@@ -53,6 +53,12 @@ export class ResourceManager {
     return true;
   }
 
+  addMana(amount: number): void {
+    if (amount <= 0) return;
+    this.resources.mana = Math.min(this.resources.maxMana, this.resources.mana + amount);
+    this.bus.emit('mana_changed', this.resources.mana);
+  }
+
   tick(dt: number, wave: number): void {
     const regen = this.resources.manaRegen;
     if (regen > 0 && this.resources.mana < this.resources.maxMana) {

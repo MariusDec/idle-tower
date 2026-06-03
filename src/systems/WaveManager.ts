@@ -20,6 +20,7 @@ export class WaveManager {
   private readonly onWaveCleared: (wave: number) => void;
   private readonly onWaveStarted: (wave: number) => void;
   private waveSkipChance = 0;
+  private intermissionMultiplier = 1;
 
   constructor(
     bus: EventBus,
@@ -40,6 +41,10 @@ export class WaveManager {
 
   setWaveSkipChance(chance: number): void {
     this.waveSkipChance = Math.max(0, Math.min(1, chance));
+  }
+
+  setIntermissionMultiplier(mult: number): void {
+    this.intermissionMultiplier = Math.max(0.1, Math.min(1, mult));
   }
 
   get snapshot(): WaveState {
@@ -106,14 +111,14 @@ export class WaveManager {
   startWave(wave: number): void {
     this.state.number = wave;
 
-    if (this.waveSkipChance > 0 && Math.random() < this.waveSkipChance) {
+    if (!isBossWave(wave) && this.waveSkipChance > 0 && Math.random() < this.waveSkipChance) {
       this.state.enemiesToSpawn = 0;
       this.state.enemiesSpawned = 0;
       this.state.spawnInterval = 0;
       this.state.spawnTimer = 0;
       this.state.spawning = false;
       this.state.intermission = true;
-      this.state.intermissionTimer = WAVE_INTERMISSION;
+      this.state.intermissionTimer = WAVE_INTERMISSION * this.intermissionMultiplier;
       this.onWaveCleared(wave);
       this.bus.emit('wave_cleared', wave);
       this.bus.emit('toast', { kind: 'milestone', text: `Wave ${wave} skipped!`, life: 2 });
@@ -216,7 +221,7 @@ export class WaveManager {
       this.onWaveCleared(this.state.number);
       this.bus.emit('wave_cleared', this.state.number);
       this.state.intermission = true;
-      this.state.intermissionTimer = WAVE_INTERMISSION;
+      this.state.intermissionTimer = WAVE_INTERMISSION * this.intermissionMultiplier;
     }
   }
 

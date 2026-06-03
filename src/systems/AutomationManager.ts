@@ -17,10 +17,11 @@ export interface AutomationDeps {
   bus: EventBus;
 }
 
-const AUTO_BUY_INTERVAL = 10;
+const BASE_AUTO_BUY_INTERVAL = 10;
 const AUTO_CAST_INTERVAL = 5;
 const AUTO_ASCEND_INTERVAL = 1;
 const AUTO_TRANSCEND_INTERVAL = 5;
+const MIN_AUTO_BUY_INTERVAL = 3;
 
 export class AutomationManager {
   private readonly deps: AutomationDeps;
@@ -43,8 +44,10 @@ export class AutomationManager {
     const autoTranscendOn = prestige.getAutomationEnabled('autoTranscend');
 
     if (autoBuyOn) {
+      const reduction = prestige.getAutoBuySpeedReduction();
+      const interval = Math.max(MIN_AUTO_BUY_INTERVAL, BASE_AUTO_BUY_INTERVAL - reduction);
       this.autoBuyTimer += dt;
-      if (this.autoBuyTimer >= AUTO_BUY_INTERVAL) {
+      if (this.autoBuyTimer >= interval) {
         this.autoBuyTimer = 0;
         this.runAutoBuy();
       }

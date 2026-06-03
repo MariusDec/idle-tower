@@ -1,11 +1,21 @@
-import type { AbilityId, GameState, PanelTab, StatsInfo } from '../types';
+import type { AbilityId, EnemyType, EnemyWaveStatsEntry, GameState, PanelTab, StatsInfo } from '../types';
+import { ENEMY_DEFS } from '../data/enemies';
+import {
+  enemyHPForWave,
+  bossHPForWave,
+  enemySpeedForWave,
+  enemyDamageForWave,
+  goldDropForWave,
+  isBossWave,
+} from '../data/formulas';
 import { HUD } from './HUD';
 import { UpgradePanel } from './UpgradePanel';
 import { AbilityPanel } from './AbilityPanel';
 import { PrestigePanel } from './PrestigePanel';
 import { TranscendencePanel } from './TranscendencePanel';
-import { ResearchPanel } from './ResearchPanel';
+import { ResearchPanel, type ResearchPanelHandlers } from './ResearchPanel';
 import { SettingsPanel } from './SettingsPanel';
+import { AchievementPanel } from './AchievementPanel';
 import { WelcomeBackModal, type WelcomeBackData } from './WelcomeBackModal';
 import { EventBus } from '../game/EventBus';
 import type { AutomationKey } from '../data/prestige';
@@ -21,6 +31,7 @@ const TABS: TabDef[] = [
   { id: 'abilities', label: 'Abilities' },
   { id: 'prestige', label: 'Prestige' },
   { id: 'transcendence', label: 'Transcendence' },
+  { id: 'achievements', label: 'Achievements' },
   { id: 'settings', label: 'Settings' },
 ];
 
@@ -33,6 +44,8 @@ export interface ResearchAPI {
   rp: number;
   unlocked: ReadonlySet<string>;
   reasonBlocked: (id: string) => string | null;
+  inProgress: { id: string; elapsed: number; total: number } | null;
+  researchSpeedMultiplier: number;
 }
 
 export interface SpeedAPI {
@@ -55,6 +68,8 @@ export interface PrestigeAPI {
   canSpend: (perkId: string, ap: number, tp: number) => boolean;
   isAutomationUnlocked: (key: AutomationKey) => boolean;
   isAutomationEnabled: (key: AutomationKey) => boolean;
+  meetsPrerequisites: (perkId: string) => boolean;
+  isExcluded: (perkId: string) => boolean;
   ascendUnlockWave: number;
   transcendUnlockAP: number;
   targetAscendWave: number;
@@ -70,17 +85,23 @@ export class UIManager {
   private readonly transcendencePanel: TranscendencePanel;
   private readonly researchPanel: ResearchPanel;
   private readonly settingsPanel: SettingsPanel;
+  private readonly achievementPanel: AchievementPanel;
   private readonly welcomeModal: WelcomeBackModal;
   private readonly bus: EventBus;
   private activeTab: PanelTab = 'upgrades';
-  private dpsSamples: number[] = [];
-  private dpsTimer = 0;
+  private damageLog: { time: number; amount: number }[] = [];
+  private realTimeDps = 0;
+  private smoothedDps = 0;
+  private lastDpsUpdateTime = 0;
+  private lastDpsDisplayTime = 0;
+  private dpsFreezeTimer = 0;
   private onBuyUpgrade: (id: string) => void = () => {};
   private onCastAbility: (id: AbilityId) => void = () => {};
   private onAscend: () => void = () => {};
   private onTranscend: () => void = () => {};
   private onSpendAP: (perkId: string) => void = () => {};
   private onUnlockResearch: (id: string) => void = () => {};
+  private onCancelResearch: () => void = () => {};
   private onToggleAutomation: (key: AutomationKey, enabled: boolean) => void = () => {};
   private onTargetWaveChange: (wave: number) => void = () => {};
   private onSpeedChange: (index: number) => void = () => {};
@@ -100,6 +121,8 @@ export class UIManager {
     canSpend: () => false,
     isAutomationUnlocked: () => false,
     isAutomationEnabled: () => false,
+    meetsPrerequisites: () => true,
+    isExcluded: () => false,
     ascendUnlockWave: 20,
     transcendUnlockAP: 100,
     targetAscendWave: 20,
@@ -108,6 +131,8 @@ export class UIManager {
     rp: 0,
     unlocked: new Set<string>(),
     reasonBlocked: () => 'Loading...',
+    inProgress: null,
+    researchSpeedMultiplier: 1,
   };
   private lastState: GameState | null = null;
   private cachedGoldMultiplier = 1;
@@ -150,18 +175,35 @@ export class UIManager {
       canSpend: (id, ap, tp) => this.prestigeApi.canSpend(id, ap, tp),
       isAutomationUnlocked: (key) => this.prestigeApi.isAutomationUnlocked(key),
       isAutomationEnabled: (key) => this.prestigeApi.isAutomationEnabled(key),
+      meetsPrerequisites: (id) => this.prestigeApi.meetsPrerequisites(id),
+      isExcluded: (id) => this.prestigeApi.isExcluded(id),
       previewTP: (ap) => this.prestigeApi.previewTP(ap),
       transcendUnlockAP: this.prestigeApi.transcendUnlockAP,
       targetAscendWave: this.prestigeApi.targetAscendWave,
     });
-    this.researchPanel = new ResearchPanel({
-      onUnlock: (id) => this.onUnlockResearch(id),
+    const researchHandlers: ResearchPanelHandlers = {
+      onStartResearch: (id) => this.onUnlockResearch(id),
+      onCancelResearch: () => this.onCancelResearch(),
       rp: 0,
       unlocked: new Set<string>(),
       reasonBlocked: (id) => this.researchApi.reasonBlocked(id),
-    });
+      inProgress: null,
+      researchSpeedMultiplier: 1,
+    };
+    // Make dynamic fields live-reference the current API
+    Object.defineProperty(researchHandlers, 'inProgress', { get: () => this.researchApi.inProgress, enumerable: true });
+    Object.defineProperty(researchHandlers, 'researchSpeedMultiplier', { get: () => this.researchApi.researchSpeedMultiplier, enumerable: true });
+    Object.defineProperty(researchHandlers, 'rp', { get: () => this.researchApi.rp, enumerable: true });
+    Object.defineProperty(researchHandlers, 'unlocked', { get: () => this.researchApi.unlocked, enumerable: true });
+    this.researchPanel = new ResearchPanel(researchHandlers);
     this.settingsPanel = new SettingsPanel({
       onClearSave: () => this.onClearSave(),
+    });
+    this.achievementPanel = new AchievementPanel({
+      getProgress: (def) => {
+        if (def.stat === 'researchCount') return this.lastState?.research.length ?? 0;
+        return (this.lastState?.stats as any)?.[def.stat] ?? 0;
+      },
     });
     this.welcomeModal = new WelcomeBackModal(deps.modalRoot);
     this.renderTabs();
@@ -182,6 +224,10 @@ export class UIManager {
       if (data.result.elapsedSeconds > 0) {
         this.welcomeModal.show(data, () => {});
       }
+    });
+    this.bus.on('tower_damage_dealt', (payload: unknown) => {
+      const p = payload as { amount: number };
+      this.damageLog.push({ time: performance.now(), amount: p.amount });
     });
   }
 
@@ -207,6 +253,10 @@ export class UIManager {
 
   setOnUnlockResearch(handler: (id: string) => void): void {
     this.onUnlockResearch = handler;
+  }
+
+  setOnCancelResearch(handler: () => void): void {
+    this.onCancelResearch = handler;
   }
 
   setOnToggleAutomation(handler: (key: AutomationKey, enabled: boolean) => void): void {
@@ -285,6 +335,7 @@ export class UIManager {
 
   update(state: GameState): void {
     this.lastState = state;
+    this.updateTabLocks(state);
     this.hud.update(state);
     if (this.activeTab === 'upgrades') {
       this.upgradePanel.update(state);
@@ -296,29 +347,79 @@ export class UIManager {
       this.transcendencePanel.update(state);
     } else if (this.activeTab === 'research') {
       this.researchPanel.update(state);
+    } else if (this.activeTab === 'achievements') {
+      this.achievementPanel.update(state);
     } else if (this.activeTab === 'settings') {
       this.settingsPanel.update();
     }
-    const dps = this.estimateDPS(state);
-    this.dpsSamples.push(dps);
-    if (this.dpsSamples.length > 30) this.dpsSamples.shift();
-    this.dpsTimer += 1 / 60;
-    if (this.dpsTimer >= 0.5) {
-      this.dpsTimer = 0;
-      const avg = this.dpsSamples.reduce((a, b) => a + b, 0) / Math.max(1, this.dpsSamples.length);
-      this.hud.setDPS(avg);
+    const now = performance.now();
+    const windowMs = 10_000;
+    const cutoff = now - windowMs;
+    while (this.damageLog.length > 0 && this.damageLog[0].time < cutoff) {
+      this.damageLog.shift();
+    }
+    let totalDmg = 0;
+    for (const entry of this.damageLog) totalDmg += entry.amount;
+    this.realTimeDps = totalDmg / (windowMs / 1000);
+
+    const dt = this.lastDpsUpdateTime ? (now - this.lastDpsUpdateTime) / 1000 : 0.016;
+    this.lastDpsUpdateTime = now;
+
+    if (state.wave.intermission) {
+      this.dpsFreezeTimer = 2;
+    } else if (this.dpsFreezeTimer > 0) {
+      this.dpsFreezeTimer = Math.max(0, this.dpsFreezeTimer - dt);
+    }
+
+    if (this.dpsFreezeTimer <= 0) {
+      const smoothingTime = 10;
+      const alpha = dt > 0 ? 1 - Math.exp(-dt / smoothingTime) : 1;
+      this.smoothedDps = this.smoothedDps * (1 - alpha) + this.realTimeDps * alpha;
+    }
+
+    if (now - this.lastDpsDisplayTime >= 3000) {
+      this.hud.setDPS(this.smoothedDps);
+      this.lastDpsDisplayTime = now;
     }
     this.pushFrameStats(state);
+    this.pushEnemyStats(state);
+  }
+
+  private pushEnemyStats(state: GameState): void {
+    const wave = state.wave.number;
+    const types: EnemyType[] = [];
+    if (isBossWave(wave)) {
+      types.push('boss');
+    } else {
+      types.push('normal');
+      if (wave >= 3) types.push('fast');
+      if (wave >= 5) types.push('tank');
+      if (wave >= 8) types.push('flying');
+      if (wave >= 15) types.push('healer');
+    }
+    const entries: EnemyWaveStatsEntry[] = types.map(t => {
+      const def = ENEMY_DEFS[t];
+      const hp = t === 'boss' ? bossHPForWave(def.baseHP, wave) : enemyHPForWave(def.baseHP, wave);
+      return {
+        type: t,
+        hp,
+        speed: enemySpeedForWave(def.baseSpeed, wave),
+        armor: def.armor,
+        magicResist: def.magicResist,
+        damage: enemyDamageForWave(def.baseDamage, wave),
+        fireRate: def.fireRate,
+        gold: goldDropForWave(def.baseGold, wave),
+      };
+    });
+    this.hud.setEnemyStatsInfo(entries);
   }
 
   private pushFrameStats(state: GameState): void {
     const t = state.tower;
     const r = state.resources;
-    const expectedHit = t.baseDamage * (1 + t.critChance * (t.critMultiplier - 1));
-    const dps = expectedHit * t.fireRate;
     this.hud.setStatsInfo({
       damage: t.baseDamage,
-      dps,
+      dps: this.realTimeDps,
       hp: t.hp,
       maxHp: t.maxHp,
       healthRegen: t.healthRegen,
@@ -329,16 +430,11 @@ export class UIManager {
       defense: t.defense,
       armor: t.armor,
       lifesteal: t.lifesteal,
+      thorns: t.thorns,
       manaRegen: r.manaRegen,
       maxMana: r.maxMana,
       goldMultiplier: this.cachedGoldMultiplier,
     });
-  }
-
-  private estimateDPS(state: GameState): number {
-    const t = state.tower;
-    const expectedHit = t.baseDamage * (1 + t.critChance * (t.critMultiplier - 1));
-    return expectedHit * t.fireRate;
   }
 
   private renderTabs(): void {
@@ -347,10 +443,28 @@ export class UIManager {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'tab-btn';
+      if (t.id === 'research') btn.classList.add('tab-locked');
       btn.textContent = t.label;
       btn.dataset.tab = t.id;
-      btn.addEventListener('click', () => this.showTab(t.id));
+      btn.addEventListener('click', () => {
+        if (btn.classList.contains('tab-locked')) return;
+        this.showTab(t.id);
+      });
       this.tabsRoot.appendChild(btn);
+    }
+  }
+
+  private updateTabLocks(state: GameState): void {
+    const researchUnlocked = (state.stats.lifetimeAscensions ?? state.stats.ascensions) >= 1;
+    for (const el of Array.from(this.tabsRoot.querySelectorAll<HTMLButtonElement>('.tab-btn'))) {
+      if (el.dataset.tab === 'research') {
+        el.classList.toggle('tab-locked', !researchUnlocked);
+        if (!researchUnlocked) {
+          el.title = 'Unlocks after first Ascension';
+        } else {
+          el.title = '';
+        }
+      }
     }
   }
 
@@ -373,6 +487,9 @@ export class UIManager {
     } else if (id === 'research') {
       this.researchPanel.mount(this.contentRoot);
       if (this.lastState) this.researchPanel.update(this.lastState);
+    } else if (id === 'achievements') {
+      this.achievementPanel.mount(this.contentRoot);
+      if (this.lastState) this.achievementPanel.update(this.lastState);
     } else if (id === 'settings') {
       this.settingsPanel.mount(this.contentRoot);
     }

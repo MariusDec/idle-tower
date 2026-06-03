@@ -29,6 +29,9 @@ export class AbilityManager {
   private fireBuffMultiplier = 1;
   private upgradeGoldAdditive = 0;
   private abilityCostMultiplier = 1;
+  private cooldownMultiplier = 1;
+  private damageMultiplier = 1;
+  private berserkFireBonus = 0;
 
   constructor(deps: AbilityManagerDeps) {
     this.resources = deps.resources;
@@ -49,6 +52,18 @@ export class AbilityManager {
 
   setAbilityCostMultiplier(value: number): void {
     this.abilityCostMultiplier = Math.max(0.1, Math.min(1, value));
+  }
+
+  setCooldownMultiplier(value: number): void {
+    this.cooldownMultiplier = Math.max(0.1, Math.min(1, value));
+  }
+
+  setDamageMultiplier(value: number): void {
+    this.damageMultiplier = Math.max(1, value);
+  }
+
+  setBerserkFireBonus(bonus: number): void {
+    this.berserkFireBonus = bonus;
   }
 
   effectiveManaCost(def: { manaCost: number }): number {
@@ -87,7 +102,7 @@ export class AbilityManager {
     const def = ABILITY_BY_ID[id];
     this.resources.spendMana(this.effectiveManaCost(def));
     const state = this.getState(id);
-    state.cooldown = def.cooldown;
+    state.cooldown = def.cooldown * this.cooldownMultiplier;
     if (def.duration > 0) {
       state.active = true;
       state.activeTimer = def.duration;
@@ -135,7 +150,7 @@ export class AbilityManager {
         this.enemies.applySlow(value, duration);
         break;
       case 'fire_rate_buff':
-        this.fireBuffMultiplier = value;
+        this.fireBuffMultiplier = value * (1 + this.berserkFireBonus);
         break;
       case 'gold_buff':
         this.goldBuffMultiplier = value;
@@ -164,7 +179,7 @@ export class AbilityManager {
 
   private dealAoEDamage(multiplier: number): void {
     const towerState = this.tower.snapshot;
-    const raw = towerState.baseDamage * multiplier;
+    const raw = towerState.baseDamage * multiplier * this.damageMultiplier;
     let hitCount = 0;
     for (const enemy of this.enemies.list) {
       if (!enemy.alive) continue;
@@ -187,6 +202,7 @@ export class AbilityManager {
     this.goldBuffMultiplier = 1;
     this.fireBuffMultiplier = 1;
     this.abilityCostMultiplier = 1;
+    this.cooldownMultiplier = 1;
     this.tower.setFireRateMultiplier(1);
   }
 }

@@ -9,6 +9,7 @@ import {
   apForWave,
   tpForAP,
   canTranscend,
+  perkCost,
   type AutomationKey,
 } from '../data/prestige';
 import { EventBus } from '../game/EventBus';
@@ -169,7 +170,7 @@ export class PrestigeManager {
     if (!def) return false;
     const level = this.getAPLevel(perkId);
     if (level >= def.maxLevel) return false;
-    return this.ctx.resources.ascensionPoints >= def.costPerLevel;
+    return this.ctx.resources.ascensionPoints >= perkCost(def, level);
   }
 
   canSpendTP(perkId: string): boolean {
@@ -177,14 +178,193 @@ export class PrestigeManager {
     if (!def) return false;
     const level = this.getTPLevel(perkId);
     if (level >= def.maxLevel) return false;
-    return this.ctx.resources.transcendencePoints >= def.costPerLevel;
+    if (!this.meetsPrerequisites(perkId)) return false;
+    if (this.isExcluded(perkId)) return false;
+    return this.ctx.resources.transcendencePoints >= perkCost(def, level);
+  }
+
+  meetsPrerequisites(perkId: string): boolean {
+    const def = TP_PERK_BY_ID[perkId];
+    if (!def || !def.prerequisites || def.prerequisites.length === 0) return true;
+    return def.prerequisites.some(
+      req => this.getTPLevel(req.perkId) >= req.minLevel,
+    );
+  }
+
+  isExcluded(perkId: string): boolean {
+    const def = TP_PERK_BY_ID[perkId];
+    if (!def || !def.exclusive || def.exclusive.length === 0) return false;
+    return def.exclusive.some(excId => this.getTPLevel(excId) > 0);
+  }
+
+  // ── New TP tree query methods ──
+
+  getTPFireRateMultiplier(): number {
+    let factor = 1;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'fire_rate_mult') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) factor *= 1 + p.effectPerLevel * lvl;
+    }
+    return factor;
+  }
+
+  getTPCritDamageBonus(): number {
+    let bonus = 0;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'crit_damage_mult') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) bonus += p.effectPerLevel * lvl;
+    }
+    return bonus;
+  }
+
+  getTPPierceBonus(): number {
+    let total = 0;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'pierce') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) total += Math.floor(p.effectPerLevel * lvl);
+    }
+    return total;
+  }
+
+  hasAoESplash(): boolean {
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'aoe_splash') continue;
+      if (this.getTPLevel(p.id) > 0) return true;
+    }
+    return false;
+  }
+
+  getAoESplashFraction(): number {
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'aoe_splash') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) return p.effectPerLevel;
+    }
+    return 0;
+  }
+
+  hasExecuteDamage(): boolean {
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'execute_damage') continue;
+      if (this.getTPLevel(p.id) > 0) return true;
+    }
+    return false;
+  }
+
+  getExecuteDamageMultiplier(): number {
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'execute_damage') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) return p.effectPerLevel;
+    }
+    return 0;
+  }
+
+  getTreasureChance(): number {
+    let chance = 0;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'treasure_chance') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) chance += p.effectPerLevel * lvl;
+    }
+    return chance;
+  }
+
+  getTPManaRegenMultiplier(): number {
+    let factor = 1;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'mana_regen_mult') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) factor *= 1 + p.effectPerLevel * lvl;
+    }
+    return factor;
+  }
+
+  getStartGold(): number {
+    let total = 0;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'start_gold') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) total += p.effectPerLevel * lvl;
+    }
+    return total;
+  }
+
+  hasGoldOnHit(): boolean {
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'gold_on_hit') continue;
+      if (this.getTPLevel(p.id) > 0) return true;
+    }
+    return false;
+  }
+
+  getGoldOnHitFraction(): number {
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'gold_on_hit') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) return p.effectPerLevel;
+    }
+    return 0;
+  }
+
+  getAbilityCDR(): number {
+    let cdr = 0;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'ability_cdr') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) cdr += p.effectPerLevel;
+    }
+    return cdr;
+  }
+
+  getAbilityManaCostReduction(): number {
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'ability_cdr') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) return 0.40;
+    }
+    return 0;
+  }
+
+  getWaveStartBonus(): number {
+    let total = 0;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'wave_start') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) total += p.effectPerLevel * lvl;
+    }
+    return total;
+  }
+
+  getAutoBuySpeedReduction(): number {
+    let total = 0;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'auto_buy_speed') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) total += p.effectPerLevel * lvl;
+    }
+    return total;
+  }
+
+  /** Returns the multiplier for research time (e.g. 0.55 = 45% faster). */
+  getResearchSpeedMultiplier(): number {
+    let reduction = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'research_speed') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) reduction += p.effectPerLevel * lvl;
+    }
+    return Math.max(0.1, 1 - reduction);
   }
 
   spendAP(perkId: string): boolean {
     const def = AP_PERK_BY_ID[perkId];
     if (!def) return false;
     if (!this.canSpendAP(perkId)) return false;
-    this.ctx.resources.ascensionPoints -= def.costPerLevel;
+    this.ctx.resources.ascensionPoints -= perkCost(def, this.getAPLevel(perkId));
     this.ctx.prestige.apSpent[perkId] = this.getAPLevel(perkId) + 1;
     if (def.effectType === 'auto_buy' && def.automationKey) {
       this.ctx.prestige.automationFlags[def.automationKey] = true;
@@ -198,7 +378,7 @@ export class PrestigeManager {
     const def = TP_PERK_BY_ID[perkId];
     if (!def) return false;
     if (!this.canSpendTP(perkId)) return false;
-    this.ctx.resources.transcendencePoints -= def.costPerLevel;
+    this.ctx.resources.transcendencePoints -= perkCost(def, this.getTPLevel(perkId));
     this.ctx.prestige.tpSpent[perkId] = this.getTPLevel(perkId) + 1;
     if (def.effectType === 'automation' && def.automationKey) {
       this.ctx.prestige.automationFlags[def.automationKey] = true;

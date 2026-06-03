@@ -4,6 +4,7 @@ import {
   AP_PERKS,
   ASCENSION_UNLOCK_WAVE,
   apForWave,
+  perkCost,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
 
@@ -105,7 +106,7 @@ export class PrestigePanel {
     const level = state.prestige.apSpent[p.id] ?? 0;
     const atMax = level >= p.maxLevel;
     const isOneTime = p.maxLevel === 1;
-    const cost = atMax ? Infinity : p.costPerLevel;
+    const cost = atMax ? Infinity : perkCost(p, level);
 
     if (isOneTime) {
       levelEl.textContent = atMax ? 'Unlocked' : 'Locked';

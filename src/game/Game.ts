@@ -4,6 +4,7 @@ import { TOWER_BASE, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
 import { ENEMY_DEFS } from '../data/enemies';
 import { ABILITIES } from '../data/abilities';
+import { RESEARCH_BY_ID } from '../data/research';
 import { nextId } from '../utils/math';
 import { EventBus } from './EventBus';
 import { Renderer } from './Renderer';
@@ -20,6 +21,7 @@ import { PrestigeManager } from '../systems/PrestigeManager';
 import { ResearchTree } from '../systems/ResearchTree';
 import { AutomationManager } from '../systems/AutomationManager';
 import { SaveManager, type PersistentState, type OfflineResult } from '../systems/SaveManager';
+import { AchievementManager } from '../systems/AchievementManager';
 import { UIManager } from '../ui/UIManager';
 import { isBossWave } from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
@@ -68,6 +70,7 @@ function makeInitialState(): GameState {
     ascensions: 0,
     lifetimeAscensions: 0,
     transcendences: 0,
+    totalUpgradesPurchased: 0,
     startedAt: Date.now(),
   };
   return {
@@ -78,6 +81,7 @@ function makeInitialState(): GameState {
     resources,
     upgrades: {},
     research: [],
+    researchInProgress: null,
     abilities,
     prestige,
     wave: {
@@ -93,6 +97,7 @@ function makeInitialState(): GameState {
       autoProgress: true,
     },
     stats,
+    achievements: [],
   };
 }
 
@@ -122,6 +127,7 @@ export class Game {
   private readonly researchTree: ResearchTree;
   private readonly automation: AutomationManager;
   private readonly saveMgr: SaveManager;
+  private readonly achievementMgr: AchievementManager;
 
   private lastTime = 0;
   private running = false;
@@ -143,6 +149,12 @@ export class Game {
 
   private speedIndex = DEFAULT_SPEED_INDEX;
   private maxSpeedIndex = MAX_SPEED_INDEX;
+
+  // Evolution state
+  private reviveUsed = false;
+  private killStreak = 0;
+  private manaFullGoldTimer = 0;
+  private shotCounter = 0;
 
   constructor(canvas: HTMLCanvasElement, deps: GameDeps) {
     this.canvas = canvas;
@@ -208,6 +220,11 @@ export class Game {
       bus: this.bus,
     });
     this.saveMgr = new SaveManager(this.bus);
+    this.achievementMgr = new AchievementManager(this.bus, {
+      getStats: () => this.state.stats,
+      getAchievements: () => this.state.achievements,
+      researchCount: () => this.state.research.length,
+    });
 
     this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
     this.state.upgrades = this.upgradeMgr.snapshot();
@@ -215,7 +232,7 @@ export class Game {
     this.syncUiApis();
 
     this.bus.on('enemy_damaged', (payload: unknown) => {
-      const p = payload as { enemy: { x: number; y: number; type: string; armor: number; magicResist: number }; amount: number; killed: boolean; isCrit?: boolean };
+      const p = payload as { enemy: { id: number; x: number; y: number; type: string; armor: number; magicResist: number; hp: number; maxHp: number; goldValue: number; alive: boolean }; amount: number; killed: boolean; isCrit?: boolean };
       const def = ENEMY_DEFS[p.enemy.type as keyof typeof ENEMY_DEFS];
       this.effects.emitHitSparks(p.enemy.x, p.enemy.y, def.color, p.killed ? 6 : 3);
       this.effects.emitDamageNumber(p.enemy.x, p.enemy.y, p.amount, !!p.isCrit);
@@ -224,9 +241,34 @@ export class Game {
         const ts = this.tower.snapshot;
         ts.hp = Math.min(ts.maxHp, ts.hp + p.amount * ls);
       }
+      if (!p.killed && this.prestigeMgr.hasGoldOnHit()) {
+        const fraction = this.prestigeMgr.getGoldOnHitFraction();
+        const goldOnHit = Math.max(1, Math.floor(p.enemy.goldValue * fraction));
+        this.resourceMgr.addGold(goldOnHit);
+      }
+      // Research: Arcane Recovery — crits restore mana
+      if (p.isCrit) {
+        const critMana = this.researchTree.getCritManaRestore();
+        if (critMana > 0) {
+          this.resourceMgr.addMana(critMana);
+        }
+      }
+      if (!p.killed && this.prestigeMgr.hasAoESplash()) {
+        const splashFraction = this.prestigeMgr.getAoESplashFraction();
+        const splashDamage = Math.max(1, Math.floor(p.amount * splashFraction));
+        const splashRadius = 60;
+        for (const e of this.enemyMgr.list) {
+          if (!e.alive || e.id === p.enemy.id) continue;
+          const dx = e.x - p.enemy.x;
+          const dy = e.y - p.enemy.y;
+          if (dx * dx + dy * dy <= splashRadius * splashRadius) {
+            this.enemyMgr.damage(e, splashDamage, false);
+          }
+        }
+      }
     });
     this.bus.on('enemy_killed', (enemy) => {
-      const e = enemy as { x: number; y: number; type: string };
+      const e = enemy as { x: number; y: number; type: string; maxHp?: number };
       const def = ENEMY_DEFS[e.type as keyof typeof ENEMY_DEFS];
       this.state.stats.enemiesKilled += 1;
       if (e.type === 'boss') {
@@ -235,10 +277,33 @@ export class Game {
         if (this.state.stats.bossesKilled === 1) {
           this.bus.emit('toast', { kind: 'milestone', text: 'First boss defeated! +200g', life: 5 });
         } else {
-          this.bus.emit('toast', { kind: 'milestone', text: 'Boss defeated!', life: 4 });
+          // this.bus.emit('toast', { kind: 'milestone', text: 'Boss defeated!', life: 4 });
         }
       }
       this.effects.emitDeathBurst(e.x, e.y, def.color, def.radius);
+
+      // Evolution: kill_streak_gold
+      if (this.upgradeMgr.hasEvolutionEffect('kill_streak_gold')) {
+        this.killStreak += 1;
+        const perKill = this.upgradeMgr.getEvolutionEffectValue('kill_streak_gold');
+        this.enemyMgr.setKillStreakGoldBonus((this.killStreak - 1) * perKill);
+      }
+
+      // Research: Chain Reaction — kills deal AoE to nearby enemies
+      const chainAoE = this.researchTree.getChainKillAoE();
+      if (chainAoE > 0 && e.maxHp) {
+        const aoeDamage = Math.max(1, Math.floor(e.maxHp * chainAoE));
+        const chainRadius = 70;
+        for (const target of this.enemyMgr.list) {
+          if (!target.alive) continue;
+          const dx = target.x - e.x;
+          const dy = target.y - e.y;
+          if (dx * dx + dy * dy <= chainRadius * chainRadius) {
+            this.enemyMgr.damage(target, aoeDamage, false);
+          }
+        }
+        this.effects.emitShockwaveRing(e.x, e.y, chainRadius);
+      }
     });
     this.bus.on('enemies_reached_tower', (reached: unknown) => {
       return;
@@ -251,6 +316,10 @@ export class Game {
     });
     this.bus.on('tower_damaged', (amount: unknown) => {
       let raw = Math.max(0, amount as number);
+      if (raw <= 0) return;
+      // Research: Reinforced Structure reduces incoming damage
+      const towerDef = this.researchTree.getTowerDefense();
+      if (towerDef > 0) raw = Math.floor(raw * (1 - towerDef));
       if (raw <= 0) return;
       const ts = this.tower.snapshot;
       if (ts.shieldCurrentCharges > 0) {
@@ -288,6 +357,18 @@ export class Game {
         false,
       );
       if (ts.hp <= 0) {
+        // Evolution: revive — once per ascension
+        if (!this.reviveUsed && this.upgradeMgr.hasEvolutionEffect('revive')) {
+          const reviveFraction = this.upgradeMgr.getEvolutionEffectValue('revive');
+          ts.hp = Math.floor(ts.maxHp * reviveFraction);
+          this.reviveUsed = true;
+          this.bus.emit('toast', {
+            kind: 'milestone',
+            text: `Titan's Heart! Revived at ${Math.round(reviveFraction * 100)}% HP.`,
+            life: 4,
+          });
+          return;
+        }
         this.bus.emit('toast', {
           kind: 'warning',
           text: `Tower destroyed! Restarting at wave ${this.waveMgr.currentWave - 1}.`,
@@ -309,6 +390,10 @@ export class Game {
       if (ts.wallMaxHp > 0) {
         ts.wallHp = ts.wallMaxHp;
       }
+      // Reset kill streak each wave
+      this.killStreak = 0;
+      this.enemyMgr.setKillStreakGoldBonus(0);
+
       const w = wave as number;
       if (WAVE_MILESTONES.has(w) && !this.announcedMilestones.has(w)) {
         this.announcedMilestones.add(w);
@@ -321,7 +406,16 @@ export class Game {
     });
     this.bus.on('upgrades_changed', (levels: Record<string, number>) => {
       this.state.upgrades = { ...(levels as Record<string, number>) };
+      this.state.stats.totalUpgradesPurchased += 1;
       this.applyUpgradeEffects();
+    });
+    this.bus.on('upgrade_evolved', (payload: unknown) => {
+      const p = payload as { id: string; level: number; evolution: { name: string; description: string } };
+      this.bus.emit('toast', {
+        kind: 'milestone',
+        text: `Evolution! ${p.evolution.name} — ${p.evolution.description}`,
+        life: 5,
+      });
     });
     this.bus.on('research_unlocked', (payload: unknown) => {
       const p = payload as { id: string };
@@ -329,7 +423,8 @@ export class Game {
       this.applyUpgradeEffects();
       if (!this.researchAnnounced.has(p.id)) {
         this.researchAnnounced.add(p.id);
-        this.bus.emit('toast', { kind: 'milestone', text: 'Research unlocked!', life: 3.5 });
+        const name = RESEARCH_BY_ID[p.id]?.name ?? 'Research';
+        this.bus.emit('toast', { kind: 'milestone', text: `${name} complete!`, life: 3.5 });
       }
     });
     this.bus.on('automation_unlocked', (payload: unknown) => {
@@ -469,11 +564,19 @@ export class Game {
     return ok;
   }
 
-  unlockResearch(id: string): boolean {
-    const ok = this.researchTree.unlock(id);
+  startResearch(id: string): boolean {
+    const ok = this.researchTree.startResearch(id);
     if (ok) {
-      this.state.research = Array.from(this.researchTree.unlocked);
-      this.applyUpgradeEffects();
+      this.state.researchInProgress = this.researchTree.inProgress ? { ...this.researchTree.inProgress } : null;
+      this.syncUiApis();
+    }
+    return ok;
+  }
+
+  cancelResearch(): boolean {
+    const ok = this.researchTree.cancelResearch();
+    if (ok) {
+      this.state.researchInProgress = null;
       this.syncUiApis();
     }
     return ok;
@@ -660,6 +763,7 @@ export class Game {
     this.applyUpgradeEffects();
     this.state.upgrades = this.upgradeMgr.snapshot();
     this.state.research = [];
+    this.state.researchInProgress = null;
     this.syncUiApis();
   }
 
@@ -701,6 +805,7 @@ export class Game {
       defense: t.defense,
       armor: t.armor,
       lifesteal: t.lifesteal,
+      thorns: t.thorns,
       manaRegen: r.manaRegen,
       maxMana: r.maxMana,
       goldMultiplier: totalGoldMulti,
@@ -717,6 +822,8 @@ export class Game {
       canSpend: (perkId, ap, tp) => this.prestigeMgr.canSpendAP(perkId) && ap >= 1 || this.prestigeMgr.canSpendTP(perkId) && tp >= 1,
       isAutomationUnlocked: (key) => this.prestigeMgr.isAutomationUnlocked(key),
       isAutomationEnabled: (key) => this.prestigeMgr.getAutomationEnabled(key),
+      meetsPrerequisites: (perkId) => this.prestigeMgr.meetsPrerequisites(perkId),
+      isExcluded: (perkId) => this.prestigeMgr.isExcluded(perkId),
       ascendUnlockWave: this.prestigeMgr.ascensionUnlockWave(),
       transcendUnlockAP: this.prestigeMgr.transcendenceUnlockAP(),
       targetAscendWave: this.state.prestige.targetAscendWave,
@@ -725,6 +832,13 @@ export class Game {
       rp: this.researchTree.rp,
       unlocked: this.researchTree.unlocked,
       reasonBlocked: (id) => this.researchTree.reasonBlocked(id),
+      inProgress: this.researchTree.inProgress
+        ? (() => {
+            const p = this.researchTree.getResearchProgress(this.researchTree.inProgress!.id);
+            return p ? { id: this.researchTree.inProgress!.id, ...p } : null;
+          })()
+        : null,
+      researchSpeedMultiplier: this.prestigeMgr.getResearchSpeedMultiplier(),
     });
     this.ui.setSpeedAPI({
       speeds: this.getAvailableSpeeds(),
@@ -764,6 +878,7 @@ export class Game {
     t.armor = 0;
     t.knockbackForce = 0;
     t.lifesteal = 0;
+    t.thorns = 0;
     t.shockwaveSize = 0;
     t.shockwaveCooldown = 0;
     t.landMineDamage = 0;
@@ -793,8 +908,8 @@ export class Game {
         case 'healthRegen': t.healthRegen = total; break;
         case 'defense': t.defense = total; break;
         case 'armor': t.armor = total; break;
-        case 'knockbackForce': t.knockbackForce = total; break;
         case 'lifesteal': t.lifesteal = total; break;
+        case 'thorns': t.thorns = total; break;
         case 'shockwave': {
           const lvl = total;
           t.shockwaveSize = 110 + (lvl - 1) * 5;
@@ -846,29 +961,101 @@ export class Game {
       t.wallMaxHp = 0;
     }
     this.enemyMgr.setWallContactExtra(wallLevel > 0 ? 36 : 0);
+    this.enemyMgr.setThorns(t.thorns);
 
     const lifetimeBonus = this.prestigeMgr.getLifetimeAPBonus();
     const apDamage = lifetimeBonus.damage;
     const apGold = lifetimeBonus.gold;
     const tpDamage = this.prestigeMgr.getTPDamageMultiplicative();
     const tpResource = this.prestigeMgr.getTPResourceMultiplicative();
+    const tpFireRate = this.prestigeMgr.getTPFireRateMultiplier();
+    const tpCritDamage = this.prestigeMgr.getTPCritDamageBonus();
+    const tpManaRegen = this.prestigeMgr.getTPManaRegenMultiplier();
     const researchGoldMulti = this.researchTree.getGoldMultiplicative();
     const researchManaMulti = this.researchTree.getManaRegenMultiplicative();
     const researchCostReduction = this.researchTree.getAbilityCostReduction();
 
     t.baseDamage = t.baseDamage * (1 + apDamage) * tpDamage;
     t.baseDamage = Math.max(1, t.baseDamage);
-    this.state.resources.manaRegen = (BASE_MANA_REGEN + manaRegenAdd) * researchManaMulti;
-    const totalGoldAdditive = (goldAdditive + apGold) * researchGoldMulti * tpResource;
+    t.fireRate = t.fireRate * tpFireRate;
+    t.critMultiplier = t.critMultiplier + tpCritDamage;
+    this.state.resources.manaRegen = (BASE_MANA_REGEN + manaRegenAdd) * researchManaMulti * tpManaRegen;
+    let totalGoldAdditive = (goldAdditive + apGold) * researchGoldMulti * tpResource;
+
+    // Evolution: wave_gold_scaling — +gold% per wave survived (must be before setGoldMultipliers)
+    if (this.upgradeMgr.hasEvolutionEffect('wave_gold_scaling')) {
+      const perWave = this.upgradeMgr.getEvolutionEffectValue('wave_gold_scaling');
+      const waveBonus = perWave * Math.max(0, this.waveMgr.currentWave - 1);
+      totalGoldAdditive += waveBonus;
+    }
 
     this.enemyMgr.setGoldMultipliers(totalGoldAdditive, 1);
     this.abilityMgr.setUpgradeGoldAdditive(goldAdditive);
-    this.abilityMgr.setAbilityCostMultiplier(1 - researchCostReduction);
+    const totalAbilityCostReduction = Math.min(0.9, researchCostReduction + this.prestigeMgr.getAbilityManaCostReduction());
+    this.abilityMgr.setAbilityCostMultiplier(1 - totalAbilityCostReduction);
+    this.abilityMgr.setCooldownMultiplier(1 - this.prestigeMgr.getAbilityCDR());
     this.projectileMgr.setDamageMultipliers(0, 1);
-    this.projectileMgr.setPierceExtra(this.researchTree.getPierceCount());
-    this.enemyMgr.setGoldLuck(this.researchTree.getGoldLuckChance(), 3);
+    this.projectileMgr.setPierceExtra(this.researchTree.getPierceCount() + this.prestigeMgr.getTPPierceBonus());
+    this.enemyMgr.setGoldLuck(this.researchTree.getGoldLuckChance() + this.prestigeMgr.getTreasureChance(), 3);
+    if (this.prestigeMgr.hasExecuteDamage()) {
+      this.projectileMgr.setExecuteBonus(0.25, this.prestigeMgr.getExecuteDamageMultiplier());
+    } else {
+      this.projectileMgr.setExecuteBonus(0, 0);
+    }
+
+    // Evolution effects
+    const armorPen = this.upgradeMgr.getEvolutionEffectValue('armor_pen');
+    if (armorPen > 0) this.projectileMgr.setArmorPen(armorPen);
+    else this.projectileMgr.setArmorPen(0);
+
+    if (this.upgradeMgr.hasEvolutionEffect('shield_fast_recharge')) {
+      const bonus = this.upgradeMgr.getEvolutionEffectValue('shield_fast_recharge');
+      t.shieldRechargeTime = Math.max(3, t.shieldRechargeTime * (1 - bonus));
+    }
+
+    if (this.upgradeMgr.hasEvolutionEffect('hp_threshold_damage') && t.hp / t.maxHp > 0.8) {
+      const bonus = this.upgradeMgr.getEvolutionEffectValue('hp_threshold_damage');
+      t.baseDamage *= 1 + bonus;
+    }
+
+    this.projectileMgr.setEvolutionCombatEffects(
+      this.upgradeMgr.getEvolutionEffectValue('instant_kill'),
+      this.upgradeMgr.getEvolutionEffectValue('crit_splash'),
+      this.upgradeMgr.hasEvolutionEffect('crit_ignore_armor'),
+    );
+
+    // Evolution: berserk_fire_bonus — extra fire rate during Berserk
+    this.abilityMgr.setBerserkFireBonus(
+      this.upgradeMgr.getEvolutionEffectValue('berserk_fire_bonus'),
+    );
 
     this.waveMgr.setWaveSkipChance(this.prestigeMgr.getWaveSkipChance());
+
+    // Research: Intermission speed
+    this.waveMgr.setIntermissionMultiplier(1 - this.researchTree.getIntermissionSpeedReduction());
+
+    // Research: Enemy HP reduction
+    this.enemyMgr.setHPReduction(this.researchTree.getEnemyHPReduction());
+
+    // Research: Ability power
+    this.abilityMgr.setDamageMultiplier(1 + this.researchTree.getAbilityPowerBonus());
+
+    // Achievement rewards
+    const achDmg = this.achievementMgr.getRewardMultiplier('damage_mult') + this.achievementMgr.getRewardMultiplier('all_damage') + this.achievementMgr.getRewardMultiplier('all_stats');
+    if (achDmg > 0) t.baseDamage *= 1 + achDmg;
+    const achFR = this.achievementMgr.getRewardMultiplier('fire_rate_mult') + this.achievementMgr.getRewardMultiplier('all_stats');
+    if (achFR > 0) t.fireRate *= 1 + achFR;
+    const achGold = this.achievementMgr.getRewardMultiplier('gold_mult') + this.achievementMgr.getRewardMultiplier('all_stats');
+    if (achGold > 0) this.enemyMgr.setGoldMultipliers(totalGoldAdditive * (1 + achGold), 1);
+    const achHP = this.achievementMgr.getRewardMultiplier('max_hp_mult');
+    if (achHP > 0) {
+      t.maxHp *= 1 + achHP;
+      if (t.hp > t.maxHp) t.hp = t.maxHp;
+    }
+    const achCDR = this.achievementMgr.getRewardMultiplier('ability_cdr');
+    if (achCDR > 0) {
+      this.abilityMgr.setCooldownMultiplier((1 - this.prestigeMgr.getAbilityCDR()) * (1 - achCDR));
+    }
 
     this.state.research = Array.from(this.researchTree.unlocked);
   }
@@ -902,6 +1089,10 @@ export class Game {
     this.abilityMgr.reset();
     this.effects.reset();
     this.mines = [];
+    this.reviveUsed = false;
+    this.killStreak = 0;
+    this.manaFullGoldTimer = 0;
+    this.shotCounter = 0;
     const t = this.tower.snapshot;
     t.cooldown = 0;
     t.hp = TOWER_BASE.hp;
@@ -909,7 +1100,7 @@ export class Game {
     t.shieldCurrentCharges = 0;
     t.shieldRechargeTimer = 0;
 
-    const startWave = this.researchTree.getStartWave();
+    const startWave = Math.max(this.researchTree.getStartWave(), this.prestigeMgr.getWaveStartBonus());
     if (startWave > 1) {
       this.waveMgr.startAtWave(startWave);
       this.state.wave.highestWave = startWave;
@@ -922,6 +1113,11 @@ export class Game {
       this.state.resources.gold += startGold;
     }
 
+    const headStartGold = this.prestigeMgr.getStartGold();
+    if (headStartGold > 0) {
+      this.state.resources.gold += headStartGold;
+    }
+
     this.applyUpgradeEffects();
     this.state.upgrades = this.upgradeMgr.snapshot();
   }
@@ -929,6 +1125,7 @@ export class Game {
   private applyFullTranscendenceReset(): void {
     this.researchTree.resetForAscension();
     this.state.research = [];
+    this.state.researchInProgress = null;
     this.automation.reset();
     this.applySavedStateReset();
     this.state.resources.ascensionPoints = 0;
@@ -955,13 +1152,22 @@ export class Game {
     s.lifetimeHighestWave = persisted.stats.lifetimeHighestWave;
     s.abilitiesCast = persisted.stats.abilitiesCast;
     s.ascensions = persisted.stats.ascensions;
+    s.lifetimeAscensions = persisted.stats.lifetimeAscensions ?? 0;
     s.transcendences = persisted.stats.transcendences;
+    s.totalUpgradesPurchased = persisted.stats.totalUpgradesPurchased ?? 0;
     s.startedAt = persisted.stats.startedAt;
+
+    this.state.achievements = [...((persisted as any).achievements ?? [])];
 
     this.state.upgrades = { ...persisted.upgrades };
     this.migrateUpgrades(this.state.upgrades);
     this.state.research = [...(persisted.research ?? [])];
-    this.researchTree.replaceUnlocked(persisted.research ?? [], persisted.resources.ascensionPoints);
+    this.researchTree.replaceUnlocked(
+      persisted.research ?? [],
+      persisted.resources.ascensionPoints,
+      persisted.researchInProgress ?? null,
+    );
+    this.state.researchInProgress = persisted.researchInProgress ?? null;
 
     const p = this.state.prestige;
     p.apSpent = { ...persisted.prestige.apSpent };
@@ -1036,6 +1242,20 @@ export class Game {
     this.resourceMgr.tick(dt, this.waveMgr.currentWave);
     this.abilityMgr.tick(dt);
 
+    // Evolution: mana_full_gold — gold bonus while mana is full
+    if (this.upgradeMgr.hasEvolutionEffect('mana_full_gold')) {
+      if (this.resourceMgr.mana >= this.resourceMgr.state.maxMana) {
+        this.manaFullGoldTimer = 5;
+      }
+      if (this.manaFullGoldTimer > 0) {
+        this.manaFullGoldTimer -= dt;
+        const bonus = this.upgradeMgr.getEvolutionEffectValue('mana_full_gold');
+        this.enemyMgr.setManaFullGoldBonus(bonus);
+      } else {
+        this.enemyMgr.setManaFullGoldBonus(0);
+      }
+    }
+
     const ts = this.tower.snapshot;
     if (ts.hp < ts.maxHp && ts.healthRegen > 0) {
       ts.hp = Math.min(ts.maxHp, ts.hp + (ts.maxHp * ts.healthRegen) * dt);
@@ -1052,6 +1272,16 @@ export class Game {
       if (this.mouseDown || target) {
         const shot = this.tower.rollShot();
         const variants = this.buildShotVariants();
+
+        // Evolution: double_shot — every Nth shot fires double
+        if (this.upgradeMgr.hasEvolutionEffect('double_shot')) {
+          this.shotCounter += 1;
+          const interval = this.upgradeMgr.getEvolutionEffectValue('double_shot');
+          if (this.shotCounter % interval === 0) {
+            variants.push({ posOffsetX: 0, posOffsetY: 12 });
+          }
+        }
+
         this.projectileMgr.fire(target, ts, {
           rawDamage: shot.damage,
           damageType: ts.damageType,
@@ -1076,6 +1306,11 @@ export class Game {
         ts.shockwaveTimer = ts.shockwaveCooldown;
         this.enemyMgr.applyShockwave(ts.shockwaveSize, ts.x, ts.y);
         this.effects.emitShockwaveRing(ts.x, ts.y, ts.shockwaveSize);
+        // Evolution: shockwave_slow — slow enemies hit by shockwave
+        if (this.upgradeMgr.hasEvolutionEffect('shockwave_slow')) {
+          const slowAmount = this.upgradeMgr.getEvolutionEffectValue('shockwave_slow');
+          this.enemyMgr.applySlow(1 - slowAmount, 2);
+        }
       }
     }
 
@@ -1087,7 +1322,7 @@ export class Game {
         const dist = 30 + Math.random() * Math.max(0, ts.range - 30);
         const mx = ts.x + Math.cos(angle) * dist;
         const my = ts.y + Math.sin(angle) * dist;
-        if (this.mines.length >= 10) {
+        if (this.mines.length >= 15) {
           this.mines.shift();
         }
         this.mines.push({
@@ -1097,6 +1332,7 @@ export class Game {
           damage: ts.baseDamage * ts.landMineDamage,
           explosionRadius: 50,
           alive: true,
+          isSplit: false,
         });
       }
     }
@@ -1120,6 +1356,23 @@ export class Game {
             }
           }
           this.effects.emitMineExplosion(mine.x, mine.y);
+          // Evolution: mine_split — spawn child mines on detonation
+          if (!mine.isSplit && this.upgradeMgr.hasEvolutionEffect('mine_split')) {
+            const count = this.upgradeMgr.getEvolutionEffectValue('mine_split');
+            for (let c = 0; c < count; c++) {
+              const childAngle = Math.random() * Math.PI * 2;
+              const childDist = 25 + Math.random() * 25;
+              this.mines.push({
+                id: nextId(),
+                x: mine.x + Math.cos(childAngle) * childDist,
+                y: mine.y + Math.sin(childAngle) * childDist,
+                damage: mine.damage * 0.5,
+                explosionRadius: 30,
+                alive: true,
+                isSplit: true,
+              });
+            }
+          }
           break;
         }
       }
@@ -1138,8 +1391,34 @@ export class Game {
     this.notifications.tick(dt);
     this.automation.tick(dt);
 
+    // Research progress
+    this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
+    if (this.researchTree.tick(dt)) {
+      // A research just completed
+      this.state.research = Array.from(this.researchTree.unlocked);
+      this.state.researchInProgress = null;
+      this.applyUpgradeEffects();
+      this.syncUiApis();
+    } else if (this.researchTree.inProgress) {
+      this.state.researchInProgress = { ...this.researchTree.inProgress };
+      // Update research API each frame for smooth progress bar
+      this.ui.setResearchAPI({
+        rp: this.researchTree.rp,
+        unlocked: this.researchTree.unlocked,
+        reasonBlocked: (id) => this.researchTree.reasonBlocked(id),
+        inProgress: (() => {
+          const ip = this.researchTree.inProgress;
+          if (!ip) return null;
+          const p = this.researchTree.getResearchProgress(ip.id);
+          return p ? { id: ip.id, ...p } : null;
+        })(),
+        researchSpeedMultiplier: this.prestigeMgr.getResearchSpeedMultiplier(),
+      });
+    }
+
     this.checkTranscendenceUnlockToast();
     this.saveMgr.tick(dt, this.state, (s) => this.saveMgr.save(s));
+    this.achievementMgr.tick(dt);
   }
 
   private checkTranscendenceUnlockToast(): void {

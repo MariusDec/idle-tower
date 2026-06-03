@@ -1,4 +1,4 @@
-import type { GameState, StatsInfo } from '../types';
+import type { GameState, StatsInfo, EnemyWaveStatsEntry } from '../types';
 import { formatNumber } from '../utils/bigNumber';
 import type { SpeedAPI, WaveControlAPI } from './UIManager';
 
@@ -27,6 +27,11 @@ export class HUD {
   private statsPopup!: HTMLElement;
   private statsPopupBody!: HTMLElement;
   private statsInfo: StatsInfo | null = null;
+  private enemyStatsBtn!: HTMLButtonElement;
+  private enemyStatsTooltip!: HTMLElement;
+  private enemyStatsPopup!: HTMLElement;
+  private enemyStatsPopupBody!: HTMLElement;
+  private enemyStatsInfo: EnemyWaveStatsEntry[] = [];
   private dps = 0;
   private speedApi: SpeedAPI = { speeds: [], currentIndex: 0, maxIndex: 0 };
   private waveApi: WaveControlAPI = { autoProgress: true, currentWave: 1, isIntermission: false };
@@ -103,6 +108,7 @@ export class HUD {
       <div class="stat-row"><span>Defense</span><span>${info.defense.toFixed(0)}</span></div>
       <div class="stat-row"><span>Armor</span><span>${info.armor.toFixed(0)}</span></div>
       <div class="stat-row"><span>Lifesteal</span><span>${pct(info.lifesteal)}</span></div>
+      <div class="stat-row"><span>Thorns</span><span>${pct(info.thorns)}</span></div>
       <div class="stat-row"><span>Mana Regen</span><span>${info.manaRegen.toFixed(1)}/s</span></div>
       <div class="stat-row"><span>Max Mana</span><span>${info.maxMana}</span></div>
       <div class="stat-row"><span>Gold Multiplier</span><span>${info.goldMultiplier.toFixed(2)}x</span></div>
@@ -119,6 +125,50 @@ export class HUD {
   private closeStatsPopup(): void {
     this.statsPopup.classList.remove('is-open');
     this.statsBtn.classList.remove('is-active');
+  }
+
+  setEnemyStatsInfo(entries: EnemyWaveStatsEntry[]): void {
+    this.enemyStatsInfo = entries;
+    if (this.enemyStatsTooltip.style.display !== 'none') {
+      this.renderEnemyStatsContent(this.enemyStatsTooltip, entries);
+    }
+    if (this.enemyStatsPopup.classList.contains('is-open')) {
+      this.renderEnemyStatsContent(this.enemyStatsPopupBody, entries);
+    }
+  }
+
+  private renderEnemyStatsContent(el: HTMLElement, entries: EnemyWaveStatsEntry[]): void {
+    if (entries.length === 0) {
+      el.innerHTML = '<div class="stat-row"><span>No enemies this wave</span><span></span></div>';
+      return;
+    }
+    const cols = entries.map(e => {
+      const label = e.type.charAt(0).toUpperCase() + e.type.slice(1);
+      return `<div class="enemy-stats-col">
+        <div class="enemy-stats-type-header">${label}</div>
+        <div class="stat-row"><span>HP</span><span>${formatNumber(e.hp)}</span></div>
+        <div class="stat-row"><span>Speed</span><span>${e.speed.toFixed(0)}</span></div>
+        <div class="stat-row"><span>Armor</span><span>${e.armor.toFixed(0)}</span></div>
+        <div class="stat-row"><span>Magic Resist</span><span>${(e.magicResist * 100).toFixed(0)}%</span></div>
+        <div class="stat-row"><span>Damage</span><span>${formatNumber(e.damage)}</span></div>
+        <div class="stat-row"><span>Fire Rate</span><span>${e.fireRate.toFixed(2)}/s</span></div>
+        <div class="stat-row"><span>Gold</span><span>${formatNumber(e.gold)}</span></div>
+      </div>`;
+    }).join('');
+    const wide = entries.length > 3 ? ' enemy-stats-grid-wide' : '';
+    el.innerHTML = `<div class="enemy-stats-grid${wide}">${cols}</div>`;
+  }
+
+  private openEnemyStatsPopup(): void {
+    if (this.enemyStatsInfo.length === 0) return;
+    this.renderEnemyStatsContent(this.enemyStatsPopupBody, this.enemyStatsInfo);
+    this.enemyStatsPopup.classList.add('is-open');
+    this.enemyStatsBtn.classList.add('is-active');
+  }
+
+  private closeEnemyStatsPopup(): void {
+    this.enemyStatsPopup.classList.remove('is-open');
+    this.enemyStatsBtn.classList.remove('is-active');
   }
 
   update(state: GameState): void {
@@ -221,6 +271,33 @@ export class HUD {
     this.statsTooltip.style.display = 'none';
     statsWrap.appendChild(this.statsTooltip);
 
+    this.enemyStatsBtn = document.createElement('button');
+    this.enemyStatsBtn.type = 'button';
+    this.enemyStatsBtn.className = 'hud-stats-btn';
+    this.enemyStatsBtn.textContent = 'Enemies';
+    this.enemyStatsBtn.addEventListener('mouseenter', () => {
+      if (this.enemyStatsInfo.length > 0) {
+        this.renderEnemyStatsContent(this.enemyStatsTooltip, this.enemyStatsInfo);
+        this.enemyStatsTooltip.style.display = 'block';
+      }
+    });
+    this.enemyStatsBtn.addEventListener('mouseleave', () => {
+      this.enemyStatsTooltip.style.display = 'none';
+    });
+    this.enemyStatsBtn.addEventListener('click', () => {
+      if (this.enemyStatsPopup.classList.contains('is-open')) {
+        this.closeEnemyStatsPopup();
+      } else {
+        this.openEnemyStatsPopup();
+      }
+    });
+    statsWrap.appendChild(this.enemyStatsBtn);
+
+    this.enemyStatsTooltip = document.createElement('div');
+    this.enemyStatsTooltip.className = 'hud-stats-tooltip';
+    this.enemyStatsTooltip.style.display = 'none';
+    statsWrap.appendChild(this.enemyStatsTooltip);
+
     this.root.appendChild(statsWrap);
 
     this.statsPopup = document.createElement('div');
@@ -246,6 +323,31 @@ export class HUD {
       if (e.target === this.statsPopup) this.closeStatsPopup();
     });
     document.body.appendChild(this.statsPopup);
+
+    this.enemyStatsPopup = document.createElement('div');
+    this.enemyStatsPopup.className = 'hud-stats-popup';
+    const enemyPopupInner = document.createElement('div');
+    enemyPopupInner.className = 'hud-stats-popup-inner enemy-stats-popup-inner';
+    const enemyCloseBtn = document.createElement('button');
+    enemyCloseBtn.type = 'button';
+    enemyCloseBtn.className = 'hud-stats-popup-close';
+    enemyCloseBtn.textContent = '\u00d7';
+    enemyCloseBtn.addEventListener('click', () => this.closeEnemyStatsPopup());
+    enemyPopupInner.appendChild(enemyCloseBtn);
+    const enemyPopupTitle = document.createElement('h3');
+    enemyPopupTitle.className = 'hud-stats-popup-title';
+    enemyPopupTitle.textContent = 'Enemy Stats';
+    enemyPopupInner.appendChild(enemyPopupTitle);
+    const enemyPopupBody = document.createElement('div');
+    enemyPopupBody.className = 'hud-stats-popup-body';
+    this.enemyStatsPopupBody = enemyPopupBody;
+    enemyPopupInner.appendChild(enemyPopupBody);
+    this.enemyStatsPopup.appendChild(enemyPopupInner);
+    this.enemyStatsPopup.addEventListener('click', (e) => {
+      if (e.target === this.enemyStatsPopup) this.closeEnemyStatsPopup();
+    });
+    document.body.appendChild(this.enemyStatsPopup);
+
     this.root.appendChild(groupLeft);
 
     const hpWrap = document.createElement('div');

@@ -24,10 +24,12 @@ export interface PersistentState {
   resources: ResourceState;
   upgrades: Record<string, number>;
   research: string[];
+  researchInProgress?: { id: string; elapsed: number } | null;
   abilities: Record<string, AbilityState>;
   prestige: PrestigeState;
   wave: WaveState;
   stats: GameStats;
+  achievements: string[];
 }
 
 export interface OfflineResult {
@@ -78,6 +80,9 @@ function validate(data: unknown): data is PersistentState {
   if (!isObject(data.prestige)) return false;
   if (!isObject(data.wave)) return false;
   if (!isObject(data.stats)) return false;
+  if (!Array.isArray(data.achievements)) {
+    (data as Record<string, unknown>).achievements = [];
+  }
   return true;
 }
 
@@ -103,10 +108,12 @@ export class SaveManager {
       resources: { ...state.resources },
       upgrades: { ...state.upgrades },
       research: [...state.research],
+      researchInProgress: state.researchInProgress ? { ...state.researchInProgress } : null,
       abilities: this.snapshotAbilities(state.abilities),
       prestige: this.snapshotPrestige(state.prestige),
       wave: { ...state.wave },
       stats: { ...state.stats },
+      achievements: [...(state.achievements ?? [])],
     };
   }
 

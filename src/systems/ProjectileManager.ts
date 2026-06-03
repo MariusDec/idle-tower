@@ -33,6 +33,12 @@ export class ProjectileManager {
   };
   private pierceExtra = 0;
   private piercingRemaining: Record<number, number> = {};
+  private executeThreshold = 0;
+  private executeMultiplier = 0;
+  private armorPen = 0;
+  private instantKillChance = 0;
+  private critSplashFraction = 0;
+  private critIgnoreArmor = false;
 
   constructor(bus: EventBus, tower: Tower, enemies: EnemyManager) {
     this.bus = bus;
@@ -50,6 +56,21 @@ export class ProjectileManager {
 
   setPierceExtra(value: number): void {
     this.pierceExtra = Math.max(0, Math.floor(value));
+  }
+
+  setExecuteBonus(threshold: number, multiplier: number): void {
+    this.executeThreshold = threshold;
+    this.executeMultiplier = multiplier;
+  }
+
+  setArmorPen(value: number): void {
+    this.armorPen = Math.max(0, Math.min(1, value));
+  }
+
+  setEvolutionCombatEffects(instantKill: number, critSplash: number, critIgnoreArmor: boolean): void {
+    this.instantKillChance = instantKill;
+    this.critSplashFraction = critSplash;
+    this.critIgnoreArmor = critIgnoreArmor;
   }
 
   private pierceMax(id: number): number {
@@ -124,12 +145,44 @@ export class ProjectileManager {
       }
       if (hits.length > 0) {
         const enemy = hits[0];
-        const final = this.tower.applyResists(enemy, p.damage);
-        const killed = this.enemies.damage(enemy, final, p.isCrit);
-        if (!killed) {
-          const ts = this.tower.snapshot;
-          if (ts.knockbackForce > 0) {
-            this.enemies.applyKnockback(enemy, ts.knockbackForce, ts.x, ts.y);
+        // Instant kill evolution (non-boss only)
+        if (this.instantKillChance > 0 && enemy.type !== 'boss' && Math.random() < this.instantKillChance) {
+          const dmg = enemy.hp;
+          this.enemies.damage(enemy, dmg, false);
+          this.bus.emit('tower_damage_dealt', { amount: dmg });
+        } else {
+          const penEnemy = this.armorPen > 0 || (p.isCrit && this.critIgnoreArmor)
+            ? { ...enemy, armor: p.isCrit && this.critIgnoreArmor ? 0 : Math.max(0, enemy.armor * (1 - this.armorPen)) }
+            : enemy;
+          let final = this.tower.applyResists(penEnemy, p.damage);
+          if (this.executeThreshold > 0 && enemy.hp / enemy.maxHp < this.executeThreshold) {
+            final = Math.floor(final * (1 + this.executeMultiplier));
+          }
+          const vulnBonus = this.enemies.isVulnerable(enemy);
+          if (vulnBonus > 0) {
+            final = Math.floor(final * (1 + vulnBonus));
+          }
+          const killed = this.enemies.damage(enemy, final, p.isCrit);
+          this.bus.emit('tower_damage_dealt', { amount: final });
+          if (!killed) {
+            const ts = this.tower.snapshot;
+            if (ts.knockbackForce > 0) {
+              this.enemies.applyKnockback(enemy, ts.knockbackForce, ts.x, ts.y);
+            }
+          }
+          // Crit splash evolution
+          if (p.isCrit && this.critSplashFraction > 0) {
+            const splashDamage = Math.max(1, Math.floor(final * this.critSplashFraction));
+            const splashRadius = 50;
+            for (const e of this.enemies.list) {
+              if (!e.alive || e.id === enemy.id) continue;
+              const dx = e.x - enemy.x;
+              const dy = e.y - enemy.y;
+              if (dx * dx + dy * dy <= splashRadius * splashRadius) {
+                this.enemies.damage(e, splashDamage, false);
+                this.bus.emit('tower_damage_dealt', { amount: splashDamage });
+              }
+            }
           }
         }
         const remaining = this.pierceMax(p.id);

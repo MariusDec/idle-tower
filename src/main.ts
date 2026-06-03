@@ -52,7 +52,10 @@ function bootstrap(): void {
     game.spendAP(perkId);
   });
   ui.setOnUnlockResearch((id) => {
-    game.unlockResearch(id);
+    game.startResearch(id);
+  });
+  ui.setOnCancelResearch(() => {
+    game.cancelResearch();
   });
   ui.setOnToggleAutomation((key, enabled) => {
     game.setAutomationEnabled(key, enabled);
@@ -90,11 +93,15 @@ function bootstrap(): void {
     ascendUnlockWave: game.prestige.ascensionUnlockWave(),
     transcendUnlockAP: game.prestige.transcendenceUnlockAP(),
     targetAscendWave: game.gameState.prestige.targetAscendWave,
+    meetsPrerequisites: (id) => game.prestige.meetsPrerequisites(id),
+    isExcluded: (id) => game.prestige.isExcluded(id),
   });
   ui.setResearchAPI({
     rp: game.research.rp,
     unlocked: game.research.unlocked,
     reasonBlocked: (id) => game.research.reasonBlocked(id),
+    inProgress: null,
+    researchSpeedMultiplier: game.prestige.getResearchSpeedMultiplier(),
   });
 
   let mouseDown = false;

@@ -1,26 +1,26 @@
 export const SUFFIXES: readonly string[] = [
   '',
-  'Thousand',
-  'Million',
-  'Billion',
-  'Trillion',
-  'Quadrillion',
-  'Quintillion',
-  'Sextillion',
-  'Septillion',
-  'Octillion',
-  'Nonillion',
-  'Decillion',
-  'Undecillion',
-  'Duodecillion',
-  'Tredecillion',
-  'Quattuordecillion',
-  'Quindecillion',
-  'Sexdecillion',
-  'Septendecillion',
-  'Octodecillion',
-  'Novemdecillion',
-  'Vigintillion',
+  'K',
+  'M',
+  'B',
+  'T',
+  'Qa',
+  'Qi',
+  'Sx',
+  'Sp',
+  'Oc',
+  'No',
+  'Dc',
+  'Udc',
+  'Ddc',
+  'Tdc',
+  'Qadc',
+  'Qidc',
+  'Sxdc',
+  'Spdc',
+  'Ocdc',
+  'Nodc',
+  'Vg',
 ];
 
 export function formatNumber(n: number): string {
@@ -31,7 +31,7 @@ export function formatNumber(n: number): string {
   const tier = Math.floor(exp / 3);
   const scaled = n / Math.pow(1000, tier);
   if (tier < SUFFIXES.length) {
-    return scaled.toFixed(2) + ' ' + SUFFIXES[tier];
+    return scaled.toFixed(2) + SUFFIXES[tier];
   }
   return n.toExponential(2);
 }

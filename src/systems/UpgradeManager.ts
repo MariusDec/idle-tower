@@ -1,4 +1,4 @@
-import type { UpgradeDef } from '../types';
+import type { UpgradeDef, UpgradeEvolution } from '../types';
 import { UPGRADES } from '../data/upgrades';
 import { upgradeCost } from '../data/formulas';
 import type { ResourceManager } from './ResourceManager';
@@ -51,10 +51,67 @@ export class UpgradeManager {
     const level = this.levels[id] ?? 0;
     const cost = upgradeCost(def.baseCost, def.costGrowth, level);
     if (!this.resources.spendGold(cost)) return false;
-    this.levels[id] = level + 1;
-    this.bus.emit('upgrade_purchased', { id, level: this.levels[id] });
+    const newLevel = level + 1;
+    this.levels[id] = newLevel;
+    this.bus.emit('upgrade_purchased', { id, level: newLevel });
     this.bus.emit('upgrades_changed', { ...this.levels });
+    if (def.evolutions) {
+      for (const evo of def.evolutions) {
+        if (newLevel === evo.level) {
+          this.bus.emit('upgrade_evolved', { id, level: newLevel, evolution: evo });
+        }
+      }
+    }
     return true;
+  }
+
+  getActiveEvolutions(id: string): UpgradeEvolution[] {
+    const def = UPGRADES.find(u => u.id === id);
+    if (!def || !def.evolutions) return [];
+    const level = this.levels[id] ?? 0;
+    return def.evolutions.filter(e => level >= e.level);
+  }
+
+  getHighestEvolution(id: string): UpgradeEvolution | null {
+    const active = this.getActiveEvolutions(id);
+    if (active.length === 0) return null;
+    return active[active.length - 1];
+  }
+
+  getNextEvolution(id: string): UpgradeEvolution | null {
+    const def = UPGRADES.find(u => u.id === id);
+    if (!def || !def.evolutions) return null;
+    const level = this.levels[id] ?? 0;
+    for (const evo of def.evolutions) {
+      if (level < evo.level) return evo;
+    }
+    return null;
+  }
+
+  hasEvolutionEffect(effectId: string): boolean {
+    for (const u of UPGRADES) {
+      if (!u.evolutions) continue;
+      const level = this.levels[u.id] ?? 0;
+      for (const evo of u.evolutions) {
+        if (level >= evo.level && evo.effectId === effectId) return true;
+      }
+    }
+    return false;
+  }
+
+  getEvolutionEffectValue(effectId: string): number {
+    for (const u of UPGRADES) {
+      if (!u.evolutions) continue;
+      const level = this.levels[u.id] ?? 0;
+      let value = 0;
+      for (const evo of u.evolutions) {
+        if (level >= evo.level && evo.effectId === effectId) {
+          value = evo.effectValue;
+        }
+      }
+      if (value > 0) return value;
+    }
+    return 0;
   }
 
   reset(): void {

@@ -19,7 +19,7 @@ export interface UpgradeScaling {
 
 export type AbilityId = 'rain_of_arrows' | 'frost_nova' | 'berserk' | 'gold_rush';
 
-export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'settings';
+export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'settings';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';
 
@@ -44,6 +44,7 @@ export interface TowerState {
   shockwaveCooldown: number;
   shockwaveTimer: number;
   lifesteal: number;
+  thorns: number;
   landMineDamage: number;
   landMineFrequency: number;
   landMineTimer: number;
@@ -110,7 +111,7 @@ export interface WaveState {
   autoProgress: boolean;
 }
 
-export const GAME_SPEEDS: readonly number[] = [0.5, 1.0];
+export const GAME_SPEEDS: readonly number[] = [0.5, 1.0, 2.0, 3.0, 4.0];
 
 export const DEFAULT_SPEED_INDEX = GAME_SPEEDS.indexOf(1.0);
 export const MAX_SPEED_INDEX = GAME_SPEEDS.length - 1;
@@ -145,7 +146,16 @@ export interface GameStats {
   ascensions: number;
   lifetimeAscensions: number;
   transcendences: number;
+  totalUpgradesPurchased: number;
   startedAt: number;
+}
+
+export interface UpgradeEvolution {
+  level: number;
+  name: string;
+  description: string;
+  effectId: string;
+  effectValue: number;
 }
 
 export interface UpgradeDef {
@@ -160,6 +170,7 @@ export interface UpgradeDef {
   category: UpgradeCategory;
   hideUpgradeScale: boolean;
   scaling?: UpgradeScaling;
+  evolutions?: UpgradeEvolution[];
 }
 
 export function computeUpgradeValue(def: UpgradeDef, level: number): number {
@@ -193,9 +204,21 @@ export interface StatsInfo {
   defense: number;
   armor: number;
   lifesteal: number;
+  thorns: number;
   manaRegen: number;
   maxMana: number;
   goldMultiplier: number;
+}
+
+export interface EnemyWaveStatsEntry {
+  type: EnemyType;
+  hp: number;
+  speed: number;
+  armor: number;
+  magicResist: number;
+  damage: number;
+  fireRate: number;
+  gold: number;
 }
 
 export interface GameState {
@@ -206,10 +229,12 @@ export interface GameState {
   resources: ResourceState;
   upgrades: Record<string, number>;
   research: string[];
+  researchInProgress: { id: string; elapsed: number } | null;
   abilities: Record<string, AbilityState>;
   prestige: PrestigeState;
   wave: WaveState;
   stats: GameStats;
+  achievements: string[];
 }
 
 export interface Particle {
@@ -240,6 +265,7 @@ export interface Mine {
   damage: number;
   explosionRadius: number;
   alive: boolean;
+  isSplit: boolean;
 }
 
 export interface Shockwave {

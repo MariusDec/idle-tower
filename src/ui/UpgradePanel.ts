@@ -1,4 +1,4 @@
-import type { UpgradeCategory, UpgradeDef, GameState } from '../types';
+import type { UpgradeCategory, UpgradeDef, UpgradeEvolution, GameState } from '../types';
 import { computeUpgradeValue } from '../types';
 import { UPGRADES } from '../data/upgrades';
 import { upgradeCost } from '../data/formulas';
@@ -19,6 +19,23 @@ const TAB_DEFS: UpgradeTabDef[] = [
 ];
 
 const PERCENT_UPGRADES = new Set(['critChance', 'critDamage', 'goldMulti']);
+
+function getHighestEvolution(def: UpgradeDef, level: number): UpgradeEvolution | null {
+  if (!def.evolutions) return null;
+  let best: UpgradeEvolution | null = null;
+  for (const evo of def.evolutions) {
+    if (level >= evo.level) best = evo;
+  }
+  return best;
+}
+
+function getNextEvolution(def: UpgradeDef, level: number): UpgradeEvolution | null {
+  if (!def.evolutions) return null;
+  for (const evo of def.evolutions) {
+    if (level < evo.level) return evo;
+  }
+  return null;
+}
 
 function isPercent(def: UpgradeDef): boolean {
   if (def.scaling) return def.scaling.effectType === 'mult';
@@ -77,6 +94,9 @@ export class UpgradePanel {
   private levelById = new Map<string, HTMLElement>();
   private bonusById = new Map<string, HTMLElement>();
   private buttonById = new Map<string, HTMLButtonElement>();
+  private nameById = new Map<string, HTMLElement>();
+  private evoInfoById = new Map<string, HTMLElement>();
+  private rowById = new Map<string, HTMLElement>();
   private activeTab: UpgradeTabId = 'attack';
 
   constructor(onBuy: (id: string) => void) {
@@ -90,6 +110,9 @@ export class UpgradePanel {
     this.levelById.clear();
     this.bonusById.clear();
     this.buttonById.clear();
+    this.nameById.clear();
+    this.evoInfoById.clear();
+    this.rowById.clear();
     this.activeTab = 'attack';
     this.renderInto(parent);
   }
@@ -102,6 +125,9 @@ export class UpgradePanel {
       const costEl = this.costById.get(u.id);
       const levelEl = this.levelById.get(u.id);
       const bonusEl = this.bonusById.get(u.id);
+      const nameEl = this.nameById.get(u.id);
+      const evoEl = this.evoInfoById.get(u.id);
+      const rowEl = this.rowById.get(u.id);
       if (!btn || !costEl || !levelEl || !bonusEl) continue;
       const level = state.upgrades[u.id] ?? 0;
       const atMax = u.maxLevel > 0 && level >= u.maxLevel;
@@ -112,6 +138,42 @@ export class UpgradePanel {
       btn.disabled = atMax || gold < cost;
       btn.classList.toggle('can-afford', !atMax && gold >= cost);
       btn.textContent = atMax ? 'Maxed' : 'Buy';
+
+      // Evolution display
+      if (nameEl && u.evolutions) {
+        const highestEvo = getHighestEvolution(u, level);
+        if (highestEvo) {
+          nameEl.textContent = highestEvo.name;
+          if (rowEl) rowEl.classList.add('upgrade-evolved');
+        } else {
+          nameEl.textContent = u.name;
+          if (rowEl) rowEl.classList.remove('upgrade-evolved');
+        }
+      }
+      if (evoEl && u.evolutions) {
+        evoEl.innerHTML = '';
+        let hasContent = false;
+        // Show unlocked evolution effects
+        for (const evo of u.evolutions) {
+          if (level >= evo.level) {
+            const line = document.createElement('div');
+            line.className = 'evo-line evo-unlocked';
+            line.textContent = `★ ${evo.name}: ${evo.description}`;
+            evoEl.appendChild(line);
+            hasContent = true;
+          }
+        }
+        // Show next evolution hint (purple, name only)
+        const nextEvo = getNextEvolution(u, level);
+        if (nextEvo) {
+          const line = document.createElement('div');
+          line.className = 'evo-line evo-next';
+          line.textContent = `Evolves at Lv${nextEvo.level}: ${nextEvo.name}`;
+          evoEl.appendChild(line);
+          hasContent = true;
+        }
+        evoEl.style.display = hasContent ? '' : 'none';
+      }
     }
   }
 
@@ -195,15 +257,23 @@ export class UpgradePanel {
     const row = document.createElement('div');
     row.className = 'upgrade-row';
     row.dataset.upgradeId = u.id;
+    this.rowById.set(u.id, row);
 
     const info = document.createElement('div');
     info.className = 'upgrade-info';
     const name = document.createElement('div');
     name.className = 'upgrade-name';
     name.textContent = u.name;
+    this.nameById.set(u.id, name);
     const desc = document.createElement('div');
     desc.className = 'upgrade-desc';
     desc.textContent = u.description;
+
+    const evoInfo = document.createElement('div');
+    evoInfo.className = 'upgrade-evo-info';
+    evoInfo.style.display = 'none';
+    this.evoInfoById.set(u.id, evoInfo);
+
     const meta = document.createElement('div');
     meta.className = 'upgrade-meta';
     const level = document.createElement('span');
@@ -220,6 +290,7 @@ export class UpgradePanel {
     meta.appendChild(delta);
     info.appendChild(name);
     info.appendChild(desc);
+    info.appendChild(evoInfo);
     info.appendChild(meta);
     row.appendChild(info);
 

@@ -26,7 +26,12 @@ export class EnemyManager {
   private slowTimer = 0;
   private goldLuckChance = 0;
   private goldLuckMultiplier = 1;
+  private thorns = 0;
   private wallContactExtra = 0;
+  private hpReduction = 0;
+  private vulnerableEnemies: Map<number, number> = new Map();
+  private killStreakGoldBonus = 0;
+  private manaFullGoldBonus = 0;
 
   constructor(bus: EventBus, resources: ResourceManager) {
     this.bus = bus;
@@ -46,8 +51,24 @@ export class EnemyManager {
     this.goldLuckMultiplier = Math.max(1, multiplier);
   }
 
+  setThorns(thorns: number): void {
+    this.thorns = thorns;
+  }
+
   setWallContactExtra(extra: number): void {
     this.wallContactExtra = extra;
+  }
+
+  setHPReduction(reduction: number): void {
+    this.hpReduction = Math.max(0, Math.min(0.5, reduction));
+  }
+
+  setKillStreakGoldBonus(bonus: number): void {
+    this.killStreakGoldBonus = bonus;
+  }
+
+  setManaFullGoldBonus(bonus: number): void {
+    this.manaFullGoldBonus = bonus;
   }
 
   applySlow(factor: number, duration: number): void {
@@ -64,6 +85,7 @@ export class EnemyManager {
     let hp: number;
     if (type === 'boss') hp = bossHPForWave(def.baseHP, wave);
     else hp = enemyHPForWave(def.baseHP, wave);
+    if (this.hpReduction > 0) hp = Math.max(1, Math.floor(hp * (1 - this.hpReduction)));
     const speed = enemySpeedForWave(def.baseSpeed, wave);
     const gold = goldDropForWave(def.baseGold, wave);
     const damage = enemyDamageForWave(def.baseDamage, wave);
@@ -108,6 +130,8 @@ export class EnemyManager {
     const base = enemy.goldValue;
     const additive = 1 + this.goldMultipliers.additive;
     let amount = base * additive * this.goldMultipliers.multiplicative;
+    if (this.killStreakGoldBonus > 0) amount *= 1 + this.killStreakGoldBonus;
+    if (this.manaFullGoldBonus > 0) amount *= 1 + this.manaFullGoldBonus;
     if (this.goldLuckChance > 0 && Math.random() < this.goldLuckChance) {
       amount *= this.goldLuckMultiplier;
     }
@@ -131,6 +155,10 @@ export class EnemyManager {
     enemy.y += (dy / d) * force;
   }
 
+  isVulnerable(enemy: Enemy): number {
+    return this.vulnerableEnemies.has(enemy.id) ? 0 : 0;
+  }
+
   applyShockwave(radius: number, fromX: number, fromY: number): void {
     if (radius <= 0) return;
     const r2 = radius * radius;
@@ -151,6 +179,13 @@ export class EnemyManager {
     if (this.slowTimer > 0) {
       this.slowTimer -= dt;
       if (this.slowTimer <= 0) this.slowFactor = 1;
+    }
+
+    // Tick knockback vulnerability timers
+    for (const [id, remaining] of this.vulnerableEnemies) {
+      const next = remaining - dt;
+      if (next <= 0) this.vulnerableEnemies.delete(id);
+      else this.vulnerableEnemies.set(id, next);
     }
 
     const newlyReached: Enemy[] = [];
@@ -179,6 +214,10 @@ export class EnemyManager {
         e.attackCooldown -= dt;
         if (e.attackCooldown <= 0) {
           totalDamage += e.damage;
+          if (this.thorns > 0) {
+            const thornDmg = Math.floor(e.damage * this.thorns);
+            if (thornDmg > 0) this.damage(e, thornDmg, false);
+          }
           e.attackCooldown += 1 / e.fireRate;
         }
       } else {
@@ -211,6 +250,9 @@ export class EnemyManager {
     this.slowTimer = 0;
     this.goldLuckChance = 0;
     this.goldLuckMultiplier = 1;
+    this.vulnerableEnemies.clear();
+    this.killStreakGoldBonus = 0;
+    this.manaFullGoldBonus = 0;
   }
 
   aliveCount(): number {

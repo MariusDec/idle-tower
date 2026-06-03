@@ -56,7 +56,8 @@ export class Renderer {
   }
 
   private drawAimLine(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
-    if (true || !snap.aimLine) return;
+    return;
+    if (!snap.aimLine) return;
     const t = snap.tower;
     const dx = snap.aimLine.x - t.x;
     const dy = snap.aimLine.y - t.y;

@@ -1,10 +1,11 @@
 import type { GameState } from '../types';
-import type { PrestigePerkDef, AutomationKey } from '../data/prestige';
+import type { PrestigePerkDef, AutomationKey, TPBranch } from '../data/prestige';
 import {
   TP_PERKS,
   TRANSCENDENCE_UNLOCK_AP,
   tpForAP,
   ASCENSION_UNLOCK_WAVE,
+  perkCost,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
 
@@ -17,6 +18,8 @@ export interface TranscendencePanelHandlers {
   canSpend: (perkId: string, ap: number, tp: number) => boolean;
   isAutomationUnlocked: (key: AutomationKey) => boolean;
   isAutomationEnabled: (key: AutomationKey) => boolean;
+  meetsPrerequisites: (perkId: string) => boolean;
+  isExcluded: (perkId: string) => boolean;
   previewTP: (ap: number) => number;
   transcendUnlockAP: number;
   targetAscendWave: number;
@@ -115,31 +118,66 @@ export class TranscendencePanel {
     const bonusEl = this.tpBonusById.get(p.id);
     const costEl = this.tpCostById.get(p.id);
     const btn = this.tpBtnById.get(p.id);
-    if (!levelEl || !bonusEl || !costEl || !btn) return;
+    const row = this.tpRowById.get(p.id);
+    if (!levelEl || !bonusEl || !costEl || !btn || !row) return;
     const level = state.prestige.tpSpent[p.id] ?? 0;
     const atMax = level >= p.maxLevel;
-    const cost = atMax ? Infinity : p.costPerLevel;
+    const cost = atMax ? Infinity : perkCost(p, level);
     const isOneTime = p.maxLevel === 1;
-    levelEl.textContent = atMax
-      ? (isOneTime ? 'Unlocked' : `Level ${level} (max)`)
-      : (isOneTime ? 'Locked' : `Level ${level}`);
-    if (p.effectType === 'damage_mult' || p.effectType === 'resource_mult') {
-      bonusEl.textContent = atMax
+    const prereqMet = this.handlers.meetsPrerequisites(p.id);
+    const excluded = this.handlers.isExcluded(p.id);
+
+    row.classList.toggle('tp-node--locked', !prereqMet && level === 0);
+    row.classList.toggle('tp-node--excluded', excluded && level === 0);
+    row.classList.toggle('tp-node--purchased', level > 0);
+    row.setAttribute('data-tp-level', String(level));
+
+    levelEl.textContent = excluded && level === 0
+      ? 'Blocked'
+      : atMax
+        ? (isOneTime ? 'Unlocked' : `Level ${level} (max)`)
+        : !prereqMet && level === 0
+          ? 'Locked'
+          : (isOneTime ? (level > 0 ? 'Unlocked' : 'Available') : `Level ${level}`);
+
+    if (p.effectType === 'damage_mult' || p.effectType === 'resource_mult'
+      || p.effectType === 'fire_rate_mult' || p.effectType === 'crit_damage_mult'
+      || p.effectType === 'mana_regen_mult') {
+      bonusEl.textContent = level > 0
         ? `+${(p.effectPerLevel * level * 100).toFixed(0)}%`
         : `+${(p.effectPerLevel * 100).toFixed(0)}% per level`;
+    } else if (p.effectType === 'treasure_chance') {
+      bonusEl.textContent = level > 0
+        ? `${(p.effectPerLevel * level * 100).toFixed(0)}% chance`
+        : `+${(p.effectPerLevel * 100).toFixed(0)}% per level`;
+    } else if (p.effectType === 'start_gold') {
+      bonusEl.textContent = level > 0
+        ? `+${formatNumber(p.effectPerLevel * level)} gold`
+        : `+${formatNumber(p.effectPerLevel)} per level`;
+    } else if (p.effectType === 'pierce') {
+      bonusEl.textContent = level > 0
+        ? `+${Math.floor(p.effectPerLevel * level)} pierce`
+        : '+1 per 2 levels';
+    } else if (p.effectType === 'wave_start') {
+      bonusEl.textContent = level > 0
+        ? `Start wave ${p.effectPerLevel * level}`
+        : `+${p.effectPerLevel} per level`;
+    } else if (p.effectType === 'auto_buy_speed') {
+      bonusEl.textContent = level > 0
+        ? `-${level}s interval`
+        : '-1s per level';
     } else {
       bonusEl.textContent = '';
     }
     costEl.textContent = atMax ? '—' : formatNumber(cost);
-    const canSpend = !atMax && tp >= cost;
+    const canSpend = !atMax && !excluded && prereqMet && tp >= cost;
     btn.disabled = !canSpend;
     btn.classList.toggle('can-afford', canSpend);
-    btn.textContent = atMax
-      ? (isOneTime ? 'Unlocked' : 'Maxed')
-      : (isOneTime ? `Unlock (${cost} TP)` : 'Buy');
-    if (this.tpRowById.has(p.id)) {
-      this.tpRowById.get(p.id)!.setAttribute('data-tp-level', String(level));
-    }
+    btn.textContent = excluded && level === 0
+      ? 'Blocked'
+      : atMax
+        ? (isOneTime ? 'Unlocked' : 'Maxed')
+        : (isOneTime ? `Unlock (${cost} TP)` : 'Buy');
   }
 
   private updateAutomationRow(key: AutomationKey): void {
@@ -325,28 +363,72 @@ export class TranscendencePanel {
     section.className = 'perk-section';
     const header = document.createElement('h3');
     header.className = 'perk-section-title';
-    header.textContent = 'Transcendence Perks';
+    header.textContent = 'Transcendence Skill Tree';
     section.appendChild(header);
 
     const intro = document.createElement('p');
     intro.className = 'panel-note';
-    intro.textContent = 'Spend TP to permanently strengthen your tower. Multipliers stack multiplicatively with AP bonuses and persist across runs.';
+    intro.textContent = 'Spend TP to specialize your tower. Each branch offers unique powers. Tier 4 choices are exclusive — pick one and the other is locked forever.';
     section.appendChild(intro);
 
-    const list = document.createElement('div');
-    list.className = 'perk-list';
-    for (const p of TP_PERKS) {
-      list.appendChild(this.renderTPPerkRow(p));
+    const tree = document.createElement('div');
+    tree.className = 'tp-tree';
+
+    const branchMeta: Array<{ key: TPBranch; title: string; color: string; icon: string }> = [
+      { key: 'wrath', title: 'Wrath', color: '#d04848', icon: '⚔' },
+      { key: 'fortune', title: 'Fortune', color: '#3ec46d', icon: '✦' },
+      { key: 'dominion', title: 'Dominion', color: '#5b8def', icon: '⚙' },
+    ];
+
+    for (const bm of branchMeta) {
+      const branch = document.createElement('div');
+      branch.className = `tp-branch tp-branch--${bm.key}`;
+
+      const bHeader = document.createElement('div');
+      bHeader.className = 'tp-branch-header';
+      bHeader.style.setProperty('--branch-color', bm.color);
+      bHeader.innerHTML = `<span class="tp-branch-icon">${bm.icon}</span> ${bm.title}`;
+      branch.appendChild(bHeader);
+
+      const perks = TP_PERKS.filter(p => p.branch === bm.key);
+      const tiers = new Map<number, PrestigePerkDef[]>();
+      for (const p of perks) {
+        const t = p.tier ?? 1;
+        if (!tiers.has(t)) tiers.set(t, []);
+        tiers.get(t)!.push(p);
+      }
+      const sortedTiers = Array.from(tiers.entries()).sort((a, b) => a[0] - b[0]);
+      for (const [tier, tierPerks] of sortedTiers) {
+        const tierWrap = document.createElement('div');
+        tierWrap.className = `tp-tier tp-tier--${tier}`;
+
+        const hasExclusive = tierPerks.some(p => p.exclusive && p.exclusive.length > 0);
+        if (hasExclusive) {
+          const badge = document.createElement('div');
+          badge.className = 'tp-choice-badge';
+          badge.textContent = 'CHOOSE ONE';
+          tierWrap.appendChild(badge);
+        }
+
+        for (const p of tierPerks) {
+          tierWrap.appendChild(this.renderTPPerkRow(p));
+        }
+        branch.appendChild(tierWrap);
+      }
+
+      tree.appendChild(branch);
     }
-    section.appendChild(list);
+
+    section.appendChild(tree);
     return section;
   }
 
   private renderTPPerkRow(p: PrestigePerkDef): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'perk-row perk-row-tp';
+    row.className = 'perk-row perk-row-tp tp-node';
     row.dataset.tpPerk = p.id;
     row.setAttribute('data-tp-level', '0');
+    if (p.exclusive && p.exclusive.length > 0) row.classList.add('tp-node--exclusive-choice');
     this.tpRowById.set(p.id, row);
 
     const icon = document.createElement('div');
@@ -363,6 +445,18 @@ export class TranscendencePanel {
     const desc = document.createElement('div');
     desc.className = 'perk-desc';
     desc.textContent = p.description;
+
+    if (p.prerequisites && p.prerequisites.length > 0) {
+      const prereqEl = document.createElement('div');
+      prereqEl.className = 'perk-prereq';
+      const prereqNames = p.prerequisites.map(req => {
+        const reqDef = TP_PERKS.find(tp => tp.id === req.perkId);
+        return reqDef ? `${reqDef.name} ${req.minLevel > 1 ? `Lv${req.minLevel}` : ''}` : req.perkId;
+      });
+      prereqEl.textContent = `Requires: ${prereqNames.join(' or ')}`;
+      info.appendChild(prereqEl);
+    }
+
     const meta = document.createElement('div');
     meta.className = 'perk-meta';
     const level = document.createElement('span');
