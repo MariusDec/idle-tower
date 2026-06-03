@@ -1,4 +1,4 @@
-import type { RenderSnapshot, Enemy, Projectile, Particle, DamageNumber, Shockwave } from '../types';
+import type { RenderSnapshot, Enemy, Projectile, Particle, DamageNumber, Shockwave, Mine } from '../types';
 import { TOWER_VISUAL } from '../data/tower';
 import { ENEMY_DEFS } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
@@ -26,6 +26,7 @@ export class Renderer {
     this.drawArena(ctx);
     this.drawTowerBase(ctx, snapshot);
     if (this.rangeOverlay) this.drawRangeRing(ctx, snapshot);
+    this.drawMines(ctx, snapshot.mines);
     this.drawParticles(ctx, snapshot.particles, 'behind');
     this.drawShockwaves(ctx, snapshot.shockwaves);
     this.drawAimLine(ctx, snapshot);
@@ -34,6 +35,7 @@ export class Renderer {
     this.drawParticles(ctx, snapshot.particles, 'front');
     this.drawDamageNumbers(ctx, snapshot.damageNumbers);
     this.drawTowerTop(ctx, snapshot);
+    this.drawShield(ctx, snapshot);
     this.drawWaveBanner(ctx, snapshot);
   }
 
@@ -124,6 +126,24 @@ export class Renderer {
     ctx.restore();
   }
 
+  private drawShield(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
+    const t = snap.tower;
+    if (t.shieldMaxCharges <= 0) return;
+    const ratio = t.shieldCurrentCharges / t.shieldMaxCharges;
+    if (ratio <= 0) return;
+    const alpha = 0.15 + ratio * 0.25;
+    const pulse = 1 + Math.sin(this.time * 2) * 0.03;
+    const r = (TOWER_VISUAL.bodyRadius + 8) * pulse;
+    ctx.save();
+    ctx.strokeStyle = `rgba(100, 180, 255, ${alpha})`;
+    ctx.lineWidth = 2 + ratio * 2;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   private drawTowerTop(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
     const t = snap.tower;
     ctx.save();
@@ -165,6 +185,26 @@ export class Renderer {
     ctx.arc(t.x, t.y, t.range, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
+  }
+
+  private drawMines(ctx: CanvasRenderingContext2D, mines: Mine[]): void {
+    for (const m of mines) {
+      if (!m.alive) continue;
+      const pulse = 0.85 + Math.sin(this.time * 3 + m.id) * 0.15;
+      ctx.save();
+      ctx.fillStyle = '#cc4422';
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 6 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ff8844';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 60, 20, 0.25)';
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 10 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   private drawEnemies(ctx: CanvasRenderingContext2D, enemies: Enemy[]): void {
@@ -302,6 +342,7 @@ export class Renderer {
   }
 
   private drawBossCrown(ctx: CanvasRenderingContext2D, enemy: Enemy, topY: number): void {
+    return;
     const baseY = topY - 2;
     const peakY = topY - 14;
     ctx.save();

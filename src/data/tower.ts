@@ -20,6 +20,14 @@ export const TOWER_BASE: Omit<TowerState, 'cooldown'> = {
   shockwaveSize: 0,
   shockwaveCooldown: 0,
   shockwaveTimer: 0,
+  lifesteal: 0,
+  landMineDamage: 0,
+  landMineFrequency: 0,
+  landMineTimer: 0,
+  shieldMaxCharges: 0,
+  shieldCurrentCharges: 0,
+  shieldRechargeTimer: 0,
+  shieldRechargeTime: 0,
 };
 
 export const PROJECTILE_SPEED = 720;

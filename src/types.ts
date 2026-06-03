@@ -44,6 +44,14 @@ export interface TowerState {
   shockwaveSize: number;
   shockwaveCooldown: number;
   shockwaveTimer: number;
+  lifesteal: number;
+  landMineDamage: number;
+  landMineFrequency: number;
+  landMineTimer: number;
+  shieldMaxCharges: number;
+  shieldCurrentCharges: number;
+  shieldRechargeTimer: number;
+  shieldRechargeTime: number;
 }
 
 export interface Enemy {
@@ -206,6 +214,15 @@ export interface DamageNumber {
   vy: number;
 }
 
+export interface Mine {
+  id: number;
+  x: number;
+  y: number;
+  damage: number;
+  explosionRadius: number;
+  alive: boolean;
+}
+
 export interface Shockwave {
   x: number;
   y: number;
@@ -227,5 +244,6 @@ export interface RenderSnapshot {
   particles: Particle[];
   damageNumbers: DamageNumber[];
   shockwaves: Shockwave[];
+  mines: Mine[];
   aimLine?: { x: number; y: number } | null;
 }

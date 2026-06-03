@@ -1,9 +1,10 @@
-import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats } from '../types';
+import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine } from '../types';
 import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX } from '../types';
 import { TOWER_BASE, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
 import { ENEMY_DEFS } from '../data/enemies';
 import { ABILITIES } from '../data/abilities';
+import { nextId } from '../utils/math';
 import { EventBus } from './EventBus';
 import { Renderer } from './Renderer';
 import { Tower } from '../systems/Tower';
@@ -131,6 +132,7 @@ export class Game {
   private fpsFrames = 0;
   private currentFps = 0;
   private fpsOverlay: HTMLElement | null = null;
+  private mines: Mine[] = [];
   private announcedMilestones = new Set<number>();
   private researchAnnounced = new Set<string>();
   private transcendenceUnlockedAnnounced = false;
@@ -165,8 +167,15 @@ export class Game {
           this.state.stats.lifetimeHighestWave = wave;
         }
       },
-      (_wave) => {
+      (wave) => {
         this.applyUpgradeEffects();
+
+        if (wave > this.state.wave.highestWave) {
+          this.state.wave.highestWave = wave;
+        }
+        if (wave > this.state.stats.lifetimeHighestWave) {
+          this.state.stats.lifetimeHighestWave = wave;
+        }
       },
     );
     this.upgradeMgr = new UpgradeManager(this.bus, this.resourceMgr);
@@ -210,6 +219,11 @@ export class Game {
       const def = ENEMY_DEFS[p.enemy.type as keyof typeof ENEMY_DEFS];
       this.effects.emitHitSparks(p.enemy.x, p.enemy.y, def.color, p.killed ? 6 : 3);
       this.effects.emitDamageNumber(p.enemy.x, p.enemy.y, p.amount, !!p.isCrit);
+      const ls = this.tower.snapshot.lifesteal;
+      if (ls > 0 && p.amount > 0) {
+        const ts = this.tower.snapshot;
+        ts.hp = Math.min(ts.maxHp, ts.hp + p.amount * ls);
+      }
     });
     this.bus.on('enemy_killed', (enemy) => {
       const e = enemy as { x: number; y: number; type: string };
@@ -239,6 +253,11 @@ export class Game {
       const raw = Math.max(0, amount as number);
       if (raw <= 0) return;
       const ts = this.tower.snapshot;
+      if (ts.shieldCurrentCharges > 0) {
+        ts.shieldCurrentCharges--;
+        this.effects.emitShieldAbsorb(ts.x, ts.y);
+        return;
+      }
       const afterArmor = raw * (1 - ts.armor);
       const afterDefense = Math.max(0, afterArmor - ts.defense);
       const dmg = Math.floor(afterDefense);
@@ -258,6 +277,9 @@ export class Game {
         });
         this.enemyMgr.reset();
         this.projectileMgr.reset();
+        this.mines = [];
+        ts.shieldCurrentCharges = ts.shieldMaxCharges;
+        ts.shieldRechargeTimer = 0;
         ts.hp = TOWER_BASE.hp;
         ts.maxHp = TOWER_BASE.maxHp;
         this.waveMgr.startAtWave(this.waveMgr.currentWave - 1);
@@ -501,12 +523,14 @@ export class Game {
   goToPrevWave(): boolean {
     const ok = this.waveMgr.goToPrevWave();
     if (ok) {
+      this.mines = [];
       this.bus.emit('toast', { kind: 'info', text: `Restarted wave ${this.waveMgr.currentWave}`, life: 1.5 });
     }
     return ok;
   }
 
   goToNextWave(): boolean {
+    this.mines = [];
     this.waveMgr.goToNextWave();
     this.bus.emit('toast', { kind: 'info', text: `Skipped to wave ${this.waveMgr.currentWave}`, life: 1.5 });
     return true;
@@ -647,8 +671,13 @@ export class Game {
     t.defense = 0;
     t.armor = 0;
     t.knockbackForce = 0;
+    t.lifesteal = 0;
     t.shockwaveSize = 0;
     t.shockwaveCooldown = 0;
+    t.landMineDamage = 0;
+    t.landMineFrequency = 0;
+    t.shieldMaxCharges = 0;
+    t.shieldRechargeTime = 0;
     let manaRegenAdd = 0;
     let goldAdditive = 0;
     let healthValue = 0;
@@ -670,10 +699,26 @@ export class Game {
         case 'defense': t.defense = total; break;
         case 'armor': t.armor = total; break;
         case 'knockbackForce': t.knockbackForce = total; break;
+        case 'lifesteal': t.lifesteal = total; break;
         case 'shockwave': {
           const lvl = total;
           t.shockwaveSize = 110 + (lvl - 1) * 5;
           t.shockwaveCooldown = Math.max(3, 30 + (lvl - 1) * -0.5);
+          break;
+        }
+        case 'landMines': {
+          t.landMineDamage = total;
+          t.landMineFrequency = Math.max(5, 15 - level / 10);
+          break;
+        }
+        case 'defenseShield': {
+          const oldMax = t.shieldMaxCharges;
+          t.shieldRechargeTime = total;
+          t.shieldMaxCharges = Math.max(5, level / 11);
+          if (t.shieldMaxCharges > oldMax) {
+            t.shieldCurrentCharges += t.shieldMaxCharges - oldMax;
+          }
+          t.shieldCurrentCharges = Math.min(t.shieldCurrentCharges, t.shieldMaxCharges);
           break;
         }
       }
@@ -741,10 +786,13 @@ export class Game {
     this.projectileMgr.reset();
     this.abilityMgr.reset();
     this.effects.reset();
+    this.mines = [];
     const t = this.tower.snapshot;
     t.cooldown = 0;
     t.hp = TOWER_BASE.hp;
     t.maxHp = TOWER_BASE.maxHp;
+    t.shieldCurrentCharges = 0;
+    t.shieldRechargeTimer = 0;
 
     this.state.resources.ascensionPoints = 0;
     this.state.stats.ascensions = 0;
@@ -915,6 +963,61 @@ export class Game {
       }
     }
 
+    if (ts.landMineDamage > 0 && ts.landMineFrequency > 0) {
+      ts.landMineTimer -= dt;
+      if (ts.landMineTimer <= 0) {
+        ts.landMineTimer = ts.landMineFrequency;
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 30 + Math.random() * Math.max(0, ts.range - 30);
+        const mx = ts.x + Math.cos(angle) * dist;
+        const my = ts.y + Math.sin(angle) * dist;
+        if (this.mines.length >= 10) {
+          this.mines.shift();
+        }
+        this.mines.push({
+          id: nextId(),
+          x: mx,
+          y: my,
+          damage: ts.baseDamage * ts.landMineDamage,
+          explosionRadius: 50,
+          alive: true,
+        });
+      }
+    }
+
+    for (let i = this.mines.length - 1; i >= 0; i--) {
+      const mine = this.mines[i];
+      if (!mine.alive) continue;
+      for (const e of this.enemyMgr.list) {
+        if (!e.alive) continue;
+        const dx = e.x - mine.x;
+        const dy = e.y - mine.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist <= mine.explosionRadius) {
+          mine.alive = false;
+          for (const target of this.enemyMgr.list) {
+            if (!target.alive) continue;
+            const tdx = target.x - mine.x;
+            const tdy = target.y - mine.y;
+            if (Math.sqrt(tdx * tdx + tdy * tdy) <= mine.explosionRadius) {
+              this.enemyMgr.damage(target, mine.damage, false);
+            }
+          }
+          this.effects.emitMineExplosion(mine.x, mine.y);
+          break;
+        }
+      }
+    }
+    this.mines = this.mines.filter(m => m.alive);
+
+    if (ts.shieldMaxCharges > 0 && ts.shieldCurrentCharges < ts.shieldMaxCharges) {
+      ts.shieldRechargeTimer -= dt;
+      if (ts.shieldRechargeTimer <= 0) {
+        ts.shieldRechargeTimer = ts.shieldRechargeTime;
+        ts.shieldCurrentCharges = Math.min(ts.shieldMaxCharges, ts.shieldCurrentCharges + 1);
+      }
+    }
+
     this.effects.tick(dt);
     this.notifications.tick(dt);
     this.automation.tick(dt);
@@ -946,6 +1049,7 @@ export class Game {
       particles: this.effects.particleList,
       damageNumbers: this.effects.damageList,
       shockwaves: this.effects.shockwaveList,
+      mines: this.mines,
       aimLine: this.mouseDown ? { x: this.mouseX, y: this.mouseY } : null,
     });
   }

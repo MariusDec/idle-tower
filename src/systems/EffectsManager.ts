@@ -175,6 +175,52 @@ export class EffectsManager {
     }
   }
 
+  emitMineExplosion(x: number, y: number): void {
+    for (let i = 0; i < 20; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 120;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 40,
+        age: 0,
+        life: 0.4 + Math.random() * 0.3,
+        size: 2 + Math.random() * 3,
+        color: i % 2 === 0 ? '#ff6633' : '#ffcc00',
+      });
+    }
+    for (let i = 0; i < 5; i++) {
+      this.particles.push({
+        x: x + (Math.random() - 0.5) * 20,
+        y: y + (Math.random() - 0.5) * 20,
+        vx: (Math.random() - 0.5) * 30,
+        vy: -40 - Math.random() * 30,
+        age: 0,
+        life: 0.6 + Math.random() * 0.3,
+        size: 4 + Math.random() * 3,
+        color: 'rgba(255, 255, 255, 0.3)',
+      });
+    }
+  }
+
+  emitShieldAbsorb(x: number, y: number): void {
+    for (let i = 0; i < 8; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 24 + Math.random() * 12;
+      this.particles.push({
+        x: x + Math.cos(angle) * dist,
+        y: y + Math.sin(angle) * dist,
+        vx: Math.cos(angle) * 40,
+        vy: Math.sin(angle) * 40,
+        age: 0,
+        life: 0.25 + Math.random() * 0.15,
+        size: 2 + Math.random() * 2,
+        color: '#64b4ff',
+      });
+    }
+  }
+
   emitDamageNumber(x: number, y: number, amount: number, isCrit: boolean): void {
     this.damageNumbers.push({
       x: x + (Math.random() - 0.5) * 10,
