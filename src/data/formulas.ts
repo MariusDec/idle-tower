@@ -1,15 +1,15 @@
 export function enemyHPForWave(baseHP: number, wave: number): number {
-  return baseHP * Math.pow(1.11, Math.max(0, wave - 1));
+  return baseHP * Math.pow(1.17, Math.max(0, wave - 1));
 }
 
 export function enemyDamageForWave(baseDamage: number, wave: number): number {
-  return baseDamage * Math.pow(1.06, Math.max(0, wave));
+  return baseDamage * Math.pow(1.1, Math.max(0, wave));
 }
 
 export function bossHPForWave(baseHP: number, wave: number): number {
   const waveIndex = Math.max(0, wave - 1);
   const tier = Math.floor(waveIndex / 10);
-  return baseHP * Math.pow(1.11, waveIndex) * Math.pow(1.35, tier);
+  return baseHP * Math.pow(1.15, waveIndex) * Math.pow(1.35, tier);
 }
 
 export function enemySpeedForWave(baseSpeed: number, wave: number): number {
@@ -18,7 +18,7 @@ export function enemySpeedForWave(baseSpeed: number, wave: number): number {
 }
 
 export function goldDropForWave(baseGold: number, wave: number): number {
-  return baseGold * Math.pow(1.10, Math.max(0, wave - 1));
+  return baseGold * Math.pow(1.06, Math.max(0, wave - 1));
 }
 
 export function enemyCountForWave(wave: number): number {
@@ -33,6 +33,12 @@ export function isBossWave(wave: number): boolean {
   return wave > 0 && wave % 10 === 0;
 }
 
-export function upgradeCost(base: number, growth: number, level: number): number {
-  return Math.floor(base * Math.pow(growth, level));
+export function evalFormula(formula: string, level: number): number {
+  const expr = formula.replace(/\{level\}/g, String(level));
+  return Function('"use strict"; return (' + expr + ')')();
+}
+
+export function upgradeCost(base: number, growth: number | string, level: number): number {
+  const g = typeof growth === 'string' ? evalFormula(growth, level) : growth;
+  return Math.floor(base * Math.pow(g, level));
 }

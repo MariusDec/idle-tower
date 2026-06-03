@@ -10,6 +10,7 @@ import {
   tpForAP,
   canTranscend,
   perkCost,
+  computePerkEffect,
   type AutomationKey,
 } from '../data/prestige';
 import { EventBus } from '../game/EventBus';
@@ -41,11 +42,11 @@ export class PrestigeManager {
     return ASCENSION_UNLOCK_WAVE;
   }
 
-  canTranscend(ascensionPoints: number = this.ctx.resources.ascensionPoints): boolean {
+  canTranscend(ascensionPoints: number = this.ctx.resources.apThisTranscendence): boolean {
     return canTranscend(ascensionPoints);
   }
 
-  previewTP(ascensionPoints: number = this.ctx.resources.ascensionPoints): number {
+  previewTP(ascensionPoints: number = this.ctx.resources.apThisTranscendence): number {
     return tpForAP(ascensionPoints);
   }
 
@@ -117,7 +118,7 @@ export class PrestigeManager {
   getWaveSkipChance(): number {
     const def = AP_PERK_BY_ID['ap_wave_skipper'];
     if (!def) return 0;
-    return def.effectPerLevel * this.getAPLevel('ap_wave_skipper');
+    return computePerkEffect(def, this.getAPLevel('ap_wave_skipper'));
   }
 
   getTPDamageMultiplicative(): number {
@@ -125,7 +126,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'damage_mult') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) factor *= 1 + p.effectPerLevel * lvl;
+      if (lvl > 0) factor *= 1 + computePerkEffect(p, lvl);
     }
     return factor;
   }
@@ -135,7 +136,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'resource_mult') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) factor *= 1 + p.effectPerLevel * lvl;
+      if (lvl > 0) factor *= 1 + computePerkEffect(p, lvl);
     }
     return factor;
   }
@@ -204,7 +205,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'fire_rate_mult') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) factor *= 1 + p.effectPerLevel * lvl;
+      if (lvl > 0) factor *= 1 + computePerkEffect(p, lvl);
     }
     return factor;
   }
@@ -214,7 +215,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'crit_damage_mult') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) bonus += p.effectPerLevel * lvl;
+      if (lvl > 0) bonus += computePerkEffect(p, lvl);
     }
     return bonus;
   }
@@ -224,7 +225,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'pierce') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) total += Math.floor(p.effectPerLevel * lvl);
+      if (lvl > 0) total += Math.floor(computePerkEffect(p, lvl));
     }
     return total;
   }
@@ -241,7 +242,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'aoe_splash') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) return p.effectPerLevel;
+      if (lvl > 0) return computePerkEffect(p, lvl);
     }
     return 0;
   }
@@ -258,7 +259,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'execute_damage') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) return p.effectPerLevel;
+      if (lvl > 0) return computePerkEffect(p, lvl);
     }
     return 0;
   }
@@ -268,7 +269,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'treasure_chance') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) chance += p.effectPerLevel * lvl;
+      if (lvl > 0) chance += computePerkEffect(p, lvl);
     }
     return chance;
   }
@@ -278,7 +279,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'mana_regen_mult') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) factor *= 1 + p.effectPerLevel * lvl;
+      if (lvl > 0) factor *= 1 + computePerkEffect(p, lvl);
     }
     return factor;
   }
@@ -288,7 +289,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'start_gold') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) total += p.effectPerLevel * lvl;
+      if (lvl > 0) total += computePerkEffect(p, lvl);
     }
     return total;
   }
@@ -305,7 +306,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'gold_on_hit') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) return p.effectPerLevel;
+      if (lvl > 0) return computePerkEffect(p, lvl);
     }
     return 0;
   }
@@ -315,7 +316,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'ability_cdr') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) cdr += p.effectPerLevel;
+      if (lvl > 0) cdr += computePerkEffect(p, lvl);
     }
     return cdr;
   }
@@ -334,7 +335,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'wave_start') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) total += p.effectPerLevel * lvl;
+      if (lvl > 0) total += computePerkEffect(p, lvl);
     }
     return total;
   }
@@ -344,7 +345,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'auto_buy_speed') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) total += p.effectPerLevel * lvl;
+      if (lvl > 0) total += computePerkEffect(p, lvl);
     }
     return total;
   }
@@ -355,9 +356,19 @@ export class PrestigeManager {
     for (const p of AP_PERKS) {
       if (p.effectType !== 'research_speed') continue;
       const lvl = this.getAPLevel(p.id);
-      if (lvl > 0) reduction += p.effectPerLevel * lvl;
+      if (lvl > 0) reduction += computePerkEffect(p, lvl);
     }
     return Math.max(0.1, 1 - reduction);
+  }
+
+  getGameSpeedBonus(): number {
+    let bonus = 0;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'game_speed') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) bonus += computePerkEffect(p, lvl);
+    }
+    return bonus;
   }
 
   spendAP(perkId: string): boolean {
@@ -400,6 +411,7 @@ export class PrestigeManager {
     const ap = this.previewAP(waveNumber);
     const rp = ap;
     this.ctx.resources.ascensionPoints += ap;
+    this.ctx.resources.apThisTranscendence += ap;
     this.ctx.resources.lifetimeAP += ap;
     this.ctx.stats.ascensions += 1;
     this.ctx.stats.lifetimeAscensions += 1;
@@ -414,7 +426,7 @@ export class PrestigeManager {
   }
 
   performTranscendence(_state: GameState): { tp: number } {
-    const ascensionPoints = this.ctx.resources.ascensionPoints;
+    const ascensionPoints = this.ctx.resources.apThisTranscendence;
     if (!this.canTranscend(ascensionPoints)) return { tp: 0 };
     const tp = this.previewTP(ascensionPoints);
     this.ctx.resources.transcendencePoints += tp;

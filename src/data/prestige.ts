@@ -1,4 +1,5 @@
 import type { PrestigeLayer } from '../types';
+import { evalFormula } from './formulas';
 
 export type PrestigePerkEffect =
   | 'extra_shots'
@@ -21,7 +22,8 @@ export type PrestigePerkEffect =
   | 'ability_cdr'
   | 'wave_start'
   | 'auto_buy_speed'
-  | 'research_speed';
+  | 'research_speed'
+  | 'game_speed';
 
 export type AutomationKey = 'autoBuy' | 'autoAbilities' | 'autoAscend' | 'autoTranscend';
 
@@ -38,10 +40,11 @@ export interface PrestigePerkDef {
   name: string;
   description: string;
   costPerLevel: number;
-  costScaling: number;
+  costScaling: number | string;
   maxLevel: number;
   effectType: PrestigePerkEffect;
-  effectPerLevel: number;
+  effectPerLevel: number | string;
+  baseEffect?: number;
   glyph: string;
   color: string;
   automationKey?: AutomationKey;
@@ -52,7 +55,19 @@ export interface PrestigePerkDef {
 }
 
 export function perkCost(def: PrestigePerkDef, level: number): number {
-  return Math.floor(def.costPerLevel * Math.pow(def.costScaling, level));
+  const s = typeof def.costScaling === 'string' ? evalFormula(def.costScaling, level) : def.costScaling;
+  return Math.floor(def.costPerLevel * Math.pow(s, level));
+}
+
+export function computePerkEffect(def: PrestigePerkDef, level: number): number {
+  if (level <= 0) return 0;
+  if (typeof def.effectPerLevel === 'string') {
+    return evalFormula(def.effectPerLevel, level);
+  }
+  if (def.baseEffect !== undefined) {
+    return def.baseEffect + def.effectPerLevel * (level - 1);
+  }
+  return def.effectPerLevel * level;
 }
 
 export const ASCENSION_UNLOCK_WAVE = 20;
@@ -150,7 +165,7 @@ export const AP_PERK_BY_ID: Record<string, PrestigePerkDef> = AP_PERKS.reduce(
 
 export function apForWave(waveNumber: number): number {
   if (waveNumber < ASCENSION_UNLOCK_WAVE) return 0;
-  return Math.max(0, Math.floor(Math.sqrt(waveNumber * 20)));
+  return Math.max(0, 20 + Math.floor(Math.pow(1.13, waveNumber - ASCENSION_UNLOCK_WAVE) * Math.sqrt(waveNumber - ASCENSION_UNLOCK_WAVE)));
 }
 
 export const TP_PERKS: PrestigePerkDef[] = [
@@ -360,22 +375,6 @@ export const TP_PERKS: PrestigePerkDef[] = [
 
   // ── Dominion Branch (Utility/Automation) ──────────────────────
   {
-    id: 'tp_auto_buy',
-    layer: 'transcendence',
-    name: 'Auto-Purchaser',
-    description: 'Unlocks automation: auto-buys the cheapest available upgrade every 10 seconds',
-    costPerLevel: 3,
-    costScaling: 1,
-    maxLevel: 1,
-    effectType: 'automation',
-    effectPerLevel: 0,
-    glyph: 'A',
-    color: '#e8a93b',
-    automationKey: 'autoBuy',
-    branch: 'dominion',
-    tier: 1,
-  },
-  {
     id: 'tp_auto_cast',
     layer: 'transcendence',
     name: 'Auto-Caster',
@@ -390,7 +389,6 @@ export const TP_PERKS: PrestigePerkDef[] = [
     automationKey: 'autoAbilities',
     branch: 'dominion',
     tier: 2,
-    prerequisites: [{ perkId: 'tp_auto_buy', minLevel: 1 }],
   },
   {
     id: 'tp_wave_start',
@@ -406,7 +404,6 @@ export const TP_PERKS: PrestigePerkDef[] = [
     color: '#3ec46d',
     branch: 'dominion',
     tier: 2,
-    prerequisites: [{ perkId: 'tp_auto_buy', minLevel: 1 }],
   },
   {
     id: 'tp_efficiency',
@@ -422,7 +419,21 @@ export const TP_PERKS: PrestigePerkDef[] = [
     color: '#e8a93b',
     branch: 'dominion',
     tier: 2,
-    prerequisites: [{ perkId: 'tp_auto_buy', minLevel: 1 }],
+  },
+  {
+    id: 'tp_game_speed',
+    layer: 'transcendence',
+    name: 'Accelerator',
+    description: 'Each level adds +0.5× to max game speed',
+    costPerLevel: 3,
+    costScaling: 2.4,
+    maxLevel: 10,
+    effectType: 'game_speed',
+    effectPerLevel: 1,
+    glyph: '⚡',
+    color: '#a855f7',
+    branch: 'dominion',
+    tier: 2,
   },
   {
     id: 'tp_auto_ascend',
@@ -473,7 +484,7 @@ export const TP_PERK_BY_ID: Record<string, PrestigePerkDef> = TP_PERKS.reduce(
 
 export function tpForAP(ap: number): number {
   if (ap < TRANSCENDENCE_UNLOCK_AP) return 0;
-  return Math.max(0, Math.floor(Math.log10(ap + 1) * 3));
+  return Math.max(0, Math.floor(Math.pow(Math.log2(ap + 1), 2)));
 }
 
 export function canTranscend(ap: number): boolean {

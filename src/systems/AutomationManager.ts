@@ -117,7 +117,7 @@ export class AutomationManager {
   }
 
   private runAutoTranscend(state: GameState): void {
-    if (!this.deps.prestige.canTranscend(state.resources.ascensionPoints)) return;
+    if (!this.deps.prestige.canTranscend(state.resources.apThisTranscendence)) return;
     this.deps.onTranscend();
   }
 

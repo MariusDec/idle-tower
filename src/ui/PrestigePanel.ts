@@ -5,6 +5,7 @@ import {
   ASCENSION_UNLOCK_WAVE,
   apForWave,
   perkCost,
+  computePerkEffect,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
 
@@ -142,8 +143,8 @@ export class PrestigePanel {
         return 'Unlocks the Auto-Upgrader automation';
       case 'wave_skip':
         return atMax
-          ? `+${(p.effectPerLevel * level * 100).toFixed(0)}% wave skip chance`
-          : `+${(p.effectPerLevel * 100).toFixed(0)}% wave skip chance per level`;
+          ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% wave skip chance`
+          : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% wave skip chance per level`;
       default:
         return '';
     }

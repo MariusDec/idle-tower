@@ -136,6 +136,9 @@ export class UIManager {
   };
   private lastState: GameState | null = null;
   private cachedGoldMultiplier = 1;
+  private uiFrameCounter = 0;
+  private lastEnemyStatsWave = -1;
+  private readonly UI_UPDATE_INTERVAL = 6;
 
   constructor(deps: {
     hudRoot: HTMLElement;
@@ -335,23 +338,8 @@ export class UIManager {
 
   update(state: GameState): void {
     this.lastState = state;
-    this.updateTabLocks(state);
-    this.hud.update(state);
-    if (this.activeTab === 'upgrades') {
-      this.upgradePanel.update(state);
-    } else if (this.activeTab === 'abilities') {
-      this.abilityPanel.update(state);
-    } else if (this.activeTab === 'prestige') {
-      this.prestigePanel.update(state);
-    } else if (this.activeTab === 'transcendence') {
-      this.transcendencePanel.update(state);
-    } else if (this.activeTab === 'research') {
-      this.researchPanel.update(state);
-    } else if (this.activeTab === 'achievements') {
-      this.achievementPanel.update(state);
-    } else if (this.activeTab === 'settings') {
-      this.settingsPanel.update();
-    }
+
+    // Per-frame DPS tracking (lightweight JS, runs every frame)
     const now = performance.now();
     const windowMs = 10_000;
     const cutoff = now - windowMs;
@@ -381,12 +369,36 @@ export class UIManager {
       this.hud.setDPS(this.smoothedDps);
       this.lastDpsDisplayTime = now;
     }
+
+    // Throttled DOM updates (~10fps at 60fps game loop)
+    this.uiFrameCounter++;
+    if (this.uiFrameCounter % this.UI_UPDATE_INTERVAL !== 0) return;
+
+    this.updateTabLocks(state);
+    this.hud.update(state);
+    if (this.activeTab === 'upgrades') {
+      this.upgradePanel.update(state);
+    } else if (this.activeTab === 'abilities') {
+      this.abilityPanel.update(state);
+    } else if (this.activeTab === 'prestige') {
+      this.prestigePanel.update(state);
+    } else if (this.activeTab === 'transcendence') {
+      this.transcendencePanel.update(state);
+    } else if (this.activeTab === 'research') {
+      this.researchPanel.update(state);
+    } else if (this.activeTab === 'achievements') {
+      this.achievementPanel.update(state);
+    } else if (this.activeTab === 'settings') {
+      this.settingsPanel.update();
+    }
     this.pushFrameStats(state);
     this.pushEnemyStats(state);
   }
 
   private pushEnemyStats(state: GameState): void {
     const wave = state.wave.number;
+    if (wave === this.lastEnemyStatsWave) return;
+    this.lastEnemyStatsWave = wave;
     const types: EnemyType[] = [];
     if (isBossWave(wave)) {
       types.push('boss');

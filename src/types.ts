@@ -1,3 +1,5 @@
+import { evalFormula } from './data/formulas';
+
 export type EnemyType = 'normal' | 'fast' | 'tank' | 'flying' | 'healer' | 'boss';
 
 export type DamageType = 'physical' | 'magic';
@@ -93,6 +95,7 @@ export interface ResourceState {
   maxMana: number;
   manaRegen: number;
   ascensionPoints: number;
+  apThisTranscendence: number;
   transcendencePoints: number;
   lifetimeAP: number;
   lifetimeGold: number;
@@ -111,7 +114,7 @@ export interface WaveState {
   autoProgress: boolean;
 }
 
-export const GAME_SPEEDS: readonly number[] = [0.5, 1.0, 2.0, 3.0, 4.0];
+export const GAME_SPEEDS: readonly number[] = [0.5, 1.0];
 
 export const DEFAULT_SPEED_INDEX = GAME_SPEEDS.indexOf(1.0);
 export const MAX_SPEED_INDEX = GAME_SPEEDS.length - 1;
@@ -163,12 +166,13 @@ export interface UpgradeDef {
   name: string;
   description: string;
   baseCost: number;
-  costGrowth: number;
-  effectPerLevel: number;
+  costGrowth: number | string;
+  effectPerLevel: number | string;
   effectType: UpgradeEffectType;
   maxLevel: number;
   category: UpgradeCategory;
   hideUpgradeScale: boolean;
+  baseEffect?: number;
   scaling?: UpgradeScaling;
   evolutions?: UpgradeEvolution[];
 }
@@ -182,6 +186,12 @@ export function computeUpgradeValue(def: UpgradeDef, level: number): number {
     if (def.scaling.cap?.min !== undefined) v = Math.max(def.scaling.cap.min, v);
     if (def.scaling.cap?.max !== undefined) v = Math.min(def.scaling.cap.max, v);
     return v;
+  }
+  if (typeof def.effectPerLevel === 'string') {
+    return (def.baseEffect ?? 0) + evalFormula(def.effectPerLevel, level);
+  }
+  if (def.baseEffect !== undefined) {
+    return def.baseEffect + def.effectPerLevel * (level - 1);
   }
   return def.effectPerLevel * level;
 }

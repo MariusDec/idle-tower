@@ -73,18 +73,32 @@ function formatNextDelta(def: UpgradeDef): string {
     const inc = formatNumberValue(Math.abs(def.scaling.perLevel));
     return `+${inc} per ${step} levels`;
   }
-  const v = def.scaling ? def.scaling.perLevel : def.effectPerLevel;
+  if (def.scaling) {
+    const v = def.scaling.perLevel;
+    const sign = v >= 0 ? '+' : '−';
+    const abs = Math.abs(v);
+    const unit = def.scaling.unit ?? '';
+    if (isPercent(def)) {
+      const pct = abs * 100;
+      const decimals = pct < 10 && pct % 1 !== 0 ? 1 : 0;
+      return `${sign}${pct.toFixed(decimals)}% per level`;
+    }
+    if (abs !== 0 && abs < 1) return `${sign}${abs.toFixed(2)}${unit} per level`;
+    if (abs < 10) return `${sign}${abs.toFixed(1)}${unit} per level`;
+    return `${sign}${abs.toFixed(0)}${unit} per level`;
+  }
+  if (typeof def.effectPerLevel === 'string') return '';
+  const v = def.effectPerLevel;
   const sign = v >= 0 ? '+' : '−';
   const abs = Math.abs(v);
-  const unit = def.scaling?.unit ?? '';
   if (isPercent(def)) {
     const pct = abs * 100;
     const decimals = pct < 10 && pct % 1 !== 0 ? 1 : 0;
     return `${sign}${pct.toFixed(decimals)}% per level`;
   }
-  if (abs !== 0 && abs < 1) return `${sign}${abs.toFixed(2)}${unit} per level`;
-  if (abs < 10) return `${sign}${abs.toFixed(1)}${unit} per level`;
-  return `${sign}${abs.toFixed(0)}${unit} per level`;
+  if (abs !== 0 && abs < 1) return `${sign}${abs.toFixed(2)} per level`;
+  if (abs < 10) return `${sign}${abs.toFixed(1)} per level`;
+  return `${sign}${abs.toFixed(0)} per level`;
 }
 
 export class UpgradePanel {

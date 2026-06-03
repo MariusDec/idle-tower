@@ -40,6 +40,7 @@ function makeInitialState(): GameState {
     maxMana: 100,
     manaRegen: 2,
     ascensionPoints: 0,
+    apThisTranscendence: 0,
     transcendencePoints: 0,
     lifetimeAP: 0,
     lifetimeGold: 0,
@@ -540,7 +541,7 @@ export class Game {
   }
 
   transcend(): number {
-    const ascensionPoints = this.state.resources.ascensionPoints;
+    const ascensionPoints = this.state.resources.apThisTranscendence;
     if (!this.prestigeMgr.canTranscend(ascensionPoints)) return 0;
     const { tp } = this.prestigeMgr.performTranscendence(this.state);
     if (tp <= 0) return 0;
@@ -598,8 +599,14 @@ export class Game {
     });
   }
 
+  private computeSpeedForIndex(index: number): number {
+    if (index < GAME_SPEEDS.length) return GAME_SPEEDS[index];
+    const last = GAME_SPEEDS.length - 1;
+    return GAME_SPEEDS[last] + (index - last) * 0.5;
+  }
+
   getSpeed(): number {
-    return GAME_SPEEDS[this.speedIndex];
+    return this.computeSpeedForIndex(this.speedIndex);
   }
 
   getSpeedIndex(): number {
@@ -611,7 +618,11 @@ export class Game {
   }
 
   getAvailableSpeeds(): readonly number[] {
-    return GAME_SPEEDS.slice(0, this.maxSpeedIndex + 1);
+    const result: number[] = [];
+    for (let i = 0; i <= this.maxSpeedIndex; i++) {
+      result.push(this.computeSpeedForIndex(i));
+    }
+    return result;
   }
 
   setSpeedIndex(index: number): boolean {
@@ -634,14 +645,14 @@ export class Game {
   }
 
   setMaxSpeedIndex(index: number): void {
-    this.maxSpeedIndex = Math.max(0, Math.min(GAME_SPEEDS.length - 1, Math.floor(index)));
+    this.maxSpeedIndex = Math.max(0, Math.floor(index));
     if (this.speedIndex > this.maxSpeedIndex) {
       this.speedIndex = this.maxSpeedIndex;
     }
   }
 
   private formatSpeedLabel(index: number): string {
-    const v = GAME_SPEEDS[index];
+    const v = this.computeSpeedForIndex(index);
     return Number.isInteger(v) ? `${v}x` : `${v}x`;
   }
 
@@ -840,6 +851,7 @@ export class Game {
         : null,
       researchSpeedMultiplier: this.prestigeMgr.getResearchSpeedMultiplier(),
     });
+    this.maxSpeedIndex = MAX_SPEED_INDEX + this.prestigeMgr.getGameSpeedBonus();
     this.ui.setSpeedAPI({
       speeds: this.getAvailableSpeeds(),
       currentIndex: this.getSpeedIndex(),
@@ -1076,7 +1088,9 @@ export class Game {
     }
     const back = this.prestigeMgr.getBackShots();
     for (let i = 0; i < back; i++) {
-      variants.push({ angleOffset: Math.PI });
+      const side = i % 2 === 0 ? -1 : 1;
+      const lane = Math.floor(i / 2) + (i != 1 ? 1 : 0);
+      variants.push({ angleOffset: Math.PI, posOffsetY: side * 10 * lane });
     }
     return variants;
   }
@@ -1128,7 +1142,15 @@ export class Game {
     this.state.researchInProgress = null;
     this.automation.reset();
     this.applySavedStateReset();
+    this.state.prestige.apSpent = {};
+    this.state.prestige.automationFlags = {
+      autoBuy: false,
+      autoAbilities: false,
+      autoAscend: false,
+      autoTranscend: false,
+    };
     this.state.resources.ascensionPoints = 0;
+    this.state.resources.apThisTranscendence = 0;
     this.state.stats.ascensions = 0;
   }
 
@@ -1139,6 +1161,7 @@ export class Game {
     r.maxMana = persisted.resources.maxMana;
     r.manaRegen = persisted.resources.manaRegen;
     r.ascensionPoints = persisted.resources.ascensionPoints;
+    r.apThisTranscendence = persisted.resources.apThisTranscendence;
     r.transcendencePoints = persisted.resources.transcendencePoints ?? 0;
     r.lifetimeAP = persisted.resources.lifetimeAP ?? 0;
     r.lifetimeGold = persisted.resources.lifetimeGold;
@@ -1423,7 +1446,7 @@ export class Game {
 
   private checkTranscendenceUnlockToast(): void {
     if (this.transcendenceUnlockedAnnounced) return;
-    if (this.prestigeMgr.canTranscend(this.state.resources.ascensionPoints)) {
+    if (this.prestigeMgr.canTranscend(this.state.resources.apThisTranscendence)) {
       this.transcendenceUnlockedAnnounced = true;
       this.bus.emit('toast', {
         kind: 'milestone',

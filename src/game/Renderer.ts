@@ -10,6 +10,7 @@ export class Renderer {
   private readonly height: number;
   private readonly rangeOverlay: boolean = true;
   private time = 0;
+  private bgCanvas: HTMLCanvasElement | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -22,8 +23,7 @@ export class Renderer {
   draw(snapshot: RenderSnapshot): void {
     this.time += 1 / 60;
     const ctx = this.ctx;
-    this.drawBackground(ctx);
-    this.drawArena(ctx);
+    ctx.drawImage(this.getBackground(), 0, 0);
     this.drawTowerBase(ctx, snapshot);
     this.drawWall(ctx, snapshot);
     if (this.rangeOverlay) this.drawRangeRing(ctx, snapshot);
@@ -38,6 +38,20 @@ export class Renderer {
     this.drawTowerTop(ctx, snapshot);
     this.drawShield(ctx, snapshot);
     this.drawWaveBanner(ctx, snapshot);
+  }
+
+  private getBackground(): HTMLCanvasElement {
+    if (this.bgCanvas && this.bgCanvas.width === this.width && this.bgCanvas.height === this.height) {
+      return this.bgCanvas;
+    }
+    const c = document.createElement('canvas');
+    c.width = this.width;
+    c.height = this.height;
+    const bg = c.getContext('2d')!;
+    this.drawBackground(bg);
+    this.drawArena(bg);
+    this.bgCanvas = c;
+    return c;
   }
 
   private drawBackground(ctx: CanvasRenderingContext2D): void {
@@ -55,30 +69,7 @@ export class Renderer {
     ctx.fillRect(0, 0, this.width, this.height);
   }
 
-  private drawAimLine(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
-    return;
-    if (!snap.aimLine) return;
-    const t = snap.tower;
-    const dx = snap.aimLine.x - t.x;
-    const dy = snap.aimLine.y - t.y;
-    const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-    const endX = t.x + (dx / d) * t.range;
-    const endY = t.y + (dy / d) * t.range;
-
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255, 200, 100, 0.35)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6, 4]);
-    ctx.beginPath();
-    ctx.moveTo(t.x, t.y);
-    ctx.lineTo(endX, endY);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(snap.aimLine.x, snap.aimLine.y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 200, 100, 0.5)';
-    ctx.fill();
-    ctx.restore();
+  private drawAimLine(_ctx: CanvasRenderingContext2D, _snap: RenderSnapshot): void {
   }
 
   private drawArena(ctx: CanvasRenderingContext2D): void {
@@ -213,23 +204,25 @@ export class Renderer {
   }
 
   private drawMines(ctx: CanvasRenderingContext2D, mines: Mine[]): void {
+    ctx.save();
     for (const m of mines) {
       if (!m.alive) continue;
       const pulse = 0.85 + Math.sin(this.time * 3 + m.id) * 0.15;
-      ctx.save();
       ctx.fillStyle = '#cc4422';
       ctx.beginPath();
       ctx.arc(m.x, m.y, 6 * pulse, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#ff8844';
       ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, 6 * pulse, 0, Math.PI * 2);
       ctx.stroke();
       ctx.fillStyle = 'rgba(255, 60, 20, 0.25)';
       ctx.beginPath();
       ctx.arc(m.x, m.y, 10 * pulse, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
     }
+    ctx.restore();
   }
 
   private drawEnemies(ctx: CanvasRenderingContext2D, enemies: Enemy[]): void {
@@ -347,10 +340,6 @@ export class Renderer {
     }
     ctx.restore();
 
-    if (enemy.type === 'boss') {
-      this.drawBossCrown(ctx, enemy, r + bob);
-    }
-
     this.drawEnemyHpBar(ctx, enemy, r, bob);
   }
 
@@ -364,36 +353,6 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(enemy.x, enemy.y, r * 2.4 * pulse, 0, Math.PI * 2);
     ctx.fill();
-  }
-
-  private drawBossCrown(ctx: CanvasRenderingContext2D, enemy: Enemy, topY: number): void {
-    return;
-    const baseY = topY - 2;
-    const peakY = topY - 14;
-    ctx.save();
-    ctx.fillStyle = '#f1c40f';
-    ctx.strokeStyle = '#7a5a00';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(enemy.x - 16, baseY);
-    ctx.lineTo(enemy.x - 12, peakY);
-    ctx.lineTo(enemy.x - 6, baseY - 4);
-    ctx.lineTo(enemy.x, peakY + 2);
-    ctx.lineTo(enemy.x + 6, baseY - 4);
-    ctx.lineTo(enemy.x + 12, peakY);
-    ctx.lineTo(enemy.x + 16, baseY);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.save();
-    ctx.fillStyle = '#ff5050';
-    ctx.font = '700 11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('BOSS', enemy.x, baseY - 18);
-    ctx.restore();
   }
 
   private drawEnemyHpBar(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
@@ -450,33 +409,33 @@ export class Renderer {
   }
 
   private drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[], layer: 'behind' | 'front'): void {
+    ctx.save();
     for (const p of particles) {
       const lifeRatio = 1 - p.age / p.life;
       if (lifeRatio <= 0) continue;
       if (layer === 'front' && p.color.startsWith('rgba(255, 255, 255')) continue;
-      ctx.save();
       ctx.globalAlpha = lifeRatio;
       ctx.fillStyle = p.color;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
     }
+    ctx.restore();
   }
 
   private drawShockwaves(ctx: CanvasRenderingContext2D, shockwaves: Shockwave[]): void {
+    ctx.save();
     for (const s of shockwaves) {
       const lifeRatio = 1 - s.age / s.life;
       if (lifeRatio <= 0) continue;
-      ctx.save();
       ctx.globalAlpha = lifeRatio;
       ctx.strokeStyle = s.color;
       ctx.lineWidth = s.lineWidth;
       ctx.beginPath();
       ctx.arc(s.x, s.y, s.currentRadius, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.restore();
     }
+    ctx.restore();
   }
 
   private drawDamageNumbers(ctx: CanvasRenderingContext2D, numbers: DamageNumber[]): void {

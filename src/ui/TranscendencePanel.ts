@@ -6,6 +6,7 @@ import {
   tpForAP,
   ASCENSION_UNLOCK_WAVE,
   perkCost,
+  computePerkEffect,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
 
@@ -64,7 +65,7 @@ export class TranscendencePanel {
 
   update(state: GameState): void {
     if (!this.root) return;
-    const ap = state.resources.ascensionPoints;
+    const ap = state.resources.apThisTranscendence;
     const tp = state.resources.transcendencePoints;
     const transcendences = state.stats.transcendences;
     const previewTP = this.handlers.previewTP(ap);
@@ -144,24 +145,24 @@ export class TranscendencePanel {
       || p.effectType === 'fire_rate_mult' || p.effectType === 'crit_damage_mult'
       || p.effectType === 'mana_regen_mult') {
       bonusEl.textContent = level > 0
-        ? `+${(p.effectPerLevel * level * 100).toFixed(0)}%`
-        : `+${(p.effectPerLevel * 100).toFixed(0)}% per level`;
+        ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}%`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% per level`;
     } else if (p.effectType === 'treasure_chance') {
       bonusEl.textContent = level > 0
-        ? `${(p.effectPerLevel * level * 100).toFixed(0)}% chance`
-        : `+${(p.effectPerLevel * 100).toFixed(0)}% per level`;
+        ? `${(computePerkEffect(p, level) * 100).toFixed(0)}% chance`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% per level`;
     } else if (p.effectType === 'start_gold') {
       bonusEl.textContent = level > 0
-        ? `+${formatNumber(p.effectPerLevel * level)} gold`
-        : `+${formatNumber(p.effectPerLevel)} per level`;
+        ? `+${formatNumber(computePerkEffect(p, level))} gold`
+        : `+${formatNumber(computePerkEffect(p, 1))} per level`;
     } else if (p.effectType === 'pierce') {
       bonusEl.textContent = level > 0
-        ? `+${Math.floor(p.effectPerLevel * level)} pierce`
+        ? `+${Math.floor(computePerkEffect(p, level))} pierce`
         : '+1 per 2 levels';
     } else if (p.effectType === 'wave_start') {
       bonusEl.textContent = level > 0
-        ? `Start wave ${p.effectPerLevel * level}`
-        : `+${p.effectPerLevel} per level`;
+        ? `Start wave ${computePerkEffect(p, level)}`
+        : `+${computePerkEffect(p, 1)} per level`;
     } else if (p.effectType === 'auto_buy_speed') {
       bonusEl.textContent = level > 0
         ? `-${level}s interval`
@@ -207,7 +208,7 @@ export class TranscendencePanel {
       const row = this.tpRowById.get(p.id);
       const levelAttr = row?.getAttribute('data-tp-level');
       const level = levelAttr ? Number(levelAttr) : 0;
-      if (level > 0) factor *= 1 + p.effectPerLevel * level;
+      if (level > 0) factor *= 1 + computePerkEffect(p, level);
     }
     return factor;
   }
@@ -219,7 +220,7 @@ export class TranscendencePanel {
       const row = this.tpRowById.get(p.id);
       const levelAttr = row?.getAttribute('data-tp-level');
       const level = levelAttr ? Number(levelAttr) : 0;
-      if (level > 0) factor *= 1 + p.effectPerLevel * level;
+      if (level > 0) factor *= 1 + computePerkEffect(p, level);
     }
     return factor;
   }
