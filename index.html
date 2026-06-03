@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Tower</title>
+    <link rel="stylesheet" href="/src/styles/main.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="hud-root" class="hud-root"></header>
+
+      <main class="game-layout">
+        <section class="canvas-wrap">
+          <canvas id="game-canvas" width="1280" height="720" aria-label="Game world"></canvas>
+          <div id="overlay-root" class="overlay-root"></div>
+        </section>
+
+        <aside id="panel-root" class="panel-root">
+          <nav class="panel-tabs" id="panel-tabs"></nav>
+          <div class="panel-content" id="panel-content"></div>
+        </aside>
+      </main>
+
+      <div id="toast-root" class="toast-root" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
