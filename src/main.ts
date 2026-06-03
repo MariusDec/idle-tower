@@ -72,6 +72,9 @@ function bootstrap(): void {
   ui.setOnToggleAutoProgress(() => {
     game.toggleAutoProgress();
   });
+  ui.setOnClearSave(() => {
+    game.clearSave();
+  });
   ui.setAbilityAPI({
     canCast: (id, wave) => game.abilities.canCast(id, wave),
     reasonBlocked: (id, wave) => game.abilities.reasonBlocked(id, wave),

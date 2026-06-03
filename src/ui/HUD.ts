@@ -1,4 +1,4 @@
-import type { GameState } from '../types';
+import type { GameState, StatsInfo } from '../types';
 import { formatNumber } from '../utils/bigNumber';
 import type { SpeedAPI, WaveControlAPI } from './UIManager';
 
@@ -22,6 +22,11 @@ export class HUD {
   private hpEl!: HTMLElement;
   private hpWrap!: HTMLElement;
   private hpBarFill!: HTMLElement;
+  private statsBtn!: HTMLButtonElement;
+  private statsTooltip!: HTMLElement;
+  private statsPopup!: HTMLElement;
+  private statsPopupBody!: HTMLElement;
+  private statsInfo: StatsInfo | null = null;
   private dps = 0;
   private speedApi: SpeedAPI = { speeds: [], currentIndex: 0, maxIndex: 0 };
   private waveApi: WaveControlAPI = { autoProgress: true, currentWave: 1, isIntermission: false };
@@ -72,6 +77,48 @@ export class HUD {
 
   setOnToggleAutoProgress(handler: () => void): void {
     this.onToggleAutoProgress = handler;
+  }
+
+  setStatsInfo(info: StatsInfo): void {
+    this.statsInfo = info;
+    if (this.statsTooltip.style.display !== 'none') {
+      this.renderStatsContent(this.statsTooltip, info);
+    }
+    if (this.statsPopup.classList.contains('is-open')) {
+      this.renderStatsContent(this.statsPopupBody, info);
+    }
+  }
+
+  private renderStatsContent(el: HTMLElement, info: StatsInfo): void {
+    const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+    el.innerHTML = `
+      <div class="stat-row"><span>Damage</span><span>${formatNumber(info.damage)}</span></div>
+      <div class="stat-row"><span>Fire Rate</span><span>${info.fireRate.toFixed(2)}/s</span></div>
+      <div class="stat-row"><span>DPS</span><span>${formatNumber(info.dps)}</span></div>
+      <div class="stat-row"><span>Crit Rate</span><span>${pct(info.critChance)}</span></div>
+      <div class="stat-row"><span>Crit Damage</span><span>${(info.critDamage * 100).toFixed(0)}%</span></div>
+      <div class="stat-row"><span>Range</span><span>${info.range.toFixed(0)}</span></div>
+      <div class="stat-row"><span>Health</span><span>${Math.floor(info.hp)} / ${Math.floor(info.maxHp)}</span></div>
+      <div class="stat-row"><span>Health Regen</span><span>${(info.maxHp * info.healthRegen).toFixed(2)}/s</span></div>
+      <div class="stat-row"><span>Defense</span><span>${info.defense.toFixed(0)}</span></div>
+      <div class="stat-row"><span>Armor</span><span>${info.armor.toFixed(0)}</span></div>
+      <div class="stat-row"><span>Lifesteal</span><span>${pct(info.lifesteal)}</span></div>
+      <div class="stat-row"><span>Mana Regen</span><span>${info.manaRegen.toFixed(1)}/s</span></div>
+      <div class="stat-row"><span>Max Mana</span><span>${info.maxMana}</span></div>
+      <div class="stat-row"><span>Gold Multiplier</span><span>${info.goldMultiplier.toFixed(2)}x</span></div>
+    `;
+  }
+
+  private openStatsPopup(): void {
+    if (!this.statsInfo) return;
+    this.renderStatsContent(this.statsPopupBody, this.statsInfo);
+    this.statsPopup.classList.add('is-open');
+    this.statsBtn.classList.add('is-active');
+  }
+
+  private closeStatsPopup(): void {
+    this.statsPopup.classList.remove('is-open');
+    this.statsBtn.classList.remove('is-active');
   }
 
   update(state: GameState): void {
@@ -144,6 +191,61 @@ export class HUD {
     this.goldEl = this.addStat(groupLeft, 'Gold', '0');
     this.killsEl = this.addStat(groupLeft, 'Kills', '0');
     groupLeft.appendChild(this.renderWaveBlock());
+    const statsWrap = document.createElement('div');
+    statsWrap.className = 'hud-stats-wrap';
+
+    this.statsBtn = document.createElement('button');
+    this.statsBtn.type = 'button';
+    this.statsBtn.className = 'hud-stats-btn';
+    this.statsBtn.textContent = 'Stats';
+    this.statsBtn.addEventListener('mouseenter', () => {
+      if (this.statsInfo) {
+        this.renderStatsContent(this.statsTooltip, this.statsInfo);
+        this.statsTooltip.style.display = 'block';
+      }
+    });
+    this.statsBtn.addEventListener('mouseleave', () => {
+      this.statsTooltip.style.display = 'none';
+    });
+    this.statsBtn.addEventListener('click', () => {
+      if (this.statsPopup.classList.contains('is-open')) {
+        this.closeStatsPopup();
+      } else {
+        this.openStatsPopup();
+      }
+    });
+    statsWrap.appendChild(this.statsBtn);
+
+    this.statsTooltip = document.createElement('div');
+    this.statsTooltip.className = 'hud-stats-tooltip';
+    this.statsTooltip.style.display = 'none';
+    statsWrap.appendChild(this.statsTooltip);
+
+    this.root.appendChild(statsWrap);
+
+    this.statsPopup = document.createElement('div');
+    this.statsPopup.className = 'hud-stats-popup';
+    const popupInner = document.createElement('div');
+    popupInner.className = 'hud-stats-popup-inner';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'hud-stats-popup-close';
+    closeBtn.textContent = '\u00d7';
+    closeBtn.addEventListener('click', () => this.closeStatsPopup());
+    popupInner.appendChild(closeBtn);
+    const popupTitle = document.createElement('h3');
+    popupTitle.className = 'hud-stats-popup-title';
+    popupTitle.textContent = 'Tower Stats';
+    popupInner.appendChild(popupTitle);
+    const popupBody = document.createElement('div');
+    popupBody.className = 'hud-stats-popup-body';
+    this.statsPopupBody = popupBody;
+    popupInner.appendChild(popupBody);
+    this.statsPopup.appendChild(popupInner);
+    this.statsPopup.addEventListener('click', (e) => {
+      if (e.target === this.statsPopup) this.closeStatsPopup();
+    });
+    document.body.appendChild(this.statsPopup);
     this.root.appendChild(groupLeft);
 
     const hpWrap = document.createElement('div');

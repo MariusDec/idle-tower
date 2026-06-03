@@ -19,7 +19,7 @@ export interface UpgradeScaling {
 
 export type AbilityId = 'rain_of_arrows' | 'frost_nova' | 'berserk' | 'gold_rush';
 
-export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence';
+export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'settings';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';
 
@@ -28,7 +28,6 @@ export interface TowerState {
   y: number;
   baseDamage: number;
   fireRate: number;
-  activeFireRate: number;
   range: number;
   critChance: number;
   critMultiplier: number;
@@ -48,6 +47,8 @@ export interface TowerState {
   landMineDamage: number;
   landMineFrequency: number;
   landMineTimer: number;
+  wallHp: number;
+  wallMaxHp: number;
   shieldMaxCharges: number;
   shieldCurrentCharges: number;
   shieldRechargeTimer: number;
@@ -177,6 +178,24 @@ export function computeUpgradeValue(def: UpgradeDef, level: number): number {
 export interface UpgradeRuntime {
   id: string;
   level: number;
+}
+
+export interface StatsInfo {
+  damage: number;
+  dps: number;
+  hp: number;
+  maxHp: number;
+  healthRegen: number;
+  critChance: number;
+  critDamage: number;
+  range: number;
+  fireRate: number;
+  defense: number;
+  armor: number;
+  lifesteal: number;
+  manaRegen: number;
+  maxMana: number;
+  goldMultiplier: number;
 }
 
 export interface GameState {

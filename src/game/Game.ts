@@ -1,4 +1,4 @@
-import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine } from '../types';
+import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo } from '../types';
 import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX } from '../types';
 import { TOWER_BASE, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
@@ -250,13 +250,31 @@ export class Game {
       });
     });
     this.bus.on('tower_damaged', (amount: unknown) => {
-      const raw = Math.max(0, amount as number);
+      let raw = Math.max(0, amount as number);
       if (raw <= 0) return;
       const ts = this.tower.snapshot;
       if (ts.shieldCurrentCharges > 0) {
         ts.shieldCurrentCharges--;
         this.effects.emitShieldAbsorb(ts.x, ts.y);
         return;
+      }
+      if (ts.wallHp > 0) {
+        raw = Math.floor(raw * 0.8);
+        const absorbed = Math.min(ts.wallHp, raw);
+        ts.wallHp -= absorbed;
+        raw -= absorbed;
+        this.effects.emitDamageNumber(
+          ts.x,
+          ts.y - TOWER_VISUAL.bodyRadius - 40,
+          absorbed,
+          false,
+        );
+
+        if (ts.wallHp <= 0) {
+          this.enemyMgr.setWallContactExtra(0);
+        }
+
+        if (raw <= 0) return;
       }
       const afterArmor = raw * (1 - ts.armor);
       const afterDefense = Math.max(0, afterArmor - ts.defense);
@@ -287,6 +305,10 @@ export class Game {
       }
     });
     this.bus.on('wave_started', (wave: unknown) => {
+      const ts = this.tower.snapshot;
+      if (ts.wallMaxHp > 0) {
+        ts.wallHp = ts.wallMaxHp;
+      }
       const w = wave as number;
       if (WAVE_MILESTONES.has(w) && !this.announcedMilestones.has(w)) {
         this.announcedMilestones.add(w);
@@ -606,6 +628,39 @@ export class Game {
 
   clearSave(): void {
     this.saveMgr.clear();
+
+    const fresh = makeInitialState();
+
+    Object.assign(this.state.tower, fresh.tower);
+    Object.assign(this.state.resources, fresh.resources);
+    Object.assign(this.state.prestige, fresh.prestige);
+    Object.assign(this.state.stats, fresh.stats);
+    for (const id of Object.keys(this.state.abilities)) {
+      Object.assign(this.state.abilities[id], fresh.abilities[id]);
+    }
+
+    this.waveMgr.reset();
+    this.state.wave = this.waveMgr.snapshot;
+    this.saveLoaded = false;
+
+    this.upgradeMgr.reset();
+    this.resourceMgr.reset();
+    this.enemyMgr.reset();
+    this.projectileMgr.reset();
+    this.abilityMgr.reset();
+    this.effects.reset();
+    this.automation.reset();
+    this.researchTree.resetForAscension();
+    this.notifications.reset();
+    this.mines = [];
+    this.announcedMilestones.clear();
+    this.researchAnnounced.clear();
+
+    this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
+    this.applyUpgradeEffects();
+    this.state.upgrades = this.upgradeMgr.snapshot();
+    this.state.research = [];
+    this.syncUiApis();
   }
 
   get eventBus(): EventBus {
@@ -616,7 +671,44 @@ export class Game {
     return this.state;
   }
 
+  private computeStatsInfo(): StatsInfo {
+    const t = this.tower.snapshot;
+    const r = this.state.resources;
+    const lifetimeBonus = this.prestigeMgr.getLifetimeAPBonus();
+    const tpResource = this.prestigeMgr.getTPResourceMultiplicative();
+    const researchGoldMulti = this.researchTree.getGoldMultiplicative();
+    let goldAdditive = 0;
+    for (const u of UPGRADES) {
+      if (u.id === 'goldMulti') {
+        const level = this.upgradeMgr.getLevel(u.id);
+        if (level > 0) goldAdditive = computeUpgradeValue(u, level);
+        break;
+      }
+    }
+    const totalGoldMulti = 1 + (goldAdditive + lifetimeBonus.gold) * researchGoldMulti * tpResource;
+    const expectedHit = t.baseDamage * (1 + t.critChance * (t.critMultiplier - 1));
+    const dps = expectedHit * t.fireRate;
+    return {
+      damage: t.baseDamage,
+      dps,
+      hp: t.hp,
+      maxHp: t.maxHp,
+      healthRegen: t.healthRegen,
+      critChance: t.critChance,
+      critDamage: t.critMultiplier,
+      range: t.range,
+      fireRate: t.fireRate,
+      defense: t.defense,
+      armor: t.armor,
+      lifesteal: t.lifesteal,
+      manaRegen: r.manaRegen,
+      maxMana: r.maxMana,
+      goldMultiplier: totalGoldMulti,
+    };
+  }
+
   private syncUiApis(): void {
+    this.ui.setStatsInfo(this.computeStatsInfo());
     this.ui.setPrestigeAPI({
       canAscend: (wave) => this.prestigeMgr.canAscend(wave),
       canTranscend: (ap) => this.prestigeMgr.canTranscend(ap),
@@ -688,7 +780,10 @@ export class Game {
       const total = computeUpgradeValue(u, level);
       switch (u.id) {
         case 'damage': t.baseDamage += total; break;
-        case 'fireRate': t.fireRate += total; break;
+        case 'fireRate': {
+          t.fireRate += total;
+          break;
+        }
         case 'range': t.range += total; break;
         case 'critChance': t.critChance = Math.min(1, t.critChance + total); break;
         case 'critDamage': t.critMultiplier += total; break;
@@ -731,6 +826,26 @@ export class Game {
     } else if (t.hp > t.maxHp) {
       t.hp = t.maxHp;
     }
+
+    const wallLevel = this.upgradeMgr.getLevel('wall');
+    if (wallLevel > 0) {
+      const wallDef = UPGRADES.find(u => u.id === 'wall')!;
+      const wallFraction = computeUpgradeValue(wallDef, wallLevel);
+      const oldWallMax = t.wallMaxHp;
+      const newWallMax = Math.max(1, Math.floor(t.maxHp * wallFraction));
+      if (oldWallMax <= 0) {
+        t.wallHp = newWallMax;
+      } else if (newWallMax > oldWallMax && t.wallHp > 0) {
+        t.wallHp = Math.min(newWallMax, t.wallHp + Math.floor((newWallMax - oldWallMax) * (t.wallHp / oldWallMax)));
+      } else if (t.wallHp > newWallMax) {
+        t.wallHp = newWallMax;
+      }
+      t.wallMaxHp = newWallMax;
+    } else {
+      t.wallHp = 0;
+      t.wallMaxHp = 0;
+    }
+    this.enemyMgr.setWallContactExtra(wallLevel > 0 ? 36 : 0);
 
     const lifetimeBonus = this.prestigeMgr.getLifetimeAPBonus();
     const apDamage = lifetimeBonus.damage;
@@ -794,9 +909,6 @@ export class Game {
     t.shieldCurrentCharges = 0;
     t.shieldRechargeTimer = 0;
 
-    this.state.resources.ascensionPoints = 0;
-    this.state.stats.ascensions = 0;
-
     const startWave = this.researchTree.getStartWave();
     if (startWave > 1) {
       this.waveMgr.startAtWave(startWave);
@@ -819,6 +931,8 @@ export class Game {
     this.state.research = [];
     this.automation.reset();
     this.applySavedStateReset();
+    this.state.resources.ascensionPoints = 0;
+    this.state.stats.ascensions = 0;
   }
 
   private applyPersistedState(persisted: PersistentState): void {
@@ -882,6 +996,8 @@ export class Game {
     t.targetingMode = persisted.tower.targetingMode;
     t.hp = persisted.tower.hp ?? TOWER_BASE.hp;
     t.maxHp = persisted.tower.maxHp ?? TOWER_BASE.maxHp;
+    t.wallHp = persisted.tower.wallHp ?? 0;
+    t.wallMaxHp = persisted.tower.wallMaxHp ?? 0;
 
     this.upgradeMgr.replaceLevels(this.state.upgrades);
     this.abilityMgr.reset();
@@ -925,7 +1041,7 @@ export class Game {
       ts.hp = Math.min(ts.maxHp, ts.hp + (ts.maxHp * ts.healthRegen) * dt);
     }
 
-    this.tower.setActiveMode(this.mouseDown);
+    this.tower.setFireRateMultiplier(this.mouseDown ? 1.3 : 1);
     if (this.mouseDown) {
       this.tower.setAimTarget(this.mouseX, this.mouseY);
     }

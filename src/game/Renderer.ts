@@ -25,6 +25,7 @@ export class Renderer {
     this.drawBackground(ctx);
     this.drawArena(ctx);
     this.drawTowerBase(ctx, snapshot);
+    this.drawWall(ctx, snapshot);
     if (this.rangeOverlay) this.drawRangeRing(ctx, snapshot);
     this.drawMines(ctx, snapshot.mines);
     this.drawParticles(ctx, snapshot.particles, 'behind');
@@ -138,6 +139,29 @@ export class Renderer {
     ctx.strokeStyle = `rgba(100, 180, 255, ${alpha})`;
     ctx.lineWidth = 2 + ratio * 2;
     ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawWall(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
+    const t = snap.tower;
+    if (t.wallMaxHp <= 0) return;
+    const ratio = Math.max(0, t.wallHp / t.wallMaxHp);
+    if (ratio <= 0) return;
+    const r = TOWER_VISUAL.bodyRadius + 40;
+    const thickness = 4 + ratio * 4;
+    const alpha = 0.3 + ratio * 0.4;
+    ctx.save();
+    ctx.strokeStyle = `rgba(150, 160, 170, ${alpha})`;
+    ctx.lineWidth = thickness;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(100, 110, 120, ${alpha * 0.6})`;
+    ctx.lineWidth = thickness - 2;
+    ctx.setLineDash([6, 8]);
     ctx.beginPath();
     ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
     ctx.stroke();

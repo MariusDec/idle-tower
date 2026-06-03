@@ -26,6 +26,7 @@ export class EnemyManager {
   private slowTimer = 0;
   private goldLuckChance = 0;
   private goldLuckMultiplier = 1;
+  private wallContactExtra = 0;
 
   constructor(bus: EventBus, resources: ResourceManager) {
     this.bus = bus;
@@ -43,6 +44,10 @@ export class EnemyManager {
   setGoldLuck(chance: number, multiplier: number): void {
     this.goldLuckChance = Math.max(0, Math.min(1, chance));
     this.goldLuckMultiplier = Math.max(1, multiplier);
+  }
+
+  setWallContactExtra(extra: number): void {
+    this.wallContactExtra = extra;
   }
 
   applySlow(factor: number, duration: number): void {
@@ -156,7 +161,7 @@ export class EnemyManager {
       const dx = towerX - e.x;
       const dy = towerY - e.y;
       const d = Math.sqrt(dx * dx + dy * dy);
-      const contact = TOWER_HIT_RADIUS + ENEMY_DEFS[e.type].radius + ENEMY_GAP;
+      const contact = TOWER_HIT_RADIUS + ENEMY_DEFS[e.type].radius + ENEMY_GAP + this.wallContactExtra;
 
       if (d <= contact) {
         if (d > 0) {

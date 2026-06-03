@@ -4,7 +4,6 @@ import { distance2 } from '../utils/math';
 export class Tower {
   private state: TowerState;
   private fireRateMultiplier = 1;
-  private activeMode = false;
   private aimX = 0;
   private aimY = 0;
 
@@ -16,16 +15,8 @@ export class Tower {
     return this.state;
   }
 
-  get isActiveMode(): boolean {
-    return this.activeMode;
-  }
-
   get aimTarget(): { x: number; y: number } {
     return { x: this.aimX, y: this.aimY };
-  }
-
-  setActiveMode(enabled: boolean): void {
-    this.activeMode = enabled;
   }
 
   setAimTarget(x: number, y: number): void {
@@ -34,8 +25,7 @@ export class Tower {
   }
 
   get effectiveFireRate(): number {
-    const base = this.activeMode ? this.state.activeFireRate : this.state.fireRate;
-    return base * this.fireRateMultiplier;
+    return this.state.fireRate * this.fireRateMultiplier;
   }
 
   setPosition(x: number, y: number): void {

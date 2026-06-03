@@ -8,8 +8,7 @@
 |-------|---------|-------------|
 | `x, y` | canvas center | Position |
 | `baseDamage` | 5 | Raw damage per shot |
-| `fireRate` | 1 | Shots per second (normal mode) |
-| `activeFireRate` | 1.3 | Shots per second (manual aim mode) |
+| `fireRate` | 1 | Shots per second~~~~ |
 | `range` | 280 | Targeting radius in pixels |
 | `critChance` | 0.05 | 5% base crit |
 | `critMultiplier` | 2 | Double damage on crit |
@@ -51,14 +50,14 @@
 
 **Fire rate** (`effectiveFireRate`):
 - Normal mode: `fireRate * fireRateMultiplier`
-- Manual aim (mouse held): `activeFireRate * fireRateMultiplier`
+- Manual aim (mouse held): `fireRate * 30% * fireRateMultiplier`
 - `consumeCooldown`: `cooldown = 1 / effectiveFireRate`
 
 ## Manual Aim Mode
 
 - When mouse is held down on canvas, tower enters active mode
 - Tower targets the mouse cursor position instead of auto-acquiring enemies
-- Uses `activeFireRate` (faster base) instead of `fireRate`
+- Applies a 30% increase to `fireRate`
 - Aim line is rendered (currently disabled — `if (true || !snap.aimLine) return`)
 
 ## Upgrade Effects Applied (from `Game.applyUpgradeEffects`)

@@ -1,10 +1,11 @@
-import type { AbilityId, GameState, PanelTab } from '../types';
+import type { AbilityId, GameState, PanelTab, StatsInfo } from '../types';
 import { HUD } from './HUD';
 import { UpgradePanel } from './UpgradePanel';
 import { AbilityPanel } from './AbilityPanel';
 import { PrestigePanel } from './PrestigePanel';
 import { TranscendencePanel } from './TranscendencePanel';
 import { ResearchPanel } from './ResearchPanel';
+import { SettingsPanel } from './SettingsPanel';
 import { WelcomeBackModal, type WelcomeBackData } from './WelcomeBackModal';
 import { EventBus } from '../game/EventBus';
 import type { AutomationKey } from '../data/prestige';
@@ -20,6 +21,7 @@ const TABS: TabDef[] = [
   { id: 'abilities', label: 'Abilities' },
   { id: 'prestige', label: 'Prestige' },
   { id: 'transcendence', label: 'Transcendence' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 export interface AbilityAPI {
@@ -67,6 +69,7 @@ export class UIManager {
   private readonly prestigePanel: PrestigePanel;
   private readonly transcendencePanel: TranscendencePanel;
   private readonly researchPanel: ResearchPanel;
+  private readonly settingsPanel: SettingsPanel;
   private readonly welcomeModal: WelcomeBackModal;
   private readonly bus: EventBus;
   private activeTab: PanelTab = 'upgrades';
@@ -84,6 +87,7 @@ export class UIManager {
   private onPrevWave: () => void = () => {};
   private onNextWave: () => void = () => {};
   private onToggleAutoProgress: () => void = () => {};
+  private onClearSave: () => void = () => {};
   private abilityApi: AbilityAPI = {
     canCast: () => false,
     reasonBlocked: () => 'Loading...',
@@ -106,6 +110,7 @@ export class UIManager {
     reasonBlocked: () => 'Loading...',
   };
   private lastState: GameState | null = null;
+  private cachedGoldMultiplier = 1;
 
   constructor(deps: {
     hudRoot: HTMLElement;
@@ -154,6 +159,9 @@ export class UIManager {
       rp: 0,
       unlocked: new Set<string>(),
       reasonBlocked: (id) => this.researchApi.reasonBlocked(id),
+    });
+    this.settingsPanel = new SettingsPanel({
+      onClearSave: () => this.onClearSave(),
     });
     this.welcomeModal = new WelcomeBackModal(deps.modalRoot);
     this.renderTabs();
@@ -225,6 +233,10 @@ export class UIManager {
     this.onToggleAutoProgress = handler;
   }
 
+  setOnClearSave(handler: () => void): void {
+    this.onClearSave = handler;
+  }
+
   setSpeedAPI(api: SpeedAPI): void {
     this.hud.setSpeedAPI(api);
   }
@@ -249,6 +261,11 @@ export class UIManager {
         this.transcendencePanel.update(this.lastState);
       }
     }
+  }
+
+  setStatsInfo(info: StatsInfo): void {
+    this.cachedGoldMultiplier = info.goldMultiplier;
+    this.hud.setStatsInfo(info);
   }
 
   setResearchAPI(api: ResearchAPI): void {
@@ -279,6 +296,8 @@ export class UIManager {
       this.transcendencePanel.update(state);
     } else if (this.activeTab === 'research') {
       this.researchPanel.update(state);
+    } else if (this.activeTab === 'settings') {
+      this.settingsPanel.update();
     }
     const dps = this.estimateDPS(state);
     this.dpsSamples.push(dps);
@@ -289,6 +308,31 @@ export class UIManager {
       const avg = this.dpsSamples.reduce((a, b) => a + b, 0) / Math.max(1, this.dpsSamples.length);
       this.hud.setDPS(avg);
     }
+    this.pushFrameStats(state);
+  }
+
+  private pushFrameStats(state: GameState): void {
+    const t = state.tower;
+    const r = state.resources;
+    const expectedHit = t.baseDamage * (1 + t.critChance * (t.critMultiplier - 1));
+    const dps = expectedHit * t.fireRate;
+    this.hud.setStatsInfo({
+      damage: t.baseDamage,
+      dps,
+      hp: t.hp,
+      maxHp: t.maxHp,
+      healthRegen: t.healthRegen,
+      critChance: t.critChance,
+      critDamage: t.critMultiplier,
+      range: t.range,
+      fireRate: t.fireRate,
+      defense: t.defense,
+      armor: t.armor,
+      lifesteal: t.lifesteal,
+      manaRegen: r.manaRegen,
+      maxMana: r.maxMana,
+      goldMultiplier: this.cachedGoldMultiplier,
+    });
   }
 
   private estimateDPS(state: GameState): number {
@@ -329,6 +373,8 @@ export class UIManager {
     } else if (id === 'research') {
       this.researchPanel.mount(this.contentRoot);
       if (this.lastState) this.researchPanel.update(this.lastState);
+    } else if (id === 'settings') {
+      this.settingsPanel.mount(this.contentRoot);
     }
   }
 
