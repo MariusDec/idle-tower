@@ -98,7 +98,17 @@ export class AutomationManager {
   }
 
   private runAutoCast(wave: number): void {
-    const order: AbilityId[] = ['rain_of_arrows', 'berserk', 'frost_nova', 'gold_rush'];
+    const order: AbilityId[] = [
+      'execute',
+      'meteor_strike',
+      'chain_lightning',
+      'precision_shot',
+      'vampiric_aura',
+      'rain_of_arrows',
+      'berserk',
+      'frost_nova',
+      'gold_rush',
+    ];
     for (const id of order) {
       const def = ABILITY_BY_ID[id];
       if (!def) continue;

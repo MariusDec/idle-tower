@@ -20,6 +20,8 @@ import { AchievementPanel } from './AchievementPanel';
 import { WelcomeBackModal, type WelcomeBackData } from './WelcomeBackModal';
 import { EventBus } from '../game/EventBus';
 import type { AutomationKey } from '../data/prestige';
+import type { EffectiveAbilityStats } from '../data/abilities';
+import { ABILITIES } from '../data/abilities';
 
 interface TabDef {
   id: PanelTab;
@@ -39,6 +41,10 @@ const TABS: TabDef[] = [
 export interface AbilityAPI {
   canCast: (id: AbilityId, wave: number) => boolean;
   reasonBlocked: (id: AbilityId, wave: number) => string | null;
+  canUpgrade: (id: AbilityId, wave: number) => boolean;
+  isMaxed: (id: AbilityId) => boolean;
+  getUpgradeCost: (id: AbilityId) => number;
+  getEffectiveStats: (id: AbilityId) => EffectiveAbilityStats;
 }
 
 export interface ResearchAPI {
@@ -110,6 +116,7 @@ export class UIManager {
   private dpsFreezeTimer = 0;
   private onBuyUpgrade: (id: string) => void = () => {};
   private onCastAbility: (id: AbilityId) => void = () => {};
+  private onUpgradeAbility: (id: AbilityId) => void = () => {};
   private onAscend: () => void = () => {};
   private onTranscend: () => void = () => {};
   private onSpendAP: (perkId: string) => void = () => {};
@@ -138,6 +145,22 @@ export class UIManager {
   private abilityApi: AbilityAPI = {
     canCast: () => false,
     reasonBlocked: () => 'Loading...',
+    canUpgrade: () => false,
+    isMaxed: () => false,
+    getUpgradeCost: () => 0,
+    getEffectiveStats: (_id) => ({
+      level: 0,
+      manaCost: 0,
+      cooldown: 0,
+      duration: 0,
+      effectValue: 0,
+      displayEffectValue: '',
+      displayDuration: '',
+      displayText: '',
+      upgradeCost: 0,
+      isMaxed: false,
+      isUnlocked: false,
+    }),
   };
   private prestigeApi: PrestigeAPI = {
     canAscend: () => false,
@@ -184,8 +207,13 @@ export class UIManager {
     this.upgradePanel = new UpgradePanel((id) => this.onBuyUpgrade(id));
     this.abilityPanel = new AbilityPanel({
       onCast: (id) => this.onCastAbility(id),
+      onUpgrade: (id) => this.onUpgradeAbility(id),
       canCast: (id, wave) => this.abilityApi.canCast(id, wave),
       reasonBlocked: (id, wave) => this.abilityApi.reasonBlocked(id, wave),
+      canUpgrade: (id, wave) => this.abilityApi.canUpgrade(id, wave),
+      isMaxed: (id) => this.abilityApi.isMaxed(id),
+      getUpgradeCost: (id) => this.abilityApi.getUpgradeCost(id),
+      getEffectiveStats: (id) => this.abilityApi.getEffectiveStats(id),
     });
     this.prestigePanel = new PrestigePanel({
       onAscend: () => this.onAscend(),
@@ -257,6 +285,17 @@ export class UIManager {
       this.abilityPanel.flashCast(p.id);
       this.bus.emit('toast', { kind: 'milestone', text: `${p.def.name} cast!`, life: 2.5 });
     });
+    this.bus.on('ability_upgraded', (payload: unknown) => {
+      const p = payload as { id: AbilityId; level: number };
+      const def = ABILITIES.find(a => a.id === p.id);
+      const name = def?.name ?? p.id;
+      this.abilityPanel.flashUpgrade(p.id);
+      this.bus.emit('toast', {
+        kind: 'info',
+        text: `${name} → Lv.${p.level}${p.level >= (def?.maxLevel ?? 0) ? ' (MAX)' : ''}`,
+        life: 2,
+      });
+    });
     this.bus.on('welcome_back', (payload: unknown) => {
       const data = payload as WelcomeBackData;
       if (data.result.elapsedSeconds > 0) {
@@ -275,6 +314,10 @@ export class UIManager {
 
   setOnCastAbility(handler: (id: AbilityId) => void): void {
     this.onCastAbility = handler;
+  }
+
+  setOnUpgradeAbility(handler: (id: AbilityId) => void): void {
+    this.onUpgradeAbility = handler;
   }
 
   setOnAscend(handler: () => void): void {

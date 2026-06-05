@@ -19,7 +19,16 @@ export interface UpgradeScaling {
   unit?: string;
 }
 
-export type AbilityId = 'rain_of_arrows' | 'frost_nova' | 'berserk' | 'gold_rush';
+export type AbilityId =
+  | 'rain_of_arrows'
+  | 'frost_nova'
+  | 'berserk'
+  | 'gold_rush'
+  | 'meteor_strike'
+  | 'precision_shot'
+  | 'chain_lightning'
+  | 'vampiric_aura'
+  | 'execute';
 
 export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'settings';
 

@@ -42,6 +42,9 @@ function bootstrap(): void {
   ui.setOnCastAbility((id) => {
     game.castAbility(id);
   });
+  ui.setOnUpgradeAbility((id) => {
+    game.upgradeAbility(id);
+  });
   ui.setOnAscend(() => {
     game.ascend();
   });
@@ -101,6 +104,10 @@ function bootstrap(): void {
   ui.setAbilityAPI({
     canCast: (id, wave) => game.abilities.canCast(id, wave),
     reasonBlocked: (id, wave) => game.abilities.reasonBlocked(id, wave),
+    canUpgrade: (id, wave) => game.abilities.canUpgrade(id, wave),
+    isMaxed: (id) => game.abilities.isMaxed(id),
+    getUpgradeCost: (id) => game.abilities.getUpgradeCost(id),
+    getEffectiveStats: (id) => game.abilities.getEffectiveStats(id),
   });
   ui.setPrestigeAPI({
     canAscend: (wave) => game.prestige.canAscend(wave),

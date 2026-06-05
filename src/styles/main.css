@@ -11,6 +11,7 @@
   --accent: #f1c40f;
   --accent-2: #9b59ff;
   --good: #3ec46d;
+  --good-dark: #0e301a;
   --warn: #e8a93b;
   --bad: #d04848;
   --shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
@@ -1038,10 +1039,10 @@ button:disabled {
   position: absolute;
   top: 4px;
   right: 4px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
-  color: #fff;
-  background: var(--good);
+  color: #FFF;
+  background: var(--good-dark);
   border-radius: 10px;
   padding: 1px 6px;
   z-index: 2;
@@ -1079,6 +1080,136 @@ button:disabled {
 @keyframes ability-flash {
   0%   { filter: brightness(1.8); }
   100% { filter: brightness(1.0); }
+}
+
+/* Ability level badge + upgrade button + tooltip */
+.ability-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ability-level-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #6b5214, #4a3a0e);
+  color: #f7e7a0;
+  border: 1px solid #8a6a1d;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ability-level-badge.is-maxed {
+  background: linear-gradient(180deg, #1f6a3f, #114a2a);
+  color: #c9f5da;
+  border-color: #2e8b58;
+}
+
+.ability-upgrade-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff8d8;
+  background: linear-gradient(180deg, #5a4515, #3a2c0a);
+  border: 1px solid #8a6a1d;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.05s ease, box-shadow 0.15s ease;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ability-upgrade-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #7a5e1f, #4f3c11);
+  box-shadow: 0 0 8px -2px rgba(241, 196, 15, 0.6);
+}
+.ability-upgrade-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.ability-upgrade-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  filter: grayscale(0.5);
+}
+.ability-upgrade-btn.cannot-afford {
+  color: #ffb4b4;
+  border-color: #8a3a3a;
+  background: linear-gradient(180deg, #5a1818, #3a0a0a);
+}
+.ability-upgrade-btn.is-maxed {
+  display: none;
+}
+
+.ability-upgrade-tooltip {
+  position: fixed;
+  background: var(--bg-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  z-index: 60;
+  min-width: 240px;
+  max-width: 360px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  font-size: 12px;
+  color: var(--text-1);
+}
+.ability-upgrade-tooltip .tooltip-header {
+  font-weight: 700;
+  color: var(--text-0);
+  font-size: 13px;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.ability-upgrade-tooltip .tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+  color: var(--text-1);
+}
+.ability-upgrade-tooltip .tooltip-row .arrow {
+  color: var(--text-2);
+  margin: 0 2px;
+}
+.ability-upgrade-tooltip .tooltip-row .up-val {
+  color: var(--good);
+  font-weight: 600;
+}
+.ability-upgrade-tooltip .tooltip-cost {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+  text-align: right;
+  color: var(--good);
+  font-variant-numeric: tabular-nums;
+}
+.ability-upgrade-tooltip .tooltip-cost.cannot-afford {
+  color: var(--warn);
+}
+
+.ability-card.is-upgrade-flash {
+  animation: ability-card-flash 0.32s ease-out;
+}
+@keyframes ability-card-flash {
+  0%   { background: var(--bg-2); box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.0); }
+  40%  { background: #3a3416; box-shadow: 0 0 0 4px rgba(241, 196, 15, 0.35); }
+  100% { background: var(--bg-2); box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.0); }
+}
+
+@media (max-width: 600px) {
+  .ability-upgrade-tooltip {
+    max-width: 220px;
+  }
 }
 
 /* HUD locked state */

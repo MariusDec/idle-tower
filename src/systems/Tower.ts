@@ -4,6 +4,9 @@ import { distance2 } from '../utils/math';
 export class Tower {
   private state: TowerState;
   private fireRateMultiplier = 1;
+  private critBonusChance = 0;
+  private critBonusMultiplier = 1;
+  private lifestealMultiplier = 1;
   private aimX = 0;
   private aimY = 0;
 
@@ -28,6 +31,22 @@ export class Tower {
     return this.state.fireRate * this.fireRateMultiplier;
   }
 
+  get fireRateMultiplierValue(): number {
+    return this.fireRateMultiplier;
+  }
+
+  get effectiveCritChance(): number {
+    return Math.min(1, this.state.critChance + this.critBonusChance);
+  }
+
+  get effectiveCritMultiplier(): number {
+    return this.state.critMultiplier * this.critBonusMultiplier;
+  }
+
+  get effectiveLifesteal(): number {
+    return this.state.lifesteal * this.lifestealMultiplier;
+  }
+
   setPosition(x: number, y: number): void {
     this.state.x = x;
     this.state.y = y;
@@ -43,6 +62,15 @@ export class Tower {
 
   setFireRateMultiplier(multiplier: number): void {
     this.fireRateMultiplier = Math.max(0.01, multiplier);
+  }
+
+  setCritBonus(extraChance: number, extraMultiplier: number): void {
+    this.critBonusChance = Math.max(0, Math.min(1, extraChance));
+    this.critBonusMultiplier = Math.max(1, extraMultiplier);
+  }
+
+  setLifestealMultiplier(multiplier: number): void {
+    this.lifestealMultiplier = Math.max(1, multiplier);
   }
 
   acquireTarget(enemies: Enemy[]): Enemy | null {
@@ -123,9 +151,9 @@ export class Tower {
   }
 
   rollShot(): { damage: number; isCrit: boolean } {
-    const isCrit = Math.random() < this.state.critChance;
+    const isCrit = Math.random() < this.effectiveCritChance;
     const damage = isCrit
-      ? this.state.baseDamage * this.state.critMultiplier
+      ? this.state.baseDamage * this.effectiveCritMultiplier
       : this.state.baseDamage;
     return { damage, isCrit };
   }

@@ -20,7 +20,7 @@ export class Renderer {
     this.height = canvas.height;
   }
 
-  draw(snapshot: RenderSnapshot, options?: { screenFlash?: number }): void {
+  draw(snapshot: RenderSnapshot, options?: { screenFlash?: number; chainPaths?: { points: { x: number; y: number }[]; age: number; life: number }[] }): void {
     this.time += 1 / 60;
     const ctx = this.ctx;
     ctx.drawImage(this.getBackground(), 0, 0);
@@ -34,6 +34,7 @@ export class Renderer {
     this.drawEnemies(ctx, snapshot.enemies);
     this.drawProjectiles(ctx, snapshot.projectiles);
     this.drawParticles(ctx, snapshot.particles, 'front');
+    this.drawChainLightning(ctx, options?.chainPaths);
     this.drawDamageNumbers(ctx, snapshot.damageNumbers);
     this.drawTowerTop(ctx, snapshot);
     this.drawShield(ctx, snapshot);
@@ -512,6 +513,51 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(s.x, s.y, s.currentRadius, 0, Math.PI * 2);
       ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  private drawChainLightning(
+    ctx: CanvasRenderingContext2D,
+    paths: { points: { x: number; y: number }[]; age: number; life: number }[] | undefined,
+  ): void {
+    if (!paths || paths.length === 0) return;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const path of paths) {
+      const lifeRatio = 1 - path.age / path.life;
+      if (lifeRatio <= 0) continue;
+      const points = path.points;
+      for (let i = 0; i < points.length - 1; i++) {
+        const a = points[i];
+        const b = points[i + 1];
+        // Outer glow stroke
+        ctx.globalAlpha = lifeRatio * 0.55;
+        ctx.strokeStyle = 'rgba(120, 160, 255, 0.85)';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const segLen = Math.sqrt(dx * dx + dy * dy);
+        const jag = 5;
+        ctx.moveTo(a.x, a.y);
+        const steps = Math.max(2, Math.floor(segLen / 12));
+        for (let s = 1; s <= steps; s++) {
+          const tt = s / steps;
+          const px = a.x + dx * tt;
+          const py = a.y + dy * tt;
+          const ox = (Math.random() - 0.5) * jag;
+          const oy = (Math.random() - 0.5) * jag;
+          ctx.lineTo(px + ox, py + oy);
+        }
+        ctx.stroke();
+        // Inner bright stroke
+        ctx.globalAlpha = lifeRatio;
+        ctx.strokeStyle = 'rgba(235, 245, 255, 1)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }

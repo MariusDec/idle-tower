@@ -31,6 +31,7 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `ability_cast` | `{ id, def }` | AbilityManager | UIManager (toast, flash) |
 | `ability_visual` | `{ id, def }` | AbilityManager | Game (particle effects) |
 | `ability_ready` | `{ id }` | AbilityManager | — |
+| `ability_upgraded` | `{ id, level }` | AbilityManager | UIManager (toast, flash), Game (save) |
 | `aoe_hit` | `{ hitCount, totalDamage, perEnemy }` | AbilityManager | — |
 | `projectile_fired` | `{ projectile, isCrit }` | ProjectileManager | — |
 | `ascension_performed` | `{ apGained, rpGained, totalAP, lifetimeAP, ascensions }` | PrestigeManager | — |

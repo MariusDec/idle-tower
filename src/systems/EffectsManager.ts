@@ -222,6 +222,152 @@ export class EffectsManager {
     }
   }
 
+  /**
+   * Meteor Strike: a fireball trail falling from above the impact point,
+   * plus an impact ring + sparks at the target.
+   */
+  emitMeteor(targetX: number, targetY: number, fromX: number, fromY: number): void {
+    const trailCount = 28;
+    for (let i = 0; i < trailCount; i++) {
+      const t = i / trailCount;
+      const x = fromX + (targetX - fromX) * t;
+      const y = fromY + (targetY - fromY) * t - Math.sin(t * Math.PI) * 24;
+      this.particles.push({
+        x: x + (Math.random() - 0.5) * 6,
+        y: y + (Math.random() - 0.5) * 6,
+        vx: (Math.random() - 0.5) * 30,
+        vy: 40 + Math.random() * 60,
+        age: 0,
+        life: 0.4 + Math.random() * 0.3,
+        size: 2.5 + Math.random() * 2,
+        color: i % 3 === 0 ? '#fff3b0' : i % 3 === 1 ? '#ff7a1a' : '#ff3a00',
+      });
+    }
+    for (let i = 0; i < 18; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 140;
+      this.particles.push({
+        x: targetX,
+        y: targetY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 40,
+        age: 0,
+        life: 0.45 + Math.random() * 0.35,
+        size: 2 + Math.random() * 2.5,
+        color: i % 2 === 0 ? '#ffb04a' : '#ff3a00',
+      });
+    }
+  }
+
+  /**
+   * Precision Shot: slow golden ring + sparkles around the tower.
+   */
+  emitPrecisionGlow(cx: number, cy: number): void {
+    for (let i = 0; i < 36; i++) {
+      const angle = (i / 36) * Math.PI * 2;
+      const speed = 60 + Math.random() * 18;
+      this.particles.push({
+        x: cx,
+        y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        age: 0,
+        life: 0.6 + Math.random() * 0.2,
+        size: 1.5 + Math.random() * 1.5,
+        color: i % 2 === 0 ? '#ffd34a' : '#fff0a0',
+      });
+    }
+    for (let i = 0; i < 12; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 20 + Math.random() * 30;
+      this.particles.push({
+        x: cx + Math.cos(angle) * dist,
+        y: cy + Math.sin(angle) * dist,
+        vx: (Math.random() - 0.5) * 24,
+        vy: -20 - Math.random() * 30,
+        age: 0,
+        life: 0.4 + Math.random() * 0.3,
+        size: 1.5 + Math.random() * 1.5,
+        color: '#ffe27a',
+      });
+    }
+  }
+
+  /**
+   * Vampiric Aura: red healing particles rising toward the tower.
+   */
+  emitVampiricAura(cx: number, cy: number): void {
+    for (let i = 0; i < 24; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 28 + Math.random() * 36;
+      this.particles.push({
+        x: cx + Math.cos(angle) * dist,
+        y: cy + Math.sin(angle) * dist,
+        vx: -Math.cos(angle) * 12,
+        vy: -60 - Math.random() * 40,
+        age: 0,
+        life: 0.7 + Math.random() * 0.4,
+        size: 2 + Math.random() * 1.5,
+        color: i % 2 === 0 ? '#ff4a4a' : '#c44a4a',
+      });
+    }
+  }
+
+  /**
+   * Execute: wide horizontal slash + blood-red particles.
+   */
+  emitExecuteSlash(cx: number, cy: number): void {
+    for (let i = 0; i < 24; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 50 + Math.random() * 120;
+      this.particles.push({
+        x: cx,
+        y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 30,
+        age: 0,
+        life: 0.4 + Math.random() * 0.3,
+        size: 2 + Math.random() * 2.5,
+        color: i % 2 === 0 ? '#a020f0' : '#ff4a4a',
+      });
+    }
+    for (let i = 0; i < 3; i++) {
+      this.particles.push({
+        x: cx + (Math.random() - 0.5) * 60,
+        y: cy + (Math.random() - 0.5) * 20,
+        vx: 0,
+        vy: -10 - Math.random() * 20,
+        age: 0,
+        life: 0.6 + Math.random() * 0.3,
+        size: 30 + Math.random() * 20,
+        color: 'rgba(180, 30, 240, 0.18)',
+      });
+    }
+  }
+
+  /**
+   * Chain lightning path. Renders jagged white-blue segments
+   * for a few frames; each segment decays in age.
+   * path: ordered list of {x,y} bounce points (first is source, last is final).
+   */
+  private chainPaths: { points: { x: number; y: number }[]; age: number; life: number }[] = [];
+
+  emitChainLightning(points: { x: number; y: number }[]): void {
+    if (points.length < 2) return;
+    this.chainPaths.push({ points: points.slice(), age: 0, life: 0.35 });
+  }
+
+  /** Render-time helper: pops expired chain paths. */
+  tickChainLightning(dt: number): void {
+    if (this.chainPaths.length === 0) return;
+    for (const p of this.chainPaths) p.age += dt;
+    this.chainPaths = this.chainPaths.filter(p => p.age < p.life);
+  }
+
+  get activeChainPaths(): { points: { x: number; y: number }[]; age: number; life: number }[] {
+    return this.chainPaths;
+  }
+
   emitMineExplosion(x: number, y: number): void {
     for (let i = 0; i < 20; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -393,6 +539,7 @@ export class EffectsManager {
     this.particles = [];
     this.damageNumbers = [];
     this.shockwaves = [];
+    this.chainPaths = [];
     this.onShockwaveDamage = null;
   }
 }

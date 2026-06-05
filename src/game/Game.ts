@@ -29,7 +29,7 @@ import { AudioManager } from '../systems/AudioManager';
 import { formatInt } from '../utils/bigNumber';
 import { setStyle, toggleClass } from '../utils/dom';
 
-const BASE_MANA_REGEN = 2;
+const BASE_MANA_REGEN = 1;
 const WAVE_MILESTONES = new Set([10, 25, 50, 100, 200, 500]);
 
 function makeInitialState(): GameState {
@@ -265,7 +265,7 @@ export class Game {
       const def = ENEMY_DEFS[p.enemy.type as keyof typeof ENEMY_DEFS];
       this.effects.emitHitSparks(p.enemy.x, p.enemy.y, def.color, p.killed ? 6 : 3);
       this.effects.emitDamageNumber(p.enemy.x, p.enemy.y, p.amount, !!p.isCrit);
-      const ls = this.tower.snapshot.lifesteal;
+      const ls = this.tower.effectiveLifesteal;
       if (ls > 0 && p.amount > 0) {
         const ts = this.tower.snapshot;
         ts.hp = Math.min(ts.maxHp, ts.hp + p.amount * ls);
@@ -511,8 +511,10 @@ export class Game {
       });
     });
     this.bus.on('ability_visual', (payload: unknown) => {
-      const p = payload as { id: AbilityId; def: { effectType: string } };
+      const p = payload as { id: AbilityId; def: { effectType: string }; target?: { x: number; y: number } | null };
       const t = this.tower.snapshot;
+      const tx = p.target?.x ?? t.x;
+      const ty = p.target?.y ?? t.y;
       switch (p.def.effectType) {
         case 'aoe_damage':
           this.effects.emitRainOfArrows(t.x, t.y);
@@ -526,6 +528,28 @@ export class Game {
         case 'gold_buff':
           this.effects.emitGoldRushSparkle(t.x, t.y);
           break;
+        case 'single_target_damage':
+          this.effects.emitMeteor(tx, ty, t.x, t.y);
+          this.triggerCanvasShake();
+          break;
+        case 'chain_damage':
+          this.effects.emitHitSparks(tx, ty, '#9aa7ff', 6);
+          break;
+        case 'crit_buff':
+          this.effects.emitPrecisionGlow(t.x, t.y);
+          break;
+        case 'lifesteal_buff':
+          this.effects.emitVampiricAura(t.x, t.y);
+          break;
+        case 'execute_damage':
+          this.effects.emitExecuteSlash(tx, ty);
+          break;
+      }
+    });
+    this.bus.on('chain_lightning', (payload: unknown) => {
+      const p = payload as { path: { x: number; y: number }[] };
+      if (p.path && p.path.length >= 2) {
+        this.effects.emitChainLightning(p.path);
       }
     });
 
@@ -540,6 +564,7 @@ export class Game {
     this.bus.on('research_unlocked', saveOnEvent);
     this.bus.on('research_cancelled', saveOnEvent);
     this.bus.on('wave_started', saveOnEvent);
+    this.bus.on('ability_upgraded', saveOnEvent);
   }
 
   start(): void {
@@ -662,6 +687,17 @@ export class Game {
 
   castAbility(id: AbilityId): boolean {
     return this.abilityMgr.tryCast(id, this.state.wave.highestWave);
+  }
+
+  upgradeAbility(id: AbilityId): boolean {
+    const def = ABILITIES.find(a => a.id === id);
+    if (!def) return false;
+    if (this.state.wave.highestWave < def.unlockWave) return false;
+    return this.abilityMgr.upgradeAbility(id);
+  }
+
+  canUpgradeAbility(id: AbilityId): boolean {
+    return this.abilityMgr.canUpgrade(id, this.state.wave.highestWave);
   }
 
   ascend(): number {
@@ -943,21 +979,24 @@ export class Game {
       }
     }
     const totalGoldMulti = 1 + (goldAdditive + lifetimeBonus.gold) * researchGoldMulti * tpResource;
-    const expectedHit = t.baseDamage * (1 + t.critChance * (t.critMultiplier - 1));
-    const dps = expectedHit * t.fireRate;
+    const effectiveCritChance = this.tower.effectiveCritChance;
+    const effectiveCritDamage = this.tower.effectiveCritMultiplier;
+    const effectiveLs = this.tower.effectiveLifesteal;
+    const expectedHit = t.baseDamage * (1 + effectiveCritChance * (effectiveCritDamage - 1));
+    const dps = expectedHit * t.fireRate * this.tower.fireRateMultiplierValue;
     return {
       damage: t.baseDamage,
       dps,
       hp: t.hp,
       maxHp: t.maxHp,
       healthRegen: t.healthRegen,
-      critChance: t.critChance,
-      critDamage: t.critMultiplier,
+      critChance: effectiveCritChance,
+      critDamage: effectiveCritDamage,
       range: t.range,
       fireRate: t.fireRate,
       defense: t.defense,
       armor: t.armor,
-      lifesteal: t.lifesteal,
+      lifesteal: effectiveLs,
       thorns: t.thorns,
       manaRegen: r.manaRegen,
       maxMana: r.maxMana,
@@ -1003,6 +1042,14 @@ export class Game {
       autoProgress: this.waveMgr.getAutoProgress(),
       currentWave: this.waveMgr.currentWave,
       isIntermission: this.state.wave.intermission,
+    });
+    this.ui.setAbilityAPI({
+      canCast: (id, wave) => this.abilityMgr.canCast(id, wave),
+      reasonBlocked: (id, wave) => this.abilityMgr.reasonBlocked(id, wave),
+      canUpgrade: (id, wave) => this.abilityMgr.canUpgrade(id, wave),
+      isMaxed: (id) => this.abilityMgr.isMaxed(id),
+      getUpgradeCost: (id) => this.abilityMgr.getUpgradeCost(id),
+      getEffectiveStats: (id) => this.abilityMgr.getEffectiveStats(id),
     });
   }
 
@@ -1285,6 +1332,7 @@ export class Game {
     this.state.research = [];
     this.state.researchInProgress = null;
     this.automation.reset();
+    this.abilityMgr.resetLevels();
     this.applySavedStateReset();
     this.state.prestige.apSpent = {};
     this.state.prestige.automationFlags = {
@@ -1578,6 +1626,7 @@ export class Game {
     }
 
     this.effects.tick(dt);
+    this.effects.tickChainLightning(dt);
     this.notifications.tick(dt);
     this.automation.tick(dt);
 
@@ -1641,6 +1690,9 @@ export class Game {
       shockwaves: this.effects.shockwaveList,
       mines: this.mines,
       aimLine: this.mouseDown ? { x: this.mouseX, y: this.mouseY } : null,
-    }, { screenFlash: this.screenFlash });
+    }, {
+      screenFlash: this.screenFlash,
+      chainPaths: this.effects.activeChainPaths,
+    });
   }
 }
