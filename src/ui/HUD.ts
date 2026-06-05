@@ -32,6 +32,13 @@ export class HUD {
   private enemyStatsPopup!: HTMLElement;
   private enemyStatsPopupBody!: HTMLElement;
   private enemyStatsInfo: EnemyWaveStatsEntry[] = [];
+  // Tweened display values (P3: smooth number transitions)
+  private displayGold = 0;
+  private displayMana = 0;
+  private displayHP = 0;
+  private displayMaxHP = 0;
+  private displayWave = 1;
+  private tweenInitialized = false;
   private dps = 0;
   private speedApi: SpeedAPI = { speeds: [], currentIndex: 0, maxIndex: 0 };
   private waveApi: WaveControlAPI = { autoProgress: true, currentWave: 1, isIntermission: false };
@@ -171,26 +178,59 @@ export class HUD {
     this.enemyStatsBtn.classList.remove('is-active');
   }
 
+  /**
+   * Per-frame tween for smooth number transitions. Called from Game.update()
+   * every frame (not throttled). Updates display float values that HUD.update()
+   * later renders via textContent.
+   */
+  tickDisplay(dt: number, state: GameState): void {
+    // Initialize display values on first call to avoid giant snap from 0
+    if (!this.tweenInitialized) {
+      this.displayGold = state.resources.gold;
+      this.displayMana = state.resources.mana;
+      this.displayHP = state.tower.hp;
+      this.displayMaxHP = state.tower.maxHp;
+      this.displayWave = state.wave.number;
+      this.tweenInitialized = true;
+    }
+    // Time-constant smoothing: 1 - exp(-dt/tau). Lower tau = snappier.
+    const goldTau = 0.18;
+    const manaTau = 0.12;
+    const hpTau = 0.15;
+    const waveTau = 0.25;
+    const goldAlpha = 1 - Math.exp(-dt / goldTau);
+    const manaAlpha = 1 - Math.exp(-dt / manaTau);
+    const hpAlpha = 1 - Math.exp(-dt / hpTau);
+    const waveAlpha = 1 - Math.exp(-dt / waveTau);
+    this.displayGold += (state.resources.gold - this.displayGold) * goldAlpha;
+    this.displayMana += (state.resources.mana - this.displayMana) * manaAlpha;
+    this.displayHP += (state.tower.hp - this.displayHP) * hpAlpha;
+    this.displayMaxHP += (state.tower.maxHp - this.displayMaxHP) * hpAlpha;
+    this.displayWave += (state.wave.number - this.displayWave) * waveAlpha;
+  }
+
   update(state: GameState): void {
     const manaUnlocked = state.wave.highestWave >= MANA_UNLOCK_WAVE;
     this.manaWrap.classList.toggle('is-locked', !manaUnlocked);
-    this.goldEl.textContent = formatNumber(state.resources.gold);
+    this.goldEl.textContent = formatNumber(this.displayGold);
     if (manaUnlocked) {
-      this.manaEl.textContent = `${Math.floor(state.resources.mana)} / ${state.resources.maxMana}`;
+      const manaDisplay = Math.floor(this.displayMana);
+      this.manaEl.textContent = `${manaDisplay} / ${state.resources.maxMana}`;
       const ratio = state.resources.maxMana > 0
-        ? state.resources.mana / state.resources.maxMana
+        ? this.displayMana / state.resources.maxMana
         : 0;
       this.manaBarFill.style.width = `${Math.min(100, Math.max(0, ratio * 100))}%`;
     } else {
       this.manaEl.textContent = `Locked · wave ${MANA_UNLOCK_WAVE}`;
       this.manaBarFill.style.width = '0%';
     }
-    this.waveEl.textContent = `Wave ${state.wave.number}`;
+    this.waveEl.textContent = `Wave ${Math.round(this.displayWave)}`;
     this.dpsEl.textContent = `${formatNumber(this.dps)} DPS`;
     this.killsEl.textContent = `Kills: ${formatNumber(state.stats.enemiesKilled)}`;
-    const t = state.tower;
-    this.hpEl.textContent = `${Math.max(0, Math.floor(t.hp * 10) / 10)} / ${Math.floor(t.maxHp * 10) / 10}`;
-    const hpRatio = t.maxHp > 0 ? t.hp / t.maxHp : 0;
+    const hpDisplay = Math.max(0, this.displayHP);
+    const maxHpDisplay = Math.max(1, this.displayMaxHP);
+    this.hpEl.textContent = `${formatNumber(hpDisplay)} / ${formatNumber(maxHpDisplay)}`;
+    const hpRatio = maxHpDisplay > 0 ? hpDisplay / maxHpDisplay : 0;
     this.hpBarFill.style.width = `${Math.min(100, Math.max(0, hpRatio * 100))}%`;
     this.hpWrap.classList.toggle('is-critical', hpRatio > 0 && hpRatio <= 0.4);
     this.hpWrap.classList.toggle('is-dead', hpRatio <= 0);

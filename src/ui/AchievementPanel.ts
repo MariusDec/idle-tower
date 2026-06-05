@@ -1,5 +1,6 @@
 import { ACHIEVEMENTS, type AchievementDef, type AchievementCategory } from '../data/achievements';
 import type { GameState } from '../types';
+import { setText, toggleClass } from '../utils/dom';
 
 export interface AchievementPanelHandlers {
   getProgress: (def: AchievementDef) => number;
@@ -107,15 +108,15 @@ export class AchievementPanel {
       const progressEl = this.progressEls.get(def.id);
       if (!card) continue;
       const unlocked = state.achievements?.includes(def.id) ?? false;
-      card.classList.toggle('achievement-unlocked', unlocked);
-      card.classList.toggle('achievement-locked', !unlocked);
+      toggleClass(card, 'achievement-unlocked', unlocked);
+      toggleClass(card, 'achievement-locked', !unlocked);
       if (progressEl) {
         if (unlocked) {
-          progressEl.textContent = '✓ Complete';
+          setText(progressEl, '✓ Complete');
         } else {
           const current = this.handlers.getProgress(def);
           const pct = Math.min(100, Math.floor((current / def.threshold) * 100));
-          progressEl.textContent = `${current.toLocaleString()} / ${def.threshold.toLocaleString()} (${pct}%)`;
+          setText(progressEl, `${current.toLocaleString()} / ${def.threshold.toLocaleString()} (${pct}%)`);
         }
       }
     }

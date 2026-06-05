@@ -5,6 +5,7 @@ import {
   type ResearchCategory,
 } from '../data/research';
 import { formatNumber } from '../utils/bigNumber';
+import { setText, toggleClass, setDisplay, setStyle } from '../utils/dom';
 
 export interface ResearchPanelHandlers {
   onStartResearch: (id: string) => void;
@@ -70,12 +71,12 @@ export class ResearchPanel {
 
   update(state: GameState): void {
     if (!this.root) return;
-    this.rpEl.textContent = formatNumber(state.resources.ascensionPoints);
-    this.ascensionsEl.textContent = formatNumber(state.stats.ascensions);
+    setText(this.rpEl, formatNumber(state.resources.ascensionPoints));
+    setText(this.ascensionsEl, formatNumber(state.stats.ascensions));
     const spent = this.computeSpent();
-    this.spentEl.textContent = formatNumber(spent);
+    setText(this.spentEl, formatNumber(spent));
     const speedPct = Math.round((1 - this.handlers.researchSpeedMultiplier) * 100);
-    this.speedEl.textContent = speedPct > 0 ? `-${speedPct}%` : '—';
+    setText(this.speedEl, speedPct > 0 ? `-${speedPct}%` : '—');
 
     const ip = this.handlers.inProgress;
 
@@ -95,56 +96,56 @@ export class ResearchPanel {
       const isResearching = ip?.id === node.id;
       const reason = this.handlers.reasonBlocked(node.id);
 
-      row.classList.toggle('is-unlocked', unlocked);
-      row.classList.toggle('is-researching', isResearching);
-      row.classList.toggle('is-locked', !unlocked && !isResearching && reason !== null);
-      row.classList.toggle('is-available', !unlocked && !isResearching && reason === null);
+      toggleClass(row, 'is-unlocked', unlocked);
+      toggleClass(row, 'is-researching', isResearching);
+      toggleClass(row, 'is-locked', !unlocked && !isResearching && reason !== null);
+      toggleClass(row, 'is-available', !unlocked && !isResearching && reason === null);
 
       if (isResearching && ip) {
         const pct = Math.min(100, (ip.elapsed / ip.total) * 100);
         const remaining = Math.max(0, ip.total - ip.elapsed);
-        stateEl.textContent = 'Researching…';
+        setText(stateEl, 'Researching…');
         stateEl.className = 'research-state research-state-researching';
-        progressWrap.style.display = '';
-        progressBar.style.width = `${pct}%`;
-        progressText.textContent = `${formatTime(remaining)} remaining`;
-        btn.textContent = 'Cancel';
+        setDisplay(progressWrap, '');
+        setStyle(progressBar, 'width', `${pct}%`);
+        setText(progressText, `${formatTime(remaining)} remaining`);
+        setText(btn, 'Cancel');
         btn.disabled = false;
-        btn.classList.remove('can-afford');
-        btn.classList.add('btn-cancel');
-        timeEst.style.display = 'none';
-        reasonEl.textContent = '';
-        reasonEl.style.display = 'none';
-        costEl.textContent = formatNumber(node.cost);
+        toggleClass(btn, 'can-afford', false);
+        toggleClass(btn, 'btn-cancel', true);
+        setDisplay(timeEst, 'none');
+        setText(reasonEl, '');
+        setDisplay(reasonEl, 'none');
+        setText(costEl, formatNumber(node.cost));
       } else {
-        progressWrap.style.display = 'none';
-        btn.classList.remove('btn-cancel');
+        setDisplay(progressWrap, 'none');
+        toggleClass(btn, 'btn-cancel', false);
         if (unlocked) {
-          stateEl.textContent = 'Completed';
+          setText(stateEl, 'Completed');
           stateEl.className = 'research-state research-state-unlocked';
-          costEl.textContent = '—';
+          setText(costEl, '—');
           btn.disabled = true;
-          btn.classList.remove('can-afford');
-          btn.textContent = 'Done';
-          timeEst.style.display = 'none';
+          toggleClass(btn, 'can-afford', false);
+          setText(btn, 'Done');
+          setDisplay(timeEst, 'none');
         } else {
           const effectiveTime = node.researchTime * this.handlers.researchSpeedMultiplier;
-          stateEl.textContent = reason ?? 'Available';
+          setText(stateEl, reason ?? 'Available');
           stateEl.className = `research-state ${reason !== null ? 'research-state-blocked' : 'research-state-available'}`;
-          costEl.textContent = formatNumber(node.cost);
+          setText(costEl, formatNumber(node.cost));
           const canStart = reason === null;
           btn.disabled = !canStart;
-          btn.classList.toggle('can-afford', canStart);
-          btn.textContent = 'Start';
-          timeEst.textContent = formatTime(effectiveTime);
-          timeEst.style.display = '';
+          toggleClass(btn, 'can-afford', canStart);
+          setText(btn, 'Start');
+          setText(timeEst, formatTime(effectiveTime));
+          setDisplay(timeEst, '');
         }
         if (reason && !unlocked && !isResearching) {
-          reasonEl.textContent = reason;
-          reasonEl.style.display = '';
+          setText(reasonEl, reason);
+          setDisplay(reasonEl, '');
         } else {
-          reasonEl.textContent = '';
-          reasonEl.style.display = 'none';
+          setText(reasonEl, '');
+          setDisplay(reasonEl, 'none');
         }
       }
     }

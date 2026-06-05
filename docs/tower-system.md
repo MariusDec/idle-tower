@@ -7,15 +7,15 @@
 | Field | Default | Description |
 |-------|---------|-------------|
 | `x, y` | canvas center | Position |
-| `baseDamage` | 5 | Raw damage per shot |
-| `fireRate` | 1 | Shots per second~~~~ |
-| `range` | 280 | Targeting radius in pixels |
+| `baseDamage` | 0 | Raw damage per shot (provided by the damage upgrade at L1) |
+| `fireRate` | 1.2 | Shots per second~~~~ |
+| `range` | 300 | Targeting radius in pixels |
 | `critChance` | 0.05 | 5% base crit |
 | `critMultiplier` | 2 | Double damage on crit |
 | `damageType` | `'physical'` | Physical vs magic (affects resist calc) |
 | `targetingMode` | `'nearest'` | Targeting strategy |
-| `hp` | 5 | Current tower health |
-| `maxHp` | 5 | Max tower health |
+| `hp` | 0 | Current tower health (provided by the health upgrade at L1) |
+| `maxHp` | 0 | Max tower health (provided by the health upgrade at L1) |
 | `healthRegen` | 0 | % of max HP regen per second |
 | `defense` | 0 | Flat damage reduction |
 | `armor` | 0 | % damage reduction |
@@ -62,13 +62,13 @@
 
 ## Upgrade Effects Applied (from `Game.applyUpgradeEffects`)
 
-All upgrades reset tower stats to base, then accumulate from `UpgradeManager` levels:
+All upgrades reset tower stats to `TOWER_BASE` (which is 0 for damage/HP), then accumulate from `UpgradeManager` levels. `damage` and `health` start at L1 via `startLevel: 1`, so the tower spawns with the L1 totals:
 - `damage` → additive to `baseDamage`
 - `fireRate` → additive to `fireRate`
 - `range` → additive to `range`
 - `critChance` → additive (capped at 100%)
 - `critDamage` → additive to `critMultiplier`
-- `health` → additive to `maxHp`
+- `health` → additive to `maxHp` (and `hp` is set to `maxHp` on first gain)
 - `healthRegen` → set to total value
 - `defense` → set to total value
 - `armor` → set to total value

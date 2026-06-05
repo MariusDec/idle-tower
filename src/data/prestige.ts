@@ -59,15 +59,30 @@ export function perkCost(def: PrestigePerkDef, level: number): number {
   return Math.floor(def.costPerLevel * Math.pow(s, level));
 }
 
+const perkEffectCache = new Map<string, number>();
+
 export function computePerkEffect(def: PrestigePerkDef, level: number): number {
   if (level <= 0) return 0;
-  if (typeof def.effectPerLevel === 'string') {
-    return evalFormula(def.effectPerLevel, level);
+  const cacheKey = `${def.id}:${level}`;
+  const cached = perkEffectCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  let v: number;
+  if (def.baseEffect && level == 1) {
+    v = def.baseEffect;
+  } else if (typeof def.effectPerLevel === 'string') {
+    v = def.baseEffect ?? 0;
+    for (let i = 2; i <= level; i++) {
+      v += evalFormula(def.effectPerLevel, i);
+    }
+  } else if (def.baseEffect !== undefined) {
+    v = def.baseEffect + def.effectPerLevel * (level - 1);
+  } else {
+    v = def.effectPerLevel * level;
   }
-  if (def.baseEffect !== undefined) {
-    return def.baseEffect + def.effectPerLevel * (level - 1);
-  }
-  return def.effectPerLevel * level;
+
+  perkEffectCache.set(cacheKey, v);
+  return v;
 }
 
 export const ASCENSION_UNLOCK_WAVE = 20;

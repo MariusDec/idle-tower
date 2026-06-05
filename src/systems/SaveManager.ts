@@ -142,6 +142,7 @@ export class SaveManager {
     try {
       const snap = this.snapshot(state);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
+      this.saveTimer = 0;
       return true;
     } catch (err) {
       console.warn('[SaveManager] save failed:', err);
@@ -172,6 +173,8 @@ export class SaveManager {
       this.clear();
       return null;
     }
+
+    this.saveTimer = 0;
     return parsed;
   }
 

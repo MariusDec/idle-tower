@@ -9,6 +9,7 @@ import {
   computePerkEffect,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
+import { setText, toggleClass, setDisplay } from '../utils/dom';
 
 export interface TranscendencePanelHandlers {
   onTranscend: () => void;
@@ -71,10 +72,10 @@ export class TranscendencePanel {
     const previewTP = this.handlers.previewTP(ap);
     const canTranscend = this.handlers.canTranscend(ap);
 
-    this.summaryTP.textContent = formatNumber(tp);
-    this.summaryTranscendences.textContent = formatNumber(transcendences);
-    this.summaryTpDamage.textContent = `+${formatNumber((this.computeTpDamage() - 1) * 100)}%`;
-    this.summaryTpResource.textContent = `+${formatNumber((this.computeTpResource() - 1) * 100)}%`;
+    setText(this.summaryTP, formatNumber(tp));
+    setText(this.summaryTranscendences, formatNumber(transcendences));
+    setText(this.summaryTpDamage, `+${formatNumber((this.computeTpDamage() - 1) * 100)}%`);
+    setText(this.summaryTpResource, `+${formatNumber((this.computeTpResource() - 1) * 100)}%`);
 
     this.updateTranscend(canTranscend, ap, previewTP);
 
@@ -93,25 +94,25 @@ export class TranscendencePanel {
       this.transcendCard.classList.remove('is-locked');
       this.transcendStatus.classList.remove('transcend-status-locked');
       this.transcendStatus.classList.add('transcend-status-ready');
-      this.transcendStatus.textContent = 'Transcendence is available.';
-      this.transcendUnlockLine.style.display = 'none';
+      setText(this.transcendStatus, 'Transcendence is available.');
+      setDisplay(this.transcendUnlockLine, 'none');
     } else {
       this.transcendCard.classList.add('is-locked');
       this.transcendStatus.classList.add('transcend-status-locked');
       this.transcendStatus.classList.remove('transcend-status-ready');
       const remaining = Math.max(0, this.handlers.transcendUnlockAP - ap);
-      this.transcendStatus.textContent = `Reach ${formatNumber(this.handlers.transcendUnlockAP)} AP to unlock Transcendence.`;
-      this.transcendUnlockLine.style.display = '';
-      this.transcendUnlockLine.textContent = `${formatNumber(remaining)} more AP to go.`;
+      setText(this.transcendStatus, `Reach ${formatNumber(this.handlers.transcendUnlockAP)} AP to unlock Transcendence.`);
+      setDisplay(this.transcendUnlockLine, '');
+      setText(this.transcendUnlockLine, `${formatNumber(remaining)} more AP to go.`);
     }
 
-    this.transcendPreview.textContent = canTranscend
+    setText(this.transcendPreview, canTranscend
       ? `Transcending now would grant ${formatNumber(preview)} TP.`
-      : `At ${formatNumber(this.handlers.transcendUnlockAP)} AP you would earn ${formatNumber(tpForAP(this.handlers.transcendUnlockAP))} TP.`;
+      : `At ${formatNumber(this.handlers.transcendUnlockAP)} AP you would earn ${formatNumber(tpForAP(this.handlers.transcendUnlockAP))} TP.`);
     this.transcendBtn.disabled = !canTranscend;
-    this.transcendBtn.classList.toggle('can-transcend', canTranscend);
+    toggleClass(this.transcendBtn, 'can-transcend', canTranscend);
 
-    this.targetWaveLabel.textContent = `Auto-Ascend target wave: ${this.handlers.targetAscendWave}`;
+    setText(this.targetWaveLabel, `Auto-Ascend target wave: ${this.handlers.targetAscendWave}`);
   }
 
   private updateTPRow(p: PrestigePerkDef, tp: number, state: GameState): void {
@@ -128,57 +129,57 @@ export class TranscendencePanel {
     const prereqMet = this.handlers.meetsPrerequisites(p.id);
     const excluded = this.handlers.isExcluded(p.id);
 
-    row.classList.toggle('tp-node--locked', !prereqMet && level === 0);
-    row.classList.toggle('tp-node--excluded', excluded && level === 0);
-    row.classList.toggle('tp-node--purchased', level > 0);
+    toggleClass(row, 'tp-node--locked', !prereqMet && level === 0);
+    toggleClass(row, 'tp-node--excluded', excluded && level === 0);
+    toggleClass(row, 'tp-node--purchased', level > 0);
     row.setAttribute('data-tp-level', String(level));
 
-    levelEl.textContent = excluded && level === 0
+    setText(levelEl, excluded && level === 0
       ? 'Blocked'
       : atMax
         ? (isOneTime ? 'Unlocked' : `Level ${level} (max)`)
         : !prereqMet && level === 0
           ? 'Locked'
-          : (isOneTime ? (level > 0 ? 'Unlocked' : 'Available') : `Level ${level}`);
+          : (isOneTime ? (level > 0 ? 'Unlocked' : 'Available') : `Level ${level}`));
 
     if (p.effectType === 'damage_mult' || p.effectType === 'resource_mult'
       || p.effectType === 'fire_rate_mult' || p.effectType === 'crit_damage_mult'
       || p.effectType === 'mana_regen_mult') {
-      bonusEl.textContent = level > 0
+      setText(bonusEl, level > 0
         ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}%`
-        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% per level`;
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% per level`);
     } else if (p.effectType === 'treasure_chance') {
-      bonusEl.textContent = level > 0
+      setText(bonusEl, level > 0
         ? `${(computePerkEffect(p, level) * 100).toFixed(0)}% chance`
-        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% per level`;
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% per level`);
     } else if (p.effectType === 'start_gold') {
-      bonusEl.textContent = level > 0
+      setText(bonusEl, level > 0
         ? `+${formatNumber(computePerkEffect(p, level))} gold`
-        : `+${formatNumber(computePerkEffect(p, 1))} per level`;
+        : `+${formatNumber(computePerkEffect(p, 1))} per level`);
     } else if (p.effectType === 'pierce') {
-      bonusEl.textContent = level > 0
+      setText(bonusEl, level > 0
         ? `+${Math.floor(computePerkEffect(p, level))} pierce`
-        : '+1 per 2 levels';
+        : '+1 per 2 levels');
     } else if (p.effectType === 'wave_start') {
-      bonusEl.textContent = level > 0
+      setText(bonusEl, level > 0
         ? `Start wave ${computePerkEffect(p, level)}`
-        : `+${computePerkEffect(p, 1)} per level`;
+        : `+${computePerkEffect(p, 1)} per level`);
     } else if (p.effectType === 'auto_buy_speed') {
-      bonusEl.textContent = level > 0
+      setText(bonusEl, level > 0
         ? `-${level}s interval`
-        : '-1s per level';
+        : '-1s per level');
     } else {
-      bonusEl.textContent = '';
+      setText(bonusEl, '');
     }
-    costEl.textContent = atMax ? '—' : formatNumber(cost);
+    setText(costEl, atMax ? '—' : formatNumber(cost));
     const canSpend = !atMax && !excluded && prereqMet && tp >= cost;
     btn.disabled = !canSpend;
-    btn.classList.toggle('can-afford', canSpend);
-    btn.textContent = excluded && level === 0
+    toggleClass(btn, 'can-afford', canSpend);
+    setText(btn, excluded && level === 0
       ? 'Blocked'
       : atMax
         ? (isOneTime ? 'Unlocked' : 'Maxed')
-        : (isOneTime ? `Unlock (${cost} TP)` : 'Buy');
+        : (isOneTime ? `Unlock (${cost} TP)` : 'Buy'));
   }
 
   private updateAutomationRow(key: AutomationKey): void {
@@ -188,17 +189,17 @@ export class TranscendencePanel {
     if (!row || !sw || !status) return;
     const unlocked = this.handlers.isAutomationUnlocked(key);
     const enabled = this.handlers.isAutomationEnabled(key);
-    row.classList.toggle('is-locked', !unlocked);
-    row.classList.toggle('is-unlocked', unlocked);
+    toggleClass(row, 'is-locked', !unlocked);
+    toggleClass(row, 'is-unlocked', unlocked);
     sw.disabled = !unlocked;
     sw.checked = unlocked && enabled;
-    status.textContent = !unlocked
+    setText(status, !unlocked
       ? 'Locked — purchase the matching perk to unlock'
       : enabled
       ? 'Active'
-      : 'Inactive';
-    status.classList.toggle('automation-status-on', unlocked && enabled);
-    status.classList.toggle('automation-status-off', unlocked && !enabled);
+      : 'Inactive');
+    toggleClass(status, 'automation-status-on', unlocked && enabled);
+    toggleClass(status, 'automation-status-off', unlocked && !enabled);
   }
 
   private computeTpDamage(): number {

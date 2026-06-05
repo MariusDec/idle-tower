@@ -9,7 +9,7 @@ export function enemyDamageForWave(baseDamage: number, wave: number): number {
 export function bossHPForWave(baseHP: number, wave: number): number {
   const waveIndex = Math.max(0, wave - 1);
   const tier = Math.floor(waveIndex / 10);
-  return baseHP * Math.pow(1.15, waveIndex) * Math.pow(1.35, tier);
+  return baseHP * Math.pow(1.12, waveIndex) * Math.pow(1.35, tier);
 }
 
 export function enemySpeedForWave(baseSpeed: number, wave: number): number {
@@ -23,6 +23,16 @@ export function goldDropForWave(baseGold: number, wave: number): number {
 
 export function enemyCountForWave(wave: number): number {
   return 5 + Math.floor((wave - 1) * 1.2);
+}
+
+export function bossCountForWave(wave: number): number {
+  const tier = Math.max(1, Math.floor(wave / 10));
+  return 2 + tier;
+}
+
+export function spawnCountForWave(wave: number): number {
+  if (isBossWave(wave)) return bossCountForWave(wave);
+  return enemyCountForWave(wave);
 }
 
 export function spawnIntervalForWave(wave: number): number {

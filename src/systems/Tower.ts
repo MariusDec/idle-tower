@@ -56,19 +56,23 @@ export class Tower {
     }
     if (candidates.length === 0) return null;
 
-    switch (this.state.targetingMode) {
-      case 'nearest': {
-        let best: Enemy | null = null;
-        let bestD = Infinity;
-        for (const e of candidates) {
-          const d = distance2(this.state.x, this.state.y, e.x, e.y);
-          if (d < bestD) {
-            bestD = d;
-            best = e;
-          }
+    const findNearest = (list: Enemy[]): Enemy | null => {
+      let best: Enemy | null = null;
+      let bestD = Infinity;
+      for (const e of list) {
+        const d = distance2(this.state.x, this.state.y, e.x, e.y);
+        if (d < bestD) {
+          bestD = d;
+          best = e;
         }
-        return best;
       }
+      return best;
+    };
+
+    switch (this.state.targetingMode) {
+      case 'nearest':
+      case 'first':
+        return findNearest(candidates);
       case 'lowest_hp': {
         let best: Enemy | null = null;
         let bestHp = Infinity;
@@ -80,13 +84,36 @@ export class Tower {
         }
         return best;
       }
-      case 'first': {
+      case 'strongest': {
         let best: Enemy | null = null;
-        let bestDistToTower = Infinity;
+        let bestHp = -Infinity;
         for (const e of candidates) {
-          const d = distance2(e.x, e.y, this.state.x, this.state.y);
-          if (d < bestDistToTower) {
-            bestDistToTower = d;
+          if (e.maxHp > bestHp) {
+            bestHp = e.maxHp;
+            best = e;
+          }
+        }
+        return best;
+      }
+      case 'boss': {
+        // Prioritize bosses, then nearest
+        const bosses = candidates.filter(e => e.type === 'boss');
+        if (bosses.length > 0) return findNearest(bosses);
+        return findNearest(candidates);
+      }
+      case 'flying': {
+        // Prioritize flying, then nearest
+        const flying = candidates.filter(e => e.type === 'flying');
+        if (flying.length > 0) return findNearest(flying);
+        return findNearest(candidates);
+      }
+      case 'last': {
+        let best: Enemy | null = null;
+        let bestD = -Infinity;
+        for (const e of candidates) {
+          const d = distance2(this.state.x, this.state.y, e.x, e.y);
+          if (d > bestD) {
+            bestD = d;
             best = e;
           }
         }

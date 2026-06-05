@@ -1,6 +1,7 @@
 import type { EnemyType, WaveState } from '../types';
 import {
   enemyCountForWave,
+  spawnCountForWave,
   isBossWave,
   spawnIntervalForWave,
 } from '../data/formulas';
@@ -75,7 +76,9 @@ export class WaveManager {
     if (wave >= 3) available.push('fast');
     if (wave >= 5) available.push('tank');
     if (wave >= 8) available.push('flying');
+    if (wave >= 12) available.push('splitter');
     if (wave >= 15) available.push('healer');
+    if (wave >= 20) available.push('shielded');
 
     if (isBossWave(wave)) {
       return 'boss';
@@ -87,6 +90,8 @@ export class WaveManager {
       if (t === 'tank') return 2;
       if (t === 'flying') return 2;
       if (t === 'healer') return 1;
+      if (t === 'splitter') return 2;
+      if (t === 'shielded') return 1;
       return 1;
     });
     const total = weights.reduce((a, b) => a + b, 0);
@@ -125,7 +130,7 @@ export class WaveManager {
       return;
     }
 
-    this.state.enemiesToSpawn = enemyCountForWave(wave);
+    this.state.enemiesToSpawn = spawnCountForWave(wave);
     this.state.enemiesSpawned = 0;
     this.state.spawnInterval = spawnIntervalForWave(wave);
     this.state.spawnTimer = 0.5;
@@ -150,7 +155,7 @@ export class WaveManager {
       highestWave: highestWave,
       spawning: true,
       enemiesSpawned: 0,
-      enemiesToSpawn: enemyCountForWave(target),
+      enemiesToSpawn: spawnCountForWave(target),
       spawnInterval: spawnIntervalForWave(target),
       spawnTimer: 0.4,
       intermission: false,

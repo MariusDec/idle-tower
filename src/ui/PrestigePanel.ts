@@ -8,6 +8,7 @@ import {
   computePerkEffect,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
+import { setText, toggleClass, setDisplay } from '../utils/dom';
 
 export interface PrestigePanelHandlers {
   onAscend: () => void;
@@ -60,12 +61,12 @@ export class PrestigePanel {
     const previewAP = this.handlers.previewAP(highestWave);
     const canAscend = this.handlers.canAscend(highestWave);
 
-    this.summaryAP.textContent = formatNumber(ap);
-    this.summaryLifetimeAP.textContent = formatNumber(lifetimeAP);
+    setText(this.summaryAP, formatNumber(ap));
+    setText(this.summaryLifetimeAP, formatNumber(lifetimeAP));
     const lifetimeBonusPct = (lifetimeAP * 0.02 * 100).toFixed(0);
-    this.summaryLifetimeBonus.textContent = `+${lifetimeBonusPct}% dmg / gold`;
-    this.summaryAscensions.textContent = formatNumber(ascensions);
-    this.summaryHighestWave.textContent = formatNumber(highestWave);
+    setText(this.summaryLifetimeBonus, `+${lifetimeBonusPct}% dmg / gold`);
+    setText(this.summaryAscensions, formatNumber(ascensions));
+    setText(this.summaryHighestWave, formatNumber(highestWave));
 
     this.updateAscend(canAscend, highestWave, previewAP);
 
@@ -79,23 +80,23 @@ export class PrestigePanel {
       this.ascendCard.classList.remove('is-locked');
       this.ascendStatus.classList.remove('ascend-status-locked');
       this.ascendStatus.classList.add('ascend-status-ready');
-      this.ascendStatus.textContent = 'Ascension is available.';
-      this.ascendUnlockLine.style.display = 'none';
+      setText(this.ascendStatus, 'Ascension is available.');
+      setDisplay(this.ascendUnlockLine, 'none');
     } else {
       this.ascendCard.classList.add('is-locked');
       this.ascendStatus.classList.add('ascend-status-locked');
       this.ascendStatus.classList.remove('ascend-status-ready');
       const remaining = Math.max(0, this.handlers.ascendUnlockWave - wave);
-      this.ascendStatus.textContent = `Reach wave ${this.handlers.ascendUnlockWave} to unlock Ascension.`;
-      this.ascendUnlockLine.style.display = '';
-      this.ascendUnlockLine.textContent = `${formatNumber(remaining)} more wave${remaining === 1 ? '' : 's'} to go.`;
+      setText(this.ascendStatus, `Reach wave ${this.handlers.ascendUnlockWave} to unlock Ascension.`);
+      setDisplay(this.ascendUnlockLine, '');
+      setText(this.ascendUnlockLine, `${formatNumber(remaining)} more wave${remaining === 1 ? '' : 's'} to go.`);
     }
 
-    this.ascendPreview.textContent = canAscend
+    setText(this.ascendPreview, canAscend
       ? `Ascending now would grant ${formatNumber(preview)} AP.`
-      : `At wave ${this.handlers.ascendUnlockWave} you would earn ${formatNumber(apForWave(this.handlers.ascendUnlockWave))} AP.`;
+      : `At wave ${this.handlers.ascendUnlockWave} you would earn ${formatNumber(apForWave(this.handlers.ascendUnlockWave))} AP.`);
     this.ascendBtn.disabled = !canAscend;
-    this.ascendBtn.classList.toggle('can-ascend', canAscend);
+    toggleClass(this.ascendBtn, 'can-ascend', canAscend);
   }
 
   private updateAPRow(p: PrestigePerkDef, ap: number, state: GameState): void {
@@ -110,19 +111,20 @@ export class PrestigePanel {
     const cost = atMax ? Infinity : perkCost(p, level);
 
     if (isOneTime) {
-      levelEl.textContent = atMax ? 'Unlocked' : 'Locked';
+      setText(levelEl, atMax ? 'Unlocked' : 'Locked');
     } else {
-      levelEl.textContent = atMax ? `Level ${level} (max)` : `Level ${level}`;
+      setText(levelEl, atMax ? `Level ${level} (max)` : `Level ${level}`);
     }
 
-    bonusEl.textContent = this.formatAPBonusText(p, level, atMax);
-    costEl.textContent = atMax ? '—' : formatNumber(cost);
+    setText(bonusEl, this.formatAPBonusText(p, level, atMax));
+    setText(costEl, atMax ? '—' : formatNumber(cost));
     const canSpend = !atMax && ap >= cost;
     btn.disabled = !canSpend;
-    btn.classList.toggle('can-afford', canSpend);
-    btn.textContent = atMax
+    toggleClass(btn, 'can-afford', canSpend);
+    setText(btn, atMax
       ? (isOneTime ? 'Unlocked' : 'Maxed')
-      : (isOneTime ? `Unlock (${cost} AP)` : 'Buy');
+      : (isOneTime ? `Unlock (${cost} AP)` : 'Buy')
+    );
   }
 
   private formatAPBonusText(p: PrestigePerkDef, level: number, atMax: boolean): string {

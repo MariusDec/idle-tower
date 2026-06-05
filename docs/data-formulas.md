@@ -29,11 +29,13 @@ else:
 
 ## Tower Base Stats (`src/data/tower.ts`)
 
-- Damage: 5, Fire Rate: 1 (active: 1.3), Range: 280
+- Damage: 0, Fire Rate: 1 (active: 1.3), Range: 280
 - Crit: 5% chance, 2x multiplier
-- HP: 5, Health Regen: 0
+- HP: 0, Health Regen: 0
 - Defense: 0, Armor: 0
 - Projectile Speed: 720 px/s
+
+The tower itself has no base damage or HP. Both are provided by the `damage` and `health` upgrades, which start at L1. Their starting totals are defined by their upgrade formulas (see `src/data/upgrades.ts`).
 
 ## Enemy Definitions (`src/data/enemies.ts`)
 

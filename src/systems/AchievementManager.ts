@@ -73,4 +73,10 @@ export class AchievementManager {
   get unlocked(): string[] {
     return this.ctx.getAchievements();
   }
+
+  reset(): void {
+    this.ctx.getAchievements().length = 0;
+    //this.ctx.getStats().reset();
+    //this.ctx.researchCount() = 0;
+  }
 }

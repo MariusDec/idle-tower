@@ -1,10 +1,10 @@
 import { evalFormula } from './data/formulas';
 
-export type EnemyType = 'normal' | 'fast' | 'tank' | 'flying' | 'healer' | 'boss';
+export type EnemyType = 'normal' | 'fast' | 'tank' | 'flying' | 'healer' | 'boss' | 'splitter' | 'shielded';
 
 export type DamageType = 'physical' | 'magic';
 
-export type TargetingMode = 'nearest' | 'lowest_hp' | 'first';
+export type TargetingMode = 'nearest' | 'lowest_hp' | 'first' | 'strongest' | 'boss' | 'flying' | 'last';
 
 export type UpgradeCategory = 'tower' | 'defense' | 'economy' | 'utility';
 
@@ -74,6 +74,15 @@ export interface Enemy {
   attackCooldown: number;
   attacking: boolean;
   alive: boolean;
+  // Healer AI
+  healCooldown?: number;
+  // Shielded charges (each absorbs one hit)
+  shieldCharges?: number;
+  // Splitter recursion guard
+  isSplitChild?: boolean;
+  // Boss enrage (Phase 2)
+  enraged?: boolean;
+  enrageTriggered?: boolean;
 }
 
 export interface Projectile {
@@ -175,25 +184,39 @@ export interface UpgradeDef {
   baseEffect?: number;
   scaling?: UpgradeScaling;
   evolutions?: UpgradeEvolution[];
+  startLevel?: number;
 }
+
+const upgradeValueCache = new Map<string, number>();
 
 export function computeUpgradeValue(def: UpgradeDef, level: number): number {
   if (level <= 0) return 0;
+  const cacheKey = `${def.id}:${level}`;
+  const cached = upgradeValueCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  let v: number;
   if (def.scaling) {
     const step = def.scaling.step ?? 0;
     const increments = step > 0 ? Math.floor(level / step) : (level - 1);
-    let v = def.scaling.base + def.scaling.perLevel * increments;
+    v = def.scaling.base + def.scaling.perLevel * increments;
     if (def.scaling.cap?.min !== undefined) v = Math.max(def.scaling.cap.min, v);
     if (def.scaling.cap?.max !== undefined) v = Math.min(def.scaling.cap.max, v);
-    return v;
+  } else if (def.baseEffect && level == 1) {
+    v = def.baseEffect;
+  } else if (typeof def.effectPerLevel === 'string') {
+    v = def.baseEffect ?? 0;
+    for (let i = 2; i <= level; i++) {
+      v += evalFormula(def.effectPerLevel, i);
+    }
+  } else if (def.baseEffect !== undefined) {
+    v = def.baseEffect + def.effectPerLevel * (level - 1);
+  } else {
+    v = def.effectPerLevel * level;
   }
-  if (typeof def.effectPerLevel === 'string') {
-    return (def.baseEffect ?? 0) + evalFormula(def.effectPerLevel, level);
-  }
-  if (def.baseEffect !== undefined) {
-    return def.baseEffect + def.effectPerLevel * (level - 1);
-  }
-  return def.effectPerLevel * level;
+
+  upgradeValueCache.set(cacheKey, v);
+  return v;
 }
 
 export interface UpgradeRuntime {
@@ -287,6 +310,14 @@ export interface Shockwave {
   life: number;
   color: string;
   lineWidth: number;
+  /** Optional damage dealt by this shockwave. Set to non-zero for damaging waves
+   *  (e.g., boss death rings). The damage is applied once when the ring crosses
+   *  each enemy — see EffectsManager.tick for details. */
+  damage?: number;
+  damageType?: 'physical' | 'magic' | 'true';
+  /** Per-shockwave flag; flipped to true after the first damage pass so each
+   *  enemy only takes one hit. */
+  hasDamaged?: boolean;
 }
 
 export interface RenderSnapshot {

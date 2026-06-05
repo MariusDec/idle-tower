@@ -77,6 +77,26 @@ function bootstrap(): void {
   });
   ui.setOnClearSave(() => {
     game.clearSave();
+    ui.setActiveTab('upgrades');
+  });
+  ui.setOnVolumeChange((v) => {
+    game.audioMgr.setVolume(v);
+  });
+  ui.setOnMuteToggle(() => {
+    game.audioMgr.toggleMute();
+  });
+  ui.setOnTargetingModeChange((mode) => {
+    game.towerSystem.setTargetingMode(mode as 'nearest' | 'lowest_hp' | 'first' | 'strongest' | 'boss' | 'flying' | 'last');
+  });
+  ui.setAudioAPI({
+    volume: game.audioMgr.currentVolume,
+    muted: game.audioMgr.isMuted,
+    setVolume: (v) => game.audioMgr.setVolume(v),
+    toggleMute: () => game.audioMgr.toggleMute(),
+  });
+  ui.setTargetingAPI({
+    currentMode: game.gameState.tower.targetingMode,
+    setMode: (m) => game.towerSystem.setTargetingMode(m as 'nearest' | 'lowest_hp' | 'first' | 'strongest' | 'boss' | 'flying' | 'last'),
   });
   ui.setAbilityAPI({
     canCast: (id, wave) => game.abilities.canCast(id, wave),
@@ -105,6 +125,7 @@ function bootstrap(): void {
   });
 
   let mouseDown = false;
+  const ensureAudio = () => game.initAudio();
   canvas.addEventListener('mousemove', (ev) => {
     const rect = canvas.getBoundingClientRect();
     game.setMouseInput(ev.clientX - rect.left, ev.clientY - rect.top, mouseDown);
@@ -113,6 +134,7 @@ function bootstrap(): void {
     mouseDown = true;
     const rect = canvas.getBoundingClientRect();
     game.setMouseInput(ev.clientX - rect.left, ev.clientY - rect.top, true);
+    ensureAudio();
   });
   canvas.addEventListener('mouseup', () => {
     mouseDown = false;
@@ -120,6 +142,7 @@ function bootstrap(): void {
   });
 
   window.addEventListener('keydown', (ev) => {
+    ensureAudio();
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement) return;
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     const def = ABILITIES.find(a => a.hotkey === ev.key);
@@ -148,6 +171,8 @@ function bootstrap(): void {
   });
 
   game.setFpsOverlay(ui.getFpsElement());
+  const canvasWrap = document.querySelector('.canvas-wrap') as HTMLElement | null;
+  game.setCanvasWrap(canvasWrap);
   game.tryLoadSave();
   game.start();
 

@@ -26,6 +26,11 @@ export class EffectsManager {
     return this.shockwaves;
   }
 
+  /** Optional callback invoked once per shockwave that has a `damage` field,
+   *  passing the shockwave object so the owner (e.g., Game.ts) can apply damage
+   *  to enemies inside the ring. Set to null to clear. */
+  onShockwaveDamage: ((s: Shockwave) => void) | null = null;
+
   emitHitSparks(x: number, y: number, color: string, count: number = 4): void {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -90,6 +95,37 @@ export class EffectsManager {
     }
   }
 
+  /**
+   * Big boss-entry ring expanding from the tower.
+   */
+  emitBossEntryPulse(cx: number, cy: number): void {
+    for (let r = 0; r < 3; r++) {
+      this.shockwaves.push({
+        x: cx,
+        y: cy,
+        currentRadius: 0,
+        maxRadius: 360 + r * 60,
+        age: -r * 0.1,
+        life: 0.9,
+        color: `rgba(220, 60, 60, ${0.7 - r * 0.2})`,
+        lineWidth: 6 - r,
+      });
+    }
+    for (let i = 0; i < 24; i++) {
+      const angle = (i / 24) * Math.PI * 2;
+      this.particles.push({
+        x: cx + Math.cos(angle) * 40,
+        y: cy + Math.sin(angle) * 40,
+        vx: Math.cos(angle) * 60,
+        vy: Math.sin(angle) * 60,
+        age: 0,
+        life: 0.5 + Math.random() * 0.2,
+        size: 2 + Math.random() * 2,
+        color: '#ff4040',
+      });
+    }
+  }
+
   emitRainOfArrows(cx: number, cy: number): void {
     for (let i = 0; i < 40; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -126,7 +162,16 @@ export class EffectsManager {
     }
   }
 
-  emitShockwaveRing(cx: number, cy: number, radius: number): void {
+  emitShockwaveRing(
+    cx: number,
+    cy: number,
+    radius: number,
+    color?: string,
+    lineWidth?: number,
+    startDelay?: number,
+    damage?: number,
+    damageType?: 'physical' | 'magic' | 'true',
+  ): void {
     if (radius <= 0) return;
     const life = Math.min(SHOCKWAVE_MAX_LIFE, Math.max(SHOCKWAVE_MIN_LIFE, radius / SHOCKWAVE_SPEED));
     this.shockwaves.push({
@@ -134,10 +179,12 @@ export class EffectsManager {
       y: cy,
       currentRadius: 0,
       maxRadius: radius,
-      age: 0,
+      age: -(startDelay ?? 0),
       life,
-      color: 'rgba(24, 125, 122, 0.7)',
-      lineWidth: 6,
+      color: color ?? 'rgba(24, 125, 122, 0.7)',
+      lineWidth: lineWidth ?? 6,
+      damage,
+      damageType: damageType ?? 'magic',
     });
   }
 
@@ -221,6 +268,72 @@ export class EffectsManager {
     }
   }
 
+  /**
+   * Emit shield-break particles for a shielded enemy taking a hit
+   * (one charge consumed). Visually distinct from tower shield absorb.
+   */
+  emitEnemyShieldBreak(x: number, y: number): void {
+    for (let i = 0; i < 14; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 16 + Math.random() * 8;
+      this.particles.push({
+        x: x + Math.cos(angle) * dist,
+        y: y + Math.sin(angle) * dist,
+        vx: Math.cos(angle) * 70,
+        vy: Math.sin(angle) * 70,
+        age: 0,
+        life: 0.3 + Math.random() * 0.2,
+        size: 2 + Math.random() * 2,
+        color: i % 2 === 0 ? '#ffffff' : '#a0d8ff',
+      });
+    }
+  }
+
+  /**
+   * Heal beam particles flowing from healer to target.
+   */
+  emitHealParticles(x0: number, y0: number, x1: number, y1: number): void {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+    const count = Math.min(8, Math.max(2, Math.floor(dist / 30)));
+    for (let i = 0; i < count; i++) {
+      const t = Math.random();
+      const px = x0 + dx * t;
+      const py = y0 + dy * t;
+      this.particles.push({
+        x: px,
+        y: py,
+        vx: (dx / dist) * 30 + (Math.random() - 0.5) * 18,
+        vy: (dy / dist) * 30 + (Math.random() - 0.5) * 18,
+        age: 0,
+        life: 0.35 + Math.random() * 0.2,
+        size: 1.5 + Math.random() * 1.5,
+        color: i % 2 === 0 ? '#3edc81' : '#aaf2c0',
+      });
+    }
+  }
+
+  /**
+   * Splitter death burst — extra particles for split event.
+   */
+  emitSplitBurst(x: number, y: number): void {
+    for (let i = 0; i < 22; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 140;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 30,
+        age: 0,
+        life: 0.4 + Math.random() * 0.3,
+        size: 2 + Math.random() * 2,
+        color: i % 2 === 0 ? '#c098ff' : '#ffffff',
+      });
+    }
+  }
+
   emitDamageNumber(x: number, y: number, amount: number, isCrit: boolean): void {
     this.damageNumbers.push({
       x: x + (Math.random() - 0.5) * 10,
@@ -257,7 +370,19 @@ export class EffectsManager {
 
     for (const s of this.shockwaves) {
       s.age += dt;
+      if (s.age < 0) {
+        s.currentRadius = 0;
+        continue;
+      }
       s.currentRadius = (s.age / s.life) * s.maxRadius;
+      // Damage callback: invoked once per shockwave (the first frame after
+      // the start delay) if it carries damage. The owner (Game.ts) is
+      // responsible for finding enemies within the *current radius band* and
+      // applying damage, then setting `s.hasDamaged = true`.
+      if (s.damage && !s.hasDamaged && this.onShockwaveDamage) {
+        this.onShockwaveDamage(s);
+        s.hasDamaged = true;
+      }
     }
     if (this.shockwaves.length > 0) {
       this.shockwaves = this.shockwaves.filter(s => s.age < s.life);
@@ -268,5 +393,6 @@ export class EffectsManager {
     this.particles = [];
     this.damageNumbers = [];
     this.shockwaves = [];
+    this.onShockwaveDamage = null;
   }
 }

@@ -10,6 +10,7 @@ import {
 } from '../data/formulas';
 import { HUD } from './HUD';
 import { UpgradePanel } from './UpgradePanel';
+import { UPGRADES } from '../data/upgrades';
 import { AbilityPanel } from './AbilityPanel';
 import { PrestigePanel } from './PrestigePanel';
 import { TranscendencePanel } from './TranscendencePanel';
@@ -75,6 +76,18 @@ export interface PrestigeAPI {
   targetAscendWave: number;
 }
 
+export interface TargetingAPI {
+  currentMode: string;
+  setMode: (mode: string) => void;
+}
+
+export interface AudioAPI {
+  volume: number;
+  muted: boolean;
+  setVolume: (v: number) => void;
+  toggleMute: () => void;
+}
+
 export class UIManager {
   private readonly tabsRoot: HTMLElement;
   private readonly contentRoot: HTMLElement;
@@ -109,6 +122,19 @@ export class UIManager {
   private onNextWave: () => void = () => {};
   private onToggleAutoProgress: () => void = () => {};
   private onClearSave: () => void = () => {};
+  private onVolumeChange: (v: number) => void = () => {};
+  private onMuteToggle: () => void = () => {};
+  private onTargetingModeChange: (mode: string) => void = () => {};
+  private audioApi: AudioAPI = {
+    volume: 0.6,
+    muted: false,
+    setVolume: () => {},
+    toggleMute: () => {},
+  };
+  private targetingApi: TargetingAPI = {
+    currentMode: 'nearest',
+    setMode: () => {},
+  };
   private abilityApi: AbilityAPI = {
     canCast: () => false,
     reasonBlocked: () => 'Loading...',
@@ -201,6 +227,12 @@ export class UIManager {
     this.researchPanel = new ResearchPanel(researchHandlers);
     this.settingsPanel = new SettingsPanel({
       onClearSave: () => this.onClearSave(),
+      onVolumeChange: (v) => this.onVolumeChange(v),
+      onMuteToggle: () => this.onMuteToggle(),
+      onTargetingModeChange: (m) => this.onTargetingModeChange(m),
+      initialVolume: this.audioApi.volume,
+      initialMuted: this.audioApi.muted,
+      currentTargetingMode: this.targetingApi.currentMode,
     });
     this.achievementPanel = new AchievementPanel({
       getProgress: (def) => {
@@ -213,9 +245,12 @@ export class UIManager {
     this.activateTabButtons('upgrades');
     this.showTab('upgrades');
 
-    this.bus.on('upgrade_purchased', (_payload: unknown) => {
-      // const p = payload as { id: string };
-      // this.bus.emit('toast', { kind: 'info', text: `Upgraded: ${p.id}` });
+    this.bus.on('upgrade_purchased', (payload: unknown) => {
+      const p = payload as { id: string; level: number };
+      const def = UPGRADES.find(u => u.id === p.id);
+      const name = def?.name ?? p.id;
+      this.bus.emit('toast', { kind: 'info', text: `Upgraded: ${name} Lv.${p.level}`, life: 2 });
+      this.upgradePanel.flashButton(p.id);
     });
     this.bus.on('ability_cast', (payload: unknown) => {
       const p = payload as { id: AbilityId; def: { name: string } };
@@ -290,6 +325,26 @@ export class UIManager {
     this.onClearSave = handler;
   }
 
+  setOnVolumeChange(handler: (v: number) => void): void {
+    this.onVolumeChange = handler;
+  }
+
+  setOnMuteToggle(handler: () => void): void {
+    this.onMuteToggle = handler;
+  }
+
+  setOnTargetingModeChange(handler: (mode: string) => void): void {
+    this.onTargetingModeChange = handler;
+  }
+
+  setAudioAPI(api: AudioAPI): void {
+    this.audioApi = api;
+  }
+
+  setTargetingAPI(api: TargetingAPI): void {
+    this.targetingApi = api;
+  }
+
   setSpeedAPI(api: SpeedAPI): void {
     this.hud.setSpeedAPI(api);
   }
@@ -334,6 +389,14 @@ export class UIManager {
 
   setDPS(dps: number): void {
     this.hud.setDPS(dps);
+  }
+
+  /**
+   * Per-frame HUD number tweening. Called from Game.update() before the
+   * throttled ui.update() writes the values to the DOM.
+   */
+  tickDisplayHud(dt: number, state: GameState): void {
+    this.hud.tickDisplay(dt, state);
   }
 
   update(state: GameState): void {
@@ -407,7 +470,9 @@ export class UIManager {
       if (wave >= 3) types.push('fast');
       if (wave >= 5) types.push('tank');
       if (wave >= 8) types.push('flying');
+      if (wave >= 12) types.push('splitter');
       if (wave >= 15) types.push('healer');
+      if (wave >= 20) types.push('shielded');
     }
     const entries: EnemyWaveStatsEntry[] = types.map(t => {
       const def = ENEMY_DEFS[t];
@@ -478,6 +543,10 @@ export class UIManager {
         }
       }
     }
+  }
+
+  setActiveTab(id: PanelTab): void {
+    this.showTab(id);
   }
 
   private showTab(id: PanelTab): void {

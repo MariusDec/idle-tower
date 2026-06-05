@@ -7,15 +7,16 @@ export const UPGRADES: UpgradeDef[] = [
     description: 'Increases the base damage',
     baseCost: 30,
     costGrowth: 1.15,
-    effectPerLevel: 'Math.pow(1.1, {level} - 1)',
+    effectPerLevel: '4 * Math.pow(1.1, {level} - 1)',
     baseEffect: 4,
+    startLevel: 1,
     effectType: 'add',
     maxLevel: 999,
     category: 'tower',
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
     evolutions: [
-      { level: 15, name: 'Keen Arrows', description: '+10% armor penetration', effectId: 'armor_pen', effectValue: 0.10 },
-      { level: 50, name: 'Vorpal Arrows', description: '3% instant kill on non-bosses', effectId: 'instant_kill', effectValue: 0.03 },
+      { level: 25, name: 'Keen Arrows', description: '+10% armor penetration', effectId: 'armor_pen', effectValue: 0.10 },
+      { level: 75, name: 'Vorpal Arrows', description: '3% instant kill on non-bosses', effectId: 'instant_kill', effectValue: 0.03 },
     ],
   },
   {
@@ -28,10 +29,10 @@ export const UPGRADES: UpgradeDef[] = [
     effectType: 'add',
     maxLevel: 100,
     category: 'tower',
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
     evolutions: [
-      { level: 15, name: 'Rapid Fire', description: 'Every 5th shot fires double', effectId: 'double_shot', effectValue: 5 },
-      { level: 40, name: 'Machine Gun', description: '+50% fire rate during Berserk', effectId: 'berserk_fire_bonus', effectValue: 0.5 },
+      { level: 25, name: 'Rapid Fire', description: 'Every 5th shot fires double', effectId: 'double_shot', effectValue: 5 },
+      { level: 50, name: 'Machine Gun', description: '+50% fire rate during Berserk', effectId: 'berserk_fire_bonus', effectValue: 0.5 },
     ],
   },
   {
@@ -44,7 +45,7 @@ export const UPGRADES: UpgradeDef[] = [
     effectType: 'add',
     maxLevel: 60,
     category: 'tower',
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
   },
   {
     id: 'critChance',
@@ -52,14 +53,14 @@ export const UPGRADES: UpgradeDef[] = [
     description: 'Increases crit chance',
     baseCost: 120,
     costGrowth: 1.35,
-    effectPerLevel: 0.012,
+    effectPerLevel: 0.01,
     effectType: 'add',
     maxLevel: 95,
     category: 'tower',
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
     evolutions: [
-      { level: 15, name: 'Hawk Eye', description: 'Crits deal 20% AoE splash', effectId: 'crit_splash', effectValue: 0.20 },
-      { level: 50, name: 'True Sight', description: 'Critical hits ignore armor', effectId: 'crit_ignore_armor', effectValue: 1 },
+      { level: 25, name: 'Hawk Eye', description: 'Crits deal 20% AoE splash', effectId: 'crit_splash', effectValue: 0.20 },
+      { level: 75, name: 'True Sight', description: 'Critical hits ignore armor', effectId: 'crit_ignore_armor', effectValue: 1 },
     ],
   },
   {
@@ -72,7 +73,7 @@ export const UPGRADES: UpgradeDef[] = [
     effectType: 'add',
     maxLevel: 999,
     category: 'tower',
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
   },
   {
     id: 'landMines',
@@ -85,9 +86,9 @@ export const UPGRADES: UpgradeDef[] = [
     maxLevel: 999,
     category: 'tower',
     scaling: { base: 0.5, perLevel: 0.25, effectType: 'mult' },
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
     evolutions: [
-      { level: 10, name: 'Cluster Mines', description: 'Mines split into 2 smaller mines on detonation', effectId: 'mine_split', effectValue: 2 },
+      { level: 25, name: 'Cluster Mines', description: 'Mines split into 2 smaller mines on detonation', effectId: 'mine_split', effectValue: 2 },
     ],
   },
   {
@@ -100,10 +101,10 @@ export const UPGRADES: UpgradeDef[] = [
     effectType: 'mult',
     maxLevel: 999,
     category: 'economy',
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
     evolutions: [
-      { level: 15, name: 'Avarice', description: 'Kill streaks: +5% gold per consecutive kill', effectId: 'kill_streak_gold', effectValue: 0.05 },
-      { level: 40, name: "Dragon's Hoard", description: '+1% gold per wave survived this run', effectId: 'wave_gold_scaling', effectValue: 0.01 },
+      { level: 25, name: 'Avarice', description: 'Kill streaks: +5% gold per consecutive kill', effectId: 'kill_streak_gold', effectValue: 0.05 },
+      { level: 50, name: "Dragon's Hoard", description: '+1% gold per wave survived this run', effectId: 'wave_gold_scaling', effectValue: 0.01 },
     ],
   },
   {
@@ -116,9 +117,9 @@ export const UPGRADES: UpgradeDef[] = [
     effectType: 'add',
     maxLevel: 999,
     category: 'utility',
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
     evolutions: [
-      { level: 15, name: 'Inner Peace', description: 'Full mana: +10% gold for 5s', effectId: 'mana_full_gold', effectValue: 0.10 },
+      { level: 25, name: 'Inner Peace', description: 'Full mana: +10% gold for 5s', effectId: 'mana_full_gold', effectValue: 0.10 },
     ],
   },
   {
@@ -127,12 +128,13 @@ export const UPGRADES: UpgradeDef[] = [
     description: 'Increases max health',
     baseCost: 60,
     costGrowth: 1.12,
-    effectPerLevel: 0,
+    effectPerLevel: 'Math.pow(1.1, {level} - 1)',
+    baseEffect: 5,
+    startLevel: 1,
     effectType: 'add',
     maxLevel: 999,
     category: 'defense',
-    scaling: { base: 3, perLevel: 2, effectType: 'add' },
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
     evolutions: [
       { level: 25, name: 'Fortified Core', description: '+15% damage when above 80% HP', effectId: 'hp_threshold_damage', effectValue: 0.15 },
       { level: 100, name: "Titan's Heart", description: 'Revive once per ascension at 25% HP', effectId: 'revive', effectValue: 0.25 },
@@ -149,7 +151,7 @@ export const UPGRADES: UpgradeDef[] = [
     maxLevel: 150,
     category: 'defense',
     scaling: { base: 0.005, perLevel: 0.001, effectType: 'mult', cap: { max: 0.5 } },
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
   },
   {
     id: 'defense',
@@ -162,7 +164,7 @@ export const UPGRADES: UpgradeDef[] = [
     maxLevel: 999,
     category: 'defense',
     scaling: { base: 0.5, perLevel: 0.25, effectType: 'add' },
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
   },
   {
     id: 'armor',
@@ -175,7 +177,7 @@ export const UPGRADES: UpgradeDef[] = [
     maxLevel: 200,
     category: 'defense',
     scaling: { base: 0.01, perLevel: 0.003, effectType: 'mult', cap: { max: 0.75 } },
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
   },
   {
     id: 'shockwave',
@@ -189,7 +191,7 @@ export const UPGRADES: UpgradeDef[] = [
     category: 'defense',
     hideUpgradeScale: true,
     evolutions: [
-      { level: 10, name: 'Tremor', description: 'Shockwaved enemies slowed 30% for 2s', effectId: 'shockwave_slow', effectValue: 0.30 },
+      { level: 15, name: 'Tremor', description: 'Shockwaved enemies slowed 30% for 2s', effectId: 'shockwave_slow', effectValue: 0.30 },
     ],
   },
   {
@@ -203,7 +205,7 @@ export const UPGRADES: UpgradeDef[] = [
     maxLevel: 999,
     category: 'defense',
     scaling: { base: 0.05, perLevel: 0.01, effectType: 'mult' },
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
   },
   {
     id: 'lifesteal',
@@ -216,7 +218,7 @@ export const UPGRADES: UpgradeDef[] = [
     maxLevel: 999,
     category: 'defense',
     scaling: { base: 0.03, perLevel: 0.0025, effectType: 'mult' },
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
   },
   {
     id: 'defenseShield',
@@ -229,9 +231,9 @@ export const UPGRADES: UpgradeDef[] = [
     maxLevel: 55,
     category: 'defense',
     scaling: { base: 60, perLevel: -0.5, effectType: 'add', cap: { min: 7 }, unit: 's' },
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
     evolutions: [
-      { level: 10, name: 'Prismatic Shield', description: 'Shield recharges 25% faster', effectId: 'shield_fast_recharge', effectValue: 0.25 },
+      { level: 25, name: 'Prismatic Shield', description: 'Shield recharges 25% faster', effectId: 'shield_fast_recharge', effectValue: 0.25 },
     ],
   },
   {
@@ -245,6 +247,6 @@ export const UPGRADES: UpgradeDef[] = [
     maxLevel: 40,
     category: 'defense',
     scaling: { base: 0.2, perLevel: 0.02, effectType: 'mult' },
-    hideUpgradeScale: false,
+    hideUpgradeScale: true,
   },
 ];

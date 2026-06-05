@@ -20,7 +20,7 @@ export class Renderer {
     this.height = canvas.height;
   }
 
-  draw(snapshot: RenderSnapshot): void {
+  draw(snapshot: RenderSnapshot, options?: { screenFlash?: number }): void {
     this.time += 1 / 60;
     const ctx = this.ctx;
     ctx.drawImage(this.getBackground(), 0, 0);
@@ -38,6 +38,15 @@ export class Renderer {
     this.drawTowerTop(ctx, snapshot);
     this.drawShield(ctx, snapshot);
     this.drawWaveBanner(ctx, snapshot);
+
+    // Screen flash overlay (boss death)
+    const flash = options?.screenFlash ?? 0;
+    if (flash > 0) {
+      ctx.save();
+      ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, flash / 0.15)})`;
+      ctx.fillRect(0, 0, this.width, this.height);
+      ctx.restore();
+    }
   }
 
   private getBackground(): HTMLCanvasElement {
@@ -256,6 +265,8 @@ export class Renderer {
 
     if (enemy.type === 'boss') {
       this.drawBossAura(ctx, enemy, r);
+    } else if (enemy.type === 'healer') {
+      this.drawHealerAura(ctx, enemy, r);
     }
 
     ctx.save();
@@ -265,10 +276,21 @@ export class Renderer {
       ctx.scale(pulse, pulse);
       ctx.translate(-enemy.x, -enemy.y);
     }
+    if (enemy.type === 'splitter') {
+      const pulse = 1 + Math.sin(this.time * 3 + enemy.id) * 0.05;
+      ctx.translate(enemy.x, enemy.y);
+      ctx.scale(pulse, pulse);
+      ctx.translate(-enemy.x, -enemy.y);
+    }
 
     switch (def.shape) {
       case 'diamond':
-        ctx.fillStyle = def.color;
+        // P5: Boss enrage color shift — turn the body red when below 50% HP
+        if (enemy.type === 'boss' && (enemy as { enraged?: boolean }).enraged) {
+          ctx.fillStyle = '#ff2020';
+        } else {
+          ctx.fillStyle = def.color;
+        }
         ctx.beginPath();
         ctx.moveTo(enemy.x, enemy.y - r + bob);
         ctx.lineTo(enemy.x + r, enemy.y + bob);
@@ -279,6 +301,13 @@ export class Renderer {
         ctx.strokeStyle = def.borderColor;
         ctx.lineWidth = 2;
         ctx.stroke();
+        // Splitter gets a small inner core dot to make it stand out
+        if (enemy.type === 'splitter') {
+          ctx.fillStyle = 'rgba(255,255,255,0.55)';
+          ctx.beginPath();
+          ctx.arc(enemy.x, enemy.y + bob, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
         break;
       case 'winged': {
         const wingFlap = Math.sin(this.time * 12 + enemy.id) * 0.4;
@@ -340,14 +369,63 @@ export class Renderer {
     }
     ctx.restore();
 
+    // Shielded: orbiting shield segments (arcs) when charges > 0
+    if (enemy.type === 'shielded' && (enemy.shieldCharges ?? 0) > 0) {
+      this.drawShieldArcs(ctx, enemy, r);
+    }
+
     this.drawEnemyHpBar(ctx, enemy, r, bob);
   }
 
+  private drawHealerAura(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
+    const pulse = 1 + Math.sin(this.time * 2.5 + enemy.id) * 0.12;
+    const grad = ctx.createRadialGradient(enemy.x, enemy.y, r * 0.7, enemy.x, enemy.y, r * 2.0 * pulse);
+    grad.addColorStop(0, 'rgba(80, 220, 120, 0.22)');
+    grad.addColorStop(0.6, 'rgba(39, 174, 96, 0.08)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(enemy.x, enemy.y, r * 2.0 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  private drawShieldArcs(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
+    const charges = enemy.shieldCharges ?? 0;
+    if (charges <= 0) return;
+    const total = 3; // max charges
+    const segAngle = (Math.PI * 2) / total;
+    const startOffset = -Math.PI / 2;
+    const inner = r + 3;
+    const outer = r + 9;
+    ctx.save();
+    ctx.translate(enemy.x, enemy.y);
+    ctx.rotate(this.time * 1.4 + enemy.id);
+    for (let i = 0; i < charges; i++) {
+      const a0 = startOffset + i * segAngle + 0.08;
+      const a1 = startOffset + (i + 1) * segAngle - 0.08;
+      ctx.beginPath();
+      ctx.arc(0, 0, inner, a0, a1);
+      ctx.arc(0, 0, outer, a1, a0, true);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(93, 173, 226, 0.65)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(180, 220, 255, 0.9)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   private drawBossAura(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
-    const pulse = 1 + Math.sin(this.time * 3) * 0.12;
+    // P5: enrage makes the aura pulse faster and brighter
+    const enraged = (enemy as { enraged?: boolean }).enraged;
+    const speed = enraged ? 7 : 3;
+    const pulse = 1 + Math.sin(this.time * speed) * (enraged ? 0.22 : 0.12);
+    const innerColor = enraged ? 'rgba(255, 80, 80, 0.55)' : 'rgba(255, 60, 60, 0.28)';
+    const midColor = enraged ? 'rgba(220, 30, 30, 0.20)' : 'rgba(160, 0, 0, 0.10)';
     const grad = ctx.createRadialGradient(enemy.x, enemy.y, r * 0.7, enemy.x, enemy.y, r * 2.4 * pulse);
-    grad.addColorStop(0, 'rgba(255, 60, 60, 0.28)');
-    grad.addColorStop(0.6, 'rgba(160, 0, 0, 0.10)');
+    grad.addColorStop(0, innerColor);
+    grad.addColorStop(0.6, midColor);
     grad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
     ctx.beginPath();

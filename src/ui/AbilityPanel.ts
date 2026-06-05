@@ -2,6 +2,7 @@ import type { AbilityId, GameState } from '../types';
 import type { AbilityDef } from '../data/abilities';
 import { ABILITIES } from '../data/abilities';
 import { formatInt } from '../utils/bigNumber';
+import { setText, toggleClass, setDisplay, setStyle } from '../utils/dom';
 
 export interface AbilityPanelHandlers {
   onCast: (id: AbilityId) => void;
@@ -48,39 +49,39 @@ export class AbilityPanel {
       const canCast = reason === null;
 
       btn.disabled = !canCast;
-      btn.classList.toggle('is-ready', canCast);
-      btn.classList.toggle('is-cooldown', onCd);
-      btn.classList.toggle('is-locked', reason === 'Locked' || (reason?.startsWith('Unlocks at') ?? false));
-      btn.classList.toggle('is-active', abState.active);
+      toggleClass(btn, 'is-ready', canCast);
+      toggleClass(btn, 'is-cooldown', onCd);
+      toggleClass(btn, 'is-locked', reason === 'Locked' || (reason?.startsWith('Unlocks at') ?? false));
+      toggleClass(btn, 'is-active', abState.active);
 
       if (onCd) {
         const ratio = Math.max(0, Math.min(1, abState.cooldown / def.cooldown));
-        overlay.style.height = `${ratio * 100}%`;
-        overlay.style.opacity = '1';
+        setStyle(overlay, 'height', `${ratio * 100}%`);
+        setStyle(overlay, 'opacity', '1');
       } else {
-        overlay.style.height = '0%';
-        overlay.style.opacity = '0';
+        setStyle(overlay, 'height', '0%');
+        setStyle(overlay, 'opacity', '0');
       }
 
       if (abState.active && abState.activeTimer > 0) {
-        badge.style.display = 'flex';
-        badge.textContent = `${abState.activeTimer.toFixed(1)}s`;
+        setDisplay(badge, 'flex');
+        setText(badge, `${abState.activeTimer.toFixed(1)}s`);
       } else {
-        badge.style.display = 'none';
+        setDisplay(badge, 'none');
       }
 
       if (reason) {
-        status.textContent = reason;
-        status.classList.add('ability-status-blocked');
+        setText(status, reason);
+        toggleClass(status, 'ability-status-blocked', true);
       } else {
-        status.textContent = `Ready · ${formatInt(mana)}/${def.manaCost} mana`;
-        status.classList.remove('ability-status-blocked');
+        setText(status, `Ready · ${formatInt(mana)}/${def.manaCost} mana`);
+        toggleClass(status, 'ability-status-blocked', false);
       }
 
       const label = this.labelById.get(def.id);
       if (label) {
         const cdTxt = onCd ? ` · ${abState.cooldown.toFixed(1)}s` : '';
-        label.textContent = `${def.name}${cdTxt}`;
+        setText(label, `${def.name}${cdTxt}`);
       }
     }
   }

@@ -15,12 +15,19 @@ export interface EnemyDef {
   borderColor: string;
   shape: 'circle' | 'diamond' | 'winged';
   glyph?: string;
+  shieldCharges?: number;     // Shielded
+  healRange?: number;         // Healer
+  healFraction?: number;      // Healer: % of maxHP healed
+  healCooldown?: number;      // Healer: seconds between heals
+  splitChildren?: number;     // Splitter: children spawned on death
+  splitHpFraction?: number;   // Splitter child HP fraction
+  splitSpeedMultiplier?: number;
 }
 
 export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   normal: {
     type: 'normal',
-    baseHP: 10,
+    baseHP: 6,
     baseSpeed: 60,
     armor: 0,
     magicResist: 0,
@@ -35,7 +42,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   fast: {
     type: 'fast',
-    baseHP: 7,
+    baseHP: 4,
     baseSpeed: 120,
     armor: 0,
     magicResist: 0,
@@ -50,7 +57,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   tank: {
     type: 'tank',
-    baseHP: 30,
+    baseHP: 20,
     baseSpeed: 30,
     armor: 3,
     magicResist: 0,
@@ -65,7 +72,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   flying: {
     type: 'flying',
-    baseHP: 12,
+    baseHP: 7,
     baseSpeed: 90,
     armor: 0,
     magicResist: 0,
@@ -80,7 +87,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   healer: {
     type: 'healer',
-    baseHP: 15,
+    baseHP: 12,
     baseSpeed: 50,
     armor: 0,
     magicResist: 0,
@@ -93,10 +100,13 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     borderColor: '#0e3a1d',
     shape: 'circle',
     glyph: '+',
+    healRange: 150,
+    healFraction: 0.15,
+    healCooldown: 2.5,
   },
   boss: {
     type: 'boss',
-    baseHP: 100,
+    baseHP: 120,
     baseSpeed: 40,
     armor: 6,
     magicResist: 0.15,
@@ -108,5 +118,39 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#7b1f1f',
     borderColor: '#ff5050',
     shape: 'circle',
+  },
+  splitter: {
+    type: 'splitter',
+    baseHP: 16,
+    baseSpeed: 55,
+    armor: 0,
+    magicResist: 0,
+    baseDamage: 1,
+    fireRate: 0.9,
+    baseGold: 3,
+    unlockWave: 12,
+    radius: 16,
+    color: '#9b59ff',
+    borderColor: '#d3b3ff',
+    shape: 'diamond',
+    splitChildren: 2,
+    splitHpFraction: 0.5,
+    splitSpeedMultiplier: 1.4,
+  },
+  shielded: {
+    type: 'shielded',
+    baseHP: 10,
+    baseSpeed: 40,
+    armor: 0,
+    magicResist: 0.3,
+    baseDamage: 1,
+    fireRate: 1.0,
+    baseGold: 5,
+    unlockWave: 20,
+    radius: 14,
+    color: '#5dade2',
+    borderColor: '#1a5276',
+    shape: 'circle',
+    shieldCharges: 3,
   },
 };

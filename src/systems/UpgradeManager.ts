@@ -13,7 +13,7 @@ export class UpgradeManager {
     this.bus = bus;
     this.resources = resources;
     for (const u of UPGRADES) {
-      this.levels[u.id] = 0;
+      this.levels[u.id] = u.startLevel ?? 0;
     }
   }
 
@@ -116,14 +116,15 @@ export class UpgradeManager {
 
   reset(): void {
     for (const u of UPGRADES) {
-      this.levels[u.id] = 0;
+      this.levels[u.id] = u.startLevel ?? 0;
     }
     this.bus.emit('upgrades_changed', { ...this.levels });
   }
 
   replaceLevels(levels: Record<string, number>): void {
     for (const u of UPGRADES) {
-      this.levels[u.id] = levels[u.id] ?? 0;
+      const start = u.startLevel ?? 0;
+      this.levels[u.id] = Math.max(start, levels[u.id] ?? 0);
     }
     this.bus.emit('upgrades_changed', { ...this.levels });
   }

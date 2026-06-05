@@ -80,7 +80,7 @@ export class EnemyManager {
     }
   }
 
-  spawn(type: EnemyType, wave: number, spawnX: number, spawnY: number): Enemy {
+  spawn(type: EnemyType, wave: number, spawnX: number, spawnY: number, overrides: Partial<Enemy> = {}): Enemy {
     const def = ENEMY_DEFS[type];
     let hp: number;
     if (type === 'boss') hp = bossHPForWave(def.baseHP, wave);
@@ -89,7 +89,7 @@ export class EnemyManager {
     const speed = enemySpeedForWave(def.baseSpeed, wave);
     const gold = goldDropForWave(def.baseGold, wave);
     const damage = enemyDamageForWave(def.baseDamage, wave);
-    const fireRate = Math.max(0.01, def.fireRate);
+    const fireRate = Math.max(0.2, def.fireRate);
     const enemy: Enemy = {
       id: nextId(),
       type,
@@ -106,14 +106,38 @@ export class EnemyManager {
       attackCooldown: 1 / fireRate,
       attacking: false,
       alive: true,
+      ...(type === 'shielded' ? { shieldCharges: def.shieldCharges ?? 3 } : {}),
+      ...(type === 'healer' ? { healCooldown: def.healCooldown ?? 2.5 } : {}),
+      ...(type === 'boss' ? { enraged: false, enrageTriggered: false } : {}),
+      ...overrides,
     };
     this.enemies.push(enemy);
     return enemy;
   }
 
+  /**
+   * Apply damage to an enemy. For shielded enemies, consumes a charge instead
+   * of HP. Returns true if enemy was killed by this hit.
+   */
   damage(enemy: Enemy, amount: number, isCrit: boolean = false): boolean {
     if (!enemy.alive) return false;
+    // Shielded: each charge absorbs a hit regardless of damage amount
+    if (enemy.type === 'shielded' && (enemy.shieldCharges ?? 0) > 0) {
+      enemy.shieldCharges = (enemy.shieldCharges ?? 0) - 1;
+      this.bus.emit('shield_break', { x: enemy.x, y: enemy.y });
+      this.bus.emit('enemy_damaged', { enemy, amount: 0, killed: false, isCrit, blocked: true });
+      return false;
+    }
     enemy.hp -= amount;
+    // Boss enrage: trigger once when HP drops below 50% of maxHP
+    if (enemy.type === 'boss' && !enemy.enrageTriggered && enemy.hp / enemy.maxHp <= 0.5) {
+      enemy.enrageTriggered = true;
+      enemy.enraged = true;
+      enemy.fireRate *= 1.5;
+      enemy.speed *= 1.3;
+      enemy.attackCooldown = Math.max(0, 1 / enemy.fireRate);
+      this.bus.emit('boss_enraged', { enemy });
+    }
     if (enemy.hp <= 0) {
       enemy.hp = 0;
       enemy.alive = false;
@@ -225,6 +249,44 @@ export class EnemyManager {
         e.x += dx * inv;
         e.y += dy * inv;
       }
+
+      // Healer AI: every healCooldown seconds, find lowest-HP non-healer ally
+      // within healRange and restore healFraction of its maxHP.
+      if (e.type === 'healer' && (e.healCooldown ?? 0) > 0) {
+        e.healCooldown = (e.healCooldown ?? 0) - dt;
+        if (e.healCooldown <= 0) {
+          const def = ENEMY_DEFS.healer;
+          const range = def.healRange ?? 150;
+          const fraction = def.healFraction ?? 0.15;
+          const cooldownReset = def.healCooldown ?? 2.5;
+          // Find lowest-HP non-healer alive ally in range
+          let target: Enemy | null = null;
+          let lowestRatio = 1;
+          for (const other of this.enemies) {
+            if (!other.alive) continue;
+            if (other.id === e.id) continue;
+            if (other.type === 'healer') continue;
+            if (other.hp >= other.maxHp) continue;
+            const ddx = other.x - e.x;
+            const ddy = other.y - e.y;
+            if (ddx * ddx + ddy * ddy > range * range) continue;
+            const r = other.hp / other.maxHp;
+            if (r < lowestRatio) {
+              lowestRatio = r;
+              target = other;
+            }
+          }
+          if (target) {
+            const heal = Math.max(1, Math.floor(target.maxHp * fraction));
+            target.hp = Math.min(target.maxHp, target.hp + heal);
+            this.bus.emit('enemy_healed', { healer: e, target, amount: heal });
+            e.healCooldown = cooldownReset;
+          } else {
+            // Don't fully reset: small partial decay so healer still has cadence
+            e.healCooldown = 0.5;
+          }
+        }
+      }
     }
 
     if (newlyReached.length > 0) {
@@ -253,6 +315,25 @@ export class EnemyManager {
     this.vulnerableEnemies.clear();
     this.killStreakGoldBonus = 0;
     this.manaFullGoldBonus = 0;
+  }
+
+  /**
+   * Spawn a splitter child at given location (used for split-on-death).
+   */
+  spawnSplitterChild(parent: Enemy, wave: number, x: number, y: number): Enemy {
+    const def = ENEMY_DEFS.splitter;
+    const childHp = Math.max(1, Math.floor(parent.maxHp * (def.splitHpFraction ?? 0.5)));
+    const childSpeed = parent.speed * (def.splitSpeedMultiplier ?? 1.4);
+    const childGold = Math.max(1, Math.floor(parent.goldValue * 0.5));
+    const childDamage = Math.max(1, Math.floor(parent.damage * 0.7));
+    return this.spawn('splitter', wave, x, y, {
+      hp: childHp,
+      maxHp: childHp,
+      speed: childSpeed,
+      goldValue: childGold,
+      damage: childDamage,
+      isSplitChild: true,
+    });
   }
 
   aliveCount(): number {

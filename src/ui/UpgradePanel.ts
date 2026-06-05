@@ -3,6 +3,7 @@ import { computeUpgradeValue } from '../types';
 import { UPGRADES } from '../data/upgrades';
 import { upgradeCost } from '../data/formulas';
 import { formatNumber } from '../utils/bigNumber';
+import { setText, toggleClass, setDisplay } from '../utils/dom';
 
 type UpgradeTabId = 'attack' | 'defense' | 'utility';
 
@@ -42,6 +43,10 @@ function isPercent(def: UpgradeDef): boolean {
   return PERCENT_UPGRADES.has(def.id);
 }
 
+function isTotalEffectUpgrade(def: UpgradeDef): boolean {
+  return def.id === 'damage' || def.id === 'health';
+}
+
 function formatNumberValue(v: number): string {
   const abs = Math.abs(v);
   if (abs !== 0 && abs < 1) return v.toFixed(2);
@@ -55,14 +60,14 @@ function formatPercentValue(v: number): string {
   return `${pct.toFixed(decimals)}%`;
 }
 
-function formatEffectBonus(def: UpgradeDef, level: number): string {
+function formatEffectBonus(def: UpgradeDef, level: number, showSign: boolean = true): string {
   const total = computeUpgradeValue(def, level);
   if (total === 0) return '';
   const unit = def.scaling?.unit ?? '';
   if (isPercent(def)) {
-    return `+${formatPercentValue(total)}`;
+    return `${showSign? '+' : ''}${formatPercentValue(total)}`;
   }
-  return `+${formatNumberValue(total)}${unit}`;
+  return `${showSign? '+' : ''}${formatNumberValue(total)}${unit}`;
 }
 
 function formatNextDelta(def: UpgradeDef): string {
@@ -111,6 +116,7 @@ export class UpgradePanel {
   private nameById = new Map<string, HTMLElement>();
   private evoInfoById = new Map<string, HTMLElement>();
   private rowById = new Map<string, HTMLElement>();
+  private evoInfoLastLevel = new Map<string, number>();
   private activeTab: UpgradeTabId = 'attack';
 
   constructor(onBuy: (id: string) => void) {
@@ -127,6 +133,7 @@ export class UpgradePanel {
     this.nameById.clear();
     this.evoInfoById.clear();
     this.rowById.clear();
+    this.evoInfoLastLevel.clear();
     this.activeTab = 'attack';
     this.renderInto(parent);
   }
@@ -146,53 +153,89 @@ export class UpgradePanel {
       const level = state.upgrades[u.id] ?? 0;
       const atMax = u.maxLevel > 0 && level >= u.maxLevel;
       const cost = atMax ? Infinity : upgradeCost(u.baseCost, u.costGrowth, level);
-      levelEl.textContent = atMax ? `Level ${level} (max)` : `Level ${level}`;
-      costEl.textContent = atMax ? '—' : formatNumber(cost);
-      bonusEl.textContent = formatEffectBonus(u, level);
+      if (isTotalEffectUpgrade(u)) {
+        setText(levelEl, atMax ? formatNumberValue(computeUpgradeValue(u, level)) : '');
+        setDisplay(levelEl, atMax ? '' : 'none');
+      } else {
+        setText(levelEl, atMax ? `Level ${level} (max)` : `Level ${level}`);
+      }
+      setText(costEl, atMax ? '—' : formatNumber(cost));
+      setText(bonusEl, isTotalEffectUpgrade(u) ? formatEffectBonus(u, level, false) : formatEffectBonus(u, level));
       btn.disabled = atMax || gold < cost;
-      btn.classList.toggle('can-afford', !atMax && gold >= cost);
-      btn.textContent = atMax ? 'Maxed' : 'Buy';
+      toggleClass(btn, 'can-afford', !atMax && gold >= cost);
+      setText(btn, atMax ? 'Maxed' : 'Buy');
 
       // Evolution display
       if (nameEl && u.evolutions) {
         const highestEvo = getHighestEvolution(u, level);
         if (highestEvo) {
-          nameEl.textContent = highestEvo.name;
+          setText(nameEl, highestEvo.name);
           if (rowEl) rowEl.classList.add('upgrade-evolved');
         } else {
-          nameEl.textContent = u.name;
+          setText(nameEl, u.name);
           if (rowEl) rowEl.classList.remove('upgrade-evolved');
         }
       }
       if (evoEl && u.evolutions) {
-        evoEl.innerHTML = '';
-        let hasContent = false;
-        // Show unlocked evolution effects
-        for (const evo of u.evolutions) {
-          if (level >= evo.level) {
+        // The evo lines only depend on `level`. Skip the full innerHTML
+        // rebuild unless the level has changed since the last render, so
+        // selecting the description text isn't broken every UI tick.
+        if (this.evoInfoLastLevel.get(u.id) !== level) {
+          this.evoInfoLastLevel.set(u.id, level);
+          evoEl.innerHTML = '';
+          let hasContent = false;
+          // Show unlocked evolution effects
+          for (const evo of u.evolutions) {
+            if (level >= evo.level) {
+              const line = document.createElement('div');
+              line.className = 'evo-line evo-unlocked';
+              line.textContent = `★ ${evo.name}: ${evo.description}`;
+              evoEl.appendChild(line);
+              hasContent = true;
+            }
+          }
+          // Show next evolution hint (purple, name only)
+          const nextEvo = getNextEvolution(u, level);
+          if (nextEvo) {
             const line = document.createElement('div');
-            line.className = 'evo-line evo-unlocked';
-            line.textContent = `★ ${evo.name}: ${evo.description}`;
+            line.className = 'evo-line evo-next';
+            line.textContent = `Evolves at Lv${nextEvo.level}: ${nextEvo.name}`;
             evoEl.appendChild(line);
             hasContent = true;
           }
+          setDisplay(evoEl, hasContent ? '' : 'none');
         }
-        // Show next evolution hint (purple, name only)
-        const nextEvo = getNextEvolution(u, level);
-        if (nextEvo) {
-          const line = document.createElement('div');
-          line.className = 'evo-line evo-next';
-          line.textContent = `Evolves at Lv${nextEvo.level}: ${nextEvo.name}`;
-          evoEl.appendChild(line);
-          hasContent = true;
-        }
-        evoEl.style.display = hasContent ? '' : 'none';
       }
     }
   }
 
-  private unmount(): void {
+  private   unmount(): void {
     this.root = null;
+  }
+
+  /**
+   * Briefly flash a button white + spawn a floating "+1" to indicate purchase.
+   */
+  flashButton(id: string): void {
+    const btn = this.buttonById.get(id);
+    if (!btn) return;
+    btn.classList.remove('is-flash');
+    // Force reflow so animation restarts
+    void btn.offsetWidth;
+    btn.classList.add('is-flash');
+    setTimeout(() => btn.classList.remove('is-flash'), 220);
+
+    // Floating "+1"
+    const action = btn.parentElement;
+    if (action) {
+      const plus = document.createElement('span');
+      plus.className = 'upgrade-plus-one';
+      plus.textContent = '+1';
+      action.appendChild(plus);
+      setTimeout(() => {
+        if (plus.parentElement) plus.parentElement.removeChild(plus);
+      }, 700);
+    }
   }
 
   private renderInto(parent: HTMLElement): void {
@@ -292,10 +335,10 @@ export class UpgradePanel {
     meta.className = 'upgrade-meta';
     const level = document.createElement('span');
     level.className = 'upgrade-level';
-    level.textContent = 'Level 0';
+    level.textContent = isTotalEffectUpgrade(u) ? '' : 'Level 0';
     const bonus = document.createElement('span');
     bonus.className = 'upgrade-bonus';
-    bonus.textContent = '';
+    bonus.textContent = formatEffectBonus(u, 0);
     const delta = document.createElement('span');
     delta.className = 'upgrade-delta';
     delta.textContent = formatNextDelta(u);

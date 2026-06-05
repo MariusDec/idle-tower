@@ -1,4 +1,4 @@
-import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo } from '../types';
+import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode } from '../types';
 import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX } from '../types';
 import { TOWER_BASE, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
@@ -25,6 +25,9 @@ import { AchievementManager } from '../systems/AchievementManager';
 import { UIManager } from '../ui/UIManager';
 import { isBossWave } from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
+import { AudioManager } from '../systems/AudioManager';
+import { formatInt } from '../utils/bigNumber';
+import { setStyle, toggleClass } from '../utils/dom';
 
 const BASE_MANA_REGEN = 2;
 const WAVE_MILESTONES = new Set([10, 25, 50, 100, 200, 500]);
@@ -129,6 +132,7 @@ export class Game {
   private readonly automation: AutomationManager;
   private readonly saveMgr: SaveManager;
   private readonly achievementMgr: AchievementManager;
+  private readonly audio: AudioManager;
 
   private lastTime = 0;
   private running = false;
@@ -150,6 +154,12 @@ export class Game {
 
   private speedIndex = DEFAULT_SPEED_INDEX;
   private maxSpeedIndex = MAX_SPEED_INDEX;
+
+  // P3: Boss entry / death FX
+  private slowMoRemaining = 0;
+  private slowMoTotal = 0;
+  private screenFlash = 0;
+  private canvasWrap: HTMLElement | null = null;
 
   // Evolution state
   private reviveUsed = false;
@@ -193,6 +203,23 @@ export class Game {
     );
     this.upgradeMgr = new UpgradeManager(this.bus, this.resourceMgr);
     this.effects = new EffectsManager();
+    this.effects.onShockwaveDamage = (s) => {
+      // P5 boss death: damage enemies caught in the ring (single hit per ring)
+      if (!s.damage) return;
+      const inner = s.currentRadius - 30; // damage band just inside the wave front
+      const outer = s.currentRadius + 30;
+      const innerSq = Math.max(0, inner) * Math.max(0, inner);
+      const outerSq = outer * outer;
+      for (const en of this.enemyMgr.list) {
+        if (!en.alive) continue;
+        const dx = en.x - s.x;
+        const dy = en.y - s.y;
+        const dSq = dx * dx + dy * dy;
+        if (dSq >= innerSq && dSq <= outerSq) {
+          this.enemyMgr.damage(en, s.damage, false);
+        }
+      }
+    };
     this.notifications = new NotificationManager(deps.notificationRoot, this.bus);
     this.abilityMgr = new AbilityManager({
       resources: this.resourceMgr,
@@ -226,6 +253,7 @@ export class Game {
       getAchievements: () => this.state.achievements,
       researchCount: () => this.state.research.length,
     });
+    this.audio = new AudioManager(this.bus);
 
     this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
     this.state.upgrades = this.upgradeMgr.snapshot();
@@ -269,18 +297,42 @@ export class Game {
       }
     });
     this.bus.on('enemy_killed', (enemy) => {
-      const e = enemy as { x: number; y: number; type: string; maxHp?: number };
+      const e = enemy as { x: number; y: number; type: string; maxHp?: number; isSplitChild?: boolean; goldValue?: number };
       const def = ENEMY_DEFS[e.type as keyof typeof ENEMY_DEFS];
       this.state.stats.enemiesKilled += 1;
       if (e.type === 'boss') {
         this.state.stats.bossesKilled += 1;
-        this.effects.emitBossDeathShockwave(e.x, e.y);
+        // P5: Multi-stage death shockwave — 3 cascading rings that each damage enemies once.
+        // Stage 1 (immediate): tight inner ring — strongest damage
+        this.effects.emitShockwaveRing(e.x, e.y, 150, 'rgba(255, 64, 64, 0.9)', 8, 0, 120, 'magic');
+        // Stage 2: mid ring
+        this.effects.emitShockwaveRing(e.x, e.y, 300, 'rgba(255, 100, 64, 0.85)', 7, 0.2, 80, 'magic');
+        // Stage 3: wide outer ring
+        this.effects.emitShockwaveRing(e.x, e.y, 500, 'rgba(255, 160, 64, 0.8)', 6, 0.4, 50, 'magic');
+        // P5: Bonus x3 gold (normal gold already awarded in damage(); add 2x more)
+        this.resources.addGold((e.goldValue ?? def.baseGold) * 2);
+        this.bus.emit('boss_killed', { x: e.x, y: e.y, goldValue: e.goldValue ?? def.baseGold });
+        // Death slow-mo + screen flash (P3 + P5)
+        this.triggerBossDeathSlowMo();
         if (this.state.stats.bossesKilled === 1) {
           this.bus.emit('toast', { kind: 'milestone', text: 'First boss defeated! +200g', life: 5 });
         } else {
-          // this.bus.emit('toast', { kind: 'milestone', text: 'Boss defeated!', life: 4 });
+          this.bus.emit('toast', { kind: 'milestone', text: `Boss defeated! +${formatInt((e.goldValue ?? def.baseGold) * 3)}g`, life: 6 });
         }
       }
+
+      // Splitter: on death spawn 2 child splitters (unless this is a child itself)
+      if (e.type === 'splitter' && !e.isSplitChild) {
+        const wave = this.waveMgr.currentWave;
+        // Find the dead splitter in the list to get full enemy props
+        const parent = this.enemyMgr.list.find(en => !en.alive && en.x === e.x && en.y === e.y && en.type === 'splitter');
+        if (parent) {
+          this.enemyMgr.spawnSplitterChild(parent, wave, e.x - 6, e.y);
+          this.enemyMgr.spawnSplitterChild(parent, wave, e.x + 6, e.y);
+        }
+        this.effects.emitSplitBurst(e.x, e.y);
+      }
+
       this.effects.emitDeathBurst(e.x, e.y, def.color, def.radius);
 
       // Evolution: kill_streak_gold
@@ -305,6 +357,17 @@ export class Game {
         }
         this.effects.emitShockwaveRing(e.x, e.y, chainRadius);
       }
+    });
+
+    this.bus.on('shield_break', (payload: unknown) => {
+      const p = payload as { x: number; y: number };
+      this.effects.emitEnemyShieldBreak(p.x, p.y);
+    });
+
+    this.bus.on('enemy_healed', (payload: unknown) => {
+      const p = payload as { healer: { x: number; y: number }; target: { x: number; y: number }; amount: number };
+      this.effects.emitHealParticles(p.healer.x, p.healer.y, p.target.x, p.target.y);
+      this.effects.emitDamageNumber(p.target.x, p.target.y - 10, p.amount, false);
     });
     this.bus.on('enemies_reached_tower', (reached: unknown) => {
       return;
@@ -396,6 +459,11 @@ export class Game {
       this.enemyMgr.setKillStreakGoldBonus(0);
 
       const w = wave as number;
+      // Boss entry effects on boss waves
+      if (isBossWave(w)) {
+        this.triggerBossEntrySlowMo();
+        this.effects.emitBossEntryPulse(ts.x, ts.y);
+      }
       if (WAVE_MILESTONES.has(w) && !this.announcedMilestones.has(w)) {
         this.announcedMilestones.add(w);
         const kind = isBossWave(w) ? 'milestone' : 'info';
@@ -460,6 +528,18 @@ export class Game {
           break;
       }
     });
+
+    const saveOnEvent = () => {
+      this.saveMgr.save(this.state);
+    };
+    this.bus.on('upgrade_purchased', saveOnEvent);
+    this.bus.on('ap_spent', saveOnEvent);
+    this.bus.on('tp_spent', saveOnEvent);
+    this.bus.on('achievement_unlocked', saveOnEvent);
+    this.bus.on('research_started', saveOnEvent);
+    this.bus.on('research_unlocked', saveOnEvent);
+    this.bus.on('research_cancelled', saveOnEvent);
+    this.bus.on('wave_started', saveOnEvent);
   }
 
   start(): void {
@@ -469,7 +549,18 @@ export class Game {
     if (!this.saveLoaded) {
       this.waveMgr.reset();
     }
+    // AudioContext: try to start (will resume on user gesture if blocked)
+    this.audio.ensureContext();
+    this.audio.resume();
     this.loop();
+  }
+
+  /**
+   * Called by main.ts on first user interaction to satisfy Chrome autoplay policy.
+   */
+  initAudio(): void {
+    this.audio.ensureContext();
+    this.audio.resume();
   }
 
   stop(): void {
@@ -482,6 +573,51 @@ export class Game {
 
   setFpsOverlay(el: HTMLElement | null): void {
     this.fpsOverlay = el;
+  }
+
+  setCanvasWrap(el: HTMLElement | null): void {
+    this.canvasWrap = el;
+  }
+
+  private triggerCanvasShake(): void {
+    if (!this.canvasWrap) return;
+    this.canvasWrap.classList.remove('is-shaking');
+    void this.canvasWrap.offsetWidth; // restart anim
+    this.canvasWrap.classList.add('is-shaking');
+    setTimeout(() => {
+      if (this.canvasWrap) this.canvasWrap.classList.remove('is-shaking');
+    }, 420);
+  }
+
+  private triggerBossEntrySlowMo(): void {
+    this.slowMoRemaining = 0.8;
+    this.slowMoTotal = 0.8;
+    this.triggerCanvasShake();
+  }
+
+  private triggerBossDeathSlowMo(): void {
+    this.slowMoRemaining = 0.3;
+    this.slowMoTotal = 0.3;
+    this.screenFlash = 0.15;
+  }
+
+  /**
+   * Update low-HP vignette intensity on the canvas wrap element.
+   * Called from update() each frame. Writes are cached so DOM is only mutated
+   * when the value actually changes (e.g. when crossing the 30% HP threshold
+   * or as intensity changes by a noticeable amount).
+   */
+  private updateVignette(): void {
+    if (!this.canvasWrap) return;
+    const t = this.tower.snapshot;
+    const ratio = t.maxHp > 0 ? t.hp / t.maxHp : 0;
+    if (ratio > 0 && ratio <= 0.3) {
+      const intensity = (0.3 - ratio) / 0.3; // 0 at 30%, 1 at 0%
+      toggleClass(this.canvasWrap, 'is-critical', true);
+      setStyle(this.canvasWrap, '--vignette-alpha', (0.35 + intensity * 0.5).toFixed(3));
+    } else {
+      toggleClass(this.canvasWrap, 'is-critical', false);
+    }
   }
 
   get upgradeManager(): UpgradeManager {
@@ -518,6 +654,10 @@ export class Game {
 
   get research(): ResearchTree {
     return this.researchTree;
+  }
+
+  get audioMgr(): AudioManager {
+    return this.audio;
   }
 
   castAbility(id: AbilityId): boolean {
@@ -749,6 +889,7 @@ export class Game {
     Object.assign(this.state.resources, fresh.resources);
     Object.assign(this.state.prestige, fresh.prestige);
     Object.assign(this.state.stats, fresh.stats);
+    this.state.achievements.length = 0;
     for (const id of Object.keys(this.state.abilities)) {
       Object.assign(this.state.abilities[id], fresh.abilities[id]);
     }
@@ -769,6 +910,7 @@ export class Game {
     this.mines = [];
     this.announcedMilestones.clear();
     this.researchAnnounced.clear();
+    this.achievementMgr.reset();
 
     this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
     this.applyUpgradeEffects();
@@ -947,7 +1089,9 @@ export class Game {
     }
 
     t.maxHp = TOWER_BASE.maxHp + healthValue;
-    if (oldMaxHp > 0 && t.maxHp > oldMaxHp && oldHp > 0) {
+    if (oldMaxHp === 0 && t.maxHp > 0) {
+      t.hp = t.maxHp;
+    } else if (oldMaxHp > 0 && t.maxHp > oldMaxHp && oldHp > 0) {
       const heal = (t.maxHp - oldMaxHp) * (oldHp / oldMaxHp);
       t.hp = Math.min(t.maxHp, oldHp + heal);
     } else if (t.hp > t.maxHp) {
@@ -1222,7 +1366,14 @@ export class Game {
     t.y = persisted.tower.y;
     t.cooldown = 0;
     t.damageType = persisted.tower.damageType;
-    t.targetingMode = persisted.tower.targetingMode;
+    // Migration: old saves stored 'first' (which behaved identically to 'nearest').
+    // Map it to 'nearest' so users keep their previous targeting.
+    const persistedMode = persisted.tower.targetingMode as string;
+    const validModes: TargetingMode[] = ['nearest', 'lowest_hp', 'first', 'strongest', 'boss', 'flying', 'last'];
+    const migrated: TargetingMode = (validModes as string[]).includes(persistedMode)
+      ? (persistedMode as TargetingMode)
+      : 'nearest';
+    t.targetingMode = migrated === 'first' ? 'nearest' : migrated;
     t.hp = persisted.tower.hp ?? TOWER_BASE.hp;
     t.maxHp = persisted.tower.maxHp ?? TOWER_BASE.maxHp;
     t.wallHp = persisted.tower.wallHp ?? 0;
@@ -1240,7 +1391,19 @@ export class Game {
     if (dt > 0.05) dt = 0.05;
 
     const speed = this.getSpeed();
-    const gameDt = dt * speed;
+    // Apply slow-mo factor on top of user speed (does not replace it)
+    let slowMo = 1;
+    if (this.slowMoRemaining > 0) {
+      this.slowMoRemaining = Math.max(0, this.slowMoRemaining - dt);
+      const t = this.slowMoTotal > 0 ? 1 - this.slowMoRemaining / this.slowMoTotal : 1;
+      // Ramp from 0.3 (entry) or 0.2 (death) up to 1.0
+      const startFactor = this.slowMoTotal <= 0.35 ? 0.2 : 0.3;
+      slowMo = startFactor + t * (1 - startFactor);
+    }
+    if (this.screenFlash > 0) {
+      this.screenFlash = Math.max(0, this.screenFlash - dt);
+    }
+    const gameDt = dt * speed * slowMo;
     this.update(gameDt);
     this.draw();
     this.state.wave = this.waveMgr.snapshot;
@@ -1284,10 +1447,14 @@ export class Game {
       ts.hp = Math.min(ts.maxHp, ts.hp + (ts.maxHp * ts.healthRegen) * dt);
     }
 
-    this.tower.setFireRateMultiplier(this.mouseDown ? 1.3 : 1);
+    // Manual aim: if mouse held, attempt to spend 1 mana per shot for +30% fire rate.
+    // If mana is insufficient, fall back to 1.0 fire rate (still aim at cursor).
+    let manualAimBoost = false;
     if (this.mouseDown) {
       this.tower.setAimTarget(this.mouseX, this.mouseY);
+      manualAimBoost = true;
     }
+    this.tower.setFireRateMultiplier(manualAimBoost ? 1.3 : 1);
 
     if (this.tower.tickCooldown(dt)) {
       const target = this.mouseDown ? null : this.tower.acquireTarget(this.enemyMgr.list);
@@ -1414,6 +1581,9 @@ export class Game {
     this.notifications.tick(dt);
     this.automation.tick(dt);
 
+    // HUD display tweening (every frame, before throttled UI update)
+    this.ui.tickDisplayHud(dt, this.state);
+
     // Research progress
     this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
     if (this.researchTree.tick(dt)) {
@@ -1442,6 +1612,8 @@ export class Game {
     this.checkTranscendenceUnlockToast();
     this.saveMgr.tick(dt, this.state, (s) => this.saveMgr.save(s));
     this.achievementMgr.tick(dt);
+    this.audio.tick(dt);
+    this.updateVignette();
   }
 
   private checkTranscendenceUnlockToast(): void {
@@ -1469,6 +1641,6 @@ export class Game {
       shockwaves: this.effects.shockwaveList,
       mines: this.mines,
       aimLine: this.mouseDown ? { x: this.mouseX, y: this.mouseY } : null,
-    });
+    }, { screenFlash: this.screenFlash });
   }
 }

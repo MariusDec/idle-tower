@@ -592,6 +592,68 @@ button:disabled {
   to { opacity: 1; }
 }
 
+/* ── Low-HP Vignette ── */
+.canvas-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 0 rgba(255, 0, 0, 0);
+  transition: box-shadow 0.4s ease;
+  z-index: 10;
+}
+.canvas-wrap.is-critical::after {
+  box-shadow: inset 0 0 80px 18px rgba(255, 0, 0, var(--vignette-alpha, 0.4));
+  animation: vignette-pulse 0.5s ease-in-out infinite alternate;
+}
+@keyframes vignette-pulse {
+  from { filter: brightness(0.85); }
+  to   { filter: brightness(1.15); }
+}
+
+/* ── Canvas shake (boss entry) ── */
+.canvas-wrap.is-shaking {
+  animation: canvas-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+@keyframes canvas-shake {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-3px, 1px); }
+  20% { transform: translate(2px, -2px); }
+  30% { transform: translate(-2px, 2px); }
+  40% { transform: translate(2px, 1px); }
+  50% { transform: translate(-1px, -1px); }
+  60% { transform: translate(1px, 0); }
+  70% { transform: translate(-1px, 1px); }
+  80% { transform: translate(1px, -1px); }
+  90% { transform: translate(0, 0); }
+}
+
+/* ── Upgrade button flash + +1 float ── */
+.btn-buy.is-flash {
+  animation: btn-buy-flash 0.22s ease-out;
+}
+@keyframes btn-buy-flash {
+  0%   { filter: brightness(2.4) saturate(1.5); transform: scale(1.04); }
+  100% { filter: brightness(1) saturate(1); transform: scale(1); }
+}
+.upgrade-plus-one {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 14px;
+  pointer-events: none;
+  animation: upgrade-plus-one-float 0.7s ease-out forwards;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+}
+@keyframes upgrade-plus-one-float {
+  0%   { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -28px); }
+}
+.upgrade-action { position: relative; }
+
 /* Upgrade panel */
 .upgrade-panel {
   display: flex;
@@ -1563,6 +1625,45 @@ button:disabled {
   color: #f5c0c0;
   transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-volume-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  font-weight: 700;
+  min-width: 40px;
+  text-align: right;
+}
+.settings-volume-slider {
+  flex: 1 1 auto;
+  accent-color: var(--accent);
+  height: 6px;
+  cursor: pointer;
+}
+.btn-mute {
+  padding: 6px 12px;
+  font-weight: 700;
+  font-size: 12px;
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+}
+.btn-mute:hover { filter: brightness(1.1); }
+.settings-select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-0);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.settings-select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
 .btn-clear-save:hover:not(:disabled) {
   background: linear-gradient(180deg, #6a2a2a, #3d1414);
   border-color: #a04040;
