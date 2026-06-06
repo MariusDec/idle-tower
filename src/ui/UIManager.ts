@@ -18,10 +18,15 @@ import { ResearchPanel, type ResearchPanelHandlers } from './ResearchPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { AchievementPanel } from './AchievementPanel';
 import { WelcomeBackModal, type WelcomeBackData } from './WelcomeBackModal';
+import { RunSummaryModal, type RunSummaryData } from './RunSummaryModal';
+import { StatsPanel } from './StatsPanel';
+import { MilestoneStrip } from './MilestoneStrip';
+import { upcomingMilestones, milestoneAtWave } from '../data/milestones';
 import { EventBus } from '../game/EventBus';
 import type { AutomationKey } from '../data/prestige';
 import type { EffectiveAbilityStats } from '../data/abilities';
 import { ABILITIES } from '../data/abilities';
+import { hasClass, toggleClass } from '../utils/dom';
 
 interface TabDef {
   id: PanelTab;
@@ -35,6 +40,7 @@ const TABS: TabDef[] = [
   { id: 'prestige', label: 'Prestige' },
   { id: 'transcendence', label: 'Transcendence' },
   { id: 'achievements', label: 'Achievements' },
+  { id: 'stats', label: 'Stats' },
   { id: 'settings', label: 'Settings' },
 ];
 
@@ -49,10 +55,12 @@ export interface AbilityAPI {
 
 export interface ResearchAPI {
   rp: number;
+  levels: Record<string, number>;
   unlocked: ReadonlySet<string>;
   reasonBlocked: (id: string) => string | null;
-  inProgress: { id: string; elapsed: number; total: number } | null;
+  inProgress: { id: string; elapsed: number; total: number; targetLevel: number } | null;
   researchSpeedMultiplier: number;
+  rpGainRate: number;
 }
 
 export interface SpeedAPI {
@@ -106,6 +114,9 @@ export class UIManager {
   private readonly settingsPanel: SettingsPanel;
   private readonly achievementPanel: AchievementPanel;
   private readonly welcomeModal: WelcomeBackModal;
+  private readonly runSummaryModal: RunSummaryModal;
+  private readonly statsPanel: StatsPanel;
+  private readonly milestoneStrip: MilestoneStrip;
   private readonly bus: EventBus;
   private activeTab: PanelTab = 'upgrades';
   private damageLog: { time: number; amount: number }[] = [];
@@ -178,10 +189,12 @@ export class UIManager {
   };
   private researchApi: ResearchAPI = {
     rp: 0,
+    levels: {},
     unlocked: new Set<string>(),
     reasonBlocked: () => 'Loading...',
     inProgress: null,
     researchSpeedMultiplier: 1,
+    rpGainRate: 0,
   };
   private lastState: GameState | null = null;
   private cachedGoldMultiplier = 1;
@@ -242,16 +255,18 @@ export class UIManager {
       onStartResearch: (id) => this.onUnlockResearch(id),
       onCancelResearch: () => this.onCancelResearch(),
       rp: 0,
+      levels: {},
       unlocked: new Set<string>(),
       reasonBlocked: (id) => this.researchApi.reasonBlocked(id),
       inProgress: null,
       researchSpeedMultiplier: 1,
     };
-    // Make dynamic fields live-reference the current API
     Object.defineProperty(researchHandlers, 'inProgress', { get: () => this.researchApi.inProgress, enumerable: true });
     Object.defineProperty(researchHandlers, 'researchSpeedMultiplier', { get: () => this.researchApi.researchSpeedMultiplier, enumerable: true });
     Object.defineProperty(researchHandlers, 'rp', { get: () => this.researchApi.rp, enumerable: true });
+    Object.defineProperty(researchHandlers, 'levels', { get: () => this.researchApi.levels, enumerable: true });
     Object.defineProperty(researchHandlers, 'unlocked', { get: () => this.researchApi.unlocked, enumerable: true });
+    Object.defineProperty(researchHandlers, 'rpGainRate', { get: () => this.researchApi.rpGainRate, enumerable: true });
     this.researchPanel = new ResearchPanel(researchHandlers);
     this.settingsPanel = new SettingsPanel({
       onClearSave: () => this.onClearSave(),
@@ -264,11 +279,43 @@ export class UIManager {
     });
     this.achievementPanel = new AchievementPanel({
       getProgress: (def) => {
-        if (def.stat === 'researchCount') return this.lastState?.research.length ?? 0;
+        if (def.stat === 'researchCount') return Object.keys(this.lastState?.research ?? {}).length;
         return (this.lastState?.stats as any)?.[def.stat] ?? 0;
       },
     });
     this.welcomeModal = new WelcomeBackModal(deps.modalRoot);
+    this.runSummaryModal = new RunSummaryModal(deps.modalRoot);
+    this.statsPanel = new StatsPanel({
+      getHistory: () => this.lastState?.runHistory ?? [],
+      getCurrentRun: () => {
+        const s = this.lastState;
+        if (!s) return null;
+        return {
+          startedAt: s.runStartedAt,
+          highestWave: s.wave.highestWave,
+          goldEarned: s.stats.goldEarned,
+          enemiesKilled: s.stats.enemiesKilled,
+          abilitiesCast: s.stats.abilitiesCast,
+          lifetimeAP: s.resources.lifetimeAP,
+          lifetimeGold: s.resources.lifetimeGold,
+          lifetimeHighestWave: s.stats.lifetimeHighestWave,
+          lifetimeAscensions: s.stats.lifetimeAscensions,
+          transcendences: s.stats.transcendences,
+        };
+      },
+    });
+    this.milestoneStrip = new MilestoneStrip(this.hud.renderMilestoneStripSlot(), {
+      getProgress: () => {
+        const s = this.lastState;
+        if (!s) return { currentWave: 1, apThisCycle: 0 };
+        return { currentWave: s.wave.highestWave, apThisCycle: s.resources.apThisTranscendence };
+      },
+      getUpcoming: () => {
+        const s = this.lastState;
+        if (!s) return [];
+        return upcomingMilestones(s.wave.highestWave, s.resources.apThisTranscendence, 3);
+      },
+    });
     this.renderTabs();
     this.activateTabButtons('upgrades');
     this.showTab('upgrades');
@@ -300,6 +347,17 @@ export class UIManager {
       const data = payload as WelcomeBackData;
       if (data.result.elapsedSeconds > 0) {
         this.welcomeModal.show(data, () => {});
+      }
+    });
+    this.bus.on('run_ended', (payload: unknown) => {
+      const p = payload as RunSummaryData;
+      this.runSummaryModal.show(p, () => {});
+    });
+    this.bus.on('wave_started', (payload: unknown) => {
+      const w = payload as number;
+      const triggers = milestoneAtWave(w);
+      if (triggers.length > 0) {
+        this.milestoneStrip.flashLastEntry();
       }
     });
     this.bus.on('tower_damage_dealt', (payload: unknown) => {
@@ -440,6 +498,7 @@ export class UIManager {
    */
   tickDisplayHud(dt: number, state: GameState): void {
     this.hud.tickDisplay(dt, state);
+    this.milestoneStrip.update(dt);
   }
 
   update(state: GameState): void {
@@ -480,7 +539,6 @@ export class UIManager {
     this.uiFrameCounter++;
     if (this.uiFrameCounter % this.UI_UPDATE_INTERVAL !== 0) return;
 
-    this.updateTabLocks(state);
     this.hud.update(state);
     if (this.activeTab === 'upgrades') {
       this.upgradePanel.update(state);
@@ -494,11 +552,14 @@ export class UIManager {
       this.researchPanel.update(state);
     } else if (this.activeTab === 'achievements') {
       this.achievementPanel.update(state);
+    } else if (this.activeTab === 'stats') {
+      this.statsPanel.update();
     } else if (this.activeTab === 'settings') {
       this.settingsPanel.update();
     }
     this.pushFrameStats(state);
     this.pushEnemyStats(state);
+    this.milestoneStrip.refresh();
   }
 
   private pushEnemyStats(state: GameState): void {
@@ -554,6 +615,7 @@ export class UIManager {
       manaRegen: r.manaRegen,
       maxMana: r.maxMana,
       goldMultiplier: this.cachedGoldMultiplier,
+      rpGainRate: this.researchApi.rpGainRate,
     });
   }
 
@@ -563,28 +625,13 @@ export class UIManager {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'tab-btn';
-      if (t.id === 'research') btn.classList.add('tab-locked');
       btn.textContent = t.label;
       btn.dataset.tab = t.id;
       btn.addEventListener('click', () => {
-        if (btn.classList.contains('tab-locked')) return;
+        if (hasClass(btn, 'tab-locked')) return;
         this.showTab(t.id);
       });
       this.tabsRoot.appendChild(btn);
-    }
-  }
-
-  private updateTabLocks(state: GameState): void {
-    const researchUnlocked = (state.stats.lifetimeAscensions ?? state.stats.ascensions) >= 1;
-    for (const el of Array.from(this.tabsRoot.querySelectorAll<HTMLButtonElement>('.tab-btn'))) {
-      if (el.dataset.tab === 'research') {
-        el.classList.toggle('tab-locked', !researchUnlocked);
-        if (!researchUnlocked) {
-          el.title = 'Unlocks after first Ascension';
-        } else {
-          el.title = '';
-        }
-      }
     }
   }
 
@@ -614,6 +661,9 @@ export class UIManager {
     } else if (id === 'achievements') {
       this.achievementPanel.mount(this.contentRoot);
       if (this.lastState) this.achievementPanel.update(this.lastState);
+    } else if (id === 'stats') {
+      this.statsPanel.mount(this.contentRoot);
+      this.statsPanel.update();
     } else if (id === 'settings') {
       this.settingsPanel.mount(this.contentRoot);
     }
@@ -621,7 +671,7 @@ export class UIManager {
 
   private activateTabButtons(id: PanelTab): void {
     for (const el of Array.from(this.tabsRoot.querySelectorAll<HTMLButtonElement>('.tab-btn'))) {
-      el.classList.toggle('active', el.dataset.tab === id);
+      toggleClass(el, 'active', el.dataset.tab === id);
     }
   }
 

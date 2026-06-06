@@ -11,6 +11,7 @@ import {
 import { TOWER_HIT_RADIUS } from '../data/tower';
 import { EventBus } from '../game/EventBus';
 import type { ResourceManager } from './ResourceManager';
+import type { ResearchTree } from './ResearchTree';
 
 const ENEMY_GAP = 2;
 
@@ -18,6 +19,7 @@ export class EnemyManager {
   private enemies: Enemy[] = [];
   private readonly bus: EventBus;
   private readonly resources: ResourceManager;
+  private readonly researchTree: ResearchTree | null;
   private goldMultipliers: { additive: number; multiplicative: number } = {
     additive: 0,
     multiplicative: 1,
@@ -32,10 +34,12 @@ export class EnemyManager {
   private vulnerableEnemies: Map<number, number> = new Map();
   private killStreakGoldBonus = 0;
   private manaFullGoldBonus = 0;
+  private rpDropChanceBonus = 0;
 
-  constructor(bus: EventBus, resources: ResourceManager) {
+  constructor(bus: EventBus, resources: ResourceManager, researchTree?: ResearchTree) {
     this.bus = bus;
     this.resources = resources;
+    this.researchTree = researchTree ?? null;
   }
 
   get list(): Enemy[] {
@@ -65,6 +69,10 @@ export class EnemyManager {
 
   setKillStreakGoldBonus(bonus: number): void {
     this.killStreakGoldBonus = bonus;
+  }
+
+  setRPDropChanceBonus(bonus: number): void {
+    this.rpDropChanceBonus = Math.max(0, bonus);
   }
 
   setManaFullGoldBonus(bonus: number): void {
@@ -144,6 +152,12 @@ export class EnemyManager {
       this.bus.emit('enemy_damaged', { enemy, amount, killed: true, isCrit });
       this.bus.emit('enemy_killed', enemy);
       this.resources.addGold(this.computeGold(enemy));
+      const def = ENEMY_DEFS[enemy.type];
+      const chance = (def.rpChance ?? 0) + this.rpDropChanceBonus;
+      if (chance > 0 && Math.random() < Math.min(1, chance)) {
+        this.bus.emit('rp_dropped', { x: enemy.x, y: enemy.y, amount: 1 });
+        if (this.researchTree) this.researchTree.addRP(1);
+      }
       return true;
     }
     this.bus.emit('enemy_damaged', { enemy, amount, killed: false, isCrit });
@@ -311,10 +325,11 @@ export class EnemyManager {
     this.slowFactor = 1;
     this.slowTimer = 0;
     this.goldLuckChance = 0;
-    this.goldLuckMultiplier = 1;
+    this.goldLuckMultiplier = 0;
     this.vulnerableEnemies.clear();
     this.killStreakGoldBonus = 0;
     this.manaFullGoldBonus = 0;
+    this.rpDropChanceBonus = 0;
   }
 
   /**

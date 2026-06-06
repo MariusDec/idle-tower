@@ -30,7 +30,7 @@ export type AbilityId =
   | 'vampiric_aura'
   | 'execute';
 
-export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'settings';
+export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'stats' | 'settings';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';
 
@@ -169,7 +169,36 @@ export interface GameStats {
   transcendences: number;
   totalUpgradesPurchased: number;
   startedAt: number;
+  /** Per-run timer. Reset on ascend/transcend; records when this run started. */
+  runStartedAt: number;
 }
+
+export interface RunRecord {
+  /** Wall-clock time the run was recorded (at end). */
+  endedAt: number;
+  /** Type of run completion. */
+  kind: 'ascension' | 'transcendence';
+  /** Highest wave reached in the run. */
+  highestWave: number;
+  /** Run duration in seconds. */
+  durationSeconds: number;
+  /** Total gold earned during the run. */
+  goldEarned: number;
+  /** Total enemies killed during the run. */
+  enemiesKilled: number;
+  /** Total ability casts during the run. */
+  abilitiesCast: number;
+  /** Currency gained: AP for ascension runs, TP for transcendence. */
+  currencyGained: number;
+  /** Research points gained this run (ascension only). */
+  rpGained: number;
+  /** True if this run set a new lifetime highest wave. */
+  newRecordWave: boolean;
+  /** True if this run set a new lifetime best gold. */
+  newRecordGold: boolean;
+}
+
+export const MAX_RUN_HISTORY = 20;
 
 export interface UpgradeEvolution {
   level: number;
@@ -250,6 +279,7 @@ export interface StatsInfo {
   manaRegen: number;
   maxMana: number;
   goldMultiplier: number;
+  rpGainRate: number;
 }
 
 export interface EnemyWaveStatsEntry {
@@ -270,13 +300,17 @@ export interface GameState {
   projectiles: Projectile[];
   resources: ResourceState;
   upgrades: Record<string, number>;
-  research: string[];
-  researchInProgress: { id: string; elapsed: number } | null;
+  research: Record<string, number>;
+  researchInProgress: { id: string; elapsed: number; targetLevel: number } | null;
   abilities: Record<string, AbilityState>;
   prestige: PrestigeState;
   wave: WaveState;
   stats: GameStats;
   achievements: string[];
+  /** v3+: ring buffer of recent run summaries (oldest first, capped at MAX_RUN_HISTORY). */
+  runHistory: RunRecord[];
+  /** v3+: wall-clock time the current ascension run started. */
+  runStartedAt: number;
 }
 
 export interface Particle {

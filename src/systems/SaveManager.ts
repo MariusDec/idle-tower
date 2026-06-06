@@ -6,12 +6,14 @@ import type {
   AbilityState,
   PrestigeState,
   GameStats,
+  RunRecord,
 } from '../types';
+import { MAX_RUN_HISTORY } from '../types';
 import { enemyHPForWave, goldDropForWave } from '../data/formulas';
 import { ENEMY_DEFS } from '../data/enemies';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 4;
 const AUTO_SAVE_INTERVAL = 30;
 const OFFLINE_CAP_SECONDS = 7 * 24 * 60 * 60;
 const OFFLINE_EFFICIENCY = 0.7;
@@ -23,13 +25,18 @@ export interface PersistentState {
   tower: TowerState;
   resources: ResourceState;
   upgrades: Record<string, number>;
-  research: string[];
-  researchInProgress?: { id: string; elapsed: number } | null;
+  research: Record<string, number>;
+  researchInProgress?: { id: string; elapsed: number; targetLevel: number } | null;
+  rp?: number;
   abilities: Record<string, AbilityState>;
   prestige: PrestigeState;
   wave: WaveState;
   stats: GameStats;
   achievements: string[];
+  /** v3+: last MAX_RUN_HISTORY run summaries (ring buffer, oldest first). */
+  runHistory?: RunRecord[];
+  /** v3+: wall-clock time the current run started; reset on ascend/transcend. */
+  runStartedAt?: number;
 }
 
 export interface OfflineResult {
@@ -38,6 +45,7 @@ export interface OfflineResult {
   effectiveDPS: number;
   goldEarned: number;
   wavesCleared: number;
+  rpEarned: number;
 }
 
 function isStorageAvailable(): boolean {
@@ -68,14 +76,62 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+function migrateToV3(data: Record<string, unknown>): void {
+  if (!Array.isArray(data.runHistory)) {
+    data.runHistory = [];
+  }
+  if (typeof data.runStartedAt !== 'number') {
+    const s = data.stats as Record<string, unknown> | undefined;
+    data.runStartedAt = typeof s?.startedAt === 'number' ? s.startedAt : Date.now();
+  }
+  const s = data.stats as Record<string, unknown> | undefined;
+  if (s && typeof s.runStartedAt !== 'number') {
+    s.runStartedAt = typeof s.startedAt === 'number' ? s.startedAt : Date.now();
+  }
+}
+
+function migrateV3toV4(data: Record<string, unknown>): void {
+  if (Array.isArray(data.research)) {
+    const newResearch: Record<string, number> = {};
+    for (const id of data.research as string[]) {
+      newResearch[id] = 1;
+    }
+    data.research = newResearch;
+  }
+  if (typeof data.rp !== 'number') {
+    data.rp = 0;
+  }
+  if (isObject(data.researchInProgress)) {
+    const ip = data.researchInProgress as Record<string, unknown>;
+    if (typeof ip.targetLevel !== 'number') {
+      ip.targetLevel = 1;
+    }
+  }
+}
+
+function computeRPGainMultiplier(research: Record<string, number>): number {
+  let sum = 0;
+  for (const [id, level] of Object.entries(research)) {
+    if (id !== 'rp_gain') continue;
+    const lvl = level;
+    if (lvl <= 0) continue;
+    const basePerLevel = 0.25;
+    if (lvl >= 10) sum += 5.0;
+    else sum += basePerLevel * lvl;
+  }
+  return sum;
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
-  if (data.version !== SAVE_VERSION) return false;
+
+  if (data.version !== SAVE_VERSION && data.version !== 3 && data.version !== 2) return false;
+
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
   if (!isObject(data.resources)) return false;
   if (!isObject(data.upgrades)) return false;
-  if (!Array.isArray(data.research)) return false;
+  if (!isObject(data.research)) return false;
   if (!isObject(data.abilities)) return false;
   if (!isObject(data.prestige)) return false;
   if (!isObject(data.wave)) return false;
@@ -83,14 +139,38 @@ function validate(data: unknown): data is PersistentState {
   if (!Array.isArray(data.achievements)) {
     (data as Record<string, unknown>).achievements = [];
   }
+
+  if (data.version === 2) {
+    migrateToV3(data);
+    data.version = 3;
+  }
+  if (data.version === 3 || data.version === 2) {
+    migrateV3toV4(data as Record<string, unknown>);
+    data.version = SAVE_VERSION;
+  } else {
+    if (!Array.isArray((data as Record<string, unknown>).runHistory)) {
+      (data as Record<string, unknown>).runHistory = [];
+    }
+    if (typeof (data as Record<string, unknown>).runStartedAt !== 'number') {
+      (data as Record<string, unknown>).runStartedAt = Date.now();
+    }
+    if (typeof (data as Record<string, unknown>).rp !== 'number') {
+      (data as Record<string, unknown>).rp = 0;
+    }
+  }
+
   return true;
 }
 
 export class SaveManager {
   private saveTimer = 0;
   private readonly busListener: (payload: unknown) => void;
+  private readonly getRP: () => number;
 
-  constructor(bus: { on: (event: string, h: (payload: unknown) => void) => void }) {
+  constructor(
+    bus: { on: (event: string, h: (payload: unknown) => void) => void },
+    opts: { getRP?: () => number } = {},
+  ) {
     this.busListener = (payload) => {
       const p = payload as { success: boolean };
       if (p && p.success === false) {
@@ -98,6 +178,7 @@ export class SaveManager {
       }
     };
     bus.on('save_failed', this.busListener);
+    this.getRP = opts.getRP ?? (() => 0);
   }
 
   snapshot(state: GameState): PersistentState {
@@ -107,13 +188,16 @@ export class SaveManager {
       tower: { ...state.tower },
       resources: { ...state.resources },
       upgrades: { ...state.upgrades },
-      research: [...state.research],
+      research: { ...state.research },
       researchInProgress: state.researchInProgress ? { ...state.researchInProgress } : null,
+      rp: Math.max(0, this.getRP()),
       abilities: this.snapshotAbilities(state.abilities),
       prestige: this.snapshotPrestige(state.prestige),
       wave: { ...state.wave },
       stats: { ...state.stats },
       achievements: [...(state.achievements ?? [])],
+      runHistory: [...(state.runHistory ?? [])].slice(-MAX_RUN_HISTORY),
+      runStartedAt: state.runStartedAt ?? state.stats.runStartedAt ?? Date.now(),
     };
   }
 
@@ -207,6 +291,7 @@ export class SaveManager {
         effectiveDPS: 0,
         goldEarned: 0,
         wavesCleared: 0,
+        rpEarned: 0,
       };
     }
     const dps = estimateDPS(persisted.tower);
@@ -215,12 +300,17 @@ export class SaveManager {
     const goldPerDmg = estimateGoldPerDamage(wave);
     const goldEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * goldPerDmg));
     const wavesCleared = Math.max(0, Math.floor(elapsed / AVG_WAVE_DURATION));
+    const lifetimeWave = persisted.stats.lifetimeHighestWave ?? 1;
+    const rpGainMultiplier = computeRPGainMultiplier(persisted.research ?? {});
+    const baseRPRate = 0.05 * lifetimeWave / 60;
+    const rpEarned = Math.max(0, Math.floor(baseRPRate * (1 + rpGainMultiplier) * elapsed));
     return {
       elapsedSeconds: elapsed,
       capped,
       effectiveDPS,
       goldEarned,
       wavesCleared,
+      rpEarned,
     };
   }
 

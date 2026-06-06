@@ -8,7 +8,7 @@ import {
   computePerkEffect,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
-import { setText, toggleClass, setDisplay } from '../utils/dom';
+import { setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
 
 export interface PrestigePanelHandlers {
   onAscend: () => void;
@@ -77,15 +77,15 @@ export class PrestigePanel {
 
   private updateAscend(canAscend: boolean, wave: number, preview: number): void {
     if (canAscend) {
-      this.ascendCard.classList.remove('is-locked');
-      this.ascendStatus.classList.remove('ascend-status-locked');
-      this.ascendStatus.classList.add('ascend-status-ready');
+      toggleClass(this.ascendCard, 'is-locked', false);
+      toggleClass(this.ascendStatus, 'ascend-status-locked', false);
+      toggleClass(this.ascendStatus, 'ascend-status-ready', true);
       setText(this.ascendStatus, 'Ascension is available.');
       setDisplay(this.ascendUnlockLine, 'none');
     } else {
-      this.ascendCard.classList.add('is-locked');
-      this.ascendStatus.classList.add('ascend-status-locked');
-      this.ascendStatus.classList.remove('ascend-status-ready');
+      toggleClass(this.ascendCard, 'is-locked', true);
+      toggleClass(this.ascendStatus, 'ascend-status-locked', true);
+      toggleClass(this.ascendStatus, 'ascend-status-ready', false);
       const remaining = Math.max(0, this.handlers.ascendUnlockWave - wave);
       setText(this.ascendStatus, `Reach wave ${this.handlers.ascendUnlockWave} to unlock Ascension.`);
       setDisplay(this.ascendUnlockLine, '');
@@ -286,7 +286,7 @@ export class PrestigePanel {
 
     const icon = document.createElement('div');
     icon.className = 'perk-icon';
-    icon.style.setProperty('--perk-color', p.color);
+    setStyle(icon, '--perk-color', p.color);
     icon.textContent = p.glyph;
     row.appendChild(icon);
 

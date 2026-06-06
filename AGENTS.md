@@ -22,4 +22,6 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/ui-system.md](docs/ui-system.md) | 5-tab panel system, HUD components, API interfaces, callback wiring, CSS |
 | [docs/event-bus.md](docs/event-bus.md) | Pub/sub event system with full event catalog (25 events) |
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
+| [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, milestone table, pulse-on-trigger behavior |
+| [docs/run-summary.md](docs/run-summary.md) | Post-run debrief modal, per-run history ring buffer, stats tab |
 | [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v2), auto-save, offline progress computation, welcome back modal |

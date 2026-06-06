@@ -1,3 +1,5 @@
+import { setText, toggleClass } from '../utils/dom';
+
 export interface SettingsAPI {
   onClearSave: () => void;
   onVolumeChange: (v: number) => void;
@@ -108,7 +110,7 @@ export class SettingsPanel {
     this.volumeSlider.addEventListener('input', () => {
       if (!this.volumeSlider || !this.volumeLabel) return;
       const v = parseInt(this.volumeSlider.value, 10) / 100;
-      this.volumeLabel.textContent = `${Math.round(v * 100)}%`;
+      setText(this.volumeLabel, `${Math.round(v * 100)}%`);
       this.api.onVolumeChange(v);
     });
     row.appendChild(this.volumeSlider);
@@ -120,7 +122,7 @@ export class SettingsPanel {
     this.muteBtn.addEventListener('click', () => {
       this.api.onMuteToggle();
       if (this.muteBtn) {
-        this.muteBtn.textContent = this.api.initialMuted ? 'Unmute' : 'Mute';
+        setText(this.muteBtn, this.api.initialMuted ? 'Unmute' : 'Mute');
       }
     });
     row.appendChild(this.muteBtn);
@@ -189,13 +191,13 @@ export class SettingsPanel {
 
     if (!this.confirmState) {
       this.confirmState = true;
-      this.confirmBtn.textContent = 'Click again to confirm — this destroys all progress!';
-      this.confirmBtn.classList.add('is-confirming');
+      setText(this.confirmBtn, 'Click again to confirm — this destroys all progress!');
+      toggleClass(this.confirmBtn, 'is-confirming', true);
       setTimeout(() => {
         this.confirmState = false;
         if (this.confirmBtn) {
-          this.confirmBtn.textContent = 'Clear Save';
-          this.confirmBtn.classList.remove('is-confirming');
+          setText(this.confirmBtn, 'Clear Save');
+          toggleClass(this.confirmBtn, 'is-confirming', false);
         }
       }, 4000);
       return;

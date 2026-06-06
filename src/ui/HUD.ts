@@ -1,6 +1,16 @@
 import type { GameState, StatsInfo, EnemyWaveStatsEntry } from '../types';
 import { formatNumber } from '../utils/bigNumber';
 import type { SpeedAPI, WaveControlAPI } from './UIManager';
+import {
+  hasClass,
+  setDisplay,
+  setDisabled,
+  setInnerHTML,
+  setStyle,
+  setText,
+  setTitle,
+  toggleClass,
+} from '../utils/dom';
 
 const MANA_UNLOCK_WAVE = 10;
 
@@ -96,14 +106,14 @@ export class HUD {
     if (this.statsTooltip.style.display !== 'none') {
       this.renderStatsContent(this.statsTooltip, info);
     }
-    if (this.statsPopup.classList.contains('is-open')) {
+    if (hasClass(this.statsPopup, 'is-open')) {
       this.renderStatsContent(this.statsPopupBody, info);
     }
   }
 
   private renderStatsContent(el: HTMLElement, info: StatsInfo): void {
     const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
-    el.innerHTML = `
+    setInnerHTML(el, `
       <div class="stat-row"><span>Damage</span><span>${formatNumber(info.damage)}</span></div>
       <div class="stat-row"><span>Fire Rate</span><span>${info.fireRate.toFixed(2)}/s</span></div>
       <div class="stat-row"><span>DPS</span><span>${formatNumber(info.dps)}</span></div>
@@ -119,19 +129,20 @@ export class HUD {
       <div class="stat-row"><span>Mana Regen</span><span>${info.manaRegen.toFixed(1)}/s</span></div>
       <div class="stat-row"><span>Max Mana</span><span>${info.maxMana}</span></div>
       <div class="stat-row"><span>Gold Multiplier</span><span>${info.goldMultiplier.toFixed(2)}x</span></div>
-    `;
+      <div class="stat-row"><span>RP Gain</span><span>${formatNumber(info.rpGainRate, 3)}/s</span></div>
+    `);
   }
 
   private openStatsPopup(): void {
     if (!this.statsInfo) return;
     this.renderStatsContent(this.statsPopupBody, this.statsInfo);
-    this.statsPopup.classList.add('is-open');
-    this.statsBtn.classList.add('is-active');
+    toggleClass(this.statsPopup, 'is-open', true);
+    toggleClass(this.statsBtn, 'is-active', true);
   }
 
   private closeStatsPopup(): void {
-    this.statsPopup.classList.remove('is-open');
-    this.statsBtn.classList.remove('is-active');
+    toggleClass(this.statsPopup, 'is-open', false);
+    toggleClass(this.statsBtn, 'is-active', false);
   }
 
   setEnemyStatsInfo(entries: EnemyWaveStatsEntry[]): void {
@@ -139,43 +150,43 @@ export class HUD {
     if (this.enemyStatsTooltip.style.display !== 'none') {
       this.renderEnemyStatsContent(this.enemyStatsTooltip, entries);
     }
-    if (this.enemyStatsPopup.classList.contains('is-open')) {
+    if (hasClass(this.enemyStatsPopup, 'is-open')) {
       this.renderEnemyStatsContent(this.enemyStatsPopupBody, entries);
     }
   }
 
   private renderEnemyStatsContent(el: HTMLElement, entries: EnemyWaveStatsEntry[]): void {
     if (entries.length === 0) {
-      el.innerHTML = '<div class="stat-row"><span>No enemies this wave</span><span></span></div>';
+      setInnerHTML(el, '<div class="stat-row"><span>No enemies this wave</span><span></span></div>');
       return;
     }
     const cols = entries.map(e => {
       const label = e.type.charAt(0).toUpperCase() + e.type.slice(1);
       return `<div class="enemy-stats-col">
         <div class="enemy-stats-type-header">${label}</div>
+        <div class="stat-row"><span>Gold</span><span>${formatNumber(e.gold)}</span></div>
         <div class="stat-row"><span>HP</span><span>${formatNumber(e.hp)}</span></div>
-        <div class="stat-row"><span>Speed</span><span>${e.speed.toFixed(0)}</span></div>
-        <div class="stat-row"><span>Armor</span><span>${e.armor.toFixed(0)}</span></div>
-        <div class="stat-row"><span>Magic Resist</span><span>${(e.magicResist * 100).toFixed(0)}%</span></div>
         <div class="stat-row"><span>Damage</span><span>${formatNumber(e.damage)}</span></div>
         <div class="stat-row"><span>Fire Rate</span><span>${e.fireRate.toFixed(2)}/s</span></div>
-        <div class="stat-row"><span>Gold</span><span>${formatNumber(e.gold)}</span></div>
+        <div class="stat-row"><span>Armor</span><span>${e.armor.toFixed(0)}</span></div>
+        <div class="stat-row"><span>Magic Resist</span><span>${(e.magicResist * 100).toFixed(0)}%</span></div>
+        <div class="stat-row"><span>Speed</span><span>${e.speed.toFixed(0)}</span></div>
       </div>`;
     }).join('');
     const wide = entries.length > 3 ? ' enemy-stats-grid-wide' : '';
-    el.innerHTML = `<div class="enemy-stats-grid${wide}">${cols}</div>`;
+    setInnerHTML(el, `<div class="enemy-stats-grid${wide}">${cols}</div>`);
   }
 
   private openEnemyStatsPopup(): void {
     if (this.enemyStatsInfo.length === 0) return;
     this.renderEnemyStatsContent(this.enemyStatsPopupBody, this.enemyStatsInfo);
-    this.enemyStatsPopup.classList.add('is-open');
-    this.enemyStatsBtn.classList.add('is-active');
+    toggleClass(this.enemyStatsPopup, 'is-open', true);
+    toggleClass(this.enemyStatsBtn, 'is-active', true);
   }
 
   private closeEnemyStatsPopup(): void {
-    this.enemyStatsPopup.classList.remove('is-open');
-    this.enemyStatsBtn.classList.remove('is-active');
+    toggleClass(this.enemyStatsPopup, 'is-open', false);
+    toggleClass(this.enemyStatsBtn, 'is-active', false);
   }
 
   /**
@@ -211,29 +222,29 @@ export class HUD {
 
   update(state: GameState): void {
     const manaUnlocked = state.wave.highestWave >= MANA_UNLOCK_WAVE;
-    this.manaWrap.classList.toggle('is-locked', !manaUnlocked);
-    this.goldEl.textContent = formatNumber(this.displayGold);
+    toggleClass(this.manaWrap, 'is-locked', !manaUnlocked);
+    setText(this.goldEl, formatNumber(this.displayGold));
     if (manaUnlocked) {
       const manaDisplay = Math.floor(this.displayMana);
-      this.manaEl.textContent = `${manaDisplay} / ${state.resources.maxMana}`;
+      setText(this.manaEl, `${manaDisplay} / ${state.resources.maxMana}`);
       const ratio = state.resources.maxMana > 0
         ? this.displayMana / state.resources.maxMana
         : 0;
-      this.manaBarFill.style.width = `${Math.min(100, Math.max(0, ratio * 100))}%`;
+      setStyle(this.manaBarFill, 'width', `${Math.min(100, Math.max(0, ratio * 100))}%`);
     } else {
-      this.manaEl.textContent = `Locked · wave ${MANA_UNLOCK_WAVE}`;
-      this.manaBarFill.style.width = '0%';
+      setText(this.manaEl, `Locked · wave ${MANA_UNLOCK_WAVE}`);
+      setStyle(this.manaBarFill, 'width', '0%');
     }
-    this.waveEl.textContent = `Wave ${Math.round(this.displayWave)}`;
-    this.dpsEl.textContent = `${formatNumber(this.dps)} DPS`;
-    this.killsEl.textContent = `Kills: ${formatNumber(state.stats.enemiesKilled)}`;
+    setText(this.waveEl, `Wave ${Math.round(this.displayWave)}`);
+    setText(this.dpsEl, `${formatNumber(this.dps)} DPS`);
+    setText(this.killsEl, `Kills: ${formatNumber(state.stats.enemiesKilled)}`);
     const hpDisplay = Math.max(0, this.displayHP);
     const maxHpDisplay = Math.max(1, this.displayMaxHP);
-    this.hpEl.textContent = `${formatNumber(hpDisplay)} / ${formatNumber(maxHpDisplay)}`;
+    setText(this.hpEl, `${formatNumber(hpDisplay)} / ${formatNumber(maxHpDisplay)}`);
     const hpRatio = maxHpDisplay > 0 ? hpDisplay / maxHpDisplay : 0;
-    this.hpBarFill.style.width = `${Math.min(100, Math.max(0, hpRatio * 100))}%`;
-    this.hpWrap.classList.toggle('is-critical', hpRatio > 0 && hpRatio <= 0.4);
-    this.hpWrap.classList.toggle('is-dead', hpRatio <= 0);
+    setStyle(this.hpBarFill, 'width', `${Math.min(100, Math.max(0, hpRatio * 100))}%`);
+    toggleClass(this.hpWrap, 'is-critical', hpRatio > 0 && hpRatio <= 0.4);
+    toggleClass(this.hpWrap, 'is-dead', hpRatio <= 0);
     this.syncControls(state);
   }
 
@@ -242,33 +253,33 @@ export class HUD {
     const cur = Math.max(0, Math.min(speeds.length - 1, this.speedApi.currentIndex));
     const max = Math.max(0, Math.min(speeds.length - 1, this.speedApi.maxIndex));
     const currentSpeed = speeds[cur] ?? 1;
-    this.speedLabelEl.textContent = formatSpeed(currentSpeed);
-    this.speedDecBtn.disabled = cur <= 0;
-    this.speedIncBtn.disabled = cur >= max;
-    this.speedDecBtn.title = cur > 0 ? `Slow to ${formatSpeed(speeds[cur - 1])}` : 'Already slowest';
-    this.speedIncBtn.title = cur < max ? `Speed up to ${formatSpeed(speeds[cur + 1])}` : 'Max speed reached';
+    setText(this.speedLabelEl, formatSpeed(currentSpeed));
+    setDisabled(this.speedDecBtn, cur <= 0);
+    setDisabled(this.speedIncBtn, cur >= max);
+    setTitle(this.speedDecBtn, cur > 0 ? `Slow to ${formatSpeed(speeds[cur - 1])}` : 'Already slowest');
+    setTitle(this.speedIncBtn, cur < max ? `Speed up to ${formatSpeed(speeds[cur + 1])}` : 'Max speed reached');
 
     const wave = state.wave.number;
-    this.prevWaveBtn.disabled = wave <= 1;
-    this.prevWaveBtn.title = wave > 1 ? `Restart wave ${wave - 1}` : 'Already at wave 1';
-    this.nextWaveBtn.title = `Skip to wave ${wave + 1}`;
-    this.nextWaveBtn.disabled = wave >= state.wave.highestWave;
-    this.autoProgressBtn.classList.toggle('is-on', this.waveApi.autoProgress);
-    this.autoProgressBtn.classList.toggle('is-off', !this.waveApi.autoProgress);
-    this.autoProgressBtn.textContent = this.waveApi.autoProgress ? 'Auto' : 'Paused';
-    this.autoProgressBtn.title = this.waveApi.autoProgress
+    setDisabled(this.prevWaveBtn, wave <= 1);
+    setTitle(this.prevWaveBtn, wave > 1 ? `Restart wave ${wave - 1}` : 'Already at wave 1');
+    setTitle(this.nextWaveBtn, `Skip to wave ${wave + 1}`);
+    setDisabled(this.nextWaveBtn, wave >= state.wave.highestWave);
+    toggleClass(this.autoProgressBtn, 'is-on', this.waveApi.autoProgress);
+    toggleClass(this.autoProgressBtn, 'is-off', !this.waveApi.autoProgress);
+    setText(this.autoProgressBtn, this.waveApi.autoProgress ? 'Auto' : 'Paused');
+    setTitle(this.autoProgressBtn, this.waveApi.autoProgress
       ? 'Auto-Progress is ON. Click to auto-restart current wave.'
-      : 'Auto-Progress is OFF. Click to resume auto-advancing waves.';
+      : 'Auto-Progress is OFF. Click to resume auto-advancing waves.');
 
     if (this.waveApi.isIntermission && !this.waveApi.autoProgress) {
-      this.waveStatusEl.textContent = '';
-      this.waveStatusEl.classList.add('is-warning');
+      setText(this.waveStatusEl, '');
+      toggleClass(this.waveStatusEl, 'is-warning', true);
     } else if (this.waveApi.isIntermission) {
-      this.waveStatusEl.textContent = 'Intermission';
-      this.waveStatusEl.classList.remove('is-warning');
+      setText(this.waveStatusEl, 'Intermission');
+      toggleClass(this.waveStatusEl, 'is-warning', false);
     } else {
-      this.waveStatusEl.textContent = '';
-      this.waveStatusEl.classList.remove('is-warning');
+      setText(this.waveStatusEl, '');
+      toggleClass(this.waveStatusEl, 'is-warning', false);
     }
   }
 
@@ -291,14 +302,14 @@ export class HUD {
     this.statsBtn.addEventListener('mouseenter', () => {
       if (this.statsInfo) {
         this.renderStatsContent(this.statsTooltip, this.statsInfo);
-        this.statsTooltip.style.display = 'block';
+        setDisplay(this.statsTooltip, 'block');
       }
     });
     this.statsBtn.addEventListener('mouseleave', () => {
-      this.statsTooltip.style.display = 'none';
+      setDisplay(this.statsTooltip, 'none');
     });
     this.statsBtn.addEventListener('click', () => {
-      if (this.statsPopup.classList.contains('is-open')) {
+      if (hasClass(this.statsPopup, 'is-open')) {
         this.closeStatsPopup();
       } else {
         this.openStatsPopup();
@@ -318,14 +329,14 @@ export class HUD {
     this.enemyStatsBtn.addEventListener('mouseenter', () => {
       if (this.enemyStatsInfo.length > 0) {
         this.renderEnemyStatsContent(this.enemyStatsTooltip, this.enemyStatsInfo);
-        this.enemyStatsTooltip.style.display = 'block';
+        setDisplay(this.enemyStatsTooltip, 'block');
       }
     });
     this.enemyStatsBtn.addEventListener('mouseleave', () => {
-      this.enemyStatsTooltip.style.display = 'none';
+      setDisplay(this.enemyStatsTooltip, 'none');
     });
     this.enemyStatsBtn.addEventListener('click', () => {
-      if (this.enemyStatsPopup.classList.contains('is-open')) {
+      if (hasClass(this.enemyStatsPopup, 'is-open')) {
         this.closeEnemyStatsPopup();
       } else {
         this.openEnemyStatsPopup();
@@ -438,9 +449,21 @@ export class HUD {
     groupRight.className = 'hud-group right';
     this.dpsEl = this.addStat(groupRight, 'DPS', '0');
     this.fpsEl = this.addStat(groupRight, 'FPS', '--');
-    this.fpsEl.classList.add('hud-fps');
+    toggleClass(this.fpsEl, 'hud-fps', true);
     groupRight.appendChild(this.renderSpeedBlock());
     this.root.appendChild(groupRight);
+  }
+
+  /**
+   * Returns a container element the host can use to render the milestone
+   * strip. Appended next to the HUD root in the document so it can use the
+   * full screen width without conflicting with the HUD bar layout.
+   */
+  renderMilestoneStripSlot(): HTMLElement {
+    const slot = document.createElement('div');
+    slot.className = 'milestone-strip-slot';
+    document.body.appendChild(slot);
+    return slot;
   }
 
   private renderWaveBlock(): HTMLElement {

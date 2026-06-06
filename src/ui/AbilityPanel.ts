@@ -1,7 +1,7 @@
 import type { AbilityId, GameState } from '../types';
 import { ABILITIES, ABILITY_BY_ID, computeEffectiveStats, type AbilityDef } from '../data/abilities';
 import { formatInt } from '../utils/bigNumber';
-import { setText, toggleClass, setDisplay, setStyle } from '../utils/dom';
+import { setAriaLabel, setDisabled, setInnerHTML, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
 
 export interface AbilityPanelHandlers {
   onCast: (id: AbilityId) => void;
@@ -83,7 +83,7 @@ export class AbilityPanel {
       const canAfford = state.resources.gold >= cost;
       const isUnlocked = state.wave.highestWave >= def.unlockWave;
 
-      btn.disabled = !canCast;
+      setDisabled(btn, !canCast);
       toggleClass(btn, 'is-ready', canCast);
       toggleClass(btn, 'is-cooldown', onCd);
       toggleClass(btn, 'is-locked', reason === 'Locked' || (reason?.startsWith('Unlocks at') ?? false));
@@ -92,7 +92,7 @@ export class AbilityPanel {
       if (manaTag) {
         setText(manaTag, `${stats.manaCost}`);
       }
-      btn.setAttribute('aria-label', `${def.name} Lv.${stats.level}, ${stats.manaCost} mana, ${stats.cooldown.toFixed(1)}s cooldown`);
+      setAriaLabel(btn, `${def.name} Lv.${stats.level}, ${stats.manaCost} mana, ${stats.cooldown.toFixed(1)}s cooldown`);
 
       if (onCd) {
         const ratio = Math.max(0, Math.min(1, abState.cooldown / stats.cooldown));
@@ -143,7 +143,7 @@ export class AbilityPanel {
       toggleClass(upgradeBtn, 'is-maxed', isMaxed);
       toggleClass(upgradeBtn, 'can-afford', canAfford);
       toggleClass(upgradeBtn, 'cannot-afford', showUpgrade && !canAfford);
-      upgradeBtn.disabled = !canAfford;
+      setDisabled(upgradeBtn, !canAfford);
       setText(upgradeBtn, `Upgrade · ${formatInt(cost)}g`);
 
       // Tooltip content (only refreshed when visible to avoid cost).
@@ -157,6 +157,8 @@ export class AbilityPanel {
   flashCast(id: AbilityId): void {
     const btn = this.buttonsById.get(id);
     if (!btn) return;
+    // Animation restart: must always add the class (toggleClass would
+    // short-circuit via the cache and skip the CSS animation).
     btn.classList.add('is-flash');
     setTimeout(() => btn.classList.remove('is-flash'), 220);
   }
@@ -164,6 +166,7 @@ export class AbilityPanel {
   flashUpgrade(id: AbilityId): void {
     const card = this.cardsById.get(id);
     if (!card) return;
+    // See flashCast — animation classes need unconditional add.
     card.classList.add('is-upgrade-flash');
     setTimeout(() => card.classList.remove('is-upgrade-flash'), 320);
   }
@@ -312,13 +315,13 @@ export class AbilityPanel {
     // green. We still render the class hook in case the affordability wiring
     // changes in the future.
     this.refreshTooltip(id, tooltip, def, stats, cost, true, false);
-    tooltip.style.display = 'block';
+    setDisplay(tooltip, 'block');
     this.positionTooltip(id);
   }
 
   private hideTooltip(id: AbilityId): void {
     const tooltip = this.upgradeTooltipById.get(id);
-    if (tooltip) tooltip.style.display = 'none';
+    if (tooltip) setDisplay(tooltip, 'none');
   }
 
   /**
@@ -340,10 +343,10 @@ export class AbilityPanel {
     const maxRight = window.innerWidth - tipRect.width - margin;
     const right = Math.max(margin, Math.min(maxRight, desiredRight));
     const top = Math.max(margin, btnRect.bottom - tipRect.height);
-    tooltip.style.right = `${right}px`;
-    tooltip.style.bottom = `${desiredBottom}px`;
-    tooltip.style.top = `${top}px`;
-    tooltip.style.left = 'auto';
+    setStyle(tooltip, 'right', `${right}px`);
+    setStyle(tooltip, 'bottom', `${desiredBottom}px`);
+    setStyle(tooltip, 'top', `${top}px`);
+    setStyle(tooltip, 'left', 'auto');
   }
 
   private refreshTooltip(
@@ -366,13 +369,13 @@ export class AbilityPanel {
     const curEff = currentStats.displayEffectValue;
     const nextEff = next.displayEffectValue;
 
-    el.innerHTML = `
+    setInnerHTML(el, `
       <div class="tooltip-header">${def.name} — Level ${currentStats.level} → ${currentStats.level + 1}</div>
       <div class="tooltip-row"><span>${effectLabel}</span><span>${curEff} <span class="arrow">→</span> <span class="up-val">${nextEff}</span></span></div>
       <div class="tooltip-row"><span>Mana cost</span><span>${manaCostStr} <span class="arrow">→</span> <span class="up-val">${nextManaCostStr}</span></span></div>
       <div class="tooltip-row"><span>Cooldown</span><span>${cooldownStr}s <span class="arrow">→</span> <span class="up-val">${nextCooldownStr}s</span></span></div>
       <div class="tooltip-row"><span>Duration</span><span>${durationStr} <span class="arrow">→</span> <span class="up-val">${nextDurationStr}</span></span></div>
       <div class="tooltip-cost ${canAfford ? 'can-afford' : 'cannot-afford'}">Cost: ${formatInt(cost)}g</div>
-    `;
+    `);
   }
 }

@@ -23,10 +23,13 @@ export const SUFFIXES: readonly string[] = [
   'Vg',
 ];
 
-export function formatNumber(n: number): string {
+export function formatNumber(n: number, decimalCount = 0): string {
   if (!isFinite(n)) return 'Infinity';
+
+  var decimalFactor = Math.pow(10, decimalCount);
   if (n < 0) return '-' + formatNumber(-n);
-  if (n < 1000) return Math.floor(n).toLocaleString();
+  if (n < 1000) return (Math.floor(n * decimalFactor) / decimalFactor).toLocaleString();
+
   const exp = Math.floor(Math.log10(n));
   const tier = Math.floor(exp / 3);
   const scaled = n / Math.pow(1000, tier);

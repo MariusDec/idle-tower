@@ -125,10 +125,15 @@ function bootstrap(): void {
   });
   ui.setResearchAPI({
     rp: game.research.rp,
+    levels: game.research.getLevelsSnapshot(),
     unlocked: game.research.unlocked,
     reasonBlocked: (id) => game.research.reasonBlocked(id),
     inProgress: null,
     researchSpeedMultiplier: game.prestige.getResearchSpeedMultiplier(),
+    rpGainRate: game.research.getPassiveRPRate(
+      game.gameState.stats.lifetimeHighestWave,
+      game.research.getRPGainMultiplier(),
+    ),
   });
 
   let mouseDown = false;

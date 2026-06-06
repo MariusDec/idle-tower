@@ -44,4 +44,5 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `rp_changed` | `{ rp, delta }` | ResearchTree | — |
 | `toast` | `{ kind, text, life? }` | Any | NotificationManager |
 | `welcome_back` | `{ result, startWave, endWave }` | Game | UIManager (modal) |
+| `run_ended` | `{ record: RunRecord, previous: RunRecord \| null }` | Game (ascend/transcend) | UIManager (RunSummaryModal) |
 | `save_failed` | `{ success }` | SaveManager | — |

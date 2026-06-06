@@ -1,6 +1,9 @@
 const textCache = new WeakMap<HTMLElement, string>();
 const classCache = new WeakMap<HTMLElement, Set<string>>();
 const styleCache = new WeakMap<HTMLElement, Map<string, string>>();
+const innerHTMLCache = new WeakMap<HTMLElement, string>();
+const attrCache = new WeakMap<HTMLElement, Map<string, string>>();
+const disabledCache = new WeakMap<HTMLElement, boolean>();
 
 export function setText(el: HTMLElement, value: string): void {
   const prev = textCache.get(el);
@@ -51,4 +54,45 @@ export function setStyle(el: HTMLElement, prop: string, value: string): void {
 export function setDisplay(el: HTMLElement, value: string): void {
   if (el.style.display === value) return;
   el.style.display = value;
+}
+
+export function setInnerHTML(el: HTMLElement, value: string): void {
+  const prev = innerHTMLCache.get(el);
+  if (prev === value) return;
+  innerHTMLCache.set(el, value);
+  el.innerHTML = value;
+}
+
+export function setAttribute(el: HTMLElement, name: string, value: string): void {
+  let cache = attrCache.get(el);
+  if (!cache) {
+    cache = new Map<string, string>();
+    attrCache.set(el, cache);
+  }
+  const prev = cache.get(name);
+  if (prev === value) return;
+  cache.set(name, value);
+  el.setAttribute(name, value);
+}
+
+export function setTitle(el: HTMLElement, value: string): void {
+  setAttribute(el, 'title', value);
+}
+
+export function setAriaLabel(el: HTMLElement, value: string): void {
+  setAttribute(el, 'aria-label', value);
+}
+
+export function setDataAttr(el: HTMLElement, name: string, value: string): void {
+  setAttribute(el, `data-${name}`, value);
+}
+
+export function setDisabled(
+  el: HTMLButtonElement | HTMLInputElement | HTMLSelectElement,
+  value: boolean,
+): void {
+  const prev = disabledCache.get(el);
+  if (prev === value) return;
+  disabledCache.set(el, value);
+  el.disabled = value;
 }

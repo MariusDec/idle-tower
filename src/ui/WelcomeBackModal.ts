@@ -1,5 +1,6 @@
 import { formatNumber } from '../utils/bigNumber';
 import type { OfflineResult } from '../systems/SaveManager';
+import { toggleClass } from '../utils/dom';
 
 export interface WelcomeBackData {
   result: OfflineResult;
@@ -105,7 +106,7 @@ export class WelcomeBackModal {
 
     wrap.appendChild(card);
     this.root.appendChild(wrap);
-    requestAnimationFrame(() => wrap.classList.add('is-visible'));
+    requestAnimationFrame(() => toggleClass(wrap, 'is-visible', true));
   }
 
   hide(): void {

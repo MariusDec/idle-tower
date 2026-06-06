@@ -3,26 +3,32 @@ import {
   RESEARCH_NODES,
   type ResearchDef,
   type ResearchCategory,
+  type ResearchEffectType,
+  getResearchCost,
+  getResearchTime,
+  getResearchEffectAtLevel,
 } from '../data/research';
 import { formatNumber } from '../utils/bigNumber';
-import { setText, toggleClass, setDisplay, setStyle } from '../utils/dom';
+import { setDisabled, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
 
 export interface ResearchPanelHandlers {
   onStartResearch: (id: string) => void;
   onCancelResearch: () => void;
   rp: number;
+  levels: Readonly<Record<string, number>>;
   unlocked: ReadonlySet<string>;
   reasonBlocked: (id: string) => string | null;
-  inProgress: { id: string; elapsed: number; total: number } | null;
+  inProgress: { id: string; elapsed: number; total: number; targetLevel: number } | null;
   researchSpeedMultiplier: number;
 }
 
-const CATEGORY_ORDER: ResearchCategory[] = ['combat', 'economy', 'arcane', 'scouting'];
+const CATEGORY_ORDER: ResearchCategory[] = ['combat', 'economy', 'arcane', 'scouting', 'research'];
 const CATEGORY_LABELS: Record<ResearchCategory, string> = {
   combat: 'Combat',
   economy: 'Economy',
   arcane: 'Arcane',
   scouting: 'Scouting',
+  research: 'Research',
 };
 
 function formatTime(seconds: number): string {
@@ -31,6 +37,58 @@ function formatTime(seconds: number): string {
   const s = Math.ceil(seconds % 60);
   if (m <= 0) return `${s}s`;
   return `${m}m ${s}s`;
+}
+
+function formatPercent(v: number, digits: number = 0): string {
+  const pct = v * 100;
+  if (digits === 0 && Math.abs(pct - Math.round(pct)) < 1e-6) {
+    return `${Math.round(pct)}%`;
+  }
+  return `${pct.toFixed(digits)}%`;
+}
+
+function formatEffectValue(effectType: ResearchEffectType, value: number): string {
+  switch (effectType) {
+    case 'pierce':
+      return `Pierce +${value}`;
+    case 'gold_multi':
+      return `+${formatPercent(value)} gold`;
+    case 'gold_luck':
+      return `${formatPercent(value, 1)} chance 3× gold`;
+    case 'mana_regen':
+      return `+${formatPercent(value)} mana regen`;
+    case 'ability_cost':
+      return `−${formatPercent(value)} ability cost`;
+    case 'start_wave':
+      return `Start at wave ${value}`;
+    case 'tower_defense':
+      return `${formatPercent(value)} damage reduction`;
+    case 'chain_kill_aoe':
+      return `${formatPercent(value)} AoE on kill`;
+    case 'crit_mana':
+      return `Crits +${formatNumber(value)} mana`;
+    case 'ability_power':
+      return `+${formatPercent(value)} ability damage`;
+    case 'intermission_speed':
+      return `−${formatPercent(value)} intermission`;
+    case 'enemy_hp_reduce':
+      return `−${formatPercent(value)} enemy HP`;
+    case 'rp_gain':
+      return `+${formatPercent(value)} RP gain`;
+    case 'rp_drop_chance':
+      return `+${formatPercent(value, 1)} drop chance`;
+    default:
+      return formatNumber(value);
+  }
+}
+
+function formatResearchEffect(def: ResearchDef, current: number, next: number | null): string {
+  if (current <= 0 && next === null) return '';
+  const currentText = current > 0 ? formatEffectValue(def.effectType, current) : '';
+  if (next === null) return currentText;
+  const nextText = formatEffectValue(def.effectType, next);
+  if (!currentText) return nextText;
+  return `${currentText} (next: ${nextText})`;
 }
 
 export class ResearchPanel {
@@ -49,6 +107,8 @@ export class ResearchPanel {
   private progressBarById = new Map<string, HTMLElement>();
   private progressTextById = new Map<string, HTMLElement>();
   private timeEstById = new Map<string, HTMLElement>();
+  private levelById = new Map<string, HTMLElement>();
+  private effectById = new Map<string, HTMLElement>();
 
   constructor(handlers: ResearchPanelHandlers) {
     this.handlers = handlers;
@@ -66,12 +126,14 @@ export class ResearchPanel {
     this.progressBarById.clear();
     this.progressTextById.clear();
     this.timeEstById.clear();
+    this.levelById.clear();
+    this.effectById.clear();
     this.renderInto(parent);
   }
 
   update(state: GameState): void {
     if (!this.root) return;
-    setText(this.rpEl, formatNumber(state.resources.ascensionPoints));
+    setText(this.rpEl, formatNumber(this.handlers.rp));
     setText(this.ascensionsEl, formatNumber(state.stats.ascensions));
     const spent = this.computeSpent();
     setText(this.spentEl, formatNumber(spent));
@@ -90,57 +152,78 @@ export class ResearchPanel {
       const progressBar = this.progressBarById.get(node.id);
       const progressText = this.progressTextById.get(node.id);
       const timeEst = this.timeEstById.get(node.id);
-      if (!row || !stateEl || !reasonEl || !costEl || !btn || !progressWrap || !progressBar || !progressText || !timeEst) continue;
+      const levelEl = this.levelById.get(node.id);
+      const effectEl = this.effectById.get(node.id);
+      if (!row || !stateEl || !reasonEl || !costEl || !btn || !progressWrap || !progressBar || !progressText || !timeEst || !levelEl || !effectEl) continue;
 
-      const unlocked = state.research.includes(node.id);
+      const level = this.handlers.levels[node.id] ?? 0;
+      const maxLevel = node.maxLevel;
+      const isMaxed = level >= maxLevel;
       const isResearching = ip?.id === node.id;
-      const reason = this.handlers.reasonBlocked(node.id);
+      const reason = isResearching ? null : this.handlers.reasonBlocked(node.id);
+      const currentEffect = level > 0 ? getResearchEffectAtLevel(node, level) : 0;
+      const nextEffect = !isMaxed ? getResearchEffectAtLevel(node, Math.min(level + 1, maxLevel)) : currentEffect;
+      const cost = isMaxed ? 0 : getResearchCost(node, Math.min(level + 1, maxLevel));
+      const totalTime = isMaxed ? 0 : getResearchTime(node, Math.min(level + 1, maxLevel)) * this.handlers.researchSpeedMultiplier;
 
-      toggleClass(row, 'is-unlocked', unlocked);
+      setText(levelEl, level > 0 ? `Level ${level} / ${maxLevel}` : '');
+      setText(effectEl, formatResearchEffect(node, currentEffect, isMaxed ? null : nextEffect));
+
+      const unlocked = level > 0;
+      toggleClass(row, 'is-unlocked', unlocked && !isResearching);
       toggleClass(row, 'is-researching', isResearching);
       toggleClass(row, 'is-locked', !unlocked && !isResearching && reason !== null);
       toggleClass(row, 'is-available', !unlocked && !isResearching && reason === null);
+      toggleClass(row, 'is-maxed', isMaxed && !isResearching);
 
       if (isResearching && ip) {
-        const pct = Math.min(100, (ip.elapsed / ip.total) * 100);
+        const pct = Math.min(100, (ip.elapsed / Math.max(0.0001, ip.total)) * 100);
         const remaining = Math.max(0, ip.total - ip.elapsed);
         setText(stateEl, 'Researching…');
-        stateEl.className = 'research-state research-state-researching';
+        toggleClass(stateEl, 'research-state-researching', true);
+        toggleClass(stateEl, 'research-state-unlocked', false);
+        toggleClass(stateEl, 'research-state-blocked', false);
+        toggleClass(stateEl, 'research-state-available', false);
         setDisplay(progressWrap, '');
         setStyle(progressBar, 'width', `${pct}%`);
         setText(progressText, `${formatTime(remaining)} remaining`);
         setText(btn, 'Cancel');
-        btn.disabled = false;
+        setDisabled(btn, false);
         toggleClass(btn, 'can-afford', false);
         toggleClass(btn, 'btn-cancel', true);
         setDisplay(timeEst, 'none');
         setText(reasonEl, '');
         setDisplay(reasonEl, 'none');
-        setText(costEl, formatNumber(node.cost));
+        setText(costEl, formatNumber(cost));
       } else {
         setDisplay(progressWrap, 'none');
         toggleClass(btn, 'btn-cancel', false);
-        if (unlocked) {
-          setText(stateEl, 'Completed');
-          stateEl.className = 'research-state research-state-unlocked';
+        toggleClass(stateEl, 'research-state-researching', false);
+        if (isMaxed) {
+          setText(stateEl, 'Maxed');
+          toggleClass(stateEl, 'research-state-unlocked', true);
+          toggleClass(stateEl, 'research-state-blocked', false);
+          toggleClass(stateEl, 'research-state-available', false);
           setText(costEl, '—');
-          btn.disabled = true;
+          setDisabled(btn, true);
           toggleClass(btn, 'can-afford', false);
           setText(btn, 'Done');
           setDisplay(timeEst, 'none');
         } else {
-          const effectiveTime = node.researchTime * this.handlers.researchSpeedMultiplier;
-          setText(stateEl, reason ?? 'Available');
-          stateEl.className = `research-state ${reason !== null ? 'research-state-blocked' : 'research-state-available'}`;
-          setText(costEl, formatNumber(node.cost));
+          setText(stateEl, '');
+          toggleClass(stateEl, 'research-state-unlocked', false);
+          toggleClass(stateEl, 'research-state-blocked', false);
+          toggleClass(stateEl, 'research-state-available', false);
+          setText(costEl, formatNumber(cost));
           const canStart = reason === null;
-          btn.disabled = !canStart;
+          setDisabled(btn, !canStart);
           toggleClass(btn, 'can-afford', canStart);
-          setText(btn, 'Start');
-          setText(timeEst, formatTime(effectiveTime));
+          setText(btn, level > 0 ? 'Upgrade' : 'Start');
+          setText(timeEst, formatTime(totalTime));
           setDisplay(timeEst, '');
         }
-        if (reason && !unlocked && !isResearching) {
+        const reasonIsPrereq = reason !== null && reason.startsWith('Requires ') && node.prerequisites.length > 0;
+        if (reason && !isMaxed && !reasonIsPrereq) {
           setText(reasonEl, reason);
           setDisplay(reasonEl, '');
         } else {
@@ -154,7 +237,8 @@ export class ResearchPanel {
   private computeSpent(): number {
     let total = 0;
     for (const node of RESEARCH_NODES) {
-      if (this.handlers.unlocked.has(node.id)) total += node.cost;
+      const level = this.handlers.levels[node.id] ?? 0;
+      for (let lv = 1; lv <= level; lv++) total += getResearchCost(node, lv);
     }
     return total;
   }
@@ -214,7 +298,7 @@ export class ResearchPanel {
     const p = document.createElement('p');
     p.className = 'panel-note';
     p.textContent =
-      'Earn Research Points (RP) by Ascending. Start research to unlock permanent upgrades — each takes time to complete. Invest in Scholarly Focus (Prestige tab) to speed up research.';
+      'Earn Research Points (RP) passively over time and from enemy drops. Start research to unlock permanent upgrades — each takes time to complete. Invest in Scholarly Focus (Prestige tab) to speed up research.';
     return p;
   }
 
@@ -263,6 +347,12 @@ export class ResearchPanel {
     const desc = document.createElement('div');
     desc.className = 'research-desc';
     desc.textContent = n.description;
+    const levelEl = document.createElement('div');
+    levelEl.className = 'research-level';
+    levelEl.textContent = '';
+    const effectEl = document.createElement('div');
+    effectEl.className = 'research-effect';
+    effectEl.textContent = '';
     const meta = document.createElement('div');
     meta.className = 'research-meta';
     const stateEl = document.createElement('span');
@@ -275,9 +365,10 @@ export class ResearchPanel {
     meta.appendChild(reasonEl);
     info.appendChild(name);
     info.appendChild(desc);
+    info.appendChild(levelEl);
+    info.appendChild(effectEl);
     info.appendChild(meta);
 
-    // Progress bar (hidden by default)
     const progressWrap = document.createElement('div');
     progressWrap.className = 'research-progress';
     progressWrap.style.display = 'none';
@@ -312,7 +403,7 @@ export class ResearchPanel {
     cost.textContent = '0';
     const timeEst = document.createElement('div');
     timeEst.className = 'research-time';
-    timeEst.textContent = formatTime(n.researchTime);
+    timeEst.textContent = formatTime(0);
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'btn btn-research';
@@ -338,6 +429,8 @@ export class ResearchPanel {
     this.progressBarById.set(n.id, progressBar);
     this.progressTextById.set(n.id, progressText);
     this.timeEstById.set(n.id, timeEst);
+    this.levelById.set(n.id, levelEl);
+    this.effectById.set(n.id, effectEl);
     return row;
   }
 }

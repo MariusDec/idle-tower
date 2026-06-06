@@ -9,7 +9,7 @@ import {
   computePerkEffect,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
-import { setText, toggleClass, setDisplay } from '../utils/dom';
+import { setDataAttr, setInnerHTML, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
 
 export interface TranscendencePanelHandlers {
   onTranscend: () => void;
@@ -91,15 +91,15 @@ export class TranscendencePanel {
 
   private updateTranscend(canTranscend: boolean, ap: number, preview: number): void {
     if (canTranscend) {
-      this.transcendCard.classList.remove('is-locked');
-      this.transcendStatus.classList.remove('transcend-status-locked');
-      this.transcendStatus.classList.add('transcend-status-ready');
+      toggleClass(this.transcendCard, 'is-locked', false);
+      toggleClass(this.transcendStatus, 'transcend-status-locked', false);
+      toggleClass(this.transcendStatus, 'transcend-status-ready', true);
       setText(this.transcendStatus, 'Transcendence is available.');
       setDisplay(this.transcendUnlockLine, 'none');
     } else {
-      this.transcendCard.classList.add('is-locked');
-      this.transcendStatus.classList.add('transcend-status-locked');
-      this.transcendStatus.classList.remove('transcend-status-ready');
+      toggleClass(this.transcendCard, 'is-locked', true);
+      toggleClass(this.transcendStatus, 'transcend-status-locked', true);
+      toggleClass(this.transcendStatus, 'transcend-status-ready', false);
       const remaining = Math.max(0, this.handlers.transcendUnlockAP - ap);
       setText(this.transcendStatus, `Reach ${formatNumber(this.handlers.transcendUnlockAP)} AP to unlock Transcendence.`);
       setDisplay(this.transcendUnlockLine, '');
@@ -132,7 +132,7 @@ export class TranscendencePanel {
     toggleClass(row, 'tp-node--locked', !prereqMet && level === 0);
     toggleClass(row, 'tp-node--excluded', excluded && level === 0);
     toggleClass(row, 'tp-node--purchased', level > 0);
-    row.setAttribute('data-tp-level', String(level));
+    setDataAttr(row, 'tp-level', String(level));
 
     setText(levelEl, excluded && level === 0
       ? 'Blocked'
@@ -388,8 +388,8 @@ export class TranscendencePanel {
 
       const bHeader = document.createElement('div');
       bHeader.className = 'tp-branch-header';
-      bHeader.style.setProperty('--branch-color', bm.color);
-      bHeader.innerHTML = `<span class="tp-branch-icon">${bm.icon}</span> ${bm.title}`;
+      setStyle(bHeader, '--branch-color', bm.color);
+      setInnerHTML(bHeader, `<span class="tp-branch-icon">${bm.icon}</span> ${bm.title}`);
       branch.appendChild(bHeader);
 
       const perks = TP_PERKS.filter(p => p.branch === bm.key);
@@ -429,13 +429,13 @@ export class TranscendencePanel {
     const row = document.createElement('div');
     row.className = 'perk-row perk-row-tp tp-node';
     row.dataset.tpPerk = p.id;
-    row.setAttribute('data-tp-level', '0');
+    setDataAttr(row, 'tp-level', '0');
     if (p.exclusive && p.exclusive.length > 0) row.classList.add('tp-node--exclusive-choice');
     this.tpRowById.set(p.id, row);
 
     const icon = document.createElement('div');
     icon.className = 'perk-icon';
-    icon.style.setProperty('--perk-color', p.color);
+    setStyle(icon, '--perk-color', p.color);
     icon.textContent = p.glyph;
     row.appendChild(icon);
 

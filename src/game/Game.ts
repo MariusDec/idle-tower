@@ -1,5 +1,5 @@
-import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode } from '../types';
-import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX } from '../types';
+import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord } from '../types';
+import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
 import { TOWER_BASE, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
 import { ENEMY_DEFS } from '../data/enemies';
@@ -76,6 +76,7 @@ function makeInitialState(): GameState {
     transcendences: 0,
     totalUpgradesPurchased: 0,
     startedAt: Date.now(),
+    runStartedAt: Date.now(),
   };
   return {
     timestamp: Date.now(),
@@ -84,7 +85,7 @@ function makeInitialState(): GameState {
     projectiles: [],
     resources,
     upgrades: {},
-    research: [],
+    research: {},
     researchInProgress: null,
     abilities,
     prestige,
@@ -102,6 +103,8 @@ function makeInitialState(): GameState {
     },
     stats,
     achievements: [],
+    runHistory: [],
+    runStartedAt: Date.now(),
   };
 }
 
@@ -152,6 +155,17 @@ export class Game {
   private mouseY = 0;
   private mouseDown = false;
 
+  // Per-run baselines (snapshotted when a run starts; used to compute deltas
+  // and to record RunRecord summaries on ascend/transcend).
+  private runBaselineGold = 0;
+  private runBaselineKills = 0;
+  private runBaselineAbilities = 0;
+  private runBaselineHighestWave = 1;
+  /** Lifetime best run gold (for "new record" detection). */
+  private bestGoldRun = 0;
+  /** Lifetime best run wave (for "new record" detection). */
+  private bestWaveRun = 1;
+
   private speedIndex = DEFAULT_SPEED_INDEX;
   private maxSpeedIndex = MAX_SPEED_INDEX;
 
@@ -175,7 +189,8 @@ export class Game {
     this.state = makeInitialState();
     this.tower = new Tower(this.state.tower);
     this.resourceMgr = new ResourceManager(this.state.resources, this.state.stats, this.bus);
-    this.enemyMgr = new EnemyManager(this.bus, this.resourceMgr);
+    this.researchTree = new ResearchTree(this.bus);
+    this.enemyMgr = new EnemyManager(this.bus, this.resourceMgr, this.researchTree);
     this.projectileMgr = new ProjectileManager(this.bus, this.tower, this.enemyMgr);
     this.waveMgr = new WaveManager(
       this.bus,
@@ -236,7 +251,6 @@ export class Game {
       stats: this.state.stats,
       prestige: this.state.prestige,
     });
-    this.researchTree = new ResearchTree(this.bus);
     this.automation = new AutomationManager({
       upgrades: this.upgradeMgr,
       abilities: this.abilityMgr,
@@ -247,11 +261,11 @@ export class Game {
       onTranscend: () => this.transcend(),
       bus: this.bus,
     });
-    this.saveMgr = new SaveManager(this.bus);
+    this.saveMgr = new SaveManager(this.bus, { getRP: () => this.researchTree.rp });
     this.achievementMgr = new AchievementManager(this.bus, {
       getStats: () => this.state.stats,
       getAchievements: () => this.state.achievements,
-      researchCount: () => this.state.research.length,
+      researchCount: () => Object.keys(this.state.research).length,
     });
     this.audio = new AudioManager(this.bus);
 
@@ -259,6 +273,7 @@ export class Game {
     this.state.upgrades = this.upgradeMgr.snapshot();
     this.applyUpgradeEffects();
     this.syncUiApis();
+    this.resetRunBaselines();
 
     this.bus.on('enemy_damaged', (payload: unknown) => {
       const p = payload as { enemy: { id: number; x: number; y: number; type: string; armor: number; magicResist: number; hp: number; maxHp: number; goldValue: number; alive: boolean }; amount: number; killed: boolean; isCrit?: boolean };
@@ -487,13 +502,18 @@ export class Game {
       });
     });
     this.bus.on('research_unlocked', (payload: unknown) => {
-      const p = payload as { id: string };
-      this.state.research = Array.from(this.researchTree.unlocked);
+      const p = payload as { id: string; level: number };
+      this.state.research = this.researchTree.getLevelsSnapshot();
       this.applyUpgradeEffects();
-      if (!this.researchAnnounced.has(p.id)) {
-        this.researchAnnounced.add(p.id);
+      const key = `${p.id}:${p.level}`;
+      if (!this.researchAnnounced.has(key)) {
+        this.researchAnnounced.add(key);
         const name = RESEARCH_BY_ID[p.id]?.name ?? 'Research';
-        this.bus.emit('toast', { kind: 'milestone', text: `${name} complete!`, life: 3.5 });
+        this.bus.emit('toast', {
+          kind: 'milestone',
+          text: `${name}${p.level > 1 ? ` Lv.${p.level}` : ''} complete!`,
+          life: 3.5,
+        });
       }
     });
     this.bus.on('automation_unlocked', (payload: unknown) => {
@@ -606,6 +626,9 @@ export class Game {
 
   private triggerCanvasShake(): void {
     if (!this.canvasWrap) return;
+    // Animation restart pattern: unconditionally remove → force reflow → add.
+    // toggleClass would short-circuit via the cache and skip the CSS
+    // animation — keep raw classList ops here.
     this.canvasWrap.classList.remove('is-shaking');
     void this.canvasWrap.offsetWidth; // restart anim
     this.canvasWrap.classList.add('is-shaking');
@@ -702,17 +725,19 @@ export class Game {
 
   ascend(): number {
     if (!this.prestigeMgr.canAscend(this.state.wave.highestWave)) return 0;
-    const { ap, rp } = this.prestigeMgr.performAscension(this.state);
+    const { ap } = this.prestigeMgr.performAscension(this.state);
     if (ap <= 0) return 0;
-    this.researchTree.addRP(rp);
+    const record = this.finalizeRun('ascension', ap, 0);
     this.applySavedStateReset();
+    this.resetRunBaselines();
     this.saveMgr.save(this.state);
     this.syncUiApis();
     this.bus.emit('toast', {
       kind: 'milestone',
-      text: `Ascension! +${ap} AP, +${rp} RP. Your run has been reset.`,
+      text: `Ascension! +${ap} AP. Your run has been reset.`,
       life: 6,
     });
+    this.bus.emit('run_ended', { record, previous: this.getPreviousRun() });
     return ap;
   }
 
@@ -721,7 +746,9 @@ export class Game {
     if (!this.prestigeMgr.canTranscend(ascensionPoints)) return 0;
     const { tp } = this.prestigeMgr.performTranscendence(this.state);
     if (tp <= 0) return 0;
+    const record = this.finalizeRun('transcendence', tp, 0);
     this.applyFullTranscendenceReset();
+    this.resetRunBaselines();
     this.saveMgr.save(this.state);
     this.syncUiApis();
     this.bus.emit('toast', {
@@ -729,7 +756,19 @@ export class Game {
       text: `Transcendence! +${tp} TP. Everything resets. New power awaits.`,
       life: 7,
     });
+    this.bus.emit('run_ended', { record, previous: this.getPreviousRun() });
     return tp;
+  }
+
+  /**
+   * Returns the run immediately preceding the most recent one (for delta display).
+   * Since `finalizeRun` always pushes a new record at the end, the previous one
+   * is at `length - 2`.
+   */
+  private getPreviousRun(): RunRecord | null {
+    const h = this.state.runHistory;
+    if (h.length < 2) return null;
+    return h[h.length - 2] ?? null;
   }
 
   spendAP(perkId: string): boolean {
@@ -895,6 +934,7 @@ export class Game {
     if (result.elapsedSeconds > 0) {
       const startWave = this.state.wave.number;
       this.saveMgr.applyOfflineProgress(this.state, result);
+      if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
       this.applyUpgradeEffects();
       this.state.upgrades = this.upgradeMgr.snapshot();
       const endWave = this.state.wave.number;
@@ -941,7 +981,7 @@ export class Game {
     this.abilityMgr.reset();
     this.effects.reset();
     this.automation.reset();
-    this.researchTree.resetForAscension();
+    this.researchTree.replaceLevels({}, 0, null);
     this.notifications.reset();
     this.mines = [];
     this.announcedMilestones.clear();
@@ -951,8 +991,12 @@ export class Game {
     this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
     this.applyUpgradeEffects();
     this.state.upgrades = this.upgradeMgr.snapshot();
-    this.state.research = [];
+    this.state.research = {};
     this.state.researchInProgress = null;
+    this.state.runHistory = [];
+    this.bestGoldRun = 0;
+    this.bestWaveRun = 1;
+    this.resetRunBaselines();
     this.syncUiApis();
   }
 
@@ -962,6 +1006,51 @@ export class Game {
 
   get gameState(): GameState {
     return this.state;
+  }
+
+  private resetRunBaselines(): void {
+    this.runBaselineGold = this.state.stats.goldEarned;
+    this.runBaselineKills = this.state.stats.enemiesKilled;
+    this.runBaselineAbilities = this.state.stats.abilitiesCast;
+    this.runBaselineHighestWave = this.state.wave.highestWave;
+    this.state.runStartedAt = Date.now();
+    this.state.stats.runStartedAt = this.state.runStartedAt;
+  }
+
+  /**
+   * Build a RunRecord from current state + deltas since the last reset,
+   * push it into the run history ring buffer, and reset run-scoped state
+   * (baselines + runStartedAt + lifetime record-tracking flags).
+   */
+  private finalizeRun(kind: 'ascension' | 'transcendence', currencyGained: number, rpGained: number): RunRecord {
+    const now = Date.now();
+    const stats = this.state.stats;
+    const goldEarned = Math.max(0, stats.goldEarned - this.runBaselineGold);
+    const enemiesKilled = Math.max(0, stats.enemiesKilled - this.runBaselineKills);
+    const abilitiesCast = Math.max(0, stats.abilitiesCast - this.runBaselineAbilities);
+    const highestWave = Math.max(this.state.wave.highestWave, this.runBaselineHighestWave);
+    const newRecordGold = goldEarned > this.bestGoldRun;
+    const newRecordWave = highestWave > this.bestWaveRun;
+    if (newRecordGold) this.bestGoldRun = goldEarned;
+    if (newRecordWave) this.bestWaveRun = highestWave;
+    const record: RunRecord = {
+      endedAt: now,
+      kind,
+      highestWave,
+      durationSeconds: Math.max(0, Math.floor((now - this.state.runStartedAt) / 1000)),
+      goldEarned,
+      enemiesKilled,
+      abilitiesCast,
+      currencyGained,
+      rpGained,
+      newRecordGold,
+      newRecordWave,
+    };
+    const hist = this.state.runHistory ?? [];
+    hist.push(record);
+    while (hist.length > MAX_RUN_HISTORY) hist.shift();
+    this.state.runHistory = hist;
+    return record;
   }
 
   private computeStatsInfo(): StatsInfo {
@@ -1001,6 +1090,10 @@ export class Game {
       manaRegen: r.manaRegen,
       maxMana: r.maxMana,
       goldMultiplier: totalGoldMulti,
+      rpGainRate: this.researchTree.getPassiveRPRate(
+        this.state.stats.lifetimeHighestWave,
+        this.researchTree.getRPGainMultiplier(),
+      ),
     };
   }
 
@@ -1022,15 +1115,15 @@ export class Game {
     });
     this.ui.setResearchAPI({
       rp: this.researchTree.rp,
+      levels: this.researchTree.getLevelsSnapshot(),
       unlocked: this.researchTree.unlocked,
       reasonBlocked: (id) => this.researchTree.reasonBlocked(id),
-      inProgress: this.researchTree.inProgress
-        ? (() => {
-            const p = this.researchTree.getResearchProgress(this.researchTree.inProgress!.id);
-            return p ? { id: this.researchTree.inProgress!.id, ...p } : null;
-          })()
-        : null,
+      inProgress: this.researchTree.inProgress,
       researchSpeedMultiplier: this.prestigeMgr.getResearchSpeedMultiplier(),
+      rpGainRate: this.researchTree.getPassiveRPRate(
+        this.state.stats.lifetimeHighestWave,
+        this.researchTree.getRPGainMultiplier(),
+      ),
     });
     this.maxSpeedIndex = MAX_SPEED_INDEX + this.prestigeMgr.getGameSpeedBonus();
     this.ui.setSpeedAPI({
@@ -1243,6 +1336,9 @@ export class Game {
     // Research: Ability power
     this.abilityMgr.setDamageMultiplier(1 + this.researchTree.getAbilityPowerBonus());
 
+    // Research: RP drop chance bonus
+    this.enemyMgr.setRPDropChanceBonus(this.researchTree.getRPDropChanceBonus());
+
     // Achievement rewards
     const achDmg = this.achievementMgr.getRewardMultiplier('damage_mult') + this.achievementMgr.getRewardMultiplier('all_damage') + this.achievementMgr.getRewardMultiplier('all_stats');
     if (achDmg > 0) t.baseDamage *= 1 + achDmg;
@@ -1260,7 +1356,7 @@ export class Game {
       this.abilityMgr.setCooldownMultiplier((1 - this.prestigeMgr.getAbilityCDR()) * (1 - achCDR));
     }
 
-    this.state.research = Array.from(this.researchTree.unlocked);
+    this.state.research = this.researchTree.getLevelsSnapshot();
   }
 
   private buildShotVariants(): ShotVariant[] {
@@ -1328,9 +1424,6 @@ export class Game {
   }
 
   private applyFullTranscendenceReset(): void {
-    this.researchTree.resetForAscension();
-    this.state.research = [];
-    this.state.researchInProgress = null;
     this.automation.reset();
     this.abilityMgr.resetLevels();
     this.applySavedStateReset();
@@ -1371,15 +1464,25 @@ export class Game {
     s.transcendences = persisted.stats.transcendences;
     s.totalUpgradesPurchased = persisted.stats.totalUpgradesPurchased ?? 0;
     s.startedAt = persisted.stats.startedAt;
+    s.runStartedAt = persisted.stats.runStartedAt ?? persisted.runStartedAt ?? persisted.stats.startedAt;
 
     this.state.achievements = [...((persisted as any).achievements ?? [])];
+    this.state.runHistory = Array.isArray(persisted.runHistory) ? [...persisted.runHistory] : [];
+    this.state.runStartedAt = persisted.runStartedAt ?? s.runStartedAt;
+    // Seed lifetime "best run" tracking from the saved history (best so far).
+    this.bestGoldRun = 0;
+    this.bestWaveRun = 1;
+    for (const r of this.state.runHistory) {
+      if (r.goldEarned > this.bestGoldRun) this.bestGoldRun = r.goldEarned;
+      if (r.highestWave > this.bestWaveRun) this.bestWaveRun = r.highestWave;
+    }
 
     this.state.upgrades = { ...persisted.upgrades };
     this.migrateUpgrades(this.state.upgrades);
-    this.state.research = [...(persisted.research ?? [])];
-    this.researchTree.replaceUnlocked(
-      persisted.research ?? [],
-      persisted.resources.ascensionPoints,
+    this.state.research = { ...(persisted.research ?? {}) };
+    this.researchTree.replaceLevels(
+      this.state.research,
+      persisted.rp ?? 0,
       persisted.researchInProgress ?? null,
     );
     this.state.researchInProgress = persisted.researchInProgress ?? null;
@@ -1633,28 +1736,33 @@ export class Game {
     // HUD display tweening (every frame, before throttled UI update)
     this.ui.tickDisplayHud(dt, this.state);
 
-    // Research progress
+    // Research progress + passive RP gain
     this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
+    this.researchTree.addPassiveRP(
+      dt,
+      this.state.stats.lifetimeHighestWave,
+      this.researchTree.getRPGainMultiplier(),
+    );
     if (this.researchTree.tick(dt)) {
-      // A research just completed
-      this.state.research = Array.from(this.researchTree.unlocked);
+      this.state.research = this.researchTree.getLevelsSnapshot();
       this.state.researchInProgress = null;
       this.applyUpgradeEffects();
       this.syncUiApis();
-    } else if (this.researchTree.inProgress) {
-      this.state.researchInProgress = { ...this.researchTree.inProgress };
-      // Update research API each frame for smooth progress bar
+    } else {
+      this.state.researchInProgress = this.researchTree.inProgress
+        ? { ...this.researchTree.inProgress }
+        : null;
       this.ui.setResearchAPI({
         rp: this.researchTree.rp,
+        levels: this.researchTree.getLevelsSnapshot(),
         unlocked: this.researchTree.unlocked,
         reasonBlocked: (id) => this.researchTree.reasonBlocked(id),
-        inProgress: (() => {
-          const ip = this.researchTree.inProgress;
-          if (!ip) return null;
-          const p = this.researchTree.getResearchProgress(ip.id);
-          return p ? { id: ip.id, ...p } : null;
-        })(),
+        inProgress: this.researchTree.inProgress,
         researchSpeedMultiplier: this.prestigeMgr.getResearchSpeedMultiplier(),
+        rpGainRate: this.researchTree.getPassiveRPRate(
+          this.state.stats.lifetimeHighestWave,
+          this.researchTree.getRPGainMultiplier(),
+        ),
       });
     }
 

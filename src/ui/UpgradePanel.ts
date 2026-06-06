@@ -170,10 +170,10 @@ export class UpgradePanel {
         const highestEvo = getHighestEvolution(u, level);
         if (highestEvo) {
           setText(nameEl, highestEvo.name);
-          if (rowEl) rowEl.classList.add('upgrade-evolved');
+          if (rowEl) toggleClass(rowEl, 'upgrade-evolved', true);
         } else {
           setText(nameEl, u.name);
-          if (rowEl) rowEl.classList.remove('upgrade-evolved');
+          if (rowEl) toggleClass(rowEl, 'upgrade-evolved', false);
         }
       }
       if (evoEl && u.evolutions) {
@@ -219,6 +219,9 @@ export class UpgradePanel {
   flashButton(id: string): void {
     const btn = this.buttonById.get(id);
     if (!btn) return;
+    // Animation restart: always remove + force reflow + add, regardless of
+    // cached class state — toggleClass would short-circuit and break the
+    // CSS animation.
     btn.classList.remove('is-flash');
     // Force reflow so animation restarts
     void btn.offsetWidth;
@@ -303,10 +306,10 @@ export class UpgradePanel {
     this.activeTab = id;
     if (!this.root) return;
     for (const el of Array.from(this.root.querySelectorAll<HTMLButtonElement>('.upgrade-tabs .tab-btn'))) {
-      el.classList.toggle('active', el.dataset.upgradeTab === id);
+      toggleClass(el, 'active', el.dataset.upgradeTab === id);
     }
     for (const el of Array.from(this.root.querySelectorAll<HTMLElement>('.upgrade-tab-panel'))) {
-      el.classList.toggle('active', el.dataset.upgradeTabPanel === id);
+      toggleClass(el, 'active', el.dataset.upgradeTabPanel === id);
     }
   }
 

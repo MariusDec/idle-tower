@@ -10,23 +10,32 @@ export type ResearchEffectType =
   | 'crit_mana'
   | 'ability_power'
   | 'intermission_speed'
-  | 'enemy_hp_reduce';
+  | 'enemy_hp_reduce'
+  | 'rp_gain'
+  | 'rp_drop_chance';
 
-export type ResearchCategory = 'combat' | 'economy' | 'arcane' | 'scouting';
+export type ResearchCategory = 'combat' | 'economy' | 'arcane' | 'scouting' | 'research';
+
+export interface ResearchLevelOverride {
+  effectValue?: number;
+  researchTime?: number;
+  cost?: number;
+}
 
 export interface ResearchDef {
   id: string;
   name: string;
   description: string;
-  cost: number;
-  /** Base time in seconds to research this node */
-  researchTime: number;
+  cost: number | number[];
+  researchTime: number | number[];
   category: ResearchCategory;
   effectType: ResearchEffectType;
-  effectValue: number;
+  effectPerLevel: number;
+  maxLevel: number;
   prerequisites: string[];
   glyph: string;
   color: string;
+  effectDefinitions?: Record<number, ResearchLevelOverride>;
 }
 
 export const RESEARCH_NODES: ResearchDef[] = [
@@ -39,7 +48,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 30,
     category: 'combat',
     effectType: 'pierce',
-    effectValue: 1,
+    effectPerLevel: 1,
+    maxLevel: 1,
     prerequisites: [],
     glyph: 'P',
     color: '#d04848',
@@ -52,7 +62,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 90,
     category: 'combat',
     effectType: 'pierce',
-    effectValue: 1,
+    effectPerLevel: 1,
+    maxLevel: 1,
     prerequisites: ['piercing_shots'],
     glyph: 'P',
     color: '#ff7070',
@@ -65,7 +76,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 25,
     category: 'combat',
     effectType: 'tower_defense',
-    effectValue: 0.2,
+    effectPerLevel: 0.2,
+    maxLevel: 1,
     prerequisites: [],
     glyph: '🛡',
     color: '#6ba3d6',
@@ -78,7 +90,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 150,
     category: 'combat',
     effectType: 'chain_kill_aoe',
-    effectValue: 0.25,
+    effectPerLevel: 0.25,
+    maxLevel: 1,
     prerequisites: ['improved_pierce'],
     glyph: '💥',
     color: '#ff4040',
@@ -93,7 +106,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 20,
     category: 'economy',
     effectType: 'gold_multi',
-    effectValue: 0.25,
+    effectPerLevel: 0.25,
+    maxLevel: 1,
     prerequisites: [],
     glyph: '$',
     color: '#f1c40f',
@@ -106,7 +120,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 75,
     category: 'economy',
     effectType: 'gold_luck',
-    effectValue: 0.05,
+    effectPerLevel: 0.05,
+    maxLevel: 1,
     prerequisites: ['alchemy'],
     glyph: 'T',
     color: '#ffd24a',
@@ -119,7 +134,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 40,
     category: 'economy',
     effectType: 'gold_multi',
-    effectValue: 0.5,
+    effectPerLevel: 0.5,
+    maxLevel: 1,
     prerequisites: ['alchemy'],
     glyph: '✦',
     color: '#e8a93b',
@@ -132,7 +148,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 120,
     category: 'economy',
     effectType: 'gold_multi',
-    effectValue: 1.0,
+    effectPerLevel: 1.0,
+    maxLevel: 1,
     prerequisites: ['transmutation', 'prosperity'],
     glyph: '👑',
     color: '#ffc107',
@@ -147,7 +164,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 30,
     category: 'arcane',
     effectType: 'mana_regen',
-    effectValue: 0.5,
+    effectPerLevel: 0.5,
+    maxLevel: 1,
     prerequisites: [],
     glyph: 'M',
     color: '#5b8def',
@@ -160,7 +178,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 120,
     category: 'arcane',
     effectType: 'ability_cost',
-    effectValue: 0.3,
+    effectPerLevel: 0.3,
+    maxLevel: 1,
     prerequisites: ['mana_font'],
     glyph: 'A',
     color: '#9b59ff',
@@ -173,7 +192,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 50,
     category: 'arcane',
     effectType: 'crit_mana',
-    effectValue: 3,
+    effectPerLevel: 3,
+    maxLevel: 1,
     prerequisites: ['mana_font'],
     glyph: '⚡',
     color: '#7b68ee',
@@ -186,39 +206,14 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 180,
     category: 'arcane',
     effectType: 'ability_power',
-    effectValue: 0.3,
+    effectPerLevel: 0.3,
+    maxLevel: 1,
     prerequisites: ['arcane_mastery', 'arcane_recovery'],
     glyph: '🔥',
     color: '#e040fb',
   },
 
   // ── Scouting ──────────────────────────────────────────────────
-  // {
-  //   id: 'veteran_scouts',
-  //   name: 'Veteran Scouts',
-  //   description: 'Start each Ascension at wave 5',
-  //   cost: 3,
-  //   researchTime: 20,
-  //   category: 'scouting',
-  //   effectType: 'start_wave',
-  //   effectValue: 5,
-  //   prerequisites: [],
-  //   glyph: 'V',
-  //   color: '#3ec46d',
-  // },
-  // {
-  //   id: 'elite_scouts',
-  //   name: 'Elite Scouts',
-  //   description: 'Start each Ascension at wave 15 (replaces Veteran Scouts)',
-  //   cost: 10,
-  //   researchTime: 75,
-  //   category: 'scouting',
-  //   effectType: 'start_wave',
-  //   effectValue: 15,
-  //   prerequisites: ['veteran_scouts'],
-  //   glyph: 'E',
-  //   color: '#27ae60',
-  // },
   {
     id: 'swift_prep',
     name: 'Swift Preparation',
@@ -227,7 +222,8 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 30,
     category: 'scouting',
     effectType: 'intermission_speed',
-    effectValue: 0.5,
+    effectPerLevel: 0.5,
+    maxLevel: 1,
     prerequisites: ['veteran_scouts'],
     glyph: '⏩',
     color: '#2ecc71',
@@ -240,10 +236,43 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 90,
     category: 'scouting',
     effectType: 'enemy_hp_reduce',
-    effectValue: 0.1,
+    effectPerLevel: 0.1,
+    maxLevel: 1,
     prerequisites: ['elite_scouts', 'swift_prep'],
     glyph: '🎯',
     color: '#1abc9c',
+  },
+
+  // ── Research ──────────────────────────────────────────────────
+  {
+    id: 'rp_gain',
+    name: 'Increased Focus',
+    description: 'Multiplies passive RP gain',
+    cost: [3, 4, 5, 7, 9, 11, 14, 17, 20, 25],
+    researchTime: [60, 90, 120, 180, 240, 300, 420, 540, 720, 900],
+    category: 'research',
+    effectType: 'rp_gain',
+    effectPerLevel: 0.25,
+    maxLevel: 10,
+    prerequisites: [],
+    glyph: '🎯',
+    color: '#ff8c42',
+    effectDefinitions: { 10: { effectValue: 5.0 } },
+  },
+  {
+    id: 'rp_drop_chance',
+    name: 'Loot Insights',
+    description: 'Increases enemy RP drop chance',
+    cost: [4, 5, 7, 9, 12, 15, 18, 22, 26, 30],
+    researchTime: [90, 120, 180, 240, 300, 420, 540, 720, 900, 1200],
+    category: 'research',
+    effectType: 'rp_drop_chance',
+    effectPerLevel: 0.005,
+    maxLevel: 10,
+    prerequisites: ['rp_gain'],
+    glyph: '🔍',
+    color: '#ffb347',
+    effectDefinitions: { 10: { effectValue: 0.1 } },
   },
 ];
 
@@ -255,14 +284,50 @@ export const RESEARCH_BY_ID: Record<string, ResearchDef> = RESEARCH_NODES.reduce
   {} as Record<string, ResearchDef>,
 );
 
+export function getResearchCost(def: ResearchDef, level: number): number {
+  if (level <= 0) return 0;
+  const override = def.effectDefinitions?.[level]?.cost;
+  if (override !== undefined) return override;
+  if (typeof def.cost === 'number') return def.cost;
+  if (def.cost.length === 0) return 0;
+  return def.cost[Math.min(level - 1, def.cost.length - 1)];
+}
+
+export function getResearchTime(def: ResearchDef, level: number): number {
+  if (level <= 0) return 0;
+  const override = def.effectDefinitions?.[level]?.researchTime;
+  if (override !== undefined) return override;
+  if (typeof def.researchTime === 'number') return def.researchTime;
+  if (def.researchTime.length === 0) return 0;
+  return def.researchTime[Math.min(level - 1, def.researchTime.length - 1)];
+}
+
+export function getResearchEffectAtLevel(def: ResearchDef, level: number): number {
+  if (level <= 0) return 0;
+  const exact = def.effectDefinitions?.[level]?.effectValue;
+  if (exact !== undefined) return exact;
+  let baseLevel = 0;
+  let baseValue = 0;
+  if (def.effectDefinitions) {
+    for (const kStr of Object.keys(def.effectDefinitions)) {
+      const k = Number(kStr);
+      if (k < level && k > baseLevel && def.effectDefinitions[k]?.effectValue !== undefined) {
+        baseLevel = k;
+        baseValue = def.effectDefinitions[k]!.effectValue!;
+      }
+    }
+  }
+  return baseValue + (level - baseLevel) * def.effectPerLevel;
+}
+
 export function researchPrereqSatisfied(
   id: string,
-  unlocked: ReadonlySet<string>,
+  levels: Readonly<Record<string, number>>,
 ): boolean {
   const def = RESEARCH_BY_ID[id];
   if (!def) return false;
   for (const pre of def.prerequisites) {
-    if (!unlocked.has(pre)) return false;
+    if (!(levels[pre] ?? 0)) return false;
   }
   return true;
 }

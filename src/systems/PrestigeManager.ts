@@ -405,11 +405,10 @@ export class PrestigeManager {
     return false;
   }
 
-  performAscension(state: GameState): { ap: number; rp: number } {
+  performAscension(state: GameState): { ap: number } {
     const waveNumber = state.wave.highestWave;
-    if (!this.canAscend(waveNumber)) return { ap: 0, rp: 0 };
+    if (!this.canAscend(waveNumber)) return { ap: 0 };
     const ap = this.previewAP(waveNumber);
-    const rp = ap;
     this.ctx.resources.ascensionPoints += ap;
     this.ctx.resources.apThisTranscendence += ap;
     this.ctx.resources.lifetimeAP += ap;
@@ -417,12 +416,11 @@ export class PrestigeManager {
     this.ctx.stats.lifetimeAscensions += 1;
     this.bus.emit('ascension_performed', {
       apGained: ap,
-      rpGained: rp,
       totalAP: this.ctx.resources.ascensionPoints,
       lifetimeAP: this.ctx.resources.lifetimeAP,
       ascensions: this.ctx.stats.ascensions,
     });
-    return { ap, rp };
+    return { ap };
   }
 
   performTranscendence(_state: GameState): { tp: number } {
