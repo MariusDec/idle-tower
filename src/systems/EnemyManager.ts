@@ -35,6 +35,12 @@ export class EnemyManager {
   private killStreakGoldBonus = 0;
   private manaFullGoldBonus = 0;
   private rpDropChanceBonus = 0;
+  /** Multiplier applied to enemy movement speed on spawn (default 1). */
+  private speedMult = 1;
+  /** Multiplier applied to enemy damage dealt to the tower (default 1). */
+  private damageToTowerMult = 1;
+  /** Multiplier applied to enemy max HP on spawn (default 1). */
+  private hpMult = 1;
 
   constructor(bus: EventBus, resources: ResourceManager, researchTree?: ResearchTree) {
     this.bus = bus;
@@ -79,6 +85,30 @@ export class EnemyManager {
     this.manaFullGoldBonus = bonus;
   }
 
+  /**
+   * Multiplier applied to enemy movement speed on spawn. Set to 1 to reset.
+   * Boss enrage multiplies speed on top of this value.
+   */
+  setSpeedMult(mult: number): void {
+    this.speedMult = Math.max(0.1, mult);
+  }
+
+  /**
+   * Multiplier applied to damage enemies deal to the tower each frame.
+   * Set to 1 to reset.
+   */
+  setDamageToTowerMult(mult: number): void {
+    this.damageToTowerMult = Math.max(0, mult);
+  }
+
+  /**
+   * Multiplier applied to enemy HP on spawn (after wave scaling, before
+   * research hpReduction). Set to 1 to reset.
+   */
+  setHPMult(mult: number): void {
+    this.hpMult = Math.max(0.1, mult);
+  }
+
   applySlow(factor: number, duration: number): void {
     if (factor < this.slowFactor || this.slowTimer <= 0) {
       this.slowFactor = factor;
@@ -94,7 +124,8 @@ export class EnemyManager {
     if (type === 'boss') hp = bossHPForWave(def.baseHP, wave);
     else hp = enemyHPForWave(def.baseHP, wave);
     if (this.hpReduction > 0) hp = Math.max(1, Math.floor(hp * (1 - this.hpReduction)));
-    const speed = enemySpeedForWave(def.baseSpeed, wave);
+    if (this.hpMult !== 1) hp = Math.max(1, Math.floor(hp * this.hpMult));
+    const speed = enemySpeedForWave(def.baseSpeed, wave) * this.speedMult;
     const gold = goldDropForWave(def.baseGold, wave);
     const damage = enemyDamageForWave(def.baseDamage, wave);
     const fireRate = Math.max(0.2, def.fireRate);
@@ -251,7 +282,7 @@ export class EnemyManager {
 
         e.attackCooldown -= dt;
         if (e.attackCooldown <= 0) {
-          totalDamage += e.damage;
+          totalDamage += e.damage * this.damageToTowerMult;
           if (this.thorns > 0) {
             const thornDmg = Math.floor(e.damage * this.thorns);
             if (thornDmg > 0) this.damage(e, thornDmg, false);
@@ -330,6 +361,9 @@ export class EnemyManager {
     this.killStreakGoldBonus = 0;
     this.manaFullGoldBonus = 0;
     this.rpDropChanceBonus = 0;
+    this.speedMult = 1;
+    this.damageToTowerMult = 1;
+    this.hpMult = 1;
   }
 
   /**

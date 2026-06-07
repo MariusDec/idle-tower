@@ -13,7 +13,11 @@ import { enemyHPForWave, goldDropForWave } from '../data/formulas';
 import { ENEMY_DEFS } from '../data/enemies';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 4;
+const SAVE_VERSION = 5;
+
+function defaultWaveModifier(): { active: null; choiceForNextWave: null; pendingChoiceForWave: null } {
+  return { active: null, choiceForNextWave: null, pendingChoiceForWave: null };
+}
 const AUTO_SAVE_INTERVAL = 30;
 const OFFLINE_CAP_SECONDS = 7 * 24 * 60 * 60;
 const OFFLINE_EFFICIENCY = 0.7;
@@ -109,6 +113,13 @@ function migrateV3toV4(data: Record<string, unknown>): void {
   }
 }
 
+function migrateV4toV5(data: Record<string, unknown>): void {
+  const wave = data.wave as Record<string, unknown> | undefined;
+  if (wave && !isObject(wave.waveModifier)) {
+    wave.waveModifier = defaultWaveModifier();
+  }
+}
+
 function computeRPGainMultiplier(research: Record<string, number>): number {
   let sum = 0;
   for (const [id, level] of Object.entries(research)) {
@@ -125,7 +136,7 @@ function computeRPGainMultiplier(research: Record<string, number>): number {
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -144,8 +155,12 @@ function validate(data: unknown): data is PersistentState {
     migrateToV3(data);
     data.version = 3;
   }
-  if (data.version === 3 || data.version === 2) {
+  if (data.version === 3) {
     migrateV3toV4(data as Record<string, unknown>);
+    data.version = 4;
+  }
+  if (data.version === 4 || data.version === 3 || data.version === 2) {
+    migrateV4toV5(data as Record<string, unknown>);
     data.version = SAVE_VERSION;
   } else {
     if (!Array.isArray((data as Record<string, unknown>).runHistory)) {
@@ -156,6 +171,10 @@ function validate(data: unknown): data is PersistentState {
     }
     if (typeof (data as Record<string, unknown>).rp !== 'number') {
       (data as Record<string, unknown>).rp = 0;
+    }
+    const wave = (data as Record<string, unknown>).wave as Record<string, unknown> | undefined;
+    if (wave && !isObject(wave.waveModifier)) {
+      wave.waveModifier = defaultWaveModifier();
     }
   }
 

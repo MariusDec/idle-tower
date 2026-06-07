@@ -35,7 +35,7 @@ function bootstrap(): void {
     modalRoot,
   });
 
-  const game = new Game(canvas, { bus, ui, notificationRoot: toastRoot });
+  const game = new Game(canvas, { bus, ui, notificationRoot: toastRoot, modalRoot });
   ui.setOnBuyUpgrade((id) => {
     game.upgradeManager.buy(id);
   });

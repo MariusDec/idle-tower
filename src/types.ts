@@ -119,6 +119,33 @@ export interface ResourceState {
   lifetimeGold: number;
 }
 
+export interface WaveModifierState {
+  /** The modifier currently active for `wave.number` (set when boss wave starts). */
+  active: WaveModifierSnapshot | null;
+  /** Up to 3 choices offered to the player for the upcoming boss wave. */
+  choiceForNextWave: WaveModifierSnapshot[] | null;
+  /** Boss wave number the `choiceForNextWave` belongs to. */
+  pendingChoiceForWave: number | null;
+}
+
+export interface WaveModifierSnapshot {
+  id: string;
+  name: string;
+  description: string;
+  detail: string;
+  glyph: string;
+  color: string;
+  reward: { ap: number; gold: number; tp: number };
+  effects: {
+    hpMult: number;
+    speedMult: number;
+    damageToTowerMult: number;
+    countMult: number;
+    goldAdditive: number;
+    playerDamageMult: number;
+  };
+}
+
 export interface WaveState {
   number: number;
   highestWave: number;
@@ -130,6 +157,8 @@ export interface WaveState {
   intermission: boolean;
   intermissionTimer: number;
   autoProgress: boolean;
+  /** v5+: per-wave modifier system. */
+  waveModifier: WaveModifierState;
 }
 
 export const GAME_SPEEDS: readonly number[] = [0.5, 1.0];

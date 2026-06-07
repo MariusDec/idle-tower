@@ -1,4 +1,4 @@
-import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord } from '../types';
+import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot } from '../types';
 import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
 import { TOWER_BASE, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
@@ -28,6 +28,8 @@ import type { AutomationKey } from '../data/prestige';
 import { AudioManager } from '../systems/AudioManager';
 import { formatInt } from '../utils/bigNumber';
 import { setStyle, toggleClass } from '../utils/dom';
+import { pickRandomModifiers, snapshotFromDef } from '../data/waveModifiers';
+import { WaveModifierModal } from '../ui/WaveModifierModal';
 
 const BASE_MANA_REGEN = 1;
 const WAVE_MILESTONES = new Set([10, 25, 50, 100, 200, 500]);
@@ -100,6 +102,7 @@ function makeInitialState(): GameState {
       intermission: false,
       intermissionTimer: 0,
       autoProgress: true,
+      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null },
     },
     stats,
     achievements: [],
@@ -112,6 +115,7 @@ export interface GameDeps {
   bus: EventBus;
   ui: UIManager;
   notificationRoot: HTMLElement;
+  modalRoot: HTMLElement;
 }
 
 export class Game {
@@ -136,6 +140,7 @@ export class Game {
   private readonly saveMgr: SaveManager;
   private readonly achievementMgr: AchievementManager;
   private readonly audio: AudioManager;
+  private readonly waveModModal: WaveModifierModal;
 
   private lastTime = 0;
   private running = false;
@@ -217,6 +222,7 @@ export class Game {
       },
     );
     this.upgradeMgr = new UpgradeManager(this.bus, this.resourceMgr);
+    this.waveModModal = new WaveModifierModal(deps.modalRoot);
     this.effects = new EffectsManager();
     this.effects.onShockwaveDamage = (s) => {
       // P5 boss death: damage enemies caught in the ring (single hit per ring)
@@ -487,6 +493,39 @@ export class Game {
           : `Wave ${w} reached`;
         this.bus.emit('toast', { kind, text, life: 4 });
       }
+
+      // Apply (or clear) the wave modifier for this wave.
+      this.applyActiveWaveModifier();
+    });
+    this.bus.on('wave_cleared', (wave: unknown) => {
+      const cleared = wave as number;
+      // If a modifier was active for the just-cleared wave, clear it
+      // before the next wave starts so future multipliers reset to 1.
+      const wms = this.state.wave.waveModifier;
+      if (wms.active && wms.pendingChoiceForWave === cleared) {
+        wms.active = null;
+        wms.pendingChoiceForWave = null;
+      }
+    });
+    this.bus.on('wave_modifier_offer', (nextWave: unknown) => {
+      const w = nextWave as number;
+      const choices = pickRandomModifiers(3);
+      this.state.wave.waveModifier.choiceForNextWave = choices.map(snapshotFromDef);
+      this.state.wave.waveModifier.pendingChoiceForWave = w;
+      this.waveMgr.pauseIntermission();
+      this.waveModModal.show(
+        { wave: w, choices: this.state.wave.waveModifier.choiceForNextWave },
+        {
+          onChoose: (snapshot: WaveModifierSnapshot) => {
+            this.waveMgr.resumeIntermission();
+            this.chooseWaveModifier(snapshot);
+          },
+          onSkip: () => {
+            this.waveMgr.resumeIntermission();
+            this.skipWaveModifier();
+          },
+        },
+      );
     });
     this.bus.on('upgrades_changed', (levels: Record<string, number>) => {
       this.state.upgrades = { ...(levels as Record<string, number>) };
@@ -1356,6 +1395,19 @@ export class Game {
       this.abilityMgr.setCooldownMultiplier((1 - this.prestigeMgr.getAbilityCDR()) * (1 - achCDR));
     }
 
+    // Wave modifier: re-apply goldAdditive and playerDamageMult on top of
+    // everything else computed above. We read the modifier from the wave
+    // state; if the wave is not a mod wave this is a no-op (effects = 1, 0).
+    const activeMod = this.state.wave.waveModifier.active;
+    if (activeMod && this.state.wave.waveModifier.pendingChoiceForWave === this.waveMgr.currentWave) {
+      if (activeMod.effects.goldAdditive !== 0) {
+        this.enemyMgr.setGoldMultipliers(totalGoldAdditive + activeMod.effects.goldAdditive, 1);
+      }
+      if (activeMod.effects.playerDamageMult !== 1) {
+        t.baseDamage = Math.max(1, t.baseDamage * activeMod.effects.playerDamageMult);
+      }
+    }
+
     this.state.research = this.researchTree.getLevelsSnapshot();
   }
 
@@ -1421,6 +1473,90 @@ export class Game {
 
     this.applyUpgradeEffects();
     this.state.upgrades = this.upgradeMgr.snapshot();
+  }
+
+  /**
+   * Apply the active wave modifier to enemy + tower systems for the current
+   * wave. If no modifier is active, reset all multipliers to 1.
+   */
+  private applyActiveWaveModifier(): void {
+    const active = this.state.wave.waveModifier.active;
+    const matchesWave = this.state.wave.waveModifier.pendingChoiceForWave === this.waveMgr.currentWave;
+    if (!active || !matchesWave) {
+      this.state.wave.waveModifier.active = null;
+      this.waveMgr.setEnemyCountMult(1);
+      this.enemyMgr.setSpeedMult(1);
+      this.enemyMgr.setDamageToTowerMult(1);
+      this.enemyMgr.setHPMult(1);
+      this.applyUpgradeEffects();
+      return;
+    }
+    const e = active.effects;
+    this.waveMgr.setEnemyCountMult(e.countMult);
+    this.enemyMgr.setSpeedMult(e.speedMult);
+    this.enemyMgr.setDamageToTowerMult(e.damageToTowerMult);
+    this.enemyMgr.setHPMult(e.hpMult);
+    // playerDamageMult + goldAdditive go through the upgrade-effects pipeline
+    // so they compose with prestige / research multipliers.
+    this.applyUpgradeEffects();
+    this.bus.emit('wave_modifier_active', active);
+  }
+
+  private awardWaveModifierReward(snapshot: WaveModifierSnapshot): void {
+    const reward = snapshot.reward;
+    if (reward.gold > 0) {
+      this.state.resources.gold += reward.gold;
+      this.state.resources.lifetimeGold += reward.gold;
+      this.state.stats.goldEarned += reward.gold;
+    }
+    if (reward.ap > 0) {
+      this.state.resources.ascensionPoints += reward.ap;
+      this.state.resources.apThisTranscendence += reward.ap;
+      this.state.resources.lifetimeAP += reward.ap;
+    }
+    if (reward.tp > 0) {
+      this.state.resources.transcendencePoints += reward.tp;
+    }
+    this.bus.emit('wave_modifier_chosen', {
+      id: snapshot.id,
+      name: snapshot.name,
+      reward,
+    });
+    this.bus.emit('toast', {
+      kind: 'milestone',
+      text: `Mutator complete: ${snapshot.name}`,
+      life: 4,
+    });
+  }
+
+  private chooseWaveModifier(snapshot: WaveModifierSnapshot): void {
+    this.state.wave.waveModifier.active = snapshot;
+    this.state.wave.waveModifier.choiceForNextWave = null;
+    // Apply non-stateful multipliers now so that the upcoming startWave()
+    // uses the correct enemy count and the active enemies spawned during
+    // this intermission window would (if any) carry the new speeds.
+    const e = snapshot.effects;
+    this.waveMgr.setEnemyCountMult(e.countMult);
+    this.enemyMgr.setSpeedMult(e.speedMult);
+    this.enemyMgr.setDamageToTowerMult(e.damageToTowerMult);
+    this.enemyMgr.setHPMult(e.hpMult);
+    // Recompute tower stats so the new wave starts with the modifier's
+    // playerDamageMult / goldAdditive baked in.
+    this.applyUpgradeEffects();
+    // Award the modifier's flat reward (AP / gold / TP) on selection per
+    // the wave modifier spec: picking is the win condition.
+    this.awardWaveModifierReward(snapshot);
+  }
+
+  private skipWaveModifier(): void {
+    this.state.wave.waveModifier.active = null;
+    this.state.wave.waveModifier.choiceForNextWave = null;
+    this.state.wave.waveModifier.pendingChoiceForWave = null;
+    this.bus.emit('toast', {
+      kind: 'info',
+      text: 'Skipped mutator this wave.',
+      life: 2.5,
+    });
   }
 
   private applyFullTranscendenceReset(): void {
@@ -1735,6 +1871,7 @@ export class Game {
 
     // HUD display tweening (every frame, before throttled UI update)
     this.ui.tickDisplayHud(dt, this.state);
+    this.waveModModal.tick(dt);
 
     // Research progress + passive RP gain
     this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());

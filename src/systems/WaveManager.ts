@@ -22,6 +22,10 @@ export class WaveManager {
   private readonly onWaveStarted: (wave: number) => void;
   private waveSkipChance = 0;
   private intermissionMultiplier = 1;
+  /** Multiplier applied to enemiesToSpawn on the next startWave (default 1). */
+  private enemyCountMult = 1;
+  /** Pause flag for the intermission timer (used by the wave modifier modal). */
+  private intermissionPaused = false;
 
   constructor(
     bus: EventBus,
@@ -48,6 +52,30 @@ export class WaveManager {
     this.intermissionMultiplier = Math.max(0.1, Math.min(1, mult));
   }
 
+  /**
+   * Pause the intermission timer (used while a modal is open so the player
+   * has time to read the choices). Spawning and combat are unaffected.
+   */
+  pauseIntermission(): void {
+    this.intermissionPaused = true;
+  }
+
+  resumeIntermission(): void {
+    this.intermissionPaused = false;
+  }
+
+  isIntermissionPaused(): boolean {
+    return this.intermissionPaused;
+  }
+
+  /**
+   * Multiplier applied to the next wave's enemy count. Used by the
+   * wave modifier system (e.g. Swarm = 3×). Set to 1 to reset.
+   */
+  setEnemyCountMult(mult: number): void {
+    this.enemyCountMult = Math.max(0.1, mult);
+  }
+
   get snapshot(): WaveState {
     return this.state;
   }
@@ -68,6 +96,7 @@ export class WaveManager {
       intermission: false,
       intermissionTimer: 0,
       autoProgress: true,
+      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null },
     };
   }
 
@@ -130,7 +159,7 @@ export class WaveManager {
       return;
     }
 
-    this.state.enemiesToSpawn = spawnCountForWave(wave);
+    this.state.enemiesToSpawn = Math.max(1, Math.floor(spawnCountForWave(wave) * this.enemyCountMult));
     this.state.enemiesSpawned = 0;
     this.state.spawnInterval = spawnIntervalForWave(wave);
     this.state.spawnTimer = 0.5;
@@ -142,6 +171,7 @@ export class WaveManager {
 
   reset(): void {
     this.state = this.makeInitialState();
+    this.enemyCountMult = 1;
     this.bus.emit('wave_started', this.state.number);
     this.onWaveStarted(this.state.number);
   }
@@ -161,7 +191,9 @@ export class WaveManager {
       intermission: false,
       intermissionTimer: 0,
       autoProgress: this.state.autoProgress,
+      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null },
     };
+    this.enemyCountMult = 1;
     this.bus.emit('wave_started', this.state.number);
     this.onWaveStarted(this.state.number);
   }
@@ -203,9 +235,11 @@ export class WaveManager {
 
   tick(dt: number): void {
     if (this.state.intermission) {
-      this.state.intermissionTimer -= dt;
-      if (this.state.intermissionTimer <= 0) {
-        this.startWave(this.state.number + (this.state.autoProgress ? 1 : 0));
+      if (!this.intermissionPaused) {
+        this.state.intermissionTimer -= dt;
+        if (this.state.intermissionTimer <= 0) {
+          this.startWave(this.state.number + (this.state.autoProgress ? 1 : 0));
+        }
       }
       return;
     }
@@ -223,10 +257,17 @@ export class WaveManager {
       this.state.enemiesSpawned >= this.state.enemiesToSpawn &&
       this.enemies.aliveCount() === 0
     ) {
-      this.onWaveCleared(this.state.number);
-      this.bus.emit('wave_cleared', this.state.number);
+      const clearedWave = this.state.number;
+      this.onWaveCleared(clearedWave);
+      this.bus.emit('wave_cleared', clearedWave);
       this.state.intermission = true;
       this.state.intermissionTimer = WAVE_INTERMISSION * this.intermissionMultiplier;
+      // If the next wave is a boss, notify the Game so it can present the
+      // 1-of-3 wave modifier picker during this intermission.
+      const nextWave = clearedWave + 1;
+      if (isBossWave(nextWave)) {
+        this.bus.emit('wave_modifier_offer', nextWave);
+      }
     }
   }
 
