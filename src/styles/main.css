@@ -17,6 +17,18 @@
   --shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
   --radius: 8px;
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Side panel sizing. Overridden by JS via inline style. */
+  --panel-width: 360px;
+  --panel-min-width: 280px;
+  --panel-max-width: 720px;
+  --panel-collapsed-width: 56px;
+  /* Bottom ability bar height. */
+  --ability-bar-height: 76px;
+  /* Bottom mobile nav height. */
+  --bottom-nav-height: 60px;
+  /* Approximate mobile HUD height (2 rows: wave block + hp/mana bars). Used
+     to position the milestone strip and toasts above the canvas. */
+  --hud-height-mobile: 90px;
 }
 
 * { box-sizing: border-box; }
@@ -69,8 +81,9 @@ button:disabled {
 .game-layout {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 1fr 360px;
+  grid-template-columns: 1fr var(--panel-width);
   min-height: 0;
+  transition: grid-template-columns 0.18s ease;
 }
 
 .canvas-wrap {
@@ -161,7 +174,8 @@ button:disabled {
 .prestige-panel,
 .placeholder-panel,
 .research-panel,
-.settings-panel {
+.settings-panel,
+.milestone-strip {
   scrollbar-width: auto;
   scrollbar-color: var(--bg-3) transparent;
 }
@@ -174,7 +188,8 @@ button:disabled {
 .prestige-panel::-webkit-scrollbar,
 .placeholder-panel::-webkit-scrollbar,
 .settings-panel::-webkit-scrollbar,
-.panel-tabs::-webkit-scrollbar {
+.panel-tabs::-webkit-scrollbar,
+.milestone-strip::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
@@ -183,7 +198,8 @@ button:disabled {
 .prestige-panel::-webkit-scrollbar-track,
 .placeholder-panel::-webkit-scrollbar-track,
 .settings-panel::-webkit-scrollbar-track,
-.panel-tabs::-webkit-scrollbar-track {
+.panel-tabs::-webkit-scrollbar-track,
+.milestone-strip::-webkit-scrollbar-track {
   background: transparent;
   margin: 4px 0;
 }
@@ -192,7 +208,8 @@ button:disabled {
 .prestige-panel::-webkit-scrollbar-thumb,
 .placeholder-panel::-webkit-scrollbar-thumb,
 .settings-panel::-webkit-scrollbar-thumb,
-.panel-tabs::-webkit-scrollbar-thumb {
+.panel-tabs::-webkit-scrollbar-thumb,
+.milestone-strip::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, var(--border-strong), var(--bg-3));
   border: 2px solid transparent;
   background-clip: padding-box;
@@ -205,7 +222,8 @@ button:disabled {
 .prestige-panel::-webkit-scrollbar-thumb:hover,
 .placeholder-panel::-webkit-scrollbar-thumb:hover,
 .settings-panel::-webkit-scrollbar-thumb:hover,
-.panel-tabs::-webkit-scrollbar-thumb:hover {
+.panel-tabs::-webkit-scrollbar-thumb:hover,
+.milestone-strip::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, var(--accent), #b8941a);
   background-clip: padding-box;
   border: 2px solid transparent;
@@ -215,7 +233,8 @@ button:disabled {
 .prestige-panel::-webkit-scrollbar-thumb:active,
 .placeholder-panel::-webkit-scrollbar-thumb:active,
 .settings-panel::-webkit-scrollbar-thumb:active,
-.panel-tabs::-webkit-scrollbar-thumb:active {
+.panel-tabs::-webkit-scrollbar-thumb:active,
+.milestone-strip::-webkit-scrollbar-thumb:active {
   background: linear-gradient(180deg, #ffd95a, var(--accent));
   background-clip: padding-box;
   border: 2px solid transparent;
@@ -225,7 +244,8 @@ button:disabled {
 .prestige-panel::-webkit-scrollbar-corner,
 .placeholder-panel::-webkit-scrollbar-corner,
 .settings-panel::-webkit-scrollbar-corner,
-.panel-tabs::-webkit-scrollbar-corner {
+.panel-tabs::-webkit-scrollbar-corner,
+.milestone-strip::-webkit-scrollbar-corner {
   background: transparent;
 }
 
@@ -1284,15 +1304,17 @@ button:disabled {
   to   { transform: translateX(0);    opacity: 1; }
 }
 
+/* Tablet: shrink side panel slightly, keep all controls. */
 @media (max-width: 1100px) {
-  .game-layout { grid-template-columns: 1fr 320px; }
+  :root { --panel-width: 320px; }
   .hud-group { gap: 12px; }
   .hud-stat { min-width: 60px; }
 }
-@media (max-width: 860px) {
-  .game-layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
-  .panel-root { border-left: none; border-top: 1px solid var(--border); max-height: 45vh; }
-  .toast-root { right: 8px; bottom: 8px; max-width: calc(100vw - 16px); }
+
+/* Mobile breakpoint. The panel is replaced by slide-up sheets driven by
+   #bottom-nav-root. The ability bar stays docked. */
+@media (max-width: 768px) {
+  :root { --panel-width: 0px; }
 }
 
 /* Prestige panel */
@@ -2199,6 +2221,11 @@ button:disabled {
   flex-direction: column;
   gap: 8px;
 }
+/* Bottom padding so the last row doesn't sit flush against the panel/sheet edge. */
+.achievement-section:last-child { margin-bottom: 16px; }
+.achievement-section:last-child .achievement-card:last-child { margin-bottom: 12px; }
+.stats-panel-body { padding-bottom: 16px; }
+.stats-panel-body > section:last-child { margin-bottom: 8px; }
 .achievement-card {
   display: flex;
   gap: 10px;
@@ -2437,6 +2464,7 @@ button:disabled {
   transition: opacity 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
   font-family: inherit;
   min-height: 26px;
+  min-width: fit-content;
 }
 .milestone-collapsed-btn:hover,
 .milestone-strip-root:has(.milestone-collapsed-btn:hover) .milestone-collapsed-btn,
@@ -2494,6 +2522,19 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 160px;
+}
+
+/* On very small screens, hide the milestone label and compact the chip —
+   but keep the button tall enough to remain tappable and visible. The glyph
+   and wave tag must stay legible. */
+@media (max-width: 480px) {
+  .milestone-collapsed-btn { padding: 4px 10px 4px 8px; min-height: 28px; gap: 6px; }
+  .milestone-collapsed-glyph { width: 18px; height: 18px; font-size: 11px; }
+  .milestone-collapsed-wave { font-size: 9px; }
+  .milestone-collapsed-label { display: none; }
+
+  /* Collapsed button remains compact, but vertical-expand styles for the
+     milestone list itself are handled in the ≤768px media query below. */
 }
 
 /* Full 3-pill strip — hidden by default, revealed on hover. */
@@ -2608,5 +2649,668 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   UI Overhaul v2: resizable panel, ability bar, mobile sheets
+   ───────────────────────────────────────────────────────────────── */
+
+/* Hide desktop panel toggle and resizer on mobile — replaced by BottomNav. */
+#panel-toggle,
+#panel-resizer { display: none; }
+
+/* Desktop: show toggle + resizer. */
+@media (min-width: 769px) {
+  #panel-toggle,
+  #panel-resizer { display: flex; }
+}
+
+/* Panel toggle button — pins to top-left of panel, collapses to icon rail. */
+#panel-toggle {
+  position: absolute;
+  top: 8px;
+  left: -1px;
+  z-index: 4;
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-1);
+  background: var(--bg-3);
+  border: 1px solid var(--border-strong);
+  border-left: none;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transform: translateX(-100%);
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+#panel-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-2);
+}
+.panel-root.collapsed #panel-toggle {
+  transform: translateX(-12px);
+  left: 0;
+  border-radius: 0 4px 4px 0;
+  border-left: 1px solid var(--border-strong);
+}
+.panel-root.collapsed #panel-toggle::before { content: '›'; }
+#panel-toggle::before { content: '‹'; }
+
+/* Resizer drag handle on the left edge of the panel. */
+#panel-resizer {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 3;
+  background: transparent;
+  touch-action: pan-y;
+}
+#panel-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+#panel-resizer:hover::after,
+body.is-resizing #panel-resizer::after {
+  opacity: 1;
+  background: var(--accent);
+}
+.panel-root.collapsed #panel-resizer { display: none; }
+
+/* When the body is resizing, lock the cursor and disable text selection. */
+body.is-resizing {
+  cursor: ew-resize !important;
+  user-select: none;
+}
+body.is-resizing * { cursor: ew-resize !important; }
+
+/* Collapsed panel: icon rail. */
+.panel-root.collapsed {
+  grid-template-columns: 0;
+  width: 0;
+  overflow: hidden;
+}
+.panel-root.collapsed .panel-tabs,
+.panel-root.collapsed .panel-content {
+  width: var(--panel-collapsed-width);
+  position: absolute;
+  inset: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-1);
+  z-index: 2;
+}
+.panel-root.collapsed .tab-btn {
+  font-size: 0;
+  padding: 10px 4px;
+  min-width: 0;
+  width: 100%;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.1;
+  position: relative;
+}
+.panel-root.collapsed .tab-btn::before {
+  content: attr(data-tab);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: block;
+  color: inherit;
+}
+.panel-root.collapsed .tab-btn.active {
+  background: var(--bg-3);
+  border-color: var(--accent);
+}
+.panel-root.collapsed .tab-btn.active::before { color: var(--accent); }
+
+/* Container queries — reflow content grids by panel width (not viewport). */
+.panel-content { container-type: inline-size; }
+@container (min-width: 480px) {
+  .upgrade-list,
+  .research-list,
+  .perk-list,
+  .automation-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .upgrade-list .upgrade-row,
+  .research-list .research-row,
+  .perk-list > * {
+    min-width: 0;
+  }
+}
+@container (min-width: 720px) {
+  .upgrade-list,
+  .research-list,
+  .perk-list,
+  .automation-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@container (min-width: 480px) {
+  .ability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+}
+@container (min-width: 720px) {
+  .ability-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (min-width: 480px) {
+  .achievement-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (min-width: 720px) {
+  .achievement-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* ── Ability Bar (fixed bottom dock) ── */
+#ability-bar-root {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: var(--ability-bar-height);
+  bottom: calc(var(--bottom-nav-height) + 20px);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 12px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, rgba(20, 23, 29, 0.65), rgba(12, 14, 18, 0.92));
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+@media (min-width: 769px) {
+  #ability-bar-root {
+    bottom: 20px;
+  }
+}
+.ability-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.ability-bar-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.ability-bar-slot-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  text-transform: uppercase;
+  white-space: nowrap;
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Reuse .ability-btn for the bar — size tweaks only. */
+.ability-bar .ability-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+}
+.ability-bar .ability-btn.is-active {
+  box-shadow: 0 0 0 2px var(--good), 0 0 16px -1px color-mix(in srgb, var(--good) 60%, transparent);
+}
+.ability-bar-empty {
+  font-size: 12px;
+  color: var(--text-2);
+  padding: 8px 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* Ability upgrade popover (long-press / context menu on the bar). */
+.ability-upgrade-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  z-index: 65;
+  display: none;
+}
+.ability-upgrade-popover-backdrop.is-open { display: block; }
+.ability-upgrade-popover {
+  position: fixed;
+  z-index: 70;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  min-width: 280px;
+  max-width: 360px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  display: none;
+}
+.ability-upgrade-popover[style*="display: block"],
+.ability-upgrade-popover.is-open { display: block; }
+.ability-upgrade-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.ability-upgrade-popover-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-0);
+  letter-spacing: 0.02em;
+}
+.ability-upgrade-popover-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+.ability-upgrade-popover .ability-upgrade-tooltip {
+  pointer-events: auto;
+}
+
+/* Push the HUD and game-layout above the bar on desktop. */
+@supports not (max-width: 768px) {
+  /* No-op selector — keep for clarity. */
+}
+@media (min-width: 769px) {
+  body.has-ability-bar #app {
+    padding-bottom: var(--ability-bar-height);
+  }
+}
+
+/* ── Bottom Nav (mobile only) ── */
+#bottom-nav-root { display: none; }
+@media (max-width: 768px) {
+  #bottom-nav-root {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    /* Stack above the ability bar so the two never overlap. */
+    bottom: 0;
+    height: var(--bottom-nav-height);
+    z-index: 45;
+    background: var(--bg-1);
+    border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body.has-ability-bar #app {
+    padding-bottom: calc(var(--ability-bar-height) + var(--bottom-nav-height) + 20px);
+  }
+}
+.bottom-nav {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+}
+.bottom-nav-btn {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 4px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.bottom-nav-btn:hover { background: var(--bg-2); color: var(--text-1); }
+.bottom-nav-btn.active { color: var(--accent); }
+.bottom-nav-btn-icon {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* ── Mobile Sheet (slide-up panel) ── */
+#mobile-sheet-root { display: none; }
+@media (max-width: 768px) {
+  #mobile-sheet-root { display: block; }
+}
+.mobile-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 70;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.mobile-sheet-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.mobile-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 80vh;
+  background: var(--bg-1);
+  border-top: 1px solid var(--border-strong);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  z-index: 75;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+  touch-action: pan-y;
+  box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.5);
+}
+.mobile-sheet.is-open { transform: translateY(0); }
+.mobile-sheet-grip {
+  width: 100%;
+  height: 32px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+}
+.mobile-sheet-grip::before {
+  content: '';
+  width: 40px;
+  height: 4px;
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+.mobile-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 8px;
+  flex: 0 0 auto;
+}
+.mobile-sheet-segmented {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+}
+.mobile-sheet-segmented-btn {
+  flex: 1 1 0;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--text-1);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.mobile-sheet-segmented-btn.active {
+  background: var(--bg-3);
+  color: var(--text-0);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.mobile-sheet-close {
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  border-radius: 6px;
+}
+.mobile-sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 8px calc(12px + env(safe-area-inset-bottom, 0px));
+  min-height: 0;
+}
+.mobile-sheet-body > * { container-type: inline-size; }
+
+/* ── Mobile HUD (≤768px) ── */
+@media (max-width: 768px) {
+  /* Stack HUD into 2 compact rows. */
+  .hud-root {
+    flex: 0 0 auto;
+  }
+  .hud {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 6px 8px;
+    min-height: 0;
+    /* Solid background so the canvas / game background never bleeds through
+       the compact HUD when the viewport is small. */
+    background: linear-gradient(180deg, var(--bg-1), var(--bg-0));
+    border-bottom: 1px solid var(--border);
+  }
+  .hud-group { gap: 8px; flex: 1 1 0; }
+  .hud-stat { min-width: 0; flex: 1 1 0; }
+  .hud-stat-value { font-size: 14px; }
+  .hud-stat-label { font-size: 9px; letter-spacing: 0.04em; }
+  .hud-hp,
+  .hud-mana {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+  .hud-hp-label,
+  .hud-mana-label { font-size: 9px; }
+  .hud-hp-value,
+  .hud-mana-value { font-size: 12px; }
+
+  /* Wave block: stack the wave label above the prev/auto/next controls to
+     keep the row narrow. Controls sit "directly under" the wave indicator
+     as the user requested. */
+  .hud-wave-block { flex-direction: column; align-items: stretch; gap: 2px; flex: 0 0 auto; }
+  .hud-wave-stat { align-items: center; flex-direction: row; gap: 4px; justify-content: center; }
+  .hud-wave-stat .hud-stat-label { display: none; }
+  .hud-wave-stat .hud-stat-value { font-size: 14px; }
+  .hud-wave-controls { display: inline-flex; gap: 2px; }
+  .hud-wave-controls .hud-ctrl-btn { min-width: 24px; height: 22px; font-size: 12px; padding: 0 4px; }
+  .hud-wave-controls .hud-ctrl-toggle { min-width: 42px; font-size: 10px; }
+  .hud-wave-status { display: none; }
+
+  /* Hide right-side stats (DPS / FPS / speed) and bottom-left stats buttons
+     on mobile — they're surfaced through the "more" popup instead. */
+  .hud-group.right { display: none; }
+  .hud-stats-wrap { display: none; }
+
+  /* Canvas fills available space. */
+  .canvas-wrap { padding: 4px; }
+  /* Toast adapted to mobile. */
+  .toast-root { right: 8px; bottom: calc(var(--ability-bar-height) + var(--bottom-nav-height) + 32px); max-width: calc(100vw - 16px); }
+  /* Milestone strip moves above the bottom nav. */
+  .milestone-strip-slot {
+    bottom: calc(var(--ability-bar-height) + var(--bottom-nav-height) + 28px);
+    left: 8px;
+  }
+  .milestone-strip-root {
+    bottom: calc(var(--ability-bar-height) + var(--bottom-nav-height) + 28px);
+    left: 8px;
+    right: 8px;
+  }
+
+  /* Milestone strip: expand as a vertical column growing upward from above
+     the collapsed button (20px gap). The collapsed button stays at the
+     bottom-left; tapping/hovering reveals the full list above it. */
+  .milestone-strip {
+    position: absolute;
+    bottom: calc(100% + 20px);
+    left: 0;
+    flex-direction: column-reverse;
+    gap: 4px;
+    max-height: calc(100vh - var(--hud-height-mobile) - var(--ability-bar-height) - var(--bottom-nav-height) - 48px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    /*background: linear-gradient(180deg, rgba(20, 25, 36, 0.96), rgba(10, 14, 22, 0.96));*/
+    /*border: 1px solid var(--border);*/
+    border-radius: var(--radius);
+    padding: 6px;
+    transform: none;
+    /*box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);*/
+  }
+  .milestone-entry {
+    width: 100%;
+  }
+}
+
+/* ── Desktop: milestone strip floats above the ability bar ── */
+@media (min-width: 769px) {
+  .milestone-strip-slot,
+  .milestone-strip-root {
+    bottom: calc(var(--ability-bar-height) + 28px);
+    left: 16px;
+  }
+}
+
+/* ── More button (mobile only) ── */
+.hud-more-btn { display: none; }
+@media (max-width: 768px) {
+  .hud-more-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 26px;
+    padding: 0 10px 0 12px;
+    font-size: 16px;
+    font-weight: 800;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-left-width: 2px;
+    border-left-color: var(--border-strong);
+    border-radius: 4px;
+    color: var(--text-0);
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  .hud-more-btn.is-active {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+}
+
+/* ── "More" popup — DPS, FPS, speed, stats & enemies buttons ── */
+.hud-more-popover {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.hud-more-popover.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.hud-more-popover-inner {
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 260px;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+.hud-more-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.hud-more-popover-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+  margin: 0;
+}
+.hud-more-popover-close {
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.hud-more-popover-close:hover { color: var(--text-0); border-color: var(--border-strong); }
+.hud-more-popover-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.hud-more-popover-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+.hud-more-popover-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-0);
+  font-variant-numeric: tabular-nums;
+}
+.hud-more-popover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hud-more-popover-actions .hud-stats-btn {
+  flex: 1 1 0;
+  font-size: 11px;
+  padding: 6px 8px;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.hud-more-popover .hud-speed-block {
+  align-items: flex-end;
+  gap: 2px;
+}
+.hud-more-popover .hud-speed-block .hud-stat-label { display: none; }
+
+/* Old wave popover trigger is no longer used — keep class hidden. */
+.hud-wave-popover-trigger { display: none !important; }
 
 

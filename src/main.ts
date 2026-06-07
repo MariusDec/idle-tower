@@ -14,6 +14,10 @@ function bootstrap(): void {
   const tabsRoot = document.getElementById('panel-tabs');
   const contentRoot = document.getElementById('panel-content');
   const toastRoot = document.getElementById('toast-root');
+  const panelRoot = document.getElementById('panel-root') as HTMLElement | null;
+  const abilityBarRoot = document.getElementById('ability-bar-root') as HTMLElement | null;
+  const bottomNavRoot = document.getElementById('bottom-nav-root') as HTMLElement | null;
+  const mobileSheetRoot = document.getElementById('mobile-sheet-root') as HTMLElement | null;
   if (!hudRoot || !tabsRoot || !contentRoot || !toastRoot) {
     console.error('[main] UI roots missing');
     return;
@@ -33,6 +37,10 @@ function bootstrap(): void {
     contentRoot,
     bus,
     modalRoot,
+    panelRoot: panelRoot ?? undefined,
+    abilityBarRoot: abilityBarRoot ?? undefined,
+    bottomNavRoot: bottomNavRoot ?? undefined,
+    mobileSheetRoot: mobileSheetRoot ?? undefined,
   });
 
   const game = new Game(canvas, { bus, ui, notificationRoot: toastRoot, modalRoot });
@@ -137,21 +145,59 @@ function bootstrap(): void {
   });
 
   let mouseDown = false;
+  let activeTouchId: number | null = null;
   const ensureAudio = () => game.initAudio();
-  canvas.addEventListener('mousemove', (ev) => {
+  const toCanvasXY = (clientX: number, clientY: number): { x: number; y: number } => {
     const rect = canvas.getBoundingClientRect();
-    game.setMouseInput(ev.clientX - rect.left, ev.clientY - rect.top, mouseDown);
+    if (rect.width <= 0 || rect.height <= 0) return { x: 0, y: 0 };
+    return {
+      x: (clientX - rect.left) * (canvas.width / rect.width),
+      y: (clientY - rect.top) * (canvas.height / rect.height),
+    };
+  };
+  canvas.addEventListener('mousemove', (ev) => {
+    const { x, y } = toCanvasXY(ev.clientX, ev.clientY);
+    game.setMouseInput(x, y, mouseDown);
   });
   canvas.addEventListener('mousedown', (ev) => {
     mouseDown = true;
-    const rect = canvas.getBoundingClientRect();
-    game.setMouseInput(ev.clientX - rect.left, ev.clientY - rect.top, true);
+    const { x, y } = toCanvasXY(ev.clientX, ev.clientY);
+    game.setMouseInput(x, y, true);
     ensureAudio();
   });
   canvas.addEventListener('mouseup', () => {
     mouseDown = false;
     game.setMouseInput(0, 0, false);
   });
+
+  // Touch input: forward single-finger touches to the same mouse pipeline.
+  canvas.addEventListener('touchstart', (ev) => {
+    if (ev.touches.length === 0) return;
+    const t = ev.touches[0];
+    activeTouchId = t.identifier;
+    const { x, y } = toCanvasXY(t.clientX, t.clientY);
+    game.setMouseInput(x, y, true);
+    ensureAudio();
+    ev.preventDefault();
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (ev) => {
+    if (activeTouchId === null) return;
+    for (let i = 0; i < ev.touches.length; i++) {
+      if (ev.touches[i].identifier === activeTouchId) {
+        const t = ev.touches[i];
+        const { x, y } = toCanvasXY(t.clientX, t.clientY);
+        game.setMouseInput(x, y, true);
+        break;
+      }
+    }
+    ev.preventDefault();
+  }, { passive: false });
+  const releaseTouch = () => {
+    activeTouchId = null;
+    game.setMouseInput(0, 0, false);
+  };
+  canvas.addEventListener('touchend', releaseTouch, { passive: true });
+  canvas.addEventListener('touchcancel', releaseTouch, { passive: true });
 
   window.addEventListener('keydown', (ev) => {
     ensureAudio();

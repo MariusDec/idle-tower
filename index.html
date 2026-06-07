@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>The Tower</title>
     <link rel="stylesheet" href="/src/styles/main.css" />
   </head>
@@ -18,10 +18,16 @@
         </section>
 
         <aside id="panel-root" class="panel-root">
+          <button id="panel-toggle" type="button" aria-label="Collapse panel"></button>
+          <div id="panel-resizer" aria-hidden="true"></div>
           <nav class="panel-tabs" id="panel-tabs"></nav>
           <div class="panel-content" id="panel-content"></div>
         </aside>
       </main>
+
+      <div id="ability-bar-root" class="ability-bar-host"></div>
+      <nav id="bottom-nav-root"></nav>
+      <div id="mobile-sheet-root"></div>
 
       <div id="toast-root" class="toast-root" aria-live="polite" aria-atomic="true"></div>
     </div>

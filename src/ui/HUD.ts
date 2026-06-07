@@ -63,6 +63,14 @@ export class HUD {
   private nextWaveBtn!: HTMLButtonElement;
   private autoProgressBtn!: HTMLButtonElement;
   private waveStatusEl!: HTMLElement;
+  private moreBtn!: HTMLButtonElement;
+  private moreSpeedDecBtn!: HTMLButtonElement;
+  private moreSpeedIncBtn!: HTMLButtonElement;
+  private moreSpeedLabelEl!: HTMLElement;
+  private moreDpsEl!: HTMLElement;
+  private moreFpsEl!: HTMLElement;
+  private moreStatsBtn!: HTMLButtonElement;
+  private moreEnemyStatsBtn!: HTMLButtonElement;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -71,6 +79,7 @@ export class HUD {
 
   setDPS(value: number): void {
     this.dps = value;
+    if (this.moreDpsEl) setText(this.moreDpsEl, formatNumber(value));
   }
 
   getFpsEl(): HTMLElement {
@@ -259,6 +268,17 @@ export class HUD {
     setTitle(this.speedDecBtn, cur > 0 ? `Slow to ${formatSpeed(speeds[cur - 1])}` : 'Already slowest');
     setTitle(this.speedIncBtn, cur < max ? `Speed up to ${formatSpeed(speeds[cur + 1])}` : 'Max speed reached');
 
+    // Mirror speed state into the "more" popup (mobile).
+    if (this.moreSpeedLabelEl) {
+      setText(this.moreSpeedLabelEl, formatSpeed(currentSpeed));
+      setDisabled(this.moreSpeedDecBtn, cur <= 0);
+      setDisabled(this.moreSpeedIncBtn, cur >= max);
+    }
+    if (this.moreFpsEl) {
+      const fpsText = this.fpsEl?.textContent ?? '--';
+      setText(this.moreFpsEl, fpsText);
+    }
+
     const wave = state.wave.number;
     setDisabled(this.prevWaveBtn, wave <= 1);
     setTitle(this.prevWaveBtn, wave > 1 ? `Restart wave ${wave - 1}` : 'Already at wave 1');
@@ -285,7 +305,7 @@ export class HUD {
 
   private render(): void {
     this.root.innerHTML = '';
-    this.root.className = 'hud';
+    this.root.classList.add('hud');
 
     const groupLeft = document.createElement('div');
     groupLeft.className = 'hud-group';
@@ -452,6 +472,18 @@ export class HUD {
     toggleClass(this.fpsEl, 'hud-fps', true);
     groupRight.appendChild(this.renderSpeedBlock());
     this.root.appendChild(groupRight);
+
+    // Mobile-only "More" button — appended to groupLeft so it sits inline with
+    // the wave controls in the top row. CSS pushes it to the right edge with
+    // margin-left: auto. Opens a popup with the elements hidden by the
+    // compact mobile HUD (DPS, FPS, speed, stats & enemies buttons).
+    this.moreBtn = document.createElement('button');
+    this.moreBtn.type = 'button';
+    this.moreBtn.className = 'hud-more-btn';
+    this.moreBtn.textContent = '\u2026';
+    this.moreBtn.setAttribute('aria-label', 'More controls');
+    groupLeft.appendChild(this.moreBtn);
+    this.installMorePopup();
   }
 
   /**
@@ -560,6 +592,146 @@ export class HUD {
 
     block.appendChild(group);
     return block;
+  }
+
+  /**
+   * Mobile "More" popup — mirrors the HUD elements that get hidden on small
+   * screens (DPS, FPS, speed, stats & enemies buttons). Stays open when the
+   * user clicks speed controls, so they can adjust and observe the effect.
+   */
+  private installMorePopup(): void {
+    const popover = document.createElement('div');
+    popover.className = 'hud-more-popover';
+    const inner = document.createElement('div');
+    inner.className = 'hud-more-popover-inner';
+
+    const header = document.createElement('div');
+    header.className = 'hud-more-popover-header';
+    const title = document.createElement('h4');
+    title.className = 'hud-more-popover-title';
+    title.textContent = 'More Controls';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'hud-more-popover-close';
+    closeBtn.textContent = '\u00d7';
+    closeBtn.setAttribute('aria-label', 'Close');
+    const close = () => {
+      toggleClass(popover, 'is-open', false);
+      toggleClass(this.moreBtn, 'is-active', false);
+    };
+    closeBtn.addEventListener('click', close);
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    inner.appendChild(header);
+
+    // DPS row.
+    const dpsRow = document.createElement('div');
+    dpsRow.className = 'hud-more-popover-row';
+    const dpsLabel = document.createElement('span');
+    dpsLabel.className = 'hud-more-popover-label';
+    dpsLabel.textContent = 'DPS';
+    this.moreDpsEl = document.createElement('span');
+    this.moreDpsEl.className = 'hud-more-popover-value';
+    this.moreDpsEl.textContent = '0';
+    dpsRow.appendChild(dpsLabel);
+    dpsRow.appendChild(this.moreDpsEl);
+    inner.appendChild(dpsRow);
+
+    // FPS row.
+    const fpsRow = document.createElement('div');
+    fpsRow.className = 'hud-more-popover-row';
+    const fpsLabel = document.createElement('span');
+    fpsLabel.className = 'hud-more-popover-label';
+    fpsLabel.textContent = 'FPS';
+    this.moreFpsEl = document.createElement('span');
+    this.moreFpsEl.className = 'hud-more-popover-value';
+    this.moreFpsEl.textContent = '--';
+    fpsRow.appendChild(fpsLabel);
+    fpsRow.appendChild(this.moreFpsEl);
+    inner.appendChild(fpsRow);
+
+    // Speed row — controls stay open on click.
+    const speedBlock = document.createElement('div');
+    speedBlock.className = 'hud-speed-block';
+    const speedLabel = document.createElement('span');
+    speedLabel.className = 'hud-stat-label';
+    speedLabel.textContent = 'Speed';
+    speedBlock.appendChild(speedLabel);
+    const speedGroup = document.createElement('div');
+    speedGroup.className = 'hud-speed-group';
+    this.moreSpeedDecBtn = document.createElement('button');
+    this.moreSpeedDecBtn.type = 'button';
+    this.moreSpeedDecBtn.className = 'hud-ctrl-btn';
+    this.moreSpeedDecBtn.textContent = '\u2212';
+    this.moreSpeedDecBtn.setAttribute('aria-label', 'Slow down');
+    this.moreSpeedDecBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const cur = this.speedApi.currentIndex;
+      if (cur > 0) this.onSpeedChange(cur - 1);
+    });
+    speedGroup.appendChild(this.moreSpeedDecBtn);
+    this.moreSpeedLabelEl = document.createElement('span');
+    this.moreSpeedLabelEl.className = 'hud-speed-value';
+    this.moreSpeedLabelEl.textContent = '1x';
+    speedGroup.appendChild(this.moreSpeedLabelEl);
+    this.moreSpeedIncBtn = document.createElement('button');
+    this.moreSpeedIncBtn.type = 'button';
+    this.moreSpeedIncBtn.className = 'hud-ctrl-btn';
+    this.moreSpeedIncBtn.textContent = '+';
+    this.moreSpeedIncBtn.setAttribute('aria-label', 'Speed up');
+    this.moreSpeedIncBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const cur = this.speedApi.currentIndex;
+      const max = this.speedApi.maxIndex;
+      if (cur < max) this.onSpeedChange(cur + 1);
+    });
+    speedGroup.appendChild(this.moreSpeedIncBtn);
+    speedBlock.appendChild(speedGroup);
+    const speedRow = document.createElement('div');
+    speedRow.className = 'hud-more-popover-row';
+    const speedRowLabel = document.createElement('span');
+    speedRowLabel.className = 'hud-more-popover-label';
+    speedRowLabel.textContent = 'Speed';
+    speedRow.appendChild(speedRowLabel);
+    speedRow.appendChild(speedBlock);
+    inner.appendChild(speedRow);
+
+    // Stats / Enemies action buttons.
+    const actions = document.createElement('div');
+    actions.className = 'hud-more-popover-actions';
+    this.moreStatsBtn = document.createElement('button');
+    this.moreStatsBtn.type = 'button';
+    this.moreStatsBtn.className = 'hud-stats-btn';
+    this.moreStatsBtn.textContent = 'Stats';
+    this.moreStatsBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (hasClass(this.statsPopup, 'is-open')) this.closeStatsPopup();
+      else this.openStatsPopup();
+    });
+    actions.appendChild(this.moreStatsBtn);
+    this.moreEnemyStatsBtn = document.createElement('button');
+    this.moreEnemyStatsBtn.type = 'button';
+    this.moreEnemyStatsBtn.className = 'hud-stats-btn';
+    this.moreEnemyStatsBtn.textContent = 'Enemies';
+    this.moreEnemyStatsBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (hasClass(this.enemyStatsPopup, 'is-open')) this.closeEnemyStatsPopup();
+      else this.openEnemyStatsPopup();
+    });
+    actions.appendChild(this.moreEnemyStatsBtn);
+    inner.appendChild(actions);
+
+    popover.appendChild(inner);
+    popover.addEventListener('click', (e) => {
+      if (e.target === popover) close();
+    });
+    document.body.appendChild(popover);
+
+    this.moreBtn.addEventListener('click', () => {
+      const opening = !hasClass(popover, 'is-open');
+      toggleClass(popover, 'is-open', opening);
+      toggleClass(this.moreBtn, 'is-active', opening);
+    });
   }
 
   private addStat(parent: HTMLElement, label: string, initialValue: string): HTMLElement {

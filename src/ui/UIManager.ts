@@ -21,12 +21,15 @@ import { WelcomeBackModal, type WelcomeBackData } from './WelcomeBackModal';
 import { RunSummaryModal, type RunSummaryData } from './RunSummaryModal';
 import { StatsPanel } from './StatsPanel';
 import { MilestoneStrip } from './MilestoneStrip';
+import { AbilityBar } from './AbilityBar';
+import { MobileSheet, type MobileSheetTab } from './MobileSheet';
+import { BottomNav, type BottomNavItem } from './BottomNav';
 import { upcomingMilestones, milestoneAtWave } from '../data/milestones';
 import { EventBus } from '../game/EventBus';
 import type { AutomationKey } from '../data/prestige';
 import type { EffectiveAbilityStats } from '../data/abilities';
 import { ABILITIES } from '../data/abilities';
-import { hasClass, toggleClass } from '../utils/dom';
+import { hasClass, toggleClass, setStyle } from '../utils/dom';
 
 interface TabDef {
   id: PanelTab;
@@ -36,13 +39,19 @@ interface TabDef {
 const TABS: TabDef[] = [
   { id: 'upgrades', label: 'Upgrades' },
   { id: 'research', label: 'Research' },
-  { id: 'abilities', label: 'Abilities' },
+  { id: 'abilities', label: 'Ability Mgmt' },
   { id: 'prestige', label: 'Prestige' },
   { id: 'transcendence', label: 'Transcendence' },
   { id: 'achievements', label: 'Achievements' },
   { id: 'stats', label: 'Stats' },
   { id: 'settings', label: 'Settings' },
 ];
+
+const PANEL_WIDTH_KEY = 'the-tower-panel-width';
+const PANEL_COLLAPSED_KEY = 'the-tower-panel-collapsed';
+const PANEL_MIN = 280;
+const PANEL_MAX = 720;
+const MOBILE_BREAKPOINT = 768;
 
 export interface AbilityAPI {
   canCast: (id: AbilityId, wave: number) => boolean;
@@ -117,7 +126,22 @@ export class UIManager {
   private readonly runSummaryModal: RunSummaryModal;
   private readonly statsPanel: StatsPanel;
   private readonly milestoneStrip: MilestoneStrip;
+  private abilityBar: AbilityBar | null = null;
+  private mobileSheet: MobileSheet | null = null;
+  private bottomNav: BottomNav | null = null;
+  private readonly panelRoot: HTMLElement;
+  private readonly abilityBarRoot: HTMLElement;
+  private readonly bottomNavRoot: HTMLElement;
+  private readonly mobileSheetRoot: HTMLElement;
+  private readonly panelToggle: HTMLButtonElement | null;
+  private readonly panelResizer: HTMLElement | null;
   private readonly bus: EventBus;
+  private isMobile = false;
+  private mobileMatchMedia: MediaQueryList | null = null;
+  private mobileBoundChange: ((ev: MediaQueryListEvent) => void) | null = null;
+  private resizeState: { startX: number; startWidth: number } | null = null;
+  private boundResizeMove: ((ev: PointerEvent) => void) | null = null;
+  private boundResizeUp: ((ev: PointerEvent) => void) | null = null;
   private activeTab: PanelTab = 'upgrades';
   private damageLog: { time: number; amount: number }[] = [];
   private realTimeDps = 0;
@@ -208,10 +232,21 @@ export class UIManager {
     contentRoot: HTMLElement;
     bus: EventBus;
     modalRoot: HTMLElement;
+    panelRoot?: HTMLElement;
+    abilityBarRoot?: HTMLElement;
+    bottomNavRoot?: HTMLElement;
+    mobileSheetRoot?: HTMLElement;
   }) {
     this.bus = deps.bus;
     this.tabsRoot = deps.tabsRoot;
     this.contentRoot = deps.contentRoot;
+    this.panelRoot = deps.panelRoot ?? (document.getElementById('panel-root') as HTMLElement);
+    this.abilityBarRoot = deps.abilityBarRoot ?? (document.getElementById('ability-bar-root') as HTMLElement);
+    this.bottomNavRoot = deps.bottomNavRoot ?? (document.getElementById('bottom-nav-root') as HTMLElement);
+    this.mobileSheetRoot = deps.mobileSheetRoot ?? (document.getElementById('mobile-sheet-root') as HTMLElement);
+    this.panelToggle = this.panelRoot?.querySelector<HTMLButtonElement>('#panel-toggle') ?? null;
+    this.panelResizer = this.panelRoot?.querySelector<HTMLElement>('#panel-resizer') ?? null;
+
     this.hud = new HUD(deps.hudRoot);
     this.hud.setOnSpeedChange((index) => this.onSpeedChange(index));
     this.hud.setOnPrevWave(() => this.onPrevWave());
@@ -330,6 +365,7 @@ export class UIManager {
     this.bus.on('ability_cast', (payload: unknown) => {
       const p = payload as { id: AbilityId; def: { name: string } };
       this.abilityPanel.flashCast(p.id);
+      this.abilityBar?.flashCast(p.id);
       this.bus.emit('toast', { kind: 'milestone', text: `${p.def.name} cast!`, life: 2.5 });
     });
     this.bus.on('ability_upgraded', (payload: unknown) => {
@@ -337,6 +373,7 @@ export class UIManager {
       const def = ABILITIES.find(a => a.id === p.id);
       const name = def?.name ?? p.id;
       this.abilityPanel.flashUpgrade(p.id);
+      this.abilityBar?.flashUpgrade(p.id);
       this.bus.emit('toast', {
         kind: 'info',
         text: `${name} → Lv.${p.level}${p.level >= (def?.maxLevel ?? 0) ? ' (MAX)' : ''}`,
@@ -364,6 +401,163 @@ export class UIManager {
       const p = payload as { amount: number };
       this.damageLog.push({ time: performance.now(), amount: p.amount });
     });
+
+    // ── UI Overhaul v2: ability bar, panel collapse, mobile routing ──
+    this.restorePanelWidth();
+    this.restorePanelCollapsed();
+    this.bindPanelToggle();
+    this.bindPanelResizer();
+    this.installAbilityBar();
+    this.installMobileChrome();
+  }
+
+  private installAbilityBar(): void {
+    if (!this.abilityBarRoot) return;
+    this.abilityBar = new AbilityBar(this.abilityBarRoot, {
+      canCast: (id, wave) => this.abilityApi.canCast(id, wave),
+      reasonBlocked: (id, wave) => this.abilityApi.reasonBlocked(id, wave),
+      onCast: (id) => this.onCastAbility(id),
+      onUpgrade: (id) => this.onUpgradeAbility(id),
+      canUpgrade: (id, wave) => this.abilityApi.canUpgrade(id, wave),
+      isMaxed: (id) => this.abilityApi.isMaxed(id),
+      getUpgradeCost: (id) => this.abilityApi.getUpgradeCost(id),
+      getEffectiveStats: (id) => this.abilityApi.getEffectiveStats(id),
+    });
+  }
+
+  private installMobileChrome(): void {
+    if (!this.bottomNavRoot || !this.mobileSheetRoot) return;
+    this.mobileSheet = new MobileSheet(this.mobileSheetRoot);
+    const navItems: BottomNavItem[] = [
+      { id: 'upgrades', label: 'Upgrades', icon: '\u25B2' },
+      { id: 'research', label: 'Research', icon: '\u2697' },
+      { id: 'progress', label: 'Progress', icon: '\u2605' },
+      { id: 'more', label: 'More', icon: '\u2026' },
+    ];
+    this.bottomNav = new BottomNav(this.bottomNavRoot, navItems);
+    this.bottomNav.setOnSelect((id) => this.handleMobileNav(id));
+    this.mobileBoundChange = (ev) => this.applyMobileMode(ev.matches);
+    this.mobileMatchMedia = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+    this.mobileMatchMedia.addEventListener('change', this.mobileBoundChange);
+    this.applyMobileMode(this.mobileMatchMedia.matches);
+  }
+
+  private applyMobileMode(mobile: boolean): void {
+    this.isMobile = mobile;
+    if (!this.bottomNav || !this.mobileSheet) return;
+    // Always populate tabs so they're ready when needed.
+    const tabs: MobileSheetTab[] = [
+      { id: 'upgrades', label: 'Upgrades', render: (b) => this.mountMobileTab('upgrades', b) },
+      { id: 'research', label: 'Research', render: (b) => this.mountMobileTab('research', b) },
+      { id: 'abilities', label: 'Abilities', render: (b) => this.mountMobileTab('abilities', b) },
+      { id: 'prestige', label: 'Prestige', render: (b) => this.mountMobileTab('prestige', b) },
+      { id: 'transcendence', label: 'Transcendence', render: (b) => this.mountMobileTab('transcendence', b) },
+      { id: 'achievements', label: 'Achievements', render: (b) => this.mountMobileTab('achievements', b) },
+      { id: 'stats', label: 'Stats', render: (b) => this.mountMobileTab('stats', b) },
+      { id: 'settings', label: 'Settings', render: (b) => this.mountMobileTab('settings', b) },
+    ];
+    this.mobileSheet.setTabs(tabs);
+  }
+
+  private mountMobileTab(tab: PanelTab, body: HTMLElement): void {
+    // Mount the same panel that the desktop tab uses, but inside the sheet body.
+    // The desktop contentRoot remains untouched so desktop still works. We do
+    // NOT update this.activeTab — that's the desktop state and would clobber
+    // the user's last desktop selection if they resized back.
+    body.className = `${tab}-panel`;
+    body.innerHTML = '';
+    switch (tab) {
+      case 'upgrades': this.upgradePanel.mount(body); break;
+      case 'research': this.researchPanel.mount(body); break;
+      case 'abilities': this.abilityPanel.mount(body); break;
+      case 'prestige': this.prestigePanel.mount(body); break;
+      case 'transcendence': this.transcendencePanel.mount(body); break;
+      case 'achievements': this.achievementPanel.mount(body); break;
+      case 'stats': this.statsPanel.mount(body); break;
+      case 'settings': this.settingsPanel.mount(body); break;
+    }
+    if (this.lastState) {
+      switch (tab) {
+        case 'upgrades': this.upgradePanel.update(this.lastState); break;
+        case 'research': this.researchPanel.update(this.lastState); break;
+        case 'abilities': this.abilityPanel.update(this.lastState); break;
+        case 'prestige': this.prestigePanel.update(this.lastState); break;
+        case 'transcendence': this.transcendencePanel.update(this.lastState); break;
+        case 'achievements': this.achievementPanel.update(this.lastState); break;
+        case 'stats': this.statsPanel.update(); break;
+      }
+    }
+  }
+
+  private handleMobileNav(id: string): void {
+    if (!this.mobileSheet) return;
+    if (id === 'more') {
+      this.mobileSheet.open('prestige');
+    } else if (id === 'progress') {
+      this.mobileSheet.open('stats');
+    } else {
+      this.mobileSheet.open(id);
+    }
+  }
+
+  private bindPanelToggle(): void {
+    if (!this.panelToggle || !this.panelRoot) return;
+    this.panelToggle.addEventListener('click', () => {
+      const collapsed = !hasClass(this.panelRoot, 'collapsed');
+      toggleClass(this.panelRoot, 'collapsed', collapsed);
+      try { localStorage.setItem(PANEL_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch {}
+    });
+  }
+
+  private bindPanelResizer(): void {
+    if (!this.panelResizer || !this.panelRoot) return;
+    this.panelResizer.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      const rect = this.panelRoot.getBoundingClientRect();
+      this.resizeState = { startX: ev.clientX, startWidth: rect.width };
+      document.body.classList.add('is-resizing');
+      this.boundResizeMove = (e: PointerEvent) => this.onResizeMove(e);
+      this.boundResizeUp = () => this.onResizeUp();
+      window.addEventListener('pointermove', this.boundResizeMove);
+      window.addEventListener('pointerup', this.boundResizeUp, { once: true });
+    });
+  }
+
+  private onResizeMove(ev: PointerEvent): void {
+    if (!this.resizeState) return;
+    const dx = this.resizeState.startX - ev.clientX;
+    const next = Math.max(PANEL_MIN, Math.min(PANEL_MAX, this.resizeState.startWidth + dx));
+    setStyle(this.panelRoot, '--panel-width', `${next}px`);
+    document.documentElement.style.setProperty('--panel-width', `${next}px`);
+  }
+
+  private onResizeUp(): void {
+    this.resizeState = null;
+    document.body.classList.remove('is-resizing');
+    if (this.boundResizeMove) window.removeEventListener('pointermove', this.boundResizeMove);
+    if (this.boundResizeUp) window.removeEventListener('pointerup', this.boundResizeUp);
+    try {
+      const width = this.panelRoot.getBoundingClientRect().width;
+      localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(width)));
+    } catch {}
+  }
+
+  private restorePanelWidth(): void {
+    try {
+      const raw = localStorage.getItem(PANEL_WIDTH_KEY);
+      if (!raw) return;
+      const w = Math.max(PANEL_MIN, Math.min(PANEL_MAX, parseInt(raw, 10) || 360));
+      document.documentElement.style.setProperty('--panel-width', `${w}px`);
+    } catch {}
+  }
+
+  private restorePanelCollapsed(): void {
+    try {
+      const raw = localStorage.getItem(PANEL_COLLAPSED_KEY);
+      if (raw === '1' && this.panelRoot) {
+        toggleClass(this.panelRoot, 'collapsed', true);
+      }
+    } catch {}
   }
 
   setOnBuyUpgrade(handler: (id: string) => void): void {
@@ -438,6 +632,10 @@ export class UIManager {
     this.onTargetingModeChange = handler;
   }
 
+  isMobileView(): boolean {
+    return this.isMobile;
+  }
+
   setAudioAPI(api: AudioAPI): void {
     this.audioApi = api;
   }
@@ -503,6 +701,7 @@ export class UIManager {
 
   update(state: GameState): void {
     this.lastState = state;
+    if (this.abilityBar) this.abilityBar.update(state);
 
     // Per-frame DPS tracking (lightweight JS, runs every frame)
     const now = performance.now();

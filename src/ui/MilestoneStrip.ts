@@ -43,6 +43,7 @@ export class MilestoneStrip {
   private hoverContainer!: HTMLElement;
   private isHovered = false;
   private hoverTimer = 0;
+  private isClickPinned = false;
   private collapsedBtn!: HTMLButtonElement;
   private collapsedFill!: HTMLElement;
   private collapsedWaveTag!: HTMLElement;
@@ -196,7 +197,7 @@ export class MilestoneStrip {
     });
     this.collapsedBtn.addEventListener('mouseleave', () => {
       this.isHovered = false;
-      this.hoverTimer = 0.25;
+      if (!this.isClickPinned) this.hoverTimer = 0.25;
     });
     this.hoverContainer.addEventListener('mouseenter', () => {
       this.isHovered = true;
@@ -205,7 +206,33 @@ export class MilestoneStrip {
     });
     this.hoverContainer.addEventListener('mouseleave', () => {
       this.isHovered = false;
-      this.hoverTimer = 0.25;
+      if (!this.isClickPinned) this.hoverTimer = 0.25;
+    });
+
+    // Click/tap to toggle (primary interaction on touch devices; secondary
+    // on desktop — a click "pins" the strip open so the hover-leave timer
+    // doesn't immediately close it).
+    this.collapsedBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const isOpen = this.hoverContainer.classList.contains('is-open');
+      if (isOpen) {
+        this.isClickPinned = false;
+        this.hoverTimer = 0;
+        toggleClass(this.hoverContainer, 'is-open', false);
+      } else {
+        this.isClickPinned = true;
+        this.hoverTimer = 0;
+        toggleClass(this.hoverContainer, 'is-open', true);
+      }
+    });
+    // Click outside the strip closes a click-pinned strip.
+    document.addEventListener('click', (ev) => {
+      if (!this.isClickPinned) return;
+      const target = ev.target as Node | null;
+      if (target && this.root.contains(target)) return;
+      this.isClickPinned = false;
+      this.hoverTimer = 0;
+      toggleClass(this.hoverContainer, 'is-open', false);
     });
 
     this.root.appendChild(this.collapsedBtn);
