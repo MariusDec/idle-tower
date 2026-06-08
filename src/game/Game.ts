@@ -1037,6 +1037,8 @@ export class Game {
     this.bestWaveRun = 1;
     this.resetRunBaselines();
     this.syncUiApis();
+
+    this.saveMgr.save(this.state);
   }
 
   get eventBus(): EventBus {

@@ -6,7 +6,7 @@ export interface SettingsAPI {
   onMuteToggle: () => void;
   onTargetingModeChange?: (mode: string) => void;
   initialVolume: number;
-  initialMuted: boolean;
+  isMuted: boolean;
   currentTargetingMode?: string;
   targetingModes?: Array<{ id: string; label: string }>;
 }
@@ -118,11 +118,13 @@ export class SettingsPanel {
     this.muteBtn = document.createElement('button');
     this.muteBtn.type = 'button';
     this.muteBtn.className = 'btn-mute';
-    this.muteBtn.textContent = this.api.initialMuted ? 'Unmute' : 'Mute';
+    this.muteBtn.textContent = this.api.isMuted ? 'Unmute' : 'Mute';
     this.muteBtn.addEventListener('click', () => {
       this.api.onMuteToggle();
+      this.api.isMuted = !this.api.isMuted;
+
       if (this.muteBtn) {
-        setText(this.muteBtn, this.api.initialMuted ? 'Unmute' : 'Mute');
+        setText(this.muteBtn, this.api.isMuted ? 'Unmute' : 'Mute');
       }
     });
     row.appendChild(this.muteBtn);

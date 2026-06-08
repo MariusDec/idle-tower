@@ -167,12 +167,19 @@ export class UIManager {
   private onVolumeChange: (v: number) => void = () => {};
   private onMuteToggle: () => void = () => {};
   private onTargetingModeChange: (mode: string) => void = () => {};
-  private audioApi: AudioAPI = {
-    volume: 0.6,
-    muted: false,
-    setVolume: () => {},
-    toggleMute: () => {},
-  };
+  private audioApi: AudioAPI = (() => {
+    let volume = 0.6;
+    let muted = false;
+    try {
+      const raw = localStorage.getItem('the-tower-audio');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.volume === 'number') volume = Math.max(0, Math.min(1, parsed.volume));
+        if (parsed.muted) muted = true;
+      }
+    } catch {}
+    return { volume, muted, setVolume: () => {}, toggleMute: () => {} };
+  })();
   private targetingApi: TargetingAPI = {
     currentMode: 'nearest',
     setMode: () => {},
@@ -309,7 +316,7 @@ export class UIManager {
       onMuteToggle: () => this.onMuteToggle(),
       onTargetingModeChange: (m) => this.onTargetingModeChange(m),
       initialVolume: this.audioApi.volume,
-      initialMuted: this.audioApi.muted,
+      isMuted: this.audioApi.muted,
       currentTargetingMode: this.targetingApi.currentMode,
     });
     this.achievementPanel = new AchievementPanel({

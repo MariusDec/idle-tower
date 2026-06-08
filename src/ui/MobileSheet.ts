@@ -92,7 +92,6 @@ export class MobileSheet {
       btn.addEventListener('click', () => this.activate(t.id));
       this.segmented.appendChild(btn);
     }
-    if (tabs.length > 0) this.activate(tabs[0].id);
   }
 
   open(tabId?: string): void {

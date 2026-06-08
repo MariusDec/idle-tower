@@ -94,6 +94,7 @@ function bootstrap(): void {
     game.audioMgr.setVolume(v);
   });
   ui.setOnMuteToggle(() => {
+
     game.audioMgr.toggleMute();
   });
   ui.setOnTargetingModeChange((mode) => {

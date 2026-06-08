@@ -33,10 +33,12 @@ const CATEGORY_LABELS: Record<ResearchCategory, string> = {
 
 function formatTime(seconds: number): string {
   if (seconds <= 0) return '0s';
-  const m = Math.floor(seconds / 60);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
   const s = Math.ceil(seconds % 60);
-  if (m <= 0) return `${s}s`;
-  return `${m}m ${s}s`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }
 
 function formatPercent(v: number, digits: number = 0): string {

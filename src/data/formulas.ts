@@ -18,7 +18,7 @@ export function enemySpeedForWave(baseSpeed: number, wave: number): number {
 }
 
 export function goldDropForWave(baseGold: number, wave: number): number {
-  return baseGold * Math.pow(1.2, Math.max(0, wave - 1));
+  return baseGold * Math.pow(1.08, Math.max(0, wave - 1));
 }
 
 export function enemyCountForWave(wave: number): number {
