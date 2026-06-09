@@ -2,20 +2,20 @@
 
 ## Formulas (`src/data/formulas.ts`)
 
-| Function | Formula |
-|----------|---------|
-| `enemyHPForWave(baseHP, wave)` | `baseHP * 1.12^(wave-1)` |
+| Function | Formula                                                 |
+|----------|---------------------------------------------------------|
+| `enemyHPForWave(baseHP, wave)` | `baseHP * 1.12^(wave-1)`                                |
 | `bossHPForWave(baseHP, wave)` | `baseHP * 1.12^wave * 1.5^tier` (tier = floor(wave/10)) |
-| `enemyDamageForWave(baseDamage, wave)` | `baseDamage + floor((wave-1)/5)` |
-| `enemySpeedForWave(baseSpeed, wave)` | `baseSpeed * min(3, 1 + 0.03*(wave-1))` |
-| `goldDropForWave(baseGold, wave)` | `baseGold * 1.08^(wave-1)` |
-| `enemyCountForWave(wave)` | `5 + floor((wave-1) * 1.5)` |
-| `spawnIntervalForWave(wave)` | `max(0.3, 2.0 - wave*0.05)` |
-| `upgradeCost(base, growth, level)` | `floor(base * growth^level)` |
-| `abilityUpgradeCost(base, growth, level)` | `floor(baseCost * growth^level)` (numeric growth only) |
-| `isBossWave(wave)` | `wave > 0 && wave % 10 === 0` |
-| `apForWave(waveNumber)` | `max(0, floor(sqrt(waveNumber * 5)))` (if wave >= 20) |
-| `tpForAP(ap)` | `max(0, floor(log10(ap+1) * 3))` (if ap >= 100) |
+| `enemyDamageForWave(baseDamage, wave)` | `baseDamage + floor((wave-1)/5)`                        |
+| `enemySpeedForWave(baseSpeed, wave)` | `baseSpeed * min(3, 1 + 0.03*(wave-1))`                 |
+| `goldDropForWave(baseGold, wave)` | `baseGold * 1.1^(wave-1)`                               |
+| `enemyCountForWave(wave)` | `5 + floor((wave-1) * 1.5)`                             |
+| `spawnIntervalForWave(wave)` | `max(0.3, 2.0 - wave*0.05)`                             |
+| `upgradeCost(base, growth, level)` | `floor(base * growth^level)`                            |
+| `abilityUpgradeCost(base, growth, level)` | `floor(baseCost * growth^level)` (numeric growth only)  |
+| `isBossWave(wave)` | `wave > 0 && wave % 10 === 0`                           |
+| `apForWave(waveNumber)` | `max(0, floor(sqrt(waveNumber * 5)))` (if wave >= 20)   |
+| `tpForAP(ap)` | `max(0, floor(log10(ap+1) * 3))` (if ap >= 100)         |
 
 ## Upgrade Value Computation (`computeUpgradeValue`)
 

@@ -33,6 +33,7 @@ export class ProjectileManager {
   };
   private pierceExtra = 0;
   private piercingRemaining: Record<number, number> = {};
+  private hitEnemies: Record<number, Set<number>> = {};
   private executeThreshold = 0;
   private executeMultiplier = 0;
   private armorPen = 0;
@@ -74,7 +75,8 @@ export class ProjectileManager {
   }
 
   private pierceMax(id: number): number {
-    return 1 + (this.piercingRemaining[id] ?? this.pierceExtra);
+    const rem = this.piercingRemaining[id];
+    return rem !== undefined ? rem : 1 + this.pierceExtra;
   }
 
   fire(target: Enemy | null, towerState: TowerState, opts: FireOptions): Projectile[] {
@@ -132,9 +134,11 @@ export class ProjectileManager {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
+      const hitSet = this.hitEnemies[p.id];
       const hits: Enemy[] = [];
       for (const e of this.enemies.list) {
         if (!e.alive) continue;
+        if (hitSet && hitSet.has(e.id)) continue;
         const r = this.enemyRadius(e) + 6;
         const dx = p.x - e.x;
         const dy = p.y - e.y;
@@ -188,16 +192,21 @@ export class ProjectileManager {
         const remaining = this.pierceMax(p.id);
         if (remaining > 1) {
           this.piercingRemaining[p.id] = remaining - 1;
+          if (!this.hitEnemies[p.id]) this.hitEnemies[p.id] = new Set();
+          this.hitEnemies[p.id].add(enemy.id);
         } else {
           p.alive = false;
           delete this.piercingRemaining[p.id];
+          delete this.hitEnemies[p.id];
         }
       }
     }
 
     this.projectiles = this.projectiles.filter(p => {
-      if (!p.alive) return false;
-      if (p.x < -100 || p.x > 9999 || p.y < -100 || p.y > 9999) return false;
+      if (!p.alive || p.x < -100 || p.x > 9999 || p.y < -100 || p.y > 9999) {
+        delete this.hitEnemies[p.id];
+        return false;
+      }
       return true;
     });
   }
@@ -217,5 +226,6 @@ export class ProjectileManager {
   reset(): void {
     this.projectiles = [];
     this.piercingRemaining = {};
+    this.hitEnemies = {};
   }
 }

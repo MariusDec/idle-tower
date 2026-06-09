@@ -85,7 +85,7 @@ export function computePerkEffect(def: PrestigePerkDef, level: number): number {
   return v;
 }
 
-export const ASCENSION_UNLOCK_WAVE = 50;
+export const ASCENSION_UNLOCK_WAVE = 30;
 export const TRANSCENDENCE_UNLOCK_AP = 100;
 
 export const AP_PERKS: PrestigePerkDef[] = [

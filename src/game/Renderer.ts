@@ -20,7 +20,7 @@ export class Renderer {
     this.height = canvas.height;
   }
 
-  draw(snapshot: RenderSnapshot, options?: { screenFlash?: number; chainPaths?: { points: { x: number; y: number }[]; age: number; life: number }[] }): void {
+  draw(snapshot: RenderSnapshot, options?: { screenFlash?: number; towerFlash?: number; wallFlash?: number; shieldFlash?: number; chainPaths?: { points: { x: number; y: number }[]; age: number; life: number }[] }): void {
     this.time += 1 / 60;
     const ctx = this.ctx;
     ctx.drawImage(this.getBackground(), 0, 0);
@@ -46,6 +46,58 @@ export class Renderer {
       ctx.save();
       ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, flash / 0.15)})`;
       ctx.fillRect(0, 0, this.width, this.height);
+      ctx.restore();
+    }
+
+    // Tower damage flash (red pulse on enemy attack)
+    const tFlash = options?.towerFlash ?? 0;
+    if (tFlash > 0) {
+      const t = snapshot.tower;
+      const alpha = Math.min(1, tFlash / 0.12) * 0.35;
+      const pulse = 1 + (1 - tFlash / 0.12) * 0.5;
+      const r = (TOWER_VISUAL.bodyRadius + 12) * pulse;
+      const grad = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, r);
+      grad.addColorStop(0, `rgba(255, 60, 40, ${alpha})`);
+      grad.addColorStop(1, 'rgba(255, 60, 40, 0)');
+      ctx.save();
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Wall damage flash (orange pulse on wall ring)
+    const wFlash = options?.wallFlash ?? 0;
+    if (wFlash > 0) {
+      const t = snapshot.tower;
+      const wallR = TOWER_VISUAL.bodyRadius + 40;
+      const alpha = Math.min(1, wFlash / 0.12) * 0.4;
+      const pulse = 1 + (1 - wFlash / 0.12) * 0.3;
+      const r = wallR * pulse;
+      ctx.save();
+      ctx.strokeStyle = `rgba(255, 160, 40, ${alpha})`;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Shield damage flash (bright blue pulse on shield ring)
+    const sFlash = options?.shieldFlash ?? 0;
+    if (sFlash > 0) {
+      const t = snapshot.tower;
+      const shieldR = TOWER_VISUAL.bodyRadius + 8;
+      const alpha = Math.min(1, sFlash / 0.12) * 0.5;
+      const pulse = 1 + (1 - sFlash / 0.12) * 0.3;
+      const r = shieldR * pulse;
+      ctx.save();
+      ctx.strokeStyle = `rgba(100, 200, 255, ${alpha})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.restore();
     }
   }
@@ -145,6 +197,30 @@ export class Renderer {
     ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
+
+    // charge dots when more than 1 charge
+    if (t.shieldCurrentCharges > 1) {
+      ctx.save();
+      const dotR = r + 6;
+      const count = t.shieldCurrentCharges;
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2 + this.time * 1.2;
+        const dx = t.x + Math.cos(a) * dotR;
+        const dy = t.y + Math.sin(a) * dotR;
+        const glow = ctx.createRadialGradient(dx, dy, 0, dx, dy, 6);
+        glow.addColorStop(0, 'rgba(180, 220, 255, 0.95)');
+        glow.addColorStop(1, 'rgba(100, 180, 255, 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(dx, dy, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#b4dcff';
+        ctx.beginPath();
+        ctx.arc(dx, dy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
   }
 
   private drawWall(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
@@ -575,8 +651,8 @@ export class Renderer {
       const size = d.isCrit ? 22 : 15;
       ctx.font = `${d.isCrit ? '700 ' : '600 '}${size}px sans-serif`;
       ctx.lineWidth = d.isCrit ? 3.5 : 2.5;
-      ctx.strokeStyle = '#3a0000';
-      ctx.fillStyle = d.isCrit ? '#ffe27a' : '#ffffff';
+      ctx.strokeStyle = d.isHeal ? '#0a3a1a' : '#3a0000';
+      ctx.fillStyle = d.isHeal ? '#3edc81' : d.isCrit ? '#ffe27a' : '#ffffff';
       const jitterX = (1 - lifeRatio) * (d.isCrit ? 0 : ((d.amount % 7) - 3) * 0.6);
       ctx.strokeText(formatInt(d.amount), d.x + jitterX, d.y);
       ctx.fillText(formatInt(d.amount), d.x + jitterX, d.y);

@@ -358,6 +358,7 @@ export interface DamageNumber {
   y: number;
   amount: number;
   isCrit: boolean;
+  isHeal?: boolean;
   age: number;
   life: number;
   vy: number;

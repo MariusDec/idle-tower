@@ -463,6 +463,47 @@ export class EffectsManager {
   /**
    * Splitter death burst — extra particles for split event.
    */
+  /**
+   * Enemy melee attack slash: short burst of particles from the enemy
+   * toward the tower, plus a brief flash ring at the enemy.
+   */
+  emitAttackSlash(ex: number, ey: number, tx: number, ty: number, color: string): void {
+    const dx = tx - ex;
+    const dy = ty - ey;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 0.001) return;
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const baseAngle = Math.atan2(ny, nx);
+    // Slash particles: spread along the attack direction
+    for (let i = 0; i < 5; i++) {
+      const spread = (Math.random() - 0.5) * 1.2;
+      const angle = baseAngle + spread;
+      const speed = 120 + Math.random() * 100;
+      this.particles.push({
+        x: ex + nx * 6,
+        y: ey + ny * 6,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        age: 0,
+        life: 0.15 + Math.random() * 0.1,
+        size: 1.5 + Math.random() * 1.5,
+        color,
+      });
+    }
+    // Small bright flash ring at the enemy
+    this.shockwaves.push({
+      x: ex,
+      y: ey,
+      currentRadius: 0,
+      maxRadius: 12,
+      age: 0,
+      life: 0.15,
+      color: 'rgba(255, 200, 200, 0.6)',
+      lineWidth: 2,
+    });
+  }
+
   emitSplitBurst(x: number, y: number): void {
     for (let i = 0; i < 22; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -488,6 +529,19 @@ export class EffectsManager {
       isCrit,
       age: 0,
       life: isCrit ? DMG_CRIT_LIFE : DMG_BASE_LIFE,
+      vy: DMG_FLOAT_SPEED,
+    });
+  }
+
+  emitHealNumber(x: number, y: number, amount: number): void {
+    this.damageNumbers.push({
+      x: x + (Math.random() - 0.5) * 10,
+      y: y - 4,
+      amount: Math.max(1, Math.round(amount)),
+      isCrit: false,
+      isHeal: true,
+      age: 0,
+      life: DMG_BASE_LIFE,
       vy: DMG_FLOAT_SPEED,
     });
   }

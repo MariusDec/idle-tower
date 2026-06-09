@@ -35,11 +35,11 @@ export class AbilityUpgradePopover {
     const def = ABILITY_BY_ID[id];
     if (!def) return;
     this.currentId = id;
-    this.titleEl.textContent = `${def.name} — Upgrade`;
+    this.titleEl.textContent = ''; // `${def.name} — Upgrade`;
     const cost = this.handlers.getUpgradeCost(id);
     const isMaxed = this.handlers.isMaxed(id);
     const canAfford = isMaxed ? false : this.handlers.canAfford(id, 0);
-    this.body.innerHTML = renderAbilityTooltip(def, currentStats, cost, canAfford);
+    this.body.innerHTML = renderAbilityTooltip(def, currentStats, cost, canAfford, true, false);
     this.upgradeBtn.style.display = isMaxed ? 'none' : 'inline-flex';
     this.upgradeBtn.textContent = `Upgrade · ${formatGold(cost)}g`;
     this.upgradeBtn.disabled = !canAfford;
@@ -99,7 +99,7 @@ export class AbilityUpgradePopover {
     this.titleEl = title;
 
     const body = document.createElement('div');
-    body.className = 'ability-upgrade-tooltip';
+    body.className = 'ability-upgrade-tooltip ability-upgrade-tooltip-embedded';
     body.style.display = 'block';
     body.style.position = 'static';
     body.style.minWidth = '0';

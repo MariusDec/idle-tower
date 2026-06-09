@@ -172,6 +172,22 @@ export class ResearchTree {
     return false;
   }
 
+  advanceResearch(seconds: number): boolean {
+    if (!this.runtime.inProgress || seconds <= 0) return false;
+    const def = RESEARCH_BY_ID[this.runtime.inProgress.id];
+    if (!def) return false;
+    const totalTime = getResearchTime(def, this.runtime.inProgress.targetLevel) * this.speedMultiplier;
+    this.runtime.inProgress.elapsed += seconds;
+    if (this.runtime.inProgress.elapsed >= totalTime) {
+      const { id, targetLevel } = this.runtime.inProgress;
+      this.runtime.inProgress = null;
+      this.runtime.levels[id] = targetLevel;
+      this.bus.emit('research_unlocked', { id, level: targetLevel });
+      return true;
+    }
+    return false;
+  }
+
   unlock(id: string): boolean {
     const def = RESEARCH_BY_ID[id];
     if (!def || this.runtime.levels[id]) return false;

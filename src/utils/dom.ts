@@ -56,6 +56,11 @@ export function setDisplay(el: HTMLElement, value: string): void {
   el.style.display = value;
 }
 
+export function setVisibility(el: HTMLElement, value: string): void {
+  if (el.style.visibility === value) return;
+  el.style.visibility = value;
+}
+
 export function setInnerHTML(el: HTMLElement, value: string): void {
   const prev = innerHTMLCache.get(el);
   if (prev === value) return;

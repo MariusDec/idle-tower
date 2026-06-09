@@ -50,6 +50,7 @@ export interface OfflineResult {
   goldEarned: number;
   wavesCleared: number;
   rpEarned: number;
+  researchElapsed: number;
 }
 
 function isStorageAvailable(): boolean {
@@ -311,6 +312,7 @@ export class SaveManager {
         goldEarned: 0,
         wavesCleared: 0,
         rpEarned: 0,
+        researchElapsed: 0,
       };
     }
     const dps = estimateDPS(persisted.tower);
@@ -330,6 +332,7 @@ export class SaveManager {
       goldEarned,
       wavesCleared,
       rpEarned,
+      researchElapsed: elapsed,
     };
   }
 

@@ -19,6 +19,8 @@ export function renderAbilityTooltip(
   currentStats: EffectiveAbilityStats,
   cost: number,
   canAfford: boolean,
+  showUpgradeStats: boolean,
+  showCost: boolean,
 ): string {
   const next = computeEffectiveStats(def, currentStats.level + 1);
   const manaCostStr = formatInt(currentStats.manaCost);
@@ -31,12 +33,14 @@ export function renderAbilityTooltip(
   const curEff = currentStats.displayEffectValue;
   const nextEff = next.displayEffectValue;
   const affCls = canAfford ? 'can-afford' : 'cannot-afford';
+
   return `
-    <div class="tooltip-header">${def.name} &mdash; Level ${currentStats.level} &rarr; ${currentStats.level + 1}</div>
-    <div class="tooltip-row"><span>${effectLabel}</span><span>${curEff} <span class="arrow">&rarr;</span> <span class="up-val">${nextEff}</span></span></div>
-    <div class="tooltip-row"><span>Mana cost</span><span>${manaCostStr} <span class="arrow">&rarr;</span> <span class="up-val">${nextManaCostStr}</span></span></div>
-    <div class="tooltip-row"><span>Cooldown</span><span>${cooldownStr}s <span class="arrow">&rarr;</span> <span class="up-val">${nextCooldownStr}s</span></span></div>
-    <div class="tooltip-row"><span>Duration</span><span>${durationStr} <span class="arrow">&rarr;</span> <span class="up-val">${nextDurationStr}</span></span></div>
-    <div class="tooltip-cost ${affCls}">Cost: ${formatInt(cost)}g</div>
+    <div class="tooltip-header">${def.name} &mdash; Level ${currentStats.level} ${showUpgradeStats ? `&rarr; ${currentStats.level + 1}` : ''}</div>
+    <div class="tooltip-desc">${currentStats.displayText || def.description}</div>
+    <div class="tooltip-row"><span>Mana cost</span><span>${manaCostStr} ${showUpgradeStats ? `<span class="arrow">&rarr;</span> <span class="up-val">${nextManaCostStr}</span>` : ''}</span></div>
+    <div class="tooltip-row"><span>${effectLabel}</span><span>${curEff}  ${showUpgradeStats ? `<span class="arrow">&rarr;</span> <span class="up-val">${nextEff}</span>` : ''}</span></div>
+    <div class="tooltip-row"><span>Cooldown</span><span>${cooldownStr}s  ${showUpgradeStats ? `<span class="arrow">&rarr;</span> <span class="up-val">${nextCooldownStr}s</span>` : ''}</span></div>
+    <div class="tooltip-row"><span>Duration</span><span>${durationStr}  ${showUpgradeStats ? `<span class="arrow">&rarr;</span> <span class="up-val">${nextDurationStr}</span>` : ''}</span></div>
+    ${showUpgradeStats && showCost ? `<div class="tooltip-cost ${affCls}">Cost: ${formatInt(cost)}g</div>` : ''}
   `;
 }

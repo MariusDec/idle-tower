@@ -47,10 +47,14 @@ function isTotalEffectUpgrade(def: UpgradeDef): boolean {
   return def.id === 'damage' || def.id === 'health';
 }
 
-function formatNumberValue(v: number): string {
+function formatNumberValue(v: number, decimalCount = 0): string {
   const abs = Math.abs(v);
   if (abs !== 0 && abs < 1) return v.toFixed(2);
   if (abs < 10) return v.toFixed(1);
+
+  const decimalFactor = Math.pow(10, decimalCount);
+  if (abs < 1000) return (Math.floor(abs * decimalFactor) / decimalFactor).toLocaleString();
+
   return v.toFixed(0);
 }
 
@@ -60,14 +64,14 @@ function formatPercentValue(v: number): string {
   return `${pct.toFixed(decimals)}%`;
 }
 
-function formatEffectBonus(def: UpgradeDef, level: number, showSign: boolean = true): string {
+function formatEffectBonus(def: UpgradeDef, level: number, showSign: boolean = true, decimalCount = 1): string {
   const total = computeUpgradeValue(def, level);
   if (total === 0) return '';
   const unit = def.scaling?.unit ?? '';
   if (isPercent(def)) {
     return `${showSign? '+' : ''}${formatPercentValue(total)}`;
   }
-  return `${showSign? '+' : ''}${formatNumberValue(total)}${unit}`;
+  return `${showSign? '+' : ''}${formatNumberValue(total, decimalCount)}${unit}`;
 }
 
 function formatNextDelta(def: UpgradeDef): string {
@@ -75,7 +79,7 @@ function formatNextDelta(def: UpgradeDef): string {
 
   if (def.scaling?.step) {
     const step = def.scaling.step;
-    const inc = formatNumberValue(Math.abs(def.scaling.perLevel));
+    const inc = formatNumberValue(Math.abs(def.scaling.perLevel), 1);
     return `+${inc} per ${step} levels`;
   }
   if (def.scaling) {
@@ -154,13 +158,13 @@ export class UpgradePanel {
       const atMax = u.maxLevel > 0 && level >= u.maxLevel;
       const cost = atMax ? Infinity : upgradeCost(u.baseCost, u.costGrowth, level);
       if (isTotalEffectUpgrade(u)) {
-        setText(levelEl, atMax ? formatNumberValue(computeUpgradeValue(u, level)) : '');
+        setText(levelEl, atMax ? formatNumberValue(computeUpgradeValue(u, level), 1) : '');
         setDisplay(levelEl, atMax ? '' : 'none');
       } else {
         setText(levelEl, atMax ? `Level ${level} (max)` : `Level ${level}`);
       }
       setText(costEl, atMax ? '—' : formatNumber(cost));
-      setText(bonusEl, isTotalEffectUpgrade(u) ? formatEffectBonus(u, level, false) : formatEffectBonus(u, level));
+      setText(bonusEl, isTotalEffectUpgrade(u) ? formatEffectBonus(u, level, false, 0) : formatEffectBonus(u, level));
       btn.disabled = atMax || gold < cost;
       toggleClass(btn, 'can-afford', !atMax && gold >= cost);
       setText(btn, atMax ? 'Maxed' : 'Buy');

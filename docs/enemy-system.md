@@ -18,7 +18,7 @@
 Each enemy gets per-wave scaling:
 - **HP:** `baseHP * 1.12^(wave-1)` (boss: `baseHP * 1.12^wave * 1.5^(wave/10 tier)`)
 - **Speed:** `baseSpeed * min(3, 1 + 0.03*(wave-1))`
-- **Gold:** `baseGold * 1.08^(wave-1)`
+- **Gold:** `baseGold * 1.1^(wave-1)`
 - **Damage:** `baseDamage + floor((wave-1)/5)`
 
 ## Movement (`tick`)

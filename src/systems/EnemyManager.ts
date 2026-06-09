@@ -282,6 +282,7 @@ export class EnemyManager {
 
         e.attackCooldown -= dt;
         if (e.attackCooldown <= 0) {
+          this.bus.emit('enemy_attack', { x: e.x, y: e.y, type: e.type });
           totalDamage += e.damage * this.damageToTowerMult;
           if (this.thorns > 0) {
             const thornDmg = Math.floor(e.damage * this.thorns);

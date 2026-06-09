@@ -8,7 +8,7 @@ Two prestige layers: Ascension (wave 5~~~~0+) and Transcendence (100+ AP).
 
 ## Ascension
 
-**Unlock:** Wave 50
+**Unlock:** Wave 30
 
 **AP Formula:** `floor(sqrt(waveNumber * 5))`
 

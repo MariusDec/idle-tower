@@ -1192,11 +1192,17 @@ button:disabled {
   padding: 10px 14px;
   z-index: 60;
   min-width: 240px;
-  max-width: 360px;
+  max-width: 300px;
   box-shadow: var(--shadow);
   pointer-events: none;
   font-size: 12px;
   color: var(--text-1);
+}
+.ability-upgrade-tooltip-embedded {
+  background: none;
+  border: none;
+  padding: 0;
+  box-shadow: none;
 }
 .ability-upgrade-tooltip .tooltip-header {
   font-weight: 700;
@@ -1204,6 +1210,14 @@ button:disabled {
   font-size: 13px;
   padding-bottom: 6px;
   margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.ability-upgrade-tooltip .tooltip-desc {
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.4;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
 .ability-upgrade-tooltip .tooltip-row {
@@ -1270,6 +1284,7 @@ button:disabled {
 }
 .toast {
   pointer-events: auto;
+  cursor: pointer;
   padding: 10px 14px;
   border-radius: var(--radius);
   font-size: 13px;
@@ -2912,7 +2927,6 @@ body.is-resizing * { cursor: ew-resize !important; }
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 8px;
 }
 .ability-upgrade-popover-title {
   font-size: 13px;

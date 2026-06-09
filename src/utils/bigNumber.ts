@@ -26,7 +26,7 @@ export const SUFFIXES: readonly string[] = [
 export function formatNumber(n: number, decimalCount = 0): string {
   if (!isFinite(n)) return 'Infinity';
 
-  var decimalFactor = Math.pow(10, decimalCount);
+  const decimalFactor = Math.pow(10, decimalCount);
   if (n < 0) return '-' + formatNumber(-n);
   if (n < 1000) return (Math.floor(n * decimalFactor) / decimalFactor).toLocaleString();
 

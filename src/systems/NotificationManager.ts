@@ -12,7 +12,7 @@ export interface Toast {
 
 const DEFAULT_LIFE = 3.5;
 const MILESTONE_LIFE = 5;
-const MAX_TOASTS = 6;
+const MAX_TOASTS = 3;
 
 export class NotificationManager {
   private readonly root: HTMLElement;
@@ -64,6 +64,10 @@ export class NotificationManager {
       const fade = Math.max(0, 1 - Math.max(0, t.age - (t.life - 0.6)) / 0.6);
       el.style.opacity = String(fade);
       el.textContent = t.text;
+      el.addEventListener('click', () => {
+        this.toasts = this.toasts.filter(x => x.id !== t.id);
+        this.render();
+      });
       this.root.appendChild(el);
     }
   }

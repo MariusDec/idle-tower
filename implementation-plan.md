@@ -272,7 +272,7 @@ Auto-Upgrader (20 RP)        — auto-buys cheapest available upgrade every 10s
 ### 4.8 Prestige Manager (`src/systems/PrestigeManager.ts`)
 
 **Layer 1 — Ascension:**
-- Unlock: reach wave 50.
+- Unlock: reach wave 30.
 - On Ascend: reset gold, mana, upgrades, wave → 1. Keep research, RP, stats.
 - Earn AP: `floor(sqrt(highestWave * 5))`. Wave 50 → 15 AP; wave 100 → 22 AP; wave 500 → 50 AP.
 - AP perks (additive bonuses):
@@ -314,16 +314,16 @@ Auto-Upgrader (20 RP)        — auto-buys cheapest available upgrade every 10s
 
 ### 5.1 Scaling Formulas
 
-| Quantity        | Formula                                  | Example @ wave 50 |
-|-----------------|------------------------------------------|-------------------|
-| Enemy HP        | `baseHP × 1.12^(wave-1)`                 | 1,442             |
-| Tank HP         | `30 × 1.12^(wave-1)`                     | 4,326             |
-| Boss HP         | `100 × 1.12^(w-1) × 1.5^floor(w/10)`     | ~70,000           |
-| Enemy speed     | `base × min(3, 1 + 0.03(w-1))`           | 2.47× base        |
-| Gold drop       | `baseGold × 1.08^(wave-1)`               | ~434              |
-| Upgrade cost    | `base × growth^level`                    | —                 |
-| AP per Ascend   | `floor(sqrt(highestWave × 5))`           | 15                |
-| TP per Transcend| `floor(log10(AP + 1) × 3)`       | 6                 |
+| Quantity        | Formula                              | Example @ wave 50 |
+|-----------------|--------------------------------------|-------------------|
+| Enemy HP        | `baseHP × 1.12^(wave-1)`             | 1,442             |
+| Tank HP         | `30 × 1.12^(wave-1)`                 | 4,326             |
+| Boss HP         | `100 × 1.12^(w-1) × 1.5^floor(w/10)` | ~70,000           |
+| Enemy speed     | `base × min(3, 1 + 0.03(w-1))`       | 2.47× base        |
+| Gold drop       | `baseGold × 1.1^(wave-1)`            | ~434              |
+| Upgrade cost    | `base × growth^level`                | —                 |
+| AP per Ascend   | `floor(sqrt(highestWave × 5))`       | 15                |
+| TP per Transcend| `floor(log10(AP + 1) × 3)`           | 6                 |
 
 ### 5.2 Number Display (`src/utils/bigNumber.ts`)
 
@@ -563,20 +563,20 @@ helpers.
 
 ## 11. Best-Practices Alignment (Self-Check)
 
-| User rule                                      | How this plan satisfies it                                  |
-|------------------------------------------------|-------------------------------------------------------------|
-| Passive from the Start                         | Wave 1 auto-starts, tower auto-fires                        |
-| Significant Offline Progress                   | 8-hour cap, heuristic calc, "Welcome back" modal            |
-| Unfolding Mechanics                            | Research tree, two prestige layers, TP-unlocked automation  |
-| Standard Number Names (NOT AA/BB)              | `bigNumber.ts` uses Million/Billion/Trillion/.../Vigintillion, then scientific |
-| Exponential growth                             | `1.12^wave` HP, `1.08^wave` gold                            |
-| Frequent milestones                            | Wave 10/25/50/100 toasts, first boss, first prestige        |
-| Reset for Permanent Buffs                      | AP, TP both give permanent multipliers                      |
-| Meaningful Resets                              | Keep research + RP across Ascend; keep stats + TP across Transcend |
-| Automate the Old Grind                         | TP-gated auto-buy, auto-abilities, auto-Ascend, auto-Transcend |
-| Layered mechanics                              | 2 prestige layers (Ascend → Transcend)                      |
-| Flexible Playstyles                            | Works idle (auto everything) or active (manual abilities)   |
-| Clear Goals & Visuals                          | Milestone toasts, damage numbers, HP bars, level-up effects |
-| Clear number formatting                        | Standard names, 2-decimal display                           |
+| User rule                                      | How this plan satisfies it                                                                  |
+|------------------------------------------------|---------------------------------------------------------------------------------------------|
+| Passive from the Start                         | Wave 1 auto-starts, tower auto-fires                                                        |
+| Significant Offline Progress                   | 8-hour cap, heuristic calc, "Welcome back" modal                                            |
+| Unfolding Mechanics                            | Research tree, two prestige layers, TP-unlocked automation                                  |
+| Standard Number Names (NOT AA/BB)              | `bigNumber.ts` uses Million/Billion/Trillion/.../Vigintillion, then scientific              |
+| Exponential growth                             | `1.12^wave` HP, `1.1^wave` gold                                                             |
+| Frequent milestones                            | Wave 10/25/50/100 toasts, first boss, first prestige                                        |
+| Reset for Permanent Buffs                      | AP, TP both give permanent multipliers                                                      |
+| Meaningful Resets                              | Keep research + RP across Ascend; keep stats + TP across Transcend                          |
+| Automate the Old Grind                         | TP-gated auto-buy, auto-abilities, auto-Ascend, auto-Transcend                              |
+| Layered mechanics                              | 2 prestige layers (Ascend → Transcend)                                                      |
+| Flexible Playstyles                            | Works idle (auto everything) or active (manual abilities)                                   |
+| Clear Goals & Visuals                          | Milestone toasts, damage numbers, HP bars, level-up effects                                 |
+| Clear number formatting                        | Standard names, 2-decimal display                                                           |
 | Obvious bottlenecks                            | Cost/gold ratio visible in upgrade buttons; big-number display makes income vs cost legible |
-| Satisfying feedback                            | Bright procedural colors, particles, damage numbers, toasts, milestone popups |
+| Satisfying feedback                            | Bright procedural colors, particles, damage numbers, toasts, milestone popups               |

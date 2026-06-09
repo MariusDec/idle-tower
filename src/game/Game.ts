@@ -1,6 +1,6 @@
 import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot } from '../types';
 import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
-import { TOWER_BASE, TOWER_VISUAL } from '../data/tower';
+import { TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
 import { ENEMY_DEFS } from '../data/enemies';
 import { ABILITIES } from '../data/abilities';
@@ -63,7 +63,7 @@ function makeInitialState(): GameState {
       autoAscend: false,
       autoTranscend: false,
     },
-    targetAscendWave: 50,
+    targetAscendWave: 30,
   };
   const stats: GameStats = {
     enemiesKilled: 0,
@@ -178,6 +178,9 @@ export class Game {
   private slowMoRemaining = 0;
   private slowMoTotal = 0;
   private screenFlash = 0;
+  private towerFlash = 0;
+  private wallFlash = 0;
+  private shieldFlash = 0;
   private canvasWrap: HTMLElement | null = null;
 
   // Evolution state
@@ -289,7 +292,9 @@ export class Game {
       const ls = this.tower.effectiveLifesteal;
       if (ls > 0 && p.amount > 0) {
         const ts = this.tower.snapshot;
-        ts.hp = Math.min(ts.maxHp, ts.hp + p.amount * ls);
+        const healAmt = p.amount * ls;
+        ts.hp = Math.min(ts.maxHp, ts.hp + healAmt);
+        this.effects.emitHealNumber(ts.x, ts.y - TOWER_VISUAL.bodyRadius - 24, healAmt);
       }
       if (!p.killed && this.prestigeMgr.hasGoldOnHit()) {
         const fraction = this.prestigeMgr.getGoldOnHitFraction();
@@ -407,11 +412,6 @@ export class Game {
       if (towerDef > 0) raw = Math.floor(raw * (1 - towerDef));
       if (raw <= 0) return;
       const ts = this.tower.snapshot;
-      if (ts.shieldCurrentCharges > 0) {
-        ts.shieldCurrentCharges--;
-        this.effects.emitShieldAbsorb(ts.x, ts.y);
-        return;
-      }
       if (ts.wallHp > 0) {
         raw = Math.floor(raw * 0.8);
         const absorbed = Math.min(ts.wallHp, raw);
@@ -429,6 +429,11 @@ export class Game {
         }
 
         if (raw <= 0) return;
+      }
+      if (ts.shieldCurrentCharges > 0) {
+        ts.shieldCurrentCharges--;
+        this.effects.emitShieldAbsorb(ts.x, ts.y);
+        return;
       }
       const afterArmor = raw * (1 - ts.armor);
       const afterDefense = Math.max(0, afterArmor - ts.defense);
@@ -612,6 +617,20 @@ export class Game {
       }
     });
 
+    this.bus.on('enemy_attack', (payload: unknown) => {
+      const p = payload as { x: number; y: number; type: string };
+      const def = ENEMY_DEFS[p.type as keyof typeof ENEMY_DEFS];
+      const ts = this.tower.snapshot;
+      this.effects.emitAttackSlash(p.x, p.y, ts.x, ts.y, def.color);
+      if (ts.shieldCurrentCharges > 0) {
+        this.shieldFlash = 0.12;
+      } else if (ts.wallHp > 0) {
+        this.wallFlash = 0.12;
+      } else {
+        this.towerFlash = 0.12;
+      }
+    });
+
     const saveOnEvent = () => {
       this.saveMgr.save(this.state);
     };
@@ -624,6 +643,38 @@ export class Game {
     this.bus.on('research_cancelled', saveOnEvent);
     this.bus.on('wave_started', saveOnEvent);
     this.bus.on('ability_upgraded', saveOnEvent);
+    this.bindVisibilityEvents();
+  }
+
+  private bindVisibilityEvents(): void {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.saveMgr.save(this.state);
+        this.stop();
+      } else {
+        const persisted = this.saveMgr.load();
+        if (persisted) {
+          const result = this.saveMgr.computeOfflineProgress(persisted);
+          if (result.elapsedSeconds > 0) {
+            const startWave = this.state.wave.number;
+            this.saveMgr.applyOfflineProgress(this.state, result);
+            if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
+            if (this.researchTree.advanceResearch(result.researchElapsed)) {
+              this.state.research = this.researchTree.getLevelsSnapshot();
+            }
+            this.state.researchInProgress = this.researchTree.inProgress
+              ? { id: this.researchTree.inProgress.id, elapsed: this.researchTree.inProgress.elapsed, targetLevel: this.researchTree.inProgress.targetLevel }
+              : null;
+            this.applyUpgradeEffects();
+            this.state.upgrades = this.upgradeMgr.snapshot();
+            const endWave = this.state.wave.number;
+            this.bus.emit('welcome_back', { result, startWave, endWave });
+            this.saveMgr.save(this.state);
+          }
+        }
+        this.start();
+      }
+    });
   }
 
   start(): void {
@@ -974,6 +1025,13 @@ export class Game {
       const startWave = this.state.wave.number;
       this.saveMgr.applyOfflineProgress(this.state, result);
       if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
+      this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
+      if (this.researchTree.advanceResearch(result.researchElapsed)) {
+        this.state.research = this.researchTree.getLevelsSnapshot();
+      }
+      this.state.researchInProgress = this.researchTree.inProgress
+        ? { id: this.researchTree.inProgress.id, elapsed: this.researchTree.inProgress.elapsed, targetLevel: this.researchTree.inProgress.targetLevel }
+        : null;
       this.applyUpgradeEffects();
       this.state.upgrades = this.upgradeMgr.snapshot();
       const endWave = this.state.wave.number;
@@ -1248,7 +1306,7 @@ export class Game {
         case 'shockwave': {
           const lvl = total;
           t.shockwaveSize = 110 + (lvl - 1) * 5;
-          t.shockwaveCooldown = Math.max(3, 30 + (lvl - 1) * -0.5);
+          t.shockwaveCooldown = total;
           break;
         }
         case 'landMines': {
@@ -1259,7 +1317,7 @@ export class Game {
         case 'defenseShield': {
           const oldMax = t.shieldMaxCharges;
           t.shieldRechargeTime = total;
-          t.shieldMaxCharges = Math.max(5, level / 11);
+          t.shieldMaxCharges = Math.min(5, Math.ceil(level / 11));
           if (t.shieldMaxCharges > oldMax) {
             t.shieldCurrentCharges += t.shieldMaxCharges - oldMax;
           }
@@ -1464,7 +1522,7 @@ export class Game {
     }
     this.state.wave = this.waveMgr.snapshot;
     if (startWave > 1) {
-      const startGold = Math.max(50, Math.floor(Math.pow(1.08, startWave - 1) * 60));
+      const startGold = Math.max(50, Math.floor(Math.pow(1.1, startWave - 1) * 60));
       this.state.resources.gold += startGold;
     }
 
@@ -1634,7 +1692,7 @@ export class Game {
       autoAscend: false,
       autoTranscend: false,
     };
-    p.targetAscendWave = persisted.prestige.targetAscendWave ?? 50;
+    p.targetAscendWave = persisted.prestige.targetAscendWave ?? 30;
 
     this.state.wave = { ...persisted.wave };
     this.waveMgr.setState(this.state.wave);
@@ -1691,6 +1749,15 @@ export class Game {
     }
     if (this.screenFlash > 0) {
       this.screenFlash = Math.max(0, this.screenFlash - dt);
+    }
+    if (this.towerFlash > 0) {
+      this.towerFlash = Math.max(0, this.towerFlash - dt);
+    }
+    if (this.wallFlash > 0) {
+      this.wallFlash = Math.max(0, this.wallFlash - dt);
+    }
+    if (this.shieldFlash > 0) {
+      this.shieldFlash = Math.max(0, this.shieldFlash - dt);
     }
     const gameDt = dt * speed * slowMo;
     this.update(gameDt);
@@ -1798,7 +1865,7 @@ export class Game {
       if (ts.landMineTimer <= 0) {
         ts.landMineTimer = ts.landMineFrequency;
         const angle = Math.random() * Math.PI * 2;
-        const dist = 30 + Math.random() * Math.max(0, ts.range - 30);
+        const dist = TOWER_HIT_RADIUS + 45 + Math.random() * Math.max(0, ts.range - TOWER_HIT_RADIUS - 45);
         const mx = ts.x + Math.cos(angle) * dist;
         const my = ts.y + Math.sin(angle) * dist;
         if (this.mines.length >= 15) {
@@ -1939,6 +2006,9 @@ export class Game {
       aimLine: this.mouseDown ? { x: this.mouseX, y: this.mouseY } : null,
     }, {
       screenFlash: this.screenFlash,
+      towerFlash: this.towerFlash,
+      wallFlash: this.wallFlash,
+      shieldFlash: this.shieldFlash,
       chainPaths: this.effects.activeChainPaths,
     });
   }

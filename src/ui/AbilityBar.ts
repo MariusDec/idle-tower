@@ -1,7 +1,18 @@
 import type { AbilityId, GameState } from '../types';
-import { ABILITIES, type EffectiveAbilityStats } from '../data/abilities';
-import { setAriaLabel, setDisabled, setStyle, setText, toggleClass, setDisplay, hasClass } from '../utils/dom';
+import { ABILITIES, ABILITY_BY_ID, type EffectiveAbilityStats } from '../data/abilities';
+import {
+  setAriaLabel,
+  setDisabled,
+  setStyle,
+  setText,
+  toggleClass,
+  setDisplay,
+  hasClass,
+  setInnerHTML,
+  setVisibility
+} from '../utils/dom';
 import { AbilityUpgradePopover } from './AbilityUpgradePopover';
+import { renderAbilityTooltip } from './abilityFormat';
 
 export interface AbilityBarHandlers {
   canCast: (id: AbilityId, wave: number) => boolean;
@@ -15,6 +26,7 @@ export interface AbilityBarHandlers {
 }
 
 const LONG_PRESS_MS = 380;
+const HOVER_DELAY_MS = 200;
 
 interface BarButtonRefs {
   def: typeof ABILITIES[number];
@@ -39,6 +51,8 @@ export class AbilityBar {
   private boundTouchEnd: ((ev: TouchEvent) => void) | null = null;
   private boundTouchCancel: ((ev: TouchEvent) => void) | null = null;
   private boundWindowBlur: (() => void) | null = null;
+  private hoverTooltip: HTMLElement | null = null;
+  private hoverTimer: number | null = null;
 
   constructor(root: HTMLElement, handlers: AbilityBarHandlers) {
     this.root = root;
@@ -140,6 +154,10 @@ export class AbilityBar {
     for (const refs of this.buttons.values()) {
       if (refs.longPressTimer !== null) window.clearTimeout(refs.longPressTimer);
     }
+    if (this.hoverTimer !== null) window.clearTimeout(this.hoverTimer);
+    if (this.hoverTooltip && this.hoverTooltip.parentElement) {
+      this.hoverTooltip.parentElement.removeChild(this.hoverTooltip);
+    }
     this.popover.hide();
   }
 
@@ -184,6 +202,8 @@ export class AbilityBar {
       ev.preventDefault();
       this.showPopover(def.id, btn);
     });
+    btn.addEventListener('mouseenter', () => this.onHoverStart(def.id, btn));
+    btn.addEventListener('mouseleave', () => this.onHoverEnd());
 
     const overlay = document.createElement('div');
     overlay.className = 'ability-cooldown-overlay';
@@ -280,6 +300,58 @@ export class AbilityBar {
     bar.addEventListener('touchcancel', this.boundTouchCancel, { passive: true });
     bar.addEventListener('touchmove', this.boundTouchCancel, { passive: true });
     window.addEventListener('blur', this.boundWindowBlur);
+  }
+
+  private onHoverStart(id: AbilityId, anchor: HTMLElement): void {
+    if (this.hoverTimer !== null) window.clearTimeout(this.hoverTimer);
+    this.hoverTimer = window.setTimeout(() => {
+      this.hoverTimer = null;
+      if (this.handlers.isMaxed(id)) return;
+      const stats = this.handlers.getEffectiveStats(id);
+      const def = ABILITY_BY_ID[id];
+      if (!def) return;
+      const cost = this.handlers.getUpgradeCost(id);
+      const canAfford = this.lastState ? this.lastState.resources.gold >= cost : false;
+      this.ensureHoverTooltip();
+      if (!this.hoverTooltip) return;
+      setInnerHTML(this.hoverTooltip, renderAbilityTooltip(def, stats, cost, canAfford, false, true));
+      setVisibility(this.hoverTooltip, 'hidden');
+      setDisplay(this.hoverTooltip, 'block');
+      this.positionHoverTooltip(anchor);
+      setVisibility(this.hoverTooltip, 'visible');
+      setStyle(this.hoverTooltip, 'pointer-events', 'none');
+    }, HOVER_DELAY_MS);
+  }
+
+  private onHoverEnd(): void {
+    if (this.hoverTimer !== null) {
+      window.clearTimeout(this.hoverTimer);
+      this.hoverTimer = null;
+    }
+    if (this.hoverTooltip) setDisplay(this.hoverTooltip, 'none');
+  }
+
+  private ensureHoverTooltip(): void {
+    if (this.hoverTooltip) return;
+    const el = document.createElement('div');
+    el.className = 'ability-upgrade-tooltip';
+    el.style.display = 'none';
+    document.body.appendChild(el);
+    this.hoverTooltip = el;
+  }
+
+  private positionHoverTooltip(anchor: HTMLElement): void {
+    if (!this.hoverTooltip) return;
+    const rect = anchor.getBoundingClientRect();
+    const tipRect = this.hoverTooltip.getBoundingClientRect();
+    const margin = 8;
+    const gap = 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let bottom = vh - rect.top + gap;
+    const left = Math.max(margin, Math.min(vw - tipRect.width - margin, rect.left + rect.width / 2 - tipRect.width / 2));
+    setStyle(this.hoverTooltip, 'bottom', `${bottom}px`);
+    setStyle(this.hoverTooltip, 'left', `${left}px`);
   }
 
   private showPopover(id: AbilityId, anchor: HTMLElement): void {

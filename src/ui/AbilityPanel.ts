@@ -347,6 +347,6 @@ export class AbilityPanel {
     canAfford: boolean,
     _isMaxed: boolean,
   ): void {
-    setInnerHTML(el, renderAbilityTooltip(def, currentStats, cost, canAfford));
+    setInnerHTML(el, renderAbilityTooltip(def, currentStats, cost, canAfford, true, true));
   }
 }
