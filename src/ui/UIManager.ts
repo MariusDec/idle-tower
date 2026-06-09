@@ -214,9 +214,9 @@ export class UIManager {
     isAutomationEnabled: () => false,
     meetsPrerequisites: () => true,
     isExcluded: () => false,
-    ascendUnlockWave: 20,
+    ascendUnlockWave: 50,
     transcendUnlockAP: 100,
-    targetAscendWave: 20,
+    targetAscendWave: 50,
   };
   private researchApi: ResearchAPI = {
     rp: 0,

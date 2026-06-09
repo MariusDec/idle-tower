@@ -26,6 +26,8 @@ export class WaveManager {
   private enemyCountMult = 1;
   /** Pause flag for the intermission timer (used by the wave modifier modal). */
   private intermissionPaused = false;
+  /** Pause flag for enemy spawning (used when a boss wave modifier modal is open). */
+  private spawnPaused = false;
 
   constructor(
     bus: EventBus,
@@ -58,6 +60,16 @@ export class WaveManager {
    */
   pauseIntermission(): void {
     this.intermissionPaused = true;
+  }
+
+  /** Pause enemy spawning (used when a boss wave modifier modal is open). */
+  pauseSpawning(): void {
+    this.spawnPaused = true;
+  }
+
+  /** Resume enemy spawning after a boss wave modifier modal is closed. */
+  resumeSpawning(): void {
+    this.spawnPaused = false;
   }
 
   resumeIntermission(): void {
@@ -167,6 +179,12 @@ export class WaveManager {
     this.state.intermission = false;
     this.onWaveStarted(wave);
     this.bus.emit('wave_started', wave);
+    // For boss waves, present the modifier picker now so the player sees it
+    // when the stage starts rather than during the previous intermission.
+    if (isBossWave(wave)) {
+      this.spawnPaused = true;
+      this.bus.emit('wave_modifier_offer', wave);
+    }
   }
 
   reset(): void {
@@ -244,7 +262,7 @@ export class WaveManager {
       return;
     }
 
-    if (this.state.spawning) {
+    if (this.state.spawning && !this.spawnPaused) {
       this.state.spawnTimer -= dt;
       while (this.state.spawning && this.state.spawnTimer <= 0) {
         this.spawnOne();
@@ -262,12 +280,6 @@ export class WaveManager {
       this.bus.emit('wave_cleared', clearedWave);
       this.state.intermission = true;
       this.state.intermissionTimer = WAVE_INTERMISSION * this.intermissionMultiplier;
-      // If the next wave is a boss, notify the Game so it can present the
-      // 1-of-3 wave modifier picker during this intermission.
-      const nextWave = clearedWave + 1;
-      if (isBossWave(nextWave)) {
-        this.bus.emit('wave_modifier_offer', nextWave);
-      }
     }
   }
 

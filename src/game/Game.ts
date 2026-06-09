@@ -330,15 +330,15 @@ export class Game {
         this.effects.emitShockwaveRing(e.x, e.y, 300, 'rgba(255, 100, 64, 0.85)', 7, 0.2, 80, 'magic');
         // Stage 3: wide outer ring
         this.effects.emitShockwaveRing(e.x, e.y, 500, 'rgba(255, 160, 64, 0.8)', 6, 0.4, 50, 'magic');
-        // P5: Bonus x3 gold (normal gold already awarded in damage(); add 2x more)
-        this.resources.addGold((e.goldValue ?? def.baseGold) * 2);
+        // P5: Bonus x2 gold (normal gold already awarded in damage(); add 1x more)
+        this.resources.addGold((e.goldValue ?? def.baseGold) * 1);
         this.bus.emit('boss_killed', { x: e.x, y: e.y, goldValue: e.goldValue ?? def.baseGold });
         // Death slow-mo + screen flash (P3 + P5)
         this.triggerBossDeathSlowMo();
         if (this.state.stats.bossesKilled === 1) {
           this.bus.emit('toast', { kind: 'milestone', text: 'First boss defeated! +200g', life: 5 });
         } else {
-          this.bus.emit('toast', { kind: 'milestone', text: `Boss defeated! +${formatInt((e.goldValue ?? def.baseGold) * 3)}g`, life: 6 });
+          this.bus.emit('toast', { kind: 'milestone', text: `Boss defeated! +${formatInt((e.goldValue ?? def.baseGold) * 2)}g`, life: 6 });
         }
       }
 
@@ -512,16 +512,16 @@ export class Game {
       const choices = pickRandomModifiers(3);
       this.state.wave.waveModifier.choiceForNextWave = choices.map(snapshotFromDef);
       this.state.wave.waveModifier.pendingChoiceForWave = w;
-      this.waveMgr.pauseIntermission();
+      this.waveMgr.pauseSpawning();
       this.waveModModal.show(
         { wave: w, choices: this.state.wave.waveModifier.choiceForNextWave },
         {
           onChoose: (snapshot: WaveModifierSnapshot) => {
-            this.waveMgr.resumeIntermission();
+            this.waveMgr.resumeSpawning();
             this.chooseWaveModifier(snapshot);
           },
           onSkip: () => {
-            this.waveMgr.resumeIntermission();
+            this.waveMgr.resumeSpawning();
             this.skipWaveModifier();
           },
         },

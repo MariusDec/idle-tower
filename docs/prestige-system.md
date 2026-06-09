@@ -4,11 +4,11 @@
 
 ## Overview
 
-Two prestige layers: Ascension (wave 20+) and Transcendence (100+ AP).
+Two prestige layers: Ascension (wave 5~~~~0+) and Transcendence (100+ AP).
 
 ## Ascension
 
-**Unlock:** Wave 20
+**Unlock:** Wave 50
 
 **AP Formula:** `floor(sqrt(waveNumber * 5))`
 

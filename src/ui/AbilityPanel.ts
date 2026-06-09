@@ -104,10 +104,10 @@ export class AbilityPanel {
 
       // Status line.
       if (reason) {
-        setText(status, `${reason} · ${formatInt(mana)}/${formatInt(stats.manaCost)} mana`);
+        setText(status, `${reason} · ${formatInt(stats.manaCost)}/${formatInt(mana)} mana`);
         toggleClass(status, 'ability-status-blocked', true);
       } else {
-        setText(status, `Ready · ${formatInt(mana)}/${formatInt(stats.manaCost)} mana`);
+        setText(status, `Ready · ${formatInt(stats.manaCost)}/${formatInt(mana)} mana`);
         toggleClass(status, 'ability-status-blocked', false);
       }
 

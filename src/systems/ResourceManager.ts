@@ -72,7 +72,7 @@ export class ResourceManager {
     this.passiveGoldTimer += dt;
     if (this.passiveGoldTimer >= this.passiveGoldInterval) {
       this.passiveGoldTimer -= this.passiveGoldInterval;
-      const passive = 0.05 * wave;
+      const passive = 0.02 * wave;
       if (passive > 0) this.addGold(passive);
     }
   }
