@@ -108,7 +108,7 @@ export class WaveManager {
       intermission: false,
       intermissionTimer: 0,
       autoProgress: true,
-      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null },
+      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null },
     };
   }
 
@@ -182,6 +182,12 @@ export class WaveManager {
     // For boss waves, present the modifier picker now so the player sees it
     // when the stage starts rather than during the previous intermission.
     if (isBossWave(wave)) {
+      if (Math.random() < 0.5) { // 50% chance for wave modifiers to appear during boss waves
+        return;
+      }
+      this.spawnPaused = true;
+      this.bus.emit('wave_modifier_offer', wave);
+    } else if (Math.random() < 0.04) { // 4% chance for wave modifiers to appear during normal waves
       this.spawnPaused = true;
       this.bus.emit('wave_modifier_offer', wave);
     }
@@ -209,7 +215,7 @@ export class WaveManager {
       intermission: false,
       intermissionTimer: 0,
       autoProgress: this.state.autoProgress,
-      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null },
+      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null },
     };
     this.enemyCountMult = 1;
     this.bus.emit('wave_started', this.state.number);

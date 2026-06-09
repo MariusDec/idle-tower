@@ -226,7 +226,7 @@ export class WaveModifierModal {
     reward.className = 'wave-mod-card-reward';
     const parts: string[] = [];
     if (snapshot.reward.ap > 0) parts.push(`+${snapshot.reward.ap} AP`);
-    if (snapshot.reward.gold > 0) parts.push(`+${snapshot.reward.gold} Gold`);
+    if (snapshot.reward.gold > 0) parts.push(`×${snapshot.reward.gold} Gold on clear`);
     if (snapshot.reward.tp > 0) parts.push(`+${snapshot.reward.tp} TP`);
     reward.textContent = parts.length > 0 ? `Reward: ${parts.join(', ')}` : 'No bonus reward';
     btn.appendChild(reward);

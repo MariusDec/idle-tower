@@ -40,7 +40,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#d04848',
     borderColor: '#ffffff',
     shape: 'circle',
-    rpChance: 0.02,
+    rpChance: 0.01,
   },
   fast: {
     type: 'fast',
@@ -56,7 +56,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#f1c40f',
     borderColor: '#7a6500',
     shape: 'diamond',
-    rpChance: 0.03,
+    rpChance: 0.02,
   },
   tank: {
     type: 'tank',
@@ -72,7 +72,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#2c5b8f',
     borderColor: '#9aa7b5',
     shape: 'circle',
-    rpChance: 0.04,
+    rpChance: 0.03,
   },
   flying: {
     type: 'flying',
@@ -88,7 +88,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#ecf0f1',
     borderColor: '#2c3e50',
     shape: 'winged',
-    rpChance: 0.05,
+    rpChance: 0.04,
   },
   healer: {
     type: 'healer',
@@ -108,7 +108,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     healRange: 150,
     healFraction: 0.15,
     healCooldown: 2.5,
-    rpChance: 0.06,
+    rpChance: 0.05,
   },
   boss: {
     type: 'boss',
@@ -124,7 +124,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#7b1f1f',
     borderColor: '#ff5050',
     shape: 'circle',
-    rpChance: 0.25,
+    rpChance: 0.15,
   },
   splitter: {
     type: 'splitter',
@@ -143,7 +143,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     splitChildren: 2,
     splitHpFraction: 0.5,
     splitSpeedMultiplier: 1.4,
-    rpChance: 0.04,
+    rpChance: 0.03,
   },
   shielded: {
     type: 'shielded',
@@ -160,6 +160,6 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     borderColor: '#1a5276',
     shape: 'circle',
     shieldCharges: 3,
-    rpChance: 0.07,
+    rpChance: 0.05,
   },
 };

@@ -15,8 +15,8 @@ import { ENEMY_DEFS } from '../data/enemies';
 const STORAGE_KEY = 'the-tower-save';
 const SAVE_VERSION = 5;
 
-function defaultWaveModifier(): { active: null; choiceForNextWave: null; pendingChoiceForWave: null } {
-  return { active: null, choiceForNextWave: null, pendingChoiceForWave: null };
+function defaultWaveModifier() {
+  return { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null };
 }
 const AUTO_SAVE_INTERVAL = 30;
 const OFFLINE_CAP_SECONDS = 7 * 24 * 60 * 60;

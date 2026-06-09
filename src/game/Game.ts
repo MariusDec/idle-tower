@@ -102,7 +102,7 @@ function makeInitialState(): GameState {
       intermission: false,
       intermissionTimer: 0,
       autoProgress: true,
-      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null },
+      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null },
     },
     stats,
     achievements: [],
@@ -504,12 +504,32 @@ export class Game {
     });
     this.bus.on('wave_cleared', (wave: unknown) => {
       const cleared = wave as number;
-      // If a modifier was active for the just-cleared wave, clear it
-      // before the next wave starts so future multipliers reset to 1.
       const wms = this.state.wave.waveModifier;
       if (wms.active && wms.pendingChoiceForWave === cleared) {
+        const goldMult = wms.active.reward.gold;
+        if (goldMult > 0 && wms.goldSnapshot != null) {
+          const waveGold = this.state.stats.goldEarned - wms.goldSnapshot;
+          if (waveGold > 0) {
+            const bonus = Math.floor(waveGold * goldMult);
+            if (bonus > 0) {
+              this.state.resources.gold += bonus;
+              this.state.resources.lifetimeGold += bonus;
+              this.state.stats.goldEarned += bonus;
+              this.bus.emit('gold_changed', this.state.resources.gold);
+            }
+          }
+        }
+        if (wms.active.reward.ap > 0) {
+          this.state.resources.ascensionPoints += wms.active.reward.ap;
+          this.state.resources.apThisTranscendence += wms.active.reward.ap;
+          this.state.resources.lifetimeAP += wms.active.reward.ap;
+        }
+        if (wms.active.reward.tp > 0) {
+          this.state.resources.transcendencePoints += wms.active.reward.tp;
+        }
         wms.active = null;
         wms.pendingChoiceForWave = null;
+        wms.goldSnapshot = null;
       }
     });
     this.bus.on('wave_modifier_offer', (nextWave: unknown) => {
@@ -1562,36 +1582,12 @@ export class Game {
     this.bus.emit('wave_modifier_active', active);
   }
 
-  private awardWaveModifierReward(snapshot: WaveModifierSnapshot): void {
-    const reward = snapshot.reward;
-    if (reward.gold > 0) {
-      this.state.resources.gold += reward.gold;
-      this.state.resources.lifetimeGold += reward.gold;
-      this.state.stats.goldEarned += reward.gold;
-    }
-    if (reward.ap > 0) {
-      this.state.resources.ascensionPoints += reward.ap;
-      this.state.resources.apThisTranscendence += reward.ap;
-      this.state.resources.lifetimeAP += reward.ap;
-    }
-    if (reward.tp > 0) {
-      this.state.resources.transcendencePoints += reward.tp;
-    }
-    this.bus.emit('wave_modifier_chosen', {
-      id: snapshot.id,
-      name: snapshot.name,
-      reward,
-    });
-    this.bus.emit('toast', {
-      kind: 'milestone',
-      text: `Mutator complete: ${snapshot.name}`,
-      life: 4,
-    });
-  }
-
   private chooseWaveModifier(snapshot: WaveModifierSnapshot): void {
     this.state.wave.waveModifier.active = snapshot;
     this.state.wave.waveModifier.choiceForNextWave = null;
+    // Snapshot gold earned so far — the modifier's gold multiplier bonus
+    // is computed from gold earned during the wave and awarded on wave_cleared.
+    this.state.wave.waveModifier.goldSnapshot = this.state.stats.goldEarned;
     // Apply non-stateful multipliers now so that the upcoming startWave()
     // uses the correct enemy count and the active enemies spawned during
     // this intermission window would (if any) carry the new speeds.
@@ -1603,9 +1599,16 @@ export class Game {
     // Recompute tower stats so the new wave starts with the modifier's
     // playerDamageMult / goldAdditive baked in.
     this.applyUpgradeEffects();
-    // Award the modifier's flat reward (AP / gold / TP) on selection per
-    // the wave modifier spec: picking is the win condition.
-    this.awardWaveModifierReward(snapshot);
+    this.bus.emit('wave_modifier_chosen', {
+      id: snapshot.id,
+      name: snapshot.name,
+      reward: snapshot.reward,
+    });
+    this.bus.emit('toast', {
+      kind: 'milestone',
+      text: `Mutator complete: ${snapshot.name}`,
+      life: 4,
+    });
   }
 
   private skipWaveModifier(): void {

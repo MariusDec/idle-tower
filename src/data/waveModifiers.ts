@@ -3,7 +3,11 @@ export type WaveModifierId =
   | 'heavy_hitters'
   | 'swarm'
   | 'golden'
-  | 'glass_tower';
+  | 'glass_tower'
+  | 'fortress'
+  | 'cursed_ground'
+  | 'ironclad'
+  | 'famine';
 
 export interface WaveModifierReward {
   /** Bonus AP awarded when the modifier's wave is cleared. */
@@ -43,7 +47,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     id: 'glass_cannon',
     name: 'Glass Cannon',
     description: 'Enemies are fragile and blindingly fast.',
-    detail: 'Enemies: HP ×0.5, Speed ×2.0 · Gold: +20%',
+    detail: 'Enemies: HP ×0.5, Speed ×2.0 · Gold: +25% · Bonus: 1 AP on clear',
     glyph: '◇',
     color: '#5b8def',
     reward: { ap: 1, gold: 0, tp: 0 },
@@ -52,7 +56,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
       speedMult: 2.0,
       damageToTowerMult: 1,
       countMult: 1,
-      goldAdditive: 0.2,
+      goldAdditive: 0.25,
       playerDamageMult: 1,
     },
   },
@@ -60,27 +64,27 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     id: 'heavy_hitters',
     name: 'Heavy Hitters',
     description: 'Tougher enemies that hit the tower harder.',
-    detail: 'Enemies: HP ×1.5, Damage to tower ×1.3 · Gold: −10%',
+    detail: 'Enemies: HP ×1.5, Damage to tower ×1.3 · Bonus: ×2 gold, 1 AP on clear',
     glyph: '⛨',
     color: '#a85a2c',
-    reward: { ap: 1, gold: 0, tp: 0 },
+    reward: { ap: 1, gold: 2, tp: 0 },
     effects: {
       hpMult: 1.5,
       speedMult: 1,
       damageToTowerMult: 1.3,
       countMult: 1,
-      goldAdditive: -0.1,
+      goldAdditive: 0,
       playerDamageMult: 1,
     },
   },
   {
     id: 'swarm',
     name: 'Swarm',
-    description: 'The horde is overwhelming. The reward is greater too.',
-    detail: 'Enemies: Count ×3.0 · Reward: +1 bonus AP on clear',
+    description: 'The horde is overwhelming.',
+    detail: 'Enemies: Count ×3.0 · Bonus: ×2 gold on clear',
     glyph: '⋙',
     color: '#9b59ff',
-    reward: { ap: 2, gold: 0, tp: 0 },
+    reward: { ap: 0, gold: 2, tp: 0 },
     effects: {
       hpMult: 1,
       speedMult: 1,
@@ -94,10 +98,10 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     id: 'golden',
     name: 'Golden Tide',
     description: 'Everything glitters — gold rains from every corpse.',
-    detail: 'Gold: ×5.0 · Bonus: +250g on clear',
+    detail: 'Gold: ×5.0',
     glyph: '✦',
     color: '#e8a93b',
-    reward: { ap: 1, gold: 250, tp: 0 },
+    reward: { ap: 0, gold: 0, tp: 0 },
     effects: {
       hpMult: 1,
       speedMult: 1,
@@ -111,10 +115,10 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     id: 'glass_tower',
     name: 'Glass Tower',
     description: 'High risk, high reward. Your tower is fragile but lethal.',
-    detail: 'Tower takes 3× damage · Your damage ×10 · Reward: +1 AP',
+    detail: 'Tower takes 3× damage · Your damage ×10',
     glyph: '☠',
     color: '#d04848',
-    reward: { ap: 1, gold: 0, tp: 0 },
+    reward: { ap: 0, gold: 0, tp: 0 },
     effects: {
       hpMult: 1,
       speedMult: 1,
@@ -122,6 +126,74 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
       countMult: 1,
       goldAdditive: 0,
       playerDamageMult: 10,
+    },
+  },
+  {
+    id: 'fortress',
+    name: 'Fortress',
+    description: 'Slow but nearly indestructible.',
+    detail: 'Enemies: HP ×3.0, Speed ×0.5 · Bonus: 1 AP on clear',
+    glyph: '🏰',
+    color: '#6b7280',
+    reward: { ap: 1, gold: 0, tp: 0 },
+    effects: {
+      hpMult: 3.0,
+      speedMult: 0.5,
+      damageToTowerMult: 1,
+      countMult: 1,
+      goldAdditive: 0,
+      playerDamageMult: 1,
+    },
+  },
+  {
+    id: 'cursed_ground',
+    name: 'Cursed Ground',
+    description: 'Dark energy weakens your tower, but riches abound.',
+    detail: 'Your damage ×0.5 · Gold: ×3, 1 AP on clear',
+    glyph: '🜏',
+    color: '#7c3aed',
+    reward: { ap: 1, gold: 3, tp: 0 },
+    effects: {
+      hpMult: 1,
+      speedMult: 1,
+      damageToTowerMult: 1,
+      countMult: 1,
+      goldAdditive: 0,
+      playerDamageMult: 0.5,
+    },
+  },
+  {
+    id: 'ironclad',
+    name: 'Ironclad',
+    description: 'Armored horde. Tough shells, rich spoils.',
+    detail: 'Enemies: HP ×2.0, Count ×2.0 · Bonus: ×4 gold, 1 AP on clear',
+    glyph: '🛡️',
+    color: '#9ca3af',
+    reward: { ap: 1, gold: 4, tp: 0 },
+    effects: {
+      hpMult: 2.0,
+      speedMult: 1,
+      damageToTowerMult: 1,
+      countMult: 2.0,
+      goldAdditive: 0,
+      playerDamageMult: 1,
+    },
+  },
+  {
+    id: 'famine',
+    name: 'Famine',
+    description: 'Resources are scarce. Endure for knowledge.',
+    detail: 'Enemies: HP ×1.2 · Gold: −50% · Bonus: 2 AP on clear',
+    glyph: '🌑',
+    color: '#4b5563',
+    reward: { ap: 2, gold: 0, tp: 0 },
+    effects: {
+      hpMult: 1.2,
+      speedMult: 1,
+      damageToTowerMult: 1,
+      countMult: 1,
+      goldAdditive: -0.5,
+      playerDamageMult: 1,
     },
   },
 ];

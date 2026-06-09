@@ -6,7 +6,7 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Sharper Arrows',
     description: 'Increases the base damage',
     baseCost: 15,
-    costGrowth: 1.4,
+    costGrowth: 1.33,
     effectPerLevel: '3.2 * Math.pow(1.1, {level} - 1)',
     baseEffect: 4,
     startLevel: 1,

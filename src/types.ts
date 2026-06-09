@@ -126,6 +126,8 @@ export interface WaveModifierState {
   choiceForNextWave: WaveModifierSnapshot[] | null;
   /** Boss wave number the `choiceForNextWave` belongs to. */
   pendingChoiceForWave: number | null;
+  /** Gold earned snapshot taken when the modifier was picked, used to compute gold multiplier bonus on wave clear. */
+  goldSnapshot: number | null;
 }
 
 export interface WaveModifierSnapshot {
@@ -135,6 +137,7 @@ export interface WaveModifierSnapshot {
   detail: string;
   glyph: string;
   color: string;
+  /** ap/tp = flat reward on clear; gold = multiplier × gold earned from enemies during the wave (deferred to wave_cleared). */
   reward: { ap: number; gold: number; tp: number };
   effects: {
     hpMult: number;
