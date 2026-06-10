@@ -2,6 +2,8 @@ import { evalFormula } from './data/formulas';
 
 export type EnemyType = 'normal' | 'fast' | 'tank' | 'flying' | 'healer' | 'boss' | 'splitter' | 'shielded';
 
+export type AuraType = 'haste' | 'thorns' | 'greed' | 'vitality' | 'retribution';
+
 export type DamageType = 'physical' | 'magic';
 
 export type TargetingMode = 'nearest' | 'lowest_hp' | 'first' | 'strongest' | 'boss' | 'flying' | 'last';
@@ -92,6 +94,10 @@ export interface Enemy {
   // Boss enrage (Phase 2)
   enraged?: boolean;
   enrageTriggered?: boolean;
+  // Elite enemies
+  elite?: boolean;
+  aura?: AuraType | null;
+  retributionTimer?: number;
 }
 
 export interface Projectile {

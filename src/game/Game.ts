@@ -390,6 +390,13 @@ export class Game {
       this.effects.emitEnemyShieldBreak(p.x, p.y);
     });
 
+    this.bus.on('thorns_reflected', (amount: unknown) => {
+      const dmg = amount as number;
+      if (dmg > 0) {
+        this.bus.emit('tower_damaged', dmg);
+      }
+    });
+
     this.bus.on('enemy_healed', (payload: unknown) => {
       const p = payload as { healer: { x: number; y: number }; target: { x: number; y: number }; amount: number };
       this.effects.emitHealParticles(p.healer.x, p.healer.y, p.target.x, p.target.y);

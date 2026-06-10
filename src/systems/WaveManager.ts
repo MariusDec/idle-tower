@@ -1,4 +1,4 @@
-import type { EnemyType, WaveState } from '../types';
+import type { EnemyType, AuraType, WaveState } from '../types';
 import {
   enemyCountForWave,
   spawnCountForWave,
@@ -7,8 +7,11 @@ import {
 } from '../data/formulas';
 import { ENEMY_DEFS } from '../data/enemies';
 import type { EnemyManager } from './EnemyManager';
+import { eliteChanceForWave } from './EnemyManager';
 import { randomBetween } from '../utils/math';
 import { EventBus } from '../game/EventBus';
+
+const ALL_AURAS: AuraType[] = ['haste', 'thorns', 'greed', 'vitality', 'retribution'];
 
 export const WAVE_INTERMISSION = 5;
 
@@ -296,7 +299,14 @@ export class WaveManager {
     }
     const type = this.pickEnemyType(this.state.number);
     const { x, y } = this.spawnPointOnEdge();
-    this.enemies.spawn(type, this.state.number, x, y);
+    const wave = this.state.number;
+    // Elite roll: wave >= 21, not bosses, linear 2%→8% chance
+    if (wave >= 21 && type !== 'boss' && Math.random() < eliteChanceForWave(wave)) {
+      const aura = ALL_AURAS[Math.floor(Math.random() * ALL_AURAS.length)];
+      this.enemies.spawnElite(type, wave, x, y, aura);
+    } else {
+      this.enemies.spawn(type, wave, x, y);
+    }
     this.state.enemiesSpawned += 1;
     if (this.state.enemiesSpawned >= this.state.enemiesToSpawn) {
       this.state.spawning = false;

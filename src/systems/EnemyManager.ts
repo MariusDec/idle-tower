@@ -1,4 +1,4 @@
-import type { Enemy, EnemyType, Projectile } from '../types';
+import type { Enemy, EnemyType, AuraType, Projectile } from '../types';
 import { distance2, nextId } from '../utils/math';
 import { ENEMY_DEFS } from '../data/enemies';
 import {
@@ -14,6 +14,42 @@ import type { ResourceManager } from './ResourceManager';
 import type { ResearchTree } from './ResearchTree';
 
 const ENEMY_GAP = 2;
+
+// Elite enemy constants
+const ELITE_UNLOCK_WAVE = 21;
+const ELITE_SPAWN_CHANCE_BASE = 0.02;
+const ELITE_SPAWN_CHANCE_MAX_WAVE = 200;
+const ELITE_SPAWN_CHANCE_MAX = 0.08;
+const ELITE_HP_MULT = 2.5;
+const AURA_RADIUS = 180;
+const HASTE_SPEED_BONUS = 0.5;
+const THORNS_REFLECT_FRACTION = 0.1;
+const GREED_GOLD_MULT = 3;
+const VITALITY_REGEN_FRACTION = 0.01; // 1% maxHP per second
+const RETRIBUTION_BUFF_DURATION = 5;
+const RETRIBUTION_BUFF_DAMAGE_MULT = 1.5;
+const RETRIBUTION_BUFF_SPEED_MULT = 1.5;
+
+/** Compute elite spawn chance for a given wave. */
+export function eliteChanceForWave(wave: number): number {
+  if (wave < ELITE_UNLOCK_WAVE) return 0;
+  return Math.min(
+    ELITE_SPAWN_CHANCE_MAX,
+    ELITE_SPAWN_CHANCE_BASE +
+      ((wave - ELITE_UNLOCK_WAVE) * (ELITE_SPAWN_CHANCE_MAX - ELITE_SPAWN_CHANCE_BASE)) /
+        (ELITE_SPAWN_CHANCE_MAX_WAVE - ELITE_UNLOCK_WAVE),
+  );
+}
+
+const ELITE_AURA_COLORS: Record<AuraType, string> = {
+  haste: 'rgba(60, 180, 255, 0.3)',
+  thorns: 'rgba(255, 100, 30, 0.3)',
+  greed: 'rgba(255, 215, 0, 0.35)',
+  vitality: 'rgba(60, 220, 100, 0.3)',
+  retribution: 'rgba(180, 50, 220, 0.3)',
+};
+
+export { ELITE_AURA_COLORS, AURA_RADIUS, RETRIBUTION_BUFF_DURATION };
 
 export class EnemyManager {
   private enemies: Enemy[] = [];
@@ -41,6 +77,8 @@ export class EnemyManager {
   private damageToTowerMult = 1;
   /** Multiplier applied to enemy max HP on spawn (default 1). */
   private hpMult = 1;
+  /** Retribution buffs: enemy ID → remaining duration. */
+  private retributionBuffs: Map<number, number> = new Map();
 
   constructor(bus: EventBus, resources: ResourceManager, researchTree?: ResearchTree) {
     this.bus = bus;
@@ -125,6 +163,8 @@ export class EnemyManager {
     else hp = enemyHPForWave(def.baseHP, wave);
     if (this.hpReduction > 0) hp = Math.max(1, Math.floor(hp * (1 - this.hpReduction)));
     if (this.hpMult !== 1) hp = Math.max(1, Math.floor(hp * this.hpMult));
+    const isElite = overrides.elite === true;
+    if (isElite) hp = Math.max(1, Math.floor(hp * ELITE_HP_MULT));
     const speed = enemySpeedForWave(def.baseSpeed, wave) * this.speedMult;
     const gold = goldDropForWave(def.baseGold, wave);
     const damage = enemyDamageForWave(def.baseDamage, wave);
@@ -155,6 +195,16 @@ export class EnemyManager {
   }
 
   /**
+   * Spawn an elite version of an enemy with the given aura.
+   */
+  spawnElite(type: EnemyType, wave: number, spawnX: number, spawnY: number, aura: AuraType): Enemy {
+    return this.spawn(type, wave, spawnX, spawnY, {
+      elite: true,
+      aura,
+    });
+  }
+
+  /**
    * Apply damage to an enemy. For shielded enemies, consumes a charge instead
    * of HP. Returns true if enemy was killed by this hit.
    */
@@ -168,6 +218,10 @@ export class EnemyManager {
       return false;
     }
     enemy.hp -= amount;
+    // Thorns aura: reflect fraction of damage back to tower (only if not blocked by shield)
+    if (enemy.alive && enemy.aura === 'thorns' && enemy.elite) {
+      this.computeThornsReflection(amount);
+    }
     // Boss enrage: trigger once when HP drops below 50% of maxHP
     if (enemy.type === 'boss' && !enemy.enrageTriggered && enemy.hp / enemy.maxHp <= 0.5) {
       enemy.enrageTriggered = true;
@@ -180,6 +234,10 @@ export class EnemyManager {
     if (enemy.hp <= 0) {
       enemy.hp = 0;
       enemy.alive = false;
+      // Retribution aura: on death, buff nearby enemies
+      if (enemy.aura === 'retribution' && enemy.elite) {
+        this.triggerRetribution(enemy);
+      }
       this.bus.emit('enemy_damaged', { enemy, amount, killed: true, isCrit });
       this.bus.emit('enemy_killed', enemy);
       this.resources.addGold(this.computeGold(enemy));
@@ -201,6 +259,7 @@ export class EnemyManager {
     let amount = base * additive * this.goldMultipliers.multiplicative;
     if (this.killStreakGoldBonus > 0) amount *= 1 + this.killStreakGoldBonus;
     if (this.manaFullGoldBonus > 0) amount *= 1 + this.manaFullGoldBonus;
+    if (enemy.aura === 'greed' && enemy.elite) amount *= GREED_GOLD_MULT;
     if (this.goldLuckChance > 0 && Math.random() < this.goldLuckChance) {
       amount *= this.goldLuckMultiplier;
     }
@@ -260,6 +319,12 @@ export class EnemyManager {
     const newlyReached: Enemy[] = [];
     let totalDamage = 0;
 
+    // Pre-compute haste aura multipliers (per-frame reset)
+    const hasteMultipliers = this.computeHasteMultipliers();
+
+    // Tick retribution buff timers
+    this.tickRetributionBuffs(dt);
+
     for (const e of this.enemies) {
       if (!e.alive) continue;
       const dx = towerX - e.x;
@@ -283,7 +348,9 @@ export class EnemyManager {
         e.attackCooldown -= dt;
         if (e.attackCooldown <= 0) {
           this.bus.emit('enemy_attack', { x: e.x, y: e.y, type: e.type });
-          totalDamage += e.damage * this.damageToTowerMult;
+          let dmgMult = this.damageToTowerMult;
+          if (this.retributionBuffs.has(e.id)) dmgMult *= RETRIBUTION_BUFF_DAMAGE_MULT;
+          totalDamage += e.damage * dmgMult;
           if (this.thorns > 0) {
             const thornDmg = Math.floor(e.damage * this.thorns);
             if (thornDmg > 0) this.damage(e, thornDmg, false);
@@ -291,7 +358,9 @@ export class EnemyManager {
           e.attackCooldown += 1 / e.fireRate;
         }
       } else {
-        const inv = e.speed * this.slowFactor * dt / d;
+        let speedMult = hasteMultipliers.get(e.id) ?? 1;
+        if (this.retributionBuffs.has(e.id)) speedMult *= RETRIBUTION_BUFF_SPEED_MULT;
+        const inv = e.speed * this.slowFactor * speedMult * dt / d;
         e.x += dx * inv;
         e.y += dy * inv;
       }
@@ -342,6 +411,14 @@ export class EnemyManager {
       this.bus.emit('tower_damaged', totalDamage);
     }
 
+    // Process vitality aura (heal nearby enemies)
+    this.processVitalityAura(dt);
+
+    // Sync retribution timers to enemy objects for renderer
+    for (const e of this.enemies) {
+      e.retributionTimer = this.retributionBuffs.get(e.id) ?? 0;
+    }
+
     this.enemies = this.enemies.filter(e => e.alive);
   }
 
@@ -365,6 +442,7 @@ export class EnemyManager {
     this.speedMult = 1;
     this.damageToTowerMult = 1;
     this.hpMult = 1;
+    this.retributionBuffs.clear();
   }
 
   /**
@@ -383,6 +461,8 @@ export class EnemyManager {
       goldValue: childGold,
       damage: childDamage,
       isSplitChild: true,
+      elite: false,
+      aura: null,
     });
   }
 
@@ -400,5 +480,81 @@ export class EnemyManager {
       if (d2 > best) best = d2;
     }
     return best;
+  }
+
+  /**
+   * Compute haste aura multipliers for all enemies.
+   * Enemies near a haste elite get +50% speed.
+   */
+  private computeHasteMultipliers(): Map<number, number> {
+    const result = new Map<number, number>();
+    const r2 = AURA_RADIUS * AURA_RADIUS;
+    for (const e of this.enemies) {
+      if (!e.alive || e.aura !== 'haste' || !e.elite) continue;
+      for (const other of this.enemies) {
+        if (!other.alive || other.id === e.id) continue;
+        const dx = other.x - e.x;
+        const dy = other.y - e.y;
+        if (dx * dx + dy * dy <= r2) {
+          const existing = result.get(other.id) ?? 1;
+          result.set(other.id, existing * (1 + HASTE_SPEED_BONUS));
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Process vitality aura: elite heals nearby enemies for 1% maxHP/s.
+   */
+  private processVitalityAura(dt: number): void {
+    const r2 = AURA_RADIUS * AURA_RADIUS;
+    for (const e of this.enemies) {
+      if (!e.alive || e.aura !== 'vitality' || !e.elite) continue;
+      for (const other of this.enemies) {
+        if (!other.alive || other.id === e.id) continue;
+        if (other.hp >= other.maxHp) continue;
+        const dx = other.x - e.x;
+        const dy = other.y - e.y;
+        if (dx * dx + dy * dy > r2) continue;
+        const heal = Math.max(1, Math.floor(other.maxHp * VITALITY_REGEN_FRACTION * dt));
+        other.hp = Math.min(other.maxHp, other.hp + heal);
+      }
+    }
+  }
+
+  /**
+   * Emit a thorns_reflected event when a projectile hits a thorns-aura elite.
+   */
+  private computeThornsReflection(damage: number): void {
+    const reflected = Math.floor(damage * THORNS_REFLECT_FRACTION);
+    if (reflected > 0) {
+      this.bus.emit('thorns_reflected', reflected);
+    }
+  }
+
+  /**
+   * On death of a retribution-aura elite, buff nearby enemies.
+   */
+  private triggerRetribution(dead: Enemy): void {
+    const r2 = AURA_RADIUS * AURA_RADIUS;
+    for (const e of this.enemies) {
+      if (!e.alive || e.id === dead.id) continue;
+      const dx = e.x - dead.x;
+      const dy = e.y - dead.y;
+      if (dx * dx + dy * dy > r2) continue;
+      this.retributionBuffs.set(e.id, RETRIBUTION_BUFF_DURATION);
+    }
+  }
+
+  /**
+   * Tick retribution buff timers.
+   */
+  private tickRetributionBuffs(dt: number): void {
+    for (const [id, remaining] of this.retributionBuffs) {
+      const next = remaining - dt;
+      if (next <= 0) this.retributionBuffs.delete(id);
+      else this.retributionBuffs.set(id, next);
+    }
   }
 }

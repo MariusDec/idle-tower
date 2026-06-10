@@ -1,8 +1,9 @@
-import type { RenderSnapshot, Enemy, Projectile, Particle, DamageNumber, Shockwave, Mine } from '../types';
+import type { RenderSnapshot, Enemy, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType } from '../types';
 import { TOWER_VISUAL } from '../data/tower';
 import { ENEMY_DEFS } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
 import { formatInt } from '../utils/bigNumber';
+import { ELITE_AURA_COLORS, AURA_RADIUS } from '../systems/EnemyManager';
 
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
@@ -334,10 +335,17 @@ export class Renderer {
 
   private drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy): void {
     const def = ENEMY_DEFS[enemy.type];
-    const r = def.radius;
+    const baseR = def.radius;
+    const eliteScale = enemy.elite ? 1.25 : 1;
+    const r = baseR * eliteScale;
     let bob = 0;
     if (enemy.type === 'flying') {
       bob = Math.sin(this.time * 5 + enemy.id * 0.7) * 3;
+    }
+
+    // Elite aura (drawn behind the enemy body)
+    if (enemy.elite && enemy.aura) {
+      this.drawEliteAura(ctx, enemy, r, enemy.aura);
     }
 
     if (enemy.type === 'boss') {
@@ -451,6 +459,23 @@ export class Renderer {
       this.drawShieldArcs(ctx, enemy, r);
     }
 
+    // Elite crown
+    if (enemy.elite && enemy.aura) {
+      this.drawEliteCrown(ctx, enemy, r, bob);
+    }
+
+    // Retribution buff indicator (pulsing purple border)
+    if (enemy.retributionTimer && enemy.retributionTimer > 0) {
+      const pulse = 0.4 + Math.sin(this.time * 8) * 0.3;
+      ctx.save();
+      ctx.strokeStyle = `rgba(180, 50, 220, ${pulse})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y + bob, r + 5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     this.drawEnemyHpBar(ctx, enemy, r, bob);
   }
 
@@ -464,6 +489,43 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(enemy.x, enemy.y, r * 2.0 * pulse, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  private drawEliteAura(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, aura: AuraType): void {
+    const color = ELITE_AURA_COLORS[aura];
+    const pulse = 1 + Math.sin(this.time * 3 + enemy.id) * 0.15;
+    const auraR = AURA_RADIUS * 0.6 * pulse; // visual radius scaled down for display
+    const grad = ctx.createRadialGradient(enemy.x, enemy.y, r * 0.5, enemy.x, enemy.y, auraR);
+    grad.addColorStop(0, color);
+    grad.addColorStop(0.7, color.replace(/[\d.]+\)$/, '0.08)'));
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(enemy.x, enemy.y, auraR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  private drawEliteCrown(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
+    const auraColors: Record<AuraType, string> = {
+      haste: '#3cb4ff',
+      thorns: '#ff6420',
+      greed: '#ffd700',
+      vitality: '#3edc64',
+      retribution: '#b432dc',
+    };
+    const color = auraColors[enemy.aura!] ?? '#fff';
+    const crownY = enemy.y - r - 12 + bob;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = `bold ${Math.max(10, r * 0.7)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('♛', enemy.x, crownY);
+    // Glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6;
+    ctx.fillText('♛', enemy.x, crownY);
+    ctx.restore();
   }
 
   private drawShieldArcs(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
