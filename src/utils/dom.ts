@@ -1,4 +1,5 @@
 const textCache = new WeakMap<HTMLElement, string>();
+const srcCache = new WeakMap<HTMLElement, string>();
 const classCache = new WeakMap<HTMLElement, Set<string>>();
 const styleCache = new WeakMap<HTMLElement, Map<string, string>>();
 const innerHTMLCache = new WeakMap<HTMLElement, string>();
@@ -100,4 +101,11 @@ export function setDisabled(
   if (prev === value) return;
   disabledCache.set(el, value);
   el.disabled = value;
+}
+
+export function setSrc(el: HTMLImageElement, value: string): void {
+  const prev = srcCache.get(el);
+  if (prev === value) return;
+  srcCache.set(el, value);
+  el.src = value;
 }

@@ -30,9 +30,10 @@ export type AbilityId =
   | 'precision_shot'
   | 'chain_lightning'
   | 'vampiric_aura'
-  | 'execute';
+  | 'execute'
+  | 'multishot';
 
-export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'stats' | 'settings';
+export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'stats' | 'settings' | 'talents' | 'passives' | 'equipment';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';
 
@@ -111,6 +112,11 @@ export interface Projectile {
   damageType: DamageType;
   isCrit: boolean;
   alive: boolean;
+  // Homing (optional — present for homing projectiles)
+  homingTargetId?: number;
+  turnRate?: number;
+  lifetime?: number;
+  age?: number;
 }
 
 export interface ResourceState {
@@ -123,6 +129,62 @@ export interface ResourceState {
   transcendencePoints: number;
   lifetimeAP: number;
   lifetimeGold: number;
+}
+
+// Tower XP / Leveling (permanent across ascension/transcendence)
+export interface TowerXpState {
+  xp: number;
+  level: number;
+  unspentTalentPoints: number;
+  totalXpEarned: number;
+}
+
+// Talent System
+export type TalentBranch = 'offense' | 'defense' | 'utility' | 'magic';
+export type TalentId = string;
+export interface TalentState {
+  allocated: Record<TalentId, number>;
+}
+
+// Passive Abilities
+export type PassiveAbilityId =
+  | 'passive_markmanship' | 'passive_fortitude' | 'passive_mana_spring'
+  | 'passive_scavenger' | 'passive_thorns_aura' | 'passive_precision'
+  | 'passive_haste' | 'passive_life_steal';
+
+export interface PassiveAbilityState {
+  level: number;
+  xp: number;
+}
+
+// Equipment
+export type EquipmentSlot = 'weapon' | 'armor' | 'accessory_1' | 'accessory_2'
+  | 'relic' | 'boots' | 'helmet' | 'ring';
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+export type EquipmentStatType =
+  | 'damage_pct' | 'fire_rate_pct' | 'crit_chance_pct' | 'crit_damage_pct'
+  | 'range_pct' | 'max_hp_pct' | 'defense_pct' | 'armor_pct'
+  | 'gold_mult_pct' | 'mana_regen_pct' | 'lifesteal_pct' | 'thorns_pct'
+  | 'knockback_pct' | 'all_damage_pct';
+
+export interface EquipmentStat { type: EquipmentStatType; value: number; }
+export interface Equipment {
+  id: string; defId: string; slot: EquipmentSlot;
+  rarity: Rarity; level: number; stats: EquipmentStat[];
+}
+export interface EquipmentDef {
+  id: string; name: string; description: string; slot: EquipmentSlot;
+  baseStats: Partial<Record<Rarity, EquipmentStat[]>>;
+  maxLevel: number; upgradeCostGrowth: number;
+  sprite: string; color: string; minWave: number; bossOnly?: boolean;
+}
+
+// Homing Projectile (extends Projectile)
+export interface HomingProjectile extends Projectile {
+  homingTargetId: number;
+  turnRate: number;
+  lifetime: number;
+  age: number;
 }
 
 export interface WaveModifierState {
@@ -349,6 +411,16 @@ export interface GameState {
   runHistory: RunRecord[];
   /** v3+: wall-clock time the current ascension run started. */
   runStartedAt: number;
+  /** v6+: Tower XP and leveling state (permanent). */
+  towerXp: TowerXpState;
+  /** v6+: Talent tree allocation state (permanent). */
+  talents: TalentState;
+  /** v6+: Passive ability XP and levels (reset on ascend/transcend). */
+  passiveAbilities: Record<string, PassiveAbilityState>;
+  /** v6+: Equipment inventory (reset on ascend/transcend). */
+  equipment: Equipment[];
+  /** v6+: Currently equipped items keyed by slot. */
+  equipped: Partial<Record<EquipmentSlot, Equipment>>;
 }
 
 export interface Particle {

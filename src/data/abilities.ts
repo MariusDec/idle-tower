@@ -9,7 +9,8 @@ export type AbilityEffectType =
   | 'chain_damage'
   | 'crit_buff'
   | 'lifesteal_buff'
-  | 'execute_damage';
+  | 'execute_damage'
+  | 'multishot';
 
 export interface AbilityDef {
   id: AbilityId;
@@ -211,6 +212,27 @@ export const ABILITIES: AbilityDef[] = [
     durationPerLevel: 0,
   },
   {
+    id: 'multishot',
+    name: 'Multishot',
+    description: 'Fires {dmg} homing projectiles that seek enemies.',
+    manaCost: 45,
+    cooldown: 20,
+    duration: 0,
+    effectType: 'multishot',
+    effectValue: 2,
+    glyph: 'W',
+    color: '#ff6b35',
+    hotkey: '0',
+    unlockWave: 35,
+    maxLevel: 15,
+    upgradeBaseCost: 500,
+    upgradeCostGrowth: 1.55,
+    manaCostPerLevel: 3,
+    cooldownReductionPerLevel: 0.3,
+    effectValuePerLevel: 0.5,
+    durationPerLevel: 0,
+  },
+  {
     id: 'vampiric_aura',
     name: 'Vampiric Aura',
     description: 'Multiplies lifesteal by {dmg}x and adds HP regen for {dur}s.',
@@ -261,9 +283,10 @@ export interface EffectiveAbilityStats {
   isUnlocked: boolean;
 }
 
-function stripTrailingZero(n: number): string {
+function stripTrailingZero(n: number, digits: number = 2): string {
   if (!Number.isFinite(n)) return '0';
-  const s = n.toFixed(2).replace(/\.?0+$/, '');
+  if (digits == 0) return Math.floor(n).toString();
+  const s = n.toFixed(digits).replace(/\.?0+$/, '');
   return s === '' || s === '-' ? '0' : s;
 }
 
@@ -318,6 +341,8 @@ function formatEffectForDisplay(type: AbilityEffectType, value: number): string 
       return `${stripTrailingZero(value)}x`;
     case 'execute_damage':
       return `${stripTrailingZero(value)}%`;
+    case 'multishot':
+      return `${stripTrailingZero(value, 0)}x`;
   }
 }
 

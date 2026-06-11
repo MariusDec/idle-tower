@@ -26,6 +26,9 @@ import { MobileSheet, type MobileSheetTab } from './MobileSheet';
 import { BottomNav, type BottomNavItem } from './BottomNav';
 import { upcomingMilestones, milestoneAtWave } from '../data/milestones';
 import { EventBus } from '../game/EventBus';
+import { TalentPanel, type TalentAPIDeps } from './TalentPanel';
+import { PassivePanel, type PassiveAPIDeps } from './PassivePanel';
+import { EquipmentPanel, type EquipmentAPIDeps } from './EquipmentPanel';
 import type { AutomationKey } from '../data/prestige';
 import type { EffectiveAbilityStats } from '../data/abilities';
 import { ABILITIES } from '../data/abilities';
@@ -40,6 +43,9 @@ const TABS: TabDef[] = [
   { id: 'upgrades', label: 'Upgrades' },
   { id: 'research', label: 'Research' },
   { id: 'abilities', label: 'Ability Mgmt' },
+  { id: 'talents', label: 'Talents' },
+  { id: 'passives', label: 'Passives' },
+  { id: 'equipment', label: 'Equipment' },
   { id: 'prestige', label: 'Prestige' },
   { id: 'transcendence', label: 'Transcendence' },
   { id: 'achievements', label: 'Achievements' },
@@ -50,7 +56,7 @@ const TABS: TabDef[] = [
 const PANEL_WIDTH_KEY = 'the-tower-panel-width';
 const PANEL_COLLAPSED_KEY = 'the-tower-panel-collapsed';
 const PANEL_MIN = 280;
-const PANEL_MAX = 720;
+const CANVAS_MIN = 420;
 const MOBILE_BREAKPOINT = 768;
 
 export interface AbilityAPI {
@@ -126,6 +132,9 @@ export class UIManager {
   private readonly runSummaryModal: RunSummaryModal;
   private readonly statsPanel: StatsPanel;
   private readonly milestoneStrip: MilestoneStrip;
+  private readonly talentPanel: TalentPanel;
+  private readonly passivePanel: PassivePanel;
+  private readonly equipmentPanel: EquipmentPanel;
   private abilityBar: AbilityBar | null = null;
   private mobileSheet: MobileSheet | null = null;
   private bottomNav: BottomNav | null = null;
@@ -167,6 +176,26 @@ export class UIManager {
   private onVolumeChange: (v: number) => void = () => {};
   private onMuteToggle: () => void = () => {};
   private onTargetingModeChange: (mode: string) => void = () => {};
+  private talentApi: TalentAPIDeps = {
+    allocated: {},
+    unspentPoints: 0,
+    canAllocate: () => false,
+    allocate: () => false,
+    refundBranch: () => {},
+  };
+  private passiveApi: PassiveAPIDeps = {
+    getLevel: () => 0,
+    getXp: () => 0,
+    highestWave: 0,
+  };
+  private equipmentApi: EquipmentAPIDeps = {
+    inventory: [],
+    equipped: {},
+    equip: () => false,
+    unequip: () => false,
+    getSellValue: () => 0,
+    onSell: () => {},
+  };
   private audioApi: AudioAPI = (() => {
     let volume = 0.6;
     let muted = false;
@@ -310,6 +339,9 @@ export class UIManager {
     Object.defineProperty(researchHandlers, 'unlocked', { get: () => this.researchApi.unlocked, enumerable: true });
     Object.defineProperty(researchHandlers, 'rpGainRate', { get: () => this.researchApi.rpGainRate, enumerable: true });
     this.researchPanel = new ResearchPanel(researchHandlers);
+    this.talentPanel = new TalentPanel(this.talentApi);
+    this.passivePanel = new PassivePanel(this.passiveApi);
+    this.equipmentPanel = new EquipmentPanel(this.equipmentApi);
     this.settingsPanel = new SettingsPanel({
       onClearSave: () => this.onClearSave(),
       onVolumeChange: (v) => this.onVolumeChange(v),
@@ -457,6 +489,9 @@ export class UIManager {
       { id: 'upgrades', label: 'Upgrades', render: (b) => this.mountMobileTab('upgrades', b) },
       { id: 'research', label: 'Research', render: (b) => this.mountMobileTab('research', b) },
       { id: 'abilities', label: 'Abilities', render: (b) => this.mountMobileTab('abilities', b) },
+      { id: 'talents', label: 'Talents', render: (b) => this.mountMobileTab('talents', b) },
+      { id: 'passives', label: 'Passives', render: (b) => this.mountMobileTab('passives', b) },
+      { id: 'equipment', label: 'Equipment', render: (b) => this.mountMobileTab('equipment', b) },
       { id: 'prestige', label: 'Prestige', render: (b) => this.mountMobileTab('prestige', b) },
       { id: 'transcendence', label: 'Transcendence', render: (b) => this.mountMobileTab('transcendence', b) },
       { id: 'achievements', label: 'Achievements', render: (b) => this.mountMobileTab('achievements', b) },
@@ -477,6 +512,9 @@ export class UIManager {
       case 'upgrades': this.upgradePanel.mount(body); break;
       case 'research': this.researchPanel.mount(body); break;
       case 'abilities': this.abilityPanel.mount(body); break;
+      case 'talents': this.talentPanel.mount(body); break;
+      case 'passives': this.passivePanel.mount(body); break;
+      case 'equipment': this.equipmentPanel.mount(body); break;
       case 'prestige': this.prestigePanel.mount(body); break;
       case 'transcendence': this.transcendencePanel.mount(body); break;
       case 'achievements': this.achievementPanel.mount(body); break;
@@ -488,6 +526,9 @@ export class UIManager {
         case 'upgrades': this.upgradePanel.update(this.lastState); break;
         case 'research': this.researchPanel.update(this.lastState); break;
         case 'abilities': this.abilityPanel.update(this.lastState); break;
+        case 'talents': this.talentPanel.update(this.lastState); break;
+        case 'passives': this.passivePanel.update(this.lastState); break;
+        case 'equipment': this.equipmentPanel.update(this.lastState); break;
         case 'prestige': this.prestigePanel.update(this.lastState); break;
         case 'transcendence': this.transcendencePanel.update(this.lastState); break;
         case 'achievements': this.achievementPanel.update(this.lastState); break;
@@ -533,9 +574,8 @@ export class UIManager {
   private onResizeMove(ev: PointerEvent): void {
     if (!this.resizeState) return;
     const dx = this.resizeState.startX - ev.clientX;
-    const next = Math.max(PANEL_MIN, Math.min(PANEL_MAX, this.resizeState.startWidth + dx));
-    setStyle(this.panelRoot, '--panel-width', `${next}px`);
-    document.documentElement.style.setProperty('--panel-width', `${next}px`);
+    const next = Math.max(PANEL_MIN, Math.min(window.innerWidth - CANVAS_MIN, this.resizeState.startWidth + dx));
+    setStyle(this.panelRoot, 'width', `${next}px`);
   }
 
   private onResizeUp(): void {
@@ -553,8 +593,8 @@ export class UIManager {
     try {
       const raw = localStorage.getItem(PANEL_WIDTH_KEY);
       if (!raw) return;
-      const w = Math.max(PANEL_MIN, Math.min(PANEL_MAX, parseInt(raw, 10) || 360));
-      document.documentElement.style.setProperty('--panel-width', `${w}px`);
+      const w = Math.max(PANEL_MIN, Math.min(window.innerWidth - CANVAS_MIN, parseInt(raw, 10) || 400));
+      setStyle(this.panelRoot, 'width', `${w}px`);
     } catch {}
   }
 
@@ -689,6 +729,28 @@ export class UIManager {
     }
   }
 
+  setTalentAPI(api: TalentAPIDeps): void {
+    this.talentApi = api;
+    if (this.lastState && this.activeTab === 'talents') {
+      this.talentPanel.update(this.lastState);
+    }
+  }
+
+  setPassiveAPI(api: PassiveAPIDeps): void {
+    this.passiveApi = api;
+    if (this.lastState && this.activeTab === 'passives') {
+      this.passivePanel.update(this.lastState);
+    }
+  }
+
+  setEquipmentAPI(api: EquipmentAPIDeps): void {
+    this.equipmentApi = api;
+    this.equipmentPanel.setDeps(api);
+    if (this.lastState && this.activeTab === 'equipment') {
+      this.equipmentPanel.update(this.lastState);
+    }
+  }
+
   getFpsElement(): HTMLElement {
     return this.hud.getFpsEl();
   }
@@ -746,10 +808,27 @@ export class UIManager {
     if (this.uiFrameCounter % this.UI_UPDATE_INTERVAL !== 0) return;
 
     this.hud.update(state);
+    // Update talent points badge
+    const badge = this.tabsRoot.querySelector<HTMLElement>('[data-tab-badge="talents"]');
+    if (badge) {
+      const pts = state.towerXp?.unspentTalentPoints ?? 0;
+      if (pts > 0) {
+        badge.textContent = String(pts);
+        toggleClass(badge, 'is-visible', true);
+      } else {
+        toggleClass(badge, 'is-visible', false);
+      }
+    }
     if (this.activeTab === 'upgrades') {
       this.upgradePanel.update(state);
     } else if (this.activeTab === 'abilities') {
       this.abilityPanel.update(state);
+    } else if (this.activeTab === 'talents') {
+      this.talentPanel.update(state);
+    } else if (this.activeTab === 'passives') {
+      this.passivePanel.update(state);
+    } else if (this.activeTab === 'equipment') {
+      this.equipmentPanel.update(state);
     } else if (this.activeTab === 'prestige') {
       this.prestigePanel.update(state);
     } else if (this.activeTab === 'transcendence') {
@@ -833,6 +912,12 @@ export class UIManager {
       btn.className = 'tab-btn';
       btn.textContent = t.label;
       btn.dataset.tab = t.id;
+      if (t.id === 'talents') {
+        const badge = document.createElement('span');
+        badge.className = 'tab-badge';
+        badge.dataset.tabBadge = 'talents';
+        btn.appendChild(badge);
+      }
       btn.addEventListener('click', () => {
         if (hasClass(btn, 'tab-locked')) return;
         this.showTab(t.id);
@@ -855,6 +940,15 @@ export class UIManager {
     } else if (id === 'abilities') {
       this.abilityPanel.mount(this.contentRoot);
       if (this.lastState) this.abilityPanel.update(this.lastState);
+    } else if (id === 'talents') {
+      this.talentPanel.mount(this.contentRoot);
+      if (this.lastState) this.talentPanel.update(this.lastState);
+    } else if (id === 'passives') {
+      this.passivePanel.mount(this.contentRoot);
+      if (this.lastState) this.passivePanel.update(this.lastState);
+    } else if (id === 'equipment') {
+      this.equipmentPanel.mount(this.contentRoot);
+      if (this.lastState) this.equipmentPanel.update(this.lastState);
     } else if (id === 'prestige') {
       this.prestigePanel.mount(this.contentRoot);
       if (this.lastState) this.prestigePanel.update(this.lastState);

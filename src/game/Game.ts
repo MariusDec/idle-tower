@@ -1,4 +1,4 @@
-import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot } from '../types';
+import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, Equipment } from '../types';
 import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
 import { TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
@@ -26,6 +26,10 @@ import { UIManager } from '../ui/UIManager';
 import { isBossWave } from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
 import { AudioManager } from '../systems/AudioManager';
+import { TowerXpManager } from '../systems/TowerXpManager';
+import { TalentManager } from '../systems/TalentManager';
+import { PassiveAbilityManager } from '../systems/PassiveAbilityManager';
+import { EquipmentManager } from '../systems/EquipmentManager';
 import { formatInt } from '../utils/bigNumber';
 import { setStyle, toggleClass } from '../utils/dom';
 import { pickRandomModifiers, snapshotFromDef } from '../data/waveModifiers';
@@ -108,6 +112,11 @@ function makeInitialState(): GameState {
     achievements: [],
     runHistory: [],
     runStartedAt: Date.now(),
+    towerXp: { xp: 0, level: 0, unspentTalentPoints: 0, totalXpEarned: 0 },
+    talents: { allocated: {} },
+    passiveAbilities: {},
+    equipment: [],
+    equipped: {},
   };
 }
 
@@ -140,6 +149,10 @@ export class Game {
   private readonly saveMgr: SaveManager;
   private readonly achievementMgr: AchievementManager;
   private readonly audio: AudioManager;
+  private readonly towerXpMgr: TowerXpManager;
+  private readonly talentMgr: TalentManager;
+  private readonly passiveMgr: PassiveAbilityManager;
+  private readonly equipmentMgr: EquipmentManager;
   private readonly waveModModal: WaveModifierModal;
 
   private lastTime = 0;
@@ -250,6 +263,7 @@ export class Game {
       enemies: this.enemyMgr,
       tower: this.tower,
       bus: this.bus,
+      projectileManager: this.projectileMgr,
       getState: (id) => this.state.abilities[id],
       onCast: () => {
         this.state.stats.abilitiesCast += 1;
@@ -277,6 +291,14 @@ export class Game {
       researchCount: () => Object.keys(this.state.research).length,
     });
     this.audio = new AudioManager(this.bus);
+    this.towerXpMgr = new TowerXpManager(this.state.towerXp, this.bus);
+    this.talentMgr = new TalentManager(this.state.talents, this.bus, {
+      towerXpUnspentPoints: () => this.state.towerXp.unspentTalentPoints,
+      spendTalentPoint: () => this.towerXpMgr.spendTalentPoint(),
+    });
+    this.passiveMgr = new PassiveAbilityManager(this.state.passiveAbilities, this.bus);
+    this.passiveMgr.ensureInitialized();
+    this.equipmentMgr = new EquipmentManager(this.state.equipment, this.state.equipped, this.bus);
 
     this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
     this.state.upgrades = this.upgradeMgr.snapshot();
@@ -340,6 +362,11 @@ export class Game {
         this.bus.emit('boss_killed', { x: e.x, y: e.y, goldValue: e.goldValue ?? def.baseGold });
         // Death slow-mo + screen flash (P3 + P5)
         this.triggerBossDeathSlowMo();
+        // Equipment drop
+        const eqDrop = this.equipmentMgr.rollDrop(this.waveMgr.currentWave, 'boss');
+        if (eqDrop) {
+          this.bus.emit('toast', { kind: 'milestone', text: `Equipment dropped: ${eqDrop.rarity}!`, life: 4 });
+        }
         if (this.state.stats.bossesKilled === 1) {
           this.bus.emit('toast', { kind: 'milestone', text: 'First boss defeated! +200g', life: 5 });
         } else {
@@ -358,6 +385,10 @@ export class Game {
         }
         this.effects.emitSplitBurst(e.x, e.y);
       }
+
+      // Tower XP & passive ability XP
+      this.towerXpMgr.addKillXp(e.type as EnemyType, this.waveMgr.currentWave);
+      this.passiveMgr.addKillXp(e.type as EnemyType, this.waveMgr.currentWave);
 
       this.effects.emitDeathBurst(e.x, e.y, def.color, def.radius);
 
@@ -538,6 +569,9 @@ export class Game {
         wms.pendingChoiceForWave = null;
         wms.goldSnapshot = null;
       }
+      // Tower XP & passive ability XP from wave clear
+      this.towerXpMgr.addWaveClearXp(cleared);
+      this.passiveMgr.addWaveClearXp(cleared);
     });
     this.bus.on('wave_modifier_offer', (nextWave: unknown) => {
       const w = nextWave as number;
@@ -571,6 +605,12 @@ export class Game {
         text: `Evolution! ${p.evolution.name} — ${p.evolution.description}`,
         life: 5,
       });
+    });
+    this.bus.on('equipment_equipped', () => {
+      this.applyUpgradeEffects();
+    });
+    this.bus.on('equipment_unequipped', () => {
+      this.applyUpgradeEffects();
     });
     this.bus.on('research_unlocked', (payload: unknown) => {
       const p = payload as { id: string; level: number };
@@ -1112,6 +1152,16 @@ export class Game {
     this.researchAnnounced.clear();
     this.achievementMgr.reset();
 
+    // v6+: Reset RPG state to fresh defaults
+    Object.assign(this.state.towerXp, fresh.towerXp);
+    this.state.talents.allocated = {};
+    const pa = this.state.passiveAbilities;
+    for (const k of Object.keys(pa)) delete pa[k];
+    this.passiveMgr.ensureInitialized();
+    this.state.equipment.length = 0;
+    const eqMap = this.state.equipped;
+    for (const k of Object.keys(eqMap)) delete (eqMap as Record<string, Equipment>)[k];
+
     this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
     this.applyUpgradeEffects();
     this.state.upgrades = this.upgradeMgr.snapshot();
@@ -1269,6 +1319,34 @@ export class Game {
       isMaxed: (id) => this.abilityMgr.isMaxed(id),
       getUpgradeCost: (id) => this.abilityMgr.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityMgr.getEffectiveStats(id),
+    });
+    this.ui.setTalentAPI({
+      allocated: this.state.talents.allocated,
+      unspentPoints: this.state.towerXp.unspentTalentPoints,
+      canAllocate: (id) => this.talentMgr.canAllocate(id),
+      allocate: (id) => this.talentMgr.allocate(id),
+      refundBranch: (branch) => this.talentMgr.refundBranch(branch),
+    });
+    this.ui.setPassiveAPI({
+      getLevel: (id) => this.passiveMgr.getLevel(id),
+      getXp: (id) => this.passiveMgr.getXp(id),
+      highestWave: this.state.wave.highestWave,
+    });
+    this.ui.setEquipmentAPI({
+      inventory: this.state.equipment,
+      equipped: this.state.equipped,
+      equip: (slot: EquipmentSlot, id: string) => this.equipmentMgr.equip(slot, id),
+      unequip: (slot: EquipmentSlot) => this.equipmentMgr.unequip(slot),
+      getSellValue: (id: string) => this.equipmentMgr.getSellValue(id),
+      onSell: (id: string) => {
+        const gold = this.equipmentMgr.sell(id);
+        if (gold > 0) {
+          this.state.resources.gold += gold;
+          this.state.resources.lifetimeGold += gold;
+          this.state.stats.goldEarned += gold;
+          this.bus.emit('gold_changed', this.state.resources.gold);
+        }
+      },
     });
   }
 
@@ -1495,6 +1573,106 @@ export class Game {
       }
     }
 
+    // Talent bonuses
+    const tDmg = this.talentMgr.getEffectValue('base_damage_pct');
+    if (tDmg > 0) t.baseDamage *= 1 + tDmg;
+    const tAllDmg = this.talentMgr.getEffectValue('all_damage_pct');
+    if (tAllDmg > 0) t.baseDamage *= 1 + tAllDmg;
+    const tMagicDmg = this.talentMgr.getEffectValue('magic_damage_pct');
+    if (tMagicDmg > 0) t.baseDamage *= 1 + tMagicDmg;
+    const tAllMagic = this.talentMgr.getEffectValue('all_magic_pct');
+    if (tAllMagic > 0) t.baseDamage *= 1 + tAllMagic;
+    const tFireRate = this.talentMgr.getEffectValue('fire_rate_pct');
+    if (tFireRate > 0) t.fireRate *= 1 + tFireRate;
+    const tCritChance = this.talentMgr.getEffectValue('crit_chance_pct');
+    if (tCritChance > 0) t.critChance = Math.min(1, t.critChance + tCritChance);
+    const tCritDmg = this.talentMgr.getEffectValue('crit_damage_pct');
+    if (tCritDmg > 0) t.critMultiplier += tCritDmg;
+    const tRange = this.talentMgr.getEffectValue('range_pct');
+    if (tRange > 0) t.range *= 1 + tRange;
+    const tMaxHpPct = this.talentMgr.getEffectValue('max_hp_pct');
+    if (tMaxHpPct > 0) {
+      const oldMaxHpT = t.maxHp;
+      t.maxHp *= 1 + tMaxHpPct;
+      if (t.hp === oldMaxHpT) t.hp = t.maxHp;
+    }
+    const tDefense = this.talentMgr.getEffectValue('defense_pct');
+    if (tDefense > 0) t.defense *= 1 + tDefense;
+    const tArmor = this.talentMgr.getEffectValue('armor_pct');
+    if (tArmor > 0) t.armor *= 1 + tArmor;
+    const tThorns = this.talentMgr.getEffectValue('thorns_pct');
+    if (tThorns > 0) t.thorns *= 1 + tThorns;
+    const tGoldMult = this.talentMgr.getEffectValue('gold_mult_pct');
+    if (tGoldMult > 0) {
+      const goldMult = 1 + tGoldMult;
+      this.enemyMgr.setGoldMultipliers(totalGoldAdditive * goldMult, 1);
+    }
+    const tManaRegen = this.talentMgr.getEffectValue('mana_regen_pct');
+    if (tManaRegen > 0) {
+      this.state.resources.manaRegen *= 1 + tManaRegen;
+    }
+    const tManaCostRed = this.talentMgr.getEffectValue('mana_cost_reduction');
+    if (tManaCostRed > 0) {
+      this.abilityMgr.setAbilityCostMultiplier((1 - totalAbilityCostReduction) * (1 - tManaCostRed));
+    }
+
+    // Passive ability bonuses
+    const pDmg = this.passiveMgr.getEffectValue('damage_pct');
+    if (pDmg > 0) t.baseDamage *= 1 + pDmg / 100;
+    const pMaxHp = this.passiveMgr.getEffectValue('max_hp_pct');
+    if (pMaxHp > 0) {
+      const oldMaxHpP = t.maxHp;
+      t.maxHp *= 1 + pMaxHp / 100;
+      if (t.hp === oldMaxHpP) t.hp = t.maxHp;
+    }
+    const pManaRegen = this.passiveMgr.getEffectValue('mana_regen_pct');
+    if (pManaRegen > 0) {
+      this.state.resources.manaRegen *= 1 + pManaRegen / 100;
+      this.state.resources.maxMana = 100;
+    }
+    const pGoldMult = this.passiveMgr.getEffectValue('gold_mult_pct');
+    if (pGoldMult > 0) {
+      this.enemyMgr.setGoldMultipliers(totalGoldAdditive * (1 + pGoldMult / 100), 1);
+    }
+    const pThorns = this.passiveMgr.getEffectValue('thorns_pct');
+    if (pThorns > 0) t.thorns += pThorns;
+    const pCritChance = this.passiveMgr.getEffectValue('crit_chance_pct');
+    if (pCritChance > 0) t.critChance = Math.min(1, t.critChance + pCritChance / 100);
+    const pFireRate = this.passiveMgr.getEffectValue('fire_rate_pct');
+    if (pFireRate > 0) t.fireRate *= 1 + pFireRate / 100;
+    const pLifesteal = this.passiveMgr.getEffectValue('lifesteal_pct');
+    if (pLifesteal > 0) t.lifesteal += pLifesteal;
+
+    // Equipment bonuses
+    const eqBonuses = this.equipmentMgr.getEquippedBonuses();
+    const applyEq = (stat: string, pct: number | undefined) => {
+      if (!pct || pct <= 0) return;
+      switch (stat) {
+        case 'damage_pct': t.baseDamage *= 1 + pct / 100; break;
+        case 'fire_rate_pct': t.fireRate *= 1 + pct / 100; break;
+        case 'crit_chance_pct': t.critChance = Math.min(1, t.critChance * (1 + pct / 100)); break;
+        case 'crit_damage_pct': t.critMultiplier *= 1 + pct / 100; break;
+        case 'range_pct': t.range *= 1 + pct / 100; break;
+        case 'max_hp_pct': {
+          const oldMax = t.maxHp;
+          t.maxHp *= 1 + pct / 100;
+          if (t.hp === oldMax) t.hp = t.maxHp;
+          break;
+        }
+        case 'defense_pct': t.defense *= 1 + pct / 100; break;
+        case 'armor_pct': t.armor *= 1 + pct / 100; break;
+        case 'gold_mult_pct': this.enemyMgr.setGoldMultipliers(totalGoldAdditive * (1 + pct / 100), 1); break;
+        case 'mana_regen_pct': this.state.resources.manaRegen *= 1 + pct / 100; break;
+        case 'lifesteal_pct': t.lifesteal *= 1 + pct / 100; break;
+        case 'thorns_pct': t.thorns *= 1 + pct / 100; break;
+        case 'knockback_pct': t.knockbackForce *= 1 + pct / 100; break;
+        case 'all_damage_pct': t.baseDamage *= 1 + pct / 100; break;
+      }
+    };
+    for (const [stat, val] of Object.entries(eqBonuses)) {
+      applyEq(stat, val as number | undefined);
+    }
+
     this.state.research = this.researchTree.getLevelsSnapshot();
   }
 
@@ -1528,6 +1706,8 @@ export class Game {
     this.projectileMgr.reset();
     this.abilityMgr.reset();
     this.effects.reset();
+    this.passiveMgr.reset();
+    this.equipmentMgr.reset();
     this.mines = [];
     this.reviveUsed = false;
     this.killStreak = 0;
@@ -1738,6 +1918,39 @@ export class Game {
 
     this.upgradeMgr.replaceLevels(this.state.upgrades);
     this.abilityMgr.reset();
+
+    // v6+: Restore RPG state
+    Object.assign(this.state.towerXp, persisted.towerXp ?? { xp: 0, level: 0, unspentTalentPoints: 0, totalXpEarned: 0 });
+    this.state.talents.allocated = { ...(persisted.talents?.allocated ?? {}) };
+
+    // Clear and repopulate passiveAbilities (manager holds reference)
+    const pa = this.state.passiveAbilities;
+    for (const k of Object.keys(pa)) delete pa[k];
+    if (persisted.passiveAbilities) {
+      for (const [id, v] of Object.entries(persisted.passiveAbilities)) {
+        pa[id] = { level: v.level, xp: v.xp };
+      }
+    }
+    this.passiveMgr.ensureInitialized();
+
+    // Clear and repopulate equipment (manager holds reference)
+    this.state.equipment.length = 0;
+    if (persisted.equipment) {
+      for (const eq of persisted.equipment) {
+        this.state.equipment.push({ ...eq, stats: [...eq.stats] });
+      }
+    }
+
+    // Clear and repopulate equipped (manager holds reference)
+    const eqMap = this.state.equipped;
+    for (const k of Object.keys(eqMap)) delete (eqMap as Record<string, Equipment>)[k];
+    if (persisted.equipped) {
+      for (const [slot, eq] of Object.entries(persisted.equipped)) {
+        if (eq && typeof eq !== 'string') {
+          (eqMap as Record<string, Equipment>)[slot] = eq;
+        }
+      }
+    }
   }
 
   private loop = (): void => {

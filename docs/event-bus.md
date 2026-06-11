@@ -46,3 +46,10 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `welcome_back` | `{ result, startWave, endWave }` | Game | UIManager (modal) |
 | `run_ended` | `{ record: RunRecord, previous: RunRecord \| null }` | Game (ascend/transcend) | UIManager (RunSummaryModal) |
 | `save_failed` | `{ success }` | SaveManager | — |
+| `tower_leveled` | `{ level, xp, talentPoints }` | TowerXpManager | — |
+| `talent_allocated` | `{ talentId, points, totalSpent }` | TalentManager | — |
+| `passive_leveled` | `{ id, level }` | PassiveAbilityManager | — |
+| `equipment_dropped` | `{ equipment }` | EquipmentManager | — |
+| `equipment_equipped` | `{ slot, equipment }` | EquipmentManager | — |
+| `equipment_unequipped` | `{ slot }` | EquipmentManager | — |
+| `multishot_fired` | `{ count, totalDamage }` | AbilityManager | — |

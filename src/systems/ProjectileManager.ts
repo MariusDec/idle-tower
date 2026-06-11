@@ -20,6 +20,9 @@ export interface FireOptions {
   variants?: ShotVariant[];
   aimX?: number;
   aimY?: number;
+  isHoming?: boolean;
+  turnRate?: number;
+  lifetime?: number;
 }
 
 export class ProjectileManager {
@@ -115,6 +118,10 @@ export class ProjectileManager {
         damageType: opts.damageType,
         isCrit: opts.isCrit,
         alive: true,
+        homingTargetId: opts.isHoming ? opts.targetId ?? undefined : undefined,
+        turnRate: opts.isHoming ? (opts.turnRate ?? Math.PI * 3) : undefined,
+        lifetime: opts.isHoming ? (opts.lifetime ?? 3) : undefined,
+        age: opts.isHoming ? 0 : undefined,
       };
 
       if (opts.piercing) {
@@ -133,6 +140,31 @@ export class ProjectileManager {
       if (!p.alive) continue;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
+
+      // Homing logic
+      if (p.homingTargetId !== undefined && p.turnRate !== undefined) {
+        p.age = (p.age ?? 0) + dt;
+        if (p.lifetime !== undefined && p.age >= p.lifetime) {
+          p.alive = false;
+          continue;
+        }
+        const target = this.enemies.list.find(e => e.alive && e.id === p.homingTargetId);
+        if (target) {
+          const dx = target.x - p.x;
+          const dy = target.y - p.y;
+          const desiredAngle = Math.atan2(dy, dx);
+          const currentAngle = Math.atan2(p.vy, p.vx);
+          let diff = desiredAngle - currentAngle;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          const maxTurn = p.turnRate * dt;
+          const clamped = Math.max(-maxTurn, Math.min(maxTurn, diff));
+          const newAngle = currentAngle + clamped;
+          const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+          p.vx = Math.cos(newAngle) * speed;
+          p.vy = Math.sin(newAngle) * speed;
+        }
+      }
 
       const hitSet = this.hitEnemies[p.id];
       const hits: Enemy[] = [];

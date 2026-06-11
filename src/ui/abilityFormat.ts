@@ -12,6 +12,7 @@ export const EFFECT_LABELS: Record<AbilityDef['effectType'], string> = {
   crit_buff: 'Crit chance',
   lifesteal_buff: 'Lifesteal',
   execute_damage: 'Threshold',
+  multishot: 'Projectiles',
 };
 
 export function renderAbilityTooltip(

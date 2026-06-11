@@ -7,13 +7,19 @@ import type {
   PrestigeState,
   GameStats,
   RunRecord,
+  TowerXpState,
+  TalentState,
+  PassiveAbilityState,
+  Equipment,
+  EquipmentSlot,
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
 import { enemyHPForWave, goldDropForWave } from '../data/formulas';
 import { ENEMY_DEFS } from '../data/enemies';
+import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 5;
+const SAVE_VERSION = 6;
 
 function defaultWaveModifier() {
   return { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null };
@@ -41,6 +47,16 @@ export interface PersistentState {
   runHistory?: RunRecord[];
   /** v3+: wall-clock time the current run started; reset on ascend/transcend. */
   runStartedAt?: number;
+  /** v6+: Tower XP and leveling state (permanent). */
+  towerXp: TowerXpState;
+  /** v6+: Talent tree allocation state (permanent). */
+  talents: TalentState;
+  /** v6+: Passive ability XP and levels (reset on ascend/transcend). */
+  passiveAbilities: Record<string, PassiveAbilityState>;
+  /** v6+: Equipment inventory (reset on ascend/transcend). */
+  equipment: Equipment[];
+  /** v6+: Currently equipped items keyed by slot. */
+  equipped: Partial<Record<EquipmentSlot, Equipment>>;
 }
 
 export interface OfflineResult {
@@ -121,6 +137,19 @@ function migrateV4toV5(data: Record<string, unknown>): void {
   }
 }
 
+function migrateV5toV6(data: Record<string, unknown>): void {
+  data.towerXp = data.towerXp ?? { xp: 0, level: 0, unspentTalentPoints: 0, totalXpEarned: 0 };
+  data.talents = data.talents ?? { allocated: {} };
+  data.passiveAbilities = data.passiveAbilities ?? {};
+  data.equipment = data.equipment ?? [];
+  data.equipped = data.equipped ?? {};
+  // Initialize all passive entries
+  for (const def of PASSIVE_ABILITIES) {
+    const pa = data.passiveAbilities as Record<string, unknown>;
+    if (!pa[def.id]) pa[def.id] = { level: 0, xp: 0 };
+  }
+}
+
 function computeRPGainMultiplier(research: Record<string, number>): number {
   let sum = 0;
   for (const [id, level] of Object.entries(research)) {
@@ -137,7 +166,7 @@ function computeRPGainMultiplier(research: Record<string, number>): number {
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -152,32 +181,19 @@ function validate(data: unknown): data is PersistentState {
     (data as Record<string, unknown>).achievements = [];
   }
 
-  if (data.version === 2) {
-    migrateToV3(data);
-    data.version = 3;
-  }
-  if (data.version === 3) {
-    migrateV3toV4(data as Record<string, unknown>);
-    data.version = 4;
-  }
-  if (data.version === 4 || data.version === 3 || data.version === 2) {
-    migrateV4toV5(data as Record<string, unknown>);
-    data.version = SAVE_VERSION;
-  } else {
-    if (!Array.isArray((data as Record<string, unknown>).runHistory)) {
-      (data as Record<string, unknown>).runHistory = [];
-    }
-    if (typeof (data as Record<string, unknown>).runStartedAt !== 'number') {
-      (data as Record<string, unknown>).runStartedAt = Date.now();
-    }
-    if (typeof (data as Record<string, unknown>).rp !== 'number') {
-      (data as Record<string, unknown>).rp = 0;
-    }
-    const wave = (data as Record<string, unknown>).wave as Record<string, unknown> | undefined;
-    if (wave && !isObject(wave.waveModifier)) {
-      wave.waveModifier = defaultWaveModifier();
-    }
-  }
+  // Cascading migration ladder
+  if (data.version === 2) { migrateToV3(data); data.version = 3; }
+  if (data.version === 3) { migrateV3toV4(data); data.version = 4; }
+  if (data.version === 4) { migrateV4toV5(data); data.version = 5; }
+  if (data.version === 5) { migrateV5toV6(data); data.version = 6; }
+
+  // Ensure fallback fields exist (applies to all versions)
+  const d = data as Record<string, unknown>;
+  if (!Array.isArray(d.runHistory)) d.runHistory = [];
+  if (typeof d.runStartedAt !== 'number') d.runStartedAt = Date.now();
+  if (typeof d.rp !== 'number') d.rp = 0;
+  const wave = d.wave as Record<string, unknown> | undefined;
+  if (wave && !isObject(wave.waveModifier)) wave.waveModifier = defaultWaveModifier();
 
   return true;
 }
@@ -218,7 +234,22 @@ export class SaveManager {
       achievements: [...(state.achievements ?? [])],
       runHistory: [...(state.runHistory ?? [])].slice(-MAX_RUN_HISTORY),
       runStartedAt: state.runStartedAt ?? state.stats.runStartedAt ?? Date.now(),
+      towerXp: { ...state.towerXp },
+      talents: { allocated: { ...state.talents.allocated } },
+      passiveAbilities: this.snapshotPassives(state.passiveAbilities),
+      equipment: state.equipment.map(e => ({ ...e, stats: [...e.stats] })),
+      equipped: Object.fromEntries(
+        Object.entries(state.equipped).map(([slot, eq]) => [slot, { ...eq!, stats: [...eq!.stats] }]),
+      ) as Partial<Record<EquipmentSlot, Equipment>>,
     };
+  }
+
+  private snapshotPassives(passives: Record<string, PassiveAbilityState>): Record<string, PassiveAbilityState> {
+    const out: Record<string, PassiveAbilityState> = {};
+    for (const id of Object.keys(passives)) {
+      out[id] = { level: passives[id].level, xp: passives[id].xp };
+    }
+    return out;
   }
 
   private snapshotAbilities(abilities: Record<string, AbilityState>): Record<string, AbilityState> {

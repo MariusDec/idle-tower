@@ -12,12 +12,14 @@ import { EventBus } from '../game/EventBus';
 import type { ResourceManager } from './ResourceManager';
 import type { EnemyManager } from './EnemyManager';
 import type { Tower } from './Tower';
+import type { ProjectileManager } from './ProjectileManager';
 
 interface AbilityManagerDeps {
   resources: ResourceManager;
   enemies: EnemyManager;
   tower: Tower;
   bus: EventBus;
+  projectileManager: ProjectileManager;
   getState: (id: AbilityId) => AbilityState;
   onCast: (id: AbilityId) => void;
 }
@@ -37,6 +39,7 @@ export class AbilityManager {
   private readonly enemies: EnemyManager;
   private readonly tower: Tower;
   private readonly bus: EventBus;
+  private readonly projectileMgr: ProjectileManager;
   private readonly getState: (id: AbilityId) => AbilityState;
   private readonly onCast: (id: AbilityId) => void;
   private goldBuffMultiplier = 1;
@@ -57,6 +60,7 @@ export class AbilityManager {
     this.enemies = deps.enemies;
     this.tower = deps.tower;
     this.bus = deps.bus;
+    this.projectileMgr = deps.projectileManager;
     this.getState = deps.getState;
     this.onCast = deps.onCast;
   }
@@ -305,6 +309,9 @@ export class AbilityManager {
       case 'execute_damage':
         this.applyExecute(value);
         return null;
+      case 'multishot':
+        this.applyMultishot(value);
+        return null;
     }
   }
 
@@ -490,6 +497,52 @@ export class AbilityManager {
     }
     if (kills > 0 || totalDamage > 0) {
       this.bus.emit('execute_hit', { kills, totalDamage });
+    }
+  }
+
+  private applyMultishot(value: number): void {
+    const count = Math.floor(value);
+    const towerState = this.tower.snapshot;
+    const alive = this.enemies.list.filter(e => e.alive);
+    let totalDamage = 0;
+    const fired: Array<{ id: number }> = [];
+
+    if (alive.length === 0) {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const rawDamage = towerState.baseDamage * 2 * this.damageMultiplier;
+        totalDamage += rawDamage;
+        this.projectileMgr.fire(null, towerState, {
+          rawDamage,
+          damageType: towerState.damageType,
+          isCrit: false,
+          targetId: null,
+          isHoming: false,
+          aimX: towerState.x + Math.cos(angle) * 100,
+          aimY: towerState.y + Math.sin(angle) * 100,
+        });
+      }
+    } else {
+      const shuffled = [...alive].sort(() => Math.random() - 0.5);
+      for (let i = 0; i < count; i++) {
+        const target = i < shuffled.length ? shuffled[i] : alive[Math.floor(Math.random() * alive.length)];
+        const rawDamage = towerState.baseDamage * 2 * this.damageMultiplier;
+        totalDamage += rawDamage;
+        this.projectileMgr.fire(target, towerState, {
+          rawDamage,
+          damageType: towerState.damageType,
+          isCrit: false,
+          targetId: target.id,
+          isHoming: true,
+          turnRate: Math.PI * 3,
+          lifetime: 3,
+        });
+        fired.push({ id: target.id });
+      }
+    }
+
+    if (fired.length > 0 || count > 0) {
+      this.bus.emit('multishot_fired', { count: Math.max(fired.length, count), totalDamage });
     }
   }
 

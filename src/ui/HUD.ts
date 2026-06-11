@@ -1,6 +1,7 @@
 import type { GameState, StatsInfo, EnemyWaveStatsEntry } from '../types';
 import { formatNumber } from '../utils/bigNumber';
 import type { SpeedAPI, WaveControlAPI } from './UIManager';
+import { TOWER_XP_TABLE, xpForNextLevel, xpToLevel } from '../data/xpTables';
 import {
   hasClass,
   setDisplay,
@@ -25,6 +26,9 @@ export class HUD {
   private manaEl!: HTMLElement;
   private manaBarFill!: HTMLElement;
   private manaWrap!: HTMLElement;
+  private xpBarFill!: HTMLElement;
+  private xpPctEl!: HTMLElement;
+  private xpLevelEl!: HTMLElement;
   private waveEl!: HTMLElement;
   private dpsEl!: HTMLElement;
   private killsEl!: HTMLElement;
@@ -56,6 +60,8 @@ export class HUD {
   private onPrevWave: () => void = () => {};
   private onNextWave: () => void = () => {};
   private onToggleAutoProgress: () => void = () => {};
+  private displayXpProgress = 0;
+  private displayXpNeeded = 1;
   private speedLabelEl!: HTMLElement;
   private speedDecBtn!: HTMLButtonElement;
   private speedIncBtn!: HTMLButtonElement;
@@ -226,11 +232,24 @@ export class HUD {
     this.displayMana += (state.resources.mana - this.displayMana) * manaAlpha;
     this.displayHP += (state.tower.hp - this.displayHP) * hpAlpha;
     this.displayMaxHP += (state.tower.maxHp - this.displayMaxHP) * hpAlpha;
-    this.displayWave += (state.wave.number - this.displayWave) * waveAlpha;
+      this.displayWave += (state.wave.number - this.displayWave) * waveAlpha;
+    const tx = state.towerXp;
+    if (tx) {
+      this.displayXpNeeded = xpForNextLevel(tx.level);
+      if (xpToLevel(tx.xp) > tx.level) {
+        this.displayXpProgress = 1;
+      } else {
+        const xpIntoLevel = tx.xp - TOWER_XP_TABLE[tx.level];
+        this.displayXpProgress = this.displayXpNeeded > 0 && this.displayXpNeeded !== Infinity
+          ? Math.min(1, xpIntoLevel / this.displayXpNeeded)
+          : 1;
+      }
+    }
   }
 
   update(state: GameState): void {
     const manaUnlocked = state.wave.highestWave >= MANA_UNLOCK_WAVE;
+    this.updateXpBar(state);
     toggleClass(this.manaWrap, 'is-locked', !manaUnlocked);
     setText(this.goldEl, formatNumber(this.displayGold));
     if (manaUnlocked) {
@@ -300,6 +319,22 @@ export class HUD {
     } else {
       setText(this.waveStatusEl, '');
       toggleClass(this.waveStatusEl, 'is-warning', false);
+    }
+  }
+
+  private updateXpBar(state: GameState): void {
+    const tx = state.towerXp;
+    if (!tx) return;
+    const pct = tx.level > 0 && tx.level >= 2000 ? 100 : (this.displayXpProgress * 100);
+    setText(this.xpLevelEl, `Lv.${tx.level}`);
+    setStyle(this.xpBarFill, 'width', `${pct}%`);
+    const needed = this.displayXpNeeded;
+    if (needed > 0 && needed !== Infinity) {
+      const xpIntoLevel = Math.max(0, tx.xp - TOWER_XP_TABLE[tx.level]);
+      const currentXp = Math.min(xpIntoLevel, needed);
+      setText(this.xpPctEl, `${Math.floor(currentXp)} / ${needed} XP`);
+    } else {
+      setText(this.xpPctEl, `MAX LEVEL`);
     }
   }
 
@@ -464,6 +499,33 @@ export class HUD {
     manaBar.appendChild(this.manaBarFill);
     manaWrap.appendChild(manaBar);
     this.root.appendChild(manaWrap);
+
+    // Tower XP bar
+    const xpWrap = document.createElement('div');
+    xpWrap.className = 'hud-xp';
+    const xpRow = document.createElement('div');
+    xpRow.className = 'hud-xp-row';
+    const xpLabel = document.createElement('span');
+    xpLabel.className = 'hud-xp-label';
+    xpLabel.textContent = 'Tower XP';
+    this.xpLevelEl = document.createElement('span');
+    this.xpLevelEl.className = 'hud-xp-level';
+    this.xpLevelEl.textContent = 'Lv.1';
+    xpRow.appendChild(xpLabel);
+    xpRow.appendChild(this.xpLevelEl);
+    const xpPct = document.createElement('span');
+    xpPct.className = 'hud-xp-pct';
+    this.xpPctEl = xpPct;
+    xpPct.textContent = '0%';
+    xpRow.appendChild(xpPct);
+    xpWrap.appendChild(xpRow);
+    const xpBar = document.createElement('div');
+    xpBar.className = 'xp-bar';
+    this.xpBarFill = document.createElement('div');
+    this.xpBarFill.className = 'xp-bar-fill';
+    xpBar.appendChild(this.xpBarFill);
+    xpWrap.appendChild(xpBar);
+    this.root.appendChild(xpWrap);
 
     const groupRight = document.createElement('div');
     groupRight.className = 'hud-group right';
