@@ -12,14 +12,16 @@ import type {
   PassiveAbilityState,
   Equipment,
   EquipmentSlot,
+  EnemyType,
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
-import { enemyHPForWave, goldDropForWave } from '../data/formulas';
+import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBossWave } from '../data/formulas';
 import { ENEMY_DEFS } from '../data/enemies';
 import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
+import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 6;
+const SAVE_VERSION = 7;
 
 function defaultWaveModifier() {
   return { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null };
@@ -67,6 +69,7 @@ export interface OfflineResult {
   wavesCleared: number;
   rpEarned: number;
   researchElapsed: number;
+  xpEarned: number;
 }
 
 function isStorageAvailable(): boolean {
@@ -91,6 +94,48 @@ function estimateGoldPerDamage(wave: number): number {
   const gold = goldDropForWave(def.baseGold, wave);
   if (hp <= 0) return 0;
   return gold / hp;
+}
+
+function averageKillXPForWave(wave: number): number {
+  if (isBossWave(wave)) return xpPerKill('boss', wave);
+  const available: EnemyType[] = ['normal'];
+  if (wave >= 3) available.push('fast');
+  if (wave >= 5) available.push('tank');
+  if (wave >= 8) available.push('flying');
+  if (wave >= 12) available.push('splitter');
+  if (wave >= 15) available.push('healer');
+  if (wave >= 20) available.push('shielded');
+  const weights: Record<EnemyType, number> = {
+    normal: 6, fast: 3, tank: 2, flying: 2, healer: 1, splitter: 2, shielded: 1, boss: 0,
+  };
+  let totalWeight = 0;
+  let weightedXp = 0;
+  for (const t of available) {
+    totalWeight += weights[t];
+    weightedXp += weights[t] * xpPerKill(t, wave);
+  }
+  return totalWeight > 0 ? weightedXp / totalWeight : 0;
+}
+
+function averageKillHPForWave(wave: number): number {
+  if (isBossWave(wave)) return bossHPForWave(ENEMY_DEFS.boss.baseHP, wave);
+  const available: EnemyType[] = ['normal'];
+  if (wave >= 3) available.push('fast');
+  if (wave >= 5) available.push('tank');
+  if (wave >= 8) available.push('flying');
+  if (wave >= 12) available.push('splitter');
+  if (wave >= 15) available.push('healer');
+  if (wave >= 20) available.push('shielded');
+  const weights: Record<EnemyType, number> = {
+    normal: 6, fast: 3, tank: 2, flying: 2, healer: 1, splitter: 2, shielded: 1, boss: 0,
+  };
+  let totalWeight = 0;
+  let weightedHp = 0;
+  for (const t of available) {
+    totalWeight += weights[t];
+    weightedHp += weights[t] * enemyHPForWave(ENEMY_DEFS[t].baseHP, wave);
+  }
+  return totalWeight > 0 ? weightedHp / totalWeight : 0;
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -150,6 +195,17 @@ function migrateV5toV6(data: Record<string, unknown>): void {
   }
 }
 
+function migrateV6toV7(data: Record<string, unknown>): void {
+  const pa = data.passiveAbilities as Record<string, Record<string, unknown>> | undefined;
+  if (!pa) return;
+  for (const key of Object.keys(pa)) {
+    const entry = pa[key];
+    if (entry && entry.unlocked === undefined) {
+      entry.unlocked = false;
+    }
+  }
+}
+
 function computeRPGainMultiplier(research: Record<string, number>): number {
   let sum = 0;
   for (const [id, level] of Object.entries(research)) {
@@ -166,7 +222,7 @@ function computeRPGainMultiplier(research: Record<string, number>): number {
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -186,6 +242,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 3) { migrateV3toV4(data); data.version = 4; }
   if (data.version === 4) { migrateV4toV5(data); data.version = 5; }
   if (data.version === 5) { migrateV5toV6(data); data.version = 6; }
+  if (data.version === 6) { migrateV6toV7(data); data.version = 7; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -247,7 +304,7 @@ export class SaveManager {
   private snapshotPassives(passives: Record<string, PassiveAbilityState>): Record<string, PassiveAbilityState> {
     const out: Record<string, PassiveAbilityState> = {};
     for (const id of Object.keys(passives)) {
-      out[id] = { level: passives[id].level, xp: passives[id].xp };
+      out[id] = { level: passives[id].level, xp: passives[id].xp, unlocked: passives[id].unlocked };
     }
     return out;
   }
@@ -344,6 +401,7 @@ export class SaveManager {
         wavesCleared: 0,
         rpEarned: 0,
         researchElapsed: 0,
+        xpEarned: 0,
       };
     }
     const dps = estimateDPS(persisted.tower);
@@ -352,6 +410,10 @@ export class SaveManager {
     const goldPerDmg = estimateGoldPerDamage(wave);
     const goldEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * goldPerDmg));
     const wavesCleared = Math.max(0, Math.floor(elapsed / AVG_WAVE_DURATION));
+    const avgXp = averageKillXPForWave(wave);
+    const avgHp = averageKillHPForWave(wave);
+    const xpPerDmg = avgHp > 0 ? avgXp / avgHp : 0;
+    const xpEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * xpPerDmg));
     const lifetimeWave = persisted.stats.lifetimeHighestWave ?? 1;
     const rpGainMultiplier = computeRPGainMultiplier(persisted.research ?? {});
     const baseRPRate = 0.05 * lifetimeWave / 60;
@@ -364,6 +426,7 @@ export class SaveManager {
       wavesCleared,
       rpEarned,
       researchElapsed: elapsed,
+      xpEarned,
     };
   }
 
@@ -372,6 +435,43 @@ export class SaveManager {
       state.resources.gold += result.goldEarned;
       state.resources.lifetimeGold += result.goldEarned;
       state.stats.goldEarned += result.goldEarned;
+    }
+    if (result.xpEarned > 0) {
+      state.towerXp.xp += result.xpEarned;
+      state.towerXp.totalXpEarned += result.xpEarned;
+      const newLevel = xpToLevel(state.towerXp.xp);
+      while (state.towerXp.level < newLevel) {
+        state.towerXp.level += 1;
+        const expectedPoints = talentPointsAtLevel(state.towerXp.level);
+        const currentTotal = state.towerXp.level - 1 + state.towerXp.unspentTalentPoints;
+        if (expectedPoints > currentTotal) {
+          state.towerXp.unspentTalentPoints += expectedPoints - currentTotal;
+        } else {
+          state.towerXp.unspentTalentPoints += 1;
+        }
+      }
+    }
+    // Advance ability cooldowns by elapsed time
+    for (const ability of Object.values(state.abilities)) {
+      ability.cooldown = Math.max(0, ability.cooldown - result.elapsedSeconds);
+    }
+    // Grant passive ability XP for each estimated wave cleared
+    if (result.wavesCleared > 0) {
+      const wave = Math.max(1, state.wave.number);
+      for (let w = wave; w < wave + result.wavesCleared; w++) {
+        const enemyCount = Math.max(1, Math.floor(spawnCountForWave(w)));
+        for (const def of PASSIVE_ABILITIES) {
+          const pa = state.passiveAbilities[def.id];
+          if (!pa || !pa.unlocked || pa.level >= def.maxLevel) continue;
+          pa.xp += def.xpPerKill * enemyCount + def.xpPerWave;
+          while (pa.level < def.maxLevel) {
+            const needed = passiveXpForLevel(pa.level + 1);
+            if (pa.xp < needed) break;
+            pa.xp -= needed;
+            pa.level += 1;
+          }
+        }
+      }
     }
   }
 

@@ -27,7 +27,7 @@ import { BottomNav, type BottomNavItem } from './BottomNav';
 import { upcomingMilestones, milestoneAtWave } from '../data/milestones';
 import { EventBus } from '../game/EventBus';
 import { TalentPanel, type TalentAPIDeps } from './TalentPanel';
-import { PassivePanel, type PassiveAPIDeps } from './PassivePanel';
+import type { PassiveAPIDeps } from './PassivePanel';
 import { EquipmentPanel, type EquipmentAPIDeps } from './EquipmentPanel';
 import type { AutomationKey } from '../data/prestige';
 import type { EffectiveAbilityStats } from '../data/abilities';
@@ -42,9 +42,8 @@ interface TabDef {
 const TABS: TabDef[] = [
   { id: 'upgrades', label: 'Upgrades' },
   { id: 'research', label: 'Research' },
-  { id: 'abilities', label: 'Ability Mgmt' },
+  { id: 'abilities', label: 'Abilities' },
   { id: 'talents', label: 'Talents' },
-  { id: 'passives', label: 'Passives' },
   { id: 'equipment', label: 'Equipment' },
   { id: 'prestige', label: 'Prestige' },
   { id: 'transcendence', label: 'Transcendence' },
@@ -133,7 +132,6 @@ export class UIManager {
   private readonly statsPanel: StatsPanel;
   private readonly milestoneStrip: MilestoneStrip;
   private readonly talentPanel: TalentPanel;
-  private readonly passivePanel: PassivePanel;
   private readonly equipmentPanel: EquipmentPanel;
   private abilityBar: AbilityBar | null = null;
   private mobileSheet: MobileSheet | null = null;
@@ -187,6 +185,14 @@ export class UIManager {
     getLevel: () => 0,
     getXp: () => 0,
     highestWave: 0,
+    isUnlocked: () => false,
+    isMaxed: () => false,
+    canUnlock: () => false,
+    getUnlockCost: () => 0,
+    onUnlock: () => {},
+    getUpgradeCost: () => 0,
+    canUpgrade: () => false,
+    onUpgrade: () => {},
   };
   private equipmentApi: EquipmentAPIDeps = {
     inventory: [],
@@ -298,7 +304,7 @@ export class UIManager {
       isMaxed: (id) => this.abilityApi.isMaxed(id),
       getUpgradeCost: (id) => this.abilityApi.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityApi.getEffectiveStats(id),
-    });
+    }, this.passiveApi);
     this.prestigePanel = new PrestigePanel({
       onAscend: () => this.onAscend(),
       onSpend: (id) => this.onSpendAP(id),
@@ -340,7 +346,6 @@ export class UIManager {
     Object.defineProperty(researchHandlers, 'rpGainRate', { get: () => this.researchApi.rpGainRate, enumerable: true });
     this.researchPanel = new ResearchPanel(researchHandlers);
     this.talentPanel = new TalentPanel(this.talentApi);
-    this.passivePanel = new PassivePanel(this.passiveApi);
     this.equipmentPanel = new EquipmentPanel(this.equipmentApi);
     this.settingsPanel = new SettingsPanel({
       onClearSave: () => this.onClearSave(),
@@ -490,7 +495,6 @@ export class UIManager {
       { id: 'research', label: 'Research', render: (b) => this.mountMobileTab('research', b) },
       { id: 'abilities', label: 'Abilities', render: (b) => this.mountMobileTab('abilities', b) },
       { id: 'talents', label: 'Talents', render: (b) => this.mountMobileTab('talents', b) },
-      { id: 'passives', label: 'Passives', render: (b) => this.mountMobileTab('passives', b) },
       { id: 'equipment', label: 'Equipment', render: (b) => this.mountMobileTab('equipment', b) },
       { id: 'prestige', label: 'Prestige', render: (b) => this.mountMobileTab('prestige', b) },
       { id: 'transcendence', label: 'Transcendence', render: (b) => this.mountMobileTab('transcendence', b) },
@@ -513,7 +517,6 @@ export class UIManager {
       case 'research': this.researchPanel.mount(body); break;
       case 'abilities': this.abilityPanel.mount(body); break;
       case 'talents': this.talentPanel.mount(body); break;
-      case 'passives': this.passivePanel.mount(body); break;
       case 'equipment': this.equipmentPanel.mount(body); break;
       case 'prestige': this.prestigePanel.mount(body); break;
       case 'transcendence': this.transcendencePanel.mount(body); break;
@@ -527,7 +530,6 @@ export class UIManager {
         case 'research': this.researchPanel.update(this.lastState); break;
         case 'abilities': this.abilityPanel.update(this.lastState); break;
         case 'talents': this.talentPanel.update(this.lastState); break;
-        case 'passives': this.passivePanel.update(this.lastState); break;
         case 'equipment': this.equipmentPanel.update(this.lastState); break;
         case 'prestige': this.prestigePanel.update(this.lastState); break;
         case 'transcendence': this.transcendencePanel.update(this.lastState); break;
@@ -738,8 +740,9 @@ export class UIManager {
 
   setPassiveAPI(api: PassiveAPIDeps): void {
     this.passiveApi = api;
-    if (this.lastState && this.activeTab === 'passives') {
-      this.passivePanel.update(this.lastState);
+    this.abilityPanel.setPassiveDeps(api);
+    if (this.lastState && this.activeTab === 'abilities') {
+      this.abilityPanel.update(this.lastState);
     }
   }
 
@@ -825,8 +828,6 @@ export class UIManager {
       this.abilityPanel.update(state);
     } else if (this.activeTab === 'talents') {
       this.talentPanel.update(state);
-    } else if (this.activeTab === 'passives') {
-      this.passivePanel.update(state);
     } else if (this.activeTab === 'equipment') {
       this.equipmentPanel.update(state);
     } else if (this.activeTab === 'prestige') {
@@ -943,9 +944,6 @@ export class UIManager {
     } else if (id === 'talents') {
       this.talentPanel.mount(this.contentRoot);
       if (this.lastState) this.talentPanel.update(this.lastState);
-    } else if (id === 'passives') {
-      this.passivePanel.mount(this.contentRoot);
-      if (this.lastState) this.passivePanel.update(this.lastState);
     } else if (id === 'equipment') {
       this.equipmentPanel.mount(this.contentRoot);
       if (this.lastState) this.equipmentPanel.update(this.lastState);

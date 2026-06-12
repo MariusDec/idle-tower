@@ -73,7 +73,7 @@ requestAnimationFrame
 
 ## Speed System
 
-- `GAME_SPEEDS = [0.5, 1.0]` (default index 1, max index 1)
+- `GAME_SPEEDS = [0.5, 1.0, 1.5]` (default index 1, max index 1)
 - `maxSpeedIndex` can be increased by research
 - Speed affects the `dt` passed to `update()` but NOT rendering or UI
 

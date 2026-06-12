@@ -2,12 +2,12 @@ import type { EnemyType } from '../types';
 
 /**
  * Cumulative XP required to reach each level.
- * Formula: floor(100 * lv^1.5)
+ * Formula: floor(400 * lv^1.9)
  */
 export const TOWER_XP_TABLE: number[] = (() => {
   const table: number[] = [0];
-  for (let lv = 1; lv <= 2000; lv++) {
-    const needed = Math.floor(100 * Math.pow(lv, 1.5));
+  for (let lv = 1; lv <= 1999; lv++) {
+    const needed = Math.floor(100 * Math.pow(lv, 2));
     table.push(needed);
   }
   return table;

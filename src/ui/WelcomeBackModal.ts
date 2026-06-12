@@ -89,6 +89,20 @@ export class WelcomeBackModal {
     waveStat.appendChild(waveValue);
     stats.appendChild(waveStat);
 
+    const xpStat = document.createElement('div');
+    xpStat.className = 'welcome-stat';
+    const xpLabel = document.createElement('div');
+    xpLabel.className = 'welcome-stat-label';
+    xpLabel.textContent = 'Tower XP earned';
+    const xpValue = document.createElement('div');
+    xpValue.className = 'welcome-stat-value';
+    xpValue.textContent = data.result.xpEarned > 0
+      ? `${formatNumber(data.result.xpEarned)}`
+      : '0';
+    xpStat.appendChild(xpLabel);
+    xpStat.appendChild(xpValue);
+    stats.appendChild(xpStat);
+
     card.appendChild(stats);
 
     const efficiency = document.createElement('p');

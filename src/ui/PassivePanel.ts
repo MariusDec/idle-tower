@@ -1,12 +1,20 @@
 import type { GameState } from '../types';
 import { PASSIVE_ABILITIES, passiveEffectValue } from '../data/passiveAbilities';
 import { passiveXpForLevel } from '../data/xpTables';
-import { setText, toggleClass, setStyle } from '../utils/dom';
+import { setText, toggleClass, setStyle, setDisplay, setDisabled } from '../utils/dom';
 
 export interface PassiveAPIDeps {
   getLevel: (id: string) => number;
   getXp: (id: string) => number;
   highestWave: number;
+  isUnlocked: (id: string) => boolean;
+  isMaxed: (id: string) => boolean;
+  canUnlock: (id: string) => boolean;
+  getUnlockCost: (id: string) => number;
+  onUnlock: (id: string) => void;
+  getUpgradeCost: (id: string) => number;
+  canUpgrade: (id: string) => boolean;
+  onUpgrade: (id: string) => void;
 }
 
 export class PassivePanel {
@@ -14,10 +22,11 @@ export class PassivePanel {
   private root: HTMLElement | null = null;
   private passiveRoots = new Map<string, HTMLElement>();
   private levelEls = new Map<string, HTMLElement>();
-  private valueEls = new Map<string, HTMLElement>();
+  private descEls = new Map<string, HTMLElement>();
   private xpBarFillEls = new Map<string, HTMLElement>();
   private xpTextEls = new Map<string, HTMLElement>();
-  private statusEls = new Map<string, HTMLElement>();
+  private xpBarEls = new Map<string, HTMLElement>();
+  private actionBtnEls = new Map<string, HTMLButtonElement>();
 
   constructor(deps: PassiveAPIDeps) {
     this.deps = deps;
@@ -36,41 +45,70 @@ export class PassivePanel {
   update(_state: GameState): void {
     if (!this.root) return;
     const wave = this.deps.highestWave;
+    const gold = _state.resources.gold;
 
     for (const def of PASSIVE_ABILITIES) {
       const root = this.passiveRoots.get(def.id);
       const levelEl = this.levelEls.get(def.id);
-      const valueEl = this.valueEls.get(def.id);
+      const descEl = this.descEls.get(def.id);
+      const xpBar = this.xpBarEls.get(def.id);
       const xpFill = this.xpBarFillEls.get(def.id);
       const xpText = this.xpTextEls.get(def.id);
-      const statusEl = this.statusEls.get(def.id);
-      if (!root || !levelEl || !valueEl || !xpFill || !xpText || !statusEl) continue;
+      const actionBtn = this.actionBtnEls.get(def.id);
+      if (!root || !levelEl || !descEl || !xpBar || !xpFill || !xpText || !actionBtn) continue;
 
-      const unlocked = wave >= def.unlockWave;
+      const waveReached = wave >= def.unlockWave;
+      const unlocked = waveReached && this.deps.isUnlocked(def.id);
       const level = unlocked ? this.deps.getLevel(def.id) : 0;
       const xp = unlocked ? this.deps.getXp(def.id) : 0;
       const atMax = level >= def.maxLevel;
 
       setText(levelEl, atMax ? ` Lv.${level} (MAX)` : ` Lv.${level}`);
-      setText(valueEl, `${passiveEffectValue(def, level).toFixed(1)}%`);
 
-      if (!unlocked) {
+      if (!waveReached) {
         toggleClass(root, 'passive-locked', true);
-        setText(statusEl, ` Unlocks at wave ${def.unlockWave}`);
-        setStyle(xpFill, 'width', '0%');
-        setText(xpText, '');
+        setText(descEl, `Unlocks at wave ${def.unlockWave}`);
+        setDisplay(xpBar, 'none');
+        setDisplay(xpText, 'none');
+        setDisplay(actionBtn, 'none');
+      } else if (!unlocked) {
+        toggleClass(root, 'passive-locked', false);
+        setText(descEl, `Unlocks at wave ${def.unlockWave}`);
+        setDisplay(xpBar, 'none');
+        setDisplay(xpText, 'none');
+        setDisplay(actionBtn, 'inline-flex');
+        const cost = this.deps.getUnlockCost(def.id);
+        const canAfford = gold >= cost;
+        setText(actionBtn, `Unlock \u00B7 ${Math.floor(cost)}g`);
+        setDisabled(actionBtn, !canAfford);
+        toggleClass(actionBtn, 'can-afford', canAfford);
+        toggleClass(actionBtn, 'cannot-afford', !canAfford);
       } else if (atMax) {
         toggleClass(root, 'passive-locked', false);
-        setText(statusEl, ' Max level');
+        setText(descEl, def.description.replace('{value}', passiveEffectValue(def, level).toFixed(1)));
+        setDisplay(xpBar, 'block');
         setStyle(xpFill, 'width', '100%');
+        setDisplay(xpText, 'block');
         setText(xpText, 'MAX');
+        setDisplay(actionBtn, 'none');
       } else {
         toggleClass(root, 'passive-locked', false);
+        setText(descEl, def.description.replace('{value}', passiveEffectValue(def, level).toFixed(1)));
         const needed = passiveXpForLevel(level + 1);
         const pct = needed > 0 ? Math.min(100, (xp / needed) * 100) : 0;
+        setDisplay(xpBar, 'block');
         setStyle(xpFill, 'width', `${pct}%`);
+        setDisplay(xpText, 'block');
         setText(xpText, `${Math.floor(xp)} / ${needed} XP`);
-        setText(statusEl, '');
+        const cost = this.deps.getUpgradeCost(def.id);
+        const canAfford = gold >= cost;
+        setDisplay(actionBtn, cost > 0 ? 'inline-flex' : 'none');
+        if (cost > 0) {
+          setText(actionBtn, `Upgrade \u00B7 ${Math.floor(cost)}g`);
+          setDisabled(actionBtn, !canAfford);
+          toggleClass(actionBtn, 'can-afford', canAfford);
+          toggleClass(actionBtn, 'cannot-afford', !canAfford);
+        }
       }
     }
   }
@@ -105,7 +143,10 @@ export class PassivePanel {
     const icon = document.createElement('div');
     icon.className = 'passive-icon';
     setStyle(icon, '--passive-color', def.color);
-    icon.textContent = def.glyph;
+    const iconInner = document.createElement('span');
+    iconInner.className = 'passive-icon-inner';
+    iconInner.textContent = def.glyph;
+    icon.appendChild(iconInner);
     row.appendChild(icon);
 
     const info = document.createElement('div');
@@ -125,31 +166,46 @@ export class PassivePanel {
     nameRow.appendChild(levelEl);
     info.appendChild(nameRow);
 
-    const valueEl = document.createElement('span');
-    valueEl.className = 'passive-value';
-    valueEl.textContent = '0.0%';
-    this.valueEls.set(def.id, valueEl);
-    info.appendChild(valueEl);
+    const descEl = document.createElement('div');
+    descEl.className = 'passive-desc';
+    descEl.textContent = def.description.replace('{value}', passiveEffectValue(def, 0).toFixed(1));
+    this.descEls.set(def.id, descEl);
+    info.appendChild(descEl);
 
-    const statusEl = document.createElement('span');
-    statusEl.className = 'passive-status';
-    statusEl.textContent = `Unlocks at wave ${def.unlockWave}`;
-    this.statusEls.set(def.id, statusEl);
-    info.appendChild(statusEl);
+    const xpRow = document.createElement('div');
+    xpRow.className = 'passive-xp-row';
 
     const xpBar = document.createElement('div');
     xpBar.className = 'passive-xp-bar';
+    this.xpBarEls.set(def.id, xpBar);
     const xpFill = document.createElement('div');
     xpFill.className = 'passive-xp-fill';
     this.xpBarFillEls.set(def.id, xpFill);
     xpBar.appendChild(xpFill);
-    info.appendChild(xpBar);
+    xpRow.appendChild(xpBar);
 
     const xpText = document.createElement('div');
     xpText.className = 'passive-xp-text';
     xpText.textContent = '';
     this.xpTextEls.set(def.id, xpText);
-    info.appendChild(xpText);
+    xpRow.appendChild(xpText);
+
+    info.appendChild(xpRow);
+
+    const actionBtn = document.createElement('button');
+    actionBtn.type = 'button';
+    actionBtn.className = 'passive-action-btn';
+    actionBtn.style.display = 'none';
+    actionBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.deps.isUnlocked(def.id)) {
+        this.deps.onUpgrade(def.id);
+      } else if (this.deps.canUnlock(def.id)) {
+        this.deps.onUnlock(def.id);
+      }
+    });
+    this.actionBtnEls.set(def.id, actionBtn);
+    info.appendChild(actionBtn);
 
     row.appendChild(info);
     return row;

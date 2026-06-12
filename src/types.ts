@@ -33,7 +33,7 @@ export type AbilityId =
   | 'execute'
   | 'multishot';
 
-export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'stats' | 'settings' | 'talents' | 'passives' | 'equipment';
+export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'stats' | 'settings' | 'talents' | 'equipment';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';
 
@@ -155,6 +155,7 @@ export type PassiveAbilityId =
 export interface PassiveAbilityState {
   level: number;
   xp: number;
+  unlocked: boolean;
 }
 
 // Equipment
@@ -232,7 +233,7 @@ export interface WaveState {
   waveModifier: WaveModifierState;
 }
 
-export const GAME_SPEEDS: readonly number[] = [0.5, 1.0];
+export const GAME_SPEEDS: readonly number[] = [0.5, 1.0, 1.5];
 
 export const DEFAULT_SPEED_INDEX = GAME_SPEEDS.indexOf(1.0);
 export const MAX_SPEED_INDEX = GAME_SPEEDS.length - 1;

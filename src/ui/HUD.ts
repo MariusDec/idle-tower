@@ -325,8 +325,8 @@ export class HUD {
   private updateXpBar(state: GameState): void {
     const tx = state.towerXp;
     if (!tx) return;
-    const pct = tx.level > 0 && tx.level >= 2000 ? 100 : (this.displayXpProgress * 100);
-    setText(this.xpLevelEl, `Lv.${tx.level}`);
+    const pct = tx.level >= 1999 ? 100 : (this.displayXpProgress * 100);
+    setText(this.xpLevelEl, `Lv.${tx.level + 1}`);
     setStyle(this.xpBarFill, 'width', `${pct}%`);
     const needed = this.displayXpNeeded;
     if (needed > 0 && needed !== Infinity) {

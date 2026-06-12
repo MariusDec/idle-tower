@@ -18,6 +18,12 @@ export interface PassiveAbilityDef {
   xpPerWave: number;
   /** Minimum wave to unlock */
   unlockWave: number;
+  /** Gold cost to unlock after wave is passed */
+  unlockGoldCost: number;
+  /** Base cost for gold-based upgrade (used with upgradeCostGrowth) */
+  upgradeBaseCost: number;
+  /** Cost growth factor per level (used with upgradeBaseCost) */
+  upgradeCostGrowth: number;
   glyph: string;
   color: string;
 }
@@ -33,7 +39,10 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     maxLevel: 50,
     xpPerKill: 3,
     xpPerWave: 15,
-    unlockWave: 1,
+    unlockWave: 10,
+    unlockGoldCost: 50,
+    upgradeBaseCost: 100,
+    upgradeCostGrowth: 1.5,
     glyph: '🎯',
     color: '#e74c3c',
   },
@@ -47,23 +56,12 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     maxLevel: 50,
     xpPerKill: 2,
     xpPerWave: 10,
-    unlockWave: 5,
+    unlockWave: 20,
+    unlockGoldCost: 200,
+    upgradeBaseCost: 150,
+    upgradeCostGrowth: 1.6,
     glyph: '❤',
     color: '#2ecc71',
-  },
-  {
-    id: 'passive_mana_spring',
-    name: 'Mana Spring',
-    description: 'Increases mana regen by {value}%.',
-    stat: 'mana_regen_pct',
-    basePercent: 5,
-    perLevelPercent: 3,
-    maxLevel: 40,
-    xpPerKill: 1,
-    xpPerWave: 8,
-    unlockWave: 10,
-    glyph: '💠',
-    color: '#5b8def',
   },
   {
     id: 'passive_scavenger',
@@ -75,9 +73,46 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     maxLevel: 40,
     xpPerKill: 2,
     xpPerWave: 12,
-    unlockWave: 8,
+    unlockWave: 25,
+    unlockGoldCost: 500,
+    upgradeBaseCost: 200,
+    upgradeCostGrowth: 1.65,
     glyph: '💰',
     color: '#f1c40f',
+  },
+  {
+    id: 'passive_haste',
+    name: 'Haste',
+    description: 'Increases fire rate by {value}%.',
+    stat: 'fire_rate_pct',
+    basePercent: 2,
+    perLevelPercent: 1.5,
+    maxLevel: 40,
+    xpPerKill: 2,
+    xpPerWave: 10,
+    unlockWave: 30,
+    unlockGoldCost: 2500,
+    upgradeBaseCost: 400,
+    upgradeCostGrowth: 1.85,
+    glyph: '⚡',
+    color: '#3498db',
+  },
+  {
+    id: 'passive_mana_spring',
+    name: 'Mana Spring',
+    description: 'Increases mana regen by {value}%.',
+    stat: 'mana_regen_pct',
+    basePercent: 5,
+    perLevelPercent: 3,
+    maxLevel: 40,
+    xpPerKill: 1,
+    xpPerWave: 8,
+    unlockWave: 35,
+    unlockGoldCost: 750,
+    upgradeBaseCost: 250,
+    upgradeCostGrowth: 1.7,
+    glyph: '💠',
+    color: '#5b8def',
   },
   {
     id: 'passive_thorns_aura',
@@ -89,7 +124,10 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     maxLevel: 30,
     xpPerKill: 1,
     xpPerWave: 6,
-    unlockWave: 15,
+    unlockWave: 45,
+    unlockGoldCost: 1500,
+    upgradeBaseCost: 350,
+    upgradeCostGrowth: 1.8,
     glyph: '⚔',
     color: '#e67e22',
   },
@@ -103,23 +141,12 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     maxLevel: 30,
     xpPerKill: 2,
     xpPerWave: 10,
-    unlockWave: 12,
+    unlockWave: 50,
+    unlockGoldCost: 1000,
+    upgradeBaseCost: 300,
+    upgradeCostGrowth: 1.75,
     glyph: '◎',
     color: '#f39c12',
-  },
-  {
-    id: 'passive_haste',
-    name: 'Haste',
-    description: 'Increases fire rate by {value}%.',
-    stat: 'fire_rate_pct',
-    basePercent: 2,
-    perLevelPercent: 1.5,
-    maxLevel: 40,
-    xpPerKill: 2,
-    xpPerWave: 10,
-    unlockWave: 20,
-    glyph: '⚡',
-    color: '#3498db',
   },
   {
     id: 'passive_life_steal',
@@ -131,7 +158,10 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     maxLevel: 30,
     xpPerKill: 1,
     xpPerWave: 5,
-    unlockWave: 25,
+    unlockWave: 65,
+    unlockGoldCost: 4000,
+    upgradeBaseCost: 500,
+    upgradeCostGrowth: 1.9,
     glyph: '💉',
     color: '#c44a4a',
   },
@@ -145,4 +175,10 @@ export const PASSIVE_BY_ID: Record<string, PassiveAbilityDef> = PASSIVE_ABILITIE
 /** Returns the effective percentage value for a passive at a given level. */
 export function passiveEffectValue(def: PassiveAbilityDef, level: number): number {
   return def.basePercent + def.perLevelPercent * level;
+}
+
+/** Gold cost to upgrade a passive from its current level to the next. */
+export function passiveUpgradeCost(def: PassiveAbilityDef, level: number): number {
+  if (level < 0) return def.upgradeBaseCost;
+  return Math.floor(def.upgradeBaseCost * Math.pow(def.upgradeCostGrowth, level));
 }

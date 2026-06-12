@@ -880,6 +880,31 @@ export class Game {
     return this.abilityMgr.canUpgrade(id, this.state.wave.highestWave);
   }
 
+  unlockPassive(id: string): boolean {
+    if (!this.passiveMgr.canUnlock(id, this.state.wave.highestWave)) return false;
+    const cost = this.passiveMgr.getUnlockCost(id);
+    if (cost <= 0 || this.state.resources.gold < cost) return false;
+    this.state.resources.gold -= cost;
+    this.passiveMgr.unlock(id);
+    this.applyUpgradeEffects();
+    this.bus.emit('gold_changed', this.state.resources.gold);
+    return true;
+  }
+
+  upgradePassive(id: string): boolean {
+    const cost = this.passiveMgr.getUpgradeCost(id);
+    if (cost <= 0 || this.state.resources.gold < cost) return false;
+    this.state.resources.gold -= cost;
+    const spent = this.passiveMgr.upgrade(id);
+    if (spent <= 0) {
+      this.state.resources.gold += cost;
+      return false;
+    }
+    this.applyUpgradeEffects();
+    this.bus.emit('gold_changed', this.state.resources.gold);
+    return true;
+  }
+
   ascend(): number {
     if (!this.prestigeMgr.canAscend(this.state.wave.highestWave)) return 0;
     const { ap } = this.prestigeMgr.performAscension(this.state);
@@ -1331,6 +1356,14 @@ export class Game {
       getLevel: (id) => this.passiveMgr.getLevel(id),
       getXp: (id) => this.passiveMgr.getXp(id),
       highestWave: this.state.wave.highestWave,
+      isUnlocked: (id) => this.passiveMgr.isUnlocked(id),
+      isMaxed: (id) => this.passiveMgr.isMaxed(id),
+      canUnlock: (id) => this.passiveMgr.canUnlock(id, this.state.wave.highestWave),
+      getUnlockCost: (id) => this.passiveMgr.getUnlockCost(id),
+      onUnlock: (id) => this.unlockPassive(id),
+      getUpgradeCost: (id) => this.passiveMgr.getUpgradeCost(id),
+      canUpgrade: (id) => this.passiveMgr.canUpgrade(id, this.state.resources.gold),
+      onUpgrade: (id) => this.upgradePassive(id),
     });
     this.ui.setEquipmentAPI({
       inventory: this.state.equipment,
@@ -1928,7 +1961,7 @@ export class Game {
     for (const k of Object.keys(pa)) delete pa[k];
     if (persisted.passiveAbilities) {
       for (const [id, v] of Object.entries(persisted.passiveAbilities)) {
-        pa[id] = { level: v.level, xp: v.xp };
+        pa[id] = { level: v.level, xp: v.xp, unlocked: v.unlocked ?? false };
       }
     }
     this.passiveMgr.ensureInitialized();
