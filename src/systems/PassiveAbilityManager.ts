@@ -3,6 +3,8 @@ import { PASSIVE_ABILITIES, PASSIVE_BY_ID, passiveUpgradeCost } from '../data/pa
 import { passiveXpForLevel } from '../data/xpTables';
 import { EventBus } from '../game/EventBus';
 
+const PASSIVE_XP_MULTIPLIER = 0.1;
+
 export class PassiveAbilityManager {
   private state: Record<string, PassiveAbilityState>;
   private readonly bus: EventBus;
@@ -44,7 +46,7 @@ export class PassiveAbilityManager {
   private addXp(def: typeof PASSIVE_ABILITIES[number], state: PassiveAbilityState, amount: number): void {
     if (amount <= 0) return;
     if (state.level >= def.maxLevel) return;
-    state.xp += amount;
+    state.xp += amount * PASSIVE_XP_MULTIPLIER;
     this.checkLevelUp(def, state);
   }
 
@@ -140,6 +142,7 @@ export class PassiveAbilityManager {
     const cost = this.getUpgradeCost(id);
     if (cost <= 0) return 0;
     s.level += 1;
+    s.xp = 0;
     this.bus.emit('passive_leveled', { id, level: s.level });
     return cost;
   }

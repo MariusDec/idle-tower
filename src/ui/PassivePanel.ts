@@ -124,7 +124,7 @@ export class PassivePanel {
 
     const note = document.createElement('p');
     note.className = 'panel-note';
-    note.textContent = 'Passives gain XP from kills and wave clears. They auto-level when enough XP is accumulated. Reset on Ascension/Transcendence.';
+    note.textContent = 'Passives gain XP from kills and wave clears (10x slower than tower XP). Upgrade with gold to level up (XP resets). Reset on Ascension/Transcendence.';
     parent.appendChild(note);
 
     const list = document.createElement('div');
