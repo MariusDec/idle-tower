@@ -60,7 +60,7 @@ function formatEffectValue(effectType: ResearchEffectType, value: number): strin
     case 'mana_regen':
       return `+${formatPercent(value)} mana regen`;
     case 'ability_cost':
-      return `−${formatPercent(value)} ability cost`;
+      return `${formatPercent(value)} ability cost`;
     case 'start_wave':
       return `Start at wave ${value}`;
     case 'tower_defense':

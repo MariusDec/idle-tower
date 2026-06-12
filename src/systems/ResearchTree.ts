@@ -295,7 +295,7 @@ export class ResearchTree {
   }
 
   getAbilityCostReduction(): number {
-    return Math.min(0.9, this.sumEffect('ability_cost'));
+    return Math.min(0, Math.max(-0.9, this.sumEffect('ability_cost')));
   }
 
   getStartWave(): number {

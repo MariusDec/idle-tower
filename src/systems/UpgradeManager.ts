@@ -8,6 +8,7 @@ export class UpgradeManager {
   private levels: Record<string, number> = {};
   private readonly bus: EventBus;
   private readonly resources: ResourceManager;
+  private costDiscount = 0;
 
   constructor(bus: EventBus, resources: ResourceManager) {
     this.bus = bus;
@@ -15,6 +16,10 @@ export class UpgradeManager {
     for (const u of UPGRADES) {
       this.levels[u.id] = u.startLevel ?? 0;
     }
+  }
+
+  setCostDiscount(discount: number): void {
+    this.costDiscount = Math.min(0, Math.max(-0.5, discount));
   }
 
   get all(): UpgradeDef[] {
@@ -29,7 +34,8 @@ export class UpgradeManager {
     const def = UPGRADES.find(u => u.id === id);
     if (!def) return Infinity;
     if (this.isMaxed(id)) return Infinity;
-    return upgradeCost(def.baseCost, def.costGrowth, this.levels[id] ?? 0);
+    const cost = upgradeCost(def.baseCost, def.costGrowth, this.levels[id] ?? 0);
+    return Math.floor(cost * (1 + this.costDiscount));
   }
 
   isMaxed(id: string): boolean {
@@ -50,7 +56,8 @@ export class UpgradeManager {
     if (this.isMaxed(id)) return false;
     const level = this.levels[id] ?? 0;
     const cost = upgradeCost(def.baseCost, def.costGrowth, level);
-    if (!this.resources.spendGold(cost)) return false;
+    const effectiveCost = Math.floor(cost * (1 + this.costDiscount));
+    if (!this.resources.spendGold(effectiveCost)) return false;
     const newLevel = level + 1;
     this.levels[id] = newLevel;
     this.bus.emit('upgrade_purchased', { id, level: newLevel });

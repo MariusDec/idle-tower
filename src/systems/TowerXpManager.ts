@@ -5,6 +5,7 @@ import { EventBus } from '../game/EventBus';
 export class TowerXpManager {
   private state: TowerXpState;
   private readonly bus: EventBus;
+  private xpGainMultiplier = 1;
 
   constructor(state: TowerXpState, bus: EventBus) {
     this.state = state;
@@ -15,6 +16,10 @@ export class TowerXpManager {
   get xp(): number { return this.state.xp; }
   get totalXpEarned(): number { return this.state.totalXpEarned; }
   get unspentTalentPoints(): number { return this.state.unspentTalentPoints; }
+
+  setXpGainMultiplier(mult: number): void {
+    this.xpGainMultiplier = Math.max(0, mult);
+  }
 
   addKillXp(type: EnemyType, wave: number): void {
     const gained = xpPerKill(type, wave);
@@ -28,8 +33,10 @@ export class TowerXpManager {
 
   private addXp(amount: number): void {
     if (amount <= 0) return;
-    this.state.xp += amount;
-    this.state.totalXpEarned += amount;
+    const gained = Math.floor(amount * this.xpGainMultiplier);
+    if (gained <= 0) return;
+    this.state.xp += gained;
+    this.state.totalXpEarned += gained;
     const newLevel = xpToLevel(this.state.xp);
     while (this.state.level < newLevel) {
       this.state.level += 1;
@@ -62,5 +69,14 @@ export class TowerXpManager {
     if (this.state.unspentTalentPoints <= 0) return false;
     this.state.unspentTalentPoints -= 1;
     return true;
+  }
+
+  grantTalentPoint(): void {
+    this.state.unspentTalentPoints += 1;
+    this.bus.emit('tower_leveled', {
+      level: this.state.level,
+      xp: this.state.xp,
+      talentPoints: this.state.unspentTalentPoints,
+    });
   }
 }

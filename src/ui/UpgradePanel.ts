@@ -19,7 +19,7 @@ const TAB_DEFS: UpgradeTabDef[] = [
   { id: 'utility', label: 'Utility', categories: ['economy', 'utility'] },
 ];
 
-const PERCENT_UPGRADES = new Set(['critChance', 'critDamage', 'goldMulti']);
+const PERCENT_UPGRADES = new Set(['critChance', 'critDamage', 'goldMulti', 'xpGain', 'upgradeDiscount', 'abilityCostReduction', 'critGold']);
 
 function getHighestEvolution(def: UpgradeDef, level: number): UpgradeEvolution | null {
   if (!def.evolutions) return null;
@@ -69,9 +69,11 @@ function formatEffectBonus(def: UpgradeDef, level: number, showSign: boolean = t
   if (total === 0) return '';
   const unit = def.scaling?.unit ?? '';
   if (isPercent(def)) {
-    return `${showSign? '+' : ''}${formatPercentValue(total)}`;
+    const sign = showSign ? (total > 0 ? '+' : '') : '';
+    return `${sign}${formatPercentValue(total)}`;
   }
-  return `${showSign? '+' : ''}${formatNumberValue(total, decimalCount)}${unit}`;
+  const sign = showSign ? (total > 0 ? '+' : '') : '';
+  return `${sign}${formatNumberValue(total, decimalCount)}${unit}`;
 }
 
 function formatNextDelta(def: UpgradeDef): string {
@@ -112,6 +114,7 @@ function formatNextDelta(def: UpgradeDef): string {
 
 export class UpgradePanel {
   private readonly onBuy: (id: string) => void;
+  private getCostFn: ((id: string) => number) | null = null;
   private root: HTMLElement | null = null;
   private costById = new Map<string, HTMLElement>();
   private levelById = new Map<string, HTMLElement>();
@@ -125,6 +128,10 @@ export class UpgradePanel {
 
   constructor(onBuy: (id: string) => void) {
     this.onBuy = onBuy;
+  }
+
+  setCostGetter(fn: (id: string) => number): void {
+    this.getCostFn = fn;
   }
 
   mount(parent: HTMLElement): void {
@@ -156,7 +163,7 @@ export class UpgradePanel {
       if (!btn || !costEl || !levelEl || !bonusEl) continue;
       const level = state.upgrades[u.id] ?? 0;
       const atMax = u.maxLevel > 0 && level >= u.maxLevel;
-      const cost = atMax ? Infinity : upgradeCost(u.baseCost, u.costGrowth, level);
+      const cost = atMax ? Infinity : (this.getCostFn ? this.getCostFn(u.id) : upgradeCost(u.baseCost, u.costGrowth, level));
       if (isTotalEffectUpgrade(u)) {
         setText(levelEl, atMax ? formatNumberValue(computeUpgradeValue(u, level), 1) : '');
         setDisplay(levelEl, atMax ? '' : 'none');

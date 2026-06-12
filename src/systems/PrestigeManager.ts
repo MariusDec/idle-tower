@@ -325,7 +325,7 @@ export class PrestigeManager {
     for (const p of TP_PERKS) {
       if (p.effectType !== 'ability_cdr') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) return 0.40;
+      if (lvl > 0) return -0.40;
     }
     return 0;
   }

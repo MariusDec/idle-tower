@@ -47,6 +47,7 @@ function bootstrap(): void {
   ui.setOnBuyUpgrade((id) => {
     game.upgradeManager.buy(id);
   });
+  ui.setUpgradeCostGetter((id) => game.upgradeManager.getCost(id));
   ui.setOnCastAbility((id) => {
     game.castAbility(id);
   });

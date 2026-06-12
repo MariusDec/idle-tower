@@ -201,6 +201,7 @@ export class Game {
   private killStreak = 0;
   private manaFullGoldTimer = 0;
   private shotCounter = 0;
+  private waveGoldBonus = 0;
 
   constructor(canvas: HTMLCanvasElement, deps: GameDeps) {
     this.canvas = canvas;
@@ -359,6 +360,13 @@ export class Game {
         this.effects.emitShockwaveRing(e.x, e.y, 500, 'rgba(255, 160, 64, 0.8)', 6, 0.4, 50, 'magic');
         // P5: Bonus x2 gold (normal gold already awarded in damage(); add 1x more)
         this.resources.addGold((e.goldValue ?? def.baseGold) * 1);
+        // Evolution: Headhunter — boss kills +50% gold
+        if (this.upgradeMgr.hasEvolutionEffect('headhunter')) {
+          const headhunterBonus = Math.floor((e.goldValue ?? def.baseGold) * this.upgradeMgr.getEvolutionEffectValue('headhunter'));
+          if (headhunterBonus > 0) {
+            this.resources.addGold(headhunterBonus);
+          }
+        }
         this.bus.emit('boss_killed', { x: e.x, y: e.y, goldValue: e.goldValue ?? def.baseGold });
         // Death slow-mo + screen flash (P3 + P5)
         this.triggerBossDeathSlowMo();
@@ -449,6 +457,11 @@ export class Game {
       const towerDef = this.researchTree.getTowerDefense();
       if (towerDef > 0) raw = Math.floor(raw * (1 - towerDef));
       if (raw <= 0) return;
+      // Evolution: Mana Shield — 10% DR when mana is full
+      if (this.upgradeMgr.hasEvolutionEffect('mana_shield') && this.state.resources.mana >= this.state.resources.maxMana) {
+        raw = Math.floor(raw * (1 - this.upgradeMgr.getEvolutionEffectValue('mana_shield')));
+        if (raw <= 0) return;
+      }
       const ts = this.tower.snapshot;
       if (ts.wallHp > 0) {
         raw = Math.floor(raw * 0.8);
@@ -568,6 +581,24 @@ export class Game {
         wms.active = null;
         wms.pendingChoiceForWave = null;
         wms.goldSnapshot = null;
+      }
+      // Wave Mastery: flat gold on wave clear
+      if (this.waveGoldBonus > 0) {
+        let multiplier = 1 + cleared * 0.5;
+        if (this.upgradeMgr.hasEvolutionEffect('golden_tide')) {
+          multiplier *= 1 + this.upgradeMgr.getEvolutionEffectValue('golden_tide');
+        }
+        const bonus = Math.floor(this.waveGoldBonus * multiplier);
+        if (bonus > 0) {
+          this.state.resources.gold += bonus;
+          this.state.resources.lifetimeGold += bonus;
+          this.state.stats.goldEarned += bonus;
+          this.bus.emit('gold_changed', this.state.resources.gold);
+        }
+      }
+      // Enlightenment evolution: +1 talent point every 10 waves
+      if (this.upgradeMgr.hasEvolutionEffect('enlightenment') && cleared % 10 === 0) {
+        this.towerXpMgr.grantTalentPoint();
       }
       // Tower XP & passive ability XP from wave clear
       this.towerXpMgr.addWaveClearXp(cleared);
@@ -1419,6 +1450,13 @@ export class Game {
     let manaRegenAdd = 0;
     let goldAdditive = 0;
     let healthValue = 0;
+    let maxManaAdd = 0;
+    let xpGainAdd = 0;
+    let abilityCostReductionAdd = 0;
+    let upgradeDiscountAdd = 0;
+    let waveGoldAdd = 0;
+    let goldOnKillAdd = 0;
+    let critGoldAdd = 0;
 
     for (const u of UPGRADES) {
       const level = this.upgradeMgr.getLevel(u.id);
@@ -1462,6 +1500,13 @@ export class Game {
           t.shieldCurrentCharges = Math.min(t.shieldCurrentCharges, t.shieldMaxCharges);
           break;
         }
+        case 'maxMana': maxManaAdd += total; break;
+        case 'xpGain': xpGainAdd += total; break;
+        case 'abilityCostReduction': abilityCostReductionAdd += total; break;
+        case 'upgradeDiscount': upgradeDiscountAdd += total; break;
+        case 'waveGold': waveGoldAdd += total; break;
+        case 'goldOnKill': goldOnKillAdd += total; break;
+        case 'critGold': critGoldAdd += total; break;
       }
     }
 
@@ -1513,6 +1558,7 @@ export class Game {
     t.fireRate = t.fireRate * tpFireRate;
     t.critMultiplier = t.critMultiplier + tpCritDamage;
     this.state.resources.manaRegen = (BASE_MANA_REGEN + manaRegenAdd) * researchManaMulti * tpManaRegen;
+    this.state.resources.maxMana = 100 + maxManaAdd;
     let totalGoldAdditive = (goldAdditive + apGold) * researchGoldMulti * tpResource;
 
     // Evolution: wave_gold_scaling — +gold% per wave survived (must be before setGoldMultipliers)
@@ -1524,12 +1570,17 @@ export class Game {
 
     this.enemyMgr.setGoldMultipliers(totalGoldAdditive, 1);
     this.abilityMgr.setUpgradeGoldAdditive(goldAdditive);
-    const totalAbilityCostReduction = Math.min(0.9, researchCostReduction + this.prestigeMgr.getAbilityManaCostReduction());
-    this.abilityMgr.setAbilityCostMultiplier(1 - totalAbilityCostReduction);
+    const totalAbilityCostReduction = Math.max(-0.9, researchCostReduction + this.prestigeMgr.getAbilityManaCostReduction() + abilityCostReductionAdd);
+    this.abilityMgr.setAbilityCostMultiplier(1 + totalAbilityCostReduction);
     this.abilityMgr.setCooldownMultiplier(1 - this.prestigeMgr.getAbilityCDR());
     this.projectileMgr.setDamageMultipliers(0, 1);
     this.projectileMgr.setPierceExtra(this.researchTree.getPierceCount() + this.prestigeMgr.getTPPierceBonus());
     this.enemyMgr.setGoldLuck(this.researchTree.getGoldLuckChance() + this.prestigeMgr.getTreasureChance(), 3);
+    this.towerXpMgr.setXpGainMultiplier(1 + xpGainAdd);
+    this.upgradeMgr.setCostDiscount(upgradeDiscountAdd);
+    this.enemyMgr.setGoldOnKillBonus(goldOnKillAdd);
+    this.enemyMgr.setCritGoldBonus(critGoldAdd);
+    this.waveGoldBonus = waveGoldAdd;
     if (this.prestigeMgr.hasExecuteDamage()) {
       this.projectileMgr.setExecuteBonus(0.25, this.prestigeMgr.getExecuteDamageMultiplier());
     } else {
@@ -1646,7 +1697,7 @@ export class Game {
     }
     const tManaCostRed = this.talentMgr.getEffectValue('mana_cost_reduction');
     if (tManaCostRed > 0) {
-      this.abilityMgr.setAbilityCostMultiplier((1 - totalAbilityCostReduction) * (1 - tManaCostRed));
+      this.abilityMgr.setAbilityCostMultiplier((1 + totalAbilityCostReduction) * (1 - tManaCostRed));
     }
 
     // Passive ability bonuses

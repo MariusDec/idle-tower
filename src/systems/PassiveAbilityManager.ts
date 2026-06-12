@@ -3,7 +3,7 @@ import { PASSIVE_ABILITIES, PASSIVE_BY_ID, passiveUpgradeCost } from '../data/pa
 import { passiveXpForLevel } from '../data/xpTables';
 import { EventBus } from '../game/EventBus';
 
-const PASSIVE_XP_MULTIPLIER = 0.1;
+const PASSIVE_XP_MULTIPLIER = 0.07;
 
 export class PassiveAbilityManager {
   private state: Record<string, PassiveAbilityState>;

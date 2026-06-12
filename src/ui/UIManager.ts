@@ -406,6 +406,16 @@ export class UIManager {
       this.bus.emit('toast', { kind: 'info', text: `Upgraded: ${name} Lv.${p.level}`, life: 2 });
       this.upgradePanel.flashButton(p.id);
     });
+    this.bus.on('upgrades_changed', () => {
+      if (!this.lastState) return;
+      if (this.activeTab === 'abilities') {
+        this.abilityPanel.update(this.lastState);
+      }
+      this.abilityBar?.update(this.lastState);
+      if (this.activeTab === 'upgrades') {
+        this.upgradePanel.update(this.lastState);
+      }
+    });
     this.bus.on('ability_cast', (payload: unknown) => {
       const p = payload as { id: AbilityId; def: { name: string } };
       this.abilityPanel.flashCast(p.id);
@@ -611,6 +621,10 @@ export class UIManager {
 
   setOnBuyUpgrade(handler: (id: string) => void): void {
     this.onBuyUpgrade = handler;
+  }
+
+  setUpgradeCostGetter(fn: (id: string) => number): void {
+    this.upgradePanel.setCostGetter(fn);
   }
 
   setOnCastAbility(handler: (id: AbilityId) => void): void {

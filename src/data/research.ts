@@ -178,7 +178,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     researchTime: 3600,
     category: 'arcane',
     effectType: 'ability_cost',
-    effectPerLevel: 0.3,
+    effectPerLevel: -0.3,
     maxLevel: 1,
     prerequisites: ['mana_font'],
     glyph: 'A',

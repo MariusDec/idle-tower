@@ -71,6 +71,8 @@ export class EnemyManager {
   private killStreakGoldBonus = 0;
   private manaFullGoldBonus = 0;
   private rpDropChanceBonus = 0;
+  private goldOnKillBonus = 0;
+  private critGoldBonus = 0;
   /** Multiplier applied to enemy movement speed on spawn (default 1). */
   private speedMult = 1;
   /** Multiplier applied to enemy damage dealt to the tower (default 1). */
@@ -117,6 +119,14 @@ export class EnemyManager {
 
   setRPDropChanceBonus(bonus: number): void {
     this.rpDropChanceBonus = Math.max(0, bonus);
+  }
+
+  setGoldOnKillBonus(bonus: number): void {
+    this.goldOnKillBonus = bonus;
+  }
+
+  setCritGoldBonus(bonus: number): void {
+    this.critGoldBonus = bonus;
   }
 
   setManaFullGoldBonus(bonus: number): void {
@@ -240,7 +250,7 @@ export class EnemyManager {
       }
       this.bus.emit('enemy_damaged', { enemy, amount, killed: true, isCrit });
       this.bus.emit('enemy_killed', enemy);
-      this.resources.addGold(this.computeGold(enemy));
+      this.resources.addGold(this.computeGold(enemy, isCrit));
       const def = ENEMY_DEFS[enemy.type];
       const chance = (def.rpChance ?? 0) + this.rpDropChanceBonus;
       if (chance > 0 && Math.random() < Math.min(1, chance)) {
@@ -253,7 +263,7 @@ export class EnemyManager {
     return false;
   }
 
-  private computeGold(enemy: Enemy): number {
+  private computeGold(enemy: Enemy, isCrit: boolean = false): number {
     const base = enemy.goldValue;
     const additive = 1 + this.goldMultipliers.additive;
     let amount = base * additive * this.goldMultipliers.multiplicative;
@@ -262,6 +272,10 @@ export class EnemyManager {
     if (enemy.aura === 'greed' && enemy.elite) amount *= GREED_GOLD_MULT;
     if (this.goldLuckChance > 0 && Math.random() < this.goldLuckChance) {
       amount *= this.goldLuckMultiplier;
+    }
+    amount += this.goldOnKillBonus;
+    if (isCrit && this.critGoldBonus > 0) {
+      amount *= 1 + this.critGoldBonus;
     }
     return Math.max(1, Math.floor(amount));
   }
@@ -439,6 +453,8 @@ export class EnemyManager {
     this.killStreakGoldBonus = 0;
     this.manaFullGoldBonus = 0;
     this.rpDropChanceBonus = 0;
+    this.goldOnKillBonus = 0;
+    this.critGoldBonus = 0;
     this.speedMult = 1;
     this.damageToTowerMult = 1;
     this.hpMult = 1;
