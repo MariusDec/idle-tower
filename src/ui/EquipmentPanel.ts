@@ -48,6 +48,8 @@ const SLOT_LABELS: Record<EquipmentSlot, string> = {
 const DRAG_THRESHOLD = 5;
 const SCROLL_ZONE = 40;
 const SCROLL_SPEED = 6;
+const HOVER_DELAY_MS = 200;
+const LONG_PRESS_MS = 380;
 
 type SortMode = 'rarity' | 'name' | 'slot';
 const RARITY_ORDER: Record<string, number> = { legendary: 4, epic: 3, rare: 2, uncommon: 1, common: 0 };
@@ -83,6 +85,9 @@ export class EquipmentPanel {
   private emptyNoteEl: HTMLElement | null = null;
   private prevInventoryIds = '';
   private prevSortMode: SortMode = 'rarity';
+  private compareTooltip: HTMLElement | null = null;
+  private hoverTimer: ReturnType<typeof setTimeout> | null = null;
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(deps: EquipmentAPIDeps) {
     this.deps = deps;
@@ -100,6 +105,7 @@ export class EquipmentPanel {
 
   private unmount(): void {
     this.cancelDrag();
+    this.destroyCompareTooltip();
     this.root = null;
     this.inventoryRows.clear();
     this.emptyNoteEl = null;
@@ -123,6 +129,126 @@ export class EquipmentPanel {
     }
     this.inventoryEl?.classList.remove('eq-drag-over');
     this.dragState = null;
+  }
+
+  private ensureCompareTooltip(): void {
+    if (this.compareTooltip) return;
+    const el = document.createElement('div');
+    el.className = 'eq-compare-tooltip';
+    el.style.display = 'none';
+    document.body.appendChild(el);
+    this.compareTooltip = el;
+  }
+
+  private showCompareTooltip(item: Equipment, anchor: HTMLElement): void {
+    this.ensureCompareTooltip();
+    const tooltip = this.compareTooltip!;
+    const equipped = this.deps.equipped[item.slot];
+    tooltip.innerHTML = this.renderCompareHTML(item, equipped);
+    tooltip.style.display = 'block';
+    tooltip.style.visibility = 'hidden';
+    this.positionCompareTooltip(anchor);
+    void tooltip.offsetHeight;
+    tooltip.style.visibility = '';
+    tooltip.classList.add('is-visible');
+  }
+
+  private hideCompareTooltip(): void {
+    if (this.hoverTimer !== null) {
+      clearTimeout(this.hoverTimer);
+      this.hoverTimer = null;
+    }
+    if (this.longPressTimer !== null) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+    if (this.compareTooltip) {
+      this.compareTooltip.classList.remove('is-visible');
+      const el = this.compareTooltip;
+      setTimeout(() => { el.style.display = 'none'; }, 120);
+    }
+  }
+
+  private destroyCompareTooltip(): void {
+    if (this.hoverTimer !== null) {
+      clearTimeout(this.hoverTimer);
+      this.hoverTimer = null;
+    }
+    if (this.longPressTimer !== null) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+    if (this.compareTooltip) {
+      this.compareTooltip.remove();
+      this.compareTooltip = null;
+    }
+  }
+
+  private positionCompareTooltip(anchor: HTMLElement): void {
+    const tooltip = this.compareTooltip!;
+    const rect = anchor.getBoundingClientRect();
+    const tipRect = tooltip.getBoundingClientRect();
+    const margin = 8;
+    const gap = 8;
+    const vw = window.innerWidth;
+    let left = rect.left - gap - tipRect.width;
+    if (left < margin) {
+      left = rect.right + gap;
+    }
+    let top = rect.top + rect.height / 2 - tipRect.height / 2;
+    top = Math.max(margin, Math.min(window.innerHeight - tipRect.height - margin, top));
+    left = Math.max(margin, Math.min(vw - tipRect.width - margin, left));
+    tooltip.style.top = `${top}px`;
+    tooltip.style.left = `${left}px`;
+  }
+
+  private renderCompareHTML(inventory: Equipment, equipped: Equipment | undefined): string {
+    const invDef = EQUIPMENT_DEF_BY_ID[inventory.defId];
+    const invName = invDef?.name ?? inventory.defId;
+    const invColor = RARITY_COLORS[inventory.rarity] ?? '#888';
+    const invRarityName = RARITY_NAMES[inventory.rarity];
+    const invSprite = invDef?.sprite ?? '';
+
+    const eqDef = equipped ? EQUIPMENT_DEF_BY_ID[equipped.defId] : null;
+    const eqName = eqDef?.name ?? '';
+    const eqColor = equipped ? (RARITY_COLORS[equipped.rarity] ?? '#888') : '';
+    const eqRarityName = equipped ? RARITY_NAMES[equipped.rarity] : '';
+    const eqSprite = equipped ? (eqDef?.sprite ?? '') : '';
+
+    const eqStatMap = new Map<string, number>();
+    if (equipped) {
+      for (const s of equipped.stats) eqStatMap.set(s.type, s.value);
+    }
+    const invStatMap = new Map<string, number>();
+    for (const s of inventory.stats) invStatMap.set(s.type, s.value);
+    const allTypes = new Set([...invStatMap.keys(), ...eqStatMap.keys()]);
+
+    const renderStats = (statMap: Map<string, number>, otherMap: Map<string, number>): string => {
+      let html = '';
+      for (const type of allTypes) {
+        const label = STAT_LABELS[type as EquipmentStatType] ?? type.replace(/_pct$/, '');
+        const myVal = statMap.get(type);
+        const otherVal = otherMap.get(type);
+        if (myVal !== undefined && otherVal !== undefined) {
+          const cls = myVal > otherVal ? 'stat-better' : myVal < otherVal ? 'stat-worse' : '';
+          html += `<div class="eq-compare-stat-row"><span>${label}</span><span class="${cls}">+${myVal}%</span></div>`;
+        } else if (myVal !== undefined) {
+          html += `<div class="eq-compare-stat-row"><span>${label}</span><span class="stat-better">+${myVal}%</span></div>`;
+        } else {
+          html += `<div class="eq-compare-stat-row"><span>${label}</span><span class="stat-missing">&mdash;</span></div>`;
+        }
+      }
+      return html;
+    };
+
+    const leftStats = renderStats(invStatMap, eqStatMap);
+    const rightStats = equipped ? renderStats(eqStatMap, invStatMap) : '';
+
+    const rightCard = equipped
+      ? `<div class="eq-compare-card"><div class="eq-compare-slot-label">Equipped</div><div class="eq-compare-item-row"><img class="eq-compare-icon" src="${eqSprite}" alt="" draggable="false"><div class="eq-compare-item-info"><span class="eq-compare-rarity-badge" style="background:${eqColor}">${eqRarityName}</span><span class="eq-compare-name" style="color:${eqColor}">${eqName}</span></div></div><div class="eq-compare-card-stats">${rightStats}</div></div>`
+      : `<div class="eq-compare-card"><div class="eq-compare-slot-label">Equipped</div><div class="eq-compare-empty">Slot empty</div></div>`;
+
+    return `<div class="eq-compare-body"><div class="eq-compare-card"><div class="eq-compare-slot-label">Inventory</div><div class="eq-compare-item-row"><img class="eq-compare-icon" src="${invSprite}" alt="" draggable="false"><div class="eq-compare-item-info"><span class="eq-compare-rarity-badge" style="background:${invColor}">${invRarityName}</span><span class="eq-compare-name" style="color:${invColor}">${invName}</span></div></div><div class="eq-compare-card-stats">${leftStats}</div></div><div class="eq-compare-vs">VS</div>${rightCard}</div>`;
   }
 
   update(_state: GameState): void {
@@ -252,6 +378,12 @@ export class EquipmentPanel {
     const icon = row.querySelector('.eq-inv-card-icon') as HTMLImageElement;
     if (icon) setSrc(icon, def?.sprite ?? '');
 
+    const rarityBadge = row.querySelector('.eq-inv-rarity-badge') as HTMLElement;
+    if (rarityBadge) {
+      setText(rarityBadge, RARITY_NAMES[item.rarity]);
+      setStyle(rarityBadge, 'background', rarityColor);
+    }
+
     const nameEl = row.querySelector('.eq-inv-card-name') as HTMLElement;
     if (nameEl) {
       setText(nameEl, name);
@@ -302,6 +434,12 @@ export class EquipmentPanel {
     icon.draggable = false;
     card.appendChild(icon);
 
+    const rarityBadge = document.createElement('div');
+    rarityBadge.className = 'eq-inv-rarity-badge';
+    setText(rarityBadge, RARITY_NAMES[item.rarity]);
+    setStyle(rarityBadge, 'background', rarityColor);
+    card.appendChild(rarityBadge);
+
     const nameEl = document.createElement('div');
     nameEl.className = 'eq-inv-card-name';
     nameEl.textContent = name;
@@ -326,7 +464,40 @@ export class EquipmentPanel {
     equipBtn.type = 'button';
     equipBtn.className = 'btn btn-buy';
     equipBtn.textContent = 'Equip';
-    equipBtn.addEventListener('click', () => this.deps.equip(item.slot, item.id));
+    equipBtn.addEventListener('click', () => {
+      this.hideCompareTooltip();
+      this.deps.equip(item.slot, item.id);
+    });
+    equipBtn.addEventListener('mouseenter', () => {
+      if (this.longPressTimer !== null) return;
+      this.hoverTimer = setTimeout(() => {
+        this.hoverTimer = null;
+        this.showCompareTooltip(item, equipBtn);
+      }, HOVER_DELAY_MS);
+    });
+    equipBtn.addEventListener('mouseleave', () => { this.hideCompareTooltip(); });
+    equipBtn.addEventListener('touchstart', () => {
+      this.longPressTimer = setTimeout(() => {
+        this.longPressTimer = null;
+        equipBtn.classList.add('is-long-press');
+        this.showCompareTooltip(item, equipBtn);
+      }, LONG_PRESS_MS);
+    }, { passive: true });
+    equipBtn.addEventListener('touchend', () => {
+      if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+      equipBtn.classList.remove('is-long-press');
+      this.hideCompareTooltip();
+    });
+    equipBtn.addEventListener('touchcancel', () => {
+      if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+      equipBtn.classList.remove('is-long-press');
+      this.hideCompareTooltip();
+    });
+    equipBtn.addEventListener('touchmove', () => {
+      if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+      equipBtn.classList.remove('is-long-press');
+      this.hideCompareTooltip();
+    }, { passive: true });
     actions.appendChild(equipBtn);
 
     const sellBtn = document.createElement('button');

@@ -242,14 +242,31 @@ export const EQUIPMENT_DEF_BY_ID: Record<string, EquipmentDef> = EQUIPMENT_DEFS.
 
 /** Roll a rarity based on current wave, using weighted random. */
 export function rollRarity(wave: number): Rarity {
-  const waveBonus = Math.min(0.3, wave * 0.001);
-  const weights: Record<Rarity, number> = {
-    common: Math.max(5, RARITY_WEIGHTS.common * (1 - waveBonus)),
-    uncommon: RARITY_WEIGHTS.uncommon * (1 + waveBonus),
-    rare: RARITY_WEIGHTS.rare * (1 + waveBonus * 1.5),
-    epic: RARITY_WEIGHTS.epic * (1 + waveBonus * 2),
-    legendary: RARITY_WEIGHTS.legendary * (1 + waveBonus * 3),
+  const t = Math.min(1, Math.max(0, (wave - 1) / 99));
+
+  const early: Record<Rarity, number> = {
+    common: 90,
+    uncommon: 8,
+    rare: 2,
+    epic: 0,
+    legendary: 0,
   };
+  const late: Record<Rarity, number> = {
+    common: 20,
+    uncommon: 20,
+    rare: 35,
+    epic: 15,
+    legendary: 10,
+  };
+
+  const weights: Record<Rarity, number> = {
+    common: early.common + (late.common - early.common) * t,
+    uncommon: early.uncommon + (late.uncommon - early.uncommon) * t,
+    rare: early.rare + (late.rare - early.rare) * t,
+    epic: early.epic + (late.epic - early.epic) * t,
+    legendary: early.legendary + (late.legendary - early.legendary) * t,
+  };
+
   const total = Object.values(weights).reduce((s, v) => s + v, 0);
   let roll = Math.random() * total;
   for (const [rarity, weight] of Object.entries(weights)) {
@@ -298,7 +315,7 @@ export function rollDrop(
   wave: number,
   source: 'boss' | 'milestone',
 ): Equipment | null {
-  const baseChance = source === 'boss' ? 0.3 : 1.0;
+  const baseChance = source === 'boss' ? 0.15 : 1.0;
   const scaledChance = Math.min(0.8, baseChance + wave * 0.005);
   if (Math.random() > scaledChance) return null;
 
