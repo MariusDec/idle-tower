@@ -159,8 +159,8 @@ export interface PassiveAbilityState {
 }
 
 // Equipment
-export type EquipmentSlot = 'weapon' | 'armor' | 'accessory_1' | 'accessory_2'
-  | 'relic' | 'boots' | 'helmet' | 'ring';
+export type EquipmentSlot = 'turret' | 'bulwark' | 'arsenal' | 'brazier'
+  | 'vault' | 'machinery' | 'banner' | 'core';
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 export type EquipmentStatType =
   | 'damage_pct' | 'fire_rate_pct' | 'crit_chance_pct' | 'crit_damage_pct'

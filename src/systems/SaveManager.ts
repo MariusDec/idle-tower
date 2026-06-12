@@ -21,7 +21,7 @@ import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 7;
+const SAVE_VERSION = 8;
 
 function defaultWaveModifier() {
   return { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null };
@@ -206,6 +206,59 @@ function migrateV6toV7(data: Record<string, unknown>): void {
   }
 }
 
+const SLOT_RENAME_MAP: Record<string, string> = {
+  weapon: 'turret',
+  armor: 'bulwark',
+  accessory_1: 'arsenal',
+  accessory_2: 'brazier',
+  relic: 'vault',
+  boots: 'machinery',
+  helmet: 'banner',
+  ring: 'core',
+};
+
+const EQUIP_ID_RENAME_MAP: Record<string, string> = {
+  crystal_staff: 'arcane_focus',
+  leather_vest: 'stone_revetment',
+  plate_armor: 'iron_plating',
+  ring_of_power: 'enchanted_quiver',
+  moon_pendant: 'moonlit_brazier',
+  swift_boots: 'swift_gears',
+  guardian_crown: 'guardian_banner',
+  emerald_band: 'emerald_core',
+};
+
+function migrateV7toV8(data: Record<string, unknown>): void {
+  const inventory = data.equipment as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(inventory)) {
+    for (const item of inventory) {
+      if (typeof item.slot === 'string' && SLOT_RENAME_MAP[item.slot]) {
+        item.slot = SLOT_RENAME_MAP[item.slot];
+      }
+      if (typeof item.defId === 'string' && EQUIP_ID_RENAME_MAP[item.defId]) {
+        item.defId = EQUIP_ID_RENAME_MAP[item.defId];
+      }
+    }
+  }
+  const equipped = data.equipped as Record<string, Record<string, unknown>> | undefined;
+  if (equipped && typeof equipped === 'object') {
+    const newEquipped: Record<string, Record<string, unknown>> = {};
+    for (const [oldSlot, item] of Object.entries(equipped)) {
+      const newSlot = SLOT_RENAME_MAP[oldSlot] ?? oldSlot;
+      if (item && typeof item === 'object') {
+        if (typeof item.slot === 'string' && SLOT_RENAME_MAP[item.slot]) {
+          item.slot = SLOT_RENAME_MAP[item.slot];
+        }
+        if (typeof item.defId === 'string' && EQUIP_ID_RENAME_MAP[item.defId]) {
+          item.defId = EQUIP_ID_RENAME_MAP[item.defId];
+        }
+      }
+      newEquipped[newSlot] = item;
+    }
+    data.equipped = newEquipped;
+  }
+}
+
 function computeRPGainMultiplier(research: Record<string, number>): number {
   let sum = 0;
   for (const [id, level] of Object.entries(research)) {
@@ -222,7 +275,7 @@ function computeRPGainMultiplier(research: Record<string, number>): number {
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -243,6 +296,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 4) { migrateV4toV5(data); data.version = 5; }
   if (data.version === 5) { migrateV5toV6(data); data.version = 6; }
   if (data.version === 6) { migrateV6toV7(data); data.version = 7; }
+  if (data.version === 7) { migrateV7toV8(data); data.version = 8; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;

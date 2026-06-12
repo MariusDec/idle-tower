@@ -13,8 +13,8 @@ export interface EquipmentAPIDeps {
 }
 
 const SLOT_ORDER: EquipmentSlot[] = [
-  'weapon', 'armor', 'accessory_1', 'accessory_2',
-  'relic', 'boots', 'helmet', 'ring',
+  'turret', 'bulwark', 'arsenal', 'brazier',
+  'vault', 'machinery', 'banner', 'core',
 ];
 
 const STAT_LABELS: Record<EquipmentStatType, string> = {
@@ -35,14 +35,14 @@ const STAT_LABELS: Record<EquipmentStatType, string> = {
 };
 
 const SLOT_LABELS: Record<EquipmentSlot, string> = {
-  weapon: 'Weapon',
-  armor: 'Armor',
-  accessory_1: 'Acc 1',
-  accessory_2: 'Acc 2',
-  relic: 'Relic',
-  boots: 'Boots',
-  helmet: 'Helmet',
-  ring: 'Ring',
+  turret: 'Turret',
+  bulwark: 'Bulwark',
+  arsenal: 'Arsenal',
+  brazier: 'Brazier',
+  vault: 'Vault',
+  machinery: 'Machinery',
+  banner: 'Banner',
+  core: 'Core',
 };
 
 const DRAG_THRESHOLD = 5;
@@ -52,8 +52,8 @@ const SCROLL_SPEED = 6;
 type SortMode = 'rarity' | 'name' | 'slot';
 const RARITY_ORDER: Record<string, number> = { legendary: 4, epic: 3, rare: 2, uncommon: 1, common: 0 };
 const SLOT_ORDER_INDEX: Record<EquipmentSlot, number> = {
-  weapon: 0, armor: 1, accessory_1: 2, accessory_2: 3,
-  relic: 4, boots: 5, helmet: 6, ring: 7,
+  turret: 0, bulwark: 1, arsenal: 2, brazier: 3,
+  vault: 4, machinery: 5, banner: 6, core: 7,
 };
 
 interface DragState {

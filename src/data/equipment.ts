@@ -42,12 +42,12 @@ function nextEquipmentId(): string {
 // ── Equipment Definitions ─────────────────────────────
 
 export const EQUIPMENT_DEFS: EquipmentDef[] = [
-  // Weapon
+  // Turret
   {
     id: 'iron_bow',
     name: 'Iron Bow',
     description: 'A sturdy bow with reliable power.',
-    slot: 'weapon',
+    slot: 'turret',
     baseStats: {
       common: [{ type: 'damage_pct', value: 5 }],
       uncommon: [{ type: 'damage_pct', value: 8 }],
@@ -62,10 +62,10 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     minWave: 1,
   },
   {
-    id: 'crystal_staff',
-    name: 'Crystal Staff',
+    id: 'arcane_focus',
+    name: 'Arcane Focus',
     description: 'Channels arcane energy into powerful strikes.',
-    slot: 'weapon',
+    slot: 'turret',
     baseStats: {
       common: [{ type: 'damage_pct', value: 4 }],
       uncommon: [{ type: 'damage_pct', value: 7 }],
@@ -75,16 +75,16 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/crystal_staff.svg',
+    sprite: 'sprites/equipment/arcane_focus.svg',
     color: '#9b59b6',
     minWave: 10,
   },
-  // Armor
+  // Bulwark
   {
-    id: 'leather_vest',
-    name: 'Leather Vest',
+    id: 'stone_revetment',
+    name: 'Stone Revetment',
     description: 'Basic protection for the tower.',
-    slot: 'armor',
+    slot: 'bulwark',
     baseStats: {
       common: [{ type: 'max_hp_pct', value: 5 }],
       uncommon: [{ type: 'max_hp_pct', value: 8 }],
@@ -94,15 +94,15 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/leather_vest.svg',
+    sprite: 'sprites/equipment/stone_revetment.svg',
     color: '#888888',
     minWave: 1,
   },
   {
-    id: 'plate_armor',
-    name: 'Plate Armor',
+    id: 'iron_plating',
+    name: 'Iron Plating',
     description: 'Heavy metal plating for maximum defense.',
-    slot: 'armor',
+    slot: 'bulwark',
     baseStats: {
       common: [{ type: 'defense_pct', value: 5 }],
       uncommon: [{ type: 'defense_pct', value: 8 }],
@@ -112,16 +112,16 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/plate_armor.svg',
+    sprite: 'sprites/equipment/iron_plating.svg',
     color: '#5d6d7e',
     minWave: 15,
   },
-  // Accessory 1 & 2
+  // Arsenal
   {
-    id: 'ring_of_power',
-    name: 'Ring of Power',
+    id: 'enchanted_quiver',
+    name: 'Enchanted Quiver',
     description: 'A ring crackling with raw energy.',
-    slot: 'accessory_1',
+    slot: 'arsenal',
     baseStats: {
       common: [{ type: 'all_damage_pct', value: 3 }],
       uncommon: [{ type: 'all_damage_pct', value: 5 }],
@@ -131,15 +131,15 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/ring_of_power.svg',
+    sprite: 'sprites/equipment/enchanted_quiver.svg',
     color: '#f1c40f',
     minWave: 5,
   },
   {
-    id: 'moon_pendant',
-    name: 'Moon Pendant',
+    id: 'moonlit_brazier',
+    name: 'Moonlit Brazier',
     description: 'Grants enhanced mana regeneration.',
-    slot: 'accessory_2',
+    slot: 'brazier',
     baseStats: {
       common: [{ type: 'mana_regen_pct', value: 5 }],
       uncommon: [{ type: 'mana_regen_pct', value: 8 }],
@@ -149,16 +149,16 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/moon_pendant.svg',
+    sprite: 'sprites/equipment/moonlit_brazier.svg',
     color: '#5b8def',
     minWave: 10,
   },
-  // Relic
+  // Vault
   {
     id: 'ancient_relic',
     name: 'Ancient Relic',
     description: 'A mysterious artifact of immense power.',
-    slot: 'relic',
+    slot: 'vault',
     baseStats: {
       common: [{ type: 'gold_mult_pct', value: 5 }],
       uncommon: [{ type: 'gold_mult_pct', value: 8 }],
@@ -173,12 +173,12 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     minWave: 15,
     bossOnly: true,
   },
-  // Boots
+  // Machinery
   {
-    id: 'swift_boots',
-    name: 'Swift Boots',
-    description: 'Enchanted boots that increase attack speed.',
-    slot: 'boots',
+    id: 'swift_gears',
+    name: 'Swift Gears',
+    description: 'Precision gears that increase attack speed.',
+    slot: 'machinery',
     baseStats: {
       common: [{ type: 'fire_rate_pct', value: 3 }],
       uncommon: [{ type: 'fire_rate_pct', value: 5 }],
@@ -188,16 +188,16 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/swift_boots.svg',
+    sprite: 'sprites/equipment/swift_gears.svg',
     color: '#3498db',
     minWave: 8,
   },
-  // Helmet
+  // Banner
   {
-    id: 'guardian_crown',
-    name: 'Guardian Crown',
-    description: 'A crown that bolsters tower defenses.',
-    slot: 'helmet',
+    id: 'guardian_banner',
+    name: 'Guardian Banner',
+    description: 'A banner that bolsters tower defenses.',
+    slot: 'banner',
     baseStats: {
       common: [{ type: 'max_hp_pct', value: 4 }],
       uncommon: [{ type: 'max_hp_pct', value: 6 }],
@@ -207,16 +207,16 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/guardian_crown.svg',
+    sprite: 'sprites/equipment/guardian_banner.svg',
     color: '#f1c40f',
     minWave: 12,
   },
-  // Ring
+  // Core
   {
-    id: 'emerald_band',
-    name: 'Emerald Band',
-    description: 'A band pulsing with natural energy.',
-    slot: 'ring',
+    id: 'emerald_core',
+    name: 'Emerald Core',
+    description: 'A core pulsing with natural energy.',
+    slot: 'core',
     baseStats: {
       common: [{ type: 'crit_chance_pct', value: 2 }],
       uncommon: [{ type: 'crit_chance_pct', value: 3 }],
@@ -226,7 +226,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/emerald_band.svg',
+    sprite: 'sprites/equipment/emerald_core.svg',
     color: '#2ecc71',
     minWave: 18,
     bossOnly: true,
