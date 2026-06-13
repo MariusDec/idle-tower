@@ -52,7 +52,12 @@ export function xpPerWaveClear(wave: number): number {
 
 /** XP required for a passive ability to reach the next level. */
 export function passiveXpForLevel(level: number): number {
-  return Math.floor(50 * Math.pow(level, 1.4));
+  return Math.floor(50 * Math.pow(level, 1.65));
+}
+
+/** XP required for an active ability to reach the next level. */
+export function abilityXpForLevel(level: number): number {
+  return Math.floor(50 * Math.pow(level, 1.5));
 }
 
 /** Talent points granted at a given tower level (1 per level). */

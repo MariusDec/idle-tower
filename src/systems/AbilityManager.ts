@@ -8,6 +8,7 @@ import {
   type EffectiveAbilityStats,
 } from '../data/abilities';
 import { abilityUpgradeCost } from '../data/formulas';
+import { abilityXpForLevel } from '../data/xpTables';
 import { EventBus } from '../game/EventBus';
 import type { ResourceManager } from './ResourceManager';
 import type { EnemyManager } from './EnemyManager';
@@ -170,7 +171,13 @@ export class AbilityManager {
     if (!def) return 0;
     const level = this.getAbilityLevel(id);
     if (level >= def.maxLevel) return 0;
-    return abilityUpgradeCost(def.upgradeBaseCost, def.upgradeCostGrowth, level);
+    const baseCost = abilityUpgradeCost(def.upgradeBaseCost, def.upgradeCostGrowth, level);
+    if (baseCost <= 0) return 0;
+    const state = this.getState(id);
+    const needed = abilityXpForLevel(level + 1);
+    if (needed <= 0) return baseCost;
+    const discount = Math.min(1, state.xp / needed);
+    return Math.max(1, Math.floor(baseCost * (1 - discount)));
   }
 
   canUpgrade(id: AbilityId, wave: number): boolean {
@@ -191,6 +198,7 @@ export class AbilityManager {
     if (!this.resources.spendGold(cost)) return false;
     const state = this.getState(id);
     state.level = Math.min(def.maxLevel, state.level + 1);
+    state.xp = 0;
     this.bus.emit('ability_upgraded', { id, level: state.level });
     return true;
   }
@@ -245,6 +253,7 @@ export class AbilityManager {
     const visualTarget = this.applyEffect(def.effectType, this.getEffectiveEffectValue(id), duration);
     this.bus.emit('ability_cast', { id, def });
     this.bus.emit('ability_visual', { id, def, target: visualTarget });
+    this.addCastXp(def, state);
     this.onCast(id);
     return true;
   }
@@ -575,6 +584,28 @@ export class AbilityManager {
       state.cooldown = 0;
       state.active = false;
       state.activeTimer = 0;
+      state.xp = 0;
+    }
+  }
+
+  getXp(id: AbilityId): number {
+    const state = this.getState(id);
+    return state?.xp ?? 0;
+  }
+
+  private addCastXp(def: AbilityDef, state: AbilityState): void {
+    if (state.level >= def.maxLevel) return;
+    state.xp += def.xpPerCast;
+    this.checkLevelUp(def, state);
+  }
+
+  private checkLevelUp(def: AbilityDef, state: AbilityState): void {
+    while (state.level < def.maxLevel) {
+      const needed = abilityXpForLevel(state.level + 1);
+      if (state.xp < needed) break;
+      state.xp -= needed;
+      state.level += 1;
+      this.bus.emit('ability_leveled', { id: def.id, level: state.level });
     }
   }
 }

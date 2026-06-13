@@ -56,7 +56,7 @@ function makeInitialState(): GameState {
   };
   const abilities: Record<string, AbilityState> = {};
   for (const def of ABILITIES) {
-    abilities[def.id] = { level: 1, cooldown: 0, active: false, activeTimer: 0 };
+    abilities[def.id] = { level: 1, cooldown: 0, active: false, activeTimer: 0, xp: 0 };
   }
   const prestige: PrestigeState = {
     apSpent: {},
@@ -1375,6 +1375,7 @@ export class Game {
       isMaxed: (id) => this.abilityMgr.isMaxed(id),
       getUpgradeCost: (id) => this.abilityMgr.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityMgr.getEffectiveStats(id),
+      getXp: (id) => this.abilityMgr.getXp(id),
     });
     this.ui.setTalentAPI({
       allocated: this.state.talents.allocated,
@@ -1447,6 +1448,9 @@ export class Game {
     t.landMineFrequency = 0;
     t.shieldMaxCharges = 0;
     t.shieldRechargeTime = 0;
+    t.doubleShotChance = 0;
+    t.quickShotChance = 0;
+    t.quickShotTime = 0;
     let manaRegenAdd = 0;
     let goldAdditive = 0;
     let healthValue = 0;
@@ -1507,6 +1511,9 @@ export class Game {
         case 'waveGold': waveGoldAdd += total; break;
         case 'goldOnKill': goldOnKillAdd += total; break;
         case 'critGold': critGoldAdd += total; break;
+        case 'doubleShotChance': t.doubleShotChance = total; break;
+        case 'quickShotChance': t.quickShotChance = total; break;
+        case 'quickShotTime': t.quickShotTime = total; break;
       }
     }
 
@@ -1797,6 +1804,7 @@ export class Game {
     this.killStreak = 0;
     this.manaFullGoldTimer = 0;
     this.shotCounter = 0;
+    this.tower.resetQuickShot();
     const t = this.tower.snapshot;
     t.cooldown = 0;
     t.hp = TOWER_BASE.hp;
@@ -1974,11 +1982,11 @@ export class Game {
     this.state.abilities = {};
     for (const id of Object.keys(persisted.abilities)) {
       const a = persisted.abilities[id];
-      this.state.abilities[id] = { level: a.level, cooldown: 0, active: false, activeTimer: 0 };
+      this.state.abilities[id] = { level: a.level, cooldown: 0, active: false, activeTimer: 0, xp: a.xp ?? 0 };
     }
     for (const def of ABILITIES) {
       if (!this.state.abilities[def.id]) {
-        this.state.abilities[def.id] = { level: 1, cooldown: 0, active: false, activeTimer: 0 };
+        this.state.abilities[def.id] = { level: 1, cooldown: 0, active: false, activeTimer: 0, xp: 0 };
       }
     }
 
@@ -2112,12 +2120,18 @@ export class Game {
 
     // Manual aim: if mouse held, attempt to spend 1 mana per shot for +30% fire rate.
     // If mana is insufficient, fall back to 1.0 fire rate (still aim at cursor).
+    this.tower.tickQuickShot(dt);
+
     let manualAimBoost = false;
     if (this.mouseDown) {
       this.tower.setAimTarget(this.mouseX, this.mouseY);
       manualAimBoost = true;
     }
     this.tower.setFireRateMultiplier(manualAimBoost ? 1.3 : 1);
+
+    if (this.tower.isQuickShotActive()) {
+      this.tower.setFireRateMultiplier(2.0);
+    }
 
     if (this.tower.tickCooldown(dt)) {
       const target = this.mouseDown ? null : this.tower.acquireTarget(this.enemyMgr.list);
@@ -2135,6 +2149,11 @@ export class Game {
           }
         }
 
+        // Quick shot chance — activate temporary 2x fire rate
+        if (ts.quickShotTime > 0 && Math.random() < ts.quickShotChance) {
+          this.tower.activateQuickShot(ts.quickShotTime);
+        }
+
         this.projectileMgr.fire(target, ts, {
           rawDamage: shot.damage,
           damageType: ts.damageType,
@@ -2147,6 +2166,21 @@ export class Game {
         this.tower.consumeCooldown();
         this.state.stats.shotsFired += 1;
         this.state.stats.damageDealt += shot.damage;
+
+        // Double shot chance — fire all projectiles a second time
+        if (Math.random() < ts.doubleShotChance) {
+          this.projectileMgr.fire(target, ts, {
+            rawDamage: shot.damage,
+            damageType: ts.damageType,
+            isCrit: shot.isCrit,
+            targetId: target?.id ?? null,
+            variants,
+            aimX: this.mouseDown ? this.mouseX : undefined,
+            aimY: this.mouseDown ? this.mouseY : undefined,
+          });
+          this.state.stats.shotsFired += 1;
+          this.state.stats.damageDealt += shot.damage;
+        }
       }
     }
 

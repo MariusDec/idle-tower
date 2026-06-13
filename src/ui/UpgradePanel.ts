@@ -19,7 +19,7 @@ const TAB_DEFS: UpgradeTabDef[] = [
   { id: 'utility', label: 'Utility', categories: ['economy', 'utility'] },
 ];
 
-const PERCENT_UPGRADES = new Set(['critChance', 'critDamage', 'goldMulti', 'xpGain', 'upgradeDiscount', 'abilityCostReduction', 'critGold']);
+const PERCENT_UPGRADES = new Set(['critChance', 'critDamage', 'goldMulti', 'xpGain', 'upgradeDiscount', 'abilityCostReduction', 'critGold', 'doubleShotChance', 'quickShotChance']);
 
 function getHighestEvolution(def: UpgradeDef, level: number): UpgradeEvolution | null {
   if (!def.evolutions) return null;

@@ -1,7 +1,7 @@
 import type { AbilityId, GameState } from '../types';
 import { ABILITIES, ABILITY_BY_ID, computeEffectiveStats, type AbilityDef } from '../data/abilities';
 import { PASSIVE_ABILITIES, passiveEffectValue } from '../data/passiveAbilities';
-import { passiveXpForLevel } from '../data/xpTables';
+import { passiveXpForLevel, abilityXpForLevel } from '../data/xpTables';
 import { formatInt } from '../utils/bigNumber';
 import { setAriaLabel, setDisabled, setInnerHTML, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
 import { renderAbilityTooltip } from './abilityFormat';
@@ -16,6 +16,7 @@ export interface AbilityPanelHandlers {
   isMaxed: (id: AbilityId) => boolean;
   getUpgradeCost: (id: AbilityId) => number;
   getEffectiveStats: (id: AbilityId) => ReturnType<typeof computeEffectiveStats>;
+  getXp: (id: AbilityId) => number;
 }
 
 type SubTab = 'active' | 'passives';
@@ -41,6 +42,9 @@ export class AbilityPanel {
   private levelBadgeById = new Map<AbilityId, HTMLElement>();
   private upgradeBtnById = new Map<AbilityId, HTMLButtonElement>();
   private upgradeTooltipById = new Map<AbilityId, HTMLElement>();
+  private xpBarEls = new Map<AbilityId, HTMLElement>();
+  private xpBarFillEls = new Map<AbilityId, HTMLElement>();
+  private xpTextEls = new Map<AbilityId, HTMLElement>();
 
   // Passive maps
   private passiveRoots = new Map<string, HTMLElement>();
@@ -73,6 +77,9 @@ export class AbilityPanel {
     this.levelBadgeById.clear();
     this.upgradeBtnById.clear();
     this.upgradeTooltipById.clear();
+    this.xpBarEls.clear();
+    this.xpBarFillEls.clear();
+    this.xpTextEls.clear();
     this.passiveRoots.clear();
     this.passiveLevelEls.clear();
     this.passiveDescEls.clear();
@@ -172,6 +179,22 @@ export class AbilityPanel {
       toggleClass(upgradeBtn, 'cannot-afford', showUpgrade && !canAfford);
       setDisabled(upgradeBtn, !canAfford);
       setText(upgradeBtn, `Upgrade · ${formatInt(cost)}g`);
+
+      const xpBarEl = this.xpBarEls.get(def.id);
+      const xpFillEl = this.xpBarFillEls.get(def.id);
+      const xpTextEl = this.xpTextEls.get(def.id);
+      if (xpBarEl && xpFillEl && xpTextEl) {
+        if (!isUnlocked || isMaxed) {
+          setDisplay(xpBarEl.parentElement!, 'none');
+        } else {
+          const xp = this.handlers.getXp(def.id);
+          const needed = abilityXpForLevel(abState.level + 1);
+          const ratio = needed > 0 ? Math.min(1, xp / needed) : 0;
+          setStyle(xpFillEl, 'width', `${ratio * 100}%`);
+          setText(xpTextEl, `${xp}/${needed}`);
+          setDisplay(xpBarEl.parentElement!, 'flex');
+        }
+      }
 
       const tooltip = this.upgradeTooltipById.get(def.id);
       if (tooltip && tooltip.style.display !== 'none') {
@@ -409,6 +432,23 @@ export class AbilityPanel {
     status.className = 'ability-status';
     status.textContent = 'Ready';
     info.appendChild(status);
+
+    const xpRow = document.createElement('div');
+    xpRow.className = 'passive-xp-row';
+    const xpBar = document.createElement('div');
+    xpBar.className = 'passive-xp-bar';
+    this.xpBarEls.set(def.id, xpBar);
+    const xpFill = document.createElement('div');
+    xpFill.className = 'passive-xp-fill';
+    xpFill.style.background = def.color;
+    this.xpBarFillEls.set(def.id, xpFill);
+    xpBar.appendChild(xpFill);
+    xpRow.appendChild(xpBar);
+    const xpText = document.createElement('div');
+    xpText.className = 'passive-xp-text';
+    this.xpTextEls.set(def.id, xpText);
+    xpRow.appendChild(xpText);
+    info.appendChild(xpRow);
 
     const upgradeBtn = document.createElement('button');
     upgradeBtn.type = 'button';

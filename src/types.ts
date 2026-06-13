@@ -45,6 +45,9 @@ export interface TowerState {
   range: number;
   critChance: number;
   critMultiplier: number;
+  doubleShotChance: number;
+  quickShotChance: number;
+  quickShotTime: number;
   damageType: DamageType;
   cooldown: number;
   targetingMode: TargetingMode;
@@ -243,6 +246,7 @@ export interface AbilityState {
   cooldown: number;
   active: boolean;
   activeTimer: number;
+  xp: number;
 }
 
 export interface PrestigeState {

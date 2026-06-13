@@ -118,6 +118,7 @@ function bootstrap(): void {
     isMaxed: (id) => game.abilities.isMaxed(id),
     getUpgradeCost: (id) => game.abilities.getUpgradeCost(id),
     getEffectiveStats: (id) => game.abilities.getEffectiveStats(id),
+    getXp: (id) => game.abilities.getXp(id),
   });
   ui.setPrestigeAPI({
     canAscend: (wave) => game.prestige.canAscend(wave),

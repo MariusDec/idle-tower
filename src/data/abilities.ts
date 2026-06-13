@@ -40,6 +40,8 @@ export interface AbilityDef {
   effectValuePerLevel: number;
   /** Extra seconds added to duration per level above 1. */
   durationPerLevel: number;
+  /** XP earned per cast of this ability. */
+  xpPerCast: number;
 }
 
 export const ABILITIES: AbilityDef[] = [
@@ -63,6 +65,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownReductionPerLevel: 0.5,
     effectValuePerLevel: 1.0,
     durationPerLevel: 0,
+    xpPerCast: 5,
   },
   {
     id: 'frost_nova',
@@ -84,6 +87,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownReductionPerLevel: 0.8,
     effectValuePerLevel: -0.02,
     durationPerLevel: 0.5,
+    xpPerCast: 5,
   },
   {
     id: 'chain_lightning',
@@ -105,6 +109,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownReductionPerLevel: 0.5,
     effectValuePerLevel: 0.3,
     durationPerLevel: 0,
+    xpPerCast: 6,
   },
   {
     id: 'precision_shot',
@@ -126,6 +131,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownReductionPerLevel: 0.6,
     effectValuePerLevel: 2,
     durationPerLevel: 0.4,
+    xpPerCast: 5,
   },
   {
     id: 'berserk',
@@ -147,6 +153,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownReductionPerLevel: 1.0,
     effectValuePerLevel: 0.15,
     durationPerLevel: 0.5,
+    xpPerCast: 6,
   },
   {
     id: 'meteor_strike',
@@ -168,6 +175,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownReductionPerLevel: 0.5,
     effectValuePerLevel: 1.5,
     durationPerLevel: 0,
+    xpPerCast: 8,
   },
   {
     id: 'gold_rush',
@@ -189,6 +197,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownReductionPerLevel: 1.5,
     effectValuePerLevel: 0.25,
     durationPerLevel: 1.0,
+    xpPerCast: 10,
   },
   {
     id: 'execute',
@@ -210,6 +219,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownReductionPerLevel: 0.8,
     effectValuePerLevel: 2,
     durationPerLevel: 0,
+    xpPerCast: 7,
   },
   {
     id: 'multishot',
@@ -231,6 +241,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownReductionPerLevel: 0.3,
     effectValuePerLevel: 0.5,
     durationPerLevel: 0,
+    xpPerCast: 6,
   },
   {
     id: 'vampiric_aura',
@@ -252,6 +263,7 @@ export const ABILITIES: AbilityDef[] = [
     cooldownReductionPerLevel: 1.0,
     effectValuePerLevel: 0.5,
     durationPerLevel: 0.4,
+    xpPerCast: 7,
   },
 ];
 

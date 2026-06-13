@@ -7,6 +7,8 @@ export class Tower {
   private critBonusChance = 0;
   private critBonusMultiplier = 1;
   private lifestealMultiplier = 1;
+  private quickShotActive = false;
+  private quickShotTimer = 0;
   private aimX = 0;
   private aimY = 0;
 
@@ -175,5 +177,29 @@ export class Tower {
   tickCooldown(dt: number): boolean {
     if (this.state.cooldown > 0) this.state.cooldown -= dt;
     return this.state.cooldown <= 0;
+  }
+
+  tickQuickShot(dt: number): void {
+    if (!this.quickShotActive) return;
+    this.quickShotTimer -= dt;
+    if (this.quickShotTimer <= 0) {
+      this.quickShotTimer = 0;
+      this.quickShotActive = false;
+    }
+  }
+
+  isQuickShotActive(): boolean {
+    return this.quickShotActive;
+  }
+
+  activateQuickShot(durationSeconds: number): void {
+    this.quickShotActive = true;
+    this.quickShotTimer = durationSeconds;
+    this.fireRateMultiplier = 2.0;
+  }
+
+  resetQuickShot(): void {
+    this.quickShotActive = false;
+    this.quickShotTimer = 0;
   }
 }

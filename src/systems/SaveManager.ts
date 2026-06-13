@@ -367,7 +367,7 @@ export class SaveManager {
     const out: Record<string, AbilityState> = {};
     for (const id of Object.keys(abilities)) {
       const a = abilities[id];
-      out[id] = { level: a.level, cooldown: 0, active: false, activeTimer: 0 };
+      out[id] = { level: a.level, cooldown: 0, active: false, activeTimer: 0, xp: a.xp ?? 0 };
     }
     return out;
   }
@@ -467,7 +467,7 @@ export class SaveManager {
     const avgXp = averageKillXPForWave(wave);
     const avgHp = averageKillHPForWave(wave);
     const xpPerDmg = avgHp > 0 ? avgXp / avgHp : 0;
-    const xpEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * xpPerDmg));
+    const xpEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * xpPerDmg)) * 0.7;
     const lifetimeWave = persisted.stats.lifetimeHighestWave ?? 1;
     const rpGainMultiplier = computeRPGainMultiplier(persisted.research ?? {});
     const baseRPRate = 0.05 * lifetimeWave / 60;
@@ -517,7 +517,7 @@ export class SaveManager {
         for (const def of PASSIVE_ABILITIES) {
           const pa = state.passiveAbilities[def.id];
           if (!pa || !pa.unlocked || pa.level >= def.maxLevel) continue;
-          pa.xp += def.xpPerKill * enemyCount + def.xpPerWave;
+          pa.xp += def.xpPerKill * enemyCount + def.xpPerWave * 0.2;
           while (pa.level < def.maxLevel) {
             const needed = passiveXpForLevel(pa.level + 1);
             if (pa.xp < needed) break;

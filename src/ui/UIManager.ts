@@ -65,6 +65,7 @@ export interface AbilityAPI {
   isMaxed: (id: AbilityId) => boolean;
   getUpgradeCost: (id: AbilityId) => number;
   getEffectiveStats: (id: AbilityId) => EffectiveAbilityStats;
+  getXp: (id: AbilityId) => number;
 }
 
 export interface ResearchAPI {
@@ -238,6 +239,7 @@ export class UIManager {
       isMaxed: false,
       isUnlocked: false,
     }),
+    getXp: () => 0,
   };
   private prestigeApi: PrestigeAPI = {
     canAscend: () => false,
@@ -304,6 +306,7 @@ export class UIManager {
       isMaxed: (id) => this.abilityApi.isMaxed(id),
       getUpgradeCost: (id) => this.abilityApi.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityApi.getEffectiveStats(id),
+      getXp: (id) => this.abilityApi.getXp(id),
     }, this.passiveApi);
     this.prestigePanel = new PrestigePanel({
       onAscend: () => this.onAscend(),
