@@ -426,7 +426,7 @@ export class AbilityManager {
     if (list.length === 0) return;
     const towerState = this.tower.snapshot;
     const level = this.getAbilityLevel('chain_lightning');
-    const bounces = Math.min(CHAIN_BOUNCE_MAX, CHAIN_BOUNCE_BASE + (level - 1) * CHAIN_BOUNCE_PER_LEVEL);
+    const bounces = Math.min(CHAIN_BOUNCE_MAX, CHAIN_BOUNCE_BASE + Math.floor(level / 2) * CHAIN_BOUNCE_PER_LEVEL);
     const r2 = CHAIN_BOUNCE_RADIUS * CHAIN_BOUNCE_RADIUS;
     const hit = new Set<number>();
 

@@ -7,7 +7,7 @@ import type { EnemyType } from '../types';
 export const TOWER_XP_TABLE: number[] = (() => {
   const table: number[] = [0];
   for (let lv = 1; lv <= 1999; lv++) {
-    const needed = Math.floor(100 * Math.pow(lv, 2));
+    const needed = Math.floor(120 * Math.pow(lv, 2.35));
     table.push(needed);
   }
   return table;
@@ -52,7 +52,7 @@ export function xpPerWaveClear(wave: number): number {
 
 /** XP required for a passive ability to reach the next level. */
 export function passiveXpForLevel(level: number): number {
-  return Math.floor(50 * Math.pow(level, 1.65));
+  return Math.floor(75 * Math.pow(level, 2.2));
 }
 
 /** XP required for an active ability to reach the next level. */

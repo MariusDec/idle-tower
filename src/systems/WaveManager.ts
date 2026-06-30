@@ -265,7 +265,8 @@ export class WaveManager {
       if (!this.intermissionPaused) {
         this.state.intermissionTimer -= dt;
         if (this.state.intermissionTimer <= 0) {
-          this.startWave(this.state.number + (this.state.autoProgress ? 1 : 0));
+          const forceAdvance = isBossWave(this.state.number);
+          this.startWave(this.state.number + (this.state.autoProgress || forceAdvance ? 1 : 0));
         }
       }
       return;

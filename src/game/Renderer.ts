@@ -738,7 +738,8 @@ export class Renderer {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const secs = Math.max(0, Math.ceil(snap.wave.intermissionTimer));
-      ctx.fillText(`Wave ${snap.wave.number} cleared — ${snap.wave.autoProgress ? 'next' : 'restarting'} wave in ${secs}s`, this.width / 2, 25);
+      const willAdvance = snap.wave.autoProgress || isBossWave(snap.wave.number);
+      ctx.fillText(`Wave ${snap.wave.number} cleared — ${willAdvance ? 'next' : 'restarting'} wave in ${secs}s`, this.width / 2, 25);
       ctx.restore();
     } else if (isBossWave(snap.wave.number)) {
       const pulse = 0.5 + Math.sin(this.time * 4) * 0.15;

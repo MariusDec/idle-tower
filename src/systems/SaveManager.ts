@@ -28,7 +28,7 @@ function defaultWaveModifier() {
 }
 const AUTO_SAVE_INTERVAL = 30;
 const OFFLINE_CAP_SECONDS = 7 * 24 * 60 * 60;
-const OFFLINE_EFFICIENCY = 0.7;
+const OFFLINE_EFFICIENCY = 0.5;
 const AVG_WAVE_DURATION = 18;
 
 export interface PersistentState {
@@ -460,14 +460,16 @@ export class SaveManager {
     }
     const dps = estimateDPS(persisted.tower);
     const effectiveDPS = dps * OFFLINE_EFFICIENCY;
-    const wave = Math.max(1, persisted.wave.number);
+    let wave = Math.max(1, persisted.wave.number);
+    if (isBossWave(wave)) --wave;
+
     const goldPerDmg = estimateGoldPerDamage(wave);
     const goldEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * goldPerDmg));
     const wavesCleared = Math.max(0, Math.floor(elapsed / AVG_WAVE_DURATION));
     const avgXp = averageKillXPForWave(wave);
     const avgHp = averageKillHPForWave(wave);
     const xpPerDmg = avgHp > 0 ? avgXp / avgHp : 0;
-    const xpEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * xpPerDmg)) * 0.7;
+    const xpEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * xpPerDmg)) * 0.5;
     const lifetimeWave = persisted.stats.lifetimeHighestWave ?? 1;
     const rpGainMultiplier = computeRPGainMultiplier(persisted.research ?? {});
     const baseRPRate = 0.05 * lifetimeWave / 60;
@@ -511,13 +513,14 @@ export class SaveManager {
     }
     // Grant passive ability XP for each estimated wave cleared
     if (result.wavesCleared > 0) {
-      const wave = Math.max(1, state.wave.number);
+      let wave = Math.max(1, state.wave.number);
+      if (isBossWave(wave)) --wave;
       for (let w = wave; w < wave + result.wavesCleared; w++) {
         const enemyCount = Math.max(1, Math.floor(spawnCountForWave(w)));
         for (const def of PASSIVE_ABILITIES) {
           const pa = state.passiveAbilities[def.id];
           if (!pa || !pa.unlocked || pa.level >= def.maxLevel) continue;
-          pa.xp += def.xpPerKill * enemyCount + def.xpPerWave * 0.2;
+          pa.xp += (def.xpPerKill * enemyCount + def.xpPerWave) * 0.1;
           while (pa.level < def.maxLevel) {
             const needed = passiveXpForLevel(pa.level + 1);
             if (pa.xp < needed) break;

@@ -643,6 +643,12 @@ export class Game {
     this.bus.on('equipment_unequipped', () => {
       this.applyUpgradeEffects();
     });
+    this.bus.on('talent_allocated', () => {
+      this.applyUpgradeEffects();
+    });
+    this.bus.on('talent_refunded', () => {
+      this.applyUpgradeEffects();
+    });
     this.bus.on('research_unlocked', (payload: unknown) => {
       const p = payload as { id: string; level: number };
       this.state.research = this.researchTree.getLevelsSnapshot();
@@ -1379,7 +1385,7 @@ export class Game {
     });
     this.ui.setTalentAPI({
       allocated: this.state.talents.allocated,
-      unspentPoints: this.state.towerXp.unspentTalentPoints,
+      unspentPoints: () => this.state.towerXp.unspentTalentPoints,
       canAllocate: (id) => this.talentMgr.canAllocate(id),
       allocate: (id) => this.talentMgr.allocate(id),
       refundBranch: (branch) => this.talentMgr.refundBranch(branch),

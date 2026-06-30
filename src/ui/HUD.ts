@@ -52,6 +52,7 @@ export class HUD {
   private displayHP = 0;
   private displayMaxHP = 0;
   private displayWave = 1;
+  private displayDps = 0;
   private tweenInitialized = false;
   private dps = 0;
   private speedApi: SpeedAPI = { speeds: [], currentIndex: 0, maxIndex: 0 };
@@ -217,6 +218,7 @@ export class HUD {
       this.displayHP = state.tower.hp;
       this.displayMaxHP = state.tower.maxHp;
       this.displayWave = state.wave.number;
+      this.displayDps = this.dps;
       this.tweenInitialized = true;
     }
     // Time-constant smoothing: 1 - exp(-dt/tau). Lower tau = snappier.
@@ -233,6 +235,8 @@ export class HUD {
     this.displayHP += (state.tower.hp - this.displayHP) * hpAlpha;
     this.displayMaxHP += (state.tower.maxHp - this.displayMaxHP) * hpAlpha;
       this.displayWave += (state.wave.number - this.displayWave) * waveAlpha;
+    const dpsAlpha = 1 - Math.exp(-dt / 0.2);
+    this.displayDps += (this.dps - this.displayDps) * dpsAlpha;
     const tx = state.towerXp;
     if (tx) {
       this.displayXpNeeded = xpForNextLevel(tx.level);
@@ -264,7 +268,7 @@ export class HUD {
       setStyle(this.manaBarFill, 'width', '0%');
     }
     setText(this.waveEl, `Wave ${Math.round(this.displayWave)}`);
-    setText(this.dpsEl, `${formatNumber(this.dps)} DPS`);
+    setText(this.dpsEl, `${formatNumber(this.displayDps)} DPS`);
     setText(this.killsEl, `Kills: ${formatNumber(state.stats.enemiesKilled)}`);
     const hpDisplay = Math.max(0, this.displayHP);
     const maxHpDisplay = Math.max(1, this.displayMaxHP);

@@ -177,7 +177,7 @@ export class UIManager {
   private onTargetingModeChange: (mode: string) => void = () => {};
   private talentApi: TalentAPIDeps = {
     allocated: {},
-    unspentPoints: 0,
+    unspentPoints: () => 0,
     canAllocate: () => false,
     allocate: () => false,
     refundBranch: () => {},
@@ -750,6 +750,7 @@ export class UIManager {
 
   setTalentAPI(api: TalentAPIDeps): void {
     this.talentApi = api;
+    this.talentPanel.setDeps(api);
     if (this.lastState && this.activeTab === 'talents') {
       this.talentPanel.update(this.lastState);
     }
