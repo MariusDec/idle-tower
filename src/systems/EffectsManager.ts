@@ -9,6 +9,29 @@ const SHOCKWAVE_SPEED = 700;
 const SHOCKWAVE_MIN_LIFE = 0.8;
 const SHOCKWAVE_MAX_LIFE = 1.0;
 
+/**
+ * Pool ceilings (plan §5.3).
+ *
+ * Every hit emits 3-6 sparks and a damage number, and nothing bounded either
+ * list. A late wave with 200+ enemies, splash and chain kills could push the
+ * particle array into the thousands, at which point the per-frame integrate +
+ * filter and the renderer's per-particle draw cost more than the whole
+ * simulation. Overflow drops the *oldest* entries, which are the ones already
+ * closest to expiring, so what the player is looking at right now survives.
+ */
+const MAX_PARTICLES = 600;
+const MAX_DAMAGE_NUMBERS = 80;
+
+/**
+ * Damage numbers landing within this radius of a live one, while it is still
+ * this young, are merged into it instead of stacking a new label on top
+ * (plan §5.3). A fast tower puts several shots into the same enemy inside a
+ * single frame; one number that climbs reads better than six overlapping ones
+ * and costs a fraction as much to draw.
+ */
+const DMG_MERGE_RADIUS = 16;
+const DMG_MERGE_MAX_AGE = 0.22;
+
 export class EffectsManager {
   private particles: Particle[] = [];
   private damageNumbers: DamageNumber[] = [];
@@ -31,11 +54,23 @@ export class EffectsManager {
    *  to enemies inside the ring. Set to null to clear. */
   onShockwaveDamage: ((s: Shockwave) => void) | null = null;
 
+  /**
+   * Append a particle, dropping the oldest if the pool is full.
+   *
+   * `shift()` on an array this size is a memmove of at most a few hundred
+   * pointers and only happens once the cap is reached, which is cheaper than
+   * the frame cost of the particle it evicts.
+   */
+  private pushParticle(p: Particle): void {
+    if (this.particles.length >= MAX_PARTICLES) this.particles.shift();
+    this.particles.push(p);
+  }
+
   emitHitSparks(x: number, y: number, color: string, count: number = 4): void {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 50 + Math.random() * 90;
-      this.particles.push({
+      this.pushParticle({
         x,
         y,
         vx: Math.cos(angle) * speed,
@@ -53,7 +88,7 @@ export class EffectsManager {
     for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 80 + Math.random() * 180;
-      this.particles.push({
+      this.pushParticle({
         x,
         y,
         vx: Math.cos(angle) * speed,
@@ -65,7 +100,7 @@ export class EffectsManager {
       });
     }
     for (let i = 0; i < Math.max(3, Math.floor(n / 3)); i++) {
-      this.particles.push({
+      this.pushParticle({
         x,
         y,
         vx: (Math.random() - 0.5) * 40,
@@ -82,7 +117,7 @@ export class EffectsManager {
     for (let i = 0; i < 36; i++) {
       const angle = (i / 36) * Math.PI * 2 + Math.random() * 0.08;
       const speed = 220 + Math.random() * 80;
-      this.particles.push({
+      this.pushParticle({
         x,
         y,
         vx: Math.cos(angle) * speed,
@@ -113,7 +148,7 @@ export class EffectsManager {
     }
     for (let i = 0; i < 24; i++) {
       const angle = (i / 24) * Math.PI * 2;
-      this.particles.push({
+      this.pushParticle({
         x: cx + Math.cos(angle) * 40,
         y: cy + Math.sin(angle) * 40,
         vx: Math.cos(angle) * 60,
@@ -132,7 +167,7 @@ export class EffectsManager {
       const dist = 40 + Math.random() * 420;
       const x = cx + Math.cos(angle) * dist;
       const y = cy + Math.sin(angle) * dist;
-      this.particles.push({
+      this.pushParticle({
         x,
         y,
         vx: (Math.random() - 0.5) * 20,
@@ -149,7 +184,7 @@ export class EffectsManager {
     for (let i = 0; i < 48; i++) {
       const angle = (i / 48) * Math.PI * 2;
       const speed = 380 + Math.random() * 60;
-      this.particles.push({
+      this.pushParticle({
         x: cx,
         y: cy,
         vx: Math.cos(angle) * speed,
@@ -192,7 +227,7 @@ export class EffectsManager {
     for (let i = 0; i < 16; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 24 + Math.random() * 12;
-      this.particles.push({
+      this.pushParticle({
         x: cx + Math.cos(angle) * dist,
         y: cy + Math.sin(angle) * dist,
         vx: Math.cos(angle) * 30,
@@ -209,7 +244,7 @@ export class EffectsManager {
     for (let i = 0; i < 12; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 16 + Math.random() * 28;
-      this.particles.push({
+      this.pushParticle({
         x: cx + Math.cos(angle) * dist,
         y: cy + Math.sin(angle) * dist,
         vx: (Math.random() - 0.5) * 24,
@@ -232,7 +267,7 @@ export class EffectsManager {
       const t = i / trailCount;
       const x = fromX + (targetX - fromX) * t;
       const y = fromY + (targetY - fromY) * t - Math.sin(t * Math.PI) * 24;
-      this.particles.push({
+      this.pushParticle({
         x: x + (Math.random() - 0.5) * 6,
         y: y + (Math.random() - 0.5) * 6,
         vx: (Math.random() - 0.5) * 30,
@@ -246,7 +281,7 @@ export class EffectsManager {
     for (let i = 0; i < 18; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 140;
-      this.particles.push({
+      this.pushParticle({
         x: targetX,
         y: targetY,
         vx: Math.cos(angle) * speed,
@@ -266,7 +301,7 @@ export class EffectsManager {
     for (let i = 0; i < 36; i++) {
       const angle = (i / 36) * Math.PI * 2;
       const speed = 60 + Math.random() * 18;
-      this.particles.push({
+      this.pushParticle({
         x: cx,
         y: cy,
         vx: Math.cos(angle) * speed,
@@ -280,7 +315,7 @@ export class EffectsManager {
     for (let i = 0; i < 12; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 20 + Math.random() * 30;
-      this.particles.push({
+      this.pushParticle({
         x: cx + Math.cos(angle) * dist,
         y: cy + Math.sin(angle) * dist,
         vx: (Math.random() - 0.5) * 24,
@@ -300,7 +335,7 @@ export class EffectsManager {
     for (let i = 0; i < 24; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 28 + Math.random() * 36;
-      this.particles.push({
+      this.pushParticle({
         x: cx + Math.cos(angle) * dist,
         y: cy + Math.sin(angle) * dist,
         vx: -Math.cos(angle) * 12,
@@ -320,7 +355,7 @@ export class EffectsManager {
     for (let i = 0; i < 24; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 50 + Math.random() * 120;
-      this.particles.push({
+      this.pushParticle({
         x: cx,
         y: cy,
         vx: Math.cos(angle) * speed,
@@ -332,7 +367,7 @@ export class EffectsManager {
       });
     }
     for (let i = 0; i < 3; i++) {
-      this.particles.push({
+      this.pushParticle({
         x: cx + (Math.random() - 0.5) * 60,
         y: cy + (Math.random() - 0.5) * 20,
         vx: 0,
@@ -372,7 +407,7 @@ export class EffectsManager {
     for (let i = 0; i < 20; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 120;
-      this.particles.push({
+      this.pushParticle({
         x,
         y,
         vx: Math.cos(angle) * speed,
@@ -384,7 +419,7 @@ export class EffectsManager {
       });
     }
     for (let i = 0; i < 5; i++) {
-      this.particles.push({
+      this.pushParticle({
         x: x + (Math.random() - 0.5) * 20,
         y: y + (Math.random() - 0.5) * 20,
         vx: (Math.random() - 0.5) * 30,
@@ -401,7 +436,7 @@ export class EffectsManager {
     for (let i = 0; i < 8; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 24 + Math.random() * 12;
-      this.particles.push({
+      this.pushParticle({
         x: x + Math.cos(angle) * dist,
         y: y + Math.sin(angle) * dist,
         vx: Math.cos(angle) * 40,
@@ -422,7 +457,7 @@ export class EffectsManager {
     for (let i = 0; i < 14; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 16 + Math.random() * 8;
-      this.particles.push({
+      this.pushParticle({
         x: x + Math.cos(angle) * dist,
         y: y + Math.sin(angle) * dist,
         vx: Math.cos(angle) * 70,
@@ -447,7 +482,7 @@ export class EffectsManager {
       const t = Math.random();
       const px = x0 + dx * t;
       const py = y0 + dy * t;
-      this.particles.push({
+      this.pushParticle({
         x: px,
         y: py,
         vx: (dx / dist) * 30 + (Math.random() - 0.5) * 18,
@@ -480,7 +515,7 @@ export class EffectsManager {
       const spread = (Math.random() - 0.5) * 1.2;
       const angle = baseAngle + spread;
       const speed = 120 + Math.random() * 100;
-      this.particles.push({
+      this.pushParticle({
         x: ex + nx * 6,
         y: ey + ny * 6,
         vx: Math.cos(angle) * speed,
@@ -508,7 +543,7 @@ export class EffectsManager {
     for (let i = 0; i < 22; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 140;
-      this.particles.push({
+      this.pushParticle({
         x,
         y,
         vx: Math.cos(angle) * speed,
@@ -522,7 +557,7 @@ export class EffectsManager {
   }
 
   emitDamageNumber(x: number, y: number, amount: number, isCrit: boolean): void {
-    this.damageNumbers.push({
+    this.pushDamageNumber({
       x: x + (Math.random() - 0.5) * 10,
       y: y - 4,
       amount: Math.max(1, Math.round(amount)),
@@ -534,7 +569,7 @@ export class EffectsManager {
   }
 
   emitHealNumber(x: number, y: number, amount: number): void {
-    this.damageNumbers.push({
+    this.pushDamageNumber({
       x: x + (Math.random() - 0.5) * 10,
       y: y - 4,
       amount: Math.max(1, Math.round(amount)),
@@ -544,6 +579,32 @@ export class EffectsManager {
       life: DMG_BASE_LIFE,
       vy: DMG_FLOAT_SPEED,
     });
+  }
+
+  /**
+   * Add a damage number, merging it into a recent neighbour where possible and
+   * dropping the oldest entry if the pool is still full (plan §5.3).
+   *
+   * Merging is matched on kind as well as position: a crit or a heal keeps its
+   * own label rather than being folded into a plain hit, since the colour is
+   * what the number is telling the player.
+   */
+  private pushDamageNumber(next: DamageNumber): void {
+    for (let i = this.damageNumbers.length - 1; i >= 0; i--) {
+      const d = this.damageNumbers[i];
+      if (d.age > DMG_MERGE_MAX_AGE) continue;
+      if (!!d.isCrit !== !!next.isCrit || !!d.isHeal !== !!next.isHeal) continue;
+      const dx = d.x - next.x;
+      const dy = d.y - next.y;
+      if (dx * dx + dy * dy > DMG_MERGE_RADIUS * DMG_MERGE_RADIUS) continue;
+      d.amount += next.amount;
+      // Restart the float so the growing total stays on screen.
+      d.age = 0;
+      d.vy = DMG_FLOAT_SPEED;
+      return;
+    }
+    if (this.damageNumbers.length >= MAX_DAMAGE_NUMBERS) this.damageNumbers.shift();
+    this.damageNumbers.push(next);
   }
 
   tick(dt: number): void {

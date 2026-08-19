@@ -1,5 +1,17 @@
 import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, Equipment, AutoBuyStrategy, GoldSourceEntry } from '../types';
 import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
+
+/**
+ * Fixed simulation substep, and the ceiling on substeps per frame (plan §5.2).
+ *
+ * One step is a 60 Hz frame, so at 1x speed nothing changes: `dt` is already
+ * about 1/60 and the loop runs once. The cap bounds the worst case — a frame
+ * hitch at maximum game speed — at six times the per-frame simulation cost
+ * rather than an unbounded spiral; when it bites, steps grow instead of time
+ * being dropped, so the game never runs slow-motion under load.
+ */
+const FIXED_STEP = 1 / 60;
+const MAX_SUBSTEPS = 6;
 import { TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
 import { ENEMY_DEFS } from '../data/enemies';
@@ -295,13 +307,12 @@ export class Game {
       const inner = s.currentRadius - 30; // damage band just inside the wave front
       const outer = s.currentRadius + 30;
       const innerSq = Math.max(0, inner) * Math.max(0, inner);
-      const outerSq = outer * outer;
-      for (const en of this.enemyMgr.list) {
-        if (!en.alive) continue;
+      // The grid narrows this to the outer disc; the inner cut-off still has
+      // to be applied by hand, since a ring is not a circle query.
+      for (const en of this.enemyMgr.queryRadius(s.x, s.y, outer)) {
         const dx = en.x - s.x;
         const dy = en.y - s.y;
-        const dSq = dx * dx + dy * dy;
-        if (dSq >= innerSq && dSq <= outerSq) {
+        if (dx * dx + dy * dy >= innerSq) {
           this.enemyMgr.damage(en, s.damage, false);
         }
       }
@@ -387,13 +398,9 @@ export class Game {
         const splashFraction = this.prestigeMgr.getAoESplashFraction();
         const splashDamage = Math.max(1, Math.floor(p.amount * splashFraction));
         const splashRadius = 60;
-        for (const e of this.enemyMgr.list) {
-          if (!e.alive || e.id === p.enemy.id) continue;
-          const dx = e.x - p.enemy.x;
-          const dy = e.y - p.enemy.y;
-          if (dx * dx + dy * dy <= splashRadius * splashRadius) {
-            this.enemyMgr.damage(e, splashDamage, false);
-          }
+        for (const e of this.enemyMgr.queryRadius(p.enemy.x, p.enemy.y, splashRadius)) {
+          if (e.id === p.enemy.id) continue;
+          this.enemyMgr.damage(e, splashDamage, false);
         }
       }
     });
@@ -484,13 +491,8 @@ export class Game {
       if (chainAoE > 0 && e.maxHp) {
         const aoeDamage = Math.max(1, Math.floor(e.maxHp * chainAoE));
         const chainRadius = 70;
-        for (const target of this.enemyMgr.list) {
-          if (!target.alive) continue;
-          const dx = target.x - e.x;
-          const dy = target.y - e.y;
-          if (dx * dx + dy * dy <= chainRadius * chainRadius) {
-            this.enemyMgr.damage(target, aoeDamage, false);
-          }
+        for (const target of this.enemyMgr.queryRadius(e.x, e.y, chainRadius)) {
+          this.enemyMgr.damage(target, aoeDamage, false);
         }
         this.effects.emitShockwaveRing(e.x, e.y, chainRadius);
       }
@@ -884,8 +886,12 @@ export class Game {
       }
     });
 
+    // Plan §5.7: these are frequent (a purchase, a wave start, an ability
+    // upgrade) and the state they change is not worth a synchronous
+    // `JSON.stringify` of the whole save each time. Mark it dirty and let
+    // `SaveManager.tick` coalesce; the tab-hidden handler flushes immediately.
     const saveOnEvent = () => {
-      this.saveMgr.save(this.state);
+      this.saveMgr.requestSave();
     };
     this.bus.on('upgrade_purchased', saveOnEvent);
     this.bus.on('ap_spent', saveOnEvent);
@@ -2593,6 +2599,28 @@ export class Game {
    *                the game (real-time research timers, auto-save cadence)
    */
   private update(dt: number, realDt: number): void {
+    // Plan §5.2: the simulation runs in fixed substeps. `dt` here can reach
+    // 0.05 s (the frame-hitch clamp) times 6.5 (max Accelerator speed) =
+    // 0.325 s, and a single step that long makes enemy movement, attack
+    // cadence and projectile travel wrong in ways the player reads as the
+    // game cheating. Substepping makes high speed cost what it should — more
+    // simulation — instead of quietly producing a different, coarser game.
+    const steps = Math.min(MAX_SUBSTEPS, Math.max(1, Math.ceil(dt / FIXED_STEP)));
+    const step = dt / steps;
+    for (let i = 0; i < steps; i++) {
+      this.simulate(step);
+    }
+    this.frameUpdate(dt, realDt);
+  }
+
+  /**
+   * One fixed simulation substep: waves, combat, movement, projectiles, mines.
+   *
+   * Everything here is time-integrated or cadence-driven, so it has to see the
+   * small step. Presentation and bookkeeping live in `frameUpdate`, which runs
+   * once per frame with the full delta.
+   */
+  private simulate(dt: number): void {
     this.waveMgr.tick(dt);
     this.resourceMgr.tick(dt, this.waveMgr.currentWave);
     this.abilityMgr.tick(dt);
@@ -2739,40 +2767,31 @@ export class Game {
     for (let i = this.mines.length - 1; i >= 0; i--) {
       const mine = this.mines[i];
       if (!mine.alive) continue;
-      for (const e of this.enemyMgr.list) {
-        if (!e.alive) continue;
-        const dx = e.x - mine.x;
-        const dy = e.y - mine.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist <= mine.explosionRadius) {
-          mine.alive = false;
-          for (const target of this.enemyMgr.list) {
-            if (!target.alive) continue;
-            const tdx = target.x - mine.x;
-            const tdy = target.y - mine.y;
-            if (Math.sqrt(tdx * tdx + tdy * tdy) <= mine.explosionRadius) {
-              this.enemyMgr.damage(target, mine.damage, false);
-            }
-          }
-          this.effects.emitMineExplosion(mine.x, mine.y);
-          // Evolution: mine_split — spawn child mines on detonation
-          if (!mine.isSplit && this.upgradeMgr.hasEvolutionEffect('mine_split')) {
-            const count = this.upgradeMgr.getEvolutionEffectValue('mine_split');
-            for (let c = 0; c < count; c++) {
-              const childAngle = Math.random() * Math.PI * 2;
-              const childDist = 25 + Math.random() * 25;
-              this.mines.push({
-                id: nextId(),
-                x: mine.x + Math.cos(childAngle) * childDist,
-                y: mine.y + Math.sin(childAngle) * childDist,
-                damage: mine.damage * 0.5,
-                explosionRadius: 30,
-                alive: true,
-                isSplit: true,
-              });
-            }
-          }
-          break;
+      // Trigger set and damage set are the same disc, so one radius query
+      // answers both — this used to be a nested scan of the whole enemy list
+      // per mine, per frame (plan §5.4).
+      const caught = this.enemyMgr.queryRadius(mine.x, mine.y, mine.explosionRadius);
+      if (caught.length === 0) continue;
+      mine.alive = false;
+      for (const target of caught) {
+        this.enemyMgr.damage(target, mine.damage, false);
+      }
+      this.effects.emitMineExplosion(mine.x, mine.y);
+      // Evolution: mine_split — spawn child mines on detonation
+      if (!mine.isSplit && this.upgradeMgr.hasEvolutionEffect('mine_split')) {
+        const count = this.upgradeMgr.getEvolutionEffectValue('mine_split');
+        for (let c = 0; c < count; c++) {
+          const childAngle = Math.random() * Math.PI * 2;
+          const childDist = 25 + Math.random() * 25;
+          this.mines.push({
+            id: nextId(),
+            x: mine.x + Math.cos(childAngle) * childDist,
+            y: mine.y + Math.sin(childAngle) * childDist,
+            damage: mine.damage * 0.5,
+            explosionRadius: 30,
+            alive: true,
+            isSplit: true,
+          });
         }
       }
     }
@@ -2785,7 +2804,19 @@ export class Game {
         ts.shieldCurrentCharges = Math.min(ts.shieldMaxCharges, ts.shieldCurrentCharges + 1);
       }
     }
+  }
 
+  /**
+   * Once-per-frame work: visuals, UI, automation, real-time systems.
+   *
+   * None of these need substepping — particles and toasts are presentation,
+   * automation and achievements are polled rather than integrated, and
+   * research and auto-save deliberately run on wall-clock time.
+   *
+   * @param dt      full simulation delta for this frame (all substeps summed)
+   * @param realDt  wall-clock delta
+   */
+  private frameUpdate(dt: number, realDt: number): void {
     this.effects.tick(dt);
     this.effects.tickChainLightning(dt);
     this.notifications.tick(dt);

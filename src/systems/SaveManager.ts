@@ -34,6 +34,18 @@ function defaultWaveModifier() {
   };
 }
 const AUTO_SAVE_INTERVAL = 30;
+
+/**
+ * Minimum wall-clock gap between event-driven writes (plan §5.7).
+ *
+ * Nine different events used to write the whole state synchronously —
+ * including every purchase and every wave start. With auto-buy on a 3 s timer
+ * and bulk buying, that is a `JSON.stringify` of the entire save several times
+ * a second on the main thread. Events now only mark the state dirty; the flush
+ * happens here, at most once per this many seconds, with the 30 s timer as the
+ * backstop for a quiet session.
+ */
+const SAVE_DEBOUNCE_SECONDS = 5;
 const OFFLINE_CAP_SECONDS = 7 * 24 * 60 * 60;
 const OFFLINE_EFFICIENCY = 0.5;
 const AVG_WAVE_DURATION = 18;
@@ -366,6 +378,8 @@ function validate(data: unknown): data is PersistentState {
 
 export class SaveManager {
   private saveTimer = 0;
+  /** Set by `requestSave`; cleared by the next actual write. */
+  private savePending = false;
   private readonly busListener: (payload: unknown) => void;
   private readonly getRP: () => number;
 
@@ -447,6 +461,7 @@ export class SaveManager {
       const snap = this.snapshot(state);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
       this.saveTimer = 0;
+      this.savePending = false;
       return true;
     } catch (err) {
       console.warn('[SaveManager] save failed:', err);
@@ -645,11 +660,29 @@ export class SaveManager {
     }
   }
 
+  /**
+   * Mark the state as changed without writing it (plan §5.7). The write
+   * happens in `tick`, no sooner than `SAVE_DEBOUNCE_SECONDS` after the last
+   * one. Use `save` directly for anything that must survive an immediate
+   * close, such as the tab going hidden.
+   */
+  requestSave(): void {
+    this.savePending = true;
+  }
+
+  /** Whether a requested save is still waiting to be flushed. */
+  get hasPendingSave(): boolean {
+    return this.savePending;
+  }
+
   tick(dt: number, state: GameState, onSave: (state: GameState) => boolean): void {
     this.saveTimer += dt;
-    if (this.saveTimer >= AUTO_SAVE_INTERVAL) {
-      this.saveTimer = 0;
-      onSave(state);
-    }
+    const due = this.savePending
+      ? this.saveTimer >= SAVE_DEBOUNCE_SECONDS
+      : this.saveTimer >= AUTO_SAVE_INTERVAL;
+    if (!due) return;
+    this.saveTimer = 0;
+    this.savePending = false;
+    onSave(state);
   }
 }

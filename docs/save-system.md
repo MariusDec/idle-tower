@@ -25,14 +25,30 @@ interface PersistentState {
 
 ## Auto-Save
 
-- Interval: 30 seconds
-- Triggered in `SaveManager.tick(dt, state, onSave)`
-- Called from `Game.update` each frame
+`SaveManager.tick(realDt, state, onSave)` is called once per frame from
+`Game.frameUpdate` on **wall-clock** delta, so the save cadence does not
+accelerate with game speed.
+
+Two triggers:
+
+- **Debounced (5 s).** Nine game events — purchases, wave starts, research,
+  ability upgrades, AP/TP spends, achievements — call
+  `SaveManager.requestSave()`, which only marks the state dirty. `tick` flushes
+  at most once per `SAVE_DEBOUNCE_SECONDS`. These used to write the full JSON
+  save synchronously on every event, which with auto-buy meant several
+  `JSON.stringify` calls of the whole state per second.
+- **Backstop (30 s).** `AUTO_SAVE_INTERVAL` writes even when nothing requested
+  it.
+
+`save(state)` writes immediately and clears the pending flag; use it for
+anything that must survive an immediate close. `Game.bindVisibilityEvents`
+calls it when the tab goes hidden, which is what flushes a pending debounced
+write.
 
 ## Validation
 
 `validate()` checks:
-- version === 2
+- version is 2..9 (older versions are walked up the migration ladder)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress

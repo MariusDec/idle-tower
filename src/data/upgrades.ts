@@ -385,3 +385,16 @@ export const UPGRADES: UpgradeDef[] = [
     hideUpgradeScale: true,
   },
 ];
+
+/**
+ * `id -> def` lookup (plan §5.8).
+ *
+ * `UpgradeManager` resolves an upgrade by id on every cost, max, affordability
+ * and evolution query, several of which run per frame from `Game.update`; a
+ * linear `UPGRADES.find` over 28 entries for each of those is pure waste.
+ */
+export const UPGRADE_BY_ID: Record<string, UpgradeDef> = (() => {
+  const map: Record<string, UpgradeDef> = {};
+  for (const u of UPGRADES) map[u.id] = u;
+  return map;
+})();

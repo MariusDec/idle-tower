@@ -68,3 +68,29 @@ The `damage` and `health` upgrades both have `startLevel: 1`, so they ship at L1
 Each shows: name, current level (or total/next for damage/health), cost, description. Click to buy.
 
 For `damage` and `health`, the level text is replaced with the current total effect and the next level's increase (e.g. `15 +13`). The bonus and per-level delta rows are hidden for these two.
+
+## Bulk Buying (plan §4.1)
+
+| Method | Buys |
+|---|---|
+| `buy(id)` | one level |
+| `getRoundedPlan(id, step)` | up to the next multiple of `step` — from level 18, x10 buys 2 |
+| `getMaxAffordablePlan(id, gold?)` | the largest plan the balance covers |
+| `buyBulk(id, count)` | executes a plan as **one transaction** |
+
+`buyBulk` pays once and emits `upgrade_purchased` once with `levelsGained`, so
+a x100 buy is one toast, one save request and one stat recompute rather than a
+hundred. Evolutions crossed by the jump each still announce themselves.
+
+Costs are summed level-by-level rather than closed-form, because `costGrowth`
+may be a per-level formula string with no single geometric ratio.
+
+## Lookup Caches (plan §5.8)
+
+- `UPGRADE_BY_ID` resolves a def without scanning `UPGRADES`.
+- `hasEvolutionEffect` / `getEvolutionEffectValue` read a cache rebuilt by
+  `rebuildEvolutionCache()` on every level mutation, rather than walking every
+  upgrade's every evolution. `Game.simulate` calls `hasEvolutionEffect` several
+  times per substep.
+
+> Any new writer of `UpgradeManager.levels` must call `rebuildEvolutionCache()`.

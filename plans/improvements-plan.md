@@ -526,6 +526,110 @@ possible heuristic: it floods cheap utility upgrades and never saves for damage.
 
 ## Part 5 — Performance & technical robustness
 
+> **Status: implemented (2026-08-19).** All ten items are done in the working
+> tree; `tsc --noEmit`, `vite build`, `npm run checks`, `npm run sim` and the
+> new `npm run test` are clean, and the renderer and timing work were verified
+> against the pre-change build in a running browser. Notes on how the plan was
+> interpreted, and the measurements behind each claim:
+>
+> - **5.1.** Enemy bodies, ground shadows, boss/healer/elite auras, elite
+>   crowns and the magic-bolt glow are pre-rendered per variant and blitted.
+>   Only genuinely per-instance animation stays live — wing flap, boss/splitter
+>   pulse, shield arcs, retribution ring. At 253 enemies with 12 elites this
+>   took `createRadialGradient` calls per frame from **266 to 0** and
+>   `drawEnemies` from **2.24 ms to 1.26 ms**. Pulsing auras scale the cached
+>   sprite instead of rebuilding the gradient, which moves the gradient's inner
+>   stop by the same few percent as the pulse; measured at 0.03% of a channel.
+>   Verified by rendering all 14 enemy/elite variants in isolation against the
+>   old renderer: **13 of 14 are pixel-equivalent**.
+> - **5.1 (behaviour change).** The boss enrage tint lived in the `diamond`
+>   branch of the shape switch, and no boss uses that shape — so an enraged
+>   boss never actually turned red. Hoisted out of the switch at the user's
+>   direction, so the tint now fires. This is the one intended visual
+>   difference from the refactor.
+> - **5.2.** `Game.update` splits into `simulate(step)` (fixed 1/60 s
+>   substeps, max 6 per frame) and `frameUpdate(dt, realDt)` (visuals, UI,
+>   automation, real-time systems). When the substep cap bites, step size grows
+>   rather than time being dropped, so the game never runs slow-motion under
+>   load. DPS at 6.5x speed versus 1x went from **−23.1% to +0.6%**; under a
+>   sustained 20 fps hitch at 6.5x, from **−46.3% to −15.3%**. The residual is
+>   the substep cap, and is the deliberate trade against a 20x per-frame
+>   simulation cost.
+> - **5.3.** Particles capped at 600, damage numbers at 80, oldest-first
+>   eviction. Damage numbers within 16 px of a live one younger than 0.22 s
+>   merge into it — 25 hits on one spot become one label reading the total —
+>   matched on kind so crits and heals keep their own colour.
+> - **5.4 — the plan's premise is wrong, and the item is scoped down.** A
+>   uniform grid exists (`src/utils/SpatialGrid.ts`) but backs only *some*
+>   radius queries. The plan calls these loops "O(n²) ... all-pairs over the
+>   enemy list"; measured, most are not. Their outer loop is over a handful of
+>   aura elites, healers or mines, so they are O(k·n) with a small k, and a
+>   flat array walk with an inlined distance test beats a hashed grid that must
+>   first rebuild an O(n) index. Measured in a single page load, grid vs. the
+>   direct scan it would replace:
+>
+>   | Path | 64 enemies | 250 | 420 |
+>   |---|---|---|---|
+>   | haste + vitality auras | **0.25x** | **0.40x** | **0.62x** |
+>   | mine detonation (15 mines) | — | 1.05x | 1.16x |
+>   | per-kill AoE (40 kills) | — | 1.36x | 1.29x |
+>
+>   So the grid backs mines, AoE splash, chain kills, the shockwave damage band
+>   and crit splash; the auras, healer search, retribution and shockwave
+>   displacement keep their direct scans, each with a comment saying why. The
+>   wins are real but small in absolute terms — roughly 0.01–0.02 ms of a ~3 ms
+>   frame. **A full revert of 5.4 is defensible** and would cost about that
+>   much; it is kept because the mine path genuinely was a nested scan per mine
+>   per frame, which is the one case that grows badly.
+>
+>   Two implementation notes: the rebuild is **lazy** (a frame with no mines or
+>   splash pays nothing), and `queryRadius` **returns a fresh array by default**
+>   — see the bug below.
+> - **5.5.** Bounds culling was already in place from Part 1; added a 4 s
+>   `MAX_PROJECTILE_AGE` applied to every projectile, not just homing ones,
+>   which is what retires a shot that is pinned or circling an uncatchable
+>   target.
+> - **5.7.** Event-driven saves became `requestSave()`, flushed by
+>   `SaveManager.tick` at most once per 5 s, with the 30 s timer as backstop.
+>   Twenty purchase events in one second now produce **one** write instead of
+>   twenty. The tab-hidden handler still writes synchronously, so a pending
+>   write cannot be lost.
+> - **5.9.** Vitest as a dev dependency only, keeping the zero-runtime-
+>   dependency rule. 72 tests across 5 files. Each optimisation is checked
+>   against the implementation it replaced — the grid against a brute-force
+>   scan, the evolution cache against a fresh linear scan, `xpToLevel` against
+>   the linear one at every table boundary — since the risk in this part is a
+>   subtly different answer, not a slow one.
+> - **5.10.** Refreshed every stale count and added the seven missing system
+>   pages (XP/talents, passives, equipment, wave modifiers, achievements,
+>   audio), plus `docs/performance.md` and `docs/testing.md`.
+>
+> One bug was introduced and fixed inside this part, worth recording because
+> the class of it is easy to repeat: `queryRadius` originally handed out a
+> single shared scratch buffer, and four of the five call sites damage what
+> they find. `damage` emits `enemy_killed` / `enemy_damaged`, whose handlers
+> query again — so the inner query cleared and refilled the array the outer
+> loop was still walking, silently dropping enemies from mine blasts, splash
+> and chain kills. Proven in the browser (a 10-enemy result set became 3
+> mid-iteration), fixed by returning fresh arrays, and pinned by a regression
+> test in `tests/systems.test.ts`.
+>
+> Two further findings surfaced while writing the tests, neither fixed here:
+>
+> - `all_stats` is read in three places in `Game` but granted by no
+>   achievement, so those reads are permanently zero — the mirror of the nine
+>   unread rewards §1.5 fixed. Granting it is a balance decision, so it is
+>   pinned in `tests/content-coverage.test.ts` under `KNOWN_UNGRANTED` with a
+>   test that fails once someone grants it.
+> - `Game.chooseWaveModifier` / `skipWaveModifier` do not call
+>   `WaveManager.resumeSpawning()` — only the modal's callbacks do. Any other
+>   caller silently leaves the wave paused forever.
+>
+> The plan's golden `StatContext` test (§7.2) still waits on Part 6: until
+> eight systems stop writing into `TowerState` directly there is no single
+> function to assert against, so `tests/formulas.test.ts` pins the per-upgrade
+> curves those systems multiply on top of instead.
+
 1. **Per-enemy radial gradients each frame.** `Renderer` calls `createRadialGradient` per enemy body
    (`Renderer.ts:327`), plus more for elites/auras/particles. `enemyCountForWave(200)` = 243 enemies
    → ~250+ gradient allocations per frame. Pre-render each enemy type/rarity to an offscreen canvas
@@ -607,7 +711,9 @@ PassiveAbilityManager effects) rather than copies of their logic. It is not a su
 Vitest suite in 7.2, but it covers the Part 2 behaviour with zero new dependencies.
 
 ### 7.2 Add a test runner
-Vitest (dev-dep only, keeps the zero-runtime-dependency rule). Minimum suite:
+**Done.** Vitest as a dev dependency only, run with `npm run test`; 72 tests in
+`tests/`. See [docs/testing.md](../docs/testing.md). The originally-specified
+suite:
 - **Golden stat tests:** given a fixed `StatContext`, assert the resolved damage/gold/fire-rate. These
   would have caught every bug in Part 1.
 - **Save round-trip + migration:** v2→v8 ladder on fixture saves; assert no field loss.
@@ -628,10 +734,10 @@ run at max speed and confirm DPS matches 1× DPS within ~5%.
 | ~~**1. Stop the bleeding**~~ ✅ | 1.1, 1.2, 1.3, 1.7, 1.8, 1.9 quick wins | done | Gold multipliers, Berserk, max mana and Vampiric now work. |
 | **2. Pipeline refactor** | Part 6, with exhaustive `StatKey` union | 2–3 days | Makes 1.4/1.5 mechanical and prevents recurrence. |
 | ~~**3. Wire dead content**~~ ✅ | 1.4 (20 talents), 1.5 (9 rewards), equipment rarity + minWave | done | Talent tree and achievements are now real. Pulled forward because the exhaustive `TalentStat` switch made it mechanical without waiting for Part 6. |
-| **4. Simulation correctness** (partly done) | ✅ 1.6 swept collision, ✅ research/save on unscaled dt — **remaining:** fixed-timestep substepping (5.2) | 1 day | High game speeds no longer cost DPS; substepping still needed for enemy/attack cadence at speed. |
+| ~~**4. Simulation correctness**~~ ✅ | 1.6 swept collision, research/save on unscaled dt, fixed-timestep substepping (5.2) | done | High game speeds no longer cost DPS: 6.5x is within 1% of 1x, measured. |
 | ~~**5. Balance re-tune**~~ ✅ | Part 2 (HP/gold/cost curves, first-prestige compression, AP sinks, XP curves) driven by 7.1 | done | Opening is 10 min instead of 60; runs end on a wave-enrage fail state instead of stalling; talents, passives and gear are reachable. Simulator kept in `sim/`. |
 | ~~**6. Depth & UX**~~ ✅ | Part 4 (bulk buy, stat breakdown tooltips, run-stall prompt, offline rework, progression tab, respec, keybinds) plus the auto-buy priorities and mutator/elite rework already done in Part 3 | done | Upgrades buy in bulk, the gold number explains itself, a stalled run says so, offline actually progresses the run, and the talent respec no longer eats points. |
-| **7. Perf & hygiene** | Part 5 items 1/3/4/5/7/8, tests (7.2), doc refresh (5.10) | 2–4 days | Late-wave framerate, safe future changes. |
+| ~~**7. Perf & hygiene**~~ ✅ | Part 5 in full (sprite cache, fixed timestep, pools, spatial grid, projectile lifetime, save debounce, lookup caches), tests (7.2), doc refresh (5.10) | done | Zero gradient allocations per frame and ~44% off enemy drawing; 6.5x game speed now costs ~0% DPS instead of 23%; saves write once per 5 s instead of per event; 73 tests and a doc page per system. 5.4 was scoped down on measurement — see the note in Part 5. |
 
 **Suggested first PR:** Phase 1 items 1.1 + 1.3 alone (delete two lines from
 `AbilityManager.applyOngoingBuffs`, introduce a fire-rate source map). Small, isolated, and it

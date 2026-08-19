@@ -53,3 +53,23 @@ For each alive enemy:
 | `applyShockwave(radius, fromX, fromY)` | Push all enemies within radius to the edge |
 | `setGoldMultipliers(additive, multiplicative)` | Affect gold drops |
 | `setGoldLuck(chance, multiplier)` | Random gold multiplication |
+
+## Radius Queries (plan §5.4)
+
+`EnemyManager` owns a `SpatialGrid` and exposes
+`queryRadius(x, y, radius, out?)`, used by mine detonation, AoE splash,
+chain-kill AoE, the shockwave damage band and crit splash.
+
+The aura passes, the healer's target search, retribution and shockwave
+displacement deliberately keep their direct scans: their outer loop is over a
+handful of elites, healers or rings rather than over every enemy, and measured
+at 64-420 enemies the grid is 1.6-4x *slower* there than the flat walk. See
+[performance.md](performance.md).
+
+> Any code that moves enemies must set `gridStale`. `tick` and `applyShockwave`
+> do.
+
+`queryRadius` returns a fresh array by default. Pass `out` to reuse a buffer
+only where nothing in the loop can trigger another query — damaging an enemy
+emits events whose handlers query again, and a shared buffer would be cleared
+underneath the loop still walking it.

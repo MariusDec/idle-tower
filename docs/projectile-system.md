@@ -67,3 +67,28 @@ Called from `Game.update` when tower cooldown is ready.
 | `reset()` | Clear all projectiles |
 | `setDamageMultipliers(a, m)` | Update damage bonuses |
 | `setPierceExtra(n)` | Set additional pierce count |
+
+## Collision (plan §1.6)
+
+Collision is **swept**, not a point test: `tick` remembers the pre-move
+position and finds the nearest enemy along the whole travel *segment*
+(closest-point-on-segment against `ENEMY_DEFS[type].radius + 6`). At 720 px/s a
+single step can cover far more than an enemy's radius, so a point-in-circle
+test at the end position missed most hits at high game speed — the Accelerator
+perk actively reduced DPS.
+
+Because the nearest hit along the segment wins, a fast projectile hits the
+first thing in its path rather than whichever enemy happens to come first in
+the array.
+
+## Lifetime (plan §5.5)
+
+A projectile retires when it:
+
+1. hits, with pierce exhausted, or
+2. leaves the play field by a 120 px margin (`setBounds(width, height)`), or
+3. reaches `MAX_PROJECTILE_AGE` (4 s).
+
+Every projectile ages, not just homing ones. The age cap is what retires a shot
+that is pinned or circling a target it can never catch — bounds culling alone
+would keep it in the list, and in every projectile-vs-enemy loop, indefinitely.

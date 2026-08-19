@@ -44,7 +44,7 @@ The tower itself has no base damage or HP. Both are provided by the `damage` and
 
 ## Upgrade Definitions (`src/data/upgrades.ts`)
 
-17 upgrades each with: id, name, description, baseCost, costGrowth, effectPerLevel, effectType (add/mult), maxLevel, category, optional scaling config.
+27 upgrades each with: id, name, description, baseCost, costGrowth, effectPerLevel, effectType (add/mult), maxLevel, category, optional scaling config.
 
 ## Ability Definitions (`src/data/abilities.ts`)
 

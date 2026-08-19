@@ -1,9 +1,25 @@
 import type { RenderSnapshot, Enemy, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType } from '../types';
 import { TOWER_VISUAL } from '../data/tower';
 import { ENEMY_DEFS } from '../data/enemies';
+import type { EnemyDef } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
 import { formatInt } from '../utils/bigNumber';
 import { ELITE_AURA_COLORS, AURA_RADIUS } from '../systems/EnemyManager';
+
+/** How much larger an elite renders than a normal enemy of the same type. */
+const ELITE_RADIUS_SCALE = 1.25;
+/** Slack around a body sprite so its outline stroke is not clipped. */
+const SPRITE_PADDING = 6;
+/** Body colour of a boss below its enrage threshold. */
+const ENRAGED_BOSS_COLOR = '#ff2020';
+/** Solid crown colours, one per aura (the aura fills are translucent). */
+const ELITE_CROWN_COLORS: Record<AuraType, string> = {
+  haste: '#3cb4ff',
+  thorns: '#ff6420',
+  greed: '#ffd700',
+  vitality: '#3edc64',
+  retribution: '#b432dc',
+};
 
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
@@ -12,6 +28,25 @@ export class Renderer {
   private readonly rangeOverlay: boolean = true;
   private time = 0;
   private bgCanvas: HTMLCanvasElement | null = null;
+  /**
+   * Pre-rendered sprites (plan §5.1).
+   *
+   * Enemy bodies, ground shadows and every aura glow used to be built from
+   * scratch on the canvas each frame — `createRadialGradient` alone ran once
+   * per shadow, once per boss/healer/elite aura and once per magic
+   * projectile, so a wave of 240 enemies allocated several hundred gradient
+   * objects every frame before drawing anything. All of it is static per
+   * (type, variant), so it is painted once into an offscreen canvas and
+   * blitted afterwards.
+   *
+   * Only genuinely per-enemy animation stays live: the wing flap, the
+   * boss/splitter pulse and the shield arcs, none of which allocate.
+   */
+  private readonly enemySprites = new Map<string, HTMLCanvasElement>();
+  private readonly shadowSprites = new Map<string, HTMLCanvasElement>();
+  private readonly auraSprites = new Map<string, HTMLCanvasElement>();
+  private readonly crownSprites = new Map<string, HTMLCanvasElement>();
+  private magicProjectileSprite: HTMLCanvasElement | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -312,6 +347,168 @@ export class Renderer {
     ctx.restore();
   }
 
+  /**
+   * Allocate an offscreen canvas of `size` px square with the origin moved to
+   * its centre, so a painter can draw in the same coordinates it would use
+   * around an enemy at (0, 0).
+   */
+  private makeSprite(size: number, paint: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {
+    const px = Math.max(2, Math.ceil(size));
+    const c = document.createElement('canvas');
+    c.width = px;
+    c.height = px;
+    const g = c.getContext('2d')!;
+    g.translate(px / 2, px / 2);
+    paint(g);
+    return c;
+  }
+
+  /** Radius an enemy of this type renders at, elite scaling included. */
+  private enemyDrawRadius(enemy: Enemy): number {
+    return ENEMY_DEFS[enemy.type].radius * (enemy.elite ? ELITE_RADIUS_SCALE : 1);
+  }
+
+  private getEnemySprite(enemy: Enemy): HTMLCanvasElement {
+    const enraged = enemy.type === 'boss' && enemy.enraged === true;
+    const key = `${enemy.type}|${enemy.elite ? 1 : 0}|${enraged ? 1 : 0}`;
+    const cached = this.enemySprites.get(key);
+    if (cached) return cached;
+    const def = ENEMY_DEFS[enemy.type];
+    const r = this.enemyDrawRadius(enemy);
+    const sprite = this.makeSprite((r + SPRITE_PADDING) * 2, (g) => {
+      this.paintEnemyBody(g, enemy.type, def, r, enraged);
+    });
+    this.enemySprites.set(key, sprite);
+    return sprite;
+  }
+
+  /**
+   * Paint an enemy body centred on the origin: fill, outline and whatever
+   * static decoration the type carries. The winged type's flapping wings are
+   * deliberately absent — they are animated, so they are drawn live.
+   */
+  private paintEnemyBody(
+    ctx: CanvasRenderingContext2D,
+    type: Enemy['type'],
+    def: EnemyDef,
+    r: number,
+    enraged: boolean,
+  ): void {
+    // Boss enrage colour shift: the body turns red below 50% HP. The check is
+    // hoisted out of the shape switch on purpose — it used to live only in the
+    // `diamond` branch, and since no boss uses that shape, an enraged boss
+    // never actually changed colour. Applying it per body colour rather than
+    // per shape means it fires whatever shape a boss is given later.
+    const bodyColor = type === 'boss' && enraged ? ENRAGED_BOSS_COLOR : def.color;
+    switch (def.shape) {
+      case 'diamond':
+        ctx.fillStyle = bodyColor;
+        ctx.beginPath();
+        ctx.moveTo(0, -r);
+        ctx.lineTo(r, 0);
+        ctx.lineTo(0, r);
+        ctx.lineTo(-r, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = def.borderColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Splitter gets a small inner core dot to make it stand out
+        if (type === 'splitter') {
+          ctx.fillStyle = 'rgba(255,255,255,0.55)';
+          ctx.beginPath();
+          ctx.arc(0, 0, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      case 'winged':
+        ctx.fillStyle = bodyColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = def.borderColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        break;
+      case 'circle':
+      default: {
+        ctx.fillStyle = bodyColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = def.borderColor;
+        ctx.lineWidth = type === 'tank' ? 4 : type === 'boss' ? 3 : 2;
+        ctx.stroke();
+        if (def.glyph) {
+          ctx.fillStyle = '#fff';
+          ctx.font = `bold ${r}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(def.glyph, 0, 1);
+        }
+        if (type === 'tank') {
+          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(0, 0, r - 4, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        break;
+      }
+    }
+  }
+
+  /**
+   * Ground shadow, keyed by radius so the eight enemy types share four or five
+   * sprites between them.
+   */
+  private getShadowSprite(r: number): HTMLCanvasElement {
+    const key = r.toFixed(1);
+    const cached = this.shadowSprites.get(key);
+    if (cached) return cached;
+    const sprite = this.makeSprite(r * 2, (g) => {
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.9);
+      grad.addColorStop(0, 'rgba(0,0,0,0.35)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(0, 0, r * 0.85, r * 0.3, 0, 0, Math.PI * 2);
+      g.fill();
+    });
+    this.shadowSprites.set(key, sprite);
+    return sprite;
+  }
+
+  /**
+   * A radial glow, painted once at its unpulsed size and scaled by `drawImage`
+   * at draw time.
+   *
+   * The live version recomputed the gradient every frame so that its inner
+   * stop stayed at a fixed radius while the outer one pulsed; scaling the
+   * whole sprite instead moves the inner stop by the same few percent, which
+   * is not visible against a +/-12% pulse on a soft gradient.
+   */
+  private getAuraSprite(key: string, radius: number, inner: number, stops: [number, string][]): HTMLCanvasElement {
+    const cached = this.auraSprites.get(key);
+    if (cached) return cached;
+    const sprite = this.makeSprite(radius * 2, (g) => {
+      const grad = g.createRadialGradient(0, 0, inner, 0, 0, radius);
+      for (const [offset, color] of stops) grad.addColorStop(offset, color);
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(0, 0, radius, 0, Math.PI * 2);
+      g.fill();
+    });
+    this.auraSprites.set(key, sprite);
+    return sprite;
+  }
+
+  /** Blit a cached glow centred on a point, scaled by the caller's pulse. */
+  private drawAuraSprite(ctx: CanvasRenderingContext2D, sprite: HTMLCanvasElement, x: number, y: number, scale: number): void {
+    const size = sprite.width * scale;
+    ctx.drawImage(sprite, x - size / 2, y - size / 2, size, size);
+  }
+
   private drawEnemies(ctx: CanvasRenderingContext2D, enemies: Enemy[]): void {
     for (const e of enemies) {
       if (!e.alive) continue;
@@ -322,22 +519,14 @@ export class Renderer {
 
   private drawEnemyShadow(ctx: CanvasRenderingContext2D, enemy: Enemy): void {
     if (enemy.type === 'flying') return;
-    const def = ENEMY_DEFS[enemy.type];
-    const r = def.radius;
-    const grad = ctx.createRadialGradient(enemy.x, enemy.y + r * 0.6, 0, enemy.x, enemy.y + r * 0.6, r * 0.9);
-    grad.addColorStop(0, 'rgba(0,0,0,0.35)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(enemy.x, enemy.y + r * 0.6, r * 0.85, r * 0.3, 0, 0, Math.PI * 2);
-    ctx.fill();
+    const r = ENEMY_DEFS[enemy.type].radius;
+    const sprite = this.getShadowSprite(r);
+    const half = sprite.width / 2;
+    ctx.drawImage(sprite, enemy.x - half, enemy.y + r * 0.6 - half);
   }
 
   private drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy): void {
-    const def = ENEMY_DEFS[enemy.type];
-    const baseR = def.radius;
-    const eliteScale = enemy.elite ? 1.25 : 1;
-    const r = baseR * eliteScale;
+    const r = this.enemyDrawRadius(enemy);
     let bob = 0;
     if (enemy.type === 'flying') {
       bob = Math.sin(this.time * 5 + enemy.id * 0.7) * 3;
@@ -354,105 +543,24 @@ export class Renderer {
       this.drawHealerAura(ctx, enemy, r);
     }
 
-    ctx.save();
-    if (enemy.type === 'boss') {
-      const pulse = 1 + Math.sin(this.time * 4) * 0.08;
-      ctx.translate(enemy.x, enemy.y);
-      ctx.scale(pulse, pulse);
-      ctx.translate(-enemy.x, -enemy.y);
-    }
-    if (enemy.type === 'splitter') {
-      const pulse = 1 + Math.sin(this.time * 3 + enemy.id) * 0.05;
-      ctx.translate(enemy.x, enemy.y);
-      ctx.scale(pulse, pulse);
-      ctx.translate(-enemy.x, -enemy.y);
-    }
+    // Body: one blit of a cached sprite. The pulse is a transform around the
+    // enemy's centre rather than a repaint at a different size.
+    let pulse = 1;
+    if (enemy.type === 'boss') pulse = 1 + Math.sin(this.time * 4) * 0.08;
+    else if (enemy.type === 'splitter') pulse = 1 + Math.sin(this.time * 3 + enemy.id) * 0.05;
 
-    switch (def.shape) {
-      case 'diamond':
-        // P5: Boss enrage color shift — turn the body red when below 50% HP
-        if (enemy.type === 'boss' && (enemy as { enraged?: boolean }).enraged) {
-          ctx.fillStyle = '#ff2020';
-        } else {
-          ctx.fillStyle = def.color;
-        }
-        ctx.beginPath();
-        ctx.moveTo(enemy.x, enemy.y - r + bob);
-        ctx.lineTo(enemy.x + r, enemy.y + bob);
-        ctx.lineTo(enemy.x, enemy.y + r + bob);
-        ctx.lineTo(enemy.x - r, enemy.y + bob);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        // Splitter gets a small inner core dot to make it stand out
-        if (enemy.type === 'splitter') {
-          ctx.fillStyle = 'rgba(255,255,255,0.55)';
-          ctx.beginPath();
-          ctx.arc(enemy.x, enemy.y + bob, 3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        break;
-      case 'winged': {
-        const wingFlap = Math.sin(this.time * 12 + enemy.id) * 0.4;
-        ctx.fillStyle = def.color;
-        ctx.beginPath();
-        ctx.arc(enemy.x, enemy.y + bob, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.fillStyle = def.borderColor;
-        ctx.save();
-        ctx.translate(enemy.x, enemy.y + bob);
-        ctx.rotate(-wingFlap);
-        ctx.beginPath();
-        ctx.moveTo(-r, 0);
-        ctx.lineTo(-r - 9, -6);
-        ctx.lineTo(-r - 4, 0);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-        ctx.save();
-        ctx.translate(enemy.x, enemy.y + bob);
-        ctx.rotate(wingFlap);
-        ctx.beginPath();
-        ctx.moveTo(r, 0);
-        ctx.lineTo(r + 9, -6);
-        ctx.lineTo(r + 4, 0);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-        break;
-      }
-      case 'circle':
-      default: {
-        ctx.fillStyle = def.color;
-        ctx.beginPath();
-        ctx.arc(enemy.x, enemy.y + bob, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = enemy.type === 'tank' ? 4 : enemy.type === 'boss' ? 3 : 2;
-        ctx.stroke();
-        if (def.glyph) {
-          ctx.fillStyle = '#fff';
-          ctx.font = `bold ${r}px sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(def.glyph, enemy.x, enemy.y + bob + 1);
-        }
-        if (enemy.type === 'tank') {
-          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.arc(enemy.x, enemy.y + bob, r - 4, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        break;
-      }
-    }
+    const sprite = this.getEnemySprite(enemy);
+    const half = sprite.width / 2;
+    ctx.save();
+    ctx.translate(enemy.x, enemy.y + bob);
+    if (pulse !== 1) ctx.scale(pulse, pulse);
+    ctx.drawImage(sprite, -half, -half);
     ctx.restore();
+
+    // Wings flap, so they cannot be baked into the body sprite.
+    if (ENEMY_DEFS[enemy.type].shape === 'winged') {
+      this.drawWings(ctx, enemy, r, bob);
+    }
 
     // Shielded: orbiting shield segments (arcs) when charges > 0
     if (enemy.type === 'shielded' && (enemy.shieldCharges ?? 0) > 0) {
@@ -466,9 +574,9 @@ export class Renderer {
 
     // Retribution buff indicator (pulsing purple border)
     if (enemy.retributionTimer && enemy.retributionTimer > 0) {
-      const pulse = 0.4 + Math.sin(this.time * 8) * 0.3;
+      const p = 0.4 + Math.sin(this.time * 8) * 0.3;
       ctx.save();
-      ctx.strokeStyle = `rgba(180, 50, 220, ${pulse})`;
+      ctx.strokeStyle = `rgba(180, 50, 220, ${p})`;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y + bob, r + 5, 0, Math.PI * 2);
@@ -479,53 +587,71 @@ export class Renderer {
     this.drawEnemyHpBar(ctx, enemy, r, bob);
   }
 
+  private drawWings(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
+    const def = ENEMY_DEFS[enemy.type];
+    const wingFlap = Math.sin(this.time * 12 + enemy.id) * 0.4;
+    ctx.save();
+    ctx.fillStyle = def.borderColor;
+    for (const dir of [-1, 1]) {
+      ctx.save();
+      ctx.translate(enemy.x, enemy.y + bob);
+      ctx.rotate(wingFlap * dir);
+      ctx.beginPath();
+      ctx.moveTo(r * dir, 0);
+      ctx.lineTo((r + 9) * dir, -6);
+      ctx.lineTo((r + 4) * dir, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   private drawHealerAura(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
     const pulse = 1 + Math.sin(this.time * 2.5 + enemy.id) * 0.12;
-    const grad = ctx.createRadialGradient(enemy.x, enemy.y, r * 0.7, enemy.x, enemy.y, r * 2.0 * pulse);
-    grad.addColorStop(0, 'rgba(80, 220, 120, 0.22)');
-    grad.addColorStop(0.6, 'rgba(39, 174, 96, 0.08)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(enemy.x, enemy.y, r * 2.0 * pulse, 0, Math.PI * 2);
-    ctx.fill();
+    const sprite = this.getAuraSprite(`healer|${r}`, r * 2.0, r * 0.7, [
+      [0, 'rgba(80, 220, 120, 0.22)'],
+      [0.6, 'rgba(39, 174, 96, 0.08)'],
+      [1, 'rgba(0,0,0,0)'],
+    ]);
+    this.drawAuraSprite(ctx, sprite, enemy.x, enemy.y, pulse);
   }
 
   private drawEliteAura(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, aura: AuraType): void {
     const color = ELITE_AURA_COLORS[aura];
     const pulse = 1 + Math.sin(this.time * 3 + enemy.id) * 0.15;
-    const auraR = AURA_RADIUS * 0.6 * pulse; // visual radius scaled down for display
-    const grad = ctx.createRadialGradient(enemy.x, enemy.y, r * 0.5, enemy.x, enemy.y, auraR);
-    grad.addColorStop(0, color);
-    grad.addColorStop(0.7, color.replace(/[\d.]+\)$/, '0.08)'));
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(enemy.x, enemy.y, auraR, 0, Math.PI * 2);
-    ctx.fill();
+    const auraR = AURA_RADIUS * 0.6; // visual radius scaled down for display
+    const sprite = this.getAuraSprite(`elite|${aura}|${r}`, auraR, r * 0.5, [
+      [0, color],
+      [0.7, color.replace(/[\d.]+\)$/, '0.08)')],
+      [1, 'rgba(0,0,0,0)'],
+    ]);
+    this.drawAuraSprite(ctx, sprite, enemy.x, enemy.y, pulse);
   }
 
   private drawEliteCrown(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
-    const auraColors: Record<AuraType, string> = {
-      haste: '#3cb4ff',
-      thorns: '#ff6420',
-      greed: '#ffd700',
-      vitality: '#3edc64',
-      retribution: '#b432dc',
-    };
-    const color = auraColors[enemy.aura!] ?? '#fff';
-    const crownY = enemy.y - r - 12 + bob;
-    ctx.save();
-    ctx.fillStyle = color;
-    ctx.font = `bold ${Math.max(10, r * 0.7)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('♛', enemy.x, crownY);
-    // Glow
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 6;
-    ctx.fillText('♛', enemy.x, crownY);
-    ctx.restore();
+    const color = ELITE_CROWN_COLORS[enemy.aura!] ?? '#fff';
+    const size = Math.max(10, r * 0.7);
+    const key = `${color}|${size.toFixed(1)}`;
+    let sprite = this.crownSprites.get(key);
+    if (!sprite) {
+      // The glow pass is a second fillText under a shadow blur, which is one
+      // of the most expensive things a 2D context does; baking it means an
+      // elite costs a blit rather than two blurred glyph rasterisations.
+      sprite = this.makeSprite(size * 2 + 16, (g) => {
+        g.fillStyle = color;
+        g.font = `bold ${size}px sans-serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText('♛', 0, 0);
+        g.shadowColor = color;
+        g.shadowBlur = 6;
+        g.fillText('♛', 0, 0);
+      });
+      this.crownSprites.set(key, sprite);
+    }
+    const half = sprite.width / 2;
+    ctx.drawImage(sprite, enemy.x - half, enemy.y - r - 12 + bob - half);
   }
 
   private drawShieldArcs(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
@@ -557,19 +683,17 @@ export class Renderer {
 
   private drawBossAura(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
     // P5: enrage makes the aura pulse faster and brighter
-    const enraged = (enemy as { enraged?: boolean }).enraged;
+    const enraged = enemy.enraged === true;
     const speed = enraged ? 7 : 3;
     const pulse = 1 + Math.sin(this.time * speed) * (enraged ? 0.22 : 0.12);
     const innerColor = enraged ? 'rgba(255, 80, 80, 0.55)' : 'rgba(255, 60, 60, 0.28)';
     const midColor = enraged ? 'rgba(220, 30, 30, 0.20)' : 'rgba(160, 0, 0, 0.10)';
-    const grad = ctx.createRadialGradient(enemy.x, enemy.y, r * 0.7, enemy.x, enemy.y, r * 2.4 * pulse);
-    grad.addColorStop(0, innerColor);
-    grad.addColorStop(0.6, midColor);
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(enemy.x, enemy.y, r * 2.4 * pulse, 0, Math.PI * 2);
-    ctx.fill();
+    const sprite = this.getAuraSprite(`boss|${enraged ? 1 : 0}|${r}`, r * 2.4, r * 0.7, [
+      [0, innerColor],
+      [0.6, midColor],
+      [1, 'rgba(0,0,0,0)'],
+    ]);
+    this.drawAuraSprite(ctx, sprite, enemy.x, enemy.y, pulse);
   }
 
   private drawEnemyHpBar(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
@@ -594,17 +718,22 @@ export class Renderer {
     for (const p of projectiles) {
       if (!p.alive) continue;
       if (p.damageType === 'magic') {
-        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 8);
-        grad.addColorStop(0, '#e0b3ff');
-        grad.addColorStop(1, 'rgba(120, 60, 200, 0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#9b59ff';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
-        ctx.fill();
+        if (!this.magicProjectileSprite) {
+          this.magicProjectileSprite = this.makeSprite(16, (g) => {
+            const grad = g.createRadialGradient(0, 0, 0, 0, 0, 8);
+            grad.addColorStop(0, '#e0b3ff');
+            grad.addColorStop(1, 'rgba(120, 60, 200, 0)');
+            g.fillStyle = grad;
+            g.beginPath();
+            g.arc(0, 0, 8, 0, Math.PI * 2);
+            g.fill();
+            g.fillStyle = '#9b59ff';
+            g.beginPath();
+            g.arc(0, 0, 3, 0, Math.PI * 2);
+            g.fill();
+          });
+        }
+        ctx.drawImage(this.magicProjectileSprite, p.x - 8, p.y - 8);
       } else {
         const angle = Math.atan2(p.vy, p.vx);
         ctx.save();

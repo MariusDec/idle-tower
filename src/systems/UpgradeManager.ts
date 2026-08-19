@@ -1,5 +1,5 @@
 import type { UpgradeDef, UpgradeEvolution } from '../types';
-import { UPGRADES } from '../data/upgrades';
+import { UPGRADES, UPGRADE_BY_ID } from '../data/upgrades';
 import { upgradeCost } from '../data/formulas';
 import type { ResourceManager } from './ResourceManager';
 import { EventBus } from '../game/EventBus';
@@ -21,6 +21,19 @@ export class UpgradeManager {
   private readonly bus: EventBus;
   private readonly resources: ResourceManager;
   private costDiscount = 0;
+  /**
+   * Evolution effects unlocked by the current levels (plan §5.8).
+   *
+   * `hasEvolutionEffect` is called several times per frame from
+   * `Game.update`, and each call used to walk every upgrade's every evolution.
+   * The answer only changes when a level changes, so it is computed there
+   * instead. `activeEvolutionIds` keeps the "is it unlocked" semantics (an
+   * evolution with `effectValue: 0` still counts) separate from the value
+   * lookup, which reports the first upgrade in table order with a non-zero
+   * value — same as the linear scan it replaces.
+   */
+  private activeEvolutionIds = new Set<string>();
+  private activeEvolutionValues = new Map<string, number>();
 
   constructor(bus: EventBus, resources: ResourceManager) {
     this.bus = bus;
@@ -28,6 +41,7 @@ export class UpgradeManager {
     for (const u of UPGRADES) {
       this.levels[u.id] = u.startLevel ?? 0;
     }
+    this.rebuildEvolutionCache();
   }
 
   setCostDiscount(discount: number): void {
@@ -43,7 +57,7 @@ export class UpgradeManager {
   }
 
   getCost(id: string): number {
-    const def = UPGRADES.find(u => u.id === id);
+    const def = UPGRADE_BY_ID[id];
     if (!def) return Infinity;
     if (this.isMaxed(id)) return Infinity;
     const cost = upgradeCost(def.baseCost, def.costGrowth, this.levels[id] ?? 0);
@@ -64,7 +78,7 @@ export class UpgradeManager {
    * plan can come back smaller than `count` (or empty, at max).
    */
   getBulkPlan(id: string, count: number): BulkPlan {
-    const def = UPGRADES.find(u => u.id === id);
+    const def = UPGRADE_BY_ID[id];
     if (!def || count <= 0) return { levels: 0, cost: 0 };
     const start = this.levels[id] ?? 0;
     const room = def.maxLevel > 0 ? def.maxLevel - start : MAX_BULK_LEVELS;
@@ -95,7 +109,7 @@ export class UpgradeManager {
    * Walks levels one at a time for the same reason `getBulkPlan` does.
    */
   getMaxAffordablePlan(id: string, gold: number = this.resources.gold): BulkPlan {
-    const def = UPGRADES.find(u => u.id === id);
+    const def = UPGRADE_BY_ID[id];
     if (!def) return { levels: 0, cost: 0 };
     const start = this.levels[id] ?? 0;
     const room = def.maxLevel > 0 ? def.maxLevel - start : MAX_BULK_LEVELS;
@@ -111,7 +125,7 @@ export class UpgradeManager {
   }
 
   isMaxed(id: string): boolean {
-    const def = UPGRADES.find(u => u.id === id);
+    const def = UPGRADE_BY_ID[id];
     if (!def) return true;
     const level = this.levels[id] ?? 0;
     return def.maxLevel > 0 && level >= def.maxLevel;
@@ -123,7 +137,7 @@ export class UpgradeManager {
   }
 
   buy(id: string): boolean {
-    const def = UPGRADES.find(u => u.id === id);
+    const def = UPGRADE_BY_ID[id];
     if (!def) return false;
     if (this.isMaxed(id)) return false;
     const level = this.levels[id] ?? 0;
@@ -132,6 +146,7 @@ export class UpgradeManager {
     if (!this.resources.spendGold(effectiveCost)) return false;
     const newLevel = level + 1;
     this.levels[id] = newLevel;
+    this.rebuildEvolutionCache();
     this.bus.emit('upgrade_purchased', { id, level: newLevel, levelsGained: 1 });
     this.bus.emit('upgrades_changed', { ...this.levels });
     if (def.evolutions) {
@@ -154,7 +169,7 @@ export class UpgradeManager {
    * the jump each still announce themselves.
    */
   buyBulk(id: string, count: number): number {
-    const def = UPGRADES.find(u => u.id === id);
+    const def = UPGRADE_BY_ID[id];
     if (!def) return 0;
     const plan = this.getBulkPlan(id, count);
     if (plan.levels <= 0) return 0;
@@ -167,6 +182,7 @@ export class UpgradeManager {
     const start = this.levels[id] ?? 0;
     const newLevel = start + levels;
     this.levels[id] = newLevel;
+    this.rebuildEvolutionCache();
     this.bus.emit('upgrade_purchased', { id, level: newLevel, levelsGained: levels });
     this.bus.emit('upgrades_changed', { ...this.levels });
     if (def.evolutions) {
@@ -180,7 +196,7 @@ export class UpgradeManager {
   }
 
   getActiveEvolutions(id: string): UpgradeEvolution[] {
-    const def = UPGRADES.find(u => u.id === id);
+    const def = UPGRADE_BY_ID[id];
     if (!def || !def.evolutions) return [];
     const level = this.levels[id] ?? 0;
     return def.evolutions.filter(e => level >= e.level);
@@ -193,7 +209,7 @@ export class UpgradeManager {
   }
 
   getNextEvolution(id: string): UpgradeEvolution | null {
-    const def = UPGRADES.find(u => u.id === id);
+    const def = UPGRADE_BY_ID[id];
     if (!def || !def.evolutions) return null;
     const level = this.levels[id] ?? 0;
     for (const evo of def.evolutions) {
@@ -203,35 +219,41 @@ export class UpgradeManager {
   }
 
   hasEvolutionEffect(effectId: string): boolean {
-    for (const u of UPGRADES) {
-      if (!u.evolutions) continue;
-      const level = this.levels[u.id] ?? 0;
-      for (const evo of u.evolutions) {
-        if (level >= evo.level && evo.effectId === effectId) return true;
-      }
-    }
-    return false;
+    return this.activeEvolutionIds.has(effectId);
   }
 
   getEvolutionEffectValue(effectId: string): number {
+    return this.activeEvolutionValues.get(effectId) ?? 0;
+  }
+
+  /** Recompute the evolution lookups. Called from every level mutation. */
+  private rebuildEvolutionCache(): void {
+    this.activeEvolutionIds.clear();
+    this.activeEvolutionValues.clear();
     for (const u of UPGRADES) {
       if (!u.evolutions) continue;
       const level = this.levels[u.id] ?? 0;
-      let value = 0;
+      // Within one upgrade the highest reached evolution wins; across
+      // upgrades the first one in table order with a non-zero value does.
+      const perUpgrade = new Map<string, number>();
       for (const evo of u.evolutions) {
-        if (level >= evo.level && evo.effectId === effectId) {
-          value = evo.effectValue;
+        if (level < evo.level) continue;
+        this.activeEvolutionIds.add(evo.effectId);
+        perUpgrade.set(evo.effectId, evo.effectValue);
+      }
+      for (const [effectId, value] of perUpgrade) {
+        if (value > 0 && !this.activeEvolutionValues.has(effectId)) {
+          this.activeEvolutionValues.set(effectId, value);
         }
       }
-      if (value > 0) return value;
     }
-    return 0;
   }
 
   reset(): void {
     for (const u of UPGRADES) {
       this.levels[u.id] = u.startLevel ?? 0;
     }
+    this.rebuildEvolutionCache();
     this.bus.emit('upgrades_changed', { ...this.levels });
   }
 
@@ -240,6 +262,7 @@ export class UpgradeManager {
       const start = u.startLevel ?? 0;
       this.levels[u.id] = Math.max(start, levels[u.id] ?? 0);
     }
+    this.rebuildEvolutionCache();
     this.bus.emit('upgrades_changed', { ...this.levels });
   }
 
