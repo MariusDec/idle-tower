@@ -1,9 +1,13 @@
 import type { DamageType, Enemy, Projectile, TowerState } from '../types';
 import { nextId } from '../utils/math';
 import { PROJECTILE_SPEED } from '../data/tower';
+import { ENEMY_DEFS } from '../data/enemies';
 import type { Tower } from './Tower';
 import type { EnemyManager } from './EnemyManager';
 import { EventBus } from '../game/EventBus';
+
+/** HP fraction below which the Executioner talent's bonus damage applies. */
+const TALENT_EXECUTE_THRESHOLD = 0.5;
 
 export interface ShotVariant {
   angleOffset?: number;
@@ -39,10 +43,15 @@ export class ProjectileManager {
   private hitEnemies: Record<number, Set<number>> = {};
   private executeThreshold = 0;
   private executeMultiplier = 0;
+  /** Executioner talent: bonus damage against enemies below half HP. */
+  private talentExecuteBonus = 0;
   private armorPen = 0;
   private instantKillChance = 0;
   private critSplashFraction = 0;
   private critIgnoreArmor = false;
+  /** Play-field size; projectiles are culled once they leave it by a margin. */
+  private boundsWidth = 1280;
+  private boundsHeight = 720;
 
   constructor(bus: EventBus, tower: Tower, enemies: EnemyManager) {
     this.bus = bus;
@@ -65,6 +74,16 @@ export class ProjectileManager {
   setExecuteBonus(threshold: number, multiplier: number): void {
     this.executeThreshold = threshold;
     this.executeMultiplier = multiplier;
+  }
+
+  /** Executioner talent: +damage to enemies below `TALENT_EXECUTE_THRESHOLD`. */
+  setTalentExecuteBonus(bonus: number): void {
+    this.talentExecuteBonus = Math.max(0, bonus);
+  }
+
+  setBounds(width: number, height: number): void {
+    this.boundsWidth = width;
+    this.boundsHeight = height;
   }
 
   setArmorPen(value: number): void {
@@ -138,6 +157,11 @@ export class ProjectileManager {
   tick(dt: number): void {
     for (const p of this.projectiles) {
       if (!p.alive) continue;
+      // Remember where the projectile was: at 720 px/s a single step can cover
+      // far more than an enemy's radius (especially at high game speed), so
+      // collision is tested against the whole travel segment, not the end point.
+      const prevX = p.x;
+      const prevY = p.y;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
@@ -167,20 +191,31 @@ export class ProjectileManager {
       }
 
       const hitSet = this.hitEnemies[p.id];
-      const hits: Enemy[] = [];
+      const segX = p.x - prevX;
+      const segY = p.y - prevY;
+      const segLenSq = segX * segX + segY * segY;
+      // Nearest enemy *along the travel segment*, so a fast projectile hits the
+      // first thing in its path rather than whatever comes first in the array.
+      let hit: Enemy | null = null;
+      let hitT = Infinity;
       for (const e of this.enemies.list) {
         if (!e.alive) continue;
         if (hitSet && hitSet.has(e.id)) continue;
         const r = this.enemyRadius(e) + 6;
-        const dx = p.x - e.x;
-        const dy = p.y - e.y;
-        if (dx * dx + dy * dy <= r * r) {
-          hits.push(e);
-          break;
+        let t = 0;
+        if (segLenSq > 0) {
+          t = ((e.x - prevX) * segX + (e.y - prevY) * segY) / segLenSq;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+        }
+        const cx = prevX + segX * t - e.x;
+        const cy = prevY + segY * t - e.y;
+        if (cx * cx + cy * cy <= r * r && t < hitT) {
+          hit = e;
+          hitT = t;
         }
       }
-      if (hits.length > 0) {
-        const enemy = hits[0];
+      if (hit) {
+        const enemy = hit;
         // Instant kill evolution (non-boss only)
         if (this.instantKillChance > 0 && enemy.type !== 'boss' && Math.random() < this.instantKillChance) {
           const dmg = enemy.hp;
@@ -190,13 +225,12 @@ export class ProjectileManager {
           const penEnemy = this.armorPen > 0 || (p.isCrit && this.critIgnoreArmor)
             ? { ...enemy, armor: p.isCrit && this.critIgnoreArmor ? 0 : Math.max(0, enemy.armor * (1 - this.armorPen)) }
             : enemy;
-          let final = this.tower.applyResists(penEnemy, p.damage);
+          let final = this.tower.applyResists(penEnemy, p.damage, p.damageType);
           if (this.executeThreshold > 0 && enemy.hp / enemy.maxHp < this.executeThreshold) {
             final = Math.floor(final * (1 + this.executeMultiplier));
           }
-          const vulnBonus = this.enemies.isVulnerable(enemy);
-          if (vulnBonus > 0) {
-            final = Math.floor(final * (1 + vulnBonus));
+          if (this.talentExecuteBonus > 0 && enemy.hp / enemy.maxHp < TALENT_EXECUTE_THRESHOLD) {
+            final = Math.floor(final * (1 + this.talentExecuteBonus));
           }
           const killed = this.enemies.damage(enemy, final, p.isCrit);
           this.bus.emit('tower_damage_dealt', { amount: final });
@@ -234,9 +268,13 @@ export class ProjectileManager {
       }
     }
 
+    const margin = 120;
+    const maxX = this.boundsWidth + margin;
+    const maxY = this.boundsHeight + margin;
     this.projectiles = this.projectiles.filter(p => {
-      if (!p.alive || p.x < -100 || p.x > 9999 || p.y < -100 || p.y > 9999) {
+      if (!p.alive || p.x < -margin || p.x > maxX || p.y < -margin || p.y > maxY) {
         delete this.hitEnemies[p.id];
+        delete this.piercingRemaining[p.id];
         return false;
       }
       return true;
@@ -244,15 +282,7 @@ export class ProjectileManager {
   }
 
   private enemyRadius(enemy: Enemy): number {
-    switch (enemy.type) {
-      case 'tank': return 18;
-      case 'boss': return 30;
-      case 'flying': return 11;
-      case 'healer': return 14;
-      case 'fast': return 10;
-      case 'normal':
-      default: return 12;
-    }
+    return ENEMY_DEFS[enemy.type].radius;
   }
 
   reset(): void {

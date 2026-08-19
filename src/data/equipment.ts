@@ -10,14 +10,6 @@ export const RARITY_WEIGHTS: Record<Rarity, number> = {
   legendary: 1,
 };
 
-export const RARITY_MULTIPLIERS: Record<Rarity, number> = {
-  common: 1, // 1
-  uncommon: 1, // 1.5
-  rare: 1, // 2.2
-  epic: 1, // 3.5
-  legendary: 1, // 6
-};
-
 export const RARITY_COLORS: Record<Rarity, string> = {
   common: '#888888',
   uncommon: '#2ecc71',
@@ -285,14 +277,16 @@ export function rollEquipmentDef(slot?: EquipmentSlot, minWave?: number): Equipm
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-/** Generate stat array for a given def + rarity using rarity multiplier. */
+/**
+ * Generate the stat array for a def + rarity. Rarity is already expressed by
+ * the per-rarity `baseStats` entry, so the only adjustment here is ±20% roll
+ * variance between two items of the same name and rarity.
+ */
 function rollStats(def: EquipmentDef, rarity: Rarity): EquipmentStat[] {
   const baseStats = def.baseStats[rarity] ?? [];
-  const mult = RARITY_MULTIPLIERS[rarity];
-  // Add some random variance (±20% of the base value)
   return baseStats.map(s => ({
     type: s.type,
-    value: Math.round((s.value * mult + s.value * mult * (Math.random() * 0.4 - 0.2)) * 10) / 10,
+    value: Math.round(s.value * (1 + (Math.random() * 0.4 - 0.2)) * 10) / 10,
   }));
 }
 
@@ -314,15 +308,18 @@ export function generateEquipment(defId: string, rarity: Rarity): Equipment {
 export function rollDrop(
   wave: number,
   source: 'boss' | 'milestone',
+  bonusChance = 0,
 ): Equipment | null {
   const baseChance = source === 'boss' ? 0.15 : 1.0;
-  const scaledChance = Math.min(0.8, baseChance + wave * 0.005);
+  const scaledChance = Math.min(0.8, baseChance + wave * 0.005 + bonusChance);
   if (Math.random() > scaledChance) return null;
 
   const rarity = rollRarity(wave);
-  const dropPool = source === 'boss'
-    ? EQUIPMENT_DEFS.filter(d => !d.bossOnly || d.minWave <= wave)
-    : EQUIPMENT_DEFS.filter(d => !d.bossOnly);
+  // Only items whose minWave has been reached can drop; boss-only items are
+  // additionally restricted to boss kills.
+  let dropPool = EQUIPMENT_DEFS.filter(d => d.minWave <= wave);
+  if (source !== 'boss') dropPool = dropPool.filter(d => !d.bossOnly);
+  if (dropPool.length === 0) return null;
   const def = dropPool[Math.floor(Math.random() * dropPool.length)];
   return generateEquipment(def.id, rarity);
 }

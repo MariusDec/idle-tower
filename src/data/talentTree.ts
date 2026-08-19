@@ -1,8 +1,58 @@
 import type { TalentBranch, TalentId } from '../types';
 
+/**
+ * Every stat a talent may affect. This tuple is the single source of truth:
+ * `TalentStat` is derived from it, so a talent cannot declare a stat that is
+ * not listed here, and `Game.applyTalentEffect` switches exhaustively over the
+ * same union — a new stat without a consumer is a compile error.
+ */
+export const TALENT_STATS = [
+  // offense
+  'base_damage_pct',
+  'all_damage_pct',
+  'fire_rate_pct',
+  'crit_chance_pct',
+  'crit_damage_pct',
+  'range_pct',
+  'armor_penetration_pct',
+  'execution_damage_pct',
+  'extra_projectile_chance',
+  // defense
+  'max_hp_pct',
+  'defense_pct',
+  'armor_pct',
+  'thorns_pct',
+  'dodge_chance',
+  'wall_regen_pct',
+  'shield_charges',
+  'health_regen_pct',
+  // utility
+  'gold_mult_pct',
+  'mana_regen_pct',
+  'double_gold_chance',
+  'head_start_waves',
+  'max_mana_flat',
+  'equipment_find_chance',
+  'auto_buy_speed_pct',
+  'upgrade_cost_reduction',
+  'all_effects_pct',
+  // magic
+  'magic_damage_pct',
+  'all_magic_pct',
+  'mana_cost_reduction',
+  'magic_proc_chance',
+  'chain_bounce_count',
+  'slow_effect_pct',
+  'meteor_damage_pct',
+  'buff_duration_pct',
+  'mana_shield_pct',
+] as const;
+
+export type TalentStat = (typeof TALENT_STATS)[number];
+
 export interface TalentEffectType {
-  /** Stat affected, matched in applyUpgradeEffects */
-  stat: string;
+  /** Stat affected, consumed by `Game.applyTalentEffect`. */
+  stat: TalentStat;
   /** Value per talent point (as a decimal fraction e.g. 0.05 = +5%) */
   perPoint: number;
 }
@@ -16,6 +66,8 @@ export interface TalentDef {
   maxPoints: number;
   costPerPoint: number;
   effect: TalentEffectType;
+  /** Second effect, for talents whose description promises two bonuses. */
+  secondary?: TalentEffectType;
   prerequisites: TalentId[];
   glyph: string;
   color: string;
@@ -124,6 +176,7 @@ export const TALENTS: TalentDef[] = [
     maxPoints: 3,
     costPerPoint: 3,
     effect: { stat: 'base_damage_pct', perPoint: 0.15 },
+    secondary: { stat: 'fire_rate_pct', perPoint: -0.05 },
     prerequisites: ['barrage'],
     glyph: '★',
     color: '#e74c3c',
@@ -138,6 +191,7 @@ export const TALENTS: TalentDef[] = [
     maxPoints: 3,
     costPerPoint: 3,
     effect: { stat: 'range_pct', perPoint: 0.10 },
+    secondary: { stat: 'crit_chance_pct', perPoint: 0.10 },
     prerequisites: ['barrage'],
     glyph: '◈',
     color: '#e74c3c',
@@ -259,6 +313,7 @@ export const TALENTS: TalentDef[] = [
     maxPoints: 3,
     costPerPoint: 3,
     effect: { stat: 'max_hp_pct', perPoint: 0.10 },
+    secondary: { stat: 'defense_pct', perPoint: 0.05 },
     prerequisites: ['invigorate'],
     glyph: '🏰',
     color: '#2ecc71',
@@ -273,6 +328,7 @@ export const TALENTS: TalentDef[] = [
     maxPoints: 3,
     costPerPoint: 3,
     effect: { stat: 'armor_pct', perPoint: 0.15 },
+    secondary: { stat: 'thorns_pct', perPoint: 0.05 },
     prerequisites: ['invigorate'],
     glyph: '⛰',
     color: '#2ecc71',
@@ -366,7 +422,7 @@ export const TALENTS: TalentDef[] = [
     tier: 4,
     maxPoints: 3,
     costPerPoint: 2,
-    effect: { stat: 'auto_buy_speed_pct', perPoint: -0.05 },
+    effect: { stat: 'auto_buy_speed_pct', perPoint: 0.05 },
     prerequisites: ['mana_reservoir'],
     glyph: '⚙',
     color: '#f1c40f',

@@ -17,6 +17,29 @@ export type AchievementRewardType =
   | 'all_stats'
   | 'upgrade_cost_reduction';
 
+/**
+ * Where each reward type is actually consumed. The `Record` forces this map to
+ * stay complete, so a new reward type cannot be added without deciding which
+ * system reads it — nine reward types previously shipped with no consumer.
+ */
+export const ACHIEVEMENT_REWARD_CONSUMERS: Record<AchievementRewardType, string> = {
+  damage_mult: 'Game.applyUpgradeEffects → tower.baseDamage',
+  fire_rate_mult: 'Game.applyUpgradeEffects → tower.fireRate',
+  gold_mult: 'Game.computeGoldMultiplier',
+  boss_gold_mult: 'Game enemy_killed handler (boss branch)',
+  start_gold: 'Game.applySavedStateReset',
+  all_damage: 'Game.applyUpgradeEffects → tower.baseDamage',
+  extra_projectile: 'Game.buildShotVariants',
+  ap_gain_mult: 'PrestigeManager.previewAP',
+  rp_gain_mult: 'Game.rpGainMultiplier',
+  tp_gain_mult: 'PrestigeManager.previewTP',
+  prestige_gain_mult: 'PrestigeManager.previewAP + previewTP',
+  ability_cdr: 'Game.applyUpgradeEffects → AbilityManager cooldown multiplier',
+  max_hp_mult: 'Game.applyUpgradeEffects → tower.maxHp',
+  all_stats: 'Game.applyUpgradeEffects (damage, fire rate) + computeGoldMultiplier',
+  upgrade_cost_reduction: 'Game.applyUpgradeEffects → UpgradeManager cost discount',
+};
+
 export interface AchievementDef {
   id: string;
   name: string;

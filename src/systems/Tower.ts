@@ -1,9 +1,22 @@
-import type { Enemy, TowerState, TargetingMode } from '../types';
+import type { DamageType, Enemy, TowerState, TargetingMode } from '../types';
 import { distance2 } from '../utils/math';
+
+/**
+ * Independent contributors to the tower's fire rate. Each source is owned by
+ * exactly one system; the effective multiplier is their product. Using a map
+ * rather than a single scalar prevents one writer from silently cancelling
+ * another (e.g. the Berserk buff vs. the manual-aim boost).
+ */
+export type FireRateSource = 'ability' | 'aim' | 'quickShot';
 
 export class Tower {
   private state: TowerState;
-  private fireRateMultiplier = 1;
+  private fireRateSources: Record<FireRateSource, number> = {
+    ability: 1,
+    aim: 1,
+    quickShot: 1,
+  };
+  private healthRegenBonus = 0;
   private critBonusChance = 0;
   private critBonusMultiplier = 1;
   private lifestealMultiplier = 1;
@@ -30,11 +43,25 @@ export class Tower {
   }
 
   get effectiveFireRate(): number {
-    return this.state.fireRate * this.fireRateMultiplier;
+    return this.state.fireRate * this.fireRateMultiplierValue;
   }
 
   get fireRateMultiplierValue(): number {
-    return this.fireRateMultiplier;
+    const s = this.fireRateSources;
+    return s.ability * s.aim * s.quickShot;
+  }
+
+  /**
+   * Health regen from temporary buffs, expressed (like `healthRegen`) as a
+   * fraction of maxHP per second. Kept separate from `state.healthRegen` so a
+   * stat recompute cannot wipe an active buff.
+   */
+  get effectiveHealthRegen(): number {
+    return this.state.healthRegen + this.healthRegenBonus;
+  }
+
+  setHealthRegenBonus(bonus: number): void {
+    this.healthRegenBonus = Math.max(0, bonus);
   }
 
   get effectiveCritChance(): number {
@@ -62,8 +89,8 @@ export class Tower {
     Object.assign(this.state, mods);
   }
 
-  setFireRateMultiplier(multiplier: number): void {
-    this.fireRateMultiplier = Math.max(0.01, multiplier);
+  setFireRateSource(source: FireRateSource, multiplier: number): void {
+    this.fireRateSources[source] = Math.max(0.01, multiplier);
   }
 
   setCritBonus(extraChance: number, extraMultiplier: number): void {
@@ -160,9 +187,14 @@ export class Tower {
     return { damage, isCrit };
   }
 
-  applyResists(enemy: Enemy, rawDamage: number): number {
+  /**
+   * @param damageType overrides the tower's default type — used by the
+   *                   Enchant Weapons talent, which makes individual shots
+   *                   land as magic damage.
+   */
+  applyResists(enemy: Enemy, rawDamage: number, damageType: DamageType = this.state.damageType): number {
     let dmg = rawDamage;
-    if (this.state.damageType === 'magic') {
+    if (damageType === 'magic') {
       dmg *= 1 - enemy.magicResist;
     } else {
       dmg -= enemy.armor;
@@ -185,6 +217,7 @@ export class Tower {
     if (this.quickShotTimer <= 0) {
       this.quickShotTimer = 0;
       this.quickShotActive = false;
+      this.fireRateSources.quickShot = 1;
     }
   }
 
@@ -195,11 +228,12 @@ export class Tower {
   activateQuickShot(durationSeconds: number): void {
     this.quickShotActive = true;
     this.quickShotTimer = durationSeconds;
-    this.fireRateMultiplier = 2.0;
+    this.fireRateSources.quickShot = 2.0;
   }
 
   resetQuickShot(): void {
     this.quickShotActive = false;
     this.quickShotTimer = 0;
+    this.fireRateSources.quickShot = 1;
   }
 }

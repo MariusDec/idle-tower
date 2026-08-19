@@ -6,6 +6,7 @@ export class EquipmentManager {
   private inventory: Equipment[];
   private equipped: Partial<Record<EquipmentSlot, Equipment>>;
   private readonly bus: EventBus;
+  private findChanceBonus = 0;
 
   constructor(
     inventory: Equipment[],
@@ -25,8 +26,13 @@ export class EquipmentManager {
     return this.equipped;
   }
 
+  /** Lucky Finds talent: additive bonus to the drop chance. */
+  setFindChanceBonus(bonus: number): void {
+    this.findChanceBonus = Math.max(0, bonus);
+  }
+
   rollDrop(wave: number, source: 'boss' | 'milestone'): Equipment | null {
-    const eq = dataRollDrop(wave, source);
+    const eq = dataRollDrop(wave, source, this.findChanceBonus);
     if (eq) {
       this.inventory.push(eq);
       this.bus.emit('equipment_dropped', { equipment: eq });

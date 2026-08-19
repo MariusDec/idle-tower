@@ -469,7 +469,7 @@ export class SaveManager {
     const avgXp = averageKillXPForWave(wave);
     const avgHp = averageKillHPForWave(wave);
     const xpPerDmg = avgHp > 0 ? avgXp / avgHp : 0;
-    const xpEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * xpPerDmg)) * 0.5;
+    const xpEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * xpPerDmg * 0.5));
     const lifetimeWave = persisted.stats.lifetimeHighestWave ?? 1;
     const rpGainMultiplier = computeRPGainMultiplier(persisted.research ?? {});
     const baseRPRate = 0.05 * lifetimeWave / 60;

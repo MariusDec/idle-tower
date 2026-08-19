@@ -56,14 +56,23 @@ export class EnemyManager {
   private readonly bus: EventBus;
   private readonly resources: ResourceManager;
   private readonly researchTree: ResearchTree | null;
-  private goldMultipliers: { additive: number; multiplicative: number } = {
-    additive: 0,
-    multiplicative: 1,
-  };
+  /**
+   * Fully composed gold multiplier (upgrades + prestige + research + talents +
+   * passives + equipment + achievements + wave modifier). Owned solely by
+   * `Game.applyUpgradeEffects` via `setGoldMultiplier`.
+   */
+  private goldMultiplier = 1;
+  /**
+   * Temporary multiplier from the Gold Rush ability. Owned solely by
+   * `AbilityManager`, kept separate so the two writers cannot clobber
+   * each other.
+   */
+  private goldBuffMultiplier = 1;
   private slowFactor = 1;
   private slowTimer = 0;
   private goldLuckChance = 0;
   private goldLuckMultiplier = 1;
+  private doubleGoldChance = 0;
   private thorns = 0;
   private wallContactExtra = 0;
   private hpReduction = 0;
@@ -92,8 +101,19 @@ export class EnemyManager {
     return this.enemies;
   }
 
-  setGoldMultipliers(additive: number, multiplicative: number): void {
-    this.goldMultipliers = { additive, multiplicative };
+  /** Composed permanent gold multiplier (1 = no bonus). */
+  setGoldMultiplier(multiplier: number): void {
+    this.goldMultiplier = Math.max(0, multiplier);
+  }
+
+  /** Temporary ability buff multiplier (1 = no buff). */
+  setGoldBuffMultiplier(multiplier: number): void {
+    this.goldBuffMultiplier = Math.max(0, multiplier);
+  }
+
+  /** Scavenge talent: chance for a kill to pay double. */
+  setDoubleGoldChance(chance: number): void {
+    this.doubleGoldChance = Math.max(0, Math.min(1, chance));
   }
 
   setGoldLuck(chance: number, multiplier: number): void {
@@ -265,13 +285,15 @@ export class EnemyManager {
 
   private computeGold(enemy: Enemy, isCrit: boolean = false): number {
     const base = enemy.goldValue;
-    const additive = 1 + this.goldMultipliers.additive;
-    let amount = base * additive * this.goldMultipliers.multiplicative;
+    let amount = base * this.goldMultiplier * this.goldBuffMultiplier;
     if (this.killStreakGoldBonus > 0) amount *= 1 + this.killStreakGoldBonus;
     if (this.manaFullGoldBonus > 0) amount *= 1 + this.manaFullGoldBonus;
     if (enemy.aura === 'greed' && enemy.elite) amount *= GREED_GOLD_MULT;
     if (this.goldLuckChance > 0 && Math.random() < this.goldLuckChance) {
       amount *= this.goldLuckMultiplier;
+    }
+    if (this.doubleGoldChance > 0 && Math.random() < this.doubleGoldChance) {
+      amount *= 2;
     }
     amount += this.goldOnKillBonus;
     if (isCrit && this.critGoldBonus > 0) {
@@ -295,10 +317,6 @@ export class EnemyManager {
     if (d < 0.001) return;
     enemy.x += (dx / d) * force;
     enemy.y += (dy / d) * force;
-  }
-
-  isVulnerable(enemy: Enemy): number {
-    return this.vulnerableEnemies.has(enemy.id) ? 0 : 0;
   }
 
   applyShockwave(radius: number, fromX: number, fromY: number): void {
@@ -448,7 +466,10 @@ export class EnemyManager {
     this.slowFactor = 1;
     this.slowTimer = 0;
     this.goldLuckChance = 0;
-    this.goldLuckMultiplier = 0;
+    this.goldLuckMultiplier = 1;
+    this.goldMultiplier = 1;
+    this.goldBuffMultiplier = 1;
+    this.doubleGoldChance = 0;
     this.vulnerableEnemies.clear();
     this.killStreakGoldBonus = 0;
     this.manaFullGoldBonus = 0;

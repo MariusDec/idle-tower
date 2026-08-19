@@ -25,6 +25,8 @@ const MIN_AUTO_BUY_INTERVAL = 3;
 
 export class AutomationManager {
   private readonly deps: AutomationDeps;
+  /** Autonomy talent: fractional reduction of the auto-buy interval. */
+  private autoBuyIntervalReduction = 0;
   private autoBuyTimer = 0;
   private autoCastTimer = 0;
   private autoAscendTimer = 0;
@@ -32,6 +34,10 @@ export class AutomationManager {
 
   constructor(deps: AutomationDeps) {
     this.deps = deps;
+  }
+
+  setAutoBuyIntervalReduction(reduction: number): void {
+    this.autoBuyIntervalReduction = Math.max(0, Math.min(0.9, reduction));
   }
 
   tick(dt: number): void {
@@ -45,7 +51,10 @@ export class AutomationManager {
 
     if (autoBuyOn) {
       const reduction = prestige.getAutoBuySpeedReduction();
-      const interval = Math.max(MIN_AUTO_BUY_INTERVAL, BASE_AUTO_BUY_INTERVAL - reduction);
+      const interval = Math.max(
+        MIN_AUTO_BUY_INTERVAL,
+        (BASE_AUTO_BUY_INTERVAL - reduction) * (1 - this.autoBuyIntervalReduction),
+      );
       this.autoBuyTimer += dt;
       if (this.autoBuyTimer >= interval) {
         this.autoBuyTimer = 0;

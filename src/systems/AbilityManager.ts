@@ -45,7 +45,6 @@ export class AbilityManager {
   private readonly onCast: (id: AbilityId) => void;
   private goldBuffMultiplier = 1;
   private fireBuffMultiplier = 1;
-  private upgradeGoldAdditive = 0;
   private abilityCostMultiplier = 1;
   private cooldownMultiplier = 1;
   private damageMultiplier = 1;
@@ -54,7 +53,15 @@ export class AbilityManager {
   private critBonusMultiplier = 1;
   private lifestealMultiplier = 1;
   private vampiricRegenBonus = 0;
-  private lastVampiricRegenApplied = 0;
+  // ── Talent-driven modifiers (set by Game.applyTalentEffects) ──
+  /** Chain Bounce: extra Chain Lightning bounces. */
+  private chainBounceBonus = 0;
+  /** Frostbite: strengthens the slow (0.1 = 10% more speed removed). */
+  private slowStrengthBonus = 0;
+  /** Meteor Shower: extra Meteor Strike damage. */
+  private meteorDamageBonus = 0;
+  /** Extended Buffs: extra duration on timed abilities. */
+  private buffDurationBonus = 0;
 
   constructor(deps: AbilityManagerDeps) {
     this.resources = deps.resources;
@@ -68,10 +75,6 @@ export class AbilityManager {
 
   isManaUnlocked(wave: number): boolean {
     return wave >= MANA_UNLOCK_WAVE;
-  }
-
-  setUpgradeGoldAdditive(value: number): void {
-    this.upgradeGoldAdditive = value;
   }
 
   setAbilityCostMultiplier(value: number): void {
@@ -88,6 +91,22 @@ export class AbilityManager {
 
   setBerserkFireBonus(bonus: number): void {
     this.berserkFireBonus = bonus;
+  }
+
+  setChainBounceBonus(bonus: number): void {
+    this.chainBounceBonus = Math.max(0, Math.floor(bonus));
+  }
+
+  setSlowStrengthBonus(bonus: number): void {
+    this.slowStrengthBonus = Math.max(0, bonus);
+  }
+
+  setMeteorDamageBonus(bonus: number): void {
+    this.meteorDamageBonus = Math.max(0, bonus);
+  }
+
+  setBuffDurationBonus(bonus: number): void {
+    this.buffDurationBonus = Math.max(0, bonus);
   }
 
   getAbilityLevel(id: AbilityId): number {
@@ -151,7 +170,8 @@ export class AbilityManager {
     const def = ABILITY_BY_ID[id];
     if (!def) return 0;
     const level = this.getAbilityLevel(id);
-    return def.duration + def.durationPerLevel * (level - 1);
+    const base = def.duration + def.durationPerLevel * (level - 1);
+    return base * (1 + this.buffDurationBonus);
   }
 
   getEffectiveStats(id: AbilityId): EffectiveAbilityStats {
@@ -291,7 +311,7 @@ export class AbilityManager {
         this.dealAoEDamage(value);
         return null;
       case 'slow':
-        this.enemies.applySlow(value, duration);
+        this.enemies.applySlow(Math.max(0.05, value * (1 - this.slowStrengthBonus)), duration);
         return null;
       case 'fire_rate_buff':
         this.fireBuffMultiplier = value * (1 + this.berserkFireBonus);
@@ -349,20 +369,18 @@ export class AbilityManager {
     }
   }
 
+  /**
+   * Push this system's time-varying buffs to their owners. Each target is a
+   * dedicated buff channel — never a shared field that the stat recompute in
+   * `Game.applyUpgradeEffects` also writes — so neither side can clobber the
+   * other.
+   */
   private applyOngoingBuffs(): void {
-    this.tower.setFireRateMultiplier(this.fireBuffMultiplier);
+    this.tower.setFireRateSource('ability', this.fireBuffMultiplier);
     this.tower.setCritBonus(this.critBonusChance, this.critBonusMultiplier);
     this.tower.setLifestealMultiplier(this.lifestealMultiplier);
-    this.enemies.setGoldMultipliers(this.upgradeGoldAdditive, this.goldBuffMultiplier);
-    const ts = this.tower.snapshot;
-    if (this.lastVampiricRegenApplied !== 0) {
-      ts.healthRegen -= this.lastVampiricRegenApplied;
-      this.lastVampiricRegenApplied = 0;
-    }
-    if (this.vampiricRegenBonus > 0) {
-      ts.healthRegen += this.vampiricRegenBonus;
-      this.lastVampiricRegenApplied = this.vampiricRegenBonus;
-    }
+    this.tower.setHealthRegenBonus(this.vampiricRegenBonus);
+    this.enemies.setGoldBuffMultiplier(this.goldBuffMultiplier);
   }
 
   private dealAoEDamage(multiplier: number): void {
@@ -397,7 +415,7 @@ export class AbilityManager {
     const target = this.pickHighestHpTarget();
     if (!target) return null;
     const towerState = this.tower.snapshot;
-    const heavyRaw = towerState.baseDamage * multiplier * this.damageMultiplier;
+    const heavyRaw = towerState.baseDamage * multiplier * this.damageMultiplier * (1 + this.meteorDamageBonus);
     const heavyFinal = this.tower.applyResists(target, heavyRaw);
     this.enemies.damage(target, heavyFinal, false);
 
@@ -426,7 +444,10 @@ export class AbilityManager {
     if (list.length === 0) return;
     const towerState = this.tower.snapshot;
     const level = this.getAbilityLevel('chain_lightning');
-    const bounces = Math.min(CHAIN_BOUNCE_MAX, CHAIN_BOUNCE_BASE + Math.floor(level / 2) * CHAIN_BOUNCE_PER_LEVEL);
+    const bounces = Math.min(
+      CHAIN_BOUNCE_MAX + this.chainBounceBonus,
+      CHAIN_BOUNCE_BASE + Math.floor(level / 2) * CHAIN_BOUNCE_PER_LEVEL + this.chainBounceBonus,
+    );
     const r2 = CHAIN_BOUNCE_RADIUS * CHAIN_BOUNCE_RADIUS;
     const hit = new Set<number>();
 
@@ -570,10 +591,12 @@ export class AbilityManager {
     this.critBonusMultiplier = 1;
     this.lifestealMultiplier = 1;
     this.vampiricRegenBonus = 0;
-    this.lastVampiricRegenApplied = 0;
-    this.tower.setFireRateMultiplier(1);
+    this.fireBuffMultiplier = 1;
+    this.tower.setFireRateSource('ability', 1);
     this.tower.setCritBonus(0, 1);
     this.tower.setLifestealMultiplier(1);
+    this.tower.setHealthRegenBonus(0);
+    this.enemies.setGoldBuffMultiplier(1);
   }
 
   /** Reset every ability to level 1 (used by Transcendence). */

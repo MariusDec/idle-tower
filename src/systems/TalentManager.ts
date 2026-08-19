@@ -1,5 +1,5 @@
 import type { TalentState, TalentBranch, TalentId } from '../types';
-import { TALENTS, TALENT_BY_ID, TALENTS_BY_BRANCH } from '../data/talentTree';
+import { TALENTS, TALENT_BY_ID, TALENTS_BY_BRANCH, type TalentStat } from '../data/talentTree';
 import { EventBus } from '../game/EventBus';
 
 export class TalentManager {
@@ -79,7 +79,7 @@ export class TalentManager {
     }
   }
 
-  getEffectValue(effectStat: string): number {
+  getEffectValue(effectStat: TalentStat): number {
     let total = 0;
     for (const [id, points] of Object.entries(this.state.allocated)) {
       if (points <= 0) continue;
@@ -88,8 +88,40 @@ export class TalentManager {
       if (def.effect.stat === effectStat) {
         total += def.effect.perPoint * points;
       }
+      if (def.secondary && def.secondary.stat === effectStat) {
+        total += def.secondary.perPoint * points;
+      }
     }
     return total;
+  }
+
+  /**
+   * Total value of every allocated talent stat, keyed by stat.
+   *
+   * `all_effects_pct` (Mastery) is folded in here rather than at the call site:
+   * it scales every other talent's contribution.
+   */
+  getAllEffectValues(): Map<TalentStat, number> {
+    const totals = new Map<TalentStat, number>();
+    const add = (stat: TalentStat, value: number) => {
+      if (value === 0) return;
+      totals.set(stat, (totals.get(stat) ?? 0) + value);
+    };
+    for (const [id, points] of Object.entries(this.state.allocated)) {
+      if (points <= 0) continue;
+      const def = TALENT_BY_ID[id];
+      if (!def) continue;
+      add(def.effect.stat, def.effect.perPoint * points);
+      if (def.secondary) add(def.secondary.stat, def.secondary.perPoint * points);
+    }
+    const mastery = totals.get('all_effects_pct') ?? 0;
+    if (mastery > 0) {
+      for (const [stat, value] of totals) {
+        if (stat === 'all_effects_pct') continue;
+        totals.set(stat, value * (1 + mastery));
+      }
+    }
+    return totals;
   }
 
   getAllocationSnapshot(): Record<TalentId, number> {

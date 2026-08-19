@@ -14,11 +14,17 @@ import {
   type AutomationKey,
 } from '../data/prestige';
 import { EventBus } from '../game/EventBus';
+import type { AchievementRewardType } from '../data/achievements';
 
 export interface AscensionContext {
   resources: ResourceState;
   stats: GameStats;
   prestige: PrestigeState;
+  /**
+   * Achievement reward lookup. Injected lazily because the achievement manager
+   * is constructed after this one.
+   */
+  achievementMultiplier?: (type: AchievementRewardType) => number;
 }
 
 export class PrestigeManager {
@@ -34,8 +40,13 @@ export class PrestigeManager {
     return wave >= ASCENSION_UNLOCK_WAVE;
   }
 
+  private achievementBonus(type: AchievementRewardType): number {
+    return this.ctx.achievementMultiplier?.(type) ?? 0;
+  }
+
   previewAP(wave: number): number {
-    return apForWave(wave);
+    const bonus = this.achievementBonus('ap_gain_mult') + this.achievementBonus('prestige_gain_mult');
+    return Math.floor(apForWave(wave) * (1 + bonus));
   }
 
   ascensionUnlockWave(): number {
@@ -47,7 +58,8 @@ export class PrestigeManager {
   }
 
   previewTP(ascensionPoints: number = this.ctx.resources.apThisTranscendence): number {
-    return tpForAP(ascensionPoints);
+    const bonus = this.achievementBonus('tp_gain_mult') + this.achievementBonus('prestige_gain_mult');
+    return Math.floor(tpForAP(ascensionPoints) * (1 + bonus));
   }
 
   transcendenceUnlockAP(): number {
