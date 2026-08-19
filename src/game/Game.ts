@@ -1,4 +1,4 @@
-import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, Equipment, AutoBuyStrategy } from '../types';
+import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, Equipment, AutoBuyStrategy, GoldSourceEntry } from '../types';
 import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
 import { TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
@@ -244,6 +244,8 @@ export class Game {
    * stays on screen as a backdrop for the decision.
    */
   private runFailed = false;
+  /** Wave the stall prompt has already fired for, so it fires once per wave. */
+  private stalledWave = -1;
   private killStreak = 0;
   private manaFullGoldTimer = 0;
   private shotCounter = 0;
@@ -343,6 +345,8 @@ export class Game {
     this.talentMgr = new TalentManager(this.state.talents, this.bus, {
       towerXpUnspentPoints: () => this.state.towerXp.unspentTalentPoints,
       spendTalentPoint: () => this.towerXpMgr.spendTalentPoint(),
+      grantTalentPoint: () => this.towerXpMgr.grantTalentPoint(),
+      spendGold: (amount) => this.resourceMgr.spendGold(amount),
     });
     this.passiveMgr = new PassiveAbilityManager(this.state.passiveAbilities, this.bus);
     this.passiveMgr.ensureInitialized();
@@ -612,7 +616,23 @@ export class Game {
         this.restartCurrentWave();
       }
     });
+    // Plan §4.3: enrage already ends a stalled run eventually, but the player
+    // deserves to be told the moment the wall is reached rather than watching
+    // an unwinnable wave grind out. Only prompt once per wave, and only when
+    // ascending is actually an option.
+    this.bus.on('wave_enraged', (payload: unknown) => {
+      const p = payload as { wave: number; stacks: number };
+      if (p.stacks < 1) return;
+      if (this.stalledWave === p.wave) return;
+      if (!this.prestigeMgr.canAscend(this.state.wave.highestWave)) return;
+      this.stalledWave = p.wave;
+      this.bus.emit('run_stalled', {
+        wave: p.wave,
+        apPreview: this.prestigeMgr.previewAP(this.state.wave.highestWave),
+      });
+    });
     this.bus.on('wave_started', (wave: unknown) => {
+      this.stalledWave = -1;
       const ts = this.tower.snapshot;
       if (ts.wallMaxHp > 0) {
         ts.wallHp = ts.wallMaxHp;
@@ -749,8 +769,14 @@ export class Game {
     });
     this.bus.on('upgrades_changed', (levels: Record<string, number>) => {
       this.state.upgrades = { ...(levels as Record<string, number>) };
-      this.state.stats.totalUpgradesPurchased += 1;
       this.applyUpgradeEffects();
+    });
+    // The purchase counter belongs on the purchase event, not on
+    // `upgrades_changed` — the latter also fires on reset/load, and a bulk buy
+    // is worth every level it bought rather than one.
+    this.bus.on('upgrade_purchased', (payload: unknown) => {
+      const p = payload as { levelsGained?: number };
+      this.state.stats.totalUpgradesPurchased += Math.max(1, p.levelsGained ?? 1);
     });
     this.bus.on('upgrade_evolved', (payload: unknown) => {
       const p = payload as { id: string; level: number; evolution: { name: string; description: string } };
@@ -873,6 +899,19 @@ export class Game {
     this.bindVisibilityEvents();
   }
 
+  /**
+   * Move the run to the wave the offline walk ended on (plan §4.4).
+   *
+   * `WaveManager.startAtWave` replaces its wave state wholesale, so the
+   * snapshot has to be re-bound afterwards — the same handshake the
+   * head-start path uses.
+   */
+  private applyOfflineWave(endWave: number): void {
+    if (endWave <= this.state.wave.number) return;
+    this.waveMgr.startAtWave(endWave);
+    this.state.wave = this.waveMgr.snapshot;
+  }
+
   private bindVisibilityEvents(): void {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
@@ -881,10 +920,11 @@ export class Game {
       } else {
         const persisted = this.saveMgr.load();
         if (persisted) {
-          const result = this.saveMgr.computeOfflineProgress(persisted);
+          const result = this.saveMgr.computeOfflineProgress(persisted, this.computeGoldMultiplier());
           if (result.elapsedSeconds > 0) {
             const startWave = this.state.wave.number;
             this.saveMgr.applyOfflineProgress(this.state, result);
+            this.applyOfflineWave(result.endWave);
             if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
             if (this.researchTree.advanceResearch(result.researchElapsed)) {
               this.state.research = this.researchTree.getLevelsSnapshot();
@@ -1336,10 +1376,11 @@ export class Game {
     if (!persisted) return null;
     this.saveLoaded = true;
     this.applyPersistedState(persisted);
-    const result = this.saveMgr.computeOfflineProgress(persisted);
+    const result = this.saveMgr.computeOfflineProgress(persisted, this.computeGoldMultiplier());
     if (result.elapsedSeconds > 0) {
       const startWave = this.state.wave.number;
       this.saveMgr.applyOfflineProgress(this.state, result);
+      this.applyOfflineWave(result.endWave);
       if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
       this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
       if (this.researchTree.advanceResearch(result.researchElapsed)) {
@@ -1499,56 +1540,89 @@ export class Game {
   }
 
   private computeGoldMultiplier(): number {
+    return this.computeGoldBreakdown().multiplier;
+  }
+
+  /**
+   * The composed gold multiplier *and* the per-source attribution behind it
+   * (plan §4.2).
+   *
+   * The breakdown is built in the same pass that produces the number, so the
+   * tooltip cannot drift from what is applied — the failure mode Part 1 was
+   * about. Each entry's `factor` is what that source multiplies the running
+   * total by, so multiplying every factor together reproduces `multiplier`.
+   */
+  private computeGoldBreakdown(): { multiplier: number; sources: GoldSourceEntry[] } {
+    const sources: GoldSourceEntry[] = [];
     const apGold = this.prestigeMgr.getLifetimeAPBonus().gold
       + this.prestigeMgr.getAPGoldBonus();
     const tpResource = this.prestigeMgr.getTPResourceMultiplicative();
     const researchGoldMulti = this.researchTree.getGoldMultiplicative();
 
-    let goldAdditive = 0;
+    let upgradeGold = 0;
     for (const u of UPGRADES) {
       if (u.id === 'goldMulti') {
         const level = this.upgradeMgr.getLevel(u.id);
-        if (level > 0) goldAdditive = computeUpgradeValue(u, level);
+        if (level > 0) upgradeGold = computeUpgradeValue(u, level);
         break;
       }
     }
 
     // Evolution: Dragon's Hoard — +gold% per wave survived this run.
+    let evolutionGold = 0;
     if (this.upgradeMgr.hasEvolutionEffect('wave_gold_scaling')) {
       const perWave = this.upgradeMgr.getEvolutionEffectValue('wave_gold_scaling');
-      goldAdditive += perWave * Math.max(0, this.waveMgr.currentWave - 1);
+      evolutionGold = perWave * Math.max(0, this.waveMgr.currentWave - 1);
     }
 
     // Wave modifier (only while its wave is the active one).
+    let mutatorGold = 0;
     const wms = this.state.wave.waveModifier;
     const activeMod = wms.active;
     if (activeMod && wms.wavesRemaining > 0 && wms.pendingChoiceForWave !== null
       && this.waveMgr.currentWave >= wms.pendingChoiceForWave) {
-      goldAdditive += activeMod.effects.goldAdditive;
+      mutatorGold = activeMod.effects.goldAdditive;
     }
 
-    let multiplier = 1 + (goldAdditive + apGold) * researchGoldMulti * tpResource;
+    const goldAdditive = upgradeGold + evolutionGold + mutatorGold;
+    const scale = researchGoldMulti * tpResource;
+    const rawAdditive = goldAdditive + apGold;
+    let multiplier = 1 + rawAdditive * scale;
+
+    // Additive sources are reported as the percentage each puts into the
+    // shared `1 + sum` step. Research/TP scale that whole sum, so their
+    // contribution is the extra additive they create — which keeps the
+    // reported parts summing to exactly the step the composition applies.
+    const addEntry = (label: string, additive: number) => {
+      if (additive <= 0) return;
+      sources.push({ label, kind: 'additive', additive });
+    };
+    addEntry('Gold upgrade', upgradeGold);
+    addEntry("Dragon's Hoard", evolutionGold);
+    addEntry('Wave mutator', mutatorGold);
+    addEntry('Ascension points', apGold);
+    addEntry('Research & Astral Harvest', rawAdditive * (scale - 1));
+
+    const mult = (label: string, factor: number) => {
+      if (factor <= 1) return;
+      multiplier *= factor;
+      sources.push({ label, kind: 'multiplicative', factor });
+    };
 
     const achGold = this.achievementMgr.getRewardMultiplier('gold_mult')
       + this.achievementMgr.getRewardMultiplier('all_stats');
-    if (achGold > 0) multiplier *= 1 + achGold;
+    mult('Achievements', 1 + achGold);
+    mult('Talents', 1 + this.talentMgr.getEffectValue('gold_mult_pct'));
+    mult('Passives', 1 + this.passiveMgr.getEffectValue('gold_mult_pct') / 100);
+    mult('Equipment', 1 + (this.equipmentMgr.getEquippedBonuses()['gold_mult_pct'] ?? 0) / 100);
 
-    const talentGold = this.talentMgr.getEffectValue('gold_mult_pct');
-    if (talentGold > 0) multiplier *= 1 + talentGold;
-
-    const passiveGold = this.passiveMgr.getEffectValue('gold_mult_pct');
-    if (passiveGold > 0) multiplier *= 1 + passiveGold / 100;
-
-    const equipGold = this.equipmentMgr.getEquippedBonuses()['gold_mult_pct'] ?? 0;
-    if (equipGold > 0) multiplier *= 1 + equipGold / 100;
-
-    return multiplier;
+    return { multiplier, sources };
   }
 
   private computeStatsInfo(): StatsInfo {
     const t = this.tower.snapshot;
     const r = this.state.resources;
-    const totalGoldMulti = this.computeGoldMultiplier();
+    const gold = this.computeGoldBreakdown();
     const effectiveCritChance = this.tower.effectiveCritChance;
     const effectiveCritDamage = this.tower.effectiveCritMultiplier;
     const effectiveLs = this.tower.effectiveLifesteal;
@@ -1570,7 +1644,8 @@ export class Game {
       thorns: t.thorns,
       manaRegen: r.manaRegen,
       maxMana: r.maxMana,
-      goldMultiplier: totalGoldMulti,
+      goldMultiplier: gold.multiplier,
+      goldSources: gold.sources,
       rpGainRate: this.researchTree.getPassiveRPRate(
         this.state.stats.lifetimeHighestWave,
         this.rpGainMultiplier(),
@@ -1640,6 +1715,10 @@ export class Game {
       canAllocate: (id) => this.talentMgr.canAllocate(id),
       allocate: (id) => this.talentMgr.allocate(id),
       refundBranch: (branch) => this.talentMgr.refundBranch(branch),
+      refundAll: () => this.talentMgr.refundAll(),
+      branchRespecCost: (branch) => this.talentMgr.branchRespecCost(branch),
+      fullRespecCost: () => this.talentMgr.fullRespecCost(),
+      gold: () => this.state.resources.gold,
     });
     this.ui.setPassiveAPI({
       getLevel: (id) => this.passiveMgr.getLevel(id),

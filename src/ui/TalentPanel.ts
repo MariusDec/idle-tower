@@ -2,13 +2,19 @@ import type { GameState, TalentBranch, TalentId } from '../types';
 import { TALENTS, TALENTS_BY_BRANCH, TALENT_BY_ID } from '../data/talentTree';
 import type { TalentDef } from '../data/talentTree';
 import { setText, toggleClass, setStyle } from '../utils/dom';
+import { formatNumber } from '../utils/bigNumber';
 
 export interface TalentAPIDeps {
   allocated: Record<string, number>;
   unspentPoints: () => number;
   canAllocate: (id: string) => boolean;
   allocate: (id: string) => boolean;
-  refundBranch: (branch: TalentBranch) => void;
+  refundBranch: (branch: TalentBranch) => boolean;
+  /** Plan §4.7: refund every branch in one action. */
+  refundAll: () => boolean;
+  branchRespecCost: (branch: TalentBranch) => number;
+  fullRespecCost: () => number;
+  gold: () => number;
 }
 
 const BRANCH_DISPLAY: { id: TalentBranch; label: string; color: string }[] = [
@@ -18,7 +24,6 @@ const BRANCH_DISPLAY: { id: TalentBranch; label: string; color: string }[] = [
   { id: 'magic', label: 'Magic', color: '#9b59b6' },
 ];
 
-const RESPEK_COST_GOLD = 500;
 
 function computeDepths(branch: TalentBranch): Map<string, number> {
   const talents = TALENTS_BY_BRANCH[branch];
@@ -51,6 +56,7 @@ export class TalentPanel {
   private talentPointsEls = new Map<TalentId, HTMLElement>();
   private talentBtnEls = new Map<TalentId, HTMLButtonElement>();
   private respecBtns = new Map<TalentBranch, HTMLButtonElement>();
+  private respecAllBtn: HTMLButtonElement | null = null;
   private branchSummaryEls = new Map<TalentBranch, HTMLElement>();
   private activeTab: TalentBranch = 'offense';
 
@@ -69,6 +75,7 @@ export class TalentPanel {
     this.talentPointsEls.clear();
     this.talentBtnEls.clear();
     this.respecBtns.clear();
+    this.respecAllBtn = null;
     this.branchSummaryEls.clear();
     this.activeTab = 'offense';
     this.renderInto(parent);
@@ -108,11 +115,30 @@ export class TalentPanel {
       }
     }
 
+    const gold = this.deps.gold();
     for (const branch of BRANCH_DISPLAY) {
       const btn = this.respecBtns.get(branch.id);
       if (!btn) continue;
-      const hasPoints = TALENTS_BY_BRANCH[branch.id].some(t => (this.deps.allocated[t.id] ?? 0) > 0);
-      btn.disabled = !hasPoints;
+      const cost = this.deps.branchRespecCost(branch.id);
+      setText(btn, `Reset ${branch.label} (${formatNumber(cost)}g)`);
+      // Disabled either because there is nothing to refund or because the
+      // refund is unaffordable — the title says which.
+      btn.disabled = cost <= 0 || gold < cost;
+      btn.title = cost <= 0
+        ? `No points invested in ${branch.label}.`
+        : gold < cost
+          ? `Costs ${formatNumber(cost)} gold — you have ${formatNumber(gold)}.`
+          : `Refunds every ${branch.label} point for ${formatNumber(cost)} gold.`;
+    }
+    if (this.respecAllBtn) {
+      const allCost = this.deps.fullRespecCost();
+      setText(this.respecAllBtn, `Reset all talents (${formatNumber(allCost)}g)`);
+      this.respecAllBtn.disabled = allCost <= 0 || gold < allCost;
+      this.respecAllBtn.title = allCost <= 0
+        ? 'No talent points invested.'
+        : gold < allCost
+          ? `Costs ${formatNumber(allCost)} gold — you have ${formatNumber(gold)}.`
+          : `Refunds every allocated talent point for ${formatNumber(allCost)} gold.`;
     }
 
     for (const branch of BRANCH_DISPLAY) {
@@ -171,6 +197,27 @@ export class TalentPanel {
       parent.appendChild(this.renderBranchPanel(branch));
     }
 
+    // Full respec sits outside the per-branch panels: it applies to all of
+    // them, and a player who wants to start over should not have to visit
+    // four tabs to do it.
+    const respecAllRow = document.createElement('div');
+    respecAllRow.className = 'talent-respec-row talent-respec-all';
+    const respecAllBtn = document.createElement('button');
+    respecAllBtn.type = 'button';
+    respecAllBtn.className = 'btn btn-respec';
+    respecAllBtn.textContent = 'Reset all talents';
+    respecAllBtn.disabled = true;
+    respecAllBtn.addEventListener('click', () => this.deps.refundAll());
+    this.respecAllBtn = respecAllBtn;
+    respecAllRow.appendChild(respecAllBtn);
+    parent.appendChild(respecAllRow);
+
+    const note = document.createElement('p');
+    note.className = 'panel-note';
+    note.textContent = 'Resetting refunds every point spent, at a gold cost per point. '
+      + 'Refunded points return to your unspent pool.';
+    parent.appendChild(note);
+
     this.showTab(this.activeTab);
   }
 
@@ -209,7 +256,8 @@ export class TalentPanel {
     const respecBtn = document.createElement('button');
     respecBtn.type = 'button';
     respecBtn.className = 'btn btn-respec';
-    respecBtn.textContent = `Reset ${branch.label} (${RESPEK_COST_GOLD}g)`;
+    respecBtn.textContent = `Reset ${branch.label}`;
+    respecBtn.disabled = true;
     respecBtn.addEventListener('click', () => this.deps.refundBranch(branch.id));
     this.respecBtns.set(branch.id, respecBtn);
     respecRow.appendChild(respecBtn);

@@ -7,6 +7,21 @@ import { setText, toggleClass, setDisplay } from '../utils/dom';
 
 type UpgradeTabId = 'attack' | 'defense' | 'utility';
 
+/** How many levels one click buys. `'max'` means "as many as gold allows". */
+export type BuyAmount = 1 | 10 | 'max';
+
+/** What a given buy amount would actually purchase, resolved by the host. */
+export interface UpgradePlan {
+  levels: number;
+  cost: number;
+}
+
+const BUY_AMOUNTS: { value: BuyAmount; label: string; title: string }[] = [
+  { value: 1, label: '×1', title: 'Buy a single level' },
+  { value: 10, label: '×10', title: 'Buy up to the next multiple of 10 (from level 18, that is 2 levels)' },
+  { value: 'max', label: '×Max', title: 'Buy as many levels as your gold allows' },
+];
+
 interface UpgradeTabDef {
   id: UpgradeTabId;
   label: string;
@@ -113,8 +128,8 @@ function formatNextDelta(def: UpgradeDef): string {
 }
 
 export class UpgradePanel {
-  private readonly onBuy: (id: string) => void;
-  private getCostFn: ((id: string) => number) | null = null;
+  private readonly onBuy: (id: string, amount: BuyAmount) => void;
+  private getPlanFn: ((id: string, amount: BuyAmount) => UpgradePlan) | null = null;
   private root: HTMLElement | null = null;
   private costById = new Map<string, HTMLElement>();
   private levelById = new Map<string, HTMLElement>();
@@ -124,14 +139,38 @@ export class UpgradePanel {
   private evoInfoById = new Map<string, HTMLElement>();
   private rowById = new Map<string, HTMLElement>();
   private evoInfoLastLevel = new Map<string, number>();
+  private levelsById = new Map<string, HTMLElement>();
+  private amountBtns = new Map<BuyAmount, HTMLButtonElement>();
   private activeTab: UpgradeTabId = 'attack';
+  private buyAmount: BuyAmount = 1;
+  /**
+   * Amount implied by a held modifier key (shift = ×10, ctrl/cmd = ×Max),
+   * which temporarily overrides the selector without changing it.
+   */
+  private modifierAmount: BuyAmount | null = null;
+  private boundModifierChange: ((ev: KeyboardEvent) => void) | null = null;
+  private boundBlur: (() => void) | null = null;
 
-  constructor(onBuy: (id: string) => void) {
+  constructor(onBuy: (id: string, amount: BuyAmount) => void) {
     this.onBuy = onBuy;
   }
 
-  setCostGetter(fn: (id: string) => number): void {
-    this.getCostFn = fn;
+  setPlanGetter(fn: (id: string, amount: BuyAmount) => UpgradePlan): void {
+    this.getPlanFn = fn;
+  }
+
+  /** The amount a click buys right now: a held modifier beats the selector. */
+  private effectiveAmount(): BuyAmount {
+    return this.modifierAmount ?? this.buyAmount;
+  }
+
+  private planFor(id: string, level: number, amount: BuyAmount): UpgradePlan {
+    if (this.getPlanFn) return this.getPlanFn(id, amount);
+    // Fallback for a panel mounted before the host wired its getter: price a
+    // single level off the raw curve.
+    const def = UPGRADES.find(u => u.id === id);
+    if (!def) return { levels: 0, cost: 0 };
+    return { levels: 1, cost: upgradeCost(def.baseCost, def.costGrowth, level) };
   }
 
   mount(parent: HTMLElement): void {
@@ -145,8 +184,36 @@ export class UpgradePanel {
     this.evoInfoById.clear();
     this.rowById.clear();
     this.evoInfoLastLevel.clear();
+    this.levelsById.clear();
+    this.amountBtns.clear();
     this.activeTab = 'attack';
+    this.bindModifierKeys();
     this.renderInto(parent);
+  }
+
+  /**
+   * Shift/ctrl held anywhere in the document temporarily promotes the buy
+   * amount, so a player can grab ten levels without leaving ×1 selected.
+   * The window blur reset stops a modifier from sticking when focus leaves
+   * mid-hold (the keyup never arrives in that case).
+   */
+  private bindModifierKeys(): void {
+    if (this.boundModifierChange) return;
+    const onChange = (ev: KeyboardEvent) => {
+      const next: BuyAmount | null = (ev.ctrlKey || ev.metaKey) ? 'max' : ev.shiftKey ? 10 : null;
+      if (next === this.modifierAmount) return;
+      this.modifierAmount = next;
+      this.refreshAmountButtons();
+    };
+    this.boundModifierChange = onChange;
+    this.boundBlur = () => {
+      if (this.modifierAmount === null) return;
+      this.modifierAmount = null;
+      this.refreshAmountButtons();
+    };
+    window.addEventListener('keydown', onChange);
+    window.addEventListener('keyup', onChange);
+    window.addEventListener('blur', this.boundBlur);
   }
 
   update(state: GameState): void {
@@ -163,7 +230,20 @@ export class UpgradePanel {
       if (!btn || !costEl || !levelEl || !bonusEl) continue;
       const level = state.upgrades[u.id] ?? 0;
       const atMax = u.maxLevel > 0 && level >= u.maxLevel;
-      const cost = atMax ? Infinity : (this.getCostFn ? this.getCostFn(u.id) : upgradeCost(u.baseCost, u.costGrowth, level));
+      const amount = this.effectiveAmount();
+      let plan = atMax ? { levels: 0, cost: 0 } : this.planFor(u.id, level, amount);
+      // At ×Max with nothing affordable there is no plan to price, but the
+      // player still needs to know what they are saving for — fall back to
+      // the next single level.
+      const emptyMax = !atMax && amount === 'max' && plan.levels === 0;
+      if (emptyMax) plan = this.planFor(u.id, level, 1);
+      const cost = atMax ? Infinity : plan.cost;
+      const levelsEl = this.levelsById.get(u.id);
+      if (levelsEl) {
+        const showLevels = !atMax && !emptyMax && plan.levels > 1;
+        setText(levelsEl, showLevels ? `+${plan.levels} lv` : '');
+        setDisplay(levelsEl, showLevels ? '' : 'none');
+      }
       if (isTotalEffectUpgrade(u)) {
         setText(levelEl, atMax ? formatNumberValue(computeUpgradeValue(u, level), 1) : '');
         setDisplay(levelEl, atMax ? '' : 'none');
@@ -172,9 +252,10 @@ export class UpgradePanel {
       }
       setText(costEl, atMax ? '—' : formatNumber(cost));
       setText(bonusEl, isTotalEffectUpgrade(u) ? formatEffectBonus(u, level, false, 0) : formatEffectBonus(u, level));
-      btn.disabled = atMax || gold < cost;
-      toggleClass(btn, 'can-afford', !atMax && gold >= cost);
-      setText(btn, atMax ? 'Maxed' : 'Buy');
+      const affordable = !atMax && !emptyMax && plan.levels > 0 && gold >= cost;
+      btn.disabled = !affordable;
+      toggleClass(btn, 'can-afford', affordable);
+      setText(btn, atMax ? 'Maxed' : plan.levels > 1 ? `Buy ×${plan.levels}` : 'Buy');
 
       // Evolution display
       if (nameEl && u.evolutions) {
@@ -221,13 +302,23 @@ export class UpgradePanel {
   }
 
   private   unmount(): void {
+    if (this.boundModifierChange) {
+      window.removeEventListener('keydown', this.boundModifierChange);
+      window.removeEventListener('keyup', this.boundModifierChange);
+      this.boundModifierChange = null;
+    }
+    if (this.boundBlur) {
+      window.removeEventListener('blur', this.boundBlur);
+      this.boundBlur = null;
+    }
+    this.modifierAmount = null;
     this.root = null;
   }
 
   /**
-   * Briefly flash a button white + spawn a floating "+1" to indicate purchase.
+   * Briefly flash a button white + spawn a floating "+N" to indicate purchase.
    */
-  flashButton(id: string): void {
+  flashButton(id: string, levels = 1): void {
     const btn = this.buttonById.get(id);
     if (!btn) return;
     // Animation restart: always remove + force reflow + add, regardless of
@@ -244,7 +335,7 @@ export class UpgradePanel {
     if (action) {
       const plus = document.createElement('span');
       plus.className = 'upgrade-plus-one';
-      plus.textContent = '+1';
+      plus.textContent = `+${levels}`;
       action.appendChild(plus);
       setTimeout(() => {
         if (plus.parentElement) plus.parentElement.removeChild(plus);
@@ -272,6 +363,8 @@ export class UpgradePanel {
       tabs.appendChild(btn);
     }
     parent.appendChild(tabs);
+
+    parent.appendChild(this.renderAmountSelector());
 
     const byTab = new Map<UpgradeTabId, UpgradeDef[]>();
     for (const t of TAB_DEFS) byTab.set(t.id, []);
@@ -309,8 +402,54 @@ export class UpgradePanel {
 
     const note = document.createElement('p');
     note.className = 'panel-note';
-    note.textContent = 'Spending gold accelerates your tower. Costs grow exponentially per level.';
+    note.textContent = 'Spending gold accelerates your tower. Costs grow exponentially per level. '
+      + 'The cost shown is the total for the selected buy amount.';
     parent.appendChild(note);
+  }
+
+  private renderAmountSelector(): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'upgrade-amount-row';
+
+    const label = document.createElement('span');
+    label.className = 'upgrade-amount-label';
+    label.textContent = 'Buy';
+    row.appendChild(label);
+
+    const group = document.createElement('div');
+    group.className = 'upgrade-amount-group';
+    for (const a of BUY_AMOUNTS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'upgrade-amount-btn';
+      btn.textContent = a.label;
+      btn.title = a.title;
+      btn.addEventListener('click', () => {
+        this.buyAmount = a.value;
+        this.refreshAmountButtons();
+      });
+      this.amountBtns.set(a.value, btn);
+      group.appendChild(btn);
+    }
+    row.appendChild(group);
+
+    const hint = document.createElement('span');
+    hint.className = 'upgrade-amount-hint';
+    hint.textContent = 'hold shift ×10 · ctrl ×Max';
+    row.appendChild(hint);
+
+    this.refreshAmountButtons();
+    return row;
+  }
+
+  private refreshAmountButtons(): void {
+    const active = this.effectiveAmount();
+    for (const [value, btn] of this.amountBtns) {
+      toggleClass(btn, 'active', value === active);
+      // A modifier-driven selection is styled apart from a clicked one so it
+      // is obvious the state is transient.
+      toggleClass(btn, 'is-modifier', this.modifierAmount !== null && value === active);
+    }
   }
 
   private showInnerTab(id: UpgradeTabId): void {
@@ -370,16 +509,21 @@ export class UpgradePanel {
     const cost = document.createElement('div');
     cost.className = 'upgrade-cost';
     cost.textContent = '0';
+    const levels = document.createElement('div');
+    levels.className = 'upgrade-cost-levels';
+    levels.style.display = 'none';
     const btn = document.createElement('button');
     btn.className = 'btn btn-buy';
     btn.type = 'button';
     btn.textContent = 'Buy';
     btn.disabled = true;
-    btn.addEventListener('click', () => this.onBuy(u.id));
+    btn.addEventListener('click', () => this.onBuy(u.id, this.effectiveAmount()));
     action.appendChild(cost);
+    action.appendChild(levels);
     action.appendChild(btn);
     row.appendChild(action);
 
+    this.levelsById.set(u.id, levels);
     this.costById.set(u.id, cost);
     this.levelById.set(u.id, level);
     this.bonusById.set(u.id, bonus);

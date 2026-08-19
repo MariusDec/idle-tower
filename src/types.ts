@@ -33,7 +33,7 @@ export type AbilityId =
   | 'execute'
   | 'multishot';
 
-export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'stats' | 'settings' | 'talents' | 'equipment';
+export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'progression' | 'stats' | 'settings' | 'talents' | 'equipment';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';
 
@@ -398,6 +398,19 @@ export interface UpgradeRuntime {
   level: number;
 }
 
+/**
+ * One contributor to the composed gold multiplier.
+ *
+ * Gold is composed in two stages: every `additive` source sums into a single
+ * `1 + sum` step, and every `multiplicative` source then multiplies on top.
+ * Attributing an additive source a factor of its own would overstate it — two
+ * `+100%` sources make `×3`, not `×4` — so the two kinds stay distinct and the
+ * display sums before it multiplies, exactly as the composition does.
+ */
+export type GoldSourceEntry =
+  | { label: string; kind: 'additive'; additive: number }
+  | { label: string; kind: 'multiplicative'; factor: number };
+
 export interface StatsInfo {
   damage: number;
   dps: number;
@@ -415,6 +428,8 @@ export interface StatsInfo {
   manaRegen: number;
   maxMana: number;
   goldMultiplier: number;
+  /** Per-source attribution for `goldMultiplier` (plan §4.2). */
+  goldSources: GoldSourceEntry[];
   rpGainRate: number;
 }
 

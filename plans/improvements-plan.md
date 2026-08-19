@@ -455,6 +455,52 @@ possible heuristic: it floods cheap utility upgrades and never saves for damage.
 
 ## Part 4 — Game feel & UX
 
+> **Status: implemented (2026-08-19).** All eight items are done in the working
+> tree; `tsc --noEmit`, `vite build`, `npm run checks` and `npm run sim` are
+> clean, and every item was verified in a running browser (bulk-buy previews,
+> gold breakdown, stall banner, offline walk, progression tab, respec, keybinds
+> overlay). `sim/checks.ts` gained sections §4.1, §4.4/4.5, §4.6 and §4.7.
+> Notes on how the plan was interpreted:
+>
+> - **4.1.** ×N buys *up to the next multiple of N* rather than adding N
+>   levels (from level 18, ×10 buys 2). Shift/ctrl held anywhere promotes the
+>   amount without changing the selector. A bulk buy is one transaction — one
+>   toast, one save, one stat recompute — with `levelsGained` on the event so
+>   `totalUpgradesPurchased` counts levels, not clicks.
+> - **4.2.** `computeGoldMultiplier` became `computeGoldBreakdown`, which
+>   returns the number and its attribution in one pass. Additive and
+>   multiplicative sources stay distinct in the display (`+140%` … `subtotal
+>   ×3.73` … `×1.10`) because attributing a factor to an additive source
+>   overstates it — two `+100%` sources are `×3`, not `×4`. The rendered parts
+>   reconstruct the applied multiplier exactly.
+> - **4.3.** A non-blocking banner rather than a modal: enrage does not
+>   guarantee the wave is lost, and interrupting a player who might still win
+>   it would punish them for trying. Fires once per wave, only when ascending
+>   is possible, and is dismissible.
+> - **4.4/4.5.** `wavesCleared` used to be `elapsed / AVG_WAVE_DURATION` — a
+>   clock reading with no connection to whether the tower could kill anything.
+>   Waves, gold and XP now all come from one wave-by-wave walk at the tower's
+>   estimated DPS, carrying the composed gold multiplier. The walk stops at
+>   *this run's* deepest wave and farms there: the lifetime best would let a
+>   post-ascension tower skip content it has never faced, and nothing here
+>   models the tower dying.
+> - **4.6.** A Progression tab built from the same definitions the milestone
+>   strip uses, plus the passive gates the strip omits. The strip's tuning is
+>   untouched.
+> - **4.7.** Both halves of the respec were missing: the advertised 500g was
+>   never charged, and refunded points were *deleted* rather than returned to
+>   the unspent pool. Cost is now 500g per point, shown live per branch and for
+>   the new full reset, and disabled when unaffordable.
+> - **4.8.** Overlay on `?` and a HUD button. Ability rows come from
+>   `ABILITIES`, so a new ability documents itself.
+>
+> Also fixed here, found while verifying 4.6: every panel's `renderInto` does
+> `parent.className = '<name>-panel'`, which wiped the container's own
+> `panel-content` class — the element carrying `overflow-y: auto`. Panels could
+> not scroll, and the stale class broke whichever tab was opened next.
+> `showTab`/`mountMobileTab` now reset and restore the container class around
+> the mount, fixing every panel at once.
+
 1. **No bulk buy.** Upgrades go to level 999 and are purchased one click at a time. Add ×1 / ×10 /
    ×Max (shift/ctrl modifiers) with a cost preview — this is the single highest-value QoL change.
 2. **Stats panel disagrees with reality.** `computeStatsInfo` recomputes gold multiplier
@@ -584,7 +630,7 @@ run at max speed and confirm DPS matches 1× DPS within ~5%.
 | ~~**3. Wire dead content**~~ ✅ | 1.4 (20 talents), 1.5 (9 rewards), equipment rarity + minWave | done | Talent tree and achievements are now real. Pulled forward because the exhaustive `TalentStat` switch made it mechanical without waiting for Part 6. |
 | **4. Simulation correctness** (partly done) | ✅ 1.6 swept collision, ✅ research/save on unscaled dt — **remaining:** fixed-timestep substepping (5.2) | 1 day | High game speeds no longer cost DPS; substepping still needed for enemy/attack cadence at speed. |
 | ~~**5. Balance re-tune**~~ ✅ | Part 2 (HP/gold/cost curves, first-prestige compression, AP sinks, XP curves) driven by 7.1 | done | Opening is 10 min instead of 60; runs end on a wave-enrage fail state instead of stalling; talents, passives and gear are reachable. Simulator kept in `sim/`. |
-| **6. Depth & UX** | Bulk buy, auto-buy priorities, stat breakdown tooltips, run-end prompt, offline multipliers, mutator/elite rework | 3–5 days | Retention and moment-to-moment satisfaction. |
+| ~~**6. Depth & UX**~~ ✅ | Part 4 (bulk buy, stat breakdown tooltips, run-stall prompt, offline rework, progression tab, respec, keybinds) plus the auto-buy priorities and mutator/elite rework already done in Part 3 | done | Upgrades buy in bulk, the gold number explains itself, a stalled run says so, offline actually progresses the run, and the talent respec no longer eats points. |
 | **7. Perf & hygiene** | Part 5 items 1/3/4/5/7/8, tests (7.2), doc refresh (5.10) | 2–4 days | Late-wave framerate, safe future changes. |
 
 **Suggested first PR:** Phase 1 items 1.1 + 1.3 alone (delete two lines from
