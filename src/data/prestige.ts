@@ -85,7 +85,26 @@ export function computePerkEffect(def: PrestigePerkDef, level: number): number {
   return v;
 }
 
-export const ASCENSION_UNLOCK_WAVE = 30;
+/**
+ * Wave at which the first ascension unlocks (plan §2.3.4).
+ *
+ * Was 30, which took ~40 minutes of waves with almost no purchasing decisions
+ * before the game's central mechanic was even introduced. Idle games want the
+ * first prestige inside 15-25 minutes.
+ */
+export const ASCENSION_UNLOCK_WAVE = 20;
+
+/**
+ * Default wave for the auto-Ascend target. Sits above the unlock wave so the
+ * automation does not fire the instant ascension becomes legal.
+ */
+export const DEFAULT_AUTO_ASCEND_WAVE = 40;
+
+/**
+ * AP floor for a player's very first ascension. Guarantees the first prestige
+ * is worth taking rather than something to be postponed.
+ */
+export const FIRST_ASCENSION_AP = 25;
 export const TRANSCENDENCE_UNLOCK_AP = 100;
 
 export const AP_PERKS: PrestigePerkDef[] = [
@@ -155,6 +174,39 @@ export const AP_PERKS: PrestigePerkDef[] = [
     glyph: '⏭',
     color: '#3ec46d',
   },
+  // ── Unbounded sinks (plan §2.3.5) ────────────────────────────────
+  // Every other AP perk caps at <=10 levels with 2.5^level growth, so the
+  // whole tree tops out around 7 600 AP while a deep run banks far more than
+  // that. Past the third ascension AP had nowhere to go but transcendence.
+  // These two never cap: geometric cost against a linear effect means each
+  // level costs more and gives the same, so they absorb any amount of AP
+  // while staying worth buying.
+  {
+    id: 'ap_might',
+    layer: 'ascension',
+    name: 'Ascendant Might',
+    description: '+3% all damage per level. Never caps.',
+    costPerLevel: 4,
+    costScaling: 1.18,
+    maxLevel: 999,
+    effectType: 'damage_mult',
+    effectPerLevel: 0.03,
+    glyph: '✦',
+    color: '#d04848',
+  },
+  {
+    id: 'ap_fortune',
+    layer: 'ascension',
+    name: 'Ascendant Fortune',
+    description: '+3% all gold per level. Never caps.',
+    costPerLevel: 4,
+    costScaling: 1.18,
+    maxLevel: 999,
+    effectType: 'resource_mult',
+    effectPerLevel: 0.03,
+    glyph: '❖',
+    color: '#e8a93b',
+  },
   {
     id: 'ap_research_speed',
     layer: 'ascension',
@@ -178,9 +230,19 @@ export const AP_PERK_BY_ID: Record<string, PrestigePerkDef> = AP_PERKS.reduce(
   {} as Record<string, PrestigePerkDef>,
 );
 
+/**
+ * AP banked for ascending at a given wave.
+ *
+ * The old shape (`20 + 1.13^(w-30) * sqrt(w-30)`) was tuned for a wall around
+ * wave 37. With the flatter HP curve of §2.3.1 the wall sits far deeper, and
+ * `1.13^depth` turned a first run into thousands of AP — enough to skip the
+ * entire ascension layer. The gentler `1.06^depth` keeps a 20-wave-deeper run
+ * worth ~3x as much AP, which is roughly what it costs to get there.
+ */
 export function apForWave(waveNumber: number): number {
   if (waveNumber < ASCENSION_UNLOCK_WAVE) return 0;
-  return Math.max(0, 20 + Math.floor(Math.pow(1.13, waveNumber - ASCENSION_UNLOCK_WAVE) * Math.sqrt(waveNumber - ASCENSION_UNLOCK_WAVE)));
+  const depth = waveNumber - ASCENSION_UNLOCK_WAVE;
+  return Math.max(0, 15 + Math.floor(5 * Math.pow(1.06, depth) * Math.sqrt(depth + 1)));
 }
 
 export const TP_PERKS: PrestigePerkDef[] = [

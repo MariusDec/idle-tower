@@ -4,6 +4,10 @@ import {
   spawnCountForWave,
   isBossWave,
   spawnIntervalForWave,
+  enrageStacksFor,
+  ENRAGE_DAMAGE_PER_STACK,
+  ENRAGE_SPEED_PER_STACK,
+  ENRAGE_STACK_INTERVAL,
 } from '../data/formulas';
 import { ENEMY_DEFS } from '../data/enemies';
 import type { EnemyManager } from './EnemyManager';
@@ -112,6 +116,8 @@ export class WaveManager {
       intermissionTimer: 0,
       autoProgress: true,
       waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null },
+      elapsed: 0,
+      enrageStacks: 0,
     };
   }
 
@@ -168,6 +174,9 @@ export class WaveManager {
       this.state.spawning = false;
       this.state.intermission = true;
       this.state.intermissionTimer = WAVE_INTERMISSION * this.intermissionMultiplier;
+      this.state.elapsed = 0;
+      this.state.enrageStacks = 0;
+      this.clearEnrage();
       this.onWaveCleared(wave);
       this.bus.emit('wave_cleared', wave);
       this.bus.emit('toast', { kind: 'milestone', text: `Wave ${wave} skipped!`, life: 2 });
@@ -180,6 +189,9 @@ export class WaveManager {
     this.state.spawnTimer = 0.5;
     this.state.spawning = true;
     this.state.intermission = false;
+    this.state.elapsed = 0;
+    this.state.enrageStacks = 0;
+    this.clearEnrage();
     this.onWaveStarted(wave);
     this.bus.emit('wave_started', wave);
     // For boss waves, present the modifier picker now so the player sees it
@@ -199,6 +211,7 @@ export class WaveManager {
   reset(): void {
     this.state = this.makeInitialState();
     this.enemyCountMult = 1;
+    this.clearEnrage();
     this.bus.emit('wave_started', this.state.number);
     this.onWaveStarted(this.state.number);
   }
@@ -219,7 +232,10 @@ export class WaveManager {
       intermissionTimer: 0,
       autoProgress: this.state.autoProgress,
       waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null },
+      elapsed: 0,
+      enrageStacks: 0,
     };
+    this.clearEnrage();
     this.enemyCountMult = 1;
     this.bus.emit('wave_started', this.state.number);
     this.onWaveStarted(this.state.number);
@@ -257,7 +273,50 @@ export class WaveManager {
   }
 
   setState(s: WaveState): void {
-    this.state = { ...s };
+    this.state = { ...s, elapsed: s.elapsed ?? 0, enrageStacks: s.enrageStacks ?? 0 };
+    this.applyEnrage();
+  }
+
+  /** Drop any enrage buff currently applied to the field. */
+  private clearEnrage(): void {
+    this.enemies.setEnrage(1, 1);
+  }
+
+  /** Push the current stack count onto the enemy manager. */
+  private applyEnrage(): void {
+    const stacks = this.state.enrageStacks;
+    this.enemies.setEnrage(
+      1 + ENRAGE_DAMAGE_PER_STACK * stacks,
+      1 + ENRAGE_SPEED_PER_STACK * stacks,
+    );
+  }
+
+  /**
+   * Advance the wave clock and escalate enrage when the wave overruns
+   * (plan §2.3.3). Enrage is what converts an unwinnable wave from an
+   * endless stall into a decisive loss.
+   */
+  private tickEnrage(dt: number): void {
+    this.state.elapsed += dt;
+    const stacks = enrageStacksFor(
+      this.state.number,
+      this.state.elapsed,
+      this.state.enemiesToSpawn,
+    );
+    if (stacks === this.state.enrageStacks) return;
+    const wasCalm = this.state.enrageStacks === 0;
+    this.state.enrageStacks = stacks;
+    this.applyEnrage();
+    if (wasCalm && stacks > 0) {
+      this.bus.emit('wave_enraged', { wave: this.state.number, stacks });
+      this.bus.emit('toast', {
+        kind: 'warning',
+        text: `Wave ${this.state.number} is enraging — enemies grow stronger every ${ENRAGE_STACK_INTERVAL}s.`,
+        life: 5,
+      });
+    } else {
+      this.bus.emit('wave_enraged', { wave: this.state.number, stacks });
+    }
   }
 
   tick(dt: number): void {
@@ -271,6 +330,8 @@ export class WaveManager {
       }
       return;
     }
+
+    this.tickEnrage(dt);
 
     if (this.state.spawning && !this.spawnPaused) {
       this.state.spawnTimer -= dt;
@@ -290,6 +351,9 @@ export class WaveManager {
       this.bus.emit('wave_cleared', clearedWave);
       this.state.intermission = true;
       this.state.intermissionTimer = WAVE_INTERMISSION * this.intermissionMultiplier;
+      this.state.elapsed = 0;
+      this.state.enrageStacks = 0;
+      this.clearEnrage();
     }
   }
 

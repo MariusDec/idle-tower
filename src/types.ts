@@ -234,6 +234,10 @@ export interface WaveState {
   autoProgress: boolean;
   /** v5+: per-wave modifier system. */
   waveModifier: WaveModifierState;
+  /** Seconds the current wave has been running (0 during intermission). */
+  elapsed: number;
+  /** Enrage stacks on the current wave (0 = wave is on schedule). */
+  enrageStacks: number;
 }
 
 export const GAME_SPEEDS: readonly number[] = [0.5, 1.0, 1.5];

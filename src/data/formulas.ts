@@ -1,15 +1,39 @@
+/**
+ * Growth rate of trash-mob HP per wave. Paired with `GOLD_GROWTH` below: the
+ * gap between the two is the rate at which the economy falls behind the
+ * difficulty, and it is the single most important number in the game.
+ * At 1.11 vs 1.08 gold-per-HP decays ~1.028^wave — a factor of 10 every
+ * ~85 waves, instead of every ~21.
+ */
+export const ENEMY_HP_GROWTH = 1.11;
+
+/** Growth rate of an enemy's gold drop per wave. See `ENEMY_HP_GROWTH`. */
+export const GOLD_GROWTH = 1.08;
+
 export function enemyHPForWave(baseHP: number, wave: number): number {
-  return baseHP * Math.pow(1.17, Math.max(0, wave - 1));
+  return baseHP * Math.pow(ENEMY_HP_GROWTH, Math.max(0, wave - 1));
 }
 
 export function enemyDamageForWave(baseDamage: number, wave: number): number {
   return baseDamage * Math.pow(1.1, Math.max(0, wave));
 }
 
+/**
+ * Per-tier bump applied to bosses on top of the shared HP curve.
+ *
+ * Bosses used to grow on their own exponent (`1.12^wave * 1.35^tier`), which
+ * ran away from the trash curve — a wave-100 boss was 724x a wave-100 trash
+ * mob and the boss wave carried 42x the HP of the wave before it. Anchoring
+ * bosses to `ENEMY_HP_GROWTH` and bumping only per tier keeps a boss wave a
+ * ~2-3x spike over its neighbours at every depth, which is what makes it an
+ * event rather than a wall.
+ */
+export const BOSS_TIER_GROWTH = 1.07;
+
 export function bossHPForWave(baseHP: number, wave: number): number {
   const waveIndex = Math.max(0, wave - 1);
   const tier = Math.floor(waveIndex / 10);
-  return baseHP * Math.pow(1.12, waveIndex) * Math.pow(1.35, tier);
+  return baseHP * Math.pow(ENEMY_HP_GROWTH, waveIndex) * Math.pow(BOSS_TIER_GROWTH, tier);
 }
 
 export function enemySpeedForWave(baseSpeed: number, wave: number): number {
@@ -18,7 +42,7 @@ export function enemySpeedForWave(baseSpeed: number, wave: number): number {
 }
 
 export function goldDropForWave(baseGold: number, wave: number): number {
-  return baseGold * Math.pow(1.05, Math.max(0, wave - 1));
+  return baseGold * Math.pow(GOLD_GROWTH, Math.max(0, wave - 1));
 }
 
 export function enemyCountForWave(wave: number): number {
@@ -61,4 +85,77 @@ export function upgradeCost(base: number, growth: number | string, level: number
 export function abilityUpgradeCost(baseCost: number, growth: number, level: number): number {
   if (level <= 0) return Math.floor(baseCost);
   return Math.floor(baseCost * Math.pow(growth, level));
+}
+
+// ── Lifetime ascension bonus (plan §2.3.5) ────────────────────────────────
+//
+// This used to be a flat linear `0.02 * lifetimeAP` — +2% damage for every AP
+// ever earned. Linear in a currency that itself grows exponentially with wave
+// depth means it eventually dwarfs every perk, talent and piece of gear in the
+// game, and it does so without the player making a single decision. It is now
+// a sub-linear power law: still the reason a veteran opens faster than a new
+// player, but no longer the only thing that matters. Deliberate progression —
+// AP perks, talents, research — is what carries the late curve.
+
+const LIFETIME_AP_COEFFICIENT = 0.02;
+const LIFETIME_AP_EXPONENT = 0.7;
+
+/** Permanent damage bonus from lifetime ascension points (0.5 = +50%). */
+export function lifetimeAPDamageBonus(lifetimeAP: number): number {
+  const ap = Math.max(0, lifetimeAP);
+  if (ap <= 0) return 0;
+  return LIFETIME_AP_COEFFICIENT * Math.pow(ap, LIFETIME_AP_EXPONENT);
+}
+
+/** Permanent gold bonus from lifetime ascension points. */
+export function lifetimeAPGoldBonus(lifetimeAP: number): number {
+  return lifetimeAPDamageBonus(lifetimeAP);
+}
+
+// ── Wave pacing / enrage (plan §2.3.3) ────────────────────────────────────
+//
+// A wave should take roughly a constant amount of time at the player's
+// comfortable depth and only blow out at the wall. Without a fail state the
+// tower simply stops killing fast enough while enemies trickle in too slowly
+// to finish it — the run neither ends nor progresses. Enrage is that fail
+// state: once a wave overruns, enemies get stronger every few seconds until
+// they take the tower down, turning an endless stall into a run-over moment.
+
+/** Seconds a wave is *expected* to take beyond its own spawn cadence. */
+export const TARGET_WAVE_KILL_SECONDS = 20;
+
+/** A wave running longer than `expectedWaveSeconds * this` starts enraging. */
+export const ENRAGE_THRESHOLD_MULTIPLIER = 2;
+
+/** Seconds between enrage stacks once a wave has overrun. */
+export const ENRAGE_STACK_INTERVAL = 8;
+
+/** Extra damage-to-tower per enrage stack (additive: +40% per stack). */
+export const ENRAGE_DAMAGE_PER_STACK = 0.4;
+
+/** Extra movement speed per enrage stack (additive: +15% per stack). */
+export const ENRAGE_SPEED_PER_STACK = 0.15;
+
+/**
+ * How long a wave ought to take: the time its enemies need just to finish
+ * spawning, plus a flat window to kill them in.
+ *
+ * `enemyCount` defaults to the wave's natural size but must be passed when a
+ * mutator has changed it — a Swarm wave spawns 3x the enemies and legitimately
+ * takes 3x as long to spawn them, and must not be punished for that.
+ */
+export function expectedWaveSeconds(wave: number, enemyCount = spawnCountForWave(wave)): number {
+  return spawnIntervalForWave(wave) * Math.max(0, enemyCount - 1) + TARGET_WAVE_KILL_SECONDS;
+}
+
+/** Seconds into a wave at which enrage begins. */
+export function enrageThresholdSeconds(wave: number, enemyCount?: number): number {
+  return expectedWaveSeconds(wave, enemyCount) * ENRAGE_THRESHOLD_MULTIPLIER;
+}
+
+/** Number of enrage stacks for a wave that has been running `elapsed` seconds. */
+export function enrageStacksFor(wave: number, elapsed: number, enemyCount?: number): number {
+  const over = elapsed - enrageThresholdSeconds(wave, enemyCount);
+  if (over < 0) return 0;
+  return 1 + Math.floor(over / ENRAGE_STACK_INTERVAL);
 }

@@ -19,6 +19,7 @@ import { SettingsPanel } from './SettingsPanel';
 import { AchievementPanel } from './AchievementPanel';
 import { WelcomeBackModal, type WelcomeBackData } from './WelcomeBackModal';
 import { RunSummaryModal, type RunSummaryData } from './RunSummaryModal';
+import { RunFailedModal, type RunFailedData } from './RunFailedModal';
 import { StatsPanel } from './StatsPanel';
 import { MilestoneStrip } from './MilestoneStrip';
 import { AbilityBar } from './AbilityBar';
@@ -130,6 +131,7 @@ export class UIManager {
   private readonly achievementPanel: AchievementPanel;
   private readonly welcomeModal: WelcomeBackModal;
   private readonly runSummaryModal: RunSummaryModal;
+  private readonly runFailedModal: RunFailedModal;
   private readonly statsPanel: StatsPanel;
   private readonly milestoneStrip: MilestoneStrip;
   private readonly talentPanel: TalentPanel;
@@ -161,6 +163,7 @@ export class UIManager {
   private onCastAbility: (id: AbilityId) => void = () => {};
   private onUpgradeAbility: (id: AbilityId) => void = () => {};
   private onAscend: () => void = () => {};
+  private onResolveRunFailure: (action: 'ascend' | 'retry') => void = () => {};
   private onTranscend: () => void = () => {};
   private onSpendAP: (perkId: string) => void = () => {};
   private onUnlockResearch: (id: string) => void = () => {};
@@ -367,6 +370,7 @@ export class UIManager {
     });
     this.welcomeModal = new WelcomeBackModal(deps.modalRoot);
     this.runSummaryModal = new RunSummaryModal(deps.modalRoot);
+    this.runFailedModal = new RunFailedModal(deps.modalRoot);
     this.statsPanel = new StatsPanel({
       getHistory: () => this.lastState?.runHistory ?? [],
       getCurrentRun: () => {
@@ -446,6 +450,14 @@ export class UIManager {
     this.bus.on('run_ended', (payload: unknown) => {
       const p = payload as RunSummaryData;
       this.runSummaryModal.show(p, () => {});
+    });
+    this.bus.on('run_failed', (payload: unknown) => {
+      const p = payload as RunFailedData;
+      this.runFailedModal.show(
+        p,
+        () => this.onResolveRunFailure('ascend'),
+        () => this.onResolveRunFailure('retry'),
+      );
     });
     this.bus.on('wave_started', (payload: unknown) => {
       const w = payload as number;
@@ -640,6 +652,10 @@ export class UIManager {
 
   setOnAscend(handler: () => void): void {
     this.onAscend = handler;
+  }
+
+  setOnResolveRunFailure(handler: (action: 'ascend' | 'retry') => void): void {
+    this.onResolveRunFailure = handler;
   }
 
   setOnTranscend(handler: () => void): void {

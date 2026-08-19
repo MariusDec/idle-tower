@@ -57,6 +57,9 @@ function bootstrap(): void {
   ui.setOnAscend(() => {
     game.ascend();
   });
+  ui.setOnResolveRunFailure((action) => {
+    game.resolveRunFailure(action);
+  });
   ui.setOnTranscend(() => {
     game.transcend();
   });

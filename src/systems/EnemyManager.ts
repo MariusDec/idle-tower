@@ -86,6 +86,13 @@ export class EnemyManager {
   private speedMult = 1;
   /** Multiplier applied to enemy damage dealt to the tower (default 1). */
   private damageToTowerMult = 1;
+  /**
+   * Enrage multipliers (plan §2.3.3). A separate channel from the wave-modifier
+   * multipliers above so the two compose instead of overwriting each other, and
+   * applied live rather than at spawn so already-spawned enemies enrage too.
+   */
+  private enrageDamageMult = 1;
+  private enrageSpeedMult = 1;
   /** Multiplier applied to enemy max HP on spawn (default 1). */
   private hpMult = 1;
   /** Retribution buffs: enemy ID → remaining duration. */
@@ -167,6 +174,15 @@ export class EnemyManager {
    */
   setDamageToTowerMult(mult: number): void {
     this.damageToTowerMult = Math.max(0, mult);
+  }
+
+  /**
+   * Enrage multipliers for the wave in progress, owned solely by WaveManager.
+   * Unlike `setSpeedMult` these apply to enemies already on the field.
+   */
+  setEnrage(damageMult: number, speedMult: number): void {
+    this.enrageDamageMult = Math.max(1, damageMult);
+    this.enrageSpeedMult = Math.max(1, speedMult);
   }
 
   /**
@@ -380,7 +396,7 @@ export class EnemyManager {
         e.attackCooldown -= dt;
         if (e.attackCooldown <= 0) {
           this.bus.emit('enemy_attack', { x: e.x, y: e.y, type: e.type });
-          let dmgMult = this.damageToTowerMult;
+          let dmgMult = this.damageToTowerMult * this.enrageDamageMult;
           if (this.retributionBuffs.has(e.id)) dmgMult *= RETRIBUTION_BUFF_DAMAGE_MULT;
           totalDamage += e.damage * dmgMult;
           if (this.thorns > 0) {
@@ -390,7 +406,7 @@ export class EnemyManager {
           e.attackCooldown += 1 / e.fireRate;
         }
       } else {
-        let speedMult = hasteMultipliers.get(e.id) ?? 1;
+        let speedMult = (hasteMultipliers.get(e.id) ?? 1) * this.enrageSpeedMult;
         if (this.retributionBuffs.has(e.id)) speedMult *= RETRIBUTION_BUFF_SPEED_MULT;
         const inv = e.speed * this.slowFactor * speedMult * dt / d;
         e.x += dx * inv;
@@ -478,6 +494,8 @@ export class EnemyManager {
     this.critGoldBonus = 0;
     this.speedMult = 1;
     this.damageToTowerMult = 1;
+    this.enrageDamageMult = 1;
+    this.enrageSpeedMult = 1;
     this.hpMult = 1;
     this.retributionBuffs.clear();
   }

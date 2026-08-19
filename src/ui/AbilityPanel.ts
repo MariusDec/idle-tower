@@ -358,7 +358,7 @@ export class AbilityPanel {
   private renderPassiveInto(parent: HTMLElement): void {
     const note = document.createElement('p');
     note.className = 'panel-note';
-    note.textContent = 'Passives gain XP from kills and wave clears. They auto-level when enough XP is accumulated. Reset on Ascension/Transcendence.';
+    note.textContent = 'Passives gain XP from kills and wave clears, and auto-level when the bar fills. They persist through Ascension and reset on Transcendence.';
     parent.appendChild(note);
 
     const list = document.createElement('div');

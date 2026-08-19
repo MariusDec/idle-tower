@@ -305,6 +305,10 @@ function validate(data: unknown): data is PersistentState {
   if (typeof d.rp !== 'number') d.rp = 0;
   const wave = d.wave as Record<string, unknown> | undefined;
   if (wave && !isObject(wave.waveModifier)) wave.waveModifier = defaultWaveModifier();
+  // Enrage clock (plan §2.3.3): older saves predate it. Start the loaded wave
+  // calm rather than resuming mid-enrage from a stale timestamp.
+  if (wave && typeof wave.elapsed !== 'number') wave.elapsed = 0;
+  if (wave && typeof wave.enrageStacks !== 'number') wave.enrageStacks = 0;
 
   return true;
 }
@@ -496,15 +500,14 @@ export class SaveManager {
       state.towerXp.xp += result.xpEarned;
       state.towerXp.totalXpEarned += result.xpEarned;
       const newLevel = xpToLevel(state.towerXp.xp);
-      while (state.towerXp.level < newLevel) {
-        state.towerXp.level += 1;
-        const expectedPoints = talentPointsAtLevel(state.towerXp.level);
-        const currentTotal = state.towerXp.level - 1 + state.towerXp.unspentTalentPoints;
-        if (expectedPoints > currentTotal) {
-          state.towerXp.unspentTalentPoints += expectedPoints - currentTotal;
-        } else {
-          state.towerXp.unspentTalentPoints += 1;
-        }
+      if (newLevel > state.towerXp.level) {
+      // Grant exactly the delta in total points owed between the two levels.
+      // The previous reconciliation (comparing against `level - 1 + unspent`)
+      // assumed one point per level and silently under-granted as soon as the
+      // curve stopped being the identity.
+        state.towerXp.unspentTalentPoints +=
+          talentPointsAtLevel(newLevel) - talentPointsAtLevel(state.towerXp.level);
+        state.towerXp.level = newLevel;
       }
     }
     // Advance ability cooldowns by elapsed time

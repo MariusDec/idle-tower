@@ -5,6 +5,7 @@ import {
   TP_PERKS,
   TP_PERK_BY_ID,
   ASCENSION_UNLOCK_WAVE,
+  FIRST_ASCENSION_AP,
   TRANSCENDENCE_UNLOCK_AP,
   apForWave,
   tpForAP,
@@ -13,6 +14,7 @@ import {
   computePerkEffect,
   type AutomationKey,
 } from '../data/prestige';
+import { lifetimeAPDamageBonus, lifetimeAPGoldBonus } from '../data/formulas';
 import { EventBus } from '../game/EventBus';
 import type { AchievementRewardType } from '../data/achievements';
 
@@ -46,7 +48,12 @@ export class PrestigeManager {
 
   previewAP(wave: number): number {
     const bonus = this.achievementBonus('ap_gain_mult') + this.achievementBonus('prestige_gain_mult');
-    return Math.floor(apForWave(wave) * (1 + bonus));
+    const earned = Math.floor(apForWave(wave) * (1 + bonus));
+    // Plan §2.3.4: the very first ascension is scripted to be worth taking, so
+    // a new player's introduction to prestige is a visible jump in power
+    // rather than a rounding error.
+    if (this.ctx.stats.lifetimeAscensions <= 0) return Math.max(FIRST_ASCENSION_AP, earned);
+    return earned;
   }
 
   ascensionUnlockWave(): number {
@@ -111,8 +118,37 @@ export class PrestigeManager {
   }
 
   getLifetimeAPBonus(): { damage: number; gold: number } {
-    const bonus = Math.max(0, this.ctx.resources.lifetimeAP) * 0.02;
-    return { damage: bonus, gold: bonus };
+    const lifetimeAP = this.ctx.resources.lifetimeAP;
+    return {
+      damage: lifetimeAPDamageBonus(lifetimeAP),
+      gold: lifetimeAPGoldBonus(lifetimeAP),
+    };
+  }
+
+  /**
+   * Additive damage bonus from unbounded AP perks (plan §2.3.5).
+   * Separate from `getLifetimeAPBonus` so the two compose rather than one
+   * silently standing in for the other.
+   */
+  getAPDamageBonus(): number {
+    let bonus = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'damage_mult') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) bonus += computePerkEffect(p, lvl);
+    }
+    return bonus;
+  }
+
+  /** Additive gold bonus from unbounded AP perks (plan §2.3.5). */
+  getAPGoldBonus(): number {
+    let bonus = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'resource_mult') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) bonus += computePerkEffect(p, lvl);
+    }
+    return bonus;
   }
 
   getExtraShots(): number {

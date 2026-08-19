@@ -1,5 +1,5 @@
 import type { GameState, StatsInfo, EnemyWaveStatsEntry } from '../types';
-import { formatNumber } from '../utils/bigNumber';
+import { formatNumber, formatInt } from '../utils/bigNumber';
 import type { SpeedAPI, WaveControlAPI } from './UIManager';
 import { TOWER_XP_TABLE, xpForNextLevel, xpToLevel } from '../data/xpTables';
 import {
@@ -15,6 +15,17 @@ import {
 
 const MANA_UNLOCK_WAVE = 10;
 
+/** Below this XP/sec the time-to-level estimate is noise, so it is hidden. */
+const MIN_XP_RATE_FOR_ETA = 0.05;
+
+/** Compact "time until" string for the XP-to-next-level hint. */
+function formatEta(seconds: number): string {
+  if (seconds < 60) return `${Math.ceil(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86400) return `${(seconds / 3600).toFixed(1)}h`;
+  return `${(seconds / 86400).toFixed(1)}d`;
+}
+
 function formatSpeed(v: number): string {
   if (Number.isInteger(v)) return `${v}x`;
   return `${v.toFixed(1).replace(/\.0$/, '')}x`;
@@ -29,6 +40,10 @@ export class HUD {
   private xpBarFill!: HTMLElement;
   private xpPctEl!: HTMLElement;
   private xpLevelEl!: HTMLElement;
+  private xpWrapEl!: HTMLElement;
+  /** Rolling XP/sec estimate, for the time-to-next-level readout. */
+  private xpRate = 0;
+  private lastTotalXp = -1;
   private waveEl!: HTMLElement;
   private dpsEl!: HTMLElement;
   private killsEl!: HTMLElement;
@@ -239,6 +254,16 @@ export class HUD {
     this.displayDps += (this.dps - this.displayDps) * dpsAlpha;
     const tx = state.towerXp;
     if (tx) {
+      // Exponentially-smoothed XP rate. Seeded on the first frame so a loaded
+      // save's lifetime total is not mistaken for one frame's worth of gain.
+      if (this.lastTotalXp < 0) {
+        this.lastTotalXp = tx.totalXpEarned;
+      } else if (dt > 0) {
+        const gained = Math.max(0, tx.totalXpEarned - this.lastTotalXp);
+        this.lastTotalXp = tx.totalXpEarned;
+        const rateAlpha = 1 - Math.exp(-dt / 5);
+        this.xpRate += (gained / dt - this.xpRate) * rateAlpha;
+      }
       this.displayXpNeeded = xpForNextLevel(tx.level);
       if (xpToLevel(tx.xp) > tx.level) {
         this.displayXpProgress = 1;
@@ -314,14 +339,25 @@ export class HUD {
       ? 'Auto-Progress is ON. Click to auto-restart current wave.'
       : 'Auto-Progress is OFF. Click to resume auto-advancing waves.');
 
-    if (this.waveApi.isIntermission && !this.waveApi.autoProgress) {
+    // Enrage outranks the intermission label: it is the one thing the player
+    // needs to react to, and a wave can only be enraged while it is live.
+    const enrageStacks = state.wave.enrageStacks ?? 0;
+    toggleClass(this.waveStatusEl, 'wave-enrage', enrageStacks > 0);
+    if (enrageStacks > 0) {
+      setText(this.waveStatusEl, `ENRAGED ×${enrageStacks}`);
+      setTitle(this.waveStatusEl, 'This wave has overrun. Enemies get stronger until it ends.');
+      toggleClass(this.waveStatusEl, 'is-warning', true);
+    } else if (this.waveApi.isIntermission && !this.waveApi.autoProgress) {
       setText(this.waveStatusEl, '');
+      setTitle(this.waveStatusEl, '');
       toggleClass(this.waveStatusEl, 'is-warning', true);
     } else if (this.waveApi.isIntermission) {
       setText(this.waveStatusEl, 'Intermission');
+      setTitle(this.waveStatusEl, '');
       toggleClass(this.waveStatusEl, 'is-warning', false);
     } else {
       setText(this.waveStatusEl, '');
+      setTitle(this.waveStatusEl, '');
       toggleClass(this.waveStatusEl, 'is-warning', false);
     }
   }
@@ -336,9 +372,23 @@ export class HUD {
     if (needed > 0 && needed !== Infinity) {
       const xpIntoLevel = Math.max(0, tx.xp - TOWER_XP_TABLE[tx.level]);
       const currentXp = Math.min(xpIntoLevel, needed);
-      setText(this.xpPctEl, `${Math.floor(currentXp)} / ${needed} XP`);
+      setText(this.xpPctEl, `${formatInt(currentXp)} / ${formatInt(needed)} XP`);
+      // Plan §2.4: say how far off the next level is, and how long that is at
+      // the current rate — without it the bar is a number with no scale.
+      const remaining = Math.max(0, needed - currentXp);
+      // Only quote an ETA once the rate is high enough to be meaningful —
+      // otherwise a near-idle tower reports "75 days at 0 XP/s", which is both
+      // useless and alarming.
+      const hasRate = this.xpRate >= MIN_XP_RATE_FOR_ETA;
+      setTitle(
+        this.xpWrapEl,
+        `Tower level ${tx.level}. ${formatInt(remaining)} XP to level ${tx.level + 1}`
+        + (hasRate ? ` (~${formatEta(remaining / this.xpRate)} at ${formatNumber(this.xpRate)} XP/s).` : '.')
+        + ` ${formatInt(tx.unspentTalentPoints)} unspent talent point${tx.unspentTalentPoints === 1 ? '' : 's'}.`,
+      );
     } else {
       setText(this.xpPctEl, `MAX LEVEL`);
+      setTitle(this.xpWrapEl, 'Tower is at max level.');
     }
   }
 
@@ -507,6 +557,7 @@ export class HUD {
     // Tower XP bar
     const xpWrap = document.createElement('div');
     xpWrap.className = 'hud-xp';
+    this.xpWrapEl = xpWrap;
     const xpRow = document.createElement('div');
     xpRow.className = 'hud-xp-row';
     const xpLabel = document.createElement('span');

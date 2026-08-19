@@ -39,14 +39,14 @@ export class TowerXpManager {
     this.state.totalXpEarned += gained;
     const newLevel = xpToLevel(this.state.xp);
     while (this.state.level < newLevel) {
+      const previousLevel = this.state.level;
       this.state.level += 1;
-      const expectedPoints = talentPointsAtLevel(this.state.level);
-      const currentTotal = this.state.level - 1 + this.state.unspentTalentPoints;
-      if (expectedPoints > currentTotal) {
-        this.state.unspentTalentPoints += expectedPoints - currentTotal;
-      } else {
-        this.state.unspentTalentPoints += 1;
-      }
+      // Grant exactly the delta in total points owed between the two levels.
+      // The previous reconciliation (comparing against `level - 1 + unspent`)
+      // assumed one point per level and silently under-granted as soon as the
+      // curve stopped being the identity.
+      this.state.unspentTalentPoints +=
+        talentPointsAtLevel(this.state.level) - talentPointsAtLevel(previousLevel);
       this.bus.emit('tower_leveled', {
         level: this.state.level,
         xp: this.state.xp,

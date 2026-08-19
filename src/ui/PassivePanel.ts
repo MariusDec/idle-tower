@@ -124,7 +124,7 @@ export class PassivePanel {
 
     const note = document.createElement('p');
     note.className = 'panel-note';
-    note.textContent = 'Passives gain XP from kills and wave clears (10x slower than tower XP). Upgrade with gold to level up (XP resets). Reset on Ascension/Transcendence.';
+    note.textContent = 'Two ways to level a passive: earn XP from kills and wave clears, or pay gold — banked XP discounts the gold cost, and a full bar levels it for free. Passives persist through Ascension and reset on Transcendence.';
     parent.appendChild(note);
 
     const list = document.createElement('div');

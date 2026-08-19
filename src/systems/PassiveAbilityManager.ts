@@ -1,9 +1,15 @@
 import type { EnemyType, PassiveAbilityState } from '../types';
 import { PASSIVE_ABILITIES, PASSIVE_BY_ID, passiveUpgradeCost } from '../data/passiveAbilities';
-import { passiveXpForLevel } from '../data/xpTables';
+import { passiveXpForLevel, enemyXpWeight } from '../data/xpTables';
 import { EventBus } from '../game/EventBus';
 
-const PASSIVE_XP_MULTIPLIER = 0.07;
+/**
+ * Global scale on passive XP gain (plan §2.5). Was 0.07, which combined with a
+ * flat 1 XP per kill made the XP track purely cosmetic. Passives are a dual
+ * track by design: gold buys a level now, XP earns it over time — and XP that
+ * never arrives is not a track, it is a bar.
+ */
+const PASSIVE_XP_MULTIPLIER = 1;
 
 export class PassiveAbilityManager {
   private state: Record<string, PassiveAbilityState>;
@@ -27,19 +33,23 @@ export class PassiveAbilityManager {
     }
   }
 
-  addKillXp(_enemyType: EnemyType, _wave: number): void {
+  addKillXp(enemyType: EnemyType, wave: number): void {
+    // Weight the kill by how much enemy it actually was, so passive XP keeps
+    // pace with the HP curve rather than falling behind it exponentially.
+    const weight = enemyXpWeight(enemyType, wave);
     for (const def of PASSIVE_ABILITIES) {
       const s = this.state[def.id];
       if (!s || !s.unlocked) continue;
-      this.addXp(def, s, def.xpPerKill);
+      this.addXp(def, s, def.xpPerKill * weight);
     }
   }
 
-  addWaveClearXp(_wave: number): void {
+  addWaveClearXp(wave: number): void {
+    const weight = enemyXpWeight('normal', wave);
     for (const def of PASSIVE_ABILITIES) {
       const s = this.state[def.id];
       if (!s || !s.unlocked) continue;
-      this.addXp(def, s, def.xpPerWave);
+      this.addXp(def, s, def.xpPerWave * weight);
     }
   }
 
@@ -66,7 +76,9 @@ export class PassiveAbilityManager {
     for (const def of PASSIVE_ABILITIES) {
       if (def.stat !== stat) continue;
       const s = this.state[def.id];
-      if (!s || !s.unlocked || s.level <= 0) continue;
+      // Unlocking a passive costs gold, so it must *do* something immediately:
+      // `basePercent` is the level-0 effect and applies the moment it unlocks.
+      if (!s || !s.unlocked) continue;
       total += def.basePercent + def.perLevelPercent * s.level;
     }
     return total;

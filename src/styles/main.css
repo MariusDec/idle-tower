@@ -4100,3 +4100,34 @@ body.eq-dragging img { pointer-events: none; }
 }
 
 
+
+/* Run-over prompt (plan §2.3.3) — shown when the tower falls and the player
+   can bank the run as an ascension instead of re-grinding a lost wave. */
+.run-failed-card { width: min(460px, calc(100vw - 32px)); }
+.run-failed-card .welcome-modal-title { color: #ff8a7a; }
+.run-failed-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+.run-failed-actions .btn { align-self: stretch; padding: 10px 12px; }
+.run-failed-actions .btn-claim { margin-top: 0; }
+
+/* Enrage warning in the HUD wave readout. */
+.wave-enrage {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: linear-gradient(180deg, #b93c2c, #7d2418);
+  border: 1px solid #ff6a52;
+  animation: enrage-pulse 1.2s ease-in-out infinite;
+}
+@keyframes enrage-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}

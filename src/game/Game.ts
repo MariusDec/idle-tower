@@ -25,6 +25,7 @@ import { AchievementManager } from '../systems/AchievementManager';
 import { UIManager } from '../ui/UIManager';
 import { isBossWave } from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
+import { DEFAULT_AUTO_ASCEND_WAVE } from '../data/prestige';
 import { AudioManager } from '../systems/AudioManager';
 import { TowerXpManager } from '../systems/TowerXpManager';
 import { TalentManager } from '../systems/TalentManager';
@@ -74,7 +75,7 @@ function makeInitialState(): GameState {
       autoAscend: false,
       autoTranscend: false,
     },
-    targetAscendWave: 30,
+    targetAscendWave: DEFAULT_AUTO_ASCEND_WAVE,
   };
   const stats: GameStats = {
     enemiesKilled: 0,
@@ -114,6 +115,8 @@ function makeInitialState(): GameState {
       intermissionTimer: 0,
       autoProgress: true,
       waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null },
+      elapsed: 0,
+      enrageStacks: 0,
     },
     stats,
     achievements: [],
@@ -227,6 +230,12 @@ export class Game {
 
   // Evolution state
   private reviveUsed = false;
+  /**
+   * True while the run-over modal is up (plan §2.3.3). The simulation is
+   * frozen so the dead tower is not killed again every frame and the field
+   * stays on screen as a backdrop for the decision.
+   */
+  private runFailed = false;
   private killStreak = 0;
   private manaFullGoldTimer = 0;
   private shotCounter = 0;
@@ -559,20 +568,26 @@ export class Game {
           });
           return;
         }
+        // Plan §2.3.3: once ascension is available a death is the *end of the
+        // run*, not a one-wave rewind. Offer the ascension there and then so
+        // the player has a decision to make instead of a wall to re-grind.
+        if (this.prestigeMgr.canAscend(this.state.wave.highestWave)) {
+          this.runFailed = true;
+          this.bus.emit('run_failed', {
+            wave: this.waveMgr.currentWave,
+            highestWave: this.state.wave.highestWave,
+            apPreview: this.prestigeMgr.previewAP(this.state.wave.highestWave),
+            enrageStacks: this.state.wave.enrageStacks,
+            goldEarned: Math.max(0, this.state.stats.goldEarned - this.runBaselineGold),
+          });
+          return;
+        }
         this.bus.emit('toast', {
           kind: 'warning',
           text: `Tower destroyed! Restarting at wave ${this.waveMgr.currentWave - 1}.`,
           life: 4,
         });
-        this.enemyMgr.reset();
-        this.projectileMgr.reset();
-        this.mines = [];
-        ts.shieldCurrentCharges = ts.shieldMaxCharges;
-        ts.shieldRechargeTimer = 0;
-        ts.hp = TOWER_BASE.hp;
-        ts.maxHp = TOWER_BASE.maxHp;
-        this.waveMgr.startAtWave(this.waveMgr.currentWave - 1);
-        this.state.wave = this.waveMgr.snapshot;
+        this.restartCurrentWave();
       }
     });
     this.bus.on('wave_started', (wave: unknown) => {
@@ -993,6 +1008,38 @@ export class Game {
     return true;
   }
 
+  /**
+   * Rewind to the previous wave with a fresh tower. Used both by the
+   * pre-ascension death path and by the run-over modal's "retry" option.
+   */
+  restartCurrentWave(): void {
+    const ts = this.tower.snapshot;
+    this.enemyMgr.reset();
+    this.projectileMgr.reset();
+    this.mines = [];
+    ts.shieldCurrentCharges = ts.shieldMaxCharges;
+    ts.shieldRechargeTimer = 0;
+    ts.hp = TOWER_BASE.hp;
+    ts.maxHp = TOWER_BASE.maxHp;
+    this.waveMgr.startAtWave(Math.max(1, this.waveMgr.currentWave - 1));
+    this.state.wave = this.waveMgr.snapshot;
+    this.applyUpgradeEffects();
+  }
+
+  /**
+   * Resolve the run-over prompt: bank the run as an ascension, or rewind a
+   * wave and keep pushing. Either way the simulation resumes.
+   */
+  resolveRunFailure(action: 'ascend' | 'retry'): void {
+    if (!this.runFailed) return;
+    this.runFailed = false;
+    if (action === 'ascend') {
+      this.ascend();
+      return;
+    }
+    this.restartCurrentWave();
+  }
+
   ascend(): number {
     if (!this.prestigeMgr.canAscend(this.state.wave.highestWave)) return 0;
     const { ap } = this.prestigeMgr.performAscension(this.state);
@@ -1075,7 +1122,10 @@ export class Game {
   }
 
   setTargetAscendWave(wave: number): void {
-    this.state.prestige.targetAscendWave = Math.max(50, Math.floor(wave));
+    this.state.prestige.targetAscendWave = Math.max(
+      this.prestigeMgr.ascensionUnlockWave(),
+      Math.floor(wave),
+    );
     this.syncUiApis();
     this.bus.emit('toast', {
       kind: 'info',
@@ -1363,7 +1413,8 @@ export class Game {
   }
 
   private computeGoldMultiplier(): number {
-    const apGold = this.prestigeMgr.getLifetimeAPBonus().gold;
+    const apGold = this.prestigeMgr.getLifetimeAPBonus().gold
+      + this.prestigeMgr.getAPGoldBonus();
     const tpResource = this.prestigeMgr.getTPResourceMultiplicative();
     const researchGoldMulti = this.researchTree.getGoldMultiplicative();
 
@@ -1658,7 +1709,9 @@ export class Game {
     this.enemyMgr.setWallContactExtra(wallLevel > 0 ? 36 : 0);
 
     const lifetimeBonus = this.prestigeMgr.getLifetimeAPBonus();
-    const apDamage = lifetimeBonus.damage;
+    // Lifetime AP (passive, diminishing) and spent AP (chosen, unbounded) are
+    // separate contributors and stack additively within the ascension layer.
+    const apDamage = lifetimeBonus.damage + this.prestigeMgr.getAPDamageBonus();
     const tpDamage = this.prestigeMgr.getTPDamageMultiplicative();
     const tpFireRate = this.prestigeMgr.getTPFireRateMultiplier();
     const tpCritDamage = this.prestigeMgr.getTPCritDamageBonus();
@@ -2000,10 +2053,14 @@ export class Game {
     this.projectileMgr.reset();
     this.abilityMgr.reset();
     this.effects.reset();
-    this.passiveMgr.reset();
-    this.equipmentMgr.reset();
+    // Plan §2.6: passives and equipment are *character* progression, like
+    // talents and tower XP — they persist through an ascension and are only
+    // wiped by a transcendence. Wiping the inventory every run made the whole
+    // loot system per-run, and since gear only drops from bosses at a 15% base
+    // chance most runs generated two to four items and then deleted them.
     this.mines = [];
     this.reviveUsed = false;
+    this.runFailed = false;
     this.killStreak = 0;
     this.manaFullGoldTimer = 0;
     this.shotCounter = 0;
@@ -2112,6 +2169,11 @@ export class Game {
   private applyFullTranscendenceReset(): void {
     this.automation.reset();
     this.abilityMgr.resetLevels();
+    // Character progression survives ascension but not transcendence. Cleared
+    // *before* applySavedStateReset so its closing stat recompute sees the
+    // wiped passives and empty gear rather than the outgoing run's.
+    this.passiveMgr.reset();
+    this.equipmentMgr.reset();
     this.applySavedStateReset();
     this.state.prestige.apSpent = {};
     this.state.prestige.automationFlags = {
@@ -2182,7 +2244,7 @@ export class Game {
       autoAscend: false,
       autoTranscend: false,
     };
-    p.targetAscendWave = persisted.prestige.targetAscendWave ?? 30;
+    p.targetAscendWave = persisted.prestige.targetAscendWave ?? DEFAULT_AUTO_ASCEND_WAVE;
 
     this.state.wave = { ...persisted.wave };
     this.waveMgr.setState(this.state.wave);
@@ -2283,7 +2345,7 @@ export class Game {
       this.shieldFlash = Math.max(0, this.shieldFlash - dt);
     }
     const gameDt = dt * speed * slowMo;
-    this.update(gameDt, dt);
+    if (!this.runFailed) this.update(gameDt, dt);
     this.draw();
     this.state.wave = this.waveMgr.snapshot;
     this.ui.update(this.state);
