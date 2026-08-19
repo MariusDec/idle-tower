@@ -115,7 +115,7 @@ export class WaveManager {
       intermission: false,
       intermissionTimer: 0,
       autoProgress: true,
-      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null },
+      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null, wavesRemaining: 0, wavesCleared: 0 },
       elapsed: 0,
       enrageStacks: 0,
     };
@@ -194,12 +194,14 @@ export class WaveManager {
     this.clearEnrage();
     this.onWaveStarted(wave);
     this.bus.emit('wave_started', wave);
-    // For boss waves, present the modifier picker now so the player sees it
-    // when the stage starts rather than during the previous intermission.
+    // Plan §3.3: a mutator runs for several waves now, so no new offer while one
+    // is still running — otherwise the picker would interrupt its own streak.
+    if (this.state.waveModifier.wavesRemaining > 0) return;
+    // Every boss wave offers a mutator. It used to be a 50% roll, which meant
+    // the one recurring decision point in a run showed up on no schedule the
+    // player could anticipate; a guaranteed offer every tenth wave turns it
+    // into a rhythm.
     if (isBossWave(wave)) {
-      if (Math.random() < 0.5) { // 50% chance for wave modifiers to appear during boss waves
-        return;
-      }
       this.spawnPaused = true;
       this.bus.emit('wave_modifier_offer', wave);
     } else if (Math.random() < 0.04) { // 4% chance for wave modifiers to appear during normal waves
@@ -231,7 +233,7 @@ export class WaveManager {
       intermission: false,
       intermissionTimer: 0,
       autoProgress: this.state.autoProgress,
-      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null },
+      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null, wavesRemaining: 0, wavesCleared: 0 },
       elapsed: 0,
       enrageStacks: 0,
     };

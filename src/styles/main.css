@@ -1276,6 +1276,23 @@ button:disabled {
   border-color: var(--border);
   color: var(--text-3);
 }
+
+/* Plan §3.1: per-ability auto-cast opt-out, shown once Auto-Caster is bought. */
+.ability-autocast-row {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.ability-autocast-row input {
+  accent-color: #5b8def;
+  cursor: pointer;
+  margin: 0;
+}
 .ability-upgrade-btn.is-maxed {
   display: none;
 }
@@ -1700,6 +1717,14 @@ button:disabled {
   background: linear-gradient(180deg, var(--bg-2), rgba(155, 89, 255, 0.04));
 }
 
+/* Plan §3.2: AP perks can be gated by prerequisites or an exclusive pair. */
+.perk-row.is-perk-locked { opacity: 0.6; }
+.perk-reason {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
 /* Automation section */
 .automation-section {
   display: flex;
@@ -1723,6 +1748,63 @@ button:disabled {
   min-width: 0;
 }
 .automation-row.is-locked { opacity: 0.55; }
+
+/* Plan §3.6: auto-buy strategy + gold reserve controls. */
+.autobuy-config {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.autobuy-config-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 8px;
+}
+.autobuy-strategy-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.autobuy-strategy-btn {
+  flex: 1 1 auto;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-1);
+  cursor: pointer;
+}
+.autobuy-strategy-btn.is-selected {
+  border-color: #5b8def;
+  color: var(--text-0);
+  background: var(--bg-3);
+}
+.autobuy-config-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.autobuy-reserve-row {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.autobuy-reserve-label {
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.autobuy-reserve-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: #5b8def;
+}
 .automation-row.is-unlocked { border-color: #4ea86a; }
 .automation-info { flex: 1 1 0; min-width: 0; }
 .automation-name { font-weight: 600; color: var(--text-0); }

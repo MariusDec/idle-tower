@@ -1,4 +1,4 @@
-import type { AbilityId, GameState } from '../types';
+import type { AbilityId, AutoBuyStrategy, GameState, UpgradeCategory } from '../types';
 import { ABILITIES, ABILITY_BY_ID } from '../data/abilities';
 import { EventBus } from '../game/EventBus';
 import type { UpgradeManager } from './UpgradeManager';
@@ -18,10 +18,43 @@ export interface AutomationDeps {
 }
 
 const BASE_AUTO_BUY_INTERVAL = 10;
-const AUTO_CAST_INTERVAL = 5;
+/**
+ * Plan §3.1: was 5s, which meant a single ability every five seconds and
+ * cooldowns finishing into dead air. Auto-cast now runs every second and casts
+ * every ready, enabled ability it can pay for, in priority order.
+ */
+const AUTO_CAST_INTERVAL = 1;
 const AUTO_ASCEND_INTERVAL = 1;
 const AUTO_TRANSCEND_INTERVAL = 5;
 const MIN_AUTO_BUY_INTERVAL = 3;
+/** Upper bound on purchases in one auto-buy tick, so a huge bank cannot stall a frame. */
+const MAX_AUTO_BUYS_PER_TICK = 40;
+
+/** Category ranking for the `damage` auto-buy strategy (lower buys first). */
+const DAMAGE_PRIORITY: Partial<Record<UpgradeCategory, number>> = {
+  tower: 0,
+  economy: 1,
+  defense: 2,
+  utility: 3,
+};
+
+/**
+ * Default auto-cast order: burst damage first, then buffs, then economy. The
+ * player opts individual abilities out rather than reordering — a full priority
+ * editor is more UI than the decision is worth.
+ */
+const AUTO_CAST_PRIORITY: AbilityId[] = [
+  'execute',
+  'meteor_strike',
+  'chain_lightning',
+  'rain_of_arrows',
+  'multishot',
+  'precision_shot',
+  'berserk',
+  'vampiric_aura',
+  'frost_nova',
+  'gold_rush',
+];
 
 export class AutomationManager {
   private readonly deps: AutomationDeps;
@@ -95,36 +128,72 @@ export class AutomationManager {
     }
   }
 
+  /**
+   * Plan §3.6. The old heuristic — buy the single cheapest affordable upgrade,
+   * once per interval — is the worst available: it floods cheap utility levels,
+   * never banks for an expensive damage level, and buys at most six upgrades a
+   * minute no matter how rich the player is. Three rules replace it:
+   *
+   *  1. **Strategy.** `damage` spends on the tower category first and only
+   *     falls through to the rest when tower upgrades are unaffordable;
+   *     `balanced` keeps categories level with each other by preferring the
+   *     lowest-level upgrade; `cheapest` is the old behaviour, kept for players
+   *     who want raw throughput.
+   *  2. **Reserve.** A purchase only happens if the gold left afterwards still
+   *     covers `autoBuyReserve` of the current pile, so a player can bank for a
+   *     manual purchase without switching automation off.
+   *  3. **Repeat.** Buying continues within the tick until no rule allows
+   *     another purchase (bounded, so a huge bank cannot stall a frame).
+   */
   private runAutoBuy(): void {
     const upgrades = this.deps.upgrades;
-    const list = upgrades.all
-      .filter(u => !upgrades.isMaxed(u.id) && upgrades.canAfford(u.id))
-      .map(u => ({ id: u.id, cost: upgrades.getCost(u.id) }));
-    if (list.length === 0) return;
-    list.sort((a, b) => a.cost - b.cost);
-    const target = list[0];
-    upgrades.buy(target.id);
+    const state = this.deps.getState();
+    const strategy: AutoBuyStrategy = state.prestige.autoBuyStrategy ?? 'balanced';
+    const reserve = Math.max(0, Math.min(0.9, state.prestige.autoBuyReserve ?? 0));
+
+    for (let i = 0; i < MAX_AUTO_BUYS_PER_TICK; i++) {
+      const gold = state.resources.gold;
+      const budget = gold * (1 - reserve);
+      const candidates = upgrades.all
+        .filter(u => !upgrades.isMaxed(u.id))
+        .map(u => ({
+          id: u.id,
+          cost: upgrades.getCost(u.id),
+          category: u.category,
+          level: upgrades.getLevel(u.id),
+        }))
+        .filter(c => Number.isFinite(c.cost) && c.cost <= budget);
+      if (candidates.length === 0) return;
+
+      candidates.sort((a, b) => {
+        if (strategy === 'damage') {
+          const pa = DAMAGE_PRIORITY[a.category] ?? 9;
+          const pb = DAMAGE_PRIORITY[b.category] ?? 9;
+          if (pa !== pb) return pa - pb;
+        } else if (strategy === 'balanced' && a.level !== b.level) {
+          return a.level - b.level;
+        }
+        return a.cost - b.cost;
+      });
+
+      if (!upgrades.buy(candidates[0].id)) return;
+    }
   }
 
+  /**
+   * Priority order the player configured for auto-cast, filtered by the
+   * per-ability toggles from plan §3.1. Casting continues down the list rather
+   * than stopping at the first success, so a tick that finds four ready
+   * abilities fires all four instead of leaving three on cooldown-complete.
+   */
   private runAutoCast(wave: number): void {
-    const order: AbilityId[] = [
-      'execute',
-      'meteor_strike',
-      'chain_lightning',
-      'precision_shot',
-      'vampiric_aura',
-      'rain_of_arrows',
-      'berserk',
-      'frost_nova',
-      'gold_rush',
-    ];
-    for (const id of order) {
+    const enabled = this.deps.getState().prestige.autoCastEnabled ?? {};
+    for (const id of AUTO_CAST_PRIORITY) {
+      if (enabled[id] === false) continue;
       const def = ABILITY_BY_ID[id];
       if (!def) continue;
       if (!this.deps.abilities.canCast(id, wave)) continue;
-      if (this.deps.abilities.tryCast(id, wave)) {
-        return;
-      }
+      this.deps.abilities.tryCast(id, wave);
     }
   }
 

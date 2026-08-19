@@ -11,6 +11,16 @@ import { WaveManager } from '../src/systems/WaveManager.ts';
 import { PassiveAbilityManager } from '../src/systems/PassiveAbilityManager.ts';
 import { TowerXpManager } from '../src/systems/TowerXpManager.ts';
 import { PrestigeManager } from '../src/systems/PrestigeManager.ts';
+import { AutomationManager } from '../src/systems/AutomationManager.ts';
+import { ResearchTree } from '../src/systems/ResearchTree.ts';
+import { eliteChanceForWave } from '../src/systems/EnemyManager.ts';
+import { ABILITIES, ABILITY_BY_ID } from '../src/data/abilities.ts';
+import { RESEARCH_NODES } from '../src/data/research.ts';
+import {
+  MUTATOR_DURATION_WAVES,
+  waveModifierRewardMultiplier,
+  waveModifierTotalRewardMultiplier,
+} from '../src/data/waveModifiers.ts';
 import {
   enrageThresholdSeconds,
   enrageStacksFor,
@@ -27,7 +37,10 @@ import {
   FIRST_ASCENSION_AP,
   apForWave,
   AP_PERK_BY_ID,
+  TP_PERK_BY_ID,
   perkCost,
+  computePerkEffect,
+  tpForAP,
 } from '../src/data/prestige.ts';
 import { talentPointsAtLevel, xpPerKill } from '../src/data/xpTables.ts';
 import { PASSIVE_ABILITIES } from '../src/data/passiveAbilities.ts';
@@ -168,6 +181,9 @@ section('§2.3.5 AP sinks');
   const resources = { ascensionPoints: 1_000_000, apThisTranscendence: 0, lifetimeAP: 0 } as never;
   const prestige = { apSpent: {}, tpSpent: {}, automationFlags: {} } as never;
   const mgr = new PrestigeManager(bus, { resources, stats: {} as never, prestige });
+  // §3.2: the sinks now sit behind a tier-1 node, so buy the prerequisite first.
+  mgr.spendAP('ap_extra_shots');
+  mgr.spendAP('ap_wave_skipper');
   check('the sink can absorb AP', mgr.spendAP('ap_might'));
   check('spending the sink raises damage', mgr.getAPDamageBonus() > 0,
     `bonus=${mgr.getAPDamageBonus()}`);
@@ -233,6 +249,180 @@ section('§2.5 passive abilities');
   }
   check('XP alone reaches level 10 in a plausible number of kills',
     kills < 20_000, `kills=${kills}`);
+}
+
+// ── §3.1 abilities ────────────────────────────────────────────────────────
+section('§3.1 abilities');
+{
+  const frontLoaded = ABILITIES.filter(a => a.unlockWave <= 30).length;
+  check('at least six abilities unlock inside a first run', frontLoaded >= 6,
+    `count=${frontLoaded}`);
+  const steepest = Math.max(...ABILITIES.map(a => a.upgradeCostGrowth));
+  check('no ability upgrade curve is steeper than 2x/level', steepest <= 2,
+    `max=${steepest}`);
+  const rain = ABILITY_BY_ID['rain_of_arrows'];
+  const lvl10 = rain.upgradeBaseCost * Math.pow(rain.upgradeCostGrowth, 9);
+  check('a level-10 ability costs less than 500K gold', lvl10 < 500_000,
+    `cost=${Math.round(lvl10)}`);
+
+  // Auto-cast must honour the per-ability opt-out and keep going past the
+  // first success, so a tick with several ready abilities fires all of them.
+  const cast: string[] = [];
+  const autoBus = new EventBus();
+  const state = {
+    wave: { highestWave: 60 },
+    resources: { gold: 0 },
+    prestige: { autoCastEnabled: { berserk: false }, autoBuyStrategy: 'balanced', autoBuyReserve: 0 },
+  } as never;
+  const auto = new AutomationManager({
+    upgrades: { all: [], isMaxed: () => true, getCost: () => Infinity, getLevel: () => 0, buy: () => false } as never,
+    abilities: {
+      canCast: () => true,
+      tryCast: (id: string) => { cast.push(id); return true; },
+    } as never,
+    prestige: {
+      getAutomationEnabled: (k: string) => k === 'autoAbilities',
+      getAutoBuySpeedReduction: () => 0,
+    } as never,
+    research: {} as never,
+    getState: () => state,
+    onAscend: () => 0,
+    onTranscend: () => 0,
+    bus: autoBus,
+  });
+  auto.tick(1.1);
+  check('auto-cast fires every ready ability, not just one', cast.length > 1,
+    `cast=${cast.length}`);
+  check('auto-cast skips abilities the player turned off', !cast.includes('berserk'));
+}
+
+// ── §3.6 auto-buy ─────────────────────────────────────────────────────────
+section('§3.6 auto-buy strategy');
+{
+  const bought: string[] = [];
+  const levels: Record<string, number> = { damage: 0, greed: 0, trinket: 0 };
+  const costs: Record<string, number> = { damage: 100, greed: 50, trinket: 10 };
+  const cats: Record<string, string> = { damage: 'tower', greed: 'economy', trinket: 'utility' };
+  const purse = { gold: 1000 };
+  const upgrades = {
+    all: Object.keys(levels).map(id => ({ id, category: cats[id] })),
+    isMaxed: () => false,
+    getCost: (id: string) => costs[id],
+    getLevel: (id: string) => levels[id],
+    buy: (id: string) => {
+      if (purse.gold < costs[id]) return false;
+      purse.gold -= costs[id];
+      levels[id] += 1;
+      bought.push(id);
+      return true;
+    },
+  } as never;
+  const makeAuto = (strategy: string, reserve: number) => new AutomationManager({
+    upgrades,
+    abilities: { canCast: () => false, tryCast: () => false } as never,
+    prestige: {
+      getAutomationEnabled: (k: string) => k === 'autoBuy',
+      getAutoBuySpeedReduction: () => 0,
+    } as never,
+    research: {} as never,
+    getState: () => ({
+      wave: { highestWave: 1 },
+      resources: purse,
+      prestige: { autoCastEnabled: {}, autoBuyStrategy: strategy, autoBuyReserve: reserve },
+    }) as never,
+    onAscend: () => 0,
+    onTranscend: () => 0,
+    bus: new EventBus(),
+  });
+
+  makeAuto('damage', 0).tick(11);
+  check('damage strategy opens on a tower upgrade', bought[0] === 'damage',
+    `first=${bought[0]}`);
+  check('auto-buy keeps buying within one tick', bought.length > 1,
+    `bought=${bought.length}`);
+
+  // A reserve must leave gold on the table.
+  purse.gold = 1000;
+  bought.length = 0;
+  makeAuto('cheapest', 0.5).tick(11);
+  check('a 50% reserve stops spending at the floor', purse.gold >= 500,
+    `left=${purse.gold}`);
+}
+
+// ── §3.2 prestige trees ───────────────────────────────────────────────────
+section('§3.2 prestige');
+{
+  check('deep transcendence pays off',
+    tpForAP(100_000) / tpForAP(100) > 10,
+    `ratio=${(tpForAP(100_000) / tpForAP(100)).toFixed(1)}x`);
+  check('a first transcendence is still worth taking', tpForAP(100) >= 20,
+    `tp=${tpForAP(100)}`);
+
+  const bus = new EventBus();
+  const resources = { ascensionPoints: 1_000_000, apThisTranscendence: 0, lifetimeAP: 0 } as never;
+  const prestige = { apSpent: {}, tpSpent: {}, automationFlags: {} } as never;
+  const mgr = new PrestigeManager(bus, { resources, stats: {} as never, prestige });
+  check('a gated AP perk cannot be bought first', !mgr.canSpendAP('ap_might'));
+  check('the gate names its prerequisite', mgr.perkBlockedReason('ap_might') !== null);
+  mgr.spendAP('ap_extra_shots');
+  check('buying the prerequisite opens the gate', mgr.canSpendAP('ap_might'));
+  for (let i = 0; i < 5; i++) mgr.spendAP('ap_might');
+  check('the tier-3 choice unlocks at Might 5', mgr.canSpendAP('ap_warlord'));
+  mgr.spendAP('ap_warlord');
+  check('taking one side locks out the other', mgr.isExcluded('ap_tycoon'));
+
+  // The unbounded TP nodes must taper, or the capped branch perks are noise.
+  const cosmic = TP_PERK_BY_ID['tp_damage'];
+  const one = computePerkEffect(cosmic, 1);
+  const forty = computePerkEffect(cosmic, 40);
+  check('the unbounded TP node still grows', forty > computePerkEffect(cosmic, 20));
+  check('the unbounded TP node tapers', forty < one * 40 * 0.5,
+    `lvl40=${forty.toFixed(2)} vs linear=${(one * 40).toFixed(2)}`);
+}
+
+// ── §3.3 wave mutators ────────────────────────────────────────────────────
+section('§3.3 wave mutators');
+{
+  check('a mutator lasts more than one wave', MUTATOR_DURATION_WAVES > 1);
+  check('the reward escalates each wave',
+    waveModifierRewardMultiplier(2) > waveModifierRewardMultiplier(0));
+  check('a full run is worth several waves of reward',
+    waveModifierTotalRewardMultiplier() >= 4);
+
+  const bus = new EventBus();
+  let offers = 0;
+  bus.on('wave_modifier_offer', () => { offers += 1; });
+  const stubEnemies = {
+    setEnrage: () => {}, aliveCount: () => 0, reset: () => {}, spawn: () => {}, spawnElite: () => {},
+  } as unknown as EnemyManager;
+  const wm = new WaveManager(bus, stubEnemies, 800, 600, () => {}, () => {});
+  for (const w of [10, 20, 30]) wm.startWave(w);
+  check('every boss wave offers a mutator', offers === 3, `offers=${offers}`);
+
+  offers = 0;
+  wm.snapshot.waveModifier.wavesRemaining = 2;
+  wm.startWave(40);
+  check('no new offer while one is still running', offers === 0);
+}
+
+// ── §3.4 elites ───────────────────────────────────────────────────────────
+section('§3.4 elites');
+{
+  check('elites stay absent early', eliteChanceForWave(10) === 0);
+  check('elites are common by wave 100', eliteChanceForWave(100) >= 0.2,
+    `chance=${eliteChanceForWave(100)}`);
+  check('the elite rate is capped', eliteChanceForWave(500) <= 0.25);
+}
+
+// ── §3.5 research ─────────────────────────────────────────────────────────
+section('§3.5 research');
+{
+  const startNodes = RESEARCH_NODES.filter(n => n.effectType === 'start_wave');
+  check('the start_wave effect has a node', startNodes.length > 0);
+  const tree = new ResearchTree(new EventBus());
+  tree.replaceLevels({ [startNodes[0].id]: 3 }, 0, null);
+  check('researching it moves the starting wave', tree.getStartWave() > 0,
+    `wave=${tree.getStartWave()}`);
 }
 
 console.log(

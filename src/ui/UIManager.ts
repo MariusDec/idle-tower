@@ -1,4 +1,4 @@
-import type { AbilityId, EnemyType, EnemyWaveStatsEntry, GameState, PanelTab, StatsInfo } from '../types';
+import type { AbilityId, EnemyType, EnemyWaveStatsEntry, GameState, PanelTab, StatsInfo, AutoBuyStrategy } from '../types';
 import { ENEMY_DEFS } from '../data/enemies';
 import {
   enemyHPForWave,
@@ -67,6 +67,10 @@ export interface AbilityAPI {
   getUpgradeCost: (id: AbilityId) => number;
   getEffectiveStats: (id: AbilityId) => EffectiveAbilityStats;
   getXp: (id: AbilityId) => number;
+  /** Plan §3.1: per-ability auto-cast opt-out. */
+  isAutoCastUnlocked: () => boolean;
+  isAutoCastEnabled: (id: AbilityId) => boolean;
+  onToggleAutoCast: (id: AbilityId, enabled: boolean) => void;
 }
 
 export interface ResearchAPI {
@@ -101,9 +105,15 @@ export interface PrestigeAPI {
   isAutomationEnabled: (key: AutomationKey) => boolean;
   meetsPrerequisites: (perkId: string) => boolean;
   isExcluded: (perkId: string) => boolean;
+  perkBlockedReason: (perkId: string) => string | null;
   ascendUnlockWave: number;
   transcendUnlockAP: number;
   targetAscendWave: number;
+  /** Plan §3.6: auto-buy tuning. */
+  autoBuyStrategy: AutoBuyStrategy;
+  autoBuyReserve: number;
+  setAutoBuyStrategy: (strategy: AutoBuyStrategy) => void;
+  setAutoBuyReserve: (fraction: number) => void;
 }
 
 export interface TargetingAPI {
@@ -243,6 +253,9 @@ export class UIManager {
       isUnlocked: false,
     }),
     getXp: () => 0,
+    isAutoCastUnlocked: () => false,
+    isAutoCastEnabled: () => true,
+    onToggleAutoCast: () => {},
   };
   private prestigeApi: PrestigeAPI = {
     canAscend: () => false,
@@ -254,9 +267,14 @@ export class UIManager {
     isAutomationEnabled: () => false,
     meetsPrerequisites: () => true,
     isExcluded: () => false,
+    perkBlockedReason: () => null,
     ascendUnlockWave: 30,
     transcendUnlockAP: 100,
     targetAscendWave: 30,
+    autoBuyStrategy: 'balanced',
+    autoBuyReserve: 0,
+    setAutoBuyStrategy: () => {},
+    setAutoBuyReserve: () => {},
   };
   private researchApi: ResearchAPI = {
     rp: 0,
@@ -310,6 +328,9 @@ export class UIManager {
       getUpgradeCost: (id) => this.abilityApi.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityApi.getEffectiveStats(id),
       getXp: (id) => this.abilityApi.getXp(id),
+      isAutoCastUnlocked: () => this.abilityApi.isAutoCastUnlocked(),
+      isAutoCastEnabled: (id) => this.abilityApi.isAutoCastEnabled(id),
+      onToggleAutoCast: (id, enabled) => this.abilityApi.onToggleAutoCast(id, enabled),
     }, this.passiveApi);
     this.prestigePanel = new PrestigePanel({
       onAscend: () => this.onAscend(),
@@ -317,6 +338,7 @@ export class UIManager {
       canAscend: (w) => this.prestigeApi.canAscend(w),
       canSpend: (id, ap, tp) => this.prestigeApi.canSpend(id, ap, tp),
       previewAP: (w) => this.prestigeApi.previewAP(w),
+      perkBlockedReason: (id) => this.prestigeApi.perkBlockedReason(id),
       ascendUnlockWave: this.prestigeApi.ascendUnlockWave,
     });
     this.transcendencePanel = new TranscendencePanel({
@@ -333,6 +355,10 @@ export class UIManager {
       previewTP: (ap) => this.prestigeApi.previewTP(ap),
       transcendUnlockAP: this.prestigeApi.transcendUnlockAP,
       targetAscendWave: this.prestigeApi.targetAscendWave,
+      getAutoBuyStrategy: () => this.prestigeApi.autoBuyStrategy,
+      onAutoBuyStrategyChange: (strategy) => this.prestigeApi.setAutoBuyStrategy(strategy),
+      getAutoBuyReserve: () => this.prestigeApi.autoBuyReserve,
+      onAutoBuyReserveChange: (fraction) => this.prestigeApi.setAutoBuyReserve(fraction),
     });
     const researchHandlers: ResearchPanelHandlers = {
       onStartResearch: (id) => this.onUnlockResearch(id),

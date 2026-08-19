@@ -122,6 +122,9 @@ function bootstrap(): void {
     getUpgradeCost: (id) => game.abilities.getUpgradeCost(id),
     getEffectiveStats: (id) => game.abilities.getEffectiveStats(id),
     getXp: (id) => game.abilities.getXp(id),
+    isAutoCastUnlocked: () => game.prestige.isAutomationUnlocked('autoAbilities'),
+    isAutoCastEnabled: (id) => game.gameState.prestige.autoCastEnabled[id] !== false,
+    onToggleAutoCast: (id, enabled) => game.setAutoCastEnabled(id, enabled),
   });
   ui.setPrestigeAPI({
     canAscend: (wave) => game.prestige.canAscend(wave),
@@ -136,6 +139,11 @@ function bootstrap(): void {
     targetAscendWave: game.gameState.prestige.targetAscendWave,
     meetsPrerequisites: (id) => game.prestige.meetsPrerequisites(id),
     isExcluded: (id) => game.prestige.isExcluded(id),
+    perkBlockedReason: (id) => game.prestige.perkBlockedReason(id),
+    autoBuyStrategy: game.gameState.prestige.autoBuyStrategy,
+    autoBuyReserve: game.gameState.prestige.autoBuyReserve,
+    setAutoBuyStrategy: (strategy) => game.setAutoBuyStrategy(strategy),
+    setAutoBuyReserve: (fraction) => game.setAutoBuyReserve(fraction),
   });
   ui.setResearchAPI({
     rp: game.research.rp,

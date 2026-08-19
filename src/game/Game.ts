@@ -1,4 +1,4 @@
-import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, Equipment } from '../types';
+import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, Equipment, AutoBuyStrategy } from '../types';
 import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
 import { TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
 import { UPGRADES } from '../data/upgrades';
@@ -23,7 +23,7 @@ import { AutomationManager } from '../systems/AutomationManager';
 import { SaveManager, type PersistentState, type OfflineResult } from '../systems/SaveManager';
 import { AchievementManager } from '../systems/AchievementManager';
 import { UIManager } from '../ui/UIManager';
-import { isBossWave } from '../data/formulas';
+import { isBossWave, goldDropForWave, spawnCountForWave } from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
 import { DEFAULT_AUTO_ASCEND_WAVE } from '../data/prestige';
 import { AudioManager } from '../systems/AudioManager';
@@ -33,7 +33,12 @@ import { PassiveAbilityManager } from '../systems/PassiveAbilityManager';
 import { EquipmentManager } from '../systems/EquipmentManager';
 import { formatInt } from '../utils/bigNumber';
 import { setStyle, toggleClass } from '../utils/dom';
-import { pickRandomModifiers, snapshotFromDef } from '../data/waveModifiers';
+import {
+  pickRandomModifiers,
+  snapshotFromDef,
+  MUTATOR_DURATION_WAVES,
+  waveModifierRewardMultiplier,
+} from '../data/waveModifiers';
 import { TALENT_STATS, type TalentStat } from '../data/talentTree';
 import { WaveModifierModal } from '../ui/WaveModifierModal';
 
@@ -76,6 +81,9 @@ function makeInitialState(): GameState {
       autoTranscend: false,
     },
     targetAscendWave: DEFAULT_AUTO_ASCEND_WAVE,
+    autoCastEnabled: {},
+    autoBuyStrategy: 'balanced',
+    autoBuyReserve: 0,
   };
   const stats: GameStats = {
     enemiesKilled: 0,
@@ -114,7 +122,7 @@ function makeInitialState(): GameState {
       intermission: false,
       intermissionTimer: 0,
       autoProgress: true,
-      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null },
+      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null, wavesRemaining: 0, wavesCleared: 0 },
       elapsed: 0,
       enrageStacks: 0,
     },
@@ -386,9 +394,23 @@ export class Game {
       }
     });
     this.bus.on('enemy_killed', (enemy) => {
-      const e = enemy as { x: number; y: number; type: string; maxHp?: number; isSplitChild?: boolean; goldValue?: number };
+      const e = enemy as { x: number; y: number; type: string; maxHp?: number; isSplitChild?: boolean; goldValue?: number; elite?: boolean };
       const def = ENEMY_DEFS[e.type as keyof typeof ENEMY_DEFS];
       this.state.stats.enemiesKilled += 1;
+      // Plan §3.4: an elite kill is worth showing up for — the gold multiplier
+      // and RP are handled in EnemyManager; the gear roll and the toast are
+      // here because they need the equipment manager and the notification bus.
+      if (e.elite) {
+        const eliteDrop = this.equipmentMgr.rollDrop(this.waveMgr.currentWave, 'elite');
+        if (eliteDrop) {
+          this.bus.emit('toast', {
+            kind: 'milestone',
+            text: `Elite dropped ${eliteDrop.rarity} gear!`,
+            life: 4,
+          });
+        }
+        this.effects.emitShockwaveRing(e.x, e.y, 120, 'rgba(255, 215, 0, 0.7)', 5, 0, 0, 'magic');
+      }
       if (e.type === 'boss') {
         this.state.stats.bossesKilled += 1;
         // P5: Multi-stage death shockwave — 3 cascading rings that each damage enemies once.
@@ -620,12 +642,17 @@ export class Game {
     this.bus.on('wave_cleared', (wave: unknown) => {
       const cleared = wave as number;
       const wms = this.state.wave.waveModifier;
-      if (wms.active && wms.pendingChoiceForWave === cleared) {
+      // Plan §3.3: a mutator now spans MUTATOR_DURATION_WAVES waves and pays
+      // out after each of them, with the reward escalating each time — so
+      // surviving the third wave under Fortress is worth twice the first.
+      if (wms.active && wms.wavesRemaining > 0 && wms.pendingChoiceForWave !== null
+        && cleared >= wms.pendingChoiceForWave) {
+        const escalation = waveModifierRewardMultiplier(wms.wavesCleared);
         const goldMult = wms.active.reward.gold;
         if (goldMult > 0 && wms.goldSnapshot != null) {
           const waveGold = this.state.stats.goldEarned - wms.goldSnapshot;
           if (waveGold > 0) {
-            const bonus = Math.floor(waveGold * goldMult);
+            const bonus = Math.floor(waveGold * goldMult * escalation);
             if (bonus > 0) {
               this.state.resources.gold += bonus;
               this.state.resources.lifetimeGold += bonus;
@@ -634,17 +661,40 @@ export class Game {
             }
           }
         }
-        if (wms.active.reward.ap > 0) {
-          this.state.resources.ascensionPoints += wms.active.reward.ap;
-          this.state.resources.apThisTranscendence += wms.active.reward.ap;
-          this.state.resources.lifetimeAP += wms.active.reward.ap;
+        const apReward = Math.floor(wms.active.reward.ap * escalation);
+        if (apReward > 0) {
+          this.state.resources.ascensionPoints += apReward;
+          this.state.resources.apThisTranscendence += apReward;
+          this.state.resources.lifetimeAP += apReward;
         }
-        if (wms.active.reward.tp > 0) {
-          this.state.resources.transcendencePoints += wms.active.reward.tp;
+        const tpReward = Math.floor(wms.active.reward.tp * escalation);
+        if (tpReward > 0) {
+          this.state.resources.transcendencePoints += tpReward;
         }
-        wms.active = null;
-        wms.pendingChoiceForWave = null;
-        wms.goldSnapshot = null;
+
+        wms.wavesCleared += 1;
+        wms.wavesRemaining -= 1;
+        if (wms.wavesRemaining <= 0) {
+          const name = wms.active.name;
+          wms.active = null;
+          wms.pendingChoiceForWave = null;
+          wms.goldSnapshot = null;
+          wms.wavesCleared = 0;
+          this.bus.emit('toast', {
+            kind: 'milestone',
+            text: `${name} survived — mutator ended.`,
+            life: 3.5,
+          });
+        } else {
+          // Fresh baseline so the next wave's gold reward measures that wave.
+          wms.goldSnapshot = this.state.stats.goldEarned;
+          this.bus.emit('toast', {
+            kind: 'info',
+            text: `${wms.active.name}: ${wms.wavesRemaining} wave${wms.wavesRemaining === 1 ? '' : 's'} left · next reward ×${waveModifierRewardMultiplier(wms.wavesCleared).toFixed(1)}`,
+            life: 3,
+          });
+        }
+        this.applyUpgradeEffects();
       }
       // Wave Mastery: flat gold on wave clear
       if (this.waveGoldBonus > 0) {
@@ -674,8 +724,17 @@ export class Game {
       this.state.wave.waveModifier.choiceForNextWave = choices.map(snapshotFromDef);
       this.state.wave.waveModifier.pendingChoiceForWave = w;
       this.waveMgr.pauseSpawning();
+      const projected: Record<string, { gold: number; ap: number; tp: number }> = {};
+      for (const snapshot of this.state.wave.waveModifier.choiceForNextWave) {
+        projected[snapshot.id] = this.projectWaveModifierReward(snapshot, w);
+      }
       this.waveModModal.show(
-        { wave: w, choices: this.state.wave.waveModifier.choiceForNextWave },
+        {
+          wave: w,
+          waves: MUTATOR_DURATION_WAVES,
+          choices: this.state.wave.waveModifier.choiceForNextWave,
+          projected,
+        },
         {
           onChoose: (snapshot: WaveModifierSnapshot) => {
             this.waveMgr.resumeSpawning();
@@ -1070,7 +1129,7 @@ export class Game {
     this.syncUiApis();
     this.bus.emit('toast', {
       kind: 'milestone',
-      text: `Transcendence! +${tp} TP. Everything resets. New power awaits.`,
+      text: `Transcendence! +${tp} TP. Gear, passives and talents carry over.`,
       life: 7,
     });
     this.bus.emit('run_ended', { record, previous: this.getPreviousRun() });
@@ -1119,6 +1178,33 @@ export class Game {
     const ok = this.prestigeMgr.setAutomationEnabled(key, enabled);
     if (ok) this.syncUiApis();
     return ok;
+  }
+
+  /**
+   * Plan §3.1: opt an ability out of auto-cast. Stored as an explicit `false`
+   * so an unseen key keeps meaning "auto-cast this".
+   */
+  setAutoCastEnabled(id: AbilityId, enabled: boolean): void {
+    if (enabled) {
+      delete this.state.prestige.autoCastEnabled[id];
+    } else {
+      this.state.prestige.autoCastEnabled[id] = false;
+    }
+    this.syncUiApis();
+  }
+
+  /** Plan §3.6: which upgrades auto-buy reaches for first. */
+  setAutoBuyStrategy(strategy: AutoBuyStrategy): void {
+    this.state.prestige.autoBuyStrategy = strategy;
+    // The panel reads its values from the pushed API snapshot, so a setter that
+    // does not re-push leaves the control showing the old choice.
+    this.syncUiApis();
+  }
+
+  /** Plan §3.6: fraction of gold auto-buy will not spend (0-0.9). */
+  setAutoBuyReserve(fraction: number): void {
+    this.state.prestige.autoBuyReserve = Math.max(0, Math.min(0.9, fraction));
+    this.syncUiApis();
   }
 
   setTargetAscendWave(wave: number): void {
@@ -1434,8 +1520,10 @@ export class Game {
     }
 
     // Wave modifier (only while its wave is the active one).
-    const activeMod = this.state.wave.waveModifier.active;
-    if (activeMod && this.state.wave.waveModifier.pendingChoiceForWave === this.waveMgr.currentWave) {
+    const wms = this.state.wave.waveModifier;
+    const activeMod = wms.active;
+    if (activeMod && wms.wavesRemaining > 0 && wms.pendingChoiceForWave !== null
+      && this.waveMgr.currentWave >= wms.pendingChoiceForWave) {
       goldAdditive += activeMod.effects.goldAdditive;
     }
 
@@ -1502,9 +1590,14 @@ export class Game {
       isAutomationEnabled: (key) => this.prestigeMgr.getAutomationEnabled(key),
       meetsPrerequisites: (perkId) => this.prestigeMgr.meetsPrerequisites(perkId),
       isExcluded: (perkId) => this.prestigeMgr.isExcluded(perkId),
+      perkBlockedReason: (perkId) => this.prestigeMgr.perkBlockedReason(perkId),
       ascendUnlockWave: this.prestigeMgr.ascensionUnlockWave(),
       transcendUnlockAP: this.prestigeMgr.transcendenceUnlockAP(),
       targetAscendWave: this.state.prestige.targetAscendWave,
+      autoBuyStrategy: this.state.prestige.autoBuyStrategy,
+      autoBuyReserve: this.state.prestige.autoBuyReserve,
+      setAutoBuyStrategy: (strategy) => this.setAutoBuyStrategy(strategy),
+      setAutoBuyReserve: (fraction) => this.setAutoBuyReserve(fraction),
     });
     this.ui.setResearchAPI({
       rp: this.researchTree.rp,
@@ -1537,6 +1630,9 @@ export class Game {
       getUpgradeCost: (id) => this.abilityMgr.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityMgr.getEffectiveStats(id),
       getXp: (id) => this.abilityMgr.getXp(id),
+      isAutoCastUnlocked: () => this.prestigeMgr.isAutomationUnlocked('autoAbilities'),
+      isAutoCastEnabled: (id) => this.state.prestige.autoCastEnabled[id] !== false,
+      onToggleAutoCast: (id, enabled) => this.setAutoCastEnabled(id, enabled),
     });
     this.ui.setTalentAPI({
       allocated: this.state.talents.allocated,
@@ -1803,8 +1899,10 @@ export class Game {
 
     // Wave modifier: playerDamageMult applies on top of everything above.
     // (Its goldAdditive is folded into computeGoldMultiplier.)
-    const activeMod = this.state.wave.waveModifier.active;
-    if (activeMod && this.state.wave.waveModifier.pendingChoiceForWave === this.waveMgr.currentWave) {
+    const wmod = this.state.wave.waveModifier;
+    const activeMod = wmod.active;
+    if (activeMod && wmod.wavesRemaining > 0 && wmod.pendingChoiceForWave !== null
+      && this.waveMgr.currentWave >= wmod.pendingChoiceForWave) {
       if (activeMod.effects.playerDamageMult !== 1) {
         t.baseDamage = Math.max(1, t.baseDamage * activeMod.effects.playerDamageMult);
       }
@@ -2104,8 +2202,12 @@ export class Game {
    * wave. If no modifier is active, reset all multipliers to 1.
    */
   private applyActiveWaveModifier(): void {
-    const active = this.state.wave.waveModifier.active;
-    const matchesWave = this.state.wave.waveModifier.pendingChoiceForWave === this.waveMgr.currentWave;
+    const wms = this.state.wave.waveModifier;
+    const active = wms.active;
+    // Plan §3.3: the modifier applies to a *range* of waves now, not one.
+    const matchesWave = wms.wavesRemaining > 0
+      && wms.pendingChoiceForWave !== null
+      && this.waveMgr.currentWave >= wms.pendingChoiceForWave;
     if (!active || !matchesWave) {
       this.state.wave.waveModifier.active = null;
       this.waveMgr.setEnemyCountMult(1);
@@ -2126,9 +2228,45 @@ export class Game {
     this.bus.emit('wave_modifier_active', active);
   }
 
+  /**
+   * Plan §3.3: rough gold a wave is worth right now, used to turn a mutator's
+   * "×4 gold" into a number the player can compare against. Deliberately a
+   * heuristic — normal-enemy drop x spawn count x the composed gold multiplier —
+   * because the exact figure depends on which enemy types roll.
+   */
+  private estimateWaveGold(wave: number): number {
+    const perEnemy = goldDropForWave(ENEMY_DEFS.normal.baseGold, wave);
+    const count = spawnCountForWave(wave);
+    return Math.max(0, perEnemy * count * this.computeGoldMultiplier());
+  }
+
+  /** Total reward a mutator is projected to pay across its full run. */
+  private projectWaveModifierReward(
+    snapshot: WaveModifierSnapshot,
+    startWave: number,
+  ): { gold: number; ap: number; tp: number } {
+    let gold = 0;
+    let ap = 0;
+    let tp = 0;
+    for (let i = 0; i < MUTATOR_DURATION_WAVES; i++) {
+      const escalation = waveModifierRewardMultiplier(i);
+      const wave = startWave + i;
+      if (snapshot.reward.gold > 0) {
+        // The mutator's own gold bonus applies to the wave it is measuring.
+        const waveGold = this.estimateWaveGold(wave) * (1 + Math.max(-0.9, snapshot.effects.goldAdditive));
+        gold += Math.floor(waveGold * snapshot.reward.gold * escalation);
+      }
+      ap += Math.floor(snapshot.reward.ap * escalation);
+      tp += Math.floor(snapshot.reward.tp * escalation);
+    }
+    return { gold, ap, tp };
+  }
+
   private chooseWaveModifier(snapshot: WaveModifierSnapshot): void {
     this.state.wave.waveModifier.active = snapshot;
     this.state.wave.waveModifier.choiceForNextWave = null;
+    this.state.wave.waveModifier.wavesRemaining = MUTATOR_DURATION_WAVES;
+    this.state.wave.waveModifier.wavesCleared = 0;
     // Snapshot gold earned so far — the modifier's gold multiplier bonus
     // is computed from gold earned during the wave and awarded on wave_cleared.
     this.state.wave.waveModifier.goldSnapshot = this.state.stats.goldEarned;
@@ -2150,7 +2288,7 @@ export class Game {
     });
     this.bus.emit('toast', {
       kind: 'milestone',
-      text: `Mutator complete: ${snapshot.name}`,
+      text: `${snapshot.name} active for ${MUTATOR_DURATION_WAVES} waves`,
       life: 4,
     });
   }
@@ -2159,6 +2297,8 @@ export class Game {
     this.state.wave.waveModifier.active = null;
     this.state.wave.waveModifier.choiceForNextWave = null;
     this.state.wave.waveModifier.pendingChoiceForWave = null;
+    this.state.wave.waveModifier.wavesRemaining = 0;
+    this.state.wave.waveModifier.wavesCleared = 0;
     this.bus.emit('toast', {
       kind: 'info',
       text: 'Skipped mutator this wave.',
@@ -2169,11 +2309,12 @@ export class Game {
   private applyFullTranscendenceReset(): void {
     this.automation.reset();
     this.abilityMgr.resetLevels();
-    // Character progression survives ascension but not transcendence. Cleared
-    // *before* applySavedStateReset so its closing stat recompute sees the
-    // wiped passives and empty gear rather than the outgoing run's.
-    this.passiveMgr.reset();
-    this.equipmentMgr.reset();
+    // Passives and equipment are *character* progression, not run progression:
+    // they survive a transcendence alongside talents, tower XP, research and
+    // achievements. Only the gold-priced layers (upgrades, ability levels) and
+    // the ascension layer itself are wiped. Gear in particular is a slow,
+    // low-drop-rate collection — deleting it at the one moment a player is
+    // asked to give everything else up made transcending read as a punishment.
     this.applySavedStateReset();
     this.state.prestige.apSpent = {};
     this.state.prestige.automationFlags = {
@@ -2245,6 +2386,9 @@ export class Game {
       autoTranscend: false,
     };
     p.targetAscendWave = persisted.prestige.targetAscendWave ?? DEFAULT_AUTO_ASCEND_WAVE;
+    p.autoCastEnabled = { ...(persisted.prestige.autoCastEnabled ?? {}) };
+    p.autoBuyStrategy = persisted.prestige.autoBuyStrategy ?? 'balanced';
+    p.autoBuyReserve = persisted.prestige.autoBuyReserve ?? 0;
 
     this.state.wave = { ...persisted.wave };
     this.waveMgr.setState(this.state.wave);

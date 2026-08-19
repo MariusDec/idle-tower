@@ -229,6 +229,24 @@ export const RESEARCH_NODES: ResearchDef[] = [
     color: '#2ecc71',
   },
   {
+    // Plan §3.5: the `start_wave` effect type existed with no node using it, so
+    // a whole branch of ResearchTree was dead code. Veteran Scouts is the node
+    // the original design called for: research that shortens the *opening* of
+    // every subsequent run rather than raising a combat number.
+    id: 'veteran_scouts',
+    name: 'Veteran Scouts',
+    description: 'Every ascension begins at a later wave',
+    cost: [60, 180, 500, 1200, 2500],
+    researchTime: [600, 1800, 3600, 7200, 14400],
+    category: 'scouting',
+    effectType: 'start_wave',
+    effectPerLevel: 3,
+    maxLevel: 5,
+    prerequisites: ['swift_prep'],
+    glyph: '🧭',
+    color: '#34d399',
+  },
+  {
     id: 'battle_intel',
     name: 'Battle Intel',
     description: 'Enemies spawn with 10% less HP',

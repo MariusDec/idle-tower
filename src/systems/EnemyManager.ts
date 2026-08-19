@@ -16,11 +16,22 @@ import type { ResearchTree } from './ResearchTree';
 const ENEMY_GAP = 2;
 
 // Elite enemy constants
+//
+// Plan §3.4: the ramp used to top out at 8% at wave 200, which made five
+// hand-written auras into noise a player would rarely see and never plan
+// around. It now reaches its cap of 20% at wave 100 — frequent enough to be a
+// recognisable part of a wave's texture, still rare enough to feel like an
+// event. Elites also pay for themselves now (see ELITE_GOLD_MULT and the
+// guaranteed RP drop in `damage`).
 const ELITE_UNLOCK_WAVE = 21;
 const ELITE_SPAWN_CHANCE_BASE = 0.02;
-const ELITE_SPAWN_CHANCE_MAX_WAVE = 200;
-const ELITE_SPAWN_CHANCE_MAX = 0.08;
+const ELITE_SPAWN_CHANCE_MAX_WAVE = 100;
+const ELITE_SPAWN_CHANCE_MAX = 0.20;
 const ELITE_HP_MULT = 2.5;
+/** Gold multiplier every elite carries, on top of any aura bonus. */
+const ELITE_GOLD_MULT = 2.5;
+/** RP guaranteed by an elite kill (plan §3.4: elites are a visible RP faucet). */
+const ELITE_RP_DROP = 1;
 const AURA_RADIUS = 180;
 const HASTE_SPEED_BONUS = 0.5;
 const THORNS_REFLECT_FRACTION = 0.1;
@@ -288,6 +299,12 @@ export class EnemyManager {
       this.bus.emit('enemy_killed', enemy);
       this.resources.addGold(this.computeGold(enemy, isCrit));
       const def = ENEMY_DEFS[enemy.type];
+      // Plan §3.4: an elite always pays out research, so the player has a
+      // concrete reason to want the aura on screen instead of merely surviving it.
+      if (enemy.elite) {
+        this.bus.emit('rp_dropped', { x: enemy.x, y: enemy.y, amount: ELITE_RP_DROP });
+        if (this.researchTree) this.researchTree.addRP(ELITE_RP_DROP);
+      }
       const chance = (def.rpChance ?? 0) + this.rpDropChanceBonus;
       if (chance > 0 && Math.random() < Math.min(1, chance)) {
         this.bus.emit('rp_dropped', { x: enemy.x, y: enemy.y, amount: 1 });
@@ -304,6 +321,7 @@ export class EnemyManager {
     let amount = base * this.goldMultiplier * this.goldBuffMultiplier;
     if (this.killStreakGoldBonus > 0) amount *= 1 + this.killStreakGoldBonus;
     if (this.manaFullGoldBonus > 0) amount *= 1 + this.manaFullGoldBonus;
+    if (enemy.elite) amount *= ELITE_GOLD_MULT;
     if (enemy.aura === 'greed' && enemy.elite) amount *= GREED_GOLD_MULT;
     if (this.goldLuckChance > 0 && Math.random() < this.goldLuckChance) {
       amount *= this.goldLuckMultiplier;

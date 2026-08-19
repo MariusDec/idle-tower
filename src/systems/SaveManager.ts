@@ -21,10 +21,17 @@ import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 8;
+const SAVE_VERSION = 9;
 
 function defaultWaveModifier() {
-  return { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null };
+  return {
+    active: null,
+    choiceForNextWave: null,
+    pendingChoiceForWave: null,
+    goldSnapshot: null,
+    wavesRemaining: 0,
+    wavesCleared: 0,
+  };
 }
 const AUTO_SAVE_INTERVAL = 30;
 const OFFLINE_CAP_SECONDS = 7 * 24 * 60 * 60;
@@ -272,10 +279,30 @@ function computeRPGainMultiplier(research: Record<string, number>): number {
   return sum;
 }
 
+/**
+ * v9 (plan §3): per-ability auto-cast toggles, auto-buy strategy/reserve, and
+ * the multi-wave mutator fields. All are additive, so the migration is a set of
+ * defaults rather than a transform.
+ */
+function migrateV8toV9(data: Record<string, unknown>): void {
+  const prestige = data.prestige as Record<string, unknown> | undefined;
+  if (prestige && typeof prestige === 'object') {
+    if (!isObject(prestige.autoCastEnabled)) prestige.autoCastEnabled = {};
+    if (typeof prestige.autoBuyStrategy !== 'string') prestige.autoBuyStrategy = 'balanced';
+    if (typeof prestige.autoBuyReserve !== 'number') prestige.autoBuyReserve = 0;
+  }
+  const wave = data.wave as Record<string, unknown> | undefined;
+  const wm = wave?.waveModifier as Record<string, unknown> | undefined;
+  if (wm && typeof wm === 'object') {
+    if (typeof wm.wavesRemaining !== 'number') wm.wavesRemaining = wm.active ? 1 : 0;
+    if (typeof wm.wavesCleared !== 'number') wm.wavesCleared = 0;
+  }
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -297,6 +324,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 5) { migrateV5toV6(data); data.version = 6; }
   if (data.version === 6) { migrateV6toV7(data); data.version = 7; }
   if (data.version === 7) { migrateV7toV8(data); data.version = 8; }
+  if (data.version === 8) { migrateV8toV9(data); data.version = 9; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -382,6 +410,9 @@ export class SaveManager {
       tpSpent: { ...p.tpSpent },
       automationFlags: { ...p.automationFlags },
       targetAscendWave: p.targetAscendWave,
+      autoCastEnabled: { ...(p.autoCastEnabled ?? {}) },
+      autoBuyStrategy: p.autoBuyStrategy ?? 'balanced',
+      autoBuyReserve: p.autoBuyReserve ?? 0,
     };
   }
 

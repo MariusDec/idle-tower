@@ -31,7 +31,7 @@ export class EquipmentManager {
     this.findChanceBonus = Math.max(0, bonus);
   }
 
-  rollDrop(wave: number, source: 'boss' | 'milestone'): Equipment | null {
+  rollDrop(wave: number, source: 'boss' | 'elite' | 'milestone'): Equipment | null {
     const eq = dataRollDrop(wave, source, this.findChanceBonus);
     if (eq) {
       this.inventory.push(eq);

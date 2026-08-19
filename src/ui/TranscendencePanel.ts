@@ -1,4 +1,5 @@
-import type { GameState } from '../types';
+import type { AutoBuyStrategy, GameState } from '../types';
+import { AUTO_BUY_STRATEGIES } from '../types';
 import type { PrestigePerkDef, AutomationKey, TPBranch } from '../data/prestige';
 import {
   TP_PERKS,
@@ -25,7 +26,24 @@ export interface TranscendencePanelHandlers {
   previewTP: (ap: number) => number;
   transcendUnlockAP: number;
   targetAscendWave: number;
+  /** Plan §3.6: auto-buy tuning, read live so the panel reflects the game state. */
+  getAutoBuyStrategy: () => AutoBuyStrategy;
+  onAutoBuyStrategyChange: (strategy: AutoBuyStrategy) => void;
+  getAutoBuyReserve: () => number;
+  onAutoBuyReserveChange: (fraction: number) => void;
 }
+
+const STRATEGY_LABELS: Record<AutoBuyStrategy, string> = {
+  cheapest: 'Cheapest',
+  balanced: 'Balanced',
+  damage: 'Damage first',
+};
+
+const STRATEGY_HINTS: Record<AutoBuyStrategy, string> = {
+  cheapest: 'Always buys the cheapest affordable upgrade. Fastest level count, weakest tower.',
+  balanced: 'Levels every upgrade evenly, cheapest first among the least-levelled.',
+  damage: 'Buys tower upgrades first, then economy, defense and utility.',
+};
 
 export class TranscendencePanel {
   private readonly handlers: TranscendencePanelHandlers;
@@ -48,6 +66,12 @@ export class TranscendencePanel {
   private tpBonusById = new Map<string, HTMLElement>();
   private tpCostById = new Map<string, HTMLElement>();
   private tpBtnById = new Map<string, HTMLButtonElement>();
+
+  private autoBuyConfig!: HTMLElement;
+  private strategyBtns = new Map<AutoBuyStrategy, HTMLButtonElement>();
+  private strategyHint!: HTMLElement;
+  private reserveInput!: HTMLInputElement;
+  private reserveLabel!: HTMLElement;
 
   private autoSwitches: Partial<Record<AutomationKey, HTMLInputElement>> = {};
   private autoRows: Partial<Record<AutomationKey, HTMLElement>> = {};
@@ -87,6 +111,24 @@ export class TranscendencePanel {
     for (const key of autoKeys) {
       this.updateAutomationRow(key);
     }
+    this.updateAutoBuyConfig();
+  }
+
+  /** Plan §3.6: strategy + reserve controls, only meaningful once auto-buy exists. */
+  private updateAutoBuyConfig(): void {
+    const unlocked = this.handlers.isAutomationUnlocked('autoBuy');
+    setDisplay(this.autoBuyConfig, unlocked ? '' : 'none');
+    if (!unlocked) return;
+    const strategy = this.handlers.getAutoBuyStrategy();
+    for (const [id, btn] of this.strategyBtns) {
+      toggleClass(btn, 'is-selected', id === strategy);
+    }
+    setText(this.strategyHint, STRATEGY_HINTS[strategy]);
+    const reserve = Math.round(this.handlers.getAutoBuyReserve() * 100);
+    if (this.reserveInput.value !== String(reserve)) this.reserveInput.value = String(reserve);
+    setText(this.reserveLabel, reserve > 0
+      ? `Keep ${reserve}% of gold banked`
+      : 'Spend all available gold');
   }
 
   private updateTranscend(canTranscend: boolean, ap: number, preview: number): void {
@@ -232,6 +274,7 @@ export class TranscendencePanel {
     this.tpBonusById.clear();
     this.tpCostById.clear();
     this.tpBtnById.clear();
+    this.strategyBtns.clear();
     this.autoSwitches = {};
     this.autoRows = {};
     this.autoStatusEls = {};
@@ -293,7 +336,7 @@ export class TranscendencePanel {
     headTitle.textContent = 'Transcendence';
     const headHint = document.createElement('div');
     headHint.className = 'transcend-card-hint';
-    headHint.textContent = `Unlocks at ${TRANSCENDENCE_UNLOCK_AP} AP. Resets EVERYTHING for permanent TP multipliers and automation.`;
+    headHint.textContent = `Unlocks at ${TRANSCENDENCE_UNLOCK_AP} AP. Resets gold, upgrades, ability levels and the whole ascension layer for permanent TP multipliers and automation. Talents, tower XP, research, passives and equipment carry over.`;
     header.appendChild(headTitle);
     header.appendChild(headHint);
     card.appendChild(header);
@@ -512,7 +555,7 @@ export class TranscendencePanel {
     const list = document.createElement('div');
     list.className = 'automation-list';
     const entries: Array<[AutomationKey, string, string]> = [
-      ['autoBuy', 'Auto-Upgrade', 'Auto-buys the cheapest available upgrade every 10s (unlocked by Auto-Upgrader AP perk or Auto-Purchaser TP perk)'],
+      ['autoBuy', 'Auto-Upgrade', 'Buys upgrades every 10s using the strategy below (unlocked by the Auto-Upgrader AP perk)'],
       ['autoAbilities', 'Auto-Cast', 'Auto-casts ready abilities when mana is sufficient'],
       ['autoAscend', 'Auto-Ascend', 'Auto-Ascends once you reach the target wave'],
       ['autoTranscend', 'Auto-Transcend', 'Auto-Transcends once 100 AP is reached'],
@@ -521,7 +564,65 @@ export class TranscendencePanel {
       list.appendChild(this.renderAutomationRow(key, name, desc));
     }
     section.appendChild(list);
+    section.appendChild(this.renderAutoBuyConfig());
     return section;
+  }
+
+  /**
+   * Plan §3.6: auto-buy used one fixed rule (cheapest affordable, one purchase
+   * per interval). These two controls are the whole configuration surface —
+   * what it reaches for, and how much gold it refuses to touch.
+   */
+  private renderAutoBuyConfig(): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'autobuy-config';
+    this.autoBuyConfig = wrap;
+    wrap.style.display = 'none';
+
+    const title = document.createElement('div');
+    title.className = 'autobuy-config-title';
+    title.textContent = 'Auto-Upgrade strategy';
+    wrap.appendChild(title);
+
+    const row = document.createElement('div');
+    row.className = 'autobuy-strategy-row';
+    for (const id of AUTO_BUY_STRATEGIES) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn autobuy-strategy-btn';
+      btn.textContent = STRATEGY_LABELS[id];
+      btn.addEventListener('click', () => this.handlers.onAutoBuyStrategyChange(id));
+      row.appendChild(btn);
+      this.strategyBtns.set(id, btn);
+    }
+    wrap.appendChild(row);
+
+    const hint = document.createElement('div');
+    hint.className = 'autobuy-config-hint';
+    this.strategyHint = hint;
+    wrap.appendChild(hint);
+
+    const reserveRow = document.createElement('div');
+    reserveRow.className = 'autobuy-reserve-row';
+    const reserveLabel = document.createElement('div');
+    reserveLabel.className = 'autobuy-reserve-label';
+    this.reserveLabel = reserveLabel;
+    reserveRow.appendChild(reserveLabel);
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = '90';
+    slider.step = '10';
+    slider.value = '0';
+    slider.className = 'autobuy-reserve-slider';
+    slider.addEventListener('input', () => {
+      this.handlers.onAutoBuyReserveChange(Number(slider.value) / 100);
+    });
+    this.reserveInput = slider;
+    reserveRow.appendChild(slider);
+    wrap.appendChild(reserveRow);
+
+    return wrap;
   }
 
   private renderAutomationRow(key: AutomationKey, name: string, desc: string): HTMLElement {

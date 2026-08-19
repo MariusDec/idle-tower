@@ -107,6 +107,15 @@ export const DEFAULT_AUTO_ASCEND_WAVE = 40;
 export const FIRST_ASCENSION_AP = 25;
 export const TRANSCENDENCE_UNLOCK_AP = 100;
 
+/**
+ * Plan §3.2: the ascension layer used to be eight independent nodes, every one
+ * of them affordable within a couple of runs — a shopping list, not a tree.
+ * It now has three tiers: the opening projectile/utility nodes are free to buy
+ * in any order, the two unbounded sinks sit behind them, and a mutually
+ * exclusive pair at tier 3 forces one real decision per transcendence (offense
+ * or economy). Prerequisites and exclusivity are enforced in
+ * `PrestigeManager.canSpendAP`, the same way the TP tree works.
+ */
 export const AP_PERKS: PrestigePerkDef[] = [
   {
     id: 'ap_extra_shots',
@@ -120,6 +129,7 @@ export const AP_PERKS: PrestigePerkDef[] = [
     effectPerLevel: 1,
     glyph: '⇆',
     color: '#d04848',
+    tier: 1,
   },
   {
     id: 'ap_scatter_shots',
@@ -133,6 +143,7 @@ export const AP_PERKS: PrestigePerkDef[] = [
     effectPerLevel: 1,
     glyph: '⋔',
     color: '#ff7a3a',
+    tier: 1,
   },
   {
     id: 'ap_back_shots',
@@ -146,12 +157,13 @@ export const AP_PERKS: PrestigePerkDef[] = [
     effectPerLevel: 1,
     glyph: '↶',
     color: '#5b8def',
+    tier: 1,
   },
   {
     id: 'ap_auto_upgrader',
     layer: 'ascension',
     name: 'Auto-Upgrader',
-    description: 'Auto-buys the cheapest available upgrade every 10s',
+    description: 'Unlocks Auto-Upgrade: buys upgrades every 10s using your chosen strategy',
     costPerLevel: 15,
     costScaling: 1,
     maxLevel: 1,
@@ -160,6 +172,7 @@ export const AP_PERKS: PrestigePerkDef[] = [
     glyph: 'U',
     color: '#e8a93b',
     automationKey: 'autoBuy',
+    tier: 1,
   },
   {
     id: 'ap_wave_skipper',
@@ -173,6 +186,7 @@ export const AP_PERKS: PrestigePerkDef[] = [
     effectPerLevel: 0.03,
     glyph: '⏭',
     color: '#3ec46d',
+    tier: 1,
   },
   // ── Unbounded sinks (plan §2.3.5) ────────────────────────────────
   // Every other AP perk caps at <=10 levels with 2.5^level growth, so the
@@ -193,6 +207,8 @@ export const AP_PERKS: PrestigePerkDef[] = [
     effectPerLevel: 0.03,
     glyph: '✦',
     color: '#d04848',
+    tier: 2,
+    prerequisites: [{ perkId: 'ap_extra_shots', minLevel: 1 }],
   },
   {
     id: 'ap_fortune',
@@ -206,6 +222,8 @@ export const AP_PERKS: PrestigePerkDef[] = [
     effectPerLevel: 0.03,
     glyph: '❖',
     color: '#e8a93b',
+    tier: 2,
+    prerequisites: [{ perkId: 'ap_wave_skipper', minLevel: 1 }],
   },
   {
     id: 'ap_research_speed',
@@ -219,6 +237,44 @@ export const AP_PERKS: PrestigePerkDef[] = [
     effectPerLevel: 0.15,
     glyph: '📚',
     color: '#9b59ff',
+    tier: 2,
+    prerequisites: [{ perkId: 'ap_auto_upgrader', minLevel: 1 }],
+  },
+  // ── Tier 3: one choice, taken once per transcendence ─────────────
+  // Both are strictly better per level than their tier-2 parent and cost far
+  // more; picking one locks the other out, so an ascension build commits to
+  // killing faster or earning faster rather than buying every row.
+  {
+    id: 'ap_warlord',
+    layer: 'ascension',
+    name: 'Warlord',
+    description: '+8% all damage per level. Locks out Tycoon.',
+    costPerLevel: 12,
+    costScaling: 1.3,
+    maxLevel: 15,
+    effectType: 'damage_mult',
+    effectPerLevel: 0.08,
+    glyph: '⚔',
+    color: '#ff5252',
+    tier: 3,
+    prerequisites: [{ perkId: 'ap_might', minLevel: 5 }],
+    exclusive: ['ap_tycoon'],
+  },
+  {
+    id: 'ap_tycoon',
+    layer: 'ascension',
+    name: 'Tycoon',
+    description: '+8% all gold per level. Locks out Warlord.',
+    costPerLevel: 12,
+    costScaling: 1.3,
+    maxLevel: 15,
+    effectType: 'resource_mult',
+    effectPerLevel: 0.08,
+    glyph: '💎',
+    color: '#ffd54a',
+    tier: 3,
+    prerequisites: [{ perkId: 'ap_fortune', minLevel: 5 }],
+    exclusive: ['ap_warlord'],
   },
 ];
 
@@ -251,12 +307,18 @@ export const TP_PERKS: PrestigePerkDef[] = [
     id: 'tp_damage',
     layer: 'transcendence',
     name: 'Cosmic Power',
-    description: '+50% all damage per level (multiplicative with AP)',
+    description: 'All damage, growing every level. Never caps (gains taper).',
     costPerLevel: 1,
     costScaling: 1.12,
     maxLevel: 999,
     effectType: 'damage_mult',
-    effectPerLevel: 0.5,
+    // Plan §3.2: was a flat +50%/level against a 1.12^level cost, which made
+    // this single node strictly better than every capped branch perk at any
+    // TP total — the branches were decoration. The per-level gain now decays
+    // as 1/sqrt(level), so the node still absorbs unlimited TP (~+2*sqrt(N)*50%
+    // total) while a capped perk's fixed percentage stays competitive.
+    effectPerLevel: '0.5 / Math.sqrt({level})',
+    baseEffect: 0.5,
     glyph: '⚔',
     color: '#9b59ff',
     branch: 'wrath',
@@ -268,8 +330,8 @@ export const TP_PERKS: PrestigePerkDef[] = [
     name: 'Rapid Assault',
     description: '+8% fire rate per level',
     costPerLevel: 2,
-    costScaling: 1.5,
-    maxLevel: 15,
+    costScaling: 1.32,
+    maxLevel: 25,
     effectType: 'fire_rate_mult',
     effectPerLevel: 0.08,
     glyph: '⚡',
@@ -284,8 +346,8 @@ export const TP_PERKS: PrestigePerkDef[] = [
     name: 'Lethal Precision',
     description: '+5% crit damage per level',
     costPerLevel: 2,
-    costScaling: 1.5,
-    maxLevel: 20,
+    costScaling: 1.32,
+    maxLevel: 30,
     effectType: 'crit_damage_mult',
     effectPerLevel: 0.05,
     glyph: '◎',
@@ -353,12 +415,14 @@ export const TP_PERKS: PrestigePerkDef[] = [
     id: 'tp_resource',
     layer: 'transcendence',
     name: 'Astral Harvest',
-    description: '+25% all resource gain per level (multiplicative with AP)',
+    description: 'All resource gain, growing every level. Never caps (gains taper).',
     costPerLevel: 1,
     costScaling: 1.12,
     maxLevel: 999,
     effectType: 'resource_mult',
-    effectPerLevel: 0.25,
+    /** Tapered for the same reason as `tp_damage` — see the note there. */
+    effectPerLevel: '0.25 / Math.sqrt({level})',
+    baseEffect: 0.25,
     glyph: '✦',
     color: '#3ec46d',
     branch: 'fortune',
@@ -370,8 +434,8 @@ export const TP_PERKS: PrestigePerkDef[] = [
     name: 'Treasure Hunter',
     description: '+3% chance for 3× gold drop per level',
     costPerLevel: 2,
-    costScaling: 1.5,
-    maxLevel: 10,
+    costScaling: 1.35,
+    maxLevel: 20,
     effectType: 'treasure_chance',
     effectPerLevel: 0.03,
     glyph: '💰',
@@ -386,8 +450,8 @@ export const TP_PERKS: PrestigePerkDef[] = [
     name: 'Mana Well',
     description: '+15% mana regen per level',
     costPerLevel: 2,
-    costScaling: 1.5,
-    maxLevel: 10,
+    costScaling: 1.35,
+    maxLevel: 20,
     effectType: 'mana_regen_mult',
     effectPerLevel: 0.15,
     glyph: '🔮',
@@ -405,7 +469,11 @@ export const TP_PERKS: PrestigePerkDef[] = [
     costScaling: 1.6,
     maxLevel: 20,
     effectType: 'start_gold',
-    effectPerLevel: 500,
+    // Plan §3.2: a flat 500/level is a rounding error by the time a player has
+    // 20 levels of it. Geometric growth keeps the opener meaningful against a
+    // gold curve that is itself exponential.
+    effectPerLevel: '500 * Math.pow(1.45, {level} - 1)',
+    baseEffect: 500,
     glyph: '🏁',
     color: '#e8a93b',
     branch: 'fortune',
@@ -559,9 +627,18 @@ export const TP_PERK_BY_ID: Record<string, PrestigePerkDef> = TP_PERKS.reduce(
   {} as Record<string, PrestigePerkDef>,
 );
 
+/**
+ * TP banked for transcending with `ap` ascension points.
+ *
+ * Plan §3.2: `log2(ap+1)^2` gave 44 TP at 100 AP and only 276 at 100 000 — a
+ * thousand times the ascension work for six times the reward, which made every
+ * transcendence after the second worse than the one before it. The power law
+ * below starts lower (25 TP for a first transcendence, still several levels of
+ * a tier-1 perk) and keeps paying: 1 000x the AP is now ~16x the TP.
+ */
 export function tpForAP(ap: number): number {
   if (ap < TRANSCENDENCE_UNLOCK_AP) return 0;
-  return Math.max(0, Math.floor(Math.pow(Math.log2(ap + 1), 2)));
+  return Math.max(0, Math.floor(4 * Math.pow(ap, 0.4)));
 }
 
 export function canTranscend(ap: number): boolean {

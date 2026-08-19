@@ -44,6 +44,25 @@ export interface AbilityDef {
   xpPerCast: number;
 }
 
+/**
+ * Plan §3.1.
+ *
+ * Two changes to the shape of this table:
+ *
+ * - **Unlock waves are front-loaded.** Berserk (was 30) and Gold Rush (was 45)
+ *   sat past the point where a first run stalls, so a new player never saw
+ *   half the ability roster. They now land at 14 and 26, giving the opening
+ *   ladder 10 / 14 / 18 / 22 / 26 / 28 and putting seven of the ten abilities
+ *   inside a first run. Their upgrade base costs were rebased onto the
+ *   `400 * 1.135^(unlockWave - 10)` trend the rest of the table follows, so an
+ *   earlier unlock is not an unaffordable one.
+ * - **Upgrade cost growth is ~1.8, was 2.55-3.15.** Ability upgrades compete
+ *   with tower upgrades for the same gold but scaled far faster: Rain of
+ *   Arrows level 10 cost `400 * 3^9` = 7.9M, which no run could ever pay. At
+ *   1.8 the same level costs `400 * 1.8^9` = 79K — expensive, but reachable,
+ *   which is what makes the ability XP track (which discounts this cost and
+ *   levels the ability on its own) worth engaging with.
+ */
 export const ABILITIES: AbilityDef[] = [
   {
     id: 'rain_of_arrows',
@@ -60,7 +79,7 @@ export const ABILITIES: AbilityDef[] = [
     unlockWave: 10,
     maxLevel: 10,
     upgradeBaseCost: 400,
-    upgradeCostGrowth: 3,
+    upgradeCostGrowth: 1.75,
     manaCostPerLevel: 5,
     cooldownReductionPerLevel: 0.5,
     effectValuePerLevel: 1.0,
@@ -82,7 +101,7 @@ export const ABILITIES: AbilityDef[] = [
     unlockWave: 18,
     maxLevel: 10,
     upgradeBaseCost: 1300,
-    upgradeCostGrowth: 2.55,
+    upgradeCostGrowth: 1.8,
     manaCostPerLevel: 4,
     cooldownReductionPerLevel: 0.8,
     effectValuePerLevel: -0.02,
@@ -104,7 +123,7 @@ export const ABILITIES: AbilityDef[] = [
     unlockWave: 22,
     maxLevel: 10,
     upgradeBaseCost: 1400,
-    upgradeCostGrowth: 3,
+    upgradeCostGrowth: 1.8,
     manaCostPerLevel: 4,
     cooldownReductionPerLevel: 0.5,
     effectValuePerLevel: 0.3,
@@ -126,7 +145,7 @@ export const ABILITIES: AbilityDef[] = [
     unlockWave: 28,
     maxLevel: 10,
     upgradeBaseCost: 3450,
-    upgradeCostGrowth: 2.9,
+    upgradeCostGrowth: 1.8,
     manaCostPerLevel: 4,
     cooldownReductionPerLevel: 0.6,
     effectValuePerLevel: 2,
@@ -145,10 +164,10 @@ export const ABILITIES: AbilityDef[] = [
     glyph: 'B',
     color: '#d04848',
     hotkey: '5',
-    unlockWave: 30,
+    unlockWave: 14,
     maxLevel: 10,
-    upgradeBaseCost: 15500,
-    upgradeCostGrowth: 3.1,
+    upgradeBaseCost: 900,
+    upgradeCostGrowth: 1.85,
     manaCostPerLevel: 6,
     cooldownReductionPerLevel: 1.0,
     effectValuePerLevel: 0.15,
@@ -170,7 +189,7 @@ export const ABILITIES: AbilityDef[] = [
     unlockWave: 40,
     maxLevel: 10,
     upgradeBaseCost: 19600,
-    upgradeCostGrowth: 3.05,
+    upgradeCostGrowth: 1.85,
     manaCostPerLevel: 6,
     cooldownReductionPerLevel: 0.5,
     effectValuePerLevel: 1.5,
@@ -189,10 +208,10 @@ export const ABILITIES: AbilityDef[] = [
     glyph: 'G',
     color: '#f1c40f',
     hotkey: '7',
-    unlockWave: 45,
+    unlockWave: 26,
     maxLevel: 10,
-    upgradeBaseCost: 29800,
-    upgradeCostGrowth: 2.95,
+    upgradeBaseCost: 3400,
+    upgradeCostGrowth: 1.8,
     manaCostPerLevel: 8,
     cooldownReductionPerLevel: 1.5,
     effectValuePerLevel: 0.25,
@@ -214,7 +233,7 @@ export const ABILITIES: AbilityDef[] = [
     unlockWave: 50,
     maxLevel: 10,
     upgradeBaseCost: 69600,
-    upgradeCostGrowth: 3.1,
+    upgradeCostGrowth: 1.85,
     manaCostPerLevel: 6,
     cooldownReductionPerLevel: 0.8,
     effectValuePerLevel: 2,
@@ -235,8 +254,8 @@ export const ABILITIES: AbilityDef[] = [
     hotkey: '0',
     unlockWave: 35,
     maxLevel: 15,
-    upgradeBaseCost: 85800,
-    upgradeCostGrowth: 3.15,
+    upgradeBaseCost: 12000,
+    upgradeCostGrowth: 1.85,
     manaCostPerLevel: 3,
     cooldownReductionPerLevel: 0.3,
     effectValuePerLevel: 0.5,
@@ -258,7 +277,7 @@ export const ABILITIES: AbilityDef[] = [
     unlockWave: 55,
     maxLevel: 10,
     upgradeBaseCost: 107000,
-    upgradeCostGrowth: 3.1,
+    upgradeCostGrowth: 1.85,
     manaCostPerLevel: 5,
     cooldownReductionPerLevel: 1.0,
     effectValuePerLevel: 0.5,

@@ -17,6 +17,8 @@ export interface PrestigePanelHandlers {
   canSpend: (perkId: string, ap: number, tp: number) => boolean;
   previewAP: (wave: number) => number;
   ascendUnlockWave: number;
+  /** Plan §3.2: AP perks now have prerequisites and exclusive pairs. */
+  perkBlockedReason: (perkId: string) => string | null;
 }
 
 export class PrestigePanel {
@@ -40,6 +42,7 @@ export class PrestigePanel {
   private apBonusById = new Map<string, HTMLElement>();
   private apCostById = new Map<string, HTMLElement>();
   private apBtnById = new Map<string, HTMLButtonElement>();
+  private apReasonById = new Map<string, HTMLElement>();
 
   constructor(handlers: PrestigePanelHandlers) {
     this.handlers = handlers;
@@ -118,7 +121,17 @@ export class PrestigePanel {
 
     setText(bonusEl, this.formatAPBonusText(p, level, atMax));
     setText(costEl, atMax ? '—' : formatNumber(cost));
-    const canSpend = !atMax && ap >= cost;
+
+    const blocked = level > 0 ? null : this.handlers.perkBlockedReason(p.id);
+    const reasonEl = this.apReasonById.get(p.id);
+    if (reasonEl) {
+      setText(reasonEl, blocked ?? '');
+      setDisplay(reasonEl, blocked ? '' : 'none');
+    }
+    const row = this.apRowById.get(p.id);
+    if (row) toggleClass(row, 'is-perk-locked', blocked !== null);
+
+    const canSpend = !atMax && blocked === null && ap >= cost;
     btn.disabled = !canSpend;
     toggleClass(btn, 'can-afford', canSpend);
     setText(btn, atMax
@@ -147,6 +160,18 @@ export class PrestigePanel {
         return atMax
           ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% wave skip chance`
           : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% wave skip chance per level`;
+      case 'damage_mult':
+        return level > 0
+          ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% damage`
+          : '';
+      case 'resource_mult':
+        return level > 0
+          ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% gold`
+          : '';
+      case 'research_speed':
+        return level > 0
+          ? `-${(computePerkEffect(p, level) * 100).toFixed(0)}% research time`
+          : '';
       default:
         return '';
     }
@@ -158,6 +183,7 @@ export class PrestigePanel {
     this.apBonusById.clear();
     this.apCostById.clear();
     this.apBtnById.clear();
+    this.apReasonById.clear();
   }
 
   private unmount(): void {
@@ -308,10 +334,15 @@ export class PrestigePanel {
     bonus.textContent = '';
     meta.appendChild(level);
     meta.appendChild(bonus);
+    const reason = document.createElement('div');
+    reason.className = 'perk-reason';
+    reason.style.display = 'none';
     info.appendChild(name);
     info.appendChild(desc);
     info.appendChild(meta);
+    info.appendChild(reason);
     row.appendChild(info);
+    this.apReasonById.set(p.id, reason);
 
     const action = document.createElement('div');
     action.className = 'perk-action';

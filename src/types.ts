@@ -192,14 +192,21 @@ export interface HomingProjectile extends Projectile {
 }
 
 export interface WaveModifierState {
-  /** The modifier currently active for `wave.number` (set when boss wave starts). */
+  /** The modifier currently running (plan §3.3: it now spans several waves). */
   active: WaveModifierSnapshot | null;
   /** Up to 3 choices offered to the player for the upcoming boss wave. */
   choiceForNextWave: WaveModifierSnapshot[] | null;
-  /** Boss wave number the `choiceForNextWave` belongs to. */
+  /** First wave the active modifier applies to (also the wave the offer was made for). */
   pendingChoiceForWave: number | null;
-  /** Gold earned snapshot taken when the modifier was picked, used to compute gold multiplier bonus on wave clear. */
+  /** Gold earned snapshot taken at the start of the current modifier wave. */
   goldSnapshot: number | null;
+  /**
+   * Waves the active modifier still applies to, including the current one
+   * (plan §3.3). 0 = no modifier running.
+   */
+  wavesRemaining: number;
+  /** Waves already cleared under the active modifier; drives the escalating reward. */
+  wavesCleared: number;
 }
 
 export interface WaveModifierSnapshot {
@@ -253,6 +260,16 @@ export interface AbilityState {
   xp: number;
 }
 
+/**
+ * Auto-buy heuristics (plan §3.6). `cheapest` is the historical behaviour:
+ * buy whatever costs least, which floods utility upgrades and never banks for
+ * damage. `damage` prioritises the tower category, `balanced` keeps every
+ * category within reach of each other.
+ */
+export type AutoBuyStrategy = 'cheapest' | 'balanced' | 'damage';
+
+export const AUTO_BUY_STRATEGIES: readonly AutoBuyStrategy[] = ['cheapest', 'balanced', 'damage'];
+
 export interface PrestigeState {
   apSpent: Record<string, number>;
   tpSpent: Record<string, number>;
@@ -263,6 +280,16 @@ export interface PrestigeState {
     autoTranscend: boolean;
   };
   targetAscendWave: number;
+  /**
+   * Per-ability auto-cast opt-out (plan §3.1). Missing key = enabled, so new
+   * abilities are auto-cast by default and old saves need no migration beyond
+   * an empty object.
+   */
+  autoCastEnabled: Record<string, boolean>;
+  /** Which upgrades auto-buy reaches for first (plan §3.6). */
+  autoBuyStrategy: AutoBuyStrategy;
+  /** Fraction of current gold auto-buy refuses to spend, 0-0.9 (plan §3.6). */
+  autoBuyReserve: number;
 }
 
 export interface GameStats {
