@@ -294,6 +294,35 @@ game the player can get *wrong*, which is what makes the right ones feel like an
 
 ## Part 2 — Enemies that demand an answer
 
+> **Status: implemented (2026-08-20).** Corrections found during implementation,
+> kept here so later parts don't repeat them:
+> 1. §2.4's suggested weights (`siege` 2, `thief` 1, `blinker` 2, `warden` 1,
+>    `burrower` 2) *added* eight weight points to a 17-point pool without saying
+>    what pays for them, which contradicts §2.6. `normal` 6→5 and `splitter` 2→1
+>    pay for them in the shipped table, and the new types' base HP is budgeted so
+>    the pool's weighted mean effective HP is unchanged.
+> 2. The spawn-weight table was hand-copied in **three** places — `WaveManager`,
+>    three functions in `SaveManager` (offline progress) and `sim/model.ts`.
+>    §2.7's file list mentions none of them. It is now one exported table,
+>    `ENEMY_SPAWN_WEIGHTS`; anything that reads the mix must read that.
+> 3. §2.8 says "`Tower.acquireTarget` must skip it". That is one of *eight*
+>    target-selection sites: the projectile sweep, three blessing bounce helpers
+>    and six pickers in `AbilityManager` are the rest. They all route through one
+>    predicate, `isTargetable` — a new picker that does not consult it is how a
+>    burrower becomes shootable underground.
+> 4. Splitter "spawn protection" (§2.2) has to mean *untargetable*, not merely
+>    damage-immune: shots that pass through cost the player nothing, whereas
+>    shots absorbed for zero read as a bug. Untargetable is the same mechanism
+>    the burrower needs, so both use it.
+> 5. §2.1's warden numbers are far stronger than they look — 15% of maxHp × 5
+>    allies refreshed every 4 s is several times its own bar over a fight. The
+>    shipped pool is *set*, never added to, wardens never shield each other, and
+>    the pool collapses the instant the warden dies; `sim/model.ts` credits it at
+>    2.2× effective HP on the strength of `priority` being the default.
+> 6. §2.7 omits `src/data/xpTables.ts` and `src/systems/SaveManager.ts`, both of
+>    which hold `Record<EnemyType, …>` maps that a new type will not compile
+>    without.
+
 **Goal:** make at least one defensive choice per enemy type *correct* and the others *wrong*, so
 the tower build stops being a single scalar.
 
