@@ -16,6 +16,18 @@ export type EnemyType =
 
 export type AuraType = 'haste' | 'thorns' | 'greed' | 'vitality' | 'retribution';
 
+/**
+ * What a boss is doing during a phase (gameplay plan §3.2).
+ *
+ * A closed union with a `Record` consumer table (`BOSS_PATTERN_CONSUMERS` in
+ * `data/enemies.ts`) and an exhaustive switch in `EnemyManager.tickBossPattern`,
+ * so a pattern nobody runs is a compile error rather than a name on a bar.
+ *
+ * Declared here rather than in `data/enemies.ts` because `Enemy` carries the
+ * active pattern and `types.ts` is the module everything else imports *from*.
+ */
+export type BossPattern = 'bulwark' | 'summon' | 'slam' | 'siphon';
+
 export type DamageType = 'physical' | 'magic';
 
 /**
@@ -169,6 +181,42 @@ export interface Enemy {
   burrowed?: boolean;
   /** Burrower: seconds of surfacing telegraph left (it cannot act during it). */
   surfacing?: number;
+
+  // ── Boss encounter (gameplay plan §3) ──────────────────────────────────
+  //
+  // The whole state machine is per-boss rather than per-wave, because a boss
+  // wave spawns `bossCountForWave(wave)` = 2 + tier of them and each one
+  // phases on its own bar.
+
+  /** Boss: 1, 2 or 3. Only ever increases, which is what makes crossings idempotent. */
+  bossPhase?: number;
+  /** Boss: seconds of phase-transition invulnerability left (`isTargetable` reads it). */
+  bossInvulnerable?: number;
+  /** Boss: the pattern this phase is running. */
+  bossPattern?: BossPattern;
+  /** Boss: seconds this boss has been on the field. Drives the §3.3 enrage timer. */
+  bossElapsed?: number;
+  /** Boss: §3.3 enrage stacks, `+15%` damage and `+10%` speed each. */
+  bossEnrageStacks?: number;
+  /** Boss: how many bosses the wave spawned, so patterns can scale with the pack. */
+  bossPackSize?: number;
+  /** `bulwark`: absorb pool in front of HP; spent before `hp` in `damage`. */
+  bossShield?: number;
+  /** `bulwark`: what a full shield is worth, for the bar overlay. */
+  bossShieldMax?: number;
+  /**
+   * `bulwark`: seconds until the shield resolves. While the shield is up this
+   * is the heal countdown; while it is broken it is the re-arm delay.
+   */
+  bossShieldTimer?: number;
+  /** `summon`: seconds until the next batch of adds. */
+  bossSummonTimer?: number;
+  /** `slam`: seconds until the next telegraph begins. */
+  bossSlamTimer?: number;
+  /** `slam`: seconds of telegraph left. `> 0` means the ring is growing. */
+  bossSlamTelegraph?: number;
+  /** `slam`: set the moment the boss is slowed or shoved during a telegraph. */
+  bossSlamMitigated?: boolean;
 }
 
 /**
@@ -347,6 +395,24 @@ export interface BlessingRunState {
   pendingOfferForWave: number | null;
   /** Waves cleared this run — the Greed Engine blessing scales on it. */
   wavesClearedThisRun: number;
+}
+
+/**
+ * Run-scoped rewards banked from boss encounters (gameplay plan §3.4).
+ *
+ * Only the *earned* half of an encounter is persisted. Mid-fight boss state —
+ * phase, pattern timers, shields — deliberately is not: live enemies have never
+ * been part of the save format, so a load starts the wave's roster empty and
+ * `WaveManager` resolves it rather than resuming half a boss. What must survive
+ * a reload is the reward the player already won, which is this.
+ */
+export interface BossRunState {
+  /** Flawless-kill AP bonus for this run, as a fraction added to `previewAP`. */
+  apBonusPct: number;
+  /** Bosses killed inside the swift-kill window this run (a readout, not a multiplier). */
+  swiftKills: number;
+  /** Encounters cleared without losing tower HP this run. */
+  flawlessKills: number;
 }
 
 export interface WaveState {
@@ -595,6 +661,8 @@ export interface GameState {
   equipped: Partial<Record<EquipmentSlot, Equipment>>;
   /** v10+: run-scoped blessing draft (reset on ascend/transcend). */
   blessings: BlessingRunState;
+  /** v11+: run-scoped boss encounter rewards (plan §3.4). */
+  bossRun: BossRunState;
 }
 
 export interface Particle {

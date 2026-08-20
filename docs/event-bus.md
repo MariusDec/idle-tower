@@ -29,6 +29,16 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `enemy_blinked` | `{ x, y, toX, toY }` | EnemyManager | Game (blink ring) |
 | `burrower_surfaced` | `{ x, y }` | EnemyManager | Game (surface burst) |
 | `gold_stolen` / `gold_recovered` / `gold_escaped` | `{ x, y, amount }` | EnemyManager | Game (toasts) |
+| `boss_spawned` | `{ enemy, wave, pattern }` | EnemyManager | Game (starts the encounter clock and flawless flag) |
+| `boss_phase` | `{ enemy, phase, pattern, x, y }` | EnemyManager | Game (slow-mo, pulse, pattern toast) |
+| `boss_shield_up` / `boss_shield_broken` | `{ enemy, x, y }` | EnemyManager | Game (bulwark rings) |
+| `boss_bulwark_held` | `{ enemy, x, y, amount }` | EnemyManager | Game (heal number + warning toast) |
+| `boss_summon` | `{ enemy, x, y, count }` | EnemyManager | Game (summon burst) |
+| `boss_slam_telegraph` | `{ enemy, x, y, duration }` | EnemyManager | Game (audio hook; the ring and bar read state) |
+| `boss_slam` | `{ enemy, x, y, damage, mitigated }` | EnemyManager | Game (shake, flash) — also emits `tower_damaged` |
+| `boss_enrage_stack` | `{ enemy, stacks, x, y }` | EnemyManager | Game (one-time enrage warning) |
+| `boss_enraged` | `{ enemy }` | EnemyManager | — (pre-existing 50%-HP enrage) |
+| `boss_killed` | `{ x, y, goldValue }` | Game | AudioManager |
 | `wave_started` | `number` (wave) | WaveManager | Game (milestone check) |
 | `wave_cleared` | `number` (wave) | WaveManager | — |
 | `gold_changed` | `number` (gold) | ResourceManager | — |

@@ -52,6 +52,12 @@ supposed to be measuring it.
 | burrower | 2 | 45 |
 | boss | 0 | — (boss waves bypass the pool) |
 
+A boss wave spawns `bossCountForWave(wave)` = **`2 + tier`** bosses, each running
+its own three-phase encounter — see
+[boss-encounters.md](boss-encounters.md). Bosses in a `summon` phase add enemies
+*on top of* `enemiesToSpawn`, so the wave cannot end until those are cleared
+too.
+
 Gameplay plan §2.6 requires that the five behavioural types **replace** slots
 rather than adding them, so total wave HP does not rise: `normal` dropped 6→5
 and `splitter` 2→1 to pay for the eight new weight points, and the new types'

@@ -675,6 +675,10 @@ describe('spawn pool (plan §2.4)', () => {
       if (wave % 10 === 0) continue;
       mgr.reset();
       wm.startWave(wave);
+      // `startWave` pauses spawning on the 4% mutator-offer roll, and only the
+      // modal resumes it. Nothing in a headless harness closes that modal, so
+      // without this the test silently spawns nothing one run in twenty-five.
+      wm.resumeSpawning();
       for (let i = 0; i < 400 && wm.snapshot.spawning; i++) wm.tick(1);
       const thieves = mgr.list.filter(e => e.type === 'thief').length;
       expect(thieves, `wave ${wave}`).toBeLessThanOrEqual(1);
@@ -687,6 +691,9 @@ describe('spawn pool (plan §2.4)', () => {
     const mgr = new EnemyManager(bus, resources);
     const wm = new WaveManager(bus, mgr, ARENA_W, ARENA_H, () => {}, () => {});
     wm.startWave(47);
+    // See above: the mutator-offer roll pauses spawning until a modal that does
+    // not exist here closes it.
+    wm.resumeSpawning();
     const target = wm.snapshot.enemiesToSpawn;
     for (let i = 0; i < 500 && wm.snapshot.spawning; i++) wm.tick(1);
 

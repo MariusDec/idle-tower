@@ -1,4 +1,5 @@
-import type { Enemy, EnemyType } from '../types';
+import type { BossPattern, Enemy, EnemyType } from '../types';
+import { bossCountForWave, bossHPForWave } from './formulas';
 
 /**
  * Body shapes the renderer knows how to paint.
@@ -109,6 +110,275 @@ export const ENEMY_BEHAVIOR = {
 } as const;
 
 /**
+ * Boss encounter tuning (gameplay plan §3).
+ *
+ * Simulation seconds throughout, like `ENEMY_BEHAVIOR`: the whole state machine
+ * runs inside `Game.simulate`'s fixed substeps, so a 2 s telegraph is 2 s of
+ * game time at `dt = 1/120` and at 6.5x speed alike.
+ */
+export const BOSS_ENCOUNTER = {
+  /** HP fractions the boss crosses into phase 2 and phase 3 at (§3.1). */
+  phaseThresholds: [0.66, 0.33] as const,
+  /** Seconds of untargetable flash on each crossing. */
+  phaseInvulnerability: 0.7,
+
+  /** `bulwark` shield, as a fraction of the boss's max HP. */
+  bulwarkShieldFraction: 0.20,
+  /** Seconds the player has to break it before the boss heals it back. */
+  bulwarkWindow: 10,
+
+  /** Adds per `summon` batch, for a *lone* boss — divided across the pack. */
+  summonCount: 4,
+  /** Seconds between batches. */
+  summonInterval: 6,
+  /**
+   * Ceiling on the field while a summon phase is running.
+   *
+   * A boss wave spawns `bossCountForWave` bosses, so an unthrottled 4-adds-per
+   * -boss-per-6 s would bury a wave-100 encounter in trash faster than any
+   * build clears it. The batch is divided across the pack *and* capped here.
+   */
+  summonMaxAlive: 40,
+
+  /** Seconds of growing ground ring before a `slam` lands. */
+  slamTelegraph: 2,
+  /** Seconds from the start of one telegraph to the start of the next. */
+  slamInterval: 9,
+  /** Slam damage, as a multiple of the boss's melee damage. */
+  slamDamageMult: 8,
+  /** Fraction of that which lands when the boss was controlled during the telegraph. */
+  slamMitigatedFraction: 0.20,
+
+  /** Mana drained per second while a `siphon` phase runs. */
+  siphonManaPerSecond: 8,
+  /**
+   * HP the boss heals per second of *full* drain, as a fraction of its max HP.
+   *
+   * Deliberately expressed per second-of-drain rather than per point of mana:
+   * mana pools grow across a run by a couple of orders of magnitude, and a heal
+   * priced per point would be a rounding error at wave 10 and half the boss's
+   * bar at wave 150. Pro-rated by how much mana was actually available, so a
+   * player who spent theirs feeds it nothing — which is the answer the pattern
+   * is asking for.
+   */
+  siphonHealFractionPerSecond: 0.005,
+
+  /** Seconds a boss may live before the §3.3 enrage timer starts. */
+  enrageDelay: 60,
+  /** Seconds per additional enrage stack after that. */
+  enrageInterval: 10,
+  /** Damage added per boss-enrage stack. */
+  enrageDamagePerStack: 0.15,
+  /** Speed added per boss-enrage stack. */
+  enrageSpeedPerStack: 0.10,
+
+  /** Encounter cleared inside this many seconds counts as a swift kill (§3.4). */
+  swiftKillSeconds: 30,
+  /** Extra boss gold a swift kill pays. */
+  swiftKillGoldBonus: 0.5,
+  /** Rarity tiers a swift kill's guaranteed drop is bumped by. */
+  swiftKillRarityBoost: 1,
+  /** AP-preview bonus a flawless encounter banks for the rest of the run. */
+  flawlessApBonus: 0.10,
+  /** Blessing reroll tokens a flawless encounter grants. */
+  flawlessRerollTokens: 1,
+} as const;
+
+/** Every boss pattern, in teaching order. */
+export const BOSS_PATTERNS: readonly BossPattern[] = ['bulwark', 'summon', 'slam', 'siphon'];
+
+/**
+ * Where each pattern is actually run.
+ *
+ * A `Record` over the union for the same reason `ENEMY_BEHAVIOR_CONSUMERS` is
+ * one (cross-cutting rule 3): a pattern that only exists as a name on the boss
+ * bar is exactly the kind of inert content the closed-union rule exists to
+ * catch. `content-coverage.test.ts` rejects a placeholder.
+ */
+export const BOSS_PATTERN_CONSUMERS: Record<BossPattern, string> = {
+  bulwark: 'EnemyManager.tickBossPattern — 20% max-HP shield that heals the boss back if it survives 10 s',
+  summon: 'EnemyManager.tickBossPattern — a batch of wave-scaled adds every 6 s, divided across the boss pack',
+  slam: 'EnemyManager.tickBossPattern — 2 s telegraph, then damage x8 through tower_damaged, x0.2 if controlled',
+  siphon: 'EnemyManager.tickBossPattern — drains 8 mana/s from the player and heals the boss for it',
+};
+
+/** Player-facing pattern names, for the boss bar. */
+export const BOSS_PATTERN_NAMES: Record<BossPattern, string> = {
+  bulwark: 'Bulwark',
+  summon: 'Summoning',
+  slam: 'Ground Slam',
+  siphon: 'Mana Siphon',
+};
+
+/** One-line "what do I do about it" for the boss bar tooltip. */
+export const BOSS_PATTERN_HINTS: Record<BossPattern, string> = {
+  bulwark: 'Break the shield within 10s or it heals back.',
+  summon: 'Clear the adds — they keep coming while this phase lasts.',
+  slam: 'Slow or knock the boss back during the telegraph to blunt it.',
+  siphon: 'Spend your mana — it heals for everything it drains.',
+};
+
+/**
+ * Tier names, indexed by `bossTierForWave` (1-based, cycling past the table).
+ *
+ * A name is the cheapest possible memory hook: "the wave-40 Warden" is a thing
+ * a player can talk about, "the wave-40 boss" is not.
+ */
+const BOSS_TIER_NAMES: readonly string[] = [
+  // Deliberately no "Warden": that is an enemy *type* (§2.1), and two
+  // different things called the same thing in the same HUD is a bug report.
+  'Sentinel', 'Overseer', 'Colossus', 'Devourer', 'Harbinger',
+  'Tyrant', 'Leviathan', 'Archon', 'Nemesis', 'Sovereign',
+];
+
+/** Boss tier for a wave: `floor(wave / 10)`, never below 1. */
+export function bossTierForWave(wave: number): number {
+  return Math.max(1, Math.floor(wave / 10));
+}
+
+/** `Wave 40 Warden` — the name the boss bar shows. */
+export function bossNameForWave(wave: number): string {
+  const tier = bossTierForWave(wave);
+  return `Wave ${wave} ${BOSS_TIER_NAMES[(tier - 1) % BOSS_TIER_NAMES.length]}`;
+}
+
+/**
+ * The pattern a boss of this tier runs in this phase (§3.2).
+ *
+ * Tier 1 teaches `bulwark` alone; tier 2 adds `summon`; tier 3 adds `slam`;
+ * from tier 4 the whole roster is in play, rotated by tier so successive
+ * encounters are not the same fight three times.
+ *
+ * §3.2 says tier 4+ "draws all four, one per phase", which cannot be literal —
+ * there are three phases and four patterns. The rotation is the honest reading:
+ * every tier-4+ boss runs three *distinct* patterns, and across four
+ * consecutive tiers every pattern appears in every phase slot. It is also
+ * deterministic, which is what makes the phase-count test meaningful.
+ */
+export function bossPatternForPhase(tier: number, phase: number): BossPattern {
+  const t = Math.max(1, Math.floor(tier));
+  const p = Math.max(1, Math.min(3, Math.floor(phase)));
+  const poolSize = t <= 1 ? 1 : t === 2 ? 2 : t === 3 ? 3 : 4;
+  if (poolSize < 4) return BOSS_PATTERNS[(p - 1) % poolSize];
+  return BOSS_PATTERNS[(t - 4 + p - 1) % BOSS_PATTERNS.length];
+}
+
+/** The three patterns a boss on this wave will run, phase 1 → 3. */
+export function bossPatternsForWave(wave: number): BossPattern[] {
+  const tier = bossTierForWave(wave);
+  return [1, 2, 3].map(phase => bossPatternForPhase(tier, phase));
+}
+
+/**
+ * Adds one boss of a wave's pack contributes per `summon` batch.
+ *
+ * §3.2's "4 adds" is the figure for a lone boss; a boss wave actually spawns
+ * `bossCountForWave(wave)` = `2 + tier` of them, so the batch is split across
+ * the pack. Without this a wave-100 encounter fields twelve summoners at four
+ * adds each every six seconds.
+ */
+export function bossSummonCountForWave(wave: number): number {
+  const pack = Math.max(1, bossCountForWave(wave));
+  return Math.max(1, Math.round(BOSS_ENCOUNTER.summonCount / pack));
+}
+
+/**
+ * Extra effective HP each pattern holds *outside* the boss's HP bar, as a
+ * fraction of its max HP.
+ *
+ * A `Record` over the union, and the balance number the whole encounter is
+ * budgeted against:
+ *   - `bulwark` = the shield fraction itself. One shield per phase; it does not
+ *     re-arm once broken, so this is exact rather than an average.
+ *   - `summon` 0.10: `bossSummonCountForWave` adds per boss every 6 s, at trash
+ *     HP against a boss bar worth ~20 of them, and the wave cannot end until
+ *     they are dead.
+ *   - `siphon` 0.04: 0.5% of max HP per second of drain, and only for as long
+ *     as the player has mana to be taken.
+ *   - `slam` 0: it costs tower HP, not tower damage.
+ */
+export const BOSS_PATTERN_HP_WEIGHT: Record<BossPattern, number> = {
+  bulwark: BOSS_ENCOUNTER.bulwarkShieldFraction,
+  summon: 0.10,
+  slam: 0,
+  siphon: 0.04,
+};
+
+/**
+ * How much more damage a boss on this wave costs than its HP bar shows.
+ *
+ * Priced from the actual rotation `bossPatternForPhase` hands it, so a tier-1
+ * boss — three `bulwark` phases, by §3.2's teaching rule — is correctly the
+ * most expensive relative to its bar.
+ */
+export function bossPhaseHpFactor(wave: number): number {
+  let extra = 0;
+  for (const pattern of bossPatternsForWave(wave)) extra += BOSS_PATTERN_HP_WEIGHT[pattern];
+  return 1 + extra;
+}
+
+/**
+ * The HP a boss actually spawns with — its *bar*, not its durability.
+ *
+ * Part 2 shipped under §2.6's rule that new content replaces what is already
+ * there rather than adding to it, and Part 3 is held to the same rule: the
+ * phase machine holds `bossPhaseHpFactor` worth of the encounter outside `hp`,
+ * so the bar shrinks by exactly that much and a boss wave costs the same total
+ * damage it did before phases existed.
+ *
+ * This is not cosmetic. Bosses were already the wall at every prestige tier —
+ * `npm run sim` puts a wave-40 boss at 0.99 of its enrage budget at 100
+ * lifetime AP — so an uncompensated +30% would have moved the wall a full
+ * decade at every tier. What Part 3 adds is *fail states* (a bulwark that heals
+ * back, adds that must be cleared, a slam that costs tower HP), not a longer
+ * bar, which was the whole complaint in §0.4.
+ *
+ * Gold and XP deliberately still price the boss at its full pre-Part-3 value
+ * (`goldDropForWave`, `xpPerKill`): the encounter is worth what it always was.
+ */
+export function bossMaxHpForWave(wave: number): number {
+  return bossHPForWave(ENEMY_DEFS.boss.baseHP, wave) / bossPhaseHpFactor(wave);
+}
+
+/** What a finished boss encounter earned (gameplay plan §3.4). */
+export interface BossEncounterOutcome {
+  swift: boolean;
+  flawless: boolean;
+}
+
+/**
+ * Score a finished encounter.
+ *
+ * A pure function rather than two comparisons inlined in `Game`, so the rule is
+ * one thing the tests can hold: "under 30 *simulation* seconds" and "the tower
+ * lost no HP" are both easy to get subtly wrong (wall-clock, or counting a hit
+ * the wall absorbed as damage) and neither mistake is visible in play.
+ */
+export function bossEncounterOutcome(
+  elapsedSeconds: number,
+  towerHpLost: boolean,
+): BossEncounterOutcome {
+  return {
+    swift: elapsedSeconds <= BOSS_ENCOUNTER.swiftKillSeconds,
+    flawless: !towerHpLost,
+  };
+}
+
+/** Boss-enrage stacks for a boss that has been alive `elapsed` seconds (§3.3). */
+export function bossEnrageStacksFor(elapsed: number): number {
+  if (elapsed < BOSS_ENCOUNTER.enrageDelay) return 0;
+  return 1 + Math.floor((elapsed - BOSS_ENCOUNTER.enrageDelay) / BOSS_ENCOUNTER.enrageInterval);
+}
+
+/** Phase a boss at this HP fraction belongs in — 1, 2 or 3. */
+export function bossPhaseForHpFraction(fraction: number): number {
+  const [p2, p3] = BOSS_ENCOUNTER.phaseThresholds;
+  if (fraction <= p3) return 3;
+  if (fraction <= p2) return 2;
+  return 1;
+}
+
+/**
  * Where each type's behaviour actually lives.
  *
  * A `Record` over the whole `EnemyType` union, exactly like
@@ -123,7 +393,7 @@ export const ENEMY_BEHAVIOR_CONSUMERS: Record<EnemyType, string> = {
   tank: 'ProjectileManager.tick — body-blocks, so a shot never pierces past a tank',
   flying: 'EnemyManager.tick + Game mine loop — ignores the wall contact band and land mines',
   healer: 'EnemyManager.tick — heals allies, and flees while healing below 40% HP',
-  boss: 'EnemyManager.damage — enrages at 50% HP; Part 3 owns the phase machine',
+  boss: 'EnemyManager.tickBoss — three phases at 66%/33% HP, one pattern each, plus the §3.3 enrage timer',
   splitter: 'Game enemy_killed + EnemyManager.spawnSplitterChild — children scatter under 2 s spawn protection',
   shielded: 'EnemyManager.tick — rebuilds a charge every 6 s after 3 s undamaged',
   siege: 'EnemyManager.tick — halts at 260 px and lobs hostile shells at the tower',
@@ -141,13 +411,20 @@ export const PRIORITY_TARGET_ORDER: readonly EnemyType[] = ['warden', 'healer', 
  *
  * The single answer for every target-selection site in the game —
  * `Tower.acquireTarget`, the projectile sweep, and every picker in
- * `AbilityManager`. A burrower underground and a splitter child inside its
- * spawn protection are both *on the field* and both un-hittable; routing them
- * through one predicate is what stops a new target picker quietly being able to
- * shoot through the ground.
+ * `AbilityManager`. A burrower underground, a splitter child inside its spawn
+ * protection and a boss mid-phase-transition are all *on the field* and all
+ * un-hittable; routing them through one predicate is what stops a new target
+ * picker quietly being able to shoot through the ground.
+ *
+ * The boss's phase flash goes through here rather than through a flag of its
+ * own, deliberately (gameplay plan §3.1): a second invulnerability mechanism is
+ * a second thing every one of the eight target-selection sites has to remember.
  */
 export function isTargetable(enemy: Enemy): boolean {
-  return enemy.alive && enemy.burrowed !== true && (enemy.spawnProtection ?? 0) <= 0;
+  return enemy.alive
+    && enemy.burrowed !== true
+    && (enemy.spawnProtection ?? 0) <= 0
+    && (enemy.bossInvulnerable ?? 0) <= 0;
 }
 
 /** True when land mines and knockback pass straight through this enemy. */

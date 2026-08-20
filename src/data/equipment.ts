@@ -29,6 +29,22 @@ export const RARITY_COLORS: Record<Rarity, string> = {
   legendary: '#f1c40f',
 };
 
+/** Rarity ladder, weakest first. `upgradeRarity` walks it. */
+export const RARITY_ORDER: readonly Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+
+/**
+ * Bump a rolled rarity up the ladder, clamped at `legendary`.
+ *
+ * Used by the swift-kill boss reward (gameplay plan §3.4): the roll is the
+ * normal one, so gear still tracks the wave, and the reward is that it lands
+ * one tier better than it would have.
+ */
+export function upgradeRarity(rarity: Rarity, steps = 1): Rarity {
+  const index = RARITY_ORDER.indexOf(rarity);
+  if (index < 0) return rarity;
+  return RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, index + Math.max(0, steps))];
+}
+
 export const RARITY_NAMES: Record<Rarity, string> = {
   common: 'Common',
   uncommon: 'Uncommon',
@@ -323,15 +339,29 @@ export function generateEquipment(defId: string, rarity: Rarity): Equipment {
  * that a deep run builds a set from elites, not so much that gear stops
  * mattering.
  */
+/**
+ * Overrides for a single drop roll (gameplay plan §3.4).
+ *
+ * `guaranteed` skips the chance gate; `rarityBoost` bumps the *rolled* rarity
+ * rather than replacing the roll, so the reward still tracks the wave.
+ */
+export interface DropOptions {
+  guaranteed?: boolean;
+  rarityBoost?: number;
+}
+
 export function rollDrop(
   wave: number,
   source: 'boss' | 'elite' | 'milestone',
   bonusChance = 0,
+  options: DropOptions = {},
 ): Equipment | null {
+  const boost = Math.max(0, options.rarityBoost ?? 0);
+  const guaranteed = options.guaranteed === true;
   if (source === 'elite') {
     const eliteChance = Math.min(0.15, 0.04 + wave * 0.001 + bonusChance);
-    if (Math.random() > eliteChance) return null;
-    const eliteRarity = rollRarity(wave);
+    if (!guaranteed && Math.random() > eliteChance) return null;
+    const eliteRarity = upgradeRarity(rollRarity(wave), boost);
     const elitePool = EQUIPMENT_DEFS.filter(d => d.minWave <= wave && !d.bossOnly);
     if (elitePool.length === 0) return null;
     const eliteDef = elitePool[Math.floor(Math.random() * elitePool.length)];
@@ -339,9 +369,9 @@ export function rollDrop(
   }
   const baseChance = source === 'boss' ? 0.15 : 1.0;
   const scaledChance = Math.min(0.8, baseChance + wave * 0.005 + bonusChance);
-  if (Math.random() > scaledChance) return null;
+  if (!guaranteed && Math.random() > scaledChance) return null;
 
-  const rarity = rollRarity(wave);
+  const rarity = upgradeRarity(rollRarity(wave), boost);
   // Only items whose minWave has been reached can drop; boss-only items are
   // additionally restricted to boss kills.
   let dropPool = EQUIPMENT_DEFS.filter(d => d.minWave <= wave);

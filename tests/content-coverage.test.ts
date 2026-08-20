@@ -19,16 +19,22 @@ import { PASSIVE_ABILITIES } from '../src/data/passiveAbilities';
 import { RESEARCH_NODES } from '../src/data/research';
 import { UPGRADES } from '../src/data/upgrades';
 import {
+  BOSS_PATTERNS,
+  BOSS_PATTERN_CONSUMERS,
+  BOSS_PATTERN_HINTS,
+  BOSS_PATTERN_HP_WEIGHT,
+  BOSS_PATTERN_NAMES,
   ENEMY_BEHAVIOR_CONSUMERS,
   ENEMY_DEFS,
   ENEMY_SPAWN_WEIGHTS,
   PRIORITY_TARGET_ORDER,
+  bossPatternsForWave,
   spawnPoolForWave,
 } from '../src/data/enemies';
 import { MILESTONE_EXEMPT_ENEMIES, MILESTONES } from '../src/data/milestones';
 import { RENDERED_ENEMY_SHAPES } from '../src/game/Renderer';
 import { TARGETING_MODES } from '../src/data/tower';
-import type { EnemyType } from '../src/types';
+import type { BossPattern, EnemyType } from '../src/types';
 import {
   BLESSINGS,
   BLESSING_BEHAVIOR_CONSUMERS,
@@ -36,6 +42,49 @@ import {
   BLESSING_STAT_LABELS,
   type BlessingBehavior,
 } from '../src/data/blessings';
+
+/**
+ * Boss patterns (gameplay plan §3.2).
+ *
+ * Same guard as the enemy roster's: `tsc` catches a missing `switch` case, but
+ * nothing catches a pattern whose consumer entry is a placeholder, or one that
+ * no tier ever draws. Both would be a name on the boss bar attached to nothing,
+ * which is precisely the failure mode §0.4 is complaining about.
+ */
+describe('boss patterns', () => {
+  it('names a real consumer for every pattern', () => {
+    for (const pattern of BOSS_PATTERNS) {
+      const consumer = BOSS_PATTERN_CONSUMERS[pattern];
+      expect(consumer, `${pattern} has no consumer`).toBeTruthy();
+      expect(consumer.length, `${pattern} consumer is too vague`).toBeGreaterThan(20);
+      expect(consumer.toLowerCase(), `${pattern} consumer is a placeholder`)
+        .not.toMatch(/todo|nothing|unused|n\/a|tbd/);
+    }
+  });
+
+  it('gives every pattern a player-facing name and an answer', () => {
+    for (const pattern of BOSS_PATTERNS) {
+      expect(BOSS_PATTERN_NAMES[pattern], `${pattern} name`).toBeTruthy();
+      expect(BOSS_PATTERN_HINTS[pattern].length, `${pattern} hint`).toBeGreaterThan(20);
+    }
+  });
+
+  it('prices every pattern in the durability budget', () => {
+    for (const pattern of BOSS_PATTERNS) {
+      // `slam` is legitimately zero — it costs tower HP, not tower damage — so
+      // the guard is that the key exists and is a number, not that it is > 0.
+      expect(typeof BOSS_PATTERN_HP_WEIGHT[pattern], pattern).toBe('number');
+    }
+  });
+
+  it('actually draws every pattern somewhere in the tier rotation', () => {
+    const drawn = new Set<BossPattern>();
+    for (let wave = 10; wave <= 200; wave += 10) {
+      for (const pattern of bossPatternsForWave(wave)) drawn.add(pattern);
+    }
+    expect([...drawn].sort()).toEqual([...BOSS_PATTERNS].sort());
+  });
+});
 
 /** A talent's declared effects: the primary one, plus the optional second. */
 const effectsOf = (t: TalentDef): TalentEffectType[] =>

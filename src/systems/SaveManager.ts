@@ -14,6 +14,7 @@ import type {
   EquipmentSlot,
   EnemyType,
   BlessingRunState,
+  BossRunState,
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
 import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBossWave } from '../data/formulas';
@@ -22,7 +23,7 @@ import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 10;
+const SAVE_VERSION = 11;
 
 function defaultWaveModifier() {
   return {
@@ -89,6 +90,8 @@ export interface PersistentState {
   equipped: Partial<Record<EquipmentSlot, Equipment>>;
   /** v10+: the run's blessing draft (plan §1.5). */
   blessings?: BlessingRunState;
+  /** v11+: run-scoped boss encounter rewards (plan §3.4). */
+  bossRun?: BossRunState;
 }
 
 export interface OfflineResult {
@@ -319,6 +322,11 @@ function defaultBlessings(): BlessingRunState {
   };
 }
 
+/** A fresh boss-reward run — the v11 default. */
+function defaultBossRun(): BossRunState {
+  return { apBonusPct: 0, swiftKills: 0, flawlessKills: 0 };
+}
+
 /**
  * v10 (gameplay plan §1.5): the blessing draft.
  *
@@ -331,10 +339,25 @@ function migrateV9toV10(data: Record<string, unknown>): void {
   }
 }
 
+/**
+ * v11 (gameplay plan §3.4): boss encounter rewards.
+ *
+ * Additive, like v10. Only the *earned* half of an encounter is stored — the
+ * flawless AP bonus and the two counters. Mid-fight state (phase, pattern
+ * timers, the bulwark shield) is deliberately absent: live enemies have never
+ * been part of the save format, so a load starts the wave's roster empty and
+ * `WaveManager` clears the wave rather than resuming half a boss.
+ */
+function migrateV10toV11(data: Record<string, unknown>): void {
+  if (!isObject(data.bossRun)) {
+    data.bossRun = defaultBossRun();
+  }
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -358,6 +381,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 7) { migrateV7toV8(data); data.version = 8; }
   if (data.version === 8) { migrateV8toV9(data); data.version = 9; }
   if (data.version === 9) { migrateV9toV10(data); data.version = 10; }
+  if (data.version === 10) { migrateV10toV11(data); data.version = 11; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -371,6 +395,7 @@ function validate(data: unknown): data is PersistentState {
   if (wave && typeof wave.elapsed !== 'number') wave.elapsed = 0;
   if (wave && typeof wave.enrageStacks !== 'number') wave.enrageStacks = 0;
   if (!isObject(d.blessings)) d.blessings = defaultBlessings();
+  if (!isObject(d.bossRun)) d.bossRun = defaultBossRun();
 
   return true;
 }
@@ -421,6 +446,7 @@ export class SaveManager {
         Object.entries(state.equipped).map(([slot, eq]) => [slot, { ...eq!, stats: [...eq!.stats] }]),
       ) as Partial<Record<EquipmentSlot, Equipment>>,
       blessings: this.snapshotBlessings(state.blessings),
+      bossRun: this.snapshotBossRun(state.bossRun),
     };
   }
 
@@ -437,6 +463,16 @@ export class SaveManager {
       rerolls: b.rerolls,
       pendingOfferForWave: b.pendingOfferForWave ?? null,
       wavesClearedThisRun: b.wavesClearedThisRun ?? 0,
+    };
+  }
+
+  /** Copied field by field, for the same reason blessings are. */
+  private snapshotBossRun(b: BossRunState | undefined): BossRunState {
+    if (!b) return defaultBossRun();
+    return {
+      apBonusPct: b.apBonusPct ?? 0,
+      swiftKills: b.swiftKills ?? 0,
+      flawlessKills: b.flawlessKills ?? 0,
     };
   }
 

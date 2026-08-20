@@ -133,7 +133,7 @@ describe('migration ladder', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify(v2Save));
     const loaded = new SaveManager(stubBus).load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBeGreaterThanOrEqual(10);
+    expect(loaded!.version).toBeGreaterThanOrEqual(11);
   });
 
   it('preserves the v2 payload through every step of the ladder', () => {
@@ -146,12 +146,12 @@ describe('migration ladder', () => {
   });
 
   it('accepts every version the ladder claims to handle', () => {
-    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
       storage.clear();
       storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version }));
       const loaded = new SaveManager(stubBus).load();
       expect(loaded, `version ${version} should load`).not.toBeNull();
-      expect(loaded!.version).toBeGreaterThanOrEqual(10);
+      expect(loaded!.version).toBeGreaterThanOrEqual(11);
     }
   });
 
@@ -163,7 +163,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(10);
+    expect(loaded.version).toBe(11);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -187,7 +187,7 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(10);
+    expect(loaded.version).toBe(11);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);

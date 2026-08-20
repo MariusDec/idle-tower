@@ -26,7 +26,13 @@ import {
   enrageThresholdSeconds,
   ENRAGE_STACK_INTERVAL,
 } from '../src/data/formulas.ts';
-import { ENEMY_BEHAVIOR, ENEMY_DEFS, spawnPoolForWave } from '../src/data/enemies.ts';
+import {
+  ENEMY_BEHAVIOR,
+  ENEMY_DEFS,
+  bossMaxHpForWave,
+  bossPhaseHpFactor,
+  spawnPoolForWave,
+} from '../src/data/enemies.ts';
 import { UPGRADES } from '../src/data/upgrades.ts';
 import { TOWER_BASE } from '../src/data/tower.ts';
 import { computeUpgradeValue } from '../src/types.ts';
@@ -80,6 +86,10 @@ function typeMix(wave: number): Array<{ type: EnemyType; weight: number }> {
  *   - `blinker` 1.1: covers ground the tower does not get to shoot across.
  *   - `siege` 1.0: it costs tower HP, not DPS — see `SIEGE_GOLD_DRAG`.
  *   - `thief` 1.0 on HP; its cost is economic, see `THIEF_GOLD_DRAG`.
+ *   - `boss` 1.0 *here*: a boss's cost is priced per wave instead, by
+ *     `bossPhaseHpFactor` in `data/enemies.ts`, because it depends on which
+ *     three patterns its tier draws — and the boss's bar is shrunk by the same
+ *     factor, so the product is the pre-Part-3 figure.
  */
 const EFFECTIVE_HP_FACTOR: Record<EnemyType, number> = {
   normal: 1,
@@ -132,8 +142,14 @@ export function waveProfile(wave: number): WaveProfile {
   for (const { type, weight } of mix) {
     const def = ENEMY_DEFS[type];
     const share = weight / weightSum;
-    const hp = type === 'boss' ? bossHPForWave(def.baseHP, wave) : enemyHPForWave(def.baseHP, wave);
-    hpPer += share * hp * EFFECTIVE_HP_FACTOR[type];
+    // A boss's *bar* is `bossMaxHpForWave`; what the tower actually has to put
+    // out is that times what the phase machine holds outside it. The two
+    // multiply back to the pre-Part-3 figure by construction (see
+    // `bossMaxHpForWave`), which is the whole point — Part 3 changed what a
+    // boss *does*, not how much damage a boss wave costs.
+    const hp = type === 'boss' ? bossMaxHpForWave(wave) : enemyHPForWave(def.baseHP, wave);
+    const phaseFactor = type === 'boss' ? bossPhaseHpFactor(wave) : 1;
+    hpPer += share * hp * EFFECTIVE_HP_FACTOR[type] * phaseFactor;
     armorPer += share * def.armor;
     goldPer += share * goldDropForWave(def.baseGold, wave);
     if (type === 'thief') thiefShare = share;

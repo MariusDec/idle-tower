@@ -1,8 +1,7 @@
 import type { AbilityId, EnemyType, EnemyWaveStatsEntry, GameState, GoldSourceEntry, PanelTab, StatsInfo, AutoBuyStrategy } from '../types';
-import { ENEMY_DEFS } from '../data/enemies';
+import { ENEMY_DEFS, bossMaxHpForWave } from '../data/enemies';
 import {
   enemyHPForWave,
-  bossHPForWave,
   enemySpeedForWave,
   enemyDamageForWave,
   goldDropForWave,
@@ -21,6 +20,7 @@ import { WelcomeBackModal, type WelcomeBackData } from './WelcomeBackModal';
 import { RunSummaryModal, type RunSummaryData } from './RunSummaryModal';
 import { RunFailedModal, type RunFailedData } from './RunFailedModal';
 import { RunStalledBanner, type RunStalledData } from './RunStalledBanner';
+import { BossBar, type BossBarData } from './BossBar';
 import { KeybindsOverlay } from './KeybindsOverlay';
 import { StatsPanel } from './StatsPanel';
 import { ProgressionPanel, type ProgressionBlessingInfo } from './ProgressionPanel';
@@ -150,6 +150,12 @@ export class UIManager {
   private readonly runSummaryModal: RunSummaryModal;
   private readonly runFailedModal: RunFailedModal;
   private readonly runStalledBanner: RunStalledBanner;
+  private readonly bossBar: BossBar;
+  /**
+   * The boss readout for the current frame, pushed by `Game.frameUpdate`
+   * (gameplay plan §3.5). Null while no boss is alive.
+   */
+  private bossBarData: BossBarData | null = null;
   private readonly keybindsOverlay: KeybindsOverlay;
   private readonly statsPanel: StatsPanel;
   private readonly progressionPanel: ProgressionPanel;
@@ -431,6 +437,9 @@ export class UIManager {
       deps.overlayRoot ?? (document.getElementById('overlay-root') as HTMLElement) ?? deps.modalRoot,
     );
     this.runStalledBanner.setOnAscend(() => this.onAscend());
+    this.bossBar = new BossBar(
+      deps.overlayRoot ?? (document.getElementById('overlay-root') as HTMLElement) ?? deps.modalRoot,
+    );
     this.keybindsOverlay = new KeybindsOverlay(deps.modalRoot);
     this.hud.setOnShowKeybinds(() => this.keybindsOverlay.toggle());
     this.statsPanel = new StatsPanel({
@@ -925,9 +934,21 @@ export class UIManager {
     this.milestoneStrip.update(dt);
   }
 
+  /**
+   * Boss readout for this frame (plan §3.5). Pushed every frame rather than
+   * polled, because `UIManager` has no view of the enemy list.
+   */
+  setBossBarData(data: BossBarData | null): void {
+    this.bossBarData = data;
+  }
+
   update(state: GameState): void {
     this.lastState = state;
     if (this.abilityBar) this.abilityBar.update(state);
+    // Deliberately *above* the throttle: a two-second slam telegraph read at
+    // 10 fps is a countdown that visibly stutters, which is the one thing the
+    // bar exists to avoid. The `dom` helpers make an unchanged frame free.
+    this.bossBar.update(this.bossBarData);
 
     // Per-frame DPS tracking (lightweight JS, runs every frame)
     const now = performance.now();
@@ -1020,7 +1041,7 @@ export class UIManager {
     }
     const entries: EnemyWaveStatsEntry[] = types.map(t => {
       const def = ENEMY_DEFS[t];
-      const hp = t === 'boss' ? bossHPForWave(def.baseHP, wave) : enemyHPForWave(def.baseHP, wave);
+      const hp = t === 'boss' ? bossMaxHpForWave(wave) : enemyHPForWave(def.baseHP, wave);
       return {
         type: t,
         hp,

@@ -32,10 +32,35 @@ export interface AscensionContext {
 export class PrestigeManager {
   private readonly bus: EventBus;
   private readonly ctx: AscensionContext;
+  /**
+   * Run-scoped AP bonus, banked by flawless boss encounters (gameplay plan
+   * §3.4) and cleared by the ascension that spends it.
+   *
+   * A separate channel from the achievement bonuses above, because those are
+   * lifetime and this one is the run's own: they compose (`(1 + ach) * (1 +
+   * run)`) rather than one silently overwriting the other. `Game` persists it
+   * in `GameState.bossRun` and restores it here on load.
+   */
+  private runApBonus = 0;
 
   constructor(bus: EventBus, ctx: AscensionContext) {
     this.bus = bus;
     this.ctx = ctx;
+  }
+
+  /** Bank a flawless-encounter AP bonus for the rest of this run. */
+  addRunApBonus(fraction: number): void {
+    if (fraction <= 0) return;
+    this.runApBonus += fraction;
+  }
+
+  /** Restore the run's banked bonus from a save. */
+  setRunApBonus(fraction: number): void {
+    this.runApBonus = Math.max(0, fraction);
+  }
+
+  getRunApBonus(): number {
+    return this.runApBonus;
   }
 
   canAscend(wave: number): boolean {
@@ -48,7 +73,7 @@ export class PrestigeManager {
 
   previewAP(wave: number): number {
     const bonus = this.achievementBonus('ap_gain_mult') + this.achievementBonus('prestige_gain_mult');
-    const earned = Math.floor(apForWave(wave) * (1 + bonus));
+    const earned = Math.floor(apForWave(wave) * (1 + bonus) * (1 + this.runApBonus));
     // Plan §2.3.4: the very first ascension is scripted to be worth taking, so
     // a new player's introduction to prestige is a visible jump in power
     // rather than a rounding error.
@@ -493,6 +518,9 @@ export class PrestigeManager {
     this.ctx.resources.lifetimeAP += ap;
     this.ctx.stats.ascensions += 1;
     this.ctx.stats.lifetimeAscensions += 1;
+    // The flawless bonus is *this run's*: the ascension that pays it out is
+    // also the one that ends the run that earned it.
+    this.runApBonus = 0;
     this.bus.emit('ascension_performed', {
       apGained: ap,
       totalAP: this.ctx.resources.ascensionPoints,

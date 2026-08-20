@@ -1,8 +1,20 @@
-import type { Enemy, EnemyType, AuraType, HostileShot, Projectile } from '../types';
+import type { BossPattern, Enemy, EnemyType, AuraType, HostileShot, Projectile } from '../types';
 import { distance2, nextId } from '../utils/math';
-import { ENEMY_BEHAVIOR, ENEMY_DEFS, ignoresWallBand } from '../data/enemies';
 import {
-  bossHPForWave,
+  BOSS_ENCOUNTER,
+  ENEMY_BEHAVIOR,
+  ENEMY_DEFS,
+  bossEnrageStacksFor,
+  bossMaxHpForWave,
+  bossPatternForPhase,
+  bossPhaseForHpFraction,
+  bossSummonCountForWave,
+  bossTierForWave,
+  ignoresWallBand,
+  spawnPoolForWave,
+} from '../data/enemies';
+import {
+  bossCountForWave,
   enemyDamageForWave,
   enemyHPForWave,
   enemySpeedForWave,
@@ -340,7 +352,9 @@ export class EnemyManager {
   spawn(type: EnemyType, wave: number, spawnX: number, spawnY: number, overrides: Partial<Enemy> = {}): Enemy {
     const def = ENEMY_DEFS[type];
     let hp: number;
-    if (type === 'boss') hp = bossHPForWave(def.baseHP, wave);
+    // The boss *bar*: shrunk by whatever its phase machine holds outside it,
+    // so the encounter costs the same total damage it always did (§3.7).
+    if (type === 'boss') hp = bossMaxHpForWave(wave);
     else hp = enemyHPForWave(def.baseHP, wave);
     if (this.hpReduction > 0) hp = Math.max(1, Math.floor(hp * (1 - this.hpReduction)));
     if (this.hpMult !== 1) hp = Math.max(1, Math.floor(hp * this.hpMult));
@@ -373,7 +387,20 @@ export class EnemyManager {
         ? { shieldCharges: def.shieldCharges ?? 3, shieldRegenTimer: ENEMY_BEHAVIOR.shieldRegenInterval }
         : {}),
       ...(type === 'healer' ? { healCooldown: def.healCooldown ?? 2.5 } : {}),
-      ...(type === 'boss' ? { enraged: false, enrageTriggered: false } : {}),
+      // A boss arrives already in phase 1 with its pattern armed, so the state
+      // machine has no "not started yet" case to special-case (plan §3.1).
+      ...(type === 'boss'
+        ? {
+          enraged: false,
+          enrageTriggered: false,
+          bossPhase: 1,
+          bossPattern: bossPatternForPhase(bossTierForWave(wave), 1),
+          bossElapsed: 0,
+          bossEnrageStacks: 0,
+          bossInvulnerable: 0,
+          bossPackSize: Math.max(1, bossCountForWave(wave)),
+        }
+        : {}),
       // Behavioural types carry their cadence from the moment they spawn, so a
       // siege that walks into range mid-reload does not get a free instant shot
       // and a blinker cannot blink on its first substep.
@@ -386,6 +413,12 @@ export class EnemyManager {
     };
     this.enemies.push(enemy);
     this.gridStale = true;
+    if (enemy.type === 'boss' && enemy.bossPattern !== undefined) {
+      this.armBossPattern(enemy, enemy.bossPattern);
+      // `Game` starts the encounter clock and the flawless flag off this, not
+      // off `wave_started`: a boss wave's first boss arrives half a second in.
+      this.bus.emit('boss_spawned', { enemy, wave, pattern: enemy.bossPattern });
+    }
     return enemy;
   }
 
@@ -412,6 +445,9 @@ export class EnemyManager {
     // effect would read as "your shot was absorbed" rather than "it missed".
     if (enemy.burrowed === true) return false;
     if ((enemy.spawnProtection ?? 0) > 0) return false;
+    // The phase-transition flash (plan §3.1). `isTargetable` already keeps every
+    // picker off it; this is the backstop for anything already in flight.
+    if ((enemy.bossInvulnerable ?? 0) > 0) return false;
     enemy.undamagedFor = 0;
     // Shielded: each charge absorbs a hit regardless of damage amount
     if (enemy.type === 'shielded' && (enemy.shieldCharges ?? 0) > 0) {
@@ -420,6 +456,28 @@ export class EnemyManager {
       this.bus.emit('shield_break', { x: enemy.x, y: enemy.y });
       this.bus.emit('enemy_damaged', { enemy, amount: 0, killed: false, isCrit, blocked: true });
       return false;
+    }
+    // Bulwark: the boss's own absorb pool, spent before HP and before the ward.
+    // Distinct from `absorbShield` on purpose — that one is *granted* by a
+    // warden and dies with it, and the boss bar draws this one as its own
+    // overlay (plan §3.2/§3.5).
+    if ((enemy.bossShield ?? 0) > 0) {
+      const soaked = Math.min(enemy.bossShield ?? 0, amount);
+      enemy.bossShield = (enemy.bossShield ?? 0) - soaked;
+      amount -= soaked;
+      if ((enemy.bossShield ?? 0) <= 0) {
+        // Broken. The clock stops for the rest of the phase — a broken bulwark
+        // stays broken. Re-arming it would make the pattern a treadmill worth
+        // several times the boss's own bar rather than the single DPS check
+        // §3.2 describes; the sim puts that difference at ten wall-waves.
+        enemy.bossShield = 0;
+        enemy.bossShieldTimer = 0;
+        this.bus.emit('boss_shield_broken', { enemy, x: enemy.x, y: enemy.y });
+      }
+      if (amount <= 0) {
+        this.bus.emit('enemy_damaged', { enemy, amount: soaked, killed: false, isCrit, blocked: true });
+        return false;
+      }
     }
     // Warden ward: an absorb pool in front of HP. It soaks the hit rather than
     // negating it, so sustained fire still gets through — this is a tax on
@@ -522,6 +580,19 @@ export class EnemyManager {
     if (d < 0.001) return;
     enemy.x += (dx / d) * force;
     enemy.y += (dy / d) * force;
+    this.noteBossControlled(enemy);
+  }
+
+  /**
+   * A boss that was shoved or slowed mid-telegraph lands a blunted slam
+   * (plan §3.2).
+   *
+   * The flag is sticky for the duration of the telegraph: the answer is a
+   * reaction inside a two-second window, so it has to count even if the control
+   * has worn off by the time the slam actually lands.
+   */
+  private noteBossControlled(enemy: Enemy): void {
+    if ((enemy.bossSlamTelegraph ?? 0) > 0) enemy.bossSlamMitigated = true;
   }
 
   applyShockwave(radius: number, fromX: number, fromY: number): void {
@@ -539,6 +610,7 @@ export class EnemyManager {
       if (d < 0.001) continue;
       e.x = fromX + (dx / d) * radius;
       e.y = fromY + (dy / d) * radius;
+      this.noteBossControlled(e);
     }
     // Everything the ring touched has been shoved outwards.
     this.gridStale = true;
@@ -610,6 +682,10 @@ export class EnemyManager {
 
       let speedMult = (hasteMultipliers.get(e.id) ?? 1) * this.enrageSpeedMult * this.blessingSpeedMult;
       if (this.retributionBuffs.has(e.id)) speedMult *= RETRIBUTION_BUFF_SPEED_MULT;
+      // Boss enrage (plan §3.3) is a live multiplier rather than a mutation of
+      // `e.speed`, so it composes with the wave-level enrage instead of
+      // compounding into it — and so it can be read straight off the boss bar.
+      if ((e.bossEnrageStacks ?? 0) > 0) speedMult *= this.bossEnrageSpeedMult(e);
       const chill = this.chilled.get(e.id);
       if (e.burrowed === true) speedMult *= ENEMY_BEHAVIOR.burrowSpeedMult;
       const moveSpeed = e.speed * this.slowFactor * (chill ? chill.factor : 1) * speedMult;
@@ -664,6 +740,7 @@ export class EnemyManager {
             this.bus.emit('enemy_attack', { x: e.x, y: e.y, type: e.type });
             let dmgMult = this.damageToTowerMult * this.enrageDamageMult * this.blessingDamageMult;
             if (this.retributionBuffs.has(e.id)) dmgMult *= RETRIBUTION_BUFF_DAMAGE_MULT;
+            if ((e.bossEnrageStacks ?? 0) > 0) dmgMult *= this.bossEnrageDamageMult(e);
             totalDamage += e.damage * dmgMult;
             if (this.thorns > 0) {
               const thornDmg = Math.floor(e.damage * this.thorns);
@@ -779,9 +856,13 @@ export class EnemyManager {
       case 'fast':
       case 'tank':
       case 'flying':
-      case 'boss':
       case 'splitter':
         return 'advance';
+
+      // Three phases, one pattern each, and a clock that punishes a stalemate.
+      // The whole machine lives in `tickBoss` (plan §3).
+      case 'boss':
+        return this.tickBoss(e, dt);
 
       case 'shielded':
         this.tickShieldRegen(e, dt);
@@ -888,6 +969,303 @@ export class EnemyManager {
         return exhaustive;
       }
     }
+  }
+
+  // ── Boss encounters (gameplay plan §3) ───────────────────────────────────
+  //
+  // Everything below is integrated on the simulation clock inside
+  // `Game.simulate`'s fixed substeps. That is not an implementation detail: a
+  // 2 s slam telegraph the player cannot read at 6.5x speed is not a telegraph,
+  // and a phase that fires twice because one frame crossed a threshold in two
+  // substeps is a boss that flashes invulnerable for no reason.
+
+  /** Damage multiplier from this boss's own enrage stacks. */
+  private bossEnrageDamageMult(e: Enemy): number {
+    return 1 + (e.bossEnrageStacks ?? 0) * BOSS_ENCOUNTER.enrageDamagePerStack;
+  }
+
+  /** Speed multiplier from this boss's own enrage stacks. */
+  private bossEnrageSpeedMult(e: Enemy): number {
+    return 1 + (e.bossEnrageStacks ?? 0) * BOSS_ENCOUNTER.enrageSpeedPerStack;
+  }
+
+  /**
+   * One substep of a boss: clock, phase crossings, then the active pattern.
+   *
+   * The crossing loop is the part that has to be right. `bossPhase` only ever
+   * *increases* and the target phase is recomputed from HP every substep, so:
+   * crossing 66% in one substep and sitting just above it in the next (a
+   * bulwark heal, a vitality aura) cannot re-fire the transition, and a hit big
+   * enough to skip a whole phase still runs both crossings in order rather than
+   * silently swallowing one.
+   */
+  private tickBoss(e: Enemy, dt: number): EnemyStance {
+    e.bossElapsed = (e.bossElapsed ?? 0) + dt;
+    const stacks = bossEnrageStacksFor(e.bossElapsed);
+    if (stacks !== (e.bossEnrageStacks ?? 0)) {
+      e.bossEnrageStacks = stacks;
+      this.bus.emit('boss_enrage_stack', { enemy: e, stacks, x: e.x, y: e.y });
+    }
+
+    const target = bossPhaseForHpFraction(e.maxHp > 0 ? e.hp / e.maxHp : 1);
+    while ((e.bossPhase ?? 1) < target) {
+      e.bossPhase = (e.bossPhase ?? 1) + 1;
+      this.enterBossPhase(e);
+    }
+
+    // The flash: untargetable via `isTargetable`, and doing nothing itself.
+    if ((e.bossInvulnerable ?? 0) > 0) {
+      e.bossInvulnerable = Math.max(0, (e.bossInvulnerable ?? 0) - dt);
+      return 'hold';
+    }
+
+    return this.tickBossPattern(e, dt);
+  }
+
+  /** Switch pattern, flash invulnerable, and tell everyone about it. */
+  private enterBossPhase(e: Enemy): void {
+    const phase = e.bossPhase ?? 1;
+    const pattern = bossPatternForPhase(bossTierForWave(e.spawnWave ?? this.currentWave), phase);
+    e.bossPattern = pattern;
+    e.bossInvulnerable = BOSS_ENCOUNTER.phaseInvulnerability;
+    this.armBossPattern(e, pattern);
+    this.bus.emit('boss_phase', { enemy: e, phase, pattern, x: e.x, y: e.y });
+  }
+
+  /**
+   * Clear the last phase's timers and start the new pattern's.
+   *
+   * An exhaustive switch with a `never` default (cross-cutting rule 3): a
+   * pattern added to `BossPattern` and never armed here is a compile error.
+   */
+  private armBossPattern(e: Enemy, pattern: BossPattern): void {
+    e.bossShield = 0;
+    e.bossShieldMax = 0;
+    e.bossShieldTimer = 0;
+    e.bossSummonTimer = 0;
+    e.bossSlamTimer = 0;
+    e.bossSlamTelegraph = 0;
+    e.bossSlamMitigated = false;
+    switch (pattern) {
+      case 'bulwark':
+        this.armBulwark(e);
+        return;
+      case 'summon':
+        // The first batch lands on the beat, not on entry — a phase change is
+        // already a lot to read without four adds appearing inside it.
+        e.bossSummonTimer = BOSS_ENCOUNTER.summonInterval;
+        return;
+      case 'slam':
+        // Staggered across the pack: `bossCountForWave` bosses telegraphing in
+        // lockstep is one enormous unanswerable hit rather than a rhythm.
+        e.bossSlamTimer = BOSS_ENCOUNTER.slamInterval * (0.35 + Math.random() * 0.5);
+        return;
+      case 'siphon':
+        // Nothing to arm — it drains continuously for the whole phase.
+        return;
+      default: {
+        const exhaustive: never = pattern;
+        return exhaustive;
+      }
+    }
+  }
+
+  /** Put a fresh bulwark shield up and start its 10 s window. */
+  private armBulwark(e: Enemy): void {
+    const amount = Math.max(1, Math.floor(e.maxHp * BOSS_ENCOUNTER.bulwarkShieldFraction));
+    e.bossShield = amount;
+    e.bossShieldMax = amount;
+    e.bossShieldTimer = BOSS_ENCOUNTER.bulwarkWindow;
+    this.bus.emit('boss_shield_up', { enemy: e, x: e.x, y: e.y, amount });
+  }
+
+  /**
+   * Run the active pattern for one substep and say what the boss does with its
+   * feet. Exhaustive over `BossPattern` with a `never` default.
+   */
+  private tickBossPattern(e: Enemy, dt: number): EnemyStance {
+    const pattern = e.bossPattern;
+    if (pattern === undefined) return 'advance';
+    switch (pattern) {
+      // A DPS check on a ten-second clock. Break it and it is gone for the
+      // phase; miss the window and the boss converts the whole shield into HP
+      // and puts a fresh one up — so failing the check costs the attempt twice.
+      case 'bulwark': {
+        // A zero timer means the shield was already broken this phase. There is
+        // nothing left to count down to.
+        if ((e.bossShieldTimer ?? 0) <= 0) return 'advance';
+        e.bossShieldTimer = (e.bossShieldTimer ?? 0) - dt;
+        if ((e.bossShieldTimer ?? 0) > 0) return 'advance';
+        const healed = Math.min(e.maxHp - e.hp, e.bossShieldMax ?? 0);
+        if (healed > 0) e.hp += healed;
+        this.bus.emit('boss_bulwark_held', {
+          enemy: e,
+          x: e.x,
+          y: e.y,
+          amount: Math.floor(healed),
+        });
+        this.armBulwark(e);
+        return 'advance';
+      }
+
+      // Adds on a fixed beat. `while` rather than `if` so a long substep under
+      // the frame-hitch clamp still owes exactly the right number of batches.
+      case 'summon': {
+        e.bossSummonTimer = (e.bossSummonTimer ?? 0) - dt;
+        while ((e.bossSummonTimer ?? 0) <= 0) {
+          e.bossSummonTimer = (e.bossSummonTimer ?? 0) + BOSS_ENCOUNTER.summonInterval;
+          this.summonAdds(e);
+        }
+        return 'advance';
+      }
+
+      // The first thing in the game the player has to *react* to inside a
+      // window. Slowing or shoving the boss during the telegraph cuts the hit
+      // to a fifth; ignoring it costs eight times a boss melee.
+      case 'slam': {
+        if ((e.bossSlamTelegraph ?? 0) > 0) {
+          if (this.isSlowed(e)) e.bossSlamMitigated = true;
+          const next = (e.bossSlamTelegraph ?? 0) - dt;
+          e.bossSlamTelegraph = Math.max(0, next);
+          if (next > 0) return 'hold';
+          this.landSlam(e);
+          e.bossSlamTimer = Math.max(0, BOSS_ENCOUNTER.slamInterval - BOSS_ENCOUNTER.slamTelegraph);
+          return 'hold';
+        }
+        e.bossSlamTimer = (e.bossSlamTimer ?? 0) - dt;
+        if ((e.bossSlamTimer ?? 0) > 0) return 'advance';
+        e.bossSlamTimer = 0;
+        e.bossSlamTelegraph = BOSS_ENCOUNTER.slamTelegraph;
+        e.bossSlamMitigated = this.isSlowed(e);
+        this.bus.emit('boss_slam_telegraph', {
+          enemy: e,
+          x: e.x,
+          y: e.y,
+          duration: BOSS_ENCOUNTER.slamTelegraph,
+        });
+        return 'hold';
+      }
+
+      // Economy pressure: it takes mana the player was hoarding and turns it
+      // into boss HP, so the answer is to have already spent it. Deliberately
+      // silent per substep — the drain is drawn from state, not from six events
+      // a frame.
+      case 'siphon': {
+        const drained = Math.min(BOSS_ENCOUNTER.siphonManaPerSecond * dt, this.resources.mana);
+        if (drained > 0) {
+          this.resources.spendMana(drained);
+          // Seconds' worth of *full* drain this substep actually got, so an
+          // empty mana pool feeds the boss nothing at all.
+          const fed = drained / BOSS_ENCOUNTER.siphonManaPerSecond;
+          e.hp = Math.min(e.maxHp, e.hp + fed * e.maxHp * BOSS_ENCOUNTER.siphonHealFractionPerSecond);
+        }
+        return 'advance';
+      }
+
+      default: {
+        const exhaustive: never = pattern;
+        return exhaustive;
+      }
+    }
+  }
+
+  /** Deliver a slam through the one mitigation chain every other hit uses. */
+  private landSlam(e: Enemy): void {
+    const mult = this.damageToTowerMult
+      * this.enrageDamageMult
+      * this.blessingDamageMult
+      * this.bossEnrageDamageMult(e);
+    const mitigated = e.bossSlamMitigated === true;
+    let damage = e.damage * BOSS_ENCOUNTER.slamDamageMult * mult;
+    if (mitigated) damage *= BOSS_ENCOUNTER.slamMitigatedFraction;
+    e.bossSlamMitigated = false;
+    this.bus.emit('boss_slam', { enemy: e, x: e.x, y: e.y, damage, mitigated });
+    // Same entry point as a melee hit and a siege shell: dodge, research DR,
+    // mana shield, wall, shield charges, armour, defense — in that order, once.
+    this.bus.emit('tower_damaged', damage);
+  }
+
+  /**
+   * Spawn one boss's share of a summon batch around it.
+   *
+   * The adds are drawn from the wave's own spawn pool at the wave's own HP
+   * curve, so a summon phase is *more of this wave*, not a second difficulty
+   * dial. They are extra to `enemiesToSpawn`, so the wave cannot end until they
+   * are dead — which is the point of the pattern.
+   */
+  private summonAdds(boss: Enemy): void {
+    if (this.aliveCount() >= BOSS_ENCOUNTER.summonMaxAlive) return;
+    const wave = boss.spawnWave ?? this.currentWave;
+    const pool = spawnPoolForWave(wave).filter(p => p.type !== 'boss');
+    if (pool.length === 0) return;
+    let total = 0;
+    for (const p of pool) total += p.weight;
+    if (total <= 0) return;
+
+    const count = bossSummonCountForWave(wave);
+    const bossRadius = ENEMY_DEFS.boss.radius;
+    let spawned = 0;
+    for (let i = 0; i < count; i++) {
+      if (this.aliveCount() >= BOSS_ENCOUNTER.summonMaxAlive) break;
+      let r = Math.random() * total;
+      let type = pool[0].type;
+      for (const p of pool) {
+        r -= p.weight;
+        if (r <= 0) {
+          type = p.type;
+          break;
+        }
+      }
+      const angle = Math.random() * Math.PI * 2;
+      const dist = bossRadius + 24 + Math.random() * 26;
+      this.spawn(type, wave, boss.x + Math.cos(angle) * dist, boss.y + Math.sin(angle) * dist);
+      spawned += 1;
+    }
+    if (spawned > 0) {
+      this.bus.emit('boss_summon', { enemy: boss, x: boss.x, y: boss.y, count: spawned });
+    }
+  }
+
+  /** Bosses still standing. `Game` resolves the encounter when this hits zero. */
+  bossAliveCount(): number {
+    let c = 0;
+    for (const e of this.enemies) if (e.alive && e.type === 'boss') c += 1;
+    return c;
+  }
+
+  /**
+   * The boss the bar should track.
+   *
+   * A boss wave spawns `2 + tier` of them, so the bar has to pick one, and the
+   * rule is "whichever one is asking the player for something right now":
+   *
+   * 1. A boss mid-slam-telegraph, soonest to land first. This is the only thing
+   *    in the encounter with a deadline, and it was the whole point of §3.5 —
+   *    an eight-boss pack where the countdown belongs to a boss the bar is not
+   *    watching is a telegraph the player never sees.
+   * 2. Otherwise the one closest to dying: the next to phase, and in practice
+   *    the most stable choice, since a focused target stays lowest until it
+   *    dies.
+   */
+  leadBoss(): Enemy | null {
+    let slamming: Enemy | null = null;
+    let slamRemaining = Infinity;
+    let lowest: Enemy | null = null;
+    let lowestRatio = Infinity;
+    for (const e of this.enemies) {
+      if (!e.alive || e.type !== 'boss') continue;
+      const telegraph = e.bossSlamTelegraph ?? 0;
+      if (telegraph > 0 && telegraph < slamRemaining) {
+        slamRemaining = telegraph;
+        slamming = e;
+      }
+      const ratio = e.maxHp > 0 ? e.hp / e.maxHp : 1;
+      if (ratio < lowestRatio || (ratio === lowestRatio && lowest !== null && e.id < lowest.id)) {
+        lowestRatio = ratio;
+        lowest = e;
+      }
+    }
+    return slamming ?? lowest;
   }
 
   /** Contact radius, wall band included unless the type walks through it. */

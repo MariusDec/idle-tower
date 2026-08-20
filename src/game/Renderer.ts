@@ -1,6 +1,6 @@
 import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType } from '../types';
 import { TOWER_VISUAL } from '../data/tower';
-import { ENEMY_BEHAVIOR, ENEMY_DEFS } from '../data/enemies';
+import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS } from '../data/enemies';
 import type { EnemyDef, EnemyShape } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
 import { formatInt } from '../utils/bigNumber';
@@ -61,6 +61,15 @@ export class Renderer {
   private readonly auraSprites = new Map<string, HTMLCanvasElement>();
   private readonly crownSprites = new Map<string, HTMLCanvasElement>();
   private magicProjectileSprite: HTMLCanvasElement | null = null;
+  /**
+   * Tower position from the frame currently being drawn.
+   *
+   * Cached at the top of `draw` so the boss siphon beam has somewhere to point.
+   * Read-only presentation state — the enemy loop must not reach back into the
+   * simulation for it.
+   */
+  private towerX = 0;
+  private towerY = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -73,6 +82,8 @@ export class Renderer {
   draw(snapshot: RenderSnapshot, options?: { screenFlash?: number; towerFlash?: number; wallFlash?: number; shieldFlash?: number; chainPaths?: { points: { x: number; y: number }[]; age: number; life: number }[] }): void {
     this.time += 1 / 60;
     const ctx = this.ctx;
+    this.towerX = snapshot.tower.x;
+    this.towerY = snapshot.tower.y;
     ctx.drawImage(this.getBackground(), 0, 0);
     this.drawTowerBase(ctx, snapshot);
     this.drawWall(ctx, snapshot);
@@ -748,6 +759,7 @@ export class Renderer {
     if (enemy.type === 'siege' && enemy.siegeHalted) this.drawSiegeStance(ctx, enemy, r);
     if (enemy.type === 'thief' && (enemy.stolenGold ?? 0) > 0) this.drawThiefLoot(ctx, enemy, r);
     if (enemy.type === 'burrower') this.drawBurrowerState(ctx, enemy, r);
+    if (enemy.type === 'boss') this.drawBossState(ctx, enemy, r);
 
     // Retribution buff indicator (pulsing purple border)
     if (enemy.retributionTimer && enemy.retributionTimer > 0) {
@@ -927,6 +939,88 @@ export class Renderer {
       ctx.stroke();
     }
     ctx.restore();
+  }
+
+  /**
+   * Boss encounter reads (gameplay plan §3.5).
+   *
+   * The bar carries the numbers; this carries the *where*. A slam telegraph in
+   * particular has to be on the field — the answer to it is a cooldown aimed at
+   * the boss, and a countdown at the top of the screen does not tell the player
+   * which of six bosses to aim it at.
+   *
+   * Everything here is stroked arcs and lines: no gradients, no allocation.
+   */
+  private drawBossState(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
+    // Phase flash: a white shell for the moment it cannot be shot.
+    const invuln = enemy.bossInvulnerable ?? 0;
+    if (invuln > 0) {
+      const t = invuln / BOSS_ENCOUNTER.phaseInvulnerability;
+      ctx.save();
+      ctx.strokeStyle = `rgba(255, 240, 190, ${0.35 + t * 0.5})`;
+      ctx.lineWidth = 3 + t * 3;
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y, r + 10 + (1 - t) * 26, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Bulwark: a ring whose sweep is what is left of the shield.
+    const shieldMax = enemy.bossShieldMax ?? 0;
+    const shield = enemy.bossShield ?? 0;
+    if (shieldMax > 0 && shield > 0) {
+      const ratio = Math.max(0, Math.min(1, shield / shieldMax));
+      ctx.save();
+      ctx.strokeStyle = 'rgba(120, 210, 255, 0.85)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y, r + 7, -Math.PI / 2, -Math.PI / 2 + ratio * Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Slam: a ground ring that closes in as the telegraph runs out, so the
+    // "how long have I got" read is spatial and does not need a glance away.
+    const telegraph = enemy.bossSlamTelegraph ?? 0;
+    if (telegraph > 0) {
+      const progress = 1 - telegraph / BOSS_ENCOUNTER.slamTelegraph;
+      const mitigated = enemy.bossSlamMitigated === true;
+      const outer = r + 20 + (1 - progress) * 90;
+      ctx.save();
+      ctx.strokeStyle = mitigated
+        ? `rgba(140, 220, 255, ${0.5 + progress * 0.4})`
+        : `rgba(255, 110, 50, ${0.45 + progress * 0.5})`;
+      ctx.lineWidth = 3 + progress * 4;
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y, outer, 0, Math.PI * 2);
+      ctx.stroke();
+      // A filling inner disc outline, so the last half-second is unmistakable.
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 8]);
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y, r + 20 + progress * 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    // Siphon: a live beam to the tower. Drawn from state rather than from an
+    // event, because the drain is continuous and per-substep events would be
+    // six particle bursts a frame for one effect.
+    if (enemy.bossPattern === 'siphon' && invuln <= 0) {
+      const pulse = 0.35 + Math.sin(this.time * 9 + enemy.id) * 0.2;
+      ctx.save();
+      ctx.strokeStyle = `rgba(150, 110, 255, ${pulse})`;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([10, 8]);
+      ctx.lineDashOffset = -this.time * 90;
+      ctx.beginPath();
+      ctx.moveTo(this.towerX, this.towerY);
+      ctx.lineTo(enemy.x, enemy.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
   }
 
   /** Thief: a coin it is visibly carrying, plus an arrow along its escape route. */

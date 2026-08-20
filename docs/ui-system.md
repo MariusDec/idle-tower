@@ -60,12 +60,36 @@ Top bar displays:
 - FPS counter
 - Speed controls (-/+)
 
+## Canvas overlays
+
+`#overlay-root` sits over the canvas and is `pointer-events: none` by default;
+each overlay opts back in. Two live there:
+
+| Overlay | File | Shown when |
+|---|---|---|
+| Run-stalled banner | `RunStalledBanner.ts` | A wave has overrun and started enraging |
+| **Boss bar** | `BossBar.ts` | Any boss is alive |
+
+The boss bar (gameplay plan §3.5) is the readout for the whole boss encounter:
+tier name, HP with phase pips at 66/33%, the bulwark shield overlay, the active
+pattern and its answer, the slam telegraph countdown, and the enrage or
+swift-kill clock. `Game.frameUpdate` resolves it from the lead boss and pushes
+it via `UIManager.setBossBarData`; passing `null` hides it. See
+[boss-encounters.md](boss-encounters.md#the-boss-bar).
+
 ## Frame Update (`UIManager.update`)
 
 Called every frame from `Game.loop`:
-1. Updates HUD with fresh state
-2. Updates active panel if mounted
-3. Computes DPS: `expectedHit * fireRate`, averages over 30 samples, updates HUD every 0.5s
+1. Updates the ability bar and the **boss bar** — both *above* the throttle
+   below, because both animate continuously and a 2 s slam countdown read at
+   10 fps visibly stutters
+2. Updates HUD with fresh state
+3. Updates active panel if mounted
+4. Computes DPS: `expectedHit * fireRate`, averages over 30 samples, updates HUD every 0.5s
+
+Everything after step 1 is throttled to every 6th frame. The caching helpers in
+`utils/dom.ts` (`setText` / `setStyle` / `toggleClass`) make an unchanged frame
+cost nothing, which is what lets the un-throttled overlays run every frame.
 
 ## CSS
 

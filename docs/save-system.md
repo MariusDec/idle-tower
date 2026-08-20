@@ -10,7 +10,7 @@ Persists game state to `localStorage` under key `the-tower-save`.
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 10
+  version: number;       // current = 11
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -21,6 +21,7 @@ interface PersistentState {
   wave: WaveState;
   stats: GameStats;
   blessings: BlessingRunState;                // v10+
+  bossRun: BossRunState;                      // v11+
 }
 ```
 
@@ -36,11 +37,20 @@ interface PersistentState {
 | v7 → v8 | equipment slot/def renames |
 | v8 → v9 | per-ability auto-cast, auto-buy strategy/reserve, multi-wave mutator fields |
 | v9 → v10 | `blessings` — the run's draft (`docs/blessing-system.md`) |
+| v10 → v11 | `bossRun` — boss encounter rewards banked this run (`docs/boss-encounters.md`) |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
 pre-v10 save loads as a run that has simply not drafted yet. The *offer* is
 deliberately not persisted — see `docs/blessing-system.md`.
+
+`migrateV10toV11` seeds an empty `bossRun`. Only the *earned* half of a boss
+encounter is stored — the flawless AP bonus and the two counters. Mid-fight
+state (phase, pattern timers, the bulwark shield, the encounter clock) is
+deliberately absent, because live enemies have never been part of the save
+format: a load starts with an empty roster and `WaveManager` clears the wave
+rather than resuming half a boss. See
+[boss-encounters.md](boss-encounters.md#persistence).
 
 ## Auto-Save
 

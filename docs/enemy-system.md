@@ -21,7 +21,7 @@ The design rule the roster is built on:
 | fast | 4 | 120 | 0 | 0 | 1 | 2 | diamond | 3 | Clear speed — it arrives three at a time |
 | tank | 20 | 30 | 3 | 0 | 1 | 3 | circle | 5 | Single-target damage; pierce stops dead on it |
 | flying | 7 | 90 | 0 | 0 | 2 | 3 | winged | 8 | Raw DPS — mines and the wall do nothing |
-| boss | 120 | 40 | 6 | 0.15 | 5 | 10 | circle | 10 | Sustained damage (Part 3 owns the encounter) |
+| boss | 120 | 40 | 6 | 0.15 | 5 | 10 | circle | 10 | Sustained damage — three phases, one pattern each ([boss-encounters.md](boss-encounters.md)) |
 | splitter | 16 | 55 | 0 | 0 | 1 | 3 | diamond | 12 | AoE that lands *after* the split, not during it |
 | healer | 12 | 50 | 0 | 0 | 2 | 4 | circle+glyph | 15 | Burst and target priority |
 | shielded | 10 | 40 | 0 | 0.3 | 1 | 5 | circle | 20 | Sustained fire — pot-shots let it rebuild |
@@ -33,7 +33,9 @@ The design rule the roster is built on:
 
 Per-wave scaling is unchanged (`src/data/formulas.ts`):
 
-- **HP:** `baseHP * 1.12^(wave-1)` (boss: `bossHPForWave`)
+- **HP:** `baseHP * 1.12^(wave-1)` (boss: `bossMaxHpForWave`, which is
+  `bossHPForWave` divided by what the boss's phase machine holds outside its bar
+  — see [boss-encounters.md](boss-encounters.md#the-durability-budget))
 - **Speed:** `baseSpeed * min(3, 1 + 0.03*(wave-1))`
 - **Gold:** `baseGold * 1.1^(wave-1)`
 - **Damage:** `baseDamage + floor((wave-1)/5)`
@@ -117,7 +119,7 @@ have placed close in.
 | `splitter` | Children get **2 s** of spawn protection and scatter outward before turning in |
 | `shielded` | Rebuilds one charge every **6 s**, but only after **3 s** with no damage taken |
 | `normal` | Unchanged — it is the baseline and should stay legible |
-| `boss` | Enrages at 50% HP; the phase machine is Part 3 |
+| `boss` | Enrages at 50% HP, **and** runs the three-phase encounter — see [boss-encounters.md](boss-encounters.md) |
 
 ## Targetability
 
@@ -129,9 +131,14 @@ tower shoot this?" for every target-selection site in the game:
 - every picker in `AbilityManager` — highest-HP (Meteor), chain-bounce
   (Chain Lightning), Execute, Multishot, and the field-wide AoE
 
-It is false for a **burrowed burrower** and for a **splitter child inside its
-spawn protection**. `EnemyManager.damage` also returns `false` for both, so the
+It is false for a **burrowed burrower**, for a **splitter child inside its spawn
+protection**, and for a **boss mid-phase-transition** (§3.1's invulnerable
+flash). `EnemyManager.damage` also returns `false` for all three, so the
 invulnerability holds even if some future call site forgets to ask.
+
+> The boss flash goes through this predicate rather than a flag of its own on
+> purpose: a second invulnerability mechanism is a second thing all eight
+> target-selection sites have to remember.
 
 > Adding a new target picker without consulting `isTargetable` is how burrowers
 > become shootable underground. There is one predicate on purpose.
@@ -167,12 +174,15 @@ per pack member, so packing `fast` does not change the elite rate.
 
 **Damage from tower** — `EnemyManager.damage(enemy, amount, isCrit)`, in order:
 
-1. Burrowed or spawn-protected → return `false` silently (it is not there to hit)
+1. Burrowed, spawn-protected or mid-boss-phase-flash → return `false` silently
+   (it is not there to hit)
 2. Reset `undamagedFor` (this is what gates shielded regeneration)
 3. `shielded` charge absorbs the whole hit, if any charge remains
-4. `absorbShield` (warden ward) soaks up to `amount`, then bleeds through
-5. HP, thorns reflection, boss enrage check
-6. On death: retribution aura, thief recovery ×2, warden ward collapse, gold, RP
+4. `bossShield` (bulwark) soaks up to `amount`, then bleeds through; emptying it
+   emits `boss_shield_broken` and stops the heal clock for the phase
+5. `absorbShield` (warden ward) soaks up to `amount`, then bleeds through
+6. HP, thorns reflection, boss 50%-HP enrage check
+7. On death: retribution aura, thief recovery ×2, warden ward collapse, gold, RP
 
 **Gold** (`computeGold`): `base × multiplier`, then kill-streak, mana-full,
 elite, greed, gold-luck, double-gold, flat on-kill and crit bonuses.
@@ -221,4 +231,5 @@ underneath the loop still walking it.
 | `enemy_blinked` | `{x, y, toX, toY}` | Blink ring |
 | `burrower_surfaced` | `{x, y}` | Surface burst + telegraph |
 | `gold_stolen` / `gold_recovered` / `gold_escaped` | `{x, y, amount}` | Toasts — a theft the player does not notice is a bug report, not a mechanic |
-| `tower_damaged` | `number` | The single mitigation chain, melee and shells alike |
+| `tower_damaged` | `number` | The single mitigation chain — melee, shells and boss slams alike |
+| `boss_*` | see [boss-encounters.md](boss-encounters.md#events) | Phases, patterns, telegraphs, enrage and rewards |

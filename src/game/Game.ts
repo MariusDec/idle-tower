@@ -1,4 +1,4 @@
-import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, EquipmentStatType, Equipment, AutoBuyStrategy, GoldSourceEntry } from '../types';
+import type { AbilityId, BossPattern, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, EquipmentStatType, Equipment, AutoBuyStrategy, GoldSourceEntry } from '../types';
 import { GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
 
 /**
@@ -13,7 +13,16 @@ import { GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } fr
 const FIXED_STEP = 1 / 60;
 const MAX_SUBSTEPS = 6;
 import { TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
-import { ENEMY_DEFS, ignoresGroundEffects, isTargetable } from '../data/enemies';
+import {
+  BOSS_ENCOUNTER,
+  BOSS_PATTERN_HINTS,
+  BOSS_PATTERN_NAMES,
+  ENEMY_DEFS,
+  bossEncounterOutcome,
+  bossNameForWave,
+  ignoresGroundEffects,
+  isTargetable,
+} from '../data/enemies';
 import { ABILITIES } from '../data/abilities';
 import { RESEARCH_BY_ID } from '../data/research';
 import { nextId } from '../utils/math';
@@ -34,6 +43,7 @@ import { AutomationManager } from '../systems/AutomationManager';
 import { SaveManager, type PersistentState, type OfflineResult } from '../systems/SaveManager';
 import { AchievementManager } from '../systems/AchievementManager';
 import { UIManager } from '../ui/UIManager';
+import type { BossBarData } from '../ui/BossBar';
 import { isBossWave, goldDropForWave, spawnCountForWave } from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
 import { DEFAULT_AUTO_ASCEND_WAVE } from '../data/prestige';
@@ -195,6 +205,7 @@ function makeInitialState(): GameState {
       pendingOfferForWave: null,
       wavesClearedThisRun: 0,
     },
+    bossRun: { apBonusPct: 0, swiftKills: 0, flawlessKills: 0 },
   };
 }
 
@@ -346,6 +357,26 @@ export class Game {
    */
   private splitOnKillActive = false;
   private waveGoldBonus = 0;
+
+  /**
+   * The boss encounter in progress (gameplay plan §3.4), or null.
+   *
+   * The *encounter* is the unit the rewards are measured against, not the
+   * individual boss: a boss wave spawns `bossCountForWave(wave)` = `2 + tier`
+   * of them, and paying a reroll token per boss would turn "flawless" into
+   * "flawless, times six". The clock starts when the first one lands and the
+   * rewards resolve when the last one dies.
+   */
+  private bossEncounter: {
+    /** Simulation seconds since the first boss of this wave spawned. */
+    elapsed: number;
+    /** False the moment the tower actually loses HP. */
+    flawless: boolean;
+    /** Summed `goldValue` of the bosses killed, for the swift-kill bonus. */
+    goldValue: number;
+    /** Wave the encounter belongs to, so a rewind cannot resolve a stale one. */
+    wave: number;
+  } | null = null;
 
   constructor(canvas: HTMLCanvasElement, deps: GameDeps) {
     this.canvas = canvas;
@@ -517,6 +548,7 @@ export class Game {
       }
       if (e.type === 'boss') {
         this.state.stats.bossesKilled += 1;
+        if (this.bossEncounter) this.bossEncounter.goldValue += e.goldValue ?? def.baseGold;
         // P5: Multi-stage death shockwave — 3 cascading rings that each damage enemies once.
         // Stage 1 (immediate): tight inner ring — strongest damage
         this.effects.emitShockwaveRing(e.x, e.y, 150, 'rgba(255, 64, 64, 0.9)', 8, 0, 120, 'magic');
@@ -552,6 +584,10 @@ export class Game {
         } else {
           this.bus.emit('toast', { kind: 'milestone', text: `Boss defeated! +${formatInt((e.goldValue ?? def.baseGold) * 2)}g`, life: 6 });
         }
+        // `enemy_killed` fires from inside `damage`, before the dead are
+        // filtered out — but `alive` is already false, so this counts what is
+        // genuinely still standing.
+        if (this.enemyMgr.bossAliveCount() === 0) this.resolveBossEncounter();
       }
 
       // Splitter: on death spawn 2 child splitters (unless this is a child itself)
@@ -665,6 +701,76 @@ export class Game {
       });
     });
 
+    // ── boss encounters (gameplay plan §3) ──
+    //
+    // Same split as the behavioural roster above: `EnemyManager` owns the state
+    // machine inside the fixed substep and emits; everything here is the part
+    // that has to read on screen. A phase the player cannot see change is a
+    // longer bar with extra steps.
+    this.bus.on('boss_spawned', (payload: unknown) => {
+      const p = payload as { wave: number };
+      if (this.bossEncounter && this.bossEncounter.wave === p.wave) return;
+      this.bossEncounter = { elapsed: 0, flawless: true, goldValue: 0, wave: p.wave };
+    });
+    this.bus.on('boss_phase', (payload: unknown) => {
+      const p = payload as { x: number; y: number; phase: number; pattern: BossPattern };
+      // The plan asks for the entry beat again on every crossing: the slow-mo
+      // is what makes a phase change land as an event rather than a stat blip.
+      this.triggerBossEntrySlowMo();
+      this.screenFlash = 0.12;
+      this.effects.emitBossEntryPulse(p.x, p.y);
+      this.effects.emitShockwaveRing(p.x, p.y, 180, 'rgba(255, 120, 60, 0.8)', 5);
+      this.bus.emit('toast', {
+        kind: 'warning',
+        text: `Phase ${p.phase} — ${BOSS_PATTERN_NAMES[p.pattern]}. ${BOSS_PATTERN_HINTS[p.pattern]}`,
+        life: 4.5,
+      });
+    });
+    this.bus.on('boss_shield_up', (payload: unknown) => {
+      const p = payload as { x: number; y: number };
+      this.effects.emitShockwaveRing(p.x, p.y, 110, 'rgba(120, 200, 255, 0.7)', 3);
+    });
+    this.bus.on('boss_shield_broken', (payload: unknown) => {
+      const p = payload as { x: number; y: number };
+      this.effects.emitEnemyShieldBreak(p.x, p.y);
+      this.effects.emitShockwaveRing(p.x, p.y, 150, 'rgba(160, 230, 255, 0.85)', 4);
+    });
+    this.bus.on('boss_bulwark_held', (payload: unknown) => {
+      const p = payload as { x: number; y: number; amount: number };
+      if (p.amount > 0) this.effects.emitHealNumber(p.x, p.y - 40, p.amount);
+      this.effects.emitShockwaveRing(p.x, p.y, 190, 'rgba(90, 220, 130, 0.7)', 4);
+      this.bus.emit('toast', {
+        kind: 'warning',
+        text: 'Bulwark held — the boss healed the shield back.',
+        life: 3.5,
+      });
+    });
+    this.bus.on('boss_summon', (payload: unknown) => {
+      const p = payload as { x: number; y: number };
+      this.effects.emitShockwaveRing(p.x, p.y, 130, 'rgba(200, 120, 255, 0.7)', 3);
+    });
+    this.bus.on('boss_slam', (payload: unknown) => {
+      const p = payload as { x: number; y: number; mitigated: boolean };
+      const ts = this.tower.snapshot;
+      if (p.mitigated) {
+        this.effects.emitShockwaveRing(p.x, p.y, 120, 'rgba(120, 200, 255, 0.6)', 4);
+        return;
+      }
+      this.effects.emitShockwaveRing(p.x, p.y, 260, 'rgba(255, 90, 40, 0.9)', 7);
+      this.effects.emitAttackSlash(p.x, p.y, ts.x, ts.y, '#ff5a28');
+      this.triggerCanvasShake();
+      this.screenFlash = 0.18;
+    });
+    this.bus.on('boss_enrage_stack', (payload: unknown) => {
+      const p = payload as { stacks: number };
+      if (p.stacks !== 1) return;
+      this.bus.emit('toast', {
+        kind: 'warning',
+        text: 'The boss is enraging — it grows stronger every 10s it survives.',
+        life: 5,
+      });
+    });
+
     this.bus.on('thorns_reflected', (amount: unknown) => {
       const dmg = amount as number;
       if (dmg > 0) {
@@ -739,6 +845,9 @@ export class Game {
         }
       }
       ts.hp = Math.max(0, ts.hp - dmg);
+      // Plan §3.4: "flawless" means the tower lost HP, not that it was hit —
+      // a shot the wall or a shield charge ate cost the player nothing.
+      if (this.bossEncounter) this.bossEncounter.flawless = false;
       this.effects.emitDamageNumber(
         ts.x,
         ts.y - TOWER_VISUAL.bodyRadius - 24,
@@ -806,6 +915,10 @@ export class Game {
       this.enemyMgr.setKillStreakGoldBonus(0);
 
       const w = wave as number;
+      // An encounter that never resolved — the run rewound a wave, or the
+      // player stepped the wave manually — is dropped rather than left ticking
+      // against a boss that is no longer on the field.
+      if (this.bossEncounter && this.bossEncounter.wave !== w) this.bossEncounter = null;
       // Boss entry effects on boss waves
       if (isBossWave(w)) {
         this.triggerBossEntrySlowMo();
@@ -1175,6 +1288,95 @@ export class Game {
     setTimeout(() => {
       if (this.canvasWrap) this.canvasWrap.classList.remove('is-shaking');
     }, 420);
+  }
+
+  /**
+   * Pay out the encounter that just ended (gameplay plan §3.4).
+   *
+   * Two rewards, each answering a different question the player can only ask
+   * once they can *see* the fight: "can I kill it fast?" and "can I kill it
+   * clean?". Both are deliberately small and immediate — a reroll token and a
+   * gold/gear bump — rather than a permanent unlock, because the point is to
+   * give a boss wave a score, not a gate.
+   */
+  private resolveBossEncounter(): void {
+    const encounter = this.bossEncounter;
+    this.bossEncounter = null;
+    if (!encounter) return;
+
+    const { swift, flawless } = bossEncounterOutcome(encounter.elapsed, !encounter.flawless);
+    if (swift) {
+      this.state.bossRun.swiftKills += 1;
+      const bonus = Math.floor(encounter.goldValue * BOSS_ENCOUNTER.swiftKillGoldBonus);
+      if (bonus > 0) this.resourceMgr.addGold(bonus);
+      // The roll is the normal one; the reward is that it cannot miss and it
+      // lands a tier better than it rolled.
+      const drop = this.equipmentMgr.rollDrop(encounter.wave, 'boss', {
+        guaranteed: true,
+        rarityBoost: BOSS_ENCOUNTER.swiftKillRarityBoost,
+      });
+      const ts = this.tower.snapshot;
+      this.effects.emitShockwaveRing(ts.x, ts.y, 320, 'rgba(255, 215, 0, 0.75)', 6);
+      this.bus.emit('toast', {
+        kind: 'milestone',
+        text: drop
+          ? `Swift kill! +${formatInt(bonus)}g and ${drop.rarity} gear.`
+          : `Swift kill! +${formatInt(bonus)}g.`,
+        life: 5,
+      });
+    }
+
+    if (flawless) {
+      this.state.bossRun.flawlessKills += 1;
+      this.state.bossRun.apBonusPct += BOSS_ENCOUNTER.flawlessApBonus;
+      this.prestigeMgr.setRunApBonus(this.state.bossRun.apBonusPct);
+      // First consumer of the token budget Part 1 built and nothing spent.
+      this.blessingMgr.grantRerollToken(BOSS_ENCOUNTER.flawlessRerollTokens);
+      this.state.blessings = this.blessingMgr.snapshot();
+      const ts = this.tower.snapshot;
+      this.effects.emitShockwaveRing(ts.x, ts.y, 280, 'rgba(120, 220, 255, 0.75)', 6);
+      this.bus.emit('toast', {
+        kind: 'milestone',
+        text: `Flawless! +1 blessing reroll · +${Math.round(this.state.bossRun.apBonusPct * 100)}% AP this run.`,
+        life: 6,
+      });
+    }
+  }
+
+  /**
+   * Resolve the boss bar's readout from the lead boss (plan §3.5).
+   *
+   * Presentation, so it runs once per frame in `frameUpdate` rather than in the
+   * substep loop. Returns null the instant no boss is alive, which is what
+   * hides the bar.
+   */
+  private bossBarSnapshot(): BossBarData | null {
+    const boss = this.enemyMgr.leadBoss();
+    if (!boss) return null;
+    const elapsed = boss.bossElapsed ?? 0;
+    const stacks = boss.bossEnrageStacks ?? 0;
+    const nextStackAt = stacks === 0
+      ? BOSS_ENCOUNTER.enrageDelay
+      : BOSS_ENCOUNTER.enrageDelay + stacks * BOSS_ENCOUNTER.enrageInterval;
+    return {
+      name: bossNameForWave(boss.spawnWave ?? this.waveMgr.currentWave),
+      hp: boss.hp,
+      maxHp: boss.maxHp,
+      shield: boss.bossShield ?? 0,
+      shieldMax: boss.bossShieldMax ?? 0,
+      shieldTimer: Math.max(0, boss.bossShieldTimer ?? 0),
+      phase: boss.bossPhase ?? 1,
+      pattern: boss.bossPattern ?? null,
+      slamRemaining: boss.bossSlamTelegraph ?? 0,
+      slamTotal: BOSS_ENCOUNTER.slamTelegraph,
+      slamMitigated: boss.bossSlamMitigated === true,
+      invulnerable: (boss.bossInvulnerable ?? 0) > 0,
+      enrageStacks: stacks,
+      enrageIn: nextStackAt - elapsed,
+      elapsed: this.bossEncounter?.elapsed ?? elapsed,
+      count: this.enemyMgr.bossAliveCount(),
+      swiftWindow: (this.bossEncounter?.elapsed ?? elapsed) < BOSS_ENCOUNTER.swiftKillSeconds,
+    };
   }
 
   private triggerBossEntrySlowMo(): void {
@@ -2229,6 +2431,12 @@ export class Game {
     this.waveMgr.resumeIntermission();
     this.blessingMgr.reset();
     this.state.blessings = this.blessingMgr.snapshot();
+    // Boss rewards are run-scoped for the same reason (plan §3.4): the flawless
+    // AP bonus is banked against *this* run's ascension, and the ascension that
+    // pays it out is the one that ends the run.
+    this.bossEncounter = null;
+    this.state.bossRun = { apBonusPct: 0, swiftKills: 0, flawlessKills: 0 };
+    this.prestigeMgr.setRunApBonus(0);
     this.buffs.reset();
     const t = this.tower.snapshot;
     t.cooldown = 0;
@@ -2707,6 +2915,17 @@ export class Game {
     this.blessingMgr.restore(persisted.blessings ?? null);
     this.state.blessings = this.blessingMgr.snapshot();
 
+    // v11+: boss rewards banked this run. The encounter itself is not
+    // persisted — see `BossRunState` — so a load that lands mid-boss-wave
+    // clears the wave rather than resuming a boss with no phase state.
+    this.state.bossRun = {
+      apBonusPct: persisted.bossRun?.apBonusPct ?? 0,
+      swiftKills: persisted.bossRun?.swiftKills ?? 0,
+      flawlessKills: persisted.bossRun?.flawlessKills ?? 0,
+    };
+    this.bossEncounter = null;
+    this.prestigeMgr.setRunApBonus(this.state.bossRun.apBonusPct);
+
     // Clear and repopulate equipped (manager holds reference)
     const eqMap = this.state.equipped;
     for (const k of Object.keys(eqMap)) delete (eqMap as Record<string, Equipment>)[k];
@@ -2803,6 +3022,10 @@ export class Game {
     this.refreshBuffedStats();
 
     this.waveMgr.tick(dt);
+    // The boss encounter clock is a *simulation* clock (plan §3.7): a swift
+    // kill has to mean 30 s of game time, so that 6.5x speed makes the reward
+    // easier to hit in wall-clock terms and no easier in game terms.
+    if (this.bossEncounter) this.bossEncounter.elapsed += dt;
     this.resourceMgr.tick(dt, this.waveMgr.currentWave);
     this.abilityMgr.tick(dt);
 
@@ -3040,6 +3263,7 @@ export class Game {
    * @param realDt  wall-clock delta
    */
   private frameUpdate(dt: number, realDt: number): void {
+    this.ui.setBossBarData(this.bossBarSnapshot());
     this.effects.tick(dt);
     this.effects.tickChainLightning(dt);
     this.notifications.tick(dt);

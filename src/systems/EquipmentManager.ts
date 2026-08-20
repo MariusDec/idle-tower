@@ -1,5 +1,5 @@
 import type { EquipmentSlot, Equipment, Rarity, EquipmentStatType } from '../types';
-import { rollDrop as dataRollDrop } from '../data/equipment';
+import { rollDrop as dataRollDrop, type DropOptions } from '../data/equipment';
 import { EventBus } from '../game/EventBus';
 
 export class EquipmentManager {
@@ -31,8 +31,12 @@ export class EquipmentManager {
     this.findChanceBonus = Math.max(0, bonus);
   }
 
-  rollDrop(wave: number, source: 'boss' | 'elite' | 'milestone'): Equipment | null {
-    const eq = dataRollDrop(wave, source, this.findChanceBonus);
+  rollDrop(
+    wave: number,
+    source: 'boss' | 'elite' | 'milestone',
+    options: DropOptions = {},
+  ): Equipment | null {
+    const eq = dataRollDrop(wave, source, this.findChanceBonus, options);
     if (eq) {
       this.inventory.push(eq);
       this.bus.emit('equipment_dropped', { equipment: eq });

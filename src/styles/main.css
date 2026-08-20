@@ -4777,3 +4777,171 @@ body.eq-dragging img { pointer-events: none; }
   cursor: pointer;
 }
 .settings-checkbox input { accent-color: var(--accent); }
+
+/* ── Boss encounter bar (gameplay plan §3.5) ───────────────────────────────
+ *
+ * Anchored at the top of the canvas, never over it: it is the readout for
+ * everything Part 3 adds, so it has to be legible without covering the fight
+ * it is describing. Hidden entirely whenever no boss is alive.
+ */
+.boss-bar {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translate(-50%, -8px);
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  width: min(620px, calc(100% - 32px));
+  padding: 9px 12px 10px;
+  background: linear-gradient(180deg, rgba(30, 12, 12, 0.94), rgba(18, 10, 12, 0.94));
+  border: 1px solid var(--bad);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 18;
+}
+.boss-bar.is-visible {
+  display: flex;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.boss-bar.is-invulnerable { border-color: #ffe08a; }
+.boss-bar.is-enraged {
+  border-color: #ff6a3d;
+  box-shadow: 0 8px 26px rgba(255, 80, 40, 0.28);
+}
+
+.boss-bar-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.boss-bar-name {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffd7d0;
+}
+.boss-bar-count {
+  display: none;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.boss-bar-count.is-visible { display: inline; }
+.boss-bar-enrage {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.boss-bar-enrage.is-swift { color: var(--accent); }
+.boss-bar-enrage.is-hot { color: #ff7a4d; font-weight: 700; }
+
+.boss-bar-track {
+  position: relative;
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.boss-bar-hp {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: linear-gradient(180deg, #ff5c4a, #a01f1f);
+  transition: width 0.1s linear;
+}
+/* Bulwark shield: drawn from the HP front outwards, so "how much is left"
+ * reads as one continuous length rather than two competing bars. */
+.boss-bar-shield {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: none;
+  background: linear-gradient(180deg, #9fe3ff, #2f7fb8);
+}
+.boss-bar-shield.is-visible { display: block; }
+/* Phase pips sit at 66% and 33% max HP — the crossings, marked in advance. */
+.boss-bar-pip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(255, 255, 255, 0.55);
+}
+.boss-bar-hptext {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.boss-bar-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+.boss-bar-pattern { font-weight: 700; color: var(--accent); flex-shrink: 0; }
+.boss-bar-hint {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.boss-bar-timer {
+  display: none;
+  margin-left: auto;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.boss-bar-timer.is-visible { display: inline; }
+.boss-bar-timer.is-urgent { color: #9fe3ff; font-weight: 700; }
+
+.boss-bar-telegraph {
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+}
+.boss-bar-telegraph.is-visible { display: flex; }
+.boss-bar-telegraph-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #ff8a4d;
+  font-variant-numeric: tabular-nums;
+}
+.boss-bar-telegraph.is-mitigated .boss-bar-telegraph-label { color: #9fe3ff; }
+.boss-bar-telegraph-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.boss-bar-telegraph-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #ffb347, #ff4d1f);
+  transition: width 0.06s linear;
+}
+.boss-bar-telegraph.is-mitigated .boss-bar-telegraph-fill {
+  background: linear-gradient(90deg, #9fe3ff, #2f7fb8);
+}
+
+@media (max-width: 768px) {
+  .boss-bar { top: 6px; padding: 7px 9px 8px; }
+  .boss-bar-hint { display: none; }
+}

@@ -18,11 +18,12 @@ DOM.
 | File | Covers |
 |---|---|
 | `formulas.test.ts` | Snapshots of every scaling curve (enemy HP, gold, upgrade cost, AP, TP), the tower XP table, and per-upgrade value curves |
-| `save.test.ts` | Save round-trip, the v2→v10 migration ladder, corrupt/future-version rejection, and the debounced write cadence |
+| `save.test.ts` | Save round-trip, the v2→v11 migration ladder, corrupt/future-version rejection, and the debounced write cadence |
 | `systems.test.ts` | `SpatialGrid` against a brute-force reference, effect-pool caps and damage-number merging, the upgrade evolution cache against a fresh linear scan |
 | `projectiles.test.ts` | Swept collision at every step size the game can produce, first-hit-along-path ordering, and lifetime culling |
-| `content-coverage.test.ts` | Every declared talent stat, achievement reward type, blessing stat/behavior and **enemy type** has a consumer — an enemy needs a paintable renderer shape, a distinct colour, a milestone on its real unlock wave, a named behaviour branch and a spawn weight — and no table has dangling prerequisites or duplicate ids |
+| `content-coverage.test.ts` | Every declared talent stat, achievement reward type, blessing stat/behavior, **boss pattern** and **enemy type** has a consumer — an enemy needs a paintable renderer shape, a distinct colour, a milestone on its real unlock wave, a named behaviour branch and a spawn weight — and no table has dangling prerequisites or duplicate ids |
 | `enemies.test.ts` | The behavioural roster: thief theft/flee/×2 recovery/escape and the per-wave ceiling, blinker cadence and knockback immunity, warden ward absorb/refresh/collapse, burrower untargetability across `Tower.acquireTarget`, projectiles and the ability pickers, siege standoff and `tower_damaged` routing, tank body-block, healer flee, splitter spawn protection, shielded regeneration, priority targeting, the spawn pool and the thief cap |
+| `boss.test.ts` | Boss encounters: the tier→pattern rotation, phase crossings firing exactly once and staying idempotent when a heal re-crosses a threshold, phase-flash untargetability, bulwark healing on timeout but not after a break, summon batching and the field cap, slam telegraph/mitigation/stickiness, siphon drain and heal, the enrage timer, the swift/flawless reward rules, and the lead-boss pick the bar tracks. Every cadence is asserted at **both** `dt = 1/120` and the coarsest substep 6.5x speed produces |
 | `blessings.test.ts` | The in-run draft: offer rules (no duplicates, no maxed or deferred cards, `requires` and wave gates), reroll order, the 30-pick cap, stat summation across stacks, the behavior cache against a linear scan, snapshot/restore |
 | `stats.test.ts` | Golden stat resolution: a literal `StatContext` in, a pinned damage/fire-rate/gold/mana figure out, plus clamps, breakdown reconstruction, and one case per bug in Part 1 |
 

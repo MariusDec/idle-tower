@@ -15,6 +15,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/enemy-system.md](docs/enemy-system.md) | 13 enemy types and the verb each one demands an answer to, hostile shots, targetability, elites and their 5 auras, scaling, crowd control |
 | [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, intermission, the shared spawn-weight table, fast packs, the thief cap, wave skip, enrage |
 | [docs/wave-modifier-system.md](docs/wave-modifier-system.md) | 9 mutators, offer cadence, 3-wave duration with escalating rewards |
+| [docs/boss-encounters.md](docs/boss-encounters.md) | Boss phases at 66/33%, the four patterns and their answers, the enrage timer, swift/flawless rewards, the boss bar, the durability budget |
 | [docs/blessing-system.md](docs/blessing-system.md) | The in-run roguelite draft: 30-card pool, cadence, rerolls, behaviors, idle safety, balance |
 | [docs/projectile-system.md](docs/projectile-system.md) | Projectile firing, shot variants, swept collision, piercing, lifetime, damage multipliers |
 | [docs/resource-system.md](docs/resource-system.md) | Gold & mana economy, income sources, spending, passive income |
@@ -44,6 +45,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Active abilities | 10 | `src/data/abilities.ts` |
 | Passive abilities | 8 | `src/data/passiveAbilities.ts` |
 | Enemy types | 13 | `src/data/enemies.ts` |
+| Boss patterns | 4 | `src/data/enemies.ts` |
 | Elite auras | 5 | `src/systems/EnemyManager.ts` |
 | Targeting modes | 7 | `src/data/tower.ts` |
 | Talents | 37 | `src/data/talentTree.ts` |
@@ -52,7 +54,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Wave modifiers | 9 | `src/data/waveModifiers.ts` |
 | Blessings | 30 | `src/data/blessings.ts` |
 | Equipment slots / rarities | 8 / 5 | `src/data/equipment.ts` |
-| Save version | 10 | `src/systems/SaveManager.ts` |
+| Save version | 11 | `src/systems/SaveManager.ts` |
 
 ## Commands
 
