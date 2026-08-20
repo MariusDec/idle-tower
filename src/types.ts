@@ -1,13 +1,33 @@
 import type { EvolutionEffectId } from './data/upgrades';
 import { evalFormula } from './data/formulas';
 
-export type EnemyType = 'normal' | 'fast' | 'tank' | 'flying' | 'healer' | 'boss' | 'splitter' | 'shielded';
+/**
+ * Every enemy in the game (gameplay plan §2.1).
+ *
+ * The last five are *behavioural* types: each one has its own branch in
+ * `EnemyManager.tick` and asks a different question of the tower's build, which
+ * is the whole point of them. A type added here with no branch is a stat block
+ * wearing a new colour — see `ENEMY_BEHAVIOR_CONSUMERS` in `data/enemies.ts`,
+ * which is the closed record that keeps that honest.
+ */
+export type EnemyType =
+  | 'normal' | 'fast' | 'tank' | 'flying' | 'healer' | 'boss' | 'splitter' | 'shielded'
+  | 'siege' | 'thief' | 'blinker' | 'warden' | 'burrower';
 
 export type AuraType = 'haste' | 'thorns' | 'greed' | 'vitality' | 'retribution';
 
 export type DamageType = 'physical' | 'magic';
 
-export type TargetingMode = 'nearest' | 'lowest_hp' | 'first' | 'strongest' | 'boss' | 'flying' | 'last';
+/**
+ * Targeting strategies (gameplay plan §2.3).
+ *
+ * `'priority'` is the default: with the behavioural types on the field,
+ * "nearest" actively loses runs, because the enemy that matters — a warden
+ * shielding the line, a thief walking off with the bank — is rarely the closest
+ * one. The old `'first'` mode was a dead alias of `'nearest'` and is gone;
+ * `Game.applyPersistedState` migrates it.
+ */
+export type TargetingMode = 'priority' | 'nearest' | 'lowest_hp' | 'strongest' | 'boss' | 'flying' | 'last';
 
 export type UpgradeCategory = 'tower' | 'defense' | 'economy' | 'utility';
 
@@ -103,6 +123,79 @@ export interface Enemy {
   elite?: boolean;
   aura?: AuraType | null;
   retributionTimer?: number;
+
+  // ── Behavioural types (gameplay plan §2.1/§2.2) ────────────────────────
+  //
+  // All optional and all absent on the types that do not use them, so an
+  // ordinary enemy costs no extra field and the hot loops pay one `undefined`
+  // check rather than carrying dead state.
+
+  /** Wave the enemy spawned on. Drives the thief's per-wave theft ceiling. */
+  spawnWave?: number;
+  /** Seconds since this enemy last took damage. Drives shielded regeneration. */
+  undamagedFor?: number;
+  /** Seconds of remaining untargetable-and-immune spawn protection (splitter children). */
+  spawnProtection?: number;
+  /** Outward scatter velocity, live while `scatterTimer > 0` (splitter children). */
+  scatterVx?: number;
+  scatterVy?: number;
+  scatterTimer?: number;
+  /** Shielded: seconds until the next charge is restored. */
+  shieldRegenTimer?: number;
+  /** Siege: seconds until the next lob. */
+  siegeCooldown?: number;
+  /** Siege: true while halted at standoff range (drives the range ring). */
+  siegeHalted?: boolean;
+  /** Thief: gold carried. Non-zero means it has stolen and is running. */
+  stolenGold?: number;
+  /** True while the enemy is running away from the tower (thief, wounded healer). */
+  fleeing?: boolean;
+  /** Blinker: seconds until the next teleport. */
+  blinkTimer?: number;
+  /** Blinker: seconds of knockback/mine immunity left from the last blink. */
+  blinkImmunity?: number;
+  /** Blinker: where it was before the last blink, for the after-image trail. */
+  afterImageX?: number;
+  afterImageY?: number;
+  afterImageAge?: number;
+  /** Warden: seconds until it re-projects its shields. */
+  wardTimer?: number;
+  /** Absorb pool granted by a warden; soaks damage before HP does. */
+  absorbShield?: number;
+  absorbMax?: number;
+  /** Id of the warden maintaining `absorbShield`; the pool dies with it. */
+  wardenId?: number;
+  /** Burrower: true while underground — invulnerable and untargetable. */
+  burrowed?: boolean;
+  /** Burrower: seconds of surfacing telegraph left (it cannot act during it). */
+  surfacing?: number;
+}
+
+/**
+ * A shot fired *at* the tower by a `siege` enemy (gameplay plan §2.1).
+ *
+ * Deliberately not a `Projectile`: every loop in `ProjectileManager` assumes
+ * tower ownership — damage multipliers, pierce, crit, ricochet, the blessing
+ * behaviours — and none of that has any meaning for an incoming shell. This is
+ * the whole model: a position, a velocity, a fuse, and a damage number that is
+ * handed to the existing `tower_damaged` mitigation chain on arrival.
+ */
+export interface HostileShot {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  /** Damage delivered on arrival, already multiplied by the enemy channels. */
+  damage: number;
+  /** Seconds left in flight. */
+  remaining: number;
+  /** Total flight time, so the renderer can place the arc. */
+  travel: number;
+  /** Launch point, so the renderer can draw the trajectory. */
+  originX: number;
+  originY: number;
+  alive: boolean;
 }
 
 export interface Projectile {
@@ -566,5 +659,7 @@ export interface RenderSnapshot {
   damageNumbers: DamageNumber[];
   shockwaves: Shockwave[];
   mines: Mine[];
+  /** Incoming siege shells (gameplay plan §2.1). */
+  hostileShots: HostileShot[];
   aimLine?: { x: number; y: number } | null;
 }

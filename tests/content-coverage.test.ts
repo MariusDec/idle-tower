@@ -19,6 +19,17 @@ import { PASSIVE_ABILITIES } from '../src/data/passiveAbilities';
 import { RESEARCH_NODES } from '../src/data/research';
 import { UPGRADES } from '../src/data/upgrades';
 import {
+  ENEMY_BEHAVIOR_CONSUMERS,
+  ENEMY_DEFS,
+  ENEMY_SPAWN_WEIGHTS,
+  PRIORITY_TARGET_ORDER,
+  spawnPoolForWave,
+} from '../src/data/enemies';
+import { MILESTONE_EXEMPT_ENEMIES, MILESTONES } from '../src/data/milestones';
+import { RENDERED_ENEMY_SHAPES } from '../src/game/Renderer';
+import { TARGETING_MODES } from '../src/data/tower';
+import type { EnemyType } from '../src/types';
+import {
   BLESSINGS,
   BLESSING_BEHAVIOR_CONSUMERS,
   BLESSING_STATS,
@@ -278,5 +289,108 @@ describe('blessings', () => {
       .filter(({ b, e }) => Math.abs(e.perStack * b.maxStacks) > 1.2)
       .map(({ b, e }) => `${b.id} -> ${e.stat} ${(e.perStack * b.maxStacks * 100).toFixed(0)}%`);
     expect(over).toEqual([]);
+  });
+});
+
+
+/**
+ * The enemy roster (gameplay plan §2.8).
+ *
+ * The failure this guards against is specific and has already happened once in
+ * this codebase's history, to talents: content that is *declared* — it has a
+ * table row, a colour, a spawn weight — and is inert, invisible or unannounced
+ * because the three or four places that have to know about it were never
+ * updated together. `tsc` covers the `Record<EnemyType, …>` maps and the
+ * exhaustive switches; these are the parts it cannot see.
+ */
+describe('enemy roster', () => {
+  const ALL_TYPES = Object.keys(ENEMY_DEFS) as EnemyType[];
+
+  it('covers every type in the def table', () => {
+    // Guard against the whole block going vacuous if the table is restructured.
+    expect(ALL_TYPES.length).toBeGreaterThanOrEqual(13);
+    for (const type of ALL_TYPES) {
+      expect(ENEMY_DEFS[type].type, type).toBe(type);
+    }
+  });
+
+  it('gives every type a shape the renderer can actually paint', () => {
+    const paintable = new Set<string>(RENDERED_ENEMY_SHAPES);
+    const unpaintable = ALL_TYPES.filter(t => !paintable.has(ENEMY_DEFS[t].shape));
+    expect(unpaintable).toEqual([]);
+  });
+
+  it('gives every type a distinct body colour', () => {
+    // Two types that draw identically are one type as far as the player is
+    // concerned, whatever the def table says.
+    const colors = ALL_TYPES.map(t => ENEMY_DEFS[t].color);
+    expect(new Set(colors).size).toBe(colors.length);
+  });
+
+  it('announces every type in the milestone strip', () => {
+    const announced = new Set(
+      MILESTONES.filter(m => m.kind === 'enemy').map(m => m.refId),
+    );
+    const missing = ALL_TYPES
+      .filter(t => !MILESTONE_EXEMPT_ENEMIES.includes(t))
+      .filter(t => !announced.has(t));
+    expect(missing).toEqual([]);
+  });
+
+  it('announces each type on the wave it actually unlocks', () => {
+    for (const m of MILESTONES) {
+      if (m.kind !== 'enemy') continue;
+      const type = m.refId as EnemyType;
+      expect(m.wave, type).toBe(ENEMY_DEFS[type].unlockWave);
+    }
+  });
+
+  it('keeps the milestone exemptions to the two types that earn them', () => {
+    // `normal` is the baseline the player starts with and `boss` has its own
+    // on-canvas banner. Any *other* exemption is a gap, not a decision.
+    expect([...MILESTONE_EXEMPT_ENEMIES].sort()).toEqual(['boss', 'normal']);
+  });
+
+  it('names a real behaviour consumer for every type', () => {
+    for (const type of ALL_TYPES) {
+      const consumer = ENEMY_BEHAVIOR_CONSUMERS[type];
+      expect(consumer, `${type} has no behaviour`).toBeTruthy();
+      expect(consumer.length, `${type} behaviour is too vague`).toBeGreaterThan(20);
+      expect(consumer.toLowerCase(), `${type} behaviour is a placeholder`)
+        .not.toMatch(/todo|nothing|unused|n\/a|tbd/);
+    }
+  });
+
+  it('puts every type except the boss into the spawn pool', () => {
+    const orphans = ALL_TYPES.filter(t => t !== 'boss' && ENEMY_SPAWN_WEIGHTS[t] <= 0);
+    expect(orphans).toEqual([]);
+    expect(ENEMY_SPAWN_WEIGHTS.boss).toBe(0);
+  });
+
+  it('gates the pool on the def table\'s unlock wave', () => {
+    for (const type of ALL_TYPES) {
+      if (ENEMY_SPAWN_WEIGHTS[type] <= 0) continue;
+      const unlock = ENEMY_DEFS[type].unlockWave;
+      expect(spawnPoolForWave(unlock - 1).some(e => e.type === type), type).toBe(false);
+      expect(spawnPoolForWave(unlock).some(e => e.type === type), type).toBe(true);
+    }
+  });
+
+  it('only prioritises types that exist', () => {
+    expect(PRIORITY_TARGET_ORDER.length).toBeGreaterThan(0);
+    const unknown = PRIORITY_TARGET_ORDER.filter(t => !(t in ENEMY_DEFS));
+    expect(unknown).toEqual([]);
+  });
+
+  it('offers every targeting mode exactly once, priority first', () => {
+    const ids = TARGETING_MODES.map(m => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids[0]).toBe('priority');
+    // The dead `'first'` alias is gone (plan §2.3) and must not come back.
+    expect(ids).not.toContain('first');
+    for (const m of TARGETING_MODES) {
+      expect(m.label.length, m.id).toBeGreaterThan(0);
+      expect(m.hint.length, m.id).toBeGreaterThan(8);
+    }
   });
 });

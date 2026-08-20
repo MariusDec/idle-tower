@@ -1,7 +1,7 @@
 import type { DamageType, Enemy, Projectile, TowerState } from '../types';
 import { nextId } from '../utils/math';
 import { PROJECTILE_SPEED } from '../data/tower';
-import { ENEMY_DEFS } from '../data/enemies';
+import { ENEMY_DEFS, isTargetable } from '../data/enemies';
 import { BLESSING_TUNING, type BlessingBehavior } from '../data/blessings';
 import type { Tower } from './Tower';
 import type { EnemyManager } from './EnemyManager';
@@ -251,7 +251,10 @@ export class ProjectileManager {
       let hit: Enemy | null = null;
       let hitT = Infinity;
       for (const e of this.enemies.list) {
-        if (!e.alive) continue;
+        // `isTargetable`, not `alive`: a burrowed burrower and a splitter child
+        // inside its spawn protection are on the field and shots pass straight
+        // through them (plan §2.1/§2.2).
+        if (!isTargetable(e)) continue;
         if (hitSet && hitSet.has(e.id)) continue;
         const r = this.enemyRadius(e) + 6;
         let t = 0;
@@ -316,7 +319,7 @@ export class ProjectileManager {
             const splashDamage = Math.max(1, Math.floor(final * this.critSplashFraction));
             const splashRadius = 50;
             for (const e of this.enemies.queryRadius(enemy.x, enemy.y, splashRadius)) {
-              if (e.id === enemy.id) continue;
+              if (e.id === enemy.id || !isTargetable(e)) continue;
               this.enemies.damage(e, splashDamage, false);
               this.bus.emit('tower_damage_dealt', { amount: splashDamage });
             }
@@ -335,7 +338,11 @@ export class ProjectileManager {
             this.applyOverkill(enemy, final - hpBefore);
           }
         }
-        const remaining = this.pierceMax(p.id);
+        // Plan §2.2: a tank body-blocks. However much pierce the shot has, it
+        // stops here — which is what gives the tank a job in a formation
+        // instead of making it a fat circle that pierce walks through.
+        const blocked = enemy.type === 'tank';
+        const remaining = blocked ? 1 : this.pierceMax(p.id);
         if (remaining > 1) {
           this.piercingRemaining[p.id] = remaining - 1;
           if (!this.hitEnemies[p.id]) this.hitEnemies[p.id] = new Set();
@@ -396,7 +403,7 @@ export class ProjectileManager {
     const found = this.enemies.queryRadius(x, y, radius);
     const scored: Array<{ e: Enemy; d: number }> = [];
     for (const e of found) {
-      if (!e.alive || exclude.has(e.id)) continue;
+      if (!isTargetable(e) || exclude.has(e.id)) continue;
       const dx = e.x - x;
       const dy = e.y - y;
       scored.push({ e, d: dx * dx + dy * dy });
@@ -410,7 +417,7 @@ export class ProjectileManager {
     const fraction = p.splashFraction ?? 1;
     const splash = Math.max(1, Math.floor(final * fraction));
     for (const e of this.enemies.queryRadius(hit.x, hit.y, p.splashRadius ?? 0)) {
-      if (e.id === hit.id || !e.alive) continue;
+      if (e.id === hit.id || !isTargetable(e)) continue;
       this.enemies.damage(e, splash, false);
       this.bus.emit('tower_damage_dealt', { amount: splash });
     }

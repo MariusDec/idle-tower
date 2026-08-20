@@ -126,6 +126,7 @@ section('§2.3.3 wave enrage');
     reset: () => {},
     spawn: () => {},
     spawnElite: () => {},
+    beginWave: () => {},
   } as unknown as EnemyManager;
   const wm = new WaveManager(bus, stubEnemies, 800, 600, () => {}, () => {});
   wm.startWave(10);
@@ -406,6 +407,7 @@ section('§3.3 wave mutators');
   bus.on('wave_modifier_offer', () => { offers += 1; });
   const stubEnemies = {
     setEnrage: () => {}, aliveCount: () => 0, reset: () => {}, spawn: () => {}, spawnElite: () => {},
+    beginWave: () => {},
   } as unknown as EnemyManager;
   const wm = new WaveManager(bus, stubEnemies, 800, 600, () => {}, () => {});
   for (const w of [10, 20, 30]) wm.startWave(w);

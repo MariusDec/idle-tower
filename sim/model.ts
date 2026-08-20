@@ -26,7 +26,7 @@ import {
   enrageThresholdSeconds,
   ENRAGE_STACK_INTERVAL,
 } from '../src/data/formulas.ts';
-import { ENEMY_DEFS } from '../src/data/enemies.ts';
+import { ENEMY_BEHAVIOR, ENEMY_DEFS, spawnPoolForWave } from '../src/data/enemies.ts';
 import { UPGRADES } from '../src/data/upgrades.ts';
 import { TOWER_BASE } from '../src/data/tower.ts';
 import { computeUpgradeValue } from '../src/types.ts';
@@ -46,18 +46,67 @@ const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(
   UPGRADES.map(u => [u.id, u]),
 );
 
-/** Enemy-type spawn weights, mirroring `WaveManager.pickEnemyType`. */
+/**
+ * Enemy-type spawn weights, read from the shipping table (`ENEMY_SPAWN_WEIGHTS`).
+ *
+ * It used to be a hand-written copy of `WaveManager.pickEnemyType`, which is
+ * how a re-weighting lands in the game but not in the model that is supposed to
+ * be measuring it. Both now read one table.
+ */
 function typeMix(wave: number): Array<{ type: EnemyType; weight: number }> {
   if (isBossWave(wave)) return [{ type: 'boss', weight: 1 }];
-  const entries: Array<{ type: EnemyType; weight: number }> = [{ type: 'normal', weight: 6 }];
-  if (wave >= 3) entries.push({ type: 'fast', weight: 3 });
-  if (wave >= 5) entries.push({ type: 'tank', weight: 2 });
-  if (wave >= 8) entries.push({ type: 'flying', weight: 2 });
-  if (wave >= 12) entries.push({ type: 'splitter', weight: 2 });
-  if (wave >= 15) entries.push({ type: 'healer', weight: 1 });
-  if (wave >= 20) entries.push({ type: 'shielded', weight: 1 });
-  return entries;
+  return spawnPoolForWave(wave);
 }
+
+/**
+ * Effective-HP multiplier per type: how much more damage the tower must
+ * actually put out than the enemy's bar says (gameplay plan §2.6).
+ *
+ * A `Record` over the union for the same reason `BEHAVIOR_DPS_CREDIT` is one —
+ * a behavioural type the model silently scores at 1.0 is a type whose balance
+ * was never checked.
+ *
+ * Every figure is deliberately conservative, because the model has no
+ * positions, no tower HP and no player attention to spend:
+ *   - `splitter` 2.0: two half-HP children, exactly as before.
+ *   - `shielded` 1.35: three charges eat a hit each, and now rebuild one every
+ *     6 s after 3 s of quiet — slightly worse than the old flat 1.3.
+ *   - `warden` 2.2: its own bar plus the 15%-of-maxHp pools it refreshes onto
+ *     up to five allies every 4 s. Well under the worst case, because the
+ *     default targeting mode is now `priority`, which shoots the warden first
+ *     and collapses every pool it was maintaining.
+ *   - `burrower` 1.25: untouchable until 120 px out, so most of the approach
+ *     corridor the model assumes the tower is shooting into is wasted on it.
+ *   - `blinker` 1.1: covers ground the tower does not get to shoot across.
+ *   - `siege` 1.0: it costs tower HP, not DPS — see `SIEGE_GOLD_DRAG`.
+ *   - `thief` 1.0 on HP; its cost is economic, see `THIEF_GOLD_DRAG`.
+ */
+const EFFECTIVE_HP_FACTOR: Record<EnemyType, number> = {
+  normal: 1,
+  fast: 1,
+  tank: 1,
+  flying: 1,
+  healer: 1,
+  boss: 1,
+  splitter: 2,
+  shielded: 1.35,
+  siege: 1,
+  thief: 1,
+  blinker: 1.1,
+  warden: 2.2,
+  burrower: 1.25,
+};
+
+/**
+ * Gold a thief walks off with, as a fraction of a wave's income, averaged.
+ *
+ * One thief per wave at most, stealing up to 6% of *current* gold; the greedy
+ * buyer spends most of its balance the instant it can afford anything, so the
+ * pot a thief finds is usually small — and a competent tower kills it and gets
+ * double back. Modelled as a flat small drag rather than simulated, because the
+ * model has no positions and cannot decide whether the thief got away.
+ */
+const THIEF_GOLD_DRAG = 0.02;
 
 export interface WaveProfile {
   count: number;
@@ -79,24 +128,28 @@ export function waveProfile(wave: number): WaveProfile {
   let hpPer = 0;
   let armorPer = 0;
   let goldPer = 0;
+  let thiefShare = 0;
   for (const { type, weight } of mix) {
     const def = ENEMY_DEFS[type];
     const share = weight / weightSum;
     const hp = type === 'boss' ? bossHPForWave(def.baseHP, wave) : enemyHPForWave(def.baseHP, wave);
-    // Splitters leave two half-HP children behind, so they cost 2x their bar.
-    const hpFactor = type === 'splitter' ? 2 : 1;
-    // Shielded enemies eat 3 hits outright; approximated as +30% effective HP.
-    const shieldFactor = type === 'shielded' ? 1.3 : 1;
-    hpPer += share * hp * hpFactor * shieldFactor;
+    hpPer += share * hp * EFFECTIVE_HP_FACTOR[type];
     armorPer += share * def.armor;
     goldPer += share * goldDropForWave(def.baseGold, wave);
+    if (type === 'thief') thiefShare = share;
   }
+
+  // Plan §2.1: a thief that gets away takes gold with it. Capped by the same
+  // per-wave ceiling the game enforces, so this can never dominate the curve.
+  const theftDrag = thiefShare > 0
+    ? Math.min(ENEMY_BEHAVIOR.thiefWaveTheftCap, THIEF_GOLD_DRAG)
+    : 0;
 
   return {
     count,
     totalHp: hpPer * count,
     avgArmor: armorPer,
-    baseGold: goldPer * count,
+    baseGold: goldPer * count * (1 - theftDrag),
     spawnDuration: spawnIntervalForWave(wave) * (count - 1),
   };
 }

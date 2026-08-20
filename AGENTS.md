@@ -11,9 +11,9 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/performance.md](docs/performance.md) | Frame budget: substepping, renderer sprite cache, spatial grid, effect pools, save cadence, lookup caches |
 | [docs/testing.md](docs/testing.md) | Vitest suite, `npm run checks`, the balance simulator, in-browser verification |
 | [docs/stat-pipeline.md](docs/stat-pipeline.md) | The single stat composition point: StatKey union, StatContext, accumulator buckets, contributors, BuffRegistry, breakdowns |
-| [docs/tower-system.md](docs/tower-system.md) | Tower state, targeting modes (nearest/lowest_hp/first), damage calculation, manual aim |
-| [docs/enemy-system.md](docs/enemy-system.md) | 8 enemy types, elites and their 5 auras, scaling per wave, movement, combat, crowd control |
-| [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, intermission, enemy selection weights, wave skip, enrage |
+| [docs/tower-system.md](docs/tower-system.md) | Tower state, the 7 targeting modes (priority is the default), damage calculation, manual aim |
+| [docs/enemy-system.md](docs/enemy-system.md) | 13 enemy types and the verb each one demands an answer to, hostile shots, targetability, elites and their 5 auras, scaling, crowd control |
+| [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, intermission, the shared spawn-weight table, fast packs, the thief cap, wave skip, enrage |
 | [docs/wave-modifier-system.md](docs/wave-modifier-system.md) | 9 mutators, offer cadence, 3-wave duration with escalating rewards |
 | [docs/blessing-system.md](docs/blessing-system.md) | The in-run roguelite draft: 30-card pool, cadence, rerolls, behaviors, idle safety, balance |
 | [docs/projectile-system.md](docs/projectile-system.md) | Projectile firing, shot variants, swept collision, piercing, lifetime, damage multipliers |
@@ -43,8 +43,9 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Upgrades (with evolutions) | 27 | `src/data/upgrades.ts` |
 | Active abilities | 10 | `src/data/abilities.ts` |
 | Passive abilities | 8 | `src/data/passiveAbilities.ts` |
-| Enemy types | 8 | `src/data/enemies.ts` |
+| Enemy types | 13 | `src/data/enemies.ts` |
 | Elite auras | 5 | `src/systems/EnemyManager.ts` |
+| Targeting modes | 7 | `src/data/tower.ts` |
 | Talents | 37 | `src/data/talentTree.ts` |
 | Research nodes | 17 | `src/data/research.ts` |
 | Achievements | 18 | `src/data/achievements.ts` |

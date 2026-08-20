@@ -1,4 +1,5 @@
 import type { DamageType, Enemy, TowerState, TargetingMode } from '../types';
+import { isTargetable, PRIORITY_TARGET_ORDER } from '../data/enemies';
 import { distance2 } from '../utils/math';
 
 /**
@@ -67,11 +68,19 @@ export class Tower {
     Object.assign(this.state, mods);
   }
 
+  /**
+   * Pick something to shoot.
+   *
+   * The candidate filter is `isTargetable`, not `alive`: a burrowed burrower and
+   * a splitter child inside its spawn protection are on the field and cannot be
+   * hit, so offering them here would stall the tower on a target it can never
+   * damage (gameplay plan §2.1).
+   */
   acquireTarget(enemies: Enemy[]): Enemy | null {
     const rangeSq = this.state.range * this.state.range;
     const candidates: Enemy[] = [];
     for (const e of enemies) {
-      if (!e.alive) continue;
+      if (!isTargetable(e)) continue;
       if (distance2(this.state.x, this.state.y, e.x, e.y) <= rangeSq) {
         candidates.push(e);
       }
@@ -92,8 +101,27 @@ export class Tower {
     };
 
     switch (this.state.targetingMode) {
+      // Plan §2.3: the default. Kill the enemy whose *job* is the problem —
+      // the warden shielding the line, the healer undoing your damage, the
+      // thief carrying your gold to the edge, the siege shelling you from
+      // outside melee — and only then fall back to whatever is closest.
+      case 'priority': {
+        for (const wanted of PRIORITY_TARGET_ORDER) {
+          let best: Enemy | null = null;
+          let bestD = Infinity;
+          for (const e of candidates) {
+            if (e.type !== wanted) continue;
+            const d = distance2(this.state.x, this.state.y, e.x, e.y);
+            if (d < bestD) {
+              bestD = d;
+              best = e;
+            }
+          }
+          if (best) return best;
+        }
+        return findNearest(candidates);
+      }
       case 'nearest':
-      case 'first':
         return findNearest(candidates);
       case 'lowest_hp': {
         let best: Enemy | null = null;

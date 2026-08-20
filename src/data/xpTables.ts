@@ -57,6 +57,14 @@ const BASE_XP_PER_KILL: Record<EnemyType, number> = {
   boss: 10,
   splitter: 1,
   shielded: 2,
+  // Behavioural types (gameplay plan §2.1): the multiplier tracks how much of
+  // the player's attention the type costs, not its HP bar — a warden or a
+  // thief is worth going out of your way for, a blinker is a nuisance.
+  siege: 2,
+  thief: 3,
+  blinker: 2,
+  warden: 3,
+  burrower: 2,
 };
 
 /**

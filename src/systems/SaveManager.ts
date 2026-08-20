@@ -17,7 +17,7 @@ import type {
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
 import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBossWave } from '../data/formulas';
-import { ENEMY_DEFS } from '../data/enemies';
+import { ENEMY_DEFS, spawnPoolForWave } from '../data/enemies';
 import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
@@ -120,67 +120,38 @@ function estimateDPS(tower: TowerState): number {
   return Math.max(0, expectedHit * tower.fireRate);
 }
 
+/**
+ * Wave averages for offline progress.
+ *
+ * All three read `spawnPoolForWave`, the same table `WaveManager` spawns from,
+ * so a re-weighting of the pool (gameplay plan §2.4) moves the offline estimate
+ * with it instead of leaving three hand-copied weight maps to drift.
+ */
 function averageKillXPForWave(wave: number): number {
   if (isBossWave(wave)) return xpPerKill('boss', wave);
-  const available: EnemyType[] = ['normal'];
-  if (wave >= 3) available.push('fast');
-  if (wave >= 5) available.push('tank');
-  if (wave >= 8) available.push('flying');
-  if (wave >= 12) available.push('splitter');
-  if (wave >= 15) available.push('healer');
-  if (wave >= 20) available.push('shielded');
-  const weights: Record<EnemyType, number> = {
-    normal: 6, fast: 3, tank: 2, flying: 2, healer: 1, splitter: 2, shielded: 1, boss: 0,
-  };
+  return poolAverage(wave, t => xpPerKill(t, wave));
+}
+
+/** Weighted mean of `value` across the wave's spawn pool. */
+function poolAverage(wave: number, value: (type: EnemyType) => number): number {
+  const pool = spawnPoolForWave(wave);
   let totalWeight = 0;
-  let weightedXp = 0;
-  for (const t of available) {
-    totalWeight += weights[t];
-    weightedXp += weights[t] * xpPerKill(t, wave);
+  let weighted = 0;
+  for (const { type, weight } of pool) {
+    totalWeight += weight;
+    weighted += weight * value(type);
   }
-  return totalWeight > 0 ? weightedXp / totalWeight : 0;
+  return totalWeight > 0 ? weighted / totalWeight : 0;
 }
 
 function averageKillGoldForWave(wave: number): number {
   if (isBossWave(wave)) return goldDropForWave(ENEMY_DEFS.boss.baseGold, wave);
-  const available: EnemyType[] = ['normal'];
-  if (wave >= 3) available.push('fast');
-  if (wave >= 5) available.push('tank');
-  if (wave >= 8) available.push('flying');
-  if (wave >= 12) available.push('splitter');
-  if (wave >= 15) available.push('healer');
-  if (wave >= 20) available.push('shielded');
-  const weights: Record<EnemyType, number> = {
-    normal: 6, fast: 3, tank: 2, flying: 2, healer: 1, splitter: 2, shielded: 1, boss: 0,
-  };
-  let totalWeight = 0;
-  let weightedGold = 0;
-  for (const t of available) {
-    totalWeight += weights[t];
-    weightedGold += weights[t] * goldDropForWave(ENEMY_DEFS[t].baseGold, wave);
-  }
-  return totalWeight > 0 ? weightedGold / totalWeight : 0;
+  return poolAverage(wave, t => goldDropForWave(ENEMY_DEFS[t].baseGold, wave));
 }
 
 function averageKillHPForWave(wave: number): number {
   if (isBossWave(wave)) return bossHPForWave(ENEMY_DEFS.boss.baseHP, wave);
-  const available: EnemyType[] = ['normal'];
-  if (wave >= 3) available.push('fast');
-  if (wave >= 5) available.push('tank');
-  if (wave >= 8) available.push('flying');
-  if (wave >= 12) available.push('splitter');
-  if (wave >= 15) available.push('healer');
-  if (wave >= 20) available.push('shielded');
-  const weights: Record<EnemyType, number> = {
-    normal: 6, fast: 3, tank: 2, flying: 2, healer: 1, splitter: 2, shielded: 1, boss: 0,
-  };
-  let totalWeight = 0;
-  let weightedHp = 0;
-  for (const t of available) {
-    totalWeight += weights[t];
-    weightedHp += weights[t] * enemyHPForWave(ENEMY_DEFS[t].baseHP, wave);
-  }
-  return totalWeight > 0 ? weightedHp / totalWeight : 0;
+  return poolAverage(wave, t => enemyHPForWave(ENEMY_DEFS[t].baseHP, wave));
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {

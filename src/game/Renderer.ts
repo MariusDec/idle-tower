@@ -1,7 +1,7 @@
-import type { RenderSnapshot, Enemy, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType } from '../types';
+import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType } from '../types';
 import { TOWER_VISUAL } from '../data/tower';
-import { ENEMY_DEFS } from '../data/enemies';
-import type { EnemyDef } from '../data/enemies';
+import { ENEMY_BEHAVIOR, ENEMY_DEFS } from '../data/enemies';
+import type { EnemyDef, EnemyShape } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
 import { formatInt } from '../utils/bigNumber';
 import { ELITE_AURA_COLORS, AURA_RADIUS } from '../systems/EnemyManager';
@@ -12,6 +12,20 @@ const ELITE_RADIUS_SCALE = 1.25;
 const SPRITE_PADDING = 6;
 /** Body colour of a boss below its enrage threshold. */
 const ENRAGED_BOSS_COLOR = '#ff2020';
+/**
+ * Shapes this renderer knows how to paint (gameplay plan §2.5).
+ *
+ * Exported so `content-coverage.test.ts` can assert that every `EnemyType`'s
+ * declared shape is one of them — `tsc` already rejects a missing case in
+ * `paintEnemyBody`, but nothing else stops a type being given a shape string
+ * that compiles and draws nothing.
+ */
+export const RENDERED_ENEMY_SHAPES: readonly EnemyShape[] =
+  ['circle', 'diamond', 'winged', 'square', 'hex', 'mound'];
+
+/** Seconds a blinker's after-image lingers at the position it left. */
+const AFTER_IMAGE_LIFE = 0.45;
+
 /** Solid crown colours, one per aura (the aura fills are translucent). */
 const ELITE_CROWN_COLORS: Record<AuraType, string> = {
   haste: '#3cb4ff',
@@ -69,6 +83,7 @@ export class Renderer {
     this.drawAimLine(ctx, snapshot);
     this.drawEnemies(ctx, snapshot.enemies);
     this.drawProjectiles(ctx, snapshot.projectiles);
+    this.drawHostileShots(ctx, snapshot.hostileShots);
     this.drawParticles(ctx, snapshot.particles, 'front');
     this.drawChainLightning(ctx, options?.chainPaths);
     this.drawDamageNumbers(ctx, snapshot.damageNumbers);
@@ -370,13 +385,16 @@ export class Renderer {
 
   private getEnemySprite(enemy: Enemy): HTMLCanvasElement {
     const enraged = enemy.type === 'boss' && enemy.enraged === true;
-    const key = `${enemy.type}|${enemy.elite ? 1 : 0}|${enraged ? 1 : 0}`;
+    // A burrower reads completely differently above and below ground, so the
+    // two are separate cache entries rather than one sprite plus a live tint.
+    const buried = enemy.burrowed === true;
+    const key = `${enemy.type}|${enemy.elite ? 1 : 0}|${enraged ? 1 : 0}|${buried ? 1 : 0}`;
     const cached = this.enemySprites.get(key);
     if (cached) return cached;
     const def = ENEMY_DEFS[enemy.type];
     const r = this.enemyDrawRadius(enemy);
     const sprite = this.makeSprite((r + SPRITE_PADDING) * 2, (g) => {
-      this.paintEnemyBody(g, enemy.type, def, r, enraged);
+      this.paintEnemyBody(g, enemy.type, def, r, enraged, buried);
     });
     this.enemySprites.set(key, sprite);
     return sprite;
@@ -393,6 +411,7 @@ export class Renderer {
     def: EnemyDef,
     r: number,
     enraged: boolean,
+    buried: boolean = false,
   ): void {
     // Boss enrage colour shift: the body turns red below 50% HP. The check is
     // hoisted out of the shape switch on purpose — it used to live only in the
@@ -420,6 +439,13 @@ export class Renderer {
           ctx.arc(0, 0, 3, 0, Math.PI * 2);
           ctx.fill();
         }
+        if (def.glyph) {
+          ctx.fillStyle = def.borderColor;
+          ctx.font = `bold ${Math.round(r * 0.95)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(def.glyph, 0, 1);
+        }
         break;
       case 'winged':
         ctx.fillStyle = bodyColor;
@@ -430,8 +456,87 @@ export class Renderer {
         ctx.lineWidth = 2;
         ctx.stroke();
         break;
-      case 'circle':
-      default: {
+      // Siege: a blunt, flat-sided chassis with a barrel — it reads as a
+      // machine parked at range rather than something running at you.
+      case 'square': {
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(-r, -r * 0.85, r * 2, r * 1.7);
+        ctx.strokeStyle = def.borderColor;
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(-r, -r * 0.85, r * 2, r * 1.7);
+        ctx.fillStyle = def.borderColor;
+        ctx.fillRect(-r * 0.25, -r * 1.5, r * 0.5, r * 0.8);
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillRect(-r * 0.75, -r * 0.25, r * 1.5, r * 0.5);
+        break;
+      }
+      // Warden: a hexagon, the same shape as the ward it projects, so the
+      // shield rings on its allies point straight back at the source.
+      case 'hex': {
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+          const px = Math.cos(a) * r;
+          const py = Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = bodyColor;
+        ctx.fill();
+        ctx.strokeStyle = def.borderColor;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+          const px = Math.cos(a) * (r * 0.5);
+          const py = Math.sin(a) * (r * 0.5);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+        break;
+      }
+      // Burrower: a low earth mound while underground, a clawed dome once it
+      // is up. Two different silhouettes on purpose — the whole point of the
+      // type is that you can tell at a glance whether it can be shot.
+      case 'mound': {
+        if (buried) {
+          ctx.fillStyle = '#4a3a22';
+          ctx.beginPath();
+          ctx.ellipse(0, r * 0.25, r * 1.15, r * 0.6, 0, Math.PI, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(216, 181, 120, 0.5)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(0,0,0,0.35)';
+          ctx.beginPath();
+          ctx.ellipse(0, r * 0.25, r * 0.5, r * 0.2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        }
+        ctx.fillStyle = bodyColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = def.borderColor;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.strokeStyle = def.borderColor;
+        ctx.lineWidth = 2;
+        for (const dir of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(dir * r * 0.35, -r * 0.15);
+          ctx.lineTo(dir * r * 0.95, -r * 0.75);
+          ctx.stroke();
+        }
+        break;
+      }
+      case 'circle': {
         ctx.fillStyle = bodyColor;
         ctx.beginPath();
         ctx.arc(0, 0, r, 0, Math.PI * 2);
@@ -454,6 +559,12 @@ export class Renderer {
           ctx.stroke();
         }
         break;
+      }
+      default: {
+        // Closed union (cross-cutting rule 3): a new shape has to be drawn
+        // before it can be given to an enemy.
+        const exhaustive: never = def.shape;
+        return exhaustive;
       }
     }
   }
@@ -510,11 +621,71 @@ export class Renderer {
   }
 
   private drawEnemies(ctx: CanvasRenderingContext2D, enemies: Enemy[]): void {
+    // Ward links are drawn first so they read as a lattice *under* the bodies
+    // rather than as lines crossing over them.
+    this.drawWardLinks(ctx, enemies);
     for (const e of enemies) {
       if (!e.alive) continue;
+      this.drawAfterImage(ctx, e);
       this.drawEnemyShadow(ctx, e);
       this.drawEnemy(ctx, e);
     }
+  }
+
+  /**
+   * Hexagonal lattice joining each warden to the allies it is shielding
+   * (plan §2.5).
+   *
+   * A direct scan per warden, the same call the aura passes make: a wave holds
+   * a handful of wardens, so this is O(wardens x n) and allocates nothing.
+   */
+  private drawWardLinks(ctx: CanvasRenderingContext2D, enemies: Enemy[]): void {
+    let anyWarden = false;
+    for (const w of enemies) {
+      if (w.alive && w.type === 'warden') { anyWarden = true; break; }
+    }
+    if (!anyWarden) return;
+    const pulse = 0.3 + Math.sin(this.time * 3) * 0.12;
+    ctx.save();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = `rgba(90, 220, 240, ${pulse})`;
+    for (const w of enemies) {
+      if (!w.alive || w.type !== 'warden') continue;
+      for (const ally of enemies) {
+        if (!ally.alive || ally.wardenId !== w.id) continue;
+        if ((ally.absorbShield ?? 0) <= 0) continue;
+        ctx.beginPath();
+        ctx.moveTo(w.x, w.y);
+        ctx.lineTo(ally.x, ally.y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  /** Blinker: a fading ghost at the position it teleported away from. */
+  private drawAfterImage(ctx: CanvasRenderingContext2D, enemy: Enemy): void {
+    const age = enemy.afterImageAge;
+    if (age === undefined || age >= AFTER_IMAGE_LIFE) return;
+    if (enemy.afterImageX === undefined || enemy.afterImageY === undefined) return;
+    const fade = 1 - age / AFTER_IMAGE_LIFE;
+    const sprite = this.getEnemySprite(enemy);
+    const half = sprite.width / 2;
+    ctx.save();
+    ctx.globalAlpha = fade * 0.45;
+    ctx.drawImage(sprite, enemy.afterImageX - half, enemy.afterImageY - half);
+    ctx.restore();
+    // A short streak between the two positions, so the eye can follow the jump.
+    ctx.save();
+    ctx.globalAlpha = fade * 0.35;
+    ctx.strokeStyle = ENEMY_DEFS.blinker.borderColor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 5]);
+    ctx.beginPath();
+    ctx.moveTo(enemy.afterImageX, enemy.afterImageY);
+    ctx.lineTo(enemy.x, enemy.y);
+    ctx.stroke();
+    ctx.restore();
   }
 
   private drawEnemyShadow(ctx: CanvasRenderingContext2D, enemy: Enemy): void {
@@ -571,6 +742,12 @@ export class Renderer {
     if (enemy.elite && enemy.aura) {
       this.drawEliteCrown(ctx, enemy, r, bob);
     }
+
+    // ── behavioural reads (plan §2.5) ──
+    if ((enemy.absorbShield ?? 0) > 0) this.drawWardRing(ctx, enemy, r, bob);
+    if (enemy.type === 'siege' && enemy.siegeHalted) this.drawSiegeStance(ctx, enemy, r);
+    if (enemy.type === 'thief' && (enemy.stolenGold ?? 0) > 0) this.drawThiefLoot(ctx, enemy, r);
+    if (enemy.type === 'burrower') this.drawBurrowerState(ctx, enemy, r);
 
     // Retribution buff indicator (pulsing purple border)
     if (enemy.retributionTimer && enemy.retributionTimer > 0) {
@@ -694,6 +871,183 @@ export class Renderer {
       [1, 'rgba(0,0,0,0)'],
     ]);
     this.drawAuraSprite(ctx, sprite, enemy.x, enemy.y, pulse);
+  }
+
+  /**
+   * Warden ward: a hexagonal shell around whoever is carrying the absorb pool,
+   * sized to what is left of it, so the player can watch it come off.
+   */
+  private drawWardRing(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
+    const max = enemy.absorbMax ?? 0;
+    if (max <= 0) return;
+    const ratio = Math.max(0, Math.min(1, (enemy.absorbShield ?? 0) / max));
+    const radius = r + 6;
+    ctx.save();
+    ctx.translate(enemy.x, enemy.y + bob);
+    ctx.strokeStyle = `rgba(90, 220, 240, ${0.35 + ratio * 0.45})`;
+    ctx.lineWidth = 1.5 + ratio * 2;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 2 + this.time * 0.6;
+      const px = Math.cos(a) * radius;
+      const py = Math.sin(a) * radius;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * Siege: a dashed standoff ring and a reload arc while it is halted.
+   *
+   * The ring is what tells a short-range build *why* it is losing HP with
+   * nothing in range — the answer the type demands is more range, and the
+   * player cannot reach for it if they cannot see the problem.
+   */
+  private drawSiegeStance(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(240, 190, 110, 0.28)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([7, 9]);
+    ctx.beginPath();
+    ctx.arc(enemy.x, enemy.y, r + 14, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Reload arc: a full sweep means the next shell is about to leave.
+    const reload = ENEMY_BEHAVIOR.siegeReload;
+    const remaining = Math.max(0, Math.min(reload, enemy.siegeCooldown ?? reload));
+    const progress = 1 - remaining / reload;
+    if (progress > 0) {
+      ctx.strokeStyle = 'rgba(255, 170, 60, 0.85)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(enemy.x, enemy.y, r + 8, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Thief: a coin it is visibly carrying, plus an arrow along its escape route. */
+  private drawThiefLoot(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
+    const sprite = this.getCoinSprite();
+    const half = sprite.width / 2;
+    const bounce = Math.sin(this.time * 8 + enemy.id) * 2;
+    ctx.drawImage(sprite, enemy.x - half, enemy.y - r - 12 + bounce - half);
+    if (!enemy.fleeing) return;
+    // Direction of travel, taken from the last frame's displacement rather
+    // than stored on the enemy: the flee vector is simulation state and the
+    // renderer has no business owning a copy of it.
+    const dx = enemy.x - (enemy.afterImageX ?? enemy.x);
+    const dy = enemy.y - (enemy.afterImageY ?? enemy.y);
+    const angle = dx === 0 && dy === 0
+      ? Math.atan2(enemy.y - this.height / 2, enemy.x - this.width / 2)
+      : Math.atan2(dy, dx);
+    ctx.save();
+    ctx.translate(enemy.x, enemy.y);
+    ctx.rotate(angle);
+    ctx.fillStyle = 'rgba(255, 220, 100, 0.9)';
+    ctx.beginPath();
+    ctx.moveTo(r + 14, 0);
+    ctx.lineTo(r + 4, -6);
+    ctx.lineTo(r + 4, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /**
+   * Burrower: a dust plume while it is underground and untouchable, and a
+   * one-second expanding ring as it breaks the surface.
+   */
+  private drawBurrowerState(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
+    if (enemy.burrowed === true) {
+      const sprite = this.getAuraSprite(`burrow|${r}`, r * 2.2, r * 0.3, [
+        [0, 'rgba(160, 130, 80, 0.30)'],
+        [0.65, 'rgba(120, 95, 55, 0.12)'],
+        [1, 'rgba(0,0,0,0)'],
+      ]);
+      const pulse = 1 + Math.sin(this.time * 6 + enemy.id) * 0.14;
+      this.drawAuraSprite(ctx, sprite, enemy.x, enemy.y + r * 0.3, pulse);
+      return;
+    }
+    const surfacing = enemy.surfacing ?? 0;
+    if (surfacing <= 0) return;
+    const progress = 1 - surfacing / ENEMY_BEHAVIOR.burrowTelegraph;
+    ctx.save();
+    ctx.strokeStyle = `rgba(230, 180, 100, ${0.75 * (1 - progress)})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(enemy.x, enemy.y, r + 6 + progress * 42, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** The coin a loaded thief carries. Cached — it is static. */
+  private getCoinSprite(): HTMLCanvasElement {
+    const cached = this.enemySprites.get('#coin');
+    if (cached) return cached;
+    const sprite = this.makeSprite(20, (g) => {
+      g.fillStyle = '#ffd24a';
+      g.beginPath();
+      g.arc(0, 0, 7, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = '#7a5a00';
+      g.lineWidth = 1.5;
+      g.stroke();
+      g.fillStyle = '#7a5a00';
+      g.font = 'bold 9px sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('$', 0, 1);
+    });
+    this.enemySprites.set('#coin', sprite);
+    return sprite;
+  }
+
+  /**
+   * Incoming siege shells (plan §2.1).
+   *
+   * Drawn as a body on a parabolic lift above the straight line it actually
+   * travels, plus a ground marker at the impact point: the arc is the
+   * telegraph, and the marker is what makes it obvious the tower is about to
+   * be hit by something no amount of knockback will stop.
+   */
+  private drawHostileShots(ctx: CanvasRenderingContext2D, shots: HostileShot[]): void {
+    if (shots.length === 0) return;
+    ctx.save();
+    for (const s of shots) {
+      if (!s.alive) continue;
+      const progress = s.travel > 0 ? 1 - s.remaining / s.travel : 1;
+      const lift = Math.sin(Math.max(0, Math.min(1, progress)) * Math.PI) * 46;
+      const dx = s.vx * s.remaining;
+      const dy = s.vy * s.remaining;
+      const landX = s.x + dx;
+      const landY = s.y + dy;
+
+      // Impact marker, tightening as the shell comes down.
+      ctx.strokeStyle = `rgba(255, 120, 50, ${0.25 + progress * 0.5})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(landX, landY, 6 + (1 - progress) * 26, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Ground shadow directly under the shell.
+      ctx.fillStyle = 'rgba(0,0,0,0.30)';
+      ctx.beginPath();
+      ctx.ellipse(s.x, s.y, 5, 2.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ff8a3c';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y - lift, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#5a2a00';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   private drawEnemyHpBar(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {

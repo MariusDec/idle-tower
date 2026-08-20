@@ -9,7 +9,7 @@ import {
   ENRAGE_SPEED_PER_STACK,
   ENRAGE_STACK_INTERVAL,
 } from '../data/formulas';
-import { ENEMY_DEFS } from '../data/enemies';
+import { ENEMY_BEHAVIOR, ENEMY_DEFS, spawnPoolForWave } from '../data/enemies';
 import type { EnemyManager } from './EnemyManager';
 import { eliteChanceForWave } from './EnemyManager';
 import { randomBetween } from '../utils/math';
@@ -35,6 +35,8 @@ export class WaveManager {
   private intermissionPaused = false;
   /** Pause flag for enemy spawning (used when a boss wave modifier modal is open). */
   private spawnPaused = false;
+  /** Plan §2.4: at most one thief per wave. */
+  private thiefSpawnedThisWave = false;
 
   constructor(
     bus: EventBus,
@@ -121,34 +123,35 @@ export class WaveManager {
     };
   }
 
+  /**
+   * Roll one enemy type from the weighted pool (plan §2.4).
+   *
+   * The weights live in `ENEMY_SPAWN_WEIGHTS` rather than here, because the
+   * offline-progress estimates in `SaveManager` and the balance model in
+   * `sim/model.ts` have to draw from the same table — three hand-copied weight
+   * maps is how a balance change lands in the game but not in the model that is
+   * supposed to be measuring it.
+   *
+   * The one exception is the thief: capped at one per wave, because two thieves
+   * is a tax on the treasury rather than a threat to answer.
+   */
   private pickEnemyType(wave: number): EnemyType {
-    const available: EnemyType[] = ['normal'];
-    if (wave >= 3) available.push('fast');
-    if (wave >= 5) available.push('tank');
-    if (wave >= 8) available.push('flying');
-    if (wave >= 12) available.push('splitter');
-    if (wave >= 15) available.push('healer');
-    if (wave >= 20) available.push('shielded');
-
     if (isBossWave(wave)) {
       return 'boss';
     }
 
-    const weights: number[] = available.map(t => {
-      if (t === 'normal') return 6;
-      if (t === 'fast') return 3;
-      if (t === 'tank') return 2;
-      if (t === 'flying') return 2;
-      if (t === 'healer') return 1;
-      if (t === 'splitter') return 2;
-      if (t === 'shielded') return 1;
-      return 1;
-    });
-    const total = weights.reduce((a, b) => a + b, 0);
+    const pool = spawnPoolForWave(wave);
+    let total = 0;
+    for (const { type, weight } of pool) {
+      if (type === 'thief' && this.thiefSpawnedThisWave) continue;
+      total += weight;
+    }
+    if (total <= 0) return 'normal';
     let r = Math.random() * total;
-    for (let i = 0; i < available.length; i++) {
-      r -= weights[i];
-      if (r <= 0) return available[i];
+    for (const { type, weight } of pool) {
+      if (type === 'thief' && this.thiefSpawnedThisWave) continue;
+      r -= weight;
+      if (r <= 0) return type;
     }
     return 'normal';
   }
@@ -165,6 +168,10 @@ export class WaveManager {
 
   startWave(wave: number): void {
     this.state.number = wave;
+    this.thiefSpawnedThisWave = false;
+    // Resets the wave's 15% theft ceiling as well as the manager's notion of
+    // which wave is running (plan §2.6).
+    this.enemies.beginWave(wave);
 
     if (!isBossWave(wave) && this.waveSkipChance > 0 && Math.random() < this.waveSkipChance) {
       this.state.enemiesToSpawn = 0;
@@ -213,6 +220,8 @@ export class WaveManager {
   reset(): void {
     this.state = this.makeInitialState();
     this.enemyCountMult = 1;
+    this.thiefSpawnedThisWave = false;
+    this.enemies.beginWave(this.state.number);
     this.clearEnrage();
     this.bus.emit('wave_started', this.state.number);
     this.onWaveStarted(this.state.number);
@@ -239,6 +248,8 @@ export class WaveManager {
     };
     this.clearEnrage();
     this.enemyCountMult = 1;
+    this.thiefSpawnedThisWave = false;
+    this.enemies.beginWave(target);
     this.bus.emit('wave_started', this.state.number);
     this.onWaveStarted(this.state.number);
   }
@@ -367,14 +378,32 @@ export class WaveManager {
     const type = this.pickEnemyType(this.state.number);
     const { x, y } = this.spawnPointOnEdge();
     const wave = this.state.number;
-    // Elite roll: wave >= 21, not bosses, linear 2%→8% chance
-    if (wave >= 21 && type !== 'boss' && Math.random() < eliteChanceForWave(wave)) {
-      const aura = ALL_AURAS[Math.floor(Math.random() * ALL_AURAS.length)];
-      this.enemies.spawnElite(type, wave, x, y, aura);
-    } else {
-      this.enemies.spawn(type, wave, x, y);
+    if (type === 'thief') this.thiefSpawnedThisWave = true;
+
+    // Plan §2.2: `fast` arrives in threes from one shared spawn point, so it
+    // reads as a rush rather than a trickle. The pack counts against
+    // `enemiesToSpawn` in full — it takes slots, it does not add them, so total
+    // wave HP is unchanged.
+    const remaining = this.state.enemiesToSpawn - this.state.enemiesSpawned;
+    const packSize = type === 'fast'
+      ? Math.max(1, Math.min(ENEMY_BEHAVIOR.fastPackSize, remaining))
+      : 1;
+
+    for (let i = 0; i < packSize; i++) {
+      const spread = packSize > 1 ? ENEMY_BEHAVIOR.fastPackSpread : 0;
+      const px = x + (spread > 0 ? randomBetween(-spread, spread) : 0);
+      const py = y + (spread > 0 ? randomBetween(-spread, spread) : 0);
+      // Elite roll: wave >= 21, not bosses, linear 2%→20% chance. Rolled per
+      // pack member, so packing `fast` does not change the elite rate.
+      if (wave >= 21 && type !== 'boss' && Math.random() < eliteChanceForWave(wave)) {
+        const aura = ALL_AURAS[Math.floor(Math.random() * ALL_AURAS.length)];
+        this.enemies.spawnElite(type, wave, px, py, aura);
+      } else {
+        this.enemies.spawn(type, wave, px, py);
+      }
+      this.state.enemiesSpawned += 1;
     }
-    this.state.enemiesSpawned += 1;
+
     if (this.state.enemiesSpawned >= this.state.enemiesToSpawn) {
       this.state.spawning = false;
     }

@@ -13,7 +13,7 @@
 | `critChance` | 0.05 | 5% base crit |
 | `critMultiplier` | 2 | Double damage on crit |
 | `damageType` | `'physical'` | Physical vs magic (affects resist calc) |
-| `targetingMode` | `'nearest'` | Targeting strategy |
+| `targetingMode` | `'priority'` | Targeting strategy |
 | `hp` | 0 | Current tower health (provided by the health upgrade at L1) |
 | `maxHp` | 0 | Max tower health (provided by the health upgrade at L1) |
 | `healthRegen` | 0 | % of max HP regen per second |
@@ -31,12 +31,43 @@
 
 ## Targeting (`Tower.acquireTarget`)
 
-1. Filter enemies within `range^2` distance squared
-2. Apply mode:
-   - `'nearest'` — closest to tower
-   - `'lowest_hp'` — lowest current HP
-   - `'first'` — closest to tower (same as nearest)
+1. Filter to enemies that are **targetable** and within `range^2`
+2. Apply the mode
 3. Returns `Enemy | null`
+
+The candidate filter is `isTargetable(enemy)`, not `enemy.alive`: a burrowed
+burrower and a splitter child inside its spawn protection are on the field and
+cannot be hit, so offering them here would stall the tower on a target it can
+never damage. See [enemy-system.md](enemy-system.md#targetability).
+
+| Mode | Picks |
+|---|---|
+| `'priority'` **(default)** | Warden → healer → thief → siege, nearest within each tier; then nearest overall |
+| `'nearest'` | Closest to the tower |
+| `'lowest_hp'` | Lowest current HP |
+| `'strongest'` | Highest max HP |
+| `'boss'` | Bosses first, then nearest |
+| `'flying'` | Flying first, then nearest |
+| `'last'` | Furthest away (backline) |
+
+`'priority'` is the default for new games (`TOWER_BASE.targetingMode`). With the
+behavioural roster on the field, "nearest" is now actively a bad default: the
+enemy that matters — a warden shielding the line, a thief carrying your gold to
+the edge — is rarely the closest one. The order lives in `PRIORITY_TARGET_ORDER`
+(`src/data/enemies.ts`).
+
+**`'first'` is gone.** It was a dead alias of `'nearest'`; a save carrying it is
+migrated to `'nearest'` in `Game.applyPersistedState`, deliberately *not* to the
+new `'priority'` default, because silently changing how an existing run plays is
+worse than leaving it on the mode it actually had.
+
+### Where the selector lives
+
+The mode is a live tactical choice, not a preference, so the dropdown sits in
+the HUD next to the wave controls (`hud-targeting-select`). The Settings panel
+keeps a copy for players who have always changed it there; both render from
+`TARGETING_MODES` in `src/data/tower.ts` and share one `TargetingAPI` object, so
+they cannot drift or disagree.
 
 ## Damage Calculation
 

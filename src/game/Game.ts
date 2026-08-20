@@ -13,7 +13,7 @@ import { GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } fr
 const FIXED_STEP = 1 / 60;
 const MAX_SUBSTEPS = 6;
 import { TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
-import { ENEMY_DEFS } from '../data/enemies';
+import { ENEMY_DEFS, ignoresGroundEffects, isTargetable } from '../data/enemies';
 import { ABILITIES } from '../data/abilities';
 import { RESEARCH_BY_ID } from '../data/research';
 import { nextId } from '../utils/math';
@@ -456,6 +456,8 @@ export class Game {
 
     this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
     this.projectileMgr.setBounds(this.canvas.width, this.canvas.height);
+    // A fleeing thief needs to know where the edge of the world is (plan §2.1).
+    this.enemyMgr.setBounds(this.canvas.width, this.canvas.height);
     this.state.upgrades = this.upgradeMgr.snapshot();
     this.applyUpgradeEffects();
     this.syncUiApis();
@@ -558,8 +560,11 @@ export class Game {
         // Find the dead splitter in the list to get full enemy props
         const parent = this.enemyMgr.list.find(en => !en.alive && en.x === e.x && en.y === e.y && en.type === 'splitter');
         if (parent) {
-          this.enemyMgr.spawnSplitterChild(parent, wave, e.x - 6, e.y);
-          this.enemyMgr.spawnSplitterChild(parent, wave, e.x + 6, e.y);
+          // Opposed scatter angles, so the pair visibly splits apart rather
+          // than drifting off in the same direction (plan §2.2).
+          const angle = Math.random() * Math.PI * 2;
+          this.enemyMgr.spawnSplitterChild(parent, wave, e.x - 6, e.y, angle);
+          this.enemyMgr.spawnSplitterChild(parent, wave, e.x + 6, e.y, angle + Math.PI);
         }
         this.effects.emitSplitBurst(e.x, e.y);
       }
@@ -600,6 +605,64 @@ export class Game {
     this.bus.on('shield_break', (payload: unknown) => {
       const p = payload as { x: number; y: number };
       this.effects.emitEnemyShieldBreak(p.x, p.y);
+    });
+
+    // ── behavioural roster feedback (gameplay plan §2.1/§2.5) ──
+    //
+    // Every one of these is presentation only: the mechanics live in
+    // `EnemyManager`, which emits the event from inside the fixed substep. What
+    // is here is the part that has to *read* — a theft the player does not
+    // notice is a bug report, not a mechanic.
+    this.bus.on('shield_restored', (payload: unknown) => {
+      const p = payload as { x: number; y: number };
+      this.effects.emitEnemyShieldBreak(p.x, p.y);
+    });
+    this.bus.on('ward_absorbed', (payload: unknown) => {
+      const p = payload as { x: number; y: number; amount: number };
+      this.effects.emitShieldAbsorb(p.x, p.y);
+    });
+    this.bus.on('ward_projected', (payload: unknown) => {
+      const p = payload as { x: number; y: number };
+      this.effects.emitShockwaveRing(p.x, p.y, 90, 'rgba(60, 210, 235, 0.5)', 2);
+    });
+    this.bus.on('siege_impact', (payload: unknown) => {
+      const p = payload as { x: number; y: number };
+      this.effects.emitMineExplosion(p.x, p.y);
+    });
+    this.bus.on('burrower_surfaced', (payload: unknown) => {
+      const p = payload as { x: number; y: number };
+      this.effects.emitShockwaveRing(p.x, p.y, 70, 'rgba(190, 150, 90, 0.75)', 4);
+      this.effects.emitDeathBurst(p.x, p.y, '#7a5a30', 14, 10);
+    });
+    this.bus.on('enemy_blinked', (payload: unknown) => {
+      const p = payload as { x: number; y: number };
+      this.effects.emitShockwaveRing(p.x, p.y, 34, 'rgba(140, 100, 250, 0.6)', 2);
+    });
+    this.bus.on('gold_stolen', (payload: unknown) => {
+      const p = payload as { x: number; y: number; amount: number };
+      this.effects.emitShockwaveRing(p.x, p.y, 60, 'rgba(255, 215, 0, 0.8)', 3);
+      this.bus.emit('toast', {
+        kind: 'warning',
+        text: `A thief stole ${formatInt(p.amount)}g — kill it before it escapes!`,
+        life: 5,
+      });
+    });
+    this.bus.on('gold_recovered', (payload: unknown) => {
+      const p = payload as { x: number; y: number; amount: number };
+      this.effects.emitShockwaveRing(p.x, p.y, 90, 'rgba(255, 215, 0, 0.85)', 5);
+      this.bus.emit('toast', {
+        kind: 'milestone',
+        text: `Thief intercepted — recovered ${formatInt(p.amount)}g.`,
+        life: 5,
+      });
+    });
+    this.bus.on('gold_escaped', (payload: unknown) => {
+      const p = payload as { amount: number };
+      this.bus.emit('toast', {
+        kind: 'warning',
+        text: `A thief escaped with ${formatInt(p.amount)}g.`,
+        life: 5,
+      });
     });
 
     this.bus.on('thorns_reflected', (amount: unknown) => {
@@ -2596,14 +2659,17 @@ export class Game {
     t.y = persisted.tower.y;
     t.cooldown = 0;
     t.damageType = persisted.tower.damageType;
-    // Migration: old saves stored 'first' (which behaved identically to 'nearest').
-    // Map it to 'nearest' so users keep their previous targeting.
+    // Migration: old saves stored 'first', a dead alias that behaved identically
+    // to 'nearest'. Gameplay plan §2.3 deleted the mode; a save carrying it keeps
+    // the behaviour it actually had rather than being silently moved to the new
+    // 'priority' default, which would change how an existing run plays.
     const persistedMode = persisted.tower.targetingMode as string;
-    const validModes: TargetingMode[] = ['nearest', 'lowest_hp', 'first', 'strongest', 'boss', 'flying', 'last'];
-    const migrated: TargetingMode = (validModes as string[]).includes(persistedMode)
-      ? (persistedMode as TargetingMode)
-      : 'nearest';
-    t.targetingMode = migrated === 'first' ? 'nearest' : migrated;
+    const validModes: TargetingMode[] = ['priority', 'nearest', 'lowest_hp', 'strongest', 'boss', 'flying', 'last'];
+    t.targetingMode = persistedMode === 'first'
+      ? 'nearest'
+      : (validModes as string[]).includes(persistedMode)
+        ? (persistedMode as TargetingMode)
+        : TOWER_BASE.targetingMode;
     t.hp = persisted.tower.hp ?? TOWER_BASE.hp;
     t.maxHp = persisted.tower.maxHp ?? TOWER_BASE.maxHp;
     t.wallHp = persisted.tower.wallHp ?? 0;
@@ -2922,7 +2988,12 @@ export class Game {
       // Trigger set and damage set are the same disc, so one radius query
       // answers both — this used to be a nested scan of the whole enemy list
       // per mine, per frame (plan §5.4).
-      const caught = this.enemyMgr.queryRadius(mine.x, mine.y, mine.explosionRadius);
+      // Plan §2.2: mines are on the *ground*. A flying enemy never trips one,
+      // and a blinker mid-teleport is not standing where the trigger is — so
+      // both are filtered out of the trigger set as well as the damage set.
+      const caught = this.enemyMgr
+        .queryRadius(mine.x, mine.y, mine.explosionRadius)
+        .filter(e => isTargetable(e) && !ignoresGroundEffects(e));
       if (caught.length === 0) continue;
       mine.alive = false;
       for (const target of caught) {
@@ -3043,6 +3114,7 @@ export class Game {
       damageNumbers: this.effects.damageList,
       shockwaves: this.effects.shockwaveList,
       mines: this.mines,
+      hostileShots: this.enemyMgr.hostileShotList,
       aimLine: this.mouseDown ? { x: this.mouseX, y: this.mouseY } : null,
     }, {
       screenFlash: this.screenFlash,

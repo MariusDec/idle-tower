@@ -2,6 +2,7 @@ import { Game } from './game/Game';
 import { EventBus } from './game/EventBus';
 import { UIManager } from './ui/UIManager';
 import { ABILITIES } from './data/abilities';
+import type { TargetingMode } from './types';
 
 function bootstrap(): void {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement | null;
@@ -111,7 +112,7 @@ function bootstrap(): void {
     game.audioMgr.toggleMute();
   });
   ui.setOnTargetingModeChange((mode) => {
-    game.towerSystem.setTargetingMode(mode as 'nearest' | 'lowest_hp' | 'first' | 'strongest' | 'boss' | 'flying' | 'last');
+    game.towerSystem.setTargetingMode(mode as TargetingMode);
   });
   ui.setOnAutoPickBlessingsChange((enabled) => {
     game.setAutoPickBlessings(enabled);
@@ -125,7 +126,7 @@ function bootstrap(): void {
   });
   ui.setTargetingAPI({
     currentMode: game.gameState.tower.targetingMode,
-    setMode: (m) => game.towerSystem.setTargetingMode(m as 'nearest' | 'lowest_hp' | 'first' | 'strongest' | 'boss' | 'flying' | 'last'),
+    setMode: (m) => game.towerSystem.setTargetingMode(m as TargetingMode),
   });
   ui.setAbilityAPI({
     canCast: (id, wave) => game.abilities.canCast(id, wave),

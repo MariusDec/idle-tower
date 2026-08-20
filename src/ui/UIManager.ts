@@ -245,7 +245,7 @@ export class UIManager {
     return { volume, muted, setVolume: () => {}, toggleMute: () => {} };
   })();
   private targetingApi: TargetingAPI = {
-    currentMode: 'nearest',
+    currentMode: 'priority',
     setMode: () => {},
   };
   private abilityApi: AbilityAPI = {
@@ -407,7 +407,10 @@ export class UIManager {
       onClearSave: () => this.onClearSave(),
       onVolumeChange: (v) => this.onVolumeChange(v),
       onMuteToggle: () => this.onMuteToggle(),
-      onTargetingModeChange: (m) => this.onTargetingModeChange(m),
+      onTargetingModeChange: (m) => {
+        this.onTargetingModeChange(m);
+        this.hud.syncTargetingMode(m);
+      },
       initialVolume: this.audioApi.volume,
       isMuted: this.audioApi.muted,
       currentTargetingMode: this.targetingApi.currentMode,
@@ -821,7 +824,10 @@ export class UIManager {
   }
 
   setTargetingAPI(api: TargetingAPI): void {
+    // Both surfaces share one API object, so changing the mode in Settings and
+    // changing it in the HUD are the same action (plan §2.3).
     this.targetingApi = api;
+    this.hud.setTargetingAPI(api);
   }
 
   setSpeedAPI(api: SpeedAPI): void {

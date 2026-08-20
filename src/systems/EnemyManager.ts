@@ -1,6 +1,6 @@
-import type { Enemy, EnemyType, AuraType, Projectile } from '../types';
+import type { Enemy, EnemyType, AuraType, HostileShot, Projectile } from '../types';
 import { distance2, nextId } from '../utils/math';
-import { ENEMY_DEFS } from '../data/enemies';
+import { ENEMY_BEHAVIOR, ENEMY_DEFS, ignoresWallBand } from '../data/enemies';
 import {
   bossHPForWave,
   enemyDamageForWave,
@@ -15,6 +15,26 @@ import type { ResourceManager } from './ResourceManager';
 import type { ResearchTree } from './ResearchTree';
 
 const ENEMY_GAP = 2;
+
+/** How far past the arena edge a fleeing thief must get to count as escaped. */
+const ESCAPE_MARGIN = 30;
+
+/**
+ * Ceiling on siege shells in the air at once.
+ *
+ * A wave full of siege enemies stalled behind a slow means shells accumulate
+ * faster than they land; the oldest is dropped rather than letting the list —
+ * and the draw loop over it — grow without bound.
+ */
+const MAX_HOSTILE_SHOTS = 64;
+
+/**
+ * What an enemy wants to do this substep (gameplay plan §2.1).
+ *
+ * `phase`-style behaviours (the blink) report `hold`, because they have already
+ * moved themselves and the shared travel code must not move them again.
+ */
+type EnemyStance = 'advance' | 'hold' | 'retreat' | 'escaped';
 
 // Elite enemy constants
 //
@@ -140,6 +160,25 @@ export class EnemyManager {
    */
   private readonly grid = new SpatialGrid<Enemy>(GRID_CELL_SIZE);
   private gridStale = true;
+  /**
+   * Shells fired *at* the tower by siege enemies (plan §2.1).
+   *
+   * Owned here rather than in `ProjectileManager` because every loop in that
+   * class assumes friendly ownership — pierce, crit, armour penetration, the
+   * blessing behaviours. On arrival a shell emits `tower_damaged` and the whole
+   * existing mitigation chain applies to it unchanged.
+   */
+  private hostileShots: HostileShot[] = [];
+  /** Wave currently spawning; drives the thief's per-wave theft ceiling. */
+  private currentWave = 1;
+  /** Gold stolen so far during `currentWave`, against the 15% cap. */
+  private theftThisWave = 0;
+  /** Play-field size, so a fleeing thief knows where the edge is. */
+  private boundsWidth = 1280;
+  private boundsHeight = 720;
+  /** Tower position from the last tick, so a fleeing healer knows what to run from. */
+  private lastTowerX = 0;
+  private lastTowerY = 0;
 
   constructor(bus: EventBus, resources: ResourceManager, researchTree?: ResearchTree) {
     this.bus = bus;
@@ -149,6 +188,28 @@ export class EnemyManager {
 
   get list(): Enemy[] {
     return this.enemies;
+  }
+
+  /** Incoming siege shells, for the renderer. */
+  get hostileShotList(): HostileShot[] {
+    return this.hostileShots;
+  }
+
+  /** Play-field size. A fleeing thief escapes by crossing it. */
+  setBounds(width: number, height: number): void {
+    this.boundsWidth = width;
+    this.boundsHeight = height;
+  }
+
+  /**
+   * A new wave is starting: reset the per-wave theft budget (plan §2.6).
+   *
+   * Called by `WaveManager.startWave`, so the cap follows the wave the player
+   * is actually on rather than whatever the last thief happened to spawn in.
+   */
+  beginWave(wave: number): void {
+    this.currentWave = Math.max(1, Math.floor(wave));
+    this.theftThisWave = 0;
   }
 
   /** Composed permanent gold multiplier (1 = no bonus). */
@@ -306,9 +367,21 @@ export class EnemyManager {
       attackCooldown: 1 / fireRate,
       attacking: false,
       alive: true,
-      ...(type === 'shielded' ? { shieldCharges: def.shieldCharges ?? 3 } : {}),
+      spawnWave: wave,
+      undamagedFor: 0,
+      ...(type === 'shielded'
+        ? { shieldCharges: def.shieldCharges ?? 3, shieldRegenTimer: ENEMY_BEHAVIOR.shieldRegenInterval }
+        : {}),
       ...(type === 'healer' ? { healCooldown: def.healCooldown ?? 2.5 } : {}),
       ...(type === 'boss' ? { enraged: false, enrageTriggered: false } : {}),
+      // Behavioural types carry their cadence from the moment they spawn, so a
+      // siege that walks into range mid-reload does not get a free instant shot
+      // and a blinker cannot blink on its first substep.
+      ...(type === 'siege' ? { siegeCooldown: ENEMY_BEHAVIOR.siegeReload, siegeHalted: false } : {}),
+      ...(type === 'thief' ? { stolenGold: 0, fleeing: false } : {}),
+      ...(type === 'blinker' ? { blinkTimer: ENEMY_BEHAVIOR.blinkInterval, blinkImmunity: 0 } : {}),
+      ...(type === 'warden' ? { wardTimer: 0 } : {}),
+      ...(type === 'burrower' ? { burrowed: true, surfacing: 0 } : {}),
       ...overrides,
     };
     this.enemies.push(enemy);
@@ -332,12 +405,34 @@ export class EnemyManager {
    */
   damage(enemy: Enemy, amount: number, isCrit: boolean = false): boolean {
     if (!enemy.alive) return false;
+    // Burrowed and freshly-split enemies are simply not there to be hit
+    // (plan §2.1/§2.2). Returning silently — no shield break, no damage number
+    // — is deliberate: every caller that reaches here does so because some
+    // *other* code path failed to consult `isTargetable`, and a visible block
+    // effect would read as "your shot was absorbed" rather than "it missed".
+    if (enemy.burrowed === true) return false;
+    if ((enemy.spawnProtection ?? 0) > 0) return false;
+    enemy.undamagedFor = 0;
     // Shielded: each charge absorbs a hit regardless of damage amount
     if (enemy.type === 'shielded' && (enemy.shieldCharges ?? 0) > 0) {
       enemy.shieldCharges = (enemy.shieldCharges ?? 0) - 1;
+      enemy.shieldRegenTimer = ENEMY_BEHAVIOR.shieldRegenInterval;
       this.bus.emit('shield_break', { x: enemy.x, y: enemy.y });
       this.bus.emit('enemy_damaged', { enemy, amount: 0, killed: false, isCrit, blocked: true });
       return false;
+    }
+    // Warden ward: an absorb pool in front of HP. It soaks the hit rather than
+    // negating it, so sustained fire still gets through — this is a tax on
+    // ignoring the warden, not an immunity.
+    if ((enemy.absorbShield ?? 0) > 0) {
+      const absorbed = Math.min(enemy.absorbShield ?? 0, amount);
+      enemy.absorbShield = (enemy.absorbShield ?? 0) - absorbed;
+      amount -= absorbed;
+      this.bus.emit('ward_absorbed', { x: enemy.x, y: enemy.y, amount: absorbed });
+      if (amount <= 0) {
+        this.bus.emit('enemy_damaged', { enemy, amount: 0, killed: false, isCrit, blocked: true });
+        return false;
+      }
     }
     enemy.hp -= amount;
     // Thorns aura: reflect fraction of damage back to tower (only if not blocked by shield)
@@ -360,6 +455,15 @@ export class EnemyManager {
       if (enemy.aura === 'retribution' && enemy.elite) {
         this.triggerRetribution(enemy);
       }
+      // A loaded thief pays double for the interception — the whole reason to
+      // drop everything and chase one (plan §2.1).
+      if (enemy.type === 'thief' && (enemy.stolenGold ?? 0) > 0) {
+        const recovered = Math.floor((enemy.stolenGold ?? 0) * ENEMY_BEHAVIOR.thiefRecoveryMult);
+        enemy.stolenGold = 0;
+        this.resources.addGold(recovered);
+        this.bus.emit('gold_recovered', { x: enemy.x, y: enemy.y, amount: recovered });
+      }
+      if (enemy.type === 'warden') this.clearWardsFrom(enemy.id);
       this.bus.emit('enemy_damaged', { enemy, amount, killed: true, isCrit });
       this.bus.emit('enemy_killed', enemy);
       this.resources.addGold(this.computeGold(enemy, isCrit));
@@ -410,6 +514,8 @@ export class EnemyManager {
 
   applyKnockback(enemy: Enemy, force: number, fromX: number, fromY: number): void {
     if (force <= 0) return;
+    // A blinker mid-teleport is not where the knockback is pushing (plan §2.1).
+    if ((enemy.blinkImmunity ?? 0) > 0) return;
     const dx = enemy.x - fromX;
     const dy = enemy.y - fromY;
     const d = Math.sqrt(dx * dx + dy * dy);
@@ -438,7 +544,23 @@ export class EnemyManager {
     this.gridStale = true;
   }
 
+  /**
+   * One simulation substep for the whole field.
+   *
+   * Structure (gameplay plan §2.1/§2.2): shared timers first, then per enemy a
+   * *stance* — the type's behaviour branch decides whether it advances, holds,
+   * runs, or has already moved itself — and only then the shared
+   * contact/melee/travel code. Keeping the decision and the movement separate is
+   * what stops thirteen types turning back into thirteen copies of "walk at the
+   * tower".
+   *
+   * Everything here is integrated on the simulation clock, so every cadence
+   * (siege reload, blink interval, warden refresh, burrow surface, shield
+   * regeneration) is correct at `dt = 1/120` and at 6.5x game speed alike.
+   */
   tick(dt: number, towerX: number, towerY: number): void {
+    this.lastTowerX = towerX;
+    this.lastTowerY = towerY;
     if (this.slowTimer > 0) {
       this.slowTimer -= dt;
       if (this.slowTimer <= 0) this.slowFactor = 1;
@@ -458,6 +580,10 @@ export class EnemyManager {
       else this.vulnerableEnemies.set(id, next);
     }
 
+    // Siege shells travel and land inside the same substep grid as everything
+    // else, so a 1.2 s flight is 1.2 s of game time at any speed.
+    this.tickHostileShots(dt);
+
     const newlyReached: Enemy[] = [];
     let totalDamage = 0;
     // Pre-compute haste aura multipliers (per-frame reset)
@@ -466,49 +592,97 @@ export class EnemyManager {
     // Tick retribution buff timers
     this.tickRetributionBuffs(dt);
 
+    let escaped = false;
+
     for (const e of this.enemies) {
       if (!e.alive) continue;
+
+      // ── shared per-enemy timers ──
+      e.undamagedFor = (e.undamagedFor ?? 0) + dt;
+      if ((e.blinkImmunity ?? 0) > 0) e.blinkImmunity = Math.max(0, (e.blinkImmunity ?? 0) - dt);
+      if (e.afterImageAge !== undefined) e.afterImageAge += dt;
+      if ((e.spawnProtection ?? 0) > 0) e.spawnProtection = Math.max(0, (e.spawnProtection ?? 0) - dt);
+      if ((e.scatterTimer ?? 0) > 0) e.scatterTimer = Math.max(0, (e.scatterTimer ?? 0) - dt);
+
       const dx = towerX - e.x;
       const dy = towerY - e.y;
       const d = Math.sqrt(dx * dx + dy * dy);
-      const contact = TOWER_HIT_RADIUS + ENEMY_DEFS[e.type].radius + ENEMY_GAP + this.wallContactExtra;
 
-      if (d <= contact) {
-        if (d > 0) {
-          const ratio = contact / d;
-          e.x = towerX - dx * ratio;
-          e.y = towerY - dy * ratio;
-        }
+      let speedMult = (hasteMultipliers.get(e.id) ?? 1) * this.enrageSpeedMult * this.blessingSpeedMult;
+      if (this.retributionBuffs.has(e.id)) speedMult *= RETRIBUTION_BUFF_SPEED_MULT;
+      const chill = this.chilled.get(e.id);
+      if (e.burrowed === true) speedMult *= ENEMY_BEHAVIOR.burrowSpeedMult;
+      const moveSpeed = e.speed * this.slowFactor * (chill ? chill.factor : 1) * speedMult;
 
-        if (!e.attacking) {
-          e.attacking = true;
-          e.attackCooldown = 1 / e.fireRate;
-          newlyReached.push(e);
-        }
+      const stance = this.resolveStance(e, dt, d, dx, dy, towerX, towerY);
+      if (stance === 'escaped') {
+        escaped = true;
+        continue;
+      }
 
-        e.attackCooldown -= dt;
-        if (e.attackCooldown <= 0) {
-          this.bus.emit('enemy_attack', { x: e.x, y: e.y, type: e.type });
-          let dmgMult = this.damageToTowerMult * this.enrageDamageMult * this.blessingDamageMult;
-          if (this.retributionBuffs.has(e.id)) dmgMult *= RETRIBUTION_BUFF_DAMAGE_MULT;
-          totalDamage += e.damage * dmgMult;
-          if (this.thorns > 0) {
-            const thornDmg = Math.floor(e.damage * this.thorns);
-            if (thornDmg > 0) this.damage(e, thornDmg, false);
-          }
-          e.attackCooldown += 1 / e.fireRate;
-        }
+      // A splitter child spends its first moments running *away* from where its
+      // parent died, so the same AoE that killed the parent does not delete the
+      // children in the same instant (plan §2.2).
+      if ((e.scatterTimer ?? 0) > 0) {
+        e.attacking = false;
+        const scatter = moveSpeed * ENEMY_BEHAVIOR.splitterScatterSpeedMult * dt;
+        e.x += (e.scatterVx ?? 0) * scatter;
+        e.y += (e.scatterVy ?? 0) * scatter;
+      } else if (stance === 'retreat') {
+        e.attacking = false;
+        const flee = this.fleeDirection(e);
+        const fleeMult = e.type === 'thief'
+          ? ENEMY_BEHAVIOR.thiefFleeSpeedMult
+          : ENEMY_BEHAVIOR.healerFleeSpeedMult;
+        e.x += flee.x * moveSpeed * fleeMult * dt;
+        e.y += flee.y * moveSpeed * fleeMult * dt;
+      } else if (stance === 'hold') {
+        e.attacking = false;
       } else {
-        let speedMult = (hasteMultipliers.get(e.id) ?? 1) * this.enrageSpeedMult * this.blessingSpeedMult;
-        if (this.retributionBuffs.has(e.id)) speedMult *= RETRIBUTION_BUFF_SPEED_MULT;
-        const chill = this.chilled.get(e.id);
-        const inv = e.speed * this.slowFactor * (chill ? chill.factor : 1) * speedMult * dt / d;
-        e.x += dx * inv;
-        e.y += dy * inv;
+        const contact = this.contactRadius(e);
+        if (d <= contact) {
+          if (d > 0) {
+            const ratio = contact / d;
+            e.x = towerX - dx * ratio;
+            e.y = towerY - dy * ratio;
+          }
+
+          // A thief never gets to melee: it grabs what it came for and runs.
+          if (e.type === 'thief' && (e.stolenGold ?? 0) <= 0) {
+            this.stealFrom(e);
+            continue;
+          }
+
+          if (!e.attacking) {
+            e.attacking = true;
+            e.attackCooldown = 1 / e.fireRate;
+            newlyReached.push(e);
+          }
+
+          e.attackCooldown -= dt;
+          if (e.attackCooldown <= 0) {
+            this.bus.emit('enemy_attack', { x: e.x, y: e.y, type: e.type });
+            let dmgMult = this.damageToTowerMult * this.enrageDamageMult * this.blessingDamageMult;
+            if (this.retributionBuffs.has(e.id)) dmgMult *= RETRIBUTION_BUFF_DAMAGE_MULT;
+            totalDamage += e.damage * dmgMult;
+            if (this.thorns > 0) {
+              const thornDmg = Math.floor(e.damage * this.thorns);
+              if (thornDmg > 0) this.damage(e, thornDmg, false);
+            }
+            e.attackCooldown += 1 / e.fireRate;
+          }
+        } else {
+          e.attacking = false;
+          const inv = moveSpeed * dt / d;
+          e.x += dx * inv;
+          e.y += dy * inv;
+        }
       }
 
       // Healer AI: every healCooldown seconds, find lowest-HP non-healer ally
-      // within healRange and restore healFraction of its maxHP.
+      // within healRange and restore healFraction of its maxHP. A wounded
+      // healer keeps healing *while* it runs (plan §2.2) — that is what makes
+      // it worth chasing rather than ignoring.
       if (e.type === 'healer' && (e.healCooldown ?? 0) > 0) {
         e.healCooldown = (e.healCooldown ?? 0) - dt;
         if (e.healCooldown <= 0) {
@@ -553,6 +727,10 @@ export class EnemyManager {
     if (totalDamage > 0) {
       this.bus.emit('tower_damaged', totalDamage);
     }
+    if (escaped) {
+      // A thief that got away is not a kill, so nothing above filtered it out.
+      this.enemies = this.enemies.filter(e => e.alive);
+    }
 
     // Process vitality aura (heal nearby enemies). Deliberately reuses the
     // index built at the top of the tick rather than forcing a second rebuild:
@@ -579,6 +757,340 @@ export class EnemyManager {
     this.gridStale = true;
   }
 
+  /**
+   * What this enemy wants to do this substep, and the type's own behaviour.
+   *
+   * An exhaustive switch with a `never` default (cross-cutting rule 3): a new
+   * `EnemyType` cannot reach the field without someone deciding what it does.
+   * Side effects live here — reloading, blinking, warding, surfacing — because
+   * they are the behaviour; the caller only owns the movement that follows.
+   */
+  private resolveStance(
+    e: Enemy,
+    dt: number,
+    d: number,
+    dx: number,
+    dy: number,
+    towerX: number,
+    towerY: number,
+  ): EnemyStance {
+    switch (e.type) {
+      case 'normal':
+      case 'fast':
+      case 'tank':
+      case 'flying':
+      case 'boss':
+      case 'splitter':
+        return 'advance';
+
+      case 'shielded':
+        this.tickShieldRegen(e, dt);
+        return 'advance';
+
+      // Below 40% it turns and runs, still healing as it goes: the one enemy
+      // whose *reward* for surviving is undoing your work now punishes you for
+      // treating it as a background number (plan §2.2).
+      case 'healer': {
+        const wounded = e.maxHp > 0 && e.hp / e.maxHp < ENEMY_BEHAVIOR.healerFleeThreshold;
+        e.fleeing = wounded;
+        return wounded ? 'retreat' : 'advance';
+      }
+
+      // Halts outside a short build's range and shells the tower on a fixed
+      // reload. Knockback and slow do nothing useful against it; range and
+      // target priority are the answer (plan §2.1).
+      case 'siege': {
+        const reload = ENEMY_BEHAVIOR.siegeReload;
+        if (d > ENEMY_BEHAVIOR.siegeStandoff) {
+          e.siegeHalted = false;
+          // Clamped at zero rather than left to go negative during a long
+          // approach, so arriving in range fires one shell, never a stockpile.
+          e.siegeCooldown = Math.max(0, (e.siegeCooldown ?? reload) - dt);
+          return 'advance';
+        }
+        e.siegeHalted = true;
+        e.siegeCooldown = (e.siegeCooldown ?? reload) - dt;
+        while (e.siegeCooldown <= 0) {
+          this.fireSiegeShell(e, towerX, towerY);
+          e.siegeCooldown += reload;
+        }
+        return 'hold';
+      }
+
+      // Beelines, lifts a cut of the treasury on contact, then runs for the
+      // nearest edge. Killing it is the only way to get the gold back — and it
+      // pays double for the trouble (plan §2.1).
+      case 'thief': {
+        if ((e.stolenGold ?? 0) <= 0) return 'advance';
+        if (this.hasLeftTheField(e)) {
+          this.escapeWithLoot(e);
+          return 'escaped';
+        }
+        return 'retreat';
+      }
+
+      // Teleports past whatever you built to keep things at arm's length.
+      // Knockback, mines and the wall band all read the position it is no
+      // longer at (plan §2.1).
+      case 'blinker': {
+        e.blinkTimer = (e.blinkTimer ?? ENEMY_BEHAVIOR.blinkInterval) - dt;
+        if (e.blinkTimer > 0) return 'advance';
+        e.blinkTimer += ENEMY_BEHAVIOR.blinkInterval;
+        e.blinkImmunity = ENEMY_BEHAVIOR.blinkImmunity;
+        const contact = this.contactRadius(e);
+        const step = d > 0 ? Math.min(ENEMY_BEHAVIOR.blinkDistance, Math.max(0, d - contact)) : 0;
+        if (step > 0) {
+          e.afterImageX = e.x;
+          e.afterImageY = e.y;
+          e.afterImageAge = 0;
+          e.x += (dx / d) * step;
+          e.y += (dy / d) * step;
+          // It moved, so the index every radius query reads is stale now — not
+          // only at the end of the tick, because a mine detonation triggered by
+          // this substep would otherwise test the position it left.
+          this.gridStale = true;
+          this.bus.emit('enemy_blinked', { x: e.afterImageX, y: e.afterImageY, toX: e.x, toY: e.y });
+        }
+        return 'hold';
+      }
+
+      // Hands out a regenerating absorb pool to the enemies around it. Nothing
+      // about your damage answers this; only shooting the warden first does
+      // (plan §2.1).
+      case 'warden': {
+        e.wardTimer = (e.wardTimer ?? 0) - dt;
+        if (e.wardTimer <= 0) {
+          e.wardTimer += ENEMY_BEHAVIOR.wardRefresh;
+          this.projectWard(e);
+        }
+        return 'advance';
+      }
+
+      // Crosses the whole approach corridor underground, where range cannot
+      // reach it, and comes up inside your close defences (plan §2.1).
+      case 'burrower': {
+        if (e.burrowed === true) {
+          if (d > ENEMY_BEHAVIOR.burrowSurfaceDistance) return 'advance';
+          e.burrowed = false;
+          e.surfacing = ENEMY_BEHAVIOR.burrowTelegraph;
+          this.bus.emit('burrower_surfaced', { x: e.x, y: e.y });
+          return 'hold';
+        }
+        if ((e.surfacing ?? 0) > 0) {
+          e.surfacing = Math.max(0, (e.surfacing ?? 0) - dt);
+          return 'hold';
+        }
+        return 'advance';
+      }
+
+      default: {
+        const exhaustive: never = e.type;
+        return exhaustive;
+      }
+    }
+  }
+
+  /** Contact radius, wall band included unless the type walks through it. */
+  private contactRadius(e: Enemy): number {
+    const extra = ignoresWallBand(e) ? 0 : this.wallContactExtra;
+    return TOWER_HIT_RADIUS + ENEMY_DEFS[e.type].radius + ENEMY_GAP + extra;
+  }
+
+  /** Unit vector a fleeing enemy runs along: thieves make for the nearest edge. */
+  private fleeDirection(e: Enemy): { x: number; y: number } {
+    if (e.type !== 'thief') {
+      // A wounded healer simply backs away from what is hurting it.
+      const dx = e.x - this.lastTowerX;
+      const dy = e.y - this.lastTowerY;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 0.001) return { x: 1, y: 0 };
+      return { x: dx / d, y: dy / d };
+    }
+    const left = e.x;
+    const right = this.boundsWidth - e.x;
+    const top = e.y;
+    const bottom = this.boundsHeight - e.y;
+    const min = Math.min(left, right, top, bottom);
+    if (min === left) return { x: -1, y: 0 };
+    if (min === right) return { x: 1, y: 0 };
+    if (min === top) return { x: 0, y: -1 };
+    return { x: 0, y: 1 };
+  }
+
+  /** True once a fleeing enemy has cleared the play field entirely. */
+  private hasLeftTheField(e: Enemy): boolean {
+    return e.x < -ESCAPE_MARGIN
+      || e.x > this.boundsWidth + ESCAPE_MARGIN
+      || e.y < -ESCAPE_MARGIN
+      || e.y > this.boundsHeight + ESCAPE_MARGIN;
+  }
+
+  /**
+   * A thief on contact: take the smaller of 6% of *current* gold and 30x a
+   * normal kill at this wave, bounded by what is left of the wave's 15% ceiling
+   * (plan §2.6).
+   *
+   * Stealing from current gold rather than lifetime or income is the safety
+   * valve: a player who spends what they earn has nothing worth taking, so the
+   * thief can annoy but never bankrupt.
+   */
+  private stealFrom(thief: Enemy): void {
+    const current = this.resources.gold;
+    if (current <= 0) {
+      // Nothing to take — it leaves anyway, which reads better than a thief
+      // standing at the wall forever.
+      thief.stolenGold = 0;
+      thief.fleeing = true;
+      thief.attacking = false;
+      this.bus.emit('toast', {
+        kind: 'info',
+        text: 'A thief found the vault empty and fled.',
+        life: 3,
+      });
+      thief.alive = false;
+      return;
+    }
+    const waveGold = goldDropForWave(ENEMY_DEFS.normal.baseGold, thief.spawnWave ?? this.currentWave);
+    const budget = Math.max(0, current * ENEMY_BEHAVIOR.thiefWaveTheftCap - this.theftThisWave);
+    const amount = Math.floor(Math.min(
+      current * ENEMY_BEHAVIOR.thiefStealFraction,
+      waveGold * ENEMY_BEHAVIOR.thiefStealWaveGoldMult,
+      budget,
+    ));
+    if (amount <= 0) {
+      thief.alive = false;
+      return;
+    }
+    this.resources.spendGold(amount);
+    this.theftThisWave += amount;
+    thief.stolenGold = amount;
+    thief.fleeing = true;
+    thief.attacking = false;
+    this.bus.emit('gold_stolen', { x: thief.x, y: thief.y, amount });
+  }
+
+  /** The thief made it off the map: the gold is gone for good. */
+  private escapeWithLoot(thief: Enemy): void {
+    const amount = thief.stolenGold ?? 0;
+    thief.alive = false;
+    thief.stolenGold = 0;
+    this.gridStale = true;
+    this.bus.emit('gold_escaped', { x: thief.x, y: thief.y, amount });
+  }
+
+  /** Shielded: rebuild one charge every 6 s, but only after 3 s of quiet. */
+  private tickShieldRegen(e: Enemy, dt: number): void {
+    const max = ENEMY_DEFS.shielded.shieldCharges ?? 3;
+    if ((e.shieldCharges ?? 0) >= max) return;
+    if ((e.undamagedFor ?? 0) < ENEMY_BEHAVIOR.shieldCalmBeforeRegen) {
+      e.shieldRegenTimer = ENEMY_BEHAVIOR.shieldRegenInterval;
+      return;
+    }
+    e.shieldRegenTimer = (e.shieldRegenTimer ?? ENEMY_BEHAVIOR.shieldRegenInterval) - dt;
+    if (e.shieldRegenTimer > 0) return;
+    e.shieldRegenTimer = ENEMY_BEHAVIOR.shieldRegenInterval;
+    e.shieldCharges = Math.min(max, (e.shieldCharges ?? 0) + 1);
+    this.bus.emit('shield_restored', { x: e.x, y: e.y });
+  }
+
+  /**
+   * Warden: refresh an absorb pool on up to five nearby allies.
+   *
+   * The pool is *set*, never added to, so standing next to two wardens is no
+   * better than standing next to one — the answer stays "kill the warden", not
+   * "out-damage the stack".
+   *
+   * A direct scan for the same reason the aura passes are: the outer loop is
+   * over wardens, of which a wave holds a handful.
+   */
+  private projectWard(warden: Enemy): void {
+    const amount = Math.max(1, Math.floor(warden.maxHp * ENEMY_BEHAVIOR.wardShieldFraction));
+    const r2 = ENEMY_BEHAVIOR.wardRange * ENEMY_BEHAVIOR.wardRange;
+    let granted = 0;
+    for (const other of this.enemies) {
+      if (granted >= ENEMY_BEHAVIOR.wardMaxTargets) break;
+      if (!other.alive || other.id === warden.id) continue;
+      // Wardens do not shield each other: a pair would otherwise be far more
+      // than twice the problem of one.
+      if (other.type === 'warden') continue;
+      if (other.burrowed === true) continue;
+      const dx = other.x - warden.x;
+      const dy = other.y - warden.y;
+      if (dx * dx + dy * dy > r2) continue;
+      other.absorbShield = amount;
+      other.absorbMax = amount;
+      other.wardenId = warden.id;
+      granted += 1;
+    }
+    if (granted > 0) {
+      this.bus.emit('ward_projected', { x: warden.x, y: warden.y, count: granted, amount });
+    }
+  }
+
+  /** The warden is dead: every pool it was maintaining collapses with it. */
+  private clearWardsFrom(wardenId: number): void {
+    for (const other of this.enemies) {
+      if (other.wardenId !== wardenId) continue;
+      other.wardenId = undefined;
+      other.absorbShield = 0;
+      other.absorbMax = 0;
+    }
+  }
+
+  /** Launch one siege shell on a fixed 1.2 s fuse. */
+  private fireSiegeShell(e: Enemy, towerX: number, towerY: number): void {
+    const travel = ENEMY_BEHAVIOR.siegeShellTravel;
+    // The enemy damage channels are applied at launch, so a shell in the air
+    // carries the multipliers that were live when it was fired — which is what
+    // the arc telegraph is promising the player.
+    const mult = this.damageToTowerMult * this.enrageDamageMult * this.blessingDamageMult;
+    const damage = e.damage * ENEMY_BEHAVIOR.siegeShellDamageMult * mult;
+    if (this.hostileShots.length >= MAX_HOSTILE_SHOTS) this.hostileShots.shift();
+    this.hostileShots.push({
+      id: nextId(),
+      x: e.x,
+      y: e.y,
+      originX: e.x,
+      originY: e.y,
+      vx: (towerX - e.x) / travel,
+      vy: (towerY - e.y) / travel,
+      damage,
+      remaining: travel,
+      travel,
+      alive: true,
+    });
+    this.bus.emit('siege_fired', { x: e.x, y: e.y });
+  }
+
+  /**
+   * Advance every shell and deliver the ones that land.
+   *
+   * Landing emits `tower_damaged`, deliberately: that is the single entry point
+   * for the whole mitigation chain — dodge, research DR, the mana-shield
+   * evolution, the wall, shield charges, armour, defense and the mana-shield
+   * talent — so a siege shell is mitigated by exactly what a melee hit is,
+   * with no second copy of any of it (plan §2.1).
+   */
+  private tickHostileShots(dt: number): void {
+    if (this.hostileShots.length === 0) return;
+    let landed = 0;
+    let anyLanded = false;
+    for (const s of this.hostileShots) {
+      if (!s.alive) continue;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.remaining -= dt;
+      if (s.remaining > 0) continue;
+      s.alive = false;
+      anyLanded = true;
+      landed += s.damage;
+      this.bus.emit('siege_impact', { x: s.x, y: s.y });
+    }
+    if (landed > 0) this.bus.emit('tower_damaged', landed);
+    if (anyLanded) this.hostileShots = this.hostileShots.filter(s => s.alive);
+  }
+
+
   findById(id: number): Enemy | null {
     for (const e of this.enemies) {
       if (e.id === id) return e;
@@ -588,6 +1100,8 @@ export class EnemyManager {
 
   reset(): void {
     this.enemies = [];
+    this.hostileShots = [];
+    this.theftThisWave = 0;
     this.grid.clear();
     this.gridStale = true;
     this.slowFactor = 1;
@@ -618,12 +1132,21 @@ export class EnemyManager {
   /**
    * Spawn a splitter child at given location (used for split-on-death).
    */
-  spawnSplitterChild(parent: Enemy, wave: number, x: number, y: number): Enemy {
+  /**
+   * Spawn a splitter child (plan §2.2).
+   *
+   * `scatterAngle` sends it outwards for a beat under spawn protection, so the
+   * AoE that killed the parent cannot delete both children in the same instant.
+   * A split is meant to be a small burst the player has to answer, not two more
+   * bars appearing inside an explosion that is already over.
+   */
+  spawnSplitterChild(parent: Enemy, wave: number, x: number, y: number, scatterAngle?: number): Enemy {
     const def = ENEMY_DEFS.splitter;
     const childHp = Math.max(1, Math.floor(parent.maxHp * (def.splitHpFraction ?? 0.5)));
     const childSpeed = parent.speed * (def.splitSpeedMultiplier ?? 1.4);
     const childGold = Math.max(1, Math.floor(parent.goldValue * 0.5));
     const childDamage = Math.max(1, Math.floor(parent.damage * 0.7));
+    const angle = scatterAngle ?? Math.random() * Math.PI * 2;
     return this.spawn('splitter', wave, x, y, {
       hp: childHp,
       maxHp: childHp,
@@ -633,6 +1156,10 @@ export class EnemyManager {
       isSplitChild: true,
       elite: false,
       aura: null,
+      spawnProtection: ENEMY_BEHAVIOR.splitterSpawnProtection,
+      scatterTimer: ENEMY_BEHAVIOR.splitterScatterTime,
+      scatterVx: Math.cos(angle),
+      scatterVy: Math.sin(angle),
     });
   }
 

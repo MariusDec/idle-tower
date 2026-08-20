@@ -26,14 +26,52 @@ tick() called each frame:
 
 ## Enemy Selection
 
-Non-boss waves pick from weighted pool:
-- **normal:** weight 6 (always available)
-- **fast:** weight 3 (wave 3+)
-- **tank:** weight 2 (wave 5+)
-- **flying:** weight 2 (wave 8+)
-- **healer:** weight 1 (wave 15+)
+Non-boss waves draw from a weighted pool. The weights live in
+**`ENEMY_SPAWN_WEIGHTS`** (`src/data/enemies.ts`), and `spawnPoolForWave(wave)`
+filters them by each type's `unlockWave`.
 
-Boss waves (every 10th) always spawn a single boss enemy.
+That table is the single source of truth: `WaveManager.pickEnemyType`, the
+offline-progress wave averages in `SaveManager`, and the balance model in
+`sim/model.ts` all read it. It used to be written out three times, which is
+exactly how a balance change lands in the game but not in the model that is
+supposed to be measuring it.
+
+| Type | Weight | Unlock |
+|---|---:|---:|
+| normal | 5 | 1 |
+| fast | 3 | 3 |
+| tank | 2 | 5 |
+| flying | 2 | 8 |
+| splitter | 1 | 12 |
+| healer | 1 | 15 |
+| shielded | 1 | 20 |
+| siege | 2 | 25 |
+| thief | 1 | 30 |
+| blinker | 2 | 35 |
+| warden | 1 | 40 |
+| burrower | 2 | 45 |
+| boss | 0 | — (boss waves bypass the pool) |
+
+Gameplay plan §2.6 requires that the five behavioural types **replace** slots
+rather than adding them, so total wave HP does not rise: `normal` dropped 6→5
+and `splitter` 2→1 to pay for the eight new weight points, and the new types'
+base HP is budgeted so the pool's weighted mean effective HP is unchanged.
+`npm run sim` reproduces the pre-change wall wave exactly at every prestige tier.
+
+### Thief cap
+
+At most **one thief per wave**. `WaveManager` drops it from the pool once one
+has spawned, and `EnemyManager` separately enforces the 15%-of-current-gold
+theft ceiling for the wave (reset by `beginWave`, which `startWave`,
+`startAtWave` and `reset` all call).
+
+### Fast packs
+
+A `fast` roll spawns **three** enemies from one shared spawn point, scattered
+over ±26 px, so it reads as a rush rather than a trickle. The pack counts
+against `enemiesToSpawn` **in full** — it takes slots, it does not add them —
+and the pack is truncated if fewer than three slots remain. The elite roll
+happens per pack member, so packing does not change the elite rate.
 
 ## Spawn Position
 
@@ -58,6 +96,11 @@ If `waveSkipChance > 0` and roll succeeds:
 | `setAutoProgress(bool)` | Toggle auto-advance |
 | `getAutoProgress()` | Current auto-progress state |
 | `setWaveSkipChance(float)` | Set skip probability |
+
+Every entry point that changes the current wave (`startWave`, `startAtWave`,
+`reset`) calls `EnemyManager.beginWave(wave)`, which resets the per-wave theft
+budget. Adding a fourth entry point without that call silently gives thieves an
+unbounded budget.
 
 ## Wave Controls (UI)
 

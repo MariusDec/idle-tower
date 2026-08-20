@@ -21,7 +21,14 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `enemy_damaged` | `{ enemy, amount, killed, isCrit }` | EnemyManager | Game (lifesteal, effects) |
 | `enemy_killed` | `Enemy` | EnemyManager | Game (stats, effects, gold) |
 | `enemies_reached_tower` | `Enemy[]` | EnemyManager | Game (toast, currently disabled) |
-| `tower_damaged` | `number` (raw damage) | EnemyManager | Game (armor/defense calc, HP) |
+| `tower_damaged` | `number` (raw damage) | EnemyManager (melee **and** siege shells), Game (thorns) | Game (the single mitigation chain: dodge → research DR → mana-shield evolution → wall → shield → armour → defense → mana-shield talent) |
+| `shield_break` / `shield_restored` | `{ x, y }` | EnemyManager | Game (shielded charge feedback) |
+| `ward_projected` | `{ x, y, count, amount }` | EnemyManager | Game (warden ring) |
+| `ward_absorbed` | `{ x, y, amount }` | EnemyManager | Game (absorb flash) |
+| `siege_fired` / `siege_impact` | `{ x, y }` | EnemyManager | Game (audio, impact burst) |
+| `enemy_blinked` | `{ x, y, toX, toY }` | EnemyManager | Game (blink ring) |
+| `burrower_surfaced` | `{ x, y }` | EnemyManager | Game (surface burst) |
+| `gold_stolen` / `gold_recovered` / `gold_escaped` | `{ x, y, amount }` | EnemyManager | Game (toasts) |
 | `wave_started` | `number` (wave) | WaveManager | Game (milestone check) |
 | `wave_cleared` | `number` (wave) | WaveManager | — |
 | `gold_changed` | `number` (gold) | ResourceManager | — |

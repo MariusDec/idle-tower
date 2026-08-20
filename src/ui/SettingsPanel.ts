@@ -1,4 +1,5 @@
 import { setText, toggleClass } from '../utils/dom';
+import { TARGETING_MODES } from '../data/tower';
 
 export interface SettingsAPI {
   onClearSave: () => void;
@@ -16,14 +17,13 @@ export interface SettingsAPI {
   onAutoPickBlessingsChange?: (enabled: boolean) => void;
 }
 
-const DEFAULT_TARGETING_MODES: Array<{ id: string; label: string }> = [
-  { id: 'nearest', label: 'Nearest' },
-  { id: 'lowest_hp', label: 'Lowest HP' },
-  { id: 'strongest', label: 'Strongest (highest maxHP)' },
-  { id: 'boss', label: 'Boss priority' },
-  { id: 'flying', label: 'Flying priority' },
-  { id: 'last', label: 'Furthest (backline)' },
-];
+/**
+ * Mirrors the HUD dropdown (plan §2.3), from the same table, so the two can
+ * never offer different modes. The HUD is where the choice now lives; this
+ * stays because it is where a player who has always changed it here will look.
+ */
+const DEFAULT_TARGETING_MODES: Array<{ id: string; label: string }> =
+  TARGETING_MODES.map(m => ({ id: m.id, label: `${m.label} — ${m.hint}` }));
 
 export class SettingsPanel {
   private api: SettingsAPI;
@@ -213,7 +213,7 @@ export class SettingsPanel {
 
     const desc = document.createElement('p');
     desc.className = 'settings-desc';
-    desc.textContent = 'How the tower chooses which enemy to attack. "Manual Aim" (hold mouse) always overrides this.';
+    desc.textContent = 'How the tower chooses which enemy to attack — also available on the HUD, next to the wave controls. "Manual Aim" (hold mouse) always overrides this.';
     section.appendChild(desc);
 
     this.targetingSelect = document.createElement('select');
@@ -222,7 +222,7 @@ export class SettingsPanel {
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.label;
-      if (m.id === (this.api.currentTargetingMode ?? 'nearest')) opt.selected = true;
+      if (m.id === (this.api.currentTargetingMode ?? 'priority')) opt.selected = true;
       this.targetingSelect.appendChild(opt);
     }
     this.targetingSelect.addEventListener('change', () => {

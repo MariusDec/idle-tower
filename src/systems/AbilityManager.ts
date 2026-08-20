@@ -7,6 +7,7 @@ import {
   type AbilityEffectType,
   type EffectiveAbilityStats,
 } from '../data/abilities';
+import { isTargetable } from '../data/enemies';
 import { abilityUpgradeCost } from '../data/formulas';
 import { abilityXpForLevel } from '../data/xpTables';
 import { EventBus } from '../game/EventBus';
@@ -429,7 +430,8 @@ export class AbilityManager {
     const raw = towerState.baseDamage * multiplier * this.damageMultiplier;
     let hitCount = 0;
     for (const enemy of this.enemies.list) {
-      if (!enemy.alive) continue;
+      // Plan §2.1: even a field-wide ability cannot reach what is underground.
+      if (!isTargetable(enemy)) continue;
       const final = this.tower.applyResists(enemy, raw);
       this.enemies.damage(enemy, final, false);
       hitCount += 1;
@@ -443,7 +445,7 @@ export class AbilityManager {
     let best: Enemy | null = null;
     let bestHp = -Infinity;
     for (const e of this.enemies.list) {
-      if (!e.alive) continue;
+      if (!isTargetable(e)) continue;
       if (e.maxHp > bestHp) {
         bestHp = e.maxHp;
         best = e;
@@ -464,7 +466,7 @@ export class AbilityManager {
     const r2 = METEOR_SPLASH_RADIUS * METEOR_SPLASH_RADIUS;
     let splashCount = 0;
     for (const e of this.enemies.list) {
-      if (!e.alive || e.id === target.id) continue;
+      if (!isTargetable(e) || e.id === target.id) continue;
       const dx = e.x - target.x;
       const dy = e.y - target.y;
       if (dx * dx + dy * dy > r2) continue;
@@ -497,7 +499,7 @@ export class AbilityManager {
     const tx = towerState.x;
     const ty = towerState.y;
     for (const e of list) {
-      if (!e.alive) continue;
+      if (!isTargetable(e)) continue;
       const dx = e.x - tx;
       const dy = e.y - ty;
       const d2 = dx * dx + dy * dy;
@@ -522,7 +524,7 @@ export class AbilityManager {
       let next: Enemy | null = null;
       let bestND2 = Infinity;
       for (const e of list) {
-        if (!e.alive) continue;
+        if (!isTargetable(e)) continue;
         if (hit.has(e.id)) continue;
         const dx = e.x - current!.x;
         const dy = e.y - current!.y;
@@ -549,7 +551,7 @@ export class AbilityManager {
     let kills = 0;
     let totalDamage = 0;
     for (const e of this.enemies.list) {
-      if (!e.alive) continue;
+      if (!isTargetable(e)) continue;
       const ratio = e.hp / e.maxHp;
       if (e.type === 'boss') {
         if (ratio > bossThreshold) continue;
@@ -574,7 +576,7 @@ export class AbilityManager {
   private applyMultishot(value: number): void {
     const count = Math.floor(value);
     const towerState = this.tower.snapshot;
-    const alive = this.enemies.list.filter(e => e.alive);
+    const alive = this.enemies.list.filter(e => isTargetable(e));
     let totalDamage = 0;
     const fired: Array<{ id: number }> = [];
 

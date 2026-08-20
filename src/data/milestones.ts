@@ -1,5 +1,6 @@
 import type { AbilityId, EnemyType } from '../types';
 import { ABILITIES } from './abilities';
+import { ENEMY_DEFS } from './enemies';
 import { PASSIVE_ABILITIES } from './passiveAbilities';
 import { ASCENSION_UNLOCK_WAVE, TRANSCENDENCE_UNLOCK_AP } from './prestige';
 
@@ -43,32 +44,58 @@ function abilityMilestones(): MilestoneDef[] {
   }));
 }
 
-const ENEMY_INTRO_MILESTONES: Array<{ type: EnemyType; name: string; glyph: string; color: string }> = [
-  { type: 'fast', name: 'Fast enemies', glyph: 'F', color: '#f1c40f' },
-  { type: 'tank', name: 'Tank enemies', glyph: 'T', color: '#2c5b8f' },
-  { type: 'flying', name: 'Flying enemies', glyph: '✈', color: '#ecf0f1' },
-  { type: 'splitter', name: 'Splitter enemies', glyph: '⋔', color: '#9b59ff' },
-  { type: 'healer', name: 'Healer enemies', glyph: '+', color: '#27ae60' },
-  { type: 'shielded', name: 'Shielded enemies', glyph: '◎', color: '#5dade2' },
+/**
+ * Every enemy type that gets an entry in the upcoming-events strip.
+ *
+ * `normal` and `boss` are excluded deliberately — one is the baseline the
+ * player starts with and the other has its own boss-wave banner. Everything
+ * else must appear, and `content-coverage.test.ts` fails if a type is added
+ * without one: an enemy that changes how the game is played and arrives with no
+ * warning is the worst version of a new mechanic.
+ *
+ * The wave comes from `ENEMY_DEFS[type].unlockWave`, so the strip cannot drift
+ * away from what `WaveManager` actually spawns.
+ */
+const ENEMY_INTRO_MILESTONES: Array<{ type: EnemyType; name: string; glyph: string; color: string; detail: string }> = [
+  { type: 'fast', name: 'Fast enemies', glyph: 'F', color: '#f1c40f',
+    detail: 'Quick and fragile — and they arrive three at a time.' },
+  { type: 'tank', name: 'Tank enemies', glyph: 'T', color: '#2c5b8f',
+    detail: 'Armoured and slow. Shots never pierce past one.' },
+  { type: 'flying', name: 'Flying enemies', glyph: '✈', color: '#ecf0f1',
+    detail: 'Ignores land mines and floats straight over the wall.' },
+  { type: 'splitter', name: 'Splitter enemies', glyph: '⋔', color: '#9b59ff',
+    detail: 'Bursts into two children that scatter before they can be hit.' },
+  { type: 'healer', name: 'Healer enemies', glyph: '+', color: '#27ae60',
+    detail: 'Heals the wave, and runs while healing once badly hurt.' },
+  { type: 'shielded', name: 'Shielded enemies', glyph: '◎', color: '#5dade2',
+    detail: 'Charges block a hit each, and rebuild if you stop shooting.' },
+  { type: 'siege', name: 'Siege engines', glyph: '◼', color: '#a9752f',
+    detail: 'Halts at 260px and shells the tower. Out-range it or kill it first.' },
+  { type: 'thief', name: 'Thieves', glyph: '$', color: '#d4af37',
+    detail: 'Steals gold on contact and runs. Kill it and you get double back.' },
+  { type: 'blinker', name: 'Blinkers', glyph: '✦', color: '#7f5af0',
+    detail: 'Teleports past knockback, mines and the wall. Answer it with damage.' },
+  { type: 'warden', name: 'Wardens', glyph: '⬡', color: '#1f7a8c',
+    detail: 'Shields five allies at a time. Target priority is the only answer.' },
+  { type: 'burrower', name: 'Burrowers', glyph: '◓', color: '#7a5a30',
+    detail: 'Untouchable underground until it surfaces beside the tower.' },
 ];
 
 function enemyMilestones(): MilestoneDef[] {
   return ENEMY_INTRO_MILESTONES.map(e => ({
     id: `enemy:${e.type}`,
     kind: 'enemy',
-    wave: e.type === 'fast' ? 3
-      : e.type === 'tank' ? 5
-      : e.type === 'flying' ? 8
-      : e.type === 'splitter' ? 12
-      : e.type === 'healer' ? 15
-      : 20,
+    wave: ENEMY_DEFS[e.type].unlockWave,
     label: `${e.name} arrive`,
-    detail: `New enemy type joins the horde.`,
+    detail: e.detail,
     glyph: e.glyph,
     color: e.color,
     refId: e.type,
   }));
 }
+
+/** The types the strip deliberately does not announce. */
+export const MILESTONE_EXEMPT_ENEMIES: readonly EnemyType[] = ['normal', 'boss'];
 
 const FIXED_MILESTONES: MilestoneDef[] = [
   {

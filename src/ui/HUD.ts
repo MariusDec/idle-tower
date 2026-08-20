@@ -1,6 +1,7 @@
 import type { GameState, StatsInfo, EnemyWaveStatsEntry } from '../types';
 import { formatNumber, formatInt } from '../utils/bigNumber';
-import type { SpeedAPI, WaveControlAPI } from './UIManager';
+import type { SpeedAPI, TargetingAPI, WaveControlAPI } from './UIManager';
+import { TARGETING_MODES } from '../data/tower';
 import { TOWER_XP_TABLE, xpForNextLevel, xpToLevel } from '../data/xpTables';
 import {
   hasClass,
@@ -72,6 +73,7 @@ export class HUD {
   private dps = 0;
   private speedApi: SpeedAPI = { speeds: [], currentIndex: 0, maxIndex: 0 };
   private waveApi: WaveControlAPI = { autoProgress: true, currentWave: 1, isIntermission: false };
+  private targetingApi: TargetingAPI = { currentMode: 'priority', setMode: () => {} };
   private onSpeedChange: (index: number) => void = () => {};
   private onPrevWave: () => void = () => {};
   private onNextWave: () => void = () => {};
@@ -84,6 +86,7 @@ export class HUD {
   private prevWaveBtn!: HTMLButtonElement;
   private nextWaveBtn!: HTMLButtonElement;
   private autoProgressBtn!: HTMLButtonElement;
+  private targetingSelect!: HTMLSelectElement;
   private waveStatusEl!: HTMLElement;
   private moreBtn!: HTMLButtonElement;
   private moreSpeedDecBtn!: HTMLButtonElement;
@@ -116,6 +119,25 @@ export class HUD {
 
   setWaveControlAPI(api: WaveControlAPI): void {
     this.waveApi = api;
+  }
+
+  /**
+   * Plan §2.3: targeting moved out of Settings and next to the wave controls.
+   *
+   * With the behavioural roster on the field it is a live tactical choice — a
+   * warden walking in wants `Priority`, a thief already loaded wants it dead
+   * now — and a live choice does not belong three tabs away under a heading
+   * called "preferences".
+   */
+  setTargetingAPI(api: TargetingAPI): void {
+    this.targetingApi = api;
+    if (this.targetingSelect) this.targetingSelect.value = api.currentMode;
+  }
+
+  /** Push a mode change made elsewhere (the Settings panel) into the HUD. */
+  syncTargetingMode(mode: string): void {
+    this.targetingApi.currentMode = mode;
+    if (this.targetingSelect) this.targetingSelect.value = mode;
   }
 
   setOnSpeedChange(handler: (index: number) => void): void {
@@ -704,6 +726,25 @@ export class HUD {
     this.nextWaveBtn.addEventListener('click', () => this.onNextWave());
     controls.appendChild(this.nextWaveBtn);
 
+    this.targetingSelect = document.createElement('select');
+    this.targetingSelect.className = 'hud-targeting-select';
+    this.targetingSelect.setAttribute('aria-label', 'Targeting mode');
+    for (const m of TARGETING_MODES) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.label;
+      opt.title = m.hint;
+      this.targetingSelect.appendChild(opt);
+    }
+    this.targetingSelect.value = this.targetingApi.currentMode;
+    this.targetingSelect.addEventListener('change', () => {
+      this.targetingApi.setMode(this.targetingSelect.value);
+      this.targetingApi.currentMode = this.targetingSelect.value;
+      this.syncTargetingHint();
+    });
+    controls.appendChild(this.targetingSelect);
+    this.syncTargetingHint();
+
     block.appendChild(controls);
 
     this.waveStatusEl = document.createElement('div');
@@ -711,6 +752,13 @@ export class HUD {
     block.appendChild(this.waveStatusEl);
 
     return block;
+  }
+
+  /** Keep the dropdown's tooltip in step with what is selected. */
+  private syncTargetingHint(): void {
+    if (!this.targetingSelect) return;
+    const mode = TARGETING_MODES.find(m => m.id === this.targetingSelect.value);
+    setTitle(this.targetingSelect, mode ? `Targeting: ${mode.hint}` : 'Targeting mode');
   }
 
   private renderSpeedBlock(): HTMLElement {
