@@ -674,6 +674,85 @@ save load — document it), `docs/loot-system.md` (new), `docs/ability-system.md
 
 ## Part 5 — Contracts
 
+> **Status: implemented (2026-08-20).** Corrections found during
+> implementation, kept here so later parts don't repeat them:
+> 1. **§5.1's `ContractGoal` cannot be tiered as written**, and tiering is
+>    the section's own stated requirement. `reach_wave` carries an absolute
+>    `wave` in a static table, which is precisely the "reach wave 60 at wave 8"
+>    failure the same paragraph forbids; it ships as `ahead` (waves beyond
+>    where the contract was drawn) resolved into an absolute target at draw
+>    time. `spend_gold`'s flat `amount` has the same problem in the other
+>    direction — trivial at wave 80, impossible at wave 8 — and ships as
+>    `goldWaves`. `boss_under` also needed a `count`: without one it is a
+>    contract that completes on the first boss wave the player happens to be
+>    fast on, which is not a goal.
+> 2. **§5.1's `reward.gold?: number` has the same flaw as `spend_gold`, and
+>    §5.2 already says so.** "~2 waves' income at the current wave" is a
+>    *ratio*, not a number, and storing the ratio is the only way one table
+>    serves wave 6 and wave 160. Shipped as `goldWaves`, resolved against
+>    `Game.estimateWaveGold` at display *and* payout, so a contract carried
+>    across ten waves pays what those ten waves are worth.
+> 3. **§5.2's "~2 waves' income" is 2-5x more than the curve tolerates.**
+>    Three slots turning over every two to three waves means the faucet is
+>    `goldWaves ÷ 2.5`, not `goldWaves` once. At the plan's figure contract
+>    gold would be 20-30% of a run's income; the orb faucet Part 4 shipped at
+>    3-5% and moved nothing. Shipped at **0.4-1.2 waves**, which measures at
+>    3-9% and holds idle wall-wave drift at exactly zero (39/59/89/129/169).
+> 4. **§5.4 says progress is driven from `upgrade_purchased`, but that event
+>    carried no price.** `{ id, level, levelsGained }` cannot feed
+>    `spend_gold`. `UpgradeManager` now emits `goldSpent` from both the single
+>    and bulk paths.
+> 5. **The AP channel §5.2 asks for already existed.** Part 3 added a
+>    run-scoped `runApBonus` to `PrestigeManager` for flawless encounters.
+>    Adding a second one would have been two scalars racing; making it one
+>    shared scalar would have meant a contract restore silently erasing the
+>    boss bonus, because both are *set* from their own saved block on load.
+>    It is now keyed by source (`RunApSource = 'boss' | 'contract'`) and summed
+>    at read, which is the only shape that survives two owners with two
+>    ceilings and two persistence blocks.
+> 6. **§5.5's "an unconsumed goal kind must not compile" is stronger if the
+>    `Record` *is* the implementation.** `ACHIEVEMENT_REWARD_CONSUMERS` is a
+>    `Record<union, string>` — a documentation table that can still name a
+>    consumer that does nothing (which is why `content-coverage.test.ts` has to
+>    check for placeholder strings). `CONTRACT_PROGRESS` is
+>    `Record<ContractGoalKind, (contract, event) => number>`: the map that
+>    enforces coverage is also the code that does the work, so there is nothing
+>    to drift.
+> 7. **`flawless_waves` needed no new mechanism.** Part 3's per-encounter
+>    flawless flag is set at one site in the `tower_damaged` handler, *after*
+>    the whole mitigation chain, so a hit the wall ate does not count. A wave
+>    flag set at the same line is the generalisation; two sites would have been
+>    two definitions of "flawless".
+> 8. **§5.3's "under the milestone strip" needed the strip to move.** The
+>    strip's collapsed chip already owned the bottom-left corner and expands
+>    *upward* on hover, so the tracker takes the corner and the strip's
+>    `bottom` is offset by `--contract-tracker-height`. Measured 89 px in
+>    browser against an assumed 84 px — the var ships at 96 px so the strip has
+>    clearance rather than resting on the top row.
+> 9. **The tracker cannot flourish on `contract_completed`.** That event is
+>    emitted by the manager *before* anything has been paid, and `UIManager`
+>    subscribes before `Game` does, so the reward text was always a frame
+>    behind. `Game` emits `contract_reward` after resolving the payout;
+>    the tracker listens there. Found in-browser, not by a test.
+> 10. **Contracts widen §4.5's idle-parity gap, and the metric is not
+>     monotonic in contract income.** Gold denominated in waves of income
+>     multiplies whatever gold advantage active play already has, so the table
+>     moves from +33.9…+45.2% to +34.5…+49.5% — inside the +50% gate at every
+>     tier, outside the preferred +25-40% band at three of five. Scaling every
+>     `goldWaves` down by 0.6x was measured and made the 0-AP tier **worse**
+>     (+51.1%), because the metric is composed DPS at one wave and the greedy
+>     buyer crosses upgrade breakpoints in steps. Part 4's own conclusion still
+>     stands: anything that needs a real cut here starts with
+>     `MANUAL_AIM.fireRateMult`, not with the thing that was added last.
+> 11. **A contract has no expiry and no reroll**, so a goal the player never
+>     engages with holds its slot. Nothing jams today — mutators are offered on
+>     every boss wave, abilities auto-cast, orbs drift home on their own — but
+>     making any of those optional turns three of the ten goal kinds into dead
+>     slots. Recorded in `docs/contract-system.md` under Known limits.
+> 12. **§5.4 says "bump to v11". v11 was Part 3's**; contracts are **v12**.
+>     Part 6's §6.3 says v12 and Part 7's §7.7 says v13 — both are now one
+>     behind.
+
 **Goal:** something to be doing between wave 12 and wave 47.
 
 ### 5.1 Model
