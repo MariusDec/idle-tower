@@ -147,7 +147,10 @@ export class UpgradeManager {
     const newLevel = level + 1;
     this.levels[id] = newLevel;
     this.rebuildEvolutionCache();
-    this.bus.emit('upgrade_purchased', { id, level: newLevel, levelsGained: 1 });
+    // `goldSpent` feeds contracts' `spend_gold` goal (gameplay plan §5.1).
+    // The payload had no notion of price before, which is why §5.4's "drive
+    // progress from `upgrade_purchased`" could not have worked as written.
+    this.bus.emit('upgrade_purchased', { id, level: newLevel, levelsGained: 1, goldSpent: effectiveCost });
     this.bus.emit('upgrades_changed', { ...this.levels });
     if (def.evolutions) {
       for (const evo of def.evolutions) {
@@ -183,7 +186,7 @@ export class UpgradeManager {
     const newLevel = start + levels;
     this.levels[id] = newLevel;
     this.rebuildEvolutionCache();
-    this.bus.emit('upgrade_purchased', { id, level: newLevel, levelsGained: levels });
+    this.bus.emit('upgrade_purchased', { id, level: newLevel, levelsGained: levels, goldSpent: cost });
     this.bus.emit('upgrades_changed', { ...this.levels });
     if (def.evolutions) {
       for (const evo of def.evolutions) {

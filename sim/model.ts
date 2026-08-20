@@ -41,6 +41,7 @@ import type { EnemyType, UpgradeDef } from '../src/types.ts';
 import { WAVE_INTERMISSION } from '../src/systems/WaveManager.ts';
 import { BlessingManager } from '../src/systems/BlessingManager.ts';
 import type { BlessingBehavior, BlessingDef } from '../src/data/blessings.ts';
+import { ContractManager } from '../src/systems/ContractManager.ts';
 
 /** Fraction of wall-clock time the tower actually spends shooting a live target. */
 const ENGAGEMENT_EFFICIENCY = 0.85;
@@ -133,6 +134,18 @@ const THIEF_GOLD_DRAG = 0.02;
  *     rerolls are only modelled as offer rerolls.
  * What is left is the gold channel, which is the one that moves the curve.
  */
+/**
+ * Orbs a wave actually drops, collected or not.
+ *
+ * Split out of `orbGoldForWave` because contracts count *orbs*, not their
+ * value: a mana orb pays the model nothing and still ticks `collect_orbs`.
+ */
+export function orbCountForWave(wave: number): number {
+  return isBossWave(wave)
+    ? (LOOT_TUNING.bossOrbsMin + LOOT_TUNING.bossOrbsMax) / 2
+    : spawnCountForWave(wave) * LOOT_TUNING.commonDropChance;
+}
+
 export function orbGoldForWave(wave: number): number {
   const boss = isBossWave(wave);
   // The boss budget is per *encounter*, not per boss — see `bossOrbShare`.
@@ -405,6 +418,131 @@ function readBlessings(mgr: BlessingManager): BlessingLoadout {
   return out;
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Contracts (gameplay plan §5)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What the model assumes about the channels it has no simulation for.
+ *
+ * Contracts are a gold faucet and an AP faucet, so a model that cannot see
+ * them is measuring a game that no longer exists — the same argument orbs got
+ * in Part 4. But four of the ten goal kinds ask about systems this model
+ * deliberately does not have (abilities, mutators, tower HP), and a contract
+ * that can never progress would sit in a slot forever and *understate* the
+ * faucet. Each figure below is therefore the assumption that makes the faucet
+ * look **larger**, which is the safe direction for a check whose job is to
+ * catch contracts moving the curve.
+ */
+export const CONTRACT_MODEL = {
+  /**
+   * Ability casts credited per wave once mana is unlocked.
+   *
+   * The model has no abilities at all. Two per wave is roughly what auto-cast
+   * manages across the nine of them at mid-run cooldowns.
+   */
+  castsPerWave: 2,
+  /**
+   * Waves after each boss wave that count as running under a mutator.
+   *
+   * `WaveManager` offers a mutator on every boss wave and one runs for
+   * `MUTATOR_DURATION_WAVES`, so a player who always accepts is under one for
+   * three waves in every ten.
+   */
+  mutatorWavesPerCycle: 3,
+  /**
+   * Whether a cleared wave counts as flawless.
+   *
+   * The model has no tower HP, so it cannot know. `true` is the assumption
+   * that makes `flawless_waves` complete fastest.
+   */
+  flawless: true,
+} as const;
+
+/**
+ * Where a completion's gold goes, set for the duration of one wave's events.
+ *
+ * A module-level hook rather than a closure on the manager because the manager
+ * announces completions on an event bus, and the sim's bus stub is the thing
+ * that has to route them somewhere.
+ */
+let contractPayout: ((goldWaves: number) => void) | null = null;
+
+/** The three-line bus the sim hands `ContractManager`. */
+function contractBus() {
+  return {
+    emit: (event: string, payload?: unknown) => {
+      if (event !== 'contract_completed' || !contractPayout) return;
+      const p = payload as { reward: { goldWaves: number } };
+      contractPayout(p.reward.goldWaves);
+    },
+  };
+}
+
+/** Gold one wave is worth, matching `Game.estimateWaveGold` exactly. */
+function estimateWaveGold(wave: number, l: Loadout): number {
+  return goldDropForWave(ENEMY_DEFS.normal.baseGold, wave)
+    * spawnCountForWave(wave)
+    * goldMultiplier(l);
+}
+
+/**
+ * Feed one cleared wave's worth of events to the real `ContractManager`.
+ *
+ * The *real* manager, for the same reason the draft runs through the real
+ * `BlessingManager`: the band gating, the three-slot refill and the +50% AP cap
+ * are the shipping ones rather than a second implementation that can drift.
+ *
+ * Returns the gold the completions paid and the AP bonus the run has banked.
+ */
+function runContractsForWave(
+  mgr: ContractManager,
+  wave: number,
+  l: Loadout,
+  ctx: { goldSpent: number; clearSec: number; killMix: Array<{ type: EnemyType; weight: number }> },
+): number {
+  let paid = 0;
+  contractPayout = (goldWaves) => {
+    if (goldWaves > 0) paid += estimateWaveGold(wave, l) * goldWaves;
+  };
+
+  // Kills, distributed across the wave's actual type mix so `kill_type`
+  // contracts progress at the rate the spawn table implies.
+  const count = spawnCountForWave(wave);
+  const weightSum = ctx.killMix.reduce((a, e) => a + e.weight, 0);
+  let assigned = 0;
+  for (let i = 0; i < ctx.killMix.length; i++) {
+    const entry = ctx.killMix[i];
+    const share = i === ctx.killMix.length - 1
+      ? count - assigned
+      : Math.round((entry.weight / weightSum) * count);
+    assigned += share;
+    for (let k = 0; k < share; k++) mgr.note({ kind: 'enemy_killed', type: entry.type });
+  }
+
+  // Every orb is collected sooner or later — an uncollected one drifts home
+  // and pays 40% (plan §4.1) — so the *count* a contract sees is the same idle
+  // or clicked. Only the value differs, and that is `orbGoldForWave`'s job.
+  const orbs = Math.round(orbCountForWave(wave));
+  for (let i = 0; i < orbs; i++) mgr.note({ kind: 'orb_collected' });
+
+  if (wave >= 10) {
+    for (let i = 0; i < CONTRACT_MODEL.castsPerWave; i++) mgr.note({ kind: 'ability_cast' });
+  }
+  if (ctx.goldSpent > 0) mgr.note({ kind: 'gold_spent', amount: ctx.goldSpent });
+  if (isBossWave(wave)) mgr.note({ kind: 'boss_encounter', seconds: ctx.clearSec });
+
+  const inMutator = wave > 10 && (wave % 10) <= CONTRACT_MODEL.mutatorWavesPerCycle && (wave % 10) > 0;
+  mgr.note({
+    kind: 'wave_cleared',
+    wave,
+    flawless: CONTRACT_MODEL.flawless,
+    mutatorActive: inMutator,
+  });
+  contractPayout = null;
+  return paid;
+}
+
 /** Deterministic RNG, so a sim run is reproducible across invocations. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -569,6 +707,11 @@ export interface RunResult {
   blessingPicks: number;
   /** Ids held at the wall, for a "what did this run become" readout. */
   blessingHeld: string[];
+  /** Contracts completed by the wall, and the AP bonus they banked (plan §5). */
+  contractsCompleted: number;
+  contractApBonus: number;
+  /** Contract gold as a fraction of everything the run earned. */
+  contractGoldShare: number;
 }
 
 export interface WaveSample {
@@ -607,6 +750,11 @@ export interface RunOptions {
   active?: boolean;
   /** Seed for the blessing draft's RNG, so a run is reproducible. */
   seed?: number;
+  /**
+   * Run the contract tracker (plan §5). Off reproduces the pre-contract curve,
+   * which is what the §5 before/after table is for.
+   */
+  contracts?: boolean;
 }
 
 export function simulateRun(opts: RunOptions = {}): RunResult {
@@ -620,6 +768,7 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     blessings = true,
     seed = 0x5eed,
     active = false,
+    contracts = true,
   } = opts;
 
   const loadout = freshLoadout(damageMult, goldMult, active);
@@ -629,6 +778,22 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
   // shipping ones rather than a second implementation that can drift.
   const blessingMgr = new BlessingManager();
   const rng = mulberry32(seed);
+  // Contracts run through the real manager too, off their **own** stream
+  // derived from the same seed. Sharing `rng` would have made every contract
+  // draw perturb the blessing draft, so the §1.6 table would move on a change
+  // that touched no card — which is exactly the drift these tables exist to
+  // detect.
+  const contractRng = mulberry32(seed ^ 0x0c07);
+  let contractWave = 1;
+  const contractMgr = new ContractManager({
+    bus: contractBus(),
+    currentWave: () => contractWave,
+    waveGold: (w) => estimateWaveGold(w, loadout),
+    rng: contractRng,
+  });
+  if (contracts) contractMgr.refill();
+  let contractGold = 0;
+  let totalGold = 0;
   let gold = 0;
   let elapsed = 0;
   let timeToUnlock = Infinity;
@@ -636,7 +801,10 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
 
   for (; wave <= maxWave; wave++) {
     const profile = waveProfile(wave);
+    contractWave = wave;
+    const beforeBuy = gold;
     gold = buyGreedily(loadout, gold, profile.avgArmor);
+    const goldSpent = Math.max(0, beforeBuy - gold);
 
     const waveDps = dps(loadout, profile.avgArmor);
     // A wave cannot finish faster than its enemies spawn.
@@ -655,6 +823,20 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     const orbRate = loadout.blessings.orbMagnet ? 1 : loadout.orbRate;
     const earned = (profile.baseGold + orbGoldForWave(wave) * orbRate) * goldMultiplier(loadout);
     gold += earned;
+    totalGold += earned;
+    // Plan §5.2: contracts pay in gold sized off a wave's income, so they are a
+    // faucet in exactly the way orbs are — and one the model has to see, or the
+    // wall-wave table below is measuring a game without them.
+    if (contracts) {
+      const paid = runContractsForWave(contractMgr, wave, loadout, {
+        goldSpent,
+        clearSec: activeSec,
+        killMix: typeMix(wave),
+      });
+      gold += paid;
+      contractGold += paid;
+      totalGold += paid;
+    }
     elapsed += clearSec;
     if (wave >= unlockWave && !Number.isFinite(timeToUnlock)) timeToUnlock = elapsed;
 
@@ -701,5 +883,8 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     blessings: loadout.blessings,
     blessingPicks: blessingMgr.picks,
     blessingHeld: blessingMgr.heldIds,
+    contractsCompleted: contractMgr.completed,
+    contractApBonus: contractMgr.apBonusPct,
+    contractGoldShare: totalGold > 0 ? contractGold / totalGold : 0,
   };
 }

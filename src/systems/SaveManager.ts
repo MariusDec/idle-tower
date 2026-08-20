@@ -15,6 +15,7 @@ import type {
   EnemyType,
   BlessingRunState,
   BossRunState,
+  ContractRunState,
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
 import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBossWave } from '../data/formulas';
@@ -23,7 +24,7 @@ import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 11;
+const SAVE_VERSION = 12;
 
 function defaultWaveModifier() {
   return {
@@ -90,6 +91,8 @@ export interface PersistentState {
   equipped: Partial<Record<EquipmentSlot, Equipment>>;
   /** v10+: the run's blessing draft (plan §1.5). */
   blessings?: BlessingRunState;
+  /** v12+: the run's three live contracts (plan §5.5). */
+  contracts?: ContractRunState;
   /**
    * Deliberately absent: **loot orbs** (gameplay plan §4.1/§4.4).
    *
@@ -339,6 +342,18 @@ function defaultBossRun(): BossRunState {
 }
 
 /**
+ * A fresh contract run — the v12 default.
+ *
+ * Deliberately *empty* rather than pre-drawn: the draw needs the run's current
+ * wave and `Game.estimateWaveGold`, neither of which the save layer has.
+ * `ContractManager.restore` refills the slots the moment the game wires itself
+ * up, so a v11 save loads straight into three live contracts.
+ */
+function defaultContracts(): ContractRunState {
+  return { active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0 };
+}
+
+/**
  * v10 (gameplay plan §1.5): the blessing draft.
  *
  * Purely additive — a pre-v10 save simply had no blessings, so the migration
@@ -365,10 +380,23 @@ function migrateV10toV11(data: Record<string, unknown>): void {
   }
 }
 
+/**
+ * v12 (gameplay plan §5.5): contracts.
+ *
+ * Additive, like v10 and v11. A pre-v12 save is a run that simply has not been
+ * handed any contracts yet, so the migration seeds an empty block and the
+ * manager draws three on load. Nothing is transformed and nothing is dropped.
+ */
+function migrateV11toV12(data: Record<string, unknown>): void {
+  if (!isObject(data.contracts)) {
+    data.contracts = defaultContracts();
+  }
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -393,6 +421,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 8) { migrateV8toV9(data); data.version = 9; }
   if (data.version === 9) { migrateV9toV10(data); data.version = 10; }
   if (data.version === 10) { migrateV10toV11(data); data.version = 11; }
+  if (data.version === 11) { migrateV11toV12(data); data.version = 12; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -407,6 +436,7 @@ function validate(data: unknown): data is PersistentState {
   if (wave && typeof wave.enrageStacks !== 'number') wave.enrageStacks = 0;
   if (!isObject(d.blessings)) d.blessings = defaultBlessings();
   if (!isObject(d.bossRun)) d.bossRun = defaultBossRun();
+  if (!isObject(d.contracts)) d.contracts = defaultContracts();
 
   return true;
 }
@@ -458,6 +488,7 @@ export class SaveManager {
       ) as Partial<Record<EquipmentSlot, Equipment>>,
       blessings: this.snapshotBlessings(state.blessings),
       bossRun: this.snapshotBossRun(state.bossRun),
+      contracts: this.snapshotContracts(state.contracts),
     };
   }
 
@@ -484,6 +515,27 @@ export class SaveManager {
       apBonusPct: b.apBonusPct ?? 0,
       swiftKills: b.swiftKills ?? 0,
       flawlessKills: b.flawlessKills ?? 0,
+    };
+  }
+
+  /**
+   * Contracts are copied field by field for the same reason blessings are: a
+   * runtime-only field on the manager must not leak into the save format.
+   */
+  private snapshotContracts(c: ContractRunState | undefined): ContractRunState {
+    if (!c) return defaultContracts();
+    return {
+      active: (c.active ?? []).map(a => ({
+        defId: a.defId,
+        uid: a.uid,
+        target: a.target,
+        progress: a.progress,
+        drawnAtWave: a.drawnAtWave,
+      })),
+      completed: [...(c.completed ?? [])],
+      completedCount: c.completedCount ?? 0,
+      apBonusPct: c.apBonusPct ?? 0,
+      uidSeq: c.uidSeq ?? 0,
     };
   }
 

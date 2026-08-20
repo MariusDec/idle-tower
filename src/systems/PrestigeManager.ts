@@ -18,6 +18,12 @@ import { lifetimeAPDamageBonus, lifetimeAPGoldBonus } from '../data/formulas';
 import { EventBus } from '../game/EventBus';
 import type { AchievementRewardType } from '../data/achievements';
 
+/**
+ * Who banked a run-scoped AP bonus. A closed union so a third source cannot be
+ * added without a decision about how it is persisted and reset.
+ */
+export type RunApSource = 'boss' | 'contract';
+
 export interface AscensionContext {
   resources: ResourceState;
   stats: GameStats;
@@ -33,34 +39,44 @@ export class PrestigeManager {
   private readonly bus: EventBus;
   private readonly ctx: AscensionContext;
   /**
-   * Run-scoped AP bonus, banked by flawless boss encounters (gameplay plan
-   * §3.4) and cleared by the ascension that spends it.
+   * Run-scoped AP bonus, by source.
    *
-   * A separate channel from the achievement bonuses above, because those are
-   * lifetime and this one is the run's own: they compose (`(1 + ach) * (1 +
-   * run)`) rather than one silently overwriting the other. `Game` persists it
-   * in `GameState.bossRun` and restores it here on load.
+   * A separate channel from the lifetime achievement bonuses, because those are
+   * permanent and this one is the run's own: they compose (`(1 + ach) * (1 +
+   * run)`) rather than one silently overwriting the other.
+   *
+   * It is keyed by source rather than being one number because two systems bank
+   * into it — flawless boss encounters (plan §3.4) and completed contracts
+   * (plan §5.2) — and each has its own ceiling and its own persistence block
+   * (`GameState.bossRun`, `GameState.contracts`). One shared scalar would mean
+   * a contract restore could silently erase the boss bonus, or vice versa.
+   * Both are *set* on load from their own saved figure, and summed here.
    */
-  private runApBonus = 0;
+  private runApBonusBySource: Record<RunApSource, number> = { boss: 0, contract: 0 };
 
   constructor(bus: EventBus, ctx: AscensionContext) {
     this.bus = bus;
     this.ctx = ctx;
   }
 
-  /** Bank a flawless-encounter AP bonus for the rest of this run. */
-  addRunApBonus(fraction: number): void {
+  /** Bank a run-scoped AP bonus for the rest of this run. */
+  addRunApBonus(fraction: number, source: RunApSource = 'boss'): void {
     if (fraction <= 0) return;
-    this.runApBonus += fraction;
+    this.runApBonusBySource[source] += fraction;
   }
 
-  /** Restore the run's banked bonus from a save. */
-  setRunApBonus(fraction: number): void {
-    this.runApBonus = Math.max(0, fraction);
+  /** Restore one source's banked bonus from a save (or clear it on reset). */
+  setRunApBonus(fraction: number, source: RunApSource = 'boss'): void {
+    this.runApBonusBySource[source] = Math.max(0, fraction);
   }
 
+  /** The composed run bonus across every source. */
   getRunApBonus(): number {
-    return this.runApBonus;
+    let total = 0;
+    for (const key of Object.keys(this.runApBonusBySource) as RunApSource[]) {
+      total += this.runApBonusBySource[key];
+    }
+    return total;
   }
 
   canAscend(wave: number): boolean {
@@ -73,7 +89,7 @@ export class PrestigeManager {
 
   previewAP(wave: number): number {
     const bonus = this.achievementBonus('ap_gain_mult') + this.achievementBonus('prestige_gain_mult');
-    const earned = Math.floor(apForWave(wave) * (1 + bonus) * (1 + this.runApBonus));
+    const earned = Math.floor(apForWave(wave) * (1 + bonus) * (1 + this.getRunApBonus()));
     // Plan §2.3.4: the very first ascension is scripted to be worth taking, so
     // a new player's introduction to prestige is a visible jump in power
     // rather than a rounding error.
@@ -518,9 +534,9 @@ export class PrestigeManager {
     this.ctx.resources.lifetimeAP += ap;
     this.ctx.stats.ascensions += 1;
     this.ctx.stats.lifetimeAscensions += 1;
-    // The flawless bonus is *this run's*: the ascension that pays it out is
-    // also the one that ends the run that earned it.
-    this.runApBonus = 0;
+    // The run bonuses are *this run's*: the ascension that pays them out is
+    // also the one that ends the run that earned them. Every source clears.
+    this.runApBonusBySource = { boss: 0, contract: 0 };
     this.bus.emit('ascension_performed', {
       apGained: ap,
       totalAP: this.ctx.resources.ascensionPoints,

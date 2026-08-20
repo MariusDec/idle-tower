@@ -20,11 +20,31 @@ export interface ProgressionBlessingInfo {
   nextDraftWave: number | null;
 }
 
+/** What the panel needs to know about the run's contracts (plan §5.3). */
+export interface ProgressionContractInfo {
+  live: ReadonlyArray<{
+    uid: number;
+    name: string;
+    label: string;
+    progress: string;
+    fill: number;
+    reward: string;
+  }>;
+  /** Def ids completed this run, oldest first. */
+  history: ReadonlyArray<{ name: string; wave: number }>;
+  completed: number;
+  /** Contract AP bonus banked this run, as a fraction. */
+  apBonusPct: number;
+  apCapPct: number;
+}
+
 export interface ProgressionPanelDeps {
   /** AP banked in the current transcendence cycle, for the AP-gated entries. */
   apThisCycle: () => number;
   /** The run's blessings. Absent before the game wires its API in. */
   blessings?: () => ProgressionBlessingInfo;
+  /** The run's contracts. Absent before the game wires its API in. */
+  contracts?: () => ProgressionContractInfo;
 }
 
 interface RowEls {
@@ -51,6 +71,10 @@ export class ProgressionPanel {
   private blessingListEl: HTMLElement | null = null;
   /** Last rendered signature, so the list is only rebuilt when it changes. */
   private blessingSignature = '';
+  private contractSummaryEl: HTMLElement | null = null;
+  private contractListEl: HTMLElement | null = null;
+  private contractHistoryEl: HTMLElement | null = null;
+  private contractSignature = '';
 
   constructor(deps: ProgressionPanelDeps) {
     this.deps = deps;
@@ -74,11 +98,16 @@ export class ProgressionPanel {
     this.blessingSummaryEl = null;
     this.blessingListEl = null;
     this.blessingSignature = '';
+    this.contractSummaryEl = null;
+    this.contractListEl = null;
+    this.contractHistoryEl = null;
+    this.contractSignature = '';
   }
 
   update(state: GameState): void {
     if (!this.root) return;
     this.updateBlessings();
+    this.updateContracts();
     const highest = state.wave.highestWave;
     const apThisCycle = this.deps.apThisCycle();
     let unlocked = 0;
@@ -129,6 +158,7 @@ export class ProgressionPanel {
     this.summaryEl = summary;
     parent.appendChild(summary);
 
+    if (this.deps.contracts) parent.appendChild(this.renderContractSection());
     if (this.deps.blessings) parent.appendChild(this.renderBlessingSection());
 
     const list = document.createElement('div');
@@ -223,6 +253,126 @@ export class ProgressionPanel {
       row.appendChild(rarity);
 
       this.blessingListEl.appendChild(row);
+    }
+  }
+
+  /**
+   * The contracts section (plan §5.3): the three live rows in full, plus what
+   * the run has already banked.
+   *
+   * The tracker in the corner is deliberately terse — a name and `12 / 40` —
+   * so this is where the *goal* text and the reward live. Above the blessing
+   * list because contracts turn over every few waves and blessings do not.
+   */
+  private renderContractSection(): HTMLElement {
+    const section = document.createElement('div');
+    section.className = 'contract-section';
+
+    const title = document.createElement('h3');
+    title.className = 'blessing-section-title';
+    title.textContent = 'Contracts — this run';
+    section.appendChild(title);
+
+    const summary = document.createElement('div');
+    summary.className = 'blessing-section-summary';
+    this.contractSummaryEl = summary;
+    section.appendChild(summary);
+
+    const list = document.createElement('div');
+    list.className = 'contract-live-list';
+    this.contractListEl = list;
+    section.appendChild(list);
+
+    const history = document.createElement('div');
+    history.className = 'contract-history';
+    this.contractHistoryEl = history;
+    section.appendChild(history);
+
+    return section;
+  }
+
+  private updateContracts(): void {
+    const get = this.deps.contracts;
+    if (!get || !this.contractListEl || !this.contractSummaryEl || !this.contractHistoryEl) return;
+    const info = get();
+    const apPct = Math.round(info.apBonusPct * 100);
+    const capPct = Math.round(info.apCapPct * 100);
+    setText(
+      this.contractSummaryEl,
+      `${formatInt(info.completed)} completed · +${apPct}% AP this run`
+      + `${apPct >= capPct ? ` (capped at +${capPct}%)` : ` / +${capPct}% cap`}`,
+    );
+
+    // Same treatment the blessing list gets: the rows only change a few dozen
+    // times a run, so the DOM is keyed on its own contents rather than rebuilt
+    // every UI tick.
+    const signature = info.live.map(c => `${c.uid}:${c.progress}`).join('|')
+      + `#${info.history.length}`;
+    if (signature === this.contractSignature) return;
+    this.contractSignature = signature;
+
+    this.contractListEl.innerHTML = '';
+    for (const c of info.live) {
+      const row = document.createElement('div');
+      row.className = 'contract-live-row';
+
+      const fill = document.createElement('div');
+      fill.className = 'contract-live-fill';
+      setStyle(fill, 'width', `${(Math.max(0, Math.min(1, c.fill)) * 100).toFixed(1)}%`);
+      row.appendChild(fill);
+
+      const body = document.createElement('div');
+      body.className = 'contract-live-body';
+      const name = document.createElement('div');
+      name.className = 'contract-live-name';
+      name.textContent = c.name;
+      body.appendChild(name);
+      const detail = document.createElement('div');
+      detail.className = 'contract-live-detail';
+      detail.textContent = c.label;
+      body.appendChild(detail);
+      row.appendChild(body);
+
+      const right = document.createElement('div');
+      right.className = 'contract-live-right';
+      const progress = document.createElement('div');
+      progress.className = 'contract-live-progress';
+      progress.textContent = c.progress;
+      right.appendChild(progress);
+      const reward = document.createElement('div');
+      reward.className = 'contract-live-reward';
+      reward.textContent = c.reward;
+      right.appendChild(reward);
+      row.appendChild(right);
+
+      this.contractListEl.appendChild(row);
+    }
+
+    this.contractHistoryEl.innerHTML = '';
+    if (info.history.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'blessing-held-none';
+      empty.textContent = 'No contracts completed yet this run.';
+      this.contractHistoryEl.appendChild(empty);
+      return;
+    }
+    const heading = document.createElement('div');
+    heading.className = 'contract-history-heading';
+    heading.textContent = 'Completed';
+    this.contractHistoryEl.appendChild(heading);
+    // Most recent first — the tail of the ring buffer is the interesting end.
+    for (let i = info.history.length - 1; i >= 0; i--) {
+      const entry = info.history[i];
+      const row = document.createElement('div');
+      row.className = 'contract-history-row';
+      const name = document.createElement('span');
+      name.textContent = entry.name;
+      row.appendChild(name);
+      const wave = document.createElement('span');
+      wave.className = 'contract-history-wave';
+      wave.textContent = entry.wave > 0 ? `Wave ${formatInt(entry.wave)}` : '';
+      row.appendChild(wave);
+      this.contractHistoryEl.appendChild(row);
     }
   }
 

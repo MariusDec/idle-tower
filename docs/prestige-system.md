@@ -19,6 +19,40 @@ Two prestige layers: Ascension (wave 5~~~~0+) and Transcendence (100+ AP).
 4. Calls `applySavedStateReset()` — resets upgrades/resources/enemies/projectiles, keeps research/perks/AP
 5. Research `startWave` bonus: if unlocked, starts at that wave (5 or 15) with starting gold
 
+### The run-scoped AP channel
+
+`previewAP(wave)` is not just `apForWave`. It composes three things:
+
+```
+floor( apForWave(wave)
+       x (1 + achievement ap_gain_mult + achievement prestige_gain_mult)
+       x (1 + runApBonus) )
+```
+
+The first multiplier is **lifetime** (unlocked achievements); the second is
+**this run's**, and it is keyed by source:
+
+```ts
+export type RunApSource = 'boss' | 'contract';
+private runApBonusBySource: Record<RunApSource, number> = { boss: 0, contract: 0 };
+```
+
+| Source | Granted by | Ceiling | Persisted in |
+|---|---|---|---|
+| `boss` | A flawless boss encounter, +10% each ([boss-encounters.md](boss-encounters.md)) | none | `GameState.bossRun.apBonusPct` |
+| `contract` | A completed contract that grants one, +3% each ([contract-system.md](contract-system.md)) | **+50%** for the run | `GameState.contracts.apBonusPct` |
+
+Two reasons it is keyed rather than one scalar. First, the two sources have
+different ceilings and different persistence blocks, so a contract restore
+calling `setRunApBonus` on a shared number would silently erase the boss bonus.
+Second, the lifetime and run channels **compose** — `(1 + ach) x (1 + run)` —
+rather than one standing in for the other, which is the bug the split was
+introduced to avoid in the first place.
+
+Both are cleared by `performAscension`: the ascension that pays a run bonus out
+is also the one that ends the run that earned it. `applySavedStateReset` clears
+both again for the transcendence path.
+
 ### AP Perks
 
 | ID | Name | Cost | Max | Effect |

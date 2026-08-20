@@ -683,6 +683,22 @@ export class HUD {
     return slot;
   }
 
+  /**
+   * Container for the contract tracker (gameplay plan §5.3).
+   *
+   * Owns the bottom-left corner; the milestone strip's `bottom` is offset by
+   * `--contract-tracker-height` so the strip sits directly above it, which is
+   * the "under the milestone strip" the plan asks for. Same reason as the
+   * milestone slot for living next to the HUD root rather than inside it: the
+   * HUD bar's layout has nothing to say about a corner overlay.
+   */
+  renderContractTrackerSlot(): HTMLElement {
+    const slot = document.createElement('div');
+    slot.className = 'contract-tracker-slot';
+    document.body.appendChild(slot);
+    return slot;
+  }
+
   private renderWaveBlock(): HTMLElement {
     const block = document.createElement('div');
     block.className = 'hud-wave-block';

@@ -43,7 +43,7 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `wave_cleared` | `number` (wave) | WaveManager | — |
 | `gold_changed` | `number` (gold) | ResourceManager | — |
 | `mana_changed` | `number` (mana) | ResourceManager | — |
-| `upgrade_purchased` | `{ id, level }` | UpgradeManager | UIManager |
+| `upgrade_purchased` | `{ id, level, levelsGained, goldSpent }` | UpgradeManager | UIManager, Game (purchase counter + contracts' `spend_gold`) |
 | `upgrades_changed` | `Record<string, number>` | UpgradeManager | Game (recalc effects) |
 | `ability_cast` | `{ id, def }` | AbilityManager | UIManager (toast, flash) |
 | `ability_visual` | `{ id, def }` | AbilityManager | Game (particle effects) |
@@ -59,6 +59,9 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `automation_toggled` | `{ key, enabled }` | PrestigeManager | — |
 | `research_unlocked` | `{ id }` | ResearchTree | Game (recalc, toast) |
 | `rp_changed` | `{ rp, delta }` | ResearchTree | — |
+| `contract_drawn` | `{ uid, id, name, label }` | ContractManager | Game (state snapshot), UIManager (tracker refresh) |
+| `contract_completed` | `{ uid, id, name, label, wave, reward }` | ContractManager | Game (pays the reward, applies the AP cap's result) |
+| `contract_reward` | `{ uid, rewardText }` | Game | UIManager (tracker flourish) — emitted *after* the payout, which is why the tracker listens here and not on `contract_completed` |
 | `toast` | `{ kind, text, life? }` | Any | NotificationManager |
 | `welcome_back` | `{ result, startWave, endWave }` | Game | UIManager (modal) |
 | `run_ended` | `{ record: RunRecord, previous: RunRecord \| null }` | Game (ascend/transcend) | UIManager (RunSummaryModal) |

@@ -416,6 +416,37 @@ export interface BossRunState {
   flawlessKills: number;
 }
 
+/** One live contract slot, as persisted (gameplay plan §5.1). */
+export interface ActiveContractState {
+  /** `ContractDef.id`. A def that no longer exists is dropped on restore. */
+  defId: string;
+  /** Instance id — the tracker keys its rows on it, so it must survive a load. */
+  uid: number;
+  /** Target already resolved for the band the contract was drawn in. */
+  target: number;
+  progress: number;
+  drawnAtWave: number;
+}
+
+/**
+ * The run's contracts (gameplay plan §5.5, save v12).
+ *
+ * Run-scoped like blessings and `bossRun`: ascension and transcendence both
+ * wipe it. The *offer* has no equivalent here — a contract is not a choice, so
+ * unlike the blessing draft there is nothing that would be silently re-rolled
+ * by persisting it, and the live slots are stored in full.
+ */
+export interface ContractRunState {
+  active: ActiveContractState[];
+  /** Def ids completed this run, oldest first, capped at the history limit. */
+  completed: string[];
+  completedCount: number;
+  /** Contract AP bonus banked this run, already capped. */
+  apBonusPct: number;
+  /** Last instance id handed out, so a reload does not reuse one. */
+  uidSeq: number;
+}
+
 export interface WaveState {
   number: number;
   highestWave: number;
@@ -664,6 +695,8 @@ export interface GameState {
   blessings: BlessingRunState;
   /** v11+: run-scoped boss encounter rewards (plan §3.4). */
   bossRun: BossRunState;
+  /** v12+: the run's three live contracts (plan §5). */
+  contracts: ContractRunState;
 }
 
 export interface Particle {

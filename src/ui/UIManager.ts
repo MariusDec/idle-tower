@@ -24,7 +24,8 @@ import { PlacementPrompt } from './PlacementPrompt';
 import { BossBar, type BossBarData } from './BossBar';
 import { KeybindsOverlay } from './KeybindsOverlay';
 import { StatsPanel } from './StatsPanel';
-import { ProgressionPanel, type ProgressionBlessingInfo } from './ProgressionPanel';
+import { ProgressionPanel, type ProgressionBlessingInfo, type ProgressionContractInfo } from './ProgressionPanel';
+import { ContractTracker, type ContractRowData } from './ContractTracker';
 import { MilestoneStrip } from './MilestoneStrip';
 import { AbilityBar } from './AbilityBar';
 import { MobileSheet, type MobileSheetTab } from './MobileSheet';
@@ -163,6 +164,7 @@ export class UIManager {
   private readonly statsPanel: StatsPanel;
   private readonly progressionPanel: ProgressionPanel;
   private readonly milestoneStrip: MilestoneStrip;
+  private readonly contractTracker: ContractTracker;
   private readonly talentPanel: TalentPanel;
   private readonly equipmentPanel: EquipmentPanel;
   private abilityBar: AbilityBar | null = null;
@@ -315,6 +317,14 @@ export class UIManager {
     picksTaken: 0,
     rerolls: 0,
     nextDraftWave: null,
+  });
+  /** The run's contracts (plan §5.3). Empty until `Game` wires its API in. */
+  private contractApi: () => ProgressionContractInfo = () => ({
+    live: [],
+    history: [],
+    completed: 0,
+    apBonusPct: 0,
+    apCapPct: 0,
   });
   private lastState: GameState | null = null;
   private cachedGoldMultiplier = 1;
@@ -472,6 +482,17 @@ export class UIManager {
     this.progressionPanel = new ProgressionPanel({
       apThisCycle: () => this.lastState?.resources.apThisTranscendence ?? 0,
       blessings: () => this.blessingApi(),
+      contracts: () => this.contractApi(),
+    });
+    this.contractTracker = new ContractTracker(this.hud.renderContractTrackerSlot(), {
+      getRows: (): ContractRowData[] => this.contractApi().live.map(c => ({
+        uid: c.uid,
+        name: c.name,
+        label: c.label,
+        progress: c.progress,
+        fill: c.fill,
+        reward: c.reward,
+      })),
     });
     this.milestoneStrip = new MilestoneStrip(this.hud.renderMilestoneStripSlot(), {
       getProgress: () => {
@@ -566,6 +587,24 @@ export class UIManager {
       if (triggers.length > 0) {
         this.milestoneStrip.flashLastEntry();
       }
+    });
+    // Contracts (plan §5.3). The flourish is driven from the event rather than
+    // inferred from a row disappearing, because an ascension and a save load
+    // also empty the tracker and neither deserves a celebration.
+    //
+    // It listens on `contract_reward`, not `contract_completed`: the latter is
+    // what `ContractManager` emits *before* anything has been paid, and this
+    // manager's subscription is registered first, so the reward text would
+    // always be a frame behind. `Game` emits `contract_reward` once the payout
+    // is resolved, still inside the same completion.
+    this.bus.on('contract_reward', (payload: unknown) => {
+      const p = payload as { uid: number; rewardText?: string };
+      this.contractTracker.flourish(p.uid, p.rewardText ?? '');
+    });
+    // The replacement is drawn after the payout, so this is what slides the
+    // new row in under the one that is still flourishing.
+    this.bus.on('contract_drawn', () => {
+      this.contractTracker.refresh();
     });
     this.bus.on('tower_damage_dealt', (payload: unknown) => {
       const p = payload as { amount: number };
@@ -922,9 +961,24 @@ export class UIManager {
    */
   setBlessingAPI(api: () => ProgressionBlessingInfo): void {
     this.blessingApi = api;
+    this.refreshProgressionDeps();
+  }
+
+  /**
+   * The run's contracts (plan §5.3). Pushed by `Game.syncUiApis`, same as the
+   * blessing API, so the tracker and the Progression section read one source.
+   */
+  setContractAPI(api: () => ProgressionContractInfo): void {
+    this.contractApi = api;
+    this.refreshProgressionDeps();
+    this.contractTracker.refresh();
+  }
+
+  private refreshProgressionDeps(): void {
     this.progressionPanel.setDeps({
       apThisCycle: () => this.lastState?.resources.apThisTranscendence ?? 0,
       blessings: () => this.blessingApi(),
+      contracts: () => this.contractApi(),
     });
     if (this.lastState && this.activeTab === 'progression') {
       this.progressionPanel.update(this.lastState);
@@ -954,6 +1008,7 @@ export class UIManager {
   tickDisplayHud(dt: number, state: GameState): void {
     this.hud.tickDisplay(dt, state);
     this.milestoneStrip.update(dt);
+    this.contractTracker.update(dt);
   }
 
   /**
@@ -1043,6 +1098,7 @@ export class UIManager {
     this.pushFrameStats(state);
     this.pushEnemyStats(state);
     this.milestoneStrip.refresh();
+    this.contractTracker.refresh();
   }
 
   private pushEnemyStats(state: GameState): void {

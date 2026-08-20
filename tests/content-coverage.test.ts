@@ -42,6 +42,12 @@ import {
   BLESSING_STAT_LABELS,
   type BlessingBehavior,
 } from '../src/data/blessings';
+import {
+  CONTRACTS,
+  CONTRACT_ENEMY_LABELS,
+  describeContract,
+  describeReward,
+} from '../src/data/contracts';
 
 /**
  * Boss patterns (gameplay plan §3.2).
@@ -189,6 +195,40 @@ describe('achievements', () => {
   it('has unique ids and a positive reward value', () => {
     expect(new Set(ACHIEVEMENTS.map((a) => a.id)).size).toBe(ACHIEVEMENTS.length);
     expect(ACHIEVEMENTS.filter((a) => a.reward.value <= 0).map((a) => a.id)).toEqual([]);
+  });
+});
+
+describe('contracts', () => {
+  /**
+   * The plan's cross-cutting rule 3, applied to §5's union.
+   *
+   * `CONTRACT_ENEMY_LABELS` is a `Record<EnemyType, string>`, so an enemy type
+   * added without a contract label is a compile error; this is the runtime half
+   * — that no label is a placeholder, and that every `kill_type` contract names
+   * an enemy the spawn pool actually produces.
+   */
+  it('names every enemy type it can ask the player to kill', () => {
+    for (const type of Object.keys(ENEMY_DEFS) as EnemyType[]) {
+      const label = CONTRACT_ENEMY_LABELS[type];
+      expect(label, `${type} has no contract label`).toBeTruthy();
+      expect(label.toLowerCase()).not.toMatch(/todo|tbd|unknown/);
+    }
+  });
+
+  it('renders a non-empty goal line for every def', () => {
+    expect(CONTRACTS.length).toBeGreaterThan(15);
+    for (const def of CONTRACTS) {
+      const text = describeContract(def.goal, 7);
+      expect(text, `${def.id} renders nothing`).toBeTruthy();
+      expect(text.length, `${def.id} renders a stub`).toBeGreaterThan(8);
+    }
+  });
+
+  it('renders a non-empty reward line for every def', () => {
+    for (const def of CONTRACTS) {
+      const text = describeReward(def.reward, 500);
+      expect(text, `${def.id} advertises no reward`).toBeTruthy();
+    }
   });
 });
 

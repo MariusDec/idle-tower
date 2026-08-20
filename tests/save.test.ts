@@ -10,6 +10,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SaveManager } from '../src/systems/SaveManager';
+import { ContractManager } from '../src/systems/ContractManager';
 import type { GameState } from '../src/types';
 
 const STORAGE_KEY = 'the-tower-save';
@@ -77,6 +78,18 @@ function makeState(): GameState {
       pendingOfferForWave: null,
       wavesClearedThisRun: 11,
     },
+    bossRun: { apBonusPct: 0.1, swiftKills: 2, flawlessKills: 1 },
+    contracts: {
+      active: [
+        { defId: 'ct_culling', uid: 4, target: 220, progress: 87, drawnAtWave: 14 },
+        { defId: 'ct_hoard', uid: 5, target: 22, progress: 3, drawnAtWave: 16 },
+        { defId: 'ct_arsenal', uid: 6, target: 30, progress: 11, drawnAtWave: 17 },
+      ],
+      completed: ['ct_first_cull', 'ct_press_on'],
+      completedCount: 2,
+      apBonusPct: 0.06,
+      uidSeq: 6,
+    },
   } as unknown as GameState;
 }
 
@@ -96,6 +109,12 @@ describe('save round-trip', () => {
     expect(loaded!.blessings?.held).toEqual({ bl_sharpen: 2, bl_ricochet: 1 });
     expect(loaded!.blessings?.picksTaken).toBe(3);
     expect(loaded!.blessings?.wavesClearedThisRun).toBe(11);
+    expect(loaded!.contracts?.active.length).toBe(3);
+    expect(loaded!.contracts?.active[0]).toEqual({
+      defId: 'ct_culling', uid: 4, target: 220, progress: 87, drawnAtWave: 14,
+    });
+    expect(loaded!.contracts?.apBonusPct).toBe(0.06);
+    expect(loaded!.contracts?.completed).toEqual(['ct_first_cull', 'ct_press_on']);
   });
 
   it('discards a corrupt save rather than loading garbage', () => {
@@ -133,7 +152,7 @@ describe('migration ladder', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify(v2Save));
     const loaded = new SaveManager(stubBus).load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBeGreaterThanOrEqual(11);
+    expect(loaded!.version).toBeGreaterThanOrEqual(12);
   });
 
   it('preserves the v2 payload through every step of the ladder', () => {
@@ -146,12 +165,12 @@ describe('migration ladder', () => {
   });
 
   it('accepts every version the ladder claims to handle', () => {
-    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
+    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
       storage.clear();
       storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version }));
       const loaded = new SaveManager(stubBus).load();
       expect(loaded, `version ${version} should load`).not.toBeNull();
-      expect(loaded!.version).toBeGreaterThanOrEqual(11);
+      expect(loaded!.version).toBeGreaterThanOrEqual(12);
     }
   });
 
@@ -163,7 +182,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(11);
+    expect(loaded.version).toBe(12);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -187,11 +206,53 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(11);
+    expect(loaded.version).toBe(12);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);
     expect(loaded.blessings!.wavesClearedThisRun).toBe(19);
+  });
+
+  /**
+   * v11 -> v12 is additive too (gameplay plan §5.5). A v11 save is a run that
+   * has simply not been handed any contracts, and one written mid-contract
+   * keeps every slot's progress through the ladder.
+   */
+  it('seeds an empty contract run for a v11 save', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11 }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(12);
+    expect(loaded.contracts).toEqual({
+      active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
+    });
+  });
+
+  it('carries contracts in progress from a v11 save through to v12', () => {
+    const contracts = {
+      active: [
+        { defId: 'ct_culling', uid: 9, target: 220, progress: 140, drawnAtWave: 21 },
+        { defId: 'ct_unbroken', uid: 10, target: 4, progress: 2, drawnAtWave: 22 },
+        { defId: 'ct_hoard', uid: 11, target: 22, progress: 20, drawnAtWave: 24 },
+      ],
+      completed: ['ct_hold_the_line'],
+      completedCount: 1,
+      apBonusPct: 0.09,
+      uidSeq: 11,
+    };
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11, contracts }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(12);
+    expect(loaded.contracts).toEqual(contracts);
+
+    // And the real manager takes that state back without losing a slot.
+    const mgr = new ContractManager({
+      currentWave: () => 24,
+      waveGold: () => 250,
+    });
+    mgr.restore(loaded.contracts!);
+    expect(mgr.list.length).toBe(3);
+    expect(mgr.list.map(c => c.progress)).toEqual([140, 2, 20]);
+    expect(mgr.apBonusPct).toBeCloseTo(0.09, 10);
   });
 
   it('fills in the enrage clock older saves predate', () => {

@@ -76,6 +76,8 @@ import { WaveModifierModal } from '../ui/WaveModifierModal';
 import { BlessingDraftModal } from '../ui/BlessingDraftModal';
 import { BlessingManager } from '../systems/BlessingManager';
 import { LootManager } from '../systems/LootManager';
+import { ContractManager } from '../systems/ContractManager';
+import { CONTRACT_TUNING } from '../data/contracts';
 import { AbilityPlacement, ChargeTracker } from '../systems/ActiveInput';
 import { LOOT_ORB_COLORS, type LootOrbKind } from '../data/loot';
 import {
@@ -211,6 +213,7 @@ function makeInitialState(): GameState {
       wavesClearedThisRun: 0,
     },
     bossRun: { apBonusPct: 0, swiftKills: 0, flawlessKills: 0 },
+    contracts: { active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0 },
   };
 }
 
@@ -292,6 +295,18 @@ export class Game {
   private readonly blessingModal: BlessingDraftModal;
   /** Loot orbs (plan §4.1). Run-scoped and never persisted. */
   private readonly lootMgr: LootManager;
+  /** The run's three contracts (plan §5). Run-scoped, persisted in full. */
+  private readonly contractMgr: ContractManager;
+  /**
+   * False once the tower has actually lost HP this wave.
+   *
+   * The generalisation of Part 3's per-encounter flawless flag rather than a
+   * second mechanism: both are set at the *same* site in the `tower_damaged`
+   * handler, after the wall / shield / armour chain has run, so "flawless"
+   * means the same thing for a wave as it does for a boss — HP came off the
+   * bar, not merely that something hit the tower.
+   */
+  private waveFlawless = true;
   /** Charged-shot hold, on the wall clock (plan §4.2). */
   private readonly charge = new ChargeTracker();
   /** Set on release, consumed by the next substep so the shot is simulated. */
@@ -458,6 +473,11 @@ export class Game {
       towerPos: () => ({ x: this.state.tower.x, y: this.state.tower.y }),
       pay: (kind, amount, full, orb) => this.payOrb(kind, amount, full, orb.x, orb.y),
     });
+    this.contractMgr = new ContractManager({
+      bus: this.bus,
+      currentWave: () => this.waveMgr.currentWave,
+      waveGold: (wave) => this.estimateWaveGold(wave),
+    });
     // The impact path asks `has(behavior)` several times per hit, so it reads
     // the manager's rebuilt cache rather than scanning the pool.
     this.projectileMgr.setBlessings(this.blessingMgr);
@@ -493,6 +513,7 @@ export class Game {
       getState: (id) => this.state.abilities[id],
       onCast: () => {
         this.state.stats.abilitiesCast += 1;
+        this.contractMgr.note({ kind: 'ability_cast' });
       },
     });
     this.prestigeMgr = new PrestigeManager(this.bus, {
@@ -535,6 +556,11 @@ export class Game {
     this.enemyMgr.setBounds(this.canvas.width, this.canvas.height);
     this.state.upgrades = this.upgradeMgr.snapshot();
     this.applyUpgradeEffects();
+    // A fresh game starts with three live contracts. A save load replaces them
+    // in `applyPersistedState`; drawing here means the tracker is never empty,
+    // including on the very first frame before any save has been read.
+    this.contractMgr.refill();
+    this.state.contracts = this.contractMgr.snapshot();
     this.syncUiApis();
     this.resetRunBaselines();
 
@@ -576,6 +602,7 @@ export class Game {
       const e = enemy as { x: number; y: number; type: string; maxHp?: number; isSplitChild?: boolean; goldValue?: number; elite?: boolean };
       const def = ENEMY_DEFS[e.type as keyof typeof ENEMY_DEFS];
       this.state.stats.enemiesKilled += 1;
+      this.contractMgr.note({ kind: 'enemy_killed', type: e.type as EnemyType });
       // Plan §3.4: an elite kill is worth showing up for — the gold multiplier
       // and RP are handled in EnemyManager; the gear roll and the toast are
       // here because they need the equipment manager and the notification bus.
@@ -896,8 +923,11 @@ export class Game {
       }
       ts.hp = Math.max(0, ts.hp - dmg);
       // Plan §3.4: "flawless" means the tower lost HP, not that it was hit —
-      // a shot the wall or a shield charge ate cost the player nothing.
+      // a shot the wall or a shield charge ate cost the player nothing. Plan
+      // §5.1's `flawless_waves` wants exactly the same rule at wave scope, so
+      // it is the same site rather than a second mechanism that could disagree.
       if (this.bossEncounter) this.bossEncounter.flawless = false;
+      this.waveFlawless = false;
       this.effects.emitDamageNumber(
         ts.x,
         ts.y - TOWER_VISUAL.bodyRadius - 24,
@@ -954,6 +984,64 @@ export class Game {
         apPreview: this.prestigeMgr.previewAP(this.state.wave.highestWave),
       });
     });
+    // ── contracts (gameplay plan §5.2) ──
+    //
+    // The manager decides *what* was earned — including applying the +50% AP
+    // cap — and this pays it. The split matters: the cap lives with the only
+    // writer of the running total, so a future second payer cannot route
+    // around it by reading the def's reward directly.
+    this.bus.on('contract_completed', (payload: unknown) => {
+      const p = payload as {
+        uid: number;
+        name: string;
+        label: string;
+        reward: { goldWaves: number; rerolls: number; rp: number; apBonusPct: number };
+      };
+      const parts: string[] = [];
+      if (p.reward.goldWaves > 0) {
+        const gold = Math.max(
+          1,
+          Math.floor(this.estimateWaveGold(this.waveMgr.currentWave) * p.reward.goldWaves),
+        );
+        this.resourceMgr.addGold(gold);
+        parts.push(`${formatInt(gold)}g`);
+      }
+      if (p.reward.rerolls > 0) {
+        this.blessingMgr.grantRerollToken(p.reward.rerolls);
+        this.state.blessings = this.blessingMgr.snapshot();
+        parts.push(`${p.reward.rerolls} reroll${p.reward.rerolls === 1 ? '' : 's'}`);
+      }
+      if (p.reward.rp > 0) {
+        this.researchTree.addRP(p.reward.rp);
+        parts.push(`${p.reward.rp} RP`);
+      }
+      if (p.reward.apBonusPct > 0) {
+        // Set rather than add: the manager owns the capped running total, so
+        // this channel always mirrors it exactly (see `PrestigeManager`).
+        this.prestigeMgr.setRunApBonus(this.contractMgr.apBonusPct, 'contract');
+        parts.push(`+${Math.round(p.reward.apBonusPct * 100)}% AP`);
+      }
+      this.state.contracts = this.contractMgr.snapshot();
+      const rewardText = parts.join(' · ');
+      this.bus.emit('contract_reward', { uid: p.uid, rewardText });
+      const ts = this.tower.snapshot;
+      this.effects.emitShockwaveRing(ts.x, ts.y, 200, 'rgba(62, 196, 109, 0.7)', 5);
+      this.bus.emit('toast', {
+        kind: 'milestone',
+        text: rewardText
+          ? `Contract complete — ${p.name}: ${rewardText}`
+          : `Contract complete — ${p.name}`,
+        life: 5,
+      });
+      this.saveMgr.requestSave();
+    });
+
+    // The replacement is drawn after the payout, so the persisted block is
+    // restated here rather than only on the completion.
+    this.bus.on('contract_drawn', () => {
+      this.state.contracts = this.contractMgr.snapshot();
+    });
+
     this.bus.on('wave_started', (wave: unknown) => {
       this.stalledWave = -1;
       // Plan §4.3: a placement prompt must not outlive the situation it was
@@ -967,6 +1055,8 @@ export class Game {
       // Reset kill streak each wave
       this.killStreak = 0;
       this.enemyMgr.setKillStreakGoldBonus(0);
+      // Plan §5.1: a wave is flawless until it isn't.
+      this.waveFlawless = true;
 
       const w = wave as number;
       // An encounter that never resolved — the run rewound a wave, or the
@@ -1076,6 +1166,18 @@ export class Game {
       this.state.blessings = this.blessingMgr.snapshot();
       if (hadGreed) this.applyUpgradeEffects();
       this.maybeOfferBlessingDraft(cleared);
+
+      // Contracts (plan §5.1). One event carries every wave-scoped goal kind —
+      // `clear_waves`, `flawless_waves`, `reach_wave` and `survive_mutator` —
+      // so a cleared wave is one call rather than four subscriptions racing
+      // each other for the same tick.
+      this.contractMgr.note({
+        kind: 'wave_cleared',
+        wave: cleared,
+        flawless: this.waveFlawless,
+        mutatorActive: this.state.wave.waveModifier.active !== null,
+      });
+      this.state.contracts = this.contractMgr.snapshot();
     });
     this.bus.on('wave_modifier_offer', (nextWave: unknown) => {
       const w = nextWave as number;
@@ -1114,8 +1216,11 @@ export class Game {
     // `upgrades_changed` — the latter also fires on reset/load, and a bulk buy
     // is worth every level it bought rather than one.
     this.bus.on('upgrade_purchased', (payload: unknown) => {
-      const p = payload as { levelsGained?: number };
+      const p = payload as { levelsGained?: number; goldSpent?: number };
       this.state.stats.totalUpgradesPurchased += Math.max(1, p.levelsGained ?? 1);
+      if (p.goldSpent && p.goldSpent > 0) {
+        this.contractMgr.note({ kind: 'gold_spent', amount: p.goldSpent });
+      }
     });
     this.bus.on('upgrade_evolved', (payload: unknown) => {
       const p = payload as { id: string; level: number; evolution: { name: string; description: string } };
@@ -1359,6 +1464,11 @@ export class Game {
     if (!encounter) return;
 
     const { swift, flawless } = bossEncounterOutcome(encounter.elapsed, !encounter.flawless);
+    // Plan §5.1's `boss_under` is scored per *encounter*, which is what this
+    // whole method is: `2 + tier` bosses resolve to one outcome (see the Part 3
+    // status block). Noting it per boss kill would make "under 30 s" mean
+    // "under 30 s, six times over" on a wave-40 pack.
+    this.contractMgr.note({ kind: 'boss_encounter', seconds: encounter.elapsed });
     if (swift) {
       this.state.bossRun.swiftKills += 1;
       const bonus = Math.floor(encounter.goldValue * BOSS_ENCOUNTER.swiftKillGoldBonus);
@@ -1846,6 +1956,10 @@ export class Game {
       }
     }
     this.effects.emitHitSparks(x, y, LOOT_ORB_COLORS[kind].core, full ? 6 : 3);
+    // Plan §5.1's `collect_orbs` counts orbs, not value, so a drifted orb that
+    // paid 40% still counts — the idle contract (cross-cutting rule 1) applies
+    // to contract progress as much as to the orb itself.
+    this.contractMgr.note({ kind: 'orb_collected' });
   }
 
   /** Roll loot for a kill. Called from the `enemy_killed` handler. */
@@ -2367,6 +2481,22 @@ export class Game {
       rerolls: this.blessingMgr.rerollsAvailable,
       nextDraftWave: this.nextBlessingDraftWave(),
     }));
+    // Contracts (plan §5.3). One API drives both the corner tracker and the
+    // Progression section, so the two can never disagree about what is live.
+    this.ui.setContractAPI(() => ({
+      live: this.contractMgr.list.map(c => ({
+        uid: c.uid,
+        name: c.def.name,
+        label: this.contractMgr.label(c),
+        progress: this.contractMgr.progressLabel(c),
+        fill: this.contractMgr.fillFraction(c),
+        reward: this.contractMgr.rewardLabel(c),
+      })),
+      history: this.contractMgr.recent.map(h => ({ name: h.name, wave: h.wave })),
+      completed: this.contractMgr.completed,
+      apBonusPct: this.contractMgr.apBonusPct,
+      apCapPct: CONTRACT_TUNING.apBonusCap,
+    }));
     this.ui.setEquipmentAPI({
       inventory: this.state.equipment,
       equipped: this.state.equipped,
@@ -2742,8 +2872,10 @@ export class Game {
     // AP bonus is banked against *this* run's ascension, and the ascension that
     // pays it out is the one that ends the run.
     this.bossEncounter = null;
+    this.waveFlawless = true;
     this.state.bossRun = { apBonusPct: 0, swiftKills: 0, flawlessKills: 0 };
-    this.prestigeMgr.setRunApBonus(0);
+    this.prestigeMgr.setRunApBonus(0, 'boss');
+    this.prestigeMgr.setRunApBonus(0, 'contract');
     this.buffs.reset();
     const t = this.tower.snapshot;
     t.cooldown = 0;
@@ -2777,6 +2909,12 @@ export class Game {
 
     this.applyUpgradeEffects();
     this.state.upgrades = this.upgradeMgr.snapshot();
+    // Contracts are run-scoped (plan §5.1) and re-drawn *last*, once the wave
+    // and the gold multiplier are the new run's: the draw is banded on the
+    // current wave and `spend_gold` targets are sized off `estimateWaveGold`,
+    // both of which read the state this method has just rewritten.
+    this.contractMgr.reset();
+    this.state.contracts = this.contractMgr.snapshot();
   }
 
   /**
@@ -3231,7 +3369,17 @@ export class Game {
       flawlessKills: persisted.bossRun?.flawlessKills ?? 0,
     };
     this.bossEncounter = null;
-    this.prestigeMgr.setRunApBonus(this.state.bossRun.apBonusPct);
+    this.waveFlawless = true;
+    this.prestigeMgr.setRunApBonus(this.state.bossRun.apBonusPct, 'boss');
+
+    // v12+: the run's contracts. Unlike the blessing *offer*, live slots are
+    // persisted in full — a contract is not a choice, so there is nothing that
+    // re-rolling on load would silently take away. `restore` refills any slot
+    // whose def no longer exists, which is also what gives a pre-v12 save its
+    // first three contracts.
+    this.contractMgr.restore(persisted.contracts ?? null);
+    this.state.contracts = this.contractMgr.snapshot();
+    this.prestigeMgr.setRunApBonus(this.contractMgr.apBonusPct, 'contract');
 
     // Clear and repopulate equipped (manager holds reference)
     const eqMap = this.state.equipped;

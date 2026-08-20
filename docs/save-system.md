@@ -10,7 +10,7 @@ Persists game state to `localStorage` under key `the-tower-save`.
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 11
+  version: number;       // current = 12
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -22,6 +22,7 @@ interface PersistentState {
   stats: GameStats;
   blessings: BlessingRunState;                // v10+
   bossRun: BossRunState;                      // v11+
+  contracts: ContractRunState;                // v12+
 }
 ```
 
@@ -38,6 +39,7 @@ interface PersistentState {
 | v8 → v9 | per-ability auto-cast, auto-buy strategy/reserve, multi-wave mutator fields |
 | v9 → v10 | `blessings` — the run's draft (`docs/blessing-system.md`) |
 | v10 → v11 | `bossRun` — boss encounter rewards banked this run (`docs/boss-encounters.md`) |
+| v11 → v12 | `contracts` — the run's three live contracts (`docs/contract-system.md`) |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -51,6 +53,17 @@ deliberately absent, because live enemies have never been part of the save
 format: a load starts with an empty roster and `WaveManager` clears the wave
 rather than resuming half a boss. See
 [boss-encounters.md](boss-encounters.md#persistence).
+
+`migrateV11toV12` seeds an empty contract block. Unlike the blessing *offer*,
+the live contract slots are persisted **in full** — progress, resolved target,
+instance id and the wave each was drawn at. A contract is not a choice, so
+there is nothing a reload would silently take away by re-rolling it; a blessing
+offer is, which is why that one is dropped instead. The seeded default is empty
+rather than pre-drawn because the draw needs the run's current wave and
+`Game.estimateWaveGold`, neither of which the save layer has;
+`ContractManager.restore` refills to three the moment the game wires itself up,
+so a pre-v12 save loads straight into three live contracts. See
+[contract-system.md](contract-system.md#persistence).
 
 ## Auto-Save
 
@@ -77,7 +90,7 @@ write.
 ## Validation
 
 `validate()` checks:
-- version is 2..10 (older versions are walked up the migration ladder)
+- version is 2..12 (older versions are walked up the migration ladder)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress

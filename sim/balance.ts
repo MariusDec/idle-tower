@@ -12,6 +12,7 @@
 import { simulateRun, waveProfile, orbGoldForWave, type WaveSample } from './model.ts';
 import { MANUAL_AIM } from '../src/data/tower.ts';
 import { LOOT_TUNING } from '../src/data/loot.ts';
+import { CONTRACT_TUNING } from '../src/data/contracts.ts';
 import { ASCENSION_UNLOCK_WAVE, apForWave } from '../src/data/prestige.ts';
 import { lifetimeAPDamageBonus, lifetimeAPGoldBonus } from '../src/data/formulas.ts';
 
@@ -224,6 +225,46 @@ function orbFaucetTable(): string {
   );
 }
 
+/**
+ * Gameplay plan §5 — what contracts cost the curve.
+ *
+ * The gate this part can fail is the one Parts 2-4 all held: **idle wall-wave
+ * drift must be zero**. Contracts pay gold sized off `estimateWaveGold`, so
+ * they are a faucet in exactly the way orbs are, and the question is whether
+ * the faucet is small enough to disappear into the upgrade curve's rounding.
+ *
+ * The AP column is the other half: `apBonusPct` is capped at +50% by
+ * `ContractManager`, and this reports what a full run actually reaches, which
+ * is the number that says whether the cap is a real ceiling or decoration.
+ */
+function contractTable(): string {
+  const tiers = [0, 100, 1_000, 10_000, 100_000];
+  const rows = tiers.map(lifetimeAP => {
+    const common = {
+      damageMult: 1 + lifetimeAPDamageBonus(lifetimeAP),
+      goldMult: 1 + lifetimeAPGoldBonus(lifetimeAP),
+      unlockWave: ASCENSION_UNLOCK_WAVE,
+      sampleWaves: [],
+      blessings: false,
+    };
+    const off = simulateRun({ ...common, contracts: false });
+    const on = simulateRun({ ...common, contracts: true });
+    return [
+      fmt(lifetimeAP),
+      String(off.wallWave),
+      String(on.wallWave),
+      on.wallWave === off.wallWave ? '0' : `${on.wallWave > off.wallWave ? '+' : ''}${on.wallWave - off.wallWave}`,
+      String(on.contractsCompleted),
+      `+${(on.contractApBonus * 100).toFixed(0)}%`,
+      `${(on.contractGoldShare * 100).toFixed(1)}%`,
+    ];
+  });
+  return table(
+    ['Lifetime AP', 'Wall (no contracts)', 'Wall (contracts)', 'Δ', 'Completed', 'AP bonus', 'gold share'],
+    rows,
+  );
+}
+
 console.log('\n=== §2.1 Wave / gold / HP curve (fresh run, greedy buyer, no blessings) ===\n');
 console.log(curveTable());
 console.log('\n=== §2.2 Wall wave and run length per prestige tier (no blessings) ===\n');
@@ -238,6 +279,12 @@ console.log(
   `\nCharged shot: ${MANUAL_AIM.chargeDamageMult}x damage, +${MANUAL_AIM.chargeExtraPierce} pierce, `
   + `${MANUAL_AIM.chargeSplashRadius}px splash, every `
   + `${MANUAL_AIM.chargeSeconds + MANUAL_AIM.chargeCooldown}s of wall-clock time.`,
+);
+console.log('\n=== Gameplay §5 Contracts: before / after (idle, no blessings) ===\n');
+console.log(contractTable());
+console.log(
+  `\nContract AP bonus: +${CONTRACT_TUNING.apBonusStep * 100}% per contract that grants one, `
+  + `capped at +${CONTRACT_TUNING.apBonusCap * 100}% for the run.`,
 );
 console.log('\n=== Gameplay §4.1 Loot orbs as a share of wave income ===\n');
 console.log(orbFaucetTable());

@@ -94,6 +94,28 @@ path that leaves placement mode — Escape, the hotkey, a wave transition, a
 failed cast, an ascension — clears it. See
 [loot-system.md](loot-system.md#click-placed-abilities).
 
+## Corner overlays: the milestone strip and the contract tracker
+
+Two fixed elements share the bottom-left corner, both appended next to the HUD
+root rather than inside it (`HUD.renderMilestoneStripSlot` /
+`HUD.renderContractTrackerSlot`) — the HUD bar's layout has nothing to say
+about a corner overlay.
+
+The **contract tracker** (gameplay plan §5.3) owns the corner: three rows of
+`name · 12 / 40` over a progress fill, with the reward on the right. The
+**milestone strip** sits directly above it, its `bottom` offset by
+`--contract-tracker-height` (96px — the tracker is always exactly three rows,
+so a constant beats measuring). The mobile branch applies the same offset on
+top of the ability bar and bottom nav, and drops the reward column so three
+rows still fit a phone.
+
+Tracker rows key on the contract's **instance id**, so a completed row can
+flourish in place while its replacement slides in underneath — including when
+the replacement is the same contract drawn again. The flourish is driven by the
+`contract_reward` event rather than by a row disappearing: an ascension and a
+save load also empty the tracker, and neither deserves a celebration. See
+[contract-system.md](contract-system.md#ui).
+
 ## Things drawn on the canvas rather than in the DOM
 
 Two Part 4 readouts live in `Renderer` rather than in an overlay, because both
@@ -117,6 +139,10 @@ Called every frame from `Game.loop`:
 2. Updates HUD with fresh state
 3. Updates active panel if mounted
 4. Computes DPS: `expectedHit * fireRate`, averages over 30 samples, updates HUD every 0.5s
+
+`tickDisplayHud` additionally runs the milestone strip's and the contract
+tracker's presentation clocks on wall-clock `dt` — the latter is what drains a
+completed row's flourish.
 
 Everything after step 1 is throttled to every 6th frame. The caching helpers in
 `utils/dom.ts` (`setText` / `setStyle` / `toggleClass`) make an unchanged frame
