@@ -2,6 +2,7 @@ export { BuffRegistry, type BuffEntry } from './BuffRegistry';
 export { StatAccumulator, type Breakdown, type Contribution, type SourceHandle } from './accumulator';
 export {
   emptyStatContext,
+  type BlessingInputs,
   type PrestigeInputs,
   type ResearchInputs,
   type StatContext,

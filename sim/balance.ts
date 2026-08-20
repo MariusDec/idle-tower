@@ -45,7 +45,11 @@ function table(headers: string[], rows: string[][]): string {
 
 function curveTable(): string {
   const rows: string[][] = [];
-  const base = simulateRun({ unlockWave: ASCENSION_UNLOCK_WAVE, sampleWaves: SAMPLE_WAVES });
+  const base = simulateRun({
+    unlockWave: ASCENSION_UNLOCK_WAVE,
+    sampleWaves: SAMPLE_WAVES,
+    blessings: false,
+  });
   for (const wave of SAMPLE_WAVES) {
     const p = waveProfile(wave);
     const s: WaveSample | undefined = base.samples.get(wave);
@@ -64,22 +68,26 @@ function curveTable(): string {
   );
 }
 
-function tiersTable(): string {
+function tiersTable(blessings: boolean): string {
   const tiers = [0, 100, 1_000, 10_000, 100_000];
+  const seeds = blessings ? BLESSING_SEEDS : [0];
   const rows = tiers.map(lifetimeAP => {
-    const r = simulateRun({
+    const runs = seeds.map(seed => simulateRun({
       damageMult: 1 + lifetimeAPDamageBonus(lifetimeAP),
       goldMult: 1 + lifetimeAPGoldBonus(lifetimeAP),
       unlockWave: ASCENSION_UNLOCK_WAVE,
       sampleWaves: [],
-    });
+      blessings,
+      seed,
+    }));
+    const wall = mean(runs.map(r => r.wallWave));
     return [
       fmt(lifetimeAP),
       `+${(lifetimeAPDamageBonus(lifetimeAP) * 100).toFixed(0)}%`,
-      String(r.wallWave),
-      mins(r.timeToUnlockSec),
-      mins(r.durationSec),
-      fmt(apForWave(r.wallWave)),
+      blessings ? wall.toFixed(1) : String(runs[0].wallWave),
+      mins(mean(runs.map(r => r.timeToUnlockSec))),
+      mins(mean(runs.map(r => r.durationSec))),
+      fmt(apForWave(Math.round(wall))),
     ];
   });
   return table(
@@ -88,8 +96,71 @@ function tiersTable(): string {
   );
 }
 
-console.log('\n=== §2.1 Wave / gold / HP curve (fresh run, greedy buyer) ===\n');
+/**
+ * Seeds the blessing tables average over.
+ *
+ * One run is one draft sequence, and the wall is quantised to boss waves — a
+ * single seed reports 49 or 59 with nothing in between, which reads as a much
+ * bigger swing than the tuning actually moved. Averaging several draft
+ * sequences is what makes the number comparable across a balance change.
+ */
+const BLESSING_SEEDS = [0x5eed, 1, 7, 99, 12345, 555, 8080];
+
+const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+/**
+ * Gameplay plan §1.6: what the blessing draft is worth, tier by tier.
+ *
+ * Both columns are produced by the same model with the draft switched off and
+ * on, so the delta is attributable to blessings alone rather than to anything
+ * else that moved in the same commit. "Run power" is the composed DPS at a
+ * matched wave — it therefore includes the upgrades the extra gold bought, not
+ * just the stats the cards granted.
+ */
+function blessingDeltaTable(): string {
+  const tiers = [0, 100, 1_000, 10_000, 100_000];
+  const rows = tiers.map(lifetimeAP => {
+    const common = {
+      damageMult: 1 + lifetimeAPDamageBonus(lifetimeAP),
+      goldMult: 1 + lifetimeAPGoldBonus(lifetimeAP),
+      unlockWave: ASCENSION_UNLOCK_WAVE,
+    };
+    // Compare power at the wave the *un-blessed* run walls on: the deepest
+    // point both runs actually reach, and the one where "how much further did
+    // blessings take me" is a fair question.
+    const powerWave = simulateRun({ ...common, sampleWaves: [], blessings: false }).wallWave;
+    const before = simulateRun({ ...common, sampleWaves: [powerWave], blessings: false });
+    const runs = BLESSING_SEEDS.map(seed =>
+      simulateRun({ ...common, sampleWaves: [powerWave], blessings: true, seed }),
+    );
+    const walls = runs.map(r => r.wallWave);
+    const picks = runs.map(r => r.blessingPicks);
+    const baseDps = before.samples.get(powerWave)?.dps ?? 0;
+    const power = baseDps > 0
+      ? runs.map(r => (r.samples.get(powerWave)?.dps ?? 0) / baseDps)
+      : [1];
+    return [
+      fmt(lifetimeAP),
+      String(before.wallWave),
+      mean(walls).toFixed(1),
+      `+${(mean(walls) - before.wallWave).toFixed(1)}`,
+      mean(picks).toFixed(1),
+      `${mean(power).toFixed(2)}x`,
+      String(powerWave),
+    ];
+  });
+  return table(
+    ['Lifetime AP', 'Wall (no bless)', 'Wall (bless)', 'Δ', 'Picks', 'Run power', 'measured at wave'],
+    rows,
+  );
+}
+
+console.log('\n=== §2.1 Wave / gold / HP curve (fresh run, greedy buyer, no blessings) ===\n');
 console.log(curveTable());
-console.log('\n=== §2.2 Wall wave and run length per prestige tier ===\n');
-console.log(tiersTable());
+console.log('\n=== §2.2 Wall wave and run length per prestige tier (no blessings) ===\n');
+console.log(tiersTable(false));
+console.log('\n=== §2.2b Wall wave and run length per prestige tier (with blessings) ===\n');
+console.log(tiersTable(true));
+console.log('\n=== Gameplay §1.6 Blessing draft: before / after ===\n');
+console.log(blessingDeltaTable());
 console.log(`\nAscension unlocks at wave ${ASCENSION_UNLOCK_WAVE}.\n`);

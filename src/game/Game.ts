@@ -63,6 +63,17 @@ import {
   type StatContext,
 } from '../stats';
 import { WaveModifierModal } from '../ui/WaveModifierModal';
+import { BlessingDraftModal } from '../ui/BlessingDraftModal';
+import { BlessingManager } from '../systems/BlessingManager';
+import {
+  BLESSING_BY_ID,
+  BLESSING_FIRST_DRAFT_WAVE,
+  BLESSING_MAX_PICKS,
+  BLESSING_TUNING,
+  describeBlessing,
+  type BlessingBehavior,
+  type BlessingDef,
+} from '../data/blessings';
 
 /** Multiplier a gold-luck proc pays out at. */
 const GOLD_LUCK_MULTIPLIER = 3;
@@ -79,6 +90,19 @@ const BUFF_QUICK_SHOT = 'tower:quickShot';
  */
 const MIN_OFFLINE_REPORT_SECONDS = 60;
 const WAVE_MILESTONES = new Set([10, 25, 50, 100, 200, 500]);
+/**
+ * Blessing draft timeouts, in **wall-clock** seconds (plan §1.1).
+ *
+ * With auto-pick on, the draft resolves itself after 20 s so an idle session
+ * never parks on a modal. With auto-pick off the player has asked to decide,
+ * so the deadline is long — but it still exists, because "nothing blocks on a
+ * modal forever" is a rule, not a preference, and a player who walks away
+ * mid-draft is the exact case it is there for.
+ */
+const BLESSING_AUTO_PICK_SECONDS = 20;
+const BLESSING_SAFETY_TIMEOUT_SECONDS = 120;
+/** localStorage key for the `autoPickBlessings` preference. */
+const AUTO_PICK_BLESSINGS_KEY = 'the-tower-auto-pick-blessings';
 
 function makeInitialState(): GameState {
   const tower: TowerState = {
@@ -164,7 +188,31 @@ function makeInitialState(): GameState {
     passiveAbilities: {},
     equipment: [],
     equipped: {},
+    blessings: {
+      held: {},
+      picksTaken: 0,
+      rerolls: 0,
+      pendingOfferForWave: null,
+      wavesClearedThisRun: 0,
+    },
   };
+}
+
+function readAutoPickPreference(): boolean {
+  try {
+    return localStorage.getItem(AUTO_PICK_BLESSINGS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeAutoPickPreference(enabled: boolean): void {
+  try {
+    if (enabled) localStorage.setItem(AUTO_PICK_BLESSINGS_KEY, '1');
+    else localStorage.removeItem(AUTO_PICK_BLESSINGS_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 export interface GameDeps {
@@ -201,6 +249,14 @@ export class Game {
   private readonly passiveMgr: PassiveAbilityManager;
   private readonly equipmentMgr: EquipmentManager;
   private readonly waveModModal: WaveModifierModal;
+  private readonly blessingMgr: BlessingManager;
+  private readonly blessingModal: BlessingDraftModal;
+  /**
+   * Player preference for auto-picking blessings. Forced on when automation is
+   * running (see `blessingAutoPickForced`), because a player who has unlocked
+   * auto-buy is by definition not watching the screen.
+   */
+  private autoPickBlessings = false;
   /**
    * Every time-varying modifier in the game. Read by `buildStatContext`, so a
    * buff composes with upgrades instead of racing them (plan §6).
@@ -281,6 +337,14 @@ export class Game {
   private killStreak = 0;
   private manaFullGoldTimer = 0;
   private shotCounter = 0;
+  /** Separate cadence from `shotCounter`, so the mortar and double-shot evolutions don't share a clock. */
+  private mortarShotCounter = 0;
+  /**
+   * Reentrancy guard for `split_on_kill`: the shards damage enemies, which can
+   * kill them, which re-enters this handler synchronously. Without the guard a
+   * dense wave turns one kill into an unbounded cascade.
+   */
+  private splitOnKillActive = false;
   private waveGoldBonus = 0;
 
   constructor(canvas: HTMLCanvasElement, deps: GameDeps) {
@@ -319,7 +383,13 @@ export class Game {
       },
     );
     this.upgradeMgr = new UpgradeManager(this.bus, this.resourceMgr);
+    this.blessingMgr = new BlessingManager(this.bus);
+    // The impact path asks `has(behavior)` several times per hit, so it reads
+    // the manager's rebuilt cache rather than scanning the pool.
+    this.projectileMgr.setBlessings(this.blessingMgr);
     this.waveModModal = new WaveModifierModal(deps.modalRoot);
+    this.blessingModal = new BlessingDraftModal(deps.modalRoot);
+    this.autoPickBlessings = readAutoPickPreference();
     this.effects = new EffectsManager();
     this.effects.onShockwaveDamage = (s) => {
       // P5 boss death: damage enemies caught in the ring (single hit per ring)
@@ -506,6 +576,14 @@ export class Game {
         const perKill = this.upgradeMgr.getEvolutionEffectValue('kill_streak_gold');
         this.enemyMgr.setKillStreakGoldBonus((this.killStreak - 1) * perKill);
       }
+
+      // ── blessing behaviors on kill (plan §1.3) ──
+      if (this.blessingMgr.has('siphon')) {
+        this.resourceMgr.addMana(
+          this.state.resources.maxMana * BLESSING_TUNING.siphonManaFraction,
+        );
+      }
+      if (this.blessingMgr.has('split_on_kill')) this.fireSplitShards(e.x, e.y);
 
       // Research: Chain Reaction — kills deal AoE to nearby enemies
       const chainAoE = this.researchTree.getChainKillAoE();
@@ -760,6 +838,14 @@ export class Game {
       // Tower XP & passive ability XP from wave clear
       this.towerXpMgr.addWaveClearXp(cleared);
       this.passiveMgr.addWaveClearXp(cleared);
+
+      // Blessings (plan §1.1). The Greed Engine's value is a function of waves
+      // cleared, so its stat total moves every wave and the block is restated.
+      const hadGreed = this.blessingMgr.has('greed_engine');
+      this.blessingMgr.noteWaveCleared();
+      this.state.blessings = this.blessingMgr.snapshot();
+      if (hadGreed) this.applyUpgradeEffects();
+      this.maybeOfferBlessingDraft(cleared);
     });
     this.bus.on('wave_modifier_offer', (nextWave: unknown) => {
       const w = nextWave as number;
@@ -942,6 +1028,11 @@ export class Game {
   private bindVisibilityEvents(): void {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
+        // The frame loop stops while hidden, so a draft left open here would
+        // freeze the intermission until the player came back — and the offline
+        // walk would then resume from a wave that never started. Resolve it
+        // now: a hidden tab is by definition an unattended one (plan §1.1).
+        if (this.blessingModal.isVisible()) this.autoPickBlessing();
         this.saveMgr.save(this.state);
         this.stop();
       } else {
@@ -1480,6 +1571,9 @@ export class Game {
     this.state.equipment.length = 0;
     const eqMap = this.state.equipped;
     for (const k of Object.keys(eqMap)) delete (eqMap as Record<string, Equipment>)[k];
+    this.blessingModal.hide();
+    this.blessingMgr.reset();
+    this.state.blessings = this.blessingMgr.snapshot();
 
     this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
     this.applyUpgradeEffects();
@@ -1702,6 +1796,16 @@ export class Game {
       canUpgrade: (id) => this.passiveMgr.canUpgrade(id, this.state.resources.gold),
       onUpgrade: (id) => this.upgradePassive(id),
     });
+    this.ui.setAutoPickBlessingsState(
+      this.blessingAutoPickActive(),
+      this.blessingAutoPickForced(),
+    );
+    this.ui.setBlessingAPI(() => ({
+      held: this.blessingMgr.heldList(),
+      picksTaken: this.blessingMgr.picks,
+      rerolls: this.blessingMgr.rerollsAvailable,
+      nextDraftWave: this.nextBlessingDraftWave(),
+    }));
     this.ui.setEquipmentAPI({
       inventory: this.state.equipment,
       equipped: this.state.equipped,
@@ -1844,9 +1948,31 @@ export class Game {
       talents,
       passives,
       equipment,
+      blessings: {
+        // Already summed across stacks by the manager's rebuilt cache, so the
+        // context stays plain data and the contributor stays a switch.
+        stats: this.blessingMgr.getStatTotals(),
+        behaviors: this.blessingBehaviors(),
+      },
       waveModifier: this.activeWaveModifierInputs(),
       buffs: this.buffs.entries,
     };
+  }
+
+  /** The next wave whose clear earns a draft, or null once the cap is hit. */
+  private nextBlessingDraftWave(): number | null {
+    if (this.blessingMgr.isCapped) return null;
+    const current = this.waveMgr.currentWave;
+    let wave = Math.max(BLESSING_FIRST_DRAFT_WAVE, current);
+    while (!this.blessingMgr.isDraftDue(wave)) wave += 1;
+    return wave;
+  }
+
+  /** Behaviors held, for the two that resolve as stats rather than hooks. */
+  private blessingBehaviors(): BlessingBehavior[] {
+    const out: BlessingBehavior[] = [];
+    if (this.blessingMgr.has('last_stand')) out.push('last_stand');
+    return out;
   }
 
   /**
@@ -1946,6 +2072,12 @@ export class Game {
     this.enemyMgr.setHPReduction(stats.enemyHpReduction);
     this.enemyMgr.setRPDropChanceBonus(stats.rpDropChanceBonus);
     this.enemyMgr.setWallContactExtra(stats.wallContactExtra);
+    // Blessing trade-off cards move the *enemies*, not the tower — but they
+    // still resolve through the pipeline, so they compose with the wave
+    // mutator's own multipliers instead of one silently winning (plan §1.4).
+    this.enemyMgr.setBlessingSpeedMult(stats.enemySpeedMult);
+    this.enemyMgr.setBlessingHpMult(stats.enemyHpMult);
+    this.enemyMgr.setBlessingDamageMult(stats.enemyDamageMult);
 
     this.abilityMgr.setAbilityCostMultiplier(stats.abilityCostMultiplier);
     this.abilityMgr.setCooldownMultiplier(stats.abilityCooldownMultiplier);
@@ -1958,6 +2090,7 @@ export class Game {
 
     this.projectileMgr.setDamageMultipliers(0, 1);
     this.projectileMgr.setArmorPen(stats.armorPen);
+    this.projectileMgr.setArmorPenFlat(stats.armorPenFlat);
     this.projectileMgr.setPierceExtra(stats.pierceExtra);
     this.projectileMgr.setExecuteBonus(stats.executeThreshold, stats.executeMultiplier);
     this.projectileMgr.setTalentExecuteBonus(stats.talentExecuteBonus);
@@ -2025,6 +2158,14 @@ export class Game {
     this.killStreak = 0;
     this.manaFullGoldTimer = 0;
     this.shotCounter = 0;
+    this.mortarShotCounter = 0;
+    // Blessings are run-scoped by design (plan §1.5): being wiped is what makes
+    // one run distinct from the next rather than a continuation of it. This
+    // path is shared by ascension and transcendence.
+    this.blessingModal.hide();
+    this.waveMgr.resumeIntermission();
+    this.blessingMgr.reset();
+    this.state.blessings = this.blessingMgr.snapshot();
     this.buffs.reset();
     const t = this.tower.snapshot;
     t.cooldown = 0;
@@ -2154,6 +2295,189 @@ export class Game {
       text: `${snapshot.name} active for ${MUTATOR_DURATION_WAVES} waves`,
       life: 4,
     });
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Blessings (plan §1)
+  // ────────────────────────────────────────────────────────────────────────
+
+  get blessings(): BlessingManager {
+    return this.blessingMgr;
+  }
+
+  /**
+   * Auto-pick is forced whenever the player has demonstrably stopped watching:
+   * once auto-buy is unlocked the run is an idle run, and a modal that waits
+   * for a click would silently cap progress at the next draft.
+   */
+  private blessingAutoPickForced(): boolean {
+    return this.prestigeMgr.isAutomationUnlocked('autoBuy');
+  }
+
+  private blessingAutoPickActive(): boolean {
+    return this.autoPickBlessings || this.blessingAutoPickForced();
+  }
+
+  /** Player preference; the forced cases override it upward, never downward. */
+  setAutoPickBlessings(enabled: boolean): void {
+    this.autoPickBlessings = enabled;
+    writeAutoPickPreference(enabled);
+    this.syncUiApis();
+  }
+
+  isAutoPickBlessings(): boolean {
+    return this.blessingAutoPickActive();
+  }
+
+  isAutoPickBlessingsForced(): boolean {
+    return this.blessingAutoPickForced();
+  }
+
+  /**
+   * Decide whether clearing `cleared` earns a draft, and open one if so.
+   *
+   * The draft pauses **only** the intermission timer — spawning, projectiles,
+   * enemies and abilities all keep running underneath it. Every exit path
+   * (`chooseBlessing`, `skipBlessing`, the auto-pick) goes through
+   * `closeBlessingDraft`, which owns the un-pause, so the obligation
+   * `docs/wave-modifier-system.md` spells out cannot be forgotten at one of
+   * four call sites.
+   */
+  private maybeOfferBlessingDraft(cleared: number): void {
+    if (this.blessingModal.isVisible()) return;
+    if (!this.blessingMgr.isDraftDue(cleared)) return;
+    const offer = this.blessingMgr.openDraft(cleared);
+    if (offer.length === 0) {
+      // Everything eligible is maxed — close it out silently rather than
+      // pausing the run for an empty picker.
+      this.blessingMgr.skip();
+      return;
+    }
+    this.waveMgr.pauseIntermission();
+    this.state.blessings = this.blessingMgr.snapshot();
+    this.showBlessingDraft(cleared);
+  }
+
+  private showBlessingDraft(wave: number): void {
+    const auto = this.blessingAutoPickActive();
+    this.blessingModal.show(
+      {
+        wave,
+        offers: this.blessingMgr.offer,
+        held: this.blessingMgr.heldList(),
+        picksTaken: this.blessingMgr.picks,
+        maxPicks: BLESSING_MAX_PICKS,
+        rerolls: this.blessingMgr.rerollsAvailable,
+        autoPick: auto,
+        autoPickForced: this.blessingAutoPickForced(),
+        timeoutSeconds: auto ? BLESSING_AUTO_PICK_SECONDS : BLESSING_SAFETY_TIMEOUT_SECONDS,
+      },
+      {
+        onChoose: (id) => this.chooseBlessing(id),
+        onSkip: () => this.skipBlessing(),
+        onReroll: () => this.rerollBlessings(),
+        onAutoPick: () => this.autoPickBlessing(),
+        onToggleAutoPick: (enabled) => this.setAutoPickBlessings(enabled),
+      },
+    );
+  }
+
+  /** Take a blessing and resume the intermission clock. */
+  chooseBlessing(id: string): boolean {
+    const def: BlessingDef | undefined = BLESSING_BY_ID[id];
+    const ok = this.blessingMgr.choose(id);
+    this.closeBlessingDraft();
+    if (!ok || !def) return false;
+    const stacks = this.blessingMgr.stacks(id);
+    // A blessing is an input to the same recompute as everything else, so the
+    // pick is felt on the very next shot rather than at the next purchase.
+    this.applyUpgradeEffects();
+    this.syncUiApis();
+    this.saveMgr.requestSave();
+    this.bus.emit('toast', {
+      kind: 'milestone',
+      text: `Blessing: ${def.name}${stacks > 1 ? ` ×${stacks}` : ''} — ${describeBlessing(def, stacks)}`,
+      life: 4,
+    });
+    return true;
+  }
+
+  /** Spend a reroll and redraw. Leaves the draft open. */
+  rerollBlessings(): boolean {
+    const wave = this.blessingMgr.offerWave;
+    if (wave === null) return false;
+    const rolled = this.blessingMgr.reroll();
+    if (!rolled) return false;
+    this.state.blessings = this.blessingMgr.snapshot();
+    this.showBlessingDraft(wave);
+    return true;
+  }
+
+  /** Decline the offer. No pick is spent; the run continues. */
+  skipBlessing(): void {
+    this.blessingMgr.skip();
+    this.closeBlessingDraft();
+    this.bus.emit('toast', { kind: 'info', text: 'Blessing declined.', life: 2.5 });
+  }
+
+  /**
+   * Resolve an unattended draft by taking the highest-weight offer.
+   *
+   * Highest weight means the *commonest* card, which is deliberate: those are
+   * the plain stat gains with no trade-off attached, and an unattended run
+   * should not be handed Glass Cannon.
+   */
+  private autoPickBlessing(): void {
+    const offers = this.blessingMgr.offer;
+    if (offers.length === 0) {
+      this.skipBlessing();
+      return;
+    }
+    let best = offers[0];
+    for (const def of offers) {
+      if (def.weight > best.weight) best = def;
+    }
+    this.chooseBlessing(best.id);
+  }
+
+  /**
+   * The single un-pause point. Every way out of the draft goes through here,
+   * which is what keeps the intermission from staying frozen after a modal is
+   * dismissed by a path nobody thought about.
+   */
+  private closeBlessingDraft(): void {
+    this.blessingModal.hide();
+    this.waveMgr.resumeIntermission();
+    this.state.blessings = this.blessingMgr.snapshot();
+  }
+
+  /**
+   * Splinter: a kill throws two shards at the nearest survivors.
+   *
+   * Applied as direct damage rather than as projectiles so the reentrancy
+   * guard can be airtight — `EnemyManager.damage` emits `enemy_killed`
+   * synchronously, and shards that spawn shards would cascade without bound in
+   * a dense wave.
+   */
+  private fireSplitShards(x: number, y: number): void {
+    if (this.splitOnKillActive) return;
+    const ts = this.tower.snapshot;
+    const damage = Math.max(1, Math.floor(ts.baseDamage * BLESSING_TUNING.splitShardDamage));
+    const candidates = this.enemyMgr
+      .queryRadius(x, y, BLESSING_TUNING.splitShardRange)
+      .filter(e => e.alive)
+      .slice(0, BLESSING_TUNING.splitShardCount);
+    if (candidates.length === 0) return;
+    this.splitOnKillActive = true;
+    try {
+      for (const target of candidates) {
+        this.effects.emitHitSparks(target.x, target.y, '#9be7ff', 4);
+        this.enemyMgr.damage(target, damage, false);
+        this.bus.emit('tower_damage_dealt', { amount: damage });
+      }
+    } finally {
+      this.splitOnKillActive = false;
+    }
   }
 
   private skipWaveModifier(): void {
@@ -2309,6 +2633,13 @@ export class Game {
         this.state.equipment.push({ ...eq, stats: [...eq.stats] });
       }
     }
+
+    // v10+: the run's blessings. `restore` drops any draft that was open when
+    // the save was written — the offer itself is not persisted, and rolling a
+    // fresh one on load would hand back a different choice than the player was
+    // looking at.
+    this.blessingMgr.restore(persisted.blessings ?? null);
+    this.state.blessings = this.blessingMgr.snapshot();
 
     // Clear and repopulate equipped (manager holds reference)
     const eqMap = this.state.equipped;
@@ -2492,32 +2823,55 @@ export class Game {
           });
         }
 
+        // Blessing: Mortar Round — every 8th shot leaves as a shell. The
+        // cadence is counted here, in the fixed substep, so it does not drift
+        // with frame rate or game speed.
+        let mortarShot = false;
+        if (this.blessingMgr.has('mortar')) {
+          this.mortarShotCounter += 1;
+          mortarShot = this.mortarShotCounter % BLESSING_TUNING.mortarInterval === 0;
+        }
+        // Blessing: Seeker Shots — only meaningful with an auto-acquired
+        // target; a manually aimed shot is already going where the player
+        // pointed it.
+        const homing = target !== null && this.blessingMgr.has('homing');
+        const shotDamage = mortarShot
+          ? shot.damage * BLESSING_TUNING.mortarDamageMult
+          : shot.damage;
+        const blessingShot = {
+          isHoming: homing,
+          splashRadius: mortarShot ? BLESSING_TUNING.mortarRadius : undefined,
+          splashFraction: mortarShot ? BLESSING_TUNING.mortarSplashFraction : undefined,
+        };
+
         this.projectileMgr.fire(target, ts, {
-          rawDamage: shot.damage,
+          rawDamage: shotDamage,
           damageType: shotDamageType,
           isCrit: shot.isCrit,
           targetId: target?.id ?? null,
           variants,
           aimX: this.mouseDown ? this.mouseX : undefined,
           aimY: this.mouseDown ? this.mouseY : undefined,
+          ...blessingShot,
         });
         this.tower.consumeCooldown();
         this.state.stats.shotsFired += 1;
-        this.state.stats.damageDealt += shot.damage;
+        this.state.stats.damageDealt += shotDamage;
 
         // Double shot chance — fire all projectiles a second time
         if (Math.random() < ts.doubleShotChance) {
           this.projectileMgr.fire(target, ts, {
-            rawDamage: shot.damage,
+            rawDamage: shotDamage,
             damageType: shotDamageType,
             isCrit: shot.isCrit,
             targetId: target?.id ?? null,
             variants,
             aimX: this.mouseDown ? this.mouseX : undefined,
             aimY: this.mouseDown ? this.mouseY : undefined,
+            ...blessingShot,
           });
           this.state.stats.shotsFired += 1;
-          this.state.stats.damageDealt += shot.damage;
+          this.state.stats.damageDealt += shotDamage;
         }
       }
     }
@@ -2623,6 +2977,9 @@ export class Game {
     // HUD display tweening (every frame, before throttled UI update)
     this.ui.tickDisplayHud(dt, this.state);
     this.waveModModal.tick(dt);
+    // Wall-clock, not simulation time: at 6.5x a 20 s game-time deadline is
+    // three real seconds, which is not long enough to read three cards.
+    this.blessingModal.tick(realDt);
 
     // Research progress + passive RP gain. Both are real-time systems — they
     // must not accelerate when the player raises the game speed.

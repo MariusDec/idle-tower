@@ -10,7 +10,7 @@ Persists game state to `localStorage` under key `the-tower-save`.
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 2
+  version: number;       // current = 10
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -20,8 +20,27 @@ interface PersistentState {
   prestige: PrestigeState;
   wave: WaveState;
   stats: GameStats;
+  blessings: BlessingRunState;                // v10+
 }
 ```
+
+## Migration ladder
+
+| Step | What it adds |
+|---|---|
+| v2 → v3 | run history + `runStartedAt` |
+| v3 → v4 | research levels as a map, RP, research-in-progress target level |
+| v4 → v5 | the wave-modifier block |
+| v5 → v6 | tower XP, talents, passives, equipment |
+| v6 → v7 | `unlocked` on each passive |
+| v7 → v8 | equipment slot/def renames |
+| v8 → v9 | per-ability auto-cast, auto-buy strategy/reserve, multi-wave mutator fields |
+| v9 → v10 | `blessings` — the run's draft (`docs/blessing-system.md`) |
+
+Every step is additive: it fills in defaults rather than transforming, and
+nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
+pre-v10 save loads as a run that has simply not drafted yet. The *offer* is
+deliberately not persisted — see `docs/blessing-system.md`.
 
 ## Auto-Save
 
@@ -48,7 +67,7 @@ write.
 ## Validation
 
 `validate()` checks:
-- version is 2..9 (older versions are walked up the migration ladder)
+- version is 2..10 (older versions are walked up the migration ladder)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress

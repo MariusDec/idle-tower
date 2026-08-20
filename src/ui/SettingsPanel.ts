@@ -9,6 +9,11 @@ export interface SettingsAPI {
   isMuted: boolean;
   currentTargetingMode?: string;
   targetingModes?: Array<{ id: string; label: string }>;
+  /** Plan §1.1: auto-resolve the blessing draft so an idle run never stalls. */
+  autoPickBlessings?: boolean;
+  /** True when automation is running, which forces the setting on. */
+  autoPickBlessingsForced?: boolean;
+  onAutoPickBlessingsChange?: (enabled: boolean) => void;
 }
 
 const DEFAULT_TARGETING_MODES: Array<{ id: string; label: string }> = [
@@ -29,6 +34,7 @@ export class SettingsPanel {
   private volumeLabel: HTMLElement | null = null;
   private muteBtn: HTMLButtonElement | null = null;
   private targetingSelect: HTMLSelectElement | null = null;
+  private autoPickInput: HTMLInputElement | null = null;
 
   constructor(api: SettingsAPI) {
     this.api = api;
@@ -49,10 +55,24 @@ export class SettingsPanel {
     this.volumeLabel = null;
     this.muteBtn = null;
     this.targetingSelect = null;
+    this.autoPickInput = null;
   }
 
   update(): void {
     // static panel
+  }
+
+  /**
+   * Push the live auto-pick state in. `forced` disables the control rather than
+   * hiding it, so the player can see *why* the setting is not theirs right now.
+   */
+  setAutoPickBlessings(enabled: boolean, forced: boolean): void {
+    this.api.autoPickBlessings = enabled;
+    this.api.autoPickBlessingsForced = forced;
+    if (this.autoPickInput) {
+      this.autoPickInput.checked = enabled;
+      this.autoPickInput.disabled = forced;
+    }
   }
 
   private render(): void {
@@ -73,8 +93,57 @@ export class SettingsPanel {
       this.root.appendChild(this.renderTargetingSection(modes));
     }
 
+    // ── Blessings section ──
+    if (this.api.onAutoPickBlessingsChange) {
+      this.root.appendChild(this.renderBlessingSection());
+    }
+
     // ── Save Data section ──
     this.root.appendChild(this.renderSaveSection());
+  }
+
+  /**
+   * Plan §1.1: the draft pauses the intermission, so an unattended run needs a
+   * way to resolve it. The setting defaults off — a player at the keyboard
+   * should get to choose — and is forced on once automation is unlocked,
+   * because at that point nobody is watching.
+   */
+  private renderBlessingSection(): HTMLElement {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+
+    const sectionTitle = document.createElement('h3');
+    sectionTitle.className = 'settings-section-title';
+    sectionTitle.textContent = 'Blessings';
+    section.appendChild(sectionTitle);
+
+    const desc = document.createElement('p');
+    desc.className = 'settings-desc';
+    desc.textContent = this.api.autoPickBlessingsForced
+      ? 'Auto-pick is forced on while automation is unlocked, so an idle run never '
+        + 'stops at a draft. The safest offer is taken after 20 seconds.'
+      : 'Take the safest offer automatically after 20 seconds instead of waiting for '
+        + 'a click. The draft never blocks the simulation either way.';
+    section.appendChild(desc);
+
+    const label = document.createElement('label');
+    label.className = 'settings-checkbox';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = this.api.autoPickBlessings ?? false;
+    input.disabled = this.api.autoPickBlessingsForced ?? false;
+    this.autoPickInput = input;
+    input.addEventListener('change', () => {
+      this.api.autoPickBlessings = input.checked;
+      this.api.onAutoPickBlessingsChange?.(input.checked);
+    });
+    label.appendChild(input);
+    const text = document.createElement('span');
+    text.textContent = 'Auto-pick blessings';
+    label.appendChild(text);
+    section.appendChild(label);
+
+    return section;
   }
 
   private renderAudioSection(): HTMLElement {

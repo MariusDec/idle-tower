@@ -23,7 +23,7 @@ import { RunFailedModal, type RunFailedData } from './RunFailedModal';
 import { RunStalledBanner, type RunStalledData } from './RunStalledBanner';
 import { KeybindsOverlay } from './KeybindsOverlay';
 import { StatsPanel } from './StatsPanel';
-import { ProgressionPanel } from './ProgressionPanel';
+import { ProgressionPanel, type ProgressionBlessingInfo } from './ProgressionPanel';
 import { MilestoneStrip } from './MilestoneStrip';
 import { AbilityBar } from './AbilityBar';
 import { MobileSheet, type MobileSheetTab } from './MobileSheet';
@@ -198,6 +198,7 @@ export class UIManager {
   private onVolumeChange: (v: number) => void = () => {};
   private onMuteToggle: () => void = () => {};
   private onTargetingModeChange: (mode: string) => void = () => {};
+  private onAutoPickBlessingsChange: (enabled: boolean) => void = () => {};
   private talentApi: TalentAPIDeps = {
     allocated: {},
     unspentPoints: () => 0,
@@ -299,6 +300,12 @@ export class UIManager {
     researchSpeedMultiplier: 1,
     rpGainRate: 0,
   };
+  private blessingApi: () => ProgressionBlessingInfo = () => ({
+    held: [],
+    picksTaken: 0,
+    rerolls: 0,
+    nextDraftWave: null,
+  });
   private lastState: GameState | null = null;
   private cachedGoldMultiplier = 1;
   private cachedGoldSources: GoldSourceEntry[] = [];
@@ -404,6 +411,9 @@ export class UIManager {
       initialVolume: this.audioApi.volume,
       isMuted: this.audioApi.muted,
       currentTargetingMode: this.targetingApi.currentMode,
+      autoPickBlessings: false,
+      autoPickBlessingsForced: false,
+      onAutoPickBlessingsChange: (enabled) => this.onAutoPickBlessingsChange(enabled),
     });
     this.achievementPanel = new AchievementPanel({
       getProgress: (def) => {
@@ -441,6 +451,7 @@ export class UIManager {
     });
     this.progressionPanel = new ProgressionPanel({
       apThisCycle: () => this.lastState?.resources.apThisTranscendence ?? 0,
+      blessings: () => this.blessingApi(),
     });
     this.milestoneStrip = new MilestoneStrip(this.hud.renderMilestoneStripSlot(), {
       getProgress: () => {
@@ -792,6 +803,15 @@ export class UIManager {
     this.onTargetingModeChange = handler;
   }
 
+  setOnAutoPickBlessingsChange(handler: (enabled: boolean) => void): void {
+    this.onAutoPickBlessingsChange = handler;
+  }
+
+  /** Push the current auto-pick state into the settings panel (plan §1.1). */
+  setAutoPickBlessingsState(enabled: boolean, forced: boolean): void {
+    this.settingsPanel.setAutoPickBlessings(enabled, forced);
+  }
+
   isMobileView(): boolean {
     return this.isMobile;
   }
@@ -856,6 +876,21 @@ export class UIManager {
     this.abilityPanel.setPassiveDeps(api);
     if (this.lastState && this.activeTab === 'abilities') {
       this.abilityPanel.update(this.lastState);
+    }
+  }
+
+  /**
+   * The run's blessings (plan §1.4). Pushed by `Game.syncUiApis`; the default
+   * is an empty run so the panel renders before the game has wired itself up.
+   */
+  setBlessingAPI(api: () => ProgressionBlessingInfo): void {
+    this.blessingApi = api;
+    this.progressionPanel.setDeps({
+      apThisCycle: () => this.lastState?.resources.apThisTranscendence ?? 0,
+      blessings: () => this.blessingApi(),
+    });
+    if (this.lastState && this.activeTab === 'progression') {
+      this.progressionPanel.update(this.lastState);
     }
   }
 

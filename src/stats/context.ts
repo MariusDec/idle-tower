@@ -3,6 +3,7 @@ import type { AchievementRewardType } from '../data/achievements';
 import type { TalentStat } from '../data/talentTree';
 import type { PassiveStat } from '../data/passiveAbilities';
 import type { EvolutionEffectId } from '../data/upgrades';
+import type { BlessingBehavior, BlessingStat } from '../data/blessings';
 import type { BuffEntry } from './BuffRegistry';
 
 /** Prestige contributions, read once per recompute from `PrestigeManager`. */
@@ -50,6 +51,20 @@ export interface WaveModifierInputs {
 }
 
 /**
+ * The run's blessings (plan §1).
+ *
+ * `stats` arrives already summed across stacks — `BlessingManager` owns that
+ * arithmetic, and folds `greed_engine`'s wave-scaling gold into `goldPct` on
+ * the way, because its value depends on run state the context has no other
+ * reason to carry. `behaviors` is here only for the handful of behaviors that
+ * are stat-shaped rather than combat hooks (`last_stand`).
+ */
+export interface BlessingInputs {
+  stats: Readonly<Partial<Record<BlessingStat, number>>>;
+  behaviors: readonly BlessingBehavior[];
+}
+
+/**
  * The complete, immutable input to a stat recompute.
  *
  * Everything here is plain data — no manager references — so `resolveStats` is
@@ -73,6 +88,8 @@ export interface StatContext {
   talents: Readonly<Partial<Record<TalentStat, number>>>;
   passives: Readonly<Partial<Record<PassiveStat, number>>>;
   equipment: Readonly<Partial<Record<EquipmentStatType, number>>>;
+  /** Run-scoped blessing draft picks. */
+  blessings: BlessingInputs;
   /** Null when no mutator is running on the current wave. */
   waveModifier: WaveModifierInputs | null;
   /** Timed buffs currently in effect (abilities, quick shot, manual aim). */
@@ -119,6 +136,7 @@ export function emptyStatContext(): StatContext {
     talents: {},
     passives: {},
     equipment: {},
+    blessings: { stats: {}, behaviors: [] },
     waveModifier: null,
     buffs: [],
   };

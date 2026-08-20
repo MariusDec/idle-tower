@@ -11,6 +11,7 @@ import { contributeTalents } from './contributors/talents';
 import { contributePassives } from './contributors/passives';
 import { contributeEquipment } from './contributors/equipment';
 import { contributeWaveModifier } from './contributors/waveModifier';
+import { contributeBlessings } from './contributors/blessings';
 import { contributeBuffs } from './contributors/buffs';
 
 export type ResolvedStats = Record<StatKey, number>;
@@ -40,6 +41,7 @@ const CONTRIBUTORS = [
   contributeResearch,
   contributeAchievements,
   contributeWaveModifier,
+  contributeBlessings,
   contributeTalents,
   contributePassives,
   contributeEquipment,

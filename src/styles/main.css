@@ -4503,3 +4503,257 @@ body.eq-dragging img { pointer-events: none; }
 }
 .keybinds-sep { font-size: 11px; color: var(--text-2); }
 .keybinds-action { font-size: 12px; color: var(--text-1); }
+
+/* ── Blessing draft (gameplay plan §1) ──────────────────────────────────── */
+
+.blessing-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 112;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+.blessing-modal.is-visible { opacity: 1; }
+#modal-root .blessing-modal { pointer-events: auto; }
+.blessing-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(3px);
+}
+.blessing-modal-card {
+  position: relative;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  padding: 22px 24px;
+  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transform: translateY(8px) scale(0.98);
+  transition: transform 0.22s ease;
+}
+.blessing-modal.is-visible .blessing-modal-card {
+  transform: translateY(0) scale(1);
+}
+.blessing-modal-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+.blessing-modal-sub {
+  margin: 0 0 4px;
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.blessing-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.blessing-modal-empty {
+  color: var(--text-1);
+  font-size: 13px;
+  padding: 12px;
+}
+.blessing-card {
+  --bl-color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, var(--bg-3), var(--bg-2));
+  border: 1px solid var(--bl-color);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  color: var(--text-0);
+  transition: transform 0.12s ease, filter 0.12s ease, background 0.12s ease;
+}
+.blessing-card:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bl-color) 14%, var(--bg-3)), var(--bg-2));
+}
+.blessing-card:focus-visible {
+  outline: 2px solid var(--bl-color);
+  outline-offset: 2px;
+}
+.blessing-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.blessing-card-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--bl-color);
+}
+.blessing-card-rarity {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.blessing-card-desc {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-0);
+}
+.blessing-card-foot {
+  font-size: 11px;
+  color: var(--text-2);
+}
+.blessing-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.blessing-reroll-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.blessing-held-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.blessing-held-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.blessing-held-empty {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.blessing-held-chip {
+  --bl-color: var(--accent);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--bl-color);
+  color: var(--bl-color);
+  background: color-mix(in srgb, var(--bl-color) 12%, transparent);
+}
+.blessing-modal-auto {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.blessing-modal-auto-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-1);
+  cursor: pointer;
+}
+.blessing-modal-auto-option input { accent-color: var(--accent); }
+.blessing-modal-countdown {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.blessing-modal-countdown-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.blessing-modal-countdown-fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: var(--accent);
+}
+.blessing-modal-countdown-text {
+  font-size: 11px;
+  color: var(--text-2);
+  min-width: 120px;
+  text-align: right;
+}
+
+/* Held-blessing list in the Progression panel. */
+.blessing-section {
+  margin: 12px 0 18px;
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.blessing-section-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: var(--accent);
+}
+.blessing-section-summary {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+.blessing-held-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.blessing-held-none {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.blessing-held-row {
+  --bl-color: var(--accent);
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 2fr auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--bl-color);
+  border-radius: 4px;
+  background: var(--bg-3);
+}
+.blessing-held-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--bl-color);
+}
+.blessing-held-desc {
+  font-size: 12px;
+  color: var(--text-1);
+}
+.blessing-held-rarity {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-0);
+  cursor: pointer;
+}
+.settings-checkbox input { accent-color: var(--accent); }

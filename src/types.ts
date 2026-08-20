@@ -121,6 +121,14 @@ export interface Projectile {
   turnRate?: number;
   lifetime?: number;
   age?: number;
+  /**
+   * Blast radius on impact, in pixels. Set by the `mortar` blessing's every-8th
+   * shot; absent on an ordinary projectile so the hot path costs one undefined
+   * check rather than a radius query.
+   */
+  splashRadius?: number;
+  /** Fraction of the landed hit everything else in `splashRadius` takes. */
+  splashFraction?: number;
 }
 
 export interface ResourceState {
@@ -227,6 +235,25 @@ export interface WaveModifierSnapshot {
     goldAdditive: number;
     playerDamageMult: number;
   };
+}
+
+/**
+ * v10+: the run's blessing draft (plan §1.5).
+ *
+ * Run-scoped by design — cleared on ascension *and* transcendence — because
+ * being wiped is what makes a run distinct rather than a continuation.
+ */
+export interface BlessingRunState {
+  /** Blessing id → stacks held. */
+  held: Record<string, number>;
+  /** Picks taken this run, against the 30-pick cap. */
+  picksTaken: number;
+  /** Banked reroll tokens (Part 5 grants them); the free per-draft reroll is not persisted. */
+  rerolls: number;
+  /** Wave a draft was open for when the state was captured, or null. */
+  pendingOfferForWave: number | null;
+  /** Waves cleared this run — the Greed Engine blessing scales on it. */
+  wavesClearedThisRun: number;
 }
 
 export interface WaveState {
@@ -473,6 +500,8 @@ export interface GameState {
   equipment: Equipment[];
   /** v6+: Currently equipped items keyed by slot. */
   equipped: Partial<Record<EquipmentSlot, Equipment>>;
+  /** v10+: run-scoped blessing draft (reset on ascend/transcend). */
+  blessings: BlessingRunState;
 }
 
 export interface Particle {

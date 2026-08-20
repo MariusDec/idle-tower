@@ -18,6 +18,13 @@ import { ABILITIES } from '../src/data/abilities';
 import { PASSIVE_ABILITIES } from '../src/data/passiveAbilities';
 import { RESEARCH_NODES } from '../src/data/research';
 import { UPGRADES } from '../src/data/upgrades';
+import {
+  BLESSINGS,
+  BLESSING_BEHAVIOR_CONSUMERS,
+  BLESSING_STATS,
+  BLESSING_STAT_LABELS,
+  type BlessingBehavior,
+} from '../src/data/blessings';
 
 /** A talent's declared effects: the primary one, plus the optional second. */
 const effectsOf = (t: TalentDef): TalentEffectType[] =>
@@ -155,5 +162,121 @@ describe('content tables are internally consistent', () => {
         .map((e) => `${u.id} evolution at level ${e.level} (max ${u.maxLevel})`),
     );
     expect(bad).toEqual([]);
+  });
+});
+
+
+/**
+ * Blessings (gameplay plan §1.8).
+ *
+ * `tsc` catches a `BlessingStat` with no case in the contributor and a
+ * `BlessingBehavior` with no entry in the consumer map. What it cannot catch is
+ * a *card* that declares nothing, a `requires` pointing at a deleted id, or a
+ * consumer entry that is a placeholder — the exact class of rot that produced
+ * twenty inert talents. That is what this block is for.
+ */
+describe('blessings', () => {
+  it('has unique ids', () => {
+    expect(new Set(BLESSINGS.map((b) => b.id)).size).toBe(BLESSINGS.length);
+  });
+
+  it('gives every blessing something to do', () => {
+    const inert = BLESSINGS.filter(
+      (b) => !b.behavior && (b.effects ?? []).length === 0,
+    );
+    expect(inert.map((b) => b.id)).toEqual([]);
+  });
+
+  it('gives every declared effect a non-zero per-stack value', () => {
+    const effects = BLESSINGS.flatMap((b) => (b.effects ?? []).map((e) => ({ id: b.id, e })));
+    expect(effects.length).toBeGreaterThan(0);
+    expect(effects.filter((x) => x.e.perStack === 0).map((x) => x.id)).toEqual([]);
+  });
+
+  it('declares every effect stat inside the consumed union', () => {
+    const known = new Set<string>(BLESSING_STATS);
+    const orphans = BLESSINGS.flatMap((b) =>
+      (b.effects ?? []).filter((e) => !known.has(e.stat)).map((e) => `${b.id} -> ${e.stat}`),
+    );
+    expect(orphans).toEqual([]);
+  });
+
+  it('has no unused stat in the union either', () => {
+    const declared = new Set(BLESSINGS.flatMap((b) => (b.effects ?? []).map((e) => e.stat)));
+    expect(BLESSING_STATS.filter((s) => !declared.has(s))).toEqual([]);
+  });
+
+  it('labels every stat, for the card and the held list', () => {
+    for (const stat of BLESSING_STATS) {
+      expect(BLESSING_STAT_LABELS[stat], stat).toBeTruthy();
+    }
+  });
+
+  it('names a real consumer for every behavior', () => {
+    const behaviors = Object.keys(BLESSING_BEHAVIOR_CONSUMERS) as BlessingBehavior[];
+    expect(behaviors.length).toBeGreaterThan(0);
+    for (const behavior of behaviors) {
+      expect(BLESSING_BEHAVIOR_CONSUMERS[behavior].length, behavior).toBeGreaterThan(0);
+    }
+  });
+
+  it('grants every behavior through at least one blessing', () => {
+    const granted = new Set(BLESSINGS.map((b) => b.behavior).filter(Boolean));
+    const orphaned = (Object.keys(BLESSING_BEHAVIOR_CONSUMERS) as BlessingBehavior[])
+      .filter((b) => !granted.has(b));
+    expect(orphaned).toEqual([]);
+  });
+
+  /**
+   * The one deferred behavior. `orb_magnet` reads a loot system Part 4 has not
+   * shipped, so its card is excluded from the offer pool rather than handed to
+   * the player as a no-op. This fails the moment the exemption is fixed, so it
+   * cannot rot into a permanent excuse.
+   */
+  it('keeps the deferred behavior out of the offer pool', () => {
+    const deferred = BLESSINGS.filter((b) => b.behavior === 'orb_magnet');
+    expect(deferred.length).toBe(1);
+    expect(deferred[0].offerable).toBe(false);
+    expect(BLESSING_BEHAVIOR_CONSUMERS.orb_magnet).toContain('Part 4');
+    // Nothing else may hide behind the flag.
+    expect(BLESSINGS.filter((b) => b.offerable === false).map((b) => b.id))
+      .toEqual([deferred[0].id]);
+  });
+
+  it('only names prerequisites that exist, and never itself', () => {
+    const ids = new Set(BLESSINGS.map((b) => b.id));
+    const requires = BLESSINGS.filter((b) => b.requires);
+    expect(requires.length).toBeGreaterThan(0);
+    const bad = requires
+      .filter((b) => !ids.has(b.requires!) || b.requires === b.id)
+      .map((b) => `${b.id} requires ${b.requires}`);
+    expect(bad).toEqual([]);
+  });
+
+  it('gives every blessing a positive weight and stack count', () => {
+    const bad = BLESSINGS.filter((b) => b.weight <= 0 || b.maxStacks <= 0);
+    expect(bad.map((b) => b.id)).toEqual([]);
+  });
+
+  it('keeps a behavior blessing to a single stack', () => {
+    const stacked = BLESSINGS.filter((b) => b.behavior && b.maxStacks !== 1);
+    expect(stacked.map((b) => b.id)).toEqual([]);
+  });
+
+  /**
+   * Plan §1.6: no single blessing may exceed +120% of one stat at max stacks.
+   * `pierceFlat` and `armorPenFlat` are counts, not fractions, so the ceiling
+   * does not apply to them.
+   */
+  it('keeps every percentage blessing under the per-stat ceiling at max stacks', () => {
+    const FLAT: string[] = ['pierceFlat', 'armorPenFlat'];
+    const checked = BLESSINGS.flatMap((b) =>
+      (b.effects ?? []).filter((e) => !FLAT.includes(e.stat)).map((e) => ({ b, e })),
+    );
+    expect(checked.length).toBeGreaterThan(0);
+    const over = checked
+      .filter(({ b, e }) => Math.abs(e.perStack * b.maxStacks) > 1.2)
+      .map(({ b, e }) => `${b.id} -> ${e.stat} ${(e.perStack * b.maxStacks * 100).toFixed(0)}%`);
+    expect(over).toEqual([]);
   });
 });

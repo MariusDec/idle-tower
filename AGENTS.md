@@ -15,6 +15,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/enemy-system.md](docs/enemy-system.md) | 8 enemy types, elites and their 5 auras, scaling per wave, movement, combat, crowd control |
 | [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, intermission, enemy selection weights, wave skip, enrage |
 | [docs/wave-modifier-system.md](docs/wave-modifier-system.md) | 9 mutators, offer cadence, 3-wave duration with escalating rewards |
+| [docs/blessing-system.md](docs/blessing-system.md) | The in-run roguelite draft: 30-card pool, cadence, rerolls, behaviors, idle safety, balance |
 | [docs/projectile-system.md](docs/projectile-system.md) | Projectile firing, shot variants, swept collision, piercing, lifetime, damage multipliers |
 | [docs/resource-system.md](docs/resource-system.md) | Gold & mana economy, income sources, spending, passive income |
 | [docs/upgrade-system.md](docs/upgrade-system.md) | 27 upgrades across 4 categories, evolutions, bulk buy, cost formula, upgrade panel |
@@ -33,7 +34,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
 | [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, progression tab, milestone table |
 | [docs/run-summary.md](docs/run-summary.md) | Post-run debrief modal, per-run history ring buffer, stats tab |
-| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v9) and the migration ladder, debounced auto-save, offline progress |
+| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v10) and the migration ladder, debounced auto-save, offline progress |
 
 ## Content at a glance
 
@@ -48,8 +49,9 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Research nodes | 17 | `src/data/research.ts` |
 | Achievements | 18 | `src/data/achievements.ts` |
 | Wave modifiers | 9 | `src/data/waveModifiers.ts` |
+| Blessings | 30 | `src/data/blessings.ts` |
 | Equipment slots / rarities | 8 / 5 | `src/data/equipment.ts` |
-| Save version | 9 | `src/systems/SaveManager.ts` |
+| Save version | 10 | `src/systems/SaveManager.ts` |
 
 ## Commands
 

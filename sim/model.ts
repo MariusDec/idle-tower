@@ -32,6 +32,8 @@ import { TOWER_BASE } from '../src/data/tower.ts';
 import { computeUpgradeValue } from '../src/types.ts';
 import type { EnemyType, UpgradeDef } from '../src/types.ts';
 import { WAVE_INTERMISSION } from '../src/systems/WaveManager.ts';
+import { BlessingManager } from '../src/systems/BlessingManager.ts';
+import type { BlessingBehavior, BlessingDef } from '../src/data/blessings.ts';
 
 /** Fraction of wall-clock time the tower actually spends shooting a live target. */
 const ENGAGEMENT_EFFICIENCY = 0.85;
@@ -99,18 +101,184 @@ export function waveProfile(wave: number): WaveProfile {
   };
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Blessings (gameplay plan §1.6)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Effective-DPS credit for each behavior blessing, as an additive fraction.
+ *
+ * A `Record` over the union, so a behavior added to the game without a balance
+ * estimate does not compile here either — the sim is the only thing that can
+ * say whether a new card moved the curve, and a card it silently scores as zero
+ * is a card whose balance was never checked.
+ *
+ * These are estimates, and deliberately conservative ones: the model has no
+ * enemy positions, so anything that depends on a crowd (ricochet, splash,
+ * chains) is credited well below its best case.
+ */
+const BEHAVIOR_DPS_CREDIT: Record<BlessingBehavior, number> = {
+  ricochet: 0.09,
+  ricochet_power: 0.11,
+  mortar: 0.05,
+  crit_chain: 0.07,
+  frost_shots: 0.015,
+  shatter: 0.07,
+  split_on_kill: 0.04,
+  homing: 0.02,
+  overkill_carry: 0.03,
+  siphon: 0,
+  executioner: 0.04,
+  // Conditional on being at low HP, which a healthy run rarely is.
+  last_stand: 0.02,
+  greed_engine: 0,
+  // Part 4 owns the consumer, and it is not offerable, so it can never be held.
+  orb_magnet: 0,
+};
+
+/** Gold credit for behaviors that pay in economy rather than damage. */
+const BEHAVIOR_GOLD_CREDIT: Partial<Record<BlessingBehavior, number>> = {
+  // +2% per wave cleared, uncapped: averaged over the second half of a run,
+  // where most of the gold is earned.
+  greed_engine: 0.3,
+};
+
+/** The blessing state a `Loadout` carries, already summed across stacks. */
+export interface BlessingLoadout {
+  damagePct: number;
+  fireRatePct: number;
+  critChanceAdd: number;
+  critDamageAdd: number;
+  goldPct: number;
+  /** Flat armour ignored (Sunder). */
+  armorPenFlat: number;
+  /** Behaviors plus enemy-HP reduction, as one effective-DPS multiplier. */
+  dpsPct: number;
+}
+
+function emptyBlessings(): BlessingLoadout {
+  return {
+    damagePct: 0,
+    fireRatePct: 0,
+    critChanceAdd: 0,
+    critDamageAdd: 0,
+    goldPct: 0,
+    armorPenFlat: 0,
+    dpsPct: 0,
+  };
+}
+
+/**
+ * How attractive a card looks to the drafting player.
+ *
+ * Used only to decide which of three offers to take — never to compute the
+ * effect, which comes from the real `BlessingManager`. Defensive stats get a
+ * partial credit rather than zero, so the model does not take Glass Cannon
+ * every single time a fresh tower is offered it.
+ */
+function draftAppeal(def: BlessingDef): number {
+  let score = def.behavior ? BEHAVIOR_DPS_CREDIT[def.behavior] : 0;
+  if (def.behavior) score += BEHAVIOR_GOLD_CREDIT[def.behavior] ?? 0;
+  for (const e of def.effects ?? []) {
+    const v = e.perStack;
+    switch (e.stat) {
+      case 'damagePct':
+      case 'fireRatePct':
+        score += v;
+        break;
+      // Crit is worth roughly its expected-hit contribution at a mid-run
+      // loadout (~25% chance, ~4x multiplier).
+      case 'critChancePct':
+        score += v * 1.7;
+        break;
+      case 'critDamagePct':
+        score += v * 0.14;
+        break;
+      case 'goldPct':
+        // Gold buys future DPS, but only after a delay — the same 0.5 discount
+        // the greedy upgrade buyer uses.
+        score += v * 0.5;
+        break;
+      case 'enemyHpPct':
+        score += 1 / (1 + v) - 1;
+        break;
+      case 'armorPenFlat':
+        score += v * 0.02;
+        break;
+      case 'pierceFlat':
+        score += v * 0.06;
+        break;
+      // Survivability and utility: real value to a player, none to a model
+      // that never tracks tower HP. Credited partially so the draft behaves
+      // like a person rather than a damage maximiser.
+      case 'maxHpPct':
+        score += v * 0.30;
+        break;
+      case 'lifestealPct':
+        score += v * 1.2;
+        break;
+      // Faster or harder-hitting enemies are a cost, not a benefit.
+      case 'enemySpeedPct':
+      case 'enemyDamagePct':
+        score -= v * 0.30;
+        break;
+      case 'rangePct':
+        score += v * 0.10;
+        break;
+      case 'manaRegenPct':
+      case 'abilityDamagePct':
+        score += v * 0.05;
+        break;
+    }
+  }
+  return score;
+}
+
+/** Read the manager's composed totals into the model's channels. */
+function readBlessings(mgr: BlessingManager): BlessingLoadout {
+  const totals = mgr.getStatTotals();
+  const out = emptyBlessings();
+  out.damagePct = totals.damagePct ?? 0;
+  out.fireRatePct = totals.fireRatePct ?? 0;
+  out.critChanceAdd = totals.critChancePct ?? 0;
+  out.critDamageAdd = totals.critDamagePct ?? 0;
+  out.goldPct = totals.goldPct ?? 0;
+  out.armorPenFlat = totals.armorPenFlat ?? 0;
+  const enemyHp = totals.enemyHpPct ?? 0;
+  out.dpsPct = enemyHp !== 0 ? 1 / (1 + enemyHp) - 1 : 0;
+  for (const behavior of Object.keys(BEHAVIOR_DPS_CREDIT) as BlessingBehavior[]) {
+    if (!mgr.has(behavior)) continue;
+    out.dpsPct += BEHAVIOR_DPS_CREDIT[behavior];
+    out.goldPct += BEHAVIOR_GOLD_CREDIT[behavior] ?? 0;
+  }
+  return out;
+}
+
+/** Deterministic RNG, so a sim run is reproducible across invocations. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export interface Loadout {
   levels: Record<string, number>;
   /** Permanent damage multiplier from prestige (lifetime AP + TP). */
   damageMult: number;
   /** Permanent gold multiplier from prestige. */
   goldMult: number;
+  /** Run-scoped blessing picks (plan §1). */
+  blessings: BlessingLoadout;
 }
 
 export function freshLoadout(damageMult = 1, goldMult = 1): Loadout {
   const levels: Record<string, number> = {};
   for (const u of UPGRADES) levels[u.id] = u.startLevel ?? 0;
-  return { levels, damageMult, goldMult };
+  return { levels, damageMult, goldMult, blessings: emptyBlessings() };
 }
 
 function levelValue(id: string, level: number): number {
@@ -121,24 +289,36 @@ function levelValue(id: string, level: number): number {
 
 /** Damage of a single shot, before enemy armor. */
 export function hitDamage(l: Loadout): number {
-  const base = (TOWER_BASE.baseDamage + levelValue('damage', l.levels.damage)) * l.damageMult;
-  const crit = Math.min(1, TOWER_BASE.critChance + levelValue('critChance', l.levels.critChance));
-  const critMult = TOWER_BASE.critMultiplier + levelValue('critDamage', l.levels.critDamage);
+  const b = l.blessings;
+  const base = (TOWER_BASE.baseDamage + levelValue('damage', l.levels.damage))
+    * l.damageMult * (1 + b.damagePct);
+  const crit = Math.min(
+    1,
+    TOWER_BASE.critChance + levelValue('critChance', l.levels.critChance) + b.critChanceAdd,
+  );
+  const critMult = TOWER_BASE.critMultiplier
+    + levelValue('critDamage', l.levels.critDamage)
+    + b.critDamageAdd;
   return Math.max(1, base) * (1 + crit * (critMult - 1));
 }
 
 export function fireRate(l: Loadout): number {
-  return TOWER_BASE.fireRate + levelValue('fireRate', l.levels.fireRate);
+  return (TOWER_BASE.fireRate + levelValue('fireRate', l.levels.fireRate))
+    * (1 + l.blessings.fireRatePct);
 }
 
 /** Sustained DPS against an enemy with the given armor. */
 export function dps(l: Loadout, armor: number): number {
-  const perHit = Math.max(1, hitDamage(l) - armor);
-  return perHit * fireRate(l) * ENGAGEMENT_EFFICIENCY;
+  const effectiveArmor = Math.max(0, armor - l.blessings.armorPenFlat);
+  const perHit = Math.max(1, hitDamage(l) - effectiveArmor);
+  // Behaviors (ricochet, splash, chains, executes) and enemy-HP reduction all
+  // land as extra damage the model cannot place spatially, so they are folded
+  // in as one effective-DPS multiplier.
+  return perHit * fireRate(l) * ENGAGEMENT_EFFICIENCY * (1 + l.blessings.dpsPct);
 }
 
 export function goldMultiplier(l: Loadout): number {
-  return (1 + levelValue('goldMulti', l.levels.goldMulti)) * l.goldMult;
+  return (1 + levelValue('goldMulti', l.levels.goldMulti) + l.blessings.goldPct) * l.goldMult;
 }
 
 export function costOf(l: Loadout, id: BuyableId): number {
@@ -195,6 +375,11 @@ export interface RunResult {
   timeToUnlockSec: number;
   /** Per-wave samples for the reporting table. */
   samples: Map<number, WaveSample>;
+  /** Blessings held at the wall, and how many picks got there (plan §1.6). */
+  blessings: BlessingLoadout;
+  blessingPicks: number;
+  /** Ids held at the wall, for a "what did this run become" readout. */
+  blessingHeld: string[];
 }
 
 export interface WaveSample {
@@ -221,6 +406,10 @@ export interface RunOptions {
   enrageSurvivalSeconds?: number;
   maxWave?: number;
   sampleWaves?: number[];
+  /** Run the blessing draft (plan §1). Off reproduces the pre-blessing curve. */
+  blessings?: boolean;
+  /** Seed for the blessing draft's RNG, so a run is reproducible. */
+  seed?: number;
 }
 
 export function simulateRun(opts: RunOptions = {}): RunResult {
@@ -231,10 +420,17 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     enrageSurvivalSeconds = ENRAGE_STACK_INTERVAL * 3,
     maxWave = 400,
     sampleWaves = [1, 10, 30, 50, 100],
+    blessings = true,
+    seed = 0x5eed,
   } = opts;
 
   const loadout = freshLoadout(damageMult, goldMult);
   const samples = new Map<number, WaveSample>();
+  // The draft is driven through the *real* manager, so the offer rules (no
+  // duplicates, no maxed cards, `requires` gating, the 30-pick cap) are the
+  // shipping ones rather than a second implementation that can drift.
+  const blessingMgr = new BlessingManager();
+  const rng = mulberry32(seed);
   let gold = 0;
   let elapsed = 0;
   let timeToUnlock = Infinity;
@@ -260,6 +456,26 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     elapsed += clearSec;
     if (wave >= unlockWave && !Number.isFinite(timeToUnlock)) timeToUnlock = elapsed;
 
+    // The wave is cleared: advance the greed clock and take a draft if one is
+    // due. A player takes the best of the three they are shown, so the model
+    // does too — `draftAppeal` is only the ordering, never the effect.
+    if (blessings) {
+      blessingMgr.noteWaveCleared();
+      if (blessingMgr.isDraftDue(wave)) {
+        const offer = blessingMgr.openDraft(wave, undefined, rng);
+        if (offer.length > 0) {
+          let best = offer[0];
+          for (const def of offer) {
+            if (draftAppeal(def) > draftAppeal(best)) best = def;
+          }
+          blessingMgr.choose(best.id);
+          loadout.blessings = readBlessings(blessingMgr);
+        } else {
+          blessingMgr.skip();
+        }
+      }
+    }
+
     if (sampleWaves.includes(wave)) {
       samples.set(wave, {
         wave,
@@ -279,5 +495,8 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     durationSec: elapsed,
     timeToUnlockSec: timeToUnlock,
     samples,
+    blessings: loadout.blessings,
+    blessingPicks: blessingMgr.picks,
+    blessingHeld: blessingMgr.heldIds,
   };
 }

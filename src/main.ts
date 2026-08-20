@@ -113,6 +113,10 @@ function bootstrap(): void {
   ui.setOnTargetingModeChange((mode) => {
     game.towerSystem.setTargetingMode(mode as 'nearest' | 'lowest_hp' | 'first' | 'strongest' | 'boss' | 'flying' | 'last');
   });
+  ui.setOnAutoPickBlessingsChange((enabled) => {
+    game.setAutoPickBlessings(enabled);
+  });
+  ui.setAutoPickBlessingsState(game.isAutoPickBlessings(), game.isAutoPickBlessingsForced());
   ui.setAudioAPI({
     volume: game.audioMgr.currentVolume,
     muted: game.audioMgr.isMuted,

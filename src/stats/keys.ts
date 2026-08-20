@@ -66,6 +66,13 @@ export type StatKey =
   | 'buffDurationBonus'
   // ── projectiles ──
   | 'armorPen'
+  /**
+   * Flat armour subtracted before `armorPen`'s percentage. `armorPen` is a
+   * *fraction* (0-1), so a blessing worth "+8 armour penetration" has nowhere
+   * to go in it; enemy armour is itself a flat subtraction, so a flat channel
+   * is the honest shape.
+   */
+  | 'armorPenFlat'
   | 'pierceExtra'
   | 'executeThreshold'
   | 'executeMultiplier'
@@ -80,7 +87,17 @@ export type StatKey =
   | 'rpDropChanceBonus'
   | 'autoBuyIntervalReduction'
   | 'headStartWaves'
-  | 'wallContactExtra';
+  | 'wallContactExtra'
+  // ── enemy-side (written to EnemyManager, not TowerState) ──
+  /**
+   * Blessing-owned enemy multipliers (plan §1.4). They resolve through the same
+   * pipeline as everything else — so they compose with, rather than clobber,
+   * the wave mutator's own enemy multipliers — but `applyResolvedStats` writes
+   * them to `EnemyManager`, never to the tower.
+   */
+  | 'enemySpeedMult'
+  | 'enemyHpMult'
+  | 'enemyDamageMult';
 
 /**
  * Which system a contribution came from. Carried through to `Breakdown` so the
@@ -98,6 +115,7 @@ export type StatSource =
   | 'passive'
   | 'equipment'
   | 'waveModifier'
+  | 'blessing'
   | 'buff'
   | 'derived';
 
@@ -161,6 +179,7 @@ export const STAT_BASES: Record<StatKey, number> = {
   buffDurationBonus: 0,
 
   armorPen: 0,
+  armorPenFlat: 0,
   pierceExtra: 0,
   executeThreshold: 0,
   executeMultiplier: 0,
@@ -176,6 +195,10 @@ export const STAT_BASES: Record<StatKey, number> = {
   autoBuyIntervalReduction: 0,
   headStartWaves: 0,
   wallContactExtra: 0,
+
+  enemySpeedMult: 1,
+  enemyHpMult: 1,
+  enemyDamageMult: 1,
 };
 
 export const STAT_KEYS = Object.keys(STAT_BASES) as StatKey[];
@@ -218,6 +241,12 @@ export const STAT_CLAMPS: Partial<Record<StatKey, StatClamp>> = {
   abilityDamageMultiplier: { min: 1 },
   chainBounceBonus: { min: 0, integer: true },
   pierceExtra: { min: 0, integer: true },
+  armorPenFlat: { min: 0 },
+  // Floors keep a stacked trade-off card from inverting the mechanic: enemies
+  // must still move, still have HP, and still hurt.
+  enemySpeedMult: { min: 0.1 },
+  enemyHpMult: { min: 0.1 },
+  enemyDamageMult: { min: 0 },
   headStartWaves: { min: 0, integer: true },
   enemyHpReduction: { min: 0, max: 0.9 },
   intermissionMultiplier: { min: 0.1, max: 1 },

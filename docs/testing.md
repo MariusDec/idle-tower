@@ -18,10 +18,11 @@ DOM.
 | File | Covers |
 |---|---|
 | `formulas.test.ts` | Snapshots of every scaling curve (enemy HP, gold, upgrade cost, AP, TP), the tower XP table, and per-upgrade value curves |
-| `save.test.ts` | Save round-trip, the v2→v9 migration ladder, corrupt/future-version rejection, and the debounced write cadence |
+| `save.test.ts` | Save round-trip, the v2→v10 migration ladder, corrupt/future-version rejection, and the debounced write cadence |
 | `systems.test.ts` | `SpatialGrid` against a brute-force reference, effect-pool caps and damage-number merging, the upgrade evolution cache against a fresh linear scan |
 | `projectiles.test.ts` | Swept collision at every step size the game can produce, first-hit-along-path ordering, and lifetime culling |
-| `content-coverage.test.ts` | Every declared talent stat and achievement reward type has a consumer, and no table has dangling prerequisites or duplicate ids |
+| `content-coverage.test.ts` | Every declared talent stat, achievement reward type and blessing stat/behavior has a consumer, and no table has dangling prerequisites or duplicate ids |
+| `blessings.test.ts` | The in-run draft: offer rules (no duplicates, no maxed or deferred cards, `requires` and wave gates), reroll order, the 30-pick cap, stat summation across stacks, the behavior cache against a linear scan, snapshot/restore |
 | `stats.test.ts` | Golden stat resolution: a literal `StatContext` in, a pinned damage/fire-rate/gold/mana figure out, plus clamps, breakdown reconstruction, and one case per bug in Part 1 |
 
 ### Conventions

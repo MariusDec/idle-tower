@@ -70,6 +70,13 @@ function makeState(): GameState {
     passiveAbilities: { marksmanship: { level: 2, xp: 30, unlocked: true } },
     equipment: [],
     equipped: {},
+    blessings: {
+      held: { bl_sharpen: 2, bl_ricochet: 1 },
+      picksTaken: 3,
+      rerolls: 1,
+      pendingOfferForWave: null,
+      wavesClearedThisRun: 11,
+    },
   } as unknown as GameState;
 }
 
@@ -86,6 +93,9 @@ describe('save round-trip', () => {
     expect(loaded!.wave.number).toBe(17);
     expect(loaded!.rp).toBe(42);
     expect(loaded!.achievements).toEqual(['first_blood']);
+    expect(loaded!.blessings?.held).toEqual({ bl_sharpen: 2, bl_ricochet: 1 });
+    expect(loaded!.blessings?.picksTaken).toBe(3);
+    expect(loaded!.blessings?.wavesClearedThisRun).toBe(11);
   });
 
   it('discards a corrupt save rather than loading garbage', () => {
@@ -123,7 +133,7 @@ describe('migration ladder', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify(v2Save));
     const loaded = new SaveManager(stubBus).load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBeGreaterThanOrEqual(9);
+    expect(loaded!.version).toBeGreaterThanOrEqual(10);
   });
 
   it('preserves the v2 payload through every step of the ladder', () => {
@@ -136,13 +146,52 @@ describe('migration ladder', () => {
   });
 
   it('accepts every version the ladder claims to handle', () => {
-    for (const version of [2, 3, 4, 5, 6, 7, 8, 9]) {
+    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10]) {
       storage.clear();
       storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version }));
       const loaded = new SaveManager(stubBus).load();
       expect(loaded, `version ${version} should load`).not.toBeNull();
-      expect(loaded!.version).toBeGreaterThanOrEqual(9);
+      expect(loaded!.version).toBeGreaterThanOrEqual(10);
     }
+  });
+
+  /**
+   * v9 -> v10 is purely additive (gameplay plan §1.5), so the test that matters
+   * is the pair: a v9 save with no blessings gets an empty run seeded, and a
+   * v10 save with blessings held keeps every stack through the ladder.
+   */
+  it('seeds an empty blessing run for a v9 save', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(10);
+    expect(loaded.blessings).toEqual({
+      held: {},
+      picksTaken: 0,
+      rerolls: 0,
+      pendingOfferForWave: null,
+      wavesClearedThisRun: 0,
+    });
+  });
+
+  it('carries blessings held in a v9 save through to v10', () => {
+    const held = { bl_frost: 1, bl_shatter: 1, bl_cruelty: 3 };
+    storage.setItem(STORAGE_KEY, JSON.stringify({
+      ...v2Save,
+      version: 9,
+      blessings: {
+        held,
+        picksTaken: 5,
+        rerolls: 2,
+        pendingOfferForWave: 19,
+        wavesClearedThisRun: 19,
+      },
+    }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(10);
+    expect(loaded.blessings!.held).toEqual(held);
+    expect(loaded.blessings!.picksTaken).toBe(5);
+    expect(loaded.blessings!.rerolls).toBe(2);
+    expect(loaded.blessings!.wavesClearedThisRun).toBe(19);
   });
 
   it('fills in the enrage clock older saves predate', () => {

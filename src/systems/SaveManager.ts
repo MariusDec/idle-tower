@@ -13,6 +13,7 @@ import type {
   Equipment,
   EquipmentSlot,
   EnemyType,
+  BlessingRunState,
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
 import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBossWave } from '../data/formulas';
@@ -21,7 +22,7 @@ import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 9;
+const SAVE_VERSION = 10;
 
 function defaultWaveModifier() {
   return {
@@ -86,6 +87,8 @@ export interface PersistentState {
   equipment: Equipment[];
   /** v6+: Currently equipped items keyed by slot. */
   equipped: Partial<Record<EquipmentSlot, Equipment>>;
+  /** v10+: the run's blessing draft (plan §1.5). */
+  blessings?: BlessingRunState;
 }
 
 export interface OfflineResult {
@@ -334,10 +337,33 @@ function migrateV8toV9(data: Record<string, unknown>): void {
   }
 }
 
+/** A fresh, empty blessing run — the v10 default. */
+function defaultBlessings(): BlessingRunState {
+  return {
+    held: {},
+    picksTaken: 0,
+    rerolls: 0,
+    pendingOfferForWave: null,
+    wavesClearedThisRun: 0,
+  };
+}
+
+/**
+ * v10 (gameplay plan §1.5): the blessing draft.
+ *
+ * Purely additive — a pre-v10 save simply had no blessings, so the migration
+ * seeds an empty run rather than transforming anything. Nothing is dropped.
+ */
+function migrateV9toV10(data: Record<string, unknown>): void {
+  if (!isObject(data.blessings)) {
+    data.blessings = defaultBlessings();
+  }
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -360,6 +386,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 6) { migrateV6toV7(data); data.version = 7; }
   if (data.version === 7) { migrateV7toV8(data); data.version = 8; }
   if (data.version === 8) { migrateV8toV9(data); data.version = 9; }
+  if (data.version === 9) { migrateV9toV10(data); data.version = 10; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -372,6 +399,7 @@ function validate(data: unknown): data is PersistentState {
   // calm rather than resuming mid-enrage from a stale timestamp.
   if (wave && typeof wave.elapsed !== 'number') wave.elapsed = 0;
   if (wave && typeof wave.enrageStacks !== 'number') wave.enrageStacks = 0;
+  if (!isObject(d.blessings)) d.blessings = defaultBlessings();
 
   return true;
 }
@@ -421,6 +449,23 @@ export class SaveManager {
       equipped: Object.fromEntries(
         Object.entries(state.equipped).map(([slot, eq]) => [slot, { ...eq!, stats: [...eq!.stats] }]),
       ) as Partial<Record<EquipmentSlot, Equipment>>,
+      blessings: this.snapshotBlessings(state.blessings),
+    };
+  }
+
+  /**
+   * Blessings are copied field by field rather than spread, so a runtime-only
+   * field added to the manager later cannot leak into the save format by
+   * accident.
+   */
+  private snapshotBlessings(b: BlessingRunState | undefined): BlessingRunState {
+    if (!b) return defaultBlessings();
+    return {
+      held: { ...b.held },
+      picksTaken: b.picksTaken,
+      rerolls: b.rerolls,
+      pendingOfferForWave: b.pendingOfferForWave ?? null,
+      wavesClearedThisRun: b.wavesClearedThisRun ?? 0,
     };
   }
 

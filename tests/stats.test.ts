@@ -382,6 +382,81 @@ describe('evolutions', () => {
   });
 });
 
+describe('blessings (gameplay plan §1)', () => {
+  /**
+   * The golden case the plan asks for: a literal context with two blessings
+   * held, resolving to one pinned damage figure. If the blessing contributor
+   * ever stops composing multiplicatively with the rest of the stack — the
+   * exact failure §1.2 was about — this number moves.
+   */
+  it('resolves two blessings to a pinned damage figure', () => {
+    const base = TOWER_BASE.baseDamage + upgradeValue('damage', 10);
+    const { stats } = resolveStats(ctx({
+      upgrades: { damage: 10 },
+      // Sharpened Tips x3 (+9%) and Glass Cannon (+35% damage, −35% max HP).
+      blessings: { stats: { damagePct: 0.09 + 0.35, maxHpPct: -0.35 }, behaviors: [] },
+    }));
+    expect(stats.baseDamage).toBeCloseTo(base * 1.44, 6);
+    expect(stats.maxHp).toBeCloseTo(TOWER_BASE.maxHp * 0.65, 6);
+  });
+
+  it('composes with prestige and talents rather than replacing them', () => {
+    const base = TOWER_BASE.baseDamage + upgradeValue('damage', 10);
+    const { stats } = resolveStats(ctx({
+      upgrades: { damage: 10 },
+      prestige: { ...emptyStatContext().prestige, tpDamage: 2 },
+      talents: { base_damage_pct: 0.5 },
+      blessings: { stats: { damagePct: 0.44 }, behaviors: [] },
+    }));
+    expect(stats.baseDamage).toBeCloseTo(base * 2 * 1.5 * 1.44, 6);
+  });
+
+  it('routes blessing gold through the additive stage, not past it', () => {
+    const { stats, breakdown } = resolveStats(
+      ctx({ blessings: { stats: { goldPct: 0.5 }, behaviors: [] } }),
+      { breakdown: true },
+    );
+    expect(stats.goldMultiplier).toBeCloseTo(1.5, 6);
+    const labels = (breakdown.goldAdditive ?? []).map(c => c.source);
+    expect(labels).toContain('blessing');
+  });
+
+  it('writes enemy multipliers to their own keys, never to the tower', () => {
+    const { stats } = resolveStats(ctx({
+      blessings: {
+        stats: { enemySpeedPct: 0.2, enemyHpPct: -0.1, enemyDamagePct: 0.25 },
+        behaviors: [],
+      },
+    }));
+    expect(stats.enemySpeedMult).toBeCloseTo(1.2, 6);
+    expect(stats.enemyHpMult).toBeCloseTo(0.9, 6);
+    expect(stats.enemyDamageMult).toBeCloseTo(1.25, 6);
+    // The tower is untouched by a card that only moves the enemies.
+    expect(stats.baseDamage).toBe(resolveStats(ctx()).stats.baseDamage);
+    expect(stats.maxHp).toBe(resolveStats(ctx()).stats.maxHp);
+  });
+
+  it('applies Last Stand only below the HP threshold', () => {
+    const held = { stats: {}, behaviors: ['last_stand' as const] };
+    const healthy = resolveStats(ctx({ upgrades: { damage: 10 }, hpFraction: 0.9, blessings: held }));
+    const hurt = resolveStats(ctx({ upgrades: { damage: 10 }, hpFraction: 0.2, blessings: held }));
+    expect(healthy.stats.baseDamage).toBeCloseTo(
+      resolveStats(ctx({ upgrades: { damage: 10 }, hpFraction: 0.9 })).stats.baseDamage,
+      6,
+    );
+    expect(hurt.stats.baseDamage).toBeCloseTo(healthy.stats.baseDamage * 1.6, 6);
+  });
+
+  it('keeps flat armour penetration in its own key, floored at zero', () => {
+    const { stats } = resolveStats(ctx({
+      blessings: { stats: { armorPenFlat: 8, pierceFlat: 2 }, behaviors: [] },
+    }));
+    expect(stats.armorPenFlat).toBe(8);
+    expect(stats.armorPen).toBe(0);
+    expect(stats.pierceExtra).toBe(2);
+  });
+});
+
 describe('known-dead content', () => {
   /**
    * `knockback_pct` is the mirror of §1.5's unread rewards: gear can roll it,

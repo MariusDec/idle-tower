@@ -2,9 +2,22 @@ import type { DamageType, Enemy, Projectile, TowerState } from '../types';
 import { nextId } from '../utils/math';
 import { PROJECTILE_SPEED } from '../data/tower';
 import { ENEMY_DEFS } from '../data/enemies';
+import { BLESSING_TUNING, type BlessingBehavior } from '../data/blessings';
 import type { Tower } from './Tower';
 import type { EnemyManager } from './EnemyManager';
 import { EventBus } from '../game/EventBus';
+
+/**
+ * The only thing the projectile loop needs to know about the blessing draft.
+ *
+ * A narrow interface rather than the manager itself, so the combat path can be
+ * driven from a test with a two-line stub and cannot reach anything else.
+ */
+export interface BlessingQuery {
+  has(behavior: BlessingBehavior): boolean;
+}
+
+const NO_BLESSINGS: BlessingQuery = { has: () => false };
 
 /** HP fraction below which the Executioner talent's bonus damage applies. */
 const TALENT_EXECUTE_THRESHOLD = 0.5;
@@ -38,6 +51,10 @@ export interface FireOptions {
   isHoming?: boolean;
   turnRate?: number;
   lifetime?: number;
+  /** Mortar blessing: blast radius on impact. */
+  splashRadius?: number;
+  /** Fraction of the landed hit that everything else in the blast takes. */
+  splashFraction?: number;
 }
 
 export class ProjectileManager {
@@ -57,6 +74,10 @@ export class ProjectileManager {
   /** Executioner talent: bonus damage against enemies below half HP. */
   private talentExecuteBonus = 0;
   private armorPen = 0;
+  /** Flat armour ignored, applied after the percentage. Blessing-fed. */
+  private armorPenFlat = 0;
+  /** The run's blessings, for the behaviors that fire on impact. */
+  private blessings: BlessingQuery = NO_BLESSINGS;
   private instantKillChance = 0;
   private critSplashFraction = 0;
   private critIgnoreArmor = false;
@@ -99,6 +120,16 @@ export class ProjectileManager {
 
   setArmorPen(value: number): void {
     this.armorPen = Math.max(0, Math.min(1, value));
+  }
+
+  /** Flat armour ignored on top of the percentage (Sunder blessing). */
+  setArmorPenFlat(value: number): void {
+    this.armorPenFlat = Math.max(0, value);
+  }
+
+  /** Wire the run's blessing draft into the impact path. */
+  setBlessings(query: BlessingQuery): void {
+    this.blessings = query;
   }
 
   setEvolutionCombatEffects(instantKill: number, critSplash: number, critIgnoreArmor: boolean): void {
@@ -152,6 +183,8 @@ export class ProjectileManager {
         turnRate: opts.isHoming ? (opts.turnRate ?? Math.PI * 3) : undefined,
         lifetime: opts.isHoming ? (opts.lifetime ?? 3) : undefined,
         age: 0,
+        splashRadius: opts.splashRadius,
+        splashFraction: opts.splashFraction,
       };
 
       if (opts.piercing) {
@@ -240,9 +273,14 @@ export class ProjectileManager {
           const dmg = enemy.hp;
           this.enemies.damage(enemy, dmg, false);
           this.bus.emit('tower_damage_dealt', { amount: dmg });
+        } else if (this.tryExecute(enemy)) {
+          // Executioner blessing already finished it; nothing else to apply.
         } else {
-          const penEnemy = this.armorPen > 0 || (p.isCrit && this.critIgnoreArmor)
-            ? { ...enemy, armor: p.isCrit && this.critIgnoreArmor ? 0 : Math.max(0, enemy.armor * (1 - this.armorPen)) }
+          const effectiveArmor = p.isCrit && this.critIgnoreArmor
+            ? 0
+            : Math.max(0, enemy.armor * (1 - this.armorPen) - this.armorPenFlat);
+          const penEnemy = effectiveArmor !== enemy.armor
+            ? { ...enemy, armor: effectiveArmor }
             : enemy;
           let final = this.tower.applyResists(penEnemy, p.damage, p.damageType);
           if (this.executeThreshold > 0 && enemy.hp / enemy.maxHp < this.executeThreshold) {
@@ -251,6 +289,13 @@ export class ProjectileManager {
           if (this.talentExecuteBonus > 0 && enemy.hp / enemy.maxHp < TALENT_EXECUTE_THRESHOLD) {
             final = Math.floor(final * (1 + this.talentExecuteBonus));
           }
+          // Shatter: the payoff card for a frost build. Read from the enemy's
+          // own chill state, not a global flag, so it rewards actually having
+          // slowed *this* target.
+          if (this.blessings.has('shatter') && this.enemies.isSlowed(enemy)) {
+            final = Math.floor(final * (1 + BLESSING_TUNING.shatterBonus));
+          }
+          const hpBefore = enemy.hp;
           const killed = this.enemies.damage(enemy, final, p.isCrit);
           this.bus.emit('tower_damage_dealt', { amount: final });
           if (!killed) {
@@ -258,6 +303,13 @@ export class ProjectileManager {
             if (ts.knockbackForce > 0) {
               this.enemies.applyKnockback(enemy, ts.knockbackForce, ts.x, ts.y);
             }
+          }
+          if (this.blessings.has('frost_shots')) {
+            this.enemies.applyChill(
+              enemy,
+              BLESSING_TUNING.frostChillFactor,
+              BLESSING_TUNING.frostChillDuration,
+            );
           }
           // Crit splash evolution
           if (p.isCrit && this.critSplashFraction > 0) {
@@ -268,6 +320,19 @@ export class ProjectileManager {
               this.enemies.damage(e, splashDamage, false);
               this.bus.emit('tower_damage_dealt', { amount: splashDamage });
             }
+          }
+          // ── blessing behaviors on impact (plan §1.3) ──
+          if (p.splashRadius && p.splashRadius > 0) {
+            this.applyBlastSplash(p, enemy, final);
+          }
+          if (this.blessings.has('ricochet')) {
+            this.applyRicochet(enemy, final);
+          }
+          if (p.isCrit && this.blessings.has('crit_chain')) {
+            this.applyCritChain(enemy, final);
+          }
+          if (killed && this.blessings.has('overkill_carry')) {
+            this.applyOverkill(enemy, final - hpBefore);
           }
         }
         const remaining = this.pierceMax(p.id);
@@ -298,6 +363,136 @@ export class ProjectileManager {
 
   private enemyRadius(enemy: Enemy): number {
     return ENEMY_DEFS[enemy.type].radius;
+  }
+
+  // ── blessing behaviors (plan §1.3) ──
+
+  /**
+   * Executioner: finish a non-boss enemy already under the threshold.
+   *
+   * Checked *before* damage is computed, so it reads as "anything this weak
+   * dies on contact" rather than as a conditional damage bonus. Bosses are
+   * exempt by design — a one-shot on the encounter would delete Part 3.
+   */
+  private tryExecute(enemy: Enemy): boolean {
+    if (!this.blessings.has('executioner')) return false;
+    if (enemy.type === 'boss') return false;
+    if (enemy.maxHp <= 0) return false;
+    if (enemy.hp / enemy.maxHp >= BLESSING_TUNING.executeThreshold) return false;
+    const dmg = enemy.hp;
+    this.enemies.damage(enemy, dmg, false);
+    this.bus.emit('tower_damage_dealt', { amount: dmg });
+    return true;
+  }
+
+  /** The `n` nearest living enemies to a point, excluding `exclude`. */
+  private nearestOthers(
+    x: number,
+    y: number,
+    radius: number,
+    exclude: Set<number>,
+    count: number,
+  ): Enemy[] {
+    const found = this.enemies.queryRadius(x, y, radius);
+    const scored: Array<{ e: Enemy; d: number }> = [];
+    for (const e of found) {
+      if (!e.alive || exclude.has(e.id)) continue;
+      const dx = e.x - x;
+      const dy = e.y - y;
+      scored.push({ e, d: dx * dx + dy * dy });
+    }
+    scored.sort((a, b) => a.d - b.d);
+    return scored.slice(0, count).map(s => s.e);
+  }
+
+  /** Mortar blessing: every 8th shot lands as a blast rather than a point hit. */
+  private applyBlastSplash(p: Projectile, hit: Enemy, final: number): void {
+    const fraction = p.splashFraction ?? 1;
+    const splash = Math.max(1, Math.floor(final * fraction));
+    for (const e of this.enemies.queryRadius(hit.x, hit.y, p.splashRadius ?? 0)) {
+      if (e.id === hit.id || !e.alive) continue;
+      this.enemies.damage(e, splash, false);
+      this.bus.emit('tower_damage_dealt', { amount: splash });
+    }
+  }
+
+  /**
+   * Ricochet: the shot carries on to a nearby target.
+   *
+   * `ricochet_power` is the synergy follow-up — it upgrades the bounce to full
+   * damage and lets it chain twice, which is what makes taking the epic on top
+   * of the rare feel like a build rather than a second copy.
+   */
+  private applyRicochet(from: Enemy, final: number): void {
+    const powered = this.blessings.has('ricochet_power');
+    const bounces = powered ? BLESSING_TUNING.ricochetPowerBounces : 1;
+    const fraction = powered
+      ? BLESSING_TUNING.ricochetPowerDamage
+      : BLESSING_TUNING.ricochetDamage;
+    const dmg = Math.max(1, Math.floor(final * fraction));
+    const struck = new Set<number>([from.id]);
+    let originX = from.x;
+    let originY = from.y;
+    for (let i = 0; i < bounces; i++) {
+      const [next] = this.nearestOthers(
+        originX,
+        originY,
+        BLESSING_TUNING.ricochetRange,
+        struck,
+        1,
+      );
+      if (!next) return;
+      struck.add(next.id);
+      originX = next.x;
+      originY = next.y;
+      this.enemies.damage(next, dmg, false);
+      this.bus.emit('tower_damage_dealt', { amount: dmg });
+    }
+  }
+
+  /** Chain Crit: a crit forks into a short lightning chain. */
+  private applyCritChain(from: Enemy, final: number): void {
+    const dmg = Math.max(1, Math.floor(final * BLESSING_TUNING.critChainDamage));
+    const struck = new Set<number>([from.id]);
+    const path: Array<{ x: number; y: number }> = [{ x: from.x, y: from.y }];
+    let originX = from.x;
+    let originY = from.y;
+    for (let i = 0; i < BLESSING_TUNING.critChainBounces; i++) {
+      const [next] = this.nearestOthers(
+        originX,
+        originY,
+        BLESSING_TUNING.critChainRange,
+        struck,
+        1,
+      );
+      if (!next) break;
+      struck.add(next.id);
+      originX = next.x;
+      originY = next.y;
+      path.push({ x: next.x, y: next.y });
+      this.enemies.damage(next, dmg, false);
+      this.bus.emit('tower_damage_dealt', { amount: dmg });
+    }
+    // Reuse the existing chain-lightning visual rather than inventing a second
+    // vocabulary for the same idea.
+    if (path.length >= 2) this.bus.emit('chain_lightning', { path });
+  }
+
+  /** Overkill: excess damage on a killing blow carries to the next target. */
+  private applyOverkill(from: Enemy, overkill: number): void {
+    if (overkill <= 0) return;
+    const carried = Math.floor(overkill * BLESSING_TUNING.overkillCarry);
+    if (carried <= 0) return;
+    const [next] = this.nearestOthers(
+      from.x,
+      from.y,
+      BLESSING_TUNING.overkillRange,
+      new Set<number>([from.id]),
+      1,
+    );
+    if (!next) return;
+    this.enemies.damage(next, carried, false);
+    this.bus.emit('tower_damage_dealt', { amount: carried });
   }
 
   reset(): void {

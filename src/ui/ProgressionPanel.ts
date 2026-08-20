@@ -2,12 +2,29 @@ import type { GameState } from '../types';
 import type { MilestoneDef } from '../data/milestones';
 import { PROGRESSION_ENTRIES, milestoneKindColor, milestoneKindLabel } from '../data/milestones';
 import { TRANSCENDENCE_UNLOCK_AP } from '../data/prestige';
+import {
+  BLESSING_MAX_PICKS,
+  BLESSING_RARITY_COLORS,
+  describeBlessing,
+  type BlessingDef,
+} from '../data/blessings';
 import { formatInt } from '../utils/bigNumber';
 import { setText, setStyle, toggleClass } from '../utils/dom';
+
+/** What the panel needs to know about the run's blessing draft (plan §1.4). */
+export interface ProgressionBlessingInfo {
+  held: ReadonlyArray<{ def: BlessingDef; stacks: number }>;
+  picksTaken: number;
+  rerolls: number;
+  /** Wave the next draft lands on, or null once the pick cap is reached. */
+  nextDraftWave: number | null;
+}
 
 export interface ProgressionPanelDeps {
   /** AP banked in the current transcendence cycle, for the AP-gated entries. */
   apThisCycle: () => number;
+  /** The run's blessings. Absent before the game wires its API in. */
+  blessings?: () => ProgressionBlessingInfo;
 }
 
 interface RowEls {
@@ -26,12 +43,20 @@ interface RowEls {
  * drift apart.
  */
 export class ProgressionPanel {
-  private readonly deps: ProgressionPanelDeps;
+  private deps: ProgressionPanelDeps;
   private root: HTMLElement | null = null;
   private rows = new Map<string, RowEls>();
   private summaryEl: HTMLElement | null = null;
+  private blessingSummaryEl: HTMLElement | null = null;
+  private blessingListEl: HTMLElement | null = null;
+  /** Last rendered signature, so the list is only rebuilt when it changes. */
+  private blessingSignature = '';
 
   constructor(deps: ProgressionPanelDeps) {
+    this.deps = deps;
+  }
+
+  setDeps(deps: ProgressionPanelDeps): void {
     this.deps = deps;
   }
 
@@ -46,10 +71,14 @@ export class ProgressionPanel {
     this.root = null;
     this.rows.clear();
     this.summaryEl = null;
+    this.blessingSummaryEl = null;
+    this.blessingListEl = null;
+    this.blessingSignature = '';
   }
 
   update(state: GameState): void {
     if (!this.root) return;
+    this.updateBlessings();
     const highest = state.wave.highestWave;
     const apThisCycle = this.deps.apThisCycle();
     let unlocked = 0;
@@ -100,6 +129,8 @@ export class ProgressionPanel {
     this.summaryEl = summary;
     parent.appendChild(summary);
 
+    if (this.deps.blessings) parent.appendChild(this.renderBlessingSection());
+
     const list = document.createElement('div');
     list.className = 'progression-list';
     for (const entry of PROGRESSION_ENTRIES) {
@@ -112,6 +143,87 @@ export class ProgressionPanel {
     note.textContent = 'Unlocks are gated on your deepest wave, so they persist through an ascension '
       + 'even though the run itself restarts.';
     parent.appendChild(note);
+  }
+
+  /**
+   * The held-blessing list (plan §1.4).
+   *
+   * It lives here rather than in a tab of its own: blessings are run-scoped
+   * progression, which is exactly what this panel is already about, and a
+   * twelfth tab for a list that is empty for the first three waves is a worse
+   * trade than a section that appears in context.
+   */
+  private renderBlessingSection(): HTMLElement {
+    const section = document.createElement('div');
+    section.className = 'blessing-section';
+
+    const title = document.createElement('h3');
+    title.className = 'blessing-section-title';
+    title.textContent = 'Blessings — this run';
+    section.appendChild(title);
+
+    const summary = document.createElement('div');
+    summary.className = 'blessing-section-summary';
+    this.blessingSummaryEl = summary;
+    section.appendChild(summary);
+
+    const list = document.createElement('div');
+    list.className = 'blessing-held-list';
+    this.blessingListEl = list;
+    section.appendChild(list);
+
+    return section;
+  }
+
+  private updateBlessings(): void {
+    const get = this.deps.blessings;
+    if (!get || !this.blessingListEl || !this.blessingSummaryEl) return;
+    const info = get();
+    if (this.blessingSummaryEl) {
+      const next = info.nextDraftWave === null
+        ? 'pick cap reached'
+        : `next draft after wave ${formatInt(info.nextDraftWave)}`;
+      setText(
+        this.blessingSummaryEl,
+        `${info.picksTaken} / ${BLESSING_MAX_PICKS} picks · ${formatInt(info.rerolls)} reroll`
+        + `${info.rerolls === 1 ? '' : 's'} · ${next}`,
+      );
+    }
+    // Rebuilding the list every UI frame would churn the DOM for a list that
+    // only changes a few times a run, so it is keyed on its own contents.
+    const signature = info.held.map(h => `${h.def.id}:${h.stacks}`).join('|');
+    if (signature === this.blessingSignature) return;
+    this.blessingSignature = signature;
+    this.blessingListEl.innerHTML = '';
+    if (info.held.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'blessing-held-none';
+      empty.textContent = 'No blessings yet — the first draft lands after wave 3.';
+      this.blessingListEl.appendChild(empty);
+      return;
+    }
+    for (const { def, stacks } of info.held) {
+      const row = document.createElement('div');
+      row.className = 'blessing-held-row';
+      setStyle(row, '--bl-color', BLESSING_RARITY_COLORS[def.rarity]);
+
+      const name = document.createElement('div');
+      name.className = 'blessing-held-name';
+      name.textContent = stacks > 1 ? `${def.name} ×${stacks}` : def.name;
+      row.appendChild(name);
+
+      const desc = document.createElement('div');
+      desc.className = 'blessing-held-desc';
+      desc.textContent = describeBlessing(def, stacks);
+      row.appendChild(desc);
+
+      const rarity = document.createElement('div');
+      rarity.className = 'blessing-held-rarity';
+      rarity.textContent = def.rarity;
+      row.appendChild(rarity);
+
+      this.blessingListEl.appendChild(row);
+    }
   }
 
   private renderRow(entry: MilestoneDef): HTMLElement {

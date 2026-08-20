@@ -58,12 +58,18 @@ runs on every purchase and buff edge while the attribution is only needed when
 the Stats panel renders.
 
 **Contributors** (`contributors/`) are pure `(ctx, acc) => void`: upgrades,
-evolutions, prestige, research, achievements, wave modifier, talents, passives,
-equipment, buffs. Four of them switch exhaustively over a closed union with a
-`never` default — talents over `TalentStat`, achievements over
+evolutions, prestige, research, achievements, wave modifier, blessings, talents,
+passives, equipment, buffs. Five of them switch exhaustively over a closed union
+with a `never` default — talents over `TalentStat`, achievements over
 `AchievementRewardType`, evolutions over `EvolutionEffectId`, passives over
-`PassiveStat` — so content that nothing consumes is a compile error rather than
-a purchase that changes no number.
+`PassiveStat`, blessings over `BlessingStat` — so content that nothing consumes
+is a compile error rather than a purchase that changes no number.
+
+Three resolved keys are deliberately **not** tower stats: `enemySpeedMult`,
+`enemyHpMult` and `enemyDamageMult` are written to `EnemyManager` by
+`applyResolvedStats`. They still go through the pipeline so a blessing's enemy
+multipliers compose with the wave mutator's instead of one overwriting the
+other. See `docs/blessing-system.md`.
 
 ## Derived and stateful cases
 

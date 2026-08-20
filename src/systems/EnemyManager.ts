@@ -112,6 +112,25 @@ export class EnemyManager {
   private enrageSpeedMult = 1;
   /** Multiplier applied to enemy max HP on spawn (default 1). */
   private hpMult = 1;
+  /**
+   * Blessing-owned enemy multipliers (plan §1.4).
+   *
+   * Separate channels from the wave-modifier ones above so the two *compose*
+   * rather than overwrite — a Reckless Greed run under Glass Cannon should get
+   * both. Speed and damage apply live (so a mid-wave pick is felt immediately);
+   * HP applies at spawn, like every other HP multiplier.
+   */
+  private blessingSpeedMult = 1;
+  private blessingHpMult = 1;
+  private blessingDamageMult = 1;
+  /**
+   * Per-enemy chill from the Frostbite blessing: enemy id → { factor, remaining }.
+   *
+   * Distinct from the global `slowFactor`, which every ability writes: a chill
+   * has to be attributable to a single enemy so `Shatter` can ask whether *this*
+   * target is slowed.
+   */
+  private chilled = new Map<number, { factor: number; remaining: number }>();
   /** Retribution buffs: enemy ID → remaining duration. */
   private retributionBuffs: Map<number, number> = new Map();
   /**
@@ -212,6 +231,42 @@ export class EnemyManager {
     this.hpMult = Math.max(0.1, mult);
   }
 
+  /** Blessing channel for enemy movement speed (applies to live enemies). */
+  setBlessingSpeedMult(mult: number): void {
+    this.blessingSpeedMult = Math.max(0.1, mult);
+  }
+
+  /** Blessing channel for enemy max HP (applied at spawn). */
+  setBlessingHpMult(mult: number): void {
+    this.blessingHpMult = Math.max(0.1, mult);
+  }
+
+  /** Blessing channel for damage enemies deal to the tower. */
+  setBlessingDamageMult(mult: number): void {
+    this.blessingDamageMult = Math.max(0, mult);
+  }
+
+  /**
+   * Chill one enemy: `factor` multiplies its speed for `duration` seconds.
+   * The strongest active chill wins; a weaker re-application only refreshes
+   * the timer, so spamming shots cannot dilute a hard slow.
+   */
+  applyChill(enemy: Enemy, factor: number, duration: number): void {
+    if (!enemy.alive) return;
+    const existing = this.chilled.get(enemy.id);
+    if (existing && existing.factor < factor) {
+      existing.remaining = Math.max(existing.remaining, duration);
+      return;
+    }
+    this.chilled.set(enemy.id, { factor, remaining: duration });
+  }
+
+  /** True while the enemy is chilled or a global slow is running. */
+  isSlowed(enemy: Enemy): boolean {
+    if (this.slowTimer > 0 && this.slowFactor < 1) return true;
+    return this.chilled.has(enemy.id);
+  }
+
   applySlow(factor: number, duration: number): void {
     if (factor < this.slowFactor || this.slowTimer <= 0) {
       this.slowFactor = factor;
@@ -228,6 +283,7 @@ export class EnemyManager {
     else hp = enemyHPForWave(def.baseHP, wave);
     if (this.hpReduction > 0) hp = Math.max(1, Math.floor(hp * (1 - this.hpReduction)));
     if (this.hpMult !== 1) hp = Math.max(1, Math.floor(hp * this.hpMult));
+    if (this.blessingHpMult !== 1) hp = Math.max(1, Math.floor(hp * this.blessingHpMult));
     const isElite = overrides.elite === true;
     if (isElite) hp = Math.max(1, Math.floor(hp * ELITE_HP_MULT));
     const speed = enemySpeedForWave(def.baseSpeed, wave) * this.speedMult;
@@ -388,6 +444,13 @@ export class EnemyManager {
       if (this.slowTimer <= 0) this.slowFactor = 1;
     }
 
+    // Frostbite chills age on the simulation clock, so a 1.5 s chill is 1.5 s
+    // of game time at any speed setting.
+    for (const [id, entry] of this.chilled) {
+      entry.remaining -= dt;
+      if (entry.remaining <= 0) this.chilled.delete(id);
+    }
+
     // Tick knockback vulnerability timers
     for (const [id, remaining] of this.vulnerableEnemies) {
       const next = remaining - dt;
@@ -426,7 +489,7 @@ export class EnemyManager {
         e.attackCooldown -= dt;
         if (e.attackCooldown <= 0) {
           this.bus.emit('enemy_attack', { x: e.x, y: e.y, type: e.type });
-          let dmgMult = this.damageToTowerMult * this.enrageDamageMult;
+          let dmgMult = this.damageToTowerMult * this.enrageDamageMult * this.blessingDamageMult;
           if (this.retributionBuffs.has(e.id)) dmgMult *= RETRIBUTION_BUFF_DAMAGE_MULT;
           totalDamage += e.damage * dmgMult;
           if (this.thorns > 0) {
@@ -436,9 +499,10 @@ export class EnemyManager {
           e.attackCooldown += 1 / e.fireRate;
         }
       } else {
-        let speedMult = (hasteMultipliers.get(e.id) ?? 1) * this.enrageSpeedMult;
+        let speedMult = (hasteMultipliers.get(e.id) ?? 1) * this.enrageSpeedMult * this.blessingSpeedMult;
         if (this.retributionBuffs.has(e.id)) speedMult *= RETRIBUTION_BUFF_SPEED_MULT;
-        const inv = e.speed * this.slowFactor * speedMult * dt / d;
+        const chill = this.chilled.get(e.id);
+        const inv = e.speed * this.slowFactor * (chill ? chill.factor : 1) * speedMult * dt / d;
         e.x += dx * inv;
         e.y += dy * inv;
       }
@@ -501,7 +565,13 @@ export class EnemyManager {
       e.retributionTimer = this.retributionBuffs.get(e.id) ?? 0;
     }
 
-    this.enemies = this.enemies.filter(e => e.alive);
+    this.enemies = this.enemies.filter(e => {
+      // Chills are keyed by enemy id, so a dead enemy's entry has to go with
+      // it — ids are monotonic, so a stale key would never be reused, but the
+      // map would still grow for the lifetime of the run.
+      if (!e.alive && this.chilled.size > 0) this.chilled.delete(e.id);
+      return e.alive;
+    });
     // Everything has moved and the dead are gone: the position index that
     // `Game`'s mine, splash and chain-kill queries use is now stale. Rebuilt
     // lazily by the next `queryRadius`, so a frame with none of those pays
@@ -538,6 +608,11 @@ export class EnemyManager {
     this.enrageSpeedMult = 1;
     this.hpMult = 1;
     this.retributionBuffs.clear();
+    this.chilled.clear();
+    // The blessing channels are *not* reset here: `reset()` runs on every wave
+    // rewind and enemy wipe, while blessings survive until the run ends.
+    // `Game.applyResolvedStats` is their only writer, and it rewrites them on
+    // the next recompute regardless.
   }
 
   /**
