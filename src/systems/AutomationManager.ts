@@ -186,6 +186,16 @@ export class AutomationManager {
    * than stopping at the first success, so a tick that finds four ready
    * abilities fires all four instead of leaving three on cooldown-complete.
    */
+  /**
+   * Gameplay plan §4.3: automation places targeted abilities too.
+   *
+   * There is deliberately nothing here to do it — `AbilityManager.tryCast`
+   * picks the densest cluster itself whenever no explicit placement is passed,
+   * which is the case for every automatic path (this one, the ability bar, and
+   * the hotkey with `instantCast` on). Putting the placer behind the cast
+   * rather than in front of it is what stops automation and the player's own
+   * instant-cast from being two implementations that drift.
+   */
   private runAutoCast(wave: number): void {
     const enabled = this.deps.getState().prestige.autoCastEnabled ?? {};
     for (const id of AUTO_CAST_PRIORITY) {

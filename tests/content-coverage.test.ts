@@ -288,19 +288,16 @@ describe('blessings', () => {
   });
 
   /**
-   * The one deferred behavior. `orb_magnet` reads a loot system Part 4 has not
-   * shipped, so its card is excluded from the offer pool rather than handed to
-   * the player as a no-op. This fails the moment the exemption is fixed, so it
-   * cannot rot into a permanent excuse.
+   * There is no longer a deferred behavior. `orb_magnet` was the last one —
+   * it waited on Part 4's loot system, which now exists, so the card is back
+   * in the pool and nothing may quietly take its place behind the flag.
    */
-  it('keeps the deferred behavior out of the offer pool', () => {
-    const deferred = BLESSINGS.filter((b) => b.behavior === 'orb_magnet');
-    expect(deferred.length).toBe(1);
-    expect(deferred[0].offerable).toBe(false);
-    expect(BLESSING_BEHAVIOR_CONSUMERS.orb_magnet).toContain('Part 4');
-    // Nothing else may hide behind the flag.
-    expect(BLESSINGS.filter((b) => b.offerable === false).map((b) => b.id))
-      .toEqual([deferred[0].id]);
+  it('has no behavior hiding behind the offerable flag', () => {
+    expect(BLESSINGS.filter((b) => b.offerable === false).map((b) => b.id)).toEqual([]);
+    const magnet = BLESSINGS.filter((b) => b.behavior === 'orb_magnet');
+    expect(magnet.length).toBe(1);
+    expect(magnet[0].offerable).toBeUndefined();
+    expect(BLESSING_BEHAVIOR_CONSUMERS.orb_magnet).toContain('LootManager');
   });
 
   it('only names prerequisites that exist, and never itself', () => {

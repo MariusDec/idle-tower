@@ -15,6 +15,9 @@ export interface SettingsAPI {
   /** True when automation is running, which forces the setting on. */
   autoPickBlessingsForced?: boolean;
   onAutoPickBlessingsChange?: (enabled: boolean) => void;
+  /** Plan §4.3: cast on hotkey (default) versus click-to-place. */
+  instantCast?: boolean;
+  onInstantCastChange?: (enabled: boolean) => void;
 }
 
 /**
@@ -35,6 +38,7 @@ export class SettingsPanel {
   private muteBtn: HTMLButtonElement | null = null;
   private targetingSelect: HTMLSelectElement | null = null;
   private autoPickInput: HTMLInputElement | null = null;
+  private instantCastInput: HTMLInputElement | null = null;
 
   constructor(api: SettingsAPI) {
     this.api = api;
@@ -56,6 +60,7 @@ export class SettingsPanel {
     this.muteBtn = null;
     this.targetingSelect = null;
     this.autoPickInput = null;
+    this.instantCastInput = null;
   }
 
   update(): void {
@@ -73,6 +78,12 @@ export class SettingsPanel {
       this.autoPickInput.checked = enabled;
       this.autoPickInput.disabled = forced;
     }
+  }
+
+  /** Push the live instant-cast preference in (plan §4.3). */
+  setInstantCast(enabled: boolean): void {
+    this.api.instantCast = enabled;
+    if (this.instantCastInput) this.instantCastInput.checked = enabled;
   }
 
   private render(): void {
@@ -96,6 +107,11 @@ export class SettingsPanel {
     // ── Blessings section ──
     if (this.api.onAutoPickBlessingsChange) {
       this.root.appendChild(this.renderBlessingSection());
+    }
+
+    // ── Abilities section ──
+    if (this.api.onInstantCastChange) {
+      this.root.appendChild(this.renderAbilitySection());
     }
 
     // ── Save Data section ──
@@ -140,6 +156,49 @@ export class SettingsPanel {
     label.appendChild(input);
     const text = document.createElement('span');
     text.textContent = 'Auto-pick blessings';
+    label.appendChild(text);
+    section.appendChild(label);
+
+    return section;
+  }
+
+  /**
+   * Plan §4.3. Default **on**, so nothing changes for a player who never opens
+   * this panel: the hotkey casts, exactly as it always has, and the ability
+   * places itself on the densest cluster in range. Turning it off is opting
+   * *in* to aiming, which is worth roughly +30% on the three placeable
+   * abilities and is the whole reward for the extra click.
+   */
+  private renderAbilitySection(): HTMLElement {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+
+    const sectionTitle = document.createElement('h3');
+    sectionTitle.className = 'settings-section-title';
+    sectionTitle.textContent = 'Abilities';
+    section.appendChild(sectionTitle);
+
+    const desc = document.createElement('p');
+    desc.className = 'settings-desc';
+    desc.textContent = 'Instant cast fires Rain of Arrows, Frost Nova and Meteor Strike the moment '
+      + 'you press the hotkey, aimed at the densest cluster in range. Turn it off to place them '
+      + 'yourself: the hotkey arms the ability and the next click on the battlefield drops it, '
+      + 'hitting harder where you put it. Escape cancels.';
+    section.appendChild(desc);
+
+    const label = document.createElement('label');
+    label.className = 'settings-checkbox';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = this.api.instantCast ?? true;
+    this.instantCastInput = input;
+    input.addEventListener('change', () => {
+      this.api.instantCast = input.checked;
+      this.api.onInstantCastChange?.(input.checked);
+    });
+    label.appendChild(input);
+    const text = document.createElement('span');
+    text.textContent = 'Instant cast';
     label.appendChild(text);
     section.appendChild(label);
 

@@ -381,3 +381,45 @@ function formatDurationForDisplay(seconds: number): string {
   if (seconds <= 0) return '0s';
   return `${stripTrailingZero(seconds)}s`;
 }
+
+/**
+ * Abilities that can be *placed* (gameplay plan §4.3).
+ *
+ * `radius` is the focus disc drawn at the cursor and the disc the extra effect
+ * lands in. It is also the radius the auto-placer scores clusters with, so the
+ * automatic fallback and the manual verb are aiming at the same shape.
+ */
+export const METEOR_SPLASH_RADIUS = 60;
+
+export const PLACEABLE_ABILITIES: Partial<Record<AbilityId, { radius: number }>> = {
+  rain_of_arrows: { radius: 130 },
+  frost_nova: { radius: 150 },
+  // Deliberately the *existing* splash radius, not the 90 px §4.2 uses for the
+  // charged shot: a placed Meteor Strike must be today's Meteor Strike with a
+  // player-chosen epicentre, not a quietly wider one.
+  meteor_strike: { radius: METEOR_SPLASH_RADIUS },
+};
+
+export function isPlaceable(id: AbilityId): boolean {
+  return PLACEABLE_ABILITIES[id] !== undefined;
+}
+
+export function placementRadius(id: AbilityId): number {
+  return PLACEABLE_ABILITIES[id]?.radius ?? 0;
+}
+
+/**
+ * What landing the disc on a good cluster is worth (plan §4.3: "roughly +30%
+ * on those three abilities").
+ *
+ * Rain of Arrows and Frost Nova are *global* effects today, so a targeted cast
+ * cannot be modelled as "only hits the disc" without being a flat nerf and a
+ * regression for every existing player. Instead the global effect is unchanged
+ * and the disc gets a bonus on top: extra damage for Rain of Arrows, a deeper
+ * and longer chill for Frost Nova. Meteor Strike genuinely relocates — its
+ * epicentre becomes the placed point.
+ */
+export const PLACEMENT_FOCUS_DAMAGE_BONUS = 0.6;
+/** Extra speed removed inside a placed Frost Nova, and its duration scale. */
+export const PLACEMENT_FOCUS_CHILL = 0.25;
+export const PLACEMENT_FOCUS_CHILL_DURATION = 1.5;

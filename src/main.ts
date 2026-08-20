@@ -118,6 +118,10 @@ function bootstrap(): void {
     game.setAutoPickBlessings(enabled);
   });
   ui.setAutoPickBlessingsState(game.isAutoPickBlessings(), game.isAutoPickBlessingsForced());
+  ui.setOnInstantCastChange((enabled) => {
+    game.setInstantCast(enabled);
+  });
+  ui.setInstantCastState(game.isInstantCast());
   ui.setAudioAPI({
     volume: game.audioMgr.currentVolume,
     muted: game.audioMgr.isMuted,
@@ -183,14 +187,33 @@ function bootstrap(): void {
       y: (clientY - rect.top) * (canvas.height / rect.height),
     };
   };
+  /**
+   * A press on the battlefield (gameplay plan §4.1/§4.3).
+   *
+   * Routing order is load-bearing: a loot orb under the cursor is collected,
+   * otherwise a pending ability placement takes the click, and only if neither
+   * consumed it does the press become an ordinary manual-aim hold. Doing this
+   * in one function rather than in each listener is what keeps mouse and touch
+   * genuinely identical — the touch pipeline feeds the same path, so tapping
+   * an orb works without a second implementation that can drift.
+   */
+  const pressAt = (x: number, y: number): void => {
+    const consumed = game.handleCanvasPress(x, y);
+    // Even a consumed press still updates the aim point. Not doing so made a
+    // click on an orb snap the tower's aim back to wherever the cursor last
+    // was, which reads as the tower flinching away from the thing you clicked.
+    game.setMouseInput(x, y, !consumed);
+  };
+
   canvas.addEventListener('mousemove', (ev) => {
     const { x, y } = toCanvasXY(ev.clientX, ev.clientY);
     game.setMouseInput(x, y, mouseDown);
   });
   canvas.addEventListener('mousedown', (ev) => {
-    mouseDown = true;
     const { x, y } = toCanvasXY(ev.clientX, ev.clientY);
-    game.setMouseInput(x, y, true);
+    mouseDown = true;
+    pressAt(x, y);
+    mouseDown = game.isMouseHeld();
     ensureAudio();
   });
   canvas.addEventListener('mouseup', () => {
@@ -204,7 +227,7 @@ function bootstrap(): void {
     const t = ev.touches[0];
     activeTouchId = t.identifier;
     const { x, y } = toCanvasXY(t.clientX, t.clientY);
-    game.setMouseInput(x, y, true);
+    pressAt(x, y);
     ensureAudio();
     ev.preventDefault();
   }, { passive: false });
@@ -256,9 +279,16 @@ function bootstrap(): void {
     } else if (ev.key === '?' || ev.key === '/') {
       ui.toggleKeybinds();
       ev.preventDefault();
-    } else if (ev.key === 'Escape' && ui.isKeybindsOpen()) {
-      ui.closeKeybinds();
-      ev.preventDefault();
+    } else if (ev.key === 'Escape') {
+      // Plan §4.3: Escape gets the player out of placement mode first — it is
+      // the state that changes what the next click does, so it is the one they
+      // most urgently need to be able to abandon.
+      if (game.cancelPlacement()) {
+        ev.preventDefault();
+      } else if (ui.isKeybindsOpen()) {
+        ui.closeKeybinds();
+        ev.preventDefault();
+      }
     }
   });
 

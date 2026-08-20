@@ -84,12 +84,24 @@ describe('offer rolling', () => {
     expect(eligible).not.toContain('bl_ricochet_power');
   });
 
+  /**
+   * The `offerable` escape hatch still exists and still works — it is what
+   * kept `bl_magnet` out of the pool while Part 4 was unwritten — but nothing
+   * is using it any more. Both halves are asserted: an opted-out card would
+   * still be filtered, and today no card is opted out.
+   */
   it('never offers a blessing whose consumer has not shipped', () => {
     const deferred = BLESSINGS.filter(b => b.offerable === false);
-    expect(deferred.length).toBeGreaterThan(0);
+    expect(deferred.map(d => d.id)).toEqual([]);
     const mgr = new BlessingManager();
     const eligible = new Set(mgr.eligible(200).map(d => d.id));
     for (const def of deferred) expect(eligible.has(def.id)).toBe(false);
+  });
+
+  /** Part 4 shipped the loot system, so Lodestone must be drawable. */
+  it('offers the loot-orb blessing now that LootManager exists', () => {
+    const mgr = new BlessingManager();
+    expect(mgr.eligible(200).map(d => d.id)).toContain('bl_magnet');
   });
 
   it('respects a blessing wave gate', () => {

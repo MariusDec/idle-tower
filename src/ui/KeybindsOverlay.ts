@@ -18,6 +18,16 @@ function buildGroups(): BindGroup[] {
       binds: ABILITIES.map(a => ({ keys: [a.hotkey], action: `Cast ${a.name}` })),
     },
     {
+      title: 'The battlefield',
+      binds: [
+        { keys: ['Click'], action: 'Collect a loot orb at full value (it drifts home for 40% on its own)' },
+        { keys: ['Hold'], action: 'Aim manually — the tower shoots where you point, 30% faster' },
+        { keys: ['Hold still'], action: 'Charge a shot for 1.2s, then release: heavy damage, pierce and splash' },
+        { keys: ['Click'], action: 'Place an armed ability (with Instant cast turned off)' },
+        { keys: ['Esc'], action: 'Cancel ability placement' },
+      ],
+    },
+    {
       title: 'Waves & speed',
       binds: [
         { keys: [',', '<'], action: 'Go to the previous wave' },

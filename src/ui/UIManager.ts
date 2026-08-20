@@ -20,6 +20,7 @@ import { WelcomeBackModal, type WelcomeBackData } from './WelcomeBackModal';
 import { RunSummaryModal, type RunSummaryData } from './RunSummaryModal';
 import { RunFailedModal, type RunFailedData } from './RunFailedModal';
 import { RunStalledBanner, type RunStalledData } from './RunStalledBanner';
+import { PlacementPrompt } from './PlacementPrompt';
 import { BossBar, type BossBarData } from './BossBar';
 import { KeybindsOverlay } from './KeybindsOverlay';
 import { StatsPanel } from './StatsPanel';
@@ -151,6 +152,8 @@ export class UIManager {
   private readonly runFailedModal: RunFailedModal;
   private readonly runStalledBanner: RunStalledBanner;
   private readonly bossBar: BossBar;
+  /** Plan §4.3: the "click to place it" strip. */
+  private readonly placementPrompt: PlacementPrompt;
   /**
    * The boss readout for the current frame, pushed by `Game.frameUpdate`
    * (gameplay plan §3.5). Null while no boss is alive.
@@ -205,6 +208,7 @@ export class UIManager {
   private onMuteToggle: () => void = () => {};
   private onTargetingModeChange: (mode: string) => void = () => {};
   private onAutoPickBlessingsChange: (enabled: boolean) => void = () => {};
+  private onInstantCastChange: (enabled: boolean) => void = () => {};
   private talentApi: TalentAPIDeps = {
     allocated: {},
     unspentPoints: () => 0,
@@ -423,6 +427,7 @@ export class UIManager {
       autoPickBlessings: false,
       autoPickBlessingsForced: false,
       onAutoPickBlessingsChange: (enabled) => this.onAutoPickBlessingsChange(enabled),
+      onInstantCastChange: (enabled) => this.onInstantCastChange(enabled),
     });
     this.achievementPanel = new AchievementPanel({
       getProgress: (def) => {
@@ -437,6 +442,9 @@ export class UIManager {
       deps.overlayRoot ?? (document.getElementById('overlay-root') as HTMLElement) ?? deps.modalRoot,
     );
     this.runStalledBanner.setOnAscend(() => this.onAscend());
+    this.placementPrompt = new PlacementPrompt(
+      deps.overlayRoot ?? (document.getElementById('overlay-root') as HTMLElement) ?? deps.modalRoot,
+    );
     this.bossBar = new BossBar(
       deps.overlayRoot ?? (document.getElementById('overlay-root') as HTMLElement) ?? deps.modalRoot,
     );
@@ -822,6 +830,20 @@ export class UIManager {
   /** Push the current auto-pick state into the settings panel (plan §1.1). */
   setAutoPickBlessingsState(enabled: boolean, forced: boolean): void {
     this.settingsPanel.setAutoPickBlessings(enabled, forced);
+  }
+
+  setOnInstantCastChange(handler: (enabled: boolean) => void): void {
+    this.onInstantCastChange = handler;
+  }
+
+  /** Push the current instant-cast preference into the settings panel (§4.3). */
+  setInstantCastState(enabled: boolean): void {
+    this.settingsPanel.setInstantCast(enabled);
+  }
+
+  /** Show or clear the ability-placement prompt (plan §4.3). */
+  setPlacementPrompt(text: string | null): void {
+    this.placementPrompt.set(text);
   }
 
   isMobileView(): boolean {

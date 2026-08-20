@@ -1,4 +1,5 @@
 import type { EvolutionEffectId } from './data/upgrades';
+import type { LootOrbKind } from './data/loot';
 import { evalFormula } from './data/formulas';
 
 /**
@@ -716,6 +717,27 @@ export interface Shockwave {
   hasDamaged?: boolean;
 }
 
+/**
+ * A dropped loot orb (gameplay plan §4.1).
+ *
+ * Run-scoped *and* frame-scoped: orbs are never persisted, so a save load
+ * starts with an empty field. See `docs/loot-system.md`.
+ */
+export interface LootOrb {
+  id: number;
+  kind: LootOrbKind;
+  x: number;
+  y: number;
+  /** Outward pop velocity, spent over `LOOT_TUNING.popSeconds`. */
+  vx: number;
+  vy: number;
+  /** Full (clicked) payout. Drift auto-collect pays a fraction of it. */
+  value: number;
+  /** Seconds since the drop, on the simulation clock. */
+  age: number;
+  alive: boolean;
+}
+
 export interface RenderSnapshot {
   tower: TowerState;
   enemies: Enemy[];
@@ -730,4 +752,30 @@ export interface RenderSnapshot {
   /** Incoming siege shells (gameplay plan §2.1). */
   hostileShots: HostileShot[];
   aimLine?: { x: number; y: number } | null;
+  /** Live loot orbs (gameplay plan §4.1). */
+  orbs?: LootOrb[];
+  /** Charged-shot ring at the cursor (gameplay plan §4.2). */
+  charge?: ChargeIndicator | null;
+  /** Click-placement preview for a targeted ability (gameplay plan §4.3). */
+  placement?: PlacementIndicator | null;
+}
+
+/** Cursor charge ring state. Presentation only — the timer lives in `Game`. */
+export interface ChargeIndicator {
+  x: number;
+  y: number;
+  /** Charge fill, 0..1. Reaches 1 when the shot is armed. */
+  progress: number;
+  /** Cooldown fill, 0..1. 0 when ready. */
+  cooldown: number;
+  ready: boolean;
+}
+
+/** Placement-mode preview: the ring the next click will drop the ability on. */
+export interface PlacementIndicator {
+  x: number;
+  y: number;
+  /** Effect radius drawn at the cursor. */
+  radius: number;
+  label: string;
 }

@@ -53,11 +53,13 @@ runs in slow motion under load. See [performance.md](performance.md).
    - `rollShot()` — damage + crit check
    - `buildShotVariants()` — extra/scatter/back shots from AP perks
    - `projectileMgr.fire(target, ...)` — spawn projectiles
-6. `projectileMgr.tick(dt)` — movement & swept collision
-7. `enemyMgr.tick(dt, tx, ty)` — movement, attack, auras
-8. Shockwave pulse (periodic knockback ring)
-9. Land mines — placement and detonation
-10. Shield recharge
+6. Charged shot — fires the projectile a mouse-release armed last frame
+7. `projectileMgr.tick(dt)` — movement & swept collision
+8. `enemyMgr.tick(dt, tx, ty)` — movement, attack, auras
+9. `lootMgr.tick(dt)` — loot-orb drift and auto-collect
+10. Shockwave pulse (periodic knockback ring)
+11. Land mines — placement and detonation
+12. Shield recharge
 
 ## Frame Order (`Game.frameUpdate`, once per frame)
 
@@ -65,11 +67,14 @@ runs in slow motion under load. See [performance.md](performance.md).
 2. `notifications.tick(dt)` — toast lifetimes
 3. `automation.tick(dt)` — auto-buy/cast/ascend/transcend
 4. `ui.tickDisplayHud(dt, state)` — HUD tweening
-5. Research + passive RP, on **`realDt`** — these are real-time systems and
+5. `charge.tick(realDt, ...)` — the charged-shot hold and cooldown, on
+   **`realDt`**: it measures a person holding still, so 1.2 s must be 1.2 s of
+   the player's life at every game speed (gameplay plan §4.2)
+6. Research + passive RP, on **`realDt`** — these are real-time systems and
    must not accelerate with game speed
-6. Transcendence unlock toast check
-7. `saveMgr.tick(realDt, ...)` — debounced save flush
-8. Achievements, audio, vignette
+7. Transcendence unlock toast check
+8. `saveMgr.tick(realDt, ...)` — debounced save flush
+9. Achievements, audio, vignette
 
 > Anything time-integrated or cadence-driven goes in `simulate`. Anything that
 > polls state, or that consumes `realDt`, goes in `frameUpdate` — a `realDt`
@@ -89,8 +94,32 @@ runs in slow motion under load. See [performance.md](performance.md).
 | `setSpeedIndex(index)` / `cycleSpeed(dir)` | Change game speed |
 | `goToPrevWave()` / `goToNextWave()` | Manual wave control |
 | `setAutoProgress(bool)` / `toggleAutoProgress()` | Auto-advance toggle |
-| `setMouseInput(x, y, down)` | Manual aim mode |
+| `setMouseInput(x, y, down)` | Manual aim, and the charged-shot hold (§4.2) |
+| `handleCanvasPress(x, y)` | A press on the battlefield: **orb, then placement, then aim** (§4.1/§4.3). Returns true if it was consumed |
+| `cancelPlacement()` | Leave ability-placement mode; `Escape` calls it first |
+| `setInstantCast(bool)` / `isInstantCast()` | Cast on hotkey (default) vs. click-to-place |
 | `tryLoadSave()` / `manualSave()` / `clearSave()` | Persistence |
+
+## The input model (gameplay plan §4)
+
+`main.ts` attaches three mouse listeners and three touch listeners, and both
+sets funnel presses through **one** `pressAt(x, y)` helper, so mouse and touch
+cannot drift apart. `pressAt` calls `Game.handleCanvasPress`, which resolves the
+press in a fixed order:
+
+1. a **loot orb** inside the catch radius → collect it, consume the press;
+2. an **armed ability** → place it, consume the press;
+3. otherwise → the press becomes an ordinary manual-aim hold.
+
+A consumed press still updates the aim point, so clicking an orb does not snap
+the tower's aim back to where the cursor previously was.
+
+The split between clocks matters here. A DOM event never simulates anything: a
+release that arms a charged shot sets a flag, and the *next fixed substep* fires
+the projectile. Orb drift is time-integrated movement, so it runs on the
+simulation clock (8 game-seconds at any speed); the charge timer measures a
+human, so it runs on `realDt`. See
+[loot-system.md](loot-system.md#why-the-timers-are-wall-clock).
 
 ## Speed System
 

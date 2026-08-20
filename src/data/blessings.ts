@@ -63,11 +63,7 @@ export const BLESSING_BEHAVIOR_CONSUMERS: Record<BlessingBehavior, string> = {
   crit_chain: 'ProjectileManager.applyCritChain',
   frost_shots: 'ProjectileManager (on hit) → EnemyManager.applyChill',
   shatter: 'ProjectileManager (on hit, vs EnemyManager.isChilled)',
-  // Part 4 (loot orbs) is the consumer. Until it lands there is nothing to
-  // magnetise, so `bl_magnet` carries `offerable: false` and the player is
-  // never handed a card that does nothing. Delete the flag when LootManager
-  // ships.
-  orb_magnet: 'TODO Part 4 — LootManager auto-collect rate (not yet implemented)',
+  orb_magnet: 'LootManager.setMagnet (auto-collect rate + drift speed)',
   split_on_kill: 'Game enemy_killed handler',
   homing: 'Game.simulate → ProjectileManager.fire({ isHoming })',
   overkill_carry: 'ProjectileManager (on kill)',
@@ -442,18 +438,14 @@ export const BLESSINGS: BlessingDef[] = [
     requires: 'bl_ricochet',
   },
 
-  // ── Deferred: Part 4 owns the consumer ──
   {
     id: 'bl_magnet',
     name: 'Lodestone',
-    description: 'Loot orbs home to the tower and pay full value',
+    description: 'Loot orbs home twice as fast and pay full value',
     rarity: 'rare',
     weight: 5,
     maxStacks: 1,
     behavior: 'orb_magnet',
-    // Part 4 adds the loot system this reads. Until then it is a no-op, so it
-    // is never offered.
-    offerable: false,
   },
 ];
 

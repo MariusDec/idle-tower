@@ -1,4 +1,5 @@
-import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType } from '../types';
+import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType, LootOrb } from '../types';
+import { LOOT_ORB_COLORS, LOOT_TUNING, type LootOrbKind } from '../data/loot';
 import { TOWER_VISUAL } from '../data/tower';
 import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS } from '../data/enemies';
 import type { EnemyDef, EnemyShape } from '../data/enemies';
@@ -62,6 +63,15 @@ export class Renderer {
   private readonly crownSprites = new Map<string, HTMLCanvasElement>();
   private magicProjectileSprite: HTMLCanvasElement | null = null;
   /**
+   * Orb bodies, one sprite per kind (gameplay plan §4.1 / §6 performance).
+   *
+   * An orb is a glow, a body and a glyph — three fills and a gradient each, and
+   * a boss pack can put a couple of dozen on screen at once. All of it is
+   * static per kind, so it is painted once and blitted with a pulse scale,
+   * exactly like the enemy auras.
+   */
+  private readonly orbSprites = new Map<LootOrbKind, HTMLCanvasElement>();
+  /**
    * Tower position from the frame currently being drawn.
    *
    * Cached at the top of `draw` so the boss siphon beam has somewhere to point.
@@ -96,6 +106,9 @@ export class Renderer {
     this.drawProjectiles(ctx, snapshot.projectiles);
     this.drawHostileShots(ctx, snapshot.hostileShots);
     this.drawParticles(ctx, snapshot.particles, 'front');
+    this.drawOrbs(ctx, snapshot.orbs);
+    this.drawPlacement(ctx, snapshot.placement);
+    this.drawChargeRing(ctx, snapshot.charge);
     this.drawChainLightning(ctx, options?.chainPaths);
     this.drawDamageNumbers(ctx, snapshot.damageNumbers);
     this.drawTowerTop(ctx, snapshot);
@@ -348,6 +361,140 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(t.x, t.y, t.range, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * Loot orbs (gameplay plan §4.1).
+   *
+   * Nothing here allocates: the body is a cached sprite blitted at a pulse
+   * scale, and the only live work is the bob offset and, once an orb is nearly
+   * home, a fading "about to auto-collect" ring so the player can see the
+   * clock running on the full-value click.
+   */
+  private drawOrbs(ctx: CanvasRenderingContext2D, orbs: LootOrb[] | undefined): void {
+    if (!orbs || orbs.length === 0) return;
+    ctx.save();
+    for (const orb of orbs) {
+      if (!orb.alive) continue;
+      const sprite = this.getOrbSprite(orb.kind);
+      const pulse = 1 + Math.sin(this.time * 5 + orb.id) * 0.08;
+      const bob = Math.sin(this.time * 3.4 + orb.id * 0.7) * 2;
+      const size = sprite.width * pulse;
+      ctx.drawImage(sprite, orb.x - size / 2, orb.y + bob - size / 2, size, size);
+    }
+    ctx.restore();
+  }
+
+  private getOrbSprite(kind: LootOrbKind): HTMLCanvasElement {
+    const cached = this.orbSprites.get(kind);
+    if (cached) return cached;
+    const colors = LOOT_ORB_COLORS[kind];
+    const r = LOOT_TUNING.orbRadius;
+    const glowR = r * 2.4;
+    const sprite = this.makeSprite(glowR * 2, (g) => {
+      const grad = g.createRadialGradient(0, 0, r * 0.4, 0, 0, glowR);
+      grad.addColorStop(0, colors.glow);
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(0, 0, glowR, 0, Math.PI * 2);
+      g.fill();
+
+      g.fillStyle = colors.core;
+      g.beginPath();
+      g.arc(0, 0, r, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      g.lineWidth = 1.5;
+      g.stroke();
+
+      // A highlight, plus a glyph so the three kinds are told apart by shape
+      // as well as by colour.
+      g.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      g.beginPath();
+      g.arc(-r * 0.3, -r * 0.35, r * 0.28, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = colors.glyph;
+      g.font = `bold ${Math.round(r * 1.2)}px sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(kind === 'gold' ? '$' : kind === 'mana' ? '\u2726' : '\u21bb', 0, r * 0.05);
+    });
+    this.orbSprites.set(kind, sprite);
+    return sprite;
+  }
+
+  /**
+   * The disc the next click will drop a targeted ability on (plan §4.3).
+   *
+   * Deliberately loud — a dashed ring plus a crosshair — because placement
+   * mode changes what a click means, and an input state the player cannot see
+   * is an input state they will fight.
+   */
+  private drawPlacement(ctx: CanvasRenderingContext2D, placement: RenderSnapshot['placement']): void {
+    if (!placement) return;
+    const { x, y, radius } = placement;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(120, 220, 255, 0.85)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.lineDashOffset = -this.time * 30;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(120, 220, 255, 0.10)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(220, 245, 255, 0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x - 10, y);
+    ctx.lineTo(x + 10, y);
+    ctx.moveTo(x, y - 10);
+    ctx.lineTo(x, y + 10);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * The charged-shot ring at the cursor (plan §4.2).
+   *
+   * Three states in one ring: filling while the hold builds, a bright pulsing
+   * ring once it is armed, and a dim draining ring while it is on cooldown.
+   */
+  private drawChargeRing(ctx: CanvasRenderingContext2D, charge: RenderSnapshot['charge']): void {
+    if (!charge) return;
+    const { x, y, progress, cooldown, ready } = charge;
+    const r = 26;
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (cooldown > 0) {
+      ctx.strokeStyle = 'rgba(150, 170, 190, 0.5)';
+      ctx.beginPath();
+      ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * cooldown);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    const pulse = ready ? 1 + Math.sin(this.time * 12) * 0.12 : 1;
+    ctx.strokeStyle = ready ? 'rgba(140, 230, 255, 0.95)' : 'rgba(110, 190, 255, 0.7)';
+    ctx.lineWidth = ready ? 4 : 3;
+    ctx.beginPath();
+    ctx.arc(x, y, r * pulse, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+    ctx.stroke();
+    if (ready) {
+      ctx.fillStyle = 'rgba(140, 230, 255, 0.16)';
+      ctx.beginPath();
+      ctx.arc(x, y, r * pulse, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 

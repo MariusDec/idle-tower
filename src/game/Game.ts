@@ -12,7 +12,7 @@ import { GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } fr
  */
 const FIXED_STEP = 1 / 60;
 const MAX_SUBSTEPS = 6;
-import { TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
+import { MANUAL_AIM, TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
 import {
   BOSS_ENCOUNTER,
   BOSS_PATTERN_HINTS,
@@ -23,7 +23,7 @@ import {
   ignoresGroundEffects,
   isTargetable,
 } from '../data/enemies';
-import { ABILITIES } from '../data/abilities';
+import { ABILITIES, isPlaceable, placementRadius } from '../data/abilities';
 import { RESEARCH_BY_ID } from '../data/research';
 import { nextId } from '../utils/math';
 import { EventBus } from './EventBus';
@@ -75,6 +75,9 @@ import {
 import { WaveModifierModal } from '../ui/WaveModifierModal';
 import { BlessingDraftModal } from '../ui/BlessingDraftModal';
 import { BlessingManager } from '../systems/BlessingManager';
+import { LootManager } from '../systems/LootManager';
+import { AbilityPlacement, ChargeTracker } from '../systems/ActiveInput';
+import { LOOT_ORB_COLORS, type LootOrbKind } from '../data/loot';
 import {
   BLESSING_BY_ID,
   BLESSING_FIRST_DRAFT_WAVE,
@@ -88,10 +91,12 @@ import {
 /** Multiplier a gold-luck proc pays out at. */
 const GOLD_LUCK_MULTIPLIER = 3;
 /** Fire-rate multiplier while the player holds the mouse to aim manually. */
-const MANUAL_AIM_FIRE_RATE = 1.3;
+const MANUAL_AIM_FIRE_RATE = MANUAL_AIM.fireRateMult;
 /** Fire-rate multiplier granted by a quick-shot proc. */
 const QUICK_SHOT_FIRE_RATE = 2;
 const BUFF_MANUAL_AIM = 'tower:manualAim';
+/** localStorage key for the `instantCast` preference (plan §4.3). */
+const INSTANT_CAST_KEY = 'the-tower-instant-cast';
 const BUFF_QUICK_SHOT = 'tower:quickShot';
 /**
  * Minimum away-time before the Welcome Back report is shown. Offline progress
@@ -217,6 +222,29 @@ function readAutoPickPreference(): boolean {
   }
 }
 
+/**
+ * `instantCast` defaults **on**, which is exactly today's behaviour: the
+ * hotkey fires immediately. A player who wants to aim turns it off and gets
+ * placement mode. Defaulting it off would have silently changed the controls
+ * of every existing save.
+ */
+function readInstantCastPreference(): boolean {
+  try {
+    return localStorage.getItem(INSTANT_CAST_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function writeInstantCastPreference(enabled: boolean): void {
+  try {
+    if (enabled) localStorage.removeItem(INSTANT_CAST_KEY);
+    else localStorage.setItem(INSTANT_CAST_KEY, '0');
+  } catch {
+    // ignore
+  }
+}
+
 function writeAutoPickPreference(enabled: boolean): void {
   try {
     if (enabled) localStorage.setItem(AUTO_PICK_BLESSINGS_KEY, '1');
@@ -262,6 +290,16 @@ export class Game {
   private readonly waveModModal: WaveModifierModal;
   private readonly blessingMgr: BlessingManager;
   private readonly blessingModal: BlessingDraftModal;
+  /** Loot orbs (plan §4.1). Run-scoped and never persisted. */
+  private readonly lootMgr: LootManager;
+  /** Charged-shot hold, on the wall clock (plan §4.2). */
+  private readonly charge = new ChargeTracker();
+  /** Set on release, consumed by the next substep so the shot is simulated. */
+  private chargeFirePending = false;
+  /** Ability waiting for a click to place it (plan §4.3). */
+  private readonly placement = new AbilityPlacement();
+  /** Player preference: cast instantly (default) rather than entering placement. */
+  private instantCast = true;
   /**
    * Player preference for auto-picking blessings. Forced on when automation is
    * running (see `blessingAutoPickForced`), because a player who has unlocked
@@ -415,12 +453,18 @@ export class Game {
     );
     this.upgradeMgr = new UpgradeManager(this.bus, this.resourceMgr);
     this.blessingMgr = new BlessingManager(this.bus);
+    this.lootMgr = new LootManager({
+      bus: this.bus,
+      towerPos: () => ({ x: this.state.tower.x, y: this.state.tower.y }),
+      pay: (kind, amount, full, orb) => this.payOrb(kind, amount, full, orb.x, orb.y),
+    });
     // The impact path asks `has(behavior)` several times per hit, so it reads
     // the manager's rebuilt cache rather than scanning the pool.
     this.projectileMgr.setBlessings(this.blessingMgr);
     this.waveModModal = new WaveModifierModal(deps.modalRoot);
     this.blessingModal = new BlessingDraftModal(deps.modalRoot);
     this.autoPickBlessings = readAutoPickPreference();
+    this.instantCast = readInstantCastPreference();
     this.effects = new EffectsManager();
     this.effects.onShockwaveDamage = (s) => {
       // P5 boss death: damage enemies caught in the ring (single hit per ring)
@@ -604,6 +648,12 @@ export class Game {
         }
         this.effects.emitSplitBurst(e.x, e.y);
       }
+
+      // Plan §4.1: bosses and elites always leave something to pick up, and
+      // any kill can. Rolled here rather than in EnemyManager because the drop
+      // needs the wave, the mana pool and the blessing state, all of which
+      // live on this side.
+      this.dropOrbsFor(e.x, e.y, e.type === 'boss', !!e.elite);
 
       // Tower XP & passive ability XP
       this.towerXpMgr.addKillXp(e.type as EnemyType, this.waveMgr.currentWave);
@@ -906,6 +956,10 @@ export class Game {
     });
     this.bus.on('wave_started', (wave: unknown) => {
       this.stalledWave = -1;
+      // Plan §4.3: a placement prompt must not outlive the situation it was
+      // opened for. A wave transition is exactly that — whatever the player
+      // was about to drop the meteor on is gone.
+      this.cancelPlacement();
       const ts = this.tower.snapshot;
       if (ts.wallMaxHp > 0) {
         ts.wallHp = ts.wallMaxHp;
@@ -1450,7 +1504,19 @@ export class Game {
     return this.audio;
   }
 
+  /**
+   * Cast an ability from the hotkey or the ability bar.
+   *
+   * With `instantCast` on (the default, and what every existing save gets)
+   * this is exactly what it always was. With it off, the three placeable
+   * abilities enter placement mode instead and the *next canvas click* casts
+   * them; pressing the same hotkey again cancels, which is why re-entering
+   * placement for the ability already pending is a toggle rather than a no-op.
+   */
   castAbility(id: AbilityId): boolean {
+    if (!this.instantCast && isPlaceable(id)) {
+      return this.beginPlacement(id);
+    }
     return this.abilityMgr.tryCast(id, this.state.wave.highestWave);
   }
 
@@ -1716,10 +1782,234 @@ export class Game {
     return true;
   }
 
+  /**
+   * Cursor/finger state, fed by the three canvas listeners in `main.ts`.
+   *
+   * This is also where the charged-shot hold is tracked (plan §4.2): a press
+   * anchors the charge, a move far enough from the anchor restarts it, and a
+   * release with a full ring queues the shot for the next substep. Nothing
+   * here fires anything itself — a DOM event is not a simulation step.
+   */
   setMouseInput(x: number, y: number, isDown: boolean): void {
-    this.mouseX = x;
-    this.mouseY = y;
+    if (this.charge.setPointer(x, y, isDown)) this.chargeFirePending = true;
+    if (isDown) {
+      this.mouseX = x;
+      this.mouseY = y;
+    }
     this.mouseDown = isDown;
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Part 4 — the three active verbs
+  // ────────────────────────────────────────────────────────────────────────
+
+  /**
+   * A press on the canvas, before it becomes a manual-aim hold (plan §4.1).
+   *
+   * Order matters and is the whole point of the routing: **orbs first**, then
+   * a pending ability placement, and only then does the press fall through to
+   * aiming. Returns true when the press was consumed, so `main.ts` knows the
+   * click meant something other than "aim here".
+   */
+  handleCanvasPress(x: number, y: number): boolean {
+    if (this.lootMgr.collectAt(x, y) > 0) return true;
+    if (this.placement.isPlacing) {
+      this.castPlacedAbility(x, y);
+      return true;
+    }
+    return false;
+  }
+
+  /** Deliver one collected orb. Exhaustive over `LootOrbKind` by construction. */
+  private payOrb(kind: LootOrbKind, amount: number, full: boolean, x: number, y: number): void {
+    switch (kind) {
+      case 'gold': {
+        const gold = Math.max(1, Math.floor(amount * this.computeGoldMultiplier()));
+        this.resourceMgr.addGold(gold);
+        this.effects.emitDamageNumber(x, y - 12, gold, full);
+        break;
+      }
+      case 'mana': {
+        this.resourceMgr.addMana(amount);
+        this.effects.emitHealNumber(x, y - 12, amount);
+        break;
+      }
+      case 'reroll': {
+        this.blessingMgr.grantRerollToken(1);
+        this.state.blessings = this.blessingMgr.snapshot();
+        this.bus.emit('toast', { kind: 'milestone', text: 'Reroll token recovered!', life: 4 });
+        break;
+      }
+      default: {
+        const never: never = kind;
+        return never;
+      }
+    }
+    this.effects.emitHitSparks(x, y, LOOT_ORB_COLORS[kind].core, full ? 6 : 3);
+  }
+
+  /** Roll loot for a kill. Called from the `enemy_killed` handler. */
+  private dropOrbsFor(x: number, y: number, isBoss: boolean, elite: boolean): void {
+    this.lootMgr.dropForKill({
+      x,
+      y,
+      wave: this.waveMgr.currentWave,
+      isBoss,
+      elite,
+      // Zero until mana is unlocked, which is what stops a wave-4 player
+      // being handed an orb whose currency does not exist yet.
+      maxMana: this.abilityMgr.isManaUnlocked(this.state.wave.highestWave)
+        ? this.state.resources.maxMana
+        : 0,
+    });
+  }
+
+  /**
+   * Fire the charged shot (plan §4.2).
+   *
+   * Runs inside `simulate`, so the projectile it creates is stepped by the
+   * same fixed substep as every other shot. Deliberately additive: it does
+   * not consume the tower's cooldown, spend mana, or interrupt the ordinary
+   * volley, so a player who never holds still loses nothing at all.
+   */
+  private fireChargedShot(): void {
+    const ts = this.tower.snapshot;
+    const shot = this.tower.rollShot();
+    const damage = shot.damage * MANUAL_AIM.chargeDamageMult;
+    this.projectileMgr.fire(null, ts, {
+      rawDamage: damage,
+      damageType: ts.damageType,
+      isCrit: shot.isCrit,
+      targetId: null,
+      aimX: this.mouseX,
+      aimY: this.mouseY,
+      extraPierce: MANUAL_AIM.chargeExtraPierce,
+      splashRadius: MANUAL_AIM.chargeSplashRadius,
+      splashFraction: MANUAL_AIM.chargeSplashFraction,
+    });
+    this.state.stats.shotsFired += 1;
+    this.state.stats.damageDealt += damage;
+    this.charge.consume();
+    this.effects.emitShockwaveRing(ts.x, ts.y, 70, 'rgba(120, 200, 255, 0.8)', 4);
+    this.bus.emit('charged_shot', { x: this.mouseX, y: this.mouseY, damage });
+  }
+
+  /** Charge-ring state for the renderer, or null when there is nothing to draw. */
+  private chargeSnapshot(): { x: number; y: number; progress: number; cooldown: number; ready: boolean } | null {
+    if (!this.charge.isDown) return null;
+    if (this.charge.onCooldown) {
+      return {
+        x: this.mouseX,
+        y: this.mouseY,
+        progress: 0,
+        cooldown: this.charge.cooldownFraction,
+        ready: false,
+      };
+    }
+    const progress = this.charge.progress;
+    if (progress <= 0) return null;
+    return { x: this.mouseX, y: this.mouseY, progress, cooldown: 0, ready: this.charge.ready };
+  }
+
+  /** Placement preview for the renderer, or null when not placing. */
+  private placementSnapshot(): { x: number; y: number; radius: number; label: string } | null {
+    const id = this.placement.pending;
+    if (!id) return null;
+    const def = ABILITIES.find(a => a.id === id);
+    return {
+      x: this.mouseX,
+      y: this.mouseY,
+      radius: placementRadius(id),
+      label: def?.name ?? '',
+    };
+  }
+
+  /**
+   * Enter placement mode for a targeted ability (plan §4.3).
+   *
+   * Refuses when the ability could not be cast anyway, so the player never
+   * gets a prompt for a cast that was never going to happen.
+   */
+  private beginPlacement(id: AbilityId): boolean {
+    const wave = this.state.wave.highestWave;
+    const outcome = this.placement.toggle(id, this.abilityMgr.canCast(id, wave));
+    if (outcome !== 'begin') {
+      this.ui.setPlacementPrompt(null);
+      if (outcome === 'rejected') {
+        const reason = this.abilityMgr.reasonBlocked(id, wave);
+        if (reason) this.bus.emit('toast', { kind: 'warning', text: reason, life: 2 });
+      }
+      return false;
+    }
+    const def = ABILITIES.find(a => a.id === id);
+    this.ui.setPlacementPrompt(
+      `Click to place ${def?.name ?? 'ability'} — Esc or ${def?.hotkey ?? ''} to cancel`,
+    );
+    return true;
+  }
+
+  /** Leave placement mode without casting. Safe to call when not placing. */
+  cancelPlacement(): boolean {
+    if (!this.placement.cancel()) return false;
+    this.ui.setPlacementPrompt(null);
+    return true;
+  }
+
+  /** True while the press is being treated as a manual-aim hold. */
+  isMouseHeld(): boolean {
+    return this.mouseDown;
+  }
+
+  /** True while a click would place an ability. */
+  isPlacing(): boolean {
+    return this.placement.isPlacing;
+  }
+
+  /** The ability awaiting placement, for tests and the HUD. */
+  get pendingPlacement(): AbilityId | null {
+    return this.placement.pending;
+  }
+
+  /**
+   * Resolve a placement click. A failed cast — most often mana drained between
+   * the hotkey and the click — cancels cleanly rather than leaving the prompt
+   * up over an ability that is now on cooldown or broke.
+   */
+  private castPlacedAbility(x: number, y: number): boolean {
+    const wave = this.state.wave.highestWave;
+    let failed: AbilityId | null = null;
+    const ok = this.placement.place((id) => {
+      const cast = this.abilityMgr.tryCast(id, wave, { x, y });
+      if (!cast) failed = id;
+      return cast;
+    });
+    this.ui.setPlacementPrompt(null);
+    if (failed !== null) {
+      const reason = this.abilityMgr.reasonBlocked(failed, wave);
+      this.bus.emit('toast', {
+        kind: 'warning',
+        text: reason ? `Cast failed: ${reason}` : 'Cast failed',
+        life: 2,
+      });
+    }
+    return ok;
+  }
+
+  /** Player preference: instant cast (default) versus click-to-place. */
+  setInstantCast(enabled: boolean): void {
+    this.instantCast = enabled;
+    if (enabled) this.cancelPlacement();
+    writeInstantCastPreference(enabled);
+    this.ui.setInstantCastState(enabled);
+  }
+
+  isInstantCast(): boolean {
+    return this.instantCast;
+  }
+
+  /** Live loot orbs, for the renderer and for tests. */
+  get loot(): LootManager {
+    return this.lootMgr;
   }
 
   isAutoProgress(): boolean {
@@ -1759,6 +2049,12 @@ export class Game {
     if (!persisted) return null;
     this.saveLoaded = true;
     this.applyPersistedState(persisted);
+    // Plan §4.4: orbs are **not** persisted. Live enemies never were either
+    // (`WaveManager` clears the wave on load), so orbs that were in the air
+    // when the tab closed have nothing left to drift toward and are dropped.
+    // The alternative — persisting them — would let a player bank a boss
+    // pack's drops across a save/reload and collect them at full value later.
+    this.lootMgr.clear();
     const result = this.saveMgr.computeOfflineProgress(persisted, this.computeGoldMultiplier());
     if (result.elapsedSeconds > 0) {
       const startWave = this.state.wave.number;
@@ -2343,6 +2639,11 @@ export class Game {
     this.enemyMgr.setBlessingSpeedMult(stats.enemySpeedMult);
     this.enemyMgr.setBlessingHpMult(stats.enemyHpMult);
     this.enemyMgr.setBlessingDamageMult(stats.enemyDamageMult);
+    // Plan §4.1: Lodestone raises the drift auto-collect rate to 100% (and
+    // shortens the drift). Set from the same recompute as everything else, so
+    // taking the card is felt on the next orb and losing it on ascension is
+    // felt immediately.
+    this.lootMgr.setMagnet(this.blessingMgr.has('orb_magnet'));
 
     this.abilityMgr.setAbilityCostMultiplier(stats.abilityCostMultiplier);
     this.abilityMgr.setCooldownMultiplier(stats.abilityCooldownMultiplier);
@@ -2431,6 +2732,12 @@ export class Game {
     this.waveMgr.resumeIntermission();
     this.blessingMgr.reset();
     this.state.blessings = this.blessingMgr.snapshot();
+    // Orbs are run-scoped *and* frame-scoped: they are never persisted, and a
+    // run that ends drops whatever was still in the air (docs/loot-system.md).
+    this.lootMgr.reset();
+    this.cancelPlacement();
+    this.charge.reset();
+    this.chargeFirePending = false;
     // Boss rewards are run-scoped for the same reason (plan §3.4): the flawless
     // AP bonus is banked against *this* run's ascension, and the ascension that
     // pays it out is the one that ends the run.
@@ -3165,8 +3472,19 @@ export class Game {
       }
     }
 
+    // Plan §4.2: the release was recorded by a DOM event; the *shot* happens
+    // here, inside the fixed substep, so it travels and collides like any
+    // other projectile at every game speed.
+    if (this.chargeFirePending) {
+      this.chargeFirePending = false;
+      this.fireChargedShot();
+    }
+
     this.projectileMgr.tick(dt);
     this.enemyMgr.tick(dt, ts.x, ts.y);
+    // Orb drift is on the *simulation* clock (plan §4.1): eight game-seconds
+    // to come home, whatever speed the player is running.
+    this.lootMgr.tick(dt);
 
     if (ts.shockwaveSize > 0 && ts.shockwaveCooldown > 0) {
       ts.shockwaveTimer -= dt;
@@ -3276,6 +3594,13 @@ export class Game {
     // three real seconds, which is not long enough to read three cards.
     this.blessingModal.tick(realDt);
 
+    // Plan §4.2, same reasoning: the charge timer measures a person holding
+    // still, so it runs on `realDt`. A 1.2 s hold is 1.2 seconds of the
+    // player's life at 1x and at 6.5x alike, and the 4 s cooldown is four real
+    // seconds rather than 0.6 — which is what keeps the verb from becoming
+    // six times stronger the moment the Accelerator is unlocked.
+    this.charge.tick(realDt, !this.isPlacing());
+
     // Research progress + passive RP gain. Both are real-time systems — they
     // must not accelerate when the player raises the game speed.
     this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
@@ -3340,6 +3665,9 @@ export class Game {
       mines: this.mines,
       hostileShots: this.enemyMgr.hostileShotList,
       aimLine: this.mouseDown ? { x: this.mouseX, y: this.mouseY } : null,
+      orbs: this.lootMgr.list,
+      charge: this.chargeSnapshot(),
+      placement: this.placementSnapshot(),
     }, {
       screenFlash: this.screenFlash,
       towerFlash: this.towerFlash,

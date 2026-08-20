@@ -10,17 +10,23 @@
 
 The mana system itself unlocks at wave 10. Each ability has its own `unlockWave` gate on top of that:
 
-| Ability | Unlock wave | Slot |
+| Ability | Unlock wave | Hotkey |
 |---|:---:|:--:|
 | Rain of Arrows | 10 | 1 |
 | Frost Nova | 18 | 2 |
-| Berserk | 30 | 3 |
-| Gold Rush | 45 | 4 |
-| Meteor Strike | 40 | 5 |
-| Precision Shot | 28 | 6 |
-| Chain Lightning | 22 | 7 |
-| Vampiric Aura | 55 | 8 |
-| Execute | 50 | 9 |
+| Chain Lightning | 22 | 3 |
+| Precision Shot | 28 | 4 |
+| Berserk | 30 | 5 |
+| Meteor Strike | 40 | 6 |
+| Gold Rush | 45 | 7 |
+| Execute | 50 | 8 |
+| Vampiric Aura | 55 | 9 |
+| Multishot | — | 0 |
+
+(The hotkey column was wrong here for six of the nine abilities until Part 4 —
+it listed the *slot order the abilities were designed in*, not the `hotkey`
+field `main.ts` matches on. `ABILITIES` in `src/data/abilities.ts` is the
+authority, and `KeybindsOverlay` builds its list from it for that reason.)
 
 The per-ability gate is layered: a cast attempt before the ability's own `unlockWave` is rejected with `"Unlocks at wave N"`. If mana itself isn't unlocked yet, the message is `"Unlocks at wave 10"`. `AutomationManager.runAutoCast` automatically respects these gates (it calls `canCast`, which checks them).
 
@@ -87,6 +93,31 @@ The `AbilityEffectType` union covers all 9 abilities:
 | `crit_buff` | Precision Shot | `tower.setCritBonus(value/100, 1.5)` — chance and multiplier applied in `rollShot` |
 | `lifesteal_buff` | Vampiric Aura | `tower.setLifestealMultiplier(value)` + adds `+0.01` to `healthRegen` (per second, as a fraction of max HP) |
 | `execute_damage` | Execute | Boss threshold = `pct/2` (5× damage); non-boss = `pct` (instant-kill by dealing `max(1, hp)`) |
+
+## Targeted Casts (gameplay plan §4.3)
+
+Rain of Arrows, Frost Nova and Meteor Strike can be **placed**. `PLACEABLE_ABILITIES` in
+`src/data/abilities.ts` gives each one a disc; `AbilityManager.tryCast(id, wave, placement?)`
+takes an optional point.
+
+| Path | Placement | Focus bonus |
+|---|---|---|
+| Hotkey with `instantCast` on (default) | `pickBestSpot(id)` — densest cluster in the disc | no |
+| Ability bar click | `pickBestSpot(id)` | no |
+| `AutomationManager.runAutoCast` | `pickBestSpot(id)` | no |
+| Hotkey with `instantCast` off, then a canvas click | the player's click | **yes** |
+
+The focus bonus is what aiming buys, and it is additive rather than restrictive: Rain of Arrows
+still hits the whole field and Frost Nova still slows it, but enemies inside the disc take +60%
+damage / a 25%-harder chill for 1.5x as long. Meteor Strike relocates its crater instead, its disc
+being exactly `METEOR_SPLASH_RADIUS` so a placed meteor is the same meteor somewhere else.
+
+`pickBestSpot` scores enemy positions with `EnemyManager.queryRadius`; Meteor Strike weights by HP
+rather than head count, which reproduces the old `pickHighestHpTarget` behaviour whenever a boss is
+on the field. The placer sits **behind** `tryCast`, so every automatic path shares it.
+
+Full details, including the placement-mode cancellation rules, are in
+[loot-system.md](loot-system.md).
 
 ## Mana System
 

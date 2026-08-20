@@ -45,6 +45,11 @@ export interface FireOptions {
   isCrit: boolean;
   targetId: number | null;
   piercing?: boolean;
+  /**
+   * Extra targets this shot pierces, on top of the tower's own pierce.
+   * The charged shot (gameplay plan §4.2) is the only user.
+   */
+  extraPierce?: number;
   variants?: ShotVariant[];
   aimX?: number;
   aimY?: number;
@@ -189,6 +194,8 @@ export class ProjectileManager {
 
       if (opts.piercing) {
         this.piercingRemaining[proj.id] = 2;
+      } else if (opts.extraPierce) {
+        this.piercingRemaining[proj.id] = 1 + this.pierceExtra + Math.max(0, Math.floor(opts.extraPierce));
       }
       this.bus.emit('projectile_fired', { projectile: proj, isCrit: opts.isCrit });
       this.projectiles.push(proj);

@@ -2,7 +2,13 @@ import type { AbilityId, AbilityState, Enemy } from '../types';
 import {
   ABILITIES,
   ABILITY_BY_ID,
+  METEOR_SPLASH_RADIUS,
+  PLACEMENT_FOCUS_CHILL,
+  PLACEMENT_FOCUS_CHILL_DURATION,
+  PLACEMENT_FOCUS_DAMAGE_BONUS,
   computeEffectiveStats,
+  isPlaceable,
+  placementRadius,
   type AbilityDef,
   type AbilityEffectType,
   type EffectiveAbilityStats,
@@ -45,7 +51,6 @@ const CRIT_BUFF_DAMAGE_MULTIPLIER = 1.5;
 const VAMPIRIC_REGEN = 0.01;
 
 const MANA_UNLOCK_WAVE = 10;
-const METEOR_SPLASH_RADIUS = 60;
 const METEOR_SPLASH_MULTIPLIER = 2;
 const CHAIN_BOUNCE_BASE = 5;
 const CHAIN_BOUNCE_PER_LEVEL = 1;
@@ -76,6 +81,13 @@ export class AbilityManager {
   private meteorDamageBonus = 0;
   /** Extended Buffs: extra duration on timed abilities. */
   private buffDurationBonus = 0;
+  /**
+   * Reused by the auto-placer's cluster scan (plan §4.3 / cross-cutting rule 6).
+   *
+   * Safe to share because the scan only *reads* — nothing in `pickBestSpot`
+   * damages an enemy, so nothing can re-enter `queryRadius` underneath it.
+   */
+  private readonly placementScratch: Enemy[] = [];
 
   constructor(deps: AbilityManagerDeps) {
     this.resources = deps.resources;
@@ -270,7 +282,17 @@ export class AbilityManager {
     return null;
   }
 
-  tryCast(id: AbilityId, wave: number): boolean {
+  /**
+   * Cast an ability, optionally at a point the player picked (plan §4.3).
+   *
+   * `placement` is `null`/omitted for every automatic path — the hotkey with
+   * `instantCast` on, the ability bar, and `AutomationManager.runAutoCast`. In
+   * that case the manager places the ability itself, at the densest cluster
+   * within the ability's disc, so the automatic fallback aims at the same
+   * shape the player would. A `placement` that came from a click additionally
+   * earns the focus bonus, which is the whole reward for aiming.
+   */
+  tryCast(id: AbilityId, wave: number, placement?: { x: number; y: number } | null): boolean {
     if (!this.canCast(id, wave)) return false;
     const def = ABILITY_BY_ID[id];
     if (!def) return false;
@@ -285,7 +307,14 @@ export class AbilityManager {
       state.active = false;
       state.activeTimer = 0;
     }
-    const visualTarget = this.applyEffect(def.effectType, this.getEffectiveEffectValue(id), duration);
+    const placed = placement ?? null;
+    const point = placed ?? (isPlaceable(id) ? this.pickBestSpot(id) : null);
+    const visualTarget = this.applyEffect(
+      def.effectType,
+      this.getEffectiveEffectValue(id),
+      duration,
+      { id, point, focused: placed !== null },
+    );
     this.bus.emit('ability_cast', { id, def });
     this.bus.emit('ability_visual', { id, def, target: visualTarget });
     this.addCastXp(def, state);
@@ -297,6 +326,40 @@ export class AbilityManager {
     const def = ABILITIES.find(a => a.hotkey === key);
     if (!def) return false;
     return this.tryCast(def.id, wave);
+  }
+
+  /**
+   * The point an automatic cast of `id` would land on: the centre of the
+   * densest cluster inside the ability's disc (plan §4.3).
+   *
+   * Candidates are enemy positions rather than a grid sweep — the best disc
+   * always has an enemy at or near its centre, and this way the scan is
+   * O(enemies) grid queries instead of O(arena area).
+   *
+   * Meteor Strike scores by **HP** rather than head count. That is what keeps
+   * it the boss nuke it has always been: a boss's bar dwarfs a crowd's, so the
+   * auto-placer picks the boss exactly as `pickHighestHpTarget` used to, and
+   * only prefers a pile when the pile is genuinely worth more.
+   */
+  pickBestSpot(id: AbilityId): { x: number; y: number } | null {
+    const radius = placementRadius(id);
+    if (radius <= 0) return null;
+    const byHp = id === 'meteor_strike';
+    let best: Enemy | null = null;
+    let bestScore = -1;
+    for (const e of this.enemies.list) {
+      if (!isTargetable(e)) continue;
+      let score = 0;
+      for (const other of this.enemies.queryRadius(e.x, e.y, radius, this.placementScratch)) {
+        if (!isTargetable(other)) continue;
+        score += byHp ? other.hp : 1;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = e;
+      }
+    }
+    return best ? { x: best.x, y: best.y } : null;
   }
 
   tick(dt: number): void {
@@ -319,14 +382,32 @@ export class AbilityManager {
     }
   }
 
-  private applyEffect(type: AbilityEffectType, value: number, duration: number): { x: number; y: number } | null {
+  private applyEffect(
+    type: AbilityEffectType,
+    value: number,
+    duration: number,
+    cast: { id: AbilityId; point: { x: number; y: number } | null; focused: boolean },
+  ): { x: number; y: number } | null {
     switch (type) {
       case 'aoe_damage':
-        this.dealAoEDamage(value);
-        return null;
-      case 'slow':
+        this.dealAoEDamage(value, cast);
+        return cast.point;
+      case 'slow': {
         this.enemies.applySlow(Math.max(0.05, value * (1 - this.slowStrengthBonus)), duration);
-        return null;
+        // Plan §4.3: the global slow is unchanged, so nothing regresses for a
+        // player who never aims. A *placed* nova additionally chills the disc
+        // harder and for longer — that difference is the reward for aiming.
+        if (cast.focused && cast.point) {
+          const factor = Math.max(0.05, value * (1 - this.slowStrengthBonus) - PLACEMENT_FOCUS_CHILL);
+          const chillDuration = duration * PLACEMENT_FOCUS_CHILL_DURATION;
+          const radius = placementRadius(cast.id);
+          for (const e of this.enemies.queryRadius(cast.point.x, cast.point.y, radius, this.placementScratch)) {
+            if (!isTargetable(e)) continue;
+            this.enemies.applyChill(e, factor, chillDuration);
+          }
+        }
+        return cast.point;
+      }
       case 'fire_rate_buff':
         this.buffs.set({
           id: BUFF_FIRE_RATE,
@@ -348,7 +429,7 @@ export class AbilityManager {
         });
         return null;
       case 'single_target_damage':
-        return this.dealMeteorStrike(value);
+        return this.dealMeteorStrike(value, cast);
       case 'chain_damage':
         this.dealChainLightning(value);
         return null;
@@ -425,20 +506,51 @@ export class AbilityManager {
     }
   }
 
-  private dealAoEDamage(multiplier: number): void {
+  private dealAoEDamage(
+    multiplier: number,
+    cast?: { id: AbilityId; point: { x: number; y: number } | null; focused: boolean },
+  ): void {
     const towerState = this.tower.snapshot;
     const raw = towerState.baseDamage * multiplier * this.damageMultiplier;
+    // Plan §4.3: a placed Rain of Arrows still falls on the whole field. What
+    // the disc buys is extra weight where the player pointed, so aiming is a
+    // bonus rather than a restriction and the idle path loses nothing.
+    const focus = cast?.focused && cast.point ? cast.point : null;
+    const focusR2 = focus ? placementRadius(cast!.id) ** 2 : 0;
     let hitCount = 0;
     for (const enemy of this.enemies.list) {
       // Plan §2.1: even a field-wide ability cannot reach what is underground.
       if (!isTargetable(enemy)) continue;
-      const final = this.tower.applyResists(enemy, raw);
+      let amount = raw;
+      if (focus) {
+        const dx = enemy.x - focus.x;
+        const dy = enemy.y - focus.y;
+        if (dx * dx + dy * dy <= focusR2) amount = raw * (1 + PLACEMENT_FOCUS_DAMAGE_BONUS);
+      }
+      const final = this.tower.applyResists(enemy, amount);
       this.enemies.damage(enemy, final, false);
       hitCount += 1;
     }
     if (hitCount > 0) {
       this.bus.emit('aoe_hit', { hitCount, totalDamage: raw, perEnemy: raw });
     }
+  }
+
+  /** Nearest targetable enemy to a point, within `radius`. */
+  private nearestWithin(x: number, y: number, radius: number): Enemy | null {
+    let best: Enemy | null = null;
+    let bestD2 = radius * radius;
+    for (const e of this.enemies.queryRadius(x, y, radius, this.placementScratch)) {
+      if (!isTargetable(e)) continue;
+      const dx = e.x - x;
+      const dy = e.y - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= bestD2) {
+        bestD2 = d2;
+        best = e;
+      }
+    }
+    return best;
   }
 
   private pickHighestHpTarget(): Enemy | null {
@@ -454,9 +566,17 @@ export class AbilityManager {
     return best;
   }
 
-  private dealMeteorStrike(multiplier: number): { x: number; y: number } | null {
-    const target = this.pickHighestHpTarget();
-    if (!target) return null;
+  private dealMeteorStrike(
+    multiplier: number,
+    cast?: { id: AbilityId; point: { x: number; y: number } | null; focused: boolean },
+  ): { x: number; y: number } | null {
+    // The epicentre is the placed point when there is one. The heavy hit goes
+    // to the nearest enemy *inside the crater* — a click on empty ground is a
+    // whiff, the same way an ability cast on an empty field already is.
+    const target = cast?.point
+      ? this.nearestWithin(cast.point.x, cast.point.y, METEOR_SPLASH_RADIUS)
+      : this.pickHighestHpTarget();
+    if (!target) return cast?.point ?? null;
     const towerState = this.tower.snapshot;
     const heavyRaw = towerState.baseDamage * multiplier * this.damageMultiplier * (1 + this.meteorDamageBonus);
     const heavyFinal = this.tower.applyResists(target, heavyRaw);
@@ -464,11 +584,15 @@ export class AbilityManager {
 
     const splashRaw = heavyRaw * METEOR_SPLASH_MULTIPLIER;
     const r2 = METEOR_SPLASH_RADIUS * METEOR_SPLASH_RADIUS;
+    // The crater sits on the placed point, not on whatever the heavy hit
+    // happened to land on, so what the player circled is what burns.
+    const cx = cast?.point ? cast.point.x : target.x;
+    const cy = cast?.point ? cast.point.y : target.y;
     let splashCount = 0;
     for (const e of this.enemies.list) {
       if (!isTargetable(e) || e.id === target.id) continue;
-      const dx = e.x - target.x;
-      const dy = e.y - target.y;
+      const dx = e.x - cx;
+      const dy = e.y - cy;
       if (dx * dx + dy * dy > r2) continue;
       const final = this.tower.applyResists(e, splashRaw);
       this.enemies.damage(e, final, false);
@@ -479,7 +603,7 @@ export class AbilityManager {
       totalDamage: heavyFinal + splashRaw * splashCount,
       perEnemy: heavyFinal,
     });
-    return { x: target.x, y: target.y };
+    return { x: cx, y: cy };
   }
 
   private dealChainLightning(baseMultiplier: number): void {

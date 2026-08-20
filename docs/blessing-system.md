@@ -95,9 +95,14 @@ The trade-off cards are the point of the epic tier. They are the first decisions
 in this game a player can get *wrong*, which is what makes the right ones feel
 like anything.
 
-`bl_magnet` (`orb_magnet`) exists in the table but carries `offerable: false`:
-its consumer is the loot system Part 4 adds, and a card that does nothing is
-worse than a card that is not there. Delete the flag when `LootManager` ships.
+`bl_magnet` (Lodestone, `orb_magnet`) **is live as of Part 4**. It spent Parts
+1–3 in the table carrying `offerable: false` — a card that does nothing is worse
+than a card that is not there — and the flag came off when `LootManager`
+shipped. It now raises the loot-orb auto-collect rate from 40% to 100% and
+halves the drift time, which makes it the one blessing aimed squarely at a
+player who is *not* clicking. The `offerable` escape hatch still exists and is
+still enforced by the offer roll; nothing is currently using it, and
+`tests/content-coverage.test.ts` asserts that nothing quietly starts to.
 
 ## Two closed unions, two compile-time guards
 
@@ -154,7 +159,7 @@ than a scan of the pool — the same lookup-cache pattern
 | `executioner` | `ProjectileManager.tryExecute`, before damage, non-boss only |
 | `last_stand` | the stat contributor, off `ctx.hpFraction` |
 | `greed_engine` | folded into `goldPct` by `BlessingManager.getStatTotals` |
-| `orb_magnet` | **TODO Part 4** — not offerable until `LootManager` exists |
+| `orb_magnet` | `LootManager.setMagnet` — auto-collect rate and drift speed |
 
 `split_on_kill` applies direct damage rather than spawning projectiles, and is
 guarded by a reentrancy flag: `EnemyManager.damage` emits `enemy_killed`
@@ -215,7 +220,7 @@ run reaches 2× baseline gold, well inside the 6× ceiling the plan set.
 ## Verification
 
 - `tests/blessings.test.ts` — offer never duplicates, never offers a maxed or
-  deferred card, `requires` gating, wave gates, reroll order (free then tokens
+  deferred card (and asserts that no card is deferred any more), `requires` gating, wave gates, reroll order (free then tokens
   then refuse), the 30-pick cap, stat summation across stacks, the behavior
   cache against a fresh linear scan, snapshot/restore.
 - `tests/stats.test.ts` — the golden case: a literal `StatContext` with two

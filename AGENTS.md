@@ -16,6 +16,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, intermission, the shared spawn-weight table, fast packs, the thief cap, wave skip, enrage |
 | [docs/wave-modifier-system.md](docs/wave-modifier-system.md) | 9 mutators, offer cadence, 3-wave duration with escalating rewards |
 | [docs/boss-encounters.md](docs/boss-encounters.md) | Boss phases at 66/33%, the four patterns and their answers, the enrage timer, swift/flawless rewards, the boss bar, the durability budget |
+| [docs/loot-system.md](docs/loot-system.md) | Loot orbs, the charged shot, click-placed abilities, the input routing order, and the idle-parity measurement |
 | [docs/blessing-system.md](docs/blessing-system.md) | The in-run roguelite draft: 30-card pool, cadence, rerolls, behaviors, idle safety, balance |
 | [docs/projectile-system.md](docs/projectile-system.md) | Projectile firing, shot variants, swept collision, piercing, lifetime, damage multipliers |
 | [docs/resource-system.md](docs/resource-system.md) | Gold & mana economy, income sources, spending, passive income |
@@ -53,6 +54,8 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Achievements | 18 | `src/data/achievements.ts` |
 | Wave modifiers | 9 | `src/data/waveModifiers.ts` |
 | Blessings | 30 | `src/data/blessings.ts` |
+| Loot orb kinds | 3 | `src/data/loot.ts` |
+| Placeable abilities | 3 | `src/data/abilities.ts` |
 | Equipment slots / rarities | 8 / 5 | `src/data/equipment.ts` |
 | Save version | 11 | `src/systems/SaveManager.ts` |
 

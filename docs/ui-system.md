@@ -69,6 +69,7 @@ each overlay opts back in. Two live there:
 |---|---|---|
 | Run-stalled banner | `RunStalledBanner.ts` | A wave has overrun and started enraging |
 | **Boss bar** | `BossBar.ts` | Any boss is alive |
+| **Placement prompt** | `PlacementPrompt.ts` | An ability is armed and waiting for a click |
 
 The boss bar (gameplay plan §3.5) is the readout for the whole boss encounter:
 tier name, HP with phase pips at 66/33%, the bulwark shield overlay, the active
@@ -76,6 +77,36 @@ pattern and its answer, the slam telegraph countdown, and the enrage or
 swift-kill clock. `Game.frameUpdate` resolves it from the lead boss and pushes
 it via `UIManager.setBossBarData`; passing `null` hides it. See
 [boss-encounters.md](boss-encounters.md#the-boss-bar).
+
+### The placement prompt (gameplay plan §4.3)
+
+With `instantCast` turned off, a hotkey *arms* Rain of Arrows, Frost Nova or
+Meteor Strike instead of casting it, and the next canvas click places it. That
+is a modal input state — the next click means something different from usual —
+and the one thing an input state must never be is invisible. `PlacementPrompt`
+is a strip near the top of the arena naming the ability and how to cancel
+(`Esc`, or the hotkey again). It is `pointer-events: none` and deliberately not
+a dialog: the simulation keeps running while the player decides, because
+stopping the game to ask where the meteor goes would break the idle contract.
+
+`Game` drives it through `UIManager.setPlacementPrompt(text | null)`, and every
+path that leaves placement mode — Escape, the hotkey, a wave transition, a
+failed cast, an ascension — clears it. See
+[loot-system.md](loot-system.md#click-placed-abilities).
+
+## Things drawn on the canvas rather than in the DOM
+
+Two Part 4 readouts live in `Renderer` rather than in an overlay, because both
+track the cursor and a DOM element chasing the pointer would lag the canvas by
+a frame:
+
+- **The charge ring** (§4.2) — a ring at the cursor with three states: filling
+  while the hold builds, bright and pulsing once the shot is armed, and dim and
+  draining while it is on cooldown. `Game.chargeSnapshot()` resolves it from
+  `ChargeTracker`; it is absent entirely when the button is not held.
+- **The placement disc** (§4.3) — a dashed, rotating ring at the cursor at the
+  ability's radius, with a crosshair, showing exactly what the next click will
+  cover.
 
 ## Frame Update (`UIManager.update`)
 

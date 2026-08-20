@@ -90,6 +90,17 @@ export interface PersistentState {
   equipped: Partial<Record<EquipmentSlot, Equipment>>;
   /** v10+: the run's blessing draft (plan §1.5). */
   blessings?: BlessingRunState;
+  /**
+   * Deliberately absent: **loot orbs** (gameplay plan §4.1/§4.4).
+   *
+   * Live enemies and projectiles are not persisted either — a load starts with
+   * an empty field and `WaveManager` restarts the wave — so an orb would have
+   * nothing to drift toward. `Game.tryLoadSave` calls `LootManager.clear()`
+   * for exactly this reason. Persisting them would also let a player bank a
+   * boss pack's drops across a reload and click them all at full value later,
+   * which is the one way the 40%/100% split could be gamed.
+   */
+
   /** v11+: run-scoped boss encounter rewards (plan §3.4). */
   bossRun?: BossRunState;
 }

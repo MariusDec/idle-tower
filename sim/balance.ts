@@ -9,7 +9,9 @@
  * of keeping this file.
  */
 
-import { simulateRun, waveProfile, type WaveSample } from './model.ts';
+import { simulateRun, waveProfile, orbGoldForWave, type WaveSample } from './model.ts';
+import { MANUAL_AIM } from '../src/data/tower.ts';
+import { LOOT_TUNING } from '../src/data/loot.ts';
 import { ASCENSION_UNLOCK_WAVE, apForWave } from '../src/data/prestige.ts';
 import { lifetimeAPDamageBonus, lifetimeAPGoldBonus } from '../src/data/formulas.ts';
 
@@ -155,6 +157,73 @@ function blessingDeltaTable(): string {
   );
 }
 
+/**
+ * Gameplay plan §4.5 — the idle-parity check, which is the gate Part 4 can
+ * actually fail.
+ *
+ * Two runs of the same model: fully idle (nothing held, orbs drift home for
+ * 40%, abilities auto-placed) versus perfect active play (mouse held for the
+ * +30% fire rate, a charged shot every cycle, every orb clicked for 100%,
+ * every placeable ability aimed). "Advantage" is composed DPS at the wave the
+ * *idle* run walls on — the same "run power" definition the blessing table
+ * uses, so it includes the upgrades the extra orb gold bought rather than only
+ * the damage the verbs did.
+ *
+ * The plan's band is +25-40%. Above +50% the charged-shot multiplier gets cut.
+ */
+function idleParityTable(): string {
+  const tiers = [0, 100, 1_000, 10_000, 100_000];
+  const rows = tiers.map(lifetimeAP => {
+    const common = {
+      damageMult: 1 + lifetimeAPDamageBonus(lifetimeAP),
+      goldMult: 1 + lifetimeAPGoldBonus(lifetimeAP),
+      unlockWave: ASCENSION_UNLOCK_WAVE,
+      blessings: false,
+    };
+    const powerWave = simulateRun({ ...common, sampleWaves: [] }).wallWave;
+    const idle = simulateRun({ ...common, sampleWaves: [powerWave], active: false });
+    const act = simulateRun({ ...common, sampleWaves: [powerWave], active: true });
+    const idleDps = idle.samples.get(powerWave)?.dps ?? 0;
+    const activeDps = act.samples.get(powerWave)?.dps ?? 0;
+    const advantage = idleDps > 0 ? activeDps / idleDps - 1 : 0;
+    return [
+      fmt(lifetimeAP),
+      String(idle.wallWave),
+      String(act.wallWave),
+      `+${(advantage * 100).toFixed(1)}%`,
+      (idle.samples.get(powerWave)?.fireRate ?? 0).toFixed(2),
+      String(powerWave),
+    ];
+  });
+  return table(
+    ['Lifetime AP', 'Wall (idle)', 'Wall (active)', 'Active advantage', 'shots/s', 'measured at wave'],
+    rows,
+  );
+}
+
+/** What the orb faucet is actually worth, as a share of a wave's income. */
+function orbFaucetTable(): string {
+  // Boss waves *and* ordinary ones: the boss budget is per encounter, so a
+  // boss wave's orb income is a very different fraction of a very different
+  // pot, and showing only multiples of ten would have hidden that.
+  const waves = [9, 10, 19, 20, 39, 40, 99, 100];
+  const rows = waves.map(wave => {
+    const p = waveProfile(wave);
+    const full = orbGoldForWave(wave);
+    return [
+      String(wave),
+      fmt(p.baseGold),
+      fmt(full),
+      `${((full * LOOT_TUNING.autoCollectRate) / p.baseGold * 100).toFixed(1)}%`,
+      `${(full / p.baseGold * 100).toFixed(1)}%`,
+    ];
+  });
+  return table(
+    ['Wave', 'Wave gold', 'Orb gold (full)', 'idle (40%)', 'clicked (100%)'],
+    rows,
+  );
+}
+
 console.log('\n=== §2.1 Wave / gold / HP curve (fresh run, greedy buyer, no blessings) ===\n');
 console.log(curveTable());
 console.log('\n=== §2.2 Wall wave and run length per prestige tier (no blessings) ===\n');
@@ -163,4 +232,13 @@ console.log('\n=== §2.2b Wall wave and run length per prestige tier (with bless
 console.log(tiersTable(true));
 console.log('\n=== Gameplay §1.6 Blessing draft: before / after ===\n');
 console.log(blessingDeltaTable());
+console.log('\n=== Gameplay §4.5 Idle parity: fully idle vs. perfect active play ===\n');
+console.log(idleParityTable());
+console.log(
+  `\nCharged shot: ${MANUAL_AIM.chargeDamageMult}x damage, +${MANUAL_AIM.chargeExtraPierce} pierce, `
+  + `${MANUAL_AIM.chargeSplashRadius}px splash, every `
+  + `${MANUAL_AIM.chargeSeconds + MANUAL_AIM.chargeCooldown}s of wall-clock time.`,
+);
+console.log('\n=== Gameplay §4.1 Loot orbs as a share of wave income ===\n');
+console.log(orbFaucetTable());
 console.log(`\nAscension unlocks at wave ${ASCENSION_UNLOCK_WAVE}.\n`);

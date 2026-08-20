@@ -4945,3 +4945,41 @@ body.eq-dragging img { pointer-events: none; }
   .boss-bar { top: 6px; padding: 7px 9px 8px; }
   .boss-bar-hint { display: none; }
 }
+
+/* ── Ability placement prompt (gameplay plan §4.3) ────────────────────────
+   Deliberately a strip near the top of the arena rather than a dialog: the
+   simulation keeps running while the player decides where to drop the
+   ability, so nothing here may capture the pointer. */
+.placement-prompt {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translate(-50%, -8px);
+  display: none;
+  align-items: center;
+  gap: 8px;
+  max-width: min(520px, calc(100% - 32px));
+  padding: 7px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--accent, #6cc8ff);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  z-index: 21;
+}
+.placement-prompt.is-visible {
+  display: flex;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.placement-prompt-text {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

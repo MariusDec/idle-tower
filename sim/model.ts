@@ -33,8 +33,9 @@ import {
   bossPhaseHpFactor,
   spawnPoolForWave,
 } from '../src/data/enemies.ts';
+import { LOOT_TUNING, orbGoldValue } from '../src/data/loot.ts';
 import { UPGRADES } from '../src/data/upgrades.ts';
-import { TOWER_BASE } from '../src/data/tower.ts';
+import { MANUAL_AIM, TOWER_BASE } from '../src/data/tower.ts';
 import { computeUpgradeValue } from '../src/types.ts';
 import type { EnemyType, UpgradeDef } from '../src/types.ts';
 import { WAVE_INTERMISSION } from '../src/systems/WaveManager.ts';
@@ -117,6 +118,33 @@ const EFFECTIVE_HP_FACTOR: Record<EnemyType, number> = {
  * model has no positions and cannot decide whether the thief got away.
  */
 const THIEF_GOLD_DRAG = 0.02;
+
+/**
+ * Full-value gold the wave's loot orbs are worth (gameplay plan §4.1).
+ *
+ * Orbs are a gold faucet, so the model has to know about them or every balance
+ * number below it is measuring a game that no longer exists. Deliberately
+ * conservative in three ways, all of which understate the faucet:
+ *   - **elites are not modelled at all** (a pre-existing simplification), so
+ *     their guaranteed 1-2 orbs are missing;
+ *   - **mana orbs are worth nothing here**, because the model has no abilities
+ *     to spend mana on;
+ *   - **reroll orbs are worth nothing here**, for the same reason the draft's
+ *     rerolls are only modelled as offer rerolls.
+ * What is left is the gold channel, which is the one that moves the curve.
+ */
+export function orbGoldForWave(wave: number): number {
+  const boss = isBossWave(wave);
+  // The boss budget is per *encounter*, not per boss — see `bossOrbShare`.
+  const orbs = boss
+    ? (LOOT_TUNING.bossOrbsMin + LOOT_TUNING.bossOrbsMax) / 2
+    : spawnCountForWave(wave) * LOOT_TUNING.commonDropChance;
+  const rerollShare = boss ? LOOT_TUNING.rerollChance : 0;
+  // Mana orbs only start rolling once mana itself is unlocked, which is the
+  // same wave `AbilityManager` gates on.
+  const manaShare = wave >= 10 ? LOOT_TUNING.manaShare : 0;
+  return orbs * (1 - rerollShare) * (1 - manaShare) * orbGoldValue(wave);
+}
 
 export interface WaveProfile {
   count: number;
@@ -201,7 +229,9 @@ const BEHAVIOR_DPS_CREDIT: Record<BlessingBehavior, number> = {
   // Conditional on being at low HP, which a healthy run rarely is.
   last_stand: 0.02,
   greed_engine: 0,
-  // Part 4 owns the consumer, and it is not offerable, so it can never be held.
+  // Pays in gold, not damage, and not as a flat percentage either: it raises
+  // the orb collect rate from 40% to 100%, which `simulateRun` applies to the
+  // orb channel directly. Zero here is correct, not unmeasured.
   orb_magnet: 0,
 };
 
@@ -211,6 +241,51 @@ const BEHAVIOR_GOLD_CREDIT: Partial<Record<BlessingBehavior, number>> = {
   // where most of the gold is earned.
   greed_engine: 0.3,
 };
+
+/**
+ * What perfect active play is worth, channel by channel (gameplay plan §4.5).
+ *
+ * The idle-parity check is the gate this part can actually fail, so every
+ * figure here is derived from the shipping constant rather than guessed, and
+ * the one figure that *is* an estimate says so.
+ */
+export const ACTIVE_PLAY = {
+  /**
+   * How many times a charged shot's damage actually lands.
+   *
+   * `+3` pierce lets one shot pass through up to four bodies, and the 90 px
+   * splash pays 60% to everything near each of those hits. Against a lone
+   * boss that is exactly 1; down the throat of a packed lane it is well over
+   * 4. Two is the run-average estimate — and note which direction is the safe
+   * one here: this is a *gate* on active play being too strong, so the
+   * cautious error is to over-credit the verb, not to under-credit it.
+   */
+  chargeCrowdFactor: 2,
+  /**
+   * Aimed DPS while the cursor is held still to build a charge.
+   *
+   * Charging is not free even for a perfect player: for 1.2 s of every cycle
+   * the cursor cannot track, so ordinary shots go at a fixed point while the
+   * enemies walk through it. Half of them landing is the estimate. This is
+   * what makes charging a *choice* — see the strategy comparison in `dps`.
+   */
+  chargeAimPenalty: 0.5,
+  /**
+   * Targeted ability placement (§4.3), as an additive fraction of total DPS.
+   *
+   * The model has no abilities at all, so this cannot be derived — it is an
+   * estimate, and a small one: the focus bonus is +60% inside the disc on two
+   * of ten abilities plus a chosen epicentre on a third, and abilities are a
+   * minority of a run's damage to begin with.
+   */
+  targetedCastDps: 0.02,
+} as const;
+
+/**
+ * Manual aim and the charged shot come straight from `MANUAL_AIM`, the table
+ * the game itself reads, so the multiplier can only be cut in one place.
+ */
+const CHARGE_CYCLE = MANUAL_AIM.chargeSeconds + MANUAL_AIM.chargeCooldown;
 
 /** The blessing state a `Loadout` carries, already summed across stacks. */
 export interface BlessingLoadout {
@@ -223,6 +298,8 @@ export interface BlessingLoadout {
   armorPenFlat: number;
   /** Behaviors plus enemy-HP reduction, as one effective-DPS multiplier. */
   dpsPct: number;
+  /** Lodestone: orbs drift home at full value (plan §4.1). */
+  orbMagnet: boolean;
 }
 
 function emptyBlessings(): BlessingLoadout {
@@ -234,6 +311,7 @@ function emptyBlessings(): BlessingLoadout {
     goldPct: 0,
     armorPenFlat: 0,
     dpsPct: 0,
+    orbMagnet: false,
   };
 }
 
@@ -248,6 +326,9 @@ function emptyBlessings(): BlessingLoadout {
 function draftAppeal(def: BlessingDef): number {
   let score = def.behavior ? BEHAVIOR_DPS_CREDIT[def.behavior] : 0;
   if (def.behavior) score += BEHAVIOR_GOLD_CREDIT[def.behavior] ?? 0;
+  // Lodestone's worth is "the orb channel, times 1.5" — a few percent of total
+  // income, discounted like any other gold card.
+  if (def.behavior === 'orb_magnet') score += 0.04;
   for (const e of def.effects ?? []) {
     const v = e.perStack;
     switch (e.stat) {
@@ -313,6 +394,7 @@ function readBlessings(mgr: BlessingManager): BlessingLoadout {
   out.critDamageAdd = totals.critDamagePct ?? 0;
   out.goldPct = totals.goldPct ?? 0;
   out.armorPenFlat = totals.armorPenFlat ?? 0;
+  out.orbMagnet = mgr.has('orb_magnet');
   const enemyHp = totals.enemyHpPct ?? 0;
   out.dpsPct = enemyHp !== 0 ? 1 / (1 + enemyHp) - 1 : 0;
   for (const behavior of Object.keys(BEHAVIOR_DPS_CREDIT) as BlessingBehavior[]) {
@@ -342,12 +424,23 @@ export interface Loadout {
   goldMult: number;
   /** Run-scoped blessing picks (plan §1). */
   blessings: BlessingLoadout;
+  /** Plan §4: perfect active play — manual aim, charged shots, clicked orbs. */
+  active: boolean;
+  /** Fraction of an orb's value collected: 1 clicking, 0.4 (or 1 magnet) idle. */
+  orbRate: number;
 }
 
-export function freshLoadout(damageMult = 1, goldMult = 1): Loadout {
+export function freshLoadout(damageMult = 1, goldMult = 1, active = false): Loadout {
   const levels: Record<string, number> = {};
   for (const u of UPGRADES) levels[u.id] = u.startLevel ?? 0;
-  return { levels, damageMult, goldMult, blessings: emptyBlessings() };
+  return {
+    levels,
+    damageMult,
+    goldMult,
+    blessings: emptyBlessings(),
+    active,
+    orbRate: active ? 1 : LOOT_TUNING.autoCollectRate,
+  };
 }
 
 function levelValue(id: string, level: number): number {
@@ -373,7 +466,11 @@ export function hitDamage(l: Loadout): number {
 
 export function fireRate(l: Loadout): number {
   return (TOWER_BASE.fireRate + levelValue('fireRate', l.levels.fireRate))
-    * (1 + l.blessings.fireRatePct);
+    * (1 + l.blessings.fireRatePct)
+    // Plan §0.1 / §4.2: holding the mouse has always been worth +30% fire
+    // rate. It is not new, but it *is* part of the idle-versus-active gap
+    // §4.5 asks to measure, so the measurement counts it.
+    * (l.active ? MANUAL_AIM.fireRateMult : 1);
 }
 
 /** Sustained DPS against an enemy with the given armor. */
@@ -383,7 +480,30 @@ export function dps(l: Loadout, armor: number): number {
   // Behaviors (ricochet, splash, chains, executes) and enemy-HP reduction all
   // land as extra damage the model cannot place spatially, so they are folded
   // in as one effective-DPS multiplier.
-  return perHit * fireRate(l) * ENGAGEMENT_EFFICIENCY * (1 + l.blessings.dpsPct);
+  const base = perHit * fireRate(l) * ENGAGEMENT_EFFICIENCY * (1 + l.blessings.dpsPct);
+  if (!l.active) return base;
+  // Plan §4.2: the charged shot does not consume the tower's cooldown, so it
+  // is *added* to the volley rather than replacing part of it. Its cycle is
+  // wall-clock and this model runs at 1x, which is the best case for it: at
+  // 6.5x the same cycle covers 6.5x as much game time and the shot is worth a
+  // sixth as much per game-second. Measuring at 1x is therefore the
+  // pessimistic reading of "is active play too strong".
+  //
+  // An optimal player picks between two strategies, so the model does too:
+  //   A. hold and track, never charge — the full manual-aim fire rate;
+  //   B. hold still for 1.2 s of every 5.2 s — the charged shot, paid for with
+  //      degraded tracking during the hold.
+  // Taking the max is what stops the model crediting a player with the fire
+  // rate of one strategy and the burst of the other.
+  const chargeShare = MANUAL_AIM.chargeSeconds / CHARGE_CYCLE;
+  const tracking = base * (1 - chargeShare + chargeShare * ACTIVE_PLAY.chargeAimPenalty);
+  const charged = perHit
+    * MANUAL_AIM.chargeDamageMult
+    * ACTIVE_PLAY.chargeCrowdFactor
+    * ENGAGEMENT_EFFICIENCY
+    * (1 + l.blessings.dpsPct)
+    / CHARGE_CYCLE;
+  return Math.max(base, tracking + charged) * (1 + ACTIVE_PLAY.targetedCastDps);
 }
 
 export function goldMultiplier(l: Loadout): number {
@@ -460,6 +580,8 @@ export interface WaveSample {
   clearSec: number;
   elapsedSec: number;
   dps: number;
+  /** Shots per second at this wave — the charged shot's worth scales inversely. */
+  fireRate: number;
 }
 
 export interface RunOptions {
@@ -477,6 +599,12 @@ export interface RunOptions {
   sampleWaves?: number[];
   /** Run the blessing draft (plan §1). Off reproduces the pre-blessing curve. */
   blessings?: boolean;
+  /**
+   * Plan §4.5: perfect active play — manual aim held, a charged shot every
+   * cycle, every orb clicked, every placeable ability aimed. Off is the fully
+   * idle run, which is the curve the game is balanced around.
+   */
+  active?: boolean;
   /** Seed for the blessing draft's RNG, so a run is reproducible. */
   seed?: number;
 }
@@ -491,9 +619,10 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     sampleWaves = [1, 10, 30, 50, 100],
     blessings = true,
     seed = 0x5eed,
+    active = false,
   } = opts;
 
-  const loadout = freshLoadout(damageMult, goldMult);
+  const loadout = freshLoadout(damageMult, goldMult, active);
   const samples = new Map<number, WaveSample>();
   // The draft is driven through the *real* manager, so the offer rules (no
   // duplicates, no maxed cards, `requires` gating, the 30-pick cap) are the
@@ -520,7 +649,11 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     // wall, and it is why runs now end instead of stalling forever.
     if (activeSec > enrageThresholdSeconds(wave) + enrageSurvivalSeconds) break;
 
-    const earned = profile.baseGold * goldMultiplier(loadout);
+    // Plan §4.1: orbs are a gold faucet, and a faucet the model cannot see is
+    // a faucet nobody is balancing. Idle collects 40% of it by drifting home;
+    // clicking collects all of it; Lodestone raises the idle rate to 100%.
+    const orbRate = loadout.blessings.orbMagnet ? 1 : loadout.orbRate;
+    const earned = (profile.baseGold + orbGoldForWave(wave) * orbRate) * goldMultiplier(loadout);
     gold += earned;
     elapsed += clearSec;
     if (wave >= unlockWave && !Number.isFinite(timeToUnlock)) timeToUnlock = elapsed;
@@ -555,6 +688,7 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
         clearSec,
         elapsedSec: elapsed,
         dps: waveDps,
+        fireRate: fireRate(loadout),
       });
     }
   }
