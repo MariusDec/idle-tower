@@ -972,3 +972,46 @@ risk + momentum), `docs/wave-system.md`, `docs/ui-system.md`, `AGENTS.md`, `test
 | 7 | Pacing | S | No dead air; attention is rewarded second-to-second. |
 
 Parts 1–3 are where the fun is. If only three ship, ship those.
+
+---
+
+## Follow-up — manual aim replaced by the charge (2026-08-20)
+
+Part 4 shipped the charged shot *alongside* manual aim's pre-existing flat `x1.3` fire rate,
+because the brief it was given said to keep the latter. Its §4.5 measurement then showed why
+§4.2 had said **replace**, not add: with the charged shot switched off entirely, manual aim plus
+orb clicking already measured **+33.9…+38.9%** — the whole active-play budget, spent on a bonus
+that requires nothing of the player but that the button be held down. That is §0.1's diagnosis
+exactly: strictly better than not holding, therefore not a choice.
+
+Resolved by the plan's original intent, on the user's call:
+
+1. **`MANUAL_AIM.fireRateMult` is gone**, along with the `BUFF_MANUAL_AIM` registry entry.
+   Holding aims and nothing else. Because holding also forfeits auto-acquisition, a player who
+   holds and never releases a charge is now *worse* off than one who never touches the mouse —
+   which is what makes it a trade.
+2. **The charged shot was re-priced in seconds of the tower's own sustained fire**
+   (`chargeDpsSeconds`), replacing the flat per-shot multiple. This is the more interesting half
+   of the fix. A flat multiple of one shot is worth `1/fireRate` of the tower's output, so a
+   single constant measured **+57% at 1.8 shots/s and +10% at 6.1** — the verb decayed into
+   irrelevance precisely where the player has the most fire rate to surrender by holding still.
+   No value of a flat multiplier lands inside the band at every tier; the sweep at 1x/3x/4x/6x/8x
+   confirmed it. Denominating the payload in DPS-seconds holds its worth flat.
+3. Tuned to `chargeDpsSeconds: 0.9`.
+
+Measured after the change — every tier inside the +25–40% band for the first time:
+
+| Lifetime AP | Wall (idle) | Wall (active) | Active advantage | shots/s |
+|---|---:|---:|---:|---:|
+| 0 | 39 | 49 | **+34.7%** | 1.84 |
+| 100 | 59 | 59 | **+28.6%** | 2.44 |
+| 1 K | 89 | 89 | **+36.0%** | 3.46 |
+| 10 K | 129 | 129 | **+28.9%** | 4.72 |
+| 100 K | 169 | 169 | **+27.3%** | 6.10 |
+
+Idle wall-waves are unchanged at every tier, as they have been through Parts 2–5.
+
+**The general lesson, for Parts 6–7 and beyond:** a bonus denominated in *one shot* is not a
+constant — it is a quantity that shrinks against every fire-rate purchase the player will ever
+make. Any future active-play or burst mechanic should be priced against the tower's throughput,
+not against one of its shots.

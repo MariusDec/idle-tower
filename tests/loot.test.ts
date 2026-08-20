@@ -244,15 +244,24 @@ describe('orb_magnet is live content now (plan §4.1)', () => {
 
 describe('charged shot tuning (plan §4.2 / §4.5)', () => {
   /**
-   * The idle-parity band is what forced the multiplier down from §4.2's 6x,
-   * and a future edit that puts it back would silently reopen the gate. The
-   * sim measures the consequence; this pins the input.
+   * The idle-parity band is what sets this number, and an edit that raises it
+   * would silently reopen the gate. The sim measures the consequence; this
+   * pins the input.
+   *
+   * The payload is denominated in seconds of the tower's own sustained fire
+   * (see `MANUAL_AIM`), which is what keeps the verb worth the same at 1.8
+   * shots/s and at 6.1. At 0.9 s the measured advantage is +34.7 / +28.6 /
+   * +36.0 / +28.9 / +27.3% across the five prestige tiers — inside the
+   * plan's +25-40% band at every one of them.
    */
   it('keeps the charged shot inside what the idle-parity check allows', () => {
-    expect(MANUAL_AIM.chargeDamageMult).toBeLessThanOrEqual(1.25);
+    expect(MANUAL_AIM.chargeDpsSeconds).toBeLessThanOrEqual(1);
     expect(MANUAL_AIM.chargeSeconds).toBeGreaterThan(0);
     expect(MANUAL_AIM.chargeCooldown).toBeGreaterThanOrEqual(4);
-    // The plan's *shape* survives the cut even though its number did not.
+    // Holding the mouse must never carry a flat fire-rate bonus again: it is
+    // the "attention tax" §0.1 diagnosed, and it alone filled the whole band.
+    expect('fireRateMult' in MANUAL_AIM).toBe(false);
+    // The plan's *shape* survives the retune even though its number did not.
     expect(MANUAL_AIM.chargeExtraPierce).toBe(3);
     expect(MANUAL_AIM.chargeSplashRadius).toBe(90);
   });

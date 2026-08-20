@@ -215,9 +215,10 @@ income.** It is composed DPS at a single wave, and the greedy buyer crosses
 upgrade breakpoints, so it moves in steps. Scaling every `goldWaves` down by
 0.6x was measured and made the 0-AP tier *worse* (+51.1%) while improving the
 middle — the shipped values are the better of the two on the gate, not merely
-the untuned ones. Anything that needs a real cut here should follow Part 4's
-own finding and start with `MANUAL_AIM.fireRateMult`, which fills the band on
-its own.
+the untuned ones. Part 4's own finding was that `MANUAL_AIM.fireRateMult` filled the band on its
+own; it has since been removed and the charged shot re-tuned to carry the
+budget alone, which brought every tier back inside +25-40%. Re-measure before
+assuming these numbers still hold.
 
 ## Known limits
 

@@ -80,15 +80,23 @@ they cannot drift or disagree.
 - Magic: `damage *= (1 - enemy.magicResist)` (min 1)
 
 **Fire rate** (`effectiveFireRate`):
-- Normal mode: `fireRate * fireRateMultiplier`
-- Manual aim (mouse held): `fireRate * 30% * fireRateMultiplier`
+- `fireRate * fireRateMultiplier`, in every mode
 - `consumeCooldown`: `cooldown = 1 / effectiveFireRate`
 
 ## Manual Aim Mode
 
 - When mouse is held down on canvas, tower enters active mode
 - Tower targets the mouse cursor position instead of auto-acquiring enemies
-- Applies a 30% increase to `fireRate`
+- **No fire-rate bonus.** Holding used to be worth a flat x1.3, which the
+  gameplay plan's §0.1 named as the game's first design problem: it was
+  strictly better than not holding, so it was a tax on attention rather than a
+  choice, and §4.5 measured it filling the entire active-play budget on its own
+  (+33.9…+38.9%) before the charged shot contributed anything.
+- What holding buys instead is the **charged shot** (see
+  [loot-system.md](loot-system.md) §4.2). The trade is real in both directions:
+  while the button is down the tower fires at the cursor rather than
+  auto-acquiring, so holding without ever releasing a charge is *worse* than
+  never touching the mouse.
 - Aim line is rendered (currently disabled — `if (true || !snap.aimLine) return`)
 
 ## Upgrade Effects Applied

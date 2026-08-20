@@ -212,12 +212,26 @@ wave the *idle* run walls on (so it includes the upgrades the extra orb gold bou
 | 10 K | 129 | 129 | **+34.8%** | 4.72 |
 | 100 K | 169 | 169 | **+33.9%** | 6.04 |
 
-Four of five tiers land inside the plan's +25–40% band and every tier is under the +50% cut line.
-The lowest tier sits above the band, and the reason is worth recording: **with the charged shot
-switched off entirely, manual aim plus orb clicking already measures +33.9% to +38.9%.** The
-pre-existing `MANUAL_AIM.fireRateMult` of 1.3 fills the band on its own, so any charged shot at all
-pushes the lowest-fire-rate tier past 40%. Closing that would mean reducing manual aim, which is a
-live regression for existing players and outside Part 4's brief.
+Those were the numbers **while manual aim still carried its flat x1.3 fire rate**. Part 4's
+measurement showed that bonus filling the whole band on its own (+33.9…+38.9% with the charged shot
+switched off entirely), which is what §4.2 meant by *replacing* it rather than stacking on top. It
+has since been removed — see [tower-system.md](tower-system.md) — and the charged shot re-tuned to
+carry the budget by itself:
+
+| Lifetime AP | Wall (idle) | Wall (active) | Active advantage | shots/s |
+|---|---:|---:|---:|---:|
+| 0 | 39 | 49 | **+34.7%** | 1.84 |
+| 100 | 59 | 59 | **+28.6%** | 2.44 |
+| 1 K | 89 | 89 | **+36.0%** | 3.46 |
+| 10 K | 129 | 129 | **+28.9%** | 4.72 |
+| 100 K | 169 | 169 | **+27.3%** | 6.10 |
+
+All five tiers now land inside the +25–40% band. The retune also changed the charge's *shape*: its
+payload is denominated in seconds of the tower's own sustained fire (`chargeDpsSeconds`), not in
+multiples of one shot. A flat multiple is worth `1/fireRate` of the tower's output, so the same
+constant measured +57% at 1.8 shots/s and +10% at 6.1 — the verb decayed into irrelevance exactly
+where the player has the most fire rate to surrender by holding still. Pricing it in DPS-seconds
+holds its worth flat across every prestige tier.
 
 **The orb faucet (§4.1)** — orb gold as a share of a wave's income:
 

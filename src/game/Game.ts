@@ -93,10 +93,8 @@ import {
 /** Multiplier a gold-luck proc pays out at. */
 const GOLD_LUCK_MULTIPLIER = 3;
 /** Fire-rate multiplier while the player holds the mouse to aim manually. */
-const MANUAL_AIM_FIRE_RATE = MANUAL_AIM.fireRateMult;
 /** Fire-rate multiplier granted by a quick-shot proc. */
 const QUICK_SHOT_FIRE_RATE = 2;
-const BUFF_MANUAL_AIM = 'tower:manualAim';
 /** localStorage key for the `instantCast` preference (plan §4.3). */
 const INSTANT_CAST_KEY = 'the-tower-instant-cast';
 const BUFF_QUICK_SHOT = 'tower:quickShot';
@@ -1989,7 +1987,7 @@ export class Game {
   private fireChargedShot(): void {
     const ts = this.tower.snapshot;
     const shot = this.tower.rollShot();
-    const damage = shot.damage * MANUAL_AIM.chargeDamageMult;
+    const damage = shot.damage * ts.fireRate * MANUAL_AIM.chargeDpsSeconds;
     this.projectileMgr.fire(null, ts, {
       rawDamage: damage,
       damageType: ts.damageType,
@@ -3510,23 +3508,12 @@ export class Game {
       if (ts.wallHp > 0) this.enemyMgr.setWallContactExtra(36);
     }
 
-    // Manual aim: holding the mouse aims at the cursor and adds fire rate.
-    // Both this and the quick-shot proc below are buff entries, so they
-    // compose with Berserk instead of overwriting it (plan §1.3).
+    // Manual aim: holding the mouse aims at the cursor. It carries no fire-rate
+    // bonus — see the note in MANUAL_AIM. Holding costs you auto-targeting and
+    // pays in the charged shot, so it is a trade rather than a tax.
     if (this.mouseDown) {
       this.tower.setAimTarget(this.mouseX, this.mouseY);
-      this.buffs.set({
-        id: BUFF_MANUAL_AIM,
-        stat: 'fireRate',
-        kind: 'mult',
-        value: MANUAL_AIM_FIRE_RATE,
-        label: 'Manual aim',
-        remaining: null,
-      });
-    } else {
-      this.buffs.clear(BUFF_MANUAL_AIM);
     }
-    this.refreshBuffedStats();
 
     if (this.tower.tickCooldown(dt)) {
       const target = this.mouseDown ? null : this.tower.acquireTarget(this.enemyMgr.list);

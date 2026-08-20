@@ -80,31 +80,45 @@ export const TARGETING_MODES: ReadonlyArray<{ id: TargetingMode; label: string; 
  * should reward.
  */
 export const MANUAL_AIM = {
-  /** Fire-rate multiplier while the player holds the mouse. Pre-dates Part 4. */
-  fireRateMult: 1.3,
+  /*
+   * There is deliberately no `fireRateMult` here any more.
+   *
+   * Holding used to be worth a flat x1.3 fire rate, which the gameplay plan's
+   * §0.1 named as the game's first design problem: holding was strictly better
+   * than not holding, so it was a tax on attention rather than a choice. The
+   * §4.5 measurement made the cost concrete — manual aim alone filled the
+   * entire active-play budget (+33.9…+38.9%) before the charged shot added
+   * anything, which is why §4.2 specified replacing it rather than stacking on
+   * top of it.
+   *
+   * What holding buys now is the charge below, and it is a genuine trade: while
+   * the button is down the tower fires at the cursor instead of auto-acquiring,
+   * so a player who holds and never releases is *worse* off than one who never
+   * touches the mouse. That is the shape a choice has.
+   */
   /** Seconds the cursor must be held still to arm the shot. */
   chargeSeconds: 1.2,
   /** Seconds before another charge can be armed. */
   chargeCooldown: 4,
   /**
-   * Damage multiple of an ordinary shot, **per target hit**.
+   * The charged shot's payload, denominated in **seconds of the tower's own
+   * sustained fire**: damage = one shot x current fire rate x this.
    *
-   * §4.2 specifies 6x. The §4.5 idle-parity measurement is the gate, and 6x
-   * measured **+127%** at 0 lifetime AP — two and a half times the +50% line
-   * the plan itself names as the point to cut. The cut is steep because the
-   * charged shot is a flat multiple of *one shot* on a cycle of wall-clock
-   * seconds, so its worth scales inversely with fire rate: the same 6x is
-   * +93% of a fresh tower's DPS at 1.8 shots/s and +8% of a late one's at 20.
+   * §4.2 specifies a flat 6x one shot, and Part 4 measured that at +127% and
+   * cut it to 1x. Both numbers are answers to the wrong question. A flat
+   * multiple of *one shot* is worth `1/fireRate` of the tower's output, so the
+   * same constant measured +57% at a fresh tower's 1.8 shots/s and +10% at a
+   * late one's 6.1 — the verb decayed into irrelevance exactly where the
+   * player has the most fire rate to give up by holding still.
    *
-   * What survives is the plan's *shape*, not its number: with `+3` pierce and
-   * the 90 px splash intact, a charged shot into a lane still delivers four
-   * full hits plus the blast — around 6x an ordinary shot's total output,
-   * which is what §4.2 was reaching for. It just is not 6x on one body.
+   * Pricing the charge in seconds-of-DPS holds its worth flat across every
+   * prestige tier, and it reads as what it is: holding still surrenders ~1.2 s
+   * of tracked fire, and the charge pays that back with interest.
    *
-   * Measured active advantage at this value: +45.2% / +35.4% / +34.7% /
-   * +34.8% / +33.9% across the five prestige tiers (`npm run sim`).
+   * Because it multiplies the *composed* fire rate, it also scales with
+   * Berserk and quick-shot rather than being diluted by them.
    */
-  chargeDamageMult: 1,
+  chargeDpsSeconds: 0.9,
   /** Extra targets the charged shot pierces. */
   chargeExtraPierce: 3,
   /** Splash radius on impact, and what everything else in it takes. */

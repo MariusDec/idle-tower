@@ -604,11 +604,10 @@ export function hitDamage(l: Loadout): number {
 
 export function fireRate(l: Loadout): number {
   return (TOWER_BASE.fireRate + levelValue('fireRate', l.levels.fireRate))
-    * (1 + l.blessings.fireRatePct)
-    // Plan §0.1 / §4.2: holding the mouse has always been worth +30% fire
-    // rate. It is not new, but it *is* part of the idle-versus-active gap
-    // §4.5 asks to measure, so the measurement counts it.
-    * (l.active ? MANUAL_AIM.fireRateMult : 1);
+    * (1 + l.blessings.fireRatePct);
+  // No manual-aim term: holding the mouse no longer carries a fire-rate
+  // bonus (plan §4.2). The whole active-play advantage now comes from the
+  // charged shot and orb collection, which is what §4.5 measures.
 }
 
 /** Sustained DPS against an enemy with the given armor. */
@@ -636,7 +635,8 @@ export function dps(l: Loadout, armor: number): number {
   const chargeShare = MANUAL_AIM.chargeSeconds / CHARGE_CYCLE;
   const tracking = base * (1 - chargeShare + chargeShare * ACTIVE_PLAY.chargeAimPenalty);
   const charged = perHit
-    * MANUAL_AIM.chargeDamageMult
+    * fireRate(l)
+    * MANUAL_AIM.chargeDpsSeconds
     * ACTIVE_PLAY.chargeCrowdFactor
     * ENGAGEMENT_EFFICIENCY
     * (1 + l.blessings.dpsPct)
