@@ -15,6 +15,7 @@ function bootstrap(): void {
   const contentRoot = document.getElementById('panel-content');
   const toastRoot = document.getElementById('toast-root');
   const panelRoot = document.getElementById('panel-root') as HTMLElement | null;
+  const overlayRoot = document.getElementById('overlay-root') as HTMLElement | null;
   const abilityBarRoot = document.getElementById('ability-bar-root') as HTMLElement | null;
   const bottomNavRoot = document.getElementById('bottom-nav-root') as HTMLElement | null;
   const mobileSheetRoot = document.getElementById('mobile-sheet-root') as HTMLElement | null;
@@ -37,6 +38,7 @@ function bootstrap(): void {
     contentRoot,
     bus,
     modalRoot,
+    overlayRoot: overlayRoot ?? undefined,
     panelRoot: panelRoot ?? undefined,
     abilityBarRoot: abilityBarRoot ?? undefined,
     bottomNavRoot: bottomNavRoot ?? undefined,
@@ -44,10 +46,17 @@ function bootstrap(): void {
   });
 
   const game = new Game(canvas, { bus, ui, notificationRoot: toastRoot, modalRoot });
-  ui.setOnBuyUpgrade((id) => {
-    game.upgradeManager.buy(id);
+  // ×N buys *up to* the next multiple of N rather than adding N levels, so
+  // the button always lands the upgrade on a round level.
+  const upgradePlan = (id: string, amount: 1 | 10 | 'max') => (
+    amount === 'max'
+      ? game.upgradeManager.getMaxAffordablePlan(id)
+      : game.upgradeManager.getRoundedPlan(id, amount)
+  );
+  ui.setOnBuyUpgrade((id, amount) => {
+    game.upgradeManager.buyBulk(id, upgradePlan(id, amount).levels);
   });
-  ui.setUpgradeCostGetter((id) => game.upgradeManager.getCost(id));
+  ui.setUpgradePlanGetter(upgradePlan);
   ui.setOnCastAbility((id) => {
     game.castAbility(id);
   });
@@ -122,6 +131,9 @@ function bootstrap(): void {
     getUpgradeCost: (id) => game.abilities.getUpgradeCost(id),
     getEffectiveStats: (id) => game.abilities.getEffectiveStats(id),
     getXp: (id) => game.abilities.getXp(id),
+    isAutoCastUnlocked: () => game.prestige.isAutomationUnlocked('autoAbilities'),
+    isAutoCastEnabled: (id) => game.gameState.prestige.autoCastEnabled[id] !== false,
+    onToggleAutoCast: (id, enabled) => game.setAutoCastEnabled(id, enabled),
   });
   ui.setPrestigeAPI({
     canAscend: (wave) => game.prestige.canAscend(wave),
@@ -136,6 +148,11 @@ function bootstrap(): void {
     targetAscendWave: game.gameState.prestige.targetAscendWave,
     meetsPrerequisites: (id) => game.prestige.meetsPrerequisites(id),
     isExcluded: (id) => game.prestige.isExcluded(id),
+    perkBlockedReason: (id) => game.prestige.perkBlockedReason(id),
+    autoBuyStrategy: game.gameState.prestige.autoBuyStrategy,
+    autoBuyReserve: game.gameState.prestige.autoBuyReserve,
+    setAutoBuyStrategy: (strategy) => game.setAutoBuyStrategy(strategy),
+    setAutoBuyReserve: (fraction) => game.setAutoBuyReserve(fraction),
   });
   ui.setResearchAPI({
     rp: game.research.rp,
@@ -230,6 +247,12 @@ function bootstrap(): void {
       ev.preventDefault();
     } else if (ev.key === '=' || ev.key === '+') {
       game.cycleSpeed(1);
+      ev.preventDefault();
+    } else if (ev.key === '?' || ev.key === '/') {
+      ui.toggleKeybinds();
+      ev.preventDefault();
+    } else if (ev.key === 'Escape' && ui.isKeybindsOpen()) {
+      ui.closeKeybinds();
       ev.preventDefault();
     }
   });

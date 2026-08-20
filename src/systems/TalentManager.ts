@@ -1,5 +1,5 @@
 import type { TalentState, TalentBranch, TalentId } from '../types';
-import { TALENTS, TALENT_BY_ID, TALENTS_BY_BRANCH, type TalentStat } from '../data/talentTree';
+import { TALENTS, TALENT_BY_ID, TALENTS_BY_BRANCH, talentRespecCost, type TalentStat } from '../data/talentTree';
 import { EventBus } from '../game/EventBus';
 
 export class TalentManager {
@@ -7,6 +7,8 @@ export class TalentManager {
   private readonly bus: EventBus;
   private readonly towerXpUnspentPoints: () => number;
   private readonly spendTalentPoint: () => boolean;
+  private readonly grantTalentPoint: () => void;
+  private readonly spendGold: (amount: number) => boolean;
 
   constructor(
     state: TalentState,
@@ -14,12 +16,16 @@ export class TalentManager {
     deps: {
       towerXpUnspentPoints: () => number;
       spendTalentPoint: () => boolean;
+      grantTalentPoint: () => void;
+      spendGold: (amount: number) => boolean;
     },
   ) {
     this.state = state;
     this.bus = bus;
     this.towerXpUnspentPoints = deps.towerXpUnspentPoints;
     this.spendTalentPoint = deps.spendTalentPoint;
+    this.grantTalentPoint = deps.grantTalentPoint;
+    this.spendGold = deps.spendGold;
   }
 
   canAllocate(talentId: TalentId): boolean {
@@ -64,19 +70,56 @@ export class TalentManager {
     return true;
   }
 
-  refundBranch(branch: TalentBranch): void {
-    const branchTalents = TALENTS_BY_BRANCH[branch];
-    let refunded = 0;
-    for (const t of branchTalents) {
-      const spent = this.state.allocated[t.id] ?? 0;
-      if (spent > 0) {
-        refunded += spent;
-        delete this.state.allocated[t.id];
-      }
-    }
-    if (refunded > 0) {
-      this.bus.emit('talent_refunded', { branch, points: refunded });
-    }
+  /** Points currently allocated in one branch. */
+  pointsInBranch(branch: TalentBranch): number {
+    let total = 0;
+    for (const t of TALENTS_BY_BRANCH[branch]) total += this.state.allocated[t.id] ?? 0;
+    return total;
+  }
+
+  /** Points currently allocated across every branch. */
+  totalAllocatedPoints(): number {
+    let total = 0;
+    for (const points of Object.values(this.state.allocated)) total += points;
+    return total;
+  }
+
+  /** Gold a branch respec would cost right now. */
+  branchRespecCost(branch: TalentBranch): number {
+    return talentRespecCost(this.pointsInBranch(branch));
+  }
+
+  /** Gold a full respec would cost right now. */
+  fullRespecCost(): number {
+    return talentRespecCost(this.totalAllocatedPoints());
+  }
+
+  /**
+   * Refund one branch for gold (plan §4.7).
+   *
+   * Both halves of this used to be missing: the advertised cost was never
+   * charged, and the refunded points were deleted rather than returned to the
+   * unspent pool — a "respec" that silently destroyed progress.
+   */
+  refundBranch(branch: TalentBranch): boolean {
+    return this.refundTalents(TALENTS_BY_BRANCH[branch].map(t => t.id), branch);
+  }
+
+  /** Refund every branch at once. */
+  refundAll(): boolean {
+    return this.refundTalents(TALENTS.map(t => t.id), null);
+  }
+
+  private refundTalents(ids: TalentId[], branch: TalentBranch | null): boolean {
+    let points = 0;
+    for (const id of ids) points += this.state.allocated[id] ?? 0;
+    if (points <= 0) return false;
+    const cost = talentRespecCost(points);
+    if (cost > 0 && !this.spendGold(cost)) return false;
+    for (const id of ids) delete this.state.allocated[id];
+    for (let i = 0; i < points; i++) this.grantTalentPoint();
+    this.bus.emit('talent_refunded', { branch, points, cost });
+    return true;
   }
 
   getEffectValue(effectStat: TalentStat): number {

@@ -769,6 +769,61 @@ button:disabled {
   font-size: 12px;
   border-radius: 4px;
 }
+/* Bulk-buy amount selector (plan §4.1) */
+.upgrade-amount-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.upgrade-amount-label {
+  font-size: 12px;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.upgrade-amount-group {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.upgrade-amount-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.upgrade-amount-btn:hover:not(.active) { background: var(--bg-3); }
+.upgrade-amount-btn.active {
+  background: var(--bg-3);
+  border-color: var(--accent);
+  color: var(--text-0);
+}
+.upgrade-amount-btn.is-modifier {
+  border-style: dashed;
+}
+.upgrade-amount-hint {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-left: auto;
+}
+.upgrade-cost-levels {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--good);
+  margin-top: -4px;
+}
+
 .upgrade-tab-panel { display: none; }
 .upgrade-tab-panel.active { display: block; }
 .upgrade-row {
@@ -821,6 +876,89 @@ button:disabled {
   color: #fff;
 }
 .btn-buy.can-afford:hover { filter: brightness(1.1); }
+
+.welcome-stat-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Run-stalled prompt (plan §4.3) */
+.run-stalled-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translate(-50%, 12px);
+  display: none;
+  align-items: center;
+  gap: 16px;
+  max-width: min(560px, calc(100% - 32px));
+  padding: 12px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--bad);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 20;
+}
+.run-stalled-banner.is-visible {
+  display: flex;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.run-stalled-body { flex: 1 1 auto; min-width: 0; }
+.run-stalled-title {
+  font-weight: 700;
+  color: var(--bad);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+}
+.run-stalled-message {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+.run-stalled-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.run-stalled-dismiss {
+  padding: 2px 8px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.run-stalled-dismiss:hover { color: var(--text-0); }
+
+/* Gold-multiplier attribution rows in the stats tooltip (plan §4.2) */
+.stat-breakdown {
+  margin: 2px 0 4px 10px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+.stat-subtotal {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px dotted var(--border);
+  font-style: italic;
+}
+.stat-subrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
 
 /* Placeholder */
 .placeholder-panel {
@@ -1276,6 +1414,23 @@ button:disabled {
   border-color: var(--border);
   color: var(--text-3);
 }
+
+/* Plan §3.1: per-ability auto-cast opt-out, shown once Auto-Caster is bought. */
+.ability-autocast-row {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--text-2);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.ability-autocast-row input {
+  accent-color: #5b8def;
+  cursor: pointer;
+  margin: 0;
+}
 .ability-upgrade-btn.is-maxed {
   display: none;
 }
@@ -1700,6 +1855,14 @@ button:disabled {
   background: linear-gradient(180deg, var(--bg-2), rgba(155, 89, 255, 0.04));
 }
 
+/* Plan §3.2: AP perks can be gated by prerequisites or an exclusive pair. */
+.perk-row.is-perk-locked { opacity: 0.6; }
+.perk-reason {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
 /* Automation section */
 .automation-section {
   display: flex;
@@ -1723,6 +1886,63 @@ button:disabled {
   min-width: 0;
 }
 .automation-row.is-locked { opacity: 0.55; }
+
+/* Plan §3.6: auto-buy strategy + gold reserve controls. */
+.autobuy-config {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.autobuy-config-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 8px;
+}
+.autobuy-strategy-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.autobuy-strategy-btn {
+  flex: 1 1 auto;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-1);
+  cursor: pointer;
+}
+.autobuy-strategy-btn.is-selected {
+  border-color: #5b8def;
+  color: var(--text-0);
+  background: var(--bg-3);
+}
+.autobuy-config-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.autobuy-reserve-row {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.autobuy-reserve-label {
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.autobuy-reserve-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: #5b8def;
+}
 .automation-row.is-unlocked { border-color: #4ea86a; }
 .automation-info { flex: 1 1 0; min-width: 0; }
 .automation-name { font-weight: 600; color: var(--text-0); }
@@ -3620,6 +3840,11 @@ body.is-resizing * { cursor: ew-resize !important; }
   justify-content: center;
   padding: 8px 0 2px;
 }
+.talent-respec-all {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
 .btn-respec {
   font-size: 11px;
   padding: 6px 12px;
@@ -4131,3 +4356,150 @@ body.eq-dragging img { pointer-events: none; }
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
 }
+
+
+/* ── Progression tab (plan §4.6) ──────────────────────────────────────── */
+.progression-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.progression-summary {
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.progression-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.progression-row {
+  display: grid;
+  grid-template-columns: 62px 22px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+.progression-row.is-unlocked { border-left-color: var(--good); }
+.progression-row.is-locked { opacity: 0.72; }
+.progression-gate {
+  font-size: 11px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.progression-glyph {
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+.progression-body { min-width: 0; }
+.progression-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.progression-kind {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  /* Kind is a secondary signal: the badge stays essentially the muted grey it
+     was, carrying just enough of the kind's hue to group the list at a glance
+     without competing with the labels for attention. */
+  color: color-mix(in srgb, var(--kind-color, var(--text-2)) 30%, var(--text-2));
+  border: 1px solid color-mix(in srgb, var(--kind-color, var(--border)) 22%, var(--border));
+  background: color-mix(in srgb, var(--kind-color, transparent) 6%, transparent);
+}
+.progression-detail {
+  font-size: 11px;
+  color: var(--text-1);
+  margin-top: 2px;
+  overflow-wrap: break-word;
+}
+.progression-status {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.progression-row.is-unlocked .progression-status { color: var(--good); }
+
+
+/* ── Keyboard shortcut reference (plan §4.8) ──────────────────────────── */
+.hud-keybinds-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.hud-keybinds-btn:hover {
+  color: var(--text-0);
+  border-color: var(--accent);
+}
+.keybinds-card { max-width: 560px; text-align: left; }
+.keybinds-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 12px 0 16px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.keybinds-group-title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+.keybinds-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+}
+.keybinds-keys {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 110px;
+  flex-shrink: 0;
+}
+.keybinds-keys kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-0);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+.keybinds-sep { font-size: 11px; color: var(--text-2); }
+.keybinds-action { font-size: 12px; color: var(--text-1); }

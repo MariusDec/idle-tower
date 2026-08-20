@@ -42,12 +42,31 @@ export interface WaveModifierDef {
   };
 }
 
+/**
+ * Plan §3.3: a mutator used to apply to exactly one wave, which made a risky
+ * pick a five-second gamble and a safe one meaningless. It now runs for three
+ * waves and pays out after each, with the reward escalating: x1, x1.5, x2.
+ */
+export const MUTATOR_DURATION_WAVES = 3;
+
+/** Reward multiplier for the Nth cleared wave under a mutator (0-based). */
+export function waveModifierRewardMultiplier(wavesCleared: number): number {
+  return 1 + 0.5 * Math.max(0, wavesCleared);
+}
+
+/** Total reward multiplier for surviving a full mutator run (1 + 1.5 + 2 = 4.5). */
+export function waveModifierTotalRewardMultiplier(duration = MUTATOR_DURATION_WAVES): number {
+  let total = 0;
+  for (let i = 0; i < duration; i++) total += waveModifierRewardMultiplier(i);
+  return total;
+}
+
 export const WAVE_MODIFIERS: WaveModifierDef[] = [
   {
     id: 'glass_cannon',
     name: 'Glass Cannon',
     description: 'Enemies are fragile and blindingly fast.',
-    detail: 'Enemies: HP ×0.5, Speed ×2.0 · Gold: +25% · Bonus: 1 AP on clear',
+    detail: 'Enemies: HP ×0.5, Speed ×2.0 · Gold: +25% · Bonus: 1 AP per wave',
     glyph: '◇',
     color: '#5b8def',
     reward: { ap: 1, gold: 0, tp: 0 },
@@ -64,7 +83,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     id: 'heavy_hitters',
     name: 'Heavy Hitters',
     description: 'Tougher enemies that hit the tower harder.',
-    detail: 'Enemies: HP ×1.5, Damage to tower ×1.3 · Bonus: ×2 gold, 1 AP on clear',
+    detail: 'Enemies: HP ×1.5, Damage to tower ×1.3 · Bonus: ×2 gold + 1 AP per wave',
     glyph: '⛨',
     color: '#a85a2c',
     reward: { ap: 1, gold: 2, tp: 0 },
@@ -81,7 +100,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     id: 'swarm',
     name: 'Swarm',
     description: 'The horde is overwhelming.',
-    detail: 'Enemies: Count ×3.0 · Bonus: ×2 gold on clear',
+    detail: 'Enemies: Count ×3.0 · Bonus: ×2 gold per wave',
     glyph: '⋙',
     color: '#9b59ff',
     reward: { ap: 0, gold: 2, tp: 0 },
@@ -132,7 +151,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     id: 'fortress',
     name: 'Fortress',
     description: 'Slow but nearly indestructible.',
-    detail: 'Enemies: HP ×3.0, Speed ×0.5 · Bonus: 1 AP on clear',
+    detail: 'Enemies: HP ×3.0, Speed ×0.5 · Bonus: 1 AP per wave',
     glyph: '🏰',
     color: '#6b7280',
     reward: { ap: 1, gold: 0, tp: 0 },
@@ -149,7 +168,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     id: 'cursed_ground',
     name: 'Cursed Ground',
     description: 'Dark energy weakens your tower, but riches abound.',
-    detail: 'Your damage ×0.5 · Gold: ×3, 1 AP on clear',
+    detail: 'Your damage ×0.5 · Gold: ×3 + 1 AP per wave',
     glyph: '🜏',
     color: '#7c3aed',
     reward: { ap: 1, gold: 3, tp: 0 },
@@ -166,7 +185,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     id: 'ironclad',
     name: 'Ironclad',
     description: 'Armored horde. Tough shells, rich spoils.',
-    detail: 'Enemies: HP ×2.0, Count ×2.0 · Bonus: ×4 gold, 1 AP on clear',
+    detail: 'Enemies: HP ×2.0, Count ×2.0 · Bonus: ×4 gold + 1 AP per wave',
     glyph: '🛡️',
     color: '#9ca3af',
     reward: { ap: 1, gold: 4, tp: 0 },
@@ -183,7 +202,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     id: 'famine',
     name: 'Famine',
     description: 'Resources are scarce. Endure for knowledge.',
-    detail: 'Enemies: HP ×1.2 · Gold: −50% · Bonus: 2 AP on clear',
+    detail: 'Enemies: HP ×1.2 · Gold: −50% · Bonus: 2 AP per wave',
     glyph: '🌑',
     color: '#4b5563',
     reward: { ap: 2, gold: 0, tp: 0 },

@@ -219,6 +219,10 @@ export class PrestigeManager {
     if (!def) return false;
     const level = this.getAPLevel(perkId);
     if (level >= def.maxLevel) return false;
+    // Plan §3.2: the AP layer is a tree now, so it obeys the same prerequisite
+    // and exclusivity rules the TP tree always has.
+    if (!this.meetsPrerequisites(perkId)) return false;
+    if (this.isExcluded(perkId)) return false;
     return this.ctx.resources.ascensionPoints >= perkCost(def, level);
   }
 
@@ -232,18 +236,45 @@ export class PrestigeManager {
     return this.ctx.resources.transcendencePoints >= perkCost(def, level);
   }
 
+  /** A perk by id from either layer — the two id spaces do not overlap. */
+  private perkDef(perkId: string) {
+    return AP_PERK_BY_ID[perkId] ?? TP_PERK_BY_ID[perkId] ?? null;
+  }
+
   meetsPrerequisites(perkId: string): boolean {
-    const def = TP_PERK_BY_ID[perkId];
+    const def = this.perkDef(perkId);
     if (!def || !def.prerequisites || def.prerequisites.length === 0) return true;
     return def.prerequisites.some(
-      req => this.getTPLevel(req.perkId) >= req.minLevel,
+      req => this.getLevel(req.perkId) >= req.minLevel,
     );
   }
 
   isExcluded(perkId: string): boolean {
-    const def = TP_PERK_BY_ID[perkId];
+    const def = this.perkDef(perkId);
     if (!def || !def.exclusive || def.exclusive.length === 0) return false;
-    return def.exclusive.some(excId => this.getTPLevel(excId) > 0);
+    return def.exclusive.some(excId => this.getLevel(excId) > 0);
+  }
+
+  /**
+   * Human-readable reason a perk cannot be bought yet, or null when it can be
+   * (ignoring affordability, which the panel reports separately).
+   */
+  perkBlockedReason(perkId: string): string | null {
+    const def = this.perkDef(perkId);
+    if (!def) return null;
+    if (this.isExcluded(perkId)) {
+      const blocker = (def.exclusive ?? []).find(id => this.getLevel(id) > 0);
+      const name = blocker ? this.perkDef(blocker)?.name ?? blocker : 'another perk';
+      return `Locked out by ${name}`;
+    }
+    if (!this.meetsPrerequisites(perkId)) {
+      const reqs = (def.prerequisites ?? []).map(r => {
+        const name = this.perkDef(r.perkId)?.name ?? r.perkId;
+        return r.minLevel > 1 ? `${name} Lv.${r.minLevel}` : name;
+      });
+      return reqs.length > 0 ? `Requires ${reqs.join(' or ')}` : null;
+    }
+    return null;
   }
 
   // ── New TP tree query methods ──

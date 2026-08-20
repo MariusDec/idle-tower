@@ -52,3 +52,22 @@ Renderer draws in layers:
 4. Projectiles
 5. Front particles (non-white)
 6. Damage numbers
+
+## Pool Caps (plan §5.3)
+
+Both pools are bounded and evict oldest-first:
+
+| Pool | Cap |
+|---|---|
+| `particles` | 600 |
+| `damageNumbers` | 80 |
+
+Every emitter routes through `pushParticle` / `pushDamageNumber`. **Pushing
+directly onto the arrays defeats the cap** — a new emitter must use the
+helpers.
+
+Damage numbers landing within 16 px of a live one younger than 0.22 s are
+merged into it: the amount is added and the float restarts, so a fast tower
+putting six shots into one enemy shows one climbing number rather than six
+overlapping labels. Merging is matched on kind, so crits and heals keep their
+own (differently coloured) labels.

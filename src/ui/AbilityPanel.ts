@@ -17,6 +17,10 @@ export interface AbilityPanelHandlers {
   getUpgradeCost: (id: AbilityId) => number;
   getEffectiveStats: (id: AbilityId) => ReturnType<typeof computeEffectiveStats>;
   getXp: (id: AbilityId) => number;
+  /** Plan §3.1: auto-cast is unlocked by the Auto-Caster TP perk. */
+  isAutoCastUnlocked: () => boolean;
+  isAutoCastEnabled: (id: AbilityId) => boolean;
+  onToggleAutoCast: (id: AbilityId, enabled: boolean) => void;
 }
 
 type SubTab = 'active' | 'passives';
@@ -45,6 +49,8 @@ export class AbilityPanel {
   private xpBarEls = new Map<AbilityId, HTMLElement>();
   private xpBarFillEls = new Map<AbilityId, HTMLElement>();
   private xpTextEls = new Map<AbilityId, HTMLElement>();
+  private autoCastRowById = new Map<AbilityId, HTMLElement>();
+  private autoCastInputById = new Map<AbilityId, HTMLInputElement>();
 
   // Passive maps
   private passiveRoots = new Map<string, HTMLElement>();
@@ -80,6 +86,8 @@ export class AbilityPanel {
     this.xpBarEls.clear();
     this.xpBarFillEls.clear();
     this.xpTextEls.clear();
+    this.autoCastRowById.clear();
+    this.autoCastInputById.clear();
     this.passiveRoots.clear();
     this.passiveLevelEls.clear();
     this.passiveDescEls.clear();
@@ -102,6 +110,7 @@ export class AbilityPanel {
 
   private updateActive(state: GameState): void {
     const mana = state.resources.mana;
+    const autoUnlocked = this.handlers.isAutoCastUnlocked();
     for (const def of ABILITIES) {
       const btn = this.buttonsById.get(def.id);
       const overlay = this.overlayById.get(def.id);
@@ -193,6 +202,17 @@ export class AbilityPanel {
           setStyle(xpFillEl, 'width', `${ratio * 100}%`);
           setText(xpTextEl, `${xp}/${needed}`);
           setDisplay(xpBarEl.parentElement!, 'flex');
+        }
+      }
+
+      const autoRow = this.autoCastRowById.get(def.id);
+      const autoInput = this.autoCastInputById.get(def.id);
+      if (autoRow && autoInput) {
+        const showAuto = autoUnlocked && isUnlocked;
+        setDisplay(autoRow, showAuto ? 'flex' : 'none');
+        if (showAuto) {
+          const on = this.handlers.isAutoCastEnabled(def.id);
+          if (autoInput.checked !== on) autoInput.checked = on;
         }
       }
 
@@ -463,6 +483,25 @@ export class AbilityPanel {
     upgradeBtn.addEventListener('focus', () => this.showTooltip(def.id));
     upgradeBtn.addEventListener('blur', () => this.hideTooltip(def.id));
     info.appendChild(upgradeBtn);
+
+    // Plan §3.1: per-ability auto-cast opt-out. Hidden until the Auto-Caster
+    // perk is bought, so it does not advertise a system the player cannot use.
+    const autoRow = document.createElement('label');
+    autoRow.className = 'ability-autocast-row';
+    autoRow.style.display = 'none';
+    const autoInput = document.createElement('input');
+    autoInput.type = 'checkbox';
+    autoInput.checked = true;
+    autoInput.addEventListener('change', () => {
+      this.handlers.onToggleAutoCast(def.id, autoInput.checked);
+    });
+    const autoText = document.createElement('span');
+    autoText.textContent = 'Auto-cast';
+    autoRow.appendChild(autoInput);
+    autoRow.appendChild(autoText);
+    info.appendChild(autoRow);
+    this.autoCastRowById.set(def.id, autoRow);
+    this.autoCastInputById.set(def.id, autoInput);
 
     card.appendChild(info);
 

@@ -1,7 +1,18 @@
-import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, Equipment } from '../types';
-import { computeUpgradeValue, GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
+import type { AbilityId, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, EquipmentStatType, Equipment, AutoBuyStrategy, GoldSourceEntry } from '../types';
+import { GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
+
+/**
+ * Fixed simulation substep, and the ceiling on substeps per frame (plan §5.2).
+ *
+ * One step is a 60 Hz frame, so at 1x speed nothing changes: `dt` is already
+ * about 1/60 and the loop runs once. The cap bounds the worst case — a frame
+ * hitch at maximum game speed — at six times the per-frame simulation cost
+ * rather than an unbounded spiral; when it bites, steps grow instead of time
+ * being dropped, so the game never runs slow-motion under load.
+ */
+const FIXED_STEP = 1 / 60;
+const MAX_SUBSTEPS = 6;
 import { TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
-import { UPGRADES } from '../data/upgrades';
 import { ENEMY_DEFS } from '../data/enemies';
 import { ABILITIES } from '../data/abilities';
 import { RESEARCH_BY_ID } from '../data/research';
@@ -23,7 +34,7 @@ import { AutomationManager } from '../systems/AutomationManager';
 import { SaveManager, type PersistentState, type OfflineResult } from '../systems/SaveManager';
 import { AchievementManager } from '../systems/AchievementManager';
 import { UIManager } from '../ui/UIManager';
-import { isBossWave } from '../data/formulas';
+import { isBossWave, goldDropForWave, spawnCountForWave } from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
 import { DEFAULT_AUTO_ASCEND_WAVE } from '../data/prestige';
 import { AudioManager } from '../systems/AudioManager';
@@ -33,11 +44,34 @@ import { PassiveAbilityManager } from '../systems/PassiveAbilityManager';
 import { EquipmentManager } from '../systems/EquipmentManager';
 import { formatInt } from '../utils/bigNumber';
 import { setStyle, toggleClass } from '../utils/dom';
-import { pickRandomModifiers, snapshotFromDef } from '../data/waveModifiers';
+import {
+  pickRandomModifiers,
+  snapshotFromDef,
+  MUTATOR_DURATION_WAVES,
+  waveModifierRewardMultiplier,
+} from '../data/waveModifiers';
 import { TALENT_STATS, type TalentStat } from '../data/talentTree';
+import { PASSIVE_STATS, type PassiveStat } from '../data/passiveAbilities';
+import { ACHIEVEMENT_REWARD_CONSUMERS, type AchievementRewardType } from '../data/achievements';
+import { EVOLUTION_EFFECT_IDS, type EvolutionEffectId } from '../data/upgrades';
+import { EQUIPMENT_STAT_TYPES } from '../data/equipment';
+import {
+  BuffRegistry,
+  goldSourceEntries,
+  resolveStats,
+  type ResolvedStats,
+  type StatContext,
+} from '../stats';
 import { WaveModifierModal } from '../ui/WaveModifierModal';
 
-const BASE_MANA_REGEN = 1;
+/** Multiplier a gold-luck proc pays out at. */
+const GOLD_LUCK_MULTIPLIER = 3;
+/** Fire-rate multiplier while the player holds the mouse to aim manually. */
+const MANUAL_AIM_FIRE_RATE = 1.3;
+/** Fire-rate multiplier granted by a quick-shot proc. */
+const QUICK_SHOT_FIRE_RATE = 2;
+const BUFF_MANUAL_AIM = 'tower:manualAim';
+const BUFF_QUICK_SHOT = 'tower:quickShot';
 /**
  * Minimum away-time before the Welcome Back report is shown. Offline progress
  * is still applied below this, it just doesn't warrant a modal — otherwise
@@ -76,6 +110,9 @@ function makeInitialState(): GameState {
       autoTranscend: false,
     },
     targetAscendWave: DEFAULT_AUTO_ASCEND_WAVE,
+    autoCastEnabled: {},
+    autoBuyStrategy: 'balanced',
+    autoBuyReserve: 0,
   };
   const stats: GameStats = {
     enemiesKilled: 0,
@@ -114,7 +151,7 @@ function makeInitialState(): GameState {
       intermission: false,
       intermissionTimer: 0,
       autoProgress: true,
-      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null },
+      waveModifier: { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null, wavesRemaining: 0, wavesCleared: 0 },
       elapsed: 0,
       enrageStacks: 0,
     },
@@ -128,19 +165,6 @@ function makeInitialState(): GameState {
     equipment: [],
     equipped: {},
   };
-}
-
-/**
- * Values already computed by `applyUpgradeEffects` that some talents compose
- * with rather than overwrite.
- */
-interface TalentApplyContext {
-  /** Additive upgrade-cost discount from upgrades (a negative fraction). */
-  upgradeDiscount: number;
-  /** Ability mana-cost multiplier accumulated from research/prestige/upgrades. */
-  abilityCostMultiplier: number;
-  /** Armor penetration granted by upgrade evolutions. */
-  evolutionArmorPen: number;
 }
 
 export interface GameDeps {
@@ -177,6 +201,22 @@ export class Game {
   private readonly passiveMgr: PassiveAbilityManager;
   private readonly equipmentMgr: EquipmentManager;
   private readonly waveModModal: WaveModifierModal;
+  /**
+   * Every time-varying modifier in the game. Read by `buildStatContext`, so a
+   * buff composes with upgrades instead of racing them (plan §6).
+   */
+  private readonly buffs = new BuffRegistry();
+  /**
+   * The context behind the stats currently in effect. `computeStatsInfo`
+   * re-resolves *this* object to build its breakdown, which is what makes
+   * "displayed" and "applied" the same computation rather than two that agree
+   * by inspection.
+   */
+  private lastStatContext: StatContext | null = null;
+  /** The stat block currently written into the tower and its managers. */
+  private lastResolved: ResolvedStats | null = null;
+  /** `BuffRegistry.version` as of the last recompute. */
+  private appliedBuffVersion = -1;
 
   private lastTime = 0;
   private running = false;
@@ -236,6 +276,8 @@ export class Game {
    * stays on screen as a backdrop for the decision.
    */
   private runFailed = false;
+  /** Wave the stall prompt has already fired for, so it fires once per wave. */
+  private stalledWave = -1;
   private killStreak = 0;
   private manaFullGoldTimer = 0;
   private shotCounter = 0;
@@ -285,13 +327,12 @@ export class Game {
       const inner = s.currentRadius - 30; // damage band just inside the wave front
       const outer = s.currentRadius + 30;
       const innerSq = Math.max(0, inner) * Math.max(0, inner);
-      const outerSq = outer * outer;
-      for (const en of this.enemyMgr.list) {
-        if (!en.alive) continue;
+      // The grid narrows this to the outer disc; the inner cut-off still has
+      // to be applied by hand, since a ring is not a circle query.
+      for (const en of this.enemyMgr.queryRadius(s.x, s.y, outer)) {
         const dx = en.x - s.x;
         const dy = en.y - s.y;
-        const dSq = dx * dx + dy * dy;
-        if (dSq >= innerSq && dSq <= outerSq) {
+        if (dx * dx + dy * dy >= innerSq) {
           this.enemyMgr.damage(en, s.damage, false);
         }
       }
@@ -303,6 +344,7 @@ export class Game {
       tower: this.tower,
       bus: this.bus,
       projectileManager: this.projectileMgr,
+      buffs: this.buffs,
       getState: (id) => this.state.abilities[id],
       onCast: () => {
         this.state.stats.abilitiesCast += 1;
@@ -335,6 +377,8 @@ export class Game {
     this.talentMgr = new TalentManager(this.state.talents, this.bus, {
       towerXpUnspentPoints: () => this.state.towerXp.unspentTalentPoints,
       spendTalentPoint: () => this.towerXpMgr.spendTalentPoint(),
+      grantTalentPoint: () => this.towerXpMgr.grantTalentPoint(),
+      spendGold: (amount) => this.resourceMgr.spendGold(amount),
     });
     this.passiveMgr = new PassiveAbilityManager(this.state.passiveAbilities, this.bus);
     this.passiveMgr.ensureInitialized();
@@ -375,20 +419,30 @@ export class Game {
         const splashFraction = this.prestigeMgr.getAoESplashFraction();
         const splashDamage = Math.max(1, Math.floor(p.amount * splashFraction));
         const splashRadius = 60;
-        for (const e of this.enemyMgr.list) {
-          if (!e.alive || e.id === p.enemy.id) continue;
-          const dx = e.x - p.enemy.x;
-          const dy = e.y - p.enemy.y;
-          if (dx * dx + dy * dy <= splashRadius * splashRadius) {
-            this.enemyMgr.damage(e, splashDamage, false);
-          }
+        for (const e of this.enemyMgr.queryRadius(p.enemy.x, p.enemy.y, splashRadius)) {
+          if (e.id === p.enemy.id) continue;
+          this.enemyMgr.damage(e, splashDamage, false);
         }
       }
     });
     this.bus.on('enemy_killed', (enemy) => {
-      const e = enemy as { x: number; y: number; type: string; maxHp?: number; isSplitChild?: boolean; goldValue?: number };
+      const e = enemy as { x: number; y: number; type: string; maxHp?: number; isSplitChild?: boolean; goldValue?: number; elite?: boolean };
       const def = ENEMY_DEFS[e.type as keyof typeof ENEMY_DEFS];
       this.state.stats.enemiesKilled += 1;
+      // Plan §3.4: an elite kill is worth showing up for — the gold multiplier
+      // and RP are handled in EnemyManager; the gear roll and the toast are
+      // here because they need the equipment manager and the notification bus.
+      if (e.elite) {
+        const eliteDrop = this.equipmentMgr.rollDrop(this.waveMgr.currentWave, 'elite');
+        if (eliteDrop) {
+          this.bus.emit('toast', {
+            kind: 'milestone',
+            text: `Elite dropped ${eliteDrop.rarity} gear!`,
+            life: 4,
+          });
+        }
+        this.effects.emitShockwaveRing(e.x, e.y, 120, 'rgba(255, 215, 0, 0.7)', 5, 0, 0, 'magic');
+      }
       if (e.type === 'boss') {
         this.state.stats.bossesKilled += 1;
         // P5: Multi-stage death shockwave — 3 cascading rings that each damage enemies once.
@@ -458,13 +512,8 @@ export class Game {
       if (chainAoE > 0 && e.maxHp) {
         const aoeDamage = Math.max(1, Math.floor(e.maxHp * chainAoE));
         const chainRadius = 70;
-        for (const target of this.enemyMgr.list) {
-          if (!target.alive) continue;
-          const dx = target.x - e.x;
-          const dy = target.y - e.y;
-          if (dx * dx + dy * dy <= chainRadius * chainRadius) {
-            this.enemyMgr.damage(target, aoeDamage, false);
-          }
+        for (const target of this.enemyMgr.queryRadius(e.x, e.y, chainRadius)) {
+          this.enemyMgr.damage(target, aoeDamage, false);
         }
         this.effects.emitShockwaveRing(e.x, e.y, chainRadius);
       }
@@ -590,7 +639,23 @@ export class Game {
         this.restartCurrentWave();
       }
     });
+    // Plan §4.3: enrage already ends a stalled run eventually, but the player
+    // deserves to be told the moment the wall is reached rather than watching
+    // an unwinnable wave grind out. Only prompt once per wave, and only when
+    // ascending is actually an option.
+    this.bus.on('wave_enraged', (payload: unknown) => {
+      const p = payload as { wave: number; stacks: number };
+      if (p.stacks < 1) return;
+      if (this.stalledWave === p.wave) return;
+      if (!this.prestigeMgr.canAscend(this.state.wave.highestWave)) return;
+      this.stalledWave = p.wave;
+      this.bus.emit('run_stalled', {
+        wave: p.wave,
+        apPreview: this.prestigeMgr.previewAP(this.state.wave.highestWave),
+      });
+    });
     this.bus.on('wave_started', (wave: unknown) => {
+      this.stalledWave = -1;
       const ts = this.tower.snapshot;
       if (ts.wallMaxHp > 0) {
         ts.wallHp = ts.wallMaxHp;
@@ -620,12 +685,17 @@ export class Game {
     this.bus.on('wave_cleared', (wave: unknown) => {
       const cleared = wave as number;
       const wms = this.state.wave.waveModifier;
-      if (wms.active && wms.pendingChoiceForWave === cleared) {
+      // Plan §3.3: a mutator now spans MUTATOR_DURATION_WAVES waves and pays
+      // out after each of them, with the reward escalating each time — so
+      // surviving the third wave under Fortress is worth twice the first.
+      if (wms.active && wms.wavesRemaining > 0 && wms.pendingChoiceForWave !== null
+        && cleared >= wms.pendingChoiceForWave) {
+        const escalation = waveModifierRewardMultiplier(wms.wavesCleared);
         const goldMult = wms.active.reward.gold;
         if (goldMult > 0 && wms.goldSnapshot != null) {
           const waveGold = this.state.stats.goldEarned - wms.goldSnapshot;
           if (waveGold > 0) {
-            const bonus = Math.floor(waveGold * goldMult);
+            const bonus = Math.floor(waveGold * goldMult * escalation);
             if (bonus > 0) {
               this.state.resources.gold += bonus;
               this.state.resources.lifetimeGold += bonus;
@@ -634,17 +704,40 @@ export class Game {
             }
           }
         }
-        if (wms.active.reward.ap > 0) {
-          this.state.resources.ascensionPoints += wms.active.reward.ap;
-          this.state.resources.apThisTranscendence += wms.active.reward.ap;
-          this.state.resources.lifetimeAP += wms.active.reward.ap;
+        const apReward = Math.floor(wms.active.reward.ap * escalation);
+        if (apReward > 0) {
+          this.state.resources.ascensionPoints += apReward;
+          this.state.resources.apThisTranscendence += apReward;
+          this.state.resources.lifetimeAP += apReward;
         }
-        if (wms.active.reward.tp > 0) {
-          this.state.resources.transcendencePoints += wms.active.reward.tp;
+        const tpReward = Math.floor(wms.active.reward.tp * escalation);
+        if (tpReward > 0) {
+          this.state.resources.transcendencePoints += tpReward;
         }
-        wms.active = null;
-        wms.pendingChoiceForWave = null;
-        wms.goldSnapshot = null;
+
+        wms.wavesCleared += 1;
+        wms.wavesRemaining -= 1;
+        if (wms.wavesRemaining <= 0) {
+          const name = wms.active.name;
+          wms.active = null;
+          wms.pendingChoiceForWave = null;
+          wms.goldSnapshot = null;
+          wms.wavesCleared = 0;
+          this.bus.emit('toast', {
+            kind: 'milestone',
+            text: `${name} survived — mutator ended.`,
+            life: 3.5,
+          });
+        } else {
+          // Fresh baseline so the next wave's gold reward measures that wave.
+          wms.goldSnapshot = this.state.stats.goldEarned;
+          this.bus.emit('toast', {
+            kind: 'info',
+            text: `${wms.active.name}: ${wms.wavesRemaining} wave${wms.wavesRemaining === 1 ? '' : 's'} left · next reward ×${waveModifierRewardMultiplier(wms.wavesCleared).toFixed(1)}`,
+            life: 3,
+          });
+        }
+        this.applyUpgradeEffects();
       }
       // Wave Mastery: flat gold on wave clear
       if (this.waveGoldBonus > 0) {
@@ -674,8 +767,17 @@ export class Game {
       this.state.wave.waveModifier.choiceForNextWave = choices.map(snapshotFromDef);
       this.state.wave.waveModifier.pendingChoiceForWave = w;
       this.waveMgr.pauseSpawning();
+      const projected: Record<string, { gold: number; ap: number; tp: number }> = {};
+      for (const snapshot of this.state.wave.waveModifier.choiceForNextWave) {
+        projected[snapshot.id] = this.projectWaveModifierReward(snapshot, w);
+      }
       this.waveModModal.show(
-        { wave: w, choices: this.state.wave.waveModifier.choiceForNextWave },
+        {
+          wave: w,
+          waves: MUTATOR_DURATION_WAVES,
+          choices: this.state.wave.waveModifier.choiceForNextWave,
+          projected,
+        },
         {
           onChoose: (snapshot: WaveModifierSnapshot) => {
             this.waveMgr.resumeSpawning();
@@ -690,8 +792,14 @@ export class Game {
     });
     this.bus.on('upgrades_changed', (levels: Record<string, number>) => {
       this.state.upgrades = { ...(levels as Record<string, number>) };
-      this.state.stats.totalUpgradesPurchased += 1;
       this.applyUpgradeEffects();
+    });
+    // The purchase counter belongs on the purchase event, not on
+    // `upgrades_changed` — the latter also fires on reset/load, and a bulk buy
+    // is worth every level it bought rather than one.
+    this.bus.on('upgrade_purchased', (payload: unknown) => {
+      const p = payload as { levelsGained?: number };
+      this.state.stats.totalUpgradesPurchased += Math.max(1, p.levelsGained ?? 1);
     });
     this.bus.on('upgrade_evolved', (payload: unknown) => {
       const p = payload as { id: string; level: number; evolution: { name: string; description: string } };
@@ -799,8 +907,12 @@ export class Game {
       }
     });
 
+    // Plan §5.7: these are frequent (a purchase, a wave start, an ability
+    // upgrade) and the state they change is not worth a synchronous
+    // `JSON.stringify` of the whole save each time. Mark it dirty and let
+    // `SaveManager.tick` coalesce; the tab-hidden handler flushes immediately.
     const saveOnEvent = () => {
-      this.saveMgr.save(this.state);
+      this.saveMgr.requestSave();
     };
     this.bus.on('upgrade_purchased', saveOnEvent);
     this.bus.on('ap_spent', saveOnEvent);
@@ -814,6 +926,19 @@ export class Game {
     this.bindVisibilityEvents();
   }
 
+  /**
+   * Move the run to the wave the offline walk ended on (plan §4.4).
+   *
+   * `WaveManager.startAtWave` replaces its wave state wholesale, so the
+   * snapshot has to be re-bound afterwards — the same handshake the
+   * head-start path uses.
+   */
+  private applyOfflineWave(endWave: number): void {
+    if (endWave <= this.state.wave.number) return;
+    this.waveMgr.startAtWave(endWave);
+    this.state.wave = this.waveMgr.snapshot;
+  }
+
   private bindVisibilityEvents(): void {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
@@ -822,10 +947,11 @@ export class Game {
       } else {
         const persisted = this.saveMgr.load();
         if (persisted) {
-          const result = this.saveMgr.computeOfflineProgress(persisted);
+          const result = this.saveMgr.computeOfflineProgress(persisted, this.computeGoldMultiplier());
           if (result.elapsedSeconds > 0) {
             const startWave = this.state.wave.number;
             this.saveMgr.applyOfflineProgress(this.state, result);
+            this.applyOfflineWave(result.endWave);
             if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
             if (this.researchTree.advanceResearch(result.researchElapsed)) {
               this.state.research = this.researchTree.getLevelsSnapshot();
@@ -1070,7 +1196,7 @@ export class Game {
     this.syncUiApis();
     this.bus.emit('toast', {
       kind: 'milestone',
-      text: `Transcendence! +${tp} TP. Everything resets. New power awaits.`,
+      text: `Transcendence! +${tp} TP. Gear, passives and talents carry over.`,
       life: 7,
     });
     this.bus.emit('run_ended', { record, previous: this.getPreviousRun() });
@@ -1119,6 +1245,33 @@ export class Game {
     const ok = this.prestigeMgr.setAutomationEnabled(key, enabled);
     if (ok) this.syncUiApis();
     return ok;
+  }
+
+  /**
+   * Plan §3.1: opt an ability out of auto-cast. Stored as an explicit `false`
+   * so an unseen key keeps meaning "auto-cast this".
+   */
+  setAutoCastEnabled(id: AbilityId, enabled: boolean): void {
+    if (enabled) {
+      delete this.state.prestige.autoCastEnabled[id];
+    } else {
+      this.state.prestige.autoCastEnabled[id] = false;
+    }
+    this.syncUiApis();
+  }
+
+  /** Plan §3.6: which upgrades auto-buy reaches for first. */
+  setAutoBuyStrategy(strategy: AutoBuyStrategy): void {
+    this.state.prestige.autoBuyStrategy = strategy;
+    // The panel reads its values from the pushed API snapshot, so a setter that
+    // does not re-push leaves the control showing the old choice.
+    this.syncUiApis();
+  }
+
+  /** Plan §3.6: fraction of gold auto-buy will not spend (0-0.9). */
+  setAutoBuyReserve(fraction: number): void {
+    this.state.prestige.autoBuyReserve = Math.max(0, Math.min(0.9, fraction));
+    this.syncUiApis();
   }
 
   setTargetAscendWave(wave: number): void {
@@ -1250,10 +1403,11 @@ export class Game {
     if (!persisted) return null;
     this.saveLoaded = true;
     this.applyPersistedState(persisted);
-    const result = this.saveMgr.computeOfflineProgress(persisted);
+    const result = this.saveMgr.computeOfflineProgress(persisted, this.computeGoldMultiplier());
     if (result.elapsedSeconds > 0) {
       const startWave = this.state.wave.number;
       this.saveMgr.applyOfflineProgress(this.state, result);
+      this.applyOfflineWave(result.endWave);
       if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
       this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
       if (this.researchTree.advanceResearch(result.researchElapsed)) {
@@ -1412,60 +1566,37 @@ export class Game {
       + this.achievementMgr.getRewardMultiplier('rp_gain_mult');
   }
 
+  /**
+   * The composed gold multiplier currently in effect — the exact number
+   * `EnemyManager` is multiplying drops by, not a second computation of it.
+   */
   private computeGoldMultiplier(): number {
-    const apGold = this.prestigeMgr.getLifetimeAPBonus().gold
-      + this.prestigeMgr.getAPGoldBonus();
-    const tpResource = this.prestigeMgr.getTPResourceMultiplicative();
-    const researchGoldMulti = this.researchTree.getGoldMultiplicative();
+    return this.lastResolved?.goldMultiplier ?? 1;
+  }
 
-    let goldAdditive = 0;
-    for (const u of UPGRADES) {
-      if (u.id === 'goldMulti') {
-        const level = this.upgradeMgr.getLevel(u.id);
-        if (level > 0) goldAdditive = computeUpgradeValue(u, level);
-        break;
-      }
-    }
-
-    // Evolution: Dragon's Hoard — +gold% per wave survived this run.
-    if (this.upgradeMgr.hasEvolutionEffect('wave_gold_scaling')) {
-      const perWave = this.upgradeMgr.getEvolutionEffectValue('wave_gold_scaling');
-      goldAdditive += perWave * Math.max(0, this.waveMgr.currentWave - 1);
-    }
-
-    // Wave modifier (only while its wave is the active one).
-    const activeMod = this.state.wave.waveModifier.active;
-    if (activeMod && this.state.wave.waveModifier.pendingChoiceForWave === this.waveMgr.currentWave) {
-      goldAdditive += activeMod.effects.goldAdditive;
-    }
-
-    let multiplier = 1 + (goldAdditive + apGold) * researchGoldMulti * tpResource;
-
-    const achGold = this.achievementMgr.getRewardMultiplier('gold_mult')
-      + this.achievementMgr.getRewardMultiplier('all_stats');
-    if (achGold > 0) multiplier *= 1 + achGold;
-
-    const talentGold = this.talentMgr.getEffectValue('gold_mult_pct');
-    if (talentGold > 0) multiplier *= 1 + talentGold;
-
-    const passiveGold = this.passiveMgr.getEffectValue('gold_mult_pct');
-    if (passiveGold > 0) multiplier *= 1 + passiveGold / 100;
-
-    const equipGold = this.equipmentMgr.getEquippedBonuses()['gold_mult_pct'] ?? 0;
-    if (equipGold > 0) multiplier *= 1 + equipGold / 100;
-
-    return multiplier;
+  /**
+   * The same multiplier plus its per-source attribution (plan §4.2).
+   *
+   * Built by re-resolving the *same context* the applied stats came from, with
+   * breakdown collection turned on. There is no second formula to drift, so a
+   * tooltip that disagrees with the applied number is not expressible.
+   */
+  private computeGoldBreakdown(): { multiplier: number; sources: GoldSourceEntry[] } {
+    const ctx = this.lastStatContext;
+    if (!ctx) return { multiplier: 1, sources: [] };
+    const { stats, breakdown } = resolveStats(ctx, { breakdown: true });
+    return { multiplier: stats.goldMultiplier, sources: goldSourceEntries(breakdown) };
   }
 
   private computeStatsInfo(): StatsInfo {
     const t = this.tower.snapshot;
     const r = this.state.resources;
-    const totalGoldMulti = this.computeGoldMultiplier();
+    const gold = this.computeGoldBreakdown();
     const effectiveCritChance = this.tower.effectiveCritChance;
     const effectiveCritDamage = this.tower.effectiveCritMultiplier;
     const effectiveLs = this.tower.effectiveLifesteal;
     const expectedHit = t.baseDamage * (1 + effectiveCritChance * (effectiveCritDamage - 1));
-    const dps = expectedHit * t.fireRate * this.tower.fireRateMultiplierValue;
+    const dps = expectedHit * t.fireRate;
     return {
       damage: t.baseDamage,
       dps,
@@ -1482,7 +1613,8 @@ export class Game {
       thorns: t.thorns,
       manaRegen: r.manaRegen,
       maxMana: r.maxMana,
-      goldMultiplier: totalGoldMulti,
+      goldMultiplier: gold.multiplier,
+      goldSources: gold.sources,
       rpGainRate: this.researchTree.getPassiveRPRate(
         this.state.stats.lifetimeHighestWave,
         this.rpGainMultiplier(),
@@ -1502,9 +1634,14 @@ export class Game {
       isAutomationEnabled: (key) => this.prestigeMgr.getAutomationEnabled(key),
       meetsPrerequisites: (perkId) => this.prestigeMgr.meetsPrerequisites(perkId),
       isExcluded: (perkId) => this.prestigeMgr.isExcluded(perkId),
+      perkBlockedReason: (perkId) => this.prestigeMgr.perkBlockedReason(perkId),
       ascendUnlockWave: this.prestigeMgr.ascensionUnlockWave(),
       transcendUnlockAP: this.prestigeMgr.transcendenceUnlockAP(),
       targetAscendWave: this.state.prestige.targetAscendWave,
+      autoBuyStrategy: this.state.prestige.autoBuyStrategy,
+      autoBuyReserve: this.state.prestige.autoBuyReserve,
+      setAutoBuyStrategy: (strategy) => this.setAutoBuyStrategy(strategy),
+      setAutoBuyReserve: (fraction) => this.setAutoBuyReserve(fraction),
     });
     this.ui.setResearchAPI({
       rp: this.researchTree.rp,
@@ -1537,6 +1674,9 @@ export class Game {
       getUpgradeCost: (id) => this.abilityMgr.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityMgr.getEffectiveStats(id),
       getXp: (id) => this.abilityMgr.getXp(id),
+      isAutoCastUnlocked: () => this.prestigeMgr.isAutomationUnlocked('autoAbilities'),
+      isAutoCastEnabled: (id) => this.state.prestige.autoCastEnabled[id] !== false,
+      onToggleAutoCast: (id, enabled) => this.setAutoCastEnabled(id, enabled),
     });
     this.ui.setTalentAPI({
       allocated: this.state.talents.allocated,
@@ -1544,6 +1684,10 @@ export class Game {
       canAllocate: (id) => this.talentMgr.canAllocate(id),
       allocate: (id) => this.talentMgr.allocate(id),
       refundBranch: (branch) => this.talentMgr.refundBranch(branch),
+      refundAll: () => this.talentMgr.refundAll(),
+      branchRespecCost: (branch) => this.talentMgr.branchRespecCost(branch),
+      fullRespecCost: () => this.talentMgr.fullRespecCost(),
+      gold: () => this.state.resources.gold,
     });
     this.ui.setPassiveAPI({
       getLevel: (id) => this.passiveMgr.getLevel(id),
@@ -1587,439 +1731,256 @@ export class Game {
     delete levels['shockwaveCooldown'];
   }
 
+  /**
+   * Recompute every stat from scratch and write the result.
+   *
+   * This is the only path in the game that may change a tower stat. It
+   * snapshots each system's contribution into an immutable `StatContext`, runs
+   * the single composition pass in `resolveStats`, and writes the result out.
+   * Because no system touches `TowerState` itself, the order they contribute
+   * in cannot change the answer — which is what the old 300-line version got
+   * wrong six different ways (plan §1.1, §1.2, §6).
+   */
   private applyUpgradeEffects(): void {
-    const t = this.tower.snapshot;
-    t.baseDamage = TOWER_BASE.baseDamage;
-    t.fireRate = TOWER_BASE.fireRate;
-    t.range = TOWER_BASE.range;
-    t.critChance = TOWER_BASE.critChance;
-    t.critMultiplier = TOWER_BASE.critMultiplier;
-    const oldMaxHp = t.maxHp;
-    const oldHp = t.hp;
-    t.maxHp = TOWER_BASE.maxHp;
-    t.healthRegen = 0;
-    t.defense = 0;
-    t.armor = 0;
-    t.knockbackForce = 0;
-    t.lifesteal = 0;
-    t.thorns = 0;
-    t.shockwaveSize = 0;
-    t.shockwaveCooldown = 0;
-    t.landMineDamage = 0;
-    t.landMineFrequency = 0;
-    t.shieldMaxCharges = 0;
-    t.shieldRechargeTime = 0;
-    t.doubleShotChance = 0;
-    t.quickShotChance = 0;
-    t.quickShotTime = 0;
-    let manaRegenAdd = 0;
-    let goldAdditive = 0;
-    let healthValue = 0;
-    let maxManaAdd = 0;
-    let xpGainAdd = 0;
-    let abilityCostReductionAdd = 0;
-    let upgradeDiscountAdd = 0;
-    let waveGoldAdd = 0;
-    let goldOnKillAdd = 0;
-    let critGoldAdd = 0;
-
-    for (const u of UPGRADES) {
-      const level = this.upgradeMgr.getLevel(u.id);
-      if (level <= 0) continue;
-      const total = computeUpgradeValue(u, level);
-      switch (u.id) {
-        case 'damage': t.baseDamage += total; break;
-        case 'fireRate': {
-          t.fireRate += total;
-          break;
-        }
-        case 'range': t.range += total; break;
-        case 'critChance': t.critChance = Math.min(1, t.critChance + total); break;
-        case 'critDamage': t.critMultiplier += total; break;
-        case 'manaRegen': manaRegenAdd += total; break;
-        case 'goldMulti': goldAdditive += total; break;
-        case 'health': healthValue += total; break;
-        case 'healthRegen': t.healthRegen = total; break;
-        case 'defense': t.defense = total; break;
-        case 'armor': t.armor = total; break;
-        case 'lifesteal': t.lifesteal = total; break;
-        case 'thorns': t.thorns = total; break;
-        case 'shockwave': {
-          const lvl = total;
-          t.shockwaveSize = 110 + (lvl - 1) * 5;
-          t.shockwaveCooldown = total;
-          break;
-        }
-        case 'landMines': {
-          t.landMineDamage = total;
-          t.landMineFrequency = Math.max(5, 15 - level / 10);
-          break;
-        }
-        case 'defenseShield': {
-          const oldMax = t.shieldMaxCharges;
-          t.shieldRechargeTime = total;
-          t.shieldMaxCharges = Math.min(5, Math.ceil(level / 11));
-          if (t.shieldMaxCharges > oldMax) {
-            t.shieldCurrentCharges += t.shieldMaxCharges - oldMax;
-          }
-          t.shieldCurrentCharges = Math.min(t.shieldCurrentCharges, t.shieldMaxCharges);
-          break;
-        }
-        case 'maxMana': maxManaAdd += total; break;
-        case 'xpGain': xpGainAdd += total; break;
-        case 'abilityCostReduction': abilityCostReductionAdd += total; break;
-        case 'upgradeDiscount': upgradeDiscountAdd += total; break;
-        case 'waveGold': waveGoldAdd += total; break;
-        case 'goldOnKill': goldOnKillAdd += total; break;
-        case 'critGold': critGoldAdd += total; break;
-        case 'doubleShotChance': t.doubleShotChance = total; break;
-        case 'quickShotChance': t.quickShotChance = total; break;
-        case 'quickShotTime': t.quickShotTime = total; break;
-      }
-    }
-
-    t.maxHp = TOWER_BASE.maxHp + healthValue;
-    if (oldMaxHp === 0 && t.maxHp > 0) {
-      t.hp = t.maxHp;
-    } else if (oldMaxHp > 0 && t.maxHp > oldMaxHp && oldHp > 0) {
-      const heal = (t.maxHp - oldMaxHp) * (oldHp / oldMaxHp);
-      t.hp = Math.min(t.maxHp, oldHp + heal);
-    } else if (t.hp > t.maxHp) {
-      t.hp = t.maxHp;
-    }
-
-    const wallLevel = this.upgradeMgr.getLevel('wall');
-    if (wallLevel > 0) {
-      const wallDef = UPGRADES.find(u => u.id === 'wall')!;
-      const wallFraction = computeUpgradeValue(wallDef, wallLevel);
-      const oldWallMax = t.wallMaxHp;
-      const newWallMax = Math.max(1, Math.floor(t.maxHp * wallFraction));
-      if (oldWallMax <= 0) {
-        t.wallHp = newWallMax;
-      } else if (newWallMax > oldWallMax && t.wallHp > 0) {
-        t.wallHp = Math.min(newWallMax, t.wallHp + Math.floor((newWallMax - oldWallMax) * (t.wallHp / oldWallMax)));
-      } else if (t.wallHp > newWallMax) {
-        t.wallHp = newWallMax;
-      }
-      t.wallMaxHp = newWallMax;
-    } else {
-      t.wallHp = 0;
-      t.wallMaxHp = 0;
-    }
-    this.enemyMgr.setWallContactExtra(wallLevel > 0 ? 36 : 0);
-
-    const lifetimeBonus = this.prestigeMgr.getLifetimeAPBonus();
-    // Lifetime AP (passive, diminishing) and spent AP (chosen, unbounded) are
-    // separate contributors and stack additively within the ascension layer.
-    const apDamage = lifetimeBonus.damage + this.prestigeMgr.getAPDamageBonus();
-    const tpDamage = this.prestigeMgr.getTPDamageMultiplicative();
-    const tpFireRate = this.prestigeMgr.getTPFireRateMultiplier();
-    const tpCritDamage = this.prestigeMgr.getTPCritDamageBonus();
-    const tpManaRegen = this.prestigeMgr.getTPManaRegenMultiplier();
-    const researchManaMulti = this.researchTree.getManaRegenMultiplicative();
-    const researchCostReduction = this.researchTree.getAbilityCostReduction();
-
-    t.baseDamage = t.baseDamage * (1 + apDamage) * tpDamage;
-    t.baseDamage = Math.max(1, t.baseDamage);
-    t.fireRate = t.fireRate * tpFireRate;
-    t.critMultiplier = t.critMultiplier + tpCritDamage;
-    this.state.resources.manaRegen = (BASE_MANA_REGEN + manaRegenAdd) * researchManaMulti * tpManaRegen;
-    this.state.resources.maxMana = 100 + maxManaAdd;
-    // Gold is composed in one place (see computeGoldMultiplier) and written
-    // once, at the end of this method.
-    const totalAbilityCostReduction = Math.max(-0.9, researchCostReduction + this.prestigeMgr.getAbilityManaCostReduction() + abilityCostReductionAdd);
-    this.abilityMgr.setAbilityCostMultiplier(1 + totalAbilityCostReduction);
-    this.abilityMgr.setCooldownMultiplier(1 - this.prestigeMgr.getAbilityCDR());
-    this.projectileMgr.setDamageMultipliers(0, 1);
-    this.projectileMgr.setPierceExtra(this.researchTree.getPierceCount() + this.prestigeMgr.getTPPierceBonus());
-    this.enemyMgr.setGoldLuck(this.researchTree.getGoldLuckChance() + this.prestigeMgr.getTreasureChance(), 3);
-    this.towerXpMgr.setXpGainMultiplier(1 + xpGainAdd);
-    const achCostReduction = this.achievementMgr.getRewardMultiplier('upgrade_cost_reduction');
-    upgradeDiscountAdd -= achCostReduction;
-    this.upgradeMgr.setCostDiscount(upgradeDiscountAdd);
-    this.enemyMgr.setGoldOnKillBonus(goldOnKillAdd);
-    this.enemyMgr.setCritGoldBonus(critGoldAdd);
-    this.waveGoldBonus = waveGoldAdd;
-    if (this.prestigeMgr.hasExecuteDamage()) {
-      this.projectileMgr.setExecuteBonus(0.25, this.prestigeMgr.getExecuteDamageMultiplier());
-    } else {
-      this.projectileMgr.setExecuteBonus(0, 0);
-    }
-
-    // Evolution effects
-    const armorPen = this.upgradeMgr.getEvolutionEffectValue('armor_pen');
-    if (armorPen > 0) this.projectileMgr.setArmorPen(armorPen);
-    else this.projectileMgr.setArmorPen(0);
-
-    if (this.upgradeMgr.hasEvolutionEffect('shield_fast_recharge')) {
-      const bonus = this.upgradeMgr.getEvolutionEffectValue('shield_fast_recharge');
-      t.shieldRechargeTime = Math.max(3, t.shieldRechargeTime * (1 - bonus));
-    }
-
-    if (this.upgradeMgr.hasEvolutionEffect('hp_threshold_damage') && t.hp / t.maxHp > 0.8) {
-      const bonus = this.upgradeMgr.getEvolutionEffectValue('hp_threshold_damage');
-      t.baseDamage *= 1 + bonus;
-    }
-
-    this.projectileMgr.setEvolutionCombatEffects(
-      this.upgradeMgr.getEvolutionEffectValue('instant_kill'),
-      this.upgradeMgr.getEvolutionEffectValue('crit_splash'),
-      this.upgradeMgr.hasEvolutionEffect('crit_ignore_armor'),
-    );
-
-    // Evolution: berserk_fire_bonus — extra fire rate during Berserk
-    this.abilityMgr.setBerserkFireBonus(
-      this.upgradeMgr.getEvolutionEffectValue('berserk_fire_bonus'),
-    );
-
-    this.waveMgr.setWaveSkipChance(this.prestigeMgr.getWaveSkipChance());
-
-    // Research: Intermission speed
-    this.waveMgr.setIntermissionMultiplier(1 - this.researchTree.getIntermissionSpeedReduction());
-
-    // Research: Enemy HP reduction
-    this.enemyMgr.setHPReduction(this.researchTree.getEnemyHPReduction());
-
-    // Research: Ability power
-    this.abilityMgr.setDamageMultiplier(1 + this.researchTree.getAbilityPowerBonus());
-
-    // Research: RP drop chance bonus
-    this.enemyMgr.setRPDropChanceBonus(this.researchTree.getRPDropChanceBonus());
-
-    // Achievement rewards
-    const achDmg = this.achievementMgr.getRewardMultiplier('damage_mult') + this.achievementMgr.getRewardMultiplier('all_damage') + this.achievementMgr.getRewardMultiplier('all_stats');
-    if (achDmg > 0) t.baseDamage *= 1 + achDmg;
-    const achFR = this.achievementMgr.getRewardMultiplier('fire_rate_mult') + this.achievementMgr.getRewardMultiplier('all_stats');
-    if (achFR > 0) t.fireRate *= 1 + achFR;
-    const achHP = this.achievementMgr.getRewardMultiplier('max_hp_mult');
-    if (achHP > 0) {
-      t.maxHp *= 1 + achHP;
-      if (t.hp > t.maxHp) t.hp = t.maxHp;
-    }
-    const achCDR = this.achievementMgr.getRewardMultiplier('ability_cdr');
-    if (achCDR > 0) {
-      this.abilityMgr.setCooldownMultiplier((1 - this.prestigeMgr.getAbilityCDR()) * (1 - achCDR));
-    }
-
-    // Wave modifier: playerDamageMult applies on top of everything above.
-    // (Its goldAdditive is folded into computeGoldMultiplier.)
-    const activeMod = this.state.wave.waveModifier.active;
-    if (activeMod && this.state.wave.waveModifier.pendingChoiceForWave === this.waveMgr.currentWave) {
-      if (activeMod.effects.playerDamageMult !== 1) {
-        t.baseDamage = Math.max(1, t.baseDamage * activeMod.effects.playerDamageMult);
-      }
-    }
-
-    // Talent bonuses
-    this.applyTalentEffects(t, {
-      upgradeDiscount: upgradeDiscountAdd,
-      abilityCostMultiplier: 1 + totalAbilityCostReduction,
-      evolutionArmorPen: armorPen,
-    });
-
-    // Passive ability bonuses
-    const pDmg = this.passiveMgr.getEffectValue('damage_pct');
-    if (pDmg > 0) t.baseDamage *= 1 + pDmg / 100;
-    const pMaxHp = this.passiveMgr.getEffectValue('max_hp_pct');
-    if (pMaxHp > 0) {
-      const oldMaxHpP = t.maxHp;
-      t.maxHp *= 1 + pMaxHp / 100;
-      if (t.hp === oldMaxHpP) t.hp = t.maxHp;
-    }
-    const pManaRegen = this.passiveMgr.getEffectValue('mana_regen_pct');
-    if (pManaRegen > 0) {
-      this.state.resources.manaRegen *= 1 + pManaRegen / 100;
-    }
-    const pThorns = this.passiveMgr.getEffectValue('thorns_pct');
-    if (pThorns > 0) t.thorns += pThorns;
-    const pCritChance = this.passiveMgr.getEffectValue('crit_chance_pct');
-    if (pCritChance > 0) t.critChance = Math.min(1, t.critChance + pCritChance / 100);
-    const pFireRate = this.passiveMgr.getEffectValue('fire_rate_pct');
-    if (pFireRate > 0) t.fireRate *= 1 + pFireRate / 100;
-    const pLifesteal = this.passiveMgr.getEffectValue('lifesteal_pct');
-    if (pLifesteal > 0) t.lifesteal += pLifesteal;
-
-    // Equipment bonuses
-    const eqBonuses = this.equipmentMgr.getEquippedBonuses();
-    const applyEq = (stat: string, pct: number | undefined) => {
-      if (!pct || pct <= 0) return;
-      switch (stat) {
-        case 'damage_pct': t.baseDamage *= 1 + pct / 100; break;
-        case 'fire_rate_pct': t.fireRate *= 1 + pct / 100; break;
-        case 'crit_chance_pct': t.critChance = Math.min(1, t.critChance * (1 + pct / 100)); break;
-        case 'crit_damage_pct': t.critMultiplier *= 1 + pct / 100; break;
-        case 'range_pct': t.range *= 1 + pct / 100; break;
-        case 'max_hp_pct': {
-          const oldMax = t.maxHp;
-          t.maxHp *= 1 + pct / 100;
-          if (t.hp === oldMax) t.hp = t.maxHp;
-          break;
-        }
-        case 'defense_pct': t.defense *= 1 + pct / 100; break;
-        case 'armor_pct': t.armor *= 1 + pct / 100; break;
-        case 'mana_regen_pct': this.state.resources.manaRegen *= 1 + pct / 100; break;
-        case 'lifesteal_pct': t.lifesteal *= 1 + pct / 100; break;
-        case 'thorns_pct': t.thorns *= 1 + pct / 100; break;
-        case 'knockback_pct': t.knockbackForce *= 1 + pct / 100; break;
-        case 'all_damage_pct': t.baseDamage *= 1 + pct / 100; break;
-      }
-    };
-    for (const [stat, val] of Object.entries(eqBonuses)) {
-      applyEq(stat, val as number | undefined);
-    }
-
-    // Single composed writes, after every contributor has had its say —
-    // pushing these mid-way through the recompute is what previously dropped
-    // the talent/passive/equipment portion of each stat.
-    this.enemyMgr.setGoldMultiplier(this.computeGoldMultiplier());
-    this.enemyMgr.setThorns(t.thorns);
-
+    const ctx = this.buildStatContext();
+    const { stats } = resolveStats(ctx);
+    this.lastStatContext = ctx;
+    this.lastResolved = stats;
+    this.appliedBuffVersion = this.buffs.version;
+    this.applyResolvedStats(stats);
     this.state.research = this.researchTree.getLevelsSnapshot();
   }
 
   /**
-   * Apply every allocated talent. Called once per stat recompute, for *all*
-   * stats — including those with zero points — so that each case can plainly
-   * set its target rather than having to be reset elsewhere.
+   * Recompute only if a buff has started or expired since the last pass. Called
+   * once per simulation substep, so a buff edge costs one resolve rather than a
+   * resolve every frame.
    */
-  private applyTalentEffects(t: TowerState, ctx: TalentApplyContext): void {
-    const values = this.talentMgr.getAllEffectValues();
-    for (const stat of TALENT_STATS) {
-      this.applyTalentEffect(stat, values.get(stat) ?? 0, t, ctx);
-    }
+  private refreshBuffedStats(): void {
+    if (this.buffs.version === this.appliedBuffVersion) return;
+    this.applyUpgradeEffects();
   }
 
   /**
-   * One talent stat → its effect. The `never` default makes adding a stat to
-   * `TALENT_STATS` without a consumer here a compile error, which is what
-   * previously let 20 talents ship doing nothing.
+   * Snapshot every contributor into the pipeline's input.
+   *
+   * Nothing here computes: each field is one system's own answer about its own
+   * contribution. Composition happens exactly once, in `resolveStats`.
    */
-  private applyTalentEffect(stat: TalentStat, value: number, t: TowerState, ctx: TalentApplyContext): void {
-    switch (stat) {
-      // ── offense ──
-      case 'base_damage_pct':
-      case 'all_damage_pct':
-      case 'magic_damage_pct':
-      case 'all_magic_pct':
-        if (value !== 0) t.baseDamage = Math.max(1, t.baseDamage * (1 + value));
-        break;
-      case 'fire_rate_pct':
-        if (value !== 0) t.fireRate = Math.max(0.01, t.fireRate * (1 + value));
-        break;
-      case 'crit_chance_pct':
-        if (value !== 0) t.critChance = Math.min(1, Math.max(0, t.critChance + value));
-        break;
-      case 'crit_damage_pct':
-        if (value !== 0) t.critMultiplier += value;
-        break;
-      case 'range_pct':
-        if (value !== 0) t.range *= 1 + value;
-        break;
-      case 'armor_penetration_pct':
-        this.projectileMgr.setArmorPen(ctx.evolutionArmorPen + value);
-        break;
-      case 'execution_damage_pct':
-        this.projectileMgr.setTalentExecuteBonus(value);
-        break;
-      case 'extra_projectile_chance':
-        this.talentExtraProjectileChance = value;
-        break;
+  private buildStatContext(): StatContext {
+    const t = this.tower.snapshot;
 
-      // ── defense ──
-      case 'max_hp_pct':
-        if (value !== 0) {
-          const oldMax = t.maxHp;
-          t.maxHp *= 1 + value;
-          if (t.hp === oldMax) t.hp = t.maxHp;
-          else if (t.hp > t.maxHp) t.hp = t.maxHp;
-        }
-        break;
-      case 'defense_pct':
-        if (value !== 0) t.defense *= 1 + value;
-        break;
-      case 'armor_pct':
-        if (value !== 0) t.armor *= 1 + value;
-        break;
-      case 'thorns_pct':
-        if (value !== 0) t.thorns *= 1 + value;
-        break;
-      case 'dodge_chance':
-        this.talentDodgeChance = Math.min(0.75, value);
-        break;
-      case 'wall_regen_pct':
-        this.talentWallRegen = value;
-        break;
-      case 'shield_charges':
-        // Only meaningful once the Defense Shield upgrade provides a recharge
-        // timer — otherwise the extra charges could never come back.
-        if (value > 0 && t.shieldRechargeTime > 0) {
-          t.shieldMaxCharges += Math.floor(value);
-          t.shieldCurrentCharges = Math.min(t.shieldMaxCharges, t.shieldCurrentCharges + Math.floor(value));
-        }
-        break;
-      case 'health_regen_pct':
-        if (value !== 0) t.healthRegen *= 1 + value;
-        break;
-
-      // ── utility ──
-      case 'gold_mult_pct':
-        // Folded into computeGoldMultiplier so every gold source composes.
-        break;
-      case 'mana_regen_pct':
-        if (value !== 0) this.state.resources.manaRegen *= 1 + value;
-        break;
-      case 'double_gold_chance':
-        this.enemyMgr.setDoubleGoldChance(value);
-        break;
-      case 'head_start_waves':
-        this.talentHeadStartWaves = Math.floor(value);
-        break;
-      case 'max_mana_flat':
-        if (value !== 0) this.state.resources.maxMana += value;
-        break;
-      case 'equipment_find_chance':
-        this.equipmentMgr.setFindChanceBonus(value);
-        break;
-      case 'auto_buy_speed_pct':
-        this.automation.setAutoBuyIntervalReduction(value);
-        break;
-      case 'upgrade_cost_reduction':
-        this.upgradeMgr.setCostDiscount(ctx.upgradeDiscount - value);
-        break;
-      case 'all_effects_pct':
-        // Mastery scales the other talents; applied in TalentManager.
-        break;
-
-      // ── magic ──
-      case 'mana_cost_reduction':
-        this.abilityMgr.setAbilityCostMultiplier(ctx.abilityCostMultiplier * (1 - value));
-        break;
-      case 'magic_proc_chance':
-        this.talentMagicProcChance = Math.min(1, value);
-        break;
-      case 'chain_bounce_count':
-        this.abilityMgr.setChainBounceBonus(value);
-        break;
-      case 'slow_effect_pct':
-        this.abilityMgr.setSlowStrengthBonus(value);
-        break;
-      case 'meteor_damage_pct':
-        this.abilityMgr.setMeteorDamageBonus(value);
-        break;
-      case 'buff_duration_pct':
-        this.abilityMgr.setBuffDurationBonus(value);
-        break;
-      case 'mana_shield_pct':
-        // "Convert 5% mana to HP per point": mana absorbs this fraction of
-        // incoming damage, 1 mana per 1 HP.
-        this.talentManaShieldFraction = Math.min(0.9, value / 100);
-        break;
-
-      default: {
-        const exhaustive: never = stat;
-        void exhaustive;
-      }
+    const evolutions: Partial<Record<EvolutionEffectId, number>> = {};
+    for (const id of EVOLUTION_EFFECT_IDS) {
+      // Presence-only evolutions (Crits Ignore Armor) carry no magnitude, so
+      // they contribute as 1 rather than dropping out as 0.
+      const value = this.upgradeMgr.getEvolutionEffectValue(id)
+        || (this.upgradeMgr.hasEvolutionEffect(id) ? 1 : 0);
+      if (value !== 0) evolutions[id] = value;
     }
+
+    const achievements: Partial<Record<AchievementRewardType, number>> = {};
+    for (const type of Object.keys(ACHIEVEMENT_REWARD_CONSUMERS) as AchievementRewardType[]) {
+      const value = this.achievementMgr.getRewardMultiplier(type);
+      if (value !== 0) achievements[type] = value;
+    }
+
+    const talentValues = this.talentMgr.getAllEffectValues();
+    const talents: Partial<Record<TalentStat, number>> = {};
+    for (const stat of TALENT_STATS) {
+      const value = talentValues.get(stat) ?? 0;
+      if (value !== 0) talents[stat] = value;
+    }
+
+    const passives: Partial<Record<PassiveStat, number>> = {};
+    for (const stat of PASSIVE_STATS) {
+      const value = this.passiveMgr.getEffectValue(stat);
+      if (value !== 0) passives[stat] = value;
+    }
+
+    const equipped = this.equipmentMgr.getEquippedBonuses();
+    const equipment: Partial<Record<EquipmentStatType, number>> = {};
+    for (const stat of EQUIPMENT_STAT_TYPES) {
+      const value = equipped[stat] ?? 0;
+      if (value !== 0) equipment[stat] = value;
+    }
+
+    const lifetime = this.prestigeMgr.getLifetimeAPBonus();
+    return {
+      wave: this.waveMgr.currentWave,
+      hpFraction: t.maxHp > 0 ? t.hp / t.maxHp : 1,
+      upgrades: this.upgradeMgr.snapshot(),
+      evolutions,
+      prestige: {
+        lifetimeDamage: lifetime.damage,
+        lifetimeGold: lifetime.gold,
+        apDamage: this.prestigeMgr.getAPDamageBonus(),
+        apGold: this.prestigeMgr.getAPGoldBonus(),
+        tpDamage: this.prestigeMgr.getTPDamageMultiplicative(),
+        tpFireRate: this.prestigeMgr.getTPFireRateMultiplier(),
+        tpManaRegen: this.prestigeMgr.getTPManaRegenMultiplier(),
+        tpResource: this.prestigeMgr.getTPResourceMultiplicative(),
+        tpCritDamage: this.prestigeMgr.getTPCritDamageBonus(),
+        tpPierce: this.prestigeMgr.getTPPierceBonus(),
+        abilityManaCostReduction: this.prestigeMgr.getAbilityManaCostReduction(),
+        abilityCdr: this.prestigeMgr.getAbilityCDR(),
+        treasureChance: this.prestigeMgr.getTreasureChance(),
+        waveSkipChance: this.prestigeMgr.getWaveSkipChance(),
+        hasExecuteDamage: this.prestigeMgr.hasExecuteDamage(),
+        executeDamageMultiplier: this.prestigeMgr.getExecuteDamageMultiplier(),
+      },
+      research: {
+        goldMultiplicative: this.researchTree.getGoldMultiplicative(),
+        manaRegenMultiplicative: this.researchTree.getManaRegenMultiplicative(),
+        abilityCostReduction: this.researchTree.getAbilityCostReduction(),
+        abilityPowerBonus: this.researchTree.getAbilityPowerBonus(),
+        pierceCount: this.researchTree.getPierceCount(),
+        goldLuckChance: this.researchTree.getGoldLuckChance(),
+        intermissionSpeedReduction: this.researchTree.getIntermissionSpeedReduction(),
+        enemyHpReduction: this.researchTree.getEnemyHPReduction(),
+        rpDropChanceBonus: this.researchTree.getRPDropChanceBonus(),
+      },
+      achievements,
+      talents,
+      passives,
+      equipment,
+      waveModifier: this.activeWaveModifierInputs(),
+      buffs: this.buffs.entries,
+    };
+  }
+
+  /**
+   * The wave mutator's tower-side effects, or null when none is running on the
+   * current wave. Its enemy-side effects are applied separately, in
+   * `applyActiveWaveModifier`.
+   */
+  private activeWaveModifierInputs(): { goldAdditive: number; playerDamageMult: number } | null {
+    const wms = this.state.wave.waveModifier;
+    const active = wms.active;
+    if (!active || wms.wavesRemaining <= 0 || wms.pendingChoiceForWave === null) return null;
+    if (this.waveMgr.currentWave < wms.pendingChoiceForWave) return null;
+    return {
+      goldAdditive: active.effects.goldAdditive,
+      playerDamageMult: active.effects.playerDamageMult,
+    };
+  }
+
+  /**
+   * Write one resolved stat block out to the tower and every manager that
+   * caches a derived number.
+   *
+   * The three places that need memory across recomputes — current HP, shield
+   * charges and wall HP — are handled here rather than in the resolver, since
+   * they depend on live run state the context deliberately does not carry.
+   */
+  private applyResolvedStats(stats: ResolvedStats): void {
+    const t = this.tower.snapshot;
+    const oldMaxHp = t.maxHp;
+    const oldHp = t.hp;
+
+    t.baseDamage = stats.baseDamage;
+    t.fireRate = stats.fireRate;
+    t.range = stats.range;
+    t.critChance = stats.critChance;
+    t.critMultiplier = stats.critMultiplier;
+    t.healthRegen = stats.healthRegen;
+    t.defense = stats.defense;
+    t.armor = stats.armor;
+    t.knockbackForce = stats.knockbackForce;
+    t.lifesteal = stats.lifesteal;
+    t.thorns = stats.thorns;
+    t.shockwaveSize = stats.shockwaveSize;
+    t.shockwaveCooldown = stats.shockwaveCooldown;
+    t.landMineDamage = stats.landMineDamage;
+    t.landMineFrequency = stats.landMineFrequency;
+    t.shieldRechargeTime = stats.shieldRechargeTime;
+    t.doubleShotChance = stats.doubleShotChance;
+    t.quickShotChance = stats.quickShotChance;
+    t.quickShotTime = stats.quickShotTime;
+
+    // HP keeps its fraction of max when max rises, so buying Fortify heals
+    // proportionally rather than leaving a debt; a drop just clamps.
+    t.maxHp = stats.maxHp;
+    if (oldMaxHp <= 0) {
+      t.hp = t.maxHp;
+    } else if (t.maxHp > oldMaxHp && oldHp > 0) {
+      t.hp = Math.min(t.maxHp, oldHp * (t.maxHp / oldMaxHp));
+    } else if (t.hp > t.maxHp) {
+      t.hp = t.maxHp;
+    }
+
+    const oldCharges = t.shieldMaxCharges;
+    t.shieldMaxCharges = stats.shieldMaxCharges;
+    if (t.shieldMaxCharges > oldCharges) {
+      t.shieldCurrentCharges += t.shieldMaxCharges - oldCharges;
+    }
+    t.shieldCurrentCharges = Math.max(0, Math.min(t.shieldCurrentCharges, t.shieldMaxCharges));
+
+    const oldWallMax = t.wallMaxHp;
+    const newWallMax = stats.wallFraction > 0
+      ? Math.max(1, Math.floor(t.maxHp * stats.wallFraction))
+      : 0;
+    if (newWallMax <= 0) {
+      t.wallHp = 0;
+    } else if (oldWallMax <= 0) {
+      t.wallHp = newWallMax;
+    } else if (newWallMax > oldWallMax && t.wallHp > 0) {
+      t.wallHp = Math.min(
+        newWallMax,
+        t.wallHp + Math.floor((newWallMax - oldWallMax) * (t.wallHp / oldWallMax)),
+      );
+    } else if (t.wallHp > newWallMax) {
+      t.wallHp = newWallMax;
+    }
+    t.wallMaxHp = newWallMax;
+
+    this.state.resources.manaRegen = stats.manaRegen;
+    this.state.resources.maxMana = stats.maxMana;
+
+    this.enemyMgr.setGoldMultiplier(stats.goldMultiplier);
+    this.enemyMgr.setThorns(stats.thorns);
+    this.enemyMgr.setGoldLuck(stats.goldLuckChance, GOLD_LUCK_MULTIPLIER);
+    this.enemyMgr.setGoldOnKillBonus(stats.goldOnKill);
+    this.enemyMgr.setCritGoldBonus(stats.critGold);
+    this.enemyMgr.setDoubleGoldChance(stats.doubleGoldChance);
+    this.enemyMgr.setHPReduction(stats.enemyHpReduction);
+    this.enemyMgr.setRPDropChanceBonus(stats.rpDropChanceBonus);
+    this.enemyMgr.setWallContactExtra(stats.wallContactExtra);
+
+    this.abilityMgr.setAbilityCostMultiplier(stats.abilityCostMultiplier);
+    this.abilityMgr.setCooldownMultiplier(stats.abilityCooldownMultiplier);
+    this.abilityMgr.setDamageMultiplier(stats.abilityDamageMultiplier);
+    this.abilityMgr.setBerserkFireBonus(stats.berserkFireBonus);
+    this.abilityMgr.setChainBounceBonus(stats.chainBounceBonus);
+    this.abilityMgr.setSlowStrengthBonus(stats.slowStrengthBonus);
+    this.abilityMgr.setMeteorDamageBonus(stats.meteorDamageBonus);
+    this.abilityMgr.setBuffDurationBonus(stats.buffDurationBonus);
+
+    this.projectileMgr.setDamageMultipliers(0, 1);
+    this.projectileMgr.setArmorPen(stats.armorPen);
+    this.projectileMgr.setPierceExtra(stats.pierceExtra);
+    this.projectileMgr.setExecuteBonus(stats.executeThreshold, stats.executeMultiplier);
+    this.projectileMgr.setTalentExecuteBonus(stats.talentExecuteBonus);
+    this.projectileMgr.setEvolutionCombatEffects(
+      stats.instantKillChance,
+      stats.critSplash,
+      stats.critIgnoreArmor > 0,
+    );
+
+    this.towerXpMgr.setXpGainMultiplier(stats.xpGainMultiplier);
+    this.upgradeMgr.setCostDiscount(stats.upgradeCostDiscount);
+    this.equipmentMgr.setFindChanceBonus(stats.equipmentFindChance);
+    this.automation.setAutoBuyIntervalReduction(stats.autoBuyIntervalReduction);
+    this.waveMgr.setWaveSkipChance(stats.waveSkipChance);
+    this.waveMgr.setIntermissionMultiplier(stats.intermissionMultiplier);
+
+    this.waveGoldBonus = stats.waveGold;
+    this.talentDodgeChance = stats.dodgeChance;
+    this.talentManaShieldFraction = stats.manaShieldFraction;
+    this.talentExtraProjectileChance = stats.extraProjectileChance;
+    this.talentMagicProcChance = stats.magicProcChance;
+    this.talentWallRegen = stats.wallRegen;
+    this.talentHeadStartWaves = stats.headStartWaves;
   }
 
   private buildShotVariants(): ShotVariant[] {
@@ -2064,7 +2025,7 @@ export class Game {
     this.killStreak = 0;
     this.manaFullGoldTimer = 0;
     this.shotCounter = 0;
-    this.tower.resetQuickShot();
+    this.buffs.reset();
     const t = this.tower.snapshot;
     t.cooldown = 0;
     t.hp = TOWER_BASE.hp;
@@ -2104,8 +2065,12 @@ export class Game {
    * wave. If no modifier is active, reset all multipliers to 1.
    */
   private applyActiveWaveModifier(): void {
-    const active = this.state.wave.waveModifier.active;
-    const matchesWave = this.state.wave.waveModifier.pendingChoiceForWave === this.waveMgr.currentWave;
+    const wms = this.state.wave.waveModifier;
+    const active = wms.active;
+    // Plan §3.3: the modifier applies to a *range* of waves now, not one.
+    const matchesWave = wms.wavesRemaining > 0
+      && wms.pendingChoiceForWave !== null
+      && this.waveMgr.currentWave >= wms.pendingChoiceForWave;
     if (!active || !matchesWave) {
       this.state.wave.waveModifier.active = null;
       this.waveMgr.setEnemyCountMult(1);
@@ -2126,9 +2091,45 @@ export class Game {
     this.bus.emit('wave_modifier_active', active);
   }
 
+  /**
+   * Plan §3.3: rough gold a wave is worth right now, used to turn a mutator's
+   * "×4 gold" into a number the player can compare against. Deliberately a
+   * heuristic — normal-enemy drop x spawn count x the composed gold multiplier —
+   * because the exact figure depends on which enemy types roll.
+   */
+  private estimateWaveGold(wave: number): number {
+    const perEnemy = goldDropForWave(ENEMY_DEFS.normal.baseGold, wave);
+    const count = spawnCountForWave(wave);
+    return Math.max(0, perEnemy * count * this.computeGoldMultiplier());
+  }
+
+  /** Total reward a mutator is projected to pay across its full run. */
+  private projectWaveModifierReward(
+    snapshot: WaveModifierSnapshot,
+    startWave: number,
+  ): { gold: number; ap: number; tp: number } {
+    let gold = 0;
+    let ap = 0;
+    let tp = 0;
+    for (let i = 0; i < MUTATOR_DURATION_WAVES; i++) {
+      const escalation = waveModifierRewardMultiplier(i);
+      const wave = startWave + i;
+      if (snapshot.reward.gold > 0) {
+        // The mutator's own gold bonus applies to the wave it is measuring.
+        const waveGold = this.estimateWaveGold(wave) * (1 + Math.max(-0.9, snapshot.effects.goldAdditive));
+        gold += Math.floor(waveGold * snapshot.reward.gold * escalation);
+      }
+      ap += Math.floor(snapshot.reward.ap * escalation);
+      tp += Math.floor(snapshot.reward.tp * escalation);
+    }
+    return { gold, ap, tp };
+  }
+
   private chooseWaveModifier(snapshot: WaveModifierSnapshot): void {
     this.state.wave.waveModifier.active = snapshot;
     this.state.wave.waveModifier.choiceForNextWave = null;
+    this.state.wave.waveModifier.wavesRemaining = MUTATOR_DURATION_WAVES;
+    this.state.wave.waveModifier.wavesCleared = 0;
     // Snapshot gold earned so far — the modifier's gold multiplier bonus
     // is computed from gold earned during the wave and awarded on wave_cleared.
     this.state.wave.waveModifier.goldSnapshot = this.state.stats.goldEarned;
@@ -2150,7 +2151,7 @@ export class Game {
     });
     this.bus.emit('toast', {
       kind: 'milestone',
-      text: `Mutator complete: ${snapshot.name}`,
+      text: `${snapshot.name} active for ${MUTATOR_DURATION_WAVES} waves`,
       life: 4,
     });
   }
@@ -2159,6 +2160,8 @@ export class Game {
     this.state.wave.waveModifier.active = null;
     this.state.wave.waveModifier.choiceForNextWave = null;
     this.state.wave.waveModifier.pendingChoiceForWave = null;
+    this.state.wave.waveModifier.wavesRemaining = 0;
+    this.state.wave.waveModifier.wavesCleared = 0;
     this.bus.emit('toast', {
       kind: 'info',
       text: 'Skipped mutator this wave.',
@@ -2169,11 +2172,12 @@ export class Game {
   private applyFullTranscendenceReset(): void {
     this.automation.reset();
     this.abilityMgr.resetLevels();
-    // Character progression survives ascension but not transcendence. Cleared
-    // *before* applySavedStateReset so its closing stat recompute sees the
-    // wiped passives and empty gear rather than the outgoing run's.
-    this.passiveMgr.reset();
-    this.equipmentMgr.reset();
+    // Passives and equipment are *character* progression, not run progression:
+    // they survive a transcendence alongside talents, tower XP, research and
+    // achievements. Only the gold-priced layers (upgrades, ability levels) and
+    // the ascension layer itself are wiped. Gear in particular is a slow,
+    // low-drop-rate collection — deleting it at the one moment a player is
+    // asked to give everything else up made transcending read as a punishment.
     this.applySavedStateReset();
     this.state.prestige.apSpent = {};
     this.state.prestige.automationFlags = {
@@ -2245,6 +2249,9 @@ export class Game {
       autoTranscend: false,
     };
     p.targetAscendWave = persisted.prestige.targetAscendWave ?? DEFAULT_AUTO_ASCEND_WAVE;
+    p.autoCastEnabled = { ...(persisted.prestige.autoCastEnabled ?? {}) };
+    p.autoBuyStrategy = persisted.prestige.autoBuyStrategy ?? 'balanced';
+    p.autoBuyReserve = persisted.prestige.autoBuyReserve ?? 0;
 
     this.state.wave = { ...persisted.wave };
     this.waveMgr.setState(this.state.wave);
@@ -2370,6 +2377,34 @@ export class Game {
    *                the game (real-time research timers, auto-save cadence)
    */
   private update(dt: number, realDt: number): void {
+    // Plan §5.2: the simulation runs in fixed substeps. `dt` here can reach
+    // 0.05 s (the frame-hitch clamp) times 6.5 (max Accelerator speed) =
+    // 0.325 s, and a single step that long makes enemy movement, attack
+    // cadence and projectile travel wrong in ways the player reads as the
+    // game cheating. Substepping makes high speed cost what it should — more
+    // simulation — instead of quietly producing a different, coarser game.
+    const steps = Math.min(MAX_SUBSTEPS, Math.max(1, Math.ceil(dt / FIXED_STEP)));
+    const step = dt / steps;
+    for (let i = 0; i < steps; i++) {
+      this.simulate(step);
+    }
+    this.frameUpdate(dt, realDt);
+  }
+
+  /**
+   * One fixed simulation substep: waves, combat, movement, projectiles, mines.
+   *
+   * Everything here is time-integrated or cadence-driven, so it has to see the
+   * small step. Presentation and bookkeeping live in `frameUpdate`, which runs
+   * once per frame with the full delta.
+   */
+  private simulate(dt: number): void {
+    // Buffs age on the simulation clock, and a buff that started or expired
+    // means the whole stat block is restated — once, here, rather than by each
+    // system poking at `TowerState`.
+    this.buffs.tick(dt);
+    this.refreshBuffedStats();
+
     this.waveMgr.tick(dt);
     this.resourceMgr.tick(dt, this.waveMgr.currentWave);
     this.abilityMgr.tick(dt);
@@ -2400,16 +2435,23 @@ export class Game {
       if (ts.wallHp > 0) this.enemyMgr.setWallContactExtra(36);
     }
 
-    // Manual aim: if mouse held, attempt to spend 1 mana per shot for +30% fire rate.
-    // If mana is insufficient, fall back to 1.0 fire rate (still aim at cursor).
-    this.tower.tickQuickShot(dt);
-
-    let manualAimBoost = false;
+    // Manual aim: holding the mouse aims at the cursor and adds fire rate.
+    // Both this and the quick-shot proc below are buff entries, so they
+    // compose with Berserk instead of overwriting it (plan §1.3).
     if (this.mouseDown) {
       this.tower.setAimTarget(this.mouseX, this.mouseY);
-      manualAimBoost = true;
+      this.buffs.set({
+        id: BUFF_MANUAL_AIM,
+        stat: 'fireRate',
+        kind: 'mult',
+        value: MANUAL_AIM_FIRE_RATE,
+        label: 'Manual aim',
+        remaining: null,
+      });
+    } else {
+      this.buffs.clear(BUFF_MANUAL_AIM);
     }
-    this.tower.setFireRateSource('aim', manualAimBoost ? 1.3 : 1);
+    this.refreshBuffedStats();
 
     if (this.tower.tickCooldown(dt)) {
       const target = this.mouseDown ? null : this.tower.acquireTarget(this.enemyMgr.list);
@@ -2440,7 +2482,14 @@ export class Game {
 
         // Quick shot chance — activate temporary 2x fire rate
         if (ts.quickShotTime > 0 && Math.random() < ts.quickShotChance) {
-          this.tower.activateQuickShot(ts.quickShotTime);
+          this.buffs.set({
+            id: BUFF_QUICK_SHOT,
+            stat: 'fireRate',
+            kind: 'mult',
+            value: QUICK_SHOT_FIRE_RATE,
+            label: 'Quick shot',
+            remaining: ts.quickShotTime,
+          });
         }
 
         this.projectileMgr.fire(target, ts, {
@@ -2516,40 +2565,31 @@ export class Game {
     for (let i = this.mines.length - 1; i >= 0; i--) {
       const mine = this.mines[i];
       if (!mine.alive) continue;
-      for (const e of this.enemyMgr.list) {
-        if (!e.alive) continue;
-        const dx = e.x - mine.x;
-        const dy = e.y - mine.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist <= mine.explosionRadius) {
-          mine.alive = false;
-          for (const target of this.enemyMgr.list) {
-            if (!target.alive) continue;
-            const tdx = target.x - mine.x;
-            const tdy = target.y - mine.y;
-            if (Math.sqrt(tdx * tdx + tdy * tdy) <= mine.explosionRadius) {
-              this.enemyMgr.damage(target, mine.damage, false);
-            }
-          }
-          this.effects.emitMineExplosion(mine.x, mine.y);
-          // Evolution: mine_split — spawn child mines on detonation
-          if (!mine.isSplit && this.upgradeMgr.hasEvolutionEffect('mine_split')) {
-            const count = this.upgradeMgr.getEvolutionEffectValue('mine_split');
-            for (let c = 0; c < count; c++) {
-              const childAngle = Math.random() * Math.PI * 2;
-              const childDist = 25 + Math.random() * 25;
-              this.mines.push({
-                id: nextId(),
-                x: mine.x + Math.cos(childAngle) * childDist,
-                y: mine.y + Math.sin(childAngle) * childDist,
-                damage: mine.damage * 0.5,
-                explosionRadius: 30,
-                alive: true,
-                isSplit: true,
-              });
-            }
-          }
-          break;
+      // Trigger set and damage set are the same disc, so one radius query
+      // answers both — this used to be a nested scan of the whole enemy list
+      // per mine, per frame (plan §5.4).
+      const caught = this.enemyMgr.queryRadius(mine.x, mine.y, mine.explosionRadius);
+      if (caught.length === 0) continue;
+      mine.alive = false;
+      for (const target of caught) {
+        this.enemyMgr.damage(target, mine.damage, false);
+      }
+      this.effects.emitMineExplosion(mine.x, mine.y);
+      // Evolution: mine_split — spawn child mines on detonation
+      if (!mine.isSplit && this.upgradeMgr.hasEvolutionEffect('mine_split')) {
+        const count = this.upgradeMgr.getEvolutionEffectValue('mine_split');
+        for (let c = 0; c < count; c++) {
+          const childAngle = Math.random() * Math.PI * 2;
+          const childDist = 25 + Math.random() * 25;
+          this.mines.push({
+            id: nextId(),
+            x: mine.x + Math.cos(childAngle) * childDist,
+            y: mine.y + Math.sin(childAngle) * childDist,
+            damage: mine.damage * 0.5,
+            explosionRadius: 30,
+            alive: true,
+            isSplit: true,
+          });
         }
       }
     }
@@ -2562,7 +2602,19 @@ export class Game {
         ts.shieldCurrentCharges = Math.min(ts.shieldMaxCharges, ts.shieldCurrentCharges + 1);
       }
     }
+  }
 
+  /**
+   * Once-per-frame work: visuals, UI, automation, real-time systems.
+   *
+   * None of these need substepping — particles and toasts are presentation,
+   * automation and achievements are polled rather than integrated, and
+   * research and auto-save deliberately run on wall-clock time.
+   *
+   * @param dt      full simulation delta for this frame (all substeps summed)
+   * @param realDt  wall-clock delta
+   */
+  private frameUpdate(dt: number, realDt: number): void {
     this.effects.tick(dt);
     this.effects.tickChainLightning(dt);
     this.notifications.tick(dt);

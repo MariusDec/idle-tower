@@ -9,6 +9,17 @@ import { EventBus } from '../game/EventBus';
 /** HP fraction below which the Executioner talent's bonus damage applies. */
 const TALENT_EXECUTE_THRESHOLD = 0.5;
 
+/**
+ * Hard lifetime for any projectile, in simulation seconds (plan §5.5).
+ *
+ * Bounds culling only retires shots that actually leave the play field; a
+ * homing projectile circling a target it can never catch, or one fired into a
+ * corner, otherwise stays in the list (and in every projectile-vs-enemy loop)
+ * indefinitely. At 720 px/s this is several times longer than crossing the
+ * arena takes, so it never truncates a shot that was going to land.
+ */
+const MAX_PROJECTILE_AGE = 4;
+
 export interface ShotVariant {
   angleOffset?: number;
   posOffsetX?: number;
@@ -140,7 +151,7 @@ export class ProjectileManager {
         homingTargetId: opts.isHoming ? opts.targetId ?? undefined : undefined,
         turnRate: opts.isHoming ? (opts.turnRate ?? Math.PI * 3) : undefined,
         lifetime: opts.isHoming ? (opts.lifetime ?? 3) : undefined,
-        age: opts.isHoming ? 0 : undefined,
+        age: 0,
       };
 
       if (opts.piercing) {
@@ -165,10 +176,18 @@ export class ProjectileManager {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
+      // Every projectile ages, so one that never hits anything and never
+      // leaves the play field still retires (plan §5.5).
+      const age = (p.age ?? 0) + dt;
+      p.age = age;
+      if (age >= MAX_PROJECTILE_AGE) {
+        p.alive = false;
+        continue;
+      }
+
       // Homing logic
       if (p.homingTargetId !== undefined && p.turnRate !== undefined) {
-        p.age = (p.age ?? 0) + dt;
-        if (p.lifetime !== undefined && p.age >= p.lifetime) {
+        if (p.lifetime !== undefined && age >= p.lifetime) {
           p.alive = false;
           continue;
         }
@@ -244,14 +263,10 @@ export class ProjectileManager {
           if (p.isCrit && this.critSplashFraction > 0) {
             const splashDamage = Math.max(1, Math.floor(final * this.critSplashFraction));
             const splashRadius = 50;
-            for (const e of this.enemies.list) {
-              if (!e.alive || e.id === enemy.id) continue;
-              const dx = e.x - enemy.x;
-              const dy = e.y - enemy.y;
-              if (dx * dx + dy * dy <= splashRadius * splashRadius) {
-                this.enemies.damage(e, splashDamage, false);
-                this.bus.emit('tower_damage_dealt', { amount: splashDamage });
-              }
+            for (const e of this.enemies.queryRadius(enemy.x, enemy.y, splashRadius)) {
+              if (e.id === enemy.id) continue;
+              this.enemies.damage(e, splashDamage, false);
+              this.bus.emit('tower_damage_dealt', { amount: splashDamage });
             }
           }
         }

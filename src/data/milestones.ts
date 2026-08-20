@@ -1,5 +1,6 @@
 import type { AbilityId, EnemyType } from '../types';
 import { ABILITIES } from './abilities';
+import { PASSIVE_ABILITIES } from './passiveAbilities';
 import { ASCENSION_UNLOCK_WAVE, TRANSCENDENCE_UNLOCK_AP } from './prestige';
 
 export type MilestoneKind =
@@ -8,7 +9,8 @@ export type MilestoneKind =
   | 'mana'
   | 'ascension'
   | 'transcendence'
-  | 'research';
+  | 'research'
+  | 'passive';
 
 export interface MilestoneDef {
   /** Unique id, e.g. "ability:frost_nova" or "ascension:unlock". */
@@ -132,3 +134,64 @@ export function milestoneAtWave(wave: number): MilestoneDef[] {
 }
 
 export { TRANSCENDENCE_MILESTONE };
+
+// ── Progression view (plan §4.6) ──────────────────────────────────────────
+//
+// The milestone strip deliberately shows only the next few unlocks, which
+// leaves the player with no way to answer "what am I working towards?".
+// The progression tab answers that from the same definitions, plus the
+// passive-ability gates the strip omits to keep itself short.
+
+function passiveMilestones(): MilestoneDef[] {
+  return PASSIVE_ABILITIES.map(p => ({
+    id: `passive:${p.id}`,
+    kind: 'passive' as const,
+    wave: p.unlockWave,
+    label: `${p.name} available`,
+    detail: `Passive ability, unlockable for ${p.unlockGoldCost} gold.`,
+    glyph: p.glyph,
+    color: p.color,
+    refId: p.id,
+  }));
+}
+
+/**
+ * Every wave-gated unlock in the game, ascending. Unlike `MILESTONES` this
+ * includes passives, and unlike `upcomingMilestones` it is not truncated —
+ * the progression tab shows what is already earned as well as what is next.
+ */
+export const PROGRESSION_ENTRIES: MilestoneDef[] = [
+  ...MILESTONES,
+  ...passiveMilestones(),
+  TRANSCENDENCE_MILESTONE,
+].sort((a, b) => a.wave - b.wave);
+
+/** Human-readable group label for a milestone kind. */
+export function milestoneKindLabel(kind: MilestoneKind): string {
+  switch (kind) {
+    case 'ability': return 'Ability';
+    case 'passive': return 'Passive';
+    case 'enemy': return 'Enemy';
+    case 'mana': return 'System';
+    case 'ascension': return 'Prestige';
+    case 'transcendence': return 'Prestige';
+    case 'research': return 'Research';
+  }
+}
+
+/**
+ * Accent colour for a kind's badge. Distinct from `MilestoneDef.color`, which
+ * is per-entry (each ability has its own): this one groups, so the eye can
+ * pick "all the abilities" out of the progression list at a glance.
+ */
+export function milestoneKindColor(kind: MilestoneKind): string {
+  switch (kind) {
+    case 'ability': return '#5b8def';
+    case 'passive': return '#3ec46d';
+    case 'enemy': return '#d04848';
+    case 'mana': return '#4bc3d4';
+    case 'ascension': return '#e8a93b';
+    case 'transcendence': return '#9b59ff';
+    case 'research': return '#c77dff';
+  }
+}

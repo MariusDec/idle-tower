@@ -1,6 +1,17 @@
-import type { EquipmentSlot, Rarity, EquipmentDef, Equipment, EquipmentStat } from '../types';
+import type { EquipmentSlot, Rarity, EquipmentDef, Equipment, EquipmentStat, EquipmentStatType } from '../types';
 
 // ── Rarity Configuration ──────────────────────────────
+
+/**
+ * Every stat gear can roll. Shared with the equipment contributor in the stat
+ * pipeline so the two cannot drift apart.
+ */
+export const EQUIPMENT_STAT_TYPES: readonly EquipmentStatType[] = [
+  'damage_pct', 'fire_rate_pct', 'crit_chance_pct', 'crit_damage_pct',
+  'range_pct', 'max_hp_pct', 'defense_pct', 'armor_pct',
+  'gold_mult_pct', 'mana_regen_pct', 'lifesteal_pct', 'thorns_pct',
+  'knockback_pct', 'all_damage_pct',
+];
 
 export const RARITY_WEIGHTS: Record<Rarity, number> = {
   common: 50,
@@ -304,12 +315,28 @@ export function generateEquipment(defId: string, rarity: Rarity): Equipment {
   };
 }
 
-/** Attempt to roll a random equipment drop (returns null if roll fails). */
+/**
+ * Attempt to roll a random equipment drop (returns null if roll fails).
+ *
+ * Plan §3.4 adds the `elite` source: elites are far more common than bosses, so
+ * they roll on a much shallower curve (4% + 0.1%/wave, capped at 15%) — enough
+ * that a deep run builds a set from elites, not so much that gear stops
+ * mattering.
+ */
 export function rollDrop(
   wave: number,
-  source: 'boss' | 'milestone',
+  source: 'boss' | 'elite' | 'milestone',
   bonusChance = 0,
 ): Equipment | null {
+  if (source === 'elite') {
+    const eliteChance = Math.min(0.15, 0.04 + wave * 0.001 + bonusChance);
+    if (Math.random() > eliteChance) return null;
+    const eliteRarity = rollRarity(wave);
+    const elitePool = EQUIPMENT_DEFS.filter(d => d.minWave <= wave && !d.bossOnly);
+    if (elitePool.length === 0) return null;
+    const eliteDef = elitePool[Math.floor(Math.random() * elitePool.length)];
+    return generateEquipment(eliteDef.id, eliteRarity);
+  }
   const baseChance = source === 'boss' ? 0.15 : 1.0;
   const scaledChance = Math.min(0.8, baseChance + wave * 0.005 + bonusChance);
   if (Math.random() > scaledChance) return null;

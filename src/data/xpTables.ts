@@ -22,14 +22,23 @@ export const TOWER_XP_TABLE: number[] = (() => {
   return table;
 })();
 
-/** Returns the current level for a given total XP amount. */
+/**
+ * Returns the current level for a given total XP amount.
+ *
+ * The table is 2 000 entries and strictly ascending, and this is called on
+ * every XP gain (i.e. every kill), so it binary-searches for the last entry at
+ * or below `xp` rather than walking the table from level 1 (plan §5.6).
+ */
 export function xpToLevel(xp: number): number {
-  let level = 0;
-  for (let i = 1; i < TOWER_XP_TABLE.length; i++) {
-    if (xp >= TOWER_XP_TABLE[i]) level = i;
-    else break;
+  if (xp < TOWER_XP_TABLE[1]) return 0;
+  let lo = 1;
+  let hi = TOWER_XP_TABLE.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (xp >= TOWER_XP_TABLE[mid]) lo = mid;
+    else hi = mid - 1;
   }
-  return level;
+  return lo;
 }
 
 /** Returns XP needed to go from `level` to `level + 1`. */

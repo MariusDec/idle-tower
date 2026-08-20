@@ -25,16 +25,24 @@ The `Game` class is the central orchestrator. It owns all system instances and r
 
 ```
 requestAnimationFrame
-  ├── dt = (now - lastTime) / 1000, capped at 0.05
-  ├── gameDt = dt * speed (default 0.5x or 1.0x)
-  ├── update(gameDt)       ← all game logic
+  ├── dt = (now - lastTime) / 1000, capped at 0.05   ← wall clock
+  ├── gameDt = dt * speed * slowMo                   ← up to 6.5x from the Accelerator perk
+  ├── update(gameDt, dt)   ← all game logic
+  │     ├── simulate(step) x N   ← fixed substeps of 1/60 s, max 6
+  │     └── frameUpdate(gameDt, dt)
   ├── draw()               ← Canvas rendering
   ├── ui.update(state)     ← DOM UI refresh
   ├── FPS calculation (every 0.5s)
   └── requestAnimationFrame(loop)
 ```
 
-## Update Order (`Game.update`)
+`update` never simulates a step larger than it has to: it runs
+`ceil(gameDt / FIXED_STEP)` substeps, clamped to `MAX_SUBSTEPS` (6). At 1x
+speed that is one step and the loop is unchanged; at 6.5x it is six. When the
+clamp bites, step size grows rather than time being dropped, so the game never
+runs in slow motion under load. See [performance.md](performance.md).
+
+## Update Order (`Game.simulate`, once per substep)
 
 1. `waveMgr.tick(dt)` — spawning, intermission
 2. `resourceMgr.tick(dt, wave)` — mana regen, passive gold
@@ -45,14 +53,27 @@ requestAnimationFrame
    - `rollShot()` — damage + crit check
    - `buildShotVariants()` — extra/scatter/back shots from AP perks
    - `projectileMgr.fire(target, ...)` — spawn projectiles
-6. `projectileMgr.tick(dt)` — movement & collision
-7. `enemyMgr.tick(dt, tx, ty)` — movement, attack
+6. `projectileMgr.tick(dt)` — movement & swept collision
+7. `enemyMgr.tick(dt, tx, ty)` — movement, attack, auras
 8. Shockwave pulse (periodic knockback ring)
-9. `effects.tick(dt)` — particle physics
-10. `notifications.tick(dt)` — toast lifetimes
-11. `automation.tick(dt)` — auto-buy/cast/ascend/transcend
-12. Save timer check (auto-save every 30s)
-13. Transcendence unlock toast check
+9. Land mines — placement and detonation
+10. Shield recharge
+
+## Frame Order (`Game.frameUpdate`, once per frame)
+
+1. `effects.tick(dt)` — particle physics
+2. `notifications.tick(dt)` — toast lifetimes
+3. `automation.tick(dt)` — auto-buy/cast/ascend/transcend
+4. `ui.tickDisplayHud(dt, state)` — HUD tweening
+5. Research + passive RP, on **`realDt`** — these are real-time systems and
+   must not accelerate with game speed
+6. Transcendence unlock toast check
+7. `saveMgr.tick(realDt, ...)` — debounced save flush
+8. Achievements, audio, vignette
+
+> Anything time-integrated or cadence-driven goes in `simulate`. Anything that
+> polls state, or that consumes `realDt`, goes in `frameUpdate` — a `realDt`
+> consumer in `simulate` would run six times per frame at high speed.
 
 ## Public API (UI callbacks)
 
@@ -74,8 +95,10 @@ requestAnimationFrame
 ## Speed System
 
 - `GAME_SPEEDS = [0.5, 1.0, 1.5]` (default index 1, max index 1)
-- `maxSpeedIndex` can be increased by research
-- Speed affects the `dt` passed to `update()` but NOT rendering or UI
+- `maxSpeedIndex` can be increased by research; the Accelerator TP perk extends
+  it to 6.5x via `computeSpeedForIndex`
+- Speed scales the simulation delta, not rendering or UI. Substepping keeps the
+  physics step fixed regardless, so DPS at 6.5x matches 1x within ~1%
 
 ## Reset Types
 

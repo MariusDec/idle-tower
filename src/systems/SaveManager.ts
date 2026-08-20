@@ -21,15 +21,42 @@ import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 8;
+const SAVE_VERSION = 9;
 
 function defaultWaveModifier() {
-  return { active: null, choiceForNextWave: null, pendingChoiceForWave: null, goldSnapshot: null };
+  return {
+    active: null,
+    choiceForNextWave: null,
+    pendingChoiceForWave: null,
+    goldSnapshot: null,
+    wavesRemaining: 0,
+    wavesCleared: 0,
+  };
 }
 const AUTO_SAVE_INTERVAL = 30;
+
+/**
+ * Minimum wall-clock gap between event-driven writes (plan §5.7).
+ *
+ * Nine different events used to write the whole state synchronously —
+ * including every purchase and every wave start. With auto-buy on a 3 s timer
+ * and bulk buying, that is a `JSON.stringify` of the entire save several times
+ * a second on the main thread. Events now only mark the state dirty; the flush
+ * happens here, at most once per this many seconds, with the 30 s timer as the
+ * backstop for a quiet session.
+ */
+const SAVE_DEBOUNCE_SECONDS = 5;
 const OFFLINE_CAP_SECONDS = 7 * 24 * 60 * 60;
 const OFFLINE_EFFICIENCY = 0.5;
 const AVG_WAVE_DURATION = 18;
+/**
+ * Ceiling on how many waves the offline walk simulates in one absence. Seven
+ * days at a quarter of `AVG_WAVE_DURATION` is ~134k waves; the cap keeps a
+ * long absence from turning into a long loop for a result nobody can read.
+ */
+const MAX_OFFLINE_WAVES = 5000;
+/** Offline XP is worth half a kill, matching the pre-existing 0.5 factor. */
+const OFFLINE_XP_EFFICIENCY = 0.5;
 
 export interface PersistentState {
   version: number;
@@ -67,6 +94,8 @@ export interface OfflineResult {
   effectiveDPS: number;
   goldEarned: number;
   wavesCleared: number;
+  /** Wave the offline simulation ended on, so the report can show real progress. */
+  endWave: number;
   rpEarned: number;
   researchElapsed: number;
   xpEarned: number;
@@ -88,14 +117,6 @@ function estimateDPS(tower: TowerState): number {
   return Math.max(0, expectedHit * tower.fireRate);
 }
 
-function estimateGoldPerDamage(wave: number): number {
-  const def = ENEMY_DEFS.normal;
-  const hp = enemyHPForWave(def.baseHP, wave);
-  const gold = goldDropForWave(def.baseGold, wave);
-  if (hp <= 0) return 0;
-  return gold / hp;
-}
-
 function averageKillXPForWave(wave: number): number {
   if (isBossWave(wave)) return xpPerKill('boss', wave);
   const available: EnemyType[] = ['normal'];
@@ -115,6 +136,27 @@ function averageKillXPForWave(wave: number): number {
     weightedXp += weights[t] * xpPerKill(t, wave);
   }
   return totalWeight > 0 ? weightedXp / totalWeight : 0;
+}
+
+function averageKillGoldForWave(wave: number): number {
+  if (isBossWave(wave)) return goldDropForWave(ENEMY_DEFS.boss.baseGold, wave);
+  const available: EnemyType[] = ['normal'];
+  if (wave >= 3) available.push('fast');
+  if (wave >= 5) available.push('tank');
+  if (wave >= 8) available.push('flying');
+  if (wave >= 12) available.push('splitter');
+  if (wave >= 15) available.push('healer');
+  if (wave >= 20) available.push('shielded');
+  const weights: Record<EnemyType, number> = {
+    normal: 6, fast: 3, tank: 2, flying: 2, healer: 1, splitter: 2, shielded: 1, boss: 0,
+  };
+  let totalWeight = 0;
+  let weightedGold = 0;
+  for (const t of available) {
+    totalWeight += weights[t];
+    weightedGold += weights[t] * goldDropForWave(ENEMY_DEFS[t].baseGold, wave);
+  }
+  return totalWeight > 0 ? weightedGold / totalWeight : 0;
 }
 
 function averageKillHPForWave(wave: number): number {
@@ -272,10 +314,30 @@ function computeRPGainMultiplier(research: Record<string, number>): number {
   return sum;
 }
 
+/**
+ * v9 (plan §3): per-ability auto-cast toggles, auto-buy strategy/reserve, and
+ * the multi-wave mutator fields. All are additive, so the migration is a set of
+ * defaults rather than a transform.
+ */
+function migrateV8toV9(data: Record<string, unknown>): void {
+  const prestige = data.prestige as Record<string, unknown> | undefined;
+  if (prestige && typeof prestige === 'object') {
+    if (!isObject(prestige.autoCastEnabled)) prestige.autoCastEnabled = {};
+    if (typeof prestige.autoBuyStrategy !== 'string') prestige.autoBuyStrategy = 'balanced';
+    if (typeof prestige.autoBuyReserve !== 'number') prestige.autoBuyReserve = 0;
+  }
+  const wave = data.wave as Record<string, unknown> | undefined;
+  const wm = wave?.waveModifier as Record<string, unknown> | undefined;
+  if (wm && typeof wm === 'object') {
+    if (typeof wm.wavesRemaining !== 'number') wm.wavesRemaining = wm.active ? 1 : 0;
+    if (typeof wm.wavesCleared !== 'number') wm.wavesCleared = 0;
+  }
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -297,6 +359,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 5) { migrateV5toV6(data); data.version = 6; }
   if (data.version === 6) { migrateV6toV7(data); data.version = 7; }
   if (data.version === 7) { migrateV7toV8(data); data.version = 8; }
+  if (data.version === 8) { migrateV8toV9(data); data.version = 9; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -315,6 +378,8 @@ function validate(data: unknown): data is PersistentState {
 
 export class SaveManager {
   private saveTimer = 0;
+  /** Set by `requestSave`; cleared by the next actual write. */
+  private savePending = false;
   private readonly busListener: (payload: unknown) => void;
   private readonly getRP: () => number;
 
@@ -382,6 +447,9 @@ export class SaveManager {
       tpSpent: { ...p.tpSpent },
       automationFlags: { ...p.automationFlags },
       targetAscendWave: p.targetAscendWave,
+      autoCastEnabled: { ...(p.autoCastEnabled ?? {}) },
+      autoBuyStrategy: p.autoBuyStrategy ?? 'balanced',
+      autoBuyReserve: p.autoBuyReserve ?? 0,
     };
   }
 
@@ -393,6 +461,7 @@ export class SaveManager {
       const snap = this.snapshot(state);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
       this.saveTimer = 0;
+      this.savePending = false;
       return true;
     } catch (err) {
       console.warn('[SaveManager] save failed:', err);
@@ -446,10 +515,35 @@ export class SaveManager {
     }
   }
 
-  computeOfflineProgress(persisted: PersistentState, now: number = Date.now()): OfflineResult {
+  /**
+   * Estimate what the tower did while the tab was closed (plan §4.4/§4.5).
+   *
+   * The wave count used to be `elapsed / AVG_WAVE_DURATION` — a clock reading
+   * with no connection to whether the tower could actually kill anything —
+   * while gold came from a single wave's gold-per-damage ratio held constant
+   * for the whole absence. Both are now derived from one wave-by-wave walk at
+   * the tower's estimated DPS, so a tower parked at its wall clears nothing
+   * and a tower with headroom climbs back up.
+   *
+   * The walk stops advancing at the player's deepest wave and farms there
+   * instead: offline play catches you up, it does not set records. Nothing
+   * here models the tower *dying*, so letting it push past its best would
+   * hand out depth the player never earned.
+   *
+   * `goldMultiplier` is the live composed multiplier (`Game.computeGoldMultiplier`).
+   * Passing it is what stops offline income from being strictly worse than
+   * active play by the whole multiplier stack.
+   */
+  computeOfflineProgress(
+    persisted: PersistentState,
+    goldMultiplier = 1,
+    now: number = Date.now(),
+  ): OfflineResult {
     const rawElapsed = Math.max(0, (now - persisted.savedAt) / 1000);
     const capped = rawElapsed > OFFLINE_CAP_SECONDS;
     const elapsed = Math.min(rawElapsed, OFFLINE_CAP_SECONDS);
+    let wave = Math.max(1, persisted.wave.number);
+    if (isBossWave(wave)) --wave;
     if (elapsed <= 0) {
       return {
         elapsedSeconds: 0,
@@ -457,6 +551,7 @@ export class SaveManager {
         effectiveDPS: 0,
         goldEarned: 0,
         wavesCleared: 0,
+        endWave: wave,
         rpEarned: 0,
         researchElapsed: 0,
         xpEarned: 0,
@@ -464,16 +559,45 @@ export class SaveManager {
     }
     const dps = estimateDPS(persisted.tower);
     const effectiveDPS = dps * OFFLINE_EFFICIENCY;
-    let wave = Math.max(1, persisted.wave.number);
-    if (isBossWave(wave)) --wave;
+    // The ceiling is *this run's* deepest wave, not the lifetime best: after an
+    // ascension the lifetime figure can be far beyond anything the current
+    // tower has faced, and while the DPS walk would gate most of that, nothing
+    // here models the tower taking damage. Catching the run back up to where
+    // it already was is the claim this estimate can actually support.
+    const ceiling = Math.max(wave, persisted.wave.highestWave ?? wave);
 
-    const goldPerDmg = estimateGoldPerDamage(wave);
-    const goldEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * goldPerDmg));
-    const wavesCleared = Math.max(0, Math.floor(elapsed / AVG_WAVE_DURATION));
-    const avgXp = averageKillXPForWave(wave);
-    const avgHp = averageKillHPForWave(wave);
-    const xpPerDmg = avgHp > 0 ? avgXp / avgHp : 0;
-    const xpEarned = Math.max(0, Math.floor(effectiveDPS * elapsed * xpPerDmg * 0.5));
+    let remaining = elapsed;
+    let gold = 0;
+    let xp = 0;
+    let wavesCleared = 0;
+    const goldScale = Math.max(0, goldMultiplier);
+    while (remaining > 0 && effectiveDPS > 0 && wavesCleared < MAX_OFFLINE_WAVES) {
+      const count = Math.max(1, Math.floor(spawnCountForWave(wave)));
+      const avgHp = averageKillHPForWave(wave);
+      const waveHp = avgHp * count;
+      if (waveHp <= 0) break;
+      // A wave cannot finish faster than its enemies spawn, so a tower that
+      // vastly out-damages the wave is still paced by the spawn cadence.
+      const waveSeconds = Math.max(waveHp / effectiveDPS, AVG_WAVE_DURATION * 0.25);
+      const avgGold = averageKillGoldForWave(wave);
+      const avgXp = averageKillXPForWave(wave);
+      if (waveSeconds > remaining) {
+        // Ran out of time partway through: pay out the fraction of the wave's
+        // HP that was actually chewed through.
+        const fraction = remaining / waveSeconds;
+        gold += avgGold * count * fraction * goldScale;
+        xp += avgXp * count * fraction * OFFLINE_XP_EFFICIENCY;
+        break;
+      }
+      gold += avgGold * count * goldScale;
+      xp += avgXp * count * OFFLINE_XP_EFFICIENCY;
+      remaining -= waveSeconds;
+      wavesCleared += 1;
+      if (wave < ceiling) wave += 1;
+    }
+
+    const goldEarned = Math.max(0, Math.floor(gold));
+    const xpEarned = Math.max(0, Math.floor(xp));
     const lifetimeWave = persisted.stats.lifetimeHighestWave ?? 1;
     const rpGainMultiplier = computeRPGainMultiplier(persisted.research ?? {});
     const baseRPRate = 0.05 * lifetimeWave / 60;
@@ -484,6 +608,7 @@ export class SaveManager {
       effectiveDPS,
       goldEarned,
       wavesCleared,
+      endWave: wave,
       rpEarned,
       researchElapsed: elapsed,
       xpEarned,
@@ -535,11 +660,29 @@ export class SaveManager {
     }
   }
 
+  /**
+   * Mark the state as changed without writing it (plan §5.7). The write
+   * happens in `tick`, no sooner than `SAVE_DEBOUNCE_SECONDS` after the last
+   * one. Use `save` directly for anything that must survive an immediate
+   * close, such as the tab going hidden.
+   */
+  requestSave(): void {
+    this.savePending = true;
+  }
+
+  /** Whether a requested save is still waiting to be flushed. */
+  get hasPendingSave(): boolean {
+    return this.savePending;
+  }
+
   tick(dt: number, state: GameState, onSave: (state: GameState) => boolean): void {
     this.saveTimer += dt;
-    if (this.saveTimer >= AUTO_SAVE_INTERVAL) {
-      this.saveTimer = 0;
-      onSave(state);
-    }
+    const due = this.savePending
+      ? this.saveTimer >= SAVE_DEBOUNCE_SECONDS
+      : this.saveTimer >= AUTO_SAVE_INTERVAL;
+    if (!due) return;
+    this.saveTimer = 0;
+    this.savePending = false;
+    onSave(state);
   }
 }

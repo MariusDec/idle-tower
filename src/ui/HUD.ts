@@ -91,6 +91,8 @@ export class HUD {
   private moreSpeedLabelEl!: HTMLElement;
   private moreDpsEl!: HTMLElement;
   private moreFpsEl!: HTMLElement;
+  private keybindsBtn!: HTMLButtonElement;
+  private onShowKeybinds: () => void = () => {};
   private moreStatsBtn!: HTMLButtonElement;
   private moreEnemyStatsBtn!: HTMLButtonElement;
 
@@ -132,6 +134,10 @@ export class HUD {
     this.onToggleAutoProgress = handler;
   }
 
+  setOnShowKeybinds(handler: () => void): void {
+    this.onShowKeybinds = handler;
+  }
+
   setStatsInfo(info: StatsInfo): void {
     this.statsInfo = info;
     if (this.statsTooltip.style.display !== 'none') {
@@ -160,8 +166,40 @@ export class HUD {
       <div class="stat-row"><span>Mana Regen</span><span>${info.manaRegen.toFixed(1)}/s</span></div>
       <div class="stat-row"><span>Max Mana</span><span>${info.maxMana}</span></div>
       <div class="stat-row"><span>Gold Multiplier</span><span>${info.goldMultiplier.toFixed(2)}x</span></div>
+      ${this.renderGoldBreakdown(info)}
       <div class="stat-row"><span>RP Gain</span><span>${formatNumber(info.rpGainRate, 3)}/s</span></div>
     `);
+  }
+
+  /**
+   * Per-source attribution under the gold multiplier (plan §4.2), so the
+   * player can see *why* it is what it is instead of taking one opaque
+   * number on faith. Sources come from the same pass that composes the
+   * multiplier, so the two cannot disagree.
+   */
+  private renderGoldBreakdown(info: StatsInfo): string {
+    const sources = info.goldSources ?? [];
+    if (sources.length === 0) return '';
+    const rows: string[] = [];
+    let additiveTotal = 0;
+    for (const s of sources) {
+      if (s.kind !== 'additive') continue;
+      additiveTotal += s.additive;
+      rows.push(`<div class="stat-subrow"><span>${s.label}</span><span>+${(s.additive * 100).toFixed(0)}%</span></div>`);
+    }
+    const multiplicative = sources.filter(s => s.kind === 'multiplicative');
+    // The subtotal line is what turns the summed percentages above into the
+    // factor the multiplicative sources below build on — without it the two
+    // halves of the composition look unrelated.
+    if (rows.length > 0 && multiplicative.length > 0) {
+      rows.push(`<div class="stat-subrow stat-subtotal"><span>subtotal</span><span>×${(1 + additiveTotal).toFixed(2)}</span></div>`);
+    }
+    for (const s of multiplicative) {
+      if (s.kind !== 'multiplicative') continue;
+      rows.push(`<div class="stat-subrow"><span>${s.label}</span><span>×${s.factor.toFixed(2)}</span></div>`);
+    }
+    if (rows.length === 0) return '';
+    return `<div class="stat-breakdown">${rows.join('')}</div>`;
   }
 
   private openStatsPopup(): void {
@@ -584,6 +622,14 @@ export class HUD {
 
     const groupRight = document.createElement('div');
     groupRight.className = 'hud-group right';
+    this.keybindsBtn = document.createElement('button');
+    this.keybindsBtn.type = 'button';
+    this.keybindsBtn.className = 'hud-keybinds-btn';
+    this.keybindsBtn.textContent = '?';
+    this.keybindsBtn.title = 'Keyboard shortcuts (?)';
+    this.keybindsBtn.setAttribute('aria-label', 'Keyboard shortcuts');
+    this.keybindsBtn.addEventListener('click', () => this.onShowKeybinds());
+    groupRight.appendChild(this.keybindsBtn);
     this.dpsEl = this.addStat(groupRight, 'DPS', '0');
     this.fpsEl = this.addStat(groupRight, 'FPS', '--');
     toggleClass(this.fpsEl, 'hud-fps', true);

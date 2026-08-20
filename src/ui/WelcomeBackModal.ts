@@ -87,6 +87,14 @@ export class WelcomeBackModal {
       : '0';
     waveStat.appendChild(waveLabel);
     waveStat.appendChild(waveValue);
+    // Only worth a row when the run actually moved: once the walk reaches the
+    // player's deepest wave it farms there, and start == end again.
+    if (data.endWave > data.startWave) {
+      const progressValue = document.createElement('div');
+      progressValue.className = 'welcome-stat-sub';
+      progressValue.textContent = `wave ${data.startWave} → ${data.endWave}`;
+      waveStat.appendChild(progressValue);
+    }
     stats.appendChild(waveStat);
 
     const xpStat = document.createElement('div');
@@ -108,7 +116,8 @@ export class WelcomeBackModal {
     const efficiency = document.createElement('p');
     efficiency.className = 'welcome-modal-note';
     const dps = Math.floor(data.result.effectiveDPS);
-    efficiency.textContent = `Tower ran at 70% efficiency (≈ ${formatNumber(dps)} effective DPS).`;
+    efficiency.textContent = `Tower ran at 50% efficiency (≈ ${formatNumber(dps)} effective DPS), `
+      + 'with your full gold multiplier applied.';
     card.appendChild(efficiency);
 
     const btn = document.createElement('button');

@@ -7,24 +7,61 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | File | Description |
 |------|-------------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Overall project structure, tech stack, entry point, file map, data flow, state management |
-| [docs/game-loop.md](docs/game-loop.md) | Core game loop, update/draw cycle, speed system, reset types, public API |
+| [docs/game-loop.md](docs/game-loop.md) | Core game loop, fixed-timestep substepping, speed system, reset types, public API |
+| [docs/performance.md](docs/performance.md) | Frame budget: substepping, renderer sprite cache, spatial grid, effect pools, save cadence, lookup caches |
+| [docs/testing.md](docs/testing.md) | Vitest suite, `npm run checks`, the balance simulator, in-browser verification |
+| [docs/stat-pipeline.md](docs/stat-pipeline.md) | The single stat composition point: StatKey union, StatContext, accumulator buckets, contributors, BuffRegistry, breakdowns |
 | [docs/tower-system.md](docs/tower-system.md) | Tower state, targeting modes (nearest/lowest_hp/first), damage calculation, manual aim |
-| [docs/enemy-system.md](docs/enemy-system.md) | 6 enemy types, scaling per wave, movement, combat, crowd control (slow/knockback/shockwave) |
-| [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, intermission, enemy selection weights, wave skip |
-| [docs/projectile-system.md](docs/projectile-system.md) | Projectile firing, shot variants (extra/scatter/back), collision, piercing, damage multipliers |
+| [docs/enemy-system.md](docs/enemy-system.md) | 8 enemy types, elites and their 5 auras, scaling per wave, movement, combat, crowd control |
+| [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, intermission, enemy selection weights, wave skip, enrage |
+| [docs/wave-modifier-system.md](docs/wave-modifier-system.md) | 9 mutators, offer cadence, 3-wave duration with escalating rewards |
+| [docs/projectile-system.md](docs/projectile-system.md) | Projectile firing, shot variants, swept collision, piercing, lifetime, damage multipliers |
 | [docs/resource-system.md](docs/resource-system.md) | Gold & mana economy, income sources, spending, passive income |
-| [docs/upgrade-system.md](docs/upgrade-system.md) | 17 upgrades across 4 categories, cost formula, effect computation, upgrade panel |
-| [docs/ability-system.md](docs/ability-system.md) | 4 active abilities, mana system, casting logic, cooldowns, buffs |
-| [docs/prestige-system.md](docs/prestige-system.md) | Ascension (AP) & Transcendence (TP), perks, formulas, automation unlocks |
-| [docs/research-system.md](docs/research-system.md) | 8 research nodes in 4 categories, RP system, effect queries, prerequisites |
-| [docs/automation-system.md](docs/automation-system.md) | 4 automation features (buy/cast/ascend/transcend), timers, unlock requirements |
-| [docs/effects-system.md](docs/effects-system.md) | Particles, damage numbers, shockwave rings, physics constants |
-| [docs/ui-system.md](docs/ui-system.md) | 5-tab panel system, HUD components, API interfaces, callback wiring, CSS |
-| [docs/event-bus.md](docs/event-bus.md) | Pub/sub event system with full event catalog (25 events) |
+| [docs/upgrade-system.md](docs/upgrade-system.md) | 27 upgrades across 4 categories, evolutions, bulk buy, cost formula, upgrade panel |
+| [docs/ability-system.md](docs/ability-system.md) | 10 active abilities, mana system, casting logic, cooldowns, buffs, ability XP |
+| [docs/passive-system.md](docs/passive-system.md) | 8 passive abilities, gold unlock + XP level track, persistence |
+| [docs/xp-talent-system.md](docs/xp-talent-system.md) | Tower XP and level curve, talent points, the 37-node talent tree, respec |
+| [docs/equipment-system.md](docs/equipment-system.md) | 8 slots, 5 rarities, drop sources and rolls, equipped bonuses, persistence |
+| [docs/achievement-system.md](docs/achievement-system.md) | 18 achievements, reward types and the consumer map that keeps them wired |
+| [docs/prestige-system.md](docs/prestige-system.md) | Ascension (AP) & Transcendence (TP), perk trees, formulas, automation unlocks |
+| [docs/research-system.md](docs/research-system.md) | 17 research nodes in 4 categories, RP system, effect queries, prerequisites |
+| [docs/automation-system.md](docs/automation-system.md) | Automation features (buy/cast/ascend/transcend), auto-buy strategies, timers, unlock requirements |
+| [docs/effects-system.md](docs/effects-system.md) | Particles, damage numbers, shockwave rings, pool caps, physics constants |
+| [docs/audio-system.md](docs/audio-system.md) | Web Audio synthesis, event subscriptions, volume and mute |
+| [docs/ui-system.md](docs/ui-system.md) | Tab panel system, HUD components, API interfaces, callback wiring, CSS |
+| [docs/event-bus.md](docs/event-bus.md) | Pub/sub event system with the event catalog |
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
-| [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, milestone table, pulse-on-trigger behavior |
+| [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, progression tab, milestone table |
 | [docs/run-summary.md](docs/run-summary.md) | Post-run debrief modal, per-run history ring buffer, stats tab |
-| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v2), auto-save, offline progress computation, welcome back modal |
+| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v9) and the migration ladder, debounced auto-save, offline progress |
+
+## Content at a glance
+
+| Table | Count | File |
+|---|---:|---|
+| Upgrades (with evolutions) | 27 | `src/data/upgrades.ts` |
+| Active abilities | 10 | `src/data/abilities.ts` |
+| Passive abilities | 8 | `src/data/passiveAbilities.ts` |
+| Enemy types | 8 | `src/data/enemies.ts` |
+| Elite auras | 5 | `src/systems/EnemyManager.ts` |
+| Talents | 37 | `src/data/talentTree.ts` |
+| Research nodes | 17 | `src/data/research.ts` |
+| Achievements | 18 | `src/data/achievements.ts` |
+| Wave modifiers | 9 | `src/data/waveModifiers.ts` |
+| Equipment slots / rarities | 8 / 5 | `src/data/equipment.ts` |
+| Save version | 9 | `src/systems/SaveManager.ts` |
+
+## Commands
+
+```bash
+npm run dev         # vite dev server
+npm run build       # tsc + vite build
+npm run typecheck   # tsc --noEmit
+npm run test        # vitest suite (tests/)
+npm run checks      # behavioural checks driving the real managers (sim/checks.ts)
+npm run sim         # balance simulator, before/after curve tables (sim/balance.ts)
+```
+
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

@@ -23,6 +23,13 @@ src/
     Game.ts                       — Core loop, orchestrator
     EventBus.ts                   — Pub/sub event system
     Renderer.ts                   — Canvas 2D drawing
+  stats/
+    keys.ts                       — Closed StatKey union, bases, clamps
+    context.ts                    — StatContext: the immutable resolve input
+    accumulator.ts                — Additive/multiplicative buckets + breakdown
+    resolve.ts                    — resolveStats(): the one composition point
+    BuffRegistry.ts               — Every time-varying modifier
+    contributors/                 — One pure (ctx, acc) => void per system
   systems/
     Tower.ts                      — Tower state, targeting, damage
     EnemyManager.ts               — Enemy spawning, movement, combat
@@ -89,7 +96,11 @@ Game loop (`Game.loop`) calls `update(dt)` → systems tick → `draw()` → `ui
 
 - Single root `GameState` object created by `makeInitialState()` in `Game.ts`
 - Each system owns a slice of state (passed via constructor)
-- Systems mutate state directly in `tick()` methods
+- Systems mutate their own slice directly in `tick()` methods
+- **Derived stats are the exception**: nothing writes a tower stat except
+  `Game.applyResolvedStats`, fed by `resolveStats` over an immutable
+  `StatContext`. Systems contribute to that context; they never touch
+  `TowerState`. See [stat-pipeline.md](stat-pipeline.md)
 - EventBus provides cross-system communication
 - UI reads state each frame — `Game.update()` ends with `this.ui.update(this.state)`
 - UI callbacks go through setter-wired methods on `Game` (no direct state mutation from UI)

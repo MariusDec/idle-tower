@@ -1,3 +1,4 @@
+import type { EvolutionEffectId } from './data/upgrades';
 import { evalFormula } from './data/formulas';
 
 export type EnemyType = 'normal' | 'fast' | 'tank' | 'flying' | 'healer' | 'boss' | 'splitter' | 'shielded';
@@ -33,7 +34,7 @@ export type AbilityId =
   | 'execute'
   | 'multishot';
 
-export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'stats' | 'settings' | 'talents' | 'equipment';
+export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'progression' | 'stats' | 'settings' | 'talents' | 'equipment';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';
 
@@ -192,14 +193,21 @@ export interface HomingProjectile extends Projectile {
 }
 
 export interface WaveModifierState {
-  /** The modifier currently active for `wave.number` (set when boss wave starts). */
+  /** The modifier currently running (plan §3.3: it now spans several waves). */
   active: WaveModifierSnapshot | null;
   /** Up to 3 choices offered to the player for the upcoming boss wave. */
   choiceForNextWave: WaveModifierSnapshot[] | null;
-  /** Boss wave number the `choiceForNextWave` belongs to. */
+  /** First wave the active modifier applies to (also the wave the offer was made for). */
   pendingChoiceForWave: number | null;
-  /** Gold earned snapshot taken when the modifier was picked, used to compute gold multiplier bonus on wave clear. */
+  /** Gold earned snapshot taken at the start of the current modifier wave. */
   goldSnapshot: number | null;
+  /**
+   * Waves the active modifier still applies to, including the current one
+   * (plan §3.3). 0 = no modifier running.
+   */
+  wavesRemaining: number;
+  /** Waves already cleared under the active modifier; drives the escalating reward. */
+  wavesCleared: number;
 }
 
 export interface WaveModifierSnapshot {
@@ -253,6 +261,16 @@ export interface AbilityState {
   xp: number;
 }
 
+/**
+ * Auto-buy heuristics (plan §3.6). `cheapest` is the historical behaviour:
+ * buy whatever costs least, which floods utility upgrades and never banks for
+ * damage. `damage` prioritises the tower category, `balanced` keeps every
+ * category within reach of each other.
+ */
+export type AutoBuyStrategy = 'cheapest' | 'balanced' | 'damage';
+
+export const AUTO_BUY_STRATEGIES: readonly AutoBuyStrategy[] = ['cheapest', 'balanced', 'damage'];
+
 export interface PrestigeState {
   apSpent: Record<string, number>;
   tpSpent: Record<string, number>;
@@ -263,6 +281,16 @@ export interface PrestigeState {
     autoTranscend: boolean;
   };
   targetAscendWave: number;
+  /**
+   * Per-ability auto-cast opt-out (plan §3.1). Missing key = enabled, so new
+   * abilities are auto-cast by default and old saves need no migration beyond
+   * an empty object.
+   */
+  autoCastEnabled: Record<string, boolean>;
+  /** Which upgrades auto-buy reaches for first (plan §3.6). */
+  autoBuyStrategy: AutoBuyStrategy;
+  /** Fraction of current gold auto-buy refuses to spend, 0-0.9 (plan §3.6). */
+  autoBuyReserve: number;
 }
 
 export interface GameStats {
@@ -313,7 +341,7 @@ export interface UpgradeEvolution {
   level: number;
   name: string;
   description: string;
-  effectId: string;
+  effectId: EvolutionEffectId;
   effectValue: number;
 }
 
@@ -371,6 +399,19 @@ export interface UpgradeRuntime {
   level: number;
 }
 
+/**
+ * One contributor to the composed gold multiplier.
+ *
+ * Gold is composed in two stages: every `additive` source sums into a single
+ * `1 + sum` step, and every `multiplicative` source then multiplies on top.
+ * Attributing an additive source a factor of its own would overstate it — two
+ * `+100%` sources make `×3`, not `×4` — so the two kinds stay distinct and the
+ * display sums before it multiplies, exactly as the composition does.
+ */
+export type GoldSourceEntry =
+  | { label: string; kind: 'additive'; additive: number }
+  | { label: string; kind: 'multiplicative'; factor: number };
+
 export interface StatsInfo {
   damage: number;
   dps: number;
@@ -388,6 +429,8 @@ export interface StatsInfo {
   manaRegen: number;
   maxMana: number;
   goldMultiplier: number;
+  /** Per-source attribution for `goldMultiplier` (plan §4.2). */
+  goldSources: GoldSourceEntry[];
   rpGainRate: number;
 }
 

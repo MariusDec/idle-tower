@@ -1,13 +1,25 @@
 import { toggleClass } from '../utils/dom';
 import type { WaveModifierSnapshot } from '../types';
+import { formatNumber } from '../utils/bigNumber';
 
 export type WaveModifierAutoMode = 'off' | 'skip' | 'select';
+
+/** Plan §3.3: what a mutator is projected to pay over its full run. */
+export interface WaveModifierProjection {
+  gold: number;
+  ap: number;
+  tp: number;
+}
 
 export interface WaveModifierChoiceData {
   /** Wave number the modifier will be applied to (e.g. 10, 20, 30). */
   wave: number;
+  /** How many waves the chosen modifier will run for. */
+  waves: number;
   /** Up to 3 modifiers to choose from. */
   choices: WaveModifierSnapshot[];
+  /** Projected total reward per modifier id, so the risk has a number next to it. */
+  projected: Record<string, WaveModifierProjection>;
 }
 
 export interface WaveModifierCallbacks {
@@ -47,6 +59,7 @@ export class WaveModifierModal {
   private autoMode: WaveModifierAutoMode = 'off';
   private autoTimer = 0;
   private currentChoices: WaveModifierSnapshot[] = [];
+  private currentData: WaveModifierChoiceData | null = null;
 
   // Element refs for live updates
   private countdownLabel: HTMLElement | null = null;
@@ -65,6 +78,7 @@ export class WaveModifierModal {
     this.autoMode = readAutoModePref();
     this.autoTimer = AUTO_PICK_DELAY;
     this.currentChoices = [...data.choices];
+    this.currentData = data;
 
     const wrap = document.createElement('div');
     wrap.className = 'wave-mod-modal';
@@ -87,7 +101,7 @@ export class WaveModifierModal {
 
     const sub = document.createElement('p');
     sub.className = 'wave-mod-modal-sub';
-    sub.textContent = 'Choose a mutator, decline, or let auto-pick handle it. The reward is granted on selection.';
+    sub.textContent = `Runs for ${data.waves} waves. Each cleared wave pays out, and the reward grows every wave: ×1, ×1.5, ×2.`;
     card.appendChild(sub);
 
     const grid = document.createElement('div');
@@ -224,11 +238,16 @@ export class WaveModifierModal {
 
     const reward = document.createElement('div');
     reward.className = 'wave-mod-card-reward';
+    const projection = this.currentData?.projected[snapshot.id];
     const parts: string[] = [];
-    if (snapshot.reward.ap > 0) parts.push(`+${snapshot.reward.ap} AP`);
-    if (snapshot.reward.gold > 0) parts.push(`×${snapshot.reward.gold} Gold on clear`);
-    if (snapshot.reward.tp > 0) parts.push(`+${snapshot.reward.tp} TP`);
-    reward.textContent = parts.length > 0 ? `Reward: ${parts.join(', ')}` : 'No bonus reward';
+    // Plan §3.3: show what the mutator is actually worth, not just its rates —
+    // "×4 gold" means nothing without knowing what a wave of gold is.
+    if (projection && projection.gold > 0) parts.push(`≈${formatNumber(projection.gold)} gold`);
+    if (projection && projection.ap > 0) parts.push(`+${formatNumber(projection.ap)} AP`);
+    if (projection && projection.tp > 0) parts.push(`+${formatNumber(projection.tp)} TP`);
+    reward.textContent = parts.length > 0
+      ? `Projected: ${parts.join(', ')}`
+      : 'No bonus reward';
     btn.appendChild(reward);
 
     btn.addEventListener('click', () => this.handleChoose(snapshot));

@@ -585,3 +585,17 @@ export const TALENTS_BY_BRANCH: Record<TalentBranch, TalentDef[]> = {
   utility: TALENTS.filter(t => t.branch === 'utility'),
   magic: TALENTS.filter(t => t.branch === 'magic'),
 };
+
+/**
+ * Gold charged to refund talent points (plan §4.7).
+ *
+ * A respec used to advertise a flat 500g and charge nothing, and the refunded
+ * points evaporated instead of returning to the pool. Pricing per point keeps
+ * the cost proportional to how much is being undone, and keeps it legible:
+ * the button can always show the exact number.
+ */
+export const TALENT_RESPEC_COST_PER_POINT = 500;
+
+export function talentRespecCost(points: number): number {
+  return Math.max(0, Math.floor(points)) * TALENT_RESPEC_COST_PER_POINT;
+}

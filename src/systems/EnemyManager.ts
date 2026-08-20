@@ -9,6 +9,7 @@ import {
   goldDropForWave,
 } from '../data/formulas';
 import { TOWER_HIT_RADIUS } from '../data/tower';
+import { SpatialGrid } from '../utils/SpatialGrid';
 import { EventBus } from '../game/EventBus';
 import type { ResourceManager } from './ResourceManager';
 import type { ResearchTree } from './ResearchTree';
@@ -16,11 +17,22 @@ import type { ResearchTree } from './ResearchTree';
 const ENEMY_GAP = 2;
 
 // Elite enemy constants
+//
+// Plan §3.4: the ramp used to top out at 8% at wave 200, which made five
+// hand-written auras into noise a player would rarely see and never plan
+// around. It now reaches its cap of 20% at wave 100 — frequent enough to be a
+// recognisable part of a wave's texture, still rare enough to feel like an
+// event. Elites also pay for themselves now (see ELITE_GOLD_MULT and the
+// guaranteed RP drop in `damage`).
 const ELITE_UNLOCK_WAVE = 21;
 const ELITE_SPAWN_CHANCE_BASE = 0.02;
-const ELITE_SPAWN_CHANCE_MAX_WAVE = 200;
-const ELITE_SPAWN_CHANCE_MAX = 0.08;
+const ELITE_SPAWN_CHANCE_MAX_WAVE = 100;
+const ELITE_SPAWN_CHANCE_MAX = 0.20;
 const ELITE_HP_MULT = 2.5;
+/** Gold multiplier every elite carries, on top of any aura bonus. */
+const ELITE_GOLD_MULT = 2.5;
+/** RP guaranteed by an elite kill (plan §3.4: elites are a visible RP faucet). */
+const ELITE_RP_DROP = 1;
 const AURA_RADIUS = 180;
 const HASTE_SPEED_BONUS = 0.5;
 const THORNS_REFLECT_FRACTION = 0.1;
@@ -29,6 +41,17 @@ const VITALITY_REGEN_FRACTION = 0.01; // 1% maxHP per second
 const RETRIBUTION_BUFF_DURATION = 5;
 const RETRIBUTION_BUFF_DAMAGE_MULT = 1.5;
 const RETRIBUTION_BUFF_SPEED_MULT = 1.5;
+
+/**
+ * Cell size of the enemy spatial grid (plan §5.4).
+ *
+ * Sized between the small radii (mine and splash, ~50 px) and the large ones
+ * (auras at 180 px, healer at 150 px). Measured at 128: a 180 px aura query
+ * visits 4x4 cells instead of the 5x5 a 96 px grid needs, while a 50 px splash
+ * query still only touches 2x2 — the per-cell lookup is a real share of the
+ * cost at this enemy count, so visiting fewer, fuller cells wins.
+ */
+const GRID_CELL_SIZE = 128;
 
 /** Compute elite spawn chance for a given wave. */
 export function eliteChanceForWave(wave: number): number {
@@ -57,17 +80,11 @@ export class EnemyManager {
   private readonly resources: ResourceManager;
   private readonly researchTree: ResearchTree | null;
   /**
-   * Fully composed gold multiplier (upgrades + prestige + research + talents +
-   * passives + equipment + achievements + wave modifier). Owned solely by
-   * `Game.applyUpgradeEffects` via `setGoldMultiplier`.
+   * Fully composed gold multiplier: every source, including the Gold Rush
+   * buff, arrives already folded together by `resolveStats`. This manager has
+   * exactly one writer and does no composition of its own.
    */
   private goldMultiplier = 1;
-  /**
-   * Temporary multiplier from the Gold Rush ability. Owned solely by
-   * `AbilityManager`, kept separate so the two writers cannot clobber
-   * each other.
-   */
-  private goldBuffMultiplier = 1;
   private slowFactor = 1;
   private slowTimer = 0;
   private goldLuckChance = 0;
@@ -97,6 +114,13 @@ export class EnemyManager {
   private hpMult = 1;
   /** Retribution buffs: enemy ID → remaining duration. */
   private retributionBuffs: Map<number, number> = new Map();
+  /**
+   * Position index for radius queries (plan §5.4). Rebuilt lazily: `gridStale`
+   * is set whenever the roster or any position changes, and `ensureGrid`
+   * re-indexes at most once before the next batch of queries.
+   */
+  private readonly grid = new SpatialGrid<Enemy>(GRID_CELL_SIZE);
+  private gridStale = true;
 
   constructor(bus: EventBus, resources: ResourceManager, researchTree?: ResearchTree) {
     this.bus = bus;
@@ -111,11 +135,6 @@ export class EnemyManager {
   /** Composed permanent gold multiplier (1 = no bonus). */
   setGoldMultiplier(multiplier: number): void {
     this.goldMultiplier = Math.max(0, multiplier);
-  }
-
-  /** Temporary ability buff multiplier (1 = no buff). */
-  setGoldBuffMultiplier(multiplier: number): void {
-    this.goldBuffMultiplier = Math.max(0, multiplier);
   }
 
   /** Scavenge talent: chance for a kill to pay double. */
@@ -237,6 +256,7 @@ export class EnemyManager {
       ...overrides,
     };
     this.enemies.push(enemy);
+    this.gridStale = true;
     return enemy;
   }
 
@@ -288,6 +308,12 @@ export class EnemyManager {
       this.bus.emit('enemy_killed', enemy);
       this.resources.addGold(this.computeGold(enemy, isCrit));
       const def = ENEMY_DEFS[enemy.type];
+      // Plan §3.4: an elite always pays out research, so the player has a
+      // concrete reason to want the aura on screen instead of merely surviving it.
+      if (enemy.elite) {
+        this.bus.emit('rp_dropped', { x: enemy.x, y: enemy.y, amount: ELITE_RP_DROP });
+        if (this.researchTree) this.researchTree.addRP(ELITE_RP_DROP);
+      }
       const chance = (def.rpChance ?? 0) + this.rpDropChanceBonus;
       if (chance > 0 && Math.random() < Math.min(1, chance)) {
         this.bus.emit('rp_dropped', { x: enemy.x, y: enemy.y, amount: 1 });
@@ -301,9 +327,10 @@ export class EnemyManager {
 
   private computeGold(enemy: Enemy, isCrit: boolean = false): number {
     const base = enemy.goldValue;
-    let amount = base * this.goldMultiplier * this.goldBuffMultiplier;
+    let amount = base * this.goldMultiplier;
     if (this.killStreakGoldBonus > 0) amount *= 1 + this.killStreakGoldBonus;
     if (this.manaFullGoldBonus > 0) amount *= 1 + this.manaFullGoldBonus;
+    if (enemy.elite) amount *= ELITE_GOLD_MULT;
     if (enemy.aura === 'greed' && enemy.elite) amount *= GREED_GOLD_MULT;
     if (this.goldLuckChance > 0 && Math.random() < this.goldLuckChance) {
       amount *= this.goldLuckMultiplier;
@@ -338,6 +365,8 @@ export class EnemyManager {
   applyShockwave(radius: number, fromX: number, fromY: number): void {
     if (radius <= 0) return;
     const r2 = radius * radius;
+    // Fires once per shockwave cooldown, so a single O(n) pass is cheaper than
+    // indexing for it.
     for (const e of this.enemies) {
       if (!e.alive) continue;
       const dx = e.x - fromX;
@@ -349,6 +378,8 @@ export class EnemyManager {
       e.x = fromX + (dx / d) * radius;
       e.y = fromY + (dy / d) * radius;
     }
+    // Everything the ring touched has been shoved outwards.
+    this.gridStale = true;
   }
 
   tick(dt: number, towerX: number, towerY: number): void {
@@ -366,7 +397,6 @@ export class EnemyManager {
 
     const newlyReached: Enemy[] = [];
     let totalDamage = 0;
-
     // Pre-compute haste aura multipliers (per-frame reset)
     const hasteMultipliers = this.computeHasteMultipliers();
 
@@ -425,6 +455,7 @@ export class EnemyManager {
           // Find lowest-HP non-healer alive ally in range
           let target: Enemy | null = null;
           let lowestRatio = 1;
+          // Direct scan: healers are few, so this is O(healers x n).
           for (const other of this.enemies) {
             if (!other.alive) continue;
             if (other.id === e.id) continue;
@@ -459,7 +490,10 @@ export class EnemyManager {
       this.bus.emit('tower_damaged', totalDamage);
     }
 
-    // Process vitality aura (heal nearby enemies)
+    // Process vitality aura (heal nearby enemies). Deliberately reuses the
+    // index built at the top of the tick rather than forcing a second rebuild:
+    // one step of movement is ~2 px at a normal enemy's speed, against a 180 px
+    // aura radius, and a rebuild costs more than that error is worth.
     this.processVitalityAura(dt);
 
     // Sync retribution timers to enemy objects for renderer
@@ -468,6 +502,11 @@ export class EnemyManager {
     }
 
     this.enemies = this.enemies.filter(e => e.alive);
+    // Everything has moved and the dead are gone: the position index that
+    // `Game`'s mine, splash and chain-kill queries use is now stale. Rebuilt
+    // lazily by the next `queryRadius`, so a frame with none of those pays
+    // nothing (plan §5.4).
+    this.gridStale = true;
   }
 
   findById(id: number): Enemy | null {
@@ -479,12 +518,13 @@ export class EnemyManager {
 
   reset(): void {
     this.enemies = [];
+    this.grid.clear();
+    this.gridStale = true;
     this.slowFactor = 1;
     this.slowTimer = 0;
     this.goldLuckChance = 0;
     this.goldLuckMultiplier = 1;
     this.goldMultiplier = 1;
-    this.goldBuffMultiplier = 1;
     this.doubleGoldChance = 0;
     this.vulnerableEnemies.clear();
     this.killStreakGoldBonus = 0;
@@ -521,6 +561,29 @@ export class EnemyManager {
     });
   }
 
+  /** Re-index positions if anything has moved or the roster has changed. */
+  private ensureGrid(): void {
+    if (!this.gridStale) return;
+    this.grid.rebuild(this.enemies);
+    this.gridStale = false;
+  }
+
+  /**
+   * Living enemies within `radius` of a point (plan §5.4).
+   *
+   * Returns a fresh array by default. Pass `out` to reuse a buffer, but only
+   * where re-entrancy is impossible: most callers damage what they find, and
+   * `damage` emits `enemy_killed` / `enemy_damaged`, whose handlers query
+   * again — a shared buffer would be cleared and refilled underneath the loop
+   * that is still walking it, silently skipping enemies.
+   */
+  queryRadius(x: number, y: number, radius: number, out?: Enemy[]): Enemy[] {
+    this.ensureGrid();
+    const target = out ?? [];
+    target.length = 0;
+    return this.grid.query(x, y, radius, target);
+  }
+
   aliveCount(): number {
     let c = 0;
     for (const e of this.enemies) if (e.alive) c++;
@@ -544,6 +607,12 @@ export class EnemyManager {
   private computeHasteMultipliers(): Map<number, number> {
     const result = new Map<number, number>();
     const r2 = AURA_RADIUS * AURA_RADIUS;
+    // Deliberately a direct scan, not a `queryRadius` call. The outer loop is
+    // over *aura elites* (a handful), not over every enemy, so this is
+    // O(elites x n) rather than the O(n^2) the plan assumed — and measured
+    // against the spatial grid at 64-420 enemies, the grid is 1.6-4x slower
+    // here, because one O(n) index rebuild costs more than the few thousand
+    // cheap distance tests it saves. See docs/performance.md.
     for (const e of this.enemies) {
       if (!e.alive || e.aura !== 'haste' || !e.elite) continue;
       for (const other of this.enemies) {
@@ -564,6 +633,7 @@ export class EnemyManager {
    */
   private processVitalityAura(dt: number): void {
     const r2 = AURA_RADIUS * AURA_RADIUS;
+    // Direct scan for the same reason as `computeHasteMultipliers`.
     for (const e of this.enemies) {
       if (!e.alive || e.aura !== 'vitality' || !e.elite) continue;
       for (const other of this.enemies) {
@@ -593,6 +663,7 @@ export class EnemyManager {
    */
   private triggerRetribution(dead: Enemy): void {
     const r2 = AURA_RADIUS * AURA_RADIUS;
+    // One pass per retribution-elite death: rare, and O(n) either way.
     for (const e of this.enemies) {
       if (!e.alive || e.id === dead.id) continue;
       const dx = e.x - dead.x;

@@ -1,4 +1,4 @@
-import type { AbilityId, EnemyType, EnemyWaveStatsEntry, GameState, PanelTab, StatsInfo } from '../types';
+import type { AbilityId, EnemyType, EnemyWaveStatsEntry, GameState, GoldSourceEntry, PanelTab, StatsInfo, AutoBuyStrategy } from '../types';
 import { ENEMY_DEFS } from '../data/enemies';
 import {
   enemyHPForWave,
@@ -9,7 +9,7 @@ import {
   isBossWave,
 } from '../data/formulas';
 import { HUD } from './HUD';
-import { UpgradePanel } from './UpgradePanel';
+import { UpgradePanel, type BuyAmount, type UpgradePlan } from './UpgradePanel';
 import { UPGRADES } from '../data/upgrades';
 import { AbilityPanel } from './AbilityPanel';
 import { PrestigePanel } from './PrestigePanel';
@@ -20,7 +20,10 @@ import { AchievementPanel } from './AchievementPanel';
 import { WelcomeBackModal, type WelcomeBackData } from './WelcomeBackModal';
 import { RunSummaryModal, type RunSummaryData } from './RunSummaryModal';
 import { RunFailedModal, type RunFailedData } from './RunFailedModal';
+import { RunStalledBanner, type RunStalledData } from './RunStalledBanner';
+import { KeybindsOverlay } from './KeybindsOverlay';
 import { StatsPanel } from './StatsPanel';
+import { ProgressionPanel } from './ProgressionPanel';
 import { MilestoneStrip } from './MilestoneStrip';
 import { AbilityBar } from './AbilityBar';
 import { MobileSheet, type MobileSheetTab } from './MobileSheet';
@@ -34,6 +37,7 @@ import type { AutomationKey } from '../data/prestige';
 import type { EffectiveAbilityStats } from '../data/abilities';
 import { ABILITIES } from '../data/abilities';
 import { hasClass, toggleClass, setStyle } from '../utils/dom';
+import { formatNumber } from '../utils/bigNumber';
 
 interface TabDef {
   id: PanelTab;
@@ -49,6 +53,7 @@ const TABS: TabDef[] = [
   { id: 'prestige', label: 'Prestige' },
   { id: 'transcendence', label: 'Transcendence' },
   { id: 'achievements', label: 'Achievements' },
+  { id: 'progression', label: 'Progression' },
   { id: 'stats', label: 'Stats' },
   { id: 'settings', label: 'Settings' },
 ];
@@ -67,6 +72,10 @@ export interface AbilityAPI {
   getUpgradeCost: (id: AbilityId) => number;
   getEffectiveStats: (id: AbilityId) => EffectiveAbilityStats;
   getXp: (id: AbilityId) => number;
+  /** Plan §3.1: per-ability auto-cast opt-out. */
+  isAutoCastUnlocked: () => boolean;
+  isAutoCastEnabled: (id: AbilityId) => boolean;
+  onToggleAutoCast: (id: AbilityId, enabled: boolean) => void;
 }
 
 export interface ResearchAPI {
@@ -101,9 +110,15 @@ export interface PrestigeAPI {
   isAutomationEnabled: (key: AutomationKey) => boolean;
   meetsPrerequisites: (perkId: string) => boolean;
   isExcluded: (perkId: string) => boolean;
+  perkBlockedReason: (perkId: string) => string | null;
   ascendUnlockWave: number;
   transcendUnlockAP: number;
   targetAscendWave: number;
+  /** Plan §3.6: auto-buy tuning. */
+  autoBuyStrategy: AutoBuyStrategy;
+  autoBuyReserve: number;
+  setAutoBuyStrategy: (strategy: AutoBuyStrategy) => void;
+  setAutoBuyReserve: (fraction: number) => void;
 }
 
 export interface TargetingAPI {
@@ -121,6 +136,8 @@ export interface AudioAPI {
 export class UIManager {
   private readonly tabsRoot: HTMLElement;
   private readonly contentRoot: HTMLElement;
+  /** `contentRoot`'s own class, re-applied after a panel overwrites it. */
+  private readonly contentRootBaseClass: string;
   private readonly hud: HUD;
   private readonly upgradePanel: UpgradePanel;
   private readonly abilityPanel: AbilityPanel;
@@ -132,7 +149,10 @@ export class UIManager {
   private readonly welcomeModal: WelcomeBackModal;
   private readonly runSummaryModal: RunSummaryModal;
   private readonly runFailedModal: RunFailedModal;
+  private readonly runStalledBanner: RunStalledBanner;
+  private readonly keybindsOverlay: KeybindsOverlay;
   private readonly statsPanel: StatsPanel;
+  private readonly progressionPanel: ProgressionPanel;
   private readonly milestoneStrip: MilestoneStrip;
   private readonly talentPanel: TalentPanel;
   private readonly equipmentPanel: EquipmentPanel;
@@ -159,7 +179,7 @@ export class UIManager {
   private lastDpsUpdateTime = 0;
   private lastDpsDisplayTime = 0;
   private dpsFreezeTimer = 0;
-  private onBuyUpgrade: (id: string) => void = () => {};
+  private onBuyUpgrade: (id: string, amount: BuyAmount) => void = () => {};
   private onCastAbility: (id: AbilityId) => void = () => {};
   private onUpgradeAbility: (id: AbilityId) => void = () => {};
   private onAscend: () => void = () => {};
@@ -183,7 +203,11 @@ export class UIManager {
     unspentPoints: () => 0,
     canAllocate: () => false,
     allocate: () => false,
-    refundBranch: () => {},
+    refundBranch: () => false,
+    refundAll: () => false,
+    branchRespecCost: () => 0,
+    fullRespecCost: () => 0,
+    gold: () => 0,
   };
   private passiveApi: PassiveAPIDeps = {
     getLevel: () => 0,
@@ -243,6 +267,9 @@ export class UIManager {
       isUnlocked: false,
     }),
     getXp: () => 0,
+    isAutoCastUnlocked: () => false,
+    isAutoCastEnabled: () => true,
+    onToggleAutoCast: () => {},
   };
   private prestigeApi: PrestigeAPI = {
     canAscend: () => false,
@@ -254,9 +281,14 @@ export class UIManager {
     isAutomationEnabled: () => false,
     meetsPrerequisites: () => true,
     isExcluded: () => false,
+    perkBlockedReason: () => null,
     ascendUnlockWave: 30,
     transcendUnlockAP: 100,
     targetAscendWave: 30,
+    autoBuyStrategy: 'balanced',
+    autoBuyReserve: 0,
+    setAutoBuyStrategy: () => {},
+    setAutoBuyReserve: () => {},
   };
   private researchApi: ResearchAPI = {
     rp: 0,
@@ -269,6 +301,7 @@ export class UIManager {
   };
   private lastState: GameState | null = null;
   private cachedGoldMultiplier = 1;
+  private cachedGoldSources: GoldSourceEntry[] = [];
   private uiFrameCounter = 0;
   private lastEnemyStatsWave = -1;
   private readonly UI_UPDATE_INTERVAL = 6;
@@ -279,6 +312,7 @@ export class UIManager {
     contentRoot: HTMLElement;
     bus: EventBus;
     modalRoot: HTMLElement;
+    overlayRoot?: HTMLElement;
     panelRoot?: HTMLElement;
     abilityBarRoot?: HTMLElement;
     bottomNavRoot?: HTMLElement;
@@ -287,6 +321,7 @@ export class UIManager {
     this.bus = deps.bus;
     this.tabsRoot = deps.tabsRoot;
     this.contentRoot = deps.contentRoot;
+    this.contentRootBaseClass = deps.contentRoot.className;
     this.panelRoot = deps.panelRoot ?? (document.getElementById('panel-root') as HTMLElement);
     this.abilityBarRoot = deps.abilityBarRoot ?? (document.getElementById('ability-bar-root') as HTMLElement);
     this.bottomNavRoot = deps.bottomNavRoot ?? (document.getElementById('bottom-nav-root') as HTMLElement);
@@ -299,7 +334,7 @@ export class UIManager {
     this.hud.setOnPrevWave(() => this.onPrevWave());
     this.hud.setOnNextWave(() => this.onNextWave());
     this.hud.setOnToggleAutoProgress(() => this.onToggleAutoProgress());
-    this.upgradePanel = new UpgradePanel((id) => this.onBuyUpgrade(id));
+    this.upgradePanel = new UpgradePanel((id, amount) => this.onBuyUpgrade(id, amount));
     this.abilityPanel = new AbilityPanel({
       onCast: (id) => this.onCastAbility(id),
       onUpgrade: (id) => this.onUpgradeAbility(id),
@@ -310,6 +345,9 @@ export class UIManager {
       getUpgradeCost: (id) => this.abilityApi.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityApi.getEffectiveStats(id),
       getXp: (id) => this.abilityApi.getXp(id),
+      isAutoCastUnlocked: () => this.abilityApi.isAutoCastUnlocked(),
+      isAutoCastEnabled: (id) => this.abilityApi.isAutoCastEnabled(id),
+      onToggleAutoCast: (id, enabled) => this.abilityApi.onToggleAutoCast(id, enabled),
     }, this.passiveApi);
     this.prestigePanel = new PrestigePanel({
       onAscend: () => this.onAscend(),
@@ -317,6 +355,7 @@ export class UIManager {
       canAscend: (w) => this.prestigeApi.canAscend(w),
       canSpend: (id, ap, tp) => this.prestigeApi.canSpend(id, ap, tp),
       previewAP: (w) => this.prestigeApi.previewAP(w),
+      perkBlockedReason: (id) => this.prestigeApi.perkBlockedReason(id),
       ascendUnlockWave: this.prestigeApi.ascendUnlockWave,
     });
     this.transcendencePanel = new TranscendencePanel({
@@ -333,6 +372,10 @@ export class UIManager {
       previewTP: (ap) => this.prestigeApi.previewTP(ap),
       transcendUnlockAP: this.prestigeApi.transcendUnlockAP,
       targetAscendWave: this.prestigeApi.targetAscendWave,
+      getAutoBuyStrategy: () => this.prestigeApi.autoBuyStrategy,
+      onAutoBuyStrategyChange: (strategy) => this.prestigeApi.setAutoBuyStrategy(strategy),
+      getAutoBuyReserve: () => this.prestigeApi.autoBuyReserve,
+      onAutoBuyReserveChange: (fraction) => this.prestigeApi.setAutoBuyReserve(fraction),
     });
     const researchHandlers: ResearchPanelHandlers = {
       onStartResearch: (id) => this.onUnlockResearch(id),
@@ -371,6 +414,12 @@ export class UIManager {
     this.welcomeModal = new WelcomeBackModal(deps.modalRoot);
     this.runSummaryModal = new RunSummaryModal(deps.modalRoot);
     this.runFailedModal = new RunFailedModal(deps.modalRoot);
+    this.runStalledBanner = new RunStalledBanner(
+      deps.overlayRoot ?? (document.getElementById('overlay-root') as HTMLElement) ?? deps.modalRoot,
+    );
+    this.runStalledBanner.setOnAscend(() => this.onAscend());
+    this.keybindsOverlay = new KeybindsOverlay(deps.modalRoot);
+    this.hud.setOnShowKeybinds(() => this.keybindsOverlay.toggle());
     this.statsPanel = new StatsPanel({
       getHistory: () => this.lastState?.runHistory ?? [],
       getCurrentRun: () => {
@@ -390,6 +439,9 @@ export class UIManager {
         };
       },
     });
+    this.progressionPanel = new ProgressionPanel({
+      apThisCycle: () => this.lastState?.resources.apThisTranscendence ?? 0,
+    });
     this.milestoneStrip = new MilestoneStrip(this.hud.renderMilestoneStripSlot(), {
       getProgress: () => {
         const s = this.lastState;
@@ -407,11 +459,13 @@ export class UIManager {
     this.showTab('upgrades');
 
     this.bus.on('upgrade_purchased', (payload: unknown) => {
-      const p = payload as { id: string; level: number };
+      const p = payload as { id: string; level: number; levelsGained?: number };
       const def = UPGRADES.find(u => u.id === p.id);
       const name = def?.name ?? p.id;
-      this.bus.emit('toast', { kind: 'info', text: `Upgraded: ${name} Lv.${p.level}`, life: 2 });
-      this.upgradePanel.flashButton(p.id);
+      const gained = p.levelsGained ?? 1;
+      const suffix = gained > 1 ? ` (+${gained})` : '';
+      this.bus.emit('toast', { kind: 'info', text: `Upgraded: ${name} Lv.${p.level}${suffix}`, life: 2 });
+      this.upgradePanel.flashButton(p.id, gained);
     });
     this.bus.on('upgrades_changed', () => {
       if (!this.lastState) return;
@@ -451,7 +505,21 @@ export class UIManager {
       const p = payload as RunSummaryData;
       this.runSummaryModal.show(p, () => {});
     });
+    this.bus.on('talent_refunded', (payload: unknown) => {
+      const p = payload as { branch: string | null; points: number; cost: number };
+      const scope = p.branch ? `${p.branch} talents` : 'all talents';
+      this.bus.emit('toast', {
+        kind: 'info',
+        text: `Reset ${scope}: ${p.points} point${p.points === 1 ? '' : 's'} refunded for ${formatNumber(p.cost)} gold.`,
+        life: 3,
+      });
+    });
+    this.bus.on('run_stalled', (payload: unknown) => {
+      this.runStalledBanner.show(payload as RunStalledData);
+    });
     this.bus.on('run_failed', (payload: unknown) => {
+      // The run is over — the modal takes it from here.
+      this.runStalledBanner.reset();
       const p = payload as RunFailedData;
       this.runFailedModal.show(
         p,
@@ -460,6 +528,8 @@ export class UIManager {
       );
     });
     this.bus.on('wave_started', (payload: unknown) => {
+      // A new wave means the old stall is moot, and the next one may prompt.
+      this.runStalledBanner.reset();
       const w = payload as number;
       const triggers = milestoneAtWave(w);
       if (triggers.length > 0) {
@@ -524,6 +594,7 @@ export class UIManager {
       { id: 'prestige', label: 'Prestige', render: (b) => this.mountMobileTab('prestige', b) },
       { id: 'transcendence', label: 'Transcendence', render: (b) => this.mountMobileTab('transcendence', b) },
       { id: 'achievements', label: 'Achievements', render: (b) => this.mountMobileTab('achievements', b) },
+      { id: 'progression', label: 'Progression', render: (b) => this.mountMobileTab('progression', b) },
       { id: 'stats', label: 'Stats', render: (b) => this.mountMobileTab('stats', b) },
       { id: 'settings', label: 'Settings', render: (b) => this.mountMobileTab('settings', b) },
     ];
@@ -535,6 +606,10 @@ export class UIManager {
     // The desktop contentRoot remains untouched so desktop still works. We do
     // NOT update this.activeTab — that's the desktop state and would clobber
     // the user's last desktop selection if they resized back.
+    const bodyBaseClass = body.className;
+    // Panels that render no class of their own (achievements, stats) still
+    // want a tab-specific hook; ones that do will overwrite this, and the
+    // base class is restored either way once the mount is done.
     body.className = `${tab}-panel`;
     body.innerHTML = '';
     switch (tab) {
@@ -546,9 +621,11 @@ export class UIManager {
       case 'prestige': this.prestigePanel.mount(body); break;
       case 'transcendence': this.transcendencePanel.mount(body); break;
       case 'achievements': this.achievementPanel.mount(body); break;
+      case 'progression': this.progressionPanel.mount(body); break;
       case 'stats': this.statsPanel.mount(body); break;
       case 'settings': this.settingsPanel.mount(body); break;
     }
+    this.restoreContainerClass(body, bodyBaseClass);
     if (this.lastState) {
       switch (tab) {
         case 'upgrades': this.upgradePanel.update(this.lastState); break;
@@ -559,6 +636,7 @@ export class UIManager {
         case 'prestige': this.prestigePanel.update(this.lastState); break;
         case 'transcendence': this.transcendencePanel.update(this.lastState); break;
         case 'achievements': this.achievementPanel.update(this.lastState); break;
+        case 'progression': this.progressionPanel.update(this.lastState); break;
         case 'stats': this.statsPanel.update(); break;
       }
     }
@@ -634,12 +712,12 @@ export class UIManager {
     } catch {}
   }
 
-  setOnBuyUpgrade(handler: (id: string) => void): void {
+  setOnBuyUpgrade(handler: (id: string, amount: BuyAmount) => void): void {
     this.onBuyUpgrade = handler;
   }
 
-  setUpgradeCostGetter(fn: (id: string) => number): void {
-    this.upgradePanel.setCostGetter(fn);
+  setUpgradePlanGetter(fn: (id: string, amount: BuyAmount) => UpgradePlan): void {
+    this.upgradePanel.setPlanGetter(fn);
   }
 
   setOnCastAbility(handler: (id: AbilityId) => void): void {
@@ -754,6 +832,7 @@ export class UIManager {
 
   setStatsInfo(info: StatsInfo): void {
     this.cachedGoldMultiplier = info.goldMultiplier;
+    this.cachedGoldSources = info.goldSources;
     this.hud.setStatsInfo(info);
   }
 
@@ -935,6 +1014,7 @@ export class UIManager {
       manaRegen: r.manaRegen,
       maxMana: r.maxMana,
       goldMultiplier: this.cachedGoldMultiplier,
+      goldSources: this.cachedGoldSources,
       rpGainRate: this.researchApi.rpGainRate,
     });
   }
@@ -969,6 +1049,9 @@ export class UIManager {
     this.activeTab = id;
     this.activateTabButtons(id);
     this.contentRoot.innerHTML = '';
+    // Clear any class the previous panel left behind: panels that render no
+    // class of their own would otherwise inherit it and pick up its layout.
+    this.contentRoot.className = this.contentRootBaseClass;
     if (id === 'upgrades') {
       this.upgradePanel.mount(this.contentRoot);
       if (this.lastState) this.upgradePanel.update(this.lastState);
@@ -993,11 +1076,32 @@ export class UIManager {
     } else if (id === 'achievements') {
       this.achievementPanel.mount(this.contentRoot);
       if (this.lastState) this.achievementPanel.update(this.lastState);
+    } else if (id === 'progression') {
+      this.progressionPanel.mount(this.contentRoot);
+      if (this.lastState) this.progressionPanel.update(this.lastState);
     } else if (id === 'stats') {
       this.statsPanel.mount(this.contentRoot);
       this.statsPanel.update();
     } else if (id === 'settings') {
       this.settingsPanel.mount(this.contentRoot);
+    }
+    this.restoreContainerClass(this.contentRoot, this.contentRootBaseClass);
+  }
+
+  /**
+   * Re-apply a panel container's own class after a panel has mounted into it.
+   *
+   * Every panel's `renderInto` does `parent.className = '<name>-panel'`, which
+   * wipes the container's class along with it — and the container is the
+   * element carrying `overflow-y: auto`. The result was a panel that could not
+   * scroll, and (because the stale class survived the next mount) a panel that
+   * broke whichever tab was opened after it. Restoring the base class here
+   * fixes every panel at once rather than auditing ten `renderInto`s.
+   */
+  private restoreContainerClass(el: HTMLElement, baseClass: string): void {
+    if (!baseClass) return;
+    for (const cls of baseClass.split(/\s+/)) {
+      if (cls) el.classList.add(cls);
     }
   }
 
@@ -1005,6 +1109,20 @@ export class UIManager {
     for (const el of Array.from(this.tabsRoot.querySelectorAll<HTMLButtonElement>('.tab-btn'))) {
       toggleClass(el, 'active', el.dataset.tab === id);
     }
+  }
+
+  /** Open/close the keyboard-shortcut reference (plan §4.8). */
+  toggleKeybinds(): void {
+    this.keybindsOverlay.toggle();
+  }
+
+  /** True when the shortcut overlay is up, so Esc can close it first. */
+  isKeybindsOpen(): boolean {
+    return this.keybindsOverlay.isOpen();
+  }
+
+  closeKeybinds(): void {
+    this.keybindsOverlay.hide();
   }
 
   notify(kind: 'info' | 'warning' | 'milestone', text: string): void {
