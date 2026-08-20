@@ -414,6 +414,72 @@ unlock waves — new types must appear in the strip), `docs/enemy-system.md`, `A
 
 ## Part 3 — Boss encounters
 
+> **Status: implemented (2026-08-20).** Corrections found during implementation,
+> kept here so later parts don't repeat them:
+> 1. **§3 assumes one boss per wave. There are `2 + tier`.**
+>    `formulas.ts:bossCountForWave` has always spawned three bosses at wave 10,
+>    six at wave 40 and twelve at wave 100, and §3.1–3.5 is written throughout as
+>    if there is exactly one. Every number in §3.2 had to be re-read as
+>    *per encounter* or *per boss*: `summon`'s "4 adds" is divided across the
+>    pack (`bossSummonCountForWave`) with a global 40-alive ceiling, `slam`'s
+>    first telegraph is staggered at random so the pack does not fire in
+>    lockstep, and the §3.4 rewards are scored once per **encounter** — paying a
+>    reroll token per boss would make "flawless" mean "flawless, times six".
+> 2. **The compensation §3 omits is the whole balance story.** Bosses were
+>    already the wall at every prestige tier (`npm run sim`: a wave-40 boss sits
+>    at 0.99 of its enrage budget at 100 lifetime AP), so the phase machine as
+>    specified moved the wall a full decade at *every* tier — 59→49, 89→79,
+>    129→119, 169→159. Part 2's §2.6 rule ("new content replaces slots, total
+>    wave HP must not rise") applies here too and §3 does not say so.
+>    `BOSS_PATTERN_HP_WEIGHT` now prices what each pattern holds outside the HP
+>    bar and `bossMaxHpForWave` shrinks the bar by exactly that, so a boss wave
+>    costs the same total damage it always did and the added difficulty is *fail
+>    states* rather than a longer bar — which is what §0.4 was asking for.
+> 3. **"Tier 4+ draws all four, one per phase" (§3.2) cannot be literal** —
+>    there are three phases and four patterns. Shipped as a deterministic
+>    rotation by tier: every tier-4+ boss runs three *distinct* patterns, and
+>    across four consecutive tiers every pattern reaches every phase slot.
+>    Determinism is also what makes §3.7's phase-count test meaningful.
+> 4. **§3.2's bulwark "recycles" is load-bearing and ambiguous.** Read as
+>    "re-arms after a break as well as after a timeout", it turns a DPS *check*
+>    into a treadmill worth several times the boss's own bar — the sim priced
+>    that at ten wall-waves. Shipped as: a broken bulwark stays broken for the
+>    phase; only the *timeout* path heals and re-arms.
+> 5. **§3.2's siphon needs a heal rate, not a heal ratio.** "Heals for it" priced
+>    per point of mana is a rounding error at wave 10 and half the bar at wave
+>    150, because mana pools grow by orders of magnitude across a run. Shipped as
+>    0.5% of max HP per second of *full* drain, pro-rated by the mana actually
+>    available — so an empty pool feeds it nothing, which is the answer the
+>    pattern is asking for.
+> 6. **§3.2 names Frost Nova as the answer to `slam`, but Frost Nova applies a
+>    global slow, not a chill.** Mitigation reads `EnemyManager.isSlowed(boss)`
+>    (per-enemy chill map first) plus a sticky flag set by `applyKnockback` /
+>    `applyShockwave`. A chill-only read would have left the ability §3.2 names
+>    doing nothing.
+> 7. **§3.5's bar has to pick a boss, and "the one you are shooting" is the
+>    wrong rule.** Lowest-HP-fraction was the first implementation; in-browser at
+>    wave 60 with an eight-boss pack the slam countdown belonged to a boss the
+>    bar was not watching, so the telegraph — the single most time-critical thing
+>    in Part 3 — never surfaced. `leadBoss()` now prefers whichever boss is
+>    mid-telegraph, soonest first.
+> 8. **§3.6's file list omits `src/data/equipment.ts`** (the swift-kill drop
+>    needs `guaranteed` + `rarityBoost` options and a rarity ladder),
+>    `src/systems/PrestigeManager.ts` (the flawless AP bonus needs a run-scoped
+>    channel that composes with the lifetime achievement bonuses instead of
+>    overwriting them), `src/systems/SaveManager.ts` and `sim/model.ts`.
+> 9. **§3 does not mention a save bump; it needs one.** `SAVE_VERSION` 10 → 11
+>    for `GameState.bossRun` (the flawless AP bonus and the two counters).
+>    Mid-fight state is deliberately *not* persisted — live enemies never were,
+>    so a load starts with an empty roster and `WaveManager` clears the wave.
+> 10. **The pre-existing 50%-HP boss enrage still fires**, inside phase 2. It was
+>     left alone rather than folded into the phase machine, but it means a boss
+>     has *four* escalations, not three, and only three of them are on the bar.
+> 11. Unrelated but found by the §3.7 test work: `tests/enemies.test.ts` had a
+>     4%-per-run flake. `WaveManager.startWave` pauses spawning on the
+>     mutator-offer roll and only the modal resumes it, so a headless harness
+>     silently spawned nothing one run in twenty-five. Fixed with an explicit
+>     `resumeSpawning()`.
+
 **Goal:** make wave 10 a thing that happens, and wave 100 a thing you prepare for.
 
 ### 3.1 Phases
