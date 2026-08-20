@@ -105,6 +105,18 @@ it. Implement in numeric order — later parts reference earlier ones.
 
 ## Part 1 — Blessings: an in-run draft
 
+> **Status: implemented (2026-08-20), commit `4a7f255`.** Four corrections found during
+> implementation, kept here so later parts don't repeat them:
+> 1. The per-card values in §1.3 are 4–6x what §1.6's balance target allows — 13 picks compound
+>    hard against the HP curve, and the §1.3 numbers put the wall past wave 89 at 0 lifetime AP.
+>    The shipped pool hits the §1.6 target instead; `docs/blessing-system.md` records the delta.
+> 2. The pool shipped at **30 cards**, not "~34" — §1.3's tables total 29.
+> 3. §1.4's "no new keys needed" was wrong twice: `armorPenFlat` needs its own key because the
+>    existing `armorPen` is a fraction, and `bl_brittle` needs an `enemyDamagePct` stat that
+>    §1.2's `BLESSING_STATS` list omits.
+> 4. The `WaveManager` API is `pauseIntermission()` / `resumeIntermission()`, not
+>    `setIntermissionPaused`; `WaveModifierModal` uses `pauseSpawning`, a different hook.
+
 **Goal:** a build-shaping decision every ~90 seconds, wiped on ascension, so two runs at the same
 power level play differently.
 
@@ -115,8 +127,8 @@ power level play differently.
 - **1 reroll** per draft, plus any reroll tokens held (Part 5 grants them).
 - Hard cap **30 picks per run** — past that the draft stops offering (keeps the sim tractable).
 - The draft is offered during intermission and **pauses the intermission timer only**
-  (`WaveManager.setIntermissionPaused`, the same hook `WaveModifierModal` uses). It must not pause
-  the simulation.
+  (`WaveManager.pauseIntermission()` / `resumeIntermission()` — note `WaveModifierModal` uses the
+  *spawning* hook, `pauseSpawning`, which is a different thing). It must not pause the simulation.
 - **Idle safety:** a setting `autoPickBlessings` (default off; forced on when the tab has been
   hidden, and when `AutomationManager` has `autoBuy` unlocked) auto-selects after **20 s**, taking
   the highest-weight offer. An unattended game never stalls on a modal.
