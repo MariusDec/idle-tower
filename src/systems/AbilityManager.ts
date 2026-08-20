@@ -14,6 +14,7 @@ import type { ResourceManager } from './ResourceManager';
 import type { EnemyManager } from './EnemyManager';
 import type { Tower } from './Tower';
 import type { ProjectileManager } from './ProjectileManager';
+import type { BuffRegistry } from '../stats/BuffRegistry';
 
 interface AbilityManagerDeps {
   resources: ResourceManager;
@@ -21,9 +22,26 @@ interface AbilityManagerDeps {
   tower: Tower;
   bus: EventBus;
   projectileManager: ProjectileManager;
+  buffs: BuffRegistry;
   getState: (id: AbilityId) => AbilityState;
   onCast: (id: AbilityId) => void;
 }
+
+/**
+ * Buff ids this manager owns. Each ability effect maps to a stable id so a
+ * recast replaces its own buff rather than stacking a second copy.
+ */
+const BUFF_FIRE_RATE = 'ability:fireRate';
+const BUFF_GOLD = 'ability:gold';
+const BUFF_CRIT_CHANCE = 'ability:critChance';
+const BUFF_CRIT_DAMAGE = 'ability:critDamage';
+const BUFF_LIFESTEAL = 'ability:lifesteal';
+const BUFF_VAMPIRIC_REGEN = 'ability:vampiricRegen';
+
+/** Crit multiplier granted alongside the crit-chance buff. */
+const CRIT_BUFF_DAMAGE_MULTIPLIER = 1.5;
+/** Vampiric Aura's flat regen, as a fraction of maxHP per second. */
+const VAMPIRIC_REGEN = 0.01;
 
 const MANA_UNLOCK_WAVE = 10;
 const METEOR_SPLASH_RADIUS = 60;
@@ -41,18 +59,13 @@ export class AbilityManager {
   private readonly tower: Tower;
   private readonly bus: EventBus;
   private readonly projectileMgr: ProjectileManager;
+  private readonly buffs: BuffRegistry;
   private readonly getState: (id: AbilityId) => AbilityState;
   private readonly onCast: (id: AbilityId) => void;
-  private goldBuffMultiplier = 1;
-  private fireBuffMultiplier = 1;
   private abilityCostMultiplier = 1;
   private cooldownMultiplier = 1;
   private damageMultiplier = 1;
   private berserkFireBonus = 0;
-  private critBonusChance = 0;
-  private critBonusMultiplier = 1;
-  private lifestealMultiplier = 1;
-  private vampiricRegenBonus = 0;
   // ── Talent-driven modifiers (set by Game.applyTalentEffects) ──
   /** Chain Bounce: extra Chain Lightning bounces. */
   private chainBounceBonus = 0;
@@ -69,6 +82,7 @@ export class AbilityManager {
     this.tower = deps.tower;
     this.bus = deps.bus;
     this.projectileMgr = deps.projectileManager;
+    this.buffs = deps.buffs;
     this.getState = deps.getState;
     this.onCast = deps.onCast;
   }
@@ -302,7 +316,6 @@ export class AbilityManager {
         }
       }
     }
-    this.applyOngoingBuffs();
   }
 
   private applyEffect(type: AbilityEffectType, value: number, duration: number): { x: number; y: number } | null {
@@ -314,10 +327,24 @@ export class AbilityManager {
         this.enemies.applySlow(Math.max(0.05, value * (1 - this.slowStrengthBonus)), duration);
         return null;
       case 'fire_rate_buff':
-        this.fireBuffMultiplier = value * (1 + this.berserkFireBonus);
+        this.buffs.set({
+          id: BUFF_FIRE_RATE,
+          stat: 'fireRate',
+          kind: 'mult',
+          value: value * (1 + this.berserkFireBonus),
+          label: 'Berserk',
+          remaining: null,
+        });
         return null;
       case 'gold_buff':
-        this.goldBuffMultiplier = value;
+        this.buffs.set({
+          id: BUFF_GOLD,
+          stat: 'goldMultiplier',
+          kind: 'mult',
+          value,
+          label: 'Gold Rush',
+          remaining: null,
+        });
         return null;
       case 'single_target_damage':
         return this.dealMeteorStrike(value);
@@ -326,13 +353,41 @@ export class AbilityManager {
         return null;
       case 'crit_buff': {
         // value = bonus crit chance in percentage points
-        this.critBonusChance = Math.max(0, Math.min(1, value / 100));
-        this.critBonusMultiplier = 1.5;
+        this.buffs.set({
+          id: BUFF_CRIT_CHANCE,
+          stat: 'critChance',
+          kind: 'add',
+          value: Math.max(0, Math.min(1, value / 100)),
+          label: 'Precision',
+          remaining: null,
+        });
+        this.buffs.set({
+          id: BUFF_CRIT_DAMAGE,
+          stat: 'critMultiplier',
+          kind: 'mult',
+          value: CRIT_BUFF_DAMAGE_MULTIPLIER,
+          label: 'Precision',
+          remaining: null,
+        });
         return null;
       }
       case 'lifesteal_buff': {
-        this.lifestealMultiplier = Math.max(1, value);
-        this.vampiricRegenBonus = 0.01;
+        this.buffs.set({
+          id: BUFF_LIFESTEAL,
+          stat: 'lifesteal',
+          kind: 'mult',
+          value: Math.max(1, value),
+          label: 'Vampiric Aura',
+          remaining: null,
+        });
+        this.buffs.set({
+          id: BUFF_VAMPIRIC_REGEN,
+          stat: 'healthRegen',
+          kind: 'add',
+          value: VAMPIRIC_REGEN,
+          label: 'Vampiric Aura',
+          remaining: null,
+        });
         return null;
       }
       case 'execute_damage':
@@ -347,18 +402,18 @@ export class AbilityManager {
   private clearEffect(type: AbilityEffectType): void {
     switch (type) {
       case 'fire_rate_buff':
-        this.fireBuffMultiplier = 1;
+        this.buffs.clear(BUFF_FIRE_RATE);
         break;
       case 'gold_buff':
-        this.goldBuffMultiplier = 1;
+        this.buffs.clear(BUFF_GOLD);
         break;
       case 'crit_buff':
-        this.critBonusChance = 0;
-        this.critBonusMultiplier = 1;
+        this.buffs.clear(BUFF_CRIT_CHANCE);
+        this.buffs.clear(BUFF_CRIT_DAMAGE);
         break;
       case 'lifesteal_buff':
-        this.lifestealMultiplier = 1;
-        this.vampiricRegenBonus = 0;
+        this.buffs.clear(BUFF_LIFESTEAL);
+        this.buffs.clear(BUFF_VAMPIRIC_REGEN);
         break;
       case 'slow':
       case 'aoe_damage':
@@ -367,20 +422,6 @@ export class AbilityManager {
       case 'execute_damage':
         break;
     }
-  }
-
-  /**
-   * Push this system's time-varying buffs to their owners. Each target is a
-   * dedicated buff channel — never a shared field that the stat recompute in
-   * `Game.applyUpgradeEffects` also writes — so neither side can clobber the
-   * other.
-   */
-  private applyOngoingBuffs(): void {
-    this.tower.setFireRateSource('ability', this.fireBuffMultiplier);
-    this.tower.setCritBonus(this.critBonusChance, this.critBonusMultiplier);
-    this.tower.setLifestealMultiplier(this.lifestealMultiplier);
-    this.tower.setHealthRegenBonus(this.vampiricRegenBonus);
-    this.enemies.setGoldBuffMultiplier(this.goldBuffMultiplier);
   }
 
   private dealAoEDamage(multiplier: number): void {
@@ -583,20 +624,14 @@ export class AbilityManager {
       state.active = false;
       state.activeTimer = 0;
     }
-    this.goldBuffMultiplier = 1;
-    this.fireBuffMultiplier = 1;
     this.abilityCostMultiplier = 1;
     this.cooldownMultiplier = 1;
-    this.critBonusChance = 0;
-    this.critBonusMultiplier = 1;
-    this.lifestealMultiplier = 1;
-    this.vampiricRegenBonus = 0;
-    this.fireBuffMultiplier = 1;
-    this.tower.setFireRateSource('ability', 1);
-    this.tower.setCritBonus(0, 1);
-    this.tower.setLifestealMultiplier(1);
-    this.tower.setHealthRegenBonus(0);
-    this.enemies.setGoldBuffMultiplier(1);
+    this.buffs.clear(BUFF_FIRE_RATE);
+    this.buffs.clear(BUFF_GOLD);
+    this.buffs.clear(BUFF_CRIT_CHANCE);
+    this.buffs.clear(BUFF_CRIT_DAMAGE);
+    this.buffs.clear(BUFF_LIFESTEAL);
+    this.buffs.clear(BUFF_VAMPIRIC_REGEN);
   }
 
   /** Reset every ability to level 1 (used by Transcendence). */

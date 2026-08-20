@@ -27,7 +27,7 @@ carries the Lucky Finds talent. The pool is filtered by both `bossOnly` **and**
 
 `equip(slot, id)` / `unequip(slot)` move items between `inventoryList` and
 `equippedMap`. `getEquippedBonuses()` returns the summed
-`Partial<Record<EquipmentStatType, number>>` that `Game.applyUpgradeEffects`
+`Partial<Record<EquipmentStatType, number>>` that the stat pipeline
 folds into the stat recompute. `sell(id)` returns `getSellValue(id)` in gold.
 
 ## Persistence

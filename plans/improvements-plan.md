@@ -662,6 +662,66 @@ possible heuristic: it floods cheap utility upgrades and never saves for damage.
 
 ## Part 6 — The architectural fix: one stat pipeline
 
+> **Status: implemented (2026-08-20).** `src/stats/` now holds the whole
+> pipeline; `Game.applyUpgradeEffects` went from ~300 lines of `TowerState`
+> mutation to a 6-line build → resolve → write, and `tsc --noEmit`,
+> `vite build`, `npm run checks`, `npm run test` (103 tests) and `npm run sim`
+> are clean. The simulator reproduces Part 2's balance table *exactly*
+> (first run 23 min, wall 39 → 169 across 0 → 100 K AP), which is the evidence
+> that the refactor changed structure and not numbers.
+>
+> How it came out against the proposed shape:
+>
+> - **`StatContext` is plain data, not manager references.** Every field is one
+>   system's own answer about its own contribution, so `resolveStats` is a pure
+>   function a test can call with a literal — which is what made §7.2's golden
+>   tests possible at all.
+> - **`StatAccumulator` is two buckets per stat**, resolved as
+>   `(base + Σadd) × Πmult` and clamped once at the end. Clamping *between*
+>   contributors is what made the old code order-dependent, so `STAT_CLAMPS`
+>   applies strictly after composition. A test asserts damage is unchanged when
+>   the same sources are listed in a different order.
+> - **`Breakdown` is opt-in** (`{ breakdown: true }`), not always-on as
+>   sketched. The resolve now runs on every purchase *and* every buff edge,
+>   while attribution is only needed when the Stats panel renders; making it
+>   unconditional would have allocated ~100 objects per resolve for nothing.
+>   `computeGoldBreakdown` re-resolves the *same context* the applied stats came
+>   from, so "displayed ≠ applied" is not expressible rather than merely fixed.
+> - **`BuffRegistry` took over more than the plan asked.** Ability buffs, the
+>   quick-shot proc and the manual-aim boost are all entries now, so `Tower`
+>   owns no stat at all — `fireRateSources`, `critBonus*`, `lifestealMultiplier`
+>   and `healthRegenBonus` are gone, as is `EnemyManager.goldBuffMultiplier`.
+>   Buffs carry `remaining` on the game clock rather than a wall-clock
+>   `expiresAt`: the sim runs at up to 6.5x, and a wall-clock deadline would
+>   make Berserk last a sixth as long at high speed.
+> - **Recompute frequency is unchanged in practice.** `BuffRegistry.version`
+>   increments only when the effective buff set changes, and
+>   `Game.simulate` recomputes on a version change — so a buff starting or
+>   expiring costs one resolve, not a resolve per frame as the plan suggested.
+> - **Exhaustiveness reached four unions, not one.** `TalentStat` already had
+>   it; `AchievementRewardType`, the new `EvolutionEffectId` and the new
+>   `PassiveStat` now do too, so content that nothing consumes fails `tsc`.
+>
+> Three deliberate behaviour changes, all consequences of composing properly:
+>
+> - **The Stats panel's fire rate now moves when Berserk is cast.** It reads the
+>   resolved value, which includes buffs; previously the multiplier was applied
+>   only inside the DPS figure. §7.3 asks for exactly this.
+> - **Thorns compose differently.** The Thorn Mastery talent's multiplier used
+>   to apply only to the upgrade's thorns, because the passive's contribution
+>   was added after it. It now scales all thorns, which is what the tooltip
+>   says.
+> - **HP keeps its fraction on every max-HP increase**, not just the one from
+>   the health upgrade. The old code preserved the fraction for upgrades but
+>   only preserved *full* HP for passives and gear.
+>
+> One pre-existing dead stat surfaced and was **not** fixed: `knockbackForce`
+> has base 0 and its only contributor (`knockback_pct` on gear) is
+> multiplicative, so knockback is always 0 no matter what gear rolls. That is
+> the equipment-side mirror of §1.5's unread rewards, but giving the tower base
+> knockback is a balance decision, so it is pinned in `tests/stats.test.ts`
+> with a test that fails once someone grants it.
+
 Most of Part 1 is one root cause: **eight systems write directly into the shared mutable
 `TowerState` / `EnemyManager` multipliers, in an order nobody can see, with `=` instead of `*=`.**
 
@@ -711,12 +771,17 @@ PassiveAbilityManager effects) rather than copies of their logic. It is not a su
 Vitest suite in 7.2, but it covers the Part 2 behaviour with zero new dependencies.
 
 ### 7.2 Add a test runner
-**Done.** Vitest as a dev dependency only, run with `npm run test`; 72 tests in
-`tests/`. See [docs/testing.md](../docs/testing.md). The originally-specified
-suite:
-- **Golden stat tests:** given a fixed `StatContext`, assert the resolved damage/gold/fire-rate. These
-  would have caught every bug in Part 1.
-- **Save round-trip + migration:** v2→v8 ladder on fixture saves; assert no field loss.
+**Done.** Vitest as a dev dependency only, run with `npm run test`; 103 tests in
+`tests/`. See [docs/testing.md](../docs/testing.md). All four originally-specified
+suites now exist:
+- **Golden stat tests:** `tests/stats.test.ts` — a literal `StatContext` in, a
+  pinned damage/fire-rate/gold/mana figure out. Landed with the Part 6 pipeline,
+  which is what gave it a single function to assert against. It carries one case
+  per Part 1 bug (§1.1/§1.2 gold, §1.3 fire rate, §1.4 talent wiring, §1.5
+  reward wiring, §1.7 max mana, §1.8 regen-during-buff), an order-independence
+  case, and a check that the gold breakdown multiplies back to exactly the
+  applied number.
+- **Save round-trip + migration:** v2→v9 ladder on fixture saves; assert no field loss.
 - **Formula snapshots:** `enemyHPForWave`, `apForWave`, `upgradeCost` at waves 1/10/50/100.
 - **Talent/achievement coverage:** assert every declared `stat`/`rewardType` has a consumer.
 
@@ -725,6 +790,22 @@ Ascend → verify equipment/passives/abilities behave per the documented persist
 Berserk and confirm the fire-rate number in Stats moves; buy Greed and confirm gold/kill changes;
 run at max speed and confirm DPS matches 1× DPS within ~5%.
 
+> **Status: partially verified (2026-08-20).** Checked in a running build
+> against `window.__theTower` before browser work was deferred to its own task:
+>
+> | Check | Result |
+> |---|---|
+> | Berserk moves the Stats fire rate | 2.8 → 5.6, DPS 19 908 → 39 816. Previously the displayed fire rate did not move at all. |
+> | Buffs compose rather than clobber | Berserk 2 × aim 1.3 × quick shot 2 = 14.56 from a 2.8 base; releasing aim drops exactly the 1.3. |
+> | A purchase during a buff keeps it | Bought a damage level mid-Berserk: DPS rose, fire-rate multiplier unchanged. This is the §1.8 failure mode. |
+> | Buff expiry restores the base exactly | A 2 s ×2 range buff resolved 450 → 900 → 450, and the entry was removed. |
+> | Gold multiplier is stable across frames | 3.878 358 held frame to frame, matching the Stats panel. |
+>
+> Still outstanding, for the follow-up browser task: the ascension persistence
+> walk, the Greed gold-per-kill check, and the 6.5x-vs-1x DPS parity
+> re-measurement (Part 5 measured +0.6%; the fire-rate refactor touched
+> `consumeCooldown`, so it is worth re-confirming).
+
 ---
 
 ## Part 8 — Prioritized roadmap
@@ -732,7 +813,7 @@ run at max speed and confirm DPS matches 1× DPS within ~5%.
 | Phase | Work | Effort | Payoff |
 |---|---|---|---|
 | ~~**1. Stop the bleeding**~~ ✅ | 1.1, 1.2, 1.3, 1.7, 1.8, 1.9 quick wins | done | Gold multipliers, Berserk, max mana and Vampiric now work. |
-| **2. Pipeline refactor** | Part 6, with exhaustive `StatKey` union | 2–3 days | Makes 1.4/1.5 mechanical and prevents recurrence. |
+| ~~**2. Pipeline refactor**~~ ✅ | Part 6, with exhaustive `StatKey` union | done | One composition point for ~60 stats; `Tower` and `EnemyManager` own no derived stat, buffs are registry entries, and the balance simulator reproduces Part 2's table unchanged. Golden stat tests (7.2) landed with it. |
 | ~~**3. Wire dead content**~~ ✅ | 1.4 (20 talents), 1.5 (9 rewards), equipment rarity + minWave | done | Talent tree and achievements are now real. Pulled forward because the exhaustive `TalentStat` switch made it mechanical without waiting for Part 6. |
 | ~~**4. Simulation correctness**~~ ✅ | 1.6 swept collision, research/save on unscaled dt, fixed-timestep substepping (5.2) | done | High game speeds no longer cost DPS: 6.5x is within 1% of 1x, measured. |
 | ~~**5. Balance re-tune**~~ ✅ | Part 2 (HP/gold/cost curves, first-prestige compression, AP sinks, XP curves) driven by 7.1 | done | Opening is 10 min instead of 60; runs end on a wave-enrage fail state instead of stalling; talents, passives and gear are reachable. Simulator kept in `sim/`. |

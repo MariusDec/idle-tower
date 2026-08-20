@@ -2,26 +2,17 @@ import type { DamageType, Enemy, TowerState, TargetingMode } from '../types';
 import { distance2 } from '../utils/math';
 
 /**
- * Independent contributors to the tower's fire rate. Each source is owned by
- * exactly one system; the effective multiplier is their product. Using a map
- * rather than a single scalar prevents one writer from silently cancelling
- * another (e.g. the Berserk buff vs. the manual-aim boost).
+ * The tower owns no stat of its own.
+ *
+ * Every field of `TowerState` is written by `Game.applyResolvedStats` from a
+ * single `resolveStats` pass, and every temporary modifier — ability buffs,
+ * quick shot, the manual-aim boost — is an entry in the `BuffRegistry` that
+ * feeds that same pass. The `effective*` getters are kept because call sites
+ * read them, but they are now plain reads: there is nothing left to compose at
+ * the point of use.
  */
-export type FireRateSource = 'ability' | 'aim' | 'quickShot';
-
 export class Tower {
   private state: TowerState;
-  private fireRateSources: Record<FireRateSource, number> = {
-    ability: 1,
-    aim: 1,
-    quickShot: 1,
-  };
-  private healthRegenBonus = 0;
-  private critBonusChance = 0;
-  private critBonusMultiplier = 1;
-  private lifestealMultiplier = 1;
-  private quickShotActive = false;
-  private quickShotTimer = 0;
   private aimX = 0;
   private aimY = 0;
 
@@ -43,37 +34,24 @@ export class Tower {
   }
 
   get effectiveFireRate(): number {
-    return this.state.fireRate * this.fireRateMultiplierValue;
+    return this.state.fireRate;
   }
 
-  get fireRateMultiplierValue(): number {
-    const s = this.fireRateSources;
-    return s.ability * s.aim * s.quickShot;
-  }
-
-  /**
-   * Health regen from temporary buffs, expressed (like `healthRegen`) as a
-   * fraction of maxHP per second. Kept separate from `state.healthRegen` so a
-   * stat recompute cannot wipe an active buff.
-   */
+  /** Fraction of maxHP regenerated per second, buffs included. */
   get effectiveHealthRegen(): number {
-    return this.state.healthRegen + this.healthRegenBonus;
-  }
-
-  setHealthRegenBonus(bonus: number): void {
-    this.healthRegenBonus = Math.max(0, bonus);
+    return this.state.healthRegen;
   }
 
   get effectiveCritChance(): number {
-    return Math.min(1, this.state.critChance + this.critBonusChance);
+    return this.state.critChance;
   }
 
   get effectiveCritMultiplier(): number {
-    return this.state.critMultiplier * this.critBonusMultiplier;
+    return this.state.critMultiplier;
   }
 
   get effectiveLifesteal(): number {
-    return this.state.lifesteal * this.lifestealMultiplier;
+    return this.state.lifesteal;
   }
 
   setPosition(x: number, y: number): void {
@@ -87,19 +65,6 @@ export class Tower {
 
   applyStatMods(mods: Partial<TowerState>): void {
     Object.assign(this.state, mods);
-  }
-
-  setFireRateSource(source: FireRateSource, multiplier: number): void {
-    this.fireRateSources[source] = Math.max(0.01, multiplier);
-  }
-
-  setCritBonus(extraChance: number, extraMultiplier: number): void {
-    this.critBonusChance = Math.max(0, Math.min(1, extraChance));
-    this.critBonusMultiplier = Math.max(1, extraMultiplier);
-  }
-
-  setLifestealMultiplier(multiplier: number): void {
-    this.lifestealMultiplier = Math.max(1, multiplier);
   }
 
   acquireTarget(enemies: Enemy[]): Enemy | null {
@@ -211,29 +176,4 @@ export class Tower {
     return this.state.cooldown <= 0;
   }
 
-  tickQuickShot(dt: number): void {
-    if (!this.quickShotActive) return;
-    this.quickShotTimer -= dt;
-    if (this.quickShotTimer <= 0) {
-      this.quickShotTimer = 0;
-      this.quickShotActive = false;
-      this.fireRateSources.quickShot = 1;
-    }
-  }
-
-  isQuickShotActive(): boolean {
-    return this.quickShotActive;
-  }
-
-  activateQuickShot(durationSeconds: number): void {
-    this.quickShotActive = true;
-    this.quickShotTimer = durationSeconds;
-    this.fireRateSources.quickShot = 2.0;
-  }
-
-  resetQuickShot(): void {
-    this.quickShotActive = false;
-    this.quickShotTimer = 0;
-    this.fireRateSources.quickShot = 1;
-  }
 }

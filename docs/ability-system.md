@@ -143,7 +143,7 @@ Two new external multipliers live on `Tower` (mirroring the existing `setFireRat
 - `setCritBonus(extraChance, extraMultiplier)` — sets an additive crit chance and a crit-multiplier scaler. `effectiveCritChance` clamps to **1.0** so Precision Shot + a high-crit-chance build can never exceed 100%.
 - `setLifestealMultiplier(m)` — multiplies the upgrade-derived `lifesteal` value. `effectiveLifesteal` is what the enemy-damaged handler uses to compute HP gain.
 
-The `fireRateMultiplierValue`, `effectiveCritChance`, `effectiveCritMultiplier`, and `effectiveLifesteal` getters are used in both `rollShot` and `computeStatsInfo` so the HUD reflects active buffs accurately (DPS, crit %, lifesteal % all update while Precision Shot / Berserk / Vampiric Aura are running).
+Buffs are entries in the `BuffRegistry` and resolve into `TowerState` like any other stat source (see [stat-pipeline.md](stat-pipeline.md)), so `rollShot` and `computeStatsInfo` both read the already-composed values — fire rate, DPS, crit % and lifesteal % all move while Precision Shot / Berserk / Vampiric Aura are running.
 
 ## Research Synergies
 
@@ -189,4 +189,4 @@ Boss-killing abilities (slots 5–9) are tried first because their value-per-man
 - **Meteor on empty field**: `pickHighestHpTarget()` returns null; the cast silently does nothing (no mana is still spent? — actually mana IS spent first; see `tryCast`). Plan: this matches the no-target edge case for AoE/chain abilities.
 - **Crit cap**: `setCritBonus` clamps to `[0, 1]` so combined crit sources can't exceed 100%.
 - **Chain double-hit guard**: a `Set<enemyId>` is built per cast to ensure each enemy is hit at most once.
-- **Vampiric regen compounding**: `applyOngoingBuffs` subtracts the *last applied* bonus before adding the new one to avoid double-stacking if the value changes during the buff.
+- **Vampiric regen compounding**: the regen bonus is a buff entry keyed by id, so re-applying it replaces rather than stacks, and a stat recompute during the buff composes with it instead of subtracting it out.

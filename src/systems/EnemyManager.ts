@@ -80,17 +80,11 @@ export class EnemyManager {
   private readonly resources: ResourceManager;
   private readonly researchTree: ResearchTree | null;
   /**
-   * Fully composed gold multiplier (upgrades + prestige + research + talents +
-   * passives + equipment + achievements + wave modifier). Owned solely by
-   * `Game.applyUpgradeEffects` via `setGoldMultiplier`.
+   * Fully composed gold multiplier: every source, including the Gold Rush
+   * buff, arrives already folded together by `resolveStats`. This manager has
+   * exactly one writer and does no composition of its own.
    */
   private goldMultiplier = 1;
-  /**
-   * Temporary multiplier from the Gold Rush ability. Owned solely by
-   * `AbilityManager`, kept separate so the two writers cannot clobber
-   * each other.
-   */
-  private goldBuffMultiplier = 1;
   private slowFactor = 1;
   private slowTimer = 0;
   private goldLuckChance = 0;
@@ -141,11 +135,6 @@ export class EnemyManager {
   /** Composed permanent gold multiplier (1 = no bonus). */
   setGoldMultiplier(multiplier: number): void {
     this.goldMultiplier = Math.max(0, multiplier);
-  }
-
-  /** Temporary ability buff multiplier (1 = no buff). */
-  setGoldBuffMultiplier(multiplier: number): void {
-    this.goldBuffMultiplier = Math.max(0, multiplier);
   }
 
   /** Scavenge talent: chance for a kill to pay double. */
@@ -338,7 +327,7 @@ export class EnemyManager {
 
   private computeGold(enemy: Enemy, isCrit: boolean = false): number {
     const base = enemy.goldValue;
-    let amount = base * this.goldMultiplier * this.goldBuffMultiplier;
+    let amount = base * this.goldMultiplier;
     if (this.killStreakGoldBonus > 0) amount *= 1 + this.killStreakGoldBonus;
     if (this.manaFullGoldBonus > 0) amount *= 1 + this.manaFullGoldBonus;
     if (enemy.elite) amount *= ELITE_GOLD_MULT;
@@ -536,7 +525,6 @@ export class EnemyManager {
     this.goldLuckChance = 0;
     this.goldLuckMultiplier = 1;
     this.goldMultiplier = 1;
-    this.goldBuffMultiplier = 1;
     this.doubleGoldChance = 0;
     this.vulnerableEnemies.clear();
     this.killStreakGoldBonus = 0;

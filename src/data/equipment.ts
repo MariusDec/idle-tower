@@ -1,6 +1,17 @@
-import type { EquipmentSlot, Rarity, EquipmentDef, Equipment, EquipmentStat } from '../types';
+import type { EquipmentSlot, Rarity, EquipmentDef, Equipment, EquipmentStat, EquipmentStatType } from '../types';
 
 // ── Rarity Configuration ──────────────────────────────
+
+/**
+ * Every stat gear can roll. Shared with the equipment contributor in the stat
+ * pipeline so the two cannot drift apart.
+ */
+export const EQUIPMENT_STAT_TYPES: readonly EquipmentStatType[] = [
+  'damage_pct', 'fire_rate_pct', 'crit_chance_pct', 'crit_damage_pct',
+  'range_pct', 'max_hp_pct', 'defense_pct', 'armor_pct',
+  'gold_mult_pct', 'mana_regen_pct', 'lifesteal_pct', 'thorns_pct',
+  'knockback_pct', 'all_damage_pct',
+];
 
 export const RARITY_WEIGHTS: Record<Rarity, number> = {
   common: 50,

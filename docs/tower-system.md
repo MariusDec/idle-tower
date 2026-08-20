@@ -60,7 +60,10 @@
 - Applies a 30% increase to `fireRate`
 - Aim line is rendered (currently disabled — `if (true || !snap.aimLine) return`)
 
-## Upgrade Effects Applied (from `Game.applyUpgradeEffects`)
+## Upgrade Effects Applied
+
+Composed by `resolveStats` and written by `Game.applyResolvedStats` — see
+[stat-pipeline.md](stat-pipeline.md). The tower itself computes nothing.
 
 All upgrades reset tower stats to `TOWER_BASE` (which is 0 for damage/HP), then accumulate from `UpgradeManager` levels. `damage` and `health` start at L1 via `startLevel: 1`, so the tower spawns with the L1 totals:
 - `damage` → additive to `baseDamage`

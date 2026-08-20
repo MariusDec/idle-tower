@@ -17,8 +17,8 @@ actually read:
 
 | Reward | Consumer |
 |---|---|
-| `damage_mult`, `all_damage`, `all_stats` | `Game.applyUpgradeEffects` → `tower.baseDamage` |
-| `fire_rate_mult` | `Game.applyUpgradeEffects` → `tower.fireRate` |
+| `damage_mult`, `all_damage`, `all_stats` | `stats/contributors/achievements.ts` → `baseDamage` |
+| `fire_rate_mult` | `stats/contributors/achievements.ts` → `fireRate` |
 | `gold_mult` | `Game.computeGoldBreakdown` |
 | `boss_gold_mult` | `Game`'s `enemy_killed` handler, boss branch |
 | `start_gold` | `Game.applySavedStateReset` |
@@ -26,9 +26,9 @@ actually read:
 | `ap_gain_mult`, `prestige_gain_mult` | `PrestigeManager.previewAP` |
 | `tp_gain_mult`, `prestige_gain_mult` | `PrestigeManager.previewTP` |
 | `rp_gain_mult` | `Game.rpGainMultiplier` |
-| `ability_cdr` | `Game.applyUpgradeEffects` → `AbilityManager` |
-| `max_hp_mult` | `Game.applyUpgradeEffects` → `tower.maxHp` |
-| `upgrade_cost_reduction` | `Game.applyUpgradeEffects` → `UpgradeManager.setCostDiscount` |
+| `ability_cdr` | `stats/contributors/achievements.ts` → `abilityCooldownMultiplier` |
+| `max_hp_mult` | `stats/contributors/achievements.ts` → `maxHp` |
+| `upgrade_cost_reduction` | `stats/contributors/achievements.ts` → `upgradeCostDiscount` |
 
 Because the map is a `Record` over the union, a new reward type cannot be added
 without deciding which system reads it. Nine reward types previously shipped

@@ -1,3 +1,4 @@
+import type { EvolutionEffectId } from './data/upgrades';
 import { evalFormula } from './data/formulas';
 
 export type EnemyType = 'normal' | 'fast' | 'tank' | 'flying' | 'healer' | 'boss' | 'splitter' | 'shielded';
@@ -340,7 +341,7 @@ export interface UpgradeEvolution {
   level: number;
   name: string;
   description: string;
-  effectId: string;
+  effectId: EvolutionEffectId;
   effectValue: number;
 }
 

@@ -1,5 +1,37 @@
 import type { UpgradeDef } from '../types';
 
+/**
+ * Every evolution effect an upgrade can unlock. Closed so the evolutions
+ * contributor in the stat pipeline can switch on it exhaustively — an
+ * evolution nothing consumes fails `tsc` rather than shipping as flavour text.
+ */
+export type EvolutionEffectId =
+  | 'armor_pen'
+  | 'berserk_fire_bonus'
+  | 'crit_ignore_armor'
+  | 'crit_splash'
+  | 'double_shot'
+  | 'enlightenment'
+  | 'golden_tide'
+  | 'hp_threshold_damage'
+  | 'instant_kill'
+  | 'kill_streak_gold'
+  | 'mana_full_gold'
+  | 'mana_shield'
+  | 'mine_split'
+  | 'revive'
+  | 'shield_fast_recharge'
+  | 'shockwave_slow'
+  | 'wave_gold_scaling';
+
+export const EVOLUTION_EFFECT_IDS: readonly EvolutionEffectId[] = [
+  'armor_pen', 'berserk_fire_bonus', 'crit_ignore_armor', 'crit_splash',
+  'double_shot', 'enlightenment', 'golden_tide', 'hp_threshold_damage',
+  'instant_kill', 'kill_streak_gold', 'mana_full_gold', 'mana_shield',
+  'mine_split', 'revive', 'shield_fast_recharge', 'shockwave_slow',
+  'wave_gold_scaling',
+];
+
 export const UPGRADES: UpgradeDef[] = [
   {
     id: 'damage',

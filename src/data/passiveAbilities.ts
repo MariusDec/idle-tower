@@ -1,11 +1,31 @@
 import type { PassiveAbilityId } from '../types';
 
+/**
+ * Stats a passive may grant. Closed so the stat pipeline can switch on it
+ * exhaustively — a passive whose stat nothing consumes is a compile error, not
+ * a silently dead purchase.
+ */
+export type PassiveStat =
+  | 'damage_pct'
+  | 'max_hp_pct'
+  | 'gold_mult_pct'
+  | 'fire_rate_pct'
+  | 'mana_regen_pct'
+  | 'thorns_pct'
+  | 'crit_chance_pct'
+  | 'lifesteal_pct';
+
+export const PASSIVE_STATS: readonly PassiveStat[] = [
+  'damage_pct', 'max_hp_pct', 'gold_mult_pct', 'fire_rate_pct',
+  'mana_regen_pct', 'thorns_pct', 'crit_chance_pct', 'lifesteal_pct',
+];
+
 export interface PassiveAbilityDef {
   id: PassiveAbilityId;
   name: string;
   description: string;
-  /** Effect stat type (matched in applyUpgradeEffects) */
-  stat: string;
+  /** Effect stat type, consumed by the passives contributor in the stat pipeline. */
+  stat: PassiveStat;
   /** Base effect value at level 0 (percent) */
   basePercent: number;
   /** Additional percent per level */

@@ -50,7 +50,7 @@ cost = floor(baseCost * growth^level)
 | defenseShield | Defense Shield | 500 | 1.35 | base 60s, -0.5s/level, cap 7s | 55 | 0 |
 | wall | Wall | 650 | 1.3 | base 0.2, +0.02/level | 40 | 0 |
 
-## Upgrade Effects Application (`Game.applyUpgradeEffects`)
+## Upgrade Effects Application (`stats/contributors/upgrades.ts`)
 
 Called whenever upgrades change or research/prestige updates:
 1. Reset all tower stats to `TOWER_BASE`

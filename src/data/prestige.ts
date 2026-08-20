@@ -178,7 +178,7 @@ export const AP_PERKS: PrestigePerkDef[] = [
     id: 'ap_wave_skipper',
     layer: 'ascension',
     name: 'Wave Skipper',
-    description: '+3% chance per level to completely skip a wave and instantly collect its rewards',
+    description: '+3% chance per level to skip a wave and instantly collect its rewards',
     costPerLevel: 3,
     costScaling: 1.5,
     maxLevel: 25,

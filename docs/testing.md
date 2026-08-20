@@ -22,6 +22,7 @@ DOM.
 | `systems.test.ts` | `SpatialGrid` against a brute-force reference, effect-pool caps and damage-number merging, the upgrade evolution cache against a fresh linear scan |
 | `projectiles.test.ts` | Swept collision at every step size the game can produce, first-hit-along-path ordering, and lifetime culling |
 | `content-coverage.test.ts` | Every declared talent stat and achievement reward type has a consumer, and no table has dangling prerequisites or duplicate ids |
+| `stats.test.ts` | Golden stat resolution: a literal `StatContext` in, a pinned damage/fire-rate/gold/mana figure out, plus clamps, breakdown reconstruction, and one case per bug in Part 1 |
 
 ### Conventions
 
@@ -40,24 +41,35 @@ DOM.
   `KNOWN_UNGRANTED` list with a test that fails if an entry is fixed, so an
   exemption cannot rot into a permanent excuse.
 
-### Known gap
+### Known gaps
 
-`all_stats` is read in three places in `Game` but granted by no achievement, so
-those reads are permanently zero. Granting it is a balance decision, so it sits
-in `KNOWN_UNGRANTED` rather than being quietly tolerated.
+`all_stats` is read by the achievements contributor but granted by no
+achievement, so those reads are permanently zero. Granting it is a balance
+decision, so it sits in `KNOWN_UNGRANTED` rather than being quietly tolerated.
 
-### Not yet covered
+`knockback_pct` is the same shape on the equipment side: gear can roll it, the
+pipeline consumes it, and it still resolves to nothing, because
+`knockbackForce` has no additive source anywhere and a multiplier has zero to
+multiply. Pinned in `stats.test.ts` under `known-dead content`.
 
-The plan's "golden stat test" — one fixed `StatContext` in, one resolved stat
-block out — needs the pipeline refactor in Part 6. Until eight systems stop
-writing into `TowerState` directly there is no single function to assert
-against, so `formulas.test.ts` pins the per-upgrade curves those systems
-multiply on top of instead.
+### Golden stat tests
 
-`Game` itself is not unit-tested: it constructs the renderer and the whole UI
-tree in its constructor, so it needs a DOM. Its behaviour is covered by
-`npm run checks` (which drives the managers directly) and by in-browser
-verification.
+The plan's golden stat test — one fixed `StatContext` in, one resolved stat
+block out — landed with the Part 6 pipeline. `tests/stats.test.ts` is the
+regression suite for Part 1 as a class: every bug there is now a case that
+fails if the composition rule regresses.
+
+- **Damage** composes prestige x achievements x mutator x talents x passives x
+  gear, and is asserted to be independent of the order sources are listed in.
+- **Fire rate** multiplies all three buff sources instead of letting the last
+  writer win (§1.3).
+- **Gold** keeps every additive source, scales them by research and
+  transcendence, and multiplies the flat sources on top (§1.1, §1.2); the
+  breakdown is asserted to multiply back to exactly the applied number.
+- **Health regen** survives a recompute during a buff (§1.8), and **max mana**
+  survives unlocking a mana passive (§1.7).
+- Each once-dead talent stat is asserted to reach a resolved key (§1.4), as are
+  the achievement reward types (§1.5).
 
 ## In-browser verification
 

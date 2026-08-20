@@ -10,7 +10,8 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/game-loop.md](docs/game-loop.md) | Core game loop, fixed-timestep substepping, speed system, reset types, public API |
 | [docs/performance.md](docs/performance.md) | Frame budget: substepping, renderer sprite cache, spatial grid, effect pools, save cadence, lookup caches |
 | [docs/testing.md](docs/testing.md) | Vitest suite, `npm run checks`, the balance simulator, in-browser verification |
-| [docs/tower-system.md](docs/tower-system.md) | Tower state, targeting modes (nearest/lowest_hp/first), damage calculation, manual aim, fire-rate source map |
+| [docs/stat-pipeline.md](docs/stat-pipeline.md) | The single stat composition point: StatKey union, StatContext, accumulator buckets, contributors, BuffRegistry, breakdowns |
+| [docs/tower-system.md](docs/tower-system.md) | Tower state, targeting modes (nearest/lowest_hp/first), damage calculation, manual aim |
 | [docs/enemy-system.md](docs/enemy-system.md) | 8 enemy types, elites and their 5 auras, scaling per wave, movement, combat, crowd control |
 | [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, intermission, enemy selection weights, wave skip, enrage |
 | [docs/wave-modifier-system.md](docs/wave-modifier-system.md) | 9 mutators, offer cadence, 3-wave duration with escalating rewards |
