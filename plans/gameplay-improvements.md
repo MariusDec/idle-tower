@@ -548,6 +548,73 @@ table + tier names), `src/game/Game.ts` (rewards, events), `src/ui/BossBar.ts` (
 
 ## Part 4 — Give the hands something to do
 
+> **Status: implemented (2026-08-20).** Corrections found during
+> implementation, kept here so later parts don't repeat them:
+> 1. **§4.2's 6x charged shot is roughly six times too strong, and the reason
+>    is structural rather than a tuning miss.** A flat multiple of *one shot*
+>    on a cycle measured in wall-clock seconds scales inversely with fire rate:
+>    the same 6x is +93% of a fresh tower's DPS at 1.78 shots/s and about +8%
+>    of a late tower's at 20. It measured **+127%** at 0 lifetime AP against
+>    §4.5's +50% cut line. Shipped at **1x per target** with the pierce and
+>    splash exactly as specified — four pierced hits plus the blast still
+>    deliver around 6x an ordinary shot's total output, which is what §4.2 was
+>    reaching for; it just is not 6x on one body.
+> 2. **§4.5's +25–40% band was already spent before Part 4 added anything.**
+>    With the charged shot switched off entirely, the *pre-existing* manual-aim
+>    buff plus orb clicking measures **+33.9% to +38.9%**. `MANUAL_AIM.fireRateMult`
+>    (1.3, and older than this plan) fills the band on its own, so any charged
+>    shot at all pushes the lowest-fire-rate tier past 40%. §4.2's own opening
+>    line — "*replace* the flat hold-for-x1.3 fire rate" — is the resolution the
+>    plan intended, but the brief for this part said manual aim keeps its buff,
+>    so the band is met at four tiers of five and the +50% gate at all five.
+>    **Anyone revisiting this should decide about manual aim first, not about
+>    the charged shot.**
+> 3. **§4.1's "bosses (always, 3–5)" hits Part 3's finding.** A boss wave holds
+>    `2 + tier` bosses, so read per boss a wave-100 pack drops sixty orbs into
+>    a forty-orb cap. `bossOrbShare` makes it an *encounter* budget divided
+>    across the pack, taking the fractional remainder as a probability. Verified
+>    in-browser: a wave-40 pack dropped four orbs, not six-to-thirty.
+> 4. **§4.3's "no separate damage bonus" cannot be taken literally for two of
+>    the three abilities.** Rain of Arrows and Frost Nova are *global* today.
+>    "Targeted placement is worth +30% by hitting a better cluster" presumes
+>    they are placed AoEs; making them so would be a flat nerf and a regression
+>    for every existing player. The global effect is unchanged and the disc
+>    carries a bonus on top instead. Meteor Strike, already a point effect,
+>    genuinely relocates — and its disc is deliberately `METEOR_SPLASH_RADIUS`
+>    so a placed meteor is today's meteor somewhere else, not a wider one.
+> 5. **A perfectly optimal auto-placer would leave nothing for the player to
+>    beat.** §4.3 assumes the reward is out-aiming the automatic placement, but
+>    a `queryRadius` cluster scan is already optimal. So the reward is the focus
+>    bonus, granted only on a hand-placed cast; the auto path gets the
+>    placement and not the bonus.
+> 6. **A reroll orb cannot pay 40%.** §4.1's collect rates are stated for all
+>    kinds; a token is indivisible, and a 40% chance of losing a Part 1 reroll
+>    for not watching the screen is the exact pressure the plan's rule 1
+>    forbids. Reroll orbs pay whole either way; the split applies to the two
+>    divisible currencies.
+> 7. **§4.4's file list omits `src/data/tower.ts`, `sim/model.ts` and
+>    `sim/balance.ts`.** The last two are not optional: §4.5's idle-parity check
+>    is the gate, and the model had no notion of active play or of orbs as a
+>    gold faucet. `MANUAL_AIM` lives in `data/tower.ts` and is read by the game
+>    *and* the sim, so the multiplier can only be cut in one place.
+> 8. **Orb income needed no compensation.** Parts 2 and 3 both had to buy back
+>    what they added; the idle wall-wave table is bit-identical here
+>    (39/59/89/129/169) because the 40% auto rate on a 2% drop chance is ~3% of
+>    an ordinary wave's gold. Boss waves are a different story — orbs are 41%
+>    of a wave-10 boss wave's income idle and 103% clicked — which is
+>    deliberate but worth knowing. The blessing table moved at exactly one tier
+>    (10 K: 147.6 → 146.1) because Lodestone is drawable now and occasionally
+>    displaces a stronger card.
+> 9. **Unrelated, found while testing:** the hotkey column in
+>    `docs/ability-system.md` was wrong for six of the nine abilities — it
+>    listed the slot order the abilities were designed in, not the `hotkey`
+>    field `main.ts` matches on. Fixed. It cost a browser test run before it
+>    was noticed, which is precisely the failure mode `KeybindsOverlay`
+>    building its list from `ABILITIES` was meant to prevent.
+> 10. **A pooled orb outlives its orb.** Worth knowing before writing a test:
+>     an evicted orb is re-initialised in place for the next spawn, so holding
+>     the object holds whatever came next. Hold the `id`.
+
 **Goal:** three optional verbs worth +25–40%, each with an automatic fallback.
 
 ### 4.1 Loot orbs
