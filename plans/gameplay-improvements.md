@@ -952,6 +952,119 @@ something to build on top of.
 
 ## Part 7 — Pacing and moment-to-moment
 
+> **Status: implemented (2026-08-21).** Corrections found during
+> implementation:
+> 1. **§7.7 says "bump to v13". v13 was Part 6's**; pacing is **v14**. That is
+>    the *fourth consecutive part* whose save version in the plan was wrong. The
+>    number in a plan written before the parts were implemented is a guess about
+>    how many bumps will happen first, and it has been wrong every time it has
+>    been checked. See the retrospective below — this is the pattern with the
+>    highest hit rate in the whole document.
+> 2. **§7.1's "+3%/second capped at +40%" is about four times what the curve can
+>    pay for**, and the reason is the one Part 4's follow-up recorded: §4.5's
+>    active-play budget was already spent before Part 7 opened. Momentum is a
+>    flat multiplier on an active run's gold, so at +40% the measured active
+>    advantage was **+60…+69% at every tier** against a +50% hard gate. Shipped
+>    at **1%/second capped at +6%**, cut proportionally rather than by capping
+>    alone — the cap has to sit a few calls above one call's worth or momentum
+>    stops being a streak and becomes a button that is either pressed or not.
+>    There is also a reward the §4.5 metric cannot see, and it argues for the
+>    smaller number: calling a wave early *is* a throughput gain (five seconds
+>    off a forty-second cycle is ~12% more waves per hour), and the metric is
+>    composed DPS at a matched wave, which credits none of it.
+> 3. **§7.2's combo is not an active-play reward, and that is the whole balance
+>    problem.** Nothing the player *does* builds it — the tower builds it by
+>    killing things — so it is a **baseline income faucet** on every run, idle
+>    included. §7.2's only stated compensation (reduce `kill_streak_gold`
+>    "proportionally") cannot pay for it: that evolution is a level-25 unlock on
+>    one economy upgrade, while the combo pays from wave 1. Integrated over a
+>    50-enemy wave the plan's 5/12/25/40 is worth **+8.0% of that wave's entire
+>    income**, and it moved the 0-AP idle wall a full boss decade (39 → 49) on
+>    six of eight draft seeds. Shipped at roughly half — **3/6/12/20** — which is
+>    +4.1% and holds the drift. Avarice still took its cut, derived rather than
+>    guessed: `(2.45 - 0.12) / 49 = 0.0476`, rounded down to **+4.7%/kill**.
+> 4. **The 0-AP wall is a knife edge, and every previous part's "drift zero" was
+>    partly luck.** +5% gold *or* +5% damage moves it from 39 to 49, because 39
+>    sits just short of a boss decade. One draft seed of eight already reports 49
+>    with Part 7 switched off entirely. `tiersTable(false)` reports seed 0, which
+>    is why the tables have always looked clean. Anyone tuning against this
+>    number should sweep seeds, not trust the printed one.
+> 5. **§7.3's preview is only worth having if it is *true*, and that needed a
+>    refactor §7.3 does not mention.** Rolling the composition from the weight
+>    table gives an expectation the dice may not honour, and a preview the wave
+>    contradicts teaches the player to ignore it. `WaveManager` now rolls the
+>    whole roster — types, spawn points, elite rolls, auras — when the
+>    intermission opens (`planNextWave`) and `spawnOne` pops from it. Same dice,
+>    earlier. Two paths need care: a mutator chosen from the boss-wave offer
+>    changes the count *after* the plan was made (the plan is discarded, not
+>    stretched), and a save restored mid-spawn has no plan at all (the queue
+>    refills lazily, which is exactly the old behaviour).
+> 6. **The lane markers needed a cap, found only in browser.** One marker per
+>    distinct spawn point produced *nineteen* arrows on a 43-enemy wave, which
+>    rings the arena in noise rather than telling the player where to look.
+>    Clustered at 150 px and capped at 8.
+> 7. **§7.4's risk dial must not be a `RunApSource`.** Part 3 and Part 5 share a
+>    banked run-AP pool with a +50% ceiling, both *set* from their own saved
+>    block on load. Risk is a live setting with no ceiling of its own that stops
+>    applying the moment the dial returns to 0; summing it into that pool would
+>    have let the contract cap swallow it and a contract restore overwrite it.
+>    It is its own scalar, multiplied in.
+> 8. **§7.1's momentum has the `hpFraction` shape Part 6 found**, as the brief
+>    predicted, and so do the combo tier and the risk dial. All three are read by
+>    a contributor and all three are discrete, so `Game.refreshPacingStats`
+>    compares one signature per substep — the same trick as
+>    `refreshHpThresholdStats`. Without it a combo tier reached at kill 25 starts
+>    paying at the next purchase, which for a mechanic whose entire point is
+>    immediacy is the wrong moment by definition. The `wave_started` handler also
+>    calls it directly, so a wave's first spawn already carries the risk dial's
+>    HP multiplier rather than getting it a substep late.
+> 9. **`EnemyManager`'s enemy-multiplier setters were named for blessings.**
+>    §7.4's dial resolves into the same `enemyHpMult` / `enemySpeedMult` keys, so
+>    `setBlessingHpMult` became `setStatHpMult` (and the other two likewise).
+>    A channel named after one of its two callers is a lie the next person goes
+>    looking for.
+> 10. **§7.8's "risk 0 reproduces the curve" is answerable; "is risk 5 a choice"
+>     is not, with the same metric.** The idle wall does not move at *any* risk
+>     level — the wall quantises to boss waves, a resolution of 25% on a base of
+>     ~40. `npm run sim` therefore prints two risk tables: the integer idle wall
+>     (the leak check, where coarseness is a feature) and the draft-averaged wall
+>     over seven seeds plus AP-per-run (where the trade is actually visible).
+>     Risk 5 costs 1.5% of wall depth for +34% AP per run — and the model has no
+>     positions and no tower HP, so the entire cost of +40% enemy speed is
+>     invisible to it. In browser at risk 3, a tower that comfortably held wave
+>     30 died on it.
+> 11. **§7.7's file list omits** `src/data/pacing.ts`, `src/systems/PacingManager.ts`,
+>     `src/stats/contributors/pacing.ts`, `src/ui/PacingOverlay.ts`,
+>     `src/stats/context.ts`, `src/stats/keys.ts`, `src/stats/resolve.ts`,
+>     `src/systems/ProjectileManager.ts` (§7.5 lives there),
+>     `src/systems/PrestigeManager.ts` (§7.4's AP), `src/ui/UIManager.ts`,
+>     `src/data/upgrades.ts` (§7.2's own compensation), `sim/model.ts` and
+>     `sim/balance.ts` — the last two are not optional, since §7.8's table is the
+>     gate.
+> 12. **Unrelated, found while testing.** `KeybindsOverlay` still advertised
+>     manual aim as "30% faster", which the Part 4 follow-up removed. Fixed.
+>     And a headless `WaveManager` test needs `resumeSpawning()` after *every*
+>     `startWave`, not just on boss waves: an ordinary wave rolls a 4% mutator
+>     offer that pauses spawning until a modal that does not exist closes it.
+>     Part 3 found this as a 4%-per-run flake in `enemies.test.ts`; it reappeared
+>     here as a 3-in-8 flake because Part 7's tests each start several waves.
+> 13. **Measured after the change** — every §4.5 tier inside the preferred
+>     +25-40% band for the first time since Part 4, including the 10 K tier
+>     Part 6 left at +19.0%:
+>
+>     | Lifetime AP | Wall (idle) | Wall (active) | Active advantage |
+>     |---|---:|---:|---:|
+>     | 0 | 39 | 49 | +33.3% |
+>     | 100 | 59 | 69 | +33.0% |
+>     | 1 K | 89 | 89 | +32.2% |
+>     | 10 K | 129 | 129 | +38.1% |
+>     | 100 K | 169 | 169 | +30.0% |
+>
+>     Idle wall-wave drift is zero at every tier. §2.2b moved -1.4 waves at the
+>     two deepest tiers, explicably: `BEHAVIOR_DPS_CREDIT.overkill_carry` dropped
+>     from 0.03 to 0.018 because the baseline now carries the other 0.012, so the
+>     draft orders that card slightly differently.
+
 Seven small changes that together remove the dead air.
 
 ### 7.1 Call the wave early
@@ -1105,3 +1218,154 @@ Idle wall-waves are unchanged at every tier, as they have been through Parts 2�
 constant — it is a quantity that shrinks against every fire-rate purchase the player will ever
 make. Any future active-play or burst mechanic should be priced against the tower's throughput,
 not against one of its shots.
+
+---
+
+## Plan retrospective (2026-08-21, after all seven parts)
+
+Written at the end, for whoever writes or implements the next plan. Every
+pattern below cost real time at least twice.
+
+### 1. A save version written in a plan is a guess, and it was wrong four times
+
+§5.4 said v11, §6.3 said v12, §7.7 said v13. The actual numbers were 12, 13, 14.
+Part 3 needed a bump the plan never mentioned at all, which is what put every
+later number one behind, and each part then found its own number stale and
+recorded a note saying so — four consecutive times.
+
+The number in a plan is a prediction of how many bumps will land first, and that
+prediction is worthless the moment any part needs an unplanned one.
+**Write "bump `SAVE_VERSION`" and stop. The ladder decides.** The same applies
+to any plan-stated identifier that is really a running count.
+
+### 2. Price a bonus against throughput, never against one shot or one kill
+
+Part 4 shipped a charged shot at "6x damage" and measured +127% against a +50%
+gate; the follow-up found that no flat multiple of one shot lands inside the
+band at every tier, because such a bonus is worth `1/fireRate` of the tower's
+output and decays against every fire-rate purchase. Part 6 hit the mirror image:
+`artillery`'s "-40% fire rate, +150% damage" is `1.5x` sustained output before
+the splash is counted, and four of its five stat blocks were mispriced the same
+way.
+
+Part 7 was warned and still had to cut two values, but for a *different* reason
+each time, which is the useful part:
+
+- **§7.1's momentum** was correctly denominated (gold %, not per shot) and still
+  four times too big, because the budget it draws on — §4.5's active-play band —
+  was already spent by Part 4. Correct units, no headroom.
+- **§7.2's combo** was correctly denominated *and* had headroom, but was
+  misclassified: the plan treats it as an attention reward when nothing the
+  player does builds it. It is baseline income wearing a skill meter.
+
+So the rule generalises. **Before tuning a number, ask two questions: what is it
+denominated in, and whose budget does it spend?** A bonus in the wrong units
+cannot be tuned. A bonus in the right units drawing on a spent budget cannot be
+afforded. A bonus the player does not earn is not an active-play bonus at all,
+whatever the UI says.
+
+### 3. "It composes" is a claim the type system cannot check, and it broke twice
+
+Part 6 found three effects reading `ctx.hpFraction` where **nothing recomputed
+when HP moved**: they armed at the next resolve triggered by something else.
+Part 7 had the identical shape in three more places (risk, momentum, combo tier)
+and only avoided it because Part 6 had written the fix down.
+
+The shape: **a contributor reads live state, and no one told the pipeline the
+state changed.** It is invisible to `tsc` (the field is read), invisible to the
+tests (the value is eventually right), and only visible in browser at the moment
+it matters. Both fixes are the same — bucket or hash the live inputs, compare
+once per substep, resolve on a change (`refreshHpThresholdStats`,
+`refreshPacingStats`).
+
+**If you add a `StatContext` field that is not a snapshot of a manager's
+settled state, you owe it a restate trigger.** Grep for the field name; if the
+only hits are the contributor and `buildStatContext`, the bug is there.
+
+### 4. Closed unions carried the whole plan; keep paying for them
+
+Cross-cutting rule 3 is the single highest-value line in this document.
+`BlessingStat`, `BlessingBehavior`, `CoreId`, `BossPattern`, `EnemyType`,
+`ContractGoalKind`, `ENEMY_THREAT_CLASS` — not one piece of inert content
+shipped across seven parts, in a codebase whose *previous* plan existed largely
+to delete twenty talents that did nothing.
+
+Part 5 found the sharpening: **make the `Record` the implementation, not a
+documentation table.** `ACHIEVEMENT_REWARD_CONSUMERS` maps a union to a *string*
+naming its consumer, so it can name one that does nothing, and
+`content-coverage.test.ts` has to check for placeholder strings.
+`CONTRACT_PROGRESS` maps the union to the function that does the work, so there
+is nothing to drift. Prefer the second shape.
+
+### 5. The balance model must be extended by the part that changes balance
+
+Every part that skipped this got caught. Part 2 found the spawn-weight table
+hand-copied in three places, so a re-weighting could land in the game and not in
+the model measuring it. Part 4's file list omitted `sim/model.ts` and
+`sim/balance.ts`, and its gate lived there. Part 5 and Part 6 both had to teach
+the model a mechanic before they could tune it.
+
+The discipline that worked: **the model imports the real tables and drives the
+real managers.** `BlessingManager`, `ContractManager` and `CoreManager` all run
+inside `simulateRun`, so the offer rules, the +50% cap and the pick cadence are
+the shipping ones. Where a second copy of a number was unavoidable it was
+*derived* from the shipping constant (`coreSurvivalMult` from the core's own
+stat block, `OVERKILL_BASE_DPS_CREDIT` from the blessing's credit) rather than
+hand-set, so a re-tune moves the table that is meant to be measuring it.
+
+### 6. Know which question your metric can answer
+
+The wall wave quantises to boss waves: steps of 10 on a base of ~40, a
+resolution of 25%. Part 6 discovered that §6.4's "±15% of `marksman`" *cannot be
+steered* by it, and Part 7 that §7.8's "is risk 5 a choice" cannot either. Both
+ended up printing two tables — the coarse integer wall as a **leak check**,
+where coarseness is a feature, and a draft-averaged fractional wall over seven
+seeds as the **tuning metric**.
+
+Part 5 added the other half: §4.5's idle parity is *stepwise and non-monotonic*,
+because the greedy buyer crosses upgrade breakpoints in jumps. Scaling contract
+gold down by 0.6x made one tier **worse**. Do not bisect against it expecting
+monotonicity, and do not read a ten-point move as a ten-point change.
+
+And Part 7 found the sting in the tail: **the 0-AP wall sits within 5% of a
+boss-wave boundary.** +5% of anything moves it a full decade, and one draft seed
+of eight already reports the far side of the boundary with Part 7 switched off.
+Every part's "drift zero" at that tier was, in part, the default seed's luck.
+Sweep seeds.
+
+### 7. Several bugs were only ever visible in a browser
+
+A representative list, because it argues for the last ten minutes of every part:
+
+- the boss bar tracked the wrong boss, so the slam telegraph — the most
+  time-critical thing in Part 3 — never surfaced (§3, note 7);
+- the contract tracker flourished a frame before the reward existed (§5, note 9);
+- the contract tracker's height was 89 px against an assumed 84 (§5, note 8);
+- three HP-gated effects armed at the wrong moment (§6, note 8);
+- nineteen spawn-lane arrows rang the arena in noise (§7, note 6);
+- `docs/ability-system.md` listed the wrong hotkey for six of nine abilities,
+  which cost a browser run to notice (§4, note 9).
+
+None of these is expressible as a unit test without first knowing it exists.
+
+### 8. What the plan got right
+
+Worth recording, because the failure modes above are all local corrections to a
+structure that held:
+
+- **The ordering was correct.** Part 1 gives the player something to decide,
+  2-3 give them something to decide about, 4 gives their hands something to do,
+  5-7 tighten the loop. Every part genuinely depended on its predecessors —
+  Part 7's threat preview is only meaningful because Part 2's roster asks
+  different questions, and Part 4's orbs are only worth clicking because Part 1
+  can turn them into rerolls.
+- **The diagnosis in §0 was accurate and the fixes landed on it.** §0.1's "the
+  only in-combat verb is hold the mouse" was still true after Part 4 shipped —
+  the follow-up had to remove manual aim's flat bonus to actually fix it, which
+  is what §4.2 had said in the first place.
+- **The idle contract survived all seven parts.** 39/59/89/129/169 at every
+  tier, unbroken from Part 2 to Part 7.
+- **The per-part status blocks were the highest-leverage thing in the file.**
+  Parts 5, 6 and 7 each avoided a bug because an earlier part had written down
+  what bit it. Keep doing this; a plan that is not amended as it is implemented
+  is a plan that lies about the codebase within a week.
