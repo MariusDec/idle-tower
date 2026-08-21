@@ -117,6 +117,7 @@ export type StatSource =
   | 'waveModifier'
   | 'blessing'
   | 'core'
+  | 'pacing'
   | 'buff'
   | 'derived';
 

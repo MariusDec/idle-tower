@@ -34,11 +34,21 @@ import {
   spawnPoolForWave,
 } from '../src/data/enemies.ts';
 import { LOOT_TUNING, orbGoldValue } from '../src/data/loot.ts';
+import {
+  COMBO_WINDOW_SECONDS,
+  MOMENTUM_CAP,
+  OVERKILL_CARRY_BASE,
+  comboBonus,
+  comboTierIndex,
+  intermissionSecondsForWave,
+  riskApBonus,
+  riskGoldMult,
+  riskHpMult,
+} from '../src/data/pacing.ts';
 import { UPGRADES } from '../src/data/upgrades.ts';
 import { MANUAL_AIM, TOWER_BASE } from '../src/data/tower.ts';
 import { computeUpgradeValue } from '../src/types.ts';
 import type { EnemyType, UpgradeDef } from '../src/types.ts';
-import { WAVE_INTERMISSION } from '../src/systems/WaveManager.ts';
 import { BlessingManager } from '../src/systems/BlessingManager.ts';
 import type { BlessingBehavior, BlessingDef } from '../src/data/blessings.ts';
 import { ContractManager } from '../src/systems/ContractManager.ts';
@@ -47,6 +57,44 @@ import { STAT_BASES } from '../src/stats/keys.ts';
 
 /** Fraction of wall-clock time the tower actually spends shooting a live target. */
 const ENGAGEMENT_EFFICIENCY = 0.85;
+
+/**
+ * Effective-DPS credit for the baseline overkill carry (gameplay plan §7.5).
+ *
+ * `ENGAGEMENT_EFFICIENCY` has always folded overkill in as *waste*; §7.5 hands
+ * 10% of that waste back as damage on another body. Sized off the blessing's
+ * own credit, which was 0.03 for a 25% carry — so a 10% carry is 0.012, and the
+ * card keeps the 0.018 step it now actually represents. Applied to every run,
+ * idle and active alike, which is why it is the one line of Part 7 that could
+ * move the *baseline* curve rather than only the reward side of it.
+ */
+const OVERKILL_BASE_DPS_CREDIT = 0.03 * (OVERKILL_CARRY_BASE / 0.25);
+
+/**
+ * Average gold multiplier the §7.2 combo pays over one wave.
+ *
+ * Not a constant, and not an assumed uptime: the combo is built by kills and
+ * broken by a 2 s gap between them, so the model computes both from the wave
+ * it is actually simulating. A wave whose mean inter-kill gap exceeds the
+ * window never chains at all, which is why early waves — five enemies spread
+ * over twenty seconds — see none of this.
+ *
+ * When the chain does hold, the bonus is *integrated over the wave* rather than
+ * taken at its peak: the tier climbs as the wave is cleared, so a 50-kill wave
+ * spends nine kills at +0%, fifteen at +5% and the rest at +12-25%. Reading the
+ * peak would have credited the mechanic with two to three times what it pays.
+ *
+ * The step at the window boundary deliberately errs high — this figure is an
+ * input to a *drift* check, and the dangerous direction is to under-credit a
+ * faucet and then not see it move the curve.
+ */
+export function comboGoldMult(count: number, activeSec: number): number {
+  const kills = Math.max(1, Math.round(count));
+  if (activeSec / kills >= COMBO_WINDOW_SECONDS) return 1;
+  let sum = 0;
+  for (let k = 1; k <= kills; k++) sum += comboBonus(comboTierIndex(k)).gold;
+  return 1 + sum / kills;
+}
 
 /**
  * Upgrades the greedy buyer is allowed to spend on (the offence/economy core).
@@ -187,7 +235,14 @@ export interface WaveProfile {
   spawnDuration: number;
 }
 
-export function waveProfile(wave: number): WaveProfile {
+/**
+ * @param risk the §7.4 dial, 0-5. Raises enemy HP and the wave's payout.
+ *
+ * Enemy *speed* is not modelled, because the model has no positions — which
+ * means the dial's cost is understated here and its reward is exact. That is
+ * the safe direction for a check whose question is "is risk free gold?".
+ */
+export function waveProfile(wave: number, risk = 0): WaveProfile {
   const count = spawnCountForWave(wave);
   const mix = typeMix(wave);
   const weightSum = mix.reduce((a, e) => a + e.weight, 0);
@@ -222,10 +277,10 @@ export function waveProfile(wave: number): WaveProfile {
 
   return {
     count,
-    totalHp: hpPer * count,
+    totalHp: hpPer * count * riskHpMult(risk),
     avgArmor: armorPer,
     avgMagicResist: magicResistPer,
-    baseGold: goldPer * count * (1 - theftDrag),
+    baseGold: goldPer * count * (1 - theftDrag) * riskGoldMult(risk),
     spawnDuration: spawnIntervalForWave(wave) * (count - 1),
   };
 }
@@ -255,7 +310,10 @@ const BEHAVIOR_DPS_CREDIT: Record<BlessingBehavior, number> = {
   shatter: 0.07,
   split_on_kill: 0.04,
   homing: 0.02,
-  overkill_carry: 0.03,
+  // Plan §7.5 made a 10% carry the *baseline*, so the card is only worth the
+  // step from 10% to 25% now. `OVERKILL_BASE_DPS_CREDIT` carries the rest, on
+  // every run rather than only on a blessed one.
+  overkill_carry: 0.018,
   siphon: 0,
   executioner: 0.04,
   // Conditional on being at low HP, which a healthy run rarely is.
@@ -833,7 +891,7 @@ export function dps(l: Loadout, armor: number, magicResist = 0): number {
   // land as extra damage the model cannot place spatially, so they are folded
   // in as one effective-DPS multiplier.
   const base = perHit * fireRate(l) * ENGAGEMENT_EFFICIENCY
-    * (1 + l.blessings.dpsPct + coreDps);
+    * (1 + l.blessings.dpsPct + coreDps + OVERKILL_BASE_DPS_CREDIT);
   if (!l.active) return base;
   // Plan §4.2: the charged shot does not consume the tower's cooldown, so it
   // is *added* to the volley rather than replacing part of it. Its cycle is
@@ -855,7 +913,7 @@ export function dps(l: Loadout, armor: number, magicResist = 0): number {
     * MANUAL_AIM.chargeDpsSeconds
     * ACTIVE_PLAY.chargeCrowdFactor
     * ENGAGEMENT_EFFICIENCY
-    * (1 + l.blessings.dpsPct + coreDps)
+    * (1 + l.blessings.dpsPct + coreDps + OVERKILL_BASE_DPS_CREDIT)
     / CHARGE_CYCLE;
   return Math.max(base, tracking + charged) * (1 + ACTIVE_PLAY.targetedCastDps);
 }
@@ -920,6 +978,8 @@ export function buyGreedily(l: Loadout, gold: number, armor: number, magicResist
 export interface RunResult {
   /** The core the run was on. */
   core: CoreId;
+  /** The §7.4 risk the run was played at. */
+  risk: number;
   /** Last wave the tower cleared inside the time limit. */
   wallWave: number;
   /** Total in-game seconds to reach the wall. */
@@ -986,6 +1046,18 @@ export interface RunOptions {
    * ruler: every other core is required to land within ±15% of its wall wave.
    */
   core?: CoreId;
+  /**
+   * The §7.4 risk dial, 0-5. **0 must reproduce the pre-Part-7 curve exactly**
+   * — that is §7.8's gate, and the whole reason risk is a parameter here
+   * rather than a constant folded into `waveProfile`.
+   */
+  risk?: number;
+  /**
+   * Run the §7.1/§7.2 pacing faucets (early-call momentum and the combo).
+   * Off reproduces the pre-Part-7 income, which is what the before/after table
+   * is for.
+   */
+  pacing?: boolean;
 }
 
 export function simulateRun(opts: RunOptions = {}): RunResult {
@@ -1001,6 +1073,8 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     active = false,
     contracts = true,
     core = DEFAULT_CORE,
+    risk = 0,
+    pacing = true,
   } = opts;
 
   const loadout = freshLoadout(damageMult, goldMult, active, core);
@@ -1036,7 +1110,7 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
   let wave = 1;
 
   for (; wave <= maxWave; wave++) {
-    const profile = waveProfile(wave);
+    const profile = waveProfile(wave, risk);
     contractWave = wave;
     const beforeBuy = gold;
     gold = buyGreedily(loadout, gold, profile.avgArmor, profile.avgMagicResist);
@@ -1046,7 +1120,12 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     // A wave cannot finish faster than its enemies spawn.
     const killSec = profile.totalHp / waveDps;
     const activeSec = Math.max(killSec, profile.spawnDuration);
-    const clearSec = activeSec + WAVE_INTERMISSION;
+    // Plan §7.6: the intermission shortens with depth, and §7.1 lets an active
+    // player skip what is left of it. Neither moves the wall — the wall
+    // condition is `activeSec` against the enrage threshold, and the
+    // intermission is not part of either — but both shorten a run.
+    const intermission = pacing ? intermissionSecondsForWave(wave) : 5;
+    const clearSec = activeSec + (pacing && loadout.active ? 0 : intermission);
 
     // Plan §2.3.3: a wave that overruns starts enraging, and the tower dies a
     // short way into that. This — not an arbitrary patience limit — is the
@@ -1057,7 +1136,17 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     // a faucet nobody is balancing. Idle collects 40% of it by drifting home;
     // clicking collects all of it; Lodestone raises the idle rate to 100%.
     const orbRate = loadout.blessings.orbMagnet ? 1 : loadout.orbRate;
-    const earned = (profile.baseGold + orbGoldForWave(wave) * orbRate) * goldMultiplier(loadout);
+    // Plan §7.1/§7.2: two more gold faucets the model has to see, or the drift
+    // table below is measuring a game without them.
+    //
+    // Momentum is credited at its **cap** for an active run: perfect play calls
+    // every wave early and never takes a hit, which is the strongest reading
+    // and therefore the right one for a gate whose question is "is active play
+    // too strong?". An idle run never calls a wave and gets none of it.
+    const momentum = pacing && loadout.active ? 1 + MOMENTUM_CAP : 1;
+    const combo = pacing ? comboGoldMult(profile.count, activeSec) : 1;
+    const earned = (profile.baseGold + orbGoldForWave(wave) * orbRate)
+      * goldMultiplier(loadout) * momentum * combo;
     gold += earned;
     totalGold += earned;
     // Plan §5.2: contracts pay in gold sized off a wave's income, so they are a
@@ -1116,6 +1205,7 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
 
   return {
     core,
+    risk,
     wallWave: wave - 1,
     durationSec: elapsed,
     timeToUnlockSec: timeToUnlock,

@@ -99,6 +99,7 @@ export class Renderer {
     this.drawWall(ctx, snapshot);
     if (this.rangeOverlay) this.drawRangeRing(ctx, snapshot);
     this.drawMines(ctx, snapshot.mines);
+    this.drawSpawnLanes(ctx, snapshot.spawnLanes);
     this.drawParticles(ctx, snapshot.particles, 'behind');
     this.drawShockwaves(ctx, snapshot.shockwaves);
     this.drawAimLine(ctx, snapshot);
@@ -454,6 +455,52 @@ export class Renderer {
     ctx.moveTo(x, y - 10);
     ctx.lineTo(x, y + 10);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * Spawn-edge markers for the coming wave (gameplay plan §7.3).
+   *
+   * These are the *real* spawn points from the pre-rolled roster, which is
+   * what makes them worth drawing: an arrow pointing at an edge no enemy is
+   * going to use would teach the player to ignore them. Drawn under the
+   * enemies, so the last stragglers of the cleared wave still read on top.
+   */
+  private drawSpawnLanes(
+    ctx: CanvasRenderingContext2D,
+    lanes: RenderSnapshot['spawnLanes'],
+  ): void {
+    if (!lanes || lanes.length === 0) return;
+    // A gentle pulse rather than a static mark: the intermission is short and
+    // a still shape at the edge of the arena reads as scenery.
+    const pulse = 0.55 + 0.35 * Math.sin(this.time * 4);
+    ctx.save();
+    for (const lane of lanes) {
+      // Clamp to the arena edge — spawn points sit 20 px outside it.
+      const x = Math.max(10, Math.min(this.width - 10, lane.x));
+      const y = Math.max(10, Math.min(this.height - 10, lane.y));
+      const dx = this.towerX - x;
+      const dy = this.towerY - y;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      ctx.strokeStyle = `rgba(255, 150, 110, ${(0.5 * pulse).toFixed(3)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + ux * 26, y + uy * 26);
+      ctx.stroke();
+      // Arrowhead pointing the way the lane will come in.
+      const tipX = x + ux * 32;
+      const tipY = y + uy * 32;
+      ctx.fillStyle = `rgba(255, 170, 130, ${(0.6 * pulse).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(x + ux * 20 - uy * 7, y + uy * 20 + ux * 7);
+      ctx.lineTo(x + ux * 20 + uy * 7, y + uy * 20 - ux * 7);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.restore();
   }
 

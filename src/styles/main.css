@@ -5215,3 +5215,169 @@ body.eq-dragging img { pointer-events: none; }
   border-color: var(--accent);
   background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--bg-3)), var(--bg-2));
 }
+
+/* ── Pacing: call-the-wave button, momentum, risk dial (plan §7.1/§7.4) ──── */
+
+.hud-call-wave-btn {
+  min-width: 62px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+/* Armed only during an intermission. Deliberately loud: the window is short
+   and a button the player has to notice in three seconds has to announce
+   itself. */
+.hud-call-wave-btn.is-armed {
+  background: linear-gradient(180deg, #7a4a12, #4a2c0a);
+  border-color: #d99a2b;
+  color: #ffdf9a;
+  animation: call-wave-pulse 1.1s ease-in-out infinite;
+}
+@keyframes call-wave-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 154, 43, 0.45); }
+  50% { box-shadow: 0 0 0 4px rgba(217, 154, 43, 0); }
+}
+
+.hud-momentum {
+  font-size: 10px;
+  font-weight: 600;
+  color: #ffc879;
+  letter-spacing: 0.02em;
+  min-height: 12px;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.hud-momentum.is-visible { opacity: 1; }
+
+.hud-risk-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 84px;
+}
+.hud-risk-block.is-hot .hud-speed-label { color: #ff9a7a; }
+.hud-risk-block.is-hot .hud-speed-group { border-color: #a5442f; }
+
+/* ── Pacing overlay: combo meter + threat preview (plan §7.2/§7.3) ────────
+   Bottom-centre of the arena, opposite the boss bar. Both children are
+   `pointer-events: none` — nothing here may take a click away from the
+   battlefield, which is where Part 4's verbs live. */
+.pacing-overlay {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(560px, calc(100% - 32px));
+  pointer-events: none;
+}
+
+.threat-preview {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 14px;
+  background: linear-gradient(180deg, rgba(20, 25, 36, 0.92), rgba(10, 14, 22, 0.92));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  max-width: 100%;
+}
+.threat-preview.is-visible { display: flex; }
+.threat-preview.is-boss { border-color: var(--bad); }
+.threat-preview-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.threat-preview.is-boss .threat-preview-title { color: var(--bad); }
+.threat-preview-body {
+  font-size: 12px;
+  color: var(--text-1);
+  text-align: center;
+}
+.threat-preview-hint {
+  font-size: 10px;
+  color: #ffc879;
+  min-height: 12px;
+}
+
+.combo-meter {
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  width: min(240px, 100%);
+  padding: 5px 10px 6px;
+  background: linear-gradient(180deg, rgba(20, 25, 36, 0.9), rgba(10, 14, 22, 0.9));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.combo-meter.is-visible { display: flex; }
+.combo-meter-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.combo-meter-count {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--text-1);
+}
+.combo-meter-tier {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.combo-meter-bonus {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--good, #6bbf59);
+}
+.combo-meter-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+/* No transition on the fill: this bar is a *clock*, and a 0.18s ease would
+   make the last fifth of a two-second window unreadable. */
+.combo-meter-fill {
+  height: 100%;
+  width: 0;
+  background: var(--text-2);
+}
+.combo-meter-next {
+  font-size: 9px;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+}
+.combo-meter.tier-1 .combo-meter-count,
+.combo-meter.tier-1 .combo-meter-tier { color: #8fd6ff; }
+.combo-meter.tier-1 .combo-meter-fill { background: #8fd6ff; }
+.combo-meter.tier-2 .combo-meter-count,
+.combo-meter.tier-2 .combo-meter-tier { color: #9be27a; }
+.combo-meter.tier-2 .combo-meter-fill { background: #9be27a; }
+.combo-meter.tier-3 .combo-meter-count,
+.combo-meter.tier-3 .combo-meter-tier { color: #ffc879; }
+.combo-meter.tier-3 .combo-meter-fill { background: #ffc879; }
+.combo-meter.tier-4 .combo-meter-count,
+.combo-meter.tier-4 .combo-meter-tier { color: #ff8a6a; }
+.combo-meter.tier-4 .combo-meter-fill { background: #ff8a6a; }
+.combo-meter.tier-4 { border-color: #ff8a6a; }
+
+@media (max-width: 768px) {
+  /* The ability bar owns the bottom edge on mobile, so the overlay rides
+     above it rather than under it. */
+  .pacing-overlay { bottom: 8px; gap: 4px; }
+  .threat-preview-hint { display: none; }
+  .hud-risk-block { min-width: 66px; }
+}

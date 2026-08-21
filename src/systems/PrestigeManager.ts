@@ -54,6 +54,17 @@ export class PrestigeManager {
    * Both are *set* on load from their own saved figure, and summed here.
    */
   private runApBonusBySource: Record<RunApSource, number> = { boss: 0, contract: 0 };
+  /**
+   * The risk dial's AP bonus (plan §7.4), as a fraction.
+   *
+   * Deliberately *not* a `RunApSource`. The two sources above are earned and
+   * banked — they accumulate over a run and share a +50% ceiling — whereas
+   * risk is a live setting with no ceiling of its own that stops applying the
+   * moment the dial goes back to 0. Summing it into the same pool would have
+   * let the contract cap silently swallow it, and let a contract restore
+   * overwrite it. It multiplies instead, so the two compose.
+   */
+  private riskApBonus = 0;
 
   constructor(bus: EventBus, ctx: AscensionContext) {
     this.bus = bus;
@@ -69,6 +80,15 @@ export class PrestigeManager {
   /** Restore one source's banked bonus from a save (or clear it on reset). */
   setRunApBonus(fraction: number, source: RunApSource = 'boss'): void {
     this.runApBonusBySource[source] = Math.max(0, fraction);
+  }
+
+  /** Set the risk dial's AP bonus. Derived from `PacingManager.activeRisk`. */
+  setRiskApBonus(fraction: number): void {
+    this.riskApBonus = Math.max(0, fraction);
+  }
+
+  getRiskApBonus(): number {
+    return this.riskApBonus;
   }
 
   /** The composed run bonus across every source. */
@@ -90,7 +110,9 @@ export class PrestigeManager {
 
   previewAP(wave: number): number {
     const bonus = this.achievementBonus('ap_gain_mult') + this.achievementBonus('prestige_gain_mult');
-    const earned = Math.floor(apForWave(wave) * (1 + bonus) * (1 + this.getRunApBonus()));
+    const earned = Math.floor(
+      apForWave(wave) * (1 + bonus) * (1 + this.getRunApBonus()) * (1 + this.riskApBonus),
+    );
     // Plan §2.3.4: the very first ascension is scripted to be worth taking, so
     // a new player's introduction to prestige is a visible jump in power
     // rather than a rounding error.

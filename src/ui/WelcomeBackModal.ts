@@ -31,6 +31,11 @@ export class WelcomeBackModal {
     this.root = root;
   }
 
+  /** True while the modal is up — see `UIManager.isModalOpen`. */
+  isOpen(): boolean {
+    return this.currentRoot !== null;
+  }
+
   show(data: WelcomeBackData, onDismiss: () => void): void {
     this.hide();
     this.onDismiss = onDismiss;

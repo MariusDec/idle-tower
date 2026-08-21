@@ -226,7 +226,25 @@ carry the budget by itself:
 | 10 K | 129 | 129 | **+28.9%** | 4.72 |
 | 100 K | 169 | 169 | **+27.3%** | 6.10 |
 
-All five tiers now land inside the +25–40% band. The retune also changed the charge's *shape*: its
+Parts 5-7 have each re-measured this table, because every one of them added a gold channel and the
+metric multiplies whatever gold advantage active play already has. It is also **stepwise and
+non-monotonic** — composed DPS at one wave, with a greedy buyer that crosses upgrade breakpoints in
+discrete jumps — so a small change can move a tier by ten points in either direction. As of Part 7
+(which added the momentum bonus for calling waves early, an active-only channel, and the combo,
+which is not):
+
+| Lifetime AP | Wall (idle) | Wall (active) | Active advantage | shots/s |
+|---|---:|---:|---:|---:|
+| 0 | 39 | 49 | **+33.3%** | 1.78 |
+| 100 | 59 | 69 | **+33.0%** | 2.44 |
+| 1 K | 89 | 89 | **+32.2%** | 3.46 |
+| 10 K | 129 | 129 | **+38.1%** | 4.78 |
+| 100 K | 169 | 169 | **+30.0%** | 6.10 |
+
+All five tiers land inside the +25–40% band. §7.1's momentum cap was sized against this table
+specifically — see `EARLY_CALL_GOLD_PER_SECOND` in `src/data/pacing.ts`.
+
+The Part 4 retune also changed the charge's *shape*: its
 payload is denominated in seconds of the tower's own sustained fire (`chargeDpsSeconds`), not in
 multiples of one shot. A flat multiple is worth `1/fireRate` of the tower's output, so the same
 constant measured +57% at 1.8 shots/s and +10% at 6.1 — the verb decayed into irrelevance exactly

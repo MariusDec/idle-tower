@@ -11,6 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SaveManager } from '../src/systems/SaveManager';
 import { ContractManager } from '../src/systems/ContractManager';
+import { PacingManager } from '../src/systems/PacingManager';
 import type { GameState } from '../src/types';
 
 const STORAGE_KEY = 'the-tower-save';
@@ -182,7 +183,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(13);
+    expect(loaded.version).toBe(14);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -206,11 +207,44 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(13);
+    expect(loaded.version).toBe(14);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);
     expect(loaded.blessings!.wavesClearedThisRun).toBe(19);
+  });
+
+  /**
+   * v13 -> v14 is additive too (gameplay plan §7.7). A v13 save is a run at
+   * risk 0 with no momentum banked, which is exactly what §7.8 requires the
+   * migration to mean: risk 0 reproduces the curve the save was playing.
+   */
+  it('seeds a risk-0 pacing block for a v13 save', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13 }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(14);
+    expect(loaded.pacing).toEqual({
+      risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
+    });
+  });
+
+  it('carries the risk dial and momentum through a v14 round trip', () => {
+    const pacing = {
+      risk: 4, committedRisk: 3, momentum: 0.045, momentumWaves: 2, comboBest: 61,
+    };
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13, pacing }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.pacing).toEqual(pacing);
+
+    // And the real manager takes it back with both lifetimes intact: the dial
+    // survives, the live combo does not.
+    const mgr = new PacingManager();
+    mgr.restore(loaded.pacing!);
+    expect(mgr.riskLevel).toBe(4);
+    expect(mgr.activeRisk).toBe(3);
+    expect(mgr.momentumBonus).toBeCloseTo(0.045, 6);
+    expect(mgr.combo).toBe(0);
+    expect(mgr.snapshot()).toEqual(pacing);
   });
 
   /**
@@ -221,7 +255,7 @@ describe('migration ladder', () => {
   it('seeds an empty contract run for a v11 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(13);
+    expect(loaded.version).toBe(14);
     expect(loaded.contracts).toEqual({
       active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
     });
@@ -241,7 +275,7 @@ describe('migration ladder', () => {
     };
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11, contracts }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(13);
+    expect(loaded.version).toBe(14);
     expect(loaded.contracts).toEqual(contracts);
 
     // And the real manager takes that state back without losing a slot.

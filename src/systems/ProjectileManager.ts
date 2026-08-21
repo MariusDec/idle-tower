@@ -4,6 +4,7 @@ import { PROJECTILE_SPEED } from '../data/tower';
 import { ENEMY_DEFS, isTargetable } from '../data/enemies';
 import { BLESSING_TUNING, type BlessingBehavior } from '../data/blessings';
 import { CORE_TUNING, type CoreBehavior } from '../data/cores';
+import { OVERKILL_CARRY_BASE } from '../data/pacing';
 import type { Tower } from './Tower';
 import type { EnemyManager } from './EnemyManager';
 import { EventBus } from '../game/EventBus';
@@ -367,7 +368,9 @@ export class ProjectileManager {
           if (p.isCrit && this.blessings.has('crit_chain')) {
             this.applyCritChain(enemy, final);
           }
-          if (killed && this.blessings.has('overkill_carry')) {
+          // Plan §7.5: overkill carries by default now; the blessing raises
+          // the share rather than switching the mechanism on.
+          if (killed) {
             this.applyOverkill(enemy, final - hpBefore);
           }
         }
@@ -518,10 +521,24 @@ export class ProjectileManager {
     if (path.length >= 2) this.bus.emit('chain_lightning', { path });
   }
 
-  /** Overkill: excess damage on a killing blow carries to the next target. */
+  /**
+   * Overkill: excess damage on a killing blow carries to the next target.
+   *
+   * Baseline **10%** (plan §7.5), raised to 25% by the `overkill_carry`
+   * blessing — one mechanism with two rates rather than two mechanisms that
+   * would both fire on a blessed kill. Needs no throughput pricing: the carried
+   * amount is a fraction of damage the tower already dealt, so it grows with
+   * every damage purchase instead of shrinking against every fire-rate one.
+   *
+   * `nearestOthers` filters on `isTargetable`, which is what keeps a carry from
+   * landing on a corpse, a burrowed enemy or a spawn-protected splitter child.
+   */
   private applyOverkill(from: Enemy, overkill: number): void {
     if (overkill <= 0) return;
-    const carried = Math.floor(overkill * BLESSING_TUNING.overkillCarry);
+    const share = this.blessings.has('overkill_carry')
+      ? BLESSING_TUNING.overkillCarry
+      : OVERKILL_CARRY_BASE;
+    const carried = Math.floor(overkill * share);
     if (carried <= 0) return;
     const [next] = this.nearestOthers(
       from.x,

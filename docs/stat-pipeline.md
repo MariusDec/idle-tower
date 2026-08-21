@@ -59,7 +59,7 @@ the Stats panel renders.
 
 **Contributors** (`contributors/`) are pure `(ctx, acc) => void`: upgrades,
 evolutions, prestige, research, achievements, wave modifier, blessings, **core**,
-talents, passives, equipment, buffs. Six of them switch exhaustively over a
+**pacing**, talents, passives, equipment, buffs. Six of them switch exhaustively over a
 closed union with a `never` default — talents over `TalentStat`, achievements
 over `AchievementRewardType`, evolutions over `EvolutionEffectId`, passives over
 `PassiveStat`, blessings over `BlessingStat`, and the core over `CoreId` — so
@@ -72,11 +72,23 @@ where it can be re-tuned in one line. The switch earns its keep on the case that
 is not data — `bloodforge`'s tempo step, which is gated on live tower HP. See
 [core-system.md](core-system.md).
 
+`contributors/pacing.ts` (gameplay plan §7) has no switch, because it has no
+content union to be exhaustive over: risk is a number, the combo tier is an
+index into a table, and the intermission is a function of the wave. What it
+guards lives in `src/data/pacing.ts` — `COMBO_TIERS` and the `Record` over
+`EnemyType` that classifies threats. It contributes the risk dial's enemy
+multipliers and gold, early-call momentum's gold, the combo tier's gold and XP,
+and the wave-depth intermission factor.
+
 Three resolved keys are deliberately **not** tower stats: `enemySpeedMult`,
 `enemyHpMult` and `enemyDamageMult` are written to `EnemyManager` by
 `applyResolvedStats`. They still go through the pipeline so a blessing's enemy
-multipliers compose with the wave mutator's instead of one overwriting the
-other. See `docs/blessing-system.md`.
+multipliers compose with the wave mutator's — and with the §7.4 risk dial, which
+resolves into the same two keys — instead of one overwriting the other. The
+`EnemyManager` setters are named for the pipeline (`setStatHpMult`,
+`setStatSpeedMult`, `setStatDamageMult`) rather than for blessings, which was
+their original and now-misleading name. See `docs/blessing-system.md` and
+`docs/wave-system.md`.
 
 ## HP-gated stats
 
@@ -90,6 +102,22 @@ that is the wrong moment by definition.
 `Game.refreshHpThresholdStats` runs once per simulation substep and buckets
 `hpFraction` against `HP_STAT_THRESHOLDS`, resolving only on a crossing. A tower
 sitting at 29% HP costs zero resolves; an actual crossing costs one.
+
+## Pacing-gated stats
+
+`StatContext.pacing` has the same shape of problem and the same shape of answer.
+The risk dial, the combo tier and early-call momentum are all read by
+`contributors/pacing.ts`, and all three are **discrete**: risk moves only on a
+wave boundary, the combo tier only when a kill crosses a threshold, momentum
+only when a wave is called early or the streak breaks.
+
+`Game.refreshPacingStats` compares `PacingManager.statSignature()` — one number
+combining all three — once per substep, and resolves only when it changes.
+Without it a combo tier reached at kill 25 would start paying at the next
+purchase, which is precisely the Part 6 bug in a mechanic whose entire point is
+immediacy. The `wave_started` handler also calls it directly, so a wave's first
+spawn already carries the risk dial's HP multiplier rather than getting it a
+substep late.
 
 ## Derived and stateful cases
 

@@ -52,6 +52,23 @@ export interface WaveModifierInputs {
 }
 
 /**
+ * Pacing inputs (plan §7), snapshotted from `PacingManager`.
+ *
+ * All three are *discrete* on purpose. `risk` moves only on a wave boundary,
+ * `comboTier` only when a threshold is crossed, and `momentum` only when a
+ * wave is called early or the streak breaks — which is what lets `Game`
+ * recompute on a signature change instead of every substep.
+ */
+export interface PacingInputs {
+  /** The risk level the live wave is running (0-5), not the dial setting. */
+  risk: number;
+  /** Accumulated early-call gold bonus, as a fraction. */
+  momentum: number;
+  /** Combo tier index: 0 for no combo, 1-4 for the tiers. */
+  comboTier: number;
+}
+
+/**
  * The run's blessings (plan §1).
  *
  * `stats` arrives already summed across stacks — `BlessingManager` owns that
@@ -101,6 +118,8 @@ export interface StatContext {
   blessings: BlessingInputs;
   /** Null when no mutator is running on the current wave. */
   waveModifier: WaveModifierInputs | null;
+  /** Risk dial, early-call momentum and the kill combo (plan §7). */
+  pacing: PacingInputs;
   /** Timed buffs currently in effect (abilities, quick shot, manual aim). */
   buffs: readonly BuffEntry[];
 }
@@ -148,6 +167,7 @@ export function emptyStatContext(): StatContext {
     equipment: {},
     blessings: { stats: {}, behaviors: [] },
     waveModifier: null,
+    pacing: { risk: 0, momentum: 0, comboTier: 0 },
     buffs: [],
   };
 }

@@ -59,6 +59,8 @@ Top bar displays:
 - DPS estimate (averaged over 30 frames)
 - FPS counter
 - Speed controls (-/+)
+- **Risk** stepper (0-5, gameplay plan §7.4) next to the speed controls
+- **Call** button and a momentum readout in the wave block (§7.1)
 
 ## Canvas overlays
 
@@ -70,6 +72,7 @@ each overlay opts back in. Two live there:
 | Run-stalled banner | `RunStalledBanner.ts` | A wave has overrun and started enraging |
 | **Boss bar** | `BossBar.ts` | Any boss is alive |
 | **Placement prompt** | `PlacementPrompt.ts` | An ability is armed and waiting for a click |
+| **Pacing overlay** | `PacingOverlay.ts` | A combo is live, or an intermission is running |
 
 The boss bar (gameplay plan §3.5) is the readout for the whole boss encounter:
 tier name, HP with phase pips at 66/33%, the bulwark shield overlay, the active
@@ -158,3 +161,49 @@ cost nothing, which is what lets the un-throttled overlays run every frame.
 - Toast notification styling
 - Welcome modal overlay
 - Scrollable panel content
+
+## The pacing overlay (gameplay plan §7.2 / §7.3)
+
+`PacingOverlay.ts` owns the bottom-centre of the arena — the opposite corner
+from the boss bar — and holds two readouts that are never both interesting at
+once: a combo dies two seconds after the last kill, and the preview only exists
+during an intermission.
+
+**Combo meter (§7.2).** Kill count, tier name, the bonus it is paying, the next
+threshold, and a bar that **drains**. The drain is the point: a number that only
+counts up is a score, whereas a bar visibly emptying is a clock the player can
+beat. It carries no CSS transition, because a 0.18 s ease would make the last
+fifth of a two-second window unreadable. Tier drives the colour, so the meter
+reads at a glance without being read.
+
+**Threat preview (§7.3).** `31 enemies · 4 Siege · 3 Shielded · 1 Elite
+(Retribution)`, plus a `Space: call it now for +3% gold` hint when the wave is
+callable. Threat types are *named* and trash is only counted — see
+`ENEMY_THREAT_CLASS`. Naming the threat rather than the headcount is what makes
+the intermission a preparation window: "4 Siege" tells the player to change
+targeting mode or save a cooldown; "31 enemies" tells them nothing they could
+act on. The canvas draws matching **spawn-edge arrows** for the lanes the wave
+will actually use (`Renderer.drawSpawnLanes`), clustered and capped at 8 —
+nineteen arrows measured in-browser rings the arena in noise.
+
+Both are pushed once per frame from `Game.frameUpdate` via
+`UIManager.setPacingData`, for the same reason the boss bar is pushed rather
+than polled: the combo lives in `PacingManager` and the preview in
+`WaveManager`, neither of which `UIManager` can see. One snapshot feeds the HUD
+controls, the overlay and the canvas lane markers, so the three cannot disagree.
+
+Both update **above** the UI throttle, like the boss bar: a two-second drain
+read at 10 fps is a stutter, not a clock. The caching `dom` helpers make an
+unchanged frame free.
+
+## `UIManager.isModalOpen()`
+
+Reports whether any modal this manager owns (welcome-back, run summary, run
+failed, keybinds) has the player's attention. `Game.isModalOpen` combines it
+with the three it owns itself (wave modifier, blessing draft, core picker) plus
+the run-failed flag, and that composite gates the §7.1 `Space` binding.
+
+A bare `modalRoot.childElementCount` check would have been shorter and wrong:
+the boss bar, the placement prompt, the pacing overlay and the contract tracker
+all live in overlay roots that fall back to `modalRoot`, and none of them is a
+modal.

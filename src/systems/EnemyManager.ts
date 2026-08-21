@@ -151,10 +151,14 @@ export class EnemyManager {
    * rather than overwrite — a Reckless Greed run under Glass Cannon should get
    * both. Speed and damage apply live (so a mid-wave pick is felt immediately);
    * HP applies at spawn, like every other HP multiplier.
+   *
+   * Named for the *pipeline*, not for blessings: plan §7.4's risk dial resolves
+   * into the same two keys, so a channel called "blessing" would have been a
+   * lie the next time someone went looking for where risk lands.
    */
-  private blessingSpeedMult = 1;
-  private blessingHpMult = 1;
-  private blessingDamageMult = 1;
+  private statSpeedMult = 1;
+  private statHpMult = 1;
+  private statDamageMult = 1;
   /**
    * Per-enemy chill from the Frostbite blessing: enemy id → { factor, remaining }.
    *
@@ -304,19 +308,19 @@ export class EnemyManager {
     this.hpMult = Math.max(0.1, mult);
   }
 
-  /** Blessing channel for enemy movement speed (applies to live enemies). */
-  setBlessingSpeedMult(mult: number): void {
-    this.blessingSpeedMult = Math.max(0.1, mult);
+  /** Resolved `enemySpeedMult` (blessings + risk); applies to live enemies. */
+  setStatSpeedMult(mult: number): void {
+    this.statSpeedMult = Math.max(0.1, mult);
   }
 
-  /** Blessing channel for enemy max HP (applied at spawn). */
-  setBlessingHpMult(mult: number): void {
-    this.blessingHpMult = Math.max(0.1, mult);
+  /** Resolved `enemyHpMult` (blessings + risk); applied at spawn. */
+  setStatHpMult(mult: number): void {
+    this.statHpMult = Math.max(0.1, mult);
   }
 
-  /** Blessing channel for damage enemies deal to the tower. */
-  setBlessingDamageMult(mult: number): void {
-    this.blessingDamageMult = Math.max(0, mult);
+  /** Resolved `enemyDamageMult` (blessings); damage enemies deal to the tower. */
+  setStatDamageMult(mult: number): void {
+    this.statDamageMult = Math.max(0, mult);
   }
 
   /**
@@ -358,7 +362,7 @@ export class EnemyManager {
     else hp = enemyHPForWave(def.baseHP, wave);
     if (this.hpReduction > 0) hp = Math.max(1, Math.floor(hp * (1 - this.hpReduction)));
     if (this.hpMult !== 1) hp = Math.max(1, Math.floor(hp * this.hpMult));
-    if (this.blessingHpMult !== 1) hp = Math.max(1, Math.floor(hp * this.blessingHpMult));
+    if (this.statHpMult !== 1) hp = Math.max(1, Math.floor(hp * this.statHpMult));
     const isElite = overrides.elite === true;
     if (isElite) hp = Math.max(1, Math.floor(hp * ELITE_HP_MULT));
     const speed = enemySpeedForWave(def.baseSpeed, wave) * this.speedMult;
@@ -680,7 +684,7 @@ export class EnemyManager {
       const dy = towerY - e.y;
       const d = Math.sqrt(dx * dx + dy * dy);
 
-      let speedMult = (hasteMultipliers.get(e.id) ?? 1) * this.enrageSpeedMult * this.blessingSpeedMult;
+      let speedMult = (hasteMultipliers.get(e.id) ?? 1) * this.enrageSpeedMult * this.statSpeedMult;
       if (this.retributionBuffs.has(e.id)) speedMult *= RETRIBUTION_BUFF_SPEED_MULT;
       // Boss enrage (plan §3.3) is a live multiplier rather than a mutation of
       // `e.speed`, so it composes with the wave-level enrage instead of
@@ -738,7 +742,7 @@ export class EnemyManager {
           e.attackCooldown -= dt;
           if (e.attackCooldown <= 0) {
             this.bus.emit('enemy_attack', { x: e.x, y: e.y, type: e.type });
-            let dmgMult = this.damageToTowerMult * this.enrageDamageMult * this.blessingDamageMult;
+            let dmgMult = this.damageToTowerMult * this.enrageDamageMult * this.statDamageMult;
             if (this.retributionBuffs.has(e.id)) dmgMult *= RETRIBUTION_BUFF_DAMAGE_MULT;
             if ((e.bossEnrageStacks ?? 0) > 0) dmgMult *= this.bossEnrageDamageMult(e);
             totalDamage += e.damage * dmgMult;
@@ -1173,7 +1177,7 @@ export class EnemyManager {
   private landSlam(e: Enemy): void {
     const mult = this.damageToTowerMult
       * this.enrageDamageMult
-      * this.blessingDamageMult
+      * this.statDamageMult
       * this.bossEnrageDamageMult(e);
     const mitigated = e.bossSlamMitigated === true;
     let damage = e.damage * BOSS_ENCOUNTER.slamDamageMult * mult;
@@ -1421,7 +1425,7 @@ export class EnemyManager {
     // The enemy damage channels are applied at launch, so a shell in the air
     // carries the multipliers that were live when it was fired — which is what
     // the arc telegraph is promising the player.
-    const mult = this.damageToTowerMult * this.enrageDamageMult * this.blessingDamageMult;
+    const mult = this.damageToTowerMult * this.enrageDamageMult * this.statDamageMult;
     const damage = e.damage * ENEMY_BEHAVIOR.siegeShellDamageMult * mult;
     if (this.hostileShots.length >= MAX_HOSTILE_SHOTS) this.hostileShots.shift();
     this.hostileShots.push({

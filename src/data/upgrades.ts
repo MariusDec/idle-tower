@@ -174,7 +174,14 @@ export const UPGRADES: UpgradeDef[] = [
     category: 'economy',
     hideUpgradeScale: true,
     evolutions: [
-      { level: 25, name: 'Avarice', description: 'Kill streaks: +5% gold per consecutive kill', effectId: 'kill_streak_gold', effectValue: 0.05 },
+      // Plan §7.2: the combo meter now pays for a kill streak too, so Avarice
+      // pays less for the same streak and the *combined* ceiling is unchanged.
+      // Derived, not guessed: the deepest streak a wave can actually sustain is
+      // its own enemy count, ~50 around the wall, where Avarice used to be
+      // worth `0.05 x 49 = +245%` and the combo's third tier now supplies +12%
+      // of it — `(2.45 - 0.12) / 49 = 0.0476`, rounded *down* so the combined
+      // figure lands just under the old one rather than just over.
+      { level: 25, name: 'Avarice', description: 'Kill streaks: +4.7% gold per consecutive kill', effectId: 'kill_streak_gold', effectValue: 0.047 },
       { level: 50, name: "Dragon's Hoard", description: '+1% gold per wave survived this run', effectId: 'wave_gold_scaling', effectValue: 0.01 },
     ],
   },

@@ -23,6 +23,7 @@ import { RunFailedModal, type RunFailedData } from './RunFailedModal';
 import { RunStalledBanner, type RunStalledData } from './RunStalledBanner';
 import { PlacementPrompt } from './PlacementPrompt';
 import { BossBar, type BossBarData } from './BossBar';
+import { PacingOverlay, type PacingHudData } from './PacingOverlay';
 import { KeybindsOverlay } from './KeybindsOverlay';
 import { StatsPanel } from './StatsPanel';
 import { ProgressionPanel, type ProgressionBlessingInfo, type ProgressionContractInfo } from './ProgressionPanel';
@@ -156,6 +157,8 @@ export class UIManager {
   private readonly runFailedModal: RunFailedModal;
   private readonly runStalledBanner: RunStalledBanner;
   private readonly bossBar: BossBar;
+  /** Combo meter + next-wave threat readout (plan §7.2/§7.3). */
+  private readonly pacingOverlay: PacingOverlay;
   /** Plan §4.3: the "click to place it" strip. */
   private readonly placementPrompt: PlacementPrompt;
   /**
@@ -163,6 +166,7 @@ export class UIManager {
    * (gameplay plan §3.5). Null while no boss is alive.
    */
   private bossBarData: BossBarData | null = null;
+  private pacingData: PacingHudData | null = null;
   private readonly keybindsOverlay: KeybindsOverlay;
   private readonly statsPanel: StatsPanel;
   private readonly progressionPanel: ProgressionPanel;
@@ -210,6 +214,8 @@ export class UIManager {
   private onPrevWave: () => void = () => {};
   private onNextWave: () => void = () => {};
   private onToggleAutoProgress: () => void = () => {};
+  private onCallWaveEarly: () => void = () => {};
+  private onRiskChange: (level: number) => void = () => {};
   private onClearSave: () => void = () => {};
   private onVolumeChange: (v: number) => void = () => {};
   private onMuteToggle: () => void = () => {};
@@ -367,6 +373,8 @@ export class UIManager {
     this.hud.setOnPrevWave(() => this.onPrevWave());
     this.hud.setOnNextWave(() => this.onNextWave());
     this.hud.setOnToggleAutoProgress(() => this.onToggleAutoProgress());
+    this.hud.setOnCallWaveEarly(() => this.onCallWaveEarly());
+    this.hud.setOnRiskChange((level) => this.onRiskChange(level));
     this.upgradePanel = new UpgradePanel((id, amount) => this.onBuyUpgrade(id, amount));
     this.abilityPanel = new AbilityPanel({
       onCast: (id) => this.onCastAbility(id),
@@ -465,6 +473,9 @@ export class UIManager {
       deps.overlayRoot ?? (document.getElementById('overlay-root') as HTMLElement) ?? deps.modalRoot,
     );
     this.bossBar = new BossBar(
+      deps.overlayRoot ?? (document.getElementById('overlay-root') as HTMLElement) ?? deps.modalRoot,
+    );
+    this.pacingOverlay = new PacingOverlay(
       deps.overlayRoot ?? (document.getElementById('overlay-root') as HTMLElement) ?? deps.modalRoot,
     );
     this.keybindsOverlay = new KeybindsOverlay(deps.modalRoot);
@@ -869,6 +880,16 @@ export class UIManager {
     this.onToggleAutoProgress = handler;
   }
 
+  /** Plan §7.1: the HUD's call-the-wave-early button. */
+  setOnCallWaveEarly(handler: () => void): void {
+    this.onCallWaveEarly = handler;
+  }
+
+  /** Plan §7.4: the risk stepper. */
+  setOnRiskChange(handler: (level: number) => void): void {
+    this.onRiskChange = handler;
+  }
+
   setOnClearSave(handler: () => void): void {
     this.onClearSave = handler;
   }
@@ -1042,6 +1063,16 @@ export class UIManager {
     this.bossBarData = data;
   }
 
+  /**
+   * Pacing readout for this frame (plan §7). Pushed for the same reason the
+   * boss bar is: the combo lives in `PacingManager` and the wave preview in
+   * `WaveManager`, neither of which `UIManager` can see.
+   */
+  setPacingData(data: PacingHudData): void {
+    this.pacingData = data;
+    this.hud.setPacingData(data);
+  }
+
   update(state: GameState): void {
     this.lastState = state;
     if (this.abilityBar) this.abilityBar.update(state);
@@ -1049,6 +1080,9 @@ export class UIManager {
     // 10 fps is a countdown that visibly stutters, which is the one thing the
     // bar exists to avoid. The `dom` helpers make an unchanged frame free.
     this.bossBar.update(this.bossBarData);
+    // Above the throttle for the same reason: the combo bar drains over two
+    // seconds and a drain read at 10 fps is a stutter, not a clock.
+    if (this.pacingData) this.pacingOverlay.update(this.pacingData);
 
     // Per-frame DPS tracking (lightweight JS, runs every frame)
     const now = performance.now();
@@ -1282,6 +1316,22 @@ export class UIManager {
   /** True when the shortcut overlay is up, so Esc can close it first. */
   isKeybindsOpen(): boolean {
     return this.keybindsOverlay.isOpen();
+  }
+
+  /**
+   * True when any modal this manager owns has the player's attention.
+   *
+   * Read by `Game.isModalOpen`, which gates the §7.1 Space binding. A bare
+   * `modalRoot.childElementCount` check would have been shorter and wrong:
+   * the boss bar, the placement prompt and the contract tracker all live in
+   * overlay roots that can fall back to `modalRoot`, and none of them is a
+   * modal.
+   */
+  isModalOpen(): boolean {
+    return this.welcomeModal.isOpen()
+      || this.runSummaryModal.isOpen()
+      || this.runFailedModal.isOpen()
+      || this.keybindsOverlay.isOpen();
   }
 
   closeKeybinds(): void {

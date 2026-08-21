@@ -21,7 +21,7 @@ function buildGroups(): BindGroup[] {
       title: 'The battlefield',
       binds: [
         { keys: ['Click'], action: 'Collect a loot orb at full value (it drifts home for 40% on its own)' },
-        { keys: ['Hold'], action: 'Aim manually — the tower shoots where you point, 30% faster' },
+        { keys: ['Hold'], action: 'Aim manually — the tower shoots where you point instead of auto-acquiring' },
         { keys: ['Hold still'], action: 'Charge a shot for 1.2s, then release: heavy damage, pierce and splash' },
         { keys: ['Click'], action: 'Place an armed ability (with Instant cast turned off)' },
         { keys: ['Esc'], action: 'Cancel ability placement' },
@@ -30,6 +30,7 @@ function buildGroups(): BindGroup[] {
     {
       title: 'Waves & speed',
       binds: [
+        { keys: ['Space'], action: 'Call the next wave early — banks gold momentum for every second skipped' },
         { keys: [',', '<'], action: 'Go to the previous wave' },
         { keys: ['.', '>'], action: 'Go to the next wave (up to your deepest)' },
         { keys: ['P'], action: 'Toggle auto-progress' },

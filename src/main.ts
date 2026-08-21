@@ -106,6 +106,12 @@ function bootstrap(): void {
   ui.setOnToggleAutoProgress(() => {
     game.toggleAutoProgress();
   });
+  ui.setOnCallWaveEarly(() => {
+    game.callWaveEarly();
+  });
+  ui.setOnRiskChange((level) => {
+    game.setRisk(level);
+  });
   ui.setOnClearSave(() => {
     game.clearSave();
     ui.setActiveTab('upgrades');
@@ -259,11 +265,27 @@ function bootstrap(): void {
 
   window.addEventListener('keydown', (ev) => {
     ensureAudio();
-    if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement) return;
+    if (
+      ev.target instanceof HTMLInputElement
+      || ev.target instanceof HTMLTextAreaElement
+      || ev.target instanceof HTMLSelectElement
+      || (ev.target instanceof HTMLElement && ev.target.isContentEditable)
+    ) return;
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     const def = ABILITIES.find(a => a.hotkey === ev.key);
     if (def) {
       if (game.castAbility(def.id)) ev.preventDefault();
+      return;
+    }
+    // Plan §7.1: Space calls the wave. Guarded twice over — `keydown` already
+    // returns above for a focused input, and `Game.canCallWaveEarly` refuses
+    // while any modal is up, because a wave called out from under a blessing
+    // draft or a core picker is a decision taken away rather than made.
+    if (ev.key === ' ' || ev.key === 'Spacebar') {
+      // Always swallow the key: Space on a focused button re-triggers it, and
+      // the browser's default is to scroll the page.
+      ev.preventDefault();
+      game.callWaveEarly();
       return;
     }
     if (ev.key === '<' || ev.key === ',') {

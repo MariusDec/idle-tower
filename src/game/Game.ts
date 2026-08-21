@@ -78,10 +78,23 @@ import { WaveModifierModal } from '../ui/WaveModifierModal';
 import { BlessingDraftModal } from '../ui/BlessingDraftModal';
 import { CorePickerModal } from '../ui/CorePickerModal';
 import type { CorePanelState } from '../ui/PrestigePanel';
+import type { PacingHudData } from '../ui/PacingOverlay';
 import { BlessingManager } from '../systems/BlessingManager';
 import { LootManager } from '../systems/LootManager';
 import { ContractManager } from '../systems/ContractManager';
+import { PacingManager } from '../systems/PacingManager';
 import { CONTRACT_TUNING } from '../data/contracts';
+import {
+  COMBO_TIERS,
+  EARLY_CALL_GOLD_PER_SECOND,
+  MAX_RISK,
+  MOMENTUM_CAP,
+  RISK_GOLD_PER_STEP,
+  RISK_HP_PER_STEP,
+  RISK_SPEED_PER_STEP,
+  intermissionSecondsForWave,
+  riskApBonus,
+} from '../data/pacing';
 import { AbilityPlacement, ChargeTracker } from '../systems/ActiveInput';
 import { LOOT_ORB_COLORS, type LootOrbKind } from '../data/loot';
 import {
@@ -243,6 +256,7 @@ function makeInitialState(): GameState {
     bossRun: { apBonusPct: 0, swiftKills: 0, flawlessKills: 0 },
     contracts: { active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0 },
     cores: { unlocked: [DEFAULT_CORE], preferred: DEFAULT_CORE, selected: DEFAULT_CORE },
+    pacing: { risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0 },
   };
 }
 
@@ -328,6 +342,21 @@ export class Game {
   private readonly lootMgr: LootManager;
   /** The run's three contracts (plan §5). Run-scoped, persisted in full. */
   private readonly contractMgr: ContractManager;
+  /** Risk dial, early-call momentum and the kill combo (plan §7). */
+  private readonly pacingMgr = new PacingManager();
+  /**
+   * `PacingManager.statSignature` at the last resolve.
+   *
+   * The same trick `hpStatBucket` uses: every pacing input is discrete, so a
+   * signature comparison costs one number per substep and a resolve is paid
+   * for only when something the pipeline reads actually moved. Part 6's
+   * finding — three effects that read live state and armed at the *next*
+   * unrelated resolve — is exactly the bug this prevents for a combo tier that
+   * has to pay on the kill that earned it.
+   */
+  private pacingStatSignature = -1;
+  /** This frame's pacing readout, resolved once in `frameUpdate`. */
+  private pacingHud: PacingHudData | null = null;
   /**
    * False once the tower has actually lost HP this wave.
    *
@@ -727,6 +756,12 @@ export class Game {
 
       this.effects.emitDeathBurst(e.x, e.y, def.color, def.radius);
 
+      // Plan §7.2: the combo meter. Registered before the evolution below so
+      // the two read the same kill, and *after* the gold for this kill has
+      // already been paid — like `kill_streak_gold`, a tier crossing pays from
+      // the next kill onward rather than retroactively.
+      this.pacingMgr.noteKill();
+
       // Evolution: kill_streak_gold
       if (this.upgradeMgr.hasEvolutionEffect('kill_streak_gold')) {
         this.killStreak += 1;
@@ -985,6 +1020,10 @@ export class Game {
       // it is the same site rather than a second mechanism that could disagree.
       if (this.bossEncounter) this.bossEncounter.flawless = false;
       this.waveFlawless = false;
+      // Plan §7.1: momentum is a reward for being *ahead*, so it dies at the
+      // same line the two flawless flags do — after the whole mitigation
+      // chain, so a hit the wall ate does not break the streak either.
+      this.pacingMgr.noteTowerDamaged();
       this.effects.emitDamageNumber(
         ts.x,
         ts.y - TOWER_VISUAL.bodyRadius - 24,
@@ -1114,6 +1153,18 @@ export class Game {
       this.enemyMgr.setKillStreakGoldBonus(0);
       // Plan §5.1: a wave is flawless until it isn't.
       this.waveFlawless = true;
+      // Plan §7.1/§7.4: the risk dial catches up and the momentum streak
+      // settles. A wave that was *not* called early breaks the streak, which
+      // covers the full intermission the plan names and every other way a wave
+      // can begin — a rewind, a manual skip, a load, a wave-skip roll.
+      this.pacingMgr.noteWaveStarted();
+      this.prestigeMgr.setRiskApBonus(riskApBonus(this.pacingMgr.activeRisk));
+      // Resolve now rather than waiting for the substep check, so the wave's
+      // first spawn already carries the risk dial's enemy HP multiplier.
+      this.refreshPacingStats();
+      // Restated once per wave rather than once per frame: everything in the
+      // block moves on a wave boundary except `comboBest`, which is a readout.
+      this.state.pacing = this.pacingMgr.snapshot();
 
       const w = wave as number;
       // An encounter that never resolved — the run rewound a wave, or the
@@ -2194,6 +2245,111 @@ export class Game {
     return this.lootMgr;
   }
 
+  // ────────────────────────────────────────────────────────────────────────
+  // Pacing (plan §7)
+  // ────────────────────────────────────────────────────────────────────────
+
+  /** Risk dial, momentum and combo state. */
+  get pacing(): PacingManager {
+    return this.pacingMgr;
+  }
+
+  /**
+   * True while any modal has the player's attention.
+   *
+   * The §7.1 `Space` binding is gated on this. Parts 1, 3, 4 and 6 each added
+   * a modal, so the check asks each owner rather than sniffing the DOM: three
+   * of them are owned here and four by `UIManager`, and a modal that forgot to
+   * answer would be a wave called out from under a decision the player was
+   * still making.
+   */
+  isModalOpen(): boolean {
+    return this.runFailed
+      || this.waveModModal.isVisible()
+      || this.blessingModal.isVisible()
+      || this.corePicker.isVisible()
+      || this.ui.isModalOpen();
+  }
+
+  /** True when `callWaveEarly` would actually start the next wave. */
+  canCallWaveEarly(): boolean {
+    return !this.isModalOpen() && this.waveMgr.canCallEarly();
+  }
+
+  /**
+   * Plan §7.1: start the next wave now and bank the momentum it earns.
+   *
+   * The momentum is banked *before* the wave starts, because `startWave`
+   * resolves the new wave's stats and the gold bonus is meant to apply to the
+   * wave the player just bought — not to the one after it.
+   */
+  callWaveEarly(): boolean {
+    if (!this.canCallWaveEarly()) return false;
+    const skipped = this.waveMgr.intermissionRemaining();
+    this.pacingMgr.noteWaveCalledEarly(skipped);
+    this.waveMgr.callWaveEarly();
+    this.state.wave = this.waveMgr.snapshot;
+    this.state.pacing = this.pacingMgr.snapshot();
+    this.effects.emitBossEntryPulse(this.state.tower.x, this.state.tower.y);
+    this.bus.emit('toast', {
+      kind: 'milestone',
+      text: `Wave called — momentum +${Math.round(this.pacingMgr.momentumBonus * 100)}% gold`,
+      life: 2,
+    });
+    this.syncUiApis();
+    return true;
+  }
+
+  /** Plan §7.4: move the risk dial. Takes effect at the next wave. */
+  setRisk(level: number): number {
+    const previous = this.pacingMgr.riskLevel;
+    const next = this.pacingMgr.setRisk(level);
+    if (next !== previous) {
+      this.state.pacing = this.pacingMgr.snapshot();
+      this.saveMgr.requestSave();
+      this.syncUiApis();
+      this.bus.emit('toast', {
+        kind: next > previous ? 'warning' : 'info',
+        text: next === 0
+          ? 'Risk 0 — the standard curve.'
+          : `Risk ${next} from the next wave: `
+            + `+${Math.round(RISK_HP_PER_STEP * next * 100)}% enemy HP, `
+            + `+${Math.round(RISK_SPEED_PER_STEP * next * 100)}% speed, `
+            + `+${Math.round(RISK_GOLD_PER_STEP * next * 100)}% gold, `
+            + `+${Math.round(riskApBonus(next) * 100)}% AP`,
+        life: 4,
+      });
+    }
+    return next;
+  }
+
+  /** Everything the HUD and the pacing overlay read, resolved once per frame. */
+  private pacingHudSnapshot(): PacingHudData {
+    const preview = this.waveMgr.previewNextWave();
+    const combo = this.pacingMgr.combo;
+    return {
+      risk: this.pacingMgr.riskLevel,
+      activeRisk: this.pacingMgr.activeRisk,
+      riskPending: this.pacingMgr.riskPending,
+      maxRisk: MAX_RISK,
+      momentum: this.pacingMgr.momentumBonus,
+      momentumStreak: this.pacingMgr.momentumStreak,
+      momentumCap: MOMENTUM_CAP,
+      canCallEarly: this.canCallWaveEarly(),
+      callBonus: this.waveMgr.intermissionRemaining() * EARLY_CALL_GOLD_PER_SECOND,
+      intermissionRemaining: this.waveMgr.intermissionRemaining(),
+      intermissionLength: intermissionSecondsForWave(this.waveMgr.currentWave),
+      combo,
+      comboTier: this.pacingMgr.comboTierIndex,
+      comboTierCount: COMBO_TIERS.length,
+      comboLabel: this.pacingMgr.comboLabel,
+      comboNext: this.pacingMgr.comboNext,
+      comboFraction: this.pacingMgr.comboFraction,
+      comboGold: this.pacingMgr.comboBonus.gold,
+      preview,
+    };
+  }
+
   isAutoProgress(): boolean {
     return this.waveMgr.getAutoProgress();
   }
@@ -2657,6 +2813,23 @@ export class Game {
   }
 
   /**
+   * Recompute when a pacing input moves (plan §7).
+   *
+   * Same shape and the same reason as `refreshHpThresholdStats`: risk, the
+   * combo tier and momentum are all read by `contributors/pacing.ts`, and all
+   * three are discrete, so a signature comparison per substep buys a resolve
+   * exactly when one of them changes. Without it a combo tier reached at kill
+   * 25 would start paying at the next purchase — which is the bug Part 6 found
+   * three instances of, in a mechanic whose entire point is immediacy.
+   */
+  private refreshPacingStats(): void {
+    const signature = this.pacingMgr.statSignature();
+    if (signature === this.pacingStatSignature) return;
+    this.pacingStatSignature = signature;
+    this.applyUpgradeEffects();
+  }
+
+  /**
    * Snapshot every contributor into the pipeline's input.
    *
    * Nothing here computes: each field is one system's own answer about its own
@@ -2747,6 +2920,14 @@ export class Game {
         behaviors: this.blessingBehaviors(),
       },
       waveModifier: this.activeWaveModifierInputs(),
+      pacing: {
+        // The *committed* risk, not the dial: §7.4 says a change takes effect
+        // at the next wave, and this is the one place that could quietly break
+        // that promise.
+        risk: this.pacingMgr.activeRisk,
+        momentum: this.pacingMgr.momentumBonus,
+        comboTier: this.pacingMgr.comboTierIndex,
+      },
       buffs: this.buffs.entries,
     };
   }
@@ -2864,12 +3045,13 @@ export class Game {
     this.enemyMgr.setHPReduction(stats.enemyHpReduction);
     this.enemyMgr.setRPDropChanceBonus(stats.rpDropChanceBonus);
     this.enemyMgr.setWallContactExtra(stats.wallContactExtra);
-    // Blessing trade-off cards move the *enemies*, not the tower — but they
-    // still resolve through the pipeline, so they compose with the wave
-    // mutator's own multipliers instead of one silently winning (plan §1.4).
-    this.enemyMgr.setBlessingSpeedMult(stats.enemySpeedMult);
-    this.enemyMgr.setBlessingHpMult(stats.enemyHpMult);
-    this.enemyMgr.setBlessingDamageMult(stats.enemyDamageMult);
+    // Blessing trade-off cards and the §7.4 risk dial move the *enemies*, not
+    // the tower — but they still resolve through the pipeline, so they compose
+    // with each other and with the wave mutator's own multipliers instead of
+    // one silently winning (plan §1.4, §7.4).
+    this.enemyMgr.setStatSpeedMult(stats.enemySpeedMult);
+    this.enemyMgr.setStatHpMult(stats.enemyHpMult);
+    this.enemyMgr.setStatDamageMult(stats.enemyDamageMult);
     // Plan §4.1: Lodestone raises the drift auto-collect rate to 100% (and
     // shortens the drift). Set from the same recompute as everything else, so
     // taking the card is felt on the next orb and losing it on ascension is
@@ -2988,6 +3170,14 @@ export class Game {
     this.state.bossRun = { apBonusPct: 0, swiftKills: 0, flawlessKills: 0 };
     this.prestigeMgr.setRunApBonus(0, 'boss');
     this.prestigeMgr.setRunApBonus(0, 'contract');
+    // Plan §7: momentum and the combo are run-scoped; the risk *dial* is not.
+    // Resetting it to 0 on every ascension would silently un-set a preference
+    // an auto-ascending run reaches several times an hour — the same trap
+    // Part 6 found in the core selection.
+    this.pacingMgr.reset();
+    this.pacingStatSignature = -1;
+    this.prestigeMgr.setRiskApBonus(riskApBonus(this.pacingMgr.activeRisk));
+    this.state.pacing = this.pacingMgr.snapshot();
     this.buffs.reset();
     const t = this.tower.snapshot;
     t.cooldown = 0;
@@ -3612,6 +3802,14 @@ export class Game {
     this.coreMgr.restore(persisted.cores ?? null);
     this.state.cores = this.coreMgr.snapshot();
 
+    // v14+: the risk dial (permanent), momentum and the combo (run-scoped).
+    // A save that predates pacing restores at risk 0 with nothing banked,
+    // which is exactly the curve it was playing.
+    this.pacingMgr.restore(persisted.pacing ?? null);
+    this.state.pacing = this.pacingMgr.snapshot();
+    this.prestigeMgr.setRiskApBonus(riskApBonus(this.pacingMgr.activeRisk));
+    this.pacingStatSignature = -1;
+
     // Clear and repopulate equipped (manager holds reference)
     const eqMap = this.state.equipped;
     for (const k of Object.keys(eqMap)) delete (eqMap as Record<string, Equipment>)[k];
@@ -3707,6 +3905,14 @@ export class Game {
     this.buffs.tick(dt);
     this.refreshBuffedStats();
     this.refreshHpThresholdStats();
+    // Plan §7.2: the combo window is a **simulation**-clock quantity. Kills are
+    // simulation events, so the interval between two of them is simulation
+    // time; on the wall clock a 2 s window would be 0.3 s at 6.5x speed and no
+    // combo would ever chain. Contrast the two timers that deliberately run on
+    // `realDt` in `frameUpdate` — the draft countdown and the charge hold —
+    // both of which measure a person rather than the field.
+    this.pacingMgr.tickCombo(dt);
+    this.refreshPacingStats();
 
     this.waveMgr.tick(dt);
     // The boss encounter clock is a *simulation* clock (plan §3.7): a swift
@@ -3964,6 +4170,11 @@ export class Game {
    */
   private frameUpdate(dt: number, realDt: number): void {
     this.ui.setBossBarData(this.bossBarSnapshot());
+    // Plan §7: one snapshot per frame, shared by the HUD controls, the pacing
+    // overlay and the canvas lane markers, so the three cannot disagree about
+    // what the coming wave holds.
+    this.pacingHud = this.pacingHudSnapshot();
+    this.ui.setPacingData(this.pacingHud);
     this.effects.tick(dt);
     this.effects.tickChainLightning(dt);
     this.notifications.tick(dt);
@@ -4051,6 +4262,7 @@ export class Game {
       orbs: this.lootMgr.list,
       charge: this.chargeSnapshot(),
       placement: this.placementSnapshot(),
+      spawnLanes: this.pacingHud?.preview?.lanes ?? null,
     }, {
       screenFlash: this.screenFlash,
       towerFlash: this.towerFlash,

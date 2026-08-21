@@ -465,6 +465,28 @@ export interface CoreRunState {
   selected: string;
 }
 
+/**
+ * Pacing state (gameplay plan §7, save v14).
+ *
+ * Two lifetimes again, for the reason `CoreRunState` has two: `risk` is a
+ * **preference** about how the player wants to play and survives an ascension
+ * — an auto-ascending game reaches that reset several times an hour with
+ * nobody watching, and silently resetting the dial to 0 would be the same bug
+ * Part 6 found in the core selection. Everything else is run-scoped.
+ */
+export interface PacingState {
+  /** The risk dial as set, 0-5. Permanent. */
+  risk: number;
+  /** The risk the live wave is running. Catches up at the next wave start. */
+  committedRisk: number;
+  /** Early-call momentum, as a gold fraction. */
+  momentum: number;
+  /** Consecutive waves called early. */
+  momentumWaves: number;
+  /** Best kill combo reached this run. */
+  comboBest: number;
+}
+
 export interface WaveState {
   number: number;
   highestWave: number;
@@ -717,6 +739,8 @@ export interface GameState {
   contracts: ContractRunState;
   /** v13+: unlocked cores (permanent) and the run's selection (plan §6). */
   cores: CoreRunState;
+  /** v14+: the risk dial, early-call momentum and the kill combo (plan §7). */
+  pacing: PacingState;
 }
 
 export interface Particle {
@@ -811,6 +835,14 @@ export interface RenderSnapshot {
   charge?: ChargeIndicator | null;
   /** Click-placement preview for a targeted ability (gameplay plan §4.3). */
   placement?: PlacementIndicator | null;
+  /**
+   * Spawn edges the *next* wave will use (gameplay plan §7.3).
+   *
+   * Present only during an intermission. These are the real spawn points from
+   * the pre-rolled roster, not a decoration — which is the whole reason the
+   * roster is rolled up front.
+   */
+  spawnLanes?: Array<{ x: number; y: number }> | null;
 }
 
 /** Cursor charge ring state. Presentation only — the timer lives in `Game`. */

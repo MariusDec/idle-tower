@@ -10,6 +10,33 @@ import { bossCountForWave, bossHPForWave } from './formulas';
  */
 export type EnemyShape = 'circle' | 'diamond' | 'winged' | 'square' | 'hex' | 'mound';
 
+/**
+ * Short display names, title-cased and singular-ish.
+ *
+ * A third naming table would have been one too many: `CONTRACT_ENEMY_LABELS`
+ * is plural and lower-case for sentence copy ("kill 30 thieves") and the
+ * milestone strip's entries are plural headings. This one is for *counted*
+ * readouts — "3 Siege · 1 Warden" in the §7.3 threat preview — and it lives
+ * here, next to the defs, because that is where anything else that needs a
+ * name will look first. A `Record` over the union, so a new type cannot ship
+ * nameless.
+ */
+export const ENEMY_LABELS: Record<EnemyType, string> = {
+  normal: 'Grunt',
+  fast: 'Runner',
+  tank: 'Tank',
+  flying: 'Flier',
+  healer: 'Healer',
+  splitter: 'Splitter',
+  shielded: 'Shielded',
+  siege: 'Siege',
+  thief: 'Thief',
+  blinker: 'Blinker',
+  warden: 'Warden',
+  burrower: 'Burrower',
+  boss: 'Boss',
+};
+
 export interface EnemyDef {
   type: EnemyType;
   baseHP: number;

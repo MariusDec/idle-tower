@@ -26,11 +26,13 @@ import {
   BOSS_PATTERN_NAMES,
   ENEMY_BEHAVIOR_CONSUMERS,
   ENEMY_DEFS,
+  ENEMY_LABELS,
   ENEMY_SPAWN_WEIGHTS,
   PRIORITY_TARGET_ORDER,
   bossPatternsForWave,
   spawnPoolForWave,
 } from '../src/data/enemies';
+import { ENEMY_THREAT_CLASS } from '../src/data/pacing';
 import { MILESTONE_EXEMPT_ENEMIES, MILESTONES } from '../src/data/milestones';
 import { RENDERED_ENEMY_SHAPES } from '../src/game/Renderer';
 import { TARGETING_MODES } from '../src/data/tower';
@@ -404,6 +406,31 @@ describe('enemy roster', () => {
     const paintable = new Set<string>(RENDERED_ENEMY_SHAPES);
     const unpaintable = ALL_TYPES.filter(t => !paintable.has(ENEMY_DEFS[t].shape));
     expect(unpaintable).toEqual([]);
+  });
+
+  it('gives every type a non-empty, distinct short label (plan §7.3)', () => {
+    // The threat preview names types by count ("3 Siege"). A `Record` over the
+    // union already makes an omission a compile error; this is what stops one
+    // shipping as an empty string or a duplicate of another type's name.
+    const labels = ALL_TYPES.map(t => ENEMY_LABELS[t]);
+    for (const [i, label] of labels.entries()) {
+      expect(label, ALL_TYPES[i]).toBeTruthy();
+    }
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it('classifies every type as trash, threat or boss (plan §7.3)', () => {
+    // The preview names threats and only counts trash, so a type with no class
+    // would be silently folded into "31 enemies".
+    for (const type of ALL_TYPES) {
+      expect(['trash', 'threat', 'boss'], type).toContain(ENEMY_THREAT_CLASS[type]);
+    }
+    // And the classification has to actually discriminate — if everything were
+    // trash the preview would never name anything.
+    const threats = ALL_TYPES.filter(t => ENEMY_THREAT_CLASS[t] === 'threat');
+    expect(threats.length).toBeGreaterThanOrEqual(5);
+    expect(ENEMY_THREAT_CLASS.boss).toBe('boss');
+    expect(ENEMY_THREAT_CLASS.normal).toBe('trash');
   });
 
   it('gives every type a distinct body colour', () => {

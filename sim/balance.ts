@@ -9,11 +9,22 @@
  * of keeping this file.
  */
 
-import { simulateRun, waveProfile, orbGoldForWave, type WaveSample } from './model.ts';
+import { simulateRun, waveProfile, orbGoldForWave, comboGoldMult, type WaveSample } from './model.ts';
 import { CORE_BY_ID, CORE_IDS, DEFAULT_CORE, describeCoreStats } from '../src/data/cores.ts';
 import { MANUAL_AIM } from '../src/data/tower.ts';
 import { LOOT_TUNING } from '../src/data/loot.ts';
 import { CONTRACT_TUNING } from '../src/data/contracts.ts';
+import {
+  COMBO_TIERS,
+  EARLY_CALL_GOLD_PER_SECOND,
+  MAX_RISK,
+  MOMENTUM_CAP,
+  RISK_GOLD_PER_STEP,
+  RISK_HP_PER_STEP,
+  RISK_SPEED_PER_STEP,
+  intermissionSecondsForWave,
+  riskApBonus,
+} from '../src/data/pacing.ts';
 import { ASCENSION_UNLOCK_WAVE, apForWave } from '../src/data/prestige.ts';
 import { lifetimeAPDamageBonus, lifetimeAPGoldBonus } from '../src/data/formulas.ts';
 
@@ -363,6 +374,129 @@ function contractTable(): string {
   );
 }
 
+/**
+ * Gameplay plan §7.8 — the gate Part 7 can actually fail.
+ *
+ * **Risk 0 must reproduce the current curve exactly.** If it does not, the dial
+ * has leaked into the baseline and every number in every other table is
+ * measuring a game the player did not choose. That is what this table is for,
+ * and the integer idle wall is the right metric for it precisely because it is
+ * coarse: a leak of any size shows as a changed number.
+ */
+function riskWallTable(): string {
+  const tiers = [0, 100, 1_000, 10_000, 100_000];
+  const rows: string[][] = [];
+  for (let risk = 0; risk <= MAX_RISK; risk++) {
+    const walls = tiers.map(lifetimeAP => simulateRun({
+      damageMult: 1 + lifetimeAPDamageBonus(lifetimeAP),
+      goldMult: 1 + lifetimeAPGoldBonus(lifetimeAP),
+      unlockWave: ASCENSION_UNLOCK_WAVE,
+      sampleWaves: [],
+      blessings: false,
+      risk,
+    }).wallWave);
+    rows.push([
+      String(risk),
+      `+${(RISK_HP_PER_STEP * risk * 100).toFixed(0)}%`,
+      `+${(RISK_SPEED_PER_STEP * risk * 100).toFixed(0)}%`,
+      `+${(RISK_GOLD_PER_STEP * risk * 100).toFixed(0)}%`,
+      `+${(riskApBonus(risk) * 100).toFixed(0)}%`,
+      ...walls.map(String),
+    ]);
+  }
+  return table(
+    ['Risk', 'enemy HP', 'speed', 'gold', 'AP', ...tiers.map(t => fmt(t))],
+    rows,
+  );
+}
+
+/**
+ * The other half of §7.8: **is the dial a choice?**
+ *
+ * "A dial nobody can survive is not a choice, and neither is one that is free
+ * gold." The wall column above cannot answer that — it quantises to boss waves
+ * — so this one runs the draft over seven seeds for fractional resolution, the
+ * same trick §6.4's core table needed, and scores the thing the player is
+ * actually trading for: **AP per run**, which is wall depth *and* the dial's
+ * own multiplier.
+ *
+ * Read the result with the model's blind spot in mind. Enemy *speed* moves no
+ * number here, because the model has no positions and no tower HP, so the
+ * entire cost of `+40% enemy speed` at risk 5 — arriving sooner, hitting more
+ * often, dying to the wall rather than to a timer — is missing. The dial is
+ * therefore *more* attractive here than in the game, which is the safe
+ * direction for "is it survivable" and the unsafe one for "is it free".
+ */
+function riskRewardTable(): string {
+  const tiers = [0, 100, 1_000, 10_000, 100_000];
+  const wallsFor = (risk: number) => tiers.map(lifetimeAP => mean(
+    BLESSING_SEEDS.map(seed => simulateRun({
+      damageMult: 1 + lifetimeAPDamageBonus(lifetimeAP),
+      goldMult: 1 + lifetimeAPGoldBonus(lifetimeAP),
+      unlockWave: ASCENSION_UNLOCK_WAVE,
+      sampleWaves: [],
+      blessings: true,
+      seed,
+      risk,
+    }).wallWave),
+  ));
+  const base = wallsFor(0);
+  const baseAp = base.map(w => apForWave(Math.round(w)));
+  const rows: string[][] = [];
+  for (let risk = 0; risk <= MAX_RISK; risk++) {
+    const walls = wallsFor(risk);
+    const apRatio = walls.map((w, i) => (
+      baseAp[i] > 0 ? (apForWave(Math.round(w)) * (1 + riskApBonus(risk))) / baseAp[i] - 1 : 0
+    ));
+    const wallDelta = mean(walls.map((w, i) => (base[i] > 0 ? w / base[i] - 1 : 0)));
+    rows.push([
+      String(risk),
+      ...walls.map(w => w.toFixed(1)),
+      `${wallDelta >= 0 ? '+' : ''}${(wallDelta * 100).toFixed(1)}%`,
+      `${mean(apRatio) >= 0 ? '+' : ''}${(mean(apRatio) * 100).toFixed(0)}%`,
+    ]);
+  }
+  return table(
+    ['Risk', ...tiers.map(t => fmt(t)), 'wall Δ', 'AP/run Δ'],
+    rows,
+  );
+}
+
+/**
+ * What the §7.1 and §7.2 faucets cost the curve.
+ *
+ * The same question Part 5 asked of contracts and Part 4 asked of orbs: idle
+ * wall-wave drift must be **zero**, because the combo is a baseline faucet
+ * that nothing the player does earns. Momentum is active-only and shows up in
+ * the §4.5 idle-parity table above instead.
+ */
+function pacingTable(): string {
+  const tiers = [0, 100, 1_000, 10_000, 100_000];
+  const rows = tiers.map(lifetimeAP => {
+    const common = {
+      damageMult: 1 + lifetimeAPDamageBonus(lifetimeAP),
+      goldMult: 1 + lifetimeAPGoldBonus(lifetimeAP),
+      unlockWave: ASCENSION_UNLOCK_WAVE,
+      sampleWaves: [],
+      blessings: false,
+    };
+    const off = simulateRun({ ...common, pacing: false });
+    const on = simulateRun({ ...common, pacing: true });
+    return [
+      fmt(lifetimeAP),
+      String(off.wallWave),
+      String(on.wallWave),
+      on.wallWave === off.wallWave ? '0' : `${on.wallWave > off.wallWave ? '+' : ''}${on.wallWave - off.wallWave}`,
+      `${((comboGoldMult(waveProfile(off.wallWave).count, 40) - 1) * 100).toFixed(1)}%`,
+      `${intermissionSecondsForWave(off.wallWave)}s`,
+    ];
+  });
+  return table(
+    ['Lifetime AP', 'Wall (no pacing)', 'Wall (pacing)', 'Δ', 'combo at the wall', 'intermission'],
+    rows,
+  );
+}
+
 console.log('\n=== §2.1 Wave / gold / HP curve (fresh run, greedy buyer, no blessings) ===\n');
 console.log(curveTable());
 console.log('\n=== §2.2 Wall wave and run length per prestige tier (no blessings) ===\n');
@@ -405,4 +539,28 @@ console.log(coreStatTable());
 
 console.log('\n=== Gameplay §4.1 Loot orbs as a share of wave income ===\n');
 console.log(orbFaucetTable());
+console.log('\n=== Gameplay §7.8 Pacing faucets: before / after (idle, no blessings) ===\n');
+console.log(pacingTable());
+console.log(
+  `\nCombo tiers: ${COMBO_TIERS.map(t => `${t.kills} kills +${(t.gold * 100).toFixed(0)}%`).join(', ')} `
+  + `gold and XP, broken by a ${2}s gap between kills.`
+  + `\nEarly call: +${(EARLY_CALL_GOLD_PER_SECOND * 100).toFixed(0)}% gold per second of `
+  + `intermission skipped, momentum capped at +${(MOMENTUM_CAP * 100).toFixed(0)}%.`
+  + `\nIdle wall-wave drift is zero at every tier, which is the standard Parts 2-6 held.\n`,
+);
+console.log('\n=== Gameplay §7.8 Risk dial: idle wall wave per step (the drift check) ===\n');
+console.log(riskWallTable());
+console.log(
+  '\nRisk 0 must reproduce the §2.2 table exactly — if it ever does not, the dial has '
+  + 'leaked into the baseline.\nThe wall quantises to boss waves, so the same question is '
+  + 'asked again below with the draft running,\nwhere it has the resolution to say whether '
+  + 'the dial is a *choice*.\n',
+);
+console.log('\n=== Gameplay §7.8 Risk dial: what a run is worth (drafting, ' + BLESSING_SEEDS.length + ' seeds) ===\n');
+console.log(riskRewardTable());
+console.log(
+  '\nEnemy speed is not modelled — no positions, no tower HP — so the whole cost of '
+  + '+40% speed at risk 5\nis missing here. The dial is more attractive in this table than '
+  + 'it is in the game.\n',
+);
 console.log(`\nAscension unlocks at wave ${ASCENSION_UNLOCK_WAVE}.\n`);

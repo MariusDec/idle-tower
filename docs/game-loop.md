@@ -44,6 +44,7 @@ runs in slow motion under load. See [performance.md](performance.md).
 
 ## Update Order (`Game.simulate`, once per substep)
 
+0. Buff ageing, HP-threshold restate, **combo decay + pacing restate**
 1. `waveMgr.tick(dt)` — spawning, intermission
 2. `resourceMgr.tick(dt, wave)` — mana regen, passive gold
 3. `abilityMgr.tick(dt)` — cooldowns, active timers, buffs
@@ -61,12 +62,44 @@ runs in slow motion under load. See [performance.md](performance.md).
 11. Land mines — placement and detonation
 12. Shield recharge
 
+### The two clocks
+
+Every timer in the game runs on exactly one of two clocks, and which one is a
+design decision rather than an implementation detail:
+
+| Clock | Runs in | For |
+|---|---|---|
+| **Simulation** (`dt`, scaled by game speed and slow-mo) | `simulate` | anything that measures *the field* |
+| **Wall clock** (`realDt`) | `frameUpdate` | anything that measures *a person* |
+
+The rule: **if the quantity being timed is produced by the simulation, it is
+simulation time.** The gameplay plan's §7.2 combo window is the clearest case.
+Kills are simulation events, so the interval between two of them is a
+simulation-time quantity; a 2 s window on the wall clock would be 0.3 s at 6.5x
+speed and no combo would ever chain, which would make the same play pay
+differently depending on a speed setting that is supposed to cost nothing
+(`PacingManager.tickCombo`, `COMBO_WINDOW_SECONDS`).
+
+The three `realDt` timers are the exceptions that prove it, and all three are
+measuring a human rather than the field:
+
+- the **blessing draft countdown** (§1.1) — 20 s to read three cards is 20 s of
+  the player's life, not 3 s at high speed;
+- the **charged-shot hold and cooldown** (§4.2) — 1.2 s of holding still, and a
+  4 s cooldown that must not become 0.6 s the moment the Accelerator unlocks;
+- **research progress and passive RP** — deliberately real-time systems.
+
+Boss enrage, the boss encounter clock, orb drift, the combo window, mutator
+cadences and every enemy behaviour cadence are all simulation time.
+
 ## Frame Order (`Game.frameUpdate`, once per frame)
 
 1. `effects.tick(dt)` — particle physics
 2. `notifications.tick(dt)` — toast lifetimes
 3. `automation.tick(dt)` — auto-buy/cast/ascend/transcend
 4. `ui.tickDisplayHud(dt, state)` — HUD tweening
+4b. `ui.setPacingData(...)` — one §7 snapshot per frame, shared by the HUD
+   controls, the pacing overlay and the canvas lane markers
 5. `charge.tick(realDt, ...)` — the charged-shot hold and cooldown, on
    **`realDt`**: it measures a person holding still, so 1.2 s must be 1.2 s of
    the player's life at every game speed (gameplay plan §4.2)

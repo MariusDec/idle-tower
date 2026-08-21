@@ -17,6 +17,7 @@ import type {
   BossRunState,
   ContractRunState,
   CoreRunState,
+  PacingState,
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
 import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBossWave } from '../data/formulas';
@@ -26,7 +27,7 @@ import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 13;
+const SAVE_VERSION = 14;
 
 function defaultWaveModifier() {
   return {
@@ -97,6 +98,8 @@ export interface PersistentState {
   contracts?: ContractRunState;
   /** v13+: unlocked cores and the run's selection (plan §6.3). */
   cores?: CoreRunState;
+  /** v14+: the risk dial, early-call momentum and the kill combo (plan §7.7). */
+  pacing?: PacingState;
   /**
    * Deliberately absent: **loot orbs** (gameplay plan §4.1/§4.4).
    *
@@ -426,10 +429,33 @@ function migrateV12toV13(data: Record<string, unknown>): void {
   }
 }
 
+/** A fresh pacing block — the v14 default: risk 0, no momentum, no combo. */
+function defaultPacing(): PacingState {
+  return { risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0 };
+}
+
+/**
+ * v14 (gameplay plan §7.7): pacing — the risk dial and early-call momentum.
+ *
+ * Additive, like v10-v13. A pre-v14 save is a run at risk 0 with no momentum
+ * banked, which is exactly what the seeded block says: §7.8's requirement is
+ * that risk 0 reproduces the current curve, so the migration is a restatement
+ * of what the save already meant rather than a grant.
+ *
+ * §7.7 says "bump to v13". It was written before Part 6 took v13 — the fourth
+ * consecutive part whose save version in the plan was stale. The ladder
+ * decides, not the plan.
+ */
+function migrateV13toV14(data: Record<string, unknown>): void {
+  if (!isObject(data.pacing)) {
+    data.pacing = defaultPacing();
+  }
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -456,6 +482,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 10) { migrateV10toV11(data); data.version = 11; }
   if (data.version === 11) { migrateV11toV12(data); data.version = 12; }
   if (data.version === 12) { migrateV12toV13(data); data.version = 13; }
+  if (data.version === 13) { migrateV13toV14(data); data.version = 14; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -472,6 +499,7 @@ function validate(data: unknown): data is PersistentState {
   if (!isObject(d.bossRun)) d.bossRun = defaultBossRun();
   if (!isObject(d.contracts)) d.contracts = defaultContracts();
   if (!isObject(d.cores)) d.cores = defaultCores();
+  if (!isObject(d.pacing)) d.pacing = defaultPacing();
 
   return true;
 }
@@ -525,6 +553,7 @@ export class SaveManager {
       bossRun: this.snapshotBossRun(state.bossRun),
       contracts: this.snapshotContracts(state.contracts),
       cores: this.snapshotCores(state.cores),
+      pacing: this.snapshotPacing(state.pacing),
     };
   }
 
@@ -582,6 +611,18 @@ export class SaveManager {
       unlocked: [...(c.unlocked ?? [DEFAULT_CORE])],
       preferred: c.preferred ?? DEFAULT_CORE,
       selected: c.selected ?? DEFAULT_CORE,
+    };
+  }
+
+  /** Copied field by field, for the same reason cores are. */
+  private snapshotPacing(p: PacingState | undefined): PacingState {
+    if (!p) return defaultPacing();
+    return {
+      risk: p.risk ?? 0,
+      committedRisk: p.committedRisk ?? p.risk ?? 0,
+      momentum: p.momentum ?? 0,
+      momentumWaves: p.momentumWaves ?? 0,
+      comboBest: p.comboBest ?? 0,
     };
   }
 

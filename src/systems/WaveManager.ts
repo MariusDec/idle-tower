@@ -10,6 +10,7 @@ import {
   ENRAGE_STACK_INTERVAL,
 } from '../data/formulas';
 import { ENEMY_BEHAVIOR, ENEMY_DEFS, spawnPoolForWave } from '../data/enemies';
+import { BASE_INTERMISSION_SECONDS, ENEMY_THREAT_CLASS } from '../data/pacing';
 import type { EnemyManager } from './EnemyManager';
 import { eliteChanceForWave } from './EnemyManager';
 import { randomBetween } from '../utils/math';
@@ -17,7 +18,50 @@ import { EventBus } from '../game/EventBus';
 
 const ALL_AURAS: AuraType[] = ['haste', 'thorns', 'greed', 'vitality', 'retribution'];
 
-export const WAVE_INTERMISSION = 5;
+/**
+ * Base intermission, in seconds. Scaled by `intermissionMultiplier`, which
+ * carries both the Efficient Deployment research node and the wave-depth
+ * shortening from plan §7.6 — see `data/pacing.ts`.
+ */
+export const WAVE_INTERMISSION = BASE_INTERMISSION_SECONDS;
+
+/**
+ * One enemy the wave is committed to spawning (gameplay plan §7.3).
+ *
+ * Rolling the roster up front rather than at each spawn tick is what makes the
+ * threat preview *truthful*: "3 Siege · 1 Elite (Haste)" is what the wave will
+ * actually contain, not an expectation derived from the weight table that the
+ * dice may not honour. It also gives the canvas real lane markers instead of
+ * decorative ones.
+ */
+export interface WavePlanEntry {
+  type: EnemyType;
+  x: number;
+  y: number;
+  elite: boolean;
+  aura: AuraType | null;
+}
+
+/**
+ * Distance within which two spawn points count as the same lane, and the most
+ * lanes the preview will ever name. Both are readability limits, not
+ * simulation ones — the roster still spawns wherever it rolled.
+ */
+const WAVE_PREVIEW_LANE_MERGE = 150;
+const WAVE_PREVIEW_MAX_LANES = 8;
+
+/** What the next wave holds, for the intermission readout and lane markers. */
+export interface WavePreview {
+  wave: number;
+  count: number;
+  isBoss: boolean;
+  /** Types worth naming (`ENEMY_THREAT_CLASS`), most numerous first. */
+  threats: Array<{ type: EnemyType; count: number }>;
+  /** Elites by aura, most numerous first. */
+  elites: Array<{ aura: AuraType; count: number }>;
+  /** Distinct spawn edges the wave will use. */
+  lanes: Array<{ x: number; y: number }>;
+}
 
 export class WaveManager {
   private state: WaveState;
@@ -37,6 +81,16 @@ export class WaveManager {
   private spawnPaused = false;
   /** Plan §2.4: at most one thief per wave. */
   private thiefSpawnedThisWave = false;
+  /**
+   * The current wave's remaining roster, consumed one entry per `spawnOne`.
+   *
+   * Refilled lazily if it runs dry, which is what makes a save load — where
+   * the wave is restored mid-spawn with no plan — behave exactly as it did
+   * before the roster was pre-rolled.
+   */
+  private spawnQueue: WavePlanEntry[] = [];
+  /** The next wave's roster, rolled at the top of the intermission. */
+  private plannedWave: { wave: number; entries: WavePlanEntry[] } | null = null;
 
   constructor(
     bus: EventBus,
@@ -135,7 +189,7 @@ export class WaveManager {
    * The one exception is the thief: capped at one per wave, because two thieves
    * is a tax on the treasury rather than a threat to answer.
    */
-  private pickEnemyType(wave: number): EnemyType {
+  private pickEnemyType(wave: number, thiefUsed: boolean): EnemyType {
     if (isBossWave(wave)) {
       return 'boss';
     }
@@ -143,17 +197,112 @@ export class WaveManager {
     const pool = spawnPoolForWave(wave);
     let total = 0;
     for (const { type, weight } of pool) {
-      if (type === 'thief' && this.thiefSpawnedThisWave) continue;
+      if (type === 'thief' && thiefUsed) continue;
       total += weight;
     }
     if (total <= 0) return 'normal';
     let r = Math.random() * total;
     for (const { type, weight } of pool) {
-      if (type === 'thief' && this.thiefSpawnedThisWave) continue;
+      if (type === 'thief' && thiefUsed) continue;
       r -= weight;
       if (r <= 0) return type;
     }
     return 'normal';
+  }
+
+  /**
+   * Roll a wave's whole roster up front (plan §7.3).
+   *
+   * Same dice as the old per-tick roll — the weighted pool, the thief cap, the
+   * `fast` pack expansion and the elite roll are all unchanged, they simply
+   * happen earlier. `total` is exactly how many enemies come out, so a pack
+   * that would overrun the wave's budget is truncated here rather than at the
+   * spawn tick.
+   */
+  private buildRoster(wave: number, total: number, thiefUsed = false): WavePlanEntry[] {
+    const entries: WavePlanEntry[] = [];
+    let thief = thiefUsed;
+    while (entries.length < total) {
+      const type = this.pickEnemyType(wave, thief);
+      if (type === 'thief') thief = true;
+      const { x, y } = this.spawnPointOnEdge();
+      // Plan §2.2: `fast` arrives in threes from one shared spawn point, so it
+      // reads as a rush rather than a trickle. The pack counts against the
+      // wave's budget in full — it takes slots, it does not add them.
+      const remaining = total - entries.length;
+      const packSize = type === 'fast'
+        ? Math.max(1, Math.min(ENEMY_BEHAVIOR.fastPackSize, remaining))
+        : 1;
+      for (let i = 0; i < packSize; i++) {
+        const spread = packSize > 1 ? ENEMY_BEHAVIOR.fastPackSpread : 0;
+        // Elite roll: wave >= 21, not bosses, linear 2%→20% chance. Rolled per
+        // pack member, so packing `fast` does not change the elite rate.
+        const elite = wave >= 21 && type !== 'boss' && Math.random() < eliteChanceForWave(wave);
+        entries.push({
+          type,
+          x: x + (spread > 0 ? randomBetween(-spread, spread) : 0),
+          y: y + (spread > 0 ? randomBetween(-spread, spread) : 0),
+          elite,
+          aura: elite ? ALL_AURAS[Math.floor(Math.random() * ALL_AURAS.length)] : null,
+        });
+      }
+    }
+    return entries;
+  }
+
+  /** How many enemies the given wave will spawn under the current mutator. */
+  private plannedCountFor(wave: number): number {
+    return Math.max(1, Math.floor(spawnCountForWave(wave) * this.enemyCountMult));
+  }
+
+  /**
+   * Roll the roster for the wave the intermission is counting down to.
+   *
+   * Called at the two points a wave becomes "next": a normal clear and a
+   * wave-skip roll. If the count changes before the wave actually starts — the
+   * only mover is a mutator chosen from the boss-wave offer, which triples it
+   * — `startWave` throws the plan away and rolls fresh, so the preview is
+   * never a promise the wave breaks.
+   */
+  private planNextWave(): void {
+    const next = this.state.number + (this.state.autoProgress || isBossWave(this.state.number) ? 1 : 0);
+    this.plannedWave = { wave: next, entries: this.buildRoster(next, this.plannedCountFor(next)) };
+  }
+
+  /**
+   * The composition of the coming wave, or null outside an intermission.
+   *
+   * Threat types are named and trash is only counted — see
+   * `ENEMY_THREAT_CLASS` for why the classification is a `Record` over the
+   * enemy union rather than a list.
+   */
+  previewNextWave(): WavePreview | null {
+    if (!this.state.intermission || !this.plannedWave) return null;
+    const { wave, entries } = this.plannedWave;
+    const byType = new Map<EnemyType, number>();
+    const byAura = new Map<AuraType, number>();
+    const lanes: Array<{ x: number; y: number }> = [];
+    for (const e of entries) {
+      byType.set(e.type, (byType.get(e.type) ?? 0) + 1);
+      if (e.elite && e.aura) byAura.set(e.aura, (byAura.get(e.aura) ?? 0) + 1);
+      // One marker per spawn *cluster*, capped: entries in a pack share an
+      // origin, and a 43-enemy wave produced nineteen arrows in browser, which
+      // rings the arena in noise rather than telling the player where to look.
+      if (
+        lanes.length < WAVE_PREVIEW_MAX_LANES
+        && !lanes.some(l => Math.hypot(l.x - e.x, l.y - e.y) < WAVE_PREVIEW_LANE_MERGE)
+      ) {
+        lanes.push({ x: e.x, y: e.y });
+      }
+    }
+    const threats = [...byType.entries()]
+      .filter(([type]) => ENEMY_THREAT_CLASS[type] === 'threat')
+      .map(([type, count]) => ({ type, count }))
+      .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
+    const elites = [...byAura.entries()]
+      .map(([aura, count]) => ({ aura, count }))
+      .sort((a, b) => b.count - a.count || a.aura.localeCompare(b.aura));
+    return { wave, count: entries.length, isBoss: isBossWave(wave), threats, elites, lanes };
   }
 
   private spawnPointOnEdge(): { x: number; y: number } {
@@ -169,6 +318,7 @@ export class WaveManager {
   startWave(wave: number): void {
     this.state.number = wave;
     this.thiefSpawnedThisWave = false;
+    this.spawnQueue = [];
     // Resets the wave's 15% theft ceiling as well as the manager's notion of
     // which wave is running (plan §2.6).
     this.enemies.beginWave(wave);
@@ -186,12 +336,24 @@ export class WaveManager {
       this.clearEnrage();
       this.onWaveCleared(wave);
       this.bus.emit('wave_cleared', wave);
+      this.planNextWave();
       this.bus.emit('toast', { kind: 'milestone', text: `Wave ${wave} skipped!`, life: 2 });
       return;
     }
 
-    this.state.enemiesToSpawn = Math.max(1, Math.floor(spawnCountForWave(wave) * this.enemyCountMult));
+    this.state.enemiesToSpawn = this.plannedCountFor(wave);
     this.state.enemiesSpawned = 0;
+    // Plan §7.3: the roster the intermission promised, if the promise still
+    // holds. A mutator chosen from the boss-wave offer changes the count after
+    // the plan was made, and a plan of the wrong size is not this wave's.
+    const planned = this.plannedWave;
+    this.spawnQueue = planned
+      && planned.wave === wave
+      && planned.entries.length === this.state.enemiesToSpawn
+      ? planned.entries.slice()
+      : this.buildRoster(wave, this.state.enemiesToSpawn);
+    this.plannedWave = null;
+    this.thiefSpawnedThisWave = this.spawnQueue.some(e => e.type === 'thief');
     this.state.spawnInterval = spawnIntervalForWave(wave);
     this.state.spawnTimer = 0.5;
     this.state.spawning = true;
@@ -221,6 +383,8 @@ export class WaveManager {
     this.state = this.makeInitialState();
     this.enemyCountMult = 1;
     this.thiefSpawnedThisWave = false;
+    this.spawnQueue = [];
+    this.plannedWave = null;
     this.enemies.beginWave(this.state.number);
     this.clearEnrage();
     this.bus.emit('wave_started', this.state.number);
@@ -249,6 +413,8 @@ export class WaveManager {
     this.clearEnrage();
     this.enemyCountMult = 1;
     this.thiefSpawnedThisWave = false;
+    this.spawnQueue = [];
+    this.plannedWave = null;
     this.enemies.beginWave(target);
     this.bus.emit('wave_started', this.state.number);
     this.onWaveStarted(this.state.number);
@@ -287,6 +453,10 @@ export class WaveManager {
 
   setState(s: WaveState): void {
     this.state = { ...s, elapsed: s.elapsed ?? 0, enrageStacks: s.enrageStacks ?? 0 };
+    // A restored wave has no roster: live enemies were never persisted, so
+    // whatever is left to spawn is rolled fresh by `spawnOne`.
+    this.spawnQueue = [];
+    this.plannedWave = null;
     this.applyEnrage();
   }
 
@@ -367,7 +537,48 @@ export class WaveManager {
       this.state.elapsed = 0;
       this.state.enrageStacks = 0;
       this.clearEnrage();
+      // Plan §7.3: the intermission is a preparation window, so what it is
+      // preparing for has to exist by the time it opens.
+      this.planNextWave();
     }
+  }
+
+  // ── §7.1 Call the wave early ──────────────────────────────────────────────
+
+  /** Intermission seconds still to run, or 0 when a wave is live. */
+  intermissionRemaining(): number {
+    if (!this.state.intermission) return 0;
+    return Math.max(0, this.state.intermissionTimer);
+  }
+
+  /**
+   * Whether `callWaveEarly` would do anything right now.
+   *
+   * A paused intermission is excluded on purpose: the pause exists because a
+   * draft or a mutator offer is on screen, and a keypress that skipped the
+   * decision the pause was protecting would be the opposite of what the pause
+   * is for.
+   */
+  canCallEarly(): boolean {
+    return this.state.intermission
+      && !this.intermissionPaused
+      && this.state.intermissionTimer > 0;
+  }
+
+  /**
+   * Start the next wave now, returning the intermission seconds skipped.
+   *
+   * Returns 0 and does nothing when the intermission is not callable. The
+   * caller banks the momentum *before* calling, because `startWave` resolves
+   * the new wave's stats and the bonus is meant to apply to the wave it bought.
+   */
+  callWaveEarly(): number {
+    if (!this.canCallEarly()) return 0;
+    const skipped = this.state.intermissionTimer;
+    this.state.intermissionTimer = 0;
+    const forceAdvance = isBossWave(this.state.number);
+    this.startWave(this.state.number + (this.state.autoProgress || forceAdvance ? 1 : 0));
+    return skipped;
   }
 
   private spawnOne(): void {
@@ -375,34 +586,29 @@ export class WaveManager {
       this.state.spawning = false;
       return;
     }
-    const type = this.pickEnemyType(this.state.number);
-    const { x, y } = this.spawnPointOnEdge();
     const wave = this.state.number;
-    if (type === 'thief') this.thiefSpawnedThisWave = true;
-
-    // Plan §2.2: `fast` arrives in threes from one shared spawn point, so it
-    // reads as a rush rather than a trickle. The pack counts against
-    // `enemiesToSpawn` in full — it takes slots, it does not add them, so total
-    // wave HP is unchanged.
-    const remaining = this.state.enemiesToSpawn - this.state.enemiesSpawned;
-    const packSize = type === 'fast'
-      ? Math.max(1, Math.min(ENEMY_BEHAVIOR.fastPackSize, remaining))
-      : 1;
-
-    for (let i = 0; i < packSize; i++) {
-      const spread = packSize > 1 ? ENEMY_BEHAVIOR.fastPackSpread : 0;
-      const px = x + (spread > 0 ? randomBetween(-spread, spread) : 0);
-      const py = y + (spread > 0 ? randomBetween(-spread, spread) : 0);
-      // Elite roll: wave >= 21, not bosses, linear 2%→20% chance. Rolled per
-      // pack member, so packing `fast` does not change the elite rate.
-      if (wave >= 21 && type !== 'boss' && Math.random() < eliteChanceForWave(wave)) {
-        const aura = ALL_AURAS[Math.floor(Math.random() * ALL_AURAS.length)];
-        this.enemies.spawnElite(type, wave, px, py, aura);
-      } else {
-        this.enemies.spawn(type, wave, px, py);
-      }
-      this.state.enemiesSpawned += 1;
+    if (this.spawnQueue.length === 0) {
+      // The queue only runs dry on a path that never called `startWave` — a
+      // save restored mid-spawn. Rolling the remainder here keeps that path
+      // identical to what it was before the roster was pre-rolled.
+      this.spawnQueue = this.buildRoster(
+        wave,
+        this.state.enemiesToSpawn - this.state.enemiesSpawned,
+        this.thiefSpawnedThisWave,
+      );
     }
+    const entry = this.spawnQueue.shift();
+    if (!entry) {
+      this.state.spawning = false;
+      return;
+    }
+    if (entry.type === 'thief') this.thiefSpawnedThisWave = true;
+    if (entry.elite && entry.aura) {
+      this.enemies.spawnElite(entry.type, wave, entry.x, entry.y, entry.aura);
+    } else {
+      this.enemies.spawn(entry.type, wave, entry.x, entry.y);
+    }
+    this.state.enemiesSpawned += 1;
 
     if (this.state.enemiesSpawned >= this.state.enemiesToSpawn) {
       this.state.spawning = false;

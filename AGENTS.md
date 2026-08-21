@@ -13,7 +13,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/stat-pipeline.md](docs/stat-pipeline.md) | The single stat composition point: StatKey union, StatContext, accumulator buckets, contributors, BuffRegistry, breakdowns |
 | [docs/tower-system.md](docs/tower-system.md) | Tower state, the 7 targeting modes (priority is the default), damage calculation, manual aim |
 | [docs/enemy-system.md](docs/enemy-system.md) | 13 enemy types and the verb each one demands an answer to, hostile shots, targetability, elites and their 5 auras, scaling, crowd control |
-| [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, intermission, the shared spawn-weight table, fast packs, the thief cap, wave skip, enrage |
+| [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, the pre-rolled roster and threat preview, calling a wave early, the risk dial, intermission length, fast packs, the thief cap, wave skip, enrage |
 | [docs/wave-modifier-system.md](docs/wave-modifier-system.md) | 9 mutators, offer cadence, 3-wave duration with escalating rewards |
 | [docs/boss-encounters.md](docs/boss-encounters.md) | Boss phases at 66/33%, the four patterns and their answers, the enrage timer, swift/flawless rewards, the boss bar, the durability budget |
 | [docs/loot-system.md](docs/loot-system.md) | Loot orbs, the charged shot, click-placed abilities, the input routing order, and the idle-parity measurement |
@@ -33,12 +33,12 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/automation-system.md](docs/automation-system.md) | Automation features (buy/cast/ascend/transcend), auto-buy strategies, timers, unlock requirements |
 | [docs/effects-system.md](docs/effects-system.md) | Particles, damage numbers, shockwave rings, pool caps, physics constants |
 | [docs/audio-system.md](docs/audio-system.md) | Web Audio synthesis, event subscriptions, volume and mute |
-| [docs/ui-system.md](docs/ui-system.md) | Tab panel system, HUD components, API interfaces, callback wiring, CSS |
+| [docs/ui-system.md](docs/ui-system.md) | Tab panel system, HUD components, canvas overlays (boss bar, pacing overlay), API interfaces, callback wiring, CSS |
 | [docs/event-bus.md](docs/event-bus.md) | Pub/sub event system with the event catalog |
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
 | [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, progression tab, milestone table |
 | [docs/run-summary.md](docs/run-summary.md) | Post-run debrief modal, per-run history ring buffer, stats tab |
-| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v13) and the migration ladder, debounced auto-save, offline progress |
+| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v14) and the migration ladder, debounced auto-save, offline progress |
 
 ## Content at a glance
 
@@ -63,7 +63,10 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Contract goal kinds | 10 | `src/data/contracts.ts` |
 | Placeable abilities | 3 | `src/data/abilities.ts` |
 | Equipment slots / rarities | 8 / 5 | `src/data/equipment.ts` |
-| Save version | 13 | `src/systems/SaveManager.ts` |
+| Combo tiers | 4 | `src/data/pacing.ts` |
+| Risk levels | 6 (0-5) | `src/data/pacing.ts` |
+| Enemy threat classes | 3 | `src/data/pacing.ts` |
+| Save version | 14 | `src/systems/SaveManager.ts` |
 
 ## Commands
 

@@ -10,7 +10,7 @@ Persists game state to `localStorage` under key `the-tower-save`.
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 13
+  version: number;       // current = 14
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -24,6 +24,7 @@ interface PersistentState {
   bossRun: BossRunState;                      // v11+
   contracts: ContractRunState;                // v12+
   cores: CoreRunState;                        // v13+
+  pacing: PacingState;                        // v14+
 }
 ```
 
@@ -42,6 +43,7 @@ interface PersistentState {
 | v10 → v11 | `bossRun` — boss encounter rewards banked this run (`docs/boss-encounters.md`) |
 | v11 → v12 | `contracts` — the run's three live contracts (`docs/contract-system.md`) |
 | v12 → v13 | `cores` — unlocked tower cores and the run's selection (`docs/core-system.md`) |
+| v13 → v14 | `pacing` — the risk dial, early-call momentum and the kill combo (`docs/wave-system.md`) |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -78,6 +80,22 @@ reset. `CoreManager.restore` rejects unrecognised ids and refuses to select a
 core the player does not own, so a hand-edited save loads as the default rather
 than as an unpayable grant. See [core-system.md](core-system.md#persistence).
 
+`migrateV13toV14` seeds `{ risk: 0, committedRisk: 0, momentum: 0,
+momentumWaves: 0, comboBest: 0 }`. Another restatement rather than a grant:
+gameplay plan §7.8's gate is that **risk 0 reproduces the pre-Part-7 curve
+exactly**, so a pre-v14 save was already playing at risk 0 with nothing banked.
+
+Like `cores`, the block carries **two lifetimes**. `risk` is permanent — it is a
+preference about how the player wants to play, and an auto-ascending run reaches
+the ascension reset several times an hour with nobody watching, so resetting the
+dial there would silently un-set it. Everything else is run-scoped.
+
+A **live combo is deliberately not persisted**, only the run's best.
+`PacingManager.restore` clears it: a combo decays in two seconds and a load is
+never inside that window, so restoring one would be restoring a number that was
+already gone. Same rule as live enemies (`bossRun`) and live orbs
+(`docs/loot-system.md`). See [wave-system.md](wave-system.md#risk-dial-gameplay-plan-74).
+
 ## Auto-Save
 
 `SaveManager.tick(realDt, state, onSave)` is called once per frame from
@@ -103,7 +121,7 @@ write.
 ## Validation
 
 `validate()` checks:
-- version is 2..13 (older versions are walked up the migration ladder)
+- version is 2..14 (older versions are walked up the migration ladder)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress

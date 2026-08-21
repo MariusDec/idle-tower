@@ -1,6 +1,7 @@
 import type { GameState, StatsInfo, EnemyWaveStatsEntry } from '../types';
 import { formatNumber, formatInt } from '../utils/bigNumber';
 import type { SpeedAPI, TargetingAPI, WaveControlAPI } from './UIManager';
+import type { PacingHudData } from './PacingOverlay';
 import { TARGETING_MODES } from '../data/tower';
 import { TOWER_XP_TABLE, xpForNextLevel, xpToLevel } from '../data/xpTables';
 import {
@@ -98,6 +99,16 @@ export class HUD {
   private onShowKeybinds: () => void = () => {};
   private moreStatsBtn!: HTMLButtonElement;
   private moreEnemyStatsBtn!: HTMLButtonElement;
+  // ── Pacing controls (gameplay plan §7.1 / §7.4) ──
+  private callWaveBtn!: HTMLButtonElement;
+  private riskWrap!: HTMLElement;
+  private riskValueEl!: HTMLElement;
+  private riskDecBtn!: HTMLButtonElement;
+  private riskIncBtn!: HTMLButtonElement;
+  private momentumEl!: HTMLElement;
+  private pacing: PacingHudData | null = null;
+  private onCallWaveEarly: () => void = () => {};
+  private onRiskChange: (level: number) => void = () => {};
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -119,6 +130,19 @@ export class HUD {
 
   setWaveControlAPI(api: WaveControlAPI): void {
     this.waveApi = api;
+  }
+
+  /** Pacing readout for this frame (plan §7), pushed via `UIManager`. */
+  setPacingData(data: PacingHudData): void {
+    this.pacing = data;
+  }
+
+  setOnCallWaveEarly(cb: () => void): void {
+    this.onCallWaveEarly = cb;
+  }
+
+  setOnRiskChange(cb: (level: number) => void): void {
+    this.onRiskChange = cb;
   }
 
   /**
@@ -339,6 +363,7 @@ export class HUD {
   update(state: GameState): void {
     const manaUnlocked = state.wave.highestWave >= MANA_UNLOCK_WAVE;
     this.updateXpBar(state);
+    this.updatePacingControls();
     toggleClass(this.manaWrap, 'is-locked', !manaUnlocked);
     setText(this.goldEl, formatNumber(this.displayGold));
     if (manaUnlocked) {
@@ -655,6 +680,7 @@ export class HUD {
     this.dpsEl = this.addStat(groupRight, 'DPS', '0');
     this.fpsEl = this.addStat(groupRight, 'FPS', '--');
     toggleClass(this.fpsEl, 'hud-fps', true);
+    groupRight.appendChild(this.renderRiskBlock());
     groupRight.appendChild(this.renderSpeedBlock());
     this.root.appendChild(groupRight);
 
@@ -761,13 +787,117 @@ export class HUD {
     controls.appendChild(this.targetingSelect);
     this.syncTargetingHint();
 
+    // Plan §7.1: calling the wave early is a *play*, so it belongs next to the
+    // wave controls rather than three tabs away. It is only enabled during an
+    // intermission, and its label carries the bonus so the decision is priced
+    // on the button rather than in a tooltip nobody opens.
+    this.callWaveBtn = document.createElement('button');
+    this.callWaveBtn.type = 'button';
+    this.callWaveBtn.className = 'hud-ctrl-btn hud-call-wave-btn';
+    this.callWaveBtn.textContent = 'Call';
+    this.callWaveBtn.setAttribute('aria-label', 'Call the next wave early');
+    this.callWaveBtn.addEventListener('click', () => this.onCallWaveEarly());
+    controls.appendChild(this.callWaveBtn);
+
     block.appendChild(controls);
 
     this.waveStatusEl = document.createElement('div');
     this.waveStatusEl.className = 'hud-wave-status';
     block.appendChild(this.waveStatusEl);
 
+    this.momentumEl = document.createElement('div');
+    this.momentumEl.className = 'hud-momentum';
+    block.appendChild(this.momentumEl);
+
     return block;
+  }
+
+  /**
+   * The risk dial (plan §7.4).
+   *
+   * A stepper rather than a slider: six discrete levels, each with a stated
+   * price, and the tooltip says what the *next* step costs so raising it is
+   * never a guess. Sits with the speed controls because both are always-on
+   * settings about how the run is being played, not moment-to-moment plays.
+   */
+  private renderRiskBlock(): HTMLElement {
+    const block = document.createElement('div');
+    block.className = 'hud-risk-block';
+
+    const label = document.createElement('span');
+    label.className = 'hud-stat-label';
+    label.textContent = 'Risk';
+    block.appendChild(label);
+
+    const group = document.createElement('div');
+    group.className = 'hud-speed-group';
+
+    this.riskDecBtn = document.createElement('button');
+    this.riskDecBtn.type = 'button';
+    this.riskDecBtn.className = 'hud-ctrl-btn';
+    this.riskDecBtn.textContent = '\u2212';
+    this.riskDecBtn.setAttribute('aria-label', 'Lower risk');
+    this.riskDecBtn.addEventListener('click', () => {
+      this.onRiskChange((this.pacing?.risk ?? 0) - 1);
+    });
+    group.appendChild(this.riskDecBtn);
+
+    this.riskValueEl = document.createElement('span');
+    this.riskValueEl.className = 'hud-speed-label';
+    this.riskValueEl.textContent = '0';
+    group.appendChild(this.riskValueEl);
+
+    this.riskIncBtn = document.createElement('button');
+    this.riskIncBtn.type = 'button';
+    this.riskIncBtn.className = 'hud-ctrl-btn';
+    this.riskIncBtn.textContent = '+';
+    this.riskIncBtn.setAttribute('aria-label', 'Raise risk');
+    this.riskIncBtn.addEventListener('click', () => {
+      this.onRiskChange((this.pacing?.risk ?? 0) + 1);
+    });
+    group.appendChild(this.riskIncBtn);
+
+    block.appendChild(group);
+    this.riskWrap = block;
+    return block;
+  }
+
+  /** Repaint the §7.1/§7.4 controls from this frame's pacing snapshot. */
+  private updatePacingControls(): void {
+    const p = this.pacing;
+    if (!p || !this.callWaveBtn) return;
+
+    setDisabled(this.callWaveBtn, !p.canCallEarly);
+    toggleClass(this.callWaveBtn, 'is-armed', p.canCallEarly);
+    setText(
+      this.callWaveBtn,
+      p.canCallEarly ? `Call +${Math.round(p.callBonus * 100)}%` : 'Call',
+    );
+    setTitle(this.callWaveBtn, p.canCallEarly
+      ? `Space — start wave now. ${p.intermissionRemaining.toFixed(1)}s skipped`
+        + ` is +${Math.round(p.callBonus * 100)}% gold, banked into momentum`
+        + ` (capped at +${Math.round(p.momentumCap * 100)}%).`
+      : `Available during the intermission (${p.intermissionLength}s at this depth).`);
+
+    const hasMomentum = p.momentum > 0;
+    toggleClass(this.momentumEl, 'is-visible', hasMomentum);
+    setText(
+      this.momentumEl,
+      hasMomentum ? `Momentum +${Math.round(p.momentum * 100)}% gold x${p.momentumStreak}` : '',
+    );
+    setTitle(this.momentumEl, hasMomentum
+      ? 'Held while you keep calling waves early. Resets when the tower takes damage.'
+      : '');
+
+    setText(this.riskValueEl, p.riskPending ? `${p.activeRisk}\u2192${p.risk}` : String(p.risk));
+    setDisabled(this.riskDecBtn, p.risk <= 0);
+    setDisabled(this.riskIncBtn, p.risk >= p.maxRisk);
+    toggleClass(this.riskWrap, 'is-hot', p.activeRisk > 0);
+    setTitle(this.riskWrap, p.risk === 0
+      ? 'Risk 0 — the standard curve. Raise it for more gold and AP at the cost of tougher waves.'
+      : `Risk ${p.risk}: +${p.risk * 18}% enemy HP, +${p.risk * 8}% enemy speed`
+        + ` for +${p.risk * 25}% gold and +${p.risk * 10}% AP.`
+        + (p.riskPending ? ` Takes effect next wave (running ${p.activeRisk}).` : ''));
   }
 
   /** Keep the dropdown's tooltip in step with what is selected. */
