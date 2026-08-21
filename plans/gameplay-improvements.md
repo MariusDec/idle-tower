@@ -817,6 +817,96 @@ subscriptions drive progress — `enemy_killed`, `wave_cleared`, `boss_killed`, 
 
 ## Part 6 — Tower cores
 
+> **Status: implemented (2026-08-21).** Corrections found during
+> implementation, kept here so Part 7 doesn't repeat them:
+> 1. **§6.3 says "bump to v12". v12 was Part 5's**; cores are **v13**. That is
+>    the third consecutive part whose save version in the plan was wrong — §7.7
+>    says v13 and is now one behind too. The ladder decides, not the plan.
+> 2. **Every one of §6.1's five stat blocks needed moving once measured, and
+>    four of them are the same mistake.** The follow-up's lesson — a payload
+>    priced against *one shot* is not a constant — has a mirror image that cost
+>    just as much here: a payload priced against one shot can also be *far too
+>    strong*. `artillery`'s "-40% fire rate, +150% damage" is `0.6 x 2.5 = 1.5x`
+>    sustained output before the splash is counted at all. Shipped at **+65%**,
+>    which is throughput parity, so the splash *is* the core rather than a
+>    garnish on a 50% damage buff. `frostwork` needed -18% rather than -15%,
+>    because more shots pay the enemy's flat armour more often — the trade is
+>    not symmetric even when the multipliers look like it.
+> 3. **`marksman` is the one core nobody chooses, so it must not move the
+>    curve.** §6.1's "+15% crit chance" measured as **+10 wall waves at 0
+>    lifetime AP** (39 → 49). Every player has `marksman` by default; a buff with
+>    no choice attached is not a core, it is a difficulty change wearing one, and
+>    it is §0.1's "strictly better than not holding" in a different costume.
+>    Shipped at **+6%**, the largest value that leaves the idle curve where Parts
+>    2-5 left it at every tier. §6.4's "±15% of `marksman`'s wall-wave" only
+>    means anything if `marksman` is the pre-existing baseline.
+> 4. **§6.4's metric cannot resolve §6.4's requirement.** The wall quantises to
+>    boss waves — steps of 10 on a base of ~40, a resolution of 25% — so a ±15%
+>    band measured on it can only ever report 0% or ±20%, and cannot be *steered*
+>    at all. `npm run sim` therefore prints three tables: the idle wall (the
+>    drift check, zero for all five cores at all five tiers), the wall with the
+>    draft running averaged over seven seeds (fractional, where ±15% is actually
+>    decided — worst deviation -5.7%), and composed DPS vs `marksman` (continuous,
+>    what the tuning was steered by).
+> 5. **`arcane`'s proc is mana-limited, and that is a design property, not a
+>    bug.** The drain is `fireRate / 5 x 3` and mana regen is not, so §6.1's -25%
+>    base measured 7-16% *below* `marksman` — worst exactly where the player has
+>    bought the most fire rate. Shipped at -18%, with Meditation as the player's
+>    answer to the rest. `sim/model.ts` does not assume an uptime: it computes
+>    one from the mana regen the greedy buyer actually decided to buy, which is
+>    the same buyer that decides every other purchase. Given an unbounded budget
+>    it buys exactly level 4 — precisely full uptime.
+> 6. **A DPS-only model always says a defensive core is bad.** `bloodforge` sits
+>    15-21% below `marksman` on composed DPS and level with it on the wall,
+>    because the wall condition *is* "seconds survived once a wave overruns" —
+>    which is exactly what more HP buys. `coreSurvivalMult` is **derived from the
+>    shipping stat block**, not a per-core constant: a hand-set multiplier would
+>    have meant re-tuning `maxHpPct` moved nothing in the table meant to be
+>    measuring the re-tune.
+> 7. **§6.2's "the selection is run-scoped" needs a third field to be
+>    survivable.** Reset-to-`marksman` is the literal reading, and an
+>    auto-ascending idle game reaches that reset several times an hour with
+>    nobody watching — so a player who unlocked `bloodforge` at 15 AP would be
+>    silently put back on the default every run. `CoreManager` carries
+>    `unlocked` (permanent), `preferred` (permanent, set by the picker) and
+>    `selected` (run-scoped, restored from `preferred`). The choice resets; the
+>    *identity* does not.
+> 8. **Three effects read `ctx.hpFraction` and nothing recomputed when HP
+>    moved.** `hp_threshold_damage` (Part 1's evolution), the `last_stand`
+>    blessing (§1.3) and `bloodforge`'s tempo step all armed at the *next*
+>    resolve triggered by something else — a purchase, a buff edge, a wave clear.
+>    For a comeback mechanic that is the wrong moment by definition, and it was
+>    only visible in-browser. `Game.refreshHpThresholdStats` buckets against
+>    `HP_STAT_THRESHOLDS` and resolves on a crossing; it fixed all three at once,
+>    two of which predate this part.
+> 9. **§6.2's `corePreference` was already plumbed and needed typing, not
+>    building.** `BlessingDef.corePreference` was `Record<string, number>`; as
+>    `Partial<Record<CoreId, number>>` a typo'd core id stops compiling. The
+>    weight is one shared constant rather than a literal per card — a per-card
+>    literal is how one of them quietly becomes 3x during a re-tune.
+> 10. **Cores are an AP spend but must not be an AP perk.** They have no levels,
+>    no prerequisites and no exclusivity, and `AP_PERKS` is a table the Prestige
+>    panel renders row-by-row with a level counter and an effect value. Threading
+>    a one-shot purchase through `perkCost` / `computePerkEffect` would have meant
+>    every consumer of that table learning about a perk that has neither.
+> 11. **Two other tables moved, both explicably.** §2.2b (wall with blessings) is
+>    up 1.4-3.0 waves at every tier because `corePreference` is live now and
+>    `marksman` favours four cards it did not before — the mechanic working, not
+>    drift. §4.5's idle-parity figures moved because `marksman`'s +6% crit
+>    changes which upgrade breakpoints the greedy buyer crosses first; still
+>    inside the +50% hard gate at all five tiers, with one tier (10 K) at +19.0%,
+>    below the preferred +25-40% band. That is the safe direction, and §5's
+>    status note 10 already recorded this metric as stepwise and non-monotonic.
+> 12. **Unrelated, found while wiring the sim:** `sim/balance.ts` printed
+>    `Charged shot: undefinedx damage` — it still read `MANUAL_AIM.chargeDamageMult`,
+>    which the follow-up replaced with `chargeDpsSeconds`. Fixed.
+> 13. **§6.3's file list omits** `src/systems/CoreManager.ts` (the three
+>    lifetimes have to live somewhere), `src/systems/AbilityManager.ts`
+>    (`nova_extended`), `src/ui/UIManager.ts` and `src/main.ts` (the picker
+>    chain), `src/data/blessings.ts` (`corePreference` typing), `sim/model.ts`
+>    and `sim/balance.ts` — the last two are not optional, since §6.4's table is
+>    the gate.
+
 **Goal:** a run identity chosen up front that changes *how* the tower shoots, so blessings have
 something to build on top of.
 
