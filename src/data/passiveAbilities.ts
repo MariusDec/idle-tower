@@ -1,4 +1,5 @@
 import type { PassiveAbilityId } from '../types';
+import type { IconId } from './icons';
 
 /**
  * Stats a passive may grant. Closed so the stat pipeline can switch on it
@@ -44,7 +45,7 @@ export interface PassiveAbilityDef {
   upgradeBaseCost: number;
   /** Cost growth factor per level (used with upgradeBaseCost) */
   upgradeCostGrowth: number;
-  glyph: string;
+  icon: IconId;
   color: string;
 }
 
@@ -63,7 +64,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockGoldCost: 250,
     upgradeBaseCost: 200,
     upgradeCostGrowth: 1.5,
-    glyph: '🎯',
+    icon: 'bullseye',
     color: '#e74c3c',
   },
   {
@@ -80,7 +81,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockGoldCost: 300,
     upgradeBaseCost: 250,
     upgradeCostGrowth: 1.6,
-    glyph: '❤',
+    icon: 'health-increase',
     color: '#2ecc71',
   },
   {
@@ -97,7 +98,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockGoldCost: 500,
     upgradeBaseCost: 240,
     upgradeCostGrowth: 1.65,
-    glyph: '💰',
+    icon: 'gold-nuggets',
     color: '#f1c40f',
   },
   {
@@ -114,7 +115,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockGoldCost: 2500,
     upgradeBaseCost: 400,
     upgradeCostGrowth: 1.85,
-    glyph: '⚡',
+    icon: 'wingfoot',
     color: '#3498db',
   },
   {
@@ -131,7 +132,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockGoldCost: 750,
     upgradeBaseCost: 350,
     upgradeCostGrowth: 1.7,
-    glyph: '💠',
+    icon: 'fountain',
     color: '#5b8def',
   },
   {
@@ -148,7 +149,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockGoldCost: 1500,
     upgradeBaseCost: 350,
     upgradeCostGrowth: 1.8,
-    glyph: '⚔',
+    icon: 'spiked-halo',
     color: '#e67e22',
   },
   {
@@ -165,7 +166,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockGoldCost: 1000,
     upgradeBaseCost: 350,
     upgradeCostGrowth: 1.75,
-    glyph: '◎',
+    icon: 'target-shot',
     color: '#f39c12',
   },
   {
@@ -182,7 +183,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockGoldCost: 4000,
     upgradeBaseCost: 500,
     upgradeCostGrowth: 1.9,
-    glyph: '💉',
+    icon: 'life-tap',
     color: '#c44a4a',
   },
 ];

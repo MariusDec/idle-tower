@@ -36,6 +36,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/ui-system.md](docs/ui-system.md) | Tab panel system, HUD components, canvas overlays (boss bar, pacing overlay), API interfaces, callback wiring, CSS |
 | [docs/camera-system.md](docs/camera-system.md) | The world/screen transform, DPR-aware sizing and the resize path, the arena extents and aspect clamp, the two world scales and why `range` is exempt from them |
 | [docs/art-direction.md](docs/art-direction.md) | The design token layer, the "arcane siege" palette and what each colour is allowed to mean, the shared `palette.ts` source of truth, the self-hosted display face |
+| [docs/icon-system.md](docs/icon-system.md) | The committed game-icons sprite and its fetch script, the generated `IconId` union, CC BY attribution, `Icon.ts` and the CSS rarity frames |
 | [docs/event-bus.md](docs/event-bus.md) | Pub/sub event system with the event catalog |
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
 | [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, progression tab, milestone table |
@@ -68,6 +69,8 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Combo tiers | 4 | `src/data/pacing.ts` |
 | Risk levels | 6 (0-5) | `src/data/pacing.ts` |
 | Enemy threat classes | 3 | `src/data/pacing.ts` |
+| Icons (distinct artwork) | 197 | `public/icons/sprite.svg` |
+| Icon references across tables | 249 | `scripts/fetch-icons.mjs` |
 | Save version | 14 | `src/systems/SaveManager.ts` |
 
 ## Commands
@@ -79,6 +82,7 @@ npm run typecheck   # tsc --noEmit
 npm run test        # vitest suite (tests/)
 npm run checks      # behavioural checks driving the real managers (sim/checks.ts)
 npm run sim         # balance simulator, before/after curve tables (sim/balance.ts)
+npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest (needs network)
 ```
 
 

@@ -10,6 +10,7 @@ import {
 } from '../data/research';
 import { formatNumber } from '../utils/bigNumber';
 import { setDisabled, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
+import { renderIcon } from './Icon';
 
 export interface ResearchPanelHandlers {
   onStartResearch: (id: string) => void;
@@ -338,7 +339,7 @@ export class ResearchPanel {
     const icon = document.createElement('div');
     icon.className = 'research-icon';
     icon.style.setProperty('--research-color', n.color);
-    icon.textContent = n.glyph;
+    renderIcon(icon, n.icon);
     row.appendChild(icon);
 
     const info = document.createElement('div');

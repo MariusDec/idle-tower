@@ -307,6 +307,30 @@ Two files, and the order matters:
 Spacing is the one group not yet swept onto tokens; Parts 7-8 of the UI plan move
 it as they rebuild each surface.
 
+The last section of `main.css` is `Icons`, added by Part 6: the `.icon` base
+rule (which is what makes `fill: currentColor` work), the semantic tone classes,
+the `.icon-frame` variants and the `data-rarity` frames, and the per-host
+`--icon-size` overrides for every surface that used to hold a text glyph.
+
+## Icons
+
+Every icon in the DOM is an `<svg class="icon"><use href="#gi-…">` pointing at a
+`<symbol>` in `public/icons/sprite.svg`, built by `src/ui/Icon.ts`:
+
+```ts
+renderIcon(host, def.icon);                                   // panels, on update
+iconFrame(u.icon, { variant: 'upgrade' });                    // framed
+iconFrame(e.icon, { variant: 'item', rarity: eq.rarity });    // rarity-framed
+iconMarkup(def.icon, { className: 'eq-compare-icon' });       // string templates
+```
+
+The sprite must be in the document before the first `<use>` exists — Chromium
+does not resolve external `<use>` references — so `main.ts` awaits
+`loadIconSprite()` before mounting the UI. Rarity is a CSS frame over shared
+artwork, never a second asset. Full details, including how to add an icon and
+the attribution the CC BY licence requires, in
+[icon-system.md](icon-system.md).
+
 ## The pacing overlay (gameplay plan §7.2 / §7.3)
 
 `PacingOverlay.ts` owns the bottom-centre of the arena — the opposite corner

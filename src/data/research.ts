@@ -1,3 +1,5 @@
+import type { IconId } from './icons';
+
 export type ResearchEffectType =
   | 'pierce'
   | 'gold_multi'
@@ -33,7 +35,7 @@ export interface ResearchDef {
   effectPerLevel: number;
   maxLevel: number;
   prerequisites: string[];
-  glyph: string;
+  icon: IconId;
   color: string;
   effectDefinitions?: Record<number, ResearchLevelOverride>;
 }
@@ -51,7 +53,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 1,
     maxLevel: 1,
     prerequisites: [],
-    glyph: 'P',
+    icon: 'piercing-sword',
     color: '#d04848',
   },
   {
@@ -65,7 +67,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 1,
     maxLevel: 1,
     prerequisites: ['piercing_shots'],
-    glyph: 'P',
+    icon: 'imbricated-arrows',
     color: '#ff7070',
   },
   {
@@ -79,7 +81,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.2,
     maxLevel: 1,
     prerequisites: [],
-    glyph: '🛡',
+    icon: 'armor-upgrade',
     color: '#6ba3d6',
   },
   {
@@ -93,7 +95,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.25,
     maxLevel: 1,
     prerequisites: ['improved_pierce'],
-    glyph: '💥',
+    icon: 'spiky-explosion',
     color: '#ff4040',
   },
 
@@ -109,7 +111,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.25,
     maxLevel: 1,
     prerequisites: [],
-    glyph: '$',
+    icon: 'bubbling-flask',
     color: '#f1c40f',
   },
   {
@@ -123,7 +125,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.05,
     maxLevel: 1,
     prerequisites: ['alchemy'],
-    glyph: 'T',
+    icon: 'gold-bar',
     color: '#ffd24a',
   },
   {
@@ -137,7 +139,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.5,
     maxLevel: 1,
     prerequisites: ['alchemy'],
-    glyph: '✦',
+    icon: 'money-stack',
     color: '#e8a93b',
   },
   {
@@ -151,7 +153,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 1.0,
     maxLevel: 1,
     prerequisites: ['transmutation', 'prosperity'],
-    glyph: '👑',
+    icon: 'crown-coin',
     color: '#ffc107',
   },
 
@@ -167,7 +169,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.5,
     maxLevel: 1,
     prerequisites: [],
-    glyph: 'M',
+    icon: 'chalice-drops',
     color: '#5b8def',
   },
   {
@@ -181,7 +183,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: -0.3,
     maxLevel: 1,
     prerequisites: ['mana_font'],
-    glyph: 'A',
+    icon: 'wizard-staff',
     color: '#9b59ff',
   },
   {
@@ -195,7 +197,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 3,
     maxLevel: 1,
     prerequisites: ['mana_font'],
-    glyph: '⚡',
+    icon: 'round-potion',
     color: '#7b68ee',
   },
   {
@@ -209,7 +211,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.3,
     maxLevel: 1,
     prerequisites: ['arcane_mastery', 'arcane_recovery'],
-    glyph: '🔥',
+    icon: 'frostfire',
     color: '#e040fb',
   },
 
@@ -225,7 +227,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.5,
     maxLevel: 1,
     prerequisites: [],
-    glyph: '⏩',
+    icon: 'fast-forward-button',
     color: '#2ecc71',
   },
   {
@@ -243,7 +245,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 3,
     maxLevel: 5,
     prerequisites: ['swift_prep'],
-    glyph: '🧭',
+    icon: 'walking-scout',
     color: '#34d399',
   },
   {
@@ -257,7 +259,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.1,
     maxLevel: 1,
     prerequisites: ['swift_prep'],
-    glyph: '🎯',
+    icon: 'telescope',
     color: '#1abc9c',
   },
 
@@ -273,7 +275,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.25,
     maxLevel: 10,
     prerequisites: [],
-    glyph: '🎯',
+    icon: 'concentration-orb',
     color: '#ff8c42',
     effectDefinitions: { 10: { effectValue: 5.0 } },
   },
@@ -288,7 +290,7 @@ export const RESEARCH_NODES: ResearchDef[] = [
     effectPerLevel: 0.005,
     maxLevel: 10,
     prerequisites: ['rp_gain'],
-    glyph: '🔍',
+    icon: 'all-seeing-eye',
     color: '#ffb347',
     effectDefinitions: { 10: { effectValue: 0.1 } },
   },

@@ -1,7 +1,8 @@
 import type { GameState, EquipmentSlot, Equipment, EquipmentStatType } from '../types';
-import { EQUIPMENT_DEF_BY_ID, RARITY_COLORS, RARITY_NAMES } from '../data/equipment';
+import { EQUIPMENT_DEF_BY_ID, RARITY_COLORS, RARITY_NAMES, SLOT_ICONS } from '../data/equipment';
+import { icon as iconSvg, iconMarkup, setIcon } from './Icon';
 import { formatNumber } from '../utils/bigNumber';
-import { setText, toggleClass, setStyle, setSrc, setDisplay } from '../utils/dom';
+import { setText, toggleClass, setStyle, setDisplay } from '../utils/dom';
 
 export interface EquipmentAPIDeps {
   inventory: Equipment[];
@@ -72,7 +73,7 @@ export class EquipmentPanel {
   private deps: EquipmentAPIDeps;
   private root: HTMLElement | null = null;
   private slotCards = new Map<EquipmentSlot, HTMLElement>();
-  private slotIconEls = new Map<EquipmentSlot, HTMLImageElement>();
+  private slotIconEls = new Map<EquipmentSlot, SVGSVGElement>();
   private slotBadgeEls = new Map<EquipmentSlot, HTMLElement>();
   private slotNameEls = new Map<EquipmentSlot, HTMLElement>();
   private slotStatEls = new Map<EquipmentSlot, HTMLElement>();
@@ -207,13 +208,13 @@ export class EquipmentPanel {
     const invName = invDef?.name ?? inventory.defId;
     const invColor = RARITY_COLORS[inventory.rarity] ?? '#888';
     const invRarityName = RARITY_NAMES[inventory.rarity];
-    const invSprite = invDef?.sprite ?? '';
+    const invIcon = iconMarkup(invDef?.icon ?? SLOT_ICONS[inventory.slot], { className: 'eq-compare-icon' });
 
     const eqDef = equipped ? EQUIPMENT_DEF_BY_ID[equipped.defId] : null;
     const eqName = eqDef?.name ?? '';
     const eqColor = equipped ? (RARITY_COLORS[equipped.rarity] ?? '#888') : '';
     const eqRarityName = equipped ? RARITY_NAMES[equipped.rarity] : '';
-    const eqSprite = equipped ? (eqDef?.sprite ?? '') : '';
+    const eqIcon = equipped ? iconMarkup(eqDef?.icon ?? SLOT_ICONS[equipped.slot], { className: 'eq-compare-icon' }) : '';
 
     const eqStatMap = new Map<string, number>();
     if (equipped) {
@@ -245,10 +246,10 @@ export class EquipmentPanel {
     const rightStats = equipped ? renderStats(eqStatMap, invStatMap) : '';
 
     const rightCard = equipped
-      ? `<div class="eq-compare-card"><div class="eq-compare-slot-label">Equipped</div><div class="eq-compare-item-row"><img class="eq-compare-icon" src="${eqSprite}" alt="" draggable="false"><div class="eq-compare-item-info"><span class="eq-compare-rarity-badge" style="background:${eqColor}">${eqRarityName}</span><span class="eq-compare-name" style="color:${eqColor}">${eqName}</span></div></div><div class="eq-compare-card-stats">${rightStats}</div></div>`
+      ? `<div class="eq-compare-card"><div class="eq-compare-slot-label">Equipped</div><div class="eq-compare-item-row">${eqIcon}<div class="eq-compare-item-info"><span class="eq-compare-rarity-badge" style="background:${eqColor}">${eqRarityName}</span><span class="eq-compare-name" style="color:${eqColor}">${eqName}</span></div></div><div class="eq-compare-card-stats">${rightStats}</div></div>`
       : `<div class="eq-compare-card"><div class="eq-compare-slot-label">Equipped</div><div class="eq-compare-empty">Slot empty</div></div>`;
 
-    return `<div class="eq-compare-body"><div class="eq-compare-card"><div class="eq-compare-slot-label">Inventory</div><div class="eq-compare-item-row"><img class="eq-compare-icon" src="${invSprite}" alt="" draggable="false"><div class="eq-compare-item-info"><span class="eq-compare-rarity-badge" style="background:${invColor}">${invRarityName}</span><span class="eq-compare-name" style="color:${invColor}">${invName}</span></div></div><div class="eq-compare-card-stats">${leftStats}</div></div><div class="eq-compare-vs">VS</div>${rightCard}</div>`;
+    return `<div class="eq-compare-body"><div class="eq-compare-card"><div class="eq-compare-slot-label">Inventory</div><div class="eq-compare-item-row">${invIcon}<div class="eq-compare-item-info"><span class="eq-compare-rarity-badge" style="background:${invColor}">${invRarityName}</span><span class="eq-compare-name" style="color:${invColor}">${invName}</span></div></div><div class="eq-compare-card-stats">${leftStats}</div></div><div class="eq-compare-vs">VS</div>${rightCard}</div>`;
   }
 
   update(_state: GameState): void {
@@ -275,7 +276,7 @@ export class EquipmentPanel {
         toggleClass(card, 'eq-empty', false);
         setStyle(card, '--eq-rarity-color', color);
         setStyle(card, 'border-color', color);
-        setSrc(iconEl, def.sprite);
+        setIcon(iconEl, def.icon);
         setText(badgeEl, RARITY_NAMES[eq.rarity]);
         setStyle(badgeEl, 'background', color);
         setText(nameEl, def.name);
@@ -301,7 +302,7 @@ export class EquipmentPanel {
       } else {
         toggleClass(card, 'eq-empty', true);
         setStyle(card, 'border-color', '');
-        setSrc(iconEl, '');
+        setIcon(iconEl, SLOT_ICONS[slot]);
         setText(badgeEl, '');
         setText(nameEl, SLOT_LABELS[slot]);
         setStyle(nameEl, 'color', '');
@@ -375,8 +376,8 @@ export class EquipmentPanel {
     const def = EQUIPMENT_DEF_BY_ID[item.defId];
     const name = def?.name ?? item.defId;
 
-    const icon = row.querySelector('.eq-inv-card-icon') as HTMLImageElement;
-    if (icon) setSrc(icon, def?.sprite ?? '');
+    const icon = row.querySelector('.eq-inv-card-icon') as SVGSVGElement | null;
+    setIcon(icon, def?.icon ?? SLOT_ICONS[item.slot]);
 
     const rarityBadge = row.querySelector('.eq-inv-rarity-badge') as HTMLElement;
     if (rarityBadge) {
@@ -427,11 +428,7 @@ export class EquipmentPanel {
     const def = EQUIPMENT_DEF_BY_ID[item.defId];
     const name = def?.name ?? item.defId;
 
-    const icon = document.createElement('img');
-    icon.className = 'eq-inv-card-icon';
-    icon.src = def?.sprite ?? '';
-    icon.alt = def?.name ?? '';
-    icon.draggable = false;
+    const icon = iconSvg(def?.icon ?? SLOT_ICONS[item.slot], { className: 'eq-inv-card-icon' });
     card.appendChild(icon);
 
     const rarityBadge = document.createElement('div');
@@ -573,10 +570,7 @@ export class EquipmentPanel {
     card.dataset.slot = slot;
     this.slotCards.set(slot, card);
 
-    const icon = document.createElement('img');
-    icon.className = 'eq-slot-icon';
-    icon.alt = '';
-    icon.draggable = false;
+    const icon = iconSvg(SLOT_ICONS[slot], { className: 'eq-slot-icon' });
     this.slotIconEls.set(slot, icon);
     card.appendChild(icon);
 

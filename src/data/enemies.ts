@@ -1,4 +1,5 @@
 import type { BossPattern, Enemy, EnemyType } from '../types';
+import type { IconId } from './icons';
 import { entity, world } from './arena';
 import { bossCountForWave, bossHPForWave } from './formulas';
 
@@ -40,6 +41,8 @@ export const ENEMY_LABELS: Record<EnemyType, string> = {
 
 export interface EnemyDef {
   type: EnemyType;
+  /** Panel/threat-preview icon. Purely UI — the canvas silhouette is `shape`. */
+  icon: IconId;
   baseHP: number;
   baseSpeed: number;
   armor: number;
@@ -468,6 +471,7 @@ export function ignoresWallBand(enemy: Enemy): boolean {
 export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   normal: {
     type: 'normal',
+    icon: 'orc-head',
     baseHP: 6,
     baseSpeed: world(60),
     armor: 0,
@@ -484,6 +488,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   fast: {
     type: 'fast',
+    icon: 'running-ninja',
     baseHP: 4,
     baseSpeed: world(120),
     armor: 0,
@@ -500,6 +505,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   tank: {
     type: 'tank',
+    icon: 'rock-golem',
     baseHP: 20,
     baseSpeed: world(30),
     armor: 3,
@@ -516,6 +522,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   flying: {
     type: 'flying',
+    icon: 'bat',
     baseHP: 7,
     baseSpeed: world(90),
     armor: 0,
@@ -532,6 +539,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   healer: {
     type: 'healer',
+    icon: 'healing',
     baseHP: 12,
     baseSpeed: world(50),
     armor: 0,
@@ -552,6 +560,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   boss: {
     type: 'boss',
+    icon: 'crowned-skull',
     baseHP: 120,
     baseSpeed: world(40),
     armor: 6,
@@ -568,6 +577,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   splitter: {
     type: 'splitter',
+    icon: 'transparent-slime',
     baseHP: 16,
     baseSpeed: world(55),
     armor: 0,
@@ -587,6 +597,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   shielded: {
     type: 'shielded',
+    icon: 'surrounded-shield',
     baseHP: 10,
     baseSpeed: world(40),
     armor: 0,
@@ -610,6 +621,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   // What each one costs the player is a wrong *build*, not a bigger bar.
   siege: {
     type: 'siege',
+    icon: 'catapult',
     baseHP: 12,
     baseSpeed: world(42),
     armor: 2,
@@ -626,6 +638,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   thief: {
     type: 'thief',
+    icon: 'robber-mask',
     baseHP: 7,
     baseSpeed: world(135),
     armor: 0,
@@ -643,6 +656,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   blinker: {
     type: 'blinker',
+    icon: 'teleport',
     baseHP: 9,
     baseSpeed: world(28),
     armor: 0,
@@ -660,6 +674,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   warden: {
     type: 'warden',
+    icon: 'nested-hexagons',
     baseHP: 14,
     baseSpeed: world(44),
     armor: 2,
@@ -676,6 +691,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   },
   burrower: {
     type: 'burrower',
+    icon: 'mole',
     baseHP: 9,
     baseSpeed: world(52),
     armor: 1,

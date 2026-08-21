@@ -10,6 +10,7 @@ import {
 } from '../data/blessings';
 import { formatInt } from '../utils/bigNumber';
 import { setText, setStyle, toggleClass } from '../utils/dom';
+import { renderIcon } from './Icon';
 
 /** What the panel needs to know about the run's blessing draft (plan §1.4). */
 export interface ProgressionBlessingInfo {
@@ -388,7 +389,7 @@ export class ProgressionPanel {
 
     const glyph = document.createElement('div');
     glyph.className = 'progression-glyph';
-    glyph.textContent = entry.glyph;
+    renderIcon(glyph, entry.icon);
     setStyle(glyph, 'color', entry.color);
     wrap.appendChild(glyph);
 

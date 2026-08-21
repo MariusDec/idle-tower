@@ -1,4 +1,5 @@
 import type { AbilityId } from '../types';
+import type { IconId } from './icons';
 import { world } from './arena';
 
 export type AbilityEffectType =
@@ -22,7 +23,7 @@ export interface AbilityDef {
   duration: number;
   effectType: AbilityEffectType;
   effectValue: number;
-  glyph: string;
+  icon: IconId;
   color: string;
   hotkey: string;
   /** Wave at which this ability becomes usable. Mana system itself unlocks at wave 10. */
@@ -74,7 +75,7 @@ export const ABILITIES: AbilityDef[] = [
     duration: 0,
     effectType: 'aoe_damage',
     effectValue: 5,
-    glyph: 'R',
+    icon: 'arrow-cluster',
     color: '#f1c40f',
     hotkey: '1',
     unlockWave: 10,
@@ -96,7 +97,7 @@ export const ABILITIES: AbilityDef[] = [
     duration: 5,
     effectType: 'slow',
     effectValue: 0.5,
-    glyph: 'F',
+    icon: 'frozen-orb',
     color: '#5b8def',
     hotkey: '2',
     unlockWave: 18,
@@ -118,7 +119,7 @@ export const ABILITIES: AbilityDef[] = [
     duration: 0,
     effectType: 'chain_damage',
     effectValue: 3,
-    glyph: 'L',
+    icon: 'chain-lightning',
     color: '#9aa7ff',
     hotkey: '3',
     unlockWave: 22,
@@ -140,7 +141,7 @@ export const ABILITIES: AbilityDef[] = [
     duration: 6,
     effectType: 'crit_buff',
     effectValue: 30,
-    glyph: 'P',
+    icon: 'arrow-scope',
     color: '#ffd34a',
     hotkey: '4',
     unlockWave: 28,
@@ -162,7 +163,7 @@ export const ABILITIES: AbilityDef[] = [
     duration: 8,
     effectType: 'fire_rate_buff',
     effectValue: 2,
-    glyph: 'B',
+    icon: 'enrage',
     color: '#d04848',
     hotkey: '5',
     unlockWave: 14,
@@ -184,7 +185,7 @@ export const ABILITIES: AbilityDef[] = [
     duration: 0,
     effectType: 'single_target_damage',
     effectValue: 12,
-    glyph: 'M',
+    icon: 'burning-meteor',
     color: '#ff7a1a',
     hotkey: '6',
     unlockWave: 40,
@@ -206,7 +207,7 @@ export const ABILITIES: AbilityDef[] = [
     duration: 15,
     effectType: 'gold_buff',
     effectValue: 3,
-    glyph: 'G',
+    icon: 'coins-pile',
     color: '#f1c40f',
     hotkey: '7',
     unlockWave: 26,
@@ -228,7 +229,7 @@ export const ABILITIES: AbilityDef[] = [
     duration: 0,
     effectType: 'execute_damage',
     effectValue: 12,
-    glyph: 'E',
+    icon: 'guillotine',
     color: '#a020f0',
     hotkey: '8',
     unlockWave: 50,
@@ -250,7 +251,7 @@ export const ABILITIES: AbilityDef[] = [
     duration: 0,
     effectType: 'multishot',
     effectValue: 2,
-    glyph: 'W',
+    icon: 'split-arrows',
     color: '#ff6b35',
     hotkey: '0',
     unlockWave: 35,
@@ -272,7 +273,7 @@ export const ABILITIES: AbilityDef[] = [
     duration: 8,
     effectType: 'lifesteal_buff',
     effectValue: 3,
-    glyph: 'V',
+    icon: 'fangs-circle',
     color: '#c44a4a',
     hotkey: '9',
     unlockWave: 55,

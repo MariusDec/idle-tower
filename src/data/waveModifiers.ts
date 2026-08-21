@@ -1,3 +1,5 @@
+import type { IconId } from './icons';
+
 export type WaveModifierId =
   | 'glass_cannon'
   | 'heavy_hitters'
@@ -23,7 +25,7 @@ export interface WaveModifierDef {
   name: string;
   description: string;
   detail: string;
-  glyph: string;
+  icon: IconId;
   color: string;
   reward: WaveModifierReward;
   effects: {
@@ -67,7 +69,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     name: 'Glass Cannon',
     description: 'Enemies are fragile and blindingly fast.',
     detail: 'Enemies: HP ×0.5, Speed ×2.0 · Gold: +25% · Bonus: 1 AP per wave',
-    glyph: '◇',
+    icon: 'glass-heart',
     color: '#5b8def',
     reward: { ap: 1, gold: 0, tp: 0 },
     effects: {
@@ -84,7 +86,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     name: 'Heavy Hitters',
     description: 'Tougher enemies that hit the tower harder.',
     detail: 'Enemies: HP ×1.5, Damage to tower ×1.3 · Bonus: ×2 gold + 1 AP per wave',
-    glyph: '⛨',
+    icon: 'mighty-force',
     color: '#a85a2c',
     reward: { ap: 1, gold: 2, tp: 0 },
     effects: {
@@ -101,7 +103,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     name: 'Swarm',
     description: 'The horde is overwhelming.',
     detail: 'Enemies: Count ×3.0 · Bonus: ×2 gold per wave',
-    glyph: '⋙',
+    icon: 'missile-swarm',
     color: '#9b59ff',
     reward: { ap: 0, gold: 2, tp: 0 },
     effects: {
@@ -118,7 +120,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     name: 'Golden Tide',
     description: 'Everything glitters — gold rains from every corpse.',
     detail: 'Gold: ×5.0',
-    glyph: '✦',
+    icon: 'gold-mine',
     color: '#e8a93b',
     reward: { ap: 0, gold: 0, tp: 0 },
     effects: {
@@ -135,7 +137,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     name: 'Glass Tower',
     description: 'High risk, high reward. Your tower is fragile but lethal.',
     detail: 'Tower takes 3× damage · Your damage ×10',
-    glyph: '☠',
+    icon: 'cracked-shield',
     color: '#d04848',
     reward: { ap: 0, gold: 0, tp: 0 },
     effects: {
@@ -152,7 +154,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     name: 'Fortress',
     description: 'Slow but nearly indestructible.',
     detail: 'Enemies: HP ×3.0, Speed ×0.5 · Bonus: 1 AP per wave',
-    glyph: '🏰',
+    icon: 'locked-fortress',
     color: '#6b7280',
     reward: { ap: 1, gold: 0, tp: 0 },
     effects: {
@@ -169,7 +171,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     name: 'Cursed Ground',
     description: 'Dark energy weakens your tower, but riches abound.',
     detail: 'Your damage ×0.5 · Gold: ×3 + 1 AP per wave',
-    glyph: '🜏',
+    icon: 'pentagram-rose',
     color: '#7c3aed',
     reward: { ap: 1, gold: 3, tp: 0 },
     effects: {
@@ -186,7 +188,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     name: 'Ironclad',
     description: 'Armored horde. Tough shells, rich spoils.',
     detail: 'Enemies: HP ×2.0, Count ×2.0 · Bonus: ×4 gold + 1 AP per wave',
-    glyph: '🛡️',
+    icon: 'metal-plate',
     color: '#9ca3af',
     reward: { ap: 1, gold: 4, tp: 0 },
     effects: {
@@ -203,7 +205,7 @@ export const WAVE_MODIFIERS: WaveModifierDef[] = [
     name: 'Famine',
     description: 'Resources are scarce. Endure for knowledge.',
     detail: 'Enemies: HP ×1.2 · Gold: −50% · Bonus: 2 AP per wave',
-    glyph: '🌑',
+    icon: 'eclipse',
     color: '#4b5563',
     reward: { ap: 2, gold: 0, tp: 0 },
     effects: {
@@ -247,7 +249,7 @@ export function snapshotFromDef(def: WaveModifierDef): WaveModifierSnapshot {
     name: def.name,
     description: def.description,
     detail: def.detail,
-    glyph: def.glyph,
+    icon: def.icon,
     color: def.color,
     reward: { ...def.reward },
     effects: { ...def.effects },

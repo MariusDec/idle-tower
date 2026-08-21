@@ -1,6 +1,7 @@
 import type { MilestoneDef } from '../data/milestones';
 import { TRANSCENDENCE_UNLOCK_AP } from '../data/prestige';
 import { setDisplay, setStyle, setText, setTitle, toggleClass } from '../utils/dom';
+import { renderIcon } from './Icon';
 
 export interface MilestoneStripHandlers {
   /**
@@ -147,7 +148,7 @@ export class MilestoneStrip {
     setDisplay(this.collapsedBtn, '');
     setText(this.collapsedWaveTag, next.wave > 0 ? `Wave ${next.wave}` : this.kindLabel(next.kind));
     setText(this.collapsedLabel, next.label);
-    setText(this.collapsedGlyph, next.glyph);
+    renderIcon(this.collapsedGlyph, next.icon);
     setStyle(this.collapsedGlyph, 'color', next.color);
     setTitle(this.collapsedBtn, `${next.label} — ${next.detail}`);
   }
@@ -252,7 +253,7 @@ export class MilestoneStrip {
 
     const glyph = document.createElement('div');
     glyph.className = 'milestone-entry-glyph';
-    glyph.textContent = m.glyph;
+    renderIcon(glyph, m.icon);
     setStyle(glyph, 'color', m.color);
 
     const body = document.createElement('div');

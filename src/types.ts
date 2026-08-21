@@ -1,4 +1,5 @@
 import type { EvolutionEffectId } from './data/upgrades';
+import type { IconId } from './data/icons';
 import type { LootOrbKind } from './data/loot';
 import { evalFormula } from './data/formulas';
 
@@ -331,7 +332,7 @@ export interface EquipmentDef {
   id: string; name: string; description: string; slot: EquipmentSlot;
   baseStats: Partial<Record<Rarity, EquipmentStat[]>>;
   maxLevel: number; upgradeCostGrowth: number;
-  sprite: string; color: string; minWave: number; bossOnly?: boolean;
+  icon: IconId; color: string; minWave: number; bossOnly?: boolean;
 }
 
 // Homing Projectile (extends Projectile)
@@ -365,7 +366,7 @@ export interface WaveModifierSnapshot {
   name: string;
   description: string;
   detail: string;
-  glyph: string;
+  icon: IconId;
   color: string;
   /** ap/tp = flat reward on clear; gold = multiplier × gold earned from enemies during the wave (deferred to wave_cleared). */
   reward: { ap: number; gold: number; tp: number };
@@ -607,6 +608,7 @@ export interface UpgradeDef {
   id: string;
   name: string;
   description: string;
+  icon: IconId;
   baseCost: number;
   costGrowth: number | string;
   effectPerLevel: number | string;

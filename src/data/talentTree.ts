@@ -1,4 +1,5 @@
 import type { TalentBranch, TalentId } from '../types';
+import type { IconId } from './icons';
 
 /**
  * Every stat a talent may affect. This tuple is the single source of truth:
@@ -69,7 +70,7 @@ export interface TalentDef {
   /** Second effect, for talents whose description promises two bonuses. */
   secondary?: TalentEffectType;
   prerequisites: TalentId[];
-  glyph: string;
+  icon: IconId;
   color: string;
   exclusive?: boolean;
 }
@@ -86,7 +87,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'base_damage_pct', perPoint: 0.05 },
     prerequisites: [],
-    glyph: '⚔',
+    icon: 'crossed-swords',
     color: '#e74c3c',
   },
   {
@@ -99,7 +100,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'fire_rate_pct', perPoint: 0.04 },
     prerequisites: [],
-    glyph: '➤',
+    icon: 'supersonic-arrow',
     color: '#e74c3c',
   },
   {
@@ -112,7 +113,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'crit_chance_pct', perPoint: 0.03 },
     prerequisites: ['power_strike'],
-    glyph: '◎',
+    icon: 'crosshair-arrow',
     color: '#e74c3c',
   },
   {
@@ -125,7 +126,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'crit_damage_pct', perPoint: 0.10 },
     prerequisites: ['power_strike'],
-    glyph: '✦',
+    icon: 'deadly-strike',
     color: '#e74c3c',
   },
   {
@@ -138,7 +139,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'armor_penetration_pct', perPoint: 0.05 },
     prerequisites: ['precision', 'deadly_strikes'],
-    glyph: '⬡',
+    icon: 'interleaved-arrows',
     color: '#e74c3c',
   },
   {
@@ -151,7 +152,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'execution_damage_pct', perPoint: 0.08 },
     prerequisites: ['precision'],
-    glyph: '†',
+    icon: 'executioner-hood',
     color: '#e74c3c',
   },
   {
@@ -164,7 +165,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'extra_projectile_chance', perPoint: 0.03 },
     prerequisites: ['piercing_volley'],
-    glyph: '≋',
+    icon: 'missile-swarm',
     color: '#e74c3c',
   },
   {
@@ -178,7 +179,7 @@ export const TALENTS: TalentDef[] = [
     effect: { stat: 'base_damage_pct', perPoint: 0.15 },
     secondary: { stat: 'fire_rate_pct', perPoint: -0.05 },
     prerequisites: ['barrage'],
-    glyph: '★',
+    icon: 'bright-explosion',
     color: '#e74c3c',
     exclusive: true,
   },
@@ -193,7 +194,7 @@ export const TALENTS: TalentDef[] = [
     effect: { stat: 'range_pct', perPoint: 0.10 },
     secondary: { stat: 'crit_chance_pct', perPoint: 0.10 },
     prerequisites: ['barrage'],
-    glyph: '◈',
+    icon: 'target-laser',
     color: '#e74c3c',
     exclusive: true,
   },
@@ -207,7 +208,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 3,
     effect: { stat: 'all_damage_pct', perPoint: 0.12 },
     prerequisites: ['barrage'],
-    glyph: '⛊',
+    icon: 'mighty-force',
     color: '#e74c3c',
     exclusive: true,
   },
@@ -223,7 +224,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'max_hp_pct', perPoint: 0.06 },
     prerequisites: [],
-    glyph: '🛡',
+    icon: 'armor-vest',
     color: '#2ecc71',
   },
   {
@@ -236,7 +237,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'defense_pct', perPoint: 0.05 },
     prerequisites: [],
-    glyph: '◈',
+    icon: 'layered-armor',
     color: '#2ecc71',
   },
   {
@@ -249,7 +250,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'dodge_chance', perPoint: 0.03 },
     prerequisites: ['toughness'],
-    glyph: '⊘',
+    icon: 'acrobatic',
     color: '#2ecc71',
   },
   {
@@ -262,7 +263,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'thorns_pct', perPoint: 0.08 },
     prerequisites: ['reinforce'],
-    glyph: '⬥',
+    icon: 'spiked-armor',
     color: '#2ecc71',
   },
   {
@@ -275,7 +276,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'wall_regen_pct', perPoint: 0.10 },
     prerequisites: ['evasion', 'thornmail'],
-    glyph: '⟳',
+    icon: 'hammer-nails',
     color: '#2ecc71',
   },
   {
@@ -288,7 +289,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'shield_charges', perPoint: 1 },
     prerequisites: ['evasion'],
-    glyph: '◉',
+    icon: 'temporary-shield',
     color: '#2ecc71',
   },
   {
@@ -301,7 +302,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'health_regen_pct', perPoint: 0.05 },
     prerequisites: ['wall_regen'],
-    glyph: '✚',
+    icon: 'heart-plus',
     color: '#2ecc71',
   },
   {
@@ -315,7 +316,7 @@ export const TALENTS: TalentDef[] = [
     effect: { stat: 'max_hp_pct', perPoint: 0.10 },
     secondary: { stat: 'defense_pct', perPoint: 0.05 },
     prerequisites: ['invigorate'],
-    glyph: '🏰',
+    icon: 'locked-fortress',
     color: '#2ecc71',
     exclusive: true,
   },
@@ -330,7 +331,7 @@ export const TALENTS: TalentDef[] = [
     effect: { stat: 'armor_pct', perPoint: 0.15 },
     secondary: { stat: 'thorns_pct', perPoint: 0.05 },
     prerequisites: ['invigorate'],
-    glyph: '⛰',
+    icon: 'stone-block',
     color: '#2ecc71',
     exclusive: true,
   },
@@ -346,7 +347,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'gold_mult_pct', perPoint: 0.08 },
     prerequisites: [],
-    glyph: '💰',
+    icon: 'shiny-purse',
     color: '#f1c40f',
   },
   {
@@ -359,7 +360,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'mana_regen_pct', perPoint: 0.05 },
     prerequisites: [],
-    glyph: '〰',
+    icon: 'droplets',
     color: '#f1c40f',
   },
   {
@@ -372,7 +373,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'double_gold_chance', perPoint: 0.04 },
     prerequisites: ['greed'],
-    glyph: '🔍',
+    icon: 'knapsack',
     color: '#f1c40f',
   },
   {
@@ -385,7 +386,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'head_start_waves', perPoint: 2 },
     prerequisites: ['greed'],
-    glyph: '🚀',
+    icon: 'checkered-flag',
     color: '#f1c40f',
   },
   {
@@ -398,7 +399,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'max_mana_flat', perPoint: 10 },
     prerequisites: ['mana_flow', 'scavenge'],
-    glyph: '💧',
+    icon: 'energy-tank',
     color: '#f1c40f',
   },
   {
@@ -411,7 +412,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'equipment_find_chance', perPoint: 0.05 },
     prerequisites: ['scavenge'],
-    glyph: '🍀',
+    icon: 'clover',
     color: '#f1c40f',
   },
   {
@@ -424,7 +425,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'auto_buy_speed_pct', perPoint: 0.05 },
     prerequisites: ['mana_reservoir'],
-    glyph: '⚙',
+    icon: 'vintage-robot',
     color: '#f1c40f',
   },
   {
@@ -437,7 +438,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'upgrade_cost_reduction', perPoint: 0.03 },
     prerequisites: ['lucky_finds'],
-    glyph: '▼',
+    icon: 'cog',
     color: '#f1c40f',
   },
   {
@@ -450,7 +451,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 3,
     effect: { stat: 'all_effects_pct', perPoint: 0.05 },
     prerequisites: ['autonomy', 'efficiency'],
-    glyph: '✦',
+    icon: 'graduate-cap',
     color: '#f1c40f',
   },
 
@@ -465,7 +466,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'magic_damage_pct', perPoint: 0.06 },
     prerequisites: [],
-    glyph: '🔮',
+    icon: 'bolt-spell-cast',
     color: '#9b59b6',
   },
   {
@@ -478,7 +479,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'mana_cost_reduction', perPoint: 0.04 },
     prerequisites: [],
-    glyph: '✧',
+    icon: 'vial',
     color: '#9b59b6',
   },
   {
@@ -491,7 +492,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'magic_proc_chance', perPoint: 0.05 },
     prerequisites: ['arcane_power'],
-    glyph: '✨',
+    icon: 'rune-sword',
     color: '#9b59b6',
   },
   {
@@ -504,7 +505,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 1,
     effect: { stat: 'chain_bounce_count', perPoint: 1 },
     prerequisites: ['mana_thrift'],
-    glyph: '⚡',
+    icon: 'lightning-branches',
     color: '#9b59b6',
   },
   {
@@ -517,7 +518,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'slow_effect_pct', perPoint: 0.05 },
     prerequisites: ['enchant_weapons', 'chain_bounce'],
-    glyph: '❄',
+    icon: 'snowflake-1',
     color: '#9b59b6',
   },
   {
@@ -530,7 +531,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'meteor_damage_pct', perPoint: 0.08 },
     prerequisites: ['enchant_weapons'],
-    glyph: '☄',
+    icon: 'fragmented-meteor',
     color: '#9b59b6',
   },
   {
@@ -543,7 +544,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'buff_duration_pct', perPoint: 0.08 },
     prerequisites: ['frostbite'],
-    glyph: '⏳',
+    icon: 'hourglass',
     color: '#9b59b6',
   },
   {
@@ -556,7 +557,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 2,
     effect: { stat: 'mana_shield_pct', perPoint: 5 },
     prerequisites: ['meteor_shower'],
-    glyph: '🛡',
+    icon: 'magic-shield',
     color: '#9b59b6',
   },
   {
@@ -569,7 +570,7 @@ export const TALENTS: TalentDef[] = [
     costPerPoint: 3,
     effect: { stat: 'all_magic_pct', perPoint: 0.10 },
     prerequisites: ['extended_buffs', 'mana_shield'],
-    glyph: '👑',
+    icon: 'wizard-face',
     color: '#9b59b6',
   },
 ];

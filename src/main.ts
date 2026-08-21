@@ -1,6 +1,7 @@
 import { Game } from './game/Game';
 import { EventBus } from './game/EventBus';
 import { UIManager } from './ui/UIManager';
+import { loadIconSprite } from './ui/Icon';
 import { ABILITIES } from './data/abilities';
 import type { TargetingMode } from './types';
 
@@ -338,8 +339,20 @@ function bootstrap(): void {
   (window as unknown as { __theTower?: unknown }).__theTower = { game, bus, ui };
 }
 
+/**
+ * The icon sprite is injected before the UI mounts (UI plan §6).
+ *
+ * `<use href="external.svg#id">` does not resolve cross-document in Chromium,
+ * so the symbols have to be in this document before the first `<use>` is
+ * created. `loadIconSprite` resolves rather than rejects on failure, so a
+ * missing sprite costs icons and not the run.
+ */
+function start(): void {
+  void loadIconSprite().then(bootstrap);
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+  document.addEventListener('DOMContentLoaded', start, { once: true });
 } else {
-  bootstrap();
+  start();
 }

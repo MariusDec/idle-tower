@@ -11,6 +11,7 @@ import {
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
 import { setDataAttr, setInnerHTML, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
+import { renderIcon } from './Icon';
 
 export interface TranscendencePanelHandlers {
   onTranscend: () => void;
@@ -479,7 +480,7 @@ export class TranscendencePanel {
     const icon = document.createElement('div');
     icon.className = 'perk-icon';
     setStyle(icon, '--perk-color', p.color);
-    icon.textContent = p.glyph;
+    renderIcon(icon, p.icon);
     row.appendChild(icon);
 
     const info = document.createElement('div');

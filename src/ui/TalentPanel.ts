@@ -3,6 +3,7 @@ import { TALENTS, TALENTS_BY_BRANCH, TALENT_BY_ID } from '../data/talentTree';
 import type { TalentDef } from '../data/talentTree';
 import { setText, toggleClass, setStyle } from '../utils/dom';
 import { formatNumber } from '../utils/bigNumber';
+import { renderIcon } from './Icon';
 
 export interface TalentAPIDeps {
   allocated: Record<string, number>;
@@ -276,7 +277,7 @@ export class TalentPanel {
     const glyph = document.createElement('div');
     glyph.className = 'talent-card-glyph';
     setStyle(glyph, '--talent-color', talent.color);
-    glyph.textContent = talent.glyph;
+    renderIcon(glyph, talent.icon);
     card.appendChild(glyph);
 
     const body = document.createElement('div');

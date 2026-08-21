@@ -1,5 +1,6 @@
 import { toggleClass } from '../utils/dom';
 import { CORES, describeCoreStats, type CoreDef, type CoreId } from '../data/cores';
+import { icon } from './Icon';
 
 export interface CorePickerCore {
   def: CoreDef;
@@ -146,7 +147,8 @@ export class CorePickerModal {
     header.className = 'blessing-card-header';
     const name = document.createElement('div');
     name.className = 'blessing-card-name';
-    name.textContent = `${def.glyph} ${def.name}`;
+    name.appendChild(icon(def.icon, { className: 'blessing-card-icon' }));
+    name.appendChild(document.createTextNode(def.name));
     header.appendChild(name);
     const tag = document.createElement('span');
     tag.className = 'blessing-card-rarity';

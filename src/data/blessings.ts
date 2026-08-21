@@ -16,6 +16,7 @@
  */
 
 import type { CoreId } from './cores';
+import type { IconId } from './icons';
 import { world } from './arena';
 import { RARITY } from './palette';
 
@@ -80,6 +81,7 @@ export const BLESSING_BEHAVIOR_CONSUMERS: Record<BlessingBehavior, string> = {
 export interface BlessingDef {
   id: string;
   name: string;
+  icon: IconId;
   description: string;
   rarity: BlessingRarity;
   /** Draw weight within the eligible pool. */
@@ -178,6 +180,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_sharpen',
     name: 'Sharpened Tips',
+    icon: 'arrowhead',
     description: '+3% damage',
     rarity: 'common',
     weight: 10,
@@ -187,6 +190,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_tempo',
     name: 'Tempo',
+    icon: 'drum',
     description: '+2.5% fire rate',
     rarity: 'common',
     weight: 10,
@@ -196,6 +200,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_focus',
     name: 'Focus',
+    icon: 'eye-target',
     description: '+2% crit chance',
     rarity: 'common',
     weight: 10,
@@ -206,6 +211,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_cruelty',
     name: 'Cruelty',
+    icon: 'dripping-blade',
     description: '+12% crit damage',
     rarity: 'common',
     weight: 10,
@@ -216,6 +222,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_reach',
     name: 'Reach',
+    icon: 'lob-arrow',
     description: '+15% range',
     rarity: 'common',
     weight: 10,
@@ -226,6 +233,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_avarice',
     name: 'Avarice',
+    icon: 'receive-money',
     description: '+10% gold',
     rarity: 'common',
     weight: 10,
@@ -235,6 +243,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_vigor',
     name: 'Vigor',
+    icon: 'shining-heart',
     description: '+20% max HP',
     rarity: 'common',
     weight: 10,
@@ -245,6 +254,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_wellspring',
     name: 'Wellspring',
+    icon: 'well',
     description: '+25% mana regeneration',
     rarity: 'common',
     weight: 10,
@@ -257,6 +267,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_ricochet',
     name: 'Ricochet',
+    icon: 'zig-arrow',
     description: 'Shots bounce to one extra target for 30% damage',
     rarity: 'rare',
     weight: 5,
@@ -266,6 +277,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_mortar',
     name: 'Mortar Round',
+    icon: 'falling-bomb',
     description: 'Every 8th shot lands as a 90px splash for 150% damage',
     rarity: 'rare',
     weight: 5,
@@ -276,6 +288,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_frost',
     name: 'Frostbite',
+    icon: 'frozen-arrow',
     description: 'Hits chill: −20% enemy speed for 1.5s',
     rarity: 'rare',
     weight: 5,
@@ -286,6 +299,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_split',
     name: 'Splinter',
+    icon: 'striking-splinter',
     description: 'Kills fire two 15% shards at nearby enemies',
     rarity: 'rare',
     weight: 5,
@@ -295,6 +309,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_homing',
     name: 'Seeker Shots',
+    icon: 'spiral-arrow',
     description: 'Projectiles curve toward their target',
     rarity: 'rare',
     weight: 5,
@@ -304,6 +319,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_siphon',
     name: 'Siphon',
+    icon: 'extraction-orb',
     description: 'Kills restore 1% max mana',
     rarity: 'rare',
     weight: 5,
@@ -314,6 +330,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_pierce',
     name: 'Piercing Shot',
+    icon: 'spine-arrow',
     description: '+2 pierce',
     rarity: 'rare',
     weight: 5,
@@ -324,6 +341,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_sunder',
     name: 'Sunder',
+    icon: 'armor-punch',
     description: '+4 armour penetration',
     rarity: 'rare',
     weight: 5,
@@ -334,6 +352,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_arcane',
     name: 'Arcane Surge',
+    icon: 'star-swirl',
     description: '+30% ability damage',
     rarity: 'rare',
     weight: 5,
@@ -345,6 +364,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_bulwark',
     name: 'Bulwark',
+    icon: 'roman-shield',
     description: '+5% lifesteal',
     rarity: 'rare',
     weight: 5,
@@ -357,6 +377,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_executioner',
     name: 'Executioner',
+    icon: 'reaper-scythe',
     description: 'Instantly kill non-boss enemies below 8% HP',
     rarity: 'epic',
     weight: 2,
@@ -366,6 +387,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_crit_chain',
     name: 'Chain Crit',
+    icon: 'lightning-trio',
     description: 'Crits fire a 3-bounce chain for 20% damage',
     rarity: 'epic',
     weight: 2,
@@ -375,6 +397,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_overkill',
     name: 'Overkill',
+    icon: 'punch-blast',
     description: '25% of overkill damage carries to the next target',
     rarity: 'epic',
     weight: 2,
@@ -384,6 +407,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_last_stand',
     name: 'Last Stand',
+    icon: 'cracked-shield',
     description: '+60% damage while below 30% tower HP',
     rarity: 'epic',
     weight: 2,
@@ -394,6 +418,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_greed_engine',
     name: 'Greed Engine',
+    icon: 'gold-mine',
     description: '+1% gold per wave cleared this run, uncapped',
     rarity: 'epic',
     weight: 2,
@@ -403,6 +428,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_glass',
     name: 'Glass Cannon',
+    icon: 'glass-heart',
     description: '+35% damage, −35% max HP',
     rarity: 'epic',
     weight: 2,
@@ -416,6 +442,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_sniper',
     name: "Sniper's Creed",
+    icon: 'crosshair',
     description: '−30% range, +20% fire rate',
     rarity: 'epic',
     weight: 2,
@@ -429,6 +456,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_reckless',
     name: 'Reckless Greed',
+    icon: 'rolling-dices',
     description: '+20% enemy speed, +25% gold',
     rarity: 'epic',
     weight: 2,
@@ -441,6 +469,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_brittle',
     name: 'Brittle Bones',
+    icon: 'crossed-bones',
     description: '−10% enemy HP, +25% enemy damage',
     rarity: 'epic',
     weight: 2,
@@ -453,6 +482,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_shatter',
     name: 'Shatter',
+    icon: 'shatter',
     description: '+15% damage against slowed or chilled enemies',
     rarity: 'epic',
     weight: 2,
@@ -464,6 +494,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_ricochet_power',
     name: 'Rebound',
+    icon: 'armored-boomerang',
     description: 'Bounces deal 60% damage and chain twice',
     rarity: 'epic',
     weight: 2,
@@ -475,6 +506,7 @@ export const BLESSINGS: BlessingDef[] = [
   {
     id: 'bl_magnet',
     name: 'Lodestone',
+    icon: 'magnet',
     description: 'Loot orbs home twice as fast and pay full value',
     rarity: 'rare',
     weight: 5,

@@ -4,6 +4,7 @@ import { UPGRADES } from '../data/upgrades';
 import { upgradeCost } from '../data/formulas';
 import { formatNumber } from '../utils/bigNumber';
 import { setText, toggleClass, setDisplay } from '../utils/dom';
+import { iconFrame } from './Icon';
 
 type UpgradeTabId = 'attack' | 'defense' | 'utility';
 
@@ -468,6 +469,8 @@ export class UpgradePanel {
     row.className = 'upgrade-row';
     row.dataset.upgradeId = u.id;
     this.rowById.set(u.id, row);
+
+    row.appendChild(iconFrame(u.icon, { variant: 'upgrade', className: 'upgrade-icon' }));
 
     const info = document.createElement('div');
     info.className = 'upgrade-info';

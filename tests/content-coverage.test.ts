@@ -9,6 +9,7 @@
  * for: it is the regression test for the whole class of bug.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { TALENTS, TALENT_STATS, TALENTS_BY_BRANCH } from '../src/data/talentTree';
 import type { TalentDef, TalentEffectType } from '../src/data/talentTree';
@@ -44,6 +45,12 @@ import {
   BLESSING_STAT_LABELS,
   type BlessingBehavior,
 } from '../src/data/blessings';
+import { ICON_CREDITS, ICON_IDS, type IconId } from '../src/data/icons';
+import { STAT_ICONS, STAT_ICON_KEYS } from '../src/data/iconMap';
+import { EQUIPMENT_DEFS, RARITY_ICONS, SLOT_ICONS } from '../src/data/equipment';
+import { CORES } from '../src/data/cores';
+import { AP_PERKS, TP_PERKS } from '../src/data/prestige';
+import { WAVE_MODIFIERS } from '../src/data/waveModifiers';
 import {
   CONTRACTS,
   CONTRACT_ENEMY_LABELS,
@@ -505,5 +512,90 @@ describe('enemy roster', () => {
       expect(m.label.length, m.id).toBeGreaterThan(0);
       expect(m.hint.length, m.id).toBeGreaterThan(8);
     }
+  });
+});
+
+/**
+ * Icons (UI plan §6.2).
+ *
+ * `IconId` is a closed union generated from the manifest in
+ * `scripts/fetch-icons.mjs`, so `tsc` already rejects an icon nobody pinned.
+ * What `tsc` cannot see is the other three halves of the contract: that the
+ * *committed sprite* actually contains a symbol for every id, that every id in
+ * the manifest is *used* by something (a pinned icon nobody references is
+ * 1.5 KB of dead payload on every load), and that `ATTRIBUTION.md` still
+ * credits the exact set that ships — which CC BY 3.0 requires.
+ */
+describe('icons', () => {
+  const sprite = readFileSync(new URL('../public/icons/sprite.svg', import.meta.url), 'utf8');
+  const attribution = readFileSync(new URL('../ATTRIBUTION.md', import.meta.url), 'utf8');
+  const spriteIds = new Set([...sprite.matchAll(/id="gi-([a-z0-9-]+)"/g)].map((m) => m[1]));
+
+  /** Every icon id the game actually asks for, with the surface that asks. */
+  const referenced: Array<[string, IconId]> = [
+    ...ABILITIES.map((a) => [`ability:${a.id}`, a.icon] as [string, IconId]),
+    ...PASSIVE_ABILITIES.map((p) => [`passive:${p.id}`, p.icon] as [string, IconId]),
+    ...UPGRADES.map((u) => [`upgrade:${u.id}`, u.icon] as [string, IconId]),
+    ...RESEARCH_NODES.map((r) => [`research:${r.id}`, r.icon] as [string, IconId]),
+    ...TALENTS.map((t) => [`talent:${t.id}`, t.icon] as [string, IconId]),
+    ...BLESSINGS.map((b) => [`blessing:${b.id}`, b.icon] as [string, IconId]),
+    ...CORES.map((c) => [`core:${c.id}`, c.icon] as [string, IconId]),
+    ...EQUIPMENT_DEFS.map((e) => [`equipment:${e.id}`, e.icon] as [string, IconId]),
+    ...[...AP_PERKS, ...TP_PERKS].map((p) => [`perk:${p.id}`, p.icon] as [string, IconId]),
+    ...ACHIEVEMENTS.map((a) => [`achievement:${a.id}`, a.icon] as [string, IconId]),
+    ...WAVE_MODIFIERS.map((m) => [`modifier:${m.id}`, m.icon] as [string, IconId]),
+    ...MILESTONES.map((m) => [`milestone:${m.id}`, m.icon] as [string, IconId]),
+    ...(Object.keys(ENEMY_DEFS) as EnemyType[]).map((t) => [`enemy:${t}`, ENEMY_DEFS[t].icon] as [string, IconId]),
+    ...(Object.keys(SLOT_ICONS) as Array<keyof typeof SLOT_ICONS>).map((s) => [`slot:${s}`, SLOT_ICONS[s]] as [string, IconId]),
+    ...(Object.keys(RARITY_ICONS) as Array<keyof typeof RARITY_ICONS>).map((r) => [`rarity:${r}`, RARITY_ICONS[r]] as [string, IconId]),
+    ...STAT_ICON_KEYS.map((k) => [`stat:${k}`, STAT_ICONS[k]] as [string, IconId]),
+  ];
+
+  it('gives every piece of content a real icon', () => {
+    const missing = referenced.filter(([, id]) => !id || !spriteIds.has(id));
+    expect(missing.map(([where, id]) => `${where} -> ${id}`)).toEqual([]);
+  });
+
+  it('covers every surface the plan promised', () => {
+    // The §6.2 table, as a count. A table that quietly loses entries stops
+    // being covered without anything else failing.
+    expect(ABILITIES.length).toBe(10);
+    expect(PASSIVE_ABILITIES.length).toBe(8);
+    expect(UPGRADES.length).toBe(27);
+    expect(RESEARCH_NODES.length).toBe(17);
+    expect(TALENTS.length).toBe(37);
+    expect(BLESSINGS.length).toBe(30);
+    expect(CORES.length).toBe(5);
+    expect(EQUIPMENT_DEFS.length).toBe(10);
+    expect(Object.keys(SLOT_ICONS)).toHaveLength(8);
+    expect(Object.keys(RARITY_ICONS)).toHaveLength(5);
+    expect(Object.keys(ENEMY_DEFS)).toHaveLength(13);
+    expect(STAT_ICON_KEYS.length).toBeGreaterThanOrEqual(16);
+  });
+
+  it('ships a sprite that matches the generated union exactly', () => {
+    expect([...spriteIds].sort()).toEqual([...ICON_IDS].sort());
+  });
+
+  it('pins nothing it does not use', () => {
+    const used = new Set(referenced.map(([, id]) => id));
+    expect(ICON_IDS.filter((id) => !used.has(id))).toEqual([]);
+  });
+
+  it('credits every shipped icon, with a licence', () => {
+    for (const id of ICON_IDS) {
+      const credit = ICON_CREDITS[id];
+      expect(credit, `${id} has no credit`).toBeTruthy();
+      expect(['CC BY 3.0', 'CC0'], `${id} licence`).toContain(credit.license);
+      expect(attribution, `${id} missing from ATTRIBUTION.md`).toContain(`\`${id}\``);
+      expect(attribution, `${credit.author} missing from ATTRIBUTION.md`).toContain(credit.author);
+    }
+  });
+
+  it('leaves no single-letter glyph behind in a content table', () => {
+    // Acceptance criterion §12.4. `EnemyDef.glyph` is exempt: it is a *canvas*
+    // marking painted inside the body silhouette, not an icon in the UI.
+    const singleChar = referenced.filter(([, id]) => String(id).length <= 2);
+    expect(singleChar).toEqual([]);
   });
 });

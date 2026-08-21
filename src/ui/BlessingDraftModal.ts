@@ -4,6 +4,7 @@ import {
   describeBlessing,
   type BlessingDef,
 } from '../data/blessings';
+import { icon } from './Icon';
 
 export interface BlessingDraftData {
   /** Wave that was just cleared — the draft is the reward for it. */
@@ -133,7 +134,8 @@ export class BlessingDraftModal {
     header.className = 'blessing-card-header';
     const name = document.createElement('div');
     name.className = 'blessing-card-name';
-    name.textContent = def.name;
+    name.appendChild(icon(def.icon, { className: 'blessing-card-icon' }));
+    name.appendChild(document.createTextNode(def.name));
     header.appendChild(name);
     const rarity = document.createElement('span');
     rarity.className = 'blessing-card-rarity';

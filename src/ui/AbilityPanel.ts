@@ -6,6 +6,7 @@ import { formatInt } from '../utils/bigNumber';
 import { setAriaLabel, setDisabled, setInnerHTML, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
 import { renderAbilityTooltip } from './abilityFormat';
 import type { PassiveAPIDeps } from './PassivePanel';
+import { renderIcon } from './Icon';
 
 export interface AbilityPanelHandlers {
   onCast: (id: AbilityId) => void;
@@ -408,7 +409,7 @@ export class AbilityPanel {
 
     const icon = document.createElement('div');
     icon.className = 'ability-icon';
-    icon.textContent = def.glyph;
+    renderIcon(icon, def.icon);
     btn.appendChild(icon);
 
     const hotkey = document.createElement('div');
@@ -533,7 +534,7 @@ export class AbilityPanel {
     setStyle(icon, '--passive-color', def.color);
     const iconInner = document.createElement('span');
     iconInner.className = 'passive-icon-inner';
-    iconInner.textContent = def.glyph;
+    renderIcon(iconInner, def.icon);
     icon.appendChild(iconInner);
     row.appendChild(icon);
 

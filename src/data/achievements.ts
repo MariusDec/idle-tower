@@ -1,3 +1,5 @@
+import type { IconId } from './icons';
+
 export type AchievementCategory = 'combat' | 'wave' | 'economy' | 'prestige' | 'mastery';
 
 export type AchievementRewardType =
@@ -52,7 +54,7 @@ export interface AchievementDef {
     value: number;
     description: string;
   };
-  glyph: string;
+  icon: IconId;
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = [
@@ -65,7 +67,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'enemiesKilled',
     threshold: 100,
     reward: { type: 'damage_mult', value: 0.05, description: '+5% damage' },
-    glyph: '🗡',
+    icon: 'bloody-sword',
   },
   {
     id: 'ach_centurion',
@@ -75,7 +77,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'enemiesKilled',
     threshold: 10000,
     reward: { type: 'damage_mult', value: 0.10, description: '+10% damage' },
-    glyph: '⚔',
+    icon: 'crossed-swords',
   },
   {
     id: 'ach_boss_slayer',
@@ -85,7 +87,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'bossesKilled',
     threshold: 10,
     reward: { type: 'boss_gold_mult', value: 0.20, description: '+20% boss gold' },
-    glyph: '💀',
+    icon: 'crowned-skull',
   },
   {
     id: 'ach_sharpshooter',
@@ -95,7 +97,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'shotsFired',
     threshold: 50000,
     reward: { type: 'fire_rate_mult', value: 0.10, description: '+10% fire rate' },
-    glyph: '🎯',
+    icon: 'bullseye',
   },
 
   // ── Wave ──
@@ -107,7 +109,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'lifetimeHighestWave',
     threshold: 50,
     reward: { type: 'start_gold', value: 100, description: '+100 starting gold' },
-    glyph: '🛡',
+    icon: 'shield',
   },
   {
     id: 'ach_veteran',
@@ -117,7 +119,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'lifetimeHighestWave',
     threshold: 100,
     reward: { type: 'all_damage', value: 0.05, description: '+5% all damage' },
-    glyph: '⭐',
+    icon: 'star-medal',
   },
   {
     id: 'ach_legend',
@@ -127,7 +129,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'lifetimeHighestWave',
     threshold: 250,
     reward: { type: 'extra_projectile', value: 1, description: '+1 extra projectile' },
-    glyph: '👑',
+    icon: 'crown',
   },
   {
     id: 'ach_unstoppable',
@@ -137,7 +139,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'lifetimeHighestWave',
     threshold: 500,
     reward: { type: 'ap_gain_mult', value: 0.25, description: '+25% AP gain' },
-    glyph: '🏆',
+    icon: 'trophy',
   },
 
   // ── Economy ──
@@ -149,7 +151,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'goldEarned',
     threshold: 100000,
     reward: { type: 'gold_mult', value: 0.10, description: '+10% gold' },
-    glyph: '🪙',
+    icon: 'two-coins',
   },
   {
     id: 'ach_tycoon',
@@ -159,7 +161,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'goldEarned',
     threshold: 10000000,
     reward: { type: 'gold_mult', value: 0.20, description: '+20% gold' },
-    glyph: '💎',
+    icon: 'gems',
   },
   {
     id: 'ach_investor',
@@ -169,7 +171,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'totalUpgradesPurchased',
     threshold: 500,
     reward: { type: 'upgrade_cost_reduction', value: 0.05, description: '-5% upgrade costs' },
-    glyph: '📈',
+    icon: 'progression',
   },
 
   // ── Prestige ──
@@ -181,7 +183,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'lifetimeAscensions',
     threshold: 10,
     reward: { type: 'ap_gain_mult', value: 0.10, description: '+10% AP gain' },
-    glyph: '🔄',
+    icon: 'upgrade',
   },
   {
     id: 'ach_enlightened',
@@ -191,7 +193,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'lifetimeAscensions',
     threshold: 100,
     reward: { type: 'rp_gain_mult', value: 0.25, description: '+25% RP gain' },
-    glyph: '✨',
+    icon: 'sparkles',
   },
   {
     id: 'ach_transcendent',
@@ -201,7 +203,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'transcendences',
     threshold: 5,
     reward: { type: 'tp_gain_mult', value: 0.10, description: '+10% TP gain' },
-    glyph: '🌟',
+    icon: 'star-formation',
   },
   {
     id: 'ach_eternal',
@@ -211,7 +213,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'transcendences',
     threshold: 25,
     reward: { type: 'prestige_gain_mult', value: 0.25, description: '+25% all prestige gains' },
-    glyph: '∞',
+    icon: 'over-infinity',
   },
 
   // ── Mastery ──
@@ -223,7 +225,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'abilitiesCast',
     threshold: 500,
     reward: { type: 'ability_cdr', value: 0.10, description: '-10% ability cooldowns' },
-    glyph: '🔮',
+    icon: 'crystal-ball',
   },
   {
     id: 'ach_endurance',
@@ -233,7 +235,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'lifetimeHighestWave',
     threshold: 50,
     reward: { type: 'max_hp_mult', value: 0.15, description: '+15% max HP' },
-    glyph: '💪',
+    icon: 'heart-tower',
   },
   {
     id: 'ach_researcher',
@@ -243,7 +245,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     stat: 'researchCount',
     threshold: 8,
     reward: { type: 'rp_gain_mult', value: 0.50, description: '+50% RP gain' },
-    glyph: '📚',
+    icon: 'book-pile',
   },
 ];
 

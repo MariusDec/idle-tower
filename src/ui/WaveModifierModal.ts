@@ -1,6 +1,7 @@
 import { toggleClass } from '../utils/dom';
 import type { WaveModifierSnapshot } from '../types';
 import { formatNumber } from '../utils/bigNumber';
+import { renderIcon } from './Icon';
 
 export type WaveModifierAutoMode = 'off' | 'skip' | 'select';
 
@@ -215,7 +216,7 @@ export class WaveModifierModal {
 
     const glyph = document.createElement('div');
     glyph.className = 'wave-mod-card-glyph';
-    glyph.textContent = snapshot.glyph;
+    renderIcon(glyph, snapshot.icon);
     header.appendChild(glyph);
 
     const nameWrap = document.createElement('div');

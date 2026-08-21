@@ -33,6 +33,7 @@
  */
 
 import type { AbilityId } from '../types';
+import type { IconId } from './icons';
 import { world } from './arena';
 
 /** Every core, in picker order. `marksman` leads because it is the default. */
@@ -106,7 +107,7 @@ export interface CoreDef {
   tagline: string;
   /** What the shot behavior does, in the player's terms. */
   shotText: string;
-  glyph: string;
+  icon: IconId;
   color: string;
   /** AP to unlock. `marksman` is 0 — it is the default, not a purchase. */
   apCost: number;
@@ -164,7 +165,7 @@ export const CORES: readonly CoreDef[] = [
     name: 'Marksman Core',
     tagline: 'The baseline, sharpened.',
     shotText: 'Ordinary single shots — no trade-offs, no surprises.',
-    glyph: '◎',
+    icon: 'archery-target',
     color: '#d9c47a',
     apCost: 0,
     // §6.1 asks for +15% crit. Measured, that moves the **idle wall wave at
@@ -184,7 +185,7 @@ export const CORES: readonly CoreDef[] = [
     tagline: 'Fewer shots. Nothing survives them alone.',
     shotText: `Every shot bursts for ${CORE_TUNING.splashRadius} px, dealing `
       + `${Math.round(CORE_TUNING.splashFraction * 100)}% to everything else caught in it.`,
-    glyph: '◆',
+    icon: 'cannon',
     color: '#e08c4a',
     // Fire rate is traded for damage at *slightly better* than break-even
     // (0.6 x 1.8 = 1.08), and the rest of the core's worth is the splash. §6.1
@@ -204,7 +205,7 @@ export const CORES: readonly CoreDef[] = [
     tagline: 'Everything you hit slows down.',
     shotText: `Hits chill: −${Math.round((1 - CORE_TUNING.chillFactor) * 100)}% enemy speed for `
       + `${CORE_TUNING.chillDuration} s. Frost Nova lasts ${CORE_TUNING.novaDurationMult}x as long.`,
-    glyph: '❄',
+    icon: 'snowflake-2',
     color: '#5fb8e0',
     // The mirror of artillery: more shots, smaller ones. Slightly *better* than
     // break-even on paper (1.30 x 0.85 = 1.105) because more shots means more
@@ -223,7 +224,7 @@ export const CORES: readonly CoreDef[] = [
     shotText: `Kills restore ${(CORE_TUNING.killHealFraction * 100).toFixed(0)}% of max HP. `
       + `Below ${Math.round(CORE_TUNING.desperateHpFraction * 100)}% HP, +`
       + `${Math.round(CORE_TUNING.desperateFireRate * 100)}% fire rate.`,
-    glyph: '✚',
+    icon: 'bloody-sword',
     color: '#c0453f',
     apCost: 15,
     stats: { maxHpPct: 0.60, lifestealAdd: 0.08, goldPct: -0.20 },
@@ -236,7 +237,7 @@ export const CORES: readonly CoreDef[] = [
     shotText: `Every ${CORE_TUNING.manaShotInterval}th shot spends ${CORE_TUNING.manaShotCost} mana `
       + `and lands as magic damage for ${Math.round(CORE_TUNING.manaShotDamageMult * 100)}%. `
       + 'Out of mana, it fires as an ordinary shot.',
-    glyph: '✦',
+    icon: 'crystal-ball',
     color: '#a071e8',
     // The proc is a *share* of shots, so its worth is flat across every fire
     // rate: 4 ordinary shots plus one at 2.5x averages 1.3x, which pays back

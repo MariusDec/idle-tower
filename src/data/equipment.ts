@@ -1,4 +1,5 @@
 import type { EquipmentSlot, Rarity, EquipmentDef, Equipment, EquipmentStat, EquipmentStatType } from '../types';
+import type { IconId } from './icons';
 import { RARITY } from './palette';
 
 // ── Rarity Configuration ──────────────────────────────
@@ -54,6 +55,37 @@ export const RARITY_NAMES: Record<Rarity, string> = {
   legendary: 'Legendary',
 };
 
+/**
+ * Slot icons (UI plan §6.2).
+ *
+ * The slot is what an empty socket shows, so it has to read as the *kind* of
+ * thing that goes there rather than as any one item — a crossbow for the
+ * turret, a plain shield for the bulwark.
+ */
+export const SLOT_ICONS: Record<EquipmentSlot, IconId> = {
+  turret: 'crossbow',
+  bulwark: 'shield',
+  arsenal: 'quiver',
+  brazier: 'fire-bowl',
+  vault: 'locked-chest',
+  machinery: 'gears',
+  banner: 'vertical-banner',
+  core: 'crystal-shine',
+};
+
+/**
+ * Rarity icons. The *frame* carries the tier colour (`.icon-frame[data-rarity]`
+ * in `main.css`); this ladder is for the places that name a tier in text —
+ * legends, filters, the drop toast — and escalates in ornament, not in hue.
+ */
+export const RARITY_ICONS: Record<Rarity, IconId> = {
+  common: 'flat-star',
+  uncommon: 'round-star',
+  rare: 'beveled-star',
+  epic: 'barbed-star',
+  legendary: 'star-formation',
+};
+
 let _nextEquipmentId = 1;
 function nextEquipmentId(): string {
   return `eq_${_nextEquipmentId++}_${Date.now()}`;
@@ -77,7 +109,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/iron_bow.svg',
+    icon: 'pocket-bow',
     color: '#888888',
     minWave: 1,
   },
@@ -95,7 +127,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/arcane_focus.svg',
+    icon: 'orb-wand',
     color: '#9b59b6',
     minWave: 10,
   },
@@ -114,7 +146,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/stone_revetment.svg',
+    icon: 'stone-wall',
     color: '#888888',
     minWave: 1,
   },
@@ -132,7 +164,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/iron_plating.svg',
+    icon: 'metal-plate',
     color: '#5d6d7e',
     minWave: 15,
   },
@@ -151,7 +183,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/enchanted_quiver.svg',
+    icon: 'arrow-flights',
     color: '#f1c40f',
     minWave: 5,
   },
@@ -169,7 +201,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/moonlit_brazier.svg',
+    icon: 'lantern-flame',
     color: '#5b8def',
     minWave: 10,
   },
@@ -188,7 +220,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/ancient_relic.svg',
+    icon: 'glowing-artifact',
     color: '#e67e22',
     minWave: 15,
     bossOnly: true,
@@ -208,7 +240,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/swift_gears.svg',
+    icon: 'clockwork',
     color: '#3498db',
     minWave: 8,
   },
@@ -227,7 +259,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/guardian_banner.svg',
+    icon: 'knight-banner',
     color: '#f1c40f',
     minWave: 12,
   },
@@ -246,7 +278,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/emerald_core.svg',
+    icon: 'floating-crystal',
     color: '#2ecc71',
     minWave: 18,
     bossOnly: true,

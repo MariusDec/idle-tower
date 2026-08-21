@@ -2,6 +2,7 @@ import type { GameState } from '../types';
 import { PASSIVE_ABILITIES, passiveEffectValue } from '../data/passiveAbilities';
 import { passiveXpForLevel } from '../data/xpTables';
 import { setText, toggleClass, setStyle, setDisplay, setDisabled } from '../utils/dom';
+import { renderIcon } from './Icon';
 
 export interface PassiveAPIDeps {
   getLevel: (id: string) => number;
@@ -145,7 +146,7 @@ export class PassivePanel {
     setStyle(icon, '--passive-color', def.color);
     const iconInner = document.createElement('span');
     iconInner.className = 'passive-icon-inner';
-    iconInner.textContent = def.glyph;
+    renderIcon(iconInner, def.icon);
     icon.appendChild(iconInner);
     row.appendChild(icon);
 

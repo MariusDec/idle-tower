@@ -16,6 +16,7 @@ import {
   type CoreId,
 } from '../data/cores';
 import { setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
+import { renderIcon } from './Icon';
 
 /**
  * What the panel needs to know about cores (plan §6.2).
@@ -309,7 +310,7 @@ export class PrestigePanel {
     const icon = document.createElement('div');
     icon.className = 'perk-icon';
     setStyle(icon, '--perk-color', def.color);
-    icon.textContent = def.glyph;
+    renderIcon(icon, def.icon);
     row.appendChild(icon);
 
     const info = document.createElement('div');
@@ -459,7 +460,7 @@ export class PrestigePanel {
     const icon = document.createElement('div');
     icon.className = 'perk-icon';
     setStyle(icon, '--perk-color', p.color);
-    icon.textContent = p.glyph;
+    renderIcon(icon, p.icon);
     row.appendChild(icon);
 
     const info = document.createElement('div');

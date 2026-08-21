@@ -5352,3 +5352,155 @@ body.eq-dragging img { pointer-events: none; }
   .threat-preview-hint { display: none; }
   .hud-risk-block { min-width: 66px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Icons (UI plan §6)
+   ───────────────────────────────────────────────────────────────────────────
+   Every icon is one <symbol> in public/icons/sprite.svg, drawn by an
+   <svg class="icon"><use href="#gi-…">. The artwork carries no fill of its
+   own, so `fill: currentColor` here is what gives an icon its colour — a tone
+   class, a rarity frame or plain inheritance from the surrounding text. That
+   is why there is one asset per icon rather than one per state.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+.icon {
+  --icon-size: 24px;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  fill: currentColor;
+  vertical-align: -0.15em;
+  pointer-events: none;
+}
+
+/* Semantic tints. The art direction (docs/art-direction.md) decides what each
+   family is allowed to mean; this is only the plumbing. */
+.icon--muted { color: var(--text-3); }
+.icon--gold { color: var(--fx-gold); }
+.icon--ember { color: var(--fx-ember); }
+.icon--mana { color: var(--fx-mana); }
+.icon--arcane { color: var(--fx-arcane); }
+.icon--blood { color: var(--fx-blood); }
+.icon--frost { color: var(--fx-frost); }
+.icon--nature { color: var(--fx-nature); }
+.icon--critical { color: var(--fx-critical); }
+.icon--inherit { color: inherit; }
+
+/* ── Framed variants ──────────────────────────────────────────────────────
+   The frame is the wrapper, the artwork is the <svg> inside it: a border, a
+   lit background and a corner notch are things an <svg> element cannot carry,
+   and the rarity tint has to reach all three. */
+
+.icon-frame {
+  --frame-size: 44px;
+  --frame-tint: var(--stroke-strong);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--frame-size);
+  height: var(--frame-size);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--frame-tint) 60%, var(--stroke-subtle));
+  background:
+    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--frame-tint) 20%, transparent), transparent 72%),
+    linear-gradient(160deg, var(--surface-3), var(--surface-1));
+  box-shadow:
+    inset 0 0 12px -4px color-mix(in srgb, var(--frame-tint) 70%, transparent),
+    var(--elev-1);
+  color: var(--text-0);
+  overflow: hidden;
+}
+
+/* The corner notch: one triangle in the tint colour, so the tier reads even
+   for a player who cannot separate the border hues. */
+.icon-frame::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+  background: linear-gradient(135deg, transparent 50%, var(--frame-tint) 50%);
+  opacity: 0.9;
+}
+
+.icon-frame > .icon { --icon-size: calc(var(--frame-size) * 0.62); }
+
+.icon-frame--ability {
+  --frame-size: 56px;
+  --frame-tint: var(--ability-color, var(--accent));
+  border-radius: var(--radius-lg);
+}
+.icon-frame--talent {
+  --frame-size: 40px;
+  --frame-tint: var(--talent-color, var(--accent));
+  border-radius: var(--radius-circle);
+}
+.icon-frame--talent::after { display: none; }
+.icon-frame--upgrade {
+  --frame-size: 36px;
+  --frame-tint: var(--accent);
+}
+.icon-frame--item { --frame-size: 48px; }
+.icon-frame--plain {
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.icon-frame--plain::after { display: none; }
+
+/* Rarity is the frame, never a second asset — see docs/icon-system.md. */
+.icon-frame[data-rarity='common'] { --frame-tint: var(--rarity-common); }
+.icon-frame[data-rarity='uncommon'] { --frame-tint: var(--rarity-uncommon); }
+.icon-frame[data-rarity='rare'] { --frame-tint: var(--rarity-rare); }
+.icon-frame[data-rarity='epic'] { --frame-tint: var(--rarity-epic); }
+.icon-frame[data-rarity='legendary'] { --frame-tint: var(--rarity-legendary); }
+
+.icon-frame.is-disabled {
+  opacity: 0.45;
+  filter: grayscale(0.65);
+}
+
+/* ── In-place replacements for the old text glyphs ────────────────────────
+   Each of these hosts used to hold a letter or an emoji sized by font-size.
+   The size now belongs here rather than at the call site, so a surface can be
+   retuned without touching TypeScript. */
+
+.ability-icon > .icon {
+  --icon-size: 30px;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--ability-color) 55%, transparent));
+}
+.passive-icon-inner > .icon { --icon-size: 28px; }
+.research-icon > .icon { --icon-size: 24px; }
+.perk-icon > .icon { --icon-size: 26px; }
+.talent-card-glyph > .icon { --icon-size: 22px; }
+.achievement-glyph > .icon { --icon-size: 26px; }
+.progression-glyph > .icon { --icon-size: 18px; }
+.milestone-entry-glyph > .icon { --icon-size: 14px; }
+.milestone-collapsed-glyph > .icon { --icon-size: 12px; }
+.wave-mod-card-glyph > .icon {
+  --icon-size: 30px;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--mod-color) 55%, transparent));
+}
+.blessing-card-icon {
+  --icon-size: 18px;
+  margin-right: 6px;
+  color: var(--bl-color, var(--text-1));
+}
+.upgrade-icon { align-self: center; }
+
+/* Equipment: the crude 3-path outlines under public/sprites/ are gone, so the
+   slot, the inventory card and the compare tooltip all draw from the sprite.
+   An empty slot now shows its own icon dimmed instead of nothing at all —
+   "what goes here" is exactly what an empty socket should be saying. */
+.eq-slot-icon.icon { --icon-size: 32px; color: var(--eq-rarity-color, var(--text-0)); }
+.eq-slot-card.eq-empty .eq-slot-icon {
+  display: inline-block;
+  color: var(--text-3);
+  opacity: 0.55;
+}
+.eq-inv-card-icon.icon { --icon-size: 44px; color: var(--eq-rarity-color, var(--text-0)); }
+.eq-compare-icon.icon { --icon-size: 44px; color: var(--text-0); }

@@ -1,6 +1,7 @@
 import { ACHIEVEMENTS, type AchievementDef, type AchievementCategory } from '../data/achievements';
 import type { GameState } from '../types';
 import { setText, toggleClass } from '../utils/dom';
+import { renderIcon } from './Icon';
 
 export interface AchievementPanelHandlers {
   getProgress: (def: AchievementDef) => number;
@@ -75,7 +76,7 @@ export class AchievementPanel {
 
     const glyph = document.createElement('div');
     glyph.className = 'achievement-glyph';
-    glyph.textContent = def.glyph;
+    renderIcon(glyph, def.icon);
 
     const info = document.createElement('div');
     info.className = 'achievement-info';

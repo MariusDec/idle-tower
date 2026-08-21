@@ -36,6 +36,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'damage',
     name: 'Sharper Arrows',
+    icon: 'broadhead-arrow',
     description: 'Increases the base damage',
     baseCost: 15,
     costGrowth: 1.22,
@@ -54,6 +55,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'fireRate',
     name: 'Quick Draw',
+    icon: 'fast-arrow',
     description: 'Increases the rate of fire',
     baseCost: 60,
     costGrowth: 1.26,
@@ -70,6 +72,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'range',
     name: 'Longbow',
+    icon: 'bow-arrow',
     description: 'Increases tower shooting range',
     baseCost: 100,
     costGrowth: 1.32,
@@ -94,6 +97,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'critChance',
     name: 'Eagle Eye',
+    icon: 'dead-eye',
     description: 'Increases crit chance',
     baseCost: 140,
     costGrowth: 1.42,
@@ -110,6 +114,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'critDamage',
     name: 'Heavy Quiver',
+    icon: 'barbed-arrow',
     description: 'Increases crit damage',
     baseCost: 170,
     costGrowth: 1.36,
@@ -122,6 +127,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'landMines',
     name: 'Land Mines',
+    icon: 'land-mine',
     description: 'Spawns mines that detonate on contact',
     baseCost: 500,
     costGrowth: 1.32,
@@ -138,6 +144,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'doubleShotChance',
     name: 'Double Tap',
+    icon: 'striking-arrows',
     description: 'Chance to fire an extra projectile per shot',
     baseCost: 120,
     costGrowth: 1.45,
@@ -151,6 +158,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'quickShotChance',
     name: 'Adrenaline Rush',
+    icon: 'energy-arrow',
     description: 'Chance to temporarily double your fire rate',
     baseCost: 250,
     costGrowth: 1.55,
@@ -164,6 +172,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'quickShotTime',
     name: 'Adrenaline Surge',
+    icon: 'extra-time',
     description: 'Increases the duration of Adrenaline Rush',
     baseCost: 100,
     costGrowth: 1.4,
@@ -177,6 +186,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'goldMulti',
     name: 'Greed',
+    icon: 'shiny-purse',
     description: 'Increases gold gained from kills',
     baseCost: 110,
     costGrowth: 1.4,
@@ -200,6 +210,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'manaRegen',
     name: 'Meditation',
+    icon: 'prayer',
     description: 'Increases mana regeneration',
     baseCost: 300,
     costGrowth: 1.55,
@@ -215,6 +226,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'maxMana',
     name: 'Arcane Reserves',
+    icon: 'crystal-cluster',
     description: 'Increases max mana',
     baseCost: 230,
     costGrowth: 1.5,
@@ -230,6 +242,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'waveGold',
     name: 'Wave Mastery',
+    icon: 'open-treasure-chest',
     description: 'Gain flat gold on wave clear',
     baseCost: 380,
     costGrowth: 1.4,
@@ -246,6 +259,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'xpGain',
     name: 'Wisdom',
+    icon: 'wisdom',
     description: 'Increases XP gain',
     baseCost: 350,
     costGrowth: 1.5,
@@ -261,6 +275,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'upgradeDiscount',
     name: 'Merchant',
+    icon: 'shop',
     description: 'Reduces upgrade costs',
     baseCost: 150,
     costGrowth: 1.4,
@@ -273,6 +288,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'abilityCostReduction',
     name: 'Mana Efficiency',
+    icon: 'standing-potion',
     description: 'Reduces ability mana costs',
     baseCost: 160,
     costGrowth: 1.5,
@@ -285,6 +301,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'goldOnKill',
     name: 'Bounty Hunter',
+    icon: 'wanted-reward',
     description: 'Gain flat gold per kill',
     baseCost: 290,
     costGrowth: 1.4,
@@ -298,6 +315,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'critGold',
     name: 'Fortune',
+    icon: 'coinflip',
     description: 'Increases bonus gold on crit kills',
     baseCost: 120,
     costGrowth: 1.45,
@@ -310,6 +328,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'health',
     name: 'Health',
+    icon: 'heart-tower',
     description: 'Increases max health',
     baseCost: 40,
     costGrowth: 1.25,
@@ -328,6 +347,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'healthRegen',
     name: 'Health Regen',
+    icon: 'regeneration',
     description: 'Restores health every second',
     baseCost: 130,
     costGrowth: 1.3,
@@ -341,6 +361,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'defense',
     name: 'Defense',
+    icon: 'bordered-shield',
     description: 'Reduces incoming damage',
     baseCost: 120,
     costGrowth: 1.32,
@@ -354,6 +375,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'armor',
     name: 'Armor',
+    icon: 'breastplate',
     description: 'Reduces incoming damage by a percentage of damage taken',
     baseCost: 140,
     costGrowth: 1.23,
@@ -367,6 +389,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'shockwave',
     name: 'Shockwave',
+    icon: 'echo-ripples',
     description: 'Periodically releases a ring that pushes nearby enemies away. Leveling increases the radius and reduces the time between pulses.',
     baseCost: 250,
     costGrowth: 1.25,
@@ -383,6 +406,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'thorns',
     name: 'Thorns',
+    icon: 'spikes',
     description: 'Deals back part of the attacker\'s damage back to them',
     baseCost: 220,
     costGrowth: 1.37,
@@ -396,6 +420,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'lifesteal',
     name: 'Lifesteal',
+    icon: 'heart-drop',
     description: 'Restores part of the damage dealt as health',
     baseCost: 250,
     costGrowth: 1.4,
@@ -409,6 +434,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'defenseShield',
     name: 'Defense Shield',
+    icon: 'energy-shield',
     description: 'Absorbs hits before breaking. Leveling increases the number of charges and lower recharge time.',
     baseCost: 500,
     costGrowth: 1.35,
@@ -425,6 +451,7 @@ export const UPGRADES: UpgradeDef[] = [
   {
     id: 'wall',
     name: 'Wall',
+    icon: 'brick-wall',
     description: 'Builds an outer barrier with its own health pool.',
     baseCost: 650,
     costGrowth: 1.37,

@@ -13,6 +13,7 @@ import {
 } from '../utils/dom';
 import { AbilityUpgradePopover } from './AbilityUpgradePopover';
 import { renderAbilityTooltip } from './abilityFormat';
+import { renderIcon } from './Icon';
 
 export interface AbilityBarHandlers {
   canCast: (id: AbilityId, wave: number) => boolean;
@@ -211,7 +212,7 @@ export class AbilityBar {
 
     const icon = document.createElement('div');
     icon.className = 'ability-icon';
-    icon.textContent = def.glyph;
+    renderIcon(icon, def.icon);
     btn.appendChild(icon);
 
     const hotkey = document.createElement('div');
