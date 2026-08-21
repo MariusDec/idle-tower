@@ -1,4 +1,5 @@
 import type { EquipmentSlot, Rarity, EquipmentDef, Equipment, EquipmentStat, EquipmentStatType } from '../types';
+import { RARITY } from './palette';
 
 // ── Rarity Configuration ──────────────────────────────
 
@@ -21,13 +22,13 @@ export const RARITY_WEIGHTS: Record<Rarity, number> = {
   legendary: 1,
 };
 
-export const RARITY_COLORS: Record<Rarity, string> = {
-  common: '#888888',
-  uncommon: '#2ecc71',
-  rare: '#3498db',
-  epic: '#9b59b6',
-  legendary: '#f1c40f',
-};
+/**
+ * The rarity ladder's colours. Re-exported from `palette.ts` rather than typed
+ * again here: the same five colours also frame blessing cards and are declared
+ * as `--rarity-*` in `tokens.css`, and three independent copies of "what colour
+ * is epic" is how a palette drifts.
+ */
+export const RARITY_COLORS: Record<Rarity, string> = RARITY;
 
 /** Rarity ladder, weakest first. `upgradeRarity` walks it. */
 export const RARITY_ORDER: readonly Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];

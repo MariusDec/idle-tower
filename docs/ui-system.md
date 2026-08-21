@@ -153,14 +153,25 @@ cost nothing, which is what lets the un-throttled overlays run every frame.
 
 ## CSS
 
-`src/styles/main.css` — ~1300 lines, dark theme:
-- CSS custom properties for colors/spacing
-- Responsive breakpoints at 1100px and 860px
-- Panel grid layout, tab styling
-- HP/mana bar animations
-- Toast notification styling
-- Welcome modal overlay
-- Scrollable panel content
+Two files, and the order matters:
+
+- **`src/styles/tokens.css`** — the design token layer, imported first from
+  `main.css`. Every colour, radius, duration, font size and elevation the app is
+  allowed to use, plus the self-hosted display face. **A literal colour, radius,
+  duration or font size in a component block is a bug** — see
+  [art-direction.md](art-direction.md), which documents the palette, what each
+  colour family is allowed to mean, and how `src/data/palette.ts` keeps the
+  canvas and the DOM from drifting.
+- **`src/styles/main.css`** — the components themselves, ~5400 lines, dark theme:
+  - Responsive breakpoints at 1100px, 860px and 768px (the mobile branch)
+  - Panel grid layout, tab styling
+  - HP/mana/XP bar animations
+  - Toast notification styling
+  - Modal overlays
+  - Scrollable panel content
+
+Spacing is the one group not yet swept onto tokens; Parts 7-8 of the UI plan move
+it as they rebuild each surface.
 
 ## The pacing overlay (gameplay plan §7.2 / §7.3)
 

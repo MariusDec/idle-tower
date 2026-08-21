@@ -34,6 +34,8 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/effects-system.md](docs/effects-system.md) | Particles, damage numbers, shockwave rings, pool caps, physics constants |
 | [docs/audio-system.md](docs/audio-system.md) | Web Audio synthesis, event subscriptions, volume and mute |
 | [docs/ui-system.md](docs/ui-system.md) | Tab panel system, HUD components, canvas overlays (boss bar, pacing overlay), API interfaces, callback wiring, CSS |
+| [docs/camera-system.md](docs/camera-system.md) | The world/screen transform, DPR-aware sizing and the resize path, the arena extents and aspect clamp, the two world scales and why `range` is exempt from them |
+| [docs/art-direction.md](docs/art-direction.md) | The design token layer, the "arcane siege" palette and what each colour is allowed to mean, the shared `palette.ts` source of truth, the self-hosted display face |
 | [docs/event-bus.md](docs/event-bus.md) | Pub/sub event system with the event catalog |
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
 | [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, progression tab, milestone table |

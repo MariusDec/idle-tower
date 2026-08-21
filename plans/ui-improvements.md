@@ -185,6 +185,46 @@ instead of merely smaller:
 that (they are the stats most coupled to approach geometry), tune `spawnRingScale` first, then the
 enemy `baseSpeed` table, and record the before/after in this file.
 
+### 1.5 Measured (2026-08-21)
+
+**Balance: zero drift.** `npm run sim` was captured at `HEAD` in a scratch worktree and again on the
+implemented tree. The two outputs are **byte-identical except for one line**:
+
+```
+- Charged shot: 0.9 DPS-seconds of damage, +3 pierce, 90px splash, every 5.2s of wall-clock time.
++ Charged shot: 0.9 DPS-seconds of damage, +3 pierce, 234px splash, every 5.2s of wall-clock time.
+```
+
+`90 × 2.6 = 234` — that is `WORLD_SCALE` doing exactly its job, reported by a print statement. Every
+curve the simulator produces (wall wave by AP tier, gold, AP/run, the risk-dial table, the idle drift
+check) is unchanged. This is a stronger result than the ±10% the plan asked for, and it is the
+§1.1 thesis confirmed: scaling distance and speed by the same factor leaves every timing untouched.
+No `spawnRingScale` or `baseSpeed` tuning was needed.
+
+`npm run checks` passes in full. `npm test` is 418/418 (387 before, +31 from `tests/camera.test.ts`
+and `tests/palette.test.ts`).
+
+**Geometry, measured live in the browser:**
+
+| | Measured | Target |
+|---|---|---|
+| World at 16:9 | 3028 × 1872, tower centred | — |
+| Short half-extent, landscape | 936 | 936 |
+| World in phone portrait (375×812) | 1872 × 2153, tower centred | — |
+| Short half-extent, portrait | 936 | 936 |
+| Backing store | = CSS box × DPR exactly (680×420 @1, 840×966 @2) | DPR-exact |
+| Range ring ÷ short half-extent, base 300 | 0.320 | ~0.32 |
+| … flat upgrade max 480 | 0.513 | — |
+| … at `ARENA_RANGE_CAP` 655 | 0.700 | ≤0.70 |
+
+The `aspect-ratio: 16/9` lock is gone: portrait produces a genuinely tall arena rather than a
+letterboxed strip, and the short axis holds its 936 half-extent across both orientations.
+
+One testing note worth keeping: `ResizeObserver` callbacks are delivered as part of the rendering
+steps, so a page with `document.hidden === true` will not reflow on a programmatic viewport change.
+Call `camera.measure()` directly when verifying in a hidden pane. This is documented in
+`docs/camera-system.md` §4 so it is not re-diagnosed as a bug later.
+
 ### 1.3 `Camera`
 
 A small class, not a framework. It owns:

@@ -16,6 +16,8 @@
  */
 
 import type { CoreId } from './cores';
+import { world } from './arena';
+import { RARITY } from './palette';
 
 export type BlessingRarity = 'common' | 'rare' | 'epic';
 
@@ -139,7 +141,7 @@ export const BLESSING_TUNING = {
   /** Bounces per shot: 1 with `ricochet`, this many with `ricochet_power`. */
   ricochetPowerBounces: 2,
   mortarInterval: 8,
-  mortarRadius: 90,
+  mortarRadius: world(90),
   /** The mortar shot itself hits for this much of a normal shot. */
   mortarDamageMult: 1.5,
   /** Everything else in the blast takes this fraction of the mortar's hit. */
@@ -489,10 +491,15 @@ export const BLESSING_BY_ID: Record<string, BlessingDef> = BLESSINGS.reduce(
   {} as Record<string, BlessingDef>,
 );
 
+/**
+ * Blessings use three of the five equipment rarities, and they use the *same*
+ * three colours: a rare blessing and a rare sword should not be two different
+ * blues. See `src/data/palette.ts`.
+ */
 export const BLESSING_RARITY_COLORS: Record<BlessingRarity, string> = {
-  common: '#8fa3b8',
-  rare: '#5b8def',
-  epic: '#b46bff',
+  common: RARITY.common,
+  rare: RARITY.rare,
+  epic: RARITY.epic,
 };
 
 /** Human-readable effect line for a def at a given held stack count. */
