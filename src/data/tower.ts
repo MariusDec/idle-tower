@@ -1,5 +1,6 @@
 import type { TargetingMode, TowerState } from '../types';
 import { entity, world } from './arena';
+import { FX, INK } from './palette';
 
 export const TOWER_BASE: Omit<TowerState, 'cooldown'> = {
   x: 0,
@@ -38,14 +39,76 @@ export const TOWER_BASE: Omit<TowerState, 'cooldown'> = {
 
 export const PROJECTILE_SPEED = world(720);
 
+/**
+ * How the tower is built, in world units and palette colours (UI plan §3.3).
+ *
+ * Before this the tower was a grey circle (`#5b6b7a`), a brown triangle "roof"
+ * and a three-point red flag — five literal colours and three numbers. It is
+ * the player's avatar and the only thing on screen that is unambiguously
+ * *theirs*, and at the Part 1 zoom level it read as a token on a board.
+ *
+ * Three things drive every number below:
+ *
+ * - **One key light.** `lightAngle` is up-and-slightly-left, and every rim
+ *   light, band highlight and cast shadow in `Renderer` derives from it. A
+ *   consistent light is most of what separates "drawn" from "assembled from
+ *   primitives".
+ * - **Amber is the player.** The rim light, the banners and the turret's
+ *   banding are `FX.gold`; the stone is the `INK` ramp the ground is made of.
+ *   The old red flag is gone — red belongs to the enemy now
+ *   (`docs/art-direction.md`).
+ * - **Levelling is visible.** `detailTiers` are tower-XP levels, not upgrade
+ *   counts: crossing one adds merlons, then banners, then an arcane ring, so
+ *   the silhouette itself says how far into the run you are.
+ */
 export const TOWER_VISUAL = {
+  /** The masonry drum. Also what `Game` measures floating text against. */
   bodyRadius: entity(28),
-  bodyColor: '#5b6b7a',
-  bodyStroke: '#2a2f38',
-  roofColor: '#7a4a2a',
-  flagColor: '#c0392b',
-  accentColor: '#8a99a8',
-};
+  /** Stone footing the drum stands on; wider, so the tower has a base. */
+  plinthRadius: entity(37),
+  /** Reach of the contact shadow the tower casts on the ground. */
+  shadowRadius: entity(54),
+  /** Where the segmented wall ring sits, from the tower centre. */
+  wallRadius: entity(28) + world(40),
+  /** Blocks in the wall ring. Each one crumbles on its own as `wallHp` drops. */
+  wallSegments: 16,
+  /** Radius of the faceted shield barrier. Outside the plinth, inside the wall. */
+  shieldRadius: entity(47),
+  /** Turret barrel: how far it reaches from the tower centre, and how wide. */
+  turretLength: entity(31),
+  turretWidth: entity(9),
+  /** World units the barrel slides back on firing, and how long it takes. */
+  recoilDistance: entity(7),
+  recoilTime: 0.17,
+  /** Seconds the muzzle flash lives. */
+  muzzleTime: 0.075,
+  /** Radius of the core crystal in the tower's mouth. */
+  crystalRadius: entity(8),
+  /** Key light direction, radians. Up and a little to the left. */
+  lightAngle: -Math.PI * 0.62,
+  /**
+   * Tower-XP levels at which the silhouette gains a tier of detail. Index into
+   * this is the tier: below `[1]` is tier 0, and so on.
+   */
+  detailTiers: [0, 10, 25, 50] as const,
+  /** Stone, lit face to deep shadow. */
+  stoneLit: INK['300'],
+  stoneMid: INK['400'],
+  stoneDark: INK['600'],
+  stoneDeep: INK['700'],
+  mortar: INK['800'],
+  /**
+   * The footing's base disc, one step lighter than the drum's shadow so the
+   * gaps between its kerb blocks read as mortar rather than as holes.
+   */
+  plinth: INK['500'],
+  /** Rim light and every piece of trim the player owns. */
+  rim: FX.gold,
+  /** Banner cloth at tier 2 and above. */
+  banner: FX.gold,
+  /** Shield barrier and its charge pips. */
+  shield: FX.frost,
+} as const;
 
 export const TOWER_HIT_RADIUS = TOWER_VISUAL.bodyRadius + entity(4);
 

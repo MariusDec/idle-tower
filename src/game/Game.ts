@@ -4351,6 +4351,11 @@ export class Game {
       charge: this.chargeSnapshot(),
       placement: this.placementSnapshot(),
       spawnLanes: this.pacingHud?.preview?.lanes ?? null,
+      // Presentation only (UI plan §3.3): the core tints the crystal and the
+      // range ring, the level drives the tower's detail tier. Both were
+      // invisible on the battlefield before Part 3.
+      coreId: this.coreMgr.current,
+      towerLevel: this.state.towerXp.level,
     }, {
       screenFlash: this.screenFlash,
       towerFlash: this.towerFlash,

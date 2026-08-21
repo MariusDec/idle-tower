@@ -63,6 +63,40 @@ export const FX: Record<FxColorName, string> = {
   critical: '#ff4d3d',
 };
 
+/**
+ * Steps on the ink ramp, lightest first. Mirrors `--ink-*` in `tokens.css`.
+ */
+export type InkStep =
+  | '050' | '100' | '200' | '300' | '400' | '500'
+  | '600' | '700' | '800' | '900' | '950';
+
+/**
+ * `--ink-*`: the deep desaturated blue-black the whole game sits on.
+ *
+ * The `--fx-*` group answers "what does this colour *mean*"; this one answers
+ * "what is the ground made of". Part 3's battlefield needs both — the layered
+ * ground, the tower's masonry and the wall's stone are all steps on this ramp,
+ * and before it was exported the renderer had `#1c2028` and `#0c0e12` and
+ * `#5b6b7a` typed into it with nothing tying them to the panels behind.
+ *
+ * It is a **primitive**, not a semantic token: a DOM rule must go through
+ * `--surface-*` / `--text-*` instead. The canvas is the exception, because a
+ * painted battlefield has no "surface" to speak of — it has rock.
+ */
+export const INK: Record<InkStep, string> = {
+  '050': '#e8ecf4',
+  '100': '#b4bcca',
+  '200': '#838d9e',
+  '300': '#5a6476',
+  '400': '#3b4457',
+  '500': '#2a3141',
+  '600': '#212734',
+  '700': '#181d28',
+  '800': '#12161f',
+  '900': '#0a0d14',
+  '950': '#070a10',
+};
+
 /** The five equipment rarities, weakest first. */
 export type RarityTier = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
@@ -87,6 +121,11 @@ export function fxVar(name: FxColorName): string {
 /** `RARITY.epic` → `'--rarity-epic'`. */
 export function rarityVar(tier: RarityTier): string {
   return `--rarity-${tier}`;
+}
+
+/** `INK['700']` → `'--ink-700'`. */
+export function inkVar(step: InkStep): string {
+  return `--ink-${step}`;
 }
 
 /**

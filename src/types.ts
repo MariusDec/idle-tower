@@ -843,6 +843,23 @@ export interface RenderSnapshot {
    * roster is rolled up front.
    */
   spawnLanes?: Array<{ x: number; y: number }> | null;
+  /**
+   * The run's tower core, for the crystal tint and the range-ring wash
+   * (UI plan §3.3).
+   *
+   * A core *is* the run's identity and, until Part 3, was invisible from the
+   * moment the picker closed. Tinting the two brightest things on the
+   * battlefield with it is the cheapest way to keep it on screen. Presentation
+   * only — nothing in the render path may branch on it for behaviour.
+   */
+  coreId?: string;
+  /**
+   * Tower-XP level, for the tower's detail tiers (`TOWER_VISUAL.detailTiers`).
+   *
+   * Levelling had no expression on the battlefield at all; this is what turns
+   * it into a silhouette change rather than a number in a panel.
+   */
+  towerLevel?: number;
 }
 
 /** Cursor charge ring state. Presentation only — the timer lives in `Game`. */

@@ -71,6 +71,7 @@ every enemy on screen at all times. Three separate jobs now have three separate 
 
 | Group | Tokens |
 |---|---|
+| Ink ramp (canvas only) | `--ink-050..950` |
 | Surfaces | `--surface-0..4`, `--surface-raised`, `--surface-sunken`, `--surface-scrim`, `--surface-overlay`, `--surface-overlay-deep` |
 | Strokes | `--stroke-subtle`, `--stroke-strong`, `--stroke-hairline` |
 | Text | `--text-0..3`, `--text-on-fill`, `--text-on-amber` |
@@ -105,8 +106,8 @@ use them in new rules.
 
 ## `palette.ts` and why the values are written twice
 
-`src/data/palette.ts` exports `FX` and `RARITY`; `tokens.css` declares the same values as
-`--fx-*` and `--rarity-*`. That duplication is deliberate:
+`src/data/palette.ts` exports `FX`, `RARITY` and `INK`; `tokens.css` declares the same
+values as `--fx-*`, `--rarity-*` and `--ink-*`. That duplication is deliberate:
 
 - The **canvas** cannot read a CSS custom property cheaply — `getComputedStyle` in a paint
   loop is a non-starter, so `Renderer.ts` needs the values as JS strings.
@@ -121,6 +122,22 @@ is a red test, not a bug report from someone noticing two slightly different gre
 `palette.ts` also exports `withAlpha(hex, alpha)` and `toRgb(hex)`: the canvas has no
 `color-mix()`, so every translucent fill goes through the helper instead of hand-writing a
 second copy of the colour.
+
+### Why `INK` is a primitive the canvas may read directly
+
+`--ink-*` is a **primitive**: layer 1, the raw hue ramp, and a DOM rule must go through
+`--surface-*` / `--text-*` instead. The canvas is the one exception, and it is exception
+enough to be worth naming. A painted battlefield has no "surface" to elevate — it has
+rock. Part 3's layered ground, the tower's masonry, the plinth, the wall blocks and every
+cast shadow are steps on that ramp, and before it was exported `Renderer.ts` had
+`#1c2028`, `#0c0e12`, `#5b6b7a` and `#2a2f38` typed into it with nothing tying them to the
+panels sitting on top.
+
+The semantic layer would be the wrong shape for it: the tower's masonry is not "surface 2",
+it is a specific stone two steps lighter than the ground it stands on, and the whole
+lighting model in `TOWER_VISUAL` is expressed as positions on that one ramp. So the ramp is
+exported, and `tests/palette.test.ts` guards it in both directions like the other two
+groups.
 
 Equipment and blessing rarity colours (`RARITY_COLORS` in `src/data/equipment.ts`,
 `BLESSING_RARITY_COLORS` in `src/data/blessings.ts`) are now re-exports of the same ladder.

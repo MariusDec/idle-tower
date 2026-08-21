@@ -1,8 +1,10 @@
 import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType, LootOrb } from '../types';
 import { LOOT_ORB_COLORS, LOOT_TUNING, type LootOrbKind } from '../data/loot';
-import { ENTITY_SCALE, entity, world } from '../data/arena';
+import { ARENA, ARENA_RANGE_CAP, ENTITY_SCALE, entity, world } from '../data/arena';
 import type { Camera } from './Camera';
 import { TOWER_VISUAL } from '../data/tower';
+import { CORE_BY_ID, DEFAULT_CORE, isCoreId, type CoreId } from '../data/cores';
+import { FX, INK, withAlpha } from '../data/palette';
 import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS } from '../data/enemies';
 import type { EnemyDef, EnemyShape } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
@@ -11,6 +13,56 @@ import { ELITE_AURA_COLORS, AURA_RADIUS } from '../systems/EnemyManager';
 
 /** How much larger an elite renders than a normal enemy of the same type. */
 const ELITE_RADIUS_SCALE = 1.25;
+
+/** Frame step every animation in this file advances on. See `Renderer.time`. */
+const FRAME_DT = 1 / 60;
+
+// ── §3.1 ground ───────────────────────────────────────────────────────────────
+
+/** Edge of the concentric-arc lattice: just past the furthest range can reach. */
+const LATTICE_OUTER = ARENA_RANGE_CAP * 1.18;
+/** Spacing of the lattice arcs, in world units. */
+const LATTICE_STEP = world(90);
+/** Radial spokes in the lattice. */
+const LATTICE_SPOKES = 12;
+/** Embers and stars scattered across the far field, per million device pixels. */
+const STAR_DENSITY = 46;
+/** Side of the seeded noise tile the terrain is built from, in device pixels. */
+const NOISE_TILE = 128;
+/** Cracks radiating out of the tower's footing. */
+const CRACK_COUNT = 13;
+
+// ── §3.2 range ring ───────────────────────────────────────────────────────────
+
+/** Radius the normalised falloff sprite is baked at, in pixels. */
+const RANGE_SPRITE_RADIUS = 256;
+/** Seconds the ring takes to ease to a new `range`. */
+const RANGE_EASE_TIME = 0.4;
+/** Seconds the "your range just changed" bloom lives for. */
+const RANGE_BLOOM_TIME = 0.75;
+/** Radians per second the rim's highlight sweep travels. */
+const RANGE_SWEEP_SPEED = 0.5;
+/** Trailing segments behind the sweep head. */
+const RANGE_SWEEP_SEGMENTS = 7;
+
+// ── §3.4 spawn portals ────────────────────────────────────────────────────────
+
+/** Seconds an enemy's rift emergence plays for. */
+const EMERGENCE_TIME = 0.4;
+/** Ceiling on concurrent emergences. Pooled, like every other effect here. */
+const EMERGENCE_CAP = 64;
+/** Seconds a rift takes to open, and to close once the lane list empties. */
+const PORTAL_OPEN_TIME = 0.45;
+/**
+ * How close to the spawn ellipse an enemy has to appear for it to count as
+ * having come through a rift.
+ *
+ * Splitter children and summoned adds appear mid-field; they did not walk out
+ * of a portal and giving them one would teach the player that a rift means
+ * nothing. Measured in the ellipse's own normalised radius, where 1.04 is the
+ * spawn ring itself (`ARENA.spawnRingScale`).
+ */
+const EMERGENCE_MIN_ELLIPSE = 0.88;
 /** Slack around a body sprite so its outline stroke is not clipped. */
 const SPRITE_PADDING = entity(6);
 /** Body colour of a boss below its enrage threshold. */
@@ -38,14 +90,111 @@ const ELITE_CROWN_COLORS: Record<AuraType, string> = {
   retribution: '#b432dc',
 };
 
+/**
+ * A tiny deterministic PRNG (mulberry32).
+ *
+ * The ground is *seeded*, not random: the same viewport and the same core must
+ * bake the same stars, the same blotching and the same cracks every time, or a
+ * resize would silently redraw the world into a different one. `Math.random`
+ * cannot do that, and a full noise library is four hundred lines for the four
+ * calls this file makes.
+ */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Cheap string hash, so a core id can seed the ground. */
+function hashString(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** `t` in 0..1 → eased. Fast at the start, settled at the end. */
+function easeOutCubic(t: number): number {
+  const u = 1 - t;
+  return 1 - u * u * u;
+}
+
+/** A rift an enemy is coming through (§3.4). Pooled — never allocated per frame. */
+interface Emergence {
+  x: number;
+  y: number;
+  age: number;
+  /** Direction the enemy is heading, so the rift faces the right way. */
+  angle: number;
+}
+
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly camera: Camera;
   private readonly rangeOverlay: boolean = true;
+  /**
+   * `prefers-reduced-motion`.
+   *
+   * Everything in Part 3 that *loops* — the crystal's breath, the range ring's
+   * sweep, the arcane ring at detail tier 3, the rift swirl — holds still when
+   * this is set. Event-driven motion (the recoil, the range bloom, a rift
+   * opening) stays: it is feedback for something the player just did, and
+   * removing it would remove the information rather than the motion.
+   */
+  private readonly reducedMotion: boolean;
   private time = 0;
   private bgCanvas: HTMLCanvasElement | null = null;
   /** World scale the background was baked at, so a zoom change re-bakes it. */
   private bgScale = 0;
+  /** Core the ground was baked for; a new core re-tints the wash and the embers. */
+  private bgCore: CoreId | null = null;
+  /** The seeded terrain tile, baked once and tiled as a pattern. */
+  private noiseTile: HTMLCanvasElement | null = null;
+
+  // ── §3.2 range ring animation ──
+  /** Radius actually drawn this frame; eases toward `rangeTo`. */
+  private rangeDrawn = 0;
+  private rangeFrom = 0;
+  private rangeTo = 0;
+  /** Ease progress, 0..1. */
+  private rangeEase = 1;
+  /** Bloom left on a range change, 1 → 0. */
+  private rangeBloom = 0;
+
+  // ── §3.3 turret ──
+  /** Where the barrel is pointing. Chases the last shot's heading. */
+  private turretAngle = -Math.PI / 2;
+  /** Recoil, 1 at the instant of firing, 0 once the barrel is home. */
+  private recoil = 0;
+  /** Muzzle flash, 1 → 0 over `TOWER_VISUAL.muzzleTime`. */
+  private muzzle = 0;
+  /**
+   * Highest projectile id seen.
+   *
+   * The tower firing is not in the render snapshot and putting it there would
+   * mean the simulation carrying a presentation field. Every projectile in the
+   * game leaves the tower, ids come from a monotonic counter and the list is
+   * append-ordered — so "is there an id above the last one I saw, starting at
+   * the tower" is an exact read of "did we just fire, and where at".
+   */
+  private lastProjectileId = -1;
+
+  // ── §3.4 spawn portals ──
+  private readonly emergences: Emergence[] = [];
+  /** Highest enemy id seen, for spotting arrivals. */
+  private maxEnemyId = -1;
+  /** False until the first frame has been observed, so a save load is not a wave. */
+  private enemyIdSeeded = false;
+  /** Rift opening, 0..1. Rises while lanes are previewed, falls after. */
+  private portalOpen = 0;
+  /** The last previewed lanes, kept so the rifts can close after the wave starts. */
+  private portalLanes: Array<{ x: number; y: number }> = [];
   /**
    * Pre-rendered sprites (plan §5.1).
    *
@@ -75,6 +224,17 @@ export class Renderer {
    */
   private readonly orbSprites = new Map<LootOrbKind, HTMLCanvasElement>();
   /**
+   * Everything Part 3 bakes: the tower's plinth, drum, turret and crystal, the
+   * wall's three block states, the range ring's falloff, the rift and its dust
+   * ring, and the three damage flashes.
+   *
+   * One map with a string key rather than six typed ones, because every entry
+   * has the same shape — a variant key and a painter — and the variant space is
+   * tiny: at most a couple of dozen sprites for the whole battlefield, all of
+   * them baked on first use and none re-baked while the run lasts.
+   */
+  private readonly partSprites = new Map<string, HTMLCanvasElement>();
+  /**
    * Tower position from the frame currently being drawn.
    *
    * Cached at the top of `draw` so the boss siphon beam has somewhere to point.
@@ -89,6 +249,50 @@ export class Renderer {
     if (!ctx) throw new Error('Failed to acquire 2D rendering context');
     this.ctx = ctx;
     this.camera = camera;
+    this.reducedMotion = typeof matchMedia === 'function'
+      && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  /**
+   * Memoised offscreen sprite. The only way anything in Part 3 gets painted.
+   *
+   * The rule from §0.8: if it is static per variant it is baked once and
+   * blitted afterwards. A `createRadialGradient` or a `shadowBlur` inside a
+   * per-frame loop is a bug, so every gradient in this file lives inside one of
+   * these painters.
+   */
+  private part(key: string, size: number, paint: (g: CanvasRenderingContext2D) => void): HTMLCanvasElement {
+    const cached = this.partSprites.get(key);
+    if (cached) return cached;
+    const sprite = this.makeSprite(size, paint);
+    this.partSprites.set(key, sprite);
+    return sprite;
+  }
+
+  /** Blit a cached sprite centred on a world point. */
+  private blit(ctx: CanvasRenderingContext2D, sprite: HTMLCanvasElement, x: number, y: number, scale = 1): void {
+    const size = sprite.width * scale;
+    ctx.drawImage(sprite, x - size / 2, y - size / 2, size, size);
+  }
+
+  /** The run's core, defaulted, so an old save without one still paints. */
+  private coreOf(snap: RenderSnapshot): CoreId {
+    return isCoreId(snap.coreId) ? snap.coreId : DEFAULT_CORE;
+  }
+
+  /** The colour the core lends the crystal, the range ring and the ground wash. */
+  private coreTint(snap: RenderSnapshot): string {
+    return CORE_BY_ID[this.coreOf(snap)].color;
+  }
+
+  /** Detail tier from the tower's XP level (`TOWER_VISUAL.detailTiers`). */
+  private towerTier(snap: RenderSnapshot): number {
+    const level = snap.towerLevel ?? 0;
+    let tier = 0;
+    for (let i = 1; i < TOWER_VISUAL.detailTiers.length; i++) {
+      if (level >= TOWER_VISUAL.detailTiers[i]) tier = i;
+    }
+    return tier;
   }
 
   /**
@@ -113,11 +317,12 @@ export class Renderer {
   }
 
   draw(snapshot: RenderSnapshot, options?: { screenFlash?: number; towerFlash?: number; wallFlash?: number; shieldFlash?: number; vignette?: number; chainPaths?: { points: { x: number; y: number }[]; age: number; life: number }[] }): void {
-    this.time += 1 / 60;
+    this.time += FRAME_DT;
     const ctx = this.ctx;
     const camera = this.camera;
     this.towerX = snapshot.tower.x;
     this.towerY = snapshot.tower.y;
+    this.advance(snapshot);
 
     // ── device space: the baked background, blitted 1:1 ──
     //
@@ -127,15 +332,19 @@ export class Renderer {
     // The tower always sits at the centre of both, so a screen-space bake is
     // exactly equivalent to a world-space one.
     camera.applyDevice(ctx);
-    ctx.drawImage(this.getBackground(), 0, 0);
+    ctx.drawImage(this.getBackground(snapshot), 0, 0);
 
     // ── world space ──
+    //
+    // Ground furniture first, in the order it physically stacks: the range
+    // wash is painted *on* the floor, the tower's shadow and plinth sit on top
+    // of it, and the wall ring stands on the plinth.
     camera.applyWorld(ctx);
+    if (this.rangeOverlay) this.drawRangeRing(ctx, snapshot);
     this.drawTowerBase(ctx, snapshot);
     this.drawWall(ctx, snapshot);
-    if (this.rangeOverlay) this.drawRangeRing(ctx, snapshot);
     this.drawMines(ctx, snapshot.mines);
-    this.drawSpawnLanes(ctx, snapshot.spawnLanes);
+    this.drawSpawnPortals(ctx);
     this.drawParticles(ctx, snapshot.particles, 'behind');
     this.drawShockwaves(ctx, snapshot.shockwaves);
     this.drawAimLine(ctx, snapshot);
@@ -149,56 +358,57 @@ export class Renderer {
     this.drawChainLightning(ctx, options?.chainPaths);
     this.drawDamageNumbers(ctx, snapshot.damageNumbers);
     this.drawTowerTop(ctx, snapshot);
-    this.drawShield(ctx, snapshot);
+    this.drawShield(ctx, snapshot, options?.shieldFlash ?? 0);
 
-    // Tower damage flash (red pulse on enemy attack)
+    // Tower damage flash: the tower is being hurt, so this is `critical`, the
+    // one colour reserved for exactly that (docs/art-direction.md). It was a
+    // fresh `createRadialGradient` every frame it was up; it is now a blit.
     const tFlash = options?.towerFlash ?? 0;
     if (tFlash > 0) {
       const t = snapshot.tower;
-      const alpha = Math.min(1, tFlash / 0.12) * 0.35;
-      const pulse = 1 + (1 - tFlash / 0.12) * 0.5;
-      const r = (TOWER_VISUAL.bodyRadius + entity(12)) * pulse;
-      const grad = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, r);
-      grad.addColorStop(0, `rgba(255, 60, 40, ${alpha})`);
-      grad.addColorStop(1, 'rgba(255, 60, 40, 0)');
+      const k = Math.min(1, tFlash / 0.12);
+      const sprite = this.part('tower-flash', (TOWER_VISUAL.bodyRadius + entity(14)) * 2, (g) => {
+        const r = TOWER_VISUAL.bodyRadius + entity(14);
+        const grad = g.createRadialGradient(0, 0, r * 0.3, 0, 0, r);
+        grad.addColorStop(0, withAlpha(FX.critical, 0.5));
+        grad.addColorStop(1, withAlpha(FX.critical, 0));
+        g.fillStyle = grad;
+        g.beginPath();
+        g.arc(0, 0, r, 0, Math.PI * 2);
+        g.fill();
+      });
       ctx.save();
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.globalAlpha = k * 0.7;
+      this.blit(ctx, sprite, t.x, t.y, 1 + (1 - k) * 0.5);
       ctx.restore();
     }
 
-    // Wall damage flash (orange pulse on wall ring)
+    // Wall damage flash: an ember ring on the segmented wall. Stone taking a
+    // hit, not the tower itself, so it is warm rather than critical.
     const wFlash = options?.wallFlash ?? 0;
     if (wFlash > 0) {
       const t = snapshot.tower;
-      const wallR = TOWER_VISUAL.bodyRadius + world(40);
-      const alpha = Math.min(1, wFlash / 0.12) * 0.4;
-      const pulse = 1 + (1 - wFlash / 0.12) * 0.3;
-      const r = wallR * pulse;
+      const k = Math.min(1, wFlash / 0.12);
       ctx.save();
-      ctx.strokeStyle = `rgba(255, 160, 40, ${alpha})`;
-      ctx.lineWidth = entity(6);
+      ctx.strokeStyle = withAlpha(FX.ember, k * 0.5);
+      ctx.lineWidth = entity(7);
       ctx.beginPath();
-      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.arc(t.x, t.y, TOWER_VISUAL.wallRadius * (1 + (1 - k) * 0.06), 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
 
-    // Shield damage flash (bright blue pulse on shield ring)
+    // Shield absorb flash: handled per-facet inside `drawShield`; this is the
+    // outer ripple the barrier sheds.
     const sFlash = options?.shieldFlash ?? 0;
     if (sFlash > 0) {
       const t = snapshot.tower;
-      const shieldR = TOWER_VISUAL.bodyRadius + entity(8);
-      const alpha = Math.min(1, sFlash / 0.12) * 0.5;
-      const pulse = 1 + (1 - sFlash / 0.12) * 0.3;
-      const r = shieldR * pulse;
+      const k = Math.min(1, sFlash / 0.12);
       ctx.save();
-      ctx.strokeStyle = `rgba(100, 200, 255, ${alpha})`;
-      ctx.lineWidth = entity(4);
+      ctx.strokeStyle = withAlpha(FX.frost, k * 0.55);
+      ctx.lineWidth = entity(3);
       ctx.beginPath();
-      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.arc(t.x, t.y, TOWER_VISUAL.shieldRadius * (1 + (1 - k) * 0.22), 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
@@ -223,6 +433,157 @@ export class Renderer {
   }
 
   /**
+   * Advance every piece of presentation state Part 3 owns, once per frame.
+   *
+   * Deliberately one method rather than a timer inside each painter: these all
+   * run on the same clock, they all have to run whether or not the thing they
+   * animate is currently visible (a range change during an intermission still
+   * has to finish easing), and a painter that mutates state is a painter that
+   * breaks the moment it is called twice.
+   */
+  private advance(snap: RenderSnapshot): void {
+    this.advanceRange(snap.tower.range);
+    this.advanceTurret(snap);
+    this.advancePortals(snap);
+  }
+
+  /**
+   * The range ring eases to a new `range` over 400 ms and blooms (§3.2).
+   *
+   * The point is that buying `Longbow` should *look* like something happened.
+   * Before this the ring was recomputed from `tower.range` every frame, so a
+   * +3 upgrade moved a 6%-alpha dashed line by three pixels between one frame
+   * and the next and no player alive would have noticed.
+   */
+  private advanceRange(range: number): void {
+    if (this.rangeDrawn === 0) {
+      this.rangeDrawn = this.rangeFrom = this.rangeTo = range;
+      return;
+    }
+    if (Math.abs(range - this.rangeTo) > 0.5) {
+      this.rangeFrom = this.rangeDrawn;
+      this.rangeTo = range;
+      this.rangeEase = 0;
+      this.rangeBloom = 1;
+    }
+    if (this.rangeEase < 1) {
+      this.rangeEase = Math.min(1, this.rangeEase + FRAME_DT / RANGE_EASE_TIME);
+      this.rangeDrawn = this.rangeFrom
+        + (this.rangeTo - this.rangeFrom) * easeOutCubic(this.rangeEase);
+    } else {
+      this.rangeDrawn = this.rangeTo;
+    }
+    if (this.rangeBloom > 0) {
+      this.rangeBloom = Math.max(0, this.rangeBloom - FRAME_DT / RANGE_BLOOM_TIME);
+    }
+  }
+
+  /**
+   * Point the turret at whatever the tower is shooting, and recoil when it does.
+   *
+   * The heading comes from the projectiles themselves — see `lastProjectileId`.
+   * The angle chases rather than snaps, so a target swap sweeps the barrel
+   * across instead of teleporting it, and the chase is proportional so a
+   * high-fire-rate tower still tracks tightly.
+   */
+  private advanceTurret(snap: RenderSnapshot): void {
+    const t = snap.tower;
+    let fired: Projectile | null = null;
+    let highest = this.lastProjectileId;
+    const list = snap.projectiles;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i];
+      if (p.id <= this.lastProjectileId) break;
+      if (p.id > highest) highest = p.id;
+      // Anything that started at the tower came out of the barrel. A homing
+      // shot that has already turned has not: it is only new once.
+      if (fired === null && Math.hypot(p.x - t.x, p.y - t.y) < TOWER_VISUAL.bodyRadius * 3) {
+        fired = p;
+      }
+    }
+    if (this.lastProjectileId < 0) {
+      // First frame: adopt the id watermark without firing, so a save load does
+      // not recoil the barrel for shots taken before the page existed.
+      this.lastProjectileId = highest;
+      fired = null;
+    } else {
+      this.lastProjectileId = highest;
+    }
+
+    if (fired) {
+      this.turretAngle = Math.atan2(fired.vy, fired.vx);
+      this.recoil = 1;
+      this.muzzle = 1;
+    } else if (snap.aimLine) {
+      // Manual aim: the barrel follows the cursor even between shots, because
+      // holding is a promise about where the next shot goes.
+      this.chaseTurret(Math.atan2(snap.aimLine.y - t.y, snap.aimLine.x - t.x));
+    }
+
+    if (this.recoil > 0) this.recoil = Math.max(0, this.recoil - FRAME_DT / TOWER_VISUAL.recoilTime);
+    if (this.muzzle > 0) this.muzzle = Math.max(0, this.muzzle - FRAME_DT / TOWER_VISUAL.muzzleTime);
+  }
+
+  /** Rotate the barrel toward `target` along the short way round. */
+  private chaseTurret(target: number): void {
+    let delta = target - this.turretAngle;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    this.turretAngle += delta * 0.25;
+  }
+
+  /**
+   * Open and close the rifts, and catch enemies coming through them (§3.4).
+   *
+   * `spawnLanes` is present only during an intermission, but enemies keep
+   * arriving for a while after it ends — so the lane list drives the *opening*
+   * and the arrivals themselves keep the rifts alive afterwards.
+   */
+  private advancePortals(snap: RenderSnapshot): void {
+    const lanes = snap.spawnLanes;
+    if (lanes && lanes.length > 0) {
+      // Copy rather than hold the reference: `PacingManager` owns that array
+      // and will clear it out from under us the moment the wave starts.
+      this.portalLanes.length = 0;
+      for (const lane of lanes) this.portalLanes.push({ x: lane.x, y: lane.y });
+      this.portalOpen = Math.min(1, this.portalOpen + FRAME_DT / PORTAL_OPEN_TIME);
+    } else {
+      this.portalOpen = Math.max(0, this.portalOpen - FRAME_DT / PORTAL_OPEN_TIME);
+      if (this.portalOpen === 0) this.portalLanes.length = 0;
+    }
+
+    // Arrivals. Enemy ids are monotonic, so anything above the watermark is new
+    // this frame; the ellipse test then keeps splitter children and mid-field
+    // spawns out of it.
+    const halfW = this.camera.viewHalfWidth;
+    const halfH = this.camera.viewHalfHeight;
+    let highest = this.maxEnemyId;
+    for (const e of snap.enemies) {
+      if (e.id <= this.maxEnemyId) continue;
+      if (e.id > highest) highest = e.id;
+      if (!this.enemyIdSeeded) continue;
+      const nx = (e.x - this.towerX) / halfW;
+      const ny = (e.y - this.towerY) / halfH;
+      if (Math.hypot(nx, ny) < EMERGENCE_MIN_ELLIPSE) continue;
+      this.pushEmergence(e.x, e.y, Math.atan2(this.towerY - e.y, this.towerX - e.x));
+    }
+    this.maxEnemyId = highest;
+    this.enemyIdSeeded = true;
+
+    for (let i = this.emergences.length - 1; i >= 0; i--) {
+      const em = this.emergences[i];
+      em.age += FRAME_DT;
+      if (em.age >= EMERGENCE_TIME) this.emergences.splice(i, 1);
+    }
+  }
+
+  /** Pooled push: the oldest emergence is dropped once the cap is reached. */
+  private pushEmergence(x: number, y: number, angle: number): void {
+    if (this.emergences.length >= EMERGENCE_CAP) this.emergences.shift();
+    this.emergences.push({ x, y, age: 0, angle });
+  }
+
+  /**
    * Low-HP vignette, in screen space.
    *
    * Was a `box-shadow` on `.canvas-wrap.is-critical`, which meant the most
@@ -239,8 +600,8 @@ export class Renderer {
     const inner = Math.min(w, h) * 0.34;
     const outer = Math.hypot(w, h) * 0.5;
     const grad = ctx.createRadialGradient(w / 2, h / 2, inner, w / 2, h / 2, outer);
-    grad.addColorStop(0, 'rgba(255, 0, 0, 0)');
-    grad.addColorStop(1, `rgba(200, 10, 10, ${(Math.min(1, intensity) * 0.55 * pulse).toFixed(3)})`);
+    grad.addColorStop(0, withAlpha(FX.critical, 0));
+    grad.addColorStop(1, withAlpha(FX.critical, Math.min(1, intensity) * 0.55 * pulse));
     ctx.save();
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
@@ -256,211 +617,954 @@ export class Renderer {
    * `invalidateBackground` on the camera's resize so a same-size, new-shape
    * viewport cannot keep a stale grid.
    */
-  private getBackground(): HTMLCanvasElement {
+  private getBackground(snap: RenderSnapshot): HTMLCanvasElement {
     const w = Math.max(1, Math.round(this.camera.transform.pixelWidth));
     const h = Math.max(1, Math.round(this.camera.transform.pixelHeight));
     const scale = this.camera.transform.scale;
+    const core = this.coreOf(snap);
     if (this.bgCanvas && this.bgCanvas.width === w && this.bgCanvas.height === h
-      && this.bgScale === scale) {
+      && this.bgScale === scale && this.bgCore === core) {
       return this.bgCanvas;
     }
     const c = document.createElement('canvas');
     c.width = w;
     c.height = h;
     const bg = c.getContext('2d')!;
-    this.drawBackground(bg, w, h);
-    this.drawArena(bg, w, h, scale);
+    // Everything below is baked in *backing-store pixels*, stepped in world
+    // units via `scale`. It runs on a resize and on a core change, and never in
+    // a frame that also has to draw two hundred enemies.
+    const rand = mulberry32(hashString(`${w}x${h}|${core}`));
+    this.bakeFarField(bg, w, h, scale, core, rand);
+    this.bakeTerrain(bg, w, h, scale, rand);
+    this.bakeLattice(bg, w, h, scale, core);
     this.bgCanvas = c;
     this.bgScale = scale;
+    this.bgCore = core;
     return c;
   }
 
-  private drawBackground(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-    const grad = ctx.createRadialGradient(
-      w / 2,
-      h / 2,
-      50,
-      w / 2,
-      h / 2,
-      Math.max(w, h),
-    );
-    grad.addColorStop(0, '#1c2028');
-    grad.addColorStop(1, '#0c0e12');
+  /**
+   * Layer 1: the far field (§3.1).
+   *
+   * A tinted vignette that gives the arena a centre and a periphery, a faint
+   * wash of the run's core colour around the tower, and a sparse seeded field
+   * of stars and embers so the dark half of the screen is not flat paint. The
+   * two-stop `#1c2028 → #0c0e12` gradient this replaces was the entire
+   * background, which is why the old floor read as an empty document.
+   */
+  private bakeFarField(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    scale: number,
+    core: CoreId,
+    rand: () => number,
+  ): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(w, h) * 0.58);
+    grad.addColorStop(0, INK['700']);
+    grad.addColorStop(0.45, INK['800']);
+    grad.addColorStop(1, INK['950']);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
+
+    // The core's wash. Weak on purpose — it is a tint on the floor the tower
+    // stands on, not a light source.
+    const tint = CORE_BY_ID[core].color;
+    const washR = ARENA.minHalfExtent * scale * 1.05;
+    const wash = ctx.createRadialGradient(cx, cy, 0, cx, cy, washR);
+    wash.addColorStop(0, withAlpha(tint, 0.07));
+    wash.addColorStop(0.55, withAlpha(tint, 0.025));
+    wash.addColorStop(1, withAlpha(tint, 0));
+    ctx.fillStyle = wash;
+    ctx.fillRect(0, 0, w, h);
+
+    // Stars and embers. Density is per-area so a phone and an ultrawide get the
+    // same *look* rather than the same count.
+    const count = Math.round((w * h) / 1_000_000 * STAR_DENSITY * 12);
+    for (let i = 0; i < count; i++) {
+      const x = rand() * w;
+      const y = rand() * h;
+      const roll = rand();
+      const r = (0.5 + rand() * 1.3) * world(1) * scale;
+      const color = roll > 0.94 ? FX.ember : roll > 0.88 ? tint : INK['100'];
+      ctx.fillStyle = withAlpha(color, 0.06 + rand() * 0.18);
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /**
+   * Layer 2: terrain (§3.1).
+   *
+   * Seeded value noise, tiled twice at two scales, plus a handful of large
+   * blotches and a set of cracks radiating from the tower's footing.
+   *
+   * The noise is a **128 px tile filled as a pattern**, not per-pixel work over
+   * the whole backing store: at 16:9 and DPR 2 that would be three and a half
+   * million `ImageData` writes on every resize, for a texture nobody can
+   * resolve individually anyway. Two passes at different context scales break
+   * up the tile's repetition, and the alpha is low enough that the seam is not
+   * findable.
+   */
+  private bakeTerrain(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    scale: number,
+    rand: () => number,
+  ): void {
+    const tile = this.getNoiseTile();
+    const pattern = ctx.createPattern(tile, 'repeat');
+    if (pattern) {
+      for (const [zoom, alpha] of [[1, 0.05], [3.3, 0.06]] as const) {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.scale(zoom, zoom);
+        ctx.fillStyle = pattern;
+        ctx.fillRect(0, 0, w / zoom, h / zoom);
+        ctx.restore();
+      }
+    }
+
+    // Large-scale blotching: a few soft discs of lighter and darker rock, so
+    // the floor has geography rather than uniform grain.
+    for (let i = 0; i < 9; i++) {
+      const x = rand() * w;
+      const y = rand() * h;
+      const r = (0.16 + rand() * 0.3) * Math.min(w, h);
+      const lighter = rand() > 0.5;
+      const blob = ctx.createRadialGradient(x, y, 0, x, y, r);
+      blob.addColorStop(0, withAlpha(lighter ? INK['600'] : INK['950'], lighter ? 0.3 : 0.24));
+      blob.addColorStop(1, withAlpha(lighter ? INK['600'] : INK['950'], 0));
+      ctx.fillStyle = blob;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+
+    // Cracks out of the tower's footing. They are what says "something heavy
+    // has been standing here" — and they point at the tower from anywhere on
+    // the floor, which is the same job the lattice does at a different scale.
+    const cx = w / 2;
+    const cy = h / 2;
+    const start = TOWER_VISUAL.plinthRadius * scale;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < CRACK_COUNT; i++) {
+      const angle = (i / CRACK_COUNT) * Math.PI * 2 + rand() * 0.4;
+      const length = (world(35) + rand() * world(95)) * scale;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      for (const [dy, color, alpha, width] of [
+        [0, INK['950'], 0.42, 1.6],
+        [-1, INK['400'], 0.14, 0.9],
+      ] as const) {
+        ctx.strokeStyle = withAlpha(color, alpha);
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(start, dy);
+        let x = start;
+        let y = dy;
+        const steps = 5;
+        for (let s = 1; s <= steps; s++) {
+          x = start + (length * s) / steps;
+          y = dy + (rand() - 0.5) * world(9) * scale;
+          ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  /**
+   * The seeded noise tile, baked once for the life of the page.
+   *
+   * Built at a quarter size and upscaled with smoothing on, which turns a field
+   * of independent random pixels into soft value noise for the price of one
+   * `drawImage`. A per-pixel Perlin implementation would look marginally better
+   * and cost four hundred lines.
+   */
+  private getNoiseTile(): HTMLCanvasElement {
+    if (this.noiseTile) return this.noiseTile;
+    const small = document.createElement('canvas');
+    const n = NOISE_TILE / 4;
+    small.width = n;
+    small.height = n;
+    const sg = small.getContext('2d')!;
+    const img = sg.createImageData(n, n);
+    const rand = mulberry32(0x51ede);
+    for (let i = 0; i < n * n; i++) {
+      const v = Math.round(90 + rand() * 165);
+      img.data[i * 4] = v;
+      img.data[i * 4 + 1] = v;
+      img.data[i * 4 + 2] = v;
+      img.data[i * 4 + 3] = 255;
+    }
+    sg.putImageData(img, 0, 0);
+
+    const tile = document.createElement('canvas');
+    tile.width = NOISE_TILE;
+    tile.height = NOISE_TILE;
+    const tg = tile.getContext('2d')!;
+    tg.imageSmoothingEnabled = true;
+    tg.drawImage(small, 0, 0, NOISE_TILE, NOISE_TILE);
+    this.noiseTile = tile;
+    return tile;
   }
 
   private drawAimLine(_ctx: CanvasRenderingContext2D, _snap: RenderSnapshot): void {
   }
 
   /**
-   * The grid, drawn in backing-store pixels but stepped in *world* units.
+   * Layer 3: the lattice (§3.1).
    *
-   * `world(80)` keeps the cell the same size relative to the arena as the old
-   * 80 px cell was to the old canvas, so the zoom-out does not turn the floor
-   * into graph paper. Aligned to the centre rather than to (0, 0), because the
-   * centre is where the tower is and the surplus at extreme aspects is
-   * symmetric about it.
+   * The old floor was an 80 px square grid at 4% white — graph paper, aligned
+   * to nothing, and it told the player nothing they did not already know. This
+   * is concentric arcs and radial spokes **centred on the tower**, so the
+   * geometry of the floor points at the tower from every part of the arena,
+   * including the parts where the tower is off the edge of the screen.
+   *
+   * It fades out at `ARENA_RANGE_CAP` — the furthest any build's range can ever
+   * reach — rather than at the current `range`, because a lattice that re-baked
+   * every time an upgrade was bought would be a re-bake per purchase for a
+   * boundary the range ring itself already draws.
    */
-  private drawArena(
+  private bakeLattice(
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number,
     scale: number,
+    core: CoreId,
   ): void {
+    const cx = w / 2;
+    const cy = h / 2;
+    const tint = CORE_BY_ID[core].color;
+    const inner = TOWER_VISUAL.plinthRadius;
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
     ctx.lineWidth = 1;
-    const step = world(80) * scale;
-    if (step >= 4) {
-      for (let x = w / 2 % step; x < w; x += step) {
-        ctx.beginPath();
-        ctx.moveTo(Math.round(x) + 0.5, 0);
-        ctx.lineTo(Math.round(x) + 0.5, h);
-        ctx.stroke();
-      }
-      for (let y = h / 2 % step; y < h; y += step) {
-        ctx.beginPath();
-        ctx.moveTo(0, Math.round(y) + 0.5);
-        ctx.lineTo(w, Math.round(y) + 0.5);
-        ctx.stroke();
-      }
+    for (let r = inner + LATTICE_STEP; r < LATTICE_OUTER; r += LATTICE_STEP) {
+      const fade = 1 - r / LATTICE_OUTER;
+      ctx.strokeStyle = withAlpha(INK['100'], 0.14 * fade);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * scale, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    for (let i = 0; i < LATTICE_SPOKES; i++) {
+      const angle = (i / LATTICE_SPOKES) * Math.PI * 2;
+      const ux = Math.cos(angle);
+      const uy = Math.sin(angle);
+      const gradient = ctx.createLinearGradient(
+        cx + ux * inner * scale,
+        cy + uy * inner * scale,
+        cx + ux * LATTICE_OUTER * scale,
+        cy + uy * LATTICE_OUTER * scale,
+      );
+      gradient.addColorStop(0, withAlpha(tint, 0.16));
+      gradient.addColorStop(1, withAlpha(tint, 0));
+      ctx.strokeStyle = gradient;
+      ctx.beginPath();
+      ctx.moveTo(cx + ux * inner * scale, cy + uy * inner * scale);
+      ctx.lineTo(cx + ux * LATTICE_OUTER * scale, cy + uy * LATTICE_OUTER * scale);
+      ctx.stroke();
     }
     ctx.restore();
   }
 
+  /**
+   * Ground furniture under the tower (§3.3): the cast shadow and the plinth.
+   *
+   * Split from `drawTowerTop` along the line where the tower stops being part
+   * of the floor and starts being an object standing on it — the shadow and the
+   * footing are painted before the enemies so a mob at contact range walks over
+   * them, and everything above the footing is painted after, so nothing ever
+   * covers up the player's own tower.
+   */
   private drawTowerBase(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
     const t = snap.tower;
-    ctx.save();
-    ctx.fillStyle = '#3a4250';
-    ctx.beginPath();
-    ctx.arc(t.x, t.y, TOWER_VISUAL.bodyRadius + entity(4), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = TOWER_VISUAL.bodyColor;
-    ctx.beginPath();
-    ctx.arc(t.x, t.y, TOWER_VISUAL.bodyRadius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = TOWER_VISUAL.bodyStroke;
-    ctx.lineWidth = entity(2);
-    ctx.stroke();
-
-    ctx.fillStyle = TOWER_VISUAL.accentColor;
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      const px = t.x + Math.cos(a) * (TOWER_VISUAL.bodyRadius - entity(6));
-      const py = t.y + Math.sin(a) * (TOWER_VISUAL.bodyRadius - entity(6));
-      ctx.beginPath();
-      ctx.arc(px, py, entity(2.5), 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
+    const lx = Math.cos(TOWER_VISUAL.lightAngle);
+    const ly = Math.sin(TOWER_VISUAL.lightAngle);
+    const shadow = this.part('tower-shadow', TOWER_VISUAL.shadowRadius * 2.6, (g) => {
+      const r = TOWER_VISUAL.shadowRadius;
+      // The shadow is cast *away* from the key light, so the tower is lit from
+      // one direction and everything on it agrees about which.
+      const ox = -lx * r * 0.24;
+      const oy = -ly * r * 0.24;
+      const grad = g.createRadialGradient(ox, oy, r * 0.35, ox, oy, r);
+      grad.addColorStop(0, withAlpha(INK['950'], 0.66));
+      grad.addColorStop(0.55, withAlpha(INK['950'], 0.34));
+      grad.addColorStop(1, withAlpha(INK['950'], 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(ox, oy, r, 0, Math.PI * 2);
+      g.fill();
+    });
+    this.blit(ctx, shadow, t.x, t.y);
+    this.blit(ctx, this.part('tower-plinth', TOWER_VISUAL.plinthRadius * 2.3, (g) => {
+      this.paintPlinth(g);
+    }), t.x, t.y);
   }
 
-  private drawShield(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
+  /** Stone footing: a kerb of set blocks, a lit bevel and an occlusion ring. */
+  private paintPlinth(g: CanvasRenderingContext2D): void {
+    const R = TOWER_VISUAL.plinthRadius;
+    const rand = mulberry32(0x91af7);
+    g.fillStyle = TOWER_VISUAL.plinth;
+    g.beginPath();
+    g.arc(0, 0, R, 0, Math.PI * 2);
+    g.fill();
+
+    // Kerb blocks around the rim, each one a slightly different stone.
+    const blocks = 16;
+    const step = (Math.PI * 2) / blocks;
+    for (let i = 0; i < blocks; i++) {
+      const a0 = i * step + step * 0.09;
+      const a1 = (i + 1) * step - step * 0.09;
+      const mid = (a0 + a1) / 2;
+      const lit = 0.5 + 0.5 * Math.cos(mid - TOWER_VISUAL.lightAngle);
+      g.beginPath();
+      g.arc(0, 0, R, a0, a1);
+      g.arc(0, 0, R * 0.79, a1, a0, true);
+      g.closePath();
+      g.fillStyle = rand() > 0.5 ? TOWER_VISUAL.stoneMid : TOWER_VISUAL.stoneDark;
+      g.fill();
+      g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.10 * lit);
+      g.fill();
+      g.fillStyle = withAlpha(INK['950'], 0.34 * (1 - lit));
+      g.fill();
+    }
+
+    // Bevel highlight on the lit side, and the occlusion ring where the drum
+    // meets the footing — the two cheapest cues that this is a solid object.
+    g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.22);
+    g.lineWidth = entity(2);
+    g.beginPath();
+    g.arc(0, 0, R * 0.9, TOWER_VISUAL.lightAngle - 1.15, TOWER_VISUAL.lightAngle + 1.15);
+    g.stroke();
+
+    const ao = g.createRadialGradient(0, 0, TOWER_VISUAL.bodyRadius * 0.85, 0, 0, TOWER_VISUAL.bodyRadius * 1.28);
+    ao.addColorStop(0, withAlpha(INK['950'], 0.5));
+    ao.addColorStop(1, withAlpha(INK['950'], 0));
+    g.fillStyle = ao;
+    g.beginPath();
+    g.arc(0, 0, TOWER_VISUAL.bodyRadius * 1.28, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  /**
+   * The faceted shield barrier (§3.3).
+   *
+   * Was a dashed blue circle plus, for every charge, a fresh
+   * `createRadialGradient` **every frame** — the exact pattern §0.8 rule 2
+   * calls a bug. It is now six flat facets (paths, no gradients) and one cached
+   * pip sprite, and it carries strictly more information than before: the
+   * barrier's presence, its strength in the facet alpha, the charge count in
+   * the pips, and an absorb as a per-facet flicker rather than a whole-ring
+   * pulse.
+   */
+  private drawShield(ctx: CanvasRenderingContext2D, snap: RenderSnapshot, flash: number): void {
     const t = snap.tower;
     if (t.shieldMaxCharges <= 0) return;
     const ratio = t.shieldCurrentCharges / t.shieldMaxCharges;
     if (ratio <= 0) return;
-    const alpha = 0.15 + ratio * 0.25;
-    const pulse = 1 + Math.sin(this.time * 2) * 0.03;
-    const r = (TOWER_VISUAL.bodyRadius + entity(8)) * pulse;
+    const breathe = this.reducedMotion ? 1 : 1 + Math.sin(this.time * 2) * 0.022;
+    const rOut = TOWER_VISUAL.shieldRadius * breathe;
+    const rIn = rOut * 0.84;
+    const spin = this.reducedMotion ? 0 : this.time * 0.18;
+    const hit = Math.min(1, flash / 0.12);
+
     ctx.save();
-    ctx.strokeStyle = `rgba(100, 180, 255, ${alpha})`;
-    ctx.lineWidth = entity(2 + ratio * 2);
-    ctx.setLineDash([entity(4), entity(6)]);
-    ctx.beginPath();
-    ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.translate(t.x, t.y);
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < 6; i++) {
+      const a0 = spin + (i / 6) * Math.PI * 2;
+      const a1 = spin + ((i + 1) / 6) * Math.PI * 2;
+      // A deterministic per-facet offset, so an absorb lights the barrier up
+      // unevenly the way a real shell would rather than as one flat pulse.
+      const jitter = ((Math.imul(i + 1, 2654435761) >>> 0) % 1000) / 1000;
+      const lit = hit * (0.35 + 0.65 * jitter);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a0) * rIn, Math.sin(a0) * rIn);
+      ctx.lineTo(Math.cos(a0) * rOut, Math.sin(a0) * rOut);
+      ctx.lineTo(Math.cos(a1) * rOut, Math.sin(a1) * rOut);
+      ctx.lineTo(Math.cos(a1) * rIn, Math.sin(a1) * rIn);
+      ctx.closePath();
+      ctx.fillStyle = withAlpha(TOWER_VISUAL.shield, 0.03 + ratio * 0.06 + lit * 0.35);
+      ctx.fill();
+      ctx.strokeStyle = withAlpha(TOWER_VISUAL.shield, 0.14 + ratio * 0.22 + lit * 0.5);
+      ctx.lineWidth = entity(0.9 + ratio * 0.9);
+      ctx.stroke();
+    }
     ctx.restore();
 
-    // charge dots when more than 1 charge
-    if (t.shieldCurrentCharges > 1) {
-      ctx.save();
-      const dotR = r + entity(6);
+    // Charge pips: one per charge, so the count is countable.
+    if (t.shieldCurrentCharges > 0) {
+      const pip = this.part('shield-pip', entity(16), (g) => {
+        const r = entity(7);
+        const grad = g.createRadialGradient(0, 0, 0, 0, 0, r);
+        grad.addColorStop(0, withAlpha(TOWER_VISUAL.shield, 0.9));
+        grad.addColorStop(1, withAlpha(TOWER_VISUAL.shield, 0));
+        g.fillStyle = grad;
+        g.beginPath();
+        g.arc(0, 0, r, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = INK['050'];
+        g.beginPath();
+        g.arc(0, 0, entity(2.4), 0, Math.PI * 2);
+        g.fill();
+      });
+      const pipR = rOut + entity(7);
       const count = t.shieldCurrentCharges;
+      const drift = this.reducedMotion ? 0 : this.time * 1.1;
       for (let i = 0; i < count; i++) {
-        const a = (i / count) * Math.PI * 2 + this.time * 1.2;
-        const dx = t.x + Math.cos(a) * dotR;
-        const dy = t.y + Math.sin(a) * dotR;
-        const glow = ctx.createRadialGradient(dx, dy, 0, dx, dy, entity(6));
-        glow.addColorStop(0, 'rgba(180, 220, 255, 0.95)');
-        glow.addColorStop(1, 'rgba(100, 180, 255, 0)');
-        ctx.fillStyle = glow;
-        ctx.beginPath();
-        ctx.arc(dx, dy, entity(6), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#b4dcff';
-        ctx.beginPath();
-        ctx.arc(dx, dy, entity(2.5), 0, Math.PI * 2);
-        ctx.fill();
+        const a = (i / count) * Math.PI * 2 + drift;
+        this.blit(ctx, pip, t.x + Math.cos(a) * pipR, t.y + Math.sin(a) * pipR);
       }
-      ctx.restore();
     }
   }
 
+  /**
+   * The wall, as a ring of stone blocks that crumble one at a time (§3.3).
+   *
+   * The old wall was two stroked circles whose alpha and width tracked
+   * `wallHp` — which meant the difference between a full wall and one at 30%
+   * was a slightly thinner, slightly dimmer grey line, and the moment it broke
+   * was not an event. Sixteen blocks give the same number a shape: they go
+   * `full → cracked → rubble → gone` in order, so the wall visibly comes apart
+   * and the last block falling is something the player sees happen.
+   *
+   * Three cached block sprites and up to sixteen blits; nothing per-frame
+   * allocates.
+   */
   private drawWall(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
     const t = snap.tower;
     if (t.wallMaxHp <= 0) return;
     const ratio = Math.max(0, t.wallHp / t.wallMaxHp);
     if (ratio <= 0) return;
-    const r = TOWER_VISUAL.bodyRadius + world(40);
-    const thickness = entity(4 + ratio * 4);
-    const alpha = 0.3 + ratio * 0.4;
+    const n = TOWER_VISUAL.wallSegments;
+    const span = (Math.PI * 2) / n;
+    const remainingAt = ratio * n;
+    const thickness = entity(11);
+    const mid = TOWER_VISUAL.wallRadius + thickness / 2;
+
     ctx.save();
-    ctx.strokeStyle = `rgba(150, 160, 170, ${alpha})`;
-    ctx.lineWidth = thickness;
-    ctx.beginPath();
-    ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = `rgba(100, 110, 120, ${alpha * 0.6})`;
-    ctx.lineWidth = thickness - entity(2);
-    ctx.setLineDash([entity(6), entity(8)]);
-    ctx.beginPath();
-    ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.translate(t.x, t.y);
+    for (let i = 0; i < n; i++) {
+      const left = remainingAt - i;
+      const state = left >= 1 ? 'full' : left > 0.4 ? 'cracked' : left > -1 ? 'rubble' : null;
+      if (state === null) continue;
+      const sprite = this.getWallSegment(state, span, thickness);
+      ctx.save();
+      ctx.rotate(-Math.PI / 2 + (i + 0.5) * span);
+      ctx.drawImage(sprite, mid - sprite.width / 2, -sprite.height / 2);
+      ctx.restore();
+    }
     ctx.restore();
   }
 
+  /**
+   * One wall block, painted with its own middle at the sprite's centre so the
+   * draw call is a rotate and a blit.
+   */
+  private getWallSegment(
+    state: 'full' | 'cracked' | 'rubble',
+    span: number,
+    thickness: number,
+  ): HTMLCanvasElement {
+    const R = TOWER_VISUAL.wallRadius;
+    const mid = R + thickness / 2;
+    const size = Math.max(thickness * 2, 2 * (R + thickness) * Math.sin(span / 2)) + entity(8);
+    return this.part(`wall|${state}`, size, (g) => {
+      g.translate(-mid, 0);
+      const gap = span * 0.055;
+      const inner = state === 'rubble' ? R + thickness * 0.55 : R;
+      const outer = state === 'rubble' ? R + thickness : R + thickness;
+      const a0 = -span / 2 + gap;
+      const a1 = span / 2 - gap;
+      const block = (from: number, to: number, s: number, e: number): void => {
+        g.beginPath();
+        g.arc(0, 0, to, s, e);
+        g.arc(0, 0, from, e, s, true);
+        g.closePath();
+      };
+
+      if (state === 'rubble') {
+        // A broken stub: lower, shorter and with a ragged crown.
+        block(inner, outer, a0 + span * 0.18, a1 - span * 0.26);
+        g.fillStyle = TOWER_VISUAL.stoneDeep;
+        g.fill();
+        g.fillStyle = withAlpha(INK['950'], 0.35);
+        g.fill();
+        return;
+      }
+
+      block(inner, outer, a0, a1);
+      g.fillStyle = state === 'full' ? TOWER_VISUAL.stoneLit : TOWER_VISUAL.stoneMid;
+      g.fill();
+      // Lit crown on the outward face, shadowed foot on the inward one: the
+      // block reads as having a top and a bottom.
+      g.strokeStyle = withAlpha(TOWER_VISUAL.rim, state === 'full' ? 0.45 : 0.2);
+      g.lineWidth = entity(1.8);
+      g.beginPath();
+      g.arc(0, 0, outer - entity(0.8), a0, a1);
+      g.stroke();
+      g.strokeStyle = withAlpha(INK['950'], 0.55);
+      g.lineWidth = entity(2);
+      g.beginPath();
+      g.arc(0, 0, inner + entity(1), a0, a1);
+      g.stroke();
+
+      if (state === 'cracked') {
+        g.strokeStyle = withAlpha(INK['950'], 0.8);
+        g.lineWidth = entity(1.5);
+        for (const at of [0.34, 0.62]) {
+          const a = a0 + (a1 - a0) * at;
+          g.beginPath();
+          g.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
+          const bend = a + span * 0.08;
+          g.lineTo(Math.cos(bend) * (inner + thickness * 0.5), Math.sin(bend) * (inner + thickness * 0.5));
+          g.lineTo(Math.cos(a - span * 0.03) * outer, Math.sin(a - span * 0.03) * outer);
+          g.stroke();
+        }
+      }
+    });
+  }
+
+  /**
+   * Everything above the footing (§3.3): the masonry drum and its battlements,
+   * the level-tier detail, the turret, and the core crystal.
+   *
+   * Drawn after the enemies, so the player's own tower is never occluded by the
+   * things attacking it.
+   */
   private drawTowerTop(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
     const t = snap.tower;
+    const tier = this.towerTier(snap);
+    const core = this.coreOf(snap);
+    const tint = CORE_BY_ID[core].color;
+
+    this.blit(ctx, this.part(`tower-drum|${tier}`, (TOWER_VISUAL.bodyRadius + entity(24)) * 2, (g) => {
+      this.paintDrum(g, tier);
+    }), t.x, t.y);
+
+    // Tier 3: a slow arcane ring, drawn as a rotated blit of one cached sprite.
+    if (tier >= 3) {
+      const ring = this.part(`tower-ring|${core}`, (TOWER_VISUAL.bodyRadius + entity(20)) * 2, (g) => {
+        const r = TOWER_VISUAL.bodyRadius + entity(13);
+        g.strokeStyle = withAlpha(tint, 0.5);
+        g.lineWidth = entity(1.6);
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * Math.PI * 2;
+          g.beginPath();
+          g.arc(0, 0, r, a, a + Math.PI * 0.42);
+          g.stroke();
+        }
+        g.fillStyle = withAlpha(tint, 0.75);
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * Math.PI * 2 + Math.PI * 0.42;
+          g.beginPath();
+          g.arc(Math.cos(a) * r, Math.sin(a) * r, entity(2.6), 0, Math.PI * 2);
+          g.fill();
+        }
+      });
+      ctx.save();
+      ctx.translate(t.x, t.y);
+      ctx.rotate(this.reducedMotion ? 0 : this.time * 0.5);
+      ctx.drawImage(ring, -ring.width / 2, -ring.height / 2);
+      ctx.restore();
+    }
+
+    // Glow, then barrel, then gem: the crystal lights the turret from behind
+    // rather than washing it out from in front.
+    this.drawCrystalGlow(ctx, snap, tint);
+    this.drawTurret(ctx, snap, tier, core);
+    this.drawCoreCrystal(ctx, snap, tint);
+  }
+
+  /** Banded masonry, battlements, and whatever the tower's level has earned. */
+  private paintDrum(g: CanvasRenderingContext2D, tier: number): void {
+    const R = TOWER_VISUAL.bodyRadius;
+    const light = TOWER_VISUAL.lightAngle;
+    const rand = mulberry32(0x2b19f + tier);
+
+    g.fillStyle = TOWER_VISUAL.stoneDark;
+    g.beginPath();
+    g.arc(0, 0, R, 0, Math.PI * 2);
+    g.fill();
+
+    // Two courses of masonry, laid with the joints offset — the second course
+    // only exists from tier 1, which is the first thing levelling buys you.
+    const courses: Array<[number, number, number]> = [[R * 0.74, R, 18]];
+    if (tier >= 1) courses.push([R * 0.44, R * 0.7, 12]);
+    for (const [from, to, count] of courses) {
+      const step = (Math.PI * 2) / count;
+      for (let i = 0; i < count; i++) {
+        const a0 = i * step + step * 0.08;
+        const a1 = (i + 1) * step - step * 0.08;
+        const mid = (a0 + a1) / 2;
+        const lit = 0.5 + 0.5 * Math.cos(mid - light);
+        g.beginPath();
+        g.arc(0, 0, to, a0, a1);
+        g.arc(0, 0, from, a1, a0, true);
+        g.closePath();
+        g.fillStyle = rand() > 0.62 ? TOWER_VISUAL.stoneLit : TOWER_VISUAL.stoneMid;
+        g.fill();
+        g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.2 * lit * lit);
+        g.fill();
+        g.fillStyle = withAlpha(INK['950'], 0.34 * (1 - lit));
+        g.fill();
+      }
+      g.strokeStyle = withAlpha(TOWER_VISUAL.mortar, 0.75);
+      g.lineWidth = entity(1.4);
+      g.beginPath();
+      g.arc(0, 0, from, 0, Math.PI * 2);
+      g.stroke();
+    }
+
+    // Battlements. More merlons is the tier-1 silhouette change you can read
+    // from across the arena.
+    const merlons = tier >= 1 ? 12 : 8;
+    const mStep = (Math.PI * 2) / merlons;
+    for (let i = 0; i < merlons; i++) {
+      const a0 = i * mStep + mStep * 0.2;
+      const a1 = (i + 1) * mStep - mStep * 0.2;
+      const mid = (a0 + a1) / 2;
+      const lit = 0.5 + 0.5 * Math.cos(mid - light);
+      g.beginPath();
+      g.arc(0, 0, R + entity(5), a0, a1);
+      g.arc(0, 0, R - entity(1), a1, a0, true);
+      g.closePath();
+      g.fillStyle = TOWER_VISUAL.stoneMid;
+      g.fill();
+      g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.18 * lit);
+      g.fill();
+      g.fillStyle = withAlpha(INK['950'], 0.45 * (1 - lit));
+      g.fill();
+    }
+
+    // Tier 2: banners. The old flag was a three-point red triangle; red is the
+    // enemy's colour now (docs/art-direction.md), so the tower flies amber.
+    if (tier >= 2) {
+      for (const dir of [-1, 1]) {
+        g.save();
+        g.rotate(dir * Math.PI * 0.5);
+        g.fillStyle = withAlpha(TOWER_VISUAL.banner, 0.85);
+        g.beginPath();
+        g.moveTo(R - entity(2), -entity(4));
+        g.lineTo(R + entity(17), -entity(1));
+        g.lineTo(R + entity(12), entity(3));
+        g.lineTo(R + entity(17), entity(7));
+        g.lineTo(R - entity(2), entity(5));
+        g.closePath();
+        g.fill();
+        g.strokeStyle = withAlpha(INK['950'], 0.4);
+        g.lineWidth = entity(1);
+        g.stroke();
+        g.restore();
+      }
+    }
+
+    // Rim light along the lit edge. Segmented rather than one long stroke, so
+    // it falls off toward the terminator instead of ending as a hard hoop —
+    // the same trick the range ring's sweep uses, and free at bake time.
+    g.lineWidth = entity(2);
+    for (let i = -4; i <= 4; i++) {
+      const a = light + i * 0.26;
+      const fall = 1 - Math.abs(i) / 5;
+      g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.4 * fall * fall);
+      g.beginPath();
+      g.arc(0, 0, R + entity(1.4), a - 0.14, a + 0.14);
+      g.stroke();
+    }
+
+    // The chamber the crystal sits in: a floor, then an occlusion falloff, so
+    // the middle of the tower is a recess rather than a hole cut in the page.
+    g.fillStyle = TOWER_VISUAL.stoneDeep;
+    g.beginPath();
+    g.arc(0, 0, R * 0.42, 0, Math.PI * 2);
+    g.fill();
+    const well = g.createRadialGradient(0, 0, R * 0.1, 0, 0, R * 0.46);
+    well.addColorStop(0, withAlpha(INK['950'], 0.55));
+    well.addColorStop(1, withAlpha(INK['950'], 0));
+    g.fillStyle = well;
+    g.beginPath();
+    g.arc(0, 0, R * 0.46, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = withAlpha(INK['950'], 0.7);
+    g.lineWidth = entity(1.6);
+    g.beginPath();
+    g.arc(0, 0, R * 0.42, 0, Math.PI * 2);
+    g.stroke();
+  }
+
+  /**
+   * The turret: it points where the tower is shooting, kicks back when it does,
+   * and flashes at the muzzle (§3.3).
+   *
+   * Before this, nothing anywhere on the tower reacted to firing — a maxed
+   * tower emptying six shots a second looked exactly like an idle one. The
+   * heading is read off the projectiles, so the barrel is aimed by the same
+   * fact that aimed the shot rather than by a copy of the targeting rules.
+   */
+  private drawTurret(ctx: CanvasRenderingContext2D, snap: RenderSnapshot, tier: number, core: CoreId): void {
+    const t = snap.tower;
+    const tint = CORE_BY_ID[core].color;
+    const len = TOWER_VISUAL.turretLength;
+    const sprite = this.part(`turret|${tier}|${core}`, (len + entity(12)) * 2, (g) => {
+      const w = TOWER_VISUAL.turretWidth;
+      const base = entity(3);
+      // Underside first, so the barrel sits on its own shadow.
+      g.fillStyle = withAlpha(INK['950'], 0.55);
+      g.beginPath();
+      g.moveTo(base, -w * 0.5 + entity(2));
+      g.lineTo(len, -w * 0.34 + entity(2));
+      g.lineTo(len, w * 0.34 + entity(2.5));
+      g.lineTo(base, w * 0.5 + entity(2.5));
+      g.closePath();
+      g.fill();
+
+      g.fillStyle = TOWER_VISUAL.stoneLit;
+      g.beginPath();
+      g.moveTo(base, -w * 0.5);
+      g.lineTo(len, -w * 0.34);
+      g.lineTo(len, w * 0.34);
+      g.lineTo(base, w * 0.5);
+      g.closePath();
+      g.fill();
+      // A dark outline, because the barrel is stone on stone and needs a
+      // silhouette of its own to read at this zoom.
+      g.strokeStyle = withAlpha(INK['950'], 0.85);
+      g.lineWidth = entity(1.6);
+      g.stroke();
+      // Lit top edge.
+      g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.65);
+      g.lineWidth = entity(1.6);
+      g.beginPath();
+      g.moveTo(base, -w * 0.5 + entity(0.9));
+      g.lineTo(len, -w * 0.34 + entity(0.9));
+      g.stroke();
+
+      // Amber banding, and a core-tinted collar at the muzzle so the shot's
+      // colour is announced before it leaves.
+      g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.55);
+      for (const at of tier >= 2 ? [0.32, 0.58, 0.8] : [0.4, 0.72]) {
+        const x = base + (len - base) * at;
+        g.fillRect(x, -w * 0.5, entity(2.4), w);
+      }
+      g.fillStyle = withAlpha(tint, 0.85);
+      g.fillRect(len - entity(3), -w * 0.4, entity(3), w * 0.8);
+
+      // Tier 2+: side vanes, so a levelled turret has a heavier silhouette.
+      if (tier >= 2) {
+        g.fillStyle = TOWER_VISUAL.stoneDark;
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.moveTo(base + entity(4), dir * w * 0.5);
+          g.lineTo(base + entity(14), dir * (w * 0.5 + entity(4)));
+          g.lineTo(base + entity(16), dir * w * 0.5);
+          g.closePath();
+          g.fill();
+        }
+      }
+    });
+
+    const back = TOWER_VISUAL.recoilDistance * easeOutCubic(this.recoil);
     ctx.save();
-    ctx.fillStyle = TOWER_VISUAL.roofColor;
-    ctx.beginPath();
-    ctx.moveTo(t.x, t.y - TOWER_VISUAL.bodyRadius - entity(18));
-    ctx.lineTo(t.x - TOWER_VISUAL.bodyRadius + entity(2), t.y - TOWER_VISUAL.bodyRadius + entity(2));
-    ctx.lineTo(t.x + TOWER_VISUAL.bodyRadius - entity(2), t.y - TOWER_VISUAL.bodyRadius + entity(2));
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = TOWER_VISUAL.bodyStroke;
-    ctx.lineWidth = entity(2);
-    ctx.stroke();
+    ctx.translate(t.x, t.y);
+    ctx.rotate(this.turretAngle);
+    ctx.translate(-back, 0);
+    ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
 
-    ctx.strokeStyle = '#c0c4cc';
-    ctx.lineWidth = entity(1.5);
-    ctx.beginPath();
-    ctx.moveTo(t.x, t.y - TOWER_VISUAL.bodyRadius - entity(18));
-    ctx.lineTo(t.x, t.y - TOWER_VISUAL.bodyRadius - entity(30));
-    ctx.stroke();
-
-    ctx.fillStyle = TOWER_VISUAL.flagColor;
-    ctx.beginPath();
-    ctx.moveTo(t.x, t.y - TOWER_VISUAL.bodyRadius - entity(30));
-    ctx.lineTo(t.x + entity(10), t.y - TOWER_VISUAL.bodyRadius - entity(26));
-    ctx.lineTo(t.x, t.y - TOWER_VISUAL.bodyRadius - entity(22));
-    ctx.closePath();
-    ctx.fill();
+    if (this.muzzle > 0) {
+      const flash = this.part(`muzzle|${core}`, entity(30), (g) => {
+        const r = entity(14);
+        const grad = g.createRadialGradient(0, 0, 0, 0, 0, r);
+        grad.addColorStop(0, withAlpha(INK['050'], 0.95));
+        grad.addColorStop(0.35, withAlpha(tint, 0.7));
+        grad.addColorStop(1, withAlpha(tint, 0));
+        g.fillStyle = grad;
+        g.beginPath();
+        g.arc(0, 0, r, 0, Math.PI * 2);
+        g.fill();
+        // Four spikes, so the flash has a direction rather than being a dot.
+        g.fillStyle = withAlpha(INK['050'], 0.8);
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2;
+          g.save();
+          g.rotate(a);
+          g.beginPath();
+          g.moveTo(0, -entity(2));
+          g.lineTo(r * (i % 2 === 0 ? 1 : 0.55), 0);
+          g.lineTo(0, entity(2));
+          g.closePath();
+          g.fill();
+          g.restore();
+        }
+      });
+      ctx.save();
+      ctx.globalAlpha = this.muzzle;
+      ctx.translate(len, 0);
+      const s = 0.65 + (1 - this.muzzle) * 0.6;
+      ctx.drawImage(flash, -flash.width * s / 2, -flash.height * s / 2, flash.width * s, flash.height * s);
+      ctx.restore();
+    }
     ctx.restore();
   }
 
+  /**
+   * The core crystal (§3.3).
+   *
+   * The one piece of the tower that is not stone, and the only place a run's
+   * *core* — its whole identity — shows up during play. It charges over the
+   * shot cadence and discharges when the shot leaves, so a tower with fire rate
+   * visibly beats faster than one without.
+   */
+  /**
+   * How lit the crystal is this frame: it charges over the shot cadence and
+   * discharges as the shot leaves.
+   */
+  private crystalCharge(snap: RenderSnapshot): number {
+    const t = snap.tower;
+    const rate = t.fireRate > 0 ? t.fireRate : 1;
+    const phase = this.reducedMotion ? 0.7 : Math.max(0, Math.min(1, 1 - t.cooldown * rate));
+    return 0.55 + phase * 0.45 + this.muzzle * 0.5;
+  }
+
+  private drawCrystalGlow(ctx: CanvasRenderingContext2D, snap: RenderSnapshot, tint: string): void {
+    const t = snap.tower;
+    const r = TOWER_VISUAL.crystalRadius;
+    const charge = this.crystalCharge(snap);
+    const glow = this.part(`crystal-glow|${tint}`, r * 6, (g) => {
+      const gr = r * 3;
+      const grad = g.createRadialGradient(0, 0, r * 0.3, 0, 0, gr);
+      grad.addColorStop(0, withAlpha(tint, 0.42));
+      grad.addColorStop(0.4, withAlpha(tint, 0.13));
+      grad.addColorStop(1, withAlpha(tint, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(0, 0, gr, 0, Math.PI * 2);
+      g.fill();
+    });
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, charge * 0.6);
+    this.blit(ctx, glow, t.x, t.y, 0.85 + charge * 0.3);
+    ctx.restore();
+  }
+
+  private drawCoreCrystal(ctx: CanvasRenderingContext2D, snap: RenderSnapshot, tint: string): void {
+    const t = snap.tower;
+    const r = TOWER_VISUAL.crystalRadius;
+    const charge = this.crystalCharge(snap);
+
+    const body = this.part(`crystal|${tint}`, r * 2.8, (g) => {
+      // A hexagonal gem: dark facets, a bright core, one specular highlight.
+      const face = (radius: number, rot: number): void => {
+        g.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = rot + (i / 6) * Math.PI * 2;
+          const px = Math.cos(a) * radius;
+          const py = Math.sin(a) * radius * 1.12;
+          if (i === 0) g.moveTo(px, py);
+          else g.lineTo(px, py);
+        }
+        g.closePath();
+      };
+      face(r, -Math.PI / 2);
+      g.fillStyle = withAlpha(tint, 0.95);
+      g.fill();
+      g.strokeStyle = withAlpha(INK['950'], 0.6);
+      g.lineWidth = entity(1.2);
+      g.stroke();
+      face(r * 0.5, -Math.PI / 2);
+      g.fillStyle = withAlpha(INK['050'], 0.6);
+      g.fill();
+      g.fillStyle = withAlpha(INK['050'], 0.4);
+      g.beginPath();
+      g.ellipse(-r * 0.32, -r * 0.42, r * 0.18, r * 0.28, -0.5, 0, Math.PI * 2);
+      g.fill();
+    });
+    this.blit(ctx, body, t.x, t.y, 0.9 + charge * 0.14);
+  }
+
+  /**
+   * The range ring (§3.2).
+   *
+   * It is the most important non-entity element on screen, and until Part 3 it
+   * was a 1 px dashed circle at 6% white — a line you could not see, marking a
+   * boundary that (before Part 1) was off the edge of the canvas anyway. Four
+   * things replace it:
+   *
+   * 1. A soft falloff annulus, so "in range" is a readable **region** and not a
+   *    line. One cached sprite of a normalised disc, scaled to the radius.
+   * 2. A crisp rim, drawn as a plain stroked arc so it stays 2 px whatever the
+   *    range is — a scaled sprite would thicken as range grew.
+   * 3. A slow highlight sweep around the rim: seven trailing arc strokes, no
+   *    allocation, and it holds still under `prefers-reduced-motion`.
+   * 4. A 400 ms ease and a bloom whenever `range` resolves to a new number, so
+   *    buying `Longbow` has a visible payoff.
+   *
+   * All of it is tinted by the run's core.
+   */
   private drawRangeRing(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
     const t = snap.tower;
+    const r = this.rangeDrawn;
+    if (r <= 0) return;
+    const tint = this.coreTint(snap);
+    const bloom = this.rangeBloom;
+
+    const fill = this.part(`range-fill|${tint}`, RANGE_SPRITE_RADIUS * 2, (g) => {
+      const R = RANGE_SPRITE_RADIUS;
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, R);
+      grad.addColorStop(0, withAlpha(tint, 0));
+      grad.addColorStop(0.5, withAlpha(tint, 0.022));
+      grad.addColorStop(0.86, withAlpha(tint, 0.05));
+      grad.addColorStop(0.97, withAlpha(tint, 0.1));
+      grad.addColorStop(1, withAlpha(tint, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(0, 0, R, 0, Math.PI * 2);
+      g.fill();
+    });
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.setLineDash([entity(6), entity(6)]);
+    ctx.globalAlpha = 1 + bloom * 1.6;
+    this.blit(ctx, fill, t.x, t.y, (r * 2) / fill.width);
+    ctx.restore();
+
+    ctx.save();
+    // The rim.
+    ctx.strokeStyle = withAlpha(tint, 0.45 + bloom * 0.45);
+    ctx.lineWidth = entity(1.8);
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    // An inner hairline, which is what gives the rim thickness at a glance.
+    ctx.strokeStyle = withAlpha(tint, 0.09 + bloom * 0.2);
     ctx.lineWidth = entity(1);
     ctx.beginPath();
-    ctx.arc(t.x, t.y, t.range, 0, Math.PI * 2);
+    ctx.arc(t.x, t.y, r - entity(6), 0, Math.PI * 2);
     ctx.stroke();
+
+    // The sweep.
+    const head = this.reducedMotion ? -Math.PI / 2 : this.time * RANGE_SWEEP_SPEED;
+    const segment = 0.13;
+    ctx.lineWidth = entity(2.6);
+    for (let i = 0; i < RANGE_SWEEP_SEGMENTS; i++) {
+      const fade = 1 - i / RANGE_SWEEP_SEGMENTS;
+      ctx.strokeStyle = withAlpha(tint, 0.42 * fade * fade);
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, head - (i + 1) * segment, head - i * segment);
+      ctx.stroke();
+    }
+
+    // The bloom: a ghost ring pushing outward from the new radius.
+    if (bloom > 0) {
+      ctx.strokeStyle = withAlpha(tint, bloom * 0.4);
+      ctx.lineWidth = entity(1 + bloom * 4);
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r + (1 - bloom) * entity(26), 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -558,56 +1662,168 @@ export class Renderer {
   }
 
   /**
-   * Spawn-edge markers for the coming wave (gameplay plan §7.3).
+   * Spawn rifts, and the enemies coming through them (§3.4).
    *
-   * These are the *real* spawn points from the pre-rolled roster, which is
-   * what makes them worth drawing: an arrow pointing at an edge no enemy is
-   * going to use would teach the player to ignore them. Drawn under the
-   * enemies, so the last stragglers of the cleared wave still read on top.
+   * Two jobs, one pass:
+   *
+   * - **The threat preview** (gameplay plan §7.3). These are the *real* spawn
+   *   points from the pre-rolled roster, which is what makes them worth
+   *   drawing at all. The arrow read is preserved exactly — a chevron pointing
+   *   the way the lane will come in — it is just now a chevron spilling out of
+   *   an open rift instead of a bare triangle on an empty floor.
+   * - **The arrivals themselves.** At `ARENA.spawnRingScale` = 1.04 enemies
+   *   materialise *just* on-screen along the long axis, and something popping
+   *   into existence in plain view reads as a bug. A 0.4 s rift flare and a
+   *   ground dust ring at the point it happens is what makes it read as
+   *   intentional instead.
+   *
+   * One cached rift sprite (rotated and scaled) and one cached dust ring; the
+   * emergence list is pooled and capped at `EMERGENCE_CAP`.
    */
-  private drawSpawnLanes(
-    ctx: CanvasRenderingContext2D,
-    lanes: RenderSnapshot['spawnLanes'],
-  ): void {
-    if (!lanes || lanes.length === 0) return;
-    // A gentle pulse rather than a static mark: the intermission is short and
-    // a still shape at the edge of the arena reads as scenery.
-    const pulse = 0.55 + 0.35 * Math.sin(this.time * 4);
+  private drawSpawnPortals(ctx: CanvasRenderingContext2D): void {
+    if (this.portalOpen <= 0 && this.emergences.length === 0) return;
+    const rift = this.getRiftSprite();
+    const swirl = this.getRiftSwirlSprite();
+
+    if (this.portalOpen > 0) {
+      const open = easeOutCubic(this.portalOpen);
+      // A gentle pulse rather than a static mark: the intermission is short and
+      // a still shape at the edge of the arena reads as scenery.
+      const pulse = this.reducedMotion ? 0.8 : 0.7 + 0.3 * Math.sin(this.time * 4);
+      const spin = this.reducedMotion ? 0 : this.time * 0.9;
+      ctx.save();
+      for (const lane of this.portalLanes) {
+        // Clamp into what is actually *visible*, not into the world rectangle:
+        // the spawn ellipse sits just outside the latter, and at an aspect
+        // outside `ARENA.aspectClamp` the two are not the same rectangle.
+        const inset = world(10);
+        const minX = this.width / 2 - this.camera.viewHalfWidth + inset;
+        const maxX = this.width / 2 + this.camera.viewHalfWidth - inset;
+        const minY = this.height / 2 - this.camera.viewHalfHeight + inset;
+        const maxY = this.height / 2 + this.camera.viewHalfHeight - inset;
+        const x = Math.max(minX, Math.min(maxX, lane.x));
+        const y = Math.max(minY, Math.min(maxY, lane.y));
+        const angle = Math.atan2(this.towerY - y, this.towerX - x);
+
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.globalAlpha = open * pulse;
+        ctx.save();
+        ctx.rotate(angle);
+        // The rift opens as a slit and widens: scaled on its short axis only,
+        // which is the whole animation.
+        ctx.scale(open, 0.35 + open * 0.65);
+        ctx.drawImage(rift, -rift.width / 2, -rift.height / 2);
+        ctx.restore();
+        ctx.save();
+        ctx.rotate(spin);
+        ctx.globalAlpha = open * pulse * 0.7;
+        ctx.drawImage(swirl, -swirl.width / 2, -swirl.height / 2);
+        ctx.restore();
+        ctx.restore();
+
+        // The threat arrow, kept: it is the only thing that says *which way*
+        // this lane is coming from.
+        const ux = Math.cos(angle);
+        const uy = Math.sin(angle);
+        ctx.globalAlpha = open * pulse;
+        ctx.strokeStyle = withAlpha(FX.blood, 0.75);
+        ctx.lineWidth = world(2.5);
+        ctx.beginPath();
+        ctx.moveTo(x + ux * world(14), y + uy * world(14));
+        ctx.lineTo(x + ux * world(26), y + uy * world(26));
+        ctx.stroke();
+        const tipX = x + ux * world(34);
+        const tipY = y + uy * world(34);
+        ctx.fillStyle = withAlpha(FX.ember, 0.9);
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(x + ux * world(21) - uy * world(7), y + uy * world(21) + ux * world(7));
+        ctx.lineTo(x + ux * world(21) + uy * world(7), y + uy * world(21) - ux * world(7));
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    if (this.emergences.length === 0) return;
+    const dust = this.getDustRingSprite();
     ctx.save();
-    for (const lane of lanes) {
-      // Clamp into what is actually *visible*, not into the world rectangle:
-      // the spawn ellipse sits just outside the latter, and at an aspect
-      // outside `ARENA.aspectClamp` the two are not the same rectangle.
-      const inset = world(10);
-      const minX = this.width / 2 - this.camera.viewHalfWidth + inset;
-      const maxX = this.width / 2 + this.camera.viewHalfWidth - inset;
-      const minY = this.height / 2 - this.camera.viewHalfHeight + inset;
-      const maxY = this.height / 2 + this.camera.viewHalfHeight - inset;
-      const x = Math.max(minX, Math.min(maxX, lane.x));
-      const y = Math.max(minY, Math.min(maxY, lane.y));
-      const dx = this.towerX - x;
-      const dy = this.towerY - y;
-      const len = Math.hypot(dx, dy) || 1;
-      const ux = dx / len;
-      const uy = dy / len;
-      ctx.strokeStyle = `rgba(255, 150, 110, ${(0.5 * pulse).toFixed(3)})`;
-      ctx.lineWidth = world(2);
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + ux * world(26), y + uy * world(26));
-      ctx.stroke();
-      // Arrowhead pointing the way the lane will come in.
-      const tipX = x + ux * world(32);
-      const tipY = y + uy * world(32);
-      ctx.fillStyle = `rgba(255, 170, 130, ${(0.6 * pulse).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.moveTo(tipX, tipY);
-      ctx.lineTo(x + ux * world(20) - uy * world(7), y + uy * world(20) + ux * world(7));
-      ctx.lineTo(x + ux * world(20) + uy * world(7), y + uy * world(20) - ux * world(7));
-      ctx.closePath();
-      ctx.fill();
+    for (const em of this.emergences) {
+      const k = em.age / EMERGENCE_TIME;
+      const fade = 1 - k;
+      ctx.save();
+      ctx.translate(em.x, em.y);
+      ctx.globalAlpha = fade * 0.9;
+      ctx.save();
+      ctx.rotate(em.angle);
+      // Flares wide the instant something comes through, then shuts.
+      ctx.scale(0.6 + fade * 0.8, 0.25 + fade * 0.95);
+      ctx.drawImage(rift, -rift.width / 2, -rift.height / 2);
+      ctx.restore();
+      // Ground dust, expanding and thinning.
+      ctx.globalAlpha = fade * fade * 0.75;
+      const s = 0.35 + k * 1.1;
+      ctx.drawImage(dust, -dust.width * s / 2, -dust.height * s / 2, dust.width * s, dust.height * s);
+      ctx.restore();
     }
     ctx.restore();
+  }
+
+  /** The rift itself: a torn slit with a hot edge. Cached; rotated and scaled. */
+  private getRiftSprite(): HTMLCanvasElement {
+    return this.part('rift', world(56), (g) => {
+      const rx = world(10);
+      const ry = world(26);
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, ry);
+      grad.addColorStop(0, withAlpha(INK['950'], 0.95));
+      grad.addColorStop(0.5, withAlpha(FX.blood, 0.72));
+      grad.addColorStop(0.78, withAlpha(FX.ember, 0.6));
+      grad.addColorStop(1, withAlpha(FX.ember, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(0, 0, rx * 1.9, ry, 0, 0, Math.PI * 2);
+      g.fill();
+      // The tear: a dark core with a bright lip, so it reads as an opening
+      // rather than a stain on the floor.
+      g.fillStyle = withAlpha(INK['950'], 0.92);
+      g.beginPath();
+      g.ellipse(0, 0, rx * 0.55, ry * 0.62, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = withAlpha(FX.ember, 0.8);
+      g.lineWidth = world(1.4);
+      g.stroke();
+    });
+  }
+
+  /** Ember arms around the rift, rotated live so the tear looks like it turns. */
+  private getRiftSwirlSprite(): HTMLCanvasElement {
+    return this.part('rift-swirl', world(60), (g) => {
+      g.lineCap = 'round';
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        g.strokeStyle = withAlpha(i % 2 === 0 ? FX.ember : FX.blood, 0.5);
+        g.lineWidth = world(2);
+        g.beginPath();
+        g.arc(0, 0, world(16) + (i % 3) * world(3), a, a + Math.PI * 0.5);
+        g.stroke();
+      }
+    });
+  }
+
+  /** The dust an arrival kicks up. One sprite, scaled outward as it fades. */
+  private getDustRingSprite(): HTMLCanvasElement {
+    return this.part('rift-dust', world(64), (g) => {
+      const r = world(30);
+      const grad = g.createRadialGradient(0, 0, r * 0.55, 0, 0, r);
+      grad.addColorStop(0, withAlpha(INK['300'], 0));
+      grad.addColorStop(0.7, withAlpha(INK['300'], 0.4));
+      grad.addColorStop(1, withAlpha(INK['300'], 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(0, 0, r, r * 0.62, 0, 0, Math.PI * 2);
+      g.fill();
+    });
   }
 
   /**

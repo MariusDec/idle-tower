@@ -133,6 +133,140 @@ a frame:
   ability's radius, with a crosshair, showing exactly what the next click will
   cover.
 
+## The battlefield: ground, tower, range ring, portals
+
+UI plan §3. Owned by `src/game/Renderer.ts` and `src/data/tower.ts`
+(`TOWER_VISUAL`); every colour comes from `src/data/palette.ts`.
+
+### The discipline first
+
+Everything below obeys one rule, the one `getEnemySprite` already established:
+**if it is static per variant, it is baked into an offscreen canvas once and
+blitted afterwards.** A `createRadialGradient` or a `shadowBlur` inside a
+per-frame loop is a bug, not a style choice. `Renderer.part(key, size, paint)`
+is the single memoised sprite factory the whole part goes through; a full run
+lives inside about a dozen sprites.
+
+Measured in-browser at a 1520×860 backing store with 261 enemies and ~250
+particles on screen: `Renderer.draw` p50 **1.7 ms**, p95 7.7 ms; the whole loop
+(simulate + draw + UI) p50 3.2 ms, p95 8 ms. Baking the ground costs ~5 ms and
+happens on a resize or a core change, never in a steady frame.
+
+### The ground, in three baked layers
+
+Composited into one offscreen canvas keyed by `(backing-store size, world
+scale, core id)`, blitted 1:1 in device space. It replaces a two-stop radial
+gradient plus an 80 px grid at 4% white.
+
+1. **Far field** — a tinted vignette so the arena has a centre and a periphery,
+   a weak wash of the run's core colour around the tower, and a seeded field of
+   stars and embers at a fixed density per unit area.
+2. **Terrain** — a 128 px seeded noise tile filled as a `createPattern` at two
+   different context scales (a per-pixel pass over the whole backing store would
+   be three and a half million writes on every resize), a handful of large soft
+   blotches so the floor has geography, and short cracks radiating out of the
+   tower's footing.
+3. **Lattice** — concentric arcs and radial spokes **centred on the tower**, so
+   the floor's geometry points at the tower from anywhere in the arena. It fades
+   out at `ARENA_RANGE_CAP × 1.18` — the furthest any build's range can ever
+   reach — rather than at the current `range`, because a lattice keyed on
+   `range` would re-bake on every upgrade purchase for a boundary the range ring
+   already draws.
+
+Seeding is `mulberry32` over `(size, core)`, so the same viewport always bakes
+the same world; `Math.random` would redraw the floor on every resize.
+
+### The range ring
+
+The most important non-entity element on screen, and it was a 1 px dashed
+circle at 6% white. Four parts, tinted by the run's core:
+
+| Part | How it is drawn |
+|---|---|
+| Falloff annulus | One cached sprite of a normalised disc, scaled to the radius. "In range" is a readable *region*, not a line. |
+| Crisp rim | A plain stroked arc, so it stays ~2 px at any range. A scaled sprite would thicken as range grew. |
+| Sweep | Seven trailing arc strokes rotating at 0.5 rad/s. No allocation. Static under `prefers-reduced-motion`. |
+| Change bloom | On a new resolved `range`, the radius eases over **400 ms** (`easeOutCubic`) and a ghost ring blooms outward for 750 ms. |
+
+The ease is the point: buying `Longbow` used to move a nearly invisible line by
+three pixels between two frames.
+
+### The tower
+
+`TOWER_VISUAL` carries the geometry and the palette; `Renderer` composites it.
+One key light (`TOWER_VISUAL.lightAngle`, up and slightly left) drives every rim
+light, band highlight and cast shadow, which is most of what separates "drawn"
+from "assembled from primitives".
+
+Split across two passes, along the line where the tower stops being part of the
+floor and starts being an object standing on it:
+
+- `drawTowerBase` — cast shadow and stone plinth, **before** the enemies, so a
+  mob at contact range walks over them.
+- `drawTowerTop` — masonry drum, battlements, tier detail, crystal glow, turret,
+  crystal, **after** the enemies, so the player's tower is never occluded by the
+  things attacking it. (Previously only the roof was on top and the body was
+  under, so enemies overlapped the tower.)
+
+**Detail tiers** come from the tower-XP level via `TOWER_VISUAL.detailTiers`
+(`0 / 10 / 25 / 50`), passed through `RenderSnapshot.towerLevel`:
+
+| Tier | Level | Adds |
+|---|---:|---|
+| 0 | 0 | one masonry course, 8 merlons |
+| 1 | 10 | a second course, 12 merlons |
+| 2 | 25 | amber banners, turret side vanes, a third barrel band |
+| 3 | 50 | a slowly rotating arcane ring in the core's colour |
+
+**The core crystal** is the only place a run's core is visible during play. It
+is tinted by `CORE_BY_ID[coreId].color` (via `RenderSnapshot.coreId`) and
+charges over the shot cadence — `1 - cooldown × fireRate` — so a tower with fire
+rate visibly beats faster than one without.
+
+**The turret** rotates to whatever the tower is shooting, kicks back on firing
+and flashes at the muzzle. The heading is read off the projectiles themselves:
+every projectile in the game leaves the tower, ids come from a monotonic counter
+and the list is append-ordered (both managers prune with `filter`, which
+preserves order), so "is there an id above the last one I saw, starting at the
+tower" is an exact read of "did we fire, and where at" — without the simulation
+carrying a presentation field or the renderer keeping a second copy of the
+targeting rules. While the pointer is held the barrel tracks the cursor instead.
+
+**Wall and shield** keep their behavioural reads and gain a shape:
+
+- The wall is a ring of `TOWER_VISUAL.wallSegments` (16) stone blocks that go
+  `full → cracked → rubble → gone` in order as `wallHp` drops. Three cached block
+  sprites, up to sixteen rotate-and-blits. Previously two stroked circles whose
+  width and alpha tracked the ratio, which made a breach a non-event.
+- The shield is a six-facet hex barrier; an absorb lights the facets unevenly
+  (a deterministic per-facet offset) rather than pulsing the whole ring. Charges
+  are countable orbiting pips. This pass previously allocated a fresh
+  `createRadialGradient` **per pip per frame**.
+
+### Spawn portals
+
+`RenderSnapshot.spawnLanes` (the real pre-rolled spawn points) opens a rift at
+each lane during the intermission — one cached sprite, scaled on its short axis
+as it widens, with a rotating ember swirl over it. The **threat arrow is kept
+exactly**: it is the only thing that says which way the wave is coming from.
+
+Arrivals are caught renderer-side: an enemy id above the watermark, appearing at
+a normalised ellipse radius ≥ `0.88`, gets a 0.4 s rift flare and an expanding
+ground dust ring at the point it appeared. The ellipse test is what keeps
+splitter children and mid-field summons — which did not walk out of a portal —
+from being given one. The list is pooled and capped at 64.
+
+This is what makes on-screen spawning at `ARENA.spawnRingScale` = 1.04 read as
+intentional rather than as things popping into existence.
+
+### Reduced motion
+
+Everything that *loops* — the crystal's breath, the range sweep, the tier-3
+arcane ring, the rift swirl, the shield's drift — holds still under
+`prefers-reduced-motion`. Event-driven motion (the recoil, the range bloom, a
+rift opening, an arrival) stays: it is feedback for something that just
+happened, and removing it removes information rather than motion.
+
 ## Frame Update (`UIManager.update`)
 
 Called every frame from `Game.loop`:

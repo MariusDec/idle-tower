@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { FX, RARITY, fxVar, rarityVar, toRgb, withAlpha } from '../src/data/palette';
+import { FX, INK, RARITY, fxVar, inkVar, rarityVar, toRgb, withAlpha } from '../src/data/palette';
 
 /**
  * `src/data/palette.ts` and `src/styles/tokens.css` both declare the effect and
@@ -49,6 +49,23 @@ describe('palette ↔ tokens.css', () => {
         hex.toLowerCase(),
       );
     }
+  });
+
+  it('declares every --ink-* step with the value palette.ts exports', () => {
+    // The canvas paints rock, not surfaces, so Part 3's ground and masonry read
+    // the primitive ramp directly. Same duplication, same guard.
+    for (const [step, hex] of Object.entries(INK)) {
+      const token = inkVar(step as keyof typeof INK);
+      expect(decls.get(token), `${token} missing from tokens.css`).toBeDefined();
+      expect(decls.get(token)!.toLowerCase(), `${token} disagrees with palette.ts`).toBe(
+        hex.toLowerCase(),
+      );
+    }
+  });
+
+  it('has no --ink-* token that palette.ts does not know about', () => {
+    const inkNames = Object.keys(INK).map(s => inkVar(s as keyof typeof INK));
+    expect(declaredNames('--ink-').sort()).toEqual(inkNames.sort());
   });
 
   it('has no --fx-* or --rarity-* token that palette.ts does not know about', () => {
