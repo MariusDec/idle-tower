@@ -4,6 +4,7 @@ import type { TalentStat } from '../data/talentTree';
 import type { PassiveStat } from '../data/passiveAbilities';
 import type { EvolutionEffectId } from '../data/upgrades';
 import type { BlessingBehavior, BlessingStat } from '../data/blessings';
+import { DEFAULT_CORE, type CoreId } from '../data/cores';
 import type { BuffEntry } from './BuffRegistry';
 
 /** Prestige contributions, read once per recompute from `PrestigeManager`. */
@@ -76,6 +77,14 @@ export interface BlessingInputs {
 export interface StatContext {
   /** Current wave number — a few effects scale with run depth. */
   wave: number;
+  /**
+   * The run's tower core (plan §6).
+   *
+   * Not optional and not nullable: every run has one, `marksman` is the
+   * default, and a context that could omit it would let a code path silently
+   * resolve a coreless tower that the game can never actually be in.
+   */
+  core: CoreId;
   /** Tower HP as a fraction of max, for HP-threshold evolutions. */
   hpFraction: number;
   /** Upgrade id → level. */
@@ -100,6 +109,7 @@ export interface StatContext {
 export function emptyStatContext(): StatContext {
   return {
     wave: 1,
+    core: DEFAULT_CORE,
     hpFraction: 1,
     upgrades: {},
     evolutions: {},

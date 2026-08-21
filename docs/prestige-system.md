@@ -65,6 +65,27 @@ both again for the transcendence path.
 
 **Lifetime AP Bonus:** Each lifetime AP gives +2% damage and +2% gold (additive).
 
+### Tower cores as an AP spend
+
+Cores ([core-system.md](core-system.md)) are bought with AP but are **not** AP
+perks: no levels, no prerequisites, no exclusivity, and their own UI.
+`PrestigeManager.canUnlockCore(id, alreadyUnlocked)` and
+`spendOnCore(id, alreadyUnlocked)` own the debit; ownership itself is
+`CoreManager`'s, which is why it is passed in rather than reached for.
+
+| Core | Cost |
+|---|---:|
+| Marksman | default (free) |
+| Artillery | 5 AP |
+| Frostwork | 10 AP |
+| Bloodforge | 15 AP |
+| Arcane | 25 AP |
+
+The unlock is **permanent** — `performAscension` and `applySavedStateReset`
+never touch it. What resets with the run is the *selection*, and it resets to
+the player's remembered preference rather than to the default, so an
+auto-ascending run keeps the identity its player chose.
+
 ## Transcendence
 
 **Unlock:** 100 AP

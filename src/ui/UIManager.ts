@@ -11,7 +11,8 @@ import { HUD } from './HUD';
 import { UpgradePanel, type BuyAmount, type UpgradePlan } from './UpgradePanel';
 import { UPGRADES } from '../data/upgrades';
 import { AbilityPanel } from './AbilityPanel';
-import { PrestigePanel } from './PrestigePanel';
+import { PrestigePanel, type CorePanelState } from './PrestigePanel';
+import { DEFAULT_CORE, type CoreId } from '../data/cores';
 import { TranscendencePanel } from './TranscendencePanel';
 import { ResearchPanel, type ResearchPanelHandlers } from './ResearchPanel';
 import { SettingsPanel } from './SettingsPanel';
@@ -113,6 +114,8 @@ export interface PrestigeAPI {
   meetsPrerequisites: (perkId: string) => boolean;
   isExcluded: (perkId: string) => boolean;
   perkBlockedReason: (perkId: string) => string | null;
+  /** Plan §6.2: cores are an AP spend with their own (non-perk) UI. */
+  coreState: CorePanelState;
   ascendUnlockWave: number;
   transcendUnlockAP: number;
   targetAscendWave: number;
@@ -197,6 +200,8 @@ export class UIManager {
   private onResolveRunFailure: (action: 'ascend' | 'retry') => void = () => {};
   private onTranscend: () => void = () => {};
   private onSpendAP: (perkId: string) => void = () => {};
+  private onUnlockCore: (id: CoreId) => void = () => {};
+  private onSelectCore: (id: CoreId) => void = () => {};
   private onUnlockResearch: (id: string) => void = () => {};
   private onCancelResearch: () => void = () => {};
   private onToggleAutomation: (key: AutomationKey, enabled: boolean) => void = () => {};
@@ -285,6 +290,7 @@ export class UIManager {
     onToggleAutoCast: () => {},
   };
   private prestigeApi: PrestigeAPI = {
+    coreState: { selected: DEFAULT_CORE, unlocked: [DEFAULT_CORE], pickerAvailable: false },
     canAscend: () => false,
     canTranscend: () => false,
     previewAP: () => 0,
@@ -384,6 +390,9 @@ export class UIManager {
       previewAP: (w) => this.prestigeApi.previewAP(w),
       perkBlockedReason: (id) => this.prestigeApi.perkBlockedReason(id),
       ascendUnlockWave: this.prestigeApi.ascendUnlockWave,
+      coreState: () => this.prestigeApi.coreState,
+      onUnlockCore: (id) => this.onUnlockCore(id),
+      onSelectCore: (id) => this.onSelectCore(id),
     });
     this.transcendencePanel = new TranscendencePanel({
       onTranscend: () => this.onTranscend(),
@@ -555,7 +564,12 @@ export class UIManager {
     });
     this.bus.on('run_ended', (payload: unknown) => {
       const p = payload as RunSummaryData;
-      this.runSummaryModal.show(p, () => {});
+      // Plan §6.2: the debrief's CTA becomes the core picker. The chain runs
+      // through the bus rather than a direct call because `Game` owns the
+      // picker modal (it owns the blessing draft for the same reason), and a
+      // UI manager reaching into the game to open one would be the only such
+      // edge in the file.
+      this.runSummaryModal.show(p, () => this.bus.emit('run_summary_dismissed', {}));
     });
     this.bus.on('talent_refunded', (payload: unknown) => {
       const p = payload as { branch: string | null; points: number; cost: number };
@@ -812,6 +826,15 @@ export class UIManager {
 
   setOnSpendAP(handler: (perkId: string) => void): void {
     this.onSpendAP = handler;
+  }
+
+  /** Plan §6.2: cores are bought with AP and chosen between runs. */
+  setOnUnlockCore(handler: (id: CoreId) => void): void {
+    this.onUnlockCore = handler;
+  }
+
+  setOnSelectCore(handler: (id: CoreId) => void): void {
+    this.onSelectCore = handler;
   }
 
   setOnUnlockResearch(handler: (id: string) => void): void {

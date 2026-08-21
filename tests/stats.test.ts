@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { TOWER_BASE } from '../src/data/tower';
+import { CORE_BY_ID, DEFAULT_CORE } from '../src/data/cores';
 import { UPGRADES } from '../src/data/upgrades';
 import { computeUpgradeValue } from '../src/types';
 import {
@@ -38,10 +39,15 @@ describe('baseline', () => {
     // level 1, and a zero-damage tower could never kill anything.
     expect(stats.baseDamage).toBe(1);
     expect(stats.fireRate).toBe(TOWER_BASE.fireRate);
-    expect(stats.range).toBe(TOWER_BASE.range);
-    expect(stats.critChance).toBe(TOWER_BASE.critChance);
     expect(stats.maxHp).toBe(TOWER_BASE.maxHp);
     expect(stats.goldMultiplier).toBe(1);
+    // Range and crit are *not* at their bases, and that is correct: every run
+    // has a core, `marksman` is the default, and `marksman` is +15% crit /
+    // +20% range (plan §6.1). There is no such thing as a coreless tower, so
+    // pinning the base here would pin a state the game can never be in.
+    const marksman = CORE_BY_ID[DEFAULT_CORE];
+    expect(stats.range).toBe(TOWER_BASE.range * (1 + (marksman.stats.rangePct ?? 0)));
+    expect(stats.critChance).toBe(TOWER_BASE.critChance + (marksman.stats.critChanceAdd ?? 0));
   });
 
   it('produces a finite value for every key', () => {

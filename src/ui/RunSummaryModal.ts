@@ -5,6 +5,15 @@ import { toggleClass } from '../utils/dom';
 export interface RunSummaryData {
   record: RunRecord;
   previous: RunRecord | null;
+  /**
+   * Whether dismissing this modal opens the core picker (plan §6.2).
+   *
+   * The CTA *is* the picker — the debrief is the moment the player is already
+   * thinking about the run that just ended, which is the only information a
+   * core choice can be made with. Before the first ascension it is false and
+   * the button reads as it always did.
+   */
+  corePickerNext?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -121,7 +130,9 @@ export class RunSummaryModal {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'btn btn-claim';
-    btn.textContent = data.record.kind === 'ascension' ? 'Begin new run' : 'Begin new cycle';
+    btn.textContent = data.corePickerNext
+      ? 'Choose your core'
+      : data.record.kind === 'ascension' ? 'Begin new run' : 'Begin new cycle';
     btn.addEventListener('click', () => this.dismiss());
     card.appendChild(btn);
 

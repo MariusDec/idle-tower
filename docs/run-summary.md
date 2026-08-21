@@ -99,9 +99,25 @@ class RunSummaryModal {
 }
 ```
 
-`RunSummaryData = { record: RunRecord, previous: RunRecord | null }`.
+`RunSummaryData = { record: RunRecord, previous: RunRecord | null, corePickerNext?: boolean }`.
 
 The CTA label changes per kind: `Begin new run` (ascension) vs `Begin new cycle` (transcendence).
+
+### The CTA is the core picker
+
+When a core picker is due (gameplay plan §6.2 — the player has ascended at least
+once and owns more than one core), the button reads **`Choose your core`** and
+dismissing the modal opens `CorePickerModal`. The debrief is the one moment the
+player is already thinking about the run that just ended, which is the only
+information a core choice can be made with; a separate prompt would be a second
+modal asking about the same thing.
+
+The chain runs through the bus rather than a direct call. `UIManager` emits
+`run_summary_dismissed` when the debrief closes; `Game` — which owns the picker
+modal, as it owns the blessing draft — subscribes and decides whether one is
+due. `Game.isCorePickerDue()` is what fills `corePickerNext` on the
+`run_ended` payload, so the label and the behaviour cannot disagree. See
+[core-system.md](core-system.md#the-picker).
 
 ## Stats tab (`src/ui/StatsPanel.ts`)
 

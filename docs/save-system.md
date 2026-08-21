@@ -10,7 +10,7 @@ Persists game state to `localStorage` under key `the-tower-save`.
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 12
+  version: number;       // current = 13
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -23,6 +23,7 @@ interface PersistentState {
   blessings: BlessingRunState;                // v10+
   bossRun: BossRunState;                      // v11+
   contracts: ContractRunState;                // v12+
+  cores: CoreRunState;                        // v13+
 }
 ```
 
@@ -40,6 +41,7 @@ interface PersistentState {
 | v9 → v10 | `blessings` — the run's draft (`docs/blessing-system.md`) |
 | v10 → v11 | `bossRun` — boss encounter rewards banked this run (`docs/boss-encounters.md`) |
 | v11 → v12 | `contracts` — the run's three live contracts (`docs/contract-system.md`) |
+| v12 → v13 | `cores` — unlocked tower cores and the run's selection (`docs/core-system.md`) |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -64,6 +66,17 @@ rather than pre-drawn because the draw needs the run's current wave and
 `ContractManager.restore` refills to three the moment the game wires itself up,
 so a pre-v12 save loads straight into three live contracts. See
 [contract-system.md](contract-system.md#persistence).
+
+`migrateV12toV13` seeds `{ unlocked: ['marksman'], preferred: 'marksman',
+selected: 'marksman' }`. That is a restatement rather than a grant: the default
+core is the only one a pre-v13 save could have owned, and `marksman`'s shot
+behavior is what every pre-v13 tower was already doing. The block carries **two
+lifetimes at once** — `unlocked` and `preferred` are permanent (an ascension
+must not un-buy a core, and an auto-ascending run must not silently revert to
+the default), while `selected` is run-scoped and restored from `preferred` on
+reset. `CoreManager.restore` rejects unrecognised ids and refuses to select a
+core the player does not own, so a hand-edited save loads as the default rather
+than as an unpayable grant. See [core-system.md](core-system.md#persistence).
 
 ## Auto-Save
 
@@ -90,7 +103,7 @@ write.
 ## Validation
 
 `validate()` checks:
-- version is 2..12 (older versions are walked up the migration ladder)
+- version is 2..13 (older versions are walked up the migration ladder)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress

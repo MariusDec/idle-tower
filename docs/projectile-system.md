@@ -92,3 +92,18 @@ A projectile retires when it:
 Every projectile ages, not just homing ones. The age cap is what retires a shot
 that is pinned or circling a target it can never catch — bounds culling alone
 would keep it in the list, and in every projectile-vs-enemy loop, indefinitely.
+
+## Core hooks
+
+`ProjectileManager.setCore(query)` mirrors `setBlessings`: a narrow
+`{ has(behavior) }` interface rather than the manager itself, so the impact path
+can be driven from a test with a two-line stub and cannot reach anything else.
+Only one core behavior fires on impact — frostwork's `chill_shots`, which routes
+through `EnemyManager.applyChill`. It shares that call with the Frostbite
+blessing, and `applyChill`'s "strongest wins, weaker only refreshes" rule
+composes the two rather than letting one dilute the other.
+
+Artillery's blast reuses the existing `splashRadius` / `splashFraction` fire
+options — the same channel the Mortar blessing and the charged shot use — which
+is why `Game.simulate` picks the larger of the two rather than applying both.
+See [core-system.md](core-system.md).

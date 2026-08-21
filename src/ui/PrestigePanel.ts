@@ -8,7 +8,28 @@ import {
   computePerkEffect,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
+import {
+  CORES,
+  DEFAULT_CORE,
+  describeCoreStats,
+  type CoreDef,
+  type CoreId,
+} from '../data/cores';
 import { setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
+
+/**
+ * What the panel needs to know about cores (plan §6.2).
+ *
+ * A flat snapshot rather than the manager, so the panel stays a renderer and
+ * the three lifetimes (`unlocked` permanent, `selected` run-scoped) are
+ * resolved by whoever owns them.
+ */
+export interface CorePanelState {
+  selected: CoreId;
+  unlocked: readonly CoreId[];
+  /** Whether switching is offered at all — false before the first ascension. */
+  pickerAvailable: boolean;
+}
 
 export interface PrestigePanelHandlers {
   onAscend: () => void;
@@ -19,6 +40,10 @@ export interface PrestigePanelHandlers {
   ascendUnlockWave: number;
   /** Plan §3.2: AP perks now have prerequisites and exclusive pairs. */
   perkBlockedReason: (perkId: string) => string | null;
+  /** Plan §6.2: cores are an AP spend, and switchable between runs. */
+  coreState: () => CorePanelState;
+  onUnlockCore: (id: CoreId) => void;
+  onSelectCore: (id: CoreId) => void;
 }
 
 export class PrestigePanel {
@@ -43,6 +68,9 @@ export class PrestigePanel {
   private apCostById = new Map<string, HTMLElement>();
   private apBtnById = new Map<string, HTMLButtonElement>();
   private apReasonById = new Map<string, HTMLElement>();
+  private coreRowById = new Map<CoreId, HTMLElement>();
+  private coreStatusById = new Map<CoreId, HTMLElement>();
+  private coreBtnById = new Map<CoreId, HTMLButtonElement>();
 
   constructor(handlers: PrestigePanelHandlers) {
     this.handlers = handlers;
@@ -75,6 +103,48 @@ export class PrestigePanel {
 
     for (const p of AP_PERKS) {
       this.updateAPRow(p, ap, state);
+    }
+    this.updateCores(ap);
+  }
+
+  /**
+   * Refresh the core rows.
+   *
+   * The button is one control with three states rather than a buy button and a
+   * separate select button, because those are the same decision at different
+   * times: an unowned core is bought, an owned one is run, and the one already
+   * running needs nothing. Three buttons would have meant two of them disabled
+   * on every row.
+   */
+  private updateCores(ap: number): void {
+    const cs = this.handlers.coreState();
+    for (const def of CORES) {
+      const row = this.coreRowById.get(def.id);
+      const status = this.coreStatusById.get(def.id);
+      const btn = this.coreBtnById.get(def.id);
+      if (!row || !status || !btn) continue;
+      const unlocked = cs.unlocked.includes(def.id);
+      const current = cs.selected === def.id;
+      toggleClass(row, 'is-core-locked', !unlocked);
+      toggleClass(row, 'is-core-current', current);
+
+      if (current) {
+        setText(status, 'Running this run');
+        setText(btn, 'Active');
+        btn.disabled = true;
+        toggleClass(btn, 'can-afford', false);
+      } else if (unlocked) {
+        setText(status, 'Unlocked');
+        setText(btn, 'Run this core');
+        btn.disabled = false;
+        toggleClass(btn, 'can-afford', true);
+      } else {
+        const affordable = ap >= def.apCost;
+        setText(status, `Locked — ${def.apCost} AP`);
+        setText(btn, `Unlock (${def.apCost} AP)`);
+        btn.disabled = !affordable;
+        toggleClass(btn, 'can-afford', affordable);
+      }
     }
   }
 
@@ -178,6 +248,9 @@ export class PrestigePanel {
   }
 
   private clearMaps(): void {
+    this.coreRowById.clear();
+    this.coreStatusById.clear();
+    this.coreBtnById.clear();
     this.apRowById.clear();
     this.apLevelById.clear();
     this.apBonusById.clear();
@@ -201,7 +274,80 @@ export class PrestigePanel {
 
     parent.appendChild(this.renderSummary());
     parent.appendChild(this.renderAscendCard());
+    parent.appendChild(this.renderCoreList());
     parent.appendChild(this.renderAPPerksList());
+  }
+
+  private renderCoreList(): HTMLElement {
+    const section = document.createElement('div');
+    section.className = 'perk-section core-section';
+    const header = document.createElement('h3');
+    header.className = 'perk-section-title';
+    header.textContent = 'Tower Cores';
+    section.appendChild(header);
+
+    const intro = document.createElement('p');
+    intro.className = 'panel-note';
+    intro.textContent = 'A core changes how the tower shoots and which blessings you are offered. '
+      + 'Unlocks are permanent; the choice itself lasts one run and is offered again each time you '
+      + 'ascend.';
+    section.appendChild(intro);
+
+    const list = document.createElement('div');
+    list.className = 'perk-list core-list';
+    for (const def of CORES) list.appendChild(this.renderCoreRow(def));
+    section.appendChild(list);
+    return section;
+  }
+
+  private renderCoreRow(def: CoreDef): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'perk-row core-row';
+    row.dataset.coreId = def.id;
+    this.coreRowById.set(def.id, row);
+
+    const icon = document.createElement('div');
+    icon.className = 'perk-icon';
+    setStyle(icon, '--perk-color', def.color);
+    icon.textContent = def.glyph;
+    row.appendChild(icon);
+
+    const info = document.createElement('div');
+    info.className = 'perk-info';
+    const name = document.createElement('div');
+    name.className = 'perk-name';
+    name.textContent = def.name;
+    const desc = document.createElement('div');
+    desc.className = 'perk-desc';
+    desc.textContent = `${describeCoreStats(def).join(' · ')} — ${def.shotText}`;
+    const meta = document.createElement('div');
+    meta.className = 'perk-meta';
+    const status = document.createElement('span');
+    status.className = 'perk-level';
+    status.textContent = def.id === DEFAULT_CORE ? 'Unlocked' : `Locked — ${def.apCost} AP`;
+    meta.appendChild(status);
+    info.appendChild(name);
+    info.appendChild(desc);
+    info.appendChild(meta);
+    row.appendChild(info);
+    this.coreStatusById.set(def.id, status);
+
+    const action = document.createElement('div');
+    action.className = 'perk-action';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-buy';
+    btn.textContent = 'Unlock';
+    btn.disabled = true;
+    btn.addEventListener('click', () => {
+      const cs = this.handlers.coreState();
+      if (cs.unlocked.includes(def.id)) this.handlers.onSelectCore(def.id);
+      else this.handlers.onUnlockCore(def.id);
+    });
+    action.appendChild(btn);
+    row.appendChild(action);
+    this.coreBtnById.set(def.id, btn);
+    return row;
   }
 
   private renderSummary(): HTMLElement {

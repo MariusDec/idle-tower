@@ -58,18 +58,38 @@ runs on every purchase and buff edge while the attribution is only needed when
 the Stats panel renders.
 
 **Contributors** (`contributors/`) are pure `(ctx, acc) => void`: upgrades,
-evolutions, prestige, research, achievements, wave modifier, blessings, talents,
-passives, equipment, buffs. Five of them switch exhaustively over a closed union
-with a `never` default — talents over `TalentStat`, achievements over
-`AchievementRewardType`, evolutions over `EvolutionEffectId`, passives over
-`PassiveStat`, blessings over `BlessingStat` — so content that nothing consumes
-is a compile error rather than a purchase that changes no number.
+evolutions, prestige, research, achievements, wave modifier, blessings, **core**,
+talents, passives, equipment, buffs. Six of them switch exhaustively over a
+closed union with a `never` default — talents over `TalentStat`, achievements
+over `AchievementRewardType`, evolutions over `EvolutionEffectId`, passives over
+`PassiveStat`, blessings over `BlessingStat`, and the core over `CoreId` — so
+content that nothing consumes is a compile error rather than a purchase that
+changes no number.
+
+`contributors/core.ts` is the odd one of the six: most of its cases are a single
+call, because a core's *stat block* is data and lives in `src/data/cores.ts`
+where it can be re-tuned in one line. The switch earns its keep on the case that
+is not data — `bloodforge`'s tempo step, which is gated on live tower HP. See
+[core-system.md](core-system.md).
 
 Three resolved keys are deliberately **not** tower stats: `enemySpeedMult`,
 `enemyHpMult` and `enemyDamageMult` are written to `EnemyManager` by
 `applyResolvedStats`. They still go through the pipeline so a blessing's enemy
 multipliers compose with the wave mutator's instead of one overwriting the
 other. See `docs/blessing-system.md`.
+
+## HP-gated stats
+
+Three effects read `StatContext.hpFraction` rather than a fixed input: the
+`hp_threshold_damage` evolution (above 80%), the `last_stand` blessing (below
+30%) and `bloodforge`'s `desperate_tempo` (below 50%). Until Part 6 nothing
+recomputed when HP moved, so all three armed at the *next* resolve triggered by
+something else — a purchase, a buff edge, a wave clear. For a comeback mechanic
+that is the wrong moment by definition.
+
+`Game.refreshHpThresholdStats` runs once per simulation substep and buckets
+`hpFraction` against `HP_STAT_THRESHOLDS`, resolving only on a crossing. A tower
+sitting at 29% HP costs zero resolves; an actual crossing costs one.
 
 ## Derived and stateful cases
 

@@ -30,6 +30,39 @@ blessings are, and the next run gets to be a different one.
 `BlessingManager.isDraftDue(clearedWave)` owns the whole rule, so the sim and
 the game agree on it by construction rather than by inspection.
 
+## The run's core biases the offer
+
+`BlessingDef.corePreference` is **live** as of Part 6. It is a
+`Partial<Record<CoreId, number>>`, and every declaration in the pool uses one
+shared constant, `CORE_PREFERENCE_WEIGHT` — a per-card literal is how one of
+them quietly becomes 3x during a re-tune.
+
+```ts
+// BlessingManager.offerWeight
+const pref = core ? def.corePreference?.[core] ?? 1 : 1;
+return Math.max(0.0001, def.weight * pref);
+```
+
+**1.5x, and never exclusive.** The weight *multiplies*, it never filters, so
+every eligible card keeps a real draw chance on every core — cross-core builds
+are most of what makes a second run of the same core interesting.
+`tests/cores.test.ts` sweeps the entire weight range and asserts that no card is
+unreachable on any core, and that every core has at least one card that likes it
+(a core the pool ignored would draft identically to `marksman`).
+
+Measured in-browser against the live pool:
+
+| Card | on `marksman` | on its own core |
+|---|---:|---:|
+| Frostbite (`bl_frost`) | 9.5% of offers | **12.0%** (`frostwork`) |
+| Mortar Round (`bl_mortar`) | 10.8% of offers | **13.5%** (`artillery`) |
+
+Frostbite is still drawn in 10.6% of `artillery` offers, which is the point.
+
+`Game` passes `coreMgr.current` into `openDraft` and `reroll`; `sim/model.ts`
+passes the run's core too, so the §1.6 table measures the draft the player
+actually sees. See [core-system.md](core-system.md).
+
 ## The draft pauses the intermission, not the game
 
 `Game.maybeOfferBlessingDraft` calls `WaveManager.pauseIntermission()` — never
@@ -113,6 +146,8 @@ does not compile. `BlessingBehavior` is keyed **exhaustively** by
 read. This is the mechanism that killed the last plan's twenty inert talents;
 `tests/content-coverage.test.ts` guards the parts the type system cannot see
 (a card that declares nothing, a dangling `requires`, a placeholder consumer).
+`CoreId` and `CoreBehavior` are the same pattern one layer up — see
+[core-system.md](core-system.md#two-closed-unions).
 
 ## How a blessing becomes a number
 

@@ -16,15 +16,17 @@ import type {
   BlessingRunState,
   BossRunState,
   ContractRunState,
+  CoreRunState,
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
 import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBossWave } from '../data/formulas';
 import { ENEMY_DEFS, spawnPoolForWave } from '../data/enemies';
+import { DEFAULT_CORE } from '../data/cores';
 import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 12;
+const SAVE_VERSION = 13;
 
 function defaultWaveModifier() {
   return {
@@ -93,6 +95,8 @@ export interface PersistentState {
   blessings?: BlessingRunState;
   /** v12+: the run's three live contracts (plan §5.5). */
   contracts?: ContractRunState;
+  /** v13+: unlocked cores and the run's selection (plan §6.3). */
+  cores?: CoreRunState;
   /**
    * Deliberately absent: **loot orbs** (gameplay plan §4.1/§4.4).
    *
@@ -393,10 +397,39 @@ function migrateV11toV12(data: Record<string, unknown>): void {
   }
 }
 
+/**
+ * A fresh core block — the v13 default.
+ *
+ * The default core is the only one a pre-v13 save can have owned, and it is
+ * also the one every run before this feature was actually playing: the shot
+ * behavior a v12 tower had is `marksman`'s, so seeding it is a restatement of
+ * what the save already meant rather than a grant.
+ */
+function defaultCores(): CoreRunState {
+  return { unlocked: [DEFAULT_CORE], preferred: DEFAULT_CORE, selected: DEFAULT_CORE };
+}
+
+/**
+ * v13 (gameplay plan §6.3): tower cores.
+ *
+ * Additive, like v10-v12. Nothing is transformed: a pre-v13 save is a run on
+ * the default core that has never been offered a choice, which is exactly what
+ * the seeded block says.
+ *
+ * §6.3 says "bump to v12". It was written before Part 3 took v11 and Part 5
+ * took v12, so the number in the plan is two behind; the ladder decides, not
+ * the plan.
+ */
+function migrateV12toV13(data: Record<string, unknown>): void {
+  if (!isObject(data.cores)) {
+    data.cores = defaultCores();
+  }
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -422,6 +455,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 9) { migrateV9toV10(data); data.version = 10; }
   if (data.version === 10) { migrateV10toV11(data); data.version = 11; }
   if (data.version === 11) { migrateV11toV12(data); data.version = 12; }
+  if (data.version === 12) { migrateV12toV13(data); data.version = 13; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -437,6 +471,7 @@ function validate(data: unknown): data is PersistentState {
   if (!isObject(d.blessings)) d.blessings = defaultBlessings();
   if (!isObject(d.bossRun)) d.bossRun = defaultBossRun();
   if (!isObject(d.contracts)) d.contracts = defaultContracts();
+  if (!isObject(d.cores)) d.cores = defaultCores();
 
   return true;
 }
@@ -489,6 +524,7 @@ export class SaveManager {
       blessings: this.snapshotBlessings(state.blessings),
       bossRun: this.snapshotBossRun(state.bossRun),
       contracts: this.snapshotContracts(state.contracts),
+      cores: this.snapshotCores(state.cores),
     };
   }
 
@@ -536,6 +572,16 @@ export class SaveManager {
       completedCount: c.completedCount ?? 0,
       apBonusPct: c.apBonusPct ?? 0,
       uidSeq: c.uidSeq ?? 0,
+    };
+  }
+
+  /** Copied field by field, for the same reason blessings are. */
+  private snapshotCores(c: CoreRunState | undefined): CoreRunState {
+    if (!c) return defaultCores();
+    return {
+      unlocked: [...(c.unlocked ?? [DEFAULT_CORE])],
+      preferred: c.preferred ?? DEFAULT_CORE,
+      selected: c.selected ?? DEFAULT_CORE,
     };
   }
 

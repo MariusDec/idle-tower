@@ -19,6 +19,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/loot-system.md](docs/loot-system.md) | Loot orbs, the charged shot, click-placed abilities, the input routing order, and the idle-parity measurement |
 | [docs/blessing-system.md](docs/blessing-system.md) | The in-run roguelite draft: 30-card pool, cadence, rerolls, behaviors, idle safety, balance |
 | [docs/contract-system.md](docs/contract-system.md) | Three rolling run-scoped objectives: wave-band tiering, the goal-kind consumer map, rewards and the +50% AP cap, the tracker |
+| [docs/core-system.md](docs/core-system.md) | Five tower cores: the run's identity, AP unlocks vs run-scoped selection, shot behaviors, the picker, blessing preference, the ±15% balance table |
 | [docs/projectile-system.md](docs/projectile-system.md) | Projectile firing, shot variants, swept collision, piercing, lifetime, damage multipliers |
 | [docs/resource-system.md](docs/resource-system.md) | Gold & mana economy, income sources, spending, passive income |
 | [docs/upgrade-system.md](docs/upgrade-system.md) | 27 upgrades across 4 categories, evolutions, bulk buy, cost formula, upgrade panel |
@@ -37,7 +38,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
 | [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, progression tab, milestone table |
 | [docs/run-summary.md](docs/run-summary.md) | Post-run debrief modal, per-run history ring buffer, stats tab |
-| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v12) and the migration ladder, debounced auto-save, offline progress |
+| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v13) and the migration ladder, debounced auto-save, offline progress |
 
 ## Content at a glance
 
@@ -55,12 +56,14 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Achievements | 18 | `src/data/achievements.ts` |
 | Wave modifiers | 9 | `src/data/waveModifiers.ts` |
 | Blessings | 30 | `src/data/blessings.ts` |
+| Tower cores | 5 | `src/data/cores.ts` |
+| Core shot behaviors | 6 | `src/data/cores.ts` |
 | Loot orb kinds | 3 | `src/data/loot.ts` |
 | Contracts | 28 | `src/data/contracts.ts` |
 | Contract goal kinds | 10 | `src/data/contracts.ts` |
 | Placeable abilities | 3 | `src/data/abilities.ts` |
 | Equipment slots / rarities | 8 / 5 | `src/data/equipment.ts` |
-| Save version | 12 | `src/systems/SaveManager.ts` |
+| Save version | 13 | `src/systems/SaveManager.ts` |
 
 ## Commands
 

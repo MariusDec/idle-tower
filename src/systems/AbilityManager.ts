@@ -81,6 +81,8 @@ export class AbilityManager {
   private meteorDamageBonus = 0;
   /** Extended Buffs: extra duration on timed abilities. */
   private buffDurationBonus = 0;
+  /** Frostwork core: slow abilities run this many times as long (plan §6.1). */
+  private slowDurationMult = 1;
   /**
    * Reused by the auto-placer's cluster scan (plan §4.3 / cross-cutting rule 6).
    *
@@ -193,12 +195,23 @@ export class AbilityManager {
     return def.effectValue + def.effectValuePerLevel * (level - 1);
   }
 
+  /**
+   * Frostwork's `nova_extended` (plan §6.1): slow abilities last this many
+   * times as long. Keyed off the ability's *effect type*, not its id, so a
+   * second slow ability would inherit the behavior rather than needing a
+   * second list.
+   */
+  setSlowDurationMult(mult: number): void {
+    this.slowDurationMult = Math.max(1, mult);
+  }
+
   getEffectiveDuration(id: AbilityId): number {
     const def = ABILITY_BY_ID[id];
     if (!def) return 0;
     const level = this.getAbilityLevel(id);
     const base = def.duration + def.durationPerLevel * (level - 1);
-    return base * (1 + this.buffDurationBonus);
+    const coreMult = def.effectType === 'slow' ? this.slowDurationMult : 1;
+    return base * (1 + this.buffDurationBonus) * coreMult;
   }
 
   getEffectiveStats(id: AbilityId): EffectiveAbilityStats {

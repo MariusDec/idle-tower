@@ -447,6 +447,24 @@ export interface ContractRunState {
   uidSeq: number;
 }
 
+/**
+ * Tower cores (gameplay plan §6, save v13).
+ *
+ * Two lifetimes in one block, which is why the block exists at all: `unlocked`
+ * and `preferred` are **permanent** (an ascension must not un-buy a core, and
+ * an auto-ascending idle run must not silently revert to the default), while
+ * `selected` is **run-scoped** and restored from `preferred` on reset. See
+ * `docs/core-system.md`.
+ */
+export interface CoreRunState {
+  /** Every core bought with AP. Always contains the default. */
+  unlocked: string[];
+  /** The last core the player actively chose — what a reset restores to. */
+  preferred: string;
+  /** The core this run is actually running. */
+  selected: string;
+}
+
 export interface WaveState {
   number: number;
   highestWave: number;
@@ -697,6 +715,8 @@ export interface GameState {
   bossRun: BossRunState;
   /** v12+: the run's three live contracts (plan §5). */
   contracts: ContractRunState;
+  /** v13+: unlocked cores (permanent) and the run's selection (plan §6). */
+  cores: CoreRunState;
 }
 
 export interface Particle {

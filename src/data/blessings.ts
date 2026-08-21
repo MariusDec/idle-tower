@@ -15,6 +15,8 @@
  * killed the last plan's twenty inert talents.
  */
 
+import type { CoreId } from './cores';
+
 export type BlessingRarity = 'common' | 'rare' | 'epic';
 
 /**
@@ -88,8 +90,17 @@ export interface BlessingDef {
   behavior?: BlessingBehavior;
   /** Only offered when the player already holds this blessing (synergy follow-ups). */
   requires?: string;
-  /** Offer weight multiplier when the player runs this core (Part 6). */
-  corePreference?: Record<string, number>;
+  /**
+   * Offer weight multiplier when the player runs this core (plan §6.2).
+   *
+   * **1.5x, and never exclusive.** A core biases the draft toward the cards
+   * that build on it; it must never gate one away, because cross-core builds
+   * are most of what makes a second run of the same core interesting. The
+   * weight is applied in `BlessingManager.offerWeight`, which multiplies rather
+   * than filters, so every eligible card keeps a non-zero draw chance at every
+   * core — `tests/cores.test.ts` asserts exactly that.
+   */
+  corePreference?: Partial<Record<CoreId, number>>;
   /**
    * False while the blessing's consumer has not shipped yet. Excluded from
    * `rollOffer`, so a no-op card can exist in the table (and stay type-checked)
@@ -97,6 +108,16 @@ export interface BlessingDef {
    */
   offerable?: boolean;
 }
+
+/**
+ * How much a core tilts its favoured cards (plan §6.2).
+ *
+ * One constant rather than a literal on each card, because the plan's
+ * requirement is about the *mechanism* ("1.5x, never exclusive"), not about any
+ * individual card — and a per-card literal is how one of them quietly becomes
+ * 3x during a re-tune.
+ */
+export const CORE_PREFERENCE_WEIGHT = 1.5;
 
 /** Draft cadence and budget (plan §1.1). */
 export const BLESSING_FIRST_DRAFT_WAVE = 3;
@@ -178,6 +199,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 10,
     maxStacks: 3,
     effects: [{ stat: 'critChancePct', perStack: 0.02 }],
+    corePreference: { marksman: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_cruelty',
@@ -187,6 +209,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 10,
     maxStacks: 3,
     effects: [{ stat: 'critDamagePct', perStack: 0.12 }],
+    corePreference: { marksman: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_reach',
@@ -196,6 +219,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 10,
     maxStacks: 3,
     effects: [{ stat: 'rangePct', perStack: 0.15 }],
+    corePreference: { marksman: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_avarice',
@@ -214,6 +238,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 10,
     maxStacks: 4,
     effects: [{ stat: 'maxHpPct', perStack: 0.20 }],
+    corePreference: { bloodforge: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_wellspring',
@@ -223,6 +248,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 10,
     maxStacks: 3,
     effects: [{ stat: 'manaRegenPct', perStack: 0.25 }],
+    corePreference: { arcane: CORE_PREFERENCE_WEIGHT },
   },
 
   // ── Rare (weight 5) ──
@@ -243,7 +269,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 5,
     maxStacks: 1,
     behavior: 'mortar',
-    corePreference: { artillery: 1.5 },
+    corePreference: { artillery: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_frost',
@@ -253,7 +279,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 5,
     maxStacks: 1,
     behavior: 'frost_shots',
-    corePreference: { frostwork: 1.5 },
+    corePreference: { frostwork: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_split',
@@ -281,7 +307,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 5,
     maxStacks: 1,
     behavior: 'siphon',
-    corePreference: { arcane: 1.5 },
+    corePreference: { arcane: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_pierce',
@@ -291,6 +317,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 5,
     maxStacks: 2,
     effects: [{ stat: 'pierceFlat', perStack: 2 }],
+    corePreference: { artillery: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_sunder',
@@ -300,6 +327,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 5,
     maxStacks: 2,
     effects: [{ stat: 'armorPenFlat', perStack: 4 }],
+    corePreference: { artillery: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_arcane',
@@ -310,7 +338,7 @@ export const BLESSINGS: BlessingDef[] = [
     maxStacks: 2,
     minWave: 10,
     effects: [{ stat: 'abilityDamagePct', perStack: 0.30 }],
-    corePreference: { arcane: 1.5 },
+    corePreference: { arcane: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_bulwark',
@@ -320,7 +348,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 5,
     maxStacks: 2,
     effects: [{ stat: 'lifestealPct', perStack: 0.05 }],
-    corePreference: { bloodforge: 1.5 },
+    corePreference: { bloodforge: CORE_PREFERENCE_WEIGHT },
   },
 
   // ── Epic (weight 2) ──
@@ -359,6 +387,7 @@ export const BLESSINGS: BlessingDef[] = [
     weight: 2,
     maxStacks: 1,
     behavior: 'last_stand',
+    corePreference: { bloodforge: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_greed_engine',
@@ -380,6 +409,7 @@ export const BLESSINGS: BlessingDef[] = [
       { stat: 'damagePct', perStack: 0.35 },
       { stat: 'maxHpPct', perStack: -0.35 },
     ],
+    corePreference: { artillery: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_sniper',
@@ -392,6 +422,7 @@ export const BLESSINGS: BlessingDef[] = [
       { stat: 'rangePct', perStack: -0.30 },
       { stat: 'fireRatePct', perStack: 0.20 },
     ],
+    corePreference: { marksman: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_reckless',
@@ -426,6 +457,7 @@ export const BLESSINGS: BlessingDef[] = [
     maxStacks: 1,
     behavior: 'shatter',
     requires: 'bl_frost',
+    corePreference: { frostwork: CORE_PREFERENCE_WEIGHT },
   },
   {
     id: 'bl_ricochet_power',

@@ -15,6 +15,7 @@ import {
   type AutomationKey,
 } from '../data/prestige';
 import { lifetimeAPDamageBonus, lifetimeAPGoldBonus } from '../data/formulas';
+import { CORE_BY_ID, type CoreId } from '../data/cores';
 import { EventBus } from '../game/EventBus';
 import type { AchievementRewardType } from '../data/achievements';
 
@@ -516,6 +517,35 @@ export class PrestigeManager {
       this.bus.emit('automation_unlocked', { key: def.automationKey });
     }
     this.bus.emit('tp_spent', { id: perkId, level: this.ctx.prestige.tpSpent[perkId] });
+    return true;
+  }
+
+  // ── tower cores (plan §6.2) ──
+
+  /**
+   * Whether the player can afford to unlock a core right now.
+   *
+   * Cores are an AP *spend*, not an AP perk: they have no levels, no
+   * prerequisites and no exclusivity, and `AP_PERKS` is a table the panel
+   * renders row by row with a level counter. Threading a one-shot purchase with
+   * a different UI through `perkCost`/`computePerkEffect` would have meant
+   * every consumer of that table learning about a perk that has no effect
+   * value. The spend lives here because this is the class that owns the AP
+   * balance; whether the core is *already owned* is `CoreManager`'s business,
+   * so the caller passes the answer in.
+   */
+  canUnlockCore(id: CoreId, alreadyUnlocked: boolean): boolean {
+    if (alreadyUnlocked) return false;
+    const def = CORE_BY_ID[id];
+    if (!def || def.apCost <= 0) return false;
+    return this.ctx.resources.ascensionPoints >= def.apCost;
+  }
+
+  /** Debit the AP for a core. Returns false without spending when it cannot. */
+  spendOnCore(id: CoreId, alreadyUnlocked: boolean): boolean {
+    if (!this.canUnlockCore(id, alreadyUnlocked)) return false;
+    this.ctx.resources.ascensionPoints -= CORE_BY_ID[id].apCost;
+    this.bus.emit('ap_spent', { id: `core:${id}`, level: 1 });
     return true;
   }
 

@@ -13,6 +13,8 @@ import { GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } fr
 const FIXED_STEP = 1 / 60;
 const MAX_SUBSTEPS = 6;
 import { MANUAL_AIM, TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
+import { CORES, CORE_BY_ID, CORE_TUNING, DEFAULT_CORE, isCoreId, type CoreId } from '../data/cores';
+import { CoreManager } from '../systems/CoreManager';
 import {
   BOSS_ENCOUNTER,
   BOSS_PATTERN_HINTS,
@@ -74,6 +76,8 @@ import {
 } from '../stats';
 import { WaveModifierModal } from '../ui/WaveModifierModal';
 import { BlessingDraftModal } from '../ui/BlessingDraftModal';
+import { CorePickerModal } from '../ui/CorePickerModal';
+import type { CorePanelState } from '../ui/PrestigePanel';
 import { BlessingManager } from '../systems/BlessingManager';
 import { LootManager } from '../systems/LootManager';
 import { ContractManager } from '../systems/ContractManager';
@@ -116,6 +120,32 @@ const WAVE_MILESTONES = new Set([10, 25, 50, 100, 200, 500]);
  */
 const BLESSING_AUTO_PICK_SECONDS = 20;
 const BLESSING_SAFETY_TIMEOUT_SECONDS = 120;
+/**
+ * Core-picker timeout, in **wall-clock** seconds (plan §6.2).
+ *
+ * Longer than the blessing draft's because there are five cards to read and
+ * the decision lasts a whole run rather than until the next draft. Timing out
+ * keeps the current selection, which `CoreManager.resetRun` has already set to
+ * the player's preference — so an auto-ascending run that nobody is watching
+ * keeps the identity the player last chose, rather than reverting to the
+ * default every time.
+ */
+const CORE_PICKER_TIMEOUT_SECONDS = 45;
+
+/**
+ * Tower-HP fractions that change a resolved stat, ascending.
+ *
+ * One list rather than three scattered comparisons, because the cost of
+ * getting it wrong is silent: a threshold missing here is an effect that
+ * arms late, which looks exactly like an effect that does not work.
+ * `tests/cores.test.ts` and `tests/stats.test.ts` pin the effects themselves;
+ * this is only the *when*.
+ */
+const HP_STAT_THRESHOLDS: readonly number[] = [
+  BLESSING_TUNING.lastStandHpFraction,   // last_stand blessing (plan §1.3)
+  CORE_TUNING.desperateHpFraction,       // bloodforge (plan §6.1)
+  0.8,                                   // hp_threshold_damage evolution
+];
 /** localStorage key for the `autoPickBlessings` preference. */
 const AUTO_PICK_BLESSINGS_KEY = 'the-tower-auto-pick-blessings';
 
@@ -212,6 +242,7 @@ function makeInitialState(): GameState {
     },
     bossRun: { apBonusPct: 0, swiftKills: 0, flawlessKills: 0 },
     contracts: { active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0 },
+    cores: { unlocked: [DEFAULT_CORE], preferred: DEFAULT_CORE, selected: DEFAULT_CORE },
   };
 }
 
@@ -290,7 +321,9 @@ export class Game {
   private readonly equipmentMgr: EquipmentManager;
   private readonly waveModModal: WaveModifierModal;
   private readonly blessingMgr: BlessingManager;
+  private readonly coreMgr: CoreManager;
   private readonly blessingModal: BlessingDraftModal;
+  private readonly corePicker: CorePickerModal;
   /** Loot orbs (plan §4.1). Run-scoped and never persisted. */
   private readonly lootMgr: LootManager;
   /** The run's three contracts (plan §5). Run-scoped, persisted in full. */
@@ -399,6 +432,11 @@ export class Game {
   private killStreak = 0;
   private manaFullGoldTimer = 0;
   private shotCounter = 0;
+  /**
+   * Which side of every HP-gated stat threshold the tower is currently on.
+   * See `refreshHpThresholdStats`. `-1` forces the first pass to resolve.
+   */
+  private hpStatBucket = -1;
   /** Separate cadence from `shotCounter`, so the mortar and double-shot evolutions don't share a clock. */
   private mortarShotCounter = 0;
   /**
@@ -466,6 +504,7 @@ export class Game {
     );
     this.upgradeMgr = new UpgradeManager(this.bus, this.resourceMgr);
     this.blessingMgr = new BlessingManager(this.bus);
+    this.coreMgr = new CoreManager(this.bus);
     this.lootMgr = new LootManager({
       bus: this.bus,
       towerPos: () => ({ x: this.state.tower.x, y: this.state.tower.y }),
@@ -479,8 +518,10 @@ export class Game {
     // The impact path asks `has(behavior)` several times per hit, so it reads
     // the manager's rebuilt cache rather than scanning the pool.
     this.projectileMgr.setBlessings(this.blessingMgr);
+    this.projectileMgr.setCore(this.coreMgr);
     this.waveModModal = new WaveModifierModal(deps.modalRoot);
     this.blessingModal = new BlessingDraftModal(deps.modalRoot);
+    this.corePicker = new CorePickerModal(deps.modalRoot);
     this.autoPickBlessings = readAutoPickPreference();
     this.instantCast = readInstantCastPreference();
     this.effects = new EffectsManager();
@@ -701,6 +742,17 @@ export class Game {
       }
       if (this.blessingMgr.has('split_on_kill')) this.fireSplitShards(e.x, e.y);
 
+      // ── core behaviors on kill (plan §6.1) ──
+      // Bloodforge pays for its own aggression. Applied here rather than in
+      // `EnemyManager` for the same reason the orb drop is: it needs the tower's
+      // max HP, which lives on this side.
+      if (this.coreMgr.has('kill_heal')) {
+        const ts = this.tower.snapshot;
+        if (ts.maxHp > 0 && ts.hp < ts.maxHp) {
+          ts.hp = Math.min(ts.maxHp, ts.hp + ts.maxHp * CORE_TUNING.killHealFraction);
+        }
+      }
+
       // Research: Chain Reaction — kills deal AoE to nearby enemies
       const chainAoE = this.researchTree.getChainKillAoE();
       if (chainAoE > 0 && e.maxHp) {
@@ -711,6 +763,13 @@ export class Game {
         }
         this.effects.emitShockwaveRing(e.x, e.y, chainRadius);
       }
+    });
+
+    // Plan §6.2: the run-summary CTA opens the picker. `UIManager` emits this
+    // when the debrief is dismissed; the decision about whether a picker is due
+    // stays here, with the state it depends on.
+    this.bus.on('run_summary_dismissed', () => {
+      this.openCorePickerIfDue();
     });
 
     this.bus.on('shield_break', (payload: unknown) => {
@@ -1366,6 +1425,9 @@ export class Game {
         // walk would then resume from a wave that never started. Resolve it
         // now: a hidden tab is by definition an unattended one (plan §1.1).
         if (this.blessingModal.isVisible()) this.autoPickBlessing();
+        // Same argument for the core picker: a hidden tab is unattended,
+        // and the run has already started underneath it.
+        if (this.corePicker.isVisible()) this.closeCorePicker();
         this.saveMgr.save(this.state);
         this.stop();
       } else {
@@ -1710,7 +1772,11 @@ export class Game {
       text: `Ascension! +${ap} AP. Your run has been reset.`,
       life: 6,
     });
-    this.bus.emit('run_ended', { record, previous: this.getPreviousRun() });
+    this.bus.emit('run_ended', {
+      record,
+      previous: this.getPreviousRun(),
+      corePickerNext: this.isCorePickerDue(),
+    });
     return ap;
   }
 
@@ -1729,7 +1795,11 @@ export class Game {
       text: `Transcendence! +${tp} TP. Gear, passives and talents carry over.`,
       life: 7,
     });
-    this.bus.emit('run_ended', { record, previous: this.getPreviousRun() });
+    this.bus.emit('run_ended', {
+      record,
+      previous: this.getPreviousRun(),
+      corePickerNext: this.isCorePickerDue(),
+    });
     return tp;
   }
 
@@ -2247,6 +2317,11 @@ export class Game {
     this.blessingModal.hide();
     this.blessingMgr.reset();
     this.state.blessings = this.blessingMgr.snapshot();
+    // A full wipe un-buys the cores too — they cost AP, and this is the path
+    // that takes the AP away.
+    this.corePicker.hide();
+    this.coreMgr.resetAll();
+    this.state.cores = this.coreMgr.snapshot();
 
     this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
     this.applyUpgradeEffects();
@@ -2402,6 +2477,7 @@ export class Game {
       meetsPrerequisites: (perkId) => this.prestigeMgr.meetsPrerequisites(perkId),
       isExcluded: (perkId) => this.prestigeMgr.isExcluded(perkId),
       perkBlockedReason: (perkId) => this.prestigeMgr.perkBlockedReason(perkId),
+      coreState: this.corePanelState(),
       ascendUnlockWave: this.prestigeMgr.ascensionUnlockWave(),
       transcendUnlockAP: this.prestigeMgr.transcendenceUnlockAP(),
       targetAscendWave: this.state.prestige.targetAscendWave,
@@ -2555,6 +2631,32 @@ export class Game {
   }
 
   /**
+   * Recompute when tower HP crosses a threshold some contributor reads.
+   *
+   * Three effects are gated on `StatContext.hpFraction` — the `hp_threshold_damage`
+   * evolution, the `last_stand` blessing, and bloodforge's `desperate_tempo`
+   * — and until Part 6 nothing recomputed when HP moved. They took effect at
+   * the *next* resolve for another reason (a purchase, a buff edge, a wave
+   * clear), which for a comeback mechanic is the wrong moment by definition:
+   * the whole point of "+40% fire rate below half HP" is that it arms the
+   * instant you drop below half, not a wave later.
+   *
+   * Bucketed rather than compared every substep, so a tower sitting at 29% HP
+   * costs zero resolves; only an actual crossing pays for one.
+   */
+  private refreshHpThresholdStats(): void {
+    const t = this.tower.snapshot;
+    const fraction = t.maxHp > 0 ? t.hp / t.maxHp : 1;
+    let bucket = 0;
+    for (const threshold of HP_STAT_THRESHOLDS) {
+      if (fraction > threshold) bucket += 1;
+    }
+    if (bucket === this.hpStatBucket) return;
+    this.hpStatBucket = bucket;
+    this.applyUpgradeEffects();
+  }
+
+  /**
    * Snapshot every contributor into the pipeline's input.
    *
    * Nothing here computes: each field is one system's own answer about its own
@@ -2601,6 +2703,7 @@ export class Game {
     const lifetime = this.prestigeMgr.getLifetimeAPBonus();
     return {
       wave: this.waveMgr.currentWave,
+      core: this.coreMgr.current,
       hpFraction: t.maxHp > 0 ? t.hp / t.maxHp : 1,
       upgrades: this.upgradeMgr.snapshot(),
       evolutions,
@@ -2781,6 +2884,10 @@ export class Game {
     this.abilityMgr.setSlowStrengthBonus(stats.slowStrengthBonus);
     this.abilityMgr.setMeteorDamageBonus(stats.meteorDamageBonus);
     this.abilityMgr.setBuffDurationBonus(stats.buffDurationBonus);
+    // Core: Frostwork — slow abilities run twice as long (plan §6.1).
+    this.abilityMgr.setSlowDurationMult(
+      this.coreMgr.has('nova_extended') ? CORE_TUNING.novaDurationMult : 1,
+    );
 
     this.projectileMgr.setDamageMultipliers(0, 1);
     this.projectileMgr.setArmorPen(stats.armorPen);
@@ -2853,6 +2960,13 @@ export class Game {
     this.manaFullGoldTimer = 0;
     this.shotCounter = 0;
     this.mortarShotCounter = 0;
+    // Plan §6.2: the core *selection* is run-scoped; the unlocks are not. It
+    // resets to the player's preference rather than to the default, because an
+    // auto-ascending idle game would otherwise strip the chosen identity from
+    // every run without ever asking. The picker is what changes the preference.
+    this.corePicker.hide();
+    this.coreMgr.resetRun();
+    this.state.cores = this.coreMgr.snapshot();
     // Blessings are run-scoped by design (plan §1.5): being wiped is what makes
     // one run distinct from the next rather than a continuation of it. This
     // path is shared by ascension and transcendence.
@@ -3012,6 +3126,119 @@ export class Game {
   }
 
   // ────────────────────────────────────────────────────────────────────────
+  // Tower cores (plan §6)
+  // ────────────────────────────────────────────────────────────────────────
+
+  get cores(): CoreManager {
+    return this.coreMgr;
+  }
+
+  /** The run's core id — read by the Stats panel and the in-browser harness. */
+  get coreId(): CoreId {
+    return this.coreMgr.current;
+  }
+
+  /**
+   * Whether the run-start picker has a question worth asking.
+   *
+   * `CoreManager.isPickerAvailable` owns §6.2's two conditions (the player has
+   * ascended at least once, and owns more than one core); this adds the third,
+   * which is about the modal rather than the content — do not stack a second
+   * modal on top of one that is already open.
+   */
+  isCorePickerDue(): boolean {
+    if (this.corePicker.isVisible()) return false;
+    return this.coreMgr.isPickerAvailable(this.state.stats.lifetimeAscensions);
+  }
+
+  /**
+   * Open the picker if one is due. Called from the run-summary dismissal, which
+   * is what makes the debrief's CTA the picker rather than a second prompt.
+   */
+  openCorePickerIfDue(): boolean {
+    if (!this.isCorePickerDue()) return false;
+    this.showCorePicker();
+    return true;
+  }
+
+  private showCorePicker(): void {
+    this.corePicker.show(
+      {
+        cores: CORES.map(def => ({
+          def,
+          unlocked: this.coreMgr.isUnlocked(def.id),
+          current: this.coreMgr.current === def.id,
+          affordable: this.prestigeMgr.canUnlockCore(def.id, this.coreMgr.isUnlocked(def.id)),
+        })),
+        ascensionPoints: this.state.resources.ascensionPoints,
+        startWave: this.waveMgr.currentWave,
+        timeoutSeconds: CORE_PICKER_TIMEOUT_SECONDS,
+      },
+      {
+        onSelect: (id) => this.selectCore(id),
+        onUnlock: (id) => {
+          if (this.unlockCore(id)) this.showCorePicker();
+        },
+        onDismiss: () => this.closeCorePicker(),
+      },
+    );
+  }
+
+  /**
+   * Run a core for the rest of this run.
+   *
+   * Public because the picker is not the only caller — the Prestige panel can
+   * switch cores between runs too, and the in-browser harness uses it.
+   */
+  selectCore(id: CoreId | string): boolean {
+    if (!isCoreId(id)) return false;
+    if (!this.coreMgr.select(id)) return false;
+    this.corePicker.hide();
+    this.state.cores = this.coreMgr.snapshot();
+    // A core is an input to the same recompute as everything else, so the
+    // choice is felt on the very next shot.
+    this.applyUpgradeEffects();
+    this.syncUiApis();
+    this.saveMgr.requestSave();
+    this.bus.emit('toast', {
+      kind: 'milestone',
+      text: `${CORE_BY_ID[id].name}: ${CORE_BY_ID[id].tagline}`,
+      life: 4,
+    });
+    return true;
+  }
+
+  /** Buy a core with AP. Permanent — an ascension never takes it back. */
+  unlockCore(id: CoreId | string): boolean {
+    if (!isCoreId(id)) return false;
+    if (!this.prestigeMgr.spendOnCore(id, this.coreMgr.isUnlocked(id))) return false;
+    this.coreMgr.unlock(id);
+    this.state.cores = this.coreMgr.snapshot();
+    this.syncUiApis();
+    this.saveMgr.save(this.state);
+    this.bus.emit('toast', {
+      kind: 'milestone',
+      text: `${CORE_BY_ID[id].name} unlocked. Choose it at the start of a run.`,
+      life: 5,
+    });
+    return true;
+  }
+
+  /** The core snapshot the Prestige panel renders (plan §6.2). */
+  corePanelState(): CorePanelState {
+    return {
+      selected: this.coreMgr.current,
+      unlocked: this.coreMgr.unlockedIds(),
+      pickerAvailable: this.coreMgr.isPickerAvailable(this.state.stats.lifetimeAscensions),
+    };
+  }
+
+  private closeCorePicker(): void {
+    this.corePicker.hide();
+    this.state.cores = this.coreMgr.snapshot();
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
   // Blessings (plan §1)
   // ────────────────────────────────────────────────────────────────────────
 
@@ -3060,7 +3287,7 @@ export class Game {
   private maybeOfferBlessingDraft(cleared: number): void {
     if (this.blessingModal.isVisible()) return;
     if (!this.blessingMgr.isDraftDue(cleared)) return;
-    const offer = this.blessingMgr.openDraft(cleared);
+    const offer = this.blessingMgr.openDraft(cleared, this.coreMgr.current);
     if (offer.length === 0) {
       // Everything eligible is maxed — close it out silently rather than
       // pausing the run for an empty picker.
@@ -3120,7 +3347,7 @@ export class Game {
   rerollBlessings(): boolean {
     const wave = this.blessingMgr.offerWave;
     if (wave === null) return false;
-    const rolled = this.blessingMgr.reroll();
+    const rolled = this.blessingMgr.reroll(this.coreMgr.current);
     if (!rolled) return false;
     this.state.blessings = this.blessingMgr.snapshot();
     this.showBlessingDraft(wave);
@@ -3379,6 +3606,12 @@ export class Game {
     this.state.contracts = this.contractMgr.snapshot();
     this.prestigeMgr.setRunApBonus(this.contractMgr.apBonusPct, 'contract');
 
+    // v13+: unlocked cores (permanent) and the run's selection (run-scoped).
+    // A save that predates cores restores as `marksman`, which is what every
+    // pre-v13 tower was actually shooting like.
+    this.coreMgr.restore(persisted.cores ?? null);
+    this.state.cores = this.coreMgr.snapshot();
+
     // Clear and repopulate equipped (manager holds reference)
     const eqMap = this.state.equipped;
     for (const k of Object.keys(eqMap)) delete (eqMap as Record<string, Equipment>)[k];
@@ -3473,6 +3706,7 @@ export class Game {
     // system poking at `TowerState`.
     this.buffs.tick(dt);
     this.refreshBuffedStats();
+    this.refreshHpThresholdStats();
 
     this.waveMgr.tick(dt);
     // The boss encounter clock is a *simulation* clock (plan §3.7): a swift
@@ -3562,22 +3796,35 @@ export class Game {
           this.mortarShotCounter += 1;
           mortarShot = this.mortarShotCounter % BLESSING_TUNING.mortarInterval === 0;
         }
+        // Core: what this shot does (plan §6.1). The cadence lives in
+        // `CoreManager` so it advances in the fixed substep, exactly like the
+        // mortar's, and so it can be driven from a test without a canvas.
+        const corePlan = this.coreMgr.planShot(
+          (amount) => this.resourceMgr.spendMana(amount),
+        );
         // Blessing: Seeker Shots — only meaningful with an auto-acquired
         // target; a manually aimed shot is already going where the player
         // pointed it.
         const homing = target !== null && this.blessingMgr.has('homing');
-        const shotDamage = mortarShot
+        const shotDamage = (mortarShot
           ? shot.damage * BLESSING_TUNING.mortarDamageMult
-          : shot.damage;
+          : shot.damage) * corePlan.damageMult;
+        // Artillery's blast and the Mortar blessing's are the same channel, so
+        // the bigger one wins rather than the two stacking: two splash payloads
+        // on one impact is one impact's worth of splash charged twice, which is
+        // not what either promises.
         const blessingShot = {
           isHoming: homing,
-          splashRadius: mortarShot ? BLESSING_TUNING.mortarRadius : undefined,
-          splashFraction: mortarShot ? BLESSING_TUNING.mortarSplashFraction : undefined,
+          splashRadius: mortarShot ? BLESSING_TUNING.mortarRadius : corePlan.splashRadius,
+          splashFraction: mortarShot
+            ? BLESSING_TUNING.mortarSplashFraction
+            : corePlan.splashFraction,
         };
+        const resolvedDamageType = corePlan.damageType ?? shotDamageType;
 
         this.projectileMgr.fire(target, ts, {
           rawDamage: shotDamage,
-          damageType: shotDamageType,
+          damageType: resolvedDamageType,
           isCrit: shot.isCrit,
           targetId: target?.id ?? null,
           variants,
@@ -3593,7 +3840,7 @@ export class Game {
         if (Math.random() < ts.doubleShotChance) {
           this.projectileMgr.fire(target, ts, {
             rawDamage: shotDamage,
-            damageType: shotDamageType,
+            damageType: resolvedDamageType,
             isCrit: shot.isCrit,
             targetId: target?.id ?? null,
             variants,
@@ -3728,6 +3975,7 @@ export class Game {
     // Wall-clock, not simulation time: at 6.5x a 20 s game-time deadline is
     // three real seconds, which is not long enough to read three cards.
     this.blessingModal.tick(realDt);
+    this.corePicker.tick(realDt, CORE_BY_ID[this.coreMgr.current].name);
 
     // Plan §4.2, same reasoning: the charge timer measures a person holding
     // still, so it runs on `realDt`. A 1.2 s hold is 1.2 seconds of the

@@ -10,6 +10,7 @@
  */
 
 import { simulateRun, waveProfile, orbGoldForWave, type WaveSample } from './model.ts';
+import { CORE_BY_ID, CORE_IDS, DEFAULT_CORE, describeCoreStats } from '../src/data/cores.ts';
 import { MANUAL_AIM } from '../src/data/tower.ts';
 import { LOOT_TUNING } from '../src/data/loot.ts';
 import { CONTRACT_TUNING } from '../src/data/contracts.ts';
@@ -202,6 +203,103 @@ function idleParityTable(): string {
   );
 }
 
+/**
+ * Gameplay plan §6.4 — the gate Part 6 can actually fail.
+ *
+ * Every core against `marksman`, tier by tier. Two versions, because the wall
+ * wave is quantised to boss waves (steps of 10 on a base of ~40, i.e. a
+ * resolution of 25%) and a ±15% band cannot be *steered* by a metric that
+ * coarse: the idle run is the drift check, and the blessing run — averaged over
+ * seven draft sequences — is the one with enough resolution to tune against.
+ */
+function coreWallTable(blessings: boolean): string {
+  const tiers = [0, 100, 1_000, 10_000, 100_000];
+  const seeds = blessings ? BLESSING_SEEDS : [0];
+  const wallsFor = (core: typeof CORE_IDS[number]) => tiers.map(lifetimeAP => mean(
+    seeds.map(seed => simulateRun({
+      damageMult: 1 + lifetimeAPDamageBonus(lifetimeAP),
+      goldMult: 1 + lifetimeAPGoldBonus(lifetimeAP),
+      unlockWave: ASCENSION_UNLOCK_WAVE,
+      sampleWaves: [],
+      blessings,
+      seed,
+      core,
+    }).wallWave),
+  ));
+
+  const base = wallsFor(DEFAULT_CORE);
+  const rows = CORE_IDS.map(id => {
+    const walls = wallsFor(id);
+    const worst = walls
+      .map((v, i) => (base[i] > 0 ? (v - base[i]) / base[i] : 0))
+      .reduce((a, b) => (Math.abs(b) > Math.abs(a) ? b : a), 0);
+    return [
+      CORE_BY_ID[id].name.replace(' Core', ''),
+      ...walls.map(v => (blessings ? v.toFixed(1) : String(Math.round(v)))),
+      `${worst >= 0 ? '+' : ''}${(worst * 100).toFixed(1)}%`,
+      Math.abs(worst) <= 0.15 ? 'ok' : 'OUT OF BAND',
+    ];
+  });
+  return table(
+    [blessings ? 'Core (drafting)' : 'Core (idle)', ...tiers.map(t => fmt(t)), 'worst Δ', '±15%'],
+    rows,
+  );
+}
+
+/**
+ * The continuous companion to the wall table: composed DPS at `marksman`'s own
+ * wall wave, relative to `marksman`. Same "run power" definition the blessing
+ * table uses, so it includes whatever the core's gold multiplier bought.
+ */
+function corePowerTable(): string {
+  const tiers = [0, 100, 1_000, 10_000, 100_000];
+  const powerAt = (core: typeof CORE_IDS[number], lifetimeAP: number, wave: number) => {
+    const r = simulateRun({
+      damageMult: 1 + lifetimeAPDamageBonus(lifetimeAP),
+      goldMult: 1 + lifetimeAPGoldBonus(lifetimeAP),
+      unlockWave: ASCENSION_UNLOCK_WAVE,
+      sampleWaves: [wave],
+      blessings: false,
+      core,
+    });
+    return r.samples.get(wave)?.dps ?? 0;
+  };
+  const baseWalls = tiers.map(lifetimeAP => simulateRun({
+    damageMult: 1 + lifetimeAPDamageBonus(lifetimeAP),
+    goldMult: 1 + lifetimeAPGoldBonus(lifetimeAP),
+    unlockWave: ASCENSION_UNLOCK_WAVE,
+    sampleWaves: [],
+    blessings: false,
+    core: DEFAULT_CORE,
+  }).wallWave);
+
+  const rows = CORE_IDS.map(id => [
+    CORE_BY_ID[id].name.replace(' Core', ''),
+    ...tiers.map((lifetimeAP, i) => {
+      const wave = baseWalls[i];
+      const base = powerAt(DEFAULT_CORE, lifetimeAP, wave);
+      const v = powerAt(id, lifetimeAP, wave);
+      const delta = base > 0 ? v / base - 1 : 0;
+      return `${delta >= 0 ? '+' : ''}${(delta * 100).toFixed(1)}%`;
+    }),
+  ]);
+  return table(['Core', ...tiers.map(t => fmt(t))], rows);
+}
+
+/** What each core actually is, so the tables above are readable on their own. */
+function coreStatTable(): string {
+  const rows = CORE_IDS.map(id => {
+    const def = CORE_BY_ID[id];
+    return [
+      def.name.replace(' Core', ''),
+      def.apCost === 0 ? 'default' : `${def.apCost} AP`,
+      describeCoreStats(def).join(', ') || '—',
+      def.behaviors.join(', ') || '—',
+    ];
+  });
+  return table(['Core', 'Unlock', 'Stats', 'Shot behavior'], rows);
+}
+
 /** What the orb faucet is actually worth, as a share of a wave's income. */
 function orbFaucetTable(): string {
   // Boss waves *and* ordinary ones: the boss budget is per encounter, so a
@@ -276,8 +374,8 @@ console.log(blessingDeltaTable());
 console.log('\n=== Gameplay §4.5 Idle parity: fully idle vs. perfect active play ===\n');
 console.log(idleParityTable());
 console.log(
-  `\nCharged shot: ${MANUAL_AIM.chargeDamageMult}x damage, +${MANUAL_AIM.chargeExtraPierce} pierce, `
-  + `${MANUAL_AIM.chargeSplashRadius}px splash, every `
+  `\nCharged shot: ${MANUAL_AIM.chargeDpsSeconds} DPS-seconds of damage, `
+  + `+${MANUAL_AIM.chargeExtraPierce} pierce, ${MANUAL_AIM.chargeSplashRadius}px splash, every `
   + `${MANUAL_AIM.chargeSeconds + MANUAL_AIM.chargeCooldown}s of wall-clock time.`,
 );
 console.log('\n=== Gameplay §5 Contracts: before / after (idle, no blessings) ===\n');
@@ -286,6 +384,25 @@ console.log(
   `\nContract AP bonus: +${CONTRACT_TUNING.apBonusStep * 100}% per contract that grants one, `
   + `capped at +${CONTRACT_TUNING.apBonusCap * 100}% for the run.`,
 );
+console.log('\n=== Gameplay §6.4 Tower cores: wall wave per core, per prestige tier ===\n');
+console.log(coreWallTable(false));
+console.log(
+  '\nIdle wall-wave drift is zero for every core at every tier, which is the '
+  + 'standard Parts 2-5 held.\nThe wall quantises to boss waves, so the same table '
+  + 'is repeated with the draft running — averaged\nover ' + BLESSING_SEEDS.length
+  + ' seeds it has real resolution, and it is where §6.4\'s ±15% is actually decided.\n',
+);
+console.log(coreWallTable(true));
+console.log('\n=== Gameplay §6.4 Tower cores: composed DPS vs marksman ===\n');
+console.log(corePowerTable());
+console.log(
+  '\nbloodforge is deliberately the outlier here: everything it buys is '
+  + 'survivability, which\nthis column cannot see. The model prices it where it '
+  + 'actually lands — seconds survived once\na wave overruns — which is the wall '
+  + 'column above, where it is level with the rest.\n',
+);
+console.log(coreStatTable());
+
 console.log('\n=== Gameplay §4.1 Loot orbs as a share of wave income ===\n');
 console.log(orbFaucetTable());
 console.log(`\nAscension unlocks at wave ${ASCENSION_UNLOCK_WAVE}.\n`);

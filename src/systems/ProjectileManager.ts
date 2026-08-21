@@ -3,6 +3,7 @@ import { nextId } from '../utils/math';
 import { PROJECTILE_SPEED } from '../data/tower';
 import { ENEMY_DEFS, isTargetable } from '../data/enemies';
 import { BLESSING_TUNING, type BlessingBehavior } from '../data/blessings';
+import { CORE_TUNING, type CoreBehavior } from '../data/cores';
 import type { Tower } from './Tower';
 import type { EnemyManager } from './EnemyManager';
 import { EventBus } from '../game/EventBus';
@@ -18,6 +19,18 @@ export interface BlessingQuery {
 }
 
 const NO_BLESSINGS: BlessingQuery = { has: () => false };
+
+/**
+ * The same narrow shape for the run's core (plan §6.2).
+ *
+ * `CoreManager` satisfies it, and so does a two-line stub — which is what the
+ * behavior tests use, so the impact path can be driven without a `Game`.
+ */
+export interface CoreQuery {
+  has(behavior: CoreBehavior): boolean;
+}
+
+const NO_CORE: CoreQuery = { has: () => false };
 
 /** HP fraction below which the Executioner talent's bonus damage applies. */
 const TALENT_EXECUTE_THRESHOLD = 0.5;
@@ -83,6 +96,8 @@ export class ProjectileManager {
   private armorPenFlat = 0;
   /** The run's blessings, for the behaviors that fire on impact. */
   private blessings: BlessingQuery = NO_BLESSINGS;
+  /** The run's core, for the behaviors that fire on impact. */
+  private core: CoreQuery = NO_CORE;
   private instantKillChance = 0;
   private critSplashFraction = 0;
   private critIgnoreArmor = false;
@@ -135,6 +150,11 @@ export class ProjectileManager {
   /** Wire the run's blessing draft into the impact path. */
   setBlessings(query: BlessingQuery): void {
     this.blessings = query;
+  }
+
+  /** Wire the run's tower core into the impact path. */
+  setCore(query: CoreQuery): void {
+    this.core = query;
   }
 
   setEvolutionCombatEffects(instantKill: number, critSplash: number, critIgnoreArmor: boolean): void {
@@ -320,6 +340,12 @@ export class ProjectileManager {
               BLESSING_TUNING.frostChillFactor,
               BLESSING_TUNING.frostChillDuration,
             );
+          }
+          // Frostwork's chill is harder and longer than the blessing's, and
+          // both route through `applyChill`, whose "strongest wins, weaker only
+          // refreshes" rule composes them without one diluting the other.
+          if (this.core.has('chill_shots')) {
+            this.enemies.applyChill(enemy, CORE_TUNING.chillFactor, CORE_TUNING.chillDuration);
           }
           // Crit splash evolution
           if (p.isCrit && this.critSplashFraction > 0) {

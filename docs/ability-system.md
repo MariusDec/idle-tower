@@ -221,3 +221,16 @@ Boss-killing abilities (slots 5–9) are tried first because their value-per-man
 - **Crit cap**: `setCritBonus` clamps to `[0, 1]` so combined crit sources can't exceed 100%.
 - **Chain double-hit guard**: a `Set<enemyId>` is built per cast to ensure each enemy is hit at most once.
 - **Vampiric regen compounding**: the regen bonus is a buff entry keyed by id, so re-applying it replaces rather than stacks, and a stat recompute during the buff composes with it instead of subtracting it out.
+
+## Core interaction
+
+`AbilityManager.setSlowDurationMult` is the frostwork core's `nova_extended`
+behavior (gameplay plan §6.1): abilities whose `effectType` is `slow` run for
+twice as long. It is keyed on the **effect type**, not on an ability id, so a
+second slow ability would inherit the behavior rather than needing a second
+list — and `getEffectiveDuration` is the one place it applies, which is what
+keeps the global slow and the ability's own `activeTimer` in step.
+
+The arcane core's +50% ability damage needs nothing here: it resolves through
+`abilityDamageMultiplier` in the stat pipeline like every other source. See
+[core-system.md](core-system.md).

@@ -42,12 +42,26 @@ import { WAVE_INTERMISSION } from '../src/systems/WaveManager.ts';
 import { BlessingManager } from '../src/systems/BlessingManager.ts';
 import type { BlessingBehavior, BlessingDef } from '../src/data/blessings.ts';
 import { ContractManager } from '../src/systems/ContractManager.ts';
+import { CORE_BY_ID, CORE_TUNING, DEFAULT_CORE, type CoreId } from '../src/data/cores.ts';
+import { STAT_BASES } from '../src/stats/keys.ts';
 
 /** Fraction of wall-clock time the tower actually spends shooting a live target. */
 const ENGAGEMENT_EFFICIENCY = 0.85;
 
-/** Upgrades the greedy buyer is allowed to spend on (the offence/economy core). */
-const BUYABLE = ['damage', 'fireRate', 'critChance', 'critDamage', 'goldMulti'] as const;
+/**
+ * Upgrades the greedy buyer is allowed to spend on (the offence/economy core).
+ *
+ * `manaRegen` joined the list with Part 6 and is *not* a widening of the
+ * baseline: it moves no DPS and no gold for four of the five cores, so the
+ * buyer's `gain / cost` ratio for it is exactly zero and it is never bought.
+ * For `arcane` it feeds the proc — see `manaRegenPerSec` — which is the whole
+ * point: rather than hand-waving an uptime constant, the model lets the same
+ * greedy buyer that decides every other purchase decide how much mana economy
+ * the core is worth.
+ */
+const BUYABLE = [
+  'damage', 'fireRate', 'critChance', 'critDamage', 'goldMulti', 'manaRegen',
+] as const;
 type BuyableId = (typeof BUYABLE)[number];
 
 const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(
@@ -165,6 +179,8 @@ export interface WaveProfile {
   totalHp: number;
   /** Mean armor across the wave (physical damage is reduced flat per hit). */
   avgArmor: number;
+  /** Mean magic resist — what the arcane proc is reduced by instead of armour. */
+  avgMagicResist: number;
   /** Gold the wave pays out at a 1x multiplier. */
   baseGold: number;
   /** Seconds before the last enemy has even spawned. */
@@ -178,6 +194,7 @@ export function waveProfile(wave: number): WaveProfile {
 
   let hpPer = 0;
   let armorPer = 0;
+  let magicResistPer = 0;
   let goldPer = 0;
   let thiefShare = 0;
   for (const { type, weight } of mix) {
@@ -192,6 +209,7 @@ export function waveProfile(wave: number): WaveProfile {
     const phaseFactor = type === 'boss' ? bossPhaseHpFactor(wave) : 1;
     hpPer += share * hp * EFFECTIVE_HP_FACTOR[type] * phaseFactor;
     armorPer += share * def.armor;
+    magicResistPer += share * def.magicResist;
     goldPer += share * goldDropForWave(def.baseGold, wave);
     if (type === 'thief') thiefShare = share;
   }
@@ -206,6 +224,7 @@ export function waveProfile(wave: number): WaveProfile {
     count,
     totalHp: hpPer * count,
     avgArmor: armorPer,
+    avgMagicResist: magicResistPer,
     baseGold: goldPer * count * (1 - theftDrag),
     spawnDuration: spawnIntervalForWave(wave) * (count - 1),
   };
@@ -299,6 +318,132 @@ export const ACTIVE_PLAY = {
  * the game itself reads, so the multiplier can only be cut in one place.
  */
 const CHARGE_CYCLE = MANUAL_AIM.chargeSeconds + MANUAL_AIM.chargeCooldown;
+
+// ────────────────────────────────────────────────────────────────────────────
+// Tower cores (gameplay plan §6.4)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What each core is worth in the channels this model has no simulation for.
+ *
+ * The *stat blocks* are not here — they are read straight out of `CORE_BY_ID`
+ * by `hitDamage` / `fireRate` / `goldMultiplier`, so a re-tune in
+ * `src/data/cores.ts` is measured rather than guessed. This record covers only
+ * what the model genuinely cannot see, and a `Record` over `CoreId` for the
+ * same reason `BEHAVIOR_DPS_CREDIT` is one: a core the model silently scores at
+ * zero is a core whose balance was never checked.
+ *
+ * `enrageSurvivalMult` deserves a note, because it is the only survivability
+ * lever the model has and it is not a fudge. The wall is
+ * `activeSec > enrageThreshold + enrageSurvivalSeconds` — literally "how long
+ * the tower lasts once a wave overruns" — so a core that raises effective HP
+ * raises exactly that number and nothing else. Without it, `bloodforge` is
+ * "-20% gold and nothing", which is what a DPS-only model always says about a
+ * defensive build.
+ */
+export interface CoreModelEntry {
+  /** Effective-DPS credit for shot behaviors the model cannot place spatially. */
+  dpsPct: number;
+  /** Share of shots that are the core's proc (0 for cores without one). */
+  procShare: number;
+  procMult: number;
+  /** True when the proc's damage type bypasses flat armour. */
+  procIgnoresArmor: boolean;
+}
+
+/**
+ * How survivability converts into wall wave.
+ *
+ * The wall is `activeSec > enrageThreshold + enrageSurvivalSeconds` — literally
+ * "how long the tower lasts once a wave overruns" — so a core that raises
+ * effective HP raises exactly that and nothing else.
+ *
+ * It is **derived from the shipping stat block** rather than being a per-core
+ * constant, which matters more than it looks: a hand-set multiplier would mean
+ * re-tuning `bloodforge`'s `maxHpPct` moved nothing in the very table that is
+ * supposed to be measuring the re-tune.
+ */
+const CORE_SURVIVAL = {
+  /** Effective-HP multiple per point of lifesteal, at a run's average uptime. */
+  lifestealEhp: 2,
+  /** Effective-HP bump from a heal on every kill. */
+  killHealEhp: 0.10,
+  /**
+   * Enrage damage compounds (+40% per stack, every 8 s), so survival *time*
+   * grows sub-linearly in effective HP. Doubling EHP does not double the
+   * seconds survived; this is the discount that says so.
+   */
+  enrageDiscount: 0.6,
+} as const;
+
+/**
+ * Seconds-of-enrage multiplier for a core, from its own numbers.
+ *
+ * `desperate_tempo` (+40% fire rate below half HP) is credited at **zero**
+ * here, deliberately: it fires exactly during the window this function is
+ * pricing, so it is real, but the model has no tower HP to know how long the
+ * tower spends under the threshold. Zero is the reading that does not flatter
+ * the core.
+ */
+export function coreSurvivalMult(core: CoreId): number {
+  const def = CORE_BY_ID[core];
+  const hp = 1 + (def.stats.maxHpPct ?? 0);
+  const sustain = 1
+    + (def.stats.lifestealAdd ?? 0) * CORE_SURVIVAL.lifestealEhp
+    + (def.behaviors.includes('kill_heal') ? CORE_SURVIVAL.killHealEhp : 0);
+  return 1 + CORE_SURVIVAL.enrageDiscount * (hp * sustain - 1);
+}
+
+export const CORE_MODEL: Record<CoreId, CoreModelEntry> = {
+  // The reference core. Everything it does — crit chance, range — is either
+  // already in the stat pipeline or invisible to a model with no positions.
+  marksman: {
+    dpsPct: 0,
+    procShare: 0,
+    procMult: 1,
+    procIgnoresArmor: false,
+  },
+  // Every shot carries a 70 px blast at 50%. Scaled off the mortar blessing's
+  // measured credit (0.05 for one shot in eight, 90 px, full fraction):
+  // 8x the frequency, half the fraction, (70/90)^2 of the area.
+  artillery: {
+    dpsPct: 0.05 * 8 * CORE_TUNING.splashFraction * (CORE_TUNING.splashRadius / 90) ** 2,
+    procShare: 0,
+    procMult: 1,
+    procIgnoresArmor: false,
+  },
+  // Chill is worth more than the blessing's 0.015 (harder, longer, and on
+  // every hit rather than as one card among thirty) but still small in a model
+  // with no enemy positions: what a slow buys is time in the firing corridor,
+  // which is folded into `ENGAGEMENT_EFFICIENCY` here rather than simulated.
+  // The Frost Nova half is worth nothing at all — the model has no abilities.
+  frostwork: {
+    dpsPct: 0.04,
+    procShare: 0,
+    procMult: 1,
+    procIgnoresArmor: false,
+  },
+  // Everything bloodforge does is survivability, which the model prices through
+  // `coreSurvivalMult` off the shipping stat block rather than as a credit
+  // here. Its DPS credit is genuinely zero.
+  bloodforge: {
+    dpsPct: 0,
+    procShare: 0,
+    procMult: 1,
+    procIgnoresArmor: false,
+  },
+  // The proc is handled structurally, in `procPerShot`, because it is a share
+  // of shots rather than a flat percentage. `dpsPct` here is the *ability*
+  // half of the core (+50% ability damage), which the model has no abilities
+  // to spend — the same estimate `ACTIVE_PLAY.targetedCastDps` is, and small
+  // for the same reason: abilities are a minority of a run's damage.
+  arcane: {
+    dpsPct: 0.04,
+    procShare: 1 / CORE_TUNING.manaShotInterval,
+    procMult: CORE_TUNING.manaShotDamageMult,
+    procIgnoresArmor: true,
+  },
+};
 
 /** The blessing state a `Loadout` carries, already summed across stacks. */
 export interface BlessingLoadout {
@@ -556,6 +701,8 @@ function mulberry32(seed: number): () => number {
 
 export interface Loadout {
   levels: Record<string, number>;
+  /** The run's tower core (plan §6). `marksman` is the default and the ruler. */
+  core: CoreId;
   /** Permanent damage multiplier from prestige (lifetime AP + TP). */
   damageMult: number;
   /** Permanent gold multiplier from prestige. */
@@ -568,11 +715,17 @@ export interface Loadout {
   orbRate: number;
 }
 
-export function freshLoadout(damageMult = 1, goldMult = 1, active = false): Loadout {
+export function freshLoadout(
+  damageMult = 1,
+  goldMult = 1,
+  active = false,
+  core: CoreId = DEFAULT_CORE,
+): Loadout {
   const levels: Record<string, number> = {};
   for (const u of UPGRADES) levels[u.id] = u.startLevel ?? 0;
   return {
     levels,
+    core,
     damageMult,
     goldMult,
     blessings: emptyBlessings(),
@@ -587,14 +740,22 @@ function levelValue(id: string, level: number): number {
   return computeUpgradeValue(def, level);
 }
 
-/** Damage of a single shot, before enemy armor. */
+/**
+ * Damage of a single shot, before enemy armor.
+ *
+ * The core's stat block is read from `CORE_BY_ID`, the table the game itself
+ * resolves through `stats/contributors/core.ts`, so a re-tune is measured here
+ * rather than needing a second copy of the numbers.
+ */
 export function hitDamage(l: Loadout): number {
   const b = l.blessings;
+  const c = CORE_BY_ID[l.core].stats;
   const base = (TOWER_BASE.baseDamage + levelValue('damage', l.levels.damage))
-    * l.damageMult * (1 + b.damagePct);
+    * l.damageMult * (1 + b.damagePct) * (1 + (c.damagePct ?? 0));
   const crit = Math.min(
     1,
-    TOWER_BASE.critChance + levelValue('critChance', l.levels.critChance) + b.critChanceAdd,
+    TOWER_BASE.critChance + levelValue('critChance', l.levels.critChance)
+      + b.critChanceAdd + (c.critChanceAdd ?? 0),
   );
   const critMult = TOWER_BASE.critMultiplier
     + levelValue('critDamage', l.levels.critDamage)
@@ -604,20 +765,75 @@ export function hitDamage(l: Loadout): number {
 
 export function fireRate(l: Loadout): number {
   return (TOWER_BASE.fireRate + levelValue('fireRate', l.levels.fireRate))
-    * (1 + l.blessings.fireRatePct);
+    * (1 + l.blessings.fireRatePct)
+    * (1 + (CORE_BY_ID[l.core].stats.fireRatePct ?? 0));
   // No manual-aim term: holding the mouse no longer carries a fire-rate
   // bonus (plan §4.2). The whole active-play advantage now comes from the
   // charged shot and orb collection, which is what §4.5 measures.
 }
 
-/** Sustained DPS against an enemy with the given armor. */
-export function dps(l: Loadout, armor: number): number {
+/**
+ * Mana per second, for the one core whose shot behavior spends it.
+ *
+ * Base plus whatever Meditation the greedy buyer decided was worth buying,
+ * times the core's own regen bonus. This exists so `arcaneProcShare` has a
+ * real number instead of an assumed uptime.
+ */
+export function manaRegenPerSec(l: Loadout): number {
+  return (STAT_BASES.manaRegen + levelValue('manaRegen', l.levels.manaRegen ?? 0))
+    * (1 + (CORE_BY_ID[l.core].stats.manaRegenPct ?? 0));
+}
+
+/**
+ * The share of shots that actually land as the core's proc.
+ *
+ * For `arcane` this is mana-limited: the proc costs 3 mana every 5 shots, so
+ * the drain scales with fire rate while the regen does not unless the player
+ * pays for it. Out of mana the shot still fires, just as an ordinary one — so
+ * the core degrades rather than stalling, and the model reads that as a reduced
+ * share rather than a cliff.
+ */
+export function procShare(l: Loadout): number {
+  const m = CORE_MODEL[l.core];
+  if (m.procShare <= 0) return 0;
+  if (l.core !== 'arcane') return m.procShare;
+  const drain = fireRate(l) * m.procShare * CORE_TUNING.manaShotCost;
+  if (drain <= 0) return m.procShare;
+  const uptime = Math.min(1, manaRegenPerSec(l) / drain);
+  return m.procShare * uptime;
+}
+
+/**
+ * Average damage one shot lands, with the core's proc folded in.
+ *
+ * The proc is a *share* of shots, never a per-second cycle, which is what makes
+ * it survive a fire-rate purchase intact — the lesson the charged shot cost a
+ * full re-tune to learn. Magic damage is resisted by `magicResist` instead of
+ * flat armour, which is the half of the arcane proc that the damage multiplier
+ * does not show.
+ */
+function perShotDamage(l: Loadout, armor: number, magicResist: number): number {
+  const raw = hitDamage(l);
   const effectiveArmor = Math.max(0, armor - l.blessings.armorPenFlat);
-  const perHit = Math.max(1, hitDamage(l) - effectiveArmor);
+  const ordinary = Math.max(1, raw - effectiveArmor);
+  const share = procShare(l);
+  if (share <= 0) return ordinary;
+  const m = CORE_MODEL[l.core];
+  const proc = m.procIgnoresArmor
+    ? Math.max(1, raw * m.procMult * (1 - magicResist))
+    : Math.max(1, raw * m.procMult - effectiveArmor);
+  return ordinary * (1 - share) + proc * share;
+}
+
+/** Sustained DPS against an enemy with the given armor. */
+export function dps(l: Loadout, armor: number, magicResist = 0): number {
+  const perHit = perShotDamage(l, armor, magicResist);
+  const coreDps = CORE_MODEL[l.core].dpsPct;
   // Behaviors (ricochet, splash, chains, executes) and enemy-HP reduction all
   // land as extra damage the model cannot place spatially, so they are folded
   // in as one effective-DPS multiplier.
-  const base = perHit * fireRate(l) * ENGAGEMENT_EFFICIENCY * (1 + l.blessings.dpsPct);
+  const base = perHit * fireRate(l) * ENGAGEMENT_EFFICIENCY
+    * (1 + l.blessings.dpsPct + coreDps);
   if (!l.active) return base;
   // Plan §4.2: the charged shot does not consume the tower's cooldown, so it
   // is *added* to the volley rather than replacing part of it. Its cycle is
@@ -639,13 +855,20 @@ export function dps(l: Loadout, armor: number): number {
     * MANUAL_AIM.chargeDpsSeconds
     * ACTIVE_PLAY.chargeCrowdFactor
     * ENGAGEMENT_EFFICIENCY
-    * (1 + l.blessings.dpsPct)
+    * (1 + l.blessings.dpsPct + coreDps)
     / CHARGE_CYCLE;
   return Math.max(base, tracking + charged) * (1 + ACTIVE_PLAY.targetedCastDps);
 }
 
 export function goldMultiplier(l: Loadout): number {
-  return (1 + levelValue('goldMulti', l.levels.goldMulti) + l.blessings.goldPct) * l.goldMult;
+  // The core's gold is additive, matching how `contributors/core.ts` writes it
+  // into `goldAdditive` — so bloodforge's -20% composes with prestige and
+  // research instead of scaling the composed total.
+  const core = CORE_BY_ID[l.core].stats.goldPct ?? 0;
+  return Math.max(
+    0,
+    1 + levelValue('goldMulti', l.levels.goldMulti) + l.blessings.goldPct + core,
+  ) * l.goldMult;
 }
 
 export function costOf(l: Loadout, id: BuyableId): number {
@@ -661,10 +884,10 @@ export function costOf(l: Loadout, id: BuyableId): number {
  * decision a competent player makes, and it is what the plan's baseline
  * table was produced with.
  */
-export function buyGreedily(l: Loadout, gold: number, armor: number): number {
+export function buyGreedily(l: Loadout, gold: number, armor: number, magicResist = 0): number {
   let budget = gold;
   for (;;) {
-    const baseDps = dps(l, armor);
+    const baseDps = dps(l, armor, magicResist);
     const baseGold = goldMultiplier(l);
     let bestId: BuyableId | null = null;
     let bestRatio = 0;
@@ -676,7 +899,8 @@ export function buyGreedily(l: Loadout, gold: number, armor: number): number {
       l.levels[id] = (l.levels[id] ?? 0) + 1;
       // Gold income is worth roughly half a DPS point: it buys future DPS but
       // only after a delay, so it is discounted rather than counted 1:1.
-      const gain = (dps(l, armor) / baseDps - 1) + 0.5 * (goldMultiplier(l) / baseGold - 1);
+      const gain = (dps(l, armor, magicResist) / baseDps - 1)
+        + 0.5 * (goldMultiplier(l) / baseGold - 1);
       l.levels[id] = (l.levels[id] ?? 0) - 1;
       const ratio = gain / cost;
       if (ratio > bestRatio) {
@@ -694,6 +918,8 @@ export function buyGreedily(l: Loadout, gold: number, armor: number): number {
 }
 
 export interface RunResult {
+  /** The core the run was on. */
+  core: CoreId;
   /** Last wave the tower cleared inside the time limit. */
   wallWave: number;
   /** Total in-game seconds to reach the wall. */
@@ -755,6 +981,11 @@ export interface RunOptions {
    * which is what the §5 before/after table is for.
    */
   contracts?: boolean;
+  /**
+   * The run's tower core (plan §6.4). `marksman` is the default *and* the
+   * ruler: every other core is required to land within ±15% of its wall wave.
+   */
+  core?: CoreId;
 }
 
 export function simulateRun(opts: RunOptions = {}): RunResult {
@@ -769,9 +1000,14 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     seed = 0x5eed,
     active = false,
     contracts = true,
+    core = DEFAULT_CORE,
   } = opts;
 
-  const loadout = freshLoadout(damageMult, goldMult, active);
+  const loadout = freshLoadout(damageMult, goldMult, active, core);
+  // Plan §6.1: bloodforge buys survivability, and the wall condition below is
+  // literally "seconds survived once a wave overruns" — so that is where the
+  // core's HP, lifesteal and kill-heal land. See `CORE_MODEL`.
+  const enrageSurvival = enrageSurvivalSeconds * coreSurvivalMult(core);
   const samples = new Map<number, WaveSample>();
   // The draft is driven through the *real* manager, so the offer rules (no
   // duplicates, no maxed cards, `requires` gating, the 30-pick cap) are the
@@ -803,10 +1039,10 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     const profile = waveProfile(wave);
     contractWave = wave;
     const beforeBuy = gold;
-    gold = buyGreedily(loadout, gold, profile.avgArmor);
+    gold = buyGreedily(loadout, gold, profile.avgArmor, profile.avgMagicResist);
     const goldSpent = Math.max(0, beforeBuy - gold);
 
-    const waveDps = dps(loadout, profile.avgArmor);
+    const waveDps = dps(loadout, profile.avgArmor, profile.avgMagicResist);
     // A wave cannot finish faster than its enemies spawn.
     const killSec = profile.totalHp / waveDps;
     const activeSec = Math.max(killSec, profile.spawnDuration);
@@ -815,7 +1051,7 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     // Plan §2.3.3: a wave that overruns starts enraging, and the tower dies a
     // short way into that. This — not an arbitrary patience limit — is the
     // wall, and it is why runs now end instead of stalling forever.
-    if (activeSec > enrageThresholdSeconds(wave) + enrageSurvivalSeconds) break;
+    if (activeSec > enrageThresholdSeconds(wave) + enrageSurvival) break;
 
     // Plan §4.1: orbs are a gold faucet, and a faucet the model cannot see is
     // a faucet nobody is balancing. Idle collects 40% of it by drifting home;
@@ -846,7 +1082,10 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     if (blessings) {
       blessingMgr.noteWaveCleared();
       if (blessingMgr.isDraftDue(wave)) {
-        const offer = blessingMgr.openDraft(wave, undefined, rng);
+        // The core is passed through, so `corePreference` (plan §6.2) is
+        // exercised by the same manager the game uses rather than being a
+        // weighting nothing measures.
+        const offer = blessingMgr.openDraft(wave, core, rng);
         if (offer.length > 0) {
           let best = offer[0];
           for (const def of offer) {
@@ -876,6 +1115,7 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
   }
 
   return {
+    core,
     wallWave: wave - 1,
     durationSec: elapsed,
     timeToUnlockSec: timeToUnlock,

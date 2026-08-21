@@ -76,6 +76,12 @@ function bootstrap(): void {
   ui.setOnSpendAP((perkId) => {
     game.spendAP(perkId);
   });
+  ui.setOnUnlockCore((id) => {
+    game.unlockCore(id);
+  });
+  ui.setOnSelectCore((id) => {
+    game.selectCore(id);
+  });
   ui.setOnUnlockResearch((id) => {
     game.startResearch(id);
   });
@@ -150,6 +156,7 @@ function bootstrap(): void {
     previewAP: (wave) => game.prestige.previewAP(wave),
     previewTP: (lap) => game.prestige.previewTP(lap),
     canSpend: (perkId) => game.prestige.canSpendAP(perkId) || game.prestige.canSpendTP(perkId),
+    coreState: game.corePanelState(),
     isAutomationUnlocked: (key) => game.prestige.isAutomationUnlocked(key),
     isAutomationEnabled: (key) => game.prestige.getAutomationEnabled(key),
     ascendUnlockWave: game.prestige.ascensionUnlockWave(),

@@ -11,6 +11,7 @@ import {
   type BlessingDef,
   type BlessingStat,
 } from '../data/blessings';
+import type { CoreId } from '../data/cores';
 import type { BlessingRunState } from '../types';
 import type { EventBus } from '../game/EventBus';
 
@@ -132,7 +133,7 @@ export class BlessingManager {
    * Blessings eligible to be offered right now: not maxed, past their wave
    * gate, prerequisite held, and with a consumer that actually exists.
    */
-  eligible(wave: number, core?: string): BlessingDef[] {
+  eligible(wave: number, core?: CoreId): BlessingDef[] {
     const out: BlessingDef[] = [];
     for (const def of BLESSINGS) {
       if (def.offerable === false) continue;
@@ -145,7 +146,7 @@ export class BlessingManager {
     return out;
   }
 
-  private offerWeight(def: BlessingDef, core?: string): number {
+  private offerWeight(def: BlessingDef, core?: CoreId): number {
     const pref = core ? def.corePreference?.[core] ?? 1 : 1;
     return Math.max(0.0001, def.weight * pref);
   }
@@ -157,7 +158,7 @@ export class BlessingManager {
    * draft would turn a three-way decision into a two-way one, which is the
    * whole point of the mechanic.
    */
-  rollOffer(wave: number, core?: string, rng: () => number = Math.random): BlessingDef[] {
+  rollOffer(wave: number, core?: CoreId, rng: () => number = Math.random): BlessingDef[] {
     const pool = this.eligible(wave, core);
     const out: BlessingDef[] = [];
     while (out.length < BLESSING_OFFER_SIZE && pool.length > 0) {
@@ -178,7 +179,7 @@ export class BlessingManager {
   }
 
   /** Open a draft for `wave`, seeding the free reroll budget. */
-  openDraft(wave: number, core?: string, rng: () => number = Math.random): BlessingDef[] {
+  openDraft(wave: number, core?: CoreId, rng: () => number = Math.random): BlessingDef[] {
     this.pendingOfferForWave = wave;
     this.freeRerolls = BLESSING_FREE_REROLLS;
     this.currentOffer = this.rollOffer(wave, core, rng);
@@ -190,7 +191,7 @@ export class BlessingManager {
    * false when there is nothing left to spend, so the caller can leave the
    * button disabled rather than silently redrawing for free.
    */
-  reroll(core?: string, rng: () => number = Math.random): BlessingDef[] | null {
+  reroll(core?: CoreId, rng: () => number = Math.random): BlessingDef[] | null {
     if (this.pendingOfferForWave === null) return null;
     if (this.freeRerolls > 0) {
       this.freeRerolls -= 1;
