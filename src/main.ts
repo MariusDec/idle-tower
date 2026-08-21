@@ -192,13 +192,21 @@ function bootstrap(): void {
   let mouseDown = false;
   let activeTouchId: number | null = null;
   const ensureAudio = () => game.initAudio();
-  const toCanvasXY = (clientX: number, clientY: number): { x: number; y: number } => {
+  /**
+   * Pointer → world.
+   *
+   * This used to be `clientX x (canvas.width / rect.width)`, which worked only
+   * because the backing store *was* the world. With a camera the two are
+   * different spaces and different units: the rect gives CSS pixels relative
+   * to the element, and only the camera knows the zoom and the offset that
+   * turn those into world coordinates. Deliberately routed through
+   * `game.screenToWorld` rather than reaching for the camera directly, so
+   * `Game` stays the only thing holding both halves.
+   */
+  const toWorldXY = (clientX: number, clientY: number): { x: number; y: number } => {
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return { x: 0, y: 0 };
-    return {
-      x: (clientX - rect.left) * (canvas.width / rect.width),
-      y: (clientY - rect.top) * (canvas.height / rect.height),
-    };
+    return game.screenToWorld(clientX - rect.left, clientY - rect.top);
   };
   /**
    * A press on the battlefield (gameplay plan §4.1/§4.3).
@@ -219,11 +227,11 @@ function bootstrap(): void {
   };
 
   canvas.addEventListener('mousemove', (ev) => {
-    const { x, y } = toCanvasXY(ev.clientX, ev.clientY);
+    const { x, y } = toWorldXY(ev.clientX, ev.clientY);
     game.setMouseInput(x, y, mouseDown);
   });
   canvas.addEventListener('mousedown', (ev) => {
-    const { x, y } = toCanvasXY(ev.clientX, ev.clientY);
+    const { x, y } = toWorldXY(ev.clientX, ev.clientY);
     mouseDown = true;
     pressAt(x, y);
     mouseDown = game.isMouseHeld();
@@ -239,7 +247,7 @@ function bootstrap(): void {
     if (ev.touches.length === 0) return;
     const t = ev.touches[0];
     activeTouchId = t.identifier;
-    const { x, y } = toCanvasXY(t.clientX, t.clientY);
+    const { x, y } = toWorldXY(t.clientX, t.clientY);
     pressAt(x, y);
     ensureAudio();
     ev.preventDefault();
@@ -249,7 +257,7 @@ function bootstrap(): void {
     for (let i = 0; i < ev.touches.length; i++) {
       if (ev.touches[i].identifier === activeTouchId) {
         const t = ev.touches[i];
-        const { x, y } = toCanvasXY(t.clientX, t.clientY);
+        const { x, y } = toWorldXY(t.clientX, t.clientY);
         game.setMouseInput(x, y, true);
         break;
       }

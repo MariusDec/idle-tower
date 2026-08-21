@@ -33,6 +33,7 @@
  */
 
 import type { AbilityId } from '../types';
+import { world } from './arena';
 
 /** Every core, in picker order. `marksman` leads because it is the default. */
 export const CORE_IDS = ['marksman', 'artillery', 'frostwork', 'bloodforge', 'arcane'] as const;
@@ -120,7 +121,7 @@ export interface CoreDef {
 export const CORE_TUNING = {
   // ── artillery ──
   /** Blast radius carried by every artillery shot. */
-  splashRadius: 70,
+  splashRadius: world(70),
   /** What everything else in the blast takes, as a fraction of the landed hit. */
   splashFraction: 0.5,
 

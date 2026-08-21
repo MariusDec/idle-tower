@@ -1,5 +1,7 @@
 import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType, LootOrb } from '../types';
 import { LOOT_ORB_COLORS, LOOT_TUNING, type LootOrbKind } from '../data/loot';
+import { ENTITY_SCALE, entity, world } from '../data/arena';
+import type { Camera } from './Camera';
 import { TOWER_VISUAL } from '../data/tower';
 import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS } from '../data/enemies';
 import type { EnemyDef, EnemyShape } from '../data/enemies';
@@ -10,7 +12,7 @@ import { ELITE_AURA_COLORS, AURA_RADIUS } from '../systems/EnemyManager';
 /** How much larger an elite renders than a normal enemy of the same type. */
 const ELITE_RADIUS_SCALE = 1.25;
 /** Slack around a body sprite so its outline stroke is not clipped. */
-const SPRITE_PADDING = 6;
+const SPRITE_PADDING = entity(6);
 /** Body colour of a boss below its enrage threshold. */
 const ENRAGED_BOSS_COLOR = '#ff2020';
 /**
@@ -38,11 +40,12 @@ const ELITE_CROWN_COLORS: Record<AuraType, string> = {
 
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly width: number;
-  private readonly height: number;
+  private readonly camera: Camera;
   private readonly rangeOverlay: boolean = true;
   private time = 0;
   private bgCanvas: HTMLCanvasElement | null = null;
+  /** World scale the background was baked at, so a zoom change re-bakes it. */
+  private bgScale = 0;
   /**
    * Pre-rendered sprites (plan §5.1).
    *
@@ -81,20 +84,53 @@ export class Renderer {
   private towerX = 0;
   private towerY = 0;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, camera: Camera) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Failed to acquire 2D rendering context');
     this.ctx = ctx;
-    this.width = canvas.width;
-    this.height = canvas.height;
+    this.camera = camera;
   }
 
-  draw(snapshot: RenderSnapshot, options?: { screenFlash?: number; towerFlash?: number; wallFlash?: number; shieldFlash?: number; chainPaths?: { points: { x: number; y: number }[]; age: number; life: number }[] }): void {
+  /**
+   * World dimensions, not canvas dimensions.
+   *
+   * These used to be `canvas.width`/`canvas.height`, which is what made the
+   * backing store *be* the world (UI plan §0.1). Everything below draws in
+   * world units under `camera.applyWorld`; the only passes that know about
+   * pixels are the background blit and the screen-space overlays.
+   */
+  private get width(): number {
+    return this.camera.worldWidth;
+  }
+
+  private get height(): number {
+    return this.camera.worldHeight;
+  }
+
+  /** Drop the baked background. Called by `Game` when the camera resizes. */
+  invalidateBackground(): void {
+    this.bgCanvas = null;
+  }
+
+  draw(snapshot: RenderSnapshot, options?: { screenFlash?: number; towerFlash?: number; wallFlash?: number; shieldFlash?: number; vignette?: number; chainPaths?: { points: { x: number; y: number }[]; age: number; life: number }[] }): void {
     this.time += 1 / 60;
     const ctx = this.ctx;
+    const camera = this.camera;
     this.towerX = snapshot.tower.x;
     this.towerY = snapshot.tower.y;
+
+    // ── device space: the baked background, blitted 1:1 ──
+    //
+    // Baked at backing-store resolution rather than world resolution, because
+    // the world is now 3328 x 1872 at 16:9 and rescaling an offscreen canvas
+    // that size every frame would cost more than the gradient it replaced.
+    // The tower always sits at the centre of both, so a screen-space bake is
+    // exactly equivalent to a world-space one.
+    camera.applyDevice(ctx);
     ctx.drawImage(this.getBackground(), 0, 0);
+
+    // ── world space ──
+    camera.applyWorld(ctx);
     this.drawTowerBase(ctx, snapshot);
     this.drawWall(ctx, snapshot);
     if (this.rangeOverlay) this.drawRangeRing(ctx, snapshot);
@@ -114,16 +150,6 @@ export class Renderer {
     this.drawDamageNumbers(ctx, snapshot.damageNumbers);
     this.drawTowerTop(ctx, snapshot);
     this.drawShield(ctx, snapshot);
-    this.drawWaveBanner(ctx, snapshot);
-
-    // Screen flash overlay (boss death)
-    const flash = options?.screenFlash ?? 0;
-    if (flash > 0) {
-      ctx.save();
-      ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, flash / 0.15)})`;
-      ctx.fillRect(0, 0, this.width, this.height);
-      ctx.restore();
-    }
 
     // Tower damage flash (red pulse on enemy attack)
     const tFlash = options?.towerFlash ?? 0;
@@ -131,7 +157,7 @@ export class Renderer {
       const t = snapshot.tower;
       const alpha = Math.min(1, tFlash / 0.12) * 0.35;
       const pulse = 1 + (1 - tFlash / 0.12) * 0.5;
-      const r = (TOWER_VISUAL.bodyRadius + 12) * pulse;
+      const r = (TOWER_VISUAL.bodyRadius + entity(12)) * pulse;
       const grad = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, r);
       grad.addColorStop(0, `rgba(255, 60, 40, ${alpha})`);
       grad.addColorStop(1, 'rgba(255, 60, 40, 0)');
@@ -147,13 +173,13 @@ export class Renderer {
     const wFlash = options?.wallFlash ?? 0;
     if (wFlash > 0) {
       const t = snapshot.tower;
-      const wallR = TOWER_VISUAL.bodyRadius + 40;
+      const wallR = TOWER_VISUAL.bodyRadius + world(40);
       const alpha = Math.min(1, wFlash / 0.12) * 0.4;
       const pulse = 1 + (1 - wFlash / 0.12) * 0.3;
       const r = wallR * pulse;
       ctx.save();
       ctx.strokeStyle = `rgba(255, 160, 40, ${alpha})`;
-      ctx.lineWidth = 6;
+      ctx.lineWidth = entity(6);
       ctx.beginPath();
       ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
       ctx.stroke();
@@ -164,68 +190,141 @@ export class Renderer {
     const sFlash = options?.shieldFlash ?? 0;
     if (sFlash > 0) {
       const t = snapshot.tower;
-      const shieldR = TOWER_VISUAL.bodyRadius + 8;
+      const shieldR = TOWER_VISUAL.bodyRadius + entity(8);
       const alpha = Math.min(1, sFlash / 0.12) * 0.5;
       const pulse = 1 + (1 - sFlash / 0.12) * 0.3;
       const r = shieldR * pulse;
       ctx.save();
       ctx.strokeStyle = `rgba(100, 200, 255, ${alpha})`;
-      ctx.lineWidth = 4;
+      ctx.lineWidth = entity(4);
       ctx.beginPath();
       ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
+
+    // ── screen space: one unit is one CSS pixel ──
+    //
+    // The banner, the boss-death flash and the low-HP vignette are chrome, not
+    // world objects: they must not scale with the zoom, must not move with the
+    // camera shake, and must fill the viewport rather than the arena.
+    camera.applyScreen(ctx);
+    this.drawWaveBanner(ctx, snapshot);
+
+    const flash = options?.screenFlash ?? 0;
+    if (flash > 0) {
+      ctx.save();
+      ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, flash / 0.15)})`;
+      ctx.fillRect(0, 0, camera.cssWidth, camera.cssHeight);
+      ctx.restore();
+    }
+
+    this.drawVignette(ctx, options?.vignette ?? 0);
   }
 
+  /**
+   * Low-HP vignette, in screen space.
+   *
+   * Was a `box-shadow` on `.canvas-wrap.is-critical`, which meant the most
+   * urgent signal in the game was painted by the same element the shake
+   * animation was translating — so at 0 HP the warning jittered along with
+   * every DOM overlay pinned to the canvas. On the canvas it sits under
+   * nothing and moves with nothing.
+   */
+  private drawVignette(ctx: CanvasRenderingContext2D, intensity: number): void {
+    if (intensity <= 0) return;
+    const w = this.camera.cssWidth;
+    const h = this.camera.cssHeight;
+    const pulse = 0.85 + 0.15 * Math.sin(this.time * 6);
+    const inner = Math.min(w, h) * 0.34;
+    const outer = Math.hypot(w, h) * 0.5;
+    const grad = ctx.createRadialGradient(w / 2, h / 2, inner, w / 2, h / 2, outer);
+    grad.addColorStop(0, 'rgba(255, 0, 0, 0)');
+    grad.addColorStop(1, `rgba(200, 10, 10, ${(Math.min(1, intensity) * 0.55 * pulse).toFixed(3)})`);
+    ctx.save();
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+
+  /**
+   * The baked background, at backing-store resolution.
+   *
+   * Keyed on the backing-store size *and* the world scale: a window resize
+   * changes the first, a change of aspect (and so of zoom) changes the second,
+   * and either one invalidates the bake. `Game` also calls
+   * `invalidateBackground` on the camera's resize so a same-size, new-shape
+   * viewport cannot keep a stale grid.
+   */
   private getBackground(): HTMLCanvasElement {
-    if (this.bgCanvas && this.bgCanvas.width === this.width && this.bgCanvas.height === this.height) {
+    const w = Math.max(1, Math.round(this.camera.transform.pixelWidth));
+    const h = Math.max(1, Math.round(this.camera.transform.pixelHeight));
+    const scale = this.camera.transform.scale;
+    if (this.bgCanvas && this.bgCanvas.width === w && this.bgCanvas.height === h
+      && this.bgScale === scale) {
       return this.bgCanvas;
     }
     const c = document.createElement('canvas');
-    c.width = this.width;
-    c.height = this.height;
+    c.width = w;
+    c.height = h;
     const bg = c.getContext('2d')!;
-    this.drawBackground(bg);
-    this.drawArena(bg);
+    this.drawBackground(bg, w, h);
+    this.drawArena(bg, w, h, scale);
     this.bgCanvas = c;
+    this.bgScale = scale;
     return c;
   }
 
-  private drawBackground(ctx: CanvasRenderingContext2D): void {
+  private drawBackground(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     const grad = ctx.createRadialGradient(
-      this.width / 2,
-      this.height / 2,
+      w / 2,
+      h / 2,
       50,
-      this.width / 2,
-      this.height / 2,
-      Math.max(this.width, this.height),
+      w / 2,
+      h / 2,
+      Math.max(w, h),
     );
     grad.addColorStop(0, '#1c2028');
     grad.addColorStop(1, '#0c0e12');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.fillRect(0, 0, w, h);
   }
 
   private drawAimLine(_ctx: CanvasRenderingContext2D, _snap: RenderSnapshot): void {
   }
 
-  private drawArena(ctx: CanvasRenderingContext2D): void {
+  /**
+   * The grid, drawn in backing-store pixels but stepped in *world* units.
+   *
+   * `world(80)` keeps the cell the same size relative to the arena as the old
+   * 80 px cell was to the old canvas, so the zoom-out does not turn the floor
+   * into graph paper. Aligned to the centre rather than to (0, 0), because the
+   * centre is where the tower is and the surplus at extreme aspects is
+   * symmetric about it.
+   */
+  private drawArena(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    scale: number,
+  ): void {
     ctx.save();
     ctx.strokeStyle = 'rgba(255,255,255,0.04)';
     ctx.lineWidth = 1;
-    const step = 80;
-    for (let x = 0; x < this.width; x += step) {
-      ctx.beginPath();
-      ctx.moveTo(x + 0.5, 0);
-      ctx.lineTo(x + 0.5, this.height);
-      ctx.stroke();
-    }
-    for (let y = 0; y < this.height; y += step) {
-      ctx.beginPath();
-      ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(this.width, y + 0.5);
-      ctx.stroke();
+    const step = world(80) * scale;
+    if (step >= 4) {
+      for (let x = w / 2 % step; x < w; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(Math.round(x) + 0.5, 0);
+        ctx.lineTo(Math.round(x) + 0.5, h);
+        ctx.stroke();
+      }
+      for (let y = h / 2 % step; y < h; y += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, Math.round(y) + 0.5);
+        ctx.lineTo(w, Math.round(y) + 0.5);
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }
@@ -235,23 +334,23 @@ export class Renderer {
     ctx.save();
     ctx.fillStyle = '#3a4250';
     ctx.beginPath();
-    ctx.arc(t.x, t.y, TOWER_VISUAL.bodyRadius + 4, 0, Math.PI * 2);
+    ctx.arc(t.x, t.y, TOWER_VISUAL.bodyRadius + entity(4), 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = TOWER_VISUAL.bodyColor;
     ctx.beginPath();
     ctx.arc(t.x, t.y, TOWER_VISUAL.bodyRadius, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = TOWER_VISUAL.bodyStroke;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = entity(2);
     ctx.stroke();
 
     ctx.fillStyle = TOWER_VISUAL.accentColor;
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      const px = t.x + Math.cos(a) * (TOWER_VISUAL.bodyRadius - 6);
-      const py = t.y + Math.sin(a) * (TOWER_VISUAL.bodyRadius - 6);
+      const px = t.x + Math.cos(a) * (TOWER_VISUAL.bodyRadius - entity(6));
+      const py = t.y + Math.sin(a) * (TOWER_VISUAL.bodyRadius - entity(6));
       ctx.beginPath();
-      ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+      ctx.arc(px, py, entity(2.5), 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -264,11 +363,11 @@ export class Renderer {
     if (ratio <= 0) return;
     const alpha = 0.15 + ratio * 0.25;
     const pulse = 1 + Math.sin(this.time * 2) * 0.03;
-    const r = (TOWER_VISUAL.bodyRadius + 8) * pulse;
+    const r = (TOWER_VISUAL.bodyRadius + entity(8)) * pulse;
     ctx.save();
     ctx.strokeStyle = `rgba(100, 180, 255, ${alpha})`;
-    ctx.lineWidth = 2 + ratio * 2;
-    ctx.setLineDash([4, 6]);
+    ctx.lineWidth = entity(2 + ratio * 2);
+    ctx.setLineDash([entity(4), entity(6)]);
     ctx.beginPath();
     ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
     ctx.stroke();
@@ -277,22 +376,22 @@ export class Renderer {
     // charge dots when more than 1 charge
     if (t.shieldCurrentCharges > 1) {
       ctx.save();
-      const dotR = r + 6;
+      const dotR = r + entity(6);
       const count = t.shieldCurrentCharges;
       for (let i = 0; i < count; i++) {
         const a = (i / count) * Math.PI * 2 + this.time * 1.2;
         const dx = t.x + Math.cos(a) * dotR;
         const dy = t.y + Math.sin(a) * dotR;
-        const glow = ctx.createRadialGradient(dx, dy, 0, dx, dy, 6);
+        const glow = ctx.createRadialGradient(dx, dy, 0, dx, dy, entity(6));
         glow.addColorStop(0, 'rgba(180, 220, 255, 0.95)');
         glow.addColorStop(1, 'rgba(100, 180, 255, 0)');
         ctx.fillStyle = glow;
         ctx.beginPath();
-        ctx.arc(dx, dy, 6, 0, Math.PI * 2);
+        ctx.arc(dx, dy, entity(6), 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = '#b4dcff';
         ctx.beginPath();
-        ctx.arc(dx, dy, 2.5, 0, Math.PI * 2);
+        ctx.arc(dx, dy, entity(2.5), 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
@@ -304,8 +403,8 @@ export class Renderer {
     if (t.wallMaxHp <= 0) return;
     const ratio = Math.max(0, t.wallHp / t.wallMaxHp);
     if (ratio <= 0) return;
-    const r = TOWER_VISUAL.bodyRadius + 40;
-    const thickness = 4 + ratio * 4;
+    const r = TOWER_VISUAL.bodyRadius + world(40);
+    const thickness = entity(4 + ratio * 4);
     const alpha = 0.3 + ratio * 0.4;
     ctx.save();
     ctx.strokeStyle = `rgba(150, 160, 170, ${alpha})`;
@@ -314,8 +413,8 @@ export class Renderer {
     ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
     ctx.stroke();
     ctx.strokeStyle = `rgba(100, 110, 120, ${alpha * 0.6})`;
-    ctx.lineWidth = thickness - 2;
-    ctx.setLineDash([6, 8]);
+    ctx.lineWidth = thickness - entity(2);
+    ctx.setLineDash([entity(6), entity(8)]);
     ctx.beginPath();
     ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
     ctx.stroke();
@@ -327,27 +426,27 @@ export class Renderer {
     ctx.save();
     ctx.fillStyle = TOWER_VISUAL.roofColor;
     ctx.beginPath();
-    ctx.moveTo(t.x, t.y - TOWER_VISUAL.bodyRadius - 18);
-    ctx.lineTo(t.x - TOWER_VISUAL.bodyRadius + 2, t.y - TOWER_VISUAL.bodyRadius + 2);
-    ctx.lineTo(t.x + TOWER_VISUAL.bodyRadius - 2, t.y - TOWER_VISUAL.bodyRadius + 2);
+    ctx.moveTo(t.x, t.y - TOWER_VISUAL.bodyRadius - entity(18));
+    ctx.lineTo(t.x - TOWER_VISUAL.bodyRadius + entity(2), t.y - TOWER_VISUAL.bodyRadius + entity(2));
+    ctx.lineTo(t.x + TOWER_VISUAL.bodyRadius - entity(2), t.y - TOWER_VISUAL.bodyRadius + entity(2));
     ctx.closePath();
     ctx.fill();
     ctx.strokeStyle = TOWER_VISUAL.bodyStroke;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = entity(2);
     ctx.stroke();
 
     ctx.strokeStyle = '#c0c4cc';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = entity(1.5);
     ctx.beginPath();
-    ctx.moveTo(t.x, t.y - TOWER_VISUAL.bodyRadius - 18);
-    ctx.lineTo(t.x, t.y - TOWER_VISUAL.bodyRadius - 30);
+    ctx.moveTo(t.x, t.y - TOWER_VISUAL.bodyRadius - entity(18));
+    ctx.lineTo(t.x, t.y - TOWER_VISUAL.bodyRadius - entity(30));
     ctx.stroke();
 
     ctx.fillStyle = TOWER_VISUAL.flagColor;
     ctx.beginPath();
-    ctx.moveTo(t.x, t.y - TOWER_VISUAL.bodyRadius - 30);
-    ctx.lineTo(t.x + 10, t.y - TOWER_VISUAL.bodyRadius - 26);
-    ctx.lineTo(t.x, t.y - TOWER_VISUAL.bodyRadius - 22);
+    ctx.moveTo(t.x, t.y - TOWER_VISUAL.bodyRadius - entity(30));
+    ctx.lineTo(t.x + entity(10), t.y - TOWER_VISUAL.bodyRadius - entity(26));
+    ctx.lineTo(t.x, t.y - TOWER_VISUAL.bodyRadius - entity(22));
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -357,8 +456,8 @@ export class Renderer {
     const t = snap.tower;
     ctx.save();
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.setLineDash([6, 6]);
-    ctx.lineWidth = 1;
+    ctx.setLineDash([entity(6), entity(6)]);
+    ctx.lineWidth = entity(1);
     ctx.beginPath();
     ctx.arc(t.x, t.y, t.range, 0, Math.PI * 2);
     ctx.stroke();
@@ -407,7 +506,7 @@ export class Renderer {
       g.arc(0, 0, r, 0, Math.PI * 2);
       g.fill();
       g.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-      g.lineWidth = 1.5;
+      g.lineWidth = entity(1.5);
       g.stroke();
 
       // A highlight, plus a glyph so the three kinds are told apart by shape
@@ -438,8 +537,8 @@ export class Renderer {
     const { x, y, radius } = placement;
     ctx.save();
     ctx.strokeStyle = 'rgba(120, 220, 255, 0.85)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 6]);
+    ctx.lineWidth = entity(2);
+    ctx.setLineDash([entity(8), entity(6)]);
     ctx.lineDashOffset = -this.time * 30;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
@@ -448,7 +547,7 @@ export class Renderer {
     ctx.fillStyle = 'rgba(120, 220, 255, 0.10)';
     ctx.fill();
     ctx.strokeStyle = 'rgba(220, 245, 255, 0.9)';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = entity(1.5);
     ctx.beginPath();
     ctx.moveTo(x - 10, y);
     ctx.lineTo(x + 10, y);
@@ -476,28 +575,35 @@ export class Renderer {
     const pulse = 0.55 + 0.35 * Math.sin(this.time * 4);
     ctx.save();
     for (const lane of lanes) {
-      // Clamp to the arena edge — spawn points sit 20 px outside it.
-      const x = Math.max(10, Math.min(this.width - 10, lane.x));
-      const y = Math.max(10, Math.min(this.height - 10, lane.y));
+      // Clamp into what is actually *visible*, not into the world rectangle:
+      // the spawn ellipse sits just outside the latter, and at an aspect
+      // outside `ARENA.aspectClamp` the two are not the same rectangle.
+      const inset = world(10);
+      const minX = this.width / 2 - this.camera.viewHalfWidth + inset;
+      const maxX = this.width / 2 + this.camera.viewHalfWidth - inset;
+      const minY = this.height / 2 - this.camera.viewHalfHeight + inset;
+      const maxY = this.height / 2 + this.camera.viewHalfHeight - inset;
+      const x = Math.max(minX, Math.min(maxX, lane.x));
+      const y = Math.max(minY, Math.min(maxY, lane.y));
       const dx = this.towerX - x;
       const dy = this.towerY - y;
       const len = Math.hypot(dx, dy) || 1;
       const ux = dx / len;
       const uy = dy / len;
       ctx.strokeStyle = `rgba(255, 150, 110, ${(0.5 * pulse).toFixed(3)})`;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = world(2);
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x + ux * 26, y + uy * 26);
+      ctx.lineTo(x + ux * world(26), y + uy * world(26));
       ctx.stroke();
       // Arrowhead pointing the way the lane will come in.
-      const tipX = x + ux * 32;
-      const tipY = y + uy * 32;
+      const tipX = x + ux * world(32);
+      const tipY = y + uy * world(32);
       ctx.fillStyle = `rgba(255, 170, 130, ${(0.6 * pulse).toFixed(3)})`;
       ctx.beginPath();
       ctx.moveTo(tipX, tipY);
-      ctx.lineTo(x + ux * 20 - uy * 7, y + uy * 20 + ux * 7);
-      ctx.lineTo(x + ux * 20 + uy * 7, y + uy * 20 - ux * 7);
+      ctx.lineTo(x + ux * world(20) - uy * world(7), y + uy * world(20) + ux * world(7));
+      ctx.lineTo(x + ux * world(20) + uy * world(7), y + uy * world(20) - ux * world(7));
       ctx.closePath();
       ctx.fill();
     }
@@ -515,7 +621,7 @@ export class Renderer {
     const { x, y, progress, cooldown, ready } = charge;
     const r = 26;
     ctx.save();
-    ctx.lineWidth = 3;
+    ctx.lineWidth = entity(3);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -555,7 +661,7 @@ export class Renderer {
       ctx.arc(m.x, m.y, 6 * pulse, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#ff8844';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = entity(1.5);
       ctx.beginPath();
       ctx.arc(m.x, m.y, 6 * pulse, 0, Math.PI * 2);
       ctx.stroke();
@@ -635,7 +741,7 @@ export class Renderer {
         ctx.closePath();
         ctx.fill();
         ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = entity(2);
         ctx.stroke();
         // Splitter gets a small inner core dot to make it stand out
         if (type === 'splitter') {
@@ -658,7 +764,7 @@ export class Renderer {
         ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = entity(2);
         ctx.stroke();
         break;
       // Siege: a blunt, flat-sided chassis with a barrel — it reads as a
@@ -667,7 +773,7 @@ export class Renderer {
         ctx.fillStyle = bodyColor;
         ctx.fillRect(-r, -r * 0.85, r * 2, r * 1.7);
         ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = entity(2.5);
         ctx.strokeRect(-r, -r * 0.85, r * 2, r * 1.7);
         ctx.fillStyle = def.borderColor;
         ctx.fillRect(-r * 0.25, -r * 1.5, r * 0.5, r * 0.8);
@@ -690,10 +796,10 @@ export class Renderer {
         ctx.fillStyle = bodyColor;
         ctx.fill();
         ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = entity(2.5);
         ctx.stroke();
         ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = entity(1.5);
         ctx.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
@@ -716,7 +822,7 @@ export class Renderer {
           ctx.ellipse(0, r * 0.25, r * 1.15, r * 0.6, 0, Math.PI, Math.PI * 2);
           ctx.fill();
           ctx.strokeStyle = 'rgba(216, 181, 120, 0.5)';
-          ctx.lineWidth = 2;
+          ctx.lineWidth = entity(2);
           ctx.stroke();
           ctx.fillStyle = 'rgba(0,0,0,0.35)';
           ctx.beginPath();
@@ -729,10 +835,10 @@ export class Renderer {
         ctx.arc(0, 0, r, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = 2.5;
+        ctx.lineWidth = entity(2.5);
         ctx.stroke();
         ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = entity(2);
         for (const dir of [-1, 1]) {
           ctx.beginPath();
           ctx.moveTo(dir * r * 0.35, -r * 0.15);
@@ -758,7 +864,7 @@ export class Renderer {
         }
         if (type === 'tank') {
           ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-          ctx.lineWidth = 1;
+          ctx.lineWidth = entity(1);
           ctx.beginPath();
           ctx.arc(0, 0, r - 4, 0, Math.PI * 2);
           ctx.stroke();
@@ -852,7 +958,7 @@ export class Renderer {
     if (!anyWarden) return;
     const pulse = 0.3 + Math.sin(this.time * 3) * 0.12;
     ctx.save();
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = entity(1.5);
     ctx.strokeStyle = `rgba(90, 220, 240, ${pulse})`;
     for (const w of enemies) {
       if (!w.alive || w.type !== 'warden') continue;
@@ -884,8 +990,8 @@ export class Renderer {
     ctx.save();
     ctx.globalAlpha = fade * 0.35;
     ctx.strokeStyle = ENEMY_DEFS.blinker.borderColor;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 5]);
+    ctx.lineWidth = entity(2);
+    ctx.setLineDash([entity(4), entity(5)]);
     ctx.beginPath();
     ctx.moveTo(enemy.afterImageX, enemy.afterImageY);
     ctx.lineTo(enemy.x, enemy.y);
@@ -960,7 +1066,7 @@ export class Renderer {
       const p = 0.4 + Math.sin(this.time * 8) * 0.3;
       ctx.save();
       ctx.strokeStyle = `rgba(180, 50, 220, ${p})`;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = entity(3);
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y + bob, r + 5, 0, Math.PI * 2);
       ctx.stroke();
@@ -1021,7 +1127,7 @@ export class Renderer {
       // The glow pass is a second fillText under a shadow blur, which is one
       // of the most expensive things a 2D context does; baking it means an
       // elite costs a blit rather than two blurred glyph rasterisations.
-      sprite = this.makeSprite(size * 2 + 16, (g) => {
+      sprite = this.makeSprite(size * 2 + entity(16), (g) => {
         g.fillStyle = color;
         g.font = `bold ${size}px sans-serif`;
         g.textAlign = 'center';
@@ -1058,7 +1164,7 @@ export class Renderer {
       ctx.fillStyle = 'rgba(93, 173, 226, 0.65)';
       ctx.fill();
       ctx.strokeStyle = 'rgba(180, 220, 255, 0.9)';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = entity(1);
       ctx.stroke();
     }
     ctx.restore();
@@ -1091,7 +1197,7 @@ export class Renderer {
     ctx.save();
     ctx.translate(enemy.x, enemy.y + bob);
     ctx.strokeStyle = `rgba(90, 220, 240, ${0.35 + ratio * 0.45})`;
-    ctx.lineWidth = 1.5 + ratio * 2;
+    ctx.lineWidth = entity(1.5) + ratio * 2;
     ctx.beginPath();
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2 - Math.PI / 2 + this.time * 0.6;
@@ -1115,8 +1221,8 @@ export class Renderer {
   private drawSiegeStance(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
     ctx.save();
     ctx.strokeStyle = 'rgba(240, 190, 110, 0.28)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([7, 9]);
+    ctx.lineWidth = entity(1.5);
+    ctx.setLineDash([entity(7), entity(9)]);
     ctx.beginPath();
     ctx.arc(enemy.x, enemy.y, r + 14, 0, Math.PI * 2);
     ctx.stroke();
@@ -1127,7 +1233,7 @@ export class Renderer {
     const progress = 1 - remaining / reload;
     if (progress > 0) {
       ctx.strokeStyle = 'rgba(255, 170, 60, 0.85)';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = entity(3);
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 8, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
       ctx.stroke();
@@ -1152,7 +1258,7 @@ export class Renderer {
       const t = invuln / BOSS_ENCOUNTER.phaseInvulnerability;
       ctx.save();
       ctx.strokeStyle = `rgba(255, 240, 190, ${0.35 + t * 0.5})`;
-      ctx.lineWidth = 3 + t * 3;
+      ctx.lineWidth = entity(3) + t * 3;
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 10 + (1 - t) * 26, 0, Math.PI * 2);
       ctx.stroke();
@@ -1166,7 +1272,7 @@ export class Renderer {
       const ratio = Math.max(0, Math.min(1, shield / shieldMax));
       ctx.save();
       ctx.strokeStyle = 'rgba(120, 210, 255, 0.85)';
-      ctx.lineWidth = 4;
+      ctx.lineWidth = entity(4);
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 7, -Math.PI / 2, -Math.PI / 2 + ratio * Math.PI * 2);
       ctx.stroke();
@@ -1184,13 +1290,13 @@ export class Renderer {
       ctx.strokeStyle = mitigated
         ? `rgba(140, 220, 255, ${0.5 + progress * 0.4})`
         : `rgba(255, 110, 50, ${0.45 + progress * 0.5})`;
-      ctx.lineWidth = 3 + progress * 4;
+      ctx.lineWidth = entity(3) + progress * 4;
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, outer, 0, Math.PI * 2);
       ctx.stroke();
       // A filling inner disc outline, so the last half-second is unmistakable.
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 8]);
+      ctx.lineWidth = entity(2);
+      ctx.setLineDash([entity(6), entity(8)]);
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 20 + progress * 12, 0, Math.PI * 2);
       ctx.stroke();
@@ -1205,8 +1311,8 @@ export class Renderer {
       const pulse = 0.35 + Math.sin(this.time * 9 + enemy.id) * 0.2;
       ctx.save();
       ctx.strokeStyle = `rgba(150, 110, 255, ${pulse})`;
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([10, 8]);
+      ctx.lineWidth = entity(2.5);
+      ctx.setLineDash([entity(10), entity(8)]);
       ctx.lineDashOffset = -this.time * 90;
       ctx.beginPath();
       ctx.moveTo(this.towerX, this.towerY);
@@ -1265,7 +1371,7 @@ export class Renderer {
     const progress = 1 - surfacing / ENEMY_BEHAVIOR.burrowTelegraph;
     ctx.save();
     ctx.strokeStyle = `rgba(230, 180, 100, ${0.75 * (1 - progress)})`;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = entity(4);
     ctx.beginPath();
     ctx.arc(enemy.x, enemy.y, r + 6 + progress * 42, 0, Math.PI * 2);
     ctx.stroke();
@@ -1276,7 +1382,8 @@ export class Renderer {
   private getCoinSprite(): HTMLCanvasElement {
     const cached = this.enemySprites.get('#coin');
     if (cached) return cached;
-    const sprite = this.makeSprite(20, (g) => {
+    const sprite = this.makeSprite(entity(20), (g) => {
+      g.scale(ENTITY_SCALE, ENTITY_SCALE);
       g.fillStyle = '#ffd24a';
       g.beginPath();
       g.arc(0, 0, 7, 0, Math.PI * 2);
@@ -1316,7 +1423,7 @@ export class Renderer {
 
       // Impact marker, tightening as the shell comes down.
       ctx.strokeStyle = `rgba(255, 120, 50, ${0.25 + progress * 0.5})`;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = entity(2);
       ctx.beginPath();
       ctx.arc(landX, landY, 6 + (1 - progress) * 26, 0, Math.PI * 2);
       ctx.stroke();
@@ -1332,7 +1439,7 @@ export class Renderer {
       ctx.arc(s.x, s.y - lift, 5.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#5a2a00';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = entity(1.5);
       ctx.stroke();
     }
     ctx.restore();
@@ -1351,7 +1458,7 @@ export class Renderer {
     ctx.fillRect(x, y, barW * ratio, barH);
     if (enemy.type === 'boss') {
       ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = entity(1);
       ctx.strokeRect(x - 0.5, y - 0.5, barW + 1, barH + 1);
     }
   }
@@ -1361,7 +1468,8 @@ export class Renderer {
       if (!p.alive) continue;
       if (p.damageType === 'magic') {
         if (!this.magicProjectileSprite) {
-          this.magicProjectileSprite = this.makeSprite(16, (g) => {
+          this.magicProjectileSprite = this.makeSprite(entity(16), (g) => {
+            g.scale(ENTITY_SCALE, ENTITY_SCALE);
             const grad = g.createRadialGradient(0, 0, 0, 0, 0, 8);
             grad.addColorStop(0, '#e0b3ff');
             grad.addColorStop(1, 'rgba(120, 60, 200, 0)');
@@ -1375,12 +1483,13 @@ export class Renderer {
             g.fill();
           });
         }
-        ctx.drawImage(this.magicProjectileSprite, p.x - 8, p.y - 8);
+        ctx.drawImage(this.magicProjectileSprite, p.x - entity(8), p.y - entity(8));
       } else {
         const angle = Math.atan2(p.vy, p.vx);
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(angle);
+        ctx.scale(ENTITY_SCALE, ENTITY_SCALE);
         ctx.fillStyle = '#f7d774';
         ctx.beginPath();
         ctx.moveTo(8, 0);
@@ -1396,6 +1505,14 @@ export class Renderer {
     }
   }
 
+  /**
+   * Particles.
+   *
+   * `p.size` comes from `EffectsManager`, which Part 5 owns and which has not
+   * been through the `ENTITY_SCALE` pass yet — so they are scaled here at the
+   * draw call instead. When Part 5 moves the emitter constants onto the arena
+   * scales, this multiply comes back out.
+   */
   private drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[], layer: 'behind' | 'front'): void {
     ctx.save();
     for (const p of particles) {
@@ -1405,7 +1522,7 @@ export class Renderer {
       ctx.globalAlpha = lifeRatio;
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, entity(p.size), 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -1444,7 +1561,7 @@ export class Renderer {
         // Outer glow stroke
         ctx.globalAlpha = lifeRatio * 0.55;
         ctx.strokeStyle = 'rgba(120, 160, 255, 0.85)';
-        ctx.lineWidth = 5;
+        ctx.lineWidth = entity(5);
         ctx.beginPath();
         const dx = b.x - a.x;
         const dy = b.y - a.y;
@@ -1464,7 +1581,7 @@ export class Renderer {
         // Inner bright stroke
         ctx.globalAlpha = lifeRatio;
         ctx.strokeStyle = 'rgba(235, 245, 255, 1)';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = entity(2);
         ctx.stroke();
       }
     }
@@ -1481,9 +1598,9 @@ export class Renderer {
       const fadeIn = Math.min(1, d.age / 0.08);
       const alpha = Math.min(lifeRatio * 1.4, 1) * fadeIn;
       ctx.globalAlpha = alpha;
-      const size = d.isCrit ? 22 : 15;
-      ctx.font = `${d.isCrit ? '700 ' : '600 '}${size}px sans-serif`;
-      ctx.lineWidth = d.isCrit ? 3.5 : 2.5;
+      const size = entity(d.isCrit ? 22 : 15);
+      ctx.font = `${d.isCrit ? '700 ' : '600 '}${size.toFixed(1)}px sans-serif`;
+      ctx.lineWidth = entity(d.isCrit ? 3.5 : 2.5);
       ctx.strokeStyle = d.isHeal ? '#0a3a1a' : '#3a0000';
       ctx.fillStyle = d.isHeal ? '#3edc81' : d.isCrit ? '#ffe27a' : '#ffffff';
       const jitterX = (1 - lifeRatio) * (d.isCrit ? 0 : ((d.amount % 7) - 3) * 0.6);
@@ -1491,44 +1608,53 @@ export class Renderer {
       ctx.fillText(formatInt(d.amount), d.x + jitterX, d.y);
       if (d.isCrit) {
         ctx.globalAlpha = alpha * 0.7;
-        ctx.font = `800 ${size + 4}px sans-serif`;
+        ctx.font = `800 ${(size + entity(4)).toFixed(1)}px sans-serif`;
         ctx.fillStyle = '#ff5050';
-        ctx.fillText('!', d.x + jitterX - size * 0.9, d.y - 2);
+        ctx.fillText('!', d.x + jitterX - size * 0.9, d.y - entity(2));
       }
     }
     ctx.restore();
   }
 
+  /**
+   * The wave banner, in screen space (CSS pixels).
+   *
+   * It is a heads-up display element, not a world object: it pins to the top
+   * of the *viewport*, and its 22 px type stays 22 px whatever the zoom is.
+   * Under the old single-space renderer both facts were accidents of the
+   * canvas and the world being the same rectangle.
+   */
   private drawWaveBanner(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
+    const w = this.camera.cssWidth;
     if (snap.wave.intermission) {
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.45)';
-      ctx.fillRect(0, 0, this.width, 50);
+      ctx.fillRect(0, 0, w, 50);
       ctx.fillStyle = '#f0f0f0';
       ctx.font = '600 22px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const secs = Math.max(0, Math.ceil(snap.wave.intermissionTimer));
       const willAdvance = snap.wave.autoProgress || isBossWave(snap.wave.number);
-      ctx.fillText(`Wave ${snap.wave.number} cleared — ${willAdvance ? 'next' : 'restarting'} wave in ${secs}s`, this.width / 2, 25);
+      ctx.fillText(`Wave ${snap.wave.number} cleared — ${willAdvance ? 'next' : 'restarting'} wave in ${secs}s`, w / 2, 25);
       ctx.restore();
     } else if (isBossWave(snap.wave.number)) {
       const pulse = 0.5 + Math.sin(this.time * 4) * 0.15;
       ctx.save();
-      const grad = ctx.createLinearGradient(0, 0, this.width, 0);
+      const grad = ctx.createLinearGradient(0, 0, w, 0);
       grad.addColorStop(0, 'rgba(120,0,0,0.0)');
       grad.addColorStop(0.5, `rgba(160, 20, 20, ${0.55 + pulse * 0.2})`);
       grad.addColorStop(1, 'rgba(120,0,0,0.0)');
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, this.width, 60);
+      ctx.fillRect(0, 0, w, 60);
       ctx.fillStyle = '#ff8a8a';
       ctx.font = '800 26px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`BOSS WAVE ${snap.wave.number}`, this.width / 2, 30);
+      ctx.fillText(`BOSS WAVE ${snap.wave.number}`, w / 2, 30);
       ctx.fillStyle = `rgba(255, 200, 200, ${0.4 + pulse * 0.3})`;
       ctx.font = '600 13px sans-serif';
-      ctx.fillText('A powerful enemy approaches', this.width / 2, 50);
+      ctx.fillText('A powerful enemy approaches', w / 2, 50);
       ctx.restore();
     }
   }

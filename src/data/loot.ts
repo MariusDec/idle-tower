@@ -1,5 +1,6 @@
 import { bossCountForWave, goldDropForWave } from './formulas';
 import { ENEMY_DEFS } from './enemies';
+import { entity, world } from './arena';
 
 /**
  * What a loot orb pays out (gameplay plan §4.1).
@@ -70,13 +71,13 @@ export const LOOT_TUNING = {
    * that is scaled down to phone width, where a pixel-tight hitbox would make
    * the whole verb feel broken.
    */
-  clickRadius: 34,
+  clickRadius: world(34),
   /** Seconds of outward "pop" before an orb starts drifting to the tower. */
   popSeconds: 0.35,
   /** Drawn radius. */
-  orbRadius: 9,
+  orbRadius: entity(9),
   /** Distance at which a drifting orb counts as having arrived. */
-  arriveRadius: 26,
+  arriveRadius: world(26),
 } as const;
 
 /**

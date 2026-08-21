@@ -1,4 +1,5 @@
 import type { TargetingMode, TowerState } from '../types';
+import { entity, world } from './arena';
 
 export const TOWER_BASE: Omit<TowerState, 'cooldown'> = {
   x: 0,
@@ -35,10 +36,10 @@ export const TOWER_BASE: Omit<TowerState, 'cooldown'> = {
   shieldRechargeTime: 0,
 };
 
-export const PROJECTILE_SPEED = 720;
+export const PROJECTILE_SPEED = world(720);
 
 export const TOWER_VISUAL = {
-  bodyRadius: 28,
+  bodyRadius: entity(28),
   bodyColor: '#5b6b7a',
   bodyStroke: '#2a2f38',
   roofColor: '#7a4a2a',
@@ -46,7 +47,7 @@ export const TOWER_VISUAL = {
   accentColor: '#8a99a8',
 };
 
-export const TOWER_HIT_RADIUS = TOWER_VISUAL.bodyRadius + 4;
+export const TOWER_HIT_RADIUS = TOWER_VISUAL.bodyRadius + entity(4);
 
 /**
  * Targeting modes, in the order they are offered (gameplay plan §2.3).
@@ -122,7 +123,7 @@ export const MANUAL_AIM = {
   /** Extra targets the charged shot pierces. */
   chargeExtraPierce: 3,
   /** Splash radius on impact, and what everything else in it takes. */
-  chargeSplashRadius: 90,
+  chargeSplashRadius: world(90),
   chargeSplashFraction: 0.6,
   /**
    * How far the cursor may wander and still count as held still.
@@ -131,5 +132,5 @@ export const MANUAL_AIM = {
    * fingertip on a canvas scaled down to phone width jitters several canvas
    * units without the player intending to move at all.
    */
-  chargeMoveTolerance: 18,
+  chargeMoveTolerance: world(18),
 } as const;

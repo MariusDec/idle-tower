@@ -1,4 +1,5 @@
 import type { AbilityId } from '../types';
+import { world } from './arena';
 
 export type AbilityEffectType =
   | 'aoe_damage'
@@ -389,11 +390,11 @@ function formatDurationForDisplay(seconds: number): string {
  * lands in. It is also the radius the auto-placer scores clusters with, so the
  * automatic fallback and the manual verb are aiming at the same shape.
  */
-export const METEOR_SPLASH_RADIUS = 60;
+export const METEOR_SPLASH_RADIUS = world(60);
 
 export const PLACEABLE_ABILITIES: Partial<Record<AbilityId, { radius: number }>> = {
-  rain_of_arrows: { radius: 130 },
-  frost_nova: { radius: 150 },
+  rain_of_arrows: { radius: world(130) },
+  frost_nova: { radius: world(150) },
   // Deliberately the *existing* splash radius, not the 90 px §4.2 uses for the
   // charged shot: a placed Meteor Strike must be today's Meteor Strike with a
   // player-chosen epicentre, not a quietly wider one.

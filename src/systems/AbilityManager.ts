@@ -1,4 +1,5 @@
 import type { AbilityId, AbilityState, Enemy } from '../types';
+import { world } from '../data/arena';
 import {
   ABILITIES,
   ABILITY_BY_ID,
@@ -55,7 +56,7 @@ const METEOR_SPLASH_MULTIPLIER = 2;
 const CHAIN_BOUNCE_BASE = 5;
 const CHAIN_BOUNCE_PER_LEVEL = 1;
 const CHAIN_BOUNCE_MAX = 9;
-const CHAIN_BOUNCE_RADIUS = 200;
+const CHAIN_BOUNCE_RADIUS = world(200);
 const CHAIN_DECAY = 0.65;
 const EXECUTE_BOSS_MULTIPLIER = 5;
 

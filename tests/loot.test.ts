@@ -11,6 +11,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { LootManager } from '../src/systems/LootManager';
 import { LOOT_TUNING, bossOrbShare, orbGoldValue, type LootOrbKind } from '../src/data/loot';
 import { bossCountForWave } from '../src/data/formulas';
+import { world } from '../src/data/arena';
 import { MANUAL_AIM } from '../src/data/tower';
 import { AbilityPlacement, ChargeTracker } from '../src/systems/ActiveInput';
 import { AbilityManager } from '../src/systems/AbilityManager';
@@ -263,7 +264,9 @@ describe('charged shot tuning (plan §4.2 / §4.5)', () => {
     expect('fireRateMult' in MANUAL_AIM).toBe(false);
     // The plan's *shape* survives the retune even though its number did not.
     expect(MANUAL_AIM.chargeExtraPierce).toBe(3);
-    expect(MANUAL_AIM.chargeSplashRadius).toBe(90);
+    // §4.2's 90 is a *pre-camera* number: `chargeSplashRadius` is a world-space
+    // AoE, so it carries `WORLD_SCALE` like every other one (UI plan §1.1).
+    expect(MANUAL_AIM.chargeSplashRadius).toBe(world(90));
   });
 
   it("tolerates a finger's worth of jitter", () => {

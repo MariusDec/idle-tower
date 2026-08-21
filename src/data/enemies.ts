@@ -1,4 +1,5 @@
 import type { BossPattern, Enemy, EnemyType } from '../types';
+import { entity, world } from './arena';
 import { bossCountForWave, bossHPForWave } from './formulas';
 
 /**
@@ -71,7 +72,7 @@ export interface EnemyDef {
  */
 export const ENEMY_BEHAVIOR = {
   /** Siege halts here and shells the tower from outside a short build's range. */
-  siegeStandoff: 260,
+  siegeStandoff: world(260),
   /** Seconds between siege lobs. */
   siegeReload: 3,
   /** Seconds a siege shell spends in the air (the telegraph). */
@@ -93,7 +94,7 @@ export const ENEMY_BEHAVIOR = {
   /** Seconds between blinks. */
   blinkInterval: 3,
   /** Distance covered by one blink, in pixels. */
-  blinkDistance: 140,
+  blinkDistance: world(140),
   /** Seconds of knockback/mine immunity a blink grants. */
   blinkImmunity: 0.3,
 
@@ -102,14 +103,14 @@ export const ENEMY_BEHAVIOR = {
   /** Allies a single warden can shield. */
   wardMaxTargets: 5,
   /** Radius the warden looks for allies in. */
-  wardRange: 190,
+  wardRange: world(190),
   /** Seconds between shield refreshes. */
   wardRefresh: 4,
 
   /** Speed multiplier while burrowed. */
   burrowSpeedMult: 1.6,
   /** Distance from the tower at which a burrower breaks the surface. */
-  burrowSurfaceDistance: 120,
+  burrowSurfaceDistance: world(120),
   /** Seconds the surfacing telegraph lasts (the burrower cannot act during it). */
   burrowTelegraph: 1,
 
@@ -121,7 +122,7 @@ export const ENEMY_BEHAVIOR = {
   /** Enemies in one `fast` spawn pack. */
   fastPackSize: 3,
   /** Radius the pack is scattered over at its shared spawn point. */
-  fastPackSpread: 26,
+  fastPackSpread: world(26),
 
   /** Seconds a splitter child is untargetable and immune after the split. */
   splitterSpawnProtection: 2,
@@ -468,14 +469,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   normal: {
     type: 'normal',
     baseHP: 6,
-    baseSpeed: 60,
+    baseSpeed: world(60),
     armor: 0,
     magicResist: 0,
     baseDamage: 1,
     fireRate: 0.7,
     baseGold: 1,
     unlockWave: 1,
-    radius: 12,
+    radius: entity(12),
     color: '#d04848',
     borderColor: '#ffffff',
     shape: 'circle',
@@ -484,14 +485,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   fast: {
     type: 'fast',
     baseHP: 4,
-    baseSpeed: 120,
+    baseSpeed: world(120),
     armor: 0,
     magicResist: 0,
     baseDamage: 1,
     fireRate: 1.2,
     baseGold: 2,
     unlockWave: 3,
-    radius: 10,
+    radius: entity(10),
     color: '#f1c40f',
     borderColor: '#7a6500',
     shape: 'diamond',
@@ -500,14 +501,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   tank: {
     type: 'tank',
     baseHP: 20,
-    baseSpeed: 30,
+    baseSpeed: world(30),
     armor: 3,
     magicResist: 0,
     baseDamage: 1,
     fireRate: 0.85,
     baseGold: 3,
     unlockWave: 5,
-    radius: 18,
+    radius: entity(18),
     color: '#2c5b8f',
     borderColor: '#9aa7b5',
     shape: 'circle',
@@ -516,14 +517,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   flying: {
     type: 'flying',
     baseHP: 7,
-    baseSpeed: 90,
+    baseSpeed: world(90),
     armor: 0,
     magicResist: 0,
     baseDamage: 2,
     fireRate: 1.5,
     baseGold: 3,
     unlockWave: 8,
-    radius: 11,
+    radius: entity(11),
     color: '#ecf0f1',
     borderColor: '#2c3e50',
     shape: 'winged',
@@ -532,19 +533,19 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   healer: {
     type: 'healer',
     baseHP: 12,
-    baseSpeed: 50,
+    baseSpeed: world(50),
     armor: 0,
     magicResist: 0,
     baseDamage: 2,
     fireRate: 1.1,
     baseGold: 4,
     unlockWave: 15,
-    radius: 14,
+    radius: entity(14),
     color: '#27ae60',
     borderColor: '#0e3a1d',
     shape: 'circle',
     glyph: '+',
-    healRange: 150,
+    healRange: world(150),
     healFraction: 0.15,
     healCooldown: 2.5,
     rpChance: 0.05,
@@ -552,14 +553,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   boss: {
     type: 'boss',
     baseHP: 120,
-    baseSpeed: 40,
+    baseSpeed: world(40),
     armor: 6,
     magicResist: 0.15,
     baseDamage: 5,
     fireRate: 0.8,
     baseGold: 10,
     unlockWave: 10,
-    radius: 30,
+    radius: entity(30),
     color: '#7b1f1f',
     borderColor: '#ff5050',
     shape: 'circle',
@@ -568,14 +569,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   splitter: {
     type: 'splitter',
     baseHP: 16,
-    baseSpeed: 55,
+    baseSpeed: world(55),
     armor: 0,
     magicResist: 0,
     baseDamage: 1,
     fireRate: 0.9,
     baseGold: 3,
     unlockWave: 12,
-    radius: 16,
+    radius: entity(16),
     color: '#9b59ff',
     borderColor: '#d3b3ff',
     shape: 'diamond',
@@ -587,14 +588,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   shielded: {
     type: 'shielded',
     baseHP: 10,
-    baseSpeed: 40,
+    baseSpeed: world(40),
     armor: 0,
     magicResist: 0.3,
     baseDamage: 1,
     fireRate: 1.0,
     baseGold: 5,
     unlockWave: 20,
-    radius: 14,
+    radius: entity(14),
     color: '#5dade2',
     borderColor: '#1a5276',
     shape: 'circle',
@@ -610,14 +611,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   siege: {
     type: 'siege',
     baseHP: 12,
-    baseSpeed: 42,
+    baseSpeed: world(42),
     armor: 2,
     magicResist: 0,
     baseDamage: 2,
     fireRate: 0.6,
     baseGold: 2,
     unlockWave: 25,
-    radius: 15,
+    radius: entity(15),
     color: '#a9752f',
     borderColor: '#f0d3a0',
     shape: 'square',
@@ -626,14 +627,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   thief: {
     type: 'thief',
     baseHP: 7,
-    baseSpeed: 135,
+    baseSpeed: world(135),
     armor: 0,
     magicResist: 0.1,
     baseDamage: 1,
     fireRate: 1.0,
     baseGold: 3,
     unlockWave: 30,
-    radius: 11,
+    radius: entity(11),
     color: '#d4af37',
     borderColor: '#3a2c00',
     shape: 'diamond',
@@ -643,14 +644,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   blinker: {
     type: 'blinker',
     baseHP: 9,
-    baseSpeed: 28,
+    baseSpeed: world(28),
     armor: 0,
     magicResist: 0.25,
     baseDamage: 2,
     fireRate: 1.0,
     baseGold: 2,
     unlockWave: 35,
-    radius: 12,
+    radius: entity(12),
     color: '#7f5af0',
     borderColor: '#ded1ff',
     shape: 'circle',
@@ -660,14 +661,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   warden: {
     type: 'warden',
     baseHP: 14,
-    baseSpeed: 44,
+    baseSpeed: world(44),
     armor: 2,
     magicResist: 0.2,
     baseGold: 3,
     baseDamage: 2,
     fireRate: 0.8,
     unlockWave: 40,
-    radius: 16,
+    radius: entity(16),
     color: '#1f7a8c',
     borderColor: '#9fe8f5',
     shape: 'hex',
@@ -676,14 +677,14 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
   burrower: {
     type: 'burrower',
     baseHP: 9,
-    baseSpeed: 52,
+    baseSpeed: world(52),
     armor: 1,
     magicResist: 0,
     baseDamage: 3,
     fireRate: 1.1,
     baseGold: 2,
     unlockWave: 45,
-    radius: 13,
+    radius: entity(13),
     color: '#7a5a30',
     borderColor: '#d8b578',
     shape: 'mound',

@@ -73,7 +73,19 @@ export const UPGRADES: UpgradeDef[] = [
     description: 'Increases tower shooting range',
     baseCost: 100,
     costGrowth: 1.32,
-    effectPerLevel: 5,
+    /*
+     * 5 -> 3 with the camera (UI plan §1.2).
+     *
+     * `range` is the one world-space stat the zoom-out deliberately does *not*
+     * multiply — that is what shrinks the ring against the arena. Left at 5,
+     * the flat max would have been base 300 + 300 = 600, i.e. the upgrade
+     * alone doubling the tower's reach and landing a stacked build straight on
+     * `ARENA_RANGE_CAP` with talents and blessings contributing nothing
+     * visible. At 3 the flat max is 300 + 180 = 480 — 0.51 of the short
+     * half-extent — which leaves the cap as somewhere a *built* tower gets to
+     * rather than somewhere every tower starts.
+     */
+    effectPerLevel: 3,
     effectType: 'add',
     maxLevel: 60,
     category: 'tower',

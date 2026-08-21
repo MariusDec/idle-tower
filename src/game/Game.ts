@@ -27,9 +27,11 @@ import {
 } from '../data/enemies';
 import { ABILITIES, isPlaceable, placementRadius } from '../data/abilities';
 import { RESEARCH_BY_ID } from '../data/research';
+import { world } from '../data/arena';
 import { nextId } from '../utils/math';
 import { EventBus } from './EventBus';
 import { Renderer } from './Renderer';
+import { Camera, type CameraResize } from './Camera';
 import { Tower } from '../systems/Tower';
 import { EnemyManager } from '../systems/EnemyManager';
 import { ProjectileManager, type ShotVariant } from '../systems/ProjectileManager';
@@ -55,7 +57,6 @@ import { TalentManager } from '../systems/TalentManager';
 import { PassiveAbilityManager } from '../systems/PassiveAbilityManager';
 import { EquipmentManager } from '../systems/EquipmentManager';
 import { formatInt } from '../utils/bigNumber';
-import { setStyle, toggleClass } from '../utils/dom';
 import {
   pickRandomModifiers,
   snapshotFromDef,
@@ -308,7 +309,7 @@ export interface GameDeps {
 }
 
 export class Game {
-  private readonly canvas: HTMLCanvasElement;
+  private readonly camera: Camera;
   private readonly renderer: Renderer;
   private readonly bus: EventBus;
   private readonly ui: UIManager;
@@ -437,7 +438,8 @@ export class Game {
   private towerFlash = 0;
   private wallFlash = 0;
   private shieldFlash = 0;
-  private canvasWrap: HTMLElement | null = null;
+  /** Low-HP vignette intensity, 0..1. Painted by the renderer in screen space. */
+  private vignette = 0;
 
   // Talent values consumed by event handlers rather than by the stat recompute.
   private talentDodgeChance = 0;
@@ -497,10 +499,11 @@ export class Game {
   } | null = null;
 
   constructor(canvas: HTMLCanvasElement, deps: GameDeps) {
-    this.canvas = canvas;
     this.bus = deps.bus;
     this.ui = deps.ui;
-    this.renderer = new Renderer(canvas);
+    this.camera = new Camera(canvas);
+    this.camera.onResize = (info) => this.onCameraResize(info);
+    this.renderer = new Renderer(canvas, this.camera);
     this.state = makeInitialState();
     this.tower = new Tower(this.state.tower);
     this.resourceMgr = new ResourceManager(this.state.resources, this.state.stats, this.bus);
@@ -510,8 +513,8 @@ export class Game {
     this.waveMgr = new WaveManager(
       this.bus,
       this.enemyMgr,
-      this.canvas.width,
-      this.canvas.height,
+      this.camera.worldWidth,
+      this.camera.worldHeight,
       (wave) => {
         if (wave > this.state.wave.highestWave) {
           this.state.wave.highestWave = wave;
@@ -618,10 +621,7 @@ export class Game {
     this.passiveMgr.ensureInitialized();
     this.equipmentMgr = new EquipmentManager(this.state.equipment, this.state.equipped, this.bus);
 
-    this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
-    this.projectileMgr.setBounds(this.canvas.width, this.canvas.height);
-    // A fleeing thief needs to know where the edge of the world is (plan §2.1).
-    this.enemyMgr.setBounds(this.canvas.width, this.canvas.height);
+    this.seatArena();
     this.state.upgrades = this.upgradeMgr.snapshot();
     this.applyUpgradeEffects();
     // A fresh game starts with three live contracts. A save load replaces them
@@ -659,7 +659,7 @@ export class Game {
       if (!p.killed && this.prestigeMgr.hasAoESplash()) {
         const splashFraction = this.prestigeMgr.getAoESplashFraction();
         const splashDamage = Math.max(1, Math.floor(p.amount * splashFraction));
-        const splashRadius = 60;
+        const splashRadius = world(60);
         for (const e of this.enemyMgr.queryRadius(p.enemy.x, p.enemy.y, splashRadius)) {
           if (e.id === p.enemy.id) continue;
           this.enemyMgr.damage(e, splashDamage, false);
@@ -738,8 +738,8 @@ export class Game {
           // Opposed scatter angles, so the pair visibly splits apart rather
           // than drifting off in the same direction (plan §2.2).
           const angle = Math.random() * Math.PI * 2;
-          this.enemyMgr.spawnSplitterChild(parent, wave, e.x - 6, e.y, angle);
-          this.enemyMgr.spawnSplitterChild(parent, wave, e.x + 6, e.y, angle + Math.PI);
+          this.enemyMgr.spawnSplitterChild(parent, wave, e.x - world(6), e.y, angle);
+          this.enemyMgr.spawnSplitterChild(parent, wave, e.x + world(6), e.y, angle + Math.PI);
         }
         this.effects.emitSplitBurst(e.x, e.y);
       }
@@ -1543,21 +1543,108 @@ export class Game {
     this.fpsOverlay = el;
   }
 
-  setCanvasWrap(el: HTMLElement | null): void {
-    this.canvasWrap = el;
+  /**
+   * Put the tower at the centre of the world and tell everything else how big
+   * the world is.
+   *
+   * The three managers do not share a notion of "the arena" beyond these two
+   * numbers, which is deliberate — they were the canvas's backing-store
+   * dimensions before the camera existed and they are the camera's world
+   * rectangle now, and neither manager had to learn anything for that to be
+   * true.
+   */
+  private seatArena(): void {
+    const w = this.camera.worldWidth;
+    const h = this.camera.worldHeight;
+    this.tower.setPosition(w / 2, h / 2);
+    this.projectileMgr.setBounds(w, h);
+    // A fleeing thief needs to know where the edge of the world is (plan §2.1).
+    this.enemyMgr.setBounds(w, h);
+    this.waveMgr.setBounds(w, h);
   }
 
+  /**
+   * The viewport changed shape.
+   *
+   * Everything on the field is rescaled *proportionally* about the arena
+   * centre rather than clamped into the new rectangle. Clamping is what a
+   * naive implementation does and it is wrong in a way that is easy to miss:
+   * rotating a phone mid-wave would stack every enemy that fell outside the
+   * new bounds onto the same edge, and a fleeing thief pushed inside the
+   * escape margin would suddenly be un-escaped. Proportional rescaling keeps
+   * relative positions, and therefore every in-flight approach, intact.
+   */
+  private onCameraResize(info: CameraResize): void {
+    const sx = info.previousWorldWidth > 0 ? info.worldWidth / info.previousWorldWidth : 1;
+    const sy = info.previousWorldHeight > 0 ? info.worldHeight / info.previousWorldHeight : 1;
+    if (sx !== 1 || sy !== 1) {
+      for (const e of this.enemyMgr.list) {
+        e.x *= sx;
+        e.y *= sy;
+        if (e.afterImageX !== undefined) e.afterImageX *= sx;
+        if (e.afterImageY !== undefined) e.afterImageY *= sy;
+      }
+      // Positions moved, so the lazily-rebuilt broadphase index is stale.
+      this.enemyMgr.markGridStale();
+      for (const p of this.projectileMgr.list) {
+        p.x *= sx;
+        p.y *= sy;
+      }
+      for (const shot of this.enemyMgr.hostileShotList) {
+        shot.x *= sx;
+        shot.y *= sy;
+        shot.originX *= sx;
+        shot.originY *= sy;
+        shot.vx *= sx;
+        shot.vy *= sy;
+      }
+      for (const orb of this.lootMgr.list) {
+        orb.x *= sx;
+        orb.y *= sy;
+      }
+      for (const mine of this.mines) {
+        mine.x *= sx;
+        mine.y *= sy;
+      }
+      this.seatArena();
+    }
+    // The background is baked at backing-store resolution, so it is stale
+    // after any resize, shape change or not.
+    this.renderer.invalidateBackground();
+  }
+
+  /**
+   * The element whose CSS box the camera measures.
+   *
+   * `main.ts` finds it after construction, so the camera starts out measuring
+   * the canvas and switches to the wrap here.
+   */
+  setCanvasWrap(el: HTMLElement | null): void {
+    this.camera.setHost(el);
+  }
+
+  /** CSS pixel relative to the canvas's top-left corner → world point. */
+  screenToWorld(x: number, y: number): { x: number; y: number } {
+    return this.camera.screenToWorld(x, y);
+  }
+
+  /** World point → CSS pixel, for DOM overlays that must track a world point. */
+  worldToScreen(x: number, y: number): { x: number; y: number } {
+    return this.camera.worldToScreen(x, y);
+  }
+
+  /**
+   * Screen shake, as a camera translate rather than a CSS animation.
+   *
+   * `.canvas-wrap.is-shaking` translated the *element*, which meant the boss
+   * bar, the contract tracker, the milestone strip and every other DOM overlay
+   * pinned to the same box jittered along with the battlefield — the one thing
+   * on screen that was supposed to be shaking was the only thing that could
+   * not shake on its own. The call sites are unchanged; only where it lands
+   * has moved. `Camera.shake` is a no-op under `prefers-reduced-motion`.
+   */
   private triggerCanvasShake(): void {
-    if (!this.canvasWrap) return;
-    // Animation restart pattern: unconditionally remove → force reflow → add.
-    // toggleClass would short-circuit via the cache and skip the CSS
-    // animation — keep raw classList ops here.
-    this.canvasWrap.classList.remove('is-shaking');
-    void this.canvasWrap.offsetWidth; // restart anim
-    this.canvasWrap.classList.add('is-shaking');
-    setTimeout(() => {
-      if (this.canvasWrap) this.canvasWrap.classList.remove('is-shaking');
-    }, 420);
+    this.camera.shake();
   }
 
   /**
@@ -1673,16 +1760,12 @@ export class Game {
    * or as intensity changes by a noticeable amount).
    */
   private updateVignette(): void {
-    if (!this.canvasWrap) return;
     const t = this.tower.snapshot;
     const ratio = t.maxHp > 0 ? t.hp / t.maxHp : 0;
-    if (ratio > 0 && ratio <= 0.3) {
-      const intensity = (0.3 - ratio) / 0.3; // 0 at 30%, 1 at 0%
-      toggleClass(this.canvasWrap, 'is-critical', true);
-      setStyle(this.canvasWrap, '--vignette-alpha', (0.35 + intensity * 0.5).toFixed(3));
-    } else {
-      toggleClass(this.canvasWrap, 'is-critical', false);
-    }
+    // 0 at 30% HP, 1 at 0%. Handed to the renderer, which paints it in screen
+    // space — it used to be a CSS class on the same element the shake
+    // animation was translating.
+    this.vignette = ratio > 0 && ratio <= 0.3 ? (0.3 - ratio) / 0.3 : 0;
   }
 
   get upgradeManager(): UpgradeManager {
@@ -2479,7 +2562,7 @@ export class Game {
     this.coreMgr.resetAll();
     this.state.cores = this.coreMgr.snapshot();
 
-    this.tower.setPosition(this.canvas.width / 2, this.canvas.height / 2);
+    this.seatArena();
     this.applyUpgradeEffects();
     this.state.upgrades = this.upgradeMgr.snapshot();
     this.state.research = {};
@@ -4093,7 +4176,8 @@ export class Game {
       if (ts.landMineTimer <= 0) {
         ts.landMineTimer = ts.landMineFrequency;
         const angle = Math.random() * Math.PI * 2;
-        const dist = TOWER_HIT_RADIUS + 45 + Math.random() * Math.max(0, ts.range - TOWER_HIT_RADIUS - 45);
+        const minDist = TOWER_HIT_RADIUS + world(45);
+        const dist = minDist + Math.random() * Math.max(0, ts.range - minDist);
         const mx = ts.x + Math.cos(angle) * dist;
         const my = ts.y + Math.sin(angle) * dist;
         if (this.mines.length >= 15) {
@@ -4104,7 +4188,7 @@ export class Game {
           x: mx,
           y: my,
           damage: ts.baseDamage * ts.landMineDamage,
-          explosionRadius: 50,
+          explosionRadius: world(50),
           alive: true,
           isSplit: false,
         });
@@ -4134,13 +4218,13 @@ export class Game {
         const count = this.upgradeMgr.getEvolutionEffectValue('mine_split');
         for (let c = 0; c < count; c++) {
           const childAngle = Math.random() * Math.PI * 2;
-          const childDist = 25 + Math.random() * 25;
+          const childDist = world(25) + Math.random() * world(25);
           this.mines.push({
             id: nextId(),
             x: mine.x + Math.cos(childAngle) * childDist,
             y: mine.y + Math.sin(childAngle) * childDist,
             damage: mine.damage * 0.5,
-            explosionRadius: 30,
+            explosionRadius: world(30),
             alive: true,
             isSplit: true,
           });
@@ -4187,6 +4271,10 @@ export class Game {
     // three real seconds, which is not long enough to read three cards.
     this.blessingModal.tick(realDt);
     this.corePicker.tick(realDt, CORE_BY_ID[this.coreMgr.current].name);
+    // Wall-clock too: a screen shake that ran six times faster at 6.5x speed
+    // would be a flicker, and one that ran on the simulation clock during a
+    // slow-mo boss death would outlast the death.
+    this.camera.update(realDt);
 
     // Plan §4.2, same reasoning: the charge timer measures a person holding
     // still, so it runs on `realDt`. A 1.2 s hold is 1.2 seconds of the
@@ -4268,6 +4356,7 @@ export class Game {
       towerFlash: this.towerFlash,
       wallFlash: this.wallFlash,
       shieldFlash: this.shieldFlash,
+      vignette: this.vignette,
       chainPaths: this.effects.activeChainPaths,
     });
   }

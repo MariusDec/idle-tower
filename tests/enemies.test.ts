@@ -25,15 +25,24 @@ import {
   isTargetable,
   spawnPoolForWave,
 } from '../src/data/enemies';
+import { world } from '../src/data/arena';
 import { TOWER_BASE } from '../src/data/tower';
 import type { Enemy, GameStats, ResourceState, TowerState } from '../src/types';
 
 /** One substep at the game's fixed rate. */
 const DT = 1 / 120;
-const TOWER_X = 400;
-const TOWER_Y = 300;
-const ARENA_W = 800;
-const ARENA_H = 600;
+/*
+ * The arena, in world units (UI plan §1.1).
+ *
+ * Every distance in this file is now `world(...)` of what it used to be. That
+ * is the whole point of the camera change: the numbers moved, the *behaviour*
+ * did not, and a test that asserted a siege halts 260 units out would have
+ * been asserting a fact about the old canvas rather than about the siege.
+ */
+const TOWER_X = world(400);
+const TOWER_Y = world(300);
+const ARENA_W = world(800);
+const ARENA_H = world(600);
 
 function makeResources(gold: number): { resources: ResourceManager; state: ResourceState } {
   const state: ResourceState = {
@@ -97,7 +106,7 @@ describe('thief (plan §2.1)', () => {
   it('steals a capped cut of current gold on contact, then runs for the edge', () => {
     const h = harness(10_000);
     // Spawned on top of the tower so contact happens on the first substep.
-    const thief = h.mgr.spawn('thief', 40, TOWER_X + 10, TOWER_Y);
+    const thief = h.mgr.spawn('thief', 40, TOWER_X + world(10), TOWER_Y);
     h.run(0.05);
 
     const stolen = thief.stolenGold ?? 0;
@@ -117,7 +126,7 @@ describe('thief (plan §2.1)', () => {
 
   it('pays double when killed before it escapes', () => {
     const h = harness(10_000);
-    const thief = h.mgr.spawn('thief', 40, TOWER_X + 10, TOWER_Y);
+    const thief = h.mgr.spawn('thief', 40, TOWER_X + world(10), TOWER_Y);
     h.run(0.05);
     const stolen = thief.stolenGold ?? 0;
     const afterTheft = h.gold();
@@ -156,7 +165,7 @@ describe('thief (plan §2.1)', () => {
     // Four thieves in one wave — more than `WaveManager` will ever spawn, which
     // is exactly why the ceiling is enforced here rather than only at spawn.
     for (let i = 0; i < 4; i++) {
-      h.mgr.spawn('thief', 40, TOWER_X + 10 + i, TOWER_Y);
+      h.mgr.spawn('thief', 40, TOWER_X + world(10) + i, TOWER_Y);
       h.run(0.05);
     }
     const taken = before - h.gold();
@@ -166,11 +175,11 @@ describe('thief (plan §2.1)', () => {
 
   it('resets the ceiling when a new wave begins', () => {
     const h = harness(10_000);
-    h.mgr.spawn('thief', 40, TOWER_X + 10, TOWER_Y);
+    h.mgr.spawn('thief', 40, TOWER_X + world(10), TOWER_Y);
     h.run(0.05);
     const afterFirstWave = h.gold();
     h.mgr.beginWave(41);
-    const t2 = h.mgr.spawn('thief', 41, TOWER_X + 10, TOWER_Y);
+    const t2 = h.mgr.spawn('thief', 41, TOWER_X + world(10), TOWER_Y);
     h.run(0.05);
     expect(t2.stolenGold ?? 0).toBeGreaterThan(0);
     expect(h.gold()).toBeLessThan(afterFirstWave);
@@ -180,7 +189,7 @@ describe('thief (plan §2.1)', () => {
 describe('blinker (plan §2.1)', () => {
   it('teleports toward the tower on its interval', () => {
     const h = harness();
-    const blinker = h.mgr.spawn('blinker', 40, TOWER_X + 400, TOWER_Y);
+    const blinker = h.mgr.spawn('blinker', 40, TOWER_X + world(400), TOWER_Y);
 
     // A quiet second: it only walks, and slowly — the type's base speed is
     // deliberately low, because the blink is how it covers ground.
@@ -206,7 +215,7 @@ describe('blinker (plan §2.1)', () => {
 
   it('ignores knockback while the blink immunity is up', () => {
     const h = harness();
-    const blinker = h.mgr.spawn('blinker', 40, TOWER_X + 400, TOWER_Y);
+    const blinker = h.mgr.spawn('blinker', 40, TOWER_X + world(400), TOWER_Y);
     h.run(ENEMY_BEHAVIOR.blinkInterval + 0.01);
     expect(blinker.blinkImmunity ?? 0).toBeGreaterThan(0);
 
@@ -226,7 +235,7 @@ describe('blinker (plan §2.1)', () => {
     const distances: number[] = [];
     for (const dt of [1 / 120, 1 / 240, 1 / 60]) {
       const h = harness();
-      const blinker = h.mgr.spawn('blinker', 40, TOWER_X + 500, TOWER_Y);
+      const blinker = h.mgr.spawn('blinker', 40, TOWER_X + world(500), TOWER_Y);
       const steps = Math.round(10 / dt);
       for (let i = 0; i < steps; i++) h.mgr.tick(dt, TOWER_X, TOWER_Y);
       distances.push(blinker.x);
@@ -238,10 +247,10 @@ describe('blinker (plan §2.1)', () => {
 describe('warden (plan §2.1)', () => {
   it('projects an absorb shield onto nearby allies, capped at five', () => {
     const h = harness();
-    const warden = h.mgr.spawn('warden', 40, TOWER_X + 300, TOWER_Y);
+    const warden = h.mgr.spawn('warden', 40, TOWER_X + world(300), TOWER_Y);
     const allies: Enemy[] = [];
     for (let i = 0; i < 7; i++) {
-      allies.push(h.mgr.spawn('normal', 40, TOWER_X + 300 + i, TOWER_Y + 10));
+      allies.push(h.mgr.spawn('normal', 40, TOWER_X + world(300) + i, TOWER_Y + world(10)));
     }
     h.run(DT * 2);
 
@@ -254,8 +263,8 @@ describe('warden (plan §2.1)', () => {
 
   it('absorbs damage before HP, and refreshes on its interval', () => {
     const h = harness();
-    const warden = h.mgr.spawn('warden', 40, TOWER_X + 300, TOWER_Y);
-    const ally = h.mgr.spawn('normal', 40, TOWER_X + 300, TOWER_Y + 10);
+    const warden = h.mgr.spawn('warden', 40, TOWER_X + world(300), TOWER_Y);
+    const ally = h.mgr.spawn('normal', 40, TOWER_X + world(300), TOWER_Y + world(10));
     h.run(DT * 2);
 
     const pool = ally.absorbShield ?? 0;
@@ -276,8 +285,8 @@ describe('warden (plan §2.1)', () => {
 
   it('bleeds through once the pool is spent', () => {
     const h = harness();
-    h.mgr.spawn('warden', 40, TOWER_X + 300, TOWER_Y);
-    const ally = h.mgr.spawn('normal', 40, TOWER_X + 300, TOWER_Y + 10);
+    h.mgr.spawn('warden', 40, TOWER_X + world(300), TOWER_Y);
+    const ally = h.mgr.spawn('normal', 40, TOWER_X + world(300), TOWER_Y + world(10));
     h.run(DT * 2);
     const pool = ally.absorbShield ?? 0;
     const hpBefore = ally.hp;
@@ -288,8 +297,8 @@ describe('warden (plan §2.1)', () => {
 
   it('collapses every pool it was maintaining when it dies', () => {
     const h = harness();
-    const warden = h.mgr.spawn('warden', 40, TOWER_X + 300, TOWER_Y);
-    const ally = h.mgr.spawn('normal', 40, TOWER_X + 300, TOWER_Y + 10);
+    const warden = h.mgr.spawn('warden', 40, TOWER_X + world(300), TOWER_Y);
+    const ally = h.mgr.spawn('normal', 40, TOWER_X + world(300), TOWER_Y + world(10));
     h.run(DT * 2);
     expect(ally.absorbShield ?? 0).toBeGreaterThan(0);
 
@@ -300,8 +309,8 @@ describe('warden (plan §2.1)', () => {
 
   it('does not shield other wardens', () => {
     const h = harness();
-    h.mgr.spawn('warden', 40, TOWER_X + 300, TOWER_Y);
-    const second = h.mgr.spawn('warden', 40, TOWER_X + 305, TOWER_Y);
+    h.mgr.spawn('warden', 40, TOWER_X + world(300), TOWER_Y);
+    const second = h.mgr.spawn('warden', 40, TOWER_X + world(305), TOWER_Y);
     h.run(DT * 2);
     expect(second.absorbShield ?? 0).toBe(0);
   });
@@ -310,7 +319,7 @@ describe('warden (plan §2.1)', () => {
 describe('burrower (plan §2.1)', () => {
   it('is untargetable and invulnerable while burrowed', () => {
     const h = harness();
-    const burrower = h.mgr.spawn('burrower', 40, TOWER_X + 400, TOWER_Y);
+    const burrower = h.mgr.spawn('burrower', 40, TOWER_X + world(400), TOWER_Y);
     expect(burrower.burrowed).toBe(true);
     expect(isTargetable(burrower)).toBe(false);
 
@@ -322,10 +331,10 @@ describe('burrower (plan §2.1)', () => {
 
   it('is skipped by Tower.acquireTarget in every mode', () => {
     const h = harness();
-    const burrower = h.mgr.spawn('burrower', 40, TOWER_X + 100, TOWER_Y);
+    const burrower = h.mgr.spawn('burrower', 40, TOWER_X + world(100), TOWER_Y);
     // Deliberately further away and lower HP, so every heuristic would
     // otherwise prefer the burrower.
-    const decoy = h.mgr.spawn('tank', 40, TOWER_X + 300, TOWER_Y);
+    const decoy = h.mgr.spawn('tank', 40, TOWER_X + world(300), TOWER_Y);
 
     for (const mode of ['priority', 'nearest', 'lowest_hp', 'strongest', 'boss', 'flying', 'last'] as const) {
       const target = makeTower(mode).acquireTarget(h.mgr.list);
@@ -339,11 +348,11 @@ describe('burrower (plan §2.1)', () => {
     // the chain-bounce search (Chain Lightning) both walk `enemies.list`
     // directly, so neither is covered by `Tower.acquireTarget`.
     const h = harness();
-    const burrower = h.mgr.spawn('burrower', 40, TOWER_X + 20, TOWER_Y);
+    const burrower = h.mgr.spawn('burrower', 40, TOWER_X + world(20), TOWER_Y);
     // Give it far more HP than anything else, so a highest-HP pick would take it.
     burrower.maxHp = 1e9;
     burrower.hp = 1e9;
-    const decoy = h.mgr.spawn('normal', 40, TOWER_X + 300, TOWER_Y);
+    const decoy = h.mgr.spawn('normal', 40, TOWER_X + world(300), TOWER_Y);
 
     const targetable = h.mgr.list.filter(isTargetable);
     expect(targetable.map(e => e.id)).toEqual([decoy.id]);
@@ -354,8 +363,8 @@ describe('burrower (plan §2.1)', () => {
     const tower = makeTower();
     const projectiles = new ProjectileManager(h.bus, tower, h.mgr);
     projectiles.setBounds(ARENA_W, ARENA_H);
-    const burrower = h.mgr.spawn('burrower', 40, TOWER_X + 100, TOWER_Y);
-    const behind = h.mgr.spawn('normal', 40, TOWER_X + 200, TOWER_Y);
+    const burrower = h.mgr.spawn('burrower', 40, TOWER_X + world(100), TOWER_Y);
+    const behind = h.mgr.spawn('normal', 40, TOWER_X + world(200), TOWER_Y);
 
     projectiles.fire(behind, tower.snapshot, {
       rawDamage: 50,
@@ -371,7 +380,7 @@ describe('burrower (plan §2.1)', () => {
 
   it('surfaces at the plan distance with a telegraph, then becomes fair game', () => {
     const h = harness();
-    const burrower = h.mgr.spawn('burrower', 40, TOWER_X + 400, TOWER_Y);
+    const burrower = h.mgr.spawn('burrower', 40, TOWER_X + world(400), TOWER_Y);
     h.run(20);
     expect(burrower.burrowed).toBe(false);
     const surfaced = h.events.find(e => e.name === 'burrower_surfaced');
@@ -388,18 +397,18 @@ describe('burrower (plan §2.1)', () => {
 
   it('crosses the approach faster than it walks on the surface', () => {
     const h = harness();
-    const buried = h.mgr.spawn('burrower', 40, TOWER_X + 400, TOWER_Y);
-    const surfaced = h.mgr.spawn('burrower', 40, TOWER_X + 400, TOWER_Y + 40);
+    const buried = h.mgr.spawn('burrower', 40, TOWER_X + world(400), TOWER_Y);
+    const surfaced = h.mgr.spawn('burrower', 40, TOWER_X + world(400), TOWER_Y + world(40));
     surfaced.burrowed = false;
     h.run(1);
-    expect(TOWER_X + 400 - buried.x).toBeGreaterThan(TOWER_X + 400 - surfaced.x);
+    expect(TOWER_X + world(400) - buried.x).toBeGreaterThan(TOWER_X + world(400) - surfaced.x);
   });
 });
 
 describe('siege (plan §2.1)', () => {
   it('halts at standoff range instead of closing', () => {
     const h = harness();
-    const siege = h.mgr.spawn('siege', 40, TOWER_X + 400, TOWER_Y);
+    const siege = h.mgr.spawn('siege', 40, TOWER_X + world(400), TOWER_Y);
     h.run(20);
     const d = Math.hypot(siege.x - TOWER_X, siege.y - TOWER_Y);
     expect(d).toBeGreaterThan(ENEMY_BEHAVIOR.siegeStandoff - 5);
@@ -432,7 +441,7 @@ describe('siege (plan §2.1)', () => {
   it('never stockpiles shells during a long approach', () => {
     const h = harness();
     // Far away for many reload periods, then dropped into range.
-    const siege = h.mgr.spawn('siege', 40, TOWER_X + 2000, TOWER_Y);
+    const siege = h.mgr.spawn('siege', 40, TOWER_X + world(2000), TOWER_Y);
     h.run(ENEMY_BEHAVIOR.siegeReload * 4);
     expect(h.mgr.hostileShotList.length).toBe(0);
     siege.x = TOWER_X + ENEMY_BEHAVIOR.siegeStandoff - 10;
@@ -461,8 +470,8 @@ describe('verbs for the existing roster (plan §2.2)', () => {
     projectiles.setBounds(ARENA_W, ARENA_H);
     projectiles.setPierceExtra(5);
 
-    const tank = h.mgr.spawn('tank', 40, TOWER_X + 100, TOWER_Y);
-    const behind = h.mgr.spawn('normal', 40, TOWER_X + 200, TOWER_Y);
+    const tank = h.mgr.spawn('tank', 40, TOWER_X + world(100), TOWER_Y);
+    const behind = h.mgr.spawn('normal', 40, TOWER_X + world(200), TOWER_Y);
     projectiles.fire(behind, tower.snapshot, {
       rawDamage: 5,
       damageType: 'physical',
@@ -484,8 +493,8 @@ describe('verbs for the existing roster (plan §2.2)', () => {
     projectiles.setBounds(ARENA_W, ARENA_H);
     projectiles.setPierceExtra(5);
 
-    const front = h.mgr.spawn('normal', 40, TOWER_X + 100, TOWER_Y);
-    const behind = h.mgr.spawn('normal', 40, TOWER_X + 200, TOWER_Y);
+    const front = h.mgr.spawn('normal', 40, TOWER_X + world(100), TOWER_Y);
+    const behind = h.mgr.spawn('normal', 40, TOWER_X + world(200), TOWER_Y);
     projectiles.fire(behind, tower.snapshot, {
       rawDamage: 5,
       damageType: 'physical',
@@ -500,10 +509,10 @@ describe('verbs for the existing roster (plan §2.2)', () => {
 
   it('healer advances while healthy and flees below 40% HP', () => {
     const h = harness();
-    const healer = h.mgr.spawn('healer', 40, TOWER_X + 300, TOWER_Y);
+    const healer = h.mgr.spawn('healer', 40, TOWER_X + world(300), TOWER_Y);
 
     h.run(1);
-    expect(healer.x).toBeLessThan(TOWER_X + 300);
+    expect(healer.x).toBeLessThan(TOWER_X + world(300));
     expect(healer.fleeing).toBeFalsy();
 
     healer.hp = Math.floor(healer.maxHp * (ENEMY_BEHAVIOR.healerFleeThreshold - 0.05));
@@ -519,8 +528,8 @@ describe('verbs for the existing roster (plan §2.2)', () => {
     // healer that ran away and went quiet would be safe to ignore, which is
     // the behaviour the change is meant to remove.
     const h = harness();
-    const healer = h.mgr.spawn('healer', 40, TOWER_X + 300, TOWER_Y);
-    const ally = h.mgr.spawn('normal', 40, TOWER_X + 300, TOWER_Y + 10);
+    const healer = h.mgr.spawn('healer', 40, TOWER_X + world(300), TOWER_Y);
+    const ally = h.mgr.spawn('normal', 40, TOWER_X + world(300), TOWER_Y + world(10));
     ally.hp = Math.floor(ally.maxHp / 2);
     healer.hp = Math.floor(healer.maxHp * (ENEMY_BEHAVIOR.healerFleeThreshold - 0.05));
     // Both are moving in opposite directions now, so the heal has to land
@@ -539,8 +548,8 @@ describe('verbs for the existing roster (plan §2.2)', () => {
   it('flying ignores the wall contact band', () => {
     const h = harness();
     h.mgr.setWallContactExtra(36);
-    const flier = h.mgr.spawn('flying', 40, TOWER_X + 200, TOWER_Y);
-    const walker = h.mgr.spawn('normal', 40, TOWER_X, TOWER_Y + 200);
+    const flier = h.mgr.spawn('flying', 40, TOWER_X + world(200), TOWER_Y);
+    const walker = h.mgr.spawn('normal', 40, TOWER_X, TOWER_Y + world(200));
     h.run(12);
 
     const flierD = Math.hypot(flier.x - TOWER_X, flier.y - TOWER_Y);
@@ -551,8 +560,8 @@ describe('verbs for the existing roster (plan §2.2)', () => {
   it('blinker also walks through the wall band', () => {
     const h = harness();
     h.mgr.setWallContactExtra(36);
-    const blinker = h.mgr.spawn('blinker', 40, TOWER_X + 200, TOWER_Y);
-    const walker = h.mgr.spawn('normal', 40, TOWER_X, TOWER_Y + 200);
+    const blinker = h.mgr.spawn('blinker', 40, TOWER_X + world(200), TOWER_Y);
+    const walker = h.mgr.spawn('normal', 40, TOWER_X, TOWER_Y + world(200));
     h.run(20);
     const blinkerD = Math.hypot(blinker.x - TOWER_X, blinker.y - TOWER_Y);
     const walkerD = Math.hypot(walker.x - TOWER_X, walker.y - TOWER_Y);
@@ -561,7 +570,7 @@ describe('verbs for the existing roster (plan §2.2)', () => {
 
   it('splitter children spawn protected, scatter, then rejoin the fight', () => {
     const h = harness();
-    const parent = h.mgr.spawn('splitter', 40, TOWER_X + 300, TOWER_Y);
+    const parent = h.mgr.spawn('splitter', 40, TOWER_X + world(300), TOWER_Y);
     const child = h.mgr.spawnSplitterChild(parent, 40, parent.x, parent.y, 0);
 
     expect(isTargetable(child)).toBe(false);
@@ -570,7 +579,7 @@ describe('verbs for the existing roster (plan §2.2)', () => {
 
     const x0 = child.x;
     h.run(0.3);
-    // Angle 0 is +x, i.e. directly away from the tower at TOWER_X + 300.
+    // Angle 0 is +x, i.e. directly away from the tower at TOWER_X + world(300).
     expect(child.x).toBeGreaterThan(x0);
 
     h.run(ENEMY_BEHAVIOR.splitterSpawnProtection);
@@ -580,7 +589,7 @@ describe('verbs for the existing roster (plan §2.2)', () => {
 
   it('shielded rebuilds a charge only after it has been left alone', () => {
     const h = harness();
-    const shielded = h.mgr.spawn('shielded', 40, TOWER_X + 400, TOWER_Y);
+    const shielded = h.mgr.spawn('shielded', 40, TOWER_X + world(400), TOWER_Y);
     h.mgr.damage(shielded, 10, false);
     h.mgr.damage(shielded, 10, false);
     expect(shielded.shieldCharges).toBe(1);
@@ -600,7 +609,7 @@ describe('verbs for the existing roster (plan §2.2)', () => {
 
   it('never rebuilds past the defined charge count', () => {
     const h = harness();
-    const shielded = h.mgr.spawn('shielded', 40, TOWER_X + 400, TOWER_Y);
+    const shielded = h.mgr.spawn('shielded', 40, TOWER_X + world(400), TOWER_Y);
     h.run(60);
     expect(shielded.shieldCharges).toBe(ENEMY_DEFS.shielded.shieldCharges);
   });
@@ -611,11 +620,11 @@ describe('priority targeting (plan §2.3)', () => {
   beforeEach(() => { h = harness(); });
 
   it('prefers warden, then healer, then thief, then siege, then nearest', () => {
-    const near = h.mgr.spawn('normal', 40, TOWER_X + 20, TOWER_Y);
-    const siege = h.mgr.spawn('siege', 40, TOWER_X + 200, TOWER_Y);
-    const thief = h.mgr.spawn('thief', 40, TOWER_X + 210, TOWER_Y);
-    const healer = h.mgr.spawn('healer', 40, TOWER_X + 220, TOWER_Y);
-    const warden = h.mgr.spawn('warden', 40, TOWER_X + 230, TOWER_Y);
+    const near = h.mgr.spawn('normal', 40, TOWER_X + world(20), TOWER_Y);
+    const siege = h.mgr.spawn('siege', 40, TOWER_X + world(200), TOWER_Y);
+    const thief = h.mgr.spawn('thief', 40, TOWER_X + world(210), TOWER_Y);
+    const healer = h.mgr.spawn('healer', 40, TOWER_X + world(220), TOWER_Y);
+    const warden = h.mgr.spawn('warden', 40, TOWER_X + world(230), TOWER_Y);
     const tower = makeTower('priority');
 
     expect(tower.acquireTarget(h.mgr.list)?.id).toBe(warden.id);
@@ -630,15 +639,15 @@ describe('priority targeting (plan §2.3)', () => {
   });
 
   it('picks the nearest of several equally-urgent targets', () => {
-    const far = h.mgr.spawn('warden', 40, TOWER_X + 300, TOWER_Y);
-    const close = h.mgr.spawn('warden', 40, TOWER_X + 100, TOWER_Y);
+    const far = h.mgr.spawn('warden', 40, TOWER_X + world(300), TOWER_Y);
+    const close = h.mgr.spawn('warden', 40, TOWER_X + world(100), TOWER_Y);
     expect(makeTower('priority').acquireTarget(h.mgr.list)?.id).toBe(close.id);
     expect(far.alive).toBe(true);
   });
 
   it('respects range: an out-of-range warden does not beat an in-range trash mob', () => {
-    h.mgr.spawn('warden', 40, TOWER_X + 900, TOWER_Y);
-    const inRange = h.mgr.spawn('normal', 40, TOWER_X + 50, TOWER_Y);
+    h.mgr.spawn('warden', 40, TOWER_X + world(900), TOWER_Y);
+    const inRange = h.mgr.spawn('normal', 40, TOWER_X + world(50), TOWER_Y);
     const tower = new Tower({ ...TOWER_BASE, cooldown: 0, range: 200, targetingMode: 'priority' });
     tower.setPosition(TOWER_X, TOWER_Y);
     expect(tower.acquireTarget(h.mgr.list)?.id).toBe(inRange.id);

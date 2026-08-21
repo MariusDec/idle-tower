@@ -9,6 +9,7 @@ import {
   ENRAGE_SPEED_PER_STACK,
   ENRAGE_STACK_INTERVAL,
 } from '../data/formulas';
+import { spawnPointOnEllipse } from '../data/arena';
 import { ENEMY_BEHAVIOR, ENEMY_DEFS, spawnPoolForWave } from '../data/enemies';
 import { BASE_INTERMISSION_SECONDS, ENEMY_THREAT_CLASS } from '../data/pacing';
 import type { EnemyManager } from './EnemyManager';
@@ -67,8 +68,8 @@ export class WaveManager {
   private state: WaveState;
   private readonly bus: EventBus;
   private readonly enemies: EnemyManager;
-  private readonly width: number;
-  private readonly height: number;
+  private width: number;
+  private height: number;
   private readonly onWaveCleared: (wave: number) => void;
   private readonly onWaveStarted: (wave: number) => void;
   private waveSkipChance = 0;
@@ -225,7 +226,7 @@ export class WaveManager {
     while (entries.length < total) {
       const type = this.pickEnemyType(wave, thief);
       if (type === 'thief') thief = true;
-      const { x, y } = this.spawnPointOnEdge();
+      const { x, y } = this.randomSpawnPoint();
       // Plan §2.2: `fast` arrives in threes from one shared spawn point, so it
       // reads as a rush rather than a trickle. The pack counts against the
       // wave's budget in full — it takes slots, it does not add them.
@@ -305,14 +306,38 @@ export class WaveManager {
     return { wave, count: entries.length, isBoss: isBossWave(wave), threats, elites, lanes };
   }
 
-  private spawnPointOnEdge(): { x: number; y: number } {
-    const side = Math.floor(Math.random() * 4);
-    const w = this.width;
-    const h = this.height;
-    if (side === 0) return { x: randomBetween(0, w), y: -20 };
-    if (side === 1) return { x: w + 20, y: randomBetween(0, h) };
-    if (side === 2) return { x: randomBetween(0, w), y: h + 20 };
-    return { x: -20, y: randomBetween(0, h) };
+  /**
+   * Where one enemy comes in, on the spawn **ellipse** (UI plan §1.4).
+   *
+   * This used to pick one of four edges and a uniform point along it, which
+   * quietly made the arena unfair to itself: a corner spawn is ~1.4x as far
+   * from the tower as an edge spawn, so a wave's length depended on how many
+   * of its rolls landed in a corner, and no player could see why. An ellipse
+   * matched to the viewport half-extents removes the asymmetry, works at any
+   * aspect including portrait, and gives Part 3's rifts a defined place to
+   * open. The `spawnLanes` threat preview reads these points unchanged — it
+   * simply points at portals now.
+   */
+  private randomSpawnPoint(): { x: number; y: number } {
+    return spawnPointOnEllipse(
+      this.width / 2,
+      this.height / 2,
+      this.width / 2,
+      this.height / 2,
+      Math.random() * Math.PI * 2,
+    );
+  }
+
+  /**
+   * The world rectangle changed shape (a resize, a rotation).
+   *
+   * Only the spawn ellipse reads it, and only at roster-build time, so a
+   * resize mid-intermission simply plans the next wave against the new arena.
+   * `Game` rescales anything already on the field.
+   */
+  setBounds(width: number, height: number): void {
+    this.width = width;
+    this.height = height;
   }
 
   startWave(wave: number): void {

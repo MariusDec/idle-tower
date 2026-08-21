@@ -1,5 +1,6 @@
 import type { DamageType, Enemy, Projectile, TowerState } from '../types';
 import { nextId } from '../utils/math';
+import { PROJECTILE_HIT_PAD, world } from '../data/arena';
 import { PROJECTILE_SPEED } from '../data/tower';
 import { ENEMY_DEFS, isTargetable } from '../data/enemies';
 import { BLESSING_TUNING, type BlessingBehavior } from '../data/blessings';
@@ -103,8 +104,8 @@ export class ProjectileManager {
   private critSplashFraction = 0;
   private critIgnoreArmor = false;
   /** Play-field size; projectiles are culled once they leave it by a margin. */
-  private boundsWidth = 1280;
-  private boundsHeight = 720;
+  private boundsWidth = world(1280);
+  private boundsHeight = world(720);
 
   constructor(bus: EventBus, tower: Tower, enemies: EnemyManager) {
     this.bus = bus;
@@ -284,7 +285,11 @@ export class ProjectileManager {
         // through them (plan §2.1/§2.2).
         if (!isTargetable(e)) continue;
         if (hitSet && hitSet.has(e.id)) continue;
-        const r = this.enemyRadius(e) + 6;
+        // `PROJECTILE_HIT_PAD`, not a literal 6: bodies scaled by
+        // `ENTITY_SCALE` while flight and enemy speeds scaled by the larger
+        // `WORLD_SCALE`, so without the pad every moving target became harder
+        // to hit purely as a side effect of the zoom-out (UI plan §1.1).
+        const r = this.enemyRadius(e) + PROJECTILE_HIT_PAD;
         let t = 0;
         if (segLenSq > 0) {
           t = ((e.x - prevX) * segX + (e.y - prevY) * segY) / segLenSq;
@@ -351,7 +356,7 @@ export class ProjectileManager {
           // Crit splash evolution
           if (p.isCrit && this.critSplashFraction > 0) {
             const splashDamage = Math.max(1, Math.floor(final * this.critSplashFraction));
-            const splashRadius = 50;
+            const splashRadius = world(50);
             for (const e of this.enemies.queryRadius(enemy.x, enemy.y, splashRadius)) {
               if (e.id === enemy.id || !isTargetable(e)) continue;
               this.enemies.damage(e, splashDamage, false);
@@ -391,7 +396,7 @@ export class ProjectileManager {
       }
     }
 
-    const margin = 120;
+    const margin = world(120);
     const maxX = this.boundsWidth + margin;
     const maxY = this.boundsHeight + margin;
     this.projectiles = this.projectiles.filter(p => {

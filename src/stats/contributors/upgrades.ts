@@ -1,3 +1,4 @@
+import { world } from '../../data/arena';
 import { UPGRADES } from '../../data/upgrades';
 import { computeUpgradeValue } from '../../types';
 import type { StatAccumulator } from '../accumulator';
@@ -29,7 +30,7 @@ export function contributeUpgrades(ctx: StatContext, acc: StatAccumulator): void
       case 'lifesteal': a.add('lifesteal', total, u.name); break;
       case 'thorns': a.add('thorns', total, u.name); break;
       case 'shockwave':
-        a.add('shockwaveSize', 110 + (total - 1) * 5, u.name);
+        a.add('shockwaveSize', world(110 + (total - 1) * 5), u.name);
         a.add('shockwaveCooldown', total, u.name);
         break;
       case 'landMines':
@@ -54,7 +55,7 @@ export function contributeUpgrades(ctx: StatContext, acc: StatAccumulator): void
       case 'wall':
         a.add('wallFraction', total, u.name);
         // Enemies stop at the wall rather than the tower hull.
-        a.add('wallContactExtra', 36, u.name);
+        a.add('wallContactExtra', world(36), u.name);
         break;
       default:
         break;

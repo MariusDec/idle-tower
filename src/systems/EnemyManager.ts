@@ -20,16 +20,17 @@ import {
   enemySpeedForWave,
   goldDropForWave,
 } from '../data/formulas';
+import { world } from '../data/arena';
 import { TOWER_HIT_RADIUS } from '../data/tower';
 import { SpatialGrid } from '../utils/SpatialGrid';
 import { EventBus } from '../game/EventBus';
 import type { ResourceManager } from './ResourceManager';
 import type { ResearchTree } from './ResearchTree';
 
-const ENEMY_GAP = 2;
+const ENEMY_GAP = world(2);
 
 /** How far past the arena edge a fleeing thief must get to count as escaped. */
-const ESCAPE_MARGIN = 30;
+const ESCAPE_MARGIN = world(30);
 
 /**
  * Ceiling on siege shells in the air at once.
@@ -65,7 +66,7 @@ const ELITE_HP_MULT = 2.5;
 const ELITE_GOLD_MULT = 2.5;
 /** RP guaranteed by an elite kill (plan §3.4: elites are a visible RP faucet). */
 const ELITE_RP_DROP = 1;
-const AURA_RADIUS = 180;
+const AURA_RADIUS = world(180);
 const HASTE_SPEED_BONUS = 0.5;
 const THORNS_REFLECT_FRACTION = 0.1;
 const GREED_GOLD_MULT = 3;
@@ -83,7 +84,7 @@ const RETRIBUTION_BUFF_SPEED_MULT = 1.5;
  * query still only touches 2x2 — the per-cell lookup is a real share of the
  * cost at this enemy count, so visiting fewer, fuller cells wins.
  */
-const GRID_CELL_SIZE = 128;
+const GRID_CELL_SIZE = world(128);
 
 /** Compute elite spawn chance for a given wave. */
 export function eliteChanceForWave(wave: number): number {
@@ -190,8 +191,8 @@ export class EnemyManager {
   /** Gold stolen so far during `currentWave`, against the 15% cap. */
   private theftThisWave = 0;
   /** Play-field size, so a fleeing thief knows where the edge is. */
-  private boundsWidth = 1280;
-  private boundsHeight = 720;
+  private boundsWidth = world(1280);
+  private boundsHeight = world(720);
   /** Tower position from the last tick, so a fleeing healer knows what to run from. */
   private lastTowerX = 0;
   private lastTowerY = 0;
@@ -212,6 +213,17 @@ export class EnemyManager {
   }
 
   /** Play-field size. A fleeing thief escapes by crossing it. */
+  /**
+   * Force a broadphase rebuild.
+   *
+   * Anything that moves enemies from outside `tick` — today only the camera's
+   * proportional rescale on a resize — has to say so, or the next radius query
+   * answers from a stale index (see `docs/performance.md`).
+   */
+  markGridStale(): void {
+    this.gridStale = true;
+  }
+
   setBounds(width: number, height: number): void {
     this.boundsWidth = width;
     this.boundsHeight = height;
@@ -1221,7 +1233,7 @@ export class EnemyManager {
         }
       }
       const angle = Math.random() * Math.PI * 2;
-      const dist = bossRadius + 24 + Math.random() * 26;
+      const dist = bossRadius + world(24) + Math.random() * world(26);
       this.spawn(type, wave, boss.x + Math.cos(angle) * dist, boss.y + Math.sin(angle) * dist);
       spawned += 1;
     }

@@ -50,7 +50,7 @@ import { MANUAL_AIM, TOWER_BASE } from '../src/data/tower.ts';
 import { computeUpgradeValue } from '../src/types.ts';
 import type { EnemyType, UpgradeDef } from '../src/types.ts';
 import { BlessingManager } from '../src/systems/BlessingManager.ts';
-import type { BlessingBehavior, BlessingDef } from '../src/data/blessings.ts';
+import { BLESSING_TUNING, type BlessingBehavior, type BlessingDef } from '../src/data/blessings.ts';
 import { ContractManager } from '../src/systems/ContractManager.ts';
 import { CORE_BY_ID, CORE_TUNING, DEFAULT_CORE, type CoreId } from '../src/data/cores.ts';
 import { STAT_BASES } from '../src/stats/keys.ts';
@@ -461,11 +461,19 @@ export const CORE_MODEL: Record<CoreId, CoreModelEntry> = {
     procMult: 1,
     procIgnoresArmor: false,
   },
-  // Every shot carries a 70 px blast at 50%. Scaled off the mortar blessing's
-  // measured credit (0.05 for one shot in eight, 90 px, full fraction):
-  // 8x the frequency, half the fraction, (70/90)^2 of the area.
+  // Every shot carries a blast at 50%. Scaled off the mortar blessing's
+  // measured credit (0.05 for one shot in eight, at the mortar's own radius
+  // and full fraction): 8x the frequency, half the fraction, and the ratio of
+  // the two areas.
+  //
+  // The denominator reads `BLESSING_TUNING.mortarRadius` rather than the
+  // literal 90 it was measured at, because both radii carry the camera's
+  // `WORLD_SCALE` now (UI plan §1.1) — left as a literal, the zoom-out alone
+  // would have inflated artillery's modelled DPS 6.8x without a single line of
+  // combat code changing.
   artillery: {
-    dpsPct: 0.05 * 8 * CORE_TUNING.splashFraction * (CORE_TUNING.splashRadius / 90) ** 2,
+    dpsPct: 0.05 * 8 * CORE_TUNING.splashFraction
+      * (CORE_TUNING.splashRadius / BLESSING_TUNING.mortarRadius) ** 2,
     procShare: 0,
     procMult: 1,
     procIgnoresArmor: false,

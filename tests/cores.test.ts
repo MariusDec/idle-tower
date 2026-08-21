@@ -229,13 +229,25 @@ describe('artillery: every shot splashes (plan §6.1)', () => {
     cores.select('artillery');
 
     const target = enemies.spawn('normal', 1, 400, 300);
-    // Three inside the 70 px blast, one comfortably outside it.
+    /*
+     * Three inside the blast, one comfortably outside it — all placed as
+     * fractions of `splashRadius` rather than as literals, and all held off
+     * the tower-to-target line (which runs along y = 300).
+     *
+     * Both details matter since the camera change: the blast is 182 world
+     * units rather than 70, and the swept collision test is wider by
+     * `PROJECTILE_HIT_PAD`, so a "nearby" enemy written as a literal 20 units
+     * off the flight path is now something the shot hits *directly* on its way
+     * through — which made this test compare a direct hit against a direct hit
+     * and conclude the splash fraction was 1.0.
+     */
+    const blast = CORE_TUNING.splashRadius;
     const near = [
-      enemies.spawn('normal', 1, 420, 300),
-      enemies.spawn('normal', 1, 400, 340),
-      enemies.spawn('normal', 1, 370, 320),
+      enemies.spawn('normal', 1, 400 + blast * 0.35, 300 + blast * 0.35),
+      enemies.spawn('normal', 1, 400, 300 + blast * 0.55),
+      enemies.spawn('normal', 1, 400 - blast * 0.35, 300 + blast * 0.45),
     ];
-    const far = enemies.spawn('normal', 1, 400, 300 + CORE_TUNING.splashRadius + 60);
+    const far = enemies.spawn('normal', 1, 400, 300 + blast + 60);
     for (const e of [target, ...near, far]) {
       e.hp = e.maxHp = 1e6;
     }

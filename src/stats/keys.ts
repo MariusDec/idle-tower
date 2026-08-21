@@ -1,3 +1,4 @@
+import { ARENA_RANGE_CAP } from '../data/arena';
 import { TOWER_BASE } from '../data/tower';
 
 /**
@@ -219,7 +220,19 @@ interface StatClamp {
 export const STAT_CLAMPS: Partial<Record<StatKey, StatClamp>> = {
   baseDamage: { min: 1 },
   fireRate: { min: 0.01 },
-  range: { min: 1 },
+  /*
+   * The arena cap (UI plan §1.2).
+   *
+   * `range` is the only world-space stat the camera's `WORLD_SCALE` does not
+   * multiply, which is what makes the ring shrink against the arena — but the
+   * multipliers stacked on top of it (talents +30%, `Reach` +45%, equipment
+   * `range_pct`) still compound, and an uncapped build resolved past 1300
+   * before the zoom-out, roughly 3.6x the visible half-extent. The ceiling is
+   * a fraction of the arena rather than a literal so it cannot drift away from
+   * the geometry it exists to respect, and `resolveStats` records an
+   * `Arena cap` row in the breakdown whenever it bites.
+   */
+  range: { min: 1, max: ARENA_RANGE_CAP },
   critChance: { min: 0, max: 1 },
   critMultiplier: { min: 1 },
   // No floor on maxHp: zero is the legitimate "not initialised yet" value that
