@@ -1,5 +1,5 @@
 import { ABILITIES } from '../data/abilities';
-import { toggleClass } from '../utils/dom';
+import { Modal } from './Modal';
 
 interface BindGroup {
   title: string;
@@ -64,14 +64,14 @@ function buildGroups(): BindGroup[] {
  */
 export class KeybindsOverlay {
   private readonly root: HTMLElement;
-  private wrap: HTMLElement | null = null;
+  private modal: Modal | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
   }
 
   isOpen(): boolean {
-    return this.wrap !== null;
+    return this.modal !== null;
   }
 
   toggle(): void {
@@ -80,25 +80,17 @@ export class KeybindsOverlay {
   }
 
   show(): void {
-    if (this.wrap) return;
-    const wrap = document.createElement('div');
-    wrap.className = 'welcome-modal keybinds-modal';
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'welcome-modal-backdrop';
-    backdrop.addEventListener('click', () => this.hide());
-    wrap.appendChild(backdrop);
-
-    const card = document.createElement('div');
-    card.className = 'welcome-modal-card keybinds-card';
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    card.setAttribute('aria-label', 'Keyboard shortcuts');
-
-    const title = document.createElement('h2');
-    title.className = 'welcome-modal-title';
-    title.textContent = 'Keyboard shortcuts';
-    card.appendChild(title);
+    if (this.modal) return;
+    const modal = new Modal({
+      id: 'keybinds',
+      title: 'Keyboard shortcuts',
+      width: 560,
+      onClose: () => { this.modal = null; },
+      root: this.root,
+    });
+    this.modal = modal;
+    modal.cardElement.classList.add('keybinds-card');
+    const card = modal.body;
 
     const groups = document.createElement('div');
     groups.className = 'keybinds-groups';
@@ -114,17 +106,13 @@ export class KeybindsOverlay {
     btn.addEventListener('click', () => this.hide());
     card.appendChild(btn);
 
-    wrap.appendChild(card);
-    this.root.appendChild(wrap);
-    this.wrap = wrap;
-    requestAnimationFrame(() => toggleClass(wrap, 'is-visible', true));
+    modal.open();
   }
 
   hide(): void {
-    if (this.wrap && this.wrap.parentNode) {
-      this.wrap.parentNode.removeChild(this.wrap);
-    }
-    this.wrap = null;
+    const modal = this.modal;
+    this.modal = null;
+    modal?.destroy();
   }
 
   private renderGroup(group: BindGroup): HTMLElement {

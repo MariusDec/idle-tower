@@ -8,6 +8,7 @@ import {
   isBossWave,
 } from '../data/formulas';
 import { HUD } from './HUD';
+import { Modal } from './Modal';
 import { UpgradePanel, type BuyAmount, type UpgradePlan } from './UpgradePanel';
 import { UPGRADES } from '../data/upgrades';
 import { AbilityPanel } from './AbilityPanel';
@@ -1414,19 +1415,19 @@ export class UIManager {
   }
 
   /**
-   * True when any modal this manager owns has the player's attention.
+   * True when any modal has the player's attention.
    *
-   * Read by `Game.isModalOpen`, which gates the §7.1 Space binding. A bare
+   * Read by `Game.isModalOpen`, which gates the §7.1 Space binding. This used
+   * to be a hand-written list of four modal names, correct only because
+   * whoever added a modal remembered to edit it; it now asks the shell's
+   * registry, so a new modal answers the gate by existing. A bare
    * `modalRoot.childElementCount` check would have been shorter and wrong:
    * the boss bar, the placement prompt and the contract tracker all live in
    * overlay roots that can fall back to `modalRoot`, and none of them is a
    * modal.
    */
   isModalOpen(): boolean {
-    return this.welcomeModal.isOpen()
-      || this.runSummaryModal.isOpen()
-      || this.runFailedModal.isOpen()
-      || this.keybindsOverlay.isOpen();
+    return Modal.anyOpen();
   }
 
   closeKeybinds(): void {
