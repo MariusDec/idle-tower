@@ -51,7 +51,7 @@ export function enemyCountForWave(wave: number): number {
 
 export function bossCountForWave(wave: number): number {
   const tier = Math.max(1, Math.floor(wave / 10));
-  return 2 + tier;
+  return 2 + Math.max(0, tier - 1);
 }
 
 export function spawnCountForWave(wave: number): number {
@@ -124,6 +124,9 @@ export function lifetimeAPGoldBonus(lifetimeAP: number): number {
 /** Seconds a wave is *expected* to take beyond its own spawn cadence. */
 export const TARGET_WAVE_KILL_SECONDS = 20;
 
+/** Kill budget a *single* boss is expected to need. Boss waves get one each. */
+export const TARGET_BOSS_KILL_SECONDS = 28;
+
 /** A wave running longer than `expectedWaveSeconds * this` starts enraging. */
 export const ENRAGE_THRESHOLD_MULTIPLIER = 2;
 
@@ -143,9 +146,16 @@ export const ENRAGE_SPEED_PER_STACK = 0.15;
  * `enemyCount` defaults to the wave's natural size but must be passed when a
  * mutator has changed it — a Swarm wave spawns 3x the enemies and legitimately
  * takes 3x as long to spawn them, and must not be punished for that.
+ *
+ * A boss wave's kill window is per *boss*, not flat: a boss is several times
+ * the effective HP of the trash it replaces, so a flat window made every boss
+ * wave the only real gate in the game (revamp §10).
  */
 export function expectedWaveSeconds(wave: number, enemyCount = spawnCountForWave(wave)): number {
-  return spawnIntervalForWave(wave) * Math.max(0, enemyCount - 1) + TARGET_WAVE_KILL_SECONDS;
+  const kill = isBossWave(wave)
+    ? TARGET_BOSS_KILL_SECONDS * enemyCount
+    : TARGET_WAVE_KILL_SECONDS;
+  return spawnIntervalForWave(wave) * Math.max(0, enemyCount - 1) + kill;
 }
 
 /** Seconds into a wave at which enrage begins. */

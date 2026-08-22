@@ -13,10 +13,16 @@ import { describe, expect, it } from 'vitest';
 import {
   ENEMY_HP_GROWTH,
   GOLD_GROWTH,
+  TARGET_BOSS_KILL_SECONDS,
+  TARGET_WAVE_KILL_SECONDS,
+  bossCountForWave,
   bossHPForWave,
   enemyHPForWave,
+  expectedWaveSeconds,
   goldDropForWave,
   isBossWave,
+  spawnCountForWave,
+  spawnIntervalForWave,
   upgradeCost,
 } from '../src/data/formulas';
 import { ASCENSION_UNLOCK_WAVE, apForWave, tpForAP } from '../src/data/prestige';
@@ -70,6 +76,48 @@ describe('enemy scaling', () => {
   it('places boss waves every tenth wave', () => {
     expect([10, 20, 100].every(isBossWave)).toBe(true);
     expect([1, 9, 11, 99].some(isBossWave)).toBe(false);
+  });
+
+  /**
+   * Revamp §10: the first boss wave is the tightest gate in the game, so a
+   * tier now adds a boss from the *second* tier onwards rather than the first.
+   */
+  it('starts boss packs at two and adds one per tier after the first', () => {
+    expect([10, 20, 30, 100].map(bossCountForWave)).toEqual([2, 3, 4, 11]);
+  });
+});
+
+/**
+ * Revamp §10: a boss wave's kill window is per boss, not the flat trash
+ * window. Without this a three-boss wave got ~23 s to kill several times the
+ * effective HP of its neighbours, and every wall was a boss wall.
+ */
+describe('wave time budget', () => {
+  it('gives non-boss waves the flat kill window on top of their spawn cadence', () => {
+    for (const w of [1, 5, 15, 37]) {
+      const spawn = spawnIntervalForWave(w) * (spawnCountForWave(w) - 1);
+      expect(expectedWaveSeconds(w)).toBeCloseTo(spawn + TARGET_WAVE_KILL_SECONDS);
+    }
+  });
+
+  it('gives boss waves one kill window per boss', () => {
+    for (const w of [10, 20, 100]) {
+      const count = spawnCountForWave(w);
+      const spawn = spawnIntervalForWave(w) * (count - 1);
+      expect(expectedWaveSeconds(w)).toBeCloseTo(spawn + TARGET_BOSS_KILL_SECONDS * count);
+    }
+  });
+
+  it('scales the boss window with a mutated enemy count', () => {
+    const one = expectedWaveSeconds(20, 1);
+    const two = expectedWaveSeconds(20, 2);
+    expect(two - one).toBeCloseTo(TARGET_BOSS_KILL_SECONDS + spawnIntervalForWave(20));
+  });
+
+  it('leaves a boss wave with more budget than its neighbours', () => {
+    for (const w of [10, 20, 30]) {
+      expect(expectedWaveSeconds(w)).toBeGreaterThan(expectedWaveSeconds(w - 1));
+    }
   });
 });
 
