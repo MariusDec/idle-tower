@@ -709,105 +709,178 @@ button:disabled {
   color: var(--amber-200);
 }
 
-.hud-mana {
+/* ── HUD bars: HP, mana, tower XP (UI plan §7) ─────────────────────────────
+   One vocabulary for all three. They were three near-identical DOM blocks with
+   three near-identical rule sets behind them, so every improvement here would
+   otherwise have had to be written out three times and kept in step by hand.
+
+   Four things the flat 8px trough could not do:
+     · a gradient fill, so the bar has a lit edge and reads as a volume;
+     · a *ghost* trailing a falling value — how much that hit took, as a length;
+     · segment ticks every 25%, because at HUD size 61% and 74% look identical;
+     · a pulse on crossing a quarter, which is when the reading changes meaning.
+
+   The tone is one `data-tone` value driving `--bar-tone` / `--bar-rgb`; nothing
+   below names a colour directly. */
+.hud-bar-block {
+  --bar-tone: var(--text-1);
+  --bar-tone-lit: var(--text-0);
+  --bar-rgb: var(--rgb-light);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 220px;
   flex: 0 0 auto;
 }
-.hud-mana-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: var(--text-sm);
-  color: var(--text-1);
+.hud-bar-block[data-tone='critical'] {
+  /* HP full-and-healthy is *nature*: the bar going green→amber→scarlet is the
+     read. `--fx-critical` arrives only in `.is-critical` below. */
+  --bar-tone: var(--fx-nature);
+  --bar-tone-lit: var(--green-300);
+  --bar-rgb: var(--rgb-nature);
 }
-.hud-mana-label { text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-2); }
-.hud-mana-value { font-variant-numeric: tabular-nums; }
-.mana-bar {
-  height: 8px;
-  background: var(--surface-3);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+.hud-bar-block[data-tone='mana'] {
+  --bar-tone: var(--fx-mana);
+  --bar-tone-lit: var(--fx-arcane);
+  --bar-rgb: var(--rgb-mana);
 }
-.mana-bar-fill {
-  height: 100%;
-  width: 0;
-  background: linear-gradient(90deg, var(--fx-mana), var(--fx-arcane));
-  transition: width var(--dur-fast) linear;
+.hud-bar-block[data-tone='gold'] {
+  --bar-tone: var(--amber-500);
+  --bar-tone-lit: var(--amber-300);
+  --bar-rgb: var(--rgb-gold);
 }
 
-/* Tower XP bar in HUD */
-.hud-xp {
+.hud-bar-head {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 220px;
-}
-.hud-xp-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  align-items: baseline;
+  gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-1);
 }
-.hud-xp-label { text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-2); }
-.hud-xp-level { font-variant-numeric: tabular-nums; }
-.hud-xp-pct { font-size: var(--text-xs); color: var(--text-1); }
-.hud-xp-progress { font-size: var(--text-2xs); color: var(--text-3); text-align: center; }
-.xp-bar {
-  height: 8px;
-  background: var(--surface-3);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+.hud-bar-icon.icon {
+  --icon-size: 14px;
+  color: var(--bar-tone-lit);
+  align-self: center;
 }
-.xp-bar-fill {
-  height: 100%;
-  width: 0;
-  background: linear-gradient(90deg, var(--amber-500), var(--amber-300));
-  transition: width var(--dur-fast) linear;
+.hud-bar-label {
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.hud-bar-value {
+  margin-left: auto;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+.hud-bar-level {
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  color: var(--bar-tone-lit);
+  letter-spacing: var(--tracking-wide);
 }
 
-.hud-hp {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 220px;
-  flex: 0 0 auto;
-}
-.hud-hp-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: var(--text-sm);
-  color: var(--text-1);
-}
-.hud-hp-label { text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-2); }
-.hud-hp-value { font-variant-numeric: tabular-nums; }
-.hp-bar {
-  height: 8px;
-  background: var(--surface-3);
-  border-radius: var(--radius-sm);
+.hud-bar-track {
+  position: relative;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  box-shadow: inset 0 1px 2px rgba(var(--rgb-shadow), 0.6);
   overflow: hidden;
 }
-.hp-bar-fill {
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, var(--fx-nature), var(--green-300));
-  transition: width var(--dur-fast) linear, background var(--dur-base) linear;
+.hud-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  /* Lit along the top edge rather than left-to-right: the bar is a surface with
+     a highlight on it, which is what separates it from a coloured rectangle. */
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--bar-tone-lit) 92%, var(--white)) 0%,
+      var(--bar-tone-lit) 38%,
+      var(--bar-tone) 100%);
+  box-shadow: 0 0 8px -2px rgba(var(--bar-rgb), 0.7);
 }
-.hud-hp.is-critical .hp-bar-fill {
-  background: linear-gradient(90deg, var(--fx-critical), var(--ember-400));
+/* The ghost: what the bar read a moment ago. Dimmer and desaturated, so the
+   live fill stays the thing the eye lands on and the tail behind it is
+   obviously past tense. */
+.hud-bar-ghost {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  display: none;
+  background: linear-gradient(180deg,
+    rgba(var(--rgb-light), 0.42),
+    rgba(var(--bar-rgb), 0.28));
+}
+.hud-bar-ghost.is-visible { display: block; }
+/* Segment ticks at every quarter, over both fills. */
+.hud-bar-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(25% - 1px),
+    rgba(var(--rgb-shadow), 0.55) calc(25% - 1px) 25%);
+}
+
+/* The quarter-crossing pulse. Two identical animations under two class names
+   for the same reason the resource chips have two: alternating restarts the
+   animation without forcing a synchronous layout. */
+.hud-bar-block.is-pulse-a .hud-bar-track { animation: hud-bar-pulse var(--dur-slow) var(--ease-out); }
+.hud-bar-block.is-pulse-b .hud-bar-track { animation: hud-bar-pulse-alt var(--dur-slow) var(--ease-out); }
+@keyframes hud-bar-pulse {
+  0%   { box-shadow: inset 0 1px 2px rgba(var(--rgb-shadow), 0.6), 0 0 0 0 rgba(var(--bar-rgb), 0.7); }
+  100% { box-shadow: inset 0 1px 2px rgba(var(--rgb-shadow), 0.6), 0 0 0 5px rgba(var(--bar-rgb), 0); }
+}
+@keyframes hud-bar-pulse-alt {
+  0%   { box-shadow: inset 0 1px 2px rgba(var(--rgb-shadow), 0.6), 0 0 0 0 rgba(var(--bar-rgb), 0.7); }
+  100% { box-shadow: inset 0 1px 2px rgba(var(--rgb-shadow), 0.6), 0 0 0 5px rgba(var(--bar-rgb), 0); }
+}
+
+/* ── HP, and the one state in this stylesheet that is allowed to be scarlet ──
+   `--fx-critical` is reserved for the tower being hurt (docs/art-direction.md);
+   `--bad` is the generic negative and is rose. They are separate tokens because
+   this state has to out-shout a Clear Save button, not match it.
+
+   The hazard stripes are the second channel: colour alone puts the whole signal
+   on one axis, and the one player who cannot read that axis is exactly the one
+   who most needs to know the tower is about to fall. */
+.hud-hp.is-critical {
+  --bar-tone: var(--blood-500);
+  --bar-tone-lit: var(--fx-critical);
+  --bar-rgb: var(--rgb-critical);
+}
+.hud-hp.is-critical .hud-bar-fill {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(var(--rgb-shadow), 0.28) 0 4px,
+      transparent 4px 9px),
+    linear-gradient(180deg, var(--bar-tone-lit) 0%, var(--bar-tone) 100%);
   animation: hp-pulse var(--dur-slower) ease-in-out infinite alternate;
 }
-.hud-hp.is-dead .hp-bar-fill {
+.hud-hp.is-critical .hud-bar-icon.icon,
+.hud-hp.is-critical .hud-bar-value { color: var(--fx-critical); }
+.hud-hp.is-dead .hud-bar-fill {
   background: var(--stroke-strong);
+  box-shadow: none;
   animation: none;
 }
 @keyframes hp-pulse {
-  from { opacity: 0.7; }
-  to { opacity: 1; }
+  from { filter: brightness(0.82); }
+  to { filter: brightness(1.18); }
+}
+
+/* Ambient loops stop; event-driven feedback (the pulse, the ghost) stays,
+   because removing those removes information rather than motion. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-hp.is-critical .hud-bar-fill { animation: none; }
 }
 
 /* ── Low-HP Vignette ── */
@@ -1630,10 +1703,13 @@ button:disabled {
 }
 
 /* HUD locked state */
-.hud-mana.is-locked .mana-bar-fill {
-  background: linear-gradient(90deg, var(--ink-500), var(--ink-300));
+.hud-mana.is-locked {
+  --bar-tone: var(--ink-500);
+  --bar-tone-lit: var(--ink-300);
+  --bar-rgb: var(--rgb-light);
 }
-.hud-mana.is-locked .hud-mana-value { color: var(--text-2); }
+.hud-mana.is-locked .hud-bar-value,
+.hud-mana.is-locked .hud-bar-icon.icon { color: var(--text-3); }
 
 /* Toasts */
 .toast-root {
@@ -3679,15 +3755,13 @@ body.is-resizing * { cursor: ew-resize !important; }
   .hud-pill-value { font-size: var(--text-xl); }
   .hud-stat-value { font-size: var(--text-base); }
   .hud-stat-label { font-size: var(--text-3xs); letter-spacing: var(--tracking-wide); }
-  .hud-hp,
-  .hud-mana {
+  .hud-bar-block {
     min-width: 0;
     flex: 1 1 0;
   }
-  .hud-hp-label,
-  .hud-mana-label { font-size: var(--text-3xs); }
-  .hud-hp-value,
-  .hud-mana-value { font-size: var(--text-sm); }
+  .hud-bar-label { font-size: var(--text-3xs); }
+  .hud-bar-value { font-size: var(--text-sm); }
+  .hud-bar-level { font-size: var(--text-sm); }
 
   /* Wave block: stack the wave label above the prev/auto/next controls to
      keep the row narrow. Controls sit "directly under" the wave indicator

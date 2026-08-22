@@ -48,6 +48,54 @@ interface PillRefs {
  */
 const PILL_FLARE_FRACTION = 0.12;
 
+/**
+ * A HUD bar (UI plan §7).
+ *
+ * Three things beyond the fill, and each answers a question the old flat bar
+ * could not:
+ *
+ * - **The ghost** trails behind a *falling* value, so "how much did that hit
+ *   take" is a length on screen instead of two numbers a frame apart.
+ * - **The segments** at 25% intervals give the bar a scale. Without them a bar
+ *   at 61% and a bar at 74% look the same at HUD size.
+ * - **The threshold pulse** fires when the fill crosses a quarter, which is the
+ *   moment the reading actually changed meaning.
+ */
+interface BarRefs {
+  block: HTMLElement;
+  fill: HTMLElement;
+  ghost: HTMLElement;
+  valueEl: HTMLElement;
+  /** Live 0..1. */
+  ratio: number;
+  ratioPrev: number;
+  /** The lagging 0..1 the ghost is drawn at. */
+  ghostRatio: number;
+  /** Seconds the ghost still holds its position before it starts draining. */
+  ghostHold: number;
+  /** Quarter the fill was last in, for the crossing pulse. */
+  quarter: number;
+  pulsePhase: boolean;
+  /** XP wraps to 0 on a level-up; a "you just lost that" ghost would be a lie. */
+  suppressGhostOnDrop: boolean;
+  /**
+   * False until the first real reading. Without it a bar that starts empty —
+   * mana on a fresh save, XP at level 1 — opens the run with a full-width ghost
+   * draining away and a threshold pulse for a crossing that never happened.
+   */
+  seeded: boolean;
+}
+
+/**
+ * How long the ghost holds before it drains, and how fast it drains once it
+ * does. The hold is re-armed by every further drop, so sustained damage keeps
+ * the ghost pinned at the pre-damage level and it only pays out once the tower
+ * stops being hit — which is the read the player wants: total damage taken in
+ * *this* exchange, not in the last frame.
+ */
+const BAR_GHOST_HOLD = 0.3;
+const BAR_GHOST_TAU = 0.28;
+
 /** Below this XP/sec the time-to-level estimate is noise, so it is hidden. */
 const MIN_XP_RATE_FOR_ETA = 0.05;
 
@@ -67,9 +115,9 @@ function formatSpeed(v: number): string {
 export class HUD {
   private readonly root: HTMLElement;
   private manaEl!: HTMLElement;
-  private manaBarFill!: HTMLElement;
+  private manaBar!: BarRefs;
   private manaWrap!: HTMLElement;
-  private xpBarFill!: HTMLElement;
+  private xpBar!: BarRefs;
   private xpPctEl!: HTMLElement;
   private xpLevelEl!: HTMLElement;
   private xpWrapEl!: HTMLElement;
@@ -85,7 +133,7 @@ export class HUD {
   private readonly pills: PillRefs[] = [];
   private hpEl!: HTMLElement;
   private hpWrap!: HTMLElement;
-  private hpBarFill!: HTMLElement;
+  private hpBar!: BarRefs;
   private statsBtn!: HTMLButtonElement;
   private statsTooltip!: HTMLElement;
   private statsPopup!: HTMLElement;
@@ -391,6 +439,29 @@ export class HUD {
           : 1;
       }
     }
+    this.tickBars(dt, state);
+  }
+
+  /**
+   * Fills, ghosts and threshold pulses, every frame.
+   *
+   * Reads the tweened display values rather than the raw state, so the ghost
+   * trails the number the player is actually looking at.
+   */
+  private tickBars(dt: number, state: GameState): void {
+    const maxHp = Math.max(1, this.displayMaxHP);
+    this.tickBar(this.hpBar, Math.max(0, this.displayHP) / maxHp, dt);
+
+    const manaUnlocked = state.wave.highestWave >= MANA_UNLOCK_WAVE;
+    const maxMana = state.resources.maxMana;
+    this.tickBar(
+      this.manaBar,
+      manaUnlocked && maxMana > 0 ? this.displayMana / maxMana : 0,
+      dt,
+    );
+
+    const tx = state.towerXp;
+    this.tickBar(this.xpBar, tx && tx.level >= 1999 ? 1 : this.displayXpProgress, dt);
   }
 
   update(state: GameState): void {
@@ -402,13 +473,8 @@ export class HUD {
     if (manaUnlocked) {
       const manaDisplay = Math.floor(this.displayMana);
       setText(this.manaEl, `${manaDisplay} / ${state.resources.maxMana}`);
-      const ratio = state.resources.maxMana > 0
-        ? this.displayMana / state.resources.maxMana
-        : 0;
-      setStyle(this.manaBarFill, 'width', `${Math.min(100, Math.max(0, ratio * 100))}%`);
     } else {
       setText(this.manaEl, `Locked · wave ${MANA_UNLOCK_WAVE}`);
-      setStyle(this.manaBarFill, 'width', '0%');
     }
     setText(this.waveEl, `Wave ${Math.round(this.displayWave)}`);
     // The chip carries the label, so the value no longer has to repeat it —
@@ -425,7 +491,6 @@ export class HUD {
     const maxHpDisplay = Math.max(1, this.displayMaxHP);
     setText(this.hpEl, `${formatNumber(hpDisplay)} / ${formatNumber(maxHpDisplay)}`);
     const hpRatio = maxHpDisplay > 0 ? hpDisplay / maxHpDisplay : 0;
-    setStyle(this.hpBarFill, 'width', `${Math.min(100, Math.max(0, hpRatio * 100))}%`);
     toggleClass(this.hpWrap, 'is-critical', hpRatio > 0 && hpRatio <= 0.4);
     toggleClass(this.hpWrap, 'is-dead', hpRatio <= 0);
     this.syncControls(state);
@@ -491,9 +556,7 @@ export class HUD {
   private updateXpBar(state: GameState): void {
     const tx = state.towerXp;
     if (!tx) return;
-    const pct = tx.level >= 1999 ? 100 : (this.displayXpProgress * 100);
     setText(this.xpLevelEl, `Lv.${tx.level + 1}`);
-    setStyle(this.xpBarFill, 'width', `${pct}%`);
     const needed = this.displayXpNeeded;
     if (needed > 0 && needed !== Infinity) {
       const xpIntoLevel = Math.max(0, tx.xp - TOWER_XP_TABLE[tx.level]);
@@ -636,77 +699,29 @@ export class HUD {
 
     this.root.appendChild(groupLeft);
 
-    const hpWrap = document.createElement('div');
-    hpWrap.className = 'hud-hp';
-    this.hpWrap = hpWrap;
-    const hpRow = document.createElement('div');
-    hpRow.className = 'hud-hp-row';
-    const hpLabel = document.createElement('span');
-    hpLabel.className = 'hud-hp-label';
-    hpLabel.textContent = 'Tower HP';
-    this.hpEl = document.createElement('span');
-    this.hpEl.className = 'hud-hp-value';
-    this.hpEl.textContent = '5 / 5';
-    hpRow.appendChild(hpLabel);
-    hpRow.appendChild(this.hpEl);
-    hpWrap.appendChild(hpRow);
-    const hpBar = document.createElement('div');
-    hpBar.className = 'hp-bar';
-    this.hpBarFill = document.createElement('div');
-    this.hpBarFill.className = 'hp-bar-fill';
-    hpBar.appendChild(this.hpBarFill);
-    hpWrap.appendChild(hpBar);
-    this.root.appendChild(hpWrap);
+    this.hpBar = this.makeBar('hp', 'Tower HP', 'hp', 'critical');
+    this.hpWrap = this.hpBar.block;
+    this.hpEl = this.hpBar.valueEl;
+    setText(this.hpEl, '5 / 5');
+    this.root.appendChild(this.hpBar.block);
 
-    const manaWrap = document.createElement('div');
-    manaWrap.className = 'hud-mana';
-    this.manaWrap = manaWrap;
-    const manaRow = document.createElement('div');
-    manaRow.className = 'hud-mana-row';
-    const manaLabel = document.createElement('span');
-    manaLabel.className = 'hud-mana-label';
-    manaLabel.textContent = 'Mana';
-    this.manaEl = document.createElement('span');
-    this.manaEl.className = 'hud-mana-value';
-    this.manaEl.textContent = '0 / 100';
-    manaRow.appendChild(manaLabel);
-    manaRow.appendChild(this.manaEl);
-    manaWrap.appendChild(manaRow);
-    const manaBar = document.createElement('div');
-    manaBar.className = 'mana-bar';
-    this.manaBarFill = document.createElement('div');
-    this.manaBarFill.className = 'mana-bar-fill';
-    manaBar.appendChild(this.manaBarFill);
-    manaWrap.appendChild(manaBar);
-    this.root.appendChild(manaWrap);
+    this.manaBar = this.makeBar('mana', 'Mana', 'mana', 'mana');
+    this.manaWrap = this.manaBar.block;
+    this.manaEl = this.manaBar.valueEl;
+    setText(this.manaEl, '0 / 100');
+    this.root.appendChild(this.manaBar.block);
 
-    // Tower XP bar
-    const xpWrap = document.createElement('div');
-    xpWrap.className = 'hud-xp';
-    this.xpWrapEl = xpWrap;
-    const xpRow = document.createElement('div');
-    xpRow.className = 'hud-xp-row';
-    const xpLabel = document.createElement('span');
-    xpLabel.className = 'hud-xp-label';
-    xpLabel.textContent = 'Tower XP';
+    // Tower XP. The level badge sits between the label and the value because
+    // "Lv.7" is the headline the bar is filling towards, not a footnote to it.
+    this.xpBar = this.makeBar('xp', 'Tower XP', 'xp', 'gold');
+    this.xpWrapEl = this.xpBar.block;
+    this.xpPctEl = this.xpBar.valueEl;
+    setText(this.xpPctEl, '0 / 0 XP');
     this.xpLevelEl = document.createElement('span');
-    this.xpLevelEl.className = 'hud-xp-level';
+    this.xpLevelEl.className = 'hud-bar-level u-display u-tabular';
     this.xpLevelEl.textContent = 'Lv.1';
-    xpRow.appendChild(xpLabel);
-    xpRow.appendChild(this.xpLevelEl);
-    const xpPct = document.createElement('span');
-    xpPct.className = 'hud-xp-pct';
-    this.xpPctEl = xpPct;
-    xpPct.textContent = '0%';
-    xpRow.appendChild(xpPct);
-    xpWrap.appendChild(xpRow);
-    const xpBar = document.createElement('div');
-    xpBar.className = 'xp-bar';
-    this.xpBarFill = document.createElement('div');
-    this.xpBarFill.className = 'xp-bar-fill';
-    xpBar.appendChild(this.xpBarFill);
-    xpWrap.appendChild(xpBar);
-    this.root.appendChild(xpWrap);
+    this.xpPctEl.parentElement?.insertBefore(this.xpLevelEl, this.xpPctEl);
+    this.root.appendChild(this.xpBar.block);
 
     const groupRight = document.createElement('div');
     groupRight.className = 'hud-group right';
@@ -1141,6 +1156,120 @@ export class HUD {
       toggleClass(popover, 'is-open', opening);
       toggleClass(this.moreBtn, 'is-active', opening);
     });
+  }
+
+  /**
+   * One HUD bar: head row (icon · label · value) over the track.
+   *
+   * All three bars share this because all three were three near-identical
+   * blocks of DOM code with three near-identical CSS blocks behind them, and
+   * every improvement in §7 — gradient, ghost, segments, pulse — would
+   * otherwise have had to be written out three times and kept in step by hand.
+   */
+  private makeBar(
+    key: 'hp' | 'mana' | 'xp',
+    label: string,
+    iconKey: StatIconKey,
+    tone: string,
+  ): BarRefs {
+    const block = document.createElement('div');
+    block.className = `hud-bar-block hud-${key}`;
+    block.dataset.tone = tone;
+
+    const head = document.createElement('div');
+    head.className = 'hud-bar-head';
+    head.appendChild(icon(STAT_ICONS[iconKey], { tone: 'inherit', className: 'hud-bar-icon' }));
+    const labelEl = document.createElement('span');
+    labelEl.className = 'hud-bar-label';
+    labelEl.textContent = label;
+    head.appendChild(labelEl);
+    const valueEl = document.createElement('span');
+    valueEl.className = 'hud-bar-value u-tabular';
+    head.appendChild(valueEl);
+    block.appendChild(head);
+
+    const track = document.createElement('div');
+    track.className = 'hud-bar-track';
+    // Ghost first so the live fill paints over it: what is left is bright, what
+    // was just lost is the dim tail sticking out past it.
+    const ghost = document.createElement('div');
+    ghost.className = 'hud-bar-ghost';
+    track.appendChild(ghost);
+    const fill = document.createElement('div');
+    fill.className = 'hud-bar-fill';
+    track.appendChild(fill);
+    block.appendChild(track);
+
+    return {
+      block,
+      fill,
+      ghost,
+      valueEl,
+      ratio: 1,
+      ratioPrev: 1,
+      ghostRatio: 1,
+      ghostHold: 0,
+      quarter: 4,
+      pulsePhase: false,
+      suppressGhostOnDrop: key === 'xp',
+      seeded: false,
+    };
+  }
+
+  /**
+   * Advance one bar on wall-clock `dt`: write the fill, run the ghost, and fire
+   * the pulse if the fill just crossed a quarter.
+   *
+   * Deliberately per-frame rather than on the throttled `update()`. The fill is
+   * already smoothed by `tickDisplay`'s tween, so a CSS width transition on top
+   * of it was double-smoothing — the HP bar lagged a hit by a visible beat —
+   * and a ghost stepping at 10 fps is not a trail, it is a stutter. The `dom`
+   * helpers cache the last value, so a bar that is not moving writes nothing.
+   */
+  private tickBar(refs: BarRefs, rawRatio: number, dt: number): void {
+    const ratio = Math.max(0, Math.min(1, rawRatio));
+    if (!refs.seeded) {
+      refs.seeded = true;
+      refs.ratio = ratio;
+      refs.ratioPrev = ratio;
+      refs.ghostRatio = ratio;
+      refs.quarter = ratio >= 1 ? 4 : Math.floor(ratio * 4);
+    }
+    const dropped = ratio < refs.ratioPrev - 1e-6;
+    refs.ratioPrev = refs.ratio;
+    refs.ratio = ratio;
+    setStyle(refs.fill, 'width', `${(ratio * 100).toFixed(2)}%`);
+
+    if (refs.suppressGhostOnDrop && dropped) {
+      // A tower level-up wraps XP back to zero. Trailing a ghost across the
+      // whole bar would read as a loss, which is the opposite of what happened.
+      refs.ghostRatio = ratio;
+    } else if (ratio >= refs.ghostRatio) {
+      refs.ghostRatio = ratio;
+      refs.ghostHold = 0;
+    } else if (dropped) {
+      refs.ghostHold = BAR_GHOST_HOLD;
+    } else if (refs.ghostHold > 0) {
+      refs.ghostHold = Math.max(0, refs.ghostHold - dt);
+    } else {
+      refs.ghostRatio += (ratio - refs.ghostRatio) * (1 - Math.exp(-dt / BAR_GHOST_TAU));
+      if (refs.ghostRatio - ratio < 0.002) refs.ghostRatio = ratio;
+    }
+    const showGhost = refs.ghostRatio - ratio > 0.004;
+    toggleClass(refs.ghost, 'is-visible', showGhost);
+    if (showGhost) setStyle(refs.ghost, 'width', `${(refs.ghostRatio * 100).toFixed(2)}%`);
+
+    // The pulse marks a *crossing*, not a value: a bar sitting at 49% has
+    // nothing to announce, but the frame it fell through 50% does.
+    const quarter = ratio >= 1 ? 4 : Math.floor(ratio * 4);
+    if (quarter !== refs.quarter) {
+      const falling = quarter < refs.quarter;
+      refs.quarter = quarter;
+      refs.pulsePhase = !refs.pulsePhase;
+      toggleClass(refs.block, 'is-pulse-a', refs.pulsePhase);
+      toggleClass(refs.block, 'is-pulse-b', !refs.pulsePhase);
+      toggleClass(refs.block, 'is-pulse-down', falling);
+    }
   }
 
   /**
