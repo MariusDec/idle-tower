@@ -2027,7 +2027,7 @@ button:disabled {
   flex-direction: column;
   align-items: flex-end;
   gap: var(--space-2);
-  z-index: 50;
+  z-index: var(--z-toast);
   pointer-events: none;
   max-width: 360px;
 }
@@ -2530,6 +2530,81 @@ button:disabled {
 .automation-switch input:disabled + .automation-switch-slider {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+/* ── The one modal shell (UI plan §8.F) ───────────────────────────────────
+   `welcome-modal*`, `blessing-modal*`, `wave-mod-modal*` and the keybinds
+   overlay each grew their own backdrop, transition and card. This block is the
+   single shell they all mount into; each modal's *content* classes
+   (`.run-summary-stats`, `.blessing-card`, `.wave-mod-card`, …) are untouched,
+   so their layouts survive the move. Width comes in per modal as
+   `--modal-width`. */
+.modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity var(--dur-base) ease;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px)
+           calc(env(safe-area-inset-right, 0px) + 16px)
+           calc(env(safe-area-inset-bottom, 0px) + 16px)
+           calc(env(safe-area-inset-left, 0px) + 16px);
+}
+.modal.is-visible { opacity: 1; }
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(var(--rgb-shadow), 0.62);
+  backdrop-filter: blur(6px);
+}
+.modal-card {
+  position: relative;
+  width: min(var(--modal-width, 440px), calc(100vw - 32px));
+  max-height: 100%;
+  overflow-y: auto;
+  /* A card that scrolls must not hand the leftover scroll to the page under
+     it — on a phone that reads as the modal dragging the battlefield. */
+  overscroll-behavior: contain;
+  padding: 22px 24px 20px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
+  border: 1px solid var(--stroke-strong);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--elev-5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transform: translateY(12px) scale(0.98);
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.modal-card:focus { outline: none; }
+.modal.is-visible .modal-card { transform: translateY(0) scale(1); }
+.modal-title {
+  margin: 0;
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+.modal-sub {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--text-md);
+  line-height: 1.45;
+}
+.modal-sub.is-hidden { display: none; }
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal,
+  .modal-card { transition: none; }
+  .modal-card { transform: none; }
 }
 
 /* Welcome back modal */
@@ -3796,7 +3871,7 @@ body.is-resizing * { cursor: ew-resize !important; }
      `--ability-bar-height`, and a dock that grew a pixel would slide four other
      overlays without anything saying so. */
   height: var(--ability-bar-height);
-  z-index: 40;
+  z-index: var(--z-dock);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3999,7 +4074,7 @@ body.is-resizing * { cursor: ew-resize !important; }
     /* Stack above the ability bar so the two never overlap. */
     bottom: 0;
     height: var(--bottom-nav-height);
-    z-index: 45;
+    z-index: calc(var(--z-dock) + 5);
     background: var(--surface-1);
     border-top: 1px solid var(--stroke-subtle);
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -4072,7 +4147,7 @@ body.is-resizing * { cursor: ew-resize !important; }
   position: fixed;
   inset: 0;
   background: rgba(var(--rgb-shadow), 0.6);
-  z-index: 70;
+  z-index: calc(var(--z-sheet) - 5);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur-base) ease;
@@ -4091,7 +4166,7 @@ body.is-resizing * { cursor: ew-resize !important; }
   border-top: 1px solid var(--stroke-strong);
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;
-  z-index: 75;
+  z-index: var(--z-sheet);
   display: flex;
   flex-direction: column;
   transform: translateY(100%);
