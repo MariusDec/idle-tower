@@ -26,6 +26,37 @@ const BRANCH_DISPLAY: { id: TalentBranch; label: string; color: string }[] = [
 ];
 
 
+/** Tri-state shared by a node and by the link that leads into it. */
+type LinkState = 'spent' | 'available' | 'locked';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** Shape, not hue: a checked node, an open ring, a padlock. */
+const STATE_GLYPH: Record<LinkState, string> = {
+  spent: '✓',
+  available: '○',
+  locked: '\u{1F512}',
+};
+
+const STATE_LABEL: Record<LinkState, string> = {
+  spent: 'Points spent',
+  available: 'Available',
+  locked: 'Locked',
+};
+
+/**
+ * §8.D: the parent plan asked for a canvas tree; there is no canvas here, and
+ * rebuilding these nodes as one would cost the tree its keyboard access, its
+ * screen-reader text and its free hit-testing to buy curved lines. So the DOM
+ * nodes stay and an SVG link layer goes behind them. See `docs/xp-talent-system.md`.
+ */
+interface BranchLinks {
+  /** The positioned box the links are measured against. */
+  tree: HTMLElement;
+  svg: SVGSVGElement;
+  edges: { parent: TalentId; child: TalentId; path: SVGPathElement }[];
+}
+
 function computeDepths(branch: TalentBranch): Map<string, number> {
   const talents = TALENTS_BY_BRANCH[branch];
   const depths = new Map<string, number>();
@@ -60,6 +91,8 @@ export class TalentPanel {
   private respecAllBtn: HTMLButtonElement | null = null;
   private branchSummaryEls = new Map<TalentBranch, HTMLElement>();
   private activeTab: TalentBranch = 'offense';
+  private branchLinks = new Map<TalentBranch, BranchLinks>();
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(deps: TalentAPIDeps) {
     this.deps = deps;
@@ -78,8 +111,18 @@ export class TalentPanel {
     this.respecBtns.clear();
     this.respecAllBtn = null;
     this.branchSummaryEls.clear();
+    this.branchLinks.clear();
     this.activeTab = 'offense';
     this.renderInto(parent);
+
+    // Geometry is recomputed on mount and on resize only — never per frame.
+    // A hidden tab measures as zero, so `showTab` re-runs the pass too.
+    if (typeof ResizeObserver === 'function') {
+      this.resizeObserver = new ResizeObserver(() => this.layoutLinks(this.activeTab));
+      const links = this.branchLinks.get(this.activeTab);
+      if (links) this.resizeObserver.observe(links.tree);
+    }
+    this.layoutLinks(this.activeTab);
   }
 
   update(_state: GameState): void {
@@ -113,6 +156,28 @@ export class TalentPanel {
         toggleClass(card, 'talent-locked', true);
         btn.disabled = true;
         setText(btn, 'Locked');
+      }
+
+      // §8.D tri-state, carried without relying on colour: the glyph and the
+      // screen-reader label say the same thing the tint does.
+      const state = this.stateOf(talent.id);
+      if (card.dataset.state !== state) {
+        card.dataset.state = state;
+        const glyph = card.querySelector<HTMLElement>('.talent-state-glyph');
+        if (glyph) {
+          glyph.textContent = STATE_GLYPH[state];
+          glyph.title = STATE_LABEL[state];
+        }
+        const sr = card.querySelector<HTMLElement>('.talent-state-label');
+        if (sr) setText(sr, STATE_LABEL[state]);
+      }
+    }
+
+    for (const links of this.branchLinks.values()) {
+      for (const edge of links.edges) {
+        const state = this.stateOf(edge.child);
+        const cls = `talent-link is-${state}`;
+        if (edge.path.getAttribute('class') !== cls) edge.path.setAttribute('class', cls);
       }
     }
 
@@ -157,7 +222,49 @@ export class TalentPanel {
   }
 
   private unmount(): void {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.branchLinks.clear();
     this.root = null;
+  }
+
+  /** spent | available | locked, for a node and for the link that leads into it. */
+  private stateOf(id: TalentId): LinkState {
+    if ((this.deps.allocated[id] ?? 0) > 0) return 'spent';
+    return this.deps.canAllocate(id) ? 'available' : 'locked';
+  }
+
+  /**
+   * Read every node rect, *then* write every path. Interleaving reads and
+   * writes would force a layout per node.
+   */
+  private layoutLinks(branch: TalentBranch): void {
+    const links = this.branchLinks.get(branch);
+    if (!links) return;
+    const host = links.tree.getBoundingClientRect();
+    if (host.width === 0 || host.height === 0) return;
+    links.svg.setAttribute('viewBox', `0 0 ${host.width} ${host.height}`);
+
+    const geometry: { path: SVGPathElement; d: string }[] = [];
+    for (const edge of links.edges) {
+      const parentEl = this.talentCards.get(edge.parent);
+      const childEl = this.talentCards.get(edge.child);
+      if (!parentEl || !childEl) continue;
+      const a = parentEl.getBoundingClientRect();
+      const b = childEl.getBoundingClientRect();
+      // Relative to the tree, not the viewport, so this survives the panel's
+      // own scrolling and its resizable width.
+      const x0 = a.left - host.left + a.width / 2;
+      const y0 = a.bottom - host.top;
+      const x1 = b.left - host.left + b.width / 2;
+      const y1 = b.top - host.top;
+      const dy = y1 - y0;
+      geometry.push({
+        path: edge.path,
+        d: `M ${x0} ${y0} C ${x0} ${y0 + dy * 0.45}, ${x1} ${y1 - dy * 0.45}, ${x1} ${y1}`,
+      });
+    }
+    for (const g of geometry) g.path.setAttribute('d', g.d);
   }
 
   private renderInto(parent: HTMLElement): void {
@@ -245,10 +352,27 @@ export class TalentPanel {
       return (depths.get(a.id) ?? 0) - (depths.get(b.id) ?? 0);
     });
 
+    // The link layer sits behind the nodes: one <svg> per branch, absolutely
+    // positioned over the tree, `pointer-events: none` so it never eats a tap.
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'talent-link-layer');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    tree.appendChild(svg);
+
+    const edges: BranchLinks['edges'] = [];
     for (const talent of sorted) {
       const depth = depths.get(talent.id) ?? 0;
       tree.appendChild(this.renderTalentCard(talent, depth));
+      for (const prereq of talent.prerequisites) {
+        if (!talents.some(t => t.id === prereq)) continue;
+        const path = document.createElementNS(SVG_NS, 'path');
+        path.setAttribute('class', 'talent-link is-locked');
+        svg.appendChild(path);
+        edges.push({ parent: prereq as TalentId, child: talent.id, path });
+      }
     }
+    this.branchLinks.set(branch.id, { tree, svg, edges });
 
     panel.appendChild(tree);
 
@@ -272,7 +396,20 @@ export class TalentPanel {
     card.className = 'talent-card talent-locked';
     card.dataset.talentId = talent.id;
     card.dataset.depth = String(depth);
+    card.dataset.state = 'locked';
     this.talentCards.set(talent.id, card);
+
+    const state = document.createElement('span');
+    state.className = 'talent-state-glyph';
+    state.setAttribute('aria-hidden', 'true');
+    state.textContent = STATE_GLYPH.locked;
+    state.title = STATE_LABEL.locked;
+    card.appendChild(state);
+
+    const srState = document.createElement('span');
+    srState.className = 'talent-state-label sr-only';
+    srState.textContent = STATE_LABEL.locked;
+    card.appendChild(srState);
 
     const glyph = document.createElement('div');
     glyph.className = 'talent-card-glyph';
@@ -350,5 +487,13 @@ export class TalentPanel {
     for (const el of Array.from(this.root.querySelectorAll<HTMLElement>('.talent-tab-panel'))) {
       toggleClass(el, 'active', el.dataset.talentTabPanel === id);
     }
+    // A hidden panel measures as zero, so the links for the tab we just
+    // revealed have to be laid out now (and are the only ones worth watching).
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      const links = this.branchLinks.get(id);
+      if (links) this.resizeObserver.observe(links.tree);
+    }
+    this.layoutLinks(id);
   }
 }

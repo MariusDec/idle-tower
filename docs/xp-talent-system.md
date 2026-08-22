@@ -58,3 +58,29 @@ unspent pool; both refuse and change nothing if the gold is not there.
 Tower XP, level and talent allocation survive **both** ascension and
 transcendence. Only gold, upgrades, ability levels and the ascension layer
 reset.
+
+## Presentation: the tree is DOM, not canvas (UI plan §8.D)
+
+The UI plan's parent document asked for "keep the canvas, restyle it". There is
+no canvas: `TalentPanel.ts` renders per-branch DOM lists of nodes. Rebuilding
+them as a canvas would cost the tree its keyboard access, its screen-reader
+text, its text selection and its free hit-testing, to buy curved lines — so the
+DOM nodes stay and an **SVG link layer** (`.talent-link-layer`, one `<svg>` per
+branch, `pointer-events: none`) draws the prerequisite edges behind them.
+
+Geometry is measured with `getBoundingClientRect()` relative to the branch's
+tree box (so it survives the panel's scroll and its resizable width) and is
+recomputed on mount, on `ResizeObserver` of the visible tree, and on tab switch
+— never per frame. Each pass reads every node rect first and writes every path
+afterwards; interleaving would force a layout per node.
+
+Links and nodes carry the same tri-state — `spent` / `available` / `locked` —
+and never by colour alone: the link is solid gold, flowing dashed green, or a
+thin static dash, and the node carries a check, a ring or a padlock plus an
+`sr-only` label. The flow animation is disabled under
+`prefers-reduced-motion: reduce`.
+
+**Pan/pinch is deliberately not implemented.** The branch panel is
+`overflow: auto` with `touch-action: pan-x pan-y` and the platform scrolls it; a
+bespoke pinch layer over DOM nodes is a lot of gesture code for a tree that fits
+a phone screen one branch at a time.
