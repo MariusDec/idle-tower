@@ -4,7 +4,7 @@ import {
   describeBlessing,
   type BlessingDef,
 } from '../data/blessings';
-import { icon } from './Icon';
+import { iconFrame } from './Icon';
 
 export interface BlessingDraftData {
   /** Wave that was just cleared — the draft is the reward for it. */
@@ -132,10 +132,16 @@ export class BlessingDraftModal {
 
     const header = document.createElement('div');
     header.className = 'blessing-card-header';
+    // The rarity frame (§8.E): the tier reads from the frame's tint and corner
+    // notch, so it survives a player who cannot separate the border hues.
+    header.appendChild(iconFrame(def.icon, {
+      variant: 'item',
+      rarity: def.rarity,
+      className: 'blessing-card-frame',
+    }));
     const name = document.createElement('div');
     name.className = 'blessing-card-name';
-    name.appendChild(icon(def.icon, { className: 'blessing-card-icon' }));
-    name.appendChild(document.createTextNode(def.name));
+    name.textContent = def.name;
     header.appendChild(name);
     const rarity = document.createElement('span');
     rarity.className = 'blessing-card-rarity';

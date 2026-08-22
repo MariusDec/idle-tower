@@ -5578,13 +5578,43 @@ body.eq-dragging img { pointer-events: none; }
   outline: 2px solid var(--bl-color);
   outline-offset: 2px;
 }
+/* Press tilt (§8.E): bounded to 4deg — a tilt that overshoots reads as broken,
+   not juicy — and paired with the hover lift above. */
+.blessing-card:hover {
+  transform: perspective(600px) rotateX(4deg) translateY(-2px);
+}
+.blessing-card:active {
+  transform: perspective(600px) rotateX(4deg) translateY(0);
+}
+/* Stagger-in (§8.E): 70 ms apart, capped at 210 ms so the last card of any
+   offer size is on screen inside one --dur-base beat after the third. */
+.blessing-card {
+  animation: blessing-card-in var(--dur-base) var(--ease-spring) backwards;
+}
+.blessing-card:nth-child(1) { animation-delay: 0ms; }
+.blessing-card:nth-child(2) { animation-delay: 70ms; }
+.blessing-card:nth-child(3) { animation-delay: 140ms; }
+.blessing-card:nth-child(n + 4) { animation-delay: 210ms; }
+@keyframes blessing-card-in {
+  from { opacity: 0; transform: perspective(600px) translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: perspective(600px) translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Both the stagger and the tilt are decoration; the card is fully legible
+     without either. */
+  .blessing-card { animation: none; }
+  .blessing-card:hover,
+  .blessing-card:active { transform: none; }
+}
 .blessing-card-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
+.blessing-card-frame { --frame-size: 40px; }
 .blessing-card-name {
+  flex: 1 1 auto;
   font-weight: 700;
   font-size: var(--text-lg);
   color: var(--bl-color);
@@ -6448,6 +6478,7 @@ body.eq-dragging img { pointer-events: none; }
   margin-right: 6px;
   color: var(--bl-color, var(--text-1));
 }
+
 .upgrade-icon { align-self: center; }
 
 /* Equipment: the crude 3-path outlines under public/sprites/ are gone, so the
