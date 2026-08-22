@@ -55,7 +55,6 @@ export interface EnemyDef {
   color: string;
   borderColor: string;
   shape: EnemyShape;
-  glyph?: string;
   shieldCharges?: number;     // Shielded
   healRange?: number;         // Healer
   healFraction?: number;      // Healer: % of maxHP healed
@@ -552,7 +551,6 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#27ae60',
     borderColor: '#0e3a1d',
     shape: 'circle',
-    glyph: '+',
     healRange: world(150),
     healFraction: 0.15,
     healCooldown: 2.5,
@@ -651,7 +649,6 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#d4af37',
     borderColor: '#3a2c00',
     shape: 'diamond',
-    glyph: '$',
     rpChance: 0.06,
   },
   blinker: {
@@ -669,7 +666,6 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#7f5af0',
     borderColor: '#ded1ff',
     shape: 'circle',
-    glyph: '✦',
     rpChance: 0.06,
   },
   warden: {

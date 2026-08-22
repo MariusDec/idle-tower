@@ -5,7 +5,7 @@ import type { Camera } from './Camera';
 import { TOWER_VISUAL } from '../data/tower';
 import { CORE_BY_ID, DEFAULT_CORE, isCoreId, type CoreId } from '../data/cores';
 import { FX, INK, withAlpha } from '../data/palette';
-import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS } from '../data/enemies';
+import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS, bossTierForWave } from '../data/enemies';
 import type { EnemyDef, EnemyShape } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
 import { formatInt } from '../utils/bigNumber';
@@ -65,8 +65,6 @@ const PORTAL_OPEN_TIME = 0.45;
 const EMERGENCE_MIN_ELLIPSE = 0.88;
 /** Slack around a body sprite so its outline stroke is not clipped. */
 const SPRITE_PADDING = entity(6);
-/** Body colour of a boss below its enrage threshold. */
-const ENRAGED_BOSS_COLOR = '#ff2020';
 /**
  * Shapes this renderer knows how to paint (gameplay plan §2.5).
  *
@@ -80,6 +78,63 @@ export const RENDERED_ENEMY_SHAPES: readonly EnemyShape[] =
 
 /** Seconds a blinker's after-image lingers at the position it left. */
 const AFTER_IMAGE_LIFE = 0.45;
+
+/**
+ * Everything that makes one baked body sprite different from another (§4.1).
+ *
+ * The cache key is built from exactly these fields, so anything that varies per
+ * enemy *instance* rather than per variant must not be in here — it belongs in
+ * the live pass (see `docs/performance.md`'s sprite-cache invariant).
+ */
+interface BodyVariant {
+  enraged: boolean;
+  buried: boolean;
+  elite: boolean;
+  aura: AuraType | null;
+  /** Index into `BOSS_PROFILES`; 0 and unused for everything that is not a boss. */
+  silhouette: number;
+}
+
+/**
+ * Boss silhouettes, one family per boss tier, cycled (§4.1).
+ *
+ * A boss was `shape: 'circle'` with `radius` 30 and a red aura — which is to
+ * say a big circle, wave 10 through wave 200. It still declares `'circle'`
+ * because `RENDERED_ENEMY_SHAPES` is the contract every *type* is held to, but
+ * it is painted from here instead: a radius function sampled around the body,
+ * so five genuinely different outlines cost one painter and five cache entries.
+ *
+ * Every profile stays inside `radius`, so a new silhouette can never quietly
+ * change how big a boss looks relative to its hitbox.
+ */
+const BOSS_PROFILES: ReadonlyArray<{
+  samples: number;
+  sx: number;
+  sy: number;
+  radius: (i: number, n: number) => number;
+}> = [
+  // Sentinel — a six-point spiked shell.
+  { samples: 12, sx: 1, sy: 1, radius: (i) => (i % 2 === 0 ? 1 : 0.72) },
+  // Overseer — a round carapace carrying four horns.
+  { samples: 16, sx: 1, sy: 0.98, radius: (i) => (i % 4 === 2 ? 1 : 0.8) },
+  // Colossus — a wide, flat slab. Broader than it is tall, and it reads heavy.
+  { samples: 8, sx: 1.16, sy: 0.8, radius: () => 1 },
+  // Devourer — a ragged, asymmetric maw. Deterministic, not random: the same
+  // tier must bake the same outline every time.
+  {
+    samples: 18,
+    sx: 1,
+    sy: 1,
+    radius: (i) => 0.62 + 0.38 * (((Math.imul(i + 1, 2654435761) >>> 0) % 1000) / 1000),
+  },
+  // Harbinger — a three-lobed crest.
+  {
+    samples: 24,
+    sx: 0.94,
+    sy: 1.06,
+    radius: (i, n) => 0.7 + 0.3 * Math.abs(Math.cos(((i / n) * Math.PI * 2 - Math.PI / 2) * 1.5)),
+  },
+];
 
 /** Solid crown colours, one per aura (the aura fills are translucent). */
 const ELITE_CROWN_COLORS: Record<AuraType, string> = {
@@ -243,6 +298,13 @@ export class Renderer {
    */
   private towerX = 0;
   private towerY = 0;
+  /**
+   * Wave number from the frame being drawn.
+   *
+   * Only used as the fallback for a boss whose `spawnWave` is missing (an old
+   * save), so its silhouette family can still be resolved.
+   */
+  private wave = 1;
 
   constructor(canvas: HTMLCanvasElement, camera: Camera) {
     const ctx = canvas.getContext('2d');
@@ -322,6 +384,7 @@ export class Renderer {
     const camera = this.camera;
     this.towerX = snapshot.tower.x;
     this.towerY = snapshot.tower.y;
+    this.wave = snapshot.wave.number;
     this.advance(snapshot);
 
     // ── device space: the baked background, blitted 1:1 ──
@@ -1910,183 +1973,247 @@ export class Renderer {
     return ENEMY_DEFS[enemy.type].radius * (enemy.elite ? ELITE_RADIUS_SCALE : 1);
   }
 
+  /**
+   * Which boss silhouette this boss wears (§4.1).
+   *
+   * A boss's *tier* is what the player already names it by — `bossNameForWave`
+   * calls the wave-10 one a Sentinel and the wave-50 one a Harbinger — so the
+   * tier is what the shape is keyed to. It comes off `spawnWave`, not the
+   * current wave, so a boss that survives into an intermission does not change
+   * shape underneath the player. Cycled over `BOSS_PROFILES`, which is what
+   * keeps the cache space small.
+   */
+  private bossSilhouette(enemy: Enemy): number {
+    const tier = bossTierForWave(enemy.spawnWave ?? this.wave);
+    return (tier - 1) % BOSS_PROFILES.length;
+  }
+
+  /** Slack a type's sprite needs around its radius for details that overhang. */
+  private spritePadding(type: Enemy['type']): number {
+    return type === 'siege' ? entity(12) : SPRITE_PADDING;
+  }
+
   private getEnemySprite(enemy: Enemy): HTMLCanvasElement {
-    const enraged = enemy.type === 'boss' && enemy.enraged === true;
-    // A burrower reads completely differently above and below ground, so the
-    // two are separate cache entries rather than one sprite plus a live tint.
-    const buried = enemy.burrowed === true;
-    const key = `${enemy.type}|${enemy.elite ? 1 : 0}|${enraged ? 1 : 0}|${buried ? 1 : 0}`;
+    const variant: BodyVariant = {
+      enraged: enemy.type === 'boss' && enemy.enraged === true,
+      // A burrower reads completely differently above and below ground, so the
+      // two are separate cache entries rather than one sprite plus a live tint.
+      buried: enemy.burrowed === true,
+      elite: enemy.elite === true,
+      // The elite rim is the aura's colour, so the aura is part of the key. Five
+      // auras across thirteen types is still a couple of dozen sprites at most,
+      // baked on first sight and never rebuilt.
+      aura: enemy.elite === true ? (enemy.aura ?? null) : null,
+      silhouette: enemy.type === 'boss' ? this.bossSilhouette(enemy) : 0,
+    };
+    const key = `${enemy.type}|${variant.elite ? variant.aura ?? 'e' : 0}`
+      + `|${variant.enraged ? 1 : 0}|${variant.buried ? 1 : 0}|${variant.silhouette}`;
     const cached = this.enemySprites.get(key);
     if (cached) return cached;
     const def = ENEMY_DEFS[enemy.type];
     const r = this.enemyDrawRadius(enemy);
-    const sprite = this.makeSprite((r + SPRITE_PADDING) * 2, (g) => {
-      this.paintEnemyBody(g, enemy.type, def, r, enraged, buried);
+    const sprite = this.makeSprite((r + this.spritePadding(enemy.type)) * 2, (g) => {
+      this.paintEnemyBody(g, def, r, variant);
     });
     this.enemySprites.set(key, sprite);
     return sprite;
   }
 
   /**
-   * Paint an enemy body centred on the origin: fill, outline and whatever
-   * static decoration the type carries. The winged type's flapping wings are
-   * deliberately absent — they are animated, so they are drawn live.
+   * Paint an enemy body centred on the origin (§4.1).
+   *
+   * Before Part 4 this was a flat fill and a 2 px stroke per shape: no
+   * lighting, no material, no depth, and — at Part 1's zoom level, where an
+   * enemy is 0.65 of the on-screen size it used to be — barely a silhouette.
+   * The six shapes are kept exactly, because they are the *contract* (see
+   * `RENDERED_ENEMY_SHAPES`) and they are what makes a type identifiable at a
+   * glance. What changes is what happens inside one:
+   *
+   * 1. A two-tone fill along the **same key light the tower uses**
+   *    (`TOWER_VISUAL.lightAngle`), so every object on the battlefield agrees
+   *    about where the light is coming from.
+   * 2. An interior contact shadow opposite that light, which is what stops a
+   *    filled shape reading as a sticker.
+   * 3. A rim light on the lit edge, clipped to the silhouette so it is an edge
+   *    rather than a hoop.
+   * 4. A per-type detail pass — the thing that says *what this is* rather than
+   *    *what colour it is*.
+   * 5. For an elite, a metallic sheen and an aura-coloured rim.
+   *
+   * All of it is baked once per variant. The added cost is one-time per cache
+   * key; a frame still pays exactly one `drawImage` per enemy.
+   *
+   * The flying type's wings are deliberately absent — they flap, so they are
+   * drawn live.
    */
   private paintEnemyBody(
-    ctx: CanvasRenderingContext2D,
-    type: Enemy['type'],
+    g: CanvasRenderingContext2D,
     def: EnemyDef,
     r: number,
-    enraged: boolean,
-    buried: boolean = false,
+    v: BodyVariant,
   ): void {
-    // Boss enrage colour shift: the body turns red below 50% HP. The check is
-    // hoisted out of the shape switch on purpose — it used to live only in the
-    // `diamond` branch, and since no boss uses that shape, an enraged boss
-    // never actually changed colour. Applying it per body colour rather than
-    // per shape means it fires whatever shape a boss is given later.
-    const bodyColor = type === 'boss' && enraged ? ENRAGED_BOSS_COLOR : def.color;
+    const type = def.type;
+    const light = TOWER_VISUAL.lightAngle;
+    const lx = Math.cos(light);
+    const ly = Math.sin(light);
+    const span = r * 2.4;
+    const trace = (): void => { this.traceEnemyShape(g, def, r, v); };
+
+    g.save();
+    trace();
+    g.clip();
+
+    // Base coat. A boss below its enrage threshold is washed hot: `critical` is
+    // reserved for the tower being hurt (docs/art-direction.md), so enrage is
+    // blood under ember rather than a second scarlet.
+    g.fillStyle = def.color;
+    g.fillRect(-span, -span, span * 2, span * 2);
+    if (v.enraged) {
+      g.fillStyle = withAlpha(FX.ember, 0.5);
+      g.fillRect(-span, -span, span * 2, span * 2);
+    }
+
+    // Two-tone: lit toward the key light, deep on the far side.
+    const tone = g.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+    tone.addColorStop(0, withAlpha(INK['050'], 0.3));
+    tone.addColorStop(0.42, withAlpha(INK['050'], 0.04));
+    tone.addColorStop(0.58, withAlpha(INK['950'], 0.1));
+    tone.addColorStop(1, withAlpha(INK['950'], 0.5));
+    g.fillStyle = tone;
+    g.fillRect(-span, -span, span * 2, span * 2);
+
+    // Contact shadow, hugging the unlit edge from the inside.
+    const cx = -lx * r * 0.8;
+    const cy = -ly * r * 0.8;
+    const contact = g.createRadialGradient(cx, cy, r * 0.15, cx, cy, r * 1.15);
+    contact.addColorStop(0, withAlpha(INK['950'], 0.4));
+    contact.addColorStop(1, withAlpha(INK['950'], 0));
+    g.fillStyle = contact;
+    g.fillRect(-span, -span, span * 2, span * 2);
+
+    this.paintEnemyDetail(g, def, r, v);
+
+    // Rim light. A fat stroke of the silhouette, still clipped to it, so only
+    // the inner half survives and it falls off toward the terminator.
+    const rim = g.createLinearGradient(lx * r, ly * r, -lx * r * 0.5, -ly * r * 0.5);
+    rim.addColorStop(0, withAlpha(INK['050'], 0.8));
+    rim.addColorStop(0.55, withAlpha(INK['050'], 0.12));
+    rim.addColorStop(1, withAlpha(INK['050'], 0));
+    g.strokeStyle = rim;
+    g.lineWidth = entity(3.4);
+    trace();
+    g.stroke();
+
+    if (v.elite) this.paintEliteSheen(g, r);
+    g.restore();
+
+    // Outline last, unclipped, so the silhouette holds against a lit floor.
+    trace();
+    g.strokeStyle = def.borderColor;
+    g.lineWidth = entity(type === 'tank' || type === 'boss' ? 2.4 : 1.7);
+    g.lineJoin = 'round';
+    g.stroke();
+
+    if (v.elite) {
+      // The elite rim is the aura's own colour: "this one is dangerous" and
+      // "this is the danger it carries" are the same read at a glance.
+      trace();
+      g.strokeStyle = withAlpha(v.aura ? ELITE_CROWN_COLORS[v.aura] : INK['050'], 0.9);
+      g.lineWidth = entity(1.6);
+      g.stroke();
+    }
+  }
+
+  /**
+   * The silhouette itself — the six-shape contract (`RENDERED_ENEMY_SHAPES`).
+   *
+   * A closed switch with a `never` default, so a new shape has to be drawn
+   * before it can be given to an enemy. Bosses branch out before it: they carry
+   * `shape: 'circle'` for the contract's sake but are painted from
+   * `BOSS_PROFILES`, because "a big circle" is exactly what a boss must never
+   * read as.
+   */
+  private traceEnemyShape(
+    g: CanvasRenderingContext2D,
+    def: EnemyDef,
+    r: number,
+    v: BodyVariant,
+  ): void {
+    if (def.type === 'boss') {
+      this.traceBossShape(g, r, v.silhouette);
+      return;
+    }
+    g.beginPath();
     switch (def.shape) {
+      case 'circle':
+        g.arc(0, 0, r, 0, Math.PI * 2);
+        g.closePath();
+        break;
       case 'diamond':
-        ctx.fillStyle = bodyColor;
-        ctx.beginPath();
-        ctx.moveTo(0, -r);
-        ctx.lineTo(r, 0);
-        ctx.lineTo(0, r);
-        ctx.lineTo(-r, 0);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = entity(2);
-        ctx.stroke();
-        // Splitter gets a small inner core dot to make it stand out
-        if (type === 'splitter') {
-          ctx.fillStyle = 'rgba(255,255,255,0.55)';
-          ctx.beginPath();
-          ctx.arc(0, 0, 3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        if (def.glyph) {
-          ctx.fillStyle = def.borderColor;
-          ctx.font = `bold ${Math.round(r * 0.95)}px sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(def.glyph, 0, 1);
-        }
+        g.moveTo(0, -r);
+        g.lineTo(r, 0);
+        g.lineTo(0, r);
+        g.lineTo(-r, 0);
+        g.closePath();
         break;
+      // Flyer: a compact body, because the wings are what gives it its width
+      // and they are drawn live.
       case 'winged':
-        ctx.fillStyle = bodyColor;
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = entity(2);
-        ctx.stroke();
+        g.ellipse(0, 0, r * 0.82, r, 0, 0, Math.PI * 2);
+        g.closePath();
         break;
-      // Siege: a blunt, flat-sided chassis with a barrel — it reads as a
-      // machine parked at range rather than something running at you.
+      // Siege: a blunt, flat-sided chassis with the corners cut off and a
+      // barrel out the front — it reads as a machine parked at range rather
+      // than as something running at you. The barrel is part of the
+      // *silhouette*, not a detail painted inside it: a detail would be clipped
+      // at the chassis edge, and the barrel is the whole reason the type is
+      // frightening from outside a short build's range.
       case 'square': {
-        ctx.fillStyle = bodyColor;
-        ctx.fillRect(-r, -r * 0.85, r * 2, r * 1.7);
-        ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = entity(2.5);
-        ctx.strokeRect(-r, -r * 0.85, r * 2, r * 1.7);
-        ctx.fillStyle = def.borderColor;
-        ctx.fillRect(-r * 0.25, -r * 1.5, r * 0.5, r * 0.8);
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.fillRect(-r * 0.75, -r * 0.25, r * 1.5, r * 0.5);
+        const w = r;
+        const h = r * 0.85;
+        const c = r * 0.28;
+        const bh = r * 0.2;
+        const bx = r * 1.42;
+        g.moveTo(-w + c, -h);
+        g.lineTo(w - c, -h);
+        g.lineTo(w, -h + c);
+        g.lineTo(w, -bh);
+        g.lineTo(bx, -bh);
+        g.lineTo(bx, bh);
+        g.lineTo(w, bh);
+        g.lineTo(w, h - c);
+        g.lineTo(w - c, h);
+        g.lineTo(-w + c, h);
+        g.lineTo(-w, h - c);
+        g.lineTo(-w, -h + c);
+        g.closePath();
         break;
       }
       // Warden: a hexagon, the same shape as the ward it projects, so the
       // shield rings on its allies point straight back at the source.
       case 'hex': {
-        ctx.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
           const px = Math.cos(a) * r;
           const py = Math.sin(a) * r;
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
+          if (i === 0) g.moveTo(px, py);
+          else g.lineTo(px, py);
         }
-        ctx.closePath();
-        ctx.fillStyle = bodyColor;
-        ctx.fill();
-        ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = entity(2.5);
-        ctx.stroke();
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.lineWidth = entity(1.5);
-        ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-          const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
-          const px = Math.cos(a) * (r * 0.5);
-          const py = Math.sin(a) * (r * 0.5);
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        }
-        ctx.closePath();
-        ctx.stroke();
+        g.closePath();
         break;
       }
-      // Burrower: a low earth mound while underground, a clawed dome once it
-      // is up. Two different silhouettes on purpose — the whole point of the
-      // type is that you can tell at a glance whether it can be shot.
-      case 'mound': {
-        if (buried) {
-          ctx.fillStyle = '#4a3a22';
-          ctx.beginPath();
-          ctx.ellipse(0, r * 0.25, r * 1.15, r * 0.6, 0, Math.PI, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(216, 181, 120, 0.5)';
-          ctx.lineWidth = entity(2);
-          ctx.stroke();
-          ctx.fillStyle = 'rgba(0,0,0,0.35)';
-          ctx.beginPath();
-          ctx.ellipse(0, r * 0.25, r * 0.5, r * 0.2, 0, 0, Math.PI * 2);
-          ctx.fill();
-          break;
-        }
-        ctx.fillStyle = bodyColor;
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = entity(2.5);
-        ctx.stroke();
-        ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = entity(2);
-        for (const dir of [-1, 1]) {
-          ctx.beginPath();
-          ctx.moveTo(dir * r * 0.35, -r * 0.15);
-          ctx.lineTo(dir * r * 0.95, -r * 0.75);
-          ctx.stroke();
+      // Burrower: a low earth mound while underground, a clawed dome once it is
+      // up. Two different silhouettes on purpose — the whole point of the type
+      // is that you can tell at a glance whether it can be shot.
+      case 'mound':
+        if (v.buried) {
+          g.ellipse(0, r * 0.25, r * 1.15, r * 0.6, 0, Math.PI, Math.PI * 2);
+          g.closePath();
+        } else {
+          g.arc(0, 0, r, 0, Math.PI * 2);
+          g.closePath();
         }
         break;
-      }
-      case 'circle': {
-        ctx.fillStyle = bodyColor;
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = def.borderColor;
-        ctx.lineWidth = type === 'tank' ? 4 : type === 'boss' ? 3 : 2;
-        ctx.stroke();
-        if (def.glyph) {
-          ctx.fillStyle = '#fff';
-          ctx.font = `bold ${r}px sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(def.glyph, 0, 1);
-        }
-        if (type === 'tank') {
-          ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-          ctx.lineWidth = entity(1);
-          ctx.beginPath();
-          ctx.arc(0, 0, r - 4, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        break;
-      }
       default: {
         // Closed union (cross-cutting rule 3): a new shape has to be drawn
         // before it can be given to an enemy.
@@ -2096,21 +2223,441 @@ export class Renderer {
     }
   }
 
+  /** One boss silhouette, sampled off its `BOSS_PROFILES` entry. */
+  private traceBossShape(g: CanvasRenderingContext2D, r: number, family: number): void {
+    const profile = BOSS_PROFILES[family % BOSS_PROFILES.length];
+    const n = profile.samples;
+    g.beginPath();
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+      const rad = r * profile.radius(i, n);
+      const px = Math.cos(a) * rad * profile.sx;
+      const py = Math.sin(a) * rad * profile.sy;
+      if (i === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.closePath();
+  }
+
   /**
-   * Ground shadow, keyed by radius so the eight enemy types share four or five
-   * sprites between them.
+   * What this thing *is* (§4.1), painted inside the clipped silhouette.
+   *
+   * A closed switch over `EnemyType` with a `never` default, the same
+   * discipline `ENEMY_BEHAVIOR_CONSUMERS` applies to behaviour: a new type does
+   * not compile until someone has decided what it looks like, which is what
+   * stops the roster sliding back into thirteen coloured circles.
    */
-  private getShadowSprite(r: number): HTMLCanvasElement {
-    const key = r.toFixed(1);
+  private paintEnemyDetail(
+    g: CanvasRenderingContext2D,
+    def: EnemyDef,
+    r: number,
+    v: BodyVariant,
+  ): void {
+    const light = TOWER_VISUAL.lightAngle;
+    const dark = (a: number): string => withAlpha(INK['950'], a);
+    const pale = (a: number): string => withAlpha(INK['050'], a);
+    switch (def.type) {
+      // Grunt: a visor slit and two eye glints. Deliberately the plainest of
+      // the thirteen — it is the baseline everything else is read against.
+      case 'normal': {
+        g.fillStyle = dark(0.5);
+        g.beginPath();
+        g.ellipse(0, -r * 0.16, r * 0.66, r * 0.22, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = withAlpha(def.borderColor, 0.85);
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.arc(dir * r * 0.3, -r * 0.16, r * 0.1, 0, Math.PI * 2);
+          g.fill();
+        }
+        break;
+      }
+      // Runner: swept chevrons. Motion lines on the body itself, so a pack of
+      // three reads as *moving* even standing still at contact range.
+      case 'fast': {
+        g.strokeStyle = dark(0.45);
+        g.lineWidth = entity(1.8);
+        g.lineCap = 'round';
+        for (let i = 0; i < 3; i++) {
+          const x = -r * 0.5 + i * r * 0.38;
+          g.beginPath();
+          g.moveTo(x, -r * 0.34);
+          g.lineTo(x + r * 0.26, 0);
+          g.lineTo(x, r * 0.34);
+          g.stroke();
+        }
+        break;
+      }
+      // Tank: chitin plates, stacked toward the light with rivets along each
+      // seam. Three overlapping arcs is the cheapest thing that reads as armour
+      // rather than as a ring.
+      case 'tank': {
+        // Overlapping bands rather than strokes: a plate has a lit face and a
+        // shadowed lip where the next one rides over it, and that lip is what
+        // makes three arcs read as armour instead of as a signal-strength icon.
+        for (const [outer, inner, w] of [[1, 0.76, 0.52], [0.76, 0.54, 0.46], [0.54, 0.3, 0.38]] as const) {
+          const a0 = light - Math.PI * w;
+          const a1 = light + Math.PI * w;
+          g.beginPath();
+          g.arc(0, 0, r * outer, a0, a1);
+          g.arc(0, 0, r * inner, a1, a0, true);
+          g.closePath();
+          g.fillStyle = pale(0.1);
+          g.fill();
+          g.strokeStyle = dark(0.6);
+          g.lineWidth = entity(1.6);
+          g.stroke();
+          // Rivets along the plate's leading edge.
+          g.fillStyle = pale(0.34);
+          for (const at of [-0.55, 0, 0.55]) {
+            const a = light + at * Math.PI * w;
+            const rad = r * (outer + inner) / 2;
+            g.beginPath();
+            g.arc(Math.cos(a) * rad, Math.sin(a) * rad, entity(1.3), 0, Math.PI * 2);
+            g.fill();
+          }
+        }
+        break;
+      }
+      // Flier: a pale underbelly and a dark carapace ridge, so the body still
+      // has a top and a bottom once the wings are flapping past it.
+      case 'flying': {
+        g.fillStyle = pale(0.3);
+        g.beginPath();
+        g.ellipse(0, r * 0.32, r * 0.5, r * 0.4, 0, 0, Math.PI * 2);
+        g.fill();
+        // A head and two ear points at the top, so the body has a front even
+        // when the wings are mid-flap and carrying the eye.
+        g.fillStyle = dark(0.5);
+        g.beginPath();
+        g.ellipse(0, -r * 0.42, r * 0.4, r * 0.32, 0, 0, Math.PI * 2);
+        g.fill();
+        g.beginPath();
+        g.moveTo(-r * 0.36, -r * 0.5);
+        g.lineTo(-r * 0.2, -r * 0.95);
+        g.lineTo(-r * 0.06, -r * 0.5);
+        g.moveTo(r * 0.36, -r * 0.5);
+        g.lineTo(r * 0.2, -r * 0.95);
+        g.lineTo(r * 0.06, -r * 0.5);
+        g.fill();
+        g.fillStyle = withAlpha(FX.blood, 0.9);
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.arc(dir * r * 0.17, -r * 0.42, entity(1.5), 0, Math.PI * 2);
+          g.fill();
+        }
+        break;
+      }
+      // Healer: a cross sigil over a soft nature glow. This replaces the `'+'`
+      // it used to render in `sans-serif` — the mark is painted now, so it
+      // scales with the body and is not one font stack away from a tofu box.
+      case 'healer': {
+        const glow = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.9);
+        glow.addColorStop(0, withAlpha(FX.nature, 0.5));
+        glow.addColorStop(1, withAlpha(FX.nature, 0));
+        g.fillStyle = glow;
+        g.beginPath();
+        g.arc(0, 0, r * 0.9, 0, Math.PI * 2);
+        g.fill();
+        const arm = r * 0.6;
+        const bar = r * 0.22;
+        g.fillStyle = pale(0.92);
+        g.fillRect(-bar / 2, -arm, bar, arm * 2);
+        g.fillRect(-arm, -bar / 2, arm * 2, bar);
+        g.fillStyle = withAlpha(FX.nature, 0.55);
+        g.fillRect(-bar / 2, -arm, bar, arm * 0.5);
+        break;
+      }
+      // Splitter: a cracked shell with the core showing through. It is about to
+      // come apart, and now it looks like it.
+      case 'splitter': {
+        const core = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.55);
+        core.addColorStop(0, pale(0.85));
+        core.addColorStop(0.5, withAlpha(def.borderColor, 0.5));
+        core.addColorStop(1, withAlpha(def.borderColor, 0));
+        g.fillStyle = core;
+        g.beginPath();
+        g.arc(0, 0, r * 0.55, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = dark(0.65);
+        g.lineWidth = entity(1.9);
+        g.lineCap = 'round';
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2 + 0.4;
+          g.beginPath();
+          g.moveTo(Math.cos(a) * r * 0.18, Math.sin(a) * r * 0.18);
+          g.lineTo(Math.cos(a + 0.22) * r * 0.6, Math.sin(a + 0.22) * r * 0.6);
+          g.lineTo(Math.cos(a - 0.1) * r, Math.sin(a - 0.1) * r);
+          g.stroke();
+        }
+        break;
+      }
+      // Shielded: a plated carapace. The orbiting charge arcs are the live
+      // read; this is what the thing looks like once they are gone.
+      case 'shielded': {
+        g.strokeStyle = dark(0.45);
+        g.lineWidth = entity(2.2);
+        for (const at of [0.72, 0.44]) {
+          g.beginPath();
+          g.arc(0, 0, r * at, light - 1.2, light + 1.2);
+          g.stroke();
+        }
+        g.fillStyle = pale(0.35);
+        g.beginPath();
+        g.arc(Math.cos(light) * r * 0.32, Math.sin(light) * r * 0.32, r * 0.16, 0, Math.PI * 2);
+        g.fill();
+        break;
+      }
+      // Siege: treads, and a barrel that is visibly smoking. The barrel points
+      // along +x, which is the axis `drawEnemy` orients the chassis on.
+      case 'siege': {
+        g.fillStyle = dark(0.55);
+        g.fillRect(-r * 0.95, -r * 0.84, r * 1.9, r * 0.28);
+        g.fillRect(-r * 0.95, r * 0.56, r * 1.9, r * 0.28);
+        g.strokeStyle = pale(0.22);
+        g.lineWidth = entity(1.2);
+        for (let i = 0; i < 5; i++) {
+          const x = -r * 0.78 + i * r * 0.39;
+          g.beginPath();
+          g.moveTo(x, -r * 0.8);
+          g.lineTo(x, -r * 0.6);
+          g.moveTo(x, r * 0.6);
+          g.lineTo(x, r * 0.8);
+          g.stroke();
+        }
+        // The barrel is soot-blackened at the muzzle and still smoking — the
+        // wisps are baked, the ember at the bore is what the eye catches.
+        g.fillStyle = withAlpha(def.borderColor, 0.35);
+        g.fillRect(r * 0.9, -r * 0.2, r * 0.55, r * 0.4);
+        g.fillStyle = dark(0.8);
+        g.fillRect(r * 1.16, -r * 0.2, r * 0.3, r * 0.4);
+        g.fillStyle = withAlpha(FX.ember, 0.45);
+        g.beginPath();
+        g.arc(r * 1.34, 0, r * 0.14, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = dark(0.5);
+        g.lineWidth = entity(1.4);
+        g.beginPath();
+        g.moveTo(r * 0.9, -r * 0.2);
+        g.lineTo(r * 0.9, r * 0.2);
+        g.stroke();
+        break;
+      }
+      // Thief: a hood and a mask band with two eye slits. It used to render a
+      // literal `'$'`; the coin it carries is the *behavioural* read and it is
+      // still drawn, live, above the body — see `drawThiefLoot`.
+      case 'thief': {
+        g.fillStyle = dark(0.62);
+        g.beginPath();
+        g.ellipse(0, -r * 0.1, r * 0.7, r * 0.3, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = withAlpha(def.borderColor, 0.9);
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.ellipse(dir * r * 0.3, -r * 0.1, r * 0.16, r * 0.09, dir * 0.3, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.strokeStyle = dark(0.45);
+        g.lineWidth = entity(1.6);
+        g.beginPath();
+        g.arc(0, 0, r * 0.78, Math.PI * 1.1, Math.PI * 1.9);
+        g.stroke();
+        break;
+      }
+      // Blinker: a four-point star sigil and a phase ring — replacing the
+      // `'✦'` character it used to print. It is the same mark, painted.
+      case 'blinker': {
+        const halo = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.85);
+        halo.addColorStop(0, withAlpha(FX.arcane, 0.75));
+        halo.addColorStop(1, withAlpha(FX.arcane, 0));
+        g.fillStyle = halo;
+        g.beginPath();
+        g.arc(0, 0, r * 0.85, 0, Math.PI * 2);
+        g.fill();
+        // The sigil is near-white against the body: violet-on-violet is not a
+        // mark, it is a suggestion.
+        g.fillStyle = pale(0.92);
+        g.beginPath();
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+          const rad = i % 2 === 0 ? r * 0.72 : r * 0.2;
+          const px = Math.cos(a) * rad;
+          const py = Math.sin(a) * rad;
+          if (i === 0) g.moveTo(px, py);
+          else g.lineTo(px, py);
+        }
+        g.closePath();
+        g.fill();
+        g.fillStyle = withAlpha(FX.arcane, 0.9);
+        g.beginPath();
+        g.arc(0, 0, r * 0.17, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = withAlpha(def.borderColor, 0.45);
+        g.lineWidth = entity(1.2);
+        g.beginPath();
+        g.arc(0, 0, r * 0.86, 0, Math.PI * 2);
+        g.stroke();
+        break;
+      }
+      // Warden: a glowing sigil inside the hex. The inner hexagon is kept
+      // exactly — it is the mark the ward lattice and the ward ring both echo,
+      // so killing the source of a shield is a shape match, not a guess.
+      case 'warden': {
+        const glow = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.8);
+        glow.addColorStop(0, withAlpha(def.borderColor, 0.55));
+        glow.addColorStop(1, withAlpha(def.borderColor, 0));
+        g.fillStyle = glow;
+        g.beginPath();
+        g.arc(0, 0, r * 0.8, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = pale(0.5);
+        g.lineWidth = entity(1.6);
+        g.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+          const px = Math.cos(a) * r * 0.5;
+          const py = Math.sin(a) * r * 0.5;
+          if (i === 0) g.moveTo(px, py);
+          else g.lineTo(px, py);
+        }
+        g.closePath();
+        g.stroke();
+        g.strokeStyle = withAlpha(def.borderColor, 0.75);
+        g.lineWidth = entity(1.3);
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2;
+          g.beginPath();
+          g.moveTo(Math.cos(a) * r * 0.5, Math.sin(a) * r * 0.5);
+          g.lineTo(Math.cos(a) * r * 0.92, Math.sin(a) * r * 0.92);
+          g.stroke();
+        }
+        break;
+      }
+      // Burrower: displaced earth on the mound while it is under, claws and a
+      // snout once it is up. The two states must never be confusable — one can
+      // be shot and the other cannot.
+      case 'burrower': {
+        if (v.buried) {
+          g.fillStyle = dark(0.4);
+          g.beginPath();
+          g.ellipse(0, r * 0.25, r * 0.5, r * 0.16, 0, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = withAlpha(def.borderColor, 0.35);
+          for (let i = 0; i < 6; i++) {
+            const a = Math.PI + (i / 5) * Math.PI;
+            g.beginPath();
+            g.arc(Math.cos(a) * r * 0.85, r * 0.25 + Math.sin(a) * r * 0.42, entity(1.7), 0, Math.PI * 2);
+            g.fill();
+          }
+          break;
+        }
+        g.strokeStyle = withAlpha(def.borderColor, 0.95);
+        g.lineWidth = entity(2.2);
+        g.lineCap = 'round';
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.moveTo(dir * r * 0.35, -r * 0.15);
+          g.lineTo(dir * r * 0.95, -r * 0.75);
+          g.stroke();
+        }
+        g.fillStyle = dark(0.5);
+        g.beginPath();
+        g.ellipse(0, r * 0.24, r * 0.36, r * 0.24, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = pale(0.4);
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.arc(dir * r * 0.14, r * 0.2, entity(1.4), 0, Math.PI * 2);
+          g.fill();
+        }
+        break;
+      }
+      // Boss: armour plates and a lit visor. The silhouette already carries the
+      // tier; this is what makes it a *thing* rather than a polygon.
+      case 'boss': {
+        g.strokeStyle = dark(0.55);
+        g.lineWidth = entity(2.6);
+        for (const at of [0.78, 0.54]) {
+          g.beginPath();
+          g.arc(0, 0, r * at, light - 1.35, light + 1.35);
+          g.stroke();
+        }
+        const visor = g.createLinearGradient(0, -r * 0.36, 0, -r * 0.02);
+        visor.addColorStop(0, withAlpha(v.enraged ? FX.ember : def.borderColor, 0.95));
+        visor.addColorStop(1, withAlpha(v.enraged ? FX.ember : def.borderColor, 0.15));
+        g.fillStyle = visor;
+        g.beginPath();
+        g.moveTo(-r * 0.5, -r * 0.3);
+        g.lineTo(r * 0.5, -r * 0.3);
+        g.lineTo(r * 0.3, -r * 0.04);
+        g.lineTo(-r * 0.3, -r * 0.04);
+        g.closePath();
+        g.fill();
+        g.fillStyle = pale(0.9);
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.ellipse(dir * r * 0.26, -r * 0.19, r * 0.1, r * 0.06, 0, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.strokeStyle = dark(0.45);
+        g.lineWidth = entity(2);
+        g.beginPath();
+        g.moveTo(0, r * 0.06);
+        g.lineTo(0, r * 0.8);
+        g.stroke();
+        break;
+      }
+      default: {
+        // Closed union: a new enemy type has to be given a look.
+        const exhaustive: never = def.type;
+        return exhaustive;
+      }
+    }
+  }
+
+  /**
+   * The elite's metallic sheen (§4.1).
+   *
+   * An elite used to be a `♛` and a 25% size bump, which at Part 1's zoom is
+   * two enemies of nearly the same size with a small character over one of
+   * them. Two hard specular bands across the body read as polished metal at any
+   * size, and cost one gradient at bake time.
+   */
+  private paintEliteSheen(g: CanvasRenderingContext2D, r: number): void {
+    const sheen = g.createLinearGradient(-r, -r, r, r);
+    const stops: Array<[number, number]> = [
+      [0, 0], [0.26, 0], [0.34, 0.38], [0.42, 0],
+      [0.56, 0], [0.62, 0.2], [0.68, 0], [1, 0],
+    ];
+    for (const [at, alpha] of stops) sheen.addColorStop(at, withAlpha(INK['050'], alpha));
+    g.fillStyle = sheen;
+    g.fillRect(-r * 1.4, -r * 1.4, r * 2.8, r * 2.8);
+  }
+
+  /**
+   * Ground shadow, keyed by radius *and* type.
+   *
+   * Cast away from the same key light the tower's shadow uses
+   * (`TOWER_VISUAL.lightAngle`), so a mob crossing the plinth agrees with the
+   * thing it is walking past about where the light is. A flier gets one too —
+   * smaller, softer and thrown further along the light vector, which reads as
+   * altitude; before Part 4 it had none at all, which reads as nothing.
+   */
+  private getShadowSprite(r: number, airborne: boolean): HTMLCanvasElement {
+    const key = `${r.toFixed(1)}|${airborne ? 1 : 0}`;
     const cached = this.shadowSprites.get(key);
     if (cached) return cached;
-    const sprite = this.makeSprite(r * 2, (g) => {
-      const grad = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.9);
-      grad.addColorStop(0, 'rgba(0,0,0,0.35)');
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
+    const alpha = airborne ? 0.22 : 0.38;
+    const squash = airborne ? 0.22 : 0.3;
+    const scale = airborne ? 0.7 : 1;
+    const sprite = this.makeSprite(r * 2.2, (g) => {
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.95);
+      grad.addColorStop(0, withAlpha(INK['950'], alpha));
+      grad.addColorStop(0.6, withAlpha(INK['950'], alpha * 0.5));
+      grad.addColorStop(1, withAlpha(INK['950'], 0));
       g.fillStyle = grad;
       g.beginPath();
-      g.ellipse(0, 0, r * 0.85, r * 0.3, 0, 0, Math.PI * 2);
+      g.ellipse(0, 0, r * 0.9 * scale, r * squash * scale, 0, 0, Math.PI * 2);
       g.fill();
     });
     this.shadowSprites.set(key, sprite);
@@ -2216,11 +2763,17 @@ export class Renderer {
   }
 
   private drawEnemyShadow(ctx: CanvasRenderingContext2D, enemy: Enemy): void {
-    if (enemy.type === 'flying') return;
     const r = ENEMY_DEFS[enemy.type].radius;
-    const sprite = this.getShadowSprite(r);
+    const airborne = enemy.type === 'flying';
+    const sprite = this.getShadowSprite(r, airborne);
     const half = sprite.width / 2;
-    ctx.drawImage(sprite, enemy.x - half, enemy.y + r * 0.6 - half);
+    // Thrown away from the key light, and further for something in the air.
+    const drop = r * (airborne ? 1.5 : 0.6);
+    ctx.drawImage(
+      sprite,
+      enemy.x - Math.cos(TOWER_VISUAL.lightAngle) * r * 0.22 - half,
+      enemy.y + drop - half,
+    );
   }
 
   private drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy): void {
@@ -2335,23 +2888,49 @@ export class Renderer {
   }
 
   private drawEliteCrown(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
-    const color = ELITE_CROWN_COLORS[enemy.aura!] ?? '#fff';
-    const size = Math.max(10, r * 0.7);
+    const color = ELITE_CROWN_COLORS[enemy.aura!] ?? INK['050'];
+    const size = Math.max(entity(9), r * 0.7);
     const key = `${color}|${size.toFixed(1)}`;
     let sprite = this.crownSprites.get(key);
     if (!sprite) {
-      // The glow pass is a second fillText under a shadow blur, which is one
-      // of the most expensive things a 2D context does; baking it means an
-      // elite costs a blit rather than two blurred glyph rasterisations.
-      sprite = this.makeSprite(size * 2 + entity(16), (g) => {
+      // Painted, not typed. It used to be a `♛` rasterised twice — once flat
+      // and once under a `shadowBlur`, which is one of the most expensive
+      // things a 2D context does — and it looked like whichever font the
+      // platform happened to resolve. Three merlons on a banded circlet with a
+      // baked glow is the same read at a tenth of the cost and none of the
+      // font dependency.
+      sprite = this.makeSprite(size * 2.6, (g) => {
+        const w = size * 0.62;
+        const h = size * 0.5;
+        const glow = g.createRadialGradient(0, 0, 0, 0, 0, size * 1.2);
+        glow.addColorStop(0, withAlpha(color, 0.5));
+        glow.addColorStop(1, withAlpha(color, 0));
+        g.fillStyle = glow;
+        g.beginPath();
+        g.arc(0, 0, size * 1.2, 0, Math.PI * 2);
+        g.fill();
+
         g.fillStyle = color;
-        g.font = `bold ${size}px sans-serif`;
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.fillText('♛', 0, 0);
-        g.shadowColor = color;
-        g.shadowBlur = 6;
-        g.fillText('♛', 0, 0);
+        g.beginPath();
+        g.moveTo(-w, h);
+        g.lineTo(-w, -h * 0.2);
+        g.lineTo(-w * 0.55, h * 0.25);
+        g.lineTo(0, -h);
+        g.lineTo(w * 0.55, h * 0.25);
+        g.lineTo(w, -h * 0.2);
+        g.lineTo(w, h);
+        g.closePath();
+        g.fill();
+        // A dark band across the base, so the merlons read as points on a
+        // circlet rather than as three unrelated spikes.
+        g.fillStyle = withAlpha(INK['950'], 0.45);
+        g.fillRect(-w, h * 0.35, w * 2, h * 0.3);
+        g.fillStyle = withAlpha(INK['050'], 0.85);
+        for (const at of [-1, 0, 1]) {
+          g.beginPath();
+          g.arc(at * w * 0.62, -h * (at === 0 ? 0.72 : 0.02), size * 0.1, 0, Math.PI * 2);
+          g.fill();
+        }
       });
       this.crownSprites.set(key, sprite);
     }
@@ -2443,6 +3022,33 @@ export class Renderer {
     ctx.arc(enemy.x, enemy.y, r + 14, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
+    // Smoke off the barrel while it is shelling. The barrel itself is baked
+    // into the silhouette; the smoke is the one part that has to be live,
+    // because a static puff reads as a smudge rather than as a machine that
+    // just fired. Two stroked curves per halted siege, and a wave holds a
+    // handful of them.
+    if (!this.reducedMotion) {
+      ctx.save();
+      ctx.translate(enemy.x, enemy.y);
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 2; i++) {
+        const t = ((this.time * 0.55 + i * 0.5 + enemy.id * 0.13) % 1);
+        ctx.globalAlpha = (1 - t) * 0.3;
+        ctx.strokeStyle = withAlpha(INK['200'], 1);
+        ctx.lineWidth = entity(1.6) + t * entity(3);
+        ctx.beginPath();
+        ctx.moveTo(r * 1.34, 0);
+        ctx.quadraticCurveTo(
+          r * 1.34 + t * entity(7),
+          -t * entity(14),
+          r * 1.34 - t * entity(4),
+          -t * entity(28),
+        );
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     // Reload arc: a full sweep means the next shell is about to leave.
     const reload = ENEMY_BEHAVIOR.siegeReload;
     const remaining = Math.max(0, Math.min(reload, enemy.siegeCooldown ?? reload));
@@ -2594,24 +3200,47 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** The coin a loaded thief carries. Cached — it is static. */
+  /**
+   * The coin a loaded thief carries. Cached — it is static.
+   *
+   * Struck rather than lettered: a rim, a lit bevel and a milled edge, so it
+   * reads as a coin at eight pixels instead of as a `$` in whatever font the
+   * platform resolved.
+   */
   private getCoinSprite(): HTMLCanvasElement {
     const cached = this.enemySprites.get('#coin');
     if (cached) return cached;
-    const sprite = this.makeSprite(entity(20), (g) => {
-      g.scale(ENTITY_SCALE, ENTITY_SCALE);
-      g.fillStyle = '#ffd24a';
+    const r = entity(7);
+    const sprite = this.makeSprite(entity(22), (g) => {
+      const glow = g.createRadialGradient(0, 0, r * 0.5, 0, 0, r * 1.5);
+      glow.addColorStop(0, withAlpha(FX.gold, 0.45));
+      glow.addColorStop(1, withAlpha(FX.gold, 0));
+      g.fillStyle = glow;
       g.beginPath();
-      g.arc(0, 0, 7, 0, Math.PI * 2);
+      g.arc(0, 0, r * 1.5, 0, Math.PI * 2);
       g.fill();
-      g.strokeStyle = '#7a5a00';
-      g.lineWidth = 1.5;
+
+      g.fillStyle = FX.gold;
+      g.beginPath();
+      g.arc(0, 0, r, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = withAlpha(INK['950'], 0.7);
+      g.lineWidth = entity(1.2);
       g.stroke();
-      g.fillStyle = '#7a5a00';
-      g.font = 'bold 9px sans-serif';
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.fillText('$', 0, 1);
+      // Milled edge: short ticks around the rim.
+      g.strokeStyle = withAlpha(INK['950'], 0.35);
+      g.lineWidth = entity(0.9);
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        g.beginPath();
+        g.moveTo(Math.cos(a) * r * 0.74, Math.sin(a) * r * 0.74);
+        g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        g.stroke();
+      }
+      g.fillStyle = withAlpha(INK['050'], 0.55);
+      g.beginPath();
+      g.arc(-r * 0.28, -r * 0.32, r * 0.3, 0, Math.PI * 2);
+      g.fill();
     });
     this.enemySprites.set('#coin', sprite);
     return sprite;
