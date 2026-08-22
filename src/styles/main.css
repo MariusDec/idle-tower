@@ -1901,54 +1901,90 @@ button:disabled {
 .hud-mana.is-locked .hud-bar-value,
 .hud-mana.is-locked .hud-bar-icon.icon { color: var(--text-3); }
 
-/* Toasts */
+/* ── Toasts (UI plan §7) ───────────────────────────────────────────────────
+   Three things were wrong. They sat at a flat `bottom: 16px`, which is under
+   the ability dock. They shared no motion language with anything else — a bare
+   `toast-in` and a per-frame opacity write for the fade. And the three tiers
+   were three background colours with no difference in weight, so a milestone
+   and a "restarted wave" notice arrived at the same volume.
+
+   Now: one entry curve (`--ease-spring`), one exit, and importance expressed as
+   elevation and an accent rail as well as hue. Positioning clears the dock, the
+   bottom nav and the safe-area inset on both. */
 .toast-root {
   position: fixed;
-  right: 16px;
-  bottom: 16px;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: var(--corner-stack-base);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
   z-index: 50;
   pointer-events: none;
   max-width: 360px;
 }
 .toast {
+  --toast-tone: var(--text-2);
   pointer-events: auto;
   cursor: pointer;
-  padding: 10px 14px;
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-lg);
+  border-left: 3px solid var(--toast-tone);
   font-size: var(--text-md);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   line-height: 1.35;
-  color: var(--white);
+  color: var(--text-0);
   background: var(--surface-2);
-  border: 1px solid var(--stroke-strong);
+  border-top: 1px solid var(--stroke-strong);
+  border-right: 1px solid var(--stroke-strong);
+  border-bottom: 1px solid var(--stroke-strong);
   box-shadow: var(--elev-2);
-  animation: toast-in var(--dur-fast) ease-out;
-  transition: opacity var(--dur-base) ease;
+  animation: toast-in var(--dur-base) var(--ease-spring);
+  will-change: transform, opacity;
+}
+/* The exit, armed once when the toast enters its last third of a second — not
+   an opacity value recomputed and written on every frame of it. */
+.toast.is-leaving {
+  animation: toast-out var(--dur-slow) var(--ease-out) forwards;
+  pointer-events: none;
 }
 .toast-info {
-  background: linear-gradient(180deg, var(--azure-700), var(--azure-800));
-  border-color: var(--azure-600);
+  --toast-tone: var(--fx-frost);
+  background: linear-gradient(180deg, var(--azure-800), var(--surface-1));
   color: var(--azure-100);
 }
 .toast-warning {
-  background: linear-gradient(180deg, var(--ember-700), var(--ember-800));
-  border-color: var(--ember-600);
+  --toast-tone: var(--fx-ember);
+  background: linear-gradient(180deg, var(--ember-800), var(--surface-1));
   color: var(--ember-200);
+  box-shadow: var(--elev-3);
 }
+/* The loudest tier: bigger type, a step more elevation, and a warm bloom, so a
+   first boss kill does not arrive at the same volume as a wave restart. */
 .toast-milestone {
-  background: linear-gradient(180deg, var(--amber-700), var(--amber-800));
-  border-color: var(--amber-600);
+  --toast-tone: var(--fx-gold);
+  background: linear-gradient(180deg, var(--amber-800), var(--surface-1));
   color: var(--amber-100);
   font-size: var(--text-base);
-  box-shadow: 0 8px 22px rgba(var(--rgb-gold), 0.35);
+  box-shadow: var(--elev-4), 0 0 24px -6px rgba(var(--rgb-gold), 0.55);
 }
 @keyframes toast-in {
-  from { transform: translateX(20px); opacity: 0; }
-  to   { transform: translateX(0);    opacity: 1; }
+  from { transform: translate3d(24px, 0, 0) scale(0.96); opacity: 0; }
+  to   { transform: translate3d(0, 0, 0) scale(1); opacity: 1; }
+}
+@keyframes toast-out {
+  from { transform: translate3d(0, 0, 0); opacity: 1; }
+  to   { transform: translate3d(16px, 0, 0); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes toast-in {
+    from { transform: none; opacity: 0; }
+    to   { transform: none; opacity: 1; }
+  }
+  @keyframes toast-out {
+    from { transform: none; opacity: 1; }
+    to   { transform: none; opacity: 0; }
+  }
 }
 
 /* Tablet: shrink side panel slightly, keep all controls. */
@@ -1966,7 +2002,14 @@ button:disabled {
      hotkey badge (there is no keyboard to press), and the name is still one
      hold away on any tile. 56px targets and the pip row are untouched — those
      are the parts §0.8 rule 3 is about. */
-  :root { --ability-bar-height: 80px; }
+  :root {
+    --ability-bar-height: 80px;
+    /* The nav shares the bottom edge on a phone, so the corner stack starts
+       above both it and the dock. */
+    --corner-stack-base: calc(
+      var(--ability-bar-height) + var(--bottom-nav-height)
+      + env(safe-area-inset-bottom, 0px) + 12px);
+  }
   .ability-bar-slot-label { display: none; }
   .ability-bar .ability-hotkey { display: none; }
 }
@@ -4111,22 +4154,29 @@ body.is-resizing * { cursor: ew-resize !important; }
   /* Canvas fills available space. */
   .canvas-wrap { padding: 4px; }
   /* Toast adapted to mobile. */
-  .toast-root { right: 8px; bottom: calc(var(--ability-bar-height) + var(--bottom-nav-height) + 32px); max-width: calc(100vw - 16px); }
+  /* Rides the same bottom-left stack the tracker and the strip use, one step
+     above the tracker: a 375px viewport has no room for a 300px toast and a
+     230px tracker side by side, so they take turns vertically instead. */
+  .toast-root {
+    right: max(var(--space-2), env(safe-area-inset-right, 0px));
+    bottom: calc(var(--corner-stack-base) + var(--contract-tracker-height));
+    max-width: min(300px, calc(100vw - var(--space-4)));
+  }
   /* Contract tracker sits above the bottom nav too, and gives up the reward
      column so three rows still fit a phone's width. */
   .contract-tracker-slot {
     left: 8px;
-    bottom: calc(var(--ability-bar-height) + var(--bottom-nav-height) + 28px);
+    bottom: var(--corner-stack-base);
     width: min(230px, calc(100vw - 16px));
   }
   .contract-row-reward { display: none; }
   /* Milestone strip moves above the bottom nav. */
   .milestone-strip-slot {
-    bottom: calc(var(--ability-bar-height) + var(--bottom-nav-height) + 28px + var(--contract-tracker-height));
+    bottom: calc(var(--corner-stack-base) + var(--contract-tracker-height));
     left: 8px;
   }
   .milestone-strip-root {
-    bottom: calc(var(--ability-bar-height) + var(--bottom-nav-height) + 28px + var(--contract-tracker-height));
+    bottom: calc(var(--corner-stack-base) + var(--contract-tracker-height));
     left: 8px;
     right: 8px;
   }
@@ -4161,12 +4211,10 @@ body.is-resizing * { cursor: ew-resize !important; }
    corner is one stack now, in the same order the mobile branch already used:
    dock, then tracker, then strip. */
 @media (min-width: 769px) {
-  .contract-tracker-slot {
-    bottom: calc(var(--ability-bar-height) + 12px);
-  }
+  .contract-tracker-slot { bottom: var(--corner-stack-base); }
   .milestone-strip-slot,
   .milestone-strip-root {
-    bottom: calc(var(--ability-bar-height) + 12px + var(--contract-tracker-height));
+    bottom: calc(var(--corner-stack-base) + var(--contract-tracker-height));
     left: 16px;
   }
 }

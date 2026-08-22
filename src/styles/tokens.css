@@ -382,6 +382,15 @@
   --ability-bar-height: 96px;
   /* Bottom mobile nav height. */
   --bottom-nav-height: 60px;
+  /* Where the bottom-corner overlay stack starts, measured up from the viewport
+     edge: clear of the ability dock, of the bottom nav where there is one, and
+     of the device's gesture bar. The contract tracker sits at this offset, the
+     milestone strip one tracker higher, and on a phone the toast stack rides
+     the same ladder. Added by Part 7, which is when four overlays each doing
+     this arithmetic themselves stopped being tenable — the tracker had already
+     drifted under the dock. The mobile branch of main.css adds the nav. */
+  --corner-stack-base: calc(
+    var(--ability-bar-height) + env(safe-area-inset-bottom, 0px) + 12px);
   /* Approximate mobile HUD height (2 rows: wave block + hp/mana bars). Used to
      position the milestone strip and toasts above the canvas. */
   --hud-height-mobile: 90px;
