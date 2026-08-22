@@ -1,6 +1,6 @@
 import type { GameState, EquipmentSlot, Equipment, EquipmentStatType } from '../types';
 import { EQUIPMENT_DEF_BY_ID, RARITY_COLORS, RARITY_NAMES, SLOT_ICONS } from '../data/equipment';
-import { icon as iconSvg, iconMarkup, setIcon } from './Icon';
+import { icon as iconSvg, iconFrame, setIcon } from './Icon';
 import { formatNumber } from '../utils/bigNumber';
 import { setText, toggleClass, setStyle, setDisplay } from '../utils/dom';
 
@@ -50,7 +50,11 @@ const DRAG_THRESHOLD = 5;
 const SCROLL_ZONE = 40;
 const SCROLL_SPEED = 6;
 const HOVER_DELAY_MS = 200;
-const LONG_PRESS_MS = 380;
+/** §8.C.3: the touch route to the compare tooltip. */
+const LONG_PRESS_MS = 350;
+
+/** The tower the eight slots sit around — the sprite, not a port of `Renderer`'s painter. */
+const TOWER_ICON = 'heart-tower' as const;
 
 type SortMode = 'rarity' | 'name' | 'slot';
 const RARITY_ORDER: Record<string, number> = { legendary: 4, epic: 3, rare: 2, uncommon: 1, common: 0 };
@@ -89,6 +93,10 @@ export class EquipmentPanel {
   private compareTooltip: HTMLElement | null = null;
   private hoverTimer: ReturnType<typeof setTimeout> | null = null;
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  /** §8.C.3: the tap-to-select half of the touch route. */
+  private selectedItemId: string | null = null;
+  /** A drag ends in a `click`; that click must not also be read as a tap. */
+  private suppressTapUntil = 0;
 
   constructor(deps: EquipmentAPIDeps) {
     this.deps = deps;
@@ -108,10 +116,43 @@ export class EquipmentPanel {
     this.cancelDrag();
     this.destroyCompareTooltip();
     this.root = null;
+    this.selectedItemId = null;
     this.inventoryRows.clear();
     this.emptyNoteEl = null;
     this.prevInventoryIds = '';
     this.prevSortMode = this.sortMode;
+  }
+
+  /**
+   * The touch route (§8.C.3): the drag path is `mousedown`-based and a phone
+   * never sends one, so a tap selects an inventory item and a second tap on its
+   * slot equips it. Selection is the same affordance the drag highlight uses.
+   */
+  private selectItem(itemId: string | null): void {
+    this.selectedItemId = itemId;
+    for (const [id, row] of this.inventoryRows) {
+      toggleClass(row, 'is-selected', id === itemId);
+    }
+    const item = itemId ? this.deps.inventory.find(i => i.id === itemId) : undefined;
+    for (const [slot, card] of this.slotCards) {
+      toggleClass(card, 'eq-slot-target', !!item && item.slot === slot);
+    }
+  }
+
+  private onSlotTap(slot: EquipmentSlot): void {
+    if (performance.now() < this.suppressTapUntil) return;
+    const itemId = this.selectedItemId;
+    if (!itemId) return;
+    const item = this.deps.inventory.find(i => i.id === itemId);
+    this.selectItem(null);
+    if (!item || item.slot !== slot) return;
+    this.hideCompareTooltip();
+    this.deps.equip(slot, itemId);
+  }
+
+  private onInventoryTap(itemId: string): void {
+    if (performance.now() < this.suppressTapUntil) return;
+    this.selectItem(this.selectedItemId === itemId ? null : itemId);
   }
 
   private cancelDrag(): void {
@@ -145,7 +186,8 @@ export class EquipmentPanel {
     this.ensureCompareTooltip();
     const tooltip = this.compareTooltip!;
     const equipped = this.deps.equipped[item.slot];
-    tooltip.innerHTML = this.renderCompareHTML(item, equipped);
+    tooltip.textContent = '';
+    tooltip.appendChild(this.buildCompareBody(item, equipped));
     tooltip.style.display = 'block';
     tooltip.style.visibility = 'hidden';
     this.positionCompareTooltip(anchor);
@@ -203,19 +245,14 @@ export class EquipmentPanel {
     tooltip.style.left = `${left}px`;
   }
 
-  private renderCompareHTML(inventory: Equipment, equipped: Equipment | undefined): string {
-    const invDef = EQUIPMENT_DEF_BY_ID[inventory.defId];
-    const invName = invDef?.name ?? inventory.defId;
-    const invColor = RARITY_COLORS[inventory.rarity] ?? '#888';
-    const invRarityName = RARITY_NAMES[inventory.rarity];
-    const invIcon = iconMarkup(invDef?.icon ?? SLOT_ICONS[inventory.slot], { className: 'eq-compare-icon' });
-
-    const eqDef = equipped ? EQUIPMENT_DEF_BY_ID[equipped.defId] : null;
-    const eqName = eqDef?.name ?? '';
-    const eqColor = equipped ? (RARITY_COLORS[equipped.rarity] ?? '#888') : '';
-    const eqRarityName = equipped ? RARITY_NAMES[equipped.rarity] : '';
-    const eqIcon = equipped ? iconMarkup(eqDef?.icon ?? SLOT_ICONS[equipped.slot], { className: 'eq-compare-icon' }) : '';
-
+  /**
+   * The compare tooltip, built as DOM rather than markup.
+   *
+   * §8.C.2: the rarity tint arrives through `iconFrame(..., { variant: 'item',
+   * rarity })` and a `data-rarity` attribute the stylesheet reads, so the badge
+   * and the name no longer carry an inline colour — §0.3 rule 4.
+   */
+  private buildCompareBody(inventory: Equipment, equipped: Equipment | undefined): HTMLElement {
     const eqStatMap = new Map<string, number>();
     if (equipped) {
       for (const s of equipped.stats) eqStatMap.set(s.type, s.value);
@@ -224,32 +261,94 @@ export class EquipmentPanel {
     for (const s of inventory.stats) invStatMap.set(s.type, s.value);
     const allTypes = new Set([...invStatMap.keys(), ...eqStatMap.keys()]);
 
-    const renderStats = (statMap: Map<string, number>, otherMap: Map<string, number>): string => {
-      let html = '';
+    const appendStats = (
+      host: HTMLElement,
+      statMap: Map<string, number>,
+      otherMap: Map<string, number>,
+    ): void => {
       for (const type of allTypes) {
         const label = STAT_LABELS[type as EquipmentStatType] ?? type.replace(/_pct$/, '');
         const myVal = statMap.get(type);
         const otherVal = otherMap.get(type);
-        if (myVal !== undefined && otherVal !== undefined) {
-          const cls = myVal > otherVal ? 'stat-better' : myVal < otherVal ? 'stat-worse' : '';
-          html += `<div class="eq-compare-stat-row"><span>${label}</span><span class="${cls}">+${myVal}%</span></div>`;
-        } else if (myVal !== undefined) {
-          html += `<div class="eq-compare-stat-row"><span>${label}</span><span class="stat-better">+${myVal}%</span></div>`;
+        const row = document.createElement('div');
+        row.className = 'eq-compare-stat-row';
+        const name = document.createElement('span');
+        name.textContent = label;
+        const value = document.createElement('span');
+        if (myVal === undefined) {
+          value.className = 'stat-missing';
+          value.textContent = '—';
         } else {
-          html += `<div class="eq-compare-stat-row"><span>${label}</span><span class="stat-missing">&mdash;</span></div>`;
+          value.textContent = `+${myVal}%`;
+          if (otherVal === undefined || myVal > otherVal) value.className = 'stat-better';
+          else if (myVal < otherVal) value.className = 'stat-worse';
         }
+        row.append(name, value);
+        host.appendChild(row);
       }
-      return html;
     };
 
-    const leftStats = renderStats(invStatMap, eqStatMap);
-    const rightStats = equipped ? renderStats(eqStatMap, invStatMap) : '';
+    const buildCard = (
+      label: string,
+      item: Equipment | undefined,
+      statMap: Map<string, number>,
+      otherMap: Map<string, number>,
+    ): HTMLElement => {
+      const card = document.createElement('div');
+      card.className = 'eq-compare-card';
 
-    const rightCard = equipped
-      ? `<div class="eq-compare-card"><div class="eq-compare-slot-label">Equipped</div><div class="eq-compare-item-row">${eqIcon}<div class="eq-compare-item-info"><span class="eq-compare-rarity-badge" style="background:${eqColor}">${eqRarityName}</span><span class="eq-compare-name" style="color:${eqColor}">${eqName}</span></div></div><div class="eq-compare-card-stats">${rightStats}</div></div>`
-      : `<div class="eq-compare-card"><div class="eq-compare-slot-label">Equipped</div><div class="eq-compare-empty">Slot empty</div></div>`;
+      const slotLabel = document.createElement('div');
+      slotLabel.className = 'eq-compare-slot-label';
+      slotLabel.textContent = label;
+      card.appendChild(slotLabel);
 
-    return `<div class="eq-compare-body"><div class="eq-compare-card"><div class="eq-compare-slot-label">Inventory</div><div class="eq-compare-item-row">${invIcon}<div class="eq-compare-item-info"><span class="eq-compare-rarity-badge" style="background:${invColor}">${invRarityName}</span><span class="eq-compare-name" style="color:${invColor}">${invName}</span></div></div><div class="eq-compare-card-stats">${leftStats}</div></div><div class="eq-compare-vs">VS</div>${rightCard}</div>`;
+      if (!item) {
+        const empty = document.createElement('div');
+        empty.className = 'eq-compare-empty';
+        empty.textContent = 'Slot empty';
+        card.appendChild(empty);
+        return card;
+      }
+
+      card.dataset.rarity = item.rarity;
+
+      const def = EQUIPMENT_DEF_BY_ID[item.defId];
+      const row = document.createElement('div');
+      row.className = 'eq-compare-item-row';
+      row.appendChild(iconFrame(def?.icon ?? SLOT_ICONS[item.slot], {
+        variant: 'item',
+        rarity: item.rarity,
+        className: 'eq-compare-icon',
+      }));
+
+      const info = document.createElement('div');
+      info.className = 'eq-compare-item-info';
+      const badge = document.createElement('span');
+      badge.className = 'eq-compare-rarity-badge';
+      badge.textContent = RARITY_NAMES[item.rarity];
+      const name = document.createElement('span');
+      name.className = 'eq-compare-name';
+      name.textContent = def?.name ?? item.defId;
+      info.append(badge, name);
+      row.appendChild(info);
+      card.appendChild(row);
+
+      const stats = document.createElement('div');
+      stats.className = 'eq-compare-card-stats';
+      appendStats(stats, statMap, otherMap);
+      card.appendChild(stats);
+      return card;
+    };
+
+    const body = document.createElement('div');
+    body.className = 'eq-compare-body';
+    body.appendChild(buildCard('Inventory', inventory, invStatMap, eqStatMap));
+    const vs = document.createElement('div');
+    vs.className = 'eq-compare-vs';
+    vs.textContent = 'VS';
+    body.appendChild(vs);
+    body.appendChild(buildCard('Equipped', equipped, eqStatMap, invStatMap));
+    return body;
   }
 
   update(_state: GameState): void {
@@ -321,6 +420,9 @@ export class EquipmentPanel {
         this.inventoryRows.delete(id);
       }
     }
+    if (this.selectedItemId && !ids.has(this.selectedItemId)) {
+      this.selectItem(null);
+    }
 
     if (ids.size === 0) {
       if (!this.emptyNoteEl) {
@@ -369,7 +471,7 @@ export class EquipmentPanel {
   }
 
   private updateInventoryRow(row: HTMLElement, item: Equipment): void {
-    const rarityColor = RARITY_COLORS[item.rarity] ?? '#888';
+    const rarityColor = RARITY_COLORS[item.rarity];
     setStyle(row, '--eq-rarity-color', rarityColor);
     setStyle(row, 'border-color', rarityColor);
 
@@ -421,7 +523,7 @@ export class EquipmentPanel {
     const card = document.createElement('div');
     card.className = 'eq-inv-card';
     card.dataset.eqId = item.id;
-    const rarityColor = RARITY_COLORS[item.rarity] ?? '#888';
+    const rarityColor = RARITY_COLORS[item.rarity];
     setStyle(card, '--eq-rarity-color', rarityColor);
     setStyle(card, 'border-color', rarityColor);
 
@@ -463,6 +565,7 @@ export class EquipmentPanel {
     equipBtn.textContent = 'Equip';
     equipBtn.addEventListener('click', () => {
       this.hideCompareTooltip();
+      this.selectItem(null);
       this.deps.equip(item.slot, item.id);
     });
     equipBtn.addEventListener('mouseenter', () => {
@@ -473,28 +576,6 @@ export class EquipmentPanel {
       }, HOVER_DELAY_MS);
     });
     equipBtn.addEventListener('mouseleave', () => { this.hideCompareTooltip(); });
-    equipBtn.addEventListener('touchstart', () => {
-      this.longPressTimer = setTimeout(() => {
-        this.longPressTimer = null;
-        equipBtn.classList.add('is-long-press');
-        this.showCompareTooltip(item, equipBtn);
-      }, LONG_PRESS_MS);
-    }, { passive: true });
-    equipBtn.addEventListener('touchend', () => {
-      if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
-      equipBtn.classList.remove('is-long-press');
-      this.hideCompareTooltip();
-    });
-    equipBtn.addEventListener('touchcancel', () => {
-      if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
-      equipBtn.classList.remove('is-long-press');
-      this.hideCompareTooltip();
-    });
-    equipBtn.addEventListener('touchmove', () => {
-      if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
-      equipBtn.classList.remove('is-long-press');
-      this.hideCompareTooltip();
-    }, { passive: true });
     actions.appendChild(equipBtn);
 
     const sellBtn = document.createElement('button');
@@ -513,6 +594,27 @@ export class EquipmentPanel {
       this.onDragStart(e, 'equip', item.id, item.slot, card);
     });
 
+    // §8.C.3: tap to select, then tap the slot to equip; long-press for compare.
+    card.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('button')) return;
+      this.onInventoryTap(item.id);
+    });
+    const endLongPress = (): void => {
+      if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
+      card.classList.remove('is-long-press');
+      this.hideCompareTooltip();
+    };
+    card.addEventListener('touchstart', () => {
+      this.longPressTimer = setTimeout(() => {
+        this.longPressTimer = null;
+        card.classList.add('is-long-press');
+        this.showCompareTooltip(item, card);
+      }, LONG_PRESS_MS);
+    }, { passive: true });
+    card.addEventListener('touchend', endLongPress);
+    card.addEventListener('touchcancel', endLongPress);
+    card.addEventListener('touchmove', endLongPress, { passive: true });
+
     card.appendChild(actions);
     this.inventoryEl.appendChild(card);
     return card;
@@ -527,8 +629,19 @@ export class EquipmentPanel {
     title.textContent = 'Equipment';
     parent.appendChild(title);
 
+    // §8.C.1: the eight slots sit around a central tower rather than in a flat
+    // grid. The tower is the icon sprite plus CSS masonry — `Renderer`'s tower
+    // painter stays on the canvas where it belongs.
     const slotsGrid = document.createElement('div');
     slotsGrid.className = 'eq-slots';
+    const tower = document.createElement('div');
+    tower.className = 'eq-tower';
+    tower.setAttribute('aria-hidden', 'true');
+    const towerBody = document.createElement('div');
+    towerBody.className = 'eq-tower-body';
+    towerBody.appendChild(iconSvg(TOWER_ICON, { className: 'eq-tower-icon' }));
+    tower.appendChild(towerBody);
+    slotsGrid.appendChild(tower);
     for (const slot of SLOT_ORDER) {
       slotsGrid.appendChild(this.renderSlotCard(slot));
     }
@@ -574,21 +687,27 @@ export class EquipmentPanel {
     this.slotIconEls.set(slot, icon);
     card.appendChild(icon);
 
+    // The text column, so the card can lay out as icon-beside-text on the
+    // tower flank without the icon competing with four stacked lines.
+    const body = document.createElement('div');
+    body.className = 'eq-slot-body';
+    card.appendChild(body);
+
     const badge = document.createElement('div');
     badge.className = 'eq-slot-rarity-badge';
     this.slotBadgeEls.set(slot, badge);
-    card.appendChild(badge);
+    body.appendChild(badge);
 
     const name = document.createElement('div');
     name.className = 'eq-slot-name';
     name.textContent = SLOT_LABELS[slot];
     this.slotNameEls.set(slot, name);
-    card.appendChild(name);
+    body.appendChild(name);
 
     const stats = document.createElement('div');
     stats.className = 'eq-slot-stats';
     this.slotStatEls.set(slot, stats);
-    card.appendChild(stats);
+    body.appendChild(stats);
 
     const unequipBtn = document.createElement('button');
     unequipBtn.type = 'button';
@@ -599,7 +718,7 @@ export class EquipmentPanel {
       this.deps.unequip(slot);
     });
     this.slotUnequipBtnEls.set(slot, unequipBtn);
-    card.appendChild(unequipBtn);
+    body.appendChild(unequipBtn);
 
     card.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
@@ -607,6 +726,11 @@ export class EquipmentPanel {
       const eq = this.deps.equipped[slot];
       if (!eq) return;
       this.onDragStart(e, 'unequip', eq.id, slot, card);
+    });
+
+    card.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('button')) return;
+      this.onSlotTap(slot);
     });
 
     return card;
@@ -666,6 +790,9 @@ export class EquipmentPanel {
       document.removeEventListener('mouseup', onUp);
 
       if (!dragStarted) return;
+
+      // The browser fires a `click` after the mouseup that ended the drag.
+      this.suppressTapUntil = performance.now() + 250;
 
       if (this.dragState) {
         this.dropAt(upEvent);

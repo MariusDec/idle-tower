@@ -4826,30 +4826,101 @@ body.is-resizing * { cursor: ew-resize !important; }
   overflow-y: auto;
   overflow-x: hidden;
 }
+/* ── The tower silhouette (UI plan §8.C.1) ────────────────────────────────
+   The eight slots sit in two columns flanking a central tower rather than in a
+   flat 4×2 grid, so a slot's position on the tower is what tells you what it
+   is. The tower is the icon sprite plus a CSS plinth — the canvas painter in
+   `Renderer` stays on the canvas. Below `--bp-sm` the flank collapses back to a
+   two-column grid and the tower steps out of the way. */
 .eq-slots {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  grid-template-columns: 1fr minmax(76px, 0.72fr) 1fr;
+  grid-template-areas:
+    "turret  tower bulwark"
+    "arsenal tower brazier"
+    "vault   tower machinery"
+    "banner  tower core";
+  gap: 6px 8px;
+  align-items: stretch;
 }
+.eq-slot-card[data-slot='turret']    { grid-area: turret; }
+.eq-slot-card[data-slot='arsenal']   { grid-area: arsenal; }
+.eq-slot-card[data-slot='vault']     { grid-area: vault; }
+.eq-slot-card[data-slot='banner']    { grid-area: banner; }
+.eq-slot-card[data-slot='bulwark']   { grid-area: bulwark; }
+.eq-slot-card[data-slot='brazier']   { grid-area: brazier; }
+.eq-slot-card[data-slot='machinery'] { grid-area: machinery; }
+.eq-slot-card[data-slot='core']      { grid-area: core; }
+
+.eq-tower {
+  grid-area: tower;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  pointer-events: none;
+}
+/* The masonry: a tapered shaft with a crenellated cap, drawn in surface tokens
+   so it reads as furniture behind the slots rather than as a ninth card. */
+.eq-tower-body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-sm);
+  background:
+    radial-gradient(circle at 50% 22%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 68%),
+    linear-gradient(180deg, var(--surface-3), var(--surface-1));
+  border: 1px solid var(--stroke-subtle);
+  clip-path: polygon(18% 0, 82% 0, 100% 100%, 0 100%);
+}
+.eq-tower-body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(180deg, color-mix(in srgb, var(--stroke-subtle) 55%, transparent) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--stroke-subtle) 40%, transparent) 0 1px, transparent 1px 18px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.eq-tower-icon {
+  --icon-size: 44px;
+  position: relative;
+  color: var(--text-2);
+  opacity: 0.9;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 30%, transparent));
+}
+
 .eq-slot-card {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 8px;
+  gap: 6px;
+  padding: 6px 8px;
   background: var(--surface-2);
   border: 1px solid var(--stroke-subtle);
   border-radius: var(--radius-lg);
-  text-align: center;
+  text-align: left;
   font-size: var(--text-xs);
-  min-height: 80px;
+  min-height: 44px;
+}
+/* The left flank mirrors so every slot's icon faces the tower it belongs to. */
+.eq-slot-card[data-slot='turret'],
+.eq-slot-card[data-slot='arsenal'],
+.eq-slot-card[data-slot='vault'],
+.eq-slot-card[data-slot='banner'] {
+  flex-direction: row-reverse;
+  text-align: right;
 }
 .eq-slot-card.eq-empty {
   justify-content: center;
 }
 .eq-slot-icon {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
   flex-shrink: 0;
 }
@@ -4864,6 +4935,20 @@ body.is-resizing * { cursor: ew-resize !important; }
   letter-spacing: 0.04em;
 }
 .eq-slot-card.eq-empty .eq-slot-rarity-badge { display: none; }
+.eq-slot-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.eq-slot-card[data-slot='turret'] .eq-slot-body,
+.eq-slot-card[data-slot='arsenal'] .eq-slot-body,
+.eq-slot-card[data-slot='vault'] .eq-slot-body,
+.eq-slot-card[data-slot='banner'] .eq-slot-body {
+  align-items: flex-end;
+}
 .eq-slot-name {
   font-weight: 600;
   color: var(--text-0);
@@ -4991,6 +5076,21 @@ body.is-resizing * { cursor: ew-resize !important; }
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
+/* ── The touch route (UI plan §8.C.3) ─────────────────────────────────────
+   The drag path is mouse-only, so a tap selects an inventory card and the slot
+   it can go to lights up; tapping that slot equips it. Both states are a ring,
+   not a hue, so the pairing reads without colour. */
+.eq-inv-card.is-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-1));
+}
+.eq-slot-card.eq-slot-target {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.eq-inv-card.is-long-press { filter: brightness(0.88); }
+
 .eq-dragging { cursor: grabbing !important; }
 body.eq-dragging, body.eq-dragging * { cursor: grabbing !important; }
 body.eq-dragging { user-select: none; }
@@ -5059,12 +5159,20 @@ body.eq-dragging img { pointer-events: none; }
   border-bottom: 1px solid var(--stroke-subtle);
 }
 
-.eq-compare-icon {
-  width: 48px;
-  height: 48px;
-  object-fit: contain;
-  flex-shrink: 0;
-}
+/* §8.C.2: the icon is an `iconFrame(..., { variant: 'item', rarity })`, so the
+   tier arrives as the frame's border, glow and corner notch. */
+.eq-compare-icon { flex: 0 0 auto; }
+
+/* …and the badge and the name take the same tier from a token, never from an
+   inline colour written by the panel (§0.3 rule 4). */
+.eq-compare-card { --eq-rarity-color: var(--stroke-strong); }
+.eq-compare-card[data-rarity='common']    { --eq-rarity-color: var(--rarity-common); }
+.eq-compare-card[data-rarity='uncommon']  { --eq-rarity-color: var(--rarity-uncommon); }
+.eq-compare-card[data-rarity='rare']      { --eq-rarity-color: var(--rarity-rare); }
+.eq-compare-card[data-rarity='epic']      { --eq-rarity-color: var(--rarity-epic); }
+.eq-compare-card[data-rarity='legendary'] { --eq-rarity-color: var(--rarity-legendary); }
+.eq-compare-card[data-rarity] .eq-compare-rarity-badge { background: var(--eq-rarity-color); }
+.eq-compare-card[data-rarity] .eq-compare-name { color: var(--eq-rarity-color); }
 
 .eq-compare-item-info {
   display: flex;
@@ -6298,11 +6406,37 @@ body.eq-dragging img { pointer-events: none; }
    slot, the inventory card and the compare tooltip all draw from the sprite.
    An empty slot now shows its own icon dimmed instead of nothing at all —
    "what goes here" is exactly what an empty socket should be saying. */
-.eq-slot-icon.icon { --icon-size: 32px; color: var(--eq-rarity-color, var(--text-0)); }
+.eq-slot-icon.icon { --icon-size: 28px; color: var(--eq-rarity-color, var(--text-0)); }
 .eq-slot-card.eq-empty .eq-slot-icon {
   display: inline-block;
   color: var(--text-3);
   opacity: 0.55;
 }
 .eq-inv-card-icon.icon { --icon-size: 44px; color: var(--eq-rarity-color, var(--text-0)); }
-.eq-compare-icon.icon { --icon-size: 44px; color: var(--text-0); }
+/* The compare icon is a framed item now, so the frame owns the box and the
+   artwork inside it only needs its tint. */
+.eq-compare-icon > .icon { color: var(--text-0); }
+
+/* The tower flank needs the width of a desktop panel; on a phone the slots go
+   back to a plain two-column grid and the tower stands down. */
+@media (max-width: 600px) {
+  .eq-slots {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-areas: none;
+  }
+  .eq-slots .eq-slot-card { grid-area: auto; }
+  .eq-tower { display: none; }
+  .eq-slot-card[data-slot='turret'],
+  .eq-slot-card[data-slot='arsenal'],
+  .eq-slot-card[data-slot='vault'],
+  .eq-slot-card[data-slot='banner'] {
+    flex-direction: row;
+    text-align: left;
+  }
+  .eq-slot-card[data-slot='turret'] .eq-slot-body,
+  .eq-slot-card[data-slot='arsenal'] .eq-slot-body,
+  .eq-slot-card[data-slot='vault'] .eq-slot-body,
+  .eq-slot-card[data-slot='banner'] .eq-slot-body {
+    align-items: flex-start;
+  }
+}
