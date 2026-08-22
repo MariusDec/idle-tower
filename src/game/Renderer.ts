@@ -1,6 +1,6 @@
 import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType, LootOrb } from '../types';
 import { LOOT_ORB_COLORS, LOOT_TUNING, type LootOrbKind } from '../data/loot';
-import { ARENA, ARENA_RANGE_CAP, ENTITY_SCALE, entity, world } from '../data/arena';
+import { ARENA, ARENA_RANGE_CAP, entity, world } from '../data/arena';
 import type { Camera } from './Camera';
 import { TOWER_VISUAL } from '../data/tower';
 import { CORE_BY_ID, DEFAULT_CORE, isCoreId, type CoreId } from '../data/cores';
@@ -112,6 +112,107 @@ interface EnemyTrack {
   sprite: HTMLCanvasElement | null;
   color: string;
   r: number;
+}
+
+// ── §4.3 projectiles and impacts ──────────────────────────────────────────────
+
+/** Ceiling on live impact records. Pooled: the oldest decal is dropped first. */
+const IMPACT_CAP = 48;
+/** Seconds a ground decal takes to fade out. */
+const DECAL_TIME = 2;
+/** Seconds the spark cone at an impact lives. */
+const SPARK_TIME = 0.18;
+/** Sparks thrown out of one impact. */
+const SPARK_COUNT = 7;
+/** Radius the ground decal is baked at. Drawn scaled, never re-baked. */
+const DECAL_BAKE_RADIUS = entity(46);
+
+/**
+ * How a core's shots look (§4.3).
+ *
+ * A core is the run's identity — it is chosen before the first blessing and it
+ * changes what every shot the tower fires actually *does* — and until Part 3
+ * the only place it appeared during play was the crystal's tint. The shots
+ * themselves were one gold arrowhead and one violet blob for the whole game.
+ *
+ * There are six core behaviours and five cores, and the mapping is not one to
+ * one, because three of the six are not about a shot at all:
+ *
+ * | Behaviour | Where it shows |
+ * |---|---|
+ * | `splash_shots` (artillery) | the shell head, and a wide scorch on impact — read off the projectile's own `splashRadius`, so a Mortar blessing shot gets it too |
+ * | `chill_shots` (frostwork) | the frost shard and its rime trail |
+ * | `mana_shot` (arcane) | the proc lands as `damageType: 'magic'`, so it is painted by the magic path — every fifth shot is visibly a different shot |
+ * | `kill_heal`, `desperate_tempo` (bloodforge) | the blood-lit bolt and its ember drip |
+ * | `nova_extended` (frostwork) | nothing: it doubles an *ability's* duration and has no shot |
+ *
+ * A `Record` over `CoreId`, so a new core cannot ship firing the default bolt
+ * by omission.
+ */
+const SHOT_STYLES: Record<CoreId, {
+  /** Head shape. `bolt` is fletched, `shell` is blunt and heavy, `shard` is a crystal. */
+  head: 'bolt' | 'shell' | 'shard';
+  /** Trail length as a multiple of the head's length. */
+  trail: number;
+  /** The colour the trail burns in. The head is always the core's own colour. */
+  glow: string;
+}> = {
+  marksman: { head: 'bolt', trail: 3.4, glow: FX.gold },
+  artillery: { head: 'shell', trail: 2.6, glow: FX.ember },
+  frostwork: { head: 'shard', trail: 3.8, glow: FX.frost },
+  bloodforge: { head: 'bolt', trail: 3, glow: FX.blood },
+  arcane: { head: 'bolt', trail: 3.6, glow: FX.arcane },
+};
+
+/** Length of a projectile head, before the per-core shape stretches it. */
+const BOLT_LENGTH = entity(9);
+
+// ── §4.4 muzzle and tracers ───────────────────────────────────────────────────
+
+/**
+ * Shots per second above which tracers take over.
+ *
+ * Below this the bolts themselves are individually legible and a tracer would
+ * be a second line drawn over one you can already see. Above it they blur into
+ * a stream, and the tracer is what makes the stream read as *shots* rather than
+ * as a smear — which is the whole point of §4.4: a maxed tower should feel
+ * maxed. Base `fireRate` is 1.0, so this is a genuinely invested build.
+ */
+const TRACER_FIRE_RATE = 5;
+/** Seconds a tracer lives. Two frames at 60 fps, so a dropped frame does not eat it. */
+const TRACER_TIME = 0.035;
+/** Ceiling on live tracers. A multishot fan is a handful; this is the safety net. */
+const TRACER_CAP = 16;
+/** How far a tracer reaches from the muzzle, in world units. */
+const TRACER_LENGTH = world(230);
+
+/** A one-frame line of fire from the muzzle (§4.4). Pooled. */
+interface Tracer {
+  angle: number;
+  age: number;
+}
+
+/** An impact: a ground decal that fades over 2 s and a spark cone that does not. */
+interface Impact {
+  x: number;
+  y: number;
+  /** Direction of travel at the moment of the hit; the sparks cone back along it. */
+  angle: number;
+  age: number;
+  /** Blast radius the shot carried, in world units. 0 for an ordinary hit. */
+  splash: number;
+  magic: boolean;
+}
+
+/** A shot the renderer is watching, so it can tell a hit from a bounds cull. */
+interface ShotTrack {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  splash: number;
+  magic: boolean;
+  seen: number;
 }
 
 /** A body coming apart along the killing blow's vector (§4.2). Pooled. */
@@ -278,6 +379,16 @@ export class Renderer {
   /** Muzzle flash, 1 → 0 over `TOWER_VISUAL.muzzleTime`. */
   private muzzle = 0;
   /**
+   * How many shots went into the flash currently burning down (§4.4).
+   *
+   * A tower with multishot, scatter and back shots empties five or six bolts in
+   * one substep, and one flash of a fixed size for all of them is the same
+   * flash a single-shot tower gets. This scales it.
+   */
+  private muzzleBurst = 1;
+  /** Live tracers (§4.4). Pooled at `TRACER_CAP`. */
+  private readonly tracers: Tracer[] = [];
+  /**
    * Highest projectile id seen.
    *
    * The tower firing is not in the render snapshot and putting it there would
@@ -316,7 +427,6 @@ export class Renderer {
   private readonly shadowSprites = new Map<string, HTMLCanvasElement>();
   private readonly auraSprites = new Map<string, HTMLCanvasElement>();
   private readonly crownSprites = new Map<string, HTMLCanvasElement>();
-  private magicProjectileSprite: HTMLCanvasElement | null = null;
   /**
    * Orb bodies, one sprite per kind (gameplay plan §4.1 / §6 performance).
    *
@@ -359,6 +469,12 @@ export class Renderer {
   private readonly deaths: Death[] = [];
   /** Incremented once per frame; a track not stamped with it has left the field. */
   private frameStamp = 0;
+
+  // ── §4.3 projectiles and impacts ──
+  private readonly impacts: Impact[] = [];
+  private readonly shots = new Map<number, ShotTrack>();
+  /** The run's core, cached at the top of `draw` so the shot painters can read it. */
+  private core: CoreId = DEFAULT_CORE;
 
   constructor(canvas: HTMLCanvasElement, camera: Camera) {
     const ctx = canvas.getContext('2d');
@@ -439,6 +555,7 @@ export class Renderer {
     this.towerX = snapshot.tower.x;
     this.towerY = snapshot.tower.y;
     this.wave = snapshot.wave.number;
+    this.core = this.coreOf(snapshot);
     this.advance(snapshot);
 
     // ── device space: the baked background, blitted 1:1 ──
@@ -461,6 +578,7 @@ export class Renderer {
     this.drawTowerBase(ctx, snapshot);
     this.drawWall(ctx, snapshot);
     this.drawMines(ctx, snapshot.mines);
+    this.drawImpactDecals(ctx);
     this.drawSpawnPortals(ctx);
     this.drawParticles(ctx, snapshot.particles, 'behind');
     this.drawShockwaves(ctx, snapshot.shockwaves);
@@ -563,6 +681,76 @@ export class Renderer {
     this.advanceTurret(snap);
     this.advancePortals(snap);
     this.advanceEnemyState(snap);
+    this.advanceImpacts(snap);
+  }
+
+  /**
+   * Spot impacts, and age the decals they leave (§4.3).
+   *
+   * The same watermark trick as everything else in this file: a projectile id
+   * that was in the list last frame and is not now has *ended*, and its last
+   * known position and velocity are the impact point and the impact normal.
+   *
+   * A shot ends for three reasons — it hit, it left the play field by
+   * `ProjectileManager`'s 120 px margin, or it aged out at 4 s. The bounds cull
+   * is excluded by testing the last position against the visible arena, which
+   * is what stops every missed shot leaving a scorch mark out past the edge of
+   * the world. The age cull is not excluded and does not need to be: a shot
+   * crosses the whole arena in about a second, so an age-out is a shot pinned
+   * on a target it can never catch, and those are rare enough to be a decal
+   * nobody will attribute to anything.
+   */
+  private advanceImpacts(snap: RenderSnapshot): void {
+    const stamp = this.frameStamp;
+    let live = 0;
+    for (const p of snap.projectiles) {
+      if (!p.alive) continue;
+      live++;
+      const track = this.shots.get(p.id);
+      if (track === undefined) {
+        this.shots.set(p.id, {
+          x: p.x, y: p.y, vx: p.vx, vy: p.vy,
+          splash: p.splashRadius ?? 0, magic: p.damageType === 'magic', seen: stamp,
+        });
+        continue;
+      }
+      track.x = p.x;
+      track.y = p.y;
+      track.vx = p.vx;
+      track.vy = p.vy;
+      track.seen = stamp;
+    }
+
+    if (this.shots.size !== live) {
+      const halfW = this.camera.viewHalfWidth;
+      const halfH = this.camera.viewHalfHeight;
+      this.shots.forEach((track, id) => {
+        if (track.seen === stamp) return;
+        this.shots.delete(id);
+        if (Math.abs(track.x - this.towerX) > halfW) return;
+        if (Math.abs(track.y - this.towerY) > halfH) return;
+        this.pushImpact(track);
+      });
+    }
+
+    for (let i = this.impacts.length - 1; i >= 0; i--) {
+      const im = this.impacts[i];
+      im.age += FRAME_DT;
+      if (im.age >= DECAL_TIME) this.impacts.splice(i, 1);
+    }
+  }
+
+  /** Pooled push: the oldest decal is dropped once the cap is reached. */
+  private pushImpact(track: ShotTrack): void {
+    if (this.impacts.length >= IMPACT_CAP) this.impacts.shift();
+    this.impacts.push({
+      x: track.x,
+      y: track.y,
+      angle: Math.atan2(track.vy, track.vx),
+      age: 0,
+      splash: track.splash,
+      magic: track.magic,
+    });
   }
 
   /**
@@ -689,31 +877,45 @@ export class Renderer {
   private advanceTurret(snap: RenderSnapshot): void {
     const t = snap.tower;
     let fired: Projectile | null = null;
+    let shots = 0;
     let highest = this.lastProjectileId;
     const list = snap.projectiles;
+    const seeded = this.lastProjectileId >= 0;
+    // §4.4: below `TRACER_FIRE_RATE` the bolts are individually legible and a
+    // tracer would just be a line drawn over one you can already see.
+    const tracing = seeded && !this.reducedMotion && t.fireRate >= TRACER_FIRE_RATE;
     for (let i = list.length - 1; i >= 0; i--) {
       const p = list[i];
       if (p.id <= this.lastProjectileId) break;
       if (p.id > highest) highest = p.id;
       // Anything that started at the tower came out of the barrel. A homing
       // shot that has already turned has not: it is only new once.
-      if (fired === null && Math.hypot(p.x - t.x, p.y - t.y) < TOWER_VISUAL.bodyRadius * 3) {
-        fired = p;
+      if (Math.hypot(p.x - t.x, p.y - t.y) < TOWER_VISUAL.bodyRadius * 3) {
+        shots++;
+        if (fired === null) fired = p;
+        if (tracing) this.pushTracer(Math.atan2(p.vy, p.vx));
       }
     }
-    if (this.lastProjectileId < 0) {
+    if (!seeded) {
       // First frame: adopt the id watermark without firing, so a save load does
       // not recoil the barrel for shots taken before the page existed.
       this.lastProjectileId = highest;
       fired = null;
+      shots = 0;
     } else {
       this.lastProjectileId = highest;
+    }
+
+    for (let i = this.tracers.length - 1; i >= 0; i--) {
+      this.tracers[i].age += FRAME_DT;
+      if (this.tracers[i].age >= TRACER_TIME) this.tracers.splice(i, 1);
     }
 
     if (fired) {
       this.turretAngle = Math.atan2(fired.vy, fired.vx);
       this.recoil = 1;
       this.muzzle = 1;
+      this.muzzleBurst = shots;
     } else if (snap.aimLine) {
       // Manual aim: the barrel follows the cursor even between shots, because
       // holding is a promise about where the next shot goes.
@@ -722,6 +924,12 @@ export class Renderer {
 
     if (this.recoil > 0) this.recoil = Math.max(0, this.recoil - FRAME_DT / TOWER_VISUAL.recoilTime);
     if (this.muzzle > 0) this.muzzle = Math.max(0, this.muzzle - FRAME_DT / TOWER_VISUAL.muzzleTime);
+  }
+
+  /** Pooled push: the oldest tracer is dropped once the cap is reached. */
+  private pushTracer(angle: number): void {
+    if (this.tracers.length >= TRACER_CAP) this.tracers.shift();
+    this.tracers.push({ angle, age: 0 });
   }
 
   /** Rotate the barrel toward `target` along the short way round. */
@@ -1378,6 +1586,7 @@ export class Renderer {
     // Glow, then barrel, then gem: the crystal lights the turret from behind
     // rather than washing it out from in front.
     this.drawCrystalGlow(ctx, snap, tint);
+    this.drawTracers(ctx, snap);
     this.drawTurret(ctx, snap, tier, core);
     this.drawCoreCrystal(ctx, snap, tint);
   }
@@ -1605,8 +1814,61 @@ export class Renderer {
       ctx.save();
       ctx.globalAlpha = this.muzzle;
       ctx.translate(len, 0);
-      const s = 0.65 + (1 - this.muzzle) * 0.6;
+      // §4.4: the flash grows with the size of the volley. A tower firing six
+      // bolts in one substep used to get exactly the flash a single-shot tower
+      // got, which is the opposite of "a maxed tower feels maxed".
+      const burst = 1 + Math.min(5, this.muzzleBurst - 1) * 0.16;
+      const s = (0.65 + (1 - this.muzzle) * 0.6) * burst;
       ctx.drawImage(flash, -flash.width * s / 2, -flash.height * s / 2, flash.width * s, flash.height * s);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Tracers (§4.4).
+   *
+   * At a high enough fire rate the individual bolts stop being individually
+   * visible — they blur into a stream, and a stream carries no information
+   * about *rate*. A one-frame line of fire from the muzzle along each shot's
+   * heading is what puts the rate back: the faster the tower fires, the more
+   * of the arena is criss-crossed with them, and a multishot fan draws its own
+   * fan.
+   *
+   * One cached tapered sprite, rotated and blitted, additively. Nothing here
+   * allocates and the pool is capped at `TRACER_CAP`.
+   */
+  private drawTracers(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
+    if (this.tracers.length === 0) return;
+    const t = snap.tower;
+    const core = this.core;
+    const sprite = this.part(`tracer|${core}`, TRACER_LENGTH * 2.1, (g) => {
+      const tint = CORE_BY_ID[core].color;
+      const grad = g.createLinearGradient(0, 0, TRACER_LENGTH, 0);
+      grad.addColorStop(0, withAlpha(INK['050'], 0.9));
+      grad.addColorStop(0.12, withAlpha(tint, 0.6));
+      grad.addColorStop(1, withAlpha(tint, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(0, -entity(2.2));
+      g.lineTo(TRACER_LENGTH, -entity(0.4));
+      g.lineTo(TRACER_LENGTH, entity(0.4));
+      g.lineTo(0, entity(2.2));
+      g.closePath();
+      g.fill();
+    });
+    const half = sprite.width / 2;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const tr of this.tracers) {
+      ctx.save();
+      ctx.globalAlpha = 1 - tr.age / TRACER_TIME;
+      ctx.translate(t.x, t.y);
+      ctx.rotate(tr.angle);
+      // The sprite is baked with the muzzle at its centre, so it is drawn
+      // offset by half its own width rather than centred on the tower.
+      ctx.translate(TOWER_VISUAL.turretLength, 0);
+      ctx.drawImage(sprite, -half, -half);
       ctx.restore();
     }
     ctx.restore();
@@ -2095,12 +2357,30 @@ export class Renderer {
    * around an enemy at (0, 0).
    */
   private makeSprite(size: number, paint: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {
-    const px = Math.max(2, Math.ceil(size));
+    return this.makeSpriteRect(size, size, paint);
+  }
+
+  /**
+   * The same, but not square.
+   *
+   * A `drawImage` costs the *sprite's* area, not the area of what was painted
+   * inside it, so a wide flat thing baked into a square canvas pays for the
+   * emptiness above and below it every frame. The ground shadow is the case
+   * that makes this worth having: it is an ellipse a third as tall as it is
+   * wide, blitted once per enemy, up to 260 times a frame.
+   */
+  private makeSpriteRect(
+    width: number,
+    height: number,
+    paint: (ctx: CanvasRenderingContext2D) => void,
+  ): HTMLCanvasElement {
+    const w = Math.max(2, Math.ceil(width));
+    const h = Math.max(2, Math.ceil(height));
     const c = document.createElement('canvas');
-    c.width = px;
-    c.height = px;
+    c.width = w;
+    c.height = h;
     const g = c.getContext('2d')!;
-    g.translate(px / 2, px / 2);
+    g.translate(w / 2, h / 2);
     paint(g);
     return c;
   }
@@ -2787,15 +3067,23 @@ export class Renderer {
     const alpha = airborne ? 0.22 : 0.38;
     const squash = airborne ? 0.22 : 0.3;
     const scale = airborne ? 0.7 : 1;
-    const sprite = this.makeSprite(r * 2.2, (g) => {
-      const grad = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.95);
+    const rx = r * 0.9 * scale;
+    const ry = r * squash * scale;
+    // Baked to the ellipse's own bounds rather than into a square: this is the
+    // single most-blitted sprite in the game and the old square canvas was
+    // three quarters empty space, paid for once per enemy per frame.
+    const sprite = this.makeSpriteRect(rx * 2 + 2, ry * 2 + 2, (g) => {
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, rx);
       grad.addColorStop(0, withAlpha(INK['950'], alpha));
       grad.addColorStop(0.6, withAlpha(INK['950'], alpha * 0.5));
       grad.addColorStop(1, withAlpha(INK['950'], 0));
+      g.save();
+      g.scale(1, ry / rx);
       g.fillStyle = grad;
       g.beginPath();
-      g.ellipse(0, 0, r * 0.9 * scale, r * squash * scale, 0, 0, Math.PI * 2);
+      g.arc(0, 0, rx, 0, Math.PI * 2);
       g.fill();
+      g.restore();
     });
     this.shadowSprites.set(key, sprite);
     return sprite;
@@ -2962,13 +3250,12 @@ export class Renderer {
     const r = ENEMY_DEFS[enemy.type].radius;
     const airborne = enemy.type === 'flying';
     const sprite = this.getShadowSprite(r, airborne);
-    const half = sprite.width / 2;
     // Thrown away from the key light, and further for something in the air.
     const drop = r * (airborne ? 1.5 : 0.6);
     ctx.drawImage(
       sprite,
-      enemy.x - Math.cos(TOWER_VISUAL.lightAngle) * r * 0.22 - half,
-      enemy.y + drop - half,
+      enemy.x - Math.cos(TOWER_VISUAL.lightAngle) * r * 0.22 - sprite.width / 2,
+      enemy.y + drop - sprite.height / 2,
     );
   }
 
@@ -3626,46 +3913,325 @@ export class Renderer {
     }
   }
 
+  /**
+   * Shots in flight, and the sparks off the ones that just landed (§4.3).
+   *
+   * What this replaces: a 14 px gold arrowhead and a 16 px violet blob, the
+   * same two for every core and every build in the game. Now a shot is
+   * **rotated to its velocity**, carries a **cached motion trail** — a baked
+   * tapered streak, not a per-frame particle spawn, which is what the plan
+   * specifically rules out — and looks like the core that fired it.
+   *
+   * Two passes over the list rather than one, so the additive composite is set
+   * twice per frame instead of twice per projectile.
+   */
   private drawProjectiles(ctx: CanvasRenderingContext2D, projectiles: Projectile[]): void {
+    if (projectiles.length === 0) return;
+    const core = this.core;
+
+    // Pass 1, additive: trails, magic bodies, and impact sparks. Everything
+    // that is *light* rather than matter.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
     for (const p of projectiles) {
       if (!p.alive) continue;
-      if (p.damageType === 'magic') {
-        if (!this.magicProjectileSprite) {
-          this.magicProjectileSprite = this.makeSprite(entity(16), (g) => {
-            g.scale(ENTITY_SCALE, ENTITY_SCALE);
-            const grad = g.createRadialGradient(0, 0, 0, 0, 0, 8);
-            grad.addColorStop(0, '#e0b3ff');
-            grad.addColorStop(1, 'rgba(120, 60, 200, 0)');
-            g.fillStyle = grad;
-            g.beginPath();
-            g.arc(0, 0, 8, 0, Math.PI * 2);
-            g.fill();
-            g.fillStyle = '#9b59ff';
-            g.beginPath();
-            g.arc(0, 0, 3, 0, Math.PI * 2);
-            g.fill();
-          });
-        }
-        ctx.drawImage(this.magicProjectileSprite, p.x - entity(8), p.y - entity(8));
-      } else {
-        const angle = Math.atan2(p.vy, p.vx);
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(angle);
-        ctx.scale(ENTITY_SCALE, ENTITY_SCALE);
-        ctx.fillStyle = '#f7d774';
-        ctx.beginPath();
-        ctx.moveTo(8, 0);
-        ctx.lineTo(-6, 4);
-        ctx.lineTo(-6, -4);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = '#7a5a00';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.restore();
-      }
+      const magic = p.damageType === 'magic';
+      const sprite = magic ? this.getMagicShotSprite(core) : this.getTrailSprite(core, (p.splashRadius ?? 0) > 0);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(Math.atan2(p.vy, p.vx));
+      ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+      ctx.restore();
     }
+    this.drawSparks(ctx, core);
+    ctx.restore();
+
+    // Pass 2, ordinary: the physical heads. A bolt is a solid object and must
+    // read as one against a bright explosion, which additive blending cannot do.
+    for (const p of projectiles) {
+      if (!p.alive || p.damageType === 'magic') continue;
+      const sprite = this.getBoltSprite(core, (p.splashRadius ?? 0) > 0);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(Math.atan2(p.vy, p.vx));
+      ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+      ctx.restore();
+    }
+  }
+
+  /**
+   * The physical head, pointing along +x so a rotate-and-blit aims it.
+   *
+   * `shell` and `shard` are the artillery and frostwork variants: a core's shot
+   * behaviour should be legible from the shot, not only from the picker card.
+   */
+  private getBoltSprite(core: CoreId, splash: boolean): HTMLCanvasElement {
+    const style = SHOT_STYLES[core];
+    const tint = CORE_BY_ID[core].color;
+    const head = splash ? 'shell' : style.head;
+    const L = BOLT_LENGTH * (head === 'shell' ? 1.2 : 1);
+    return this.part(`bolt|${core}|${head}`, L * 3.4, (g) => {
+      g.lineJoin = 'round';
+      switch (head) {
+        case 'shell': {
+          // Blunt and heavy: it is a thing that arrives rather than a thing
+          // that pierces, and it is about to take out everything around it.
+          g.fillStyle = tint;
+          g.beginPath();
+          g.moveTo(L, 0);
+          g.quadraticCurveTo(L * 0.7, -L * 0.55, -L * 0.5, -L * 0.5);
+          g.lineTo(-L * 0.5, L * 0.5);
+          g.quadraticCurveTo(L * 0.7, L * 0.55, L, 0);
+          g.closePath();
+          g.fill();
+          g.strokeStyle = withAlpha(INK['950'], 0.75);
+          g.lineWidth = entity(1.2);
+          g.stroke();
+          g.fillStyle = withAlpha(FX.ember, 0.85);
+          g.fillRect(-L * 0.5, -L * 0.5, L * 0.22, L);
+          break;
+        }
+        case 'shard': {
+          // A crystal: narrow, faceted, and cold.
+          g.fillStyle = tint;
+          g.beginPath();
+          g.moveTo(L * 1.15, 0);
+          g.lineTo(0, -L * 0.34);
+          g.lineTo(-L * 0.75, 0);
+          g.lineTo(0, L * 0.34);
+          g.closePath();
+          g.fill();
+          g.strokeStyle = withAlpha(FX.frost, 0.9);
+          g.lineWidth = entity(1);
+          g.stroke();
+          g.fillStyle = withAlpha(INK['050'], 0.7);
+          g.beginPath();
+          g.moveTo(L * 1.15, 0);
+          g.lineTo(0, -L * 0.34);
+          g.lineTo(-L * 0.2, 0);
+          g.closePath();
+          g.fill();
+          break;
+        }
+        case 'bolt': {
+          // Fletched: a shaft, a head and two vanes. The vanes are the whole
+          // difference between "an arrow" and "a triangle".
+          g.fillStyle = withAlpha(INK['700'], 0.95);
+          g.fillRect(-L * 0.9, -L * 0.11, L * 1.7, L * 0.22);
+          g.fillStyle = tint;
+          g.beginPath();
+          g.moveTo(L, 0);
+          g.lineTo(L * 0.35, -L * 0.36);
+          g.lineTo(L * 0.45, 0);
+          g.lineTo(L * 0.35, L * 0.36);
+          g.closePath();
+          g.fill();
+          g.strokeStyle = withAlpha(INK['950'], 0.8);
+          g.lineWidth = entity(0.9);
+          g.stroke();
+          g.fillStyle = withAlpha(style.glow, 0.9);
+          for (const dir of [-1, 1]) {
+            g.beginPath();
+            g.moveTo(-L * 0.9, dir * L * 0.1);
+            g.lineTo(-L * 1.25, dir * L * 0.5);
+            g.lineTo(-L * 0.45, dir * L * 0.12);
+            g.closePath();
+            g.fill();
+          }
+          break;
+        }
+        default: {
+          const exhaustive: never = head;
+          return exhaustive;
+        }
+      }
+    });
+  }
+
+  /**
+   * The motion trail: one baked tapered streak, blitted behind the head.
+   *
+   * §4.3 asks for "a short cached polyline, **not** a per-frame particle
+   * spawn", and this is stricter than that — it is a single `drawImage`.
+   * Because every shot in this game travels in a straight line at a constant
+   * speed (homing turns, but slowly), the streak that trails a shot is exactly
+   * a fixed shape behind it, so there is nothing a stored position history
+   * would add except the allocation.
+   */
+  private getTrailSprite(core: CoreId, splash: boolean): HTMLCanvasElement {
+    const style = SHOT_STYLES[core];
+    const len = BOLT_LENGTH * style.trail * (splash ? 1.3 : 1);
+    return this.part(`trail|${core}|${splash ? 1 : 0}`, len * 2.4, (g) => {
+      const w = BOLT_LENGTH * (splash ? 0.42 : 0.3);
+      const grad = g.createLinearGradient(-len, 0, BOLT_LENGTH * 0.4, 0);
+      grad.addColorStop(0, withAlpha(style.glow, 0));
+      grad.addColorStop(0.65, withAlpha(style.glow, 0.28));
+      grad.addColorStop(1, withAlpha(style.glow, 0.7));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(BOLT_LENGTH * 0.4, -w);
+      g.lineTo(BOLT_LENGTH * 0.4, w);
+      g.lineTo(-len, 0);
+      g.closePath();
+      g.fill();
+    });
+  }
+
+  /**
+   * A magic shot: core, corona and trailing wisps, all in one additive sprite.
+   *
+   * The wisps are baked into the same sprite as the head — they sit at fixed
+   * offsets along −x, which is exactly where they would be if they were
+   * simulated, because the shot travels in a straight line. One blit for the
+   * whole effect, which is cheaper than the single radial blob it replaces.
+   *
+   * This is also `mana_shot` made visible: the arcane core's every-fifth shot
+   * lands as `damageType: 'magic'`, so it is *this* that comes out of the
+   * barrel instead of a bolt, and the proc is legible in flight.
+   */
+  private getMagicShotSprite(core: CoreId): HTMLCanvasElement {
+    const tint = CORE_BY_ID[core].color;
+    const r = BOLT_LENGTH * 0.62;
+    const tail = BOLT_LENGTH * SHOT_STYLES[core].trail;
+    return this.part(`magic|${core}`, (tail + r) * 2.2, (g) => {
+      const corona = g.createRadialGradient(0, 0, 0, 0, 0, r * 2.6);
+      corona.addColorStop(0, withAlpha(FX.arcane, 0.55));
+      corona.addColorStop(0.4, withAlpha(tint, 0.3));
+      corona.addColorStop(1, withAlpha(tint, 0));
+      g.fillStyle = corona;
+      g.beginPath();
+      g.arc(0, 0, r * 2.6, 0, Math.PI * 2);
+      g.fill();
+      // Wisps: smaller and dimmer the further back they are, alternating off
+      // the axis so the trail curls rather than reading as a bar.
+      for (let i = 1; i <= 4; i++) {
+        const t = i / 5;
+        const x = -tail * t;
+        const y = Math.sin(i * 1.9) * r * 0.8;
+        g.fillStyle = withAlpha(tint, 0.42 * (1 - t));
+        g.beginPath();
+        g.arc(x, y, r * (1 - t * 0.7), 0, Math.PI * 2);
+        g.fill();
+      }
+      g.fillStyle = withAlpha(INK['050'], 0.95);
+      g.beginPath();
+      g.arc(0, 0, r * 0.5, 0, Math.PI * 2);
+      g.fill();
+    });
+  }
+
+  /**
+   * Ground decals from shots that have landed (§4.3).
+   *
+   * Drawn with the floor rather than with the entities, so a mob walks over a
+   * scorch mark instead of under it. Pooled at `IMPACT_CAP` and faded over
+   * `DECAL_TIME`; a splash-carrying shot leaves a wider mark, which is what
+   * makes artillery's blast radius something the player can see the size of
+   * rather than a number on a card.
+   */
+  private drawImpactDecals(ctx: CanvasRenderingContext2D): void {
+    if (this.impacts.length === 0) return;
+    ctx.save();
+    for (const im of this.impacts) {
+      const fade = 1 - im.age / DECAL_TIME;
+      const sprite = this.getDecalSprite(im.magic);
+      // Baked large and scaled *down* for an ordinary hit: an artillery blast
+      // is `CORE_TUNING.splashRadius` = 182 world units, and upscaling a 26 px
+      // smudge to that is a blur rather than a crater. A splash decal is
+      // deliberately well inside its own blast — the crater a shell leaves is
+      // not the width of what it killed, and a 2 s mark at the full blast
+      // radius would black out a quarter of the arena.
+      const size = im.splash > 0 ? Math.min(im.splash * 0.8, DECAL_BAKE_RADIUS * 2) : entity(30);
+      ctx.globalAlpha = fade * fade * (im.splash > 0 ? 0.55 : 0.8);
+      ctx.save();
+      ctx.translate(im.x, im.y);
+      ctx.rotate(im.angle);
+      ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * One scorch mark, elongated along the direction of travel.
+   *
+   * The burn itself is near-black, which on this floor is a shadow rather than
+   * a mark — so the ejecta streaks are warm (or arcane), and they are what
+   * actually reads. A pure `INK['950']` decal is invisible on `INK['800']`
+   * ground, which is a lesson this file has already learned once with the
+   * flier's wings.
+   */
+  private getDecalSprite(magic: boolean): HTMLCanvasElement {
+    const r = DECAL_BAKE_RADIUS;
+    const burn = magic ? FX.arcane : INK['900'];
+    const spray = magic ? FX.arcane : FX.ember;
+    return this.part(`decal|${magic ? 1 : 0}`, r * 2.2, (g) => {
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      grad.addColorStop(0, withAlpha(burn, magic ? 0.32 : 0.5));
+      grad.addColorStop(0.55, withAlpha(burn, magic ? 0.14 : 0.22));
+      grad.addColorStop(1, withAlpha(burn, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(0, 0, r, r * 0.74, 0, 0, Math.PI * 2);
+      g.fill();
+      // Ejecta, thrown forward along the impact vector.
+      g.strokeStyle = withAlpha(spray, magic ? 0.35 : 0.42);
+      g.lineWidth = r * 0.05;
+      g.lineCap = 'round';
+      for (let i = 0; i < 7; i++) {
+        const jitter = ((Math.imul(i + 3, 2654435761) >>> 0) % 1000) / 1000;
+        const a = (i - 3) * 0.34 + (jitter - 0.5) * 0.2;
+        const reach = r * (0.6 + jitter * 0.4);
+        g.beginPath();
+        g.moveTo(Math.cos(a) * r * 0.25, Math.sin(a) * r * 0.25);
+        g.lineTo(Math.cos(a) * reach, Math.sin(a) * reach);
+        g.stroke();
+      }
+      g.fillStyle = withAlpha(spray, magic ? 0.22 : 0.3);
+      g.beginPath();
+      g.ellipse(0, 0, r * 0.3, r * 0.22, 0, 0, Math.PI * 2);
+      g.fill();
+    });
+  }
+
+  /**
+   * The spark cone at a fresh impact (§4.3).
+   *
+   * Aligned to the impact normal — the shot's own heading — and thrown *back*
+   * along it, which is the direction debris actually goes. Stroked lines, no
+   * per-particle gradients, and only for the first `SPARK_TIME` of a decal's
+   * life, so the pool this walks is at most a handful of entries.
+   */
+  private drawSparks(ctx: CanvasRenderingContext2D, core: CoreId): void {
+    if (this.impacts.length === 0) return;
+    const glow = SHOT_STYLES[core].glow;
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (const im of this.impacts) {
+      if (im.age >= SPARK_TIME) continue;
+      const k = im.age / SPARK_TIME;
+      const fade = 1 - k;
+      ctx.save();
+      ctx.translate(im.x, im.y);
+      ctx.rotate(im.angle);
+      ctx.globalAlpha = fade;
+      ctx.strokeStyle = im.magic ? withAlpha(FX.arcane, 0.9) : withAlpha(glow, 0.9);
+      ctx.lineWidth = entity(1.6) * fade;
+      const reach = entity(6) + k * entity(20) * (im.splash > 0 ? 1.8 : 1);
+      for (let i = 0; i < SPARK_COUNT; i++) {
+        // A cone of ±60° about the *reverse* of the shot's heading, with a
+        // deterministic per-spark jitter so it is not a fan of even spokes.
+        const jitter = ((Math.imul(i + 1, 2654435761) >>> 0) % 1000) / 1000;
+        const a = Math.PI + (i / (SPARK_COUNT - 1) - 0.5) * 2.1 + (jitter - 0.5) * 0.3;
+        const near = reach * (0.35 + jitter * 0.3);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * near, Math.sin(a) * near);
+        ctx.lineTo(Math.cos(a) * reach * (0.8 + jitter * 0.5), Math.sin(a) * reach * (0.8 + jitter * 0.5));
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   /**
