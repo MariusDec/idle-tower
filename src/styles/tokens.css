@@ -282,6 +282,10 @@
   --text-4xl: 22px;
   --text-5xl: 24px;
   --text-6xl: 28px;
+  /* Added by Part 7 for the wave number, which is the one figure in the HUD
+     that has to read as a focal element rather than as a large label. The ramp
+     stopped at 28px because nothing before Part 7 asked for more. */
+  --text-7xl: 34px;
 
   --weight-regular: 400;
   --weight-medium: 500;

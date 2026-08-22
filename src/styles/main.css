@@ -443,30 +443,189 @@ button:disabled {
   }
 }
 
-/* Wave controls */
+/* ── The wave header (UI plan §7) ──────────────────────────────────────────
+   The wave number is the one figure that names where the run *is*, and it was
+   an 18px span reading "Wave 1" under a caption reading "Wave", wedged into a
+   button row it shared with a dropdown and a "..." menu.
+
+   Now it is the focal element: the display face at four times the size, step
+   chevrons flanking it, and everything that *qualifies* the wave — its state,
+   what is coming, the risk being run — arranged around it in one block instead
+   of scattered across two HUD groups. */
 .hud-wave-block {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    'focal side'
+    'focal controls';
+  align-items: center;
+  justify-content: start;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-2xl);
+  border: 1px solid var(--stroke-subtle);
+  background:
+    radial-gradient(ellipse at 18% 50%, rgba(var(--rgb-gold), 0.07), transparent 62%),
+    linear-gradient(180deg, var(--surface-3), var(--surface-1));
+  box-shadow: var(--elev-1);
 }
-.hud-wave-stat {
+
+.hud-wave-focal {
+  grid-area: focal;
+  --wave-tone: var(--fx-gold);
+  --wave-rgb: var(--rgb-gold);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+.hud-wave-numwrap {
   display: flex;
   flex-direction: column;
   align-items: center;
+  line-height: var(--leading-tight);
+  min-width: 62px;
+}
+.hud-wave-caption {
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.hud-wave-number {
+  font-size: var(--text-7xl);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--text-0);
+  text-shadow: 0 0 18px rgba(var(--wave-rgb), 0.35);
+}
+/* A boss wave is the one wave a player must not walk into unprepared, so the
+   focal element says so itself rather than delegating it to a status line. */
+.hud-wave-focal.is-boss {
+  --wave-tone: var(--fx-blood);
+  --wave-rgb: var(--rgb-blood);
+}
+.hud-wave-focal.is-boss .hud-wave-caption { color: var(--fx-blood); }
+.hud-wave-focal.is-boss .hud-wave-number {
+  color: var(--blood-100);
+  animation: hud-wave-boss var(--dur-ambient) ease-in-out infinite alternate;
+}
+@keyframes hud-wave-boss {
+  from { text-shadow: 0 0 10px rgba(var(--rgb-blood), 0.3); }
+  to   { text-shadow: 0 0 22px rgba(var(--rgb-blood), 0.75); }
+}
+
+/* Step chevrons. 32px wide on desktop and taken up to the 44px touch minimum
+   in the mobile branch — a wave-step is destructive enough (it restarts the
+   wave) that a mis-tap is a real cost. */
+.hud-wave-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 40px;
+  padding: 0;
+  font-size: var(--text-3xl);
+  line-height: 1;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+.hud-wave-step:hover:not(:disabled) {
+  color: var(--text-0);
+  background: var(--surface-4);
+  border-color: var(--stroke-subtle);
+}
+.hud-wave-step:disabled { opacity: 0.3; }
+
+.hud-wave-side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 .hud-wave-controls {
+  grid-area: controls;
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   align-items: stretch;
 }
 .hud-wave-status {
   font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
   color: var(--text-2);
   min-height: 12px;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
 }
-.hud-wave-status.is-warning { color: var(--warn); font-weight: 600; }
+.hud-wave-status.is-warning { color: var(--warn); }
+
+/* The coming wave's named threats as marks. The arena overlay keeps the
+   readable sentence next to the spawn-lane arrows; this is the glance, in the
+   chrome the player is already reading the wave number off. */
+.hud-wave-threat {
+  display: none;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.hud-wave-threat.is-visible { display: flex; }
+.hud-threat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  border: 1px solid var(--stroke-subtle);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-2);
+}
+.hud-threat-chip > .icon { --icon-size: 12px; }
+/* Named types are the ones that ask a question of the build, so they read
+   hotter than the headcount they are drawn from. */
+.hud-threat-chip.is-named { color: var(--blood-200); border-color: var(--blood-700); }
+.hud-threat-chip.is-elite { color: var(--amber-200); border-color: var(--amber-700); }
+
+/* The risk dial, in its new home beside the wave it prices. */
+.hud-risk-block {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--stroke-subtle);
+}
+.hud-risk-label {
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-2);
+}
+.hud-risk-group {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--stroke-subtle);
+  border-radius: var(--radius-md);
+  padding: 2px;
+}
+.hud-risk-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  color: var(--text-0);
+}
 
 /* Stats button */
 .hud-stats-wrap {
@@ -3759,21 +3918,59 @@ body.is-resizing * { cursor: ew-resize !important; }
     min-width: 0;
     flex: 1 1 0;
   }
+  .hud-bar-block { gap: 2px; }
   .hud-bar-label { font-size: var(--text-3xs); }
   .hud-bar-value { font-size: var(--text-sm); }
   .hud-bar-level { font-size: var(--text-sm); }
+  .hud-bar-head { font-size: var(--text-2xs); }
+  /* The momentum line reserves a row on desktop so the header does not jump
+     when it appears. On a phone that row is 12px of nothing most of the time,
+     and the header has none to spare. */
+  .hud-momentum { min-height: 0; }
+  /* The threat marks are a duplicate on a phone: the arena overlay is already
+     showing the named, readable version a few hundred pixels below, and there
+     the player is looking at the spawn arrows it describes. */
+  .hud-wave-threat.is-visible { display: none; }
 
-  /* Wave block: stack the wave label above the prev/auto/next controls to
-     keep the row narrow. Controls sit "directly under" the wave indicator
-     as the user requested. */
-  .hud-wave-block { flex-direction: column; align-items: stretch; gap: 2px; flex: 0 0 auto; }
-  .hud-wave-stat { align-items: center; flex-direction: row; gap: 4px; justify-content: center; }
-  .hud-wave-stat .hud-stat-label { display: none; }
-  .hud-wave-stat .hud-stat-value { font-size: var(--text-base); }
-  .hud-wave-controls { display: inline-flex; gap: 2px; }
-  .hud-wave-controls .hud-ctrl-btn { min-width: 24px; height: 22px; font-size: var(--text-sm); padding: 0 4px; }
-  .hud-wave-controls .hud-ctrl-toggle { min-width: 42px; font-size: var(--text-2xs); }
-  .hud-wave-status { display: none; }
+  /* The wave header takes a line of its own on a phone: the chips and the More
+     button share the row above it, the header spans the full width below.
+     Sharing one 375px row with them is what forced the old 22px-tall wave
+     buttons, and §0.8 rule 3 makes 44px the floor, not the aspiration. */
+  .hud-group { flex-wrap: wrap; }
+  .hud-more-btn { order: 1; }
+  .hud-wave-block {
+    order: 2;
+    flex: 1 0 100%;
+    min-width: 0;
+    /* The controls drop to a full-width row of their own: four of them plus the
+       risk dial need 287px, and the focal element has already spent 164 of the
+       375 available. */
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'focal side'
+      'controls controls';
+    row-gap: 2px;
+    column-gap: var(--space-2);
+    padding: 2px var(--space-2) var(--space-1);
+  }
+  .hud-wave-focal { gap: var(--space-2); }
+  .hud-wave-numwrap { min-width: 52px; }
+  .hud-wave-number { font-size: var(--text-5xl); }
+  .hud-wave-step { width: 44px; height: 44px; font-size: var(--text-2xl); }
+  /* §0.8 rule 3: 44px is the floor for every target here, not the aspiration.
+     The old rules took these down to 22px, which is half of it. */
+  .hud-wave-controls { display: flex; gap: var(--space-1); flex-wrap: nowrap; }
+  .hud-wave-controls .hud-ctrl-btn {
+    min-height: 44px;
+    min-width: 44px;
+    font-size: var(--text-2xs);
+    padding: 0 var(--space-1);
+  }
+  .hud-wave-controls .hud-ctrl-toggle { min-width: 44px; }
+  .hud-wave-status { min-height: 0; }
+  .hud-targeting-select { height: 44px; max-width: 72px; }
+  .hud-risk-block { padding-left: var(--space-1); }
+  .hud-risk-label { display: none; }
 
   /* Hide right-side stats (DPS / FPS / speed) and bottom-left stats buttons
      on mobile — they're surfaced through the "more" popup instead. */
@@ -3843,8 +4040,8 @@ body.is-resizing * { cursor: ew-resize !important; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 32px;
-    height: 26px;
+    min-width: 44px;
+    height: 44px;
     padding: 0 10px 0 12px;
     font-size: var(--text-xl);
     font-weight: 800;
@@ -5429,14 +5626,14 @@ body.eq-dragging img { pointer-events: none; }
 }
 .hud-momentum.is-visible { opacity: 1; }
 
-.hud-risk-block {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 84px;
+/* Risk actually being run, as opposed to merely set: the dial heats up so a
+   player cannot forget they are paying for it. Layout for the block itself is
+   in the wave-header section, where it now lives. */
+.hud-risk-block.is-hot .hud-risk-value { color: var(--ember-200); }
+.hud-risk-block.is-hot .hud-risk-group {
+  border-color: var(--blood-600);
+  background: linear-gradient(180deg, var(--blood-900), var(--surface-sunken));
 }
-.hud-risk-block.is-hot .hud-speed-label { color: var(--ember-200); }
-.hud-risk-block.is-hot .hud-speed-group { border-color: var(--blood-600); }
 
 /* ── Pacing overlay: combo meter + threat preview (plan §7.2/§7.3) ────────
    Bottom-centre of the arena, opposite the boss bar. Both children are
@@ -5559,7 +5756,6 @@ body.eq-dragging img { pointer-events: none; }
      above it rather than under it. */
   .pacing-overlay { bottom: 8px; gap: 4px; }
   .threat-preview-hint { display: none; }
-  .hud-risk-block { min-width: 66px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

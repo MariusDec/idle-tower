@@ -81,7 +81,7 @@ every enemy on screen at all times. Three separate jobs now have three separate 
 | Status | `--accent`, `--accent-2`, `--good`, `--good-dark`, `--warn`, `--bad`, `--critical` |
 | Domain accents | `--research-color`, `--ability-color`, `--perk-color`, `--passive-color`, `--mod-banner-color` |
 | Fonts | `--font-ui`, `--font-display`, `--font-mono` |
-| Type scale | `--text-3xs` 9 · `--text-2xs` 10 · `--text-xs` 11 · `--text-sm` 12 · `--text-md` 13 · `--text-base` 14 · `--text-lg` 15 · `--text-xl` 16 · `--text-2xl` 18 · `--text-3xl` 20 · `--text-4xl` 22 · `--text-5xl` 24 · `--text-6xl` 28 |
+| Type scale | `--text-3xs` 9 · `--text-2xs` 10 · `--text-xs` 11 · `--text-sm` 12 · `--text-md` 13 · `--text-base` 14 · `--text-lg` 15 · `--text-xl` 16 · `--text-2xl` 18 · `--text-3xl` 20 · `--text-4xl` 22 · `--text-5xl` 24 · `--text-6xl` 28 · `--text-7xl` 34 |
 | Type detail | `--weight-{regular,medium,semibold,bold}`, `--leading-{tight,normal,loose}`, `--tracking-{tight,normal,wide,caps}` |
 | Spacing | `--space-0..8` (0/4/8/12/16/20/24/32/40) |
 | Radii | `--radius-{2xs,xs,sm,md,lg,xl,2xl,full,circle}` (2/3/4/6/8/10/12/999px/50%) |

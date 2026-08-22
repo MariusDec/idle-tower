@@ -5,7 +5,9 @@ import type { PacingHudData } from './PacingOverlay';
 import { TARGETING_MODES } from '../data/tower';
 import { TOWER_XP_TABLE, xpForNextLevel, xpToLevel } from '../data/xpTables';
 import { STAT_ICONS, type StatIconKey } from '../data/iconMap';
-import { icon } from './Icon';
+import { ENEMY_DEFS, ENEMY_LABELS } from '../data/enemies';
+import { isBossWave } from '../data/formulas';
+import { icon, iconMarkup } from './Icon';
 import {
   hasClass,
   setDisplay,
@@ -125,6 +127,11 @@ export class HUD {
   private xpRate = 0;
   private lastTotalXp = -1;
   private waveEl!: HTMLElement;
+  private waveFocal!: HTMLElement;
+  private waveCaptionEl!: HTMLElement;
+  private threatRow!: HTMLElement;
+  /** Composition signature, so an unchanged preview never rebuilds its icons. */
+  private threatSig = '';
   private dpsPill!: PillRefs;
   private goldPill!: PillRefs;
   private killsPill!: PillRefs;
@@ -476,7 +483,16 @@ export class HUD {
     } else {
       setText(this.manaEl, `Locked · wave ${MANA_UNLOCK_WAVE}`);
     }
-    setText(this.waveEl, `Wave ${Math.round(this.displayWave)}`);
+    // The caption says "Wave"; the number no longer has to repeat the word.
+    const waveShown = Math.round(this.displayWave);
+    setText(this.waveEl, String(waveShown));
+    // A boss wave is the one wave the player must not walk into unprepared, so
+    // the focal element says so in its own right rather than leaving it to a
+    // status line under it. Reads off `isBossWave`, the same predicate
+    // `WaveManager` spawns from, so the two cannot disagree.
+    const boss = isBossWave(waveShown);
+    toggleClass(this.waveFocal, 'is-boss', boss);
+    setText(this.waveCaptionEl, boss ? 'Boss Wave' : 'Wave');
     // The chip carries the label, so the value no longer has to repeat it —
     // "1.2K DPS" under a heading reading "DPS" was saying it twice. No tick:
     // DPS is a *rate*, and a rate that drifts up every frame would flicker
@@ -747,7 +763,6 @@ export class HUD {
     fpsStat.appendChild(fpsLabel);
     fpsStat.appendChild(this.fpsEl);
     groupRight.appendChild(fpsStat);
-    groupRight.appendChild(this.renderRiskBlock());
     groupRight.appendChild(this.renderSpeedBlock());
     this.root.appendChild(groupRight);
 
@@ -796,28 +811,64 @@ export class HUD {
     const block = document.createElement('div');
     block.className = 'hud-wave-block';
 
-    const waveStat = document.createElement('div');
-    waveStat.className = 'hud-wave-stat';
-    const waveLabel = document.createElement('span');
-    waveLabel.className = 'hud-stat-label';
-    waveLabel.textContent = 'Wave';
-    this.waveEl = document.createElement('span');
-    this.waveEl.className = 'hud-stat-value';
-    this.waveEl.textContent = 'Wave 1';
-    waveStat.appendChild(waveLabel);
-    waveStat.appendChild(this.waveEl);
-    block.appendChild(waveStat);
-
-    const controls = document.createElement('div');
-    controls.className = 'hud-wave-controls';
+    // \u2500\u2500 The focal element \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // The wave number is the one figure in the HUD that names where the run
+    // *is*, and it used to be a 18px span reading "Wave 1" under a caption
+    // reading "Wave". It is now the display face at four times the size, with
+    // the step controls flanking it as chevrons rather than sharing a button
+    // row with the targeting dropdown and a "..." menu.
+    const focal = document.createElement('div');
+    focal.className = 'hud-wave-focal';
+    this.waveFocal = focal;
 
     this.prevWaveBtn = document.createElement('button');
     this.prevWaveBtn.type = 'button';
-    this.prevWaveBtn.className = 'hud-ctrl-btn';
-    this.prevWaveBtn.textContent = '\u00ab';
+    this.prevWaveBtn.className = 'hud-wave-step';
+    this.prevWaveBtn.textContent = '\u2039';
     this.prevWaveBtn.setAttribute('aria-label', 'Previous wave');
     this.prevWaveBtn.addEventListener('click', () => this.onPrevWave());
-    controls.appendChild(this.prevWaveBtn);
+    focal.appendChild(this.prevWaveBtn);
+
+    const numWrap = document.createElement('div');
+    numWrap.className = 'hud-wave-numwrap';
+    this.waveCaptionEl = document.createElement('span');
+    this.waveCaptionEl.className = 'hud-wave-caption';
+    this.waveCaptionEl.textContent = 'Wave';
+    numWrap.appendChild(this.waveCaptionEl);
+    this.waveEl = document.createElement('span');
+    this.waveEl.className = 'hud-wave-number u-display u-tabular';
+    this.waveEl.textContent = '1';
+    numWrap.appendChild(this.waveEl);
+    focal.appendChild(numWrap);
+
+    this.nextWaveBtn = document.createElement('button');
+    this.nextWaveBtn.type = 'button';
+    this.nextWaveBtn.className = 'hud-wave-step';
+    this.nextWaveBtn.textContent = '\u203a';
+    this.nextWaveBtn.setAttribute('aria-label', 'Next wave');
+    this.nextWaveBtn.addEventListener('click', () => this.onNextWave());
+    focal.appendChild(this.nextWaveBtn);
+
+    block.appendChild(focal);
+
+    // \u2500\u2500 Everything arranged around it \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    const side = document.createElement('div');
+    side.className = 'hud-wave-side';
+
+    this.waveStatusEl = document.createElement('div');
+    this.waveStatusEl.className = 'hud-wave-status';
+    side.appendChild(this.waveStatusEl);
+
+    // Threat preview, as marks rather than a sentence. The arena overlay keeps
+    // the named, readable version next to the spawn-lane arrows; this is the
+    // glance in the persistent chrome, which is where the player is already
+    // looking at the wave number the threat belongs to.
+    this.threatRow = document.createElement('div');
+    this.threatRow.className = 'hud-wave-threat';
+    side.appendChild(this.threatRow);
+
+    const controls = document.createElement('div');
+    controls.className = 'hud-wave-controls';
 
     this.autoProgressBtn = document.createElement('button');
     this.autoProgressBtn.type = 'button';
@@ -826,14 +877,6 @@ export class HUD {
     this.autoProgressBtn.setAttribute('aria-label', 'Toggle auto-progress');
     this.autoProgressBtn.addEventListener('click', () => this.onToggleAutoProgress());
     controls.appendChild(this.autoProgressBtn);
-
-    this.nextWaveBtn = document.createElement('button');
-    this.nextWaveBtn.type = 'button';
-    this.nextWaveBtn.className = 'hud-ctrl-btn';
-    this.nextWaveBtn.textContent = '\u00bb';
-    this.nextWaveBtn.setAttribute('aria-label', 'Next wave');
-    this.nextWaveBtn.addEventListener('click', () => this.onNextWave());
-    controls.appendChild(this.nextWaveBtn);
 
     this.targetingSelect = document.createElement('select');
     this.targetingSelect.className = 'hud-targeting-select';
@@ -866,17 +909,72 @@ export class HUD {
     this.callWaveBtn.addEventListener('click', () => this.onCallWaveEarly());
     controls.appendChild(this.callWaveBtn);
 
-    block.appendChild(controls);
-
-    this.waveStatusEl = document.createElement('div');
-    this.waveStatusEl.className = 'hud-wave-status';
-    block.appendChild(this.waveStatusEl);
+    // §7.4's dial belongs *here*, beside the wave it prices, not filed away in
+    // the right-hand group with the speed stepper. Raising risk is a statement
+    // about the next wave; the number it changes should be on screen with it.
+    controls.appendChild(this.renderRiskBlock());
 
     this.momentumEl = document.createElement('div');
     this.momentumEl.className = 'hud-momentum';
-    block.appendChild(this.momentumEl);
+    side.appendChild(this.momentumEl);
 
+    // `focal`, `side` and `controls` are all direct children of the block so
+    // one grid can place them: the desktop arrangement stacks the state and the
+    // controls beside the number, and the phone one drops the controls to a
+    // full-width row underneath. Nesting the controls inside `side` would put
+    // them outside that grid's reach.
+    block.appendChild(side);
+    block.appendChild(controls);
     return block;
+  }
+
+  /**
+   * The coming wave's named threats, as icons with counts.
+   *
+   * Rebuilt only when the composition actually changes — the signature check
+   * is what keeps an intermission from re-creating a dozen `<svg>`s ten times a
+   * second. Trash is counted, never named, for the same reason the arena
+   * overlay does it: "31 enemies" tells the player nothing they can act on,
+   * "4 Siege" tells them to change targeting mode.
+   */
+  private updateThreatRow(): void {
+    const preview = this.pacing?.preview ?? null;
+    if (!preview) {
+      if (this.threatSig !== '') {
+        this.threatSig = '';
+        this.threatRow.textContent = '';
+      }
+      toggleClass(this.threatRow, 'is-visible', false);
+      return;
+    }
+    toggleClass(this.threatRow, 'is-visible', true);
+    const sig = `${preview.wave}|${preview.count}|`
+      + preview.threats.map(t => `${t.type}:${t.count}`).join(',')
+      + '|' + preview.elites.map(e => `${e.aura}:${e.count}`).join(',');
+    if (sig === this.threatSig) return;
+    this.threatSig = sig;
+
+    const parts: string[] = [
+      `<span class="hud-threat-chip" title="${preview.count} enemies in the coming wave">`
+      + iconMarkup(STAT_ICONS.kills, { tone: 'inherit' })
+      + `<span class="u-tabular">${preview.count}</span></span>`,
+    ];
+    for (const t of preview.threats) {
+      const def = ENEMY_DEFS[t.type];
+      parts.push(
+        `<span class="hud-threat-chip is-named" title="${t.count} × ${ENEMY_LABELS[t.type]}">`
+        + iconMarkup(def.icon, { tone: 'inherit' })
+        + `<span class="u-tabular">${t.count}</span></span>`,
+      );
+    }
+    for (const e of preview.elites) {
+      parts.push(
+        `<span class="hud-threat-chip is-elite" title="${e.count} × Elite (${e.aura})">`
+        + iconMarkup(STAT_ICONS.talentPoints, { tone: 'inherit' })
+        + `<span class="u-tabular">${e.count}</span></span>`,
+      );
+    }
+    setInnerHTML(this.threatRow, parts.join(''));
   }
 
   /**
@@ -884,20 +982,24 @@ export class HUD {
    *
    * A stepper rather than a slider: six discrete levels, each with a stated
    * price, and the tooltip says what the *next* step costs so raising it is
-   * never a guess. Sits with the speed controls because both are always-on
-   * settings about how the run is being played, not moment-to-moment plays.
+   * never a guess.
+   *
+   * Part 7 moves it out of the right-hand group, where it sat next to the speed
+   * stepper and read as a preference, and puts it in the wave header. Risk is a
+   * statement about the *next wave*; the wave number it prices should be on
+   * screen beside it.
    */
   private renderRiskBlock(): HTMLElement {
     const block = document.createElement('div');
     block.className = 'hud-risk-block';
 
     const label = document.createElement('span');
-    label.className = 'hud-stat-label';
+    label.className = 'hud-risk-label';
     label.textContent = 'Risk';
     block.appendChild(label);
 
     const group = document.createElement('div');
-    group.className = 'hud-speed-group';
+    group.className = 'hud-risk-group';
 
     this.riskDecBtn = document.createElement('button');
     this.riskDecBtn.type = 'button';
@@ -910,7 +1012,7 @@ export class HUD {
     group.appendChild(this.riskDecBtn);
 
     this.riskValueEl = document.createElement('span');
-    this.riskValueEl.className = 'hud-speed-label';
+    this.riskValueEl.className = 'hud-risk-value u-tabular';
     this.riskValueEl.textContent = '0';
     group.appendChild(this.riskValueEl);
 
@@ -955,6 +1057,8 @@ export class HUD {
     setTitle(this.momentumEl, hasMomentum
       ? 'Held while you keep calling waves early. Resets when the tower takes damage.'
       : '');
+
+    this.updateThreatRow();
 
     setText(this.riskValueEl, p.riskPending ? `${p.activeRisk}\u2192${p.risk}` : String(p.risk));
     setDisabled(this.riskDecBtn, p.risk <= 0);
