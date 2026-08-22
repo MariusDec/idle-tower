@@ -30,7 +30,11 @@ export function contributeUpgrades(ctx: StatContext, acc: StatAccumulator): void
       case 'lifesteal': a.add('lifesteal', total, u.name); break;
       case 'thorns': a.add('thorns', total, u.name); break;
       case 'shockwave':
-        a.add('shockwaveSize', world(110 + (total - 1) * 5), u.name);
+        // Plan §1.8 / §6.2.5: the radius derives from the *level*, never from
+        // `total`. `total` is the cooldown (`30 - 0.5 x level`, min 3), so
+        // feeding it into the size shrank the blast from 255 px to 120 px as
+        // the line was levelled — the upgrade paid for its own downgrade.
+        a.add('shockwaveSize', world(110 + 4 * level), u.name);
         a.add('shockwaveCooldown', total, u.name);
         break;
       case 'landMines':

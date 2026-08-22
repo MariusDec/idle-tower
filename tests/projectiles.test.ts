@@ -7,14 +7,22 @@
  * at every step size the game can produce.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../src/game/EventBus';
 import { Tower } from '../src/systems/Tower';
 import { EnemyManager } from '../src/systems/EnemyManager';
 import { ResourceManager } from '../src/systems/ResourceManager';
 import { ProjectileManager } from '../src/systems/ProjectileManager';
+import { PrestigeManager } from '../src/systems/PrestigeManager';
 import { PROJECTILE_SPEED } from '../src/data/tower';
-import type { GameStats, ResourceState, TowerState } from '../src/types';
+import { CORE_TUNING } from '../src/data/cores';
+import {
+  SPLASH_FRACTION_CAP,
+  TP_AOE_SPLASH_RADIUS,
+  composeShotSplash,
+} from '../src/data/prestige';
+import type { GameStats, PrestigeState, ResourceState, TowerState } from '../src/types';
 
 function harness() {
   const bus = new EventBus();
@@ -137,5 +145,63 @@ describe('projectile lifetime (plan §5.5)', () => {
     });
     projectiles.reset();
     expect(projectiles.list).toHaveLength(0);
+  });
+});
+
+describe('Annihilation splash (upgrades plan §9.1 / gate 13)', () => {
+  /**
+   * `tp_aoe` shipped inert: `hasAoESplash()` / `getAoESplashFraction()` had no
+   * consumer that reached the projectile, so a 12 TP perk changed nothing on
+   * screen. Both halves are pinned here — the payload lands on a second enemy,
+   * and the accessor still has a caller in `Game`.
+   */
+  function aoePrestige() {
+    return new PrestigeManager(new EventBus(), {
+      resources: { ascensionPoints: 0, lifetimeAP: 0, apThisTranscendence: 0 } as unknown as ResourceState,
+      stats: { lifetimeAscensions: 1 } as unknown as GameStats,
+      prestige: { apSpent: {}, tpSpent: { tp_aoe: 1 }, automationFlags: {} } as unknown as PrestigeState,
+    });
+  }
+
+  it('damages a second enemy inside the radius', () => {
+    const { enemies, towerState, projectiles } = harness();
+    const prestige = aoePrestige();
+    expect(prestige.hasAoESplash()).toBe(true);
+
+    const target = enemies.spawn('normal', 1, 400, 300);
+    // Well inside the blast, and not the projectile's target.
+    const bystander = enemies.spawn('normal', 1, 400 + TP_AOE_SPLASH_RADIUS * 0.5, 300);
+    const bystanderHp = bystander.hp;
+
+    const splash = composeShotSplash({}, {
+      splashRadius: TP_AOE_SPLASH_RADIUS,
+      splashFraction: prestige.getAoESplashFraction(),
+    });
+    projectiles.fire(target, towerState, {
+      rawDamage: 40, damageType: 'physical', isCrit: false, targetId: target.id, ...splash,
+    });
+    const p = projectiles.list[0];
+    p.x = target.x - 5;
+    p.y = target.y;
+    projectiles.tick(0.05);
+
+    expect(bystander.hp).toBeLessThan(bystanderHp);
+  });
+
+  it('composes with the artillery core by max radius and summed fraction', () => {
+    const core = { splashRadius: CORE_TUNING.splashRadius, splashFraction: CORE_TUNING.splashFraction };
+    const composed = composeShotSplash(core, { splashRadius: TP_AOE_SPLASH_RADIUS, splashFraction: 0.25 });
+    expect(composed.splashRadius).toBe(Math.max(CORE_TUNING.splashRadius, TP_AOE_SPLASH_RADIUS));
+    // The cap never takes a source below what it grants alone.
+    expect(composed.splashFraction).toBeGreaterThanOrEqual(CORE_TUNING.splashFraction);
+    expect(composed.splashFraction).toBeLessThanOrEqual(
+      Math.max(CORE_TUNING.splashFraction, SPLASH_FRACTION_CAP),
+    );
+  });
+
+  it('still has a consumer for hasAoESplash in Game', () => {
+    const src = readFileSync(new URL('../src/game/Game.ts', import.meta.url), 'utf8');
+    expect(src).toMatch(/hasAoESplash\(\)/);
+    expect(src).toMatch(/getAoESplashFraction\(\)/);
   });
 });

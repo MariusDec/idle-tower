@@ -1,6 +1,7 @@
 import type { PrestigeLayer } from '../types';
 import type { IconId } from './icons';
 import { evalFormula } from './formulas';
+import { world } from './arena';
 
 export type PrestigePerkEffect =
   | 'extra_shots'
@@ -575,7 +576,10 @@ export const TP_PERKS: PrestigePerkDef[] = [
     costScaling: 2.4,
     maxLevel: 10,
     effectType: 'game_speed',
-    effectPerLevel: 1,
+    // Plan §9.3: the copy above promises +0.5x a level; the effect used to
+    // grant +1x, so a maxed Accelerator ran the game at 11x while the panel
+    // claimed 6x. The description is the contract — the number follows it.
+    effectPerLevel: 0.5,
     icon: 'fast-forward-button',
     color: '#a855f7',
     branch: 'dominion',
@@ -644,4 +648,50 @@ export function tpForAP(ap: number): number {
 
 export function canTranscend(ap: number): boolean {
   return ap >= TRANSCENDENCE_UNLOCK_AP;
+}
+
+/**
+ * Annihilation's blast radius (plan §9.1).
+ *
+ * `tp_aoe` grants a fraction, not a radius, so the radius lives here next to
+ * the perk rather than being invented at the call site. Sized under the
+ * artillery core's `world(70)`: the perk is a universal top-up, not a core.
+ */
+export const TP_AOE_SPLASH_RADIUS = world(60);
+
+/**
+ * Cap on a single shot's summed splash fraction (plan §5.2).
+ *
+ * Composition rule: **max radius, summed fraction to the cap**. The cap can
+ * never take a source below what it grants on its own, so the artillery core
+ * (0.5) keeps its blast and Annihilation adds on top of the smaller sources.
+ */
+export const SPLASH_FRACTION_CAP = 0.4;
+
+export interface ShotSplash {
+  splashRadius?: number;
+  splashFraction?: number;
+}
+
+/**
+ * Compose two splash payloads into the one channel `FireOptions` carries.
+ *
+ * Two splash payloads on one impact is one impact's worth of splash charged
+ * twice, which is what the max-radius half prevents; the summed-fraction half
+ * is what stops a second source from being silently free.
+ */
+export function composeShotSplash(base: ShotSplash, add: ShotSplash): ShotSplash {
+  const baseRadius = base.splashRadius ?? 0;
+  const addRadius = add.splashRadius ?? 0;
+  if (baseRadius <= 0 && addRadius <= 0) return { ...base };
+  const baseFraction = baseRadius > 0 ? base.splashFraction ?? 1 : 0;
+  const addFraction = addRadius > 0 ? add.splashFraction ?? 1 : 0;
+  return {
+    splashRadius: Math.max(baseRadius, addRadius),
+    splashFraction: Math.max(
+      baseFraction,
+      addFraction,
+      Math.min(SPLASH_FRACTION_CAP, baseFraction + addFraction),
+    ),
+  };
 }

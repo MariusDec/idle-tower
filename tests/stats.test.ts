@@ -476,3 +476,20 @@ describe('known-dead content', () => {
     expect(stats.knockbackForce).toBe(0);
   });
 });
+
+describe('shockwave (upgrades plan §1.8 / gate 15)', () => {
+  /**
+   * The radius used to be derived from `shockwaveCooldown`, which *falls* with
+   * level — so every Shockwave purchase shrank the blast it was paying to
+   * widen (255 px down to 120 px across the line). Radius now comes off the
+   * level; the cooldown is still the one thing that shortens.
+   */
+  it('widens the blast and shortens the cooldown as it levels', () => {
+    const levels = [1, 5, 20, 50];
+    const resolved = levels.map((level) => resolveStats(ctx({ upgrades: { shockwave: level } })).stats);
+    for (let i = 1; i < resolved.length; i++) {
+      expect(resolved[i].shockwaveSize).toBeGreaterThan(resolved[i - 1].shockwaveSize);
+      expect(resolved[i].shockwaveCooldown).toBeLessThan(resolved[i - 1].shockwaveCooldown);
+    }
+  });
+});

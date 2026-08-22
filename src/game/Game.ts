@@ -51,7 +51,7 @@ import { UIManager } from '../ui/UIManager';
 import type { BossBarData } from '../ui/BossBar';
 import { isBossWave, goldDropForWave, spawnCountForWave } from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
-import { DEFAULT_AUTO_ASCEND_WAVE } from '../data/prestige';
+import { DEFAULT_AUTO_ASCEND_WAVE, TP_AOE_SPLASH_RADIUS, composeShotSplash } from '../data/prestige';
 import { AudioManager } from '../systems/AudioManager';
 import { TowerXpManager } from '../systems/TowerXpManager';
 import { TalentManager } from '../systems/TalentManager';
@@ -702,15 +702,6 @@ export class Game {
         const critMana = this.researchTree.getCritManaRestore();
         if (critMana > 0) {
           this.resourceMgr.addMana(critMana);
-        }
-      }
-      if (!p.killed && this.prestigeMgr.hasAoESplash()) {
-        const splashFraction = this.prestigeMgr.getAoESplashFraction();
-        const splashDamage = Math.max(1, Math.floor(p.amount * splashFraction));
-        const splashRadius = world(60);
-        for (const e of this.enemyMgr.queryRadius(p.enemy.x, p.enemy.y, splashRadius)) {
-          if (e.id === p.enemy.id) continue;
-          this.enemyMgr.damage(e, splashDamage, false);
         }
       }
     });
@@ -4243,10 +4234,25 @@ export class Game {
         // not what either promises.
         const blessingShot = {
           isHoming: homing,
-          splashRadius: mortarShot ? BLESSING_TUNING.mortarRadius : corePlan.splashRadius,
-          splashFraction: mortarShot
-            ? BLESSING_TUNING.mortarSplashFraction
-            : corePlan.splashFraction,
+          // Plan §9.1: Annihilation is the third source on this one channel,
+          // and it composes the same way the other two do — max radius, summed
+          // fraction to the cap — rather than re-damaging the enemy from the
+          // `enemy_damaged` handler, which fired off a hit the projectile had
+          // already resolved and never reached a killing blow's neighbours.
+          ...composeShotSplash(
+            {
+              splashRadius: mortarShot ? BLESSING_TUNING.mortarRadius : corePlan.splashRadius,
+              splashFraction: mortarShot
+                ? BLESSING_TUNING.mortarSplashFraction
+                : corePlan.splashFraction,
+            },
+            this.prestigeMgr.hasAoESplash()
+              ? {
+                splashRadius: TP_AOE_SPLASH_RADIUS,
+                splashFraction: this.prestigeMgr.getAoESplashFraction(),
+              }
+              : {},
+          ),
         };
         const resolvedDamageType = corePlan.damageType ?? shotDamageType;
 
