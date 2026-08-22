@@ -48,6 +48,9 @@ const TALENT_EXECUTE_THRESHOLD = 0.5;
  */
 const MAX_PROJECTILE_AGE = 4;
 
+/** Overwatch (revamp §6.1): the fraction of range beyond which it pays. */
+export const OVERWATCH_RANGE_FRACTION = 0.7;
+
 export interface ShotVariant {
   angleOffset?: number;
   posOffsetX?: number;
@@ -102,6 +105,10 @@ export class ProjectileManager {
   private core: CoreQuery = NO_CORE;
   private instantKillChance = 0;
   private critSplashFraction = 0;
+  /** Overwatch: extra damage to enemies past `rangeDamageThreshold` of range. */
+  private rangeDamageBonus = 0;
+  /** Skewer: extra damage to every target after the first on the same shot. */
+  private pierceAmp = 0;
   private critIgnoreArmor = false;
   /** Play-field size; projectiles are culled once they leave it by a margin. */
   private boundsWidth = world(1280);
@@ -157,6 +164,16 @@ export class ProjectileManager {
   /** Wire the run's tower core into the impact path. */
   setCore(query: CoreQuery): void {
     this.core = query;
+  }
+
+  /**
+   * Overwatch and Skewer (revamp §6.1). Both need the impact's geometry — how
+   * far the target is, and how many bodies this shot has already been through
+   * — so they are per-hit modifiers here rather than stat keys.
+   */
+  setEvolutionShotBonuses(rangeDamage: number, pierceAmp: number): void {
+    this.rangeDamageBonus = Math.max(0, rangeDamage);
+    this.pierceAmp = Math.max(0, pierceAmp);
   }
 
   setEvolutionCombatEffects(instantKill: number, critSplash: number, critIgnoreArmor: boolean): void {
@@ -330,6 +347,22 @@ export class ProjectileManager {
           // slowed *this* target.
           if (this.blessings.has('shatter') && this.enemies.isSlowed(enemy)) {
             final = Math.floor(final * (1 + BLESSING_TUNING.shatterBonus));
+          }
+          // Overwatch: the far band of the tower's own range. Read from the
+          // live snapshot so levelling `range` moves the band with the ring.
+          if (this.rangeDamageBonus > 0) {
+            const ts = this.tower.snapshot;
+            const ddx = enemy.x - ts.x;
+            const ddy = enemy.y - ts.y;
+            const far = ts.range * OVERWATCH_RANGE_FRACTION;
+            if (ddx * ddx + ddy * ddy > far * far) {
+              final = Math.floor(final * (1 + this.rangeDamageBonus));
+            }
+          }
+          // Skewer: every body after the first on this shot. `hitEnemies` is
+          // only populated once a projectile has actually pierced something.
+          if (this.pierceAmp > 0 && (this.hitEnemies[p.id]?.size ?? 0) > 0) {
+            final = Math.floor(final * (1 + this.pierceAmp));
           }
           const hpBefore = enemy.hp;
           const killed = this.enemies.damage(enemy, final, p.isCrit);

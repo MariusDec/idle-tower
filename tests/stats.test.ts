@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { TOWER_BASE } from '../src/data/tower';
+import { DRAGON_HOARD_GOLD_CAP } from '../src/data/formulas';
 import { CORE_BY_ID, DEFAULT_CORE } from '../src/data/cores';
 import { UPGRADES } from '../src/data/upgrades';
 import { computeUpgradeValue } from '../src/types';
@@ -373,11 +374,33 @@ describe('evolutions', () => {
   });
 
   it("scales Dragon's Hoard with waves survived this run", () => {
-    const w1 = resolveStats(ctx({ wave: 1, evolutions: { wave_gold_scaling: 0.05 } }));
-    const w21 = resolveStats(ctx({ wave: 21, evolutions: { wave_gold_scaling: 0.05 } }));
+    const w1 = resolveStats(ctx({ wave: 1, evolutions: { wave_gold_scaling: 0.005 } }));
+    const w21 = resolveStats(ctx({ wave: 21, evolutions: { wave_gold_scaling: 0.005 } }));
 
     expect(w1.stats.goldMultiplier).toBeCloseTo(1, 6);
-    expect(w21.stats.goldMultiplier).toBeCloseTo(1 + 0.05 * 20, 6);
+    expect(w21.stats.goldMultiplier).toBeCloseTo(1 + 0.005 * 20, 6);
+  });
+
+  // Gate 14 (revamp §6.2.2): the hoard is the one economy line whose input
+  // grows every wave forever, so its ceiling is the cap that matters most.
+  it("caps Dragon's Hoard at +50% however deep the run goes", () => {
+    const shipping = 0.005;
+    const atCap = 1 + DRAGON_HOARD_GOLD_CAP;
+
+    // 1 + 100 x 0.005 = +50%: exactly the cap, and the last uncapped wave.
+    expect(
+      resolveStats(ctx({ wave: 101, evolutions: { wave_gold_scaling: shipping } }))
+        .stats.goldMultiplier,
+    ).toBeCloseTo(atCap, 6);
+    // Twice as deep, and ten times the per-wave value: still +50%.
+    expect(
+      resolveStats(ctx({ wave: 201, evolutions: { wave_gold_scaling: shipping } }))
+        .stats.goldMultiplier,
+    ).toBeCloseTo(atCap, 6);
+    expect(
+      resolveStats(ctx({ wave: 201, evolutions: { wave_gold_scaling: 0.05 } }))
+        .stats.goldMultiplier,
+    ).toBeCloseTo(atCap, 6);
   });
 
   it('adds evolution and talent armor penetration together', () => {

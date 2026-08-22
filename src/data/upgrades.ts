@@ -20,6 +20,8 @@ export type EvolutionEffectId =
   | 'mana_full_gold'
   | 'mana_shield'
   | 'mine_split'
+  | 'pierce_amp'
+  | 'range_damage'
   | 'revive'
   | 'shield_fast_recharge'
   | 'shockwave_slow'
@@ -29,7 +31,8 @@ export const EVOLUTION_EFFECT_IDS: readonly EvolutionEffectId[] = [
   'armor_pen', 'berserk_fire_bonus', 'crit_ignore_armor', 'crit_splash',
   'double_shot', 'enlightenment', 'golden_tide', 'hp_threshold_damage',
   'instant_kill', 'kill_streak_gold', 'mana_full_gold', 'mana_shield',
-  'mine_split', 'revive', 'shield_fast_recharge', 'shockwave_slow',
+  'mine_split', 'pierce_amp', 'range_damage', 'revive',
+  'shield_fast_recharge', 'shockwave_slow',
   'wave_gold_scaling',
 ];
 
@@ -76,8 +79,8 @@ export const UPGRADES: UpgradeDef[] = [
     category: 'tower',
     hideUpgradeScale: true,
     evolutions: [
-      { level: 25, name: 'Keen Arrows', description: '+10% armor penetration', effectId: 'armor_pen', effectValue: 0.10 },
-      { level: 75, name: 'Vorpal Arrows', description: '3% instant kill on non-bosses', effectId: 'instant_kill', effectValue: 0.03 },
+      { level: 20, name: 'Keen Arrows', description: '+10% armor penetration', effectId: 'armor_pen', effectValue: 0.10 },
+      { level: 60, name: 'Vorpal Arrows', description: '1.5% instant kill on non-bosses', effectId: 'instant_kill', effectValue: 0.015 },
     ],
   },
   {
@@ -99,8 +102,8 @@ export const UPGRADES: UpgradeDef[] = [
     category: 'tower',
     hideUpgradeScale: true,
     evolutions: [
-      { level: 25, name: 'Rapid Fire', description: 'Every 5th shot fires double', effectId: 'double_shot', effectValue: 5 },
-      { level: 45, name: 'Machine Gun', description: '+50% fire rate during Berserk', effectId: 'berserk_fire_bonus', effectValue: 0.5 },
+      { level: 12, name: 'Rapid Fire', description: 'Every 5th shot fires double', effectId: 'double_shot', effectValue: 5 },
+      { level: 30, name: 'Machine Gun', description: '+30% fire rate during Berserk', effectId: 'berserk_fire_bonus', effectValue: 0.3 },
     ],
   },
   {
@@ -127,6 +130,12 @@ export const UPGRADES: UpgradeDef[] = [
     maxLevel: 50,
     category: 'tower',
     hideUpgradeScale: true,
+    evolutions: [
+      // Revamp §6.1. Consumed in `ProjectileManager` against the tower's own
+      // composed range, so levelling `range` widens the band the bonus applies
+      // in rather than diluting it.
+      { level: 25, name: 'Overwatch', description: '+10% damage to enemies beyond 70% of range', effectId: 'range_damage', effectValue: 0.10 },
+    ],
   },
   {
     id: 'critChance',
@@ -142,8 +151,8 @@ export const UPGRADES: UpgradeDef[] = [
     category: 'tower',
     hideUpgradeScale: true,
     evolutions: [
-      { level: 25, name: 'Hawk Eye', description: 'Crits deal 20% AoE splash', effectId: 'crit_splash', effectValue: 0.20 },
-      { level: 40, name: 'True Sight', description: 'Critical hits ignore armor', effectId: 'crit_ignore_armor', effectValue: 1 },
+      { level: 20, name: 'Hawk Eye', description: 'Crits deal 15% AoE splash', effectId: 'crit_splash', effectValue: 0.15 },
+      { level: 35, name: 'True Sight', description: 'Critical hits ignore armor', effectId: 'crit_ignore_armor', effectValue: 1 },
     ],
   },
   {
@@ -178,6 +187,12 @@ export const UPGRADES: UpgradeDef[] = [
     maxLevel: 6,
     category: 'tower',
     hideUpgradeScale: true,
+    evolutions: [
+      // Revamp §6.1: the payoff for committing to the coverage line — every
+      // target after the first on the same shot takes more, so pierce stops
+      // being strictly worse than raw damage on a thin wave.
+      { level: 4, name: 'Skewer', description: 'Pierced targets take +15% from the same shot', effectId: 'pierce_amp', effectValue: 0.15 },
+    ],
   },
   {
     id: 'splash',
@@ -278,15 +293,14 @@ export const UPGRADES: UpgradeDef[] = [
     category: 'economy',
     hideUpgradeScale: true,
     evolutions: [
-      // Plan §7.2: the combo meter now pays for a kill streak too, so Avarice
-      // pays less for the same streak and the *combined* ceiling is unchanged.
-      // Derived, not guessed: the deepest streak a wave can actually sustain is
-      // its own enemy count, ~50 around the wall, where Avarice used to be
-      // worth `0.05 x 49 = +245%` and the combo's third tier now supplies +12%
-      // of it — `(2.45 - 0.12) / 49 = 0.0476`, rounded *down* so the combined
-      // figure lands just under the old one rather than just over.
-      { level: 25, name: 'Avarice', description: 'Kill streaks: +4.7% gold per consecutive kill', effectId: 'kill_streak_gold', effectValue: 0.047 },
-      { level: 50, name: "Dragon's Hoard", description: '+1% gold per wave survived this run', effectId: 'wave_gold_scaling', effectValue: 0.01 },
+      // Revamp §6.1/§6.2: both lines are now capped in code — Avarice at +75%
+      // in the `enemy_killed` handler, Dragon's Hoard at +50% in the evolutions
+      // contributor. Uncapped, a wave-40 streak was worth +245% and the hoard
+      // another +40%, which is most of the 1.185x/wave income growth the
+      // revamp exists to bound. The combo meter (plan §7.2) still pays its own
+      // tier bonus on top of the streak.
+      { level: 20, name: 'Avarice', description: 'Kill streaks: +2.5% gold per consecutive kill, up to +75%', effectId: 'kill_streak_gold', effectValue: 0.025 },
+      { level: 40, name: "Dragon's Hoard", description: '+0.5% gold per wave survived this run, up to +50%', effectId: 'wave_gold_scaling', effectValue: 0.005 },
     ],
   },
   {
@@ -326,7 +340,7 @@ export const UPGRADES: UpgradeDef[] = [
     category: 'utility',
     hideUpgradeScale: true,
     evolutions: [
-      { level: 25, name: 'Inner Peace', description: 'Full mana: +10% gold for 5s', effectId: 'mana_full_gold', effectValue: 0.10 },
+      { level: 20, name: 'Inner Peace', description: 'Full mana: +8% gold for 5s', effectId: 'mana_full_gold', effectValue: 0.08 },
     ],
   },
   {
@@ -359,7 +373,7 @@ export const UPGRADES: UpgradeDef[] = [
     scaling: { base: 3, perLevel: 2, effectType: 'add' },
     hideUpgradeScale: true,
     evolutions: [
-      { level: 25, name: 'Golden Tide', description: 'Wave clear gold +25%', effectId: 'golden_tide', effectValue: 0.25 },
+      { level: 20, name: 'Golden Tide', description: 'Wave clear gold +20%', effectId: 'golden_tide', effectValue: 0.20 },
     ],
   },
   {
@@ -376,7 +390,9 @@ export const UPGRADES: UpgradeDef[] = [
     category: 'utility',
     hideUpgradeScale: true,
     evolutions: [
-      { level: 25, name: 'Enlightenment', description: '+1 talent point every 10 waves', effectId: 'enlightenment', effectValue: 1 },
+      // `effectValue` is the *interval* in waves, read by the wave_cleared
+      // handler in `Game.ts` — 12, not the hardcoded 10 it used to assume.
+      { level: 25, name: 'Enlightenment', description: '+1 talent point every 12 waves', effectId: 'enlightenment', effectValue: 12 },
     ],
   },
   {
@@ -438,8 +454,8 @@ export const UPGRADES: UpgradeDef[] = [
     category: 'defense',
     hideUpgradeScale: true,
     evolutions: [
-      { level: 25, name: 'Fortified Core', description: '+15% damage when above 80% HP', effectId: 'hp_threshold_damage', effectValue: 0.15 },
-      { level: 100, name: "Titan's Heart", description: 'Revive once per ascension at 25% HP', effectId: 'revive', effectValue: 0.25 },
+      { level: 25, name: 'Fortified Core', description: '+12% damage when above 80% HP', effectId: 'hp_threshold_damage', effectValue: 0.12 },
+      { level: 90, name: "Titan's Heart", description: 'Revive once per ascension at 25% HP', effectId: 'revive', effectValue: 0.25 },
     ],
   },
   {

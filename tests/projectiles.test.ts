@@ -205,3 +205,67 @@ describe('Annihilation splash (upgrades plan §9.1 / gate 13)', () => {
     expect(src).toMatch(/getAoESplashFraction\(\)/);
   });
 });
+
+/**
+ * Overwatch and Skewer (revamp §6.1).
+ *
+ * Both are per-hit modifiers rather than stat keys — one needs the target's
+ * distance, the other how many bodies the shot has already been through — so
+ * these pin that they actually change a number on impact rather than shipping
+ * as tooltip text.
+ */
+describe('shot evolutions (revamp §6.1)', () => {
+  function damageDealt(range: number, enemyX: number, bonus: number): number {
+    const { enemies, towerState, projectiles } = harness();
+    towerState.range = range;
+    towerState.baseDamage = 1000;
+    projectiles.setEvolutionShotBonuses(bonus, 0);
+    const enemy = enemies.spawn('normal', 1, enemyX, towerState.y);
+    enemy.hp = enemy.maxHp = 1e9;
+    enemy.armor = 0;
+    const hpBefore = enemy.hp;
+
+    projectiles.fire(enemy, towerState, {
+      rawDamage: 1000, damageType: 'physical', isCrit: false, targetId: enemy.id,
+    });
+    const p = projectiles.list[0];
+    p.x = enemy.x - 25;
+    p.y = enemy.y;
+    projectiles.tick(0.05);
+    return hpBefore - enemy.hp;
+  }
+
+  it('Overwatch pays only past 70% of range', () => {
+    // Tower sits at x=100 with a 1000-unit range: the band starts at x=800.
+    const near = damageDealt(1000, 600, 0.10);
+    const far = damageDealt(1000, 1000, 0.10);
+    const farNoEvo = damageDealt(1000, 1000, 0);
+
+    expect(near).toBe(farNoEvo);
+    expect(far).toBeCloseTo(farNoEvo * 1.10, 4);
+  });
+
+  it('Skewer amplifies every target after the first on the same shot', () => {
+    const { enemies, towerState, projectiles } = harness();
+    towerState.baseDamage = 1000;
+    projectiles.setPierceExtra(2);
+    projectiles.setEvolutionShotBonuses(0, 0.15);
+
+    const first = enemies.spawn('normal', 1, 300, towerState.y);
+    const second = enemies.spawn('normal', 1, 500, towerState.y);
+    for (const e of [first, second]) {
+      e.hp = e.maxHp = 1e9;
+      e.armor = 0;
+    }
+
+    projectiles.fire(second, towerState, {
+      rawDamage: 1000, damageType: 'physical', isCrit: false, targetId: second.id,
+    });
+    for (let i = 0; i < 40; i++) projectiles.tick(0.05);
+
+    const firstHit = 1e9 - first.hp;
+    const secondHit = 1e9 - second.hp;
+    expect(firstHit).toBeGreaterThan(0);
+    expect(secondHit).toBeCloseTo(firstHit * 1.15, 4);
+  });
+});

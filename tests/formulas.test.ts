@@ -11,10 +11,14 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  AVARICE_STREAK_GOLD_CAP,
+  DRAGON_HOARD_GOLD_CAP,
   ENEMY_HP_GROWTH,
   GOLD_GROWTH,
+  waveMasteryChainMultiplier,
   TARGET_BOSS_KILL_SECONDS,
   TARGET_WAVE_KILL_SECONDS,
+  avariceStreakGoldBonus,
   bossCountForWave,
   bossHPForWave,
   enemyHPForWave,
@@ -299,6 +303,50 @@ describe('upgrade value curves', () => {
       const v = computeUpgradeValue(u, top);
       if (u.scaling.cap.min !== undefined) expect(v, u.id).toBeGreaterThanOrEqual(u.scaling.cap.min);
       if (u.scaling.cap.max !== undefined) expect(v, u.id).toBeLessThanOrEqual(u.scaling.cap.max);
+    }
+  });
+});
+
+/**
+ * Gate 14 (revamp §6.2): the economy ceilings.
+ *
+ * Every purchased gold multiplier used to compound without one, which is why
+ * run income grew 1.185x per wave against a 1.08 cost ruler — one wave of
+ * income bought one damage level at every depth, forever. These are the three
+ * clamps that need code rather than a data-table field.
+ */
+describe('economy caps', () => {
+  it('caps Avarice at +75% however long the streak runs', () => {
+    const perKill = 0.025;   // the shipping evolution value
+
+    expect(avariceStreakGoldBonus(1, perKill)).toBe(0);
+    expect(avariceStreakGoldBonus(11, perKill)).toBeCloseTo(0.25, 6);
+    // 31 kills = 30 x 2.5% = exactly the cap.
+    expect(avariceStreakGoldBonus(31, perKill)).toBeCloseTo(AVARICE_STREAK_GOLD_CAP, 6);
+    // A wave near the wall sustains ~50; uncapped that was +122%.
+    expect(avariceStreakGoldBonus(50, perKill)).toBeCloseTo(AVARICE_STREAK_GOLD_CAP, 6);
+    expect(avariceStreakGoldBonus(500, perKill)).toBeCloseTo(AVARICE_STREAK_GOLD_CAP, 6);
+  });
+
+  it('holds the two evolution ceilings at the plan values', () => {
+    expect(AVARICE_STREAK_GOLD_CAP).toBe(0.75);
+    expect(DRAGON_HOARD_GOLD_CAP).toBe(0.50);
+  });
+
+  it('caps the Wave Mastery chain at x3', () => {
+    expect(waveMasteryChainMultiplier(0)).toBeCloseTo(1, 6);
+    expect(waveMasteryChainMultiplier(5)).toBeCloseTo(1.5, 6);
+    expect(waveMasteryChainMultiplier(20)).toBeCloseTo(3, 6);
+    // Wave 40 used to read x21 here.
+    expect(waveMasteryChainMultiplier(40)).toBeCloseTo(3, 6);
+    expect(waveMasteryChainMultiplier(400)).toBeCloseTo(3, 6);
+  });
+
+  it('never lets the chain run away with depth', () => {
+    for (let wave = 1; wave <= 200; wave++) {
+      const m = waveMasteryChainMultiplier(wave);
+      expect(m, `wave ${wave}`).toBeGreaterThanOrEqual(1);
+      expect(m, `wave ${wave}`).toBeLessThanOrEqual(3);
     }
   });
 });

@@ -49,7 +49,13 @@ import { SaveManager, type PersistentState, type OfflineResult } from '../system
 import { AchievementManager } from '../systems/AchievementManager';
 import { UIManager } from '../ui/UIManager';
 import type { BossBarData } from '../ui/BossBar';
-import { isBossWave, goldDropForWave, spawnCountForWave } from '../data/formulas';
+import {
+  avariceStreakGoldBonus,
+  isBossWave,
+  goldDropForWave,
+  spawnCountForWave,
+  waveMasteryChainMultiplier,
+} from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
 import type { ShotSplash } from '../data/prestige';
 import { DEFAULT_AUTO_ASCEND_WAVE, TP_AOE_SPLASH_RADIUS, composeShotSplash } from '../data/prestige';
@@ -808,7 +814,13 @@ export class Game {
       if (this.upgradeMgr.hasEvolutionEffect('kill_streak_gold')) {
         this.killStreak += 1;
         const perKill = this.upgradeMgr.getEvolutionEffectValue('kill_streak_gold');
-        this.enemyMgr.setKillStreakGoldBonus((this.killStreak - 1) * perKill);
+        // Revamp §6.2.1: hard cap. A deep wave sustains a streak as long as its
+        // own enemy count (~50 near the wall), so uncapped this was worth over
+        // +200% gold on its own — the largest single term in the 1.185x/wave
+        // income growth the revamp bounds.
+        this.enemyMgr.setKillStreakGoldBonus(
+          avariceStreakGoldBonus(this.killStreak, perKill),
+        );
       }
 
       // ── blessing behaviors on kill (plan §1.3) ──
@@ -1295,7 +1307,9 @@ export class Game {
       }
       // Wave Mastery: flat gold on wave clear
       if (this.waveGoldBonus > 0) {
-        let multiplier = 1 + cleared * 0.5;
+        // Revamp §6.2.3: capped at x3 (20 waves x 0.1), applied *before*
+        // Golden Tide. Was `1 + cleared * 0.5` — x21 by wave 40.
+        let multiplier = waveMasteryChainMultiplier(cleared);
         if (this.upgradeMgr.hasEvolutionEffect('golden_tide')) {
           multiplier *= 1 + this.upgradeMgr.getEvolutionEffectValue('golden_tide');
         }
@@ -1307,9 +1321,14 @@ export class Game {
           this.bus.emit('gold_changed', this.state.resources.gold);
         }
       }
-      // Enlightenment evolution: +1 talent point every 10 waves
-      if (this.upgradeMgr.hasEvolutionEffect('enlightenment') && cleared % 10 === 0) {
-        this.towerXpMgr.grantTalentPoint();
+      // Enlightenment evolution: +1 talent point every 12 waves
+      if (this.upgradeMgr.hasEvolutionEffect('enlightenment')) {
+        // Revamp §6.1: the interval is the evolution's own `effectValue` (12),
+        // not a literal here that could drift away from the tooltip.
+        const every = Math.max(1, Math.round(
+          this.upgradeMgr.getEvolutionEffectValue('enlightenment'),
+        ));
+        if (cleared % every === 0) this.towerXpMgr.grantTalentPoint();
       }
       // Tower XP & passive ability XP from wave clear
       this.towerXpMgr.addWaveClearXp(cleared);
@@ -3298,6 +3317,10 @@ export class Game {
       : {};
     this.projectileMgr.setExecuteBonus(stats.executeThreshold, stats.executeMultiplier);
     this.projectileMgr.setTalentExecuteBonus(stats.talentExecuteBonus);
+    this.projectileMgr.setEvolutionShotBonuses(
+      this.upgradeMgr.getEvolutionEffectValue('range_damage'),
+      this.upgradeMgr.getEvolutionEffectValue('pierce_amp'),
+    );
     this.projectileMgr.setEvolutionCombatEffects(
       stats.instantKillChance,
       stats.critSplash,
