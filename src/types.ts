@@ -903,6 +903,22 @@ export interface RenderSnapshot {
   towerLevel?: number;
   /** Kill-combo tier 0..4 and the drain bar's fill, for the §5.C flourish. Presentation only. */
   combo?: { tier: number; fraction: number };
+  /**
+   * The boss intro (§5.D). `progress` is the bar extension, 0..1, already
+   * eased and phase-resolved by `Game`, so the renderer needs no phase logic
+   * and no wall clock of its own. Presentation only.
+   */
+  bossIntro?: BossIntroView | null;
+}
+
+/** What the renderer paints for the boss intro. Presentation only. */
+export interface BossIntroView {
+  /** Bar extension, 0..1: 0 is closed, 1 is the held frame. */
+  progress: number;
+  name: string;
+  /** Player-facing pattern name, or null when no boss is on the field yet. */
+  pattern: string | null;
+  wave: number;
 }
 
 /** Cursor charge ring state. Presentation only — the timer lives in `Game`. */

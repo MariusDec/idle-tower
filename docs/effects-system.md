@@ -124,3 +124,38 @@ two, and `age` resets so the pop re-runs — a growing total should visibly bump
 `riseCss` is **deliberately not reset**; resetting it would teleport the label
 back down onto the enemy. `tests/effects.test.ts` pins that. Merging is matched
 on `kind` as well as crit, so a heal never folds into a hit.
+
+## Boss intro (UI plan §5.D)
+
+A 1.8 s letterbox cinematic — `in` 0.35 s, `hold` 1.10 s, `out` 0.35 s — that
+**never pauses the simulation**. The boss is already fighting through it, and
+stopping the clock would break both the wave timer and the idle contract.
+
+The state machine (`BossIntroState`) lives in `Game`, not in `EffectsManager`
+and not in the renderer:
+
+- only `Game` has `realDt`, and the intro advances on the wall clock — on
+  `gameDt` a 6.5× run would flash the whole timeline in 0.28 s;
+- `Renderer.time` advances by a fixed `FRAME_DT`, which is right for a looping
+  shimmer and wrong for a 1.8-second timeline;
+- it is not a particle, so routing it through the 600-slot pool would be a
+  category error.
+
+`Game.bossIntroSnapshot()` hands the renderer a single eased number — the bar
+extension, 0..1 — so `Renderer.drawBossIntro` carries no phase logic.
+
+Guards, all in `beginBossIntro` / `tickBossIntro`:
+
+| Condition | Behaviour |
+|---|---|
+| Same wave already introduced | Ignored — once per encounter |
+| `getSpeed() > 2` at open | No intro at all (idle contract) |
+| `getSpeed() > 2` mid-intro | Dropped immediately |
+| `prefers-reduced-motion` | Opens straight at `hold`: static name plate for 1.10 s, no bars, no `zoomPunch`. It does **not** degrade to nothing — which boss showed up is information |
+| Any canvas press or key | Jumps to `out` (a 0.35 s retract, not a hard cut) and consumes the event |
+
+It is layered on top of the existing 0.8 s entry slow-mo and
+`emitBossEntryPulse`, which still fire at the same two sites. While the intro
+is up, `drawWaveBanner` skips its `BOSS WAVE n` branch so the title is not
+painted twice. The pattern line ships as text: the icon sprite sheet is
+DOM-side and there is no cheap icon path in the canvas renderer.

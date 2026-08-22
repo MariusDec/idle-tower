@@ -220,6 +220,10 @@ function bootstrap(): void {
    * an orb works without a second implementation that can drift.
    */
   const pressAt = (x: number, y: number): void => {
+    // UI plan §5.D: a boss intro takes the press *before* the orb/placement/
+    // charge routing, and consumes it — a tap meant to skip the cinematic must
+    // not also drop a meteor. It retracts over 0.35 s rather than cutting.
+    if (game.skipBossIntro()) return;
     const consumed = game.handleCanvasPress(x, y);
     // Even a consumed press still updates the aim point. Not doing so made a
     // click on an orb snap the tower's aim back to wherever the cursor last
@@ -281,6 +285,12 @@ function bootstrap(): void {
       || (ev.target instanceof HTMLElement && ev.target.isContentEditable)
     ) return;
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    // §5.D: same rule as the canvas press — any key skips the boss intro and
+    // does nothing else that frame.
+    if (game.skipBossIntro()) {
+      ev.preventDefault();
+      return;
+    }
     const def = ABILITIES.find(a => a.hotkey === ev.key);
     if (def) {
       if (game.castAbility(def.id)) ev.preventDefault();

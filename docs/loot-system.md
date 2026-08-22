@@ -189,9 +189,17 @@ guarantee:
 `main.ts` funnels both mouse and touch presses through one `pressAt(x, y)`, which calls
 `Game.handleCanvasPress`. The order is load-bearing:
 
+0. **Boss intro** playing (UI plan §5.D) → skip it (jump to the 0.35 s retract) and consume the
+   press. This sits ahead of everything else and lives in `pressAt` rather than in
+   `handleCanvasPress`, because a tap meant to dismiss a cinematic must not also drop a meteor or
+   start an aim hold.
 1. **Loot orb** under the cursor → collect, consume the press.
 2. **Pending placement** → place the ability, consume the press.
 3. Otherwise → the press becomes an ordinary manual-aim hold.
+
+Keyboard follows the same rule: the `keydown` handler calls `Game.skipBossIntro()` after its
+focused-input and modifier guards and before ability hotkeys, so any key skips the intro and does
+nothing else that frame.
 
 A consumed press still updates the aim point, so clicking an orb does not snap the tower's aim back
 to wherever the cursor previously was. Because both pipelines share the function, tapping an orb

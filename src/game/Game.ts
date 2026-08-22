@@ -301,6 +301,29 @@ function writeAutoPickPreference(enabled: boolean): void {
   }
 }
 
+/**
+ * The boss intro's timeline (UI plan §5.D).
+ *
+ * `t` is seconds elapsed *in the current phase*, on the wall clock — the intro
+ * is a cinematic and must run at the same 1.8 s whatever the speed multiplier
+ * is doing to the simulation underneath it.
+ */
+interface BossIntroState {
+  phase: 'in' | 'hold' | 'out';
+  t: number;
+  wave: number;
+  name: string;
+  pattern: string | null;
+}
+
+const INTRO_IN = 0.35, INTRO_HOLD = 1.10, INTRO_OUT = 0.35;   // 1.80 s total
+
+/** The intro's bar extension curve. Local to §5.D; the renderer has its own. */
+function introEaseOutCubic(t: number): number {
+  const c = Math.max(0, Math.min(1, t));
+  return 1 - (1 - c) ** 3;
+}
+
 export interface GameDeps {
   bus: EventBus;
   ui: UIManager;
@@ -440,6 +463,24 @@ export class Game {
   private shieldFlash = 0;
   /** Low-HP vignette intensity, 0..1. Painted by the renderer in screen space. */
   private vignette = 0;
+
+  /**
+   * The boss intro (UI plan §5.D).
+   *
+   * A 1.8 s cinematic that **never pauses the simulation** — the boss is
+   * already fighting through it, and stopping the clock would break both the
+   * wave timer and the idle contract. The state machine lives here rather than
+   * in the renderer because only `Game` has `realDt`, `getSpeed()` and the
+   * input; `Renderer.time` advances by a fixed `FRAME_DT`, which is right for a
+   * looping shimmer and wrong for a wall-clock timeline.
+   */
+  private bossIntro: BossIntroState | null = null;
+  /**
+   * `prefers-reduced-motion`, resolved once. The intro degrades to a static
+   * name plate rather than to nothing: which boss showed up is information.
+   */
+  private readonly reducedMotion: boolean = typeof matchMedia === 'function'
+    && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Talent values consumed by event handlers rather than by the stat recompute.
   private talentDodgeChance = 0;
@@ -883,6 +924,8 @@ export class Game {
       const p = payload as { wave: number };
       if (this.bossEncounter && this.bossEncounter.wave === p.wave) return;
       this.bossEncounter = { elapsed: 0, flawless: true, goldValue: 0, wave: p.wave };
+      // §5.D: the cinematic, layered on the entry beat that already fires here.
+      this.beginBossIntro(p.wave, bossNameForWave(p.wave), this.leadBossPatternName());
     });
     this.bus.on('boss_phase', (payload: unknown) => {
       const p = payload as { x: number; y: number; phase: number; pattern: BossPattern };
@@ -1181,6 +1224,7 @@ export class Game {
       if (isBossWave(w)) {
         this.triggerBossEntrySlowMo();
         this.effects.emitBossEntryPulse(ts.x, ts.y);
+        this.beginBossIntro(w, bossNameForWave(w), this.leadBossPatternName());
       }
       if (WAVE_MILESTONES.has(w) && !this.announcedMilestones.has(w)) {
         this.announcedMilestones.add(w);
@@ -1745,6 +1789,69 @@ export class Game {
       count: this.enemyMgr.bossAliveCount(),
       swiftWindow: (this.bossEncounter?.elapsed ?? elapsed) < BOSS_ENCOUNTER.swiftKillSeconds,
     };
+  }
+
+  /**
+   * The lead boss's pattern, player-facing, or null when nothing is on the
+   * field yet — a wave-start trigger runs before the first boss spawns.
+   */
+  private leadBossPatternName(): string | null {
+    const pattern = this.enemyMgr.leadBoss()?.bossPattern;
+    return pattern ? BOSS_PATTERN_NAMES[pattern] : null;
+  }
+
+  /**
+   * Open the boss intro (UI plan §5.D).
+   *
+   * Layered *on top of* the existing entry slow-mo and `emitBossEntryPulse` at
+   * the same sites, not a replacement for them.
+   */
+  private beginBossIntro(wave: number, name: string, pattern: string | null): void {
+    if (this.bossIntro && this.bossIntro.wave === wave) return;  // once per encounter
+    if (this.getSpeed() > 2) return;                             // idle contract: no cinematic at speed
+    if (this.reducedMotion) { this.bossIntro = { phase: 'hold', t: 0, wave, name, pattern }; return; }
+    this.bossIntro = { phase: 'in', t: 0, wave, name, pattern };
+    this.camera.zoomPunch();
+  }
+
+  /**
+   * Advance the intro on the wall clock. Never on `gameDt`: a 6.5× run would
+   * flash the whole 1.8 s timeline in 0.28 s.
+   */
+  private tickBossIntro(realDt: number): void {
+    const s = this.bossIntro;
+    if (!s) return;
+    if (this.getSpeed() > 2) { this.bossIntro = null; return; }   // speed raised mid-intro
+    s.t += realDt;
+    const cap = s.phase === 'in' ? INTRO_IN : s.phase === 'hold' ? INTRO_HOLD : INTRO_OUT;
+    if (s.t < cap) return;
+    s.t -= cap;
+    if (s.phase === 'in') s.phase = 'hold';
+    else if (s.phase === 'hold') s.phase = 'out';
+    else this.bossIntro = null;
+  }
+
+  /**
+   * Skip the intro from input (§5.D). Jumps to the retract rather than cutting:
+   * a hard cut is jarring, a 0.35 s retract is not. Returns true when the press
+   * or key was consumed, so `main.ts` can stop it also firing an ability.
+   */
+  skipBossIntro(): boolean {
+    const s = this.bossIntro;
+    if (!s || s.phase === 'out') return false;
+    s.phase = 'out';
+    s.t = 0;
+    return true;
+  }
+
+  /** The renderer's view of the intro: a single 0..1 bar extension. */
+  private bossIntroSnapshot(): { progress: number; name: string; pattern: string | null; wave: number } | null {
+    const s = this.bossIntro;
+    if (!s) return null;
+    const p = s.phase === 'in' ? introEaseOutCubic(s.t / INTRO_IN)
+      : s.phase === 'hold' ? 1
+        : 1 - introEaseOutCubic(s.t / INTRO_OUT);
+    return { progress: p, name: s.name, pattern: s.pattern, wave: s.wave };
   }
 
   private triggerBossEntrySlowMo(): void {
@@ -4284,6 +4391,8 @@ export class Game {
     // would be a flicker, and one that ran on the simulation clock during a
     // slow-mo boss death would outlast the death.
     this.camera.update(realDt);
+    // §5.D: wall clock, so the 1.8 s cinematic is 1.8 s at any speed.
+    this.tickBossIntro(realDt);
 
     // Plan §4.2, same reasoning: the charge timer measures a person holding
     // still, so it runs on `realDt`. A 1.2 s hold is 1.2 seconds of the
@@ -4370,6 +4479,8 @@ export class Game {
       combo: this.pacingHud
         ? { tier: this.pacingHud.comboTier, fraction: this.pacingHud.comboFraction }
         : undefined,
+      // Presentation only (UI plan §5.D): the boss intro's bar extension.
+      bossIntro: this.bossIntroSnapshot(),
     }, {
       screenFlash: this.screenFlash,
       towerFlash: this.towerFlash,

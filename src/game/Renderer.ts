@@ -1,4 +1,4 @@
-import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, ParticleLayer, DamageNumber, Shockwave, Mine, AuraType, LootOrb } from '../types';
+import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, ParticleLayer, DamageNumber, Shockwave, Mine, AuraType, LootOrb, BossIntroView } from '../types';
 import { LOOT_ORB_COLORS, LOOT_TUNING, type LootOrbKind } from '../data/loot';
 import { ARENA, ARENA_RANGE_CAP, entity, world } from '../data/arena';
 import type { Camera } from './Camera';
@@ -755,6 +755,7 @@ export class Renderer {
     camera.applyScreen(ctx);
     this.drawDamageNumbers(ctx, snapshot.damageNumbers);
     this.drawWaveBanner(ctx, snapshot);
+    this.drawBossIntro(ctx, snapshot.bossIntro ?? null);
 
     const flash = options?.screenFlash ?? 0;
     if (flash > 0) {
@@ -4699,7 +4700,9 @@ export class Renderer {
       const willAdvance = snap.wave.autoProgress || isBossWave(snap.wave.number);
       ctx.fillText(`Wave ${snap.wave.number} cleared — ${willAdvance ? 'next' : 'restarting'} wave in ${secs}s`, w / 2, 25);
       ctx.restore();
-    } else if (isBossWave(snap.wave.number)) {
+    } else if (isBossWave(snap.wave.number) && !snap.bossIntro) {
+      // §5.D: while the intro is up it owns the boss's title; two of them
+      // stacked read as a bug.
       const pulse = 0.5 + Math.sin(this.time * 4) * 0.15;
       ctx.save();
       const grad = ctx.createLinearGradient(0, 0, w, 0);
@@ -4718,5 +4721,45 @@ export class Renderer {
       ctx.fillText('A powerful enemy approaches', w / 2, 50);
       ctx.restore();
     }
+  }
+
+  /**
+   * The boss intro (UI plan §5.D), in screen space.
+   *
+   * Everything about the timeline — the phase, the easing, the wall clock —
+   * was resolved in `Game`; this paints one number. Under reduced motion the
+   * bars are dropped and only the name plate is drawn: the letterbox is the
+   * moving part, the name is the information.
+   */
+  private drawBossIntro(ctx: CanvasRenderingContext2D, intro: BossIntroView | null): void {
+    if (!intro || intro.progress <= 0) return;
+    const w = this.camera.cssWidth;
+    const h = this.camera.cssHeight;
+    const p = Math.max(0, Math.min(1, intro.progress));
+    ctx.save();
+    if (!this.reducedMotion) {
+      const barH = h * 0.10 * p;
+      ctx.fillStyle = withAlpha(INK['950'], 0.92);
+      ctx.fillRect(0, 0, w, barH);
+      ctx.fillRect(0, h - barH, w, barH);
+    }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = p;
+    ctx.translate(w / 2, h * 0.42);
+    // The name settles rather than arriving: 1.06 → 1.00 across the extension.
+    ctx.scale(1.06 - 0.06 * p, 1.06 - 0.06 * p);
+    ctx.fillStyle = mix(FX.blood, INK['050'], 0.5);
+    ctx.font = `800 36px ${DISPLAY_FONT_STACK}`;
+    ctx.fillText(intro.name, 0, 0);
+    if (intro.pattern) {
+      // No pattern icon: there is no cheap icon path in the canvas renderer
+      // (the sprite sheet is DOM-side), so this ships as text — §5.D allows it.
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = withAlpha(INK['100'], 0.75 * p);
+      ctx.font = `600 15px ${DISPLAY_FONT_STACK}`;
+      ctx.fillText(intro.pattern, 0, 30);
+    }
+    ctx.restore();
   }
 }
