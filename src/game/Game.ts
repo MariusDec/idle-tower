@@ -39,6 +39,7 @@ import { WaveManager } from '../systems/WaveManager';
 import { ResourceManager } from '../systems/ResourceManager';
 import { UpgradeManager } from '../systems/UpgradeManager';
 import { EffectsManager } from '../systems/EffectsManager';
+import { DEFAULT_QUALITY, type QualityTier } from '../data/quality';
 import { NotificationManager } from '../systems/NotificationManager';
 import { AbilityManager } from '../systems/AbilityManager';
 import { PrestigeManager } from '../systems/PrestigeManager';
@@ -335,6 +336,8 @@ export interface GameDeps {
 export class Game {
   private readonly camera: Camera;
   private readonly renderer: Renderer;
+  /** The live quality tier (§5.F). Presentation only. */
+  private quality: QualityTier = DEFAULT_QUALITY;
   private readonly bus: EventBus;
   private readonly ui: UIManager;
 
@@ -1592,6 +1595,25 @@ export class Game {
 
   setFpsOverlay(el: HTMLElement | null): void {
     this.fpsOverlay = el;
+  }
+
+  /**
+   * The quality knob (UI plan §5.F).
+   *
+   * Part 5 owns the table and this wiring; Part 9 owns the Settings control,
+   * the auto-detect and the camera's DPR cap, and only has to call this. Purely
+   * presentational: no consumer of a quality profile is read by the simulation,
+   * and the damaging shockwave rings are never scaled by it.
+   */
+  setQuality(tier: QualityTier): void {
+    this.quality = tier;
+    this.effects.setQuality(tier);
+    this.renderer.setQuality(tier);
+  }
+
+  /** The tier currently in force, for Part 9's Settings control to read back. */
+  get qualityTier(): QualityTier {
+    return this.quality;
   }
 
   /**

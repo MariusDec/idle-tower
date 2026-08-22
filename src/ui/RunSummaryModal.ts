@@ -1,6 +1,6 @@
 import { formatInt, formatNumber } from '../utils/bigNumber';
 import type { RunRecord } from '../types';
-import { toggleClass } from '../utils/dom';
+import { Modal } from './Modal';
 
 export interface RunSummaryData {
   record: RunRecord;
@@ -43,7 +43,7 @@ function formatDelta(current: number, previous: number | undefined, suffix = '')
 
 export class RunSummaryModal {
   private readonly root: HTMLElement;
-  private currentRoot: HTMLElement | null = null;
+  private modal: Modal | null = null;
   private onDismiss: (() => void) | null = null;
 
   constructor(root: HTMLElement) {
@@ -52,36 +52,26 @@ export class RunSummaryModal {
 
   /** True while the modal is up — see `UIManager.isModalOpen`. */
   isOpen(): boolean {
-    return this.currentRoot !== null;
+    return this.modal !== null;
   }
 
   show(data: RunSummaryData, onDismiss: () => void): void {
     this.hide();
     this.onDismiss = onDismiss;
-    const wrap = document.createElement('div');
-    wrap.className = 'welcome-modal run-summary-modal';
-    this.currentRoot = wrap;
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'welcome-modal-backdrop';
-    wrap.appendChild(backdrop);
-
-    const card = document.createElement('div');
-    card.className = 'welcome-modal-card run-summary-card';
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    card.setAttribute('aria-label', 'Run summary');
-
-    const title = document.createElement('h2');
-    title.className = 'welcome-modal-title';
-    title.textContent = data.record.kind === 'ascension' ? 'Ascension Complete' : 'Transcendence Complete';
-    card.appendChild(title);
-
-    const sub = document.createElement('p');
-    sub.className = 'welcome-modal-sub';
     const currencyLabel = data.record.kind === 'ascension' ? 'AP gained' : 'TP gained';
-    sub.textContent = `Wave ${data.record.highestWave} • ${formatDuration(data.record.durationSeconds)} • +${formatInt(data.record.currencyGained)} ${currencyLabel}`;
-    card.appendChild(sub);
+    // The debrief is not dismissible: its button is the run's only exit (and,
+    // after the first ascension, the route into the core picker).
+    const modal = new Modal({
+      id: 'run-summary',
+      title: data.record.kind === 'ascension' ? 'Ascension Complete' : 'Transcendence Complete',
+      sub: `Wave ${data.record.highestWave} • ${formatDuration(data.record.durationSeconds)}`
+        + ` • +${formatInt(data.record.currencyGained)} ${currencyLabel}`,
+      width: 520,
+      dismissible: false,
+      root: this.root,
+    });
+    this.modal = modal;
+    const card = modal.body;
 
     const stats = document.createElement('div');
     stats.className = 'welcome-modal-stats run-summary-stats';
@@ -141,17 +131,14 @@ export class RunSummaryModal {
     btn.addEventListener('click', () => this.dismiss());
     card.appendChild(btn);
 
-    wrap.appendChild(card);
-    this.root.appendChild(wrap);
-    requestAnimationFrame(() => toggleClass(wrap, 'is-visible', true));
+    modal.open();
   }
 
   hide(): void {
-    if (this.currentRoot && this.currentRoot.parentNode) {
-      this.currentRoot.parentNode.removeChild(this.currentRoot);
-    }
-    this.currentRoot = null;
+    const modal = this.modal;
+    this.modal = null;
     this.onDismiss = null;
+    modal?.destroy();
   }
 
   private dismiss(): void {

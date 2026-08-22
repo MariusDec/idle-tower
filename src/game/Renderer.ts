@@ -5,6 +5,7 @@ import type { Camera } from './Camera';
 import { TOWER_VISUAL } from '../data/tower';
 import { CORE_BY_ID, DEFAULT_CORE, isCoreId, type CoreId } from '../data/cores';
 import { FX, INK, lighten, mix, withAlpha } from '../data/palette';
+import { DEFAULT_QUALITY, QUALITY, type QualityProfile, type QualityTier } from '../data/quality';
 import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS, ENEMY_GAIT, bossTierForWave } from '../data/enemies';
 import type { EnemyDef, EnemyShape } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
@@ -154,8 +155,6 @@ interface EnemyTrack {
 
 // ── §4.3 projectiles and impacts ──────────────────────────────────────────────
 
-/** Ceiling on live impact records. Pooled: the oldest decal is dropped first. */
-const IMPACT_CAP = 48;
 /** Seconds a ground decal takes to fade out. */
 const DECAL_TIME = 2;
 /** Seconds the spark cone at an impact lives. */
@@ -233,14 +232,12 @@ const TRACER_LENGTH = world(230);
  * how loud each one is allowed to be on the battlefield.
  */
 const COMBO_INTENSITY = [0, 0.28, 0.5, 0.75, 1];
-/** Ceiling on live embers. Pooled, like every other effect here. */
-const EMBER_CAP = 48;
 /** Embers spawned per second at full glow. */
 const EMBER_RATE = 14;
 /** Peak alpha of the baked edge glow, at `comboGlow === 1`. */
 const COMBO_EDGE_ALPHA = 0.22;
 
-/** A drifting ember thrown off by a running combo (§5.C). Pooled at `EMBER_CAP`. */
+/** A drifting ember thrown off by a running combo (§5.C). Pooled at the quality profile's `embers`. */
 interface ComboEmber {
   x: number;
   y: number;
@@ -554,10 +551,17 @@ export class Renderer {
   /** The baked inverse-vignettes, gold and ember, cross-faded by intensity. */
   private comboEdgeGold: HTMLCanvasElement | null = null;
   private comboEdgeEmber: HTMLCanvasElement | null = null;
-  /** Live embers (§5.C). Pooled at `EMBER_CAP`. */
+  /** Live embers (§5.C). Pooled at the quality profile's `embers`. */
   private readonly embers: ComboEmber[] = [];
   /** Fractional spawn carry, so a low glow still emits at the right rate. */
   private emberDebt = 0;
+
+  // ── §5.F the quality knob ──
+  /**
+   * The live quality profile. Presentation only: nothing the simulation reads
+   * is derived from it, and the damaging shockwave rings are never scaled.
+   */
+  private profile: QualityProfile = QUALITY[DEFAULT_QUALITY];
 
   // ── §4.3 projectiles and impacts ──
   private readonly impacts: Impact[] = [];
@@ -630,6 +634,26 @@ export class Renderer {
 
   private get height(): number {
     return this.camera.worldHeight;
+  }
+
+  /**
+   * Mirror `EffectsManager.setQuality` for everything the renderer owns (§5.F).
+   *
+   * `bgLayers` and `shadows` are baked into the background and the sprite
+   * cache, so a change to either has to drop the bake — otherwise the old
+   * terrain noise survives a switch to `low` until the next resize.
+   */
+  setQuality(tier: QualityTier): void {
+    const next = QUALITY[tier];
+    const rebake = next.bgLayers !== this.profile.bgLayers || next.shadows !== this.profile.shadows;
+    this.profile = next;
+    // Trim the pools immediately rather than waiting for them to age out, so
+    // turning the knob down is felt on the next frame.
+    const overDecals = this.impacts.length - next.decals;
+    if (overDecals > 0) this.impacts.splice(0, overDecals);
+    const overEmbers = this.embers.length - next.embers;
+    if (overEmbers > 0) this.embers.splice(0, overEmbers);
+    if (rebake) this.invalidateBackground();
   }
 
   /** Drop the baked background. Called by `Game` when the camera resizes. */
@@ -827,7 +851,8 @@ export class Renderer {
 
   /** Spawn one ember on a random point of the ring the tower covers. */
   private pushEmber(snap: RenderSnapshot): void {
-    if (this.embers.length >= EMBER_CAP) this.embers.shift();
+    if (this.profile.embers <= 0) return;
+    if (this.embers.length >= this.profile.embers) this.embers.shift();
     const a = Math.random() * Math.PI * 2;
     const r = this.rangeDrawn * 0.75;
     this.embers.push({
@@ -898,7 +923,8 @@ export class Renderer {
 
   /** Pooled push: the oldest decal is dropped once the cap is reached. */
   private pushImpact(track: ShotTrack): void {
-    if (this.impacts.length >= IMPACT_CAP) this.impacts.shift();
+    if (this.profile.decals <= 0) return;
+    if (this.impacts.length >= this.profile.decals) this.impacts.shift();
     this.impacts.push({
       x: track.x,
       y: track.y,
@@ -1249,7 +1275,9 @@ export class Renderer {
     // a frame that also has to draw two hundred enemies.
     const rand = mulberry32(hashString(`${w}x${h}|${core}`));
     this.bakeFarField(bg, w, h, scale, core, rand);
-    this.bakeTerrain(bg, w, h, scale, rand);
+    // `bgLayers: 2` drops the terrain noise — the most expensive of the three
+    // bakes and the least missed on a phone.
+    if (this.profile.bgLayers >= 3) this.bakeTerrain(bg, w, h, scale, rand);
     this.bakeLattice(bg, w, h, scale, core);
     this.bgCanvas = c;
     this.bgScale = scale;
@@ -1514,7 +1542,7 @@ export class Renderer {
       g.arc(ox, oy, r, 0, Math.PI * 2);
       g.fill();
     });
-    this.blit(ctx, shadow, t.x, t.y);
+    if (this.profile.shadows) this.blit(ctx, shadow, t.x, t.y);
     this.blit(ctx, this.part('tower-plinth', TOWER_VISUAL.plinthRadius * 2.3, (g) => {
       this.paintPlinth(g);
     }), t.x, t.y);
@@ -3352,7 +3380,7 @@ export class Renderer {
     for (const e of enemies) {
       if (!e.alive) continue;
       this.drawAfterImage(ctx, e);
-      this.drawEnemyShadow(ctx, e);
+      if (this.profile.shadows) this.drawEnemyShadow(ctx, e);
       this.drawEnemy(ctx, e);
     }
   }
@@ -4347,7 +4375,7 @@ export class Renderer {
    * Ground decals from shots that have landed (§4.3).
    *
    * Drawn with the floor rather than with the entities, so a mob walks over a
-   * scorch mark instead of under it. Pooled at `IMPACT_CAP` and faded over
+   * scorch mark instead of under it. Pooled at the quality profile's `decals` and faded over
    * `DECAL_TIME`; a splash-carrying shot leaves a wider mark, which is what
    * makes artillery's blast radius something the player can see the size of
    * rather than a number on a card.
@@ -4472,7 +4500,10 @@ export class Renderer {
     options?: RenderOptions,
   ): void {
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    // At the `low` tier the pass still runs — everything in it still has to be
+    // drawn — but composites `source-over`, which is the cheap path on a GPU
+    // that has to read back the destination for every `lighter` fill.
+    if (this.profile.additive) ctx.globalCompositeOperation = 'lighter';
     this.drawParticles(ctx, snap.particles, 'additive');
     this.drawShockwaves(ctx, snap.shockwaves);
     this.drawChainLightning(ctx, options?.chainPaths);

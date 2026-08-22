@@ -1,4 +1,5 @@
 import { FX, INK, lighten, mix, withAlpha } from '../data/palette';
+import { DEFAULT_QUALITY, QUALITY, type QualityProfile, type QualityTier } from '../data/quality';
 import type { DamageKind, DamageNumber, Particle, Shockwave } from '../types';
 
 const PARTICLE_GRAVITY = 320;
@@ -28,8 +29,10 @@ const SHOCKWAVE_MAX_LIFE = 1.0;
  * filter and the renderer's per-particle draw cost more than the whole
  * simulation. Overflow drops the *oldest* entries, which are the ones already
  * closest to expiring, so what the player is looking at right now survives.
+ *
+ * The particle ceiling itself is not a constant any more: it lives on the
+ * quality profile (§5.F) so a lower tier can shrink the pool.
  */
-const MAX_PARTICLES = 600;
 const MAX_DAMAGE_NUMBERS = 80;
 
 /**
@@ -61,6 +64,25 @@ export class EffectsManager {
   private particles: Particle[] = [];
   private damageNumbers: DamageNumber[] = [];
   private shockwaves: Shockwave[] = [];
+  /** The live quality profile (§5.F). Presentation only — see `quality.ts`. */
+  private profile: QualityProfile = QUALITY[DEFAULT_QUALITY];
+
+  /**
+   * Point every emitter at a new quality tier.
+   *
+   * Shrinking the pool drops the *oldest* particles, the same policy
+   * `pushParticle` uses on overflow.
+   */
+  setQuality(tier: QualityTier): void {
+    this.profile = QUALITY[tier];
+    const over = this.particles.length - this.profile.maxParticles;
+    if (over > 0) this.particles.splice(0, over);
+  }
+
+  /** Scale a particle count by the quality tier, never below 1. */
+  private n(count: number): number {
+    return Math.max(1, Math.round(count * this.profile.particleScale));
+  }
 
   get particleList(): Particle[] {
     return this.particles;
@@ -90,12 +112,13 @@ export class EffectsManager {
     // UI plan §5.A: routing is explicit. An emitter that says nothing is
     // ordinary matter, painted in the `front` pass.
     p.layer ??= 'front';
-    if (this.particles.length >= MAX_PARTICLES) this.particles.shift();
+    if (this.particles.length >= this.profile.maxParticles) this.particles.shift();
     this.particles.push(p);
   }
 
   emitHitSparks(x: number, y: number, color: string, count: number = 4): void {
-    for (let i = 0; i < count; i++) {
+    const n = this.n(count);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 50 + Math.random() * 90;
       this.pushParticle({
@@ -113,7 +136,8 @@ export class EffectsManager {
   }
 
   emitDeathBurst(x: number, y: number, color: string, radius: number, count?: number): void {
-    const n = count ?? Math.max(8, Math.round(radius * 0.7));
+    const base = count ?? Math.max(8, Math.round(radius * 0.7));
+    const n = this.n(base);
     for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 80 + Math.random() * 180;
@@ -129,7 +153,8 @@ export class EffectsManager {
         layer: 'front',
       });
     }
-    for (let i = 0; i < Math.max(3, Math.floor(n / 3)); i++) {
+    const puffs = this.n(Math.max(3, Math.floor(base / 3)));
+    for (let i = 0; i < puffs; i++) {
       this.pushParticle({
         x,
         y,
@@ -145,8 +170,9 @@ export class EffectsManager {
   }
 
   emitBossDeathShockwave(x: number, y: number): void {
-    for (let i = 0; i < 36; i++) {
-      const angle = (i / 36) * Math.PI * 2 + Math.random() * 0.08;
+    const n = this.n(36);
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2 + Math.random() * 0.08;
       const speed = 220 + Math.random() * 80;
       this.pushParticle({
         x,
@@ -178,8 +204,9 @@ export class EffectsManager {
         lineWidth: 6 - r,
       });
     }
-    for (let i = 0; i < 24; i++) {
-      const angle = (i / 24) * Math.PI * 2;
+    const n = this.n(24);
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2;
       this.pushParticle({
         x: cx + Math.cos(angle) * 40,
         y: cy + Math.sin(angle) * 40,
@@ -195,7 +222,8 @@ export class EffectsManager {
   }
 
   emitRainOfArrows(cx: number, cy: number): void {
-    for (let i = 0; i < 40; i++) {
+    const n = this.n(40);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 40 + Math.random() * 420;
       const x = cx + Math.cos(angle) * dist;
@@ -215,8 +243,9 @@ export class EffectsManager {
   }
 
   emitFrostNovaRing(cx: number, cy: number): void {
-    for (let i = 0; i < 48; i++) {
-      const angle = (i / 48) * Math.PI * 2;
+    const n = this.n(48);
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2;
       const speed = 380 + Math.random() * 60;
       this.pushParticle({
         x: cx,
@@ -259,7 +288,8 @@ export class EffectsManager {
   }
 
   emitBerserkPulse(cx: number, cy: number): void {
-    for (let i = 0; i < 16; i++) {
+    const n = this.n(16);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 24 + Math.random() * 12;
       this.pushParticle({
@@ -277,7 +307,8 @@ export class EffectsManager {
   }
 
   emitGoldRushSparkle(cx: number, cy: number): void {
-    for (let i = 0; i < 12; i++) {
+    const n = this.n(12);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 16 + Math.random() * 28;
       this.pushParticle({
@@ -299,7 +330,7 @@ export class EffectsManager {
    * plus an impact ring + sparks at the target.
    */
   emitMeteor(targetX: number, targetY: number, fromX: number, fromY: number): void {
-    const trailCount = 28;
+    const trailCount = this.n(28);
     for (let i = 0; i < trailCount; i++) {
       const t = i / trailCount;
       const x = fromX + (targetX - fromX) * t;
@@ -316,7 +347,8 @@ export class EffectsManager {
         layer: 'additive',
       });
     }
-    for (let i = 0; i < 18; i++) {
+    const sparks = this.n(18);
+    for (let i = 0; i < sparks; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 140;
       this.pushParticle({
@@ -337,8 +369,9 @@ export class EffectsManager {
    * Precision Shot: slow golden ring + sparkles around the tower.
    */
   emitPrecisionGlow(cx: number, cy: number): void {
-    for (let i = 0; i < 36; i++) {
-      const angle = (i / 36) * Math.PI * 2;
+    const n = this.n(36);
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2;
       const speed = 60 + Math.random() * 18;
       this.pushParticle({
         x: cx,
@@ -352,7 +385,8 @@ export class EffectsManager {
         layer: 'additive',
       });
     }
-    for (let i = 0; i < 12; i++) {
+    const sparkles = this.n(12);
+    for (let i = 0; i < sparkles; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 20 + Math.random() * 30;
       this.pushParticle({
@@ -373,7 +407,8 @@ export class EffectsManager {
    * Vampiric Aura: red healing particles rising toward the tower.
    */
   emitVampiricAura(cx: number, cy: number): void {
-    for (let i = 0; i < 24; i++) {
+    const n = this.n(24);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 28 + Math.random() * 36;
       this.pushParticle({
@@ -394,7 +429,8 @@ export class EffectsManager {
    * Execute: wide horizontal slash + blood-red particles.
    */
   emitExecuteSlash(cx: number, cy: number): void {
-    for (let i = 0; i < 24; i++) {
+    const n = this.n(24);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 50 + Math.random() * 120;
       this.pushParticle({
@@ -408,7 +444,8 @@ export class EffectsManager {
         color: i % 2 === 0 ? FX.arcane : FX.blood,
       });
     }
-    for (let i = 0; i < 3; i++) {
+    const smears = this.n(3);
+    for (let i = 0; i < smears; i++) {
       this.pushParticle({
         x: cx + (Math.random() - 0.5) * 60,
         y: cy + (Math.random() - 0.5) * 20,
@@ -447,7 +484,8 @@ export class EffectsManager {
   }
 
   emitMineExplosion(x: number, y: number): void {
-    for (let i = 0; i < 20; i++) {
+    const n = this.n(20);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 120;
       this.pushParticle({
@@ -461,7 +499,8 @@ export class EffectsManager {
         color: i % 2 === 0 ? FX.ember : FX.gold,
       });
     }
-    for (let i = 0; i < 5; i++) {
+    const smoke = this.n(5);
+    for (let i = 0; i < smoke; i++) {
       this.pushParticle({
         x: x + (Math.random() - 0.5) * 20,
         y: y + (Math.random() - 0.5) * 20,
@@ -477,7 +516,8 @@ export class EffectsManager {
   }
 
   emitShieldAbsorb(x: number, y: number): void {
-    for (let i = 0; i < 8; i++) {
+    const n = this.n(8);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 24 + Math.random() * 12;
       this.pushParticle({
@@ -499,7 +539,8 @@ export class EffectsManager {
    * (one charge consumed). Visually distinct from tower shield absorb.
    */
   emitEnemyShieldBreak(x: number, y: number): void {
-    for (let i = 0; i < 14; i++) {
+    const n = this.n(14);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 16 + Math.random() * 8;
       this.pushParticle({
@@ -523,7 +564,7 @@ export class EffectsManager {
     const dx = x1 - x0;
     const dy = y1 - y0;
     const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-    const count = Math.min(8, Math.max(2, Math.floor(dist / 30)));
+    const count = this.n(Math.min(8, Math.max(2, Math.floor(dist / 30))));
     for (let i = 0; i < count; i++) {
       const t = Math.random();
       const px = x0 + dx * t;
@@ -558,7 +599,8 @@ export class EffectsManager {
     const ny = dy / dist;
     const baseAngle = Math.atan2(ny, nx);
     // Slash particles: spread along the attack direction
-    for (let i = 0; i < 5; i++) {
+    const n = this.n(5);
+    for (let i = 0; i < n; i++) {
       const spread = (Math.random() - 0.5) * 1.2;
       const angle = baseAngle + spread;
       const speed = 120 + Math.random() * 100;
@@ -588,7 +630,8 @@ export class EffectsManager {
   }
 
   emitSplitBurst(x: number, y: number): void {
-    for (let i = 0; i < 22; i++) {
+    const n = this.n(22);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 140;
       this.pushParticle({

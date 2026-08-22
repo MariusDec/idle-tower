@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EffectsManager, damageTier } from '../src/systems/EffectsManager';
+import { QUALITY } from '../src/data/quality';
 
 describe('damageTier (UI plan §5.B)', () => {
   it('buckets a hit by the fraction of max HP it took', () => {
@@ -71,5 +72,74 @@ describe('damage numbers, screen-space model (UI plan §5.B)', () => {
     expect(d.kind).toBe('gold');
     expect(d.isCrit).toBe(false);
     expect(d.tier).toBe(0);
+  });
+});
+
+describe('the quality knob (UI plan §5.F)', () => {
+  it('defaults to high, where nothing is scaled', () => {
+    expect(QUALITY.high.particleScale).toBe(1);
+    const fx = new EffectsManager();
+    fx.emitFrostNovaRing(0, 0);
+    expect(fx.particleList).toHaveLength(48);
+  });
+
+  it('scales every emitter by the tier', () => {
+    const low = new EffectsManager();
+    low.setQuality('low');
+    low.emitFrostNovaRing(0, 0);
+    expect(low.particleList).toHaveLength(12); // 48 * 0.25
+
+    const medium = new EffectsManager();
+    medium.setQuality('medium');
+    medium.emitDeathBurst(0, 0, '#ffffff', 20, 24);
+    // 24 * 0.5 body sparks + max(3, 24/3) * 0.5 = 4 soft puffs.
+    expect(medium.particleList).toHaveLength(16);
+  });
+
+  it('never emits fewer than one particle', () => {
+    const fx = new EffectsManager();
+    fx.setQuality('low');
+    fx.emitAttackSlash(0, 0, 10, 0, '#ffffff'); // 5 * 0.25 rounds to 1
+    expect(fx.particleList.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('keeps a ring a ring: the angle is derived from the scaled bound', () => {
+    const fx = new EffectsManager();
+    fx.setQuality('low');
+    fx.emitFrostNovaRing(0, 0);
+    // A quarter of the particles still covers the whole circle, so the
+    // headings must span it rather than bunching into a quadrant.
+    const angles = fx.particleList.map(p => Math.atan2(p.vy, p.vx));
+    expect(Math.max(...angles) - Math.min(...angles)).toBeGreaterThan(Math.PI);
+  });
+
+  it('never touches a damaging shockwave', () => {
+    // The one place in Part 5 where a mistake changes the balance: the ring
+    // that carries `damage` is a gameplay object, not a garnish.
+    const fx = new EffectsManager();
+    fx.setQuality('low');
+    fx.emitShockwaveRing(0, 0, 200, undefined, undefined, 0.1, 250, 'magic');
+    expect(fx.shockwaveList).toHaveLength(1);
+    const s = fx.shockwaveList[0];
+    expect(s.damage).toBe(250);
+    expect(s.maxRadius).toBe(200);
+    expect(s.age).toBeCloseTo(-0.1);
+
+    // …and the boss-entry rings, which are shockwaves too, still all fire.
+    const pulse = new EffectsManager();
+    pulse.setQuality('low');
+    pulse.emitBossEntryPulse(0, 0);
+    expect(pulse.shockwaveList).toHaveLength(3);
+  });
+
+  it('shrinks the live pool to the new ceiling, dropping the oldest', () => {
+    const fx = new EffectsManager();
+    for (let i = 0; i < 100; i++) fx.emitHitSparks(i, 0, '#ffffff', 4);
+    expect(fx.particleList).toHaveLength(400);
+    fx.setQuality('low');
+    expect(fx.particleList).toHaveLength(QUALITY.low.maxParticles);
+    // The survivors are the youngest: the last emitter's x, not the first's.
+    expect(fx.particleList[fx.particleList.length - 1].x).toBe(99);
+    expect(fx.particleList[0].x).toBeGreaterThan(0);
   });
 });

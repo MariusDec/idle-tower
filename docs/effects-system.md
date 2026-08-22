@@ -111,7 +111,7 @@ Both pools are bounded and evict oldest-first:
 
 | Pool | Cap |
 |---|---|
-| `particles` | 600 |
+| `particles` | `QUALITY[tier].maxParticles` — 600 at `high` |
 | `damageNumbers` | 80 |
 
 Every emitter routes through `pushParticle` / `pushDamageNumber`. **Pushing
@@ -124,6 +124,39 @@ two, and `age` resets so the pop re-runs — a growing total should visibly bump
 `riseCss` is **deliberately not reset**; resetting it would teleport the label
 back down onto the enemy. `tests/effects.test.ts` pins that. Merging is matched
 on `kind` as well as crit, so a heal never folds into a hit.
+
+## The quality knob (UI plan §5.F)
+
+`src/data/quality.ts` holds one profile per tier (`high` / `medium` / `low`) and
+nothing else. `Game.setQuality(tier)` fans it out: `EffectsManager.setQuality`
+takes `particleScale` and `maxParticles`, `Renderer.setQuality` takes `decals`,
+`embers`, `additive`, `bgLayers` and `shadows`. Part 9 owns the Settings
+control, the auto-detect and `dprCap`; the default is `high`, where every
+multiplier is 1 and nothing changes.
+
+| Field | Effect |
+|---|---|
+| `particleScale` | multiplies every emitter's count, via `EffectsManager.n()`, never below 1 |
+| `maxParticles` | the pool ceiling; lowering it splices the oldest off immediately |
+| `additive` | `false` runs the §5.A pass as `source-over` instead of `lighter` |
+| `decals` / `embers` | pool ceilings in the renderer; `0` stops the push entirely |
+| `bgLayers` | `2` skips `bakeTerrain` |
+| `shadows` | `false` skips the enemy and tower ground shadows |
+
+`Renderer.setQuality` calls `invalidateBackground()` when `bgLayers` or
+`shadows` changes, so the stale bake does not survive the switch.
+
+Two rules that are not negotiable:
+
+1. **Ring emitters derive the angle from the scaled bound.** The shape is
+   `const n = this.n(48); for (let i = 0; i < n; i++) { const angle = (i / n) *
+   Math.PI * 2; … }`. Scaling only the loop bound would emit a quarter circle.
+2. **Nothing that carries damage is ever scaled.** `emitShockwaveRing` takes an
+   optional `damage` and `tick` calls `onShockwaveDamage` for it: that ring is a
+   gameplay object wearing a visual's clothes. Quality touches no shockwave
+   count, radius, lifetime or delay. An effect that needs both is split into a
+   damaging ring plus a scalable particle garnish. `npm run sim` is what catches
+   a mistake here, and it must stay byte-identical across a quality change.
 
 ## Boss intro (UI plan §5.D)
 
