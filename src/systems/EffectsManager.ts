@@ -1,3 +1,4 @@
+import { FX, INK, lighten, mix, withAlpha } from '../data/palette';
 import type { DamageKind, DamageNumber, Particle, Shockwave } from '../types';
 
 const PARTICLE_GRAVITY = 320;
@@ -137,7 +138,7 @@ export class EffectsManager {
         age: 0,
         life: 0.9 + Math.random() * 0.4,
         size: radius * 0.45,
-        color: 'rgba(255, 255, 255, 0.18)',
+        color: withAlpha('#ffffff', 0.18),
         layer: 'behind',
       });
     }
@@ -155,7 +156,7 @@ export class EffectsManager {
         age: 0,
         life: 0.9 + Math.random() * 0.3,
         size: 3 + Math.random() * 2,
-        color: i % 2 === 0 ? '#ff5050' : '#ffd28a',
+        color: i % 2 === 0 ? FX.blood : lighten(FX.gold, 0.4),
         layer: 'additive',
       });
     }
@@ -173,7 +174,7 @@ export class EffectsManager {
         maxRadius: 360 + r * 60,
         age: -r * 0.1,
         life: 0.9,
-        color: `rgba(220, 60, 60, ${0.7 - r * 0.2})`,
+        color: withAlpha(FX.blood, 0.7 - r * 0.2),
         lineWidth: 6 - r,
       });
     }
@@ -187,7 +188,7 @@ export class EffectsManager {
         age: 0,
         life: 0.5 + Math.random() * 0.2,
         size: 2 + Math.random() * 2,
-        color: '#ff4040',
+        color: FX.blood,
         layer: 'additive',
       });
     }
@@ -207,7 +208,7 @@ export class EffectsManager {
         age: 0,
         life: 0.55 + Math.random() * 0.35,
         size: 1.5 + Math.random() * 1.5,
-        color: '#f7d774',
+        color: lighten(FX.gold, 0.35),
         layer: 'front',
       });
     }
@@ -225,7 +226,7 @@ export class EffectsManager {
         age: 0,
         life: 0.55 + Math.random() * 0.2,
         size: 2 + Math.random() * 2,
-        color: i % 2 === 0 ? '#a3d2ff' : '#e0f0ff',
+        color: i % 2 === 0 ? FX.frost : lighten(FX.frost, 0.55),
         layer: 'additive',
       });
     }
@@ -250,7 +251,7 @@ export class EffectsManager {
       maxRadius: radius,
       age: -(startDelay ?? 0),
       life,
-      color: color ?? 'rgba(24, 125, 122, 0.7)',
+      color: color ?? withAlpha(FX.frost, 0.7),
       lineWidth: lineWidth ?? 6,
       damage,
       damageType: damageType ?? 'magic',
@@ -269,7 +270,7 @@ export class EffectsManager {
         age: 0,
         life: 0.35 + Math.random() * 0.2,
         size: 2 + Math.random() * 1.5,
-        color: '#ff6a4a',
+        color: FX.ember,
         layer: 'additive',
       });
     }
@@ -287,7 +288,7 @@ export class EffectsManager {
         age: 0,
         life: 0.5 + Math.random() * 0.3,
         size: 1.5 + Math.random() * 1.5,
-        color: '#ffd24a',
+        color: FX.gold,
         layer: 'additive',
       });
     }
@@ -311,7 +312,7 @@ export class EffectsManager {
         age: 0,
         life: 0.4 + Math.random() * 0.3,
         size: 2.5 + Math.random() * 2,
-        color: i % 3 === 0 ? '#fff3b0' : i % 3 === 1 ? '#ff7a1a' : '#ff3a00',
+        color: i % 3 === 0 ? lighten(FX.gold, 0.6) : i % 3 === 1 ? FX.ember : mix(FX.ember, FX.blood, 0.35),
         layer: 'additive',
       });
     }
@@ -326,7 +327,7 @@ export class EffectsManager {
         age: 0,
         life: 0.45 + Math.random() * 0.35,
         size: 2 + Math.random() * 2.5,
-        color: i % 2 === 0 ? '#ffb04a' : '#ff3a00',
+        color: i % 2 === 0 ? mix(FX.ember, FX.gold, 0.5) : mix(FX.ember, FX.blood, 0.35),
         layer: 'additive',
       });
     }
@@ -347,7 +348,7 @@ export class EffectsManager {
         age: 0,
         life: 0.6 + Math.random() * 0.2,
         size: 1.5 + Math.random() * 1.5,
-        color: i % 2 === 0 ? '#ffd34a' : '#fff0a0',
+        color: i % 2 === 0 ? FX.gold : lighten(FX.gold, 0.55),
         layer: 'additive',
       });
     }
@@ -362,7 +363,7 @@ export class EffectsManager {
         age: 0,
         life: 0.4 + Math.random() * 0.3,
         size: 1.5 + Math.random() * 1.5,
-        color: '#ffe27a',
+        color: lighten(FX.gold, 0.4),
         layer: 'additive',
       });
     }
@@ -383,7 +384,7 @@ export class EffectsManager {
         age: 0,
         life: 0.7 + Math.random() * 0.4,
         size: 2 + Math.random() * 1.5,
-        color: i % 2 === 0 ? '#ff4a4a' : '#c44a4a',
+        color: i % 2 === 0 ? FX.blood : mix(FX.blood, INK['900'], 0.2),
         layer: 'additive',
       });
     }
@@ -404,7 +405,7 @@ export class EffectsManager {
         age: 0,
         life: 0.4 + Math.random() * 0.3,
         size: 2 + Math.random() * 2.5,
-        color: i % 2 === 0 ? '#a020f0' : '#ff4a4a',
+        color: i % 2 === 0 ? FX.arcane : FX.blood,
       });
     }
     for (let i = 0; i < 3; i++) {
@@ -416,7 +417,7 @@ export class EffectsManager {
         age: 0,
         life: 0.6 + Math.random() * 0.3,
         size: 30 + Math.random() * 20,
-        color: 'rgba(180, 30, 240, 0.18)',
+        color: withAlpha(FX.arcane, 0.18),
         layer: 'behind',
       });
     }
@@ -457,7 +458,7 @@ export class EffectsManager {
         age: 0,
         life: 0.4 + Math.random() * 0.3,
         size: 2 + Math.random() * 3,
-        color: i % 2 === 0 ? '#ff6633' : '#ffcc00',
+        color: i % 2 === 0 ? FX.ember : FX.gold,
       });
     }
     for (let i = 0; i < 5; i++) {
@@ -469,7 +470,7 @@ export class EffectsManager {
         age: 0,
         life: 0.6 + Math.random() * 0.3,
         size: 4 + Math.random() * 3,
-        color: 'rgba(255, 255, 255, 0.3)',
+        color: withAlpha('#ffffff', 0.3),
         layer: 'behind',
       });
     }
@@ -487,7 +488,7 @@ export class EffectsManager {
         age: 0,
         life: 0.25 + Math.random() * 0.15,
         size: 2 + Math.random() * 2,
-        color: '#64b4ff',
+        color: FX.frost,
         layer: 'additive',
       });
     }
@@ -509,7 +510,7 @@ export class EffectsManager {
         age: 0,
         life: 0.3 + Math.random() * 0.2,
         size: 2 + Math.random() * 2,
-        color: i % 2 === 0 ? '#ffffff' : '#a0d8ff',
+        color: i % 2 === 0 ? '#ffffff' : lighten(FX.frost, 0.3),
         layer: 'additive',
       });
     }
@@ -535,7 +536,7 @@ export class EffectsManager {
         age: 0,
         life: 0.35 + Math.random() * 0.2,
         size: 1.5 + Math.random() * 1.5,
-        color: i % 2 === 0 ? '#3edc81' : '#aaf2c0',
+        color: i % 2 === 0 ? FX.nature : lighten(FX.nature, 0.5),
         layer: 'additive',
       });
     }
@@ -581,7 +582,7 @@ export class EffectsManager {
       maxRadius: 12,
       age: 0,
       life: 0.15,
-      color: 'rgba(255, 200, 200, 0.6)',
+      color: withAlpha(lighten(FX.blood, 0.6), 0.6),
       lineWidth: 2,
     });
   }
@@ -598,7 +599,7 @@ export class EffectsManager {
         age: 0,
         life: 0.4 + Math.random() * 0.3,
         size: 2 + Math.random() * 2,
-        color: i % 2 === 0 ? '#c098ff' : '#ffffff',
+        color: i % 2 === 0 ? lighten(FX.arcane, 0.35) : '#ffffff',
         layer: 'front',
       });
     }

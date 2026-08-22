@@ -1,4 +1,5 @@
 import type { BossPattern, Enemy, EnemyType, AuraType, HostileShot, Projectile } from '../types';
+import { FX, withAlpha } from '../data/palette';
 import { distance2, nextId } from '../utils/math';
 import {
   BOSS_ENCOUNTER,
@@ -98,11 +99,11 @@ export function eliteChanceForWave(wave: number): number {
 }
 
 const ELITE_AURA_COLORS: Record<AuraType, string> = {
-  haste: 'rgba(60, 180, 255, 0.3)',
-  thorns: 'rgba(255, 100, 30, 0.3)',
-  greed: 'rgba(255, 215, 0, 0.35)',
-  vitality: 'rgba(60, 220, 100, 0.3)',
-  retribution: 'rgba(180, 50, 220, 0.3)',
+  haste: withAlpha(FX.frost, 0.3),
+  thorns: withAlpha(FX.ember, 0.3),
+  greed: withAlpha(FX.gold, 0.35),
+  vitality: withAlpha(FX.nature, 0.3),
+  retribution: withAlpha(FX.arcane, 0.3),
 };
 
 export { ELITE_AURA_COLORS, AURA_RADIUS, RETRIBUTION_BUFF_DURATION };

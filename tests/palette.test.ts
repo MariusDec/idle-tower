@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { FX, INK, RARITY, fxVar, inkVar, rarityVar, toRgb, withAlpha } from '../src/data/palette';
+import {
+  FX, INK, RARITY, fxVar, inkVar, lighten, mix, rarityVar, toRgb, withAlpha,
+} from '../src/data/palette';
 
 /**
  * `src/data/palette.ts` and `src/styles/tokens.css` both declare the effect and
@@ -112,5 +114,19 @@ describe('palette helpers', () => {
 
   it('builds a canvas-ready rgba() string', () => {
     expect(withAlpha(FX.blood, 0.5)).toBe('rgba(217, 83, 79, 0.5)');
+  });
+
+  it('interpolates linearly and clamps t to [0, 1]', () => {
+    expect(mix('#000000', '#ffffff', 0)).toBe('#000000');
+    expect(mix('#000000', '#ffffff', 1)).toBe('#ffffff');
+    expect(mix('#000000', '#ffffff', 0.5)).toBe('#808080');
+    expect(mix('#000000', '#ffffff', -3)).toBe('#000000');
+    expect(mix('#000000', '#ffffff', 3)).toBe('#ffffff');
+  });
+
+  it('lightens toward the top of the ink ramp', () => {
+    expect(lighten(FX.ember, 0)).toBe(FX.ember.toLowerCase());
+    expect(lighten(FX.ember, 1)).toBe(INK['050'].toLowerCase());
+    expect(lighten(FX.ember, 0.5)).toBe(mix(FX.ember, INK['050'], 0.5));
   });
 });

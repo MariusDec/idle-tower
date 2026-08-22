@@ -164,6 +164,36 @@ Applied at the base layer to `h1`-`h4` and the `.u-display` utility. `.u-tabular
 tabular figures for numbers that must line up in a column. Parts 7-8 route the wave number,
 boss name and damage totals through `.u-display`.
 
+## The canvas literal sweep (UI plan §5.E)
+
+`Renderer.ts`, `EffectsManager.ts`, `Game.ts`, `EnemyManager.ts` and `TalentPanel.ts` used to
+carry their own hexes and `rgba()` strings, so the canvas and the DOM drifted apart every time
+the palette moved. They now all read `src/data/palette.ts`. Two helpers make that possible
+without inventing a second hex for every tint:
+
+- `mix(a, b, t)` — linear sRGB blend, `t = 0` → `a`.
+- `lighten(hex, amount)` — `mix(hex, INK['050'], amount)`, the common case.
+
+Where a colour appears at several alphas it goes through `withAlpha(token, a)` rather than a
+pre-baked second hex. The only literals still allowed anywhere in `src/` are `'#ffffff'` and
+`'#000'`.
+
+The mapping, so the next person does not have to ask why `#ff6633` became ember and not blood:
+
+| Literal | Files | Became |
+|---|---|---|
+| `#ff5050`, `#ff4040`, `#ff4a4a`, `#c44a4a`, `#d04848`, `rgba(220,60,60,…)`, `rgba(255,64,64,…)`, `rgba(255,80,80,…)`, `rgba(255,60,60,…)` | Effects, Renderer, Game | `FX.blood` (± `lighten` / `mix` toward ink) |
+| `#ff6633`, `#ff7a1a`, `#ff3a00`, `#ff6a4a`, `#ff8844`, `#ff8a3c`, `#ff6420`, `#cc4422`, `#ff5a28`, `#ffb04a` | Effects, Renderer, Game | `FX.ember` (± `lighten` / `mix` toward gold) |
+| `#ffcc00`, `#ffd24a`, `#ffd34a`, `#ffe27a`, `#fff0a0`, `#fff3b0`, `#ffd28a`, `#f7d774`, `#ffd700`, `#e8a93b`, `rgba(255,215,0,…)` | Effects, Renderer, Game | `FX.gold` (± `lighten`) |
+| `#3edc81`, `#3edc64`, `#3ec46d`, `#aaf2c0`, `#2ecc71`, `rgba(80,220,120,…)`, `rgba(39,174,96,…)` | Effects, Renderer, Game, TalentPanel | `FX.nature` (± `lighten`) |
+| `#a3d2ff`, `#e0f0ff`, `#64b4ff`, `#a0d8ff`, `#3cb4ff`, `#9be7ff`, `rgba(120,220,255,…)` and friends | Effects, Renderer, Game, EnemyManager | `FX.frost` (± `lighten`) |
+| `#a020f0`, `#b432dc`, `#c098ff`, `#9b59b6`, `rgba(180,50,220,…)` | Effects, Renderer, TalentPanel | `FX.arcane` (± `lighten`) |
+| `#9aa7ff`, `rgba(150,110,255,…)`, `rgba(140,100,250,…)`, `rgba(120,160,255,…)` | Renderer, Game | `FX.mana` |
+| `#0c0e12`, `#1c2028`, `#5a2a00`, `#7a5a30`, `rgba(150,170,190,…)` | Renderer, Game | `INK['900']` / `INK['600']` / `INK['200']` / `mix(FX.ember or FX.gold, INK[…])` |
+| `#f0f0f0`, `#ff8a8a` (wave banner) | Renderer | `INK['050']`, `mix(FX.blood, INK['050'], 0.45)` |
+| `#e74c3c`, `#f1c40f` (talent branches) | TalentPanel | `FX.blood`, `FX.gold` |
+| `'#ffffff'`, `'#000'` | anywhere | **allowed** — the only two literals the guard test whitelists |
+
 ## Adding to the token layer
 
 1. Add the value to `tokens.css`, in the right layer, with a comment saying what it is for.

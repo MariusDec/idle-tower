@@ -97,6 +97,7 @@ import {
   riskApBonus,
 } from '../data/pacing';
 import { AbilityPlacement, ChargeTracker } from '../systems/ActiveInput';
+import { FX, INK, lighten, mix, withAlpha } from '../data/palette';
 import { LOOT_ORB_COLORS, type LootOrbKind } from '../data/loot';
 import {
   BLESSING_BY_ID,
@@ -727,18 +728,18 @@ export class Game {
             life: 4,
           });
         }
-        this.effects.emitShockwaveRing(e.x, e.y, 120, 'rgba(255, 215, 0, 0.7)', 5, 0, 0, 'magic');
+        this.effects.emitShockwaveRing(e.x, e.y, 120, withAlpha(FX.gold, 0.7), 5, 0, 0, 'magic');
       }
       if (e.type === 'boss') {
         this.state.stats.bossesKilled += 1;
         if (this.bossEncounter) this.bossEncounter.goldValue += e.goldValue ?? def.baseGold;
         // P5: Multi-stage death shockwave — 3 cascading rings that each damage enemies once.
         // Stage 1 (immediate): tight inner ring — strongest damage
-        this.effects.emitShockwaveRing(e.x, e.y, 150, 'rgba(255, 64, 64, 0.9)', 8, 0, 120, 'magic');
+        this.effects.emitShockwaveRing(e.x, e.y, 150, withAlpha(FX.blood, 0.9), 8, 0, 120, 'magic');
         // Stage 2: mid ring
-        this.effects.emitShockwaveRing(e.x, e.y, 300, 'rgba(255, 100, 64, 0.85)', 7, 0.2, 80, 'magic');
+        this.effects.emitShockwaveRing(e.x, e.y, 300, withAlpha(FX.ember, 0.85), 7, 0.2, 80, 'magic');
         // Stage 3: wide outer ring
-        this.effects.emitShockwaveRing(e.x, e.y, 500, 'rgba(255, 160, 64, 0.8)', 6, 0.4, 50, 'magic');
+        this.effects.emitShockwaveRing(e.x, e.y, 500, withAlpha(mix(FX.ember, FX.gold, 0.4), 0.8), 6, 0.4, 50, 'magic');
         // P5: Bonus x2 gold (normal gold already awarded in damage(); add 1x more)
         this.resources.addGold((e.goldValue ?? def.baseGold) * 1);
         // Achievement reward: bonus gold from boss kills.
@@ -872,7 +873,7 @@ export class Game {
     });
     this.bus.on('ward_projected', (payload: unknown) => {
       const p = payload as { x: number; y: number };
-      this.effects.emitShockwaveRing(p.x, p.y, 90, 'rgba(60, 210, 235, 0.5)', 2);
+      this.effects.emitShockwaveRing(p.x, p.y, 90, withAlpha(FX.frost, 0.5), 2);
     });
     this.bus.on('siege_impact', (payload: unknown) => {
       const p = payload as { x: number; y: number };
@@ -880,16 +881,16 @@ export class Game {
     });
     this.bus.on('burrower_surfaced', (payload: unknown) => {
       const p = payload as { x: number; y: number };
-      this.effects.emitShockwaveRing(p.x, p.y, 70, 'rgba(190, 150, 90, 0.75)', 4);
-      this.effects.emitDeathBurst(p.x, p.y, '#7a5a30', 14, 10);
+      this.effects.emitShockwaveRing(p.x, p.y, 70, withAlpha(mix(FX.gold, INK['300'], 0.35), 0.75), 4);
+      this.effects.emitDeathBurst(p.x, p.y, mix(FX.gold, INK['700'], 0.55), 14, 10);
     });
     this.bus.on('enemy_blinked', (payload: unknown) => {
       const p = payload as { x: number; y: number };
-      this.effects.emitShockwaveRing(p.x, p.y, 34, 'rgba(140, 100, 250, 0.6)', 2);
+      this.effects.emitShockwaveRing(p.x, p.y, 34, withAlpha(FX.mana, 0.6), 2);
     });
     this.bus.on('gold_stolen', (payload: unknown) => {
       const p = payload as { x: number; y: number; amount: number };
-      this.effects.emitShockwaveRing(p.x, p.y, 60, 'rgba(255, 215, 0, 0.8)', 3);
+      this.effects.emitShockwaveRing(p.x, p.y, 60, withAlpha(FX.gold, 0.8), 3);
       this.bus.emit('toast', {
         kind: 'warning',
         text: `A thief stole ${formatInt(p.amount)}g — kill it before it escapes!`,
@@ -898,7 +899,7 @@ export class Game {
     });
     this.bus.on('gold_recovered', (payload: unknown) => {
       const p = payload as { x: number; y: number; amount: number };
-      this.effects.emitShockwaveRing(p.x, p.y, 90, 'rgba(255, 215, 0, 0.85)', 5);
+      this.effects.emitShockwaveRing(p.x, p.y, 90, withAlpha(FX.gold, 0.85), 5);
       this.bus.emit('toast', {
         kind: 'milestone',
         text: `Thief intercepted — recovered ${formatInt(p.amount)}g.`,
@@ -934,7 +935,7 @@ export class Game {
       this.triggerBossEntrySlowMo();
       this.screenFlash = 0.12;
       this.effects.emitBossEntryPulse(p.x, p.y);
-      this.effects.emitShockwaveRing(p.x, p.y, 180, 'rgba(255, 120, 60, 0.8)', 5);
+      this.effects.emitShockwaveRing(p.x, p.y, 180, withAlpha(FX.ember, 0.8), 5);
       this.bus.emit('toast', {
         kind: 'warning',
         text: `Phase ${p.phase} — ${BOSS_PATTERN_NAMES[p.pattern]}. ${BOSS_PATTERN_HINTS[p.pattern]}`,
@@ -943,17 +944,17 @@ export class Game {
     });
     this.bus.on('boss_shield_up', (payload: unknown) => {
       const p = payload as { x: number; y: number };
-      this.effects.emitShockwaveRing(p.x, p.y, 110, 'rgba(120, 200, 255, 0.7)', 3);
+      this.effects.emitShockwaveRing(p.x, p.y, 110, withAlpha(FX.frost, 0.7), 3);
     });
     this.bus.on('boss_shield_broken', (payload: unknown) => {
       const p = payload as { x: number; y: number };
       this.effects.emitEnemyShieldBreak(p.x, p.y);
-      this.effects.emitShockwaveRing(p.x, p.y, 150, 'rgba(160, 230, 255, 0.85)', 4);
+      this.effects.emitShockwaveRing(p.x, p.y, 150, withAlpha(lighten(FX.frost, 0.35), 0.85), 4);
     });
     this.bus.on('boss_bulwark_held', (payload: unknown) => {
       const p = payload as { x: number; y: number; amount: number };
       if (p.amount > 0) this.effects.emitHealNumber(p.x, p.y - 40, p.amount);
-      this.effects.emitShockwaveRing(p.x, p.y, 190, 'rgba(90, 220, 130, 0.7)', 4);
+      this.effects.emitShockwaveRing(p.x, p.y, 190, withAlpha(FX.nature, 0.7), 4);
       this.bus.emit('toast', {
         kind: 'warning',
         text: 'Bulwark held — the boss healed the shield back.',
@@ -962,17 +963,17 @@ export class Game {
     });
     this.bus.on('boss_summon', (payload: unknown) => {
       const p = payload as { x: number; y: number };
-      this.effects.emitShockwaveRing(p.x, p.y, 130, 'rgba(200, 120, 255, 0.7)', 3);
+      this.effects.emitShockwaveRing(p.x, p.y, 130, withAlpha(FX.arcane, 0.7), 3);
     });
     this.bus.on('boss_slam', (payload: unknown) => {
       const p = payload as { x: number; y: number; mitigated: boolean };
       const ts = this.tower.snapshot;
       if (p.mitigated) {
-        this.effects.emitShockwaveRing(p.x, p.y, 120, 'rgba(120, 200, 255, 0.6)', 4);
+        this.effects.emitShockwaveRing(p.x, p.y, 120, withAlpha(FX.frost, 0.6), 4);
         return;
       }
-      this.effects.emitShockwaveRing(p.x, p.y, 260, 'rgba(255, 90, 40, 0.9)', 7);
-      this.effects.emitAttackSlash(p.x, p.y, ts.x, ts.y, '#ff5a28');
+      this.effects.emitShockwaveRing(p.x, p.y, 260, withAlpha(FX.ember, 0.9), 7);
+      this.effects.emitAttackSlash(p.x, p.y, ts.x, ts.y, FX.ember);
       this.triggerCanvasShake();
       this.screenFlash = 0.18;
     });
@@ -1170,7 +1171,7 @@ export class Game {
       const rewardText = parts.join(' · ');
       this.bus.emit('contract_reward', { uid: p.uid, rewardText });
       const ts = this.tower.snapshot;
-      this.effects.emitShockwaveRing(ts.x, ts.y, 200, 'rgba(62, 196, 109, 0.7)', 5);
+      this.effects.emitShockwaveRing(ts.x, ts.y, 200, withAlpha(FX.nature, 0.7), 5);
       this.bus.emit('toast', {
         kind: 'milestone',
         text: rewardText
@@ -1452,7 +1453,7 @@ export class Game {
           this.triggerCanvasShake();
           break;
         case 'chain_damage':
-          this.effects.emitHitSparks(tx, ty, '#9aa7ff', 6);
+          this.effects.emitHitSparks(tx, ty, FX.mana, 6);
           break;
         case 'crit_buff':
           this.effects.emitPrecisionGlow(t.x, t.y);
@@ -1728,7 +1729,7 @@ export class Game {
         rarityBoost: BOSS_ENCOUNTER.swiftKillRarityBoost,
       });
       const ts = this.tower.snapshot;
-      this.effects.emitShockwaveRing(ts.x, ts.y, 320, 'rgba(255, 215, 0, 0.75)', 6);
+      this.effects.emitShockwaveRing(ts.x, ts.y, 320, withAlpha(FX.gold, 0.75), 6);
       this.bus.emit('toast', {
         kind: 'milestone',
         text: drop
@@ -1746,7 +1747,7 @@ export class Game {
       this.blessingMgr.grantRerollToken(BOSS_ENCOUNTER.flawlessRerollTokens);
       this.state.blessings = this.blessingMgr.snapshot();
       const ts = this.tower.snapshot;
-      this.effects.emitShockwaveRing(ts.x, ts.y, 280, 'rgba(120, 220, 255, 0.75)', 6);
+      this.effects.emitShockwaveRing(ts.x, ts.y, 280, withAlpha(FX.frost, 0.75), 6);
       this.bus.emit('toast', {
         kind: 'milestone',
         text: `Flawless! +1 blessing reroll · +${Math.round(this.state.bossRun.apBonusPct * 100)}% AP this run.`,
@@ -2322,7 +2323,7 @@ export class Game {
     this.state.stats.shotsFired += 1;
     this.state.stats.damageDealt += damage;
     this.charge.consume();
-    this.effects.emitShockwaveRing(ts.x, ts.y, 70, 'rgba(120, 200, 255, 0.8)', 4);
+    this.effects.emitShockwaveRing(ts.x, ts.y, 70, withAlpha(FX.frost, 0.8), 4);
     this.bus.emit('charged_shot', { x: this.mouseX, y: this.mouseY, damage });
   }
 
@@ -3801,7 +3802,7 @@ export class Game {
     this.splitOnKillActive = true;
     try {
       for (const target of candidates) {
-        this.effects.emitHitSparks(target.x, target.y, '#9be7ff', 4);
+        this.effects.emitHitSparks(target.x, target.y, lighten(FX.frost, 0.3), 4);
         this.enemyMgr.damage(target, damage, false);
         this.bus.emit('tower_damage_dealt', { amount: damage });
       }

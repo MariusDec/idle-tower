@@ -165,3 +165,15 @@ export function toRgb(hex: string): { r: number; g: number; b: number } {
   }
   return { r: (value >> 16) & 0xff, g: (value >> 8) & 0xff, b: value & 0xff };
 }
+
+/**
+ * `mix(hex, INK['050'], amount)` — the common case, spelled once.
+ *
+ * Effect literals came in families: one base colour plus two or three paler
+ * versions of it for the hot core of a spark or the rim of a ring. Those tints
+ * are now derived from the token instead of being separate hexes, so retuning
+ * `FX.ember` moves its highlights with it.
+ */
+export function lighten(hex: string, amount: number): string {
+  return mix(hex, INK['050'], amount);
+}

@@ -3,6 +3,7 @@ import { TALENTS, TALENTS_BY_BRANCH, TALENT_BY_ID } from '../data/talentTree';
 import type { TalentDef } from '../data/talentTree';
 import { setText, toggleClass, setStyle } from '../utils/dom';
 import { formatNumber } from '../utils/bigNumber';
+import { FX } from '../data/palette';
 import { renderIcon } from './Icon';
 
 export interface TalentAPIDeps {
@@ -19,10 +20,10 @@ export interface TalentAPIDeps {
 }
 
 const BRANCH_DISPLAY: { id: TalentBranch; label: string; color: string }[] = [
-  { id: 'offense', label: 'Offense', color: '#e74c3c' },
-  { id: 'defense', label: 'Defense', color: '#2ecc71' },
-  { id: 'utility', label: 'Utility', color: '#f1c40f' },
-  { id: 'magic', label: 'Magic', color: '#9b59b6' },
+  { id: 'offense', label: 'Offense', color: FX.blood },
+  { id: 'defense', label: 'Defense', color: FX.nature },
+  { id: 'utility', label: 'Utility', color: FX.gold },
+  { id: 'magic', label: 'Magic', color: FX.arcane },
 ];
 
 

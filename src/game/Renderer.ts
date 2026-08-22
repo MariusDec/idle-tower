@@ -4,7 +4,7 @@ import { ARENA, ARENA_RANGE_CAP, entity, world } from '../data/arena';
 import type { Camera } from './Camera';
 import { TOWER_VISUAL } from '../data/tower';
 import { CORE_BY_ID, DEFAULT_CORE, isCoreId, type CoreId } from '../data/cores';
-import { FX, INK, mix, withAlpha } from '../data/palette';
+import { FX, INK, lighten, mix, withAlpha } from '../data/palette';
 import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS, ENEMY_GAIT, bossTierForWave } from '../data/enemies';
 import type { EnemyDef, EnemyShape } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
@@ -352,11 +352,11 @@ const BOSS_PROFILES: ReadonlyArray<{
 
 /** Solid crown colours, one per aura (the aura fills are translucent). */
 const ELITE_CROWN_COLORS: Record<AuraType, string> = {
-  haste: '#3cb4ff',
-  thorns: '#ff6420',
-  greed: '#ffd700',
-  vitality: '#3edc64',
-  retribution: '#b432dc',
+  haste: FX.frost,
+  thorns: FX.ember,
+  greed: FX.gold,
+  vitality: FX.nature,
+  retribution: FX.arcane,
 };
 
 /**
@@ -760,7 +760,7 @@ export class Renderer {
     const flash = options?.screenFlash ?? 0;
     if (flash > 0) {
       ctx.save();
-      ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, flash / 0.15)})`;
+      ctx.fillStyle = withAlpha('#ffffff', Math.min(1, flash / 0.15));
       ctx.fillRect(0, 0, camera.cssWidth, camera.cssHeight);
       ctx.restore();
     }
@@ -1263,7 +1263,7 @@ export class Renderer {
    * A tinted vignette that gives the arena a centre and a periphery, a faint
    * wash of the run's core colour around the tower, and a sparse seeded field
    * of stars and embers so the dark half of the screen is not flat paint. The
-   * two-stop `#1c2028 → #0c0e12` gradient this replaces was the entire
+   * two-stop `INK['600'] → INK['900']` gradient this replaces was the entire
    * background, which is why the old floor read as an empty document.
    */
   private bakeFarField(
@@ -2284,7 +2284,7 @@ export class Renderer {
     const sprite = this.makeSprite(glowR * 2, (g) => {
       const grad = g.createRadialGradient(0, 0, r * 0.4, 0, 0, glowR);
       grad.addColorStop(0, colors.glow);
-      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      grad.addColorStop(1, withAlpha('#000', 0));
       g.fillStyle = grad;
       g.beginPath();
       g.arc(0, 0, glowR, 0, Math.PI * 2);
@@ -2294,13 +2294,13 @@ export class Renderer {
       g.beginPath();
       g.arc(0, 0, r, 0, Math.PI * 2);
       g.fill();
-      g.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      g.strokeStyle = withAlpha('#ffffff', 0.75);
       g.lineWidth = entity(1.5);
       g.stroke();
 
       // A highlight, plus a glyph so the three kinds are told apart by shape
       // as well as by colour.
-      g.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      g.fillStyle = withAlpha('#ffffff', 0.55);
       g.beginPath();
       g.arc(-r * 0.3, -r * 0.35, r * 0.28, 0, Math.PI * 2);
       g.fill();
@@ -2325,7 +2325,7 @@ export class Renderer {
     if (!placement) return;
     const { x, y, radius } = placement;
     ctx.save();
-    ctx.strokeStyle = 'rgba(120, 220, 255, 0.85)';
+    ctx.strokeStyle = withAlpha(FX.frost, 0.85);
     ctx.lineWidth = entity(2);
     ctx.setLineDash([entity(8), entity(6)]);
     ctx.lineDashOffset = -this.time * 30;
@@ -2333,9 +2333,9 @@ export class Renderer {
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(120, 220, 255, 0.10)';
+    ctx.fillStyle = withAlpha(FX.frost, 0.10);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(220, 245, 255, 0.9)';
+    ctx.strokeStyle = withAlpha(lighten(FX.frost, 0.55), 0.9);
     ctx.lineWidth = entity(1.5);
     ctx.beginPath();
     ctx.moveTo(x - 10, y);
@@ -2523,13 +2523,13 @@ export class Renderer {
     const r = 26;
     ctx.save();
     ctx.lineWidth = entity(3);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.strokeStyle = withAlpha('#ffffff', 0.12);
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.stroke();
 
     if (cooldown > 0) {
-      ctx.strokeStyle = 'rgba(150, 170, 190, 0.5)';
+      ctx.strokeStyle = withAlpha(INK['200'], 0.5);
       ctx.beginPath();
       ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * cooldown);
       ctx.stroke();
@@ -2538,13 +2538,13 @@ export class Renderer {
     }
 
     const pulse = ready ? 1 + Math.sin(this.time * 12) * 0.12 : 1;
-    ctx.strokeStyle = ready ? 'rgba(140, 230, 255, 0.95)' : 'rgba(110, 190, 255, 0.7)';
+    ctx.strokeStyle = ready ? withAlpha(lighten(FX.frost, 0.25), 0.95) : withAlpha(FX.frost, 0.7);
     ctx.lineWidth = ready ? 4 : 3;
     ctx.beginPath();
     ctx.arc(x, y, r * pulse, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
     ctx.stroke();
     if (ready) {
-      ctx.fillStyle = 'rgba(140, 230, 255, 0.16)';
+      ctx.fillStyle = withAlpha(lighten(FX.frost, 0.25), 0.16);
       ctx.beginPath();
       ctx.arc(x, y, r * pulse, 0, Math.PI * 2);
       ctx.fill();
@@ -2557,16 +2557,16 @@ export class Renderer {
     for (const m of mines) {
       if (!m.alive) continue;
       const pulse = 0.85 + Math.sin(this.time * 3 + m.id) * 0.15;
-      ctx.fillStyle = '#cc4422';
+      ctx.fillStyle = mix(FX.ember, INK['900'], 0.25);
       ctx.beginPath();
       ctx.arc(m.x, m.y, 6 * pulse, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#ff8844';
+      ctx.strokeStyle = mix(FX.ember, FX.gold, 0.25);
       ctx.lineWidth = entity(1.5);
       ctx.beginPath();
       ctx.arc(m.x, m.y, 6 * pulse, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = 'rgba(255, 60, 20, 0.25)';
+      ctx.fillStyle = withAlpha(FX.ember, 0.25);
       ctx.beginPath();
       ctx.arc(m.x, m.y, 10 * pulse, 0, Math.PI * 2);
       ctx.fill();
@@ -3429,7 +3429,7 @@ export class Renderer {
     const pulse = 0.3 + Math.sin(this.time * 3) * 0.12;
     ctx.save();
     ctx.lineWidth = entity(1.5);
-    ctx.strokeStyle = `rgba(90, 220, 240, ${pulse})`;
+    ctx.strokeStyle = withAlpha(FX.frost, pulse);
     for (const w of enemies) {
       if (!w.alive || w.type !== 'warden') continue;
       for (const ally of enemies) {
@@ -3575,7 +3575,7 @@ export class Renderer {
     if (enemy.retributionTimer && enemy.retributionTimer > 0) {
       const p = 0.4 + Math.sin(this.time * 8) * 0.3;
       ctx.save();
-      ctx.strokeStyle = `rgba(180, 50, 220, ${p})`;
+      ctx.strokeStyle = withAlpha(FX.arcane, p);
       ctx.lineWidth = entity(3);
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y + bob, r + 5, 0, Math.PI * 2);
@@ -3696,9 +3696,9 @@ export class Renderer {
   private drawHealerAura(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
     const pulse = 1 + Math.sin(this.time * 2.5 + enemy.id) * 0.12;
     const sprite = this.getAuraSprite(`healer|${r}`, r * 2.0, r * 0.7, [
-      [0, 'rgba(80, 220, 120, 0.22)'],
-      [0.6, 'rgba(39, 174, 96, 0.08)'],
-      [1, 'rgba(0,0,0,0)'],
+      [0, withAlpha(FX.nature, 0.22)],
+      [0.6, withAlpha(FX.nature, 0.08)],
+      [1, withAlpha('#000', 0)],
     ]);
     this.drawAuraSprite(ctx, sprite, enemy.x, enemy.y, pulse);
   }
@@ -3710,7 +3710,7 @@ export class Renderer {
     const sprite = this.getAuraSprite(`elite|${aura}|${r}`, auraR, r * 0.5, [
       [0, color],
       [0.7, color.replace(/[\d.]+\)$/, '0.08)')],
-      [1, 'rgba(0,0,0,0)'],
+      [1, withAlpha('#000', 0)],
     ]);
     this.drawAuraSprite(ctx, sprite, enemy.x, enemy.y, pulse);
   }
@@ -3784,9 +3784,9 @@ export class Renderer {
       ctx.arc(0, 0, inner, a0, a1);
       ctx.arc(0, 0, outer, a1, a0, true);
       ctx.closePath();
-      ctx.fillStyle = 'rgba(93, 173, 226, 0.65)';
+      ctx.fillStyle = withAlpha(FX.frost, 0.65);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(180, 220, 255, 0.9)';
+      ctx.strokeStyle = withAlpha(lighten(FX.frost, 0.4), 0.9);
       ctx.lineWidth = entity(1);
       ctx.stroke();
     }
@@ -3798,12 +3798,12 @@ export class Renderer {
     const enraged = enemy.enraged === true;
     const speed = enraged ? 7 : 3;
     const pulse = 1 + Math.sin(this.time * speed) * (enraged ? 0.22 : 0.12);
-    const innerColor = enraged ? 'rgba(255, 80, 80, 0.55)' : 'rgba(255, 60, 60, 0.28)';
-    const midColor = enraged ? 'rgba(220, 30, 30, 0.20)' : 'rgba(160, 0, 0, 0.10)';
+    const innerColor = enraged ? withAlpha(FX.blood, 0.55) : withAlpha(FX.blood, 0.28);
+    const midColor = enraged ? withAlpha(FX.blood, 0.20) : withAlpha(mix(FX.blood, INK['950'], 0.35), 0.10);
     const sprite = this.getAuraSprite(`boss|${enraged ? 1 : 0}|${r}`, r * 2.4, r * 0.7, [
       [0, innerColor],
       [0.6, midColor],
-      [1, 'rgba(0,0,0,0)'],
+      [1, withAlpha('#000', 0)],
     ]);
     this.drawAuraSprite(ctx, sprite, enemy.x, enemy.y, pulse);
   }
@@ -3819,7 +3819,7 @@ export class Renderer {
     const radius = r + 6;
     ctx.save();
     ctx.translate(enemy.x, enemy.y + bob);
-    ctx.strokeStyle = `rgba(90, 220, 240, ${0.35 + ratio * 0.45})`;
+    ctx.strokeStyle = withAlpha(FX.frost, 0.35 + ratio * 0.45);
     ctx.lineWidth = entity(1.5) + ratio * 2;
     ctx.beginPath();
     for (let i = 0; i < 6; i++) {
@@ -3843,7 +3843,7 @@ export class Renderer {
    */
   private drawSiegeStance(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
     ctx.save();
-    ctx.strokeStyle = 'rgba(240, 190, 110, 0.28)';
+    ctx.strokeStyle = withAlpha(lighten(FX.gold, 0.2), 0.28);
     ctx.lineWidth = entity(1.5);
     ctx.setLineDash([entity(7), entity(9)]);
     ctx.beginPath();
@@ -3882,7 +3882,7 @@ export class Renderer {
     const remaining = Math.max(0, Math.min(reload, enemy.siegeCooldown ?? reload));
     const progress = 1 - remaining / reload;
     if (progress > 0) {
-      ctx.strokeStyle = 'rgba(255, 170, 60, 0.85)';
+      ctx.strokeStyle = withAlpha(mix(FX.ember, FX.gold, 0.5), 0.85);
       ctx.lineWidth = entity(3);
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 8, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
@@ -3907,7 +3907,7 @@ export class Renderer {
     if (invuln > 0) {
       const t = invuln / BOSS_ENCOUNTER.phaseInvulnerability;
       ctx.save();
-      ctx.strokeStyle = `rgba(255, 240, 190, ${0.35 + t * 0.5})`;
+      ctx.strokeStyle = withAlpha(lighten(FX.gold, 0.55), 0.35 + t * 0.5);
       ctx.lineWidth = entity(3) + t * 3;
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 10 + (1 - t) * 26, 0, Math.PI * 2);
@@ -3921,7 +3921,7 @@ export class Renderer {
     if (shieldMax > 0 && shield > 0) {
       const ratio = Math.max(0, Math.min(1, shield / shieldMax));
       ctx.save();
-      ctx.strokeStyle = 'rgba(120, 210, 255, 0.85)';
+      ctx.strokeStyle = withAlpha(FX.frost, 0.85);
       ctx.lineWidth = entity(4);
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 7, -Math.PI / 2, -Math.PI / 2 + ratio * Math.PI * 2);
@@ -3938,8 +3938,8 @@ export class Renderer {
       const outer = r + 20 + (1 - progress) * 90;
       ctx.save();
       ctx.strokeStyle = mitigated
-        ? `rgba(140, 220, 255, ${0.5 + progress * 0.4})`
-        : `rgba(255, 110, 50, ${0.45 + progress * 0.5})`;
+        ? withAlpha(lighten(FX.frost, 0.2), 0.5 + progress * 0.4)
+        : withAlpha(FX.ember, 0.45 + progress * 0.5);
       ctx.lineWidth = entity(3) + progress * 4;
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, outer, 0, Math.PI * 2);
@@ -3960,7 +3960,7 @@ export class Renderer {
     if (enemy.bossPattern === 'siphon' && invuln <= 0) {
       const pulse = 0.35 + Math.sin(this.time * 9 + enemy.id) * 0.2;
       ctx.save();
-      ctx.strokeStyle = `rgba(150, 110, 255, ${pulse})`;
+      ctx.strokeStyle = withAlpha(FX.mana, pulse);
       ctx.lineWidth = entity(2.5);
       ctx.setLineDash([entity(10), entity(8)]);
       ctx.lineDashOffset = -this.time * 90;
@@ -3991,7 +3991,7 @@ export class Renderer {
     ctx.save();
     ctx.translate(enemy.x, enemy.y);
     ctx.rotate(angle);
-    ctx.fillStyle = 'rgba(255, 220, 100, 0.9)';
+    ctx.fillStyle = withAlpha(lighten(FX.gold, 0.3), 0.9);
     ctx.beginPath();
     ctx.moveTo(r + 14, 0);
     ctx.lineTo(r + 4, -6);
@@ -4008,9 +4008,9 @@ export class Renderer {
   private drawBurrowerState(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
     if (enemy.burrowed === true) {
       const sprite = this.getAuraSprite(`burrow|${r}`, r * 2.2, r * 0.3, [
-        [0, 'rgba(160, 130, 80, 0.30)'],
-        [0.65, 'rgba(120, 95, 55, 0.12)'],
-        [1, 'rgba(0,0,0,0)'],
+        [0, withAlpha(mix(FX.gold, INK['400'], 0.4), 0.30)],
+        [0.65, withAlpha(mix(FX.gold, INK['600'], 0.5), 0.12)],
+        [1, withAlpha('#000', 0)],
       ]);
       const pulse = 1 + Math.sin(this.time * 6 + enemy.id) * 0.14;
       this.drawAuraSprite(ctx, sprite, enemy.x, enemy.y + r * 0.3, pulse);
@@ -4020,7 +4020,7 @@ export class Renderer {
     if (surfacing <= 0) return;
     const progress = 1 - surfacing / ENEMY_BEHAVIOR.burrowTelegraph;
     ctx.save();
-    ctx.strokeStyle = `rgba(230, 180, 100, ${0.75 * (1 - progress)})`;
+    ctx.strokeStyle = withAlpha(lighten(FX.gold, 0.12), 0.75 * (1 - progress));
     ctx.lineWidth = entity(4);
     ctx.beginPath();
     ctx.arc(enemy.x, enemy.y, r + 6 + progress * 42, 0, Math.PI * 2);
@@ -4095,23 +4095,23 @@ export class Renderer {
       const landY = s.y + dy;
 
       // Impact marker, tightening as the shell comes down.
-      ctx.strokeStyle = `rgba(255, 120, 50, ${0.25 + progress * 0.5})`;
+      ctx.strokeStyle = withAlpha(FX.ember, 0.25 + progress * 0.5);
       ctx.lineWidth = entity(2);
       ctx.beginPath();
       ctx.arc(landX, landY, 6 + (1 - progress) * 26, 0, Math.PI * 2);
       ctx.stroke();
 
       // Ground shadow directly under the shell.
-      ctx.fillStyle = 'rgba(0,0,0,0.30)';
+      ctx.fillStyle = withAlpha('#000', 0.30);
       ctx.beginPath();
       ctx.ellipse(s.x, s.y, 5, 2.5, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = '#ff8a3c';
+      ctx.fillStyle = FX.ember;
       ctx.beginPath();
       ctx.arc(s.x, s.y - lift, 5.5, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#5a2a00';
+      ctx.strokeStyle = mix(FX.ember, INK['950'], 0.7);
       ctx.lineWidth = entity(1.5);
       ctx.stroke();
     }
@@ -4125,12 +4125,12 @@ export class Renderer {
     const x = enemy.x - barW / 2;
     const y = enemy.y - r - 10 + bob;
     const ratio = Math.max(0, enemy.hp / enemy.maxHp);
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillStyle = withAlpha('#000', 0.6);
     ctx.fillRect(x, y, barW, barH);
-    ctx.fillStyle = ratio > 0.5 ? '#3ec46d' : ratio > 0.25 ? '#e8a93b' : '#d04848';
+    ctx.fillStyle = ratio > 0.5 ? FX.nature : ratio > 0.25 ? FX.gold : FX.blood;
     ctx.fillRect(x, y, barW * ratio, barH);
     if (enemy.type === 'boss') {
-      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.strokeStyle = withAlpha('#ffffff', 0.4);
       ctx.lineWidth = entity(1);
       ctx.strokeRect(x - 0.5, y - 0.5, barW + 1, barH + 1);
     }
@@ -4574,7 +4574,7 @@ export class Renderer {
         const b = points[i + 1];
         // Outer glow stroke
         ctx.globalAlpha = lifeRatio * 0.55;
-        ctx.strokeStyle = 'rgba(120, 160, 255, 0.85)';
+        ctx.strokeStyle = withAlpha(FX.mana, 0.85);
         ctx.lineWidth = entity(5);
         ctx.beginPath();
         const dx = b.x - a.x;
@@ -4594,7 +4594,7 @@ export class Renderer {
         ctx.stroke();
         // Inner bright stroke
         ctx.globalAlpha = lifeRatio;
-        ctx.strokeStyle = 'rgba(235, 245, 255, 1)';
+        ctx.strokeStyle = withAlpha(lighten(FX.frost, 0.7), 1);
         ctx.lineWidth = entity(2);
         ctx.stroke();
       }
@@ -4690,9 +4690,9 @@ export class Renderer {
     const w = this.camera.cssWidth;
     if (snap.wave.intermission) {
       ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillStyle = withAlpha('#000', 0.45);
       ctx.fillRect(0, 0, w, 50);
-      ctx.fillStyle = '#f0f0f0';
+      ctx.fillStyle = INK['050'];
       ctx.font = '600 22px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -4706,17 +4706,17 @@ export class Renderer {
       const pulse = 0.5 + Math.sin(this.time * 4) * 0.15;
       ctx.save();
       const grad = ctx.createLinearGradient(0, 0, w, 0);
-      grad.addColorStop(0, 'rgba(120,0,0,0.0)');
-      grad.addColorStop(0.5, `rgba(160, 20, 20, ${0.55 + pulse * 0.2})`);
-      grad.addColorStop(1, 'rgba(120,0,0,0.0)');
+      grad.addColorStop(0, withAlpha(mix(FX.blood, INK['950'], 0.5), 0));
+      grad.addColorStop(0.5, withAlpha(mix(FX.blood, INK['950'], 0.35), 0.55 + pulse * 0.2));
+      grad.addColorStop(1, withAlpha(mix(FX.blood, INK['950'], 0.5), 0));
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, 60);
-      ctx.fillStyle = '#ff8a8a';
+      ctx.fillStyle = mix(FX.blood, INK['050'], 0.45);
       ctx.font = '800 26px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(`BOSS WAVE ${snap.wave.number}`, w / 2, 30);
-      ctx.fillStyle = `rgba(255, 200, 200, ${0.4 + pulse * 0.3})`;
+      ctx.fillStyle = withAlpha(lighten(FX.blood, 0.6), 0.4 + pulse * 0.3);
       ctx.font = '600 13px sans-serif';
       ctx.fillText('A powerful enemy approaches', w / 2, 50);
       ctx.restore();
