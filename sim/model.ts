@@ -46,6 +46,10 @@ import {
   riskHpMult,
 } from '../src/data/pacing.ts';
 import { UPGRADES } from '../src/data/upgrades.ts';
+// Namespace import on purpose: `PRESTIGE_PROJECTILE_TUNING` (revamp §7) does
+// not exist yet — it ships with task 6 — and this is what lets the sim pick it
+// up on the commit that adds it instead of needing a second edit here.
+import * as PRESTIGE_DATA from '../src/data/prestige.ts';
 import { MANUAL_AIM, TOWER_BASE } from '../src/data/tower.ts';
 import { computeUpgradeValue } from '../src/types.ts';
 import type { EnemyType, UpgradeDef } from '../src/types.ts';
@@ -57,6 +61,14 @@ import { STAT_BASES } from '../src/stats/keys.ts';
 
 /** Fraction of wall-clock time the tower actually spends shooting a live target. */
 const ENGAGEMENT_EFFICIENCY = 0.85;
+
+/**
+ * Adrenaline Rush's multiplier, mirroring `QUICK_SHOT_FIRE_RATE` in `Game.ts`.
+ *
+ * A literal because the game's copy is a module-private const rather than data;
+ * if the buff ever moves into `src/data`, this reads it instead.
+ */
+const QUICK_SHOT_FIRE_RATE = 2;
 
 /**
  * Effective-DPS credit for the baseline overkill carry (gameplay plan §7.5).
@@ -97,20 +109,59 @@ export function comboGoldMult(count: number, activeSec: number): number {
 }
 
 /**
- * Upgrades the greedy buyer is allowed to spend on (the offence/economy core).
+ * Every upgrade id whose effect this model actually resolves (revamp §13.1).
  *
- * `manaRegen` joined the list with Part 6 and is *not* a widening of the
- * baseline: it moves no DPS and no gold for four of the five cores, so the
- * buyer's `gain / cost` ratio for it is exactly zero and it is never bought.
- * For `arcane` it feeds the proc — see `manaRegenPerSec` — which is the whole
- * point: rather than hand-waving an uptime constant, the model lets the same
- * greedy buyer that decides every other purchase decide how much mana economy
- * the core is worth.
+ * The list used to be six ids long, which meant the greedy buyer could not
+ * spend on twenty-one of the twenty-seven lines and the sim was measuring a
+ * much narrower game than the one that ships: *a purchasable effect the sim
+ * cannot see is an effect nobody is balancing*. Everything here moves DPS or
+ * gold and has a term below —
+ *
+ *   - offence: `damage`, `fireRate`, `critChance`, `critDamage`,
+ *     `doubleShotChance`, `quickShotChance`, `quickShotTime`;
+ *   - coverage: `pierce`, `splash` (see `effectiveTargets`);
+ *   - economy: `goldMulti`, `prospecting`, `goldOnKill`, `critGold`,
+ *     `waveGold`;
+ *   - `manaRegen`, which moves neither for four of the five cores (its
+ *     `gain / cost` is then exactly zero and it is never bought) but feeds the
+ *     arcane proc through `manaRegenPerSec`.
+ *
+ * `pierce`, `splash` and `prospecting` do not exist in `UPGRADES` yet — they
+ * arrive with revamp task 4. That is why `BUYABLE` is *derived* from the
+ * shipping table rather than written out: the ids are picked up automatically
+ * on the commit that adds them, with no second edit here to forget.
+ *
+ * Deliberately absent: `landMines` (damage the model has no positions to place
+ * — it fires at the tower's feet, and crediting it would be inventing a number
+ * rather than measuring one), `range`, `xpGain`, `upgradeDiscount` and the
+ * whole defense category, none of which move DPS or gold in a model with no
+ * tower HP.
  */
-const BUYABLE = [
+const MODELLED_UPGRADE_IDS = new Set([
+  'damage', 'fireRate', 'critChance', 'critDamage', 'manaRegen',
+  'doubleShotChance', 'quickShotChance', 'quickShotTime',
+  'pierce', 'splash',
+  'goldMulti', 'prospecting', 'goldOnKill', 'critGold', 'waveGold',
+]);
+
+const BUYABLE: string[] = UPGRADES
+  .filter(u => MODELLED_UPGRADE_IDS.has(u.id))
+  .map(u => u.id);
+type BuyableId = string;
+
+/**
+ * The six ids the buyer could reach before revamp §13 widened the list.
+ *
+ * Kept, and only ever selected through `RunOptions.legacyBuyable`, because the
+ * revamp's entire §1 baseline was measured with this buyer: **wall 39, 21 min,
+ * 82 AP**. Widening the list moves that baseline — a buyer with more real
+ * options builds a stronger tower — so the old figure has to stay reproducible
+ * or there is no way to tell a re-tune apart from the instrumentation that
+ * measured it. See the provenance line under the §13 report.
+ */
+const LEGACY_BUYABLE: string[] = [
   'damage', 'fireRate', 'critChance', 'critDamage', 'goldMulti', 'manaRegen',
-] as const;
-type BuyableId = (typeof BUYABLE)[number];
+];
 
 const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(
   UPGRADES.map(u => [u.id, u]),
@@ -779,6 +830,51 @@ export interface Loadout {
   active: boolean;
   /** Fraction of an orb's value collected: 1 clicking, 0.4 (or 1 magnet) idle. */
   orbRate: number;
+  /**
+   * The wave the loadout is currently fighting.
+   *
+   * Coverage is the one channel that is worth more against a crowd than
+   * against a straggler (revamp §4), so `dps` has to know how many enemies the
+   * wave has. Carried on the loadout rather than threaded through every call
+   * site, because `dps(l, armor)` is the signature the whole sim and both
+   * report files are written against.
+   */
+  wave: number;
+  /** Coverage granted by prestige rather than by the gold table (revamp §13.2). */
+  prestigeCoverage: PrestigeCoverage;
+}
+
+/**
+ * The prestige half of coverage, as the model sees it.
+ *
+ * Nothing sets these yet — the AP/TP trees are revamp tasks 7 and 8, and the
+ * baseline must not move before them — but the fields exist so those tasks
+ * feed the *measured* number instead of adding a second coverage model.
+ */
+export interface PrestigeCoverage {
+  /** `pierceExtra` from `ap_pierce` / `tp_pierce`. */
+  pierceExtra: number;
+  /** Splash fraction from `tp_aoe`, composed with the `splash` upgrade. */
+  splashFraction: number;
+  /** Splash radius in world pixels; composed by max, as `FireOptions` does. */
+  splashRadius: number;
+  /** Twin Arrows: front projectiles, each carrying `extraDamageScale`. */
+  extraShots: number;
+  /** Rear Guard: projectiles behind the tower, at `rearDamageScale`. */
+  rearShots: number;
+  /** Scatter Shot: angled lanes, each at `scatterDamageScale`. */
+  scatterShots: number;
+}
+
+export function emptyPrestigeCoverage(): PrestigeCoverage {
+  return {
+    pierceExtra: 0,
+    splashFraction: 0,
+    splashRadius: 0,
+    extraShots: 0,
+    rearShots: 0,
+    scatterShots: 0,
+  };
 }
 
 export function freshLoadout(
@@ -797,6 +893,8 @@ export function freshLoadout(
     blessings: emptyBlessings(),
     active,
     orbRate: active ? 1 : LOOT_TUNING.autoCollectRate,
+    wave: 1,
+    prestigeCoverage: emptyPrestigeCoverage(),
   };
 }
 
@@ -813,16 +911,24 @@ function levelValue(id: string, level: number): number {
  * resolves through `stats/contributors/core.ts`, so a re-tune is measured here
  * rather than needing a second copy of the numbers.
  */
+/**
+ * Composed crit chance. Split out of `hitDamage` because `critGold` pays on a
+ * crit *kill*, so the economy model needs the same number the damage model uses.
+ */
+export function critChance(l: Loadout): number {
+  return Math.min(
+    1,
+    TOWER_BASE.critChance + levelValue('critChance', l.levels.critChance)
+      + l.blessings.critChanceAdd + (CORE_BY_ID[l.core].stats.critChanceAdd ?? 0),
+  );
+}
+
 export function hitDamage(l: Loadout): number {
   const b = l.blessings;
   const c = CORE_BY_ID[l.core].stats;
   const base = (TOWER_BASE.baseDamage + levelValue('damage', l.levels.damage))
     * l.damageMult * (1 + b.damagePct) * (1 + (c.damagePct ?? 0));
-  const crit = Math.min(
-    1,
-    TOWER_BASE.critChance + levelValue('critChance', l.levels.critChance)
-      + b.critChanceAdd + (c.critChanceAdd ?? 0),
-  );
+  const crit = critChance(l);
   const critMult = TOWER_BASE.critMultiplier
     + levelValue('critDamage', l.levels.critDamage)
     + b.critDamageAdd;
@@ -891,6 +997,165 @@ function perShotDamage(l: Loadout, armor: number, magicResist: number): number {
   return ordinary * (1 - share) + proc * share;
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Coverage: targets per shot, and payload per projectile (revamp §4, §13)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What a point of coverage is worth, in a model with no enemy positions.
+ *
+ * Every figure here is deliberately **low**, and the direction matters: this is
+ * the axis the revamp asks to carry the growth `damage` must not absorb, so a
+ * generous credit here would show a wall the game cannot reach. Err low and the
+ * sim under-reports coverage; err high and it green-lights a tuning that dies
+ * on wave 10 in a browser.
+ */
+const COVERAGE_TUNING = {
+  /**
+   * Enemy count at which a lane is "full" — i.e. at which one extra pierce or
+   * one splash disc finds a body every single time.
+   *
+   * Enemy count is `5 + floor((wave - 1) * 1.2)`: 27 at wave 20, 51 at wave 40.
+   * 60 therefore keeps even a deep wave under full credit, which stands in for
+   * the fact that a wave's *spawned* count is not its *alive at once* count.
+   */
+  densityReferenceCount: 60,
+  /** Share of a pierce point that actually passes through a second body. */
+  pierceCredit: 0.45,
+  /** Bodies a splash disc at the reference radius covers, beyond the one hit. */
+  splashTargetsAtReferenceRadius: 1.2,
+  /** Radius the figure above was measured at — the mortar blessing's own. */
+  splashReferenceRadius: BLESSING_TUNING.mortarRadius,
+  /** Hard ceiling, so a stacked build cannot run away inside the model. */
+  maxEffectiveTargets: 4,
+  /** Share of shots a rear-facing projectile finds anything to hit. */
+  rearCoverage: 0.30,
+  /** Share of shots an angled scatter lane finds anything to hit. */
+  scatterCoverage: 0.35,
+} as const;
+
+/**
+ * Payload scales for the AP projectile perks (revamp §7).
+ *
+ * Read from `PRESTIGE_PROJECTILE_TUNING` when `src/data/prestige.ts` exports it,
+ * so the sim measures the number that ships rather than a copy of it. The
+ * constant arrives with revamp task 6; until then the fallback is `1`, which is
+ * exactly today's behaviour — every variant carries the full `rawDamage`.
+ */
+interface ProjectileTuning {
+  extraDamageScale: number;
+  rearDamageScale: number;
+  scatterDamageScale: number;
+}
+
+// Indexed through a variable rather than dotted, so the bundler does not warn
+// about a named import that does not exist yet — the whole point is that it may
+// not, and a warning on every `npm run sim` until task 6 lands is noise.
+const PROJECTILE_TUNING_KEY = 'PRESTIGE_PROJECTILE_TUNING';
+
+const PROJECTILE_TUNING: ProjectileTuning =
+  ((PRESTIGE_DATA as Record<string, unknown>)[PROJECTILE_TUNING_KEY] as
+    ProjectileTuning | undefined)
+  ?? { extraDamageScale: 1, rearDamageScale: 1, scatterDamageScale: 1 };
+
+/** How full the lane is at this wave, 0-1. */
+function crowdDensity(wave: number): number {
+  return Math.min(1, spawnCountForWave(wave) / COVERAGE_TUNING.densityReferenceCount);
+}
+
+/** Total `pierceExtra` the loadout carries, from the gold table and prestige. */
+export function pierceExtra(l: Loadout): number {
+  return levelValue('pierce', l.levels.pierce ?? 0) + l.prestigeCoverage.pierceExtra;
+}
+
+/**
+ * Splash, composed the way `FireOptions` composes it: **max** radius, summed
+ * fraction. The `splash` upgrade ships its radius through `scaling`, so the
+ * model reads the composed value rather than re-deriving it from the level.
+ */
+export function splashCoverage(l: Loadout): { radius: number; fraction: number } {
+  const def = UPGRADE_BY_ID.splash;
+  const level = l.levels.splash ?? 0;
+  const upgradeFraction = def ? levelValue('splash', level) : 0;
+  const upgradeRadius = def && level > 0 && def.scaling
+    ? (def.scaling.base ?? 0) + (def.scaling.perLevel ?? 0) * level
+    : 0;
+  return {
+    radius: Math.max(upgradeRadius, l.prestigeCoverage.splashRadius),
+    fraction: upgradeFraction + l.prestigeCoverage.splashFraction,
+  };
+}
+
+/**
+ * Effective targets one shot lands on, ≥ 1 (revamp §13.2).
+ *
+ * Splash is credited at its *fraction*, not at full damage — a 25% splash on
+ * two extra bodies is half an extra target, not two.
+ */
+export function effectiveTargets(l: Loadout): number {
+  const density = crowdDensity(l.wave);
+  const pierce = pierceExtra(l) * COVERAGE_TUNING.pierceCredit * density;
+  const { radius, fraction } = splashCoverage(l);
+  const area = radius > 0
+    ? (radius / COVERAGE_TUNING.splashReferenceRadius) ** 2
+      * COVERAGE_TUNING.splashTargetsAtReferenceRadius
+    : 0;
+  const splash = fraction * area * density * (1 + pierce);
+  return Math.min(COVERAGE_TUNING.maxEffectiveTargets, 1 + pierce + splash);
+}
+
+/**
+ * The volley's damage as a multiple of one projectile's, after payload scaling
+ * and the geometry each extra lane actually covers.
+ *
+ * With the whole suite bought and revamp §7's scales in place this lands near
+ * **x2.0** against the x2.80 the payloads sum to — the rear lane only covers
+ * what is behind the tower and the scatter lanes miss on a sparse wave.
+ */
+export function volleyPayload(l: Loadout): number {
+  const c = l.prestigeCoverage;
+  return 1
+    + c.extraShots * PROJECTILE_TUNING.extraDamageScale
+    + c.rearShots * PROJECTILE_TUNING.rearDamageScale * COVERAGE_TUNING.rearCoverage
+    + c.scatterShots * PROJECTILE_TUNING.scatterDamageScale * COVERAGE_TUNING.scatterCoverage;
+}
+
+/**
+ * Shots per second the tower *effectively* fires, with Double Tap's extra
+ * projectile and Adrenaline Rush's temporary 2x folded in as expectations.
+ *
+ * Adrenaline is a buff refreshed on any shot that rolls it, so its uptime is
+ * `1 - (1 - p)^(rate * duration)` — saturating, which is the honest shape and
+ * the reason the two lines are worth buying together or not at all.
+ */
+export function effectiveFireRate(l: Loadout): number {
+  const raw = fireRate(l);
+  const doubleShot = levelValue('doubleShotChance', l.levels.doubleShotChance ?? 0);
+  const chance = levelValue('quickShotChance', l.levels.quickShotChance ?? 0);
+  const duration = levelValue('quickShotTime', l.levels.quickShotTime ?? 0);
+  let quick = 1;
+  if (chance > 0 && duration > 0) {
+    const uptime = 1 - (1 - Math.min(1, chance)) ** Math.max(1, raw * duration);
+    quick = 1 + uptime * (QUICK_SHOT_FIRE_RATE - 1);
+  }
+  return raw * (1 + Math.min(1, doubleShot)) * quick;
+}
+
+/**
+ * Shots one enemy takes to die — the revamp's first-class balance metric
+ * (§3.3), and the number the upgrade panel is meant to show the player.
+ *
+ * Deliberately **per target**, not per volley: the extra lanes Twin/Rear/
+ * Scatter add are *coverage*, spent on other enemies, and folding them in here
+ * would report a one-shot the player never sees against the enemy in front of
+ * the tower. Double Tap and Adrenaline are likewise excluded — they are shots
+ * per second, not damage per shot.
+ */
+export function shotsToKill(l: Loadout, hp: number, armor: number, magicResist = 0): number {
+  const per = perShotDamage(l, armor, magicResist);
+  return per > 0 ? hp / per : Infinity;
+}
+
 /** Sustained DPS against an enemy with the given armor. */
 export function dps(l: Loadout, armor: number, magicResist = 0): number {
   const perHit = perShotDamage(l, armor, magicResist);
@@ -898,7 +1163,13 @@ export function dps(l: Loadout, armor: number, magicResist = 0): number {
   // Behaviors (ricochet, splash, chains, executes) and enemy-HP reduction all
   // land as extra damage the model cannot place spatially, so they are folded
   // in as one effective-DPS multiplier.
-  const base = perHit * fireRate(l) * ENGAGEMENT_EFFICIENCY
+  // Revamp §4: the third axis. Coverage (pierce, splash) and the volley's
+  // payload (Twin/Rear/Scatter, at their shipping damage scales) multiply the
+  // per-shot channel rather than adding to it, which is exactly why they are
+  // the axis that can track a *crowd*. Both are 1.0 with nothing bought, so a
+  // run that owns no coverage measures precisely what it did before.
+  const rate = effectiveFireRate(l) * effectiveTargets(l) * volleyPayload(l);
+  const base = perHit * rate * ENGAGEMENT_EFFICIENCY
     * (1 + l.blessings.dpsPct + coreDps + OVERKILL_BASE_DPS_CREDIT);
   if (!l.active) return base;
   // Plan §4.2: the charged shot does not consume the tower's cooldown, so it
@@ -917,7 +1188,7 @@ export function dps(l: Loadout, armor: number, magicResist = 0): number {
   const chargeShare = MANUAL_AIM.chargeSeconds / CHARGE_CYCLE;
   const tracking = base * (1 - chargeShare + chargeShare * ACTIVE_PLAY.chargeAimPenalty);
   const charged = perHit
-    * fireRate(l)
+    * rate
     * MANUAL_AIM.chargeDpsSeconds
     * ACTIVE_PLAY.chargeCrowdFactor
     * ENGAGEMENT_EFFICIENCY
@@ -937,6 +1208,51 @@ export function goldMultiplier(l: Loadout): number {
   ) * l.goldMult;
 }
 
+/**
+ * Expected multiplier on a *kill's* gold, over and above `goldMultiplier`.
+ *
+ * Two channels, both read straight off `EnemyManager.valueFor`:
+ *   - the **double-gold roll** (revamp §13.4), which `prospecting` feeds
+ *     through the existing `doubleGoldChance` key — a `p` chance of `x2` is an
+ *     expected `1 + p`, and the key is clamped to `[0, 1]` so this is too;
+ *   - `critGold`, which pays only on a crit kill, so it is worth the crit
+ *     chance times the bonus and nothing more.
+ *
+ * Deliberately not folded into `goldMultiplier`: that function has to keep
+ * matching `Game.estimateWaveGold` exactly, because contracts size their
+ * payouts off it.
+ */
+export function killGoldMultiplier(l: Loadout): number {
+  const doubleGold = Math.max(0, Math.min(1, levelValue('prospecting', l.levels.prospecting ?? 0)));
+  const critBonus = levelValue('critGold', l.levels.critGold ?? 0);
+  return goldMultiplier(l) * (1 + doubleGold) * (1 + critChance(l) * critBonus);
+}
+
+/**
+ * Flat gold a wave pays that no multiplier touches: `goldOnKill` once per
+ * enemy, `waveGold` once on clear.
+ *
+ * The Wave Mastery *chain* multiplier (`Game.ts:1304`) is not credited — it is
+ * uncapped today and revamp §6.2 clamps it, so crediting the pre-clamp shape
+ * here would bake the very bug the plan is removing into the baseline.
+ */
+export function flatGoldForWave(wave: number, l: Loadout): number {
+  const perKill = levelValue('goldOnKill', l.levels.goldOnKill ?? 0);
+  const onClear = levelValue('waveGold', l.levels.waveGold ?? 0);
+  return perKill * spawnCountForWave(wave) + onClear;
+}
+
+/**
+ * What a wave is worth to this loadout — the quantity the greedy buyer is
+ * actually comparing when it weighs an economy line against a damage one.
+ *
+ * Risk is left at 0: it scales every wave's payout uniformly, so it cancels in
+ * the ratio the buyer takes.
+ */
+export function waveIncome(l: Loadout, wave = l.wave): number {
+  return waveProfile(wave).baseGold * killGoldMultiplier(l) + flatGoldForWave(wave, l);
+}
+
 export function costOf(l: Loadout, id: BuyableId): number {
   const def = UPGRADE_BY_ID[id];
   const level = l.levels[id] ?? 0;
@@ -950,23 +1266,25 @@ export function costOf(l: Loadout, id: BuyableId): number {
  * decision a competent player makes, and it is what the plan's baseline
  * table was produced with.
  */
-export function buyGreedily(l: Loadout, gold: number, armor: number, magicResist = 0): number {
+export function buyGreedily(
+  l: Loadout, gold: number, armor: number, magicResist = 0, ids: string[] = BUYABLE,
+): number {
   let budget = gold;
   for (;;) {
     const baseDps = dps(l, armor, magicResist);
-    const baseGold = goldMultiplier(l);
+    const baseGold = waveIncome(l);
     let bestId: BuyableId | null = null;
     let bestRatio = 0;
     let bestCost = 0;
 
-    for (const id of BUYABLE) {
+    for (const id of ids) {
       const cost = costOf(l, id);
       if (!Number.isFinite(cost) || cost > budget) continue;
       l.levels[id] = (l.levels[id] ?? 0) + 1;
       // Gold income is worth roughly half a DPS point: it buys future DPS but
       // only after a delay, so it is discounted rather than counted 1:1.
       const gain = (dps(l, armor, magicResist) / baseDps - 1)
-        + 0.5 * (goldMultiplier(l) / baseGold - 1);
+        + 0.5 * (waveIncome(l) / baseGold - 1);
       l.levels[id] = (l.levels[id] ?? 0) - 1;
       const ratio = gain / cost;
       if (ratio > bestRatio) {
@@ -981,6 +1299,34 @@ export function buyGreedily(l: Loadout, gold: number, armor: number, magicResist
     l.levels[bestId] = (l.levels[bestId] ?? 0) + 1;
   }
   return budget;
+}
+
+/**
+ * The largest composed-DPS step any single ordinary level can buy from here
+ * (revamp gate 7: no ordinary level may move total DPS by more than +25%).
+ *
+ * Affordability is deliberately ignored — the gate is about the *shape* of the
+ * curve, and a level that is worth +80% is a broken level whether or not the
+ * buyer can reach it this wave.
+ */
+export function bestPurchase(
+  l: Loadout, armor: number, magicResist = 0, ids: string[] = BUYABLE,
+): { id: string; dpsDelta: number } {
+  const base = dps(l, armor, magicResist);
+  let id = '—';
+  let dpsDelta = 0;
+  if (base <= 0) return { id, dpsDelta };
+  for (const candidate of ids) {
+    if (!Number.isFinite(costOf(l, candidate))) continue;
+    l.levels[candidate] = (l.levels[candidate] ?? 0) + 1;
+    const delta = dps(l, armor, magicResist) / base - 1;
+    l.levels[candidate] = (l.levels[candidate] ?? 0) - 1;
+    if (delta > dpsDelta) {
+      dpsDelta = delta;
+      id = candidate;
+    }
+  }
+  return { id, dpsDelta };
 }
 
 export interface RunResult {
@@ -1006,6 +1352,12 @@ export interface RunResult {
   contractApBonus: number;
   /** Contract gold as a fraction of everything the run earned. */
   contractGoldShare: number;
+  /**
+   * Geometric mean of `wave gold / previous wave gold` across the run — the
+   * revamp §6.3 figure, measured at 1.185x today against a `GOLD_GROWTH` of
+   * 1.08. The gap is purchased multipliers, and the target is ≤1.16x.
+   */
+  incomeGrowth: number;
 }
 
 export interface WaveSample {
@@ -1019,7 +1371,33 @@ export interface WaveSample {
   dps: number;
   /** Shots per second at this wave — the charged shot's worth scales inversely. */
   fireRate: number;
+  // ── Revamp §13.5: everything the instrumentation table reports ──
+  /** Boss waves get their own budget row; §1.2 splits the two. */
+  boss: boolean;
+  /**
+   * Fraction of the wave's enrage budget the wave consumed —
+   * `activeSec / (enrageThresholdSeconds + enrageSurvival)`. The revamp's whole
+   * complaint is that this sits at 18-34% on nine waves in ten.
+   */
+  budgetUse: number;
+  /** Shots a same-wave `normal` takes to die (revamp gate 6). */
+  shotsToKillNormal: number;
+  /** Shots the wave's *average* enemy takes to die. */
+  shotsToKillAverage: number;
+  /** Effective targets one shot covers, and the volley's payload multiple. */
+  targetsPerShot: number;
+  payload: number;
+  /** Levels of the lines the report tracks, at this wave. */
+  levels: Record<string, number>;
+  /** Waves of this wave's income the next level of each core line costs. */
+  wavesOfIncome: Record<string, number>;
+  /** Best single purchase available here, as a fraction of composed DPS. */
+  bestPurchaseId: string;
+  bestPurchaseDpsDelta: number;
 }
+
+/** Lines the §13.5 report tracks level-by-level. */
+export const REPORT_LINES = ['damage', 'fireRate', 'pierce', 'goldMulti'] as const;
 
 export interface RunOptions {
   damageMult?: number;
@@ -1066,6 +1444,15 @@ export interface RunOptions {
    * is for.
    */
   pacing?: boolean;
+  /**
+   * Restrict the greedy buyer to the six ids it could reach before revamp §13.
+   *
+   * The only reason this exists: the revamp's §1 baseline (wall 39, 21 min,
+   * 82 AP) was measured with that buyer, and a widened buyer is a *different*
+   * measurement rather than a drift. Off — the default — is the game as it
+   * actually ships.
+   */
+  legacyBuyable?: boolean;
 }
 
 export function simulateRun(opts: RunOptions = {}): RunResult {
@@ -1083,7 +1470,9 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     core = DEFAULT_CORE,
     risk = 0,
     pacing = true,
+    legacyBuyable = false,
   } = opts;
+  const buyable = legacyBuyable ? LEGACY_BUYABLE : BUYABLE;
 
   const loadout = freshLoadout(damageMult, goldMult, active, core);
   // Plan §6.1: bloodforge buys survivability, and the wall condition below is
@@ -1112,6 +1501,9 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
   if (contracts) contractMgr.refill();
   let contractGold = 0;
   let totalGold = 0;
+  let lastEarned = 0;
+  let growthSum = 0;
+  let growthSteps = 0;
   let gold = 0;
   let elapsed = 0;
   let timeToUnlock = Infinity;
@@ -1120,8 +1512,12 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
   for (; wave <= maxWave; wave++) {
     const profile = waveProfile(wave, risk);
     contractWave = wave;
+    // Coverage is worth more against a crowd than against a straggler, so the
+    // loadout has to know which wave it is standing in before anything prices
+    // a purchase.
+    loadout.wave = wave;
     const beforeBuy = gold;
-    gold = buyGreedily(loadout, gold, profile.avgArmor, profile.avgMagicResist);
+    gold = buyGreedily(loadout, gold, profile.avgArmor, profile.avgMagicResist, buyable);
     const goldSpent = Math.max(0, beforeBuy - gold);
 
     const waveDps = dps(loadout, profile.avgArmor, profile.avgMagicResist);
@@ -1153,8 +1549,14 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     // too strong?". An idle run never calls a wave and gets none of it.
     const momentum = pacing && loadout.active ? 1 + MOMENTUM_CAP : 1;
     const combo = pacing ? comboGoldMult(profile.count, activeSec) : 1;
-    const earned = (profile.baseGold + orbGoldForWave(wave) * orbRate)
-      * goldMultiplier(loadout) * momentum * combo;
+    // Kill gold carries the double-gold roll and `critGold` (revamp §13.4);
+    // orbs are not kills, so they ride the plain multiplier; `goldOnKill` and
+    // `waveGold` are flat and no multiplier touches them.
+    const earned = (
+      profile.baseGold * killGoldMultiplier(loadout)
+      + orbGoldForWave(wave) * orbRate * goldMultiplier(loadout)
+      + flatGoldForWave(wave, loadout)
+    ) * momentum * combo;
     gold += earned;
     totalGold += earned;
     // Plan §5.2: contracts pay in gold sized off a wave's income, so they are a
@@ -1196,7 +1598,29 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
       }
     }
 
+    // Revamp §6.3: run income growth per wave is the number that decides
+    // whether purchases stay decisions, so it is measured across the whole run
+    // rather than sampled — geometrically, since it is a growth rate.
+    if (earned > 0) {
+      if (lastEarned > 0) {
+        growthSum += Math.log(earned / lastEarned);
+        growthSteps += 1;
+      }
+      lastEarned = earned;
+    }
+
     if (sampleWaves.includes(wave)) {
+      const budget = enrageThresholdSeconds(wave) + enrageSurvival;
+      const normalHp = enemyHPForWave(ENEMY_DEFS.normal.baseHP, wave) * riskHpMult(risk);
+      const best = bestPurchase(loadout, profile.avgArmor, profile.avgMagicResist, buyable);
+      const levels: Record<string, number> = {};
+      const wavesOfIncome: Record<string, number> = {};
+      const income = earned;
+      for (const id of REPORT_LINES) {
+        levels[id] = loadout.levels[id] ?? 0;
+        const cost = UPGRADE_BY_ID[id] ? costOf(loadout, id) : Infinity;
+        wavesOfIncome[id] = income > 0 ? cost / income : Infinity;
+      }
       samples.set(wave, {
         wave,
         avgEnemyHp: profile.totalHp / profile.count,
@@ -1206,7 +1630,21 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
         clearSec,
         elapsedSec: elapsed,
         dps: waveDps,
-        fireRate: fireRate(loadout),
+        fireRate: effectiveFireRate(loadout),
+        boss: isBossWave(wave),
+        budgetUse: budget > 0 ? activeSec / budget : Infinity,
+        shotsToKillNormal: shotsToKill(
+          loadout, normalHp, ENEMY_DEFS.normal.armor, ENEMY_DEFS.normal.magicResist,
+        ),
+        shotsToKillAverage: shotsToKill(
+          loadout, profile.totalHp / profile.count, profile.avgArmor, profile.avgMagicResist,
+        ),
+        targetsPerShot: effectiveTargets(loadout),
+        payload: volleyPayload(loadout),
+        levels,
+        wavesOfIncome,
+        bestPurchaseId: best.id,
+        bestPurchaseDpsDelta: best.dpsDelta,
       });
     }
   }
@@ -1224,5 +1662,6 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     contractsCompleted: contractMgr.completed,
     contractApBonus: contractMgr.apBonusPct,
     contractGoldShare: totalGold > 0 ? contractGold / totalGold : 0,
+    incomeGrowth: growthSteps > 0 ? Math.exp(growthSum / growthSteps) : 1,
   };
 }

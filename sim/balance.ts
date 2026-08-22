@@ -497,6 +497,113 @@ function pacingTable(): string {
   );
 }
 
+/**
+ * Upgrades revamp §13.5 — the table the whole revamp is steered by.
+ *
+ * Fresh run only: no prestige multipliers, no blessings, idle, risk 0,
+ * `marksman`. That is the curve every §14 gate is written against, and mixing
+ * a blessed or prestiged run into it would hide the thing being measured.
+ *
+ * The `wall` row is the last wave the run actually cleared, so the sample has
+ * to be taken in a second pass once the first has found it.
+ */
+function instrumentationTable(legacyBuyable: boolean): string {
+  const common = {
+    unlockWave: ASCENSION_UNLOCK_WAVE,
+    blessings: false,
+    legacyBuyable,
+  };
+  const probe = simulateRun({ ...common, sampleWaves: [] });
+  const waves = [...new Set([5, 10, 20, 30, probe.wallWave])]
+    .filter(w => w > 0 && w <= probe.wallWave)
+    .sort((a, b) => a - b);
+  const run = simulateRun({ ...common, sampleWaves: waves });
+
+  const rows = waves.map(wave => {
+    const s = run.samples.get(wave);
+    if (!s) return [String(wave), ...Array(13).fill('—')];
+    return [
+      wave === probe.wallWave ? `${wave} (wall)` : String(wave),
+      s.boss ? 'B' : '·',
+      `${(s.budgetUse * 100).toFixed(0)}%`,
+      s.shotsToKillNormal.toFixed(1),
+      s.shotsToKillAverage.toFixed(1),
+      String(s.levels.damage ?? 0),
+      String(s.levels.fireRate ?? 0),
+      String(s.levels.pierce ?? 0),
+      String(s.levels.goldMulti ?? 0),
+      Number.isFinite(s.wavesOfIncome.damage) ? s.wavesOfIncome.damage.toFixed(1) : '—',
+      Number.isFinite(s.wavesOfIncome.fireRate) ? s.wavesOfIncome.fireRate.toFixed(1) : '—',
+      s.targetsPerShot.toFixed(2),
+      fmt(s.dps),
+      `${s.bestPurchaseId} +${(s.bestPurchaseDpsDelta * 100).toFixed(1)}%`,
+    ];
+  });
+
+  return table(
+    [
+      'Wave', 'B?', 'Budget use', 's2k normal', 's2k avg',
+      'dmg', 'rate', 'pierce', 'greed',
+      'waves/dmg', 'waves/rate', 'targets/shot', 'composed DPS', 'best single buy',
+    ],
+    rows,
+  );
+}
+
+/** The one-line summary the §14 gates are read off. */
+function instrumentationSummary(legacyBuyable: boolean): string {
+  const r = simulateRun({
+    unlockWave: ASCENSION_UNLOCK_WAVE,
+    sampleWaves: [],
+    blessings: false,
+    legacyBuyable,
+  });
+  const nonBoss: number[] = [];
+  const boss: number[] = [];
+  const sampled = simulateRun({
+    unlockWave: ASCENSION_UNLOCK_WAVE,
+    sampleWaves: Array.from({ length: r.wallWave }, (_, i) => i + 1),
+    blessings: false,
+    legacyBuyable,
+  });
+  for (const s of sampled.samples.values()) {
+    if (s.wave < 5) continue;
+    (s.boss ? boss : nonBoss).push(s.budgetUse);
+  }
+  const band = (xs: number[]) => (xs.length === 0
+    ? '—'
+    : `${(Math.min(...xs) * 100).toFixed(0)}-${(Math.max(...xs) * 100).toFixed(0)}%`
+      + ` (median ${(median(xs) * 100).toFixed(0)}%)`);
+  return [
+    `wall ${r.wallWave}, ${mins(r.durationSec)}, ${fmt(apForWave(r.wallWave))} AP banked`,
+    `non-boss budget use (waves 5-wall): ${band(nonBoss)}`,
+    `boss budget use: ${band(boss)}`,
+    `run income growth: ${r.incomeGrowth.toFixed(3)}x per wave (§6.3 target ≤1.16x)`,
+  ].join('\n');
+}
+
+function median(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 === 1 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+console.log('\n=== Revamp §13.5 Instrumentation (fresh run: idle, no blessings, no prestige) ===\n');
+console.log(instrumentationTable(false));
+console.log('\n' + instrumentationSummary(false));
+console.log(
+  '\n`s2k` is shots to kill *one* enemy — extra lanes and Double Tap are coverage and rate,'
+  + '\nnot damage per shot, so neither is folded in. `targets/shot` is the §4 coverage axis;'
+  + '\nit is 1.00 until `pierce` / `splash` / the AP-TP coverage nodes exist (revamp tasks 4, 7, 8).\n',
+);
+console.log(
+  'Provenance: the revamp\'s §1 baseline was measured with a greedy buyer that could reach only'
+  + '\nsix upgrade ids. §13.1 widened that to every line the model can price, which is a stronger'
+  + '\ntower and therefore a different curve — not a drift. The old buyer is still reproducible:\n',
+);
+console.log(instrumentationTable(true));
+console.log('\n' + instrumentationSummary(true));
+
 console.log('\n=== §2.1 Wave / gold / HP curve (fresh run, greedy buyer, no blessings) ===\n');
 console.log(curveTable());
 console.log('\n=== §2.2 Wall wave and run length per prestige tier (no blessings) ===\n');
