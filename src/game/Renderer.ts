@@ -5,7 +5,7 @@ import type { Camera } from './Camera';
 import { TOWER_VISUAL } from '../data/tower';
 import { CORE_BY_ID, DEFAULT_CORE, isCoreId, type CoreId } from '../data/cores';
 import { FX, INK, withAlpha } from '../data/palette';
-import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS, bossTierForWave } from '../data/enemies';
+import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS, ENEMY_GAIT, bossTierForWave } from '../data/enemies';
 import type { EnemyDef, EnemyShape } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
 import { formatInt } from '../utils/bigNumber';
@@ -78,6 +78,54 @@ export const RENDERED_ENEMY_SHAPES: readonly EnemyShape[] =
 
 /** Seconds a blinker's after-image lingers at the position it left. */
 const AFTER_IMAGE_LIFE = 0.45;
+
+// ── §4.2 motion and reaction ──────────────────────────────────────────────────
+
+/** Seconds an enemy's hit flash lives. */
+const HIT_FLASH_TIME = 0.06;
+/** Seconds a death dissolve plays for. */
+const DEATH_TIME = 0.36;
+/** Ceiling on concurrent death dissolves. Pooled, like every other effect here. */
+const DEATH_CAP = 40;
+/** Shards flung out of one death. */
+const DEATH_SHARDS = 4;
+/** Gait multiplier while an enemy is chilled or slowed. */
+const SLOWED_GAIT = 0.4;
+
+/**
+ * Per-enemy presentation state, keyed by enemy id.
+ *
+ * Everything here is *derived from the snapshot*, never pushed into it: a hit
+ * is "this enemy's `hp` is lower than it was last frame", exactly the way the
+ * turret learns it fired from the projectile list rather than from a
+ * presentation field bolted onto the simulation.
+ */
+interface EnemyTrack {
+  hp: number;
+  /** Seconds of hit flash left. */
+  flash: number;
+  /** Frame stamp, so a vanished enemy can be spotted in one pass. */
+  seen: number;
+  x: number;
+  y: number;
+  /** Last body sprite drawn for it, so its death has something to dissolve. */
+  sprite: HTMLCanvasElement | null;
+  color: string;
+  r: number;
+}
+
+/** A body coming apart along the killing blow's vector (§4.2). Pooled. */
+interface Death {
+  x: number;
+  y: number;
+  /** Unit vector the body and its shards travel along. */
+  vx: number;
+  vy: number;
+  age: number;
+  sprite: HTMLCanvasElement | null;
+  color: string;
+  r: number;
+}
 
 /**
  * Everything that makes one baked body sprite different from another (§4.1).
@@ -306,6 +354,12 @@ export class Renderer {
    */
   private wave = 1;
 
+  // ── §4.2 motion and reaction ──
+  private readonly tracks = new Map<number, EnemyTrack>();
+  private readonly deaths: Death[] = [];
+  /** Incremented once per frame; a track not stamped with it has left the field. */
+  private frameStamp = 0;
+
   constructor(canvas: HTMLCanvasElement, camera: Camera) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Failed to acquire 2D rendering context');
@@ -508,6 +562,89 @@ export class Renderer {
     this.advanceRange(snap.tower.range);
     this.advanceTurret(snap);
     this.advancePortals(snap);
+    this.advanceEnemyState(snap);
+  }
+
+  /**
+   * Hit flashes and death dissolves (§4.2), derived from the snapshot alone.
+   *
+   * A hit is "this enemy's `hp` is lower than it was last frame" and a death is
+   * "this id was on the field last frame and is not now" — the same trick
+   * `advanceTurret` uses for firing and `advancePortals` uses for arrivals. The
+   * simulation carries no presentation field for either, and the renderer keeps
+   * no copy of the combat rules.
+   *
+   * The sweep for departures only runs on a frame where something actually
+   * left: every live enemy is stamped in the first loop, so
+   * `tracks.size - alive` is exactly the number of deaths, and a wave where
+   * nothing dies pays one subtraction.
+   */
+  private advanceEnemyState(snap: RenderSnapshot): void {
+    const stamp = ++this.frameStamp;
+    let alive = 0;
+    for (const e of snap.enemies) {
+      if (!e.alive) continue;
+      alive++;
+      const track = this.tracks.get(e.id);
+      if (track === undefined) {
+        this.tracks.set(e.id, {
+          hp: e.hp, flash: 0, seen: stamp, x: e.x, y: e.y,
+          sprite: null, color: ENEMY_DEFS[e.type].color, r: this.enemyDrawRadius(e),
+        });
+        continue;
+      }
+      // Absorb shields and boss bulwarks soak damage *before* `hp`, so a hit
+      // that lands entirely on a shield does not flash the body — which is
+      // correct: the shield arc is the read for that one.
+      if (e.hp < track.hp) track.flash = HIT_FLASH_TIME;
+      else if (track.flash > 0) track.flash = Math.max(0, track.flash - FRAME_DT);
+      track.hp = e.hp;
+      track.seen = stamp;
+      track.x = e.x;
+      track.y = e.y;
+    }
+
+    if (this.tracks.size !== alive) {
+      this.tracks.forEach((track, id) => {
+        if (track.seen === stamp) return;
+        this.pushDeath(track);
+        this.tracks.delete(id);
+      });
+    }
+
+    for (let i = this.deaths.length - 1; i >= 0; i--) {
+      const d = this.deaths[i];
+      d.age += FRAME_DT;
+      if (d.age >= DEATH_TIME) this.deaths.splice(i, 1);
+    }
+  }
+
+  /**
+   * Pooled push of a death dissolve, aimed along the killing blow.
+   *
+   * The vector is *outward from the tower*, and that is a deliberate
+   * approximation rather than a shortcut: essentially all damage in this game
+   * originates at the tower — its shots, its shockwaves, its mines, its
+   * abilities — so the outward radial is the killing blow's direction to
+   * within anything a player can perceive at this zoom. Carrying the true
+   * vector would mean the simulation emitting a damage direction on every hit,
+   * which is a per-hit field on the hot path for a 0.36 s effect.
+   */
+  private pushDeath(track: EnemyTrack): void {
+    if (this.deaths.length >= DEATH_CAP) this.deaths.shift();
+    const dx = track.x - this.towerX;
+    const dy = track.y - this.towerY;
+    const len = Math.hypot(dx, dy);
+    this.deaths.push({
+      x: track.x,
+      y: track.y,
+      vx: len > 0 ? dx / len : 1,
+      vy: len > 0 ? dy / len : 0,
+      age: 0,
+      sprite: track.sprite,
+      color: track.color,
+      r: track.r,
+    });
   }
 
   /**
@@ -2698,12 +2835,71 @@ export class Renderer {
     // Ward links are drawn first so they read as a lattice *under* the bodies
     // rather than as lines crossing over them.
     this.drawWardLinks(ctx, enemies);
+    // Then the dissolving dead, under the living: a corpse must never occlude
+    // the thing that is still walking at you.
+    this.drawDeaths(ctx);
     for (const e of enemies) {
       if (!e.alive) continue;
       this.drawAfterImage(ctx, e);
       this.drawEnemyShadow(ctx, e);
       this.drawEnemy(ctx, e);
     }
+  }
+
+  /**
+   * Death, as a directional dissolve (§4.2).
+   *
+   * The body smears along the killing blow's vector — stretched along it,
+   * pinched across it, fading — and throws four shards ahead of itself. What
+   * this replaces is nothing at all: the body simply stopped being drawn, and
+   * the only thing that marked a kill was a symmetric particle burst that looks
+   * identical whether the enemy was shot from the front or crushed from behind.
+   *
+   * `EffectsManager` still owns that burst (it is Part 5's file); this is the
+   * body's own exit, and pooled at `DEATH_CAP` the way every other effect here
+   * is.
+   */
+  private drawDeaths(ctx: CanvasRenderingContext2D): void {
+    if (this.deaths.length === 0) return;
+    ctx.save();
+    for (const d of this.deaths) {
+      const k = d.age / DEATH_TIME;
+      const fade = 1 - k;
+      if (d.sprite) {
+        const half = d.sprite.width / 2;
+        ctx.save();
+        ctx.globalAlpha = fade * fade * 0.8;
+        ctx.translate(d.x + d.vx * k * d.r * 1.5, d.y + d.vy * k * d.r * 1.5);
+        ctx.rotate(Math.atan2(d.vy, d.vx));
+        ctx.scale(1 + k * 0.85, Math.max(0.05, 1 - k * 0.6));
+        ctx.drawImage(d.sprite, -half, -half);
+        ctx.restore();
+      }
+      // Shards, fanned around the vector and outrunning the body.
+      ctx.save();
+      ctx.globalAlpha = fade * 0.85;
+      ctx.fillStyle = d.color;
+      ctx.translate(d.x, d.y);
+      ctx.rotate(Math.atan2(d.vy, d.vx));
+      for (let i = 0; i < DEATH_SHARDS; i++) {
+        const spread = (i / (DEATH_SHARDS - 1) - 0.5) * 1.5;
+        const reach = d.r * (1.4 + (i % 2) * 0.9) * k;
+        const size = d.r * 0.24 * fade;
+        ctx.save();
+        ctx.rotate(spread);
+        ctx.translate(d.r * 0.4 + reach, 0);
+        ctx.rotate(k * 6 * (i % 2 === 0 ? 1 : -1));
+        ctx.beginPath();
+        ctx.moveTo(size, 0);
+        ctx.lineTo(-size * 0.7, size * 0.8);
+        ctx.lineTo(-size * 0.7, -size * 0.8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   /**
@@ -2778,9 +2974,25 @@ export class Renderer {
 
   private drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy): void {
     const r = this.enemyDrawRadius(enemy);
+    const track = this.tracks.get(enemy.id);
+
+    // ── gait (§4.2) ──
+    //
+    // Two `Math.sin` calls. Before this, exactly two types in the game moved at
+    // all — the flier bobbed, the boss and splitter breathed — so a crowd of
+    // two hundred read as a point cloud sliding across the floor. The phase is
+    // `time × freq + id`, so no two neighbours are ever in step, and the
+    // frequency is per type, which means a Runner and a Tank are told apart by
+    // how they move before their silhouettes resolve.
+    const gait = ENEMY_GAIT[enemy.type];
     let bob = 0;
-    if (enemy.type === 'flying') {
-      bob = Math.sin(this.time * 5 + enemy.id * 0.7) * 3;
+    let squash = 0;
+    if (!this.reducedMotion) {
+      const phase = this.time * gait.freq * (enemy.slowed === true ? SLOWED_GAIT : 1)
+        + enemy.id * 1.7;
+      squash = Math.sin(phase) * gait.squash;
+      const lift = Math.sin(phase * 0.5);
+      bob = gait.float ? lift * gait.bob : -Math.abs(lift) * gait.bob;
     }
 
     // Elite aura (drawn behind the enemy body)
@@ -2794,19 +3006,38 @@ export class Renderer {
       this.drawHealerAura(ctx, enemy, r);
     }
 
-    // Body: one blit of a cached sprite. The pulse is a transform around the
+    // Body: one blit of a cached sprite. The squash is a transform around the
     // enemy's centre rather than a repaint at a different size.
-    let pulse = 1;
-    if (enemy.type === 'boss') pulse = 1 + Math.sin(this.time * 4) * 0.08;
-    else if (enemy.type === 'splitter') pulse = 1 + Math.sin(this.time * 3 + enemy.id) * 0.05;
-
     const sprite = this.getEnemySprite(enemy);
     const half = sprite.width / 2;
+    if (track) {
+      track.sprite = sprite;
+      track.r = r;
+    }
     ctx.save();
     ctx.translate(enemy.x, enemy.y + bob);
-    if (pulse !== 1) ctx.scale(pulse, pulse);
+    if (squash !== 0) ctx.scale(1 - squash * 0.65, 1 + squash);
     ctx.drawImage(sprite, -half, -half);
+
+    // Hit flash (§4.2): the same sprite, blitted again additively for 60 ms.
+    // A hit used to throw sparks while the body itself did not acknowledge it —
+    // which meant a shot that connected and a shot that missed looked the same
+    // on the thing that was shot. Additive rather than a second white
+    // silhouette, so it costs no extra sprite and keeps the body's own hue.
+    if (track !== undefined && track.flash > 0) {
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = Math.min(1, track.flash / HIT_FLASH_TIME) * 0.9;
+      ctx.drawImage(sprite, -half, -half);
+    }
     ctx.restore();
+
+    // Chill (§4.2): a rime crust on the body, and a gait already halved above.
+    // `slowed` is the only status the simulation actually has — see
+    // docs/enemy-system.md on why there is no burn or stun read here.
+    if (enemy.slowed === true) this.drawFrostCrust(ctx, enemy, r, bob);
+    // Spawn protection: a splitter child inside its 2 s of immunity looks
+    // exactly like one that can be shot, which is a lie the player pays for.
+    if ((enemy.spawnProtection ?? 0) > 0) this.drawSpawnWard(ctx, enemy, r, bob);
 
     // Wings flap, so they cannot be baked into the body sprite.
     if (ENEMY_DEFS[enemy.type].shape === 'winged') {
@@ -2845,21 +3076,108 @@ export class Renderer {
     this.drawEnemyHpBar(ctx, enemy, r, bob);
   }
 
+  /**
+   * Frost crust on a chilled body (§4.2).
+   *
+   * A chill is worth 25% of an enemy's speed and, before this, was completely
+   * invisible: the frostwork core's entire shot behaviour and the Frostbite
+   * blessing both landed with nothing to show for them. One cached sprite of
+   * rime spurs per radius, blitted at a fixed rotation so it does not spin.
+   */
+  private drawFrostCrust(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
+    const sprite = this.part(`frost|${r.toFixed(1)}`, (r + entity(5)) * 2, (g) => {
+      g.strokeStyle = withAlpha(FX.frost, 0.75);
+      g.lineWidth = entity(1.5);
+      g.lineCap = 'round';
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2;
+        const base = r * 0.86;
+        const tip = r * (i % 2 === 0 ? 1.16 : 1.04);
+        g.beginPath();
+        g.moveTo(Math.cos(a) * base, Math.sin(a) * base);
+        g.lineTo(Math.cos(a + 0.1) * tip, Math.sin(a + 0.1) * tip);
+        g.stroke();
+      }
+      const glaze = g.createRadialGradient(0, 0, r * 0.4, 0, 0, r);
+      glaze.addColorStop(0, withAlpha(FX.frost, 0));
+      glaze.addColorStop(1, withAlpha(FX.frost, 0.3));
+      g.fillStyle = glaze;
+      g.beginPath();
+      g.arc(0, 0, r, 0, Math.PI * 2);
+      g.fill();
+    });
+    this.blit(ctx, sprite, enemy.x, enemy.y + bob);
+  }
+
+  /**
+   * The ward around something that cannot be shot yet (§4.2).
+   *
+   * `spawnProtection` makes a splitter child untargetable *and* immune for two
+   * seconds, and it looked identical to one that could be killed — so a player
+   * watching their shots pass through a child had no way to know it was
+   * working as designed. A tightening ring says "not yet" and says how long is
+   * left, which is the same information the boss's phase flash already carries.
+   */
+  private drawSpawnWard(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
+    const left = enemy.spawnProtection ?? 0;
+    const ratio = Math.max(0, Math.min(1, left / ENEMY_BEHAVIOR.splitterSpawnProtection));
+    ctx.save();
+    ctx.strokeStyle = withAlpha(INK['050'], 0.2 + ratio * 0.4);
+    ctx.lineWidth = entity(1.4);
+    ctx.setLineDash([entity(4), entity(4)]);
+    ctx.lineDashOffset = -this.time * 26;
+    ctx.beginPath();
+    ctx.arc(enemy.x, enemy.y + bob, r + entity(4) + ratio * entity(5), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * Tattered wings (§4.1), drawn live because they flap.
+   *
+   * They used to be one flat triangle per side — a nine-pixel spike that read
+   * as a fin. A scalloped membrane on two struts is barely more geometry and it
+   * is the difference between "a white circle with fins" and a thing that
+   * flies; the notches in the trailing edge are what make it *tattered* rather
+   * than merely pointed.
+   */
   private drawWings(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
     const def = ENEMY_DEFS[enemy.type];
-    const wingFlap = Math.sin(this.time * 12 + enemy.id) * 0.4;
+    const flap = this.reducedMotion ? -0.15 : Math.sin(this.time * 12 + enemy.id) * 0.45;
+    const span = r * 2.1;
     ctx.save();
-    ctx.fillStyle = def.borderColor;
+    ctx.translate(enemy.x, enemy.y + bob);
     for (const dir of [-1, 1]) {
       ctx.save();
-      ctx.translate(enemy.x, enemy.y + bob);
-      ctx.rotate(wingFlap * dir);
+      ctx.rotate(flap * dir);
+      ctx.scale(dir, 1);
+      // Membrane: a leading edge out to the tip, then three scallops back in.
       ctx.beginPath();
-      ctx.moveTo(r * dir, 0);
-      ctx.lineTo((r + 9) * dir, -6);
-      ctx.lineTo((r + 4) * dir, 0);
+      ctx.moveTo(r * 0.5, -r * 0.15);
+      ctx.quadraticCurveTo(span * 0.7, -r * 0.95, span, -r * 0.5);
+      ctx.quadraticCurveTo(span * 0.82, -r * 0.05, span * 0.66, -r * 0.3);
+      ctx.quadraticCurveTo(span * 0.6, r * 0.2, span * 0.42, -r * 0.1);
+      ctx.quadraticCurveTo(span * 0.34, r * 0.32, r * 0.62, r * 0.12);
       ctx.closePath();
+      ctx.fillStyle = withAlpha(def.borderColor, 0.92);
       ctx.fill();
+      // A lit edge in the *body's* colour. The membrane is the flier's dark
+      // navy `borderColor`, which on this floor is very nearly the floor —
+      // without the edge the wings are geometry nobody can see.
+      ctx.strokeStyle = withAlpha(def.color, 0.55);
+      ctx.lineWidth = entity(1.2);
+      ctx.stroke();
+      // Struts.
+      ctx.strokeStyle = withAlpha(def.color, 0.3);
+      ctx.lineWidth = entity(1.1);
+      ctx.beginPath();
+      ctx.moveTo(r * 0.5, -r * 0.15);
+      ctx.lineTo(span * 0.66, -r * 0.3);
+      ctx.moveTo(r * 0.5, -r * 0.15);
+      ctx.lineTo(span * 0.42, -r * 0.1);
+      ctx.moveTo(r * 0.5, -r * 0.15);
+      ctx.lineTo(span, -r * 0.5);
+      ctx.stroke();
       ctx.restore();
     }
     ctx.restore();

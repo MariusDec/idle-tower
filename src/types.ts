@@ -148,6 +148,19 @@ export interface Enemy {
   spawnWave?: number;
   /** Seconds since this enemy last took damage. Drives shielded regeneration. */
   undamagedFor?: number;
+  /**
+   * **Presentation only.** True while this enemy is actually moving slower than
+   * its own `speed` — a Frostbite/frostwork chill, or a global slow from an
+   * ability (UI plan §4.2).
+   *
+   * Written by `EnemyManager.tick` at the point it already resolves the chill,
+   * and read only by `Renderer` to paint the frost crust and to halve the gait.
+   * Nothing in the simulation may branch on it: the movement code composes the
+   * two slow sources itself, and a second copy of that answer would be a second
+   * thing to keep in step. It exists because the renderer has the snapshot and
+   * no route to the manager's chill map.
+   */
+  slowed?: boolean;
   /** Seconds of remaining untargetable-and-immune spawn protection (splitter children). */
   spawnProtection?: number;
   /** Outward scatter velocity, live while `scatterTimer > 0` (splitter children). */

@@ -705,6 +705,9 @@ export class EnemyManager {
       const chill = this.chilled.get(e.id);
       if (e.burrowed === true) speedMult *= ENEMY_BEHAVIOR.burrowSpeedMult;
       const moveSpeed = e.speed * this.slowFactor * (chill ? chill.factor : 1) * speedMult;
+      // Presentation only (UI plan §4.2): the renderer has the snapshot and no
+      // route to the chill map, and "am I slowed" is already answered here.
+      e.slowed = chill !== undefined || (this.slowTimer > 0 && this.slowFactor < 1);
 
       const stance = this.resolveStance(e, dt, d, dx, dy, towerX, towerY);
       if (stance === 'escaped') {

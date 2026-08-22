@@ -66,6 +66,48 @@ export interface EnemyDef {
 }
 
 /**
+ * How a type *moves* (UI plan §4.2). Presentation only.
+ *
+ * Before this, exactly two enemies in the game animated at all — the flier
+ * bobbed and the boss and splitter breathed — so a wave of two hundred read as
+ * a point cloud sliding across the floor. A cheap per-type gait fixes that for
+ * two `Math.sin` calls per enemy per frame, and it does a second job for free:
+ * a Runner scurrying at 15 rad/s and a Tank lumbering at 3.4 are *told apart by
+ * their motion* before their silhouettes are close enough to resolve.
+ *
+ * The phase is `time × freq + id`, so two enemies of the same type standing
+ * next to each other are never in step. A `Record` over the union, so a new
+ * type cannot ship as a sliding sprite.
+ */
+export const ENEMY_GAIT: Record<EnemyType, {
+  /** Radians per second of the gait cycle. Fast things scurry, heavy things do not. */
+  freq: number;
+  /** Peak vertical travel, in drawn pixels. */
+  bob: number;
+  /** Peak squash, as a fraction of the body radius. Stretched up, pinched across. */
+  squash: number;
+  /** True for something that hovers (a smooth float) rather than steps (a hop). */
+  float: boolean;
+}> = {
+  normal: { freq: 7, bob: entity(1.2), squash: 0.05, float: false },
+  fast: { freq: 15, bob: entity(2.2), squash: 0.1, float: false },
+  tank: { freq: 3.4, bob: entity(0.8), squash: 0.035, float: false },
+  flying: { freq: 5, bob: entity(3), squash: 0.03, float: true },
+  healer: { freq: 5.5, bob: entity(1.4), squash: 0.05, float: false },
+  boss: { freq: 2.6, bob: entity(1.6), squash: 0.06, float: false },
+  splitter: { freq: 4.5, bob: entity(1.6), squash: 0.11, float: false },
+  shielded: { freq: 4.5, bob: entity(0.9), squash: 0.04, float: false },
+  // A machine on treads. It has a gait so it is not frozen, and almost none so
+  // it never reads as something that runs at you.
+  siege: { freq: 3, bob: entity(0.4), squash: 0.02, float: false },
+  thief: { freq: 16, bob: entity(2.4), squash: 0.09, float: false },
+  // Drifting rather than walking — it does not run, it arrives.
+  blinker: { freq: 2, bob: entity(1.6), squash: 0.06, float: true },
+  warden: { freq: 3.2, bob: entity(2), squash: 0.02, float: true },
+  burrower: { freq: 8, bob: entity(0.9), squash: 0.09, float: false },
+};
+
+/**
  * Tuning for the behavioural roster (gameplay plan §2.1/§2.2).
  *
  * Every cadence here is measured in *simulation* seconds and consumed inside
