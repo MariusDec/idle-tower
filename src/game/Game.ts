@@ -636,7 +636,10 @@ export class Game {
       const p = payload as { enemy: { id: number; x: number; y: number; type: string; armor: number; magicResist: number; hp: number; maxHp: number; goldValue: number; alive: boolean }; amount: number; killed: boolean; isCrit?: boolean };
       const def = ENEMY_DEFS[p.enemy.type as keyof typeof ENEMY_DEFS];
       this.effects.emitHitSparks(p.enemy.x, p.enemy.y, def.color, p.killed ? 6 : 3);
-      this.effects.emitDamageNumber(p.enemy.x, p.enemy.y, p.amount, !!p.isCrit);
+      this.effects.emitDamageNumber(p.enemy.x, p.enemy.y, p.amount, !!p.isCrit, {
+        maxHp: p.enemy.maxHp,
+        kind: 'damage',
+      });
       const ls = this.tower.effectiveLifesteal;
       if (ls > 0 && p.amount > 0) {
         const ts = this.tower.snapshot;
@@ -950,7 +953,7 @@ export class Game {
     this.bus.on('enemy_healed', (payload: unknown) => {
       const p = payload as { healer: { x: number; y: number }; target: { x: number; y: number }; amount: number };
       this.effects.emitHealParticles(p.healer.x, p.healer.y, p.target.x, p.target.y);
-      this.effects.emitDamageNumber(p.target.x, p.target.y - 10, p.amount, false);
+      this.effects.emitDamageNumber(p.target.x, p.target.y - 10, p.amount, false, { kind: 'heal' });
     });
     this.bus.on('tower_damaged', (amount: unknown) => {
       let raw = Math.max(0, amount as number);
@@ -962,6 +965,7 @@ export class Game {
           this.tower.snapshot.y - TOWER_VISUAL.bodyRadius - 24,
           0,
           false,
+          { kind: 'self' },
         );
         return;
       }
@@ -985,6 +989,7 @@ export class Game {
           ts.y - TOWER_VISUAL.bodyRadius - 40,
           absorbed,
           false,
+          { maxHp: ts.wallMaxHp, kind: 'self' },
         );
 
         if (ts.wallHp <= 0) {
@@ -1029,6 +1034,7 @@ export class Game {
         ts.y - TOWER_VISUAL.bodyRadius - 24,
         dmg,
         false,
+        { maxHp: ts.maxHp, kind: 'self' },
       );
       if (ts.hp <= 0) {
         // Evolution: revive — once per ascension
@@ -2138,12 +2144,15 @@ export class Game {
       case 'gold': {
         const gold = Math.max(1, Math.floor(amount * this.computeGoldMultiplier()));
         this.resourceMgr.addGold(gold);
-        this.effects.emitDamageNumber(x, y - 12, gold, full);
+        // `full` (the pickup was collected at full value) used to be passed as
+        // `isCrit`, which is why gold popped in the crit colour. It still drives
+        // the spark count below; it is not a crit.
+        this.effects.emitDamageNumber(x, y - 12, gold, false, { kind: 'gold' });
         break;
       }
       case 'mana': {
         this.resourceMgr.addMana(amount);
-        this.effects.emitHealNumber(x, y - 12, amount);
+        this.effects.emitDamageNumber(x, y - 12, amount, false, { kind: 'mana' });
         break;
       }
       case 'reroll': {

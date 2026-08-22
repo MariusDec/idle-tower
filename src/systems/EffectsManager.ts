@@ -1,8 +1,17 @@
-import type { DamageNumber, Particle, Shockwave } from '../types';
+import type { DamageKind, DamageNumber, Particle, Shockwave } from '../types';
 
 const PARTICLE_GRAVITY = 320;
 const PARTICLE_DRAG_PER_SEC = 0.55;
-const DMG_FLOAT_SPEED = 48;
+/**
+ * The rise, in **CSS pixels per second** (UI plan §5.B).
+ *
+ * Damage numbers are anchored in the world but typed and moved in screen
+ * space, so the rise is unit-agnostic here: `EffectsManager` needs no camera to
+ * integrate it, and the renderer subtracts it after projecting the anchor.
+ */
+const DMG_RISE_SPEED = 74;
+/** The existing exponential decay on the rise, per second. */
+const DMG_RISE_DECAY = 0.35;
 const DMG_BASE_LIFE = 0.85;
 const DMG_CRIT_LIFE = 1.25;
 const SHOCKWAVE_SPEED = 700;
@@ -31,6 +40,21 @@ const MAX_DAMAGE_NUMBERS = 80;
  */
 const DMG_MERGE_RADIUS = 16;
 const DMG_MERGE_MAX_AGE = 0.22;
+
+/**
+ * How big a bite this hit took out of the thing it hit, bucketed (UI plan §5.B).
+ *
+ * `maxHp <= 0` (a heal, a gold pop, an unknown target) is always tier 0 — a
+ * number with no denominator has no business shouting.
+ */
+export function damageTier(amount: number, maxHp: number): 0 | 1 | 2 | 3 {
+  if (!(maxHp > 0)) return 0;
+  const f = amount / maxHp;
+  if (f >= 0.5) return 3;
+  if (f >= 0.2) return 2;
+  if (f >= 0.06) return 1;
+  return 0;
+}
 
 export class EffectsManager {
   private particles: Particle[] = [];
@@ -580,15 +604,32 @@ export class EffectsManager {
     }
   }
 
-  emitDamageNumber(x: number, y: number, amount: number, isCrit: boolean): void {
+  /**
+   * A floating number anchored at a world point.
+   *
+   * The options bag rather than a fifth positional boolean because the fifth
+   * argument used to be exactly that and one call site passed "this was a
+   * full-value pickup" into `isCrit`, which is why gold used to pop in the crit
+   * colour (UI plan §0.2 gap 4).
+   */
+  emitDamageNumber(
+    x: number,
+    y: number,
+    amount: number,
+    isCrit: boolean,
+    opts?: { maxHp?: number; kind?: DamageKind },
+  ): void {
     this.pushDamageNumber({
       x: x + (Math.random() - 0.5) * 10,
       y: y - 4,
       amount: Math.max(1, Math.round(amount)),
       isCrit,
+      kind: opts?.kind ?? 'damage',
+      tier: damageTier(amount, opts?.maxHp ?? 0),
       age: 0,
       life: isCrit ? DMG_CRIT_LIFE : DMG_BASE_LIFE,
-      vy: DMG_FLOAT_SPEED,
+      riseCss: 0,
+      vy: DMG_RISE_SPEED,
     });
   }
 
@@ -598,10 +639,12 @@ export class EffectsManager {
       y: y - 4,
       amount: Math.max(1, Math.round(amount)),
       isCrit: false,
-      isHeal: true,
+      kind: 'heal',
+      tier: 0,
       age: 0,
       life: DMG_BASE_LIFE,
-      vy: DMG_FLOAT_SPEED,
+      riseCss: 0,
+      vy: DMG_RISE_SPEED,
     });
   }
 
@@ -617,14 +660,18 @@ export class EffectsManager {
     for (let i = this.damageNumbers.length - 1; i >= 0; i--) {
       const d = this.damageNumbers[i];
       if (d.age > DMG_MERGE_MAX_AGE) continue;
-      if (!!d.isCrit !== !!next.isCrit || !!d.isHeal !== !!next.isHeal) continue;
+      if (!!d.isCrit !== !!next.isCrit || d.kind !== next.kind) continue;
       const dx = d.x - next.x;
       const dy = d.y - next.y;
       if (dx * dx + dy * dy > DMG_MERGE_RADIUS * DMG_MERGE_RADIUS) continue;
       d.amount += next.amount;
-      // Restart the float so the growing total stays on screen.
+      // A merge that crosses a threshold promotes the label.
+      d.tier = Math.max(d.tier, next.tier);
+      // Restarting `age` re-runs the pop, which is what a growing total should
+      // do. `riseCss` is deliberately untouched: resetting it would teleport the
+      // label back down onto the enemy. See tests/effects.test.ts.
       d.age = 0;
-      d.vy = DMG_FLOAT_SPEED;
+      d.vy = DMG_RISE_SPEED;
       return;
     }
     if (this.damageNumbers.length >= MAX_DAMAGE_NUMBERS) this.damageNumbers.shift();
@@ -646,8 +693,8 @@ export class EffectsManager {
 
     for (const d of this.damageNumbers) {
       d.age += dt;
-      d.y -= d.vy * dt;
-      d.vy *= Math.pow(0.35, dt);
+      d.riseCss += d.vy * dt;
+      d.vy *= Math.pow(DMG_RISE_DECAY, dt);
     }
     if (this.damageNumbers.length > 0) {
       this.damageNumbers = this.damageNumbers.filter(d => d.age < d.life);

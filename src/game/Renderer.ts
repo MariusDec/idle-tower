@@ -4,7 +4,7 @@ import { ARENA, ARENA_RANGE_CAP, entity, world } from '../data/arena';
 import type { Camera } from './Camera';
 import { TOWER_VISUAL } from '../data/tower';
 import { CORE_BY_ID, DEFAULT_CORE, isCoreId, type CoreId } from '../data/cores';
-import { FX, INK, withAlpha } from '../data/palette';
+import { FX, INK, mix, withAlpha } from '../data/palette';
 import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS, ENEMY_GAIT, bossTierForWave } from '../data/enemies';
 import type { EnemyDef, EnemyShape } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
@@ -16,6 +16,44 @@ const ELITE_RADIUS_SCALE = 1.25;
 
 /** Frame step every animation in this file advances on. See `Renderer.time`. */
 const FRAME_DT = 1 / 60;
+
+/**
+ * The Part 2 display face, as one string, kept byte-identical to
+ * `--font-display` in `src/styles/tokens.css`. Damage numbers are exactly what
+ * a condensed face was self-hosted for; the canvas cannot read a custom
+ * property, so the stack is declared once here rather than at every `ctx.font`.
+ */
+const DISPLAY_FONT_STACK =
+  "'Oswald', 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue Condensed', " +
+  "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, " +
+  "'Helvetica Neue', Arial, sans-serif";
+
+/** Damage-number type sizes in CSS pixels, by `damageTier()` bucket (§5.B). */
+const DMG_SIZE_BY_TIER = [15, 18, 22, 28];
+/**
+ * The tower's own numbers, and gold pickups, are pinned to a flatter ramp: a
+ * chip off the tower must never out-shout the damage the player is dealing.
+ */
+const DMG_SIZE_BY_TIER_SELF = [15, 15, 17, 19];
+const DMG_CRIT_SIZE_SCALE = 1.28;
+/** Seconds spent growing, then seconds easing back to rest. */
+const DMG_POP = 0.09;
+const DMG_SETTLE = 0.13;
+
+/** The standard `easeOutBack`, overshoot 1.70158, written out. */
+function easeOutBack(t: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  const u = t - 1;
+  return 1 + c3 * u * u * u + c1 * u * u;
+}
+
+/** 0.62 → ~1.15 → 1.00: the pop, then the settle. */
+function popScale(age: number): number {
+  if (age < DMG_POP) return 0.62 + 0.53 * easeOutBack(age / DMG_POP);
+  if (age < DMG_POP + DMG_SETTLE) return 1.15 - 0.15 * ((age - DMG_POP) / DMG_SETTLE);
+  return 1.0;
+}
 
 // ── §3.1 ground ───────────────────────────────────────────────────────────────
 
@@ -603,7 +641,6 @@ export class Renderer {
     this.drawOrbs(ctx, snapshot.orbs);
     this.drawPlacement(ctx, snapshot.placement);
     this.drawChargeRing(ctx, snapshot.charge);
-    this.drawDamageNumbers(ctx, snapshot.damageNumbers);
     this.drawTowerTop(ctx, snapshot);
     this.drawShield(ctx, snapshot, options?.shieldFlash ?? 0);
 
@@ -666,6 +703,7 @@ export class Renderer {
     // world objects: they must not scale with the zoom, must not move with the
     // camera shake, and must fill the viewport rather than the arena.
     camera.applyScreen(ctx);
+    this.drawDamageNumbers(ctx, snapshot.damageNumbers);
     this.drawWaveBanner(ctx, snapshot);
 
     const flash = options?.screenFlash ?? 0;
@@ -4374,30 +4412,78 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** The size a number is typed at, before the pop curve and the crit bump. */
+  private damageSize(d: DamageNumber): number {
+    const ramp = d.kind === 'self' || d.kind === 'gold' ? DMG_SIZE_BY_TIER_SELF : DMG_SIZE_BY_TIER;
+    return ramp[Math.max(0, Math.min(3, d.tier))];
+  }
+
+  /** What the number means, in colour. Tokens only — never a literal (§5.E). */
+  private damageFill(d: DamageNumber): string {
+    switch (d.kind) {
+      case 'heal':
+        return FX.nature;
+      case 'gold':
+        return FX.gold;
+      case 'mana':
+        return FX.mana;
+      case 'self':
+        // The tower is being hurt, which is the one thing this colour means.
+        return FX.critical;
+      default:
+        if (d.isCrit || d.tier >= 3) return FX.gold;
+        if (d.tier === 2) return mix(INK['050'], FX.gold, 0.45);
+        return INK['050'];
+    }
+  }
+
+  /**
+   * Damage numbers, in **screen space** (UI plan §5.B).
+   *
+   * `d.x, d.y` is a world anchor fixed at emit time; the rise is accumulated in
+   * CSS pixels by `EffectsManager` and subtracted here, after projecting. That
+   * is what keeps a hit legible at any zoom — in world space the type was about
+   * 12 CSS px at the desktop zoom, smaller than the smallest HUD label.
+   *
+   * Screen space is outside the camera shake translate, so these no longer
+   * shake with the world. That is deliberate: jittering text is unreadable.
+   * See `docs/effects-system.md`.
+   */
   private drawDamageNumbers(ctx: CanvasRenderingContext2D, numbers: DamageNumber[]): void {
+    if (numbers.length === 0) return;
+    const cssW = this.camera.cssWidth;
+    const cssH = this.camera.cssHeight;
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const d of numbers) {
       const lifeRatio = 1 - d.age / d.life;
       if (lifeRatio <= 0) continue;
-      const fadeIn = Math.min(1, d.age / 0.08);
-      const alpha = Math.min(lifeRatio * 1.4, 1) * fadeIn;
+      const p = this.camera.worldToScreen(d.x, d.y);
+      const sy = p.y - d.riseCss;
+      if (p.x < -100 || p.x > cssW + 100 || sy < -60 || sy > cssH + 60) continue;
+      const scale = popScale(d.age) * (d.isCrit ? 1.25 : 1);
+      const size = this.damageSize(d) * (d.isCrit ? DMG_CRIT_SIZE_SCALE : 1) * scale;
+      const alpha = Math.min(1, d.age / 0.06) * Math.min(1, lifeRatio * 1.6);
+      const jitterX = (1 - lifeRatio) * (d.isCrit ? 0 : ((d.amount % 7) - 3) * 0.8);
+      const sx = p.x + jitterX;
+      const text = formatInt(d.amount);
       ctx.globalAlpha = alpha;
-      const size = entity(d.isCrit ? 22 : 15);
-      ctx.font = `${d.isCrit ? '700 ' : '600 '}${size.toFixed(1)}px sans-serif`;
-      ctx.lineWidth = entity(d.isCrit ? 3.5 : 2.5);
-      ctx.strokeStyle = d.isHeal ? '#0a3a1a' : '#3a0000';
-      ctx.fillStyle = d.isHeal ? '#3edc81' : d.isCrit ? '#ffe27a' : '#ffffff';
-      const jitterX = (1 - lifeRatio) * (d.isCrit ? 0 : ((d.amount % 7) - 3) * 0.6);
-      ctx.strokeText(formatInt(d.amount), d.x + jitterX, d.y);
-      ctx.fillText(formatInt(d.amount), d.x + jitterX, d.y);
+      ctx.font = `${d.isCrit || d.tier >= 2 ? '700' : '600'} ${size.toFixed(1)}px ${DISPLAY_FONT_STACK}`;
       if (d.isCrit) {
-        ctx.globalAlpha = alpha * 0.7;
-        ctx.font = `800 ${(size + entity(4)).toFixed(1)}px sans-serif`;
-        ctx.fillStyle = '#ff5050';
-        ctx.fillText('!', d.x + jitterX - size * 0.9, d.y - entity(2));
+        // Chromatic edge: the same glyph twice, source-over, under the fill.
+        ctx.globalAlpha = alpha * 0.38;
+        ctx.fillStyle = FX.critical;
+        ctx.fillText(text, sx - 1.5, sy);
+        ctx.fillStyle = FX.frost;
+        ctx.fillText(text, sx + 1.5, sy);
+        ctx.globalAlpha = alpha;
       }
+      ctx.lineWidth = size * 0.16;
+      ctx.strokeStyle = withAlpha(INK['950'], 0.85);
+      ctx.strokeText(text, sx, sy);
+      ctx.fillStyle = this.damageFill(d);
+      ctx.fillText(text, sx, sy);
     }
     ctx.restore();
   }

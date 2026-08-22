@@ -139,6 +139,22 @@ export function withAlpha(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/**
+ * `mix('#e8ecf4', '#f0b23c', 0.45)` → the hex 45% of the way from the first
+ * colour to the second.
+ *
+ * Straight linear interpolation in sRGB, which is what the canvas composites in
+ * anyway. It exists so a "halfway to gold" damage number is derived from the
+ * two tokens rather than being a third literal nobody would remember to update.
+ */
+export function mix(a: string, b: string, t: number): string {
+  const k = Math.max(0, Math.min(1, t));
+  const ca = toRgb(a);
+  const cb = toRgb(b);
+  const ch = (x: number, y: number) => Math.round(x + (y - x) * k).toString(16).padStart(2, '0');
+  return `#${ch(ca.r, cb.r)}${ch(ca.g, cb.g)}${ch(ca.b, cb.b)}`;
+}
+
 /** `'#f0b23c'` → `{ r: 240, g: 178, b: 60 }`. Accepts `#rgb` and `#rrggbb`. */
 export function toRgb(hex: string): { r: number; g: number; b: number } {
   let body = hex.trim().replace(/^#/, '');

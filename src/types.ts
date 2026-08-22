@@ -780,14 +780,29 @@ export interface Particle {
   layer?: ParticleLayer;
 }
 
+/**
+ * What a floating number is telling the player (UI plan §5.B).
+ *
+ * `self` is anything happening to the tower — a hit it took, a wall absorb, a
+ * dodge — and is the only kind that wears `FX.critical`. `gold` and `mana` are
+ * pickups, which used to be mis-coloured: gold went out as a crit and mana went
+ * through the heal path and popped green.
+ */
+export type DamageKind = 'damage' | 'heal' | 'gold' | 'mana' | 'self';
+
 export interface DamageNumber {
+  /** World anchor, fixed at emit. */
   x: number;
   y: number;
   amount: number;
   isCrit: boolean;
-  isHeal?: boolean;
+  kind: DamageKind;
+  /** 0..3, from `damageTier()`. Drives size and colour. */
+  tier: number;
   age: number;
   life: number;
+  /** CSS pixels risen so far, and the CSS px/s it is still rising at. */
+  riseCss: number;
   vy: number;
 }
 
