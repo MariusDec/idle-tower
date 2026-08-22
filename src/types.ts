@@ -901,6 +901,8 @@ export interface RenderSnapshot {
    * it into a silhouette change rather than a number in a panel.
    */
   towerLevel?: number;
+  /** Kill-combo tier 0..4 and the drain bar's fill, for the §5.C flourish. Presentation only. */
+  combo?: { tier: number; fraction: number };
 }
 
 /** Cursor charge ring state. Presentation only — the timer lives in `Game`. */

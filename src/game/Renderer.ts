@@ -224,6 +224,33 @@ const TRACER_CAP = 16;
 /** How far a tracer reaches from the muzzle, in world units. */
 const TRACER_LENGTH = world(230);
 
+// ── §5.C the combo flourish ───────────────────────────────────────────────────
+
+/**
+ * Eased intensity target per combo tier (0..4).
+ *
+ * The tiers themselves are `COMBO_TIERS` in `src/data/pacing.ts`; this is only
+ * how loud each one is allowed to be on the battlefield.
+ */
+const COMBO_INTENSITY = [0, 0.28, 0.5, 0.75, 1];
+/** Ceiling on live embers. Pooled, like every other effect here. */
+const EMBER_CAP = 48;
+/** Embers spawned per second at full glow. */
+const EMBER_RATE = 14;
+/** Peak alpha of the baked edge glow, at `comboGlow === 1`. */
+const COMBO_EDGE_ALPHA = 0.22;
+
+/** A drifting ember thrown off by a running combo (§5.C). Pooled at `EMBER_CAP`. */
+interface ComboEmber {
+  x: number;
+  y: number;
+  /** World units per second, negative: embers rise. */
+  vy: number;
+  age: number;
+  life: number;
+  size: number;
+}
+
 /** A one-frame line of fire from the muzzle (§4.4). Pooled. */
 interface Tracer {
   angle: number;
@@ -519,6 +546,19 @@ export class Renderer {
   /** Incremented once per frame; a track not stamped with it has left the field. */
   private frameStamp = 0;
 
+  // ── §5.C the combo flourish ──
+  /** Eased combo intensity, 0..1. Never steps: see `advanceCombo`. */
+  private comboGlow = 0;
+  /** Seconds for the smoother to cover ~63% of a tier step. */
+  private static readonly COMBO_TAU = 0.25;
+  /** The baked inverse-vignettes, gold and ember, cross-faded by intensity. */
+  private comboEdgeGold: HTMLCanvasElement | null = null;
+  private comboEdgeEmber: HTMLCanvasElement | null = null;
+  /** Live embers (§5.C). Pooled at `EMBER_CAP`. */
+  private readonly embers: ComboEmber[] = [];
+  /** Fractional spawn carry, so a low glow still emits at the right rate. */
+  private emberDebt = 0;
+
   // ── §4.3 projectiles and impacts ──
   private readonly impacts: Impact[] = [];
   private readonly shots = new Map<number, ShotTrack>();
@@ -595,6 +635,10 @@ export class Renderer {
   /** Drop the baked background. Called by `Game` when the camera resizes. */
   invalidateBackground(): void {
     this.bgCanvas = null;
+    // The combo edge glow is baked at the same backing-store size, so it dies
+    // with the background rather than keeping a sprite for the old viewport.
+    this.comboEdgeGold = null;
+    this.comboEdgeEmber = null;
   }
 
   draw(snapshot: RenderSnapshot, options?: RenderOptions): void {
@@ -702,6 +746,12 @@ export class Renderer {
     // The banner, the boss-death flash and the low-HP vignette are chrome, not
     // world objects: they must not scale with the zoom, must not move with the
     // camera shake, and must fill the viewport rather than the arena.
+    // §5.C: the combo edge glow, in device space because that is the
+    // resolution it is baked at — an inverse vignette that warms the corners
+    // of the viewport while a kill chain is running. Painted under the HUD-ish
+    // chrome below so the peril vignette always wins over it.
+    this.drawComboEdge(ctx);
+
     camera.applyScreen(ctx);
     this.drawDamageNumbers(ctx, snapshot.damageNumbers);
     this.drawWaveBanner(ctx, snapshot);
@@ -732,6 +782,61 @@ export class Renderer {
     this.advancePortals(snap);
     this.advanceEnemyState(snap);
     this.advanceImpacts(snap);
+    this.advanceCombo(snap);
+  }
+
+  /**
+   * The combo flourish's clock (§5.C).
+   *
+   * The tier is a step function — it pops on the tenth kill and vanishes when
+   * the drain runs out — and a full-screen glow that switched on and off with
+   * it would read as a bug rather than as a reward. So the tier picks a target
+   * and a frame-rate-independent smoother walks a single scalar toward it;
+   * every painter downstream reads that scalar and nothing reads the tier.
+   */
+  private advanceCombo(snap: RenderSnapshot): void {
+    const tier = snap.combo?.tier ?? 0;
+    const target = COMBO_INTENSITY[Math.min(Math.max(tier, 0), 4)];
+    const k = 1 - Math.exp(-FRAME_DT / Renderer.COMBO_TAU);
+    this.comboGlow += (target - this.comboGlow) * k;
+    // Snap to off so both passes can early-out instead of blitting a
+    // transparent full-screen sprite forever after a combo ends.
+    if (this.comboGlow < 0.002) this.comboGlow = 0;
+
+    // Embers are motion, and motion is what `prefers-reduced-motion` asks us
+    // to drop. The edge glow is static per frame and stays.
+    if (this.reducedMotion) {
+      if (this.embers.length > 0) this.embers.length = 0;
+      this.emberDebt = 0;
+      return;
+    }
+
+    this.emberDebt += this.comboGlow * EMBER_RATE * FRAME_DT;
+    while (this.emberDebt >= 1) {
+      this.emberDebt -= 1;
+      this.pushEmber(snap);
+    }
+    for (let i = this.embers.length - 1; i >= 0; i--) {
+      const e = this.embers[i];
+      e.age += FRAME_DT;
+      e.y += e.vy * FRAME_DT;
+      if (e.age >= e.life) this.embers.splice(i, 1);
+    }
+  }
+
+  /** Spawn one ember on a random point of the ring the tower covers. */
+  private pushEmber(snap: RenderSnapshot): void {
+    if (this.embers.length >= EMBER_CAP) this.embers.shift();
+    const a = Math.random() * Math.PI * 2;
+    const r = this.rangeDrawn * 0.75;
+    this.embers.push({
+      x: snap.tower.x + Math.cos(a) * r,
+      y: snap.tower.y + Math.sin(a) * r,
+      vy: -(26 + Math.random() * 22),
+      age: 0,
+      life: 1.4 + Math.random() * 0.8,
+      size: entity(1.2 + Math.random() * 1.4),
+    });
   }
 
   /**
@@ -1075,6 +1180,56 @@ export class Renderer {
    * `invalidateBackground` on the camera's resize so a same-size, new-shape
    * viewport cannot keep a stale grid.
    */
+  /**
+   * The combo edge glow (§5.C), blitted in device space.
+   *
+   * An inverse vignette — transparent in the middle, warm at the corners — is
+   * the whole flourish: it *is* the heat tint, and a second full-screen fill
+   * for a few percent more warmth would cost real fill rate at DPR 2 on a
+   * phone for something nobody would name.
+   *
+   * Two sprites are baked (gold and ember) and cross-faded by intensity rather
+   * than one sprite re-baked whenever the eased scalar moves, which is every
+   * frame a combo is climbing. `FX.gold`/`FX.ember` and *not* `FX.critical` or
+   * `FX.blood`: per `docs/art-direction.md` those two mean "the tower is in
+   * peril" and "an enemy", and a combo is the opposite of both.
+   */
+  private drawComboEdge(ctx: CanvasRenderingContext2D): void {
+    if (this.comboGlow === 0) return;
+    const w = Math.max(1, Math.round(this.camera.transform.pixelWidth));
+    const h = Math.max(1, Math.round(this.camera.transform.pixelHeight));
+    if (!this.comboEdgeGold || this.comboEdgeGold.width !== w || this.comboEdgeGold.height !== h) {
+      this.comboEdgeGold = this.bakeComboEdge(w, h, FX.gold);
+      this.comboEdgeEmber = this.bakeComboEdge(w, h, FX.ember);
+    }
+    const ember = this.comboEdgeEmber;
+    if (!ember) return;
+    const alpha = this.comboGlow * COMBO_EDGE_ALPHA;
+    this.camera.applyDevice(ctx);
+    ctx.save();
+    ctx.globalAlpha = alpha * (1 - this.comboGlow);
+    ctx.drawImage(this.comboEdgeGold, 0, 0);
+    ctx.globalAlpha = alpha * this.comboGlow;
+    ctx.drawImage(ember, 0, 0);
+    ctx.restore();
+  }
+
+  /** Bake one inverse vignette at backing-store size. See `drawComboEdge`. */
+  private bakeComboEdge(w: number, h: number, tint: string): HTMLCanvasElement {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d')!;
+    const inner = Math.min(w, h) * 0.55;
+    const outer = Math.hypot(w, h) / 2;
+    const grad = g.createRadialGradient(w / 2, h / 2, inner, w / 2, h / 2, outer);
+    grad.addColorStop(0, withAlpha(tint, 0));
+    grad.addColorStop(1, tint);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+    return c;
+  }
+
   private getBackground(snap: RenderSnapshot): HTMLCanvasElement {
     const w = Math.max(1, Math.round(this.camera.transform.pixelWidth));
     const h = Math.max(1, Math.round(this.camera.transform.pixelHeight));
@@ -4322,6 +4477,40 @@ export class Renderer {
     this.drawChainLightning(ctx, options?.chainPaths);
     this.drawTracers(ctx, snap);
     this.drawMuzzleFlash(ctx, snap);
+    this.drawComboEmbers(ctx);
+    ctx.restore();
+  }
+
+  /**
+   * Embers thrown off by a running combo (§5.C).
+   *
+   * Deliberately not routed through `EffectsManager`: this is pure decoration
+   * on the renderer's own clock, and spending the shared 600-particle pool on
+   * it would let a long combo evict the sparks the player is actually reading.
+   */
+  private drawComboEmbers(ctx: CanvasRenderingContext2D): void {
+    if (this.embers.length === 0 || this.comboGlow === 0) return;
+    const sprite = this.part('combo-ember', entity(14), (g) => {
+      const r = entity(7);
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      grad.addColorStop(0, withAlpha(FX.gold, 0.95));
+      grad.addColorStop(0.45, withAlpha(FX.ember, 0.5));
+      grad.addColorStop(1, withAlpha(FX.ember, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(0, 0, r, 0, Math.PI * 2);
+      g.fill();
+    });
+    ctx.save();
+    for (const e of this.embers) {
+      // A sine rather than a ramp, so an ember fades in *and* out and never
+      // pops into existence at full brightness.
+      ctx.globalAlpha = Math.sin(Math.PI * (e.age / e.life)) * 0.5 * this.comboGlow;
+      // `size` is the ember's core radius; the sprite is mostly falloff, so it
+      // is blitted at four times that to keep the glow around it.
+      const size = e.size * 4;
+      ctx.drawImage(sprite, e.x - size / 2, e.y - size / 2, size, size);
+    }
     ctx.restore();
   }
 

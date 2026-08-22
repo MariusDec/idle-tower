@@ -4365,6 +4365,11 @@ export class Game {
       // invisible on the battlefield before Part 3.
       coreId: this.coreMgr.current,
       towerLevel: this.state.towerXp.level,
+      // Presentation only (UI plan §5.C): the kill combo's only expression was
+      // the HUD meter; this is what puts it on the battlefield.
+      combo: this.pacingHud
+        ? { tier: this.pacingHud.comboTier, fraction: this.pacingHud.comboFraction }
+        : undefined,
     }, {
       screenFlash: this.screenFlash,
       towerFlash: this.towerFlash,
