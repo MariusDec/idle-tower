@@ -196,12 +196,12 @@ describe('the range cap (plan §1.2)', () => {
     expect(TOWER_BASE.range / ARENA.minHalfExtent).toBeCloseTo(0.32, 2);
   });
 
-  it('puts the flat upgrade maximum at ~51%, i.e. short of the cap', () => {
+  it('puts the flat upgrade maximum at ~48%, i.e. short of the cap', () => {
     const longbow = UPGRADE_BY_ID['range'];
     expect(longbow).toBeTruthy();
     const flatMax = TOWER_BASE.range + computeUpgradeValue(longbow, longbow.maxLevel);
-    expect(flatMax).toBe(480);
-    expect(flatMax / ARENA.minHalfExtent).toBeCloseTo(0.51, 2);
+    expect(flatMax).toBe(450);
+    expect(flatMax / ARENA.minHalfExtent).toBeCloseTo(0.48, 2);
     // The cap has to be somewhere a *built* tower gets to, not somewhere the
     // upgrade alone lands — otherwise talents and blessings buy nothing.
     expect(flatMax).toBeLessThan(ARENA_RANGE_CAP);

@@ -289,7 +289,7 @@ describe('clamped stats', () => {
       talents: { shield_charges: 2 },
     })).stats;
     expect(withShield.shieldRechargeTime).toBeCloseTo(Math.max(3, recharge * 0.1), 6);
-    expect(withShield.shieldMaxCharges).toBe(4);
+    expect(withShield.shieldMaxCharges).toBe(5);
 
     // A deeper reduction hits the 3 s floor rather than making the shield free.
     const floored = resolveStats(ctx({
@@ -349,13 +349,14 @@ describe('once-dead content now reaches a stat', () => {
     expect(stats.abilityCooldownMultiplier).toBeCloseTo(0.8, 6);
   });
 
-  it('stacks the upgrade, achievement and talent cost discounts', () => {
+  it('stacks the achievement and talent cost discounts', () => {
     const { stats } = resolveStats(ctx({
-      upgrades: { upgradeDiscount: 5 },
       achievements: { upgrade_cost_reduction: 0.05 },
       talents: { upgrade_cost_reduction: 0.09 },
     }));
-    expect(stats.upgradeCostDiscount).toBeCloseTo(upgradeValue('upgradeDiscount', 5) - 0.05 - 0.09, 6);
+    // Revamp §5.3 retired the `upgradeDiscount` line — a flat cost reducer is
+    // an anti-upgrade — but the *key* stays alive for talents and achievements.
+    expect(stats.upgradeCostDiscount).toBeCloseTo(-0.05 - 0.09, 6);
   });
 });
 
@@ -491,5 +492,33 @@ describe('shockwave (upgrades plan §1.8 / gate 15)', () => {
       expect(resolved[i].shockwaveSize).toBeGreaterThan(resolved[i - 1].shockwaveSize);
       expect(resolved[i].shockwaveCooldown).toBeLessThan(resolved[i - 1].shockwaveCooldown);
     }
+  });
+});
+
+describe('coverage and economy lines (upgrades revamp §5.2/§5.3)', () => {
+  it('routes Bodkin Points through pierceExtra, as whole targets', () => {
+    for (const level of [1, 3, 6]) {
+      expect(resolveStats(ctx({ upgrades: { pierce: level } })).stats.pierceExtra).toBe(level);
+    }
+  });
+
+  it('grows the Fragmenting Arrows disc with the level and caps its fraction', () => {
+    const at = (level: number) => resolveStats(ctx({ upgrades: { splash: level } })).stats;
+    const one = at(1);
+    const mid = at(12);
+    const max = at(25);
+    expect(one.shotSplashRadius).toBeGreaterThan(0);
+    expect(mid.shotSplashRadius).toBeGreaterThan(one.shotSplashRadius);
+    expect(max.shotSplashRadius).toBeGreaterThan(mid.shotSplashRadius);
+    // `0.10 + 0.012/level`, and never past the composition cap.
+    expect(one.shotSplashFraction).toBeCloseTo(0.112, 6);
+    expect(max.shotSplashFraction).toBeCloseTo(0.40, 6);
+    expect(at(200).shotSplashFraction).toBeLessThanOrEqual(0.40);
+  });
+
+  it('pays Prospecting out as double-gold chance, not as a cost discount', () => {
+    const { stats } = resolveStats(ctx({ upgrades: { prospecting: 20 } }));
+    expect(stats.doubleGoldChance).toBeCloseTo(0.30, 6);
+    expect(stats.upgradeCostDiscount).toBe(0);
   });
 });

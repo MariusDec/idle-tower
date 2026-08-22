@@ -51,6 +51,7 @@ import { UIManager } from '../ui/UIManager';
 import type { BossBarData } from '../ui/BossBar';
 import { isBossWave, goldDropForWave, spawnCountForWave } from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
+import type { ShotSplash } from '../data/prestige';
 import { DEFAULT_AUTO_ASCEND_WAVE, TP_AOE_SPLASH_RADIUS, composeShotSplash } from '../data/prestige';
 import { AudioManager } from '../systems/AudioManager';
 import { TowerXpManager } from '../systems/TowerXpManager';
@@ -515,6 +516,8 @@ export class Game {
   private hpStatBucket = -1;
   /** Separate cadence from `shotCounter`, so the mortar and double-shot evolutions don't share a clock. */
   private mortarShotCounter = 0;
+  /** `splash` upgrade payload, rewritten by `applyResolvedStats`. */
+  private shotSplash: ShotSplash = {};
   /**
    * Reentrancy guard for `split_on_kill`: the shards damage enemies, which can
    * kill them, which re-enters this handler synchronously. Without the guard a
@@ -3288,6 +3291,11 @@ export class Game {
     this.projectileMgr.setArmorPen(stats.armorPen);
     this.projectileMgr.setArmorPenFlat(stats.armorPenFlat);
     this.projectileMgr.setPierceExtra(stats.pierceExtra);
+    // Revamp §5.2: the `splash` upgrade's disc, held here rather than on
+    // `TowerState` because the only consumer is the volley composed below.
+    this.shotSplash = stats.shotSplashRadius > 0 && stats.shotSplashFraction > 0
+      ? { splashRadius: stats.shotSplashRadius, splashFraction: stats.shotSplashFraction }
+      : {};
     this.projectileMgr.setExecuteBonus(stats.executeThreshold, stats.executeMultiplier);
     this.projectileMgr.setTalentExecuteBonus(stats.talentExecuteBonus);
     this.projectileMgr.setEvolutionCombatEffects(
@@ -4240,12 +4248,17 @@ export class Game {
           // `enemy_damaged` handler, which fired off a hit the projectile had
           // already resolved and never reached a killing blow's neighbours.
           ...composeShotSplash(
-            {
-              splashRadius: mortarShot ? BLESSING_TUNING.mortarRadius : corePlan.splashRadius,
-              splashFraction: mortarShot
-                ? BLESSING_TUNING.mortarSplashFraction
-                : corePlan.splashFraction,
-            },
+            composeShotSplash(
+              {
+                splashRadius: mortarShot ? BLESSING_TUNING.mortarRadius : corePlan.splashRadius,
+                splashFraction: mortarShot
+                  ? BLESSING_TUNING.mortarSplashFraction
+                  : corePlan.splashFraction,
+              },
+              // Revamp §5.2: Fragmenting Arrows is the fourth source on this
+              // one channel and composes exactly like the other three.
+              this.shotSplash,
+            ),
             this.prestigeMgr.hasAoESplash()
               ? {
                 splashRadius: TP_AOE_SPLASH_RADIUS,

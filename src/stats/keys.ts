@@ -1,4 +1,5 @@
 import { ARENA_RANGE_CAP } from '../data/arena';
+import { SPLASH_FRACTION_CAP } from '../data/prestige';
 import { TOWER_BASE } from '../data/tower';
 
 /**
@@ -38,6 +39,17 @@ export type StatKey =
   | 'landMineDamage'
   | 'landMineFrequency'
   | 'doubleShotChance'
+  /*
+   * Splash carried by an ordinary tower shot (revamp §5.2).
+   *
+   * Two keys rather than one because the composition rule is not the same for
+   * both halves: radius takes the **max** across sources and fraction **sums**
+   * to `SPLASH_FRACTION_CAP`. Fed into `FireOptions.splashRadius` /
+   * `splashFraction` through `composeShotSplash`, alongside the artillery
+   * core, the Mortar blessing and Annihilation.
+   */
+  | 'shotSplashRadius'
+  | 'shotSplashFraction'
   | 'quickShotChance'
   | 'quickShotTime'
   | 'extraProjectileChance'
@@ -153,6 +165,8 @@ export const STAT_BASES: Record<StatKey, number> = {
   landMineDamage: 0,
   landMineFrequency: 0,
   doubleShotChance: 0,
+  shotSplashRadius: 0,
+  shotSplashFraction: 0,
   quickShotChance: 0,
   quickShotTime: 0,
   extraProjectileChance: 0,
@@ -256,6 +270,10 @@ export const STAT_CLAMPS: Partial<Record<StatKey, StatClamp>> = {
   abilityDamageMultiplier: { min: 1 },
   chainBounceBonus: { min: 0, integer: true },
   pierceExtra: { min: 0, integer: true },
+  shotSplashRadius: { min: 0 },
+  // Same ceiling `composeShotSplash` enforces at the call site; the clamp is
+  // what stops a second *stat* source from walking past it.
+  shotSplashFraction: { min: 0, max: SPLASH_FRACTION_CAP },
   armorPenFlat: { min: 0 },
   // Floors keep a stacked trade-off card from inverting the mechanic: enemies
   // must still move, still have HP, and still hurt.

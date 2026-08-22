@@ -1,5 +1,5 @@
 import { world } from '../../data/arena';
-import { UPGRADES } from '../../data/upgrades';
+import { UPGRADES, splashRadiusForLevel } from '../../data/upgrades';
 import { computeUpgradeValue } from '../../types';
 import type { StatAccumulator } from '../accumulator';
 import type { StatContext } from '../context';
@@ -39,20 +39,30 @@ export function contributeUpgrades(ctx: StatContext, acc: StatAccumulator): void
         break;
       case 'landMines':
         a.add('landMineDamage', total, u.name);
-        a.add('landMineFrequency', Math.max(5, 15 - level / 10), u.name);
+        a.add('landMineFrequency', Math.max(6, 16 - level / 6), u.name);
         break;
       case 'defenseShield':
         a.add('shieldRechargeTime', total, u.name);
         // Capped at five charges; the levels past that only shave recharge time.
-        a.add('shieldMaxCharges', Math.min(5, Math.ceil(level / 11)), u.name);
+        a.add('shieldMaxCharges', Math.min(5, Math.ceil(level / 10)), u.name);
         break;
       case 'maxMana': a.add('maxMana', total, u.name); break;
       case 'xpGain': a.add('xpGainMultiplier', total, u.name); break;
       case 'abilityCostReduction': a.add('abilityCostMultiplier', total, u.name); break;
-      case 'upgradeDiscount': a.add('upgradeCostDiscount', total, u.name); break;
       case 'waveGold': a.add('waveGold', total, u.name); break;
       case 'goldOnKill': a.add('goldOnKill', total, u.name); break;
       case 'critGold': a.add('critGold', total, u.name); break;
+      case 'prospecting': a.add('doubleGoldChance', total, u.name); break;
+      case 'pierce': a.add('pierceExtra', total, u.name); break;
+      case 'splash':
+        // Revamp §5.2: `total` is the damage *fraction*; the disc radius comes
+        // from the level through `splashRadiusForLevel`, the same shape the
+        // shockwave fix uses. Composition with the core, the Mortar blessing
+        // and Annihilation happens once, at the fire site, in
+        // `composeShotSplash`.
+        a.add('shotSplashRadius', splashRadiusForLevel(level), u.name);
+        a.add('shotSplashFraction', total, u.name);
+        break;
       case 'doubleShotChance': a.add('doubleShotChance', total, u.name); break;
       case 'quickShotChance': a.add('quickShotChance', total, u.name); break;
       case 'quickShotTime': a.add('quickShotTime', total, u.name); break;

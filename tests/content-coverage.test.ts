@@ -561,7 +561,7 @@ describe('icons', () => {
     // being covered without anything else failing.
     expect(ABILITIES.length).toBe(10);
     expect(PASSIVE_ABILITIES.length).toBe(8);
-    expect(UPGRADES.length).toBe(27);
+    expect(UPGRADES.length).toBe(29);
     expect(RESEARCH_NODES.length).toBe(17);
     expect(TALENTS.length).toBe(37);
     expect(BLESSINGS.length).toBe(30);

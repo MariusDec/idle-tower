@@ -189,7 +189,6 @@ Icons made by [Delapouite](https://delapouite.com), licensed **CC BY 3.0**.
 | `rolling-dices` | [rolling-dices](https://github.com/game-icons/icons/blob/master/delapouite/rolling-dices.svg) | CC BY 3.0 |
 | `roman-shield` | [roman-shield](https://github.com/game-icons/icons/blob/master/delapouite/roman-shield.svg) | CC BY 3.0 |
 | `round-star` | [round-star](https://github.com/game-icons/icons/blob/master/delapouite/round-star.svg) | CC BY 3.0 |
-| `shop` | [shop](https://github.com/game-icons/icons/blob/master/delapouite/shop.svg) | CC BY 3.0 |
 | `sparkles` | [sparkles](https://github.com/game-icons/icons/blob/master/delapouite/sparkles.svg) | CC BY 3.0 |
 | `split-arrows` | [split-arrows](https://github.com/game-icons/icons/blob/master/delapouite/split-arrows.svg) | CC BY 3.0 |
 | `star-formation` | [star-formation](https://github.com/game-icons/icons/blob/master/delapouite/star-formation.svg) | CC BY 3.0 |

@@ -45,7 +45,7 @@ import {
   riskGoldMult,
   riskHpMult,
 } from '../src/data/pacing.ts';
-import { UPGRADES } from '../src/data/upgrades.ts';
+import { UPGRADES, splashRadiusForLevel } from '../src/data/upgrades.ts';
 // Namespace import on purpose: `PRESTIGE_PROJECTILE_TUNING` (revamp §7) does
 // not exist yet — it ships with task 6 — and this is what lets the sim pick it
 // up on the commit that adds it instead of needing a second edit here.
@@ -133,7 +133,7 @@ export function comboGoldMult(count: number, activeSec: number): number {
  *
  * Deliberately absent: `landMines` (damage the model has no positions to place
  * — it fires at the tower's feet, and crediting it would be inventing a number
- * rather than measuring one), `range`, `xpGain`, `upgradeDiscount` and the
+ * rather than measuring one), `range`, `xpGain`, `abilityCostReduction` and the
  * whole defense category, none of which move DPS or gold in a model with no
  * tower HP.
  */
@@ -1070,16 +1070,15 @@ export function pierceExtra(l: Loadout): number {
 
 /**
  * Splash, composed the way `FireOptions` composes it: **max** radius, summed
- * fraction. The `splash` upgrade ships its radius through `scaling`, so the
- * model reads the composed value rather than re-deriving it from the level.
+ * fraction. The `splash` upgrade spends its `scaling` block on the damage
+ * fraction and derives the disc from the level, so the radius comes from the
+ * shipping `splashRadiusForLevel` rather than a second copy of the geometry.
  */
 export function splashCoverage(l: Loadout): { radius: number; fraction: number } {
   const def = UPGRADE_BY_ID.splash;
   const level = l.levels.splash ?? 0;
   const upgradeFraction = def ? levelValue('splash', level) : 0;
-  const upgradeRadius = def && level > 0 && def.scaling
-    ? (def.scaling.base ?? 0) + (def.scaling.perLevel ?? 0) * level
-    : 0;
+  const upgradeRadius = def ? splashRadiusForLevel(level) : 0;
   return {
     radius: Math.max(upgradeRadius, l.prestigeCoverage.splashRadius),
     fraction: upgradeFraction + l.prestigeCoverage.splashFraction,

@@ -1,4 +1,5 @@
 import type { UpgradeDef } from '../types';
+import { world } from './arena';
 
 /**
  * Every evolution effect an upgrade can unlock. Closed so the evolutions
@@ -32,19 +33,46 @@ export const EVOLUTION_EFFECT_IDS: readonly EvolutionEffectId[] = [
   'wave_gold_scaling',
 ];
 
+/**
+ * Splash geometry for the `splash` upgrade (revamp §5.2).
+ *
+ * The radius derives from the *level*, exactly like the shockwave fix in
+ * §6.2.5 — an `UpgradeDef` carries one `scaling` block and `splash` spends it
+ * on the damage fraction, so the disc size lives here where both the stat
+ * contributor and `sim/model.ts` read the same numbers rather than each
+ * re-deriving them.
+ */
+export const SPLASH_TUNING = { radiusBase: 40, radiusPerLevel: 3 } as const;
+
+/** World-space splash radius at `level`; 0 when the line is unbought. */
+export function splashRadiusForLevel(level: number): number {
+  if (level <= 0) return 0;
+  return world(SPLASH_TUNING.radiusBase + SPLASH_TUNING.radiusPerLevel * level);
+}
+
 export const UPGRADES: UpgradeDef[] = [
   {
     id: 'damage',
     name: 'Sharper Arrows',
     icon: 'broadhead-arrow',
     description: 'Increases the base damage',
-    baseCost: 15,
-    costGrowth: 1.22,
-    effectPerLevel: '3.2 * Math.pow(1.1, {level} - 1)',
-    baseEffect: 4,
+    /*
+     * Revamp §5.1. `V(n) = 2.2 x 1.11^(n-1)` — every level is worth exactly
+     * +11%, against enemy HP at 1.11x per wave.
+     *
+     * The old line was `4 + Σ 3.2 x 1.1^(i-1)`, whose *marginal* growth starts
+     * at +88% and only asymptotes to +10%: the first five levels were worth
+     * 5.1x on their own and were all affordable inside eight waves, which is
+     * the overshoot that made the tower one-shot everything from wave 4 to the
+     * wall. `0.242 = 2.2 x 0.11`, so the summed form is geometric from L1.
+     */
+    baseCost: 10,
+    costGrowth: 1.16,
+    effectPerLevel: '0.242 * Math.pow(1.11, {level} - 2)',
+    baseEffect: 2.2,
     startLevel: 1,
     effectType: 'add',
-    maxLevel: 999,
+    maxLevel: 200,
     category: 'tower',
     hideUpgradeScale: true,
     evolutions: [
@@ -57,16 +85,22 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Quick Draw',
     icon: 'fast-arrow',
     description: 'Increases the rate of fire',
-    baseCost: 60,
-    costGrowth: 1.26,
-    effectPerLevel: 0.06,
+    /*
+     * Revamp §5.1 and design rule 4: `damage` is geometric, so this axis is
+     * deliberately additive and hard-capped. Two compounding DPS axes multiply
+     * into a runaway — the verified candidate with both geometric walled at
+     * wave 140. Composed ceiling from the upgrade alone is 7.75 shots/s.
+     */
+    baseCost: 40,
+    costGrowth: 1.18,
+    effectPerLevel: 0.15,
     effectType: 'add',
-    maxLevel: 100,
+    maxLevel: 45,
     category: 'tower',
     hideUpgradeScale: true,
     evolutions: [
       { level: 25, name: 'Rapid Fire', description: 'Every 5th shot fires double', effectId: 'double_shot', effectValue: 5 },
-      { level: 50, name: 'Machine Gun', description: '+50% fire rate during Berserk', effectId: 'berserk_fire_bonus', effectValue: 0.5 },
+      { level: 45, name: 'Machine Gun', description: '+50% fire rate during Berserk', effectId: 'berserk_fire_bonus', effectValue: 0.5 },
     ],
   },
   {
@@ -74,8 +108,8 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Longbow',
     icon: 'bow-arrow',
     description: 'Increases tower shooting range',
-    baseCost: 100,
-    costGrowth: 1.32,
+    baseCost: 120,
+    costGrowth: 1.30,
     /*
      * 5 -> 3 with the camera (UI plan §1.2).
      *
@@ -84,13 +118,13 @@ export const UPGRADES: UpgradeDef[] = [
      * the flat max would have been base 300 + 300 = 600, i.e. the upgrade
      * alone doubling the tower's reach and landing a stacked build straight on
      * `ARENA_RANGE_CAP` with talents and blessings contributing nothing
-     * visible. At 3 the flat max is 300 + 180 = 480 — 0.51 of the short
+     * visible. At 3 the flat max is 300 + 150 = 450 — about half the short
      * half-extent — which leaves the cap as somewhere a *built* tower gets to
      * rather than somewhere every tower starts.
      */
     effectPerLevel: 3,
     effectType: 'add',
-    maxLevel: 60,
+    maxLevel: 50,
     category: 'tower',
     hideUpgradeScale: true,
   },
@@ -99,16 +133,17 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Eagle Eye',
     icon: 'dead-eye',
     description: 'Increases crit chance',
-    baseCost: 140,
-    costGrowth: 1.42,
-    effectPerLevel: 0.01,
+    // Ceiling 25% including the 5% base, not 100% (revamp §5.3).
+    baseCost: 220,
+    costGrowth: 1.32,
+    effectPerLevel: 0.005,
     effectType: 'add',
-    maxLevel: 95,
+    maxLevel: 40,
     category: 'tower',
     hideUpgradeScale: true,
     evolutions: [
       { level: 25, name: 'Hawk Eye', description: 'Crits deal 20% AoE splash', effectId: 'crit_splash', effectValue: 0.20 },
-      { level: 75, name: 'True Sight', description: 'Critical hits ignore armor', effectId: 'crit_ignore_armor', effectValue: 1 },
+      { level: 40, name: 'True Sight', description: 'Critical hits ignore armor', effectId: 'crit_ignore_armor', effectValue: 1 },
     ],
   },
   {
@@ -116,12 +151,54 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Heavy Quiver',
     icon: 'barbed-arrow',
     description: 'Increases crit damage',
-    baseCost: 170,
-    costGrowth: 1.36,
-    effectPerLevel: 0.12,
+    // Ceiling x6.0 on the 2.0 base. Was +0.12/level with `maxLevel 999`.
+    baseCost: 260,
+    costGrowth: 1.30,
+    effectPerLevel: 0.08,
     effectType: 'add',
-    maxLevel: 999,
+    maxLevel: 50,
     category: 'tower',
+    hideUpgradeScale: true,
+  },
+  {
+    id: 'pierce',
+    name: 'Bodkin Points',
+    icon: 'arrowhead',
+    description: 'Shots pass through additional enemies',
+    /*
+     * Revamp §5.2, the coverage axis. Priced as a *milestone*, not a trickle
+     * buy: 1 200 / 3 840 / 12 288 / 39 322 / 125 830 / 402 656 — six purchases
+     * across a whole progression, each a visible, run-changing moment. Writes
+     * `pierceExtra`, which is already clamped `{min: 0, integer: true}`.
+     */
+    baseCost: 1200,
+    costGrowth: 3.2,
+    effectPerLevel: 1,
+    effectType: 'add',
+    maxLevel: 6,
+    category: 'tower',
+    hideUpgradeScale: true,
+  },
+  {
+    id: 'splash',
+    name: 'Fragmenting Arrows',
+    icon: 'fragmented-meteor',
+    description: 'Shots burst on impact, damaging everything nearby',
+    /*
+     * Revamp §5.2. The `scaling` block is the damage *fraction*; the disc
+     * radius comes from `splashRadiusForLevel` above. The fraction composes
+     * with the artillery core, the Mortar blessing and Annihilation through
+     * `composeShotSplash` — max radius, summed fraction to
+     * `SPLASH_FRACTION_CAP` — so the cap here and the key's clamp are the same
+     * ceiling stated twice on purpose.
+     */
+    baseCost: 1500,
+    costGrowth: 1.35,
+    effectPerLevel: 0,
+    effectType: 'mult',
+    maxLevel: 25,
+    category: 'tower',
+    scaling: { base: 0.112, perLevel: 0.012, effectType: 'mult', cap: { max: 0.40 } },
     hideUpgradeScale: true,
   },
   {
@@ -129,13 +206,13 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Land Mines',
     icon: 'land-mine',
     description: 'Spawns mines that detonate on contact',
-    baseCost: 500,
-    costGrowth: 1.32,
+    baseCost: 700,
+    costGrowth: 1.34,
     effectPerLevel: 0,
     effectType: 'mult',
-    maxLevel: 999,
+    maxLevel: 80,
     category: 'tower',
-    scaling: { base: 0.5, perLevel: 0.25, effectType: 'mult' },
+    scaling: { base: 0.4, perLevel: 0.15, effectType: 'mult' },
     hideUpgradeScale: true,
     evolutions: [
       { level: 25, name: 'Cluster Mines', description: 'Mines split into 2 smaller mines on detonation', effectId: 'mine_split', effectValue: 2 },
@@ -146,12 +223,13 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Double Tap',
     icon: 'striking-arrows',
     description: 'Chance to fire an extra projectile per shot',
-    baseCost: 120,
-    costGrowth: 1.45,
-    effectPerLevel: 0.02,
+    // Ceiling 31%. Was `2% + 2%/level` to L35 — 72%.
+    baseCost: 240,
+    costGrowth: 1.36,
+    effectPerLevel: 0.01,
     baseEffect: 0.02,
     effectType: 'add',
-    maxLevel: 35,
+    maxLevel: 30,
     category: 'tower',
     hideUpgradeScale: true,
   },
@@ -160,12 +238,13 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Adrenaline Rush',
     icon: 'energy-arrow',
     description: 'Chance to temporarily double your fire rate',
-    baseCost: 250,
-    costGrowth: 1.55,
-    effectPerLevel: 0.01,
+    // Ceiling 18.4%. Was `1% + 1%/level` to L50 — 51%.
+    baseCost: 320,
+    costGrowth: 1.38,
+    effectPerLevel: 0.006,
     baseEffect: 0.01,
     effectType: 'add',
-    maxLevel: 50,
+    maxLevel: 30,
     category: 'tower',
     hideUpgradeScale: true,
   },
@@ -174,13 +253,14 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Adrenaline Surge',
     icon: 'extra-time',
     description: 'Increases the duration of Adrenaline Rush',
-    baseCost: 100,
-    costGrowth: 1.4,
+    // Ceiling 6.5 s. Was `3s + 1s/level` to L9 — 12 s.
+    baseCost: 200,
+    costGrowth: 1.40,
     effectPerLevel: 0,
     effectType: 'add',
-    maxLevel: 9,
+    maxLevel: 10,
     category: 'tower',
-    scaling: { base: 3, perLevel: 1, effectType: 'add', unit: 's' },
+    scaling: { base: 2, perLevel: 0.5, effectType: 'add', unit: 's' },
     hideUpgradeScale: true,
   },
   {
@@ -188,11 +268,13 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Greed',
     icon: 'shiny-purse',
     description: 'Increases gold gained from kills',
-    baseCost: 110,
-    costGrowth: 1.4,
-    effectPerLevel: 0.04,
+    // Ceiling +100%. Was +4%/level with `maxLevel 999` — design rule 6 wants
+    // every compounding economy source capped.
+    baseCost: 220,
+    costGrowth: 1.32,
+    effectPerLevel: 0.02,
     effectType: 'mult',
-    maxLevel: 999,
+    maxLevel: 50,
     category: 'economy',
     hideUpgradeScale: true,
     evolutions: [
@@ -208,15 +290,39 @@ export const UPGRADES: UpgradeDef[] = [
     ],
   },
   {
+    id: 'prospecting',
+    name: 'Prospecting',
+    icon: 'gold-mine',
+    description: 'Chance for a kill to pay double gold',
+    /*
+     * Revamp §5.3, replacing `upgradeDiscount`.
+     *
+     * A flat cost reducer is an anti-upgrade: nothing happens on screen, it
+     * compounds silently with every other economy line, and it is strictly the
+     * least interesting thing gold can buy. This occupies the same slot and
+     * pays out as a visible double-gold pop. Routes through the existing
+     * `doubleGoldChance` key, clamped `{min: 0, max: 1}`. Long-term cost
+     * reduction still exists through talents and achievements, which keep
+     * `upgradeCostDiscount` alive as a key.
+     */
+    baseCost: 240,
+    costGrowth: 1.34,
+    effectPerLevel: 0.015,
+    effectType: 'add',
+    maxLevel: 20,
+    category: 'economy',
+    hideUpgradeScale: true,
+  },
+  {
     id: 'manaRegen',
     name: 'Meditation',
     icon: 'prayer',
     description: 'Increases mana regeneration',
-    baseCost: 300,
-    costGrowth: 1.55,
-    effectPerLevel: 0.25,
+    baseCost: 320,
+    costGrowth: 1.34,
+    effectPerLevel: 0.2,
     effectType: 'add',
-    maxLevel: 999,
+    maxLevel: 60,
     category: 'utility',
     hideUpgradeScale: true,
     evolutions: [
@@ -228,8 +334,8 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Arcane Reserves',
     icon: 'crystal-cluster',
     description: 'Increases max mana',
-    baseCost: 230,
-    costGrowth: 1.5,
+    baseCost: 260,
+    costGrowth: 1.30,
     effectPerLevel: 5,
     effectType: 'add',
     maxLevel: 40,
@@ -244,11 +350,11 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Wave Mastery',
     icon: 'open-treasure-chest',
     description: 'Gain flat gold on wave clear',
-    baseCost: 380,
-    costGrowth: 1.4,
+    baseCost: 600,
+    costGrowth: 1.34,
     effectPerLevel: 0,
     effectType: 'add',
-    maxLevel: 999,
+    maxLevel: 60,
     category: 'economy',
     scaling: { base: 3, perLevel: 2, effectType: 'add' },
     hideUpgradeScale: true,
@@ -261,11 +367,12 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Wisdom',
     icon: 'wisdom',
     description: 'Increases XP gain',
-    baseCost: 350,
-    costGrowth: 1.5,
-    effectPerLevel: 0.03,
+    // Ceiling +80%. Was +3%/level to L50.
+    baseCost: 400,
+    costGrowth: 1.34,
+    effectPerLevel: 0.02,
     effectType: 'mult',
-    maxLevel: 50,
+    maxLevel: 40,
     category: 'utility',
     hideUpgradeScale: true,
     evolutions: [
@@ -273,28 +380,16 @@ export const UPGRADES: UpgradeDef[] = [
     ],
   },
   {
-    id: 'upgradeDiscount',
-    name: 'Merchant',
-    icon: 'shop',
-    description: 'Reduces upgrade costs',
-    baseCost: 150,
-    costGrowth: 1.4,
-    effectPerLevel: -0.01,
-    effectType: 'add',
-    maxLevel: 50,
-    category: 'economy',
-    hideUpgradeScale: true,
-  },
-  {
     id: 'abilityCostReduction',
     name: 'Mana Efficiency',
     icon: 'standing-potion',
     description: 'Reduces ability mana costs',
-    baseCost: 160,
-    costGrowth: 1.5,
-    effectPerLevel: -0.02,
+    // Ceiling -30%, leaving room for talents, research and TP. Was -50%.
+    baseCost: 260,
+    costGrowth: 1.34,
+    effectPerLevel: -0.015,
     effectType: 'add',
-    maxLevel: 25,
+    maxLevel: 20,
     category: 'utility',
     hideUpgradeScale: true,
   },
@@ -303,11 +398,11 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Bounty Hunter',
     icon: 'wanted-reward',
     description: 'Gain flat gold per kill',
-    baseCost: 290,
-    costGrowth: 1.4,
+    baseCost: 400,
+    costGrowth: 1.32,
     effectPerLevel: 0,
     effectType: 'add',
-    maxLevel: 999,
+    maxLevel: 60,
     category: 'economy',
     scaling: { base: 1, perLevel: 1, effectType: 'add' },
     hideUpgradeScale: true,
@@ -317,9 +412,10 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Fortune',
     icon: 'coinflip',
     description: 'Increases bonus gold on crit kills',
-    baseCost: 120,
-    costGrowth: 1.45,
-    effectPerLevel: 0.5,
+    // Ceiling x6 on crit kills. Was +0.5/level — x11.
+    baseCost: 240,
+    costGrowth: 1.34,
+    effectPerLevel: 0.25,
     effectType: 'mult',
     maxLevel: 20,
     category: 'economy',
@@ -330,13 +426,15 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Health',
     icon: 'heart-tower',
     description: 'Increases max health',
-    baseCost: 40,
-    costGrowth: 1.25,
-    effectPerLevel: '4.2 * Math.pow(1.1, {level} - 1)',
+    // Mirrors `damage` (revamp §5.3): `V(n) = 5 x 1.10^(n-1)`, a flat +10% per
+    // level instead of a +48% first step.
+    baseCost: 25,
+    costGrowth: 1.15,
+    effectPerLevel: '0.5 * Math.pow(1.10, {level} - 2)',
     baseEffect: 5,
     startLevel: 1,
     effectType: 'add',
-    maxLevel: 999,
+    maxLevel: 200,
     category: 'defense',
     hideUpgradeScale: true,
     evolutions: [
@@ -349,13 +447,15 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Health Regen',
     icon: 'regeneration',
     description: 'Restores health every second',
-    baseCost: 130,
-    costGrowth: 1.3,
+    // Cap 6%/s, was 50%/s — at a large max HP that deletes all incoming
+    // pressure outright.
+    baseCost: 200,
+    costGrowth: 1.32,
     effectPerLevel: 0,
     effectType: 'add',
-    maxLevel: 150,
+    maxLevel: 120,
     category: 'defense',
-    scaling: { base: 0.005, perLevel: 0.001, effectType: 'mult', cap: { max: 0.5 } },
+    scaling: { base: 0.004, perLevel: 0.0005, effectType: 'mult', cap: { max: 0.06 } },
     hideUpgradeScale: true,
   },
   {
@@ -363,13 +463,13 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Defense',
     icon: 'bordered-shield',
     description: 'Reduces incoming damage',
-    baseCost: 120,
-    costGrowth: 1.32,
+    baseCost: 150,
+    costGrowth: 1.30,
     effectPerLevel: 0,
     effectType: 'add',
-    maxLevel: 999,
+    maxLevel: 150,
     category: 'defense',
-    scaling: { base: 0.5, perLevel: 0.35, effectType: 'add' },
+    scaling: { base: 0.5, perLevel: 0.3, effectType: 'add' },
     hideUpgradeScale: true,
   },
   {
@@ -377,13 +477,13 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Armor',
     icon: 'breastplate',
     description: 'Reduces incoming damage by a percentage of damage taken',
-    baseCost: 140,
-    costGrowth: 1.23,
+    baseCost: 180,
+    costGrowth: 1.26,
     effectPerLevel: 0,
     effectType: 'mult',
-    maxLevel: 200,
+    maxLevel: 160,
     category: 'defense',
-    scaling: { base: 0.01, perLevel: 0.005, effectType: 'mult', cap: { max: 0.75 } },
+    scaling: { base: 0.01, perLevel: 0.003, effectType: 'mult', cap: { max: 0.50 } },
     hideUpgradeScale: true,
   },
   {
@@ -391,14 +491,17 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Shockwave',
     icon: 'echo-ripples',
     description: 'Periodically releases a ring that pushes nearby enemies away. Leveling increases the radius and reduces the time between pulses.',
-    baseCost: 250,
-    costGrowth: 1.25,
+    // §5.2 / §6.2.5: `scaling` is the *cooldown*; the radius derives from the
+    // level in the contributor, which is what stopped the line from paying for
+    // its own downgrade.
+    baseCost: 300,
+    costGrowth: 1.28,
     effectPerLevel: 0,
     effectType: 'add',
-    maxLevel: 50,
+    maxLevel: 60,
     category: 'defense',
     hideUpgradeScale: true,
-    scaling: { base: 30, perLevel: -0.5, effectType: 'add', cap: { min: 3 }, unit: 's' },
+    scaling: { base: 26, perLevel: -0.35, effectType: 'add', cap: { min: 5 }, unit: 's' },
     evolutions: [
       { level: 15, name: 'Tremor', description: 'Shockwaved enemies slowed 30% for 2s', effectId: 'shockwave_slow', effectValue: 0.30 },
     ],
@@ -408,13 +511,13 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Thorns',
     icon: 'spikes',
     description: 'Deals back part of the attacker\'s damage back to them',
-    baseCost: 220,
-    costGrowth: 1.37,
+    baseCost: 260,
+    costGrowth: 1.34,
     effectPerLevel: 0,
     effectType: 'mult',
-    maxLevel: 999,
+    maxLevel: 140,
     category: 'defense',
-    scaling: { base: 0.05, perLevel: 0.01, effectType: 'mult' },
+    scaling: { base: 0.03, perLevel: 0.005, effectType: 'mult', cap: { max: 0.75 } },
     hideUpgradeScale: true,
   },
   {
@@ -422,13 +525,13 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Lifesteal',
     icon: 'heart-drop',
     description: 'Restores part of the damage dealt as health',
-    baseCost: 250,
-    costGrowth: 1.4,
+    baseCost: 300,
+    costGrowth: 1.34,
     effectPerLevel: 0,
     effectType: 'mult',
-    maxLevel: 999,
+    maxLevel: 140,
     category: 'defense',
-    scaling: { base: 0.002, perLevel: 0.0006, effectType: 'mult' },
+    scaling: { base: 0.003, perLevel: 0.0006, effectType: 'mult', cap: { max: 0.10 } },
     hideUpgradeScale: true,
   },
   {
@@ -436,13 +539,13 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Defense Shield',
     icon: 'energy-shield',
     description: 'Absorbs hits before breaking. Leveling increases the number of charges and lower recharge time.',
-    baseCost: 500,
-    costGrowth: 1.35,
+    baseCost: 600,
+    costGrowth: 1.32,
     effectPerLevel: 0,
     effectType: 'add',
-    maxLevel: 55,
+    maxLevel: 50,
     category: 'defense',
-    scaling: { base: 60, perLevel: -1, effectType: 'add', cap: { min: 7 }, unit: 's' },
+    scaling: { base: 55, perLevel: -0.9, effectType: 'add', cap: { min: 8 }, unit: 's' },
     hideUpgradeScale: true,
     evolutions: [
       { level: 25, name: 'Prismatic Shield', description: 'Shield recharges 25% faster', effectId: 'shield_fast_recharge', effectValue: 0.25 },
@@ -453,13 +556,13 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Wall',
     icon: 'brick-wall',
     description: 'Builds an outer barrier with its own health pool.',
-    baseCost: 650,
-    costGrowth: 1.37,
+    baseCost: 700,
+    costGrowth: 1.34,
     effectPerLevel: 0,
     effectType: 'mult',
-    maxLevel: 40,
+    maxLevel: 35,
     category: 'defense',
-    scaling: { base: 0.2, perLevel: 0.02, effectType: 'mult' },
+    scaling: { base: 0.2, perLevel: 0.02, effectType: 'mult', cap: { max: 0.90 } },
     hideUpgradeScale: true,
   },
 ];
