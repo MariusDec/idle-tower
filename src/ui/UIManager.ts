@@ -40,31 +40,23 @@ import { EquipmentPanel, type EquipmentAPIDeps } from './EquipmentPanel';
 import type { AutomationKey } from '../data/prestige';
 import type { EffectiveAbilityStats } from '../data/abilities';
 import { ABILITIES } from '../data/abilities';
+import {
+  NAV_GROUPS,
+  GROUP_OF,
+  groupById,
+  firstTabOf,
+  isPanelTab,
+  type NavGroupId,
+} from './navGroups';
+import { icon as renderIconEl } from './Icon';
 import { hasClass, toggleClass, setStyle } from '../utils/dom';
 import { formatNumber } from '../utils/bigNumber';
 
-interface TabDef {
-  id: PanelTab;
-  label: string;
-}
-
-const TABS: TabDef[] = [
-  { id: 'upgrades', label: 'Upgrades' },
-  { id: 'research', label: 'Research' },
-  { id: 'abilities', label: 'Abilities' },
-  { id: 'talents', label: 'Talents' },
-  { id: 'equipment', label: 'Equipment' },
-  { id: 'prestige', label: 'Prestige' },
-  { id: 'transcendence', label: 'Transcendence' },
-  { id: 'achievements', label: 'Achievements' },
-  { id: 'progression', label: 'Progression' },
-  { id: 'stats', label: 'Stats' },
-  { id: 'settings', label: 'Settings' },
-];
-
 const PANEL_WIDTH_KEY = 'the-tower-panel-width';
 const PANEL_COLLAPSED_KEY = 'the-tower-panel-collapsed';
-const PANEL_MIN = 280;
+const NAV_TAB_KEY = 'the-tower-nav-tab';
+/** §8.A: the rail costs ~52 px, so the old 280 no longer leaves a usable column. */
+const PANEL_MIN = 332;
 const CANVAS_MIN = 420;
 const MOBILE_BREAKPOINT = 768;
 
@@ -191,6 +183,16 @@ export class UIManager {
   private boundResizeMove: ((ev: PointerEvent) => void) | null = null;
   private boundResizeUp: ((ev: PointerEvent) => void) | null = null;
   private activeTab: PanelTab = 'upgrades';
+  /** §8.A: the rail's selection, always `GROUP_OF[activeTab]`. */
+  private activeGroup: NavGroupId = GROUP_OF['upgrades'];
+  /** Where each group was left, so re-entering it does not reset to tab one. */
+  private readonly lastTabPerGroup = new Map<NavGroupId, PanelTab>(
+    NAV_GROUPS.map(g => [g.id, g.tabs[0].id] as const),
+  );
+  /** The horizontal strip of the active group's tabs, above the content. */
+  private readonly subStrip: HTMLElement;
+  /** Per-tab badge counts, summed onto the rail button of the owning group. */
+  private readonly tabBadges = new Map<PanelTab, number>();
   private damageLog: { time: number; amount: number }[] = [];
   private realTimeDps = 0;
   private smoothedDps = 0;
@@ -361,6 +363,12 @@ export class UIManager {
     this.tabsRoot = deps.tabsRoot;
     this.contentRoot = deps.contentRoot;
     this.contentRootBaseClass = deps.contentRoot.className;
+    // §8.A: the sub-strip is a sibling of the content, not part of the rail, so
+    // it can sit inside the content column of the panel grid.
+    this.subStrip = document.createElement('div');
+    this.subStrip.className = 'panel-substrip';
+    this.subStrip.setAttribute('role', 'tablist');
+    this.contentRoot.parentElement?.insertBefore(this.subStrip, this.contentRoot);
     this.panelRoot = deps.panelRoot ?? (document.getElementById('panel-root') as HTMLElement);
     this.abilityBarRoot = deps.abilityBarRoot ?? (document.getElementById('ability-bar-root') as HTMLElement);
     this.bottomNavRoot = deps.bottomNavRoot ?? (document.getElementById('bottom-nav-root') as HTMLElement);
@@ -526,9 +534,8 @@ export class UIManager {
         return upcomingMilestones(s.wave.highestWave, s.resources.apThisTranscendence, 3);
       },
     });
-    this.renderTabs();
-    this.activateTabButtons('upgrades');
-    this.showTab('upgrades');
+    this.renderRail();
+    this.showTab(this.restoreNavTab());
 
     this.bus.on('upgrade_purchased', (payload: unknown) => {
       const p = payload as { id: string; level: number; levelsGained?: number };
@@ -662,12 +669,14 @@ export class UIManager {
   private installMobileChrome(): void {
     if (!this.bottomNavRoot || !this.mobileSheetRoot) return;
     this.mobileSheet = new MobileSheet(this.mobileSheetRoot);
-    const navItems: BottomNavItem[] = [
-      { id: 'upgrades', label: 'Upgrades', icon: '\u25B2' },
-      { id: 'research', label: 'Research', icon: '\u2697' },
-      { id: 'progress', label: 'Progress', icon: '\u2605' },
-      { id: 'more', label: 'More', icon: '\u2026' },
-    ];
+    // \u00A78.A: the same five groups the desktop rail shows. The old ad-hoc four \u2014
+    // with a `'more'` bucket that opened Prestige \u2014 was the second, unrelated
+    // information architecture this table exists to delete.
+    const navItems: BottomNavItem[] = NAV_GROUPS.map(g => ({
+      id: g.id,
+      label: g.label,
+      icon: g.icon,
+    }));
     this.bottomNav = new BottomNav(this.bottomNavRoot, navItems);
     this.bottomNav.setOnSelect((id) => this.handleMobileNav(id));
     this.mobileBoundChange = (ev) => this.applyMobileMode(ev.matches);
@@ -679,20 +688,20 @@ export class UIManager {
   private applyMobileMode(mobile: boolean): void {
     this.isMobile = mobile;
     if (!this.bottomNav || !this.mobileSheet) return;
-    // Always populate tabs so they're ready when needed.
-    const tabs: MobileSheetTab[] = [
-      { id: 'upgrades', label: 'Upgrades', render: (b) => this.mountMobileTab('upgrades', b) },
-      { id: 'research', label: 'Research', render: (b) => this.mountMobileTab('research', b) },
-      { id: 'abilities', label: 'Abilities', render: (b) => this.mountMobileTab('abilities', b) },
-      { id: 'talents', label: 'Talents', render: (b) => this.mountMobileTab('talents', b) },
-      { id: 'equipment', label: 'Equipment', render: (b) => this.mountMobileTab('equipment', b) },
-      { id: 'prestige', label: 'Prestige', render: (b) => this.mountMobileTab('prestige', b) },
-      { id: 'transcendence', label: 'Transcendence', render: (b) => this.mountMobileTab('transcendence', b) },
-      { id: 'achievements', label: 'Achievements', render: (b) => this.mountMobileTab('achievements', b) },
-      { id: 'progression', label: 'Progression', render: (b) => this.mountMobileTab('progression', b) },
-      { id: 'stats', label: 'Stats', render: (b) => this.mountMobileTab('stats', b) },
-      { id: 'settings', label: 'Settings', render: (b) => this.mountMobileTab('settings', b) },
-    ];
+    // Seed the sheet with the group the panel is already on, so the very first
+    // open is not an empty segmented strip.
+    this.loadSheetGroup(this.activeGroup);
+    this.bottomNav.setActive(this.activeGroup);
+  }
+
+  /** §8.A: the sheet only ever carries one group's tabs at a time. */
+  private loadSheetGroup(g: NavGroupId): void {
+    if (!this.mobileSheet) return;
+    const tabs: MobileSheetTab[] = groupById(g).tabs.map(t => ({
+      id: t.id,
+      label: t.label,
+      render: (b: HTMLElement) => this.mountMobileTab(t.id, b),
+    }));
     this.mobileSheet.setTabs(tabs);
   }
 
@@ -701,6 +710,9 @@ export class UIManager {
     // The desktop contentRoot remains untouched so desktop still works. We do
     // NOT update this.activeTab — that's the desktop state and would clobber
     // the user's last desktop selection if they resized back.
+    // The group's remembered tab *is* shared with desktop — landing on the tab
+    // you last used is the point of remembering it, on either surface.
+    this.lastTabPerGroup.set(GROUP_OF[tab], tab);
     const bodyBaseClass = body.className;
     // Panels that render no class of their own (achievements, stats) still
     // want a tab-specific hook; ones that do will overwrite this, and the
@@ -737,15 +749,16 @@ export class UIManager {
     }
   }
 
+  /**
+   * A bottom-nav id is now a group id, so there are no special cases left: the
+   * sheet is loaded with that group's tabs and opened on its remembered one.
+   */
   private handleMobileNav(id: string): void {
     if (!this.mobileSheet) return;
-    if (id === 'more') {
-      this.mobileSheet.open('prestige');
-    } else if (id === 'progress') {
-      this.mobileSheet.open('stats');
-    } else {
-      this.mobileSheet.open(id);
-    }
+    if (!NAV_GROUPS.some(g => g.id === id)) return;
+    const g = id as NavGroupId;
+    this.loadSheetGroup(g);
+    this.mobileSheet.open(this.lastTabPerGroup.get(g) ?? firstTabOf(g));
   }
 
   private bindPanelToggle(): void {
@@ -1120,17 +1133,7 @@ export class UIManager {
     if (this.uiFrameCounter % this.UI_UPDATE_INTERVAL !== 0) return;
 
     this.hud.update(state);
-    // Update talent points badge
-    const badge = this.tabsRoot.querySelector<HTMLElement>('[data-tab-badge="talents"]');
-    if (badge) {
-      const pts = state.towerXp?.unspentTalentPoints ?? 0;
-      if (pts > 0) {
-        badge.textContent = String(pts);
-        toggleClass(badge, 'is-visible', true);
-      } else {
-        toggleClass(badge, 'is-visible', false);
-      }
-    }
+    this.setTabBadge('talents', state.towerXp?.unspentTalentPoints ?? 0);
     if (this.activeTab === 'upgrades') {
       this.upgradePanel.update(state);
     } else if (this.activeTab === 'abilities') {
@@ -1216,26 +1219,109 @@ export class UIManager {
     });
   }
 
-  private renderTabs(): void {
+  /**
+   * The five-group rail on the panel's leading edge (§8.A).
+   *
+   * Built once: the group set is static, so only the `active` class and the
+   * badge text ever change after this.
+   */
+  private renderRail(): void {
+    this.tabsRoot.className = 'panel-rail';
+    this.tabsRoot.setAttribute('role', 'tablist');
     this.tabsRoot.innerHTML = '';
-    for (const t of TABS) {
+    for (const g of NAV_GROUPS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'rail-btn';
+      btn.dataset.group = g.id;
+      btn.title = g.label;
+      btn.setAttribute('aria-label', g.label);
+      const iconWrap = document.createElement('span');
+      iconWrap.className = 'rail-btn-icon';
+      iconWrap.appendChild(renderIconEl(g.icon, { size: 22, tone: 'inherit' }));
+      const label = document.createElement('span');
+      label.className = 'rail-btn-label';
+      label.textContent = g.label;
+      const badge = document.createElement('span');
+      badge.className = 'tab-badge';
+      badge.dataset.groupBadge = g.id;
+      btn.append(iconWrap, label, badge);
+      btn.addEventListener('click', () => {
+        if (hasClass(btn, 'tab-locked')) return;
+        this.showGroup(g.id);
+      });
+      this.tabsRoot.appendChild(btn);
+    }
+  }
+
+  /** The active group's tabs, rendered above the content. */
+  private renderSubStrip(g: NavGroupId): void {
+    const group = groupById(g);
+    this.subStrip.innerHTML = '';
+    // A one-tab group has nothing to choose between; the strip would be a row
+    // of chrome saying the same thing the rail already says.
+    toggleClass(this.subStrip, 'is-hidden', group.tabs.length < 2);
+    for (const t of group.tabs) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'tab-btn';
       btn.textContent = t.label;
       btn.dataset.tab = t.id;
-      if (t.id === 'talents') {
-        const badge = document.createElement('span');
-        badge.className = 'tab-badge';
-        badge.dataset.tabBadge = 'talents';
-        btn.appendChild(badge);
-      }
+      const badge = document.createElement('span');
+      badge.className = 'tab-badge';
+      badge.dataset.tabBadge = t.id;
+      btn.appendChild(badge);
       btn.addEventListener('click', () => {
         if (hasClass(btn, 'tab-locked')) return;
         this.showTab(t.id);
       });
-      this.tabsRoot.appendChild(btn);
+      this.subStrip.appendChild(btn);
     }
+    this.applyBadges();
+  }
+
+  private showGroup(g: NavGroupId): void {
+    this.showTab(this.lastTabPerGroup.get(g) ?? firstTabOf(g));
+  }
+
+  /**
+   * Badge counts, generalised (§8.A). Talents was the only caller, but the
+   * mechanism now has to reach two surfaces per tab (the sub-tab and its group
+   * rail button, whose count is the sum over the group), and special-casing
+   * one id twice is how that stays wrong.
+   */
+  setTabBadge(tab: PanelTab, count: number): void {
+    const next = Math.max(0, Math.floor(count));
+    if ((this.tabBadges.get(tab) ?? 0) === next) return;
+    this.tabBadges.set(tab, next);
+    this.applyBadges();
+  }
+
+  private applyBadges(): void {
+    for (const g of NAV_GROUPS) {
+      let sum = 0;
+      for (const t of g.tabs) {
+        const n = this.tabBadges.get(t.id) ?? 0;
+        sum += n;
+        this.writeBadge(this.subStrip.querySelector(`[data-tab-badge="${t.id}"]`), n);
+      }
+      this.writeBadge(this.tabsRoot.querySelector(`[data-group-badge="${g.id}"]`), sum);
+      this.bottomNav?.setBadge(g.id, sum);
+    }
+  }
+
+  private writeBadge(el: Element | null, count: number): void {
+    if (!(el instanceof HTMLElement)) return;
+    el.textContent = count > 0 ? String(count) : '';
+    toggleClass(el, 'is-visible', count > 0);
+  }
+
+  private restoreNavTab(): PanelTab {
+    try {
+      const raw = localStorage.getItem(NAV_TAB_KEY);
+      if (isPanelTab(raw)) return raw;
+    } catch {}
+    return 'upgrades';
   }
 
   setActiveTab(id: PanelTab): void {
@@ -1244,6 +1330,10 @@ export class UIManager {
 
   private showTab(id: PanelTab): void {
     this.activeTab = id;
+    this.activeGroup = GROUP_OF[id];
+    this.lastTabPerGroup.set(this.activeGroup, id);
+    try { localStorage.setItem(NAV_TAB_KEY, id); } catch {}
+    this.renderSubStrip(this.activeGroup);
     this.activateTabButtons(id);
     this.contentRoot.innerHTML = '';
     // Clear any class the previous panel left behind: panels that render no
@@ -1303,9 +1393,14 @@ export class UIManager {
   }
 
   private activateTabButtons(id: PanelTab): void {
-    for (const el of Array.from(this.tabsRoot.querySelectorAll<HTMLButtonElement>('.tab-btn'))) {
+    for (const el of Array.from(this.subStrip.querySelectorAll<HTMLButtonElement>('.tab-btn'))) {
       toggleClass(el, 'active', el.dataset.tab === id);
     }
+    const group = GROUP_OF[id];
+    for (const el of Array.from(this.tabsRoot.querySelectorAll<HTMLButtonElement>('.rail-btn'))) {
+      toggleClass(el, 'active', el.dataset.group === group);
+    }
+    this.bottomNav?.setActive(group);
   }
 
   /** Open/close the keyboard-shortcut reference (plan §4.8). */
