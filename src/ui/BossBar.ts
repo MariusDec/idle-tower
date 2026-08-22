@@ -4,8 +4,28 @@ import {
   BOSS_PATTERN_HINTS,
   BOSS_PATTERN_NAMES,
 } from '../data/enemies';
+import type { IconId } from '../data/icons';
 import { formatNumber } from '../utils/bigNumber';
 import { setStyle, setText, toggleClass } from '../utils/dom';
+import { icon, setIcon } from './Icon';
+
+/**
+ * The mark for each pattern (UI plan §7).
+ *
+ * Lives here rather than beside `BOSS_PATTERN_NAMES` because it is a
+ * presentation choice about this bar, not a property of the encounter — and
+ * every id is already pinned in the manifest, so the sprite does not grow.
+ *
+ * Reuse is deliberate, per `docs/icon-system.md`: a bulwark is the same concept
+ * as a shielded enemy's shield, so it is the same mark, and the player learns
+ * one symbol rather than two synonyms.
+ */
+const PATTERN_ICONS: Record<BossPattern, IconId> = {
+  bulwark: 'surrounded-shield',
+  summon: 'star-gate',
+  slam: 'punch-blast',
+  siphon: 'extraction-orb',
+};
 
 /**
  * Everything the bar shows, resolved by `Game` from the lead boss.
@@ -71,6 +91,12 @@ export class BossBar {
   private telegraphFill: HTMLElement | null = null;
   private telegraphLabel: HTMLElement | null = null;
   private enrageEl: HTMLElement | null = null;
+  private patternIcon: SVGSVGElement | null = null;
+  private rim: HTMLElement | null = null;
+  /** Last phase seen, so a crossing fires the flash exactly once. */
+  private lastPhase = 0;
+  /** Alternates so a repeat flash restarts without forcing a reflow. */
+  private flashPhase = false;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -80,6 +106,9 @@ export class BossBar {
   update(data: BossBarData | null): void {
     if (!data) {
       if (this.wrap) toggleClass(this.wrap, 'is-visible', false);
+      // A new encounter must not inherit the last one's phase, or a boss that
+      // opens on phase 1 after one that died in phase 3 would flash on arrival.
+      this.lastPhase = 0;
       return;
     }
     if (!this.wrap) this.render();
@@ -108,9 +137,36 @@ export class BossBar {
     toggleClass(this.wrap, 'is-invulnerable', data.invulnerable);
     toggleClass(this.wrap, 'is-enraged', data.enrageStacks > 0);
 
+    // A phase crossing is the single most consequential thing that happens
+    // inside an encounter — the boss changes what it is doing — and it used to
+    // be a border colour change during the 0.7s invulnerability window, which a
+    // player watching the battlefield could miss entirely.
+    if (data.phase !== this.lastPhase) {
+      if (this.lastPhase !== 0) {
+        this.flashPhase = !this.flashPhase;
+        toggleClass(this.wrap, 'is-phase-flash-a', this.flashPhase);
+        toggleClass(this.wrap, 'is-phase-flash-b', !this.flashPhase);
+      }
+      this.lastPhase = data.phase;
+    }
+    // Which of the three segments the fight is in, so the track can dim the
+    // ones already spent.
+    this.wrap.dataset.phase = String(data.phase);
+
     const pattern = data.pattern;
     setText(this.patternEl!, pattern ? `Phase ${data.phase} · ${BOSS_PATTERN_NAMES[pattern]}` : `Phase ${data.phase}`);
     setText(this.hintEl!, pattern ? BOSS_PATTERN_HINTS[pattern] : '');
+    if (pattern) setIcon(this.patternIcon, PATTERN_ICONS[pattern]);
+    toggleClass(this.patternIcon as unknown as HTMLElement, 'is-visible', pattern !== null);
+
+    // The enrage clock as a rim that drains around the whole panel. As text it
+    // was a number in a corner competing with four other numbers; as a ring it
+    // is peripheral vision — the player sees it shortening without reading it.
+    const span = data.enrageStacks > 0
+      ? BOSS_ENCOUNTER.enrageInterval
+      : BOSS_ENCOUNTER.enrageDelay;
+    const rimFraction = span > 0 ? Math.max(0, Math.min(1, data.enrageIn / span)) : 0;
+    setStyle(this.rim!, '--rim-angle', `${(rimFraction * 360).toFixed(1)}deg`);
 
     // The bulwark clock. It only exists while the shield is standing — once it
     // is broken there is nothing left to race, and showing a dead countdown
@@ -181,14 +237,20 @@ export class BossBar {
     const shieldFill = document.createElement('div');
     shieldFill.className = 'boss-bar-shield';
     track.appendChild(shieldFill);
-    // Phase pips: static markers at the two thresholds, so the player can see
-    // how far the next transition is rather than being surprised by it.
-    for (const threshold of BOSS_ENCOUNTER.phaseThresholds) {
-      const pip = document.createElement('div');
-      pip.className = 'boss-bar-pip';
-      pip.style.left = `${threshold * 100}%`;
-      track.appendChild(pip);
-    }
+    // The two thresholds cut the track into three segments, one per phase, so
+    // the bar reads as three fights rather than one long one. A pip was a 2px
+    // hairline over a continuous fill; a divider that reaches past both edges
+    // of the track says "this is a boundary" instead of "this is a mark".
+    BOSS_ENCOUNTER.phaseThresholds.forEach((threshold, i) => {
+      const div = document.createElement('div');
+      div.className = 'boss-bar-divider';
+      // The boundary index, not an `nth-of-type` position: the dividers are the
+      // third and fourth `div`s in the track, so a positional selector would
+      // quietly match nothing.
+      div.dataset.boundary = String(i + 1);
+      div.style.left = `${threshold * 100}%`;
+      track.appendChild(div);
+    });
     const hpText = document.createElement('span');
     hpText.className = 'boss-bar-hptext';
     track.appendChild(hpText);
@@ -196,6 +258,8 @@ export class BossBar {
 
     const meta = document.createElement('div');
     meta.className = 'boss-bar-meta';
+    const patternIcon = icon(PATTERN_ICONS.bulwark, { tone: 'inherit', className: 'boss-bar-pattern-icon' });
+    meta.appendChild(patternIcon);
     const pattern = document.createElement('span');
     pattern.className = 'boss-bar-pattern';
     meta.appendChild(pattern);
@@ -220,8 +284,15 @@ export class BossBar {
     telegraph.appendChild(telegraphTrack);
     wrap.appendChild(telegraph);
 
+    // The draining rim, last so it sits over the panel's own border.
+    const rim = document.createElement('div');
+    rim.className = 'boss-bar-rim';
+    wrap.appendChild(rim);
+
     this.root.appendChild(wrap);
     this.wrap = wrap;
+    this.patternIcon = patternIcon;
+    this.rim = rim;
     this.nameEl = name;
     this.countEl = count;
     this.hpFill = hpFill;

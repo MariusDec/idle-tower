@@ -5502,15 +5502,28 @@ body.eq-dragging img { pointer-events: none; }
   background: linear-gradient(180deg, var(--azure-200), var(--azure-500));
 }
 .boss-bar-shield.is-visible { display: block; }
-/* Phase pips sit at 66% and 33% max HP — the crossings, marked in advance. */
-.boss-bar-pip {
+/* The two thresholds cut the track into three segments, one per phase, so the
+ * bar reads as three fights rather than one long one. A 2px hairline over a
+ * continuous fill was a *mark*; a divider that reaches past both edges of the
+ * track is a boundary. */
+.boss-bar-divider {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
+  top: -2px;
+  bottom: -2px;
+  width: 3px;
   margin-left: -1px;
-  background: rgba(var(--rgb-light), 0.55);
+  z-index: 2;
+  background: var(--surface-sunken);
+  box-shadow:
+    -1px 0 0 rgba(var(--rgb-light), 0.35),
+    1px 0 0 rgba(var(--rgb-light), 0.35);
 }
+/* Phases already spent read cooler than the one being fought. The fill has
+ * gone past them, but the *segment* saying so is what makes "two down, one to
+ * go" legible at a glance. */
+.boss-bar[data-phase='2'] .boss-bar-divider[data-boundary='1'],
+.boss-bar[data-phase='3'] .boss-bar-divider[data-boundary='1'],
+.boss-bar[data-phase='3'] .boss-bar-divider[data-boundary='2'] { opacity: 0.4; }
 .boss-bar-hptext {
   position: absolute;
   inset: 0;
@@ -5530,7 +5543,16 @@ body.eq-dragging img { pointer-events: none; }
   gap: 8px;
   font-size: var(--text-xs);
 }
-.boss-bar-pattern { font-weight: 700; color: var(--accent); flex-shrink: 0; }
+/* The pattern's mark. Four patterns each demand a different answer, and the
+ * name alone made the player parse a word mid-fight to find out which. */
+.boss-bar-pattern-icon.icon {
+  --icon-size: 14px;
+  color: var(--accent);
+  visibility: hidden;
+  align-self: center;
+}
+.boss-bar-pattern-icon.is-visible { visibility: visible; }
+.boss-bar-pattern { font-weight: var(--weight-bold); color: var(--accent); flex-shrink: 0; }
 .boss-bar-hint {
   color: var(--text-2);
   overflow: hidden;
@@ -5575,6 +5597,55 @@ body.eq-dragging img { pointer-events: none; }
 }
 .boss-bar-telegraph.is-mitigated .boss-bar-telegraph-fill {
   background: linear-gradient(90deg, var(--azure-200), var(--azure-500));
+}
+
+/* The phase-transition flash. A crossing is the most consequential thing that
+ * happens inside an encounter — the boss changes what it is doing — and it used
+ * to be a border-colour change during a 0.7s invulnerability window that a
+ * player watching the battlefield could miss entirely. Two identical animations
+ * under two names, alternated from TS, so a repeat restarts without a reflow. */
+.boss-bar.is-phase-flash-a { animation: boss-phase-flash var(--dur-slow) var(--ease-out); }
+.boss-bar.is-phase-flash-b { animation: boss-phase-flash-alt var(--dur-slow) var(--ease-out); }
+@keyframes boss-phase-flash {
+  0%   { box-shadow: var(--elev-3), 0 0 0 0 rgba(var(--rgb-blood), 0.9); }
+  35%  { box-shadow: var(--elev-3), 0 0 26px 8px rgba(var(--rgb-blood), 0.55); }
+  100% { box-shadow: var(--elev-3), 0 0 0 0 rgba(var(--rgb-blood), 0); }
+}
+@keyframes boss-phase-flash-alt {
+  0%   { box-shadow: var(--elev-3), 0 0 0 0 rgba(var(--rgb-blood), 0.9); }
+  35%  { box-shadow: var(--elev-3), 0 0 26px 8px rgba(var(--rgb-blood), 0.55); }
+  100% { box-shadow: var(--elev-3), 0 0 0 0 rgba(var(--rgb-blood), 0); }
+}
+
+/* ── The enrage clock, as a draining rim ───────────────────────────────────
+   As text it was a number in a corner competing with four other numbers. As a
+   ring around the panel it is peripheral vision: the player sees it shortening
+   without having to read it, which is the whole difference between a clock and
+   a label.
+
+   Drawn as a conic gradient masked to a 2px ring — one element, one custom
+   property written per frame, no per-frame layout. `--rim-angle` is the time
+   *left*, so the ring unwinds anticlockwise into nothing. */
+.boss-bar-rim {
+  --rim-angle: 360deg;
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 2px;
+  pointer-events: none;
+  background: conic-gradient(
+    from -90deg,
+    var(--rim-tone, var(--warn)) 0deg var(--rim-angle),
+    transparent var(--rim-angle) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.75;
+}
+.boss-bar.is-enraged .boss-bar-rim {
+  --rim-tone: var(--fx-ember);
+  opacity: 1;
 }
 
 @media (max-width: 768px) {
