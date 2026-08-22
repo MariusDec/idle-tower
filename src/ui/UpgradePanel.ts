@@ -3,7 +3,7 @@ import { computeUpgradeValue } from '../types';
 import { UPGRADES } from '../data/upgrades';
 import { upgradeCost } from '../data/formulas';
 import { formatNumber } from '../utils/bigNumber';
-import { setText, toggleClass, setDisplay } from '../utils/dom';
+import { setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
 import { iconFrame } from './Icon';
 
 type UpgradeTabId = 'attack' | 'defense' | 'utility';
@@ -257,6 +257,15 @@ export class UpgradePanel {
       btn.disabled = !affordable;
       toggleClass(btn, 'can-afford', affordable);
       setText(btn, atMax ? 'Maxed' : plan.levels > 1 ? `Buy ×${plan.levels}` : 'Buy');
+      if (rowEl) {
+        // Plan §8.B: the card's affordability state, legible without colour —
+        // the action dims and disables, the cost reads as unmet.
+        setDataAttr(rowEl, 'afford', atMax ? 'maxed' : affordable ? 'yes' : 'no');
+        // The evolution ribbon fires one level out, not on the level itself.
+        const upcoming = getNextEvolution(u, level);
+        const near = upcoming !== null && upcoming.level - level <= 1;
+        setDataAttr(rowEl, 'evolution', near ? 'near' : 'none');
+      }
 
       // Evolution display
       if (nameEl && u.evolutions) {
@@ -466,7 +475,7 @@ export class UpgradePanel {
 
   private renderRow(u: UpgradeDef): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'upgrade-row';
+    row.className = 'card upgrade-row';
     row.dataset.upgradeId = u.id;
     this.rowById.set(u.id, row);
 
@@ -508,9 +517,9 @@ export class UpgradePanel {
     row.appendChild(info);
 
     const action = document.createElement('div');
-    action.className = 'upgrade-action';
+    action.className = 'card-action upgrade-action';
     const cost = document.createElement('div');
-    cost.className = 'upgrade-cost';
+    cost.className = 'card-cost upgrade-cost';
     cost.textContent = '0';
     const levels = document.createElement('div');
     levels.className = 'upgrade-cost-levels';

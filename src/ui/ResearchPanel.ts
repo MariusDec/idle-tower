@@ -9,7 +9,7 @@ import {
   getResearchEffectAtLevel,
 } from '../data/research';
 import { formatNumber } from '../utils/bigNumber';
-import { setDisabled, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
+import { setDisabled, setStyle, setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
 import { renderIcon } from './Icon';
 
 export interface ResearchPanelHandlers {
@@ -178,6 +178,11 @@ export class ResearchPanel {
       toggleClass(row, 'is-locked', !unlocked && !isResearching && reason !== null);
       toggleClass(row, 'is-available', !unlocked && !isResearching && reason === null);
       toggleClass(row, 'is-maxed', isMaxed && !isResearching);
+      // Plan §8.B: the shared card's affordability state. A running research
+      // still has a live action (Cancel), so it reads as actionable.
+      setDataAttr(row, 'afford', isMaxed && !isResearching
+        ? 'maxed'
+        : isResearching || reason === null ? 'yes' : 'no');
 
       if (isResearching && ip) {
         const pct = Math.min(100, (ip.elapsed / Math.max(0.0001, ip.total)) * 100);
@@ -332,7 +337,7 @@ export class ResearchPanel {
 
   private renderRow(n: ResearchDef): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'research-row is-locked';
+    row.className = 'card research-row is-locked';
     row.dataset.researchId = n.id;
     this.rowById.set(n.id, row);
 
@@ -400,9 +405,9 @@ export class ResearchPanel {
     row.appendChild(info);
 
     const action = document.createElement('div');
-    action.className = 'research-action';
+    action.className = 'card-action research-action';
     const cost = document.createElement('div');
-    cost.className = 'research-cost';
+    cost.className = 'card-cost research-cost';
     cost.textContent = '0';
     const timeEst = document.createElement('div');
     timeEst.className = 'research-time';

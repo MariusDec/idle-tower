@@ -1234,15 +1234,69 @@ button:disabled {
 
 .upgrade-tab-panel { display: none; }
 .upgrade-tab-panel.active { display: block; }
-.upgrade-row {
-  display: flex;
-  align-items: stretch;
-  gap: 10px;
-  padding: 10px;
+/* ── The card primitive (plan §8.B) ───────────────────────────────────────
+   Upgrade, ability and research rows were three near-identical layouts. They
+   are one grid now — icon | text | action — plus two state attributes:
+   `data-afford` (yes / no / maxed) and `data-evolution` (near). The state has
+   to read without colour, because affordability is what a player scans a whole
+   panel for: the action dims *and* disables, and the cost is marked unmet by a
+   dotted underline rather than by turning red. */
+.card {
+  --card-icon: 40px;
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--card-icon) 1fr auto;   /* icon | text | action */
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3);
   background: var(--surface-2);
   border: 1px solid var(--stroke-subtle);
   border-radius: var(--radius-lg);
   min-width: 0;
+}
+.card-action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: stretch;
+  justify-content: center;
+  min-width: 80px;
+}
+.card-cost {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+/* Unaffordable: dim the action, leave the text at full contrast. */
+.card[data-afford='no'] .card-action { opacity: 0.55; }
+.card[data-afford='no'] .card-cost {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+/* Maxed: the action collapses to a check and the border takes the tint. */
+.card[data-afford='maxed'] { border-color: var(--good); }
+.card[data-afford='maxed'] .card-cost { display: none; }
+.card[data-afford='maxed'] .card-action { min-width: 0; }
+.card[data-afford='maxed'] .card-action .btn::before {
+  content: '✓';
+  margin-right: var(--space-1);
+  color: var(--good);
+}
+/* One level away from an evolution: a corner ribbon on the card itself. */
+.card[data-evolution='near']::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(225deg, var(--accent-2) 0 50%, transparent 50%);
+  border-top-right-radius: var(--radius-lg);
+  pointer-events: none;
+}
+
+.upgrade-row {
+  --card-icon: 36px;
 }
 .upgrade-info { flex: 1 1 0; min-width: 0; overflow-wrap: break-word; }
 .upgrade-name { font-weight: 600; color: var(--text-0); }
@@ -1427,15 +1481,8 @@ button:disabled {
 }
 .research-category:first-child { border-top: none; margin-top: 0; padding-top: 0; }
 .research-row {
-  display: flex;
-  align-items: stretch;
-  gap: 10px;
-  padding: 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--stroke-subtle);
-  border-radius: var(--radius-lg);
+  --card-icon: 44px;
   transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease, opacity var(--dur-fast) ease;
-  min-width: 0;
 }
 .research-row.is-locked { opacity: 0.7; }
 .research-row.is-unlocked {
@@ -1625,14 +1672,7 @@ button:disabled {
   margin-top: 8px;
 }
 .ability-card {
-  display: flex;
-  gap: 10px;
-  padding: 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--stroke-subtle);
-  border-radius: var(--radius-lg);
-  align-items: center;
-  min-width: 0;
+  --card-icon: 52px;
 }
 .ability-btn {
   position: relative;
@@ -1834,6 +1874,13 @@ button:disabled {
   cursor: pointer;
   font-size: var(--text-sm);
   white-space: nowrap;
+}
+/* In the card's action column (plan §8.B) the button owns the column rather
+   than hanging off the end of the text block. */
+.card-action > .ability-upgrade-btn {
+  align-self: stretch;
+  margin-top: 0;
+  text-align: center;
 }
 .ability-upgrade-btn:hover:not(:disabled) {
   background: var(--surface-3);

@@ -3,7 +3,7 @@ import { ABILITIES, ABILITY_BY_ID, computeEffectiveStats, type AbilityDef } from
 import { PASSIVE_ABILITIES, passiveEffectValue } from '../data/passiveAbilities';
 import { passiveXpForLevel, abilityXpForLevel } from '../data/xpTables';
 import { formatInt } from '../utils/bigNumber';
-import { setAriaLabel, setDisabled, setInnerHTML, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
+import { setAriaLabel, setDisabled, setInnerHTML, setStyle, setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
 import { renderAbilityTooltip } from './abilityFormat';
 import type { PassiveAPIDeps } from './PassivePanel';
 import { renderIcon } from './Icon';
@@ -46,6 +46,7 @@ export class AbilityPanel {
   private descById = new Map<AbilityId, HTMLElement>();
   private levelBadgeById = new Map<AbilityId, HTMLElement>();
   private upgradeBtnById = new Map<AbilityId, HTMLButtonElement>();
+  private actionById = new Map<AbilityId, HTMLElement>();
   private upgradeTooltipById = new Map<AbilityId, HTMLElement>();
   private xpBarEls = new Map<AbilityId, HTMLElement>();
   private xpBarFillEls = new Map<AbilityId, HTMLElement>();
@@ -83,6 +84,7 @@ export class AbilityPanel {
     this.descById.clear();
     this.levelBadgeById.clear();
     this.upgradeBtnById.clear();
+    this.actionById.clear();
     this.upgradeTooltipById.clear();
     this.xpBarEls.clear();
     this.xpBarFillEls.clear();
@@ -189,6 +191,15 @@ export class AbilityPanel {
       toggleClass(upgradeBtn, 'cannot-afford', showUpgrade && !canAfford);
       setDisabled(upgradeBtn, !canAfford);
       setText(upgradeBtn, `Upgrade · ${formatInt(cost)}g`);
+
+      // Plan §8.B: card state. With no upgrade to offer the action column
+      // collapses rather than reserving an empty gutter.
+      const cardEl = this.cardsById.get(def.id);
+      if (cardEl) {
+        setDataAttr(cardEl, 'afford', isMaxed ? 'maxed' : showUpgrade && canAfford ? 'yes' : 'no');
+      }
+      const actionEl = this.actionById.get(def.id);
+      if (actionEl) setDisplay(actionEl, showUpgrade ? '' : 'none');
 
       const xpBarEl = this.xpBarEls.get(def.id);
       const xpFillEl = this.xpBarFillEls.get(def.id);
@@ -392,7 +403,7 @@ export class AbilityPanel {
 
   private renderCard(def: AbilityDef): HTMLElement {
     const card = document.createElement('div');
-    card.className = 'ability-card';
+    card.className = 'card ability-card';
     card.dataset.abilityId = def.id;
     card.style.position = 'relative';
 
@@ -483,7 +494,6 @@ export class AbilityPanel {
     upgradeBtn.addEventListener('mouseleave', () => this.hideTooltip(def.id));
     upgradeBtn.addEventListener('focus', () => this.showTooltip(def.id));
     upgradeBtn.addEventListener('blur', () => this.hideTooltip(def.id));
-    info.appendChild(upgradeBtn);
 
     // Plan §3.1: per-ability auto-cast opt-out. Hidden until the Auto-Caster
     // perk is bought, so it does not advertise a system the player cannot use.
@@ -505,6 +515,14 @@ export class AbilityPanel {
     this.autoCastInputById.set(def.id, autoInput);
 
     card.appendChild(info);
+
+    // Plan §8.B: the upgrade button lives in the shared card's action column
+    // rather than trailing the text block.
+    const action = document.createElement('div');
+    action.className = 'card-action ability-action';
+    action.appendChild(upgradeBtn);
+    card.appendChild(action);
+    this.actionById.set(def.id, action);
 
     const tooltip = document.createElement('div');
     tooltip.className = 'ability-upgrade-tooltip';
