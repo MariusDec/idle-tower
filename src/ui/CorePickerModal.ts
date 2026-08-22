@@ -88,7 +88,6 @@ export class CorePickerModal {
       root: this.root,
     });
     this.modal = modal;
-    modal.cardElement.classList.add('core-modal-card');
     const card = modal.body;
 
     const grid = document.createElement('div');

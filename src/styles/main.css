@@ -2607,53 +2607,8 @@ button:disabled {
   .modal-card { transform: none; }
 }
 
-/* Welcome back modal */
-.welcome-modal {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  pointer-events: auto;
-  opacity: 0;
-  transition: opacity var(--dur-base) ease;
-}
-.welcome-modal.is-visible { opacity: 1; }
-.welcome-modal-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(var(--rgb-shadow), 0.6);
-  backdrop-filter: blur(2px);
-}
-.welcome-modal-card {
-  position: relative;
-  width: min(440px, calc(100vw - 32px));
-  padding: 22px 24px 20px;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
-  border: 1px solid var(--stroke-strong);
-  border-radius: var(--radius-2xl);
-  box-shadow: var(--elev-5);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transform: translateY(8px) scale(0.98);
-  transition: transform var(--dur-base) ease;
-}
-.welcome-modal.is-visible .welcome-modal-card { transform: translateY(0) scale(1); }
-.welcome-modal-title {
-  margin: 0;
-  font-size: var(--text-3xl);
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 0.02em;
-}
-.welcome-modal-sub {
-  margin: 0;
-  color: var(--text-1);
-  font-size: var(--text-md);
-  line-height: 1.45;
-}
+/* Welcome back / run debrief content. The shell is `.modal` (§8.F); what is
+   left here is the stats grid these three modals share. */
 .welcome-modal-stats {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -2698,56 +2653,7 @@ button:disabled {
 }
 .btn-claim:hover { filter: brightness(1.1); }
 
-/* Wave modifier (mutator) picker modal */
-.wave-mod-modal {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 110;
-  opacity: 0;
-  transition: opacity var(--dur-base) ease;
-}
-.wave-mod-modal.is-visible { opacity: 1; }
-.wave-mod-modal-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(var(--rgb-shadow), 0.66);
-  backdrop-filter: blur(3px);
-}
-.wave-mod-modal-card {
-  position: relative;
-  width: min(720px, calc(100vw - 32px));
-  max-height: calc(100vh - 64px);
-  overflow-y: auto;
-  padding: 22px 24px 22px;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
-  border: 1px solid var(--stroke-strong);
-  border-radius: var(--radius-2xl);
-  box-shadow: var(--elev-5);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transform: translateY(8px) scale(0.98);
-  transition: transform var(--dur-base) ease;
-}
-.wave-mod-modal.is-visible .wave-mod-modal-card {
-  transform: translateY(0) scale(1);
-}
-.wave-mod-modal-title {
-  margin: 0;
-  font-size: var(--text-3xl);
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 0.02em;
-}
-.wave-mod-modal-sub {
-  margin: 0 0 6px;
-  color: var(--text-1);
-  font-size: var(--text-md);
-  line-height: 1.45;
-}
+/* Wave modifier (mutator) picker — content only; the shell is `.modal`. */
 .wave-mod-modal-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -2973,9 +2879,7 @@ button:disabled {
   color: var(--text-0);
 }
 
-#modal-root { position: fixed; inset: 0; pointer-events: none; z-index: 100; }
-#modal-root .welcome-modal { pointer-events: auto; }
-#modal-root .wave-mod-modal { pointer-events: auto; }
+#modal-root { position: fixed; inset: 0; pointer-events: none; z-index: var(--z-modal); }
 
 /* Settings panel */
 .settings-panel {
@@ -3224,8 +3128,7 @@ button:disabled {
 }
 
 /* ── Run Summary Modal (#1) ── */
-.run-summary-modal { z-index: 110; }
-.run-summary-card { width: min(520px, calc(100vw - 32px)); }
+/* Shell and width come from `.modal` (§8.F). */
 .run-summary-stats {
   grid-template-columns: 1fr 1fr;
 }
@@ -5518,7 +5421,7 @@ body.eq-dragging img { pointer-events: none; }
   color: var(--text-0);
   border-color: var(--accent);
 }
-.keybinds-card { max-width: 560px; text-align: left; }
+.keybinds-card { text-align: left; }
 .keybinds-groups {
   display: flex;
   flex-direction: column;
@@ -5567,56 +5470,6 @@ body.eq-dragging img { pointer-events: none; }
 
 /* ── Blessing draft (gameplay plan §1) ──────────────────────────────────── */
 
-.blessing-modal {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 112;
-  opacity: 0;
-  transition: opacity var(--dur-base) ease;
-}
-.blessing-modal.is-visible { opacity: 1; }
-#modal-root .blessing-modal { pointer-events: auto; }
-.blessing-modal-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(var(--rgb-shadow), 0.62);
-  backdrop-filter: blur(3px);
-}
-.blessing-modal-card {
-  position: relative;
-  width: min(760px, calc(100vw - 32px));
-  max-height: calc(100vh - 64px);
-  overflow-y: auto;
-  padding: 22px 24px;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
-  border: 1px solid var(--stroke-strong);
-  border-radius: var(--radius-2xl);
-  box-shadow: var(--elev-5);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  transform: translateY(8px) scale(0.98);
-  transition: transform var(--dur-base) ease;
-}
-.blessing-modal.is-visible .blessing-modal-card {
-  transform: translateY(0) scale(1);
-}
-.blessing-modal-title {
-  margin: 0;
-  font-size: var(--text-3xl);
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 0.02em;
-}
-.blessing-modal-sub {
-  margin: 0 0 4px;
-  color: var(--text-1);
-  font-size: var(--text-md);
-  line-height: 1.45;
-}
 .blessing-modal-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
