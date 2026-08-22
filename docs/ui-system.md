@@ -50,17 +50,96 @@ UI reads state through cached API interfaces (set via setters, refreshed in `syn
 
 ## HUD Components
 
-Top bar displays:
-- Gold (formatted with suffixes)
-- Kills count
-- Wave number + controls (prev/auto/next)
-- Tower HP bar (with critical warning at ≤40%)
-- Mana bar (locked until wave 10)
-- DPS estimate (averaged over 30 frames)
-- FPS counter
-- Speed controls (-/+)
-- **Risk** stepper (0-5, gameplay plan §7.4) next to the speed controls
-- **Call** button and a momentum readout in the wave block (§7.1)
+UI plan §7. Three vocabularies — chips, bars and the wave header — plus the
+speed stepper and the two stat popups.
+
+| Element | Reads | Notes |
+|---|---|---|
+| Gold / Kills / DPS chips | `resources.gold`, `stats.enemiesKilled`, smoothed DPS | icon + caption + display-face value |
+| Tower HP bar | `tower.hp / maxHp` | critical at ≤40% |
+| Mana bar | `resources.mana / maxMana` | locked until wave 10 |
+| Tower XP bar | `towerXp` | level badge in the head |
+| Wave header | `wave.number`, `PacingHudData` | focal number, boss state, threat marks, controls, risk dial |
+| Speed stepper | `SpeedAPI` | right-hand group |
+| FPS | written by `Game` into `getFpsEl()` | a diagnostic, styled as a lesser citizen |
+
+### Resource chips (`.hud-pill`)
+
+`HUD.addPill` builds icon + caption + value; `HUD.setPillValue` writes it. Two
+pieces of motion, and they say different things:
+
+- **the tick** fires whenever the resource goes up;
+- **the flare** fires only when the gain is worth ≥12% of what was already there
+  — proportional, because "a lot of gold" means something different at wave 3
+  and at wave 300.
+
+DPS gets neither: it is a rate, and a rate drifting up every frame would flicker
+continuously without marking anything the player did.
+
+Gain detection reads the **authoritative** state number, not the tweened display
+one. The tween lags by a few frames, so detecting on it re-fires the tick for
+every frame the number spends easing towards its target.
+
+Both animations exist twice under two class names that alternate. That is what
+restarts them on a repeat gain; the usual `offsetWidth` read forces a
+synchronous layout on every gold pickup. The same trick is used by the bar
+pulse, the ability ready-flash and the boss phase flash — if you see an `-a` /
+`-b` class pair in this part, that is why.
+
+On a phone a chip drops its written caption and keeps its mark. The name stays
+as an `aria-label`.
+
+### Bars (`.hud-bar-block`)
+
+One `HUD.makeBar` and one rule set for HP, mana and XP. Beyond the fill:
+
+| Part | What it answers |
+|---|---|
+| Gradient lit along the top edge | makes the bar a surface, not a coloured rectangle |
+| **Ghost** | "how much did that hit take", as a length |
+| Segment ticks at each 25% | at HUD size, 61% and 74% are the same bar without them |
+| **Threshold pulse** | the frame the reading changed meaning |
+
+The ghost's hold is re-armed by every further drop, so a tower under sustained
+fire keeps it pinned and only pays it out once the hitting stops — the read
+wanted is the damage from *this* exchange. XP suppresses it: XP wraps to zero on
+a level-up, and a trail across the whole bar would read as a loss.
+
+Fills and ghosts run on the per-frame `tickDisplay`, not the throttled `update`.
+The fill is already smoothed by the number tween, so a CSS width transition on
+top of it double-smoothed and visibly lagged a hit; and a ghost stepping at
+10 fps is a stutter, not a trail. The caching `dom` helpers keep a still bar at
+zero writes. Each bar seeds itself on its first real reading — without that,
+mana on a fresh save opens the run with a full-width ghost draining away.
+
+HP's critical state is **`--fx-critical`**, never `--bad`: Part 2 split those so
+this surface could out-shout a Clear Save button rather than match it. It also
+carries hazard stripes, because colour alone puts the whole signal on one axis.
+
+### The wave header (`.hud-wave-block`)
+
+The wave number is the focal element — `--font-display` at `--text-7xl`, tabular
+— with step chevrons flanking it and everything that *qualifies* the wave
+arranged around it on one grid: state, threat, controls, risk dial, momentum.
+
+`focal`, `side` and `controls` are direct children of that grid, which is what
+lets the phone layout drop the controls to a full-width row underneath instead
+of squeezing five controls into the 200px left beside the number.
+
+Boss-wave state reads off `isBossWave` — the same predicate `WaveManager` spawns
+from, so the header and the spawner cannot disagree about what wave 40 is.
+
+The **threat marks** are the coming wave's named types as icon+count chips, from
+the enemy table's own icons. Trash is counted and never named, exactly as the
+arena overlay does it. The row rebuilds only when the composition signature
+changes, so an intermission does not re-create a dozen `<svg>`s ten times a
+second. The arena's `PacingOverlay` keeps the readable sentence next to the
+spawn arrows it describes; the header is the glance in the persistent chrome,
+and on a phone it stands down rather than saying the same thing twice.
+
+The **risk dial** lives here rather than beside the speed stepper: risk is a
+statement about the next wave, so the number it prices should be on screen with
+it.
 
 ## Canvas overlays
 

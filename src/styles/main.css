@@ -517,6 +517,14 @@ button:disabled {
   from { text-shadow: 0 0 10px rgba(var(--rgb-blood), 0.3); }
   to   { text-shadow: 0 0 22px rgba(var(--rgb-blood), 0.75); }
 }
+/* Ambient loops stop; the blood tint that carries the actual information does
+   not. Same rule as everywhere else in Part 7 — a cue is not decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-wave-focal.is-boss .hud-wave-number {
+    animation: none;
+    text-shadow: 0 0 18px rgba(var(--rgb-blood), 0.55);
+  }
+}
 
 /* Step chevrons. 32px wide on desktop and taken up to the 44px touch minimum
    in the mobile branch — a wave-step is destructive enough (it restarts the
@@ -4180,6 +4188,26 @@ body.is-resizing * { cursor: ew-resize !important; }
     left: 8px;
     right: 8px;
   }
+  /* §0.8 rule 3: the strip's only touch route is tapping this chip, and it was
+     a 46x28 target. It keeps its compact look and gains the 44px it needs by
+     padding rather than by growing its content. */
+  .milestone-collapsed-btn {
+    min-height: 44px;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* The rest of the HUD's phone-only controls, all of which were between 19px
+     and 29px. The "more" popup and the two stat popups exist *because* the
+     phone HUD is compact, so their own controls being the hardest things on
+     screen to hit was exactly backwards. */
+  .hud-more-popover .hud-ctrl-btn,
+  .hud-more-popover-close,
+  .hud-stats-popup-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .hud-more-popover-actions .hud-stats-btn { min-height: 44px; }
+  .hud-stats-popup-close { top: var(--space-1); right: var(--space-1); }
 
   /* Milestone strip: expand as a vertical column growing upward from above
      the collapsed button (20px gap). The collapsed button stays at the
@@ -5685,6 +5713,8 @@ body.eq-dragging img { pointer-events: none; }
     from -90deg,
     var(--rim-tone, var(--warn)) 0deg var(--rim-angle),
     transparent var(--rim-angle) 360deg);
+  /* The two `#000`s are mask *alpha*, not palette — opaque is the only value
+     that means "keep this pixel". §0.8 rule 4 is about colour choices. */
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -5870,6 +5900,12 @@ body.eq-dragging img { pointer-events: none; }
 @keyframes call-wave-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(var(--rgb-warn), 0.45); }
   50% { box-shadow: 0 0 0 4px rgba(var(--rgb-warn), 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud-call-wave-btn.is-armed {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(var(--rgb-warn), 0.45);
+  }
 }
 
 .hud-momentum {
