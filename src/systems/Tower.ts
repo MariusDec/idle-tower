@@ -1,5 +1,5 @@
 import type { DamageType, Enemy, TowerState, TargetingMode } from '../types';
-import { isTargetable, PRIORITY_TARGET_ORDER } from '../data/enemies';
+import { armorDamageMultiplier, isTargetable, PRIORITY_TARGET_ORDER } from '../data/enemies';
 import { distance2 } from '../utils/math';
 
 /**
@@ -190,7 +190,7 @@ export class Tower {
     if (damageType === 'magic') {
       dmg *= 1 - enemy.magicResist;
     } else {
-      dmg -= enemy.armor;
+      dmg *= armorDamageMultiplier(enemy.armor);
     }
     return Math.max(1, dmg);
   }

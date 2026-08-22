@@ -68,9 +68,17 @@ export const UPGRADES: UpgradeDef[] = [
      * 5.1x on their own and were all affordable inside eight waves, which is
      * the overshoot that made the tower one-shot everything from wave 4 to the
      * wall. `0.242 = 2.2 x 0.11`, so the summed form is geometric from L1.
+     *
+     * The **costs** are not §5.3's 10 / 1.16, and the reason is the §14 gates.
+     * At 1.16 the greedy buyer takes almost exactly one level per wave, and
+     * `1.11^1` per level against `ENEMY_HP_GROWTH = 1.11` cancels *exactly*:
+     * shots-to-kill never moves, so nothing walls until `fireRate` saturates
+     * (measured wall 129, run 175 min). 8 / 1.18 buys the same opener a wave
+     * earlier and then falls behind at ~0.85 levels/wave, which is what makes
+     * shots-to-kill drift 2.5 -> 4.1 across a run and puts the wall at 40.
      */
-    baseCost: 10,
-    costGrowth: 1.16,
+    baseCost: 8,
+    costGrowth: 1.18,
     effectPerLevel: '0.242 * Math.pow(1.11, {level} - 2)',
     baseEffect: 2.2,
     startLevel: 1,
@@ -93,9 +101,16 @@ export const UPGRADES: UpgradeDef[] = [
      * deliberately additive and hard-capped. Two compounding DPS axes multiply
      * into a runaway — the verified candidate with both geometric walled at
      * wave 140. Composed ceiling from the upgrade alone is 7.75 shots/s.
+     *
+     * The ceiling (`+0.15`/level to L45) is §5.1's; the **price** is steeper
+     * than §5.3's 40 / 1.18. Cheap enough and the line alone covers enemy-count
+     * growth for a hundred waves; too dear and wave 10's boss — 614 effective
+     * HP behind armor, in a 139 s budget — is unbeatable at any damage table.
+     * 25 / 1.30 puts L1 inside wave 9's income and the ceiling out of a fresh
+     * run's reach, so the wall lands where coverage has to take over (§4).
      */
-    baseCost: 40,
-    costGrowth: 1.18,
+    baseCost: 25,
+    costGrowth: 1.30,
     effectPerLevel: 0.15,
     effectType: 'add',
     maxLevel: 45,

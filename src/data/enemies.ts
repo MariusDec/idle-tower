@@ -303,6 +303,32 @@ const BOSS_TIER_NAMES: readonly string[] = [
   'Tyrant', 'Leviathan', 'Archon', 'Nemesis', 'Sovereign',
 ];
 
+/**
+ * The softening constant behind `armorDamageMultiplier`.
+ *
+ * Armor used to be a **flat** subtraction from every hit (`dmg -= enemy.armor`)
+ * against `EnemyDef.armor` values that never scale with the wave. That is only
+ * survivable while per-shot damage is large: on the pre-revamp table a boss's
+ * armor 6 was ~16% of a wave-10 hit and rounding error by wave 30. The revamp's
+ * §5 curve cuts early per-shot damage roughly 6x, at which point the *same*
+ * flat 6 eats four fifths of every arrow and wave 10 becomes unbeatable at any
+ * damage table — the constraints in §14 gates 5 and 6 go mutually exclusive.
+ *
+ * So armor is a *fraction* of the hit instead: `K / (K + armor)`, scale-free by
+ * construction, which is what keeps it worth the same slice of an arrow at
+ * wave 10 and at wave 200. K = 20 puts a boss (6) at -23%, a tank (3) at -13%
+ * and a warden/siege (2) at -9% — the neighbourhood flat armor occupied on the
+ * old table, without the cliff. Armor penetration still applies to the armor
+ * *value* before the curve, so `armorPen`/`armorPenFlat` keep their meaning.
+ */
+export const ARMOR_SOFTENING = 20;
+
+/** Fraction of a physical hit that survives `armor`. Never below `K/(K+armor)`. */
+export function armorDamageMultiplier(armor: number): number {
+  if (armor <= 0) return 1;
+  return ARMOR_SOFTENING / (ARMOR_SOFTENING + armor);
+}
+
 /** Boss tier for a wave: `floor(wave / 10)`, never below 1. */
 export function bossTierForWave(wave: number): number {
   return Math.max(1, Math.floor(wave / 10));

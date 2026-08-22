@@ -20,6 +20,8 @@ import { ProjectileManager } from '../src/systems/ProjectileManager';
 import { Tower } from '../src/systems/Tower';
 import { WaveManager } from '../src/systems/WaveManager';
 import {
+  ARMOR_SOFTENING,
+  armorDamageMultiplier,
   ENEMY_BEHAVIOR,
   ENEMY_DEFS,
   isTargetable,
@@ -709,5 +711,50 @@ describe('spawn pool (plan §2.4)', () => {
     // Never over the wave's budget, whatever the pack rolls did.
     expect(wm.snapshot.enemiesSpawned).toBe(target);
     expect(mgr.list.length).toBe(target);
+  });
+});
+
+describe('armor is a fraction of a hit, not a flat subtraction (revamp §5 gap fix)', () => {
+  /*
+   * `EnemyDef.armor` never scales with the wave, so a flat `dmg -= armor` is a
+   * different tax at every depth: rounding error once per-shot damage is large,
+   * and four fifths of an arrow under the §5 damage curve, where wave 10's boss
+   * (armor 6) became unbeatable at *any* damage table. These tests pin the
+   * proportional model, in the two places that must never disagree — the game's
+   * `Tower.applyResists` and the sim's `perShotDamage`, which reads the same
+   * helper.
+   */
+  it('takes the same share of a small hit and a huge one', () => {
+    const tower = makeTower();
+    const boss = { armor: 6, magicResist: 0 } as Enemy;
+    const small = tower.applyResists(boss, 10, 'physical');
+    const large = tower.applyResists(boss, 10_000, 'physical');
+    expect(small / 10).toBeCloseTo(large / 10_000, 6);
+    expect(small / 10).toBeCloseTo(armorDamageMultiplier(6), 6);
+  });
+
+  it('prices the shipped armour values off ARMOR_SOFTENING', () => {
+    expect(armorDamageMultiplier(0)).toBe(1);
+    expect(armorDamageMultiplier(ENEMY_DEFS.boss.armor))
+      .toBeCloseTo(ARMOR_SOFTENING / (ARMOR_SOFTENING + 6), 6);
+    // More armour is always worse for the shot, and never all of it.
+    expect(armorDamageMultiplier(ENEMY_DEFS.tank.armor))
+      .toBeGreaterThan(armorDamageMultiplier(ENEMY_DEFS.boss.armor));
+    expect(armorDamageMultiplier(1000)).toBeGreaterThan(0);
+  });
+
+  it('never lets armour delete a hit the way the flat model did', () => {
+    // The failure this replaces: 5 raw damage against armor 6 floored at 1.
+    const tower = makeTower();
+    const boss = { armor: 6, magicResist: 0 } as Enemy;
+    expect(tower.applyResists(boss, 5, 'physical')).toBeGreaterThan(3);
+  });
+
+  it('still leaves armour penetration meaningful', () => {
+    const tower = makeTower();
+    const full = { armor: 6, magicResist: 0 } as Enemy;
+    const penned = { armor: 3, magicResist: 0 } as Enemy;
+    expect(tower.applyResists(penned, 100, 'physical'))
+      .toBeGreaterThan(tower.applyResists(full, 100, 'physical'));
   });
 });

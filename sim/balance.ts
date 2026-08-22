@@ -597,6 +597,19 @@ console.log(
   + '\nit is 1.00 until `pierce` / `splash` / the AP-TP coverage nodes exist (revamp tasks 4, 7, 8).\n',
 );
 console.log(
+  'Armor note: `EnemyDef.armor` is a *fraction* of a hit (`K/(K+armor)`, K = ARMOR_SOFTENING),'
+  + '\nnot the flat subtraction it was through task 4. Flat armour is a tax that never scales, so'
+  + '\nunder §5\'s damage curve wave 10\'s boss (armor 6) took four fifths of every arrow and gates 5'
+  + '\nand 6 became mutually exclusive at any damage table. The game and this model read the same'
+  + '\nhelper, so the two cannot drift.\n',
+);
+console.log(
+  'Cost note: `damage` ships at 8 / 1.18 and `fireRate` at 25 / 1.30, not §5.3\'s 10 / 1.16 and'
+  + '\n40 / 1.18 (§16 lever 2). At 1.16 the buyer takes ~1 level/wave and +11%/level cancels'
+  + '\n`ENEMY_HP_GROWTH` exactly — shots-to-kill never moves and nothing walls until `fireRate`'
+  + '\nsaturates (measured wall 129, 175 min). The effect shapes and maxLevels are §5.3\'s.\n',
+);
+console.log(
   'Provenance: the revamp\'s §1 baseline was measured with a greedy buyer that could reach only'
   + '\nsix upgrade ids. §13.1 widened that to every line the model can price, which is a stronger'
   + '\ntower and therefore a different curve — not a drift. The old buyer is still reproducible:\n',
