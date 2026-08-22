@@ -18,6 +18,7 @@ import { PrestigeManager } from '../src/systems/PrestigeManager';
 import { PROJECTILE_SPEED } from '../src/data/tower';
 import { CORE_TUNING } from '../src/data/cores';
 import {
+  PRESTIGE_PROJECTILE_TUNING,
   SPLASH_FRACTION_CAP,
   TP_AOE_SPLASH_RADIUS,
   composeShotSplash,
@@ -267,5 +268,65 @@ describe('shot evolutions (revamp §6.1)', () => {
     const secondHit = 1e9 - second.hp;
     expect(firstHit).toBeGreaterThan(0);
     expect(secondHit).toBeCloseTo(firstHit * 1.15, 4);
+  });
+});
+
+describe('projectile payloads (revamp §7 / gate 12)', () => {
+  const { extraDamageScale, rearDamageScale, scatterDamageScale } = PRESTIGE_PROJECTILE_TUNING;
+
+  it('ships the §7 payload fractions', () => {
+    expect(extraDamageScale).toBe(0.55);
+    expect(rearDamageScale).toBe(0.55);
+    expect(scatterDamageScale).toBe(0.35);
+  });
+
+  /**
+   * The volley Game.buildShotVariants() produces with the whole AP suite: the
+   * ordinary shot at full payload, Twin Arrows and Rear Guard at 55%, and each
+   * of the two Scatter lanes at 35%.
+   */
+  it('lands Twin/Rear at 55% and each Scatter lane at 35% of rawDamage', () => {
+    const { towerState, projectiles } = harness();
+    const rawDamage = 1000;
+
+    const created = projectiles.fire(null, towerState, {
+      rawDamage, damageType: 'physical', isCrit: false, targetId: null,
+      variants: [
+        {},
+        { posOffsetY: -10, damageScale: extraDamageScale },
+        { angleOffset: -0.5, damageScale: scatterDamageScale },
+        { angleOffset: 0.5, damageScale: scatterDamageScale },
+        { angleOffset: Math.PI, posOffsetY: -10, damageScale: rearDamageScale },
+      ],
+    });
+
+    expect(created.map(p => p.damage)).toEqual([
+      rawDamage,
+      rawDamage * 0.55,
+      rawDamage * 0.35,
+      rawDamage * 0.35,
+      rawDamage * 0.55,
+    ]);
+    // The whole suite is worth x2.80 before geometry, not x5 (§7).
+    const total = created.reduce((sum, p) => sum + p.damage, 0);
+    expect(total).toBeCloseTo(rawDamage * 2.80, 6);
+  });
+
+  it('leaves an unscaled variant — ordinary, Barrage, Rapid Fire — at full payload', () => {
+    const { towerState, projectiles } = harness();
+    const created = projectiles.fire(null, towerState, {
+      rawDamage: 1000, damageType: 'physical', isCrit: false, targetId: null,
+      variants: [{}, { posOffsetY: -12 }, { posOffsetY: 12 }],
+    });
+    expect(created.every(p => p.damage === 1000)).toBe(true);
+  });
+
+  it('applies the payload through Game.buildShotVariants, not just at the call site', () => {
+    const src = readFileSync(new URL('../src/game/Game.ts', import.meta.url), 'utf8');
+    const body = src.slice(src.indexOf('private buildShotVariants'));
+    const fn = body.slice(0, body.indexOf('\n  }'));
+    expect(fn).toContain('PRESTIGE_PROJECTILE_TUNING.extraDamageScale');
+    expect(fn).toContain('PRESTIGE_PROJECTILE_TUNING.scatterDamageScale');
+    expect(fn).toContain('PRESTIGE_PROJECTILE_TUNING.rearDamageScale');
   });
 });

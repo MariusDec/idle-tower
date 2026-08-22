@@ -110,6 +110,20 @@ export const FIRST_ASCENSION_AP = 25;
 export const TRANSCENDENCE_UNLOCK_AP = 100;
 
 /**
+ * Revamp §7: the AP projectile perks add *coverage*, not a damage multiplier.
+ * Every extra lane carries a fraction of the volley's payload, so the whole
+ * suite is worth ~x2.8 before geometry rather than the ~x13 it used to be.
+ *
+ * One shared block: `Game.buildShotVariants()` ships it and `sim/model.ts`
+ * reads it, so the simulator measures the number that actually fires.
+ */
+export const PRESTIGE_PROJECTILE_TUNING = {
+  extraDamageScale: 0.55,   // Twin Arrows, front lane
+  rearDamageScale: 0.55,    // Rear Guard, behind the tower
+  scatterDamageScale: 0.35, // Scatter Shot, each of two angled lanes
+} as const;
+
+/**
  * Plan §3.2: the ascension layer used to be eight independent nodes, every one
  * of them affordable within a couple of runs — a shopping list, not a tree.
  * It now has three tiers: the opening projectile/utility nodes are free to buy
@@ -123,7 +137,7 @@ export const AP_PERKS: PrestigePerkDef[] = [
     id: 'ap_extra_shots',
     layer: 'ascension',
     name: 'Twin Arrows',
-    description: '+1 front projectile',
+    description: 'Adds one front projectile at 55% damage',
     costPerLevel: 2,
     costScaling: 2.5,
     maxLevel: 10,
@@ -137,7 +151,7 @@ export const AP_PERKS: PrestigePerkDef[] = [
     id: 'ap_scatter_shots',
     layer: 'ascension',
     name: 'Scatter Shot',
-    description: '+1 scatter projectile',
+    description: 'Adds two angled projectiles at 35% damage each',
     costPerLevel: 2,
     costScaling: 2.5,
     maxLevel: 5,
@@ -151,7 +165,7 @@ export const AP_PERKS: PrestigePerkDef[] = [
     id: 'ap_back_shots',
     layer: 'ascension',
     name: 'Rear Volley',
-    description: '+1 rear projectile',
+    description: 'Adds one rear projectile at 55% damage',
     costPerLevel: 3,
     costScaling: 2.5,
     maxLevel: 3,

@@ -55,6 +55,8 @@ export interface ShotVariant {
   angleOffset?: number;
   posOffsetX?: number;
   posOffsetY?: number;
+  /** Fraction of the volley's damage this variant carries. Defaults to 1. */
+  damageScale?: number;
 }
 
 export interface FireOptions {
@@ -219,7 +221,7 @@ export class ProjectileManager {
         targetId: opts.targetId,
         vx,
         vy,
-        damage: scaled,
+        damage: scaled * Math.max(0, v.damageScale ?? 1),
         damageType: opts.damageType,
         isCrit: opts.isCrit,
         alive: true,

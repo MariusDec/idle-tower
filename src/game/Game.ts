@@ -58,7 +58,12 @@ import {
 } from '../data/formulas';
 import type { AutomationKey } from '../data/prestige';
 import type { ShotSplash } from '../data/prestige';
-import { DEFAULT_AUTO_ASCEND_WAVE, TP_AOE_SPLASH_RADIUS, composeShotSplash } from '../data/prestige';
+import {
+  DEFAULT_AUTO_ASCEND_WAVE,
+  PRESTIGE_PROJECTILE_TUNING,
+  TP_AOE_SPLASH_RADIUS,
+  composeShotSplash,
+} from '../data/prestige';
 import { AudioManager } from '../systems/AudioManager';
 import { TowerXpManager } from '../systems/TowerXpManager';
 import { TalentManager } from '../systems/TalentManager';
@@ -3350,19 +3355,28 @@ export class Game {
     for (let i = 0; i < extra; i++) {
       const side = i % 2 === 0 ? -1 : 1;
       const lane = Math.floor(i / 2) + 1;
-      variants.push({ posOffsetX: 0, posOffsetY: side * 10 * lane });
+      variants.push({
+        posOffsetX: 0,
+        posOffsetY: side * 10 * lane,
+        damageScale: PRESTIGE_PROJECTILE_TUNING.extraDamageScale,
+      });
     }
     const scatter = this.prestigeMgr.getScatterShots();
     for (let lvl = 0; lvl < scatter; lvl++) {
       const angle = Math.min((30 + 15 * lvl) * Math.PI / 180, 75 * Math.PI / 180);
-      variants.push({ angleOffset: -angle });
-      variants.push({ angleOffset: angle });
+      const scatterScale = PRESTIGE_PROJECTILE_TUNING.scatterDamageScale;
+      variants.push({ angleOffset: -angle, damageScale: scatterScale });
+      variants.push({ angleOffset: angle, damageScale: scatterScale });
     }
     const back = this.prestigeMgr.getBackShots();
     for (let i = 0; i < back; i++) {
       const side = i % 2 === 0 ? -1 : 1;
       const lane = Math.floor(i / 2) + (i != 1 ? 1 : 0);
-      variants.push({ angleOffset: Math.PI, posOffsetY: side * 10 * lane });
+      variants.push({
+        angleOffset: Math.PI,
+        posOffsetY: side * 10 * lane,
+        damageScale: PRESTIGE_PROJECTILE_TUNING.rearDamageScale,
+      });
     }
     return variants;
   }

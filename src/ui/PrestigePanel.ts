@@ -3,6 +3,7 @@ import type { PrestigePerkDef } from '../data/prestige';
 import {
   AP_PERKS,
   ASCENSION_UNLOCK_WAVE,
+  PRESTIGE_PROJECTILE_TUNING,
   apForWave,
   perkCost,
   computePerkEffect,
@@ -212,19 +213,26 @@ export class PrestigePanel {
   }
 
   private formatAPBonusText(p: PrestigePerkDef, level: number, atMax: boolean): string {
+    const pct = (scale: number) => Math.round(scale * 100);
+    const extraPct = pct(PRESTIGE_PROJECTILE_TUNING.extraDamageScale);
+    const rearPct = pct(PRESTIGE_PROJECTILE_TUNING.rearDamageScale);
+    const scatterPct = pct(PRESTIGE_PROJECTILE_TUNING.scatterDamageScale);
     switch (p.effectType) {
+      // Revamp §7/§12.5: these rows state the *payload*, never a bare
+      // projectile count — an extra lane carries a fraction of the volley, and
+      // a player pricing the node against its cost has to be able to see that.
       case 'extra_shots':
         return atMax
-          ? `+${level} parallel projectile${level === 1 ? '' : 's'}`
-          : `+1 projectile per level`;
+          ? `+${level} front projectile${level === 1 ? '' : 's'} at ${extraPct}% damage`
+          : `Adds one front projectile at ${extraPct}% damage`;
       case 'scatter_shots':
         return atMax
-          ? `+${level * 2} scatter projectile${level * 2 === 1 ? '' : 's'}`
-          : `+2 projectiles per level`;
+          ? `+${level * 2} angled projectile${level * 2 === 1 ? '' : 's'} at ${scatterPct}% damage each`
+          : `Adds two angled projectiles at ${scatterPct}% damage each`;
       case 'back_shots':
         return atMax
-          ? `+${level} rear projectile${level === 1 ? '' : 's'}`
-          : `+1 projectile per level`;
+          ? `+${level} rear projectile${level === 1 ? '' : 's'} at ${rearPct}% damage`
+          : `Adds one rear projectile at ${rearPct}% damage`;
       case 'auto_buy':
         return 'Unlocks the Auto-Upgrader automation';
       case 'wave_skip':

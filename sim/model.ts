@@ -27,6 +27,7 @@ import {
   ENRAGE_STACK_INTERVAL,
 } from '../src/data/formulas.ts';
 import {
+  armorDamageMultiplier,
   ENEMY_BEHAVIOR,
   ENEMY_DEFS,
   bossMaxHpForWave,
@@ -46,9 +47,8 @@ import {
   riskHpMult,
 } from '../src/data/pacing.ts';
 import { UPGRADES, splashRadiusForLevel } from '../src/data/upgrades.ts';
-// Namespace import on purpose: `PRESTIGE_PROJECTILE_TUNING` (revamp §7) does
-// not exist yet — it ships with task 6 — and this is what lets the sim pick it
-// up on the commit that adds it instead of needing a second edit here.
+// Namespace import on purpose: it is what lets the sim pick up
+// `PRESTIGE_PROJECTILE_TUNING` (revamp §7) through the indexed lookup below.
 import * as PRESTIGE_DATA from '../src/data/prestige.ts';
 import { MANUAL_AIM, TOWER_BASE } from '../src/data/tower.ts';
 import { computeUpgradeValue } from '../src/types.ts';
@@ -276,7 +276,7 @@ export interface WaveProfile {
   count: number;
   /** Total effective HP the tower must chew through. */
   totalHp: number;
-  /** Mean armor across the wave (physical damage is reduced flat per hit). */
+  /** Mean armor across the wave (physical damage keeps `K/(K+armor)` of a hit). */
   avgArmor: number;
   /** Mean magic resist — what the arcane proc is reduced by instead of armour. */
   avgMagicResist: number;
@@ -987,13 +987,13 @@ export function procShare(l: Loadout): number {
 function perShotDamage(l: Loadout, armor: number, magicResist: number): number {
   const raw = hitDamage(l);
   const effectiveArmor = Math.max(0, armor - l.blessings.armorPenFlat);
-  const ordinary = Math.max(1, raw - effectiveArmor);
+  const ordinary = Math.max(1, raw * armorDamageMultiplier(effectiveArmor));
   const share = procShare(l);
   if (share <= 0) return ordinary;
   const m = CORE_MODEL[l.core];
   const proc = m.procIgnoresArmor
     ? Math.max(1, raw * m.procMult * (1 - magicResist))
-    : Math.max(1, raw * m.procMult - effectiveArmor);
+    : Math.max(1, raw * m.procMult * armorDamageMultiplier(effectiveArmor));
   return ordinary * (1 - share) + proc * share;
 }
 
@@ -1037,10 +1037,9 @@ const COVERAGE_TUNING = {
 /**
  * Payload scales for the AP projectile perks (revamp §7).
  *
- * Read from `PRESTIGE_PROJECTILE_TUNING` when `src/data/prestige.ts` exports it,
- * so the sim measures the number that ships rather than a copy of it. The
- * constant arrives with revamp task 6; until then the fallback is `1`, which is
- * exactly today's behaviour — every variant carries the full `rawDamage`.
+ * Read from `PRESTIGE_PROJECTILE_TUNING` in `src/data/prestige.ts`, so the sim
+ * measures the payload that ships rather than a copy of it. The `1` fallback is
+ * the pre-task-6 behaviour — every variant carrying the full `rawDamage`.
  */
 interface ProjectileTuning {
   extraDamageScale: number;
@@ -1048,9 +1047,9 @@ interface ProjectileTuning {
   scatterDamageScale: number;
 }
 
-// Indexed through a variable rather than dotted, so the bundler does not warn
-// about a named import that does not exist yet — the whole point is that it may
-// not, and a warning on every `npm run sim` until task 6 lands is noise.
+// Indexed through a variable rather than dotted: the namespace object carries
+// the live export, and the lookup keeps the fallback honest if it is ever
+// removed rather than failing the bundle.
 const PROJECTILE_TUNING_KEY = 'PRESTIGE_PROJECTILE_TUNING';
 
 const PROJECTILE_TUNING: ProjectileTuning =
