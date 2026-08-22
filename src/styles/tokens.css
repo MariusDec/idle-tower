@@ -375,8 +375,11 @@
      at 89px in-browser (title + 3 rows + gaps); the extra leaves the strip a few
      pixels of clearance rather than sitting on the top row. */
   --contract-tracker-height: 96px;
-  /* Bottom ability bar height. */
-  --ability-bar-height: 76px;
+  /* Bottom ability dock height. 56px tile + the level pip row + the name,
+     plus its padding (UI plan §7). Four other overlays offset themselves by
+     this, so it is a declared constant rather than a measured one; the mobile
+     branch overrides it, where the dock drops the name and the hotkey badge. */
+  --ability-bar-height: 96px;
   /* Bottom mobile nav height. */
   --bottom-nav-height: 60px;
   /* Approximate mobile HUD height (2 rows: wave block + hp/mana bars). Used to

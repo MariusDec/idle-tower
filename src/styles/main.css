@@ -1610,17 +1610,41 @@ button:disabled {
 .ability-btn.is-flash { animation: ability-flash var(--dur-base) ease-out; }
 .ability-btn:disabled { cursor: not-allowed; }
 
-.ability-cooldown-overlay {
+/* The cooldown sweep (UI plan §7).
+ *
+ * It was a dark panel rising from the bottom of the tile, which reads as a
+ * *fill level* — the tile filling up — rather than as a clock winding down, and
+ * at 56px the difference between 30% and 45% full was a few pixels. A conic
+ * sweep from twelve o'clock is a clock face, which is what a cooldown is, and
+ * the remaining seconds sit in the middle of it. `--cd-angle` is written from
+ * TS each frame: 0deg is the whole tile dark, 360deg is ready. */
+.ability-cooldown-radial {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 0;
-  background: rgba(var(--rgb-surface-sunken), 0.78);
-  border-top: 1px solid var(--stroke-strong);
-  transition: height var(--dur-instant) linear, opacity var(--dur-fast) ease;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: conic-gradient(
+    from -90deg,
+    transparent 0deg var(--cd-angle, 360deg),
+    rgba(var(--rgb-surface-sunken), 0.82) var(--cd-angle, 360deg) 360deg);
+  transition: opacity var(--dur-fast) ease;
+}
+/* Remaining seconds, over the icon. The tile itself never said how long. */
+.ability-cd-text {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  color: var(--text-0);
+  text-shadow: 0 1px 3px rgba(var(--rgb-shadow), 0.95);
   pointer-events: none;
 }
+.ability-cd-text.is-visible { display: flex; }
+.ability-btn.is-cooldown .ability-icon { opacity: 0.35; }
 .ability-icon {
   position: relative;
   font-size: var(--text-5xl);
@@ -1630,18 +1654,25 @@ button:disabled {
   z-index: 1;
   letter-spacing: 0.04em;
 }
+/* The mana cost. It was always the same colour, so "can I cast this" was a
+ * look at the HUD mana bar plus arithmetic; now the badge answers it. */
 .ability-mana {
   position: absolute;
-  bottom: 4px;
-  right: 6px;
+  bottom: 3px;
+  right: 4px;
   font-size: var(--text-2xs);
-  font-weight: 700;
-  color: var(--azure-100);
-  background: rgba(var(--rgb-surface-sunken), 0.7);
+  font-weight: var(--weight-bold);
+  color: var(--fx-mana);
+  background: rgba(var(--rgb-surface-sunken), 0.85);
+  border: 1px solid color-mix(in srgb, var(--fx-mana) 45%, transparent);
   border-radius: var(--radius-sm);
-  padding: 1px 4px;
-  font-variant-numeric: tabular-nums;
-  z-index: 2;
+  padding: 0 4px;
+  z-index: 4;
+  transition: color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.ability-mana.is-unaffordable {
+  color: var(--text-3);
+  border-color: var(--stroke-subtle);
 }
 .ability-hotkey {
   position: absolute;
@@ -1931,6 +1962,13 @@ button:disabled {
    #bottom-nav-root. The ability bar stays docked. */
 @media (max-width: 768px) {
   :root { --panel-width: 0px; }
+  /* The dock is shorter on a phone: it drops the tile's written name and its
+     hotkey badge (there is no keyboard to press), and the name is still one
+     hold away on any tile. 56px targets and the pip row are untouched — those
+     are the parts §0.8 rule 3 is about. */
+  :root { --ability-bar-height: 80px; }
+  .ability-bar-slot-label { display: none; }
+  .ability-bar .ability-hotkey { display: none; }
 }
 
 /* Prestige panel */
@@ -3605,46 +3643,77 @@ body.is-resizing * { cursor: ew-resize !important; }
   .achievement-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-/* ── Ability Bar (fixed bottom dock) ── */
+/* ── The ability dock (UI plan §7) ─────────────────────────────────────────
+   A row of 52px tiles floating over the arena with no bottom safe-area
+   awareness of its own beyond a padding value, in a bar whose height was fixed
+   while its contents were not.
+
+   It is a dock now: 56px targets (the §0.8 floor, with room for the pip row
+   under them), 8px gutters, and its own safe-area padding *plus* the bottom-nav
+   height, because on a phone the two share the bottom edge and a gesture bar
+   sits under both. */
 #ability-bar-root {
   position: fixed;
   left: 0;
   right: 0;
+  bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+  /* An explicit height, not a content-sized one: the milestone strip, the
+     contract tracker and the toast stack all offset themselves by
+     `--ability-bar-height`, and a dock that grew a pixel would slide four other
+     overlays without anything saying so. */
   height: var(--ability-bar-height);
-  bottom: calc(var(--bottom-nav-height) + 20px);
   z-index: 40;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 20px 12px calc(6px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, rgba(var(--rgb-surface-2), 0.65), rgba(var(--rgb-surface-0), 0.92));
+  padding: var(--space-2) var(--space-3) var(--space-2);
+  padding-left: max(var(--space-3), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--space-3), env(safe-area-inset-right, 0px));
+  background: linear-gradient(180deg, rgba(var(--rgb-surface-2), 0.72), rgba(var(--rgb-surface-0), 0.95));
   border-top: 1px solid var(--stroke-subtle);
+  box-shadow: var(--elev-up);
   backdrop-filter: blur(8px);
   pointer-events: auto;
+  /* The dock never scrolls the page or fires a double-tap zoom under a hold. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 @media (min-width: 769px) {
   #ability-bar-root {
-    bottom: 20px;
+    bottom: 0;
+    padding-bottom: max(var(--space-2), env(safe-area-inset-bottom, 0px));
   }
 }
 .ability-bar {
   display: flex;
-  gap: 6px;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
+  gap: var(--space-2);
+  align-items: flex-start;
+  /* More abilities than gutters at a narrow viewport: scroll the dock rather
+     than shrinking the tiles under the touch minimum. `safe center` is
+     load-bearing — a plain centred flex row that overflows spills equally off
+     *both* ends, and the left spill is unreachable by scrolling, so the first
+     two abilities simply cannot be tapped. The fallback declaration is for
+     engines that do not know the keyword. */
+  max-width: 100%;
+  justify-content: flex-start;
+  justify-content: safe center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding-bottom: 2px;
 }
+.ability-bar::-webkit-scrollbar { display: none; }
 .ability-bar-slot {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
+  flex: 0 0 auto;
 }
 .ability-bar-slot-label {
   font-size: var(--text-3xs);
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
   color: var(--text-2);
   text-transform: uppercase;
   white-space: nowrap;
@@ -3652,29 +3721,87 @@ body.is-resizing * { cursor: ew-resize !important; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Reuse .ability-btn for the bar — size tweaks only. */
+/* Reuse .ability-btn for the dock — size and state tweaks only. */
 .ability-bar .ability-btn {
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   border-radius: var(--radius-xl);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
 .ability-bar .ability-btn.is-active {
   box-shadow: 0 0 0 2px var(--good), 0 0 16px -1px color-mix(in srgb, var(--good) 60%, transparent);
 }
+/* The ready-flash. Two identical animations under two names so a repeat restart
+   costs nothing; see the resource chips for why the reflow trick is not used.
+   This is the transition an idle game's abilities otherwise never get: they
+   come off cooldown while the player is looking somewhere else, so without it
+   the tile is simply different the next time they glance down. */
+.ability-bar .ability-btn.is-ready-flash-a { animation: ability-ready var(--dur-slow) var(--ease-out); }
+.ability-bar .ability-btn.is-ready-flash-b { animation: ability-ready-alt var(--dur-slow) var(--ease-out); }
+@keyframes ability-ready {
+  0%   { box-shadow: 0 0 0 0 var(--ability-color), 0 0 0 0 color-mix(in srgb, var(--ability-color) 70%, transparent); }
+  40%  { box-shadow: 0 0 0 2px var(--ability-color), 0 0 22px 4px color-mix(in srgb, var(--ability-color) 70%, transparent); }
+  100% { box-shadow: 0 0 0 1px var(--ability-color), 0 0 14px -2px color-mix(in srgb, var(--ability-color) 60%, transparent); }
+}
+@keyframes ability-ready-alt {
+  0%   { box-shadow: 0 0 0 0 var(--ability-color), 0 0 0 0 color-mix(in srgb, var(--ability-color) 70%, transparent); }
+  40%  { box-shadow: 0 0 0 2px var(--ability-color), 0 0 22px 4px color-mix(in srgb, var(--ability-color) 70%, transparent); }
+  100% { box-shadow: 0 0 0 1px var(--ability-color), 0 0 14px -2px color-mix(in srgb, var(--ability-color) 60%, transparent); }
+}
+
+/* The level pip row. Ability level had no representation on the dock at all, so
+   an ability with 40k gold sunk into it looked exactly like one nobody had ever
+   touched — and the only place to find out was the popover the row is an
+   argument for opening. Doubles as the affordable-upgrade prompt. */
+.ability-pips {
+  display: flex;
+  gap: 1px;
+  width: 56px;
+  height: 3px;
+}
+.ability-pip {
+  flex: 1 1 0;
+  border-radius: var(--radius-2xs);
+  background: var(--surface-4);
+  transition: background var(--dur-fast) ease;
+}
+.ability-pip.is-on { background: var(--ability-color, var(--accent)); }
+.ability-bar-slot.is-maxed .ability-pip.is-on { background: var(--good); }
+.ability-bar-slot.can-afford-upgrade .ability-pip:not(.is-on) {
+  background: color-mix(in srgb, var(--good) 55%, var(--surface-4));
+  animation: ability-pip-hint var(--dur-pulse) ease-in-out infinite alternate;
+}
+@keyframes ability-pip-hint {
+  from { opacity: 0.45; }
+  to   { opacity: 1; }
+}
+
 .ability-bar-empty {
   font-size: var(--text-sm);
   color: var(--text-2);
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-4);
   background: var(--surface-2);
   border: 1px solid var(--stroke-subtle);
   border-radius: var(--radius-lg);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .ability-bar-slot.can-afford-upgrade .ability-pip:not(.is-on) { animation: none; opacity: 1; }
+  .ability-bar .ability-btn.is-active { animation: none; }
+}
+
+
 /* Ability upgrade popover (long-press / context menu on the bar). */
+/* The hold-to-inspect sheet's backdrop. It was fully transparent, which was
+ * fine when the only routes in were a right click and a double click; now that
+ * a hold on any tile opens it — the primary way to read an ability on a phone —
+ * it needs to read as modal, because it is one. */
 .ability-upgrade-popover-backdrop {
   position: fixed;
   inset: 0;
-  background: transparent;
+  background: rgba(var(--rgb-shadow), 0.35);
   z-index: 65;
   display: none;
 }
@@ -3720,7 +3847,10 @@ body.is-resizing * { cursor: ew-resize !important; }
 }
 @media (min-width: 769px) {
   body.has-ability-bar #app {
-    padding-bottom: calc(var(--ability-bar-height) + 20px);
+    /* The dock now sits on the bottom edge rather than floating 20px above it,
+       so the reserved strip is exactly the dock plus whatever the device's
+       gesture bar takes. */
+    padding-bottom: calc(var(--ability-bar-height) + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -3741,7 +3871,8 @@ body.is-resizing * { cursor: ew-resize !important; }
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   body.has-ability-bar #app {
-    padding-bottom: calc(var(--ability-bar-height) + var(--bottom-nav-height) + 20px);
+    padding-bottom: calc(
+      var(--ability-bar-height) + var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   }
 }
 .bottom-nav {
@@ -4024,11 +4155,18 @@ body.is-resizing * { cursor: ew-resize !important; }
   }
 }
 
-/* ── Desktop: milestone strip floats above the ability bar ── */
+/* ── Desktop: the bottom-left corner stacks above the dock ──────────────────
+   The tracker sat at a flat `bottom: 12px` and overlapped the ability bar,
+   which the dock rebuild made obvious and which §7 says must not happen. The
+   corner is one stack now, in the same order the mobile branch already used:
+   dock, then tracker, then strip. */
 @media (min-width: 769px) {
+  .contract-tracker-slot {
+    bottom: calc(var(--ability-bar-height) + 12px);
+  }
   .milestone-strip-slot,
   .milestone-strip-root {
-    bottom: calc(var(--ability-bar-height) + 28px);
+    bottom: calc(var(--ability-bar-height) + 12px + var(--contract-tracker-height));
     left: 16px;
   }
 }
