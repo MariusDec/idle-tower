@@ -758,6 +758,15 @@ export interface GameState {
   pacing: PacingState;
 }
 
+/**
+ * Which render pass paints a particle (UI plan §5.A).
+ *
+ * `behind` is ground-level haze that must sit under the enemies, `front` is
+ * ordinary matter, and `additive` is *light* — it goes through the single
+ * `lighter` pass in `Renderer.drawAdditivePass`.
+ */
+export type ParticleLayer = 'behind' | 'front' | 'additive';
+
 export interface Particle {
   x: number;
   y: number;
@@ -767,6 +776,8 @@ export interface Particle {
   life: number;
   size: number;
   color: string;
+  /** Which pass paints this. Defaults to 'front' when an emitter omits it. */
+  layer?: ParticleLayer;
 }
 
 export interface DamageNumber {

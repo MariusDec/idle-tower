@@ -46,12 +46,33 @@ Manages transient visual effects: particles, floating damage numbers, and expand
 ## Rendering
 
 Renderer draws in layers:
-1. Background particles
-2. Shockwaves
-3. Enemies
-4. Projectiles
-5. Front particles (non-white)
+1. `behind` particles
+2. Enemies
+3. Projectiles
+4. `front` particles
+5. The additive pass (UI plan §5.A)
 6. Damage numbers
+
+### The additive pass
+
+A particle carries a `layer` field — `'behind' | 'front' | 'additive'` — and
+`pushParticle` stamps `'front'` on anything an emitter left blank. The renderer
+routes on that field; it no longer sniffs the colour string to decide what sits
+behind the enemies.
+
+`Renderer.drawAdditivePass` is the single `globalCompositeOperation = 'lighter'`
+block in the frame. It paints, in order: `additive` particles, shockwaves, chain
+lightning, tracers, the muzzle flash — everything that is *light* rather than
+matter. Additive particles fade on `pow(lifeRatio, 1.6) * 0.85` rather than
+`lifeRatio`, because additive over a near-black ground blows out fast.
+
+Rules for a new emitter:
+
+- Ground haze and smoke that must sit under the enemies: `'behind'`.
+- Debris, shards, sparks, slashes — matter: `'front'` (the default).
+- Glows, novas, auras, sparkles — light: `'additive'`.
+- Nothing on the additive pass may draw at full alpha in near-white at a radius
+  over ~24 world units. Big soft puffs stay on `'behind'`.
 
 ## Pool Caps (plan §5.3)
 

@@ -62,6 +62,9 @@ export class EffectsManager {
    * the frame cost of the particle it evicts.
    */
   private pushParticle(p: Particle): void {
+    // UI plan §5.A: routing is explicit. An emitter that says nothing is
+    // ordinary matter, painted in the `front` pass.
+    p.layer ??= 'front';
     if (this.particles.length >= MAX_PARTICLES) this.particles.shift();
     this.particles.push(p);
   }
@@ -79,6 +82,7 @@ export class EffectsManager {
         life: 0.22 + Math.random() * 0.18,
         size: 1.5 + Math.random() * 1.5,
         color,
+        layer: 'front',
       });
     }
   }
@@ -97,6 +101,7 @@ export class EffectsManager {
         life: 0.55 + Math.random() * 0.45,
         size: 2 + Math.random() * 3,
         color,
+        layer: 'front',
       });
     }
     for (let i = 0; i < Math.max(3, Math.floor(n / 3)); i++) {
@@ -109,6 +114,7 @@ export class EffectsManager {
         life: 0.9 + Math.random() * 0.4,
         size: radius * 0.45,
         color: 'rgba(255, 255, 255, 0.18)',
+        layer: 'behind',
       });
     }
   }
@@ -126,6 +132,7 @@ export class EffectsManager {
         life: 0.9 + Math.random() * 0.3,
         size: 3 + Math.random() * 2,
         color: i % 2 === 0 ? '#ff5050' : '#ffd28a',
+        layer: 'additive',
       });
     }
   }
@@ -157,6 +164,7 @@ export class EffectsManager {
         life: 0.5 + Math.random() * 0.2,
         size: 2 + Math.random() * 2,
         color: '#ff4040',
+        layer: 'additive',
       });
     }
   }
@@ -176,6 +184,7 @@ export class EffectsManager {
         life: 0.55 + Math.random() * 0.35,
         size: 1.5 + Math.random() * 1.5,
         color: '#f7d774',
+        layer: 'front',
       });
     }
   }
@@ -193,6 +202,7 @@ export class EffectsManager {
         life: 0.55 + Math.random() * 0.2,
         size: 2 + Math.random() * 2,
         color: i % 2 === 0 ? '#a3d2ff' : '#e0f0ff',
+        layer: 'additive',
       });
     }
   }
@@ -236,6 +246,7 @@ export class EffectsManager {
         life: 0.35 + Math.random() * 0.2,
         size: 2 + Math.random() * 1.5,
         color: '#ff6a4a',
+        layer: 'additive',
       });
     }
   }
@@ -253,6 +264,7 @@ export class EffectsManager {
         life: 0.5 + Math.random() * 0.3,
         size: 1.5 + Math.random() * 1.5,
         color: '#ffd24a',
+        layer: 'additive',
       });
     }
   }
@@ -276,6 +288,7 @@ export class EffectsManager {
         life: 0.4 + Math.random() * 0.3,
         size: 2.5 + Math.random() * 2,
         color: i % 3 === 0 ? '#fff3b0' : i % 3 === 1 ? '#ff7a1a' : '#ff3a00',
+        layer: 'additive',
       });
     }
     for (let i = 0; i < 18; i++) {
@@ -290,6 +303,7 @@ export class EffectsManager {
         life: 0.45 + Math.random() * 0.35,
         size: 2 + Math.random() * 2.5,
         color: i % 2 === 0 ? '#ffb04a' : '#ff3a00',
+        layer: 'additive',
       });
     }
   }
@@ -310,6 +324,7 @@ export class EffectsManager {
         life: 0.6 + Math.random() * 0.2,
         size: 1.5 + Math.random() * 1.5,
         color: i % 2 === 0 ? '#ffd34a' : '#fff0a0',
+        layer: 'additive',
       });
     }
     for (let i = 0; i < 12; i++) {
@@ -324,6 +339,7 @@ export class EffectsManager {
         life: 0.4 + Math.random() * 0.3,
         size: 1.5 + Math.random() * 1.5,
         color: '#ffe27a',
+        layer: 'additive',
       });
     }
   }
@@ -344,6 +360,7 @@ export class EffectsManager {
         life: 0.7 + Math.random() * 0.4,
         size: 2 + Math.random() * 1.5,
         color: i % 2 === 0 ? '#ff4a4a' : '#c44a4a',
+        layer: 'additive',
       });
     }
   }
@@ -376,6 +393,7 @@ export class EffectsManager {
         life: 0.6 + Math.random() * 0.3,
         size: 30 + Math.random() * 20,
         color: 'rgba(180, 30, 240, 0.18)',
+        layer: 'behind',
       });
     }
   }
@@ -428,6 +446,7 @@ export class EffectsManager {
         life: 0.6 + Math.random() * 0.3,
         size: 4 + Math.random() * 3,
         color: 'rgba(255, 255, 255, 0.3)',
+        layer: 'behind',
       });
     }
   }
@@ -445,6 +464,7 @@ export class EffectsManager {
         life: 0.25 + Math.random() * 0.15,
         size: 2 + Math.random() * 2,
         color: '#64b4ff',
+        layer: 'additive',
       });
     }
   }
@@ -466,6 +486,7 @@ export class EffectsManager {
         life: 0.3 + Math.random() * 0.2,
         size: 2 + Math.random() * 2,
         color: i % 2 === 0 ? '#ffffff' : '#a0d8ff',
+        layer: 'additive',
       });
     }
   }
@@ -491,6 +512,7 @@ export class EffectsManager {
         life: 0.35 + Math.random() * 0.2,
         size: 1.5 + Math.random() * 1.5,
         color: i % 2 === 0 ? '#3edc81' : '#aaf2c0',
+        layer: 'additive',
       });
     }
   }
@@ -524,6 +546,7 @@ export class EffectsManager {
         life: 0.15 + Math.random() * 0.1,
         size: 1.5 + Math.random() * 1.5,
         color,
+        layer: 'front',
       });
     }
     // Small bright flash ring at the enemy
@@ -552,6 +575,7 @@ export class EffectsManager {
         life: 0.4 + Math.random() * 0.3,
         size: 2 + Math.random() * 2,
         color: i % 2 === 0 ? '#c098ff' : '#ffffff',
+        layer: 'front',
       });
     }
   }

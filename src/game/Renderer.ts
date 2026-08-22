@@ -1,4 +1,4 @@
-import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, DamageNumber, Shockwave, Mine, AuraType, LootOrb } from '../types';
+import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, ParticleLayer, DamageNumber, Shockwave, Mine, AuraType, LootOrb } from '../types';
 import { LOOT_ORB_COLORS, LOOT_TUNING, type LootOrbKind } from '../data/loot';
 import { ARENA, ARENA_RANGE_CAP, entity, world } from '../data/arena';
 import type { Camera } from './Camera';
@@ -338,6 +338,17 @@ interface Emergence {
   angle: number;
 }
 
+/** Per-frame presentation extras `Game` hands the renderer. */
+interface RenderOptions {
+  screenFlash?: number;
+  towerFlash?: number;
+  wallFlash?: number;
+  shieldFlash?: number;
+  vignette?: number;
+  chainPaths?: { points: { x: number; y: number }[]; age: number; life: number }[];
+}
+
+
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly camera: Camera;
@@ -548,7 +559,7 @@ export class Renderer {
     this.bgCanvas = null;
   }
 
-  draw(snapshot: RenderSnapshot, options?: { screenFlash?: number; towerFlash?: number; wallFlash?: number; shieldFlash?: number; vignette?: number; chainPaths?: { points: { x: number; y: number }[]; age: number; life: number }[] }): void {
+  draw(snapshot: RenderSnapshot, options?: RenderOptions): void {
     this.time += FRAME_DT;
     const ctx = this.ctx;
     const camera = this.camera;
@@ -581,16 +592,17 @@ export class Renderer {
     this.drawImpactDecals(ctx);
     this.drawSpawnPortals(ctx);
     this.drawParticles(ctx, snapshot.particles, 'behind');
-    this.drawShockwaves(ctx, snapshot.shockwaves);
     this.drawAimLine(ctx, snapshot);
     this.drawEnemies(ctx, snapshot.enemies);
     this.drawProjectiles(ctx, snapshot.projectiles);
     this.drawHostileShots(ctx, snapshot.hostileShots);
     this.drawParticles(ctx, snapshot.particles, 'front');
+    // §5.A: everything that is *light* rather than matter, in one pass with a
+    // single `globalCompositeOperation` flip for the whole frame.
+    this.drawAdditivePass(ctx, snapshot, options);
     this.drawOrbs(ctx, snapshot.orbs);
     this.drawPlacement(ctx, snapshot.placement);
     this.drawChargeRing(ctx, snapshot.charge);
-    this.drawChainLightning(ctx, options?.chainPaths);
     this.drawDamageNumbers(ctx, snapshot.damageNumbers);
     this.drawTowerTop(ctx, snapshot);
     this.drawShield(ctx, snapshot, options?.shieldFlash ?? 0);
@@ -1586,7 +1598,6 @@ export class Renderer {
     // Glow, then barrel, then gem: the crystal lights the turret from behind
     // rather than washing it out from in front.
     this.drawCrystalGlow(ctx, snap, tint);
-    this.drawTracers(ctx, snap);
     this.drawTurret(ctx, snap, tier, core);
     this.drawCoreCrystal(ctx, snap, tint);
   }
@@ -1784,44 +1795,63 @@ export class Renderer {
     ctx.rotate(this.turretAngle);
     ctx.translate(-back, 0);
     ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+    ctx.restore();
+  }
 
-    if (this.muzzle > 0) {
-      const flash = this.part(`muzzle|${core}`, entity(30), (g) => {
-        const r = entity(14);
-        const grad = g.createRadialGradient(0, 0, 0, 0, 0, r);
-        grad.addColorStop(0, withAlpha(INK['050'], 0.95));
-        grad.addColorStop(0.35, withAlpha(tint, 0.7));
-        grad.addColorStop(1, withAlpha(tint, 0));
-        g.fillStyle = grad;
+  /**
+   * The muzzle flash (§4.4), lifted out of `drawTurret` so it can ride the one
+   * additive pass (§5.A) instead of compositing `source-over` on the barrel.
+   *
+   * It rebuilds the barrel's transform rather than being drawn inside it: the
+   * flash is light and paints after the world, the barrel is stone and paints
+   * with it.
+   */
+  private drawMuzzleFlash(ctx: CanvasRenderingContext2D, snap: RenderSnapshot): void {
+    if (this.muzzle <= 0) return;
+    const t = snap.tower;
+    const core = this.core;
+    const tint = CORE_BY_ID[core].color;
+    const len = TOWER_VISUAL.turretLength;
+    const back = TOWER_VISUAL.recoilDistance * easeOutCubic(this.recoil);
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.rotate(this.turretAngle);
+    ctx.translate(-back, 0);
+    const flash = this.part(`muzzle|${core}`, entity(30), (g) => {
+      const r = entity(14);
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      grad.addColorStop(0, withAlpha(INK['050'], 0.95));
+      grad.addColorStop(0.35, withAlpha(tint, 0.7));
+      grad.addColorStop(1, withAlpha(tint, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(0, 0, r, 0, Math.PI * 2);
+      g.fill();
+      // Four spikes, so the flash has a direction rather than being a dot.
+      g.fillStyle = withAlpha(INK['050'], 0.8);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        g.save();
+        g.rotate(a);
         g.beginPath();
-        g.arc(0, 0, r, 0, Math.PI * 2);
+        g.moveTo(0, -entity(2));
+        g.lineTo(r * (i % 2 === 0 ? 1 : 0.55), 0);
+        g.lineTo(0, entity(2));
+        g.closePath();
         g.fill();
-        // Four spikes, so the flash has a direction rather than being a dot.
-        g.fillStyle = withAlpha(INK['050'], 0.8);
-        for (let i = 0; i < 4; i++) {
-          const a = (i / 4) * Math.PI * 2;
-          g.save();
-          g.rotate(a);
-          g.beginPath();
-          g.moveTo(0, -entity(2));
-          g.lineTo(r * (i % 2 === 0 ? 1 : 0.55), 0);
-          g.lineTo(0, entity(2));
-          g.closePath();
-          g.fill();
-          g.restore();
-        }
-      });
-      ctx.save();
-      ctx.globalAlpha = this.muzzle;
-      ctx.translate(len, 0);
-      // §4.4: the flash grows with the size of the volley. A tower firing six
-      // bolts in one substep used to get exactly the flash a single-shot tower
-      // got, which is the opposite of "a maxed tower feels maxed".
-      const burst = 1 + Math.min(5, this.muzzleBurst - 1) * 0.16;
-      const s = (0.65 + (1 - this.muzzle) * 0.6) * burst;
-      ctx.drawImage(flash, -flash.width * s / 2, -flash.height * s / 2, flash.width * s, flash.height * s);
-      ctx.restore();
-    }
+        g.restore();
+      }
+    });
+    ctx.save();
+    ctx.globalAlpha = this.muzzle;
+    ctx.translate(len, 0);
+    // §4.4: the flash grows with the size of the volley. A tower firing six
+    // bolts in one substep used to get exactly the flash a single-shot tower
+    // got, which is the opposite of "a maxed tower feels maxed".
+    const burst = 1 + Math.min(5, this.muzzleBurst - 1) * 0.16;
+    const s = (0.65 + (1 - this.muzzle) * 0.6) * burst;
+    ctx.drawImage(flash, -flash.width * s / 2, -flash.height * s / 2, flash.width * s, flash.height * s);
+    ctx.restore();
     ctx.restore();
   }
 
@@ -1859,7 +1889,6 @@ export class Renderer {
     });
     const half = sprite.width / 2;
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
     for (const tr of this.tracers) {
       ctx.save();
       ctx.globalAlpha = 1 - tr.age / TRACER_TIME;
@@ -4235,6 +4264,30 @@ export class Renderer {
   }
 
   /**
+   * The additive pass (UI plan §5.A).
+   *
+   * Every glow in the game used to composite `source-over` and read as flat
+   * paint, and the three places that did reach for `lighter` each flipped the
+   * composite mode themselves, several times a frame. This is the one routed
+   * pass: everything in it is *light*, it costs a single state flip, and it
+   * adds no draw calls — it only moves existing ones.
+   */
+  private drawAdditivePass(
+    ctx: CanvasRenderingContext2D,
+    snap: RenderSnapshot,
+    options?: RenderOptions,
+  ): void {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    this.drawParticles(ctx, snap.particles, 'additive');
+    this.drawShockwaves(ctx, snap.shockwaves);
+    this.drawChainLightning(ctx, options?.chainPaths);
+    this.drawTracers(ctx, snap);
+    this.drawMuzzleFlash(ctx, snap);
+    ctx.restore();
+  }
+
+  /**
    * Particles.
    *
    * `p.size` comes from `EffectsManager`, which Part 5 owns and which has not
@@ -4242,13 +4295,17 @@ export class Renderer {
    * draw call instead. When Part 5 moves the emitter constants onto the arena
    * scales, this multiply comes back out.
    */
-  private drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[], layer: 'behind' | 'front'): void {
+  private drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[], layer: ParticleLayer): void {
     ctx.save();
     for (const p of particles) {
       const lifeRatio = 1 - p.age / p.life;
       if (lifeRatio <= 0) continue;
-      if (layer === 'front' && p.color.startsWith('rgba(255, 255, 255')) continue;
-      ctx.globalAlpha = lifeRatio;
+      // §5.A: routed by field, not by sniffing the colour string. An emitter
+      // that stamped nothing is `front`.
+      if ((p.layer ?? 'front') !== layer) continue;
+      // Additive over a near-black ground blows out fast, so light fades on a
+      // steeper curve and never reaches full strength.
+      ctx.globalAlpha = layer === 'additive' ? Math.pow(lifeRatio, 1.6) * 0.85 : lifeRatio;
       ctx.fillStyle = p.color;
       ctx.beginPath();
       ctx.arc(p.x, p.y, entity(p.size), 0, Math.PI * 2);
