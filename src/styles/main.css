@@ -6192,7 +6192,7 @@ body.eq-dragging img { pointer-events: none; }
 /* ── Core picker (gameplay plan §6.2) ───────────────────────────────────── */
 /* Shares the blessing modal's card vocabulary on purpose: a choice should look
    like a choice everywhere in the game. Only what differs is redefined. */
-.core-modal-card { width: min(940px, calc(100vw - 32px)); }
+/* Width comes from the Modal shell (940px). */
 .core-modal-grid { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .core-card { gap: 6px; }
 .core-card.is-current {

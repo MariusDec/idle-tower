@@ -1,4 +1,5 @@
 import { toggleClass } from '../utils/dom';
+import { Modal } from './Modal';
 import { CORES, describeCoreStats, type CoreDef, type CoreId } from '../data/cores';
 import { icon } from './Icon';
 
@@ -53,7 +54,7 @@ export interface CorePickerCallbacks {
  */
 export class CorePickerModal {
   private readonly root: HTMLElement;
-  private currentRoot: HTMLElement | null = null;
+  private modal: Modal | null = null;
   private callbacks: CorePickerCallbacks | null = null;
   private timer = 0;
   private total = 0;
@@ -65,7 +66,7 @@ export class CorePickerModal {
   }
 
   isVisible(): boolean {
-    return this.currentRoot !== null;
+    return this.modal !== null;
   }
 
   show(data: CorePickerData, callbacks: CorePickerCallbacks): void {
@@ -74,30 +75,21 @@ export class CorePickerModal {
     this.timer = data.timeoutSeconds;
     this.total = Math.max(0.001, data.timeoutSeconds);
 
-    const wrap = document.createElement('div');
-    wrap.className = 'blessing-modal core-modal';
-    this.currentRoot = wrap;
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'blessing-modal-backdrop';
-    wrap.appendChild(backdrop);
-
-    const card = document.createElement('div');
-    card.className = 'blessing-modal-card core-modal-card';
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    card.setAttribute('aria-label', 'Choose a tower core');
-
-    const title = document.createElement('h2');
-    title.className = 'blessing-modal-title';
-    title.textContent = 'Choose Your Core';
-    card.appendChild(title);
-
-    const sub = document.createElement('p');
-    sub.className = 'blessing-modal-sub';
-    sub.textContent = `The core decides how this run shoots, and it biases which blessings you are `
-      + `offered. It lasts until you ascend. Starting at wave ${data.startWave}.`;
-    card.appendChild(sub);
+    // Escape and a backdrop tap keep the current core — the same answer the
+    // countdown lands on, so dismissing is never a choice the player did not
+    // mean to make.
+    const modal = new Modal({
+      id: 'core-picker',
+      title: 'Choose Your Core',
+      sub: 'The core decides how this run shoots, and it biases which blessings you are'
+        + ` offered. It lasts until you ascend. Starting at wave ${data.startWave}.`,
+      width: 940,
+      onClose: () => this.handleDismiss(),
+      root: this.root,
+    });
+    this.modal = modal;
+    modal.cardElement.classList.add('core-modal-card');
+    const card = modal.body;
 
     const grid = document.createElement('div');
     grid.className = 'blessing-modal-grid core-modal-grid';
@@ -128,9 +120,19 @@ export class CorePickerModal {
     card.appendChild(this.buildCountdown(currentName));
     this.refreshCountdown(currentName);
 
-    wrap.appendChild(card);
-    this.root.appendChild(wrap);
-    requestAnimationFrame(() => toggleClass(wrap, 'is-visible', true));
+    modal.open();
+  }
+
+  /**
+   * Escape or a backdrop tap. `hide()` drops `callbacks` first, so a close the
+   * modal itself started (select / keep / timeout) reaches this with nothing
+   * left to fire.
+   */
+  private handleDismiss(): void {
+    const cb = this.callbacks;
+    if (!cb) return;
+    this.hide();
+    cb.onDismiss();
   }
 
   private buildCard(entry: CorePickerCore): HTMLElement {
@@ -238,7 +240,7 @@ export class CorePickerModal {
    * player three real seconds to read five cards.
    */
   tick(realDt: number, currentName: string): boolean {
-    if (!this.currentRoot || !this.callbacks) return false;
+    if (!this.modal || !this.callbacks) return false;
     this.timer -= realDt;
     if (this.timer <= 0) {
       const cb = this.callbacks;
@@ -251,11 +253,10 @@ export class CorePickerModal {
   }
 
   hide(): void {
-    if (this.currentRoot && this.currentRoot.parentNode) {
-      this.currentRoot.parentNode.removeChild(this.currentRoot);
-    }
-    this.currentRoot = null;
+    const modal = this.modal;
+    this.modal = null;
     this.callbacks = null;
+    modal?.destroy();
     this.timer = 0;
     this.countdownBar = null;
     this.countdownLabel = null;
