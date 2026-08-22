@@ -1,4 +1,4 @@
-import { toggleClass } from '../utils/dom';
+import { Modal } from './Modal';
 import {
   BLESSING_RARITY_COLORS,
   describeBlessing,
@@ -51,7 +51,7 @@ export interface BlessingDraftCallbacks {
  */
 export class BlessingDraftModal {
   private readonly root: HTMLElement;
-  private currentRoot: HTMLElement | null = null;
+  private modal: Modal | null = null;
   private callbacks: BlessingDraftCallbacks | null = null;
   private timer = 0;
   private total = 0;
@@ -63,7 +63,7 @@ export class BlessingDraftModal {
   }
 
   isVisible(): boolean {
-    return this.currentRoot !== null;
+    return this.modal !== null;
   }
 
   show(data: BlessingDraftData, callbacks: BlessingDraftCallbacks): void {
@@ -72,30 +72,19 @@ export class BlessingDraftModal {
     this.timer = data.timeoutSeconds;
     this.total = Math.max(0.001, data.timeoutSeconds);
 
-    const wrap = document.createElement('div');
-    wrap.className = 'blessing-modal';
-    this.currentRoot = wrap;
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'blessing-modal-backdrop';
-    wrap.appendChild(backdrop);
-
-    const card = document.createElement('div');
-    card.className = 'blessing-modal-card';
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    card.setAttribute('aria-label', `Choose a blessing after wave ${data.wave}`);
-
-    const title = document.createElement('h2');
-    title.className = 'blessing-modal-title';
-    title.textContent = 'Choose a Blessing';
-    card.appendChild(title);
-
-    const sub = document.createElement('p');
-    sub.className = 'blessing-modal-sub';
-    sub.textContent = `Wave ${data.wave} cleared · pick ${data.picksTaken + 1} of ${data.maxPicks}`
-      + ' · blessings last until you ascend.';
-    card.appendChild(sub);
+    // Escape and a backdrop tap skip the pick, which is what the Skip button
+    // does and what the caller already knows how to un-pause from.
+    const modal = new Modal({
+      id: 'blessing-draft',
+      title: 'Choose a Blessing',
+      sub: `Wave ${data.wave} cleared · pick ${data.picksTaken + 1} of ${data.maxPicks}`
+        + ' · blessings last until you ascend.',
+      width: 760,
+      onClose: () => this.handleDismiss(),
+      root: this.root,
+    });
+    this.modal = modal;
+    const card = modal.body;
 
     const grid = document.createElement('div');
     grid.className = 'blessing-modal-grid';
@@ -117,9 +106,18 @@ export class BlessingDraftModal {
 
     this.refreshCountdown();
 
-    wrap.appendChild(card);
-    this.root.appendChild(wrap);
-    requestAnimationFrame(() => toggleClass(wrap, 'is-visible', true));
+    modal.open();
+  }
+
+  /**
+   * Escape or a backdrop tap. Every other exit clears `callbacks` in `hide()`
+   * before the shell closes, so those re-enter here as a no-op.
+   */
+  private handleDismiss(): void {
+    const cb = this.callbacks;
+    if (!cb) return;
+    this.hide();
+    cb.onSkip();
   }
 
   private buildCard(def: BlessingDef, data: BlessingDraftData): HTMLElement {
@@ -278,7 +276,7 @@ export class BlessingDraftModal {
    * which is not enough time to read three cards.
    */
   tick(realDt: number): boolean {
-    if (!this.currentRoot || !this.callbacks) return false;
+    if (!this.modal || !this.callbacks) return false;
     this.timer -= realDt;
     if (this.timer <= 0) {
       const cb = this.callbacks;
@@ -291,11 +289,10 @@ export class BlessingDraftModal {
   }
 
   hide(): void {
-    if (this.currentRoot && this.currentRoot.parentNode) {
-      this.currentRoot.parentNode.removeChild(this.currentRoot);
-    }
-    this.currentRoot = null;
+    const modal = this.modal;
+    this.modal = null;
     this.callbacks = null;
+    modal?.destroy();
     this.timer = 0;
     this.countdownBar = null;
     this.countdownLabel = null;
