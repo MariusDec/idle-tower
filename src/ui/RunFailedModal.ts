@@ -1,5 +1,5 @@
 import { formatInt, formatNumber } from '../utils/bigNumber';
-import { toggleClass } from '../utils/dom';
+import { Modal } from './Modal';
 
 export interface RunFailedData {
   /** Wave the tower fell on. */
@@ -24,43 +24,35 @@ export interface RunFailedData {
  */
 export class RunFailedModal {
   private readonly root: HTMLElement;
-  private currentRoot: HTMLElement | null = null;
+  private modal: Modal | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
   }
 
   isOpen(): boolean {
-    return this.currentRoot !== null;
+    return this.modal !== null;
   }
 
   show(data: RunFailedData, onAscend: () => void, onRetry: () => void): void {
     this.hide();
-    const wrap = document.createElement('div');
-    wrap.className = 'welcome-modal run-failed-modal';
-    this.currentRoot = wrap;
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'welcome-modal-backdrop';
-    wrap.appendChild(backdrop);
-
-    const card = document.createElement('div');
-    card.className = 'welcome-modal-card run-failed-card';
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    card.setAttribute('aria-label', 'Run over');
-
-    const title = document.createElement('h2');
-    title.className = 'welcome-modal-title';
-    title.textContent = 'Tower destroyed';
-    card.appendChild(title);
-
-    const sub = document.createElement('p');
-    sub.className = 'welcome-modal-sub';
-    sub.textContent = data.enrageStacks > 0
-      ? `Wave ${data.wave} enraged (${data.enrageStacks}×) and overwhelmed the tower. This run has gone as far as it can.`
-      : `Wave ${data.wave} overwhelmed the tower.`;
-    card.appendChild(sub);
+    // Not dismissible: the run is over either way, and the player has to say
+    // which way. Escaping out of it would leave the tower dead and the game
+    // waiting on a decision nothing else can make.
+    const modal = new Modal({
+      id: 'run-failed',
+      title: 'Tower destroyed',
+      sub: data.enrageStacks > 0
+        ? `Wave ${data.wave} enraged (${data.enrageStacks}×) and overwhelmed the tower.`
+          + ' This run has gone as far as it can.'
+        : `Wave ${data.wave} overwhelmed the tower.`,
+      width: 460,
+      dismissible: false,
+      root: this.root,
+    });
+    this.modal = modal;
+    modal.cardElement.classList.add('run-failed-card');
+    const card = modal.body;
 
     const stats = document.createElement('div');
     stats.className = 'welcome-modal-stats';
@@ -112,15 +104,12 @@ export class RunFailedModal {
     actions.appendChild(retryBtn);
 
     card.appendChild(actions);
-    wrap.appendChild(card);
-    this.root.appendChild(wrap);
-    requestAnimationFrame(() => toggleClass(wrap, 'is-visible', true));
+    modal.open();
   }
 
   hide(): void {
-    if (this.currentRoot && this.currentRoot.parentNode) {
-      this.currentRoot.parentNode.removeChild(this.currentRoot);
-    }
-    this.currentRoot = null;
+    const modal = this.modal;
+    this.modal = null;
+    modal?.destroy();
   }
 }

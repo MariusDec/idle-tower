@@ -5389,8 +5389,8 @@ body.eq-dragging img { pointer-events: none; }
 
 /* Run-over prompt (plan §2.3.3) — shown when the tower falls and the player
    can bank the run as an ascension instead of re-grinding a lost wave. */
-.run-failed-card { width: min(460px, calc(100vw - 32px)); }
-.run-failed-card .welcome-modal-title { color: var(--blood-300); }
+/* Width comes from the Modal shell; the class stays for the red title. */
+.run-failed-card .modal-title { color: var(--blood-300); }
 .run-failed-actions {
   display: flex;
   flex-direction: column;
