@@ -300,28 +300,148 @@ button:disabled {
 }
 .hud-group {
   display: flex;
+  align-items: center;
   gap: 18px;
   flex: 1 1 0;
 }
-.hud-group.right { justify-content: flex-end; }
-.hud-stat {
-  display: flex;
-  flex-direction: column;
-  min-width: 70px;
-}
+.hud-group.right { justify-content: flex-end; align-items: center; }
 .hud-stat-label {
   color: var(--text-2);
   font-size: var(--text-xs);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-caps);
 }
 .hud-stat-value {
   color: var(--text-0);
   font-size: var(--text-2xl);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
 }
-.hud-fps { color: var(--text-2); font-size: var(--text-base); }
+
+/* ── Resource chips (UI plan §7) ───────────────────────────────────────────
+   Gold, kills and DPS were a label and a bare <span>: nothing to find them by
+   and no feedback when they moved. A chip gives each one a mark, a tinted rim
+   in its own family's colour, and two pieces of motion — a *tick* whenever the
+   resource goes up, and a *flare* when the jump is large relative to the total.
+   The tick is what turns "the number is different now" into "you earned that".
+
+   The tone drives one custom property; every rule below reads that rather than
+   naming a colour, so a new chip is one `data-tone` value and nothing else. */
+.hud-pill {
+  --pill-tone: var(--text-1);
+  --pill-rgb: var(--rgb-light);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  min-width: 84px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-1));
+  border: 1px solid var(--stroke-subtle);
+  box-shadow: var(--elev-1);
+  isolation: isolate;
+}
+.hud-pill[data-tone='gold'] { --pill-tone: var(--fx-gold); --pill-rgb: var(--rgb-gold); }
+.hud-pill[data-tone='mana'] { --pill-tone: var(--fx-mana); --pill-rgb: var(--rgb-mana); }
+.hud-pill[data-tone='arcane'] { --pill-tone: var(--fx-arcane); --pill-rgb: var(--rgb-arcane); }
+.hud-pill[data-tone='nature'] { --pill-tone: var(--fx-nature); --pill-rgb: var(--rgb-nature); }
+.hud-pill[data-tone='ember'] { --pill-tone: var(--fx-ember); --pill-rgb: var(--rgb-ember); }
+.hud-pill[data-tone='blood'] { --pill-tone: var(--fx-blood); --pill-rgb: var(--rgb-blood); }
+
+.hud-pill-icon.icon {
+  --icon-size: 20px;
+  color: var(--pill-tone);
+  filter: drop-shadow(0 0 6px rgba(var(--pill-rgb), 0.35));
+}
+.hud-pill-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: var(--leading-tight);
+}
+.hud-pill-label {
+  color: var(--text-2);
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  white-space: nowrap;
+}
+.hud-pill-value {
+  color: var(--text-0);
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-normal);
+  white-space: nowrap;
+}
+/* A diagnostic readout, not a resource: no mark, no motion, and visibly a
+   lesser citizen than the chips beside it. */
+.hud-pill--quiet {
+  min-width: 0;
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+.hud-pill--quiet .hud-pill-value {
+  color: var(--text-2);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
+}
+.hud-fps { color: var(--text-2); }
+
+/* The flare, behind the chip's content and clipped to its own rounded box. */
+.hud-pill::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 22% 50%, rgba(var(--pill-rgb), 0.55), transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Two identical animations under two class names. Alternating between them is
+   what restarts the tick on a repeat gain; the usual remove/reflow/re-add trick
+   would force a synchronous layout on every gold pickup. */
+.hud-pill.is-tick-a .hud-pill-value { animation: hud-pill-tick var(--dur-base) var(--ease-out); }
+.hud-pill.is-tick-b .hud-pill-value { animation: hud-pill-tick-alt var(--dur-base) var(--ease-out); }
+.hud-pill.is-flare-a::after { animation: hud-pill-flare var(--dur-slow) var(--ease-out); }
+.hud-pill.is-flare-b::after { animation: hud-pill-flare-alt var(--dur-slow) var(--ease-out); }
+
+@keyframes hud-pill-tick {
+  0%   { transform: translateY(0.14em); color: var(--pill-tone); }
+  60%  { transform: translateY(0); color: var(--pill-tone); }
+  100% { transform: translateY(0); color: var(--text-0); }
+}
+@keyframes hud-pill-tick-alt {
+  0%   { transform: translateY(0.14em); color: var(--pill-tone); }
+  60%  { transform: translateY(0); color: var(--pill-tone); }
+  100% { transform: translateY(0); color: var(--text-0); }
+}
+@keyframes hud-pill-flare {
+  0%   { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+@keyframes hud-pill-flare-alt {
+  0%   { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
+/* §0.8: motion is feedback, so under reduced-motion the *colour* pulse stays
+   and only the movement goes. Removing the cue entirely would remove the
+   information along with the animation. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes hud-pill-tick {
+    0%   { transform: none; color: var(--pill-tone); }
+    100% { transform: none; color: var(--text-0); }
+  }
+  @keyframes hud-pill-tick-alt {
+    0%   { transform: none; color: var(--pill-tone); }
+    100% { transform: none; color: var(--text-0); }
+  }
+}
 
 /* Wave controls */
 .hud-wave-block {
@@ -1569,7 +1689,7 @@ button:disabled {
 @media (max-width: 1100px) {
   :root { --panel-width: 320px; }
   .hud-group { gap: 12px; }
-  .hud-stat { min-width: 60px; }
+  .hud-pill { min-width: 68px; }
 }
 
 /* Mobile breakpoint. The panel is replaced by slide-up sheets driven by
@@ -3540,10 +3660,25 @@ body.is-resizing * { cursor: ew-resize !important; }
     background: linear-gradient(180deg, var(--surface-1), var(--surface-0));
     border-bottom: 1px solid var(--stroke-subtle);
   }
-  .hud-group { gap: 8px; flex: 1 1 0; }
-  .hud-stat { min-width: 0; flex: 1 1 0; }
+  .hud-group { gap: var(--space-2); flex: 1 1 0; min-width: 0; }
+  /* On a phone the chip drops its written label and keeps its mark: the icon
+     is the label, which is the whole reason Part 6 put one there. The name is
+     still on the element as an `aria-label`, so nothing is lost to a screen
+     reader — only to the 40 px of vertical space a stacked caption costs on an
+     812 px-tall viewport. */
+  .hud-pill {
+    min-width: 0;
+    /* Never shrink: a chip squeezed below its content shows neither its mark
+       nor its number, which is worse than the crowding it was avoiding. */
+    flex: 0 0 auto;
+    padding: var(--space-1) var(--space-2);
+    gap: var(--space-1);
+  }
+  .hud-pill-icon.icon { --icon-size: 16px; }
+  .hud-pill-label { display: none; }
+  .hud-pill-value { font-size: var(--text-xl); }
   .hud-stat-value { font-size: var(--text-base); }
-  .hud-stat-label { font-size: var(--text-3xs); letter-spacing: 0.04em; }
+  .hud-stat-label { font-size: var(--text-3xs); letter-spacing: var(--tracking-wide); }
   .hud-hp,
   .hud-mana {
     min-width: 0;

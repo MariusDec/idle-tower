@@ -4,6 +4,8 @@ import type { SpeedAPI, TargetingAPI, WaveControlAPI } from './UIManager';
 import type { PacingHudData } from './PacingOverlay';
 import { TARGETING_MODES } from '../data/tower';
 import { TOWER_XP_TABLE, xpForNextLevel, xpToLevel } from '../data/xpTables';
+import { STAT_ICONS, type StatIconKey } from '../data/iconMap';
+import { icon } from './Icon';
 import {
   hasClass,
   setDisplay,
@@ -16,6 +18,35 @@ import {
 } from '../utils/dom';
 
 const MANA_UNLOCK_WAVE = 10;
+
+/**
+ * A resource chip (UI plan §7).
+ *
+ * Gold, kills and DPS used to be bare `<span>`s: a label and a number, with no
+ * mark to find them by and no feedback when they moved. The chip adds both —
+ * the icon is what the eye lands on, and the tick/flare is what turns "the
+ * number is different now" into "you just earned that".
+ */
+interface PillRefs {
+  wrap: HTMLElement;
+  valueEl: HTMLElement;
+  /** Last *authoritative* (untweened) value, so a gain is detected exactly once. */
+  last: number;
+  /**
+   * Alternates between two identical animation classes so a repeat gain
+   * restarts the tick. The usual trick — remove the class, read `offsetWidth`,
+   * add it back — forces a synchronous layout on every gold pickup, which is
+   * exactly the kind of per-frame reflow the rest of this UI is careful about.
+   */
+  tickPhase: boolean;
+}
+
+/**
+ * A gain has to be worth this fraction of what is already there before it earns
+ * a flare. Proportional rather than absolute because "a lot of gold" means
+ * something different at wave 3 and at wave 300.
+ */
+const PILL_FLARE_FRACTION = 0.12;
 
 /** Below this XP/sec the time-to-level estimate is noise, so it is hidden. */
 const MIN_XP_RATE_FOR_ETA = 0.05;
@@ -35,7 +66,6 @@ function formatSpeed(v: number): string {
 
 export class HUD {
   private readonly root: HTMLElement;
-  private goldEl!: HTMLElement;
   private manaEl!: HTMLElement;
   private manaBarFill!: HTMLElement;
   private manaWrap!: HTMLElement;
@@ -47,9 +77,12 @@ export class HUD {
   private xpRate = 0;
   private lastTotalXp = -1;
   private waveEl!: HTMLElement;
-  private dpsEl!: HTMLElement;
-  private killsEl!: HTMLElement;
+  private dpsPill!: PillRefs;
+  private goldPill!: PillRefs;
+  private killsPill!: PillRefs;
   private fpsEl!: HTMLElement;
+  /** Every chip, so a reduced-motion / reset sweep has one list to walk. */
+  private readonly pills: PillRefs[] = [];
   private hpEl!: HTMLElement;
   private hpWrap!: HTMLElement;
   private hpBarFill!: HTMLElement;
@@ -365,7 +398,7 @@ export class HUD {
     this.updateXpBar(state);
     this.updatePacingControls();
     toggleClass(this.manaWrap, 'is-locked', !manaUnlocked);
-    setText(this.goldEl, formatNumber(this.displayGold));
+    this.setPillValue(this.goldPill, formatNumber(this.displayGold), state.resources.gold);
     if (manaUnlocked) {
       const manaDisplay = Math.floor(this.displayMana);
       setText(this.manaEl, `${manaDisplay} / ${state.resources.maxMana}`);
@@ -378,8 +411,16 @@ export class HUD {
       setStyle(this.manaBarFill, 'width', '0%');
     }
     setText(this.waveEl, `Wave ${Math.round(this.displayWave)}`);
-    setText(this.dpsEl, `${formatNumber(this.displayDps)} DPS`);
-    setText(this.killsEl, `Kills: ${formatNumber(state.stats.enemiesKilled)}`);
+    // The chip carries the label, so the value no longer has to repeat it —
+    // "1.2K DPS" under a heading reading "DPS" was saying it twice. No tick:
+    // DPS is a *rate*, and a rate that drifts up every frame would flicker
+    // continuously rather than marking anything the player did.
+    setText(this.dpsPill.valueEl, formatNumber(this.displayDps));
+    this.setPillValue(
+      this.killsPill,
+      formatNumber(state.stats.enemiesKilled),
+      state.stats.enemiesKilled,
+    );
     const hpDisplay = Math.max(0, this.displayHP);
     const maxHpDisplay = Math.max(1, this.displayMaxHP);
     setText(this.hpEl, `${formatNumber(hpDisplay)} / ${formatNumber(maxHpDisplay)}`);
@@ -483,8 +524,8 @@ export class HUD {
 
     const groupLeft = document.createElement('div');
     groupLeft.className = 'hud-group';
-    this.goldEl = this.addStat(groupLeft, 'Gold', '0');
-    this.killsEl = this.addStat(groupLeft, 'Kills', '0');
+    this.goldPill = this.addPill(groupLeft, 'Gold', '0', 'gold', 'gold');
+    this.killsPill = this.addPill(groupLeft, 'Kills', '0', 'kills', 'blood');
     groupLeft.appendChild(this.renderWaveBlock());
     const statsWrap = document.createElement('div');
     statsWrap.className = 'hud-stats-wrap';
@@ -677,9 +718,20 @@ export class HUD {
     this.keybindsBtn.setAttribute('aria-label', 'Keyboard shortcuts');
     this.keybindsBtn.addEventListener('click', () => this.onShowKeybinds());
     groupRight.appendChild(this.keybindsBtn);
-    this.dpsEl = this.addStat(groupRight, 'DPS', '0');
-    this.fpsEl = this.addStat(groupRight, 'FPS', '--');
-    toggleClass(this.fpsEl, 'hud-fps', true);
+    this.dpsPill = this.addPill(groupRight, 'DPS', '0', 'dps', 'ember');
+    // FPS is a diagnostic, not a resource: no icon, no tick, and a chip that
+    // deliberately does not compete with the ones next to it for attention.
+    const fpsStat = document.createElement('div');
+    fpsStat.className = 'hud-pill hud-pill--quiet';
+    const fpsLabel = document.createElement('span');
+    fpsLabel.className = 'hud-pill-label';
+    fpsLabel.textContent = 'FPS';
+    this.fpsEl = document.createElement('span');
+    this.fpsEl.className = 'hud-pill-value hud-fps u-tabular';
+    this.fpsEl.textContent = '--';
+    fpsStat.appendChild(fpsLabel);
+    fpsStat.appendChild(this.fpsEl);
+    groupRight.appendChild(fpsStat);
     groupRight.appendChild(this.renderRiskBlock());
     groupRight.appendChild(this.renderSpeedBlock());
     this.root.appendChild(groupRight);
@@ -1091,18 +1143,68 @@ export class HUD {
     });
   }
 
-  private addStat(parent: HTMLElement, label: string, initialValue: string): HTMLElement {
-    const stat = document.createElement('div');
-    stat.className = 'hud-stat';
+  /**
+   * A resource chip: icon, label, value. Replaces the old bare label+span pair.
+   *
+   * `iconKey` is a `StatIconKey`, not a free-form `IconId`, so a chip cannot
+   * invent a mark for a concept that already has one — the same reuse rule
+   * `docs/icon-system.md` states for every other surface.
+   */
+  private addPill(
+    parent: HTMLElement,
+    label: string,
+    initialValue: string,
+    iconKey: StatIconKey,
+    tone: string,
+  ): PillRefs {
+    const wrap = document.createElement('div');
+    wrap.className = 'hud-pill';
+    wrap.dataset.tone = tone;
+    // The phone layout drops the written caption and keeps the icon, so the
+    // name has to live somewhere a screen reader can still reach it.
+    wrap.setAttribute('aria-label', label);
+    wrap.title = label;
+
+    const iconEl = icon(STAT_ICONS[iconKey], { tone: 'inherit', className: 'hud-pill-icon' });
+    wrap.appendChild(iconEl);
+
+    const text = document.createElement('div');
+    text.className = 'hud-pill-text';
     const labelEl = document.createElement('span');
-    labelEl.className = 'hud-stat-label';
+    labelEl.className = 'hud-pill-label';
     labelEl.textContent = label;
     const valueEl = document.createElement('span');
-    valueEl.className = 'hud-stat-value';
+    valueEl.className = 'hud-pill-value u-display u-tabular';
     valueEl.textContent = initialValue;
-    stat.appendChild(labelEl);
-    stat.appendChild(valueEl);
-    parent.appendChild(stat);
-    return valueEl;
+    text.appendChild(labelEl);
+    text.appendChild(valueEl);
+    wrap.appendChild(text);
+
+    parent.appendChild(wrap);
+    const refs: PillRefs = { wrap, valueEl, last: Number.NaN, tickPhase: false };
+    this.pills.push(refs);
+    return refs;
+  }
+
+  /**
+   * Write a chip's value and, if the underlying resource went *up*, play the
+   * tick (and a flare if the jump was large relative to the total).
+   *
+   * `authoritative` is the real state number rather than the tweened display
+   * one: the tween lags by a few frames, so detecting the gain on it would fire
+   * the tick repeatedly as the number eased towards its target.
+   */
+  private setPillValue(refs: PillRefs, text: string, authoritative: number): void {
+    setText(refs.valueEl, text);
+    const prev = refs.last;
+    refs.last = authoritative;
+    if (!Number.isFinite(prev) || authoritative <= prev) return;
+    const gain = authoritative - prev;
+    const big = prev > 0 && gain / prev >= PILL_FLARE_FRACTION;
+    refs.tickPhase = !refs.tickPhase;
+    toggleClass(refs.wrap, 'is-tick-a', refs.tickPhase);
+    toggleClass(refs.wrap, 'is-tick-b', !refs.tickPhase);
+    toggleClass(refs.wrap, 'is-flare-a', big && refs.tickPhase);
+    toggleClass(refs.wrap, 'is-flare-b', big && !refs.tickPhase);
   }
 }
