@@ -10,7 +10,7 @@ Persists game state to `localStorage` under key `the-tower-save`.
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 14
+  version: number;       // current = 15
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -44,6 +44,7 @@ interface PersistentState {
 | v11 → v12 | `contracts` — the run's three live contracts (`docs/contract-system.md`) |
 | v12 → v13 | `cores` — unlocked tower cores and the run's selection (`docs/core-system.md`) |
 | v13 → v14 | `pacing` — the risk dial, early-call momentum and the kill combo (`docs/wave-system.md`) |
+| v14 → v15 | the offline cap became **derived** — 8h base + 8h/level of `ap_idle_time` (no field to seed; see below) |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -121,14 +122,18 @@ write.
 ## Validation
 
 `validate()` checks:
-- version is 2..14 (older versions are walked up the migration ladder)
+- version is 2..15 (older versions are walked up the migration ladder)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress
 
 Computed on load via `computeOfflineProgress(persisted, now)`:
 
-1. **Elapsed time:** `max(0, (now - savedAt) / 1000)`, capped at 7 days
+1. **Elapsed time:** `max(0, (now - savedAt) / 1000)`, capped at the current
+   idle cap — 8h base, +8h per level of the `ap_idle_time` AP perk, up to 4
+   days (11 levels). The cap is derived from `prestige.apSpent` via a
+   `getIdleCapSeconds` callback injected into `SaveManager`; nothing about it
+   is persisted, which is why `migrateV14toV15` is a no-op.
 2. **Effective DPS:** `estimateDPS(tower) * 0.7` (70% efficiency)
 3. **Gold earned:** `floor(effectiveDPS * elapsed * goldPerDamage)`
    - goldPerDamage = `goldDropForWave / enemyHPForWave`
@@ -142,7 +147,8 @@ Applied via `applyOfflineProgress(state, result)`:
 
 When offline progress > 0, `welcome_back` event triggers `WelcomeBackModal.show()`:
 - Shows duration, gold earned, waves cleared, effective DPS
-- Capped notice if > 7 days
+- Capped notice if the absence exceeded the idle cap, naming the cap
+  (`capped at 8h`, `capped at 1d 8h`, …)
 - Modal overlay with Continue button
 
 ## Manual Operations

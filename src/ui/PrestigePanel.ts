@@ -4,9 +4,11 @@ import {
   AP_PERKS,
   ASCENSION_UNLOCK_WAVE,
   PRESTIGE_PROJECTILE_TUNING,
+  BASE_IDLE_TIME_SECONDS,
   apForWave,
   perkCost,
   computePerkEffect,
+  formatIdleDuration,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
 import {
@@ -66,6 +68,7 @@ export class PrestigePanel {
 
   private apRowById = new Map<string, HTMLElement>();
   private apLevelById = new Map<string, HTMLElement>();
+  private apCurrentById = new Map<string, HTMLElement>();
   private apBonusById = new Map<string, HTMLElement>();
   private apCostById = new Map<string, HTMLElement>();
   private apBtnById = new Map<string, HTMLButtonElement>();
@@ -176,10 +179,11 @@ export class PrestigePanel {
 
   private updateAPRow(p: PrestigePerkDef, ap: number, state: GameState): void {
     const levelEl = this.apLevelById.get(p.id);
+    const currentEl = this.apCurrentById.get(p.id);
     const bonusEl = this.apBonusById.get(p.id);
     const costEl = this.apCostById.get(p.id);
     const btn = this.apBtnById.get(p.id);
-    if (!levelEl || !bonusEl || !costEl || !btn) return;
+    if (!levelEl || !currentEl || !bonusEl || !costEl || !btn) return;
     const level = state.prestige.apSpent[p.id] ?? 0;
     const atMax = level >= p.maxLevel;
     const isOneTime = p.maxLevel === 1;
@@ -189,6 +193,17 @@ export class PrestigePanel {
       setText(levelEl, atMax ? 'Unlocked' : 'Locked');
     } else {
       setText(levelEl, atMax ? `Level ${level} (max)` : `Level ${level}`);
+    }
+
+    // Plan §10.1: the idle-time perk shows the *current* cap next to its
+    // level, so the row states what has already been bought, not just what
+    // the next purchase adds.
+    if (p.effectType === 'idle_time') {
+      const capSeconds = BASE_IDLE_TIME_SECONDS + computePerkEffect(p, level);
+      setText(currentEl, `Idle cap: ${formatIdleDuration(capSeconds)}`);
+      setDisplay(currentEl, '');
+    } else {
+      setDisplay(currentEl, 'none');
     }
 
     setText(bonusEl, this.formatAPBonusText(p, level, atMax));
@@ -251,6 +266,8 @@ export class PrestigePanel {
         return level > 0
           ? `-${(computePerkEffect(p, level) * 100).toFixed(0)}% research time`
           : '';
+      case 'idle_time':
+        return `+${formatIdleDuration(computePerkEffect(p, 1))} offline cap`;
       default:
         return '';
     }
@@ -262,6 +279,7 @@ export class PrestigePanel {
     this.coreBtnById.clear();
     this.apRowById.clear();
     this.apLevelById.clear();
+    this.apCurrentById.clear();
     this.apBonusById.clear();
     this.apCostById.clear();
     this.apBtnById.clear();
@@ -484,10 +502,15 @@ export class PrestigePanel {
     const level = document.createElement('span');
     level.className = 'perk-level';
     level.textContent = p.maxLevel === 1 ? 'Locked' : 'Level 0';
+    const current = document.createElement('span');
+    current.className = 'perk-current';
+    current.textContent = '';
+    current.style.display = 'none';
     const bonus = document.createElement('span');
     bonus.className = 'perk-bonus';
     bonus.textContent = '';
     meta.appendChild(level);
+    meta.appendChild(current);
     meta.appendChild(bonus);
     const reason = document.createElement('div');
     reason.className = 'perk-reason';
@@ -515,6 +538,7 @@ export class PrestigePanel {
     row.appendChild(action);
 
     this.apLevelById.set(p.id, level);
+    this.apCurrentById.set(p.id, current);
     this.apBonusById.set(p.id, bonus);
     this.apCostById.set(p.id, cost);
     this.apBtnById.set(p.id, btn);

@@ -659,7 +659,10 @@ export class Game {
       onTranscend: () => this.transcend(),
       bus: this.bus,
     });
-    this.saveMgr = new SaveManager(this.bus, { getRP: () => this.researchTree.rp });
+    this.saveMgr = new SaveManager(this.bus, {
+      getRP: () => this.researchTree.rp,
+      getIdleCapSeconds: () => this.prestigeMgr.getIdleTimeCapSeconds(),
+    });
     this.achievementMgr = new AchievementManager(this.bus, {
       getStats: () => this.state.stats,
       getAchievements: () => this.state.achievements,

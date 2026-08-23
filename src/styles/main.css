@@ -2283,6 +2283,7 @@ button:disabled {
   font-size: var(--text-sm);
 }
 .perk-level { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.perk-current { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
 .perk-bonus { color: var(--good); font-weight: 600; font-variant-numeric: tabular-nums; }
 .perk-action {
   display: flex;

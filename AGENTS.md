@@ -71,7 +71,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Enemy threat classes | 3 | `src/data/pacing.ts` |
 | Icons (distinct artwork) | 197 | `public/icons/sprite.svg` |
 | Icon references across tables | 249 | `scripts/fetch-icons.mjs` |
-| Save version | 14 | `src/systems/SaveManager.ts` |
+| Save version | 15 | `src/systems/SaveManager.ts` |
 
 ## Commands
 

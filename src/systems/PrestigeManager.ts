@@ -12,6 +12,7 @@ import {
   canTranscend,
   perkCost,
   computePerkEffect,
+  BASE_IDLE_TIME_SECONDS,
   type AutomationKey,
 } from '../data/prestige';
 import { lifetimeAPDamageBonus, lifetimeAPGoldBonus } from '../data/formulas';
@@ -539,6 +540,19 @@ export class PrestigeManager {
       if (lvl > 0) bonus += computePerkEffect(p, lvl);
     }
     return bonus;
+  }
+
+  /**
+   * Offline-progress cap in seconds (plan §10.1).
+   *
+   * Derived, never stored: `BASE_IDLE_TIME_SECONDS` plus 8h per level of
+   * `ap_idle_time`. The save layer calls this through `Game` when it needs the
+   * cap, so a perk purchase moves the ceiling on the next offline walk.
+   */
+  getIdleTimeCapSeconds(): number {
+    const def = AP_PERK_BY_ID['ap_idle_time'];
+    if (!def) return BASE_IDLE_TIME_SECONDS;
+    return BASE_IDLE_TIME_SECONDS + computePerkEffect(def, this.getAPLevel('ap_idle_time'));
   }
 
   spendAP(perkId: string): boolean {

@@ -166,7 +166,7 @@ describe('migration ladder', () => {
   });
 
   it('accepts every version the ladder claims to handle', () => {
-    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) {
       storage.clear();
       storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version }));
       const loaded = new SaveManager(stubBus).load();
@@ -183,7 +183,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(14);
+    expect(loaded.version).toBe(15);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -207,7 +207,7 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(14);
+    expect(loaded.version).toBe(15);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);
@@ -222,7 +222,7 @@ describe('migration ladder', () => {
   it('seeds a risk-0 pacing block for a v13 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(14);
+    expect(loaded.version).toBe(15);
     expect(loaded.pacing).toEqual({
       risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
     });
@@ -255,7 +255,7 @@ describe('migration ladder', () => {
   it('seeds an empty contract run for a v11 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(14);
+    expect(loaded.version).toBe(15);
     expect(loaded.contracts).toEqual({
       active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
     });
@@ -275,7 +275,7 @@ describe('migration ladder', () => {
     };
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11, contracts }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(14);
+    expect(loaded.version).toBe(15);
     expect(loaded.contracts).toEqual(contracts);
 
     // And the real manager takes that state back without losing a slot.

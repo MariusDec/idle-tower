@@ -1,7 +1,7 @@
 import { formatNumber } from '../utils/bigNumber';
 import type { OfflineResult } from '../systems/SaveManager';
+import { formatIdleDuration } from '../data/prestige';
 import { Modal } from './Modal';
-
 export interface WelcomeBackData {
   result: OfflineResult;
   startWave: number;
@@ -46,7 +46,7 @@ export class WelcomeBackModal {
       id: 'welcome-back',
       title: 'Welcome back!',
       sub: data.result.capped
-        ? `You were away for a long time (capped at 7 days). Your tower kept working for ${dur}.`
+        ? `You were away for a long time (capped at ${formatIdleDuration(data.result.maxIdleSeconds)}). Your tower kept working for ${dur}.`
         : `You were away for ${dur}. Your tower kept working while you were gone.`,
       width: 440,
       onClose: () => this.dismiss(),

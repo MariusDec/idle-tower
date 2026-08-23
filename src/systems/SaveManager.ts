@@ -27,7 +27,7 @@ import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 14;
+const SAVE_VERSION = 15;
 
 function defaultWaveModifier() {
   return {
@@ -52,7 +52,16 @@ const AUTO_SAVE_INTERVAL = 30;
  * backstop for a quiet session.
  */
 const SAVE_DEBOUNCE_SECONDS = 5;
-const OFFLINE_CAP_SECONDS = 7 * 24 * 60 * 60;
+/**
+ * Pre-perk floor for the offline cap (plan §10.1).
+ *
+ * Was 7 * 24 * 60 * 60 (seven days) as a constant the walk read directly. The
+ * cap is now derived — `BASE_IDLE_TIME_SECONDS` plus 8h per level of the
+ * `ap_idle_time` AP perk — so this file's job is only to name the default the
+ * manager starts from when nothing has been purchased. `getIdleCapSeconds`,
+ * wired in the constructor, supplies the live figure.
+ */
+const DEFAULT_OFFLINE_CAP_SECONDS = 8 * 60 * 60;
 const OFFLINE_EFFICIENCY = 0.5;
 const AVG_WAVE_DURATION = 18;
 /**
@@ -118,6 +127,8 @@ export interface PersistentState {
 export interface OfflineResult {
   elapsedSeconds: number;
   capped: boolean;
+  /** The cap in effect for this absence, so the report can name it (plan §10.1). */
+  maxIdleSeconds: number;
   effectiveDPS: number;
   goldEarned: number;
   wavesCleared: number;
@@ -452,10 +463,26 @@ function migrateV13toV14(data: Record<string, unknown>): void {
   }
 }
 
+/**
+ * v15 (gameplay plan §10.1): the offline cap became derived.
+ *
+ * Unlike every migration before it, this one has **nothing to seed**. The cap
+ * used to be a constant in this file; it is now `BASE_IDLE_TIME_SECONDS` plus
+ * 8h per level of `ap_idle_time`, and the perk's level already lives in
+ * `prestige.apSpent`, a free-form map every save has carried since v1. A
+ * pre-v15 save with no points in the perk therefore *already means* "8h cap",
+ * so the migration is a restatement of what the save already meant rather
+ * than a grant — same rule as v13 and v14. The function exists only so the
+ * ladder stays one-step-per-version and the number never silently skips.
+ */
+function migrateV14toV15(_data: Record<string, unknown>): void {
+  // no-op: the cap is computed, never persisted.
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -483,6 +510,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 11) { migrateV11toV12(data); data.version = 12; }
   if (data.version === 12) { migrateV12toV13(data); data.version = 13; }
   if (data.version === 13) { migrateV13toV14(data); data.version = 14; }
+  if (data.version === 14) { migrateV14toV15(data); data.version = 15; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -510,10 +538,18 @@ export class SaveManager {
   private savePending = false;
   private readonly busListener: (payload: unknown) => void;
   private readonly getRP: () => number;
+  /**
+   * Live offline cap (plan §10.1). Injected because the cap belongs to the
+   * prestige layer (`ap_idle_time`), which this class does not see.
+   */
+  private readonly getIdleCapSeconds: () => number;
 
   constructor(
     bus: { on: (event: string, h: (payload: unknown) => void) => void },
-    opts: { getRP?: () => number } = {},
+    opts: {
+      getRP?: () => number;
+      getIdleCapSeconds?: () => number;
+    } = {},
   ) {
     this.busListener = (payload) => {
       const p = payload as { success: boolean };
@@ -523,6 +559,7 @@ export class SaveManager {
     };
     bus.on('save_failed', this.busListener);
     this.getRP = opts.getRP ?? (() => 0);
+    this.getIdleCapSeconds = opts.getIdleCapSeconds ?? (() => DEFAULT_OFFLINE_CAP_SECONDS);
   }
 
   snapshot(state: GameState): PersistentState {
@@ -742,14 +779,16 @@ export class SaveManager {
     now: number = Date.now(),
   ): OfflineResult {
     const rawElapsed = Math.max(0, (now - persisted.savedAt) / 1000);
-    const capped = rawElapsed > OFFLINE_CAP_SECONDS;
-    const elapsed = Math.min(rawElapsed, OFFLINE_CAP_SECONDS);
+    const capSeconds = Math.max(0, this.getIdleCapSeconds());
+    const capped = rawElapsed > capSeconds;
+    const elapsed = Math.min(rawElapsed, capSeconds);
     let wave = Math.max(1, persisted.wave.number);
     if (isBossWave(wave)) --wave;
     if (elapsed <= 0) {
       return {
         elapsedSeconds: 0,
         capped,
+        maxIdleSeconds: capSeconds,
         effectiveDPS: 0,
         goldEarned: 0,
         wavesCleared: 0,
@@ -807,6 +846,7 @@ export class SaveManager {
     return {
       elapsedSeconds: elapsed,
       capped,
+      maxIdleSeconds: capSeconds,
       effectiveDPS,
       goldEarned,
       wavesCleared,

@@ -57,11 +57,30 @@ both again for the transcendence path.
 
 | ID | Name | Cost | Max | Effect |
 |----|------|------|-----|--------|
-| ap_extra_shots | Twin Arrows | 2 AP | 10 | +1 front projectile/level |
-| ap_scatter_shots | Scatter Shot | 3 AP | 5 | +1 angled projectile/level |
-| ap_back_shots | Rear Volley | 5 AP | 3 | +1 rear projectile/level |
-| ap_auto_upgrader | Auto-Upgrader | 15 AP | 1 | Auto-buy cheapest upgrade every 10s |
-| ap_wave_skipper | Wave Skipper | 3 AP | 25 | +3% wave skip chance/level |
+| ap_auto_upgrader | Auto-Upgrader | 25 AP | 1 | Auto-buy automation |
+| ap_wave_skipper | Wave Skipper | 6 AP | 15 | +1% wave skip chance/level |
+| ap_quiver | Deep Quiver | 5 AP | 30 | +2% fire rate/level |
+| ap_might | Ascendant Might | 6 AP | 999 | +2% all damage/level |
+| ap_fortune | Ascendant Fortune | 6 AP | 999 | +2% all gold/level |
+| ap_research_speed | Scholarly Focus | 8 AP | 5 | -8% research time/level |
+| ap_idle_time | Extended Watch | 4 AP | 11 | +8h offline cap/level |
+| ap_extra_shots | Twin Arrows | 60 AP | 1 | +1 front projectile at 55% damage |
+| ap_pierce | Bodkin Mastery | 75 AP | 3 | +1 pierce/level |
+| ap_back_shots | Rear Guard | 90 AP | 1 | +1 rear projectile at 55% damage |
+| ap_scatter_shots | Scatter Shot | 200 AP | 1 | +2 angled projectiles at 35% damage |
+| ap_warlord | Warlord | 40 AP | 12 | +5% all damage/level (locks out Tycoon) |
+| ap_tycoon | Tycoon | 40 AP | 12 | +5% all gold/level (locks out Warlord) |
+
+### Idle-time cap
+
+The offline-progress cap is **derived, never stored**: `BASE_IDLE_TIME_SECONDS`
+(8h) plus 8h per level of `ap_idle_time`, up to `IDLE_TIME_MAX_LEVEL` (11) — a
+4-day ceiling. `PrestigeManager.getIdleTimeCapSeconds()` is the single query;
+`SaveManager` receives it as a constructor callback (`getIdleCapSeconds`) and
+applies it in `computeOfflineProgress`, so a perk purchase moves the ceiling on
+the next offline walk with no save-field change. The perk row in
+`PrestigePanel` shows the current cap next to its level (`Idle cap: 1d 8h`),
+and the welcome-back modal names the cap in its "capped at …" line.
 
 **Lifetime AP Bonus:** Each lifetime AP gives +2% damage and +2% gold (additive).
 

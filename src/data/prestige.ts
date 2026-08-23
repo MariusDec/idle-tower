@@ -25,7 +25,8 @@ export type PrestigePerkEffect =
   | 'wave_start'
   | 'auto_buy_speed'
   | 'research_speed'
-  | 'game_speed';
+  | 'game_speed'
+  | 'idle_time';
 
 export type AutomationKey = 'autoBuy' | 'autoAbilities' | 'autoAscend' | 'autoTranscend';
 
@@ -95,6 +96,31 @@ export function computePerkEffect(def: PrestigePerkDef, level: number): number {
  * first prestige inside 15-25 minutes.
  */
 export const ASCENSION_UNLOCK_WAVE = 20;
+
+/**
+ * Idle-time cap tuning (plan §10.1).
+ *
+ * The offline cap starts at 8 hours and grows 8h per level of `ap_idle_time`,
+ * to a 4-day ceiling. The two constants live next to the perk that spends
+ * them so the welcome-back copy and the perk row can stay in step with the
+ * effect without hard-coding seconds at either call site.
+ */
+export const BASE_IDLE_TIME_SECONDS = 8 * 60 * 60;
+export const IDLE_TIME_PER_LEVEL_SECONDS = 8 * 60 * 60;
+export const IDLE_TIME_MAX_LEVEL = 11;
+
+/**
+ * Compact duration for the idle cap (plan §10.1). The cap is always a whole
+ * number of hours, so this never needs a minutes field: `8h`, `1d`, `1d 8h`,
+ * `4d`.
+ */
+export function formatIdleDuration(seconds: number): string {
+  const hours = Math.max(0, Math.round(seconds / 3600));
+  const days = Math.floor(hours / 24);
+  const h = hours % 24;
+  if (days > 0) return h > 0 ? `${days}d ${h}h` : `${days}d`;
+  return `${hours}h`;
+}
 
 /**
  * Default wave for the auto-Ascend target. Sits above the unlock wave so the
@@ -231,6 +257,21 @@ export const AP_PERKS: PrestigePerkDef[] = [
     effectPerLevel: 0.08,
     icon: 'book-pile',
     color: '#9b59ff',
+    tier: 2,
+    prerequisites: [{ perkId: 'ap_auto_upgrader', minLevel: 1 }],
+  },
+  {
+    id: 'ap_idle_time',
+    layer: 'ascension',
+    name: 'Extended Watch',
+    description: 'Tower auto-battles for an additional 8 hours while away.',
+    costPerLevel: 14,
+    costScaling: 1.6,
+    maxLevel: IDLE_TIME_MAX_LEVEL,
+    effectType: 'idle_time',
+    effectPerLevel: IDLE_TIME_PER_LEVEL_SECONDS,
+    icon: 'hourglass',
+    color: '#5b8def',
     tier: 2,
     prerequisites: [{ perkId: 'ap_auto_upgrader', minLevel: 1 }],
   },

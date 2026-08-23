@@ -584,7 +584,7 @@ describe('persistence (plan §6.3)', () => {
     const roundTripped = JSON.parse(JSON.stringify(persisted));
     const restored = new CoreManager();
     restored.restore(roundTripped.cores);
-    expect(roundTripped.version).toBe(14);
+    expect(roundTripped.version).toBe(15);
     expect(restored.current).toBe('bloodforge');
     expect(restored.unlockedIds()).toEqual([...CORE_IDS]);
   });
