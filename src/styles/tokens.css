@@ -377,7 +377,7 @@
      ═════════════════════════════════════════════════════════════════════════ */
 
   /* Side panel sizing. Overridden by JS via inline style. */
-  --panel-width: 400px;
+  --panel-width: 420px;
   --panel-min-width: 280px;
   --panel-max-width: 720px;
   --panel-collapsed-width: 56px;

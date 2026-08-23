@@ -57,7 +57,7 @@ const PANEL_WIDTH_KEY = 'the-tower-panel-width';
 const PANEL_COLLAPSED_KEY = 'the-tower-panel-collapsed';
 const NAV_TAB_KEY = 'the-tower-nav-tab';
 /** §8.A: the rail costs ~52 px, so the old 280 no longer leaves a usable column. */
-const PANEL_MIN = 332;
+const PANEL_MIN = 352;
 const CANVAS_MIN = 420;
 const MOBILE_BREAKPOINT = 768;
 
@@ -821,7 +821,7 @@ export class UIManager {
     try {
       const raw = localStorage.getItem(PANEL_WIDTH_KEY);
       if (!raw) return;
-      const w = Math.max(PANEL_MIN, Math.min(window.innerWidth - CANVAS_MIN, parseInt(raw, 10) || 400));
+      const w = Math.max(PANEL_MIN, Math.min(window.innerWidth - CANVAS_MIN, parseInt(raw, 10) || 420));
       setStyle(this.panelRoot, 'width', `${w}px`);
     } catch {}
   }

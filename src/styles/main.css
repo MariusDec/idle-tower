@@ -154,7 +154,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 3px;
-  width: 44px;
+  width: 64px;
   min-height: 44px;
   padding: 6px 2px;
   color: var(--text-2);
@@ -2083,8 +2083,8 @@ button:disabled {
 
 /* Tablet: shrink side panel slightly, keep all controls. */
 @media (max-width: 1100px) {
-  /* §8.A: the rail costs ~52px, so the tablet default tracks PANEL_MIN. */
-  :root { --panel-width: 332px; }
+  /* §8.A: the rail costs ~73px, so the tablet default tracks PANEL_MIN. */
+  :root { --panel-width: 352px; }
   .hud-group { gap: 12px; }
   .hud-pill { min-width: 68px; }
 }
@@ -3703,6 +3703,8 @@ body.is-resizing * { cursor: ew-resize !important; }
   z-index: 2;
 }
 .panel-root.collapsed .rail-btn.active { border-color: var(--accent); }
+.panel-root.collapsed .rail-btn { width: 44px; }
+.panel-root.collapsed .rail-btn-label { display: none; }
 
 /* Container queries — reflow content grids by panel width (not viewport). */
 .panel-content { container-type: inline-size; }
