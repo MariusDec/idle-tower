@@ -61,6 +61,19 @@ const PANEL_MIN = 332;
 const CANVAS_MIN = 420;
 const MOBILE_BREAKPOINT = 768;
 
+/** §DPS HUD: hold the smoothed reading for this long after a wave resumes, so
+ * it eases into the new wave instead of collapsing toward the empty damage
+ * window. Re-armed on every intermission frame. */
+const DPS_RESUME_EASE = 3;
+/** How long after the freeze the 10 s damage window takes to refill; while it
+ * is refilling the reading only tracks *up*, because an early window
+ * under-reports the true rate. */
+const DPS_REFILL_WINDOW = 10;
+/** HUD push cadence: fast while the reading is moving so the pill's tween has
+ * a fresh target, slow once it settles. */
+const DPS_PUSH_FAST_MS = 250;
+const DPS_PUSH_SLOW_MS = 3000;
+
 export interface AbilityAPI {
   canCast: (id: AbilityId, wave: number) => boolean;
   reasonBlocked: (id: AbilityId, wave: number) => string | null;
@@ -200,6 +213,9 @@ export class UIManager {
   private lastDpsUpdateTime = 0;
   private lastDpsDisplayTime = 0;
   private dpsFreezeTimer = 0;
+  private dpsRefillTimer = 0;
+  /** The last value pushed to the HUD, so push cadence can track drift. */
+  private lastPushedDps = 0;
   private onBuyUpgrade: (id: string, amount: BuyAmount) => void = () => {};
   private onCastAbility: (id: AbilityId) => void = () => {};
   private onUpgradeAbility: (id: AbilityId) => void = () => {};
@@ -1103,20 +1119,42 @@ export class UIManager {
     const dt = this.lastDpsUpdateTime ? (now - this.lastDpsUpdateTime) / 1000 : 0.016;
     this.lastDpsUpdateTime = now;
 
+    // Intermission freeze: the damage log drains to zero within ten seconds of
+    // the last hit, so tracking it through an intermission would show the tower
+    // "losing" DPS it still has. Both timers are re-armed every intermission
+    // frame and only run down once the next wave is live — the ease period the
+    // new wave gets before the reading may move again.
     if (state.wave.intermission) {
-      this.dpsFreezeTimer = 2;
+      this.dpsFreezeTimer = DPS_RESUME_EASE;
+      this.dpsRefillTimer = DPS_REFILL_WINDOW;
     } else if (this.dpsFreezeTimer > 0) {
       this.dpsFreezeTimer = Math.max(0, this.dpsFreezeTimer - dt);
+    } else if (this.dpsRefillTimer > 0) {
+      this.dpsRefillTimer = Math.max(0, this.dpsRefillTimer - dt);
     }
 
     if (this.dpsFreezeTimer <= 0) {
       const smoothingTime = 10;
       const alpha = dt > 0 ? 1 - Math.exp(-dt / smoothingTime) : 1;
-      this.smoothedDps = this.smoothedDps * (1 - alpha) + this.realTimeDps * alpha;
+      // While the damage window refills after a lull, an early reading is a
+      // fraction of the true rate. Only track *up* then: chasing the early
+      // reading down would dip the pill below the value it held and drag it
+      // back up again as the window filled.
+      const refilling = this.dpsRefillTimer > 0 && this.realTimeDps < this.smoothedDps;
+      if (!refilling) {
+        this.smoothedDps = this.smoothedDps * (1 - alpha) + this.realTimeDps * alpha;
+      }
     }
 
-    if (now - this.lastDpsDisplayTime >= 3000) {
+    // Adaptive push cadence: while the reading is on the move the HUD needs a
+    // fresh target at tween speed; once it settles, a slow refresh is plenty.
+    const drift = Math.abs(this.smoothedDps - this.lastPushedDps);
+    const cadenceMs = drift > Math.max(0.5, this.lastPushedDps * 0.01)
+      ? DPS_PUSH_FAST_MS
+      : DPS_PUSH_SLOW_MS;
+    if (now - this.lastDpsDisplayTime >= cadenceMs) {
       this.hud.setDPS(this.smoothedDps);
+      this.lastPushedDps = this.smoothedDps;
       this.lastDpsDisplayTime = now;
     }
 
@@ -1191,7 +1229,9 @@ export class UIManager {
     const r = state.resources;
     this.hud.setStatsInfo({
       damage: t.baseDamage,
-      dps: this.realTimeDps,
+      // The same smoothed reading the HUD DPS pill tweens from, so the
+      // tooltip row and the pill cannot disagree about the tower's DPS.
+      dps: this.smoothedDps,
       hp: t.hp,
       maxHp: t.maxHp,
       healthRegen: t.healthRegen,

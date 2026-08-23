@@ -40,6 +40,30 @@ burrower and a splitter child inside its spawn protection are on the field and
 cannot be hit, so offering them here would stall the tower on a target it can
 never damage. See [enemy-system.md](enemy-system.md#targetability).
 
+### Lock-on
+
+The chosen target is **remembered across shots**. Every mode keeps it until the
+enemy dies, leaves the field, leaves range, or becomes un-targetable — a
+second, better candidate of the same mode does not pull fire. This is what lets
+a `nearest` tower finish a kill instead of hopping between two enemies whose
+distances cross mid-volley, and it changes what `lowest_hp`/`strongest` mean:
+they pick "the weakest/strongest enemy *when I picked*", then commit.
+
+The lock is dropped by anything that should re-open the question:
+
+- the locked enemy dies, leaves the list, leaves range, or fails `isTargetable`
+- the mode is changed (`setTargetingMode` clears it — a new mode means new rules)
+- manual aim begins (`Game.setMouseInput` calls `clearTargetLock` on the
+  rising edge, so releasing the hold re-acquires fresh; a press consumed by an
+  orb or ability placement never raises `isDown` and does not disturb the lock)
+- any run reset (`Game.clearSave` / `applySavedStateReset`), so a stale enemy
+  object never crosses the run boundary
+
+`priority` makes one exception: a **higher-tier** enemy appearing in range and
+targetable displaces the lock immediately — a warden showing up unseats a
+locked healer, and any listed type unseats a locked trash mob, because that
+enemy's *job* is the problem. Equal-tier enemies never displace each other.
+
 | Mode | Picks |
 |---|---|
 | `'priority'` **(default)** | Warden → healer → thief → siege, nearest within each tier; then nearest overall |

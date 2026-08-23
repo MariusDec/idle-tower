@@ -660,6 +660,145 @@ describe('priority targeting (plan §2.3)', () => {
   });
 });
 
+describe('lock-on targeting', () => {
+  let h: Harness;
+  beforeEach(() => { h = harness(); });
+
+  it('priority: keeps an equal-tier target when another of the same type is closer', () => {
+    const near = h.mgr.spawn('healer', 40, TOWER_X + world(200), TOWER_Y);
+    h.mgr.spawn('healer', 40, TOWER_X + world(300), TOWER_Y);
+    const tower = makeTower('priority');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(near.id);
+    // The locked one falls behind its twin; equal tier does not pull fire.
+    near.x = TOWER_X + world(400);
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(near.id);
+  });
+
+  it('priority: keeps a locked behavioural type when trash walks closer', () => {
+    const thief = h.mgr.spawn('thief', 40, TOWER_X + world(200), TOWER_Y);
+    const normal = h.mgr.spawn('normal', 40, TOWER_X + world(300), TOWER_Y);
+    const tower = makeTower('priority');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(thief.id);
+    normal.x = TOWER_X + world(50);
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(thief.id);
+  });
+
+  it('priority: a higher-tier enemy appearing displaces the lock', () => {
+    const healer = h.mgr.spawn('healer', 40, TOWER_X + world(200), TOWER_Y);
+    const tower = makeTower('priority');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(healer.id);
+    const warden = h.mgr.spawn('warden', 40, TOWER_X + world(400), TOWER_Y);
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(warden.id);
+  });
+
+  it('priority: any listed type displaces a locked trash mob', () => {
+    const normal = h.mgr.spawn('normal', 40, TOWER_X + world(100), TOWER_Y);
+    const tower = makeTower('priority');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(normal.id);
+    const siege = h.mgr.spawn('siege', 40, TOWER_X + world(500), TOWER_Y);
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(siege.id);
+  });
+
+  it('nearest: a closer enemy appearing does not pull fire', () => {
+    const far = h.mgr.spawn('normal', 40, TOWER_X + world(300), TOWER_Y);
+    const tower = makeTower('nearest');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(far.id);
+    h.mgr.spawn('normal', 40, TOWER_X + world(50), TOWER_Y);
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(far.id);
+  });
+
+  it('lowest_hp: a weaker enemy appearing does not pull fire', () => {
+    const first = h.mgr.spawn('tank', 40, TOWER_X + world(300), TOWER_Y);
+    const tower = makeTower('lowest_hp');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(first.id);
+    const weaker = h.mgr.spawn('tank', 40, TOWER_X + world(200), TOWER_Y);
+    weaker.hp = 1;
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(first.id);
+  });
+
+  it('strongest: a bigger enemy appearing does not pull fire', () => {
+    const first = h.mgr.spawn('normal', 40, TOWER_X + world(200), TOWER_Y);
+    const tower = makeTower('strongest');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(first.id);
+    const bigger = h.mgr.spawn('normal', 40, TOWER_X + world(300), TOWER_Y);
+    bigger.maxHp = 1e9;
+    bigger.hp = 1e9;
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(first.id);
+  });
+
+  it('boss: a boss appearing does not pull fire', () => {
+    const first = h.mgr.spawn('normal', 40, TOWER_X + world(200), TOWER_Y);
+    const tower = makeTower('boss');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(first.id);
+    h.mgr.spawn('boss', 40, TOWER_X + world(300), TOWER_Y);
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(first.id);
+  });
+
+  it('flying: a flyer appearing does not pull fire', () => {
+    const first = h.mgr.spawn('normal', 40, TOWER_X + world(200), TOWER_Y);
+    const tower = makeTower('flying');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(first.id);
+    h.mgr.spawn('flying', 40, TOWER_X + world(300), TOWER_Y);
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(first.id);
+  });
+
+  it('last: a further enemy appearing does not pull fire', () => {
+    const first = h.mgr.spawn('normal', 40, TOWER_X + world(200), TOWER_Y);
+    const tower = makeTower('last');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(first.id);
+    h.mgr.spawn('normal', 40, TOWER_X + world(500), TOWER_Y);
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(first.id);
+  });
+
+  it('drops the lock when the target dies', () => {
+    const warden = h.mgr.spawn('warden', 40, TOWER_X + world(200), TOWER_Y);
+    const healer = h.mgr.spawn('healer', 40, TOWER_X + world(300), TOWER_Y);
+    const tower = makeTower('priority');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(warden.id);
+    warden.alive = false;
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(healer.id);
+  });
+
+  it('drops the lock when the target leaves range', () => {
+    const near = h.mgr.spawn('normal', 40, TOWER_X + 100, TOWER_Y);
+    const far = h.mgr.spawn('normal', 40, TOWER_X + 300, TOWER_Y);
+    const tower = makeTower('nearest');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(near.id);
+    near.x = TOWER_X + 2100;
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(far.id);
+  });
+
+  it('drops the lock when the target becomes un-targetable', () => {
+    const near = h.mgr.spawn('normal', 40, TOWER_X + 100, TOWER_Y);
+    const far = h.mgr.spawn('normal', 40, TOWER_X + 300, TOWER_Y);
+    const tower = makeTower('nearest');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(near.id);
+    near.burrowed = true;
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(far.id);
+  });
+
+  it('switching modes drops the lock', () => {
+    const far = h.mgr.spawn('normal', 40, TOWER_X + 300, TOWER_Y);
+    const tower = makeTower('nearest');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(far.id);
+    h.mgr.spawn('normal', 40, TOWER_X + 50, TOWER_Y);
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(far.id);
+    // Even back to the same mode: the new mode re-selects from scratch.
+    tower.setTargetingMode('nearest');
+    expect(tower.acquireTarget(h.mgr.list)?.id).not.toBe(far.id);
+  });
+
+  it('clearTargetLock makes the next shot re-acquire', () => {
+    const far = h.mgr.spawn('normal', 40, TOWER_X + 300, TOWER_Y);
+    const tower = makeTower('nearest');
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(far.id);
+    h.mgr.spawn('normal', 40, TOWER_X + 50, TOWER_Y);
+    expect(tower.acquireTarget(h.mgr.list)?.id).toBe(far.id);
+    tower.clearTargetLock();
+    expect(tower.acquireTarget(h.mgr.list)?.id).not.toBe(far.id);
+  });
+});
+
 describe('spawn pool (plan §2.4)', () => {
   it('unlocks each behavioural type at its documented wave', () => {
     for (const [type, wave] of [

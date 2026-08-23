@@ -63,6 +63,28 @@ speed stepper and the two stat popups.
 | Speed stepper | `SpeedAPI` | right-hand group |
 | FPS | written by `Game` into `getFpsEl()` | a diagnostic, styled as a lesser citizen |
 
+### The DPS readout
+
+The DPS chip and the Stats tooltip's DPS row read the **same smoothed
+value**: a 10 s EMA of real damage dealt, composed per frame in
+`UIManager.update`. The tooltip renders that value directly; the chip tweens
+toward it per frame (τ = 0.2 s) and writes its text every frame rather than on
+the throttled `update()`, so the number eases instead of stepping at 10 fps.
+The `setText` cache keeps a settled value at zero DOM writes.
+
+The EMA freezes through an intermission — the 10 s damage window drains to
+zero after the last hit, and tracking that would show the tower "losing" DPS
+it still has. After the wave resumes there is a 3 s ease hold, then a 10 s
+refill window during which the reading only tracks **up**: an early window
+under-reports the true rate, so chasing it down would dip the pill below the
+value it held and drag it back up as the window filled. The HUD target is
+pushed at a fast cadence (250 ms) while the reading is moving and a slow one
+(3 s) once it settles, so the tween always has a fresh target.
+
+Under 10 the readout always carries one decimal (`5.0`, not `5`) via
+`formatWithOptionalDecimal`'s `keepTrailingZeros` option, so a whole-number
+rate is visibly a rate and not a count.
+
 ### Resource chips (`.hud-pill`)
 
 `HUD.addPill` builds icon + caption + value; `HUD.setPillValue` writes it. Two
@@ -74,7 +96,9 @@ pieces of motion, and they say different things:
   and at wave 300.
 
 DPS gets neither: it is a rate, and a rate drifting up every frame would flicker
-continuously without marking anything the player did.
+continuously without marking anything the player did. Its motion is the
+per-frame tween described above instead — the number eases between readings
+rather than jumping.
 
 Gain detection reads the **authoritative** state number, not the tweened display
 one. The tween lags by a few frames, so detecting on it re-fires the tick for

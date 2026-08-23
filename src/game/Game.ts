@@ -2249,6 +2249,11 @@ export class Game {
       this.mouseX = x;
       this.mouseY = y;
     }
+    // Manual aim begins: drop the lock-on so releasing the hold re-acquires
+    // fresh rather than resuming a commitment made before the player took over.
+    // A consumed press (orb, placement) never raises `isDown`, so clicking
+    // something does not disturb the lock.
+    if (isDown && !this.mouseDown) this.tower.clearTargetLock();
     this.mouseDown = isDown;
   }
 
@@ -2676,6 +2681,7 @@ export class Game {
     this.enemyMgr.reset();
     this.projectileMgr.reset();
     this.abilityMgr.reset();
+    this.tower.clearTargetLock();
     this.effects.reset();
     this.automation.reset();
     this.researchTree.replaceLevels({}, 0, null);
@@ -3429,6 +3435,9 @@ export class Game {
     t.maxHp = TOWER_BASE.maxHp;
     t.shieldCurrentCharges = 0;
     t.shieldRechargeTimer = 0;
+    // The enemy list is re-rolled below; the lock-on must not carry a stale
+    // enemy object across the run boundary.
+    this.tower.clearTargetLock();
 
     const startWave = Math.max(
       this.researchTree.getStartWave(),

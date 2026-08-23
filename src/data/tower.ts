@@ -117,11 +117,12 @@ export const TOWER_HIT_RADIUS = TOWER_VISUAL.bodyRadius + entity(4);
  *
  * Shared by the HUD dropdown and the Settings panel so the two cannot drift.
  * `priority` leads because it is the default and, with the behavioural roster
- * on the field, the correct answer most of the time.
+ * on the field, the correct answer most of the time. Every mode locks onto its
+ * chosen target until it dies or leaves range (docs/tower-system.md#lock-on).
  */
 export const TARGETING_MODES: ReadonlyArray<{ id: TargetingMode; label: string; hint: string }> = [
   { id: 'priority', label: 'Priority', hint: 'Warden → Healer → Thief → Siege, then nearest' },
-  { id: 'nearest', label: 'Nearest', hint: 'Closest enemy to the tower' },
+  { id: 'nearest', label: 'Nearest', hint: 'Closest enemy, locked on until it dies' },
   { id: 'lowest_hp', label: 'Lowest HP', hint: 'Finish wounded enemies first' },
   { id: 'strongest', label: 'Strongest', hint: 'Highest max HP in range' },
   { id: 'boss', label: 'Boss first', hint: 'Bosses before anything else' },

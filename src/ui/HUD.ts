@@ -201,7 +201,23 @@ export class HUD {
 
   setDPS(value: number): void {
     this.dps = value;
-    if (this.moreDpsEl) setText(this.moreDpsEl, formatNumber(value));
+  }
+
+  /**
+   * Write the (tweened) DPS to every surface that shows it: the header pill
+   * and the mobile "More" mirror. Called per frame from `tickDisplay`, not
+   * from the throttled `update()` — the tween is what makes the number ease,
+   * and a tween read at 10 fps is a stutter, not an animation. The `dom`
+   * helpers cache the last string, so a settled value writes nothing.
+   *
+   * `keepTrailingZeros` is the fractional readout: under 10 the value always
+   * carries its decimal ("5.0", not "5"), so a whole-number rate is visibly a
+   * rate and not a count.
+   */
+  private writeDpsValue(value: number): void {
+    const text = formatWithOptionalDecimal(value, 1, { keepTrailingZeros: true });
+    setText(this.dpsPill.valueEl, text);
+    if (this.moreDpsEl) setText(this.moreDpsEl, text);
   }
 
 
@@ -276,7 +292,7 @@ export class HUD {
     setInnerHTML(el, `
       <div class="stat-row"><span>Damage</span><span>${formatWithOptionalDecimal(info.damage)}</span></div>
       <div class="stat-row"><span>Fire Rate</span><span>${info.fireRate.toFixed(2)}/s</span></div>
-      <div class="stat-row"><span>DPS</span><span>${formatWithOptionalDecimal(info.dps)}</span></div>
+      <div class="stat-row"><span>DPS</span><span>${formatWithOptionalDecimal(info.dps, 1, { keepTrailingZeros: true })}</span></div>
       <div class="stat-row"><span>Crit Rate</span><span>${pct(info.critChance)}</span></div>
       <div class="stat-row"><span>Crit Damage</span><span>${(info.critDamage * 100).toFixed(0)}%</span></div>
       <div class="stat-row"><span>Range</span><span>${info.range.toFixed(0)}</span></div>
@@ -384,7 +400,8 @@ export class HUD {
   /**
    * Per-frame tween for smooth number transitions. Called from Game.update()
    * every frame (not throttled). Updates display float values that HUD.update()
-   * later renders via textContent.
+   * later renders via textContent — except DPS, whose pill is written here,
+   * per frame, so the tween is what is on screen.
    */
   tickDisplay(dt: number, state: GameState): void {
     // Initialize display values on first call to avoid giant snap from 0
@@ -413,6 +430,7 @@ export class HUD {
       this.displayWave += (state.wave.number - this.displayWave) * waveAlpha;
     const dpsAlpha = 1 - Math.exp(-dt / 0.2);
     this.displayDps += (this.dps - this.displayDps) * dpsAlpha;
+    this.writeDpsValue(this.displayDps);
     const tx = state.towerXp;
     if (tx) {
       // Exponentially-smoothed XP rate. Seeded on the first frame so a loaded
@@ -483,10 +501,11 @@ export class HUD {
     toggleClass(this.waveFocal, 'is-boss', boss);
     setText(this.waveCaptionEl, boss ? 'Boss Wave' : 'Wave');
     // The chip carries the label, so the value no longer has to repeat it —
-    // "1.2K DPS" under a heading reading "DPS" was saying it twice. No tick:
-    // DPS is a *rate*, and a rate that drifts up every frame would flicker
-    // continuously rather than marking anything the player did.
-    setText(this.dpsPill.valueEl, formatWithOptionalDecimal(this.displayDps));
+    // "1.2K DPS" under a heading reading "DPS" was saying it twice. The value
+    // itself is written per frame by `tickDisplay`'s `writeDpsValue`, so the
+    // tweened number is what is on screen. No tick: DPS is a *rate*, and a
+    // rate that drifts up every frame would flicker continuously rather than
+    // marking anything the player did.
     this.setPillValue(
       this.killsPill,
       formatNumber(state.stats.enemiesKilled),

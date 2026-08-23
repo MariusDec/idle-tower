@@ -18,4 +18,16 @@ describe('formatWithOptionalDecimal', () => {
     expect(formatWithOptionalDecimal(12.5)).toBe('12');
     expect(formatWithOptionalDecimal(1234)).toBe('1,234');
   });
+
+  it('keeps trailing zeros when asked, so whole rates read as fractional', () => {
+    expect(formatWithOptionalDecimal(5, 1, { keepTrailingZeros: true })).toBe('5.0');
+    expect(formatWithOptionalDecimal(0, 1, { keepTrailingZeros: true })).toBe('0.0');
+    expect(formatWithOptionalDecimal(2.2, 1, { keepTrailingZeros: true })).toBe('2.2');
+    expect(formatWithOptionalDecimal(9.94, 2, { keepTrailingZeros: true })).toBe('9.94');
+  });
+
+  it('still uses integers at or above 10 with keepTrailingZeros', () => {
+    expect(formatWithOptionalDecimal(10, 1, { keepTrailingZeros: true })).toBe('10');
+    expect(formatWithOptionalDecimal(1234, 1, { keepTrailingZeros: true })).toBe('1,234');
+  });
 });
