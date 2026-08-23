@@ -31,8 +31,7 @@ function buildGroups(): BindGroup[] {
       title: 'Waves & speed',
       binds: [
         { keys: ['Space'], action: 'Call the next wave early — banks gold momentum for every second skipped' },
-        { keys: [',', '<'], action: 'Go to the previous wave' },
-        { keys: ['.', '>'], action: 'Go to the next wave (up to your deepest)' },
+        { keys: ['R'], action: 'Restart the current wave' },
         { keys: ['P'], action: 'Toggle auto-progress' },
         { keys: ['-'], action: 'Slow the game down' },
         { keys: ['='], action: 'Speed the game up' },

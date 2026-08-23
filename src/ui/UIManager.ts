@@ -214,8 +214,7 @@ export class UIManager {
   private onToggleAutomation: (key: AutomationKey, enabled: boolean) => void = () => {};
   private onTargetWaveChange: (wave: number) => void = () => {};
   private onSpeedChange: (index: number) => void = () => {};
-  private onPrevWave: () => void = () => {};
-  private onNextWave: () => void = () => {};
+  private onRestartWave: () => void = () => {};
   private onToggleAutoProgress: () => void = () => {};
   private onCallWaveEarly: () => void = () => {};
   private onRiskChange: (level: number) => void = () => {};
@@ -379,8 +378,7 @@ export class UIManager {
 
     this.hud = new HUD(deps.hudRoot);
     this.hud.setOnSpeedChange((index) => this.onSpeedChange(index));
-    this.hud.setOnPrevWave(() => this.onPrevWave());
-    this.hud.setOnNextWave(() => this.onNextWave());
+    this.hud.setOnRestartWave(() => this.onRestartWave());
     this.hud.setOnToggleAutoProgress(() => this.onToggleAutoProgress());
     this.hud.setOnCallWaveEarly(() => this.onCallWaveEarly());
     this.hud.setOnRiskChange((level) => this.onRiskChange(level));
@@ -882,12 +880,8 @@ export class UIManager {
     this.onSpeedChange = handler;
   }
 
-  setOnPrevWave(handler: () => void): void {
-    this.onPrevWave = handler;
-  }
-
-  setOnNextWave(handler: () => void): void {
-    this.onNextWave = handler;
+  setOnRestartWave(handler: () => void): void {
+    this.onRestartWave = handler;
   }
 
   setOnToggleAutoProgress(handler: () => void): void {
@@ -1051,9 +1045,6 @@ export class UIManager {
     }
   }
 
-  getFpsElement(): HTMLElement {
-    return this.hud.getFpsEl();
-  }
 
   setDPS(dps: number): void {
     this.hud.setDPS(dps);

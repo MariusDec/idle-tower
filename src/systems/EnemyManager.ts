@@ -732,6 +732,19 @@ export class EnemyManager {
           : ENEMY_BEHAVIOR.healerFleeSpeedMult;
         e.x += flee.x * moveSpeed * fleeMult * dt;
         e.y += flee.y * moveSpeed * fleeMult * dt;
+        if (e.type === 'healer') {
+          // Heal itself back up while it runs, stop at the edge rather than
+          // leaving the field, and walk back in once whole.
+          const margin = ENEMY_BEHAVIOR.healerFleeEdgeMargin;
+          e.x = Math.min(Math.max(e.x, margin), this.boundsWidth - margin);
+          e.y = Math.min(Math.max(e.y, margin), this.boundsHeight - margin);
+          e.hp = Math.min(e.maxHp, e.hp + e.maxHp * ENEMY_BEHAVIOR.healerSelfHealPerSecond * dt);
+          if (e.hp >= e.maxHp) {
+            e.hp = e.maxHp;
+            e.healerRecovered = true;
+            e.fleeing = false;
+          }
+        }
       } else if (stance === 'hold') {
         e.attacking = false;
       } else {
@@ -888,13 +901,21 @@ export class EnemyManager {
         this.tickShieldRegen(e, dt);
         return 'advance';
 
-      // Below 40% it turns and runs, still healing as it goes: the one enemy
-      // whose *reward* for surviving is undoing your work now punishes you for
-      // treating it as a background number (plan §2.2).
+      // Below 40% it turns and runs for the arena edge, patching itself up as
+      // it goes; once fully healed it walks back in and never flees again
+      // (plan §2.2). A healer that left the field would be an unkillable wave
+      // — the escape branch is for thieves only.
       case 'healer': {
+        if (e.healerRecovered === true) {
+          e.fleeing = false;
+          return 'advance';
+        }
         const wounded = e.maxHp > 0 && e.hp / e.maxHp < ENEMY_BEHAVIOR.healerFleeThreshold;
-        e.fleeing = wounded;
-        return wounded ? 'retreat' : 'advance';
+        // Once running, it stays running until fully healed; the threshold
+        // only *starts* the retreat.
+        const retreating = (e.fleeing === true || wounded) && e.hp < e.maxHp;
+        e.fleeing = retreating;
+        return retreating ? 'retreat' : 'advance';
       }
 
       // Halts outside a short build's range and shells the tower on a fixed

@@ -162,6 +162,10 @@ export const ENEMY_BEHAVIOR = {
   healerFleeThreshold: 0.4,
   /** Speed multiplier for a fleeing healer. */
   healerFleeSpeedMult: 1.15,
+  /** How far from the arena edge a fleeing healer stops, so it never leaves the field. */
+  healerFleeEdgeMargin: world(40),
+  /** Max-HP fraction a fleeing healer restores to itself per second. */
+  healerSelfHealPerSecond: 0.12,
 
   /** Enemies in one `fast` spawn pack. */
   fastPackSize: 3,
@@ -490,7 +494,7 @@ export const ENEMY_BEHAVIOR_CONSUMERS: Record<EnemyType, string> = {
   fast: 'WaveManager.spawnOne — arrives in packs of three from one shared spawn point',
   tank: 'ProjectileManager.tick — body-blocks, so a shot never pierces past a tank',
   flying: 'EnemyManager.tick + Game mine loop — ignores the wall contact band and land mines',
-  healer: 'EnemyManager.tick — heals allies, and flees while healing below 40% HP',
+  healer: 'EnemyManager.tick — heals allies; below 40% HP it flees to the arena edge while healing itself, then returns and never flees again',
   boss: 'EnemyManager.tickBoss — three phases at 66%/33% HP, one pattern each, plus the §3.3 enrage timer',
   splitter: 'Game enemy_killed + EnemyManager.spawnSplitterChild — children scatter under 2 s spawn protection',
   shielded: 'EnemyManager.tick — rebuilds a charge every 6 s after 3 s undamaged',

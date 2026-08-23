@@ -44,3 +44,17 @@ export function formatInt(n: number): string {
   if (n < 0) return '-' + formatInt(-n);
   return Math.floor(n).toLocaleString();
 }
+
+/**
+ * Compact readout for small live numbers (damage/heal/regen).
+ *
+ * Values under 10 keep one decimal place so fractional ticks read accurately;
+ * larger values show as integers so the label does not sprawl.
+ */
+export function formatWithOptionalDecimal(n: number, decimalCount = 1): string {
+  if (!isFinite(n)) return 'Infinity';
+  if (n < 0) return '-' + formatWithOptionalDecimal(-n);
+  if (n >= 10) return formatInt(n);
+  const s = n.toFixed(decimalCount);
+  return s.replace(/\.?0+$/, '');
+}

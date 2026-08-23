@@ -177,6 +177,8 @@ export interface Enemy {
   stolenGold?: number;
   /** True while the enemy is running away from the tower (thief, wounded healer). */
   fleeing?: boolean;
+  /** Healer: true once it has fled to the edge and healed back to full — it never flees twice. */
+  healerRecovered?: boolean;
   /** Blinker: seconds until the next teleport. */
   blinkTimer?: number;
   /** Blinker: seconds of knockback/mine immunity left from the last blink. */

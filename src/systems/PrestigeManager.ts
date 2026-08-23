@@ -215,6 +215,33 @@ export class PrestigeManager {
     return bonus;
   }
 
+  /**
+   * Fire-rate multiplier from Deep Quiver (revamp §8.2).
+   *
+   * Multiplicative per perk the way the TP fire-rate node composes, so the two
+   * layers stack the same way; consumed in `stats/contributors/prestige.ts`.
+   */
+  getAPFireRateMultiplier(): number {
+    let factor = 1;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'fire_rate_mult') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) factor *= 1 + computePerkEffect(p, lvl);
+    }
+    return factor;
+  }
+
+  /** Flat `pierceExtra` from Bodkin Mastery (revamp §8.2). */
+  getAPPierceBonus(): number {
+    let total = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'pierce') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) total += Math.floor(computePerkEffect(p, lvl));
+    }
+    return total;
+  }
+
   getExtraShots(): number {
     return this.getAPLevel('ap_extra_shots');
   }

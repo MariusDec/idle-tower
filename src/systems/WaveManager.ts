@@ -445,17 +445,15 @@ export class WaveManager {
     this.onWaveStarted(this.state.number);
   }
 
-  goToPrevWave(): boolean {
-    if (this.state.number <= 1) return false;
-    const prev = this.state.number - 1;
+  /**
+   * Replay the wave currently on the field. Replaces the old prev/next step
+   * controls: going backwards re-farmed earlier waves and going forwards
+   * skipped past ones the run never survived, so the only wave jump the HUD
+   * offers now is "this one, again".
+   */
+  restartWave(): boolean {
     this.enemies.reset();
-    this.startWave(prev);
-    return true;
-  }
-
-  goToNextWave(): boolean {
-    this.enemies.reset();
-    this.startWave(this.state.number + 1);
+    this.startWave(this.state.number);
     return true;
   }
 
@@ -472,9 +470,6 @@ export class WaveManager {
     return this.state.autoProgress;
   }
 
-  canGoPrev(): boolean {
-    return this.state.number > 1;
-  }
 
   setState(s: WaveState): void {
     this.state = { ...s, elapsed: s.elapsed ?? 0, enrageStacks: s.enrageStacks ?? 0 };

@@ -191,7 +191,7 @@ export const CORES: readonly CoreDef[] = [
     // (0.6 x 1.8 = 1.08), and the rest of the core's worth is the splash. §6.1
     // asked for +150%, which is 1.5x sustained output on its own — see the
     // header note on why that unit is wrong.
-    apCost: 5,
+    apCost: 30,
     // Measured: at +80% the core sits +13% of marksman's composed DPS at 0 AP
     // and tips the wall a whole decade. +65% is throughput parity
     // (0.6 x 1.65 = 0.99), which leaves the splash as the core's actual worth
@@ -211,7 +211,7 @@ export const CORES: readonly CoreDef[] = [
     // break-even on paper (1.30 x 0.85 = 1.105) because more shots means more
     // damage lost to flat enemy armour and more overkill on small targets — the
     // trade is not symmetric even when the multipliers look like it.
-    apCost: 10,
+    apCost: 45,
     // -18%, not §6.1's -15%: the extra shots each pay the enemy's flat armour
     // again, so 1.30 x 0.82 = 1.066 on paper measures as parity in practice.
     stats: { fireRatePct: 0.30, damagePct: -0.18 },
@@ -226,7 +226,7 @@ export const CORES: readonly CoreDef[] = [
       + `${Math.round(CORE_TUNING.desperateFireRate * 100)}% fire rate.`,
     icon: 'bloody-sword',
     color: '#c0453f',
-    apCost: 15,
+    apCost: 60,
     stats: { maxHpPct: 0.60, lifestealAdd: 0.08, goldPct: -0.20 },
     behaviors: ['kill_heal', 'desperate_tempo'],
   },
@@ -250,7 +250,7 @@ export const CORES: readonly CoreDef[] = [
     // most fire rate. -18% holds it inside ±10% across the whole ladder, and
     // Meditation is the answer to the rest — the sim's greedy buyer takes it
     // to level 4, which is precisely full uptime (see `procShare`).
-    apCost: 25,
+    apCost: 90,
     stats: { damagePct: -0.18, manaRegenPct: 1.0, abilityDamagePct: 0.50 },
     behaviors: ['mana_shot'],
   },

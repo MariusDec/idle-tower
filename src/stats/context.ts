@@ -15,6 +15,10 @@ export interface PrestigeInputs {
   /** Bonuses from AP actually spent on perks, as fractions. */
   apDamage: number;
   apGold: number;
+  /** Ascension fire-rate multiplier from Deep Quiver (already `1 + x` shaped). */
+  apFireRate: number;
+  /** Flat pierce from Bodkin Mastery. */
+  apPierce: number;
   /** Transcendence multipliers (already `1 + x` shaped). */
   tpDamage: number;
   tpFireRate: number;
@@ -137,6 +141,8 @@ export function emptyStatContext(): StatContext {
       lifetimeGold: 0,
       apDamage: 0,
       apGold: 0,
+      apFireRate: 1,
+      apPierce: 0,
       tpDamage: 1,
       tpFireRate: 1,
       tpManaRegen: 1,

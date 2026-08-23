@@ -98,11 +98,8 @@ function bootstrap(): void {
   ui.setOnSpeedChange((index) => {
     game.setSpeedIndex(index);
   });
-  ui.setOnPrevWave(() => {
-    game.goToPrevWave();
-  });
-  ui.setOnNextWave(() => {
-    game.goToNextWave();
+  ui.setOnRestartWave(() => {
+    game.restartWave();
   });
   ui.setOnToggleAutoProgress(() => {
     game.toggleAutoProgress();
@@ -307,13 +304,8 @@ function bootstrap(): void {
       game.callWaveEarly();
       return;
     }
-    if (ev.key === '<' || ev.key === ',') {
-      game.goToPrevWave();
-      ev.preventDefault();
-    } else if (ev.key === '>' || ev.key === '.') {
-      if (game.gameState.wave.number >= game.gameState.wave.highestWave) return;
-
-      game.goToNextWave();
+    if (ev.key === 'r' || ev.key === 'R') {
+      game.restartWave();
       ev.preventDefault();
     } else if (ev.key === 'p' || ev.key === 'P') {
       game.toggleAutoProgress();
@@ -340,7 +332,6 @@ function bootstrap(): void {
     }
   });
 
-  game.setFpsOverlay(ui.getFpsElement());
   const canvasWrap = document.querySelector('.canvas-wrap') as HTMLElement | null;
   game.setCanvasWrap(canvasWrap);
   game.tryLoadSave();

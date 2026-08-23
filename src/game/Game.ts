@@ -443,10 +443,7 @@ export class Game {
   private saveLoaded = false;
   private rafId: number | null = null;
 
-  private fpsAccumulator = 0;
-  private fpsFrames = 0;
-  private currentFps = 0;
-  private fpsOverlay: HTMLElement | null = null;
+
   private mines: Mine[] = [];
   private announcedMilestones = new Set<number>();
   private researchAnnounced = new Set<string>();
@@ -1611,9 +1608,6 @@ export class Game {
     }
   }
 
-  setFpsOverlay(el: HTMLElement | null): void {
-    this.fpsOverlay = el;
-  }
 
   /**
    * The quality knob (UI plan §5.F).
@@ -2232,20 +2226,13 @@ export class Game {
     return Number.isInteger(v) ? `${v}x` : `${v}x`;
   }
 
-  goToPrevWave(): boolean {
-    const ok = this.waveMgr.goToPrevWave();
+  restartWave(): boolean {
+    const ok = this.waveMgr.restartWave();
     if (ok) {
       this.mines = [];
       this.bus.emit('toast', { kind: 'info', text: `Restarted wave ${this.waveMgr.currentWave}`, life: 1.5 });
     }
     return ok;
-  }
-
-  goToNextWave(): boolean {
-    this.mines = [];
-    this.waveMgr.goToNextWave();
-    this.bus.emit('toast', { kind: 'info', text: `Skipped to wave ${this.waveMgr.currentWave}`, life: 1.5 });
-    return true;
   }
 
   /**
@@ -2610,9 +2597,6 @@ export class Game {
     return next;
   }
 
-  canGoPrevWave(): boolean {
-    return this.waveMgr.canGoPrev();
-  }
 
   reasonResearchBlocked(id: string): string | null {
     return this.researchTree.reasonBlocked(id);
@@ -3125,6 +3109,8 @@ export class Game {
         lifetimeGold: lifetime.gold,
         apDamage: this.prestigeMgr.getAPDamageBonus(),
         apGold: this.prestigeMgr.getAPGoldBonus(),
+        apFireRate: this.prestigeMgr.getAPFireRateMultiplier(),
+        apPierce: this.prestigeMgr.getAPPierceBonus(),
         tpDamage: this.prestigeMgr.getTPDamageMultiplicative(),
         tpFireRate: this.prestigeMgr.getTPFireRateMultiplier(),
         tpManaRegen: this.prestigeMgr.getTPManaRegenMultiplier(),
@@ -4114,17 +4100,6 @@ export class Game {
     this.draw();
     this.state.wave = this.waveMgr.snapshot;
     this.ui.update(this.state);
-
-    this.fpsAccumulator += dt;
-    this.fpsFrames += 1;
-    if (this.fpsAccumulator >= 0.5) {
-      this.currentFps = Math.round(this.fpsFrames / this.fpsAccumulator);
-      this.fpsAccumulator = 0;
-      this.fpsFrames = 0;
-      if (this.fpsOverlay) {
-        this.fpsOverlay.textContent = `FPS: ${this.currentFps}`;
-      }
-    }
 
     this.rafId = requestAnimationFrame(this.loop);
   };

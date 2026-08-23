@@ -124,63 +124,27 @@ export const PRESTIGE_PROJECTILE_TUNING = {
 } as const;
 
 /**
- * Plan §3.2: the ascension layer used to be eight independent nodes, every one
- * of them affordable within a couple of runs — a shopping list, not a tree.
- * It now has three tiers: the opening projectile/utility nodes are free to buy
- * in any order, the two unbounded sinks sit behind them, and a mutually
- * exclusive pair at tier 3 forces one real decision per transcendence (offense
- * or economy). Prerequisites and exclusivity are enforced in
- * `PrestigeManager.canSpendAP`, the same way the TP tree works.
+ * Revamp §8: twelve perks in four tiers.
+ *
+ * The old tree let 25 AP — a first ascension — buy seven full-damage
+ * projectiles, a ~7x multiplier bought once and never revisited (§1.5). The
+ * three projectile nodes are now **single-level signature purchases** at
+ * 60/90/200 AP, each carrying a fraction of the volley (§7), so the first
+ * ascension buys exactly one utility line and coverage is something a player
+ * saves several runs for.
+ *
+ * Prerequisites stay **OR**-based in `PrestigeManager.meetsPrerequisites` —
+ * the panel renders them as "Requires A or B", so a node listing two parents
+ * opens on either one.
  */
 export const AP_PERKS: PrestigePerkDef[] = [
-  {
-    id: 'ap_extra_shots',
-    layer: 'ascension',
-    name: 'Twin Arrows',
-    description: 'Adds one front projectile at 55% damage',
-    costPerLevel: 2,
-    costScaling: 2.5,
-    maxLevel: 10,
-    effectType: 'extra_shots',
-    effectPerLevel: 1,
-    icon: 'double-shot',
-    color: '#d04848',
-    tier: 1,
-  },
-  {
-    id: 'ap_scatter_shots',
-    layer: 'ascension',
-    name: 'Scatter Shot',
-    description: 'Adds two angled projectiles at 35% damage each',
-    costPerLevel: 2,
-    costScaling: 2.5,
-    maxLevel: 5,
-    effectType: 'scatter_shots',
-    effectPerLevel: 1,
-    icon: 'pentarrows-tornado',
-    color: '#ff7a3a',
-    tier: 1,
-  },
-  {
-    id: 'ap_back_shots',
-    layer: 'ascension',
-    name: 'Rear Volley',
-    description: 'Adds one rear projectile at 55% damage',
-    costPerLevel: 3,
-    costScaling: 2.5,
-    maxLevel: 3,
-    effectType: 'back_shots',
-    effectPerLevel: 1,
-    icon: 'return-arrow',
-    color: '#5b8def',
-    tier: 1,
-  },
+  // ── Tier 1: the first ascension's single choice ──────────────────
   {
     id: 'ap_auto_upgrader',
     layer: 'ascension',
     name: 'Auto-Upgrader',
     description: 'Unlocks Auto-Upgrade: buys upgrades every 10s using your chosen strategy',
-    costPerLevel: 15,
+    costPerLevel: 25,
     costScaling: 1,
     maxLevel: 1,
     effectType: 'auto_buy',
@@ -194,102 +158,180 @@ export const AP_PERKS: PrestigePerkDef[] = [
     id: 'ap_wave_skipper',
     layer: 'ascension',
     name: 'Wave Skipper',
-    description: '+3% chance per level to skip a wave and instantly collect its rewards',
-    costPerLevel: 3,
-    costScaling: 1.5,
-    maxLevel: 25,
+    description: '+1% chance per level to skip a wave and instantly collect its rewards',
+    costPerLevel: 6,
+    costScaling: 1.60,
+    maxLevel: 15,
     effectType: 'wave_skip',
-    effectPerLevel: 0.03,
+    effectPerLevel: 0.01,
     icon: 'fast-forward-button',
     color: '#3ec46d',
     tier: 1,
   },
-  // ── Unbounded sinks (plan §2.3.5) ────────────────────────────────
-  // Every other AP perk caps at <=10 levels with 2.5^level growth, so the
-  // whole tree tops out around 7 600 AP while a deep run banks far more than
-  // that. Past the third ascension AP had nowhere to go but transcendence.
-  // These two never cap: geometric cost against a linear effect means each
-  // level costs more and gives the same, so they absorb any amount of AP
-  // while staying worth buying.
+  {
+    id: 'ap_quiver',
+    layer: 'ascension',
+    name: 'Deep Quiver',
+    description: '+2% fire rate per level',
+    costPerLevel: 5,
+    costScaling: 1.22,
+    maxLevel: 30,
+    effectType: 'fire_rate_mult',
+    effectPerLevel: 0.02,
+    icon: 'lightning-arc',
+    color: '#5b8def',
+    tier: 1,
+  },
+  // ── Tier 2: the unbounded sinks and the research line ────────────
   {
     id: 'ap_might',
     layer: 'ascension',
     name: 'Ascendant Might',
-    description: '+3% all damage per level. Never caps.',
-    costPerLevel: 4,
-    costScaling: 1.18,
+    description: '+2% all damage per level. Never caps.',
+    costPerLevel: 6,
+    costScaling: 1.20,
     maxLevel: 999,
     effectType: 'damage_mult',
-    effectPerLevel: 0.03,
+    effectPerLevel: 0.02,
     icon: 'mighty-force',
     color: '#d04848',
     tier: 2,
-    prerequisites: [{ perkId: 'ap_extra_shots', minLevel: 1 }],
+    prerequisites: [
+      { perkId: 'ap_auto_upgrader', minLevel: 1 },
+      { perkId: 'ap_quiver', minLevel: 3 },
+    ],
   },
   {
     id: 'ap_fortune',
     layer: 'ascension',
     name: 'Ascendant Fortune',
-    description: '+3% all gold per level. Never caps.',
-    costPerLevel: 4,
-    costScaling: 1.18,
+    description: '+2% all gold per level. Never caps.',
+    costPerLevel: 6,
+    costScaling: 1.20,
     maxLevel: 999,
     effectType: 'resource_mult',
-    effectPerLevel: 0.03,
+    effectPerLevel: 0.02,
     icon: 'crown-coin',
     color: '#e8a93b',
     tier: 2,
-    prerequisites: [{ perkId: 'ap_wave_skipper', minLevel: 1 }],
+    prerequisites: [
+      { perkId: 'ap_auto_upgrader', minLevel: 1 },
+      { perkId: 'ap_wave_skipper', minLevel: 2 },
+    ],
   },
   {
     id: 'ap_research_speed',
     layer: 'ascension',
     name: 'Scholarly Focus',
-    description: '-15% research time per level',
-    costPerLevel: 2,
+    description: '-8% research time per level',
+    costPerLevel: 8,
     costScaling: 1.8,
     maxLevel: 5,
     effectType: 'research_speed',
-    effectPerLevel: 0.15,
+    effectPerLevel: 0.08,
     icon: 'book-pile',
     color: '#9b59ff',
     tier: 2,
     prerequisites: [{ perkId: 'ap_auto_upgrader', minLevel: 1 }],
   },
-  // ── Tier 3: one choice, taken once per transcendence ─────────────
-  // Both are strictly better per level than their tier-2 parent and cost far
-  // more; picking one locks the other out, so an ascension build commits to
-  // killing faster or earning faster rather than buying every row.
+  // ── Tier 3: the signature coverage nodes, one level each ─────────
+  {
+    id: 'ap_extra_shots',
+    layer: 'ascension',
+    name: 'Twin Arrows',
+    description: 'Adds one front projectile at 55% damage',
+    costPerLevel: 60,
+    costScaling: 1,
+    maxLevel: 1,
+    effectType: 'extra_shots',
+    effectPerLevel: 1,
+    icon: 'double-shot',
+    color: '#d04848',
+    tier: 3,
+    prerequisites: [
+      { perkId: 'ap_might', minLevel: 5 },
+      { perkId: 'ap_quiver', minLevel: 5 },
+    ],
+  },
+  {
+    id: 'ap_pierce',
+    layer: 'ascension',
+    name: 'Bodkin Mastery',
+    description: '+1 pierce per level',
+    costPerLevel: 75,
+    costScaling: 2.2,
+    maxLevel: 3,
+    effectType: 'pierce',
+    effectPerLevel: 1,
+    icon: 'piercing-sword',
+    color: '#d04848',
+    tier: 3,
+    prerequisites: [{ perkId: 'ap_might', minLevel: 5 }],
+  },
+  {
+    id: 'ap_back_shots',
+    layer: 'ascension',
+    name: 'Rear Guard',
+    description: 'Adds one rear projectile at 55% damage',
+    costPerLevel: 90,
+    costScaling: 1,
+    maxLevel: 1,
+    effectType: 'back_shots',
+    effectPerLevel: 1,
+    icon: 'return-arrow',
+    color: '#5b8def',
+    tier: 3,
+    prerequisites: [{ perkId: 'ap_extra_shots', minLevel: 1 }],
+  },
+  // ── Tier 4: the deep-run fork ────────────────────────────────────
+  {
+    id: 'ap_scatter_shots',
+    layer: 'ascension',
+    name: 'Scatter Shot',
+    description: 'Adds two angled projectiles at 35% damage each',
+    costPerLevel: 200,
+    costScaling: 1,
+    maxLevel: 1,
+    effectType: 'scatter_shots',
+    effectPerLevel: 1,
+    icon: 'pentarrows-tornado',
+    color: '#ff7a3a',
+    tier: 4,
+    prerequisites: [
+      { perkId: 'ap_back_shots', minLevel: 1 },
+      { perkId: 'ap_pierce', minLevel: 2 },
+    ],
+  },
   {
     id: 'ap_warlord',
     layer: 'ascension',
     name: 'Warlord',
-    description: '+8% all damage per level. Locks out Tycoon.',
-    costPerLevel: 12,
-    costScaling: 1.3,
-    maxLevel: 15,
+    description: '+5% all damage per level. Locks out Tycoon.',
+    costPerLevel: 40,
+    costScaling: 1.32,
+    maxLevel: 12,
     effectType: 'damage_mult',
-    effectPerLevel: 0.08,
+    effectPerLevel: 0.05,
     icon: 'crossed-swords',
     color: '#ff5252',
-    tier: 3,
-    prerequisites: [{ perkId: 'ap_might', minLevel: 5 }],
+    tier: 4,
+    prerequisites: [{ perkId: 'ap_might', minLevel: 10 }],
     exclusive: ['ap_tycoon'],
   },
   {
     id: 'ap_tycoon',
     layer: 'ascension',
     name: 'Tycoon',
-    description: '+8% all gold per level. Locks out Warlord.',
-    costPerLevel: 12,
-    costScaling: 1.3,
-    maxLevel: 15,
+    description: '+5% all gold per level. Locks out Warlord.',
+    costPerLevel: 40,
+    costScaling: 1.32,
+    maxLevel: 12,
     effectType: 'resource_mult',
-    effectPerLevel: 0.08,
+    effectPerLevel: 0.05,
     icon: 'gems',
     color: '#ffd54a',
-    tier: 3,
-    prerequisites: [{ perkId: 'ap_fortune', minLevel: 5 }],
+    tier: 4,
+    prerequisites: [{ perkId: 'ap_fortune', minLevel: 10 }],
     exclusive: ['ap_warlord'],
   },
 ];

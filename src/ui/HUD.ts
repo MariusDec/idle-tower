@@ -1,5 +1,5 @@
 import type { GameState, StatsInfo, EnemyWaveStatsEntry } from '../types';
-import { formatNumber, formatInt } from '../utils/bigNumber';
+import { formatNumber, formatInt, formatWithOptionalDecimal } from '../utils/bigNumber';
 import type { SpeedAPI, TargetingAPI, WaveControlAPI } from './UIManager';
 import type { PacingHudData } from './PacingOverlay';
 import { TARGETING_MODES } from '../data/tower';
@@ -135,7 +135,6 @@ export class HUD {
   private dpsPill!: PillRefs;
   private goldPill!: PillRefs;
   private killsPill!: PillRefs;
-  private fpsEl!: HTMLElement;
   /** Every chip, so a reduced-motion / reset sweep has one list to walk. */
   private readonly pills: PillRefs[] = [];
   private hpEl!: HTMLElement;
@@ -164,16 +163,14 @@ export class HUD {
   private waveApi: WaveControlAPI = { autoProgress: true, currentWave: 1, isIntermission: false };
   private targetingApi: TargetingAPI = { currentMode: 'priority', setMode: () => {} };
   private onSpeedChange: (index: number) => void = () => {};
-  private onPrevWave: () => void = () => {};
-  private onNextWave: () => void = () => {};
+  private onRestartWave: () => void = () => {};
   private onToggleAutoProgress: () => void = () => {};
   private displayXpProgress = 0;
   private displayXpNeeded = 1;
   private speedLabelEl!: HTMLElement;
   private speedDecBtn!: HTMLButtonElement;
   private speedIncBtn!: HTMLButtonElement;
-  private prevWaveBtn!: HTMLButtonElement;
-  private nextWaveBtn!: HTMLButtonElement;
+  private restartWaveBtn!: HTMLButtonElement;
   private autoProgressBtn!: HTMLButtonElement;
   private targetingSelect!: HTMLSelectElement;
   private waveStatusEl!: HTMLElement;
@@ -182,7 +179,6 @@ export class HUD {
   private moreSpeedIncBtn!: HTMLButtonElement;
   private moreSpeedLabelEl!: HTMLElement;
   private moreDpsEl!: HTMLElement;
-  private moreFpsEl!: HTMLElement;
   private keybindsBtn!: HTMLButtonElement;
   private onShowKeybinds: () => void = () => {};
   private moreStatsBtn!: HTMLButtonElement;
@@ -208,9 +204,6 @@ export class HUD {
     if (this.moreDpsEl) setText(this.moreDpsEl, formatNumber(value));
   }
 
-  getFpsEl(): HTMLElement {
-    return this.fpsEl;
-  }
 
   setSpeedAPI(api: SpeedAPI): void {
     this.speedApi = api;
@@ -256,12 +249,8 @@ export class HUD {
     this.onSpeedChange = handler;
   }
 
-  setOnPrevWave(handler: () => void): void {
-    this.onPrevWave = handler;
-  }
-
-  setOnNextWave(handler: () => void): void {
-    this.onNextWave = handler;
+  setOnRestartWave(handler: () => void): void {
+    this.onRestartWave = handler;
   }
 
   setOnToggleAutoProgress(handler: () => void): void {
@@ -285,19 +274,19 @@ export class HUD {
   private renderStatsContent(el: HTMLElement, info: StatsInfo): void {
     const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
     setInnerHTML(el, `
-      <div class="stat-row"><span>Damage</span><span>${formatNumber(info.damage)}</span></div>
+      <div class="stat-row"><span>Damage</span><span>${formatWithOptionalDecimal(info.damage)}</span></div>
       <div class="stat-row"><span>Fire Rate</span><span>${info.fireRate.toFixed(2)}/s</span></div>
-      <div class="stat-row"><span>DPS</span><span>${formatNumber(info.dps)}</span></div>
+      <div class="stat-row"><span>DPS</span><span>${formatWithOptionalDecimal(info.dps)}</span></div>
       <div class="stat-row"><span>Crit Rate</span><span>${pct(info.critChance)}</span></div>
       <div class="stat-row"><span>Crit Damage</span><span>${(info.critDamage * 100).toFixed(0)}%</span></div>
       <div class="stat-row"><span>Range</span><span>${info.range.toFixed(0)}</span></div>
       <div class="stat-row"><span>Health</span><span>${Math.floor(info.hp)} / ${Math.floor(info.maxHp)}</span></div>
-      <div class="stat-row"><span>Health Regen</span><span>${(info.maxHp * info.healthRegen).toFixed(2)}/s</span></div>
+      <div class="stat-row"><span>Health Regen</span><span>${formatWithOptionalDecimal(info.maxHp * info.healthRegen, 2)}/s</span></div>
       <div class="stat-row"><span>Defense</span><span>${info.defense.toFixed(0)}</span></div>
       <div class="stat-row"><span>Armor</span><span>${info.armor.toFixed(0)}</span></div>
       <div class="stat-row"><span>Lifesteal</span><span>${pct(info.lifesteal)}</span></div>
       <div class="stat-row"><span>Thorns</span><span>${pct(info.thorns)}</span></div>
-      <div class="stat-row"><span>Mana Regen</span><span>${info.manaRegen.toFixed(1)}/s</span></div>
+      <div class="stat-row"><span>Mana Regen</span><span>${formatWithOptionalDecimal(info.manaRegen)}/s</span></div>
       <div class="stat-row"><span>Max Mana</span><span>${info.maxMana}</span></div>
       <div class="stat-row"><span>Gold Multiplier</span><span>${info.goldMultiplier.toFixed(2)}x</span></div>
       ${this.renderGoldBreakdown(info)}
@@ -497,7 +486,7 @@ export class HUD {
     // "1.2K DPS" under a heading reading "DPS" was saying it twice. No tick:
     // DPS is a *rate*, and a rate that drifts up every frame would flicker
     // continuously rather than marking anything the player did.
-    setText(this.dpsPill.valueEl, formatNumber(this.displayDps));
+    setText(this.dpsPill.valueEl, formatWithOptionalDecimal(this.displayDps));
     this.setPillValue(
       this.killsPill,
       formatNumber(state.stats.enemiesKilled),
@@ -529,16 +518,12 @@ export class HUD {
       setDisabled(this.moreSpeedDecBtn, cur <= 0);
       setDisabled(this.moreSpeedIncBtn, cur >= max);
     }
-    if (this.moreFpsEl) {
-      const fpsText = this.fpsEl?.textContent ?? '--';
-      setText(this.moreFpsEl, fpsText);
-    }
-
     const wave = state.wave.number;
-    setDisabled(this.prevWaveBtn, wave <= 1);
-    setTitle(this.prevWaveBtn, wave > 1 ? `Restart wave ${wave - 1}` : 'Already at wave 1');
-    setTitle(this.nextWaveBtn, `Skip to wave ${wave + 1}`);
-    setDisabled(this.nextWaveBtn, wave >= state.wave.highestWave);
+    // Restarting replays the wave you are on — enemies, mines and all — so it
+    // is the honest answer to "I want another shot at this wave", where the
+    // old step controls let a run hop backwards to re-farm or forwards past a
+    // wave it never survived.
+    setTitle(this.restartWaveBtn, `Restart wave ${wave}`);
     toggleClass(this.autoProgressBtn, 'is-on', this.waveApi.autoProgress);
     toggleClass(this.autoProgressBtn, 'is-off', !this.waveApi.autoProgress);
     setText(this.autoProgressBtn, this.waveApi.autoProgress ? 'Auto' : 'Paused');
@@ -750,19 +735,6 @@ export class HUD {
     this.keybindsBtn.addEventListener('click', () => this.onShowKeybinds());
     groupRight.appendChild(this.keybindsBtn);
     this.dpsPill = this.addPill(groupRight, 'DPS', '0', 'dps', 'ember');
-    // FPS is a diagnostic, not a resource: no icon, no tick, and a chip that
-    // deliberately does not compete with the ones next to it for attention.
-    const fpsStat = document.createElement('div');
-    fpsStat.className = 'hud-pill hud-pill--quiet';
-    const fpsLabel = document.createElement('span');
-    fpsLabel.className = 'hud-pill-label';
-    fpsLabel.textContent = 'FPS';
-    this.fpsEl = document.createElement('span');
-    this.fpsEl.className = 'hud-pill-value hud-fps u-tabular';
-    this.fpsEl.textContent = '--';
-    fpsStat.appendChild(fpsLabel);
-    fpsStat.appendChild(this.fpsEl);
-    groupRight.appendChild(fpsStat);
     groupRight.appendChild(this.renderSpeedBlock());
     this.root.appendChild(groupRight);
 
@@ -814,20 +786,24 @@ export class HUD {
     // \u2500\u2500 The focal element \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     // The wave number is the one figure in the HUD that names where the run
     // *is*, and it used to be a 18px span reading "Wave 1" under a caption
-    // reading "Wave". It is now the display face at four times the size, with
-    // the step controls flanking it as chevrons rather than sharing a button
-    // row with the targeting dropdown and a "..." menu.
+    // reading "Wave". It is now the display face at four times the size, with the restart
+    // control beside it rather than sharing a button row with the targeting
+    // dropdown and a "..." menu.
     const focal = document.createElement('div');
     focal.className = 'hud-wave-focal';
     this.waveFocal = focal;
 
-    this.prevWaveBtn = document.createElement('button');
-    this.prevWaveBtn.type = 'button';
-    this.prevWaveBtn.className = 'hud-wave-step';
-    this.prevWaveBtn.textContent = '\u2039';
-    this.prevWaveBtn.setAttribute('aria-label', 'Previous wave');
-    this.prevWaveBtn.addEventListener('click', () => this.onPrevWave());
-    focal.appendChild(this.prevWaveBtn);
+    // Restart replaces the old ‹ › step controls: free wave navigation let a
+    // run re-farm earlier waves or skip past one it never survived, which
+    // fights the risk dial, contracts, and anything else priced per wave.
+    // Replaying the wave you are on has no such loophole.
+    this.restartWaveBtn = document.createElement('button');
+    this.restartWaveBtn.type = 'button';
+    this.restartWaveBtn.className = 'hud-wave-restart';
+    this.restartWaveBtn.textContent = '↻';
+    this.restartWaveBtn.setAttribute('aria-label', 'Restart wave');
+    this.restartWaveBtn.addEventListener('click', () => this.onRestartWave());
+    focal.appendChild(this.restartWaveBtn);
 
     const numWrap = document.createElement('div');
     numWrap.className = 'hud-wave-numwrap';
@@ -840,14 +816,6 @@ export class HUD {
     this.waveEl.textContent = '1';
     numWrap.appendChild(this.waveEl);
     focal.appendChild(numWrap);
-
-    this.nextWaveBtn = document.createElement('button');
-    this.nextWaveBtn.type = 'button';
-    this.nextWaveBtn.className = 'hud-wave-step';
-    this.nextWaveBtn.textContent = '\u203a';
-    this.nextWaveBtn.setAttribute('aria-label', 'Next wave');
-    this.nextWaveBtn.addEventListener('click', () => this.onNextWave());
-    focal.appendChild(this.nextWaveBtn);
 
     block.appendChild(focal);
 
@@ -1165,18 +1133,6 @@ export class HUD {
     dpsRow.appendChild(this.moreDpsEl);
     inner.appendChild(dpsRow);
 
-    // FPS row.
-    const fpsRow = document.createElement('div');
-    fpsRow.className = 'hud-more-popover-row';
-    const fpsLabel = document.createElement('span');
-    fpsLabel.className = 'hud-more-popover-label';
-    fpsLabel.textContent = 'FPS';
-    this.moreFpsEl = document.createElement('span');
-    this.moreFpsEl.className = 'hud-more-popover-value';
-    this.moreFpsEl.textContent = '--';
-    fpsRow.appendChild(fpsLabel);
-    fpsRow.appendChild(this.moreFpsEl);
-    inner.appendChild(fpsRow);
 
     // Speed row — controls stay open on click.
     const speedBlock = document.createElement('div');

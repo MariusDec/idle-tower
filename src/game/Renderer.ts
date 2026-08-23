@@ -9,7 +9,7 @@ import { DEFAULT_QUALITY, QUALITY, type QualityProfile, type QualityTier } from 
 import { BOSS_ENCOUNTER, ENEMY_BEHAVIOR, ENEMY_DEFS, ENEMY_GAIT, bossTierForWave } from '../data/enemies';
 import type { EnemyDef, EnemyShape } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
-import { formatInt } from '../utils/bigNumber';
+import { formatWithOptionalDecimal } from '../utils/bigNumber';
 import { ELITE_AURA_COLORS, AURA_RADIUS } from '../systems/EnemyManager';
 
 /** How much larger an elite renders than a normal enemy of the same type. */
@@ -4688,7 +4688,7 @@ export class Renderer {
       const alpha = Math.min(1, d.age / 0.06) * Math.min(1, lifeRatio * 1.6);
       const jitterX = (1 - lifeRatio) * (d.isCrit ? 0 : ((d.amount % 7) - 3) * 0.8);
       const sx = p.x + jitterX;
-      const text = formatInt(d.amount);
+      const text = formatWithOptionalDecimal(d.amount);
       ctx.globalAlpha = alpha;
       ctx.font = `${d.isCrit || d.tier >= 2 ? '700' : '600'} ${size.toFixed(1)}px ${DISPLAY_FONT_STACK}`;
       if (d.isCrit) {

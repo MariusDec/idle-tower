@@ -73,6 +73,18 @@ describe('damage numbers, screen-space model (UI plan §5.B)', () => {
     expect(d.isCrit).toBe(false);
     expect(d.tier).toBe(0);
   });
+
+  it('keeps fractional damage amounts instead of rounding to the nearest integer', () => {
+    const fx = new EffectsManager();
+    fx.emitDamageNumber(400, 300, 2.2, false, { maxHp: 100 });
+    expect(fx.damageList[0].amount).toBe(2.2);
+  });
+
+  it('keeps fractional heal amounts instead of rounding up to 1', () => {
+    const fx = new EffectsManager();
+    fx.emitHealNumber(400, 300, 0.4);
+    expect(fx.damageList[0].amount).toBe(0.4);
+  });
 });
 
 describe('the quality knob (UI plan §5.F)', () => {

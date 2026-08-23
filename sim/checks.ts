@@ -194,9 +194,9 @@ section('§2.3.5 AP sinks');
   const resources = { ascensionPoints: 1_000_000, apThisTranscendence: 0, lifetimeAP: 0 } as never;
   const prestige = { apSpent: {}, tpSpent: {}, automationFlags: {} } as never;
   const mgr = new PrestigeManager(bus, { resources, stats: {} as never, prestige });
-  // §3.2: the sinks now sit behind a tier-1 node, so buy the prerequisite first.
-  mgr.spendAP('ap_extra_shots');
-  mgr.spendAP('ap_wave_skipper');
+  // Revamp §8.2: the sinks sit behind a tier-1 utility node (OR-gated), so buy
+  // the prerequisite first. Auto-Upgrader opens both.
+  mgr.spendAP('ap_auto_upgrader');
   check('the sink can absorb AP', mgr.spendAP('ap_might'));
   check('spending the sink raises damage', mgr.getAPDamageBonus() > 0,
     `bonus=${mgr.getAPDamageBonus()}`);
@@ -377,10 +377,10 @@ section('§3.2 prestige');
   const mgr = new PrestigeManager(bus, { resources, stats: {} as never, prestige });
   check('a gated AP perk cannot be bought first', !mgr.canSpendAP('ap_might'));
   check('the gate names its prerequisite', mgr.perkBlockedReason('ap_might') !== null);
-  mgr.spendAP('ap_extra_shots');
+  mgr.spendAP('ap_auto_upgrader');
   check('buying the prerequisite opens the gate', mgr.canSpendAP('ap_might'));
-  for (let i = 0; i < 5; i++) mgr.spendAP('ap_might');
-  check('the tier-3 choice unlocks at Might 5', mgr.canSpendAP('ap_warlord'));
+  for (let i = 0; i < 10; i++) mgr.spendAP('ap_might');
+  check('the tier-4 fork unlocks at Might 10', mgr.canSpendAP('ap_warlord'));
   mgr.spendAP('ap_warlord');
   check('taking one side locks out the other', mgr.isExcluded('ap_tycoon'));
 

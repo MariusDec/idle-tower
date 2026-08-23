@@ -666,7 +666,7 @@ export class EffectsManager {
     this.pushDamageNumber({
       x: x + (Math.random() - 0.5) * 10,
       y: y - 4,
-      amount: Math.max(1, Math.round(amount)),
+      amount: Math.max(0, amount),
       isCrit,
       kind: opts?.kind ?? 'damage',
       tier: damageTier(amount, opts?.maxHp ?? 0),
@@ -681,7 +681,7 @@ export class EffectsManager {
     this.pushDamageNumber({
       x: x + (Math.random() - 0.5) * 10,
       y: y - 4,
-      amount: Math.max(1, Math.round(amount)),
+      amount: Math.max(0, amount),
       isCrit: false,
       kind: 'heal',
       tier: 0,

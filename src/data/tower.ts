@@ -8,7 +8,7 @@ export const TOWER_BASE: Omit<TowerState, 'cooldown'> = {
   baseDamage: 0,
   fireRate: 1.0,
   range: 300,
-  critChance: 0.05,
+  critChance: 0.02,
   critMultiplier: 2,
   doubleShotChance: 0,
   quickShotChance: 0,

@@ -428,20 +428,6 @@ button:disabled {
   letter-spacing: var(--tracking-normal);
   white-space: nowrap;
 }
-/* A diagnostic readout, not a resource: no mark, no motion, and visibly a
-   lesser citizen than the chips beside it. */
-.hud-pill--quiet {
-  min-width: 0;
-  background: none;
-  border-color: transparent;
-  box-shadow: none;
-}
-.hud-pill--quiet .hud-pill-value {
-  color: var(--text-2);
-  font-size: var(--text-lg);
-  font-weight: var(--weight-medium);
-}
-.hud-fps { color: var(--text-2); }
 
 /* The flare, behind the chip's content and clipped to its own rounded box. */
 .hud-pill::after {
@@ -579,10 +565,10 @@ button:disabled {
   }
 }
 
-/* Step chevrons. 32px wide on desktop and taken up to the 44px touch minimum
-   in the mobile branch — a wave-step is destructive enough (it restarts the
-   wave) that a mis-tap is a real cost. */
-.hud-wave-step {
+/* Restart button. 32px wide on desktop and taken up to the 44px touch minimum
+   in the mobile branch — restarting the wave is destructive enough that a
+   mis-tap is a real cost. */
+.hud-wave-restart {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -596,12 +582,12 @@ button:disabled {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
 }
-.hud-wave-step:hover:not(:disabled) {
+.hud-wave-restart:hover:not(:disabled) {
   color: var(--text-0);
   background: var(--surface-4);
   border-color: var(--stroke-subtle);
 }
-.hud-wave-step:disabled { opacity: 0.3; }
+.hud-wave-restart:disabled { opacity: 0.3; }
 
 .hud-wave-side {
   grid-area: side;
@@ -4220,7 +4206,7 @@ body.is-resizing * { cursor: ew-resize !important; }
   .hud-wave-focal { gap: var(--space-2); }
   .hud-wave-numwrap { min-width: 52px; }
   .hud-wave-number { font-size: var(--text-5xl); }
-  .hud-wave-step { width: 44px; height: 44px; font-size: var(--text-2xl); }
+  .hud-wave-restart { width: 44px; height: 44px; font-size: var(--text-2xl); }
   /* §0.8 rule 3: 44px is the floor for every target here, not the aspiration.
      The old rules took these down to 22px, which is half of it. */
   .hud-wave-controls { display: flex; gap: var(--space-1); flex-wrap: nowrap; }
