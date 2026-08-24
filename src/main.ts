@@ -80,9 +80,6 @@ function bootstrap(): void {
   ui.setOnUnlockCore((id) => {
     game.unlockCore(id);
   });
-  ui.setOnSelectCore((id) => {
-    game.selectCore(id);
-  });
   ui.setOnUnlockResearch((id) => {
     game.startResearch(id);
   });

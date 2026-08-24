@@ -128,9 +128,11 @@ exclusivity. `PrestigeManager.canUnlockCore` / `spendOnCore` own the debit
 owns each). Threading a one-shot purchase through `AP_PERKS` would have meant
 every consumer of that table learning about a perk with no effect value.
 
-Buy them from the **Prestige** tab, or straight from the picker — a locked card
-there is a buy button, and the modal stays open so a player can unlock and then
-choose in one visit.
+Buy them from the **Prestige** tab, which is also the only place that sells
+them: the picker never shows a locked core, so a core the player cannot yet be
+is not one of the choices a run can be. Unlocking is also the only thing the
+tab's core rows do — the active core changes at the start of a run, never from
+the panel, so an unlocked row shows its status and no button.
 
 ## The picker
 
@@ -145,6 +147,16 @@ Two gates, both in `CoreManager.isPickerAvailable`:
    choose with, so they are not asked. They are on `marksman` and the picker
    never appears.
 2. **More than one core owned.** One core is not a choice.
+
+The picker lists **unlocked cores only** — the second gate guarantees at least
+two — no matter how much AP is on hand. It is a choice between what the run can
+*be*, and a core that is not owned is not one of those choices; the AP a player
+saves for a locked core is their reason to open the Prestige tab, not a card
+here.
+
+It is also the run's only moment of choice: the active core changes on a run
+restart, never mid-run. The Prestige panel shows unlock buttons and nothing
+else, so there is no "run this core" button anywhere that is not the picker.
 
 The countdown is never off, for the same reason the blessing draft's is not:
 an auto-ascending idle game reaches this modal several times an hour with nobody

@@ -361,6 +361,7 @@ export function generateEquipment(defId: string, rarity: Rarity): Equipment {
     rarity,
     level: 1,
     stats: rollStats(def, rarity),
+    seen: false,
   };
 }
 

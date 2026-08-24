@@ -44,10 +44,9 @@ export interface PrestigePanelHandlers {
   ascendUnlockWave: number;
   /** Plan §3.2: AP perks now have prerequisites and exclusive pairs. */
   perkBlockedReason: (perkId: string) => string | null;
-  /** Plan §6.2: cores are an AP spend, and switchable between runs. */
+  /** Plan §6.2: cores are an AP spend, chosen only at the start of a run. */
   coreState: () => CorePanelState;
   onUnlockCore: (id: CoreId) => void;
-  onSelectCore: (id: CoreId) => void;
 }
 
 export class PrestigePanel {
@@ -115,11 +114,11 @@ export class PrestigePanel {
   /**
    * Refresh the core rows.
    *
-   * The button is one control with three states rather than a buy button and a
-   * separate select button, because those are the same decision at different
-   * times: an unowned core is bought, an owned one is run, and the one already
-   * running needs nothing. Three buttons would have meant two of them disabled
-   * on every row.
+   * The button is one control with two states rather than a buy button and a
+   * separate select button: an unowned core is bought here, and an owned one
+   * cannot be run from the panel at all — the active core only changes at the
+   * start of a run, via the picker, so an unlocked row's action is hidden and
+   * its status carries the state instead.
    */
   private updateCores(ap: number): void {
     const cs = this.handlers.coreState();
@@ -135,20 +134,17 @@ export class PrestigePanel {
 
       if (current) {
         setText(status, 'Running this run');
-        setText(btn, 'Active');
-        btn.disabled = true;
-        toggleClass(btn, 'can-afford', false);
+        setDisplay(btn, 'none');
       } else if (unlocked) {
         setText(status, 'Unlocked');
-        setText(btn, 'Run this core');
-        btn.disabled = false;
-        toggleClass(btn, 'can-afford', true);
+        setDisplay(btn, 'none');
       } else {
         const affordable = ap >= def.apCost;
         setText(status, `Locked — ${def.apCost} AP`);
         setText(btn, `Unlock (${def.apCost} AP)`);
         btn.disabled = !affordable;
         toggleClass(btn, 'can-afford', affordable);
+        setDisplay(btn, '');
       }
     }
   }
@@ -316,8 +312,8 @@ export class PrestigePanel {
     const intro = document.createElement('p');
     intro.className = 'panel-note';
     intro.textContent = 'A core changes how the tower shoots and which blessings you are offered. '
-      + 'Unlocks are permanent; the choice itself lasts one run and is offered again each time you '
-      + 'ascend.';
+      + 'Unlocks are permanent; you can switch to another unlocked core only at the start of a run, '
+      + 'and the choice lasts until you ascend.';
     section.appendChild(intro);
 
     const list = document.createElement('div');
@@ -366,11 +362,7 @@ export class PrestigePanel {
     btn.className = 'btn btn-buy';
     btn.textContent = 'Unlock';
     btn.disabled = true;
-    btn.addEventListener('click', () => {
-      const cs = this.handlers.coreState();
-      if (cs.unlocked.includes(def.id)) this.handlers.onSelectCore(def.id);
-      else this.handlers.onUnlockCore(def.id);
-    });
+    btn.addEventListener('click', () => this.handlers.onUnlockCore(def.id));
     action.appendChild(btn);
     row.appendChild(action);
     this.coreBtnById.set(def.id, btn);

@@ -5,17 +5,13 @@ import { icon } from './Icon';
 
 export interface CorePickerCore {
   def: CoreDef;
-  unlocked: boolean;
   /** True when this is the core the run is currently set to. */
   current: boolean;
-  /** AP the player has, for the unlock affordance on a locked card. */
-  affordable: boolean;
 }
 
 export interface CorePickerData {
+  /** Unlocked cores only — the picker never shows a core still for sale. */
   cores: readonly CorePickerCore[];
-  /** Ascension points on hand, for the "unlock for N AP" line. */
-  ascensionPoints: number;
   /** Wave the new run starts at, purely for the sub-heading. */
   startWave: number;
   /** Wall-clock seconds before the modal resolves itself. */
@@ -25,8 +21,6 @@ export interface CorePickerData {
 export interface CorePickerCallbacks {
   /** Run this core. The modal is already hidden when this fires. */
   onSelect: (id: CoreId) => void;
-  /** Buy a locked core with AP. The caller re-`show`s with fresh data. */
-  onUnlock: (id: CoreId) => void;
   /** Dismissed, or the countdown ran out: keep whatever is selected. */
   onDismiss: () => void;
 }
@@ -49,8 +43,10 @@ export interface CorePickerCallbacks {
  * which `CoreManager.resetRun` has already restored to the player's preference,
  * so an unattended run keeps the identity the player last chose.
  *
- * Locked cores are shown, not hidden: "there are four more of these and one
- * costs 5 AP" is the whole reason to save AP for them.
+ * Locked cores are **not** shown, even when the player holds enough AP for
+ * one: the picker is a choice between what the run can be, and a core that is
+ * not owned is not one of those choices. Buying happens on the Prestige tab;
+ * this modal never sells.
  */
 export class CorePickerModal {
   private readonly root: HTMLElement;
@@ -99,10 +95,6 @@ export class CorePickerModal {
 
     const actions = document.createElement('div');
     actions.className = 'blessing-modal-actions';
-    const ap = document.createElement('div');
-    ap.className = 'core-modal-ap';
-    ap.textContent = `${Math.floor(data.ascensionPoints)} AP available`;
-    actions.appendChild(ap);
     const keep = document.createElement('button');
     keep.type = 'button';
     keep.className = 'btn blessing-skip-btn';
@@ -135,13 +127,12 @@ export class CorePickerModal {
   }
 
   private buildCard(entry: CorePickerCore): HTMLElement {
-    const { def, unlocked, current, affordable } = entry;
+    const { def, current } = entry;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'blessing-card core-card';
     btn.dataset.coreId = def.id;
     btn.style.setProperty('--bl-color', def.color);
-    toggleClass(btn, 'is-locked', !unlocked);
     toggleClass(btn, 'is-current', current);
 
     const header = document.createElement('div');
@@ -153,7 +144,7 @@ export class CorePickerModal {
     header.appendChild(name);
     const tag = document.createElement('span');
     tag.className = 'blessing-card-rarity';
-    tag.textContent = current ? 'current' : unlocked ? 'owned' : `${def.apCost} AP`;
+    tag.textContent = current ? 'current' : 'owned';
     header.appendChild(tag);
     btn.appendChild(header);
 
@@ -180,24 +171,11 @@ export class CorePickerModal {
 
     const foot = document.createElement('div');
     foot.className = 'blessing-card-foot';
-    if (unlocked) {
-      foot.textContent = current ? 'Running this core' : 'Click to run this core';
-    } else {
-      foot.textContent = affordable
-        ? `Click to unlock for ${def.apCost} AP`
-        : `Locked — needs ${def.apCost} AP`;
-    }
+    foot.textContent = current ? 'Running this core' : 'Click to run this core';
     btn.appendChild(foot);
 
-    btn.disabled = !unlocked && !affordable;
     btn.addEventListener('click', () => {
       const cb = this.callbacks;
-      if (!unlocked) {
-        // Unlocking leaves the modal open — the caller re-`show`s with the new
-        // AP balance, so the player can buy and then pick in one visit.
-        cb?.onUnlock(def.id);
-        return;
-      }
       this.hide();
       cb?.onSelect(def.id);
     });

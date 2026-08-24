@@ -77,7 +77,7 @@ import {
   waveModifierRewardMultiplier,
 } from '../data/waveModifiers';
 import { TALENT_STATS, type TalentStat } from '../data/talentTree';
-import { PASSIVE_STATS, type PassiveStat } from '../data/passiveAbilities';
+import { PASSIVE_STATS, PASSIVE_ABILITIES, type PassiveStat } from '../data/passiveAbilities';
 import { ACHIEVEMENT_REWARD_CONSUMERS, type AchievementRewardType } from '../data/achievements';
 import { EVOLUTION_EFFECT_IDS, type EvolutionEffectId } from '../data/upgrades';
 import { EQUIPMENT_STAT_TYPES } from '../data/equipment';
@@ -448,6 +448,12 @@ export class Game {
   private announcedMilestones = new Set<number>();
   private researchAnnounced = new Set<string>();
   private transcendenceUnlockedAnnounced = false;
+  /**
+   * Passives whose "now buyable" notification already fired this run. Cleared
+   * when a run ends, so re-crossing an unlock wave in the next run notifies
+   * again — but a same-run rewind (death retry) does not re-notify.
+   */
+  private passiveUnlockNotified = new Set<string>();
 
   private mouseX = 0;
   private mouseY = 0;
@@ -588,6 +594,7 @@ export class Game {
         if (wave > this.state.stats.lifetimeHighestWave) {
           this.state.stats.lifetimeHighestWave = wave;
         }
+        this.checkPassiveUnlocks(wave);
       },
     );
     this.upgradeMgr = new UpgradeManager(this.bus, this.resourceMgr);
@@ -2012,6 +2019,34 @@ export class Game {
   }
 
   /**
+   * The player viewed an inventory item's tooltip (or tapped it on mobile):
+   * it is no longer "new". The UI recomputes the badge from `seen` flags, so
+   * this only flips the bit and marks the save dirty.
+   */
+  markEquipmentSeen(id: string): void {
+    const item = this.state.equipment.find(e => e.id === id);
+    if (!item || item.seen === true) return;
+    item.seen = true;
+    this.saveMgr.requestSave();
+  }
+
+  /**
+   * Wave-advance hook: badge the UI for any passive whose unlock wave the run
+   * has just *cleared* — the badge fires when the wave after `unlockWave`
+   * starts. Once per passive per run — a death rewind replays the same wave
+   * without re-notifying, but the set clears at run end.
+   */
+  private checkPassiveUnlocks(wave: number): void {
+    for (const def of PASSIVE_ABILITIES) {
+      if (wave <= def.unlockWave) continue;
+      if (this.passiveMgr.isUnlocked(def.id)) continue;
+      if (this.passiveUnlockNotified.has(def.id)) continue;
+      this.passiveUnlockNotified.add(def.id);
+      this.ui.notifyPassiveAvailable(def.id);
+    }
+  }
+
+  /**
    * Rewind to the previous wave with a fresh tower. Used both by the
    * pre-ascension death path and by the run-over modal's "retry" option.
    */
@@ -2741,6 +2776,8 @@ export class Game {
     this.runBaselineHighestWave = this.state.wave.highestWave;
     this.state.runStartedAt = Date.now();
     this.state.stats.runStartedAt = this.state.runStartedAt;
+    // Per-run "passive available" notifications: a new run notifies afresh.
+    this.passiveUnlockNotified.clear();
   }
 
   /**
@@ -2966,6 +3003,7 @@ export class Game {
       equip: (slot: EquipmentSlot, id: string) => this.equipmentMgr.equip(slot, id),
       unequip: (slot: EquipmentSlot) => this.equipmentMgr.unequip(slot),
       getSellValue: (id: string) => this.equipmentMgr.getSellValue(id),
+      onItemViewed: (id: string) => this.markEquipmentSeen(id),
       onSell: (id: string) => {
         const gold = this.equipmentMgr.sell(id);
         if (gold > 0) {
@@ -3610,21 +3648,18 @@ export class Game {
   private showCorePicker(): void {
     this.corePicker.show(
       {
-        cores: CORES.map(def => ({
+        // Unlocked cores only — the picker is a choice between what the run
+        // can be, and a core that is not owned is not one of those choices.
+        // `isPickerAvailable` guarantees at least two make the list.
+        cores: CORES.filter(def => this.coreMgr.isUnlocked(def.id)).map(def => ({
           def,
-          unlocked: this.coreMgr.isUnlocked(def.id),
           current: this.coreMgr.current === def.id,
-          affordable: this.prestigeMgr.canUnlockCore(def.id, this.coreMgr.isUnlocked(def.id)),
         })),
-        ascensionPoints: this.state.resources.ascensionPoints,
         startWave: this.waveMgr.currentWave,
         timeoutSeconds: CORE_PICKER_TIMEOUT_SECONDS,
       },
       {
         onSelect: (id) => this.selectCore(id),
-        onUnlock: (id) => {
-          if (this.unlockCore(id)) this.showCorePicker();
-        },
         onDismiss: () => this.closeCorePicker(),
       },
     );
@@ -3633,8 +3668,9 @@ export class Game {
   /**
    * Run a core for the rest of this run.
    *
-   * Public because the picker is not the only caller — the Prestige panel can
-   * switch cores between runs too, and the in-browser harness uses it.
+   * Public because the in-browser harness uses it. In the game itself the only
+   * caller is the run-start picker: the active core changes on a run restart,
+   * never mid-run.
    */
   selectCore(id: CoreId | string): boolean {
     if (!isCoreId(id)) return false;
@@ -4020,7 +4056,9 @@ export class Game {
     this.state.equipment.length = 0;
     if (persisted.equipment) {
       for (const eq of persisted.equipment) {
-        this.state.equipment.push({ ...eq, stats: [...eq.stats] });
+        // Pre-feature items have no `seen` flag: default to seen so upgrading
+        // a save doesn't mark the whole inventory as NEW.
+        this.state.equipment.push({ ...eq, stats: [...eq.stats], seen: eq.seen !== false });
       }
     }
 

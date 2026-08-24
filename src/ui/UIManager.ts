@@ -207,6 +207,21 @@ export class UIManager {
   private readonly subStrip: HTMLElement;
   /** Per-tab badge counts, summed onto the rail button of the owning group. */
   private readonly tabBadges = new Map<PanelTab, number>();
+  /**
+   * Passives that became buyable this run and have not been viewed yet. The
+   * set's size is the badge count on the Abilities tab (and, summed, the
+   * Build rail button); opening the Passives panel empties it.
+   */
+  private readonly pendingPassiveBadges = new Set<string>();
+  /** The last badge count pushed to the AbilityPanel sub-tab, for remounts. */
+  private passiveBadgeCount = 0;
+  /**
+   * Count of unseen (not-yet-viewed, unequipped) inventory items, pushed to
+   * the Equipment tab badge (and, summed, the Build rail button). Recomputed
+   * from `item.seen` flags every UI frame — the inventory is the single
+   * source of truth, so drops, equips, views and sells all reconcile here.
+   */
+  private equipmentBadgeCount = 0;
   private damageLog: { time: number; amount: number }[] = [];
   private realTimeDps = 0;
   private smoothedDps = 0;
@@ -224,7 +239,6 @@ export class UIManager {
   private onTranscend: () => void = () => {};
   private onSpendAP: (perkId: string) => void = () => {};
   private onUnlockCore: (id: CoreId) => void = () => {};
-  private onSelectCore: (id: CoreId) => void = () => {};
   private onUnlockResearch: (id: string) => void = () => {};
   private onCancelResearch: () => void = () => {};
   private onToggleAutomation: (key: AutomationKey, enabled: boolean) => void = () => {};
@@ -270,6 +284,7 @@ export class UIManager {
     equip: () => false,
     unequip: () => false,
     getSellValue: () => 0,
+    onItemViewed: () => {},
     onSell: () => {},
   };
   private audioApi: AudioAPI = (() => {
@@ -412,6 +427,7 @@ export class UIManager {
       isAutoCastUnlocked: () => this.abilityApi.isAutoCastUnlocked(),
       isAutoCastEnabled: (id) => this.abilityApi.isAutoCastEnabled(id),
       onToggleAutoCast: (id, enabled) => this.abilityApi.onToggleAutoCast(id, enabled),
+      onPassivesViewed: () => this.onPassivesViewed(),
     }, this.passiveApi);
     this.prestigePanel = new PrestigePanel({
       onAscend: () => this.onAscend(),
@@ -423,7 +439,6 @@ export class UIManager {
       ascendUnlockWave: this.prestigeApi.ascendUnlockWave,
       coreState: () => this.prestigeApi.coreState,
       onUnlockCore: (id) => this.onUnlockCore(id),
-      onSelectCore: (id) => this.onSelectCore(id),
     });
     this.transcendencePanel = new TranscendencePanel({
       onTranscend: () => this.onTranscend(),
@@ -603,6 +618,19 @@ export class UIManager {
       // UI manager reaching into the game to open one would be the only such
       // edge in the file.
       this.runSummaryModal.show(p, () => this.bus.emit('run_summary_dismissed', {}));
+      // A new run starts with a clean slate for "new passive available"
+      // notifications; stale badges must not survive into it.
+      if (this.pendingPassiveBadges.size > 0) {
+        this.pendingPassiveBadges.clear();
+        this.pushPassiveBadge();
+      }
+      // Same for equipment: the inventory is wiped, so the badge is too.
+      // (`pushEquipmentBadge` would catch up on the next frame, but that
+      // leaves a stale count visible during the summary.)
+      if (this.equipmentBadgeCount !== 0) {
+        this.equipmentBadgeCount = 0;
+        this.setTabBadge('equipment', 0);
+      }
     });
     this.bus.on('talent_refunded', (payload: unknown) => {
       const p = payload as { branch: string | null; points: number; cost: number };
@@ -762,6 +790,9 @@ export class UIManager {
         case 'stats': this.statsPanel.update(); break;
       }
     }
+    // A remount rebuilds the sub-tab button, so re-apply the badge.
+    if (tab === 'abilities') this.abilityPanel.setPassiveBadge(this.passiveBadgeCount);
+    if (tab === 'equipment') this.setTabBadge('equipment', this.equipmentBadgeCount);
   }
 
   /**
@@ -867,13 +898,9 @@ export class UIManager {
     this.onSpendAP = handler;
   }
 
-  /** Plan §6.2: cores are bought with AP and chosen between runs. */
+  /** Plan §6.2: cores are bought with AP; switching happens at run start. */
   setOnUnlockCore(handler: (id: CoreId) => void): void {
     this.onUnlockCore = handler;
-  }
-
-  setOnSelectCore(handler: (id: CoreId) => void): void {
-    this.onSelectCore = handler;
   }
 
   setOnUnlockResearch(handler: (id: string) => void): void {
@@ -1024,6 +1051,45 @@ export class UIManager {
   }
 
   /**
+   * A passive's unlock wave was just cleared this run (its purchase opened
+   * up). Called by `Game` on the wave-advance event; the badge persists until
+   * the player opens the Passives panel.
+   */
+  notifyPassiveAvailable(id: string): void {
+    if (this.pendingPassiveBadges.has(id)) return;
+    this.pendingPassiveBadges.add(id);
+    this.pushPassiveBadge();
+  }
+
+  /** Recompute and push the passive badge to all three surfaces. */
+  private pushPassiveBadge(): void {
+    this.passiveBadgeCount = this.pendingPassiveBadges.size;
+    this.setTabBadge('abilities', this.passiveBadgeCount);
+    this.abilityPanel.setPassiveBadge(this.passiveBadgeCount);
+  }
+
+  /**
+   * Recomputed from the live inventory (`item.seen === false` = new), pushed
+   * as the Equipment tab badge and, summed, onto the Build rail button.
+   */
+  private pushEquipmentBadge(): void {
+    let n = 0;
+    for (const item of this.equipmentApi.inventory) {
+      if (item.seen !== true) n++;
+    }
+    if (n === this.equipmentBadgeCount) return;
+    this.equipmentBadgeCount = n;
+    this.setTabBadge('equipment', n);
+  }
+
+  /** Opening the Passives panel marks every pending passive as seen. */
+  private onPassivesViewed(): void {
+    if (this.pendingPassiveBadges.size === 0) return;
+    this.pendingPassiveBadges.clear();
+    this.pushPassiveBadge();
+  }
+
+  /**
    * The run's blessings (plan §1.4). Pushed by `Game.syncUiApis`; the default
    * is an empty run so the panel renders before the game has wired itself up.
    */
@@ -1164,6 +1230,7 @@ export class UIManager {
 
     this.hud.update(state);
     this.setTabBadge('talents', state.towerXp?.unspentTalentPoints ?? 0);
+    this.pushEquipmentBadge();
     if (this.activeTab === 'upgrades') {
       this.upgradePanel.update(state);
     } else if (this.activeTab === 'abilities') {
@@ -1377,12 +1444,16 @@ export class UIManager {
     } else if (id === 'abilities') {
       this.abilityPanel.mount(this.contentRoot);
       if (this.lastState) this.abilityPanel.update(this.lastState);
+      // A remount rebuilds the sub-tab button, so re-apply the badge.
+      this.abilityPanel.setPassiveBadge(this.passiveBadgeCount);
     } else if (id === 'talents') {
       this.talentPanel.mount(this.contentRoot);
       if (this.lastState) this.talentPanel.update(this.lastState);
     } else if (id === 'equipment') {
       this.equipmentPanel.mount(this.contentRoot);
       if (this.lastState) this.equipmentPanel.update(this.lastState);
+      // A remount rebuilds the sub-tab strip, so re-apply the badge.
+      this.setTabBadge('equipment', this.equipmentBadgeCount);
     } else if (id === 'prestige') {
       this.prestigePanel.mount(this.contentRoot);
       if (this.lastState) this.prestigePanel.update(this.lastState);

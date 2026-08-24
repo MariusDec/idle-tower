@@ -22,6 +22,8 @@ export interface AbilityPanelHandlers {
   isAutoCastUnlocked: () => boolean;
   isAutoCastEnabled: (id: AbilityId) => boolean;
   onToggleAutoCast: (id: AbilityId, enabled: boolean) => void;
+  /** Fired when the Passives sub-tab is opened, so the owner can clear badges. */
+  onPassivesViewed: () => void;
 }
 
 type SubTab = 'active' | 'passives';
@@ -35,6 +37,9 @@ export class AbilityPanel {
   private passiveContentRoot: HTMLElement | null = null;
   private subTabActiveBtn: HTMLButtonElement | null = null;
   private subTabPassiveBtn: HTMLButtonElement | null = null;
+  /** Notification badge on the Passives sub-tab ("new passive available"). */
+  private subTabPassiveBadge: HTMLElement | null = null;
+  private passiveBadgeCount = 0;
 
   // Active ability maps
   private cardsById = new Map<AbilityId, HTMLElement>();
@@ -328,6 +333,20 @@ export class AbilityPanel {
     if (this.subTabPassiveBtn) toggleClass(this.subTabPassiveBtn, 'active', tab === 'passives');
     if (this.activeContentRoot) setDisplay(this.activeContentRoot, tab === 'active' ? '' : 'none');
     if (this.passiveContentRoot) setDisplay(this.passiveContentRoot, tab === 'passives' ? '' : 'none');
+    if (tab === 'passives') this.handlers.onPassivesViewed();
+  }
+
+  /**
+   * Notification count for the Passives sub-tab badge ("new passive
+   * available"). Written by `UIManager`, which owns the pending set, so the
+   * sub-tab stays in lockstep with the Abilities tab and Build rail badges.
+   */
+  setPassiveBadge(count: number): void {
+    this.passiveBadgeCount = Math.max(0, Math.floor(count));
+    if (!this.subTabPassiveBadge) return;
+    const n = this.passiveBadgeCount;
+    this.subTabPassiveBadge.textContent = n > 0 ? String(n) : '';
+    toggleClass(this.subTabPassiveBadge, 'is-visible', n > 0);
   }
 
   private renderInto(parent: HTMLElement): void {
@@ -352,6 +371,9 @@ export class AbilityPanel {
     this.subTabPassiveBtn.className = 'ability-sub-tab-btn';
     this.subTabPassiveBtn.textContent = 'Passives';
     this.subTabPassiveBtn.addEventListener('click', () => this.switchSubTab('passives'));
+    this.subTabPassiveBadge = document.createElement('span');
+    this.subTabPassiveBadge.className = 'tab-badge';
+    this.subTabPassiveBtn.appendChild(this.subTabPassiveBadge);
     subTabBar.appendChild(this.subTabPassiveBtn);
 
     parent.appendChild(subTabBar);

@@ -245,12 +245,7 @@ export class UpgradePanel {
         setText(levelsEl, showLevels ? `+${plan.levels} lv` : '');
         setDisplay(levelsEl, showLevels ? '' : 'none');
       }
-      if (isTotalEffectUpgrade(u)) {
-        setText(levelEl, atMax ? formatNumberValue(computeUpgradeValue(u, level), 1) : '');
-        setDisplay(levelEl, atMax ? '' : 'none');
-      } else {
-        setText(levelEl, atMax ? `Level ${level} (max)` : `Level ${level}`);
-      }
+      setText(levelEl, atMax ? `Level ${level} (max)` : `Level ${level}`);
       setText(costEl, atMax ? '—' : formatNumber(cost));
       setText(bonusEl, isTotalEffectUpgrade(u) ? formatEffectBonus(u, level, false, 0) : formatEffectBonus(u, level));
       const affordable = !atMax && !emptyMax && plan.levels > 0 && gold >= cost;
@@ -500,7 +495,7 @@ export class UpgradePanel {
     meta.className = 'upgrade-meta';
     const level = document.createElement('span');
     level.className = 'upgrade-level';
-    level.textContent = isTotalEffectUpgrade(u) ? '' : 'Level 0';
+    level.textContent = 'Level 0';
     const bonus = document.createElement('span');
     bonus.className = 'upgrade-bonus';
     bonus.textContent = formatEffectBonus(u, 0);

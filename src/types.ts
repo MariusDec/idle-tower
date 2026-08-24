@@ -342,6 +342,12 @@ export interface EquipmentStat { type: EquipmentStatType; value: number; }
 export interface Equipment {
   id: string; defId: string; slot: EquipmentSlot;
   rarity: Rarity; level: number; stats: EquipmentStat[];
+  /**
+   * False until the player equips the item or views its compare tooltip.
+   * Optional for pre-feature saves; missing = already seen (no retroactive
+   * "NEW" flood on upgrade).
+   */
+  seen?: boolean;
 }
 export interface EquipmentDef {
   id: string; name: string; description: string; slot: EquipmentSlot;

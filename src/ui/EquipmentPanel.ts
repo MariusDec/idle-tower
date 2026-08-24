@@ -10,6 +10,8 @@ export interface EquipmentAPIDeps {
   equip: (slot: EquipmentSlot, id: string) => boolean;
   unequip: (slot: EquipmentSlot) => boolean;
   getSellValue: (id: string) => number;
+  /** The player viewed an item (tooltip shown / tapped on mobile). */
+  onItemViewed: (id: string) => void;
   onSell: (id: string) => void;
 }
 
@@ -84,6 +86,8 @@ export class EquipmentPanel {
   private slotUnequipBtnEls = new Map<EquipmentSlot, HTMLElement>();
   private inventoryEl!: HTMLElement;
   private inventoryRows = new Map<string, HTMLElement>();
+  /** Per-item "NEW" pills, toggled by `updateInventoryRow`. */
+  private newDots = new Map<string, HTMLElement>();
   private dragState: DragState | null = null;
   private sortMode: SortMode = 'rarity';
   private scrollInterval: ReturnType<typeof setInterval> | null = null;
@@ -118,6 +122,7 @@ export class EquipmentPanel {
     this.root = null;
     this.selectedItemId = null;
     this.inventoryRows.clear();
+    this.newDots.clear();
     this.emptyNoteEl = null;
     this.prevInventoryIds = '';
     this.prevSortMode = this.sortMode;
@@ -137,6 +142,8 @@ export class EquipmentPanel {
     for (const [slot, card] of this.slotCards) {
       toggleClass(card, 'eq-slot-target', !!item && item.slot === slot);
     }
+    // Tapping an item to inspect it counts as having seen it.
+    if (itemId && item) this.deps.onItemViewed(itemId);
   }
 
   private onSlotTap(slot: EquipmentSlot): void {
@@ -194,6 +201,8 @@ export class EquipmentPanel {
     void tooltip.offsetHeight;
     tooltip.style.visibility = '';
     tooltip.classList.add('is-visible');
+    // Showing the tooltip is "viewing" the item: clears its NEW dot.
+    this.deps.onItemViewed(item.id);
   }
 
   private hideCompareTooltip(): void {
@@ -418,6 +427,7 @@ export class EquipmentPanel {
       if (!ids.has(id)) {
         row.remove();
         this.inventoryRows.delete(id);
+        this.newDots.delete(id);
       }
     }
     if (this.selectedItemId && !ids.has(this.selectedItemId)) {
@@ -493,6 +503,9 @@ export class EquipmentPanel {
       setStyle(nameEl, 'color', rarityColor);
     }
 
+    const newDot = this.newDots.get(item.id);
+    if (newDot) toggleClass(newDot, 'is-visible', item.seen !== true);
+
     const statsEl = row.querySelector('.eq-inv-card-stats');
     if (statsEl) {
       const existing = statsEl.querySelectorAll('.eq-inv-card-stat');
@@ -538,6 +551,13 @@ export class EquipmentPanel {
     setText(rarityBadge, RARITY_NAMES[item.rarity]);
     setStyle(rarityBadge, 'background', rarityColor);
     card.appendChild(rarityBadge);
+
+    const newDot = document.createElement('span');
+    newDot.className = 'eq-new-dot';
+    newDot.textContent = 'NEW';
+    toggleClass(newDot, 'is-visible', item.seen !== true);
+    this.newDots.set(item.id, newDot);
+    card.appendChild(newDot);
 
     const nameEl = document.createElement('div');
     nameEl.className = 'eq-inv-card-name';
