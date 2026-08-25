@@ -47,15 +47,21 @@ export interface ViewTransform {
  * aspect clamp the two terms are equal and the world rectangle is exactly the
  * visible one; outside it the surplus shows as extra floor on the long axis,
  * which the background paints over.
+ *
+ * `dprCap` is the ceiling on the resolved DPR. Defaults to
+ * `ARENA.maxDevicePixelRatio` so the pre-§9.D call sites keep their meaning;
+ * the quality tier (low/medium/high) supplies the actual value at runtime.
  */
 export function makeViewTransform(
   cssWidth: number,
   cssHeight: number,
   devicePixelRatio: number,
+  dprCap: number = ARENA.maxDevicePixelRatio,
 ): ViewTransform {
   const cssW = cssWidth > 0 ? cssWidth : 1;
   const cssH = cssHeight > 0 ? cssHeight : 1;
-  const dpr = Math.max(1, Math.min(ARENA.maxDevicePixelRatio, devicePixelRatio || 1));
+  const cap = dprCap > 0 ? dprCap : ARENA.maxDevicePixelRatio;
+  const dpr = Math.max(1, Math.min(cap, devicePixelRatio || 1));
   const pixelWidth = Math.max(1, Math.round(cssW * dpr));
   const pixelHeight = Math.max(1, Math.round(cssH * dpr));
 
@@ -122,6 +128,14 @@ export class Camera {
   private readonly canvas: HTMLCanvasElement;
   private host: HTMLElement | null = null;
   private observer: ResizeObserver | null = null;
+  /**
+   * The current `devicePixelRatio` cap, fed by the quality tier (UI plan §9.D).
+   * `high` keeps the historic `ARENA.maxDevicePixelRatio` ceiling; `low` drops
+   * to 1.0 because on a 3x phone buffer a low-quality fill is still a 2.25x
+   * fill-rate tax over 1x. The value is recomputed into a transform only when
+   * it actually changes, so a no-op setter is a no-op.
+   */
+  private dprCap: number = ARENA.maxDevicePixelRatio;
   private view: ViewTransform;
   private shakeAmount = 0;
   private shakeTime = 0;
@@ -296,7 +310,12 @@ export class Camera {
     const cssWidth = rect.width || box.clientWidth || this.view.cssWidth;
     const cssHeight = rect.height || box.clientHeight || this.view.cssHeight;
     const previous = this.view;
-    const next = makeViewTransform(cssWidth, cssHeight, globalThis.devicePixelRatio ?? 1);
+    const next = makeViewTransform(
+      cssWidth,
+      cssHeight,
+      globalThis.devicePixelRatio ?? 1,
+      this.dprCap,
+    );
     if (
       next.pixelWidth === previous.pixelWidth
       && next.pixelHeight === previous.pixelHeight
@@ -323,9 +342,38 @@ export class Camera {
         worldWidth: next.worldWidth,
         worldHeight: next.worldHeight,
         previousWorldWidth: next.worldWidth,
-        previousWorldHeight: next.worldHeight,
+        previousWorldHeight: previous.worldHeight,
       });
     }
+  }
+
+  /**
+   * The cap on `devicePixelRatio` (UI plan §9.D).
+   *
+   * `low` caps at 1.0 because a 3x phone buffer is a 2.25x fill-rate tax over
+   * 1x for no visible gain; `medium` keeps 1.5; `high` keeps the historic 2.0.
+   *
+   * **The crucial property: a DPR change leaves the world rectangle
+   * untouched.** The Camera's resize handler rescales live enemy positions
+   * when the world extents move, so a mid-wave resize does not teleport
+   * anything out of bounds. A DPR change must not run that path — it would
+   * shift every enemy by a factor of 1, which is harmless, but it would also
+   * be the kind of code that breaks the moment someone tightens the
+   * `sx !== 1` guard into a no-op for symmetry. The current
+   * `onCameraResize` already short-circuits on `sx === sy === 1`, but the
+   * test pinned by §10.C covers it so the next refactor cannot quietly
+   * regress.
+   */
+  setDprCap(cap: number): void {
+    if (!(cap > 0)) return;
+    if (cap === this.dprCap) return;
+    this.dprCap = cap;
+    this.measure();
+  }
+
+  /** The current DPR cap, for diagnostics. */
+  get currentDprCap(): number {
+    return this.dprCap;
   }
 
   destroy(): void {

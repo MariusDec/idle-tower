@@ -1,5 +1,6 @@
 import { setText, toggleClass } from '../utils/dom';
 import { TARGETING_MODES } from '../data/tower';
+import type { QualityTier } from '../data/quality';
 
 export interface SettingsAPI {
   onClearSave: () => void;
@@ -18,6 +19,9 @@ export interface SettingsAPI {
   /** Plan §4.3: cast on hotkey (default) versus click-to-place. */
   instantCast?: boolean;
   onInstantCastChange?: (enabled: boolean) => void;
+  /** UI plan §9.D: the four-position Graphics control. */
+  currentQuality?: 'auto' | QualityTier;
+  onQualityChange?: (pref: 'auto' | QualityTier) => void;
 }
 
 /**
@@ -27,6 +31,23 @@ export interface SettingsAPI {
  */
 const DEFAULT_TARGETING_MODES: Array<{ id: string; label: string }> =
   TARGETING_MODES.map(m => ({ id: m.id, label: `${m.label} — ${m.hint}` }));
+
+/**
+ * One-line summary of what a tier costs (UI plan §9.D).
+ *
+ * The strings are short on purpose: a Settings panel hint, not a tooltip. The
+ * numbers are intentionally not named — a player who has not read the doc
+ * does not know that 1× means 60 fps on a desktop and 30 fps on a phone, and
+ * the answer to "is the low tier OK for me" is the same either way.
+ */
+function qualityHint(pref: 'auto' | QualityTier, active: QualityTier): string {
+  const prefix = pref === 'auto' ? 'Auto: ' : '';
+  switch (active) {
+    case 'high':   return prefix + 'High: full particles, glow pass, 2× buffer';
+    case 'medium': return prefix + 'Medium: half particles, glow pass, 1.5× buffer';
+    case 'low':    return prefix + 'Low: quarter particles, no glow, 1× buffer';
+  }
+}
 
 export class SettingsPanel {
   private api: SettingsAPI;
@@ -39,6 +60,9 @@ export class SettingsPanel {
   private targetingSelect: HTMLSelectElement | null = null;
   private autoPickInput: HTMLInputElement | null = null;
   private instantCastInput: HTMLInputElement | null = null;
+  /** Quality segmented buttons, indexed by preference id (UI plan §9.D). */
+  private qualityButtons: Map<'auto' | QualityTier, HTMLButtonElement> = new Map();
+  private qualityHint: HTMLElement | null = null;
 
   constructor(api: SettingsAPI) {
     this.api = api;
@@ -61,6 +85,8 @@ export class SettingsPanel {
     this.targetingSelect = null;
     this.autoPickInput = null;
     this.instantCastInput = null;
+    this.qualityButtons.clear();
+    this.qualityHint = null;
   }
 
   update(): void {
@@ -86,6 +112,22 @@ export class SettingsPanel {
     if (this.instantCastInput) this.instantCastInput.checked = enabled;
   }
 
+  /**
+   * Push the live quality preference in (UI plan §9.D).
+   *
+   * Reflects it on the segmented control and re-states the per-tier hint, so
+   * the panel can never disagree with `Game.qualityPreference`.
+   */
+  setQuality(pref: 'auto' | QualityTier, currentTier: QualityTier): void {
+    this.api.currentQuality = pref;
+    for (const [key, btn] of this.qualityButtons) {
+      toggleClass(btn, 'active', key === pref);
+    }
+    if (this.qualityHint) {
+      this.qualityHint.textContent = qualityHint(pref, currentTier);
+    }
+  }
+
   private render(): void {
     if (!this.root) return;
     this.root.innerHTML = '';
@@ -94,6 +136,11 @@ export class SettingsPanel {
     title.className = 'panel-title';
     title.textContent = 'Settings';
     this.root.appendChild(title);
+
+    // ── Graphics section (UI plan §9.D) ──
+    if (this.api.onQualityChange) {
+      this.root.appendChild(this.renderGraphicsSection());
+    }
 
     // ── Audio section ──
     this.root.appendChild(this.renderAudioSection());
@@ -201,6 +248,75 @@ export class SettingsPanel {
     text.textContent = 'Instant cast';
     label.appendChild(text);
     section.appendChild(label);
+
+    return section;
+  }
+
+  /**
+   * The Graphics section (UI plan §9.D).
+   *
+   * A four-button segmented control — Auto | High | Medium | Low — with a
+   * single-line hint under it that names what the current tier costs in
+   * particles, glow and resolution. Sits above Save Data because the cost
+   * it charges is the *player's* frame time, and the Save Data confirmation
+   * is a two-step affordance that should not be a tap away from a default.
+   */
+  private renderGraphicsSection(): HTMLElement {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+
+    const sectionTitle = document.createElement('h3');
+    sectionTitle.className = 'settings-section-title';
+    sectionTitle.textContent = 'Graphics';
+    section.appendChild(sectionTitle);
+
+    const desc = document.createElement('p');
+    desc.className = 'settings-desc';
+    desc.textContent = 'Trade visual fidelity for frame time. "Auto" picks a tier '
+      + 'from your device, then runs a 2-second probe on the first wave and '
+      + 'demotes one step if the frame budget is missed. Once you pick a tier '
+      + 'yourself, the probe is gone.';
+    section.appendChild(desc);
+
+    const segmented = document.createElement('div');
+    segmented.className = 'settings-segmented';
+    segmented.setAttribute('role', 'radiogroup');
+    segmented.setAttribute('aria-label', 'Graphics quality');
+
+    const current = this.api.currentQuality ?? 'auto';
+    // `currentTier` is the *active* tier — separate from the preference when
+    // the preference is `'auto'`, because the auto-detect may have demoted.
+    // The panel is fed both; the hint describes the tier, not the preference.
+    const tier = this.api.currentQuality as 'auto' | QualityTier;
+    const initialTier: QualityTier = tier === 'auto' || tier === undefined ? 'high' : tier;
+    const options: Array<{ key: 'auto' | QualityTier; label: string }> = [
+      { key: 'auto', label: 'Auto' },
+      { key: 'high', label: 'High' },
+      { key: 'medium', label: 'Medium' },
+      { key: 'low', label: 'Low' },
+    ];
+    for (const opt of options) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'settings-segmented-btn';
+      btn.dataset.qualityKey = opt.key;
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-checked', String(opt.key === current));
+      btn.textContent = opt.label;
+      if (opt.key === current) btn.classList.add('active');
+      btn.addEventListener('click', () => {
+        this.api.onQualityChange?.(opt.key);
+      });
+      segmented.appendChild(btn);
+      this.qualityButtons.set(opt.key, btn);
+    }
+    section.appendChild(segmented);
+
+    const hint = document.createElement('p');
+    hint.className = 'settings-desc settings-quality-hint';
+    hint.textContent = qualityHint(current, initialTier);
+    section.appendChild(hint);
+    this.qualityHint = hint;
 
     return section;
   }

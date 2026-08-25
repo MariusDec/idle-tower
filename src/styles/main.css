@@ -21,6 +21,21 @@ html, body, #app {
   overflow: hidden;
 }
 
+/* UI plan §9.C — touch hardening. The `overscroll-behavior: none` is the
+   load-bearing half: pull-to-refresh mid-run refreshes the page and the run
+   is gone. `touch-callout: none` and `tap-highlight-color: transparent` are
+   the smaller ones — they prevent the iOS long-press bubble and the
+   Chromium tap flash from interrupting a tap that already has a job. The
+   `touch-action: none` deliberately does *not* live here; the canvas owns it
+   (it would kill panel scrolling) and main.css:115 keeps it. */
+html, body, #app {
+  overscroll-behavior: none;
+}
+#app {
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* The display face. Condensed, so a wave number or a six-figure gold total gets
    more glyphs into the same width and still reads at arm's length on a phone.
    Applied here at the base layer only — the panel and modal titles the DOM
@@ -72,11 +87,9 @@ button:disabled {
   background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
   border-bottom: 1px solid var(--stroke-subtle);
   z-index: 5;
-}
-
-@media (max-width: 768px) {
-  .game-layout { grid-template-columns: 1fr; }
-  .panel-root { display: none; }
+  /* UI plan §9.A: a notch eats the wave header. Top inset the HUD and a small
+     floor of space so the wave number sits below the camera cut-out on iOS. */
+  padding-top: max(var(--space-2), var(--safe-t));
 }
 
 .game-layout {
@@ -132,6 +145,24 @@ button:disabled {
   min-height: 0;
   min-width: var(--panel-width);
   width: var(--panel-width);
+  /* UI plan §9.A: side insets on the desktop panel so a landscape phone with a
+     cut-out on the long edge does not bury the rail under the bezel. */
+  padding-left: var(--safe-l);
+  padding-right: var(--safe-r);
+  padding-bottom: var(--safe-b);
+}
+
+/* The panel and the BottomNav are two ways to navigate the same groups; only
+   one belongs on screen at a time. The rules live here — past the base rules
+   above — because a media query placed earlier is overridden by an equal-
+   specificity base rule that follows it, which left .panel-root at display:
+   grid on phones and pushed the rail and resizer off-screen with width: 0
+   instead of actually hiding the panel. The bottom-nav-root / mobile-sheet
+   rules below already sit past their base rules, so this only needs to
+   retake the two earliest selectors. */
+@media (max-width: 768px) {
+  .game-layout { grid-template-columns: 1fr; }
+  .panel-root { display: none; }
 }
 
 /* The five-group rail. */
@@ -197,6 +228,11 @@ button:disabled {
 .tab-btn {
   flex: 1 1 auto;
   padding: 6px 10px;
+  /* UI plan §9.C: the §9.C 44 px floor for touch. The strip is on the
+     desktop panel — mice do not need it — but the segmented controls inside
+     the mobile sheet delegate the same role, and a class shared between the
+     two keeps one of them from drifting. */
+  min-height: 44px;
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--text-1);
@@ -239,6 +275,9 @@ button:disabled {
   grid-row: 2;
   overflow-y: auto;
   overflow-x: hidden;
+  /* UI plan §9.C: a panel scrolled to the end on a phone must not bounce the
+     page underneath. `contain` keeps the chain reaction in the panel. */
+  overscroll-behavior: contain;
   padding: 12px;
   min-height: 0;
 }
@@ -401,6 +440,14 @@ button:disabled {
 .hud-pill[data-tone='nature'] { --pill-tone: var(--fx-nature); --pill-rgb: var(--rgb-nature); }
 .hud-pill[data-tone='ember'] { --pill-tone: var(--fx-ember); --pill-rgb: var(--rgb-ember); }
 .hud-pill[data-tone='blood'] { --pill-tone: var(--fx-blood); --pill-rgb: var(--rgb-blood); }
+
+/* The mobile-only DPS chip parked in the top row next to the gold and kills
+   pills. The desktop pill already lives in .hud-group.right, which is hidden
+   below the §9 breakpoint; without this mirror, the player loses the one
+   number that says "your build is working" while the rest of the HUD is
+   condensed around it. The mobile media query below reveals it; the desktop
+   default keeps it off-screen. */
+.hud-pill-top { display: none; }
 
 .hud-pill-icon.icon {
   --icon-size: 20px;
@@ -1628,6 +1675,8 @@ button:disabled {
   position: relative; /* for the notification badge */
   flex: 1 1 0;
   padding: 6px 4px;
+  /* UI plan §9.C: 44 px floor. */
+  min-height: 44px;
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--text-1);
@@ -1854,6 +1903,8 @@ button:disabled {
   align-self: flex-start;
   margin-top: 4px;
   padding: 6px 12px;
+  /* UI plan §9.C: 44 px floor for the card action. */
+  min-height: 44px;
   border: 1px solid var(--stroke-subtle);
   border-radius: var(--radius-lg);
   background: var(--surface-3);
@@ -2008,7 +2059,7 @@ button:disabled {
    bottom nav and the safe-area inset on both. */
 .toast-root {
   position: fixed;
-  right: max(16px, env(safe-area-inset-right, 0px));
+  right: max(16px, var(--safe-r));
   bottom: var(--corner-stack-base);
   display: flex;
   flex-direction: column;
@@ -2104,7 +2155,7 @@ button:disabled {
        above both it and the dock. */
     --corner-stack-base: calc(
       var(--ability-bar-height) + var(--bottom-nav-height)
-      + env(safe-area-inset-bottom, 0px) + 12px);
+      + var(--safe-b) + 12px);
   }
   .ability-bar-slot-label { display: none; }
   .ability-bar .ability-hotkey { display: none; }
@@ -2537,10 +2588,10 @@ button:disabled {
   pointer-events: auto;
   opacity: 0;
   transition: opacity var(--dur-base) ease;
-  padding: calc(env(safe-area-inset-top, 0px) + 16px)
-           calc(env(safe-area-inset-right, 0px) + 16px)
-           calc(env(safe-area-inset-bottom, 0px) + 16px)
-           calc(env(safe-area-inset-left, 0px) + 16px);
+  padding: calc(var(--safe-t) + 16px)
+           calc(var(--safe-r) + 16px)
+           calc(var(--safe-b) + 16px)
+           calc(var(--safe-l) + 16px);
 }
 .modal.is-visible { opacity: 1; }
 .modal-backdrop {
@@ -2634,6 +2685,8 @@ button:disabled {
   align-self: stretch;
   margin-top: 6px;
   padding: 10px 12px;
+  /* UI plan §9.C: 44 px floor for the primary CTA on every modal. */
+  min-height: 44px;
   font-weight: 700;
   background: linear-gradient(180deg, var(--green-700), var(--green-800));
   border-color: var(--green-500);
@@ -2914,6 +2967,53 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* Segmented control used by the Graphics section (UI plan §9.D). Same shape
+   as the blessing-picker's row and the wave modifier's tier pick, but lives
+   here as a settings primitive so any future segmented preference reaches for
+   it rather than re-styling the same pattern. */
+.settings-segmented {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--stroke-subtle);
+  border-radius: var(--radius-md);
+}
+.settings-segmented-btn {
+  flex: 1 1 0;
+  /* UI plan §9.C: 44 px floor — this is the touch target. */
+  min-height: 44px;
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-1);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  transition: color var(--dur-fast) ease, background var(--dur-fast) ease,
+    border-color var(--dur-fast) ease;
+}
+.settings-segmented-btn:hover:not(.active) {
+  background: var(--surface-3);
+  color: var(--text-0);
+}
+.settings-segmented-btn.active {
+  background: var(--surface-3);
+  color: var(--accent);
+  border-color: var(--stroke-strong);
+}
+.settings-segmented-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.settings-quality-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-2);
 }
 .settings-volume-value {
   font-variant-numeric: tabular-nums;
@@ -3758,7 +3858,7 @@ body.is-resizing * { cursor: ew-resize !important; }
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--bottom-nav-height) + var(--safe-b));
   /* An explicit height, not a content-sized one: the milestone strip, the
      contract tracker and the toast stack all offset themselves by
      `--ability-bar-height`, and a dock that grew a pixel would slide four other
@@ -3769,8 +3869,8 @@ body.is-resizing * { cursor: ew-resize !important; }
   align-items: center;
   justify-content: center;
   padding: var(--space-2) var(--space-3) var(--space-2);
-  padding-left: max(var(--space-3), env(safe-area-inset-left, 0px));
-  padding-right: max(var(--space-3), env(safe-area-inset-right, 0px));
+  padding-left: max(var(--space-3), var(--safe-l));
+  padding-right: max(var(--space-3), var(--safe-r));
   background: linear-gradient(180deg, rgba(var(--rgb-surface-2), 0.72), rgba(var(--rgb-surface-0), 0.95));
   border-top: 1px solid var(--stroke-subtle);
   box-shadow: var(--elev-up);
@@ -3783,7 +3883,7 @@ body.is-resizing * { cursor: ew-resize !important; }
 @media (min-width: 769px) {
   #ability-bar-root {
     bottom: 0;
-    padding-bottom: max(var(--space-2), env(safe-area-inset-bottom, 0px));
+    padding-bottom: max(var(--space-2), var(--safe-b));
   }
 }
 .ability-bar {
@@ -3952,7 +4052,7 @@ body.is-resizing * { cursor: ew-resize !important; }
     /* The dock now sits on the bottom edge rather than floating 20px above it,
        so the reserved strip is exactly the dock plus whatever the device's
        gesture bar takes. */
-    padding-bottom: calc(var(--ability-bar-height) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(var(--ability-bar-height) + var(--safe-b));
   }
 }
 
@@ -3970,11 +4070,11 @@ body.is-resizing * { cursor: ew-resize !important; }
     z-index: calc(var(--z-dock) + 5);
     background: var(--surface-1);
     border-top: 1px solid var(--stroke-subtle);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--safe-b);
   }
   body.has-ability-bar #app {
     padding-bottom: calc(
-      var(--ability-bar-height) + var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+      var(--ability-bar-height) + var(--bottom-nav-height) + var(--safe-b));
   }
 }
 .bottom-nav {
@@ -4100,6 +4200,7 @@ body.is-resizing * { cursor: ew-resize !important; }
   padding: 2px;
 }
 .mobile-sheet-segmented-btn {
+  position: relative;
   flex: 1 1 0;
   padding: 5px 8px;
   font-size: var(--text-xs);
@@ -4115,6 +4216,27 @@ body.is-resizing * { cursor: ew-resize !important; }
   color: var(--text-0);
   box-shadow: inset 0 0 0 1px var(--stroke-strong);
 }
+/* Per-tab notification badge, matching the desktop .tab-badge: same accent
+   dot, same hide-by-default. The mobile segmented strip and the desktop
+   sub-strip are the same surface on different canvases, so a notification on
+   one is a notification on the other. */
+.mobile-sheet-segmented-btn-badge {
+  display: none;
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--text-on-amber);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  padding: 0 3px;
+}
+.mobile-sheet-segmented-btn-badge.is-visible { display: inline-block; }
 .mobile-sheet-close {
   font-size: var(--text-2xl);
   line-height: 1;
@@ -4127,10 +4249,47 @@ body.is-resizing * { cursor: ew-resize !important; }
 .mobile-sheet-body {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 4px 8px calc(12px + env(safe-area-inset-bottom, 0px));
+  /* UI plan §9.C: a sheet scrolled to its end must not bounce the page. */
+  overscroll-behavior: contain;
+  padding: 4px 8px calc(12px + var(--safe-b));
   min-height: 0;
 }
 .mobile-sheet-body > * { container-type: inline-size; }
+
+/* ── Portrait phones (UI plan §9.B) ─────────────────────────────────────────
+   A 9:16 phone in the field already gets a 936 short half-extent from the
+   camera's aspect clamp; what was broken was the *chrome* around it. The HUD
+   grew past `--hud-height-mobile` under Part 7, the ability dock is 96 px,
+   the bottom nav is 60 px, the toast stack rides the same ladder, and a
+   landscape-only mobile sheet left the panel toggle unreachable on a phone
+   held upright. This block fixes all four: a full-height sheet pinned to the
+   dynamic viewport height, the HUD on two rows, and the panel opens as a
+   sheet rather than as a side column. */
+@media (orientation: portrait) and (max-width: 768px) {
+  .mobile-sheet {
+    /* `100dvh` not `100vh` — vh on iOS includes the retracting browser chrome
+       and the dock would clip behind the gesture bar. */
+    height: calc(100dvh - var(--safe-t));
+    max-height: none;
+  }
+  .mobile-sheet-header {
+    /* On portrait the sheet is full-bleed, so the close button has to clear the
+       right safe area too. */
+    padding-right: max(12px, var(--safe-r));
+    padding-left: max(12px, var(--safe-l));
+  }
+  .mobile-sheet-segmented-btn {
+    min-height: 44px;
+  }
+}
+@media (max-width: 768px) {
+  .mobile-sheet-close {
+    /* The X is one of the §9.C 44 px targets and the segmented buttons are
+       only 28 px tall in landscape — lift both. */
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
 
 /* ── Mobile HUD (≤768px) ── */
 @media (max-width: 768px) {
@@ -4143,6 +4302,11 @@ body.is-resizing * { cursor: ew-resize !important; }
     align-items: stretch;
     gap: 4px;
     padding: 6px 8px;
+    /* The HUD root already gets the top safe-area inset; the side insets live
+       here so a landscape phone with a camera cut-out on the long edge does
+       not push the resource chips into the bezel. */
+    padding-left: max(8px, var(--safe-l));
+    padding-right: max(8px, var(--safe-r));
     min-height: 0;
     /* Solid background so the canvas / game background never bleeds through
        the compact HUD when the viewport is small. */
@@ -4166,6 +4330,9 @@ body.is-resizing * { cursor: ew-resize !important; }
   .hud-pill-icon.icon { --icon-size: 16px; }
   .hud-pill-label { display: none; }
   .hud-pill-value { font-size: var(--text-xl); }
+  /* Reveal the mobile-only DPS chip parked in the top row; the §7 sizing
+     rules above give it the same small form as gold and kills. */
+  .hud-pill-top { display: flex; }
   .hud-stat-value { font-size: var(--text-base); }
   .hud-stat-label { font-size: var(--text-3xs); letter-spacing: var(--tracking-wide); }
   .hud-bar-block {
@@ -4238,7 +4405,7 @@ body.is-resizing * { cursor: ew-resize !important; }
      above the tracker: a 375px viewport has no room for a 300px toast and a
      230px tracker side by side, so they take turns vertically instead. */
   .toast-root {
-    right: max(var(--space-2), env(safe-area-inset-right, 0px));
+    right: max(var(--space-2), var(--safe-r));
     bottom: calc(var(--corner-stack-base) + var(--contract-tracker-height));
     max-width: min(300px, calc(100vw - var(--space-4)));
   }
@@ -4290,7 +4457,7 @@ body.is-resizing * { cursor: ew-resize !important; }
     left: 0;
     flex-direction: column-reverse;
     gap: 4px;
-    max-height: calc(100vh - var(--hud-height-mobile) - var(--ability-bar-height) - var(--bottom-nav-height) - 48px);
+    max-height: calc(100dvh - var(--hud-height-mobile) - var(--ability-bar-height) - var(--bottom-nav-height) - 48px);
     overflow-y: auto;
     overflow-x: hidden;
     /*background: linear-gradient(180deg, rgba(var(--rgb-surface-2), 0.96), rgba(var(--rgb-surface-0), 0.96));*/
@@ -4541,6 +4708,9 @@ body.is-resizing * { cursor: ew-resize !important; }
   align-items: stretch;
   gap: 10px;
   padding: 8px 10px;
+  /* UI plan §9.C: 44 px floor for talent rows, which are full-row tap targets
+     with the buy button on the trailing edge. */
+  min-height: 44px;
   background: var(--surface-2);
   border: 1px solid var(--stroke-subtle);
   border-radius: var(--radius-lg);
@@ -5008,6 +5178,9 @@ body.is-resizing * { cursor: ew-resize !important; }
 .eq-sort-btn {
   font-size: var(--text-2xs);
   padding: 2px 8px;
+  /* UI plan §9.C: sort buttons are touch targets in their own right, even
+     though they read like desktop controls. */
+  min-height: 44px;
   border: 1px solid var(--stroke-subtle);
   border-radius: var(--radius-sm);
   background: transparent;

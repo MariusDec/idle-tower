@@ -403,7 +403,18 @@
      this arithmetic themselves stopped being tenable — the tracker had already
      drifted under the dock. The mobile branch of main.css adds the nav. */
   --corner-stack-base: calc(
-    var(--ability-bar-height) + env(safe-area-inset-bottom, 0px) + 12px);
+    var(--ability-bar-height) + var(--safe-b) + 12px);
+
+  /* Safe-area insets (UI plan §9.A). The browser only reports these on a
+     viewport with `viewport-fit=cover` (index.html), and a notch, a gesture bar
+     or a rounded corner is the only reason any of them is non-zero. Every
+     component rule that needs them reads one of these tokens rather than
+     calling `env()` itself — the same single-source-of-truth rule that already
+     applies to colours and durations. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
   /* Approximate mobile HUD height (2 rows: wave block + hp/mana bars). Used to
      position the milestone strip and toasts above the canvas. */
   --hud-height-mobile: 90px;

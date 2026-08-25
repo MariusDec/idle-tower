@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- UI plan §9.E: theme-color for the Capacitor status bar. The pairing
+         with --surface-0 in tokens.css is deliberate — both are the ground
+         the app sits on, and keeping them in sync is what makes a notched
+         device look continuous from chrome to canvas. -->
+    <meta name="theme-color" content="#0a0d14" />
     <title>The Tower</title>
     <!-- The display face is self-hosted (no runtime network for the Capacitor
          build) and discovered only once the CSS has parsed, so preload the latin

@@ -129,6 +129,14 @@ function bootstrap(): void {
     game.setInstantCast(enabled);
   });
   ui.setInstantCastState(game.isInstantCast());
+  // Plan §9.D: the Graphics control. `setQualityPreference` writes the
+  // preference and persists; `setQualityState` mirrors the live state back
+  // into the panel so a tier demoted by the 2-second probe is visible.
+  ui.setOnQualityChange((pref) => {
+    game.setQualityPreference(pref);
+    ui.setQualityState(pref, game.qualityTier);
+  });
+  ui.setQualityState(game.qualityPreference, game.qualityTier);
   ui.setAudioAPI({
     volume: game.audioMgr.currentVolume,
     muted: game.audioMgr.isMuted,

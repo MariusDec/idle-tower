@@ -133,6 +133,15 @@ export class HUD {
   /** Composition signature, so an unchanged preview never rebuilds its icons. */
   private threatSig = '';
   private dpsPill!: PillRefs;
+  /**
+   * Mobile-only mirror of `dpsPill`, parked in the top group next to the gold
+   * and kills pills. The desktop pill lives in `groupRight`, which collapses
+   * on a phone in favour of the bottom-nav; without this mirror the player
+   * loses the only number that says "your build is working" while the rest of
+   * the HUD is condensed around it. CSS hides it above the §9 breakpoint and
+   * the .hud-pill mobile rules give it the small form.
+   */
+  private dpsPillTop!: PillRefs;
   private goldPill!: PillRefs;
   private killsPill!: PillRefs;
   /** Every chip, so a reduced-motion / reset sweep has one list to walk. */
@@ -178,7 +187,6 @@ export class HUD {
   private moreSpeedDecBtn!: HTMLButtonElement;
   private moreSpeedIncBtn!: HTMLButtonElement;
   private moreSpeedLabelEl!: HTMLElement;
-  private moreDpsEl!: HTMLElement;
   private keybindsBtn!: HTMLButtonElement;
   private onShowKeybinds: () => void = () => {};
   private moreStatsBtn!: HTMLButtonElement;
@@ -205,10 +213,11 @@ export class HUD {
 
   /**
    * Write the (tweened) DPS to every surface that shows it: the header pill
-   * and the mobile "More" mirror. Called per frame from `tickDisplay`, not
-   * from the throttled `update()` — the tween is what makes the number ease,
-   * and a tween read at 10 fps is a stutter, not an animation. The `dom`
-   * helpers cache the last string, so a settled value writes nothing.
+   * and the top-row mobile chip parked next to the gold and kills pills.
+   * Called per frame from `tickDisplay`, not from the throttled `update()` —
+   * the tween is what makes the number ease, and a tween read at 10 fps is a
+   * stutter, not an animation. The `dom` helpers cache the last string, so a
+   * settled value writes nothing.
    *
    * `keepTrailingZeros` is the fractional readout: under 10 the value always
    * carries its decimal ("5.0", not "5"), so a whole-number rate is visibly a
@@ -217,7 +226,7 @@ export class HUD {
   private writeDpsValue(value: number): void {
     const text = formatWithOptionalDecimal(value, 1, { keepTrailingZeros: true });
     setText(this.dpsPill.valueEl, text);
-    if (this.moreDpsEl) setText(this.moreDpsEl, text);
+    setText(this.dpsPillTop.valueEl, text);
   }
 
 
@@ -609,6 +618,7 @@ export class HUD {
     groupLeft.className = 'hud-group';
     this.goldPill = this.addPill(groupLeft, 'Gold', '0', 'gold', 'gold');
     this.killsPill = this.addPill(groupLeft, 'Kills', '0', 'kills', 'blood');
+    this.dpsPillTop = this.addPill(groupLeft, 'DPS', '0', 'dps', 'ember', 'hud-pill-top');
     groupLeft.appendChild(this.renderWaveBlock());
     const statsWrap = document.createElement('div');
     statsWrap.className = 'hud-stats-wrap';
@@ -1139,19 +1149,11 @@ export class HUD {
     header.appendChild(closeBtn);
     inner.appendChild(header);
 
-    // DPS row.
-    const dpsRow = document.createElement('div');
-    dpsRow.className = 'hud-more-popover-row';
-    const dpsLabel = document.createElement('span');
-    dpsLabel.className = 'hud-more-popover-label';
-    dpsLabel.textContent = 'DPS';
-    this.moreDpsEl = document.createElement('span');
-    this.moreDpsEl.className = 'hud-more-popover-value';
-    this.moreDpsEl.textContent = '0';
-    dpsRow.appendChild(dpsLabel);
-    dpsRow.appendChild(this.moreDpsEl);
-    inner.appendChild(dpsRow);
-
+    // The DPS readout was here once; the mobile-only top-row chip installed
+    // alongside gold and kills now carries it directly on the page, so a
+    // second copy inside the More popup would be reading the same number
+    // twice in two places and only one of them would survive the next
+    // visible-surface audit.
 
     // Speed row — controls stay open on click.
     const speedBlock = document.createElement('div');
@@ -1357,6 +1359,10 @@ export class HUD {
    * `iconKey` is a `StatIconKey`, not a free-form `IconId`, so a chip cannot
    * invent a mark for a concept that already has one — the same reuse rule
    * `docs/icon-system.md` states for every other surface.
+   *
+   * `extraClass` is for chips that need a second hook — e.g. the mobile-only
+   * DPS pill carries `.hud-pill-top` so CSS can hide it on desktop without
+   * affecting the other pills that share the `.hud-pill` base styling.
    */
   private addPill(
     parent: HTMLElement,
@@ -1364,9 +1370,10 @@ export class HUD {
     initialValue: string,
     iconKey: StatIconKey,
     tone: string,
+    extraClass?: string,
   ): PillRefs {
     const wrap = document.createElement('div');
-    wrap.className = 'hud-pill';
+    wrap.className = extraClass ? `hud-pill ${extraClass}` : 'hud-pill';
     wrap.dataset.tone = tone;
     // The phone layout drops the written caption and keeps the icon, so the
     // name has to live somewhere a screen reader can still reach it.

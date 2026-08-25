@@ -89,9 +89,12 @@ can fire before layout settles, and `ResizeObserver` is not guaranteed to see a 
 the element's box the same size but changes `devicePixelRatio`. All three paths call `measure()`,
 which is a no-op when nothing moved.
 
-`measure()` sets `canvas.width/height = cssBox × min(devicePixelRatio, 2)`. The DPR cap is
-`ARENA.maxDevicePixelRatio`: a 3× phone buffer is a 2.25× fill-rate tax over a 2× one for a
-difference nobody can see at arm's length, and this game's frame budget is spent on 200+ enemies.
+`measure()` sets `canvas.width/height = cssBox × min(devicePixelRatio, dprCap)`. The cap is
+`ARENA.maxDevicePixelRatio` for the `high` quality tier, 1.5 for `medium`, and 1.0 for `low` — a 3×
+phone buffer is a 2.25× fill-rate tax over a 2× one for a difference nobody can see at arm's length,
+and this game's frame budget is spent on 200+ enemies. The quality tier (UI plan §9.D) feeds the
+cap in via `camera.setDprCap(QUALITY[tier].dprCap)`; the per-tier table lives in
+`src/data/quality.ts`.
 
 > **Note when testing in a headless or hidden pane:** `ResizeObserver` callbacks are delivered as
 > part of the rendering steps. A page with `document.hidden === true` is not running them, so a
@@ -101,8 +104,13 @@ difference nobody can see at arm's length, and this game's frame budget is spent
 When the world rectangle changes, `onResize` fires and `Game.onCameraResize` re-seats the tower,
 pushes new bounds to the enemy and projectile managers, rescales live entity positions
 proportionally (a resize mid-wave must not teleport anything out of bounds) and invalidates the
-renderer's background bake. When only the *buffer* changed, `onResize` still fires so the background
-can be re-baked at the new resolution.
+renderer's background bake. When only the *buffer* changed — including the §9.D case of a DPR cap
+change — `onResize` still fires so the background can be re-baked at the new resolution, but the
+rescale path is skipped (`previousWorldWidth === worldWidth`, so `sx === sy === 1`). That is the
+**§9.D rescale guard**: a DPR change leaves the world extents identical, and the only thing moving
+is the backing store and `scale`. `tests/camera.test.ts` pins both halves — that
+`setDprCap` changes `pixelWidth`/`pixelHeight`/`scale` but leaves `worldWidth`/`worldHeight`
+untouched.
 
 ### Transform
 

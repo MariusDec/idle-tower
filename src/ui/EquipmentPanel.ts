@@ -588,14 +588,6 @@ export class EquipmentPanel {
       this.selectItem(null);
       this.deps.equip(item.slot, item.id);
     });
-    equipBtn.addEventListener('mouseenter', () => {
-      if (this.longPressTimer !== null) return;
-      this.hoverTimer = setTimeout(() => {
-        this.hoverTimer = null;
-        this.showCompareTooltip(item, equipBtn);
-      }, HOVER_DELAY_MS);
-    });
-    equipBtn.addEventListener('mouseleave', () => { this.hideCompareTooltip(); });
     actions.appendChild(equipBtn);
 
     const sellBtn = document.createElement('button');
@@ -611,7 +603,35 @@ export class EquipmentPanel {
     card.style.cursor = 'grab';
     card.addEventListener('mousedown', (e) => {
       if ((e.target as HTMLElement).closest('button')) return;
+      // Cancel any pending hover-tooltip so a drag that begins just after a
+      // hover doesn't pop the compare tooltip behind the dragged clone.
+      if (this.hoverTimer !== null) { clearTimeout(this.hoverTimer); this.hoverTimer = null; }
       this.onDragStart(e, 'equip', item.id, item.slot, card);
+    });
+
+    // §8.C.2: the compare tooltip now follows the whole card, not just the
+    // Equip button — the rest of the card is a hover target too. The Sell
+    // button is the one affordance that should not also pop a comparison, so
+    // hovering it (or any descendant) tears the tooltip down instead.
+    card.addEventListener('mouseover', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('.btn-sell')) {
+        if (this.hoverTimer !== null) { clearTimeout(this.hoverTimer); this.hoverTimer = null; }
+        this.hideCompareTooltip();
+        return;
+      }
+      if (this.longPressTimer !== null) return;
+      if (this.dragState) return;
+      if (this.hoverTimer !== null) return;
+      this.hoverTimer = setTimeout(() => {
+        this.hoverTimer = null;
+        this.showCompareTooltip(item, card);
+      }, HOVER_DELAY_MS);
+    });
+    card.addEventListener('mouseout', (e) => {
+      const related = e.relatedTarget as HTMLElement | null;
+      if (related && card.contains(related)) return;
+      this.hideCompareTooltip();
     });
 
     // §8.C.3: tap to select, then tap the slot to equip; long-press for compare.

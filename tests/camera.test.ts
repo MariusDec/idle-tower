@@ -83,6 +83,31 @@ describe('the view transform', () => {
     expect(makeViewTransform(800, 600, 0).dpr).toBe(1);
   });
 
+  it('honours an explicit dprCap, which the quality tier feeds in (UI plan §9.D)', () => {
+    // The cap is a ceiling: a 2x buffer under a 1.5 cap resolves to 1.5.
+    expect(makeViewTransform(800, 600, 2, 1.5).dpr).toBe(1.5);
+    expect(makeViewTransform(800, 600, 3, 1).dpr).toBe(1);
+    // And under the 1.5 cap, the 1x buffer stays 1x.
+    expect(makeViewTransform(800, 600, 1, 1.5).dpr).toBe(1);
+  });
+
+  it('a dprCap change moves pixelWidth and scale but leaves worldWidth untouched', () => {
+    // UI plan §9.D: the enemy-rescale guard. A DPR cap change must rebuild the
+    // backing store and recompute `scale`, but the world rectangle is the same
+    // for both calls — if the camera fed the resize handler here, every enemy
+    // would shift by 1.0 (a no-op) and the next refactor that tightens the
+    // `sx !== 1` guard would teleport them.
+    const t2 = makeViewTransform(800, 600, 2, 2);
+    const t1 = makeViewTransform(800, 600, 2, 1);
+    expect(t2.worldWidth).toBe(t1.worldWidth);
+    expect(t2.worldHeight).toBe(t1.worldHeight);
+    expect(t2.pixelWidth).toBeGreaterThan(t1.pixelWidth);
+    expect(t2.pixelHeight).toBeGreaterThan(t1.pixelHeight);
+    // Scale (backing-store px per world unit) is exactly halved under the
+    // halved cap — that is the whole point of the cap.
+    expect(t2.scale).toBeCloseTo(t1.scale * 2, 6);
+  });
+
   it('sizes the backing store as cssPx x dpr', () => {
     const t = makeViewTransform(800, 450, 2);
     expect(t.pixelWidth).toBe(1600);

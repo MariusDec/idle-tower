@@ -479,3 +479,36 @@ A bare `modalRoot.childElementCount` check would have been shorter and wrong:
 the boss bar, the placement prompt, the pacing overlay and the contract tracker
 all live in overlay roots that fall back to `modalRoot`, and none of them is a
 modal.
+
+## Capacitor
+
+UI plan §9.E. The game ships to Capacitor as a static `dist/`; nothing in
+this repo provisions the native project. Three things make that work:
+
+- `index.html` carries `<meta name="theme-color" content="#0a0d14">`. The
+  value pairs with `--surface-0` in `src/styles/tokens.css`; both are the
+  ground the app sits on, and keeping them in sync is what makes a notched
+  device look continuous from chrome to canvas. Update both together.
+- `vite.config.ts` sets `base: './'`. The `dist/` is therefore path-agnostic
+  and resolves from a `capacitor://` or `https://` host without re-bundling.
+  The icon sprite is already loaded as a relative path
+  (`src/ui/Icon.ts:28`) and via `new URL(url, document.baseURI)`, so the
+  sprite resolves the same way at runtime.
+- No runtime network. Fonts and the icon sprite are both committed under
+  `public/`; `src/styles/tokens.css` does not import any web font, and
+  `tests/palette.test.ts` scans `index.html` and `src/styles/*.css` for any
+  `http://` / `https://` URL outside a comment. A future `@import` of a
+  web font fails that test.
+
+To add the native project:
+
+```bash
+npm run build
+npx cap add android     # or ios
+npx cap copy android
+npx cap open android
+```
+
+The splash background is `--surface-0`. The status-bar style is whatever
+`@capacitor/status-bar` is set to in the native project; with the
+`theme-color` meta above, the OS picks a dark variant by default.

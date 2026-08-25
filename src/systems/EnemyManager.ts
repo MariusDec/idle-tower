@@ -647,7 +647,7 @@ export class EnemyManager {
    * (siege reload, blink interval, warden refresh, burrow surface, shield
    * regeneration) is correct at `dt = 1/120` and at 6.5x game speed alike.
    */
-  tick(dt: number, towerX: number, towerY: number): void {
+  tick(dt: number, towerX: number, towerY: number, towerRange: number): void {
     this.lastTowerX = towerX;
     this.lastTowerY = towerY;
     if (this.slowTimer > 0) {
@@ -710,7 +710,7 @@ export class EnemyManager {
       // route to the chill map, and "am I slowed" is already answered here.
       e.slowed = chill !== undefined || (this.slowTimer > 0 && this.slowFactor < 1);
 
-      const stance = this.resolveStance(e, dt, d, dx, dy, towerX, towerY);
+      const stance = this.resolveStance(e, dt, d, dx, dy, towerX, towerY, towerRange);
       if (stance === 'escaped') {
         escaped = true;
         continue;
@@ -883,6 +883,7 @@ export class EnemyManager {
     dy: number,
     towerX: number,
     towerY: number,
+    towerRange: number,
   ): EnemyStance {
     switch (e.type) {
       case 'normal':
@@ -918,12 +919,15 @@ export class EnemyManager {
         return retreating ? 'retreat' : 'advance';
       }
 
-      // Halts outside a short build's range and shells the tower on a fixed
-      // reload. Knockback and slow do nothing useful against it; range and
-      // target priority are the answer (plan §2.1).
+      // Halts at the nearer of "just inside the tower's range" or the static
+      // cap. A short build never gets close enough to acquire one; a long
+      // build stops it at the same place the static cap would. Knockback and
+      // slow do nothing useful against it; range and target priority are the
+      // answer (plan §2.1).
       case 'siege': {
         const reload = ENEMY_BEHAVIOR.siegeReload;
-        if (d > ENEMY_BEHAVIOR.siegeStandoff) {
+        const haltDistance = Math.min(towerRange - 10, ENEMY_BEHAVIOR.siegeStandoff);
+        if (d > haltDistance) {
           e.siegeHalted = false;
           // Clamped at zero rather than left to go negative during a long
           // approach, so arriving in range fires one shell, never a stockpile.

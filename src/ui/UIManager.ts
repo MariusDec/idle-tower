@@ -254,6 +254,9 @@ export class UIManager {
   private onTargetingModeChange: (mode: string) => void = () => {};
   private onAutoPickBlessingsChange: (enabled: boolean) => void = () => {};
   private onInstantCastChange: (enabled: boolean) => void = () => {};
+  private onQualityChange: (
+    pref: 'auto' | 'high' | 'medium' | 'low',
+  ) => void = () => {};
   private talentApi: TalentAPIDeps = {
     allocated: {},
     unspentPoints: () => 0,
@@ -493,6 +496,8 @@ export class UIManager {
       autoPickBlessingsForced: false,
       onAutoPickBlessingsChange: (enabled) => this.onAutoPickBlessingsChange(enabled),
       onInstantCastChange: (enabled) => this.onInstantCastChange(enabled),
+      currentQuality: 'auto',
+      onQualityChange: (pref) => this.onQualityChange(pref),
     });
     this.achievementPanel = new AchievementPanel({
       getProgress: (def) => {
@@ -731,6 +736,12 @@ export class UIManager {
   private applyMobileMode(mobile: boolean): void {
     this.isMobile = mobile;
     if (!this.bottomNav || !this.mobileSheet) return;
+    // Resizing out of mobile leaves the sheet floating over the now-visible
+    // desktop panel; close it so the player is not staring at a half-faded
+    // dialog while the panel renders behind it. The mobile state is otherwise
+    // intact — the next resize back to mobile lands the user on the same
+    // group they last picked.
+    if (!mobile) this.mobileSheet.close();
     // Seed the sheet with the group the panel is already on, so the very first
     // open is not an empty segmented strip.
     this.loadSheetGroup(this.activeGroup);
@@ -973,6 +984,23 @@ export class UIManager {
   /** Push the current instant-cast preference into the settings panel (§4.3). */
   setInstantCastState(enabled: boolean): void {
     this.settingsPanel.setInstantCast(enabled);
+  }
+
+  /** Plan §9.D: the four-position Graphics control. */
+  setOnQualityChange(handler: (pref: 'auto' | 'high' | 'medium' | 'low') => void): void {
+    this.onQualityChange = handler;
+  }
+
+  /**
+   * Push the live quality state in (plan §9.D).
+   *
+   * `pref` is the player's saved preference; `currentTier` is the tier the
+   * game is actually running — they are equal unless the preference is
+   * `'auto'` and the probe has demoted, in which case the hint has to reflect
+   * what the player is looking at.
+   */
+  setQualityState(pref: 'auto' | 'high' | 'medium' | 'low', currentTier: 'high' | 'medium' | 'low'): void {
+    this.settingsPanel.setQuality(pref, currentTier);
   }
 
   /** Show or clear the ability-placement prompt (plan §4.3). */
@@ -1273,6 +1301,11 @@ export class UIManager {
       if (wave >= 12) types.push('splitter');
       if (wave >= 15) types.push('healer');
       if (wave >= 20) types.push('shielded');
+      if (wave >= 25) types.push('siege');
+      if (wave >= 30) types.push('thief');
+      if (wave >= 35) types.push('blinker');
+      if (wave >= 40) types.push('warden');
+      if (wave >= 45) types.push('burrower');
     }
     const entries: EnemyWaveStatsEntry[] = types.map(t => {
       const def = ENEMY_DEFS[t];
@@ -1403,6 +1436,10 @@ export class UIManager {
         const n = this.tabBadges.get(t.id) ?? 0;
         sum += n;
         this.writeBadge(this.subStrip.querySelector(`[data-tab-badge="${t.id}"]`), n);
+        // Per-tab badge on the mobile segmented strip too, so a Research →
+        // Talents notification (the one a phone user is most likely to hit
+        // first) is the same mark on both surfaces.
+        this.mobileSheet?.setBadge(t.id, n);
       }
       this.writeBadge(this.tabsRoot.querySelector(`[data-group-badge="${g.id}"]`), sum);
       this.bottomNav?.setBadge(g.id, sum);

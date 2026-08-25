@@ -1,6 +1,6 @@
 import type { BossPattern, Enemy, EnemyType } from '../types';
 import type { IconId } from './icons';
-import { entity, world } from './arena';
+import { ARENA_RANGE_CAP, entity, world } from './arena';
 import { bossCountForWave, bossHPForWave } from './formulas';
 
 /**
@@ -115,8 +115,13 @@ export const ENEMY_GAIT: Record<EnemyType, {
  * `dt = 1/120` and at 6.5x speed alike.
  */
 export const ENEMY_BEHAVIOR = {
-  /** Siege halts here and shells the tower from outside a short build's range. */
-  siegeStandoff: world(260),
+  /**
+   * Siege halts just inside the arena range cap, so it is outside a short
+   * build's reach but inside a fully range-stacked one's. Was 260 world units
+   * — a touch *above* the cap — which meant no build could ever acquire one
+   * automatically; range and target priority are the answer (plan §2.1).
+   */
+  siegeStandoff: ARENA_RANGE_CAP - 15,
   /** Seconds between siege lobs. */
   siegeReload: 3,
   /** Seconds a siege shell spends in the air (the telegraph). */
@@ -173,7 +178,7 @@ export const ENEMY_BEHAVIOR = {
   fastPackSpread: world(26),
 
   /** Seconds a splitter child is untargetable and immune after the split. */
-  splitterSpawnProtection: 2,
+  splitterSpawnProtection: 1,
   /** Seconds a splitter child spends scattering outwards before it turns in. */
   splitterScatterTime: 0.6,
   /** Speed multiplier applied to that scatter. */

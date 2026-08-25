@@ -87,9 +87,9 @@ function harness(mana = 0): Harness {
     mgr,
     mana: () => state.mana,
     events,
-    run: (seconds, dt = DT) => {
+    run: (seconds, dt = DT, towerRange: number = 2000) => {
       const steps = Math.max(1, Math.round(seconds / dt));
-      for (let i = 0; i < steps; i++) mgr.tick(dt, TOWER_X, TOWER_Y);
+      for (let i = 0; i < steps; i++) mgr.tick(dt, TOWER_X, TOWER_Y, towerRange);
     },
   };
 }
@@ -190,7 +190,7 @@ describe('boss phases (plan §3.1)', () => {
     const boss = spawnBoss(h, 40);
     const chip = boss.maxHp * 0.02;
     for (let i = 0; i < 2000 && boss.alive; i++) {
-      h.mgr.tick(DT, TOWER_X, TOWER_Y);
+      h.mgr.tick(DT, TOWER_X, TOWER_Y, 2000);
       h.mgr.damage(boss, chip, false);
     }
     expect(boss.alive).toBe(false);
@@ -253,7 +253,7 @@ describe('boss phases (plan §3.1)', () => {
       const dpsRate = boss.maxHp / 10;
       const steps = Math.round(40 / dt);
       for (let i = 0; i < steps && boss.alive; i++) {
-        h.mgr.tick(dt, TOWER_X, TOWER_Y);
+        h.mgr.tick(dt, TOWER_X, TOWER_Y, 2000);
         h.mgr.damage(boss, dpsRate * dt, false);
       }
       return { phases: phaseEvents(h), alive: boss.alive };
@@ -382,7 +382,7 @@ describe('summon (plan §3.2)', () => {
 function runToTelegraph(h: Harness, boss: Enemy): void {
   for (let i = 0; i < 4000; i++) {
     if ((boss.bossSlamTelegraph ?? 0) > 0) return;
-    h.mgr.tick(DT, TOWER_X, TOWER_Y);
+    h.mgr.tick(DT, TOWER_X, TOWER_Y, 2000);
   }
   throw new Error('boss never telegraphed a slam');
 }

@@ -39,7 +39,7 @@ import { WaveManager } from '../systems/WaveManager';
 import { ResourceManager } from '../systems/ResourceManager';
 import { UpgradeManager } from '../systems/UpgradeManager';
 import { EffectsManager } from '../systems/EffectsManager';
-import { DEFAULT_QUALITY, type QualityTier } from '../data/quality';
+import { DEFAULT_QUALITY, QUALITY, isQualityTier, type QualityTier } from '../data/quality';
 import { NotificationManager } from '../systems/NotificationManager';
 import { AbilityManager } from '../systems/AbilityManager';
 import { PrestigeManager } from '../systems/PrestigeManager';
@@ -176,6 +176,59 @@ const HP_STAT_THRESHOLDS: readonly number[] = [
 ];
 /** localStorage key for the `autoPickBlessings` preference. */
 const AUTO_PICK_BLESSINGS_KEY = 'the-tower-auto-pick-blessings';
+/**
+ * localStorage key for the quality preference (UI plan §9.D).
+ *
+ * Holds `'auto'` or one of the three tier ids. `'auto'` means the game may
+ * still demote based on its 2-second probe; an explicit value is never
+ * overridden until the player changes it back.
+ */
+const QUALITY_PREF_KEY = 'the-tower-quality';
+
+/**
+ * The first-run guess for the quality tier (UI plan §9.D).
+ *
+ * Two heuristics, applied in order:
+ *  - Eight hardware-concurrency threads is the historical desktop/notebook
+ *    split — a four-core mobile SoC does not run this game at 60 fps with
+ *    200 enemies on `high`, and the auto-detect is the path the player
+ *    actually wants to be on. A coarse pointer (phone-class device) drops
+ *    that threshold one notch: even a fast phone is paying 2.25x fill-rate
+ *    tax for a 3x buffer nobody can see at arm's length.
+ *  - The high-DPR rule catches the *remaining* path: a desktop with a 3x
+ *    monitor (rare but real) and a coarse pointer (e.g. a kiosk) would
+ *    otherwise stay on `high`. Demote one step.
+ *
+ * Pure: a node test can call it with mocked `navigator`/`matchMedia` values.
+ */
+export function initialQualityTier(): QualityTier {
+  const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
+  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  const highThreshold = coarse ? 16 : 8;
+  let t: QualityTier = cores >= highThreshold ? 'high' : cores >= 4 ? 'medium' : 'low';
+  if (coarse && dpr > 2 && t === 'high') t = 'medium';
+  return t;
+}
+
+/**
+ * The value read out of `localStorage` on startup. `'auto'` is the default; an
+ * explicit `'high' | 'medium' | 'low'` is respected until the player changes
+ * it. Anything else (a stale value, a different build's key) is treated as
+ * `'auto'` and falls through to `initialQualityTier`.
+ */
+export function readStoredQuality(): 'auto' | QualityTier {
+  if (typeof localStorage === 'undefined') return 'auto';
+  const raw = localStorage.getItem(QUALITY_PREF_KEY);
+  if (raw === 'high' || raw === 'medium' || raw === 'low' || raw === 'auto') return raw;
+  return 'auto';
+}
+
+function persistQuality(value: 'auto' | QualityTier): void {
+  if (typeof localStorage === 'undefined') return;
+  if (value === 'auto') localStorage.removeItem(QUALITY_PREF_KEY);
+  else localStorage.setItem(QUALITY_PREF_KEY, value);
+}
 
 function makeInitialState(): GameState {
   const tower: TowerState = {
@@ -348,8 +401,21 @@ export interface GameDeps {
 export class Game {
   private readonly camera: Camera;
   private readonly renderer: Renderer;
-  /** The live quality tier (§5.F). Presentation only. */
+  /** The live quality tier (§5.F + §9.D). Presentation only. */
   private quality: QualityTier = DEFAULT_QUALITY;
+  /**
+   * The user-facing quality preference (§9.D). `'auto'` is the default and the
+   * only state in which the 2-second probe may demote the tier. An explicit
+   * value is never overridden.
+   */
+  private qualityPref: 'auto' | QualityTier = 'auto';
+  /**
+   * The 2-second probe (UI plan §9.D). Started once, on the first frame of
+   * wave 1 of the session, and only when the stored preference is `'auto'`.
+   * After the probe runs (or is abandoned) this is `null` and never refills —
+   * promotion is the Settings control's job, not a per-load guess.
+   */
+  private qualityProbe: { frames: number; sum: number; elapsed: number } | null = null;
   private readonly bus: EventBus;
   private readonly ui: UIManager;
 
@@ -697,6 +763,10 @@ export class Game {
     this.state.contracts = this.contractMgr.snapshot();
     this.syncUiApis();
     this.resetRunBaselines();
+    // UI plan §9.D: resolve the saved quality preference into a tier before the
+    // first frame. The probe is started separately, on the first frame of wave
+    // 1, so a hidden tab or a 6.5x game speed cannot pollute the measurement.
+    this.applyStoredQuality();
 
     this.bus.on('enemy_damaged', (payload: unknown) => {
       const p = payload as { enemy: { id: number; x: number; y: number; type: string; armor: number; magicResist: number; hp: number; maxHp: number; goldValue: number; alive: boolean }; amount: number; killed: boolean; isCrit?: boolean };
@@ -1222,6 +1292,12 @@ export class Game {
       // Reset kill streak each wave
       this.killStreak = 0;
       this.enemyMgr.setKillStreakGoldBonus(0);
+      // UI plan §9.D: start the 2-second frame-time probe on the first wave
+      // of the session, and only when the player has left the game on Auto.
+      // A wave boundary is a stable moment — the simulation is fresh, the
+      // background is baked, and the player is looking at the field.
+      const probeWave = wave as { number: number };
+      if (typeof probeWave?.number === 'number' && probeWave.number === 1) this.startQualityProbe();
       // Plan §5.1: a wave is flawless until it isn't.
       this.waveFlawless = true;
       // Plan §7.1/§7.4: the risk dial catches up and the momentum streak
@@ -1620,17 +1696,109 @@ export class Game {
 
 
   /**
-   * The quality knob (UI plan §5.F).
+   * The quality knob (UI plan §5.F + §9.D).
    *
-   * Part 5 owns the table and this wiring; Part 9 owns the Settings control,
-   * the auto-detect and the camera's DPR cap, and only has to call this. Purely
-   * presentational: no consumer of a quality profile is read by the simulation,
-   * and the damaging shockwave rings are never scaled by it.
+   * Part 5 owns the table and the per-frame wiring; Part 9 owns the Settings
+   * control, the auto-detect and the camera's DPR cap, and only has to call
+   * this. Purely presentational: no consumer of a quality profile is read by
+   * the simulation, and the damaging shockwave rings are never scaled by it.
+   *
+   * The four fan-outs match the four owners the §9.D table names:
+   *  - `effects.setQuality`     — particle scale + pool trim
+   *  - `renderer.setQuality`    — decals, embers, additive, bg layers, shadows
+   *  - `camera.setDprCap`       — backing-store size, leaves world extents
+   *                               alone (the §9.D rescale guard)
    */
   setQuality(tier: QualityTier): void {
     this.quality = tier;
+    const profile = QUALITY[tier];
     this.effects.setQuality(tier);
     this.renderer.setQuality(tier);
+    this.camera.setDprCap(profile.dprCap);
+  }
+
+  /**
+   * Read the player's stored quality preference and apply it (UI plan §9.D).
+   * Called once at construction, before the first frame. The Settings panel
+   * calls `setQualityPreference` from then on, which goes through the same
+   * path and persists the result.
+   */
+  private applyStoredQuality(): void {
+    this.qualityPref = readStoredQuality();
+    const tier = this.qualityPref === 'auto' ? initialQualityTier() : this.qualityPref;
+    this.setQuality(tier);
+  }
+
+  /**
+   * The Settings control's callback. `'auto'` clears the stored value so the
+   * next session re-derives from hardware; an explicit value is persisted and
+   * the probe is abandoned (it can never override a player's choice).
+   */
+  setQualityPreference(pref: 'auto' | QualityTier): void {
+    if (pref !== 'auto' && !isQualityTier(pref)) return;
+    this.qualityPref = pref;
+    if (pref !== 'auto') {
+      this.setQuality(pref);
+      this.qualityProbe = null;        // explicit choice: never probe again
+    } else {
+      this.setQuality(initialQualityTier());
+      this.qualityProbe = null;        // probe is started by startProbe below
+    }
+    persistQuality(pref);
+  }
+
+  /** What the Settings panel reads back to render the segmented control. */
+  get qualityPreference(): 'auto' | QualityTier {
+    return this.qualityPref;
+  }
+
+  /**
+   * Start the 2-second probe (UI plan §9.D).
+   *
+   * Called once, on the first frame of wave 1 of the session, and only when
+   * the stored preference is `'auto'`. A hidden tab throttles rAF to 1 Hz —
+   * the measurement there is the throttling, not the device — and a 6.5x
+   * game speed is not the frame cost the player will live with, so both
+   * abandon the probe rather than mis-measure.
+   */
+  startQualityProbe(): void {
+    if (this.qualityPref !== 'auto') return;
+    if (this.qualityProbe) return;
+    this.qualityProbe = { frames: 0, sum: 0, elapsed: 0 };
+  }
+
+  /**
+   * One step of the probe. Called from `frameUpdate` on `realDt` — the
+   * wall clock, not the simulation clock.
+   */
+  private tickQualityProbe(realDt: number): void {
+    const p = this.qualityProbe;
+    if (!p) return;
+    if (typeof document !== 'undefined' && document.hidden) {
+      this.qualityProbe = null;
+      return;
+    }
+    if (this.getSpeed() > 1) {
+      this.qualityProbe = null;
+      return;
+    }
+    if (++p.frames <= 30) return;   // skip JIT warm-up and the first background bake
+    p.sum += realDt;
+    p.elapsed += realDt;
+    if (p.elapsed < 2) return;
+    // Use the **mean**, not the worst frame. A single 40 ms hitch from a save
+    // write or a sprite bake is not a reason to drop a desktop to `low`.
+    // 22 ms = 45 fps floor for `low`; 17 ms = 60 fps target for everything else.
+    const meanMs = (p.sum / (p.frames - 30)) * 1000;
+    const budget = this.quality === 'low' ? 22 : 17;
+    if (meanMs > budget) this.demoteQuality();
+    this.qualityProbe = null;       // once per session, never again
+  }
+
+  /** Drop one tier, clamping at `low`. The probe never auto-promotes. */
+  private demoteQuality(): void {
+    if (this.quality === 'high') this.setQuality('medium');
+    else if (this.quality === 'medium') this.setQuality('low');
   }
 
   /** The tier currently in force, for Part 9's Settings control to read back. */
@@ -4372,7 +4540,7 @@ export class Game {
     }
 
     this.projectileMgr.tick(dt);
-    this.enemyMgr.tick(dt, ts.x, ts.y);
+    this.enemyMgr.tick(dt, ts.x, ts.y, ts.range);
     // Orb drift is on the *simulation* clock (plan §4.1): eight game-seconds
     // to come home, whatever speed the player is running.
     this.lootMgr.tick(dt);
@@ -4497,6 +4665,9 @@ export class Game {
     this.camera.update(realDt);
     // §5.D: wall clock, so the 1.8 s cinematic is 1.8 s at any speed.
     this.tickBossIntro(realDt);
+    // §9.D: wall clock too. The probe must measure the frame time the player
+    // will actually live with, not whatever 6.5x a hidden tab rAFs at.
+    this.tickQualityProbe(realDt);
 
     // Plan §4.2, same reasoning: the charge timer measures a person holding
     // still, so it runs on `realDt`. A 1.2 s hold is 1.2 seconds of the

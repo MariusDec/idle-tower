@@ -89,9 +89,31 @@ export class MobileSheet {
       btn.className = 'mobile-sheet-segmented-btn';
       btn.textContent = t.label;
       btn.dataset.tabId = t.id;
+      // Same per-tab badge surface as the desktop sub-strip: a notification
+      // attached to one tab in the group is a notification attached to the
+      // matching segmented button, so the player sees the same mark whichever
+      // surface they are on. Empty until `setBadge` is called by UIManager.
+      const badge = document.createElement('span');
+      badge.className = 'mobile-sheet-segmented-btn-badge';
+      badge.dataset.tabBadge = t.id;
+      btn.appendChild(badge);
       btn.addEventListener('click', () => this.activate(t.id));
       this.segmented.appendChild(btn);
     }
+  }
+
+  /**
+   * Mirror of `BottomNav.setBadge` for the segmented strip. The desktop
+   * sub-strip and the mobile segmented strip are the same per-tab surface
+   * drawn on different canvases, so a tab notification has to land on both —
+   * the player who flips between phone and desktop on the same device should
+   * never have to re-discover the new-talent counter.
+   */
+  setBadge(id: string, count: number): void {
+    const badge = this.segmented.querySelector<HTMLElement>(`[data-tab-badge="${id}"]`);
+    if (!badge) return;
+    badge.textContent = count > 0 ? String(count) : '';
+    toggleClass(badge, 'is-visible', count > 0);
   }
 
   open(tabId?: string): void {

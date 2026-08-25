@@ -90,9 +90,9 @@ function harness(gold = 10_000): Harness {
     mgr,
     gold: () => state.gold,
     events,
-    run: (seconds: number) => {
+    run: (seconds: number, towerRange: number = world(2000)) => {
       const steps = Math.round(seconds / DT);
-      for (let i = 0; i < steps; i++) mgr.tick(DT, TOWER_X, TOWER_Y);
+      for (let i = 0; i < steps; i++) mgr.tick(DT, TOWER_X, TOWER_Y, towerRange);
     },
   };
 }
@@ -239,7 +239,7 @@ describe('blinker (plan §2.1)', () => {
       const h = harness();
       const blinker = h.mgr.spawn('blinker', 40, TOWER_X + world(500), TOWER_Y);
       const steps = Math.round(10 / dt);
-      for (let i = 0; i < steps; i++) h.mgr.tick(dt, TOWER_X, TOWER_Y);
+      for (let i = 0; i < steps; i++) h.mgr.tick(dt, TOWER_X, TOWER_Y, world(2000));
       distances.push(blinker.x);
     }
     for (const d of distances) expect(d).toBeCloseTo(distances[0], 0);
@@ -457,10 +457,22 @@ describe('siege (plan §2.1)', () => {
       const h = harness();
       h.mgr.spawn('siege', 40, TOWER_X + ENEMY_BEHAVIOR.siegeStandoff - 10, TOWER_Y);
       const steps = Math.round(10 / dt);
-      for (let i = 0; i < steps; i++) h.mgr.tick(dt, TOWER_X, TOWER_Y);
+      for (let i = 0; i < steps; i++) h.mgr.tick(dt, TOWER_X, TOWER_Y, world(2000));
       counts.push(h.events.filter(e => e.name === 'siege_fired').length);
     }
     expect(new Set(counts).size).toBe(1);
+  });
+
+  it('halts just inside the tower range when the tower is short', () => {
+    // A tower with range 350: the siege should stop at 340 (= 350 - 10), well
+    // inside the static cap, so a short build can still target it.
+    const h = harness();
+    const siege = h.mgr.spawn('siege', 40, TOWER_X + world(400), TOWER_Y);
+    h.run(20, 350);
+    const d = Math.hypot(siege.x - TOWER_X, siege.y - TOWER_Y);
+    expect(d).toBeGreaterThan(330);
+    expect(d).toBeLessThanOrEqual(340);
+    expect(siege.siegeHalted).toBe(true);
   });
 });
 
