@@ -31,7 +31,7 @@ import {
 } from '../src/data/formulas';
 import { ASCENSION_UNLOCK_WAVE, apForWave, tpForAP } from '../src/data/prestige';
 import { ENEMY_DEFS } from '../src/data/enemies';
-import { TOWER_XP_TABLE, xpToLevel, talentPointsAtLevel } from '../src/data/xpTables';
+import { TOWER_XP_TABLE, TOWER_LEVEL_CAP, xpToLevel, xpForNextLevel, talentPointsAtLevel, xpPerKill, xpPerWaveClear, pioneerBonusXp, PIONEER_CLEAR_MULTIPLIER } from '../src/data/xpTables';
 import { UPGRADES, UPGRADE_BY_ID } from '../src/data/upgrades';
 import { computeUpgradeValue } from '../src/types';
 
@@ -180,39 +180,35 @@ describe('prestige curves', () => {
 });
 
 describe('tower XP table', () => {
-  it('is strictly ascending, so a binary search over it is well defined', () => {
-    for (let i = 2; i < TOWER_XP_TABLE.length; i++) {
-      expect(TOWER_XP_TABLE[i]).toBeGreaterThan(TOWER_XP_TABLE[i - 1]);
-    }
-  });
-
-  /**
-   * Plan §5.6 replaced a linear scan with a binary search. This checks the new
-   * implementation against the old one's semantics at every boundary in the
-   * table, which is where an off-by-one in a binary search shows up.
-   */
-  it('resolves the same level as a linear scan at every boundary', () => {
-    const linear = (xp: number): number => {
-      let level = 0;
-      for (let i = 1; i < TOWER_XP_TABLE.length; i++) {
-        if (xp >= TOWER_XP_TABLE[i]) level = i;
-        else break;
-      }
-      return level;
-    };
-    for (let i = 1; i < TOWER_XP_TABLE.length; i++) {
-      for (const xp of [TOWER_XP_TABLE[i] - 1, TOWER_XP_TABLE[i], TOWER_XP_TABLE[i] + 1]) {
-        expect(xpToLevel(xp)).toBe(linear(xp));
-      }
-    }
-    for (const xp of [0, -5, Number.MAX_SAFE_INTEGER]) {
-      expect(xpToLevel(xp)).toBe(linear(xp));
-    }
-  });
-
-  it('grants a bonus talent point every fifth level', () => {
-    expect([1, 4, 5, 10, 20].map(talentPointsAtLevel)).toEqual([1, 4, 6, 12, 24]);
+  it('grants exactly one talent point per level, capped', () => {
+    expect([1, 2, 10, 100, 200, 250].map(talentPointsAtLevel)).toEqual([1, 2, 10, 100, 200, 200]);
     expect(talentPointsAtLevel(0)).toBe(0);
+  });
+
+  it('builds a strictly ascending XP table up to the cap', () => {
+    expect(TOWER_XP_TABLE.length).toBe(TOWER_LEVEL_CAP + 1);
+    expect(TOWER_XP_TABLE[1]).toBe(0);
+    for (let l = 2; l <= TOWER_LEVEL_CAP; l++) {
+      expect(TOWER_XP_TABLE[l]).toBeGreaterThan(TOWER_XP_TABLE[l - 1]);
+    }
+  });
+
+  it('round-trips xpToLevel against the table', () => {
+    for (const l of [1, 2, 5, 40, 100, 199, 200]) {
+      expect(xpToLevel(TOWER_XP_TABLE[l])).toBe(l);
+      if (l > 1) expect(xpToLevel(TOWER_XP_TABLE[l] - 1)).toBe(l - 1);
+    }
+    expect(xpToLevel(TOWER_XP_TABLE[TOWER_LEVEL_CAP] * 10)).toBe(TOWER_LEVEL_CAP);
+  });
+
+  it('pays more XP for deeper kills and deeper clears', () => {
+    expect(xpPerKill('normal', 200)).toBeGreaterThan(xpPerKill('normal', 20) * 5);
+    expect(xpPerWaveClear(100)).toBeGreaterThan(xpPerWaveClear(50) * 2);
+  });
+
+  it('pays a pioneer bonus only past the lifetime best', () => {
+    expect(pioneerBonusXp(40, 40)).toBe(0);
+    expect(pioneerBonusXp(41, 40)).toBe(Math.round(xpPerWaveClear(41) * PIONEER_CLEAR_MULTIPLIER));
   });
 });
 
@@ -254,9 +250,9 @@ describe('upgrade value curves', () => {
         ],
         "fireRate": [
           0,
-          0.15,
-          1.5,
-          7.5,
+          0.1,
+          1,
+          5,
         ],
         "goldMulti": [
           0,

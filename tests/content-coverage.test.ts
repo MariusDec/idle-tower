@@ -11,7 +11,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { TALENTS, TALENT_STATS, TALENTS_BY_BRANCH } from '../src/data/talentTree';
+import { TALENTS, TALENT_STATS, TALENTS_BY_BRANCH, TALENT_BY_ID, TALENT_GRID, TALENT_ENDLESS, TALENT_BEHAVIOR_CONSUMERS, type TalentBehavior } from '../src/data/talentTree';
 import type { TalentDef, TalentEffectType } from '../src/data/talentTree';
 import { ACHIEVEMENTS, ACHIEVEMENT_REWARD_CONSUMERS } from '../src/data/achievements';
 import type { AchievementRewardType } from '../src/data/achievements';
@@ -49,6 +49,7 @@ import { ICON_CREDITS, ICON_IDS, type IconId } from '../src/data/icons';
 import { STAT_ICONS, STAT_ICON_KEYS } from '../src/data/iconMap';
 import { EQUIPMENT_DEFS, RARITY_ICONS, SLOT_ICONS } from '../src/data/equipment';
 import { CORES } from '../src/data/cores';
+import { NAV_GROUPS } from '../src/ui/navGroups';
 import { AP_PERKS, TP_PERKS } from '../src/data/prestige';
 import { WAVE_MODIFIERS } from '../src/data/waveModifiers';
 import {
@@ -101,9 +102,8 @@ describe('boss patterns', () => {
   });
 });
 
-/** A talent's declared effects: the primary one, plus the optional second. */
-const effectsOf = (t: TalentDef): TalentEffectType[] =>
-  t.secondary ? [t.effect, t.secondary] : [t.effect];
+/** A talent's declared effects: the new array format. */
+const effectsOf = (t: TalentDef): TalentEffectType[] => t.effects;
 
 describe('talents', () => {
   it('declares every effect stat in the consumed union', () => {
@@ -127,11 +127,6 @@ describe('talents', () => {
     expect(dead).toEqual([]);
   });
 
-  it('lets every talent actually be bought', () => {
-    const unbuyable = TALENTS.filter((t) => t.maxPoints <= 0 || t.costPerPoint <= 0);
-    expect(unbuyable.map((t) => t.id)).toEqual([]);
-  });
-
   it('has unique ids', () => {
     expect(new Set(TALENTS.map((t) => t.id)).size).toBe(TALENTS.length);
   });
@@ -151,6 +146,137 @@ describe('talents', () => {
     for (const [branch, talents] of Object.entries(TALENTS_BY_BRANCH)) {
       expect(talents.length, `${branch} should not be empty`).toBeGreaterThan(0);
     }
+  });
+
+  // ── New assertions from §14.2 ──
+
+  it('gives every branch a 5-row grid with unique row:col positions', () => {
+    const branches = ['offense', 'defense', 'utility', 'magic'] as const;
+    for (const branch of branches) {
+      const grid = TALENT_GRID[branch];
+      expect(grid.length, `${branch} grid`).toBeGreaterThanOrEqual(14);
+      // Unique row:col positions
+      const positions = grid.map(t => `${t.row}:${t.col}`);
+      expect(new Set(positions).size, `${branch} unique positions`).toBe(grid.length);
+    }
+  });
+
+  it('places prerequisites in the row above, same branch', () => {
+    for (const t of TALENTS) {
+      if (t.endless) continue; // endless nodes have no prereqs
+      for (const prereqId of t.prerequisites) {
+        const prereq = TALENT_BY_ID[prereqId];
+        expect(prereq, `${t.id} prereq ${prereqId} exists`).toBeDefined();
+        expect(prereq!.branch, `${t.id} prereq ${prereqId} same branch`).toBe(t.branch);
+        expect(prereq!.row, `${t.id} prereq ${prereqId} row above`).toBeLessThan(t.row);
+      }
+    }
+  });
+
+  it('has monotonically increasing row gates', () => {
+    const branches = ['offense', 'defense', 'utility', 'magic'] as const;
+    for (const branch of branches) {
+      const grid = TALENT_GRID[branch];
+      const byRow = new Map<number, number[]>();
+      for (const t of grid) {
+        if (!byRow.has(t.row)) byRow.set(t.row, []);
+        byRow.get(t.row)!.push(t.requiresBranchPoints);
+      }
+      const rows = [...byRow.keys()].sort((a, b) => a - b);
+      for (let i = 1; i < rows.length; i++) {
+        const prevGate = Math.max(...byRow.get(rows[i - 1])!);
+        const currGate = Math.min(...byRow.get(rows[i])!);
+        expect(currGate, `${branch} row ${rows[i]} gate >= row ${rows[i - 1]} gate`)
+          .toBeGreaterThanOrEqual(prevGate);
+      }
+    }
+  });
+
+  it('has the designed tree at or above 75% of level cap (160/200 = 80%)', () => {
+    // Total points available in the grid (rows 1-5, excluding endless)
+    const gridTotal = TALENTS.filter(t => !t.endless).reduce((s, t) => s + t.maxPoints, 0);
+    // Level cap is 200, so 200 talent points max
+    expect(gridTotal).toBeGreaterThanOrEqual(150); // 75% of 200
+  });
+
+  it('declares a 40-point reachable capacity per branch (160 total)', () => {
+    // Mirrors the BRANCH_CAPACITY constant in src/ui/TalentPanel.ts so a
+    // drift between the panel's tab labels and the data is a test failure.
+    const branches = ['offense', 'defense', 'utility', 'magic'] as const;
+    let total = 0;
+    for (const branch of branches) {
+      const grid = TALENT_GRID[branch];
+      const reachable = grid
+        .filter(n => !n.exclusiveGroup)
+        .reduce((s, n) => s + n.maxPoints, 0) + 1;
+      expect(reachable, `${branch} reachable capacity`).toBe(40);
+      total += reachable;
+    }
+    expect(total).toBe(160);
+  });
+
+  it('gives every branch exactly one endless node', () => {
+    const branches = ['offense', 'defense', 'utility', 'magic'] as const;
+    for (const branch of branches) {
+      const endless = TALENTS.filter(t => t.branch === branch && t.endless);
+      expect(endless.length, `${branch} endless count`).toBe(1);
+      expect(endless[0].maxPoints, `${endless[0].id} maxPoints`).toBe(999);
+    }
+  });
+
+  it('makes every row-5 keystone reachable from a root (BFS)', () => {
+    const branches = ['offense', 'defense', 'utility', 'magic'] as const;
+    for (const branch of branches) {
+      const grid = TALENT_GRID[branch];
+      const roots = grid.filter(t => t.row === 1);
+      expect(roots.length, `${branch} roots`).toBeGreaterThanOrEqual(2);
+
+      // BFS from roots
+      const reachable = new Set<string>();
+      const queue = [...roots.map(t => t.id)];
+      while (queue.length > 0) {
+        const id = queue.shift()!;
+        if (reachable.has(id)) continue;
+        reachable.add(id);
+        // Find children that have this as a prerequisite
+        for (const t of grid) {
+          if (t.prerequisites.includes(id) && !reachable.has(t.id)) {
+            queue.push(t.id);
+          }
+        }
+      }
+
+      const keystones = grid.filter(t => t.row === 5);
+      for (const ks of keystones) {
+        expect(reachable.has(ks.id), `${ks.id} reachable from root`).toBe(true);
+      }
+    }
+  });
+
+  it('names a real consumer for every talent behaviour', () => {
+    const behaviors = Object.keys(TALENT_BEHAVIOR_CONSUMERS) as TalentBehavior[];
+    expect(behaviors.length).toBeGreaterThan(0);
+    for (const behavior of behaviors) {
+      const consumer = TALENT_BEHAVIOR_CONSUMERS[behavior];
+      expect(consumer, `${behavior} has no consumer`).toBeTruthy();
+      expect(consumer.length, `${behavior} consumer is too vague`).toBeGreaterThan(20);
+    }
+  });
+
+  it('only declares behaviours that have consumers', () => {
+    const declared = new Set(
+      TALENTS.filter(t => t.behavior).map(t => t.behavior!),
+    );
+    const consumed = new Set(Object.keys(TALENT_BEHAVIOR_CONSUMERS));
+    const orphaned = [...declared].filter(b => !consumed.has(b));
+    expect(orphaned).toEqual([]);
+  });
+
+  it('grants every behaviour through at least one talent', () => {
+    const granted = new Set(TALENTS.filter(t => t.behavior).map(t => t.behavior!));
+    const consumed = Object.keys(TALENT_BEHAVIOR_CONSUMERS) as TalentBehavior[];
+    const orphaned = consumed.filter(b => !granted.has(b));
+    expect(orphaned).toEqual([]);
   });
 });
 
@@ -549,6 +675,7 @@ describe('icons', () => {
     ...(Object.keys(SLOT_ICONS) as Array<keyof typeof SLOT_ICONS>).map((s) => [`slot:${s}`, SLOT_ICONS[s]] as [string, IconId]),
     ...(Object.keys(RARITY_ICONS) as Array<keyof typeof RARITY_ICONS>).map((r) => [`rarity:${r}`, RARITY_ICONS[r]] as [string, IconId]),
     ...STAT_ICON_KEYS.map((k) => [`stat:${k}`, STAT_ICONS[k]] as [string, IconId]),
+    ...NAV_GROUPS.map((g) => [`nav:${g.id}`, g.icon] as [string, IconId]),
   ];
 
   it('gives every piece of content a real icon', () => {
@@ -563,7 +690,7 @@ describe('icons', () => {
     expect(PASSIVE_ABILITIES.length).toBe(8);
     expect(UPGRADES.length).toBe(29);
     expect(RESEARCH_NODES.length).toBe(17);
-    expect(TALENTS.length).toBe(37);
+    expect(TALENTS.length).toBe(60);
     expect(BLESSINGS.length).toBe(30);
     expect(CORES.length).toBe(5);
     expect(EQUIPMENT_DEFS.length).toBe(10);

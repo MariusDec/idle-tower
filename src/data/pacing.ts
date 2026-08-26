@@ -119,10 +119,10 @@ export interface ComboTier {
  * below the point where a combo would outweigh the upgrades that earned it.
  */
 export const COMBO_TIERS: readonly ComboTier[] = [
-  { kills: 10, gold: 0.03, xp: 0.03, label: 'Chain' },
-  { kills: 25, gold: 0.06, xp: 0.06, label: 'Streak' },
-  { kills: 50, gold: 0.12, xp: 0.12, label: 'Rampage' },
-  { kills: 100, gold: 0.20, xp: 0.20, label: 'Massacre' },
+  { kills: 10, gold: 0.1, xp: 0.1, label: 'Chain' },
+  { kills: 25, gold: 0.2, xp: 0.2, label: 'Streak' },
+  { kills: 50, gold: 0.5, xp: 0.5, label: 'Rampage' },
+  { kills: 100, gold: 1, xp: 1, label: 'Massacre' },
 ] as const;
 
 /** Tier index for a kill count: 0 when below the first threshold. */

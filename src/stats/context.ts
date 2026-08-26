@@ -126,6 +126,10 @@ export interface StatContext {
   pacing: PacingInputs;
   /** Timed buffs currently in effect (abilities, quick shot, manual aim). */
   buffs: readonly BuffEntry[];
+  /** Mana / max mana at the moment of the recompute. Read by the Battery keystone. */
+  manaFraction: number;
+  /** Talent behaviours currently held. */
+  talentBehaviors: string[];  // Will be TalentBehavior[] once talentTree.ts is updated in Step 5
 }
 
 /** A context with every contributor empty — the baseline tower. */
@@ -175,5 +179,7 @@ export function emptyStatContext(): StatContext {
     waveModifier: null,
     pacing: { risk: 0, momentum: 0, comboTier: 0 },
     buffs: [],
+    manaFraction: 1,
+    talentBehaviors: [],
   };
 }

@@ -184,8 +184,8 @@ export class SettingsPanel {
     desc.className = 'settings-desc';
     desc.textContent = this.api.autoPickBlessingsForced
       ? 'Auto-pick is forced on while automation is unlocked, so an idle run never '
-        + 'stops at a draft. The safest offer is taken after 20 seconds.'
-      : 'Take the safest offer automatically after 20 seconds instead of waiting for '
+        + 'stops at a draft. The safest offer is taken after 10 seconds.'
+      : 'Take the safest offer automatically after 10 seconds instead of waiting for '
         + 'a click. The draft never blocks the simulation either way.';
     section.appendChild(desc);
 

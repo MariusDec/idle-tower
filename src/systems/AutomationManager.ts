@@ -60,6 +60,8 @@ export class AutomationManager {
   private readonly deps: AutomationDeps;
   /** Autonomy talent: fractional reduction of the auto-buy interval. */
   private autoBuyIntervalReduction = 0;
+  /** Quartermaster talent: minimum gold reserve fraction (0.4 = 40%). */
+  private quartermasterReserve = 0;
   private autoBuyTimer = 0;
   private autoCastTimer = 0;
   private autoAscendTimer = 0;
@@ -71,6 +73,11 @@ export class AutomationManager {
 
   setAutoBuyIntervalReduction(reduction: number): void {
     this.autoBuyIntervalReduction = Math.max(0, Math.min(0.9, reduction));
+  }
+
+  /** Quartermaster talent: minimum gold reserve for auto-buy. */
+  setQuartermasterReserve(reserve: number): void {
+    this.quartermasterReserve = Math.max(0, Math.min(0.9, reserve));
   }
 
   tick(dt: number): void {
@@ -149,7 +156,10 @@ export class AutomationManager {
     const upgrades = this.deps.upgrades;
     const state = this.deps.getState();
     const strategy: AutoBuyStrategy = state.prestige.autoBuyStrategy ?? 'balanced';
-    const reserve = Math.max(0, Math.min(0.9, state.prestige.autoBuyReserve ?? 0));
+    const reserve = Math.max(
+      Math.max(0, Math.min(0.9, state.prestige.autoBuyReserve ?? 0)),
+      this.quartermasterReserve,
+    );
 
     for (let i = 0; i < MAX_AUTO_BUYS_PER_TICK; i++) {
       const gold = state.resources.gold;

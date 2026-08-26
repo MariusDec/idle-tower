@@ -5,6 +5,7 @@ import {
   orbGoldValue,
   type LootOrbKind,
 } from '../data/loot';
+import { TALENT_TUNING } from '../data/talentTree';
 import { nextId } from '../utils/math';
 import type { EventBus } from '../game/EventBus';
 
@@ -64,6 +65,8 @@ export class LootManager {
   private magnet = false;
   /** Orbs collected this run, for the run summary and Part 5's contracts. */
   private collectedThisRun = 0;
+  /** Prospector talent: orb value bonus (fraction, e.g. 0.12 = +12%). */
+  private valueBonus = 0;
 
   constructor(deps: LootManagerDeps) {
     this.bus = deps.bus;
@@ -98,10 +101,18 @@ export class LootManager {
     this.autoRate = enabled ? LOOT_TUNING.magnetCollectRate : LOOT_TUNING.autoCollectRate;
   }
 
+  /** Prospector talent: orb value bonus. */
+  setValueBonus(bonus: number): void {
+    this.valueBonus = Math.max(0, bonus);
+  }
+
   private get driftSeconds(): number {
-    return this.magnet
+    let base = this.magnet
       ? LOOT_TUNING.driftSeconds * LOOT_TUNING.magnetDriftScale
       : LOOT_TUNING.driftSeconds;
+    // Prospector talent: faster drift (lower seconds = faster arrival).
+    if (this.valueBonus > 0) base /= (1 + this.valueBonus * TALENT_TUNING.prospectorDriftPerPoint);
+    return base;
   }
 
   // ── spawning ────────────────────────────────────────────────────────────
@@ -140,18 +151,26 @@ export class LootManager {
   }
 
   private valueFor(kind: LootOrbKind, req: OrbDropRequest): number {
+    let base: number;
     switch (kind) {
       case 'gold':
-        return orbGoldValue(req.wave);
+        base = orbGoldValue(req.wave);
+        break;
       case 'mana':
-        return Math.max(1, req.maxMana * LOOT_TUNING.manaFraction);
+        base = Math.max(1, req.maxMana * LOOT_TUNING.manaFraction);
+        break;
       case 'reroll':
-        return 1;
+        base = 1;
+        break;
       default: {
         const never: never = kind;
-        return never;
+        base = never;
+        break;
       }
     }
+    // Prospector talent: multiply orb value.
+    if (this.valueBonus > 0) base = Math.floor(base * (1 + this.valueBonus));
+    return base;
   }
 
   /** Place one orb. Exposed for tests and for anything that grants directly. */

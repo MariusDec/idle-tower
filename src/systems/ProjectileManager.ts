@@ -6,6 +6,7 @@ import { ENEMY_DEFS, isTargetable } from '../data/enemies';
 import { BLESSING_TUNING, type BlessingBehavior } from '../data/blessings';
 import { CORE_TUNING, type CoreBehavior } from '../data/cores';
 import { OVERKILL_CARRY_BASE } from '../data/pacing';
+import { TALENT_TUNING } from '../data/talentTree';
 import type { Tower } from './Tower';
 import type { EnemyManager } from './EnemyManager';
 import { EventBus } from '../game/EventBus';
@@ -117,6 +118,15 @@ export class ProjectileManager {
   /** Play-field size; projectiles are culled once they leave it by a margin. */
   private boundsWidth = world(1280);
   private boundsHeight = world(720);
+  // ── Levelling redesign step 7: talent-driven impact modifiers ──
+  /** Focus Fire: bonus damage per consecutive hit on the same target. */
+  private focusStackBonus = 0;
+  private focusTargetId = -1;
+  private focusStacks = 0;
+  /** Siegebreaker: bonus damage against boss enemies. */
+  private bossDamageBonus = 0;
+  /** Frostbite: bonus damage against chilled/slowed enemies. */
+  private chilledDamageBonus = 0;
 
   constructor(bus: EventBus, tower: Tower, enemies: EnemyManager) {
     this.bus = bus;
@@ -184,6 +194,21 @@ export class ProjectileManager {
     this.instantKillChance = instantKill;
     this.critSplashFraction = critSplash;
     this.critIgnoreArmor = critIgnoreArmor;
+  }
+
+  /** Focus Fire talent: bonus damage per consecutive hit on same target. */
+  setFocusStackBonus(bonus: number): void {
+    this.focusStackBonus = Math.max(0, bonus);
+  }
+
+  /** Siegebreaker talent: bonus damage against boss enemies. */
+  setBossDamageBonus(bonus: number): void {
+    this.bossDamageBonus = Math.max(0, bonus);
+  }
+
+  /** Frostbite talent: bonus damage against chilled/slowed enemies. */
+  setChilledDamageBonus(bonus: number): void {
+    this.chilledDamageBonus = Math.max(0, bonus);
   }
 
   private pierceMax(id: number): number {
@@ -368,6 +393,24 @@ export class ProjectileManager {
           // only populated once a projectile has actually pierced something.
           if (this.pierceAmp > 0 && (this.hitEnemies[p.id]?.size ?? 0) > 0) {
             final = Math.floor(final * (1 + this.pierceAmp));
+          }
+          // Focus Fire: bonus damage per consecutive impact on the same target.
+          if (this.focusStackBonus > 0) {
+            if (enemy.id === this.focusTargetId) {
+              this.focusStacks = Math.min(TALENT_TUNING.focusMaxStacks, this.focusStacks + 1);
+            } else {
+              this.focusTargetId = enemy.id;
+              this.focusStacks = 0;
+            }
+            final = Math.floor(final * (1 + this.focusStackBonus * this.focusStacks));
+          }
+          // Siegebreaker: bonus damage against boss enemies.
+          if (this.bossDamageBonus > 0 && enemy.type === 'boss') {
+            final = Math.floor(final * (1 + this.bossDamageBonus));
+          }
+          // Frostbite: bonus damage against chilled/slowed enemies.
+          if (this.chilledDamageBonus > 0 && this.enemies.isSlowed(enemy)) {
+            final = Math.floor(final * (1 + this.chilledDamageBonus));
           }
           const hpBefore = enemy.hp;
           const killed = this.enemies.damage(enemy, final, p.isCrit);
@@ -601,5 +644,7 @@ export class ProjectileManager {
     this.projectiles = [];
     this.piercingRemaining = {};
     this.hitEnemies = {};
+    this.focusTargetId = -1;
+    this.focusStacks = 0;
   }
 }

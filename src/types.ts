@@ -261,6 +261,8 @@ export interface HostileShot {
   originX: number;
   originY: number;
   alive: boolean;
+  /** Enemy that fired this shot, for Retaliation thorns. */
+  ownerId: number;
 }
 
 /**

@@ -29,8 +29,9 @@ Fetches all non-maxed, affordable upgrades, sorts by cost ascending, buys cheape
 ## Dependencies
 
 - `UpgradeManager` — to check costs and buy
-- `AbilityManager` — to check mana/cooldown and cast
+- `AbilityManager` — to check mana/cooldown and cast, `upgradeAbility(id)` for Quartermaster
 - `PrestigeManager` — to check canAscend/canTranscend and automation flags
 - `GameState` — to check highestWave, resources
+- `TalentManager` — `hasTalentBehavior(b)` for Quartermaster hooks
 
 Timers reset to 0 on transcendence (`reset()`).

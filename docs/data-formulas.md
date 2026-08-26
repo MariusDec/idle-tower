@@ -17,6 +17,57 @@
 | `apForWave(waveNumber)` | `max(0, floor(sqrt(waveNumber * 5)))` (if wave >= 20)   |
 | `tpForAP(ap)` | `max(0, floor(log10(ap+1) * 3))` (if ap >= 100)         |
 
+## XP System (`src/data/xpTables.ts`)
+
+### §4.1 Kill XP
+
+`xpPerKill(type, wave)` = `KILL_XP_WEIGHT[type] * killXpWaveScale(wave)`,
+floored at 1.
+
+`KILL_XP_WEIGHT` per type:
+
+| Type | Weight |
+|---|---:|
+| normal, fast | 1 |
+| splitter | 0.8 |
+| flying | 1.1 |
+| tank, siege | 1.8 |
+| healer, shielded, burrower | 1.6 |
+| blinker | 1.5 |
+| thief, warden | 2.4 |
+| boss | 12 |
+
+`killXpWaveScale(wave)` = `1 + 0.20 * wave` (linear; a wave-200 kill is 41x a
+wave-1 kill).
+
+### §4.2 Wave-clear XP
+
+`xpPerWaveClear(wave)` = `1.5 * wave^1.5`, floored at 1. Superlinear — clearing
+deep waves is the real XP faucet.
+
+### §4.3 Pioneer bonus
+
+`pioneerBonusXp(wave, lifetimeHighestWave)` = `xpPerWaveClear(wave) * 2.0` when
+`wave > lifetimeHighestWave`, else 0. Total for a record wave is 3x the normal
+clear XP.
+
+### §5.1 XP curve (polynomial + geometric hybrid)
+
+XP to go from level L-1 to level L:
+
+```
+25 * (L-1)^1.6 * 1.028^(L-2)
+```
+
+Polynomial early (first twenty levels inside the first hour), geometric late
+(cap is a horizon). `TOWER_XP_TABLE` is cumulative with `TOWER_LEVEL_CAP + 1`
+entries. `xpToLevel` binary-searches it.
+
+### §5.2 Talent points
+
+`talentPointsAtLevel(level)` = `min(200, floor(level))`. One point per level,
+capped at `TOWER_LEVEL_CAP` (200). No bonus every 5th level.
+
 ## Upgrade Value Computation (`computeUpgradeValue`)
 
 ```typescript
@@ -76,23 +127,23 @@ balanced together — the early-call bonus, the combo meter and the risk dial ar
 all gold faucets pointed at the same curve, and `npm run sim` measures the three
 against one table.
 
-| Constant / function | Value | Notes |
-|---|---|---|
-| `EARLY_CALL_GOLD_PER_SECOND` | `0.01` | Gold per second of intermission skipped (§7.1) |
-| `MOMENTUM_CAP` | `0.06` | Ceiling on the accumulated momentum counter |
-| `COMBO_WINDOW_SECONDS` | `2` | **Simulation** seconds a combo survives without a kill |
-| `COMBO_TIERS` | 10/25/50/100 kills → +3/6/12/20% gold **and** XP | |
-| `comboTierIndex(kills)` | 0-4 | 0 = no combo; doubles as the meter's pip count |
-| `MAX_RISK` | `5` | The dial is `0..5` inclusive |
-| `RISK_HP_PER_STEP` | `0.18` | Additive per step, like `ENRAGE_DAMAGE_PER_STACK` |
-| `RISK_SPEED_PER_STEP` | `0.08` | |
-| `RISK_GOLD_PER_STEP` | `0.25` | |
-| `RISK_AP_PER_STEP` | `0.10` | Multiplied into `previewAP`, outside the +50% banked cap |
-| `OVERKILL_CARRY_BASE` | `0.10` | Raised to `BLESSING_TUNING.overkillCarry` (0.25) by the card |
-| `BASE_INTERMISSION_SECONDS` | `5` | Re-exported by `WaveManager` as `WAVE_INTERMISSION` |
-| `intermissionSecondsForWave(w)` | 5 / 3 / 2 | Steps past wave 20 and wave 50 |
-| `intermissionFactorForWave(w)` | 1 / 0.6 / 0.4 | Multiplied into `intermissionMultiplier` |
-| `ENEMY_THREAT_CLASS` | `Record<EnemyType, 'trash' \| 'threat' \| 'boss'>` | Which types the §7.3 preview names |
+| Constant / function | Value                                               | Notes |
+|---|-----------------------------------------------------|---|
+| `EARLY_CALL_GOLD_PER_SECOND` | `0.01`                                              | Gold per second of intermission skipped (§7.1) |
+| `MOMENTUM_CAP` | `0.06`                                              | Ceiling on the accumulated momentum counter |
+| `COMBO_WINDOW_SECONDS` | `2`                                                 | **Simulation** seconds a combo survives without a kill |
+| `COMBO_TIERS` | 10/25/50/100 kills → +10/20/50/100% gold **and** XP | |
+| `comboTierIndex(kills)` | 0-4                                                 | 0 = no combo; doubles as the meter's pip count |
+| `MAX_RISK` | `5`                                                 | The dial is `0..5` inclusive |
+| `RISK_HP_PER_STEP` | `0.18`                                              | Additive per step, like `ENRAGE_DAMAGE_PER_STACK` |
+| `RISK_SPEED_PER_STEP` | `0.08`                                              | |
+| `RISK_GOLD_PER_STEP` | `0.25`                                              | |
+| `RISK_AP_PER_STEP` | `0.10`                                              | Multiplied into `previewAP`, outside the +50% banked cap |
+| `OVERKILL_CARRY_BASE` | `0.10`                                              | Raised to `BLESSING_TUNING.overkillCarry` (0.25) by the card |
+| `BASE_INTERMISSION_SECONDS` | `5`                                                 | Re-exported by `WaveManager` as `WAVE_INTERMISSION` |
+| `intermissionSecondsForWave(w)` | 5 / 3 / 2                                           | Steps past wave 20 and wave 50 |
+| `intermissionFactorForWave(w)` | 1 / 0.6 / 0.4                                       | Multiplied into `intermissionMultiplier` |
+| `ENEMY_THREAT_CLASS` | `Record<EnemyType, 'trash' \| 'threat' \| 'boss'>`  | Which types the §7.3 preview names |
 
 ### Why nothing here is priced per shot or per kill
 

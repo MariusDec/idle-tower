@@ -36,14 +36,45 @@ StatContext  ──►  contributors  ──►  StatAccumulator  ──►  Res
                                             └──►  Breakdown (opt-in)
 ```
 
-**`StatKey`** (`keys.ts`) is a closed union of ~60 stats, with `STAT_BASES`
+**`StatKey`** (`keys.ts`) is a closed union of ~75 stats, with `STAT_BASES`
 giving each a seed and `STAT_CLAMPS` a single post-composition clamp. Because
 `ResolvedStats` is `Record<StatKey, number>`, a key without a base fails `tsc`.
+
+The 15 talent StatKeys added by the levelling redesign:
+
+| StatKey | Clamp | Notes |
+|---|---|---|
+| `focusStackBonus` | min 0 | Focus stacks per hit |
+| `killFrenzyPerStack` | min 0 | Kill frenzy damage per stack |
+| `overwatchDamage` | min 0 | Overwatch far-band damage |
+| `bossDamageBonus` | min 0 | Bonus damage to bosses |
+| `critFollowUpChance` | [0, 1] | Chance for follow-up crit |
+| `shieldRechargeReduction` | [0, 0.8] | Reduces shield recharge time |
+| `secondWindPower` | min 0 | Second wind damage multiplier |
+| `lowHpDamageBonus` | *none* | Context-conditional, never leaves accumulator |
+| `orbValueBonus` | min 0 | Loot orb value bonus |
+| `momentumGainBonus` | min 0 | Early-call momentum gain rate |
+| `windfallMultiplier` | min 0 | Windfall gold multiplier |
+| `interestRate` | [0, 0.5] | Gold interest per wave |
+| `chilledDamageBonus` | min 0 | Bonus damage to slowed enemies |
+| `abilityEchoChance` | [0, 0.75] | Chance to echo an ability cast |
+| `manaOnKillFraction` | [0, 0.5] | Mana gained per kill as fraction of max |
+
+`lowHpDamageBonus` and `battery` (via `manaFraction`) are context-conditional:
+they read `StatContext.hpFraction` / `StatContext.manaFraction` and apply only
+when the threshold is met, so they never leave the accumulator as resolved stats.
 
 **`StatContext`** (`context.ts`) is plain data — no manager references. Each
 field is one system's own answer about its own contribution. `Game.buildStatContext`
 fills it; nothing in it computes. That is what makes `resolveStats` callable from
 a test with a literal, which is what `tests/stats.test.ts` does.
+
+Two fields added by the levelling redesign:
+- `manaFraction`: `mana / maxMana` at the moment of the recompute. Read by the
+  Battery keystone (damage bonus when mana ≥ 80%).
+- `talentBehaviors`: the set of active `TalentBehavior` ids, from
+  `TalentManager.behaviors()`. Read by contributors that need behaviour-gated
+  logic rather than stat composition.
 
 **`StatAccumulator`** (`accumulator.ts`) holds two buckets per stat. The only
 composition rule in the game is:

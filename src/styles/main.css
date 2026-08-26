@@ -4610,24 +4610,70 @@ body.is-resizing * { cursor: ew-resize !important; }
 /* Old wave popover trigger is no longer used — keep class hidden. */
 .hud-wave-popover-trigger { display: none !important; }
 
-/* Talent panel */
+/* ── Talent panel (§11) ─────────────────────────────────────────────────── */
+
 .talent-panel {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  overflow: hidden;
+  height: 100%;
+  min-height: 0;
+}
+
+/* Header: level, xp bar, unspent points */
+.talent-header {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  padding: 10px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  flex-wrap: wrap;
 }
-.talent-unspent-bar {
+.talent-level {
   font-size: var(--text-sm);
-  color: var(--text-1);
+  font-weight: 700;
+  color: var(--text-0);
+  white-space: nowrap;
 }
-.talent-unspent-value {
-  color: var(--accent);
+.talent-xp {
+  flex: 1 1 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.talent-xp-bar {
+  height: 6px;
+  background: var(--surface-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.talent-xp-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width var(--dur-snap) ease-out;
+}
+.talent-xp-label {
+  font-size: var(--text-2xs);
+  color: var(--text-2);
+}
+.talent-points {
+  font-size: var(--text-sm);
   font-weight: 600;
+  color: var(--accent);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
+.talent-points.is-pulsing {
+  animation: talent-points-pulse 1.6s ease-in-out infinite;
+}
+@keyframes talent-points-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* Tabs */
 .talent-tabs {
   display: flex;
   gap: 4px;
@@ -4638,9 +4684,20 @@ body.is-resizing * { cursor: ew-resize !important; }
 }
 .talent-tabs .tab-btn {
   flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
   padding: 6px 4px;
   font-size: var(--text-sm);
   border-radius: var(--radius-sm);
+  line-height: 1.2;
+}
+.tab-btn-label { font-weight: 600; }
+.tab-btn-sub {
+  font-size: var(--text-2xs);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 .talent-tabs .tab-btn.active {
   background: var(--surface-3);
@@ -4648,29 +4705,63 @@ body.is-resizing * { cursor: ew-resize !important; }
   color: var(--text-0);
   box-shadow: inset 0 -2px 0 var(--branch-color);
 }
-.talent-tab-panel { display: none; }
-.talent-tab-panel.active { display: block; }
-/* §8.D: no bespoke pan/pinch layer — the platform scrolls the branch. */
-.talent-tab-panel.active {
+.talent-tabs .tab-btn.active .tab-btn-sub { color: var(--text-1); }
+
+/* Stages — one per branch, only .active displayed */
+.talent-stage { display: none; }
+.talent-stage.active {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Branch bar */
+.talent-branch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.talent-branch-bar-track {
+  flex: 1;
+  height: 4px;
+  background: var(--surface-3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.talent-branch-bar-fill {
+  height: 100%;
+  background: var(--branch-color);
+  border-radius: 2px;
+  transition: width var(--dur-snap) ease-out;
+}
+.talent-branch-bar-label {
+  font-size: var(--text-2xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* Scroll wrapper — grid + overflow divider + endless node scroll together */
+.talent-scroll {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   touch-action: pan-x pan-y;
   overscroll-behavior: contain;
 }
-.talent-branch-summary {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--branch-color);
-  text-align: center;
-  padding: 6px 0 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+
+/* Grid — CSS Grid with gutter column for gate chips */
+.talent-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px repeat(5, minmax(46px, 1fr));
+  grid-auto-rows: 74px;
+  gap: 14px 8px;
+  padding: 4px 0;
 }
 
-/* Tree connection lines — §8.D: an SVG link layer behind the DOM nodes.
-   Recomputed on mount and on ResizeObserver, never per frame. */
-.talent-tree {
-  position: relative;
-}
+/* SVG link layer */
 .talent-link-layer {
   position: absolute;
   inset: 0;
@@ -4678,6 +4769,7 @@ body.is-resizing * { cursor: ew-resize !important; }
   height: 100%;
   overflow: visible;
   pointer-events: none;
+  z-index: 0;
 }
 .talent-link {
   fill: none;
@@ -4690,8 +4782,8 @@ body.is-resizing * { cursor: ew-resize !important; }
   stroke-width: 2;
   stroke-dasharray: none;
 }
-.talent-link.is-available {
-  stroke: var(--fx-nature);
+.talent-link.is-open {
+  stroke: var(--branch-color);
   stroke-width: 2;
   stroke-dasharray: 6 4;
   animation: talent-link-flow var(--dur-ambient) linear infinite;
@@ -4701,43 +4793,113 @@ body.is-resizing * { cursor: ew-resize !important; }
   to { stroke-dashoffset: 0; }
 }
 
-/* Talent cards */
-.talent-card {
+/* Gate chips in the gutter */
+.talent-gate {
+  grid-row: var(--row);
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border: 1px dashed var(--stroke-subtle);
+  border-radius: var(--radius-sm);
+  align-self: center;
+  width: 26px;
+  height: 26px;
+}
+
+/* Keystone label — spans row 5 */
+.talent-keystone-label {
+  grid-row: var(--row);
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.6;
+}
+
+/* Talent nodes */
+.talent-node {
   position: relative;
   display: flex;
-  align-items: stretch;
-  gap: 10px;
-  padding: 8px 10px;
-  /* UI plan §9.C: 44 px floor for talent rows, which are full-row tap targets
-     with the buy button on the trailing edge. */
-  min-height: 44px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  grid-row: var(--row);
+  grid-column: calc(var(--col) + 1);
+  padding: 4px;
   background: var(--surface-2);
-  border: 1px solid var(--stroke-subtle);
-  border-radius: var(--radius-lg);
+  border: 2px solid var(--stroke-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
   min-width: 0;
-  margin-top: 4px;
+  max-width: 64px;
+  justify-self: center;
+  z-index: 1;
+  transition: border-color var(--dur-snap), box-shadow var(--dur-snap), opacity var(--dur-snap);
+  font-family: inherit;
+  color: var(--text-0);
 }
-.talent-card:first-child { margin-top: 0; }
+.talent-node:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
-/* Depth-based indentation */
-.talent-card[data-depth="1"] { margin-left: 18px; }
-.talent-card[data-depth="2"] { margin-left: 36px; }
-.talent-card[data-depth="3"] { margin-left: 54px; }
-.talent-card[data-depth="4"] { margin-left: 72px; }
-.talent-card[data-depth="5"] { margin-left: 90px; }
+/* Node icon */
+.talent-node-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--talent-color);
+}
+.talent-node-icon > .icon { --icon-size: 20px; }
 
-/* Tri-state, carried by shape as well as by hue (§8.D). */
-.talent-state-glyph {
+/* Node glyph (state indicator) */
+.talent-node-glyph {
   position: absolute;
-  top: 4px;
-  right: 6px;
-  font-size: var(--text-2xs);
+  top: 2px;
+  right: 3px;
+  font-size: 9px;
   line-height: 1;
   color: var(--text-2);
   pointer-events: none;
 }
-.talent-card[data-state="spent"] .talent-state-glyph { color: var(--fx-gold); }
-.talent-card[data-state="available"] .talent-state-glyph { color: var(--fx-nature); }
+
+/* Node rank badge */
+.talent-node-rank {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  line-height: 1;
+}
+
+/* Node name */
+.talent-node-name {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-1);
+  text-align: center;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* SR-only */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -4750,114 +4912,221 @@ body.is-resizing * { cursor: ew-resize !important; }
   border: 0;
 }
 
-/* Card visual states */
-.talent-card.talent-locked { opacity: 0.45; }
-.talent-card.talent-locked .talent-card-glyph { filter: grayscale(1) brightness(0.6); }
-.talent-card.talent-available {
+/* Node states */
+.talent-node.is-maxed {
+  border-color: var(--fx-gold);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--fx-gold) 40%, transparent);
+  background: color-mix(in srgb, var(--fx-gold) 10%, var(--surface-2));
+}
+.talent-node.is-maxed .talent-node-glyph { color: var(--fx-gold); }
+
+.talent-node.is-spent {
+  border-color: color-mix(in srgb, var(--branch-color) 60%, transparent);
+  background: color-mix(in srgb, var(--branch-color) 8%, var(--surface-2));
+}
+.talent-node.is-spent .talent-node-glyph { color: var(--fx-gold); }
+
+.talent-node.is-available {
   border-color: var(--branch-color);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--branch-color) 30%, transparent);
+  animation: talent-node-available-pulse 2s ease-in-out infinite;
 }
-.talent-card.talent-maxed {
-  border-color: var(--good);
-  box-shadow: inset 0 0 0 1px rgba(var(--rgb-nature), 0.2);
-}
-.talent-card.talent-maxed .talent-card-glyph {
-  background: rgba(var(--rgb-nature), 0.15);
+.talent-node.is-available .talent-node-glyph { color: var(--fx-nature); }
+@keyframes talent-node-available-pulse {
+  0%, 100% { box-shadow: 0 0 6px color-mix(in srgb, var(--branch-color) 30%, transparent); }
+  50% { box-shadow: 0 0 12px color-mix(in srgb, var(--branch-color) 50%, transparent); }
 }
 
-/* §8.D node tri-state. `data-state` wins over the allocation classes above:
-   a node with points in it reads as spent even once it is no longer buyable. */
-.talent-card[data-state="spent"] {
-  opacity: 1;
-  background: color-mix(in srgb, var(--fx-gold) 8%, var(--surface-2));
-  border-color: color-mix(in srgb, var(--fx-gold) 55%, transparent);
+.talent-node.is-gated {
+  opacity: 0.5;
+  border-style: dashed;
+  border-color: var(--stroke-subtle);
 }
-.talent-card[data-state="spent"] .talent-card-glyph { filter: none; }
-.talent-card[data-state="available"] {
-  opacity: 1;
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--fx-nature) 60%, transparent);
-}
-.talent-card[data-state="locked"] { opacity: 0.45; }
 
-/* Card glyph */
-.talent-card-glyph {
-  width: 36px;
-  height: 36px;
+.talent-node.is-locked {
+  opacity: 0.35;
+  border-color: var(--stroke-subtle);
+}
+.talent-node.is-locked .talent-node-icon { filter: grayscale(1) brightness(0.6); }
+
+.talent-node.is-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Keystone nodes — slightly larger */
+.talent-node.is-keystone {
+  max-width: 68px;
+  border-radius: var(--radius-lg);
+  border-width: 3px;
+}
+
+/* Endless node — round */
+.talent-node.is-endless {
+  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+  max-width: 56px;
+}
+
+/* Overflow section */
+.talent-overflow-divider {
+  text-align: center;
+  font-size: var(--text-2xs);
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 0;
+  border-top: 1px dashed var(--stroke-subtle);
+  margin-top: 4px;
+}
+.talent-overflow {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+/* Detail card */
+.talent-detail {
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--stroke-subtle);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 60px;
+  z-index: 10;
   flex-shrink: 0;
+}
+.talent-detail.is-empty {
+  opacity: 0.5;
+  justify-content: center;
+  align-items: center;
+}
+.talent-detail.is-empty > * { display: none; }
+.talent-detail.is-empty::after {
+  content: 'Select a talent to see details';
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+.talent-detail.is-preview {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--branch-color, var(--accent)) 6%, var(--surface-2));
+  transition: background var(--dur-snap) ease-out, border-color var(--dur-snap) ease-out;
+}
+.talent-detail.is-preview:not(.is-empty)::before {
+  content: 'Preview';
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--branch-color, var(--accent));
+  opacity: 0.7;
+  pointer-events: none;
+  line-height: 1;
+}
+
+.talent-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.talent-detail-icon {
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-2xl);
   background: var(--surface-3);
   border-radius: var(--radius-md);
   color: var(--talent-color);
+  flex-shrink: 0;
+}
+.talent-detail-icon > .icon { --icon-size: 22px; }
+.talent-detail-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.talent-detail-name {
+  font-size: var(--text-sm);
+  color: var(--text-0);
+}
+.talent-detail-meta {
+  font-size: var(--text-2xs);
+  color: var(--text-2);
+}
+.talent-detail-rank {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* Card body */
-.talent-card-body {
-  flex: 1 1 0;
-  min-width: 0;
-  overflow-wrap: break-word;
+.talent-detail-desc {
+  font-size: var(--text-xs);
+  color: var(--text-1);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.talent-detail-delta {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.talent-card-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  align-items: baseline;
-  font-size: var(--text-sm);
-}
-.talent-name { font-weight: 600; color: var(--text-0); }
-.talent-tier-badge {
+.talent-detail-delta-line {
   font-size: var(--text-2xs);
-  color: var(--text-2);
-  background: var(--surface-3);
-  padding: 0 4px;
-  border-radius: var(--radius-xs);
-}
-.talent-exclusive-badge {
-  font-size: var(--text-2xs);
-  color: var(--accent);
-  background: rgba(var(--rgb-gold), 0.1);
-  padding: 0 4px;
-  border-radius: var(--radius-xs);
-}
-.talent-points {
-  margin-left: auto;
+  color: var(--fx-nature);
   font-variant-numeric: tabular-nums;
-  color: var(--text-1);
 }
-.talent-card-desc {
-  font-size: var(--text-xs);
-  color: var(--text-2);
-}
-.talent-card-footer {
-  font-size: var(--text-2xs);
-  color: var(--text-2);
-}
-.talent-prereq { font-size: var(--text-2xs); color: var(--text-2); }
 
-/* Card action */
-.talent-card-action {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  min-width: 70px;
-  flex-shrink: 0;
-  justify-content: center;
+.talent-detail-reason {
+  font-size: var(--text-2xs);
+  color: var(--bad);
+  margin: 0;
+}
+
+.btn-learn {
+  align-self: flex-start;
+  font-size: var(--text-xs);
+  padding: 4px 10px;
+  background: var(--accent);
+  border: 1px solid var(--stroke-strong);
+  border-radius: var(--radius-sm);
+  color: var(--bg-1);
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-learn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.btn-learn:hover:not(:disabled) {
+  background: var(--warn);
 }
 
 /* Respec */
 .talent-respec-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
+  gap: 6px;
   padding: 8px 0 2px;
+  border-top: 1px solid var(--stroke-subtle);
+  flex-shrink: 0;
 }
 .talent-respec-all {
+  width: 100%;
   margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px solid var(--stroke-subtle);
 }
 .btn-respec {
   font-size: var(--text-xs);
@@ -4871,6 +5140,23 @@ body.is-resizing * { cursor: ew-resize !important; }
 }
 .btn-respec:hover:not(:disabled) { color: var(--text-0); border-color: var(--accent); }
 .btn-respec:disabled { opacity: 0.3; cursor: default; }
+.btn-respec.is-hidden { display: none; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .talent-points.is-pulsing,
+  .talent-node.is-available,
+  .talent-link.is-open {
+    animation: none;
+  }
+}
+
+/* Fine pointer — hover previews */
+@media (pointer: fine) {
+  .talent-node:hover:not(.is-selected) {
+    border-color: var(--branch-color);
+  }
+}
 
 /* Passive panel */
 .passive-panel {
@@ -6563,7 +6849,7 @@ body.eq-dragging img { pointer-events: none; }
 .passive-icon-inner > .icon { --icon-size: 28px; }
 .research-icon > .icon { --icon-size: 24px; }
 .perk-icon > .icon { --icon-size: 26px; }
-.talent-card-glyph > .icon { --icon-size: 22px; }
+
 .achievement-glyph > .icon { --icon-size: 26px; }
 .progression-glyph > .icon { --icon-size: 18px; }
 .milestone-entry-glyph > .icon { --icon-size: 14px; }

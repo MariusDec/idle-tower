@@ -9,6 +9,7 @@ UIManager
   ├── HUD (top bar, never changes tab)
   ├── UpgradePanel (Attack / Defense / Utility sub-tabs)
   ├── AbilityPanel (10 ability cards)
+  ├── TalentPanel (4-branch talent tree)
   ├── PrestigePanel (Ascension card + AP perks)
   ├── TranscendencePanel (Transcendence card + TP perks + Automation)
   ├── ResearchPanel (4-category research tree)
@@ -25,6 +26,44 @@ UIManager
 3. Clears contentRoot
 4. Mounts the panel's DOM into contentRoot
 5. Calls update() with latest state
+
+## Talent Panel (`TalentPanel.ts`)
+
+CSS Grid layout: `grid-template-columns: 30px repeat(5, minmax(46px, 1fr))` —
+a 30px gutter column for gate chips, then 5 columns for the 3 node columns
+plus spacing.
+
+**Gate chips** sit in the gutter at each gated row (rows 2-5), showing the
+branch point requirement (4, 12, 22, 32).
+
+**Elbow (orthogonal) SVG links** connect prerequisite nodes. An SVG layer
+(`talent-link-layer`, `pointer-events: none`) draws rounded elbow paths between
+parent and child nodes. Geometry is measured with `getBoundingClientRect()`
+relative to the grid and recomputed on mount, `ResizeObserver`, and tab switch.
+
+**Five node states**, distinguished by glyph and CSS class:
+
+| State | Glyph | CSS class | Meaning |
+|---|---|---|---|
+| maxed | ★ | `is-maxed` | All points invested |
+| spent | ✓ | `is-spent` | Some points, can allocate more |
+| available | ○ | `is-available` | Can allocate now |
+| gated | (number) | `is-gated` | Branch-point gate not met |
+| locked | 🔒 | `is-locked` | Prerequisites not met |
+
+**Sticky detail card** at the bottom of the panel. Shows selected node's icon,
+name, rank (`current / max`), description, effect deltas (Now → Next), blocked
+reason, and a Learn button.
+
+**Interaction**: click a node to select it (detail card updates), click again to
+allocate. Hover previews the detail card. Keyboard: arrow keys navigate the
+grid, Enter/Space allocates, Escape deselects.
+
+**Keystone row** (row 5) is marked "Choose one" — the three keystones per
+branch are mutually exclusive (`exclusiveGroup`).
+
+**Overflow divider** separates the main grid from the endless node, labeled
+"Overflow — no limit". The endless node has `maxPoints: 999`.
 
 ## UI Callback Wiring
 

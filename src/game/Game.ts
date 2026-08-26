@@ -51,6 +51,7 @@ import { UIManager } from '../ui/UIManager';
 import type { BossBarData } from '../ui/BossBar';
 import {
   avariceStreakGoldBonus,
+  GOLD_GROWTH,
   isBossWave,
   goldDropForWave,
   spawnCountForWave,
@@ -76,7 +77,7 @@ import {
   MUTATOR_DURATION_WAVES,
   waveModifierRewardMultiplier,
 } from '../data/waveModifiers';
-import { TALENT_STATS, type TalentStat } from '../data/talentTree';
+import { TALENT_STATS, TALENT_TUNING, type TalentStat } from '../data/talentTree';
 import { PASSIVE_STATS, PASSIVE_ABILITIES, type PassiveStat } from '../data/passiveAbilities';
 import { ACHIEVEMENT_REWARD_CONSUMERS, type AchievementRewardType } from '../data/achievements';
 import { EVOLUTION_EFFECT_IDS, type EvolutionEffectId } from '../data/upgrades';
@@ -146,7 +147,7 @@ const WAVE_MILESTONES = new Set([10, 25, 50, 100, 200, 500]);
  * modal forever" is a rule, not a preference, and a player who walks away
  * mid-draft is the exact case it is there for.
  */
-const BLESSING_AUTO_PICK_SECONDS = 20;
+const BLESSING_AUTO_PICK_SECONDS = 10;
 const BLESSING_SAFETY_TIMEOUT_SECONDS = 120;
 /**
  * Core-picker timeout, in **wall-clock** seconds (plan §6.2).
@@ -309,7 +310,7 @@ function makeInitialState(): GameState {
     achievements: [],
     runHistory: [],
     runStartedAt: Date.now(),
-    towerXp: { xp: 0, level: 0, unspentTalentPoints: 0, totalXpEarned: 0 },
+    towerXp: { xp: 0, level: 1, unspentTalentPoints: 1, totalXpEarned: 0 },
     talents: { allocated: {} },
     passiveAbilities: {},
     equipment: [],
@@ -473,6 +474,12 @@ export class Game {
    * bar, not merely that something hit the tower.
    */
   private waveFlawless = true;
+  /**
+   * `stats.lifetimeHighestWave` before the `onWaveCleared` callback updates it.
+   * Captured so `addWaveClearXp` can compute the pioneer bonus against the
+   * correct (pre-update) value.
+   */
+  private lifetimeHighestWaveBeforeClear = 1;
   /** Charged-shot hold, on the wall clock (plan §4.2). */
   private readonly charge = new ChargeTracker();
   /** Set on release, consumed by the next substep so the shot is simulated. */
@@ -576,6 +583,19 @@ export class Game {
   private talentWallRegen = 0;
   private talentHeadStartWaves = 0;
 
+  // ── Levelling redesign step 4: new talent cache fields ──
+  private killFrenzyPerStack = 0;
+  private bloodlustStacks = 0;
+  private critFollowUpChance = 0;
+  private secondWindPower = 0;
+  private secondWindArmed = true;
+  private juggernautArmed = true;
+  private juggernautImmunity = 0;
+  private windfallMultiplier = 0;
+  private interestRate = 0;
+  private manaOnKillFraction = 0;
+  private relentlessCounter = 0;
+
   // Evolution state
   private reviveUsed = false;
   /**
@@ -644,6 +664,7 @@ export class Game {
       this.camera.worldWidth,
       this.camera.worldHeight,
       (wave) => {
+        this.lifetimeHighestWaveBeforeClear = this.state.stats.lifetimeHighestWave;
         if (wave > this.state.wave.highestWave) {
           this.state.wave.highestWave = wave;
         }
@@ -714,6 +735,17 @@ export class Game {
       onCast: () => {
         this.state.stats.abilitiesCast += 1;
         this.contractMgr.note({ kind: 'ability_cast' });
+        // Archmage keystone: casting grants fire rate buff.
+        if (this.talentMgr.hasBehavior('archmage')) {
+          this.buffs.set({
+            id: 'talent_archmage',
+            stat: 'fireRate',
+            kind: 'mult',
+            value: 1 + TALENT_TUNING.archmageFireRateBonus,
+            label: 'Archmage',
+            remaining: TALENT_TUNING.archmageBuffSeconds,
+          });
+        }
       },
     });
     this.prestigeMgr = new PrestigeManager(this.bus, {
@@ -882,7 +914,7 @@ export class Game {
 
       // Tower XP & passive ability XP
       this.towerXpMgr.addKillXp(e.type as EnemyType, this.waveMgr.currentWave);
-      this.passiveMgr.addKillXp(e.type as EnemyType, this.waveMgr.currentWave);
+      this.passiveMgr.addKillXp(this.waveMgr.currentWave);
 
       this.effects.emitDeathBurst(e.x, e.y, def.color, def.radius);
 
@@ -934,6 +966,26 @@ export class Game {
         }
         this.effects.emitShockwaveRing(e.x, e.y, chainRadius);
       }
+
+      // ── Levelling redesign step 7: talent mechanics on kill ──
+
+      // Bloodlust: stacking damage buff on kill.
+      if (this.killFrenzyPerStack > 0) {
+        this.bloodlustStacks = Math.min(TALENT_TUNING.bloodlustMaxStacks, this.bloodlustStacks + 1);
+        this.buffs.set({
+          id: 'talent_bloodlust',
+          stat: 'baseDamage',
+          kind: 'mult',
+          value: 1 + this.killFrenzyPerStack * this.bloodlustStacks,
+          label: 'Bloodlust',
+          remaining: TALENT_TUNING.bloodlustSeconds,
+        });
+      }
+
+      // Soul Harvest: mana on kill.
+      if (this.manaOnKillFraction > 0) {
+        this.resourceMgr.addMana(this.state.resources.maxMana * this.manaOnKillFraction);
+      }
     });
 
     // Plan §6.2: the run-summary CTA opens the picker. `UIManager` emits this
@@ -967,8 +1019,19 @@ export class Game {
       this.effects.emitShockwaveRing(p.x, p.y, 90, withAlpha(FX.frost, 0.5), 2);
     });
     this.bus.on('siege_impact', (payload: unknown) => {
-      const p = payload as { x: number; y: number };
+      const p = payload as { x: number; y: number; ownerId?: number };
       this.effects.emitMineExplosion(p.x, p.y);
+      // Retaliation keystone: thorns damage the shot's owner.
+      if (this.talentMgr.hasBehavior('retaliation') && p.ownerId !== undefined) {
+        const ts = this.tower.snapshot;
+        if (ts.thorns > 0) {
+          const owner = this.enemyMgr.findById(p.ownerId);
+          if (owner && owner.alive) {
+            const thornDmg = Math.floor(owner.maxHp * ts.thorns);
+            if (thornDmg > 0) this.enemyMgr.damage(owner, thornDmg, false);
+          }
+        }
+      }
     });
     this.bus.on('burrower_surfaced', (payload: unknown) => {
       const p = payload as { x: number; y: number };
@@ -1129,6 +1192,17 @@ export class Game {
 
         if (ts.wallHp <= 0) {
           this.enemyMgr.setWallContactExtra(0);
+          // Juggernaut keystone: immunity when wall breaks.
+          if (this.juggernautArmed && this.talentMgr.hasBehavior('juggernaut')) {
+            this.juggernautArmed = false;
+            this.juggernautImmunity = TALENT_TUNING.juggernautImmunitySeconds;
+            this.effects.emitShieldAbsorb(ts.x, ts.y);
+            this.bus.emit('toast', {
+              kind: 'milestone',
+              text: 'Juggernaut! Immune for 4s.',
+              life: 3,
+            });
+          }
         }
 
         if (raw <= 0) return;
@@ -1142,6 +1216,15 @@ export class Game {
       const afterDefense = Math.max(0, afterArmor - ts.defense);
       let dmg = Math.floor(afterDefense);
       if (dmg <= 0) return;
+      // Juggernaut keystone: 30% damage reduction while wall is up.
+      if (this.talentMgr.hasBehavior('juggernaut') && ts.wallHp > 0) {
+        dmg = Math.floor(dmg * (1 - TALENT_TUNING.juggernautDamageReduction));
+        if (dmg <= 0) return;
+      }
+      // Juggernaut keystone: immunity after wall breaks.
+      if (this.juggernautImmunity > 0) {
+        return; // immune — damage is zeroed
+      }
       // Talent: Mana Shield — spend mana to absorb part of the hit.
       if (this.talentManaShieldFraction > 0 && this.state.resources.mana > 0) {
         const absorbed = Math.floor(
@@ -1171,6 +1254,23 @@ export class Game {
         false,
         { maxHp: ts.maxHp, kind: 'self' },
       );
+      // Second Wind: heal and damage buff when HP drops below threshold.
+      const frac = ts.maxHp > 0 ? ts.hp / ts.maxHp : 1;
+      if (this.secondWindArmed && this.secondWindPower > 0
+          && frac < TALENT_TUNING.secondWindThreshold) {
+        this.secondWindArmed = false;
+        ts.hp = Math.min(ts.maxHp, ts.hp + ts.maxHp * this.secondWindPower);
+        this.buffs.set({
+          id: 'talent_second_wind',
+          stat: 'baseDamage',
+          kind: 'mult',
+          value: 1 + this.secondWindPower * TALENT_TUNING.secondWindDamageRatio,
+          label: 'Second Wind',
+          remaining: TALENT_TUNING.secondWindSeconds,
+        });
+        this.effects.emitShockwaveRing(ts.x, ts.y, 120, withAlpha(FX.nature, 0.6), 3);
+        this.bus.emit('toast', { kind: 'milestone', text: 'Second Wind!', life: 3 });
+      }
       if (ts.hp <= 0) {
         // Evolution: revive — once per ascension
         if (!this.reviveUsed && this.upgradeMgr.hasEvolutionEffect('revive')) {
@@ -1300,6 +1400,16 @@ export class Game {
       if (typeof probeWave?.number === 'number' && probeWave.number === 1) this.startQualityProbe();
       // Plan §5.1: a wave is flawless until it isn't.
       this.waveFlawless = true;
+      // Levelling redesign step 4: reset per-wave talent arms.
+      this.secondWindArmed = true;
+      this.juggernautArmed = true;
+      // Levelling redesign step 7: Interest — earn gold on savings at wave start.
+      if (this.interestRate > 0) {
+        const wNum = (wave as { number?: number }).number ?? (wave as number);
+        const cap = TALENT_TUNING.interestCapBase * Math.pow(GOLD_GROWTH, Math.max(0, wNum - 1));
+        const payout = Math.floor(Math.min(this.state.resources.gold, cap) * this.interestRate);
+        if (payout > 0) this.resourceMgr.addGold(payout);
+      }
       // Plan §7.1/§7.4: the risk dial catches up and the momentum streak
       // settles. A wave that was *not* called early breaks the streak, which
       // covers the full intermission the plan names and every other way a wave
@@ -1409,17 +1519,27 @@ export class Game {
           this.bus.emit('gold_changed', this.state.resources.gold);
         }
       }
-      // Enlightenment evolution: +1 talent point every 12 waves
-      if (this.upgradeMgr.hasEvolutionEffect('enlightenment')) {
-        // Revamp §6.1: the interval is the evolution's own `effectValue` (12),
-        // not a literal here that could drift away from the tooltip.
-        const every = Math.max(1, Math.round(
-          this.upgradeMgr.getEvolutionEffectValue('enlightenment'),
-        ));
-        if (cleared % every === 0) this.towerXpMgr.grantTalentPoint();
+      // Levelling redesign step 7: Windfall — periodic gold chest.
+      if (this.windfallMultiplier > 0 && cleared % TALENT_TUNING.windfallInterval === 0) {
+        // Reuse the wave-clear gold that was already computed above.
+        const waveClearGold = this.waveGoldBonus > 0
+          ? Math.floor(this.waveGoldBonus * waveMasteryChainMultiplier(cleared))
+          : 0;
+        const chest = Math.floor(waveClearGold * this.windfallMultiplier);
+        if (chest > 0) {
+          this.state.resources.gold += chest;
+          this.state.resources.lifetimeGold += chest;
+          this.state.stats.goldEarned += chest;
+          this.bus.emit('gold_changed', this.state.resources.gold);
+        }
+        if (this.windfallMultiplier >= TALENT_TUNING.windfallEquipmentThreshold) {
+          this.equipmentMgr.rollDrop(cleared, 'milestone', { guaranteed: true });
+        }
+        const ts = this.tower.snapshot;
+        this.effects.emitGoldRushSparkle(ts.x, ts.y);
       }
       // Tower XP & passive ability XP from wave clear
-      this.towerXpMgr.addWaveClearXp(cleared);
+      this.towerXpMgr.addWaveClearXp(cleared, this.lifetimeHighestWaveBeforeClear);
       this.passiveMgr.addWaveClearXp(cleared);
 
       // Blessings (plan §1.1). The Greed Engine's value is a function of waves
@@ -3133,8 +3253,13 @@ export class Game {
     this.ui.setTalentAPI({
       allocated: this.state.talents.allocated,
       unspentPoints: () => this.state.towerXp.unspentTalentPoints,
+      level: () => this.towerXpMgr.level,
+      xpProgress: () => this.towerXpMgr.getProgressToNextLevel(),
+      atLevelCap: () => this.towerXpMgr.atCap,
       canAllocate: (id) => this.talentMgr.canAllocate(id),
+      blockedReason: (id) => this.talentMgr.blockedReason(id),
       allocate: (id) => this.talentMgr.allocate(id),
+      pointsInBranch: (branch) => this.talentMgr.pointsInBranch(branch),
       refundBranch: (branch) => this.talentMgr.refundBranch(branch),
       refundAll: () => this.talentMgr.refundAll(),
       branchRespecCost: (branch) => this.talentMgr.branchRespecCost(branch),
@@ -3237,6 +3362,10 @@ export class Game {
    */
   private refreshBuffedStats(): void {
     if (this.buffs.version === this.appliedBuffVersion) return;
+    // Bloodlust decay: reset stacks when the buff expires.
+    if (this.bloodlustStacks > 0 && !this.buffs.has('talent_bloodlust')) {
+      this.bloodlustStacks = 0;
+    }
     this.applyUpgradeEffects();
   }
 
@@ -3385,6 +3514,10 @@ export class Game {
         comboTier: this.pacingMgr.comboTierIndex,
       },
       buffs: this.buffs.entries,
+      manaFraction: this.state.resources.maxMana > 0
+        ? this.state.resources.mana / this.state.resources.maxMana
+        : 1,
+      talentBehaviors: [...this.talentMgr.behaviors()],
     };
   }
 
@@ -3562,6 +3695,29 @@ export class Game {
     this.talentMagicProcChance = stats.magicProcChance;
     this.talentWallRegen = stats.wallRegen;
     this.talentHeadStartWaves = stats.headStartWaves;
+
+    // ── Levelling redesign step 4: new talent stat cache ──
+    this.killFrenzyPerStack = stats.killFrenzyPerStack;
+    this.critFollowUpChance = stats.critFollowUpChance;
+    this.secondWindPower = stats.secondWindPower;
+    this.windfallMultiplier = stats.windfallMultiplier;
+    this.interestRate = stats.interestRate;
+    this.manaOnKillFraction = stats.manaOnKillFraction;
+    // ── Levelling redesign step 7: wire talent stats to managers ──
+    this.projectileMgr.setFocusStackBonus(stats.focusStackBonus);
+    this.projectileMgr.setBossDamageBonus(stats.bossDamageBonus);
+    this.projectileMgr.setChilledDamageBonus(stats.chilledDamageBonus);
+    this.projectileMgr.setEvolutionShotBonuses(
+      this.upgradeMgr.getEvolutionEffectValue('range_damage') + stats.overwatchDamage,
+      this.upgradeMgr.getEvolutionEffectValue('pierce_amp'),
+    );
+    this.abilityMgr.setEchoChance(stats.abilityEchoChance);
+    this.lootMgr.setValueBonus(stats.orbValueBonus);
+    this.pacingMgr.setMomentumBonus(stats.momentumGainBonus, Math.min(MOMENTUM_CAP * 2, stats.momentumGainBonus / 20));
+    this.enemyMgr.setThornsOnKnockback(stats.knockbackForce > TOWER_BASE.knockbackForce);
+    this.automation.setQuartermasterReserve(
+      this.talentMgr.hasBehavior('quartermaster') ? TALENT_TUNING.quartermasterGoldReserve : 0,
+    );
   }
 
   private buildShotVariants(): ShotVariant[] {
@@ -4224,7 +4380,7 @@ export class Game {
     this.abilityMgr.reset();
 
     // v6+: Restore RPG state
-    Object.assign(this.state.towerXp, persisted.towerXp ?? { xp: 0, level: 0, unspentTalentPoints: 0, totalXpEarned: 0 });
+    Object.assign(this.state.towerXp, persisted.towerXp ?? { xp: 0, level: 1, unspentTalentPoints: 1, totalXpEarned: 0 });
     this.state.talents.allocated = { ...(persisted.talents?.allocated ?? {}) };
 
     // Clear and repopulate passiveAbilities (manager holds reference)
@@ -4373,6 +4529,10 @@ export class Game {
     this.buffs.tick(dt);
     this.refreshBuffedStats();
     this.refreshHpThresholdStats();
+    // Juggernaut immunity timer.
+    if (this.juggernautImmunity > 0) {
+      this.juggernautImmunity = Math.max(0, this.juggernautImmunity - dt);
+    }
     // Plan §7.2: the combo window is a **simulation**-clock quantity. Kills are
     // simulation events, so the interval between two of them is simulation
     // time; on the wall clock a 2 s window would be 0.3 s at 6.5x speed and no
@@ -4516,6 +4676,27 @@ export class Game {
         };
         const resolvedDamageType = corePlan.damageType ?? shotDamageType;
 
+        // Relentless keystone: every Nth shot fires 3 projectiles at reduced damage.
+        if (this.talentMgr.hasBehavior('relentless')) {
+          this.relentlessCounter += 1;
+          if (this.relentlessCounter >= TALENT_TUNING.relentlessShotInterval) {
+            this.relentlessCounter = 0;
+            const relentlessVariants: ShotVariant[] = [
+              { angleOffset: -0.18, damageScale: TALENT_TUNING.relentlessDamage },
+              { angleOffset: 0,     damageScale: TALENT_TUNING.relentlessDamage },
+              { angleOffset: 0.18,  damageScale: TALENT_TUNING.relentlessDamage },
+            ];
+            if (variants.length > 1) {
+              // Append to existing AP multi-shot variants.
+              variants.push(...relentlessVariants);
+            } else {
+              // Replace the single default variant.
+              variants.length = 0;
+              variants.push(...relentlessVariants);
+            }
+          }
+        }
+
         this.projectileMgr.fire(target, ts, {
           rawDamage: shotDamage,
           damageType: resolvedDamageType,
@@ -4529,6 +4710,20 @@ export class Game {
         this.tower.consumeCooldown();
         this.state.stats.shotsFired += 1;
         this.state.stats.damageDealt += shotDamage;
+
+        // Killing Spree: crit follow-up shot (non-crit, reduced damage).
+        if (shot.isCrit && this.critFollowUpChance > 0 && Math.random() < this.critFollowUpChance) {
+          this.projectileMgr.fire(target, ts, {
+            rawDamage: shotDamage * TALENT_TUNING.critFollowUpDamage,
+            damageType: resolvedDamageType,
+            isCrit: false,
+            targetId: target?.id ?? null,
+            variants,
+            aimX: this.mouseDown ? this.mouseX : undefined,
+            aimY: this.mouseDown ? this.mouseY : undefined,
+            ...blessingShot,
+          });
+        }
 
         // Double shot chance — fire all projectiles a second time
         if (Math.random() < ts.doubleShotChance) {

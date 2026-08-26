@@ -46,7 +46,7 @@ import {
   computePerkEffect,
   tpForAP,
 } from '../src/data/prestige.ts';
-import { talentPointsAtLevel, xpPerKill } from '../src/data/xpTables.ts';
+import { talentPointsAtLevel, xpPerKill, TOWER_XP_TABLE, TOWER_LEVEL_CAP, xpToLevel, xpPerWaveClear, pioneerBonusXp, PIONEER_CLEAR_MULTIPLIER } from '../src/data/xpTables.ts';
 import { PASSIVE_ABILITIES } from '../src/data/passiveAbilities.ts';
 import { PROGRESSION_ENTRIES } from '../src/data/milestones.ts';
 import { TALENTS_BY_BRANCH, talentRespecCost } from '../src/data/talentTree.ts';
@@ -211,19 +211,35 @@ section('§2.4 tower XP and talent points');
     `w10=${xpPerKill('normal', 10)} w50=${xpPerKill('normal', 50)}`);
   check('bosses are worth more than trash', xpPerKill('boss', 30) > xpPerKill('normal', 30));
 
-  check('a bonus talent point lands every 5th level',
-    talentPointsAtLevel(5) - talentPointsAtLevel(4) === 2);
-  check('other levels grant one point',
-    talentPointsAtLevel(4) - talentPointsAtLevel(3) === 1);
+  // One talent point per level, capped at 200.
+  check('one point per level, capped at 200',
+    talentPointsAtLevel(200) === 200 && talentPointsAtLevel(250) === 200);
   check('level 0 grants nothing', talentPointsAtLevel(0) === 0);
 
-  // The grant loop must pay the bonus even when points are already banked —
-  // this is what the old reconciliation got wrong.
+  // The XP table is ascending and xpToLevel round-trips.
+  check('XP table has cap+1 entries', TOWER_XP_TABLE.length === TOWER_LEVEL_CAP + 1);
+  let ascending = true;
+  for (let l = 2; l <= TOWER_LEVEL_CAP; l++) {
+    if (TOWER_XP_TABLE[l] <= TOWER_XP_TABLE[l - 1]) { ascending = false; break; }
+  }
+  check('XP table is strictly ascending', ascending);
+  let roundTrips = true;
+  for (const l of [1, 2, 5, 40, 100, 199, 200]) {
+    if (xpToLevel(TOWER_XP_TABLE[l]) !== l) { roundTrips = false; break; }
+  }
+  check('xpToLevel round-trips against the table', roundTrips);
+
+  // Pioneer bonus only past the lifetime best.
+  check('no pioneer bonus at or below the best', pioneerBonusXp(40, 40) === 0);
+  check('pioneer bonus pays past the best',
+    pioneerBonusXp(41, 40) === Math.round(xpPerWaveClear(41) * PIONEER_CLEAR_MULTIPLIER));
+
+  // The grant loop must pay correctly even when points are already banked.
   const bus = new EventBus();
-  const state: TowerXpState = { xp: 0, level: 0, unspentTalentPoints: 0, totalXpEarned: 0 };
+  const state: TowerXpState = { xp: 0, level: 1, unspentTalentPoints: 1, totalXpEarned: 0 };
   const xpMgr = new TowerXpManager(state, bus);
   for (let i = 0; i < 4000; i++) xpMgr.addKillXp('normal', 40);
-  check('banked points do not suppress the bonus grant',
+  check('banked points do not suppress the grant',
     state.unspentTalentPoints === talentPointsAtLevel(state.level),
     `level=${state.level} points=${state.unspentTalentPoints} expected=${talentPointsAtLevel(state.level)}`);
   check('the tower actually levels', state.level >= 5, `level=${state.level}`);
@@ -245,7 +261,7 @@ section('§2.5 passive abilities');
     `got ${mgr.getEffectValue(def.stat)}, expected ${def.basePercent}`);
 
   const before = mgr.getUpgradeCost(def.id);
-  for (let i = 0; i < 20; i++) mgr.addKillXp('normal', 40);
+  for (let i = 0; i < 20; i++) mgr.addKillXp(40);
   check('passives earn XP from kills', mgr.getXp(def.id) > 0, `xp=${mgr.getXp(def.id)}`);
   check('banked XP discounts the gold cost', mgr.getUpgradeCost(def.id) < before,
     `${before} -> ${mgr.getUpgradeCost(def.id)}`);
@@ -257,7 +273,7 @@ section('§2.5 passive abilities');
   soloMgr.unlock(def.id);
   let kills = 0;
   while (soloMgr.getLevel(def.id) < 10 && kills < 2_000_000) {
-    soloMgr.addKillXp('normal', 40);
+    soloMgr.addKillXp(40);
     kills += 1;
   }
   check('XP alone reaches level 10 in a plausible number of kills',
@@ -545,8 +561,8 @@ section('§4.6 progression');
   check('progression has no duplicates', ids.size === PROGRESSION_ENTRIES.length);
 }
 
-// ── §4.7 talent respec ────────────────────────────────────────────────────
-section('§4.7 talent respec');
+// ── §4.7 talent allocation & respec ──────────────────────────────────────
+section('§4.7 talent allocation & respec');
 {
   const bus = new EventBus();
   const talentState: TalentState = { allocated: {} };
@@ -559,7 +575,12 @@ section('§4.7 talent respec');
     spendGold: (amount) => (gold >= amount ? (gold -= amount, true) : false),
   });
 
+  // TALENTS_BY_BRANCH[branch][0] is now wr_edge / bw_toughness / ft_greed / ar_power,
+  // all with requiresBranchPoints: 0.
   const first = TALENTS_BY_BRANCH['offense'][0];
+  check('first offense node is wr_edge', first.id === 'wr_edge');
+  check('first offense node has requiresBranchPoints 0', first.requiresBranchPoints === 0);
+
   talents.allocate(first.id);
   talents.allocate(first.id);
   const spent = talents.pointsInBranch('offense');
@@ -588,6 +609,83 @@ section('§4.7 talent respec');
   talents.allocate(TALENTS_BY_BRANCH['defense'][0].id);
   check('a full respec clears everything',
     talents.refundAll() && talents.totalAllocatedPoints() === 0);
+
+  // ── Branch gating ─────────────────────────────────────────────────────
+  // wr_precision (row-2) requires 4 branch points.
+  gold = 100000;
+  points = 100;
+  const talentState2: TalentState = { allocated: {} };
+  const talents2 = new TalentManager(talentState2, bus, {
+    towerXpUnspentPoints: () => points,
+    spendTalentPoint: () => (points > 0 ? (points -= 1, true) : false),
+    grantTalentPoint: () => { points += 1; },
+    spendGold: (amount) => (gold >= amount ? (gold -= amount, true) : false),
+  });
+  talents2.allocate('wr_edge'); // 1 branch point
+  check('row-2 node blocked at 1 branch point',
+    talents2.blockedReason('wr_precision') === 'gate');
+  talents2.allocate('wr_edge');
+  talents2.allocate('wr_edge');
+  talents2.allocate('wr_edge'); // 4 branch points
+  check('row-2 node unblocked at 4 branch points',
+    talents2.blockedReason('wr_precision') === null);
+
+  // ── ExclusiveGroup blocking ───────────────────────────────────────────
+  // Build offense to 35 branch points and take one keystone.
+  const talentState3: TalentState = { allocated: {} };
+  points = 200;
+  gold = 100000;
+  const talents3 = new TalentManager(talentState3, bus, {
+    towerXpUnspentPoints: () => points,
+    spendTalentPoint: () => (points > 0 ? (points -= 1, true) : false),
+    grantTalentPoint: () => { points += 1; },
+    spendGold: (amount) => (gold >= amount ? (gold -= amount, true) : false),
+  });
+  for (let i = 0; i < 5; i++) talents3.allocate('wr_edge');
+  for (let i = 0; i < 5; i++) talents3.allocate('wr_cadence');
+  for (let i = 0; i < 3; i++) talents3.allocate('wr_precision');
+  for (let i = 0; i < 3; i++) talents3.allocate('wr_cruelty');
+  for (let i = 0; i < 3; i++) talents3.allocate('wr_focus_fire');
+  for (let i = 0; i < 3; i++) talents3.allocate('wr_volley');
+  for (let i = 0; i < 3; i++) talents3.allocate('wr_executioner');
+  for (let i = 0; i < 3; i++) talents3.allocate('wr_bloodlust');
+  for (let i = 0; i < 3; i++) talents3.allocate('wr_overwatch');
+  talents3.allocate('wr_siegebreaker');
+  talents3.allocate('wr_killing_spree');
+  talents3.allocate('wr_key_annihilation');
+  check('taking one keystone blocks the others',
+    talents3.blockedReason('wr_key_deadeye') === 'exclusive');
+  check('refundBranch releases the exclusive block',
+    talents3.refundBranch('offense') && talents3.blockedReason('wr_key_deadeye') === 'prereq');
+
+  // ── behaviours() reflection ───────────────────────────────────────────
+  const talentState4: TalentState = { allocated: {} };
+  points = 200;
+  gold = 100000;
+  const talents4 = new TalentManager(talentState4, bus, {
+    towerXpUnspentPoints: () => points,
+    spendTalentPoint: () => (points > 0 ? (points -= 1, true) : false),
+    grantTalentPoint: () => { points += 1; },
+    spendGold: (amount) => (gold >= amount ? (gold -= amount, true) : false),
+  });
+  check('no behaviours before allocation', talents4.behaviors().size === 0);
+  talents4.allocate('wr_edge');
+  check('a non-behavior node does not add a behavior', !talents4.hasBehavior('relentless'));
+  // Build to relentless
+  for (let i = 0; i < 4; i++) talents4.allocate('wr_edge');
+  for (let i = 0; i < 5; i++) talents4.allocate('wr_cadence');
+  for (let i = 0; i < 3; i++) talents4.allocate('wr_precision');
+  for (let i = 0; i < 3; i++) talents4.allocate('wr_cruelty');
+  for (let i = 0; i < 3; i++) talents4.allocate('wr_focus_fire');
+  for (let i = 0; i < 3; i++) talents4.allocate('wr_volley');
+  for (let i = 0; i < 3; i++) talents4.allocate('wr_executioner');
+  for (let i = 0; i < 3; i++) talents4.allocate('wr_bloodlust');
+  for (let i = 0; i < 3; i++) talents4.allocate('wr_overwatch');
+  talents4.allocate('wr_killing_spree');
+  talents4.allocate('wr_key_relentless');
+  check('behaviours() reflects allocation', talents4.hasBehavior('relentless'));
+  talents4.refundBranch('offense');
+  check('behaviours() reflects refund', !talents4.hasBehavior('relentless'));
 }
 
 console.log(

@@ -260,8 +260,13 @@ export class UIManager {
   private talentApi: TalentAPIDeps = {
     allocated: {},
     unspentPoints: () => 0,
+    level: () => 1,
+    xpProgress: () => 0,
+    atLevelCap: () => false,
     canAllocate: () => false,
+    blockedReason: () => null,
     allocate: () => false,
+    pointsInBranch: () => 0,
     refundBranch: () => false,
     refundAll: () => false,
     branchRespecCost: () => 0,

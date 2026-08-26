@@ -37,6 +37,9 @@ export function contributeEvolutions(ctx: StatContext, acc: StatAccumulator): vo
       case 'hp_threshold_damage':
         if (ctx.hpFraction > 0.8) a.mult('baseDamage', 1 + value, 'Full Power');
         break;
+      case 'enlightenment':
+        a.mult('xpGainMultiplier', 1 + value, 'Enlightenment');
+        break;
       case 'wave_gold_scaling':
         // Revamp §6.2.2: hard-capped at +50%. Uncapped this was +1%/wave with
         // no ceiling, i.e. a permanent, unbounded economy multiplier bought
@@ -55,7 +58,6 @@ export function contributeEvolutions(ctx: StatContext, acc: StatAccumulator): vo
       // amplification), which need the impact's geometry and so are read by
       // `ProjectileManager` rather than by a global stat.
       case 'double_shot':
-      case 'enlightenment':
       case 'golden_tide':
       case 'kill_streak_gold':
       case 'mana_full_gold':

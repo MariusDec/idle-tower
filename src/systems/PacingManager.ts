@@ -47,6 +47,9 @@ export class PacingManager {
   private comboTier = 0;
   /** Best combo this run, for the run summary and the meter's ghost mark. */
   private comboBest = 0;
+  // ── Tempo talent: momentum gain multiplier and cap bonus ──
+  private momentumGainMult = 0;
+  private momentumCapBonus = 0;
 
   // ── risk ────────────────────────────────────────────────────────────────
 
@@ -71,13 +74,20 @@ export class PacingManager {
 
   // ── momentum ────────────────────────────────────────────────────────────
 
+  /** Tempo talent: momentum gain multiplier and cap bonus. */
+  setMomentumBonus(gainMult: number, capBonus: number): void {
+    this.momentumGainMult = Math.max(0, gainMult);
+    this.momentumCapBonus = Math.max(0, capBonus);
+  }
+
   /**
    * Bank a call-the-wave-early bonus. `seconds` is the intermission actually
    * skipped, so a player who calls with 0.2 s left banks almost nothing.
    */
   noteWaveCalledEarly(seconds: number): number {
-    const gained = Math.max(0, seconds) * EARLY_CALL_GOLD_PER_SECOND;
-    this.momentum = Math.min(MOMENTUM_CAP, this.momentum + gained);
+    const gained = Math.max(0, seconds) * EARLY_CALL_GOLD_PER_SECOND * (1 + this.momentumGainMult);
+    const cap = MOMENTUM_CAP + this.momentumCapBonus;
+    this.momentum = Math.min(cap, this.momentum + gained);
     this.momentumWaves += 1;
     this.calledEarlyPending = true;
     return this.momentum;
@@ -198,6 +208,8 @@ export class PacingManager {
     this.calledEarlyPending = false;
     this.breakCombo();
     this.comboBest = 0;
+    this.momentumGainMult = 0;
+    this.momentumCapBonus = 0;
   }
 
   snapshot(): PacingState {

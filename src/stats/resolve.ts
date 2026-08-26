@@ -90,7 +90,8 @@ export function resolveStats(ctx: StatContext, options: ResolveOptions = {}): Re
   }
 
   if (stats.shieldRechargeTime > 0) {
-    stats.shieldRechargeTime = Math.max(MIN_SHIELD_RECHARGE, stats.shieldRechargeTime);
+    const rechargeCut = 1 - acc.resolve('shieldRechargeReduction');
+    stats.shieldRechargeTime = Math.max(MIN_SHIELD_RECHARGE, stats.shieldRechargeTime * rechargeCut);
   } else {
     // No recharge timer means no shield at all, so the Extra Shield talent has
     // nothing to add charges to.

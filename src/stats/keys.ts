@@ -110,7 +110,23 @@ export type StatKey =
    */
   | 'enemySpeedMult'
   | 'enemyHpMult'
-  | 'enemyDamageMult';
+  | 'enemyDamageMult'
+  // ── talent tree (levelling redesign step 4) ──
+  | 'focusStackBonus'
+  | 'killFrenzyPerStack'
+  | 'overwatchDamage'
+  | 'bossDamageBonus'
+  | 'critFollowUpChance'
+  | 'shieldRechargeReduction'
+  | 'secondWindPower'
+  | 'lowHpDamageBonus'
+  | 'orbValueBonus'
+  | 'momentumGainBonus'
+  | 'windfallMultiplier'
+  | 'interestRate'
+  | 'chilledDamageBonus'
+  | 'abilityEchoChance'
+  | 'manaOnKillFraction';
 
 /**
  * Which system a contribution came from. Carried through to `Breakdown` so the
@@ -216,6 +232,23 @@ export const STAT_BASES: Record<StatKey, number> = {
   enemySpeedMult: 1,
   enemyHpMult: 1,
   enemyDamageMult: 1,
+
+  // ── talent tree (levelling redesign step 4) ──
+  focusStackBonus: 0,
+  killFrenzyPerStack: 0,
+  overwatchDamage: 0,
+  bossDamageBonus: 0,
+  critFollowUpChance: 0,
+  shieldRechargeReduction: 0,
+  secondWindPower: 0,
+  lowHpDamageBonus: 0,
+  orbValueBonus: 0,
+  momentumGainBonus: 0,
+  windfallMultiplier: 0,
+  interestRate: 0,
+  chilledDamageBonus: 0,
+  abilityEchoChance: 0,
+  manaOnKillFraction: 0,
 };
 
 export const STAT_KEYS = Object.keys(STAT_BASES) as StatKey[];
@@ -284,4 +317,20 @@ export const STAT_CLAMPS: Partial<Record<StatKey, StatClamp>> = {
   enemyHpReduction: { min: 0, max: 0.9 },
   intermissionMultiplier: { min: 0.1, max: 1 },
   waveSkipChance: { min: 0, max: 1 },
+  // ── talent tree (levelling redesign step 4) ──
+  focusStackBonus: { min: 0 },
+  killFrenzyPerStack: { min: 0 },
+  overwatchDamage: { min: 0 },
+  bossDamageBonus: { min: 0 },
+  critFollowUpChance: { min: 0, max: 1 },
+  shieldRechargeReduction: { min: 0, max: 0.8 },
+  secondWindPower: { min: 0 },
+  // lowHpDamageBonus: no clamp — context-conditional, never leaves accumulator
+  orbValueBonus: { min: 0 },
+  momentumGainBonus: { min: 0 },
+  windfallMultiplier: { min: 0 },
+  interestRate: { min: 0, max: 0.5 },
+  chilledDamageBonus: { min: 0 },
+  abilityEchoChance: { min: 0, max: 0.75 },
+  manaOnKillFraction: { min: 0, max: 0.5 },
 };

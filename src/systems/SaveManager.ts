@@ -24,10 +24,10 @@ import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBo
 import { ENEMY_DEFS, spawnPoolForWave } from '../data/enemies';
 import { DEFAULT_CORE } from '../data/cores';
 import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
-import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
+import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel, TOWER_LEVEL_CAP, TOWER_XP_TABLE } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 16;
+const SAVE_VERSION = 17;
 
 function defaultWaveModifier() {
   return {
@@ -234,7 +234,7 @@ function migrateV4toV5(data: Record<string, unknown>): void {
 }
 
 function migrateV5toV6(data: Record<string, unknown>): void {
-  data.towerXp = data.towerXp ?? { xp: 0, level: 0, unspentTalentPoints: 0, totalXpEarned: 0 };
+  data.towerXp = data.towerXp ?? { xp: 0, level: 1, unspentTalentPoints: 1, totalXpEarned: 0 };
   data.talents = data.talents ?? { allocated: {} };
   data.passiveAbilities = data.passiveAbilities ?? {};
   data.equipment = data.equipment ?? [];
@@ -502,10 +502,45 @@ function migrateV15toV16(data: Record<string, unknown>): void {
   }
 }
 
+/**
+ * v17: the levelling redesign.
+ *
+ * Three things change at once and all three have to be reconciled here:
+ *
+ *  - `level` becomes 1-based (a fresh save is level 1, not level 0);
+ *  - the XP requirement curve is a different, far steeper function, so the
+ *    stored `xp` no longer denotes the same level it did;
+ *  - every talent id is new, so nothing can carry over.
+ *
+ * The level is treated as the thing worth preserving — it is what the player
+ * spent months on — so the XP is *restated* onto the new curve rather than
+ * re-interpreted. Progress within the level is dropped (it is at most one
+ * level's worth), and every point is refunded so the player re-spends into the
+ * new tree with a clean slate.
+ */
+function migrateV16toV17(data: Record<string, unknown>): void {
+  const tx = data.towerXp as Record<string, unknown> | undefined;
+  const oldLevel = isObject(tx) && typeof tx.level === 'number' ? Math.floor(tx.level) : 0;
+  // 0-based -> 1-based, then clamp to the new cap.
+  const level = Math.max(1, Math.min(TOWER_LEVEL_CAP, oldLevel + 1));
+  const xp = TOWER_XP_TABLE[level];
+  const oldTotal = isObject(tx) && typeof tx.totalXpEarned === 'number' ? tx.totalXpEarned : 0;
+  data.towerXp = {
+    level,
+    xp,
+    // Lifetime XP is a stat, not a currency. Scale it by the same factor the
+    // curve moved so achievements and the Stats panel stay proportionate.
+    totalXpEarned: Math.max(xp, Math.floor(oldTotal * (xp / Math.max(1, oldTotal || 1)))),
+    unspentTalentPoints: talentPointsAtLevel(level),
+  };
+  // Every talent id changed; a full refund is the only honest migration.
+  data.talents = { allocated: {} };
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -535,6 +570,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 13) { migrateV13toV14(data); data.version = 14; }
   if (data.version === 14) { migrateV14toV15(data); data.version = 15; }
   if (data.version === 15) { migrateV15toV16(data); data.version = 16; }
+  if (data.version === 16) { migrateV16toV17(data); data.version = 17; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;

@@ -3,7 +3,7 @@ import { formatNumber, formatInt, formatWithOptionalDecimal } from '../utils/big
 import type { SpeedAPI, TargetingAPI, WaveControlAPI } from './UIManager';
 import type { PacingHudData } from './PacingOverlay';
 import { TARGETING_MODES } from '../data/tower';
-import { TOWER_XP_TABLE, xpForNextLevel, xpToLevel } from '../data/xpTables';
+import { TOWER_XP_TABLE, TOWER_LEVEL_CAP, xpForNextLevel, xpToLevel } from '../data/xpTables';
 import { STAT_ICONS, type StatIconKey } from '../data/iconMap';
 import { ENEMY_DEFS, ENEMY_LABELS } from '../data/enemies';
 import { isBossWave } from '../data/formulas';
@@ -457,7 +457,7 @@ export class HUD {
         this.displayXpProgress = 1;
       } else {
         const xpIntoLevel = tx.xp - TOWER_XP_TABLE[tx.level];
-        this.displayXpProgress = this.displayXpNeeded > 0 && this.displayXpNeeded !== Infinity
+        this.displayXpProgress = Number.isFinite(this.displayXpNeeded) && this.displayXpNeeded > 0
           ? Math.min(1, xpIntoLevel / this.displayXpNeeded)
           : 1;
       }
@@ -484,7 +484,7 @@ export class HUD {
     );
 
     const tx = state.towerXp;
-    this.tickBar(this.xpBar, tx && tx.level >= 1999 ? 1 : this.displayXpProgress, dt);
+    this.tickBar(this.xpBar, tx && tx.level >= TOWER_LEVEL_CAP ? 1 : this.displayXpProgress, dt);
   }
 
   update(state: GameState): void {
@@ -585,9 +585,9 @@ export class HUD {
   private updateXpBar(state: GameState): void {
     const tx = state.towerXp;
     if (!tx) return;
-    setText(this.xpLevelEl, `Lv.${tx.level + 1}`);
+    setText(this.xpLevelEl, `Lv.${tx.level}`);
     const needed = this.displayXpNeeded;
-    if (needed > 0 && needed !== Infinity) {
+    if (Number.isFinite(needed) && needed > 0) {
       const xpIntoLevel = Math.max(0, tx.xp - TOWER_XP_TABLE[tx.level]);
       const currentXp = Math.min(xpIntoLevel, needed);
       setText(this.xpPctEl, `${formatInt(currentXp)} / ${formatInt(needed)} XP`);
@@ -605,7 +605,7 @@ export class HUD {
         + ` ${formatInt(tx.unspentTalentPoints)} unspent talent point${tx.unspentTalentPoints === 1 ? '' : 's'}.`,
       );
     } else {
-      setText(this.xpPctEl, `MAX LEVEL`);
+      setText(this.xpPctEl, `MAX`);
       setTitle(this.xpWrapEl, 'Tower is at max level.');
     }
   }

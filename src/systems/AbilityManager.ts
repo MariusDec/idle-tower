@@ -84,6 +84,8 @@ export class AbilityManager {
   private buffDurationBonus = 0;
   /** Frostwork core: slow abilities run this many times as long (plan §6.1). */
   private slowDurationMult = 1;
+  /** Spell Echo talent: chance to re-execute an ability's effect for free. */
+  private echoChance = 0;
   /**
    * Reused by the auto-placer's cluster scan (plan §4.3 / cross-cutting rule 6).
    *
@@ -214,6 +216,11 @@ export class AbilityManager {
     this.slowDurationMult = Math.max(1, mult);
   }
 
+  /** Spell Echo talent: chance to re-execute an ability's effect for free. */
+  setEchoChance(chance: number): void {
+    this.echoChance = Math.max(0, Math.min(1, chance));
+  }
+
   getEffectiveDuration(id: AbilityId): number {
     const def = ABILITY_BY_ID[id];
     if (!def) return 0;
@@ -341,6 +348,16 @@ export class AbilityManager {
     this.bus.emit('ability_visual', { id, def, target: visualTarget });
     this.addCastXp(def, state);
     this.onCast(id);
+    // Spell Echo: chance to re-execute the effect for free (no mana, no cooldown).
+    // Never recurses — an echoed cast cannot echo again.
+    if (this.echoChance > 0 && Math.random() < this.echoChance) {
+      this.applyEffect(
+        def.effectType,
+        this.getEffectiveEffectValue(id),
+        duration,
+        { id, point, focused: placed !== null },
+      );
+    }
     return true;
   }
 

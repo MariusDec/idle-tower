@@ -1,5 +1,5 @@
 import type { TowerXpState, EnemyType } from '../types';
-import { TOWER_XP_TABLE, xpPerKill, xpPerWaveClear, xpToLevel, xpForNextLevel, talentPointsAtLevel } from '../data/xpTables';
+import { TOWER_XP_TABLE, TOWER_LEVEL_CAP, xpPerKill, xpPerWaveClear, pioneerBonusXp, xpToLevel, xpForNextLevel, talentPointsAtLevel } from '../data/xpTables';
 import { EventBus } from '../game/EventBus';
 
 export class TowerXpManager {
@@ -13,6 +13,7 @@ export class TowerXpManager {
   }
 
   get level(): number { return this.state.level; }
+  get atCap(): boolean { return this.state.level >= TOWER_LEVEL_CAP; }
   get xp(): number { return this.state.xp; }
   get totalXpEarned(): number { return this.state.totalXpEarned; }
   get unspentTalentPoints(): number { return this.state.unspentTalentPoints; }
@@ -22,29 +23,25 @@ export class TowerXpManager {
   }
 
   addKillXp(type: EnemyType, wave: number): void {
-    const gained = xpPerKill(type, wave);
-    this.addXp(gained);
+    this.addXp(xpPerKill(type, wave));
   }
 
-  addWaveClearXp(wave: number): void {
-    const gained = xpPerWaveClear(wave);
-    this.addXp(gained);
+  addWaveClearXp(wave: number, lifetimeHighestWave: number): void {
+    this.addXp(xpPerWaveClear(wave) + pioneerBonusXp(wave, lifetimeHighestWave));
   }
 
   private addXp(amount: number): void {
     if (amount <= 0) return;
     const gained = Math.floor(amount * this.xpGainMultiplier);
     if (gained <= 0) return;
-    this.state.xp += gained;
     this.state.totalXpEarned += gained;
+    if (this.atCap) return;
+    this.state.xp = Math.min(this.state.xp + gained, TOWER_XP_TABLE[TOWER_LEVEL_CAP]);
     const newLevel = xpToLevel(this.state.xp);
     while (this.state.level < newLevel) {
       const previousLevel = this.state.level;
       this.state.level += 1;
       // Grant exactly the delta in total points owed between the two levels.
-      // The previous reconciliation (comparing against `level - 1 + unspent`)
-      // assumed one point per level and silently under-granted as soon as the
-      // curve stopped being the identity.
       this.state.unspentTalentPoints +=
         talentPointsAtLevel(this.state.level) - talentPointsAtLevel(previousLevel);
       this.bus.emit('tower_leveled', {
@@ -56,9 +53,9 @@ export class TowerXpManager {
   }
 
   getProgressToNextLevel(): number {
+    if (this.atCap) return 1;
     const currentXp = this.state.xp;
     const currentLevel = this.state.level;
-    if (xpToLevel(currentXp) > currentLevel) return 1;
     const needed = xpForNextLevel(currentLevel);
     if (needed <= 0 || needed === Infinity) return 1;
     const xpIntoLevel = currentXp - TOWER_XP_TABLE[currentLevel];

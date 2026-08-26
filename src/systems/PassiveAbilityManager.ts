@@ -1,6 +1,6 @@
-import type { EnemyType, PassiveAbilityState } from '../types';
+import type { PassiveAbilityState } from '../types';
 import { PASSIVE_ABILITIES, PASSIVE_BY_ID, passiveUpgradeCost } from '../data/passiveAbilities';
-import { passiveXpForLevel, enemyXpWeight } from '../data/xpTables';
+import { passiveXpForLevel, passiveXpPerKill } from '../data/xpTables';
 import { EventBus } from '../game/EventBus';
 
 /**
@@ -33,23 +33,21 @@ export class PassiveAbilityManager {
     }
   }
 
-  addKillXp(enemyType: EnemyType, wave: number): void {
+  addKillXp(wave: number): void {
     // Weight the kill by how much enemy it actually was, so passive XP keeps
     // pace with the HP curve rather than falling behind it exponentially.
-    const weight = enemyXpWeight(enemyType, wave);
     for (const def of PASSIVE_ABILITIES) {
       const s = this.state[def.id];
       if (!s || !s.unlocked) continue;
-      this.addXp(def, s, def.xpPerKill * weight);
+      this.addXp(def, s, passiveXpPerKill(def, wave));
     }
   }
 
   addWaveClearXp(wave: number): void {
-    const weight = enemyXpWeight('normal', wave);
     for (const def of PASSIVE_ABILITIES) {
       const s = this.state[def.id];
       if (!s || !s.unlocked) continue;
-      this.addXp(def, s, def.xpPerWave * weight);
+      this.addXp(def, s, passiveXpPerKill(def, wave) * def.xpPerWave);
     }
   }
 

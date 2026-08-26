@@ -296,6 +296,8 @@ place.
 
 ## Edge cases
 
+- **`LootManager.setValueBonus(v)`** sets the Prospector talent's orb value
+  bonus; called from `Game.applyResolvedStats` with `stats.orbValueBonus`.
 - **A boss pack all dying at once** stays inside the cap by construction; the test asserts it at
   waves 10 through 200.
 - **An orb spawned on top of the tower** arrives immediately (`arriveRadius`, 26 px) and pays the

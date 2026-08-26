@@ -263,3 +263,6 @@ keeps the global slow and the ability's own `activeTimer` in step.
 The arcane core's +50% ability damage needs nothing here: it resolves through
 `abilityDamageMultiplier` in the stat pipeline like every other source. See
 [core-system.md](core-system.md).
+
+`AbilityManager.setEchoChance(v)` sets the Spell Echo talent's echo chance;
+called from `Game.applyResolvedStats` with `stats.abilityEchoChance`.

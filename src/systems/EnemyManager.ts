@@ -135,6 +135,8 @@ export class EnemyManager {
   private critGoldBonus = 0;
   /** Multiplier applied to enemy movement speed on spawn (default 1). */
   private speedMult = 1;
+  /** Bastion talent: thorns damage on knockback. */
+  private thornsOnKnockback = false;
   /** Multiplier applied to enemy damage dealt to the tower (default 1). */
   private damageToTowerMult = 1;
   /**
@@ -282,6 +284,11 @@ export class EnemyManager {
 
   setCritGoldBonus(bonus: number): void {
     this.critGoldBonus = bonus;
+  }
+
+  /** Bastion talent: deal thorns damage when knockback is applied. */
+  setThornsOnKnockback(enabled: boolean): void {
+    this.thornsOnKnockback = enabled;
   }
 
   setManaFullGoldBonus(bonus: number): void {
@@ -598,6 +605,11 @@ export class EnemyManager {
     enemy.x += (dx / d) * force;
     enemy.y += (dy / d) * force;
     this.noteBossControlled(enemy);
+    // Bastion talent: thorns damage on knockback.
+    if (this.thornsOnKnockback && this.thorns > 0) {
+      const thornDmg = Math.floor(enemy.maxHp * this.thorns);
+      if (thornDmg > 0) this.damage(enemy, thornDmg, false);
+    }
   }
 
   /**
@@ -1481,6 +1493,7 @@ export class EnemyManager {
       remaining: travel,
       travel,
       alive: true,
+      ownerId: e.id,
     });
     this.bus.emit('siege_fired', { x: e.x, y: e.y });
   }
@@ -1507,7 +1520,7 @@ export class EnemyManager {
       s.alive = false;
       anyLanded = true;
       landed += s.damage;
-      this.bus.emit('siege_impact', { x: s.x, y: s.y });
+      this.bus.emit('siege_impact', { x: s.x, y: s.y, ownerId: s.ownerId });
     }
     if (landed > 0) this.bus.emit('tower_damaged', landed);
     if (anyLanded) this.hostileShots = this.hostileShots.filter(s => s.alive);
@@ -1540,6 +1553,7 @@ export class EnemyManager {
     this.goldOnKillBonus = 0;
     this.critGoldBonus = 0;
     this.speedMult = 1;
+    this.thornsOnKnockback = false;
     this.damageToTowerMult = 1;
     this.enrageDamageMult = 1;
     this.enrageSpeedMult = 1;
