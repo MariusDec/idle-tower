@@ -10,7 +10,7 @@ Persists game state to `localStorage` under key `the-tower-save`.
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 15
+  version: number;       // current = 16
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -45,6 +45,7 @@ interface PersistentState {
 | v12 → v13 | `cores` — unlocked tower cores and the run's selection (`docs/core-system.md`) |
 | v13 → v14 | `pacing` — the risk dial, early-call momentum and the kill combo (`docs/wave-system.md`) |
 | v14 → v15 | the offline cap became **derived** — 8h base + 8h/level of `ap_idle_time` (no field to seed; see below) |
+| v15 → v16 | the `multishot` ability was renamed `rocket_barrage` — its state key in `abilities` and its key in `prestige.autoCastEnabled` move with it, values kept |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -97,6 +98,13 @@ never inside that window, so restoring one would be restoring a number that was
 already gone. Same rule as live enemies (`bossRun`) and live orbs
 (`docs/loot-system.md`). See [wave-system.md](wave-system.md#risk-dial-gameplay-plan-74).
 
+`migrateV15toV16` is the ladder's first **rename** rather than a seed: the
+`multishot` ability became `rocket_barrage`, so its key moves in `abilities`
+(stored level and XP untouched) and in `prestige.autoCastEnabled` (the player's
+per-ability on/off choice untouched). Both containers are guarded for absence
+or a shape mismatch before they are touched, so a hand-edited or partially
+formed save cannot crash the walk.
+
 ## Auto-Save
 
 `SaveManager.tick(realDt, state, onSave)` is called once per frame from
@@ -122,7 +130,7 @@ write.
 ## Validation
 
 `validate()` checks:
-- version is 2..15 (older versions are walked up the migration ladder)
+- version is 2..16 (older versions are walked up the migration ladder)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress

@@ -129,7 +129,7 @@ tower shoot this?" for every target-selection site in the game:
 - `Tower.acquireTarget`
 - the swept-collision loop and every blessing bounce in `ProjectileManager`
 - every picker in `AbilityManager` — highest-HP (Meteor), chain-bounce
-  (Chain Lightning), Execute, Multishot, and the field-wide AoE
+  (Chain Lightning), Execute, Rocket Barrage, and the field-wide AoE
 
 It is false for a **burrowed burrower**, for a **splitter child inside its spawn
 protection**, and for a **boss mid-phase-transition** (§3.1's invulnerable

@@ -48,7 +48,7 @@ const AUTO_CAST_PRIORITY: AbilityId[] = [
   'meteor_strike',
   'chain_lightning',
   'rain_of_arrows',
-  'multishot',
+  'rocket_barrage',
   'precision_shot',
   'berserk',
   'vampiric_aura',

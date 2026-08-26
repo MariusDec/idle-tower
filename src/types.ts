@@ -66,7 +66,7 @@ export type AbilityId =
   | 'chain_lightning'
   | 'vampiric_aura'
   | 'execute'
-  | 'multishot';
+  | 'rocket_barrage';
 
 export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'progression' | 'stats' | 'settings' | 'talents' | 'equipment';
 
@@ -263,6 +263,12 @@ export interface HostileShot {
   alive: boolean;
 }
 
+/**
+ * How a projectile draws itself. `'rocket'` opts into the Rocket Barrage
+ * sprite set (hull + exhaust flame); anything else renders as the core's bolt.
+ */
+export type ProjectileVisual = 'default' | 'rocket';
+
 export interface Projectile {
   id: number;
   x: number;
@@ -287,6 +293,8 @@ export interface Projectile {
   splashRadius?: number;
   /** Fraction of the landed hit everything else in `splashRadius` takes. */
   splashFraction?: number;
+  /** Sprite set to draw this projectile with (Rocket Barrage rounds are 'rocket'). */
+  visual?: ProjectileVisual;
 }
 
 export interface ResourceState {

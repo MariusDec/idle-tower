@@ -218,7 +218,7 @@ const BOLT_LENGTH = entity(9);
 const TRACER_FIRE_RATE = 5;
 /** Seconds a tracer lives. Two frames at 60 fps, so a dropped frame does not eat it. */
 const TRACER_TIME = 0.035;
-/** Ceiling on live tracers. A multishot fan is a handful; this is the safety net. */
+/** Ceiling on live tracers. A Rocket Barrage fan is a handful; this is the safety net. */
 const TRACER_CAP = 16;
 /** How far a tracer reaches from the muzzle, in world units. */
 const TRACER_LENGTH = world(230);
@@ -454,9 +454,9 @@ export class Renderer {
   /**
    * How many shots went into the flash currently burning down (§4.4).
    *
-   * A tower with multishot, scatter and back shots empties five or six bolts in
-   * one substep, and one flash of a fixed size for all of them is the same
-   * flash a single-shot tower gets. This scales it.
+   * A volley of scatter and back shots — or a Rocket Barrage fan — empties
+   * five or six bolts in one substep, and one flash of a fixed size for all of
+   * them is the same flash a single-shot tower gets. This scales it.
    */
   private muzzleBurst = 1;
   /** Live tracers (§4.4). Pooled at `TRACER_CAP`. */
@@ -2083,9 +2083,9 @@ export class Renderer {
    * At a high enough fire rate the individual bolts stop being individually
    * visible — they blur into a stream, and a stream carries no information
    * about *rate*. A one-frame line of fire from the muzzle along each shot's
-   * heading is what puts the rate back: the faster the tower fires, the more
-   * of the arena is criss-crossed with them, and a multishot fan draws its own
-   * fan.
+    * heading is what puts the rate back: the faster the tower fires, the more
+    * of the arena is criss-crossed with them, and a Rocket Barrage fan draws
+    * its own.
    *
    * One cached tapered sprite, rotated and blitted, additively. Nothing here
    * allocates and the pool is capped at `TRACER_CAP`.
@@ -4181,13 +4181,18 @@ export class Renderer {
     const core = this.core;
 
     // Pass 1, additive: trails, magic bodies, and impact sparks. Everything
-    // that is *light* rather than matter.
+    // that is *light* rather than matter. A rocket swaps its trail for an
+    // exhaust flame — same additive pass, different light.
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const p of projectiles) {
       if (!p.alive) continue;
       const magic = p.damageType === 'magic';
-      const sprite = magic ? this.getMagicShotSprite(core) : this.getTrailSprite(core, (p.splashRadius ?? 0) > 0);
+      const sprite = p.visual === 'rocket'
+        ? this.getRocketExhaustSprite()
+        : magic
+          ? this.getMagicShotSprite(core)
+          : this.getTrailSprite(core, (p.splashRadius ?? 0) > 0);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(Math.atan2(p.vy, p.vx));
@@ -4201,7 +4206,9 @@ export class Renderer {
     // read as one against a bright explosion, which additive blending cannot do.
     for (const p of projectiles) {
       if (!p.alive || p.damageType === 'magic') continue;
-      const sprite = this.getBoltSprite(core, (p.splashRadius ?? 0) > 0);
+      const sprite = p.visual === 'rocket'
+        ? this.getRocketSprite()
+        : this.getBoltSprite(core, (p.splashRadius ?? 0) > 0);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(Math.atan2(p.vy, p.vx));
@@ -4296,6 +4303,86 @@ export class Renderer {
           return exhaustive;
         }
       }
+    });
+  }
+
+  /**
+   * A Rocket Barrage round: an elongated hull with fins, pointing along +x so
+   * a rotate-and-blit aims it, in the same family as the bolt heads above.
+   *
+   * Rockets come from an *ability* rather than the barrel, so they wear the
+   * ember/gold of explosions here instead of any core's tint — whatever build
+   * fired them, they must not read as one of its shots.
+   */
+  private getRocketSprite(): HTMLCanvasElement {
+    const L = BOLT_LENGTH * 1.5;
+    return this.part('rocket', L * 3.4, (g) => {
+      g.lineJoin = 'round';
+      // Fins first, so the hull overlaps their roots.
+      g.fillStyle = withAlpha(INK['950'], 0.9);
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.moveTo(-L * 0.5, dir * L * 0.12);
+        g.lineTo(-L * 1.05, dir * L * 0.52);
+        g.lineTo(-L * 0.1, dir * L * 0.18);
+        g.closePath();
+        g.fill();
+      }
+      // Hull: slim, dark, with an outline like every other physical head.
+      g.fillStyle = withAlpha(INK['500'], 0.95);
+      g.beginPath();
+      g.moveTo(L * 1.05, 0);
+      g.quadraticCurveTo(L * 0.4, -L * 0.26, -L * 0.9, -L * 0.22);
+      g.lineTo(-L * 0.9, L * 0.22);
+      g.quadraticCurveTo(L * 0.4, L * 0.26, L * 1.05, 0);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = withAlpha(INK['950'], 0.8);
+      g.lineWidth = entity(1.1);
+      g.stroke();
+      // Ember nose cone and a gold warhead band — the accent pair.
+      g.fillStyle = withAlpha(FX.ember, 0.9);
+      g.beginPath();
+      g.moveTo(L * 1.05, 0);
+      g.quadraticCurveTo(L * 0.72, -L * 0.17, L * 0.45, -L * 0.2);
+      g.lineTo(L * 0.45, L * 0.2);
+      g.quadraticCurveTo(L * 0.72, L * 0.17, L * 1.05, 0);
+      g.closePath();
+      g.fill();
+      g.fillStyle = withAlpha(FX.gold, 0.85);
+      g.fillRect(L * 0.08, -L * 0.21, L * 0.14, L * 0.42);
+    });
+  }
+
+  /**
+   * The additive half of a rocket: a short exhaust flame pointing backwards
+   * (−x after rotation), standing in for the straight-line trail a bolt gets.
+   * A rocket turns hard toward its target, so a fixed streak would lag behind
+   * the heading; a flame at the nozzle is always correct no matter where the
+   * hull is pointed.
+   */
+  private getRocketExhaustSprite(): HTMLCanvasElement {
+    const len = BOLT_LENGTH * 3;
+    return this.part('rocket-exhaust', len * 2.2, (g) => {
+      const grad = g.createLinearGradient(BOLT_LENGTH * 0.3, 0, -len, 0);
+      grad.addColorStop(0, withAlpha(FX.gold, 0.85));
+      grad.addColorStop(0.35, withAlpha(FX.ember, 0.5));
+      grad.addColorStop(1, withAlpha(FX.ember, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(BOLT_LENGTH * 0.3, -BOLT_LENGTH * 0.34);
+      g.quadraticCurveTo(-len * 0.35, -BOLT_LENGTH * 0.52, -len, 0);
+      g.quadraticCurveTo(-len * 0.35, BOLT_LENGTH * 0.52, BOLT_LENGTH * 0.3, BOLT_LENGTH * 0.34);
+      g.closePath();
+      g.fill();
+      // Hot core right at the nozzle.
+      const hot = g.createRadialGradient(BOLT_LENGTH * 0.1, 0, 0, BOLT_LENGTH * 0.1, 0, BOLT_LENGTH * 0.8);
+      hot.addColorStop(0, withAlpha(INK['050'], 0.9));
+      hot.addColorStop(1, withAlpha(INK['050'], 0));
+      g.fillStyle = hot;
+      g.beginPath();
+      g.arc(BOLT_LENGTH * 0.1, 0, BOLT_LENGTH * 0.8, 0, Math.PI * 2);
+      g.fill();
     });
   }
 

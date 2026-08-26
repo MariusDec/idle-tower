@@ -1568,7 +1568,22 @@ export class Game {
         case 'execute_damage':
           this.effects.emitExecuteSlash(tx, ty);
           break;
+        case 'rocket_barrage':
+          // The rockets themselves are the visual; all the tower gets is a
+          // quick burst as the volley leaves it.
+          this.effects.emitHitSparks(t.x, t.y, FX.ember, 8);
+          break;
       }
+    });
+    // Rocket Barrage rounds — and mortar-blessed shots, which carry the same
+    // splashRadius — pop a small ring where they land. These rings are
+    // DECORATIVE: the damage went through the normal impact path already, so
+    // they carry no damage payload and stay inside the effects-system quality
+    // knob rather than becoming a second, untracked damage channel.
+    this.bus.on('projectile_exploded', (payload: unknown) => {
+      const p = payload as { x: number; y: number; radius: number };
+      this.effects.emitShockwaveRing(p.x, p.y, Math.min(p.radius, world(40)), withAlpha(FX.ember, 0.75), 4);
+      this.effects.emitHitSparks(p.x, p.y, FX.ember, 5);
     });
     this.bus.on('chain_lightning', (payload: unknown) => {
       const p = payload as { path: { x: number; y: number }[] };
@@ -3588,6 +3603,7 @@ export class Game {
     this.enemyMgr.reset();
     this.projectileMgr.reset();
     this.abilityMgr.reset();
+    this.abilityMgr.resetLevels();
     this.effects.reset();
     // Plan §2.6: passives and equipment are *character* progression, like
     // talents and tower XP — they persist through an ascension and are only
@@ -4086,13 +4102,14 @@ export class Game {
 
   private applyFullTranscendenceReset(): void {
     this.automation.reset();
-    this.abilityMgr.resetLevels();
     // Passives and equipment are *character* progression, not run progression:
     // they survive a transcendence alongside talents, tower XP, research and
-    // achievements. Only the gold-priced layers (upgrades, ability levels) and
-    // the ascension layer itself are wiped. Gear in particular is a slow,
-    // low-drop-rate collection — deleting it at the one moment a player is
-    // asked to give everything else up made transcending read as a punishment.
+    // achievements. The gold-priced layers (tower upgrades, ability levels)
+    // are wiped by applySavedStateReset itself — ability levels became
+    // run-scoped and reset on every ascension — so only the ascension layer
+    // is cleared here. Gear in particular is a slow, low-drop-rate
+    // collection — deleting it at the one moment a player is asked to give
+    // everything else up made transcending read as a punishment.
     this.applySavedStateReset();
     this.state.prestige.apSpent = {};
     this.state.prestige.automationFlags = {

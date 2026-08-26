@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EventBus } from '../src/core/EventBus';
+import { EventBus } from '../src/game/EventBus';
 import { PrestigeManager } from '../src/systems/PrestigeManager';
 import { AP_PERKS, AP_PERK_BY_ID, FIRST_ASCENSION_AP, perkCost } from '../src/data/prestige';
 import { CORES } from '../src/data/cores';
@@ -86,8 +86,8 @@ describe('AP tree gates (revamp §8, gates 10 and 11)', () => {
 });
 
 describe('AP tree shape (revamp §8.2 / §8.4)', () => {
-  it('is twelve perks in four tiers', () => {
-    expect(AP_PERKS).toHaveLength(12);
+  it('is thirteen perks in four tiers', () => {
+    expect(AP_PERKS).toHaveLength(13);
     expect(new Set(AP_PERKS.map(p => p.tier))).toEqual(new Set([1, 2, 3, 4]));
   });
 

@@ -41,7 +41,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
 | [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, progression tab, milestone table |
 | [docs/run-summary.md](docs/run-summary.md) | Post-run debrief modal, per-run history ring buffer, stats tab |
-| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v14) and the migration ladder, debounced auto-save, offline progress |
+| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v16) and the migration ladder, debounced auto-save, offline progress |
 
 ## Content at a glance
 
@@ -71,7 +71,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Enemy threat classes | 3 | `src/data/pacing.ts` |
 | Icons (distinct artwork) | 197 | `public/icons/sprite.svg` |
 | Icon references across tables | 249 | `scripts/fetch-icons.mjs` |
-| Save version | 15 | `src/systems/SaveManager.ts` |
+| Save version | 16 | `src/systems/SaveManager.ts` |
 
 ## Commands
 

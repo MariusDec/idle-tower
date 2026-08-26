@@ -405,7 +405,10 @@ export class AbilityPanel {
 
     const footer = document.createElement('p');
     footer.className = 'panel-note';
-    footer.textContent = 'Each ability unlocks at a different wave and can be upgraded up to 10 times from this panel.';
+    // Derived, not hardcoded: Rocket Barrage caps at 15 while the rest cap at
+    // 10, so "up to 10 times" was already wrong for one of the ten cards.
+    const deepestMax = Math.max(...ABILITIES.map(a => a.maxLevel));
+    footer.textContent = `Each ability unlocks at a different wave and can be upgraded up to ${deepestMax - 1} times from this panel.`;
     parent.appendChild(footer);
   }
 

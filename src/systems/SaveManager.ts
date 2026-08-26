@@ -27,7 +27,7 @@ import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 15;
+const SAVE_VERSION = 16;
 
 function defaultWaveModifier() {
   return {
@@ -479,10 +479,33 @@ function migrateV14toV15(_data: Record<string, unknown>): void {
   // no-op: the cap is computed, never persisted.
 }
 
+/**
+ * v16: the `multishot` ability became `rocket_barrage`.
+ *
+ * A rename, not a transform: the ability's saved state and its auto-cast
+ * toggle keep their exact values under the new key. Both live in free-form
+ * maps, so each container is guarded for absence or a shape mismatch before
+ * it is touched.
+ */
+function migrateV15toV16(data: Record<string, unknown>): void {
+  const abilities = data.abilities as Record<string, unknown> | undefined;
+  if (isObject(abilities) && abilities.multishot !== undefined) {
+    abilities.rocket_barrage = abilities.multishot;
+    delete abilities.multishot;
+  }
+  const prestige = data.prestige as Record<string, unknown> | undefined;
+  if (!isObject(prestige)) return;
+  const autoCast = prestige.autoCastEnabled;
+  if (isObject(autoCast) && autoCast.multishot !== undefined) {
+    autoCast.rocket_barrage = autoCast.multishot;
+    delete autoCast.multishot;
+  }
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -511,6 +534,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 12) { migrateV12toV13(data); data.version = 13; }
   if (data.version === 13) { migrateV13toV14(data); data.version = 14; }
   if (data.version === 14) { migrateV14toV15(data); data.version = 15; }
+  if (data.version === 15) { migrateV15toV16(data); data.version = 16; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;

@@ -12,7 +12,7 @@ export type AbilityEffectType =
   | 'crit_buff'
   | 'lifesteal_buff'
   | 'execute_damage'
-  | 'multishot';
+  | 'rocket_barrage';
 
 export interface AbilityDef {
   id: AbilityId;
@@ -40,6 +40,10 @@ export interface AbilityDef {
   cooldownReductionPerLevel: number;
   /** Delta applied to effectValue per level above 1. */
   effectValuePerLevel: number;
+  /** Base projectile count for abilities that fire a volley. */
+  effectCount?: number;
+  /** Extra projectiles per level above 1. */
+  effectCountPerLevel?: number;
   /** Extra seconds added to duration per level above 1. */
   durationPerLevel: number;
   /** XP earned per cast of this ability. */
@@ -64,6 +68,11 @@ export interface AbilityDef {
  *   1.8 the same level costs `400 * 1.8^9` = 79K — expensive, but reachable,
  *   which is what makes the ability XP track (which discounts this cost and
  *   levels the ability on its own) worth engaging with.
+ * - **Top-end base costs are capped for per-run affordability.** Once ability
+ *   levels became ascension-scoped — re-bought with gold every run instead of
+ *   carried across ascensions — Execute (`69600 → 20000`) and Vampiric Aura
+ *   (`107000 → 25000`) sat out of a mid-run budget's reach, so their bases
+ *   were lowered while keeping the shared 1.85 growth factor.
  */
 export const ABILITIES: AbilityDef[] = [
   {
@@ -135,7 +144,7 @@ export const ABILITIES: AbilityDef[] = [
   {
     id: 'precision_shot',
     name: 'Precision Shot',
-    description: 'Boosts crit chance by {dmg}% for {dur}s.',
+    description: 'Boosts crit chance by {dmg}% and multiplies crit damage by {crit}x for {dur}s.',
     manaCost: 35,
     cooldown: 22,
     duration: 6,
@@ -223,7 +232,7 @@ export const ABILITIES: AbilityDef[] = [
   {
     id: 'execute',
     name: 'Execute',
-    description: 'Kills non-boss enemies below {dmg}% HP. Heavy damage to wounded bosses.',
+    description: 'Kills non-boss enemies below {dmg}% HP. Bosses below {boss}% HP take 5x damage.',
     manaCost: 50,
     cooldown: 30,
     duration: 0,
@@ -234,7 +243,7 @@ export const ABILITIES: AbilityDef[] = [
     hotkey: '8',
     unlockWave: 50,
     maxLevel: 10,
-    upgradeBaseCost: 69600,
+    upgradeBaseCost: 20000,
     upgradeCostGrowth: 1.85,
     manaCostPerLevel: 6,
     cooldownReductionPerLevel: 0.8,
@@ -243,13 +252,13 @@ export const ABILITIES: AbilityDef[] = [
     xpPerCast: 7,
   },
   {
-    id: 'multishot',
-    name: 'Multishot',
-    description: 'Fires {dmg} homing projectiles that seek enemies.',
+    id: 'rocket_barrage',
+    name: 'Rocket Barrage',
+    description: 'Fires {count} homing rockets at nearby enemies. Each deals {dmg}x tower damage and explodes.',
     manaCost: 45,
     cooldown: 20,
     duration: 0,
-    effectType: 'multishot',
+    effectType: 'rocket_barrage',
     effectValue: 2,
     icon: 'split-arrows',
     color: '#ff6b35',
@@ -260,29 +269,31 @@ export const ABILITIES: AbilityDef[] = [
     upgradeCostGrowth: 1.85,
     manaCostPerLevel: 3,
     cooldownReductionPerLevel: 0.3,
-    effectValuePerLevel: 0.5,
+    effectValuePerLevel: 0.25,
+    effectCount: 6,
+    effectCountPerLevel: 0.3,
     durationPerLevel: 0,
     xpPerCast: 6,
   },
   {
     id: 'vampiric_aura',
     name: 'Vampiric Aura',
-    description: 'Multiplies lifesteal by {dmg}x and adds HP regen for {dur}s.',
+    description: 'Gain +{ls}% lifesteal and regenerate {rg}% max HP per second for {dur}s.',
     manaCost: 45,
     cooldown: 35,
     duration: 8,
     effectType: 'lifesteal_buff',
-    effectValue: 3,
+    effectValue: 0.06,
     icon: 'fangs-circle',
     color: '#c44a4a',
     hotkey: '9',
     unlockWave: 55,
     maxLevel: 10,
-    upgradeBaseCost: 107000,
+    upgradeBaseCost: 25000,
     upgradeCostGrowth: 1.85,
     manaCostPerLevel: 5,
     cooldownReductionPerLevel: 1.0,
-    effectValuePerLevel: 0.5,
+    effectValuePerLevel: 0.02,
     durationPerLevel: 0.4,
     xpPerCast: 7,
   },
@@ -302,6 +313,8 @@ export interface EffectiveAbilityStats {
   cooldown: number;
   duration: number;
   effectValue: number;
+  /** Effective projectile count, for volley abilities (Rocket Barrage). */
+  count?: number;
   /** Human-friendly effect value for display (e.g. slow % for Frost Nova). */
   displayEffectValue: string;
   /** Human-friendly duration in seconds. */
@@ -323,16 +336,58 @@ function stripTrailingZero(n: number, digits: number = 2): string {
   return s === '' || s === '-' ? '0' : s;
 }
 
+/**
+ * Level-scaled halves of the two buff abilities whose tooltips must quote what
+ * they actually grant (ability revamp phase 4).
+ *
+ * - Precision Shot's crit multiplier used to sit at a flat 1.5x at every
+ *   level while the upgrade pitch implied per-level growth; the curve is now
+ *   real (+10% crit damage per level above 1).
+ * - Vampiric Aura's regen grows alongside its lifesteal so the aura stays
+ *   self-sufficient sustain rather than a multiplier on a stat most builds
+ *   never invest in.
+ *
+ * Both live next to the table they describe because `buildAbilityDisplayText`
+ * needs them for the {crit}/{rg} tokens, and `AbilityManager` applies exactly
+ * these numbers — one source, no doc/code drift.
+ */
+/** Vampiric Aura's base regen, as a fraction of maxHP per second. */
+export const VAMPIRIC_REGEN = 0.01;
+/** Extra regen fraction per level above 1. */
+export const VAMPIRIC_REGEN_PER_LEVEL = 0.005;
+
+export function vampiricRegen(level: number): number {
+  return VAMPIRIC_REGEN + VAMPIRIC_REGEN_PER_LEVEL * (Math.max(1, level) - 1);
+}
+
+/** Crit multiplier at level 1. */
+export const CRIT_BUFF_DAMAGE_MULTIPLIER = 1.5;
+/** Extra crit multiplier per level above 1. */
+export const CRIT_BUFF_DAMAGE_PER_LEVEL = 0.1;
+
+export function precisionCritMultiplier(level: number): number {
+  return CRIT_BUFF_DAMAGE_MULTIPLIER + CRIT_BUFF_DAMAGE_PER_LEVEL * (Math.max(1, level) - 1);
+}
+
 /** Build a level-aware description string from the static template. */
 export function buildAbilityDisplayText(def: AbilityDef, level: number): string {
   const clampedLevel = Math.max(1, Math.min(def.maxLevel, level));
   const lvlOffset = clampedLevel - 1;
   const effectValue = def.effectValue + def.effectValuePerLevel * lvlOffset;
   const duration = def.duration + def.durationPerLevel * lvlOffset;
+  const count = def.effectCount !== undefined
+    ? def.effectCount + (def.effectCountPerLevel ?? 0) * lvlOffset
+    : undefined;
   return def.description
+    .replace('{count}', count !== undefined ? String(Math.floor(count)) : '0')
     .replace('{dmg}', stripTrailingZero(effectValue))
     .replace('{slow}', String(Math.round((1 - effectValue) * 100)))
-    .replace('{dur}', stripTrailingZero(duration));
+    .replace('{dur}', stripTrailingZero(duration))
+    // Lifesteal and regen are stored as fractions; the text quotes percent.
+    .replace('{ls}', stripTrailingZero(effectValue * 100))
+    .replace('{rg}', stripTrailingZero(vampiricRegen(clampedLevel) * 100))
+    .replace('{crit}', stripTrailingZero(precisionCritMultiplier(clampedLevel)))
+    .replace('{boss}', String(Math.floor(effectValue / 2)));
 }
 
 export function computeEffectiveStats(def: AbilityDef, level: number): EffectiveAbilityStats {
@@ -342,6 +397,9 @@ export function computeEffectiveStats(def: AbilityDef, level: number): Effective
   const cooldown = Math.max(1, def.cooldown - def.cooldownReductionPerLevel * lvlOffset);
   const duration = def.duration + def.durationPerLevel * lvlOffset;
   const effectValue = def.effectValue + def.effectValuePerLevel * lvlOffset;
+  const count = def.effectCount !== undefined
+    ? def.effectCount + (def.effectCountPerLevel ?? 0) * lvlOffset
+    : undefined;
 
   return {
     level: clampedLevel,
@@ -349,7 +407,8 @@ export function computeEffectiveStats(def: AbilityDef, level: number): Effective
     cooldown,
     duration,
     effectValue,
-    displayEffectValue: formatEffectForDisplay(def.effectType, effectValue),
+    ...(count !== undefined ? { count } : {}),
+    displayEffectValue: formatEffectForDisplay(def.effectType, effectValue, count),
     displayDuration: formatDurationForDisplay(duration),
     displayText: buildAbilityDisplayText(def, clampedLevel),
     upgradeCost: 0,
@@ -358,7 +417,7 @@ export function computeEffectiveStats(def: AbilityDef, level: number): Effective
   };
 }
 
-function formatEffectForDisplay(type: AbilityEffectType, value: number): string {
+function formatEffectForDisplay(type: AbilityEffectType, value: number, count?: number): string {
   switch (type) {
     case 'aoe_damage':
     case 'fire_rate_buff':
@@ -371,11 +430,14 @@ function formatEffectForDisplay(type: AbilityEffectType, value: number): string 
     case 'crit_buff':
       return `+${stripTrailingZero(value)}%`;
     case 'lifesteal_buff':
-      return `${stripTrailingZero(value)}x`;
+      // Additive lifesteal reads as "+N%", not "Nx" of a base that may be zero.
+      return `+${stripTrailingZero(value * 100)}%`;
     case 'execute_damage':
       return `${stripTrailingZero(value)}%`;
-    case 'multishot':
-      return `${stripTrailingZero(value, 0)}x`;
+    case 'rocket_barrage':
+      // Rockets and per-rocket damage are the two numbers a player tunes, so
+      // the tooltip reads them together rather than hiding one behind "2x".
+      return `${Math.floor(count ?? 0)} @ ${stripTrailingZero(value)}x`;
   }
 }
 

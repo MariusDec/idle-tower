@@ -1,4 +1,4 @@
-import type { DamageType, Enemy, Projectile, TowerState } from '../types';
+import type { DamageType, Enemy, Projectile, ProjectileVisual, TowerState } from '../types';
 import { nextId } from '../utils/math';
 import { PROJECTILE_HIT_PAD, world } from '../data/arena';
 import { PROJECTILE_SPEED } from '../data/tower';
@@ -80,6 +80,8 @@ export interface FireOptions {
   splashRadius?: number;
   /** Fraction of the landed hit that everything else in the blast takes. */
   splashFraction?: number;
+  /** Sprite set to draw with; defaults to the core's ordinary bolt. */
+  visual?: ProjectileVisual;
 }
 
 export class ProjectileManager {
@@ -231,6 +233,7 @@ export class ProjectileManager {
         age: 0,
         splashRadius: opts.splashRadius,
         splashFraction: opts.splashFraction,
+        visual: opts.visual,
       };
 
       if (opts.piercing) {
@@ -401,6 +404,8 @@ export class ProjectileManager {
           // ── blessing behaviors on impact (plan §1.3) ──
           if (p.splashRadius && p.splashRadius > 0) {
             this.applyBlastSplash(p, enemy, final);
+            // Damage is already applied here; the ring is presentation only.
+            this.bus.emit('projectile_exploded', { x: enemy.x, y: enemy.y, radius: p.splashRadius });
           }
           if (this.blessings.has('ricochet')) {
             this.applyRicochet(enemy, final);

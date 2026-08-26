@@ -46,11 +46,10 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `upgrade_purchased` | `{ id, level, levelsGained, goldSpent }` | UpgradeManager | UIManager, Game (purchase counter + contracts' `spend_gold`) |
 | `upgrades_changed` | `Record<string, number>` | UpgradeManager | Game (recalc effects) |
 | `ability_cast` | `{ id, def }` | AbilityManager | UIManager (toast, flash) |
-| `ability_visual` | `{ id, def }` | AbilityManager | Game (particle effects) |
-| `ability_ready` | `{ id }` | AbilityManager | — |
+| `ability_visual` | `{ id, def, target? }` | AbilityManager | Game (particle effects) |
 | `ability_upgraded` | `{ id, level }` | AbilityManager | UIManager (toast, flash), Game (save) |
-| `aoe_hit` | `{ hitCount, totalDamage, perEnemy }` | AbilityManager | — |
 | `projectile_fired` | `{ projectile, isCrit }` | ProjectileManager | — |
+| `projectile_exploded` | `{ x, y, radius }` | ProjectileManager (splash impacts) | Game (decorative ring + sparks), AudioManager (throttled boom) |
 | `ascension_performed` | `{ apGained, rpGained, totalAP, lifetimeAP, ascensions }` | PrestigeManager | — |
 | `transcendence_performed` | `{ tpGained, totalTP, transcendences }` | PrestigeManager | — |
 | `ap_spent` | `{ id, level }` | PrestigeManager | — |
@@ -72,4 +71,4 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `equipment_dropped` | `{ equipment }` | EquipmentManager | — |
 | `equipment_equipped` | `{ slot, equipment }` | EquipmentManager | — |
 | `equipment_unequipped` | `{ slot }` | EquipmentManager | — |
-| `multishot_fired` | `{ count, totalDamage }` | AbilityManager | — |
+| `rockets_fired` | `{ count, totalDamage }` | AbilityManager (Rocket Barrage) | AudioManager (launch whoosh) |

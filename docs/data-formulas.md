@@ -48,15 +48,16 @@ The tower itself has no base damage or HP. Both are provided by the `damage` and
 
 ## Ability Definitions (`src/data/abilities.ts`)
 
-9 abilities (slots 1–4 general purpose, 5–9 boss-killing kit), each upgradable 1 → 10: id, name, description, manaCost, cooldown, duration, effectType (`aoe_damage` / `slow` / `fire_rate_buff` / `gold_buff` / `single_target_damage` / `chain_damage` / `crit_buff` / `lifesteal_buff` / `execute_damage`), effectValue, hotkey (1-9), **unlockWave**, **maxLevel**, **upgradeBaseCost**, **upgradeCostGrowth**, **manaCostPerLevel**, **cooldownReductionPerLevel**, **effectValuePerLevel**, **durationPerLevel**. See `docs/ability-system.md` for the per-ability table.
+10 abilities, each upgradable 1 → `maxLevel` (10; Rocket Barrage goes to 15): id, name, description, manaCost, cooldown, duration, effectType (`aoe_damage` / `slow` / `fire_rate_buff` / `gold_buff` / `single_target_damage` / `chain_damage` / `crit_buff` / `lifesteal_buff` / `execute_damage` / `rocket_barrage`), effectValue, hotkey (1–9 plus 0), **unlockWave**, **maxLevel**, **upgradeBaseCost**, **upgradeCostGrowth**, **manaCostPerLevel**, **cooldownReductionPerLevel**, **effectValuePerLevel**, **durationPerLevel**, **xpPerCast**, and — for Rocket Barrage's volley — optional `effectCount` / `effectCountPerLevel`. See `docs/ability-system.md` for the per-ability table.
 
-### New Effect Types (slots 5–9)
+### Effect Type Behaviours
 
 - `single_target_damage` (Meteor Strike): heavy hit on highest-HP enemy, 2× splash to all enemies within 60 px of the impact.
-- `chain_damage` (Chain Lightning): bounces start at the nearest enemy to the tower; each subsequent bounce picks the nearest unhit enemy within 200 px. Damage = `towerDamage × value × 0.65^index × damageMultiplier`. Bounces = `5 + (level - 1)`, capped at 9.
-- `crit_buff` (Precision Shot): adds `(value / 100)` to the tower's crit chance (clamped to 1.0) and 1.5× to the crit multiplier for the duration.
-- `lifesteal_buff` (Vampiric Aura): multiplies the tower's lifesteal by `value` and adds +1% maxHP/s regen for the duration.
+- `chain_damage` (Chain Lightning): bounces start at the nearest enemy to the tower; each subsequent bounce picks the nearest unhit enemy within 200 px. Damage = `towerDamage × value × 0.65^index × damageMultiplier`. Bounces = `5 + floor(level / 2)`, capped at 9 (talents can push both).
+- `crit_buff` (Precision Shot): adds `(value / 100)` to the tower's crit chance (clamped to 1.0) and multiplies crit damage by `precisionCritMultiplier(level)` = `1.5 + 0.1 × (level − 1)` for the duration.
+- `lifesteal_buff` (Vampiric Aura): **adds** `value` (`+6% +2%/level`) to the tower's lifesteal and adds `vampiricRegen(level)` = `1% + 0.5% × (level − 1)` of maxHP/s regen for the duration.
 - `execute_damage` (Execute): instantly kills non-boss enemies below `value%` HP; deals 5× damage to bosses below `value / 2%` HP.
+- `rocket_barrage` (Rocket Barrage): fires `floor(effectCount)` homing rockets (`6 + 0.3/level`, so ~10 at L15), each dealing `effectValue × towerDamage` (`2 + 0.25/level`) through the normal impact path with a half-damage splash in a 60 px blast.
 
 ## Prestige Perks (`src/data/prestige.ts`)
 

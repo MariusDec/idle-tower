@@ -102,7 +102,7 @@ export const UPGRADES: UpgradeDef[] = [
      * into a runaway — the verified candidate with both geometric walled at
      * wave 140. Composed ceiling from the upgrade alone is 7.75 shots/s.
      *
-     * The ceiling (`+0.15`/level to L45) is §5.1's; the **price** is steeper
+     * The ceiling (`+0.1`/level to L45) is §5.1's; the **price** is steeper
      * than §5.3's 40 / 1.18. Cheap enough and the line alone covers enemy-count
      * growth for a hundred waves; too dear and wave 10's boss — 614 effective
      * HP behind armor, in a 139 s budget — is unbeatable at any damage table.
@@ -111,7 +111,7 @@ export const UPGRADES: UpgradeDef[] = [
      */
     baseCost: 25,
     costGrowth: 1.30,
-    effectPerLevel: 0.15,
+    effectPerLevel: 0.1,
     effectType: 'add',
     maxLevel: 45,
     category: 'tower',

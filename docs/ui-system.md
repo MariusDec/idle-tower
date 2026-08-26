@@ -8,7 +8,7 @@
 UIManager
   ├── HUD (top bar, never changes tab)
   ├── UpgradePanel (Attack / Defense / Utility sub-tabs)
-  ├── AbilityPanel (4 ability cards)
+  ├── AbilityPanel (10 ability cards)
   ├── PrestigePanel (Ascension card + AP perks)
   ├── TranscendencePanel (Transcendence card + TP perks + Automation)
   ├── ResearchPanel (4-category research tree)
