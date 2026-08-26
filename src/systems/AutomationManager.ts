@@ -48,7 +48,7 @@ const AUTO_CAST_PRIORITY: AbilityId[] = [
   'meteor_strike',
   'chain_lightning',
   'rain_of_arrows',
-  'multishot',
+  'rocket_barrage',
   'precision_shot',
   'berserk',
   'vampiric_aura',
@@ -60,6 +60,8 @@ export class AutomationManager {
   private readonly deps: AutomationDeps;
   /** Autonomy talent: fractional reduction of the auto-buy interval. */
   private autoBuyIntervalReduction = 0;
+  /** Quartermaster talent: minimum gold reserve fraction (0.4 = 40%). */
+  private quartermasterReserve = 0;
   private autoBuyTimer = 0;
   private autoCastTimer = 0;
   private autoAscendTimer = 0;
@@ -71,6 +73,11 @@ export class AutomationManager {
 
   setAutoBuyIntervalReduction(reduction: number): void {
     this.autoBuyIntervalReduction = Math.max(0, Math.min(0.9, reduction));
+  }
+
+  /** Quartermaster talent: minimum gold reserve for auto-buy. */
+  setQuartermasterReserve(reserve: number): void {
+    this.quartermasterReserve = Math.max(0, Math.min(0.9, reserve));
   }
 
   tick(dt: number): void {
@@ -149,7 +156,10 @@ export class AutomationManager {
     const upgrades = this.deps.upgrades;
     const state = this.deps.getState();
     const strategy: AutoBuyStrategy = state.prestige.autoBuyStrategy ?? 'balanced';
-    const reserve = Math.max(0, Math.min(0.9, state.prestige.autoBuyReserve ?? 0));
+    const reserve = Math.max(
+      Math.max(0, Math.min(0.9, state.prestige.autoBuyReserve ?? 0)),
+      this.quartermasterReserve,
+    );
 
     for (let i = 0; i < MAX_AUTO_BUYS_PER_TICK; i++) {
       const gold = state.resources.gold;
@@ -185,6 +195,16 @@ export class AutomationManager {
    * per-ability toggles from plan §3.1. Casting continues down the list rather
    * than stopping at the first success, so a tick that finds four ready
    * abilities fires all four instead of leaving three on cooldown-complete.
+   */
+  /**
+   * Gameplay plan §4.3: automation places targeted abilities too.
+   *
+   * There is deliberately nothing here to do it — `AbilityManager.tryCast`
+   * picks the densest cluster itself whenever no explicit placement is passed,
+   * which is the case for every automatic path (this one, the ability bar, and
+   * the hotkey with `instantCast` on). Putting the placer behind the cast
+   * rather than in front of it is what stops automation and the player's own
+   * instant-cast from being two implementations that drift.
    */
   private runAutoCast(wave: number): void {
     const enabled = this.deps.getState().prestige.autoCastEnabled ?? {};

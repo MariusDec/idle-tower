@@ -94,3 +94,10 @@ may be a per-level formula string with no single geometric ratio.
   times per substep.
 
 > Any new writer of `UpgradeManager.levels` must call `rebuildEvolutionCache()`.
+
+## Enlightenment Evolution
+
+The Wisdom upgrade's L25 evolution (`enlightenment`) is now an XP multiplier
+(`xpGainMultiplier`), not a talent-point faucet. It contributes via
+`contributors/evolutions.ts` as `a.mult('xpGainMultiplier', 1 + value)`. The
+old "every N waves, grant a talent point" hook is removed.

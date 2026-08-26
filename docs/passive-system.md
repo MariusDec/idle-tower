@@ -26,10 +26,11 @@ mix of gold and kill XP. `PassiveAbilityManager`, `src/data/passiveAbilities.ts`
 ## XP track
 
 `addKillXp` / `addWaveClearXp` feed `passiveXpForLevel(level)`
-(`75 * level^1.9`), scaled by `PASSIVE_XP_MULTIPLIER`. XP uses the same
-`enemyXpWeight` as tower XP, so it keeps pace with the HP curve. Before the
-re-tune, reaching a passive's max level needed roughly six million kills and
-the XP bar was decoration.
+(`75 * level^1.9`), scaled by `PASSIVE_XP_MULTIPLIER`. `passiveXpPerKill(def,
+wave)` replaces the old `enemyXpWeight` — it uses the same `killXpWaveScale` as
+tower kill XP with a 0.25 factor that keeps the passive track's pace where it
+is today. Before the re-tune, reaching a passive's max level needed roughly six
+million kills and the XP bar was decoration.
 
 ## Persistence
 

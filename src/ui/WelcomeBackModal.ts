@@ -1,7 +1,7 @@
 import { formatNumber } from '../utils/bigNumber';
 import type { OfflineResult } from '../systems/SaveManager';
-import { toggleClass } from '../utils/dom';
-
+import { formatIdleDuration } from '../data/prestige';
+import { Modal } from './Modal';
 export interface WelcomeBackData {
   result: OfflineResult;
   startWave: number;
@@ -24,42 +24,36 @@ function formatDuration(seconds: number): string {
 
 export class WelcomeBackModal {
   private readonly root: HTMLElement;
-  private currentRoot: HTMLElement | null = null;
+  private modal: Modal | null = null;
   private onDismiss: (() => void) | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
   }
 
+  /** True while the modal is up — see `UIManager.isModalOpen`. */
+  isOpen(): boolean {
+    return this.modal !== null;
+  }
+
   show(data: WelcomeBackData, onDismiss: () => void): void {
     this.hide();
     this.onDismiss = onDismiss;
-    const wrap = document.createElement('div');
-    wrap.className = 'welcome-modal';
-    this.currentRoot = wrap;
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'welcome-modal-backdrop';
-    wrap.appendChild(backdrop);
-
-    const card = document.createElement('div');
-    card.className = 'welcome-modal-card';
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    card.setAttribute('aria-label', 'Welcome back');
-
-    const title = document.createElement('h2');
-    title.className = 'welcome-modal-title';
-    title.textContent = 'Welcome back!';
-    card.appendChild(title);
-
-    const sub = document.createElement('p');
-    sub.className = 'welcome-modal-sub';
     const dur = formatDuration(data.result.elapsedSeconds);
-    sub.textContent = data.result.capped
-      ? `You were away for a long time (capped at 7 days). Your tower kept working for ${dur}.`
-      : `You were away for ${dur}. Your tower kept working while you were gone.`;
-    card.appendChild(sub);
+    // Dismissible: Escape and a backdrop tap mean the same thing as Continue,
+    // and the report is only ever information.
+    const modal = new Modal({
+      id: 'welcome-back',
+      title: 'Welcome back!',
+      sub: data.result.capped
+        ? `You were away for a long time (capped at ${formatIdleDuration(data.result.maxIdleSeconds)}). Your tower kept working for ${dur}.`
+        : `You were away for ${dur}. Your tower kept working while you were gone.`,
+      width: 440,
+      onClose: () => this.dismiss(),
+      root: this.root,
+    });
+    this.modal = modal;
+    const card = modal.body;
 
     const stats = document.createElement('div');
     stats.className = 'welcome-modal-stats';
@@ -127,22 +121,25 @@ export class WelcomeBackModal {
     btn.addEventListener('click', () => this.dismiss());
     card.appendChild(btn);
 
-    wrap.appendChild(card);
-    this.root.appendChild(wrap);
-    requestAnimationFrame(() => toggleClass(wrap, 'is-visible', true));
+    modal.open();
   }
 
   hide(): void {
-    if (this.currentRoot && this.currentRoot.parentNode) {
-      this.currentRoot.parentNode.removeChild(this.currentRoot);
-    }
-    this.currentRoot = null;
+    const modal = this.modal;
+    this.modal = null;
     this.onDismiss = null;
+    modal?.destroy();
   }
 
+  /**
+   * Continue, Escape or a backdrop tap — all one path. `hide()` clears the
+   * callback before tearing the shell down, so the `onClose` it triggers
+   * re-enters here with nothing left to fire.
+   */
   private dismiss(): void {
     const cb = this.onDismiss;
+    if (!cb) return;
     this.hide();
-    if (cb) cb();
+    cb();
   }
 }

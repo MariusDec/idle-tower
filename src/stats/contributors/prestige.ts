@@ -21,6 +21,8 @@ export function contributePrestige(ctx: StatContext, acc: StatAccumulator): void
   ap.add('goldAdditive', p.lifetimeGold + p.apGold);
   ap.add('goldLuckChance', p.treasureChance);
   ap.add('waveSkipChance', p.waveSkipChance);
+  ap.mult('fireRate', p.apFireRate);
+  ap.add('pierceExtra', p.apPierce);
   if (p.hasExecuteDamage) {
     ap.add('executeThreshold', PRESTIGE_EXECUTE_THRESHOLD);
     ap.add('executeMultiplier', p.executeDamageMultiplier);

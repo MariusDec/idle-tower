@@ -1,4 +1,6 @@
 import type { EquipmentSlot, Rarity, EquipmentDef, Equipment, EquipmentStat, EquipmentStatType } from '../types';
+import type { IconId } from './icons';
+import { RARITY } from './palette';
 
 // ── Rarity Configuration ──────────────────────────────
 
@@ -21,13 +23,29 @@ export const RARITY_WEIGHTS: Record<Rarity, number> = {
   legendary: 1,
 };
 
-export const RARITY_COLORS: Record<Rarity, string> = {
-  common: '#888888',
-  uncommon: '#2ecc71',
-  rare: '#3498db',
-  epic: '#9b59b6',
-  legendary: '#f1c40f',
-};
+/**
+ * The rarity ladder's colours. Re-exported from `palette.ts` rather than typed
+ * again here: the same five colours also frame blessing cards and are declared
+ * as `--rarity-*` in `tokens.css`, and three independent copies of "what colour
+ * is epic" is how a palette drifts.
+ */
+export const RARITY_COLORS: Record<Rarity, string> = RARITY;
+
+/** Rarity ladder, weakest first. `upgradeRarity` walks it. */
+export const RARITY_ORDER: readonly Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+
+/**
+ * Bump a rolled rarity up the ladder, clamped at `legendary`.
+ *
+ * Used by the swift-kill boss reward (gameplay plan §3.4): the roll is the
+ * normal one, so gear still tracks the wave, and the reward is that it lands
+ * one tier better than it would have.
+ */
+export function upgradeRarity(rarity: Rarity, steps = 1): Rarity {
+  const index = RARITY_ORDER.indexOf(rarity);
+  if (index < 0) return rarity;
+  return RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, index + Math.max(0, steps))];
+}
 
 export const RARITY_NAMES: Record<Rarity, string> = {
   common: 'Common',
@@ -35,6 +53,37 @@ export const RARITY_NAMES: Record<Rarity, string> = {
   rare: 'Rare',
   epic: 'Epic',
   legendary: 'Legendary',
+};
+
+/**
+ * Slot icons (UI plan §6.2).
+ *
+ * The slot is what an empty socket shows, so it has to read as the *kind* of
+ * thing that goes there rather than as any one item — a crossbow for the
+ * turret, a plain shield for the bulwark.
+ */
+export const SLOT_ICONS: Record<EquipmentSlot, IconId> = {
+  turret: 'crossbow',
+  bulwark: 'shield',
+  arsenal: 'quiver',
+  brazier: 'fire-bowl',
+  vault: 'locked-chest',
+  machinery: 'gears',
+  banner: 'vertical-banner',
+  core: 'crystal-shine',
+};
+
+/**
+ * Rarity icons. The *frame* carries the tier colour (`.icon-frame[data-rarity]`
+ * in `main.css`); this ladder is for the places that name a tier in text —
+ * legends, filters, the drop toast — and escalates in ornament, not in hue.
+ */
+export const RARITY_ICONS: Record<Rarity, IconId> = {
+  common: 'flat-star',
+  uncommon: 'round-star',
+  rare: 'beveled-star',
+  epic: 'barbed-star',
+  legendary: 'star-formation',
 };
 
 let _nextEquipmentId = 1;
@@ -60,7 +109,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/iron_bow.svg',
+    icon: 'pocket-bow',
     color: '#888888',
     minWave: 1,
   },
@@ -78,7 +127,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/arcane_focus.svg',
+    icon: 'orb-wand',
     color: '#9b59b6',
     minWave: 10,
   },
@@ -97,7 +146,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/stone_revetment.svg',
+    icon: 'stone-wall',
     color: '#888888',
     minWave: 1,
   },
@@ -115,7 +164,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 20,
     upgradeCostGrowth: 1.5,
-    sprite: 'sprites/equipment/iron_plating.svg',
+    icon: 'metal-plate',
     color: '#5d6d7e',
     minWave: 15,
   },
@@ -134,7 +183,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/enchanted_quiver.svg',
+    icon: 'arrow-flights',
     color: '#f1c40f',
     minWave: 5,
   },
@@ -152,7 +201,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/moonlit_brazier.svg',
+    icon: 'lantern-flame',
     color: '#5b8def',
     minWave: 10,
   },
@@ -171,7 +220,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/ancient_relic.svg',
+    icon: 'glowing-artifact',
     color: '#e67e22',
     minWave: 15,
     bossOnly: true,
@@ -191,7 +240,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/swift_gears.svg',
+    icon: 'clockwork',
     color: '#3498db',
     minWave: 8,
   },
@@ -210,7 +259,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/guardian_banner.svg',
+    icon: 'knight-banner',
     color: '#f1c40f',
     minWave: 12,
   },
@@ -229,7 +278,7 @@ export const EQUIPMENT_DEFS: EquipmentDef[] = [
     },
     maxLevel: 15,
     upgradeCostGrowth: 1.6,
-    sprite: 'sprites/equipment/emerald_core.svg',
+    icon: 'floating-crystal',
     color: '#2ecc71',
     minWave: 18,
     bossOnly: true,
@@ -312,6 +361,7 @@ export function generateEquipment(defId: string, rarity: Rarity): Equipment {
     rarity,
     level: 1,
     stats: rollStats(def, rarity),
+    seen: false,
   };
 }
 
@@ -323,15 +373,29 @@ export function generateEquipment(defId: string, rarity: Rarity): Equipment {
  * that a deep run builds a set from elites, not so much that gear stops
  * mattering.
  */
+/**
+ * Overrides for a single drop roll (gameplay plan §3.4).
+ *
+ * `guaranteed` skips the chance gate; `rarityBoost` bumps the *rolled* rarity
+ * rather than replacing the roll, so the reward still tracks the wave.
+ */
+export interface DropOptions {
+  guaranteed?: boolean;
+  rarityBoost?: number;
+}
+
 export function rollDrop(
   wave: number,
   source: 'boss' | 'elite' | 'milestone',
   bonusChance = 0,
+  options: DropOptions = {},
 ): Equipment | null {
+  const boost = Math.max(0, options.rarityBoost ?? 0);
+  const guaranteed = options.guaranteed === true;
   if (source === 'elite') {
     const eliteChance = Math.min(0.15, 0.04 + wave * 0.001 + bonusChance);
-    if (Math.random() > eliteChance) return null;
-    const eliteRarity = rollRarity(wave);
+    if (!guaranteed && Math.random() > eliteChance) return null;
+    const eliteRarity = upgradeRarity(rollRarity(wave), boost);
     const elitePool = EQUIPMENT_DEFS.filter(d => d.minWave <= wave && !d.bossOnly);
     if (elitePool.length === 0) return null;
     const eliteDef = elitePool[Math.floor(Math.random() * elitePool.length)];
@@ -339,9 +403,9 @@ export function rollDrop(
   }
   const baseChance = source === 'boss' ? 0.15 : 1.0;
   const scaledChance = Math.min(0.8, baseChance + wave * 0.005 + bonusChance);
-  if (Math.random() > scaledChance) return null;
+  if (!guaranteed && Math.random() > scaledChance) return null;
 
-  const rarity = rollRarity(wave);
+  const rarity = upgradeRarity(rollRarity(wave), boost);
   // Only items whose minWave has been reached can drop; boss-only items are
   // additionally restricted to boss kills.
   let dropPool = EQUIPMENT_DEFS.filter(d => d.minWave <= wave);

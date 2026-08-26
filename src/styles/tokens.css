@@ -1,0 +1,439 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   The Tower — design tokens
+   ───────────────────────────────────────────────────────────────────────────
+   The vocabulary every other stylesheet speaks. Nothing here styles anything;
+   it only names values. See docs/art-direction.md.
+
+   The rule this file exists to enforce: **a literal colour, radius, duration or
+   font size inside a component block is a bug.** If you need a value that is not
+   here, add it here first.
+
+   Three layers, in order:
+     1. Primitives  — the raw hue ramps (--ink-*, --amber-*, …). Never referenced
+                      from a component block; only the semantic layer reads them.
+     2. Semantic    — what a thing *means* (--surface-2, --fx-blood, --warn).
+                      This is the layer components use.
+     3. Layout      — sizes the JS also knows about (--panel-width, …).
+
+   The --fx-* and --rarity-* groups are mirrored in src/data/palette.ts so the
+   canvas renderer and the DOM cannot drift. tests/palette.test.ts fails if the
+   two lists disagree, so edit both together.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Display face ───────────────────────────────────────────────────────────
+   Oswald, a condensed grotesque, for numbers and headings. Self-hosted (the
+   Capacitor build must have no runtime network dependency) as the variable
+   woff2, latin + latin-ext, ~40 KB total. SIL Open Font License 1.1 —
+   public/fonts/OFL.txt.
+
+   `font-display: swap` plus a genuinely condensed fallback stack so the layout
+   the player sees during the swap is close to the one they end up with.        */
+
+@font-face {
+  font-family: 'Oswald';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/oswald-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Oswald';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/oswald-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  /* ═════════════════════════════════════════════════════════════════════════
+     1. PRIMITIVES — hue ramps. 100 is the lightest step, 900 the darkest.
+     Component blocks must not reference these; go through the semantic layer.
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  /* Ink — the deep desaturated blue-black ground the whole game sits on. */
+  --ink-050: #e8ecf4;
+  --ink-100: #b4bcca;
+  --ink-200: #838d9e;
+  --ink-300: #5a6476;
+  --ink-400: #3b4457;
+  --ink-500: #2a3141;
+  --ink-600: #212734;
+  --ink-700: #181d28;
+  --ink-800: #12161f;
+  --ink-900: #0a0d14;
+  --ink-950: #070a10;
+
+  /* Amber — everything the player owns: the tower, gold, physical shots, XP. */
+  --amber-100: #ffeec2;
+  --amber-200: #ffdf9a;
+  --amber-300: #ffc879;
+  --amber-400: #f0b23c;
+  --amber-500: #e09b2e;
+  --amber-600: #b47a1c;
+  --amber-700: #6a5015;
+  --amber-800: #46350f;
+  --amber-900: #2b2110;
+
+  /* Ember — fire, burn, enrage. Warm, urgent, but not hostile. */
+  --ember-100: #ffd9bf;
+  --ember-200: #ffc9a3;
+  --ember-300: #ffa96f;
+  --ember-400: #ff8b46;
+  --ember-500: #d9752b;
+  --ember-600: #a4551c;
+  --ember-700: #6d3a12;
+  --ember-800: #46240c;
+  --ember-900: #2a1608;
+
+  /* Violet — the arcane: mana, magic, blessings, research, transcendence. */
+  --violet-100: #ece0ff;
+  --violet-200: #d8c3ff;
+  --violet-300: #c08cff;
+  --violet-400: #a95cff;
+  --violet-500: #8a44d6;
+  --violet-600: #6446b8;
+  --violet-700: #46308a;
+  --violet-800: #2a2042;
+  --violet-900: #17102b;
+
+  /* Azure — frost, shields, information. The cool counterweight to amber. */
+  --azure-100: #d6e7ff;
+  --azure-200: #9fe3ff;
+  --azure-300: #79d2ff;
+  --azure-400: #4a9eff;
+  --azure-500: #2f7fb8;
+  --azure-600: #2c4f7d;
+  --azure-700: #1f3a5c;
+  --azure-800: #15263d;
+  --azure-900: #0d1826;
+
+  /* Green — healing, buffs, affordability, progress. */
+  --green-100: #dff8e8;
+  --green-200: #c9f5da;
+  --green-300: #7bdd9d;
+  --green-400: #4ec97a;
+  --green-500: #3ba463;
+  --green-600: #2f7d47;
+  --green-700: #1f5c33;
+  --green-800: #143d22;
+  --green-900: #0e2a19;
+
+  /* Blood — enemies and damage. Reserved; see --fx-blood. */
+  --blood-100: #ffd7d0;
+  --blood-200: #f9b8b3;
+  --blood-300: #ef7a72;
+  --blood-400: #d9534f;
+  --blood-500: #b53b36;
+  --blood-600: #8f2f2c;
+  --blood-700: #6b2626;
+  --blood-800: #4a1a1a;
+  --blood-900: #2d0f10;
+
+  /* Rose — generic negative UI: destructive buttons, a stat downside, a cancel.
+     Deliberately *not* red: red belongs to the battlefield. */
+  --rose-050: #fdeef0;
+  --rose-100: #f7e2e5;
+  --rose-200: #f0cdd2;
+  --rose-300: #d99aa3;
+  --rose-400: #c46a72;
+  --rose-500: #9c5a66;
+  --rose-600: #7a4550;
+  --rose-700: #55303a;
+  --rose-800: #3a2026;
+
+  /* Absolutes. Only for shadows, inset highlights and text on a tinted fill. */
+  --white: #ffffff;
+  --black: #000000;
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     2. SEMANTIC
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  /* ── Surfaces ─────────────────────────────────────────────────────────────
+     0 is the ground the app sits on and each step is one level nearer the
+     viewer. `raised` and `sunken` are the explicit pair for a control that
+     stands off its parent or a well that recedes into it. */
+  --surface-0: var(--ink-900);
+  --surface-1: var(--ink-800);
+  --surface-2: var(--ink-700);
+  --surface-3: var(--ink-600);
+  /* One step above --surface-3: the hover lift for a control that already sits
+     on the topmost surface. */
+  --surface-4: var(--ink-500);
+  --surface-raised: var(--ink-600);
+  --surface-sunken: var(--ink-950);
+  /* A scrim over the whole viewport, under a modal. */
+  --surface-scrim: rgba(0, 0, 0, 0.62);
+  /* A translucent panel that lets the battlefield show through. */
+  --surface-overlay: rgba(16, 20, 30, 0.9);
+  --surface-overlay-deep: rgba(10, 13, 20, 0.92);
+
+  /* ── Strokes ───────────────────────────────────────────────────────────── */
+  --stroke-subtle: var(--ink-500);
+  --stroke-strong: var(--ink-400);
+  /* A 1px light line along a top edge, for a lit-from-above surface. */
+  --stroke-hairline: rgba(255, 255, 255, 0.08);
+
+  /* ── Text ─────────────────────────────────────────────────────────────────
+     0 primary, 3 the faintest still-readable step. */
+  --text-0: var(--ink-050);
+  --text-1: var(--ink-100);
+  --text-2: var(--ink-200);
+  --text-3: var(--ink-300);
+  /* Text sitting on a saturated fill. */
+  --text-on-fill: var(--white);
+  --text-on-amber: var(--amber-900);
+
+  /* ── Effect colours (--fx-*) ──────────────────────────────────────────────
+     Mirrored in src/data/palette.ts. Edit both, or tests/palette.test.ts fails.
+     Written as literals rather than `var(--amber-400)` precisely so that test
+     can compare them without resolving the cascade. */
+  --fx-gold: #f0b23c; /* = --amber-400 */
+  --fx-ember: #ff8b46; /* = --ember-400 */
+  --fx-mana: #7f6cff; /* blue-violet, between --violet-400 and --azure-400 */
+  --fx-arcane: #a95cff; /* = --violet-400 */
+  --fx-blood: #d9534f; /* = --blood-400 — enemies and damage ONLY */
+  --fx-frost: #79d2ff; /* = --azure-300 */
+  --fx-nature: #4ec97a; /* = --green-400 */
+  --fx-critical: #ff4d3d; /* the tower in peril ONLY — see docs/art-direction.md */
+
+  /* rgb triplets for the same colours, so a translucent fill can be written
+     `rgba(var(--rgb-blood), 0.3)` instead of retyping the channels. */
+  --rgb-gold: 240, 178, 60;
+  --rgb-ember: 255, 139, 70;
+  --rgb-mana: 127, 108, 255;
+  --rgb-arcane: 169, 92, 255;
+  --rgb-blood: 217, 83, 79;
+  --rgb-frost: 121, 210, 255;
+  --rgb-nature: 78, 201, 122;
+  --rgb-critical: 255, 77, 61;
+  --rgb-shadow: 0, 0, 0;
+  --rgb-light: 255, 255, 255;
+  /* Status and surface triplets, for the same reason: a translucent panel or a
+     pulsing destructive button needs the channels, not the colour. */
+  --rgb-warn: 224, 155, 46;
+  --rgb-bad: 196, 106, 114;
+  --rgb-surface-0: 10, 13, 20;
+  --rgb-surface-1: 18, 22, 31;
+  --rgb-surface-2: 24, 29, 40;
+  --rgb-surface-3: 33, 39, 52;
+  --rgb-surface-sunken: 7, 10, 16;
+  /* The near-black end of the blood ramp, for the boss bar's tinted panel. */
+  --rgb-blood-deep: 45, 15, 16;
+
+  /* ── Rarity (--rarity-*) ──────────────────────────────────────────────────
+     One ladder for equipment and blessings. Also mirrored in palette.ts. */
+  --rarity-common: #838d9e; /* = --ink-200 */
+  --rarity-uncommon: #4ec97a; /* = --green-400 */
+  --rarity-rare: #4a9eff; /* = --azure-400 */
+  --rarity-epic: #a95cff; /* = --violet-400 */
+  --rarity-legendary: #f0b23c; /* = --amber-400 */
+
+  /* ── Status ───────────────────────────────────────────────────────────────
+     `--bad` is the *generic* negative: unaffordable, destructive, a downside.
+     It is rose, not red, because red is the battlefield's. When the thing being
+     signalled is the tower taking real damage, use `--fx-critical` instead. */
+  --accent: var(--fx-gold);
+  --accent-2: var(--fx-arcane);
+  --good: var(--fx-nature);
+  --good-dark: var(--green-900);
+  --warn: var(--amber-500);
+  --bad: var(--rose-400);
+  --critical: var(--fx-critical);
+
+  /* Domain accents, used as the default for a `--x-color` a component sets
+     per-item from the data tables. */
+  --research-color: var(--fx-arcane);
+  --ability-color: var(--fx-mana);
+  --perk-color: var(--fx-nature);
+  --passive-color: var(--fx-mana);
+  --mod-banner-color: var(--warn);
+
+  /* ── Typography ───────────────────────────────────────────────────────────
+     Body text keeps the system stack: it is already the most legible face on
+     every platform and costs nothing to load. The display face is condensed, so
+     a five-digit gold number fits where the UI face needs six digits' room. */
+  --font-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Oswald', 'Arial Narrow', 'Roboto Condensed',
+    'Helvetica Neue Condensed', var(--font-ui);
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  /* Type scale. These are the sizes the UI actually uses today; Parts 7-8 of the
+     UI plan tighten the ramp as they rebuild each surface. */
+  --text-3xs: 9px;
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 15px;
+  --text-xl: 16px;
+  --text-2xl: 18px;
+  --text-3xl: 20px;
+  --text-4xl: 22px;
+  --text-5xl: 24px;
+  --text-6xl: 28px;
+  /* Added by Part 7 for the wave number, which is the one figure in the HUD
+     that has to read as a focal element rather than as a large label. The ramp
+     stopped at 28px because nothing before Part 7 asked for more. */
+  --text-7xl: 34px;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --leading-tight: 1.15;
+  --leading-normal: 1.4;
+  --leading-loose: 1.6;
+
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.08em;
+
+  /* ── Spacing — a 4px baseline ─────────────────────────────────────────── */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  /* ── Radii ────────────────────────────────────────────────────────────── */
+  --radius-2xs: 2px;
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+  --radius-full: 999px;
+  --radius-circle: 50%;
+
+  /* ── Elevation ────────────────────────────────────────────────────────────
+     A drop shadow *and* an inset top highlight, so a raised surface reads as lit
+     from above rather than as a rectangle with a blur behind it. */
+  --elev-0: none;
+  --elev-1: 0 1px 2px rgba(var(--rgb-shadow), 0.35),
+    inset 0 1px 0 rgba(var(--rgb-light), 0.04);
+  --elev-2: 0 6px 18px rgba(var(--rgb-shadow), 0.45),
+    inset 0 1px 0 rgba(var(--rgb-light), 0.05);
+  --elev-3: 0 8px 24px rgba(var(--rgb-shadow), 0.5),
+    inset 0 1px 0 rgba(var(--rgb-light), 0.05);
+  --elev-4: 0 12px 32px rgba(var(--rgb-shadow), 0.55),
+    inset 0 1px 0 rgba(var(--rgb-light), 0.06);
+  --elev-5: 0 18px 40px rgba(var(--rgb-shadow), 0.6),
+    inset 0 1px 0 rgba(var(--rgb-light), 0.06);
+  /* A sheet rising from the bottom edge casts its shadow upward. */
+  --elev-up: 0 -12px 32px rgba(var(--rgb-shadow), 0.5);
+  /* An inset hairline on its own, for a surface that must not float. */
+  --elev-inset: inset 0 1px 0 rgba(var(--rgb-light), 0.06);
+
+  /* ── Motion ───────────────────────────────────────────────────────────────
+     `fast` is a state change the player is already looking at, `base` is
+     something entering or leaving, `slow` is a deliberate reveal. The last two
+     are for ambient loops (a pulsing badge), not for interaction. */
+  --dur-instant: 60ms;
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-slow: 420ms;
+  --dur-slower: 800ms;
+  --dur-pulse: 1200ms;
+  --dur-ambient: 1600ms;
+
+  /* ── Stacking ladder (UI plan §8.F) ───────────────────────────────────────
+     Five rungs, in the order things sit in front of each other: overlays
+     painted over the canvas, the ability dock and bottom nav, the mobile
+     sheet, modals, and toasts on top of everything so a warning is readable
+     while a modal is up. Component rules quote a rung instead of inventing a
+     number, which is how `z-index: 110` and `z-index: 112` came to sit next to
+     each other in the first place. */
+  --z-canvas-overlay: 20;
+  --z-dock: 40;
+  --z-sheet: 75;
+  --z-modal: 110;
+  --z-toast: 120;
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     3. LAYOUT — sizes the JS also reads or writes. Not art direction; kept here
+     so there is exactly one place to look for "how wide is the panel".
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  /* Side panel sizing. Overridden by JS via inline style. */
+  --panel-width: 420px;
+  --panel-min-width: 280px;
+  --panel-max-width: 720px;
+  --panel-collapsed-width: 56px;
+
+  /* Contract tracker (gameplay plan §5.3): three rows in the bottom-left, with
+     the milestone strip sitting directly above it. A constant rather than a
+     measured height because the tracker is always exactly three rows. Measured
+     at 89px in-browser (title + 3 rows + gaps); the extra leaves the strip a few
+     pixels of clearance rather than sitting on the top row. */
+  --contract-tracker-height: 96px;
+  /* Bottom ability dock height. 56px tile + the level pip row + the name,
+     plus its padding (UI plan §7). Four other overlays offset themselves by
+     this, so it is a declared constant rather than a measured one; the mobile
+     branch overrides it, where the dock drops the name and the hotkey badge. */
+  --ability-bar-height: 96px;
+  /* Bottom mobile nav height. */
+  --bottom-nav-height: 60px;
+  /* Where the bottom-corner overlay stack starts, measured up from the viewport
+     edge: clear of the ability dock, of the bottom nav where there is one, and
+     of the device's gesture bar. The contract tracker sits at this offset, the
+     milestone strip one tracker higher, and on a phone the toast stack rides
+     the same ladder. Added by Part 7, which is when four overlays each doing
+     this arithmetic themselves stopped being tenable — the tracker had already
+     drifted under the dock. The mobile branch of main.css adds the nav. */
+  --corner-stack-base: calc(
+    var(--ability-bar-height) + var(--safe-b) + 12px);
+
+  /* Safe-area insets (UI plan §9.A). The browser only reports these on a
+     viewport with `viewport-fit=cover` (index.html), and a notch, a gesture bar
+     or a rounded corner is the only reason any of them is non-zero. Every
+     component rule that needs them reads one of these tokens rather than
+     calling `env()` itself — the same single-source-of-truth rule that already
+     applies to colours and durations. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  /* Approximate mobile HUD height (2 rows: wave block + hp/mana bars). Used to
+     position the milestone strip and toasts above the canvas. */
+  --hud-height-mobile: 90px;
+
+  /* Strength of the low-HP vignette. Written from TS as the tower's HP falls. */
+  --vignette-alpha: 0.4;
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     DEPRECATED ALIASES
+     Kept only so the two selectors owned by the camera work (`.canvas-wrap`,
+     `#game-canvas`) keep resolving. Do not use them in new rules.
+     ═════════════════════════════════════════════════════════════════════════ */
+  --bg-0: var(--surface-0);
+  --bg-1: var(--surface-1);
+  --bg-2: var(--surface-2);
+  --bg-3: var(--surface-3);
+  --border: var(--stroke-subtle);
+  --border-strong: var(--stroke-strong);
+  --font: var(--font-ui);
+  --radius: var(--radius-lg);
+  --shadow: var(--elev-2);
+}

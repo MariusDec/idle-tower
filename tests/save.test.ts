@@ -10,7 +10,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SaveManager } from '../src/systems/SaveManager';
+import { ContractManager } from '../src/systems/ContractManager';
+import { PacingManager } from '../src/systems/PacingManager';
 import type { GameState } from '../src/types';
+import { TOWER_LEVEL_CAP, TOWER_XP_TABLE, talentPointsAtLevel } from '../src/data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
 
@@ -65,11 +68,30 @@ function makeState(): GameState {
     achievements: ['first_blood'],
     runHistory: [],
     runStartedAt: 1000,
-    towerXp: { level: 3, xp: 900, totalXpEarned: 900, unspentTalentPoints: 1 },
+    towerXp: { level: 3, xp: TOWER_XP_TABLE[3], totalXpEarned: TOWER_XP_TABLE[3], unspentTalentPoints: 3 },
     talents: { allocated: { power_core: 2 } },
     passiveAbilities: { marksmanship: { level: 2, xp: 30, unlocked: true } },
     equipment: [],
     equipped: {},
+    blessings: {
+      held: { bl_sharpen: 2, bl_ricochet: 1 },
+      picksTaken: 3,
+      rerolls: 1,
+      pendingOfferForWave: null,
+      wavesClearedThisRun: 11,
+    },
+    bossRun: { apBonusPct: 0.1, swiftKills: 2, flawlessKills: 1 },
+    contracts: {
+      active: [
+        { defId: 'ct_culling', uid: 4, target: 220, progress: 87, drawnAtWave: 14 },
+        { defId: 'ct_hoard', uid: 5, target: 22, progress: 3, drawnAtWave: 16 },
+        { defId: 'ct_arsenal', uid: 6, target: 30, progress: 11, drawnAtWave: 17 },
+      ],
+      completed: ['ct_first_cull', 'ct_press_on'],
+      completedCount: 2,
+      apBonusPct: 0.06,
+      uidSeq: 6,
+    },
   } as unknown as GameState;
 }
 
@@ -86,6 +108,15 @@ describe('save round-trip', () => {
     expect(loaded!.wave.number).toBe(17);
     expect(loaded!.rp).toBe(42);
     expect(loaded!.achievements).toEqual(['first_blood']);
+    expect(loaded!.blessings?.held).toEqual({ bl_sharpen: 2, bl_ricochet: 1 });
+    expect(loaded!.blessings?.picksTaken).toBe(3);
+    expect(loaded!.blessings?.wavesClearedThisRun).toBe(11);
+    expect(loaded!.contracts?.active.length).toBe(3);
+    expect(loaded!.contracts?.active[0]).toEqual({
+      defId: 'ct_culling', uid: 4, target: 220, progress: 87, drawnAtWave: 14,
+    });
+    expect(loaded!.contracts?.apBonusPct).toBe(0.06);
+    expect(loaded!.contracts?.completed).toEqual(['ct_first_cull', 'ct_press_on']);
   });
 
   it('discards a corrupt save rather than loading garbage', () => {
@@ -123,7 +154,7 @@ describe('migration ladder', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify(v2Save));
     const loaded = new SaveManager(stubBus).load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBeGreaterThanOrEqual(9);
+    expect(loaded!.version).toBeGreaterThanOrEqual(14);
   });
 
   it('preserves the v2 payload through every step of the ladder', () => {
@@ -136,13 +167,194 @@ describe('migration ladder', () => {
   });
 
   it('accepts every version the ladder claims to handle', () => {
-    for (const version of [2, 3, 4, 5, 6, 7, 8, 9]) {
+    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
       storage.clear();
       storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version }));
       const loaded = new SaveManager(stubBus).load();
       expect(loaded, `version ${version} should load`).not.toBeNull();
-      expect(loaded!.version).toBeGreaterThanOrEqual(9);
+      expect(loaded!.version).toBeGreaterThanOrEqual(14);
     }
+  });
+
+  /**
+   * v9 -> v10 is purely additive (gameplay plan §1.5), so the test that matters
+   * is the pair: a v9 save with no blessings gets an empty run seeded, and a
+   * v10 save with blessings held keeps every stack through the ladder.
+   */
+  it('seeds an empty blessing run for a v9 save', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(17);
+    expect(loaded.blessings).toEqual({
+      held: {},
+      picksTaken: 0,
+      rerolls: 0,
+      pendingOfferForWave: null,
+      wavesClearedThisRun: 0,
+    });
+  });
+
+  it('carries blessings held in a v9 save through to v10', () => {
+    const held = { bl_frost: 1, bl_shatter: 1, bl_cruelty: 3 };
+    storage.setItem(STORAGE_KEY, JSON.stringify({
+      ...v2Save,
+      version: 9,
+      blessings: {
+        held,
+        picksTaken: 5,
+        rerolls: 2,
+        pendingOfferForWave: 19,
+        wavesClearedThisRun: 19,
+      },
+    }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(17);
+    expect(loaded.blessings!.held).toEqual(held);
+    expect(loaded.blessings!.picksTaken).toBe(5);
+    expect(loaded.blessings!.rerolls).toBe(2);
+    expect(loaded.blessings!.wavesClearedThisRun).toBe(19);
+  });
+
+  /**
+   * v13 -> v14 is additive too (gameplay plan §7.7). A v13 save is a run at
+   * risk 0 with no momentum banked, which is exactly what §7.8 requires the
+   * migration to mean: risk 0 reproduces the curve the save was playing.
+   */
+  it('seeds a risk-0 pacing block for a v13 save', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13 }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(17);
+    expect(loaded.pacing).toEqual({
+      risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
+    });
+  });
+
+  it('carries the risk dial and momentum through a v14 round trip', () => {
+    const pacing = {
+      risk: 4, committedRisk: 3, momentum: 0.045, momentumWaves: 2, comboBest: 61,
+    };
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13, pacing }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.pacing).toEqual(pacing);
+
+    // And the real manager takes it back with both lifetimes intact: the dial
+    // survives, the live combo does not.
+    const mgr = new PacingManager();
+    mgr.restore(loaded.pacing!);
+    expect(mgr.riskLevel).toBe(4);
+    expect(mgr.activeRisk).toBe(3);
+    expect(mgr.momentumBonus).toBeCloseTo(0.045, 6);
+    expect(mgr.combo).toBe(0);
+    expect(mgr.snapshot()).toEqual(pacing);
+  });
+
+  /**
+   * v11 -> v12 is additive too (gameplay plan §5.5). A v11 save is a run that
+   * has simply not been handed any contracts, and one written mid-contract
+   * keeps every slot's progress through the ladder.
+   */
+  it('seeds an empty contract run for a v11 save', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11 }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(17);
+    expect(loaded.contracts).toEqual({
+      active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
+    });
+  });
+
+  it('carries contracts in progress from a v11 save through to v12', () => {
+    const contracts = {
+      active: [
+        { defId: 'ct_culling', uid: 9, target: 220, progress: 140, drawnAtWave: 21 },
+        { defId: 'ct_unbroken', uid: 10, target: 4, progress: 2, drawnAtWave: 22 },
+        { defId: 'ct_hoard', uid: 11, target: 22, progress: 20, drawnAtWave: 24 },
+      ],
+      completed: ['ct_hold_the_line'],
+      completedCount: 1,
+      apBonusPct: 0.09,
+      uidSeq: 11,
+    };
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11, contracts }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(17);
+    expect(loaded.contracts).toEqual(contracts);
+
+    // And the real manager takes that state back without losing a slot.
+    const mgr = new ContractManager({
+      currentWave: () => 24,
+      waveGold: () => 250,
+    });
+    mgr.restore(loaded.contracts!);
+    expect(mgr.list.length).toBe(3);
+    expect(mgr.list.map(c => c.progress)).toEqual([140, 2, 20]);
+    expect(mgr.apBonusPct).toBeCloseTo(0.09, 10);
+  });
+
+  /**
+   * v15 -> v16 is a key rename, not a transform (the `multishot` ability
+   * became `rocket_barrage`). The saved state and its auto-cast toggle must
+   * reappear under the new key with their values untouched.
+   */
+  it('renames multishot to rocket_barrage in a v15 save', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({
+      ...v2Save,
+      version: 15,
+      abilities: {
+        multishot: { level: 3, xp: 0, cooldown: 0, active: false, activeTimer: 0 },
+      },
+      prestige: { autoCastEnabled: { multishot: false } },
+    }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(17);
+    expect(loaded.abilities.rocket_barrage).toEqual({
+      level: 3, xp: 0, cooldown: 0, active: false, activeTimer: 0,
+    });
+    expect(loaded.abilities.multishot).toBeUndefined();
+    expect(loaded.prestige.autoCastEnabled.rocket_barrage).toBe(false);
+  });
+
+  /**
+   * v16 -> v17 is the levelling redesign. The old 0-based level is restated
+   * onto the new 1-based curve, XP is restated, and all talents are refunded.
+   */
+  it('restates level 3 (0-based) to level 4 (1-based) with correct XP', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({
+      ...v2Save,
+      version: 16,
+      towerXp: { level: 3, xp: 900, totalXpEarned: 1000, unspentTalentPoints: 3 },
+      talents: { allocated: { power_core: 2 } },
+    }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(17);
+    expect(loaded.towerXp.level).toBe(4); // 3 + 1 (0-based -> 1-based)
+    expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[4]);
+    expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(4));
+    expect(loaded.talents.allocated).toEqual({});
+  });
+
+  it('clamps level 500 to TOWER_LEVEL_CAP', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({
+      ...v2Save,
+      version: 16,
+      towerXp: { level: 500, xp: 999999999, totalXpEarned: 1000000000, unspentTalentPoints: 500 },
+      talents: { allocated: {} },
+    }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(17);
+    expect(loaded.towerXp.level).toBe(TOWER_LEVEL_CAP);
+    expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[TOWER_LEVEL_CAP]);
+    expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(TOWER_LEVEL_CAP));
+  });
+
+  it('treats missing towerXp as level 0 -> level 1', () => {
+    const save: Record<string, unknown> = { ...v2Save, version: 16 };
+    delete save.towerXp;
+    storage.setItem(STORAGE_KEY, JSON.stringify(save));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.towerXp.level).toBe(1);
+    expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[1]);
+    expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(1));
+    expect(loaded.talents.allocated).toEqual({});
   });
 
   it('fills in the enrage clock older saves predate', () => {

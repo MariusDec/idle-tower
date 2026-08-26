@@ -1,38 +1,100 @@
 import type { EnemyType } from '../types';
-import { enemyHPForWave, bossHPForWave } from './formulas';
-import { ENEMY_DEFS } from './enemies';
 
 /**
- * Cumulative XP required to reach each level (plan §2.4).
- *
- * Was `120 * lv^2.35`, which put level 20 at ~147 K cumulative XP against a
- * kill worth 2 XP — tower level froze in the teens, so the 37-node talent tree
- * (~90 points to fill) could never show the player anything past tier 2. At
- * 1.8 the curve still slows down with depth, but a long-running save can
- * actually reach the bottom of the tree.
+ * Per-kill XP weight by type. Tracks how much of the player's *attention* a
+ * type costs, not its HP bar — the wave scale below carries depth.
  */
-export const TOWER_XP_CURVE_EXPONENT = 1.8;
+export const KILL_XP_WEIGHT: Record<EnemyType, number> = {
+  normal: 1,
+  fast: 1,
+  splitter: 0.8,
+  flying: 1.1,
+  tank: 1.8,
+  healer: 1.6,
+  shielded: 1.6,
+  siege: 1.8,
+  blinker: 1.5,
+  burrower: 1.6,
+  thief: 2.4,
+  warden: 2.4,
+  boss: 12,
+};
 
+/** Per-kill XP is linear in wave: a wave-200 kill is 41x a wave-1 kill. */
+export const KILL_XP_WAVE_SLOPE = 0.20;
+
+/** Wave-clear XP is superlinear: clearing deep waves is the real faucet. */
+export const WAVE_CLEAR_XP_BASE = 1.5;
+export const WAVE_CLEAR_XP_EXPONENT = 1.5;
+
+/**
+ * Extra multiple of the clear payout for a wave deeper than any ever cleared.
+ * Total for a record wave is therefore (1 + this) x the normal clear XP.
+ */
+export const PIONEER_CLEAR_MULTIPLIER = 2.0;
+
+/** Hard ceiling. Levels past this earn nothing; the HUD bar reads MAX. */
+export const TOWER_LEVEL_CAP = 200;
+
+/**
+ * The requirement curve: `XP_CURVE_BASE * (L-1)^XP_CURVE_POLY * XP_CURVE_GEO^(L-2)`
+ * XP to go from level L-1 to level L.
+ *
+ * Polynomial early (so the first twenty levels land inside the first hour) and
+ * geometric late (so the cap is a horizon rather than a milestone). The old
+ * curve was polynomial all the way, which is why XP gain — itself ~w^2 per
+ * wave — outran it and the tree filled in one run.
+ */
+export const XP_CURVE_BASE = 25;
+export const XP_CURVE_POLY = 1.6;
+export const XP_CURVE_GEO = 1.028;
+
+/** Cumulative XP required to *be* each level. Index 0 unused, index 1 is 0. */
 export const TOWER_XP_TABLE: number[] = (() => {
-  const table: number[] = [0];
-  for (let lv = 1; lv <= 1999; lv++) {
-    const needed = Math.floor(120 * Math.pow(lv, TOWER_XP_CURVE_EXPONENT));
-    table.push(needed);
+  const table: number[] = [0, 0];
+  for (let lv = 2; lv <= TOWER_LEVEL_CAP; lv++) {
+    const needed = Math.floor(
+      XP_CURVE_BASE * Math.pow(lv - 1, XP_CURVE_POLY) * Math.pow(XP_CURVE_GEO, lv - 2),
+    );
+    table.push(table[lv - 1] + needed);
   }
   return table;
 })();
 
+/** Per-kill wave scale. Linear, so the enemy roster's weights stay legible. */
+export function killXpWaveScale(wave: number): number {
+  return 1 + KILL_XP_WAVE_SLOPE * Math.max(1, wave);
+}
+
+export function xpPerKill(type: EnemyType, wave: number): number {
+  return Math.max(1, Math.round(KILL_XP_WEIGHT[type] * killXpWaveScale(wave)));
+}
+
 /**
- * Returns the current level for a given total XP amount.
- *
- * The table is 2 000 entries and strictly ascending, and this is called on
- * every XP gain (i.e. every kill), so it binary-searches for the last entry at
- * or below `xp` rather than walking the table from level 1 (plan §5.6).
+ * Passive-ability XP earned per kill. Uses the passive def's own `xpPerKill`
+ * weight scaled by the same wave curve as tower kill XP, with a 0.25 factor
+ * that keeps the passive track's pace where it is today.
  */
+export function passiveXpPerKill(def: { xpPerKill: number }, wave: number): number {
+  return Math.max(1, Math.round(def.xpPerKill * killXpWaveScale(wave) * 0.25));
+}
+
+export function xpPerWaveClear(wave: number): number {
+  return Math.max(1, Math.round(
+    WAVE_CLEAR_XP_BASE * Math.pow(Math.max(1, wave), WAVE_CLEAR_XP_EXPONENT),
+  ));
+}
+
+/** Clearing deeper than you ever have pays the clear XP again, doubled. */
+export function pioneerBonusXp(wave: number, lifetimeHighestWave: number): number {
+  if (wave <= lifetimeHighestWave) return 0;
+  return Math.round(xpPerWaveClear(wave) * PIONEER_CLEAR_MULTIPLIER);
+}
+
 export function xpToLevel(xp: number): number {
-  if (xp < TOWER_XP_TABLE[1]) return 0;
+  if (xp < TOWER_XP_TABLE[2]) return 1;
   let lo = 1;
-  let hi = TOWER_XP_TABLE.length - 1;
+  let hi = TOWER_LEVEL_CAP;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
     if (xp >= TOWER_XP_TABLE[mid]) lo = mid;
@@ -41,79 +103,31 @@ export function xpToLevel(xp: number): number {
   return lo;
 }
 
-/** Returns XP needed to go from `level` to `level + 1`. */
+/** XP needed to go from `level` to `level + 1`; Infinity at the cap. */
 export function xpForNextLevel(level: number): number {
-  if (level < 0) return TOWER_XP_TABLE[1];
-  if (level >= TOWER_XP_TABLE.length - 1) return Infinity;
+  if (level < 1) return TOWER_XP_TABLE[2];
+  if (level >= TOWER_LEVEL_CAP) return Infinity;
   return TOWER_XP_TABLE[level + 1] - TOWER_XP_TABLE[level];
 }
 
-const BASE_XP_PER_KILL: Record<EnemyType, number> = {
-  normal: 1,
-  fast: 1,
-  tank: 2,
-  flying: 1,
-  healer: 2,
-  boss: 10,
-  splitter: 1,
-  shielded: 2,
-};
-
-/**
- * XP earned from killing one enemy of a given type at a given wave (plan §2.4).
- *
- * Was a flat `1 + 0.02 * wave`, which meant a wave-50 kill was worth 2 XP no
- * matter that the enemy had 1 000x the HP of a wave-1 kill. XP now tracks the
- * enemy's actual wave-scaled HP through `log2`, so deeper waves pay
- * meaningfully more without the reward itself going exponential.
- */
-export function xpPerKill(type: EnemyType, wave: number): number {
-  return Math.max(1, Math.floor(BASE_XP_PER_KILL[type] * enemyXpWeight(type, wave)));
+export function talentPointsAtLevel(level: number): number {
+  return Math.max(0, Math.min(TOWER_LEVEL_CAP, Math.floor(level)));
 }
 
-/**
- * How much an enemy of this type is "worth" in XP terms at this wave, as a
- * multiple of its wave-1 self. Shared by the tower and passive XP tracks so
- * both keep pace with the HP curve instead of drifting apart.
- */
-export function enemyXpWeight(type: EnemyType, wave: number): number {
-  const def = ENEMY_DEFS[type];
-  const hp = type === 'boss'
-    ? bossHPForWave(def.baseHP, wave)
-    : enemyHPForWave(def.baseHP, wave);
-  return Math.max(1, Math.log2(Math.max(2, hp)));
-}
-
-/** XP earned from clearing a wave. */
-export function xpPerWaveClear(wave: number): number {
-  return Math.floor(5 + wave * 0.5);
-}
-
-/** Bonus talent points granted on every Nth level, on top of the per-level one. */
-export const TALENT_BONUS_LEVEL_INTERVAL = 5;
+// ── Legacy exports (kept for downstream consumers) ──────────────────────────
 
 /**
- * XP required for a passive ability to reach the next level (plan §2.5).
- *
- * At the old `75 * level^2.2` — against a flat 1 XP per kill scaled by 0.07 —
- * Marksmanship's level 50 needed roughly six million kills, so the XP bar was
- * decoration and passives were a pure gold sink. Flattened here, and paired
- * with wave-scaled XP gain, so the idle track actually resolves.
+ * @deprecated Used by SaveManager, AbilityPanel, PassivePanel.
+ * Will be updated in a future step.
  */
 export function passiveXpForLevel(level: number): number {
   return Math.floor(75 * Math.pow(level, 1.9));
 }
 
-/** XP required for an active ability to reach the next level. */
+/**
+ * @deprecated Used by AbilityManager, AbilityPanel.
+ * Will be updated in a future step.
+ */
 export function abilityXpForLevel(level: number): number {
   return Math.floor(50 * Math.pow(level, 1.5));
-}
-
-/**
- * Total talent points granted by the time the tower reaches `level`
- * (plan §2.4): one per level, plus a bonus point every fifth level.
- */
-export function talentPointsAtLevel(level: number): number {
-  if (level <= 0) return 0;
-  return level + Math.floor(level / TALENT_BONUS_LEVEL_INTERVAL);
 }

@@ -4,7 +4,16 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- UI plan §9.E: theme-color for the Capacitor status bar. The pairing
+         with --surface-0 in tokens.css is deliberate — both are the ground
+         the app sits on, and keeping them in sync is what makes a notched
+         device look continuous from chrome to canvas. -->
+    <meta name="theme-color" content="#0a0d14" />
     <title>The Tower</title>
+    <!-- The display face is self-hosted (no runtime network for the Capacitor
+         build) and discovered only once the CSS has parsed, so preload the latin
+         cut to overlap the fetch with the stylesheet. See src/styles/tokens.css. -->
+    <link rel="preload" href="/fonts/oswald-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/src/styles/main.css" />
   </head>
   <body>
@@ -13,7 +22,9 @@
 
       <main class="game-layout">
         <section class="canvas-wrap">
-          <canvas id="game-canvas" width="1280" height="720" aria-label="Game world"></canvas>
+          <!-- No width/height attributes: the Camera owns the backing store and
+               sizes it from the CSS box x devicePixelRatio. See docs/camera-system.md. -->
+          <canvas id="game-canvas" aria-label="Game world"></canvas>
           <div id="overlay-root" class="overlay-root"></div>
         </section>
 

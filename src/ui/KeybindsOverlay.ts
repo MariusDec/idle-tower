@@ -1,5 +1,5 @@
 import { ABILITIES } from '../data/abilities';
-import { toggleClass } from '../utils/dom';
+import { Modal } from './Modal';
 
 interface BindGroup {
   title: string;
@@ -18,10 +18,20 @@ function buildGroups(): BindGroup[] {
       binds: ABILITIES.map(a => ({ keys: [a.hotkey], action: `Cast ${a.name}` })),
     },
     {
+      title: 'The battlefield',
+      binds: [
+        { keys: ['Click'], action: 'Collect a loot orb at full value (it drifts home for 40% on its own)' },
+        { keys: ['Hold'], action: 'Aim manually — the tower shoots where you point instead of auto-acquiring' },
+        { keys: ['Hold still'], action: 'Charge a shot for 1.2s, then release: heavy damage, pierce and splash' },
+        { keys: ['Click'], action: 'Place an armed ability (with Instant cast turned off)' },
+        { keys: ['Esc'], action: 'Cancel ability placement' },
+      ],
+    },
+    {
       title: 'Waves & speed',
       binds: [
-        { keys: [',', '<'], action: 'Go to the previous wave' },
-        { keys: ['.', '>'], action: 'Go to the next wave (up to your deepest)' },
+        { keys: ['Space'], action: 'Call the next wave early — banks gold momentum for every second skipped' },
+        { keys: ['R'], action: 'Restart the current wave' },
         { keys: ['P'], action: 'Toggle auto-progress' },
         { keys: ['-'], action: 'Slow the game down' },
         { keys: ['='], action: 'Speed the game up' },
@@ -53,14 +63,14 @@ function buildGroups(): BindGroup[] {
  */
 export class KeybindsOverlay {
   private readonly root: HTMLElement;
-  private wrap: HTMLElement | null = null;
+  private modal: Modal | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
   }
 
   isOpen(): boolean {
-    return this.wrap !== null;
+    return this.modal !== null;
   }
 
   toggle(): void {
@@ -69,25 +79,17 @@ export class KeybindsOverlay {
   }
 
   show(): void {
-    if (this.wrap) return;
-    const wrap = document.createElement('div');
-    wrap.className = 'welcome-modal keybinds-modal';
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'welcome-modal-backdrop';
-    backdrop.addEventListener('click', () => this.hide());
-    wrap.appendChild(backdrop);
-
-    const card = document.createElement('div');
-    card.className = 'welcome-modal-card keybinds-card';
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    card.setAttribute('aria-label', 'Keyboard shortcuts');
-
-    const title = document.createElement('h2');
-    title.className = 'welcome-modal-title';
-    title.textContent = 'Keyboard shortcuts';
-    card.appendChild(title);
+    if (this.modal) return;
+    const modal = new Modal({
+      id: 'keybinds',
+      title: 'Keyboard shortcuts',
+      width: 560,
+      onClose: () => { this.modal = null; },
+      root: this.root,
+    });
+    this.modal = modal;
+    modal.cardElement.classList.add('keybinds-card');
+    const card = modal.body;
 
     const groups = document.createElement('div');
     groups.className = 'keybinds-groups';
@@ -103,17 +105,13 @@ export class KeybindsOverlay {
     btn.addEventListener('click', () => this.hide());
     card.appendChild(btn);
 
-    wrap.appendChild(card);
-    this.root.appendChild(wrap);
-    this.wrap = wrap;
-    requestAnimationFrame(() => toggleClass(wrap, 'is-visible', true));
+    modal.open();
   }
 
   hide(): void {
-    if (this.wrap && this.wrap.parentNode) {
-      this.wrap.parentNode.removeChild(this.wrap);
-    }
-    this.wrap = null;
+    const modal = this.modal;
+    this.modal = null;
+    modal?.destroy();
   }
 
   private renderGroup(group: BindGroup): HTMLElement {

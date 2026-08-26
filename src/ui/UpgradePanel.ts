@@ -3,7 +3,8 @@ import { computeUpgradeValue } from '../types';
 import { UPGRADES } from '../data/upgrades';
 import { upgradeCost } from '../data/formulas';
 import { formatNumber } from '../utils/bigNumber';
-import { setText, toggleClass, setDisplay } from '../utils/dom';
+import { setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
+import { iconFrame } from './Icon';
 
 type UpgradeTabId = 'attack' | 'defense' | 'utility';
 
@@ -34,7 +35,7 @@ const TAB_DEFS: UpgradeTabDef[] = [
   { id: 'utility', label: 'Utility', categories: ['economy', 'utility'] },
 ];
 
-const PERCENT_UPGRADES = new Set(['critChance', 'critDamage', 'goldMulti', 'xpGain', 'upgradeDiscount', 'abilityCostReduction', 'critGold', 'doubleShotChance', 'quickShotChance']);
+const PERCENT_UPGRADES = new Set(['critChance', 'critDamage', 'goldMulti', 'xpGain', 'prospecting', 'abilityCostReduction', 'critGold', 'doubleShotChance', 'quickShotChance']);
 
 function getHighestEvolution(def: UpgradeDef, level: number): UpgradeEvolution | null {
   if (!def.evolutions) return null;
@@ -244,18 +245,22 @@ export class UpgradePanel {
         setText(levelsEl, showLevels ? `+${plan.levels} lv` : '');
         setDisplay(levelsEl, showLevels ? '' : 'none');
       }
-      if (isTotalEffectUpgrade(u)) {
-        setText(levelEl, atMax ? formatNumberValue(computeUpgradeValue(u, level), 1) : '');
-        setDisplay(levelEl, atMax ? '' : 'none');
-      } else {
-        setText(levelEl, atMax ? `Level ${level} (max)` : `Level ${level}`);
-      }
+      setText(levelEl, atMax ? `Level ${level} (max)` : `Level ${level}`);
       setText(costEl, atMax ? '—' : formatNumber(cost));
       setText(bonusEl, isTotalEffectUpgrade(u) ? formatEffectBonus(u, level, false, 0) : formatEffectBonus(u, level));
       const affordable = !atMax && !emptyMax && plan.levels > 0 && gold >= cost;
       btn.disabled = !affordable;
       toggleClass(btn, 'can-afford', affordable);
       setText(btn, atMax ? 'Maxed' : plan.levels > 1 ? `Buy ×${plan.levels}` : 'Buy');
+      if (rowEl) {
+        // Plan §8.B: the card's affordability state, legible without colour —
+        // the action dims and disables, the cost reads as unmet.
+        setDataAttr(rowEl, 'afford', atMax ? 'maxed' : affordable ? 'yes' : 'no');
+        // The evolution ribbon fires one level out, not on the level itself.
+        const upcoming = getNextEvolution(u, level);
+        const near = upcoming !== null && upcoming.level - level <= 1;
+        setDataAttr(rowEl, 'evolution', near ? 'near' : 'none');
+      }
 
       // Evolution display
       if (nameEl && u.evolutions) {
@@ -465,9 +470,11 @@ export class UpgradePanel {
 
   private renderRow(u: UpgradeDef): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'upgrade-row';
+    row.className = 'card upgrade-row';
     row.dataset.upgradeId = u.id;
     this.rowById.set(u.id, row);
+
+    row.appendChild(iconFrame(u.icon, { variant: 'upgrade', className: 'upgrade-icon' }));
 
     const info = document.createElement('div');
     info.className = 'upgrade-info';
@@ -488,7 +495,7 @@ export class UpgradePanel {
     meta.className = 'upgrade-meta';
     const level = document.createElement('span');
     level.className = 'upgrade-level';
-    level.textContent = isTotalEffectUpgrade(u) ? '' : 'Level 0';
+    level.textContent = 'Level 0';
     const bonus = document.createElement('span');
     bonus.className = 'upgrade-bonus';
     bonus.textContent = formatEffectBonus(u, 0);
@@ -505,9 +512,9 @@ export class UpgradePanel {
     row.appendChild(info);
 
     const action = document.createElement('div');
-    action.className = 'upgrade-action';
+    action.className = 'card-action upgrade-action';
     const cost = document.createElement('div');
-    cost.className = 'upgrade-cost';
+    cost.className = 'card-cost upgrade-cost';
     cost.textContent = '0';
     const levels = document.createElement('div');
     levels.className = 'upgrade-cost-levels';

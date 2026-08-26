@@ -1,5 +1,5 @@
 import type { EquipmentSlot, Equipment, Rarity, EquipmentStatType } from '../types';
-import { rollDrop as dataRollDrop } from '../data/equipment';
+import { rollDrop as dataRollDrop, type DropOptions } from '../data/equipment';
 import { EventBus } from '../game/EventBus';
 
 export class EquipmentManager {
@@ -31,8 +31,12 @@ export class EquipmentManager {
     this.findChanceBonus = Math.max(0, bonus);
   }
 
-  rollDrop(wave: number, source: 'boss' | 'elite' | 'milestone'): Equipment | null {
-    const eq = dataRollDrop(wave, source, this.findChanceBonus);
+  rollDrop(
+    wave: number,
+    source: 'boss' | 'elite' | 'milestone',
+    options: DropOptions = {},
+  ): Equipment | null {
+    const eq = dataRollDrop(wave, source, this.findChanceBonus, options);
     if (eq) {
       this.inventory.push(eq);
       this.bus.emit('equipment_dropped', { equipment: eq });
@@ -45,6 +49,8 @@ export class EquipmentManager {
     if (idx === -1) return false;
     const item = this.inventory[idx];
     if (item.slot !== slot) return false;
+    // Equipping counts as "seen": it clears the NEW dot and the tab badge.
+    item.seen = true;
 
     const current = this.equipped[slot];
     if (current) {
@@ -61,7 +67,9 @@ export class EquipmentManager {
     const item = this.equipped[slot];
     if (!item) return false;
 
-    this.inventory.push({ ...item, stats: [...item.stats] });
+    // It was seen the moment it was equipped (or before, from an old save);
+    // returning to the inventory must not resurrect the NEW dot.
+    this.inventory.push({ ...item, stats: [...item.stats], seen: true });
     delete this.equipped[slot];
     this.bus.emit('equipment_unequipped', { slot });
     return true;

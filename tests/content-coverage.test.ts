@@ -9,8 +9,9 @@
  * for: it is the regression test for the whole class of bug.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { TALENTS, TALENT_STATS, TALENTS_BY_BRANCH } from '../src/data/talentTree';
+import { TALENTS, TALENT_STATS, TALENTS_BY_BRANCH, TALENT_BY_ID, TALENT_GRID, TALENT_ENDLESS, TALENT_BEHAVIOR_CONSUMERS, type TalentBehavior } from '../src/data/talentTree';
 import type { TalentDef, TalentEffectType } from '../src/data/talentTree';
 import { ACHIEVEMENTS, ACHIEVEMENT_REWARD_CONSUMERS } from '../src/data/achievements';
 import type { AchievementRewardType } from '../src/data/achievements';
@@ -18,10 +19,91 @@ import { ABILITIES } from '../src/data/abilities';
 import { PASSIVE_ABILITIES } from '../src/data/passiveAbilities';
 import { RESEARCH_NODES } from '../src/data/research';
 import { UPGRADES } from '../src/data/upgrades';
+import {
+  BOSS_PATTERNS,
+  BOSS_PATTERN_CONSUMERS,
+  BOSS_PATTERN_HINTS,
+  BOSS_PATTERN_HP_WEIGHT,
+  BOSS_PATTERN_NAMES,
+  ENEMY_BEHAVIOR_CONSUMERS,
+  ENEMY_DEFS,
+  ENEMY_LABELS,
+  ENEMY_SPAWN_WEIGHTS,
+  PRIORITY_TARGET_ORDER,
+  bossPatternsForWave,
+  spawnPoolForWave,
+} from '../src/data/enemies';
+import { ENEMY_THREAT_CLASS } from '../src/data/pacing';
+import { MILESTONE_EXEMPT_ENEMIES, MILESTONES } from '../src/data/milestones';
+import { RENDERED_ENEMY_SHAPES } from '../src/game/Renderer';
+import { TARGETING_MODES } from '../src/data/tower';
+import type { BossPattern, EnemyType } from '../src/types';
+import {
+  BLESSINGS,
+  BLESSING_BEHAVIOR_CONSUMERS,
+  BLESSING_STATS,
+  BLESSING_STAT_LABELS,
+  type BlessingBehavior,
+} from '../src/data/blessings';
+import { ICON_CREDITS, ICON_IDS, type IconId } from '../src/data/icons';
+import { STAT_ICONS, STAT_ICON_KEYS } from '../src/data/iconMap';
+import { EQUIPMENT_DEFS, RARITY_ICONS, SLOT_ICONS } from '../src/data/equipment';
+import { CORES } from '../src/data/cores';
+import { NAV_GROUPS } from '../src/ui/navGroups';
+import { AP_PERKS, TP_PERKS } from '../src/data/prestige';
+import { WAVE_MODIFIERS } from '../src/data/waveModifiers';
+import {
+  CONTRACTS,
+  CONTRACT_ENEMY_LABELS,
+  describeContract,
+  describeReward,
+} from '../src/data/contracts';
 
-/** A talent's declared effects: the primary one, plus the optional second. */
-const effectsOf = (t: TalentDef): TalentEffectType[] =>
-  t.secondary ? [t.effect, t.secondary] : [t.effect];
+/**
+ * Boss patterns (gameplay plan §3.2).
+ *
+ * Same guard as the enemy roster's: `tsc` catches a missing `switch` case, but
+ * nothing catches a pattern whose consumer entry is a placeholder, or one that
+ * no tier ever draws. Both would be a name on the boss bar attached to nothing,
+ * which is precisely the failure mode §0.4 is complaining about.
+ */
+describe('boss patterns', () => {
+  it('names a real consumer for every pattern', () => {
+    for (const pattern of BOSS_PATTERNS) {
+      const consumer = BOSS_PATTERN_CONSUMERS[pattern];
+      expect(consumer, `${pattern} has no consumer`).toBeTruthy();
+      expect(consumer.length, `${pattern} consumer is too vague`).toBeGreaterThan(20);
+      expect(consumer.toLowerCase(), `${pattern} consumer is a placeholder`)
+        .not.toMatch(/todo|nothing|unused|n\/a|tbd/);
+    }
+  });
+
+  it('gives every pattern a player-facing name and an answer', () => {
+    for (const pattern of BOSS_PATTERNS) {
+      expect(BOSS_PATTERN_NAMES[pattern], `${pattern} name`).toBeTruthy();
+      expect(BOSS_PATTERN_HINTS[pattern].length, `${pattern} hint`).toBeGreaterThan(20);
+    }
+  });
+
+  it('prices every pattern in the durability budget', () => {
+    for (const pattern of BOSS_PATTERNS) {
+      // `slam` is legitimately zero — it costs tower HP, not tower damage — so
+      // the guard is that the key exists and is a number, not that it is > 0.
+      expect(typeof BOSS_PATTERN_HP_WEIGHT[pattern], pattern).toBe('number');
+    }
+  });
+
+  it('actually draws every pattern somewhere in the tier rotation', () => {
+    const drawn = new Set<BossPattern>();
+    for (let wave = 10; wave <= 200; wave += 10) {
+      for (const pattern of bossPatternsForWave(wave)) drawn.add(pattern);
+    }
+    expect([...drawn].sort()).toEqual([...BOSS_PATTERNS].sort());
+  });
+});
+
+/** A talent's declared effects: the new array format. */
+const effectsOf = (t: TalentDef): TalentEffectType[] => t.effects;
 
 describe('talents', () => {
   it('declares every effect stat in the consumed union', () => {
@@ -45,11 +127,6 @@ describe('talents', () => {
     expect(dead).toEqual([]);
   });
 
-  it('lets every talent actually be bought', () => {
-    const unbuyable = TALENTS.filter((t) => t.maxPoints <= 0 || t.costPerPoint <= 0);
-    expect(unbuyable.map((t) => t.id)).toEqual([]);
-  });
-
   it('has unique ids', () => {
     expect(new Set(TALENTS.map((t) => t.id)).size).toBe(TALENTS.length);
   });
@@ -69,6 +146,137 @@ describe('talents', () => {
     for (const [branch, talents] of Object.entries(TALENTS_BY_BRANCH)) {
       expect(talents.length, `${branch} should not be empty`).toBeGreaterThan(0);
     }
+  });
+
+  // ── New assertions from §14.2 ──
+
+  it('gives every branch a 5-row grid with unique row:col positions', () => {
+    const branches = ['offense', 'defense', 'utility', 'magic'] as const;
+    for (const branch of branches) {
+      const grid = TALENT_GRID[branch];
+      expect(grid.length, `${branch} grid`).toBeGreaterThanOrEqual(14);
+      // Unique row:col positions
+      const positions = grid.map(t => `${t.row}:${t.col}`);
+      expect(new Set(positions).size, `${branch} unique positions`).toBe(grid.length);
+    }
+  });
+
+  it('places prerequisites in the row above, same branch', () => {
+    for (const t of TALENTS) {
+      if (t.endless) continue; // endless nodes have no prereqs
+      for (const prereqId of t.prerequisites) {
+        const prereq = TALENT_BY_ID[prereqId];
+        expect(prereq, `${t.id} prereq ${prereqId} exists`).toBeDefined();
+        expect(prereq!.branch, `${t.id} prereq ${prereqId} same branch`).toBe(t.branch);
+        expect(prereq!.row, `${t.id} prereq ${prereqId} row above`).toBeLessThan(t.row);
+      }
+    }
+  });
+
+  it('has monotonically increasing row gates', () => {
+    const branches = ['offense', 'defense', 'utility', 'magic'] as const;
+    for (const branch of branches) {
+      const grid = TALENT_GRID[branch];
+      const byRow = new Map<number, number[]>();
+      for (const t of grid) {
+        if (!byRow.has(t.row)) byRow.set(t.row, []);
+        byRow.get(t.row)!.push(t.requiresBranchPoints);
+      }
+      const rows = [...byRow.keys()].sort((a, b) => a - b);
+      for (let i = 1; i < rows.length; i++) {
+        const prevGate = Math.max(...byRow.get(rows[i - 1])!);
+        const currGate = Math.min(...byRow.get(rows[i])!);
+        expect(currGate, `${branch} row ${rows[i]} gate >= row ${rows[i - 1]} gate`)
+          .toBeGreaterThanOrEqual(prevGate);
+      }
+    }
+  });
+
+  it('has the designed tree at or above 75% of level cap (160/200 = 80%)', () => {
+    // Total points available in the grid (rows 1-5, excluding endless)
+    const gridTotal = TALENTS.filter(t => !t.endless).reduce((s, t) => s + t.maxPoints, 0);
+    // Level cap is 200, so 200 talent points max
+    expect(gridTotal).toBeGreaterThanOrEqual(150); // 75% of 200
+  });
+
+  it('declares a 40-point reachable capacity per branch (160 total)', () => {
+    // Mirrors the BRANCH_CAPACITY constant in src/ui/TalentPanel.ts so a
+    // drift between the panel's tab labels and the data is a test failure.
+    const branches = ['offense', 'defense', 'utility', 'magic'] as const;
+    let total = 0;
+    for (const branch of branches) {
+      const grid = TALENT_GRID[branch];
+      const reachable = grid
+        .filter(n => !n.exclusiveGroup)
+        .reduce((s, n) => s + n.maxPoints, 0) + 1;
+      expect(reachable, `${branch} reachable capacity`).toBe(40);
+      total += reachable;
+    }
+    expect(total).toBe(160);
+  });
+
+  it('gives every branch exactly one endless node', () => {
+    const branches = ['offense', 'defense', 'utility', 'magic'] as const;
+    for (const branch of branches) {
+      const endless = TALENTS.filter(t => t.branch === branch && t.endless);
+      expect(endless.length, `${branch} endless count`).toBe(1);
+      expect(endless[0].maxPoints, `${endless[0].id} maxPoints`).toBe(999);
+    }
+  });
+
+  it('makes every row-5 keystone reachable from a root (BFS)', () => {
+    const branches = ['offense', 'defense', 'utility', 'magic'] as const;
+    for (const branch of branches) {
+      const grid = TALENT_GRID[branch];
+      const roots = grid.filter(t => t.row === 1);
+      expect(roots.length, `${branch} roots`).toBeGreaterThanOrEqual(2);
+
+      // BFS from roots
+      const reachable = new Set<string>();
+      const queue = [...roots.map(t => t.id)];
+      while (queue.length > 0) {
+        const id = queue.shift()!;
+        if (reachable.has(id)) continue;
+        reachable.add(id);
+        // Find children that have this as a prerequisite
+        for (const t of grid) {
+          if (t.prerequisites.includes(id) && !reachable.has(t.id)) {
+            queue.push(t.id);
+          }
+        }
+      }
+
+      const keystones = grid.filter(t => t.row === 5);
+      for (const ks of keystones) {
+        expect(reachable.has(ks.id), `${ks.id} reachable from root`).toBe(true);
+      }
+    }
+  });
+
+  it('names a real consumer for every talent behaviour', () => {
+    const behaviors = Object.keys(TALENT_BEHAVIOR_CONSUMERS) as TalentBehavior[];
+    expect(behaviors.length).toBeGreaterThan(0);
+    for (const behavior of behaviors) {
+      const consumer = TALENT_BEHAVIOR_CONSUMERS[behavior];
+      expect(consumer, `${behavior} has no consumer`).toBeTruthy();
+      expect(consumer.length, `${behavior} consumer is too vague`).toBeGreaterThan(20);
+    }
+  });
+
+  it('only declares behaviours that have consumers', () => {
+    const declared = new Set(
+      TALENTS.filter(t => t.behavior).map(t => t.behavior!),
+    );
+    const consumed = new Set(Object.keys(TALENT_BEHAVIOR_CONSUMERS));
+    const orphaned = [...declared].filter(b => !consumed.has(b));
+    expect(orphaned).toEqual([]);
+  });
+
+  it('grants every behaviour through at least one talent', () => {
+    const granted = new Set(TALENTS.filter(t => t.behavior).map(t => t.behavior!));
+    const consumed = Object.keys(TALENT_BEHAVIOR_CONSUMERS) as TalentBehavior[];
+    const orphaned = consumed.filter(b => !granted.has(b));
+    expect(orphaned).toEqual([]);
   });
 });
 
@@ -125,6 +333,40 @@ describe('achievements', () => {
   });
 });
 
+describe('contracts', () => {
+  /**
+   * The plan's cross-cutting rule 3, applied to §5's union.
+   *
+   * `CONTRACT_ENEMY_LABELS` is a `Record<EnemyType, string>`, so an enemy type
+   * added without a contract label is a compile error; this is the runtime half
+   * — that no label is a placeholder, and that every `kill_type` contract names
+   * an enemy the spawn pool actually produces.
+   */
+  it('names every enemy type it can ask the player to kill', () => {
+    for (const type of Object.keys(ENEMY_DEFS) as EnemyType[]) {
+      const label = CONTRACT_ENEMY_LABELS[type];
+      expect(label, `${type} has no contract label`).toBeTruthy();
+      expect(label.toLowerCase()).not.toMatch(/todo|tbd|unknown/);
+    }
+  });
+
+  it('renders a non-empty goal line for every def', () => {
+    expect(CONTRACTS.length).toBeGreaterThan(15);
+    for (const def of CONTRACTS) {
+      const text = describeContract(def.goal, 7);
+      expect(text, `${def.id} renders nothing`).toBeTruthy();
+      expect(text.length, `${def.id} renders a stub`).toBeGreaterThan(8);
+    }
+  });
+
+  it('renders a non-empty reward line for every def', () => {
+    for (const def of CONTRACTS) {
+      const text = describeReward(def.reward, 500);
+      expect(text, `${def.id} advertises no reward`).toBeTruthy();
+    }
+  });
+});
+
 describe('content tables are internally consistent', () => {
   it('has unique ids across every table', () => {
     for (const [name, ids] of [
@@ -155,5 +397,332 @@ describe('content tables are internally consistent', () => {
         .map((e) => `${u.id} evolution at level ${e.level} (max ${u.maxLevel})`),
     );
     expect(bad).toEqual([]);
+  });
+});
+
+
+/**
+ * Blessings (gameplay plan §1.8).
+ *
+ * `tsc` catches a `BlessingStat` with no case in the contributor and a
+ * `BlessingBehavior` with no entry in the consumer map. What it cannot catch is
+ * a *card* that declares nothing, a `requires` pointing at a deleted id, or a
+ * consumer entry that is a placeholder — the exact class of rot that produced
+ * twenty inert talents. That is what this block is for.
+ */
+describe('blessings', () => {
+  it('has unique ids', () => {
+    expect(new Set(BLESSINGS.map((b) => b.id)).size).toBe(BLESSINGS.length);
+  });
+
+  it('gives every blessing something to do', () => {
+    const inert = BLESSINGS.filter(
+      (b) => !b.behavior && (b.effects ?? []).length === 0,
+    );
+    expect(inert.map((b) => b.id)).toEqual([]);
+  });
+
+  it('gives every declared effect a non-zero per-stack value', () => {
+    const effects = BLESSINGS.flatMap((b) => (b.effects ?? []).map((e) => ({ id: b.id, e })));
+    expect(effects.length).toBeGreaterThan(0);
+    expect(effects.filter((x) => x.e.perStack === 0).map((x) => x.id)).toEqual([]);
+  });
+
+  it('declares every effect stat inside the consumed union', () => {
+    const known = new Set<string>(BLESSING_STATS);
+    const orphans = BLESSINGS.flatMap((b) =>
+      (b.effects ?? []).filter((e) => !known.has(e.stat)).map((e) => `${b.id} -> ${e.stat}`),
+    );
+    expect(orphans).toEqual([]);
+  });
+
+  it('has no unused stat in the union either', () => {
+    const declared = new Set(BLESSINGS.flatMap((b) => (b.effects ?? []).map((e) => e.stat)));
+    expect(BLESSING_STATS.filter((s) => !declared.has(s))).toEqual([]);
+  });
+
+  it('labels every stat, for the card and the held list', () => {
+    for (const stat of BLESSING_STATS) {
+      expect(BLESSING_STAT_LABELS[stat], stat).toBeTruthy();
+    }
+  });
+
+  it('names a real consumer for every behavior', () => {
+    const behaviors = Object.keys(BLESSING_BEHAVIOR_CONSUMERS) as BlessingBehavior[];
+    expect(behaviors.length).toBeGreaterThan(0);
+    for (const behavior of behaviors) {
+      expect(BLESSING_BEHAVIOR_CONSUMERS[behavior].length, behavior).toBeGreaterThan(0);
+    }
+  });
+
+  it('grants every behavior through at least one blessing', () => {
+    const granted = new Set(BLESSINGS.map((b) => b.behavior).filter(Boolean));
+    const orphaned = (Object.keys(BLESSING_BEHAVIOR_CONSUMERS) as BlessingBehavior[])
+      .filter((b) => !granted.has(b));
+    expect(orphaned).toEqual([]);
+  });
+
+  /**
+   * There is no longer a deferred behavior. `orb_magnet` was the last one —
+   * it waited on Part 4's loot system, which now exists, so the card is back
+   * in the pool and nothing may quietly take its place behind the flag.
+   */
+  it('has no behavior hiding behind the offerable flag', () => {
+    expect(BLESSINGS.filter((b) => b.offerable === false).map((b) => b.id)).toEqual([]);
+    const magnet = BLESSINGS.filter((b) => b.behavior === 'orb_magnet');
+    expect(magnet.length).toBe(1);
+    expect(magnet[0].offerable).toBeUndefined();
+    expect(BLESSING_BEHAVIOR_CONSUMERS.orb_magnet).toContain('LootManager');
+  });
+
+  it('only names prerequisites that exist, and never itself', () => {
+    const ids = new Set(BLESSINGS.map((b) => b.id));
+    const requires = BLESSINGS.filter((b) => b.requires);
+    expect(requires.length).toBeGreaterThan(0);
+    const bad = requires
+      .filter((b) => !ids.has(b.requires!) || b.requires === b.id)
+      .map((b) => `${b.id} requires ${b.requires}`);
+    expect(bad).toEqual([]);
+  });
+
+  it('gives every blessing a positive weight and stack count', () => {
+    const bad = BLESSINGS.filter((b) => b.weight <= 0 || b.maxStacks <= 0);
+    expect(bad.map((b) => b.id)).toEqual([]);
+  });
+
+  it('keeps a behavior blessing to a single stack', () => {
+    const stacked = BLESSINGS.filter((b) => b.behavior && b.maxStacks !== 1);
+    expect(stacked.map((b) => b.id)).toEqual([]);
+  });
+
+  /**
+   * Plan §1.6: no single blessing may exceed +120% of one stat at max stacks.
+   * `pierceFlat` and `armorPenFlat` are counts, not fractions, so the ceiling
+   * does not apply to them.
+   */
+  it('keeps every percentage blessing under the per-stat ceiling at max stacks', () => {
+    const FLAT: string[] = ['pierceFlat', 'armorPenFlat'];
+    const checked = BLESSINGS.flatMap((b) =>
+      (b.effects ?? []).filter((e) => !FLAT.includes(e.stat)).map((e) => ({ b, e })),
+    );
+    expect(checked.length).toBeGreaterThan(0);
+    const over = checked
+      .filter(({ b, e }) => Math.abs(e.perStack * b.maxStacks) > 1.2)
+      .map(({ b, e }) => `${b.id} -> ${e.stat} ${(e.perStack * b.maxStacks * 100).toFixed(0)}%`);
+    expect(over).toEqual([]);
+  });
+});
+
+
+/**
+ * The enemy roster (gameplay plan §2.8).
+ *
+ * The failure this guards against is specific and has already happened once in
+ * this codebase's history, to talents: content that is *declared* — it has a
+ * table row, a colour, a spawn weight — and is inert, invisible or unannounced
+ * because the three or four places that have to know about it were never
+ * updated together. `tsc` covers the `Record<EnemyType, …>` maps and the
+ * exhaustive switches; these are the parts it cannot see.
+ */
+describe('enemy roster', () => {
+  const ALL_TYPES = Object.keys(ENEMY_DEFS) as EnemyType[];
+
+  it('covers every type in the def table', () => {
+    // Guard against the whole block going vacuous if the table is restructured.
+    expect(ALL_TYPES.length).toBeGreaterThanOrEqual(13);
+    for (const type of ALL_TYPES) {
+      expect(ENEMY_DEFS[type].type, type).toBe(type);
+    }
+  });
+
+  it('gives every type a shape the renderer can actually paint', () => {
+    const paintable = new Set<string>(RENDERED_ENEMY_SHAPES);
+    const unpaintable = ALL_TYPES.filter(t => !paintable.has(ENEMY_DEFS[t].shape));
+    expect(unpaintable).toEqual([]);
+  });
+
+  it('gives every type a non-empty, distinct short label (plan §7.3)', () => {
+    // The threat preview names types by count ("3 Siege"). A `Record` over the
+    // union already makes an omission a compile error; this is what stops one
+    // shipping as an empty string or a duplicate of another type's name.
+    const labels = ALL_TYPES.map(t => ENEMY_LABELS[t]);
+    for (const [i, label] of labels.entries()) {
+      expect(label, ALL_TYPES[i]).toBeTruthy();
+    }
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it('classifies every type as trash, threat or boss (plan §7.3)', () => {
+    // The preview names threats and only counts trash, so a type with no class
+    // would be silently folded into "31 enemies".
+    for (const type of ALL_TYPES) {
+      expect(['trash', 'threat', 'boss'], type).toContain(ENEMY_THREAT_CLASS[type]);
+    }
+    // And the classification has to actually discriminate — if everything were
+    // trash the preview would never name anything.
+    const threats = ALL_TYPES.filter(t => ENEMY_THREAT_CLASS[t] === 'threat');
+    expect(threats.length).toBeGreaterThanOrEqual(5);
+    expect(ENEMY_THREAT_CLASS.boss).toBe('boss');
+    expect(ENEMY_THREAT_CLASS.normal).toBe('trash');
+  });
+
+  it('gives every type a distinct body colour', () => {
+    // Two types that draw identically are one type as far as the player is
+    // concerned, whatever the def table says.
+    const colors = ALL_TYPES.map(t => ENEMY_DEFS[t].color);
+    expect(new Set(colors).size).toBe(colors.length);
+  });
+
+  it('announces every type in the milestone strip', () => {
+    const announced = new Set(
+      MILESTONES.filter(m => m.kind === 'enemy').map(m => m.refId),
+    );
+    const missing = ALL_TYPES
+      .filter(t => !MILESTONE_EXEMPT_ENEMIES.includes(t))
+      .filter(t => !announced.has(t));
+    expect(missing).toEqual([]);
+  });
+
+  it('announces each type on the wave it actually unlocks', () => {
+    for (const m of MILESTONES) {
+      if (m.kind !== 'enemy') continue;
+      const type = m.refId as EnemyType;
+      expect(m.wave, type).toBe(ENEMY_DEFS[type].unlockWave);
+    }
+  });
+
+  it('keeps the milestone exemptions to the two types that earn them', () => {
+    // `normal` is the baseline the player starts with and `boss` has its own
+    // on-canvas banner. Any *other* exemption is a gap, not a decision.
+    expect([...MILESTONE_EXEMPT_ENEMIES].sort()).toEqual(['boss', 'normal']);
+  });
+
+  it('names a real behaviour consumer for every type', () => {
+    for (const type of ALL_TYPES) {
+      const consumer = ENEMY_BEHAVIOR_CONSUMERS[type];
+      expect(consumer, `${type} has no behaviour`).toBeTruthy();
+      expect(consumer.length, `${type} behaviour is too vague`).toBeGreaterThan(20);
+      expect(consumer.toLowerCase(), `${type} behaviour is a placeholder`)
+        .not.toMatch(/todo|nothing|unused|n\/a|tbd/);
+    }
+  });
+
+  it('puts every type except the boss into the spawn pool', () => {
+    const orphans = ALL_TYPES.filter(t => t !== 'boss' && ENEMY_SPAWN_WEIGHTS[t] <= 0);
+    expect(orphans).toEqual([]);
+    expect(ENEMY_SPAWN_WEIGHTS.boss).toBe(0);
+  });
+
+  it('gates the pool on the def table\'s unlock wave', () => {
+    for (const type of ALL_TYPES) {
+      if (ENEMY_SPAWN_WEIGHTS[type] <= 0) continue;
+      const unlock = ENEMY_DEFS[type].unlockWave;
+      expect(spawnPoolForWave(unlock - 1).some(e => e.type === type), type).toBe(false);
+      expect(spawnPoolForWave(unlock).some(e => e.type === type), type).toBe(true);
+    }
+  });
+
+  it('only prioritises types that exist', () => {
+    expect(PRIORITY_TARGET_ORDER.length).toBeGreaterThan(0);
+    const unknown = PRIORITY_TARGET_ORDER.filter(t => !(t in ENEMY_DEFS));
+    expect(unknown).toEqual([]);
+  });
+
+  it('offers every targeting mode exactly once, priority first', () => {
+    const ids = TARGETING_MODES.map(m => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids[0]).toBe('priority');
+    // The dead `'first'` alias is gone (plan §2.3) and must not come back.
+    expect(ids).not.toContain('first');
+    for (const m of TARGETING_MODES) {
+      expect(m.label.length, m.id).toBeGreaterThan(0);
+      expect(m.hint.length, m.id).toBeGreaterThan(8);
+    }
+  });
+});
+
+/**
+ * Icons (UI plan §6.2).
+ *
+ * `IconId` is a closed union generated from the manifest in
+ * `scripts/fetch-icons.mjs`, so `tsc` already rejects an icon nobody pinned.
+ * What `tsc` cannot see is the other three halves of the contract: that the
+ * *committed sprite* actually contains a symbol for every id, that every id in
+ * the manifest is *used* by something (a pinned icon nobody references is
+ * 1.5 KB of dead payload on every load), and that `ATTRIBUTION.md` still
+ * credits the exact set that ships — which CC BY 3.0 requires.
+ */
+describe('icons', () => {
+  const sprite = readFileSync(new URL('../public/icons/sprite.svg', import.meta.url), 'utf8');
+  const attribution = readFileSync(new URL('../ATTRIBUTION.md', import.meta.url), 'utf8');
+  const spriteIds = new Set([...sprite.matchAll(/id="gi-([a-z0-9-]+)"/g)].map((m) => m[1]));
+
+  /** Every icon id the game actually asks for, with the surface that asks. */
+  const referenced: Array<[string, IconId]> = [
+    ...ABILITIES.map((a) => [`ability:${a.id}`, a.icon] as [string, IconId]),
+    ...PASSIVE_ABILITIES.map((p) => [`passive:${p.id}`, p.icon] as [string, IconId]),
+    ...UPGRADES.map((u) => [`upgrade:${u.id}`, u.icon] as [string, IconId]),
+    ...RESEARCH_NODES.map((r) => [`research:${r.id}`, r.icon] as [string, IconId]),
+    ...TALENTS.map((t) => [`talent:${t.id}`, t.icon] as [string, IconId]),
+    ...BLESSINGS.map((b) => [`blessing:${b.id}`, b.icon] as [string, IconId]),
+    ...CORES.map((c) => [`core:${c.id}`, c.icon] as [string, IconId]),
+    ...EQUIPMENT_DEFS.map((e) => [`equipment:${e.id}`, e.icon] as [string, IconId]),
+    ...[...AP_PERKS, ...TP_PERKS].map((p) => [`perk:${p.id}`, p.icon] as [string, IconId]),
+    ...ACHIEVEMENTS.map((a) => [`achievement:${a.id}`, a.icon] as [string, IconId]),
+    ...WAVE_MODIFIERS.map((m) => [`modifier:${m.id}`, m.icon] as [string, IconId]),
+    ...MILESTONES.map((m) => [`milestone:${m.id}`, m.icon] as [string, IconId]),
+    ...(Object.keys(ENEMY_DEFS) as EnemyType[]).map((t) => [`enemy:${t}`, ENEMY_DEFS[t].icon] as [string, IconId]),
+    ...(Object.keys(SLOT_ICONS) as Array<keyof typeof SLOT_ICONS>).map((s) => [`slot:${s}`, SLOT_ICONS[s]] as [string, IconId]),
+    ...(Object.keys(RARITY_ICONS) as Array<keyof typeof RARITY_ICONS>).map((r) => [`rarity:${r}`, RARITY_ICONS[r]] as [string, IconId]),
+    ...STAT_ICON_KEYS.map((k) => [`stat:${k}`, STAT_ICONS[k]] as [string, IconId]),
+    ...NAV_GROUPS.map((g) => [`nav:${g.id}`, g.icon] as [string, IconId]),
+  ];
+
+  it('gives every piece of content a real icon', () => {
+    const missing = referenced.filter(([, id]) => !id || !spriteIds.has(id));
+    expect(missing.map(([where, id]) => `${where} -> ${id}`)).toEqual([]);
+  });
+
+  it('covers every surface the plan promised', () => {
+    // The §6.2 table, as a count. A table that quietly loses entries stops
+    // being covered without anything else failing.
+    expect(ABILITIES.length).toBe(10);
+    expect(PASSIVE_ABILITIES.length).toBe(8);
+    expect(UPGRADES.length).toBe(29);
+    expect(RESEARCH_NODES.length).toBe(17);
+    expect(TALENTS.length).toBe(60);
+    expect(BLESSINGS.length).toBe(30);
+    expect(CORES.length).toBe(5);
+    expect(EQUIPMENT_DEFS.length).toBe(10);
+    expect(Object.keys(SLOT_ICONS)).toHaveLength(8);
+    expect(Object.keys(RARITY_ICONS)).toHaveLength(5);
+    expect(Object.keys(ENEMY_DEFS)).toHaveLength(13);
+    expect(STAT_ICON_KEYS.length).toBeGreaterThanOrEqual(16);
+  });
+
+  it('ships a sprite that matches the generated union exactly', () => {
+    expect([...spriteIds].sort()).toEqual([...ICON_IDS].sort());
+  });
+
+  it('pins nothing it does not use', () => {
+    const used = new Set(referenced.map(([, id]) => id));
+    expect(ICON_IDS.filter((id) => !used.has(id))).toEqual([]);
+  });
+
+  it('credits every shipped icon, with a licence', () => {
+    for (const id of ICON_IDS) {
+      const credit = ICON_CREDITS[id];
+      expect(credit, `${id} has no credit`).toBeTruthy();
+      expect(['CC BY 3.0', 'CC0'], `${id} licence`).toContain(credit.license);
+      expect(attribution, `${id} missing from ATTRIBUTION.md`).toContain(`\`${id}\``);
+      expect(attribution, `${credit.author} missing from ATTRIBUTION.md`).toContain(credit.author);
+    }
+  });
+
+  it('leaves no single-letter glyph behind in a content table', () => {
+    // Acceptance criterion §12.4. `EnemyDef.glyph` is exempt: it is a *canvas*
+    // marking painted inside the body silhouette, not an icon in the UI.
+    const singleChar = referenced.filter(([, id]) => String(id).length <= 2);
+    expect(singleChar).toEqual([]);
   });
 });

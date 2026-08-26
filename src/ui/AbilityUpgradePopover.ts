@@ -35,11 +35,18 @@ export class AbilityUpgradePopover {
     const def = ABILITY_BY_ID[id];
     if (!def) return;
     this.currentId = id;
-    this.titleEl.textContent = ''; // `${def.name} — Upgrade`;
     const cost = this.handlers.getUpgradeCost(id);
     const isMaxed = this.handlers.isMaxed(id);
     const canAfford = isMaxed ? false : this.handlers.canAfford(id, 0);
-    this.body.innerHTML = renderAbilityTooltip(def, currentStats, cost, canAfford, true, false);
+    // The title was deliberately blank, which left a dialog whose subject was
+    // only identifiable from the tooltip body's first line. On a phone, where
+    // this is now the primary way to read an ability at all, the sheet has to
+    // say what it is about.
+    this.titleEl.textContent = isMaxed ? `${def.name} — Max` : `${def.name} — Upgrade`;
+    // A maxed ability shows its stats without the "→ next level" column. It
+    // used to refuse to open at all, so the one surface that explains what an
+    // ability does disappeared the moment the player finished paying for it.
+    this.body.innerHTML = renderAbilityTooltip(def, currentStats, cost, canAfford, !isMaxed, false);
     this.upgradeBtn.style.display = isMaxed ? 'none' : 'inline-flex';
     this.upgradeBtn.textContent = `Upgrade · ${formatGold(cost)}g`;
     this.upgradeBtn.disabled = !canAfford;

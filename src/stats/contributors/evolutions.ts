@@ -1,3 +1,4 @@
+import { DRAGON_HOARD_GOLD_CAP } from '../../data/formulas';
 import { EVOLUTION_EFFECT_IDS } from '../../data/upgrades';
 import type { StatAccumulator } from '../accumulator';
 import type { StatContext } from '../context';
@@ -36,20 +37,34 @@ export function contributeEvolutions(ctx: StatContext, acc: StatAccumulator): vo
       case 'hp_threshold_damage':
         if (ctx.hpFraction > 0.8) a.mult('baseDamage', 1 + value, 'Full Power');
         break;
+      case 'enlightenment':
+        a.mult('xpGainMultiplier', 1 + value, 'Enlightenment');
+        break;
       case 'wave_gold_scaling':
-        a.add('goldAdditive', value * Math.max(0, ctx.wave - 1), "Dragon's Hoard");
+        // Revamp §6.2.2: hard-capped at +50%. Uncapped this was +1%/wave with
+        // no ceiling, i.e. a permanent, unbounded economy multiplier bought
+        // once and compounding with every other one.
+        a.add(
+          'goldAdditive',
+          Math.min(DRAGON_HOARD_GOLD_CAP, value * Math.max(0, ctx.wave - 1)),
+          "Dragon's Hoard",
+        );
         break;
 
       // Consumed as behaviour by event handlers and managers rather than as a
       // stat: extra shots, revive, mine splitting, on-kill/on-full-mana gold,
-      // shockwave slow and the mana shield trigger.
+      // shockwave slow, the mana shield trigger, and the two per-hit shot
+      // modifiers (Overwatch's far-band damage and Skewer's pierce
+      // amplification), which need the impact's geometry and so are read by
+      // `ProjectileManager` rather than by a global stat.
       case 'double_shot':
-      case 'enlightenment':
       case 'golden_tide':
       case 'kill_streak_gold':
       case 'mana_full_gold':
       case 'mana_shield':
       case 'mine_split':
+      case 'pierce_amp':
+      case 'range_damage':
       case 'revive':
       case 'shockwave_slow':
         break;

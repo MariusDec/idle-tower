@@ -140,6 +140,8 @@ export class AudioManager {
       this.bus.on('transcendence_performed', () => this.playAscension()),
       this.bus.on('boss_enraged', () => this.playBossEnrage()),
       this.bus.on('boss_killed', () => this.playBossDeath()),
+      this.bus.on('rockets_fired', () => this.playRocketLaunch()),
+      this.bus.on('projectile_exploded', () => this.playExplosion()),
     );
   }
 
@@ -305,6 +307,25 @@ export class AudioManager {
     // Deep explosion rumble
     this.playTone({ freq: 80, type: 'sawtooth', duration: 0.3, volume: 0.35, attack: 0.01, release: 0.3 });
     this.playNoiseHit(0.4, 0.3);
+  }
+
+  /** Rocket Barrage launch: a falling filtered whoosh. */
+  private playRocketLaunch(): void {
+    this.playNoiseHit(0.25, 0.16);
+    this.playTone({ freq: 320, type: 'sawtooth', duration: 0.22, volume: 0.1, freqEnd: 90 });
+  }
+
+  /** Wall clock for the explosion throttle — independent of the AudioContext. */
+  private lastExplosionAt = 0;
+
+  private playExplosion(): void {
+    // Up to ten rockets land near-simultaneously; one soft boom per ~60 ms is
+    // about all the ear parses anyway.
+    const now = performance.now();
+    if (now - this.lastExplosionAt < 60) return;
+    this.lastExplosionAt = now;
+    this.playNoiseHit(0.18, 0.2);
+    this.playTone({ freq: 120, type: 'triangle', duration: 0.15, volume: 0.18, freqEnd: 50 });
   }
 
   // ─── Ambient pad ───

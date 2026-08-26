@@ -51,7 +51,7 @@ export function enemyCountForWave(wave: number): number {
 
 export function bossCountForWave(wave: number): number {
   const tier = Math.max(1, Math.floor(wave / 10));
-  return 2 + tier;
+  return 2 + Math.max(0, tier - 1);
 }
 
 export function spawnCountForWave(wave: number): number {
@@ -124,6 +124,9 @@ export function lifetimeAPGoldBonus(lifetimeAP: number): number {
 /** Seconds a wave is *expected* to take beyond its own spawn cadence. */
 export const TARGET_WAVE_KILL_SECONDS = 20;
 
+/** Kill budget a *single* boss is expected to need. Boss waves get one each. */
+export const TARGET_BOSS_KILL_SECONDS = 28;
+
 /** A wave running longer than `expectedWaveSeconds * this` starts enraging. */
 export const ENRAGE_THRESHOLD_MULTIPLIER = 2;
 
@@ -143,9 +146,16 @@ export const ENRAGE_SPEED_PER_STACK = 0.15;
  * `enemyCount` defaults to the wave's natural size but must be passed when a
  * mutator has changed it — a Swarm wave spawns 3x the enemies and legitimately
  * takes 3x as long to spawn them, and must not be punished for that.
+ *
+ * A boss wave's kill window is per *boss*, not flat: a boss is several times
+ * the effective HP of the trash it replaces, so a flat window made every boss
+ * wave the only real gate in the game (revamp §10).
  */
 export function expectedWaveSeconds(wave: number, enemyCount = spawnCountForWave(wave)): number {
-  return spawnIntervalForWave(wave) * Math.max(0, enemyCount - 1) + TARGET_WAVE_KILL_SECONDS;
+  const kill = isBossWave(wave)
+    ? TARGET_BOSS_KILL_SECONDS * enemyCount
+    : TARGET_WAVE_KILL_SECONDS;
+  return spawnIntervalForWave(wave) * Math.max(0, enemyCount - 1) + kill;
 }
 
 /** Seconds into a wave at which enrage begins. */
@@ -158,4 +168,45 @@ export function enrageStacksFor(wave: number, elapsed: number, enemyCount?: numb
   const over = elapsed - enrageThresholdSeconds(wave, enemyCount);
   if (over < 0) return 0;
   return 1 + Math.floor(over / ENRAGE_STACK_INTERVAL);
+}
+
+// ── Economy ceilings (revamp §6.2) ────────────────────────────────────────
+//
+// Every purchased gold multiplier used to compound without a ceiling, so run
+// income grew 1.185x per wave against a 1.08 cost ruler and one wave of income
+// bought one damage level at *every* depth. These three caps are the ones that
+// need code rather than a data-table field; they live here so the clamp and
+// the number a doc quotes are the same constant.
+
+/** Avarice: hardest gold bonus a kill streak can reach (+75%). */
+export const AVARICE_STREAK_GOLD_CAP = 0.75;
+
+/**
+ * Avarice's gold bonus for a streak of `streak` kills at `perKill` each.
+ *
+ * A deep wave can sustain a streak as long as its own enemy count (~50 near
+ * the wall), so uncapped this was worth over +200% gold from one purchase.
+ */
+export function avariceStreakGoldBonus(streak: number, perKill: number): number {
+  const raw = Math.max(0, streak - 1) * Math.max(0, perKill);
+  return Math.min(AVARICE_STREAK_GOLD_CAP, raw);
+}
+
+/** Dragon's Hoard: hardest gold bonus waves-survived can reach (+50%). */
+export const DRAGON_HOARD_GOLD_CAP = 0.50;
+
+/** Wave Mastery chain: bonus per wave cleared, and the waves it counts. */
+export const WAVE_MASTERY_CHAIN_PER_WAVE = 0.1;
+export const WAVE_MASTERY_CHAIN_MAX_WAVES = 20;
+
+/**
+ * Wave Mastery's chain multiplier on the flat wave-clear payout.
+ *
+ * Was `1 + cleared * 0.5` with no ceiling — x21 by wave 40, on a line whose
+ * own level is already an economy purchase. Capped at x3 (revamp §6.2.3);
+ * Golden Tide multiplies on top of this, not into it.
+ */
+export function waveMasteryChainMultiplier(cleared: number): number {
+  return 1 + Math.min(Math.max(0, cleared), WAVE_MASTERY_CHAIN_MAX_WAVES)
+    * WAVE_MASTERY_CHAIN_PER_WAVE;
 }

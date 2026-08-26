@@ -14,6 +14,13 @@ interface Projectile {
   damageType: 'physical'|'magic';
   isCrit: boolean;
   alive: boolean;
+  homingTargetId?: number;   // present on homing shots only
+  turnRate?: number;         // max steering rate (rad/s)
+  lifetime?: number;         // homing retirement age, in seconds
+  age?: number;              // seconds alive; every projectile ages
+  splashRadius?: number;     // blast radius on impact (Mortar blessing, Artillery core, Rocket Barrage)
+  splashFraction?: number;   // share of the landed hit the rest of the blast takes
+  visual?: ProjectileVisual; // sprite set to draw with: 'default' | 'rocket'
 }
 ```
 
@@ -33,6 +40,8 @@ Called from `Game.update` when tower cooldown is ready.
 - Extra shots: parallel offset left/right
 - Scatter shots: angled spread (30° + 15° per level)
 - Back shots: 180° reverse
+
+`FireOptions.visual` passes straight through to each created projectile — `'default'` renders as the core's ordinary bolt, and `'rocket'` swaps in the rocket hull + exhaust sprite set (Rocket Barrage is the only emitter that sets it today).
 
 ## Movement & Collision (`tick`)
 
@@ -92,3 +101,32 @@ A projectile retires when it:
 Every projectile ages, not just homing ones. The age cap is what retires a shot
 that is pinned or circling a target it can never catch — bounds culling alone
 would keep it in the list, and in every projectile-vs-enemy loop, indefinitely.
+
+## Splash impacts
+
+A projectile carrying `splashRadius` deals its blast — `splashFraction` of the
+landed hit to every other targetable enemy in the radius via `applyBlastSplash`
+— and then emits `projectile_exploded` `{ x, y, radius }`. The event is
+**presentation only** (the damage already went through the normal impact path):
+`Game` turns it into a decorative shockwave ring capped at 40 px plus a few
+sparks, and `AudioManager` plays the explosion sound, throttled to one per
+60 ms of wall clock so a full barrage doesn't stack booms.
+
+The `splashRadius` / `splashFraction` fire options are one shared channel used
+by the Mortar blessing, the Artillery core's `splash_shots`, and Rocket Barrage,
+whose rockets each pop half their hit within 60 px.
+
+## Core hooks
+
+`ProjectileManager.setCore(query)` mirrors `setBlessings`: a narrow
+`{ has(behavior) }` interface rather than the manager itself, so the impact path
+can be driven from a test with a two-line stub and cannot reach anything else.
+Only one core behavior fires on impact — frostwork's `chill_shots`, which routes
+through `EnemyManager.applyChill`. It shares that call with the Frostbite
+blessing, and `applyChill`'s "strongest wins, weaker only refreshes" rule
+composes the two rather than letting one dilute the other.
+
+Artillery's blast reuses that same `splashRadius` / `splashFraction` channel
+(see *Splash impacts* above) — which is why `Game.simulate` picks the larger of
+the two rather than applying both.
+See [core-system.md](core-system.md).

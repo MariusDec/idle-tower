@@ -1,7 +1,9 @@
 import { Game } from './game/Game';
 import { EventBus } from './game/EventBus';
 import { UIManager } from './ui/UIManager';
+import { loadIconSprite } from './ui/Icon';
 import { ABILITIES } from './data/abilities';
+import type { TargetingMode } from './types';
 
 function bootstrap(): void {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement | null;
@@ -75,6 +77,9 @@ function bootstrap(): void {
   ui.setOnSpendAP((perkId) => {
     game.spendAP(perkId);
   });
+  ui.setOnUnlockCore((id) => {
+    game.unlockCore(id);
+  });
   ui.setOnUnlockResearch((id) => {
     game.startResearch(id);
   });
@@ -90,14 +95,17 @@ function bootstrap(): void {
   ui.setOnSpeedChange((index) => {
     game.setSpeedIndex(index);
   });
-  ui.setOnPrevWave(() => {
-    game.goToPrevWave();
-  });
-  ui.setOnNextWave(() => {
-    game.goToNextWave();
+  ui.setOnRestartWave(() => {
+    game.restartWave();
   });
   ui.setOnToggleAutoProgress(() => {
     game.toggleAutoProgress();
+  });
+  ui.setOnCallWaveEarly(() => {
+    game.callWaveEarly();
+  });
+  ui.setOnRiskChange((level) => {
+    game.setRisk(level);
   });
   ui.setOnClearSave(() => {
     game.clearSave();
@@ -111,8 +119,24 @@ function bootstrap(): void {
     game.audioMgr.toggleMute();
   });
   ui.setOnTargetingModeChange((mode) => {
-    game.towerSystem.setTargetingMode(mode as 'nearest' | 'lowest_hp' | 'first' | 'strongest' | 'boss' | 'flying' | 'last');
+    game.towerSystem.setTargetingMode(mode as TargetingMode);
   });
+  ui.setOnAutoPickBlessingsChange((enabled) => {
+    game.setAutoPickBlessings(enabled);
+  });
+  ui.setAutoPickBlessingsState(game.isAutoPickBlessings(), game.isAutoPickBlessingsForced());
+  ui.setOnInstantCastChange((enabled) => {
+    game.setInstantCast(enabled);
+  });
+  ui.setInstantCastState(game.isInstantCast());
+  // Plan §9.D: the Graphics control. `setQualityPreference` writes the
+  // preference and persists; `setQualityState` mirrors the live state back
+  // into the panel so a tier demoted by the 2-second probe is visible.
+  ui.setOnQualityChange((pref) => {
+    game.setQualityPreference(pref);
+    ui.setQualityState(pref, game.qualityTier);
+  });
+  ui.setQualityState(game.qualityPreference, game.qualityTier);
   ui.setAudioAPI({
     volume: game.audioMgr.currentVolume,
     muted: game.audioMgr.isMuted,
@@ -121,7 +145,7 @@ function bootstrap(): void {
   });
   ui.setTargetingAPI({
     currentMode: game.gameState.tower.targetingMode,
-    setMode: (m) => game.towerSystem.setTargetingMode(m as 'nearest' | 'lowest_hp' | 'first' | 'strongest' | 'boss' | 'flying' | 'last'),
+    setMode: (m) => game.towerSystem.setTargetingMode(m as TargetingMode),
   });
   ui.setAbilityAPI({
     canCast: (id, wave) => game.abilities.canCast(id, wave),
@@ -141,6 +165,7 @@ function bootstrap(): void {
     previewAP: (wave) => game.prestige.previewAP(wave),
     previewTP: (lap) => game.prestige.previewTP(lap),
     canSpend: (perkId) => game.prestige.canSpendAP(perkId) || game.prestige.canSpendTP(perkId),
+    coreState: game.corePanelState(),
     isAutomationUnlocked: (key) => game.prestige.isAutomationUnlocked(key),
     isAutomationEnabled: (key) => game.prestige.getAutomationEnabled(key),
     ascendUnlockWave: game.prestige.ascensionUnlockWave(),
@@ -170,22 +195,53 @@ function bootstrap(): void {
   let mouseDown = false;
   let activeTouchId: number | null = null;
   const ensureAudio = () => game.initAudio();
-  const toCanvasXY = (clientX: number, clientY: number): { x: number; y: number } => {
+  /**
+   * Pointer → world.
+   *
+   * This used to be `clientX x (canvas.width / rect.width)`, which worked only
+   * because the backing store *was* the world. With a camera the two are
+   * different spaces and different units: the rect gives CSS pixels relative
+   * to the element, and only the camera knows the zoom and the offset that
+   * turn those into world coordinates. Deliberately routed through
+   * `game.screenToWorld` rather than reaching for the camera directly, so
+   * `Game` stays the only thing holding both halves.
+   */
+  const toWorldXY = (clientX: number, clientY: number): { x: number; y: number } => {
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return { x: 0, y: 0 };
-    return {
-      x: (clientX - rect.left) * (canvas.width / rect.width),
-      y: (clientY - rect.top) * (canvas.height / rect.height),
-    };
+    return game.screenToWorld(clientX - rect.left, clientY - rect.top);
   };
+  /**
+   * A press on the battlefield (gameplay plan §4.1/§4.3).
+   *
+   * Routing order is load-bearing: a loot orb under the cursor is collected,
+   * otherwise a pending ability placement takes the click, and only if neither
+   * consumed it does the press become an ordinary manual-aim hold. Doing this
+   * in one function rather than in each listener is what keeps mouse and touch
+   * genuinely identical — the touch pipeline feeds the same path, so tapping
+   * an orb works without a second implementation that can drift.
+   */
+  const pressAt = (x: number, y: number): void => {
+    // UI plan §5.D: a boss intro takes the press *before* the orb/placement/
+    // charge routing, and consumes it — a tap meant to skip the cinematic must
+    // not also drop a meteor. It retracts over 0.35 s rather than cutting.
+    if (game.skipBossIntro()) return;
+    const consumed = game.handleCanvasPress(x, y);
+    // Even a consumed press still updates the aim point. Not doing so made a
+    // click on an orb snap the tower's aim back to wherever the cursor last
+    // was, which reads as the tower flinching away from the thing you clicked.
+    game.setMouseInput(x, y, !consumed);
+  };
+
   canvas.addEventListener('mousemove', (ev) => {
-    const { x, y } = toCanvasXY(ev.clientX, ev.clientY);
+    const { x, y } = toWorldXY(ev.clientX, ev.clientY);
     game.setMouseInput(x, y, mouseDown);
   });
   canvas.addEventListener('mousedown', (ev) => {
+    const { x, y } = toWorldXY(ev.clientX, ev.clientY);
     mouseDown = true;
-    const { x, y } = toCanvasXY(ev.clientX, ev.clientY);
-    game.setMouseInput(x, y, true);
+    pressAt(x, y);
+    mouseDown = game.isMouseHeld();
     ensureAudio();
   });
   canvas.addEventListener('mouseup', () => {
@@ -198,8 +254,8 @@ function bootstrap(): void {
     if (ev.touches.length === 0) return;
     const t = ev.touches[0];
     activeTouchId = t.identifier;
-    const { x, y } = toCanvasXY(t.clientX, t.clientY);
-    game.setMouseInput(x, y, true);
+    const { x, y } = toWorldXY(t.clientX, t.clientY);
+    pressAt(x, y);
     ensureAudio();
     ev.preventDefault();
   }, { passive: false });
@@ -208,7 +264,7 @@ function bootstrap(): void {
     for (let i = 0; i < ev.touches.length; i++) {
       if (ev.touches[i].identifier === activeTouchId) {
         const t = ev.touches[i];
-        const { x, y } = toCanvasXY(t.clientX, t.clientY);
+        const { x, y } = toWorldXY(t.clientX, t.clientY);
         game.setMouseInput(x, y, true);
         break;
       }
@@ -224,20 +280,37 @@ function bootstrap(): void {
 
   window.addEventListener('keydown', (ev) => {
     ensureAudio();
-    if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement) return;
+    if (
+      ev.target instanceof HTMLInputElement
+      || ev.target instanceof HTMLTextAreaElement
+      || ev.target instanceof HTMLSelectElement
+      || (ev.target instanceof HTMLElement && ev.target.isContentEditable)
+    ) return;
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    // §5.D: same rule as the canvas press — any key skips the boss intro and
+    // does nothing else that frame.
+    if (game.skipBossIntro()) {
+      ev.preventDefault();
+      return;
+    }
     const def = ABILITIES.find(a => a.hotkey === ev.key);
     if (def) {
       if (game.castAbility(def.id)) ev.preventDefault();
       return;
     }
-    if (ev.key === '<' || ev.key === ',') {
-      game.goToPrevWave();
+    // Plan §7.1: Space calls the wave. Guarded twice over — `keydown` already
+    // returns above for a focused input, and `Game.canCallWaveEarly` refuses
+    // while any modal is up, because a wave called out from under a blessing
+    // draft or a core picker is a decision taken away rather than made.
+    if (ev.key === ' ' || ev.key === 'Spacebar') {
+      // Always swallow the key: Space on a focused button re-triggers it, and
+      // the browser's default is to scroll the page.
       ev.preventDefault();
-    } else if (ev.key === '>' || ev.key === '.') {
-      if (game.gameState.wave.number >= game.gameState.wave.highestWave) return;
-
-      game.goToNextWave();
+      game.callWaveEarly();
+      return;
+    }
+    if (ev.key === 'r' || ev.key === 'R') {
+      game.restartWave();
       ev.preventDefault();
     } else if (ev.key === 'p' || ev.key === 'P') {
       game.toggleAutoProgress();
@@ -251,13 +324,19 @@ function bootstrap(): void {
     } else if (ev.key === '?' || ev.key === '/') {
       ui.toggleKeybinds();
       ev.preventDefault();
-    } else if (ev.key === 'Escape' && ui.isKeybindsOpen()) {
-      ui.closeKeybinds();
-      ev.preventDefault();
+    } else if (ev.key === 'Escape') {
+      // Plan §4.3: Escape gets the player out of placement mode first — it is
+      // the state that changes what the next click does, so it is the one they
+      // most urgently need to be able to abandon.
+      if (game.cancelPlacement()) {
+        ev.preventDefault();
+      } else if (ui.isKeybindsOpen()) {
+        ui.closeKeybinds();
+        ev.preventDefault();
+      }
     }
   });
 
-  game.setFpsOverlay(ui.getFpsElement());
   const canvasWrap = document.querySelector('.canvas-wrap') as HTMLElement | null;
   game.setCanvasWrap(canvasWrap);
   game.tryLoadSave();
@@ -266,8 +345,20 @@ function bootstrap(): void {
   (window as unknown as { __theTower?: unknown }).__theTower = { game, bus, ui };
 }
 
+/**
+ * The icon sprite is injected before the UI mounts (UI plan §6).
+ *
+ * `<use href="external.svg#id">` does not resolve cross-document in Chromium,
+ * so the symbols have to be in this document before the first `<use>` is
+ * created. `loadIconSprite` resolves rather than rejects on failure, so a
+ * missing sprite costs icons and not the run.
+ */
+function start(): void {
+  void loadIconSprite().then(bootstrap);
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+  document.addEventListener('DOMContentLoaded', start, { once: true });
 } else {
-  bootstrap();
+  start();
 }

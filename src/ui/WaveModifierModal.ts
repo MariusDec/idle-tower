@@ -1,6 +1,8 @@
 import { toggleClass } from '../utils/dom';
+import { Modal } from './Modal';
 import type { WaveModifierSnapshot } from '../types';
 import { formatNumber } from '../utils/bigNumber';
+import { renderIcon } from './Icon';
 
 export type WaveModifierAutoMode = 'off' | 'skip' | 'select';
 
@@ -54,7 +56,7 @@ function writeAutoModePref(mode: WaveModifierAutoMode): void {
 
 export class WaveModifierModal {
   private readonly root: HTMLElement;
-  private currentRoot: HTMLElement | null = null;
+  private modal: Modal | null = null;
   private callbacks: WaveModifierCallbacks | null = null;
   private autoMode: WaveModifierAutoMode = 'off';
   private autoTimer = 0;
@@ -80,29 +82,20 @@ export class WaveModifierModal {
     this.currentChoices = [...data.choices];
     this.currentData = data;
 
-    const wrap = document.createElement('div');
-    wrap.className = 'wave-mod-modal';
-    this.currentRoot = wrap;
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'wave-mod-modal-backdrop';
-    wrap.appendChild(backdrop);
-
-    const card = document.createElement('div');
-    card.className = 'wave-mod-modal-card';
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    card.setAttribute('aria-label', `Choose a wave modifier for wave ${data.wave}`);
-
-    const title = document.createElement('h2');
-    title.className = 'wave-mod-modal-title';
-    title.textContent = `Wave ${data.wave} Mutator`;
-    card.appendChild(title);
-
-    const sub = document.createElement('p');
-    sub.className = 'wave-mod-modal-sub';
-    sub.textContent = `Runs for ${data.waves} waves. Each cleared wave pays out, and the reward grows every wave: ×1, ×1.5, ×2.`;
-    card.appendChild(sub);
+    // Backdrop-tap and Escape decline the mutator rather than doing nothing:
+    // "no mutator" is a real answer here, and it is the one the countdown
+    // reaches on its own.
+    const modal = new Modal({
+      id: 'wave-modifier',
+      title: `Wave ${data.wave} Mutator`,
+      sub: `Runs for ${data.waves} waves. Each cleared wave pays out, and the reward grows`
+        + ' every wave: ×1, ×1.5, ×2.',
+      width: 720,
+      onClose: () => this.handleDismiss(),
+      root: this.root,
+    });
+    this.modal = modal;
+    const card = modal.body;
 
     const grid = document.createElement('div');
     grid.className = 'wave-mod-modal-grid';
@@ -199,9 +192,19 @@ export class WaveModifierModal {
 
     this.refreshCountdown();
 
-    wrap.appendChild(card);
-    this.root.appendChild(wrap);
-    requestAnimationFrame(() => toggleClass(wrap, 'is-visible', true));
+    modal.open();
+  }
+
+  /**
+   * Escape or a backdrop tap. `hide()` clears `callbacks` before it tears the
+   * shell down, so a close the modal itself initiated (choose / skip) lands
+   * here with nothing left to fire and this is a no-op.
+   */
+  private handleDismiss(): void {
+    const cb = this.callbacks;
+    if (!cb) return;
+    this.hide();
+    cb.onSkip();
   }
 
   private buildChoice(snapshot: WaveModifierSnapshot): HTMLElement {
@@ -215,7 +218,7 @@ export class WaveModifierModal {
 
     const glyph = document.createElement('div');
     glyph.className = 'wave-mod-card-glyph';
-    glyph.textContent = snapshot.glyph;
+    renderIcon(glyph, snapshot.icon);
     header.appendChild(glyph);
 
     const nameWrap = document.createElement('div');
@@ -288,7 +291,7 @@ export class WaveModifierModal {
    * visible (so callers can early-out other UI ticks).
    */
   tick(dt: number): boolean {
-    if (!this.currentRoot || !this.callbacks) return false;
+    if (!this.modal || !this.callbacks) return false;
     if (this.autoMode === 'off') {
       return true;
     }
@@ -324,11 +327,10 @@ export class WaveModifierModal {
   }
 
   hide(): void {
-    if (this.currentRoot && this.currentRoot.parentNode) {
-      this.currentRoot.parentNode.removeChild(this.currentRoot);
-    }
-    this.currentRoot = null;
+    const modal = this.modal;
+    this.modal = null;
     this.callbacks = null;
+    modal?.destroy();
     this.autoMode = 'off';
     this.autoTimer = 0;
     this.currentChoices = [];
@@ -340,6 +342,6 @@ export class WaveModifierModal {
   }
 
   isVisible(): boolean {
-    return this.currentRoot !== null;
+    return this.modal !== null;
   }
 }

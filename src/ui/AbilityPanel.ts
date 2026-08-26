@@ -3,9 +3,10 @@ import { ABILITIES, ABILITY_BY_ID, computeEffectiveStats, type AbilityDef } from
 import { PASSIVE_ABILITIES, passiveEffectValue } from '../data/passiveAbilities';
 import { passiveXpForLevel, abilityXpForLevel } from '../data/xpTables';
 import { formatInt } from '../utils/bigNumber';
-import { setAriaLabel, setDisabled, setInnerHTML, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
+import { setAriaLabel, setDisabled, setInnerHTML, setStyle, setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
 import { renderAbilityTooltip } from './abilityFormat';
 import type { PassiveAPIDeps } from './PassivePanel';
+import { renderIcon } from './Icon';
 
 export interface AbilityPanelHandlers {
   onCast: (id: AbilityId) => void;
@@ -21,6 +22,8 @@ export interface AbilityPanelHandlers {
   isAutoCastUnlocked: () => boolean;
   isAutoCastEnabled: (id: AbilityId) => boolean;
   onToggleAutoCast: (id: AbilityId, enabled: boolean) => void;
+  /** Fired when the Passives sub-tab is opened, so the owner can clear badges. */
+  onPassivesViewed: () => void;
 }
 
 type SubTab = 'active' | 'passives';
@@ -34,6 +37,9 @@ export class AbilityPanel {
   private passiveContentRoot: HTMLElement | null = null;
   private subTabActiveBtn: HTMLButtonElement | null = null;
   private subTabPassiveBtn: HTMLButtonElement | null = null;
+  /** Notification badge on the Passives sub-tab ("new passive available"). */
+  private subTabPassiveBadge: HTMLElement | null = null;
+  private passiveBadgeCount = 0;
 
   // Active ability maps
   private cardsById = new Map<AbilityId, HTMLElement>();
@@ -45,6 +51,7 @@ export class AbilityPanel {
   private descById = new Map<AbilityId, HTMLElement>();
   private levelBadgeById = new Map<AbilityId, HTMLElement>();
   private upgradeBtnById = new Map<AbilityId, HTMLButtonElement>();
+  private actionById = new Map<AbilityId, HTMLElement>();
   private upgradeTooltipById = new Map<AbilityId, HTMLElement>();
   private xpBarEls = new Map<AbilityId, HTMLElement>();
   private xpBarFillEls = new Map<AbilityId, HTMLElement>();
@@ -82,6 +89,7 @@ export class AbilityPanel {
     this.descById.clear();
     this.levelBadgeById.clear();
     this.upgradeBtnById.clear();
+    this.actionById.clear();
     this.upgradeTooltipById.clear();
     this.xpBarEls.clear();
     this.xpBarFillEls.clear();
@@ -188,6 +196,15 @@ export class AbilityPanel {
       toggleClass(upgradeBtn, 'cannot-afford', showUpgrade && !canAfford);
       setDisabled(upgradeBtn, !canAfford);
       setText(upgradeBtn, `Upgrade · ${formatInt(cost)}g`);
+
+      // Plan §8.B: card state. With no upgrade to offer the action column
+      // collapses rather than reserving an empty gutter.
+      const cardEl = this.cardsById.get(def.id);
+      if (cardEl) {
+        setDataAttr(cardEl, 'afford', isMaxed ? 'maxed' : showUpgrade && canAfford ? 'yes' : 'no');
+      }
+      const actionEl = this.actionById.get(def.id);
+      if (actionEl) setDisplay(actionEl, showUpgrade ? '' : 'none');
 
       const xpBarEl = this.xpBarEls.get(def.id);
       const xpFillEl = this.xpBarFillEls.get(def.id);
@@ -316,6 +333,20 @@ export class AbilityPanel {
     if (this.subTabPassiveBtn) toggleClass(this.subTabPassiveBtn, 'active', tab === 'passives');
     if (this.activeContentRoot) setDisplay(this.activeContentRoot, tab === 'active' ? '' : 'none');
     if (this.passiveContentRoot) setDisplay(this.passiveContentRoot, tab === 'passives' ? '' : 'none');
+    if (tab === 'passives') this.handlers.onPassivesViewed();
+  }
+
+  /**
+   * Notification count for the Passives sub-tab badge ("new passive
+   * available"). Written by `UIManager`, which owns the pending set, so the
+   * sub-tab stays in lockstep with the Abilities tab and Build rail badges.
+   */
+  setPassiveBadge(count: number): void {
+    this.passiveBadgeCount = Math.max(0, Math.floor(count));
+    if (!this.subTabPassiveBadge) return;
+    const n = this.passiveBadgeCount;
+    this.subTabPassiveBadge.textContent = n > 0 ? String(n) : '';
+    toggleClass(this.subTabPassiveBadge, 'is-visible', n > 0);
   }
 
   private renderInto(parent: HTMLElement): void {
@@ -340,6 +371,9 @@ export class AbilityPanel {
     this.subTabPassiveBtn.className = 'ability-sub-tab-btn';
     this.subTabPassiveBtn.textContent = 'Passives';
     this.subTabPassiveBtn.addEventListener('click', () => this.switchSubTab('passives'));
+    this.subTabPassiveBadge = document.createElement('span');
+    this.subTabPassiveBadge.className = 'tab-badge';
+    this.subTabPassiveBtn.appendChild(this.subTabPassiveBadge);
     subTabBar.appendChild(this.subTabPassiveBtn);
 
     parent.appendChild(subTabBar);
@@ -371,7 +405,10 @@ export class AbilityPanel {
 
     const footer = document.createElement('p');
     footer.className = 'panel-note';
-    footer.textContent = 'Each ability unlocks at a different wave and can be upgraded up to 10 times from this panel.';
+    // Derived, not hardcoded: Rocket Barrage caps at 15 while the rest cap at
+    // 10, so "up to 10 times" was already wrong for one of the ten cards.
+    const deepestMax = Math.max(...ABILITIES.map(a => a.maxLevel));
+    footer.textContent = `Each ability unlocks at a different wave and can be upgraded up to ${deepestMax - 1} times from this panel.`;
     parent.appendChild(footer);
   }
 
@@ -391,7 +428,7 @@ export class AbilityPanel {
 
   private renderCard(def: AbilityDef): HTMLElement {
     const card = document.createElement('div');
-    card.className = 'ability-card';
+    card.className = 'card ability-card';
     card.dataset.abilityId = def.id;
     card.style.position = 'relative';
 
@@ -408,7 +445,7 @@ export class AbilityPanel {
 
     const icon = document.createElement('div');
     icon.className = 'ability-icon';
-    icon.textContent = def.glyph;
+    renderIcon(icon, def.icon);
     btn.appendChild(icon);
 
     const hotkey = document.createElement('div');
@@ -482,7 +519,6 @@ export class AbilityPanel {
     upgradeBtn.addEventListener('mouseleave', () => this.hideTooltip(def.id));
     upgradeBtn.addEventListener('focus', () => this.showTooltip(def.id));
     upgradeBtn.addEventListener('blur', () => this.hideTooltip(def.id));
-    info.appendChild(upgradeBtn);
 
     // Plan §3.1: per-ability auto-cast opt-out. Hidden until the Auto-Caster
     // perk is bought, so it does not advertise a system the player cannot use.
@@ -504,6 +540,14 @@ export class AbilityPanel {
     this.autoCastInputById.set(def.id, autoInput);
 
     card.appendChild(info);
+
+    // Plan §8.B: the upgrade button lives in the shared card's action column
+    // rather than trailing the text block.
+    const action = document.createElement('div');
+    action.className = 'card-action ability-action';
+    action.appendChild(upgradeBtn);
+    card.appendChild(action);
+    this.actionById.set(def.id, action);
 
     const tooltip = document.createElement('div');
     tooltip.className = 'ability-upgrade-tooltip';
@@ -533,7 +577,7 @@ export class AbilityPanel {
     setStyle(icon, '--passive-color', def.color);
     const iconInner = document.createElement('span');
     iconInner.className = 'passive-icon-inner';
-    iconInner.textContent = def.glyph;
+    renderIcon(iconInner, def.icon);
     icon.appendChild(iconInner);
     row.appendChild(icon);
 

@@ -1,3 +1,5 @@
+import { ARENA_RANGE_CAP } from '../data/arena';
+import { SPLASH_FRACTION_CAP } from '../data/prestige';
 import { TOWER_BASE } from '../data/tower';
 
 /**
@@ -37,6 +39,17 @@ export type StatKey =
   | 'landMineDamage'
   | 'landMineFrequency'
   | 'doubleShotChance'
+  /*
+   * Splash carried by an ordinary tower shot (revamp §5.2).
+   *
+   * Two keys rather than one because the composition rule is not the same for
+   * both halves: radius takes the **max** across sources and fraction **sums**
+   * to `SPLASH_FRACTION_CAP`. Fed into `FireOptions.splashRadius` /
+   * `splashFraction` through `composeShotSplash`, alongside the artillery
+   * core, the Mortar blessing and Annihilation.
+   */
+  | 'shotSplashRadius'
+  | 'shotSplashFraction'
   | 'quickShotChance'
   | 'quickShotTime'
   | 'extraProjectileChance'
@@ -66,6 +79,13 @@ export type StatKey =
   | 'buffDurationBonus'
   // ── projectiles ──
   | 'armorPen'
+  /**
+   * Flat armour subtracted before `armorPen`'s percentage. `armorPen` is a
+   * *fraction* (0-1), so a blessing worth "+8 armour penetration" has nowhere
+   * to go in it; enemy armour is itself a flat subtraction, so a flat channel
+   * is the honest shape.
+   */
+  | 'armorPenFlat'
   | 'pierceExtra'
   | 'executeThreshold'
   | 'executeMultiplier'
@@ -80,7 +100,33 @@ export type StatKey =
   | 'rpDropChanceBonus'
   | 'autoBuyIntervalReduction'
   | 'headStartWaves'
-  | 'wallContactExtra';
+  | 'wallContactExtra'
+  // ── enemy-side (written to EnemyManager, not TowerState) ──
+  /**
+   * Blessing-owned enemy multipliers (plan §1.4). They resolve through the same
+   * pipeline as everything else — so they compose with, rather than clobber,
+   * the wave mutator's own enemy multipliers — but `applyResolvedStats` writes
+   * them to `EnemyManager`, never to the tower.
+   */
+  | 'enemySpeedMult'
+  | 'enemyHpMult'
+  | 'enemyDamageMult'
+  // ── talent tree (levelling redesign step 4) ──
+  | 'focusStackBonus'
+  | 'killFrenzyPerStack'
+  | 'overwatchDamage'
+  | 'bossDamageBonus'
+  | 'critFollowUpChance'
+  | 'shieldRechargeReduction'
+  | 'secondWindPower'
+  | 'lowHpDamageBonus'
+  | 'orbValueBonus'
+  | 'momentumGainBonus'
+  | 'windfallMultiplier'
+  | 'interestRate'
+  | 'chilledDamageBonus'
+  | 'abilityEchoChance'
+  | 'manaOnKillFraction';
 
 /**
  * Which system a contribution came from. Carried through to `Breakdown` so the
@@ -98,6 +144,9 @@ export type StatSource =
   | 'passive'
   | 'equipment'
   | 'waveModifier'
+  | 'blessing'
+  | 'core'
+  | 'pacing'
   | 'buff'
   | 'derived';
 
@@ -132,6 +181,8 @@ export const STAT_BASES: Record<StatKey, number> = {
   landMineDamage: 0,
   landMineFrequency: 0,
   doubleShotChance: 0,
+  shotSplashRadius: 0,
+  shotSplashFraction: 0,
   quickShotChance: 0,
   quickShotTime: 0,
   extraProjectileChance: 0,
@@ -161,6 +212,7 @@ export const STAT_BASES: Record<StatKey, number> = {
   buffDurationBonus: 0,
 
   armorPen: 0,
+  armorPenFlat: 0,
   pierceExtra: 0,
   executeThreshold: 0,
   executeMultiplier: 0,
@@ -176,6 +228,27 @@ export const STAT_BASES: Record<StatKey, number> = {
   autoBuyIntervalReduction: 0,
   headStartWaves: 0,
   wallContactExtra: 0,
+
+  enemySpeedMult: 1,
+  enemyHpMult: 1,
+  enemyDamageMult: 1,
+
+  // ── talent tree (levelling redesign step 4) ──
+  focusStackBonus: 0,
+  killFrenzyPerStack: 0,
+  overwatchDamage: 0,
+  bossDamageBonus: 0,
+  critFollowUpChance: 0,
+  shieldRechargeReduction: 0,
+  secondWindPower: 0,
+  lowHpDamageBonus: 0,
+  orbValueBonus: 0,
+  momentumGainBonus: 0,
+  windfallMultiplier: 0,
+  interestRate: 0,
+  chilledDamageBonus: 0,
+  abilityEchoChance: 0,
+  manaOnKillFraction: 0,
 };
 
 export const STAT_KEYS = Object.keys(STAT_BASES) as StatKey[];
@@ -194,7 +267,19 @@ interface StatClamp {
 export const STAT_CLAMPS: Partial<Record<StatKey, StatClamp>> = {
   baseDamage: { min: 1 },
   fireRate: { min: 0.01 },
-  range: { min: 1 },
+  /*
+   * The arena cap (UI plan §1.2).
+   *
+   * `range` is the only world-space stat the camera's `WORLD_SCALE` does not
+   * multiply, which is what makes the ring shrink against the arena — but the
+   * multipliers stacked on top of it (talents +30%, `Reach` +45%, equipment
+   * `range_pct`) still compound, and an uncapped build resolved past 1300
+   * before the zoom-out, roughly 3.6x the visible half-extent. The ceiling is
+   * a fraction of the arena rather than a literal so it cannot drift away from
+   * the geometry it exists to respect, and `resolveStats` records an
+   * `Arena cap` row in the breakdown whenever it bites.
+   */
+  range: { min: 1, max: ARENA_RANGE_CAP },
   critChance: { min: 0, max: 1 },
   critMultiplier: { min: 1 },
   // No floor on maxHp: zero is the legitimate "not initialised yet" value that
@@ -218,8 +303,34 @@ export const STAT_CLAMPS: Partial<Record<StatKey, StatClamp>> = {
   abilityDamageMultiplier: { min: 1 },
   chainBounceBonus: { min: 0, integer: true },
   pierceExtra: { min: 0, integer: true },
+  shotSplashRadius: { min: 0 },
+  // Same ceiling `composeShotSplash` enforces at the call site; the clamp is
+  // what stops a second *stat* source from walking past it.
+  shotSplashFraction: { min: 0, max: SPLASH_FRACTION_CAP },
+  armorPenFlat: { min: 0 },
+  // Floors keep a stacked trade-off card from inverting the mechanic: enemies
+  // must still move, still have HP, and still hurt.
+  enemySpeedMult: { min: 0.1 },
+  enemyHpMult: { min: 0.1 },
+  enemyDamageMult: { min: 0 },
   headStartWaves: { min: 0, integer: true },
   enemyHpReduction: { min: 0, max: 0.9 },
   intermissionMultiplier: { min: 0.1, max: 1 },
   waveSkipChance: { min: 0, max: 1 },
+  // ── talent tree (levelling redesign step 4) ──
+  focusStackBonus: { min: 0 },
+  killFrenzyPerStack: { min: 0 },
+  overwatchDamage: { min: 0 },
+  bossDamageBonus: { min: 0 },
+  critFollowUpChance: { min: 0, max: 1 },
+  shieldRechargeReduction: { min: 0, max: 0.8 },
+  secondWindPower: { min: 0 },
+  // lowHpDamageBonus: no clamp — context-conditional, never leaves accumulator
+  orbValueBonus: { min: 0 },
+  momentumGainBonus: { min: 0 },
+  windfallMultiplier: { min: 0 },
+  interestRate: { min: 0, max: 0.5 },
+  chilledDamageBonus: { min: 0 },
+  abilityEchoChance: { min: 0, max: 0.75 },
+  manaOnKillFraction: { min: 0, max: 0.5 },
 };

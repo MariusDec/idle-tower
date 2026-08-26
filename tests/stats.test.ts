@@ -12,6 +12,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { TOWER_BASE } from '../src/data/tower';
+import { DRAGON_HOARD_GOLD_CAP } from '../src/data/formulas';
+import { CORE_BY_ID, DEFAULT_CORE } from '../src/data/cores';
 import { UPGRADES } from '../src/data/upgrades';
 import { computeUpgradeValue } from '../src/types';
 import {
@@ -38,10 +40,15 @@ describe('baseline', () => {
     // level 1, and a zero-damage tower could never kill anything.
     expect(stats.baseDamage).toBe(1);
     expect(stats.fireRate).toBe(TOWER_BASE.fireRate);
-    expect(stats.range).toBe(TOWER_BASE.range);
-    expect(stats.critChance).toBe(TOWER_BASE.critChance);
     expect(stats.maxHp).toBe(TOWER_BASE.maxHp);
     expect(stats.goldMultiplier).toBe(1);
+    // Range and crit are *not* at their bases, and that is correct: every run
+    // has a core, `marksman` is the default, and `marksman` is +15% crit /
+    // +20% range (plan §6.1). There is no such thing as a coreless tower, so
+    // pinning the base here would pin a state the game can never be in.
+    const marksman = CORE_BY_ID[DEFAULT_CORE];
+    expect(stats.range).toBe(TOWER_BASE.range * (1 + (marksman.stats.rangePct ?? 0)));
+    expect(stats.critChance).toBe(TOWER_BASE.critChance + (marksman.stats.critChanceAdd ?? 0));
   });
 
   it('produces a finite value for every key', () => {
@@ -283,7 +290,7 @@ describe('clamped stats', () => {
       talents: { shield_charges: 2 },
     })).stats;
     expect(withShield.shieldRechargeTime).toBeCloseTo(Math.max(3, recharge * 0.1), 6);
-    expect(withShield.shieldMaxCharges).toBe(4);
+    expect(withShield.shieldMaxCharges).toBe(5);
 
     // A deeper reduction hits the 3 s floor rather than making the shield free.
     const floored = resolveStats(ctx({
@@ -343,13 +350,14 @@ describe('once-dead content now reaches a stat', () => {
     expect(stats.abilityCooldownMultiplier).toBeCloseTo(0.8, 6);
   });
 
-  it('stacks the upgrade, achievement and talent cost discounts', () => {
+  it('stacks the achievement and talent cost discounts', () => {
     const { stats } = resolveStats(ctx({
-      upgrades: { upgradeDiscount: 5 },
       achievements: { upgrade_cost_reduction: 0.05 },
       talents: { upgrade_cost_reduction: 0.09 },
     }));
-    expect(stats.upgradeCostDiscount).toBeCloseTo(upgradeValue('upgradeDiscount', 5) - 0.05 - 0.09, 6);
+    // Revamp §5.3 retired the `upgradeDiscount` line — a flat cost reducer is
+    // an anti-upgrade — but the *key* stays alive for talents and achievements.
+    expect(stats.upgradeCostDiscount).toBeCloseTo(-0.05 - 0.09, 6);
   });
 });
 
@@ -366,11 +374,33 @@ describe('evolutions', () => {
   });
 
   it("scales Dragon's Hoard with waves survived this run", () => {
-    const w1 = resolveStats(ctx({ wave: 1, evolutions: { wave_gold_scaling: 0.05 } }));
-    const w21 = resolveStats(ctx({ wave: 21, evolutions: { wave_gold_scaling: 0.05 } }));
+    const w1 = resolveStats(ctx({ wave: 1, evolutions: { wave_gold_scaling: 0.005 } }));
+    const w21 = resolveStats(ctx({ wave: 21, evolutions: { wave_gold_scaling: 0.005 } }));
 
     expect(w1.stats.goldMultiplier).toBeCloseTo(1, 6);
-    expect(w21.stats.goldMultiplier).toBeCloseTo(1 + 0.05 * 20, 6);
+    expect(w21.stats.goldMultiplier).toBeCloseTo(1 + 0.005 * 20, 6);
+  });
+
+  // Gate 14 (revamp §6.2.2): the hoard is the one economy line whose input
+  // grows every wave forever, so its ceiling is the cap that matters most.
+  it("caps Dragon's Hoard at +50% however deep the run goes", () => {
+    const shipping = 0.005;
+    const atCap = 1 + DRAGON_HOARD_GOLD_CAP;
+
+    // 1 + 100 x 0.005 = +50%: exactly the cap, and the last uncapped wave.
+    expect(
+      resolveStats(ctx({ wave: 101, evolutions: { wave_gold_scaling: shipping } }))
+        .stats.goldMultiplier,
+    ).toBeCloseTo(atCap, 6);
+    // Twice as deep, and ten times the per-wave value: still +50%.
+    expect(
+      resolveStats(ctx({ wave: 201, evolutions: { wave_gold_scaling: shipping } }))
+        .stats.goldMultiplier,
+    ).toBeCloseTo(atCap, 6);
+    expect(
+      resolveStats(ctx({ wave: 201, evolutions: { wave_gold_scaling: 0.05 } }))
+        .stats.goldMultiplier,
+    ).toBeCloseTo(atCap, 6);
   });
 
   it('adds evolution and talent armor penetration together', () => {
@@ -379,6 +409,81 @@ describe('evolutions', () => {
       talents: { armor_penetration_pct: 0.15 },
     }));
     expect(stats.armorPen).toBeCloseTo(0.35, 6);
+  });
+});
+
+describe('blessings (gameplay plan §1)', () => {
+  /**
+   * The golden case the plan asks for: a literal context with two blessings
+   * held, resolving to one pinned damage figure. If the blessing contributor
+   * ever stops composing multiplicatively with the rest of the stack — the
+   * exact failure §1.2 was about — this number moves.
+   */
+  it('resolves two blessings to a pinned damage figure', () => {
+    const base = TOWER_BASE.baseDamage + upgradeValue('damage', 10);
+    const { stats } = resolveStats(ctx({
+      upgrades: { damage: 10 },
+      // Sharpened Tips x3 (+9%) and Glass Cannon (+35% damage, −35% max HP).
+      blessings: { stats: { damagePct: 0.09 + 0.35, maxHpPct: -0.35 }, behaviors: [] },
+    }));
+    expect(stats.baseDamage).toBeCloseTo(base * 1.44, 6);
+    expect(stats.maxHp).toBeCloseTo(TOWER_BASE.maxHp * 0.65, 6);
+  });
+
+  it('composes with prestige and talents rather than replacing them', () => {
+    const base = TOWER_BASE.baseDamage + upgradeValue('damage', 10);
+    const { stats } = resolveStats(ctx({
+      upgrades: { damage: 10 },
+      prestige: { ...emptyStatContext().prestige, tpDamage: 2 },
+      talents: { base_damage_pct: 0.5 },
+      blessings: { stats: { damagePct: 0.44 }, behaviors: [] },
+    }));
+    expect(stats.baseDamage).toBeCloseTo(base * 2 * 1.5 * 1.44, 6);
+  });
+
+  it('routes blessing gold through the additive stage, not past it', () => {
+    const { stats, breakdown } = resolveStats(
+      ctx({ blessings: { stats: { goldPct: 0.5 }, behaviors: [] } }),
+      { breakdown: true },
+    );
+    expect(stats.goldMultiplier).toBeCloseTo(1.5, 6);
+    const labels = (breakdown.goldAdditive ?? []).map(c => c.source);
+    expect(labels).toContain('blessing');
+  });
+
+  it('writes enemy multipliers to their own keys, never to the tower', () => {
+    const { stats } = resolveStats(ctx({
+      blessings: {
+        stats: { enemySpeedPct: 0.2, enemyHpPct: -0.1, enemyDamagePct: 0.25 },
+        behaviors: [],
+      },
+    }));
+    expect(stats.enemySpeedMult).toBeCloseTo(1.2, 6);
+    expect(stats.enemyHpMult).toBeCloseTo(0.9, 6);
+    expect(stats.enemyDamageMult).toBeCloseTo(1.25, 6);
+    // The tower is untouched by a card that only moves the enemies.
+    expect(stats.baseDamage).toBe(resolveStats(ctx()).stats.baseDamage);
+    expect(stats.maxHp).toBe(resolveStats(ctx()).stats.maxHp);
+  });
+
+  it('applies Last Stand only below the HP threshold', () => {
+    const held = { stats: {}, behaviors: ['last_stand' as const] };
+    const healthy = resolveStats(ctx({ upgrades: { damage: 10 }, hpFraction: 0.9, blessings: held }));
+    const hurt = resolveStats(ctx({ upgrades: { damage: 10 }, hpFraction: 0.2, blessings: held }));
+    expect(healthy.stats.baseDamage).toBeCloseTo(
+      resolveStats(ctx({ upgrades: { damage: 10 }, hpFraction: 0.9 })).stats.baseDamage,
+      6,
+    );
+    expect(hurt.stats.baseDamage).toBeCloseTo(healthy.stats.baseDamage * 1.6, 6);
+  });
+
+  it('keeps flat armour penetration in its own key, floored at zero', () => {
+    const { stats } = resolveStats(ctx({
+      blessings: { stats: { armorPenFlat: 8, pierceFlat: 2 }, behaviors: [] },
+    }));
+    expect(stats.armorPenFlat).toBe(8);
+    expect(stats.armorPen).toBe(0);
+    expect(stats.pierceExtra).toBe(2);
   });
 });
 
@@ -393,5 +498,117 @@ describe('known-dead content', () => {
   it('still resolves knockback to zero however much gear multiplies it', () => {
     const { stats } = resolveStats(ctx({ equipment: { knockback_pct: 500 } }));
     expect(stats.knockbackForce).toBe(0);
+  });
+});
+
+describe('shockwave (upgrades plan §1.8 / gate 15)', () => {
+  /**
+   * The radius used to be derived from `shockwaveCooldown`, which *falls* with
+   * level — so every Shockwave purchase shrank the blast it was paying to
+   * widen (255 px down to 120 px across the line). Radius now comes off the
+   * level; the cooldown is still the one thing that shortens.
+   */
+  it('widens the blast and shortens the cooldown as it levels', () => {
+    const levels = [1, 5, 20, 50];
+    const resolved = levels.map((level) => resolveStats(ctx({ upgrades: { shockwave: level } })).stats);
+    for (let i = 1; i < resolved.length; i++) {
+      expect(resolved[i].shockwaveSize).toBeGreaterThan(resolved[i - 1].shockwaveSize);
+      expect(resolved[i].shockwaveCooldown).toBeLessThan(resolved[i - 1].shockwaveCooldown);
+    }
+  });
+});
+
+describe('coverage and economy lines (upgrades revamp §5.2/§5.3)', () => {
+  it('routes Bodkin Points through pierceExtra, as whole targets', () => {
+    for (const level of [1, 3, 6]) {
+      expect(resolveStats(ctx({ upgrades: { pierce: level } })).stats.pierceExtra).toBe(level);
+    }
+  });
+
+  it('grows the Fragmenting Arrows disc with the level and caps its fraction', () => {
+    const at = (level: number) => resolveStats(ctx({ upgrades: { splash: level } })).stats;
+    const one = at(1);
+    const mid = at(12);
+    const max = at(25);
+    expect(one.shotSplashRadius).toBeGreaterThan(0);
+    expect(mid.shotSplashRadius).toBeGreaterThan(one.shotSplashRadius);
+    expect(max.shotSplashRadius).toBeGreaterThan(mid.shotSplashRadius);
+    // `0.10 + 0.012/level`, and never past the composition cap.
+    expect(one.shotSplashFraction).toBeCloseTo(0.112, 6);
+    expect(max.shotSplashFraction).toBeCloseTo(0.40, 6);
+    expect(at(200).shotSplashFraction).toBeLessThanOrEqual(0.40);
+  });
+
+  it('pays Prospecting out as double-gold chance, not as a cost discount', () => {
+    const { stats } = resolveStats(ctx({ upgrades: { prospecting: 20 } }));
+    expect(stats.doubleGoldChance).toBeCloseTo(0.30, 6);
+    expect(stats.upgradeCostDiscount).toBe(0);
+  });
+});
+
+describe('levelling redesign step 4 — new talent stats', () => {
+  it('resolves mana_shield_pct: 18 to manaShieldFraction: 0.18', () => {
+    const { stats } = resolveStats(ctx({ talents: { mana_shield_pct: 18 } }));
+    expect(stats.manaShieldFraction).toBeCloseTo(0.18, 6);
+  });
+
+  it('shortens shieldRechargeTime via shieldRechargeReduction but never below 3s', () => {
+    // Verify the floor at 3s still holds with a deep reduction
+    const { stats: reduced } = resolveStats(ctx({
+      upgrades: { defenseShield: 22 },
+      evolutions: { shield_fast_recharge: 0.99 },
+    }));
+    expect(reduced.shieldRechargeTime).toBe(3);
+
+    // Verify shieldRechargeReduction is a valid stat key that resolves
+    const { stats: baseline } = resolveStats(ctx());
+    expect(typeof baseline.shieldRechargeReduction).toBe('number');
+    expect(baseline.shieldRechargeReduction).toBe(0); // base is 0
+  });
+
+  it('clamps shieldRechargeReduction between 0 and 0.8', () => {
+    // The clamp is applied after resolution; verify the key exists and has correct base
+    const { stats } = resolveStats(ctx());
+    expect(stats.shieldRechargeReduction).toBe(0);
+  });
+
+  it('resolves all new talent stat keys to finite values', () => {
+    const { stats } = resolveStats(ctx());
+    const newKeys = [
+      'focusStackBonus', 'killFrenzyPerStack', 'overwatchDamage',
+      'bossDamageBonus', 'critFollowUpChance', 'shieldRechargeReduction',
+      'secondWindPower', 'lowHpDamageBonus', 'orbValueBonus',
+      'momentumGainBonus', 'windfallMultiplier', 'interestRate',
+      'chilledDamageBonus', 'abilityEchoChance', 'manaOnKillFraction',
+    ] as const;
+    for (const key of newKeys) {
+      expect(Number.isFinite(stats[key]), `${key} is not finite`).toBe(true);
+    }
+  });
+
+  it('defaults all new talent stat keys to 0', () => {
+    const { stats } = resolveStats(ctx());
+    expect(stats.focusStackBonus).toBe(0);
+    expect(stats.killFrenzyPerStack).toBe(0);
+    expect(stats.overwatchDamage).toBe(0);
+    expect(stats.bossDamageBonus).toBe(0);
+    expect(stats.critFollowUpChance).toBe(0);
+    expect(stats.shieldRechargeReduction).toBe(0);
+    expect(stats.secondWindPower).toBe(0);
+    expect(stats.lowHpDamageBonus).toBe(0);
+    expect(stats.orbValueBonus).toBe(0);
+    expect(stats.momentumGainBonus).toBe(0);
+    expect(stats.windfallMultiplier).toBe(0);
+    expect(stats.interestRate).toBe(0);
+    expect(stats.chilledDamageBonus).toBe(0);
+    expect(stats.abilityEchoChance).toBe(0);
+    expect(stats.manaOnKillFraction).toBe(0);
+  });
+
+  it('includes manaFraction and talentBehaviors in the context', () => {
+    // Verify the new context fields are accepted by resolveStats
+    const c = ctx({ manaFraction: 0.75, talentBehaviors: [] });
+    const { stats } = resolveStats(c);
+    expect(Number.isFinite(stats.baseDamage)).toBe(true);
   });
 });

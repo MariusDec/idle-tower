@@ -13,15 +13,21 @@ import type {
   Equipment,
   EquipmentSlot,
   EnemyType,
+  BlessingRunState,
+  BossRunState,
+  ContractRunState,
+  CoreRunState,
+  PacingState,
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
 import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBossWave } from '../data/formulas';
-import { ENEMY_DEFS } from '../data/enemies';
+import { ENEMY_DEFS, spawnPoolForWave } from '../data/enemies';
+import { DEFAULT_CORE } from '../data/cores';
 import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
-import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel } from '../data/xpTables';
+import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel, TOWER_LEVEL_CAP, TOWER_XP_TABLE } from '../data/xpTables';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 9;
+const SAVE_VERSION = 17;
 
 function defaultWaveModifier() {
   return {
@@ -46,7 +52,16 @@ const AUTO_SAVE_INTERVAL = 30;
  * backstop for a quiet session.
  */
 const SAVE_DEBOUNCE_SECONDS = 5;
-const OFFLINE_CAP_SECONDS = 7 * 24 * 60 * 60;
+/**
+ * Pre-perk floor for the offline cap (plan §10.1).
+ *
+ * Was 7 * 24 * 60 * 60 (seven days) as a constant the walk read directly. The
+ * cap is now derived — `BASE_IDLE_TIME_SECONDS` plus 8h per level of the
+ * `ap_idle_time` AP perk — so this file's job is only to name the default the
+ * manager starts from when nothing has been purchased. `getIdleCapSeconds`,
+ * wired in the constructor, supplies the live figure.
+ */
+const DEFAULT_OFFLINE_CAP_SECONDS = 8 * 60 * 60;
 const OFFLINE_EFFICIENCY = 0.5;
 const AVG_WAVE_DURATION = 18;
 /**
@@ -86,11 +101,34 @@ export interface PersistentState {
   equipment: Equipment[];
   /** v6+: Currently equipped items keyed by slot. */
   equipped: Partial<Record<EquipmentSlot, Equipment>>;
+  /** v10+: the run's blessing draft (plan §1.5). */
+  blessings?: BlessingRunState;
+  /** v12+: the run's three live contracts (plan §5.5). */
+  contracts?: ContractRunState;
+  /** v13+: unlocked cores and the run's selection (plan §6.3). */
+  cores?: CoreRunState;
+  /** v14+: the risk dial, early-call momentum and the kill combo (plan §7.7). */
+  pacing?: PacingState;
+  /**
+   * Deliberately absent: **loot orbs** (gameplay plan §4.1/§4.4).
+   *
+   * Live enemies and projectiles are not persisted either — a load starts with
+   * an empty field and `WaveManager` restarts the wave — so an orb would have
+   * nothing to drift toward. `Game.tryLoadSave` calls `LootManager.clear()`
+   * for exactly this reason. Persisting them would also let a player bank a
+   * boss pack's drops across a reload and click them all at full value later,
+   * which is the one way the 40%/100% split could be gamed.
+   */
+
+  /** v11+: run-scoped boss encounter rewards (plan §3.4). */
+  bossRun?: BossRunState;
 }
 
 export interface OfflineResult {
   elapsedSeconds: number;
   capped: boolean;
+  /** The cap in effect for this absence, so the report can name it (plan §10.1). */
+  maxIdleSeconds: number;
   effectiveDPS: number;
   goldEarned: number;
   wavesCleared: number;
@@ -117,67 +155,38 @@ function estimateDPS(tower: TowerState): number {
   return Math.max(0, expectedHit * tower.fireRate);
 }
 
+/**
+ * Wave averages for offline progress.
+ *
+ * All three read `spawnPoolForWave`, the same table `WaveManager` spawns from,
+ * so a re-weighting of the pool (gameplay plan §2.4) moves the offline estimate
+ * with it instead of leaving three hand-copied weight maps to drift.
+ */
 function averageKillXPForWave(wave: number): number {
   if (isBossWave(wave)) return xpPerKill('boss', wave);
-  const available: EnemyType[] = ['normal'];
-  if (wave >= 3) available.push('fast');
-  if (wave >= 5) available.push('tank');
-  if (wave >= 8) available.push('flying');
-  if (wave >= 12) available.push('splitter');
-  if (wave >= 15) available.push('healer');
-  if (wave >= 20) available.push('shielded');
-  const weights: Record<EnemyType, number> = {
-    normal: 6, fast: 3, tank: 2, flying: 2, healer: 1, splitter: 2, shielded: 1, boss: 0,
-  };
+  return poolAverage(wave, t => xpPerKill(t, wave));
+}
+
+/** Weighted mean of `value` across the wave's spawn pool. */
+function poolAverage(wave: number, value: (type: EnemyType) => number): number {
+  const pool = spawnPoolForWave(wave);
   let totalWeight = 0;
-  let weightedXp = 0;
-  for (const t of available) {
-    totalWeight += weights[t];
-    weightedXp += weights[t] * xpPerKill(t, wave);
+  let weighted = 0;
+  for (const { type, weight } of pool) {
+    totalWeight += weight;
+    weighted += weight * value(type);
   }
-  return totalWeight > 0 ? weightedXp / totalWeight : 0;
+  return totalWeight > 0 ? weighted / totalWeight : 0;
 }
 
 function averageKillGoldForWave(wave: number): number {
   if (isBossWave(wave)) return goldDropForWave(ENEMY_DEFS.boss.baseGold, wave);
-  const available: EnemyType[] = ['normal'];
-  if (wave >= 3) available.push('fast');
-  if (wave >= 5) available.push('tank');
-  if (wave >= 8) available.push('flying');
-  if (wave >= 12) available.push('splitter');
-  if (wave >= 15) available.push('healer');
-  if (wave >= 20) available.push('shielded');
-  const weights: Record<EnemyType, number> = {
-    normal: 6, fast: 3, tank: 2, flying: 2, healer: 1, splitter: 2, shielded: 1, boss: 0,
-  };
-  let totalWeight = 0;
-  let weightedGold = 0;
-  for (const t of available) {
-    totalWeight += weights[t];
-    weightedGold += weights[t] * goldDropForWave(ENEMY_DEFS[t].baseGold, wave);
-  }
-  return totalWeight > 0 ? weightedGold / totalWeight : 0;
+  return poolAverage(wave, t => goldDropForWave(ENEMY_DEFS[t].baseGold, wave));
 }
 
 function averageKillHPForWave(wave: number): number {
   if (isBossWave(wave)) return bossHPForWave(ENEMY_DEFS.boss.baseHP, wave);
-  const available: EnemyType[] = ['normal'];
-  if (wave >= 3) available.push('fast');
-  if (wave >= 5) available.push('tank');
-  if (wave >= 8) available.push('flying');
-  if (wave >= 12) available.push('splitter');
-  if (wave >= 15) available.push('healer');
-  if (wave >= 20) available.push('shielded');
-  const weights: Record<EnemyType, number> = {
-    normal: 6, fast: 3, tank: 2, flying: 2, healer: 1, splitter: 2, shielded: 1, boss: 0,
-  };
-  let totalWeight = 0;
-  let weightedHp = 0;
-  for (const t of available) {
-    totalWeight += weights[t];
-    weightedHp += weights[t] * enemyHPForWave(ENEMY_DEFS[t].baseHP, wave);
-  }
-  return totalWeight > 0 ? weightedHp / totalWeight : 0;
+  return poolAverage(wave, t => enemyHPForWave(ENEMY_DEFS[t].baseHP, wave));
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -225,7 +234,7 @@ function migrateV4toV5(data: Record<string, unknown>): void {
 }
 
 function migrateV5toV6(data: Record<string, unknown>): void {
-  data.towerXp = data.towerXp ?? { xp: 0, level: 0, unspentTalentPoints: 0, totalXpEarned: 0 };
+  data.towerXp = data.towerXp ?? { xp: 0, level: 1, unspentTalentPoints: 1, totalXpEarned: 0 };
   data.talents = data.talents ?? { allocated: {} };
   data.passiveAbilities = data.passiveAbilities ?? {};
   data.equipment = data.equipment ?? [];
@@ -334,10 +343,204 @@ function migrateV8toV9(data: Record<string, unknown>): void {
   }
 }
 
+/** A fresh, empty blessing run — the v10 default. */
+function defaultBlessings(): BlessingRunState {
+  return {
+    held: {},
+    picksTaken: 0,
+    rerolls: 0,
+    pendingOfferForWave: null,
+    wavesClearedThisRun: 0,
+  };
+}
+
+/** A fresh boss-reward run — the v11 default. */
+function defaultBossRun(): BossRunState {
+  return { apBonusPct: 0, swiftKills: 0, flawlessKills: 0 };
+}
+
+/**
+ * A fresh contract run — the v12 default.
+ *
+ * Deliberately *empty* rather than pre-drawn: the draw needs the run's current
+ * wave and `Game.estimateWaveGold`, neither of which the save layer has.
+ * `ContractManager.restore` refills the slots the moment the game wires itself
+ * up, so a v11 save loads straight into three live contracts.
+ */
+function defaultContracts(): ContractRunState {
+  return { active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0 };
+}
+
+/**
+ * v10 (gameplay plan §1.5): the blessing draft.
+ *
+ * Purely additive — a pre-v10 save simply had no blessings, so the migration
+ * seeds an empty run rather than transforming anything. Nothing is dropped.
+ */
+function migrateV9toV10(data: Record<string, unknown>): void {
+  if (!isObject(data.blessings)) {
+    data.blessings = defaultBlessings();
+  }
+}
+
+/**
+ * v11 (gameplay plan §3.4): boss encounter rewards.
+ *
+ * Additive, like v10. Only the *earned* half of an encounter is stored — the
+ * flawless AP bonus and the two counters. Mid-fight state (phase, pattern
+ * timers, the bulwark shield) is deliberately absent: live enemies have never
+ * been part of the save format, so a load starts the wave's roster empty and
+ * `WaveManager` clears the wave rather than resuming half a boss.
+ */
+function migrateV10toV11(data: Record<string, unknown>): void {
+  if (!isObject(data.bossRun)) {
+    data.bossRun = defaultBossRun();
+  }
+}
+
+/**
+ * v12 (gameplay plan §5.5): contracts.
+ *
+ * Additive, like v10 and v11. A pre-v12 save is a run that simply has not been
+ * handed any contracts yet, so the migration seeds an empty block and the
+ * manager draws three on load. Nothing is transformed and nothing is dropped.
+ */
+function migrateV11toV12(data: Record<string, unknown>): void {
+  if (!isObject(data.contracts)) {
+    data.contracts = defaultContracts();
+  }
+}
+
+/**
+ * A fresh core block — the v13 default.
+ *
+ * The default core is the only one a pre-v13 save can have owned, and it is
+ * also the one every run before this feature was actually playing: the shot
+ * behavior a v12 tower had is `marksman`'s, so seeding it is a restatement of
+ * what the save already meant rather than a grant.
+ */
+function defaultCores(): CoreRunState {
+  return { unlocked: [DEFAULT_CORE], preferred: DEFAULT_CORE, selected: DEFAULT_CORE };
+}
+
+/**
+ * v13 (gameplay plan §6.3): tower cores.
+ *
+ * Additive, like v10-v12. Nothing is transformed: a pre-v13 save is a run on
+ * the default core that has never been offered a choice, which is exactly what
+ * the seeded block says.
+ *
+ * §6.3 says "bump to v12". It was written before Part 3 took v11 and Part 5
+ * took v12, so the number in the plan is two behind; the ladder decides, not
+ * the plan.
+ */
+function migrateV12toV13(data: Record<string, unknown>): void {
+  if (!isObject(data.cores)) {
+    data.cores = defaultCores();
+  }
+}
+
+/** A fresh pacing block — the v14 default: risk 0, no momentum, no combo. */
+function defaultPacing(): PacingState {
+  return { risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0 };
+}
+
+/**
+ * v14 (gameplay plan §7.7): pacing — the risk dial and early-call momentum.
+ *
+ * Additive, like v10-v13. A pre-v14 save is a run at risk 0 with no momentum
+ * banked, which is exactly what the seeded block says: §7.8's requirement is
+ * that risk 0 reproduces the current curve, so the migration is a restatement
+ * of what the save already meant rather than a grant.
+ *
+ * §7.7 says "bump to v13". It was written before Part 6 took v13 — the fourth
+ * consecutive part whose save version in the plan was stale. The ladder
+ * decides, not the plan.
+ */
+function migrateV13toV14(data: Record<string, unknown>): void {
+  if (!isObject(data.pacing)) {
+    data.pacing = defaultPacing();
+  }
+}
+
+/**
+ * v15 (gameplay plan §10.1): the offline cap became derived.
+ *
+ * Unlike every migration before it, this one has **nothing to seed**. The cap
+ * used to be a constant in this file; it is now `BASE_IDLE_TIME_SECONDS` plus
+ * 8h per level of `ap_idle_time`, and the perk's level already lives in
+ * `prestige.apSpent`, a free-form map every save has carried since v1. A
+ * pre-v15 save with no points in the perk therefore *already means* "8h cap",
+ * so the migration is a restatement of what the save already meant rather
+ * than a grant — same rule as v13 and v14. The function exists only so the
+ * ladder stays one-step-per-version and the number never silently skips.
+ */
+function migrateV14toV15(_data: Record<string, unknown>): void {
+  // no-op: the cap is computed, never persisted.
+}
+
+/**
+ * v16: the `multishot` ability became `rocket_barrage`.
+ *
+ * A rename, not a transform: the ability's saved state and its auto-cast
+ * toggle keep their exact values under the new key. Both live in free-form
+ * maps, so each container is guarded for absence or a shape mismatch before
+ * it is touched.
+ */
+function migrateV15toV16(data: Record<string, unknown>): void {
+  const abilities = data.abilities as Record<string, unknown> | undefined;
+  if (isObject(abilities) && abilities.multishot !== undefined) {
+    abilities.rocket_barrage = abilities.multishot;
+    delete abilities.multishot;
+  }
+  const prestige = data.prestige as Record<string, unknown> | undefined;
+  if (!isObject(prestige)) return;
+  const autoCast = prestige.autoCastEnabled;
+  if (isObject(autoCast) && autoCast.multishot !== undefined) {
+    autoCast.rocket_barrage = autoCast.multishot;
+    delete autoCast.multishot;
+  }
+}
+
+/**
+ * v17: the levelling redesign.
+ *
+ * Three things change at once and all three have to be reconciled here:
+ *
+ *  - `level` becomes 1-based (a fresh save is level 1, not level 0);
+ *  - the XP requirement curve is a different, far steeper function, so the
+ *    stored `xp` no longer denotes the same level it did;
+ *  - every talent id is new, so nothing can carry over.
+ *
+ * The level is treated as the thing worth preserving — it is what the player
+ * spent months on — so the XP is *restated* onto the new curve rather than
+ * re-interpreted. Progress within the level is dropped (it is at most one
+ * level's worth), and every point is refunded so the player re-spends into the
+ * new tree with a clean slate.
+ */
+function migrateV16toV17(data: Record<string, unknown>): void {
+  const tx = data.towerXp as Record<string, unknown> | undefined;
+  const oldLevel = isObject(tx) && typeof tx.level === 'number' ? Math.floor(tx.level) : 0;
+  // 0-based -> 1-based, then clamp to the new cap.
+  const level = Math.max(1, Math.min(TOWER_LEVEL_CAP, oldLevel + 1));
+  const xp = TOWER_XP_TABLE[level];
+  const oldTotal = isObject(tx) && typeof tx.totalXpEarned === 'number' ? tx.totalXpEarned : 0;
+  data.towerXp = {
+    level,
+    xp,
+    // Lifetime XP is a stat, not a currency. Scale it by the same factor the
+    // curve moved so achievements and the Stats panel stay proportionate.
+    totalXpEarned: Math.max(xp, Math.floor(oldTotal * (xp / Math.max(1, oldTotal || 1)))),
+    unspentTalentPoints: talentPointsAtLevel(level),
+  };
+  // Every talent id changed; a full refund is the only honest migration.
+  data.talents = { allocated: {} };
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -360,6 +563,14 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 6) { migrateV6toV7(data); data.version = 7; }
   if (data.version === 7) { migrateV7toV8(data); data.version = 8; }
   if (data.version === 8) { migrateV8toV9(data); data.version = 9; }
+  if (data.version === 9) { migrateV9toV10(data); data.version = 10; }
+  if (data.version === 10) { migrateV10toV11(data); data.version = 11; }
+  if (data.version === 11) { migrateV11toV12(data); data.version = 12; }
+  if (data.version === 12) { migrateV12toV13(data); data.version = 13; }
+  if (data.version === 13) { migrateV13toV14(data); data.version = 14; }
+  if (data.version === 14) { migrateV14toV15(data); data.version = 15; }
+  if (data.version === 15) { migrateV15toV16(data); data.version = 16; }
+  if (data.version === 16) { migrateV16toV17(data); data.version = 17; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -372,6 +583,11 @@ function validate(data: unknown): data is PersistentState {
   // calm rather than resuming mid-enrage from a stale timestamp.
   if (wave && typeof wave.elapsed !== 'number') wave.elapsed = 0;
   if (wave && typeof wave.enrageStacks !== 'number') wave.enrageStacks = 0;
+  if (!isObject(d.blessings)) d.blessings = defaultBlessings();
+  if (!isObject(d.bossRun)) d.bossRun = defaultBossRun();
+  if (!isObject(d.contracts)) d.contracts = defaultContracts();
+  if (!isObject(d.cores)) d.cores = defaultCores();
+  if (!isObject(d.pacing)) d.pacing = defaultPacing();
 
   return true;
 }
@@ -382,10 +598,18 @@ export class SaveManager {
   private savePending = false;
   private readonly busListener: (payload: unknown) => void;
   private readonly getRP: () => number;
+  /**
+   * Live offline cap (plan §10.1). Injected because the cap belongs to the
+   * prestige layer (`ap_idle_time`), which this class does not see.
+   */
+  private readonly getIdleCapSeconds: () => number;
 
   constructor(
     bus: { on: (event: string, h: (payload: unknown) => void) => void },
-    opts: { getRP?: () => number } = {},
+    opts: {
+      getRP?: () => number;
+      getIdleCapSeconds?: () => number;
+    } = {},
   ) {
     this.busListener = (payload) => {
       const p = payload as { success: boolean };
@@ -395,6 +619,7 @@ export class SaveManager {
     };
     bus.on('save_failed', this.busListener);
     this.getRP = opts.getRP ?? (() => 0);
+    this.getIdleCapSeconds = opts.getIdleCapSeconds ?? (() => DEFAULT_OFFLINE_CAP_SECONDS);
   }
 
   snapshot(state: GameState): PersistentState {
@@ -421,6 +646,80 @@ export class SaveManager {
       equipped: Object.fromEntries(
         Object.entries(state.equipped).map(([slot, eq]) => [slot, { ...eq!, stats: [...eq!.stats] }]),
       ) as Partial<Record<EquipmentSlot, Equipment>>,
+      blessings: this.snapshotBlessings(state.blessings),
+      bossRun: this.snapshotBossRun(state.bossRun),
+      contracts: this.snapshotContracts(state.contracts),
+      cores: this.snapshotCores(state.cores),
+      pacing: this.snapshotPacing(state.pacing),
+    };
+  }
+
+  /**
+   * Blessings are copied field by field rather than spread, so a runtime-only
+   * field added to the manager later cannot leak into the save format by
+   * accident.
+   */
+  private snapshotBlessings(b: BlessingRunState | undefined): BlessingRunState {
+    if (!b) return defaultBlessings();
+    return {
+      held: { ...b.held },
+      picksTaken: b.picksTaken,
+      rerolls: b.rerolls,
+      pendingOfferForWave: b.pendingOfferForWave ?? null,
+      wavesClearedThisRun: b.wavesClearedThisRun ?? 0,
+    };
+  }
+
+  /** Copied field by field, for the same reason blessings are. */
+  private snapshotBossRun(b: BossRunState | undefined): BossRunState {
+    if (!b) return defaultBossRun();
+    return {
+      apBonusPct: b.apBonusPct ?? 0,
+      swiftKills: b.swiftKills ?? 0,
+      flawlessKills: b.flawlessKills ?? 0,
+    };
+  }
+
+  /**
+   * Contracts are copied field by field for the same reason blessings are: a
+   * runtime-only field on the manager must not leak into the save format.
+   */
+  private snapshotContracts(c: ContractRunState | undefined): ContractRunState {
+    if (!c) return defaultContracts();
+    return {
+      active: (c.active ?? []).map(a => ({
+        defId: a.defId,
+        uid: a.uid,
+        target: a.target,
+        progress: a.progress,
+        drawnAtWave: a.drawnAtWave,
+      })),
+      completed: [...(c.completed ?? [])],
+      completedCount: c.completedCount ?? 0,
+      apBonusPct: c.apBonusPct ?? 0,
+      uidSeq: c.uidSeq ?? 0,
+    };
+  }
+
+  /** Copied field by field, for the same reason blessings are. */
+  private snapshotCores(c: CoreRunState | undefined): CoreRunState {
+    if (!c) return defaultCores();
+    return {
+      unlocked: [...(c.unlocked ?? [DEFAULT_CORE])],
+      preferred: c.preferred ?? DEFAULT_CORE,
+      selected: c.selected ?? DEFAULT_CORE,
+    };
+  }
+
+  /** Copied field by field, for the same reason cores are. */
+  private snapshotPacing(p: PacingState | undefined): PacingState {
+    if (!p) return defaultPacing();
+    return {
+      risk: p.risk ?? 0,
+      committedRisk: p.committedRisk ?? p.risk ?? 0,
+      momentum: p.momentum ?? 0,
+      momentumWaves: p.momentumWaves ?? 0,
+      comboBest: p.comboBest ?? 0,
     };
   }
 
@@ -540,14 +839,16 @@ export class SaveManager {
     now: number = Date.now(),
   ): OfflineResult {
     const rawElapsed = Math.max(0, (now - persisted.savedAt) / 1000);
-    const capped = rawElapsed > OFFLINE_CAP_SECONDS;
-    const elapsed = Math.min(rawElapsed, OFFLINE_CAP_SECONDS);
+    const capSeconds = Math.max(0, this.getIdleCapSeconds());
+    const capped = rawElapsed > capSeconds;
+    const elapsed = Math.min(rawElapsed, capSeconds);
     let wave = Math.max(1, persisted.wave.number);
     if (isBossWave(wave)) --wave;
     if (elapsed <= 0) {
       return {
         elapsedSeconds: 0,
         capped,
+        maxIdleSeconds: capSeconds,
         effectiveDPS: 0,
         goldEarned: 0,
         wavesCleared: 0,
@@ -605,6 +906,7 @@ export class SaveManager {
     return {
       elapsedSeconds: elapsed,
       capped,
+      maxIdleSeconds: capSeconds,
       effectiveDPS,
       goldEarned,
       wavesCleared,

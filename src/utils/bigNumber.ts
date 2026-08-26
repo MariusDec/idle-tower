@@ -44,3 +44,30 @@ export function formatInt(n: number): string {
   if (n < 0) return '-' + formatInt(-n);
   return Math.floor(n).toLocaleString();
 }
+
+export interface DecimalFormatOptions {
+  /**
+   * Keep the decimal places even when they are trailing zeros — "5.0" rather
+   * than "5". Rates read as fractional when the scale is visible, even while
+   * the smoothed value happens to sit on a round number.
+   */
+  keepTrailingZeros?: boolean;
+}
+
+/**
+ * Compact readout for small live numbers (damage/heal/regen).
+ *
+ * Values under 10 keep one decimal place so fractional ticks read accurately;
+ * larger values show as integers so the label does not sprawl.
+ */
+export function formatWithOptionalDecimal(
+  n: number,
+  decimalCount = 1,
+  options: DecimalFormatOptions = {},
+): string {
+  if (!isFinite(n)) return 'Infinity';
+  if (n < 0) return '-' + formatWithOptionalDecimal(-n, decimalCount, options);
+  if (n >= 10) return formatInt(n);
+  const s = n.toFixed(decimalCount);
+  return options.keepTrailingZeros ? s : s.replace(/\.?0+$/, '');
+}

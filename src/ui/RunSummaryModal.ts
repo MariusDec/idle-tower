@@ -1,10 +1,19 @@
 import { formatInt, formatNumber } from '../utils/bigNumber';
 import type { RunRecord } from '../types';
-import { toggleClass } from '../utils/dom';
+import { Modal } from './Modal';
 
 export interface RunSummaryData {
   record: RunRecord;
   previous: RunRecord | null;
+  /**
+   * Whether dismissing this modal opens the core picker (plan §6.2).
+   *
+   * The CTA *is* the picker — the debrief is the moment the player is already
+   * thinking about the run that just ended, which is the only information a
+   * core choice can be made with. Before the first ascension it is false and
+   * the button reads as it always did.
+   */
+  corePickerNext?: boolean;
 }
 
 function formatDuration(seconds: number): string {
@@ -34,40 +43,35 @@ function formatDelta(current: number, previous: number | undefined, suffix = '')
 
 export class RunSummaryModal {
   private readonly root: HTMLElement;
-  private currentRoot: HTMLElement | null = null;
+  private modal: Modal | null = null;
   private onDismiss: (() => void) | null = null;
 
   constructor(root: HTMLElement) {
     this.root = root;
   }
 
+  /** True while the modal is up — see `UIManager.isModalOpen`. */
+  isOpen(): boolean {
+    return this.modal !== null;
+  }
+
   show(data: RunSummaryData, onDismiss: () => void): void {
     this.hide();
     this.onDismiss = onDismiss;
-    const wrap = document.createElement('div');
-    wrap.className = 'welcome-modal run-summary-modal';
-    this.currentRoot = wrap;
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'welcome-modal-backdrop';
-    wrap.appendChild(backdrop);
-
-    const card = document.createElement('div');
-    card.className = 'welcome-modal-card run-summary-card';
-    card.setAttribute('role', 'dialog');
-    card.setAttribute('aria-modal', 'true');
-    card.setAttribute('aria-label', 'Run summary');
-
-    const title = document.createElement('h2');
-    title.className = 'welcome-modal-title';
-    title.textContent = data.record.kind === 'ascension' ? 'Ascension Complete' : 'Transcendence Complete';
-    card.appendChild(title);
-
-    const sub = document.createElement('p');
-    sub.className = 'welcome-modal-sub';
     const currencyLabel = data.record.kind === 'ascension' ? 'AP gained' : 'TP gained';
-    sub.textContent = `Wave ${data.record.highestWave} • ${formatDuration(data.record.durationSeconds)} • +${formatInt(data.record.currencyGained)} ${currencyLabel}`;
-    card.appendChild(sub);
+    // The debrief is not dismissible: its button is the run's only exit (and,
+    // after the first ascension, the route into the core picker).
+    const modal = new Modal({
+      id: 'run-summary',
+      title: data.record.kind === 'ascension' ? 'Ascension Complete' : 'Transcendence Complete',
+      sub: `Wave ${data.record.highestWave} • ${formatDuration(data.record.durationSeconds)}`
+        + ` • +${formatInt(data.record.currencyGained)} ${currencyLabel}`,
+      width: 520,
+      dismissible: false,
+      root: this.root,
+    });
+    this.modal = modal;
+    const card = modal.body;
 
     const stats = document.createElement('div');
     stats.className = 'welcome-modal-stats run-summary-stats';
@@ -121,21 +125,20 @@ export class RunSummaryModal {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'btn btn-claim';
-    btn.textContent = data.record.kind === 'ascension' ? 'Begin new run' : 'Begin new cycle';
+    btn.textContent = data.corePickerNext
+      ? 'Choose your core'
+      : data.record.kind === 'ascension' ? 'Begin new run' : 'Begin new cycle';
     btn.addEventListener('click', () => this.dismiss());
     card.appendChild(btn);
 
-    wrap.appendChild(card);
-    this.root.appendChild(wrap);
-    requestAnimationFrame(() => toggleClass(wrap, 'is-visible', true));
+    modal.open();
   }
 
   hide(): void {
-    if (this.currentRoot && this.currentRoot.parentNode) {
-      this.currentRoot.parentNode.removeChild(this.currentRoot);
-    }
-    this.currentRoot = null;
+    const modal = this.modal;
+    this.modal = null;
     this.onDismiss = null;
+    modal?.destroy();
   }
 
   private dismiss(): void {

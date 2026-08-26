@@ -11,6 +11,9 @@ import { contributeTalents } from './contributors/talents';
 import { contributePassives } from './contributors/passives';
 import { contributeEquipment } from './contributors/equipment';
 import { contributeWaveModifier } from './contributors/waveModifier';
+import { contributeBlessings } from './contributors/blessings';
+import { contributeCore } from './contributors/core';
+import { contributePacing } from './contributors/pacing';
 import { contributeBuffs } from './contributors/buffs';
 
 export type ResolvedStats = Record<StatKey, number>;
@@ -40,6 +43,9 @@ const CONTRIBUTORS = [
   contributeResearch,
   contributeAchievements,
   contributeWaveModifier,
+  contributeBlessings,
+  contributeCore,
+  contributePacing,
   contributeTalents,
   contributePassives,
   contributeEquipment,
@@ -68,8 +74,24 @@ export function resolveStats(ctx: StatContext, options: ResolveOptions = {}): Re
   const stats = {} as ResolvedStats;
   for (const key of STAT_KEYS) stats[key] = acc.resolve(key);
 
+  /*
+   * The arena cap, surfaced (UI plan §1.2).
+   *
+   * `STAT_CLAMPS.range.max` has already done the clamping — this only records
+   * *that* it happened, because a stat silently swallowing every further point
+   * the player spends on it is the worst kind of dead content: it still reads
+   * as an upgrade in the shop and it still charges for the level. The row goes
+   * in as a multiplier so the breakdown's factors keep multiplying back to the
+   * value actually shown.
+   */
+  const rawRange = acc.additive('range') * acc.multiplier('range');
+  if (rawRange > stats.range) {
+    acc.mult('range', stats.range / rawRange, 'derived', 'Arena cap');
+  }
+
   if (stats.shieldRechargeTime > 0) {
-    stats.shieldRechargeTime = Math.max(MIN_SHIELD_RECHARGE, stats.shieldRechargeTime);
+    const rechargeCut = 1 - acc.resolve('shieldRechargeReduction');
+    stats.shieldRechargeTime = Math.max(MIN_SHIELD_RECHARGE, stats.shieldRechargeTime * rechargeCut);
   } else {
     // No recharge timer means no shield at all, so the Extra Shield talent has
     // nothing to add charges to.

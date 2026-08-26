@@ -12,11 +12,19 @@ import {
   canTranscend,
   perkCost,
   computePerkEffect,
+  BASE_IDLE_TIME_SECONDS,
   type AutomationKey,
 } from '../data/prestige';
 import { lifetimeAPDamageBonus, lifetimeAPGoldBonus } from '../data/formulas';
+import { CORE_BY_ID, type CoreId } from '../data/cores';
 import { EventBus } from '../game/EventBus';
 import type { AchievementRewardType } from '../data/achievements';
+
+/**
+ * Who banked a run-scoped AP bonus. A closed union so a third source cannot be
+ * added without a decision about how it is persisted and reset.
+ */
+export type RunApSource = 'boss' | 'contract';
 
 export interface AscensionContext {
   resources: ResourceState;
@@ -32,10 +40,65 @@ export interface AscensionContext {
 export class PrestigeManager {
   private readonly bus: EventBus;
   private readonly ctx: AscensionContext;
+  /**
+   * Run-scoped AP bonus, by source.
+   *
+   * A separate channel from the lifetime achievement bonuses, because those are
+   * permanent and this one is the run's own: they compose (`(1 + ach) * (1 +
+   * run)`) rather than one silently overwriting the other.
+   *
+   * It is keyed by source rather than being one number because two systems bank
+   * into it — flawless boss encounters (plan §3.4) and completed contracts
+   * (plan §5.2) — and each has its own ceiling and its own persistence block
+   * (`GameState.bossRun`, `GameState.contracts`). One shared scalar would mean
+   * a contract restore could silently erase the boss bonus, or vice versa.
+   * Both are *set* on load from their own saved figure, and summed here.
+   */
+  private runApBonusBySource: Record<RunApSource, number> = { boss: 0, contract: 0 };
+  /**
+   * The risk dial's AP bonus (plan §7.4), as a fraction.
+   *
+   * Deliberately *not* a `RunApSource`. The two sources above are earned and
+   * banked — they accumulate over a run and share a +50% ceiling — whereas
+   * risk is a live setting with no ceiling of its own that stops applying the
+   * moment the dial goes back to 0. Summing it into the same pool would have
+   * let the contract cap silently swallow it, and let a contract restore
+   * overwrite it. It multiplies instead, so the two compose.
+   */
+  private riskApBonus = 0;
 
   constructor(bus: EventBus, ctx: AscensionContext) {
     this.bus = bus;
     this.ctx = ctx;
+  }
+
+  /** Bank a run-scoped AP bonus for the rest of this run. */
+  addRunApBonus(fraction: number, source: RunApSource = 'boss'): void {
+    if (fraction <= 0) return;
+    this.runApBonusBySource[source] += fraction;
+  }
+
+  /** Restore one source's banked bonus from a save (or clear it on reset). */
+  setRunApBonus(fraction: number, source: RunApSource = 'boss'): void {
+    this.runApBonusBySource[source] = Math.max(0, fraction);
+  }
+
+  /** Set the risk dial's AP bonus. Derived from `PacingManager.activeRisk`. */
+  setRiskApBonus(fraction: number): void {
+    this.riskApBonus = Math.max(0, fraction);
+  }
+
+  getRiskApBonus(): number {
+    return this.riskApBonus;
+  }
+
+  /** The composed run bonus across every source. */
+  getRunApBonus(): number {
+    let total = 0;
+    for (const key of Object.keys(this.runApBonusBySource) as RunApSource[]) {
+      total += this.runApBonusBySource[key];
+    }
+    return total;
   }
 
   canAscend(wave: number): boolean {
@@ -48,7 +111,9 @@ export class PrestigeManager {
 
   previewAP(wave: number): number {
     const bonus = this.achievementBonus('ap_gain_mult') + this.achievementBonus('prestige_gain_mult');
-    const earned = Math.floor(apForWave(wave) * (1 + bonus));
+    const earned = Math.floor(
+      apForWave(wave) * (1 + bonus) * (1 + this.getRunApBonus()) * (1 + this.riskApBonus),
+    );
     // Plan §2.3.4: the very first ascension is scripted to be worth taking, so
     // a new player's introduction to prestige is a visible jump in power
     // rather than a rounding error.
@@ -149,6 +214,33 @@ export class PrestigeManager {
       if (lvl > 0) bonus += computePerkEffect(p, lvl);
     }
     return bonus;
+  }
+
+  /**
+   * Fire-rate multiplier from Deep Quiver (revamp §8.2).
+   *
+   * Multiplicative per perk the way the TP fire-rate node composes, so the two
+   * layers stack the same way; consumed in `stats/contributors/prestige.ts`.
+   */
+  getAPFireRateMultiplier(): number {
+    let factor = 1;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'fire_rate_mult') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) factor *= 1 + computePerkEffect(p, lvl);
+    }
+    return factor;
+  }
+
+  /** Flat `pierceExtra` from Bodkin Mastery (revamp §8.2). */
+  getAPPierceBonus(): number {
+    let total = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'pierce') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) total += Math.floor(computePerkEffect(p, lvl));
+    }
+    return total;
   }
 
   getExtraShots(): number {
@@ -450,6 +542,19 @@ export class PrestigeManager {
     return bonus;
   }
 
+  /**
+   * Offline-progress cap in seconds (plan §10.1).
+   *
+   * Derived, never stored: `BASE_IDLE_TIME_SECONDS` plus 8h per level of
+   * `ap_idle_time`. The save layer calls this through `Game` when it needs the
+   * cap, so a perk purchase moves the ceiling on the next offline walk.
+   */
+  getIdleTimeCapSeconds(): number {
+    const def = AP_PERK_BY_ID['ap_idle_time'];
+    if (!def) return BASE_IDLE_TIME_SECONDS;
+    return BASE_IDLE_TIME_SECONDS + computePerkEffect(def, this.getAPLevel('ap_idle_time'));
+  }
+
   spendAP(perkId: string): boolean {
     const def = AP_PERK_BY_ID[perkId];
     if (!def) return false;
@@ -478,6 +583,35 @@ export class PrestigeManager {
     return true;
   }
 
+  // ── tower cores (plan §6.2) ──
+
+  /**
+   * Whether the player can afford to unlock a core right now.
+   *
+   * Cores are an AP *spend*, not an AP perk: they have no levels, no
+   * prerequisites and no exclusivity, and `AP_PERKS` is a table the panel
+   * renders row by row with a level counter. Threading a one-shot purchase with
+   * a different UI through `perkCost`/`computePerkEffect` would have meant
+   * every consumer of that table learning about a perk that has no effect
+   * value. The spend lives here because this is the class that owns the AP
+   * balance; whether the core is *already owned* is `CoreManager`'s business,
+   * so the caller passes the answer in.
+   */
+  canUnlockCore(id: CoreId, alreadyUnlocked: boolean): boolean {
+    if (alreadyUnlocked) return false;
+    const def = CORE_BY_ID[id];
+    if (!def || def.apCost <= 0) return false;
+    return this.ctx.resources.ascensionPoints >= def.apCost;
+  }
+
+  /** Debit the AP for a core. Returns false without spending when it cannot. */
+  spendOnCore(id: CoreId, alreadyUnlocked: boolean): boolean {
+    if (!this.canUnlockCore(id, alreadyUnlocked)) return false;
+    this.ctx.resources.ascensionPoints -= CORE_BY_ID[id].apCost;
+    this.bus.emit('ap_spent', { id: `core:${id}`, level: 1 });
+    return true;
+  }
+
   spendPerk(perkId: string): boolean {
     if (AP_PERK_BY_ID[perkId]) return this.spendAP(perkId);
     if (TP_PERK_BY_ID[perkId]) return this.spendTP(perkId);
@@ -493,6 +627,9 @@ export class PrestigeManager {
     this.ctx.resources.lifetimeAP += ap;
     this.ctx.stats.ascensions += 1;
     this.ctx.stats.lifetimeAscensions += 1;
+    // The run bonuses are *this run's*: the ascension that pays them out is
+    // also the one that ends the run that earned them. Every source clears.
+    this.runApBonusBySource = { boss: 0, contract: 0 };
     this.bus.emit('ascension_performed', {
       apGained: ap,
       totalAP: this.ctx.resources.ascensionPoints,

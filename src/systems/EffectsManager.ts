@@ -1,8 +1,19 @@
-import type { DamageNumber, Particle, Shockwave } from '../types';
+import { FX, INK, lighten, mix, withAlpha } from '../data/palette';
+import { DEFAULT_QUALITY, QUALITY, type QualityProfile, type QualityTier } from '../data/quality';
+import type { DamageKind, DamageNumber, Particle, Shockwave } from '../types';
 
 const PARTICLE_GRAVITY = 320;
 const PARTICLE_DRAG_PER_SEC = 0.55;
-const DMG_FLOAT_SPEED = 48;
+/**
+ * The rise, in **CSS pixels per second** (UI plan §5.B).
+ *
+ * Damage numbers are anchored in the world but typed and moved in screen
+ * space, so the rise is unit-agnostic here: `EffectsManager` needs no camera to
+ * integrate it, and the renderer subtracts it after projecting the anchor.
+ */
+const DMG_RISE_SPEED = 74;
+/** The existing exponential decay on the rise, per second. */
+const DMG_RISE_DECAY = 0.35;
 const DMG_BASE_LIFE = 0.85;
 const DMG_CRIT_LIFE = 1.25;
 const SHOCKWAVE_SPEED = 700;
@@ -18,8 +29,10 @@ const SHOCKWAVE_MAX_LIFE = 1.0;
  * filter and the renderer's per-particle draw cost more than the whole
  * simulation. Overflow drops the *oldest* entries, which are the ones already
  * closest to expiring, so what the player is looking at right now survives.
+ *
+ * The particle ceiling itself is not a constant any more: it lives on the
+ * quality profile (§5.F) so a lower tier can shrink the pool.
  */
-const MAX_PARTICLES = 600;
 const MAX_DAMAGE_NUMBERS = 80;
 
 /**
@@ -32,10 +45,44 @@ const MAX_DAMAGE_NUMBERS = 80;
 const DMG_MERGE_RADIUS = 16;
 const DMG_MERGE_MAX_AGE = 0.22;
 
+/**
+ * How big a bite this hit took out of the thing it hit, bucketed (UI plan §5.B).
+ *
+ * `maxHp <= 0` (a heal, a gold pop, an unknown target) is always tier 0 — a
+ * number with no denominator has no business shouting.
+ */
+export function damageTier(amount: number, maxHp: number): 0 | 1 | 2 | 3 {
+  if (!(maxHp > 0)) return 0;
+  const f = amount / maxHp;
+  if (f >= 0.5) return 3;
+  if (f >= 0.2) return 2;
+  if (f >= 0.06) return 1;
+  return 0;
+}
+
 export class EffectsManager {
   private particles: Particle[] = [];
   private damageNumbers: DamageNumber[] = [];
   private shockwaves: Shockwave[] = [];
+  /** The live quality profile (§5.F). Presentation only — see `quality.ts`. */
+  private profile: QualityProfile = QUALITY[DEFAULT_QUALITY];
+
+  /**
+   * Point every emitter at a new quality tier.
+   *
+   * Shrinking the pool drops the *oldest* particles, the same policy
+   * `pushParticle` uses on overflow.
+   */
+  setQuality(tier: QualityTier): void {
+    this.profile = QUALITY[tier];
+    const over = this.particles.length - this.profile.maxParticles;
+    if (over > 0) this.particles.splice(0, over);
+  }
+
+  /** Scale a particle count by the quality tier, never below 1. */
+  private n(count: number): number {
+    return Math.max(1, Math.round(count * this.profile.particleScale));
+  }
 
   get particleList(): Particle[] {
     return this.particles;
@@ -62,12 +109,16 @@ export class EffectsManager {
    * the frame cost of the particle it evicts.
    */
   private pushParticle(p: Particle): void {
-    if (this.particles.length >= MAX_PARTICLES) this.particles.shift();
+    // UI plan §5.A: routing is explicit. An emitter that says nothing is
+    // ordinary matter, painted in the `front` pass.
+    p.layer ??= 'front';
+    if (this.particles.length >= this.profile.maxParticles) this.particles.shift();
     this.particles.push(p);
   }
 
   emitHitSparks(x: number, y: number, color: string, count: number = 4): void {
-    for (let i = 0; i < count; i++) {
+    const n = this.n(count);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 50 + Math.random() * 90;
       this.pushParticle({
@@ -79,12 +130,14 @@ export class EffectsManager {
         life: 0.22 + Math.random() * 0.18,
         size: 1.5 + Math.random() * 1.5,
         color,
+        layer: 'front',
       });
     }
   }
 
   emitDeathBurst(x: number, y: number, color: string, radius: number, count?: number): void {
-    const n = count ?? Math.max(8, Math.round(radius * 0.7));
+    const base = count ?? Math.max(8, Math.round(radius * 0.7));
+    const n = this.n(base);
     for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 80 + Math.random() * 180;
@@ -97,9 +150,11 @@ export class EffectsManager {
         life: 0.55 + Math.random() * 0.45,
         size: 2 + Math.random() * 3,
         color,
+        layer: 'front',
       });
     }
-    for (let i = 0; i < Math.max(3, Math.floor(n / 3)); i++) {
+    const puffs = this.n(Math.max(3, Math.floor(base / 3)));
+    for (let i = 0; i < puffs; i++) {
       this.pushParticle({
         x,
         y,
@@ -108,14 +163,16 @@ export class EffectsManager {
         age: 0,
         life: 0.9 + Math.random() * 0.4,
         size: radius * 0.45,
-        color: 'rgba(255, 255, 255, 0.18)',
+        color: withAlpha('#ffffff', 0.18),
+        layer: 'behind',
       });
     }
   }
 
   emitBossDeathShockwave(x: number, y: number): void {
-    for (let i = 0; i < 36; i++) {
-      const angle = (i / 36) * Math.PI * 2 + Math.random() * 0.08;
+    const n = this.n(36);
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2 + Math.random() * 0.08;
       const speed = 220 + Math.random() * 80;
       this.pushParticle({
         x,
@@ -125,7 +182,8 @@ export class EffectsManager {
         age: 0,
         life: 0.9 + Math.random() * 0.3,
         size: 3 + Math.random() * 2,
-        color: i % 2 === 0 ? '#ff5050' : '#ffd28a',
+        color: i % 2 === 0 ? FX.blood : lighten(FX.gold, 0.4),
+        layer: 'additive',
       });
     }
   }
@@ -142,12 +200,13 @@ export class EffectsManager {
         maxRadius: 360 + r * 60,
         age: -r * 0.1,
         life: 0.9,
-        color: `rgba(220, 60, 60, ${0.7 - r * 0.2})`,
+        color: withAlpha(FX.blood, 0.7 - r * 0.2),
         lineWidth: 6 - r,
       });
     }
-    for (let i = 0; i < 24; i++) {
-      const angle = (i / 24) * Math.PI * 2;
+    const n = this.n(24);
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2;
       this.pushParticle({
         x: cx + Math.cos(angle) * 40,
         y: cy + Math.sin(angle) * 40,
@@ -156,13 +215,15 @@ export class EffectsManager {
         age: 0,
         life: 0.5 + Math.random() * 0.2,
         size: 2 + Math.random() * 2,
-        color: '#ff4040',
+        color: FX.blood,
+        layer: 'additive',
       });
     }
   }
 
   emitRainOfArrows(cx: number, cy: number): void {
-    for (let i = 0; i < 40; i++) {
+    const n = this.n(40);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 40 + Math.random() * 420;
       const x = cx + Math.cos(angle) * dist;
@@ -175,14 +236,16 @@ export class EffectsManager {
         age: 0,
         life: 0.55 + Math.random() * 0.35,
         size: 1.5 + Math.random() * 1.5,
-        color: '#f7d774',
+        color: lighten(FX.gold, 0.35),
+        layer: 'front',
       });
     }
   }
 
   emitFrostNovaRing(cx: number, cy: number): void {
-    for (let i = 0; i < 48; i++) {
-      const angle = (i / 48) * Math.PI * 2;
+    const n = this.n(48);
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2;
       const speed = 380 + Math.random() * 60;
       this.pushParticle({
         x: cx,
@@ -192,7 +255,8 @@ export class EffectsManager {
         age: 0,
         life: 0.55 + Math.random() * 0.2,
         size: 2 + Math.random() * 2,
-        color: i % 2 === 0 ? '#a3d2ff' : '#e0f0ff',
+        color: i % 2 === 0 ? FX.frost : lighten(FX.frost, 0.55),
+        layer: 'additive',
       });
     }
   }
@@ -216,7 +280,7 @@ export class EffectsManager {
       maxRadius: radius,
       age: -(startDelay ?? 0),
       life,
-      color: color ?? 'rgba(24, 125, 122, 0.7)',
+      color: color ?? withAlpha(FX.frost, 0.7),
       lineWidth: lineWidth ?? 6,
       damage,
       damageType: damageType ?? 'magic',
@@ -224,7 +288,8 @@ export class EffectsManager {
   }
 
   emitBerserkPulse(cx: number, cy: number): void {
-    for (let i = 0; i < 16; i++) {
+    const n = this.n(16);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 24 + Math.random() * 12;
       this.pushParticle({
@@ -235,13 +300,15 @@ export class EffectsManager {
         age: 0,
         life: 0.35 + Math.random() * 0.2,
         size: 2 + Math.random() * 1.5,
-        color: '#ff6a4a',
+        color: FX.ember,
+        layer: 'additive',
       });
     }
   }
 
   emitGoldRushSparkle(cx: number, cy: number): void {
-    for (let i = 0; i < 12; i++) {
+    const n = this.n(12);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 16 + Math.random() * 28;
       this.pushParticle({
@@ -252,7 +319,8 @@ export class EffectsManager {
         age: 0,
         life: 0.5 + Math.random() * 0.3,
         size: 1.5 + Math.random() * 1.5,
-        color: '#ffd24a',
+        color: FX.gold,
+        layer: 'additive',
       });
     }
   }
@@ -262,7 +330,7 @@ export class EffectsManager {
    * plus an impact ring + sparks at the target.
    */
   emitMeteor(targetX: number, targetY: number, fromX: number, fromY: number): void {
-    const trailCount = 28;
+    const trailCount = this.n(28);
     for (let i = 0; i < trailCount; i++) {
       const t = i / trailCount;
       const x = fromX + (targetX - fromX) * t;
@@ -275,10 +343,12 @@ export class EffectsManager {
         age: 0,
         life: 0.4 + Math.random() * 0.3,
         size: 2.5 + Math.random() * 2,
-        color: i % 3 === 0 ? '#fff3b0' : i % 3 === 1 ? '#ff7a1a' : '#ff3a00',
+        color: i % 3 === 0 ? lighten(FX.gold, 0.6) : i % 3 === 1 ? FX.ember : mix(FX.ember, FX.blood, 0.35),
+        layer: 'additive',
       });
     }
-    for (let i = 0; i < 18; i++) {
+    const sparks = this.n(18);
+    for (let i = 0; i < sparks; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 140;
       this.pushParticle({
@@ -289,7 +359,8 @@ export class EffectsManager {
         age: 0,
         life: 0.45 + Math.random() * 0.35,
         size: 2 + Math.random() * 2.5,
-        color: i % 2 === 0 ? '#ffb04a' : '#ff3a00',
+        color: i % 2 === 0 ? mix(FX.ember, FX.gold, 0.5) : mix(FX.ember, FX.blood, 0.35),
+        layer: 'additive',
       });
     }
   }
@@ -298,8 +369,9 @@ export class EffectsManager {
    * Precision Shot: slow golden ring + sparkles around the tower.
    */
   emitPrecisionGlow(cx: number, cy: number): void {
-    for (let i = 0; i < 36; i++) {
-      const angle = (i / 36) * Math.PI * 2;
+    const n = this.n(36);
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2;
       const speed = 60 + Math.random() * 18;
       this.pushParticle({
         x: cx,
@@ -309,10 +381,12 @@ export class EffectsManager {
         age: 0,
         life: 0.6 + Math.random() * 0.2,
         size: 1.5 + Math.random() * 1.5,
-        color: i % 2 === 0 ? '#ffd34a' : '#fff0a0',
+        color: i % 2 === 0 ? FX.gold : lighten(FX.gold, 0.55),
+        layer: 'additive',
       });
     }
-    for (let i = 0; i < 12; i++) {
+    const sparkles = this.n(12);
+    for (let i = 0; i < sparkles; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 20 + Math.random() * 30;
       this.pushParticle({
@@ -323,7 +397,8 @@ export class EffectsManager {
         age: 0,
         life: 0.4 + Math.random() * 0.3,
         size: 1.5 + Math.random() * 1.5,
-        color: '#ffe27a',
+        color: lighten(FX.gold, 0.4),
+        layer: 'additive',
       });
     }
   }
@@ -332,7 +407,8 @@ export class EffectsManager {
    * Vampiric Aura: red healing particles rising toward the tower.
    */
   emitVampiricAura(cx: number, cy: number): void {
-    for (let i = 0; i < 24; i++) {
+    const n = this.n(24);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 28 + Math.random() * 36;
       this.pushParticle({
@@ -343,7 +419,8 @@ export class EffectsManager {
         age: 0,
         life: 0.7 + Math.random() * 0.4,
         size: 2 + Math.random() * 1.5,
-        color: i % 2 === 0 ? '#ff4a4a' : '#c44a4a',
+        color: i % 2 === 0 ? FX.blood : mix(FX.blood, INK['900'], 0.2),
+        layer: 'additive',
       });
     }
   }
@@ -352,7 +429,8 @@ export class EffectsManager {
    * Execute: wide horizontal slash + blood-red particles.
    */
   emitExecuteSlash(cx: number, cy: number): void {
-    for (let i = 0; i < 24; i++) {
+    const n = this.n(24);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 50 + Math.random() * 120;
       this.pushParticle({
@@ -363,10 +441,11 @@ export class EffectsManager {
         age: 0,
         life: 0.4 + Math.random() * 0.3,
         size: 2 + Math.random() * 2.5,
-        color: i % 2 === 0 ? '#a020f0' : '#ff4a4a',
+        color: i % 2 === 0 ? FX.arcane : FX.blood,
       });
     }
-    for (let i = 0; i < 3; i++) {
+    const smears = this.n(3);
+    for (let i = 0; i < smears; i++) {
       this.pushParticle({
         x: cx + (Math.random() - 0.5) * 60,
         y: cy + (Math.random() - 0.5) * 20,
@@ -375,7 +454,8 @@ export class EffectsManager {
         age: 0,
         life: 0.6 + Math.random() * 0.3,
         size: 30 + Math.random() * 20,
-        color: 'rgba(180, 30, 240, 0.18)',
+        color: withAlpha(FX.arcane, 0.18),
+        layer: 'behind',
       });
     }
   }
@@ -404,7 +484,8 @@ export class EffectsManager {
   }
 
   emitMineExplosion(x: number, y: number): void {
-    for (let i = 0; i < 20; i++) {
+    const n = this.n(20);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 120;
       this.pushParticle({
@@ -415,10 +496,11 @@ export class EffectsManager {
         age: 0,
         life: 0.4 + Math.random() * 0.3,
         size: 2 + Math.random() * 3,
-        color: i % 2 === 0 ? '#ff6633' : '#ffcc00',
+        color: i % 2 === 0 ? FX.ember : FX.gold,
       });
     }
-    for (let i = 0; i < 5; i++) {
+    const smoke = this.n(5);
+    for (let i = 0; i < smoke; i++) {
       this.pushParticle({
         x: x + (Math.random() - 0.5) * 20,
         y: y + (Math.random() - 0.5) * 20,
@@ -427,13 +509,15 @@ export class EffectsManager {
         age: 0,
         life: 0.6 + Math.random() * 0.3,
         size: 4 + Math.random() * 3,
-        color: 'rgba(255, 255, 255, 0.3)',
+        color: withAlpha('#ffffff', 0.3),
+        layer: 'behind',
       });
     }
   }
 
   emitShieldAbsorb(x: number, y: number): void {
-    for (let i = 0; i < 8; i++) {
+    const n = this.n(8);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 24 + Math.random() * 12;
       this.pushParticle({
@@ -444,7 +528,8 @@ export class EffectsManager {
         age: 0,
         life: 0.25 + Math.random() * 0.15,
         size: 2 + Math.random() * 2,
-        color: '#64b4ff',
+        color: FX.frost,
+        layer: 'additive',
       });
     }
   }
@@ -454,7 +539,8 @@ export class EffectsManager {
    * (one charge consumed). Visually distinct from tower shield absorb.
    */
   emitEnemyShieldBreak(x: number, y: number): void {
-    for (let i = 0; i < 14; i++) {
+    const n = this.n(14);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const dist = 16 + Math.random() * 8;
       this.pushParticle({
@@ -465,7 +551,8 @@ export class EffectsManager {
         age: 0,
         life: 0.3 + Math.random() * 0.2,
         size: 2 + Math.random() * 2,
-        color: i % 2 === 0 ? '#ffffff' : '#a0d8ff',
+        color: i % 2 === 0 ? '#ffffff' : lighten(FX.frost, 0.3),
+        layer: 'additive',
       });
     }
   }
@@ -477,7 +564,7 @@ export class EffectsManager {
     const dx = x1 - x0;
     const dy = y1 - y0;
     const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-    const count = Math.min(8, Math.max(2, Math.floor(dist / 30)));
+    const count = this.n(Math.min(8, Math.max(2, Math.floor(dist / 30))));
     for (let i = 0; i < count; i++) {
       const t = Math.random();
       const px = x0 + dx * t;
@@ -490,7 +577,8 @@ export class EffectsManager {
         age: 0,
         life: 0.35 + Math.random() * 0.2,
         size: 1.5 + Math.random() * 1.5,
-        color: i % 2 === 0 ? '#3edc81' : '#aaf2c0',
+        color: i % 2 === 0 ? FX.nature : lighten(FX.nature, 0.5),
+        layer: 'additive',
       });
     }
   }
@@ -511,7 +599,8 @@ export class EffectsManager {
     const ny = dy / dist;
     const baseAngle = Math.atan2(ny, nx);
     // Slash particles: spread along the attack direction
-    for (let i = 0; i < 5; i++) {
+    const n = this.n(5);
+    for (let i = 0; i < n; i++) {
       const spread = (Math.random() - 0.5) * 1.2;
       const angle = baseAngle + spread;
       const speed = 120 + Math.random() * 100;
@@ -524,6 +613,7 @@ export class EffectsManager {
         life: 0.15 + Math.random() * 0.1,
         size: 1.5 + Math.random() * 1.5,
         color,
+        layer: 'front',
       });
     }
     // Small bright flash ring at the enemy
@@ -534,13 +624,14 @@ export class EffectsManager {
       maxRadius: 12,
       age: 0,
       life: 0.15,
-      color: 'rgba(255, 200, 200, 0.6)',
+      color: withAlpha(lighten(FX.blood, 0.6), 0.6),
       lineWidth: 2,
     });
   }
 
   emitSplitBurst(x: number, y: number): void {
-    for (let i = 0; i < 22; i++) {
+    const n = this.n(22);
+    for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 60 + Math.random() * 140;
       this.pushParticle({
@@ -551,20 +642,38 @@ export class EffectsManager {
         age: 0,
         life: 0.4 + Math.random() * 0.3,
         size: 2 + Math.random() * 2,
-        color: i % 2 === 0 ? '#c098ff' : '#ffffff',
+        color: i % 2 === 0 ? lighten(FX.arcane, 0.35) : '#ffffff',
+        layer: 'front',
       });
     }
   }
 
-  emitDamageNumber(x: number, y: number, amount: number, isCrit: boolean): void {
+  /**
+   * A floating number anchored at a world point.
+   *
+   * The options bag rather than a fifth positional boolean because the fifth
+   * argument used to be exactly that and one call site passed "this was a
+   * full-value pickup" into `isCrit`, which is why gold used to pop in the crit
+   * colour (UI plan §0.2 gap 4).
+   */
+  emitDamageNumber(
+    x: number,
+    y: number,
+    amount: number,
+    isCrit: boolean,
+    opts?: { maxHp?: number; kind?: DamageKind },
+  ): void {
     this.pushDamageNumber({
       x: x + (Math.random() - 0.5) * 10,
       y: y - 4,
-      amount: Math.max(1, Math.round(amount)),
+      amount: Math.max(0, amount),
       isCrit,
+      kind: opts?.kind ?? 'damage',
+      tier: damageTier(amount, opts?.maxHp ?? 0),
       age: 0,
       life: isCrit ? DMG_CRIT_LIFE : DMG_BASE_LIFE,
-      vy: DMG_FLOAT_SPEED,
+      riseCss: 0,
+      vy: DMG_RISE_SPEED,
     });
   }
 
@@ -572,12 +681,14 @@ export class EffectsManager {
     this.pushDamageNumber({
       x: x + (Math.random() - 0.5) * 10,
       y: y - 4,
-      amount: Math.max(1, Math.round(amount)),
+      amount: Math.max(0, amount),
       isCrit: false,
-      isHeal: true,
+      kind: 'heal',
+      tier: 0,
       age: 0,
       life: DMG_BASE_LIFE,
-      vy: DMG_FLOAT_SPEED,
+      riseCss: 0,
+      vy: DMG_RISE_SPEED,
     });
   }
 
@@ -593,14 +704,18 @@ export class EffectsManager {
     for (let i = this.damageNumbers.length - 1; i >= 0; i--) {
       const d = this.damageNumbers[i];
       if (d.age > DMG_MERGE_MAX_AGE) continue;
-      if (!!d.isCrit !== !!next.isCrit || !!d.isHeal !== !!next.isHeal) continue;
+      if (!!d.isCrit !== !!next.isCrit || d.kind !== next.kind) continue;
       const dx = d.x - next.x;
       const dy = d.y - next.y;
       if (dx * dx + dy * dy > DMG_MERGE_RADIUS * DMG_MERGE_RADIUS) continue;
       d.amount += next.amount;
-      // Restart the float so the growing total stays on screen.
+      // A merge that crosses a threshold promotes the label.
+      d.tier = Math.max(d.tier, next.tier);
+      // Restarting `age` re-runs the pop, which is what a growing total should
+      // do. `riseCss` is deliberately untouched: resetting it would teleport the
+      // label back down onto the enemy. See tests/effects.test.ts.
       d.age = 0;
-      d.vy = DMG_FLOAT_SPEED;
+      d.vy = DMG_RISE_SPEED;
       return;
     }
     if (this.damageNumbers.length >= MAX_DAMAGE_NUMBERS) this.damageNumbers.shift();
@@ -622,8 +737,8 @@ export class EffectsManager {
 
     for (const d of this.damageNumbers) {
       d.age += dt;
-      d.y -= d.vy * dt;
-      d.vy *= Math.pow(0.35, dt);
+      d.riseCss += d.vy * dt;
+      d.vy *= Math.pow(DMG_RISE_DECAY, dt);
     }
     if (this.damageNumbers.length > 0) {
       this.damageNumbers = this.damageNumbers.filter(d => d.age < d.life);

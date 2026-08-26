@@ -11,17 +11,27 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  AVARICE_STREAK_GOLD_CAP,
+  DRAGON_HOARD_GOLD_CAP,
   ENEMY_HP_GROWTH,
   GOLD_GROWTH,
+  waveMasteryChainMultiplier,
+  TARGET_BOSS_KILL_SECONDS,
+  TARGET_WAVE_KILL_SECONDS,
+  avariceStreakGoldBonus,
+  bossCountForWave,
   bossHPForWave,
   enemyHPForWave,
+  expectedWaveSeconds,
   goldDropForWave,
   isBossWave,
+  spawnCountForWave,
+  spawnIntervalForWave,
   upgradeCost,
 } from '../src/data/formulas';
 import { ASCENSION_UNLOCK_WAVE, apForWave, tpForAP } from '../src/data/prestige';
 import { ENEMY_DEFS } from '../src/data/enemies';
-import { TOWER_XP_TABLE, xpToLevel, talentPointsAtLevel } from '../src/data/xpTables';
+import { TOWER_XP_TABLE, TOWER_LEVEL_CAP, xpToLevel, xpForNextLevel, talentPointsAtLevel, xpPerKill, xpPerWaveClear, pioneerBonusXp, PIONEER_CLEAR_MULTIPLIER } from '../src/data/xpTables';
 import { UPGRADES, UPGRADE_BY_ID } from '../src/data/upgrades';
 import { computeUpgradeValue } from '../src/types';
 
@@ -70,6 +80,48 @@ describe('enemy scaling', () => {
   it('places boss waves every tenth wave', () => {
     expect([10, 20, 100].every(isBossWave)).toBe(true);
     expect([1, 9, 11, 99].some(isBossWave)).toBe(false);
+  });
+
+  /**
+   * Revamp §10: the first boss wave is the tightest gate in the game, so a
+   * tier now adds a boss from the *second* tier onwards rather than the first.
+   */
+  it('starts boss packs at two and adds one per tier after the first', () => {
+    expect([10, 20, 30, 100].map(bossCountForWave)).toEqual([2, 3, 4, 11]);
+  });
+});
+
+/**
+ * Revamp §10: a boss wave's kill window is per boss, not the flat trash
+ * window. Without this a three-boss wave got ~23 s to kill several times the
+ * effective HP of its neighbours, and every wall was a boss wall.
+ */
+describe('wave time budget', () => {
+  it('gives non-boss waves the flat kill window on top of their spawn cadence', () => {
+    for (const w of [1, 5, 15, 37]) {
+      const spawn = spawnIntervalForWave(w) * (spawnCountForWave(w) - 1);
+      expect(expectedWaveSeconds(w)).toBeCloseTo(spawn + TARGET_WAVE_KILL_SECONDS);
+    }
+  });
+
+  it('gives boss waves one kill window per boss', () => {
+    for (const w of [10, 20, 100]) {
+      const count = spawnCountForWave(w);
+      const spawn = spawnIntervalForWave(w) * (count - 1);
+      expect(expectedWaveSeconds(w)).toBeCloseTo(spawn + TARGET_BOSS_KILL_SECONDS * count);
+    }
+  });
+
+  it('scales the boss window with a mutated enemy count', () => {
+    const one = expectedWaveSeconds(20, 1);
+    const two = expectedWaveSeconds(20, 2);
+    expect(two - one).toBeCloseTo(TARGET_BOSS_KILL_SECONDS + spawnIntervalForWave(20));
+  });
+
+  it('leaves a boss wave with more budget than its neighbours', () => {
+    for (const w of [10, 20, 30]) {
+      expect(expectedWaveSeconds(w)).toBeGreaterThan(expectedWaveSeconds(w - 1));
+    }
   });
 });
 
@@ -128,39 +180,35 @@ describe('prestige curves', () => {
 });
 
 describe('tower XP table', () => {
-  it('is strictly ascending, so a binary search over it is well defined', () => {
-    for (let i = 2; i < TOWER_XP_TABLE.length; i++) {
-      expect(TOWER_XP_TABLE[i]).toBeGreaterThan(TOWER_XP_TABLE[i - 1]);
-    }
-  });
-
-  /**
-   * Plan §5.6 replaced a linear scan with a binary search. This checks the new
-   * implementation against the old one's semantics at every boundary in the
-   * table, which is where an off-by-one in a binary search shows up.
-   */
-  it('resolves the same level as a linear scan at every boundary', () => {
-    const linear = (xp: number): number => {
-      let level = 0;
-      for (let i = 1; i < TOWER_XP_TABLE.length; i++) {
-        if (xp >= TOWER_XP_TABLE[i]) level = i;
-        else break;
-      }
-      return level;
-    };
-    for (let i = 1; i < TOWER_XP_TABLE.length; i++) {
-      for (const xp of [TOWER_XP_TABLE[i] - 1, TOWER_XP_TABLE[i], TOWER_XP_TABLE[i] + 1]) {
-        expect(xpToLevel(xp)).toBe(linear(xp));
-      }
-    }
-    for (const xp of [0, -5, Number.MAX_SAFE_INTEGER]) {
-      expect(xpToLevel(xp)).toBe(linear(xp));
-    }
-  });
-
-  it('grants a bonus talent point every fifth level', () => {
-    expect([1, 4, 5, 10, 20].map(talentPointsAtLevel)).toEqual([1, 4, 6, 12, 24]);
+  it('grants exactly one talent point per level, capped', () => {
+    expect([1, 2, 10, 100, 200, 250].map(talentPointsAtLevel)).toEqual([1, 2, 10, 100, 200, 200]);
     expect(talentPointsAtLevel(0)).toBe(0);
+  });
+
+  it('builds a strictly ascending XP table up to the cap', () => {
+    expect(TOWER_XP_TABLE.length).toBe(TOWER_LEVEL_CAP + 1);
+    expect(TOWER_XP_TABLE[1]).toBe(0);
+    for (let l = 2; l <= TOWER_LEVEL_CAP; l++) {
+      expect(TOWER_XP_TABLE[l]).toBeGreaterThan(TOWER_XP_TABLE[l - 1]);
+    }
+  });
+
+  it('round-trips xpToLevel against the table', () => {
+    for (const l of [1, 2, 5, 40, 100, 199, 200]) {
+      expect(xpToLevel(TOWER_XP_TABLE[l])).toBe(l);
+      if (l > 1) expect(xpToLevel(TOWER_XP_TABLE[l] - 1)).toBe(l - 1);
+    }
+    expect(xpToLevel(TOWER_XP_TABLE[TOWER_LEVEL_CAP] * 10)).toBe(TOWER_LEVEL_CAP);
+  });
+
+  it('pays more XP for deeper kills and deeper clears', () => {
+    expect(xpPerKill('normal', 200)).toBeGreaterThan(xpPerKill('normal', 20) * 5);
+    expect(xpPerWaveClear(100)).toBeGreaterThan(xpPerWaveClear(50) * 2);
+  });
+
+  it('pays a pioneer bonus only past the lifetime best', () => {
+    expect(pioneerBonusXp(40, 40)).toBe(0);
+    expect(pioneerBonusXp(41, 40)).toBe(Math.round(xpPerWaveClear(41) * PIONEER_CLEAR_MULTIPLIER));
   });
 });
 
@@ -190,27 +238,27 @@ describe('upgrade value curves', () => {
       {
         "critChance": [
           0,
-          0.01,
-          0.1,
-          0.5,
+          0.005,
+          0.05,
+          0.25,
         ],
         "damage": [
           0,
-          4,
-          51.79975872320002,
-          3725.307292150262,
+          2.2,
+          5.627681233650303,
+          365.8041611067256,
         ],
         "fireRate": [
           0,
-          0.06,
-          0.6,
-          3,
+          0.1,
+          1,
+          5,
         ],
         "goldMulti": [
           0,
-          0.04,
-          0.4,
-          2,
+          0.02,
+          0.2,
+          1,
         ],
       }
     `);
@@ -251,6 +299,50 @@ describe('upgrade value curves', () => {
       const v = computeUpgradeValue(u, top);
       if (u.scaling.cap.min !== undefined) expect(v, u.id).toBeGreaterThanOrEqual(u.scaling.cap.min);
       if (u.scaling.cap.max !== undefined) expect(v, u.id).toBeLessThanOrEqual(u.scaling.cap.max);
+    }
+  });
+});
+
+/**
+ * Gate 14 (revamp §6.2): the economy ceilings.
+ *
+ * Every purchased gold multiplier used to compound without one, which is why
+ * run income grew 1.185x per wave against a 1.08 cost ruler — one wave of
+ * income bought one damage level at every depth, forever. These are the three
+ * clamps that need code rather than a data-table field.
+ */
+describe('economy caps', () => {
+  it('caps Avarice at +75% however long the streak runs', () => {
+    const perKill = 0.025;   // the shipping evolution value
+
+    expect(avariceStreakGoldBonus(1, perKill)).toBe(0);
+    expect(avariceStreakGoldBonus(11, perKill)).toBeCloseTo(0.25, 6);
+    // 31 kills = 30 x 2.5% = exactly the cap.
+    expect(avariceStreakGoldBonus(31, perKill)).toBeCloseTo(AVARICE_STREAK_GOLD_CAP, 6);
+    // A wave near the wall sustains ~50; uncapped that was +122%.
+    expect(avariceStreakGoldBonus(50, perKill)).toBeCloseTo(AVARICE_STREAK_GOLD_CAP, 6);
+    expect(avariceStreakGoldBonus(500, perKill)).toBeCloseTo(AVARICE_STREAK_GOLD_CAP, 6);
+  });
+
+  it('holds the two evolution ceilings at the plan values', () => {
+    expect(AVARICE_STREAK_GOLD_CAP).toBe(0.75);
+    expect(DRAGON_HOARD_GOLD_CAP).toBe(0.50);
+  });
+
+  it('caps the Wave Mastery chain at x3', () => {
+    expect(waveMasteryChainMultiplier(0)).toBeCloseTo(1, 6);
+    expect(waveMasteryChainMultiplier(5)).toBeCloseTo(1.5, 6);
+    expect(waveMasteryChainMultiplier(20)).toBeCloseTo(3, 6);
+    // Wave 40 used to read x21 here.
+    expect(waveMasteryChainMultiplier(40)).toBeCloseTo(3, 6);
+    expect(waveMasteryChainMultiplier(400)).toBeCloseTo(3, 6);
+  });
+
+  it('never lets the chain run away with depth', () => {
+    for (let wave = 1; wave <= 200; wave++) {
+      const m = waveMasteryChainMultiplier(wave);
+      expect(m, `wave ${wave}`).toBeGreaterThanOrEqual(1);
+      expect(m, `wave ${wave}`).toBeLessThanOrEqual(3);
     }
   });
 });

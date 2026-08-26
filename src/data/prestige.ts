@@ -1,5 +1,7 @@
 import type { PrestigeLayer } from '../types';
+import type { IconId } from './icons';
 import { evalFormula } from './formulas';
+import { world } from './arena';
 
 export type PrestigePerkEffect =
   | 'extra_shots'
@@ -23,7 +25,8 @@ export type PrestigePerkEffect =
   | 'wave_start'
   | 'auto_buy_speed'
   | 'research_speed'
-  | 'game_speed';
+  | 'game_speed'
+  | 'idle_time';
 
 export type AutomationKey = 'autoBuy' | 'autoAbilities' | 'autoAscend' | 'autoTranscend';
 
@@ -45,7 +48,7 @@ export interface PrestigePerkDef {
   effectType: PrestigePerkEffect;
   effectPerLevel: number | string;
   baseEffect?: number;
-  glyph: string;
+  icon: IconId;
   color: string;
   automationKey?: AutomationKey;
   branch?: TPBranch;
@@ -95,6 +98,31 @@ export function computePerkEffect(def: PrestigePerkDef, level: number): number {
 export const ASCENSION_UNLOCK_WAVE = 20;
 
 /**
+ * Idle-time cap tuning (plan §10.1).
+ *
+ * The offline cap starts at 8 hours and grows 8h per level of `ap_idle_time`,
+ * to a 4-day ceiling. The two constants live next to the perk that spends
+ * them so the welcome-back copy and the perk row can stay in step with the
+ * effect without hard-coding seconds at either call site.
+ */
+export const BASE_IDLE_TIME_SECONDS = 8 * 60 * 60;
+export const IDLE_TIME_PER_LEVEL_SECONDS = 8 * 60 * 60;
+export const IDLE_TIME_MAX_LEVEL = 11;
+
+/**
+ * Compact duration for the idle cap (plan §10.1). The cap is always a whole
+ * number of hours, so this never needs a minutes field: `8h`, `1d`, `1d 8h`,
+ * `4d`.
+ */
+export function formatIdleDuration(seconds: number): string {
+  const hours = Math.max(0, Math.round(seconds / 3600));
+  const days = Math.floor(hours / 24);
+  const h = hours % 24;
+  if (days > 0) return h > 0 ? `${days}d ${h}h` : `${days}d`;
+  return `${hours}h`;
+}
+
+/**
  * Default wave for the auto-Ascend target. Sits above the unlock wave so the
  * automation does not fire the instant ascension becomes legal.
  */
@@ -108,68 +136,46 @@ export const FIRST_ASCENSION_AP = 25;
 export const TRANSCENDENCE_UNLOCK_AP = 100;
 
 /**
- * Plan §3.2: the ascension layer used to be eight independent nodes, every one
- * of them affordable within a couple of runs — a shopping list, not a tree.
- * It now has three tiers: the opening projectile/utility nodes are free to buy
- * in any order, the two unbounded sinks sit behind them, and a mutually
- * exclusive pair at tier 3 forces one real decision per transcendence (offense
- * or economy). Prerequisites and exclusivity are enforced in
- * `PrestigeManager.canSpendAP`, the same way the TP tree works.
+ * Revamp §7: the AP projectile perks add *coverage*, not a damage multiplier.
+ * Every extra lane carries a fraction of the volley's payload, so the whole
+ * suite is worth ~x2.8 before geometry rather than the ~x13 it used to be.
+ *
+ * One shared block: `Game.buildShotVariants()` ships it and `sim/model.ts`
+ * reads it, so the simulator measures the number that actually fires.
+ */
+export const PRESTIGE_PROJECTILE_TUNING = {
+  extraDamageScale: 0.55,   // Twin Arrows, front lane
+  rearDamageScale: 0.55,    // Rear Guard, behind the tower
+  scatterDamageScale: 0.35, // Scatter Shot, each of two angled lanes
+} as const;
+
+/**
+ * Revamp §8: twelve perks in four tiers.
+ *
+ * The old tree let 25 AP — a first ascension — buy seven full-damage
+ * projectiles, a ~7x multiplier bought once and never revisited (§1.5). The
+ * three projectile nodes are now **single-level signature purchases** at
+ * 60/90/200 AP, each carrying a fraction of the volley (§7), so the first
+ * ascension buys exactly one utility line and coverage is something a player
+ * saves several runs for.
+ *
+ * Prerequisites stay **OR**-based in `PrestigeManager.meetsPrerequisites` —
+ * the panel renders them as "Requires A or B", so a node listing two parents
+ * opens on either one.
  */
 export const AP_PERKS: PrestigePerkDef[] = [
-  {
-    id: 'ap_extra_shots',
-    layer: 'ascension',
-    name: 'Twin Arrows',
-    description: '+1 front projectile',
-    costPerLevel: 2,
-    costScaling: 2.5,
-    maxLevel: 10,
-    effectType: 'extra_shots',
-    effectPerLevel: 1,
-    glyph: '⇆',
-    color: '#d04848',
-    tier: 1,
-  },
-  {
-    id: 'ap_scatter_shots',
-    layer: 'ascension',
-    name: 'Scatter Shot',
-    description: '+1 scatter projectile',
-    costPerLevel: 2,
-    costScaling: 2.5,
-    maxLevel: 5,
-    effectType: 'scatter_shots',
-    effectPerLevel: 1,
-    glyph: '⋔',
-    color: '#ff7a3a',
-    tier: 1,
-  },
-  {
-    id: 'ap_back_shots',
-    layer: 'ascension',
-    name: 'Rear Volley',
-    description: '+1 rear projectile',
-    costPerLevel: 3,
-    costScaling: 2.5,
-    maxLevel: 3,
-    effectType: 'back_shots',
-    effectPerLevel: 1,
-    glyph: '↶',
-    color: '#5b8def',
-    tier: 1,
-  },
+  // ── Tier 1: the first ascension's single choice ──────────────────
   {
     id: 'ap_auto_upgrader',
     layer: 'ascension',
     name: 'Auto-Upgrader',
     description: 'Unlocks Auto-Upgrade: buys upgrades every 10s using your chosen strategy',
-    costPerLevel: 15,
+    costPerLevel: 25,
     costScaling: 1,
     maxLevel: 1,
     effectType: 'auto_buy',
     effectPerLevel: 0,
-    glyph: 'U',
+    icon: 'auto-repair',
     color: '#e8a93b',
     automationKey: 'autoBuy',
     tier: 1,
@@ -178,102 +184,194 @@ export const AP_PERKS: PrestigePerkDef[] = [
     id: 'ap_wave_skipper',
     layer: 'ascension',
     name: 'Wave Skipper',
-    description: '+3% chance per level to skip a wave and instantly collect its rewards',
-    costPerLevel: 3,
-    costScaling: 1.5,
-    maxLevel: 25,
+    description: '+1% chance per level to skip a wave and instantly collect its rewards',
+    costPerLevel: 6,
+    costScaling: 1.60,
+    maxLevel: 15,
     effectType: 'wave_skip',
-    effectPerLevel: 0.03,
-    glyph: '⏭',
+    effectPerLevel: 0.01,
+    icon: 'fast-forward-button',
     color: '#3ec46d',
     tier: 1,
   },
-  // ── Unbounded sinks (plan §2.3.5) ────────────────────────────────
-  // Every other AP perk caps at <=10 levels with 2.5^level growth, so the
-  // whole tree tops out around 7 600 AP while a deep run banks far more than
-  // that. Past the third ascension AP had nowhere to go but transcendence.
-  // These two never cap: geometric cost against a linear effect means each
-  // level costs more and gives the same, so they absorb any amount of AP
-  // while staying worth buying.
+  {
+    id: 'ap_quiver',
+    layer: 'ascension',
+    name: 'Deep Quiver',
+    description: '+2% fire rate per level',
+    costPerLevel: 5,
+    costScaling: 1.22,
+    maxLevel: 30,
+    effectType: 'fire_rate_mult',
+    effectPerLevel: 0.02,
+    icon: 'lightning-arc',
+    color: '#5b8def',
+    tier: 1,
+  },
+  {
+    id: 'ap_idle_time',
+    layer: 'ascension',
+    name: 'Extended Watch',
+    description: 'Tower auto-battles for an additional 8 hours while away.',
+    costPerLevel: 14,
+    costScaling: 1.6,
+    maxLevel: IDLE_TIME_MAX_LEVEL,
+    effectType: 'idle_time',
+    effectPerLevel: IDLE_TIME_PER_LEVEL_SECONDS,
+    icon: 'hourglass',
+    color: '#5b8def',
+    tier: 1
+  },
+  // ── Tier 2: the unbounded sinks and the research line ────────────
   {
     id: 'ap_might',
     layer: 'ascension',
     name: 'Ascendant Might',
-    description: '+3% all damage per level. Never caps.',
-    costPerLevel: 4,
-    costScaling: 1.18,
+    description: '+2% all damage per level. Never caps.',
+    costPerLevel: 6,
+    costScaling: 1.20,
     maxLevel: 999,
     effectType: 'damage_mult',
-    effectPerLevel: 0.03,
-    glyph: '✦',
+    effectPerLevel: 0.02,
+    icon: 'mighty-force',
     color: '#d04848',
     tier: 2,
-    prerequisites: [{ perkId: 'ap_extra_shots', minLevel: 1 }],
+    prerequisites: [
+      { perkId: 'ap_auto_upgrader', minLevel: 1 },
+      { perkId: 'ap_quiver', minLevel: 3 },
+    ],
   },
   {
     id: 'ap_fortune',
     layer: 'ascension',
     name: 'Ascendant Fortune',
-    description: '+3% all gold per level. Never caps.',
-    costPerLevel: 4,
-    costScaling: 1.18,
+    description: '+2% all gold per level. Never caps.',
+    costPerLevel: 6,
+    costScaling: 1.20,
     maxLevel: 999,
     effectType: 'resource_mult',
-    effectPerLevel: 0.03,
-    glyph: '❖',
+    effectPerLevel: 0.02,
+    icon: 'crown-coin',
     color: '#e8a93b',
     tier: 2,
-    prerequisites: [{ perkId: 'ap_wave_skipper', minLevel: 1 }],
+    prerequisites: [
+      { perkId: 'ap_auto_upgrader', minLevel: 1 },
+      { perkId: 'ap_wave_skipper', minLevel: 2 },
+    ],
   },
   {
     id: 'ap_research_speed',
     layer: 'ascension',
     name: 'Scholarly Focus',
-    description: '-15% research time per level',
-    costPerLevel: 2,
+    description: '-8% research time per level',
+    costPerLevel: 8,
     costScaling: 1.8,
     maxLevel: 5,
     effectType: 'research_speed',
-    effectPerLevel: 0.15,
-    glyph: '📚',
+    effectPerLevel: 0.08,
+    icon: 'book-pile',
     color: '#9b59ff',
     tier: 2,
     prerequisites: [{ perkId: 'ap_auto_upgrader', minLevel: 1 }],
   },
-  // ── Tier 3: one choice, taken once per transcendence ─────────────
-  // Both are strictly better per level than their tier-2 parent and cost far
-  // more; picking one locks the other out, so an ascension build commits to
-  // killing faster or earning faster rather than buying every row.
+  // ── Tier 3: the signature coverage nodes, one level each ─────────
+  {
+    id: 'ap_extra_shots',
+    layer: 'ascension',
+    name: 'Twin Arrows',
+    description: 'Adds one front projectile at 55% damage',
+    costPerLevel: 60,
+    costScaling: 1,
+    maxLevel: 1,
+    effectType: 'extra_shots',
+    effectPerLevel: 1,
+    icon: 'double-shot',
+    color: '#d04848',
+    tier: 3,
+    prerequisites: [
+      { perkId: 'ap_might', minLevel: 5 },
+      { perkId: 'ap_quiver', minLevel: 5 },
+    ],
+  },
+  {
+    id: 'ap_pierce',
+    layer: 'ascension',
+    name: 'Bodkin Mastery',
+    description: '+1 pierce per level',
+    costPerLevel: 75,
+    costScaling: 2.2,
+    maxLevel: 3,
+    effectType: 'pierce',
+    effectPerLevel: 1,
+    icon: 'piercing-sword',
+    color: '#d04848',
+    tier: 3,
+    prerequisites: [{ perkId: 'ap_might', minLevel: 5 }],
+  },
+  {
+    id: 'ap_back_shots',
+    layer: 'ascension',
+    name: 'Rear Guard',
+    description: 'Adds one rear projectile at 55% damage',
+    costPerLevel: 90,
+    costScaling: 1,
+    maxLevel: 1,
+    effectType: 'back_shots',
+    effectPerLevel: 1,
+    icon: 'return-arrow',
+    color: '#5b8def',
+    tier: 3,
+    prerequisites: [{ perkId: 'ap_extra_shots', minLevel: 1 }],
+  },
+  // ── Tier 4: the deep-run fork ────────────────────────────────────
+  {
+    id: 'ap_scatter_shots',
+    layer: 'ascension',
+    name: 'Scatter Shot',
+    description: 'Adds two angled projectiles at 35% damage each',
+    costPerLevel: 200,
+    costScaling: 1,
+    maxLevel: 1,
+    effectType: 'scatter_shots',
+    effectPerLevel: 1,
+    icon: 'pentarrows-tornado',
+    color: '#ff7a3a',
+    tier: 4,
+    prerequisites: [
+      { perkId: 'ap_back_shots', minLevel: 1 },
+      { perkId: 'ap_pierce', minLevel: 2 },
+    ],
+  },
   {
     id: 'ap_warlord',
     layer: 'ascension',
     name: 'Warlord',
-    description: '+8% all damage per level. Locks out Tycoon.',
-    costPerLevel: 12,
-    costScaling: 1.3,
-    maxLevel: 15,
+    description: '+5% all damage per level. Locks out Tycoon.',
+    costPerLevel: 40,
+    costScaling: 1.32,
+    maxLevel: 12,
     effectType: 'damage_mult',
-    effectPerLevel: 0.08,
-    glyph: '⚔',
+    effectPerLevel: 0.05,
+    icon: 'crossed-swords',
     color: '#ff5252',
-    tier: 3,
-    prerequisites: [{ perkId: 'ap_might', minLevel: 5 }],
+    tier: 4,
+    prerequisites: [{ perkId: 'ap_might', minLevel: 10 }],
     exclusive: ['ap_tycoon'],
   },
   {
     id: 'ap_tycoon',
     layer: 'ascension',
     name: 'Tycoon',
-    description: '+8% all gold per level. Locks out Warlord.',
-    costPerLevel: 12,
-    costScaling: 1.3,
-    maxLevel: 15,
+    description: '+5% all gold per level. Locks out Warlord.',
+    costPerLevel: 40,
+    costScaling: 1.32,
+    maxLevel: 12,
     effectType: 'resource_mult',
-    effectPerLevel: 0.08,
-    glyph: '💎',
+    effectPerLevel: 0.05,
+    icon: 'gems',
     color: '#ffd54a',
-    tier: 3,
-    prerequisites: [{ perkId: 'ap_fortune', minLevel: 5 }],
+    tier: 4,
+    prerequisites: [{ perkId: 'ap_fortune', minLevel: 10 }],
     exclusive: ['ap_warlord'],
   },
 ];
@@ -319,7 +417,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     // total) while a capped perk's fixed percentage stays competitive.
     effectPerLevel: '0.5 / Math.sqrt({level})',
     baseEffect: 0.5,
-    glyph: '⚔',
+    icon: 'orbital-rays',
     color: '#9b59ff',
     branch: 'wrath',
     tier: 1,
@@ -334,7 +432,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 25,
     effectType: 'fire_rate_mult',
     effectPerLevel: 0.08,
-    glyph: '⚡',
+    icon: 'lightning-arc',
     color: '#d04848',
     branch: 'wrath',
     tier: 2,
@@ -350,7 +448,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 30,
     effectType: 'crit_damage_mult',
     effectPerLevel: 0.05,
-    glyph: '◎',
+    icon: 'target-arrows',
     color: '#ff7a3a',
     branch: 'wrath',
     tier: 2,
@@ -366,7 +464,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 6,
     effectType: 'pierce',
     effectPerLevel: 0.5,
-    glyph: '➤',
+    icon: 'piercing-sword',
     color: '#d04848',
     branch: 'wrath',
     tier: 3,
@@ -385,7 +483,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 1,
     effectType: 'aoe_splash',
     effectPerLevel: 0.25,
-    glyph: '💥',
+    icon: 'explosion-rays',
     color: '#d04848',
     branch: 'wrath',
     tier: 4,
@@ -402,7 +500,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 1,
     effectType: 'execute_damage',
     effectPerLevel: 2.0,
-    glyph: '☠',
+    icon: 'reaper-scythe',
     color: '#9b59ff',
     branch: 'wrath',
     tier: 4,
@@ -423,7 +521,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     /** Tapered for the same reason as `tp_damage` — see the note there. */
     effectPerLevel: '0.25 / Math.sqrt({level})',
     baseEffect: 0.25,
-    glyph: '✦',
+    icon: 'star-gate',
     color: '#3ec46d',
     branch: 'fortune',
     tier: 1,
@@ -438,7 +536,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 20,
     effectType: 'treasure_chance',
     effectPerLevel: 0.03,
-    glyph: '💰',
+    icon: 'treasure-map',
     color: '#e8a93b',
     branch: 'fortune',
     tier: 2,
@@ -454,7 +552,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 20,
     effectType: 'mana_regen_mult',
     effectPerLevel: 0.15,
-    glyph: '🔮',
+    icon: 'well',
     color: '#5b8def',
     branch: 'fortune',
     tier: 2,
@@ -474,7 +572,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     // gold curve that is itself exponential.
     effectPerLevel: '500 * Math.pow(1.45, {level} - 1)',
     baseEffect: 500,
-    glyph: '🏁',
+    icon: 'checkered-flag',
     color: '#e8a93b',
     branch: 'fortune',
     tier: 3,
@@ -493,7 +591,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 1,
     effectType: 'gold_on_hit',
     effectPerLevel: 0.10,
-    glyph: '👑',
+    icon: 'crown',
     color: '#e8a93b',
     branch: 'fortune',
     tier: 4,
@@ -510,7 +608,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 1,
     effectType: 'ability_cdr',
     effectPerLevel: 0.30,
-    glyph: '✧',
+    icon: 'sparkles',
     color: '#5b8def',
     branch: 'fortune',
     tier: 4,
@@ -529,7 +627,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 1,
     effectType: 'automation',
     effectPerLevel: 0,
-    glyph: 'C',
+    icon: 'clockwork',
     color: '#5b8def',
     automationKey: 'autoAbilities',
     branch: 'dominion',
@@ -545,7 +643,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 10,
     effectType: 'wave_start',
     effectPerLevel: 3,
-    glyph: '⏩',
+    icon: 'level-end-flag',
     color: '#3ec46d',
     branch: 'dominion',
     tier: 2,
@@ -560,7 +658,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 7,
     effectType: 'auto_buy_speed',
     effectPerLevel: 1,
-    glyph: '⏱',
+    icon: 'cog',
     color: '#e8a93b',
     branch: 'dominion',
     tier: 2,
@@ -574,8 +672,11 @@ export const TP_PERKS: PrestigePerkDef[] = [
     costScaling: 2.4,
     maxLevel: 10,
     effectType: 'game_speed',
-    effectPerLevel: 1,
-    glyph: '⚡',
+    // Plan §9.3: the copy above promises +0.5x a level; the effect used to
+    // grant +1x, so a maxed Accelerator ran the game at 11x while the panel
+    // claimed 6x. The description is the contract — the number follows it.
+    effectPerLevel: 0.5,
+    icon: 'fast-forward-button',
     color: '#a855f7',
     branch: 'dominion',
     tier: 2,
@@ -590,7 +691,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 1,
     effectType: 'automation',
     effectPerLevel: 0,
-    glyph: '↑',
+    icon: 'upgrade',
     color: '#d04848',
     automationKey: 'autoAscend',
     branch: 'dominion',
@@ -610,7 +711,7 @@ export const TP_PERKS: PrestigePerkDef[] = [
     maxLevel: 1,
     effectType: 'automation',
     effectPerLevel: 0,
-    glyph: '∞',
+    icon: 'over-infinity',
     color: '#9b59ff',
     automationKey: 'autoTranscend',
     branch: 'dominion',
@@ -643,4 +744,50 @@ export function tpForAP(ap: number): number {
 
 export function canTranscend(ap: number): boolean {
   return ap >= TRANSCENDENCE_UNLOCK_AP;
+}
+
+/**
+ * Annihilation's blast radius (plan §9.1).
+ *
+ * `tp_aoe` grants a fraction, not a radius, so the radius lives here next to
+ * the perk rather than being invented at the call site. Sized under the
+ * artillery core's `world(70)`: the perk is a universal top-up, not a core.
+ */
+export const TP_AOE_SPLASH_RADIUS = world(60);
+
+/**
+ * Cap on a single shot's summed splash fraction (plan §5.2).
+ *
+ * Composition rule: **max radius, summed fraction to the cap**. The cap can
+ * never take a source below what it grants on its own, so the artillery core
+ * (0.5) keeps its blast and Annihilation adds on top of the smaller sources.
+ */
+export const SPLASH_FRACTION_CAP = 0.4;
+
+export interface ShotSplash {
+  splashRadius?: number;
+  splashFraction?: number;
+}
+
+/**
+ * Compose two splash payloads into the one channel `FireOptions` carries.
+ *
+ * Two splash payloads on one impact is one impact's worth of splash charged
+ * twice, which is what the max-radius half prevents; the summed-fraction half
+ * is what stops a second source from being silently free.
+ */
+export function composeShotSplash(base: ShotSplash, add: ShotSplash): ShotSplash {
+  const baseRadius = base.splashRadius ?? 0;
+  const addRadius = add.splashRadius ?? 0;
+  if (baseRadius <= 0 && addRadius <= 0) return { ...base };
+  const baseFraction = baseRadius > 0 ? base.splashFraction ?? 1 : 0;
+  const addFraction = addRadius > 0 ? add.splashFraction ?? 1 : 0;
+  return {
+    splashRadius: Math.max(baseRadius, addRadius),
+    splashFraction: Math.max(
+      baseFraction,
+      addFraction,
+      Math.min(SPLASH_FRACTION_CAP, baseFraction + addFraction),
+    ),
+  };
 }

@@ -11,10 +11,15 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/performance.md](docs/performance.md) | Frame budget: substepping, renderer sprite cache, spatial grid, effect pools, save cadence, lookup caches |
 | [docs/testing.md](docs/testing.md) | Vitest suite, `npm run checks`, the balance simulator, in-browser verification |
 | [docs/stat-pipeline.md](docs/stat-pipeline.md) | The single stat composition point: StatKey union, StatContext, accumulator buckets, contributors, BuffRegistry, breakdowns |
-| [docs/tower-system.md](docs/tower-system.md) | Tower state, targeting modes (nearest/lowest_hp/first), damage calculation, manual aim |
-| [docs/enemy-system.md](docs/enemy-system.md) | 8 enemy types, elites and their 5 auras, scaling per wave, movement, combat, crowd control |
-| [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, intermission, enemy selection weights, wave skip, enrage |
+| [docs/tower-system.md](docs/tower-system.md) | Tower state, the 7 targeting modes (priority is the default), damage calculation, manual aim |
+| [docs/enemy-system.md](docs/enemy-system.md) | 13 enemy types and the verb each one demands an answer to, hostile shots, targetability, elites and their 5 auras, scaling, crowd control |
+| [docs/wave-system.md](docs/wave-system.md) | Wave progression, spawning, the pre-rolled roster and threat preview, calling a wave early, the risk dial, intermission length, fast packs, the thief cap, wave skip, enrage |
 | [docs/wave-modifier-system.md](docs/wave-modifier-system.md) | 9 mutators, offer cadence, 3-wave duration with escalating rewards |
+| [docs/boss-encounters.md](docs/boss-encounters.md) | Boss phases at 66/33%, the four patterns and their answers, the enrage timer, swift/flawless rewards, the boss bar, the durability budget |
+| [docs/loot-system.md](docs/loot-system.md) | Loot orbs, the charged shot, click-placed abilities, the input routing order, and the idle-parity measurement |
+| [docs/blessing-system.md](docs/blessing-system.md) | The in-run roguelite draft: 30-card pool, cadence, rerolls, behaviors, idle safety, balance |
+| [docs/contract-system.md](docs/contract-system.md) | Three rolling run-scoped objectives: wave-band tiering, the goal-kind consumer map, rewards and the +50% AP cap, the tracker |
+| [docs/core-system.md](docs/core-system.md) | Five tower cores: the run's identity, AP unlocks vs run-scoped selection, shot behaviors, the picker, blessing preference, the ±15% balance table |
 | [docs/projectile-system.md](docs/projectile-system.md) | Projectile firing, shot variants, swept collision, piercing, lifetime, damage multipliers |
 | [docs/resource-system.md](docs/resource-system.md) | Gold & mana economy, income sources, spending, passive income |
 | [docs/upgrade-system.md](docs/upgrade-system.md) | 27 upgrades across 4 categories, evolutions, bulk buy, cost formula, upgrade panel |
@@ -28,12 +33,15 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/automation-system.md](docs/automation-system.md) | Automation features (buy/cast/ascend/transcend), auto-buy strategies, timers, unlock requirements |
 | [docs/effects-system.md](docs/effects-system.md) | Particles, damage numbers, shockwave rings, pool caps, physics constants |
 | [docs/audio-system.md](docs/audio-system.md) | Web Audio synthesis, event subscriptions, volume and mute |
-| [docs/ui-system.md](docs/ui-system.md) | Tab panel system, HUD components, API interfaces, callback wiring, CSS |
+| [docs/ui-system.md](docs/ui-system.md) | Tab panel system, HUD components, canvas overlays (boss bar, pacing overlay), API interfaces, callback wiring, CSS |
+| [docs/camera-system.md](docs/camera-system.md) | The world/screen transform, DPR-aware sizing and the resize path, the arena extents and aspect clamp, the two world scales and why `range` is exempt from them |
+| [docs/art-direction.md](docs/art-direction.md) | The design token layer, the "arcane siege" palette and what each colour is allowed to mean, the shared `palette.ts` source of truth, the self-hosted display face |
+| [docs/icon-system.md](docs/icon-system.md) | The committed game-icons sprite and its fetch script, the generated `IconId` union, CC BY attribution, `Icon.ts` and the CSS rarity frames |
 | [docs/event-bus.md](docs/event-bus.md) | Pub/sub event system with the event catalog |
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
 | [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, progression tab, milestone table |
 | [docs/run-summary.md](docs/run-summary.md) | Post-run debrief modal, per-run history ring buffer, stats tab |
-| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v9) and the migration ladder, debounced auto-save, offline progress |
+| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v16) and the migration ladder, debounced auto-save, offline progress |
 
 ## Content at a glance
 
@@ -42,14 +50,28 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Upgrades (with evolutions) | 27 | `src/data/upgrades.ts` |
 | Active abilities | 10 | `src/data/abilities.ts` |
 | Passive abilities | 8 | `src/data/passiveAbilities.ts` |
-| Enemy types | 8 | `src/data/enemies.ts` |
+| Enemy types | 13 | `src/data/enemies.ts` |
+| Boss patterns | 4 | `src/data/enemies.ts` |
 | Elite auras | 5 | `src/systems/EnemyManager.ts` |
+| Targeting modes | 7 | `src/data/tower.ts` |
 | Talents | 37 | `src/data/talentTree.ts` |
 | Research nodes | 17 | `src/data/research.ts` |
 | Achievements | 18 | `src/data/achievements.ts` |
 | Wave modifiers | 9 | `src/data/waveModifiers.ts` |
+| Blessings | 30 | `src/data/blessings.ts` |
+| Tower cores | 5 | `src/data/cores.ts` |
+| Core shot behaviors | 6 | `src/data/cores.ts` |
+| Loot orb kinds | 3 | `src/data/loot.ts` |
+| Contracts | 28 | `src/data/contracts.ts` |
+| Contract goal kinds | 10 | `src/data/contracts.ts` |
+| Placeable abilities | 3 | `src/data/abilities.ts` |
 | Equipment slots / rarities | 8 / 5 | `src/data/equipment.ts` |
-| Save version | 9 | `src/systems/SaveManager.ts` |
+| Combo tiers | 4 | `src/data/pacing.ts` |
+| Risk levels | 6 (0-5) | `src/data/pacing.ts` |
+| Enemy threat classes | 3 | `src/data/pacing.ts` |
+| Icons (distinct artwork) | 197 | `public/icons/sprite.svg` |
+| Icon references across tables | 249 | `scripts/fetch-icons.mjs` |
+| Save version | 16 | `src/systems/SaveManager.ts` |
 
 ## Commands
 
@@ -60,13 +82,14 @@ npm run typecheck   # tsc --noEmit
 npm run test        # vitest suite (tests/)
 npm run checks      # behavioural checks driving the real managers (sim/checks.ts)
 npm run sim         # balance simulator, before/after curve tables (sim/balance.ts)
+npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest (needs network)
 ```
 
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **idle-tower** (2521 symbols, 9736 relationships, 221 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **idle-tower** (5184 symbols, 19286 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
