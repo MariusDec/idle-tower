@@ -24,7 +24,7 @@ import {
   arenaExtents,
   spawnPointOnEllipse,
 } from '../src/data/arena';
-import { makeViewTransform, screenToWorld, worldToScreen } from '../src/game/Camera';
+import { Camera, makeViewTransform, screenToWorld, worldToScreen, type CameraResize } from '../src/game/Camera';
 import { clampStat } from '../src/stats/accumulator';
 import { TOWER_BASE } from '../src/data/tower';
 import { UPGRADE_BY_ID } from '../src/data/upgrades';
@@ -246,5 +246,109 @@ describe('the two scales', () => {
     // 300 is the pre-camera base. It must stay 300: scaling it would move the
     // ring with the arena and the zoom-out would be invisible.
     expect(TOWER_BASE.range).toBe(300);
+  });
+});
+
+describe('Camera.setDprCap (UI plan §9.D)', () => {
+  // The enemy-rescale guard. `Game.onCameraResize` multiplies every live
+  // enemy, projectile, hostile shot and loot orb by
+  // `worldWidth / previousWorldWidth`. A DPR-cap change leaves the world
+  // rectangle identical, so the resize it emits must report the *same* world
+  // extents on both sides — anything else is a mid-wave teleport waiting for
+  // the next refactor that tightens the `sx !== 1` short-circuit.
+  const makeCanvas = (cssWidth: number, cssHeight: number): HTMLCanvasElement => {
+    const canvas = {
+      width: 0,
+      height: 0,
+      clientWidth: cssWidth,
+      clientHeight: cssHeight,
+      getBoundingClientRect: () => ({ width: cssWidth, height: cssHeight }),
+    };
+    return canvas as unknown as HTMLCanvasElement;
+  };
+
+  const withDevicePixelRatio = <T>(dpr: number, fn: () => T): T => {
+    const had = Object.prototype.hasOwnProperty.call(globalThis, 'devicePixelRatio');
+    const previous = (globalThis as { devicePixelRatio?: number }).devicePixelRatio;
+    (globalThis as { devicePixelRatio?: number }).devicePixelRatio = dpr;
+    try {
+      return fn();
+    } finally {
+      if (had) (globalThis as { devicePixelRatio?: number }).devicePixelRatio = previous;
+      else delete (globalThis as { devicePixelRatio?: number }).devicePixelRatio;
+    }
+  };
+
+  it('resizes the backing store without moving the world rectangle', () => {
+    withDevicePixelRatio(3, () => {
+      const canvas = makeCanvas(800, 600);
+      const camera = new Camera(canvas);
+      const resizes: CameraResize[] = [];
+      camera.onResize = (info) => { resizes.push(info); };
+
+      const before = camera.transform;
+      expect(camera.currentDprCap).toBe(ARENA.maxDevicePixelRatio);
+
+      camera.setDprCap(1);
+
+      const after = camera.transform;
+      expect(after.dpr).toBe(1);
+      expect(after.pixelWidth).toBe(800);
+      expect(canvas.width).toBe(800);
+      expect(after.pixelWidth).toBeLessThan(before.pixelWidth);
+      // The world is untouched: same extents, so nothing may be rescaled.
+      expect(after.worldWidth).toBe(before.worldWidth);
+      expect(after.worldHeight).toBe(before.worldHeight);
+
+      expect(resizes).toHaveLength(1);
+      const info = resizes[0];
+      expect(info.previousWorldWidth).toBe(info.worldWidth);
+      expect(info.previousWorldHeight).toBe(info.worldHeight);
+      // i.e. the scale factors Game computes are exactly 1 on both axes.
+      expect(info.worldWidth / info.previousWorldWidth).toBe(1);
+      expect(info.worldHeight / info.previousWorldHeight).toBe(1);
+
+      camera.destroy();
+    });
+  });
+
+  it('is a no-op when the cap does not change, and rejects nonsense', () => {
+    withDevicePixelRatio(2, () => {
+      const camera = new Camera(makeCanvas(800, 600));
+      const resizes: CameraResize[] = [];
+      camera.onResize = (info) => { resizes.push(info); };
+
+      camera.setDprCap(ARENA.maxDevicePixelRatio);   // already the cap
+      camera.setDprCap(0);                            // nonsense
+      camera.setDprCap(-1);
+      expect(resizes).toHaveLength(0);
+      expect(camera.currentDprCap).toBe(ARENA.maxDevicePixelRatio);
+
+      camera.destroy();
+    });
+  });
+
+  it('still reports the real previous extents when the world does change shape', () => {
+    withDevicePixelRatio(1, () => {
+      const canvas = makeCanvas(1600, 900);
+      const camera = new Camera(canvas);
+      const resizes: CameraResize[] = [];
+      camera.onResize = (info) => { resizes.push(info); };
+
+      const before = camera.transform;
+      // A genuine viewport change: portrait phone box.
+      canvas.clientWidth = 400;
+      canvas.clientHeight = 900;
+      (canvas as unknown as { getBoundingClientRect: () => { width: number; height: number } })
+        .getBoundingClientRect = () => ({ width: 400, height: 900 });
+      camera.measure();
+
+      expect(resizes).toHaveLength(1);
+      expect(resizes[0].previousWorldWidth).toBe(before.worldWidth);
+      expect(resizes[0].previousWorldHeight).toBe(before.worldHeight);
+      expect(resizes[0].worldWidth).not.toBe(before.worldWidth);
+
+      camera.destroy();
+    });
   });
 });

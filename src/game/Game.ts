@@ -1855,6 +1855,10 @@ export class Game {
     this.effects.setQuality(tier);
     this.renderer.setQuality(tier);
     this.camera.setDprCap(profile.dprCap);
+    // The camera only fires its resize when the cap actually moved, and the
+    // renderer only rebakes when `bgLayers`/`shadows` moved — so drop the bake
+    // here unconditionally rather than relying on either to have done it.
+    this.renderer.invalidateBackground();
   }
 
   /**
