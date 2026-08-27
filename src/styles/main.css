@@ -4154,7 +4154,10 @@ body.is-resizing * { cursor: ew-resize !important; }
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: 80vh;
+  /* §9.B: `dvh`, never `vh`. In landscape the sheet keeps its 80% cap, but on
+     iOS `vh` is measured against the *expanded* browser chrome, so an 80vh
+     sheet overhangs the visible viewport while the toolbar is out. */
+  max-height: 80dvh;
   background: var(--surface-1);
   border-top: 1px solid var(--stroke-strong);
   border-top-left-radius: 16px;
@@ -4470,6 +4473,52 @@ body.is-resizing * { cursor: ew-resize !important; }
   .milestone-entry {
     width: 100%;
   }
+}
+
+/* ── Portrait phones: the HUD on two rows (UI plan §9.B) ────────────────────
+   This block has to sit *after* the ≤768px mobile HUD block above: the two
+   have the same specificity, so source order is what decides, and the rules
+   here are deliberate overrides of it.
+
+   The ≤768px branch lays `.hud` out as a flex column, which gave each of the
+   three resource bars a row of its own — 267px of HUD at 375x812, a third of
+   the phone, against a `--hud-height-mobile` token that still claimed 90px.
+   A grid is the smallest change that seats them side by side without touching
+   the markup: the wave/chips group spans the full width on row one, hp / mana
+   / xp share row two. `.hud-stats-wrap` and `.hud-group.right` are
+   `display: none` on mobile, so they are not grid items and take no track. */
+@media (orientation: portrait) and (max-width: 768px) {
+  .hud {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-content: start;
+  }
+  .hud-group { grid-column: 1 / -1; }
+  .hud-bar-block { min-width: 0; }
+  /* Three bars across 375px is ~115px of track each, and "Tower XP  Lv.1
+     0 / 0 XP" needs 149. The written label goes the same way the §7 chip
+     labels did — the coloured mark is the label — but it stays in the
+     accessibility tree rather than being dropped, because unlike a chip the
+     bar carries no `aria-label` of its own. */
+  .hud-bar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  .hud-bar-head {
+    gap: var(--space-1);
+    /* A bar head is a fixed row: it may crop, never wrap onto a second line
+       and re-inflate the HUD it was just shrunk out of. */
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .hud-bar-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 }
 
 /* ── Desktop: the bottom-left corner stacks above the dock ──────────────────

@@ -429,9 +429,16 @@
   --safe-r: env(safe-area-inset-right, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
-  /* Approximate mobile HUD height (2 rows: wave block + hp/mana bars). Used to
-     position the milestone strip and toasts above the canvas. */
-  --hud-height-mobile: 90px;
+  /* Approximate mobile HUD height. Used to position the milestone strip and
+     toasts above the canvas — it is a reservation, not a layout input, so it
+     wants to be at or above the real height rather than exact.
+
+     UI plan §9.B asked for this to be verified against the Part 7 HUD, which
+     grew: measured at 375x812 the two-row portrait HUD is 202px (chips + More
+     on 44, the wave block on 104, the three resource bars sharing 29, plus
+     gaps and padding), not the 90px this token claimed when it described a
+     pre-Part-7 HUD of a wave block and two bars. */
+  --hud-height-mobile: 204px;
 
   /* Strength of the low-HP vignette. Written from TS as the tower's HP falls. */
   --vignette-alpha: 0.4;
