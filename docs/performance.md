@@ -155,6 +155,84 @@ notably the `visibilitychange` handler in `Game.bindVisibilityEvents`.
 **Invariant:** any new writer of `UpgradeManager.levels` must call
 `rebuildEvolutionCache()`.
 
+## The budget harness (`__theTower.bench`)
+
+UI plan §10.B. It lives in `src/main.ts` and hangs off the existing
+`window.__theTower` global rather than adding a second one:
+
+```js
+await __theTower.bench({ enemies: 250, seconds: 10, tier: 'low' })
+// → { tier, frames, p50, p95, worst, particles, enemies }   // ms per frame
+```
+
+What it does, and why each piece is there:
+
+- **Enemies come from the real `EnemyManager.spawn`**, topped back up to
+  `enemies` every frame, in a spread of six types. Spawning through the manager
+  is the point: the spatial grid, the per-type sprite cache and the whole
+  render path are exercised the way a busy wave exercises them, which a
+  synthetic array of stubs would not do.
+- **The particle pool is saturated**, not merely used: a 48-particle
+  `emitDeathBurst` every third frame is ~960 particles/second against a ~1 s
+  particle life, which overruns every tier's cap (600 / 360 / 200) even after
+  `particleScale` has taken its cut. `particles` in the result is the check —
+  if it comes back below the tier's cap, the run did not measure a full pool.
+- **Samples are frame deltas from a rAF that rides alongside `Game`'s own
+  loop**, so what is measured is the whole frame — update, draw, UI — as the
+  player receives it.
+- **The first 30 samples are discarded**, for the same reason the §9.D quality
+  probe discards them: JIT warm-up and the first background bake are not the
+  frame cost anyone lives with.
+- **It puts the field back.** The enemies it spawned are spliced out by id and
+  the tier is restored with `setQuality`, never `setQualityPreference` — a
+  measurement must not persist itself as the player's choice.
+
+`p50` at 60 Hz is vsync-clamped at ~16.7 ms, so the median reports *whether*
+frames are being hit, not how much slack is left; `p95` and `worst` are where
+the headroom shows.
+
+### Measured 2026-08-27
+
+Chromium (`--headless=new`, hardware GL), 250 enemies, 10 s per tier, pool
+saturated at every tier. Milliseconds per frame.
+
+**Before Part 5** — commit `0412584` (the parent of the first Part 5 commit) in
+a scratch worktree. No quality tiers existed yet, so there is one row per DPR:
+
+| viewport         | p50  | p95  | worst | particles |
+|------------------|------|------|-------|-----------|
+| 1280×800, DPR 1  | 16.7 | 18.1 | 21.2  | 600       |
+| 1280×800, DPR 2  | 16.8 | 21.1 | 45.8  | 600       |
+
+**After Parts 5 / 8 / 9:**
+
+| viewport         | tier   | p50  | p95  | worst | particles |
+|------------------|--------|------|------|-------|-----------|
+| 1280×800, DPR 1  | high   | 16.7 | 18.1 | 21.2  | 599       |
+| 1280×800, DPR 1  | medium | 16.7 | 18.1 | 21.0  | 360       |
+| 1280×800, DPR 1  | low    | 16.7 | 18.0 | 20.6  | 200       |
+| 1280×800, DPR 2  | high   | 16.7 | 19.1 | 35.6  | 600       |
+| 1280×800, DPR 2  | medium | 16.6 | 19.0 | 27.9  | 360       |
+| 1280×800, DPR 2  | low    | 16.6 | 18.6 | 22.7  | 199       |
+| 375×812, DPR 2   | high   | 16.7 | 18.7 | 24.9  | 600       |
+| 375×812, DPR 2   | medium | 16.6 | 18.3 | 21.8  | 360       |
+| 375×812, DPR 2   | low    | 16.7 | 18.7 | 21.5  | 200       |
+
+Every configuration holds 60 fps at the median with 250 enemies and a full
+particle pool. Part 5 did not cost anything at DPR 1 and *improved* the DPR 2
+tail (p95 21.1 → 19.1, worst 45.8 → 35.6) — the routed additive pass replaced
+several `globalCompositeOperation` flips per frame with one.
+
+**Caveats.** These are desktop-GPU numbers throughout; the 375×812 rows are a
+phone-shaped *viewport* under CDP device emulation, not phone-class silicon, so
+they bound the layout cost and say nothing about a mid-range Android's fill
+rate. Software rasterisation (`--use-gl=swiftshader`) misses 60 fps at DPR 2
+before the harness spawns anything, which is the rasteriser and not the game —
+if a run shows the idle page already over budget, the number is not about this
+codebase. And a headless tab whose pane is not composited throttles rAF to
+roughly 1 Hz, which makes the harness unusable there; it needs a tab that is
+actually painting.
+
 ## Verifying a change
 
 ```bash

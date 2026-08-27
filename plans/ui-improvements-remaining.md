@@ -1066,32 +1066,44 @@ and only split a layer if the numbers demand it. If the numbers do demand it, re
 before writing the code.
 
 **Measured 2026-08-27 — verdict: do not split. No layer canvases were built.**
+**Re-confirmed 2026-08-27 through §10.B's landed `__theTower.bench()`, at DPR 2 and on a
+phone-shaped viewport. Verdict unchanged.**
 
-§10.B's `__theTower.bench()` is not landed yet, so the measurement was taken with an equivalent
-throwaway harness driven from the devtools console against a clean `HEAD` checkout on `npm run dev`:
-250 live enemies held at count through the real `EnemyManager.spawn` (so the spatial grid and the
-sprite cache are exercised), the particle pool saturated via `emitDeathBurst` every 6th frame, and
-`Game.update` / `Game.draw` timed separately with `performance.now()` over 240 frames per tier.
-Desktop Chromium, 1280×720, DPR 1. Milliseconds:
+The first pass used a throwaway devtools harness against a clean `HEAD` checkout — 250 live enemies
+held at count through the real `EnemyManager.spawn`, the pool fed by `emitDeathBurst`, and
+`Game.update` / `Game.draw` timed separately over 240 frames per tier at 1280×720. It recorded
+~0.1–0.2 ms of update and ~1.1–1.9 ms of draw at the median, i.e. ~2 ms of a 16.7 ms budget, but it
+had to be stepped synchronously in a backgrounded tab and the browser would not honour a forced
+`devicePixelRatio`, so it never saw DPR 2 at all.
 
-| tier   | update p50 / p95 | draw p50 / p95 | particles |
-|--------|------------------|----------------|-----------|
-| high   | 0.2 / 0.5        | 1.9 / 6.6      | 600       |
-| medium | 0.1 / 0.3        | 1.4 / 5.2      | 359       |
-| low    | 0.1 / 0.3        | 1.1 / 5.9      | 200       |
+Re-measured through the real harness — `bench({ enemies: 250, seconds: 10, tier })`, rAF-driven in a
+compositing headless Chromium with hardware GL, the pool verified full at every tier. The harness
+reports whole frames rather than a per-pass split, which is the number the budget is stated in:
 
-The whole frame at the worst tier sits at ~2.1 ms median and ~7.1 ms at p95 against a 16.7 ms
-budget — the draw pass is not the constraint at 250 enemies, and the routed additive pass from §5.A
-already removed the per-entity `lighter` state flips that the split was meant to amortise. Two
-full-size composites per frame would *add* fill rate to a path with 60 % headroom to spare. The
-numbers do not demand it, so the entity and effects passes stay on the main context.
+| viewport        | tier   | p50  | p95  | worst | particles |
+|-----------------|--------|------|------|-------|-----------|
+| 1280×800, DPR 1 | high   | 16.7 | 18.1 | 21.2  | 599       |
+| 1280×800, DPR 1 | medium | 16.7 | 18.1 | 21.0  | 360       |
+| 1280×800, DPR 1 | low    | 16.7 | 18.0 | 20.6  | 200       |
+| 1280×800, DPR 2 | high   | 16.7 | 19.1 | 35.6  | 600       |
+| 1280×800, DPR 2 | medium | 16.6 | 19.0 | 27.9  | 360       |
+| 1280×800, DPR 2 | low    | 16.6 | 18.6 | 22.7  | 199       |
+| 375×812, DPR 2  | high   | 16.7 | 18.7 | 24.9  | 600       |
+| 375×812, DPR 2  | medium | 16.6 | 18.3 | 21.8  | 360       |
+| 375×812, DPR 2  | low    | 16.7 | 18.7 | 21.5  | 200       |
 
-Caveats for whoever re-measures under §10.B: this was DPR 1 (the browser would not honour a forced
-`devicePixelRatio` override — the backing store never grew), and the tab was backgrounded, so RAF
-was throttled and the loop had to be stepped synchronously; the isolated `worst` samples were
-dominated by GC spikes from the respawn loop and are not reported. Re-run through the real harness
-once it exists, at DPR 2 and on a phone-class viewport, before treating this as settled for the
-`low` tier on mobile.
+Every row holds 60 fps at the median — `p50` is vsync-clamped, which is exactly the pass condition —
+and DPR 2 costs about 1 ms of p95 over DPR 1. The pre-Part-5 baseline (commit `0412584`, one row per
+DPR because tiers did not exist yet) measured 16.7 / 18.1 / 21.2 at DPR 1 and 16.8 / 21.1 / 45.8 at
+DPR 2: the routed additive pass from §5.A *improved* the DPR 2 tail rather than costing anything, and
+it already removed the per-entity `lighter` state flips the split was meant to amortise. Two
+full-size composites per frame would add fill rate to a path that is not fill-rate bound. The numbers
+still do not demand it, so the entity and effects passes stay on the main context.
+
+One caveat survives and cannot be closed from this machine: every run is desktop-GPU, and the 375×812
+rows are a phone-shaped viewport under CDP device emulation, not phone-class silicon. They bound the
+layout cost, not a mid-range Android's fill rate. The `low` tier on real mobile hardware is still
+unmeasured — see the caveats block in `docs/performance.md`.
 
 ### 10.B The budget harness
 
@@ -1117,6 +1129,16 @@ function percentile(samples: number[], p: number): number {
 Discard the first 30 samples for the same reason the §9.D probe does. Run it at each tier and record
 the table in `docs/performance.md` — before Part 5 (capture it from `HEAD` in a scratch worktree)
 and after Parts 5/8/9 — the same before/after discipline §1.5 of the parent plan used.
+
+**Landed 2026-08-27.** `bench` sits in `src/main.ts` on the existing `__theTower` global and needed
+two new read-only accessors on `Game` (`effectsManager`, `worldExtents`) to reach the pool and the
+arena rectangle without reaching into privates. Two notes on the shape as built:
+
+- The pool is saturated with a 48-particle burst every **third** frame, not every sixth: at one
+  burst per six frames the pool settled at ~150 of a 600 cap, so the runs would not have been
+  measuring a full pool at all. `particles` in the result is the assertion that they now are.
+- The before/after tables are in `docs/performance.md`; the §10.A re-confirmation is recorded above.
+  The baseline row is a single untiered measurement because `QUALITY` did not exist before Part 5.
 
 ### 10.C Tests
 

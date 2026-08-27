@@ -3,7 +3,145 @@ import { EventBus } from './game/EventBus';
 import { UIManager } from './ui/UIManager';
 import { loadIconSprite } from './ui/Icon';
 import { ABILITIES } from './data/abilities';
-import type { TargetingMode } from './types';
+import { isQualityTier, type QualityTier } from './data/quality';
+import { FX } from './data/palette';
+import type { EnemyType, TargetingMode } from './types';
+
+/** What `__theTower.bench()` accepts (UI plan §10.B). */
+interface BenchOptions {
+  /** Live enemies held on the field for the duration. */
+  enemies?: number;
+  /** Sampling window, in seconds of wall clock. */
+  seconds?: number;
+  /** Tier to measure. Restored when the run ends; the stored preference is never touched. */
+  tier?: QualityTier;
+}
+
+/** What it reports back. Milliseconds, per frame. */
+interface BenchResult {
+  tier: QualityTier;
+  frames: number;
+  p50: number;
+  p95: number;
+  worst: number;
+  particles: number;
+  enemies: number;
+}
+
+// Small n, one shot, no allocation pressure that matters: a plain sort is fine.
+function percentile(samples: number[], p: number): number {
+  const s = [...samples].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor(p * s.length))];
+}
+
+/**
+ * The frame-budget harness (UI plan §10.B).
+ *
+ * Holds `enemies` live enemies on the field through the real `EnemyManager`
+ * — so the spatial grid, the sprite cache and the whole render path are
+ * exercised the way a busy wave exercises them — saturates the particle pool
+ * by calling `emitDeathBurst` on a timer, and samples the frame delta from a
+ * rAF that rides alongside `Game`'s own loop.
+ *
+ * The first 30 samples are discarded for the same reason the §9.D probe
+ * discards them: JIT warm-up and the first background bake are not the frame
+ * cost anyone lives with.
+ *
+ * Everything it touches is put back: the enemies it spawned are spliced out of
+ * the list by id, and the tier is restored with `setQuality` (not
+ * `setQualityPreference`, which would persist a measurement as a choice).
+ */
+function bench(game: Game, opts: BenchOptions = {}): Promise<BenchResult> {
+  const targetEnemies = Math.max(0, Math.floor(opts.enemies ?? 250));
+  const seconds = Math.max(0.1, opts.seconds ?? 10);
+  const previousTier = game.qualityTier;
+  if (opts.tier !== undefined && isQualityTier(opts.tier)) game.setQuality(opts.tier);
+
+  const mgr = game.enemies;
+  const effects = game.effectsManager;
+  const { width, height } = game.worldExtents;
+  // A spread of types, so the sprite cache is asked for more than one bake.
+  const types: EnemyType[] = ['normal', 'fast', 'tank', 'flying', 'shielded', 'siege'];
+  const wave = Math.max(1, game.gameState.wave.number);
+  const spawned = new Set<number>();
+  let cursor = 0;
+
+  const topUp = (): void => {
+    // Count only the harness's own enemies, so a bench run during a live wave
+    // does not spawn on top of a full field.
+    let live = 0;
+    for (const e of mgr.list) if (spawned.has(e.id) && e.alive) live++;
+    while (live < targetEnemies) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 0.18 + Math.random() * 0.3;
+      const x = width / 2 + Math.cos(angle) * width * r;
+      const y = height / 2 + Math.sin(angle) * height * r;
+      const e = mgr.spawn(types[cursor++ % types.length], wave, x, y);
+      spawned.add(e.id);
+      live++;
+    }
+    mgr.markGridStale();
+  };
+
+  return new Promise<BenchResult>((resolve) => {
+    const samples: number[] = [];
+    let last = performance.now();
+    let seen = 0;
+    let frame = 0;
+    let elapsed = 0;
+
+    const step = (): void => {
+      const now = performance.now();
+      const dt = now - last;
+      last = now;
+      frame++;
+      topUp();
+      // Saturate the pool: 48 particles every third frame is ~960/s against a
+      // ~1 s particle life, which overruns every tier's cap (600/360/200) even
+      // after `particleScale` has taken its cut. The pool stays full, which is
+      // the state worth measuring.
+      if (frame % 3 === 0) {
+        const angle = Math.random() * Math.PI * 2;
+        effects.emitDeathBurst(
+          width / 2 + Math.cos(angle) * width * 0.25,
+          height / 2 + Math.sin(angle) * height * 0.25,
+          FX.ember,
+          18,
+          48,
+        );
+      }
+      if (++seen > 30) {
+        samples.push(dt);
+        elapsed += dt / 1000;
+      }
+      if (elapsed < seconds) {
+        requestAnimationFrame(step);
+        return;
+      }
+
+      const result: BenchResult = {
+        tier: game.qualityTier,
+        frames: samples.length,
+        p50: percentile(samples, 0.5),
+        p95: percentile(samples, 0.95),
+        worst: Math.max(...samples),
+        particles: effects.particleList.length,
+        enemies: mgr.list.filter((e) => spawned.has(e.id) && e.alive).length,
+      };
+
+      // Put the field back: drop only what this run put on it.
+      const list = mgr.list;
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (spawned.has(list[i].id)) list.splice(i, 1);
+      }
+      mgr.markGridStale();
+      game.setQuality(previousTier);
+      resolve(result);
+    };
+
+    requestAnimationFrame(step);
+  });
+}
 
 function bootstrap(): void {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement | null;
@@ -342,7 +480,13 @@ function bootstrap(): void {
   game.tryLoadSave();
   game.start();
 
-  (window as unknown as { __theTower?: unknown }).__theTower = { game, bus, ui };
+  (window as unknown as { __theTower?: unknown }).__theTower = {
+    game,
+    bus,
+    ui,
+    // UI plan §10.B: one global, not two.
+    bench: (opts?: BenchOptions) => bench(game, opts),
+  };
 }
 
 /**

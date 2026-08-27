@@ -2258,6 +2258,24 @@ export class Game {
     return this.projectileMgr;
   }
 
+  /**
+   * The effects pool, for the §10.B budget harness.
+   *
+   * Read-only in spirit: the harness saturates the pool through the real
+   * emitters so the render path is exercised the way a busy wave exercises it.
+   */
+  get effectsManager(): EffectsManager {
+    return this.effects;
+  }
+
+  /**
+   * The arena rectangle, in world units — what `seatArena` hands the managers.
+   * The §10.B harness needs it to scatter its enemies where real ones spawn.
+   */
+  get worldExtents(): { width: number; height: number } {
+    return { width: this.camera.worldWidth, height: this.camera.worldHeight };
+  }
+
   get towerSystem(): Tower {
     return this.tower;
   }
