@@ -12,6 +12,7 @@ import { Modal } from './Modal';
 import { UpgradePanel, type BuyAmount, type UpgradePlan } from './UpgradePanel';
 import { UPGRADES } from '../data/upgrades';
 import { AbilityPanel } from './AbilityPanel';
+import { PassivePanel, type PassiveAPIDeps } from './PassivePanel';
 import { PrestigePanel, type CorePanelState } from './PrestigePanel';
 import { DEFAULT_CORE, type CoreId } from '../data/cores';
 import { TranscendencePanel } from './TranscendencePanel';
@@ -36,7 +37,6 @@ import { BottomNav, type BottomNavItem } from './BottomNav';
 import { upcomingMilestones, milestoneAtWave } from '../data/milestones';
 import { EventBus } from '../game/EventBus';
 import { TalentPanel, type TalentAPIDeps } from './TalentPanel';
-import type { PassiveAPIDeps } from './PassivePanel';
 import { EquipmentPanel, type EquipmentAPIDeps } from './EquipmentPanel';
 import type { AutomationKey } from '../data/prestige';
 import type { EffectiveAbilityStats } from '../data/abilities';
@@ -153,6 +153,7 @@ export class UIManager {
   private readonly hud: HUD;
   private readonly upgradePanel: UpgradePanel;
   private readonly abilityPanel: AbilityPanel;
+  private readonly passivePanel: PassivePanel;
   private readonly prestigePanel: PrestigePanel;
   private readonly transcendencePanel: TranscendencePanel;
   private readonly researchPanel: ResearchPanel;
@@ -276,13 +277,18 @@ export class UIManager {
   private passiveApi: PassiveAPIDeps = {
     getLevel: () => 0,
     getXp: () => 0,
-    highestWave: 0,
+    getXpForNextLevel: () => 0,
+    highestWave: () => 0,
+    unlockedCount: () => 0,
+    totalLevels: () => 0,
     isUnlocked: () => false,
     isMaxed: () => false,
     canUnlock: () => false,
     getUnlockCost: () => 0,
     onUnlock: () => {},
+    getFullUpgradeCost: () => 0,
     getUpgradeCost: () => 0,
+    getXpDiscount: () => 0,
     canUpgrade: () => false,
     onUpgrade: () => {},
   };
@@ -435,8 +441,8 @@ export class UIManager {
       isAutoCastUnlocked: () => this.abilityApi.isAutoCastUnlocked(),
       isAutoCastEnabled: (id) => this.abilityApi.isAutoCastEnabled(id),
       onToggleAutoCast: (id, enabled) => this.abilityApi.onToggleAutoCast(id, enabled),
-      onPassivesViewed: () => this.onPassivesViewed(),
-    }, this.passiveApi);
+    });
+    this.passivePanel = new PassivePanel(this.passiveApi);
     this.prestigePanel = new PrestigePanel({
       onAscend: () => this.onAscend(),
       onSpend: (id) => this.onSpendAP(id),
@@ -591,6 +597,9 @@ export class UIManager {
       if (this.activeTab === 'abilities') {
         this.abilityPanel.update(this.lastState);
       }
+      if (this.activeTab === 'passives') {
+        this.passivePanel.update(this.lastState);
+      }
       this.abilityBar?.update(this.lastState);
       if (this.activeTab === 'upgrades') {
         this.upgradePanel.update(this.lastState);
@@ -613,6 +622,28 @@ export class UIManager {
         text: `${name} → Lv.${p.level}${p.level >= (def?.maxLevel ?? 0) ? ' (MAX)' : ''}`,
         life: 2,
       });
+    });
+    this.bus.on('passive_leveled', (payload: unknown) => {
+      const p = payload as {
+        id: string; name: string; level: number; maxed: boolean;
+        milestone: { at: number; label: string } | null;
+      };
+      this.passivePanel.flashLevelUp(p.id);
+      if (p.milestone) {
+        this.bus.emit('toast', {
+          kind: 'milestone',
+          text: `${p.name} Lv.${p.level} — ${p.milestone.label}`,
+          life: 4,
+        });
+      } else if (p.maxed) {
+        this.bus.emit('toast', {
+          kind: 'milestone',
+          text: `${p.name} mastered! Lv.${p.level}`,
+          life: 5,
+        });
+      } else {
+        this.bus.emit('toast', { kind: 'info', text: `${p.name} → Lv.${p.level}`, life: 2 });
+      }
     });
     this.bus.on('welcome_back', (payload: unknown) => {
       const data = payload as WelcomeBackData;
@@ -782,6 +813,7 @@ export class UIManager {
       case 'upgrades': this.upgradePanel.mount(body); break;
       case 'research': this.researchPanel.mount(body); break;
       case 'abilities': this.abilityPanel.mount(body); break;
+      case 'passives': this.passivePanel.mount(body); break;
       case 'talents': this.talentPanel.mount(body); break;
       case 'equipment': this.equipmentPanel.mount(body); break;
       case 'prestige': this.prestigePanel.mount(body); break;
@@ -797,6 +829,7 @@ export class UIManager {
         case 'upgrades': this.upgradePanel.update(this.lastState); break;
         case 'research': this.researchPanel.update(this.lastState); break;
         case 'abilities': this.abilityPanel.update(this.lastState); break;
+        case 'passives': this.passivePanel.update(this.lastState); break;
         case 'talents': this.talentPanel.update(this.lastState); break;
         case 'equipment': this.equipmentPanel.update(this.lastState); break;
         case 'prestige': this.prestigePanel.update(this.lastState); break;
@@ -806,9 +839,8 @@ export class UIManager {
         case 'stats': this.statsPanel.update(); break;
       }
     }
-    // A remount rebuilds the sub-tab button, so re-apply the badge.
-    if (tab === 'abilities') this.abilityPanel.setPassiveBadge(this.passiveBadgeCount);
     if (tab === 'equipment') this.setTabBadge('equipment', this.equipmentBadgeCount);
+    if (tab === 'passives') this.onPassivesViewed();
   }
 
   /**
@@ -1077,9 +1109,9 @@ export class UIManager {
 
   setPassiveAPI(api: PassiveAPIDeps): void {
     this.passiveApi = api;
-    this.abilityPanel.setPassiveDeps(api);
-    if (this.lastState && this.activeTab === 'abilities') {
-      this.abilityPanel.update(this.lastState);
+    this.passivePanel.setDeps(api);
+    if (this.lastState && this.activeTab === 'passives') {
+      this.passivePanel.update(this.lastState);
     }
   }
 
@@ -1097,8 +1129,7 @@ export class UIManager {
   /** Recompute and push the passive badge to all three surfaces. */
   private pushPassiveBadge(): void {
     this.passiveBadgeCount = this.pendingPassiveBadges.size;
-    this.setTabBadge('abilities', this.passiveBadgeCount);
-    this.abilityPanel.setPassiveBadge(this.passiveBadgeCount);
+    this.setTabBadge('passives', this.passiveBadgeCount);
   }
 
   /**
@@ -1268,6 +1299,8 @@ export class UIManager {
       this.upgradePanel.update(state);
     } else if (this.activeTab === 'abilities') {
       this.abilityPanel.update(state);
+    } else if (this.activeTab === 'passives') {
+      this.passivePanel.update(state);
     } else if (this.activeTab === 'talents') {
       this.talentPanel.update(state);
     } else if (this.activeTab === 'equipment') {
@@ -1486,8 +1519,10 @@ export class UIManager {
     } else if (id === 'abilities') {
       this.abilityPanel.mount(this.contentRoot);
       if (this.lastState) this.abilityPanel.update(this.lastState);
-      // A remount rebuilds the sub-tab button, so re-apply the badge.
-      this.abilityPanel.setPassiveBadge(this.passiveBadgeCount);
+    } else if (id === 'passives') {
+      this.passivePanel.mount(this.contentRoot);
+      if (this.lastState) this.passivePanel.update(this.lastState);
+      this.onPassivesViewed();
     } else if (id === 'talents') {
       this.talentPanel.mount(this.contentRoot);
       if (this.lastState) this.talentPanel.update(this.lastState);
@@ -1576,6 +1611,17 @@ export class UIManager {
 
   closeKeybinds(): void {
     this.keybindsOverlay.hide();
+  }
+
+  /**
+   * Advance the run-failed modal's 20 s auto-retry countdown. Called from
+   * `Game.tickWallClockSystems` so the countdown keeps moving while the
+   * simulation is paused for the run-over prompt. Wall-clock only: at 6.5x
+   * speed a game-time deadline would give the player three real seconds to
+   * read the stats and pick, which is not the idle-game guarantee.
+   */
+  tickRunFailedModal(realDt: number): void {
+    this.runFailedModal.tick(realDt);
   }
 
   notify(kind: 'info' | 'warning' | 'milestone', text: string): void {

@@ -1690,40 +1690,7 @@ button:disabled {
   overflow-y: auto;
   overflow-x: hidden;
 }
-.ability-sub-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  background: var(--surface-1);
-  border: 1px solid var(--stroke-subtle);
-  border-radius: var(--radius-lg);
-}
-.ability-sub-tab-btn {
-  position: relative; /* for the notification badge */
-  flex: 1 1 0;
-  padding: 6px 4px;
-  /* UI plan §9.C: 44 px floor. */
-  min-height: 44px;
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text-1);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: inherit;
-}
-.ability-sub-tab-btn:hover:not(.active) {
-  background: var(--surface-3);
-  color: var(--text-0);
-}
-.ability-sub-tab-btn.active {
-  background: var(--surface-3);
-  border-color: var(--stroke-strong);
-  color: var(--text-0);
-}
-.ability-active-content,
-.ability-passive-content {
+.ability-active-content {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3634,6 +3601,7 @@ button:disabled {
   transform: translateX(-8px);
   pointer-events: none;
   transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease;
+  display: none;
 }
 .milestone-strip.is-open {
   opacity: 1;
@@ -5287,99 +5255,234 @@ body.is-resizing * { cursor: ew-resize !important; }
 .passive-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 10px;
+  gap: var(--space-4);
+  padding: var(--space-3);
   overflow-y: auto;
   overflow-x: hidden;
 }
-.passive-list {
+
+.passive-summary {
+  display: flex;
+  gap: var(--space-2);
+}
+.passive-summary-stat {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-.passive-row {
-  display: flex;
-  align-items: stretch;
-  gap: 10px;
-  padding: 10px;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
   background: var(--surface-2);
   border: 1px solid var(--stroke-subtle);
   border-radius: var(--radius-lg);
 }
-.passive-row.passive-locked {
-  opacity: 0.5;
+.passive-summary-stat b {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  line-height: var(--leading-tight);
+  color: var(--text-0);
 }
-.passive-row.passive-locked .passive-icon {
-  filter: grayscale(1);
+.passive-summary-stat span {
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.passive-family {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.passive-family-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.passive-family-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-circle);
+  background: var(--family-color);
+  box-shadow: 0 0 8px var(--family-color);
+}
+
+.passive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: var(--space-2);
+}
+
+.passive-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--stroke-subtle);
+  border-left: 3px solid var(--passive-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-1);
+  transition: border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.passive-card.is-gated {
+  opacity: 0.45;
+  border-left-color: var(--stroke-subtle);
+}
+.passive-card.is-gated .passive-icon { filter: grayscale(1); }
+.passive-card.is-locked {
+  border-left-color: color-mix(in srgb, var(--passive-color) 55%, transparent);
+}
+.passive-card.is-maxed {
+  border-color: color-mix(in srgb, var(--passive-color) 60%, var(--stroke-subtle));
+  box-shadow: var(--elev-1), 0 0 0 1px color-mix(in srgb, var(--passive-color) 25%, transparent);
+}
+
+.passive-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 .passive-icon {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--passive-color) 20%, transparent);
+  background: color-mix(in srgb, var(--passive-color) 18%, transparent);
 }
-.passive-icon-inner {
-  font-size: var(--text-5xl);
-  line-height: 1;
-}
-.passive-info {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+.passive-icon-inner { line-height: 1; }
+.passive-icon-inner > .icon { --icon-size: 26px; color: var(--passive-color); }
+
+.passive-title { flex: 1 1 0; min-width: 0; }
 .passive-name-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 .passive-name {
-  font-weight: 600;
-  color: var(--text-0);
   flex: 1;
+  min-width: 0;
+  font-weight: var(--weight-semibold);
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .passive-level {
+  font-family: var(--font-display);
   font-size: var(--text-xs);
-  color: var(--text-2);
+  color: var(--text-1);
   padding: 1px 6px;
   background: var(--surface-3);
   border-radius: var(--radius-sm);
+  white-space: nowrap;
 }
-.passive-desc {
-  color: var(--text-1);
+.passive-card.is-maxed .passive-level {
+  color: var(--text-on-fill);
+  background: color-mix(in srgb, var(--passive-color) 55%, transparent);
+}
+.passive-tagline {
+  font-size: var(--text-2xs);
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.passive-effects {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.passive-effects li {
   font-size: var(--text-sm);
+  color: var(--text-1);
+  padding-left: 10px;
+  position: relative;
 }
-.passive-xp-row {
+.passive-effects li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-circle);
+  background: var(--passive-color);
+}
+/* Not yet owned: the same lines, shown as what the purchase would give. */
+.passive-effects.is-preview li { color: var(--text-3); }
+
+.passive-track {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .passive-xp-bar {
   flex: 1;
-  height: 8px;
-  background: var(--surface-3);
-  border-radius: var(--radius-sm);
+  height: 6px;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-full);
   overflow: hidden;
 }
 .passive-xp-fill {
   height: 100%;
   width: 0;
+  border-radius: var(--radius-full);
   background: linear-gradient(90deg, var(--fx-mana), var(--fx-arcane));
   transition: width var(--dur-fast) linear;
 }
 .passive-xp-text {
   font-size: var(--text-2xs);
+  font-family: var(--font-display);
   color: var(--text-3);
   white-space: nowrap;
 }
+
+.passive-milestones {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.passive-pip {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  border: 1px solid var(--stroke-subtle);
+  cursor: help;
+  transition: background var(--dur-base) var(--ease-out);
+}
+.passive-pip.is-earned {
+  background: var(--passive-color);
+  border-color: var(--passive-color);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--passive-color) 60%, transparent);
+}
+
+.passive-next {
+  font-size: var(--text-2xs);
+  color: var(--text-2);
+  min-height: 1.2em;
+}
+
+.passive-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: auto;
+}
 .passive-action-btn {
-  margin-top: 4px;
-  align-self: flex-start;
   padding: 6px 12px;
   border: 1px solid var(--stroke-subtle);
   border-radius: var(--radius-lg);
@@ -5389,22 +5492,42 @@ body.is-resizing * { cursor: ew-resize !important; }
   font-size: var(--text-sm);
   white-space: nowrap;
 }
-.passive-action-btn:hover:not(:disabled) {
-  /* Was `var(--bg-4)`, a custom property that was never declared, so the hover
-     silently blanked the button's background instead of lifting it. */
-  background: var(--surface-4);
-  border-color: var(--stroke-strong);
+.passive-action-btn:disabled { opacity: 0.5; cursor: default; }
+.passive-action-btn.can-afford { border-color: var(--accent); color: var(--accent); }
+.passive-action-btn.cannot-afford { border-color: var(--stroke-subtle); color: var(--text-3); }
+.passive-discount {
+  font-size: var(--text-2xs);
+  color: var(--good);
+  white-space: nowrap;
 }
-.passive-action-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
+
+@media (pointer: fine) {
+  .passive-action-btn:hover:not(:disabled) {
+    background: var(--surface-4);
+    border-color: var(--stroke-strong);
+  }
+  .passive-card:hover {
+    border-color: color-mix(in srgb, var(--passive-color) 45%, var(--stroke-subtle));
+    box-shadow: var(--elev-2);
+  }
 }
-.passive-action-btn.can-afford {
-  border-color: var(--fx-mana);
+
+/* Level-up flourish. Triggered by PassivePanel.flashLevelUp. */
+.passive-card.is-levelup { animation: passive-levelup var(--dur-slow) var(--ease-spring); }
+@keyframes passive-levelup {
+  0%   { box-shadow: var(--elev-1), 0 0 0 0 color-mix(in srgb, var(--passive-color) 70%, transparent); }
+  35%  { box-shadow: var(--elev-2), 0 0 0 6px color-mix(in srgb, var(--passive-color) 35%, transparent); }
+  100% { box-shadow: var(--elev-1), 0 0 0 0 rgba(0, 0, 0, 0); }
 }
-.passive-action-btn.cannot-afford {
-  border-color: var(--stroke-subtle);
-  color: var(--text-3);
+
+@media (prefers-reduced-motion: reduce) {
+  .passive-card.is-levelup { animation: none; }
+  .passive-xp-fill { transition: none; }
+}
+
+/* One column once the panel is narrower than two cards plus the gap. */
+@media (max-width: 620px) {
+  .passive-grid { grid-template-columns: 1fr; }
 }
 
 /* Equipment panel */
@@ -5912,6 +6035,39 @@ body.eq-dragging img { pointer-events: none; }
 }
 .run-failed-actions .btn { align-self: stretch; padding: 10px 12px; }
 .run-failed-actions .btn-claim { margin-top: 0; }
+
+/* 20 s auto-retry countdown — sits between the explanatory copy and the
+   action row so the player reads "Retry wave in Ns" before deciding which
+   button is the default. Matches the blessing-draft countdown strip so the
+   vocabulary stays consistent across modals. */
+.run-failed-countdown {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.run-failed-countdown-track {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--radius-2xs);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.run-failed-countdown-fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: var(--blood-300);
+  /* Linear so the player can read the rate of countdown at a glance; the
+     blessing draft uses the same shape and the same default --dur-fast. */
+  transition: transform var(--dur-fast) linear;
+}
+.run-failed-countdown-text {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  min-width: 120px;
+  text-align: right;
+}
 
 /* Enrage warning in the HUD wave readout. */
 .wave-enrage {
@@ -6987,7 +7143,6 @@ body.eq-dragging img { pointer-events: none; }
   --icon-size: 30px;
   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--ability-color) 55%, transparent));
 }
-.passive-icon-inner > .icon { --icon-size: 28px; }
 .research-icon > .icon { --icon-size: 24px; }
 .perk-icon > .icon { --icon-size: 26px; }
 

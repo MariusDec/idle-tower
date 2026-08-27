@@ -1,4 +1,5 @@
 import type { EnemyType } from '../types';
+import { enemyCountForWave } from './formulas';
 
 /**
  * Per-kill XP weight by type. Tracks how much of the player's *attention* a
@@ -70,13 +71,64 @@ export function xpPerKill(type: EnemyType, wave: number): number {
   return Math.max(1, Math.round(KILL_XP_WEIGHT[type] * killXpWaveScale(wave)));
 }
 
+// ── Passive-ability XP (passives redesign §3) ───────────────────────────────
+//
+// The requirement curve is anchored to the *unlock wave's own faucet*, which is
+// the whole fix: before this, every passive shared one flat requirement table
+// while the faucet grew with the live wave, so a passive that unlocked at wave
+// 65 finished ten levels inside its first wave. `passiveWaveXpRef` is the XP one
+// ordinary wave at depth `w` pays out, and `def.xpBase` is six of those — so
+// level 1 of every passive costs six waves of play at the depth it unlocks.
+
+/** Per-kill scale factor. Kept at 1 so the numbers in the tables read directly. */
+export const PASSIVE_KILL_XP_FACTOR = 1;
+
+/** A wave clear is worth this many kills' worth of passive XP. */
+export const PASSIVE_WAVE_CLEAR_XP_MULTIPLIER = 12;
+
+/** Passive XP a single kill of `type` at depth `wave` pays. */
+export function passiveXpPerKill(type: EnemyType, wave: number): number {
+  return KILL_XP_WEIGHT[type] * killXpWaveScale(wave) * PASSIVE_KILL_XP_FACTOR;
+}
+
+/** Passive XP clearing wave `wave` pays, on top of the kills in it. */
+export function passiveXpPerWaveClear(wave: number): number {
+  return killXpWaveScale(wave) * PASSIVE_KILL_XP_FACTOR * PASSIVE_WAVE_CLEAR_XP_MULTIPLIER;
+}
+
 /**
- * Passive-ability XP earned per kill. Uses the passive def's own `xpPerKill`
- * weight scaled by the same wave curve as tower kill XP, with a 0.25 factor
- * that keeps the passive track's pace where it is today.
+ * Passive XP one ordinary (non-boss) wave at depth `w` is expected to pay.
+ *
+ * Reference quantity only — nothing awards it. It exists so `xpBase` in the
+ * passive table can be quoted in *waves of play* rather than as a magic number,
+ * and so a test can assert the two have not drifted apart.
  */
-export function passiveXpPerKill(def: { xpPerKill: number }, wave: number): number {
-  return Math.max(1, Math.round(def.xpPerKill * killXpWaveScale(wave) * 0.25));
+export function passiveWaveXpRef(wave: number): number {
+  return (enemyCountForWave(wave) + PASSIVE_WAVE_CLEAR_XP_MULTIPLIER)
+    * killXpWaveScale(wave)
+    * PASSIVE_KILL_XP_FACTOR;
+}
+
+/** Waves of play at the unlock wave that level 1 of a passive is priced at. */
+export const PASSIVE_XP_LEVEL_WAVES = 6;
+
+/** Requirement curve exponents. Polynomial for shape, geometric for the tail. */
+export const PASSIVE_XP_POLY = 1.5;
+export const PASSIVE_XP_GEO = 1.10;
+
+/**
+ * XP to go from `level - 1` to `level`, for a passive with the given `xpBase`.
+ *
+ *   xpBase * level^1.5 * 1.10^(level-1)
+ *
+ * `xpBase` is `round2sig(PASSIVE_XP_LEVEL_WAVES * passiveWaveXpRef(unlockWave))`
+ * and is a literal in the passive table.
+ */
+export function passiveXpForLevel(def: { xpBase: number }, level: number): number {
+  if (level <= 0) return 0;
+  return Math.round(
+    def.xpBase * Math.pow(level, PASSIVE_XP_POLY) * Math.pow(PASSIVE_XP_GEO, level - 1),
+  );
 }
 
 export function xpPerWaveClear(wave: number): number {
@@ -115,14 +167,6 @@ export function talentPointsAtLevel(level: number): number {
 }
 
 // ── Legacy exports (kept for downstream consumers) ──────────────────────────
-
-/**
- * @deprecated Used by SaveManager, AbilityPanel, PassivePanel.
- * Will be updated in a future step.
- */
-export function passiveXpForLevel(level: number): number {
-  return Math.floor(75 * Math.pow(level, 1.9));
-}
 
 /**
  * @deprecated Used by AbilityManager, AbilityPanel.

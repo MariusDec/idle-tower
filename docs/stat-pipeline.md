@@ -199,3 +199,32 @@ value, so casting Berserk moves the number.
 
 Adding a talent/achievement/evolution/passive stat to its data union without
 step 2 does not compile.
+
+## Passive stat list (49 entries)
+
+The `PassiveStat` union in `src/data/passiveAbilities.ts` has 49 entries across
+4 categories. All `_pct` stats are stored as percentages (e.g., 8 means +8%)
+and divided by 100 in `src/stats/contributors/passives.ts`.
+
+### Offense (16 stats)
+`damage_pct`, `fire_rate_pct`, `crit_chance_pct`, `crit_damage_pct`,
+`armor_pen_pct`, `armor_pen_flat`, `pierce_flat`, `double_shot_chance_pct`,
+`extra_projectile_chance_pct`, `execute_threshold_pct`,
+`execute_damage_multiplier_pct`, `instant_kill_chance_pct`, `boss_damage_pct`,
+`overwatch_damage_pct`, `splash_radius_flat`, `splash_fraction_pct`
+
+### Defense (12 stats)
+`max_hp_pct`, `armor_flat_pct`, `lifesteal_pct`, `thorns_pct`,
+`dodge_chance_pct`, `knockback_pct`, `wall_fraction_pct`, `shield_charges_flat`,
+`shield_recharge_pct`, `mana_shield_pct`, `second_wind_pct`, `revive_charges_flat`
+
+### Economy (11 stats)
+`gold_mult_pct`, `double_gold_chance_pct`, `orb_value_pct`,
+`equipment_find_chance_pct`, `upgrade_cost_reduction_pct`, `interest_pct`,
+`windfall_mult_flat`, `auto_buy_speed_pct`, `xp_gain_pct`, `rp_drop_chance_pct`,
+`momentum_gain_pct`
+
+### Arcana (10 stats)
+`mana_regen_pct`, `max_mana_flat`, `max_mana_pct`, `mana_on_kill_pct`,
+`ability_damage_pct`, `ability_cooldown_pct`, `ability_cost_pct`,
+`magic_proc_chance_pct`, `buff_duration_pct`, `ability_echo_chance_pct`

@@ -23,11 +23,16 @@ import { MAX_RUN_HISTORY } from '../types';
 import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBossWave } from '../data/formulas';
 import { ENEMY_DEFS, spawnPoolForWave } from '../data/enemies';
 import { DEFAULT_CORE } from '../data/cores';
+import { xpPerKill, xpToLevel, talentPointsAtLevel, TOWER_LEVEL_CAP, TOWER_XP_TABLE } from '../data/xpTables';
+import { passiveXpPerKill, passiveXpPerWaveClear } from '../data/xpTables';
 import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
-import { xpPerKill, xpToLevel, talentPointsAtLevel, passiveXpForLevel, TOWER_LEVEL_CAP, TOWER_XP_TABLE } from '../data/xpTables';
+import type { PassiveAbilityManager } from './PassiveAbilityManager';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 17;
+const SAVE_VERSION = 18;
+
+/** Offline passive XP is paid at a quarter of the live rate. */
+const OFFLINE_PASSIVE_XP_RATE = 0.25;
 
 function defaultWaveModifier() {
   return {
@@ -537,10 +542,27 @@ function migrateV16toV17(data: Record<string, unknown>): void {
   data.talents = { allocated: {} };
 }
 
+/**
+ * v18: the passive redesign.
+ *
+ * Every passive id, effect, cost curve and XP curve is new, and the level cap
+ * dropped from 50/30 to 25. Nothing about an old entry survives translation —
+ * a level 34 `passive_markmanship` (note the typo in the old id) means nothing
+ * on the new table. Rather than silently keep meaningless levels, the whole
+ * track is refunded: entries are cleared and `PassiveAbilityManager`
+ * re-initialises them.
+ *
+ * The gold is not refunded, because there is no honest figure to refund — the
+ * old prices were a rounding error next to the new ones (§1.2).
+ */
+function migrateV17toV18(data: Record<string, unknown>): void {
+  data.passiveAbilities = {};
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -571,6 +593,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 14) { migrateV14toV15(data); data.version = 15; }
   if (data.version === 15) { migrateV15toV16(data); data.version = 16; }
   if (data.version === 16) { migrateV16toV17(data); data.version = 17; }
+  if (data.version === 17) { migrateV17toV18(data); data.version = 18; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -917,7 +940,11 @@ export class SaveManager {
     };
   }
 
-  applyOfflineProgress(state: GameState, result: OfflineResult): void {
+  applyOfflineProgress(
+    state: GameState,
+    result: OfflineResult,
+    passives: PassiveAbilityManager,
+  ): void {
     if (result.goldEarned > 0) {
       state.resources.gold += result.goldEarned;
       state.resources.lifetimeGold += result.goldEarned;
@@ -941,24 +968,18 @@ export class SaveManager {
     for (const ability of Object.values(state.abilities)) {
       ability.cooldown = Math.max(0, ability.cooldown - result.elapsedSeconds);
     }
-    // Grant passive ability XP for each estimated wave cleared
+    // Grant passive ability XP for each estimated wave cleared. Offline pays a
+    // quarter rate — the same discount idle progress takes everywhere else —
+    // and goes through the manager so the level-up rule stays in one place.
     if (result.wavesCleared > 0) {
       let wave = Math.max(1, state.wave.number);
       if (isBossWave(wave)) --wave;
+      let xp = 0;
       for (let w = wave; w < wave + result.wavesCleared; w++) {
-        const enemyCount = Math.max(1, Math.floor(spawnCountForWave(w)));
-        for (const def of PASSIVE_ABILITIES) {
-          const pa = state.passiveAbilities[def.id];
-          if (!pa || !pa.unlocked || pa.level >= def.maxLevel) continue;
-          pa.xp += (def.xpPerKill * enemyCount + def.xpPerWave) * 0.1;
-          while (pa.level < def.maxLevel) {
-            const needed = passiveXpForLevel(pa.level + 1);
-            if (pa.xp < needed) break;
-            pa.xp -= needed;
-            pa.level += 1;
-          }
-        }
+        const enemies = Math.max(1, Math.floor(spawnCountForWave(w)));
+        xp += passiveXpPerKill('normal', w) * enemies + passiveXpPerWaveClear(w);
       }
+      passives.addRawXp(xp * OFFLINE_PASSIVE_XP_RATE);
     }
   }
 

@@ -78,7 +78,7 @@ import {
   waveModifierRewardMultiplier,
 } from '../data/waveModifiers';
 import { TALENT_STATS, TALENT_TUNING, type TalentStat } from '../data/talentTree';
-import { PASSIVE_STATS, PASSIVE_ABILITIES, type PassiveStat } from '../data/passiveAbilities';
+import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { ACHIEVEMENT_REWARD_CONSUMERS, type AchievementRewardType } from '../data/achievements';
 import { EVOLUTION_EFFECT_IDS, type EvolutionEffectId } from '../data/upgrades';
 import { EQUIPMENT_STAT_TYPES } from '../data/equipment';
@@ -125,6 +125,8 @@ import {
 
 /** Multiplier a gold-luck proc pays out at. */
 const GOLD_LUCK_MULTIPLIER = 3;
+/** HP fraction restored on each passive revive (plan §7.3). */
+const PASSIVE_REVIVE_FRACTION = 0.5;
 /** Fire-rate multiplier while the player holds the mouse to aim manually. */
 /** Fire-rate multiplier granted by a quick-shot proc. */
 const QUICK_SHOT_FIRE_RATE = 2;
@@ -602,7 +604,8 @@ export class Game {
   private relentlessCounter = 0;
 
   // Evolution state
-  private reviveUsed = false;
+  private revivesUsed = 0;
+  private extraReviveCharges = 0;
   /**
    * True while the run-over modal is up (plan §2.3.3). The simulation is
    * frozen so the dead tower is not killed again every frame and the field
@@ -919,7 +922,7 @@ export class Game {
 
       // Tower XP & passive ability XP
       this.towerXpMgr.addKillXp(e.type as EnemyType, this.waveMgr.currentWave);
-      this.passiveMgr.addKillXp(this.waveMgr.currentWave);
+      this.passiveMgr.addKillXp(e.type as EnemyType, this.waveMgr.currentWave);
 
       this.effects.emitDeathBurst(e.x, e.y, def.color, def.radius);
 
@@ -1277,14 +1280,19 @@ export class Game {
         this.bus.emit('toast', { kind: 'milestone', text: 'Second Wind!', life: 3 });
       }
       if (ts.hp <= 0) {
-        // Evolution: revive — once per ascension
-        if (!this.reviveUsed && this.upgradeMgr.hasEvolutionEffect('revive')) {
-          const reviveFraction = this.upgradeMgr.getEvolutionEffectValue('revive');
-          ts.hp = Math.floor(ts.maxHp * reviveFraction);
-          this.reviveUsed = true;
+        // Revive: evolution (Titan's Heart) + passive charges (plan §7.3).
+        // The evolution is consumed first; passive charges stack on top.
+        const evoRevive = this.upgradeMgr.hasEvolutionEffect('revive');
+        const totalCharges = (evoRevive ? 1 : 0) + this.extraReviveCharges;
+        if (this.revivesUsed < totalCharges) {
+          const fraction = evoRevive && this.revivesUsed === 0
+            ? Math.max(PASSIVE_REVIVE_FRACTION, this.upgradeMgr.getEvolutionEffectValue('revive'))
+            : PASSIVE_REVIVE_FRACTION;
+          ts.hp = Math.floor(ts.maxHp * fraction);
+          this.revivesUsed += 1;
           this.bus.emit('toast', {
             kind: 'milestone',
-            text: `Titan's Heart! Revived at ${Math.round(reviveFraction * 100)}% HP.`,
+            text: `Revived at ${Math.round(fraction * 100)}% HP! (${this.revivesUsed}/${totalCharges})`,
             life: 4,
           });
           return;
@@ -1782,7 +1790,7 @@ export class Game {
           const result = this.saveMgr.computeOfflineProgress(persisted, this.computeGoldMultiplier());
           if (result.elapsedSeconds > 0) {
             const startWave = this.state.wave.number;
-            this.saveMgr.applyOfflineProgress(this.state, result);
+            this.saveMgr.applyOfflineProgress(this.state, result, this.passiveMgr);
             this.applyOfflineWave(result.endWave);
             if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
             if (this.researchTree.advanceResearch(result.researchElapsed)) {
@@ -2324,7 +2332,7 @@ export class Game {
   }
 
   unlockPassive(id: string): boolean {
-    if (!this.passiveMgr.canUnlock(id, this.state.wave.highestWave)) return false;
+    if (!this.passiveMgr.canUnlock(id, this.state.stats.lifetimeHighestWave)) return false;
     const cost = this.passiveMgr.getUnlockCost(id);
     if (cost <= 0 || this.state.resources.gold < cost) return false;
     this.state.resources.gold -= cost;
@@ -2442,7 +2450,7 @@ export class Game {
     this.syncUiApis();
     this.bus.emit('toast', {
       kind: 'milestone',
-      text: `Transcendence! +${tp} TP. Gear, passives and talents carry over.`,
+      text: `Transcendence! +${tp} TP. Gear and talents carry over; passives reset.`,
       life: 7,
     });
     this.bus.emit('run_ended', {
@@ -2993,7 +3001,7 @@ export class Game {
     const result = this.saveMgr.computeOfflineProgress(persisted, this.computeGoldMultiplier());
     if (result.elapsedSeconds > 0) {
       const startWave = this.state.wave.number;
-      this.saveMgr.applyOfflineProgress(this.state, result);
+      this.saveMgr.applyOfflineProgress(this.state, result, this.passiveMgr);
       this.applyOfflineWave(result.endWave);
       if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
       this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
@@ -3294,17 +3302,22 @@ export class Game {
       gold: () => this.state.resources.gold,
     });
     this.ui.setPassiveAPI({
-      getLevel: (id) => this.passiveMgr.getLevel(id),
-      getXp: (id) => this.passiveMgr.getXp(id),
-      highestWave: this.state.wave.highestWave,
-      isUnlocked: (id) => this.passiveMgr.isUnlocked(id),
-      isMaxed: (id) => this.passiveMgr.isMaxed(id),
-      canUnlock: (id) => this.passiveMgr.canUnlock(id, this.state.wave.highestWave),
-      getUnlockCost: (id) => this.passiveMgr.getUnlockCost(id),
-      onUnlock: (id) => this.unlockPassive(id),
-      getUpgradeCost: (id) => this.passiveMgr.getUpgradeCost(id),
-      canUpgrade: (id) => this.passiveMgr.canUpgrade(id, this.state.resources.gold),
-      onUpgrade: (id) => this.upgradePassive(id),
+      getLevel: (id: string) => this.passiveMgr.getLevel(id),
+      getXp: (id: string) => this.passiveMgr.getXp(id),
+      getXpForNextLevel: (id: string) => this.passiveMgr.getXpForNextLevel(id),
+      highestWave: () => this.state.stats.lifetimeHighestWave,
+      unlockedCount: () => this.passiveMgr.unlockedCount,
+      totalLevels: () => this.passiveMgr.totalLevels,
+      isUnlocked: (id: string) => this.passiveMgr.isUnlocked(id),
+      isMaxed: (id: string) => this.passiveMgr.isMaxed(id),
+      canUnlock: (id: string) => this.passiveMgr.canUnlock(id, this.state.stats.lifetimeHighestWave),
+      getUnlockCost: (id: string) => this.passiveMgr.getUnlockCost(id),
+      onUnlock: (id: string) => this.unlockPassive(id),
+      getFullUpgradeCost: (id: string) => this.passiveMgr.getFullUpgradeCost(id),
+      getUpgradeCost: (id: string) => this.passiveMgr.getUpgradeCost(id),
+      getXpDiscount: (id: string) => this.passiveMgr.getXpDiscount(id),
+      canUpgrade: (id: string) => this.passiveMgr.canUpgrade(id, this.state.resources.gold),
+      onUpgrade: (id: string) => this.upgradePassive(id),
     });
     this.ui.setAutoPickBlessingsState(
       this.blessingAutoPickActive(),
@@ -3470,11 +3483,7 @@ export class Game {
       if (value !== 0) talents[stat] = value;
     }
 
-    const passives: Partial<Record<PassiveStat, number>> = {};
-    for (const stat of PASSIVE_STATS) {
-      const value = this.passiveMgr.getEffectValue(stat);
-      if (value !== 0) passives[stat] = value;
-    }
+    const passives = this.passiveMgr.getStatTotals();
 
     const equipped = this.equipmentMgr.getEquippedBonuses();
     const equipment: Partial<Record<EquipmentStatType, number>> = {};
@@ -3709,6 +3718,7 @@ export class Game {
     );
 
     this.towerXpMgr.setXpGainMultiplier(stats.xpGainMultiplier);
+    this.passiveMgr.setXpGainMultiplier(stats.xpGainMultiplier);
     this.upgradeMgr.setCostDiscount(stats.upgradeCostDiscount);
     this.equipmentMgr.setFindChanceBonus(stats.equipmentFindChance);
     this.automation.setAutoBuyIntervalReduction(stats.autoBuyIntervalReduction);
@@ -3730,6 +3740,7 @@ export class Game {
     this.windfallMultiplier = stats.windfallMultiplier;
     this.interestRate = stats.interestRate;
     this.manaOnKillFraction = stats.manaOnKillFraction;
+    this.extraReviveCharges = stats.reviveCharges;
     // ── Levelling redesign step 7: wire talent stats to managers ──
     this.projectileMgr.setFocusStackBonus(stats.focusStackBonus);
     this.projectileMgr.setBossDamageBonus(stats.bossDamageBonus);
@@ -3794,7 +3805,7 @@ export class Game {
     // loot system per-run, and since gear only drops from bosses at a 15% base
     // chance most runs generated two to four items and then deleted them.
     this.mines = [];
-    this.reviveUsed = false;
+    this.revivesUsed = 0;
     this.runFailed = false;
     this.killStreak = 0;
     this.manaFullGoldTimer = 0;
@@ -4285,15 +4296,14 @@ export class Game {
 
   private applyFullTranscendenceReset(): void {
     this.automation.reset();
-    // Passives and equipment are *character* progression, not run progression:
-    // they survive a transcendence alongside talents, tower XP, research and
-    // achievements. The gold-priced layers (tower upgrades, ability levels)
-    // are wiped by applySavedStateReset itself — ability levels became
-    // run-scoped and reset on every ascension — so only the ascension layer
-    // is cleared here. Gear in particular is a slow, low-drop-rate
-    // collection — deleting it at the one moment a player is asked to give
-    // everything else up made transcending read as a punishment.
+    // Passives are progression *inside* one transcendence cycle: they survive
+    // every Ascension (that is what makes an ascension cheap to take) and are
+    // wiped here, alongside the AP layer they were bought with. Equipment is
+    // not — gear is a slow, low-drop-rate collection, and deleting it at the one
+    // moment the player is asked to give everything else up made transcending
+    // read as a punishment.
     this.applySavedStateReset();
+    this.passiveMgr.reset();
     this.state.prestige.apSpent = {};
     this.state.prestige.automationFlags = {
       autoBuy: false,
@@ -4515,6 +4525,11 @@ export class Game {
     }
     const gameDt = dt * speed * slowMo;
     if (!this.runFailed) this.update(gameDt, dt);
+    // Wall-clock systems run whether or not the simulation is paused for the
+    // run-over prompt: research continues to progress, the modal's
+    // auto-resolve countdown keeps moving, and the player's saved state stays
+    // current. See `tickWallClockSystems` for what is and isn't included.
+    this.tickWallClockSystems(dt);
     this.draw();
     this.state.wave = this.waveMgr.snapshot;
     this.ui.update(this.state);
@@ -4915,8 +4930,42 @@ export class Game {
     // six times stronger the moment the Accelerator is unlocked.
     this.charge.tick(realDt, !this.isPlacing());
 
-    // Research progress + passive RP gain. Both are real-time systems — they
-    // must not accelerate when the player raises the game speed.
+    this.checkTranscendenceUnlockToast();
+    this.saveMgr.tick(realDt, this.state, (s) => this.saveMgr.save(s));
+    this.achievementMgr.tick(dt);
+    this.audio.tick(dt);
+    this.updateVignette();
+  }
+
+  /**
+   * Wall-clock systems that must keep ticking even when the simulation is
+   * frozen for the run-over prompt. Called from `loop` unconditionally —
+   * `if (!this.runFailed) this.update(...)` is the gate that pauses the
+   * simulation; this method sits outside it.
+   *
+   * What lives here:
+   *  - The run-failed modal's 20 s countdown must advance on the player's
+   *    clock whether or not the wave is still moving.
+   *  - Research progress + passive RP gain. Both are real-time systems — they
+   *    must not accelerate when the player raises the game speed — and a
+   *    player who walks away from the run-over prompt should still come back
+   *    to in-progress research, not a frozen one.
+   *
+   * What deliberately does not: `saveMgr` / `achievementMgr` / `audio` ticks
+   * are still inside `update` because the save cadence and achievement audio
+   * cues make sense only while the player is engaged with the run, and the
+   * auto-save that follows a research completion is already covered by
+   * `applyUpgradeEffects` → dirty-state path when the simulation is running.
+   *
+   * @param realDt  wall-clock delta in seconds (already clamped to 0.05 s)
+   */
+  private tickWallClockSystems(realDt: number): void {
+    // The run-failed modal has its own countdown so a player who walks away
+    // comes back to a live game, not a frozen one. Tick it first so an
+    // auto-resolve fires before the research block reads state in the same
+    // frame. `RunFailedModal` is owned by `UIManager`, so we proxy through it.
+    this.ui.tickRunFailedModal(realDt);
+
     this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
     this.researchTree.addPassiveRP(
       realDt,
@@ -4945,12 +4994,6 @@ export class Game {
         ),
       });
     }
-
-    this.checkTranscendenceUnlockToast();
-    this.saveMgr.tick(realDt, this.state, (s) => this.saveMgr.save(s));
-    this.achievementMgr.tick(dt);
-    this.audio.tick(dt);
-    this.updateVignette();
   }
 
   private checkTranscendenceUnlockToast(): void {

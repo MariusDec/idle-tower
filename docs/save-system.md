@@ -10,7 +10,7 @@ Persists game state to `localStorage` under key `the-tower-save`.
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 17
+  version: number;       // current = 18
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -47,6 +47,7 @@ interface PersistentState {
 | v14 → v15 | the offline cap became **derived** — 8h base + 8h/level of `ap_idle_time` (no field to seed; see below) |
 | v15 → v16 | the `multishot` ability was renamed `rocket_barrage` — its state key in `abilities` and its key in `prestige.autoCastEnabled` move with it, values kept |
 | v16 → v17 | the levelling redesign: 0-based levels become 1-based, XP restated onto the new polynomial+geometric curve, `talents.allocated` emptied (full refund — all talent ids changed) |
+| v17 → v18 | the passive redesign: `passiveAbilities` cleared (new 12-passive structure with per-passive XP curves, milestones, and gold+XP upgrade costs; old prices were negligible vs new ones so no gold refund) |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -131,7 +132,7 @@ write.
 ## Validation
 
 `validate()` checks:
-- version is 2..17 (older versions are walked up the migration ladder)
+- version is 2..18 (older versions are walked up the migration ladder)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress

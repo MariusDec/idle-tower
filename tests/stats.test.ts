@@ -252,6 +252,24 @@ describe('resources', () => {
   });
 });
 
+describe('passive stat rounding (passives plan §14.2)', () => {
+  /**
+   * §14.2 bug fixes: `thorns_pct` and `lifesteal_pct` are *percent* inputs but
+   * `thorns` / `lifesteal` are consumed as *fractions* of the attacker damage /
+   * damage dealt. The old `a.add('thorns', value)` path wrote 3 at Lv0, so
+   * Thorns at Lv0 reflected 300% of every hit. The fix divides by 100.
+   */
+  it('applies thorns as a fraction of the attacker damage, not a raw percent', () => {
+    const { stats } = resolveStats({ ...emptyStatContext(), passives: { thorns_pct: 58 } });
+    expect(stats.thorns).toBeCloseTo(0.58, 6);
+  });
+
+  it('applies lifesteal as a fraction of damage dealt', () => {
+    const { stats } = resolveStats({ ...emptyStatContext(), passives: { lifesteal_pct: 1.5 } });
+    expect(stats.lifesteal).toBeCloseTo(0.015, 6);
+  });
+});
+
 describe('health regen', () => {
   /**
    * §1.8: Vampiric Aura added its regen into `tower.healthRegen` while the

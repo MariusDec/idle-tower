@@ -16,16 +16,178 @@ UIManager
   └── WelcomeBackModal (offline progress dialog)
 ```
 
-## Tab System
+## Nav groups and the two-level nav (UI plan §8.A)
 
-5 tabs: Upgrades, Research, Abilities, Prestige, Transcendence.
+`src/ui/navGroups.ts` is the **one** navigation table. Before it the app carried
+two information architectures for one set of panels: an 11-entry flat tab strip
+on desktop and an unrelated 4-entry bottom nav with a `'more'` bucket on mobile.
+Both now read `NAV_GROUPS`, so a tab can only ever live in one place and adding
+one is a single edit.
 
-`UIManager.showTab(id)`:
-1. Sets `activeTab`
-2. Activates tab button CSS
-3. Clears contentRoot
-4. Mounts the panel's DOM into contentRoot
-5. Calls update() with latest state
+| Group | Icon | Tabs |
+|---|---|---|
+| `build` | `hammer-nails` | Upgrades, Abilities, Equipment |
+| `research` | `bubbling-flask` | Research, Talents |
+| `prestige` | `star-gate` | Prestige, Transcendence |
+| `progress` | `progression` | Progression, Achievements, Stats |
+| `system` | `cog` | Settings |
+
+The module also exports `GROUP_OF` (a reverse index built once at module load),
+`groupById`, `firstTabOf` and the `isPanelTab` narrowing helper used on values
+coming back out of `localStorage`. `tests/content-coverage.test.ts` asserts every
+`PanelTab` appears in exactly one group, every group has at least one tab and a
+valid `IconId`, and every `BottomNav` item id is a `NavGroupId`.
+
+**Desktop: rail + sub-strip.** `renderRail()` builds a five-button `.panel-rail`
+on the panel's leading edge, once — the group set is static, so only the active
+class and the badge text change afterwards. `renderSubStrip(group)` renders the
+active group's tabs above the content as `.tab-btn`s, and hides itself entirely
+for a one-tab group, where the strip would be a row of chrome repeating what the
+rail already says.
+
+**Mobile: bottom nav + sheet.** `BottomNav` is built from the same
+`NAV_GROUPS.map(...)`; selecting a group opens `MobileSheet` on that group's
+tabs, rendered as a segmented control in the sheet header.
+
+**Selection state.** `UIManager` keeps `activeGroup` (always `GROUP_OF[activeTab]`)
+and a `lastTabPerGroup` map, so returning to a group reopens the tab you left it
+on rather than snapping back to the first. `showGroup(g)` is therefore just
+`showTab(lastTabPerGroup.get(g) ?? firstTabOf(g))`. `showTab(id)`:
+
+1. sets `activeTab` and derives `activeGroup` from `GROUP_OF`;
+2. records the tab as the group's last selection;
+3. persists it to `localStorage` (restored on boot through `restoreNavTab()`,
+   guarded by `isPanelTab`);
+4. re-renders the sub-strip for the group;
+5. clears `contentRoot`, mounts the panel's DOM, and calls `update()` with the
+   latest state.
+
+## The card primitive
+
+`.card` in `main.css` is the shared row used by every list panel: a three-column
+grid of `icon | text | action` over `--surface-2` with a `--radius-lg` border.
+State is carried by data attributes rather than by classes, and — deliberately —
+has to read without colour, because affordability is what a player scans a whole
+panel for:
+
+| Attribute | Effect |
+|---|---|
+| `data-afford='yes'` | default |
+| `data-afford='no'` | the action dims to 0.55 **and** disables; the cost gets a dotted underline instead of turning red |
+| `data-afford='maxed'` | border takes `--good`, the cost disappears, the action collapses to a check |
+| `data-evolution='near'` | an `--accent-2` corner ribbon on the card itself |
+
+## The modal shell (UI plan §8.F)
+
+`src/ui/Modal.ts` is the one shell. It replaced three independent ones
+(`welcome-modal*`, `blessing-modal*`, `wave-mod-modal*`) plus `KeybindsOverlay`,
+each re-implementing backdrop, visibility transition and dismissal, and none of
+them trapping focus. Adopters now own their **content** only: they render into
+`modal.body`, keeping their existing content classes so their layouts survive
+the move.
+
+- **Structure.** `.modal[data-modal=id] > .modal-backdrop + .modal-card`, the
+  card carrying `role="dialog"`, `aria-modal="true"`, `tabindex="-1"` and
+  `aria-labelledby` pointing at its own `.modal-title`. Width comes in as
+  `--modal-width`.
+- **Mount point.** `#modal-root` by default, falling back to `document.body`.
+  Not in the plan's sketch, but every adopter is handed a `modalRoot` by
+  `main.ts` and mounting elsewhere would put the card outside the overlay
+  stacking context.
+- **Focus.** `open()` remembers `document.activeElement`, focuses the first
+  focusable node (or the card), and `close()` returns focus where it came from
+  if that node is still connected.
+- **The Tab trap.** `focusableNodes()` queries a `FOCUSABLE` selector whose
+  `:not([disabled])` filters matter — a disabled reroll button is still in the
+  DOM and would otherwise swallow a tab stop — and filters on
+  `offsetParent !== null`. Tab from the last node wraps to the first,
+  Shift+Tab from the first wraps to the last.
+- **Escape and stacking.** A static `openStack` holds every open modal,
+  innermost last; only the top one reacts to a key, so a picker opened over a
+  debrief does not close both on one Escape. `dismissible: false` opts out of
+  both Escape and the backdrop tap.
+- **`Modal.anyOpen()`** is what lets `UIManager.isModalOpen()` stop being a
+  hand-maintained list of names: a new modal answers the Space-binding gate by
+  existing.
+
+## Modal countdowns and the wall-clock tick
+
+Cross-cutting rule 1 (UI plan §1): **nothing blocks on a modal forever**.
+Three modals have a countdown that resolves the modal on its own when the
+player walks away:
+
+| Modal | Timeout | Resolves to |
+|---|---:|---|
+| `BlessingDraftModal` | `BLESSING_DRAFT_TIMEOUT_SECONDS` | Auto-pick the recommended blessing |
+| `CorePickerModal` | `CORE_PICKER_TIMEOUT_SECONDS` | Keep the current core |
+| `RunFailedModal` | `RUN_FAILED_TIMEOUT_SECONDS` (20 s) | Retry the wave |
+
+All three share the same shape:
+
+- A `tick(realDt)` method on the modal class, called every frame from
+  `Game.update` (or, for `RunFailedModal`, from `Game.tickWallClockSystems`).
+- A countdown strip rendered with the matching `*-countdown-track` /
+  `*-countdown-fill` / `*-countdown-text` CSS classes.
+- Wall-clock driven, not simulation-clock driven — at 6.5x speed a 20 s
+  game-time deadline would fire in three real seconds, which is not enough
+  time to read the cards and decide.
+- `hide()` drops `callbacks` before invoking them, so a manual click that
+  re-enters `show` lands on a fresh instance rather than this one's leftovers.
+
+### The wall-clock tick itself
+
+`Game.loop` runs `update(gameDt, dt)` only while `!runFailed`, but
+`tickWallClockSystems(dt)` runs unconditionally:
+
+```ts
+const gameDt = dt * speed * slowMo;
+if (!this.runFailed) this.update(gameDt, dt);
+this.tickWallClockSystems(dt);  // ← always
+```
+
+`tickWallClockSystems` currently holds two things that must keep moving
+while the run-over prompt is up:
+
+- `ui.tickRunFailedModal(realDt)` — so the 20 s countdown reaches zero on
+  the player's clock even when the wave is dead.
+- Research progress + passive RP gain — the research tree is wall-clock
+  already (`realDt`), and a player who walks away from the prompt must come
+  back to in-progress research, not a frozen one.
+
+Save cadence, achievement checks and audio are still inside `update` —
+they make sense only while the player is engaged with the run.
+
+## The quality control (UI plan §9.D)
+
+`SettingsPanel` renders a segmented `Auto / High / Medium / Low` control
+(`aria-label="Graphics quality"`), plus a hint line. `Game` pushes the live value
+back in through `SettingsPanel.setQuality(pref, currentTier)`, so the panel can
+never disagree with `Game.qualityPreference` — which matters because under
+`'auto'` the 2-second probe may have demoted the tier out from under the
+displayed preference, and the hint is what makes that visible. Picking an
+explicit tier disables the probe permanently for that device. The tier table and
+the probe's rules are in [performance.md](performance.md); the per-tier profile
+is `src/data/quality.ts`.
+
+## Portrait phones (UI plan §9.B)
+
+A 9:16 phone already gets a correct field of view from the camera's aspect
+clamp; what was broken was the chrome around it. Two `@media (orientation:
+portrait) and (max-width: 768px)` blocks in `main.css` fix it:
+
+- **The sheet goes full height**, at `calc(100dvh - var(--safe-t))` — `dvh` and
+  not `vh`, because `vh` on iOS includes the retracting browser chrome and the
+  ability dock would clip behind the gesture bar. Its header pads to the left
+  and right safe areas, and its segmented buttons lift to the §9.C 44 px floor.
+- **The HUD moves to two rows.** The ≤768px branch laid `.hud` out as a flex
+  column, giving each resource bar a row of its own: 267 px of HUD at 375×812,
+  a third of the phone, against a `--hud-height-mobile` token still claiming
+  90 px. A three-column grid seats them side by side without touching the
+  markup — the wave/chips group spans row one, hp / mana / xp share row two.
+  The written bar labels are visually hidden but stay in the accessibility
+  tree, because unlike a chip a bar carries no `aria-label` of its own. This
+  block must stay *after* the ≤768px block: same specificity, so source order
+  decides.
 
 ## Talent Panel (`TalentPanel.ts`)
 

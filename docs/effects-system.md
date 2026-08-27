@@ -192,3 +192,38 @@ It is layered on top of the existing 0.8 s entry slow-mo and
 is up, `drawWaveBanner` skips its `BOSS WAVE n` branch so the title is not
 painted twice. The pattern line ships as text: the icon sprite sheet is
 DOM-side and there is no cheap icon path in the canvas renderer.
+
+## The combo flourish (UI plan §5.C)
+
+Kill-combo tiers come out of `PacingManager` as a step function: the tier pops
+on a threshold kill and vanishes when the drain window runs out. A full-screen
+glow that switched on and off with that step would read as a bug, so the tier
+never reaches a painter. `Renderer.advanceCombo` maps `snapshot.combo.tier`
+(0..4) through `COMBO_INTENSITY = [0, 0.28, 0.5, 0.75, 1]` to a target and
+walks one scalar, `comboGlow`, toward it with a frame-rate-independent
+smoother (`COMBO_TAU = 0.25 s`, `k = 1 - exp(-FRAME_DT / TAU)`). Everything
+downstream reads that scalar and nothing reads the tier. Below `0.002` the
+scalar snaps to `0` so both passes can early-out instead of blitting a
+transparent full-screen sprite forever after a combo ends.
+
+Two painters consume it:
+
+- **The edge glow** (`drawComboEdge`) — an inverse vignette, transparent in the
+  middle and warm at the corners, blitted in *device* space via
+  `camera.applyDevice`. Two sprites are baked at backing-store size (one
+  `FX.gold`, one `FX.ember`) and cross-faded by `comboGlow` rather than one
+  sprite re-baked every frame the combo climbs. Peak alpha is
+  `COMBO_EDGE_ALPHA = 0.22`. The bake is dropped on any resize, alongside the
+  background bake. The tint is deliberately not `FX.critical` or `FX.blood` —
+  see `docs/art-direction.md`.
+- **Embers** — pooled drifting motes spawned at `EMBER_RATE = 14/s` scaled by
+  `comboGlow`, on a random point of the ring at `0.75 ×` the drawn tower range,
+  rising at 26–48 world units/s for 1.4–2.2 s. The pool is capped by the
+  quality profile's `embers`; the oldest is shifted out when it is full, and a
+  profile with `embers: 0` spawns none.
+
+`prefers-reduced-motion` drops the embers and clears the pool — they are pure
+motion — and keeps the edge glow, which is static within a frame.
+
+The flourish is presentation only: nothing in either painter feeds back into
+`PacingManager`, and the combo's own bonus arithmetic is untouched by it.

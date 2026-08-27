@@ -27,6 +27,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     tabs: [
       { id: 'upgrades', label: 'Upgrades' },
       { id: 'abilities', label: 'Abilities' },
+      { id: 'passives', label: 'Passives' },
       { id: 'equipment', label: 'Equipment' },
     ],
   },

@@ -1,122 +1,84 @@
 import type { GameState } from '../types';
-import { PASSIVE_ABILITIES, passiveEffectValue } from '../data/passiveAbilities';
-import { passiveXpForLevel } from '../data/xpTables';
-import { setText, toggleClass, setStyle, setDisplay, setDisabled } from '../utils/dom';
+import {
+  PASSIVE_ABILITIES,
+  PASSIVE_FAMILIES,
+  PASSIVE_MAX_LEVEL,
+  PASSIVE_MILESTONE_LEVELS,
+  describePassiveEffects,
+  nextPassiveMilestone,
+  type PassiveAbilityDef,
+} from '../data/passiveAbilities';
+import { formatInt } from '../utils/bigNumber';
+import { setText, toggleClass, setStyle, setDisplay, setDisabled, setAriaLabel } from '../utils/dom';
 import { renderIcon } from './Icon';
 
 export interface PassiveAPIDeps {
   getLevel: (id: string) => number;
   getXp: (id: string) => number;
-  highestWave: number;
+  getXpForNextLevel: (id: string) => number;
+  /** Lifetime highest wave. A getter — the old snapshot never updated. */
+  highestWave: () => number;
+  unlockedCount: () => number;
+  totalLevels: () => number;
   isUnlocked: (id: string) => boolean;
   isMaxed: (id: string) => boolean;
   canUnlock: (id: string) => boolean;
   getUnlockCost: (id: string) => number;
   onUnlock: (id: string) => void;
+  getFullUpgradeCost: (id: string) => number;
   getUpgradeCost: (id: string) => number;
+  getXpDiscount: (id: string) => number;
   canUpgrade: (id: string) => boolean;
   onUpgrade: (id: string) => void;
 }
 
 export class PassivePanel {
-  private readonly deps: PassiveAPIDeps;
+  private deps: PassiveAPIDeps;
   private root: HTMLElement | null = null;
-  private passiveRoots = new Map<string, HTMLElement>();
+  private headerCountEl: HTMLElement | null = null;
+  private headerLevelsEl: HTMLElement | null = null;
+  private cardEls = new Map<string, HTMLElement>();
   private levelEls = new Map<string, HTMLElement>();
-  private descEls = new Map<string, HTMLElement>();
-  private xpBarFillEls = new Map<string, HTMLElement>();
+  private effectEls = new Map<string, HTMLElement>();
+  private xpFillEls = new Map<string, HTMLElement>();
   private xpTextEls = new Map<string, HTMLElement>();
-  private xpBarEls = new Map<string, HTMLElement>();
+  private xpRowEls = new Map<string, HTMLElement>();
+  private milestoneRowEls = new Map<string, HTMLElement>();
+  private pipEls = new Map<string, HTMLElement[]>();
+  private nextEls = new Map<string, HTMLElement>();
+  private actionRowEls = new Map<string, HTMLElement>();
   private actionBtnEls = new Map<string, HTMLButtonElement>();
+  private discountEls = new Map<string, HTMLElement>();
+  private lastEffectLevel = new Map<string, number>();
+  private lastUnlocked = new Map<string, boolean>();
 
   constructor(deps: PassiveAPIDeps) {
     this.deps = deps;
   }
 
+  setDeps(deps: PassiveAPIDeps): void {
+    this.deps = deps;
+  }
+
   mount(parent: HTMLElement): void {
-    this.unmount();
-    this.root = parent;
-    this.renderInto(parent);
-  }
+    this.cardEls.clear();
+    this.levelEls.clear();
+    this.effectEls.clear();
+    this.xpFillEls.clear();
+    this.xpTextEls.clear();
+    this.xpRowEls.clear();
+    this.milestoneRowEls.clear();
+    this.pipEls.clear();
+    this.nextEls.clear();
+    this.actionRowEls.clear();
+    this.actionBtnEls.clear();
+    this.discountEls.clear();
+    this.lastEffectLevel.clear();
+    this.lastUnlocked.clear();
 
-  private unmount(): void {
-    this.root = null;
-  }
-
-  update(_state: GameState): void {
-    if (!this.root) return;
-    const wave = this.deps.highestWave;
-    const gold = _state.resources.gold;
-
-    for (const def of PASSIVE_ABILITIES) {
-      const root = this.passiveRoots.get(def.id);
-      const levelEl = this.levelEls.get(def.id);
-      const descEl = this.descEls.get(def.id);
-      const xpBar = this.xpBarEls.get(def.id);
-      const xpFill = this.xpBarFillEls.get(def.id);
-      const xpText = this.xpTextEls.get(def.id);
-      const actionBtn = this.actionBtnEls.get(def.id);
-      if (!root || !levelEl || !descEl || !xpBar || !xpFill || !xpText || !actionBtn) continue;
-
-      const waveReached = wave >= def.unlockWave;
-      const unlocked = waveReached && this.deps.isUnlocked(def.id);
-      const level = unlocked ? this.deps.getLevel(def.id) : 0;
-      const xp = unlocked ? this.deps.getXp(def.id) : 0;
-      const atMax = level >= def.maxLevel;
-
-      setText(levelEl, atMax ? ` Lv.${level} (MAX)` : ` Lv.${level}`);
-
-      if (!waveReached) {
-        toggleClass(root, 'passive-locked', true);
-        setText(descEl, `Unlocks at wave ${def.unlockWave}`);
-        setDisplay(xpBar, 'none');
-        setDisplay(xpText, 'none');
-        setDisplay(actionBtn, 'none');
-      } else if (!unlocked) {
-        toggleClass(root, 'passive-locked', false);
-        setText(descEl, `Unlocks at wave ${def.unlockWave}`);
-        setDisplay(xpBar, 'none');
-        setDisplay(xpText, 'none');
-        setDisplay(actionBtn, 'inline-flex');
-        const cost = this.deps.getUnlockCost(def.id);
-        const canAfford = gold >= cost;
-        setText(actionBtn, `Unlock \u00B7 ${Math.floor(cost)}g`);
-        setDisabled(actionBtn, !canAfford);
-        toggleClass(actionBtn, 'can-afford', canAfford);
-        toggleClass(actionBtn, 'cannot-afford', !canAfford);
-      } else if (atMax) {
-        toggleClass(root, 'passive-locked', false);
-        setText(descEl, def.description.replace('{value}', passiveEffectValue(def, level).toFixed(1)));
-        setDisplay(xpBar, 'block');
-        setStyle(xpFill, 'width', '100%');
-        setDisplay(xpText, 'block');
-        setText(xpText, 'MAX');
-        setDisplay(actionBtn, 'none');
-      } else {
-        toggleClass(root, 'passive-locked', false);
-        setText(descEl, def.description.replace('{value}', passiveEffectValue(def, level).toFixed(1)));
-        const needed = passiveXpForLevel(level + 1);
-        const pct = needed > 0 ? Math.min(100, (xp / needed) * 100) : 0;
-        setDisplay(xpBar, 'block');
-        setStyle(xpFill, 'width', `${pct}%`);
-        setDisplay(xpText, 'block');
-        setText(xpText, `${Math.floor(xp)} / ${needed} XP`);
-        const cost = this.deps.getUpgradeCost(def.id);
-        const canAfford = gold >= cost;
-        setDisplay(actionBtn, cost > 0 ? 'inline-flex' : 'none');
-        if (cost > 0) {
-          setText(actionBtn, `Upgrade \u00B7 ${Math.floor(cost)}g`);
-          setDisabled(actionBtn, !canAfford);
-          toggleClass(actionBtn, 'can-afford', canAfford);
-          toggleClass(actionBtn, 'cannot-afford', !canAfford);
-        }
-      }
-    }
-  }
-
-  private renderInto(parent: HTMLElement): void {
     parent.innerHTML = '';
     parent.className = 'passive-panel';
+    this.root = parent;
 
     const title = document.createElement('h2');
     title.className = 'panel-title';
@@ -125,90 +87,268 @@ export class PassivePanel {
 
     const note = document.createElement('p');
     note.className = 'panel-note';
-    note.textContent = 'Two ways to level a passive: earn XP from kills and wave clears, or pay gold — banked XP discounts the gold cost, and a full bar levels it for free. Passives persist through Ascension and reset on Transcendence.';
+    note.textContent = 'Passives are permanent. XP from kills and wave clears fills the bar and levels them for free; gold buys whatever the bar has not filled yet, at a matching discount. Every fifth level grants a milestone rank. Passives survive Ascension and are reset by Transcendence.';
     parent.appendChild(note);
 
-    const list = document.createElement('div');
-    list.className = 'passive-list';
-    for (const def of PASSIVE_ABILITIES) {
-      list.appendChild(this.renderPassiveRow(def));
+    // Summary row
+    const summary = document.createElement('div');
+    summary.className = 'passive-summary';
+    const countBox = document.createElement('div');
+    countBox.className = 'passive-summary-stat';
+    this.headerCountEl = document.createElement('b');
+    this.headerCountEl.textContent = `0 / ${PASSIVE_ABILITIES.length}`;
+    countBox.appendChild(this.headerCountEl);
+    const countLabel = document.createElement('span');
+    countLabel.textContent = 'Unlocked';
+    countBox.appendChild(countLabel);
+    summary.appendChild(countBox);
+    const levelsBox = document.createElement('div');
+    levelsBox.className = 'passive-summary-stat';
+    this.headerLevelsEl = document.createElement('b');
+    this.headerLevelsEl.textContent = `0 / ${PASSIVE_ABILITIES.length * PASSIVE_MAX_LEVEL}`;
+    levelsBox.appendChild(this.headerLevelsEl);
+    const levelsLabel = document.createElement('span');
+    levelsLabel.textContent = 'Total levels';
+    levelsBox.appendChild(levelsLabel);
+    summary.appendChild(levelsBox);
+    parent.appendChild(summary);
+
+    // Family groups
+    for (const family of PASSIVE_FAMILIES) {
+      const familyEl = document.createElement('div');
+      familyEl.className = 'passive-family';
+      familyEl.style.setProperty('--family-color', family.color);
+
+      const head = document.createElement('div');
+      head.className = 'passive-family-head';
+      const dot = document.createElement('span');
+      dot.className = 'passive-family-dot';
+      head.appendChild(dot);
+      head.appendChild(document.createTextNode(family.label));
+      familyEl.appendChild(head);
+
+      const grid = document.createElement('div');
+      grid.className = 'passive-grid';
+
+      const defs = PASSIVE_ABILITIES.filter(p => p.family === family.id);
+      for (const def of defs) {
+        grid.appendChild(this.renderCard(def));
+      }
+
+      familyEl.appendChild(grid);
+      parent.appendChild(familyEl);
     }
-    parent.appendChild(list);
   }
 
-  private renderPassiveRow(def: typeof PASSIVE_ABILITIES[number]): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'passive-row passive-locked';
-    this.passiveRoots.set(def.id, row);
+  private renderCard(def: PassiveAbilityDef): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'passive-card';
+    card.style.setProperty('--passive-color', def.color);
+    this.cardEls.set(def.id, card);
 
-    const icon = document.createElement('div');
-    icon.className = 'passive-icon';
-    setStyle(icon, '--passive-color', def.color);
+    // Head
+    const head = document.createElement('div');
+    head.className = 'passive-card-head';
+
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'passive-icon';
     const iconInner = document.createElement('span');
     iconInner.className = 'passive-icon-inner';
-    renderIcon(iconInner, def.icon);
-    icon.appendChild(iconInner);
-    row.appendChild(icon);
+    renderIcon(iconInner, def.icon, { size: 28 });
+    iconWrap.appendChild(iconInner);
+    head.appendChild(iconWrap);
 
-    const info = document.createElement('div');
-    info.className = 'passive-info';
-
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'passive-title';
     const nameRow = document.createElement('div');
     nameRow.className = 'passive-name-row';
-    const name = document.createElement('span');
-    name.className = 'passive-name';
-    name.textContent = def.name;
-    nameRow.appendChild(name);
-
+    const nameEl = document.createElement('span');
+    nameEl.className = 'passive-name';
+    nameEl.textContent = def.name;
+    nameRow.appendChild(nameEl);
     const levelEl = document.createElement('span');
     levelEl.className = 'passive-level';
-    levelEl.textContent = 'Lv.0';
+    levelEl.textContent = '—';
     this.levelEls.set(def.id, levelEl);
     nameRow.appendChild(levelEl);
-    info.appendChild(nameRow);
+    titleWrap.appendChild(nameRow);
+    const tagline = document.createElement('div');
+    tagline.className = 'passive-tagline';
+    tagline.textContent = def.tagline;
+    titleWrap.appendChild(tagline);
+    head.appendChild(titleWrap);
+    card.appendChild(head);
 
-    const descEl = document.createElement('div');
-    descEl.className = 'passive-desc';
-    descEl.textContent = def.description.replace('{value}', passiveEffectValue(def, 0).toFixed(1));
-    this.descEls.set(def.id, descEl);
-    info.appendChild(descEl);
+    // Effects list
+    const effectsEl = document.createElement('ul');
+    effectsEl.className = 'passive-effects';
+    this.effectEls.set(def.id, effectsEl);
+    card.appendChild(effectsEl);
 
-    const xpRow = document.createElement('div');
-    xpRow.className = 'passive-xp-row';
-
-    const xpBar = document.createElement('div');
-    xpBar.className = 'passive-xp-bar';
-    this.xpBarEls.set(def.id, xpBar);
-    const xpFill = document.createElement('div');
-    xpFill.className = 'passive-xp-fill';
-    this.xpBarFillEls.set(def.id, xpFill);
-    xpBar.appendChild(xpFill);
-    xpRow.appendChild(xpBar);
-
+    // XP track
+    const track = document.createElement('div');
+    track.className = 'passive-track';
+    this.xpRowEls.set(def.id, track);
+    const bar = document.createElement('div');
+    bar.className = 'passive-xp-bar';
+    const fill = document.createElement('div');
+    fill.className = 'passive-xp-fill';
+    bar.appendChild(fill);
+    this.xpFillEls.set(def.id, fill);
+    track.appendChild(bar);
     const xpText = document.createElement('div');
     xpText.className = 'passive-xp-text';
-    xpText.textContent = '';
     this.xpTextEls.set(def.id, xpText);
-    xpRow.appendChild(xpText);
+    track.appendChild(xpText);
+    card.appendChild(track);
 
-    info.appendChild(xpRow);
+    // Milestone pips
+    const milestones = document.createElement('div');
+    milestones.className = 'passive-milestones';
+    this.milestoneRowEls.set(def.id, milestones);
+    const pips: HTMLElement[] = [];
+    for (const m of def.milestones) {
+      const pip = document.createElement('span');
+      pip.className = 'passive-pip';
+      pip.dataset.at = String(m.at);
+      pip.title = m.label;
+      setAriaLabel(pip, `Level ${m.at}: ${m.label}`);
+      milestones.appendChild(pip);
+      pips.push(pip);
+    }
+    this.pipEls.set(def.id, pips);
+    card.appendChild(milestones);
 
-    const actionBtn = document.createElement('button');
-    actionBtn.type = 'button';
-    actionBtn.className = 'passive-action-btn';
-    actionBtn.style.display = 'none';
-    actionBtn.addEventListener('click', (e) => {
+    // Next milestone
+    const nextEl = document.createElement('div');
+    nextEl.className = 'passive-next';
+    this.nextEls.set(def.id, nextEl);
+    card.appendChild(nextEl);
+
+    // Action row
+    const actionRow = document.createElement('div');
+    actionRow.className = 'passive-action';
+    this.actionRowEls.set(def.id, actionRow);
+    const btn = document.createElement('button');
+    btn.className = 'passive-action-btn';
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (this.deps.isUnlocked(def.id)) {
-        this.deps.onUpgrade(def.id);
-      } else if (this.deps.canUnlock(def.id)) {
-        this.deps.onUnlock(def.id);
-      }
+      if (this.deps.isUnlocked(def.id)) this.deps.onUpgrade(def.id);
+      else if (this.deps.canUnlock(def.id)) this.deps.onUnlock(def.id);
     });
-    this.actionBtnEls.set(def.id, actionBtn);
-    info.appendChild(actionBtn);
+    actionRow.appendChild(btn);
+    this.actionBtnEls.set(def.id, btn);
+    const discountEl = document.createElement('span');
+    discountEl.className = 'passive-discount';
+    this.discountEls.set(def.id, discountEl);
+    actionRow.appendChild(discountEl);
+    card.appendChild(actionRow);
 
-    row.appendChild(info);
-    return row;
+    return card;
+  }
+
+  update(state: GameState): void {
+    if (!this.root) return;
+    const wave = this.deps.highestWave();
+    const gold = state.resources.gold;
+    if (this.headerCountEl) setText(this.headerCountEl, `${this.deps.unlockedCount()} / ${PASSIVE_ABILITIES.length}`);
+    if (this.headerLevelsEl) setText(this.headerLevelsEl, `${this.deps.totalLevels()} / ${PASSIVE_ABILITIES.length * PASSIVE_MAX_LEVEL}`);
+
+    for (const def of PASSIVE_ABILITIES) {
+      const card = this.cardEls.get(def.id);
+      const levelEl = this.levelEls.get(def.id);
+      const effectsEl = this.effectEls.get(def.id);
+      const xpFill = this.xpFillEls.get(def.id);
+      const xpText = this.xpTextEls.get(def.id);
+      const trackEl = this.xpRowEls.get(def.id);
+      const pips = this.pipEls.get(def.id);
+      const nextEl = this.nextEls.get(def.id);
+      const btn = this.actionBtnEls.get(def.id);
+      const discountEl = this.discountEls.get(def.id);
+      const actionRow = this.actionRowEls.get(def.id);
+      if (!card || !levelEl || !effectsEl || !xpFill || !xpText || !trackEl || !pips || !nextEl || !btn || !discountEl || !actionRow) continue;
+
+      const gated = wave < def.unlockWave;
+      const unlocked = this.deps.isUnlocked(def.id);
+      const level = unlocked ? this.deps.getLevel(def.id) : 0;
+      const maxed = level >= PASSIVE_MAX_LEVEL;
+
+      toggleClass(card, 'is-gated', gated);
+      toggleClass(card, 'is-locked', !unlocked && !gated);
+      toggleClass(card, 'is-owned', unlocked);
+      toggleClass(card, 'is-maxed', maxed);
+
+      setText(levelEl, unlocked ? (maxed ? `Lv.${level} MAX` : `Lv.${level}`) : '—');
+
+      // Effect lines — rebuilt only when level changed
+      if (this.lastEffectLevel.get(def.id) !== level || this.lastUnlocked.get(def.id) !== unlocked) {
+        this.lastEffectLevel.set(def.id, level);
+        this.lastUnlocked.set(def.id, unlocked);
+        effectsEl.innerHTML = '';
+        const lines = unlocked ? describePassiveEffects(def, level) : describePassiveEffects(def, 0);
+        for (const line of lines) {
+          const li = document.createElement('li');
+          li.textContent = line;
+          effectsEl.appendChild(li);
+        }
+        toggleClass(effectsEl, 'is-preview', !unlocked);
+      }
+
+      // Milestone pips
+      for (let i = 0; i < PASSIVE_MILESTONE_LEVELS.length; i++) {
+        toggleClass(pips[i], 'is-earned', unlocked && level >= PASSIVE_MILESTONE_LEVELS[i]);
+      }
+
+      // XP track
+      if (!unlocked || maxed) {
+        setDisplay(trackEl, 'none');
+        setText(nextEl, maxed ? 'Fully mastered.' : `Unlocks at wave ${def.unlockWave}`);
+      } else {
+        setDisplay(trackEl, 'flex');
+        const xp = this.deps.getXp(def.id);
+        const needed = this.deps.getXpForNextLevel(def.id);
+        const pct = needed > 0 ? Math.min(100, (xp / needed) * 100) : 0;
+        setStyle(xpFill, 'width', `${pct.toFixed(1)}%`);
+        setText(xpText, `${formatInt(xp)} / ${formatInt(needed)} XP`);
+        const next = nextPassiveMilestone(def, level);
+        setText(nextEl, next ? `Lv.${next.at}: ${next.label}` : 'All ranks earned.');
+      }
+
+      // Action row
+      if (gated) {
+        setDisplay(actionRow, 'none');
+      } else if (!unlocked) {
+        setDisplay(actionRow, 'flex');
+        const cost = this.deps.getUnlockCost(def.id);
+        const afford = gold >= cost;
+        setText(btn, `Unlock · ${formatInt(cost)}g`);
+        setDisabled(btn, !afford);
+        toggleClass(btn, 'can-afford', afford);
+        toggleClass(btn, 'cannot-afford', !afford);
+        setText(discountEl, '');
+      } else if (maxed) {
+        setDisplay(actionRow, 'none');
+      } else {
+        setDisplay(actionRow, 'flex');
+        const cost = this.deps.getUpgradeCost(def.id);
+        const full = this.deps.getFullUpgradeCost(def.id);
+        const afford = gold >= cost;
+        setText(btn, `Upgrade · ${formatInt(cost)}g`);
+        setDisabled(btn, !afford);
+        toggleClass(btn, 'can-afford', afford);
+        toggleClass(btn, 'cannot-afford', !afford);
+        const saved = full > 0 ? Math.round((1 - cost / full) * 100) : 0;
+        setText(discountEl, saved > 0 ? `−${saved}% from banked XP` : '');
+      }
+    }
+  }
+
+  flashLevelUp(id: string): void {
+    const card = this.cardEls.get(id);
+    if (!card) return;
+    card.classList.remove('is-levelup');
+    void card.offsetWidth;          // restart the animation
+    card.classList.add('is-levelup');
+    setTimeout(() => card.classList.remove('is-levelup'), 620);
   }
 }

@@ -54,3 +54,15 @@ Research Points (RP) earned on each Ascension (RP = AP gained). Spent on permane
 
 - `resetForAscension()` — called on transcendence, clears all research
 - `replaceUnlocked(ids, rp)` — used when loading saves
+
+## Wall-clock guarantees
+
+Research ticks on **wall-clock** time (`realDt`), not simulation time —
+it must not accelerate when the player raises the game speed, and a 30 s
+research must cost 30 s of the player's life at 1x and at 6.5x alike.
+
+It also ticks while the run-over prompt is up: `Game.tickWallClockSystems`
+sits outside the `if (!this.runFailed) this.update(...)` gate, so research
+progress and passive RP gain continue while `RunFailedModal` waits for the
+player to pick Ascend or Retry Wave. A player who walks away from the
+prompt comes back to in-progress research, not a frozen one.

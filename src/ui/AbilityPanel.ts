@@ -1,11 +1,9 @@
 import type { AbilityId, GameState } from '../types';
 import { ABILITIES, ABILITY_BY_ID, computeEffectiveStats, type AbilityDef } from '../data/abilities';
-import { PASSIVE_ABILITIES, passiveEffectValue } from '../data/passiveAbilities';
-import { passiveXpForLevel, abilityXpForLevel } from '../data/xpTables';
+import { abilityXpForLevel } from '../data/xpTables';
 import { formatInt } from '../utils/bigNumber';
-import { setAriaLabel, setDisabled, setInnerHTML, setStyle, setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
+import { setAriaLabel, setDisabled, setStyle, setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
 import { renderAbilityTooltip } from './abilityFormat';
-import type { PassiveAPIDeps } from './PassivePanel';
 import { renderIcon } from './Icon';
 import { bindLongPress } from '../utils/longPress';
 
@@ -23,24 +21,11 @@ export interface AbilityPanelHandlers {
   isAutoCastUnlocked: () => boolean;
   isAutoCastEnabled: (id: AbilityId) => boolean;
   onToggleAutoCast: (id: AbilityId, enabled: boolean) => void;
-  /** Fired when the Passives sub-tab is opened, so the owner can clear badges. */
-  onPassivesViewed: () => void;
 }
-
-type SubTab = 'active' | 'passives';
 
 export class AbilityPanel {
   private readonly handlers: AbilityPanelHandlers;
-  private passiveDeps: PassiveAPIDeps;
   private root: HTMLElement | null = null;
-  private subTab: SubTab = 'active';
-  private activeContentRoot: HTMLElement | null = null;
-  private passiveContentRoot: HTMLElement | null = null;
-  private subTabActiveBtn: HTMLButtonElement | null = null;
-  private subTabPassiveBtn: HTMLButtonElement | null = null;
-  /** Notification badge on the Passives sub-tab ("new passive available"). */
-  private subTabPassiveBadge: HTMLElement | null = null;
-  private passiveBadgeCount = 0;
 
   // Active ability maps
   private cardsById = new Map<AbilityId, HTMLElement>();
@@ -62,22 +47,8 @@ export class AbilityPanel {
   /** Teardown for the §9.C hold-to-read bindings on the upgrade buttons. */
   private longPressUnbinds: (() => void)[] = [];
 
-  // Passive maps
-  private passiveRoots = new Map<string, HTMLElement>();
-  private passiveLevelEls = new Map<string, HTMLElement>();
-  private passiveDescEls = new Map<string, HTMLElement>();
-  private passiveXpBarEls = new Map<string, HTMLElement>();
-  private passiveXpBarFillEls = new Map<string, HTMLElement>();
-  private passiveXpTextEls = new Map<string, HTMLElement>();
-  private passiveActionBtnEls = new Map<string, HTMLButtonElement>();
-
-  constructor(handlers: AbilityPanelHandlers, passiveDeps: PassiveAPIDeps) {
+  constructor(handlers: AbilityPanelHandlers) {
     this.handlers = handlers;
-    this.passiveDeps = passiveDeps;
-  }
-
-  setPassiveDeps(deps: PassiveAPIDeps): void {
-    this.passiveDeps = deps;
   }
 
   mount(parent: HTMLElement): void {
@@ -99,24 +70,12 @@ export class AbilityPanel {
     this.xpTextEls.clear();
     this.autoCastRowById.clear();
     this.autoCastInputById.clear();
-    this.passiveRoots.clear();
-    this.passiveLevelEls.clear();
-    this.passiveDescEls.clear();
-    this.passiveXpBarEls.clear();
-    this.passiveXpBarFillEls.clear();
-    this.passiveXpTextEls.clear();
-    this.passiveActionBtnEls.clear();
-    this.subTab = 'active';
     this.renderInto(parent);
   }
 
   update(state: GameState): void {
     if (!this.root) return;
-    if (this.subTab === 'active') {
-      this.updateActive(state);
-    } else {
-      this.updatePassive(state);
-    }
+    this.updateActive(state);
   }
 
   private updateActive(state: GameState): void {
@@ -243,75 +202,6 @@ export class AbilityPanel {
     }
   }
 
-  private updatePassive(_state: GameState): void {
-    const wave = this.passiveDeps.highestWave;
-    const gold = _state.resources.gold;
-    for (const def of PASSIVE_ABILITIES) {
-      const root = this.passiveRoots.get(def.id);
-      const levelEl = this.passiveLevelEls.get(def.id);
-      const descEl = this.passiveDescEls.get(def.id);
-      const xpBar = this.passiveXpBarEls.get(def.id);
-      const xpFill = this.passiveXpBarFillEls.get(def.id);
-      const xpText = this.passiveXpTextEls.get(def.id);
-      const actionBtn = this.passiveActionBtnEls.get(def.id);
-      if (!root || !levelEl || !descEl || !xpBar || !xpFill || !xpText || !actionBtn) continue;
-
-      const waveReached = wave >= def.unlockWave;
-      const unlocked = this.passiveDeps.isUnlocked(def.id);
-      const level = unlocked ? this.passiveDeps.getLevel(def.id) : 0;
-      const xp = unlocked ? this.passiveDeps.getXp(def.id) : 0;
-      const atMax = level >= def.maxLevel;
-
-      setText(levelEl, atMax ? ` Lv.${level} (MAX)` : ` Lv.${level}`);
-
-      if (!waveReached) {
-        toggleClass(root, 'passive-locked', true);
-        setText(descEl, `Unlocks at wave ${def.unlockWave}`);
-        setDisplay(xpBar, 'none');
-        setDisplay(xpText, 'none');
-        setDisplay(actionBtn, 'none');
-      } else if (!unlocked) {
-        toggleClass(root, 'passive-locked', false);
-        const cost = this.passiveDeps.getUnlockCost(def.id);
-        const canAfford = gold >= cost;
-        setText(descEl, `Unlocks at wave ${def.unlockWave}`);
-        setDisplay(xpBar, 'none');
-        setDisplay(xpText, 'none');
-        setDisplay(actionBtn, 'inline-flex');
-        setText(actionBtn, `Unlock \u00B7 ${Math.floor(cost)}g`);
-        setDisabled(actionBtn, !canAfford);
-        toggleClass(actionBtn, 'can-afford', canAfford);
-        toggleClass(actionBtn, 'cannot-afford', !canAfford);
-      } else if (atMax) {
-        toggleClass(root, 'passive-locked', false);
-        setText(descEl, def.description.replace('{value}', passiveEffectValue(def, level).toFixed(1)));
-        setDisplay(xpBar, 'block');
-        setStyle(xpFill, 'width', '100%');
-        setDisplay(xpText, 'block');
-        setText(xpText, 'MAX');
-        setDisplay(actionBtn, 'none');
-      } else {
-        toggleClass(root, 'passive-locked', false);
-        setText(descEl, def.description.replace('{value}', passiveEffectValue(def, level).toFixed(1)));
-        const needed = passiveXpForLevel(level + 1);
-        const pct = needed > 0 ? Math.min(100, (xp / needed) * 100) : 0;
-        setDisplay(xpBar, 'block');
-        setStyle(xpFill, 'width', `${pct}%`);
-        setDisplay(xpText, 'block');
-        setText(xpText, `${Math.floor(xp)} / ${needed} XP`);
-        const cost = this.passiveDeps.getUpgradeCost(def.id);
-        const canAfford = gold >= cost;
-        setDisplay(actionBtn, cost > 0 ? 'inline-flex' : 'none');
-        if (cost > 0) {
-          setText(actionBtn, `Upgrade \u00B7 ${Math.floor(cost)}g`);
-          setDisabled(actionBtn, !canAfford);
-          toggleClass(actionBtn, 'can-afford', canAfford);
-          toggleClass(actionBtn, 'cannot-afford', !canAfford);
-        }
-      }
-    }
-  }
-
   flashCast(id: AbilityId): void {
     const btn = this.buttonsById.get(id);
     if (!btn) return;
@@ -332,28 +222,6 @@ export class AbilityPanel {
     this.root = null;
   }
 
-  private switchSubTab(tab: SubTab): void {
-    this.subTab = tab;
-    if (this.subTabActiveBtn) toggleClass(this.subTabActiveBtn, 'active', tab === 'active');
-    if (this.subTabPassiveBtn) toggleClass(this.subTabPassiveBtn, 'active', tab === 'passives');
-    if (this.activeContentRoot) setDisplay(this.activeContentRoot, tab === 'active' ? '' : 'none');
-    if (this.passiveContentRoot) setDisplay(this.passiveContentRoot, tab === 'passives' ? '' : 'none');
-    if (tab === 'passives') this.handlers.onPassivesViewed();
-  }
-
-  /**
-   * Notification count for the Passives sub-tab badge ("new passive
-   * available"). Written by `UIManager`, which owns the pending set, so the
-   * sub-tab stays in lockstep with the Abilities tab and Build rail badges.
-   */
-  setPassiveBadge(count: number): void {
-    this.passiveBadgeCount = Math.max(0, Math.floor(count));
-    if (!this.subTabPassiveBadge) return;
-    const n = this.passiveBadgeCount;
-    this.subTabPassiveBadge.textContent = n > 0 ? String(n) : '';
-    toggleClass(this.subTabPassiveBadge, 'is-visible', n > 0);
-  }
-
   private renderInto(parent: HTMLElement): void {
     parent.innerHTML = '';
     parent.className = 'ability-panel';
@@ -363,39 +231,6 @@ export class AbilityPanel {
     title.textContent = 'Abilities';
     parent.appendChild(title);
 
-    const subTabBar = document.createElement('div');
-    subTabBar.className = 'ability-sub-tabs';
-
-    this.subTabActiveBtn = document.createElement('button');
-    this.subTabActiveBtn.className = 'ability-sub-tab-btn active';
-    this.subTabActiveBtn.textContent = 'Active';
-    this.subTabActiveBtn.addEventListener('click', () => this.switchSubTab('active'));
-    subTabBar.appendChild(this.subTabActiveBtn);
-
-    this.subTabPassiveBtn = document.createElement('button');
-    this.subTabPassiveBtn.className = 'ability-sub-tab-btn';
-    this.subTabPassiveBtn.textContent = 'Passives';
-    this.subTabPassiveBtn.addEventListener('click', () => this.switchSubTab('passives'));
-    this.subTabPassiveBadge = document.createElement('span');
-    this.subTabPassiveBadge.className = 'tab-badge';
-    this.subTabPassiveBtn.appendChild(this.subTabPassiveBadge);
-    subTabBar.appendChild(this.subTabPassiveBtn);
-
-    parent.appendChild(subTabBar);
-
-    this.activeContentRoot = document.createElement('div');
-    this.activeContentRoot.className = 'ability-active-content';
-    this.renderActiveInto(this.activeContentRoot);
-    parent.appendChild(this.activeContentRoot);
-
-    this.passiveContentRoot = document.createElement('div');
-    this.passiveContentRoot.className = 'ability-passive-content';
-    this.passiveContentRoot.style.display = 'none';
-    this.renderPassiveInto(this.passiveContentRoot);
-    parent.appendChild(this.passiveContentRoot);
-  }
-
-  private renderActiveInto(parent: HTMLElement): void {
     const intro = document.createElement('p');
     intro.className = 'panel-note';
     intro.textContent = 'Active abilities. Spend mana to cast, then wait for the cooldown. Hover the Upgrade button to compare stats.';
@@ -415,20 +250,6 @@ export class AbilityPanel {
     const deepestMax = Math.max(...ABILITIES.map(a => a.maxLevel));
     footer.textContent = `Each ability unlocks at a different wave and can be upgraded up to ${deepestMax - 1} times from this panel.`;
     parent.appendChild(footer);
-  }
-
-  private renderPassiveInto(parent: HTMLElement): void {
-    const note = document.createElement('p');
-    note.className = 'panel-note';
-    note.textContent = 'Passives gain XP from kills and wave clears, and auto-level when the bar fills. They persist through Ascension and reset on Transcendence.';
-    parent.appendChild(note);
-
-    const list = document.createElement('div');
-    list.className = 'passive-list';
-    for (const def of PASSIVE_ABILITIES) {
-      list.appendChild(this.renderPassiveRow(def));
-    }
-    parent.appendChild(list);
   }
 
   private renderCard(def: AbilityDef): HTMLElement {
@@ -580,83 +401,6 @@ export class AbilityPanel {
     return card;
   }
 
-  private renderPassiveRow(def: typeof PASSIVE_ABILITIES[number]): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'passive-row passive-locked';
-    this.passiveRoots.set(def.id, row);
-
-    const icon = document.createElement('div');
-    icon.className = 'passive-icon';
-    setStyle(icon, '--passive-color', def.color);
-    const iconInner = document.createElement('span');
-    iconInner.className = 'passive-icon-inner';
-    renderIcon(iconInner, def.icon);
-    icon.appendChild(iconInner);
-    row.appendChild(icon);
-
-    const info = document.createElement('div');
-    info.className = 'passive-info';
-
-    const nameRow = document.createElement('div');
-    nameRow.className = 'passive-name-row';
-    const name = document.createElement('span');
-    name.className = 'passive-name';
-    name.textContent = def.name;
-    nameRow.appendChild(name);
-
-    const levelEl = document.createElement('span');
-    levelEl.className = 'passive-level';
-    levelEl.textContent = 'Lv.0';
-    this.passiveLevelEls.set(def.id, levelEl);
-    nameRow.appendChild(levelEl);
-    info.appendChild(nameRow);
-
-    const descEl = document.createElement('div');
-    descEl.className = 'passive-desc';
-    descEl.textContent = def.description.replace('{value}', passiveEffectValue(def, 0).toFixed(1));
-    this.passiveDescEls.set(def.id, descEl);
-    info.appendChild(descEl);
-
-    const xpRow = document.createElement('div');
-    xpRow.className = 'passive-xp-row';
-
-    const xpBar = document.createElement('div');
-    xpBar.className = 'passive-xp-bar';
-    this.passiveXpBarEls.set(def.id, xpBar);
-    const xpFill = document.createElement('div');
-    xpFill.className = 'passive-xp-fill';
-    this.passiveXpBarFillEls.set(def.id, xpFill);
-    xpBar.appendChild(xpFill);
-    xpRow.appendChild(xpBar);
-
-    const xpText = document.createElement('div');
-    xpText.className = 'passive-xp-text';
-    xpText.textContent = '';
-    this.passiveXpTextEls.set(def.id, xpText);
-    xpRow.appendChild(xpText);
-
-    info.appendChild(xpRow);
-
-    const actionBtn = document.createElement('button');
-    actionBtn.type = 'button';
-    actionBtn.className = 'passive-action-btn';
-    actionBtn.style.display = 'none';
-    actionBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const s = this.passiveDeps;
-      if (s.isUnlocked(def.id)) {
-        s.onUpgrade(def.id);
-      } else if (s.canUnlock(def.id)) {
-        s.onUnlock(def.id);
-      }
-    });
-    this.passiveActionBtnEls.set(def.id, actionBtn);
-    info.appendChild(actionBtn);
-
-    row.appendChild(info);
-    return row;
-  }
-
   private showTooltip(id: AbilityId): void {
     const tooltip = this.upgradeTooltipById.get(id);
     const upgradeBtn = this.upgradeBtnById.get(id);
@@ -699,13 +443,13 @@ export class AbilityPanel {
 
   private refreshTooltip(
     _id: AbilityId,
-    el: HTMLElement,
+    tooltip: HTMLElement,
     def: AbilityDef,
-    currentStats: ReturnType<typeof computeEffectiveStats>,
+    stats: ReturnType<typeof computeEffectiveStats>,
     cost: number,
     canAfford: boolean,
-    _isMaxed: boolean,
+    isMaxed: boolean,
   ): void {
-    setInnerHTML(el, renderAbilityTooltip(def, currentStats, cost, canAfford, true, true));
+    tooltip.innerHTML = renderAbilityTooltip(def, stats, cost, canAfford, !isMaxed, true);
   }
 }

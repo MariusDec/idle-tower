@@ -233,6 +233,44 @@ codebase. And a headless tab whose pane is not composited throttles rAF to
 roughly 1 Hz, which makes the harness unusable there; it needs a tab that is
 actually painting.
 
+## The quality probe (UI plan §9.D)
+
+The harness above is a developer tool. The probe is what the player gets: a
+one-shot, 2-second frame-time measurement that may demote the quality tier, and
+may never promote it.
+
+**Where the starting tier comes from.** `initialQualityTier()` guesses from
+device signals only — `navigator.hardwareConcurrency` (≥ 8 cores for `high`, or
+≥ 16 on a coarse pointer, ≥ 4 for `medium`, otherwise `low`), demoting a coarse
+pointer above DPR 2 out of `high`. `readStoredQuality()` overrides that with the
+player's stored preference; anything unrecognised falls back to `'auto'`.
+
+**When it runs.** `Game.startQualityProbe()` is called on the first frame of
+wave 1 of the session, and returns immediately unless the preference is
+`'auto'`. `tickQualityProbe(realDt)` runs on the **wall clock**, not the
+simulation clock.
+
+**What it measures.** The first 30 frames are discarded (JIT warm-up and the
+first background bake), then it accumulates `realDt` for 2 seconds and compares
+the **mean** frame time against a budget: 22 ms (a 45 fps floor) when already at
+`low`, 17 ms (60 fps) otherwise. Over budget demotes exactly one tier, clamping
+at `low`. The mean and not the worst frame, because a single 40 ms hitch from a
+save write or a sprite bake is not a reason to drop a desktop to `low`.
+
+**When it gives up.** The probe is abandoned — set to `null`, never restarted —
+if the document is hidden, or if the game speed is above 1×. Both would measure
+something other than a real frame.
+
+**Why it never promotes.** Promotion is a decision with a cost the player pays
+and a benefit only they can judge, and a probe that could climb back would
+oscillate on any load spike — a background tab, a save flush, a system update —
+re-baking the background and the edge-glow sprites each time. So the probe fires
+once per session, in one direction. Climbing back up is the Settings control's
+job: the segmented `Auto / High / Medium / Low` control in `SettingsPanel`
+writes an explicit preference, which disables the probe permanently for that
+device, and the hint line under it reports the tier actually in force so an
+`'auto'` run that was demoted is visible rather than mysterious.
+
 ## Verifying a change
 
 ```bash

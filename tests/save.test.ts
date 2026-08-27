@@ -70,7 +70,7 @@ function makeState(): GameState {
     runStartedAt: 1000,
     towerXp: { level: 3, xp: TOWER_XP_TABLE[3], totalXpEarned: TOWER_XP_TABLE[3], unspentTalentPoints: 3 },
     talents: { allocated: { power_core: 2 } },
-    passiveAbilities: { marksmanship: { level: 2, xp: 30, unlocked: true } },
+    passiveAbilities: { passive_marksmanship: { level: 2, xp: 30, unlocked: true } },
     equipment: [],
     equipped: {},
     blessings: {
@@ -184,7 +184,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(17);
+    expect(loaded.version).toBe(18);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -208,7 +208,7 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(17);
+    expect(loaded.version).toBe(18);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);
@@ -223,7 +223,7 @@ describe('migration ladder', () => {
   it('seeds a risk-0 pacing block for a v13 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(17);
+    expect(loaded.version).toBe(18);
     expect(loaded.pacing).toEqual({
       risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
     });
@@ -256,7 +256,7 @@ describe('migration ladder', () => {
   it('seeds an empty contract run for a v11 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(17);
+    expect(loaded.version).toBe(18);
     expect(loaded.contracts).toEqual({
       active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
     });
@@ -276,7 +276,7 @@ describe('migration ladder', () => {
     };
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11, contracts }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(17);
+    expect(loaded.version).toBe(18);
     expect(loaded.contracts).toEqual(contracts);
 
     // And the real manager takes that state back without losing a slot.
@@ -305,7 +305,7 @@ describe('migration ladder', () => {
       prestige: { autoCastEnabled: { multishot: false } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(17);
+    expect(loaded.version).toBe(18);
     expect(loaded.abilities.rocket_barrage).toEqual({
       level: 3, xp: 0, cooldown: 0, active: false, activeTimer: 0,
     });
@@ -325,7 +325,7 @@ describe('migration ladder', () => {
       talents: { allocated: { power_core: 2 } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(17);
+    expect(loaded.version).toBe(18);
     expect(loaded.towerXp.level).toBe(4); // 3 + 1 (0-based -> 1-based)
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[4]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(4));
@@ -340,7 +340,7 @@ describe('migration ladder', () => {
       talents: { allocated: {} },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(17);
+    expect(loaded.version).toBe(18);
     expect(loaded.towerXp.level).toBe(TOWER_LEVEL_CAP);
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[TOWER_LEVEL_CAP]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(TOWER_LEVEL_CAP));
@@ -355,6 +355,22 @@ describe('migration ladder', () => {
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[1]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(1));
     expect(loaded.talents.allocated).toEqual({});
+  });
+
+  /**
+   * v17 -> v18 wipes passiveAbilities (plan §14.3). The old `marksmanship`
+   * unlock is not preserved — the v18 passive set is built fresh from the
+   * new table, so any carried state must be discarded on load.
+   */
+  it('wipes passiveAbilities when migrating a v17 save', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({
+      ...v2Save,
+      version: 17,
+      passiveAbilities: { marksmanship: { level: 5, xp: 200, unlocked: true } },
+    }));
+    const loaded = new SaveManager(stubBus).load()!;
+    expect(loaded.version).toBe(18);
+    expect(loaded.passiveAbilities).toEqual({});
   });
 
   it('fills in the enrage clock older saves predate', () => {

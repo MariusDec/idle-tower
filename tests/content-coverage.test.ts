@@ -16,7 +16,11 @@ import type { TalentDef, TalentEffectType } from '../src/data/talentTree';
 import { ACHIEVEMENTS, ACHIEVEMENT_REWARD_CONSUMERS } from '../src/data/achievements';
 import type { AchievementRewardType } from '../src/data/achievements';
 import { ABILITIES } from '../src/data/abilities';
-import { PASSIVE_ABILITIES } from '../src/data/passiveAbilities';
+import {
+  PASSIVE_ABILITIES, PASSIVE_MAX_LEVEL, PASSIVE_MILESTONE_LEVELS,
+  PASSIVE_STATS, passiveStatValue, passiveUpgradeCost,
+} from '../src/data/passiveAbilities';
+import { passiveWaveXpRef, passiveXpForLevel, PASSIVE_XP_LEVEL_WAVES } from '../src/data/xpTables';
 import { RESEARCH_NODES } from '../src/data/research';
 import { UPGRADES } from '../src/data/upgrades';
 import {
@@ -688,7 +692,7 @@ describe('icons', () => {
     // The §6.2 table, as a count. A table that quietly loses entries stops
     // being covered without anything else failing.
     expect(ABILITIES.length).toBe(10);
-    expect(PASSIVE_ABILITIES.length).toBe(8);
+    expect(PASSIVE_ABILITIES.length).toBe(12);
     expect(UPGRADES.length).toBe(29);
     expect(RESEARCH_NODES.length).toBe(17);
     expect(TALENTS.length).toBe(60);
@@ -707,7 +711,11 @@ describe('icons', () => {
 
   it('pins nothing it does not use', () => {
     const used = new Set(referenced.map(([, id]) => id));
-    expect(ICON_IDS.filter((id) => !used.has(id))).toEqual([]);
+    // Icons that are in the sprite but not currently used by any content.
+    // These are kept for future use or were retired from active content.
+    const ALLOWED_UNUSED: IconId[] = ['life-tap', 'target-shot'];
+    const unused = ICON_IDS.filter((id) => !used.has(id) && !ALLOWED_UNUSED.includes(id));
+    expect(unused).toEqual([]);
   });
 
   it('credits every shipped icon, with a licence', () => {
@@ -766,7 +774,7 @@ describe('nav groups', () => {
    * rather than silently skipped so that the exception cannot grow unnoticed —
    * and the test below proves each entry really is absent from the table.
    */
-  const NOT_NAVIGABLE = new Set<PanelTab>(['passives']);
+  const NOT_NAVIGABLE = new Set<PanelTab>([]);
 
   const tabIds = NAV_GROUPS.flatMap((g) => g.tabs.map((t) => t.id));
 
@@ -836,6 +844,84 @@ describe('nav groups', () => {
   it('opens every group on a tab it actually contains', () => {
     for (const g of NAV_GROUPS) {
       expect(g.tabs.some((t) => t.id === firstTabOf(g.id))).toBe(true);
+    }
+  });
+});
+
+describe('passives', () => {
+  it('gives every passive exactly the five milestone levels', () => {
+    for (const p of PASSIVE_ABILITIES) {
+      expect(p.milestones.map(m => m.at), p.id).toEqual([...PASSIVE_MILESTONE_LEVELS]);
+    }
+  });
+
+  it('only names stats the contributor knows', () => {
+    const known = new Set(PASSIVE_STATS);
+    for (const p of PASSIVE_ABILITIES) {
+      for (const e of p.effects) expect(known.has(e.stat), `${p.id}:${e.stat}`).toBe(true);
+      for (const m of p.milestones) {
+        for (const g of m.grants) expect(known.has(g.stat), `${p.id}:${g.stat}`).toBe(true);
+      }
+    }
+  });
+
+  it('has a non-empty tagline and at least one scaling effect', () => {
+    for (const p of PASSIVE_ABILITIES) {
+      expect(p.tagline.length, p.id).toBeGreaterThan(0);
+      expect(p.effects.length, p.id).toBeGreaterThan(0);
+      expect(p.effects.some(e => e.perLevel > 0), p.id).toBe(true);
+    }
+  });
+
+  it('unlocks in ascending order of cost within a family-free sort', () => {
+    const byWave = [...PASSIVE_ABILITIES].sort((a, b) => a.unlockWave - b.unlockWave);
+    for (let i = 1; i < byWave.length; i++) {
+      expect(byWave[i].unlockGoldCost, byWave[i].id)
+        .toBeGreaterThan(byWave[i - 1].unlockGoldCost);
+      expect(byWave[i].upgradeBaseCost, byWave[i].id)
+        .toBeGreaterThan(byWave[i - 1].upgradeBaseCost);
+      expect(byWave[i].xpBase, byWave[i].id).toBeGreaterThan(byWave[i - 1].xpBase);
+    }
+  });
+
+  it('prices level 1 at six waves of XP at the unlock wave, within 15%', () => {
+    for (const p of PASSIVE_ABILITIES) {
+      const expected = PASSIVE_XP_LEVEL_WAVES * passiveWaveXpRef(p.unlockWave);
+      const actual = passiveXpForLevel(p, 1);
+      expect(Math.abs(actual / expected - 1), p.id).toBeLessThan(0.15);
+    }
+  });
+
+  it('makes every level strictly more expensive than the last', () => {
+    for (const p of PASSIVE_ABILITIES) {
+      for (let l = 1; l < PASSIVE_MAX_LEVEL; l++) {
+        expect(passiveUpgradeCost(p, l), `${p.id}@${l}`)
+          .toBeGreaterThan(passiveUpgradeCost(p, l - 1));
+        expect(passiveXpForLevel(p, l + 1), `${p.id}@${l}`)
+          .toBeGreaterThan(passiveXpForLevel(p, l));
+      }
+    }
+  });
+
+  it('never lets a milestone lower a stat', () => {
+    for (const p of PASSIVE_ABILITIES) {
+      for (const m of p.milestones) {
+        for (const g of m.grants) expect(g.value, `${p.id}:${g.stat}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('grants a milestone exactly at its level and not before', () => {
+    for (const p of PASSIVE_ABILITIES) {
+      for (const m of p.milestones) {
+        for (const g of m.grants) {
+          const before = passiveStatValue(p, g.stat, m.at - 1);
+          const after = passiveStatValue(p, g.stat, m.at);
+          // `perLevel` may also move the stat, so assert the *jump* is at least
+          // the grant, not that the value equals it.
+          expect(after - before, `${p.id}:${g.stat}@${m.at}`).toBeGreaterThanOrEqual(g.value);
+        }
+      }
     }
   });
 });

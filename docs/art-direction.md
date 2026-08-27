@@ -194,6 +194,14 @@ The mapping, so the next person does not have to ask why `#ff6633` became ember 
 | `#e74c3c`, `#f1c40f` (talent branches) | TalentPanel | `FX.blood`, `FX.gold` |
 | `'#ffffff'`, `'#000'` | anywhere | **allowed** — the only two literals the guard test whitelists |
 
+### `critical` and `blood` are off-limits to the combo flourish
+
+The §5.C combo edge glow and its embers tint with `FX.gold` and `FX.ember` only, cross-faded by
+intensity. `FX.critical` and `FX.blood` are reserved: per the split above, critical red means
+"the tower is in peril" and blood red means "an enemy". A combo is the opposite of both, so a
+reward that borrowed either colour would teach the player the wrong reflex. `Renderer.drawComboEdge`
+carries the same note at the call site.
+
 ## Adding to the token layer
 
 1. Add the value to `tokens.css`, in the right layer, with a comment saying what it is for.

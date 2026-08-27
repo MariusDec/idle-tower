@@ -32,6 +32,7 @@ import {
   ENEMY_HP_GROWTH,
   GOLD_GROWTH,
   enemyHPForWave,
+  enemyCountForWave,
   bossHPForWave,
   goldDropForWave,
   spawnCountForWave,
@@ -252,32 +253,50 @@ section('§2.5 passive abilities');
   const state: Record<string, PassiveAbilityState> = {};
   const mgr = new PassiveAbilityManager(state, bus);
   mgr.ensureInitialized();
-  const def = PASSIVE_ABILITIES[0];
+  const first = PASSIVE_ABILITIES[0];      // Marksmanship, unlock wave 5
+  const last = PASSIVE_ABILITIES[PASSIVE_ABILITIES.length - 1];
 
-  check('a locked passive does nothing', mgr.getEffectValue(def.stat) === 0);
-  mgr.unlock(def.id);
-  check('unlocking a passive grants its base effect immediately',
-    mgr.getEffectValue(def.stat) === def.basePercent,
-    `got ${mgr.getEffectValue(def.stat)}, expected ${def.basePercent}`);
+  check('a locked passive contributes nothing',
+    Object.keys(mgr.getStatTotals()).length === 0);
 
-  const before = mgr.getUpgradeCost(def.id);
-  for (let i = 0; i < 20; i++) mgr.addKillXp(40);
-  check('passives earn XP from kills', mgr.getXp(def.id) > 0, `xp=${mgr.getXp(def.id)}`);
-  check('banked XP discounts the gold cost', mgr.getUpgradeCost(def.id) < before,
-    `${before} -> ${mgr.getUpgradeCost(def.id)}`);
+  mgr.unlock(first.id);
+  check('unlocking grants the level-0 effect immediately',
+    (mgr.getStatTotals().damage_pct ?? 0) === first.effects[0].base,
+    `got ${mgr.getStatTotals().damage_pct}`);
 
-  // The XP track must resolve on a human timescale, not six million kills.
-  const solo: Record<string, PassiveAbilityState> = {};
-  const soloMgr = new PassiveAbilityManager(solo, bus);
-  soloMgr.ensureInitialized();
-  soloMgr.unlock(def.id);
-  let kills = 0;
-  while (soloMgr.getLevel(def.id) < 10 && kills < 2_000_000) {
-    soloMgr.addKillXp(40);
-    kills += 1;
-  }
-  check('XP alone reaches level 10 in a plausible number of kills',
-    kills < 20_000, `kills=${kills}`);
+  const before = mgr.getUpgradeCost(first.id);
+  for (let i = 0; i < 20; i++) mgr.addKillXp('normal', first.unlockWave);
+  check('passives earn XP from kills', mgr.getXp(first.id) > 0);
+  check('banked XP discounts the gold cost', mgr.getUpgradeCost(first.id) < before);
+
+  // The headline fix: measured in *waves at its own unlock wave*, a late
+  // passive must level no faster than an early one. Before the redesign the
+  // wave-65 passive gained ten levels inside a single wave.
+  const wavesToLevel = (def: typeof first) => {
+    const s: Record<string, PassiveAbilityState> = {};
+    const m = new PassiveAbilityManager(s, bus);
+    m.ensureInitialized();
+    m.unlock(def.id);
+    let waves = 0;
+    while (m.getLevel(def.id) < 5 && waves < 10_000) {
+      const n = Math.max(1, Math.floor(enemyCountForWave(def.unlockWave)));
+      for (let k = 0; k < n; k++) m.addKillXp('normal', def.unlockWave);
+      m.addWaveClearXp(def.unlockWave);
+      waves += 1;
+    }
+    return waves;
+  };
+  const early = wavesToLevel(first);
+  const late = wavesToLevel(last);
+  check('the last passive is not faster than the first, per wave of play',
+    Math.abs(early - late) <= 3, `early=${early} late=${late}`);
+  check('reaching level 5 from XP alone takes real play',
+    early >= 25, `waves=${early}`);
+
+  // Gold has to be a cost, not a rounding error.
+  const runGoldAtUnlock = 20 * Math.pow(1.11, last.unlockWave) * 6;
+  check('unlocking the deepest passive costs several waves of income',
+    last.unlockGoldCost > runGoldAtUnlock * 0.7, `${last.unlockGoldCost}`);
 }
 
 // ── §3.1 abilities ────────────────────────────────────────────────────────

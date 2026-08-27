@@ -68,7 +68,7 @@ export type AbilityId =
   | 'execute'
   | 'rocket_barrage';
 
-export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'prestige' | 'transcendence' | 'achievements' | 'progression' | 'stats' | 'settings' | 'talents' | 'equipment';
+export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'passives' | 'prestige' | 'transcendence' | 'achievements' | 'progression' | 'stats' | 'settings' | 'talents' | 'equipment';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';
 
@@ -328,9 +328,11 @@ export interface TalentState {
 
 // Passive Abilities
 export type PassiveAbilityId =
-  | 'passive_markmanship' | 'passive_fortitude' | 'passive_mana_spring'
-  | 'passive_scavenger' | 'passive_thorns_aura' | 'passive_precision'
-  | 'passive_haste' | 'passive_life_steal';
+  | 'passive_marksmanship' | 'passive_haste' | 'passive_executioner'
+  | 'passive_siege_doctrine'
+  | 'passive_fortitude' | 'passive_retribution' | 'passive_aegis_ward'
+  | 'passive_scavenger' | 'passive_treasury' | 'passive_prospector'
+  | 'passive_mana_spring' | 'passive_arcane_focus';
 
 export interface PassiveAbilityState {
   level: number;
@@ -758,7 +760,7 @@ export interface GameState {
   towerXp: TowerXpState;
   /** v6+: Talent tree allocation state (permanent). */
   talents: TalentState;
-  /** v6+: Passive ability XP and levels (reset on ascend/transcend). */
+  /** v6+: Passive ability XP and levels. Survives Ascension; wiped by Transcendence. */
   passiveAbilities: Record<string, PassiveAbilityState>;
   /** v6+: Equipment inventory (reset on ascend/transcend). */
   equipment: Equipment[];

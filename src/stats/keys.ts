@@ -33,6 +33,13 @@ export type StatKey =
   | 'shieldRechargeTime'
   | 'wallFraction'
   | 'wallRegen'
+  /**
+   * Extra times the tower may come back from 0 HP in one run (passives §7).
+   *
+   * Additive on top of the `revive` evolution's single charge. Integer, because
+   * half a revive is not a thing `Game.applyTowerDamage` can spend.
+   */
+  | 'reviveCharges'
   // ── tower: kit ──
   | 'shockwaveSize'
   | 'shockwaveCooldown'
@@ -175,6 +182,7 @@ export const STAT_BASES: Record<StatKey, number> = {
   shieldRechargeTime: 0,
   wallFraction: 0,
   wallRegen: 0,
+  reviveCharges: 0,
 
   shockwaveSize: 0,
   shockwaveCooldown: 0,
@@ -286,12 +294,13 @@ export const STAT_CLAMPS: Partial<Record<StatKey, StatClamp>> = {
   // `applyResolvedStats` keys its first HP fill on.
   healthRegen: { min: 0 },
   defense: { min: 0 },
-  armor: { min: 0 },
+  armor: { min: 0, max: 0.75 },
   lifesteal: { min: 0 },
   thorns: { min: 0 },
   dodgeChance: { min: 0, max: 0.75 },
   manaShieldFraction: { min: 0, max: 0.9 },
   shieldMaxCharges: { min: 0, integer: true },
+  reviveCharges: { min: 0, integer: true },
   maxMana: { min: 1 },
   manaRegen: { min: 0 },
   magicProcChance: { min: 0, max: 1 },
@@ -303,6 +312,7 @@ export const STAT_CLAMPS: Partial<Record<StatKey, StatClamp>> = {
   abilityDamageMultiplier: { min: 1 },
   chainBounceBonus: { min: 0, integer: true },
   pierceExtra: { min: 0, integer: true },
+  executeThreshold: { min: 0, max: 0.5 },
   shotSplashRadius: { min: 0 },
   // Same ceiling `composeShotSplash` enforces at the call site; the clamp is
   // what stops a second *stat* source from walking past it.

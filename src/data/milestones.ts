@@ -4,6 +4,7 @@ import { ABILITIES } from './abilities';
 import { ENEMY_DEFS } from './enemies';
 import { PASSIVE_ABILITIES } from './passiveAbilities';
 import { ASCENSION_UNLOCK_WAVE, TRANSCENDENCE_UNLOCK_AP } from './prestige';
+import { formatInt } from '../utils/bigNumber';
 
 export type MilestoneKind =
   | 'ability'
@@ -176,7 +177,7 @@ function passiveMilestones(): MilestoneDef[] {
     kind: 'passive' as const,
     wave: p.unlockWave,
     label: `${p.name} available`,
-    detail: `Passive ability, unlockable for ${p.unlockGoldCost} gold.`,
+    detail: `${p.tagline} Unlockable for ${formatInt(p.unlockGoldCost)} gold.`,
     icon: p.icon,
     color: p.color,
     refId: p.id,
