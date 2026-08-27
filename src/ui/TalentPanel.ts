@@ -18,6 +18,7 @@ import {
 import { formatNumber } from '../utils/bigNumber';
 import { FX } from '../data/palette';
 import { renderIcon } from './Icon';
+import { bindLongPress } from '../utils/longPress';
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -198,6 +199,9 @@ export class TalentPanel {
   /** Change signature for the visible respec labels. */
   private respecSignature = '';
 
+  /** Teardown for the §9.C hold-to-preview bindings, one per branch scroller. */
+  private longPressUnbinds: (() => void)[] = [];
+
   /** Whether the runtime supports hover at all (mouseenter/mouseleave is reliable). */
   private readonly canHover: boolean;
 
@@ -251,6 +255,8 @@ export class TalentPanel {
   private unmount(): void {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    for (const unbind of this.longPressUnbinds) unbind();
+    this.longPressUnbinds.length = 0;
     this.branchLinks.clear();
     this.root = null;
   }
@@ -670,6 +676,19 @@ export class TalentPanel {
     const scroll = document.createElement('div');
     scroll.className = 'talent-scroll';
     scroll.appendChild(grid);
+
+    // §9.C: the node preview is a hover affordance, and `canHover` deliberately
+    // leaves the hover handlers unbound on touch — which left a phone with no
+    // way to read a node without also selecting it. A hold previews it and the
+    // shared helper swallows the trailing click, so the hold never allocates.
+    this.longPressUnbinds.push(bindLongPress(scroll, {
+      selector: '.talent-node',
+      onLongPress: (node) => {
+        const id = node.dataset.talentId as TalentId | undefined;
+        if (id) this.onNodeHover(id);
+      },
+      onRelease: () => this.onNodeLeave(),
+    }));
 
     const divider = document.createElement('div');
     divider.className = 'talent-overflow-divider';

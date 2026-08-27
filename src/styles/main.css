@@ -1364,6 +1364,10 @@ button:disabled {
 .btn-buy {
   font-weight: 600;
   background: var(--surface-3);
+  /* UI plan §9.C: the buy button is the panel's most-tapped control and the
+     base `button` padding leaves it at ~32 px. The action column is already
+     `align-items: stretch`, so the floor costs no layout. */
+  min-height: 44px;
 }
 .btn-buy.can-afford {
   background: linear-gradient(180deg, var(--green-600), var(--green-700));
@@ -1592,7 +1596,13 @@ button:disabled {
   color: var(--accent);
   font-weight: 600;
 }
-.btn-research { font-weight: 600; background: var(--surface-3); }
+.btn-research {
+  font-weight: 600;
+  background: var(--surface-3);
+  /* UI plan §9.C: same 44 px floor as `.btn-buy` — a research row's only
+     control should not be smaller than a thumb. */
+  min-height: 44px;
+}
 .btn-research.can-afford {
   background: linear-gradient(180deg, var(--violet-600), var(--violet-700));
   border-color: var(--fx-arcane);
@@ -4885,6 +4895,12 @@ body.is-resizing * { cursor: ew-resize !important; }
   align-items: center;
   justify-content: center;
   gap: 2px;
+  /* UI plan §9.C: the node is the talent tree's only control and the grid is
+     free to squeeze it — `min-width: 0` let a narrow branch column shrink it
+     below a thumb. The floor sits under the existing 64 px cap, so a node is
+     now always between 44 and 64 px wide. */
+  min-width: 44px;
+  min-height: 44px;
   grid-row: var(--row);
   grid-column: calc(var(--col) + 1);
   padding: 4px;
@@ -4892,7 +4908,6 @@ body.is-resizing * { cursor: ew-resize !important; }
   border: 2px solid var(--stroke-subtle);
   border-radius: var(--radius-md);
   cursor: pointer;
-  min-width: 0;
   max-width: 64px;
   justify-self: center;
   z-index: 1;
@@ -5589,10 +5604,24 @@ body.is-resizing * { cursor: ew-resize !important; }
   margin-top: auto;
 }
 .eq-inv-card-actions .btn {
+  position: relative;
   font-size: var(--text-2xs);
   padding: 3px 8px;
   border-radius: var(--radius-sm);
   cursor: pointer;
+}
+/* UI plan §9.C: Equip and Sell sit two-up at the foot of an inventory card and
+   a 44 px *visual* would double the card's height — the one case the plan
+   calls out for the transparent `::before` instead. The hit area grows to the
+   floor in both axes; the paint does not move. */
+.eq-inv-card-actions .btn::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, 44px);
+  height: max(100%, 44px);
 }
 .eq-inv-card-actions .btn-buy { background: var(--surface-3); border: 1px solid var(--stroke-strong); color: var(--text-0); }
 .eq-inv-card-actions .btn-buy:hover { filter: brightness(1.1); }

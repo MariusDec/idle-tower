@@ -7,13 +7,13 @@ import {
   setText,
   toggleClass,
   setDisplay,
-  hasClass,
   setInnerHTML,
   setVisibility
 } from '../utils/dom';
 import { AbilityUpgradePopover } from './AbilityUpgradePopover';
 import { renderAbilityTooltip } from './abilityFormat';
 import { renderIcon } from './Icon';
+import { bindLongPress } from '../utils/longPress';
 
 export interface AbilityBarHandlers {
   canCast: (id: AbilityId, wave: number) => boolean;
@@ -26,19 +26,13 @@ export interface AbilityBarHandlers {
   getEffectiveStats: (id: AbilityId) => EffectiveAbilityStats;
 }
 
-/**
- * Hold-to-inspect (UI plan §7).
- *
- * 380ms is long enough not to fire on a tap that means "cast" and short enough
- * that a player who is deliberately holding does not conclude nothing is going
- * to happen.
- */
-const HOLD_MS = 380;
 const HOVER_DELAY_MS = 200;
 /**
  * A hold that wanders further than this is a scroll or a drag, not an inspect.
  * Measured against the *pointer*, not the element, so a finger that slides off
  * the tile still cancels rather than opening a popover for the wrong ability.
+ * Wider than the shared default: the dock's tiles are big and a thumb on a
+ * phone is not steady.
  */
 const HOLD_SLOP_PX = 12;
 
@@ -55,10 +49,6 @@ interface BarButtonRefs {
   label: HTMLElement;
   pips: HTMLElement[];
   upgradeBtn: HTMLButtonElement;
-  holdTimer: number | null;
-  /** Where the hold started, for the slop test. */
-  holdX: number;
-  holdY: number;
   /** Last cooldown seen, so coming *off* cooldown can be detected exactly once. */
   wasOnCooldown: boolean;
   /** Alternates so a repeat ready-flash restarts without forcing a reflow. */
@@ -95,10 +85,8 @@ export class AbilityBar {
   private readonly buttons = new Map<AbilityId, BarButtonRefs>();
   private lastState: GameState | null = null;
   private boundKeydown: ((ev: KeyboardEvent) => void) | null = null;
-  private boundPointerDown: ((ev: PointerEvent) => void) | null = null;
-  private boundPointerMove: ((ev: PointerEvent) => void) | null = null;
-  private boundPointerEnd: ((ev: PointerEvent) => void) | null = null;
-  private boundWindowBlur: (() => void) | null = null;
+  /** Teardown for the shared hold-to-inspect binding (§9.C). */
+  private unbindLongPress: (() => void) | null = null;
   private hoverTooltip: HTMLElement | null = null;
   private hoverTimer: number | null = null;
 
@@ -220,15 +208,10 @@ export class AbilityBar {
 
   destroy(): void {
     if (this.boundKeydown) window.removeEventListener('keydown', this.boundKeydown);
-    const bar = this.root.querySelector('.ability-bar') as HTMLElement | null;
-    if (bar && this.boundPointerDown) bar.removeEventListener('pointerdown', this.boundPointerDown);
-    if (this.boundPointerMove) window.removeEventListener('pointermove', this.boundPointerMove);
-    if (this.boundPointerEnd) {
-      window.removeEventListener('pointerup', this.boundPointerEnd);
-      window.removeEventListener('pointercancel', this.boundPointerEnd);
+    if (this.unbindLongPress) {
+      this.unbindLongPress();
+      this.unbindLongPress = null;
     }
-    if (this.boundWindowBlur) window.removeEventListener('blur', this.boundWindowBlur);
-    this.cancelHolds();
     if (this.hoverTimer !== null) window.clearTimeout(this.hoverTimer);
     if (this.hoverTooltip && this.hoverTooltip.parentElement) {
       this.hoverTooltip.parentElement.removeChild(this.hoverTooltip);
@@ -260,13 +243,9 @@ export class AbilityBar {
     btn.className = 'ability-btn';
     btn.style.setProperty('--ability-color', def.color);
     btn.setAttribute('aria-label', `${def.name}, ability`);
-    btn.addEventListener('click', (ev) => {
-      // Suppress the click that follows a hold-to-inspect.
-      if (hasClass(btn, 'is-long-press')) {
-        ev.preventDefault();
-        btn.classList.remove('is-long-press');
-        return;
-      }
+    // The click that follows a hold-to-inspect never reaches here — the shared
+    // long-press helper swallows it (§9.C).
+    btn.addEventListener('click', () => {
       this.handlers.onCast(def.id);
     });
     btn.addEventListener('contextmenu', (ev) => {
@@ -338,7 +317,7 @@ export class AbilityBar {
 
     return {
       def, wrap, btn, sweep, badge, cdText, mana, label, pips, upgradeBtn,
-      holdTimer: null, holdX: 0, holdY: 0, wasOnCooldown: false, flashPhase: false,
+      wasOnCooldown: false, flashPhase: false,
     };
   }
 
@@ -349,64 +328,39 @@ export class AbilityBar {
   }
 
   /**
-   * Hold-to-inspect, on pointer events rather than touch events.
+   * Hold-to-inspect, through the shared helper (UI plan §9.C).
    *
-   * One code path for finger, mouse and pen. The touch-only version this
-   * replaces meant the popover's only desktop routes were right-click and
-   * double-click, and its only phone route was a `touchstart` handler that a
-   * pen or a trackpad press never reached.
-   *
-   * `pointermove` and `pointerup` are bound to the *window*, not the tile: a
-   * finger that slides off the button still has to cancel the hold, and a
-   * pointerup that lands outside still has to clear the timer.
+   * Part 7 wrote this loop inline here; §9.C moved it to `utils/longPress` so
+   * the equipment, upgrade and talent touch routes could bind the same
+   * behaviour instead of each growing their own copy. The dock keeps its wider
+   * slop and gets the popover; everything else — the pointer-not-touch code
+   * path, the window-level move/up listeners, the swallowed trailing click —
+   * is now the helper's.
    */
   private bindPointer(): void {
     const bar = this.root.querySelector('.ability-bar') as HTMLElement | null;
     if (!bar) return;
-
-    this.boundPointerDown = (ev: PointerEvent) => {
-      const target = (ev.target as HTMLElement | null)?.closest('.ability-bar-slot') as HTMLElement | null;
-      if (!target) return;
-      const id = target.dataset.abilityId as AbilityId | undefined;
-      if (!id) return;
-      const refs = this.buttons.get(id);
-      if (!refs) return;
-      this.cancelHolds();
-      refs.holdX = ev.clientX;
-      refs.holdY = ev.clientY;
-      refs.holdTimer = window.setTimeout(() => {
-        refs.holdTimer = null;
+    this.unbindLongPress = bindLongPress(bar, {
+      selector: '.ability-bar-slot',
+      slopPx: HOLD_SLOP_PX,
+      onLongPress: (slot) => {
+        const id = slot.dataset.abilityId as AbilityId | undefined;
+        if (!id) return;
+        const refs = this.buttons.get(id);
+        if (!refs) return;
+        // The slot is what the helper matched; the tile inside it is what the
+        // popover anchors to and what wears `is-long-press`.
+        slot.classList.remove('is-long-press');
         refs.btn.classList.add('is-long-press');
         this.onHoverEnd();
         this.showPopover(refs.def.id, refs.btn);
-      }, HOLD_MS);
-    };
-
-    this.boundPointerMove = (ev: PointerEvent) => {
-      for (const refs of this.buttons.values()) {
-        if (refs.holdTimer === null) continue;
-        const dx = ev.clientX - refs.holdX;
-        const dy = ev.clientY - refs.holdY;
-        if (dx * dx + dy * dy > HOLD_SLOP_PX * HOLD_SLOP_PX) this.cancelHolds();
-      }
-    };
-
-    this.boundPointerEnd = () => this.cancelHolds();
-    this.boundWindowBlur = () => this.cancelHolds();
-
-    bar.addEventListener('pointerdown', this.boundPointerDown);
-    window.addEventListener('pointermove', this.boundPointerMove, { passive: true });
-    window.addEventListener('pointerup', this.boundPointerEnd);
-    window.addEventListener('pointercancel', this.boundPointerEnd);
-    window.addEventListener('blur', this.boundWindowBlur);
-  }
-
-  private cancelHolds(): void {
-    for (const refs of this.buttons.values()) {
-      if (refs.holdTimer === null) continue;
-      window.clearTimeout(refs.holdTimer);
-      refs.holdTimer = null;
-    }
+      },
+      onRelease: (slot) => {
+        const id = slot.dataset.abilityId as AbilityId | undefined;
+        const refs = id ? this.buttons.get(id) : undefined;
+        refs?.btn.classList.remove('is-long-press');
+      },
+    });
   }
 
   private onHoverStart(id: AbilityId, anchor: HTMLElement): void {

@@ -3,6 +3,7 @@ import { EQUIPMENT_DEF_BY_ID, RARITY_COLORS, RARITY_NAMES, SLOT_ICONS } from '..
 import { icon as iconSvg, iconFrame, setIcon } from './Icon';
 import { formatNumber } from '../utils/bigNumber';
 import { setText, toggleClass, setStyle, setDisplay } from '../utils/dom';
+import { bindLongPress } from '../utils/longPress';
 
 export interface EquipmentAPIDeps {
   inventory: Equipment[];
@@ -52,8 +53,6 @@ const DRAG_THRESHOLD = 5;
 const SCROLL_ZONE = 40;
 const SCROLL_SPEED = 6;
 const HOVER_DELAY_MS = 200;
-/** §8.C.3: the touch route to the compare tooltip. */
-const LONG_PRESS_MS = 350;
 
 /** The tower the eight slots sit around — the sprite, not a port of `Renderer`'s painter. */
 const TOWER_ICON = 'heart-tower' as const;
@@ -96,7 +95,12 @@ export class EquipmentPanel {
   private prevSortMode: SortMode = 'rarity';
   private compareTooltip: HTMLElement | null = null;
   private hoverTimer: ReturnType<typeof setTimeout> | null = null;
-  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Teardown for the per-card hold-to-compare bindings (§9.C), keyed by item.
+   * The helper listens on the *window* for move/up, so a card that leaves the
+   * inventory has to unbind explicitly — the listeners do not die with it.
+   */
+  private longPressUnbinds = new Map<string, () => void>();
   /** §8.C.3: the tap-to-select half of the touch route. */
   private selectedItemId: string | null = null;
   /** A drag ends in a `click`; that click must not also be read as a tap. */
@@ -118,6 +122,8 @@ export class EquipmentPanel {
 
   private unmount(): void {
     this.cancelDrag();
+    for (const unbind of this.longPressUnbinds.values()) unbind();
+    this.longPressUnbinds.clear();
     this.destroyCompareTooltip();
     this.root = null;
     this.selectedItemId = null;
@@ -210,10 +216,6 @@ export class EquipmentPanel {
       clearTimeout(this.hoverTimer);
       this.hoverTimer = null;
     }
-    if (this.longPressTimer !== null) {
-      clearTimeout(this.longPressTimer);
-      this.longPressTimer = null;
-    }
     if (this.compareTooltip) {
       this.compareTooltip.classList.remove('is-visible');
       const el = this.compareTooltip;
@@ -225,10 +227,6 @@ export class EquipmentPanel {
     if (this.hoverTimer !== null) {
       clearTimeout(this.hoverTimer);
       this.hoverTimer = null;
-    }
-    if (this.longPressTimer !== null) {
-      clearTimeout(this.longPressTimer);
-      this.longPressTimer = null;
     }
     if (this.compareTooltip) {
       this.compareTooltip.remove();
@@ -428,6 +426,8 @@ export class EquipmentPanel {
         row.remove();
         this.inventoryRows.delete(id);
         this.newDots.delete(id);
+        this.longPressUnbinds.get(id)?.();
+        this.longPressUnbinds.delete(id);
       }
     }
     if (this.selectedItemId && !ids.has(this.selectedItemId)) {
@@ -620,7 +620,7 @@ export class EquipmentPanel {
         this.hideCompareTooltip();
         return;
       }
-      if (this.longPressTimer !== null) return;
+      if (card.classList.contains('is-long-press')) return;
       if (this.dragState) return;
       if (this.hoverTimer !== null) return;
       this.hoverTimer = setTimeout(() => {
@@ -639,21 +639,24 @@ export class EquipmentPanel {
       if ((e.target as HTMLElement).closest('button')) return;
       this.onInventoryTap(item.id);
     });
-    const endLongPress = (): void => {
-      if (this.longPressTimer !== null) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
-      card.classList.remove('is-long-press');
-      this.hideCompareTooltip();
-    };
-    card.addEventListener('touchstart', () => {
-      this.longPressTimer = setTimeout(() => {
-        this.longPressTimer = null;
-        card.classList.add('is-long-press');
+    // §9.C: the compare tooltip's touch route runs through the one long-press
+    // helper (the same one the ability dock uses) rather than the touch-event
+    // copy §8.C.3 shipped — a pen or a trackpad press never sent a `touchstart`
+    // and so never had a route to the comparison at all.
+    this.longPressUnbinds.get(item.id)?.();
+    this.longPressUnbinds.set(item.id, bindLongPress(card, {
+      shouldStart: (_el, ev) => {
+        // A press on Equip/Sell is that button's, and a press that becomes a
+        // drag is the drag's.
+        if ((ev.target as HTMLElement).closest('button')) return false;
+        return this.dragState === null;
+      },
+      onLongPress: () => {
+        if (this.hoverTimer !== null) { clearTimeout(this.hoverTimer); this.hoverTimer = null; }
         this.showCompareTooltip(item, card);
-      }, LONG_PRESS_MS);
-    }, { passive: true });
-    card.addEventListener('touchend', endLongPress);
-    card.addEventListener('touchcancel', endLongPress);
-    card.addEventListener('touchmove', endLongPress, { passive: true });
+      },
+      onRelease: () => this.hideCompareTooltip(),
+    }));
 
     card.appendChild(actions);
     this.inventoryEl.appendChild(card);

@@ -7,6 +7,7 @@ import { setAriaLabel, setDisabled, setInnerHTML, setStyle, setText, toggleClass
 import { renderAbilityTooltip } from './abilityFormat';
 import type { PassiveAPIDeps } from './PassivePanel';
 import { renderIcon } from './Icon';
+import { bindLongPress } from '../utils/longPress';
 
 export interface AbilityPanelHandlers {
   onCast: (id: AbilityId) => void;
@@ -58,6 +59,8 @@ export class AbilityPanel {
   private xpTextEls = new Map<AbilityId, HTMLElement>();
   private autoCastRowById = new Map<AbilityId, HTMLElement>();
   private autoCastInputById = new Map<AbilityId, HTMLInputElement>();
+  /** Teardown for the §9.C hold-to-read bindings on the upgrade buttons. */
+  private longPressUnbinds: (() => void)[] = [];
 
   // Passive maps
   private passiveRoots = new Map<string, HTMLElement>();
@@ -324,6 +327,8 @@ export class AbilityPanel {
   }
 
   private unmount(): void {
+    for (const unbind of this.longPressUnbinds) unbind();
+    this.longPressUnbinds.length = 0;
     this.root = null;
   }
 
@@ -519,6 +524,14 @@ export class AbilityPanel {
     upgradeBtn.addEventListener('mouseleave', () => this.hideTooltip(def.id));
     upgradeBtn.addEventListener('focus', () => this.showTooltip(def.id));
     upgradeBtn.addEventListener('blur', () => this.hideTooltip(def.id));
+    // §9.C: the upgrade tooltip was hover- and focus-only, which on a phone
+    // means the only way to read what a level buys is to buy it. Hold opens
+    // it; the helper swallows the trailing click so the hold does not also
+    // spend the gold.
+    this.longPressUnbinds.push(bindLongPress(upgradeBtn, {
+      onLongPress: () => this.showTooltip(def.id),
+      onRelease: () => this.hideTooltip(def.id),
+    }));
 
     // Plan §3.1: per-ability auto-cast opt-out. Hidden until the Auto-Caster
     // perk is bought, so it does not advertise a system the player cannot use.
