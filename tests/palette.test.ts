@@ -130,3 +130,32 @@ describe('palette helpers', () => {
     expect(lighten(FX.ember, 0.5)).toBe(mix(FX.ember, INK['050'], 0.5));
   });
 });
+
+/**
+ * UI plan §9.E — Capacitor readiness. The app ships as a static `dist/` inside a
+ * native shell, where a request to a remote host is at best a slow first paint
+ * on a cold mobile connection and at worst a blank page behind a captive portal
+ * or an offline device. Fonts and the icon sprite are committed under `public/`;
+ * this test is what keeps a future `@import url(https://fonts.googleapis.com/…)`
+ * from quietly reintroducing a runtime network dependency.
+ */
+describe('no runtime network', () => {
+  const SOURCES: Array<[string, string]> = [
+    ['index.html', '../index.html'],
+    ['src/styles/tokens.css', '../src/styles/tokens.css'],
+    ['src/styles/main.css', '../src/styles/main.css'],
+  ];
+
+  /** Strip `/* *\/` and `<!-- -->` comments so prose about URLs stays legal. */
+  function stripComments(src: string): string {
+    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, '');
+  }
+
+  for (const [label, rel] of SOURCES) {
+    it(`${label} references no http(s) URL`, () => {
+      const body = stripComments(readFileSync(resolve(__dirname, rel), 'utf8'));
+      const hits = [...body.matchAll(/https?:\/\/[^\s"')]*/g)].map(m => m[0]);
+      expect(hits, `${label} would fetch from the network at runtime`).toEqual([]);
+    });
+  }
+});
