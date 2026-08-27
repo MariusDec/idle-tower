@@ -91,7 +91,7 @@ export const UPGRADES: UpgradeDef[] = [
     hideUpgradeScale: true,
     evolutions: [
       { level: 20, name: 'Keen Arrows', description: '+10% armor penetration', effectId: 'armor_pen', effectValue: 0.10 },
-      { level: 60, name: 'Vorpal Arrows', description: '1.5% instant kill on non-bosses', effectId: 'instant_kill', effectValue: 0.015 },
+      { level: 60, name: 'Vorpal Arrows', description: '2.5% instant kill on non-bosses', effectId: 'instant_kill', effectValue: 0.025 },
     ],
   },
   {
@@ -271,11 +271,11 @@ export const UPGRADES: UpgradeDef[] = [
     name: 'Adrenaline Rush',
     icon: 'energy-arrow',
     description: 'Chance to temporarily double your fire rate',
-    // Ceiling 18.4%. Was `1% + 1%/level` to L50 — 51%.
+    // Ceiling 27.6% per shot — raised with the shot-cadence rebase so uptime, not the roll, stays put.
     baseCost: 320,
     costGrowth: 1.38,
-    effectPerLevel: 0.006,
-    baseEffect: 0.01,
+    effectPerLevel: 0.009,
+    baseEffect: 0.015,
     effectType: 'add',
     maxLevel: 30,
     category: 'tower',

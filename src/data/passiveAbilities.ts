@@ -329,7 +329,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     ],
     milestones: [
       { at: 5,  label: '+10% boss damage',        grants: [{ stat: 'boss_damage_pct', value: 10 }] },
-      { at: 10, label: '+0.8% instant-kill chance', grants: [{ stat: 'instant_kill_chance_pct', value: 0.8 }] },
+      { at: 10, label: '+1.2% instant-kill chance', grants: [{ stat: 'instant_kill_chance_pct', value: 1.2 }] },
       { at: 15, label: '+50% execute damage',     grants: [{ stat: 'execute_damage_multiplier_pct', value: 50 }] },
       { at: 20, label: '+10% armour penetration', grants: [{ stat: 'armor_pen_pct', value: 10 }] },
       { at: 25, label: '+5% execute threshold',   grants: [{ stat: 'execute_threshold_pct', value: 5 }] },
