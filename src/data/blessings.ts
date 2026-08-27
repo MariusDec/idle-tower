@@ -156,7 +156,7 @@ export const BLESSING_TUNING = {
   frostChillDuration: 1.5,
   shatterBonus: 0.15,
   splitShardCount: 2,
-  splitShardDamage: 0.15,
+  splitShardDamage: 0.125,
   splitShardRange: 220,
   siphonManaFraction: 0.01,
   executeThreshold: 0.08,

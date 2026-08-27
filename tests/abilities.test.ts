@@ -55,11 +55,11 @@ describe('rocket_barrage effective stats', () => {
     expect(Math.floor(count(15))).toBe(10);
   });
 
-  it('grows per-rocket damage 2x -> 5.5x at L15', () => {
+  it('grows per-rocket damage 1.65x -> 4.59x at L15', () => {
     const dmg = (level: number) => computeEffectiveStats(def, level).effectValue;
-    expect(dmg(1)).toBe(2);
-    // 2 + 0.25 * 14
-    expect(dmg(15)).toBeCloseTo(5.5, 6);
+    expect(dmg(1)).toBe(1.65);
+    // 1.65 + 0.21 * 14
+    expect(dmg(15)).toBeCloseTo(4.59, 6);
   });
 
   it('leaves every other ability without a count field', () => {
@@ -76,17 +76,17 @@ describe('rocket_barrage display text', () => {
   it('carries the floored count and the per-rocket multiplier', () => {
     const l1 = buildAbilityDisplayText(def, 1);
     expect(l1).toContain('Fires 6 homing rockets');
-    expect(l1).toContain('deals 2x tower damage');
+    expect(l1).toContain('deals 1.65x tower damage');
 
-    // L10: count 8.7 floors to 8; damage is 4.25x.
+    // L10: count 8.7 floors to 8; damage is 3.54x.
     const l10 = buildAbilityDisplayText(def, 10);
     expect(l10).toContain('Fires 8 homing rockets');
-    expect(l10).toContain('deals 4.25x tower damage');
+    expect(l10).toContain('deals 3.54x tower damage');
   });
 
   it('reads as "<count> @ <mult>x" in the tooltip effect slot', () => {
-    expect(computeEffectiveStats(def, 1).displayEffectValue).toBe('6 @ 2x');
-    expect(computeEffectiveStats(def, 15).displayEffectValue).toBe('10 @ 5.5x');
+    expect(computeEffectiveStats(def, 1).displayEffectValue).toBe('6 @ 1.65x');
+    expect(computeEffectiveStats(def, 15).displayEffectValue).toBe('10 @ 4.59x');
   });
 });
 
@@ -165,10 +165,10 @@ describe('execute boss threshold text (phase 4)', () => {
   const def = ABILITY_BY_ID['execute'];
 
   it('states the boss threshold as half the kill threshold', () => {
-    // L1: kills below 12%; bosses take 5x below floor(12/2) = 6%.
-    expect(buildAbilityDisplayText(def, 1)).toContain('Bosses below 6% HP take 5x damage');
+    // L1: kills below 12%; bosses take 4.2x below floor(12/2) = 6%.
+    expect(buildAbilityDisplayText(def, 1)).toContain('Bosses below 6% HP take 4.2x damage');
     // L10: kills below 30%; bosses below floor(30/2) = 15%.
-    expect(buildAbilityDisplayText(def, 10)).toContain('Bosses below 15% HP take 5x damage');
+    expect(buildAbilityDisplayText(def, 10)).toContain('Bosses below 15% HP take 4.2x damage');
   });
 });
 
@@ -341,8 +341,8 @@ describe('Rocket Barrage through tryCast', () => {
       totalDamage: number;
     };
     expect(fired.count).toBe(6);
-    // 6 rockets x baseDamage 10 x mult 2.
-    expect(fired.totalDamage).toBeCloseTo(120, 6);
+    // 6 rockets x baseDamage 10 x mult 1.65.
+    expect(fired.totalDamage).toBeCloseTo(99, 6);
   });
 
   it('floors the count: an L15 cast fires ten rockets', () => {
@@ -389,7 +389,7 @@ describe('Rocket Barrage through tryCast', () => {
       totalDamage: number;
     };
     expect(fired.count).toBe(6);
-    expect(fired.totalDamage).toBeCloseTo(120, 6);
+    expect(fired.totalDamage).toBeCloseTo(99, 6);
 
     // And they still retire rather than circling forever (plan §5.5).
     runUntilSettled(h.projectiles);

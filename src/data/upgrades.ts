@@ -245,7 +245,7 @@ export const UPGRADES: UpgradeDef[] = [
     effectType: 'mult',
     maxLevel: 80,
     category: 'tower',
-    scaling: { base: 0.4, perLevel: 0.15, effectType: 'mult' },
+    scaling: { base: 0.33, perLevel: 0.125, effectType: 'mult' },
     hideUpgradeScale: true,
     evolutions: [
       { level: 25, name: 'Cluster Mines', description: 'Mines split into 2 smaller mines on detonation', effectId: 'mine_split', effectValue: 2 },

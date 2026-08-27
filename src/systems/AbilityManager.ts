@@ -58,7 +58,10 @@ const CHAIN_BOUNCE_PER_LEVEL = 1;
 const CHAIN_BOUNCE_MAX = 9;
 const CHAIN_BOUNCE_RADIUS = world(200);
 const CHAIN_DECAY = 0.65;
-const EXECUTE_BOSS_MULTIPLIER = 5;
+// Divided by the shot-cadence rebase's damage scalar (`plans/firerate.md`):
+// this multiplies `baseDamage` directly and Execute's cadence is a cooldown,
+// not a fire rate.
+const EXECUTE_BOSS_MULTIPLIER = 4.2;
 
 export class AbilityManager {
   private readonly resources: ResourceManager;
