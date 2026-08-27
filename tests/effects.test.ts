@@ -145,6 +145,53 @@ describe('the quality knob (UI plan §5.F)', () => {
     expect(pulse.shockwaveList).toHaveLength(3);
   });
 
+  it('drops the particle count monotonically as the tier falls', () => {
+    const counts = (['high', 'medium', 'low'] as const).map(tier => {
+      const fx = new EffectsManager();
+      fx.setQuality(tier);
+      fx.emitDeathBurst(0, 0, '#ffffff', 20, 24);
+      return fx.particleList.length;
+    });
+    expect(counts[0]).toBeGreaterThan(counts[1]);
+    expect(counts[1]).toBeGreaterThan(counts[2]);
+  });
+
+  it('emits an identical damaging shockwave at every tier', () => {
+    // §10.C spells the fields out because each is a gameplay input: the number
+    // of rings, how far they reach, how long they live, when they arrive and
+    // what they hit for. Presentation may not change simulation (§0.3 rule 3).
+    const rings = (['high', 'medium', 'low'] as const).map(tier => {
+      const fx = new EffectsManager();
+      fx.setQuality(tier);
+      fx.emitShockwaveRing(0, 0, 200, undefined, undefined, 0.1, 250, 'magic');
+      return fx.shockwaveList;
+    });
+    for (const list of rings) expect(list).toHaveLength(rings[0].length);
+    for (const list of rings) {
+      const s = list[0];
+      const ref = rings[0][0];
+      expect(s.maxRadius).toBe(ref.maxRadius);
+      expect(s.life).toBe(ref.life);
+      expect(s.age).toBe(ref.age);
+      expect(s.damage).toBe(ref.damage);
+      expect(s.damageType).toBe(ref.damageType);
+    }
+  });
+
+  it('holds the pool cap under a flood, keeping the newest survivors', () => {
+    // 5 000 four-spark emitters is twenty thousand particles asking for a slot
+    // in a pool that holds a few hundred. The cap is the only thing between a
+    // busy wave and an unbounded array, so it gets tested at the scale that
+    // would actually hurt.
+    const fx = new EffectsManager();
+    for (let i = 0; i < 5000; i++) fx.emitHitSparks(i, 0, '#ffffff', 4);
+    expect(fx.particleList.length).toBeLessThanOrEqual(QUALITY.high.maxParticles);
+    // The survivors are the newest: nothing older than the tail window is left.
+    const oldest = Math.min(...fx.particleList.map(p => p.x));
+    expect(oldest).toBeGreaterThan(5000 - QUALITY.high.maxParticles - 1);
+    expect(fx.particleList[fx.particleList.length - 1].x).toBe(4999);
+  });
+
   it('shrinks the live pool to the new ceiling, dropping the oldest', () => {
     const fx = new EffectsManager();
     for (let i = 0; i < 100; i++) fx.emitHitSparks(i, 0, '#ffffff', 4);

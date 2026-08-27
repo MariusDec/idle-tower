@@ -12,6 +12,7 @@ import {
 import { formatNumber } from '../utils/bigNumber';
 import { setDataAttr, setInnerHTML, setStyle, setText, toggleClass, setDisplay } from '../utils/dom';
 import { renderIcon } from './Icon';
+import { FX, RARITY } from '../data/palette';
 
 export interface TranscendencePanelHandlers {
   onTranscend: () => void;
@@ -421,9 +422,9 @@ export class TranscendencePanel {
     tree.className = 'tp-tree';
 
     const branchMeta: Array<{ key: TPBranch; title: string; color: string; icon: string }> = [
-      { key: 'wrath', title: 'Wrath', color: '#d04848', icon: '⚔' },
-      { key: 'fortune', title: 'Fortune', color: '#3ec46d', icon: '✦' },
-      { key: 'dominion', title: 'Dominion', color: '#5b8def', icon: '⚙' },
+      { key: 'wrath', title: 'Wrath', color: FX.blood, icon: '⚔' },
+      { key: 'fortune', title: 'Fortune', color: FX.nature, icon: '✦' },
+      { key: 'dominion', title: 'Dominion', color: RARITY.rare, icon: '⚙' },
     ];
 
     for (const bm of branchMeta) {

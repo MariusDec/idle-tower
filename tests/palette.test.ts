@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   FX, INK, RARITY, fxVar, inkVar, lighten, mix, rarityVar, toRgb, withAlpha,
@@ -129,6 +129,16 @@ describe('palette helpers', () => {
     expect(lighten(FX.ember, 1)).toBe(INK['050'].toLowerCase());
     expect(lighten(FX.ember, 0.5)).toBe(mix(FX.ember, INK['050'], 0.5));
   });
+
+  it('clamps lighten outside [0, 1] instead of overshooting the ramp', () => {
+    expect(lighten(FX.ember, -3)).toBe(FX.ember.toLowerCase());
+    expect(lighten(FX.ember, 3)).toBe(INK['050'].toLowerCase());
+  });
+
+  it('round-trips an arbitrary pair at the endpoints, not just black and white', () => {
+    expect(mix(FX.blood, FX.frost, 0)).toBe(FX.blood.toLowerCase());
+    expect(mix(FX.blood, FX.frost, 1)).toBe(FX.frost.toLowerCase());
+  });
 });
 
 /**
@@ -156,6 +166,63 @@ describe('no runtime network', () => {
       const body = stripComments(readFileSync(resolve(__dirname, rel), 'utf8'));
       const hits = [...body.matchAll(/https?:\/\/[^\s"')]*/g)].map(m => m[0]);
       expect(hits, `${label} would fetch from the network at runtime`).toEqual([]);
+    });
+  }
+});
+
+/**
+ * UI plan §10.C — the guard that makes §5.E stick. Every colour the render path
+ * and the DOM panels paint has to come from `palette.ts` (or a `--token` in
+ * `tokens.css`), because that is the only way a change to the art direction
+ * reaches all of it at once. A literal here is invisible until someone notices
+ * two greens that do not match, so it is a test failure instead.
+ *
+ * Two literals stay legal: `#ffffff` and `#000`, which are not art direction —
+ * they are the ends of the canvas compositing range (masks, `destination-out`
+ * clears, full-strength highlights) and naming them would be worse, not better.
+ *
+ * Note the scope: `src/data/*` content tables are deliberately *not* scanned.
+ * Enemy body colours, rarity swatches and the like are content data, and
+ * `palette.ts` itself has to spell its hexes out.
+ */
+describe('no literal colour in the render path', () => {
+  const WHITELIST = new Set(['#ffffff', '#000']);
+
+  /** Strip `/* *\/` blocks and whole-line `//` comments; prose may say "rgba(". */
+  function stripComments(src: string): string {
+    return src
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter(line => !line.trim().startsWith('//'))
+      .join('\n');
+  }
+
+  const uiDir = resolve(__dirname, '../src/ui');
+  const FILES: string[] = [
+    'src/game/Renderer.ts',
+    'src/systems/EffectsManager.ts',
+    'src/game/Game.ts',
+    ...readdirSync(uiDir)
+      .filter(f => f.endsWith('.ts'))
+      .sort()
+      .map(f => `src/ui/${f}`),
+  ];
+
+  it('scans a non-empty file list, so a moved file cannot silently opt out', () => {
+    expect(FILES.length).toBeGreaterThan(20);
+  });
+
+  for (const rel of FILES) {
+    it(`${rel} names its colours`, () => {
+      const body = stripComments(readFileSync(resolve(__dirname, '..', rel), 'utf8'));
+      const hex = [...body.matchAll(/#[0-9a-fA-F]{3,8}\b/g)]
+        .map(m => m[0])
+        .filter(h => !WHITELIST.has(h));
+      const fn = [...body.matchAll(/rgba?\(/g)].map(m => m[0]);
+      expect(
+        [...hex, ...fn],
+        `${rel} paints a literal colour — use a palette token (see UI plan §5.E)`,
+      ).toEqual([]);
     });
   }
 });

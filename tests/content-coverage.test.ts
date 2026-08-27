@@ -37,7 +37,7 @@ import { ENEMY_THREAT_CLASS } from '../src/data/pacing';
 import { MILESTONE_EXEMPT_ENEMIES, MILESTONES } from '../src/data/milestones';
 import { RENDERED_ENEMY_SHAPES } from '../src/game/Renderer';
 import { TARGETING_MODES } from '../src/data/tower';
-import type { BossPattern, EnemyType } from '../src/types';
+import type { BossPattern, EnemyType, PanelTab } from '../src/types';
 import {
   BLESSINGS,
   BLESSING_BEHAVIOR_CONSUMERS,
@@ -49,7 +49,8 @@ import { ICON_CREDITS, ICON_IDS, type IconId } from '../src/data/icons';
 import { STAT_ICONS, STAT_ICON_KEYS } from '../src/data/iconMap';
 import { EQUIPMENT_DEFS, RARITY_ICONS, SLOT_ICONS } from '../src/data/equipment';
 import { CORES } from '../src/data/cores';
-import { NAV_GROUPS } from '../src/ui/navGroups';
+import { GROUP_OF, NAV_GROUPS, firstTabOf, groupById, type NavGroupId } from '../src/ui/navGroups';
+import type { BottomNavItem } from '../src/ui/BottomNav';
 import { AP_PERKS, TP_PERKS } from '../src/data/prestige';
 import { WAVE_MODIFIERS } from '../src/data/waveModifiers';
 import {
@@ -724,5 +725,117 @@ describe('icons', () => {
     // marking painted inside the body silhouette, not an icon in the UI.
     const singleChar = referenced.filter(([, id]) => String(id).length <= 2);
     expect(singleChar).toEqual([]);
+  });
+});
+
+/**
+ * The navigation table (UI plan §8.A, guarded here per §10.C).
+ *
+ * `NAV_GROUPS` is the single information architecture the desktop rail, the
+ * mobile bottom nav and the tab-restore path all read. `tsc` proves the ids are
+ * spelled right; it cannot prove that a tab is reachable, that it is reachable
+ * only once, or that a group has anything in it. All three would ship as a
+ * panel nobody can open, which is exactly what the one-table refactor set out
+ * to make impossible.
+ */
+describe('nav groups', () => {
+  /**
+   * The `PanelTab` union at runtime. Written as an exhaustive record so `tsc`
+   * fails if a tab is added to `src/types.ts` and not to this list — the type
+   * itself erases at build time and cannot be enumerated any other way.
+   */
+  const ALL_TABS: Record<PanelTab, true> = {
+    upgrades: true,
+    research: true,
+    abilities: true,
+    passives: true,
+    prestige: true,
+    transcendence: true,
+    achievements: true,
+    progression: true,
+    stats: true,
+    settings: true,
+    talents: true,
+    equipment: true,
+  };
+
+  /**
+   * Tabs that are deliberately not nav destinations. `'passives'` became a
+   * sub-tab *inside* the Abilities panel in §8 and is no longer something the
+   * nav can open; the name survives in the `PanelTab` union. It is listed here
+   * rather than silently skipped so that the exception cannot grow unnoticed —
+   * and the test below proves each entry really is absent from the table.
+   */
+  const NOT_NAVIGABLE = new Set<PanelTab>(['passives']);
+
+  const tabIds = NAV_GROUPS.flatMap((g) => g.tabs.map((t) => t.id));
+
+  it('gives every navigable PanelTab exactly one home', () => {
+    for (const tab of Object.keys(ALL_TABS) as PanelTab[]) {
+      if (NOT_NAVIGABLE.has(tab)) continue;
+      const homes = NAV_GROUPS.filter((g) => g.tabs.some((t) => t.id === tab));
+      expect(homes.map((g) => g.id), `${tab} lives in ${homes.length} groups`).toHaveLength(1);
+    }
+  });
+
+  it('keeps the non-navigable exceptions genuinely out of the table', () => {
+    for (const tab of NOT_NAVIGABLE) {
+      expect(tabIds, `${tab} is listed as non-navigable but the nav offers it`).not.toContain(tab);
+    }
+  });
+
+  it('lists no tab twice, anywhere', () => {
+    expect(new Set(tabIds).size).toBe(tabIds.length);
+  });
+
+  it('gives every group at least one tab and a real icon', () => {
+    expect(NAV_GROUPS.length).toBeGreaterThan(0);
+    for (const g of NAV_GROUPS) {
+      expect(g.tabs.length, `group ${g.id} is empty`).toBeGreaterThan(0);
+      expect(ICON_IDS, `group ${g.id} icon`).toContain(g.icon);
+      expect(g.label.trim(), `group ${g.id} label`).not.toBe('');
+      for (const t of g.tabs) {
+        expect(t.id in ALL_TABS, `${t.id} is not a PanelTab`).toBe(true);
+        expect(t.label.trim(), `tab ${t.id} label`).not.toBe('');
+      }
+    }
+  });
+
+  it('has unique group ids', () => {
+    const ids = NAV_GROUPS.map((g) => g.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('indexes every listed tab in GROUP_OF, pointing at a real group', () => {
+    for (const g of NAV_GROUPS) {
+      for (const t of g.tabs) expect(GROUP_OF[t.id]).toBe(g.id);
+    }
+  });
+
+  /**
+   * The bottom nav is built by mapping `NAV_GROUPS` (`UIManager.ts` §8.A), so
+   * every item id is a `NavGroupId` by construction. This pins that
+   * construction: an item that is not a group id would be a mobile button that
+   * `handleMobileNav` cannot route.
+   */
+  it('builds the bottom nav out of group ids and nothing else', () => {
+    const items: BottomNavItem[] = NAV_GROUPS.map((g) => ({
+      id: g.id,
+      label: g.label,
+      icon: g.icon,
+    }));
+    const groupIds = new Set<string>(NAV_GROUPS.map((g) => g.id));
+    for (const item of items) {
+      expect(groupIds, `bottom nav item ${item.id} is not a NavGroupId`).toContain(item.id);
+      expect(() => groupById(item.id as NavGroupId)).not.toThrow();
+      expect(ICON_IDS, `bottom nav item ${item.id} icon`).toContain(item.icon);
+    }
+    expect(items).toHaveLength(NAV_GROUPS.length);
+  });
+
+  it('opens every group on a tab it actually contains', () => {
+    for (const g of NAV_GROUPS) {
+      expect(g.tabs.some((t) => t.id === firstTabOf(g.id))).toBe(true);
+    }
   });
 });
