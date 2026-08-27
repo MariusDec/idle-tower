@@ -8,7 +8,7 @@
 |-------|---------|-------------|
 | `x, y` | canvas center | Position |
 | `baseDamage` | 0 | Raw damage per shot (provided by the damage upgrade at L1) |
-| `fireRate` | 1.2 | Shots per second~~~~ |
+| `fireRate` | 0.9 | Shots per second |
 | `range` | 300 | Targeting radius in pixels |
 | `critChance` | 0.05 | 5% base crit |
 | `critMultiplier` | 2 | Double damage on crit |
@@ -106,6 +106,27 @@ they cannot drift or disagree.
 **Fire rate** (`effectiveFireRate`):
 - `fireRate * fireRateMultiplier`, in every mode
 - `consumeCooldown`: `cooldown = 1 / effectiveFireRate`
+
+## Shot Cadence
+
+Two stats compose the tower's per-second damage output, and each has exactly one
+additive source so the curve stays predictable: `baseDamage` from the `damage`
+upgrade, and `fireRate` from the `fireRate` upgrade. The shot-cadence rebase
+shipped in v16 cut the fire-rate additive ceiling from 5.50 down to **3.15 shots/s
+at L45** (~57% of the old cap), then raised `damage` by 1.2x to pay part of it
+back. Net effect on DPS by depth: deliberately **down ~30% at deep waves** (where
+the cadence cap used to dominate) and **up ~8% at the opener** (where the
+damage bump outweighs the lost fire rate before the player has bought into
+fireRate). The discipline is that the cap on `fireRate` + 1.2x `damage` is the
+only DPS axis — no separate "attack speed" upgrade, no per-shot procs that are
+priced in *one* shot (those got the same x1.5 raise; see the links below).
+
+Saves are unaffected by the rebase: tower stats are recomputed from upgrade
+levels each load, not persisted, so players don't lose progress when the
+formulas change.
+
+Full reasoning, before/after tables, and the per-shot proc list live in
+[`plans/firerate.md`](../plans/firerate.md).
 
 ## Manual Aim Mode
 

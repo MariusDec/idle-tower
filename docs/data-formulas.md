@@ -107,8 +107,8 @@ The tower itself has no base damage or HP. Both are provided by the `damage` and
 - `chain_damage` (Chain Lightning): bounces start at the nearest enemy to the tower; each subsequent bounce picks the nearest unhit enemy within 200 px. Damage = `towerDamage × value × 0.65^index × damageMultiplier`. Bounces = `5 + floor(level / 2)`, capped at 9 (talents can push both).
 - `crit_buff` (Precision Shot): adds `(value / 100)` to the tower's crit chance (clamped to 1.0) and multiplies crit damage by `precisionCritMultiplier(level)` = `1.5 + 0.1 × (level − 1)` for the duration.
 - `lifesteal_buff` (Vampiric Aura): **adds** `value` (`+6% +2%/level`) to the tower's lifesteal and adds `vampiricRegen(level)` = `1% + 0.5% × (level − 1)` of maxHP/s regen for the duration.
-- `execute_damage` (Execute): instantly kills non-boss enemies below `value%` HP; deals 5× damage to bosses below `value / 2%` HP.
-- `rocket_barrage` (Rocket Barrage): fires `floor(effectCount)` homing rockets (`6 + 0.3/level`, so ~10 at L15), each dealing `effectValue × towerDamage` (`2 + 0.25/level`) through the normal impact path with a half-damage splash in a 60 px blast.
+- `execute_damage` (Execute): instantly kills non-boss enemies below `value%` HP; deals 4.2× damage to bosses below `value / 2%` HP. (The boss multiplier was 5× pre-v16; the shot-cadence rebase divided it by 1.2 with everything else whose cadence is a cooldown, see `plans/firerate.md` Part B.)
+- `rocket_barrage` (Rocket Barrage): fires `floor(effectCount)` homing rockets (`6 + 0.3/level`, so ~10 at L15), each dealing `effectValue × towerDamage` (`1.65 + 0.21/level`) through the normal impact path with a half-damage splash in a 60 px blast. (Pre-v16: 2 + 0.25/level; see `plans/firerate.md` Part B.)
 
 ## Prestige Perks (`src/data/prestige.ts`)
 
@@ -158,6 +158,15 @@ the fire rate reaches tier 3 twice as fast and holds it just as long, so the
 tier tracks how the wave is going rather than how many upgrades are bought. Risk
 and the combo pay as gold multipliers, which scale with the curve. Overkill
 carry is a fraction of damage *already dealt*.
+
+The lesson fed back into the v16 shot-cadence rebase: Vorpal Arrows and
+Adrenaline Rush *were* priced per shot (1.5% instant-kill at L60, ceiling
+18.4% per shot at L30, respectively). The cadence cut shaved their per-second
+value by the same `1 / fireRateRatio` factor as everything else; both were
+raised to restore across-shot value rather than removed — Vorpal landed at
+**2.5%** and Adrenaline Rush at **27.6% per shot** at the same caps. See
+[`plans/firerate.md`](../plans/firerate.md) for the full table and the
+uptime-formula derivation.
 
 ### Where the plan's numbers moved, and why
 

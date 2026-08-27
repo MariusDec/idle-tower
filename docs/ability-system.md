@@ -32,15 +32,15 @@ The per-ability gate is layered: a cast attempt before the ability's own `unlock
 
 | Ability | Mana | CD (s) | Duration (s) | Effect | Hotkey |
 |---|---:|---:|---:|---|:---:|
-| Rain of Arrows | 30 | 15 | instant | 5× tower damage to all | 1 |
+| Rain of Arrows | 30 | 15 | instant | 4.2× tower damage to all | 1 |
 | Berserk | 40 | 30 | 8 | Doubles tower fire rate | 5 |
 | Frost Nova | 25 | 20 | 5 | Slows all enemies by 50% | 2 |
-| Chain Lightning | 40 | 18 | instant | Strikes the nearest enemy for 3× and arcs to nearby targets; damage decays by 0.65 per bounce | 3 |
+| Chain Lightning | 40 | 18 | instant | Strikes the nearest enemy for 2.5× and arcs to nearby targets; damage decays by 0.65 per bounce | 3 |
 | Gold Rush | 50 | 60 | 15 | Triples gold drops | 7 |
 | Precision Shot | 35 | 22 | 6 | +30% crit chance and ×1.5 crit damage for 6 s | 4 |
-| Rocket Barrage | 45 | 20 | instant | Fires 6 homing rockets at nearby enemies; each deals 2× tower damage and splashes half of its hit within a 60 px blast | 0 |
-| Meteor Strike | 60 | 25 | instant | 12× damage to highest-HP enemy, 2× splash within 60 px | 6 |
-| Execute | 50 | 30 | instant | Kills non-boss enemies below 12% HP; bosses below 6% HP take 5× damage | 8 |
+| Rocket Barrage | 45 | 20 | instant | Fires 6 homing rockets at nearby enemies; each deals 1.65× tower damage and splashes half of its hit within a 60 px blast | 0 |
+| Meteor Strike | 60 | 25 | instant | 10× damage to highest-HP enemy, 2× splash within 60 px | 6 |
+| Execute | 50 | 30 | instant | Kills non-boss enemies below 12% HP; bosses below 6% HP take 4.2× damage | 8 |
 | Vampiric Aura | 45 | 35 | 8 | +6% lifesteal (additive) and +1% maxHP/s regen for 8 s | 9 |
 
 ## Upgrades
@@ -50,14 +50,14 @@ ability except Rocket Barrage, which goes to 15. Per upgrade level:
 
 | Ability | Upgrade base | Growth | Mana +/lvl | CD −/lvl | Dur +/lvl | Effect Δ/lvl |
 |---|---:|:---:|---:|---:|---:|---|
-| Rain of Arrows | 400g | 1.75 | +5 | −0.5 s | 0 | +1.0× dmg |
+| Rain of Arrows | 400g | 1.75 | +5 | −0.5 s | 0 | +0.85× dmg |
 | Berserk | 900g | 1.85 | +6 | −1.0 s | +0.5 s | +0.15× fire rate |
 | Frost Nova | 1300g | 1.80 | +4 | −0.8 s | +0.5 s | −0.02 slow factor |
-| Chain Lightning | 1400g | 1.80 | +4 | −0.5 s | 0 | +0.3× dmg; +1 bounce per even level (cap 9) |
+| Chain Lightning | 1400g | 1.80 | +4 | −0.5 s | 0 | +0.25× dmg; +1 bounce per even level (cap 9) |
 | Gold Rush | 3400g | 1.80 | +8 | −1.5 s | +1.0 s | +0.25× gold |
 | Precision Shot | 3450g | 1.80 | +4 | −0.6 s | +0.4 s | +2% crit chance; crit multiplier +0.1×/lvl (1.5 → 2.4) |
-| Rocket Barrage | 12000g | 1.85 | +3 | −0.3 s | 0 | +0.25× per rocket **and** +0.3 rockets/lvl (6 → ~10 at L15) |
-| Meteor Strike | 19600g | 1.85 | +6 | −0.5 s | 0 | +1.5× dmg |
+| Rocket Barrage | 12000g | 1.85 | +3 | −0.3 s | 0 | +0.21× per rocket **and** +0.3 rockets/lvl (6 → ~10 at L15) |
+| Meteor Strike | 19600g | 1.85 | +6 | −0.5 s | 0 | +1.25× dmg |
 | Execute | 20000g | 1.85 | +6 | −0.8 s | 0 | +2% threshold (12% → 30%; boss threshold stays half) |
 | Vampiric Aura | 25000g | 1.85 | +5 | −1.0 s | +0.4 s | +2% lifesteal (additive); regen +0.5%/lvl (1% → 5.5%) |
 
@@ -82,11 +82,11 @@ cost(level) = floor(upgradeBaseCost × upgradeCostGrowth^level)
 - `duration(level) = def.duration + def.durationPerLevel × (level − 1)`
 - `effectValue(level) = def.effectValue + def.effectValuePerLevel × (level − 1)`
 
-**Example — Rain of Arrows L1 → L10**: damage 5× → 14×, mana 30 → 75, cooldown 15.0 s → 10.5 s. Total gold spent on upgrades ≈ 143 k before the ability-XP discount.
+**Example — Rain of Arrows L1 → L10**: damage 4.2× → 11.85×, mana 30 → 75, cooldown 15.0 s → 10.5 s. Total gold spent on upgrades ≈ 143 k before the ability-XP discount.
 
 **Frost Nova display inversion**: the internal slow *factor* shrinks (0.50 → 0.32) but the description and tooltip render `(1 − factor) × 100` as the slow **%**, so the player sees 50% → 68%.
 
-**Execute display**: the threshold is stored as a percent value. The description and tooltip render it directly. Level-ups *raise* the threshold (12% → 30% at L10), so the ability gets **easier** to trigger as it levels — more enemies qualify for the instant-kill. The boss threshold is always half the non-boss one; bosses never get instakilled, they just take `5×` damage below it.
+**Execute display**: the threshold is stored as a percent value. The description and tooltip render it directly. Level-ups *raise* the threshold (12% → 30% at L10), so the ability gets **easier** to trigger as it levels — more enemies qualify for the instant-kill. The boss threshold is always half the non-boss one; bosses never get instakilled, they just take `4.2×` damage below it.
 
 ## Effect Types
 
@@ -102,7 +102,7 @@ The `AbilityEffectType` union covers all 10 abilities:
 | `chain_damage` | Chain Lightning | Bounces start at the nearest enemy to the tower, each subsequent bounce picks the nearest unhit enemy within `CHAIN_BOUNCE_RADIUS` (200 px); damage decays by `CHAIN_DECAY` (0.65) per bounce |
 | `crit_buff` | Precision Shot | Two `BuffRegistry` entries — `critChance` **additive** at `value / 100` (clamped to `[0, 1]`) and `critMultiplier` multiplicative at `precisionCritMultiplier(level)` (`1.5 + 0.1 × (level − 1)`), both applied in `rollShot`. The multiplier curve is what makes the upgrade pitch "+10% crit damage per level" real rather than tooltip-only |
 | `lifesteal_buff` | Vampiric Aura | Two `BuffRegistry` entries — `lifesteal` **additive** at `+6% (+2%/level)` and `healthRegen` additive at `vampiricRegen(level)` = `1% + 0.5% × (level − 1)` of max HP per second. Additive because most builds carry zero base lifesteal and a ×N multiplier had nothing to multiply; the additive bucket still composes with any lifesteal the player does own |
-| `execute_damage` | Execute | Boss threshold = `pct/2` (5× damage); non-boss = `pct` (instant-kill by dealing `max(1, hp)`) |
+| `execute_damage` | Execute | Boss threshold = `pct/2` (4.2× damage); non-boss = `pct` (instant-kill by dealing `max(1, hp)`) |
 | `rocket_barrage` | Rocket Barrage | Fires `floor(effectCount)` homing rockets at distinct targetable enemies (extras double up at random once the field runs out of firsts). Each lands through the ordinary impact path — resists apply — for `effectValue × towerDamage`, then splashes `splashFraction` (0.5) of its hit within `ROCKET_SPLASH_RADIUS` (60 px). Emits `rockets_fired`; each splash pops a decorative `projectile_exploded` |
 
 ## Targeted Casts (gameplay plan §4.3)
@@ -152,7 +152,7 @@ Full details, including the placement-mode cancellation rules, are in
    - `chain_damage`: chain lightning starting from the nearest enemy; bounces = `min(9 + talent bonus, 5 + ⌊level/2⌋ + talent bonus)`, damage = `towerDamage × value × 0.65^index × damageMultiplier`
    - `crit_buff`: two buffs — `critChance` additive at `value/100` (clamped to `[0, 1]`) and `critMultiplier` multiplicative at `precisionCritMultiplier(level)`
    - `lifesteal_buff`: `lifesteal` **additive** at `value`, plus a second buff adding `vampiricRegen(level)` to `healthRegen` (fraction of max HP per second)
-   - `execute_damage`: kill non-boss enemies below `value%` HP; deal `5×` to boss below `value/2%` HP
+   - `execute_damage`: kill non-boss enemies below `value%` HP; deal `4.2×` to boss below `value/2%` HP
    - `rocket_barrage`: fire `floor(effectCount)` homing rockets (`effectCount + 0.3 × (level − 1)`), each for `towerDamage × effectValue` with a half-damage splash in 60 px
 6. Emit `ability_cast` and `ability_visual` events. The visual event may carry an optional `target: {x,y}` — Meteor Strike's actual impact point, or the placement disc's centre.
 

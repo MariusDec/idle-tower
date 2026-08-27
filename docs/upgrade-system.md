@@ -19,8 +19,8 @@ cost = floor(baseCost * growth^level)
 ### Tower (5)
 | ID | Name | baseCost | growth | effect/level | maxLevel | startLevel |
 |----|------|----------|--------|-------------|----------|------------|
-| damage | Sharper Arrows | 30 | 1.15 | base 3, +1.1^(L-1) | 999 | 1 |
-| fireRate | Quick Draw | 50 | 1.20 | +0.06 fire rate | 100 | 0 |
+| damage | Sharper Arrows | 8 | 1.18 | 2.64 x 1.11^(L-1) | 200 | 1 |
+| fireRate | Quick Draw | 25 | 1.30 | +0.05 fire rate | 45 | 0 |
 | range | Longbow | 25 | 1.12 | +5 range | 60 | 0 |
 | critChance | Eagle Eye | 120 | 1.35 | +1.2% crit | 95 | 0 |
 | critDamage | Heavy Quiver | 150 | 1.35 | +12% crit dmg | 999 | 0 |
