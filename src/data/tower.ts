@@ -6,7 +6,21 @@ export const TOWER_BASE: Omit<TowerState, 'cooldown'> = {
   x: 0,
   y: 0,
   baseDamage: 0,
-  fireRate: 1.0,
+  /*
+   * The shot-cadence rebase (`plans/firerate.md`).
+   *
+   * Fire rate used to pass 4 shots/s inside a day of play and cap at 5.5. The
+   * cap is now 3.15 (0.9 + 45 x 0.05) and the `damage` upgrade is 1.2x to pay
+   * part of it back. It is deliberately only *part*: sustained DPS lands ~30%
+   * below today at high rate levels and ~8% above it on a fresh tower.
+   *
+   * 0.9 and not 0.45. Because `baseDamage` seeds at 0 and `fireRate` seeds at
+   * this value, an exact halving of the whole curve would need the base halved
+   * too — and that costs the opener two full seconds between shots. 0.9 keeps
+   * the opening cadence and pays for it in late-game DPS, which is the trade
+   * §0.3 of the plan measured and chose.
+   */
+  fireRate: 0.9,
   range: 300,
   critChance: 0.02,
   critMultiplier: 2,

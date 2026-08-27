@@ -76,11 +76,14 @@ export const UPGRADES: UpgradeDef[] = [
      * (measured wall 129, run 175 min). 8 / 1.18 buys the same opener a wave
      * earlier and then falls behind at ~0.85 levels/wave, which is what makes
      * shots-to-kill drift 2.5 -> 4.1 across a run and puts the wall at 40.
+     *
+     * The scale (not the growth) is 1.2x its original with the shot-cadence
+     * rebase; see `TOWER_BASE.fireRate` in `src/data/tower.ts`.
      */
     baseCost: 8,
     costGrowth: 1.18,
-    effectPerLevel: '0.242 * Math.pow(1.11, {level} - 2)',
-    baseEffect: 2.2,
+    effectPerLevel: '0.2904 * Math.pow(1.11, {level} - 2)',
+    baseEffect: 2.64,
     startLevel: 1,
     effectType: 'add',
     maxLevel: 200,
@@ -100,9 +103,9 @@ export const UPGRADES: UpgradeDef[] = [
      * Revamp §5.1 and design rule 4: `damage` is geometric, so this axis is
      * deliberately additive and hard-capped. Two compounding DPS axes multiply
      * into a runaway — the verified candidate with both geometric walled at
-     * wave 140. Composed ceiling from the upgrade alone is 7.75 shots/s.
+     * wave 140. Composed ceiling from the upgrade alone is **3.88 shots/s**.
      *
-     * The ceiling (`+0.1`/level to L45) is §5.1's; the **price** is steeper
+     * The ceiling (`+0.05`/level to L45) is §5.1's; the **price** is steeper
      * than §5.3's 40 / 1.18. Cheap enough and the line alone covers enemy-count
      * growth for a hundred waves; too dear and wave 10's boss — 614 effective
      * HP behind armor, in a 139 s budget — is unbeatable at any damage table.
@@ -111,7 +114,7 @@ export const UPGRADES: UpgradeDef[] = [
      */
     baseCost: 25,
     costGrowth: 1.30,
-    effectPerLevel: 0.1,
+    effectPerLevel: 0.05,
     effectType: 'add',
     maxLevel: 45,
     category: 'tower',
