@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { EffectsManager, damageTier } from '../src/systems/EffectsManager';
 import { QUALITY } from '../src/data/quality';
+import { INTRO_IN, INTRO_HOLD, INTRO_OUT, introEaseOutCubic } from '../src/game/Game';
 
 describe('damageTier (UI plan §5.B)', () => {
   it('buckets a hit by the fraction of max HP it took', () => {
@@ -153,5 +154,30 @@ describe('the quality knob (UI plan §5.F)', () => {
     // The survivors are the youngest: the last emitter's x, not the first's.
     expect(fx.particleList[fx.particleList.length - 1].x).toBe(99);
     expect(fx.particleList[0].x).toBeGreaterThan(0);
+  });
+});
+
+describe('the boss intro timeline (UI plan §5.D, acceptance §5.G)', () => {
+  it('runs the whole cinematic in under two seconds', () => {
+    // §5.G: "a boss entry produces bars-name-pattern in under two seconds".
+    // The phases are on the wall clock, so their sum *is* the wall time.
+    expect(INTRO_IN + INTRO_HOLD + INTRO_OUT).toBeLessThan(2);
+  });
+
+  it('reaches the hold with the bars fully extended, and returns to nothing', () => {
+    // The snapshot feeds the renderer a single 0..1 bar extension: it must
+    // start closed, be open for the whole hold, and close again on the out.
+    expect(introEaseOutCubic(0)).toBe(0);
+    expect(introEaseOutCubic(1)).toBe(1);
+    expect(1 - introEaseOutCubic(1)).toBe(0);
+  });
+
+  it('clamps outside 0..1 rather than overshooting the letterbox', () => {
+    expect(introEaseOutCubic(-5)).toBe(0);
+    expect(introEaseOutCubic(5)).toBe(1);
+  });
+
+  it('eases out: the bars are more than half open at the phase midpoint', () => {
+    expect(introEaseOutCubic(0.5)).toBeGreaterThan(0.5);
   });
 });

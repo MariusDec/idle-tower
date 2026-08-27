@@ -384,10 +384,15 @@ interface BossIntroState {
   pattern: string | null;
 }
 
-const INTRO_IN = 0.35, INTRO_HOLD = 1.10, INTRO_OUT = 0.35;   // 1.80 s total
+/**
+ * The three phases, in seconds. Exported for `tests/effects.test.ts`, which
+ * pins the §5.G acceptance criterion that the whole cinematic lands in under
+ * two seconds — a number the plan states as a budget, not as a preference.
+ */
+export const INTRO_IN = 0.35, INTRO_HOLD = 1.10, INTRO_OUT = 0.35;   // 1.80 s total
 
 /** The intro's bar extension curve. Local to §5.D; the renderer has its own. */
-function introEaseOutCubic(t: number): number {
+export function introEaseOutCubic(t: number): number {
   const c = Math.max(0, Math.min(1, t));
   return 1 - (1 - c) ** 3;
 }
