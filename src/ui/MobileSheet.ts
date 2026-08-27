@@ -155,6 +155,11 @@ export class MobileSheet {
     for (const btn of Array.from(this.segmented.querySelectorAll<HTMLButtonElement>('.mobile-sheet-segmented-btn'))) {
       toggleClass(btn, 'active', btn.dataset.tabId === id);
     }
+    // Every panel adds its own class to the container it renders into, and the
+    // sheet reuses one body element for all of them — so without this reset the
+    // classes accumulate and a settings sheet is still wearing `.upgrade-panel`
+    // (and its padding) from three taps ago. UI plan §9.F.
+    this.body.className = 'mobile-sheet-body';
     setInnerHTML(this.body, '');
     tab.render(this.body);
   }
