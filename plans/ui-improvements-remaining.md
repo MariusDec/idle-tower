@@ -1065,6 +1065,34 @@ compositing two full-size canvases per frame at DPR 2 costs real fill rate. Run 
 and only split a layer if the numbers demand it. If the numbers do demand it, record them here
 before writing the code.
 
+**Measured 2026-08-27 — verdict: do not split. No layer canvases were built.**
+
+§10.B's `__theTower.bench()` is not landed yet, so the measurement was taken with an equivalent
+throwaway harness driven from the devtools console against a clean `HEAD` checkout on `npm run dev`:
+250 live enemies held at count through the real `EnemyManager.spawn` (so the spatial grid and the
+sprite cache are exercised), the particle pool saturated via `emitDeathBurst` every 6th frame, and
+`Game.update` / `Game.draw` timed separately with `performance.now()` over 240 frames per tier.
+Desktop Chromium, 1280×720, DPR 1. Milliseconds:
+
+| tier   | update p50 / p95 | draw p50 / p95 | particles |
+|--------|------------------|----------------|-----------|
+| high   | 0.2 / 0.5        | 1.9 / 6.6      | 600       |
+| medium | 0.1 / 0.3        | 1.4 / 5.2      | 359       |
+| low    | 0.1 / 0.3        | 1.1 / 5.9      | 200       |
+
+The whole frame at the worst tier sits at ~2.1 ms median and ~7.1 ms at p95 against a 16.7 ms
+budget — the draw pass is not the constraint at 250 enemies, and the routed additive pass from §5.A
+already removed the per-entity `lighter` state flips that the split was meant to amortise. Two
+full-size composites per frame would *add* fill rate to a path with 60 % headroom to spare. The
+numbers do not demand it, so the entity and effects passes stay on the main context.
+
+Caveats for whoever re-measures under §10.B: this was DPR 1 (the browser would not honour a forced
+`devicePixelRatio` override — the backing store never grew), and the tab was backgrounded, so RAF
+was throttled and the loop had to be stepped synchronously; the isolated `worst` samples were
+dominated by GC spikes from the respawn loop and are not reported. Re-run through the real harness
+once it exists, at DPR 2 and on a phone-class viewport, before treating this as settled for the
+`low` tier on mobile.
+
 ### 10.B The budget harness
 
 Extend the existing `window.__theTower` (`src/main.ts:339`) rather than adding a new global:
