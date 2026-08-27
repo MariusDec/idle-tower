@@ -355,15 +355,29 @@
   --dur-ambient: 1600ms;
 
   /* ── Stacking ladder (UI plan §8.F) ───────────────────────────────────────
-     Five rungs, in the order things sit in front of each other: overlays
-     painted over the canvas, the ability dock and bottom nav, the mobile
-     sheet, modals, and toasts on top of everything so a warning is readable
-     while a modal is up. Component rules quote a rung instead of inventing a
-     number, which is how `z-index: 110` and `z-index: 112` came to sit next to
-     each other in the first place. */
+     The rungs, in the order things sit in front of each other: the HUD strip,
+     the low-HP vignette over the canvas, overlays painted over the canvas
+     (boss bar, banners, the placement prompt), the ability dock and bottom
+     nav, the corner overlay stack (contracts, milestones), hover tooltips,
+     interactive popovers, the mobile sheet, body-level menus, modals, and
+     toasts on top of everything so a warning is readable while a modal is up.
+     Component rules quote a rung instead of inventing a number, which is how
+     `z-index: 110` and `z-index: 112` came to sit next to each other in the
+     first place.
+
+     A literal `z-index` survives in `main.css` only for stacking *inside* one
+     component's own stacking context (a fill behind its label, the badges on
+     an ability button). Those never race anything global, so they stay small
+     integers; `tests/z-index.test.ts` holds the line at 5. */
+  --z-hud: 5;
+  --z-canvas-vignette: 10;
   --z-canvas-overlay: 20;
   --z-dock: 40;
+  --z-corner: 50;
+  --z-tooltip: 60;
+  --z-popover: 70;
   --z-sheet: 75;
+  --z-menu: 80;
   --z-modal: 110;
   --z-toast: 120;
 

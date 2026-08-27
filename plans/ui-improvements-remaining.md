@@ -876,7 +876,14 @@ Z-index becomes a token ladder in `tokens.css` (`--z-canvas-overlay`, `--z-dock`
   `PANEL_MIN` width.
 - The bottom nav and the desktop rail show the **same** five groups in the same order.
 - Every modal in the game closes on Escape, traps Tab, and restores focus on close.
-- `grep -n "z-index: [0-9]" src/styles/main.css` returns only token references.
+- Every cross-component `z-index` in `main.css` quotes a rung of the `tokens.css` ladder.
+  The criterion as first written — `grep -n "z-index: [0-9]" src/styles/main.css` returns
+  nothing — is the right rule for layering *between* components and the wrong one for stacking
+  *inside* one component's own stacking context (a progress fill behind its label, the four
+  badges on an ability button); naming those would cost a token per component and buy nothing,
+  since they cannot race anything global. `tests/z-index.test.ts` enforces the real rule: a
+  literal survives only up to 5, every larger value is a rung, the ladder is strictly
+  ascending, and no rule quotes a rung that does not exist.
 - The talent tree shows curved links whose state is distinguishable in greyscale.
 
 ---

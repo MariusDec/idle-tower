@@ -86,7 +86,7 @@ button:disabled {
   flex: 0 0 auto;
   background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
   border-bottom: 1px solid var(--stroke-subtle);
-  z-index: 5;
+  z-index: var(--z-hud);
   /* UI plan §9.A: a notch eats the wave header. Top inset the HUD and a small
      floor of space so the wave number sits below the camera cut-out on iOS. */
   padding-top: max(var(--space-2), var(--safe-t));
@@ -758,7 +758,7 @@ button:disabled {
   border: 1px solid var(--stroke-strong);
   border-radius: var(--radius-lg);
   padding: 10px 14px;
-  z-index: 1000;
+  z-index: var(--z-tooltip);
   min-width: 260px;
   box-shadow: var(--elev-2);
   pointer-events: none;
@@ -782,7 +782,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
+  z-index: var(--z-modal);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur-fast) ease;
@@ -1144,7 +1144,7 @@ button:disabled {
   pointer-events: none;
   box-shadow: inset 0 0 0 0 rgba(var(--rgb-critical), 0);
   transition: box-shadow var(--dur-slow) ease;
-  z-index: 10;
+  z-index: var(--z-canvas-vignette);
 }
 .canvas-wrap.is-critical::after {
   box-shadow: inset 0 0 80px 18px rgba(var(--rgb-critical), var(--vignette-alpha));
@@ -1397,7 +1397,7 @@ button:disabled {
   pointer-events: auto;
   opacity: 0;
   transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease;
-  z-index: 20;
+  z-index: var(--z-canvas-overlay);
 }
 .run-stalled-banner.is-visible {
   display: flex;
@@ -1965,7 +1965,7 @@ button:disabled {
   border: 1px solid var(--stroke-strong);
   border-radius: var(--radius-lg);
   padding: 10px 14px;
-  z-index: 60;
+  z-index: var(--z-tooltip);
   min-width: 240px;
   max-width: 300px;
   box-shadow: var(--elev-2);
@@ -2881,7 +2881,7 @@ button:disabled {
   position: fixed;
   left: 12px;
   bottom: 12px;
-  z-index: 60;
+  z-index: var(--z-tooltip);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3371,7 +3371,7 @@ button:disabled {
   position: fixed;
   left: 16px;
   bottom: 12px;
-  z-index: 50;
+  z-index: var(--z-corner);
   pointer-events: none;
   width: 260px;
   max-width: calc(100vw - 32px);
@@ -3473,7 +3473,7 @@ button:disabled {
   left: 16px;
   /* Sits directly above the contract tracker, which owns the corner. */
   bottom: calc(12px + var(--contract-tracker-height));
-  z-index: 50;
+  z-index: var(--z-corner);
   pointer-events: none;
   display: flex;
   gap: 8px;
@@ -4004,13 +4004,13 @@ body.is-resizing * { cursor: ew-resize !important; }
   position: fixed;
   inset: 0;
   background: rgba(var(--rgb-shadow), 0.35);
-  z-index: 65;
+  z-index: calc(var(--z-popover) - 5);
   display: none;
 }
 .ability-upgrade-popover-backdrop.is-open { display: block; }
 .ability-upgrade-popover {
   position: fixed;
-  z-index: 70;
+  z-index: var(--z-popover);
   background: var(--surface-2);
   border: 1px solid var(--stroke-strong);
   border-radius: var(--radius-lg);
@@ -4518,7 +4518,7 @@ body.is-resizing * { cursor: ew-resize !important; }
   position: fixed;
   inset: 0;
   background: rgba(var(--rgb-shadow), 0.5);
-  z-index: 80;
+  z-index: var(--z-menu);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4997,7 +4997,7 @@ body.is-resizing * { cursor: ew-resize !important; }
   flex-direction: column;
   gap: 6px;
   min-height: 60px;
-  z-index: 10;
+  z-index: 5; /* above the nodes (1) inside the tree's own stacking context */
   flex-shrink: 0;
 }
 .talent-detail.is-empty {
@@ -5604,7 +5604,7 @@ body.eq-dragging img { pointer-events: none; }
   border: 1px solid var(--stroke-strong);
   border-radius: var(--radius-lg);
   padding: 12px;
-  z-index: 60;
+  z-index: var(--z-tooltip);
   box-shadow: var(--elev-2);
   pointer-events: none;
   font-size: var(--text-xs);
@@ -6194,7 +6194,7 @@ body.eq-dragging img { pointer-events: none; }
   pointer-events: none;
   opacity: 0;
   transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease;
-  z-index: 18;
+  z-index: calc(var(--z-canvas-overlay) - 2);
 }
 .boss-bar.is-visible {
   display: flex;
@@ -6433,7 +6433,7 @@ body.eq-dragging img { pointer-events: none; }
   pointer-events: none;
   opacity: 0;
   transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease;
-  z-index: 21;
+  z-index: calc(var(--z-canvas-overlay) + 1);
 }
 .placement-prompt.is-visible {
   display: flex;
