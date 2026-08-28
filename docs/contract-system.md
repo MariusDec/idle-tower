@@ -143,6 +143,33 @@ saved figure on load, and summed at read.
 - A row past **80% fill** takes `.is-close`: a nature-green border and a soft
   glow. The completion flourish used to be the first and only signal, which
   arrives one frame *after* the thing worth looking up for.
+- `--contract-tracker-height` is **measured**, not declared. The tracker
+  publishes its own root height onto `:root` — explicitly when it folds and
+  when the row set changes, plus a `ResizeObserver` for what those cannot name.
+  The token in `tokens.css` is now only the first-frame fallback. It used to be
+  a constant sized for the worst case (four open rows), so a three-row tracker
+  pushed the milestone strip 40px higher than anything needed and folding the
+  tracker on a phone reclaimed nothing at all.
+
+### Mobile
+
+The corner is free real estate on a desktop and roughly a third of the play
+area on a 375px screen, so three things differ:
+
+- The header is a **fold control**, 44px, and the tracker starts **folded** on
+  a phone and open on a desktop. The preference is remembered per browser
+  (`the-tower-contracts-collapsed`); only the default reads the viewport. The
+  folded chip is not a bare label — it carries the live-slot count and the
+  best slot's fill, so a glance still says whether something is about to land.
+- An open row shows its **goal in words** on a second line. A desktop reads
+  that from the row's `title`; a touch screen has no hover, so without it a
+  mobile row is a flavour name and a fraction and the contract is unreadable.
+- Toasts sit **directly above the dock**, in the same lane as the folded chip,
+  spanning the width. They used to ride one step above the tracker, which put
+  a notification a third of the way up the screen. `--z-toast` is above
+  `--z-corner`, so a toast covers the chip for its few seconds the way a
+  snackbar covers what is under it — nothing reserves permanent space for
+  something that is absent almost all of the time.
 - Rows key on the contract's **instance id** (`uid`), not its def id. That is
   what lets a completed contract flourish in place while its replacement slides
   in underneath — including when the replacement is the same def drawn again.

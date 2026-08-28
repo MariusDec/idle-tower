@@ -933,7 +933,14 @@ export class UIManager {
 
   private installMobileChrome(): void {
     if (!this.bottomNavRoot || !this.mobileSheetRoot) return;
-    this.mobileSheet = new MobileSheet(this.mobileSheetRoot);
+    this.mobileSheet = new MobileSheet(this.mobileSheetRoot, {
+      // Badge counts live on `this.tabBadges`. The sheet recreates its
+      // segmented buttons on every group switch, so we hand it a query
+      // callback so it can re-apply the current counts to the freshly-built
+      // badge spans instead of leaving them empty until the next live
+      // `setBadge` update.
+      badgeSource: (id) => this.tabBadges.get(id as PanelTab) ?? 0,
+    });
     // \u00A78.A: the same five groups the desktop rail shows. The old ad-hoc four \u2014
     // with a `'more'` bucket that opened Prestige \u2014 was the second, unrelated
     // information architecture this table exists to delete.

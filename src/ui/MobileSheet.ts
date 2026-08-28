@@ -13,6 +13,7 @@ export class MobileSheet {
   private readonly grip: HTMLElement;
   private readonly segmented: HTMLElement;
   private readonly body: HTMLElement;
+  private readonly badgeSource: ((id: string) => number) | null;
   private tabs: MobileSheetTab[] = [];
   private activeId: string | null = null;
   private isOpenFlag = false;
@@ -24,7 +25,7 @@ export class MobileSheet {
   private touchDeltaY = 0;
   private isDragging = false;
 
-  constructor(host: HTMLElement) {
+  constructor(host: HTMLElement, opts?: { badgeSource?: (id: string) => number }) {
     this.host = host;
     this.host.classList.add('mobile-sheet-root');
 
@@ -78,6 +79,7 @@ export class MobileSheet {
     window.addEventListener('keydown', this.boundOnKeydown);
 
     this.bindSwipe();
+    this.badgeSource = opts?.badgeSource ?? null;
   }
 
   setTabs(tabs: MobileSheetTab[]): void {
@@ -96,6 +98,18 @@ export class MobileSheet {
       const badge = document.createElement('span');
       badge.className = 'mobile-sheet-segmented-btn-badge';
       badge.dataset.tabBadge = t.id;
+      // Re-apply the current badge count immediately after creation: the
+      // player may have earned a notification (e.g. talent point, equipment
+      // drop) well before the first time they tap the bottom nav. Without
+      // this, fresh badge elements would stay empty until the next
+      // `setBadge` call, hiding the very notification that brought them
+      // to this tab. The `setBadge` path is the live updates; this is the
+      // catch-up after a DOM rebuild.
+      if (this.badgeSource) {
+        const count = this.badgeSource(t.id);
+        badge.textContent = count > 0 ? String(count) : '';
+        toggleClass(badge, 'is-visible', count > 0);
+      }
       btn.appendChild(badge);
       btn.addEventListener('click', () => this.activate(t.id));
       this.segmented.appendChild(btn);

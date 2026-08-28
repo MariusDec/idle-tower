@@ -402,10 +402,12 @@
   /* Plans/milestones.md §5.2: the board_expansion Watch unlock raises the
      tracker to four rows. The strip is sized large enough for both three and
      four rows so the layout does not jump when the chapter completes. */
-  /* Re-measured after the rows were sized for legibility (28px min-height and
-     11px text, up from 21px and 10px): title + 4 rows + gaps is 150px, and the
-     extra leaves the strip clearance rather than sitting on the top row. */
-  --contract-tracker-height: 154px;
+  /* This is only the **first-frame fallback**. `ContractTracker` measures its
+     own root with a `ResizeObserver` and rewrites this property on :root, so
+     the strip sits on the tracker's real height — three rows or four, open or
+     folded — rather than on a constant sized for the worst case. It was that
+     constant that made folding the tracker on a phone reclaim nothing. */
+  --contract-tracker-height: 120px;
   /* Plans/milestones.md §6.5: the Long Watch chip sits one row above the
      milestone strip. The strip's own height is reserved here so the chip's
      bottom offset is a single read instead of a hand-measured value, and so

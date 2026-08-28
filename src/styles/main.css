@@ -3308,17 +3308,30 @@ button:disabled {
   flex-direction: column;
   gap: 4px;
 }
+/* The header is also the collapse control. It is a button on every viewport;
+   only the mobile branch acts on the class it toggles. */
 .contract-tracker-title {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
+  align-self: flex-start;
+  padding: 2px 6px 2px 2px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  font-family: inherit;
   font-size: var(--text-2xs);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-weight: 700;
   color: var(--text-2);
-  padding-left: 2px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color var(--dur-fast) ease;
 }
+.contract-tracker-title:hover { color: var(--text-0); }
 .contract-tracker-title::before {
   content: '';
   width: 3px;
@@ -3326,6 +3339,34 @@ button:disabled {
   border-radius: 2px;
   background: var(--good);
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+.contract-tracker-title-label { position: relative; z-index: 1; }
+/* Live-slot count and the best slot's fill. Both are dead weight while the
+   tracker is open — the rows say it better — so they only show folded. */
+.contract-tracker-count,
+.contract-tracker-summary-fill { display: none; }
+.contract-tracker.is-collapsed .contract-tracker-count {
+  display: inline-block;
+  position: relative;
+  z-index: 1;
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--surface-4);
+  color: var(--text-1);
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.contract-tracker.is-collapsed .contract-tracker-summary-fill {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: linear-gradient(90deg, rgba(var(--rgb-nature), 0.34), rgba(var(--rgb-nature), 0.10));
+  transition: width var(--dur-base) ease;
+  pointer-events: none;
 }
 .contract-tracker-list {
   display: flex;
@@ -3364,11 +3405,20 @@ button:disabled {
   position: relative;
   z-index: 1;
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+  gap: 1px;
   min-width: 0;
   flex: 1;
 }
+.contract-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+/* The goal in words. A desktop gets it from the row's `title` on hover; a
+   touch screen has no hover at all, so mobile renders it inline instead. */
+.contract-row-label { display: none; }
 .contract-row-name {
   font-size: var(--text-xs);
   font-weight: 600;
@@ -4344,26 +4394,65 @@ body.is-resizing * { cursor: ew-resize !important; }
 
   /* Canvas fills available space. */
   .canvas-wrap { padding: 4px; }
-  /* Toast adapted to mobile. */
-  /* Rides the same bottom-left stack the tracker and the strip use, one step
-     above the tracker: a 375px viewport has no room for a 300px toast and a
-     230px tracker side by side, so they take turns vertically instead. */
+  /* Toasts sit **directly above the dock**, not on top of the corner stack.
+     They used to ride one step above the contract tracker, which put a
+     notification a third of the way up a phone screen — far from the thing it
+     was reporting on and squarely over the play area. A toast is transient and
+     `--z-toast` is above `--z-corner`, so for its few seconds it simply covers
+     the collapsed contract chip, the way a snackbar covers what is under it.
+     Nothing reserves permanent space for a thing that is usually absent. */
   .toast-root {
+    left: max(var(--space-2), var(--safe-l));
     right: max(var(--space-2), var(--safe-r));
-    bottom: calc(var(--corner-stack-base) + var(--contract-tracker-height));
-    max-width: min(300px, calc(100vw - var(--space-4)));
+    bottom: var(--corner-stack-base);
+    /* Full-width on a phone. Right-aligned at 300px it clipped the corner of
+       the contract chip in the same lane, which reads as a collision; spanning
+       the lane reads as a snackbar sitting on top of it, which is what it is.
+       Nothing below reserves space for a thing that is absent 95% of the time. */
+    max-width: none;
+    align-items: stretch;
   }
   /* Contract tracker sits above the bottom nav too, and gives up the reward
      column so three rows still fit a phone's width. */
   .contract-tracker-slot {
     left: 8px;
     bottom: var(--corner-stack-base);
-    width: min(230px, calc(100vw - 16px));
+    width: min(260px, calc(100vw - 16px));
   }
   .contract-row-reward { display: none; }
-  /* Milestone strip moves above the bottom nav. */
+  /* §0.8 rule 3: folding the tracker is the only way to get the play area
+     back, so the control has to be a real 44px target rather than a 14px
+     caption. It keeps its compact look and gains the height by padding. */
+  .contract-tracker-title {
+    min-height: 44px;
+    padding: var(--space-2) var(--space-3);
+    background: linear-gradient(180deg, rgba(var(--rgb-surface-2), 0.95), rgba(var(--rgb-surface-1), 0.95));
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--stroke-subtle);
+    box-shadow: var(--elev-1);
+    cursor: pointer;
+  }
+  .contract-tracker-title.is-close { border-color: rgba(var(--rgb-nature), 0.65); }
+  /* Folded: the chip is the whole tracker. This is the default on a phone —
+     three rows and a strip were eating ~200px of a ~500px canvas. */
+  .contract-tracker.is-collapsed .contract-tracker-list { display: none; }
+  /* Open: the goal text appears on every row. There is no hover on a touch
+     screen, so the `title` a desktop reads is unreachable here — without this
+     a row is a flavour name and a fraction, which is the "what does this one
+     even want" problem. */
+  .contract-row-label {
+    display: block;
+    font-size: var(--text-2xs);
+    line-height: 1.25;
+    color: var(--text-2);
+    white-space: normal;
+  }
+  .contract-row { min-height: 40px; }
+  /* Milestone strip moves above the bottom nav, one lane above the tracker —
+     which is now the *measured* height of a folded chip rather than a 154px
+     reservation sized for four open rows. */
   .milestone-strip-slot {
-    bottom: calc(var(--corner-stack-base) + var(--contract-tracker-height));
+    bottom: calc(var(--corner-stack-base) + var(--contract-tracker-height) + 4px);
     left: 8px;
   }
   /* §0.8 rule 3: the strip's only touch route is tapping this chip, and it was
