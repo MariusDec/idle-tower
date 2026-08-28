@@ -34,6 +34,11 @@ export function renderAbilityTooltip(
   const curEff = currentStats.displayEffectValue;
   const nextEff = next.displayEffectValue;
   const affCls = canAfford ? 'can-afford' : 'cannot-afford';
+  // Plan §G.4: an Area row only when this ability is targeted. Non-targeted
+  // abilities leave `currentStats.area` at 0 and the row is omitted.
+  const areaRow = currentStats.area > 0
+    ? `<div class="tooltip-row"><span>Area</span><span>${currentStats.displayArea}  ${showUpgradeStats ? `<span class="arrow">&rarr;</span> <span class="up-val">${next.displayArea}</span>` : ''}</span></div>`
+    : '';
 
   return `
     <div class="tooltip-header">${def.name} &mdash; Level ${currentStats.level} ${showUpgradeStats ? `&rarr; ${currentStats.level + 1}` : ''}</div>
@@ -42,6 +47,7 @@ export function renderAbilityTooltip(
     <div class="tooltip-row"><span>${effectLabel}</span><span>${curEff}  ${showUpgradeStats ? `<span class="arrow">&rarr;</span> <span class="up-val">${nextEff}</span>` : ''}</span></div>
     <div class="tooltip-row"><span>Cooldown</span><span>${cooldownStr}s  ${showUpgradeStats ? `<span class="arrow">&rarr;</span> <span class="up-val">${nextCooldownStr}s</span>` : ''}</span></div>
     <div class="tooltip-row"><span>Duration</span><span>${durationStr}  ${showUpgradeStats ? `<span class="arrow">&rarr;</span> <span class="up-val">${nextDurationStr}</span>` : ''}</span></div>
+    ${areaRow}
     ${showUpgradeStats && showCost ? `<div class="tooltip-cost ${affCls}">Cost: ${formatInt(cost)}g</div>` : ''}
   `;
 }

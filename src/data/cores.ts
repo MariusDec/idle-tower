@@ -98,6 +98,7 @@ export interface CoreStatBlock {
   goldPct?: number;
   manaRegenPct?: number;
   abilityDamagePct?: number;
+  abilityAreaPct?: number;
 }
 
 export interface CoreDef {
@@ -251,7 +252,7 @@ export const CORES: readonly CoreDef[] = [
     // Meditation is the answer to the rest — the sim's greedy buyer takes it
     // to level 4, which is precisely full uptime (see `procShare`).
     apCost: 90,
-    stats: { damagePct: -0.18, manaRegenPct: 1.0, abilityDamagePct: 0.50 },
+    stats: { damagePct: -0.18, manaRegenPct: 1.0, abilityDamagePct: 0.50, abilityAreaPct: 0.25 },
     behaviors: ['mana_shot'],
   },
 ];
@@ -281,6 +282,7 @@ export function describeCoreStats(def: CoreDef): string[] {
   if (s.lifestealAdd !== undefined) out.push(`${pct(s.lifestealAdd)} lifesteal`);
   if (s.manaRegenPct !== undefined) out.push(`${pct(s.manaRegenPct)} mana regen`);
   if (s.abilityDamagePct !== undefined) out.push(`${pct(s.abilityDamagePct)} ability damage`);
+  if (s.abilityAreaPct !== undefined) out.push(`${pct(s.abilityAreaPct)} ability area`);
   if (s.goldPct !== undefined) out.push(`${pct(s.goldPct)} gold`);
   return out;
 }

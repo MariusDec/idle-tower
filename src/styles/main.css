@@ -1675,6 +1675,29 @@ button:disabled {
   z-index: 2;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+/* Plan §A.4 / §G.3: crosshair glyph on every tile that targets, marking
+   "this one aims" before the player taps it. CSS-only `⌖` keeps it free of
+   a sprite dependency for a single character. */
+.ability-btn .ability-aim-glyph {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-size: 10px;
+  opacity: 0.7;
+  z-index: 3;
+  pointer-events: none;
+}
+/* Plan §G.3: the armed tile pulses so the player can see which ability the
+   next click will consume. `outline` rather than `border` so it does not
+   shift layout mid-pulse. */
+.ability-btn.is-arming {
+  outline: 2px solid currentColor;
+  animation: ability-arm-pulse 0.9s ease-in-out infinite;
+}
+@keyframes ability-arm-pulse {
+  0%, 100% { outline-offset: 0; }
+  50%      { outline-offset: 3px; }
+}
 .ability-active-badge {
   position: absolute;
   top: 4px;

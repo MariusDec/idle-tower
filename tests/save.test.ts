@@ -207,7 +207,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(19);
+    expect(loaded.version).toBe(20);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -231,7 +231,7 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(19);
+    expect(loaded.version).toBe(20);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);
@@ -246,7 +246,7 @@ describe('migration ladder', () => {
   it('seeds a risk-0 pacing block for a v13 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(19);
+    expect(loaded.version).toBe(20);
     expect(loaded.pacing).toEqual({
       risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
     });
@@ -279,7 +279,7 @@ describe('migration ladder', () => {
   it('seeds an empty contract run for a v11 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(19);
+    expect(loaded.version).toBe(20);
     expect(loaded.contracts).toEqual({
       active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
     });
@@ -299,7 +299,7 @@ describe('migration ladder', () => {
     };
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11, contracts }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(19);
+    expect(loaded.version).toBe(20);
     expect(loaded.contracts).toEqual(contracts);
 
     // And the real manager takes that state back without losing a slot.
@@ -328,7 +328,7 @@ describe('migration ladder', () => {
       prestige: { autoCastEnabled: { multishot: false } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(19);
+    expect(loaded.version).toBe(20);
     expect(loaded.abilities.rocket_barrage).toEqual({
       level: 3, xp: 0, cooldown: 0, active: false, activeTimer: 0,
     });
@@ -348,7 +348,7 @@ describe('migration ladder', () => {
       talents: { allocated: { power_core: 2 } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(19);
+    expect(loaded.version).toBe(20);
     expect(loaded.towerXp.level).toBe(4); // 3 + 1 (0-based -> 1-based)
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[4]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(4));
@@ -363,7 +363,7 @@ describe('migration ladder', () => {
       talents: { allocated: {} },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(19);
+    expect(loaded.version).toBe(20);
     expect(loaded.towerXp.level).toBe(TOWER_LEVEL_CAP);
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[TOWER_LEVEL_CAP]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(TOWER_LEVEL_CAP));
@@ -392,7 +392,7 @@ describe('migration ladder', () => {
       passiveAbilities: { marksmanship: { level: 5, xp: 200, unlocked: true } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(19);
+    expect(loaded.version).toBe(20);
     expect(loaded.passiveAbilities).toEqual({});
   });
 
@@ -490,7 +490,7 @@ describe('v19 watch block', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...minimalSave, version: 18 }));
     const loaded = new SaveManager(stubBus).load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(19);
+    expect(loaded!.version).toBe(20);
     expect(typeof loaded!.watch).toBe('object');
     expect(loaded!.watch).not.toBeNull();
     expect(Array.isArray(loaded!.watch!.counters.riskWaves)).toBe(true);
@@ -521,7 +521,7 @@ describe('v19 watch block', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify(malformed));
     const loaded = new SaveManager(stubBus).load();
     expect(loaded, 'save should load — normalizeWatch repairs, does not reject').not.toBeNull();
-    expect(loaded!.version).toBe(19);
+    expect(loaded!.version).toBe(20);
 
     const w = loaded!.watch!;
     expect(Array.isArray(w.completed)).toBe(true);
@@ -600,5 +600,58 @@ describe('v19 watch block', () => {
     expect(loaded).not.toBeNull();
     expect(loaded!.watch!.counters.killsByType.tank).toBe(42);
     expect(loaded!.watch!.counters.riskWaves[0]).toBe(0);
+  });
+});
+
+describe('v19→v20 ability level clamp', () => {
+  /**
+   * The minimal save template reused across the new block. Same shape as the
+   * `v19 watch block` block, inlined for scope isolation.
+   */
+  const minimalSave = {
+    version: 2,
+    savedAt: Date.now(),
+    tower: { hp: 50, maxHp: 100 },
+    resources: { gold: 500, lifetimeGold: 500, mana: 10, maxMana: 100, manaRegen: 1 },
+    upgrades: { damage: 5 },
+    research: {},
+    abilities: {},
+    prestige: {},
+    wave: { number: 12 },
+    stats: { enemiesKilled: 90 },
+  };
+
+  it('migrates a v19 save to v20 and clamps ability levels to their def caps', () => {
+    // rain_of_arrows has maxLevel 10. Plant a v19 blob with one ability below
+    // the floor and one above the ceiling.
+    const v19 = {
+      ...minimalSave,
+      version: 19,
+      abilities: {
+        rain_of_arrows: { level: 7 },          // in range — must stay at 7
+        frost_nova: { level: 999 },            // over cap (maxLevel 10) → 10
+        chain_lightning: { level: -3 },        // under floor → 1
+      },
+    };
+    storage.setItem(STORAGE_KEY, JSON.stringify(v19));
+    const loaded = new SaveManager(stubBus).load();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(20);
+    // In-range survives unchanged; out-of-range is clamped to [1, maxLevel].
+    expect(loaded!.abilities.rain_of_arrows.level).toBe(7);
+    expect(loaded!.abilities.frost_nova.level).toBe(10);
+    expect(loaded!.abilities.chain_lightning.level).toBe(1);
+  });
+
+  it('survives a v20 round trip without further clamping', () => {
+    // After migration, save+load must not re-clamp an in-range level.
+    const state = makeState();
+    state.abilities.rain_of_arrows = { level: 8 };
+    const mgr = new SaveManager(stubBus);
+    expect(mgr.save(state)).toBe(true);
+    const loaded = mgr.load();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(20);
+    expect(loaded!.abilities.rain_of_arrows.level).toBe(8);
   });
 });

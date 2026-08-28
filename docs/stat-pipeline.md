@@ -58,6 +58,7 @@ The 15 talent StatKeys added by the levelling redesign:
 | `interestRate` | [0, 0.5] | Gold interest per wave |
 | `chilledDamageBonus` | min 0 | Bonus damage to slowed enemies |
 | `abilityEchoChance` | [0, 0.75] | Chance to echo an ability cast |
+| `abilityAreaMultiplier` | [0.5, 3] | Scales every targeted ability's disc. Sources: `arcane_expansion` research, the `ar_frostbite` talent, the arcane core |
 | `manaOnKillFraction` | [0, 0.5] | Mana gained per kill as fraction of max |
 
 `lowHpDamageBonus` and `battery` (via `manaFraction`) are context-conditional:
@@ -224,7 +225,8 @@ and divided by 100 in `src/stats/contributors/passives.ts`.
 `windfall_mult_flat`, `auto_buy_speed_pct`, `xp_gain_pct`, `rp_drop_chance_pct`,
 `momentum_gain_pct`
 
-### Arcana (10 stats)
+### Arcana (11 stats)
 `mana_regen_pct`, `max_mana_flat`, `max_mana_pct`, `mana_on_kill_pct`,
 `ability_damage_pct`, `ability_cooldown_pct`, `ability_cost_pct`,
-`magic_proc_chance_pct`, `buff_duration_pct`, `ability_echo_chance_pct`
+`magic_proc_chance_pct`, `buff_duration_pct`, `ability_echo_chance_pct`,
+`ability_area_pct`

@@ -275,11 +275,12 @@ export class EffectsManager {
     }
   }
 
-  emitRainOfArrows(cx: number, cy: number): void {
+  emitRainOfArrows(cx: number, cy: number, radius: number = 200): void {
     const n = this.n(40);
     for (let i = 0; i < n; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const dist = 40 + Math.random() * 420;
+      // sqrt for a uniform disc rather than a centre-heavy one.
+      const dist = radius * Math.sqrt(Math.random());
       const x = cx + Math.cos(angle) * dist;
       const y = cy + Math.sin(angle) * dist;
       this.pushParticle({
@@ -296,18 +297,22 @@ export class EffectsManager {
     }
   }
 
-  emitFrostNovaRing(cx: number, cy: number): void {
+  emitFrostNovaRing(cx: number, cy: number, radius: number = 220): void {
     const n = this.n(48);
+    // Particle speed is derived so the ring reaches `radius` within its life,
+    // instead of the hard-coded 380-440 it used today (plan §E.1).
+    const life = 0.55;
+    const baseSpeed = radius / life;
     for (let i = 0; i < n; i++) {
       const angle = (i / n) * Math.PI * 2;
-      const speed = 380 + Math.random() * 60;
+      const speed = baseSpeed + (Math.random() - 0.5) * baseSpeed * 0.15;
       this.pushParticle({
         x: cx,
         y: cy,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
         age: 0,
-        life: 0.55 + Math.random() * 0.2,
+        life: life + (Math.random() - 0.5) * 0.2,
         size: 2 + Math.random() * 2,
         color: i % 2 === 0 ? FX.frost : lighten(FX.frost, 0.55),
         layer: 'additive',

@@ -11,6 +11,7 @@ export type ResearchEffectType =
   | 'chain_kill_aoe'
   | 'crit_mana'
   | 'ability_power'
+  | 'ability_area'
   | 'intermission_speed'
   | 'enemy_hp_reduce'
   | 'rp_gain'
@@ -213,6 +214,20 @@ export const RESEARCH_NODES: ResearchDef[] = [
     prerequisites: ['arcane_mastery', 'arcane_recovery'],
     icon: 'frostfire',
     color: '#e040fb',
+  },
+  {
+    id: 'arcane_expansion',
+    name: 'Arcane Expansion',
+    description: 'Ability areas are 35% larger',
+    cost: 900,
+    researchTime: 14400,
+    category: 'arcane',
+    effectType: 'ability_area',
+    effectPerLevel: 0.35,
+    maxLevel: 1,
+    prerequisites: ['arcane_mastery'],
+    icon: 'frozen-orb',
+    color: '#8e7bff',
   },
 
   // ── Scouting ──────────────────────────────────────────────────

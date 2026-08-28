@@ -268,6 +268,10 @@ export class ResearchTree {
     return this.sumEffect('ability_power');
   }
 
+  getAbilityAreaBonus(): number {
+    return this.sumEffect('ability_area');
+  }
+
   getIntermissionSpeedReduction(): number {
     return Math.min(0.9, this.sumEffect('intermission_speed'));
   }

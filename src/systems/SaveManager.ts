@@ -40,10 +40,11 @@ import { MAX_RISK_CEILING } from '../data/pacing';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, TOWER_LEVEL_CAP, TOWER_XP_TABLE } from '../data/xpTables';
 import { passiveXpPerKill, passiveXpPerWaveClear } from '../data/xpTables';
 import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
+import { ABILITIES } from '../data/abilities';
 import type { PassiveAbilityManager } from './PassiveAbilityManager';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 19;
+const SAVE_VERSION = 20;
 
 /** Offline passive XP is paid at a quarter of the live rate. */
 const OFFLINE_PASSIVE_XP_RATE = 0.25;
@@ -643,10 +644,32 @@ function migrateV18toV19(data: Record<string, unknown>): void {
   data.watch = defaultWatch();
 }
 
+/**
+ * v20: the active-abilities redesign.
+ *
+ * There is no ability-state shape change — levels, XP, cooldowns and
+ * `autoCastEnabled` all keep their meaning. The migration exists for one
+ * reason: ability levels are run-scoped and the redesign changes what a level
+ * is worth, so this clamps any level above the new `maxLevel` (no maxLevel
+ * dropped in this phase, so it is a no-op safety net) and leaves everything
+ * else untouched.
+ */
+function migrateV19toV20(data: Record<string, unknown>): void {
+  const abilities = data.abilities as Record<string, Record<string, unknown>> | undefined;
+  if (!isObject(abilities)) return;
+  for (const def of ABILITIES) {
+    const s = abilities[def.id];
+    if (!isObject(s)) continue;
+    if (typeof s.level === 'number') {
+      s.level = Math.max(1, Math.min(def.maxLevel, s.level));
+    }
+  }
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -679,6 +702,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 16) { migrateV16toV17(data); data.version = 17; }
   if (data.version === 17) { migrateV17toV18(data); data.version = 18; }
   if (data.version === 18) { migrateV18toV19(data); data.version = 19; }
+  if (data.version === 19) { migrateV19toV20(data); data.version = 20; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;

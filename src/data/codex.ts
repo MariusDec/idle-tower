@@ -564,6 +564,17 @@ export const CODEX_ENTRIES: readonly CodexEntry[] = [
     seeAlso: ['ability-cost', 'meteor', 'chain-lightning'],
   },
   {
+    id: 'ability-area',
+    term: 'Ability Area',
+    icon: 'spiky-explosion',
+    category: 'magic',
+    summary: 'A multiplier on every targeted ability\'s disc radius.',
+    detail:
+      'abilityAreaMultiplier is a 1+ multiplier that scales the radius of every placed ability (Rain of Arrows, Frost Nova, Meteor Strike). It is fed by the Arcane Expansion research, the Frostbite talent, and the arcane core\'s area bonus. It is clamped to [0.5, 3] so a stacked build cannot halve a disc to nothing or blow it past the arena.',
+    stats: ['abilityAreaMultiplier'],
+    seeAlso: ['ability-damage', 'meteor'],
+  },
+  {
     id: 'berserk',
     term: 'Berserk',
     icon: 'punch-blast',

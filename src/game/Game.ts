@@ -25,7 +25,7 @@ import {
   ignoresGroundEffects,
   isTargetable,
 } from '../data/enemies';
-import { ABILITIES, isPlaceable, placementRadius } from '../data/abilities';
+import { ABILITIES, ABILITY_BY_ID, isTargeted } from '../data/abilities';
 import { RESEARCH_BY_ID } from '../data/research';
 import { world } from '../data/arena';
 import { nextId } from '../utils/math';
@@ -148,8 +148,16 @@ const PASSIVE_REVIVE_FRACTION = 0.5;
 /** Fire-rate multiplier while the player holds the mouse to aim manually. */
 /** Fire-rate multiplier granted by a quick-shot proc. */
 const QUICK_SHOT_FIRE_RATE = 2;
-/** localStorage key for the `instantCast` preference (plan §4.3). */
-const INSTANT_CAST_KEY = 'the-tower-instant-cast';
+/** localStorage key for the `autoCastAutoAim` preference (plan §A.2 / §H.2). */
+const AUTO_AIM_KEY = 'the-tower-autocast-aim';
+/**
+ * Legacy key from before the abilities redesign (plan §H.2). The old
+ * `instantCast` flag meant "auto-aim my own presses" — its value still
+ * reads correctly as "auto-aim", so it is carried over into `AUTO_AIM_KEY`
+ * once and removed. Kept as a constant (rather than inlined at the one
+ * call site) so a grep finds the migration path.
+ */
+const LEGACY_INSTANT_CAST_KEY = 'the-tower-instant-cast';
 const BUFF_QUICK_SHOT = 'tower:quickShot';
 /**
  * Minimum away-time before the Welcome Back report is shown. Offline progress
@@ -370,23 +378,37 @@ function readAutoPickPreference(): boolean {
 }
 
 /**
- * `instantCast` defaults **on**, which is exactly today's behaviour: the
- * hotkey fires immediately. A player who wants to aim turns it off and gets
- * placement mode. Defaulting it off would have silently changed the controls
- * of every existing save.
+ * `autoCastAutoAim` defaults **on**, which is exactly the previous behaviour:
+ * auto-cast aims at the densest cluster. A player who wants every cast to
+ * land on the tower turns it off. Defaulting it off would have silently
+ * changed the controls of every existing save.
+ *
+ * The reader carries the legacy `instantCast` value over once and removes
+ * the old key, so an existing player keeps the preference they had — the
+ * new key's semantics ("should auto-cast aim?") are the same as the old
+ * key's, so the value is the same value.
  */
-function readInstantCastPreference(): boolean {
+function readAutoAimPreference(): boolean {
   try {
-    return localStorage.getItem(INSTANT_CAST_KEY) !== '0';
+    const next = localStorage.getItem(AUTO_AIM_KEY);
+    if (next !== null) return next !== '0';
+    const legacy = localStorage.getItem(LEGACY_INSTANT_CAST_KEY);
+    if (legacy !== null) {
+      localStorage.removeItem(LEGACY_INSTANT_CAST_KEY);
+      const on = legacy !== '0';
+      localStorage.setItem(AUTO_AIM_KEY, on ? '1' : '0');
+      return on;
+    }
   } catch {
-    return true;
+    // private mode / SSR — fall through to the default.
   }
+  return true;
 }
 
-function writeInstantCastPreference(enabled: boolean): void {
+function writeAutoAimPreference(enabled: boolean): void {
   try {
-    if (enabled) localStorage.removeItem(INSTANT_CAST_KEY);
-    else localStorage.setItem(INSTANT_CAST_KEY, '0');
+    if (enabled) localStorage.removeItem(AUTO_AIM_KEY);
+    else localStorage.setItem(AUTO_AIM_KEY, '0');
   } catch {
     // ignore
   }
@@ -538,8 +560,29 @@ export class Game {
   private chargeFirePending = false;
   /** Ability waiting for a click to place it (plan §4.3). */
   private readonly placement = new AbilityPlacement();
-  /** Player preference: cast instantly (default) rather than entering placement. */
-  private instantCast = true;
+  /**
+   * Player preference: should auto-cast aim at the densest cluster, or just
+   * cast from the tower? Defaults on (plan §A.2). Manual presses always arm
+   * placement, so this preference governs *only* the automation path; the
+   * name is the new public name for the legacy `instantCast` field.
+   */
+  private autoCastAutoAim = true;
+  /**
+   * Pointer is currently over the canvas. `placementSnapshot` reads it (in
+   * Phase 4) so the reticle disappears when the cursor leaves the battlefield
+   * rather than sticking at the edge. The field lives on `Game` rather than
+   * on the input listeners in `main.ts` because both the mouse-leave and the
+   * touch paths need to keep it in sync.
+   *
+   * Exposed via a getter rather than left as a public field so the wire-up
+   * in `main.ts` is the only path that can write to it.
+   */
+  private pointerOnCanvas = false;
+
+  /** Phase 4's `placementSnapshot` reads this to hide the reticle on leave. */
+  get isPointerOnCanvas(): boolean {
+    return this.pointerOnCanvas;
+  }
   /**
    * Player preference for auto-picking blessings. Forced on when automation is
    * running (see `blessingAutoPickForced`), because a player who has unlocked
@@ -625,6 +668,13 @@ export class Game {
    */
   private readonly reducedMotion: boolean = typeof matchMedia === 'function'
     && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /**
+   * Whether the primary pointer is coarse (touch-class device), resolved once
+   * at construction. Drives the placement-prompt copy (plan §G.1): a finger
+   * drags and lifts to cast; a mouse clicks to place.
+   */
+  private readonly coarsePointer: boolean = typeof matchMedia === 'function'
+    && matchMedia('(pointer: coarse)').matches;
 
   // Talent values consumed by event handlers rather than by the stat recompute.
   private talentDodgeChance = 0;
@@ -780,7 +830,7 @@ export class Game {
     this.blessingModal = new BlessingDraftModal(deps.modalRoot);
     this.corePicker = new CorePickerModal(deps.modalRoot);
     this.autoPickBlessings = readAutoPickPreference();
-    this.instantCast = readInstantCastPreference();
+    this.autoCastAutoAim = readAutoAimPreference();
     this.effects = new EffectsManager();
     this.effects.onShockwaveDamage = (s) => {
       // P5 boss death: damage enemies caught in the ring (single hit per ring)
@@ -822,6 +872,8 @@ export class Game {
           });
         }
       },
+      // Plan §D.10: Gold Rush holds the loot magnet for the buff's duration.
+      setGoldRushMagnet: (on) => this.lootMgr.setMagnetSource('goldRush', on),
     });
     this.prestigeMgr = new PrestigeManager(this.bus, {
       resources: this.state.resources,
@@ -841,6 +893,11 @@ export class Game {
       onAscend: () => this.ascend(),
       onTranscend: () => this.transcend(),
       bus: this.bus,
+      // Plan §A.2 / §F.1: auto-cast honours the player's `autoCastAutoAim`
+      // preference — `'auto'` for cluster-aim, `'tower'` for the cheap
+      // tower-centre fallback. Read each tick so a settings-panel change
+      // is picked up on the next auto-cast, not on a reload.
+      getAutoAim: () => this.autoCastAutoAim,
     });
     this.saveMgr = new SaveManager(this.bus, {
       getRP: () => this.researchTree.rp,
@@ -1783,16 +1840,27 @@ export class Game {
       this.effects.emitShockwaveRing(ts.x, ts.y, 320, withAlpha(FX.gold, 0.75), 6);
     });
     this.bus.on('ability_visual', (payload: unknown) => {
-      const p = payload as { id: AbilityId; def: { effectType: string }; target?: { x: number; y: number } | null };
+      // Plan §E.2: the payload now carries the ability's effective disc radius
+      // (0 for non-targeted abilities) and a placement target when the cast
+      // was aimed. The AoE / slow visuals use the placement target + radius so
+      // the burst matches the disc the player just dropped; everything tower-
+      // centred is unchanged.
+      const p = payload as {
+        id: AbilityId;
+        def: { effectType: string };
+        target?: { x: number; y: number } | null;
+        radius?: number;
+      };
       const t = this.tower.snapshot;
       const tx = p.target?.x ?? t.x;
       const ty = p.target?.y ?? t.y;
+      const r = p.radius ?? 0;
       switch (p.def.effectType) {
         case 'aoe_damage':
-          this.effects.emitRainOfArrows(t.x, t.y);
+          this.effects.emitRainOfArrows(tx, ty, r);
           break;
         case 'slow':
-          this.effects.emitFrostNovaRing(t.x, t.y);
+          this.effects.emitFrostNovaRing(tx, ty, r);
           break;
         case 'fire_rate_buff':
           this.effects.emitBerserkPulse(t.x, t.y);
@@ -1802,6 +1870,7 @@ export class Game {
           break;
         case 'single_target_damage':
           this.effects.emitMeteor(tx, ty, t.x, t.y);
+          this.effects.emitShockwaveRing(tx, ty, r, withAlpha(FX.ember, 0.8), 5);
           this.triggerCanvasShake();
           break;
         case 'chain_damage':
@@ -2420,18 +2489,15 @@ export class Game {
   }
 
   /**
-   * Cast an ability from the hotkey or the ability bar.
+   * Cast an ability from the hotkey or the ability bar (plan §A.1).
    *
-   * With `instantCast` on (the default, and what every existing save gets)
-   * this is exactly what it always was. With it off, the three placeable
-   * abilities enter placement mode instead and the *next canvas click* casts
-   * them; pressing the same hotkey again cancels, which is why re-entering
-   * placement for the ability already pending is a toggle rather than a no-op.
+   * A manual press *always* aims: a targeted ability arms placement and the
+   * next canvas press drops it. Auto-aim is what automation does, not what a
+   * player who reached for the keyboard asked for. Pressing the same hotkey
+   * again cancels, which is why re-arming the pending ability is a toggle.
    */
   castAbility(id: AbilityId): boolean {
-    if (!this.instantCast && isPlaceable(id)) {
-      return this.beginPlacement(id);
-    }
+    if (isTargeted(id)) return this.beginPlacement(id);
     return this.abilityMgr.tryCast(id, this.state.wave.highestWave);
   }
 
@@ -2727,25 +2793,70 @@ export class Game {
   }
 
   /**
-   * Cursor/finger state, fed by the three canvas listeners in `main.ts`.
+   * Cursor/finger state, fed by the canvas listeners in `main.ts`.
    *
    * This is also where the charged-shot hold is tracked (plan §4.2): a press
    * anchors the charge, a move far enough from the anchor restarts it, and a
    * release with a full ring queues the shot for the next substep. Nothing
    * here fires anything itself — a DOM event is not a simulation step.
+   *
+   * Plan §B.1: the cursor position is tracked whether or not the button is
+   * down, so the placement reticle has something to follow during a hover.
+   * Every other consumer of `mouseX` / `mouseY` is already gated on
+   * `mouseDown` (the charge snapshot, the manual-aim ring, the
+   * `fireChargedShot` path), so widening the tracking is safe.
    */
   setMouseInput(x: number, y: number, isDown: boolean): void {
     if (this.charge.setPointer(x, y, isDown)) this.chargeFirePending = true;
-    if (isDown) {
-      this.mouseX = x;
-      this.mouseY = y;
-    }
+    this.mouseX = x;
+    this.mouseY = y;
     // Manual aim begins: drop the lock-on so releasing the hold re-acquires
     // fresh rather than resuming a commitment made before the player took over.
     // A consumed press (orb, placement) never raises `isDown`, so clicking
     // something does not disturb the lock.
     if (isDown && !this.mouseDown) this.tower.clearTargetLock();
     this.mouseDown = isDown;
+  }
+
+  /**
+   * Pointer released (plan §B.2).
+   *
+   * `mouseup` / `touchend` used to call `setMouseInput(0, 0, false)`, which
+   * snapped the stored point to the world origin and made the next placement
+   * reticle draw at (0, 0) for the frame it took the move listener to catch
+   * up. A dedicated release keeps the last position — only the button state
+   * changes.
+   */
+  releasePointer(): void {
+    if (this.charge.setPointer(this.mouseX, this.mouseY, false)) this.chargeFirePending = true;
+    this.mouseDown = false;
+  }
+
+  /**
+   * Track whether the cursor is currently over the canvas (plan §B.2).
+   *
+   * `placementSnapshot` will read this in Phase 4 so the reticle disappears
+   * when the cursor leaves the battlefield rather than sticking at the edge.
+   * Set `true` on `mouseenter` / every `touchstart` / every `touchmove`,
+   * `false` on `mouseleave`. Touch does not call `false` on `touchend` —
+   * the finger has gone, but the placement may have just resolved there.
+   */
+  setPointerOnCanvas(on: boolean): void {
+    this.pointerOnCanvas = on;
+  }
+
+  /**
+   * Drop the armed ability wherever the pointer currently is (plan §B.3).
+   *
+   * Touch pipeline only: a mouse click already routes through
+   * `castPlacedAbility` from `handleCanvasPress` (the click is the press),
+   * but a touch wants a *release* to commit so the player can drag to aim.
+   * Returns false when nothing is armed, so the touch pipeline can decide
+   * not to consume the event.
+   */
+  commitPlacementAtPointer(): boolean {
+    if (!this.placement.isPlacing) return false;
+    return this.castPlacedAbility(this.mouseX, this.mouseY);
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -2868,26 +2979,46 @@ export class Game {
   }
 
   /** Placement preview for the renderer, or null when not placing. */
-  private placementSnapshot(): { x: number; y: number; radius: number; label: string } | null {
+  private placementSnapshot(): { x: number; y: number; radius: number; label: string; color: string; valid: boolean; count: number } | null {
     const id = this.placement.pending;
     if (!id) return null;
-    const def = ABILITIES.find(a => a.id === id);
+    if (!this.pointerOnCanvas && !this.mouseDown) return null;
+    const def = ABILITY_BY_ID[id];
+    const radius = this.abilityMgr.getEffectiveRadius(id);
+    // `queryRadius` returns a fresh array by default — allocating one here per
+    // frame while the reticle is up is fine (plan §E.3).
+    const inDisc = this.enemyMgr.queryRadius(this.mouseX, this.mouseY, radius);
+    let count = 0;
+    for (const e of inDisc) if (isTargetable(e)) count++;
     return {
       x: this.mouseX,
       y: this.mouseY,
-      radius: placementRadius(id),
+      radius,
       label: def?.name ?? '',
+      color: def?.color ?? '#ffffff',
+      valid: count > 0,
+      count,
     };
   }
 
   /**
-   * Enter placement mode for a targeted ability (plan §4.3).
+   * Enter placement mode for a targeted ability (plan §4.3 / §B.4).
    *
    * Refuses when the ability could not be cast anyway, so the player never
    * gets a prompt for a cast that was never going to happen.
+   *
+   * If a *different* targeted ability is already armed, the old one is
+   * cancelled first and the prompt is cleared — the new arming then writes
+   * its own prompt. `AbilityPlacement.toggle` would overwrite the pending
+   * id on its own, but doing the cancel here keeps the lifecycle visible in
+   * one place and makes sure no stale prompt text survives a re-arm.
    */
   private beginPlacement(id: AbilityId): boolean {
     const wave = this.state.wave.highestWave;
+    if (this.placement.pending !== null && this.placement.pending !== id) {
+      this.placement.cancel();
+      this.ui.setPlacementPrompt(null);
+    }
     const outcome = this.placement.toggle(id, this.abilityMgr.canCast(id, wave));
     if (outcome !== 'begin') {
       this.ui.setPlacementPrompt(null);
@@ -2898,9 +3029,14 @@ export class Game {
       return false;
     }
     const def = ABILITIES.find(a => a.id === id);
-    this.ui.setPlacementPrompt(
-      `Click to place ${def?.name ?? 'ability'} — Esc or ${def?.hotkey ?? ''} to cancel`,
-    );
+    // Plan §G.1: drop the hotkey from the prompt — it is on the tile and in
+    // the keybinds overlay already, and the string was already long on a
+    // phone. Touch devices get a drag-and-lift variant instead.
+    const name = def?.name ?? 'ability';
+    const prompt = this.coarsePointer
+      ? `Drag to aim ${name}, lift to cast — tap the tile to cancel`
+      : `Click to place ${name} — Esc to cancel`;
+    this.ui.setPlacementPrompt(prompt);
     return true;
   }
 
@@ -2933,6 +3069,27 @@ export class Game {
    */
   private castPlacedAbility(x: number, y: number): boolean {
     const wave = this.state.wave.highestWave;
+    // Plan §G.2: refuse a whiff before spending mana. A non-targeted ability
+    // (no disc) skips this check — there is no "empty field" to detect.
+    const pendingId = this.placement.pending;
+    if (pendingId !== null && isTargeted(pendingId)) {
+      const radius = this.abilityMgr.getEffectiveRadius(pendingId);
+      const inDisc = this.enemyMgr.queryRadius(x, y, radius);
+      let hasTarget = false;
+      for (const e of inDisc) {
+        if (isTargetable(e)) { hasTarget = true; break; }
+      }
+      if (!hasTarget) {
+        this.placement.cancel();
+        this.ui.setPlacementPrompt(null);
+        this.bus.emit('toast', {
+          kind: 'info',
+          text: 'No target there',
+          life: 1.5,
+        });
+        return false;
+      }
+    }
     let failed: AbilityId | null = null;
     const ok = this.placement.place((id) => {
       const cast = this.abilityMgr.tryCast(id, wave, { x, y });
@@ -2951,16 +3108,27 @@ export class Game {
     return ok;
   }
 
-  /** Player preference: instant cast (default) versus click-to-place. */
-  setInstantCast(enabled: boolean): void {
-    this.instantCast = enabled;
-    if (enabled) this.cancelPlacement();
-    writeInstantCastPreference(enabled);
-    this.ui.setInstantCastState(enabled);
+  /**
+   * Player preference: should auto-cast aim at the densest cluster, or
+   * just cast from the tower? Plan §A.2.
+   *
+   * Note the removed `if (enabled) this.cancelPlacement()` line — the
+   * setting no longer has anything to do with placement mode. Manual
+   * presses always arm placement, so a player cannot end up stuck in it
+   * because of this setting either way.
+   */
+  setAutoCastAutoAim(enabled: boolean): void {
+    this.autoCastAutoAim = enabled;
+    writeAutoAimPreference(enabled);
+    this.ui.setAutoCastAutoAimState(enabled);
   }
 
-  isInstantCast(): boolean {
-    return this.instantCast;
+  /**
+   * The getter `AutomationManager.getAutoAim` reads, so the manager can
+   * branch on the preference without growing its own cached copy.
+   */
+  get autoCastAutoAimEnabled(): boolean {
+    return this.autoCastAutoAim;
   }
 
   /** Live loot orbs, for the renderer and for tests. */
@@ -3421,6 +3589,9 @@ export class Game {
       isAutoCastUnlocked: () => this.prestigeMgr.isAutomationUnlocked('autoAbilities'),
       isAutoCastEnabled: (id) => this.state.prestige.autoCastEnabled[id] !== false,
       onToggleAutoCast: (id, enabled) => this.setAutoCastEnabled(id, enabled),
+      // Plan §G.3: the bar's `is-arming` class reads the current placement
+      // pending id through the API so the UI never reaches into Game state.
+      getPendingPlacement: () => this.placement.pending,
     });
     this.ui.setTalentAPI({
       allocated: this.state.talents.allocated,
@@ -3540,6 +3711,10 @@ export class Game {
     this.lastResolved = stats;
     this.appliedBuffVersion = this.buffs.version;
     this.applyResolvedStats(stats);
+    // The Stats popup replays a cached copy of this block every frame, so it
+    // has to be handed the new one here — this is the only path that changes
+    // a tower stat.
+    this.ui?.setResolvedStats(stats, stats.goldMultiplier);
     this.state.research = this.researchTree.getLevelsSnapshot();
   }
 
@@ -3712,6 +3887,7 @@ export class Game {
         manaRegenMultiplicative: this.researchTree.getManaRegenMultiplicative(),
         abilityCostReduction: this.researchTree.getAbilityCostReduction(),
         abilityPowerBonus: this.researchTree.getAbilityPowerBonus(),
+        abilityAreaBonus: this.researchTree.getAbilityAreaBonus(),
         pierceCount: this.researchTree.getPierceCount(),
         goldLuckChance: this.researchTree.getGoldLuckChance(),
         intermissionSpeedReduction: this.researchTree.getIntermissionSpeedReduction(),
@@ -3865,15 +4041,16 @@ export class Game {
     this.enemyMgr.setStatSpeedMult(stats.enemySpeedMult);
     this.enemyMgr.setStatHpMult(stats.enemyHpMult);
     this.enemyMgr.setStatDamageMult(stats.enemyDamageMult);
-    // Plan §4.1: Lodestone raises the drift auto-collect rate to 100% (and
-    // shortens the drift). Set from the same recompute as everything else, so
-    // taking the card is felt on the next orb and losing it on ascension is
-    // felt immediately.
-    this.lootMgr.setMagnet(this.blessingMgr.has('orb_magnet'));
+    // Plan §D.9: the `orb_magnet` blessing is one of the ref-counted magnet
+    // sources (the other is Gold Rush, owned by `AbilityManager`). Set from
+    // the same recompute as everything else, so taking the card is felt on
+    // the next orb and losing it on ascension is felt immediately.
+    this.lootMgr.setMagnetSource('blessing', this.blessingMgr.has('orb_magnet'));
 
     this.abilityMgr.setAbilityCostMultiplier(stats.abilityCostMultiplier);
     this.abilityMgr.setCooldownMultiplier(stats.abilityCooldownMultiplier);
     this.abilityMgr.setDamageMultiplier(stats.abilityDamageMultiplier);
+    this.abilityMgr.setAreaMultiplier(stats.abilityAreaMultiplier);
     this.abilityMgr.setBerserkFireBonus(stats.berserkFireBonus);
     this.abilityMgr.setChainBounceBonus(stats.chainBounceBonus);
     this.abilityMgr.setSlowStrengthBonus(stats.slowStrengthBonus);

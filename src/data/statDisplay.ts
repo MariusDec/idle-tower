@@ -146,6 +146,7 @@ const RAW_GROUPS: ReadonlyArray<RawGroup> = [
       { key: 'abilityCostMultiplier', label: 'Ability Cost', format: 'mult', hideAt: 1 },
       { key: 'abilityCooldownMultiplier', label: 'Ability Cooldown', format: 'mult', hideAt: 1 },
       { key: 'abilityDamageMultiplier', label: 'Ability Damage', format: 'mult', hideAt: 1 },
+      { key: 'abilityAreaMultiplier', label: 'Ability Area', format: 'mult', hideAt: 1 },
       { key: 'buffDurationBonus', label: 'Buff Duration', format: 'pctAdd', hideAt: 0 },
       { key: 'abilityEchoChance', label: 'Echo', format: 'pct', hideAt: 0 },
       { key: 'manaOnKillFraction', label: 'Soul Harvest', format: 'pct', hideAt: 0 },
@@ -193,7 +194,7 @@ export function formatStatValue(value: number, format: StatFormat): string {
     case 'pct':     return `${(value * 100).toFixed(1)}%`;
     case 'pctAdd':  return `${value >= 0 ? '+' : ''}${Math.round(value * 100)}%`;
     case 'mult':    return `${value.toFixed(2)}x`;
-    case 'perSec':  return `${formatWithOptionalDecimal(value)}/s`;
+    case 'perSec':  return `${formatWithOptionalDecimal(value, 2)}/s`;
     case 'seconds': return `${value.toFixed(2)}s`;
     case 'world':   return `${Math.round(value)}`;
   }

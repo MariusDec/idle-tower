@@ -263,10 +263,10 @@ function bootstrap(): void {
     game.setAutoPickBlessings(enabled);
   });
   ui.setAutoPickBlessingsState(game.isAutoPickBlessings(), game.isAutoPickBlessingsForced());
-  ui.setOnInstantCastChange((enabled) => {
-    game.setInstantCast(enabled);
+  ui.setOnAutoCastAutoAimChange((enabled) => {
+    game.setAutoCastAutoAim(enabled);
   });
-  ui.setInstantCastState(game.isInstantCast());
+  ui.setAutoCastAutoAimState(game.autoCastAutoAimEnabled);
   // Plan §9.D: the Graphics control. `setQualityPreference` writes the
   // preference and persists; `setQualityState` mirrors the live state back
   // into the panel so a tier demoted by the 2-second probe is visible.
@@ -296,6 +296,9 @@ function bootstrap(): void {
     isAutoCastUnlocked: () => game.prestige.isAutomationUnlocked('autoAbilities'),
     isAutoCastEnabled: (id) => game.gameState.prestige.autoCastEnabled[id] !== false,
     onToggleAutoCast: (id, enabled) => game.setAutoCastEnabled(id, enabled),
+    // Plan §G.3: read pending placement from the live `Game` accessor so the
+    // bar's `is-arming` class tracks arming without polling Game directly.
+    getPendingPlacement: () => game.pendingPlacement,
   });
   ui.setPrestigeAPI({
     canAscend: (wave) => game.prestige.canAscend(wave),
@@ -378,22 +381,42 @@ function bootstrap(): void {
   canvas.addEventListener('mousedown', (ev) => {
     const { x, y } = toWorldXY(ev.clientX, ev.clientY);
     mouseDown = true;
+    game.setPointerOnCanvas(true);
     pressAt(x, y);
     mouseDown = game.isMouseHeld();
     ensureAudio();
   });
   canvas.addEventListener('mouseup', () => {
     mouseDown = false;
-    game.setMouseInput(0, 0, false);
+    game.releasePointer();
   });
+  // Plan §B.2: a cursor leaving the canvas drops the button state and the
+  // "pointer is on the canvas" flag, so the reticle does not stick at the
+  // last hover point and `placementSnapshot` can hide the disc. Re-entering
+  // re-raises the flag so the next move listener can paint a fresh one.
+  canvas.addEventListener('mouseleave', () => {
+    mouseDown = false;
+    game.releasePointer();
+    game.setPointerOnCanvas(false);
+  });
+  canvas.addEventListener('mouseenter', () => game.setPointerOnCanvas(true));
 
   // Touch input: forward single-finger touches to the same mouse pipeline.
+  // Plan §B.3: while an ability is armed, the touch path is "drag to aim,
+  // release to place" — `touchstart` does not press, it only tracks; the
+  // cast resolves on `touchend` via `commitPlacementAtPointer`.
   canvas.addEventListener('touchstart', (ev) => {
     if (ev.touches.length === 0) return;
     const t = ev.touches[0];
     activeTouchId = t.identifier;
     const { x, y } = toWorldXY(t.clientX, t.clientY);
-    pressAt(x, y);
+    game.setPointerOnCanvas(true);
+    if (game.isPlacing()) {
+      // Aiming: the disc follows the finger and lands when it lifts.
+      game.setMouseInput(x, y, true);
+    } else {
+      pressAt(x, y);
+    }
     ensureAudio();
     ev.preventDefault();
   }, { passive: false });
@@ -403,6 +426,7 @@ function bootstrap(): void {
       if (ev.touches[i].identifier === activeTouchId) {
         const t = ev.touches[i];
         const { x, y } = toWorldXY(t.clientX, t.clientY);
+        game.setPointerOnCanvas(true);
         game.setMouseInput(x, y, true);
         break;
       }
@@ -411,7 +435,8 @@ function bootstrap(): void {
   }, { passive: false });
   const releaseTouch = () => {
     activeTouchId = null;
-    game.setMouseInput(0, 0, false);
+    if (game.isPlacing()) game.commitPlacementAtPointer();
+    game.releasePointer();
   };
   canvas.addEventListener('touchend', releaseTouch, { passive: true });
   canvas.addEventListener('touchcancel', releaseTouch, { passive: true });

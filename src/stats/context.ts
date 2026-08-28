@@ -43,6 +43,7 @@ export interface ResearchInputs {
   /** Negative fraction. */
   abilityCostReduction: number;
   abilityPowerBonus: number;
+  abilityAreaBonus: number;
   pierceCount: number;
   goldLuckChance: number;
   intermissionSpeedReduction: number;
@@ -165,6 +166,7 @@ export function emptyStatContext(): StatContext {
       manaRegenMultiplicative: 1,
       abilityCostReduction: 0,
       abilityPowerBonus: 0,
+      abilityAreaBonus: 0,
       pierceCount: 0,
       goldLuckChance: 0,
       intermissionSpeedReduction: 0,

@@ -1088,4 +1088,10 @@ export interface PlacementIndicator {
   /** Effect radius drawn at the cursor. */
   radius: number;
   label: string;
+  /** Ability tile colour, used to tint the reticle when the cast would hit something. */
+  color: string;
+  /** True when the disc currently contains at least one targetable enemy. */
+  valid: boolean;
+  /** Number of targetable enemies inside the disc — drives the count badge. */
+  count: number;
 }

@@ -79,6 +79,7 @@ export type StatKey =
   | 'abilityCostMultiplier'
   | 'abilityCooldownMultiplier'
   | 'abilityDamageMultiplier'
+  | 'abilityAreaMultiplier'
   | 'berserkFireBonus'
   | 'chainBounceBonus'
   | 'slowStrengthBonus'
@@ -213,6 +214,7 @@ export const STAT_BASES: Record<StatKey, number> = {
   abilityCostMultiplier: 1,
   abilityCooldownMultiplier: 1,
   abilityDamageMultiplier: 1,
+  abilityAreaMultiplier: 1,
   berserkFireBonus: 0,
   chainBounceBonus: 0,
   slowStrengthBonus: 0,
@@ -310,6 +312,7 @@ export const STAT_CLAMPS: Partial<Record<StatKey, StatClamp>> = {
   abilityCostMultiplier: { min: 0.1, max: 1 },
   abilityCooldownMultiplier: { min: 0.1, max: 1 },
   abilityDamageMultiplier: { min: 1 },
+  abilityAreaMultiplier: { min: 0.5, max: 3 },
   chainBounceBonus: { min: 0, integer: true },
   pierceExtra: { min: 0, integer: true },
   executeThreshold: { min: 0, max: 0.5 },

@@ -3241,34 +3241,64 @@ export class Renderer {
   }
 
   /**
-   * The disc the next click will drop a targeted ability on (plan §4.3).
+   * The disc the next click will drop a targeted ability on (plan §4.3 + §E.3).
    *
-   * Deliberately loud — a dashed ring plus a crosshair — because placement
-   * mode changes what a click means, and an input state the player cannot see
-   * is an input state they will fight.
+   * Deliberately loud — a filled disc, a rotating dashed rim, an inner pulse
+   * ring, and a crosshair — because placement mode changes what a click means,
+   * and an input state the player cannot see is an input state they will fight.
+   *
+   * When the disc currently contains a targetable enemy, the reticle is tinted
+   * in the ability's own colour; an empty disc flips to `FX.blood` so the
+   * whiff the §G.2 empty-disc refusal will eat is visible *before* the click.
+   * The count badge above the rim lets the player compare two candidate spots.
    */
-  private drawPlacement(ctx: CanvasRenderingContext2D, placement: RenderSnapshot['placement']): void {
-    if (!placement) return;
-    const { x, y, radius } = placement;
+  private drawPlacement(ctx: CanvasRenderingContext2D, p: RenderSnapshot['placement']): void {
+    if (!p) return;
+    const tint = p.valid ? p.color : FX.blood;
     ctx.save();
-    ctx.strokeStyle = withAlpha(FX.frost, 0.85);
-    ctx.lineWidth = entity(2);
-    ctx.setLineDash([entity(8), entity(6)]);
-    ctx.lineDashOffset = -this.time * 30;
+    // Filled disc first, so the ring reads as an edge rather than a floating circle.
+    ctx.fillStyle = withAlpha(tint, 0.10);
     ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    ctx.fill();
+    // Rotating dashed rim.
+    ctx.strokeStyle = withAlpha(tint, 0.9);
+    ctx.lineWidth = entity(2);
+    ctx.setLineDash([entity(10), entity(7)]);
+    ctx.lineDashOffset = -this.time * 40;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = withAlpha(FX.frost, 0.10);
-    ctx.fill();
-    ctx.strokeStyle = withAlpha(lighten(FX.frost, 0.55), 0.9);
+    // Inner pulse ring — makes the size change legible when the radius grows.
+    const pulse = 0.55 + 0.45 * Math.sin(this.time * 4);
+    ctx.strokeStyle = withAlpha(lighten(tint, 0.5), 0.55);
+    ctx.lineWidth = entity(1);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    // Crosshair, scaled with `entity()` like every other drawn size. The old
+    // raw `±10` world-unit cross was a 6-pixel mark on a 400-unit ring —
+    // invisible.
+    ctx.strokeStyle = withAlpha(lighten(tint, 0.55), 0.95);
     ctx.lineWidth = entity(1.5);
     ctx.beginPath();
-    ctx.moveTo(x - 10, y);
-    ctx.lineTo(x + 10, y);
-    ctx.moveTo(x, y - 10);
-    ctx.lineTo(x, y + 10);
+    ctx.moveTo(p.x - entity(10), p.y);
+    ctx.lineTo(p.x + entity(10), p.y);
+    ctx.moveTo(p.x, p.y - entity(10));
+    ctx.lineTo(p.x, p.y + entity(10));
     ctx.stroke();
+    // Count badge above the rim, so a player can compare two candidate spots
+    // without counting heads.
+    ctx.font = `700 ${entity(14).toFixed(2)}px ${DISPLAY_FONT_STACK}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    const badgeY = p.y - p.radius - entity(10);
+    ctx.lineWidth = entity(2.2);
+    ctx.strokeStyle = withAlpha(INK['950'], 0.85);
+    ctx.strokeText(`${p.count}`, p.x, badgeY);
+    ctx.fillStyle = p.valid ? withAlpha(lighten(tint, 0.55), 0.95) : withAlpha(FX.blood, 0.95);
+    ctx.fillText(`${p.count}`, p.x, badgeY);
     ctx.restore();
   }
 

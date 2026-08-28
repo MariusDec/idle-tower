@@ -745,7 +745,7 @@ describe('icons', () => {
     expect(ABILITIES.length).toBe(10);
     expect(PASSIVE_ABILITIES.length).toBe(12);
     expect(UPGRADES.length).toBe(29);
-    expect(RESEARCH_NODES.length).toBe(17);
+    expect(RESEARCH_NODES.length).toBe(18);
     expect(TALENTS.length).toBe(60);
     expect(BLESSINGS.length).toBe(30);
     expect(CORES.length).toBe(5);

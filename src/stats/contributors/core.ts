@@ -70,6 +70,7 @@ function applyStatBlock(a: SourceHandle, def: CoreDef): void {
   if (s.lifestealAdd !== undefined) a.add('lifesteal', s.lifestealAdd);
   if (s.manaRegenPct !== undefined) a.mult('manaRegen', 1 + s.manaRegenPct);
   if (s.abilityDamagePct !== undefined) a.mult('abilityDamageMultiplier', 1 + s.abilityDamagePct);
+  if (s.abilityAreaPct !== undefined) a.mult('abilityAreaMultiplier', 1 + s.abilityAreaPct);
   // Additive, so a core's gold composes with prestige, research and blessings
   // the way every other additive gold source does (plan §1.1).
   if (s.goldPct !== undefined) a.add('goldAdditive', s.goldPct);

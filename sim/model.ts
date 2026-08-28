@@ -439,14 +439,18 @@ export const ACTIVE_PLAY = {
    */
   chargeAimPenalty: 0.5,
   /**
-   * Targeted ability placement (§4.3), as an additive fraction of total DPS.
+   * Targeted ability placement (plan §I.4 / abilities plan), as an additive
+   * fraction of total DPS.
    *
    * The model has no abilities at all, so this cannot be derived — it is an
-   * estimate, and a small one: the focus bonus is +60% inside the disc on two
-   * of ten abilities plus a chosen epicentre on a third, and abilities are a
-   * minority of a run's damage to begin with.
+   * estimate. Five of ten abilities are now targeted rather than three; the
+   * focus bonus is `PLACEMENT_FOCUS_DAMAGE_BONUS` (0.25) across the whole disc
+   * rather than 0.6 across a sub-disc; and a placed disc that misses now costs
+   * real coverage (auto-cast fills only the cluster it can see). The gap
+   * between perfect placement and the auto-placer is genuinely wider than the
+   * old estimate, so the credit rises.
    */
-  targetedCastDps: 0.02,
+  targetedCastDps: 0.06,
 } as const;
 
 /**
@@ -580,7 +584,8 @@ export const CORE_MODEL: Record<CoreId, CoreModelEntry> = {
   // of shots rather than a flat percentage. `dpsPct` here is the *ability*
   // half of the core (+50% ability damage), which the model has no abilities
   // to spend — the same estimate `ACTIVE_PLAY.targetedCastDps` is, and small
-  // for the same reason: abilities are a minority of a run's damage.
+  // for the same reason: abilities are a minority of a run's damage even
+  // after the abilities plan makes five of ten targeted.
   arcane: {
     dpsPct: 0.04,
     procShare: 1 / CORE_TUNING.manaShotInterval,

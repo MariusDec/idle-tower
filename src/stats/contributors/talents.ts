@@ -69,6 +69,7 @@ export function contributeTalents(ctx: StatContext, acc: StatAccumulator): void 
 
       // ── Arcana ──
       case 'ability_damage_pct':  a.mult('abilityDamageMultiplier', 1 + value); break;
+      case 'ability_area_pct':    a.mult('abilityAreaMultiplier', 1 + value); break;
       case 'mana_cost_reduction': a.mult('abilityCostMultiplier', 1 - value); break;
       case 'ability_cooldown_pct': a.mult('abilityCooldownMultiplier', 1 - value); break;
       case 'mana_regen_pct':      a.mult('manaRegen', 1 + value); break;

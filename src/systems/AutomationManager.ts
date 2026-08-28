@@ -15,6 +15,11 @@ export interface AutomationDeps {
   onAscend: () => number;
   onTranscend: () => number;
   bus: EventBus;
+  /**
+   * Whether auto-cast should aim at the densest cluster (`'auto'`) or just
+   * cast from the tower (`'tower'`). Player preference (plan §A.2).
+   */
+  getAutoAim: () => boolean;
 }
 
 const BASE_AUTO_BUY_INTERVAL = 10;
@@ -39,20 +44,29 @@ const DAMAGE_PRIORITY: Partial<Record<UpgradeCategory, number>> = {
 };
 
 /**
- * Default auto-cast order: burst damage first, then buffs, then economy. The
- * player opts individual abilities out rather than reordering — a full priority
- * editor is more UI than the decision is worth.
+ * Auto-cast order, plan §F.1.
+ *
+ * Meteor Strike and Execute lead **only because their `autoCast` conditions
+ * gate them** (`minInDisc: 1` and a min-enemies field respectively) — an
+ * unconditional expensive cast at the top of the list is what starved the
+ * roster before, because the budget could pay for one or two of the top
+ * abilities and never reached the cheap ones. With the conditions in place,
+ * the top two are cheap to skip when the field is wrong, and Rain of Arrows
+ * (the best damage-per-mana in the table) sits third and fires on nearly
+ * every tick that has a crowd. The rest follow roughly best-to-worst
+ * damage-per-mana, with the self-buffs and the economy ability at the bottom
+ * so the budget reaches them only when nothing else is worth spending on.
  */
 const AUTO_CAST_PRIORITY: AbilityId[] = [
-  'execute',
   'meteor_strike',
-  'chain_lightning',
+  'execute',
   'rain_of_arrows',
+  'chain_lightning',
   'rocket_barrage',
-  'precision_shot',
   'berserk',
-  'vampiric_aura',
+  'precision_shot',
   'frost_nova',
+  'vampiric_aura',
   'gold_rush',
 ];
 
@@ -195,25 +209,30 @@ export class AutomationManager {
    * per-ability toggles from plan §3.1. Casting continues down the list rather
    * than stopping at the first success, so a tick that finds four ready
    * abilities fires all four instead of leaving three on cooldown-complete.
-   */
-  /**
-   * Gameplay plan §4.3: automation places targeted abilities too.
    *
-   * There is deliberately nothing here to do it — `AbilityManager.tryCast`
-   * picks the densest cluster itself whenever no explicit placement is passed,
-   * which is the case for every automatic path (this one, the ability bar, and
-   * the hotkey with `instantCast` on). Putting the placer behind the cast
-   * rather than in front of it is what stops automation and the player's own
-   * instant-cast from being two implementations that drift.
+   * Each candidate is gated on three things, in order:
+   *  1. the player's per-ability toggle (`autoCastEnabled`),
+   *  2. the ability's *condition* (`autoCastConditionMet` — see plan §F.2),
+   *     which exists so the budget lands on casts that will actually hit
+   *     something, and
+   *  3. mana + cooldown (`canCast`).
+   * Manual casts never see the condition — pressing a hotkey gets the cast,
+   * full stop (plan §F.3).
+   *
+   * `placement` follows the player's `autoCastAutoAim` setting: `'auto'` lets
+   * `AbilityManager.tryCast` pick the densest cluster, `'tower'` centres the
+   * disc on the tower (a cheap fallback for buffs and the economy ability).
    */
   private runAutoCast(wave: number): void {
     const enabled = this.deps.getState().prestige.autoCastEnabled ?? {};
+    const autoAim = this.deps.getAutoAim();
     for (const id of AUTO_CAST_PRIORITY) {
       if (enabled[id] === false) continue;
       const def = ABILITY_BY_ID[id];
       if (!def) continue;
       if (!this.deps.abilities.canCast(id, wave)) continue;
-      this.deps.abilities.tryCast(id, wave);
+      if (!this.deps.abilities.autoCastConditionMet(id)) continue;
+      this.deps.abilities.tryCast(id, wave, autoAim ? 'auto' : 'tower');
     }
   }
 

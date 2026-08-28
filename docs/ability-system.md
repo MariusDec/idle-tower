@@ -30,36 +30,44 @@ The per-ability gate is layered: a cast attempt before the ability's own `unlock
 
 ## Per-Ability Tuning (base values, all at L1)
 
-| Ability | Mana | CD (s) | Duration (s) | Effect | Hotkey |
-|---|---:|---:|---:|---|:---:|
-| Rain of Arrows | 30 | 15 | instant | 4.2× tower damage to all | 1 |
-| Berserk | 40 | 30 | 8 | Doubles tower fire rate | 5 |
-| Frost Nova | 25 | 20 | 5 | Slows all enemies by 50% | 2 |
-| Chain Lightning | 40 | 18 | instant | Strikes the nearest enemy for 2.5× and arcs to nearby targets; damage decays by 0.65 per bounce | 3 |
-| Gold Rush | 50 | 60 | 15 | Triples gold drops | 7 |
-| Precision Shot | 35 | 22 | 6 | +30% crit chance and ×1.5 crit damage for 6 s | 4 |
-| Rocket Barrage | 45 | 20 | instant | Fires 6 homing rockets at nearby enemies; each deals 1.65× tower damage and splashes half of its hit within a 60 px blast | 0 |
-| Meteor Strike | 60 | 25 | instant | 10× damage to highest-HP enemy, 2× splash within 60 px | 6 |
-| Execute | 50 | 30 | instant | Kills non-boss enemies below 12% HP; bosses below 6% HP take 4.2× damage | 8 |
-| Vampiric Aura | 45 | 35 | 8 | +6% lifesteal (additive) and +1% maxHP/s regen for 8 s | 9 |
+| Ability | Mana | CD (s) | Duration (s) | Area (px) | Effect | Hotkey |
+|---|---:|---:|---:|---:|---|:---:|
+| Rain of Arrows | 30 | 12 | instant | 170 | 6.5x tower damage to everything inside the disc | 1 |
+| Berserk | 40 | 30 | 8 | — | Doubles tower fire rate | 5 |
+| Frost Nova | 25 | 18 | 5 | 190 | Global 15% slow, a 50% chill inside the disc, and +25% damage to chilled enemies | 2 |
+| Chain Lightning | 34 | 14 | instant | 120 | Seeds at the placed point for 4.0x and arcs to nearby targets; damage decays by 0.65 per bounce | 3 |
+| Gold Rush | 50 | 40 | 12 | — | 2.6x gold drops **and** the loot magnet for the duration | 7 |
+| Precision Shot | 35 | 22 | 6 | — | +30% crit chance and x1.5 crit damage for 6 s | 4 |
+| Rocket Barrage | 45 | 20 | instant | 220 | Fires 6 homing rockets at enemies inside the disc; each deals 1.65x tower damage and splashes half its hit within a 60 px blast | 0 |
+| Meteor Strike | 60 | 25 | instant | 70 | 18x damage to the highest-HP enemy **inside the crater**, 0.55x splash to the rest of it | 6 |
+| Execute | 50 | 30 | instant | — | Kills non-boss enemies below 12% HP; bosses below 6% HP lose 5% of their **max** HP | 8 |
+| Vampiric Aura | 45 | 35 | 8 | — | +6% lifesteal (additive) and +1% maxHP/s regen for 8 s | 9 |
+
+Areas are quoted in **pre-scale px** — the same units `range` and the enemy codex use, so the
+number is directly comparable to the range ring the player already reads. Five of the ten
+abilities are targeted; see [Targeted casts](#targeted-casts).
 
 ## Upgrades
 
 Each ability is upgradable from level 1 (base) up to `maxLevel` — 10 for every
 ability except Rocket Barrage, which goes to 15. Per upgrade level:
 
-| Ability | Upgrade base | Growth | Mana +/lvl | CD −/lvl | Dur +/lvl | Effect Δ/lvl |
-|---|---:|:---:|---:|---:|---:|---|
-| Rain of Arrows | 400g | 1.75 | +5 | −0.5 s | 0 | +0.85× dmg |
-| Berserk | 900g | 1.85 | +6 | −1.0 s | +0.5 s | +0.15× fire rate |
-| Frost Nova | 1300g | 1.80 | +4 | −0.8 s | +0.5 s | −0.02 slow factor |
-| Chain Lightning | 1400g | 1.80 | +4 | −0.5 s | 0 | +0.25× dmg; +1 bounce per even level (cap 9) |
-| Gold Rush | 3400g | 1.80 | +8 | −1.5 s | +1.0 s | +0.25× gold |
-| Precision Shot | 3450g | 1.80 | +4 | −0.6 s | +0.4 s | +2% crit chance; crit multiplier +0.1×/lvl (1.5 → 2.4) |
-| Rocket Barrage | 12000g | 1.85 | +3 | −0.3 s | 0 | +0.21× per rocket **and** +0.3 rockets/lvl (6 → ~10 at L15) |
-| Meteor Strike | 19600g | 1.85 | +6 | −0.5 s | 0 | +1.25× dmg |
-| Execute | 20000g | 1.85 | +6 | −0.8 s | 0 | +2% threshold (12% → 30%; boss threshold stays half) |
-| Vampiric Aura | 25000g | 1.85 | +5 | −1.0 s | +0.4 s | +2% lifesteal (additive); regen +0.5%/lvl (1% → 5.5%) |
+| Ability | Upgrade base | Growth | Mana +/lvl | CD -/lvl | Dur +/lvl | Area +/lvl | Effect delta/lvl |
+|---|---:|:---:|---:|---:|---:|---:|---|
+| Rain of Arrows | 400g | 1.75 | +5 | -0.5 s | 0 | +16 px | +1.15x dmg |
+| Berserk | 900g | 1.85 | +6 | -1.0 s | +0.5 s | — | +0.15x fire rate |
+| Frost Nova | 1300g | 1.80 | +4 | -0.8 s | +0.5 s | +14 px | -0.02 chill factor, +3% brittle |
+| Chain Lightning | 1400g | 1.80 | +3 | -0.4 s | 0 | +8 px | +0.45x dmg; +1 bounce per even level (cap 9) |
+| Gold Rush | 3400g | 1.80 | +8 | -1.0 s | +0.6 s | — | +0.30x gold |
+| Precision Shot | 3450g | 1.80 | +4 | -0.6 s | +0.4 s | — | +2% crit chance; crit multiplier +0.1x/lvl (1.5 -> 2.4) |
+| Rocket Barrage | 12000g | 1.85 | +3 | -0.3 s | 0 | +10 px | +0.21x per rocket **and** +0.3 rockets/lvl (6 -> ~10 at L15) |
+| Meteor Strike | 19600g | 1.85 | +6 | -0.5 s | 0 | +9 px | +2.2x dmg |
+| Execute | 20000g | 1.85 | +6 | -0.8 s | 0 | — | +2% threshold (12% -> 30%); boss max-HP bite +0.8%/lvl (5% -> 12.2%) |
+| Vampiric Aura | 25000g | 1.85 | +5 | -1.0 s | +0.4 s | — | +2% lifesteal (additive); regen +0.5%/lvl (1% -> 5.5%) |
+
+At max level the discs read: Rain of Arrows 314 px, Frost Nova 316 px, Chain Lightning 192 px,
+Rocket Barrage 360 px (L15), Meteor Strike 151 px. Every one of them stays inside the arena's
+short half-extent, which `npm run checks` asserts.
 
 Upgrade base costs loosely follow the shared `400 × 1.135^(unlockWave − 10)`
 trend the front-loaded ladder was rebased onto. The top end sits deliberately
@@ -84,9 +92,9 @@ cost(level) = floor(upgradeBaseCost × upgradeCostGrowth^level)
 
 **Example — Rain of Arrows L1 → L10**: damage 4.2× → 11.85×, mana 30 → 75, cooldown 15.0 s → 10.5 s. Total gold spent on upgrades ≈ 143 k before the ability-XP discount.
 
-**Frost Nova display inversion**: the internal slow *factor* shrinks (0.50 → 0.32) but the description and tooltip render `(1 − factor) × 100` as the slow **%**, so the player sees 50% → 68%.
+**Frost Nova display inversion**: the internal chill *factor* shrinks (0.50 → 0.32) but the description and tooltip render `(1 − factor) × 100` as the slow **%**, so the player sees 50% → 68%. The global floor outside the disc is a separate, level-independent 15%.
 
-**Execute display**: the threshold is stored as a percent value. The description and tooltip render it directly. Level-ups *raise* the threshold (12% → 30% at L10), so the ability gets **easier** to trigger as it levels — more enemies qualify for the instant-kill. The boss threshold is always half the non-boss one; bosses never get instakilled, they just take `4.2×` damage below it.
+**Execute display**: the threshold is stored as a percent value. The description and tooltip render it directly. Level-ups *raise* the threshold (12% → 30% at L10), so the ability gets **easier** to trigger as it levels — more enemies qualify for the instant-kill. The boss threshold is always half the non-boss one; bosses never get instakilled, they lose `executeBossFrac(level)` of their max HP below it (5% at L1, 12.2% at L10).
 
 ## Effect Types
 
@@ -94,41 +102,94 @@ The `AbilityEffectType` union covers all 10 abilities:
 
 | Type | Abilities | Implementation |
 |---|---|---|
-| `aoe_damage` | Rain of Arrows | Hits every alive enemy once |
-| `slow` | Frost Nova | Sets `slowFactor` + `slowTimer` on `EnemyManager` |
+| `aoe_damage` | Rain of Arrows | **Disc-scoped**: hits every targetable enemy inside `getEffectiveRadius(id)` of the cast point once. A focused cast adds `PLACEMENT_FOCUS_DAMAGE_BONUS` (+25%) across the whole disc |
+| `slow` | Frost Nova | Three layers: a **global floor** (`GLOBAL_NOVA_SLOW` = 0.85, level-independent, so an idle player's panic button never regresses), a **disc chill** (`applyChill` at the level-scaled factor, deepened by `PLACEMENT_FOCUS_CHILL` and lengthened by `PLACEMENT_FOCUS_CHILL_DURATION` on a focused cast), and the **brittle buff** `ability:frostBrittle` adding `frostBrittle(level)` (25% +3%/lvl) to `chilledDamageBonus` for the duration |
 | `fire_rate_buff` | Berserk | `BuffRegistry` entry `ability:fireRate`, stat `fireRate`, kind mult at `value × (1 + berserkFireBonus)` |
-| `gold_buff` | Gold Rush | `BuffRegistry` entry `ability:gold`, stat `goldMultiplier`, kind mult at `value` |
-| `single_target_damage` | Meteor Strike | Highest-HP target, 2× splash within `METEOR_SPLASH_RADIUS` (60 px) |
-| `chain_damage` | Chain Lightning | Bounces start at the nearest enemy to the tower, each subsequent bounce picks the nearest unhit enemy within `CHAIN_BOUNCE_RADIUS` (200 px); damage decays by `CHAIN_DECAY` (0.65) per bounce |
+| `gold_buff` | Gold Rush | `BuffRegistry` entry `ability:gold`, stat `goldMultiplier`, kind mult at `value`, **plus** `LootManager.setMagnetSource('goldRush', true)` for the duration — the orbs a boosted drop rate produces are worth nothing if they age out uncollected. `clearEffect` drops the source |
+| `single_target_damage` | Meteor Strike | The crater **is** the ability's disc: the heavy hit goes to the highest-HP targetable enemy inside it, and everything else in the disc takes `METEOR_SPLASH_FRACTION` (**0.55**) of that hit. The splash is a fraction, never a multiple — `npm run checks` guards it |
+| `chain_damage` | Chain Lightning | The chain **seeds at the placed point** (tower-centred when there is none); a focused cast reaches +2 extra bounces. Each subsequent bounce picks the nearest unhit enemy within `CHAIN_BOUNCE_RADIUS` (200 px); each subsequent bounce picks the nearest unhit enemy within `CHAIN_BOUNCE_RADIUS` (200 px); damage decays by `CHAIN_DECAY` (0.65) per bounce |
 | `crit_buff` | Precision Shot | Two `BuffRegistry` entries — `critChance` **additive** at `value / 100` (clamped to `[0, 1]`) and `critMultiplier` multiplicative at `precisionCritMultiplier(level)` (`1.5 + 0.1 × (level − 1)`), both applied in `rollShot`. The multiplier curve is what makes the upgrade pitch "+10% crit damage per level" real rather than tooltip-only |
 | `lifesteal_buff` | Vampiric Aura | Two `BuffRegistry` entries — `lifesteal` **additive** at `+6% (+2%/level)` and `healthRegen` additive at `vampiricRegen(level)` = `1% + 0.5% × (level − 1)` of max HP per second. Additive because most builds carry zero base lifesteal and a ×N multiplier had nothing to multiply; the additive bucket still composes with any lifesteal the player does own |
-| `execute_damage` | Execute | Boss threshold = `pct/2` (4.2× damage); non-boss = `pct` (instant-kill by dealing `max(1, hp)`) |
-| `rocket_barrage` | Rocket Barrage | Fires `floor(effectCount)` homing rockets at distinct targetable enemies (extras double up at random once the field runs out of firsts). Each lands through the ordinary impact path — resists apply — for `effectValue × towerDamage`, then splashes `splashFraction` (0.5) of its hit within `ROCKET_SPLASH_RADIUS` (60 px). Emits `rockets_fired`; each splash pops a decorative `projectile_exploded` |
+| `execute_damage` | Execute | Boss threshold = `pct/2`; below it the boss loses `executeBossFrac(level)` of its **max HP** (5% +0.8%/lvl), capped at the bar that is left and deliberately bypassing `applyResists` — an execute a resist can shrug is not an execute. Non-boss = `pct` (instant-kill by dealing `max(1, hp)`). Untargeted: it sweeps the field |
+| `rocket_barrage` | Rocket Barrage | Fires `floor(effectCount)` homing rockets at distinct targetable enemies **inside the disc** (extras double up at random once the field runs out of firsts). Each lands through the ordinary impact path — resists apply — for `effectValue × towerDamage`, then splashes `splashFraction` (0.5) of its hit within `ROCKET_SPLASH_RADIUS` (60 px). Emits `rockets_fired`; each splash pops a decorative `projectile_exploded` |
 
-## Targeted Casts (gameplay plan §4.3)
+## Targeted casts
 
-Rain of Arrows, Frost Nova and Meteor Strike can be **placed**. `PLACEABLE_ABILITIES` in
-`src/data/abilities.ts` gives each one a disc; `AbilityManager.tryCast(id, wave, placement?)`
-takes an optional point.
+Five abilities are **targeted**: Rain of Arrows, Frost Nova, Chain Lightning, Rocket Barrage and
+Meteor Strike. A def is targeted iff it carries an `areaRadius`; `isTargeted(id)` is the single
+predicate and `placementRadius(id, level)` the single radius formula:
 
-| Path | Placement | Focus bonus |
+```
+placementRadius(id, level) = areaRadius + areaRadiusPerLevel × (level − 1)
+effective radius           = placementRadius(id, level) × abilityAreaMultiplier
+```
+
+`AbilityManager.getEffectiveRadius(id)` is the only caller anything else should use — it folds in
+the level and the stat. `AbilityManager.tryCast(id, wave, placement)` takes a `CastPlacement`,
+which is one of exactly three things:
+
+| `placement` | Meaning | Focus bonus |
 |---|---|---|
-| Hotkey with `instantCast` on (default) | `pickBestSpot(id)` — densest cluster in the disc | no |
-| Ability bar click | `pickBestSpot(id)` | no |
-| `AutomationManager.runAutoCast` | `pickBestSpot(id)` | no |
-| Hotkey with `instantCast` off, then a canvas click | the player's click | **yes** |
+| `{x, y}` | The player pointed here | **yes** |
+| `'auto'` | `pickBestSpot(id)` — the densest cluster the disc can cover | no |
+| `'tower'` | Centred on the tower | no |
 
-The focus bonus is what aiming buys, and it is additive rather than restrictive: Rain of Arrows
-still hits the whole field and Frost Nova still slows it, but enemies inside the disc take +60%
-damage / a 25%-harder chill for 1.5x as long. Meteor Strike relocates its crater instead, its disc
-being exactly `METEOR_SPLASH_RADIUS` so a placed meteor is the same meteor somewhere else.
+**Routing.** A manual press *always* arms placement: `Game.castAbility` sends any targeted ability
+to `beginPlacement(id)`, hotkey and ability-bar click alike, and the resulting canvas press casts
+with a `{x, y}`. Automation is the thing that picks a spot for you:
+`AutomationManager.runAutoCast` passes `'auto'` when the player's **auto-aim** setting is on
+(the default) and `'tower'` when it is off. Untargeted abilities cast immediately from any path.
+
+**What aiming buys.** The disc *is* the effect now — a placed Rain of Arrows hits its disc rather
+than the field — so the reward for aiming is a bonus on top of choosing the spot:
+`PLACEMENT_FOCUS_DAMAGE_BONUS` (0.25) across the whole disc for damage abilities, a deeper and
+1.5x-longer chill for Frost Nova, +2 bounces for Chain Lightning.
 
 `pickBestSpot` scores enemy positions with `EnemyManager.queryRadius`; Meteor Strike weights by HP
 rather than head count, which reproduces the old `pickHighestHpTarget` behaviour whenever a boss is
 on the field. The placer sits **behind** `tryCast`, so every automatic path shares it.
 
-Full details, including the placement-mode cancellation rules, are in
-[loot-system.md](loot-system.md).
+A placement that lands on empty ground is **refused, not eaten**: no mana is spent and the arming
+state stays up. Cancellation rules and the pointer/touch idiom are in
+[loot-system.md](loot-system.md) and [ui-system.md](ui-system.md).
+
+## Ability area
+
+`abilityAreaMultiplier` is a plain stat key, base `1`, clamped to `[0.5, 3]` so a stacked build can
+neither halve a disc to nothing nor blow it past the arena. `Game.applyResolvedStats` pushes it
+into `AbilityManager.setAreaMultiplier`. Its sources:
+
+| Source | Effect |
+|---|---|
+| Ability level | `areaRadiusPerLevel` per level above 1 (this is radius, not the multiplier) |
+| `arcane_expansion` research | +35% ability area (900 RP, 4 h, needs `arcane_mastery`) |
+| `ar_frostbite` talent | +5% ability area per point (3 points max) |
+| Arcane core | +25% ability area, alongside its +50% ability damage |
+
+See [stat-pipeline.md](stat-pipeline.md) for how the contributors compose.
+
+## Auto-cast conditions
+
+"Is it off cooldown" is not a decision. The mana budget cannot pay for the whole roster, so an
+ability may carry an `AutoCastCondition` — a **floor** automation must clear before it spends mana.
+A manual cast never consults it.
+
+| Ability | Condition |
+|---|---|
+| Rain of Arrows | `minInDisc: 3` |
+| Berserk | `minEnemies: 4` |
+| Frost Nova | `minInDisc: 4` |
+| Chain Lightning | `minEnemies: 2` |
+| Gold Rush | `minEnemies: 6` |
+| Precision Shot | `minEnemies: 3` |
+| Rocket Barrage | `minEnemies: 3` |
+| Meteor Strike | `minInDisc: 1` |
+| Execute | `minEnemies: 1` |
+| Vampiric Aura | `towerHpBelow: 0.75` |
+
+The fields are `minEnemies`, `minInDisc` (counted at `pickBestSpot`), `bossOnly`, `bossHpBelow` and
+`towerHpBelow`; `AbilityManager.autoCastConditionMet(id)` evaluates them, and an ability with no
+condition is always eligible.
 
 ## Mana System
 
@@ -143,23 +204,26 @@ Full details, including the placement-mode cancellation rules, are in
 2. Spend the effective mana cost.
 3. Set the cooldown to the **effective** cooldown (`cooldown × cooldownMultiplier`), with a 1 s floor.
 4. If the ability has a duration, set `active` + `activeTimer` to the effective duration. Otherwise clear them.
-5. Apply the **effective** effect value (level-scaled):
-   - `aoe_damage`: deal `towerDamage × effectValue × damageMultiplier` to each alive enemy
-   - `slow`: `enemies.applySlow(effectValue, duration)` — the factor multiplies enemy speed
+5. Resolve the `CastPlacement` into a `CastContext` — `{id, point, focused}`. `'tower'` yields the
+   tower's position, `'auto'` the `pickBestSpot(id)` result (falling back to the tower), a `{x, y}`
+   the player's own point with `focused = true`.
+6. Apply the **effective** effect value (level-scaled) through that context:
+   - `aoe_damage`: deal `towerDamage × effectValue × damageMultiplier × (focused ? 1.25 : 1)` to every targetable enemy within `getEffectiveRadius(id)` of the cast point
+   - `slow`: global `applySlow(GLOBAL_NOVA_SLOW, duration)`, then `applyChill` inside the disc at the level-scaled factor (deeper and 1.5x longer when focused), plus the `ability:frostBrittle` buff
    - `fire_rate_buff`: multiply tower fire rate by `effectValue × (1 + berserkFireBonus)`
    - `gold_buff`: multiply gold drops by `effectValue`
-   - `single_target_damage`: hit highest-HP enemy for `value×` heavy, 2× splash within 60 px
-   - `chain_damage`: chain lightning starting from the nearest enemy; bounces = `min(9 + talent bonus, 5 + ⌊level/2⌋ + talent bonus)`, damage = `towerDamage × value × 0.65^index × damageMultiplier`
+   - `single_target_damage`: hit the highest-HP enemy **inside the crater** for `value×`, then `METEOR_SPLASH_FRACTION` (0.55) of that to the rest of the crater
+   - `chain_damage`: chain lightning seeded at the cast point (+2 bounces when focused); bounces = `min(9 + talent bonus, 5 + ⌊level/2⌋ + talent bonus)`, damage = `towerDamage × value × 0.65^index × damageMultiplier`
    - `crit_buff`: two buffs — `critChance` additive at `value/100` (clamped to `[0, 1]`) and `critMultiplier` multiplicative at `precisionCritMultiplier(level)`
    - `lifesteal_buff`: `lifesteal` **additive** at `value`, plus a second buff adding `vampiricRegen(level)` to `healthRegen` (fraction of max HP per second)
-   - `execute_damage`: kill non-boss enemies below `value%` HP; deal `4.2×` to boss below `value/2%` HP
-   - `rocket_barrage`: fire `floor(effectCount)` homing rockets (`effectCount + 0.3 × (level − 1)`), each for `towerDamage × effectValue` with a half-damage splash in 60 px
-6. Emit `ability_cast` and `ability_visual` events. The visual event may carry an optional `target: {x,y}` — Meteor Strike's actual impact point, or the placement disc's centre.
+   - `execute_damage`: kill non-boss enemies below `value%` HP; take `executeBossFrac(level)` of **max HP** off a boss below `value/2%` HP
+   - `rocket_barrage`: fire `floor(effectCount)` homing rockets (`effectCount + 0.3 × (level − 1)`) at targets inside the disc, each for `towerDamage × effectValue` with a half-damage splash in 60 px
+7. Emit `ability_cast` and `ability_visual` events. The visual event carries the cast point and the effective radius, so the effect that draws is exactly the disc the reticle promised.
 
 ## Tick Logic
 
 - Decrement cooldowns. No event fires when one reaches 0.
-- Decrement active durations; on expiry, `clearEffect` removes exactly the `BuffRegistry` ids `applyEffect` set (fire rate, crit, lifesteal/regen, gold).
+- Decrement active durations; on expiry, `clearEffect` removes exactly what `applyEffect` set — the `BuffRegistry` ids (fire rate, crit, lifesteal/regen, gold, frost brittle) and the Gold Rush magnet source.
 
 ## Upgrading from the Abilities Panel
 
@@ -190,6 +254,7 @@ The ability buffs are plain entries in the `BuffRegistry`, keyed by stable ids s
 | `ability:critDamage` | `critMultiplier` | mult | `precisionCritMultiplier(level)` |
 | `ability:lifesteal` | `lifesteal` | add | Vampiric Aura's grant — additive because most builds have zero base lifesteal |
 | `ability:vampiricRegen` | `healthRegen` | add | `vampiricRegen(level)` of max HP per second |
+| `ability:frostBrittle` | `chilledDamageBonus` | add | Frost Nova's `frostBrittle(level)` (0.25 +0.03/lvl), cleared when the nova expires |
 
 They resolve into `TowerState` like any other stat source (see [stat-pipeline.md](stat-pipeline.md)); the clamps live in the stat-key table (`critChance` maxes at 1, `lifesteal` floors at 0). `Tower` exposes only getters over the composed snapshot — there is no imperative setter for crit or lifesteal — so `rollShot` and `computeStatsInfo` both read already-composed values: fire rate, DPS, crit % and lifesteal % all move while Precision Shot / Berserk / Vampiric Aura are running.
 
@@ -211,12 +276,18 @@ between the two resets.
 
 ## Save Migration
 
-Saves are at **v16** (`SAVE_VERSION` in `src/systems/SaveManager.ts`). The
-v15 → v16 step is the ladder's first rename: `migrateV15toV16` moves the
-`multishot` key to `rocket_barrage` in both places it appears — the `abilities`
-state map (level and XP carried over untouched) and `prestige.autoCastEnabled`
-(the player's per-ability on/off choice carried over). See
-[save-system.md](save-system.md).
+Saves are at **v20** (`SAVE_VERSION` in `src/systems/SaveManager.ts`).
+
+- **v15 → v16** is the ladder's first rename: `migrateV15toV16` moves the `multishot` key to
+  `rocket_barrage` in both places it appears — the `abilities` state map (level and XP carried over
+  untouched) and `prestige.autoCastEnabled` (the player's per-ability on/off choice carried over).
+- **v19 → v20** is the ability redesign. There is no state-shape change — levels, XP, cooldowns and
+  `autoCastEnabled` all keep their meaning — so `migrateV19toV20` only clamps any stored level into
+  `[1, maxLevel]` as a safety net; levels are run-scoped and the redesign changes what a level is
+  worth, not how it is stored. The `instantCast` **localStorage preference** (a separate key, not
+  part of the save) is read once and carried into `autoCastAutoAim`, then removed.
+
+See [save-system.md](save-system.md).
 
 ## Cooldown Floor
 
@@ -231,22 +302,32 @@ state map (level and XP carried over untouched) and `prestige.autoCastEnabled`
 Once per second, `AutomationManager.runAutoCast` walks every ability in this fixed priority, casting each one that is ready, enabled and affordable:
 
 ```
-execute → meteor_strike → chain_lightning → rain_of_arrows → rocket_barrage
-  → precision_shot → berserk → vampiric_aura → frost_nova → gold_rush
+meteor_strike → execute → rain_of_arrows → chain_lightning → rocket_barrage
+  → berserk → precision_shot → frost_nova → vampiric_aura → gold_rush
 ```
 
-Burst damage first, then buffs, then economy — Execute leads because its value-per-mana is highest on boss waves. A full priority editor was judged more UI than the decision is worth: the player opts individual abilities out instead (`prestige.autoCastEnabled[id] === false`), which the walk honours alongside the wave gates via `canCast`.
+Meteor and Execute lead **only because their conditions gate them** (`minInDisc: 1` and a populated
+field respectively) — an unconditional expensive cast at the top of the list is what starved the
+rest of the roster. Rain of Arrows, the best damage-per-mana in the table, sits third and casts on
+nearly every tick that has a crowd; the economy buff sits last.
+
+Each candidate must clear four gates in order: the player's opt-out
+(`prestige.autoCastEnabled[id] === false`), `canCast` (wave, level, cooldown, mana),
+`autoCastConditionMet(id)`, and then it casts with `'auto'` or `'tower'` depending on the auto-aim
+setting. A full priority editor was judged more UI than the decision is worth.
 
 ## Edge Cases
 
 - **Upgrade while buff is active**: buff continues at its cast level; future casts use new stats.
-- **Save migration**: v16 renames `multishot` → `rocket_barrage`; the stored level/XP and auto-cast toggle carry over.
+- **Save migration**: v16 renames `multishot` → `rocket_barrage`; v20 clamps stored levels and migrates the `instantCast` preference to `autoCastAutoAim`.
 - **Frost Nova display**: internal factor shrinks, UI shows slow %.
+- **Brittle stacking**: `ability:frostBrittle` adds to `chilledDamageBonus` *additively* with the `ar_frostbite` talent — that is the intended composition, and `chilledDamageBonus` only amplifies projectile hits, so the nova cannot amplify its own follow-up nuke.
+- **Ability area clamp**: `abilityAreaMultiplier` is clamped to `[0.5, 3]`; a fully stacked area build tops out there.
 - **Cooldown / cost floor**: minimum 1 s / 1 mana even at L10 with full reductions.
 - **Ascension / Transcendence**: both reset every ability to L1 and wipe XP — levels are run-scoped.
 - **Automation**: `AutomationManager.runAutoCast` already routes through `canCast` and `tryCast`, so it picks up the new wave gates and effective stats for free.
-- **Meteor on empty field**: `pickHighestHpTarget()` returns null; the cast silently does nothing (no mana is still spent? — actually mana IS spent first; see `tryCast`). Plan: this matches the no-target edge case for AoE/chain abilities.
-- **Rocket Barrage on empty field**: mana is still spent; the rockets leave as non-homing duds in a radial spread with no splash and age out like any other stray shot.
+- **A placement on empty ground**: refused before any mana is spent — `Game` keeps the arming state up rather than eating the cast. An *automatic* cast on an empty field is prevented earlier by the ability's `autoCast` condition.
+- **Rocket Barrage with an empty disc**: the manual path refuses the placement; a `'tower'`-routed cast with nothing in range still spends mana and the rockets leave as non-homing duds that age out like any other stray shot.
 - **Crit cap**: the `critChance` stat clamps to `[0, 1]` so combined crit sources can't exceed 100%.
 - **Chain double-hit guard**: a `Set<enemyId>` is built per cast to ensure each enemy is hit at most once.
 - **Vampiric regen compounding**: the regen bonus is a buff entry keyed by id, so re-applying it replaces rather than stacks, and a stat recompute during the buff composes with it instead of subtracting it out.

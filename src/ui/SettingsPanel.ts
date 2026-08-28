@@ -16,9 +16,13 @@ export interface SettingsAPI {
   /** True when automation is running, which forces the setting on. */
   autoPickBlessingsForced?: boolean;
   onAutoPickBlessingsChange?: (enabled: boolean) => void;
-  /** Plan §4.3: cast on hotkey (default) versus click-to-place. */
-  instantCast?: boolean;
-  onInstantCastChange?: (enabled: boolean) => void;
+  /**
+   * Plan §A.2: should auto-cast aim at the densest cluster (default), or
+   * just cast from the tower? A player who reached for the keyboard is
+   * always aiming, so this only governs the automation path.
+   */
+  autoCastAutoAim?: boolean;
+  onAutoCastAutoAimChange?: (enabled: boolean) => void;
   /** UI plan §9.D: the four-position Graphics control. */
   currentQuality?: 'auto' | QualityTier;
   onQualityChange?: (pref: 'auto' | QualityTier) => void;
@@ -59,7 +63,7 @@ export class SettingsPanel {
   private muteBtn: HTMLButtonElement | null = null;
   private targetingSelect: HTMLSelectElement | null = null;
   private autoPickInput: HTMLInputElement | null = null;
-  private instantCastInput: HTMLInputElement | null = null;
+  private autoCastAutoAimInput: HTMLInputElement | null = null;
   /** Quality segmented buttons, indexed by preference id (UI plan §9.D). */
   private qualityButtons: Map<'auto' | QualityTier, HTMLButtonElement> = new Map();
   private qualityHint: HTMLElement | null = null;
@@ -84,7 +88,7 @@ export class SettingsPanel {
     this.muteBtn = null;
     this.targetingSelect = null;
     this.autoPickInput = null;
-    this.instantCastInput = null;
+    this.autoCastAutoAimInput = null;
     this.qualityButtons.clear();
     this.qualityHint = null;
   }
@@ -106,10 +110,10 @@ export class SettingsPanel {
     }
   }
 
-  /** Push the live instant-cast preference in (plan §4.3). */
-  setInstantCast(enabled: boolean): void {
-    this.api.instantCast = enabled;
-    if (this.instantCastInput) this.instantCastInput.checked = enabled;
+  /** Push the live auto-cast auto-aim preference in (plan §A.2). */
+  setAutoCastAutoAim(enabled: boolean): void {
+    this.api.autoCastAutoAim = enabled;
+    if (this.autoCastAutoAimInput) this.autoCastAutoAimInput.checked = enabled;
   }
 
   /**
@@ -157,7 +161,7 @@ export class SettingsPanel {
     }
 
     // ── Abilities section ──
-    if (this.api.onInstantCastChange) {
+    if (this.api.onAutoCastAutoAimChange) {
       this.root.appendChild(this.renderAbilitySection());
     }
 
@@ -210,11 +214,12 @@ export class SettingsPanel {
   }
 
   /**
-   * Plan §4.3. Default **on**, so nothing changes for a player who never opens
-   * this panel: the hotkey casts, exactly as it always has, and the ability
-   * places itself on the densest cluster in range. Turning it off is opting
-   * *in* to aiming, which is worth roughly +30% on the three placeable
-   * abilities and is the whole reward for the extra click.
+   * Plan §A.5. Default **on**, so nothing changes for a player who never opens
+   * this panel: auto-cast aims at the densest cluster, exactly as it has
+   * since the revamp. Turning it off makes auto-cast cast from the tower —
+   * the cheap fallback that still works when there is no enemy on the field
+   * (Berserk, Gold Rush, etc.) and is the only thing the setting governs
+   * any more.
    */
   private renderAbilitySection(): HTMLElement {
     const section = document.createElement('div');
@@ -227,25 +232,26 @@ export class SettingsPanel {
 
     const desc = document.createElement('p');
     desc.className = 'settings-desc';
-    desc.textContent = 'Instant cast fires Rain of Arrows, Frost Nova and Meteor Strike the moment '
-      + 'you press the hotkey, aimed at the densest cluster in range. Turn it off to place them '
-      + 'yourself: the hotkey arms the ability and the next click on the battlefield drops it, '
-      + 'hitting harder where you put it. Escape cancels.';
+    desc.textContent = 'Targeted abilities — Rain of Arrows, Frost Nova, Chain Lightning, Meteor '
+      + 'Strike and Rocket Barrage — arm when you press their hotkey, and the next click on the '
+      + 'battlefield drops them there. Escape or the hotkey again cancels. Auto-cast aims for '
+      + 'you: leave "Auto-cast aims at crowds" on and automation drops each ability on the '
+      + 'densest cluster it can find; turn it off and automation casts from the tower instead.';
     section.appendChild(desc);
 
     const label = document.createElement('label');
     label.className = 'settings-checkbox';
     const input = document.createElement('input');
     input.type = 'checkbox';
-    input.checked = this.api.instantCast ?? true;
-    this.instantCastInput = input;
+    input.checked = this.api.autoCastAutoAim ?? true;
+    this.autoCastAutoAimInput = input;
     input.addEventListener('change', () => {
-      this.api.instantCast = input.checked;
-      this.api.onInstantCastChange?.(input.checked);
+      this.api.autoCastAutoAim = input.checked;
+      this.api.onAutoCastAutoAimChange?.(input.checked);
     });
     label.appendChild(input);
     const text = document.createElement('span');
-    text.textContent = 'Instant cast';
+    text.textContent = 'Auto-cast aims at crowds';
     label.appendChild(text);
     section.appendChild(label);
 

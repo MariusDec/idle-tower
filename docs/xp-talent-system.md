@@ -103,6 +103,12 @@ number }`) and optionally a `behavior` from the `TalentBehavior` union.
 | `archmage` | `Game` ability_cast handler → `BuffRegistry` (fireRate) |
 | `battery` | `stats/contributors/talents` (reads `ctx.manaFraction`) |
 
+`ar_frostbite` (Magic, row 3) is the tree's cold node and carries three stats per point: `+8%`
+slow effect, `+7%` chilled damage, and `+5%` **ability area** (`ability_area_pct` →
+`abilityAreaMultiplier`). The area stat is what makes a cold build's Frost Nova disc grow as it is
+invested in; it stacks multiplicatively with the `arcane_expansion` research and the arcane core,
+inside the `[0.5, 3]` clamp on the stat key.
+
 ### TalentStat is a closed union
 
 `TALENT_STATS` is a `const` array; `TalentStat` is derived from it.

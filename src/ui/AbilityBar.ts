@@ -1,5 +1,5 @@
 import type { AbilityId, GameState } from '../types';
-import { ABILITIES, ABILITY_BY_ID, type EffectiveAbilityStats } from '../data/abilities';
+import { ABILITIES, ABILITY_BY_ID, isTargeted, type EffectiveAbilityStats } from '../data/abilities';
 import {
   setAriaLabel,
   setDisabled,
@@ -24,6 +24,12 @@ export interface AbilityBarHandlers {
   isMaxed: (id: AbilityId) => boolean;
   getUpgradeCost: (id: AbilityId) => number;
   getEffectiveStats: (id: AbilityId) => EffectiveAbilityStats;
+  /**
+   * The id of the ability currently armed for placement, or null when none.
+   * Drives the `is-arming` outline pulse so the player can see which tile the
+   * next click will consume (plan §A.4 / §G.3).
+   */
+  getPendingPlacement: () => AbilityId | null;
 }
 
 const HOVER_DELAY_MS = 200;
@@ -129,6 +135,11 @@ export class AbilityBar {
       toggleClass(refs.btn, 'is-cooldown', onCd);
       toggleClass(refs.btn, 'is-locked', reason === 'Locked' || (reason?.startsWith('Unlocks at') ?? false));
       toggleClass(refs.btn, 'is-active', abState.active);
+
+      // Plan §A.4 / §G.3: the armed tile wears an `is-arming` class so the CSS
+      // outline pulse can mark which ability the next click will consume.
+      const armed = this.handlers.getPendingPlacement();
+      toggleClass(refs.btn, 'is-arming', armed === def.id);
 
       // The badge greys the moment the pool cannot pay for it, so affording a
       // cast stops being a two-readout arithmetic problem.
@@ -276,6 +287,17 @@ export class AbilityBar {
     hotkey.className = 'ability-hotkey';
     hotkey.textContent = def.hotkey;
     btn.appendChild(hotkey);
+
+    // A small crosshair glyph on every targeted tile, so the player can see
+    // "this one aims" before they tap it. CSS-only `⌖` (U+2316) avoids loading
+    // a sprite icon for a one-character mark (plan §A.4).
+    if (isTargeted(def.id)) {
+      const aimGlyph = document.createElement('span');
+      aimGlyph.className = 'ability-aim-glyph';
+      aimGlyph.textContent = '\u2316';
+      aimGlyph.setAttribute('aria-hidden', 'true');
+      btn.appendChild(aimGlyph);
+    }
 
     const badge = document.createElement('div');
     badge.className = 'ability-active-badge';

@@ -25,6 +25,7 @@ Research Points (RP) earned on each Ascension (RP = AP gained). Spent on permane
 |----|------|------|--------|--------|
 | mana_font | Mana Font | 5 | — | +50% mana regen |
 | arcane_mastery | Arcane Mastery | 15 | mana_font | -30% ability mana cost |
+| arcane_expansion | Arcane Expansion | 900 | arcane_mastery | +35% ability area (every targeted ability's disc) |
 
 ### Scouting
 | ID | Name | Cost | Prereq | Effect |

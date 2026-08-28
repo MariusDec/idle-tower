@@ -19,8 +19,8 @@ export const TALENT_STATS = [
   'equipment_find_chance', 'upgrade_cost_reduction', 'orb_value_pct', 'momentum_gain_pct',
   'auto_buy_speed_pct', 'windfall_mult', 'interest_pct', 'enemy_hp_pct',
   // ── Arcana ──
-  'ability_damage_pct', 'mana_cost_reduction', 'ability_cooldown_pct', 'mana_regen_pct',
-  'max_mana_flat', 'max_mana_pct', 'magic_proc_chance', 'slow_effect_pct',
+  'ability_damage_pct', 'ability_area_pct', 'mana_cost_reduction', 'ability_cooldown_pct',
+  'mana_regen_pct', 'max_mana_flat', 'max_mana_pct', 'magic_proc_chance', 'slow_effect_pct',
   'chilled_damage_pct', 'chain_bounce_count', 'meteor_damage_pct', 'mana_shield_pct',
   'ability_echo_chance', 'mana_on_kill_pct', 'buff_duration_pct',
 ] as const;
@@ -831,7 +831,7 @@ export const TALENTS: TalentDef[] = [
   {
     id: 'ar_frostbite',
     name: 'Frostbite',
-    description: '+8% slow effect, +7% chilled damage per point',
+    description: '+8% slow effect, +7% chilled damage, +5% ability area per point',
     branch: 'magic',
     row: 3, col: 1,
     maxPoints: 3,
@@ -840,6 +840,7 @@ export const TALENTS: TalentDef[] = [
     effects: [
       { stat: 'slow_effect_pct', perPoint: 0.08 },
       { stat: 'chilled_damage_pct', perPoint: 0.07 },
+      { stat: 'ability_area_pct', perPoint: 0.05 },
     ],
     icon: 'snowflake-1',
     color: '#a95cff',
@@ -1060,6 +1061,7 @@ export const TALENT_STAT_LABELS: Record<TalentStat, string> = {
   enemy_hp_pct: 'enemy HP',
   // ── Arcana ──
   ability_damage_pct: 'ability damage',
+  ability_area_pct: 'ability area',
   mana_cost_reduction: 'ability mana cost',
   ability_cooldown_pct: 'ability cooldown',
   mana_regen_pct: 'mana regen',

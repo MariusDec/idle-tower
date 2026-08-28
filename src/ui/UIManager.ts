@@ -95,6 +95,11 @@ export interface AbilityAPI {
   isAutoCastUnlocked: () => boolean;
   isAutoCastEnabled: (id: AbilityId) => boolean;
   onToggleAutoCast: (id: AbilityId, enabled: boolean) => void;
+  /**
+   * Plan §A.4 / §G.3: the id currently armed for placement, or null. Drives
+   * the `is-arming` outline pulse on the targeted tile.
+   */
+  getPendingPlacement: () => AbilityId | null;
 }
 
 export interface ResearchAPI {
@@ -357,7 +362,7 @@ export class UIManager {
   private onMuteToggle: () => void = () => {};
   private onTargetingModeChange: (mode: string) => void = () => {};
   private onAutoPickBlessingsChange: (enabled: boolean) => void = () => {};
-  private onInstantCastChange: (enabled: boolean) => void = () => {};
+  private onAutoCastAutoAimChange: (enabled: boolean) => void = () => {};
   private onQualityChange: (
     pref: 'auto' | 'high' | 'medium' | 'low',
   ) => void = () => {};
@@ -433,6 +438,8 @@ export class UIManager {
       cooldown: 0,
       duration: 0,
       effectValue: 0,
+      area: 0,
+      displayArea: '',
       displayEffectValue: '',
       displayDuration: '',
       displayText: '',
@@ -444,6 +451,7 @@ export class UIManager {
     isAutoCastUnlocked: () => false,
     isAutoCastEnabled: () => true,
     onToggleAutoCast: () => {},
+    getPendingPlacement: () => null,
   };
   private prestigeApi: PrestigeAPI = {
     coreState: { selected: DEFAULT_CORE, unlocked: [DEFAULT_CORE], pickerAvailable: false },
@@ -645,7 +653,7 @@ export class UIManager {
       autoPickBlessings: false,
       autoPickBlessingsForced: false,
       onAutoPickBlessingsChange: (enabled) => this.onAutoPickBlessingsChange(enabled),
-      onInstantCastChange: (enabled) => this.onInstantCastChange(enabled),
+      onAutoCastAutoAimChange: (enabled) => this.onAutoCastAutoAimChange(enabled),
       currentQuality: 'auto',
       onQualityChange: (pref) => this.onQualityChange(pref),
     });
@@ -928,6 +936,7 @@ export class UIManager {
       isMaxed: (id) => this.abilityApi.isMaxed(id),
       getUpgradeCost: (id) => this.abilityApi.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityApi.getEffectiveStats(id),
+      getPendingPlacement: () => this.abilityApi.getPendingPlacement(),
     });
   }
 
@@ -1241,13 +1250,13 @@ export class UIManager {
     this.settingsPanel.setAutoPickBlessings(enabled, forced);
   }
 
-  setOnInstantCastChange(handler: (enabled: boolean) => void): void {
-    this.onInstantCastChange = handler;
+  setOnAutoCastAutoAimChange(handler: (enabled: boolean) => void): void {
+    this.onAutoCastAutoAimChange = handler;
   }
 
-  /** Push the current instant-cast preference into the settings panel (§4.3). */
-  setInstantCastState(enabled: boolean): void {
-    this.settingsPanel.setInstantCast(enabled);
+  /** Push the current auto-cast auto-aim preference into the settings panel. */
+  setAutoCastAutoAimState(enabled: boolean): void {
+    this.settingsPanel.setAutoCastAutoAim(enabled);
   }
 
   /** Plan §9.D: the four-position Graphics control. */
@@ -1323,6 +1332,22 @@ export class UIManager {
         this.transcendencePanel.update(this.lastState);
       }
     }
+  }
+
+  /**
+   * Refresh just the resolved stat block (and the multiplier derived from it).
+   *
+   * Every row in the Stats popup reads `info.resolved`, but the per-frame
+   * `pushFrameStats` can only replay the cached block — so without this the
+   * popup showed whatever `setStatsInfo` last pushed, and a talent or upgrade
+   * bought mid-run did not move the numbers until some other path happened to
+   * call `syncUiApis` (picking a blessing, for instance). Called from the one
+   * place that may change a tower stat, so the cache cannot go stale.
+   */
+  setResolvedStats(resolved: Readonly<Record<StatKey, number>>, goldMultiplier: number): void {
+    this.cachedResolved = resolved;
+    this.cachedGoldMultiplier = goldMultiplier;
+    if (this.lastState) this.pushFrameStats(this.lastState);
   }
 
   setStatsInfo(info: StatsInfo): void {

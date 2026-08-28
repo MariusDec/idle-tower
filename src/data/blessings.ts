@@ -68,7 +68,7 @@ export const BLESSING_BEHAVIOR_CONSUMERS: Record<BlessingBehavior, string> = {
   crit_chain: 'ProjectileManager.applyCritChain',
   frost_shots: 'ProjectileManager (on hit) → EnemyManager.applyChill',
   shatter: 'ProjectileManager (on hit, vs EnemyManager.isChilled)',
-  orb_magnet: 'LootManager.setMagnet (auto-collect rate + drift speed)',
+  orb_magnet: 'LootManager.setMagnetSource("blessing", …) (auto-collect rate + drift speed)',
   split_on_kill: 'Game enemy_killed handler',
   homing: 'Game.simulate → ProjectileManager.fire({ isHoming })',
   overkill_carry: 'ProjectileManager (on kill)',

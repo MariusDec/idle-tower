@@ -50,6 +50,7 @@ interface PersistentState {
 | v16 → v17 | the levelling redesign: 0-based levels become 1-based, XP restated onto the new polynomial+geometric curve, `talents.allocated` emptied (full refund — all talent ids changed) |
 | v17 → v18 | the passive redesign: `passiveAbilities` cleared (new 12-passive structure with per-passive XP curves, milestones, and gold+XP upgrade costs; old prices were negligible vs new ones so no gold refund) |
 | v18 → v19 | the Long Watch. Purely additive — `data.watch = defaultWatch()`. |
+| v19 → v20 | the ability redesign. No state-shape change — `migrateV19toV20` only clamps each stored ability level into `[1, maxLevel]` as a safety net. The `instantCast` **localStorage** preference (never part of the save) is read once into `autoCastAutoAim` and removed. |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a

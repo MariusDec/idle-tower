@@ -385,21 +385,49 @@ swift-kill clock. `Game.frameUpdate` resolves it from the lead boss and pushes
 it via `UIManager.setBossBarData`; passing `null` hides it. See
 [boss-encounters.md](boss-encounters.md#the-boss-bar).
 
-### The placement prompt (gameplay plan §4.3)
+### The placement prompt and the reticle
 
-With `instantCast` turned off, a hotkey *arms* Rain of Arrows, Frost Nova or
-Meteor Strike instead of casting it, and the next canvas click places it. That
-is a modal input state — the next click means something different from usual —
-and the one thing an input state must never be is invisible. `PlacementPrompt`
-is a strip near the top of the arena naming the ability and how to cancel
-(`Esc`, or the hotkey again). It is `pointer-events: none` and deliberately not
-a dialog: the simulation keeps running while the player decides, because
-stopping the game to ask where the meteor goes would break the idle contract.
+A press on a **targeted** ability (Rain of Arrows, Frost Nova, Chain Lightning, Rocket Barrage,
+Meteor Strike) *arms* it rather than casting it, and the next canvas press places it. That is a
+modal input state — the next press means something different from usual — and the one thing an
+input state must never be is invisible.
 
-`Game` drives it through `UIManager.setPlacementPrompt(text | null)`, and every
-path that leaves placement mode — Escape, the hotkey, a wave transition, a
-failed cast, an ascension — clears it. See
-[loot-system.md](loot-system.md#click-placed-abilities).
+`PlacementPrompt` is a strip near the top of the arena. The copy is pointer-dependent, because the
+idiom is:
+
+- fine pointer — `Click to place {Ability} — Esc to cancel`
+- coarse pointer — `Drag to aim {Ability}, lift to cast — tap the tile to cancel`
+
+The hotkey is deliberately *not* in the string: it is already on the tile and in the keybinds
+overlay, and the line was long on a phone. The strip is `pointer-events: none` and deliberately not
+a dialog — the simulation keeps running while the player decides, because stopping the game to ask
+where the meteor goes would break the idle contract.
+
+**Touch is drag-to-aim.** While an ability is armed, `touchstart` does not press — it only tracks,
+so the disc follows the finger and the cast resolves on `touchend` via `commitPlacementAtPointer`.
+A finger that never lifts over a valid spot never casts.
+
+**The reticle follows the pointer**, not the last press: `Game.setMouseInput` tracks hover
+unconditionally, and `mouseleave` / `mouseenter` raise and drop a `pointerOnCanvas` flag so the disc
+hides rather than sticking at a stale point. `Renderer.drawPlacement` draws a filled disc, a
+rotating dashed rim, an inner pulse ring (which makes a radius change legible) and a crosshair, all
+sized through `entity()` so they scale with the camera.
+
+Two states ride on it:
+
+- **Validity.** With at least one targetable enemy inside, the reticle takes the ability's own
+  colour. An empty disc flips to `FX.blood` — the whiff the empty-disc refusal will reject is
+  visible *before* the click, not after.
+- **A count badge** above the rim showing how many enemies the disc currently covers, so two
+  candidate spots can be compared without counting heads.
+
+The **ability bar** mirrors the state: an armed tile carries `is-arming`, and targeted abilities
+carry a crosshair glyph so the player knows which presses will arm before pressing one.
+
+`Game` drives the prompt through `UIManager.setPlacementPrompt(text | null)`, and every path that
+leaves placement mode — Escape, the hotkey, a wave transition, an ascension, a successful cast —
+clears it. A *refused* cast keeps the prompt up and toasts instead. See
+[loot-system.md](loot-system.md#targeted-abilities).
 
 ## Corner overlays: the milestone strip and the contract tracker
 

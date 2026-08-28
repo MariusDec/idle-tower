@@ -10,6 +10,7 @@ export function contributeResearch(ctx: StatContext, acc: StatAccumulator): void
   a.mult('manaRegen', r.manaRegenMultiplicative);
   a.add('abilityCostMultiplier', r.abilityCostReduction);
   a.add('abilityDamageMultiplier', r.abilityPowerBonus);
+  a.add('abilityAreaMultiplier', r.abilityAreaBonus);
   a.add('pierceExtra', r.pierceCount);
   a.add('goldLuckChance', r.goldLuckChance);
   a.add('intermissionMultiplier', -r.intermissionSpeedReduction);

@@ -61,7 +61,15 @@ export class LootManager {
   private pool: LootOrb[] = [];
   /** Fraction a drift-collected orb pays. Raised to 1 by `orb_magnet`. */
   private autoRate: number = LOOT_TUNING.autoCollectRate;
-  /** True while the `orb_magnet` blessing is held: faster drift, full value. */
+  /**
+   * Ref-counted set of magnet sources. `Gold Rush` (the buff) and the
+   * `orb_magnet` blessing both raise the drift rate to 100%; the magnet is
+   * "on" while at least one source is held. A `Set` keeps the bookkeeping
+   * idempotent so `setMagnetSource('blessing', true)` called twice does not
+   * need a matching pair of `false`s to come back down.
+   */
+  private readonly magnetSources = new Set<string>();
+  /** Cached magnet state — the `Set.size > 0` check. */
   private magnet = false;
   /** Orbs collected this run, for the run summary and Part 5's contracts. */
   private collectedThisRun = 0;
@@ -92,13 +100,23 @@ export class LootManager {
   }
 
   /**
-   * Plan §4.1: the `orb_magnet` blessing (and, later, a research node) raise
-   * the auto rate to 100%. Called from `Game.applyBlessingEffects`, so it
-   * follows the blessing being taken *and* being wiped on ascension.
+   * Plan §D.9: a ref-counted magnet, so multiple sources can each call
+   * `setMagnetSource` without coordinating a paired `false`. The magnet
+   * (100% auto-collect, faster drift) is on while at least one source is
+   * held; dropping the last source reverts to the default drift rate.
+   *
+   * Currently two callers:
+   *  - the `orb_magnet` blessing (taken during the draft, wiped on ascension),
+   *  - `Gold Rush` (the active ability, plan §D.10 — on for the buff's
+   *    duration, off when the buff expires).
    */
-  setMagnet(enabled: boolean): void {
-    this.magnet = enabled;
-    this.autoRate = enabled ? LOOT_TUNING.magnetCollectRate : LOOT_TUNING.autoCollectRate;
+  setMagnetSource(source: 'blessing' | 'goldRush', enabled: boolean): void {
+    if (enabled) this.magnetSources.add(source);
+    else this.magnetSources.delete(source);
+    const on = this.magnetSources.size > 0;
+    if (on === this.magnet) return;
+    this.magnet = on;
+    this.autoRate = on ? LOOT_TUNING.magnetCollectRate : LOOT_TUNING.autoCollectRate;
   }
 
   /** Prospector talent: orb value bonus. */
@@ -339,6 +357,8 @@ export class LootManager {
   reset(): void {
     this.clear();
     this.collectedThisRun = 0;
-    this.setMagnet(false);
+    this.magnetSources.clear();
+    this.magnet = false;
+    this.autoRate = LOOT_TUNING.autoCollectRate;
   }
 }

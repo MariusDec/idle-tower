@@ -164,11 +164,11 @@ describe('vampiric_aura self-sufficiency (phase 4)', () => {
 describe('execute boss threshold text (phase 4)', () => {
   const def = ABILITY_BY_ID['execute'];
 
-  it('states the boss threshold as half the kill threshold', () => {
-    // L1: kills below 12%; bosses take 4.2x below floor(12/2) = 6%.
-    expect(buildAbilityDisplayText(def, 1)).toContain('Bosses below 6% HP take 4.2x damage');
-    // L10: kills below 30%; bosses below floor(30/2) = 15%.
-    expect(buildAbilityDisplayText(def, 10)).toContain('Bosses below 15% HP take 4.2x damage');
+  it('states the boss threshold as half the kill threshold and boss damage as a fraction of max HP', () => {
+    // L1: kills below 12%; bosses lose 5% of max HP below floor(12/2) = 6%.
+    expect(buildAbilityDisplayText(def, 1)).toContain('Bosses below 6% HP lose 5% of their max HP');
+    // L10: kills below 30%; bosses below floor(30/2) = 15%; boss loss 5 + 0.8*9 = 12.2%.
+    expect(buildAbilityDisplayText(def, 10)).toContain('Bosses below 15% HP lose 12.2% of their max HP');
   });
 });
 
@@ -238,8 +238,25 @@ function runUntilSettled(projectiles: ProjectileManager, maxSeconds = 5): void {
   }
 }
 
-function makeAbilityManager(h: Harness, rocketLevel: number): AbilityManager {
+interface AbilityHarness {
+  abilities: AbilityManager;
+  buffs: BuffRegistry;
+  magnetCalls: boolean[];
+  setLevels: (overrides: Partial<Record<AbilityId, number>>) => void;
+}
+
+/**
+ * Build an AbilityManager wired to the harness, and surface the bits the
+ * new Phase-5 cases need to inspect: the shared BuffRegistry (so a frost-nova
+ * case can read back the brittle buff), the Gold Rush magnet callback (so a
+ * gold-rush case can assert it fired), and a levels-mutator (so cases that
+ * need a specific ability at level N can override without re-wiring the
+ * whole fixture).
+ */
+function makeAbilityManager(h: Harness, rocketLevel: number = 1): AbilityHarness {
   const states = {} as Record<AbilityId, AbilityState>;
+  const buffs = new BuffRegistry();
+  const magnetCalls: boolean[] = [];
   for (const def of ABILITIES) {
     states[def.id] = {
       level: def.id === 'rocket_barrage' ? rocketLevel : 1,
@@ -249,16 +266,24 @@ function makeAbilityManager(h: Harness, rocketLevel: number): AbilityManager {
       xp: 0,
     };
   }
-  return new AbilityManager({
+  const setLevels = (overrides: Partial<Record<AbilityId, number>>): void => {
+    for (const [id, level] of Object.entries(overrides)) {
+      const sid = id as AbilityId;
+      if (states[sid]) states[sid].level = level;
+    }
+  };
+  const abilities = new AbilityManager({
     resources: h.resources,
     enemies: h.enemies,
     tower: h.tower,
     bus: h.bus,
     projectileManager: h.projectiles,
-    buffs: new BuffRegistry(),
+    buffs,
     getState: (id) => states[id],
     onCast: () => {},
+    setGoldRushMagnet: (on) => magnetCalls.push(on),
   });
+  return { abilities, buffs, magnetCalls, setLevels };
 }
 
 describe('splash plumbing (ProjectileManager)', () => {
@@ -317,7 +342,7 @@ describe('Rocket Barrage through tryCast', () => {
     const a = h.enemies.spawn('normal', 40, TOWER_X + world(200), TOWER_Y);
     const b = h.enemies.spawn('normal', 40, TOWER_X + world(260), TOWER_Y);
     beefUp(a, b);
-    const abilities = makeAbilityManager(h, 1);
+    const { abilities } = makeAbilityManager(h, 1);
 
     expect(abilities.tryCast('rocket_barrage', 40)).toBe(true);
 
@@ -348,7 +373,7 @@ describe('Rocket Barrage through tryCast', () => {
   it('floors the count: an L15 cast fires ten rockets', () => {
     const h = harness();
     h.enemies.spawn('normal', 40, TOWER_X + world(200), TOWER_Y);
-    const abilities = makeAbilityManager(h, 15);
+    const { abilities } = makeAbilityManager(h, 15);
 
     expect(abilities.tryCast('rocket_barrage', 40)).toBe(true);
     expect(h.projectiles.list.length).toBe(10);
@@ -359,7 +384,7 @@ describe('Rocket Barrage through tryCast', () => {
     const a = h.enemies.spawn('normal', 40, TOWER_X + world(150), TOWER_Y);
     const b = h.enemies.spawn('normal', 40, TOWER_X + world(170), TOWER_Y);
     beefUp(a, b);
-    const abilities = makeAbilityManager(h, 1);
+    const { abilities } = makeAbilityManager(h, 1);
 
     abilities.tryCast('rocket_barrage', 40);
     runUntilSettled(h.projectiles);
@@ -374,7 +399,7 @@ describe('Rocket Barrage through tryCast', () => {
 
   it('duds into a radial spread with no splash on an empty field', () => {
     const h = harness(); // no enemies spawned
-    const abilities = makeAbilityManager(h, 1);
+    const { abilities } = makeAbilityManager(h, 1);
 
     expect(abilities.tryCast('rocket_barrage', 40)).toBe(true);
 
@@ -394,5 +419,322 @@ describe('Rocket Barrage through tryCast', () => {
     // And they still retire rather than circling forever (plan §5.5).
     runUntilSettled(h.projectiles);
     expect(h.projectiles.list.length).toBe(0);
+  });
+});
+
+// ── phase 5: abilities plan §I.1 ───────────────────────────────────────────
+
+import {
+  BUFF_FROST_BRITTLE,
+  GLOBAL_NOVA_SLOW,
+  METEOR_SPLASH_FRACTION,
+  PLACEMENT_FOCUS_DAMAGE_BONUS,
+  frostBrittle,
+  placementRadius,
+} from '../src/data/abilities';
+
+describe('ability disc scales with level and the area stat', () => {
+  it('placementRadius grows linearly and clamps at maxLevel', () => {
+    const rain = ABILITY_BY_ID['rain_of_arrows'];
+    expect(placementRadius('rain_of_arrows', 1)).toBe(rain.areaRadius!);
+    expect(placementRadius('rain_of_arrows', 10)).toBe(
+      rain.areaRadius! + (rain.areaRadiusPerLevel ?? 0) * 9,
+    );
+    // Over-level inputs clamp to maxLevel (10), so a level-99 disc equals L10.
+    expect(placementRadius('rain_of_arrows', 99)).toBe(
+      placementRadius('rain_of_arrows', 10),
+    );
+  });
+
+  it('getEffectiveRadius multiplies by the area stat and clamps to [0.5, 3]', () => {
+    const h = harness();
+    const { abilities } = makeAbilityManager(h, 1);
+    // Base: the area stat is 1, so the disc is exactly placementRadius.
+    expect(abilities.getEffectiveRadius('rain_of_arrows')).toBe(
+      placementRadius('rain_of_arrows', 1),
+    );
+    // +50% area stat → 1.5x disc.
+    abilities.setAreaMultiplier(1.5);
+    expect(abilities.getEffectiveRadius('rain_of_arrows')).toBeCloseTo(
+      placementRadius('rain_of_arrows', 1) * 1.5,
+      6,
+    );
+    // The clamp caps both ends — the table already bounds via contributors,
+    // but the manager's own setter defends against bad input.
+    abilities.setAreaMultiplier(99);
+    expect(abilities.getEffectiveRadius('rain_of_arrows')).toBeCloseTo(
+      placementRadius('rain_of_arrows', 1) * 3,
+      6,
+    );
+    abilities.setAreaMultiplier(0.01);
+    expect(abilities.getEffectiveRadius('rain_of_arrows')).toBeCloseTo(
+      placementRadius('rain_of_arrows', 1) * 0.5,
+      6,
+    );
+  });
+});
+
+describe('disc-scoped effects (plan §D.3, §D.4, §D.7)', () => {
+  /** Damage a Rain of Arrows cast at `point` deals to a single enemy there. */
+  function rainDamageAt(point: { x: number; y: number }, placement: 'focused' | 'auto'): number {
+    const h = harness();
+    const inside = h.enemies.spawn('normal', 60, point.x, point.y);
+    beefUp(inside);
+    const { abilities } = makeAbilityManager(h, 1);
+    abilities.tryCast('rain_of_arrows', 60, placement === 'focused' ? point : 'auto');
+    return 1e9 - inside.hp;
+  }
+
+  it('Rain of Arrows is disc-scoped: only the in-disc enemy loses HP', () => {
+    const h = harness();
+    // Place the inside enemy right next to the tower so the L1 disc covers it.
+    const inside = h.enemies.spawn('normal', 60, TOWER_X + world(50), TOWER_Y);
+    const outside = h.enemies.spawn('normal', 60, TOWER_X + world(2000), TOWER_Y);
+    beefUp(inside, outside);
+    const { abilities } = makeAbilityManager(h, 1);
+
+    abilities.tryCast('rain_of_arrows', 60, { x: TOWER_X + world(50), y: TOWER_Y });
+
+    expect(1e9 - inside.hp).toBeGreaterThan(0);
+    expect(outside.hp).toBe(1e9);
+  });
+
+  it('Rain of Arrows focus bonus applies to the whole disc, not a sub-disc', () => {
+    const point = { x: TOWER_X + world(50), y: TOWER_Y };
+    // Same enemy setup, same point — the only variable is the placement
+    // type, which controls the focus bonus on the *whole* cast.
+    const focused = rainDamageAt(point, 'focused');
+    const auto = rainDamageAt(point, 'auto');
+    // The auto-placer may pick the same point (it's the only cluster), but
+    // its cast carries no focus bonus — so the placed cast is exactly
+    // stronger by the bonus across the whole disc.
+    expect(focused).toBeGreaterThan(auto);
+    expect(focused / auto).toBeCloseTo(1 + PLACEMENT_FOCUS_DAMAGE_BONUS, 1);
+  });
+
+  it('Meteor splash is a fraction of the heavy hit, not a multiple', () => {
+    const h = harness();
+    const target = h.enemies.spawn('normal', 60, TOWER_X + world(50), TOWER_Y);
+    const inCrater = h.enemies.spawn('normal', 60, TOWER_X + world(55), TOWER_Y);
+    // Target has more HP than the splash target — target must be picked.
+    target.maxHp = 1e9;
+    target.hp = 1e9;
+    inCrater.maxHp = 1e9 / 2;
+    inCrater.hp = 1e9 / 2;
+    const { abilities } = makeAbilityManager(h, 1);
+    abilities.tryCast('meteor_strike', 60, { x: TOWER_X + world(50), y: TOWER_Y });
+
+    const targetLoss = 1e9 - target.hp;
+    const splashLoss = 1e9 / 2 - inCrater.hp;
+    expect(targetLoss).toBeGreaterThan(0);
+    expect(splashLoss).toBeGreaterThan(0);
+    expect(splashLoss).toBeCloseTo(targetLoss * METEOR_SPLASH_FRACTION, 0);
+  });
+
+  it('Meteor picks the highest-HP enemy in the crater, not the nearest', () => {
+    const h = harness();
+    const near = h.enemies.spawn('normal', 60, TOWER_X + world(50), TOWER_Y);
+    const far = h.enemies.spawn('normal', 60, TOWER_X + world(80), TOWER_Y);
+    // Far has more HP — that is the target the description promises to smash.
+    near.maxHp = 1e9;
+    near.hp = 1e9;
+    far.maxHp = 2e9;
+    far.hp = 2e9;
+    const { abilities } = makeAbilityManager(h, 1);
+    abilities.tryCast('meteor_strike', 60, { x: TOWER_X + world(60), y: TOWER_Y });
+
+    // The higher-HP enemy (far) takes the heavy hit; the lower-HP enemy (near)
+    // only takes the splash, which is 0.55x the heavy.
+    const nearLoss = 1e9 - near.hp;
+    const farLoss = 2e9 - far.hp;
+    expect(farLoss).toBeGreaterThan(nearLoss);
+    // The splash fraction exactly pins near's loss vs far's.
+    expect(nearLoss / farLoss).toBeCloseTo(METEOR_SPLASH_FRACTION, 1);
+  });
+
+  it('Meteor does not crash when the crater kills mid-iteration', () => {
+    const h = harness();
+    // Five 1-HP enemies inside the crater: the heavy hit kills the target
+    // before the splash loop starts iterating. The re-entrancy guard must
+    // copy the query result into a fresh array first.
+    const swarm = [];
+    for (let i = 0; i < 5; i++) {
+      swarm.push(h.enemies.spawn('normal', 60, TOWER_X + world(50) + i * 10, TOWER_Y));
+      swarm[i].maxHp = 1;
+      swarm[i].hp = 1;
+    }
+    const { abilities } = makeAbilityManager(h, 1);
+
+    expect(() =>
+      abilities.tryCast('meteor_strike', 60, { x: TOWER_X + world(55), y: TOWER_Y }),
+    ).not.toThrow();
+
+    for (const e of swarm) expect(e.hp).toBeLessThanOrEqual(0);
+  });
+});
+
+describe('execute: percent of max HP, no resists', () => {
+  it('Execute takes a fraction of boss max HP, scaling with level', () => {
+    const h = harness();
+    const boss = h.enemies.spawn('boss', 60, TOWER_X + world(50), TOWER_Y);
+    boss.maxHp = 1e6;
+    // L1 gate is 6%; sit at 5% so the cast triggers. Leave enough HP that
+    // the `Math.min(e.hp, ...)` cap inside applyExecute does not clip the
+    // expected damage.
+    boss.hp = 0.05 * 1e6;   // = 50_000, above the 6% gate
+    const { abilities } = makeAbilityManager(h, 1);
+    const before = boss.hp;
+
+    expect(abilities.tryCast('execute', 60)).toBe(true);
+
+    const expectedLoss = 1e6 * 0.05;          // EXECUTE_BOSS_MAXHP_FRACTION at L1
+    expect(before - boss.hp).toBeCloseTo(expectedLoss, 0);
+
+    // L10: gate 15%, fraction 5% + 0.8% * 9 = 12.2%.
+    const boss2 = h.enemies.spawn('boss', 60, TOWER_X + world(50), TOWER_Y);
+    boss2.maxHp = 1e6;
+    boss2.hp = 0.14 * 1e6;   // = 140_000, above the 15% gate
+    const a2 = makeAbilityManager(h, 1);
+    a2.setLevels({ execute: 10 });
+    const before2 = boss2.hp;
+    expect(a2.abilities.tryCast('execute', 60)).toBe(true);
+    expect(before2 - boss2.hp).toBeCloseTo(1e6 * 0.122, 1);
+  });
+
+  it('Execute ignores boss magicResist — a full-resist boss still takes the execute', () => {
+    const h = harness();
+    const boss = h.enemies.spawn('boss', 60, TOWER_X + world(50), TOWER_Y);
+    boss.maxHp = 1e6;
+    boss.hp = 0.05 * 1e6;
+    boss.magicResist = 0.99;   // would zero out a magic hit through applyResists
+    const { abilities } = makeAbilityManager(h, 1);
+    const before = boss.hp;
+
+    expect(abilities.tryCast('execute', 60)).toBe(true);
+
+    // Apply Resists would reduce 5% of max HP to a rounding error; Execute
+    // must take the full fraction regardless.
+    expect(before - boss.hp).toBeCloseTo(1e6 * 0.05, 0);
+  });
+});
+
+describe('frost nova: global slow + brittle buff', () => {
+  it('sets the brittle buff on cast and clears it on expiry', () => {
+    const h = harness();
+    h.enemies.spawn('normal', 60, TOWER_X + world(50), TOWER_Y);   // inside disc
+    const { abilities, buffs } = makeAbilityManager(h, 1);
+
+    expect(abilities.tryCast('frost_nova', 60, { x: TOWER_X + world(50), y: TOWER_Y })).toBe(true);
+
+    const entry = buffs.entries.find((e) => e.id === BUFF_FROST_BRITTLE);
+    expect(entry).toBeTruthy();
+    expect(entry!.stat).toBe('chilledDamageBonus');
+    expect(entry!.value).toBeCloseTo(frostBrittle(1), 6);
+
+    // Frost Nova's duration is 5s; tick AbilityManager past it and the
+    // buff clears through clearEffect (the buff itself is `remaining: null`
+    // because the lifetime is owned by AbilityManager.activeTimer, not the
+    // registry's per-buff countdown — a registry-level tick wouldn't expire
+    // it).
+    abilities.tick(6);
+    expect(buffs.has(BUFF_FROST_BRITTLE)).toBe(false);
+  });
+
+  it('still slows every enemy globally, not just those inside the disc', () => {
+    const h = harness();
+    // Far enemy is well outside the disc but should still be slowed: the
+    // global floor (§D.6 layer 1) is what makes Frost Nova a panic button.
+    const far = h.enemies.spawn('normal', 60, TOWER_X + world(800), TOWER_Y);
+    h.enemies.spawn('normal', 60, TOWER_X + world(50), TOWER_Y);   // in-disc
+    const { abilities } = makeAbilityManager(h, 1);
+
+    expect(abilities.tryCast('frost_nova', 60, { x: TOWER_X + world(50), y: TOWER_Y })).toBe(true);
+
+    // GLOBAL_NOVA_SLOW is 0.85: the global slow factor means far is slowed
+    // even though it is well outside the placed disc.
+    expect(h.enemies.isSlowed(far)).toBe(true);
+    // Sanity: the constant is what we think it is.
+    expect(GLOBAL_NOVA_SLOW).toBe(0.85);
+  });
+});
+
+describe('chain lightning: seeds at the placed point', () => {
+  it('seeds at the placed point, not the tower', () => {
+    const h = harness();
+    // Two distinct clusters. The placed point sits over the far cluster;
+    // the chain must start there, so the near cluster is untouched.
+    const near = [];
+    for (let i = 0; i < 3; i++) {
+      near.push(h.enemies.spawn('normal', 60, TOWER_X + world(50), TOWER_Y + i * 10));
+    }
+    const far = [];
+    for (let i = 0; i < 3; i++) {
+      far.push(h.enemies.spawn('normal', 60, TOWER_X + world(500), TOWER_Y + i * 10));
+    }
+    beefUp(...near, ...far);
+    const { abilities } = makeAbilityManager(h, 1);
+
+    abilities.tryCast('chain_lightning', 60, { x: TOWER_X + world(500), y: TOWER_Y + 10 });
+
+    // Far cluster lost HP, near cluster did not.
+    expect(far.some((e) => e.hp < 1e9)).toBe(true);
+    expect(near.every((e) => e.hp === 1e9)).toBe(true);
+  });
+});
+
+describe('auto-cast conditions (plan §F.2)', () => {
+  it('rain_of_arrows refuses on a sparse field, accepts on a dense one', () => {
+    const sparse = harness();
+    sparse.enemies.spawn('normal', 60, TOWER_X + world(50), TOWER_Y);
+    sparse.enemies.spawn('normal', 60, TOWER_X + world(60), TOWER_Y);
+    const { abilities: sparseAb } = makeAbilityManager(sparse, 1);
+    // Plan §D.2: rain_of_arrows requires minInDisc: 3. Two enemies fails it.
+    expect(sparseAb.autoCastConditionMet('rain_of_arrows')).toBe(false);
+
+    const dense = harness();
+    for (let i = 0; i < 5; i++) {
+      dense.enemies.spawn('normal', 60, TOWER_X + world(50) + i * 10, TOWER_Y);
+    }
+    const { abilities: denseAb } = makeAbilityManager(dense, 1);
+    expect(denseAb.autoCastConditionMet('rain_of_arrows')).toBe(true);
+  });
+
+  it('vampiric_aura refuses at full tower HP, accepts below 75%', () => {
+    const full = harness();
+    // Give the tower some HP so the condition has a real fraction to read.
+    full.tower.snapshot.maxHp = 1000;
+    full.tower.snapshot.hp = 1000;
+    const { abilities: fullAb } = makeAbilityManager(full, 1);
+    expect(fullAb.autoCastConditionMet('vampiric_aura')).toBe(false);
+
+    const low = harness();
+    low.tower.snapshot.maxHp = 1000;
+    low.tower.snapshot.hp = 500;   // 50% of max — below the 75% gate
+    const { abilities: lowAb } = makeAbilityManager(low, 1);
+    expect(lowAb.autoCastConditionMet('vampiric_aura')).toBe(true);
+  });
+
+  it('a manual cast bypasses every condition — even on a sparse field', () => {
+    const h = harness();
+    h.enemies.spawn('normal', 60, TOWER_X + world(50), TOWER_Y);
+    const { abilities } = makeAbilityManager(h, 1);
+    // autoCastConditionMet would say no, but tryCast must succeed anyway
+    // (plan §F.3) — a player who pressed the key gets the cast, full stop.
+    expect(abilities.autoCastConditionMet('rain_of_arrows')).toBe(false);
+    expect(abilities.tryCast('rain_of_arrows', 60, { x: TOWER_X + world(50), y: TOWER_Y })).toBe(true);
+  });
+});
+
+describe('gold rush toggles the loot magnet (plan §D.9)', () => {
+  it('flips the magnet dep on cast and clears it on expiry', () => {
+    const h = harness();
+    const { abilities, magnetCalls } = makeAbilityManager(h, 1);
+
+    expect(abilities.tryCast('gold_rush', 60)).toBe(true);
+    expect(magnetCalls).toEqual([true]);
+
+    // Tick the buff past its duration to fire the clearEffect hook.
+    abilities.tick(20);
+    expect(magnetCalls).toEqual([true, false]);
   });
 });

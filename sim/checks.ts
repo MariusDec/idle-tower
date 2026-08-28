@@ -18,7 +18,8 @@ import { PrestigeManager } from '../src/systems/PrestigeManager.ts';
 import { AutomationManager } from '../src/systems/AutomationManager.ts';
 import { ResearchTree } from '../src/systems/ResearchTree.ts';
 import { eliteChanceForWave } from '../src/systems/EnemyManager.ts';
-import { ABILITIES, ABILITY_BY_ID } from '../src/data/abilities.ts';
+import { ABILITIES, ABILITY_BY_ID, METEOR_SPLASH_FRACTION, placementRadius } from '../src/data/abilities.ts';
+import { ARENA, world } from '../src/data/arena.ts';
 import { RESEARCH_NODES } from '../src/data/research.ts';
 import {
   MUTATOR_DURATION_WAVES,
@@ -329,6 +330,7 @@ section('§3.1 abilities');
     abilities: {
       canCast: () => true,
       tryCast: (id: string) => { cast.push(id); return true; },
+      autoCastConditionMet: () => true,
     } as never,
     prestige: {
       getAutomationEnabled: (k: string) => k === 'autoAbilities',
@@ -336,6 +338,7 @@ section('§3.1 abilities');
     } as never,
     research: {} as never,
     getState: () => state,
+    getAutoAim: () => true,
     onAscend: () => 0,
     onTranscend: () => 0,
     bus: autoBus,
@@ -344,6 +347,59 @@ section('§3.1 abilities');
   check('auto-cast fires every ready ability, not just one', cast.length > 1,
     `cast=${cast.length}`);
   check('auto-cast skips abilities the player turned off', !cast.includes('berserk'));
+
+  // Plan §I.3: damage-per-mana must not span more than 6x across the damage
+  // abilities. The old spread was 26x (plan §1.7), which left half the roster
+  // mathematically dead. Model the same crowd the diagnosis used — 15 bodies —
+  // and re-derive per-mana DPS at L1.
+  const CROWD = 15;
+  const damageAbilities = ABILITIES.filter(a =>
+    a.effectType === 'aoe_damage'
+    || a.effectType === 'single_target_damage'
+    || a.effectType === 'chain_damage',
+  );
+  const perMana = damageAbilities.map(a => {
+    const total = CROWD * a.effectValue;
+    return { id: a.id, value: total / a.manaCost };
+  });
+  const max = Math.max(...perMana.map(p => p.value));
+  const min = Math.min(...perMana.map(p => p.value));
+  check('damage-per-mana spread across damage abilities stays within 6x',
+    max / min <= 6,
+    `max=${max.toFixed(2)} min=${min.toFixed(2)} (${perMana.map(p => `${p.id}=${p.value.toFixed(2)}`).join(', ')})`);
+
+  // Disc sizes must stay inside the arena on both ends: a sub-60px disc is a
+  // cosmetic reticle that does no work, and a disc bigger than the short
+  // half-extent is a screen-wipe with a reticle drawn on it.
+  const targeted = ABILITIES.filter(a => a.areaRadius && a.areaRadius > 0);
+  for (const a of targeted) {
+    const l1 = placementRadius(a.id, 1);
+    const lmax = placementRadius(a.id, a.maxLevel);
+    check(`${a.id} L1 disc is at least world(60)`,
+      l1 >= world(60),
+      `l1=${l1}`);
+    check(`${a.id} max-level disc fits inside the short half-extent`,
+      lmax <= ARENA.minHalfExtent,
+      `lmax=${lmax} arena.minHalfExtent=${ARENA.minHalfExtent}`);
+  }
+
+  // Meteor splash is a fraction, not a multiple (plan §1.4). Anything that
+  // makes the splash > 1x the primary hit regresses the original bug.
+  check('METEOR_SPLASH_FRACTION is strictly less than 1',
+    METEOR_SPLASH_FRACTION < 1,
+    `METEOR_SPLASH_FRACTION=${METEOR_SPLASH_FRACTION}`);
+
+  // Every ability that opts into an auto-cast condition has at least one
+  // floor set — a stray empty block would be silently permissive and never
+  // fail any other check.
+  for (const a of ABILITIES) {
+    if (!a.autoCast) continue;
+    const hasField = ['minEnemies', 'minInDisc', 'bossOnly', 'bossHpBelow', 'towerHpBelow']
+      .some(k => (a.autoCast as Record<string, number | undefined>)[k] !== undefined);
+    check(`${a.id} autoCast condition has at least one floor set`,
+      hasField,
+      `autoCast=${JSON.stringify(a.autoCast)}`);
+  }
 }
 
 // ── §3.6 auto-buy ─────────────────────────────────────────────────────────
@@ -369,7 +425,7 @@ section('§3.6 auto-buy strategy');
   } as never;
   const makeAuto = (strategy: string, reserve: number) => new AutomationManager({
     upgrades,
-    abilities: { canCast: () => false, tryCast: () => false } as never,
+    abilities: { canCast: () => false, tryCast: () => false, autoCastConditionMet: () => true } as never,
     prestige: {
       getAutomationEnabled: (k: string) => k === 'autoBuy',
       getAutoBuySpeedReduction: () => 0,
@@ -380,6 +436,7 @@ section('§3.6 auto-buy strategy');
       resources: purse,
       prestige: { autoCastEnabled: {}, autoBuyStrategy: strategy, autoBuyReserve: reserve },
     }) as never,
+    getAutoAim: () => true,
     onAscend: () => 0,
     onTranscend: () => 0,
     bus: new EventBus(),

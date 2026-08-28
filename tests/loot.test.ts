@@ -81,7 +81,7 @@ describe('loot orbs (plan §4.1)', () => {
   });
 
   it('raises the auto rate to 100% with the orb_magnet blessing', () => {
-    mgr.setMagnet(true);
+    mgr.setMagnetSource('blessing', true);
     expect(mgr.autoCollectRate).toBe(1);
     mgr.spawn('gold', 100, 100, 500);
     drift(mgr);
@@ -92,7 +92,7 @@ describe('loot orbs (plan §4.1)', () => {
     const plain = makeManager();
     plain.mgr.spawn('gold', 60, 60, 1);
     const magnet = makeManager();
-    magnet.mgr.setMagnet(true);
+    magnet.mgr.setMagnetSource('blessing', true);
     magnet.mgr.spawn('gold', 60, 60, 1);
     // Halfway through the ordinary drift the magnetised orb is already home
     // and the plain one is not.
@@ -511,7 +511,7 @@ describe('automatic ability placement (plan §4.3)', () => {
       // shows up as damage rather than being clamped away by a kill.
       for (let i = 0; i < 5; i++) pack.push(h.enemies.spawn('normal', 80, 800 + i * 10, 400));
       const before = pack.reduce((a, e) => a + e.hp, 0);
-      h.abilities.tryCast('rain_of_arrows', 60, placed ? { x: 820, y: 400 } : null);
+      h.abilities.tryCast('rain_of_arrows', 60, placed ? { x: 820, y: 400 } : 'auto');
       return before - pack.reduce((a, e) => a + e.hp, 0);
     };
     expect(damageDealt(true)).toBeGreaterThan(damageDealt(false));

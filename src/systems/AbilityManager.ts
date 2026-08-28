@@ -1,14 +1,18 @@
 import type { AbilityId, AbilityState, Enemy } from '../types';
-import { world } from '../data/arena';
+import { WORLD_SCALE, world } from '../data/arena';
 import {
   ABILITIES,
   ABILITY_BY_ID,
-  METEOR_SPLASH_RADIUS,
+  BUFF_FROST_BRITTLE,
+  GLOBAL_NOVA_SLOW,
+  METEOR_SPLASH_FRACTION,
   PLACEMENT_FOCUS_CHILL,
   PLACEMENT_FOCUS_CHILL_DURATION,
   PLACEMENT_FOCUS_DAMAGE_BONUS,
   computeEffectiveStats,
-  isPlaceable,
+  executeBossFrac,
+  frostBrittle,
+  isTargeted,
   placementRadius,
   precisionCritMultiplier,
   vampiricRegen,
@@ -35,6 +39,33 @@ interface AbilityManagerDeps {
   buffs: BuffRegistry;
   getState: (id: AbilityId) => AbilityState;
   onCast: (id: AbilityId) => void;
+  /**
+   * Plan §D.9 / §D.10: Gold Rush raises the loot magnet while the buff
+   * is live. Optional because the early-init path and the test harness
+   * build an `AbilityManager` without a `LootManager` to talk to.
+   */
+  setGoldRushMagnet?: (on: boolean) => void;
+}
+
+/**
+ * How a cast picked the point its effect lands on.
+ *
+ * - `{ x, y }` — the player placed the click. Earns the focus bonus on disc
+ *   abilities because a hand-placed disc is better placed than an auto-aimed one.
+ * - `'auto'` — the manager placed it itself, at the densest cluster the disc can
+ *   cover; on an empty field, fell back to the tower.
+ * - `'tower'` — a non-targeted ability that fires from the tower.
+ */
+export type CastPlacement = { x: number; y: number } | 'auto' | 'tower';
+
+/**
+ * Everything the effect paths need to know about a cast: which ability, the
+ * resolved centre, and whether the centre came from a hand-placed click.
+ */
+interface CastContext {
+  id: AbilityId;
+  point: { x: number; y: number } | null;
+  focused: boolean;
 }
 
 /**
@@ -49,19 +80,14 @@ const BUFF_LIFESTEAL = 'ability:lifesteal';
 const BUFF_VAMPIRIC_REGEN = 'ability:vampiricRegen';
 
 const MANA_UNLOCK_WAVE = 10;
-const METEOR_SPLASH_MULTIPLIER = 2;
 /** Rocket Barrage: blast radius and splash share of each rocket's landed hit. */
 const ROCKET_SPLASH_RADIUS = world(60);
 const ROCKET_SPLASH_FRACTION = 0.5;
-const CHAIN_BOUNCE_BASE = 5;
+const CHAIN_BOUNCE_BASE = 6;
 const CHAIN_BOUNCE_PER_LEVEL = 1;
-const CHAIN_BOUNCE_MAX = 9;
+const CHAIN_BOUNCE_MAX = 12;
 const CHAIN_BOUNCE_RADIUS = world(200);
-const CHAIN_DECAY = 0.65;
-// Divided by the shot-cadence rebase's damage scalar (`plans/firerate.md`):
-// this multiplies `baseDamage` directly and Execute's cadence is a cooldown,
-// not a fire rate.
-const EXECUTE_BOSS_MULTIPLIER = 4.2;
+const CHAIN_DECAY = 0.82;
 
 export class AbilityManager {
   private readonly resources: ResourceManager;
@@ -72,9 +98,16 @@ export class AbilityManager {
   private readonly buffs: BuffRegistry;
   private readonly getState: (id: AbilityId) => AbilityState;
   private readonly onCast: (id: AbilityId) => void;
+  /**
+   * Plan §D.9 / §D.10: Gold Rush raises the loot magnet while the buff
+   * is live. `undefined` in the test harness and during early init, so
+   * every call is optional-chained.
+   */
+  private readonly setGoldRushMagnet?: (on: boolean) => void;
   private abilityCostMultiplier = 1;
   private cooldownMultiplier = 1;
   private damageMultiplier = 1;
+  private areaMultiplier = 1;
   private berserkFireBonus = 0;
   // ── Talent-driven modifiers (set by Game.applyTalentEffects) ──
   /** Chain Bounce: extra Chain Lightning bounces. */
@@ -106,6 +139,7 @@ export class AbilityManager {
     this.buffs = deps.buffs;
     this.getState = deps.getState;
     this.onCast = deps.onCast;
+    this.setGoldRushMagnet = deps.setGoldRushMagnet;
   }
 
   isManaUnlocked(wave: number): boolean {
@@ -122,6 +156,31 @@ export class AbilityManager {
 
   setDamageMultiplier(value: number): void {
     this.damageMultiplier = Math.max(1, value);
+  }
+
+  /**
+   * Set the radius multiplier every placed disc gets (plan §C.1).
+   *
+   * Clamped to `[0.5, 3]` so a stacked build cannot halve a disc to nothing or
+   * blow it past the arena. Set from `Game.applyResolvedStats` alongside the
+   * other ability multipliers, so a research unlock or talent point shows up
+   * on the next disc and disappears the moment the player respecs.
+   */
+  setAreaMultiplier(value: number): void {
+    this.areaMultiplier = Math.max(0.5, Math.min(3, value));
+  }
+
+  /**
+   * The disc radius the live game should use: the per-def radius at the
+   * ability's current level, scaled by the area stat.
+   *
+   * Phase 1 stub: not yet wired into `pickBestSpot` or any of the effect paths.
+   * Phase 2 routes the existing single-arg `placementRadius(id)` calls through
+   * this helper so the disc the player sees and the disc the auto-placer
+   * scores with are the same shape the *effects* land in.
+   */
+  getEffectiveRadius(id: AbilityId): number {
+    return placementRadius(id, this.getAbilityLevel(id)) * this.areaMultiplier;
   }
 
   setBerserkFireBonus(bonus: number): void {
@@ -242,6 +301,13 @@ export class AbilityManager {
     stats.cooldown = Math.max(1, stats.cooldown * this.cooldownMultiplier);
     stats.upgradeCost = this.getUpgradeCost(id);
     stats.isMaxed = def ? level >= def.maxLevel : true;
+    // Plan §G.4: the tooltip quotes the live, area-multiplied disc so the row
+    // matches what the player sees under the cursor and what the effect lands
+    // in. Non-targeted abilities keep the 0 / '' pair set by `computeEffectiveStats`.
+    if (isTargeted(id)) {
+      stats.area = this.getEffectiveRadius(id);
+      stats.displayArea = `${Math.round(stats.area / WORLD_SCALE)} px`;
+    }
     return stats;
   }
 
@@ -295,6 +361,59 @@ export class AbilityManager {
     return true;
   }
 
+  /**
+   * Whether automation should spend mana on `id` right now (plan §F.2).
+   *
+   * The mana budget cannot pay for the whole roster, so automation has to
+   * choose, and "is it off cooldown" is not a choice. A condition is a
+   * floor, never a preference: an ability with no `autoCast` block is
+   * always allowed, so adding a condition to the table is a tightening,
+   * not a new piece of state to keep in sync.
+   *
+   * Consulted **only** by `AutomationManager.runAutoCast`. `canCast` and
+   * `tryCast` deliberately do not call it — a player who presses the
+   * hotkey gets the cast, full stop (plan §F.3).
+   *
+   * `pickBestSpot` runs for the two `minInDisc` abilities (Rain of Arrows,
+   * Frost Nova, Meteor Strike); `runAutoCast` runs once per second, so the
+   * extra scan is at most three times per second. That is acceptable; do
+   * not add caching.
+   */
+  autoCastConditionMet(id: AbilityId): boolean {
+    const c = ABILITY_BY_ID[id]?.autoCast;
+    if (!c) return true;
+
+    if (c.minEnemies !== undefined) {
+      let n = 0;
+      for (const e of this.enemies.list) if (isTargetable(e)) n++;
+      if (n < c.minEnemies) return false;
+    }
+    if (c.minInDisc !== undefined) {
+      const spot = this.pickBestSpot(id);
+      if (!spot) return false;
+      let n = 0;
+      for (const e of this.enemies.queryRadius(
+        spot.x,
+        spot.y,
+        this.getEffectiveRadius(id),
+        this.placementScratch,
+      )) {
+        if (isTargetable(e)) n++;
+      }
+      if (n < c.minInDisc) return false;
+    }
+    if (c.bossOnly || c.bossHpBelow !== undefined) {
+      const boss = this.enemies.list.find(e => e.type === 'boss' && isTargetable(e));
+      if (!boss) return false;
+      if (c.bossHpBelow !== undefined && boss.hp / boss.maxHp > c.bossHpBelow) return false;
+    }
+    if (c.towerHpBelow !== undefined) {
+      const ts = this.tower.snapshot;
+      if (ts.maxHp <= 0 || ts.hp / ts.maxHp > c.towerHpBelow) return false;
+    }
+    return true;
+  }
+
   reasonBlocked(id: AbilityId, wave: number): string | null {
     if (!this.isManaUnlocked(wave)) {
       return `Unlocks at wave ${MANA_UNLOCK_WAVE}`;
@@ -315,16 +434,18 @@ export class AbilityManager {
   }
 
   /**
-   * Cast an ability, optionally at a point the player picked (plan §4.3).
+   * Cast an ability (plan §4.3 / §A.1 / §D.3).
    *
-   * `placement` is `null`/omitted for every automatic path — the hotkey with
-   * `instantCast` on, the ability bar, and `AutomationManager.runAutoCast`. In
-   * that case the manager places the ability itself, at the densest cluster
-   * within the ability's disc, so the automatic fallback aims at the same
-   * shape the player would. A `placement` that came from a click additionally
-   * earns the focus bonus, which is the whole reward for aiming.
+   * `placement` is `'auto'` for every automatic path — `AutomationManager`
+   * with the player's `autoCastAutoAim` preference on, the non-targeted
+   * branch of `Game.castAbility`, and the ability bar. In that case the
+   * manager places the ability itself, at the densest cluster within the
+   * ability's disc; an empty field falls back to the tower so a self-buff
+   * still resolves. `'tower'` pins the effect to the tower's position. A
+   * `{x, y}` placement is a hand-placed click and earns the focus bonus,
+   * which is the whole reward for aiming.
    */
-  tryCast(id: AbilityId, wave: number, placement?: { x: number; y: number } | null): boolean {
+  tryCast(id: AbilityId, wave: number, placement: CastPlacement = 'auto'): boolean {
     if (!this.canCast(id, wave)) return false;
     const def = ABILITY_BY_ID[id];
     if (!def) return false;
@@ -339,16 +460,35 @@ export class AbilityManager {
       state.active = false;
       state.activeTimer = 0;
     }
-    const placed = placement ?? null;
-    const point = placed ?? (isPlaceable(id) ? this.pickBestSpot(id) : null);
+    const ts = this.tower.snapshot;
+    let point: { x: number; y: number } | null = null;
+    let focused = false;
+    if (placement === 'tower') {
+      point = { x: ts.x, y: ts.y };
+    } else if (placement === 'auto') {
+      const spot = isTargeted(id) ? this.pickBestSpot(id) : null;
+      point = spot ?? { x: ts.x, y: ts.y };
+    } else {
+      point = { x: placement.x, y: placement.y };
+      focused = true;
+    }
     const visualTarget = this.applyEffect(
       def.effectType,
       this.getEffectiveEffectValue(id),
       duration,
-      { id, point, focused: placed !== null },
+      { id, point, focused },
     );
     this.bus.emit('ability_cast', { id, def });
-    this.bus.emit('ability_visual', { id, def, target: visualTarget });
+    // Plan §E.2: payload carries the ability's effective disc radius so the
+    // placement-aware emitters in EffectsManager size their visuals to match.
+    // Non-targeted abilities pass 0 — they paint at the tower's position and
+    // never consult `radius`.
+    this.bus.emit('ability_visual', {
+      id,
+      def,
+      target: visualTarget,
+      radius: isTargeted(id) ? this.getEffectiveRadius(id) : 0,
+    });
     this.addCastXp(def, state);
     this.onCast(id);
     // Spell Echo: chance to re-execute the effect for free (no mana, no cooldown).
@@ -358,7 +498,7 @@ export class AbilityManager {
         def.effectType,
         this.getEffectiveEffectValue(id),
         duration,
-        { id, point, focused: placed !== null },
+        { id, point, focused },
       );
     }
     return true;
@@ -372,7 +512,7 @@ export class AbilityManager {
 
   /**
    * The point an automatic cast of `id` would land on: the centre of the
-   * densest cluster inside the ability's disc (plan §4.3).
+   * densest cluster inside the ability's disc (plan §4.3 / §F.2).
    *
    * Candidates are enemy positions rather than a grid sweep — the best disc
    * always has an enemy at or near its centre, and this way the scan is
@@ -384,7 +524,7 @@ export class AbilityManager {
    * only prefers a pile when the pile is genuinely worth more.
    */
   pickBestSpot(id: AbilityId): { x: number; y: number } | null {
-    const radius = placementRadius(id);
+    const radius = this.getEffectiveRadius(id);
     if (radius <= 0) return null;
     const byHp = id === 'meteor_strike';
     let best: Enemy | null = null;
@@ -424,26 +564,46 @@ export class AbilityManager {
     type: AbilityEffectType,
     value: number,
     duration: number,
-    cast: { id: AbilityId; point: { x: number; y: number } | null; focused: boolean },
+    cast: CastContext,
   ): { x: number; y: number } | null {
     switch (type) {
       case 'aoe_damage':
         this.dealAoEDamage(value, cast);
         return cast.point;
       case 'slow': {
-        this.enemies.applySlow(Math.max(0.05, value * (1 - this.slowStrengthBonus)), duration);
-        // Plan §4.3: the global slow is unchanged, so nothing regresses for a
-        // player who never aims. A *placed* nova additionally chills the disc
-        // harder and for longer — that difference is the reward for aiming.
-        if (cast.focused && cast.point) {
-          const factor = Math.max(0.05, value * (1 - this.slowStrengthBonus) - PLACEMENT_FOCUS_CHILL);
-          const chillDuration = duration * PLACEMENT_FOCUS_CHILL_DURATION;
-          const radius = placementRadius(cast.id);
+        // Layer 1 (plan §D.6): a global slow keeps the panic-button floor for
+        // an idle player. Level-independent on purpose — the level curve
+        // moves the *disc* number, not the global number, so an idle player's
+        // safety net never regresses.
+        this.enemies.applySlow(GLOBAL_NOVA_SLOW, duration);
+        // Layer 2: every targetable enemy inside the placed disc gets a
+        // harder chill than the global slow. The focused cast deepens the
+        // factor and lengthens the duration — that is the reward for aiming.
+        if (cast.point) {
+          const baseFactor = value * (1 - this.slowStrengthBonus);
+          const factor = Math.max(
+            0.05,
+            baseFactor - (cast.focused ? PLACEMENT_FOCUS_CHILL : 0),
+          );
+          const chillDuration = duration * (cast.focused ? PLACEMENT_FOCUS_CHILL_DURATION : 1);
+          const radius = this.getEffectiveRadius(cast.id);
           for (const e of this.enemies.queryRadius(cast.point.x, cast.point.y, radius, this.placementScratch)) {
             if (!isTargetable(e)) continue;
             this.enemies.applyChill(e, factor, chillDuration);
           }
         }
+        // Layer 3: brittle damage bonus while the slow is live. Because the
+        // global slow (layer 1) marks every enemy as slowed, this also makes
+        // the `chilledDamageBonus` channel apply to every enemy on the field
+        // for the nova's duration — not just the ones in the disc.
+        this.buffs.set({
+          id: BUFF_FROST_BRITTLE,
+          stat: 'chilledDamageBonus',
+          kind: 'add',
+          value: frostBrittle(this.getAbilityLevel(cast.id)),
+          label: 'Frost Nova',
+          remaining: null,
+        });
         return cast.point;
       }
       case 'fire_rate_buff':
@@ -465,11 +625,16 @@ export class AbilityManager {
           label: 'Gold Rush',
           remaining: null,
         });
+        // The buff doubles gold; the magnet (plan §D.10) makes the orbs
+        // arrive faster and pay 100% while they are coming. Held only for
+        // the buff's duration, so the matching `clearEffect` is what
+        // turns it off.
+        this.setGoldRushMagnet?.(true);
         return null;
       case 'single_target_damage':
         return this.dealMeteorStrike(value, cast);
       case 'chain_damage':
-        this.dealChainLightning(value);
+        this.dealChainLightning(value, cast);
         return null;
       case 'crit_buff': {
         // value = bonus crit chance in percentage points
@@ -517,10 +682,10 @@ export class AbilityManager {
         return null;
       }
       case 'execute_damage':
-        this.applyExecute(value);
+        this.applyExecute(cast);
         return null;
       case 'rocket_barrage':
-        this.applyRocketBarrage(value);
+        this.applyRocketBarrage(value, cast);
         return null;
     }
   }
@@ -532,6 +697,7 @@ export class AbilityManager {
         break;
       case 'gold_buff':
         this.buffs.clear(BUFF_GOLD);
+        this.setGoldRushMagnet?.(false);
         break;
       case 'crit_buff':
         this.buffs.clear(BUFF_CRIT_CHANCE);
@@ -542,6 +708,11 @@ export class AbilityManager {
         this.buffs.clear(BUFF_VAMPIRIC_REGEN);
         break;
       case 'slow':
+        // The brittle damage channel rides the nova. When the slow expires,
+        // so does the brittle — otherwise the buff would keep applying damage
+        // to every enemy that is no longer chilled.
+        this.buffs.clear(BUFF_FROST_BRITTLE);
+        break;
       case 'aoe_damage':
       case 'single_target_damage':
       case 'chain_damage':
@@ -552,26 +723,23 @@ export class AbilityManager {
 
   private dealAoEDamage(
     multiplier: number,
-    cast?: { id: AbilityId; point: { x: number; y: number } | null; focused: boolean },
+    cast: CastContext,
   ): void {
+    // Plan §D.3: the disc *is* the effect for Rain of Arrows. The idle path
+    // still works because the centre the auto-placer picks is on the densest
+    // cluster, and a focused click lands the disc somewhere even better. The
+    // focus bonus applies to the *whole* disc, because the whole disc is what
+    // the player paid mana for.
     const towerState = this.tower.snapshot;
     const raw = towerState.baseDamage * multiplier * this.damageMultiplier;
-    // Plan §4.3: a placed Rain of Arrows still falls on the whole field. What
-    // the disc buys is extra weight where the player pointed, so aiming is a
-    // bonus rather than a restriction and the idle path loses nothing.
-    const focus = cast?.focused && cast.point ? cast.point : null;
-    const focusR2 = focus ? placementRadius(cast!.id) ** 2 : 0;
-    for (const enemy of this.enemies.list) {
-      // Plan §2.1: even a field-wide ability cannot reach what is underground.
-      if (!isTargetable(enemy)) continue;
-      let amount = raw;
-      if (focus) {
-        const dx = enemy.x - focus.x;
-        const dy = enemy.y - focus.y;
-        if (dx * dx + dy * dy <= focusR2) amount = raw * (1 + PLACEMENT_FOCUS_DAMAGE_BONUS);
-      }
-      const final = this.tower.applyResists(enemy, amount);
-      this.enemies.damage(enemy, final, false);
+    const cx = cast.point?.x ?? towerState.x;
+    const cy = cast.point?.y ?? towerState.y;
+    const r = this.getEffectiveRadius(cast.id);
+    const focusBonus = cast.focused ? 1 + PLACEMENT_FOCUS_DAMAGE_BONUS : 1;
+    for (const e of this.enemies.queryRadius(cx, cy, r, this.placementScratch)) {
+      if (!isTargetable(e)) continue;
+      const final = this.tower.applyResists(e, raw * focusBonus);
+      this.enemies.damage(e, final, false);
     }
   }
 
@@ -592,81 +760,77 @@ export class AbilityManager {
     return best;
   }
 
-  private pickHighestHpTarget(): Enemy | null {
-    let best: Enemy | null = null;
-    let bestHp = -Infinity;
-    for (const e of this.enemies.list) {
-      if (!isTargetable(e)) continue;
-      if (e.maxHp > bestHp) {
-        bestHp = e.maxHp;
-        best = e;
-      }
-    }
-    return best;
-  }
-
   private dealMeteorStrike(
     multiplier: number,
-    cast?: { id: AbilityId; point: { x: number; y: number } | null; focused: boolean },
+    cast: CastContext,
   ): { x: number; y: number } | null {
-    // The epicentre is the placed point when there is one. The heavy hit goes
-    // to the nearest enemy *inside the crater* — a click on empty ground is a
-    // whiff, the same way an ability cast on an empty field already is.
-    const target = cast?.point
-      ? this.nearestWithin(cast.point.x, cast.point.y, METEOR_SPLASH_RADIUS)
-      : this.pickHighestHpTarget();
-    if (!target) return cast?.point ?? null;
-    const towerState = this.tower.snapshot;
-    const heavyRaw = towerState.baseDamage * multiplier * this.damageMultiplier * (1 + this.meteorDamageBonus);
-    const heavyFinal = this.tower.applyResists(target, heavyRaw);
-    this.enemies.damage(target, heavyFinal, false);
+    // Plan §D.4: the crater is the ability's disc, and the heavy hit goes to
+    // the **highest-HP** targetable enemy inside it — the "smashes the
+    // highest-HP enemy" the description has always promised. A click on empty
+    // ground is still a whiff, but the crater still draws.
+    const ts = this.tower.snapshot;
+    const r = this.getEffectiveRadius(cast.id);
+    const cx = cast.point?.x ?? ts.x;
+    const cy = cast.point?.y ?? ts.y;
 
-    const splashRaw = heavyRaw * METEOR_SPLASH_MULTIPLIER;
-    const r2 = METEOR_SPLASH_RADIUS * METEOR_SPLASH_RADIUS;
-    // The crater sits on the placed point, not on whatever the heavy hit
-    // happened to land on, so what the player circled is what burns.
-    const cx = cast?.point ? cast.point.x : target.x;
-    const cy = cast?.point ? cast.point.y : target.y;
-    for (const e of this.enemies.list) {
-      if (!isTargetable(e) || e.id === target.id) continue;
-      const dx = e.x - cx;
-      const dy = e.y - cy;
-      if (dx * dx + dy * dy > r2) continue;
-      const final = this.tower.applyResists(e, splashRaw);
-      this.enemies.damage(e, final, false);
+    // Copy the query into a fresh array before any `damage` call. `damage`
+    // emits events whose handlers re-enter `queryRadius`, which would
+    // otherwise clear and refill `placementScratch` under the loop that is
+    // still walking it.
+    const inCrater: Enemy[] = [];
+    let target: Enemy | null = null;
+    let bestHp = -Infinity;
+    for (const e of this.enemies.queryRadius(cx, cy, r, this.placementScratch)) {
+      if (!isTargetable(e)) continue;
+      inCrater.push(e);
+      if (e.hp > bestHp) {
+        bestHp = e.hp;
+        target = e;
+      }
+    }
+    if (!target) return { x: cx, y: cy };
+
+    const heavyRaw = ts.baseDamage * multiplier * this.damageMultiplier
+      * (1 + this.meteorDamageBonus)
+      * (cast.focused ? 1 + PLACEMENT_FOCUS_DAMAGE_BONUS : 1);
+    this.enemies.damage(target, this.tower.applyResists(target, heavyRaw), false);
+
+    const splashRaw = heavyRaw * METEOR_SPLASH_FRACTION;
+    for (const e of inCrater) {
+      if (e.id === target.id) continue;
+      this.enemies.damage(e, this.tower.applyResists(e, splashRaw), false);
     }
     return { x: cx, y: cy };
   }
 
-  private dealChainLightning(baseMultiplier: number): void {
+  private dealChainLightning(baseMultiplier: number, cast: CastContext): void {
     const list = this.enemies.list;
     if (list.length === 0) return;
     const towerState = this.tower.snapshot;
     const level = this.getAbilityLevel('chain_lightning');
+    // A focused cast reaches further: +2 bounces is the visible reward for
+    // aiming on an ability that is otherwise a flat "seed at the densest
+    // spot" auto-fire.
     const bounces = Math.min(
       CHAIN_BOUNCE_MAX + this.chainBounceBonus,
-      CHAIN_BOUNCE_BASE + Math.floor(level / 2) * CHAIN_BOUNCE_PER_LEVEL + this.chainBounceBonus,
+      CHAIN_BOUNCE_BASE + Math.floor(level / 2) * CHAIN_BOUNCE_PER_LEVEL
+        + this.chainBounceBonus + (cast.focused ? 2 : 0),
     );
     const r2 = CHAIN_BOUNCE_RADIUS * CHAIN_BOUNCE_RADIUS;
     const hit = new Set<number>();
 
-    let current: Enemy | null = null;
-    let bestD2 = Infinity;
-    const tx = towerState.x;
-    const ty = towerState.y;
-    for (const e of list) {
-      if (!isTargetable(e)) continue;
-      const dx = e.x - tx;
-      const dy = e.y - ty;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < bestD2) {
-        bestD2 = d2;
-        current = e;
-      }
-    }
+    // Seed at the placed point, not the tower — Chain Lightning is now
+    // targeted, so the chain starts where the player pointed. Without a
+    // placed point, fall back to the tower.
+    const seedX = cast.point?.x ?? towerState.x;
+    const seedY = cast.point?.y ?? towerState.y;
+    let current = this.nearestWithin(seedX, seedY, this.getEffectiveRadius(cast.id));
     if (!current) return;
 
-    const path: { x: number; y: number }[] = [{ x: tx, y: ty }, { x: current.x, y: current.y }];
+    const path: { x: number; y: number }[] = [
+      { x: towerState.x, y: towerState.y },
+      { x: current.x, y: current.y },
+    ];
     let totalDamage = 0;
     let perEnemy = 0;
     for (let i = 0; i < bounces && current; i++) {
@@ -701,22 +865,32 @@ export class AbilityManager {
     }
   }
 
-  private applyExecute(thresholdPct: number): void {
-    const towerState = this.tower.snapshot;
-    const bossThreshold = thresholdPct / 2;
-    for (const e of this.enemies.list) {
+  private applyExecute(cast: CastContext): void {
+    // Plan §D.5: bosses take a fraction of their **max** HP, not a multiple
+    // of baseDamage. A multiple is a rounding error against a wave-50 boss
+    // bar; a fraction of max HP is what makes the threshold mean something.
+    // The boss path deliberately bypasses `applyResists` — an execute a
+    // resist can shrug is not an execute — and is capped at the bar that is
+    // left so it cannot roll over into overkill accounting.
+    const level = this.getAbilityLevel(cast.id);
+    const bossFrac = executeBossFrac(level);
+    const effectValue = this.getEffectiveEffectValue(cast.id);
+    const bossGate = effectValue / 200;   // percent → fraction, halved
+    const gate = effectValue / 100;
+    for (const e of [...this.enemies.list]) {
       if (!isTargetable(e)) continue;
       const ratio = e.hp / e.maxHp;
       if (e.type === 'boss') {
-        if (ratio > bossThreshold) continue;
-        const dmg = towerState.baseDamage * EXECUTE_BOSS_MULTIPLIER * this.damageMultiplier;
-        const final = this.tower.applyResists(e, dmg);
-        this.enemies.damage(e, final, false);
+        if (ratio > bossGate) continue;
+        // Deliberately bypasses `applyResists`: Execute is a designed-in
+        // bypass, and boss damage scales with Execute level rather than
+        // magic resist.
+        const amount = Math.min(e.hp, e.maxHp * bossFrac * this.damageMultiplier);
+        this.enemies.damage(e, amount, false);
       } else {
-        if (ratio > thresholdPct / 100) continue;
+        if (ratio > gate) continue;
         // Instant-kill: deal damage equal to current HP (minimum 1)
-        const final = Math.max(1, e.hp);
-        this.enemies.damage(e, final, false);
+        this.enemies.damage(e, Math.max(1, e.hp), false);
       }
     }
   }
@@ -727,20 +901,35 @@ export class AbilityManager {
    * rocket lands through the ordinary impact path (so resists apply) and pops
    * a splash around its hit.
    *
+   * Plan §D.8: now targeted. Rockets pick their targets **inside the disc**
+   * rather than anywhere on the field. A focused click adds the damage focus
+   * bonus on top.
+   *
    * On an empty field the cast is still spent: the rockets leave as duds in a
    * radial spread with no target and no splash, and age out like any other
    * stray shot.
    */
-  private applyRocketBarrage(value: number): void {
+  private applyRocketBarrage(value: number, cast: CastContext): void {
     const count = Math.floor(this.getEffectiveCount('rocket_barrage'));
     const towerState = this.tower.snapshot;
-    const alive = this.enemies.list.filter(e => isTargetable(e));
+    const rawDamage = towerState.baseDamage * value * this.damageMultiplier
+      * (cast.focused ? 1 + PLACEMENT_FOCUS_DAMAGE_BONUS : 1);
     let totalDamage = 0;
     const fired: Array<{ id: number }> = [];
 
-    const rawDamage = towerState.baseDamage * value * this.damageMultiplier;
+    // Find the targets inside the disc. Copy the filtered result into a fresh
+    // array before firing — the projectile manager shuffles its own state
+    // inside `fire`, and `placementScratch` is shared with other radius
+    // queries.
+    const cx = cast.point?.x ?? towerState.x;
+    const cy = cast.point?.y ?? towerState.y;
+    const inDisc: Enemy[] = [];
+    for (const e of this.enemies.queryRadius(cx, cy, this.getEffectiveRadius(cast.id), this.placementScratch)) {
+      if (!isTargetable(e)) continue;
+      inDisc.push(e);
+    }
 
-    if (alive.length === 0) {
+    if (inDisc.length === 0) {
       for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
         totalDamage += rawDamage;
@@ -758,9 +947,9 @@ export class AbilityManager {
     } else {
       // Distinct-first distribution: every rocket gets its own enemy while
       // there are enough, then doubles up at random.
-      const shuffled = [...alive].sort(() => Math.random() - 0.5);
+      const shuffled = [...inDisc].sort(() => Math.random() - 0.5);
       for (let i = 0; i < count; i++) {
-        const target = i < shuffled.length ? shuffled[i] : alive[Math.floor(Math.random() * alive.length)];
+        const target = i < shuffled.length ? shuffled[i] : inDisc[Math.floor(Math.random() * inDisc.length)];
         totalDamage += rawDamage;
         this.projectileMgr.fire(target, towerState, {
           rawDamage,
@@ -798,6 +987,10 @@ export class AbilityManager {
     this.buffs.clear(BUFF_CRIT_DAMAGE);
     this.buffs.clear(BUFF_LIFESTEAL);
     this.buffs.clear(BUFF_VAMPIRIC_REGEN);
+    this.buffs.clear(BUFF_FROST_BRITTLE);
+    // Drop the Gold Rush magnet source if it was held — `LootManager.reset`
+    // is the same call from the other side, so the ref count returns to 0.
+    this.setGoldRushMagnet?.(false);
   }
 
   /** Reset every ability to level 1 (used by Transcendence). */

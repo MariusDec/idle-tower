@@ -128,49 +128,63 @@ Everything the charge *does* still happens inside `Game.simulate`: the release s
 like any other shot at any game speed. **Orb drift is the other way round** — it is time-integrated
 movement, so it runs on the simulation clock and takes 8 game-seconds at every speed.
 
-## Click-placed abilities
+## Targeted abilities
 
-Rain of Arrows, Frost Nova and Meteor Strike are `PLACEABLE_ABILITIES` (`src/data/abilities.ts`).
+Five abilities carry an `areaRadius` in `src/data/abilities.ts` and are therefore **targeted**:
 
-| Ability | Disc | What a *placed* cast adds |
-|---|---:|---|
-| Rain of Arrows | 130 px | Enemies in the disc take **+60%** on top of the global hit |
-| Frost Nova | 150 px | Enemies in the disc are chilled 25% harder for 1.5× as long |
-| Meteor Strike | 60 px | The crater is your click, not the highest-HP enemy |
+| Ability | Disc at L1 | At max level | What the disc does |
+|---|---:|---:|---|
+| Rain of Arrows | 170 px | 314 px | The disc **is** the hit — nothing outside it is touched |
+| Frost Nova | 190 px | 316 px | A hard chill inside; a 15% global floor outside |
+| Chain Lightning | 120 px | 192 px | The chain seeds here rather than at the tower |
+| Rocket Barrage | 220 px | 360 px | Rockets pick targets inside it |
+| Meteor Strike | 70 px | 151 px | The crater is here, and the heavy hit goes to the highest-HP enemy in it |
 
-### Why a bonus rather than a restriction
+The disc is `placementRadius(id, level) × abilityAreaMultiplier`, read through
+`AbilityManager.getEffectiveRadius(id)`. It grows with the ability's level, the `arcane_expansion`
+research, the `ar_frostbite` talent and the arcane core — so the reticle the player sees is a real
+readout of a stat they have been investing in, not a fixed decoration.
 
-§4.3 assumes these are placed AoEs whose reward is hitting a better cluster. Two of the three are
-*global* today: Rain of Arrows hits every enemy alive and Frost Nova slows the whole field.
-Restricting them to a disc would be a flat nerf and a regression for every existing player, and it
-would break the idle contract in the process. So the global effect is unchanged and the disc gets a
-bonus on top. Meteor Strike, which was already a point effect, genuinely relocates — and its disc
-is deliberately `METEOR_SPLASH_RADIUS`, so a placed meteor is today's meteor with a player-chosen
-epicentre rather than a quietly wider one.
+### The disc is the effect, and aiming is a bonus on top
 
-A meteor placed on empty ground is a whiff: the heavy hit goes to the nearest enemy *inside the
-crater*, and if there is none, nothing is hit. That matches the existing empty-field behaviour.
+These used to be global effects with a bonus disc drawn over them, which meant the reticle
+described a shape the ability did not have. Now the disc is the ability's actual footprint, and
+what aiming buys is choosing *where* it lands plus a focus bonus: `PLACEMENT_FOCUS_DAMAGE_BONUS`
+(+25%) across the whole disc, a deeper and 1.5x-longer chill for Frost Nova, +2 bounces for Chain
+Lightning. Frost Nova keeps a level-independent 15% **global** slow so an idle player's panic
+button never regresses.
 
-### The automatic fallback
+A placement on empty ground is **refused**: `Game` declines the press, no mana is spent, and the
+arming state stays up. The reticle warns first — it flips to red with a `0` count badge before the
+click.
 
-`AbilityManager.tryCast(id, wave)` with no placement calls `pickBestSpot(id)`, which scores every
-enemy position by how much is inside the disc around it and takes the best. Candidates are enemy
+### Routing: your press aims, automation places
+
+- **A manual press always arms.** `Game.castAbility` routes any targeted ability to
+  `beginPlacement(id)` — hotkey and ability-bar click alike — and the next canvas press casts with
+  the pointer's position and the focus bonus.
+- **Automation places for you.** `AutomationManager.runAutoCast` casts with `'auto'` when the
+  **auto-aim** setting is on (the default) and `'tower'` when it is off.
+
+`AbilityManager.tryCast(id, wave, 'auto')` calls `pickBestSpot(id)`, which scores every enemy
+position by how much is inside the disc around it and takes the best. Candidates are enemy
 positions rather than a grid sweep, because the best disc always has an enemy near its centre; the
-scan uses `EnemyManager.queryRadius` with a shared scratch buffer (safe — it only reads).
+scan uses `EnemyManager.queryRadius` with a shared scratch buffer, copied into a fresh array before
+any damage is dealt so a kill cannot re-enter the iteration.
 
 Meteor Strike scores by **HP** rather than head count, which is what keeps it the boss nuke it has
 always been: a boss's bar dwarfs a crowd's, so the auto-placer picks the boss exactly as
 `pickHighestHpTarget` used to, and only prefers a pile when the pile is worth more.
 
-Putting the placer *behind* the cast rather than in front of it means `AutomationManager.runAutoCast`,
-the ability bar and the instant-cast hotkey all get it for free, with no second implementation to
-drift.
+Putting the placer *behind* the cast rather than in front of it means every automatic path shares
+one implementation with nothing to drift.
 
-### The `instantCast` setting
+### The auto-aim setting
 
-Settings → Abilities, **default on**, stored in `localStorage` (no save-version bump). On is
-exactly today's behaviour: the hotkey fires immediately. Off arms the ability instead, and the next
-canvas click places it.
+Settings → Abilities, **default on**, stored in `localStorage` (no save-version bump). It governs
+**automation only** — it cannot make your own press skip aiming, because a press that aims is the
+whole point. The legacy `instantCast` key (which meant the opposite: "auto-aim my presses") is read
+once on load, carried into `autoCastAutoAim`, and removed.
 
 Placement mode **never outlives its reason** — this is the invariant `AbilityPlacement` exists to
 guarantee:
@@ -180,8 +194,15 @@ guarantee:
   does);
 - a `wave_started` event cancels;
 - an ascension or transcendence cancels;
-- a **click always leaves the mode**, whether or not the cast that follows succeeds — if the mana
-  drained between the hotkey and the click, the player gets a toast, not a stuck prompt.
+- a **successful** cast leaves the mode; a refused one (empty disc, or mana drained between the
+  arming and the click) keeps it up, with a toast rather than a stuck prompt.
+
+### Gold Rush and the loot magnet
+
+Gold Rush holds `LootManager.setMagnetSource('goldRush', true)` for its duration and drops it in
+`clearEffect`. The magnet is reference-counted through a `Set` of source names, so Gold Rush
+overlapping the `orb_magnet` blessing is safe in either order — the magnet is on while at least one
+source is held. Boosted gold drops that age out uncollected are not boosted gold.
 
 ## Input routing
 
