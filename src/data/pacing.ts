@@ -160,8 +160,16 @@ export function comboNextThreshold(kills: number): number | null {
 
 // ── §7.4 Risk dial ────────────────────────────────────────────────────────
 
-/** Highest risk step. The dial is `0..MAX_RISK` inclusive. */
+/** Highest risk step without any Watch unlock. The dial is `0..MAX_RISK` inclusive. */
 export const MAX_RISK = 5;
+
+/**
+ * The absolute ceiling the dial can ever reach, including Watch unlocks
+ * (`riskbearer` → 6, `deep_watch` → 7). Array sizes and save-restore clamps
+ * read this rather than `MAX_RISK`, so a later unlock cannot write out of
+ * bounds into `WatchCounters.riskWaves`.
+ */
+export const MAX_RISK_CEILING = 7;
 
 /**
  * What one step of the dial costs and pays.
@@ -177,9 +185,9 @@ export const RISK_SPEED_PER_STEP = 0.08;
 export const RISK_GOLD_PER_STEP = 0.25;
 export const RISK_AP_PER_STEP = 0.10;
 
-export function clampRisk(level: number): number {
+export function clampRisk(level: number, max: number = MAX_RISK): number {
   if (!Number.isFinite(level)) return 0;
-  return Math.max(0, Math.min(MAX_RISK, Math.floor(level)));
+  return Math.max(0, Math.min(Math.min(max, MAX_RISK_CEILING), Math.floor(level)));
 }
 
 export function riskHpMult(risk: number): number {

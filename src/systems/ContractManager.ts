@@ -10,7 +10,12 @@ import {
   type ContractGoalKind,
   type ContractReward,
 } from '../data/contracts';
-import type { ActiveContractState, ContractRunState, EnemyType } from '../types';
+import type {
+  ActiveContractState,
+  CompletedContractState,
+  ContractRunState,
+  EnemyType,
+} from '../types';
 
 /**
  * The slice of `EventBus` this manager needs.
@@ -50,10 +55,21 @@ export interface ActiveContract {
   drawnAtWave: number;
 }
 
+/**
+ * A completion, with the payout it actually made.
+ *
+ * `gold` is resolved at completion time rather than kept as the def's
+ * `goldWaves` ratio: a contract that paid two waves of wave-30 income did not
+ * pay two waves of wave-90 income, and the history list is a record of what
+ * happened. `reward.apBonusPct` is likewise the *banked* figure, so a
+ * completion past the run's cap reads as the zero it was.
+ */
 export interface CompletedContract {
   defId: string;
   name: string;
   wave: number;
+  gold: number;
+  reward: Required<ContractReward>;
 }
 
 /**
@@ -106,6 +122,15 @@ export interface ContractManagerDeps {
   /** Gold one wave is worth right now — `Game.estimateWaveGold`. */
   waveGold: (wave: number) => number;
   rng?: () => number;
+  /**
+   * How many slots to hold. Defaults to `CONTRACT_SLOTS`.
+   *
+   * The fourth slot is the Watch chapter-1 unlock (`board_expansion`,
+   * plans/milestones.md §5.2); `Game` passes a callback that asks the Watch.
+   * The default keeps the dep opt-in so `sim/model.ts` (which builds the
+   * manager with no deps and must stay byte-identical to `HEAD`) sees three.
+   */
+  slots?: () => number;
 }
 
 /**
@@ -119,6 +144,11 @@ export interface ContractManagerDeps {
  *      reader, so `PrestigeManager` cannot be handed an uncapped figure by a
  *      future caller.
  */
+/** The payout of an entry restored from a save that predates `log`. */
+const NO_REWARD: Required<ContractReward> = {
+  goldWaves: 0, rerolls: 0, rp: 0, apBonusPct: 0,
+};
+
 export class ContractManager {
   private readonly deps: ContractManagerDeps;
   private readonly rng: () => number;
@@ -154,6 +184,17 @@ export class ContractManager {
 
   get isApCapped(): boolean {
     return this.apBonus >= CONTRACT_TUNING.apBonusCap - 1e-9;
+  }
+
+  /**
+   * Slots the tracker holds right now. Never below `CONTRACT_SLOTS`.
+   *
+   * The `Math.max` is a guard against the `slots` dep ever returning less than
+   * the baseline — a contract slot is a player expectation that survives a
+   * Watch unlock being lost, not a feature that disappears with it.
+   */
+  get slotCount(): number {
+    return Math.max(CONTRACT_SLOTS, Math.floor(this.deps.slots?.() ?? CONTRACT_SLOTS));
   }
 
   /** Gold a contract's reward is worth right now (0 when it pays no gold). */
@@ -192,11 +233,12 @@ export class ContractManager {
     return out;
   }
 
-  /** Fill empty slots up to `CONTRACT_SLOTS`. Safe to call at any time. */
+  /** Fill empty slots up to the current `slotCount`. Safe to call at any time. */
   refill(): void {
+    const target = this.slotCount;
     const wave = Math.max(1, Math.floor(this.deps.currentWave()));
-    let guard = CONTRACT_SLOTS * 4;
-    while (this.active.length < CONTRACT_SLOTS && guard-- > 0) {
+    let guard = target * 4;
+    while (this.active.length < target && guard-- > 0) {
       const pool = this.eligible(wave);
       if (pool.length === 0) break;
       const def = this.pick(pool);
@@ -307,11 +349,15 @@ export class ContractManager {
   private complete(c: ActiveContract): void {
     const wave = Math.max(1, Math.floor(this.deps.currentWave()));
     this.completedCount += 1;
-    this.history.push({ defId: c.def.id, name: c.def.name, wave });
+    // Resolved before the push so the history entry carries the payout: the
+    // gold figure is the same `goldValue` the tracker was showing a frame ago
+    // and the same one `Game` pays, because all three read one method.
+    const reward = this.grantReward(c);
+    const gold = this.goldValue(c);
+    this.history.push({ defId: c.def.id, name: c.def.name, wave, gold, reward });
     if (this.history.length > CONTRACT_TUNING.historyLimit) {
       this.history.splice(0, this.history.length - CONTRACT_TUNING.historyLimit);
     }
-    const reward = this.grantReward(c);
     this.deps.bus?.emit('contract_completed', {
       uid: c.uid,
       id: c.def.id,
@@ -366,6 +412,14 @@ export class ContractManager {
         drawnAtWave: c.drawnAtWave,
       })),
       completed: this.history.map(h => h.defId),
+      log: this.history.map(h => ({
+        defId: h.defId,
+        wave: h.wave,
+        gold: h.gold,
+        rerolls: h.reward.rerolls,
+        rp: h.reward.rp,
+        apBonusPct: h.reward.apBonusPct,
+      })),
       completedCount: this.completedCount,
       apBonusPct: this.apBonus,
       uidSeq: this.uidSeq,
@@ -385,13 +439,40 @@ export class ContractManager {
       const restored = this.restoreOne(entry);
       if (restored) this.active.push(restored);
     }
-    for (const defId of state?.completed ?? []) {
-      const def = CONTRACT_BY_ID[defId];
-      if (def) this.history.push({ defId, name: def.name, wave: 0 });
+    // `log` is the richer form; `completed` is what a save written before it
+    // existed has. Either way a def that has since left the pool is dropped —
+    // the list is names and payouts, and it has neither for one.
+    if (state?.log) {
+      for (const entry of state.log) {
+        const restored = this.restoreCompleted(entry);
+        if (restored) this.history.push(restored);
+      }
+    } else {
+      for (const defId of state?.completed ?? []) {
+        const def = CONTRACT_BY_ID[defId];
+        if (def) this.history.push({ defId, name: def.name, wave: 0, gold: 0, reward: NO_REWARD });
+      }
     }
     // A save written before a def was removed from the pool loses that slot;
     // the refill puts the tracker back to three rather than leaving a hole.
     this.refill();
+  }
+
+  private restoreCompleted(entry: CompletedContractState): CompletedContract | null {
+    const def = CONTRACT_BY_ID[entry.defId];
+    if (!def) return null;
+    return {
+      defId: entry.defId,
+      name: def.name,
+      wave: Math.max(0, Math.floor(entry.wave ?? 0)),
+      gold: Math.max(0, entry.gold ?? 0),
+      reward: {
+        goldWaves: def.reward.goldWaves ?? 0,
+        rerolls: Math.max(0, Math.floor(entry.rerolls ?? 0)),
+        rp: Math.max(0, Math.floor(entry.rp ?? 0)),
+        apBonusPct: Math.max(0, entry.apBonusPct ?? 0),
+      },
+    };
   }
 
   private restoreOne(entry: ActiveContractState): ActiveContract | null {

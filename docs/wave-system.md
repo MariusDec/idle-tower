@@ -51,13 +51,14 @@ supposed to be measuring it.
 | blinker | 2 | 35 |
 | warden | 1 | 40 |
 | burrower | 2 | 45 |
-| boss | 0 | — (boss waves bypass the pool) |
+| boss | 0 | — the boss is placed by `buildRoster`, never rolled |
 
-A boss wave spawns `bossCountForWave(wave)` = **`2 + tier`** bosses, each running
-its own three-phase encounter — see
-[boss-encounters.md](boss-encounters.md). Bosses in a `summon` phase add enemies
-*on top of* `enemiesToSpawn`, so the wave cannot end until those are cleared
-too.
+A boss wave spawns **one** boss plus an escort of `bossEscortCountForWave(wave)`
+= `2 + (tier - 1)` ordinary enemies rolled from the pool above — see
+[boss-encounters.md](boss-encounters.md). The boss is the roster's first entry,
+so it leads and the escort walks in behind it. A boss in a `summon` phase adds
+enemies *on top of* `enemiesToSpawn`, so the wave cannot end until those are
+cleared too.
 
 Gameplay plan §2.6 requires that the five behavioural types **replace** slots
 rather than adding them, so total wave HP does not rise: `normal` dropped 6→5

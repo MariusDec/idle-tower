@@ -23,16 +23,15 @@ Nothing in Part 4 blocks, and nothing has to be clicked for a run to progress.
 
 | Source | Orbs | Notes |
 |---|---|---|
-| Boss | `bossOrbShare(wave)` | **3–5 per *encounter*, divided across the pack** |
+| Boss | `bossOrbShare(wave)` | **3–5 per *encounter*** |
 | Elite | 1–2 | Always |
 | Anything else | 2% chance of 1 | |
 
-The boss rule is the one correction the plan needed. §4.1 says "bosses (always, 3–5)", written —
-like the rest of the plan before Part 3 corrected it — as though a boss wave held one boss. It
-holds `bossCountForWave(wave)` = `2 + tier`: three at wave 10, twelve at wave 100. Read per boss,
-a wave-100 pack would drop sixty orbs into a forty-orb cap. `bossOrbShare` therefore divides the
-encounter budget across the pack, taking the fractional remainder as a probability, so a wave-10
-pack and a wave-100 pack both pay about four orbs.
+The budget is per *encounter*, and for one release it had to be divided: Part 3 gave a boss wave
+a pack of `2 + tier` bosses, and read per boss a wave-100 pack would have dropped sixty orbs into
+a forty-orb cap. A boss wave fields one boss again, so `bossOrbShare` pays the whole 3–5 budget on
+that one kill and the division is gone. The escort drops on the ordinary 2% rule, like any other
+trash.
 
 ### Kinds
 
@@ -67,7 +66,7 @@ currencies.
 
 40 live orbs; a spawn past the cap evicts the **oldest**, which is the one closest to
 auto-collecting anyway. An evicted orb **expires without paying** — that is what "expires" means —
-but the drop budget is sized so it never fires in normal play (a full wave-100 boss pack is about
+but the drop budget is sized so it never fires in normal play (a wave-100 boss encounter is about
 four orbs).
 
 Orbs are pooled: dead entries go on a free list and are re-initialised in place, and removal is an
@@ -83,7 +82,7 @@ never the object.
 Orbs are **never saved**. `Game.tryLoadSave` calls `LootManager.clear()`, and `SaveManager` carries
 a comment saying why. Live enemies and projectiles were never persisted either — a load starts with
 an empty field and `WaveManager` restarts the wave — so an orb would have nothing to drift toward.
-Persisting them would also let a player bank a boss pack's drops across a reload and click them all
+Persisting them would also let a player bank a boss encounter's drops across a reload and click them all
 at full value later, which is the one way the 40/100 split could be gamed.
 
 Orbs are also run-scoped: `applySavedStateReset` (ascension and transcendence) drops them.
@@ -298,7 +297,7 @@ place.
 
 - **`LootManager.setValueBonus(v)`** sets the Prospector talent's orb value
   bonus; called from `Game.applyResolvedStats` with `stats.orbValueBonus`.
-- **A boss pack all dying at once** stays inside the cap by construction; the test asserts it at
+- **A boss encounter's drops landing at once** stay inside the cap by construction; the test asserts it at
   waves 10 through 200.
 - **An orb spawned on top of the tower** arrives immediately (`arriveRadius`, 26 px) and pays the
   auto rate.

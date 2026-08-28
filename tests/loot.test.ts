@@ -10,7 +10,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { LootManager } from '../src/systems/LootManager';
 import { LOOT_TUNING, bossOrbShare, orbGoldValue, type LootOrbKind } from '../src/data/loot';
-import { bossCountForWave } from '../src/data/formulas';
 import { world } from '../src/data/arena';
 import { MANUAL_AIM } from '../src/data/tower';
 import { AbilityPlacement, ChargeTracker } from '../src/systems/ActiveInput';
@@ -166,31 +165,25 @@ describe('loot orbs (plan §4.1)', () => {
 
 describe('orb drop rules (plan §4.1)', () => {
   /**
-   * Part 3 found that a boss wave spawns `2 + tier` bosses, not one. §4.1's
-   * "bosses drop 3-5" therefore has to be an *encounter* budget, or a wave-100
-   * pack would drop sixty orbs into a forty-orb cap.
+   * §4.1's "bosses drop 3-5" is an *encounter* budget. It had to be divided
+   * across the pack while a boss wave spawned `2 + tier` bosses; the wave
+   * fields one boss again, so the whole budget lands on one kill — and that
+   * kill still has to stay inside the forty-orb cap at every depth.
    */
-  it('keeps a boss pack inside the orb cap at every tier', () => {
+  it('keeps a boss encounter inside the orb cap at every tier', () => {
     for (const wave of [10, 20, 40, 60, 100, 200]) {
       const { mgr } = makeManager();
-      const packSize = bossCountForWave(wave);
-      let total = 0;
-      for (let i = 0; i < packSize; i++) {
-        total += mgr.dropForKill({ x: 100 + i, y: 100, wave, isBoss: true, maxMana: 0 });
-      }
-      expect(total, `wave ${wave} (${packSize} bosses)`)
-        .toBeLessThanOrEqual(LOOT_TUNING.maxOrbs);
+      const total = mgr.dropForKill({ x: 100, y: 100, wave, isBoss: true, maxMana: 0 });
+      expect(total, `wave ${wave}`).toBeLessThanOrEqual(LOOT_TUNING.maxOrbs);
       expect(mgr.count).toBeLessThanOrEqual(LOOT_TUNING.maxOrbs);
     }
   });
 
-  it('pays roughly the same encounter budget however big the pack is', () => {
-    // 200 encounters per wave, so the fractional share averages out.
+  it('pays the same encounter budget at every depth', () => {
+    // 200 encounters per wave, so the roll averages out.
     const totalFor = (wave: number): number => {
       let sum = 0;
-      for (let run = 0; run < 200; run++) {
-        for (let i = 0; i < bossCountForWave(wave); i++) sum += bossOrbShare(wave);
-      }
+      for (let run = 0; run < 200; run++) sum += bossOrbShare(wave);
       return sum / 200;
     };
     const small = totalFor(10);

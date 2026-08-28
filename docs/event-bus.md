@@ -73,3 +73,8 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `equipment_equipped` | `{ slot, equipment }` | EquipmentManager | — |
 | `equipment_unequipped` | `{ slot }` | EquipmentManager | — |
 | `rockets_fired` | `{ count, totalDamage }` | AbilityManager (Rocket Barrage) | AudioManager (launch whoosh) |
+| `watch_chapter_completed` | `{ id, number, name, unlockId, unlockName, unlockDescription, icon, color, next }` | WatchManager (`check()`) | Game (runs `applyWatchUnlock(id)`, `syncUiApis()`, `requestSave()`; emits `toast` `kind: 'milestone'`, `text: 'Chapter complete: …'`, `life: 8`; emits shockwave ring) · UIManager (pushes payload onto `chapterModalQueue`; pops the next when current modal closes, deferring with `Modal.anyOpen()` while another modal is up) |
+
+## Related
+
+- [watch-system.md](watch-system.md) — the Long Watch campaign. The cascade rule, the closed `WATCH_PROGRESS` reader table, the unlock consumer map, and why `watch_chapter_completed` is the only campaign-scoped event on the bus.

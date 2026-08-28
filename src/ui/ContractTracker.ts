@@ -1,4 +1,4 @@
-import { setStyle, setText, setTitle } from '../utils/dom';
+import { setStyle, setText, setTitle, toggleClass } from '../utils/dom';
 
 /** One tracker row's worth of state, pushed by the host each UI tick. */
 export interface ContractRowData {
@@ -21,6 +21,9 @@ export interface ContractTrackerHandlers {
 
 /** Seconds a completed row stays on screen playing its flourish. */
 const FLOURISH_SECONDS = 1.1;
+
+/** Fill at which a row starts advertising that it is nearly done. */
+const CLOSE_FRACTION = 0.8;
 
 interface RowEls {
   wrap: HTMLElement;
@@ -111,7 +114,11 @@ export class ContractTracker {
       setText(els.progress, data.progress);
       setText(els.reward, data.reward);
       setTitle(els.wrap, `${data.name} — ${data.label}`);
-      setStyle(els.fill, 'width', `${(Math.max(0, Math.min(1, data.fill)) * 100).toFixed(1)}%`);
+      const fill = Math.max(0, Math.min(1, data.fill));
+      setStyle(els.fill, 'width', `${(fill * 100).toFixed(1)}%`);
+      // A row inside its last fifth lights its border, so "about to complete"
+      // is visible before the flourish rather than only after it.
+      toggleClass(els.wrap, 'is-close', fill >= CLOSE_FRACTION);
     }
     // A uid that vanished without a `flourish` call — a save load, an
     // ascension — is dropped silently rather than celebrated.

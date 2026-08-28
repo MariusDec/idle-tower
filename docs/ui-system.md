@@ -423,6 +423,53 @@ the replacement is the same contract drawn again. The flourish is driven by the
 save load also empty the tracker, and neither deserves a celebration. See
 [contract-system.md](contract-system.md#ui).
 
+### The Journal tab and the Long Watch corner chip
+
+A third corner overlay, owned by `src/ui/JournalStrip.ts` (plan §6.5), sits
+one row above the milestone strip and shares the corner layer (`--z-corner`)
+with it. Reading top-down, the bottom-left stack now reads:
+
+```
+contract tracker    (--corner-stack-base)
+milestone strip     (--contract-tracker-height above the base)
+Long Watch chip     (--contract-tracker-height + --milestone-strip-height)
+```
+
+The chip itself shows the active chapter's number, name, and a progress
+bar that is the mean of the chapter's three objective fills. A click
+opens the Journal tab on desktop, or the `progress` sheet on mobile
+(which lands on the Journal tab as the first entry of that group). The
+pulse flourish is the same `@keyframes milestone-pulse` the milestone
+strip uses, so there is one animation to tune. Like the milestone strip
+the chip hides itself entirely when every chapter is done — the
+celebration is the modal, and a perpetual "12 / 12" pill in the corner
+would just be dead pixels.
+
+**Deliberate mobile hide.** The chip is `display: none` on the
+`@media (max-width: 768px)` block, for the same reason the milestone
+strip's hover-flyout was retired: three stacked chips in a phone's
+bottom-left corner eats the play area, and the precedent (see
+[milestones.md](milestones.md)) is to drop the chip rather than resize
+the play area to fit. The Journal tab is still reachable one tap away
+in the `progress` group on the bottom nav, and the chapter-complete
+modal still fires on mobile so the player learns the chapter is done —
+they just have to want to see the next one badly enough to open the
+sheet. See [watch-system.md](watch-system.md#ui).
+
+The **Journal tab** (`src/ui/JournalPanel.ts`) is the campaign's home
+and lives in the `progress` group of `NAV_GROUPS` as its first entry,
+label "Journal" — so the tab is one tap away on mobile. Five surfaces,
+top to bottom: a header with `X / 12 chapters`; the **active** chapter
+card (accent border, three objective rows with progress bars, reward
+strip); the **next up** card (half prominence, names the upcoming
+chapter and its reward); the **completed** list (newest first, one row
+per chapter with its unlock name); and **the road ahead** (the
+remaining chapters as one-line rows). The view model is
+`Game.watchInfo()` → `UIManager` → `JournalPanel`; the panel rebuilds
+the DOM only when the *signature* changes (active chapter, completion
+state, goal-met flags) and updates progress numbers in place every UI
+tick. See [watch-system.md](watch-system.md).
+
 ## Things drawn on the canvas rather than in the DOM
 
 Two Part 4 readouts live in `Renderer` rather than in an overlay, because both

@@ -16,15 +16,42 @@ something different.
 
 ## Anatomy of an encounter
 
-A boss wave spawns `bossCountForWave(wave)` = **`2 + tier`** bosses — three at
-wave 10, six at wave 40, twelve at wave 100. Everything below is **per boss**;
-the pack is why several of the numbers are divided.
+A boss wave spawns **one** boss, plus an escort of `bossEscortCountForWave(wave)`
+ordinary enemies drawn from the wave's own pool.
+
+For one release it spawned `2 + tier` of them — three at wave 10, twelve at wave
+100 — and everything below was divided across that pack. That was the wrong
+shape for the machine this page describes: the phases, the pips, the ten-second
+bulwark window and the two-second slam telegraph are all written for *a* boss,
+and eleven copies of them running out of phase with each other is not eleven
+times the encounter, it is noise the player cannot read or answer. The pack
+survives as `bossEncounterWeight(wave)` = **`2 + (tier - 1)`**, a multiplier the
+lone boss carries.
 
 | Concept | Where it lives |
 |---|---|
 | Phase, pattern, timers | Fields on the `Enemy` (`bossPhase`, `bossPattern`, …) |
 | The machine | `EnemyManager.tickBoss`, inside `resolveStance`'s `boss` branch |
-| The encounter (all bosses on the wave) | `Game.bossEncounter` — one clock, one flawless flag |
+| What the wave is worth | `bossEncounterWeight` — the bar, the purse, the XP, the summon batch and the siphon rate all scale with it |
+| The encounter (boss, adds and escort) | `Game.bossEncounter` — one clock, one flawless flag |
+
+### The escort
+
+`bossEscortCountForWave(wave)` = one trash per boss the pack used to field,
+rolled from `spawnPoolForWave` exactly like a normal wave's enemies, and placed
+*after* the boss in the roster so the boss leads.
+
+It exists because the pack was not only durability, it was **bodies**: things to
+cleave, chip damage arriving from several directions, a reason to cast an AoE on
+a boss wave at all. Its HP and its gold both come **out of** the boss
+(`bossMaxHpForWave`, `bossGoldForWave`), so it redistributes the encounter
+rather than adding to it — the same §2.6 rule the phase machine was held to.
+
+It is deliberately small. Every body on the wave buys spawn time in
+`expectedWaveSeconds`, so a fat escort quietly buys the encounter a longer
+enrage fuse: at three trash per boss, `npm run sim` put boss-wave budget use at
+**52%** against the ~82% a boss wave has always run at, and the wall stopped
+landing on boss waves at all.
 
 ## Phases
 
@@ -57,7 +84,7 @@ default in `EnemyManager.tickBossPattern`.
 | `bulwark` | Puts up a shield worth **20% of max HP**. Break it within **10 s** or the boss converts the whole shield into HP and puts a fresh one up. | A DPS check. Saved cooldowns — Rain of Arrows, Meteor, Berserk. |
 | `summon` | Every **6 s**, adds drawn from the wave's own spawn pool at the wave's own HP curve. The wave cannot end until they are dead. | AoE and clear speed — Frost Nova, mines, ricochet. |
 | `slam` | **2 s** of growing ground ring, then `damage × 8` to the tower. Cut to **20%** if the boss is slowed or knocked back during the telegraph. | The first genuinely *reactive* moment in the game. |
-| `siphon` | Drains **8 mana/s** and heals **0.5% of max HP per second** of that drain. | Mana economy — spend it rather than pool it. |
+| `siphon` | Drains **8 mana/s × the encounter weight** and heals **0.5% of max HP per second** of full drain. | Mana economy — spend it rather than pool it. |
 
 ### bulwark
 
@@ -73,10 +100,10 @@ granted by a warden and collapses when the warden dies.
 
 ### summon
 
-§3.2's "4 adds" is the figure for a *lone* boss. `bossSummonCountForWave`
-divides the batch across the pack, so a wave-100 encounter with twelve bosses
-fields one add each rather than forty-eight. A global ceiling
-(`summonMaxAlive`, 40 alive) is the second brake.
+§3.2's "4 adds" is the figure for a *lone* boss, which is what there is again:
+`bossSummonCountForWave` is `max(4, bossEncounterWeight)`, so one boss summons
+what the pack used to summon between them — four at the shallow tiers, eleven at
+wave 100. A global ceiling (`summonMaxAlive`, 40 alive) is the second brake.
 
 Adds are extra to `enemiesToSpawn`; `WaveManager` waits for `aliveCount() === 0`,
 so leaving them alive keeps the wave — and the enrage clock — running.
@@ -93,9 +120,15 @@ so the question is whether *this* boss was controlled — plus a flag set by
 of the telegraph: the answer is a reaction inside a two-second window, so it
 counts even if the chill has worn off by the time the slam lands.
 
-First telegraphs are staggered at random across the pack
-(`slamInterval * (0.35 … 0.85)`), because `2 + tier` bosses telegraphing in
-lockstep is one unanswerable hit rather than a rhythm.
+The first telegraph of a phase lands at a random point in the interval
+(`slamInterval * (0.35 … 0.85)`), so it is not a beat the player can set a
+metronome to. It was staggering across the pack back when lockstep telegraphs
+from `2 + tier` bosses were one unanswerable hit rather than a rhythm.
+
+Slam damage is **not** scaled by `bossEncounterWeight`. Everything the boss
+holds *against the tower's damage* is; this is the one thing that costs tower
+**HP**, and a wave-100 slam worth eleven of them is a one-shot dressed up as a
+mechanic. The escort carries the chip damage the pack used to deal instead.
 
 Damage goes out as `tower_damaged`, so it runs the same mitigation chain as a
 melee hit and a siege shell: dodge → research DR → mana shield → wall → shield
@@ -107,6 +140,11 @@ Priced **per second of drain**, not per point of mana: mana pools grow by orders
 of magnitude across a run, and a heal priced per point would be a rounding error
 at wave 10 and half the bar at wave 150. Pro-rated by how much mana was actually
 available, so an empty pool feeds the boss nothing.
+
+The drain rate is `siphonManaPerSecond * bossEncounterWeight` — the pack's
+pressure, from one boss. The heal is a fraction of a bar that is `weight` times
+bigger, so leaving the rate at the per-boss figure would let a deep-wave boss
+heal the pack's worth of HP out of a fraction of the pack's mana.
 
 It emits no events — the drain is continuous, and six particle bursts a frame
 for one effect is not a readout. `Renderer.drawBossState` draws a live beam from
@@ -156,13 +194,19 @@ at 6.5x alike.
 
 ## Rewards
 
-Scored per **encounter**, not per boss (`bossEncounterOutcome`), and resolved by
-`Game.resolveBossEncounter` when the last boss of the wave dies. Paying a reroll
-token per boss would make "flawless" mean "flawless, times six".
+Scored per **encounter** (`bossEncounterOutcome`), and resolved by
+`Game.resolveBossEncounter` when the wave's boss dies.
+
+The encounter also pays what the pack paid, because the pack's whole budget is
+on the one boss: gold is `bossGoldForWave` (the purse, less the escort's share),
+XP is `xpPerKill('boss', wave)` weighted by `bossEncounterWeight`, orbs are the
+undivided 3–5 (`bossOrbShare`), and the equipment roll runs
+`bossEncounterWeight` times on the kill — under **one** toast, because
+`2 + tier` separate "Equipment dropped" toasts is a wave the player cannot read.
 
 | Condition | Reward |
 |---|---|
-| **Swift kill** — every boss dead inside **30 simulation seconds** of the first one spawning | **+50% boss gold**, and a **guaranteed** equipment drop **one rarity tier above** the roll |
+| **Swift kill** — the boss dead inside **30 simulation seconds** of it spawning | **+50% boss gold**, and a **guaranteed** equipment drop **one rarity tier above** the roll |
 | **Flawless** — the tower lost no HP during the fight | **+1 blessing reroll token**, and **+10% AP** on this run's ascension preview, cumulative |
 
 Both announce with the existing toast + shockwave vocabulary.
@@ -182,7 +226,7 @@ compose rather than one overwriting the other.
 `src/ui/BossBar.ts`, mounted in the overlay root, visible only while a boss is
 alive. It shows:
 
-- the tier name and, when the pack is more than one, how many are still up,
+- the tier name and, if more than one boss is somehow on the field, how many are still up,
 - HP with **phase pips** drawn at 66% and 33%, and the bulwark shield as an
   overlay starting at the HP front so "how much is left" is one continuous read,
 - the active pattern, its one-line answer, and the bulwark heal countdown,
@@ -199,18 +243,19 @@ unchanged frame free.
 
 ### Which boss does it track?
 
-`EnemyManager.leadBoss()`, in order:
+A wave has one, so `EnemyManager.leadBoss()` is in practice a lookup. The
+selection rule is kept because nothing *guarantees* one — a mutator, a manual
+spawn or a future multi-boss tier would all put a second on the field, and a bar
+that silently tracked the first entry in the array is how a slam telegraph goes
+unseen (in-browser verification caught exactly that with an eight-boss pack at
+wave 60):
 
-1. **A boss mid-slam-telegraph**, soonest to land first. This is the only thing
-   in the encounter with a deadline. In-browser verification caught the
-   alternative: with an eight-boss pack at wave 60 the countdown belonged to a
-   boss the bar was not watching, so the telegraph never surfaced.
-2. Otherwise the one **closest to dying** — the next to phase, and in practice
-   stable, since a focused target stays lowest until it dies.
+1. **A boss mid-slam-telegraph**, soonest to land first — the only thing in the
+   encounter with a deadline.
+2. Otherwise the one **closest to dying** — the next to phase.
 
 The on-canvas rings are drawn for **every** boss (`Renderer.drawBossState`), so
-*which* boss is slamming is always answerable on the field; the bar answers
-*how long*.
+what is slamming is always answerable on the field; the bar answers *how long*.
 
 ## The durability budget
 
@@ -226,14 +271,24 @@ rather than adding to it.**
   `slam` 0 (it costs tower HP, not tower damage).
 - `bossPhaseHpFactor(wave)` sums that over the three patterns the wave's tier
   draws — 1.60 at tier 1 (three bulwark phases), 1.14–1.30 from tier 4.
-- `bossMaxHpForWave(wave)` = `bossHPForWave(...) / bossPhaseHpFactor(wave)`.
+- `bossEncounterHpForWave(wave)` = `bossHPForWave(...) * bossEncounterWeight(wave)`
+  — the whole wave, which is what the pack used to be between them.
+- `bossMaxHpForWave(wave)` = `(bossEncounterHpForWave - escort) / bossPhaseHpFactor`,
+  where `escort` is `bossEscortHpForWave` clamped by `BOSS_BAR_MIN_SHARE` (0.8),
+  so the escort can never eat more than a fifth of the encounter's bar. In
+  practice it lands at 4–14% and the clamp never binds.
 
-The bar shrinks by exactly what the machine holds, so a boss wave costs the same
-total damage it did before phases existed — `npm run sim` reproduces the
-pre-Part-3 curve to the wave. `tests/boss.test.ts` asserts the identity.
+The bar shrinks by exactly what the machine and the escort hold, so a boss wave
+costs the same total damage it did before phases existed — `npm run sim`
+reproduces the pre-Part-3 curve to the wave, and reproduced it again across the
+pack-to-single change (wave-100 wave HP moved 74.5M → 75.1M, entirely the
+escort's behavioural effective-HP factors). `tests/boss.test.ts` asserts both
+identities: the HP one and the purse.
 
-**Gold and XP are deliberately not compensated** (`goldDropForWave`,
-`xpPerKill`): the encounter is worth what it always was.
+**Gold and XP are still priced at the pre-Part-3 encounter** — `bossGoldForWave`
+and `xpPerKill` carry `bossEncounterWeight`, and gold additionally pays the
+escort out of the same purse (`BOSS_PURSE_MIN_SHARE` is the guard, at 0.25). The
+encounter is worth what it always was; the phases are not paid for twice.
 
 What Part 3 actually adds is *fail states* — a bulwark that heals back, adds
 that must be cleared, a slam that costs tower HP — none of which a model with no

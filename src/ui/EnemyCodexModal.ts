@@ -51,6 +51,12 @@ function linksForType(type: EnemyType): readonly CodexLink[] {
 
 export interface EnemyCodexHandlers {
   onOpenCodex: (entryId: string) => void;
+  /**
+   * Opens the Journal tab. A codex mastery row's only action — the player
+   * reads "412 / 400" and wants to see the whole chapter card the line
+   * belongs to (plan §7.3).
+   */
+  onOpenJournal: () => void;
 }
 
 /**
@@ -245,6 +251,11 @@ export class EnemyCodexModal {
     this.pageEl.appendChild(this.renderDescription(entry));
     this.pageEl.appendChild(this.renderAnswer(entry));
     this.pageEl.appendChild(this.renderStats(entry));
+    // The mastery track sits between the stat block and the gameplay tips
+    // (effects / patterns / links) — same mechanical density as the stats
+    // above it, and reading order matches the rest of the pane.
+    const watch = this.renderWatch(entry);
+    if (watch) this.pageEl.appendChild(watch);
     const effects = this.renderEffects(entry);
     if (effects) this.pageEl.appendChild(effects);
     if (entry.type === 'boss') {
@@ -474,6 +485,56 @@ export class EnemyCodexModal {
       li.appendChild(body);
 
       list.appendChild(li);
+    }
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  /**
+   * The mastery track (plan §7). One row per chapter that names this enemy
+   * with a `kills_of` goal; absent when no chapter names it. Returns `null`
+   * on the empty array — an empty section reads worse than a missing one,
+   * and a "no objectives" placeholder would lie about the chapter state.
+   */
+  private renderWatch(entry: EnemyWaveStatsEntry): HTMLElement | null {
+    if (entry.watch.length === 0) return null;
+    const wrap = document.createElement('section');
+    wrap.className = 'enemy-page-watch';
+
+    const heading = document.createElement('h4');
+    heading.className = 'enemy-page-section-heading';
+    setText(heading, 'The Long Watch');
+    wrap.appendChild(heading);
+
+    const list = document.createElement('div');
+    list.className = 'enemy-page-watch-list';
+    for (const line of entry.watch) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'enemy-page-watch-row';
+      if (line.met) row.classList.add('is-met');
+      row.setAttribute('aria-label',
+        `Open the Long Watch chapter ${line.chapterName}: ${line.progress}${line.met ? ', complete' : ''}`);
+      row.addEventListener('click', () => this.handlers.onOpenJournal());
+
+      const name = document.createElement('span');
+      name.className = 'enemy-page-watch-name';
+      setText(name, `The Long Watch · ${line.chapterName}`);
+      row.appendChild(name);
+
+      const progress = document.createElement('span');
+      progress.className = 'enemy-page-watch-progress';
+      setText(progress, line.progress);
+      row.appendChild(progress);
+
+      // The check is decorative; the row (without it) is the hit target so a
+      // tap on the check still reads as a tap on the chapter (plan §7.3).
+      const check = document.createElement('span');
+      check.className = 'enemy-page-watch-check';
+      check.textContent = line.met ? '✓' : '';
+      row.appendChild(check);
+
+      list.appendChild(row);
     }
     wrap.appendChild(list);
     return wrap;

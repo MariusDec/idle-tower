@@ -10,7 +10,7 @@ Persists game state to `localStorage` under key `the-tower-save`.
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 18
+  version: number;       // current = 19
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -25,6 +25,7 @@ interface PersistentState {
   contracts: ContractRunState;                // v12+
   cores: CoreRunState;                        // v13+
   pacing: PacingState;                        // v14+
+  watch: WatchState;                          // v19+
 }
 ```
 
@@ -48,6 +49,7 @@ interface PersistentState {
 | v15 → v16 | the `multishot` ability was renamed `rocket_barrage` — its state key in `abilities` and its key in `prestige.autoCastEnabled` move with it, values kept |
 | v16 → v17 | the levelling redesign: 0-based levels become 1-based, XP restated onto the new polynomial+geometric curve, `talents.allocated` emptied (full refund — all talent ids changed) |
 | v17 → v18 | the passive redesign: `passiveAbilities` cleared (new 12-passive structure with per-passive XP curves, milestones, and gold+XP upgrade costs; old prices were negligible vs new ones so no gold refund) |
+| v18 → v19 | the Long Watch. Purely additive — `data.watch = defaultWatch()`. |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -106,6 +108,47 @@ already gone. Same rule as live enemies (`bossRun`) and live orbs
 per-ability on/off choice untouched). Both containers are guarded for absence
 or a shape mismatch before they are touched, so a hand-edited or partially
 formed save cannot crash the walk.
+
+`migrateV18toV19` seeds `data.watch = defaultWatch()`. The block is purely
+additive — a pre-v19 save has no campaign state, so the first poll credits
+every chapter the player's existing lifetime counters already satisfy.
+That is the intended behaviour, not a migration shortcut (see
+[watch-system.md](watch-system.md#why-progress-is-derived-not-stored)).
+The seven counters that did not exist before this version start at zero
+and accrue from the update forward; that is the one place a returning
+player loses credit, and it is unavoidable: the data was never written
+down.
+
+## WatchState (v19+)
+
+The Long Watch campaign — `GameState.watch`. Two fields:
+
+- `completed: string[]` — chapter ids completed, in completion order. The
+  `WatchManager` rebuilds the unlock set from this list on every mutation,
+  so the unlock map and the completed list cannot drift.
+- `counters: WatchCounters` — the seven lifetime counters no existing
+  field covers: `killsByType` (per-enemy-type lifetime kills),
+  `flawlessWaves`, `swiftBosses`, `contractsDone`, `blessingPicks`,
+  `mutatorWaves`, and `riskWaves` (a per-step histogram indexed by the
+  risk level in force when the wave was cleared).
+
+**Permanent.** Neither `applySavedStateReset` nor
+`applyFullTranscendenceReset` may touch this block — it is
+meta-progression, like achievements and unlocked cores. A reset that wiped
+it would delete the only long-horizon goal the game has.
+
+**Objective progress is deliberately not stored.** It is derived from the
+counters on every read, so there is nothing here that a save/load can
+disagree with. See [watch-system.md](watch-system.md#why-progress-is-derived-not-stored).
+
+`normalizeWatch(w)` repairs malformed saves in place: missing or
+non-array `completed` → `[]`; missing or non-object `counters` →
+`defaultWatch().counters`; missing or non-object `killsByType` → `{}`;
+the five scalar counters missing or non-finite → `0`; `riskWaves`
+missing, short, or with non-finite entries → resized to
+`MAX_RISK_CEILING + 1` zeros, valid entries copied in. The `riskWaves`
+array is sized to `MAX_RISK_CEILING + 1` (7 indices today, indexed 0–6)
+so a future Watch unlock that raises the dial cannot land out of bounds.
 
 ## Auto-Save
 

@@ -25,6 +25,7 @@ import {
   waveModifierRewardMultiplier,
   waveModifierTotalRewardMultiplier,
 } from '../src/data/waveModifiers.ts';
+import { bossEncounterHpForWave } from '../src/data/enemies.ts';
 import {
   enrageThresholdSeconds,
   enrageStacksFor,
@@ -33,7 +34,6 @@ import {
   GOLD_GROWTH,
   enemyHPForWave,
   enemyCountForWave,
-  bossHPForWave,
   goldDropForWave,
   spawnCountForWave,
 } from '../src/data/formulas.ts';
@@ -85,7 +85,9 @@ section('§2.3.1 HP / gold curves');
   // Bosses must stay a spike, not a wall: a boss wave's HP against the wave
   // before it, at several depths.
   for (const wave of [20, 50, 100]) {
-    const bossWaveHp = bossHPForWave(120, wave) * spawnCountForWave(wave);
+    // The escort is carved *out* of the boss's bar, so the encounter budget is
+    // already the whole wave's HP — adding the escort again double-counts it.
+    const bossWaveHp = bossEncounterHpForWave(wave);
     const prevWaveHp = enemyHPForWave(9, wave - 1) * spawnCountForWave(wave - 1);
     const spike = bossWaveHp / prevWaveHp;
     check(

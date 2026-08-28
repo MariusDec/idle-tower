@@ -17,7 +17,7 @@
 
 import {
   enemyHPForWave,
-  bossHPForWave,
+  bossEscortCountForWave,
   goldDropForWave,
   spawnCountForWave,
   spawnIntervalForWave,
@@ -30,6 +30,7 @@ import {
   armorDamageMultiplier,
   ENEMY_BEHAVIOR,
   ENEMY_DEFS,
+  bossGoldForWave,
   bossMaxHpForWave,
   bossPhaseHpFactor,
   spawnPoolForWave,
@@ -175,8 +176,19 @@ const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(
  * be measuring it. Both now read one table.
  */
 function typeMix(wave: number): Array<{ type: EnemyType; weight: number }> {
-  if (isBossWave(wave)) return [{ type: 'boss', weight: 1 }];
-  return spawnPoolForWave(wave);
+  if (!isBossWave(wave)) return spawnPoolForWave(wave);
+  // A boss wave is one boss and `bossEscortCountForWave` trash from the wave's
+  // own pool, so the mix has to be both — weighted by how many bodies of each
+  // are actually on the field, because `waveProfile` averages across the mix
+  // and then multiplies by `spawnCountForWave`.
+  const pool = spawnPoolForWave(wave);
+  const poolWeight = pool.reduce((a, e) => a + e.weight, 0);
+  const escort = bossEscortCountForWave(wave);
+  if (poolWeight <= 0 || escort <= 0) return [{ type: 'boss', weight: 1 }];
+  return [
+    { type: 'boss' as EnemyType, weight: 1 },
+    ...pool.map(e => ({ type: e.type, weight: escort * (e.weight / poolWeight) })),
+  ];
 }
 
 /**
@@ -313,11 +325,26 @@ export function waveProfile(wave: number, risk = 0): WaveProfile {
     // boss *does*, not how much damage a boss wave costs.
     const hp = type === 'boss' ? bossMaxHpForWave(wave) : enemyHPForWave(def.baseHP, wave);
     const phaseFactor = type === 'boss' ? bossPhaseHpFactor(wave) : 1;
-    hpPer += share * hp * EFFECTIVE_HP_FACTOR[type] * phaseFactor;
-    armorPer += share * def.armor;
-    magicResistPer += share * def.magicResist;
-    goldPer += share * goldDropForWave(def.baseGold, wave);
+    const effectiveHp = share * hp * EFFECTIVE_HP_FACTOR[type] * phaseFactor;
+    hpPer += effectiveHp;
+    // Armour and resist are weighted by **HP share**, not body share: a hit is
+    // reduced by the armour of whatever it lands on, and the number of hits a
+    // type absorbs is proportional to how much HP it is. Body-weighted was
+    // close enough while a wave was one kind of thing — every enemy on a boss
+    // wave was a boss — but a boss wave is one armour-6 boss and an escort of
+    // armour-1 trash now, and averaging those per *body* hands the tower the
+    // trash's armour on the boss's HP and prices the encounter ~15% cheaper
+    // than it is.
+    armorPer += effectiveHp * def.armor;
+    magicResistPer += effectiveHp * def.magicResist;
+    goldPer += share * (type === 'boss'
+      ? bossGoldForWave(wave)
+      : goldDropForWave(def.baseGold, wave));
     if (type === 'thief') thiefShare = share;
+  }
+  if (hpPer > 0) {
+    armorPer /= hpPer;
+    magicResistPer /= hpPer;
   }
 
   // Plan §2.1: a thief that gets away takes gold with it. Capped by the same

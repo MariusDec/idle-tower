@@ -191,10 +191,9 @@ export class WaveManager {
    * is a tax on the treasury rather than a threat to answer.
    */
   private pickEnemyType(wave: number, thiefUsed: boolean): EnemyType {
-    if (isBossWave(wave)) {
-      return 'boss';
-    }
-
+    // A boss wave is no longer "every slot is a boss": `buildRoster` places the
+    // one boss itself and fills the rest of the roster from this pool, so the
+    // escort rolls exactly like a normal wave's enemies do.
     const pool = spawnPoolForWave(wave);
     let total = 0;
     for (const { type, weight } of pool) {
@@ -223,6 +222,13 @@ export class WaveManager {
   private buildRoster(wave: number, total: number, thiefUsed = false): WavePlanEntry[] {
     const entries: WavePlanEntry[] = [];
     let thief = thiefUsed;
+    // The boss goes in first so it is the first thing through the portal: it
+    // carries the whole encounter, and an escort that arrives ahead of it is a
+    // wave the player fights twice rather than an entrance.
+    if (isBossWave(wave)) {
+      const { x, y } = this.randomSpawnPoint();
+      entries.push({ type: 'boss', x, y, elite: false, aura: null });
+    }
     while (entries.length < total) {
       const type = this.pickEnemyType(wave, thief);
       if (type === 'thief') thief = true;

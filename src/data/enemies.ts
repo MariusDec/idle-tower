@@ -1,7 +1,13 @@
 import type { BossPattern, Enemy, EnemyType } from '../types';
 import type { IconId } from './icons';
 import { ARENA_RANGE_CAP, entity, world } from './arena';
-import { bossCountForWave, bossHPForWave } from './formulas';
+import {
+  bossEncounterWeight,
+  bossEscortCountForWave,
+  bossHPForWave,
+  enemyHPForWave,
+  goldDropForWave,
+} from './formulas';
 
 /**
  * Body shapes the renderer knows how to paint.
@@ -377,16 +383,17 @@ export function bossPatternsForWave(wave: number): BossPattern[] {
 }
 
 /**
- * Adds one boss of a wave's pack contributes per `summon` batch.
+ * Adds the boss puts on the field per `summon` batch.
  *
- * §3.2's "4 adds" is the figure for a lone boss; a boss wave actually spawns
- * `bossCountForWave(wave)` = `2 + tier` of them, so the batch is split across
- * the pack. Without this a wave-100 encounter fields twelve summoners at four
- * adds each every six seconds.
+ * The batch used to be divided across the pack — §3.2's "4 adds" was the figure
+ * for a lone boss, and a wave-100 pack of eleven each summoning one landed
+ * eleven adds a batch. There is one boss now, so it summons what the pack used
+ * to summon between them: the plan's four at the shallow tiers, and the
+ * encounter's weight once that is the larger of the two. `summonMaxAlive` is
+ * still the ceiling.
  */
 export function bossSummonCountForWave(wave: number): number {
-  const pack = Math.max(1, bossCountForWave(wave));
-  return Math.max(1, Math.round(BOSS_ENCOUNTER.summonCount / pack));
+  return Math.max(BOSS_ENCOUNTER.summonCount, bossEncounterWeight(wave));
 }
 
 /**
@@ -425,6 +432,26 @@ export function bossPhaseHpFactor(wave: number): number {
 }
 
 /**
+ * Floor on how much of the encounter's HP stays in the boss's own bar.
+ *
+ * The escort is deducted from the boss, and the deduction has to stop
+ * somewhere: a deep wave's escort is a real slice of the budget, and a boss
+ * whose bar has been eaten by its own trash is not a boss. At 0.8 the escort
+ * can never be worth more than a fifth of the encounter.
+ */
+export const BOSS_BAR_MIN_SHARE = 0.8;
+
+/**
+ * Floor on how much of the encounter's *gold* the boss itself pays.
+ *
+ * The escort's share is a much bigger slice of the purse than it is of the
+ * bar — trash is priced well above a boss in gold per point of HP — so this
+ * floor sits far lower than `BOSS_BAR_MIN_SHARE`. It is a guard, not a knob:
+ * at every depth the escort's share lands around 40% of the purse.
+ */
+export const BOSS_PURSE_MIN_SHARE = 0.25;
+
+/**
  * The HP a boss actually spawns with — its *bar*, not its durability.
  *
  * Part 2 shipped under §2.6's rule that new content replaces what is already
@@ -440,11 +467,82 @@ export function bossPhaseHpFactor(wave: number): number {
  * back, adds that must be cleared, a slam that costs tower HP), not a longer
  * bar, which was the whole complaint in §0.4.
  *
- * Gold and XP deliberately still price the boss at its full pre-Part-3 value
- * (`goldDropForWave`, `xpPerKill`): the encounter is worth what it always was.
+ * The wave's *escort* comes out of the same bar, for the same reason: it is
+ * trash the tower has to shoot on a wave whose damage budget was already
+ * spent. `BOSS_BAR_MIN_SHARE` caps how much of the bar that can eat; in
+ * practice the escort lands at 4-14% and the cap never binds.
+ *
+ * Gold and XP price the encounter, not the body (`bossGoldForWave`,
+ * `xpPerKill`): the wave is worth what it always was.
  */
 export function bossMaxHpForWave(wave: number): number {
-  return bossHPForWave(ENEMY_DEFS.boss.baseHP, wave) / bossPhaseHpFactor(wave);
+  const budget = bossEncounterHpForWave(wave);
+  const escort = Math.min(budget * (1 - BOSS_BAR_MIN_SHARE), bossEscortHpForWave(wave));
+  return (budget - escort) / bossPhaseHpFactor(wave);
+}
+
+/**
+ * Total HP a boss wave is worth — the whole encounter, boss and escort alike.
+ *
+ * `bossHPForWave` prices *one* boss, and a boss wave used to field
+ * `bossEncounterWeight` of them; that is still what the wave costs, it is
+ * simply no longer split across several bodies. Every consumer that used to
+ * multiply a per-boss figure by the pack size reads this instead.
+ */
+export function bossEncounterHpForWave(wave: number): number {
+  return bossHPForWave(ENEMY_DEFS.boss.baseHP, wave) * bossEncounterWeight(wave);
+}
+
+/**
+ * HP the escort holds, priced at the wave's own trash curve.
+ *
+ * Taken *out* of the boss's bar rather than added on top, so the escort is a
+ * redistribution of the encounter's damage budget and not a surcharge on it —
+ * the same §2.6 rule the phase machine itself was held to.
+ */
+export function bossEscortHpForWave(wave: number): number {
+  return bossEscortCountForWave(wave)
+    * poolAverage(wave, t => enemyHPForWave(ENEMY_DEFS[t].baseHP, wave));
+}
+
+/**
+ * Gold the lone boss pays: the encounter's purse, less what the escort pays.
+ *
+ * Same shape as `bossMaxHpForWave`, and for the same reason. Killing the one
+ * boss has to be worth roughly what killing the pack was, or a boss wave
+ * quietly becomes the worst-paying wave in the game — but the escort pays its
+ * own gold on the way in, and trash is worth far more gold *per point of HP*
+ * than a boss is. Paying the full pack purse on top of the escort put wave-100
+ * boss gold up 66% and pushed run income growth from 1.169x to 1.197x a wave
+ * against §6.3's 1.16x ceiling. The purse is the wave's; the escort's share
+ * simply comes out of it.
+ */
+export function bossGoldForWave(wave: number): number {
+  const purse = goldDropForWave(ENEMY_DEFS.boss.baseGold, wave) * bossEncounterWeight(wave);
+  return Math.max(purse * BOSS_PURSE_MIN_SHARE, purse - bossEscortGoldForWave(wave));
+}
+
+/** Gold the escort pays between them, at the wave's own trash rate. */
+export function bossEscortGoldForWave(wave: number): number {
+  return bossEscortCountForWave(wave) * poolAverage(wave, t => goldDropForWave(ENEMY_DEFS[t].baseGold, wave));
+}
+
+/**
+ * Weighted mean of `value` across the types a wave can spawn.
+ *
+ * The escort rolls from `spawnPoolForWave` like any other wave's enemies, so
+ * anything priced across the escort is priced across that table rather than
+ * against `normal` as a stand-in.
+ */
+function poolAverage(wave: number, value: (type: EnemyType) => number): number {
+  const pool = spawnPoolForWave(wave);
+  let weight = 0;
+  let total = 0;
+  for (const entry of pool) {
+    weight += entry.weight;
+    total += entry.weight * value(entry.type);
+  }
+  return weight > 0 ? total / weight : 0;
 }
 
 /** What a finished boss encounter earned (gameplay plan §3.4). */

@@ -18,18 +18,32 @@ import type {
   ContractRunState,
   CoreRunState,
   PacingState,
+  WatchState,
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
-import { enemyHPForWave, bossHPForWave, goldDropForWave, spawnCountForWave, isBossWave } from '../data/formulas';
-import { ENEMY_DEFS, spawnPoolForWave } from '../data/enemies';
+import {
+  bossEscortCountForWave,
+  enemyHPForWave,
+  goldDropForWave,
+  spawnCountForWave,
+  isBossWave,
+} from '../data/formulas';
+import {
+  ENEMY_DEFS,
+  bossGoldForWave,
+  bossMaxHpForWave,
+  bossPhaseHpFactor,
+  spawnPoolForWave,
+} from '../data/enemies';
 import { DEFAULT_CORE } from '../data/cores';
+import { MAX_RISK_CEILING } from '../data/pacing';
 import { xpPerKill, xpToLevel, talentPointsAtLevel, TOWER_LEVEL_CAP, TOWER_XP_TABLE } from '../data/xpTables';
 import { passiveXpPerKill, passiveXpPerWaveClear } from '../data/xpTables';
 import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import type { PassiveAbilityManager } from './PassiveAbilityManager';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 18;
+const SAVE_VERSION = 19;
 
 /** Offline passive XP is paid at a quarter of the live rate. */
 const OFFLINE_PASSIVE_XP_RATE = 0.25;
@@ -127,6 +141,8 @@ export interface PersistentState {
 
   /** v11+: run-scoped boss encounter rewards (plan §3.4). */
   bossRun?: BossRunState;
+  /** v19+: the Long Watch campaign (permanent; survives both resets). */
+  watch?: WatchState;
 }
 
 export interface OfflineResult {
@@ -166,9 +182,22 @@ function estimateDPS(tower: TowerState): number {
  * All three read `spawnPoolForWave`, the same table `WaveManager` spawns from,
  * so a re-weighting of the pool (gameplay plan §2.4) moves the offline estimate
  * with it instead of leaving three hand-copied weight maps to drift.
+ *
+ * The caller multiplies these by `spawnCountForWave`, so on a boss wave — one
+ * boss plus `bossEscortCountForWave` trash — they have to be the average over
+ * that whole roster, not the boss's own figure. `bossWaveAverage` is that
+ * mean: the boss's value plus the escort's, over the bodies on the wave.
  */
+function bossWaveAverage(wave: number, boss: number, escort: (type: EnemyType) => number): number {
+  const escortCount = bossEscortCountForWave(wave);
+  const total = boss + escortCount * poolAverage(wave, escort);
+  return total / (1 + escortCount);
+}
+
 function averageKillXPForWave(wave: number): number {
-  if (isBossWave(wave)) return xpPerKill('boss', wave);
+  if (isBossWave(wave)) {
+    return bossWaveAverage(wave, xpPerKill('boss', wave), t => xpPerKill(t, wave));
+  }
   return poolAverage(wave, t => xpPerKill(t, wave));
 }
 
@@ -185,12 +214,28 @@ function poolAverage(wave: number, value: (type: EnemyType) => number): number {
 }
 
 function averageKillGoldForWave(wave: number): number {
-  if (isBossWave(wave)) return goldDropForWave(ENEMY_DEFS.boss.baseGold, wave);
+  if (isBossWave(wave)) {
+    return bossWaveAverage(
+      wave,
+      bossGoldForWave(wave),
+      t => goldDropForWave(ENEMY_DEFS[t].baseGold, wave),
+    );
+  }
   return poolAverage(wave, t => goldDropForWave(ENEMY_DEFS[t].baseGold, wave));
 }
 
 function averageKillHPForWave(wave: number): number {
-  if (isBossWave(wave)) return bossHPForWave(ENEMY_DEFS.boss.baseHP, wave);
+  // The boss's share is the *encounter* budget minus what the escort holds —
+  // which is exactly the bar it spawns with, times what its phase machine holds
+  // outside that bar. Reading `bossEncounterHpForWave` alone would charge the
+  // offline walk for the escort twice.
+  if (isBossWave(wave)) {
+    return bossWaveAverage(
+      wave,
+      bossMaxHpForWave(wave) * bossPhaseHpFactor(wave),
+      t => enemyHPForWave(ENEMY_DEFS[t].baseHP, wave),
+    );
+  }
   return poolAverage(wave, t => enemyHPForWave(ENEMY_DEFS[t].baseHP, wave));
 }
 
@@ -559,10 +604,49 @@ function migrateV17toV18(data: Record<string, unknown>): void {
   data.passiveAbilities = {};
 }
 
+/**
+ * A fresh watch block — the v19 default.
+ *
+ * Counters begin at zero and the `riskWaves` array is sized to
+ * `MAX_RISK_CEILING + 1`, so a later Watch unlock that raises the dial cannot
+ * land out of bounds.
+ */
+function defaultWatch(): WatchState {
+  return {
+    completed: [],
+    counters: {
+      killsByType: {},
+      flawlessWaves: 0,
+      swiftBosses: 0,
+      contractsDone: 0,
+      blessingPicks: 0,
+      mutatorWaves: 0,
+      riskWaves: new Array(MAX_RISK_CEILING + 1).fill(0),
+    },
+  };
+}
+
+/**
+ * v19: the Long Watch.
+ *
+ * Purely additive. A pre-v19 save has no campaign state, so the block is
+ * seeded empty and the first poll credits every chapter the player's existing
+ * lifetime counters already satisfy — which is the intended behaviour, not a
+ * migration shortcut (see plan §1.2). The counters that did not exist before
+ * this version start at zero, so `flawless_waves`, `swift_bosses`,
+ * `risk_waves`, `mutator_waves`, `contracts_done`, `blessing_picks` and every
+ * per-type kill count begin accruing from the update forward. That is the one
+ * place a returning player loses credit, and it is unavoidable: the data was
+ * never written down.
+ */
+function migrateV18toV19(data: Record<string, unknown>): void {
+  data.watch = defaultWatch();
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -594,6 +678,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 15) { migrateV15toV16(data); data.version = 16; }
   if (data.version === 16) { migrateV16toV17(data); data.version = 17; }
   if (data.version === 17) { migrateV17toV18(data); data.version = 18; }
+  if (data.version === 18) { migrateV18toV19(data); data.version = 19; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -611,8 +696,29 @@ function validate(data: unknown): data is PersistentState {
   if (!isObject(d.contracts)) d.contracts = defaultContracts();
   if (!isObject(d.cores)) d.cores = defaultCores();
   if (!isObject(d.pacing)) d.pacing = defaultPacing();
+  if (!isObject(d.watch)) d.watch = defaultWatch();
+  else normalizeWatch(d.watch as Record<string, unknown>);
 
   return true;
+}
+
+/** Repair a `watch` block in place: missing counters, short risk array, bad numbers. */
+function normalizeWatch(w: Record<string, unknown>): void {
+  if (!Array.isArray(w.completed)) w.completed = [];
+  if (!isObject(w.counters)) w.counters = defaultWatch().counters;
+  const c = w.counters as Record<string, unknown>;
+  if (!isObject(c.killsByType)) c.killsByType = {};
+  for (const key of ['flawlessWaves', 'swiftBosses', 'contractsDone',
+                     'blessingPicks', 'mutatorWaves'] as const) {
+    if (typeof c[key] !== 'number' || !Number.isFinite(c[key])) c[key] = 0;
+  }
+  const risk = Array.isArray(c.riskWaves) ? (c.riskWaves as number[]) : [];
+  const fixed = new Array(MAX_RISK_CEILING + 1).fill(0);
+  for (let i = 0; i < fixed.length; i++) {
+    const v = risk[i];
+    fixed[i] = typeof v === 'number' && Number.isFinite(v) ? v : 0;
+  }
+  c.riskWaves = fixed;
 }
 
 export class SaveManager {
@@ -674,6 +780,7 @@ export class SaveManager {
       contracts: this.snapshotContracts(state.contracts),
       cores: this.snapshotCores(state.cores),
       pacing: this.snapshotPacing(state.pacing),
+      watch: this.snapshotWatch(state.watch),
     };
   }
 
@@ -718,6 +825,20 @@ export class SaveManager {
         drawnAtWave: a.drawnAtWave,
       })),
       completed: [...(c.completed ?? [])],
+      // The completion log (payout per completed contract). Copied entry by
+      // entry like everything else here, and left off entirely when the run
+      // has none rather than written as an empty array — a v12-era block has
+      // no `log` at all, and `ContractManager.restore` distinguishes the two.
+      ...(c.log ? {
+        log: c.log.map(e => ({
+          defId: e.defId,
+          wave: e.wave,
+          gold: e.gold,
+          rerolls: e.rerolls,
+          rp: e.rp,
+          apBonusPct: e.apBonusPct,
+        })),
+      } : {}),
       completedCount: c.completedCount ?? 0,
       apBonusPct: c.apBonusPct ?? 0,
       uidSeq: c.uidSeq ?? 0,
@@ -743,6 +864,29 @@ export class SaveManager {
       momentum: p.momentum ?? 0,
       momentumWaves: p.momentumWaves ?? 0,
       comboBest: p.comboBest ?? 0,
+    };
+  }
+
+  /**
+   * Copied field by field, for the same reason the other blocks are: a
+   * runtime-only field added later cannot leak into the save format. The
+   * counters object and the inner arrays are spread so the written blob does
+   * not share memory with the live state.
+   */
+  private snapshotWatch(w: WatchState | undefined): WatchState {
+    if (!w) return defaultWatch();
+    const c = w.counters ?? defaultWatch().counters;
+    return {
+      completed: [...(w.completed ?? [])],
+      counters: {
+        killsByType: { ...(c.killsByType ?? {}) },
+        flawlessWaves: c.flawlessWaves ?? 0,
+        swiftBosses: c.swiftBosses ?? 0,
+        contractsDone: c.contractsDone ?? 0,
+        blessingPicks: c.blessingPicks ?? 0,
+        mutatorWaves: c.mutatorWaves ?? 0,
+        riskWaves: [...(c.riskWaves ?? new Array(MAX_RISK_CEILING + 1).fill(0))],
+      },
     };
   }
 

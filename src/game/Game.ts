@@ -49,8 +49,10 @@ import { SaveManager, type PersistentState, type OfflineResult } from '../system
 import { AchievementManager } from '../systems/AchievementManager';
 import { UIManager } from '../ui/UIManager';
 import type { BossBarData } from '../ui/BossBar';
+import type { EnemyWatchLine, WatchChapterView, WatchInfo } from '../ui/UIManager';
 import {
   avariceStreakGoldBonus,
+  bossEncounterWeight,
   GOLD_GROWTH,
   isBossWave,
   goldDropForWave,
@@ -98,25 +100,37 @@ import { BlessingManager } from '../systems/BlessingManager';
 import { LootManager } from '../systems/LootManager';
 import { ContractManager } from '../systems/ContractManager';
 import { PacingManager } from '../systems/PacingManager';
-import { CONTRACT_TUNING } from '../data/contracts';
+import { CONTRACT_SLOTS, CONTRACT_TUNING } from '../data/contracts';
 import {
   COMBO_TIERS,
   EARLY_CALL_GOLD_PER_SECOND,
   MAX_RISK,
+  MAX_RISK_CEILING,
   MOMENTUM_CAP,
   RISK_GOLD_PER_STEP,
   RISK_HP_PER_STEP,
   RISK_SPEED_PER_STEP,
+  clampRisk,
   intermissionSecondsForWave,
   riskApBonus,
 } from '../data/pacing';
+import { WatchManager, type WatchMetrics } from '../systems/WatchManager';
+import {
+  WATCH_CHAPTERS,
+  WATCH_UNLOCKS,
+  describeGoal,
+  goalTarget,
+  type WatchUnlockId,
+} from '../data/watch';
 import { AbilityPlacement, ChargeTracker } from '../systems/ActiveInput';
 import { FX, INK, lighten, mix, withAlpha } from '../data/palette';
 import { LOOT_ORB_COLORS, type LootOrbKind } from '../data/loot';
 import {
   BLESSING_BY_ID,
   BLESSING_FIRST_DRAFT_WAVE,
+  BLESSING_FREE_REROLLS,
   BLESSING_MAX_PICKS,
+  BLESSING_OFFER_SIZE,
   BLESSING_TUNING,
   describeBlessing,
   type BlessingBehavior,
@@ -332,6 +346,18 @@ function makeInitialState(): GameState {
     contracts: { active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0 },
     cores: { unlocked: [DEFAULT_CORE], preferred: DEFAULT_CORE, selected: DEFAULT_CORE },
     pacing: { risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0 },
+    watch: {
+      completed: [],
+      counters: {
+        killsByType: {},
+        flawlessWaves: 0,
+        swiftBosses: 0,
+        contractsDone: 0,
+        blessingPicks: 0,
+        mutatorWaves: 0,
+        riskWaves: new Array(MAX_RISK_CEILING + 1).fill(0),
+      },
+    },
   };
 }
 
@@ -470,6 +496,13 @@ export class Game {
   private readonly contractMgr: ContractManager;
   /** Risk dial, early-call momentum and the kill combo (plan §7). */
   private readonly pacingMgr = new PacingManager();
+  /**
+   * The Long Watch (plans/milestones.md §5.0): chapters, unlocks, persistent
+   * unlocks. Constructed after every consumer that reads it, but each
+   * consumer holds a closure rather than a direct reference, so order is
+   * enforced by the `this.watchMgr = ...` line in the constructor.
+   */
+  private readonly watchMgr: WatchManager;
   /**
    * `PacingManager.statSignature` at the last resolve.
    *
@@ -649,11 +682,12 @@ export class Game {
   /**
    * The boss encounter in progress (gameplay plan §3.4), or null.
    *
-   * The *encounter* is the unit the rewards are measured against, not the
-   * individual boss: a boss wave spawns `bossCountForWave(wave)` = `2 + tier`
-   * of them, and paying a reroll token per boss would turn "flawless" into
-   * "flawless, times six". The clock starts when the first one lands and the
-   * rewards resolve when the last one dies.
+   * The *encounter* is the unit the rewards are measured against. That used to
+   * matter because a boss wave fielded `2 + tier` bosses and paying a reroll
+   * token per boss would have turned "flawless" into "flawless, times six"; the
+   * wave fields one boss now, but the encounter is still the unit — its adds
+   * and its escort have to be dealt with before the wave is over, and the clock
+   * runs across all of it.
    */
   private bossEncounter: {
     /** Simulation seconds since the first boss of this wave spawned. */
@@ -705,7 +739,13 @@ export class Game {
       },
     );
     this.upgradeMgr = new UpgradeManager(this.bus, this.resourceMgr);
-    this.blessingMgr = new BlessingManager(this.bus);
+    // The draft overrides are read lazily (only on `openDraft` / `rollOffer`),
+    // so the closures can capture `this.watchMgr` even though that field is
+    // assigned further down — plans/milestones.md §5.3 ordering note.
+    this.blessingMgr = new BlessingManager(this.bus, {
+      offerSize: () => (this.watchMgr.has('wide_draft') ? BLESSING_OFFER_SIZE + 1 : BLESSING_OFFER_SIZE),
+      freeRerolls: () => BLESSING_FREE_REROLLS + (this.watchMgr.has('quartermaster') ? 1 : 0),
+    });
     this.coreMgr = new CoreManager(this.bus);
     this.lootMgr = new LootManager({
       bus: this.bus,
@@ -716,7 +756,22 @@ export class Game {
       bus: this.bus,
       currentWave: () => this.waveMgr.currentWave,
       waveGold: (wave) => this.estimateWaveGold(wave),
+      // The board_expansion Watch unlock (plans/milestones.md §5.2) raises
+      // the tracker to four slots. The dep reads lazily.
+      slots: () => (this.watchMgr.has('board_expansion') ? CONTRACT_SLOTS + 1 : CONTRACT_SLOTS),
     });
+    // The Long Watch manager (plans/milestones.md §5.0). Constructed here so
+    // the blessings / contracts / pacing / prestige deps that read it are all
+    // already wired — each callback fires only when the consumer needs it.
+    this.watchMgr = new WatchManager({
+      bus: this.bus,
+      state: () => this.state.watch,
+      metrics: () => this.watchMetrics(),
+    });
+    // Watch raises the risk dial's ceiling (plans/milestones.md §5.5). The
+    // provider reads lazily; before any chapter lands it is a no-op because
+    // the default is `MAX_RISK`.
+    this.pacingMgr.setMaxRiskProvider(() => this.maxRisk());
     // The impact path asks `has(behavior)` several times per hit, so it reads
     // the manager's rebuilt cache rather than scanning the pool.
     this.projectileMgr.setBlessings(this.blessingMgr);
@@ -773,6 +828,9 @@ export class Game {
       stats: this.state.stats,
       prestige: this.state.prestige,
       achievementMultiplier: (type) => this.achievementMgr.getRewardMultiplier(type),
+      // Watch's overseer unlock (plans/milestones.md §5.6) unlocks `autoBuy`
+      // without spending an AP perk. Other keys stay perk-only.
+      externalAutomation: (key) => key === 'autoBuy' && this.watchMgr.has('overseer'),
     });
     this.automation = new AutomationManager({
       upgrades: this.upgradeMgr,
@@ -854,6 +912,7 @@ export class Game {
       const def = ENEMY_DEFS[e.type as keyof typeof ENEMY_DEFS];
       this.state.stats.enemiesKilled += 1;
       this.contractMgr.note({ kind: 'enemy_killed', type: e.type as EnemyType });
+      this.noteWatchKill(e.type as EnemyType);
       // Plan §3.4: an elite kill is worth showing up for — the gold multiplier
       // and RP are handled in EnemyManager; the gear roll and the toast are
       // here because they need the equipment manager and the notification bus.
@@ -896,10 +955,24 @@ export class Game {
         this.bus.emit('boss_killed', { x: e.x, y: e.y, goldValue: e.goldValue ?? def.baseGold });
         // Death slow-mo + screen flash (P3 + P5)
         this.triggerBossDeathSlowMo();
-        // Equipment drop
-        const eqDrop = this.equipmentMgr.rollDrop(this.waveMgr.currentWave, 'boss');
-        if (eqDrop) {
-          this.bus.emit('toast', { kind: 'milestone', text: `Equipment dropped: ${eqDrop.rarity}!`, life: 4 });
+        // Equipment drop. Rolled once per *boss the wave is worth*, not once
+        // per body: the pack used to pay `2 + tier` rolls a wave and the lone
+        // boss inherits the whole encounter's gear budget, exactly as it
+        // inherits its gold. One toast for the lot — `2 + tier` separate
+        // "Equipment dropped" toasts is a wave the player cannot read.
+        const eqDrops: Equipment[] = [];
+        for (let i = 0; i < bossEncounterWeight(this.waveMgr.currentWave); i++) {
+          const eqDrop = this.equipmentMgr.rollDrop(this.waveMgr.currentWave, 'boss');
+          if (eqDrop) eqDrops.push(eqDrop);
+        }
+        if (eqDrops.length === 1) {
+          this.bus.emit('toast', { kind: 'milestone', text: `Equipment dropped: ${eqDrops[0].rarity}!`, life: 4 });
+        } else if (eqDrops.length > 1) {
+          this.bus.emit('toast', {
+            kind: 'milestone',
+            text: `Equipment dropped: ${eqDrops.length} pieces!`,
+            life: 4,
+          });
         }
         if (this.state.stats.bossesKilled === 1) {
           this.bus.emit('toast', { kind: 'milestone', text: 'First boss defeated! +200g', life: 5 });
@@ -1385,6 +1458,7 @@ export class Game {
         parts.push(`+${Math.round(p.reward.apBonusPct * 100)}% AP`);
       }
       this.state.contracts = this.contractMgr.snapshot();
+      this.state.watch.counters.contractsDone += 1;
       const rewardText = parts.join(' · ');
       this.bus.emit('contract_reward', { uid: p.uid, rewardText });
       const ts = this.tower.snapshot;
@@ -1587,10 +1661,13 @@ export class Game {
         mutatorActive: this.state.wave.waveModifier.active !== null,
       });
       this.state.contracts = this.contractMgr.snapshot();
+      this.noteWatchWave();
     });
     this.bus.on('wave_modifier_offer', (nextWave: unknown) => {
       const w = nextWave as number;
-      const choices = pickRandomModifiers(3);
+      // Storm Caller (plans/milestones.md §5.7) offers one extra mutator; the
+      // modal's grid is `auto-fit minmax(180px, 1fr)` so four cards still fit.
+      const choices = pickRandomModifiers(this.watchMgr.has('storm_caller') ? 4 : 3);
       this.state.wave.waveModifier.choiceForNextWave = choices.map(snapshotFromDef);
       this.state.wave.waveModifier.pendingChoiceForWave = w;
       this.waveMgr.pauseSpawning();
@@ -1601,7 +1678,7 @@ export class Game {
       this.waveModModal.show(
         {
           wave: w,
-          waves: MUTATOR_DURATION_WAVES,
+          waves: this.mutatorDuration(),
           choices: this.state.wave.waveModifier.choiceForNextWave,
           projected,
         },
@@ -1683,6 +1760,27 @@ export class Game {
         text: `${names[p.key]} unlocked — toggle it in Prestige → Automation.`,
         life: 5,
       });
+    });
+    // The Long Watch's only side effect at the call site. Everything else
+    // (the modal, the toast, the unlock) is wired here so the bus is the
+    // single source of truth — the manager's poll cannot disagree with the
+    // UI about whether a chapter landed (plans/milestones.md §5.0).
+    this.bus.on('watch_chapter_completed', (payload) => {
+      const p = payload as { name: string; unlockId: WatchUnlockId; unlockName: string };
+      this.applyWatchUnlock(p.unlockId);
+      // Two unlocks need an immediate consumer reaction, otherwise the reward
+      // sits invisible until the next contract completion / next chapter.
+      if (p.unlockId === 'board_expansion') this.contractMgr.refill();
+      if (p.unlockId === 'overseer') this.prestigeMgr.setAutomationEnabled('autoBuy', true);
+      this.syncUiApis();
+      this.saveMgr.requestSave();
+      this.bus.emit('toast', {
+        kind: 'milestone',
+        text: `Chapter complete: ${p.name} — ${p.unlockName} unlocked`,
+        life: 8,
+      });
+      const ts = this.tower.snapshot;
+      this.effects.emitShockwaveRing(ts.x, ts.y, 320, withAlpha(FX.gold, 0.75), 6);
     });
     this.bus.on('ability_visual', (payload: unknown) => {
       const p = payload as { id: AbilityId; def: { effectType: string }; target?: { x: number; y: number } | null };
@@ -2095,12 +2193,12 @@ export class Game {
 
     const { swift, flawless } = bossEncounterOutcome(encounter.elapsed, !encounter.flawless);
     // Plan §5.1's `boss_under` is scored per *encounter*, which is what this
-    // whole method is: `2 + tier` bosses resolve to one outcome (see the Part 3
-    // status block). Noting it per boss kill would make "under 30 s" mean
-    // "under 30 s, six times over" on a wave-40 pack.
+    // whole method is: one boss, its adds and its escort resolve to one
+    // outcome.
     this.contractMgr.note({ kind: 'boss_encounter', seconds: encounter.elapsed });
     if (swift) {
       this.state.bossRun.swiftKills += 1;
+      this.state.watch.counters.swiftBosses += 1;
       const bonus = Math.floor(encounter.goldValue * BOSS_ENCOUNTER.swiftKillGoldBonus);
       if (bonus > 0) this.resourceMgr.addGold(bonus);
       // The roll is the normal one; the reward is that it cannot miss and it
@@ -2956,7 +3054,9 @@ export class Game {
       risk: this.pacingMgr.riskLevel,
       activeRisk: this.pacingMgr.activeRisk,
       riskPending: this.pacingMgr.riskPending,
-      maxRisk: MAX_RISK,
+      // Watch raises the ceiling (plans/milestones.md §5.5); the HUD reflects
+      // the same number the `PacingManager` provider clamps against.
+      maxRisk: this.maxRisk(),
       momentum: this.pacingMgr.momentumBonus,
       momentumStreak: this.pacingMgr.momentumStreak,
       momentumCap: MOMENTUM_CAP,
@@ -3303,6 +3403,13 @@ export class Game {
     this.ui.setEnemyAPI({
       getWaveMultipliers: () => this.enemyMgr.getWaveMultipliers(),
     });
+    // Plan §7: the codex mastery track is a per-enemy list of chapters that
+    // have a `kills_of` goal for the type. Read once per UI tick by
+    // `pushEnemyStats`; cheap because the snapshot it consumes is the same
+    // one `watchInfo()` already builds, with no second metric pass.
+    this.ui.setEnemyWatchAPI({
+      getWatchLines: () => this.watchEnemyLines(),
+    });
     this.ui.setAbilityAPI({
       canCast: (id, wave) => this.abilityMgr.canCast(id, wave),
       reasonBlocked: (id, wave) => this.abilityMgr.reasonBlocked(id, wave),
@@ -3370,11 +3477,22 @@ export class Game {
         fill: this.contractMgr.fillFraction(c),
         reward: this.contractMgr.rewardLabel(c),
       })),
-      history: this.contractMgr.recent.map(h => ({ name: h.name, wave: h.wave })),
+      history: this.contractMgr.recent.map(h => ({
+        name: h.name,
+        wave: h.wave,
+        gold: h.gold,
+        rerolls: h.reward.rerolls,
+        rp: h.reward.rp,
+        apBonusPct: h.reward.apBonusPct,
+      })),
       completed: this.contractMgr.completed,
       apBonusPct: this.contractMgr.apBonusPct,
       apCapPct: CONTRACT_TUNING.apBonusCap,
     }));
+    // The Long Watch (plan §6.2): one closure, called once per UI tick by
+    // the Journal panel — the view walks all twelve chapters and every goal,
+    // so caching the snapshot at the top of `watchInfo` keeps this cheap.
+    this.ui.setWatchAPI(() => this.watchInfo());
     this.ui.setEquipmentAPI({
       inventory: this.state.equipment,
       equipped: this.state.equipped,
@@ -3867,7 +3985,10 @@ export class Game {
     this.enemyMgr.reset();
     this.projectileMgr.reset();
     this.abilityMgr.reset();
-    this.abilityMgr.resetLevels();
+    // The `long_memory` Watch unlock (plans/milestones.md §5.11) keeps the
+    // player's ability levels across ascensions / transcendences. The base
+    // reset wipes levels because they were historically run-scoped.
+    if (!this.watchMgr.has('long_memory')) this.abilityMgr.resetLevels();
     this.effects.reset();
     // Plan §2.6: passives and equipment are *character* progression, like
     // talents and tower XP — they persist through an ascension and are only
@@ -3893,7 +4014,10 @@ export class Game {
     // path is shared by ascension and transcendence.
     this.blessingModal.hide();
     this.waveMgr.resumeIntermission();
-    this.blessingMgr.reset();
+    // The `heirloom` Watch unlock (plans/milestones.md §5.8) keeps the player's
+    // best-rarity blessing through an ascension, so one of the previous run's
+    // cards does not vanish at the moment the new run's identity is forming.
+    this.blessingMgr.reset({ carryBest: this.watchMgr.has('heirloom') });
     this.state.blessings = this.blessingMgr.snapshot();
     // Orbs are run-scoped *and* frame-scoped: they are never persisted, and a
     // run that ends drops whatever was still in the air (docs/loot-system.md).
@@ -3932,6 +4056,9 @@ export class Game {
       this.researchTree.getStartWave(),
       this.prestigeMgr.getWaveStartBonus(),
       this.talentHeadStartWaves > 0 ? this.talentHeadStartWaves + 1 : 0,
+      // The `veteran_start` Watch unlock (plans/milestones.md §5.9) starts
+      // each run at wave 6. Research and talents can still pull higher.
+      this.watchMgr.has('veteran_start') ? 6 : 0,
     );
     if (startWave > 1) {
       this.waveMgr.startAtWave(startWave);
@@ -4012,7 +4139,7 @@ export class Game {
     let gold = 0;
     let ap = 0;
     let tp = 0;
-    for (let i = 0; i < MUTATOR_DURATION_WAVES; i++) {
+    for (let i = 0; i < this.mutatorDuration(); i++) {
       const escalation = waveModifierRewardMultiplier(i);
       const wave = startWave + i;
       if (snapshot.reward.gold > 0) {
@@ -4029,7 +4156,7 @@ export class Game {
   private chooseWaveModifier(snapshot: WaveModifierSnapshot): void {
     this.state.wave.waveModifier.active = snapshot;
     this.state.wave.waveModifier.choiceForNextWave = null;
-    this.state.wave.waveModifier.wavesRemaining = MUTATOR_DURATION_WAVES;
+    this.state.wave.waveModifier.wavesRemaining = this.mutatorDuration();
     this.state.wave.waveModifier.wavesCleared = 0;
     // Snapshot gold earned so far — the modifier's gold multiplier bonus
     // is computed from gold earned during the wave and awarded on wave_cleared.
@@ -4052,7 +4179,7 @@ export class Game {
     });
     this.bus.emit('toast', {
       kind: 'milestone',
-      text: `${snapshot.name} active for ${MUTATOR_DURATION_WAVES} waves`,
+      text: `${snapshot.name} active for ${this.mutatorDuration()} waves`,
       life: 4,
     });
   }
@@ -4259,6 +4386,7 @@ export class Game {
     const ok = this.blessingMgr.choose(id);
     this.closeBlessingDraft();
     if (!ok || !def) return false;
+    this.state.watch.counters.blessingPicks += 1;
     const stacks = this.blessingMgr.stacks(id);
     // A blessing is an input to the same recompute as everything else, so the
     // pick is felt on the very next shot rather than at the next purchase.
@@ -4320,6 +4448,220 @@ export class Game {
     this.blessingModal.hide();
     this.waveMgr.resumeIntermission();
     this.state.blessings = this.blessingMgr.snapshot();
+  }
+
+  // ── The Long Watch (plans/milestones.md §4) ─────────────────────────────
+  //
+  // The seven lifetime counters and the per-poll metrics snapshot. The
+  // manager itself is not constructed here yet — that lands in Step 6
+  // (plan §5) along with the unlock consumer wiring. For now the helpers
+  // are pure writers so the per-site changes are minimal and reversible.
+
+  /** One lifetime per-type kill. Called from the `enemy_killed` handler. */
+  private noteWatchKill(type: EnemyType): void {
+    const byType = this.state.watch.counters.killsByType;
+    byType[type] = (byType[type] ?? 0) + 1;
+  }
+
+  /**
+   * The three wave-scoped Watch counters, from the one `wave_cleared` handler.
+   *
+   * Deliberately reads the same two facts the contract note reads — the
+   * flawless flag and the mutator flag — at the same point in the handler, so
+   * a wave can never be flawless for a contract and not for a chapter.
+   */
+  private noteWatchWave(): void {
+    const c = this.state.watch.counters;
+    if (this.waveFlawless) c.flawlessWaves += 1;
+    if (this.state.wave.waveModifier.active !== null) c.mutatorWaves += 1;
+    // Every wave is bucketed, risk 0 included, so `riskWaves` is a complete
+    // histogram. `risk_waves` objectives simply never ask for index 0. The
+    // `riskWaves` array is sized to `MAX_RISK_CEILING + 1`, so a `maxRisk()`
+    // of 7 still writes in-bounds (plans/milestones.md §5.5).
+    const risk = clampRisk(this.pacingMgr.activeRisk, this.maxRisk());
+    c.riskWaves[risk] = (c.riskWaves[risk] ?? 0) + 1;
+  }
+
+  /**
+   * The flat snapshot `WatchManager` reads once a second.
+   *
+   * Most fields are read-throughs into `state.stats`; the seven `WatchCounters`
+   * are surfaced directly because the manager owns progress computation
+   * against the closed `WATCH_PROGRESS` record. Cheap to build: this runs
+   * once a poll, not per frame.
+   *
+   * Non-`private` so the `WatchManager` dep closure (`metrics: () => this.watchMetrics()`)
+   * can call it through `this` without a `private`-method suppression comment —
+   * the closure is constructed in Step 6 (plan §5) when the manager is wired.
+   */
+  watchMetrics(): WatchMetrics {
+    const s = this.state.stats;
+    const c = this.state.watch.counters;
+    return {
+      highestWave: s.lifetimeHighestWave,
+      kills: s.enemiesKilled,
+      killsByType: c.killsByType,
+      bosses: s.bossesKilled,
+      goldEarned: s.goldEarned,
+      ascensions: s.lifetimeAscensions,
+      transcendences: s.transcendences,
+      abilitiesCast: s.abilitiesCast,
+      upgradesBought: s.totalUpgradesPurchased,
+      towerLevel: this.state.towerXp.level,
+      blessingPicks: c.blessingPicks,
+      contractsDone: c.contractsDone,
+      flawlessWaves: c.flawlessWaves,
+      swiftBosses: c.swiftBosses,
+      riskWaves: c.riskWaves,
+      mutatorWaves: c.mutatorWaves,
+    };
+  }
+
+  /**
+   * The view model the Journal tab consumes (plan §6.2).
+   *
+   * Walks `WATCH_CHAPTERS` once with a single `watchMetrics()` snapshot at the
+   * top — the panel polls at ~10 Hz and per-goal snapshots would be 36 wasted
+   * metric builds. Locked chapters still fill in their goals: the counters are
+   * lifetime, and "you are already 60% of the way into chapter 7" is exactly
+   * the pull the panel exists to surface.
+   *
+   * `activeIndex` is the index of the live chapter in `chapters`, or -1 once
+   * every chapter is complete.
+   */
+  watchInfo(): WatchInfo {
+    const m = this.watchMetrics();
+    const completedSet = new Set(this.state.watch.completed);
+    const chapters: WatchChapterView[] = WATCH_CHAPTERS.map((ch) => {
+      const unlock = WATCH_UNLOCKS[ch.reward];
+      let state: WatchChapterView['state'];
+      if (completedSet.has(ch.id)) state = 'done';
+      else if (this.watchMgr.activeChapter?.id === ch.id) state = 'active';
+      else state = 'locked';
+      const goals: WatchChapterView['goals'] = ch.goals.map((goal) => {
+        const target = goalTarget(goal);
+        const current = this.watchMgr.progress(goal, m);
+        const capped = Math.min(target, current);
+        return {
+          label: describeGoal(goal),
+          progress: `${capped.toLocaleString()} / ${target.toLocaleString()}`,
+          fill: this.watchMgr.fill(goal, m),
+          met: this.watchMgr.isGoalMet(goal, m),
+        };
+      });
+      return {
+        id: ch.id,
+        number: ch.number,
+        name: ch.name,
+        flavour: ch.flavour,
+        icon: ch.icon,
+        color: ch.color,
+        state,
+        goals,
+        reward: {
+          id: unlock.id,
+          name: unlock.name,
+          description: unlock.description,
+          icon: unlock.icon,
+        },
+      };
+    });
+    const activeIdx = chapters.findIndex((c) => c.state === 'active');
+    return {
+      chapters,
+      completed: this.watchMgr.completedCount,
+      total: WATCH_CHAPTERS.length,
+      activeIndex: activeIdx,
+    };
+  }
+
+  /**
+   * The mastery track surfaced in the codex enemy detail pane (plan §7.1).
+   *
+   * Walks `WATCH_CHAPTERS` once with a single `watchMetrics()` snapshot at the
+   * top and groups every `kills_of` goal under the enemy it names. Chapters
+   * with no `kills_of` goal contribute nothing; types nobody names are simply
+   * absent from the record, so the codex can render an empty section simply
+   * by reading `entry.watch` (which the caller derives from this map).
+   *
+   * The view is sorted by chapter order so the masteries a player unlocks
+   * first stay on top; "Blood and Iron" precedes "Storm Caller" no matter
+   * which one the player happens to be hunting.
+   */
+  watchEnemyLines(): Partial<Record<EnemyType, EnemyWatchLine[]>> {
+    const m = this.watchMetrics();
+    const out: Partial<Record<EnemyType, EnemyWatchLine[]>> = {};
+    for (const ch of WATCH_CHAPTERS) {
+      for (const goal of ch.goals) {
+        if (goal.kind !== 'kills_of') continue;
+        const target = goalTarget(goal);
+        const current = Math.min(target, this.watchMgr.progress(goal, m));
+        const line: EnemyWatchLine = {
+          chapterName: ch.name,
+          progress: `${current.toLocaleString()} / ${target.toLocaleString()}`,
+          fill: Math.min(1, Math.max(0, this.watchMgr.fill(goal, m))),
+          met: this.watchMgr.isGoalMet(goal, m),
+        };
+        (out[goal.type] ??= []).push(line);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Perform the side effect of an unlock, if it has one.
+   *
+   * Idempotent by construction: `CoreManager.unlock` is a `Set.add`. Called
+   * once on the completion event and once per earned unlock on save load, so
+   * the granted cores can never drift from the completed chapters
+   * (plans/milestones.md §5.1).
+   */
+  private applyWatchUnlock(id: WatchUnlockId): void {
+    switch (id) {
+      case 'cold_forge':
+        this.coreMgr.unlock('frostwork');
+        this.state.cores = this.coreMgr.snapshot();
+        break;
+      case 'sanctum':
+        this.coreMgr.unlock('arcane');
+        this.state.cores = this.coreMgr.snapshot();
+        break;
+      default:
+        // Every other unlock is read by its consumer through `watchMgr.has()`;
+        // there is nothing to perform. Listed exhaustively rather than
+        // defaulted so a new unlock forces a decision here.
+        break;
+    }
+  }
+
+  /** Replay every earned unlock's side effect. Called at the end of save load. */
+  private applyWatchUnlocksOnLoad(): void {
+    this.watchMgr.rebuildUnlocks();
+    for (const id of this.watchMgr.earnedUnlocks()) this.applyWatchUnlock(id);
+  }
+
+  /**
+   * The risk dial's ceiling, including Watch unlocks (plans/milestones.md §5.5).
+   *
+   * `riskbearer` adds a sixth step, `deep_watch` adds a seventh. Read by the
+   * UI (`pacingHudSnapshot`) and by the `PacingManager` provider so the
+   * 6-or-7 cap is enforced everywhere a level is written or read.
+   */
+  maxRisk(): number {
+    if (this.watchMgr.has('deep_watch')) return 7;
+    if (this.watchMgr.has('riskbearer')) return 6;
+    return MAX_RISK;
+  }
+
+  /**
+   * Waves a mutator runs for, including the Storm Caller unlock.
+   *
+   * The Watch's `storm_caller` chapter (plans/milestones.md §5.7) adds one
+   * wave to the run, so a single helper reads in one place rather than every
+   * site hardcoding `MUTATOR_DURATION_WAVES + 1`.
+   */
+  private mutatorDuration(): number {
+    return MUTATOR_DURATION_WAVES + (this.watchMgr.has('storm_caller') ? 1 : 0);
   }
 
   /**
@@ -4543,6 +4885,12 @@ export class Game {
     // pre-v13 tower was actually shooting like.
     this.coreMgr.restore(persisted.cores ?? null);
     this.state.cores = this.coreMgr.snapshot();
+
+    // v15+: The Long Watch (plans/milestones.md §5.0). Restore the unlock set
+    // *and* replay every earned unlock's side effect — the cold forge must
+    // grant `frostwork` on a v15+ load even though `coreMgr.restore` is the
+    // canonical source for the previously-unlocked cores.
+    this.applyWatchUnlocksOnLoad();
 
     // v14+: the risk dial (permanent), momentum and the combo (run-scoped).
     // A save that predates pacing restores at risk 0 with nothing banked,
@@ -5003,6 +5351,10 @@ export class Game {
     this.checkTranscendenceUnlockToast();
     this.saveMgr.tick(realDt, this.state, (s) => this.saveMgr.save(s));
     this.achievementMgr.tick(dt);
+    // The Long Watch polls lifetime counters once a second (plans/milestones.md
+    // §5.0). Completion is observed through the bus, not the return value, so
+    // the modal, the toast and the unlock share a single source of truth.
+    this.watchMgr.tick(dt);
     this.audio.tick(dt);
     this.updateVignette();
   }

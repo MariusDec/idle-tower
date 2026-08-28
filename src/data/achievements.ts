@@ -82,10 +82,14 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   {
     id: 'ach_boss_slayer',
     name: 'Boss Slayer',
-    description: 'Kill 10 bosses',
+    description: 'Kill 5 bosses',
     category: 'combat',
     stat: 'bossesKilled',
-    threshold: 10,
+    // Five boss *waves*, which is wave 50. This asked for ten back when a boss
+    // wave spawned `2 + tier` bosses and wave 40 alone paid nine of them; one
+    // boss per wave means the same threshold would have moved an early-game
+    // achievement to wave 100.
+    threshold: 5,
     reward: { type: 'boss_gold_mult', value: 0.20, description: '+20% boss gold' },
     icon: 'crowned-skull',
   },

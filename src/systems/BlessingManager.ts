@@ -9,11 +9,27 @@ import {
   BLESSING_TUNING,
   type BlessingBehavior,
   type BlessingDef,
+  type BlessingRarity,
   type BlessingStat,
 } from '../data/blessings';
 import type { CoreId } from '../data/cores';
 import type { BlessingRunState } from '../types';
 import type { EventBus } from '../game/EventBus';
+
+/**
+ * Draft-time overrides injected by `Game`. Every field is opt-in and defaults
+ * to today's constant — so the simulator and any test that constructs the
+ * manager with no overrides get the unchanged behaviour.
+ *
+ * Two unlocks read these: `quartermaster` raises `freeRerolls` by one,
+ * `wide_draft` raises `offerSize` by one (plans/milestones.md §5.3).
+ */
+export interface BlessingDraftOverrides {
+  /** Cards per offer. Defaults to `BLESSING_OFFER_SIZE`. */
+  offerSize?: () => number;
+  /** Free rerolls seeded per draft. Defaults to `BLESSING_FREE_REROLLS`. */
+  freeRerolls?: () => number;
+}
 
 /**
  * Owns the run's blessing state: what is held, what the next offer looks like,
@@ -29,6 +45,7 @@ import type { EventBus } from '../game/EventBus';
  */
 export class BlessingManager {
   private readonly bus: EventBus | null;
+  private readonly overrides: BlessingDraftOverrides;
   private held: Record<string, number> = {};
   private picksTaken = 0;
   /** Reroll tokens banked from other systems (Part 5 grants them). */
@@ -44,8 +61,9 @@ export class BlessingManager {
   private behaviorCache = new Set<BlessingBehavior>();
   private statCache: Partial<Record<BlessingStat, number>> = {};
 
-  constructor(bus?: EventBus) {
+  constructor(bus?: EventBus, overrides: BlessingDraftOverrides = {}) {
     this.bus = bus ?? null;
+    this.overrides = overrides;
     this.rebuildCaches();
   }
 
@@ -161,7 +179,11 @@ export class BlessingManager {
   rollOffer(wave: number, core?: CoreId, rng: () => number = Math.random): BlessingDef[] {
     const pool = this.eligible(wave, core);
     const out: BlessingDef[] = [];
-    while (out.length < BLESSING_OFFER_SIZE && pool.length > 0) {
+    // Wide Draft unlock (plans/milestones.md §5.3) raises the offer size by one
+    // via the injected `offerSize` dep. The default is `BLESSING_OFFER_SIZE`
+    // so a manager constructed without overrides behaves exactly as before.
+    const size = Math.max(1, Math.floor(this.overrides.offerSize?.() ?? BLESSING_OFFER_SIZE));
+    while (out.length < size && pool.length > 0) {
       let total = 0;
       for (const def of pool) total += this.offerWeight(def, core);
       let r = rng() * total;
@@ -181,7 +203,9 @@ export class BlessingManager {
   /** Open a draft for `wave`, seeding the free reroll budget. */
   openDraft(wave: number, core?: CoreId, rng: () => number = Math.random): BlessingDef[] {
     this.pendingOfferForWave = wave;
-    this.freeRerolls = BLESSING_FREE_REROLLS;
+    // Quartermaster unlock (plans/milestones.md §5.3) adds a free reroll via
+    // the injected `freeRerolls` dep. Default is `BLESSING_FREE_REROLLS`.
+    this.freeRerolls = Math.max(0, Math.floor(this.overrides.freeRerolls?.() ?? BLESSING_FREE_REROLLS));
     this.currentOffer = this.rollOffer(wave, core, rng);
     return this.currentOffer;
   }
@@ -242,14 +266,48 @@ export class BlessingManager {
 
   // ── lifecycle ──
 
-  /** Blessings are run-scoped: ascension and transcendence both wipe them. */
-  reset(): void {
+  /**
+   * Wipe the run's blessings.
+   *
+   * Blessings are run-scoped: ascension and transcendence both wipe them.
+   *
+   * `carryBest` (the Heirloom unlock, plans/milestones.md §5.8) keeps a single
+   * stack of the highest-rarity blessing held, breaking ties by the most
+   * recently taken. One stack, never the whole card's stacks — the reward is
+   * "something survives", not "your build survives".
+   */
+  reset(opts: { carryBest?: boolean } = {}): void {
+    const keep = opts.carryBest ? this.bestHeldId() : null;
     this.held = {};
     this.picksTaken = 0;
     this.rerollTokens = 0;
     this.wavesClearedThisRun = 0;
     this.closeDraft();
+    if (keep) {
+      this.held[keep] = 1;
+      this.picksTaken = 1;
+    }
     this.rebuildCaches();
+  }
+
+  /**
+   * Highest-rarity held blessing, ties broken by the order they were taken
+   * (i.e. the iteration order of `this.held`, which `choose` appends to).
+   *
+   * Rarity is the whole point: an Epic outranks two Rares regardless of how
+   * many Rare stacks the player has banked, because the reward is "a card
+   * survives", not "your favourite card survives".
+   */
+  private bestHeldId(): string | null {
+    const rank: Record<BlessingRarity, number> = { common: 0, rare: 1, epic: 2 };
+    let best: string | null = null;
+    let bestRank = -1;
+    for (const id of Object.keys(this.held)) {
+      const def = BLESSING_BY_ID[id];
+      if (!def || (this.held[id] ?? 0) <= 0) continue;
+      if (rank[def.rarity] > bestRank) { bestRank = rank[def.rarity]; best = id; }
+    }
+    return best;
   }
 
   snapshot(): BlessingRunState {

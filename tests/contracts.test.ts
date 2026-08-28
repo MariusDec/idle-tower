@@ -93,6 +93,21 @@ const DRIVER: Record<ContractGoalKind, (goal: ContractGoal, step: number) => Con
 
 const ALL_KINDS = Object.keys(DRIVER) as ContractGoalKind[];
 
+/**
+ * Feed one live contract until it completes, and return its uid.
+ *
+ * `wave_cleared` carries an absolute wave, so `reach_wave` needs a step that
+ * actually climbs — hence the counter rather than a constant.
+ */
+function drive(h: Harness, target: { uid: number; goal: ContractGoal }): number {
+  const uid = target.uid;
+  for (let step = 1; step <= 2000; step++) {
+    if (!h.mgr.list.some(c => c.uid === uid)) return uid;
+    h.mgr.note(DRIVER[target.goal.kind](target.goal, h.wave + step));
+  }
+  throw new Error(`contract ${uid} (${target.goal.kind}) never completed`);
+}
+
 describe('goal kinds all have a consumer', () => {
   /**
    * The `Record` is the subject (plan §5.5 and cross-cutting rule 3).
@@ -347,6 +362,85 @@ describe('snapshot / restore', () => {
     snap.apBonusPct = 9;
     h.mgr.restore(snap);
     expect(h.mgr.apBonusPct).toBe(CONTRACT_TUNING.apBonusCap);
+  });
+});
+
+/**
+ * The completed-contract log (the Progression tab's history).
+ *
+ * The payout is recorded at completion and persisted, rather than re-derived
+ * from the def on read — a contract's gold is denominated in waves of income
+ * at the wave it completed on, and its AP grant is whatever the cap left. Both
+ * are facts about a moment, and neither can be recovered later.
+ */
+describe('the completion log', () => {
+  it('records the gold each completion actually paid', () => {
+    const h = harness(1);
+    const first = h.mgr.list.find(c => c.def.reward.goldWaves)!;
+    // `waveGold` is a flat 100 in the harness, so the payout is the ratio x100.
+    const expected = Math.max(1, Math.floor(100 * first.def.reward.goldWaves!));
+    drive(h, first);
+    const entry = h.mgr.recent.find(e => e.defId === first.def.id)!;
+    expect(entry.gold).toBe(expected);
+    expect(entry.wave).toBe(1);
+  });
+
+  it('logs what the run banked, not what the defs asked for', () => {
+    const h = harness(1);
+    drive(h, h.mgr.list[0]);
+    drive(h, h.mgr.list[0]);
+    drive(h, h.mgr.list[0]);
+    const logged = h.mgr.recent.reduce((a, e) => a + e.reward.apBonusPct, 0);
+    expect(logged).toBeCloseTo(h.mgr.apBonusPct, 10);
+  });
+
+  it('records a completion past the AP cap as the zero it banked', () => {
+    const h = harness(45);
+    for (let i = 0; i < 600 && h.mgr.apBonusPct < CONTRACT_TUNING.apBonusCap; i++) {
+      drive(h, h.mgr.list[0]);
+    }
+    expect(h.mgr.isApCapped, 'the run never reached the cap').toBe(true);
+    // Keep going *past* the ceiling. The defs still ask for +3%; every one of
+    // these banked nothing, and the log has to say so rather than replaying
+    // the def — which is the whole reason the payout is stored.
+    const mark = h.mgr.completed;
+    for (let i = 0; i < 60; i++) drive(h, h.mgr.list[0]);
+    expect(h.mgr.completed).toBeGreaterThan(mark);
+
+    const asked = h.mgr.recent.filter(e => CONTRACT_BY_ID[e.defId].reward.apBonusPct);
+    expect(asked.length, 'no AP-granting def in the retained history').toBeGreaterThan(0);
+    for (const entry of asked) {
+      expect(entry.reward.apBonusPct, `${entry.defId} paid AP past the cap`).toBe(0);
+    }
+  });
+
+  it('survives a snapshot / restore with its payouts intact', () => {
+    const h = harness(1);
+    drive(h, h.mgr.list[0]);
+    drive(h, h.mgr.list[0]);
+    const before = h.mgr.recent.map(e => ({ ...e, reward: { ...e.reward } }));
+    const snap = h.mgr.snapshot();
+    expect(snap.log).toHaveLength(before.length);
+
+    const restored = harness(1);
+    restored.mgr.restore(snap);
+    expect(restored.mgr.recent).toEqual(before);
+  });
+
+  it('restores a save written before the log existed, without inventing rewards', () => {
+    const h = harness(1);
+    drive(h, h.mgr.list[0]);
+    const snap = h.mgr.snapshot();
+    // A v12-era block: def ids only.
+    delete snap.log;
+
+    const restored = harness(1);
+    restored.mgr.restore(snap);
+    expect(restored.mgr.recent).toHaveLength(1);
+    const entry = restored.mgr.recent[0];
+    expect(entry.wave).toBe(0);
+    expect(entry.gold).toBe(0);
+    expect(entry.reward.apBonusPct).toBe(0);
   });
 });
 

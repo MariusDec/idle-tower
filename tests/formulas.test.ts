@@ -19,7 +19,8 @@ import {
   TARGET_BOSS_KILL_SECONDS,
   TARGET_WAVE_KILL_SECONDS,
   avariceStreakGoldBonus,
-  bossCountForWave,
+  bossEncounterWeight,
+  bossEscortCountForWave,
   bossHPForWave,
   enemyHPForWave,
   expectedWaveSeconds,
@@ -84,10 +85,21 @@ describe('enemy scaling', () => {
 
   /**
    * Revamp §10: the first boss wave is the tightest gate in the game, so a
-   * tier now adds a boss from the *second* tier onwards rather than the first.
+   * tier adds to the encounter from the *second* tier onwards rather than the
+   * first. The figure used to be a head-count of bosses and is now the weight
+   * the wave's one boss carries — same curve, one body.
    */
-  it('starts boss packs at two and adds one per tier after the first', () => {
-    expect([10, 20, 30, 100].map(bossCountForWave)).toEqual([2, 3, 4, 11]);
+  it('starts the boss encounter at two and adds one per tier after the first', () => {
+    expect([10, 20, 30, 100].map(bossEncounterWeight)).toEqual([2, 3, 4, 11]);
+  });
+
+  it('spawns exactly one boss on a boss wave, plus its escort', () => {
+    for (const w of [10, 20, 30, 100]) {
+      expect(spawnCountForWave(w), `wave ${w}`).toBe(1 + bossEscortCountForWave(w));
+      // The escort is trash, and there is more of it the deeper the wave.
+      expect(bossEscortCountForWave(w)).toBeGreaterThan(1);
+    }
+    expect(bossEscortCountForWave(100)).toBeGreaterThan(bossEscortCountForWave(10));
   });
 });
 
@@ -104,18 +116,21 @@ describe('wave time budget', () => {
     }
   });
 
-  it('gives boss waves one kill window per boss', () => {
+  it('sizes the boss window off the encounter weight, not the body count', () => {
     for (const w of [10, 20, 100]) {
       const count = spawnCountForWave(w);
       const spawn = spawnIntervalForWave(w) * (count - 1);
-      expect(expectedWaveSeconds(w)).toBeCloseTo(spawn + TARGET_BOSS_KILL_SECONDS * count);
+      const kill = TARGET_BOSS_KILL_SECONDS * bossEncounterWeight(w);
+      expect(expectedWaveSeconds(w), `wave ${w}`).toBeCloseTo(spawn + kill);
     }
   });
 
-  it('scales the boss window with a mutated enemy count', () => {
+  it('pays a mutated boss roster for the time it takes to spawn', () => {
+    // The extra bodies a Swarm mutator adds to a boss wave are escort trash,
+    // not bosses, so they buy spawn time rather than a second kill window.
     const one = expectedWaveSeconds(20, 1);
     const two = expectedWaveSeconds(20, 2);
-    expect(two - one).toBeCloseTo(TARGET_BOSS_KILL_SECONDS + spawnIntervalForWave(20));
+    expect(two - one).toBeCloseTo(spawnIntervalForWave(20));
   });
 
   it('leaves a boss wave with more budget than its neighbours', () => {

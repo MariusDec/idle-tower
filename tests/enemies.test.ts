@@ -19,6 +19,7 @@ import { ResourceManager } from '../src/systems/ResourceManager';
 import { ProjectileManager } from '../src/systems/ProjectileManager';
 import { Tower } from '../src/systems/Tower';
 import { WaveManager } from '../src/systems/WaveManager';
+import { bossEscortCountForWave } from '../src/data/formulas';
 import {
   ARMOR_SOFTENING,
   armorDamageMultiplier,
@@ -844,6 +845,25 @@ describe('spawn pool (plan §2.4)', () => {
       for (let i = 0; i < 400 && wm.snapshot.spawning; i++) wm.tick(1);
       const thieves = mgr.list.filter(e => e.type === 'thief').length;
       expect(thieves, `wave ${wave}`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('spawns exactly one boss on a boss wave, with the rest as escort trash', () => {
+    const bus = new EventBus();
+    const { resources } = makeResources(0);
+    const mgr = new EnemyManager(bus, resources);
+    const wm = new WaveManager(bus, mgr, ARENA_W, ARENA_H, () => {}, () => {});
+    for (const wave of [10, 30, 100]) {
+      mgr.reset();
+      wm.startWave(wave);
+      wm.resumeSpawning();
+      for (let i = 0; i < 500 && wm.snapshot.spawning; i++) wm.tick(1);
+      const bosses = mgr.list.filter(e => e.type === 'boss');
+      expect(bosses.length, `wave ${wave}`).toBe(1);
+      // The escort is real, and it is *not* bosses.
+      expect(mgr.list.length, `wave ${wave}`).toBe(1 + bossEscortCountForWave(wave));
+      // The boss leads: the escort walks in behind it, not ahead of it.
+      expect(mgr.list[0].type, `wave ${wave}`).toBe('boss');
     }
   });
 

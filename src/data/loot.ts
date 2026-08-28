@@ -1,4 +1,4 @@
-import { bossCountForWave, goldDropForWave } from './formulas';
+import { goldDropForWave } from './formulas';
 import { ENEMY_DEFS } from './enemies';
 import { entity, world } from './arena';
 
@@ -35,14 +35,13 @@ export const LOOT_TUNING = {
   eliteOrbsMin: 1,
   eliteOrbsMax: 2,
   /**
-   * Orbs a boss *encounter* pays, not a boss.
+   * Orbs a boss *encounter* pays.
    *
-   * §4.1 says "bosses (always, 3-5)", written — like the rest of the plan
-   * before Part 3 corrected it — as if a boss wave had one boss. It has
-   * `bossCountForWave` = `2 + tier`: three at wave 10, twelve at wave 100.
-   * Read per boss, a wave-100 pack would carpet the field with sixty orbs and
-   * blow straight through the forty-orb cap. So the budget is per encounter
-   * and `bossOrbShare` divides it across the pack.
+   * §4.1's "bosses (always, 3-5)" was written as if a boss wave had one boss;
+   * Part 3 gave it a pack of `2 + tier` and this budget had to be divided
+   * across it, or a wave-100 pack would have carpeted the field with sixty
+   * orbs and blown through the forty-orb cap. The wave has one boss again, so
+   * the encounter budget and the per-kill drop are the same thing once more.
    */
   bossOrbsMin: 3,
   bossOrbsMax: 5,
@@ -81,19 +80,16 @@ export const LOOT_TUNING = {
 } as const;
 
 /**
- * Orbs one boss of a wave-`wave` pack drops.
+ * Orbs the boss of wave `wave` drops — the whole encounter budget (3-5).
  *
- * The encounter budget (3-5) divided by the pack size, with the fractional
- * remainder taken as a probability — so a three-boss wave-10 pack pays about
- * four orbs in total and so does a twelve-boss wave-100 pack, instead of the
- * latter paying four times the cap.
+ * Kept as a function of the wave, and kept taking an `rng`, because it used to
+ * divide the budget across the pack and the wave is still what decides how big
+ * an encounter is. `wave` is unused today; the signature is the seam that made
+ * the pack change a one-line edit and would make the next one the same.
  */
-export function bossOrbShare(wave: number, rng: () => number = Math.random): number {
+export function bossOrbShare(_wave: number, rng: () => number = Math.random): number {
   const span = LOOT_TUNING.bossOrbsMax - LOOT_TUNING.bossOrbsMin;
-  const encounterTotal = LOOT_TUNING.bossOrbsMin + Math.floor(rng() * (span + 1));
-  const share = encounterTotal / Math.max(1, bossCountForWave(wave));
-  const whole = Math.floor(share);
-  return whole + (rng() < share - whole ? 1 : 0);
+  return LOOT_TUNING.bossOrbsMin + Math.floor(rng() * (span + 1));
 }
 
 /** Gold an orb dropped on `wave` is worth at full (clicked) value. */

@@ -70,7 +70,9 @@ export type AbilityId =
   | 'execute'
   | 'rocket_barrage';
 
-export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'passives' | 'prestige' | 'transcendence' | 'achievements' | 'progression' | 'codex' | 'stats' | 'settings' | 'talents' | 'equipment';
+export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'passives' | 'prestige'
+  | 'transcendence' | 'achievements' | 'journal' | 'progression' | 'codex' | 'stats'
+  | 'settings' | 'talents' | 'equipment';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';
 
@@ -203,9 +205,9 @@ export interface Enemy {
 
   // ── Boss encounter (gameplay plan §3) ──────────────────────────────────
   //
-  // The whole state machine is per-boss rather than per-wave, because a boss
-  // wave spawns `bossCountForWave(wave)` = 2 + tier of them and each one
-  // phases on its own bar.
+  // The state machine lives on the enemy rather than on the wave: a boss wave
+  // fields one boss, but `summon` adds and the escort share the field with it,
+  // and phase state belongs to the thing that phases.
 
   /** Boss: 1, 2 or 3. Only ever increases, which is what makes crossings idempotent. */
   bossPhase?: number;
@@ -217,8 +219,6 @@ export interface Enemy {
   bossElapsed?: number;
   /** Boss: §3.3 enrage stacks, `+15%` damage and `+10%` speed each. */
   bossEnrageStacks?: number;
-  /** Boss: how many bosses the wave spawned, so patterns can scale with the pack. */
-  bossPackSize?: number;
   /** `bulwark`: absorb pool in front of HP; spent before `hp` in `damage`. */
   bossShield?: number;
   /** `bulwark`: what a full shield is worth, for the bar overlay. */
@@ -476,11 +476,41 @@ export interface ContractRunState {
   active: ActiveContractState[];
   /** Def ids completed this run, oldest first, capped at the history limit. */
   completed: string[];
+  /**
+   * The same completions with their **payouts**, for the Progression tab's
+   * history list.
+   *
+   * Optional and additive rather than a save-version bump: a save written
+   * before this field existed still has `completed`, and `ContractManager`
+   * falls back to it — the entries restore with a zero wave and no reward,
+   * which is exactly what that save could tell us. Written alongside
+   * `completed` rather than replacing it so a downgrade still reads.
+   */
+  log?: CompletedContractState[];
   completedCount: number;
   /** Contract AP bonus banked this run, already capped. */
   apBonusPct: number;
   /** Last instance id handed out, so a reload does not reuse one. */
   uidSeq: number;
+}
+
+/**
+ * One completed contract with what it actually paid.
+ *
+ * The gold figure is **resolved**, not a `goldWaves` ratio: the reward is
+ * denominated in waves of income at the wave it completed on, so re-resolving
+ * it at read time against a much later wave would report a payout the player
+ * never received. Same reason `apBonusPct` is the banked figure rather than
+ * the def's — a completion past the cap paid zero and should say so.
+ */
+export interface CompletedContractState {
+  defId: string;
+  /** Wave it completed on. 0 for an entry restored from a pre-`log` save. */
+  wave: number;
+  gold: number;
+  rerolls: number;
+  rp: number;
+  apBonusPct: number;
 }
 
 /**
@@ -521,6 +551,52 @@ export interface PacingState {
   momentumWaves: number;
   /** Best kill combo reached this run. */
   comboBest: number;
+}
+
+/**
+ * The Long Watch (plans/milestones.md).
+ *
+ * **Permanent.** Neither `applySavedStateReset` nor `applyFullTranscendenceReset`
+ * may touch this block — it is meta-progression, like achievements and unlocked
+ * cores. A reset that wiped it would delete the only long-horizon goal the game
+ * has.
+ *
+ * Objective *progress* is deliberately not stored. It is derived from the
+ * counters on every read, so there is nothing here that a save/load can
+ * disagree with.
+ */
+export interface WatchState {
+  /** Chapter ids completed, in completion order. */
+  completed: string[];
+  counters: WatchCounters;
+}
+
+/**
+ * The seven lifetime counters no existing field covers.
+ *
+ * Everything else an objective reads already lives in `GameStats` or
+ * `TowerXpState`; these are the ones that had no home. Each is incremented at
+ * exactly one call site — see the table in §4.2.
+ */
+export interface WatchCounters {
+  /** Lifetime kills per enemy type. */
+  killsByType: Partial<Record<EnemyType, number>>;
+  /** Waves cleared with the tower's HP untouched. */
+  flawlessWaves: number;
+  /** Boss encounters resolved inside the swift threshold. */
+  swiftBosses: number;
+  /** Contracts completed, lifetime (the contract block's own count is run-scoped). */
+  contractsDone: number;
+  /** Blessings taken, lifetime. */
+  blessingPicks: number;
+  /** Waves cleared while a mutator was active. */
+  mutatorWaves: number;
+  /**
+   * Waves cleared, bucketed by the risk level in force when they were cleared.
+   * Index is the risk step; length is `MAX_RISK_CEILING + 1` so raising the
+   * dial later cannot land out of bounds.
+   */
+  riskWaves: number[];
 }
 
 export interface WaveState {
@@ -739,6 +815,24 @@ export interface StatsInfo {
   targetingMode: TargetingMode;
 }
 
+/**
+ * One chapter that names this enemy type, ready for the codex detail pane
+ * (plans/milestones.md §7). Sourced from the `kills_of` goals in
+ * `WATCH_CHAPTERS`. An empty array means no chapter has ever named this
+ * enemy and the codex detail pane renders no Watch section at all.
+ *
+ * Lives next to `EnemyWaveStatsEntry` because the two are pushed through
+ * the same `pushEnemyStats` hook; the modal reads `entry.watch` directly.
+ */
+export interface EnemyWatchLine {
+  chapterName: string;
+  /** Already-formatted `412 / 400`. */
+  progress: string;
+  /** 0..1 fill for the bar. */
+  fill: number;
+  met: boolean;
+}
+
 export interface EnemyWaveStatsEntry {
   type: EnemyType;
   hp: number;
@@ -754,6 +848,11 @@ export interface EnemyWaveStatsEntry {
   inWave: boolean;
   /** Live per-stat multipliers the spawning enemy was actually built with. */
   multipliers: { hp: number; speed: number; damage: number };
+  /**
+   * Watch chapters that have a `kills_of` goal for this type. Empty when no
+   * chapter names the type — the codex detail pane then renders nothing.
+   */
+  watch: readonly EnemyWatchLine[];
 }
 
 export interface GameState {
@@ -794,6 +893,8 @@ export interface GameState {
   cores: CoreRunState;
   /** v14+: the risk dial, early-call momentum and the kill combo (plan §7). */
   pacing: PacingState;
+  /** v19+: the Long Watch campaign (permanent — survives both resets). */
+  watch: WatchState;
 }
 
 /**

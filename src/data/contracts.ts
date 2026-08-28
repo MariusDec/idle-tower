@@ -1,5 +1,6 @@
 import type { EnemyType } from '../types';
 import { ENEMY_DEFS } from './enemies';
+import { formatNumber } from '../utils/bigNumber';
 
 /**
  * Plural display names for contract text.
@@ -142,7 +143,7 @@ export const CONTRACTS: ContractDef[] = [
     minWave: 1,
     maxWave: 24,
     weight: 10,
-    reward: { goldWaves: 0.5 },
+    reward: { goldWaves: 1.5 },
   },
   {
     id: 'ct_rank_and_file',
@@ -151,7 +152,7 @@ export const CONTRACTS: ContractDef[] = [
     minWave: 1,
     maxWave: 24,
     weight: 8,
-    reward: { goldWaves: 0.4 },
+    reward: { goldWaves: 1.2 },
   },
   {
     id: 'ct_outrun',
@@ -160,7 +161,7 @@ export const CONTRACTS: ContractDef[] = [
     minWave: 3,
     maxWave: 24,
     weight: 8,
-    reward: { goldWaves: 0.4 },
+    reward: { goldWaves: 1.2 },
   },
   {
     id: 'ct_hold_the_line',
@@ -169,7 +170,7 @@ export const CONTRACTS: ContractDef[] = [
     minWave: 1,
     maxWave: 24,
     weight: 10,
-    reward: { goldWaves: 0.6 },
+    reward: { goldWaves: 1.8 },
   },
   {
     id: 'ct_untouched',
@@ -187,7 +188,7 @@ export const CONTRACTS: ContractDef[] = [
     minWave: 1,
     maxWave: 24,
     weight: 8,
-    reward: { goldWaves: 0.5 },
+    reward: { goldWaves: 1.5 },
   },
   {
     id: 'ct_press_on',
@@ -216,7 +217,7 @@ export const CONTRACTS: ContractDef[] = [
     minWave: 12,
     maxWave: 59,
     weight: 10,
-    reward: { goldWaves: 0.8 },
+    reward: { goldWaves: 2.5 },
   },
   {
     id: 'ct_breakpoint',
@@ -225,7 +226,7 @@ export const CONTRACTS: ContractDef[] = [
     minWave: 12,
     maxWave: 59,
     weight: 7,
-    reward: { goldWaves: 0.6 },
+    reward: { goldWaves: 2.0 },
   },
   {
     id: 'ct_sunder',
@@ -234,7 +235,7 @@ export const CONTRACTS: ContractDef[] = [
     minWave: 20,
     maxWave: 59,
     weight: 7,
-    reward: { goldWaves: 0.6 },
+    reward: { goldWaves: 2.0 },
   },
   {
     id: 'ct_cutpurse',
@@ -243,7 +244,7 @@ export const CONTRACTS: ContractDef[] = [
     minWave: 32,
     maxWave: 59,
     weight: 6,
-    reward: { goldWaves: 0.9 },
+    reward: { goldWaves: 2.8 },
   },
   {
     id: 'ct_clockbreaker',
@@ -297,7 +298,7 @@ export const CONTRACTS: ContractDef[] = [
     minWave: 12,
     maxWave: 59,
     weight: 8,
-    reward: { goldWaves: 0.8 },
+    reward: { goldWaves: 2.5 },
   },
   {
     id: 'ct_deeper',
@@ -316,7 +317,7 @@ export const CONTRACTS: ContractDef[] = [
     goal: { kind: 'kill_count', count: 650 },
     minWave: 40,
     weight: 10,
-    reward: { goldWaves: 1.0 },
+    reward: { goldWaves: 3.2 },
   },
   {
     id: 'ct_decapitate',
@@ -324,7 +325,7 @@ export const CONTRACTS: ContractDef[] = [
     goal: { kind: 'kill_type', type: 'warden', count: 18 },
     minWave: 42,
     weight: 7,
-    reward: { goldWaves: 0.9 },
+    reward: { goldWaves: 3.0 },
   },
   {
     id: 'ct_exhume',
@@ -332,7 +333,7 @@ export const CONTRACTS: ContractDef[] = [
     goal: { kind: 'kill_type', type: 'burrower', count: 24 },
     minWave: 47,
     weight: 7,
-    reward: { goldWaves: 0.9 },
+    reward: { goldWaves: 3.0 },
   },
   {
     id: 'ct_immaculate',
@@ -348,7 +349,7 @@ export const CONTRACTS: ContractDef[] = [
     goal: { kind: 'boss_under', seconds: 30, count: 3 },
     minWave: 40,
     weight: 6,
-    reward: { goldWaves: 1.0, apBonusPct: CONTRACT_TUNING.apBonusStep },
+    reward: { goldWaves: 3.0, apBonusPct: CONTRACT_TUNING.apBonusStep },
   },
   {
     id: 'ct_expedition',
@@ -364,7 +365,7 @@ export const CONTRACTS: ContractDef[] = [
     goal: { kind: 'spend_gold', goldWaves: 10 },
     minWave: 40,
     weight: 8,
-    reward: { goldWaves: 1.2 },
+    reward: { goldWaves: 4.0 },
   },
   {
     id: 'ct_tempest',
@@ -380,7 +381,7 @@ export const CONTRACTS: ContractDef[] = [
     goal: { kind: 'collect_orbs', count: 60 },
     minWave: 40,
     weight: 8,
-    reward: { goldWaves: 1.0 },
+    reward: { goldWaves: 3.2 },
   },
 ];
 
@@ -447,12 +448,57 @@ export function describeContract(goal: ContractGoal, target: number): string {
   }
 }
 
+/**
+ * A payout with its gold already resolved into a number of coins.
+ *
+ * The pair below exists because a *live* contract's gold is a ratio waiting on
+ * `estimateWaveGold` while a *completed* one's is a figure that was paid at a
+ * particular wave. Both format through `describeResolvedReward`, so the corner
+ * tracker and the history list can never word the same payout differently.
+ */
+export interface ResolvedReward {
+  gold: number;
+  rerolls: number;
+  rp: number;
+  apBonusPct: number;
+}
+
 /** Short reward blurb for the tracker and the Progression list. */
 export function describeReward(reward: ContractReward, goldAmount: number): string {
-  const parts: string[] = [];
-  if (reward.goldWaves) parts.push(`${Math.max(1, Math.floor(goldAmount)).toLocaleString()}g`);
-  if (reward.rerolls) parts.push(`${reward.rerolls} reroll${reward.rerolls === 1 ? '' : 's'}`);
-  if (reward.rp) parts.push(`${reward.rp} RP`);
-  if (reward.apBonusPct) parts.push(`+${Math.round(reward.apBonusPct * 100)}% AP`);
-  return parts.join(' · ');
+  return describeResolvedReward({
+    gold: reward.goldWaves ? Math.max(1, Math.floor(goldAmount)) : 0,
+    rerolls: reward.rerolls ?? 0,
+    rp: reward.rp ?? 0,
+    apBonusPct: reward.apBonusPct ?? 0,
+  });
+}
+
+export function describeResolvedReward(reward: ResolvedReward): string {
+  return rewardParts(reward).map(p => p.text).join(' · ');
+}
+
+/** What a reward chip is made of — a class suffix and its text. */
+export interface RewardPart {
+  kind: 'gold' | 'reroll' | 'rp' | 'ap';
+  text: string;
+}
+
+/**
+ * The payout split into its parts, for a view that wants to style them.
+ *
+ * The Progression tab's history renders one chip per part; everything else
+ * joins them with a separator. One producer, so a reward that reads "2.40Kg ·
+ * 1 reroll" in the corner reads the same two things there.
+ */
+export function rewardParts(reward: ResolvedReward): RewardPart[] {
+  const parts: RewardPart[] = [];
+  if (reward.gold > 0) parts.push({ kind: 'gold', text: `${formatNumber(reward.gold)}g` });
+  if (reward.rerolls > 0) {
+    parts.push({ kind: 'reroll', text: `${reward.rerolls} reroll${reward.rerolls === 1 ? '' : 's'}` });
+  }
+  if (reward.rp > 0) parts.push({ kind: 'rp', text: `${reward.rp} RP` });
+  if (reward.apBonusPct > 0) {
+    parts.push({ kind: 'ap', text: `+${Math.round(reward.apBonusPct * 100)}% AP` });
+  }
+  return parts;
 }

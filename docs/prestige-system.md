@@ -136,3 +136,23 @@ Automation flags are stored in `PrestigeState.automationFlags`:
 - `autoAbilities` — auto-cast abilities
 - `autoAscend` — auto-ascend at target wave
 - `autoTranscend` — auto-transcend when possible
+
+## Second, non-AP grant paths via the Watch
+
+Four of the things the AP tree sells are also granted by Long Watch
+chapters (`docs/watch-system.md`): `veteran_start` (chapter 3), `cold_forge`
+(chapter 5), `overseer` (chapter 7) and `sanctum` (chapter 11). These are
+intentional overlaps — a player who earns the chapter should not have to
+buy the same perk again — and they **never double-count**:
+
+- `startWave` is already a `Math.max` over four sources (research, an AP
+  perk, a talent, and `watch.veteranStart`), so any of them can lift the
+  floor and none can lift it twice.
+- `isAutomationUnlocked(key)` is a boolean OR across the AP perk, the TP
+  perk and `watch.overseer`, so any of them unlocks it once.
+
+`cold_forge` and `sanctum` are the two AP cores the chapters give for
+free (`frostwork` normally 10 AP, `arcane` normally 25 AP). The chapter
+completes call `CoreManager.unlock(id)` directly; the AP-tree path
+remains the way to spend AP for either core. See
+[watch-system.md](watch-system.md#the-unlock-catalogue).

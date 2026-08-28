@@ -3296,41 +3296,58 @@ button:disabled {
   bottom: 12px;
   z-index: var(--z-corner);
   pointer-events: none;
-  width: 260px;
+  width: 288px;
   max-width: calc(100vw - 32px);
 }
+/* Full opacity by design. The tracker spent its first version at 0.62 with
+   9-10px text, which made it scenery — the one readout in the corner that a
+   player stopped noticing was there. It is a live objective board, so it is
+   lit like one, and `is-close` below is what actually pulls the eye. */
 .contract-tracker {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  opacity: 0.62;
-  transition: opacity var(--dur-fast) ease;
+  gap: 4px;
 }
-.contract-tracker:hover { opacity: 1; }
 .contract-tracker-title {
-  font-size: var(--text-3xs);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-2xs);
   text-transform: uppercase;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.1em;
   font-weight: 700;
-  color: var(--text-3);
+  color: var(--text-2);
   padding-left: 2px;
+}
+.contract-tracker-title::before {
+  content: '';
+  width: 3px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--good);
+  flex-shrink: 0;
 }
 .contract-tracker-list {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 .contract-row {
   pointer-events: auto;
   position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  min-height: 21px;
-  background: linear-gradient(180deg, rgba(var(--rgb-surface-2), 0.78), rgba(var(--rgb-surface-0), 0.78));
+  gap: 8px;
+  padding: 5px 9px;
+  min-height: 28px;
+  /* Near-opaque rather than 0.78: the play area behind the corner is bright
+     during a wave, and a translucent row loses its text to whatever passes
+     under it. The blur keeps it from reading as a flat slab. */
+  background: linear-gradient(180deg, rgba(var(--rgb-surface-2), 0.95), rgba(var(--rgb-surface-1), 0.95));
+  backdrop-filter: blur(6px);
   border: 1px solid var(--stroke-subtle);
   border-radius: var(--radius-md);
+  box-shadow: var(--elev-1);
   overflow: hidden;
   cursor: default;
 }
@@ -3338,7 +3355,8 @@ button:disabled {
   position: absolute;
   inset: 0;
   width: 0;
-  background: linear-gradient(90deg, rgba(var(--rgb-nature), 0.30), rgba(var(--rgb-nature), 0.14));
+  background: linear-gradient(90deg, rgba(var(--rgb-nature), 0.42), rgba(var(--rgb-nature), 0.16));
+  border-right: 1px solid rgba(var(--rgb-nature), 0.55);
   transition: width var(--dur-base) ease;
   pointer-events: none;
 }
@@ -3352,7 +3370,7 @@ button:disabled {
   flex: 1;
 }
 .contract-row-name {
-  font-size: var(--text-2xs);
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-0);
   white-space: nowrap;
@@ -3360,19 +3378,27 @@ button:disabled {
   text-overflow: ellipsis;
 }
 .contract-row-progress {
-  font-size: var(--text-3xs);
+  font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
-  color: var(--text-2);
+  font-weight: 600;
+  color: var(--text-1);
   flex-shrink: 0;
 }
 .contract-row-reward {
   position: relative;
   z-index: 1;
-  font-size: var(--text-3xs);
+  font-size: var(--text-2xs);
   font-weight: 700;
   color: var(--accent);
   white-space: nowrap;
   flex-shrink: 0;
+}
+/* A contract inside its last fifth. The point of the tracker is that a goal
+   is about to land, so the row that is about to land says so rather than
+   waiting for the completion flourish to be the first signal. */
+.contract-row.is-close {
+  border-color: rgba(var(--rgb-nature), 0.65);
+  box-shadow: var(--elev-1), 0 0 10px rgba(var(--rgb-nature), 0.22);
 }
 .contract-row.is-entering { animation: contract-slide-in var(--dur-slow) ease both; }
 .contract-row.is-complete {
@@ -3396,6 +3422,23 @@ button:disabled {
   left: 16px;
   /* Sits directly above the contract tracker, which owns the corner. */
   bottom: calc(12px + var(--contract-tracker-height));
+  z-index: var(--z-corner);
+  pointer-events: none;
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  max-width: calc(100vw - 32px);
+  flex-direction: row;
+}
+
+/* The Long Watch chip (plan §6.5). One row above the milestone strip so the
+   bottom-left stack reads: contract tracker → milestone → Long Watch.
+   Shares the corner layer with the milestone strip (same `z-index`), so a
+   third chip coming in later would have to compete for the same ladder rung. */
+.journal-strip-slot {
+  position: fixed;
+  left: 16px;
+  bottom: calc(12px + var(--contract-tracker-height) + var(--milestone-strip-height));
   z-index: var(--z-corner);
   pointer-events: none;
   display: flex;
@@ -3503,6 +3546,84 @@ button:disabled {
   0% { transform: scale(0.85); box-shadow: 0 0 0 0 rgba(var(--rgb-nature), 0.7); }
   35% { transform: scale(1.08); box-shadow: 0 0 0 10px rgba(var(--rgb-nature), 0); }
   100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(var(--rgb-nature), 0); }
+}
+
+/* Long Watch chip (plan §6.5). Same compact-pill aesthetic as the milestone
+   strip — fixed width on the left edge so the two chips stack vertically —
+   with a progress fill that is the mean of the chapter's three goal fills. */
+.journal-collapsed-btn {
+  pointer-events: auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 8px;
+  background: linear-gradient(180deg, rgba(var(--rgb-surface-2), 0.78), rgba(var(--rgb-surface-0), 0.78));
+  border: 1px solid var(--stroke-subtle);
+  border-radius: var(--radius-full);
+  color: var(--text-0);
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+  min-height: 44px;
+  min-width: 44px;
+}
+.journal-collapsed-btn:hover {
+  border-color: var(--stroke-strong);
+}
+.journal-collapsed-btn.is-pulse {
+  animation: milestone-pulse var(--dur-ambient) ease-out 1;
+  border-color: var(--good);
+}
+.journal-collapsed-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(var(--rgb-good), 0.32), rgba(var(--rgb-good), 0.18));
+  width: 0;
+  transition: width var(--dur-base) ease;
+  pointer-events: none;
+}
+.journal-collapsed-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.journal-collapsed-glyph {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-circle);
+  background: var(--surface-3);
+  border: 1px solid var(--stroke-subtle);
+  flex-shrink: 0;
+}
+.journal-collapsed-title {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+.journal-collapsed-count {
+  font-size: var(--text-3xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-1);
+  flex-shrink: 0;
+}
+.journal-collapsed-glyph > .icon { --icon-size: 14px; }
+
+@media (max-width: 480px) {
+  .journal-collapsed-btn { padding: 4px 10px 4px 8px; gap: 6px; }
+  .journal-collapsed-title { display: none; }
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -4253,6 +4374,13 @@ body.is-resizing * { cursor: ew-resize !important; }
     padding: var(--space-2) var(--space-3);
   }
 
+  /* The Long Watch chip lives in the same corner stack as the milestone
+     strip, but phones already have three corner chips (toast root, contract
+     tracker, milestone strip). Adding a fourth crowds the play area, so the
+     chip is hidden on mobile — the celebration is the modal anyway, and a
+     permanent pill would just be dead pixels next to the milestone strip. */
+  .journal-strip-slot { display: none; }
+
   /* The rest of the HUD's phone-only controls, all of which were between 19px
      and 29px. The "more" popup and the two stat popups exist *because* the
      phone HUD is compact, so their own controls being the hardest things on
@@ -4320,6 +4448,15 @@ body.is-resizing * { cursor: ew-resize !important; }
   .contract-tracker-slot { bottom: var(--corner-stack-base); }
   .milestone-strip-slot {
     bottom: calc(var(--corner-stack-base) + var(--contract-tracker-height));
+    left: 16px;
+  }
+  /* Long Watch chip sits one row above the milestone strip (plan §6.5). The
+     `milestone-strip-height` reservation keeps it clear of the milestone pill
+     even if the milestone strip grows a tall pill in the future. */
+  .journal-strip-slot {
+    bottom: calc(
+      var(--corner-stack-base) + var(--contract-tracker-height) + var(--milestone-strip-height)
+    );
     left: 16px;
   }
 }
@@ -5933,6 +6070,336 @@ body.eq-dragging img { pointer-events: none; }
 .progression-row.is-unlocked .progression-status { color: var(--good); }
 
 
+/* ── The Long Watch tab (plan §6) ──────────────────────────────────────── */
+.journal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.journal-header-sub {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  margin-top: -8px;
+  margin-bottom: 4px;
+}
+.journal-section-heading {
+  margin: 8px 0 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+/* The active chapter card. The accent colour is `--view-color` set inline
+   from `view.color` so each chapter carries its own hue; the border-left
+   stripe is the strong read of it, the rest of the surface is one shade
+   below the panel background. */
+.journal-active {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--stroke-subtle);
+  border-left: 4px solid var(--stroke-subtle);
+  border-radius: var(--radius-lg);
+}
+.journal-active.is-locked {
+  opacity: 0.7;
+}
+.journal-active-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.journal-active-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+}
+.journal-active-heading { min-width: 0; flex: 1; }
+.journal-active-number {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.journal-active-name {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--text-0);
+  margin-top: 1px;
+}
+.journal-active-flavour {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--text-1);
+}
+.journal-active-goals {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.journal-goal {
+  /* The Codex-link rows. Touch target floor from §9.C; the 44 px hits the
+     height axis, width is the full panel minus the card padding. */
+  min-height: 44px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--stroke-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  align-items: stretch;
+  transition: border-color var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+.journal-goal:hover { border-color: var(--accent); }
+.journal-goal:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.journal-goal.is-met { border-color: var(--good); }
+.journal-goal-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.journal-goal-label {
+  font-size: var(--text-sm);
+  color: var(--text-0);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.journal-goal-progress {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.journal-goal-fill-track {
+  position: relative;
+  height: 4px;
+  background: var(--surface-3);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.journal-goal-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  transition: width var(--dur-fast) ease;
+}
+.journal-goal-check {
+  position: absolute;
+  /* Anchored to the top-right of the goal row, so the check sits over the
+     fill track without adding a new line. The 14px square is well clear of
+     the fill bar at the same height. */
+  top: 8px;
+  right: 10px;
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--good);
+  pointer-events: none;
+  width: 14px;
+  text-align: center;
+}
+/* Position the check over the goal card without conflicting with the
+   progress number on its right. The card is a button; absolute children
+   need a positioned parent. */
+.journal-goal { position: relative; }
+.journal-active-reward {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--stroke-subtle);
+}
+.journal-active-reward-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--surface-1);
+  border-radius: var(--radius-sm);
+}
+.journal-active-reward-body { min-width: 0; flex: 1; }
+.journal-active-reward-name {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-0);
+}
+.journal-active-reward-desc {
+  font-size: var(--text-xs);
+  color: var(--text-1);
+  margin-top: 1px;
+}
+.journal-active-empty {
+  font-size: var(--text-sm);
+  color: var(--text-1);
+  font-style: italic;
+  padding: 6px 0;
+}
+/* The "next up" teaser. Lives at half prominence because the player's eye
+   is on the active card above it; the accent still reads. */
+.journal-next {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--stroke-subtle);
+  border-left: 4px solid var(--stroke-subtle);
+  border-radius: var(--radius-lg);
+  opacity: 0.92;
+}
+.journal-next-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.journal-next-icon {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+}
+.journal-next-name {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-0);
+  min-width: 0;
+}
+.journal-next-reward {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  margin-left: 36px;
+}
+.journal-completed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.journal-completed-row {
+  display: grid;
+  grid-template-columns: 28px 22px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--stroke-subtle);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+.journal-completed-num {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.journal-completed-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.journal-completed-name {
+  font-size: var(--text-sm);
+  color: var(--text-0);
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.journal-completed-unlock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-1);
+  white-space: nowrap;
+}
+.journal-completed-unlock-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.journal-road {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.journal-road-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--stroke-subtle);
+  border-radius: var(--radius-md);
+  min-width: 0;
+  opacity: 0.85;
+}
+.journal-road-row.is-locked { opacity: 0.55; }
+.journal-road-num {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.journal-road-name {
+  font-size: var(--text-sm);
+  color: var(--text-0);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.journal-road-reward {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.journal-empty {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+
 /* ── Keyboard shortcut reference (plan §4.8) ──────────────────────────── */
 .hud-keybinds-btn {
   width: 24px;
@@ -6554,24 +7021,142 @@ body.eq-dragging img { pointer-events: none; }
   font-weight: 600;
 }
 .contract-live-reward { font-size: var(--text-xs); color: var(--accent); font-weight: 600; }
-.contract-history { margin-top: 10px; }
-.contract-history-heading {
+/* The completed list, behind a disclosure (the header is the whole button).
+   Collapsed by default: forty history rows below three live ones buried the
+   part of the section that is actually actionable. */
+.contract-history {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--stroke-hairline);
+}
+.contract-history-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
   font-size: var(--text-2xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-3);
   font-weight: 700;
-  margin-bottom: 4px;
-}
-.contract-history-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: var(--text-xs);
   color: var(--text-2);
-  padding: 2px 0;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
-.contract-history-wave { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.contract-history-toggle:hover {
+  background: var(--surface-3);
+  color: var(--text-0);
+}
+.contract-history-caret {
+  display: inline-block;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-3);
+  transition: transform var(--dur-fast) ease;
+}
+.contract-history.is-open .contract-history-caret { transform: rotate(90deg); }
+.contract-history-label { flex: 1; text-align: left; }
+.contract-history-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-4);
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.contract-history-body { display: none; }
+.contract-history.is-open .contract-history-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+/* The run's take, above the cards. One payout reads as loose change; the sum
+   of twenty is the figure that says whether contracts are paying. */
+.contract-history-totals {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--stroke-subtle);
+  background: linear-gradient(180deg, rgba(var(--rgb-gold), 0.10), rgba(var(--rgb-surface-3), 0.6));
+}
+.contract-history-totals-label {
+  flex: 1;
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--text-2);
+}
+.contract-history-card {
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid rgba(var(--rgb-nature), 0.55);
+  background: var(--surface-3);
+}
+.contract-history-wave {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.contract-history-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* One chip per reward part, colour-coded by currency — the same four colours
+   the rest of the game uses for gold, RP, AP and a blessing reroll. */
+.contract-reward-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.contract-reward-chip {
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.contract-reward-chip.is-gold {
+  color: var(--accent);
+  background: rgba(var(--rgb-gold), 0.14);
+  border-color: rgba(var(--rgb-gold), 0.32);
+}
+.contract-reward-chip.is-rp {
+  color: var(--fx-frost);
+  background: rgba(var(--rgb-frost), 0.14);
+  border-color: rgba(var(--rgb-frost), 0.32);
+}
+.contract-reward-chip.is-ap {
+  color: var(--fx-arcane);
+  background: rgba(var(--rgb-arcane), 0.14);
+  border-color: rgba(var(--rgb-arcane), 0.32);
+}
+.contract-reward-chip.is-reroll {
+  color: var(--good);
+  background: rgba(var(--rgb-nature), 0.14);
+  border-color: rgba(var(--rgb-nature), 0.32);
+}
 
 /* ── Core picker (gameplay plan §6.2) ───────────────────────────────────── */
 /* Shares the blessing modal's card vocabulary on purpose: a choice should look
@@ -7774,6 +8359,74 @@ body.eq-dragging img { pointer-events: none; }
 .enemy-page-effect-body,
 .enemy-page-pattern-body {
   color: var(--text-1);
+}
+
+/* The Long Watch mastery track (plan §7). One row per chapter that names
+   this enemy with a `kills_of` goal; an empty array hides the whole section.
+   Each row is a 44 px button: chapter name on the left, progress on the
+   right, a ✓ glyph when met. */
+.enemy-page-watch-list {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+}
+
+.enemy-page-watch-row {
+  /* Plan §9.C 44 px touch floor — the row is the only clickable thing, and
+     the click opens the Journal tab (the spec rules out hit-testing the
+     checkmark or any other decorative child). */
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--stroke-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  transition: border-color var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+.enemy-page-watch-row:hover { border-color: var(--accent); }
+.enemy-page-watch-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.enemy-page-watch-row.is-met { border-color: var(--good); }
+
+.enemy-page-watch-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.enemy-page-watch-progress {
+  flex: 0 0 auto;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.enemy-page-watch-check {
+  /* Decorative; the row is the hit target. pointer-events: none keeps the
+     tap on the check reading as a tap on the whole row (plan §7.3). */
+  flex: 0 0 14px;
+  width: 14px;
+  text-align: center;
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--good);
+  pointer-events: none;
 }
 
 .enemy-page-chips {

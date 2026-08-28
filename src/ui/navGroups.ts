@@ -54,6 +54,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: 'Progress',
     icon: 'progression',
     tabs: [
+      { id: 'journal', label: 'Journal' },
       { id: 'progression', label: 'Progression' },
       { id: 'codex', label: 'Codex' },
       { id: 'achievements', label: 'Achievements' },

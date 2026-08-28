@@ -35,6 +35,15 @@ export interface AscensionContext {
    * is constructed after this one.
    */
   achievementMultiplier?: (type: AchievementRewardType) => number;
+  /**
+   * Out-of-tree automation grants (plans/milestones.md §5.6).
+   *
+   * The Watch's `overseer` unlock unlocks `autoBuy` without an AP perk; this
+   * callback lets `Game` route that decision here. Default returns `false`
+   * for every key, so the manager's perk tables remain the only grant path
+   * for any caller that does not pass one.
+   */
+  externalAutomation?: (key: AutomationKey) => boolean;
 }
 
 export class PrestigeManager {
@@ -282,6 +291,10 @@ export class PrestigeManager {
   }
 
   isAutomationUnlocked(key: AutomationKey): boolean {
+    // Watch unlocks are a second, independent grant path
+    // (plans/milestones.md §5.6). Checked first because it is a set lookup
+    // and the perk scan is not.
+    if (this.ctx.externalAutomation?.(key)) return true;
     for (const p of AP_PERKS) {
       if (p.effectType === 'auto_buy' && p.automationKey === key) {
         if (this.getAPLevel(p.id) > 0) return true;

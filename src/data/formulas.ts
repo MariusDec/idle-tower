@@ -49,13 +49,49 @@ export function enemyCountForWave(wave: number): number {
   return 5 + Math.floor((wave - 1) * 1.2);
 }
 
-export function bossCountForWave(wave: number): number {
+/**
+ * How many bosses' worth of encounter a boss wave is — `2 + (tier - 1)`.
+ *
+ * This used to be a literal head-count: a boss wave spawned `2 + tier` bosses,
+ * so wave 100 fielded eleven of them. The phase machine is written for *one*
+ * boss — one bar with pips at 66% and 33%, one bulwark to break inside ten
+ * seconds, one slam telegraph to answer — and eleven copies of it running out
+ * of phase with each other is not eleven times the encounter, it is noise. A
+ * boss wave now spawns **one** boss and an escort of ordinary enemies.
+ *
+ * The number survives as a *weight*, because the pack was carrying the whole
+ * encounter's budget: the lone boss's bar, gold and XP are all multiplied by it
+ * (`bossEncounterHpForWave`, `bossGoldForWave`, `xpPerKill`), so a boss wave
+ * costs the same total damage and pays the same total reward it always did.
+ */
+export function bossEncounterWeight(wave: number): number {
   const tier = Math.max(1, Math.floor(wave / 10));
   return 2 + Math.max(0, tier - 1);
 }
 
+/**
+ * Trash spawned alongside the boss, drawn from the wave's own pool.
+ *
+ * The pack was not only durability — it was *bodies*: several things walking at
+ * the tower at once, which is what makes AoE worth casting and what supplies
+ * the chip damage a boss wave threatens the tower with. One boss on its own
+ * gives back neither, so the escort carries that role instead.
+ *
+ * One trash per boss the pack used to field, which is deliberately conservative:
+ * the escort spawns on the wave's own cadence and `expectedWaveSeconds` pays for
+ * every body that has to come through the portal, so a fatter escort quietly
+ * buys the encounter a longer enrage fuse. At three per boss `npm run sim` put
+ * boss-wave budget use at 52% against the 82% it has always run at — a boss wave
+ * stopped being the wall, which is the one thing it is for. Their HP and gold
+ * both come out of the boss (`bossMaxHpForWave`, `bossGoldForWave`), so the
+ * escort is bodies, not budget.
+ */
+export function bossEscortCountForWave(wave: number): number {
+  return bossEncounterWeight(wave);
+}
+
 export function spawnCountForWave(wave: number): number {
-  if (isBossWave(wave)) return bossCountForWave(wave);
+  if (isBossWave(wave)) return 1 + bossEscortCountForWave(wave);
   return enemyCountForWave(wave);
 }
 
@@ -147,13 +183,20 @@ export const ENRAGE_SPEED_PER_STACK = 0.15;
  * mutator has changed it — a Swarm wave spawns 3x the enemies and legitimately
  * takes 3x as long to spawn them, and must not be punished for that.
  *
- * A boss wave's kill window is per *boss*, not flat: a boss is several times
- * the effective HP of the trash it replaces, so a flat window made every boss
- * wave the only real gate in the game (revamp §10).
+ * A boss wave's kill window is sized off `bossEncounterWeight`, not off its
+ * body count: a boss is several times the effective HP of the trash it
+ * replaces, so a flat window made every boss wave the only real gate in the
+ * game (revamp §10). It is the *weight* rather than the count because the wave
+ * fields one boss and an escort of trash now — counting bodies would hand the
+ * encounter a fresh 28-second window for every piece of trash walking in
+ * behind the boss, and `npm run sim` prices that at boss-wave budget use
+ * falling from ~82% to ~54%. A boss wave has to stay the wall it has always
+ * been; the escort is paid for through the spawn cadence below, like any other
+ * body on any other wave.
  */
 export function expectedWaveSeconds(wave: number, enemyCount = spawnCountForWave(wave)): number {
   const kill = isBossWave(wave)
-    ? TARGET_BOSS_KILL_SECONDS * enemyCount
+    ? TARGET_BOSS_KILL_SECONDS * bossEncounterWeight(wave)
     : TARGET_WAVE_KILL_SECONDS;
   return spawnIntervalForWave(wave) * Math.max(0, enemyCount - 1) + kill;
 }

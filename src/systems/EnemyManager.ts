@@ -6,6 +6,7 @@ import {
   ENEMY_BEHAVIOR,
   ENEMY_DEFS,
   bossEnrageStacksFor,
+  bossGoldForWave,
   bossMaxHpForWave,
   bossPatternForPhase,
   bossPhaseForHpFraction,
@@ -15,7 +16,7 @@ import {
   spawnPoolForWave,
 } from '../data/enemies';
 import {
-  bossCountForWave,
+  bossEncounterWeight,
   enemyDamageForWave,
   enemyHPForWave,
   enemySpeedForWave,
@@ -404,7 +405,9 @@ export class EnemyManager {
     const isElite = overrides.elite === true;
     if (isElite) hp = Math.max(1, Math.floor(hp * ELITE_HP_MULT));
     const speed = enemySpeedForWave(def.baseSpeed, wave) * this.speedMult;
-    const gold = goldDropForWave(def.baseGold, wave);
+    // The lone boss is paid the whole encounter's purse — it is the only thing
+    // on the wave the pack's gold can be attached to now (§3.7).
+    const gold = type === 'boss' ? bossGoldForWave(wave) : goldDropForWave(def.baseGold, wave);
     const damage = enemyDamageForWave(def.baseDamage, wave);
     const fireRate = Math.max(0.2, def.fireRate);
     const enemy: Enemy = {
@@ -440,7 +443,6 @@ export class EnemyManager {
           bossElapsed: 0,
           bossEnrageStacks: 0,
           bossInvulnerable: 0,
-          bossPackSize: Math.max(1, bossCountForWave(wave)),
         }
         : {}),
       // Behavioural types carry their cadence from the moment they spawn, so a
@@ -1131,8 +1133,10 @@ export class EnemyManager {
         e.bossSummonTimer = BOSS_ENCOUNTER.summonInterval;
         return;
       case 'slam':
-        // Staggered across the pack: `bossCountForWave` bosses telegraphing in
-        // lockstep is one enormous unanswerable hit rather than a rhythm.
+        // Randomised rather than fixed: the first telegraph of a phase should
+        // not land on a beat the player can set a metronome to. It used to be
+        // staggered across the pack as well, back when a wave fielded several
+        // bosses and lockstep telegraphs were one unanswerable hit.
         e.bossSlamTimer = BOSS_ENCOUNTER.slamInterval * (0.35 + Math.random() * 0.5);
         return;
       case 'siphon':
@@ -1226,12 +1230,19 @@ export class EnemyManager {
       // silent per substep — the drain is drawn from state, not from six events
       // a frame.
       case 'siphon': {
-        const drained = Math.min(BOSS_ENCOUNTER.siphonManaPerSecond * dt, this.resources.mana);
+        // The drain scales with the encounter's weight for the same reason the
+        // bar does: the pack used to siphon `2 + tier` times over, and the heal
+        // is priced as a fraction of a bar that is now that much bigger. Leave
+        // the rate at the per-boss figure and a deep-wave boss would heal the
+        // pack's worth of HP off a fraction of the pack's mana.
+        const rate = BOSS_ENCOUNTER.siphonManaPerSecond
+          * bossEncounterWeight(e.spawnWave ?? this.currentWave);
+        const drained = Math.min(rate * dt, this.resources.mana);
         if (drained > 0) {
           this.resources.spendMana(drained);
           // Seconds' worth of *full* drain this substep actually got, so an
           // empty mana pool feeds the boss nothing at all.
-          const fed = drained / BOSS_ENCOUNTER.siphonManaPerSecond;
+          const fed = drained / rate;
           e.hp = Math.min(e.maxHp, e.hp + fed * e.maxHp * BOSS_ENCOUNTER.siphonHealFractionPerSecond);
         }
         return 'advance';
@@ -1311,16 +1322,15 @@ export class EnemyManager {
   /**
    * The boss the bar should track.
    *
-   * A boss wave spawns `2 + tier` of them, so the bar has to pick one, and the
-   * rule is "whichever one is asking the player for something right now":
+   * A boss wave fields exactly one boss, so in practice this is a lookup — but
+   * the selection rule is kept, because nothing in the encounter guarantees it:
+   * a mutator, a manual spawn or a future multi-boss tier would all put a
+   * second one on the field, and a bar that silently tracked the first entry in
+   * the array is how a slam telegraph goes unseen.
    *
-   * 1. A boss mid-slam-telegraph, soonest to land first. This is the only thing
-   *    in the encounter with a deadline, and it was the whole point of §3.5 —
-   *    an eight-boss pack where the countdown belongs to a boss the bar is not
-   *    watching is a telegraph the player never sees.
-   * 2. Otherwise the one closest to dying: the next to phase, and in practice
-   *    the most stable choice, since a focused target stays lowest until it
-   *    dies.
+   * 1. A boss mid-slam-telegraph, soonest to land first — the only thing in the
+   *    encounter with a deadline.
+   * 2. Otherwise the one closest to dying: the next to phase.
    */
   leadBoss(): Enemy | null {
     let slamming: Enemy | null = null;

@@ -18,11 +18,18 @@ import { EnemyManager } from '../src/systems/EnemyManager';
 import { ResourceManager } from '../src/systems/ResourceManager';
 import { PrestigeManager } from '../src/systems/PrestigeManager';
 import { BlessingManager } from '../src/systems/BlessingManager';
+import { KILL_XP_WEIGHT, killXpWaveScale, xpPerKill } from '../src/data/xpTables';
 import {
+  BOSS_BAR_MIN_SHARE,
   BOSS_ENCOUNTER,
   BOSS_PATTERNS,
+  bossEncounterHpForWave,
   bossEncounterOutcome,
   bossEnrageStacksFor,
+  bossEscortGoldForWave,
+  bossEscortHpForWave,
+  bossGoldForWave,
+  ENEMY_DEFS,
   bossMaxHpForWave,
   bossNameForWave,
   bossPatternForPhase,
@@ -32,7 +39,7 @@ import {
   bossSummonCountForWave,
   isTargetable,
 } from '../src/data/enemies';
-import { bossHPForWave, bossCountForWave } from '../src/data/formulas';
+import { bossEncounterWeight, bossHPForWave, goldDropForWave } from '../src/data/formulas';
 import { RARITY_ORDER, rollDrop, upgradeRarity } from '../src/data/equipment';
 import type { BossPattern, Enemy, GameStats, PrestigeState, ResourceState } from '../src/types';
 
@@ -139,21 +146,20 @@ describe('boss patterns (plan §3.2)', () => {
     expect(bossNameForWave(20)).not.toContain('Warden');
   });
 
-  it('divides a summon batch across the boss pack rather than per boss', () => {
-    // The plan's "4 adds" is the figure for a lone boss; a wave fields
-    // `2 + tier` of them and the batch is shared out, so the per-boss figure
-    // falls as the pack grows and never rises above the plan's number.
-    let previous = Infinity;
+  it('summons the batch the pack used to summon between them', () => {
+    // The batch used to be divided across `2 + tier` bosses; one boss summons
+    // the lot, so the figure never falls below the plan's four and grows with
+    // the encounter once the encounter is worth more than four bosses.
+    let previous = 0;
     for (const wave of [10, 40, 100]) {
-      const perBoss = bossSummonCountForWave(wave);
-      expect(perBoss, `wave ${wave}`).toBeGreaterThanOrEqual(1);
-      expect(perBoss, `wave ${wave}`).toBeLessThanOrEqual(BOSS_ENCOUNTER.summonCount);
-      expect(perBoss, `wave ${wave}`).toBeLessThanOrEqual(previous);
-      previous = perBoss;
+      const batch = bossSummonCountForWave(wave);
+      expect(batch, `wave ${wave}`).toBeGreaterThanOrEqual(BOSS_ENCOUNTER.summonCount);
+      expect(batch, `wave ${wave}`).toBeGreaterThanOrEqual(previous);
+      expect(batch, `wave ${wave}`).toBeLessThanOrEqual(BOSS_ENCOUNTER.summonMaxAlive);
+      previous = batch;
     }
-    // A deep wave's pack is bigger than the batch, so each boss adds one.
-    expect(bossCountForWave(100)).toBeGreaterThan(BOSS_ENCOUNTER.summonCount);
-    expect(bossSummonCountForWave(100)).toBe(1);
+    expect(bossSummonCountForWave(10)).toBe(BOSS_ENCOUNTER.summonCount);
+    expect(bossSummonCountForWave(100)).toBe(bossEncounterWeight(100));
   });
 });
 
@@ -162,8 +168,39 @@ describe('boss patterns (plan §3.2)', () => {
 describe('boss durability budget (plan §3.7)', () => {
   it('keeps a boss wave costing the same total damage it did before phases', () => {
     for (const wave of [10, 20, 40, 70, 130]) {
-      const effective = bossMaxHpForWave(wave) * bossPhaseHpFactor(wave);
-      expect(effective, `wave ${wave}`).toBeCloseTo(bossHPForWave(120, wave), 6);
+      // The encounter is the unit: the bar the boss spawns with, plus what its
+      // phase machine holds outside that bar, plus the escort carved out of it,
+      // is the `2 + tier` bosses the wave used to field.
+      const effective = bossMaxHpForWave(wave) * bossPhaseHpFactor(wave)
+        + Math.min(bossEncounterHpForWave(wave) * (1 - BOSS_BAR_MIN_SHARE), bossEscortHpForWave(wave));
+      expect(effective, `wave ${wave}`)
+        .toBeCloseTo(bossHPForWave(120, wave) * bossEncounterWeight(wave), 6);
+    }
+  });
+
+  it('pays the encounter purse the pack used to pay, boss and escort together', () => {
+    for (const wave of [10, 20, 40, 70, 130]) {
+      const purse = goldDropForWave(ENEMY_DEFS.boss.baseGold, wave) * bossEncounterWeight(wave);
+      expect(bossGoldForWave(wave) + bossEscortGoldForWave(wave), `wave ${wave}`)
+        .toBeCloseTo(purse, 6);
+    }
+  });
+
+  it('pays the encounter XP the pack used to pay', () => {
+    for (const wave of [10, 40, 100]) {
+      // One kill worth `2 + tier` bosses, rather than `2 + tier` kills.
+      expect(xpPerKill('boss', wave), `wave ${wave}`).toBeCloseTo(
+        Math.round(KILL_XP_WEIGHT.boss * killXpWaveScale(wave) * bossEncounterWeight(wave)),
+        6,
+      );
+    }
+  });
+
+  it('never lets the escort eat more than a fifth of the encounter', () => {
+    for (const wave of [10, 40, 100, 200]) {
+      const bar = bossMaxHpForWave(wave) * bossPhaseHpFactor(wave);
+      expect(bar / bossEncounterHpForWave(wave), `wave ${wave}`)
+        .toBeGreaterThanOrEqual(BOSS_BAR_MIN_SHARE - 1e-9);
     }
   });
 
@@ -488,7 +525,10 @@ describe('siphon (plan §3.2)', () => {
 
     h.run(2);
 
-    expect(h.mana()).toBeCloseTo(500 - BOSS_ENCOUNTER.siphonManaPerSecond * 2, 3);
+    // The drain is the per-boss rate times the encounter's weight: the lone
+    // boss siphons what the wave's pack used to siphon between them.
+    const rate = BOSS_ENCOUNTER.siphonManaPerSecond * bossEncounterWeight(70);
+    expect(h.mana()).toBeCloseTo(500 - rate * 2, 3);
     expect(boss.hp).toBeCloseTo(
       hp + 2 * boss.maxHp * BOSS_ENCOUNTER.siphonHealFractionPerSecond,
       3,

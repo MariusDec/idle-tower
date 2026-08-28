@@ -597,6 +597,20 @@ export class HUD {
   }
 
   /**
+   * Container for the Long Watch chip (plan §6.5). Sits one row above the
+   * milestone strip — same rationale as the milestone slot for living next to
+   * the HUD root: the HUD bar's layout has nothing to say about a corner
+   * overlay, and the JS that sizes the offset reads `--milestone-strip-height`
+   * so the chip always clears the strip regardless of breakpoint.
+   */
+  renderJournalStripSlot(): HTMLElement {
+    const slot = document.createElement('div');
+    slot.className = 'journal-strip-slot';
+    document.body.appendChild(slot);
+    return slot;
+  }
+
+  /**
    * Container for the contract tracker (gameplay plan §5.3).
    *
    * Owns the bottom-left corner; the milestone strip's `bottom` is offset by

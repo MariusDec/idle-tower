@@ -8,6 +8,7 @@ import {
   describeBlessing,
   type BlessingDef,
 } from '../data/blessings';
+import { rewardParts, type RewardPart } from '../data/contracts';
 import { formatInt } from '../utils/bigNumber';
 import { setText, setStyle, toggleClass } from '../utils/dom';
 import { renderIcon } from './Icon';
@@ -31,8 +32,21 @@ export interface ProgressionContractInfo {
     fill: number;
     reward: string;
   }>;
-  /** Def ids completed this run, oldest first. */
-  history: ReadonlyArray<{ name: string; wave: number }>;
+  /**
+   * Completions this run, oldest first, with what each one paid.
+   *
+   * The payout is carried as numbers rather than a formatted blurb so the
+   * history can both chip each part and total the column — a run's contract
+   * gold is the figure the section exists to make visible.
+   */
+  history: ReadonlyArray<{
+    name: string;
+    wave: number;
+    gold: number;
+    rerolls: number;
+    rp: number;
+    apBonusPct: number;
+  }>;
   completed: number;
   /** Contract AP bonus banked this run, as a fraction. */
   apBonusPct: number;
@@ -75,7 +89,20 @@ export class ProgressionPanel {
   private contractSummaryEl: HTMLElement | null = null;
   private contractListEl: HTMLElement | null = null;
   private contractHistoryEl: HTMLElement | null = null;
+  private contractHistoryToggleEl: HTMLElement | null = null;
+  private contractHistoryCountEl: HTMLElement | null = null;
+  private contractHistoryBodyEl: HTMLElement | null = null;
   private contractSignature = '';
+  /**
+   * Whether the completed list is expanded. Collapsed by default — the run's
+   * *live* contracts are what the section is for, and by wave 60 the history
+   * is forty rows that push everything below it off the screen.
+   *
+   * Deliberately **not** cleared by `unmount`: switching tabs and coming back
+   * remounts the panel, and a disclosure that forgets it was open is a worse
+   * bug than the one this field costs.
+   */
+  private contractHistoryOpen = false;
 
   constructor(deps: ProgressionPanelDeps) {
     this.deps = deps;
@@ -102,6 +129,9 @@ export class ProgressionPanel {
     this.contractSummaryEl = null;
     this.contractListEl = null;
     this.contractHistoryEl = null;
+    this.contractHistoryToggleEl = null;
+    this.contractHistoryCountEl = null;
+    this.contractHistoryBodyEl = null;
     this.contractSignature = '';
   }
 
@@ -284,12 +314,63 @@ export class ProgressionPanel {
     this.contractListEl = list;
     section.appendChild(list);
 
+    section.appendChild(this.renderContractHistory());
+
+    return section;
+  }
+
+  /**
+   * The completed list, behind a disclosure.
+   *
+   * The header and the body are built once and only their *contents* are
+   * rebuilt, so toggling the disclosure never has to wait for the next update
+   * tick and the open state cannot be lost to a signature-driven redraw.
+   */
+  private renderContractHistory(): HTMLElement {
     const history = document.createElement('div');
     history.className = 'contract-history';
     this.contractHistoryEl = history;
-    section.appendChild(history);
 
-    return section;
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'contract-history-toggle';
+    toggle.setAttribute('aria-expanded', String(this.contractHistoryOpen));
+
+    const caret = document.createElement('span');
+    caret.className = 'contract-history-caret';
+    caret.textContent = '▸';
+    toggle.appendChild(caret);
+
+    const label = document.createElement('span');
+    label.className = 'contract-history-label';
+    label.textContent = 'Completed';
+    toggle.appendChild(label);
+
+    const count = document.createElement('span');
+    count.className = 'contract-history-count';
+    this.contractHistoryCountEl = count;
+    toggle.appendChild(count);
+
+    toggle.addEventListener('click', () => {
+      this.contractHistoryOpen = !this.contractHistoryOpen;
+      this.applyHistoryOpen();
+    });
+    this.contractHistoryToggleEl = toggle;
+    history.appendChild(toggle);
+
+    const body = document.createElement('div');
+    body.className = 'contract-history-body';
+    this.contractHistoryBodyEl = body;
+    history.appendChild(body);
+
+    this.applyHistoryOpen();
+    return history;
+  }
+
+  private applyHistoryOpen(): void {
+    if (!this.contractHistoryEl || !this.contractHistoryToggleEl) return;
+    toggleClass(this.contractHistoryEl, 'is-open', this.contractHistoryOpen);
+    this.contractHistoryToggleEl.setAttribute('aria-expanded', String(this.contractHistoryOpen));
   }
 
   private updateContracts(): void {
@@ -349,32 +430,91 @@ export class ProgressionPanel {
       this.contractListEl.appendChild(row);
     }
 
-    this.contractHistoryEl.innerHTML = '';
+    this.renderHistoryContents(info);
+  }
+
+  /**
+   * Fill the disclosure: a totals line, then one card per completion.
+   *
+   * Newest first — the tail of the ring buffer is the interesting end, and it
+   * is the one the player just watched flourish out of the corner tracker.
+   */
+  private renderHistoryContents(info: ProgressionContractInfo): void {
+    const body = this.contractHistoryBodyEl;
+    if (!body) return;
+    if (this.contractHistoryCountEl) {
+      setText(this.contractHistoryCountEl, formatInt(info.history.length));
+    }
+    body.innerHTML = '';
     if (info.history.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'blessing-held-none';
       empty.textContent = 'No contracts completed yet this run.';
-      this.contractHistoryEl.appendChild(empty);
+      body.appendChild(empty);
       return;
     }
-    const heading = document.createElement('div');
-    heading.className = 'contract-history-heading';
-    heading.textContent = 'Completed';
-    this.contractHistoryEl.appendChild(heading);
-    // Most recent first — the tail of the ring buffer is the interesting end.
+
+    // The run's take, summed from the same numbers the cards show. Gold is the
+    // reason the totals row exists: one payout reads as small, and twenty of
+    // them are a meaningful share of a run's income.
+    const totals = { gold: 0, rerolls: 0, rp: 0, apBonusPct: 0 };
+    for (const entry of info.history) {
+      totals.gold += entry.gold;
+      totals.rerolls += entry.rerolls;
+      totals.rp += entry.rp;
+      totals.apBonusPct += entry.apBonusPct;
+    }
+    const totalParts = rewardParts(totals);
+    if (totalParts.length > 0) {
+      const row = document.createElement('div');
+      row.className = 'contract-history-totals';
+      const label = document.createElement('span');
+      label.className = 'contract-history-totals-label';
+      label.textContent = 'Earned this run';
+      row.appendChild(label);
+      row.appendChild(this.renderRewardChips(totalParts));
+      body.appendChild(row);
+    }
+
     for (let i = info.history.length - 1; i >= 0; i--) {
       const entry = info.history[i];
-      const row = document.createElement('div');
-      row.className = 'contract-history-row';
-      const name = document.createElement('span');
-      name.textContent = entry.name;
-      row.appendChild(name);
-      const wave = document.createElement('span');
+      const card = document.createElement('div');
+      card.className = 'contract-history-card';
+
+      const wave = document.createElement('div');
       wave.className = 'contract-history-wave';
-      wave.textContent = entry.wave > 0 ? `Wave ${formatInt(entry.wave)}` : '';
-      row.appendChild(wave);
-      this.contractHistoryEl.appendChild(row);
+      // A pre-`log` save restores its completions without a wave; the slot
+      // keeps its width so the column of names stays aligned either way.
+      wave.textContent = entry.wave > 0 ? `W${formatInt(entry.wave)}` : '—';
+      card.appendChild(wave);
+
+      const name = document.createElement('div');
+      name.className = 'contract-history-name';
+      name.textContent = entry.name;
+      card.appendChild(name);
+
+      const parts = rewardParts(entry);
+      if (parts.length > 0) {
+        card.appendChild(this.renderRewardChips(parts));
+      } else {
+        const none = document.createElement('div');
+        none.className = 'contract-reward-chips';
+        card.appendChild(none);
+      }
+      body.appendChild(card);
     }
+  }
+
+  private renderRewardChips(parts: ReadonlyArray<RewardPart>): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'contract-reward-chips';
+    for (const part of parts) {
+      const chip = document.createElement('span');
+      chip.className = `contract-reward-chip is-${part.kind}`;
+      chip.textContent = part.text;
+      wrap.appendChild(chip);
+    }
+    return wrap;
   }
 
   private renderRow(entry: MilestoneDef): HTMLElement {

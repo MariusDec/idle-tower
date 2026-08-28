@@ -14,6 +14,7 @@ import { ContractManager } from '../src/systems/ContractManager';
 import { PacingManager } from '../src/systems/PacingManager';
 import type { GameState } from '../src/types';
 import { TOWER_LEVEL_CAP, TOWER_XP_TABLE, talentPointsAtLevel } from '../src/data/xpTables';
+import { MAX_RISK_CEILING } from '../src/data/pacing';
 
 const STORAGE_KEY = 'the-tower-save';
 
@@ -88,6 +89,10 @@ function makeState(): GameState {
         { defId: 'ct_arsenal', uid: 6, target: 30, progress: 11, drawnAtWave: 17 },
       ],
       completed: ['ct_first_cull', 'ct_press_on'],
+      log: [
+        { defId: 'ct_first_cull', wave: 5, gold: 940, rerolls: 0, rp: 0, apBonusPct: 0 },
+        { defId: 'ct_press_on', wave: 11, gold: 0, rerolls: 0, rp: 1, apBonusPct: 0.03 },
+      ],
       completedCount: 2,
       apBonusPct: 0.06,
       uidSeq: 6,
@@ -117,6 +122,24 @@ describe('save round-trip', () => {
     });
     expect(loaded!.contracts?.apBonusPct).toBe(0.06);
     expect(loaded!.contracts?.completed).toEqual(['ct_first_cull', 'ct_press_on']);
+    // The completion log. `snapshotContracts` copies field by field on purpose,
+    // so a field added to `ContractRunState` and nowhere else is dropped
+    // silently — which is exactly what happened to this one first time round.
+    expect(loaded!.contracts?.log).toEqual([
+      { defId: 'ct_first_cull', wave: 5, gold: 940, rerolls: 0, rp: 0, apBonusPct: 0 },
+      { defId: 'ct_press_on', wave: 11, gold: 0, rerolls: 0, rp: 1, apBonusPct: 0.03 },
+    ]);
+  });
+
+  it('omits the completion log entirely when the run has none', () => {
+    const mgr = new SaveManager(stubBus);
+    const state = makeState();
+    delete (state.contracts as { log?: unknown }).log;
+    expect(mgr.save(state)).toBe(true);
+    const loaded = mgr.load();
+    // Absent, not `[]`: `ContractManager.restore` reads a missing `log` as
+    // "this save predates the field" and falls back to `completed`.
+    expect(loaded!.contracts).not.toHaveProperty('log');
   });
 
   it('discards a corrupt save rather than loading garbage', () => {
@@ -167,7 +190,7 @@ describe('migration ladder', () => {
   });
 
   it('accepts every version the ladder claims to handle', () => {
-    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
+    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]) {
       storage.clear();
       storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version }));
       const loaded = new SaveManager(stubBus).load();
@@ -184,7 +207,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(18);
+    expect(loaded.version).toBe(19);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -208,7 +231,7 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(18);
+    expect(loaded.version).toBe(19);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);
@@ -223,7 +246,7 @@ describe('migration ladder', () => {
   it('seeds a risk-0 pacing block for a v13 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(18);
+    expect(loaded.version).toBe(19);
     expect(loaded.pacing).toEqual({
       risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
     });
@@ -256,7 +279,7 @@ describe('migration ladder', () => {
   it('seeds an empty contract run for a v11 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(18);
+    expect(loaded.version).toBe(19);
     expect(loaded.contracts).toEqual({
       active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
     });
@@ -276,7 +299,7 @@ describe('migration ladder', () => {
     };
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11, contracts }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(18);
+    expect(loaded.version).toBe(19);
     expect(loaded.contracts).toEqual(contracts);
 
     // And the real manager takes that state back without losing a slot.
@@ -305,7 +328,7 @@ describe('migration ladder', () => {
       prestige: { autoCastEnabled: { multishot: false } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(18);
+    expect(loaded.version).toBe(19);
     expect(loaded.abilities.rocket_barrage).toEqual({
       level: 3, xp: 0, cooldown: 0, active: false, activeTimer: 0,
     });
@@ -325,7 +348,7 @@ describe('migration ladder', () => {
       talents: { allocated: { power_core: 2 } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(18);
+    expect(loaded.version).toBe(19);
     expect(loaded.towerXp.level).toBe(4); // 3 + 1 (0-based -> 1-based)
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[4]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(4));
@@ -340,7 +363,7 @@ describe('migration ladder', () => {
       talents: { allocated: {} },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(18);
+    expect(loaded.version).toBe(19);
     expect(loaded.towerXp.level).toBe(TOWER_LEVEL_CAP);
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[TOWER_LEVEL_CAP]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(TOWER_LEVEL_CAP));
@@ -369,7 +392,7 @@ describe('migration ladder', () => {
       passiveAbilities: { marksmanship: { level: 5, xp: 200, unlocked: true } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(18);
+    expect(loaded.version).toBe(19);
     expect(loaded.passiveAbilities).toEqual({});
   });
 
@@ -434,5 +457,148 @@ describe('write cadence (plan §5.7)', () => {
     let writes = 0;
     for (let i = 0; i < 60 * 6; i++) mgr.tick(1 / 60, state, () => (writes++, true));
     expect(writes).toBe(0);
+  });
+});
+
+/**
+ * v19 watch block (plan §8.3).
+ *
+ * The Long Watch lands in v19. A v18 save has no `watch` key and gets the
+ * default seeded by migration; a v19 save with a malformed `watch` is
+ * repaired in place by `normalizeWatch` rather than rejected.
+ */
+describe('v19 watch block', () => {
+  /**
+   * The same minimal save the `migration ladder` block uses, inlined here
+   * because the original is scoped to its describe block.
+   */
+  const minimalSave = {
+    version: 2,
+    savedAt: Date.now(),
+    tower: { hp: 50, maxHp: 100 },
+    resources: { gold: 500, lifetimeGold: 500, mana: 10, maxMana: 100, manaRegen: 1 },
+    upgrades: { damage: 5 },
+    research: {},
+    abilities: {},
+    prestige: {},
+    wave: { number: 12 },
+    stats: { enemiesKilled: 90 },
+  };
+
+  // 1. v18 blob loads to v19 with a well-formed watch block.
+  it('migrates a v18 save to v19 and seeds a well-formed watch block', () => {
+    storage.setItem(STORAGE_KEY, JSON.stringify({ ...minimalSave, version: 18 }));
+    const loaded = new SaveManager(stubBus).load();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(19);
+    expect(typeof loaded!.watch).toBe('object');
+    expect(loaded!.watch).not.toBeNull();
+    expect(Array.isArray(loaded!.watch!.counters.riskWaves)).toBe(true);
+    expect(loaded!.watch!.counters.riskWaves).toHaveLength(MAX_RISK_CEILING + 1);
+    // The rest of the block is also seeded cleanly.
+    expect(loaded!.watch!.completed).toEqual([]);
+    expect(loaded!.watch!.counters.flawlessWaves).toBe(0);
+  });
+
+  // 2. Malformed watch is repaired, not rejected.
+  it('repairs a malformed watch block rather than rejecting the save', () => {
+    // Construct a v19 blob whose watch is broken in three places at once:
+    //   - `completed` is missing entirely (normalizeWatch resets to [])
+    //   - `counters.killsByType` is missing (resets to {})
+    //   - `counters.flawlessWaves` is a string (resets to 0)
+    //   - `counters.riskWaves` has only three entries (resized)
+    const malformed = {
+      ...minimalSave,
+      version: 19,
+      watch: {
+        counters: {
+          flawlessWaves: 'not a number',
+          swiftBosses: NaN,
+          riskWaves: [1, 2, 3],
+        },
+      },
+    };
+    storage.setItem(STORAGE_KEY, JSON.stringify(malformed));
+    const loaded = new SaveManager(stubBus).load();
+    expect(loaded, 'save should load — normalizeWatch repairs, does not reject').not.toBeNull();
+    expect(loaded!.version).toBe(19);
+
+    const w = loaded!.watch!;
+    expect(Array.isArray(w.completed)).toBe(true);
+    expect(w.completed).toEqual([]);
+    expect(typeof w.counters).toBe('object');
+    expect(typeof w.counters.killsByType).toBe('object');
+    expect(w.counters.killsByType).toEqual({});
+    expect(typeof w.counters.flawlessWaves).toBe('number');
+    expect(Number.isFinite(w.counters.flawlessWaves)).toBe(true);
+    expect(w.counters.flawlessWaves).toBe(0);
+    expect(w.counters.swiftBosses).toBe(0);
+    expect(w.counters.riskWaves).toHaveLength(MAX_RISK_CEILING + 1);
+    // And the first three slots were preserved.
+    expect(w.counters.riskWaves[0]).toBe(1);
+    expect(w.counters.riskWaves[1]).toBe(2);
+    expect(w.counters.riskWaves[2]).toBe(3);
+  });
+
+  // 3. Round trip preserves completed and every counter.
+  it('round-trips completed and every counter through save and load', () => {
+    const state = {
+      ...makeState(),
+      watch: {
+        completed: ['wc_first_watch'],
+        counters: {
+          killsByType: { tank: 42 },
+          flawlessWaves: 7,
+          swiftBosses: 3,
+          contractsDone: 11,
+          blessingPicks: 19,
+          mutatorWaves: 5,
+          riskWaves: [1, 2, 3, 4, 5, 6, 7, 8],
+        },
+      },
+    } as unknown as GameState;
+    const mgr = new SaveManager(stubBus);
+    expect(mgr.save(state)).toBe(true);
+    const loaded = mgr.load();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.watch!.completed).toEqual(['wc_first_watch']);
+    expect(loaded!.watch!.counters.killsByType).toEqual({ tank: 42 });
+    expect(loaded!.watch!.counters.flawlessWaves).toBe(7);
+    expect(loaded!.watch!.counters.swiftBosses).toBe(3);
+    expect(loaded!.watch!.counters.contractsDone).toBe(11);
+    expect(loaded!.watch!.counters.blessingPicks).toBe(19);
+    expect(loaded!.watch!.counters.mutatorWaves).toBe(5);
+    expect(loaded!.watch!.counters.riskWaves).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  // 4. The snapshot does not alias: mutating the live state after save does
+  //    not change what was written.
+  it('snapshots the watch block by value, not by reference', () => {
+    const state = {
+      ...makeState(),
+      watch: {
+        completed: [],
+        counters: {
+          killsByType: { tank: 42 },
+          flawlessWaves: 0,
+          swiftBosses: 0,
+          contractsDone: 0,
+          blessingPicks: 0,
+          mutatorWaves: 0,
+          riskWaves: [0, 0, 0, 0, 0, 0, 0, 0],
+        },
+      },
+    } as unknown as GameState;
+    const mgr = new SaveManager(stubBus);
+    expect(mgr.save(state)).toBe(true);
+
+    // Now mutate the live state — this must not reach the saved blob.
+    state.watch!.counters.killsByType.tank = 9999;
+    state.watch!.counters.riskWaves[0] = 9999;
+
+    const loaded = mgr.load();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.watch!.counters.killsByType.tank).toBe(42);
+    expect(loaded!.watch!.counters.riskWaves[0]).toBe(0);
   });
 });

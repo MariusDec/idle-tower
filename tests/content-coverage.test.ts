@@ -817,6 +817,7 @@ describe('nav groups', () => {
     settings: true,
     talents: true,
     equipment: true,
+    journal: true,
   };
 
   /**

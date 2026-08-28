@@ -19,6 +19,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/loot-system.md](docs/loot-system.md) | Loot orbs, the charged shot, click-placed abilities, the input routing order, and the idle-parity measurement |
 | [docs/blessing-system.md](docs/blessing-system.md) | The in-run roguelite draft: 30-card pool, cadence, rerolls, behaviors, idle safety, balance |
 | [docs/contract-system.md](docs/contract-system.md) | Three rolling run-scoped objectives: wave-band tiering, the goal-kind consumer map, rewards and the +50% AP cap, the tracker |
+| [docs/watch-system.md](docs/watch-system.md) | The Long Watch chapter campaign — twelve ordered chapters, one active at a time, sixteen objective kinds, twelve content unlocks. |
 | [docs/core-system.md](docs/core-system.md) | Five tower cores: the run's identity, AP unlocks vs run-scoped selection, shot behaviors, the picker, blessing preference, the ±15% balance table |
 | [docs/projectile-system.md](docs/projectile-system.md) | Projectile firing, shot variants, swept collision, piercing, lifetime, damage multipliers |
 | [docs/resource-system.md](docs/resource-system.md) | Gold & mana economy, income sources, spending, passive income |
@@ -41,7 +42,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
 | [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, progression tab, milestone table |
 | [docs/run-summary.md](docs/run-summary.md) | Post-run debrief modal, per-run history ring buffer, stats tab |
-| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v16) and the migration ladder, debounced auto-save, offline progress |
+| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v19) and the migration ladder, debounced auto-save, offline progress |
 
 ## Content at a glance
 
@@ -65,6 +66,8 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Loot orb kinds | 3 | `src/data/loot.ts` |
 | Contracts | 28 | `src/data/contracts.ts` |
 | Contract goal kinds | 10 | `src/data/contracts.ts` |
+| Watch chapters | 12 | `src/data/watch.ts` |
+| Watch unlocks | 12 | `src/data/watch.ts` |
 | Placeable abilities | 3 | `src/data/abilities.ts` |
 | Equipment slots / rarities | 8 / 5 | `src/data/equipment.ts` |
 | Combo tiers | 4 | `src/data/pacing.ts` |
@@ -72,7 +75,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Enemy threat classes | 3 | `src/data/pacing.ts` |
 | Icons (distinct artwork) | 197 | `public/icons/sprite.svg` |
 | Icon references across tables | 249 | `scripts/fetch-icons.mjs` |
-| Save version | 16 | `src/systems/SaveManager.ts` |
+| Save version | 19 | `src/systems/SaveManager.ts` |
 
 ## Commands
 

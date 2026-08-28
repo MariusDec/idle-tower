@@ -1,6 +1,7 @@
 import {
   COMBO_WINDOW_SECONDS,
   EARLY_CALL_GOLD_PER_SECOND,
+  MAX_RISK,
   MOMENTUM_CAP,
   clampRisk,
   comboBonus,
@@ -51,10 +52,24 @@ export class PacingManager {
   private momentumGainMult = 0;
   private momentumCapBonus = 0;
 
+  /**
+   * The dial's current ceiling. `Game` raises it with Watch unlocks
+   * (`riskbearer` → 6, `deep_watch` → 7 — plans/milestones.md §5.5).
+   *
+   * Default reproduces today's behaviour: `MAX_RISK`. The default is what keeps
+   * the simulator byte-identical to `HEAD` (rule §0.5): `sim/model.ts` builds
+   * a fresh `PacingManager` with no provider, and never sees a wider dial.
+   */
+  private maxRisk: () => number = () => MAX_RISK;
+
+  setMaxRiskProvider(fn: () => number): void {
+    this.maxRisk = fn;
+  }
+
   // ── risk ────────────────────────────────────────────────────────────────
 
   setRisk(level: number): number {
-    this.risk = clampRisk(level);
+    this.risk = clampRisk(level, this.maxRisk());
     return this.risk;
   }
 
@@ -223,8 +238,12 @@ export class PacingManager {
   }
 
   restore(state: PacingState | undefined | null): void {
-    this.risk = clampRisk(state?.risk ?? 0);
-    this.committedRisk = clampRisk(state?.committedRisk ?? this.risk);
+    // Route through the same ceiling `setRisk` uses, so a save written at
+    // risk 7 does not survive a Watch unlock being lost (plans/milestones.md
+    // §5.5: the same ceiling is applied wherever a saved risk level is read).
+    const ceiling = this.maxRisk();
+    this.risk = clampRisk(state?.risk ?? 0, ceiling);
+    this.committedRisk = clampRisk(state?.committedRisk ?? this.risk, ceiling);
     this.momentum = Math.max(0, Math.min(MOMENTUM_CAP, state?.momentum ?? 0));
     this.momentumWaves = Math.max(0, Math.floor(state?.momentumWaves ?? 0));
     this.comboBest = Math.max(0, Math.floor(state?.comboBest ?? 0));

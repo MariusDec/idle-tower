@@ -2,6 +2,10 @@
 
 **Files:** `src/data/milestones.ts`, `src/ui/MilestoneStrip.ts`, wired through `src/ui/UIManager.ts` and `src/ui/HUD.ts`.
 
+> The strip previews *unlocks by wave*; the Watch (see
+> [watch-system.md](watch-system.md)) is the *campaign*. They are different
+> things and both live in the Progress group.
+
 ## Why
 
 Players had no way to see what's coming. Mana unlock at wave 10 was invisible until it landed, ability unlocks at wave 18/22/28/30/40/45/50 felt arbitrary, and Ascension at wave 20 was a sudden prompt. The strip solves all three at once.

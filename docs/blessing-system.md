@@ -213,6 +213,27 @@ their enemy dies.
 **10**; `migrateV9toV10` seeds an empty run, which is all a pre-v10 save needs
 because the change is purely additive.
 
+### The draft size, free rerolls, and Heirloom carry-over
+
+Three Long Watch chapters (`docs/watch-system.md`) inject overrides into the
+draft via `BlessingDraftOverrides`:
+
+- **`wide_draft`** (chapter 4) raises the offer from the default
+  `BLESSING_OFFER_SIZE` (3) to **4 cards**. `BlessingManager.rollOffer`
+  reads the size from the injected `offerSize()` dep rather than the
+  constant directly.
+- **`quartermaster`** (chapter 2) adds a **+1 free reroll** on every
+  draft. `BlessingManager.openDraft` reads the free count from the
+  injected `freeRerolls()` dep rather than `BLESSING_FREE_REROLLS`
+  directly.
+- **`heirloom`** (chapter 9) passes `{ carryBest: true }` to
+  `BlessingManager.resetRun(...)` from `Game.applySavedStateReset`, so one
+  stack of the **highest-rarity blessing** the run ended with survives
+  the ascension that ends the run. The blessing rides into the next
+  `blessings.held` map rather than being cleared, and the carried stack
+  is the one the draft would have offered last, picked at the highest
+  rarity it reached.
+
 The *offer* is not persisted. `BlessingManager.restore` drops any draft that was
 open when the save was written — rolling a fresh one on load would hand the
 player a different choice than the one they were looking at.

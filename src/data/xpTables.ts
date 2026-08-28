@@ -1,5 +1,5 @@
 import type { EnemyType } from '../types';
-import { enemyCountForWave } from './formulas';
+import { bossEncounterWeight, enemyCountForWave, isBossWave } from './formulas';
 
 /**
  * Per-kill XP weight by type. Tracks how much of the player's *attention* a
@@ -67,8 +67,23 @@ export function killXpWaveScale(wave: number): number {
   return 1 + KILL_XP_WAVE_SLOPE * Math.max(1, wave);
 }
 
+/**
+ * What one kill of `type` is worth in *bodies*, at depth `wave`.
+ *
+ * Always 1 except for a boss, which is worth the whole encounter: a boss wave
+ * used to spawn `bossEncounterWeight` bosses and now spawns one, so the single
+ * kill has to pay what the pack paid or a boss wave becomes the worst XP in the
+ * game. Shared by tower XP and passive XP so the two cannot drift.
+ */
+function killWeight(type: EnemyType, wave: number): number {
+  return type === 'boss' && isBossWave(wave) ? bossEncounterWeight(wave) : 1;
+}
+
 export function xpPerKill(type: EnemyType, wave: number): number {
-  return Math.max(1, Math.round(KILL_XP_WEIGHT[type] * killXpWaveScale(wave)));
+  return Math.max(
+    1,
+    Math.round(KILL_XP_WEIGHT[type] * killXpWaveScale(wave) * killWeight(type, wave)),
+  );
 }
 
 // ── Passive-ability XP (passives redesign §3) ───────────────────────────────
@@ -88,7 +103,8 @@ export const PASSIVE_WAVE_CLEAR_XP_MULTIPLIER = 12;
 
 /** Passive XP a single kill of `type` at depth `wave` pays. */
 export function passiveXpPerKill(type: EnemyType, wave: number): number {
-  return KILL_XP_WEIGHT[type] * killXpWaveScale(wave) * PASSIVE_KILL_XP_FACTOR;
+  return KILL_XP_WEIGHT[type] * killXpWaveScale(wave) * PASSIVE_KILL_XP_FACTOR
+    * killWeight(type, wave);
 }
 
 /** Passive XP clearing wave `wave` pays, on top of the kills in it. */

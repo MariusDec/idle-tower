@@ -1,6 +1,8 @@
-import type { AbilityId, EnemyType, EnemyWaveStatsEntry, GameState, GoldSourceEntry, PanelTab, StatsInfo, AutoBuyStrategy, TargetingMode } from '../types';
+import type { AbilityId, EnemyType, EnemyWatchLine, EnemyWaveStatsEntry, GameState, GoldSourceEntry, PanelTab, StatsInfo, AutoBuyStrategy, TargetingMode } from '../types';
+
+export type { EnemyWatchLine };
 import type { StatKey } from '../stats/keys';
-import { ENEMY_DEFS, bossMaxHpForWave, spawnPoolForWave } from '../data/enemies';
+import { ENEMY_DEFS, bossGoldForWave, bossMaxHpForWave, spawnPoolForWave } from '../data/enemies';
 import {
   enemyHPForWave,
   enemySpeedForWave,
@@ -32,8 +34,12 @@ import { KeybindsOverlay } from './KeybindsOverlay';
 import { StatsPanel } from './StatsPanel';
 import { StatsPopup } from './StatsPopup';
 import { ProgressionPanel, type ProgressionBlessingInfo, type ProgressionContractInfo } from './ProgressionPanel';
+import { JournalPanel } from './JournalPanel';
+import type { IconId } from '../data/icons';
 import { ContractTracker, type ContractRowData } from './ContractTracker';
 import { MilestoneStrip } from './MilestoneStrip';
+import { JournalStrip } from './JournalStrip';
+import { ChapterModal, type ChapterCompletedPayload } from './ChapterModal';
 import { AbilityBar } from './AbilityBar';
 import { MobileSheet, type MobileSheetTab } from './MobileSheet';
 import { BottomNav, type BottomNavItem } from './BottomNav';
@@ -142,6 +148,41 @@ export interface TargetingAPI {
 }
 
 /**
+ * The Long Watch view model (plan §6.2). Built by `Game.watchInfo()` once per
+ * ~10 Hz UI tick and consumed by `JournalPanel`.
+ *
+ * The view stays free of `WatchManager` — `UIManager` is a UI module and would
+ * otherwise reach into a system manager to read counters. `Game` does that
+ * work, hands the panel a plain shape, and the panel renders it.
+ */
+export interface WatchChapterView {
+  id: string;
+  number: number;
+  name: string;
+  flavour: string;
+  icon: IconId;
+  /** Accent colour. Sourced from `WATCH_CHAPTERS`; arrives as data, not a literal. */
+  color: string;
+  state: 'done' | 'active' | 'locked';
+  goals: ReadonlyArray<{
+    label: string;
+    /** Already-formatted `1,240 / 1,500`. */
+    progress: string;
+    fill: number;
+    met: boolean;
+  }>;
+  reward: { id: string; name: string; description: string; icon: IconId };
+}
+
+export interface WatchInfo {
+  chapters: readonly WatchChapterView[];
+  completed: number;
+  total: number;
+  /** Index into `chapters` of the live one, or -1 when all are done. */
+  activeIndex: number;
+}
+
+/**
  * Read-only handle into `EnemyManager`, plumbed through `Game.syncUiApis` so
  * the UI never reaches into a system manager directly (cross-cutting rule 3:
  * UI talks to game systems through hand-rolled APIs).
@@ -152,6 +193,17 @@ export interface TargetingAPI {
  */
 export interface EnemyAPI {
   getWaveMultipliers: () => { hp: number; speed: number; damage: number };
+}
+
+/**
+ * Read-only handle for the codex mastery track (plan §7). Built by
+ * `Game.watchEnemyLines()` — every chapter that has a `kills_of` goal for the
+ * given type appears under that type. Types nobody names are simply absent
+ * from the record; the lookup `lines[type] ?? []` handles the missing case
+ * the same way the codex detail pane needs.
+ */
+export interface EnemyWatchAPI {
+  getWatchLines: () => Readonly<Partial<Record<EnemyType, readonly EnemyWatchLine[]>>>;
 }
 
 export interface AudioAPI {
@@ -198,7 +250,31 @@ export class UIManager {
   private readonly keybindsOverlay: KeybindsOverlay;
   private readonly statsPanel: StatsPanel;
   private readonly progressionPanel: ProgressionPanel;
+  /**
+   * The Long Watch (plan §6). Mirrors `progressionPanel`'s shape — a UI
+   * surface that reads a plain `WatchInfo` snapshot pushed by `Game` instead
+   * of reaching into `WatchManager` directly.
+   */
+  private readonly journalPanel: JournalPanel;
   private readonly milestoneStrip: MilestoneStrip;
+  /**
+   * The bottom-left Long Watch chip (plan §6.5). Hidden when every chapter
+   * is done; on mobile the whole slot is hidden in CSS because three stacked
+   * chips eat the play area.
+   */
+  private readonly journalStrip: JournalStrip;
+  /**
+   * Chapter-complete modal (plan §6.4). Reuses the shared `Modal` shell, so it
+   * participates in `Modal.anyOpen()` and `isModalOpen()` automatically.
+   */
+  private readonly chapterModal: ChapterModal;
+  /**
+   * Pending completion modals (plan §6.4). `UIManager` listens on
+   * `watch_chapter_completed`; if a modal is already open (a blessing draft,
+   * a run summary, a previous chapter) the next one waits here until the
+   * shell signals `anyOpen()` is false.
+   */
+  private readonly chapterModalQueue: ChapterCompletedPayload[] = [];
   private readonly contractTracker: ContractTracker;
   private readonly talentPanel: TalentPanel;
   private readonly equipmentPanel: EquipmentPanel;
@@ -402,6 +478,13 @@ export class UIManager {
   private enemyApi: EnemyAPI = {
     getWaveMultipliers: () => ({ hp: 1, speed: 1, damage: 1 }),
   };
+  /**
+   * Read-only handle into `Game.watchEnemyLines()` (plan §7). Empty default so
+   * the codex renders no Watch section before `Game` has wired the API in.
+   */
+  private enemyWatchApi: EnemyWatchAPI = {
+    getWatchLines: () => ({}),
+  };
   private blessingApi: () => ProgressionBlessingInfo = () => ({
     held: [],
     picksTaken: 0,
@@ -415,6 +498,16 @@ export class UIManager {
     completed: 0,
     apBonusPct: 0,
     apCapPct: 0,
+  });
+  /**
+   * The Long Watch view (plan §6.2). Empty until `Game` wires its API in.
+   * `JournalPanel` reads it once per UI tick through this closure.
+   */
+  private watchInfo: () => WatchInfo = () => ({
+    chapters: [],
+    completed: 0,
+    total: 0,
+    activeIndex: -1,
   });
   private lastState: GameState | null = null;
   private cachedGoldMultiplier = 1;
@@ -527,6 +620,14 @@ export class UIManager {
     this.equipmentPanel = new EquipmentPanel(this.equipmentApi);
     this.enemyCodexModal = new EnemyCodexModal({
       onOpenCodex: (id) => this.openCodex(id),
+      // Plan §7.3: the codex mastery rows land on the Journal tab, the same
+      // place the player reads about the chapter those rows belong to. The
+      // mobile path mirrors the JournalStrip chip so a phone tap opens both
+      // the desktop panel and the bottom-nav sheet.
+      onOpenJournal: () => {
+        this.setActiveTab('journal');
+        if (this.isMobile) this.handleMobileNav('progress');
+      },
     });
     this.hud.setOnOpenEnemies(() => this.enemyCodexModal.toggle());
     this.hud.setOnOpenStats(() => this.statsPopup.toggle());
@@ -596,6 +697,13 @@ export class UIManager {
       blessings: () => this.blessingApi(),
       contracts: () => this.contractApi(),
     });
+    this.journalPanel = new JournalPanel({
+      // Plan §6.3: the click handler on an objective row will land here in
+      // Step 9 when the Codex wiring is in place. Stubbed now so this panel
+      // never has to be re-edited for the route to exist.
+      watch: () => this.watchInfo(),
+      onOpenCodex: (entryId) => this.openCodex(entryId),
+    });
     this.contractTracker = new ContractTracker(this.hud.renderContractTrackerSlot(), {
       getRows: (): ContractRowData[] => this.contractApi().live.map(c => ({
         uid: c.uid,
@@ -619,6 +727,30 @@ export class UIManager {
       },
       onOpenProgression: () => this.setActiveTab('progression'),
     });
+    this.journalStrip = new JournalStrip(this.hud.renderJournalStripSlot(), {
+      getInfo: () => {
+        const info = this.watchInfo();
+        const active = info.activeIndex >= 0 ? info.chapters[info.activeIndex] : null;
+        // The chip's "2 / 3" reads `WatchManager.activeProgress()`; that count
+        // lives inside the manager, but the active chapter is the same thing
+        // the journal card already exposes. Walking both keeps the chip off the
+        // manager (UI never reaches in) — the manager's `activeProgress()`
+        // count is mirrored by walking the chapter's goal `met` flags here.
+        if (!active) return { active: null, met: 0, total: 0 };
+        let met = 0;
+        for (const g of active.goals) if (g.met) met++;
+        return { active, met, total: active.goals.length };
+      },
+      onOpenJournal: () => {
+        this.setActiveTab('journal');
+        // On mobile the journal tab lives in the progress group, so the click
+        // also has to open the bottom-nav sheet — otherwise a phone player
+        // tapping the chip would see the desktop panel jump and the sheet
+        // stay closed.
+        if (this.isMobile) this.handleMobileNav('progress');
+      },
+    });
+    this.chapterModal = new ChapterModal();
     this.renderRail();
     this.showTab(this.restoreNavTab());
 
@@ -743,6 +875,16 @@ export class UIManager {
         this.milestoneStrip.flashLastEntry();
       }
     });
+    // Plan §6.4–§6.5: the manager emits when a chapter completes. `Game` already
+    // reacts (unlock, toast, shockwave); the UI layer reacts here for the
+    // completion modal and the chip's green-ring pulse. The modal queue waits
+    // when another modal is up so the modal does not stack over a blessing
+    // draft or a run summary (Modal.anyOpen()).
+    this.bus.on('watch_chapter_completed', (payload: unknown) => {
+      const p = payload as ChapterCompletedPayload;
+      this.enqueueChapterModal(p);
+      this.journalStrip.flashLastEntry();
+    });
     // Contracts (plan §5.3). The flourish is driven from the event rather than
     // inferred from a row disappearing, because an ascension and a save load
     // also empty the tracker and neither deserves a celebration.
@@ -859,6 +1001,7 @@ export class UIManager {
       case 'transcendence': this.transcendencePanel.mount(body); break;
       case 'achievements': this.achievementPanel.mount(body); break;
       case 'progression': this.progressionPanel.mount(body); break;
+      case 'journal': this.journalPanel.mount(body); break;
       case 'stats': this.statsPanel.mount(body); break;
       case 'settings': this.settingsPanel.mount(body); break;
     }
@@ -875,6 +1018,7 @@ export class UIManager {
         case 'transcendence': this.transcendencePanel.update(this.lastState); break;
         case 'achievements': this.achievementPanel.update(this.lastState); break;
         case 'progression': this.progressionPanel.update(this.lastState); break;
+        case 'journal': this.journalPanel.update(this.lastState); break;
         case 'stats': this.statsPanel.update(); break;
       }
     }
@@ -951,6 +1095,43 @@ export class UIManager {
         toggleClass(this.panelRoot, 'collapsed', true);
       }
     } catch {}
+  }
+
+  /**
+   * Queue a chapter-complete modal (plan §6.4).
+   *
+   * If any modal is currently up — a blessing draft, a run summary, an enemy
+   * codex, a previous chapter — the payload is queued and shown as soon as the
+   * shell signals `anyOpen()` is false. The queue is a flat array: chapters
+   * complete in order, and the modal renders them in order.
+   */
+  private enqueueChapterModal(payload: ChapterCompletedPayload): void {
+    if (Modal.anyOpen()) {
+      this.chapterModalQueue.push(payload);
+      return;
+    }
+    this.showChapterModal(payload);
+  }
+
+  /** Pop the next queued payload, if any, and show it. */
+  private drainChapterModalQueue(): void {
+    const next = this.chapterModalQueue.shift();
+    if (!next) return;
+    // `Modal.anyOpen()` is the gate — a fresh `drain` from the previous modal's
+    // `onClose` runs while the previous card is still tearing down, so we
+    // double-check before building the next one.
+    if (Modal.anyOpen()) {
+      this.chapterModalQueue.unshift(next);
+      return;
+    }
+    this.showChapterModal(next);
+  }
+
+  /** Open the modal, wiring the shell's `onClose` to drain the queue. */
+  private showChapterModal(payload: ChapterCompletedPayload): void {
+    this.chapterModal.show(payload, () => {
+      if (this.chapterModalQueue.length > 0) this.drainChapterModalQueue();
+    });
   }
 
   setOnBuyUpgrade(handler: (id: string, amount: BuyAmount) => void): void {
@@ -1111,6 +1292,14 @@ export class UIManager {
     this.enemyApi = api;
   }
 
+  /**
+   * Wire the codex mastery track (plan §7). The codex reads through this on
+   * every push so the rendered rows track lifetime progress as it climbs.
+   */
+  setEnemyWatchAPI(api: EnemyWatchAPI): void {
+    this.enemyWatchApi = api;
+  }
+
   setAbilityAPI(api: AbilityAPI): void {
     this.abilityApi = api;
     if (this.lastState && this.activeTab === 'abilities') {
@@ -1217,6 +1406,16 @@ export class UIManager {
     this.contractTracker.refresh();
   }
 
+  /**
+   * The Long Watch view (plan §6.2). Pushed by `Game.syncUiApis`, same shape
+   * as the blessing/contract APIs: `Game` builds the data, `JournalPanel`
+   * reads it. The empty default means the panel renders its initial state
+   * before `Game` has had a chance to wire itself up.
+   */
+  setWatchAPI(api: () => WatchInfo): void {
+    this.watchInfo = api;
+  }
+
   private refreshProgressionDeps(): void {
     this.progressionPanel.setDeps({
       apThisCycle: () => this.lastState?.resources.apThisTranscendence ?? 0,
@@ -1248,6 +1447,7 @@ export class UIManager {
   tickDisplayHud(dt: number, state: GameState): void {
     this.hud.tickDisplay(dt, state);
     this.milestoneStrip.update(dt);
+    this.journalStrip.update(dt);
     this.contractTracker.update(dt);
   }
 
@@ -1358,6 +1558,10 @@ export class UIManager {
       this.researchPanel.update(state);
     } else if (this.activeTab === 'achievements') {
       this.achievementPanel.update(state);
+    } else if (this.activeTab === 'progression') {
+      this.progressionPanel.update(state);
+    } else if (this.activeTab === 'journal') {
+      this.journalPanel.update(state);
     } else if (this.activeTab === 'stats') {
       this.statsPanel.update();
     } else if (this.activeTab === 'settings') {
@@ -1366,6 +1570,7 @@ export class UIManager {
     this.pushFrameStats(state);
     this.pushEnemyStats(state);
     this.milestoneStrip.refresh();
+    this.journalStrip.refresh();
     this.contractTracker.refresh();
   }
 
@@ -1382,16 +1587,27 @@ export class UIManager {
     const isBoss = isBossWave(wave);
     // `spawnPoolForWave` is the single source of truth for what *can* spawn
     // this wave; the boss is listed unconditionally because the boss bar and
-    // its banner cover the announcement elsewhere.
+    // its banner cover the announcement elsewhere. On a boss wave the pool is
+    // live in its own right — the escort spawns from it (`bossEscortCountForWave`).
     const pool = spawnPoolForWave(wave);
     const inWaveSet = new Set<EnemyType>(pool.map(e => e.type));
     const types: EnemyType[] = [];
     if (isBoss) types.push('boss');
     for (const e of pool) types.push(e.type);
 
+    // The mastery track is keyed off lifetime counters, so it can change
+    // without any wave/multiplier change. Re-fetch every push (cheap — one
+    // walk of `WATCH_CHAPTERS`) and stamp the matching type's lines on each
+    // entry; types nobody names get an empty array, which is the codex's
+    // signal to render no Watch section.
+    const watchLines = this.enemyWatchApi.getWatchLines();
+
     const entries: EnemyWaveStatsEntry[] = types.map(t => {
       const def = ENEMY_DEFS[t];
       const hp = t === 'boss' ? bossMaxHpForWave(wave) : enemyHPForWave(def.baseHP, wave);
+      // The boss is paid the whole encounter's purse, so the codex has to quote
+      // that and not the per-boss figure the pack used to be paid.
+      const gold = t === 'boss' ? bossGoldForWave(wave) : goldDropForWave(def.baseGold, wave);
       return {
         type: t,
         hp,
@@ -1400,10 +1616,11 @@ export class UIManager {
         magicResist: def.magicResist,
         damage: enemyDamageForWave(def.baseDamage, wave),
         fireRate: def.fireRate,
-        gold: goldDropForWave(def.baseGold, wave),
+        gold,
         wave,
         inWave: t === 'boss' ? isBoss : inWaveSet.has(t),
         multipliers: mults,
+        watch: watchLines[t] ?? [],
       };
     });
 
@@ -1596,6 +1813,9 @@ export class UIManager {
     } else if (id === 'progression') {
       this.progressionPanel.mount(this.contentRoot);
       if (this.lastState) this.progressionPanel.update(this.lastState);
+    } else if (id === 'journal') {
+      this.journalPanel.mount(this.contentRoot);
+      if (this.lastState) this.journalPanel.update(this.lastState);
     } else if (id === 'stats') {
       this.statsPanel.mount(this.contentRoot);
       this.statsPanel.update();
