@@ -2,6 +2,7 @@ import type { UpgradeCategory, UpgradeDef, UpgradeEvolution, GameState } from '.
 import { computeUpgradeValue } from '../types';
 import { UPGRADES } from '../data/upgrades';
 import { upgradeCost } from '../data/formulas';
+import { TOWER_MARKS, type TowerMarkDef } from '../data/towerMarks';
 import { formatNumber } from '../utils/bigNumber';
 import { setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
 import { iconFrame } from './Icon';
@@ -52,6 +53,50 @@ function getNextEvolution(def: UpgradeDef, level: number): UpgradeEvolution | nu
     if (level < evo.level) return evo;
   }
   return null;
+}
+
+/**
+ * The next tower-visual change this upgrade's line will produce, if any
+ * (`plans/tower-ui.md` §F.3).
+ *
+ * `combine: 'sum'` marks are fed by two lines, so the threshold is against the
+ * *combined* level — the hint has to say the combined number or it will be
+ * wrong for whichever line the player is looking at. That is why `levels` is
+ * the whole record rather than one number.
+ */
+function getNextMark(
+  upgradeId: string,
+  levels: Record<string, number>,
+): { def: TowerMarkDef; at: number; step: number } | null {
+  for (const def of TOWER_MARKS) {
+    if (!def.sources.includes(upgradeId)) continue;
+    let level = 0;
+    if (def.combine === 'sum') for (const id of def.sources) level += levels[id] ?? 0;
+    else for (const id of def.sources) level = Math.max(level, levels[id] ?? 0);
+    for (let i = 0; i < def.thresholds.length; i++) {
+      if (level < def.thresholds[i]) return { def, at: def.thresholds[i], step: i + 1 };
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * `level`, folded together with every sibling level a mark hint for this
+ * upgrade would read.
+ *
+ * `evoInfoLastLevel` is a `Map<string, number>` and stays one — this is still
+ * a number, just one that covers more than a single line. `1009` is an
+ * arbitrary small prime; two lines never push the product anywhere near
+ * `Number.MAX_SAFE_INTEGER` at `maxLevel` 200.
+ */
+function markMemoKey(upgradeId: string, level: number, levels: Record<string, number>): number {
+  let key = level;
+  for (const def of TOWER_MARKS) {
+    if (!def.sources.includes(upgradeId)) continue;
+    for (const id of def.sources) key = key * 1009 + (levels[id] ?? 0);
+  }
+  return key;
 }
 
 function isPercent(def: UpgradeDef): boolean {
@@ -273,16 +318,18 @@ export class UpgradePanel {
           if (rowEl) toggleClass(rowEl, 'upgrade-evolved', false);
         }
       }
-      if (evoEl && u.evolutions) {
-        // The evo lines only depend on `level`. Skip the full innerHTML
-        // rebuild unless the level has changed since the last render, so
-        // selecting the description text isn't broken every UI tick.
-        if (this.evoInfoLastLevel.get(u.id) !== level) {
-          this.evoInfoLastLevel.set(u.id, level);
+      if (evoEl) {
+        // The lines below depend on `level` and — for a `combine: 'sum'` mark
+        // — on the *sibling* line's level too. Skip the full innerHTML rebuild
+        // unless one of those has changed since the last render, so selecting
+        // the description text isn't broken every UI tick.
+        const memoKey = markMemoKey(u.id, level, state.upgrades);
+        if (this.evoInfoLastLevel.get(u.id) !== memoKey) {
+          this.evoInfoLastLevel.set(u.id, memoKey);
           evoEl.innerHTML = '';
           let hasContent = false;
           // Show unlocked evolution effects
-          for (const evo of u.evolutions) {
+          for (const evo of u.evolutions ?? []) {
             if (level >= evo.level) {
               const line = document.createElement('div');
               line.className = 'evo-line evo-unlocked';
@@ -291,12 +338,26 @@ export class UpgradePanel {
               hasContent = true;
             }
           }
-          // Show next evolution hint (purple, name only)
+          // Show next evolution hint (purple, name only). `getNextEvolution`
+          // already returns null for an upgrade with no evolutions.
           const nextEvo = getNextEvolution(u, level);
           if (nextEvo) {
             const line = document.createElement('div');
             line.className = 'evo-line evo-next';
             line.textContent = `Evolves at Lv${nextEvo.level}: ${nextEvo.name}`;
+            evoEl.appendChild(line);
+            hasContent = true;
+          }
+          // The next tower-visual change on this line (`plans/tower-ui.md` §F.3).
+          const nextMark = getNextMark(u.id, state.upgrades);
+          if (nextMark) {
+            const line = document.createElement('div');
+            line.className = 'evo-line mark-next';
+            const combined = nextMark.def.sources.length > 1
+              ? ` (${nextMark.def.sources.length} lines combined)`
+              : '';
+            line.textContent =
+              `Lv${nextMark.at}${combined}: ${nextMark.def.part} — ${nextMark.def.announce[nextMark.step - 1]}`;
             evoEl.appendChild(line);
             hasContent = true;
           }

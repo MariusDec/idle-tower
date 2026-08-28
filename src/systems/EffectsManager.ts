@@ -189,6 +189,60 @@ export class EffectsManager {
   }
 
   /**
+   * The flourish when an upgrade rebuilds part of the tower
+   * (`plans/tower-ui.md` §F.1).
+   *
+   * Gold, because everything the player owns is gold, and **undamaging** —
+   * the ring carries no `damage` field, so `tick` never calls
+   * `onShockwaveDamage` for it. A cosmetic ring that quietly killed a wave
+   * would be the worst kind of presentation leak.
+   */
+  emitTowerForge(cx: number, cy: number, radius: number): void {
+    this.shockwaves.push({
+      x: cx,
+      y: cy,
+      currentRadius: 0,
+      maxRadius: radius * 2.2,
+      age: 0,
+      life: 0.55,
+      color: withAlpha(FX.gold, 0.7),
+      lineWidth: 4,
+    });
+    const n = this.n(20);
+    for (let i = 0; i < n; i++) {
+      const angle = (i / n) * Math.PI * 2;
+      const speed = 90 + Math.random() * 70;
+      this.pushParticle({
+        x: cx + Math.cos(angle) * radius * 0.8,
+        y: cy + Math.sin(angle) * radius * 0.8,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 40,
+        age: 0,
+        life: 0.45 + Math.random() * 0.3,
+        size: 1.5 + Math.random() * 2,
+        color: i % 3 === 0 ? lighten(FX.gold, 0.4) : FX.ember,
+        layer: 'additive',
+      });
+    }
+    // A handful of stone chips, in the ordinary pass: something was *built*.
+    const chips = this.n(8);
+    for (let i = 0; i < chips; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      this.pushParticle({
+        x: cx + Math.cos(angle) * radius * 0.6,
+        y: cy + Math.sin(angle) * radius * 0.6,
+        vx: Math.cos(angle) * 40,
+        vy: Math.sin(angle) * 40 - 90,
+        age: 0,
+        life: 0.5 + Math.random() * 0.25,
+        size: 1.5 + Math.random() * 1.5,
+        color: INK['300'],
+        layer: 'front',
+      });
+    }
+  }
+
+  /**
    * Big boss-entry ring expanding from the tower.
    */
   emitBossEntryPulse(cx: number, cy: number): void {

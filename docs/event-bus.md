@@ -66,6 +66,7 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `run_ended` | `{ record: RunRecord, previous: RunRecord \| null }` | Game (ascend/transcend) | UIManager (RunSummaryModal) |
 | `save_failed` | `{ success }` | SaveManager | — |
 | `tower_leveled` | `{ level, xp, talentPoints }` | TowerXpManager | — |
+| `tower_mark_changed` | `{ id, step, def }` | Game | Game (toast + forge flourish) |
 | `talent_allocated` | `{ talentId, points, totalSpent }` | TalentManager | — |
 | `passive_leveled` | `{ id, level }` | PassiveAbilityManager | — |
 | `equipment_dropped` | `{ equipment }` | EquipmentManager | — |

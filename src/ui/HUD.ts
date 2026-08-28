@@ -1,4 +1,4 @@
-import type { GameState, StatsInfo, EnemyWaveStatsEntry } from '../types';
+import type { GameState } from '../types';
 import { formatNumber, formatInt, formatWithOptionalDecimal } from '../utils/bigNumber';
 import type { SpeedAPI, TargetingAPI, WaveControlAPI } from './UIManager';
 import type { PacingHudData } from './PacingOverlay';
@@ -10,7 +10,6 @@ import { isBossWave } from '../data/formulas';
 import { icon, iconMarkup } from './Icon';
 import {
   hasClass,
-  setDisplay,
   setDisabled,
   setInnerHTML,
   setStyle,
@@ -150,15 +149,7 @@ export class HUD {
   private hpWrap!: HTMLElement;
   private hpBar!: BarRefs;
   private statsBtn!: HTMLButtonElement;
-  private statsTooltip!: HTMLElement;
-  private statsPopup!: HTMLElement;
-  private statsPopupBody!: HTMLElement;
-  private statsInfo: StatsInfo | null = null;
   private enemyStatsBtn!: HTMLButtonElement;
-  private enemyStatsTooltip!: HTMLElement;
-  private enemyStatsPopup!: HTMLElement;
-  private enemyStatsPopupBody!: HTMLElement;
-  private enemyStatsInfo: EnemyWaveStatsEntry[] = [];
   // Tweened display values (P3: smooth number transitions)
   private displayGold = 0;
   private displayMana = 0;
@@ -189,6 +180,12 @@ export class HUD {
   private moreSpeedLabelEl!: HTMLElement;
   private keybindsBtn!: HTMLButtonElement;
   private onShowKeybinds: () => void = () => {};
+  /**
+   * The host owns the tower-Stats dialog (now a `StatsPopup` hosted by
+   * `UIManager`). The button only signals the intent — it has no business
+   * knowing what closes when, what stays open, or where focus goes next.
+   */
+  private onOpenStats: () => void = () => {};
   private moreStatsBtn!: HTMLButtonElement;
   private moreEnemyStatsBtn!: HTMLButtonElement;
   // ── Pacing controls (gameplay plan §7.1 / §7.4) ──
@@ -286,124 +283,19 @@ export class HUD {
     this.onShowKeybinds = handler;
   }
 
-  setStatsInfo(info: StatsInfo): void {
-    this.statsInfo = info;
-    if (this.statsTooltip.style.display !== 'none') {
-      this.renderStatsContent(this.statsTooltip, info);
-    }
-    if (hasClass(this.statsPopup, 'is-open')) {
-      this.renderStatsContent(this.statsPopupBody, info);
-    }
-  }
-
-  private renderStatsContent(el: HTMLElement, info: StatsInfo): void {
-    const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
-    setInnerHTML(el, `
-      <div class="stat-row"><span>Damage</span><span>${formatWithOptionalDecimal(info.damage)}</span></div>
-      <div class="stat-row"><span>Fire Rate</span><span>${info.fireRate.toFixed(2)}/s</span></div>
-      <div class="stat-row"><span>DPS</span><span>${formatWithOptionalDecimal(info.dps, 1, { keepTrailingZeros: true })}</span></div>
-      <div class="stat-row"><span>Crit Rate</span><span>${pct(info.critChance)}</span></div>
-      <div class="stat-row"><span>Crit Damage</span><span>${(info.critDamage * 100).toFixed(0)}%</span></div>
-      <div class="stat-row"><span>Range</span><span>${info.range.toFixed(0)}</span></div>
-      <div class="stat-row"><span>Health</span><span>${Math.floor(info.hp)} / ${Math.floor(info.maxHp)}</span></div>
-      <div class="stat-row"><span>Health Regen</span><span>${formatWithOptionalDecimal(info.maxHp * info.healthRegen, 2)}/s</span></div>
-      <div class="stat-row"><span>Defense</span><span>${info.defense.toFixed(0)}</span></div>
-      <div class="stat-row"><span>Armor</span><span>${info.armor.toFixed(0)}</span></div>
-      <div class="stat-row"><span>Lifesteal</span><span>${pct(info.lifesteal)}</span></div>
-      <div class="stat-row"><span>Thorns</span><span>${pct(info.thorns)}</span></div>
-      <div class="stat-row"><span>Mana Regen</span><span>${formatWithOptionalDecimal(info.manaRegen)}/s</span></div>
-      <div class="stat-row"><span>Max Mana</span><span>${info.maxMana}</span></div>
-      <div class="stat-row"><span>Gold Multiplier</span><span>${info.goldMultiplier.toFixed(2)}x</span></div>
-      ${this.renderGoldBreakdown(info)}
-      <div class="stat-row"><span>RP Gain</span><span>${formatNumber(info.rpGainRate, 3)}/s</span></div>
-    `);
+  setOnOpenStats(handler: () => void): void {
+    this.onOpenStats = handler;
   }
 
   /**
-   * Per-source attribution under the gold multiplier (plan §4.2), so the
-   * player can see *why* it is what it is instead of taking one opaque
-   * number on faith. Sources come from the same pass that composes the
-   * multiplier, so the two cannot disagree.
+   * The "Enemies" button is a thin shim — it has no business owning a popup or
+   * knowing what closes when. `UIManager` hands in a handler that opens the
+   * `EnemyCodexModal`, the same shape `setOnOpenStats` already uses for the
+   * tower Stats dialog.
    */
-  private renderGoldBreakdown(info: StatsInfo): string {
-    const sources = info.goldSources ?? [];
-    if (sources.length === 0) return '';
-    const rows: string[] = [];
-    let additiveTotal = 0;
-    for (const s of sources) {
-      if (s.kind !== 'additive') continue;
-      additiveTotal += s.additive;
-      rows.push(`<div class="stat-subrow"><span>${s.label}</span><span>+${(s.additive * 100).toFixed(0)}%</span></div>`);
-    }
-    const multiplicative = sources.filter(s => s.kind === 'multiplicative');
-    // The subtotal line is what turns the summed percentages above into the
-    // factor the multiplicative sources below build on — without it the two
-    // halves of the composition look unrelated.
-    if (rows.length > 0 && multiplicative.length > 0) {
-      rows.push(`<div class="stat-subrow stat-subtotal"><span>subtotal</span><span>×${(1 + additiveTotal).toFixed(2)}</span></div>`);
-    }
-    for (const s of multiplicative) {
-      if (s.kind !== 'multiplicative') continue;
-      rows.push(`<div class="stat-subrow"><span>${s.label}</span><span>×${s.factor.toFixed(2)}</span></div>`);
-    }
-    if (rows.length === 0) return '';
-    return `<div class="stat-breakdown">${rows.join('')}</div>`;
-  }
-
-  private openStatsPopup(): void {
-    if (!this.statsInfo) return;
-    this.renderStatsContent(this.statsPopupBody, this.statsInfo);
-    toggleClass(this.statsPopup, 'is-open', true);
-    toggleClass(this.statsBtn, 'is-active', true);
-  }
-
-  private closeStatsPopup(): void {
-    toggleClass(this.statsPopup, 'is-open', false);
-    toggleClass(this.statsBtn, 'is-active', false);
-  }
-
-  setEnemyStatsInfo(entries: EnemyWaveStatsEntry[]): void {
-    this.enemyStatsInfo = entries;
-    if (this.enemyStatsTooltip.style.display !== 'none') {
-      this.renderEnemyStatsContent(this.enemyStatsTooltip, entries);
-    }
-    if (hasClass(this.enemyStatsPopup, 'is-open')) {
-      this.renderEnemyStatsContent(this.enemyStatsPopupBody, entries);
-    }
-  }
-
-  private renderEnemyStatsContent(el: HTMLElement, entries: EnemyWaveStatsEntry[]): void {
-    if (entries.length === 0) {
-      setInnerHTML(el, '<div class="stat-row"><span>No enemies this wave</span><span></span></div>');
-      return;
-    }
-    const cols = entries.map(e => {
-      const label = e.type.charAt(0).toUpperCase() + e.type.slice(1);
-      return `<div class="enemy-stats-col">
-        <div class="enemy-stats-type-header">${label}</div>
-        <div class="stat-row"><span>Gold</span><span>${formatNumber(e.gold)}</span></div>
-        <div class="stat-row"><span>HP</span><span>${formatNumber(e.hp)}</span></div>
-        <div class="stat-row"><span>Damage</span><span>${formatNumber(e.damage)}</span></div>
-        <div class="stat-row"><span>Fire Rate</span><span>${e.fireRate.toFixed(2)}/s</span></div>
-        <div class="stat-row"><span>Armor</span><span>${e.armor.toFixed(0)}</span></div>
-        <div class="stat-row"><span>Magic Resist</span><span>${(e.magicResist * 100).toFixed(0)}%</span></div>
-        <div class="stat-row"><span>Speed</span><span>${e.speed.toFixed(0)}</span></div>
-      </div>`;
-    }).join('');
-    const wide = entries.length > 3 ? ' enemy-stats-grid-wide' : '';
-    setInnerHTML(el, `<div class="enemy-stats-grid${wide}">${cols}</div>`);
-  }
-
-  private openEnemyStatsPopup(): void {
-    if (this.enemyStatsInfo.length === 0) return;
-    this.renderEnemyStatsContent(this.enemyStatsPopupBody, this.enemyStatsInfo);
-    toggleClass(this.enemyStatsPopup, 'is-open', true);
-    toggleClass(this.enemyStatsBtn, 'is-active', true);
-  }
-
-  private closeEnemyStatsPopup(): void {
-    toggleClass(this.enemyStatsPopup, 'is-open', false);
-    toggleClass(this.enemyStatsBtn, 'is-active', false);
+  private onOpenEnemies: () => void = () => {};
+  setOnOpenEnemies(handler: () => void): void {
+    this.onOpenEnemies = handler;
   }
 
   /**
@@ -627,105 +519,17 @@ export class HUD {
     this.statsBtn.type = 'button';
     this.statsBtn.className = 'hud-stats-btn';
     this.statsBtn.textContent = 'Stats';
-    this.statsBtn.addEventListener('mouseenter', () => {
-      if (this.statsInfo) {
-        this.renderStatsContent(this.statsTooltip, this.statsInfo);
-        setDisplay(this.statsTooltip, 'block');
-      }
-    });
-    this.statsBtn.addEventListener('mouseleave', () => {
-      setDisplay(this.statsTooltip, 'none');
-    });
-    this.statsBtn.addEventListener('click', () => {
-      if (hasClass(this.statsPopup, 'is-open')) {
-        this.closeStatsPopup();
-      } else {
-        this.openStatsPopup();
-      }
-    });
+    this.statsBtn.addEventListener('click', () => this.onOpenStats());
     statsWrap.appendChild(this.statsBtn);
-
-    this.statsTooltip = document.createElement('div');
-    this.statsTooltip.className = 'hud-stats-tooltip';
-    this.statsTooltip.style.display = 'none';
-    statsWrap.appendChild(this.statsTooltip);
 
     this.enemyStatsBtn = document.createElement('button');
     this.enemyStatsBtn.type = 'button';
     this.enemyStatsBtn.className = 'hud-stats-btn';
     this.enemyStatsBtn.textContent = 'Enemies';
-    this.enemyStatsBtn.addEventListener('mouseenter', () => {
-      if (this.enemyStatsInfo.length > 0) {
-        this.renderEnemyStatsContent(this.enemyStatsTooltip, this.enemyStatsInfo);
-        setDisplay(this.enemyStatsTooltip, 'block');
-      }
-    });
-    this.enemyStatsBtn.addEventListener('mouseleave', () => {
-      setDisplay(this.enemyStatsTooltip, 'none');
-    });
-    this.enemyStatsBtn.addEventListener('click', () => {
-      if (hasClass(this.enemyStatsPopup, 'is-open')) {
-        this.closeEnemyStatsPopup();
-      } else {
-        this.openEnemyStatsPopup();
-      }
-    });
+    this.enemyStatsBtn.addEventListener('click', () => this.onOpenEnemies());
     statsWrap.appendChild(this.enemyStatsBtn);
 
-    this.enemyStatsTooltip = document.createElement('div');
-    this.enemyStatsTooltip.className = 'hud-stats-tooltip';
-    this.enemyStatsTooltip.style.display = 'none';
-    statsWrap.appendChild(this.enemyStatsTooltip);
-
     this.root.appendChild(statsWrap);
-
-    this.statsPopup = document.createElement('div');
-    this.statsPopup.className = 'hud-stats-popup';
-    const popupInner = document.createElement('div');
-    popupInner.className = 'hud-stats-popup-inner';
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'hud-stats-popup-close';
-    closeBtn.textContent = '\u00d7';
-    closeBtn.addEventListener('click', () => this.closeStatsPopup());
-    popupInner.appendChild(closeBtn);
-    const popupTitle = document.createElement('h3');
-    popupTitle.className = 'hud-stats-popup-title';
-    popupTitle.textContent = 'Tower Stats';
-    popupInner.appendChild(popupTitle);
-    const popupBody = document.createElement('div');
-    popupBody.className = 'hud-stats-popup-body';
-    this.statsPopupBody = popupBody;
-    popupInner.appendChild(popupBody);
-    this.statsPopup.appendChild(popupInner);
-    this.statsPopup.addEventListener('click', (e) => {
-      if (e.target === this.statsPopup) this.closeStatsPopup();
-    });
-    document.body.appendChild(this.statsPopup);
-
-    this.enemyStatsPopup = document.createElement('div');
-    this.enemyStatsPopup.className = 'hud-stats-popup';
-    const enemyPopupInner = document.createElement('div');
-    enemyPopupInner.className = 'hud-stats-popup-inner enemy-stats-popup-inner';
-    const enemyCloseBtn = document.createElement('button');
-    enemyCloseBtn.type = 'button';
-    enemyCloseBtn.className = 'hud-stats-popup-close';
-    enemyCloseBtn.textContent = '\u00d7';
-    enemyCloseBtn.addEventListener('click', () => this.closeEnemyStatsPopup());
-    enemyPopupInner.appendChild(enemyCloseBtn);
-    const enemyPopupTitle = document.createElement('h3');
-    enemyPopupTitle.className = 'hud-stats-popup-title';
-    enemyPopupTitle.textContent = 'Enemy Stats';
-    enemyPopupInner.appendChild(enemyPopupTitle);
-    const enemyPopupBody = document.createElement('div');
-    enemyPopupBody.className = 'hud-stats-popup-body';
-    this.enemyStatsPopupBody = enemyPopupBody;
-    enemyPopupInner.appendChild(enemyPopupBody);
-    this.enemyStatsPopup.appendChild(enemyPopupInner);
-    this.enemyStatsPopup.addEventListener('click', (e) => {
-      if (e.target === this.enemyStatsPopup) this.closeEnemyStatsPopup();
-    });
-    document.body.appendChild(this.enemyStatsPopup);
 
     this.root.appendChild(groupLeft);
 
@@ -1210,8 +1014,9 @@ export class HUD {
     this.moreStatsBtn.textContent = 'Stats';
     this.moreStatsBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      if (hasClass(this.statsPopup, 'is-open')) this.closeStatsPopup();
-      else this.openStatsPopup();
+      // Close the More popover first; the dialog manages its own focus.
+      close();
+      this.onOpenStats();
     });
     actions.appendChild(this.moreStatsBtn);
     this.moreEnemyStatsBtn = document.createElement('button');
@@ -1220,8 +1025,8 @@ export class HUD {
     this.moreEnemyStatsBtn.textContent = 'Enemies';
     this.moreEnemyStatsBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      if (hasClass(this.enemyStatsPopup, 'is-open')) this.closeEnemyStatsPopup();
-      else this.openEnemyStatsPopup();
+      close();
+      this.onOpenEnemies();
     });
     actions.appendChild(this.moreEnemyStatsBtn);
     inner.appendChild(actions);

@@ -49,6 +49,7 @@ function buildGroups(): BindGroup[] {
       binds: [
         { keys: ['?'], action: 'Show or hide this list' },
         { keys: ['Esc'], action: 'Close this list' },
+        { keys: ['—'], action: 'Progress → Codex: the in-game glossary for every stat and mechanic' },
       ],
     },
   ];

@@ -176,7 +176,8 @@ without inventing a second hex for every tint:
 
 Where a colour appears at several alphas it goes through `withAlpha(token, a)` rather than a
 pre-baked second hex. The only literals still allowed anywhere in `src/` are `'#ffffff'` and
-`'#000'`.
+`'#000'`. Iron plating is `INK['200']`, chosen because a lighter *stone* reads as a lighting
+change rather than a second material.
 
 The mapping, so the next person does not have to ask why `#ff6633` became ember and not blood:
 

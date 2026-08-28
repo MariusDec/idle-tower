@@ -1,5 +1,6 @@
-import type { AbilityId, EnemyType, EnemyWaveStatsEntry, GameState, GoldSourceEntry, PanelTab, StatsInfo, AutoBuyStrategy } from '../types';
-import { ENEMY_DEFS, bossMaxHpForWave } from '../data/enemies';
+import type { AbilityId, EnemyType, EnemyWaveStatsEntry, GameState, GoldSourceEntry, PanelTab, StatsInfo, AutoBuyStrategy, TargetingMode } from '../types';
+import type { StatKey } from '../stats/keys';
+import { ENEMY_DEFS, bossMaxHpForWave, spawnPoolForWave } from '../data/enemies';
 import {
   enemyHPForWave,
   enemySpeedForWave,
@@ -9,6 +10,7 @@ import {
 } from '../data/formulas';
 import { HUD } from './HUD';
 import { Modal } from './Modal';
+import { EnemyCodexModal } from './EnemyCodexModal';
 import { UpgradePanel, type BuyAmount, type UpgradePlan } from './UpgradePanel';
 import { UPGRADES } from '../data/upgrades';
 import { AbilityPanel } from './AbilityPanel';
@@ -28,6 +30,7 @@ import { BossBar, type BossBarData } from './BossBar';
 import { PacingOverlay, type PacingHudData } from './PacingOverlay';
 import { KeybindsOverlay } from './KeybindsOverlay';
 import { StatsPanel } from './StatsPanel';
+import { StatsPopup } from './StatsPopup';
 import { ProgressionPanel, type ProgressionBlessingInfo, type ProgressionContractInfo } from './ProgressionPanel';
 import { ContractTracker, type ContractRowData } from './ContractTracker';
 import { MilestoneStrip } from './MilestoneStrip';
@@ -138,6 +141,19 @@ export interface TargetingAPI {
   setMode: (mode: string) => void;
 }
 
+/**
+ * Read-only handle into `EnemyManager`, plumbed through `Game.syncUiApis` so
+ * the UI never reaches into a system manager directly (cross-cutting rule 3:
+ * UI talks to game systems through hand-rolled APIs).
+ *
+ * Plan D.4: the bestiary needs the live HP / speed / damage multipliers the
+ * spawning enemy was actually built with. Enrage is deliberately excluded —
+ * it is a mid-encounter timer, not a spawn-time multiplier.
+ */
+export interface EnemyAPI {
+  getWaveMultipliers: () => { hp: number; speed: number; damage: number };
+}
+
 export interface AudioAPI {
   volume: number;
   muted: boolean;
@@ -173,6 +189,11 @@ export class UIManager {
    * (gameplay plan §3.5). Null while no boss is alive.
    */
   private bossBarData: BossBarData | null = null;
+  /**
+   * Tower Stats dialog (plans/stats.md Part C). Adopts the shared Modal shell
+   * so Space-key "call wave early" is gated via `Modal.anyOpen()`.
+   */
+  private readonly statsPopup = new StatsPopup();
   private pacingData: PacingHudData | null = null;
   private readonly keybindsOverlay: KeybindsOverlay;
   private readonly statsPanel: StatsPanel;
@@ -181,6 +202,12 @@ export class UIManager {
   private readonly contractTracker: ContractTracker;
   private readonly talentPanel: TalentPanel;
   private readonly equipmentPanel: EquipmentPanel;
+  /**
+   * The enemy bestiary dialog (plans/stats.md Part D). Owns the `Modal` shell
+   * so it participates in `Modal.anyOpen()` — that is what stops the Space
+   * key from calling a wave while the popup is up.
+   */
+  private readonly enemyCodexModal: EnemyCodexModal;
   private abilityBar: AbilityBar | null = null;
   private mobileSheet: MobileSheet | null = null;
   private bottomNav: BottomNav | null = null;
@@ -371,6 +398,10 @@ export class UIManager {
     researchSpeedMultiplier: 1,
     rpGainRate: 0,
   };
+  /** Read-only handle into `EnemyManager` (plans/stats.md Part D). */
+  private enemyApi: EnemyAPI = {
+    getWaveMultipliers: () => ({ hp: 1, speed: 1, damage: 1 }),
+  };
   private blessingApi: () => ProgressionBlessingInfo = () => ({
     held: [],
     picksTaken: 0,
@@ -388,8 +419,10 @@ export class UIManager {
   private lastState: GameState | null = null;
   private cachedGoldMultiplier = 1;
   private cachedGoldSources: GoldSourceEntry[] = [];
+  private cachedResolved: Readonly<Record<StatKey, number>> | null = null;
+  private cachedTargetingMode: TargetingMode = 'priority';
   private uiFrameCounter = 0;
-  private lastEnemyStatsWave = -1;
+  private lastEnemyStatsSig = '';
   private readonly UI_UPDATE_INTERVAL = 6;
 
   constructor(deps: {
@@ -492,6 +525,11 @@ export class UIManager {
     this.researchPanel = new ResearchPanel(researchHandlers);
     this.talentPanel = new TalentPanel(this.talentApi);
     this.equipmentPanel = new EquipmentPanel(this.equipmentApi);
+    this.enemyCodexModal = new EnemyCodexModal({
+      onOpenCodex: (id) => this.openCodex(id),
+    });
+    this.hud.setOnOpenEnemies(() => this.enemyCodexModal.toggle());
+    this.hud.setOnOpenStats(() => this.statsPopup.toggle());
     this.settingsPanel = new SettingsPanel({
       onClearSave: () => this.onClearSave(),
       onVolumeChange: (v) => this.onVolumeChange(v),
@@ -579,6 +617,7 @@ export class UIManager {
         if (!s) return [];
         return upcomingMilestones(s.wave.highestWave, s.resources.apThisTranscendence, 3);
       },
+      onOpenProgression: () => this.setActiveTab('progression'),
     });
     this.renderRail();
     this.showTab(this.restoreNavTab());
@@ -1068,6 +1107,10 @@ export class UIManager {
     this.hud.setWaveControlAPI(api);
   }
 
+  setEnemyAPI(api: EnemyAPI): void {
+    this.enemyApi = api;
+  }
+
   setAbilityAPI(api: AbilityAPI): void {
     this.abilityApi = api;
     if (this.lastState && this.activeTab === 'abilities') {
@@ -1089,7 +1132,9 @@ export class UIManager {
   setStatsInfo(info: StatsInfo): void {
     this.cachedGoldMultiplier = info.goldMultiplier;
     this.cachedGoldSources = info.goldSources;
-    this.hud.setStatsInfo(info);
+    this.cachedResolved = info.resolved;
+    this.cachedTargetingMode = info.targetingMode;
+    this.statsPopup.setInfo(info);
   }
 
   setResearchAPI(api: ResearchAPI): void {
@@ -1326,25 +1371,24 @@ export class UIManager {
 
   private pushEnemyStats(state: GameState): void {
     const wave = state.wave.number;
-    if (wave === this.lastEnemyStatsWave) return;
-    this.lastEnemyStatsWave = wave;
+    const mults = this.enemyApi.getWaveMultipliers();
+    // Key on (wave, multipliers) so a mid-wave HP multiplier change (Glass
+    // Cannon, enrage — except enrage is filtered here too) re-renders, while
+    // a same-wave re-push from the per-frame UI tick is a no-op.
+    const sig = `${wave}|${mults.hp}|${mults.speed}|${mults.damage}`;
+    if (sig === this.lastEnemyStatsSig) return;
+    this.lastEnemyStatsSig = sig;
+
+    const isBoss = isBossWave(wave);
+    // `spawnPoolForWave` is the single source of truth for what *can* spawn
+    // this wave; the boss is listed unconditionally because the boss bar and
+    // its banner cover the announcement elsewhere.
+    const pool = spawnPoolForWave(wave);
+    const inWaveSet = new Set<EnemyType>(pool.map(e => e.type));
     const types: EnemyType[] = [];
-    if (isBossWave(wave)) {
-      types.push('boss');
-    } else {
-      types.push('normal');
-      if (wave >= 3) types.push('fast');
-      if (wave >= 5) types.push('tank');
-      if (wave >= 8) types.push('flying');
-      if (wave >= 12) types.push('splitter');
-      if (wave >= 15) types.push('healer');
-      if (wave >= 20) types.push('shielded');
-      if (wave >= 25) types.push('siege');
-      if (wave >= 30) types.push('thief');
-      if (wave >= 35) types.push('blinker');
-      if (wave >= 40) types.push('warden');
-      if (wave >= 45) types.push('burrower');
-    }
+    if (isBoss) types.push('boss');
+    for (const e of pool) types.push(e.type);
+
     const entries: EnemyWaveStatsEntry[] = types.map(t => {
       const def = ENEMY_DEFS[t];
       const hp = t === 'boss' ? bossMaxHpForWave(wave) : enemyHPForWave(def.baseHP, wave);
@@ -1357,15 +1401,19 @@ export class UIManager {
         damage: enemyDamageForWave(def.baseDamage, wave),
         fireRate: def.fireRate,
         gold: goldDropForWave(def.baseGold, wave),
+        wave,
+        inWave: t === 'boss' ? isBoss : inWaveSet.has(t),
+        multipliers: mults,
       };
     });
-    this.hud.setEnemyStatsInfo(entries);
+
+    this.enemyCodexModal.setInfo(entries);
   }
 
   private pushFrameStats(state: GameState): void {
     const t = state.tower;
     const r = state.resources;
-    this.hud.setStatsInfo({
+    this.statsPopup.setInfo({
       damage: t.baseDamage,
       // The same smoothed reading the HUD DPS pill tweens from, so the
       // tooltip row and the pill cannot disagree about the tower's DPS.
@@ -1386,6 +1434,8 @@ export class UIManager {
       goldMultiplier: this.cachedGoldMultiplier,
       goldSources: this.cachedGoldSources,
       rpGainRate: this.researchApi.rpGainRate,
+      resolved: this.cachedResolved,
+      targetingMode: this.cachedTargetingMode,
     });
   }
 
@@ -1586,6 +1636,16 @@ export class UIManager {
   /** Open/close the keyboard-shortcut reference (plan §4.8). */
   toggleKeybinds(): void {
     this.keybindsOverlay.toggle();
+  }
+
+  /** Open the Codex on a specific entry (from a stat row or an enemy card). */
+  openCodex(entryId?: string): void {
+    this.setActiveTab('codex');
+    // Codex entry focus is a follow-up — the panels system is mid-refactor
+    // (see plans/ui.md §codex wiring). For now, jumping to the codex tab is
+    // enough: every enemy bestiary chip links to one of three top-level ids
+    // the player can find by scrolling.
+    void entryId;
   }
 
   /** True when the shortcut overlay is up, so Esc can close it first. */

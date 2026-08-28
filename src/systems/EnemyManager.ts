@@ -344,6 +344,24 @@ export class EnemyManager {
   }
 
   /**
+   * The composed per-stat multipliers an enemy spawning *right now* would be
+   * built with. Read-only; not consumed by `spawn()`.
+   *
+   * Exposed to the UI through `EnemyAPI` so the enemy bestiary modal can
+   * annotate every stat row with the actual HP / speed / damage multiplier the
+   * player is under this wave — enrage is deliberately excluded: it is a
+   * mid-encounter timer, not a spawn-time multiplier, and a per-second reading
+   * would lie for everything that was spawned ten seconds ago.
+   */
+  getWaveMultipliers(): { hp: number; speed: number; damage: number } {
+    return {
+      hp: (1 - this.hpReduction) * this.hpMult * this.statHpMult,
+      speed: this.speedMult * this.statSpeedMult,
+      damage: this.damageToTowerMult * this.statDamageMult,
+    };
+  }
+
+  /**
    * Chill one enemy: `factor` multiplies its speed for `duration` seconds.
    * The strongest active chill wins; a weaker re-application only refreshes
    * the timer, so spamming shots cannot dilute a hard slow.

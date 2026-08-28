@@ -1,6 +1,8 @@
 import type { EvolutionEffectId } from './data/upgrades';
 import type { IconId } from './data/icons';
 import type { LootOrbKind } from './data/loot';
+import type { TowerMarks } from './data/towerMarks';
+import type { StatKey } from './stats/keys';
 import { evalFormula } from './data/formulas';
 
 /**
@@ -68,7 +70,7 @@ export type AbilityId =
   | 'execute'
   | 'rocket_barrage';
 
-export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'passives' | 'prestige' | 'transcendence' | 'achievements' | 'progression' | 'stats' | 'settings' | 'talents' | 'equipment';
+export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'passives' | 'prestige' | 'transcendence' | 'achievements' | 'progression' | 'codex' | 'stats' | 'settings' | 'talents' | 'equipment';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';
 
@@ -725,6 +727,16 @@ export interface StatsInfo {
   /** Per-source attribution for `goldMultiplier` (plan §4.2). */
   goldSources: GoldSourceEntry[];
   rpGainRate: number;
+  /**
+   * The full resolved stat block currently applied to the tower.
+   * The ~17 scalar fields above are the per-tick live readings the HUD
+   * tweens from; this is the composition result, pushed only when something
+   * recomposes. Both come from the same Game pass, so a row and a pill
+   * cannot disagree. Null before the first resolve.
+   */
+  resolved: Readonly<Record<StatKey, number>> | null;
+  /** TowerState.targetingMode, for the Utility group's one non-numeric row. */
+  targetingMode: TargetingMode;
 }
 
 export interface EnemyWaveStatsEntry {
@@ -736,6 +748,12 @@ export interface EnemyWaveStatsEntry {
   damage: number;
   fireRate: number;
   gold: number;
+  /** The wave this snapshot is for; the modal subtitle. */
+  wave: number;
+  /** True when this type is in `spawnPoolForWave(wave)` (or is `boss`). */
+  inWave: boolean;
+  /** Live per-stat multipliers the spawning enemy was actually built with. */
+  multipliers: { hp: number; speed: number; damage: number };
 }
 
 export interface GameState {
@@ -921,6 +939,16 @@ export interface RenderSnapshot {
    * it into a silhouette change rather than a number in a panel.
    */
   towerLevel?: number;
+  /**
+   * Upgrade levels made visible on the tower (`plans/tower-ui.md`).
+   *
+   * Ten small integers derived from upgrade levels by a threshold table, and a
+   * precomputed key the renderer compares to know when to drop the sprites it
+   * baked. `Game` rebuilds this object only when levels change, so the renderer
+   * can compare it by identity. Presentation only — nothing in the render path
+   * may branch on it for behaviour.
+   */
+  towerMarks?: TowerMarks;
   /** Kill-combo tier 0..4 and the drain bar's fill, for the §5.C flourish. Presentation only. */
   combo?: { tier: number; fraction: number };
   /**

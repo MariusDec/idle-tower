@@ -29,7 +29,10 @@ import {
   BOSS_PATTERN_HINTS,
   BOSS_PATTERN_HP_WEIGHT,
   BOSS_PATTERN_NAMES,
+  BOSS_ENCOUNTER,
+  ENEMY_BEHAVIOR,
   ENEMY_BEHAVIOR_CONSUMERS,
+  ENEMY_CODEX,
   ENEMY_DEFS,
   ENEMY_LABELS,
   ENEMY_SPAWN_WEIGHTS,
@@ -57,6 +60,8 @@ import { GROUP_OF, NAV_GROUPS, firstTabOf, groupById, type NavGroupId } from '..
 import type { BottomNavItem } from '../src/ui/BottomNav';
 import { AP_PERKS, TP_PERKS } from '../src/data/prestige';
 import { WAVE_MODIFIERS } from '../src/data/waveModifiers';
+import { CODEX_CATEGORIES, CODEX_CATEGORY_ICONS, CODEX_ENTRIES } from '../src/data/codex';
+import { TOWER_MARKS } from '../src/data/towerMarks';
 import {
   CONTRACTS,
   CONTRACT_ENEMY_LABELS,
@@ -633,6 +638,50 @@ describe('enemy roster', () => {
     expect(unknown).toEqual([]);
   });
 
+  it('hands the roster every tagline', () => {
+    // The bestiary modal reads ENEMY_CODEX[type].tagline onto the page; an
+    // empty string or a placeholder would be exactly the failure mode the
+    // "ships announced but inert" §0.4 complaint is about.
+    for (const type of ALL_TYPES) {
+      expect(ENEMY_CODEX[type].tagline, type).toBeTruthy();
+      expect(ENEMY_CODEX[type].tagline.length, type).toBeGreaterThan(8);
+    }
+  });
+
+  it('reuses the milestone copy for the taglines', () => {
+    // The 11 non-exempt types read their milestone detail from
+    // ENEMY_CODEX[type].tagline — so the strip and the modal cannot drift.
+    // `normal` and `boss` are exempt from the milestone strip and have fresh
+    // taglines, so they are checked separately.
+    for (const m of MILESTONES) {
+      if (m.kind !== 'enemy') continue;
+      expect(ENEMY_CODEX[m.refId as EnemyType].tagline, m.refId).toBe(m.detail);
+    }
+  });
+
+  it('hands every type an answer the player can act on', () => {
+    // The "Answer:" row is the part the player reads to decide what to build.
+    // Empty / placeholder / N/A would be an inert page.
+    for (const type of ALL_TYPES) {
+      const answer = ENEMY_CODEX[type].answer;
+      expect(answer, type).toBeTruthy();
+      expect(answer.length, type).toBeGreaterThan(8);
+      expect(answer.toLowerCase(), type).not.toMatch(/todo|nothing|unused|n\/a|tbd/);
+    }
+  });
+
+  it('quotes the real tuning numbers', () => {
+    // Every effect-line text must interpolate from `ENEMY_BEHAVIOR` /
+    // `BOSS_ENCOUNTER`, never typed as a literal. Spot-check a few of the
+    // big numbers so a future `sed`-style edit cannot quietly type them.
+    expect(ENEMY_CODEX.siege.effects.map(e => e.text).join(' '))
+      .toContain(String(ENEMY_BEHAVIOR.siegeReload));
+    expect(ENEMY_CODEX.warden.effects.map(e => e.text).join(' '))
+      .toContain(String(ENEMY_BEHAVIOR.wardMaxTargets));
+    expect(ENEMY_CODEX.boss.effects.map(e => e.text).join(' '))
+      .toContain(String(BOSS_ENCOUNTER.enrageDelay));
+  });
+
   it('offers every targeting mode exactly once, priority first', () => {
     const ids = TARGETING_MODES.map(m => m.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -681,6 +730,8 @@ describe('icons', () => {
     ...(Object.keys(RARITY_ICONS) as Array<keyof typeof RARITY_ICONS>).map((r) => [`rarity:${r}`, RARITY_ICONS[r]] as [string, IconId]),
     ...STAT_ICON_KEYS.map((k) => [`stat:${k}`, STAT_ICONS[k]] as [string, IconId]),
     ...NAV_GROUPS.map((g) => [`nav:${g.id}`, g.icon] as [string, IconId]),
+    ...CODEX_ENTRIES.map((e) => [`codex:${e.id}`, e.icon] as [string, IconId]),
+    ...CODEX_CATEGORIES.map((c) => [`codexcat:${c}`, CODEX_CATEGORY_ICONS[c]] as [string, IconId]),
   ];
 
   it('gives every piece of content a real icon', () => {
@@ -713,7 +764,7 @@ describe('icons', () => {
     const used = new Set(referenced.map(([, id]) => id));
     // Icons that are in the sprite but not currently used by any content.
     // These are kept for future use or were retired from active content.
-    const ALLOWED_UNUSED: IconId[] = ['life-tap', 'target-shot'];
+    const ALLOWED_UNUSED: IconId[] = ['target-shot'];
     const unused = ICON_IDS.filter((id) => !used.has(id) && !ALLOWED_UNUSED.includes(id));
     expect(unused).toEqual([]);
   });
@@ -761,6 +812,7 @@ describe('nav groups', () => {
     transcendence: true,
     achievements: true,
     progression: true,
+    codex: true,
     stats: true,
     settings: true,
     talents: true,
@@ -921,6 +973,25 @@ describe('passives', () => {
           // the grant, not that the value equals it.
           expect(after - before, `${p.id}:${g.stat}@${m.at}`).toBeGreaterThanOrEqual(g.value);
         }
+      }
+    }
+  });
+});
+
+describe('tower marks', () => {
+  it('covers both the damage and the health line, which is the whole ask', () => {
+    const sourced = new Set(TOWER_MARKS.flatMap(m => [...m.sources]));
+    expect(sourced.has('damage')).toBe(true);
+    expect(sourced.has('health')).toBe(true);
+  });
+
+  it('gives each upgrade line to at most one mark', () => {
+    const seen = new Set<string>();
+    for (const m of TOWER_MARKS) {
+      for (const id of m.sources) {
+        expect(seen.has(id), `${id} feeds two marks — they will fight over the same anatomy`)
+          .toBe(false);
+        seen.add(id);
       }
     }
   });

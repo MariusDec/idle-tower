@@ -8,13 +8,17 @@ Players had no way to see what's coming. Mana unlock at wave 10 was invisible un
 
 ## What shows up
 
-A small horizontal pill strip rendered in a fixed-position slot at the top of the screen (see `.milestone-strip-slot` in `src/styles/main.css`). The strip shows the **next 3 milestones** in wave order, e.g.:
+A single compact chip pinned in the bottom-left corner stack, directly above the contract tracker (`.milestone-strip-slot`, see `src/styles/main.css`). The chip shows the **next** milestone — its wave tag, its label, and a coloured fill that grows from 0% to 100% as the player approaches it.
 
-- `Wave 10` · `Mana system unlocked` — Abilities become available...
-- `Wave 18` · `Frost Nova unlocked` — New ability at wave 18.
-- `Wave 20` · `Ascension available` — Reset your run for AP.
+Examples:
 
-When the player has ≥ 100 AP in a transcendence cycle, the strip also surfaces the Transcendence milestone at the end (with the label `100 AP` since it's AP-gated, not wave-gated).
+- `Wave 10` · `Mana system unlocked`
+- `Wave 18` · `Frost Nova unlocked`
+- `Wave 20` · `Ascension available`
+
+When the player has ≥ 100 AP in a transcendence cycle, the chip also surfaces the Transcendence milestone (with the label `100 AP` since it's AP-gated, not wave-gated).
+
+The earlier version of this widget also expanded a hover-flyout of up to three pills covering the play area around the chip. It was removed in plans/stats.md Part B because it duplicated the Progression tab (which lists every milestone, earned or upcoming), swallowed pointer events around the bottom-left corner, and on mobile grew into a column that could fill most of the viewport. Clicking the chip now opens the Progression tab — the canonical home of every milestone.
 
 ## Data model
 
@@ -31,14 +35,15 @@ The table is **derived** from `ABILITIES` and enemy unlock waves (single source 
 
 ## Animation
 
-When a milestone is reached, the strip's `is-pulse` class animates a 1.6s scale + green ring effect (see `@keyframes milestone-pulse` in CSS). Detection: on each `refresh()`, the strip compares the new upcoming-ID set with the previous one. If any previously-shown ID is gone, a milestone was just passed, and the new "next" entry pulses.
-
-The pulse is triggered from the strip's own state diff (NOT from the `wave_started` event) so the visual feedback is robust even if the throttled UI update races with the event.
+When a milestone is reached, the chip pulses for four seconds with the `@keyframes milestone-pulse` flourish (green ring + scale). Detection: on each `refresh()`, the strip compares the new upcoming-ID set with the previous one; if any previously-shown ID is gone, a milestone was just passed, and the chip pulses. The pulse is triggered from the strip's own state diff (NOT from the `wave_started` event) so the visual feedback is robust even if the throttled UI update races with the event. The `wave_started` call site still invokes `flashLastEntry()` directly as a belt-and-braces trigger.
 
 ## Wiring
 
 1. `HUD.renderMilestoneStripSlot()` appends a `div.milestone-strip-slot` to `document.body` and returns it.
-2. `UIManager` constructs `MilestoneStrip` against that slot, passing a `getUpcoming()` callback that calls `upcomingMilestones(state.wave.highestWave, state.resources.apThisTranscendence, 3)`.
+2. `UIManager` constructs `MilestoneStrip` against that slot, passing:
+   - `getProgress()` for the fill bar width,
+   - `getUpcoming()` for the next milestone (called with `count = 3` so the set-difference early-out still detects a fresh trigger),
+   - `onOpenProgression()` — a callback that opens the Progression tab (or the mobile sheet's `progression` tab on phones).
 3. `UIManager.update()` calls `milestoneStrip.refresh()` once per UI frame (~10 Hz).
 4. `UIManager.tickDisplayHud(dt, state)` calls `milestoneStrip.update(dt)` every game frame so the pulse timer can decay smoothly.
 
@@ -46,9 +51,16 @@ The pulse is triggered from the strip's own state diff (NOT from the `wave_start
 
 ```ts
 class MilestoneStrip {
-  constructor(root: HTMLElement, handlers: { getUpcoming: () => MilestoneDef[] });
-  refresh(): void;          // rebuild DOM from getUpcoming()
+  constructor(
+    root: HTMLElement,
+    handlers: {
+      getProgress: () => { currentWave: number; apThisCycle: number };
+      getUpcoming: () => MilestoneDef[];
+      onOpenProgression: () => void;
+    },
+  );
+  refresh(): void;          // rebuild chip content from getUpcoming()
   update(dt: number): void; // advance the pulse timer
-  flashLastEntry(): void;   // manual trigger (rarely needed)
+  flashLastEntry(): void;   // trigger the chip pulse (rarely needed)
 }
 ```

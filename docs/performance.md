@@ -48,11 +48,24 @@ blits with `drawImage`:
 | `auraSprites` | boss/healer/elite + aura + radius | radial glow at unpulsed size |
 | `crownSprites` | colour + size | elite crown glyph, including its blurred glow pass |
 | `magicProjectileSprite` | — | magic bolt glow |
+| `towerSprites` | family name (`'drum'`, `'turret'`, …) — see below | plinth, drum, arcane ring, turret, wall segment — the five tower painters whose art depends on the upgrade marks |
 
 Everything genuinely animated is still drawn live and allocates nothing: the
 wing flap (`drawWings`), the boss/splitter pulse (a transform around the blit),
 the shield arcs, and the retribution ring. Pulsing auras scale the cached
 sprite via `drawImage` rather than rebuilding the gradient.
+
+`towerSprites` is kept apart from `partSprites` because the upgrade-mark key
+space is **combinatorial** — seven dimensions, each up to six steps — while the
+number of keys live at any one time is exactly one per family. `partSprites`
+never evicts (correct there, a leak here), so the whole `towerSprites` map is
+**dropped wholesale** the moment `towerSig` (`marks.key` + core + detail tier)
+moves, and the five tower painters rebake lazily on the next frame. Marks
+change a couple of dozen times across a long run; a rebake is five painters
+and costs less than one frame of the per-frame gradients Part 5 of the UI
+plan removed. **The invariant is that no mark-dependent sprite may go in
+`partSprites`** — putting a tower sprite in the no-evict cache is a memory leak
+measured in hundreds of megabytes by wave 30.
 
 At 253 enemies with 12 elites this took `createRadialGradient` calls per frame
 from **266 to 0**, and `drawEnemies` from 2.24 ms to 1.26 ms.

@@ -1,6 +1,6 @@
 import type { MilestoneDef } from '../data/milestones';
 import { TRANSCENDENCE_UNLOCK_AP } from '../data/prestige';
-import { setDisplay, setStyle, setText, setTitle, toggleClass } from '../utils/dom';
+import { setDisplay, setStyle, setText, setTitle } from '../utils/dom';
 import { renderIcon } from './Icon';
 
 export interface MilestoneStripHandlers {
@@ -15,36 +15,30 @@ export interface MilestoneStripHandlers {
    * duplicating milestone-source knowledge here.
    */
   getUpcoming: () => MilestoneDef[];
+  /**
+   * Opens the Progression tab. Wired by UIManager — the pill is a button that
+   * deep-links into the full milestone list, which is the canonical home of
+   * every milestone (plans/stats.md Part B).
+   */
+  onOpenProgression: () => void;
 }
 
-interface EntryEls {
-  wrap: HTMLElement;
-  fill: HTMLElement;
-  glyph: HTMLElement;
-  label: HTMLElement;
-  detail: HTMLElement;
-  waveTag: HTMLElement;
-}
-
-const MAX_VISIBLE_ENTRIES = 3;
+const PULSE_SECONDS = 4;
 
 /**
- * Compact, hover-expandable "what's next" panel. By default a single pill is
- * visible (showing the *next* milestone with a progress fill that grows as
- * the player advances). Hovering reveals the full upcoming list of up to
- * 3 milestones, each with its own progress fill.
+ * Compact "what's next" pill. Shows the next milestone with a progress fill
+ * that grows as the player advances, and on click opens the Progression tab,
+ * which lists every milestone in full.
+ *
+ * The pill replaces the earlier hover-flyout: the flyout covered the play
+ * area, swallowed pointer events around the bottom-left corner, and
+ * duplicated the Progression tab.
  */
 export class MilestoneStrip {
   private readonly root: HTMLElement;
   private readonly handlers: MilestoneStripHandlers;
-  private entries: EntryEls[] = [];
   private announcedSet: Set<string> = new Set();
   private flashTimer = 0;
-  private latestToFlash = -1;
-  private hoverContainer!: HTMLElement;
-  private isHovered = false;
-  private hoverTimer = 0;
-  private isClickPinned = false;
   private collapsedBtn!: HTMLButtonElement;
   private collapsedFill!: HTMLElement;
   private collapsedWaveTag!: HTMLElement;
@@ -54,39 +48,26 @@ export class MilestoneStrip {
   constructor(root: HTMLElement, handlers: MilestoneStripHandlers) {
     this.root = root;
     this.handlers = handlers;
-    this.root.classList.add('milestone-strip-root');
     this.render();
   }
 
   /**
-   * Mark the last (rightmost) entry as just-triggered so it pulses.
-   * Called by the host immediately after a milestone wave is reached.
+   * Pulse the pill for a few seconds (the same green-ring flourish the old
+   * flyout used). Called by the host when a milestone wave is reached.
    */
   flashLastEntry(): void {
-    if (this.entries.length === 0) return;
-    const idx = this.entries.length - 1;
-    this.flashTimer = 4;
-    this.latestToFlash = idx;
-    const entry = this.entries[idx];
-    if (!entry) return;
-    entry.wrap.classList.remove('is-pulse');
-    void entry.wrap.offsetWidth;
-    entry.wrap.classList.add('is-pulse');
+    if (!this.collapsedBtn) return;
+    this.flashTimer = PULSE_SECONDS;
+    this.collapsedBtn.classList.remove('is-pulse');
+    void this.collapsedBtn.offsetWidth;
+    this.collapsedBtn.classList.add('is-pulse');
   }
 
   update(dt: number): void {
     if (this.flashTimer > 0) {
       this.flashTimer = Math.max(0, this.flashTimer - dt);
-      if (this.flashTimer === 0 && this.latestToFlash >= 0) {
-        const entry = this.entries[this.latestToFlash];
-        if (entry) entry.wrap.classList.remove('is-pulse');
-        this.latestToFlash = -1;
-      }
-    }
-    if (this.hoverTimer > 0) {
-      this.hoverTimer = Math.max(0, this.hoverTimer - dt);
-      if (this.hoverTimer === 0 && !this.isHovered) {
-        toggleClass(this.hoverContainer, 'is-open', false);
+      if (this.flashTimer === 0) {
+        this.collapsedBtn.classList.remove('is-pulse');
       }
     }
     this.refreshProgress();
@@ -95,48 +76,23 @@ export class MilestoneStrip {
   refresh(): void {
     const upcoming = this.handlers.getUpcoming();
     const upcomingIds = new Set(upcoming.map(m => m.id));
-    // Detect whether the set of upcoming milestones has changed since the
-    // last rebuild AND whether any previously-announced milestone was reached.
-    let reachedOne = false;
-    let sameSet = upcomingIds.size === this.announcedSet.size;
-    for (const prev of this.announcedSet) {
-      if (!upcomingIds.has(prev)) {
-        reachedOne = true;
-        sameSet = false;
-        break;
+    // Early-out when the upcoming set is unchanged. The first ~10 Hz UI tick
+    // where this matters is the per-frame `update()` call path.
+    if (upcomingIds.size === this.announcedSet.size) {
+      let sameSet = true;
+      for (const prev of this.announcedSet) {
+        if (!upcomingIds.has(prev)) {
+          sameSet = false;
+          break;
+        }
+      }
+      if (sameSet) {
+        this.refreshProgress();
+        return;
       }
     }
-    // Early-out: nothing to rebuild — just refresh the progress bar widths.
-    // This skips the per-UI-tick innerHTML teardown/rebuild of up to 3
-    // milestone entries, which was the single biggest per-frame DOM cost in
-    // the project.
-    if (sameSet) {
-      this.refreshProgress();
-      return;
-    }
-    this.entries = [];
-    this.hoverContainer.innerHTML = '';
-    if (upcoming.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'milestone-empty';
-      empty.textContent = 'No upcoming milestones';
-      this.hoverContainer.appendChild(empty);
-      this.announcedSet.clear();
-      this.updateCollapsed(null);
-      this.refreshProgress();
-      return;
-    }
-    const limited = upcoming.slice(0, MAX_VISIBLE_ENTRIES);
-    for (let i = 0; i < limited.length; i++) {
-      const m = limited[i];
-      if (!m) continue;
-      this.hoverContainer.appendChild(this.renderEntry(m, i === 0));
-    }
-    this.updateCollapsed(limited[0] ?? null);
+    this.updateCollapsed(upcoming[0] ?? null);
     this.refreshProgress();
-    if (reachedOne) {
-      this.flashLastEntry();
-    }
     this.announcedSet = upcomingIds;
   }
 
@@ -150,7 +106,8 @@ export class MilestoneStrip {
     setText(this.collapsedLabel, next.label);
     renderIcon(this.collapsedGlyph, next.icon);
     setStyle(this.collapsedGlyph, 'color', next.color);
-    setTitle(this.collapsedBtn, `${next.label} — ${next.detail}`);
+    setTitle(this.collapsedBtn, `${next.label} — ${next.detail}. Open Progression.`);
+    this.collapsedBtn.setAttribute('aria-label', `Next milestone: ${next.label}. Open Progression.`);
   }
 
   private render(): void {
@@ -159,7 +116,6 @@ export class MilestoneStrip {
     this.collapsedBtn = document.createElement('button');
     this.collapsedBtn.type = 'button';
     this.collapsedBtn.className = 'milestone-collapsed-btn';
-    this.collapsedBtn.setAttribute('aria-label', 'Show upcoming milestones');
 
     const collapsedFill = document.createElement('div');
     collapsedFill.className = 'milestone-collapsed-fill';
@@ -188,127 +144,30 @@ export class MilestoneStrip {
 
     this.collapsedBtn.appendChild(collapsedContent);
 
-    this.hoverContainer = document.createElement('div');
-    this.hoverContainer.className = 'milestone-strip';
-
-    this.collapsedBtn.addEventListener('mouseenter', () => {
-      this.isHovered = true;
-      this.hoverTimer = 0;
-      toggleClass(this.hoverContainer, 'is-open', true);
-    });
-    this.collapsedBtn.addEventListener('mouseleave', () => {
-      this.isHovered = false;
-      if (!this.isClickPinned) this.hoverTimer = 0.25;
-    });
-    this.hoverContainer.addEventListener('mouseenter', () => {
-      this.isHovered = true;
-      this.hoverTimer = 0;
-      toggleClass(this.hoverContainer, 'is-open', true);
-    });
-    this.hoverContainer.addEventListener('mouseleave', () => {
-      this.isHovered = false;
-      if (!this.isClickPinned) this.hoverTimer = 0.25;
-    });
-
-    // Click/tap to toggle (primary interaction on touch devices; secondary
-    // on desktop — a click "pins" the strip open so the hover-leave timer
-    // doesn't immediately close it).
-    this.collapsedBtn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      const isOpen = this.hoverContainer.classList.contains('is-open');
-      if (isOpen) {
-        this.isClickPinned = false;
-        this.hoverTimer = 0;
-        toggleClass(this.hoverContainer, 'is-open', false);
-      } else {
-        this.isClickPinned = true;
-        this.hoverTimer = 0;
-        toggleClass(this.hoverContainer, 'is-open', true);
-      }
-    });
-    // Click outside the strip closes a click-pinned strip.
-    document.addEventListener('click', (ev) => {
-      if (!this.isClickPinned) return;
-      const target = ev.target as Node | null;
-      if (target && this.root.contains(target)) return;
-      this.isClickPinned = false;
-      this.hoverTimer = 0;
-      toggleClass(this.hoverContainer, 'is-open', false);
+    this.collapsedBtn.addEventListener('click', () => {
+      this.handlers.onOpenProgression();
     });
 
     this.root.appendChild(this.collapsedBtn);
-    this.root.appendChild(this.hoverContainer);
-    this.refresh();
-  }
-
-  private renderEntry(m: MilestoneDef, isNext: boolean): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = `milestone-entry${isNext ? ' is-next' : ''}`;
-    wrap.dataset.kind = m.kind;
-    wrap.dataset.milestoneId = m.id;
-
-    const fill = document.createElement('div');
-    fill.className = 'milestone-entry-fill';
-    wrap.appendChild(fill);
-
-    const glyph = document.createElement('div');
-    glyph.className = 'milestone-entry-glyph';
-    renderIcon(glyph, m.icon);
-    setStyle(glyph, 'color', m.color);
-
-    const body = document.createElement('div');
-    body.className = 'milestone-entry-body';
-    const waveRow = document.createElement('div');
-    waveRow.className = 'milestone-entry-row';
-    const waveTag = document.createElement('span');
-    waveTag.className = 'milestone-entry-wave';
-    waveTag.textContent = m.wave > 0 ? `Wave ${m.wave}` : this.kindLabel(m.kind);
-    const label = document.createElement('span');
-    label.className = 'milestone-entry-label';
-    label.textContent = m.label;
-    waveRow.appendChild(waveTag);
-    waveRow.appendChild(label);
-    body.appendChild(waveRow);
-    const detail = document.createElement('div');
-    detail.className = 'milestone-entry-detail';
-    detail.textContent = m.detail;
-    body.appendChild(detail);
-
-    wrap.appendChild(glyph);
-    wrap.appendChild(body);
-
-    this.entries.push({ wrap, fill, glyph, label, detail, waveTag });
-    return wrap;
   }
 
   private refreshProgress(): void {
     const progress = this.handlers.getProgress();
     const upcoming = this.handlers.getUpcoming();
-    const limited = upcoming.slice(0, MAX_VISIBLE_ENTRIES);
-    let prevWave = 0;
-    for (let i = 0; i < this.entries.length; i++) {
-      const entry = this.entries[i];
-      const def = limited[i];
-      if (!entry) continue;
-      const fillPct = this.computeFill(def ?? null, prevWave, progress);
-      setStyle(entry.fill, 'width', `${(fillPct * 100).toFixed(1)}%`);
-      if (def && def.wave > 0) prevWave = def.wave;
-    }
-    const collapsedDef = limited[0];
-    if (collapsedDef) {
-      const collapsedPct = this.computeFill(collapsedDef, 0, progress);
-      setStyle(this.collapsedFill, 'width', `${(collapsedPct * 100).toFixed(1)}%`);
+    const next = upcoming[0];
+    if (next) {
+      const pct = this.computeFill(next, 0, progress);
+      setStyle(this.collapsedFill, 'width', `${(pct * 100).toFixed(1)}%`);
     } else {
       setStyle(this.collapsedFill, 'width', '0%');
     }
   }
 
   private computeFill(
-    m: MilestoneDef | null,
+    m: MilestoneDef,
     prevWave: number,
     progress: { currentWave: number; apThisCycle: number },
   ): number {
-    if (!m) return 0;
     if (m.wave === 0) {
       const target = TRANSCENDENCE_UNLOCK_AP;
       if (target <= 0) return 0;

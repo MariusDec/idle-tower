@@ -62,6 +62,8 @@ Called whenever upgrades change or research/prestige updates:
 
 The `damage` and `health` upgrades both have `startLevel: 1`, so they ship at L1 out of the box and contribute to the tower's stats from frame 0. The first purchase moves them to L2 and pays the L1→L2 cost. The first-time `maxHp` gain (going from 0 to >0) sets `hp = maxHp` so the tower spawns with full health.
 
+Ten upgrade lines also drive a **tower mark** — see [tower-system.md#upgrade-marks](tower-system.md#upgrade-marks). Marks change no stat.
+
 ## Upgrade Panel
 
 3 sub-tabs in UI: Attack, Defense, Utility (economy grouped in Utility).

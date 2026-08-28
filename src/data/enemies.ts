@@ -782,6 +782,169 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
 };
 
 /**
+ * One bullet in an enemy codex page.
+ *
+ * `name` is the short heading the modal prints in a coloured pill (e.g.
+ * `Pack`, `Armour`, `Enrage`); `text` is the player-facing sentence. Numbers
+ * in `text` are interpolated from `ENEMY_BEHAVIOR` / `BOSS_ENCOUNTER` /
+ * `ENEMY_DEFS` via template literals — never typed as literals — so a balance
+ * change lands in the page in the same commit it lands in the simulation.
+ */
+export interface EnemyEffectLine {
+  name: string;
+  text: string;
+}
+
+/**
+ * One page in the enemy bestiary (plans/stats.md Part D).
+ *
+ * - `tagline` — single sentence the player sees on first open. Moved verbatim
+ *   from `ENEMY_INTRO_MILESTONES` for the eleven types that have a milestone
+ *   entry; written fresh for `normal` (no milestone) and `boss` (boss-wave
+ *   banner covers the announcement, this is the page-level summary).
+ * - `description` — one or two sentences on what the enemy *is*. Written fresh.
+ * - `answer` — the tactic the player needs to bring. Written fresh.
+ * - `effects` — the mechanics bullets, in teaching order. Numbers come from the
+ *   tuning constants so a balance change reaches the modal automatically.
+ */
+export interface EnemyCodexEntry {
+  tagline: string;
+  description: string;
+  answer: string;
+  effects: readonly EnemyEffectLine[];
+}
+
+/**
+ * The enemy bestiary — one entry per `EnemyType` (plans/stats.md Part D).
+ *
+ * `Record<EnemyType, …>` so adding a new type cannot ship without copy: tsc
+ * catches the missing key, and `content-coverage.test.ts` rejects an empty
+ * tagline or a placeholder answer.
+ */
+export const ENEMY_CODEX: Record<EnemyType, EnemyCodexEntry> = {
+  normal: {
+    tagline: 'The baseline enemy — a cheap advance-and-melee unit.',
+    description: 'A cheap grunts whose only job is to reach the tower and hit it once per swing. '
+      + 'Every mechanic in the game was tested against this type before it was added to anything else.',
+    answer: 'Anything works. Build for splash or pierce and the rest of the roster falls in line.',
+    effects: [],
+  },
+  fast: {
+    tagline: 'Quick and fragile — and they arrive three at a time.',
+    description: `Quick and fragile runners. Every spawn is a pack of ${ENEMY_BEHAVIOR.fastPackSize} from one shared point, scattered over ${ENEMY_BEHAVIOR.fastPackSpread} px.`,
+    answer: 'Splash or chain damage — a single-target build lets the pack leak past.',
+    effects: [
+      { name: 'Pack', text: `Spawns in groups of ${ENEMY_BEHAVIOR.fastPackSize} from one shared spawn point, scattered over ${ENEMY_BEHAVIOR.fastPackSpread} px.` },
+    ],
+  },
+  tank: {
+    tagline: 'Armoured and slow. Shots never pierce past one.',
+    description: `Slow heavy body with ${ENEMY_DEFS.tank.armor} armour. A tank is a body-block: a shot that would pierce past a grunt dies on the tank's hide.`,
+    answer: 'Multi-shot, splash or high per-hit damage — a piercing build cannot route around a wall.',
+    effects: [
+      { name: 'Body Block', text: 'Shots never pierce past a tank, even if they would have pierced the grunt behind it.' },
+      { name: 'Armour', text: `Reduces incoming physical damage to ${(armorDamageMultiplier(ENEMY_DEFS.tank.armor) * 100).toFixed(0)}% of the hit.` },
+    ],
+  },
+  flying: {
+    tagline: 'Ignores land mines and floats straight over the wall.',
+    description: 'A flier ignores the wall\'s extended contact band and is unaffected by land mines and knockback — magic is the only thing that reliably catches one.',
+    answer: 'Magic damage. The Marksman and Frostwork cores pay off here; physical builds waste their bonus.',
+    effects: [
+      { name: 'Airborne', text: 'Ignores land mines, knockback and the wall\'s contact band. Magic damage still applies.' },
+    ],
+  },
+  healer: {
+    tagline: 'Heals the wave, and runs while healing once badly hurt.',
+    description: `A support unit that heals allies in a ${ENEMY_DEFS.healer.healRange!} px radius for ${(ENEMY_DEFS.healer.healFraction! * 100).toFixed(0)}% of their max HP every ${ENEMY_DEFS.healer.healCooldown!} s. Below ${(ENEMY_BEHAVIOR.healerFleeThreshold * 100).toFixed(0)}% HP it turns and runs for the arena edge while self-healing.`,
+    answer: 'Target priority — a healer left alive keeps the whole wave topped up.',
+    effects: [
+      { name: 'Field Heal', text: `Restores ${(ENEMY_DEFS.healer.healFraction! * 100).toFixed(0)}% of max HP to allies within ${ENEMY_DEFS.healer.healRange!} px, every ${ENEMY_DEFS.healer.healCooldown!} s.` },
+      { name: 'Flee', text: `Below ${(ENEMY_BEHAVIOR.healerFleeThreshold * 100).toFixed(0)}% HP it flees at ${ENEMY_BEHAVIOR.healerFleeSpeedMult}× speed and self-heals at ${(ENEMY_BEHAVIOR.healerSelfHealPerSecond * 100).toFixed(0)}% max HP / s. Never flees twice.` },
+    ],
+  },
+  boss: {
+    tagline: 'Three phases, one pattern each, plus a timer that punishes patience.',
+    description: 'The arena boss. Three phases at 66% and 33% HP, each running a different pattern from the tier\'s rotation. After the enrage delay the boss gains damage and speed every ten seconds for the rest of the fight.',
+    answer: 'Learn the tier\'s patterns and bring the right counter — Damage, AoE, Slow or Magic. Never let it enrage.',
+    effects: [
+      { name: 'Phases', text: `Three phases at ${(BOSS_ENCOUNTER.phaseThresholds[0] * 100).toFixed(0)}% and ${(BOSS_ENCOUNTER.phaseThresholds[1] * 100).toFixed(0)}% HP. Each crossing flashes untargetable for ${BOSS_ENCOUNTER.phaseInvulnerability} s.` },
+      { name: BOSS_PATTERN_NAMES.bulwark, text: BOSS_PATTERN_HINTS.bulwark },
+      { name: BOSS_PATTERN_NAMES.summon, text: BOSS_PATTERN_HINTS.summon },
+      { name: BOSS_PATTERN_NAMES.slam, text: BOSS_PATTERN_HINTS.slam },
+      { name: BOSS_PATTERN_NAMES.siphon, text: BOSS_PATTERN_HINTS.siphon },
+      { name: 'Enrage', text: `After ${BOSS_ENCOUNTER.enrageDelay} s the boss gains +${(BOSS_ENCOUNTER.enrageDamagePerStack * 100).toFixed(0)}% damage and +${(BOSS_ENCOUNTER.enrageSpeedPerStack * 100).toFixed(0)}% speed every ${BOSS_ENCOUNTER.enrageInterval} s.` },
+      { name: 'Swift Kill', text: `Cleared inside ${BOSS_ENCOUNTER.swiftKillSeconds} s pays +${(BOSS_ENCOUNTER.swiftKillGoldBonus * 100).toFixed(0)}% boss gold and boosts the guaranteed drop by ${BOSS_ENCOUNTER.swiftKillRarityBoost} rarity tier.` },
+      { name: 'Flawless', text: `A no-HP-lost clear banks +${(BOSS_ENCOUNTER.flawlessApBonus * 100).toFixed(0)}% AP preview and ${BOSS_ENCOUNTER.flawlessRerollTokens} blessing reroll token for the rest of the run.` },
+    ],
+  },
+  splitter: {
+    tagline: 'Bursts into two children that scatter before they can be hit.',
+    description: `On death a splitter spawns ${ENEMY_DEFS.splitter.splitChildren} children at ${(ENEMY_DEFS.splitter.splitHpFraction! * 100).toFixed(0)}% HP each, scattering at ${ENEMY_DEFS.splitter.splitSpeedMultiplier}× speed for ${ENEMY_BEHAVIOR.splitterScatterTime} s before turning in. Each child is untargetable for ${ENEMY_BEHAVIOR.splitterSpawnProtection} s.`,
+    answer: 'Splash or chain damage — single-target kills one and pays double for the second.',
+    effects: [
+      { name: 'Split', text: `On death spawns ${ENEMY_DEFS.splitter.splitChildren} children at ${(ENEMY_DEFS.splitter.splitHpFraction! * 100).toFixed(0)}% HP, moving at ${ENEMY_DEFS.splitter.splitSpeedMultiplier}× speed.` },
+      { name: 'Spawn Protection', text: `Each child is untargetable for ${ENEMY_BEHAVIOR.splitterSpawnProtection} s and scatters at ${ENEMY_BEHAVIOR.splitterScatterSpeedMult}× speed for ${ENEMY_BEHAVIOR.splitterScatterTime} s before turning toward the tower.` },
+    ],
+  },
+  shielded: {
+    tagline: 'Charges block a hit each, and rebuild if you stop shooting.',
+    description: `A shield absorbs up to ${ENEMY_DEFS.shielded.shieldCharges} hits. After ${ENEMY_BEHAVIOR.shieldCalmBeforeRegen} s of taking no damage it rebuilds one charge every ${ENEMY_BEHAVIOR.shieldRegenInterval} s. Also ${(ENEMY_DEFS.shielded.magicResist * 100).toFixed(0)}% magic-resistant.`,
+    answer: 'Sustained damage — burst damage feeds its regen window and wastes every shot after the first.',
+    effects: [
+      { name: 'Charges', text: `${ENEMY_DEFS.shielded.shieldCharges} shield charges absorb a hit each.` },
+      { name: 'Rebuild', text: `After ${ENEMY_BEHAVIOR.shieldCalmBeforeRegen} s undamaged, restores one charge every ${ENEMY_BEHAVIOR.shieldRegenInterval} s.` },
+      { name: 'Magic Resist', text: `Reduces incoming magic damage by ${(ENEMY_DEFS.shielded.magicResist * 100).toFixed(0)}%.` },
+    ],
+  },
+  siege: {
+    tagline: 'Halts at 260px and shells the tower. Out-range it or kill it first.',
+    description: `Stops just inside the arena range cap at ${ENEMY_BEHAVIOR.siegeStandoff} px and lobs a hostile shell every ${ENEMY_BEHAVIOR.siegeReload} s. The shell takes ${ENEMY_BEHAVIOR.siegeShellTravel} s to land and deals ${ENEMY_BEHAVIOR.siegeShellDamageMult}× the siege's melee damage.`,
+    answer: 'Out-range it with a fully range-stacked build, or take it first — its shell will out-DPS your tower if you ignore it.',
+    effects: [
+      { name: 'Standoff', text: `Halts at ${ENEMY_BEHAVIOR.siegeStandoff} px and will not close the rest of the gap on its own.` },
+      { name: 'Shell', text: `Lobs a hostile shell every ${ENEMY_BEHAVIOR.siegeReload} s; it travels for ${ENEMY_BEHAVIOR.siegeShellTravel} s and deals ${ENEMY_BEHAVIOR.siegeShellDamageMult}× melee damage on arrival.` },
+    ],
+  },
+  thief: {
+    tagline: 'Steals gold on contact and runs. Kill it and you get double back.',
+    description: `Steals ${(ENEMY_BEHAVIOR.thiefStealFraction * 100).toFixed(0)}% of current gold on contact, capped at ${ENEMY_BEHAVIOR.thiefStealWaveGoldMult}× a normal's wave drop per hit and ${(ENEMY_BEHAVIOR.thiefWaveTheftCap * 100).toFixed(0)}% of current gold per wave. While loaded it flees at ${ENEMY_BEHAVIOR.thiefFleeSpeedMult}× speed. Killing a loaded thief pays ${ENEMY_BEHAVIOR.thiefRecoveryMult}× its cargo.`,
+    answer: 'Damage — let one escape and you pay twice (the gold and the wave-clear bounty).',
+    effects: [
+      { name: 'Theft', text: `Steals ${(ENEMY_BEHAVIOR.thiefStealFraction * 100).toFixed(0)}% of current gold on contact, capped at ${ENEMY_BEHAVIOR.thiefStealWaveGoldMult}× a normal's wave drop per hit and ${(ENEMY_BEHAVIOR.thiefWaveTheftCap * 100).toFixed(0)}% of current gold per wave.` },
+      { name: 'Flight', text: `While loaded it flees for the arena edge at ${ENEMY_BEHAVIOR.thiefFleeSpeedMult}× speed.` },
+      { name: 'Recovery', text: `Killing a loaded thief pays ${ENEMY_BEHAVIOR.thiefRecoveryMult}× its cargo back as bonus gold.` },
+    ],
+  },
+  blinker: {
+    tagline: 'Teleports past knockback, mines and the wall. Answer it with damage.',
+    description: `Teleports ${ENEMY_BEHAVIOR.blinkDistance} px every ${ENEMY_BEHAVIOR.blinkInterval} s, with ${ENEMY_BEHAVIOR.blinkImmunity} s of knockback and mine immunity after each blink. Also ${(ENEMY_DEFS.blinker.magicResist * 100).toFixed(0)}% magic-resistant.`,
+    answer: 'Damage over time and prediction — anything that needs the enemy to stay still is wasted on a blinker.',
+    effects: [
+      { name: 'Blink', text: `Teleports ${ENEMY_BEHAVIOR.blinkDistance} px every ${ENEMY_BEHAVIOR.blinkInterval} s and is immune to knockback and mines for ${ENEMY_BEHAVIOR.blinkImmunity} s afterwards.` },
+      { name: 'Magic Resist', text: `Reduces incoming magic damage by ${(ENEMY_DEFS.blinker.magicResist * 100).toFixed(0)}%.` },
+    ],
+  },
+  warden: {
+    tagline: 'Shields five allies at a time. Target priority is the only answer.',
+    description: `Projects a regenerating absorb shield worth ${(ENEMY_BEHAVIOR.wardShieldFraction * 100).toFixed(0)}% of its own max HP onto up to ${ENEMY_BEHAVIOR.wardMaxTargets} allies in a ${ENEMY_BEHAVIOR.wardRange} px radius, refreshing every ${ENEMY_BEHAVIOR.wardRefresh} s.`,
+    answer: 'Target priority — a warden left alive makes the whole wave twice as hard to kill.',
+    effects: [
+      { name: 'Ward', text: `Absorb shield worth ${(ENEMY_BEHAVIOR.wardShieldFraction * 100).toFixed(0)}% of its max HP onto up to ${ENEMY_BEHAVIOR.wardMaxTargets} allies in ${ENEMY_BEHAVIOR.wardRange} px. Refreshes every ${ENEMY_BEHAVIOR.wardRefresh} s.` },
+    ],
+  },
+  burrower: {
+    tagline: 'Untouchable underground until it surfaces beside the tower.',
+    description: `Untargtable and invulnerable underground, moving at ${ENEMY_BEHAVIOR.burrowSpeedMult}× speed. Surfaces for ${ENEMY_BEHAVIOR.burrowTelegraph} s at ${ENEMY_BEHAVIOR.burrowSurfaceDistance} px from the tower before meleeing.`,
+    answer: 'AoE at the surface point — single-target towers will miss the window while it telegraphs.',
+    effects: [
+      { name: 'Burrow', text: `Untargtable underground, moving at ${ENEMY_BEHAVIOR.burrowSpeedMult}× speed.` },
+      { name: 'Surface', text: `Surfaces for ${ENEMY_BEHAVIOR.burrowTelegraph} s at ${ENEMY_BEHAVIOR.burrowSurfaceDistance} px from the tower, then melee attacks.` },
+    ],
+  },
+};
+
+/**
  * Draw weights for the non-boss spawn pool (gameplay plan §2.4).
  *
  * The single source of truth: `WaveManager.pickEnemyType`, the wave-average

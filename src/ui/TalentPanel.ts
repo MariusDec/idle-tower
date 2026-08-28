@@ -4,6 +4,7 @@ import {
   TALENT_BY_ID,
   TALENT_GRID,
   TALENT_ENDLESS,
+  formatTalentEffectLine,
   type TalentDef,
   type TalentId,
 } from '../data/talentTree';
@@ -180,6 +181,8 @@ export class TalentPanel {
   private detailLearnBtn!: HTMLButtonElement;
   /** Which talent the card currently shows. Drives the icon swap and Learn. */
   private detailCardId: TalentId | null = null;
+  /** Talent id whose resolved effect lines are currently rendered in detailDescEl, '' when in text mode. */
+  private detailDescEffectsKey: string = '';
 
   private respecBtns = new Map<TalentBranch, HTMLButtonElement>();
   private respecAllBtn: HTMLButtonElement | null = null;
@@ -934,7 +937,31 @@ export class TalentPanel {
       'Row ' + def.row + ' \u00B7 ' + branchLabel
       + (def.requiresBranchPoints > 0 ? ' \u00B7 needs ' + def.requiresBranchPoints + ' pts in branch' : ''));
     setText(this.detailRankEl, current + ' / ' + def.maxPoints);
-    setText(this.detailDescEl, def.description);
+
+    // When maxed with effects, replace the per-point description with one
+    // resolved line per effect (stacked vertically). Otherwise fall back to
+    // the description text. The key is the talent id — once maxed, `current`
+    // is pinned at def.maxPoints so transitions only happen on id change or
+    // maxed ↔ unmaxed.
+    const showResolvedEffects = current >= def.maxPoints && def.effects.length > 0;
+    if (showResolvedEffects) {
+      if (this.detailDescEffectsKey !== id) {
+        this.detailDescEffectsKey = id;
+        this.detailDescEl.textContent = '';
+        for (const eff of def.effects) {
+          const line = document.createElement('span');
+          line.className = 'talent-detail-effect-line';
+          line.textContent = formatTalentEffectLine(eff.stat, eff.perPoint * current);
+          this.detailDescEl.appendChild(line);
+        }
+      }
+    } else {
+      if (this.detailDescEffectsKey !== '') {
+        this.detailDescEffectsKey = '';
+        this.detailDescEl.textContent = '';
+      }
+      setText(this.detailDescEl, def.description);
+    }
 
     const showDelta = def.effects.length > 0 && current < def.maxPoints;
     setDisplay(this.detailDeltaWrap, showDelta ? '' : 'none');

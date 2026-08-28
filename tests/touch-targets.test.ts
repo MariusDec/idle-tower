@@ -84,6 +84,9 @@ describe('§9.C 44 px audit', () => {
     { sel: '.btn-research', axes: ['min-height'] },
     { sel: '.mobile-sheet-segmented-btn', axes: ['min-height'] },
     { sel: '.mobile-sheet-close', axes: ['min-width', 'min-height'] },
+    // The modal X is the only dismiss control a phone has — Escape and the
+    // backdrop are both out of reach when the card fills the viewport.
+    { sel: '.modal-close', axes: ['min-width', 'min-height'] },
     { sel: '.talent-node', axes: ['min-width', 'min-height'] },
   ];
 
@@ -142,11 +145,11 @@ describe('§9.F acceptance regressions', () => {
     expect(body!.body).toMatch(/padding:[^;]*var\(--safe-b\)/);
   });
 
-  it('the milestone strip subtracts both insets from the free column', () => {
-    const strip = RULES.find(r => r.selector === '.milestone-strip' && /max-height:/.test(r.body));
-    expect(strip).toBeTruthy();
-    expect(strip!.body).toMatch(/var\(--safe-t\)/);
-    expect(strip!.body).toMatch(/var\(--safe-b\)/);
+  it('the milestone chip keeps its 44px mobile tap target', () => {
+    // The hover-flyout was deleted in plans/stats.md Part B; what survives is
+    // the pill, which is still the only milestone UI on mobile and still has
+    // to clear the 44px floor.
+    expect(declares('.milestone-collapsed-btn', /min-height:\s*44px/)).toBe(true);
   });
 
   it('the modal card caps its width against the side insets', () => {

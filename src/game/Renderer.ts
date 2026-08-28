@@ -3,6 +3,7 @@ import { LOOT_ORB_COLORS, LOOT_TUNING, type LootOrbKind } from '../data/loot';
 import { ARENA, ARENA_RANGE_CAP, entity, world } from '../data/arena';
 import type { Camera } from './Camera';
 import { TOWER_VISUAL } from '../data/tower';
+import { DEFAULT_TOWER_MARKS, type TowerMarks } from '../data/towerMarks';
 import { CORE_BY_ID, DEFAULT_CORE, isCoreId, type CoreId } from '../data/cores';
 import { FX, INK, lighten, mix, withAlpha } from '../data/palette';
 import { DEFAULT_QUALITY, QUALITY, type QualityProfile, type QualityTier } from '../data/quality';
@@ -521,6 +522,25 @@ export class Renderer {
    */
   private readonly partSprites = new Map<string, HTMLCanvasElement>();
   /**
+   * Sprites whose art depends on the tower's upgrade marks
+   * (`plans/tower-ui.md` §C).
+   *
+   * Kept apart from `partSprites` because the key space is *combinatorial*
+   * while the number of keys live at any one time is exactly one per family.
+   * `partSprites` never evicts — correct there, a leak here. So the whole map
+   * is dropped the moment `towerSig` moves, and the five tower painters rebake
+   * lazily on the next frame.
+   */
+  private readonly towerSprites = new Map<string, HTMLCanvasElement>();
+  /**
+   * The marks the tower is currently painted from. Replaced by reference at
+   * the top of `draw`; the painters read it instead of threading a parameter
+   * through five call sites.
+   */
+  private marks: TowerMarks = DEFAULT_TOWER_MARKS;
+  /** `marks.key` + core + detail tier — everything the tower's art depends on. */
+  private towerSig = '';
+  /**
    * Tower position from the frame currently being drawn.
    *
    * Cached at the top of `draw` so the boss siphon beam has somewhere to point.
@@ -594,6 +614,38 @@ export class Renderer {
     return sprite;
   }
 
+  /**
+   * The same as `part()`, but in the evictable tower cache.
+   *
+   * Keys here are plain family names (`'drum'`, `'turret'`) with no variant
+   * suffix: the map only ever holds sprites for the *current* signature,
+   * because `syncTowerMarks` empties it when the signature moves.
+   */
+  private towerPart(
+    key: string,
+    size: number,
+    paint: (g: CanvasRenderingContext2D) => void,
+  ): HTMLCanvasElement {
+    const cached = this.towerSprites.get(key);
+    if (cached) return cached;
+    const sprite = this.makeSprite(size, paint);
+    this.towerSprites.set(key, sprite);
+    return sprite;
+  }
+
+  /**
+   * Adopt this frame's marks, and drop the baked tower if anything about its
+   * art changed. One string compare and, a couple of dozen times per run, a
+   * `Map.clear()`.
+   */
+  private syncTowerMarks(snap: RenderSnapshot): void {
+    this.marks = snap.towerMarks ?? DEFAULT_TOWER_MARKS;
+    const sig = `${this.marks.key}${this.core}|${this.towerTier(snap)}`;
+    if (sig === this.towerSig) return;
+    this.towerSig = sig;
+    this.towerSprites.clear();
+  }
+
   /** Blit a cached sprite centred on a world point. */
   private blit(ctx: CanvasRenderingContext2D, sprite: HTMLCanvasElement, x: number, y: number, scale = 1): void {
     const size = sprite.width * scale;
@@ -618,6 +670,18 @@ export class Renderer {
       if (level >= TOWER_VISUAL.detailTiers[i]) tier = i;
     }
     return tier;
+  }
+
+  /**
+   * The barrel's drawn length this frame.
+   *
+   * `TOWER_VISUAL.turretLength` is the *unupgraded* length and stays a
+   * constant — §D.1 grows the barrel by painting a longer one, and the muzzle
+   * flash and the tracers have to be placed at the tip of what was actually
+   * drawn or they detach from it.
+   */
+  private get drawnTurretLength(): number {
+    return TOWER_VISUAL.turretLength * (1 + this.marks.steps.barrel * 0.045);
   }
 
   /**
@@ -673,6 +737,7 @@ export class Renderer {
     this.towerY = snapshot.tower.y;
     this.wave = snapshot.wave.number;
     this.core = this.coreOf(snapshot);
+    this.syncTowerMarks(snapshot);
     this.advance(snapshot);
 
     // ── device space: the baked background, blitted 1:1 ──
@@ -1543,7 +1608,7 @@ export class Renderer {
       g.fill();
     });
     if (this.profile.shadows) this.blit(ctx, shadow, t.x, t.y);
-    this.blit(ctx, this.part('tower-plinth', TOWER_VISUAL.plinthRadius * 2.3, (g) => {
+    this.blit(ctx, this.towerPart('plinth', TOWER_VISUAL.plinthRadius * 2.7, (g) => {
       this.paintPlinth(g);
     }), t.x, t.y);
   }
@@ -1551,7 +1616,14 @@ export class Renderer {
   /** Stone footing: a kerb of set blocks, a lit bevel and an occlusion ring. */
   private paintPlinth(g: CanvasRenderingContext2D): void {
     const R = TOWER_VISUAL.plinthRadius;
+    const light = TOWER_VISUAL.lightAngle;
+    const m = this.marks.steps;
     const rand = mulberry32(0x91af7);
+
+    // §D.9: buttresses go under the disc, so the disc's edge cuts them and
+    // they read as set *into* the footing.
+    this.paintButtresses(g, R, light, m.masonry);
+
     g.fillStyle = TOWER_VISUAL.plinth;
     g.beginPath();
     g.arc(0, 0, R, 0, Math.PI * 2);
@@ -1564,7 +1636,7 @@ export class Renderer {
       const a0 = i * step + step * 0.09;
       const a1 = (i + 1) * step - step * 0.09;
       const mid = (a0 + a1) / 2;
-      const lit = 0.5 + 0.5 * Math.cos(mid - TOWER_VISUAL.lightAngle);
+      const lit = 0.5 + 0.5 * Math.cos(mid - light);
       g.beginPath();
       g.arc(0, 0, R, a0, a1);
       g.arc(0, 0, R * 0.79, a1, a0, true);
@@ -1577,12 +1649,51 @@ export class Renderer {
       g.fill();
     }
 
+    // masonry 2+: a second, finer kerb inside the first — the footing is
+    // stepped, which is the cheapest way to say "this is thicker than it was".
+    if (m.masonry >= 2) {
+      const inner = 24;
+      const iStep = (Math.PI * 2) / inner;
+      for (let i = 0; i < inner; i++) {
+        const a0 = i * iStep + iStep * 0.12;
+        const a1 = (i + 1) * iStep - iStep * 0.12;
+        const mid = (a0 + a1) / 2;
+        const lit = 0.5 + 0.5 * Math.cos(mid - light);
+        g.beginPath();
+        g.arc(0, 0, R * 0.77, a0, a1);
+        g.arc(0, 0, R * 0.64, a1, a0, true);
+        g.closePath();
+        g.fillStyle = rand() > 0.5 ? TOWER_VISUAL.stoneMid : TOWER_VISUAL.stoneDark;
+        g.fill();
+        g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.08 * lit);
+        g.fill();
+        g.fillStyle = withAlpha(INK['950'], 0.3 * (1 - lit));
+        g.fill();
+      }
+    }
+
+    // masonry 5: a stepped second tier, drawn as a raised lip.
+    if (m.masonry >= 5) {
+      g.strokeStyle = withAlpha(TOWER_VISUAL.stoneLit, 0.9);
+      g.lineWidth = entity(2.4);
+      g.beginPath();
+      g.arc(0, 0, R * 0.61, 0, Math.PI * 2);
+      g.stroke();
+      g.strokeStyle = withAlpha(INK['950'], 0.55);
+      g.lineWidth = entity(1.4);
+      g.beginPath();
+      g.arc(0, 0, R * 0.585, 0, Math.PI * 2);
+      g.stroke();
+    }
+
+    this.paintResonator(g, R, light, m.resonator);
+
     // Bevel highlight on the lit side, and the occlusion ring where the drum
     // meets the footing — the two cheapest cues that this is a solid object.
     g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.22);
     g.lineWidth = entity(2);
     g.beginPath();
-    g.arc(0, 0, R * 0.9, TOWER_VISUAL.lightAngle - 1.15, TOWER_VISUAL.lightAngle + 1.15);
+    g.arc(0, 0, R * 0.9, light - 1.15, light + 1.15);
     g.stroke();
 
     const ao = g.createRadialGradient(0, 0, TOWER_VISUAL.bodyRadius * 0.85, 0, 0, TOWER_VISUAL.bodyRadius * 1.28);
@@ -1592,6 +1703,107 @@ export class Renderer {
     g.beginPath();
     g.arc(0, 0, TOWER_VISUAL.bodyRadius * 1.28, 0, Math.PI * 2);
     g.fill();
+  }
+
+  /**
+   * Buttresses from the `health` line (`plans/tower-ui.md` §D.9).
+   *
+   * The only mark that grows the tower's *footprint*, which is why the plinth
+   * sprite is baked at `plinthRadius * 2.7` rather than `2.3`. It does not
+   * touch `TOWER_VISUAL.plinthRadius` itself: the charge ring reads that
+   * constant (`Renderer.drawChargeRing`) and moving it would drag an unrelated
+   * indicator outward.
+   */
+  private paintButtresses(
+    g: CanvasRenderingContext2D,
+    R: number,
+    light: number,
+    step: number,
+  ): void {
+    if (step <= 0) return;
+    const n = step >= 3 ? 8 : 4;
+    const reach = R + entity(step >= 3 ? 8 : 5.5);
+    const half = step >= 3 ? 0.15 : 0.19;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.PI / n;
+      const lit = 0.5 + 0.5 * Math.cos(a - light);
+      g.beginPath();
+      g.moveTo(Math.cos(a - half) * R * 0.9, Math.sin(a - half) * R * 0.9);
+      g.lineTo(Math.cos(a - half * 0.45) * reach, Math.sin(a - half * 0.45) * reach);
+      g.lineTo(Math.cos(a + half * 0.45) * reach, Math.sin(a + half * 0.45) * reach);
+      g.lineTo(Math.cos(a + half) * R * 0.9, Math.sin(a + half) * R * 0.9);
+      g.closePath();
+      g.fillStyle = TOWER_VISUAL.stoneDark;
+      g.fill();
+      g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.12 * lit);
+      g.fill();
+      g.fillStyle = withAlpha(INK['950'], 0.4 * (1 - lit));
+      g.fill();
+      g.strokeStyle = withAlpha(INK['950'], 0.7);
+      g.lineWidth = entity(1.2);
+      g.stroke();
+      // step 3: a stepped shoulder on each buttress.
+      if (step >= 3) {
+        g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.25 * lit);
+        g.lineWidth = entity(1.1);
+        g.beginPath();
+        g.arc(0, 0, (R + reach) / 2, a - half * 0.7, a + half * 0.7);
+        g.stroke();
+      }
+    }
+  }
+
+  /**
+   * Emitter rings from the `shockwave` line (`plans/tower-ui.md` §D.9).
+   *
+   * Frost, not gold: `shockwave`'s evolution is a slow, and frost is the
+   * palette's slow/chill family (`docs/art-direction.md`). It is also the one
+   * mark whose step 1 is at upgrade level 1 — the line is a single deliberate
+   * purchase, so buying it at all has to show.
+   */
+  private paintResonator(
+    g: CanvasRenderingContext2D,
+    R: number,
+    light: number,
+    step: number,
+  ): void {
+    if (step <= 0) return;
+    const radii = step >= 3 ? [0.42, 0.52, 0.62] : step >= 2 ? [0.46, 0.58] : [0.52];
+    for (const at of radii) {
+      g.strokeStyle = withAlpha(INK['950'], 0.55);
+      g.lineWidth = entity(3);
+      g.beginPath();
+      g.arc(0, 0, R * at, 0, Math.PI * 2);
+      g.stroke();
+      g.strokeStyle = withAlpha(TOWER_VISUAL.stoneLit, 0.8);
+      g.lineWidth = entity(1.6);
+      g.beginPath();
+      g.arc(0, 0, R * at - entity(0.6), light - 1.4, light + 1.4);
+      g.stroke();
+    }
+    if (step < 2) return;
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      const x = Math.cos(a) * R * 0.57;
+      const y = Math.sin(a) * R * 0.57;
+      g.fillStyle = withAlpha(INK['950'], 0.7);
+      g.beginPath();
+      g.arc(x, y, entity(3.4), 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = withAlpha(TOWER_VISUAL.shield, step >= 3 ? 0.85 : 0.5);
+      g.beginPath();
+      g.arc(x, y, entity(2.2), 0, Math.PI * 2);
+      g.fill();
+      if (step >= 3) {
+        const glow = g.createRadialGradient(x, y, 0, x, y, entity(7));
+        glow.addColorStop(0, withAlpha(TOWER_VISUAL.shield, 0.45));
+        glow.addColorStop(1, withAlpha(TOWER_VISUAL.shield, 0));
+        g.fillStyle = glow;
+        g.beginPath();
+        g.arc(x, y, entity(7), 0, Math.PI * 2);
+        g.fill();
+      }
+    }
   }
 
   /**
@@ -1687,7 +1899,10 @@ export class Renderer {
     const n = TOWER_VISUAL.wallSegments;
     const span = (Math.PI * 2) / n;
     const remainingAt = ratio * n;
-    const thickness = entity(11);
+    // §D.10: the courses are laid thicker as `wall` is levelled. Purely a
+    // drawn dimension — `TOWER_VISUAL.wallRadius` is untouched, and nothing
+    // outside this renderer reads either number.
+    const thickness = entity(11) * (1 + this.marks.steps.bulwark * 0.09);
     const mid = TOWER_VISUAL.wallRadius + thickness / 2;
 
     ctx.save();
@@ -1716,8 +1931,8 @@ export class Renderer {
   ): HTMLCanvasElement {
     const R = TOWER_VISUAL.wallRadius;
     const mid = R + thickness / 2;
-    const size = Math.max(thickness * 2, 2 * (R + thickness) * Math.sin(span / 2)) + entity(8);
-    return this.part(`wall|${state}`, size, (g) => {
+    const size = Math.max(thickness * 3, 2 * (R + thickness) * Math.sin(span / 2)) + entity(14);
+    return this.towerPart(`wall|${state}`, size, (g) => {
       g.translate(-mid, 0);
       const gap = span * 0.055;
       const inner = state === 'rubble' ? R + thickness * 0.55 : R;
@@ -1770,6 +1985,49 @@ export class Renderer {
           g.stroke();
         }
       }
+      const bw = this.marks.steps.bulwark;
+      if (bw >= 1) {
+        // A merlon crowning the block's outward face.
+        g.beginPath();
+        g.arc(0, 0, outer + thickness * 0.3, a0 + span * 0.3, a1 - span * 0.3);
+        g.arc(0, 0, outer - entity(0.5), a1 - span * 0.3, a0 + span * 0.3, true);
+        g.closePath();
+        g.fillStyle = state === 'full' ? TOWER_VISUAL.stoneLit : TOWER_VISUAL.stoneMid;
+        g.fill();
+        g.strokeStyle = withAlpha(INK['950'], 0.7);
+        g.lineWidth = entity(1);
+        g.stroke();
+      }
+      if (bw >= 3) {
+        // Iron banding across the block, and spikes on the crown.
+        g.strokeStyle = withAlpha(INK['200'], 0.85);
+        g.lineWidth = entity(1.6);
+        for (const at of [0.3, 0.7]) {
+          const a = a0 + (a1 - a0) * at;
+          g.beginPath();
+          g.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
+          g.lineTo(Math.cos(a) * outer, Math.sin(a) * outer);
+          g.stroke();
+          g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.55);
+          g.beginPath();
+          g.arc(Math.cos(a) * (inner + thickness * 0.5), Math.sin(a) * (inner + thickness * 0.5), entity(0.9), 0, Math.PI * 2);
+          g.fill();
+        }
+        if (state === 'full') {
+          g.fillStyle = INK['200'];
+          for (const at of [0.35, 0.65]) {
+            const a = a0 + (a1 - a0) * at;
+            const bx = Math.cos(a) * (outer + thickness * 0.3);
+            const by = Math.sin(a) * (outer + thickness * 0.3);
+            g.beginPath();
+            g.moveTo(bx, by);
+            g.lineTo(Math.cos(a) * (outer + thickness * 0.85), Math.sin(a) * (outer + thickness * 0.85));
+            g.lineTo(Math.cos(a + span * 0.06) * (outer + thickness * 0.3), Math.sin(a + span * 0.06) * (outer + thickness * 0.3));
+            g.closePath();
+            g.fill();
+          }
+        }
+      }
     });
   }
 
@@ -1785,14 +2043,38 @@ export class Renderer {
     const tier = this.towerTier(snap);
     const core = this.coreOf(snap);
     const tint = CORE_BY_ID[core].color;
+    const m = this.marks.steps;
 
-    this.blit(ctx, this.part(`tower-drum|${tier}`, (TOWER_VISUAL.bodyRadius + entity(24)) * 2, (g) => {
+    this.blit(ctx, this.towerPart('drum', (TOWER_VISUAL.bodyRadius + entity(30)) * 2, (g) => {
       this.paintDrum(g, tier);
     }), t.x, t.y);
 
+    // §D.7 step 3: the conduits pulse. One cached sprite, one `globalAlpha`,
+    // no allocation — and it holds still under `prefers-reduced-motion` and at
+    // the `low` quality tier, where the additive budget is spent elsewhere.
+    if (m.conduits >= 3 && this.profile.additive && !this.reducedMotion) {
+      const pulse = this.towerPart('conduit-pulse', (TOWER_VISUAL.bodyRadius + entity(6)) * 2, (g) => {
+        const R = TOWER_VISUAL.bodyRadius;
+        g.strokeStyle = withAlpha(lighten(FX.mana, 0.4), 0.8);
+        g.lineWidth = entity(2.4);
+        g.lineCap = 'round';
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+          g.beginPath();
+          g.moveTo(Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5);
+          g.lineTo(Math.cos(a) * R * 0.66, Math.sin(a) * R * 0.66);
+          g.stroke();
+        }
+      });
+      ctx.save();
+      ctx.globalAlpha = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(this.time * 2.4));
+      this.blit(ctx, pulse, t.x, t.y, 1 + 0.35 * (0.5 + 0.5 * Math.sin(this.time * 2.4)));
+      ctx.restore();
+    }
+
     // Tier 3: a slow arcane ring, drawn as a rotated blit of one cached sprite.
     if (tier >= 3) {
-      const ring = this.part(`tower-ring|${core}`, (TOWER_VISUAL.bodyRadius + entity(20)) * 2, (g) => {
+      const ring = this.towerPart('arcane-ring', (TOWER_VISUAL.bodyRadius + entity(20)) * 2, (g) => {
         const r = TOWER_VISUAL.bodyRadius + entity(13);
         g.strokeStyle = withAlpha(tint, 0.5);
         g.lineWidth = entity(1.6);
@@ -1824,10 +2106,11 @@ export class Renderer {
     this.drawCoreCrystal(ctx, snap, tint);
   }
 
-  /** Banded masonry, battlements, and whatever the tower's level has earned. */
+  /** Banded masonry, battlements, and whatever level and gold have earned. */
   private paintDrum(g: CanvasRenderingContext2D, tier: number): void {
     const R = TOWER_VISUAL.bodyRadius;
     const light = TOWER_VISUAL.lightAngle;
+    const m = this.marks.steps;
     const rand = mulberry32(0x2b19f + tier);
 
     g.fillStyle = TOWER_VISUAL.stoneDark;
@@ -1835,10 +2118,11 @@ export class Renderer {
     g.arc(0, 0, R, 0, Math.PI * 2);
     g.fill();
 
-    // Two courses of masonry, laid with the joints offset — the second course
-    // only exists from tier 1, which is the first thing levelling buys you.
+    // Courses of masonry, laid with the joints offset. The second course is
+    // the tower's first *level* reward; the third is `health`'s belt course.
     const courses: Array<[number, number, number]> = [[R * 0.74, R, 18]];
     if (tier >= 1) courses.push([R * 0.44, R * 0.7, 12]);
+    if (m.masonry >= 3) courses.push([R * 0.66, R * 0.735, 24]);
     for (const [from, to, count] of courses) {
       const step = (Math.PI * 2) / count;
       for (let i = 0; i < count; i++) {
@@ -1864,26 +2148,69 @@ export class Renderer {
       g.stroke();
     }
 
+    this.paintPlating(g, R, light, m.plating);
+    this.paintGilding(g, R, m.gilding, tier);
+    this.paintConduits(g, R, m.conduits);
+
     // Battlements. More merlons is the tier-1 silhouette change you can read
-    // from across the arena.
-    const merlons = tier >= 1 ? 12 : 8;
+    // from across the arena; `masonry` 4 adds four more on top of that.
+    const merlons = m.masonry >= 4 ? 16 : tier >= 1 ? 12 : 8;
     const mStep = (Math.PI * 2) / merlons;
+    const outerMerlon = R + entity(5);
     for (let i = 0; i < merlons; i++) {
       const a0 = i * mStep + mStep * 0.2;
       const a1 = (i + 1) * mStep - mStep * 0.2;
       const mid = (a0 + a1) / 2;
       const lit = 0.5 + 0.5 * Math.cos(mid - light);
       g.beginPath();
-      g.arc(0, 0, R + entity(5), a0, a1);
+      g.arc(0, 0, outerMerlon, a0, a1);
       g.arc(0, 0, R - entity(1), a1, a0, true);
       g.closePath();
-      g.fillStyle = TOWER_VISUAL.stoneMid;
+      g.fillStyle = m.plating >= 3 ? INK['200'] : TOWER_VISUAL.stoneMid;
       g.fill();
       g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.18 * lit);
       g.fill();
       g.fillStyle = withAlpha(INK['950'], 0.45 * (1 - lit));
       g.fill();
+
+      // masonry 2: a capstone slab on every merlon.
+      if (m.masonry >= 2) {
+        g.beginPath();
+        g.arc(0, 0, outerMerlon + entity(1.4), a0 - mStep * 0.05, a1 + mStep * 0.05);
+        g.arc(0, 0, outerMerlon - entity(1), a1 + mStep * 0.05, a0 - mStep * 0.05, true);
+        g.closePath();
+        g.fillStyle = TOWER_VISUAL.stoneLit;
+        g.fill();
+        g.fillStyle = withAlpha(INK['950'], 0.4 * (1 - lit));
+        g.fill();
+      }
+      // masonry 4: an arrow slit cut through each merlon.
+      if (m.masonry >= 4) {
+        g.strokeStyle = withAlpha(INK['950'], 0.85);
+        g.lineWidth = entity(1.4);
+        g.beginPath();
+        g.moveTo(Math.cos(mid) * (R + entity(0.5)), Math.sin(mid) * (R + entity(0.5)));
+        g.lineTo(Math.cos(mid) * (outerMerlon - entity(0.5)), Math.sin(mid) * (outerMerlon - entity(0.5)));
+        g.stroke();
+      }
     }
+
+    // masonry 5: a parapet skirt filling the crenels partway, so the crown
+    // reads as a solid wall-walk rather than a row of teeth.
+    if (m.masonry >= 5) {
+      g.strokeStyle = withAlpha(TOWER_VISUAL.stoneMid, 0.95);
+      g.lineWidth = entity(3.2);
+      g.beginPath();
+      g.arc(0, 0, R + entity(2.2), 0, Math.PI * 2);
+      g.stroke();
+      g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.3);
+      g.lineWidth = entity(1);
+      g.beginPath();
+      g.arc(0, 0, R + entity(3.4), light - 1.2, light + 1.2);
+      g.stroke();
+    }
+
+    this.paintMast(g, R, light, m.mast);
 
     // Tier 2: banners. The old flag was a three-point red triangle; red is the
     // enemy's colour now (docs/art-direction.md), so the tower flies amber.
@@ -1903,13 +2230,24 @@ export class Renderer {
         g.strokeStyle = withAlpha(INK['950'], 0.4);
         g.lineWidth = entity(1);
         g.stroke();
+        // gilding 2: a fringe along the banner's trailing edge.
+        if (m.gilding >= 2) {
+          g.strokeStyle = withAlpha(lighten(TOWER_VISUAL.banner, 0.4), 0.9);
+          g.lineWidth = entity(0.9);
+          for (let i = 0; i < 5; i++) {
+            const x = R + entity(13) + i * entity(1);
+            g.beginPath();
+            g.moveTo(x, -entity(1) + i * entity(0.3));
+            g.lineTo(x + entity(2), entity(1) + i * entity(0.3));
+            g.stroke();
+          }
+        }
         g.restore();
       }
     }
 
     // Rim light along the lit edge. Segmented rather than one long stroke, so
-    // it falls off toward the terminator instead of ending as a hard hoop —
-    // the same trick the range ring's sweep uses, and free at bake time.
+    // it falls off toward the terminator instead of ending as a hard hoop.
     g.lineWidth = entity(2);
     for (let i = -4; i <= 4; i++) {
       const a = light + i * 0.26;
@@ -1941,21 +2279,314 @@ export class Renderer {
   }
 
   /**
-   * The turret: it points where the tower is shooting, kicks back when it does,
-   * and flashes at the muzzle (§3.3).
+   * Iron strapping from the `defense` + `armor` lines
+   * (`plans/tower-ui.md` §D.5).
    *
-   * Before this, nothing anywhere on the tower reacted to firing — a maxed
-   * tower emptying six shots a second looked exactly like an idle one. The
-   * heading is read off the projectiles, so the barrel is aimed by the same
+   * The plate is `INK['200']` — brighter *and* colder than any of the
+   * `TOWER_VISUAL.stone*` steps — because a plate that is merely a lighter
+   * stone reads as a lighting change, not as a second material. The rivets are
+   * `rim` gold: the plating is still something the player owns.
+   */
+  private paintPlating(
+    g: CanvasRenderingContext2D,
+    R: number,
+    light: number,
+    step: number,
+  ): void {
+    if (step <= 0) return;
+    const plate = INK['200'];
+
+    // step 2: a girdle plate under the straps, so they have something to bite.
+    if (step >= 2) {
+      g.strokeStyle = withAlpha(plate, 0.75);
+      g.lineWidth = R * 0.16;
+      g.beginPath();
+      g.arc(0, 0, R * 0.59, 0, Math.PI * 2);
+      g.stroke();
+      g.strokeStyle = withAlpha(INK['950'], 0.5);
+      g.lineWidth = entity(1.2);
+      g.beginPath();
+      g.arc(0, 0, R * 0.67, 0, Math.PI * 2);
+      g.stroke();
+    }
+
+    const straps = step >= 2 ? 8 : 4;
+    const halfWidth = step >= 2 ? 0.1 : 0.13;
+    for (let i = 0; i < straps; i++) {
+      const a = (i / straps) * Math.PI * 2 + Math.PI * 0.25;
+      const lit = 0.5 + 0.5 * Math.cos(a - light);
+      g.beginPath();
+      g.arc(0, 0, R + entity(2), a - halfWidth, a + halfWidth);
+      g.arc(0, 0, R * 0.42, a + halfWidth, a - halfWidth, true);
+      g.closePath();
+      g.fillStyle = plate;
+      g.fill();
+      g.fillStyle = withAlpha('#ffffff', 0.12 * lit);
+      g.fill();
+      g.fillStyle = withAlpha(INK['950'], 0.42 * (1 - lit));
+      g.fill();
+      g.strokeStyle = withAlpha(INK['950'], 0.7);
+      g.lineWidth = entity(1);
+      g.stroke();
+      // Three rivets down each strap.
+      g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.5 + 0.3 * lit);
+      for (const at of [0.55, 0.75, 0.94]) {
+        g.beginPath();
+        g.arc(Math.cos(a) * R * at, Math.sin(a) * R * at, entity(1.1), 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+
+    // step 3: the outer course is faced in plate — sixteen flat facets with
+    // lit edges, which is what turns "banded stone" into "an armoured keep".
+    if (step >= 3) {
+      const facets = 16;
+      const fStep = (Math.PI * 2) / facets;
+      for (let i = 0; i < facets; i++) {
+        const a0 = i * fStep;
+        const a1 = (i + 1) * fStep;
+        const mid = (a0 + a1) / 2;
+        const lit = 0.5 + 0.5 * Math.cos(mid - light);
+        g.beginPath();
+        g.moveTo(Math.cos(a0) * R, Math.sin(a0) * R);
+        g.lineTo(Math.cos(a1) * R, Math.sin(a1) * R);
+        g.lineTo(Math.cos(a1) * R * 0.8, Math.sin(a1) * R * 0.8);
+        g.lineTo(Math.cos(a0) * R * 0.8, Math.sin(a0) * R * 0.8);
+        g.closePath();
+        g.fillStyle = plate;
+        g.fill();
+        g.fillStyle = withAlpha('#ffffff', 0.14 * lit * lit);
+        g.fill();
+        g.fillStyle = withAlpha(INK['950'], 0.45 * (1 - lit));
+        g.fill();
+        g.strokeStyle = withAlpha(INK['950'], 0.55);
+        g.lineWidth = entity(0.9);
+        g.stroke();
+      }
+    }
+  }
+
+  /**
+   * Gold trim from the `goldMulti` + `prospecting` lines
+   * (`plans/tower-ui.md` §D.6).
+   *
+   * Amber is already the player's colour, so gilding is the one mark that adds
+   * no new hue — it adds *quantity* of the colour that is already there. That
+   * is deliberate: a rich tower should look like the same tower with more gold
+   * on it, not like a different faction's.
+   */
+  private paintGilding(
+    g: CanvasRenderingContext2D,
+    R: number,
+    step: number,
+    tier: number,
+  ): void {
+    if (step <= 0) return;
+    const gold = TOWER_VISUAL.rim;
+
+    // step 1: the mortar joints of the outer course are gilded.
+    g.strokeStyle = withAlpha(gold, 0.3);
+    g.lineWidth = entity(1.2);
+    g.beginPath();
+    g.arc(0, 0, R * 0.74, 0, Math.PI * 2);
+    g.stroke();
+    const joints = 18;
+    for (let i = 0; i < joints; i++) {
+      const a = (i / joints) * Math.PI * 2;
+      g.beginPath();
+      g.moveTo(Math.cos(a) * R * 0.74, Math.sin(a) * R * 0.74);
+      g.lineTo(Math.cos(a) * R, Math.sin(a) * R);
+      g.stroke();
+    }
+
+    if (step < 2) return;
+
+    // step 2: filigree — a scrolled band of small arcs above the belt course.
+    g.strokeStyle = withAlpha(lighten(gold, 0.3), 0.55);
+    g.lineWidth = entity(1.1);
+    const scrolls = tier >= 1 ? 12 : 9;
+    for (let i = 0; i < scrolls; i++) {
+      const a = (i / scrolls) * Math.PI * 2;
+      g.beginPath();
+      g.arc(Math.cos(a) * R * 0.63, Math.sin(a) * R * 0.63, entity(3.2), a - 2.2, a + 0.9);
+      g.stroke();
+    }
+
+    if (step < 3) return;
+
+    // step 3: coin studs set around the drum.
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+      const x = Math.cos(a) * R * 0.86;
+      const y = Math.sin(a) * R * 0.86;
+      g.fillStyle = withAlpha(INK['950'], 0.6);
+      g.beginPath();
+      g.arc(x, y, entity(3.1), 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = gold;
+      g.beginPath();
+      g.arc(x, y, entity(2.4), 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = withAlpha(lighten(gold, 0.55), 0.8);
+      g.beginPath();
+      g.arc(x - entity(0.7), y - entity(0.7), entity(0.9), 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+
+  /**
+   * Mana channels from the `manaRegen` + `maxMana` lines
+   * (`plans/tower-ui.md` §D.7).
+   *
+   * They run *inward*, to the crystal well, because that is where the tower's
+   * power visibly is — a conduit that ended nowhere would be a decoration.
+   * `FX.mana` is the mana pool's own colour, so a player who reads the HUD
+   * bar already knows what these are.
+   */
+  private paintConduits(g: CanvasRenderingContext2D, R: number, step: number): void {
+    if (step <= 0) return;
+    const n = step >= 2 ? 6 : 3;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.PI / n;
+      const ux = Math.cos(a);
+      const uy = Math.sin(a);
+      // The groove first, so the glow sits in a channel rather than on the face.
+      g.strokeStyle = withAlpha(INK['950'], 0.7);
+      g.lineWidth = entity(3.4);
+      g.beginPath();
+      g.moveTo(ux * R * 0.42, uy * R * 0.42);
+      g.lineTo(ux * R * 0.9, uy * R * 0.9);
+      g.stroke();
+      g.strokeStyle = withAlpha(FX.mana, 0.55);
+      g.lineWidth = entity(1.8);
+      g.beginPath();
+      g.moveTo(ux * R * 0.44, uy * R * 0.44);
+      g.lineTo(ux * R * 0.88, uy * R * 0.88);
+      g.stroke();
+      // step 3: each channel forks near the rim.
+      if (step >= 3) {
+        for (const spread of [-0.22, 0.22]) {
+          const b = a + spread;
+          g.beginPath();
+          g.moveTo(ux * R * 0.78, uy * R * 0.78);
+          g.lineTo(Math.cos(b) * R * 0.97, Math.sin(b) * R * 0.97);
+          g.stroke();
+        }
+      }
+    }
+    // step 2: a collector ring the channels feed out of.
+    if (step >= 2) {
+      g.strokeStyle = withAlpha(FX.mana, 0.4);
+      g.lineWidth = entity(1.4);
+      g.beginPath();
+      g.arc(0, 0, R * 0.86, 0, Math.PI * 2);
+      g.stroke();
+    }
+  }
+
+  /**
+   * A spotter's mast from the `range` line (`plans/tower-ui.md` §D.8).
+   *
+   * It leans along the key light, which at this near-top-down angle is what
+   * reads as "up" — a mast drawn straight along +x would read as a spar
+   * sticking sideways out of the wall. `range` is the one stat with an existing
+   * battlefield expression (the ring), so this is the piece of tower that
+   * *explains* the ring rather than duplicating it.
+   */
+  private paintMast(
+    g: CanvasRenderingContext2D,
+    R: number,
+    light: number,
+    step: number,
+  ): void {
+    if (step <= 0) return;
+    const angles = step >= 3 ? [light, light + Math.PI] : [light];
+    for (const a of angles) {
+      const ux = Math.cos(a);
+      const uy = Math.sin(a);
+      const x0 = ux * R * 0.5;
+      const y0 = uy * R * 0.5;
+      const x1 = ux * (R + entity(13));
+      const y1 = uy * (R + entity(13));
+      // The pole, with its own shadow line so it lifts off the drum.
+      g.strokeStyle = withAlpha(INK['950'], 0.6);
+      g.lineWidth = entity(3);
+      g.beginPath();
+      g.moveTo(x0 + entity(1), y0 + entity(1.5));
+      g.lineTo(x1 + entity(1), y1 + entity(1.5));
+      g.stroke();
+      g.strokeStyle = TOWER_VISUAL.stoneLit;
+      g.lineWidth = entity(2);
+      g.beginPath();
+      g.moveTo(x0, y0);
+      g.lineTo(x1, y1);
+      g.stroke();
+      // The crow's nest.
+      g.fillStyle = TOWER_VISUAL.stoneMid;
+      g.beginPath();
+      g.arc(x1, y1, entity(4), 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = withAlpha(INK['950'], 0.8);
+      g.lineWidth = entity(1.2);
+      g.stroke();
+      g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.5);
+      g.lineWidth = entity(1);
+      g.beginPath();
+      g.arc(x1, y1, entity(2.4), 0, Math.PI * 2);
+      g.stroke();
+
+      if (step < 2) continue;
+
+      // step 2: a crossbar with a pennant, and a lookout lantern.
+      const px = -uy;
+      const py = ux;
+      g.strokeStyle = TOWER_VISUAL.stoneLit;
+      g.lineWidth = entity(1.4);
+      g.beginPath();
+      g.moveTo(x1 - px * entity(6), y1 - py * entity(6));
+      g.lineTo(x1 + px * entity(6), y1 + py * entity(6));
+      g.stroke();
+      g.fillStyle = withAlpha(TOWER_VISUAL.banner, 0.85);
+      g.beginPath();
+      g.moveTo(x1 + px * entity(6), y1 + py * entity(6));
+      g.lineTo(x1 + px * entity(6) + ux * entity(6), y1 + py * entity(6) + uy * entity(6));
+      g.lineTo(x1 + px * entity(1.5) + ux * entity(4), y1 + py * entity(1.5) + uy * entity(4));
+      g.closePath();
+      g.fill();
+      const lantern = g.createRadialGradient(
+        x1 - px * entity(6), y1 - py * entity(6), 0,
+        x1 - px * entity(6), y1 - py * entity(6), entity(6),
+      );
+      lantern.addColorStop(0, withAlpha(lighten(TOWER_VISUAL.rim, 0.5), 0.9));
+      lantern.addColorStop(1, withAlpha(TOWER_VISUAL.rim, 0));
+      g.fillStyle = lantern;
+      g.beginPath();
+      g.arc(x1 - px * entity(6), y1 - py * entity(6), entity(6), 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+
+  /**
+   * The turret: it points where the tower is shooting, kicks back when it does,
+   * and flashes at the muzzle (UI plan §3.3) — and it is rebuilt as `damage`,
+   * `fireRate` and the crit lines are levelled (`plans/tower-ui.md` §D.1–3).
+   *
+   * The heading is read off the projectiles, so the barrel is aimed by the same
    * fact that aimed the shot rather than by a copy of the targeting rules.
    */
   private drawTurret(ctx: CanvasRenderingContext2D, snap: RenderSnapshot, tier: number, core: CoreId): void {
     const t = snap.tower;
     const tint = CORE_BY_ID[core].color;
-    const len = TOWER_VISUAL.turretLength;
-    const sprite = this.part(`turret|${tier}|${core}`, (len + entity(12)) * 2, (g) => {
-      const w = TOWER_VISUAL.turretWidth;
+    const m = this.marks.steps;
+    const b = m.barrel;
+    const len = this.drawnTurretLength;
+    const sprite = this.towerPart('turret', (len + entity(20)) * 2, (g) => {
+      const w = TOWER_VISUAL.turretWidth * (1 + b * 0.03);
       const base = entity(3);
+
+      // §D.2: the autoloader sits under the barrel, at the breech.
+      this.paintAutoloader(g, base, w, len, m.autoloader, tint);
+
       // Underside first, so the barrel sits on its own shadow.
       g.fillStyle = withAlpha(INK['950'], 0.55);
       g.beginPath();
@@ -1965,6 +2596,22 @@ export class Renderer {
       g.lineTo(base, w * 0.5 + entity(2.5));
       g.closePath();
       g.fill();
+
+      // b >= 3: a reinforcing sleeve at the breech. Painted before the shaft so
+      // the shaft's outline crosses it and the two read as one assembly.
+      if (b >= 3) {
+        g.fillStyle = TOWER_VISUAL.stoneMid;
+        g.fillRect(base - entity(2), -w * 0.78, (len - base) * 0.36, w * 1.56);
+        g.strokeStyle = withAlpha(INK['950'], 0.8);
+        g.lineWidth = entity(1.4);
+        g.strokeRect(base - entity(2), -w * 0.78, (len - base) * 0.36, w * 1.56);
+        g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.4);
+        g.lineWidth = entity(1.2);
+        g.beginPath();
+        g.moveTo(base - entity(2), -w * 0.78 + entity(1));
+        g.lineTo(base - entity(2) + (len - base) * 0.36, -w * 0.78 + entity(1));
+        g.stroke();
+      }
 
       g.fillStyle = TOWER_VISUAL.stoneLit;
       g.beginPath();
@@ -1987,17 +2634,93 @@ export class Renderer {
       g.lineTo(len, -w * 0.34 + entity(0.9));
       g.stroke();
 
-      // Amber banding, and a core-tinted collar at the muzzle so the shot's
-      // colour is announced before it leaves.
+      // b >= 2: a dorsal blade along the top of the shaft. This is the first
+      // change that alters the *silhouette* rather than the surface, which is
+      // why it is early in the ladder.
+      if (b >= 2) {
+        g.fillStyle = TOWER_VISUAL.stoneMid;
+        g.beginPath();
+        g.moveTo(base + (len - base) * 0.24, -w * 0.5);
+        g.lineTo(len - entity(3), -w * 0.5 - entity(4.5));
+        g.lineTo(len - entity(3), -w * 0.34);
+        g.closePath();
+        g.fill();
+        g.strokeStyle = withAlpha(INK['950'], 0.8);
+        g.lineWidth = entity(1.1);
+        g.stroke();
+        g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.5);
+        g.lineWidth = entity(1);
+        g.beginPath();
+        g.moveTo(base + (len - base) * 0.24, -w * 0.5);
+        g.lineTo(len - entity(3), -w * 0.5 - entity(4.5));
+        g.stroke();
+      }
+
+      // Amber banding. More bands as the line is levelled: the barrel is
+      // reinforced, not merely longer.
+      const bands = b >= 5 ? [0.22, 0.4, 0.58, 0.74, 0.87]
+        : b >= 3 ? [0.28, 0.5, 0.7, 0.86]
+          : b >= 1 ? [0.3, 0.55, 0.8]
+            : tier >= 2 ? [0.32, 0.58, 0.8] : [0.4, 0.72];
       g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.55);
-      for (const at of tier >= 2 ? [0.32, 0.58, 0.8] : [0.4, 0.72]) {
+      for (const at of bands) {
         const x = base + (len - base) * at;
         g.fillRect(x, -w * 0.5, entity(2.4), w);
       }
-      g.fillStyle = withAlpha(tint, 0.85);
-      g.fillRect(len - entity(3), -w * 0.4, entity(3), w * 0.8);
 
-      // Tier 2+: side vanes, so a levelled turret has a heavier silhouette.
+      // b >= 5: gold inlay chased along the shaft, between the bands.
+      if (b >= 5) {
+        g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.45);
+        g.lineWidth = entity(1);
+        for (let i = 0; i < 6; i++) {
+          const x = base + (len - base) * (0.16 + i * 0.13);
+          g.beginPath();
+          g.moveTo(x, -w * 0.34);
+          g.lineTo(x + entity(4), w * 0.34);
+          g.stroke();
+        }
+      }
+
+      // b >= 6: a charged channel cut down the middle, fed by the core.
+      if (b >= 6) {
+        g.fillStyle = withAlpha(tint, 0.55);
+        g.fillRect(base + entity(2), -w * 0.12, len - base - entity(4), w * 0.24);
+        g.fillStyle = withAlpha(INK['050'], 0.35);
+        g.fillRect(base + entity(2), -w * 0.05, len - base - entity(4), w * 0.1);
+      }
+
+      // The muzzle collar, in the core's colour, so the shot's colour is
+      // announced before it leaves. It thickens at the top of the ladder.
+      const collar = b >= 6 ? entity(6) : entity(3);
+      g.fillStyle = withAlpha(tint, 0.85);
+      g.fillRect(len - collar, -w * 0.4, collar, w * 0.8);
+
+      // b >= 1: a muzzle brake — two notches cut across the collar.
+      if (b >= 1) {
+        g.fillStyle = withAlpha(INK['950'], 0.75);
+        g.fillRect(len - collar - entity(3), -w * 0.5, entity(1.6), w);
+        g.fillRect(len - collar - entity(7), -w * 0.5, entity(1.6), w);
+      }
+
+      // b >= 4: twin prongs, swept forward off the muzzle. The heaviest
+      // silhouette change on the ladder — this is what a maxed barrel is.
+      if (b >= 4) {
+        g.fillStyle = TOWER_VISUAL.stoneLit;
+        g.strokeStyle = withAlpha(INK['950'], 0.85);
+        g.lineWidth = entity(1.2);
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.moveTo(len - entity(6), dir * w * 0.34);
+          g.lineTo(len + entity(8), dir * (w * 0.62 + (b >= 6 ? entity(3) : 0)));
+          g.lineTo(len + entity(3), dir * w * 0.28);
+          g.closePath();
+          g.fill();
+          g.stroke();
+        }
+      }
+
+      // Tier 2+: side vanes, so a levelled *tower* has a heavier silhouette
+      // too. This is the tower-XP tier, not a mark — leave it alone.
       if (tier >= 2) {
         g.fillStyle = TOWER_VISUAL.stoneDark;
         for (const dir of [-1, 1]) {
@@ -2009,6 +2732,9 @@ export class Renderer {
           g.fill();
         }
       }
+
+      // §D.3: the sights sit on top of everything.
+      this.paintOptics(g, base, w, len, m.optics, tint);
     });
 
     const back = TOWER_VISUAL.recoilDistance * easeOutCubic(this.recoil);
@@ -2018,6 +2744,163 @@ export class Renderer {
     ctx.translate(-back, 0);
     ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
     ctx.restore();
+  }
+
+  /**
+   * Feed gear at the breech, from the `fireRate` line
+   * (`plans/tower-ui.md` §D.2).
+   *
+   * Painted *before* the barrel so the barrel overlaps the drums' inboard
+   * edges — the gear reads as bolted under the weapon rather than floating
+   * beside it.
+   */
+  private paintAutoloader(
+    g: CanvasRenderingContext2D,
+    base: number,
+    w: number,
+    len: number,
+    step: number,
+    tint: string,
+  ): void {
+    if (step <= 0) return;
+    const cx = base + (len - base) * 0.16;
+    const r = entity(6.5);
+    const sides: number[] = step >= 2 ? [-1, 1] : [-1];
+
+    for (const dir of sides) {
+      const cy = dir * (w * 0.62 + r * 0.6);
+      g.fillStyle = TOWER_VISUAL.stoneMid;
+      g.beginPath();
+      g.arc(cx, cy, r, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = withAlpha(INK['950'], 0.85);
+      g.lineWidth = entity(1.3);
+      g.stroke();
+      // Four spokes, so the drum reads as a drum and not as a dot.
+      g.strokeStyle = withAlpha(INK['950'], 0.6);
+      g.lineWidth = entity(1.1);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI * 0.25;
+        g.beginPath();
+        g.moveTo(cx, cy);
+        g.lineTo(cx + Math.cos(a) * r * 0.85, cy + Math.sin(a) * r * 0.85);
+        g.stroke();
+      }
+      g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.5);
+      g.beginPath();
+      g.arc(cx, cy, r * 0.3, 0, Math.PI * 2);
+      g.fill();
+      // step 3: the drums are wound to the core and glow with it.
+      if (step >= 3) {
+        g.fillStyle = withAlpha(tint, 0.75);
+        g.beginPath();
+        g.arc(cx, cy, r * 0.5, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = withAlpha(INK['050'], 0.5);
+        g.beginPath();
+        g.arc(cx, cy, r * 0.2, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+
+    // step 2+: feed rails running forward along the flanks.
+    if (step >= 2) {
+      g.fillStyle = withAlpha(INK['200'], 0.85);
+      for (const dir of [-1, 1]) {
+        g.fillRect(cx, dir * w * 0.5 - (dir < 0 ? entity(1.8) : 0), (len - cx) * 0.62, entity(1.8));
+      }
+    }
+    // step 3: a third rail over the top.
+    if (step >= 3) {
+      g.fillStyle = withAlpha(INK['200'], 0.7);
+      g.fillRect(cx, -entity(0.9), (len - cx) * 0.5, entity(1.8));
+    }
+  }
+
+  /**
+   * Sights, from the two crit lines (`plans/tower-ui.md` §D.3).
+   *
+   * Painted last, over the barrel, because a scope is bolted on top of a
+   * weapon and its silhouette has to break the barrel's outline to read as a
+   * separate object. Crit is precision, so this is the one piece of the tower
+   * allowed a hard white highlight (`'#ffffff'`, whitelisted).
+   */
+  private paintOptics(
+    g: CanvasRenderingContext2D,
+    base: number,
+    w: number,
+    len: number,
+    step: number,
+    tint: string,
+  ): void {
+    if (step <= 0) return;
+
+    // step 1: a front sight post and a rear notch.
+    g.fillStyle = TOWER_VISUAL.stoneMid;
+    g.strokeStyle = withAlpha(INK['950'], 0.8);
+    g.lineWidth = entity(1);
+    g.beginPath();
+    g.rect(len - entity(10), -w * 0.5 - entity(4), entity(1.8), entity(4));
+    g.fill();
+    g.stroke();
+    g.beginPath();
+    g.rect(base + (len - base) * 0.2, -w * 0.5 - entity(3), entity(3.4), entity(3));
+    g.fill();
+    g.stroke();
+
+    if (step < 2) return;
+
+    // step 2: a scope tube over the barrel, on two mounts.
+    const x0 = base + (len - base) * 0.3;
+    const x1 = base + (len - base) * 0.78;
+    const cy = -w * 0.5 - entity(5.5);
+    const th = entity(5);
+    g.fillStyle = withAlpha(INK['200'], 0.9);
+    for (const at of [x0 + entity(2), x1 - entity(4)]) {
+      g.fillRect(at, cy, entity(2.2), entity(6));
+    }
+    g.fillStyle = TOWER_VISUAL.stoneLit;
+    g.beginPath();
+    g.rect(x0, cy - th / 2, x1 - x0, th);
+    g.fill();
+    g.strokeStyle = withAlpha(INK['950'], 0.85);
+    g.lineWidth = entity(1.3);
+    g.stroke();
+    g.strokeStyle = withAlpha(TOWER_VISUAL.rim, 0.55);
+    g.lineWidth = entity(1);
+    g.beginPath();
+    g.moveTo(x0 + entity(1), cy - th / 2 + entity(1));
+    g.lineTo(x1 - entity(1), cy - th / 2 + entity(1));
+    g.stroke();
+
+    // The objective lens, in the core's colour.
+    g.fillStyle = withAlpha(tint, 0.85);
+    g.beginPath();
+    g.ellipse(x1, cy, entity(1.6), th * 0.55, 0, 0, Math.PI * 2);
+    g.fill();
+
+    if (step < 3) return;
+
+    // step 3: the lens is ground and cross-etched, and a windage drum is fitted.
+    g.strokeStyle = withAlpha('#ffffff', 0.85);
+    g.lineWidth = entity(0.8);
+    g.beginPath();
+    g.moveTo(x1, cy - th * 0.5);
+    g.lineTo(x1, cy + th * 0.5);
+    g.moveTo(x1 - entity(1.5), cy);
+    g.lineTo(x1 + entity(1.5), cy);
+    g.stroke();
+    g.fillStyle = withAlpha('#ffffff', 0.55);
+    g.beginPath();
+    g.ellipse(x1 - entity(0.4), cy - th * 0.2, entity(0.5), th * 0.16, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = withAlpha(TOWER_VISUAL.rim, 0.8);
+    g.beginPath();
+    g.arc((x0 + x1) / 2, cy - th * 0.55, entity(2), 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = withAlpha(INK['950'], 0.7);
+    g.lineWidth = entity(0.9);
+    g.stroke();
   }
 
   /**
@@ -2033,7 +2916,7 @@ export class Renderer {
     const t = snap.tower;
     const core = this.core;
     const tint = CORE_BY_ID[core].color;
-    const len = TOWER_VISUAL.turretLength;
+    const len = this.drawnTurretLength;
     const back = TOWER_VISUAL.recoilDistance * easeOutCubic(this.recoil);
     ctx.save();
     ctx.translate(t.x, t.y);
@@ -2067,10 +2950,9 @@ export class Renderer {
     ctx.save();
     ctx.globalAlpha = this.muzzle;
     ctx.translate(len, 0);
-    // §4.4: the flash grows with the size of the volley. A tower firing six
-    // bolts in one substep used to get exactly the flash a single-shot tower
-    // got, which is the opposite of "a maxed tower feels maxed".
-    const burst = 1 + Math.min(5, this.muzzleBurst - 1) * 0.16;
+    // §D.1/§D.2: a bigger barrel and a fed autoloader throw a bigger flash.
+    const gear = 1 + this.marks.steps.barrel * 0.05 + this.marks.steps.autoloader * 0.07;
+    const burst = (1 + Math.min(5, this.muzzleBurst - 1) * 0.16) * gear;
     const s = (0.65 + (1 - this.muzzle) * 0.6) * burst;
     ctx.drawImage(flash, -flash.width * s / 2, -flash.height * s / 2, flash.width * s, flash.height * s);
     ctx.restore();
@@ -2118,7 +3000,7 @@ export class Renderer {
       ctx.rotate(tr.angle);
       // The sprite is baked with the muzzle at its centre, so it is drawn
       // offset by half its own width rather than centred on the tower.
-      ctx.translate(TOWER_VISUAL.turretLength, 0);
+      ctx.translate(this.drawnTurretLength, 0);
       ctx.drawImage(sprite, -half, -half);
       ctx.restore();
     }
@@ -2257,6 +3139,22 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(t.x, t.y, r - entity(6), 0, Math.PI * 2);
     ctx.stroke();
+
+    // §D.8 step 3: cardinal ticks on the rim, so the ring reads as *measured*
+    // rather than merely drawn. Four strokes; no sprite worth baking.
+    if (this.marks.steps.mast >= 3) {
+      ctx.strokeStyle = withAlpha(tint, 0.5 + bloom * 0.3);
+      ctx.lineWidth = entity(2.2);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        const ux = Math.cos(a);
+        const uy = Math.sin(a);
+        ctx.beginPath();
+        ctx.moveTo(t.x + ux * (r - entity(7)), t.y + uy * (r - entity(7)));
+        ctx.lineTo(t.x + ux * (r + entity(5)), t.y + uy * (r + entity(5)));
+        ctx.stroke();
+      }
+    }
 
     // The sweep.
     const head = this.reducedMotion ? -Math.PI / 2 : this.time * RANGE_SWEEP_SPEED;
@@ -4227,8 +5125,15 @@ export class Renderer {
     const style = SHOT_STYLES[core];
     const tint = CORE_BY_ID[core].color;
     const head = splash ? 'shell' : style.head;
-    const L = BOLT_LENGTH * (head === 'shell' ? 1.2 : 1);
-    return this.part(`bolt|${core}|${head}`, L * 3.4, (g) => {
+    const b = this.marks.steps.barrel;
+    // §E: the bolt grows with the barrel that fired it. Keyed into `part`
+    // rather than `towerPart` on purpose — a bolt sprite is ~60 px square, the
+    // variant space is 5 cores x 3 heads x 7 barrel steps = 105 worst case at
+    // ~14 KB each, and unlike the drum these are hit tens of times a frame, so
+    // a cache that empties on every threshold crossing would be the wrong
+    // trade.
+    const L = BOLT_LENGTH * (head === 'shell' ? 1.2 : 1) * (1 + b * 0.035);
+    return this.part(`bolt|${core}|${head}|${b}`, L * 3.4, (g) => {
       g.lineJoin = 'round';
       switch (head) {
         case 'shell': {
@@ -4295,6 +5200,30 @@ export class Renderer {
             g.lineTo(-L * 0.45, dir * L * 0.12);
             g.closePath();
             g.fill();
+          }
+          // §E: barbs at b >= 2, a lit edge at b >= 4, a gold band at b >= 6.
+          if (b >= 2) {
+            g.fillStyle = tint;
+            for (const dir of [-1, 1]) {
+              g.beginPath();
+              g.moveTo(L * 0.45, dir * L * 0.06);
+              g.lineTo(L * 0.1, dir * L * 0.3);
+              g.lineTo(L * 0.3, dir * L * 0.07);
+              g.closePath();
+              g.fill();
+            }
+          }
+          if (b >= 4) {
+            g.strokeStyle = withAlpha(INK['050'], 0.7);
+            g.lineWidth = entity(0.8);
+            g.beginPath();
+            g.moveTo(L, 0);
+            g.lineTo(L * 0.35, -L * 0.36);
+            g.stroke();
+          }
+          if (b >= 6) {
+            g.fillStyle = withAlpha(FX.gold, 0.9);
+            g.fillRect(-L * 0.3, -L * 0.13, L * 0.16, L * 0.26);
           }
           break;
         }

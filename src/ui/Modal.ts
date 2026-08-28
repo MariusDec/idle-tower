@@ -88,6 +88,21 @@ export class Modal {
     if (opts.width) card.style.setProperty('--modal-width', `${opts.width}px`);
     this.card = card;
 
+    // The X. Escape and the backdrop tap already dismiss, but neither is
+    // reachable on a phone where the card fills the viewport — so every
+    // dismissible modal gets a visible close affordance. It is sticky rather
+    // than absolute because `.modal-card` is itself the scroller: an absolute
+    // button scrolls off the top of a long dialog and strands the user again.
+    if (opts.dismissible !== false) {
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'modal-close';
+      close.textContent = '\u00d7';
+      close.setAttribute('aria-label', 'Close');
+      close.addEventListener('click', () => this.close());
+      card.appendChild(close);
+    }
+
     const titleId = `modal-title-${opts.id}`;
     const title = document.createElement('h2');
     title.className = 'modal-title';

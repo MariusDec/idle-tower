@@ -122,6 +122,10 @@ import {
   type BlessingBehavior,
   type BlessingDef,
 } from '../data/blessings';
+import {
+  computeTowerMarks, TOWER_MARK_BY_ID, DEFAULT_TOWER_MARKS,
+  type TowerMarkId, type TowerMarks,
+} from '../data/towerMarks';
 
 /** Multiplier a gold-luck proc pays out at. */
 const GOLD_LUCK_MULTIPLIER = 3;
@@ -434,6 +438,14 @@ export class Game {
   private readonly waveMgr: WaveManager;
   private readonly resourceMgr: ResourceManager;
   private readonly upgradeMgr: UpgradeManager;
+  /**
+   * The tower's upgrade marks (`plans/tower-ui.md`).
+   *
+   * Rebuilt only when upgrade levels change, and handed to every snapshot as
+   * the same frozen object in between, so the renderer's "has this changed"
+   * check is a reference compare rather than sixty string builds a second.
+   */
+  private towerMarks: TowerMarks = DEFAULT_TOWER_MARKS;
   private readonly effects: EffectsManager;
   private readonly notifications: NotificationManager;
   private readonly abilityMgr: AbilityManager;
@@ -796,6 +808,7 @@ export class Game {
     this.seatArena();
     this.state.upgrades = this.upgradeMgr.snapshot();
     this.applyUpgradeEffects();
+    this.refreshTowerMarks(false);
     // A fresh game starts with three live contracts. A save load replaces them
     // in `applyPersistedState`; drawing here means the tracker is never empty,
     // including on the very first frame before any save has been read.
@@ -1607,6 +1620,8 @@ export class Game {
     this.bus.on('upgrades_changed', (levels: Record<string, number>) => {
       this.state.upgrades = { ...(levels as Record<string, number>) };
       this.applyUpgradeEffects();
+      // Silent: this event also fires on reset and on load.
+      this.refreshTowerMarks(false);
     });
     // The purchase counter belongs on the purchase event, not on
     // `upgrades_changed` — the latter also fires on reset/load, and a bulk buy
@@ -1617,6 +1632,8 @@ export class Game {
       if (p.goldSpent && p.goldSpent > 0) {
         this.contractMgr.note({ kind: 'gold_spent', amount: p.goldSpent });
       }
+      // The only path that earns the toast and the forge flourish.
+      this.refreshTowerMarks(true);
     });
     this.bus.on('upgrade_evolved', (payload: unknown) => {
       const p = payload as { id: string; level: number; evolution: { name: string; description: string } };
@@ -2992,6 +3009,14 @@ export class Game {
     if (!persisted) return null;
     this.saveLoaded = true;
     this.applyPersistedState(persisted);
+    // The persisted tower position was captured against the world size at
+    // save time. If the viewport/aspect changed (rotation, window resize,
+    // device swap), that point is no longer the centre of the new world and
+    // the tower renders off-axis until the next resize. `applyPersistedState`
+    // ran before the bounds were re-set, so re-seat now — the tower is a
+    // cosmetic anchor that never moves in gameplay, so snapping it to the
+    // current world centre is always the correct intent.
+    this.seatArena();
     // Plan §4.4: orbs are **not** persisted. Live enemies never were either
     // (`WaveManager` clears the wave on load), so orbs that were in the air
     // when the tab closed have nothing left to drift toward and are dropped.
@@ -3225,6 +3250,8 @@ export class Game {
         this.state.stats.lifetimeHighestWave,
         this.rpGainMultiplier(),
       ),
+      resolved: this.lastResolved,
+      targetingMode: t.targetingMode,
     };
   }
 
@@ -3272,6 +3299,9 @@ export class Game {
       autoProgress: this.waveMgr.getAutoProgress(),
       currentWave: this.waveMgr.currentWave,
       isIntermission: this.state.wave.intermission,
+    });
+    this.ui.setEnemyAPI({
+      getWaveMultipliers: () => this.enemyMgr.getWaveMultipliers(),
     });
     this.ui.setAbilityAPI({
       canCast: (id, wave) => this.abilityMgr.canCast(id, wave),
@@ -3393,6 +3423,46 @@ export class Game {
     this.appliedBuffVersion = this.buffs.version;
     this.applyResolvedStats(stats);
     this.state.research = this.researchTree.getLevelsSnapshot();
+  }
+
+  /**
+   * Recompute the tower's upgrade marks, and announce any that stepped up.
+   *
+   * `announce` is false on every path that is not a purchase — a save load, an
+   * ascension reset, a `replaceLevels` — because those move every mark at once
+   * and a wall of ten toasts on page load is not a reward, it is noise. The
+   * purchase path is the only one that earns the flourish.
+   *
+   * Reads `upgradeMgr.snapshot()` rather than `state.upgrades` so it is correct
+   * whichever of the two level events called it: `UpgradeManager` emits
+   * `upgrade_purchased` *before* `upgrades_changed`, so `state.upgrades` is one
+   * event stale at the moment the announcement has to be made.
+   */
+  private refreshTowerMarks(announce: boolean): void {
+    const next = computeTowerMarks(this.upgradeMgr.snapshot());
+    if (next.key === this.towerMarks.key) return;
+    const prev = this.towerMarks;
+    this.towerMarks = next;
+    if (!announce) return;
+    const t = this.tower.snapshot;
+    let flourished = false;
+    for (const id of Object.keys(next.steps) as TowerMarkId[]) {
+      const step = next.steps[id];
+      if (step <= prev.steps[id]) continue;
+      const def = TOWER_MARK_BY_ID[id];
+      this.bus.emit('tower_mark_changed', { id, step, def });
+      this.bus.emit('toast', {
+        kind: 'milestone',
+        text: `${def.part}: ${def.announce[step - 1]}.`,
+        life: 4,
+      });
+      // One flourish per purchase, however many marks a bulk buy crossed —
+      // ten overlapping rings is a smear, not a moment.
+      if (!flourished) {
+        this.effects.emitTowerForge(t.x, t.y, TOWER_VISUAL.plinthRadius);
+        flourished = true;
+      }
+    }
   }
 
   /**
@@ -5031,6 +5101,8 @@ export class Game {
       // invisible on the battlefield before Part 3.
       coreId: this.coreMgr.current,
       towerLevel: this.state.towerXp.level,
+      // Presentation only (`plans/tower-ui.md`): upgrade levels, as a tower.
+      towerMarks: this.towerMarks,
       // Presentation only (UI plan §5.C): the kill combo's only expression was
       // the HUD meter; this is what puts it on the battlefield.
       combo: this.pacingHud

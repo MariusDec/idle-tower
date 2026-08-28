@@ -1009,3 +1009,109 @@ export function talentRespecCost(points: number): number {
   if (p <= 0) return 0;
   return Math.floor(TALENT_RESPEC_BASE * Math.pow(p, TALENT_RESPEC_EXPONENT));
 }
+
+// ── Display helpers ──────────────────────────────────────────────────────────
+
+/** Short noun for each stat, used by `formatTalentEffectLine` and `describeTalentEffects`. */
+export const TALENT_STAT_LABELS: Record<TalentStat, string> = {
+  // ── Wrath ──
+  base_damage_pct: 'base damage',
+  all_damage_pct: 'all damage',
+  fire_rate_pct: 'fire rate',
+  crit_chance_pct: 'crit chance',
+  crit_damage_pct: 'crit damage',
+  range_pct: 'range',
+  armor_penetration_pct: 'armor penetration',
+  execution_damage_pct: 'execution damage',
+  extra_projectile_chance: 'extra projectile chance',
+  focus_stack_pct: 'focus stack bonus',
+  kill_frenzy_pct: 'kill frenzy',
+  overwatch_damage_pct: 'overwatch damage',
+  boss_damage_pct: 'boss damage',
+  crit_followup_chance: 'crit follow-up chance',
+  shot_splash_radius: 'splash radius',
+  shot_splash_fraction: 'splash damage',
+  // ── Bulwark ──
+  max_hp_pct: 'max HP',
+  defense_pct: 'defense',
+  armor_pct: 'armor',
+  thorns_pct: 'thorns damage',
+  dodge_chance: 'dodge chance',
+  wall_regen_pct: 'wall regen',
+  wall_contact_pct: 'wall damage',
+  shield_charges: 'shield charges',
+  shield_recharge_pct: 'shield recharge',
+  health_regen_pct: 'health regen',
+  knockback_pct: 'knockback',
+  second_wind_pct: 'second wind damage',
+  low_hp_damage_pct: 'low HP damage',
+  // ── Fortune ──
+  gold_mult_pct: 'gold earned',
+  xp_gain_pct: 'XP gain',
+  double_gold_chance: 'double gold chance',
+  head_start_waves: 'head start waves',
+  equipment_find_chance: 'equipment find chance',
+  upgrade_cost_reduction: 'upgrade cost',
+  orb_value_pct: 'loot orb value',
+  momentum_gain_pct: 'momentum gain',
+  auto_buy_speed_pct: 'auto-buy speed',
+  windfall_mult: 'windfall bonus',
+  interest_pct: 'interest',
+  enemy_hp_pct: 'enemy HP',
+  // ── Arcana ──
+  ability_damage_pct: 'ability damage',
+  mana_cost_reduction: 'ability mana cost',
+  ability_cooldown_pct: 'ability cooldown',
+  mana_regen_pct: 'mana regen',
+  max_mana_flat: 'max mana',
+  max_mana_pct: 'max mana',
+  magic_proc_chance: 'magic proc chance',
+  slow_effect_pct: 'slow effect',
+  chilled_damage_pct: 'damage vs chilled',
+  chain_bounce_count: 'chain bounces',
+  meteor_damage_pct: 'meteor damage',
+  mana_shield_pct: 'mana shield',
+  ability_echo_chance: 'ability echo chance',
+  mana_on_kill_pct: 'mana per kill',
+  buff_duration_pct: 'buff duration',
+};
+
+/** Format a single stat value as a signed number (+30%, +5, −2.5). */
+export function formatTalentEffectValue(stat: TalentStat, value: number): string {
+  const isPercent = stat.endsWith('_pct')
+    || stat.includes('chance')
+    || stat.includes('fraction')
+    || stat === 'mana_cost_reduction'
+    || stat === 'upgrade_cost_reduction';
+
+  let display: number;
+  let suffix: string;
+  if (isPercent) {
+    display = Math.abs(value) < 1 ? value * 100 : value;
+    suffix = '%';
+  } else {
+    display = value;
+    suffix = '';
+  }
+
+  const sign = display > 0 ? '+' : display < 0 ? '\u2212' : '';
+  const abs = Math.abs(display);
+  const formatted = abs % 1 === 0 ? abs.toFixed(0) : abs.toFixed(1);
+  return sign + formatted + suffix;
+}
+
+/** "+30% base damage" — one resolved effect line, label included. */
+export function formatTalentEffectLine(stat: TalentStat, value: number): string {
+  return `${formatTalentEffectValue(stat, value)} ${TALENT_STAT_LABELS[stat]}`;
+}
+
+/** Live effect lines for a talent at `points`, one string per defined effect. */
+export function describeTalentEffects(def: TalentDef, points: number): string[] {
+  const lines: string[] = [];
+  for (const eff of def.effects) {
+    const v = eff.perPoint * points;
+    if (v === 0) continue;
+    lines.push(formatTalentEffectLine(eff.stat, v));
+  }
+  return lines;
+}

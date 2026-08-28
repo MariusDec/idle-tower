@@ -61,6 +61,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Blessings | 30 | `src/data/blessings.ts` |
 | Tower cores | 5 | `src/data/cores.ts` |
 | Core shot behaviors | 6 | `src/data/cores.ts` |
+| Tower marks | 10 | `src/data/towerMarks.ts` |
 | Loot orb kinds | 3 | `src/data/loot.ts` |
 | Contracts | 28 | `src/data/contracts.ts` |
 | Contract goal kinds | 10 | `src/data/contracts.ts` |
