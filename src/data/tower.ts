@@ -54,6 +54,57 @@ export const TOWER_BASE: Omit<TowerState, 'cooldown'> = {
 export const PROJECTILE_SPEED = world(720);
 
 /**
+ * Seeker steering (`plans/homing.md`).
+ *
+ * A homing shot owns its own targeting: the volley's target is only its launch
+ * heading, and from there it hunts the nearest enemy it is already flying at.
+ * Three of these numbers exist purely so that Scatter Shot and Rear Guard stay
+ * *different perks* while Seeker Shots is drafted — `spreadDelay`,
+ * `spreadLaunchBoost` and `acquireCone` are what stop every lane from folding
+ * onto the same enemy within three frames and turning both perks into Twin
+ * Arrows.
+ *
+ * Sizing note: at `PROJECTILE_SPEED` (1872 u/s) a shot crosses half the arena's
+ * short axis in 0.5 s, so every duration here is a fraction of a *quarter* of a
+ * flight, not of a flight.
+ */
+export const HOMING = {
+  /**
+   * Default steering rate, rad/s. Was `Math.PI * 3` (9.42) — deliberately only
+   * ~27% slower, not halved: the ask was "a bit slower, but not by much".
+   */
+  turnRate: Math.PI * 2.2,
+  /** Seconds over which the turn eases from 0 to `turnRate` once steering starts. */
+  ramp: 0.28,
+  /** Extra straight-flight seconds a *fully spread* lane gets before steering. */
+  spreadDelay: 0.16,
+  /** Launch speed multiplier of a fully spread lane. */
+  spreadLaunchBoost: 1.55,
+  /** `|angleOffset|` at which a lane counts as fully spread, in radians (45°). */
+  spreadFullAngle: Math.PI / 4,
+  /** Time constant for the launch boost bleeding back to `PROJECTILE_SPEED`. */
+  speedSettle: 0.30,
+  /** Radius searched for a target, world units (two thirds of the short axis). */
+  seekRadius: world(620),
+  /** Half-angle of the acquisition cone around the current heading (75°). */
+  acquireCone: (75 * Math.PI) / 180,
+  /** Seconds between opportunistic re-scans while the current target is fine. */
+  retargetInterval: 0.12,
+  /**
+   * How much closer a rival must be to steal a *still-valid* target: squared
+   * distance below `switchMargin²` of the current one. Pure hysteresis — without
+   * it a shot flying between two enemies dithers and hits neither.
+   */
+  switchMargin: 0.75,
+  /** Straight-flight seconds for a clicked (manual-aim) volley. */
+  manualDelay: 0.10,
+  /** Straight-flight seconds for the charged shot. */
+  chargedDelay: 0.20,
+  /** The charged shot steers at this fraction of `turnRate` — it stays a skill shot. */
+  chargedTurnScale: 0.6,
+} as const;
+
+/**
  * How the tower is built, in world units and palette colours (UI plan §3.3).
  *
  * Before this the tower was a grey circle (`#5b6b7a`), a brown triangle "roof"

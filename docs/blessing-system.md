@@ -188,7 +188,7 @@ than a scan of the pool — the same lookup-cache pattern
 | `frost_shots` | `EnemyManager.applyChill` on impact (per-enemy, not the global slow) |
 | `shatter` | impact damage, against `EnemyManager.isSlowed(enemy)` |
 | `split_on_kill` | `Game.fireSplitShards` from the `enemy_killed` handler |
-| `homing` | `fire({ isHoming })`, only for an auto-acquired target |
+| `homing` | `fire({ isHoming })` on every volley, clicked or auto; the shot then seeks nearest |
 | `overkill_carry` | `ProjectileManager.applyOverkill` on a killing blow |
 | `siphon` | `enemy_killed` handler |
 | `executioner` | `ProjectileManager.tryExecute`, before damage, non-boss only |

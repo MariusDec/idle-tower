@@ -23,14 +23,14 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/core-system.md](docs/core-system.md) | Five tower cores: the run's identity, AP unlocks vs run-scoped selection, shot behaviors, the picker, blessing preference, the ±15% balance table |
 | [docs/projectile-system.md](docs/projectile-system.md) | Projectile firing, shot variants, swept collision, piercing, lifetime, damage multipliers |
 | [docs/resource-system.md](docs/resource-system.md) | Gold & mana economy, income sources, spending, passive income |
-| [docs/upgrade-system.md](docs/upgrade-system.md) | 27 upgrades across 4 categories, evolutions, bulk buy, cost formula, upgrade panel |
+| [docs/upgrade-system.md](docs/upgrade-system.md) | 29 upgrades across 4 categories, evolutions and the economy caps, bulk buy, cost formula, upgrade panel |
 | [docs/ability-system.md](docs/ability-system.md) | 10 active abilities, mana system, casting logic, cooldowns, buffs, ability XP |
 | [docs/passive-system.md](docs/passive-system.md) | 8 passive abilities, gold unlock + XP level track, persistence |
 | [docs/xp-talent-system.md](docs/xp-talent-system.md) | Tower XP and level curve, talent points, the 37-node talent tree, respec |
 | [docs/equipment-system.md](docs/equipment-system.md) | 8 slots, 5 rarities, drop sources and rolls, equipped bonuses, persistence |
 | [docs/achievement-system.md](docs/achievement-system.md) | 18 achievements, reward types and the consumer map that keeps them wired |
 | [docs/prestige-system.md](docs/prestige-system.md) | Ascension (AP) & Transcendence (TP), perk trees, formulas, automation unlocks |
-| [docs/research-system.md](docs/research-system.md) | 17 research nodes in 4 categories, RP system, effect queries, prerequisites |
+| [docs/research-system.md](docs/research-system.md) | 18 research nodes in 4 categories, RP system, effect queries, prerequisites |
 | [docs/automation-system.md](docs/automation-system.md) | Automation features (buy/cast/ascend/transcend), auto-buy strategies, timers, unlock requirements |
 | [docs/effects-system.md](docs/effects-system.md) | Particles, damage numbers, shockwave rings, pool caps, physics constants |
 | [docs/audio-system.md](docs/audio-system.md) | Web Audio synthesis, event subscriptions, volume and mute |
@@ -42,13 +42,15 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | [docs/data-formulas.md](docs/data-formulas.md) | All scaling formulas, upgrade value computation, static data definitions |
 | [docs/milestones.md](docs/milestones.md) | Upcoming-events strip, progression tab, milestone table |
 | [docs/run-summary.md](docs/run-summary.md) | Post-run debrief modal, per-run history ring buffer, stats tab |
-| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v19) and the migration ladder, debounced auto-save, offline progress |
+| [docs/save-system.md](docs/save-system.md) | localStorage persistence, save format (v21) and the migration ladder, debounced auto-save, offline progress |
 
 ## Content at a glance
 
 | Table | Count | File |
 |---|---:|---|
-| Upgrades (with evolutions) | 27 | `src/data/upgrades.ts` |
+| Upgrades (with evolutions) | 29 | `src/data/upgrades.ts` |
+| Upgrade evolutions | 17 | `src/data/upgrades.ts` |
+| AP perks / TP perks | 13 / 18 | `src/data/prestige.ts` |
 | Active abilities | 10 | `src/data/abilities.ts` |
 | Passive abilities | 8 | `src/data/passiveAbilities.ts` |
 | Enemy types | 13 | `src/data/enemies.ts` |
@@ -56,7 +58,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Elite auras | 5 | `src/systems/EnemyManager.ts` |
 | Targeting modes | 7 | `src/data/tower.ts` |
 | Talents | 37 | `src/data/talentTree.ts` |
-| Research nodes | 17 | `src/data/research.ts` |
+| Research nodes | 18 | `src/data/research.ts` |
 | Achievements | 18 | `src/data/achievements.ts` |
 | Wave modifiers | 9 | `src/data/waveModifiers.ts` |
 | Blessings | 30 | `src/data/blessings.ts` |
@@ -75,7 +77,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Enemy threat classes | 3 | `src/data/pacing.ts` |
 | Icons (distinct artwork) | 197 | `public/icons/sprite.svg` |
 | Icon references across tables | 249 | `scripts/fetch-icons.mjs` |
-| Save version | 19 | `src/systems/SaveManager.ts` |
+| Save version | 21 | `src/systems/SaveManager.ts` |
 
 ## Commands
 
@@ -93,7 +95,7 @@ npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **idle-tower** (5577 symbols, 20461 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **idle-tower** (6617 symbols, 23119 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

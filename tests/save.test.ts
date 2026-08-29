@@ -15,6 +15,8 @@ import { PacingManager } from '../src/systems/PacingManager';
 import type { GameState } from '../src/types';
 import { TOWER_LEVEL_CAP, TOWER_XP_TABLE, talentPointsAtLevel } from '../src/data/xpTables';
 import { MAX_RISK_CEILING } from '../src/data/pacing';
+import { AP_PERK_BY_ID, TP_PERK_BY_ID } from '../src/data/prestige';
+import { UPGRADE_BY_ID } from '../src/data/upgrades';
 
 const STORAGE_KEY = 'the-tower-save';
 
@@ -190,7 +192,7 @@ describe('migration ladder', () => {
   });
 
   it('accepts every version the ladder claims to handle', () => {
-    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]) {
+    for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) {
       storage.clear();
       storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version }));
       const loaded = new SaveManager(stubBus).load();
@@ -207,7 +209,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(20);
+    expect(loaded.version).toBe(21);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -231,7 +233,7 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(20);
+    expect(loaded.version).toBe(21);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);
@@ -246,7 +248,7 @@ describe('migration ladder', () => {
   it('seeds a risk-0 pacing block for a v13 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(20);
+    expect(loaded.version).toBe(21);
     expect(loaded.pacing).toEqual({
       risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
     });
@@ -279,7 +281,7 @@ describe('migration ladder', () => {
   it('seeds an empty contract run for a v11 save', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11 }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(20);
+    expect(loaded.version).toBe(21);
     expect(loaded.contracts).toEqual({
       active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
     });
@@ -299,7 +301,7 @@ describe('migration ladder', () => {
     };
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11, contracts }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(20);
+    expect(loaded.version).toBe(21);
     expect(loaded.contracts).toEqual(contracts);
 
     // And the real manager takes that state back without losing a slot.
@@ -328,7 +330,7 @@ describe('migration ladder', () => {
       prestige: { autoCastEnabled: { multishot: false } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(20);
+    expect(loaded.version).toBe(21);
     expect(loaded.abilities.rocket_barrage).toEqual({
       level: 3, xp: 0, cooldown: 0, active: false, activeTimer: 0,
     });
@@ -348,7 +350,7 @@ describe('migration ladder', () => {
       talents: { allocated: { power_core: 2 } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(20);
+    expect(loaded.version).toBe(21);
     expect(loaded.towerXp.level).toBe(4); // 3 + 1 (0-based -> 1-based)
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[4]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(4));
@@ -363,7 +365,7 @@ describe('migration ladder', () => {
       talents: { allocated: {} },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(20);
+    expect(loaded.version).toBe(21);
     expect(loaded.towerXp.level).toBe(TOWER_LEVEL_CAP);
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[TOWER_LEVEL_CAP]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(TOWER_LEVEL_CAP));
@@ -392,7 +394,7 @@ describe('migration ladder', () => {
       passiveAbilities: { marksmanship: { level: 5, xp: 200, unlocked: true } },
     }));
     const loaded = new SaveManager(stubBus).load()!;
-    expect(loaded.version).toBe(20);
+    expect(loaded.version).toBe(21);
     expect(loaded.passiveAbilities).toEqual({});
   });
 
@@ -490,7 +492,7 @@ describe('v19 watch block', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify({ ...minimalSave, version: 18 }));
     const loaded = new SaveManager(stubBus).load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(20);
+    expect(loaded!.version).toBe(21);
     expect(typeof loaded!.watch).toBe('object');
     expect(loaded!.watch).not.toBeNull();
     expect(Array.isArray(loaded!.watch!.counters.riskWaves)).toBe(true);
@@ -521,7 +523,7 @@ describe('v19 watch block', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify(malformed));
     const loaded = new SaveManager(stubBus).load();
     expect(loaded, 'save should load — normalizeWatch repairs, does not reject').not.toBeNull();
-    expect(loaded!.version).toBe(20);
+    expect(loaded!.version).toBe(21);
 
     const w = loaded!.watch!;
     expect(Array.isArray(w.completed)).toBe(true);
@@ -636,7 +638,7 @@ describe('v19→v20 ability level clamp', () => {
     storage.setItem(STORAGE_KEY, JSON.stringify(v19));
     const loaded = new SaveManager(stubBus).load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(20);
+    expect(loaded!.version).toBe(21);
     // In-range survives unchanged; out-of-range is clamped to [1, maxLevel].
     expect(loaded!.abilities.rain_of_arrows.level).toBe(7);
     expect(loaded!.abilities.frost_nova.level).toBe(10);
@@ -651,7 +653,133 @@ describe('v19→v20 ability level clamp', () => {
     expect(mgr.save(state)).toBe(true);
     const loaded = mgr.load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(20);
+    expect(loaded!.version).toBe(21);
     expect(loaded!.abilities.rain_of_arrows.level).toBe(8);
+  });
+});
+
+describe('v20→v21 revamp balance migration (§11)', () => {
+  const minimalSave = {
+    version: 2,
+    savedAt: Date.now(),
+    tower: { hp: 50, maxHp: 100 },
+    resources: { gold: 500, lifetimeGold: 500, mana: 10, maxMana: 100, manaRegen: 1 },
+    upgrades: { damage: 5 },
+    research: {},
+    abilities: {},
+    prestige: {},
+    wave: { number: 12 },
+    stats: { enemiesKilled: 90 },
+  };
+
+  it('maps tp_midas to tp_salvage L1 and clamps every TP perk to its cap', () => {
+    const v20 = {
+      ...minimalSave,
+      version: 20,
+      prestige: {
+        apSpent: {},
+        tpSpent: {
+          tp_midas: 3,
+          tp_wave_start: 20,
+          tp_game_speed: 30,
+          tp_head_start: 20,
+          tp_fire_rate: 99,
+          tp_crit: 40,
+          tp_treasure: 15,
+          tp_mana: 40,
+          tp_damage: 7,
+          tp_gone: 4,
+        },
+      },
+    };
+    storage.setItem(STORAGE_KEY, JSON.stringify(v20));
+    const loaded = new SaveManager(stubBus).load();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(21);
+    const tp = loaded!.prestige.tpSpent;
+    expect(tp.tp_midas).toBeUndefined();
+    expect(tp.tp_salvage).toBe(1);
+    expect(tp.tp_wave_start).toBe(TP_PERK_BY_ID.tp_wave_start.maxLevel);
+    expect(tp.tp_game_speed).toBe(TP_PERK_BY_ID.tp_game_speed.maxLevel);
+    expect(tp.tp_head_start).toBe(TP_PERK_BY_ID.tp_head_start.maxLevel);
+    expect(tp.tp_fire_rate).toBe(TP_PERK_BY_ID.tp_fire_rate.maxLevel);
+    expect(tp.tp_crit).toBe(TP_PERK_BY_ID.tp_crit.maxLevel);
+    expect(tp.tp_treasure).toBe(TP_PERK_BY_ID.tp_treasure.maxLevel);
+    expect(tp.tp_mana).toBe(TP_PERK_BY_ID.tp_mana.maxLevel);
+    // In-range levels are untouched; ids the table dropped go away.
+    expect(tp.tp_damage).toBe(7);
+    expect(tp.tp_gone).toBeUndefined();
+  });
+
+  it('clamps AP perks and resolves the warlord/tycoon exclusion', () => {
+    const v20 = {
+      ...minimalSave,
+      version: 20,
+      prestige: {
+        tpSpent: {},
+        apSpent: {
+          ap_extra_shots: 10,
+          ap_scatter_shots: 5,
+          ap_back_shots: 4,
+          ap_wave_skipper: 40,
+          ap_warlord: 3,
+          ap_tycoon: 8,
+        },
+      },
+    };
+    storage.setItem(STORAGE_KEY, JSON.stringify(v20));
+    const loaded = new SaveManager(stubBus).load()!;
+    const ap = loaded.prestige.apSpent;
+    expect(ap.ap_extra_shots).toBe(1);
+    expect(ap.ap_scatter_shots).toBe(1);
+    expect(ap.ap_back_shots).toBe(1);
+    expect(ap.ap_wave_skipper).toBe(AP_PERK_BY_ID.ap_wave_skipper.maxLevel);
+    // Tycoon has the deeper investment, so warlord is the one cleared.
+    expect(ap.ap_warlord).toBeUndefined();
+    expect(ap.ap_tycoon).toBe(8);
+  });
+
+  /**
+   * §11's named case, run the whole ladder: a v14 save holding maxed Twin and
+   * Scatter, an `upgradeDiscount` level, `tp_midas` and `tp_head_start` L20.
+   */
+  it('walks the §11 v14 save all the way to the current version', () => {
+    const v14 = {
+      ...minimalSave,
+      version: 14,
+      upgrades: { damage: 5, upgradeDiscount: 9, goldMulti: 999 },
+      prestige: {
+        apSpent: { ap_extra_shots: 10, ap_scatter_shots: 5 },
+        tpSpent: { tp_midas: 1, tp_head_start: 20 },
+      },
+    };
+    storage.setItem(STORAGE_KEY, JSON.stringify(v14));
+    const loaded = new SaveManager(stubBus).load();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.version).toBe(21);
+    // upgradeDiscount 9 -> prospecting ceil(9/2) = 5, old key gone.
+    expect(loaded!.upgrades.upgradeDiscount).toBeUndefined();
+    expect(loaded!.upgrades.prospecting).toBe(5);
+    expect(loaded!.upgrades.damage).toBe(5);
+    expect(loaded!.upgrades.goldMulti).toBe(UPGRADE_BY_ID.goldMulti.maxLevel);
+    expect(loaded!.prestige.apSpent.ap_extra_shots).toBe(1);
+    expect(loaded!.prestige.apSpent.ap_scatter_shots).toBe(1);
+    expect(loaded!.prestige.tpSpent.tp_midas).toBeUndefined();
+    expect(loaded!.prestige.tpSpent.tp_salvage).toBe(1);
+    expect(loaded!.prestige.tpSpent.tp_head_start).toBe(TP_PERK_BY_ID.tp_head_start.maxLevel);
+  });
+
+  it('leaves an already-v21 save alone through a round trip', () => {
+    const state = makeState();
+    state.upgrades.damage = 12;
+    state.prestige.tpSpent = { tp_head_start: 4 };
+    state.prestige.apSpent = { ap_warlord: 2 };
+    const mgr = new SaveManager(stubBus);
+    expect(mgr.save(state)).toBe(true);
+    const loaded = mgr.load()!;
+    expect(loaded.version).toBe(21);
+    expect(loaded.upgrades.damage).toBe(12);
+    expect(loaded.prestige.tpSpent.tp_head_start).toBe(4);
+    expect(loaded.prestige.apSpent.ap_warlord).toBe(2);
   });
 });

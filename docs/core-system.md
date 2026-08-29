@@ -21,10 +21,15 @@ is a plan on wave 1 instead of an accident on wave 15.
 | Core | Unlock | Stats | Shot behavior |
 |---|---:|---|---|
 | `marksman` | default | +6% crit chance, +20% range | Ordinary single shots |
-| `artillery` | 5 AP | +65% damage, −40% fire rate | Every shot bursts for 70 px at 50% |
-| `frostwork` | 10 AP | +30% fire rate, −18% damage | Hits chill (−25% speed, 2 s); Frost Nova ×2 duration |
-| `bloodforge` | 15 AP | +60% max HP, +8% lifesteal, −20% gold | Kills heal 1% max HP; below 50% HP, +40% fire rate |
-| `arcane` | 25 AP | −18% damage, +100% mana regen, +50% ability damage | Every 5th shot spends 3 mana and lands as magic at 250% |
+| `artillery` | 30 AP | +65% damage, −40% fire rate | Every shot bursts for 70 px at 50% |
+| `frostwork` | 45 AP | +30% fire rate, −18% damage | Hits chill (−25% speed, 2 s); Frost Nova ×2 duration |
+| `bloodforge` | 60 AP | +60% max HP, +8% lifesteal, −20% gold | Kills heal 1% max HP; below 50% HP, +40% fire rate |
+| `arcane` | 90 AP | −18% damage, +100% mana regen, +50% ability damage, +25% ability area | Every 5th shot spends 3 mana and lands as magic at 250% |
+
+The prices are the revamped AP ladder: a core is several ascensions of saving,
+not something a first ascension buys alongside everything else. The same
+numbers are the ones [prestige-system.md](prestige-system.md#tower-cores-as-an-ap-spend)
+quotes, because both read `apCost` from `CORES`.
 
 Every number lives in `CORES` / `CORE_TUNING` in `src/data/cores.ts`. Nothing
 else in the codebase holds a copy — `sim/model.ts` reads the same table, which

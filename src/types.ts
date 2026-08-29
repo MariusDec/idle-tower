@@ -288,6 +288,18 @@ export interface Projectile {
   homingTargetId?: number;
   turnRate?: number;
   lifetime?: number;
+  /**
+   * Seconds of straight launch-heading flight before steering (and target
+   * seeking) begins. Spread lanes carry a larger one; see `HOMING`.
+   */
+  homingDelay?: number;
+  /**
+   * Speed the launch boost decays back to once steering starts. Absent on a
+   * shot that launched at the ordinary `PROJECTILE_SPEED`.
+   */
+  cruiseSpeed?: number;
+  /** Countdown, in seconds, to this shot's next target re-scan. */
+  retargetIn?: number;
   age?: number;
   /**
    * Blast radius on impact, in pixels. Set by the `mortar` blessing's every-8th
@@ -368,14 +380,6 @@ export interface EquipmentDef {
   baseStats: Partial<Record<Rarity, EquipmentStat[]>>;
   maxLevel: number; upgradeCostGrowth: number;
   icon: IconId; color: string; minWave: number; bossOnly?: boolean;
-}
-
-// Homing Projectile (extends Projectile)
-export interface HomingProjectile extends Projectile {
-  homingTargetId: number;
-  turnRate: number;
-  lifetime: number;
-  age: number;
 }
 
 export interface WaveModifierState {

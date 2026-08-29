@@ -244,6 +244,11 @@ export class PrestigePanel {
         return atMax
           ? `+${level} rear projectile${level === 1 ? '' : 's'} at ${rearPct}% damage`
           : `Adds one rear projectile at ${rearPct}% damage`;
+      // Coverage, stated as what a shot does rather than as a bare stat name.
+      case 'pierce':
+        return level > 0
+          ? `Shots pass through ${computePerkEffect(p, level).toFixed(0)} more ${computePerkEffect(p, level) === 1 ? 'enemy' : 'enemies'}`
+          : 'Shots pass through one more enemy per level';
       case 'auto_buy':
         return 'Unlocks the Auto-Upgrader automation';
       case 'wave_skip':

@@ -36,9 +36,26 @@ StatContext  ──►  contributors  ──►  StatAccumulator  ──►  Res
                                             └──►  Breakdown (opt-in)
 ```
 
-**`StatKey`** (`keys.ts`) is a closed union of ~75 stats, with `STAT_BASES`
+**`StatKey`** (`keys.ts`) is a closed union of ~100 stats, with `STAT_BASES`
 giving each a seed and `STAT_CLAMPS` a single post-composition clamp. Because
 `ResolvedStats` is `Record<StatKey, number>`, a key without a base fails `tsc`.
+
+The keys the upgrades revamp added or repurposed:
+
+| StatKey | Base | Clamp | Written by |
+|---|---:|---|---|
+| `shotSplashRadius` | 0 | min 0 | `splash` upgrade, artillery core, Mortar blessing, Annihilation |
+| `shotSplashFraction` | 0 | [0, `SPLASH_FRACTION_CAP`] | the same four |
+| `pierceExtra` | 0 | min 0, integer | `pierce` upgrade, `ap_pierce`, `tp_pierce`, research |
+| `doubleGoldChance` | 0 | [0, 1] | `prospecting` upgrade |
+| `orbGoldMultiplier` | 1 | — | Salvage (`tp_salvage`), via `contributors/prestige.ts` |
+| `upgradeCostDiscount` | 0 | — | talents and achievements **only** — the `upgradeDiscount` gold upgrade was retired |
+
+Splash is two keys rather than one because the composition rule differs per
+half: radius takes the **max** across sources and fraction **sums** to the cap.
+`composeShotSplash` (`src/data/prestige.ts`) does the composing, and the cap can
+never take a source below what it grants on its own — so the artillery core
+keeps its blast and Annihilation adds on top of the smaller sources.
 
 The 15 talent StatKeys added by the levelling redesign:
 

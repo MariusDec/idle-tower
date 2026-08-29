@@ -1,7 +1,8 @@
 import type { UpgradeCategory, UpgradeDef, UpgradeEvolution, GameState } from '../types';
 import { computeUpgradeValue } from '../types';
-import { UPGRADES } from '../data/upgrades';
-import { upgradeCost } from '../data/formulas';
+import { UPGRADES, splashRadiusForLevel } from '../data/upgrades';
+import { upgradeCost, enemyHPForWave } from '../data/formulas';
+import { ENEMY_DEFS, ENEMY_LABELS } from '../data/enemies';
 import { TOWER_MARKS, type TowerMarkDef } from '../data/towerMarks';
 import { formatNumber } from '../utils/bigNumber';
 import { setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
@@ -35,6 +36,92 @@ const TAB_DEFS: UpgradeTabDef[] = [
   { id: 'defense', label: 'Defense', categories: ['defense'] },
   { id: 'utility', label: 'Utility', categories: ['economy', 'utility'] },
 ];
+
+/**
+ * The composed shot the panel prices a purchase against (revamp §12.2).
+ *
+ * Filled by `Game.previewUpgradeShot` out of a resolved stat block, so the
+ * "after" numbers are the pipeline's answer rather than a second copy of the
+ * balance math living in the UI.
+ */
+export interface ShotPreview {
+  damage: number;
+  fireRate: number;
+  critChance: number;
+  critMultiplier: number;
+}
+
+export interface UpgradeShotPreview {
+  before: ShotPreview;
+  after: ShotPreview;
+}
+
+/** Composed shot before/after buying `levels` of `id`; null before stats resolve. */
+export type ShotPreviewGetter = (id: string, levels: number) => UpgradeShotPreview | null;
+
+/**
+ * The offence lines whose readout is a *composed* stat rather than the
+ * upgrade's own accumulated value — a player wants "1.75 → 1.90 shots/s", not
+ * "+0.70 fire-rate bonus" (revamp §12.1).
+ */
+const COMPOSED_ROWS = new Set(['damage', 'fireRate', 'critChance', 'critDamage']);
+
+/**
+ * Lines that are saved for rather than trickled into (revamp §12.4). They get
+ * the milestone badge and a per-level "what the next one unlocks" line, the
+ * same treatment an evolution gets.
+ */
+const MILESTONE_ROWS = new Set(['pierce', 'splash']);
+
+/** Noun the before → after readout is stated in, per line. */
+const EFFECT_LABEL: Record<string, string> = {
+  range: 'range',
+  landMines: 'mine damage',
+  doubleShotChance: 'double-shot chance',
+  quickShotChance: 'proc chance',
+  quickShotTime: 'duration',
+  goldMulti: 'gold',
+  prospecting: 'double-gold chance',
+  manaRegen: 'mana/s',
+  maxMana: 'max mana',
+  waveGold: 'gold on wave clear',
+  xpGain: 'XP',
+  abilityCostReduction: 'ability mana cost',
+  goldOnKill: 'gold per kill',
+  critGold: 'crit gold',
+  health: 'max HP',
+  healthRegen: 'HP/s regen',
+  defense: 'flat damage reduction',
+  armor: 'damage reduction',
+  shockwave: 'between pulses',
+  thorns: 'damage reflected',
+  lifesteal: 'lifesteal',
+  defenseShield: 'shield recharge',
+  wall: 'wall strength',
+};
+
+/** Expected damage of one shot, crits folded in — `Game.computeStatsInfo`'s shape. */
+function expectedHit(shot: ShotPreview): number {
+  return shot.damage * (1 + shot.critChance * (shot.critMultiplier - 1));
+}
+
+/**
+ * Shots this tower needs to drop the current wave's `normal` enemy.
+ *
+ * The HP comes from `enemyHPForWave` and `ENEMY_DEFS`, the damage from the
+ * stat pipeline — this is the metric the whole revamp is built on (§12.2), so
+ * it must be the shipping formula rather than a UI approximation of it.
+ */
+function shotsToKill(shot: ShotPreview, wave: number): number {
+  const hit = expectedHit(shot);
+  if (hit <= 0) return Infinity;
+  return enemyHPForWave(ENEMY_DEFS.normal.baseHP, wave) / hit;
+}
+
+function formatShots(v: number): string {
+  if (!Number.isFinite(v)) return '∞';
+  return v >= 10 ? v.toFixed(0) : v.toFixed(1);
+}
 
 const PERCENT_UPGRADES = new Set(['critChance', 'critDamage', 'goldMulti', 'xpGain', 'prospecting', 'abilityCostReduction', 'critGold', 'doubleShotChance', 'quickShotChance']);
 
@@ -186,6 +273,17 @@ export class UpgradePanel {
   private rowById = new Map<string, HTMLElement>();
   private evoInfoLastLevel = new Map<string, number>();
   private levelsById = new Map<string, HTMLElement>();
+  private deltaById = new Map<string, HTMLElement>();
+  private stkById = new Map<string, HTMLElement>();
+  private readoutKeyById = new Map<string, string>();
+  private previewFn: ShotPreviewGetter | null = null;
+  /**
+   * Bumped by the host whenever the resolved stat block changes. It is the
+   * memo key for the composed readouts — without it a talent or a blessing
+   * would move the tower's damage and leave the panel quoting the old
+   * before → after pair.
+   */
+  private statsVersion = 0;
   private amountBtns = new Map<BuyAmount, HTMLButtonElement>();
   private activeTab: UpgradeTabId = 'attack';
   private buyAmount: BuyAmount = 1;
@@ -203,6 +301,17 @@ export class UpgradePanel {
 
   setPlanGetter(fn: (id: string, amount: BuyAmount) => UpgradePlan): void {
     this.getPlanFn = fn;
+  }
+
+  /** Wire the composed before → after shot preview (revamp §12.2). */
+  setShotPreviewGetter(fn: ShotPreviewGetter): void {
+    this.previewFn = fn;
+    this.readoutKeyById.clear();
+  }
+
+  /** Told by the host that the resolved stat block moved; invalidates the memo. */
+  statsChanged(): void {
+    this.statsVersion += 1;
   }
 
   /** The amount a click buys right now: a held modifier beats the selector. */
@@ -231,6 +340,9 @@ export class UpgradePanel {
     this.rowById.clear();
     this.evoInfoLastLevel.clear();
     this.levelsById.clear();
+    this.deltaById.clear();
+    this.stkById.clear();
+    this.readoutKeyById.clear();
     this.amountBtns.clear();
     this.activeTab = 'attack';
     this.bindModifierKeys();
@@ -265,6 +377,7 @@ export class UpgradePanel {
   update(state: GameState): void {
     if (!this.root) return;
     const gold = state.resources.gold;
+    const wave = Math.max(1, state.wave.number);
     for (const u of UPGRADES) {
       const btn = this.buttonById.get(u.id);
       const costEl = this.costById.get(u.id);
@@ -297,6 +410,15 @@ export class UpgradePanel {
       btn.disabled = !affordable;
       toggleClass(btn, 'can-afford', affordable);
       setText(btn, atMax ? 'Maxed' : plan.levels > 1 ? `Buy ×${plan.levels}` : 'Buy');
+      // §12.1–2: the concrete next effect, and — where the shot changes —
+      // shots-to-kill against this wave's Grunt. Rebuilt only when the level,
+      // the pending buy, the wave or the resolved stat block moves, so the
+      // per-frame path stays a pair of cached `setText` calls.
+      const readoutKey = `${level}|${atMax ? 0 : plan.levels}|${wave}|${this.statsVersion}`;
+      if (this.readoutKeyById.get(u.id) !== readoutKey) {
+        this.readoutKeyById.set(u.id, readoutKey);
+        this.renderReadout(u, level, atMax ? 0 : plan.levels, wave);
+      }
       if (rowEl) {
         // Plan §8.B: the card's affordability state, legible without colour —
         // the action dims and disables, the cost reads as unmet.
@@ -340,11 +462,24 @@ export class UpgradePanel {
           }
           // Show next evolution hint (purple, name only). `getNextEvolution`
           // already returns null for an upgrade with no evolutions.
+          // §12.3: an evolution is a milestone, so it is labelled as one and
+          // names what it unlocks — the level alone told the player nothing.
           const nextEvo = getNextEvolution(u, level);
           if (nextEvo) {
             const line = document.createElement('div');
-            line.className = 'evo-line evo-next';
-            line.textContent = `Evolves at Lv${nextEvo.level}: ${nextEvo.name}`;
+            line.className = 'evo-line evo-next evo-milestone';
+            line.textContent =
+              `Milestone · Lv${nextEvo.level} (${nextEvo.level - level} to go): ${nextEvo.name} — ${nextEvo.description}`;
+            evoEl.appendChild(line);
+            hasContent = true;
+          }
+          // §12.4: the coverage lines have no evolutions to carry the moment,
+          // so they state their own next step in the same milestone voice.
+          const milestone = this.milestoneStepLine(u, level);
+          if (milestone) {
+            const line = document.createElement('div');
+            line.className = 'evo-line evo-next evo-milestone';
+            line.textContent = milestone;
             evoEl.appendChild(line);
             hasContent = true;
           }
@@ -364,6 +499,98 @@ export class UpgradePanel {
           setDisplay(evoEl, hasContent ? '' : 'none');
         }
       }
+    }
+  }
+
+
+  /**
+   * The milestone sentence for `pierce` / `splash` — what the *next* level of
+   * the line changes about the shot, said as a step rather than a trickle
+   * (§12.4). Null for every other line and for a maxed one.
+   */
+  private milestoneStepLine(u: UpgradeDef, level: number): string | null {
+    if (!MILESTONE_ROWS.has(u.id)) return null;
+    if (u.maxLevel > 0 && level >= u.maxLevel) return null;
+    const nextLevel = level + 1;
+    if (u.id === 'pierce') {
+      return `Milestone · Lv${nextLevel}: each shot hits ${nextLevel + 1} enemies in a line`;
+    }
+    return `Milestone · Lv${nextLevel}: ${formatPercentValue(computeUpgradeValue(u, nextLevel))} burst`
+      + ` in a ${splashRadiusForLevel(nextLevel).toFixed(0)} radius`;
+  }
+
+  /**
+   * Write the two §12 readout lines for one row.
+   *
+   * `buyLevels` is what the current buy amount would actually purchase, so the
+   * "after" figure is the one the Buy button lands — quoting a single level
+   * next to a ×10 button is exactly the disconnect this readout exists to
+   * close. Only the four composed offence lines ask the host for a preview;
+   * every other row's effect is its own accumulated value, which needs no
+   * second stat resolve.
+   */
+  private renderReadout(u: UpgradeDef, level: number, buyLevels: number, wave: number): void {
+    const deltaEl = this.deltaById.get(u.id);
+    const stkEl = this.stkById.get(u.id);
+    let next = '';
+    let stk = '';
+
+    if (buyLevels <= 0) {
+      next = formatNextDelta(u);
+    } else if (COMPOSED_ROWS.has(u.id)) {
+      const preview = this.previewFn ? this.previewFn(u.id, buyLevels) : null;
+      if (!preview) {
+        next = formatNextDelta(u);
+      } else {
+        const { before, after } = preview;
+        switch (u.id) {
+          case 'damage': {
+            const gain = before.damage > 0 ? (after.damage / before.damage - 1) * 100 : 0;
+            next = `${formatNumberValue(before.damage, 1)} → ${formatNumberValue(after.damage, 1)} damage`
+              + (gain > 0 ? ` (+${gain.toFixed(0)}%)` : '');
+            break;
+          }
+          case 'fireRate':
+            next = `${before.fireRate.toFixed(2)} → ${after.fireRate.toFixed(2)} shots/s`;
+            break;
+          case 'critChance': {
+            // A single level is half a percentage point, so this readout needs
+            // a decimal the generic percent formatter drops above 10%.
+            const pp = (v: number) => `${(v * 100).toFixed(1)}%`;
+            next = `${pp(before.critChance)} → ${pp(after.critChance)} crit chance`;
+            break;
+          }
+          default:
+            next = `×${before.critMultiplier.toFixed(2)} → ×${after.critMultiplier.toFixed(2)} crit damage`;
+            break;
+        }
+        const b = shotsToKill(before, wave);
+        const a = shotsToKill(after, wave);
+        if (Number.isFinite(b) && Math.abs(a - b) > 0.05) {
+          stk = `${formatShots(b)} → ${formatShots(a)} shots to kill a ${ENEMY_LABELS.normal} (wave ${wave})`;
+        }
+      }
+    } else if (u.id === 'pierce') {
+      next = `passes through ${level} → ${level + buyLevels} extra ${level + buyLevels === 1 ? 'enemy' : 'enemies'}`;
+    } else if (u.id === 'splash') {
+      const b = computeUpgradeValue(u, level);
+      const a = computeUpgradeValue(u, level + buyLevels);
+      // The radius is stated on the milestone line below the row; repeating
+      // it here would push the numbers that changed off the end.
+      next = `${formatPercentValue(b)} → ${formatPercentValue(a)} splash damage`;
+    } else {
+      const b = computeUpgradeValue(u, level);
+      const a = computeUpgradeValue(u, level + buyLevels);
+      const unit = u.scaling?.unit ?? '';
+      const fmt = (v: number) => isPercent(u) ? formatPercentValue(v) : `${formatNumberValue(v, 1)}${unit}`;
+      const label = EFFECT_LABEL[u.id];
+      next = a === b ? formatNextDelta(u) : `${fmt(b)} → ${fmt(a)}${label ? ` ${label}` : ''}`;
+    }
+
+    if (deltaEl) setText(deltaEl, next);
+    if (stkEl) {
+      setText(stkEl, stk);
+      setDisplay(stkEl, stk ? '' : 'none');
     }
   }
 
@@ -541,8 +768,23 @@ export class UpgradePanel {
     info.className = 'upgrade-info';
     const name = document.createElement('div');
     name.className = 'upgrade-name';
-    name.textContent = u.name;
-    this.nameById.set(u.id, name);
+    // The label is its own span: `update` rewrites it with the unlocked
+    // evolution's name, and writing the whole row's `textContent` would take
+    // the milestone badge with it.
+    const nameText = document.createElement('span');
+    nameText.className = 'upgrade-name-text';
+    nameText.textContent = u.name;
+    name.appendChild(nameText);
+    this.nameById.set(u.id, nameText);
+    // §12.4: the two coverage lines are milestone purchases, and the row has
+    // to say so before the player reads the four-figure price tag.
+    if (MILESTONE_ROWS.has(u.id)) {
+      row.dataset.milestone = 'yes';
+      const badge = document.createElement('span');
+      badge.className = 'upgrade-milestone-badge';
+      badge.textContent = 'Milestone';
+      name.appendChild(badge);
+    }
     const desc = document.createElement('div');
     desc.className = 'upgrade-desc';
     desc.textContent = u.description;
@@ -563,13 +805,20 @@ export class UpgradePanel {
     const delta = document.createElement('span');
     delta.className = 'upgrade-delta';
     delta.textContent = formatNextDelta(u);
+    this.deltaById.set(u.id, delta);
     meta.appendChild(level);
     meta.appendChild(bonus);
     meta.appendChild(delta);
+    // §12.2: shots-to-kill against this wave's Grunt, before → after.
+    const stk = document.createElement('div');
+    stk.className = 'upgrade-stk';
+    stk.style.display = 'none';
+    this.stkById.set(u.id, stk);
     info.appendChild(name);
     info.appendChild(desc);
     info.appendChild(evoInfo);
     info.appendChild(meta);
+    info.appendChild(stk);
     row.appendChild(info);
 
     const action = document.createElement('div');

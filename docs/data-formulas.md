@@ -2,20 +2,71 @@
 
 ## Formulas (`src/data/formulas.ts`)
 
-| Function | Formula                                                 |
-|----------|---------------------------------------------------------|
-| `enemyHPForWave(baseHP, wave)` | `baseHP * 1.12^(wave-1)`                                |
-| `bossHPForWave(baseHP, wave)` | `baseHP * 1.12^wave * 1.5^tier` (tier = floor(wave/10)) |
-| `enemyDamageForWave(baseDamage, wave)` | `baseDamage + floor((wave-1)/5)`                        |
-| `enemySpeedForWave(baseSpeed, wave)` | `baseSpeed * min(3, 1 + 0.03*(wave-1))`                 |
-| `goldDropForWave(baseGold, wave)` | `baseGold * 1.1^(wave-1)`                               |
-| `enemyCountForWave(wave)` | `5 + floor((wave-1) * 1.5)`                             |
-| `spawnIntervalForWave(wave)` | `max(0.3, 2.0 - wave*0.05)`                             |
-| `upgradeCost(base, growth, level)` | `floor(base * growth^level)`                            |
-| `abilityUpgradeCost(base, growth, level)` | `floor(baseCost * growth^level)` (numeric growth only)  |
-| `isBossWave(wave)` | `wave > 0 && wave % 10 === 0`                           |
-| `apForWave(waveNumber)` | `max(0, floor(sqrt(waveNumber * 5)))` (if wave >= 20)   |
-| `tpForAP(ap)` | `max(0, floor(log10(ap+1) * 3))` (if ap >= 100)         |
+| Function | Formula                                                                          |
+|----------|----------------------------------------------------------------------------------|
+| `enemyHPForWave(baseHP, wave)` | `baseHP * ENEMY_HP_GROWTH^(wave-1)`, `ENEMY_HP_GROWTH = 1.11`                    |
+| `bossHPForWave(baseHP, wave)` | `baseHP * 1.11^(wave-1) * 1.07^tier` (`tier = floor((wave-1)/10)`)               |
+| `enemyDamageForWave(baseDamage, wave)` | `baseDamage * 1.1^wave`                                                          |
+| `enemySpeedForWave(baseSpeed, wave)` | `baseSpeed * min(3, 1 + 0.03*(wave-1))`                                          |
+| `goldDropForWave(baseGold, wave)` | `baseGold * GOLD_GROWTH^(wave-1)`, `GOLD_GROWTH = 1.08`                          |
+| `enemyCountForWave(wave)` | `5 + floor((wave-1) * 1.2)`                                                      |
+| `bossEncounterWeight(wave)` | `2 + (tier - 1)`, `tier = max(1, floor(wave/10))`                                |
+| `bossEscortCountForWave(wave)` | `bossEncounterWeight(wave)`                                                      |
+| `spawnCountForWave(wave)` | boss wave: `1 + escort`; otherwise `enemyCountForWave`                           |
+| `spawnIntervalForWave(wave)` | `max(0.4, 2.0 - wave*0.04)`                                                      |
+| `upgradeCost(base, growth, level)` | `floor(base * growth^level)`                                                     |
+| `abilityUpgradeCost(base, growth, level)` | `floor(baseCost * growth^level)` (numeric growth only)                           |
+| `isBossWave(wave)` | `wave > 0 && wave % 10 === 0`                                                    |
+| `apForWave(wave)` | `15 + floor(5 * 1.06^d * sqrt(d+1))`, `d = wave - 20`; `0` below wave 20         |
+| `tpForAP(ap)` | `floor(4 * ap^0.4)` (if `ap >= 100`)                                             |
+| `lifetimeAPDamageBonus(ap)` | `0.02 * ap^0.7` — sub-linear. `lifetimeAPGoldBonus` is the same curve            |
+| `perkCost(def, level)` | `floor(costPerLevel * costScaling^level)`                                        |
+
+`ENEMY_HP_GROWTH` and `GOLD_GROWTH` are the single most important pair in the
+game: the gap between them is the rate at which the economy falls behind the
+difficulty. At 1.11 vs 1.08, gold-per-HP decays ~`1.028^wave` — a factor of ten
+every ~85 waves instead of every ~21.
+
+Bosses are anchored to `ENEMY_HP_GROWTH` with only a per-tier bump
+(`BOSS_TIER_GROWTH = 1.07`). On their own exponent they ran away from the trash
+curve — a wave-100 boss was 724x a wave-100 trash mob.
+
+### Wave pacing and enrage
+
+| Constant / function | Value | Notes |
+|---|---|---|
+| `TARGET_WAVE_KILL_SECONDS` | `20` | Flat kill window a non-boss wave gets beyond its own spawn cadence |
+| `TARGET_BOSS_KILL_SECONDS` | `28` | Kill window a **single** boss is expected to need |
+| `ENRAGE_THRESHOLD_MULTIPLIER` | `2` | A wave running longer than `expected x 2` starts enraging |
+| `ENRAGE_STACK_INTERVAL` | `8` | Seconds between stacks once it has overrun |
+| `ENRAGE_DAMAGE_PER_STACK` | `0.4` | Additive damage-to-tower per stack |
+| `ENRAGE_SPEED_PER_STACK` | `0.15` | Additive movement speed per stack |
+| `expectedWaveSeconds(wave, count?)` | `spawnIntervalForWave(wave) * max(0, count-1) + kill` | `kill` is `TARGET_WAVE_KILL_SECONDS`, or `TARGET_BOSS_KILL_SECONDS * bossEncounterWeight(wave)` on a boss wave |
+| `enrageThresholdSeconds(wave, count?)` | `expectedWaveSeconds * 2` | |
+| `enrageStacksFor(wave, elapsed, count?)` | `1 + floor(over / 8)` past the threshold | |
+
+`enemyCount` defaults to the wave's natural size but **must** be passed when a
+mutator has changed it — a Swarm wave spawns 3x the enemies and legitimately
+takes 3x as long to spawn them.
+
+A boss wave's kill window is sized off `bossEncounterWeight`, **not** off its
+body count. Counting bodies would hand the encounter a fresh 28-second window
+for every piece of escort trash walking in behind the boss, which `npm run sim`
+prices at boss-wave budget use falling from ~82% to ~54% — a boss wave has to
+stay the wall it has always been. The escort is paid for through the spawn
+cadence, like any other body on any other wave.
+
+### Economy ceilings (revamp §6.2)
+
+| Constant / function | Value | Bounds |
+|---|---|---|
+| `AVARICE_STREAK_GOLD_CAP` | `0.75` | Avarice's kill-streak gold |
+| `avariceStreakGoldBonus(streak, perKill)` | `min(0.75, (streak-1) * perKill)` | |
+| `DRAGON_HOARD_GOLD_CAP` | `0.50` | Dragon's Hoard's waves-survived gold |
+| `WAVE_MASTERY_CHAIN_PER_WAVE` / `_MAX_WAVES` | `0.1` / `20` | |
+| `waveMasteryChainMultiplier(cleared)` | `1 + min(cleared, 20) * 0.1` — **x3 max** | Wave Mastery's clear chain |
+
+See [upgrade-system.md](upgrade-system.md#economy-caps-revamp-62).
 
 ## XP System (`src/data/xpTables.ts`)
 
@@ -91,11 +142,11 @@ The tower itself has no base damage or HP. Both are provided by the `damage` and
 
 ## Enemy Definitions (`src/data/enemies.ts`)
 
-6 types with individual: baseHP, baseSpeed, armor, magicResist, baseDamage, fireRate, baseGold, radius, shape, color.
+13 types with individual: baseHP, baseSpeed, armor, magicResist, baseDamage, fireRate, baseGold, radius, shape, color.
 
 ## Upgrade Definitions (`src/data/upgrades.ts`)
 
-27 upgrades each with: id, name, description, baseCost, costGrowth, effectPerLevel, effectType (add/mult), maxLevel, category, optional scaling config.
+29 upgrades (11 tower, 5 economy, 4 utility, 9 defense) each with: id, name, description, baseCost, costGrowth, effectPerLevel, effectType (add/mult), maxLevel, category, optional scaling config.
 
 ## Ability Definitions (`src/data/abilities.ts`)
 
@@ -112,13 +163,14 @@ The tower itself has no base damage or HP. Both are provided by the `damage` and
 
 ## Prestige Perks (`src/data/prestige.ts`)
 
-- 5 AP perks + 6 TP perks
-- Each: id, name, description, costPerLevel, maxLevel, effectType, optional automationKey
+- 13 AP perks in four tiers + 18 TP perks across three branches (`wrath` / `fortune` / `dominion`)
+- Each: id, name, description, costPerLevel, costScaling, maxLevel, effectType, optional `baseEffect`, `automationKey`, `branch`, `tier`, `prerequisites` (OR-based), `exclusive`
+- `PRESTIGE_PROJECTILE_TUNING` carries the per-lane `damageScale` for the three projectile perks (0.55 / 0.55 / 0.35)
 - AP/T perk lookup tables: `AP_PERK_BY_ID`, `TP_PERK_BY_ID`
 
 ## Research Nodes (`src/data/research.ts`)
 
-8 nodes each with: id, name, description, cost, category (combat/economy/arcane/scouting), effectType (pierce/gold_multi/gold_luck/mana_regen/ability_cost/start_wave), effectValue, prerequisites array.
+18 nodes each with: id, name, description, cost, category (combat/economy/arcane/scouting), effectType (pierce/gold_multi/gold_luck/mana_regen/ability_cost/start_wave), effectValue, prerequisites array.
 
 ## Pacing (`src/data/pacing.ts`)
 
@@ -186,6 +238,8 @@ at their definitions; in short:
   because that evolution is a level-25 unlock while the combo pays from wave 1.
   Shipped at roughly half: 3/6/12/20.
 
-`kill_streak_gold` (the Avarice evolution) still took its cut: **+5% → +4.7%**
-per consecutive kill, derived so the *combined* bonus at the deepest streak a
-wave can sustain (~50 kills, `(2.45 - 0.12) / 49`) matches the pre-change figure.
+`kill_streak_gold` (the Avarice evolution) took its cut here, and the upgrades
+revamp then cut it again and put a ceiling on it: it now pays **+2.5% per
+consecutive kill to a hard +75%** (`AVARICE_STREAK_GOLD_CAP`). A deep wave can
+sustain a streak as long as its own enemy count, so uncapped this one purchase
+was worth over +200% gold.

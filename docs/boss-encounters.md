@@ -49,7 +49,8 @@ rather than adding to it — the same §2.6 rule the phase machine was held to.
 
 It is deliberately small. Every body on the wave buys spawn time in
 `expectedWaveSeconds`, so a fat escort quietly buys the encounter a longer
-enrage fuse: at three trash per boss, `npm run sim` put boss-wave budget use at
+enrage fuse — the wave's kill window is `TARGET_BOSS_KILL_SECONDS` (28 s) times
+`bossEncounterWeight`, *not* 28 s per body: at three trash per boss, `npm run sim` put boss-wave budget use at
 **52%** against the ~82% a boss wave has always run at, and the wall stopped
 landing on boss waves at all.
 

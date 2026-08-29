@@ -75,6 +75,7 @@ export class LootManager {
   private collectedThisRun = 0;
   /** Prospector talent: orb value bonus (fraction, e.g. 0.12 = +12%). */
   private valueBonus = 0;
+  private goldMultiplier = 1;
 
   constructor(deps: LootManagerDeps) {
     this.bus = deps.bus;
@@ -122,6 +123,17 @@ export class LootManager {
   /** Prospector talent: orb value bonus. */
   setValueBonus(bonus: number): void {
     this.valueBonus = Math.max(0, bonus);
+  }
+
+  /**
+   * Salvage (revamp §9.2): a multiplier on gold orbs only.
+   *
+   * Kept separate from `valueBonus` (the Prospector talent, which lifts every
+   * orb kind and also speeds their drift) because this perk buys gold and
+   * nothing else.
+   */
+  setGoldMultiplier(mult: number): void {
+    this.goldMultiplier = Math.max(1, mult);
   }
 
   private get driftSeconds(): number {
@@ -172,7 +184,7 @@ export class LootManager {
     let base: number;
     switch (kind) {
       case 'gold':
-        base = orbGoldValue(req.wave);
+        base = Math.floor(orbGoldValue(req.wave) * this.goldMultiplier);
         break;
       case 'mana':
         base = Math.max(1, req.maxMana * LOOT_TUNING.manaFraction);

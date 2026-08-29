@@ -1218,7 +1218,31 @@ button:disabled {
 .upgrade-level { color: var(--text-2); font-variant-numeric: tabular-nums; }
 .upgrade-bonus { color: var(--good); font-weight: 600; font-variant-numeric: tabular-nums; }
 .upgrade-bonus:empty { display: none; }
-.upgrade-delta { color: var(--text-2); }
+.upgrade-delta { color: var(--text-1); font-variant-numeric: tabular-nums; }
+/* Revamp §12.2: shots-to-kill against this wave's Grunt, before → after. */
+.upgrade-stk {
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--fx-gold);
+  font-variant-numeric: tabular-nums;
+}
+.upgrade-stk:empty { display: none; }
+/* §12.4: the coverage lines read as milestones, not trickle buys. */
+.upgrade-milestone-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent-2);
+  color: var(--accent-2);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.upgrade-row[data-milestone='yes'] {
+  border-left: 2px solid var(--accent-2);
+}
 .upgrade-action {
   display: flex;
   flex-direction: column;
@@ -3082,6 +3106,9 @@ button:disabled {
 }
 .evo-next {
   color: var(--accent-2);
+}
+.evo-milestone {
+  font-weight: 600;
 }
 .mark-next {
   color: var(--fx-gold);
@@ -7841,11 +7868,26 @@ body.eq-dragging img { pointer-events: none; }
   gap: 8px;
   font-size: 12px;
 }
-.codex-detail-stat code {
+.codex-detail-stat-name {
   background: var(--fx-bg-2, rgba(0,0,0,0.3));
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 11px;
+  color: var(--text-1);
+}
+/* A game term named inside codex prose: emphasised, but still prose — no
+   monospace, since these read as names now, not as identifiers. */
+.codex-term {
+  color: var(--accent);
+  font-weight: 600;
+  /* A faint tinted pill plus a dotted rule: enough to read as "this is a
+     named stat, and it has a tooltip" without breaking the line rhythm of
+     the surrounding paragraph. */
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-bottom: 1px dotted color-mix(in srgb, var(--accent) 55%, transparent);
+  padding: 0 3px;
+  border-radius: 3px;
+  cursor: help;
 }
 .codex-detail-stat-warning { color: var(--text-warning, var(--text-muted)); font-size: 11px; }
 
@@ -8101,16 +8143,29 @@ body.eq-dragging img { pointer-events: none; }
   color: var(--text-1);
   font-size: var(--text-sm);
   line-height: 1.45;
-  pointer-events: auto;
   /* Hidden by default; the open path flips `.is-visible` after content + size
-     have settled, so the entrance animation starts from the final position. */
+     have settled, so the entrance animation starts from the final position.
+     Opacity alone would leave an invisible 320px panel sitting over the stat
+     rows and swallowing their clicks and hovers, so the hidden state also
+     takes the element out of hit-testing and out of the a11y tree. The
+     `visibility` step is delayed by the fade duration so closing still
+     animates instead of snapping away. */
   opacity: 0;
   transform: translateY(4px);
-  transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) ease,
+    transform var(--dur-fast) ease,
+    visibility 0s linear var(--dur-fast);
 }
 .stats-codex-tooltip.is-visible {
   opacity: 1;
   transform: translateY(0);
+  visibility: visible;
+  pointer-events: auto;
+  /* Showing must be immediate — no delay on the visibility flip. */
+  transition-delay: 0s;
 }
 
 .stats-codex-tooltip-head {

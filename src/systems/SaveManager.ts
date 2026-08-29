@@ -41,10 +41,12 @@ import { xpPerKill, xpToLevel, talentPointsAtLevel, TOWER_LEVEL_CAP, TOWER_XP_TA
 import { passiveXpPerKill, passiveXpPerWaveClear } from '../data/xpTables';
 import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { ABILITIES } from '../data/abilities';
+import { UPGRADE_BY_ID } from '../data/upgrades';
+import { AP_PERK_BY_ID, TP_PERK_BY_ID } from '../data/prestige';
 import type { PassiveAbilityManager } from './PassiveAbilityManager';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 20;
+const SAVE_VERSION = 21;
 
 /** Offline passive XP is paid at a quarter of the live rate. */
 const OFFLINE_PASSIVE_XP_RATE = 0.25;
@@ -666,10 +668,102 @@ function migrateV19toV20(data: Record<string, unknown>): void {
   }
 }
 
+/**
+ * v21 (upgrades revamp §11): the balance migration the revamp owes old saves.
+ *
+ * The plan wrote this as v14 -> v15, but the ladder moved on while the revamp
+ * was being built and several of its bullets landed on their own along the
+ * way, so only the parts that are still outstanding are done here:
+ *
+ *  - `upgradeDiscount` -> `prospecting` at `min(20, ceil(old / 2))`, then the
+ *    old key is deleted. The retired id was already ignored on load (see
+ *    `UpgradeManager.replaceLevels`, which walks `UPGRADES` rather than the
+ *    saved map), so its levels were being silently dropped rather than
+ *    translated — this is the translation.
+ *  - Every remaining upgrade level is clamped to its new `maxLevel`; the
+ *    revamp gave ceilings to lines that used to run to 999.
+ *  - AP and TP perk levels are clamped to their table `maxLevel`. This covers
+ *    §11's hand-written list (Twin/Rear/Scatter to 1, `ap_wave_skipper` to 15,
+ *    `tp_wave_start` 8, `tp_game_speed` 6, `tp_head_start` 12, `tp_fire_rate`
+ *    20, `tp_crit` 25, `tp_treasure`/`tp_mana` 15) without restating numbers
+ *    that now live in `AP_PERK_BY_ID` / `TP_PERK_BY_ID`, and stays correct if
+ *    §14 retunes any of them. Perks whose id no longer exists are dropped.
+ *  - `tp_midas` -> `tp_salvage` at level 1 if owned, old key deleted.
+ *  - `ap_warlord` / `ap_tycoon` are now exclusive: if a save holds both, the
+ *    one with more spent levels is kept and the other cleared (ties keep
+ *    `ap_warlord`, the first of the pair in table order).
+ *
+ * No refunds anywhere — gold, AP and TP all stay as they are. §11 is explicit
+ * that this is a balance migration, not an accounting one.
+ */
+function migrateV20toV21(data: Record<string, unknown>): void {
+  const upgrades = data.upgrades as Record<string, unknown> | undefined;
+  if (isObject(upgrades)) {
+    const discount = upgrades.upgradeDiscount;
+    if (typeof discount === 'number' && discount > 0) {
+      const converted = Math.min(20, Math.ceil(discount / 2));
+      const existing = typeof upgrades.prospecting === 'number' ? upgrades.prospecting : 0;
+      upgrades.prospecting = Math.max(existing, converted);
+    }
+    delete upgrades.upgradeDiscount;
+    for (const [id, level] of Object.entries(upgrades)) {
+      const def = UPGRADE_BY_ID[id];
+      if (!def) continue;
+      if (typeof level !== 'number') continue;
+      upgrades[id] = Math.max(def.startLevel ?? 0, Math.min(def.maxLevel, Math.floor(level)));
+    }
+  }
+
+  const prestige = data.prestige as Record<string, unknown> | undefined;
+  if (!isObject(prestige)) return;
+
+  const tpSpent = prestige.tpSpent as Record<string, unknown> | undefined;
+  if (isObject(tpSpent)) {
+    if (typeof tpSpent.tp_midas === 'number' && tpSpent.tp_midas > 0) {
+      tpSpent.tp_salvage = 1;
+    }
+    delete tpSpent.tp_midas;
+    clampPerkLevels(tpSpent, TP_PERK_BY_ID);
+  }
+
+  const apSpent = prestige.apSpent as Record<string, unknown> | undefined;
+  if (isObject(apSpent)) {
+    clampPerkLevels(apSpent, AP_PERK_BY_ID);
+    const warlord = typeof apSpent.ap_warlord === 'number' ? apSpent.ap_warlord : 0;
+    const tycoon = typeof apSpent.ap_tycoon === 'number' ? apSpent.ap_tycoon : 0;
+    if (warlord > 0 && tycoon > 0) {
+      if (tycoon > warlord) delete apSpent.ap_warlord;
+      else delete apSpent.ap_tycoon;
+    }
+  }
+}
+
+/**
+ * Clamp a `{perkId: level}` map to the table's ceilings, dropping ids the
+ * table no longer defines and entries that are not positive integers.
+ */
+function clampPerkLevels(
+  spent: Record<string, unknown>,
+  table: Record<string, { maxLevel: number }>,
+): void {
+  for (const [id, level] of Object.entries(spent)) {
+    const def = table[id];
+    if (!def) {
+      delete spent[id];
+      continue;
+    }
+    if (typeof level !== 'number' || !Number.isFinite(level) || level <= 0) {
+      delete spent[id];
+      continue;
+    }
+    spent[id] = Math.min(def.maxLevel, Math.floor(level));
+  }
+}
+
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 20 && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -703,6 +797,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 17) { migrateV17toV18(data); data.version = 18; }
   if (data.version === 18) { migrateV18toV19(data); data.version = 19; }
   if (data.version === 19) { migrateV19toV20(data); data.version = 20; }
+  if (data.version === 20) { migrateV20toV21(data); data.version = 21; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;

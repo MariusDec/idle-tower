@@ -197,6 +197,7 @@ function bootstrap(): void {
     game.upgradeManager.buyBulk(id, upgradePlan(id, amount).levels);
   });
   ui.setUpgradePlanGetter(upgradePlan);
+  ui.setUpgradeShotPreviewGetter((id, levels) => game.previewUpgradeShot(id, levels));
   ui.setOnCastAbility((id) => {
     game.castAbility(id);
   });

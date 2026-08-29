@@ -1,7 +1,7 @@
 import type { DamageType, Enemy, Projectile, ProjectileVisual, TowerState } from '../types';
 import { nextId } from '../utils/math';
 import { PROJECTILE_HIT_PAD, world } from '../data/arena';
-import { PROJECTILE_SPEED } from '../data/tower';
+import { HOMING, PROJECTILE_SPEED } from '../data/tower';
 import { ENEMY_DEFS, isTargetable } from '../data/enemies';
 import { BLESSING_TUNING, type BlessingBehavior } from '../data/blessings';
 import { CORE_TUNING, type CoreBehavior } from '../data/cores';
@@ -76,6 +76,13 @@ export interface FireOptions {
   aimY?: number;
   isHoming?: boolean;
   turnRate?: number;
+  /**
+   * Straight-flight seconds every lane of this volley gets before it starts
+   * seeking, on top of whatever its own spread angle earns it. Set by the
+   * manual-aim and charged-shot paths so a clicked shot visibly goes where the
+   * player pointed before it hunts. Ignored unless `isHoming`.
+   */
+  homingDelay?: number;
   lifetime?: number;
   /** Mortar blessing: blast radius on impact. */
   splashRadius?: number;
@@ -97,6 +104,24 @@ export class ProjectileManager {
   private pierceExtra = 0;
   private piercingRemaining: Record<number, number> = {};
   private hitEnemies: Record<number, Set<number>> = {};
+  /**
+   * The enemy each homing shot is currently steering at, by projectile id.
+   *
+   * A *reference*, not an id, and that is the point: steering needs the
+   * target's live position every step, and resolving an id against
+   * `enemies.list` every step would be an O(enemies) scan per seeker per tick.
+   * With the reference cached, the per-step cost is two field reads and the
+   * O(enemies-in-radius) re-scan only runs on `HOMING.retargetInterval` or when
+   * the target stops being valid. Cleaned up in exactly the three places
+   * `hitEnemies` is.
+   */
+  private homingTargets: Record<number, Enemy> = {};
+  /**
+   * Scratch buffer for `seekNearest`'s radius query. Safe to share — unlike
+   * every other `queryRadius` caller in this file, the seek does not damage
+   * anything, so no handler can re-enter and refill the buffer mid-loop.
+   */
+  private readonly seekScratch: Enemy[] = [];
   private executeThreshold = 0;
   private executeMultiplier = 0;
   /** Executioner talent: bonus damage against enemies below half HP. */
@@ -216,6 +241,146 @@ export class ProjectileManager {
     return rem !== undefined ? rem : 1 + this.pierceExtra;
   }
 
+  /**
+   * One steering step for a homing shot.
+   *
+   * Three things happen, in this order, and each is one of the three
+   * complaints in `plans/homing.md`:
+   *
+   * 1. **Straight-flight delay.** For `homingDelay` seconds the shot keeps its
+   *    launch heading at its launch speed. This is what keeps Scatter Shot and
+   *    Rear Guard from collapsing into Twin Arrows the moment Seeker Shots is
+   *    drafted, and what makes a clicked shot go where it was pointed.
+   * 2. **Its own target**, picked from its own position — never the volley's
+   *    lock, never a body it has already pierced.
+   * 3. **A ramped turn**, easing from 0 to `turnRate` over `HOMING.ramp`, with
+   *    the launch boost bleeding back to cruise on the same clock.
+   */
+  private steerHoming(p: Projectile, age: number, dt: number): void {
+    const delay = p.homingDelay ?? 0;
+    if (age < delay) return;
+
+    // The boost only bleeds off *after* the delay — burst out straight, then
+    // settle into the hunt.
+    const cruise = p.cruiseSpeed ?? PROJECTILE_SPEED;
+    let speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+    if (speed > cruise) {
+      speed = cruise + (speed - cruise) * Math.exp(-dt / HOMING.speedSettle);
+    }
+
+    let angle = Math.atan2(p.vy, p.vx);
+    const target = this.homingTarget(p, dt);
+    if (target) {
+      const desired = Math.atan2(target.y - p.y, target.x - p.x);
+      let diff = desired - angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      const ease = HOMING.ramp > 0 ? Math.min(1, (age - delay) / HOMING.ramp) : 1;
+      const rate = p.turnRate ?? HOMING.turnRate;
+      const maxTurn = rate * ease * dt;
+      angle += Math.max(-maxTurn, Math.min(maxTurn, diff));
+    }
+    p.vx = Math.cos(angle) * speed;
+    p.vy = Math.sin(angle) * speed;
+  }
+
+  /**
+   * The enemy this shot should be steering at, re-acquiring when it must.
+   *
+   * A target is dropped when it dies, becomes un-targetable, **or has already
+   * been pierced by this same shot** — `hitEnemies` bars a second hit, so
+   * chasing it would just orbit a body until `MAX_PROJECTILE_AGE`. That last
+   * clause is the "gets a new target after it passes through an enemy" half of
+   * the ask. Where the ask says "or the same if no other", this keeps flying
+   * *straight* instead: re-locking a body it can no longer hit produces a
+   * corkscrew that hits nothing, whereas straight flight can still stumble into
+   * something new before the lifetime cap.
+   */
+  private homingTarget(p: Projectile, dt: number): Enemy | null {
+    const hitSet = this.hitEnemies[p.id];
+    let current: Enemy | null = this.homingTargets[p.id] ?? null;
+
+    // First steering step of a shot that launched with a volley target: resolve
+    // the id once, then hold the reference. Clearing the id on a failed resolve
+    // is what stops this scan repeating every tick for a target that is gone.
+    if (!current && p.homingTargetId !== undefined) {
+      current = this.enemies.list.find(e => e.id === p.homingTargetId) ?? null;
+      if (current) this.homingTargets[p.id] = current;
+      else p.homingTargetId = undefined;
+    }
+    if (current && (!isTargetable(current) || (hitSet !== undefined && hitSet.has(current.id)))) {
+      current = null;
+      delete this.homingTargets[p.id];
+      p.homingTargetId = undefined;
+    }
+
+    const remaining = (p.retargetIn ?? 0) - dt;
+    if (current && remaining > 0) {
+      p.retargetIn = remaining;
+      return current;
+    }
+    p.retargetIn = HOMING.retargetInterval;
+
+    const found = this.seekNearest(p, hitSet);
+    if (!current) {
+      if (found) {
+        this.homingTargets[p.id] = found;
+        p.homingTargetId = found.id;
+      }
+      return found;
+    }
+    if (found && found.id !== current.id) {
+      const cdx = current.x - p.x;
+      const cdy = current.y - p.y;
+      const fdx = found.x - p.x;
+      const fdy = found.y - p.y;
+      const margin = HOMING.switchMargin * HOMING.switchMargin;
+      if (fdx * fdx + fdy * fdy < (cdx * cdx + cdy * cdy) * margin) {
+        this.homingTargets[p.id] = found;
+        p.homingTargetId = found.id;
+        return found;
+      }
+    }
+    return current;
+  }
+
+  /**
+   * The nearest enemy this shot could still hit, preferring the cone ahead.
+   *
+   * The cone is what stops a Rear Guard or Scatter lane from U-turning into
+   * whatever the front lane is already shooting the instant its delay expires:
+   * a lane adopts something it is broadly already flying at, and only falls
+   * back to "nearest anywhere" when its cone is empty. Bodies this shot has
+   * already pierced are never candidates.
+   */
+  private seekNearest(p: Projectile, hitSet: Set<number> | undefined): Enemy | null {
+    const heading = Math.atan2(p.vy, p.vx);
+    const found = this.enemies.queryRadius(p.x, p.y, HOMING.seekRadius, this.seekScratch);
+    let inCone: Enemy | null = null;
+    let inConeD = Infinity;
+    let anywhere: Enemy | null = null;
+    let anywhereD = Infinity;
+    for (const e of found) {
+      if (!isTargetable(e)) continue;
+      if (hitSet !== undefined && hitSet.has(e.id)) continue;
+      const dx = e.x - p.x;
+      const dy = e.y - p.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < anywhereD) {
+        anywhere = e;
+        anywhereD = d2;
+      }
+      let diff = Math.atan2(dy, dx) - heading;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      if (Math.abs(diff) <= HOMING.acquireCone && d2 < inConeD) {
+        inCone = e;
+        inConeD = d2;
+      }
+    }
+    return inCone ?? anywhere;
+  }
+
   fire(target: Enemy | null, towerState: TowerState, opts: FireOptions): Projectile[] {
     const aimX = opts.aimX ?? (target ? target.x : towerState.x + 1);
     const aimY = opts.aimY ?? (target ? target.y : towerState.y);
@@ -234,10 +399,36 @@ export class ProjectileManager {
     const variants = opts.variants && opts.variants.length > 0 ? opts.variants : [{}];
     const created: Projectile[] = [];
 
+    /**
+     * How "spread" a lane is, 0..1, from its angle off the volley heading.
+     *
+     * Twin Arrows (parallel lanes, `angleOffset` 0) scores 0 and keeps today's
+     * instant-seek behaviour — that perk *is* the tight one. Scatter Shot
+     * (30-75°) and Rear Guard (180°) score high and get the delay and the
+     * launch boost, which is what keeps the three perks distinct once Seeker
+     * Shots is drafted. Relentless's ±0.18 rad lanes score ~0.23, i.e. nearly
+     * nothing, which is correct — they are a burst, not a spread.
+     */
+    const spreadOf = (angleOffset: number): number => {
+      let a = Math.abs(angleOffset) % (Math.PI * 2);
+      if (a > Math.PI) a = Math.PI * 2 - a;
+      return Math.min(1, a / HOMING.spreadFullAngle);
+    };
+
     for (const v of variants) {
       const a = baseAngle + (v.angleOffset ?? 0);
-      const vx = Math.cos(a) * PROJECTILE_SPEED;
-      const vy = Math.sin(a) * PROJECTILE_SPEED;
+      // Spread lanes launch *fast and straight*, then settle. Only homing shots
+      // are boosted: without the steering that follows it, a faster scatter
+      // lane would be a silent, unpriced buff to a perk this plan is not
+      // rebalancing.
+      const spread = opts.isHoming ? spreadOf(v.angleOffset ?? 0) : 0;
+      const delay = opts.isHoming
+        ? (opts.homingDelay ?? 0) + HOMING.spreadDelay * spread
+        : 0;
+      const launchSpeed = PROJECTILE_SPEED
+        * (1 + (HOMING.spreadLaunchBoost - 1) * spread);
+      const vx = Math.cos(a) * launchSpeed;
+      const vy = Math.sin(a) * launchSpeed;
       const ox = v.posOffsetX ?? 0;
       const oy = v.posOffsetY ?? 0;
 
@@ -252,9 +443,18 @@ export class ProjectileManager {
         damageType: opts.damageType,
         isCrit: opts.isCrit,
         alive: true,
-        homingTargetId: opts.isHoming ? opts.targetId ?? undefined : undefined,
-        turnRate: opts.isHoming ? (opts.turnRate ?? Math.PI * 3) : undefined,
+        // A delayed lane launches *untargeted* on purpose: it acquires from
+        // wherever it has got to when the delay expires, which is how two
+        // scatter lanes end up on two different enemies.
+        homingTargetId: opts.isHoming && delay <= 0 ? opts.targetId ?? undefined : undefined,
+        turnRate: opts.isHoming ? (opts.turnRate ?? HOMING.turnRate) : undefined,
         lifetime: opts.isHoming ? (opts.lifetime ?? 3) : undefined,
+        homingDelay: opts.isHoming && delay > 0 ? delay : undefined,
+        cruiseSpeed: opts.isHoming && launchSpeed > PROJECTILE_SPEED ? PROJECTILE_SPEED : undefined,
+        // Zero, not `retargetInterval`: the first steering step re-scans, so a
+        // shot fired at a locked target that is *not* the nearest one corrects
+        // as soon as it starts steering rather than 0.12 s later.
+        retargetIn: opts.isHoming ? 0 : undefined,
         age: 0,
         splashRadius: opts.splashRadius,
         splashFraction: opts.splashFraction,
@@ -294,28 +494,16 @@ export class ProjectileManager {
         continue;
       }
 
-      // Homing logic
-      if (p.homingTargetId !== undefined && p.turnRate !== undefined) {
+      // ── Homing (plans/homing.md) ──
+      // `turnRate` alone is the gate now: `fire` sets it only for homing shots,
+      // and a seeker may legitimately have no target yet (a clicked volley, or
+      // a spread lane still inside its launch delay).
+      if (p.turnRate !== undefined) {
         if (p.lifetime !== undefined && age >= p.lifetime) {
           p.alive = false;
           continue;
         }
-        const target = this.enemies.list.find(e => e.alive && e.id === p.homingTargetId);
-        if (target) {
-          const dx = target.x - p.x;
-          const dy = target.y - p.y;
-          const desiredAngle = Math.atan2(dy, dx);
-          const currentAngle = Math.atan2(p.vy, p.vx);
-          let diff = desiredAngle - currentAngle;
-          while (diff > Math.PI) diff -= Math.PI * 2;
-          while (diff < -Math.PI) diff += Math.PI * 2;
-          const maxTurn = p.turnRate * dt;
-          const clamped = Math.max(-maxTurn, Math.min(maxTurn, diff));
-          const newAngle = currentAngle + clamped;
-          const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-          p.vx = Math.cos(newAngle) * speed;
-          p.vy = Math.sin(newAngle) * speed;
-        }
+        this.steerHoming(p, age, dt);
       }
 
       const hitSet = this.hitEnemies[p.id];
@@ -475,6 +663,7 @@ export class ProjectileManager {
           p.alive = false;
           delete this.piercingRemaining[p.id];
           delete this.hitEnemies[p.id];
+          delete this.homingTargets[p.id];
         }
       }
     }
@@ -486,6 +675,7 @@ export class ProjectileManager {
       if (!p.alive || p.x < -margin || p.x > maxX || p.y < -margin || p.y > maxY) {
         delete this.hitEnemies[p.id];
         delete this.piercingRemaining[p.id];
+        delete this.homingTargets[p.id];
         return false;
       }
       return true;
@@ -644,6 +834,7 @@ export class ProjectileManager {
     this.projectiles = [];
     this.piercingRemaining = {};
     this.hitEnemies = {};
+    this.homingTargets = {};
     this.focusTargetId = -1;
     this.focusStacks = 0;
   }

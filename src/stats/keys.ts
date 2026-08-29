@@ -71,6 +71,8 @@ export type StatKey =
   | 'critGold'
   | 'waveGold'
   | 'goldLuckChance'
+  /** Multiplier on the gold an orb is worth (Salvage, revamp §9.2). */
+  | 'orbGoldMultiplier'
   | 'doubleGoldChance'
   | 'upgradeCostDiscount'
   | 'equipmentFindChance'
@@ -206,6 +208,7 @@ export const STAT_BASES: Record<StatKey, number> = {
   critGold: 0,
   waveGold: 0,
   goldLuckChance: 0,
+  orbGoldMultiplier: 1,
   doubleGoldChance: 0,
   upgradeCostDiscount: 0,
   equipmentFindChance: 0,

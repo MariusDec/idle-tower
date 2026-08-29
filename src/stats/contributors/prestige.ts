@@ -34,6 +34,7 @@ export function contributePrestige(ctx: StatContext, acc: StatAccumulator): void
   tp.mult('goldAdditive', p.tpResource);
   tp.add('critMultiplier', p.tpCritDamage);
   tp.add('pierceExtra', p.tpPierce);
+  tp.mult('orbGoldMultiplier', p.orbGoldMultiplier);
   tp.add('abilityCostMultiplier', p.abilityManaCostReduction);
   tp.mult('abilityCooldownMultiplier', 1 - p.abilityCdr);
 }

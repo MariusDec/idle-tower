@@ -15,7 +15,7 @@ import { EnemyManager } from '../src/systems/EnemyManager';
 import { ResourceManager } from '../src/systems/ResourceManager';
 import { ProjectileManager } from '../src/systems/ProjectileManager';
 import { PrestigeManager } from '../src/systems/PrestigeManager';
-import { PROJECTILE_SPEED } from '../src/data/tower';
+import { HOMING, PROJECTILE_SPEED } from '../src/data/tower';
 import { CORE_TUNING } from '../src/data/cores';
 import {
   PRESTIGE_PROJECTILE_TUNING,
@@ -328,5 +328,152 @@ describe('projectile payloads (revamp §7 / gate 12)', () => {
     expect(fn).toContain('PRESTIGE_PROJECTILE_TUNING.extraDamageScale');
     expect(fn).toContain('PRESTIGE_PROJECTILE_TUNING.scatterDamageScale');
     expect(fn).toContain('PRESTIGE_PROJECTILE_TUNING.rearDamageScale');
+  });
+});
+
+describe('homing (plans/homing.md)', () => {
+  const step = 1 / 60;
+  const run = (projectiles: ProjectileManager, seconds: number) => {
+    for (let i = 0; i < Math.round(seconds / step); i++) projectiles.tick(step);
+  };
+  const beef = (...list: Array<{ hp: number; maxHp: number }>) => {
+    for (const e of list) { e.hp = 1e12; e.maxHp = 1e12; }
+  };
+
+  it('defaults to a gentler turn than the old snap', () => {
+    const { enemies, towerState, projectiles } = harness();
+    const e = enemies.spawn('normal', 1, 400, 300);
+    projectiles.fire(e, towerState, {
+      rawDamage: 1, damageType: 'physical', isCrit: false, targetId: e.id, isHoming: true,
+    });
+    expect(projectiles.list[0].turnRate).toBe(HOMING.turnRate);
+    expect(HOMING.turnRate).toBeLessThan(Math.PI * 3);
+  });
+
+  it('seeks the nearest enemy when the volley had no target at all', () => {
+    const { enemies, towerState, projectiles } = harness();
+    const e = enemies.spawn('normal', 1, 500, 400);
+    beef(e);
+    // Fired flat along y = 300 — a straight shot passes 100 units clear.
+    projectiles.fire(null, towerState, {
+      rawDamage: 1000, damageType: 'physical', isCrit: false, targetId: null,
+      aimX: 1200, aimY: 300, isHoming: true,
+    });
+    run(projectiles, 1.5);
+    expect(e.hp).toBeLessThan(e.maxHp);
+  });
+
+  it('leaves a non-homing shot dead straight (control for the case above)', () => {
+    const { enemies, towerState, projectiles } = harness();
+    const e = enemies.spawn('normal', 1, 500, 400);
+    beef(e);
+    projectiles.fire(null, towerState, {
+      rawDamage: 1000, damageType: 'physical', isCrit: false, targetId: null,
+      aimX: 1200, aimY: 300,
+    });
+    run(projectiles, 1.5);
+    expect(e.hp).toBe(e.maxHp);
+  });
+
+  it('abandons the volley target for a much nearer enemy', () => {
+    const { enemies, towerState, projectiles } = harness();
+    const far = enemies.spawn('normal', 1, 1100, 300);
+    const near = enemies.spawn('normal', 1, 400, 360);
+    beef(far, near);
+    projectiles.fire(far, towerState, {
+      rawDamage: 1000, damageType: 'physical', isCrit: false, targetId: far.id, isHoming: true,
+    });
+    run(projectiles, 1.0);
+    expect(near.hp).toBeLessThan(near.maxHp);
+    expect(far.hp).toBe(far.maxHp);
+  });
+
+  it('picks up a new target after piercing the first', () => {
+    const { enemies, towerState, projectiles } = harness();
+    const a = enemies.spawn('normal', 1, 400, 300);
+    const b = enemies.spawn('normal', 1, 700, 460);
+    beef(a, b);
+    projectiles.fire(a, towerState, {
+      rawDamage: 1000, damageType: 'physical', isCrit: false, targetId: a.id,
+      isHoming: true, piercing: true,
+    });
+    run(projectiles, 2);
+    expect(a.hp).toBeLessThan(a.maxHp);
+    // `b` is well off the line through `a`; only a re-acquisition reaches it.
+    expect(b.hp).toBeLessThan(b.maxHp);
+  });
+
+  it('never re-locks the body it just pierced', () => {
+    const { enemies, towerState, projectiles } = harness();
+    const a = enemies.spawn('normal', 1, 400, 300);
+    beef(a);
+    projectiles.fire(a, towerState, {
+      rawDamage: 1000, damageType: 'physical', isCrit: false, targetId: a.id,
+      isHoming: true, piercing: true,
+    });
+    run(projectiles, 0.5);
+    const p = projectiles.list[0];
+    // Either it has retired or it is still flying, but it is not orbiting `a`.
+    if (p) expect(p.homingTargetId).not.toBe(a.id);
+  });
+
+  it('keeps a scatter volley spread instead of merging it', () => {
+    const { enemies, towerState, projectiles } = harness();
+    enemies.spawn('normal', 1, 700, 300);
+    projectiles.fire(null, towerState, {
+      rawDamage: 1000, damageType: 'physical', isCrit: false, targetId: null,
+      aimX: 1200, aimY: 300, isHoming: true,
+      variants: [{ angleOffset: -0.7 }, { angleOffset: 0.7 }],
+    });
+    const [left, right] = projectiles.list;
+    // Boosted out of the barrel...
+    expect(Math.hypot(left.vx, left.vy)).toBeGreaterThan(PROJECTILE_SPEED * 1.3);
+    run(projectiles, 0.1);
+    // ...and still 1.4 rad apart a tenth of a second later. Before this plan
+    // they were within a few hundredths of each other by now.
+    const angle = (p: { vx: number; vy: number }) => Math.atan2(p.vy, p.vx);
+    expect(Math.abs(angle(left) - angle(right))).toBeGreaterThan(1.2);
+  });
+
+  it('settles the launch boost back to cruise speed', () => {
+    const { towerState, projectiles } = harness();
+    // The harness' 1280x720 bounds are small next to 1872 u/s, so a full
+    // settle does not fit inside them. Widen the field for this one case and
+    // fire into empty space, down and to the right so nothing culls it.
+    projectiles.setBounds(6000, 6000);
+    projectiles.fire(null, towerState, {
+      rawDamage: 1, damageType: 'physical', isCrit: false, targetId: null,
+      aimX: 1200, aimY: 300, isHoming: true, lifetime: 3,
+      variants: [{ angleOffset: 1.2 }],
+    });
+    const p = projectiles.list[0];
+    expect(Math.hypot(p.vx, p.vy)).toBeGreaterThan(PROJECTILE_SPEED * 1.5);
+    run(projectiles, 1.2);
+    // ~1903 u/s at 1.2 s: the boost is spent, the shot is back at cruise.
+    expect(Math.hypot(p.vx, p.vy)).toBeGreaterThanOrEqual(PROJECTILE_SPEED);
+    expect(Math.hypot(p.vx, p.vy)).toBeLessThan(PROJECTILE_SPEED * 1.05);
+  });
+
+  it('does not U-turn a rear lane into the front target on frame one', () => {
+    const { enemies, towerState, projectiles } = harness();
+    enemies.spawn('normal', 1, 500, 300).hp = 1e12;
+    projectiles.fire(null, towerState, {
+      rawDamage: 1, damageType: 'physical', isCrit: false, targetId: null,
+      aimX: 1200, aimY: 300, isHoming: true, variants: [{ angleOffset: Math.PI }],
+    });
+    run(projectiles, 0.1);
+    const p = projectiles.list[0];
+    expect(p.vx).toBeLessThan(0);
+    expect(p.x).toBeLessThan(towerState.x);
+  });
+
+  it('retires a seeker that finds nothing', () => {
+    const { towerState, projectiles } = harness();
+    projectiles.fire(null, towerState, {
+      rawDamage: 1, damageType: 'physical', isCrit: false, targetId: null,
+      aimX: 120, aimY: 300, isHoming: true, lifetime: 1,
+    });
+    run(projectiles, 2);
+    expect(projectiles.list).toHaveLength(0);
   });
 });

@@ -10,7 +10,7 @@ Persists game state to `localStorage` under key `the-tower-save`.
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 19
+  version: number;       // current = 21
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -51,6 +51,7 @@ interface PersistentState {
 | v17 → v18 | the passive redesign: `passiveAbilities` cleared (new 12-passive structure with per-passive XP curves, milestones, and gold+XP upgrade costs; old prices were negligible vs new ones so no gold refund) |
 | v18 → v19 | the Long Watch. Purely additive — `data.watch = defaultWatch()`. |
 | v19 → v20 | the ability redesign. No state-shape change — `migrateV19toV20` only clamps each stored ability level into `[1, maxLevel]` as a safety net. The `instantCast` **localStorage** preference (never part of the save) is read once into `autoCastAutoAim` and removed. |
+| v20 → v21 | the upgrades revamp's balance migration — `upgradeDiscount` → `prospecting`, `tp_midas` → `tp_salvage`, and every upgrade/perk level clamped to its new ceiling (see below) |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -120,6 +121,35 @@ and accrue from the update forward; that is the one place a returning
 player loses credit, and it is unavoidable: the data was never written
 down.
 
+### v20 → v21: the upgrades revamp
+
+`migrateV20toV21` is a **balance** migration, not an accounting one: no refunds
+anywhere — gold, AP and TP all stay as they are. The revamp plan wrote this step
+as v14 → v15, but the ladder moved on while it was being built and several of
+its bullets landed on their own along the way, so only what was still
+outstanding is done here.
+
+| What | How |
+|---|---|
+| `upgradeDiscount` → `prospecting` | `min(20, ceil(old / 2))`, taking the max against any existing `prospecting`, then the old key is deleted |
+| Every upgrade level | clamped to `[startLevel ?? 0, maxLevel]` from `UPGRADE_BY_ID` |
+| `tp_midas` → `tp_salvage` | level 1 if owned, old key deleted |
+| AP and TP perk levels | clamped to the table's `maxLevel` via `clampPerkLevels`; ids the table no longer defines are dropped |
+| `ap_warlord` / `ap_tycoon` | now `exclusive` — a save holding both keeps the one with more spent levels; a tie keeps `ap_warlord`, first of the pair in table order |
+
+The retired `upgradeDiscount` id was **already** being ignored on load —
+`UpgradeManager.replaceLevels` walks `UPGRADES` rather than the saved map, so
+its levels were silently dropped rather than translated. This step is the
+translation. `upgradeCostDiscount` survives as a *stat key*, written by talents
+and achievements; what went away is the gold upgrade that fed it. See
+[upgrade-system.md](upgrade-system.md#economy-5).
+
+The perk clamps cover the plan's hand-written list (Twin/Rear/Scatter to 1,
+`ap_wave_skipper` 15, `tp_wave_start` 8, `tp_game_speed` 6, `tp_head_start` 12,
+`tp_fire_rate` 20, `tp_crit` 25, `tp_treasure`/`tp_mana` 15) **without
+restating any of those numbers** — they are read from `AP_PERK_BY_ID` /
+`TP_PERK_BY_ID`, so the migration stays correct if the tables are retuned again.
+
 ## WatchState (v19+)
 
 The Long Watch campaign — `GameState.watch`. Two fields:
@@ -176,7 +206,7 @@ write.
 ## Validation
 
 `validate()` checks:
-- version is 2..18 (older versions are walked up the migration ladder)
+- version is 2..21 (anything older than the current version is walked up the migration ladder; anything outside the range is rejected)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress

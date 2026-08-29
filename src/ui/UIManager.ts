@@ -12,8 +12,9 @@ import {
 } from '../data/formulas';
 import { HUD } from './HUD';
 import { Modal } from './Modal';
+import { CodexPanel } from './CodexPanel';
 import { EnemyCodexModal } from './EnemyCodexModal';
-import { UpgradePanel, type BuyAmount, type UpgradePlan } from './UpgradePanel';
+import { UpgradePanel, type BuyAmount, type UpgradePlan, type ShotPreviewGetter } from './UpgradePanel';
 import { UPGRADES } from '../data/upgrades';
 import { AbilityPanel } from './AbilityPanel';
 import { PassivePanel, type PassiveAPIDeps } from './PassivePanel';
@@ -261,6 +262,7 @@ export class UIManager {
    * of reaching into `WatchManager` directly.
    */
   private readonly journalPanel: JournalPanel;
+  private readonly codexPanel = new CodexPanel();
   private readonly milestoneStrip: MilestoneStrip;
   /**
    * The bottom-left Long Watch chip (plan §6.5). Hidden when every chapter
@@ -1158,6 +1160,11 @@ export class UIManager {
     this.upgradePanel.setPlanGetter(fn);
   }
 
+  /** Composed before → after shot for the upgrade panel's readouts (revamp §12.2). */
+  setUpgradeShotPreviewGetter(fn: ShotPreviewGetter): void {
+    this.upgradePanel.setShotPreviewGetter(fn);
+  }
+
   setOnCastAbility(handler: (id: AbilityId) => void): void {
     this.onCastAbility = handler;
   }
@@ -1347,6 +1354,9 @@ export class UIManager {
   setResolvedStats(resolved: Readonly<Record<StatKey, number>>, goldMultiplier: number): void {
     this.cachedResolved = resolved;
     this.cachedGoldMultiplier = goldMultiplier;
+    // The upgrade panel's before → after readouts are memoised against the
+    // resolved block, so they have to be told it moved.
+    this.upgradePanel.statsChanged();
     if (this.lastState) this.pushFrameStats(this.lastState);
   }
 
@@ -1848,6 +1858,8 @@ export class UIManager {
     } else if (id === 'journal') {
       this.journalPanel.mount(this.contentRoot);
       if (this.lastState) this.journalPanel.update(this.lastState);
+    } else if (id === 'codex') {
+      this.codexPanel.mount(this.contentRoot);
     } else if (id === 'stats') {
       this.statsPanel.mount(this.contentRoot);
       this.statsPanel.update();
@@ -1893,11 +1905,7 @@ export class UIManager {
   /** Open the Codex on a specific entry (from a stat row or an enemy card). */
   openCodex(entryId?: string): void {
     this.setActiveTab('codex');
-    // Codex entry focus is a follow-up — the panels system is mid-refactor
-    // (see plans/ui.md §codex wiring). For now, jumping to the codex tab is
-    // enough: every enemy bestiary chip links to one of three top-level ids
-    // the player can find by scrolling.
-    void entryId;
+    if (entryId) this.codexPanel.focusEntry(entryId);
   }
 
   /** True when the shortcut overlay is up, so Esc can close it first. */

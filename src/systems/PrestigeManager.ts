@@ -478,21 +478,20 @@ export class PrestigeManager {
     return total;
   }
 
-  hasGoldOnHit(): boolean {
+  /**
+   * Salvage (§9.2): the loot-orb gold multiplier, `1 + fraction`.
+   *
+   * Replaces Midas Touch's per-hit faucet — this rides wave income, so it
+   * cannot be farmed by stacking fire rate and projectile count.
+   */
+  getOrbGoldMultiplier(): number {
+    let mult = 1;
     for (const p of TP_PERKS) {
-      if (p.effectType !== 'gold_on_hit') continue;
-      if (this.getTPLevel(p.id) > 0) return true;
-    }
-    return false;
-  }
-
-  getGoldOnHitFraction(): number {
-    for (const p of TP_PERKS) {
-      if (p.effectType !== 'gold_on_hit') continue;
+      if (p.effectType !== 'orb_gold_mult') continue;
       const lvl = this.getTPLevel(p.id);
-      if (lvl > 0) return computePerkEffect(p, lvl);
+      if (lvl > 0) mult += computePerkEffect(p, lvl);
     }
-    return 0;
+    return mult;
   }
 
   getAbilityCDR(): number {

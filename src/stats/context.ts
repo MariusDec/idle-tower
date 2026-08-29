@@ -27,6 +27,8 @@ export interface PrestigeInputs {
   /** Additive transcendence bonuses. */
   tpCritDamage: number;
   tpPierce: number;
+  /** Salvage's loot-orb gold multiplier (already `1 + x` shaped). */
+  orbGoldMultiplier: number;
   /** Negative fractions: mana cost reduction and cooldown reduction. */
   abilityManaCostReduction: number;
   abilityCdr: number;
@@ -154,6 +156,7 @@ export function emptyStatContext(): StatContext {
       tpResource: 1,
       tpCritDamage: 0,
       tpPierce: 0,
+      orbGoldMultiplier: 1,
       abilityManaCostReduction: 0,
       abilityCdr: 0,
       treasureChance: 0,

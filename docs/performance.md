@@ -142,6 +142,16 @@ leaving the play field by a 120 px margin (`setBounds`), or reaching
 age cap is what retires a shot that is pinned or circling a target it cannot
 catch.
 
+Seeking is cheaper than the steering it replaced. A homing shot re-scans for a
+target with one spatial-grid `queryRadius` — into a scratch buffer shared by
+every seeker, which is safe here precisely because the seek damages nothing, so
+no handler can re-enter and refill it mid-loop — and only on the
+`HOMING.retargetInterval` (0.12 s) cadence, or when its target dies, becomes
+un-targetable, or gets pierced. Between scans the shot holds a cached `Enemy`
+reference, so a steering step is two field reads. The old code resolved
+`homingTargetId` with an O(enemies) `list.find` on **every** homing projectile
+**every tick**, so even with acquisition added this is strictly less work.
+
 ## Save cadence
 
 Nine game events (purchases, wave starts, research, ability upgrades…) used to

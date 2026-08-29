@@ -37,7 +37,7 @@ trash.
 
 | Kind | Value | Consumer |
 |---|---|---|
-| `gold` | `12 ×` a wave-normal kill, times the composed gold multiplier at collection | `ResourceManager.addGold` |
+| `gold` | `12 ×` a wave-normal kill, times the composed gold multiplier at collection, times `orbGoldMultiplier` | `ResourceManager.addGold` |
 | `mana` | 12% of max mana | `ResourceManager.addMana` |
 | `reroll` | 1 token | `BlessingManager.grantRerollToken` (Part 1's draft) |
 
@@ -318,6 +318,14 @@ place.
 
 - **`LootManager.setValueBonus(v)`** sets the Prospector talent's orb value
   bonus; called from `Game.applyResolvedStats` with `stats.orbValueBonus`.
+- **`LootManager.setGoldMultiplier(v)`** sets `orbGoldMultiplier`, also from
+  `Game.applyResolvedStats`. Today its only source is the **Salvage**
+  transcendence perk (`tp_salvage`, +40%), which replaced Midas Touch — a
+  per-projectile-hit gold faucet that scaled with fire rate and projectile
+  count, the one shape the economy forbids everywhere else. Salvage is narrower
+  than `orbValueBonus`: it multiplies **gold orbs only** and leaves mana and
+  reroll orbs alone. See
+  [prestige-system.md](prestige-system.md#fortune).
 - **A boss encounter's drops landing at once** stay inside the cap by construction; the test asserts it at
   waves 10 through 200.
 - **An orb spawned on top of the tower** arrives immediately (`arriveRadius`, 26 px) and pays the

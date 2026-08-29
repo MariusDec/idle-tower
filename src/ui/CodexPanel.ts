@@ -7,6 +7,7 @@ import {
   type CodexCategory,
   type CodexEntry,
 } from '../data/codex';
+import { STAT_ROW_BY_KEY } from '../data/statDisplay';
 import type { StatKey } from '../stats/keys';
 import type { GameState } from '../types';
 import { setText, toggleClass } from '../utils/dom';
@@ -24,9 +25,65 @@ import { renderIcon } from './Icon';
  * the game loop. The optional `update(state)` is a no-op kept to match the
  * other panels' contract; `focusEntry(id)` is the only public mutator.
  */
+/**
+ * Player-facing name for an internal identifier.
+ *
+ * Codex prose and the `stats` lists are authored against the engine's own key
+ * names (`focusStackBonus`), but those names appear nowhere else in the UI —
+ * the stats panel calls that row "Focus Bonus". Preferring the stat table's
+ * label keeps the codex speaking the same language as the rest of the game;
+ * anything the table does not know falls back to a de-camel-cased form so a
+ * new key reads as words rather than as source code.
+ */
+function friendlyTermName(raw: string): string {
+  const row = STAT_ROW_BY_KEY[raw as StatKey];
+  if (row) return row.label;
+  return raw
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/^./, (c) => c.toUpperCase())
+    // De-camel-casing turns "maxHp" into "Max Hp"; the game writes these as
+    // acronyms everywhere else.
+    .replace(/\b(Hp|Xp|Rp|Dps|Aoe)\b/g, (w) => w.toUpperCase());
+}
+
+/**
+ * camelCase identifiers embedded in prose. Deliberately narrow: it needs a
+ * lowercase start and an interior capital, so ordinary words and sentence-
+ * initial capitals never match.
+ */
+const IDENTIFIER_RE = /\b[a-z][a-z0-9]*(?:[A-Z][a-zA-Z0-9]*)+\b/g;
+
+/**
+ * Write `text` into `host`, swapping every internal identifier for its
+ * player-facing name and tagging it so the styling marks it as a named game
+ * term rather than leaving it looking like a variable.
+ */
+function setProse(host: HTMLElement, text: string): void {
+  host.replaceChildren();
+  let last = 0;
+  for (const match of text.matchAll(IDENTIFIER_RE)) {
+    const at = match.index ?? 0;
+    if (at > last) host.appendChild(document.createTextNode(text.slice(last, at)));
+    const span = document.createElement('span');
+    span.className = 'codex-term';
+    span.textContent = friendlyTermName(match[0]);
+    span.title = match[0];
+    host.appendChild(span);
+    last = at + match[0].length;
+  }
+  if (last < text.length) host.appendChild(document.createTextNode(text.slice(last)));
+}
+
+/**
+ * Tab strip selection: a real category, or the synthetic "All" tab that drops
+ * the category filter entirely. Search always lands on `all` so a query is
+ * never silently narrowed to whatever tab happened to be open.
+ */
+type CodexFilter = CodexCategory | 'all';
+
 export class CodexPanel {
   private root: HTMLElement | null = null;
-  private tabEls = new Map<CodexCategory, HTMLElement>();
+  private tabEls = new Map<CodexFilter, HTMLElement>();
   private entryEls = new Map<string, HTMLElement>();
   private detailEl: HTMLElement | null = null;
   private detailTermEl: HTMLElement | null = null;
@@ -36,7 +93,7 @@ export class CodexPanel {
   private detailStatsEl: HTMLElement | null = null;
   private detailGlyphEl: HTMLElement | null = null;
   private emptyEl: HTMLElement | null = null;
-  private activeCategory: CodexCategory = 'offense';
+  private activeCategory: CodexFilter = 'offense';
   private activeEntryId: string | null = null;
   private searchTerm = '';
 
@@ -78,7 +135,9 @@ export class CodexPanel {
       this.focusEntry(CODEX_ENTRIES[0].id);
       return;
     }
-    this.activeCategory = target.category;
+    // Staying on "All" keeps a search result list intact when the player
+    // clicks through it; any other tab follows the entry to its category.
+    if (this.activeCategory !== 'all') this.activeCategory = target.category;
     this.activeEntryId = target.id;
     this.refreshTabs();
     this.applyFilter();
@@ -113,7 +172,18 @@ export class CodexPanel {
     input.setAttribute('aria-label', 'Search the codex');
     input.addEventListener('input', () => {
       this.searchTerm = input.value.trim().toLowerCase();
+      // A query searches the whole codex, not the open tab: jump to "All" so
+      // the player sees every hit rather than the subset in one category.
+      if (this.searchTerm) this.activeCategory = 'all';
+      this.refreshTabs();
       this.applyFilter();
+      // Keep the detail pane on something the list still shows.
+      const first = CODEX_ENTRIES.find(
+        (e) =>
+          (this.activeCategory === 'all' || e.category === this.activeCategory) &&
+          this.matchesSearch(e),
+      );
+      if (first && !this.isVisibleEntry(this.activeEntryId)) this.focusEntry(first.id);
     });
     searchRow.appendChild(input);
     header.appendChild(searchRow);
@@ -121,7 +191,7 @@ export class CodexPanel {
     const tabs = document.createElement('div');
     tabs.className = 'codex-tabs';
     tabs.setAttribute('role', 'tablist');
-    for (const category of CODEX_CATEGORIES) {
+    for (const category of ['all', ...CODEX_CATEGORIES] as CodexFilter[]) {
       const tab = document.createElement('button');
       tab.type = 'button';
       tab.className = `codex-tab codex-tab-${category}`;
@@ -131,12 +201,12 @@ export class CodexPanel {
 
       const tabIcon = document.createElement('span');
       tabIcon.className = 'codex-tab-icon';
-      renderIcon(tabIcon, CODEX_CATEGORY_ICONS[category]);
+      renderIcon(tabIcon, category === 'all' ? 'book-pile' : CODEX_CATEGORY_ICONS[category]);
       tab.appendChild(tabIcon);
 
       const tabLabel = document.createElement('span');
       tabLabel.className = 'codex-tab-label';
-      tabLabel.textContent = CODEX_CATEGORY_LABELS[category];
+      tabLabel.textContent = category === 'all' ? 'All' : CODEX_CATEGORY_LABELS[category];
       tab.appendChild(tabLabel);
 
       tabs.appendChild(tab);
@@ -240,14 +310,17 @@ export class CodexPanel {
     parent.appendChild(body);
   }
 
-  private selectCategory(category: CodexCategory): void {
+  private selectCategory(category: CodexFilter): void {
     if (this.activeCategory === category && !this.searchTerm) return;
     this.activeCategory = category;
     this.refreshTabs();
     this.applyFilter();
-    // Pick the first entry in the new category as the active one so the
-    // detail pane never lands empty after a tab switch.
-    const first = CODEX_ENTRIES.find((e) => e.category === category);
+    // Pick the first still-visible entry as the active one so the detail pane
+    // never lands empty after a tab switch — respecting the search, since the
+    // category's own first entry may be filtered out by it.
+    const first = CODEX_ENTRIES.find(
+      (e) => (category === 'all' || e.category === category) && this.matchesSearch(e),
+    );
     if (first) this.focusEntry(first.id);
   }
 
@@ -263,7 +336,7 @@ export class CodexPanel {
     for (const entry of CODEX_ENTRIES) {
       const row = this.entryEls.get(entry.id);
       if (!row) continue;
-      const matchesCategory = entry.category === this.activeCategory;
+      const matchesCategory = this.activeCategory === 'all' || entry.category === this.activeCategory;
       const matchesSearch = this.matchesSearch(entry);
       const visible = matchesCategory && matchesSearch;
       row.hidden = !visible;
@@ -274,6 +347,15 @@ export class CodexPanel {
     }
   }
 
+  /** True when the given entry id is currently shown by the list filter. */
+  private isVisibleEntry(id: string | null): boolean {
+    if (!id) return false;
+    const entry = CODEX_ENTRIES.find((e) => e.id === id);
+    if (!entry) return false;
+    if (this.activeCategory !== 'all' && entry.category !== this.activeCategory) return false;
+    return this.matchesSearch(entry);
+  }
+
   private matchesSearch(entry: CodexEntry): boolean {
     if (!this.searchTerm) return true;
     const haystack = [
@@ -282,6 +364,8 @@ export class CodexPanel {
       entry.detail,
       ...(entry.aliases ?? []),
       ...(entry.stats ?? []),
+      // Players search the name they can see ("Focus Bonus"), not the key.
+      ...(entry.stats ?? []).map(friendlyTermName),
     ]
       .join(' ')
       .toLowerCase();
@@ -295,8 +379,8 @@ export class CodexPanel {
   private renderDetail(entry: CodexEntry): void {
     if (!this.detailEl) return;
     if (this.detailTermEl) setText(this.detailTermEl, entry.term);
-    if (this.detailSummaryEl) setText(this.detailSummaryEl, entry.summary);
-    if (this.detailDetailEl) setText(this.detailDetailEl, entry.detail);
+    if (this.detailSummaryEl) setProse(this.detailSummaryEl, entry.summary);
+    if (this.detailDetailEl) setProse(this.detailDetailEl, entry.detail);
     if (this.detailGlyphEl) {
       this.detailGlyphEl.replaceChildren();
       renderIcon(this.detailGlyphEl, entry.icon, { tone: 'inherit' });
@@ -329,14 +413,22 @@ export class CodexPanel {
       const li = document.createElement('li');
       li.className = 'codex-detail-stat';
       li.dataset.stat = stat;
-      const code = document.createElement('code');
-      code.textContent = stat;
-      li.appendChild(code);
+      const name = document.createElement('span');
+      name.className = 'codex-detail-stat-name';
+      name.textContent = friendlyTermName(stat);
+      // The engine key stays reachable on hover for anyone cross-referencing
+      // a save file or the wiki, but never occupies the row itself.
+      name.title = stat;
+      li.appendChild(name);
       const refs = CODEX_BY_STAT[stat as StatKey];
       if (refs && refs.length > 1) {
         const warning = document.createElement('span');
         warning.className = 'codex-detail-stat-warning';
-        warning.textContent = 'also referenced by: ' + refs.filter((r) => r !== entry.id).join(', ');
+        // Entry ids are internal too — quote the entries by their titles.
+        const others = refs
+          .filter((r) => r !== entry.id)
+          .map((r) => CODEX_ENTRIES.find((e) => e.id === r)?.term ?? friendlyTermName(r));
+        warning.textContent = 'also referenced by: ' + others.join(', ');
         li.appendChild(warning);
       }
       list.appendChild(li);

@@ -4,13 +4,21 @@
 
 ## Overview
 
-Two prestige layers: Ascension (wave 5~~~~0+) and Transcendence (100+ AP).
+Two prestige layers: Ascension (wave 20+) and Transcendence (100+ AP).
 
 ## Ascension
 
-**Unlock:** Wave 30
+**Unlock:** Wave 20 (`ASCENSION_UNLOCK_WAVE`)
 
-**AP Formula:** `floor(sqrt(waveNumber * 5))`
+**AP Formula:** `apForWave(w)` = `15 + floor(5 * 1.06^d * sqrt(d + 1))` where
+`d = w - 20`, and `0` below the unlock wave. The old
+`20 + 1.13^(w-30) * sqrt(w-30)` was tuned for a wall around wave 37; with the
+flatter HP curve the wall sits far deeper and `1.13^depth` turned a first run
+into thousands of AP. At `1.06^depth` a 20-wave-deeper run is worth ~3x as
+much, which is roughly what it costs to get there.
+
+`FIRST_ASCENSION_AP` (**25**) is a floor on the player's very first ascension,
+so the first prestige is worth taking rather than something to postpone.
 
 **Performs:**
 1. Calculates AP from current highest wave
@@ -55,21 +63,49 @@ both again for the transcendence path.
 
 ### AP Perks
 
-| ID | Name | Cost | Max | Effect |
-|----|------|------|-----|--------|
-| ap_auto_upgrader | Auto-Upgrader | 25 AP | 1 | Auto-buy automation |
-| ap_wave_skipper | Wave Skipper | 6 AP | 15 | +1% wave skip chance/level |
-| ap_quiver | Deep Quiver | 5 AP | 30 | +2% fire rate/level |
-| ap_might | Ascendant Might | 6 AP | 999 | +2% all damage/level |
-| ap_fortune | Ascendant Fortune | 6 AP | 999 | +2% all gold/level |
-| ap_research_speed | Scholarly Focus | 8 AP | 5 | -8% research time/level |
-| ap_idle_time | Extended Watch | 4 AP | 11 | +8h offline cap/level |
-| ap_extra_shots | Twin Arrows | 60 AP | 1 | +1 front projectile at 55% damage |
-| ap_pierce | Bodkin Mastery | 75 AP | 3 | +1 pierce/level |
-| ap_back_shots | Rear Guard | 90 AP | 1 | +1 rear projectile at 55% damage |
-| ap_scatter_shots | Scatter Shot | 200 AP | 1 | +2 angled projectiles at 35% damage |
-| ap_warlord | Warlord | 40 AP | 12 | +5% all damage/level (locks out Tycoon) |
-| ap_tycoon | Tycoon | 40 AP | 12 | +5% all gold/level (locks out Warlord) |
+Thirteen perks in four tiers (revamp §8). The old tree let one first
+ascension buy seven full-damage projectiles — a ~7x multiplier bought once and
+never revisited. The three projectile nodes are now **single-level signature
+purchases**, each carrying only a *fraction* of the volley, so the first
+ascension buys exactly one utility line and coverage is something a player
+saves several runs for.
+
+| Tier | ID | Name | Cost | Scaling | Max | Effect | Requires |
+|---:|----|------|-----:|--------:|----:|--------|----------|
+| 1 | ap_auto_upgrader | Auto-Upgrader | 25 | — | 1 | Auto-buy automation | — |
+| 1 | ap_wave_skipper | Wave Skipper | 6 | 1.60 | 15 | +1% wave skip/level | — |
+| 1 | ap_quiver | Deep Quiver | 5 | 1.22 | 30 | +2% fire rate/level | — |
+| 1 | ap_idle_time | Extended Watch | 14 | 1.6 | 11 | +8 h offline cap/level | — |
+| 2 | ap_might | Ascendant Might | 6 | 1.20 | 999 | +2% all damage/level | Auto-Upgrader **or** Deep Quiver 3 |
+| 2 | ap_fortune | Ascendant Fortune | 6 | 1.20 | 999 | +2% all gold/level | Auto-Upgrader **or** Wave Skipper 2 |
+| 2 | ap_research_speed | Scholarly Focus | 8 | 1.8 | 5 | −8% research time/level | Auto-Upgrader |
+| 3 | ap_extra_shots | Twin Arrows | 60 | — | 1 | +1 front projectile at 55% damage | Might 5 **or** Quiver 5 |
+| 3 | ap_pierce | Bodkin Mastery | 75 | 2.2 | 3 | +1 pierce/level | Might 5 |
+| 3 | ap_back_shots | Rear Guard | 90 | — | 1 | +1 rear projectile at 55% damage | Twin Arrows |
+| 4 | ap_scatter_shots | Scatter Shot | 200 | — | 1 | +2 angled projectiles at 35% damage each | Rear Guard **or** Bodkin Mastery 2 |
+| 4 | ap_warlord | Warlord | 40 | 1.32 | 12 | +5% all damage/level — locks out Tycoon | Might 10 |
+| 4 | ap_tycoon | Tycoon | 40 | 1.32 | 12 | +5% all gold/level — locks out Warlord | Fortune 10 |
+
+`perkCost(def, level)` = `floor(costPerLevel * costScaling^level)`; a perk with
+`costScaling: 1` is a flat one-off price. Prerequisites are **OR**-based in
+`PrestigeManager.meetsPrerequisites` — a node listing two parents opens on
+either one, and the panel renders them as "Requires A or B". `ap_warlord` /
+`ap_tycoon` are mutually `exclusive`.
+
+### Projectile payload scaling (revamp §7)
+
+The AP projectile perks add **coverage**, not a damage multiplier. Every extra
+lane carries a fraction of the volley's payload through `ShotVariant.damageScale`
+(see [projectile-system.md](projectile-system.md)), so the whole suite is worth
+~x2.8 before geometry rather than the ~x13 it used to be. One shared block —
+`PRESTIGE_PROJECTILE_TUNING` — is read by both `Game.buildShotVariants()` and
+`sim/model.ts`, so the simulator measures the number that actually fires:
+
+| Field | Value | Lane |
+|---|---:|---|
+| `extraDamageScale` | 0.55 | Twin Arrows, front |
+| `rearDamageScale` | 0.55 | Rear Guard, behind the tower |
+| `scatterDamageScale` | 0.35 | Scatter Shot, each of two angled lanes |
 
 ### Idle-time cap
 
@@ -82,7 +118,12 @@ the next offline walk with no save-field change. The perk row in
 `PrestigePanel` shows the current cap next to its level (`Idle cap: 1d 8h`),
 and the welcome-back modal names the cap in its "capped at …" line.
 
-**Lifetime AP Bonus:** Each lifetime AP gives +2% damage and +2% gold (additive).
+**Lifetime AP Bonus:** `lifetimeAPDamageBonus(ap)` = `0.02 * ap^0.7`, and the
+gold bonus is the same curve. It used to be a flat linear `0.02 * lifetimeAP` —
+linear in a currency that itself grows exponentially with wave depth, so it
+eventually dwarfed every perk, talent and piece of gear without the player
+making a decision. Sub-linear, it is still why a veteran opens faster than a
+new player, but deliberate progression carries the late curve.
 
 ### Tower cores as an AP spend
 
@@ -95,10 +136,10 @@ perks: no levels, no prerequisites, no exclusivity, and their own UI.
 | Core | Cost |
 |---|---:|
 | Marksman | default (free) |
-| Artillery | 5 AP |
-| Frostwork | 10 AP |
-| Bloodforge | 15 AP |
-| Arcane | 25 AP |
+| Artillery | 30 AP |
+| Frostwork | 45 AP |
+| Bloodforge | 60 AP |
+| Arcane | 90 AP |
 
 The unlock is **permanent** — `performAscension` and `applySavedStateReset`
 never touch it. What resets with the run is the *selection*, and it resets to
@@ -107,9 +148,14 @@ auto-ascending run keeps the identity its player chose.
 
 ## Transcendence
 
-**Unlock:** 100 AP
+**Unlock:** 100 AP (`TRANSCENDENCE_UNLOCK_AP`)
 
-**TP Formula:** `floor(log10(ap + 1) * 3)`
+**TP Formula:** `tpForAP(ap)` = `floor(4 * ap^0.4)`, and `0` below the unlock.
+`log2(ap+1)^2` gave 44 TP at 100 AP and only 276 at 100 000 — a thousand times
+the ascension work for six times the reward, which made every transcendence
+after the second worse than the one before it. The power law starts lower (**25
+TP** for a first transcendence) and keeps paying: 1 000x the AP is now ~16x
+the TP.
 
 **Performs:**
 1. Calculates TP from current AP
@@ -118,14 +164,62 @@ auto-ascending run keeps the identity its player chose.
 
 ### TP Perks
 
-| ID | Name | Cost | Max | Effect |
-|----|------|------|-----|--------|
-| tp_damage | Cosmic Power | 1 TP | 999 | +50% damage/level (multiplicative with AP) |
-| tp_resource | Astral Harvest | 1 TP | 999 | +25% resource gain/level (multiplicative) |
-| tp_auto_buy | Auto-Purchaser | 5 TP | 1 | Auto-buy automation |
-| tp_auto_cast | Auto-Caster | 10 TP | 1 | Auto-cast automation |
-| tp_auto_ascend | Auto-Ascender | 20 TP | 1 | Auto-ascend automation |
-| tp_auto_transcend | Auto-Transcender | 50 TP | 1 | Auto-transcend automation |
+Eighteen perks across three branches — **Wrath** (offensive), **Fortune**
+(economic) and **Dominion** (utility/automation). Same `perkCost`,
+prerequisite and `exclusive` machinery as the AP tree.
+
+#### Wrath
+
+| Tier | ID | Name | Cost | Scaling | Max | Effect | Requires |
+|---:|----|------|-----:|--------:|----:|--------|----------|
+| 1 | tp_damage | Cosmic Power | 3 | 1.25 | 999 | +`0.20 / sqrt(L)` all damage per level — tapers, never caps | — |
+| 2 | tp_fire_rate | Rapid Assault | 4 | 1.35 | 20 | +4% fire rate/level | Cosmic Power 3 |
+| 2 | tp_crit | Lethal Precision | 4 | 1.35 | 25 | +4% crit damage/level | Cosmic Power 3 |
+| 3 | tp_pierce | Piercing Fury | 10 | 1.9 | 6 | +1 pierce per 2 levels | Rapid Assault 3 **or** Lethal Precision 3 |
+| 4 | tp_aoe | Annihilation | 30 | — | 1 | 25% AoE splash on impact — locks out Executioner | Piercing Fury 2 |
+| 4 | tp_execute | Executioner | 30 | — | 1 | +150% damage below 25% HP — locks out Annihilation | Piercing Fury 2 |
+
+Cosmic Power's ladder is 3, 3, 4, 5, 7, 9, 11, 14, 17, 22…: a first
+transcendence (25 TP) buys ~5 levels for +65%, not 13 levels for +330%, so the
+branch nodes stay live purchases instead of being strictly dominated by one row.
+Annihilation's radius is `TP_AOE_SPLASH_RADIUS` = `world(60)` — sized *under*
+the artillery core's `world(70)`, because the perk is a universal top-up, not a
+core — and its fraction sums into `SPLASH_FRACTION_CAP` (0.40) through
+`composeShotSplash`.
+
+#### Fortune
+
+| Tier | ID | Name | Cost | Scaling | Max | Effect | Requires |
+|---:|----|------|-----:|--------:|----:|--------|----------|
+| 1 | tp_resource | Astral Harvest | 3 | 1.25 | 999 | +`0.12 / sqrt(L)` all resource gain per level — tapers | — |
+| 2 | tp_treasure | Treasure Hunter | 4 | 1.38 | 15 | +2% chance of a 3x gold drop/level | Astral Harvest 3 |
+| 2 | tp_mana | Mana Well | 4 | 1.38 | 15 | +10% mana regen/level | Astral Harvest 3 |
+| 3 | tp_head_start | Head Start | 5 | 1.7 | 12 | Start each ascension with `400 x 1.30^(L-1)` gold | Treasure Hunter 2 **or** Mana Well 2 |
+| 4 | tp_salvage | Salvage | 28 | — | 1 | +40% gold from loot orbs — locks out Arcane Abundance | Head Start 5 |
+| 4 | tp_arcane | Arcane Abundance | 28 | — | 1 | −30% ability cooldowns, −40% ability mana costs — locks out Salvage | Head Start 5 |
+
+**`tp_salvage` replaced Midas Touch** (revamp §9.2), which paid gold on every
+projectile *hit* — a faucet that scaled with fire rate and projectile count,
+the one shape the economy forbids everywhere else. Salvage writes the
+`orbGoldMultiplier` stat instead, so it scales with wave income like the rest
+of the economy; see [loot-system.md](loot-system.md). Head Start totals 400 at
+L1 and 29 731 at the L12 cap — roughly one early run's income at the depth
+where the last level is affordable, against the old table's 1 874 391.
+
+#### Dominion
+
+| Tier | ID | Name | Cost | Scaling | Max | Effect | Requires |
+|---:|----|------|-----:|--------:|----:|--------|----------|
+| 2 | tp_auto_cast | Auto-Caster | 8 | — | 1 | Auto-cast automation | — |
+| 2 | tp_wave_start | Wave Commander | 3 | 1.55 | 8 | Start each ascension at wave `2 x level` | — |
+| 2 | tp_efficiency | Efficiency | 3 | 1.5 | 7 | Auto-buy interval −1 s/level (min 3 s) | — |
+| 2 | tp_game_speed | Accelerator | 6 | 2.2 | 6 | +0.5x max game speed/level | — |
+| 3 | tp_auto_ascend | Auto-Ascender | 20 | — | 1 | Auto-ascend automation | Auto-Caster **or** Wave Commander 3 |
+| 4 | tp_auto_transcend | Auto-Transcender | 40 | — | 1 | Auto-transcend automation | Auto-Ascender |
+
+Accelerator's copy is the contract: it used to grant +1x a level, so a maxed
+Accelerator ran the game at 11x while the panel claimed 6x. The number follows
+the description now.
 
 ## Automation Unlocks
 
@@ -152,7 +246,7 @@ buy the same perk again — and they **never double-count**:
   perk and `watch.overseer`, so any of them unlocks it once.
 
 `cold_forge` and `sanctum` are the two AP cores the chapters give for
-free (`frostwork` normally 10 AP, `arcane` normally 25 AP). The chapter
+free (`frostwork` normally 45 AP, `arcane` normally 90 AP). The chapter
 completes call `CoreManager.unlock(id)` directly; the AP-tree path
 remains the way to spend AP for either core. See
 [watch-system.md](watch-system.md#the-unlock-catalogue).

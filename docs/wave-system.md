@@ -20,8 +20,10 @@ tick() called each simulation substep:
 
 | Field | Formula | Description |
 |-------|---------|-------------|
-| Enemy count | `5 + (wave-1) * 1.5` | How many enemies to spawn |
-| Spawn interval | `max(0.3, 2.0 - wave * 0.05)` | Time between spawns |
+| Enemy count | `5 + floor((wave-1) * 1.2)` | How many enemies to spawn (`enemyCountForWave`) |
+| Spawn count | `spawnCountForWave` | Boss waves spawn `1 + bossEscortCountForWave` instead |
+| Spawn interval | `max(0.4, 2.0 - wave * 0.04)` | Time between spawns |
+| Expected duration | `expectedWaveSeconds` | Spawn cadence + a kill window — see [Enrage](#enrage) |
 | Intermission | 5 s / 3 s / 2 s | Pause between waves — see [Intermission length](#intermission-length) |
 | Auto-progress | default ON | Advance waves automatically |
 
@@ -195,6 +197,33 @@ game (`ENRAGE_DAMAGE_PER_STACK`).
 - The AP bonus is its own channel on `PrestigeManager` (`setRiskApBonus`), not a
   `RunApSource`: the banked run bonuses share a +50% cap that risk is not part
   of, and they are *set* from their own saved blocks on load.
+
+## Enrage
+
+The wave-level fail state, in `src/data/formulas.ts`. Without one the tower
+simply stops killing fast enough while enemies trickle in too slowly to finish
+the wave — the run neither ends nor progresses.
+
+```
+expectedWaveSeconds(wave)  = spawnIntervalForWave(wave) * (count - 1) + kill
+  kill = TARGET_WAVE_KILL_SECONDS (20)
+       | TARGET_BOSS_KILL_SECONDS (28) * bossEncounterWeight(wave)   on a boss wave
+enrageThresholdSeconds(wave) = expectedWaveSeconds(wave) * ENRAGE_THRESHOLD_MULTIPLIER (2)
+enrageStacksFor(wave, t)     = 1 + floor((t - threshold) / ENRAGE_STACK_INTERVAL (8))
+```
+
+Each stack is **+40% damage to the tower** (`ENRAGE_DAMAGE_PER_STACK`) and
+**+15% movement speed** (`ENRAGE_SPEED_PER_STACK`), additive — the same
+stacking shape as the risk dial below.
+
+`enemyCount` is an optional argument and **must** be passed when a mutator has
+changed the wave's size: a Swarm wave spawns 3x the enemies and legitimately
+takes 3x as long to spawn them, and must not be punished for that.
+
+A boss wave's kill window is sized off `bossEncounterWeight` rather than its
+body count, so the escort does not buy the encounter a longer fuse — see
+[boss-encounters.md](boss-encounters.md#the-durability-budget). The boss's *own*
+enrage timer is a separate, tighter clock.
 
 ## Wave Skip
 

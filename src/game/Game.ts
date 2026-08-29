@@ -12,7 +12,7 @@ import { GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } fr
  */
 const FIXED_STEP = 1 / 60;
 const MAX_SUBSTEPS = 6;
-import { MANUAL_AIM, TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
+import { HOMING, MANUAL_AIM, TOWER_BASE, TOWER_HIT_RADIUS, TOWER_VISUAL } from '../data/tower';
 import { CORES, CORE_BY_ID, CORE_TUNING, DEFAULT_CORE, isCoreId, type CoreId } from '../data/cores';
 import { CoreManager } from '../systems/CoreManager';
 import {
@@ -95,6 +95,7 @@ import { WaveModifierModal } from '../ui/WaveModifierModal';
 import { BlessingDraftModal } from '../ui/BlessingDraftModal';
 import { CorePickerModal } from '../ui/CorePickerModal';
 import type { CorePanelState } from '../ui/PrestigePanel';
+import type { UpgradeShotPreview, ShotPreview } from '../ui/UpgradePanel';
 import type { PacingHudData } from '../ui/PacingOverlay';
 import { BlessingManager } from '../systems/BlessingManager';
 import { LootManager } from '../systems/LootManager';
@@ -456,6 +457,21 @@ export interface GameDeps {
   ui: UIManager;
   notificationRoot: HTMLElement;
   modalRoot: HTMLElement;
+}
+
+
+/**
+ * The four numbers a shot's damage is composed from, lifted out of a resolved
+ * stat block (revamp §12.2). Kept next to its only producer so the panel and
+ * the tower cannot disagree about what "one shot" means.
+ */
+function shotPreviewOf(stats: ResolvedStats): ShotPreview {
+  return {
+    damage: stats.baseDamage,
+    fireRate: stats.fireRate,
+    critChance: stats.critChance,
+    critMultiplier: stats.critMultiplier,
+  };
 }
 
 export class Game {
@@ -950,11 +966,6 @@ export class Game {
         const healAmt = p.amount * ls;
         ts.hp = Math.min(ts.maxHp, ts.hp + healAmt);
         this.effects.emitHealNumber(ts.x, ts.y - TOWER_VISUAL.bodyRadius - 24, healAmt);
-      }
-      if (!p.killed && this.prestigeMgr.hasGoldOnHit()) {
-        const fraction = this.prestigeMgr.getGoldOnHitFraction();
-        const goldOnHit = Math.max(1, Math.floor(p.enemy.goldValue * fraction));
-        this.resourceMgr.addGold(goldOnHit);
       }
       // Research: Arcane Recovery — crits restore mana
       if (p.isCrit) {
@@ -2953,6 +2964,15 @@ export class Game {
       extraPierce: MANUAL_AIM.chargeExtraPierce,
       splashRadius: MANUAL_AIM.chargeSplashRadius,
       splashFraction: MANUAL_AIM.chargeSplashFraction,
+      // Seeker Shots applies to the charged shot as well, but weakly on
+      // purpose: a long straight lead-out and 60% of the turn rate, so the
+      // pierce line the player aimed still goes where they aimed it and the
+      // homing only sweeps up what it passes near. Its extra pierce plus the
+      // "never re-target a body I already went through" rule is what makes it
+      // walk down a column instead of orbiting the first thing it hits.
+      isHoming: this.blessingMgr.has('homing'),
+      turnRate: HOMING.turnRate * HOMING.chargedTurnScale,
+      homingDelay: HOMING.chargedDelay,
     });
     this.state.stats.shotsFired += 1;
     this.state.stats.damageDealt += damage;
@@ -3487,6 +3507,34 @@ export class Game {
     return { multiplier: stats.goldMultiplier, sources: goldSourceEntries(breakdown) };
   }
 
+  /**
+   * What the tower's shot would look like after buying `levels` of `id`
+   * (revamp §12.1–2), so the upgrade panel can name the change instead of
+   * quoting a raw per-level constant.
+   *
+   * Re-resolves the *same context* the applied stats came from with one
+   * upgrade level swapped, exactly like `computeGoldBreakdown` — there is no
+   * second damage formula to drift. Evolution effects are not previewed: they
+   * come from `StatContext.evolutions`, which `UpgradeManager` owns, and the
+   * panel already announces them on their own milestone line.
+   *
+   * The panel memoises on its own level/stat version, so this runs on a
+   * purchase or a wave change, not per frame.
+   */
+  previewUpgradeShot(id: string, levels: number): UpgradeShotPreview | null {
+    const ctx = this.lastStatContext;
+    const base = this.lastResolved;
+    if (!ctx || !base) return null;
+    const before = shotPreviewOf(base);
+    if (levels <= 0) return { before, after: before };
+    const current = ctx.upgrades[id] ?? 0;
+    const { stats } = resolveStats({
+      ...ctx,
+      upgrades: { ...ctx.upgrades, [id]: current + levels },
+    });
+    return { before, after: shotPreviewOf(stats) };
+  }
+
   private computeStatsInfo(): StatsInfo {
     const t = this.tower.snapshot;
     const r = this.state.resources;
@@ -3875,6 +3923,7 @@ export class Game {
         tpResource: this.prestigeMgr.getTPResourceMultiplicative(),
         tpCritDamage: this.prestigeMgr.getTPCritDamageBonus(),
         tpPierce: this.prestigeMgr.getTPPierceBonus(),
+        orbGoldMultiplier: this.prestigeMgr.getOrbGoldMultiplier(),
         abilityManaCostReduction: this.prestigeMgr.getAbilityManaCostReduction(),
         abilityCdr: this.prestigeMgr.getAbilityCDR(),
         treasureChance: this.prestigeMgr.getTreasureChance(),
@@ -4116,6 +4165,7 @@ export class Game {
     );
     this.abilityMgr.setEchoChance(stats.abilityEchoChance);
     this.lootMgr.setValueBonus(stats.orbValueBonus);
+    this.lootMgr.setGoldMultiplier(stats.orbGoldMultiplier);
     this.pacingMgr.setMomentumBonus(stats.momentumGainBonus, Math.min(MOMENTUM_CAP * 2, stats.momentumGainBonus / 20));
     this.enemyMgr.setThornsOnKnockback(stats.knockbackForce > TOWER_BASE.knockbackForce);
     this.automation.setQuartermasterReserve(
@@ -5273,10 +5323,13 @@ export class Game {
         const corePlan = this.coreMgr.planShot(
           (amount) => this.resourceMgr.spendMana(amount),
         );
-        // Blessing: Seeker Shots — only meaningful with an auto-acquired
-        // target; a manually aimed shot is already going where the player
-        // pointed it.
-        const homing = target !== null && this.blessingMgr.has('homing');
+        // Blessing: Seeker Shots — the shot does its own targeting now, so a
+        // clicked volley homes too: the cursor sets the launch heading,
+        // `HOMING.manualDelay` holds it long enough to read as "it went where I
+        // pointed", and then the shot hunts the nearest enemy from wherever it
+        // has got to. `target` is null while the mouse is down, which is
+        // exactly the case that used to be excluded here.
+        const homing = this.blessingMgr.has('homing');
         const shotDamage = (mortarShot
           ? shot.damage * BLESSING_TUNING.mortarDamageMult
           : shot.damage) * corePlan.damageMult;
@@ -5286,6 +5339,7 @@ export class Game {
         // not what either promises.
         const blessingShot = {
           isHoming: homing,
+          homingDelay: this.mouseDown ? HOMING.manualDelay : 0,
           // Plan §9.1: Annihilation is the third source on this one channel,
           // and it composes the same way the other two do — max radius, summed
           // fraction to the cap — rather than re-damaging the enemy from the

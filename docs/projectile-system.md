@@ -17,6 +17,9 @@ interface Projectile {
   homingTargetId?: number;   // present on homing shots only
   turnRate?: number;         // max steering rate (rad/s)
   lifetime?: number;         // homing retirement age, in seconds
+  homingDelay?: number;      // straight launch-heading seconds before it starts seeking
+  cruiseSpeed?: number;      // speed the launch boost decays back to (spread lanes only)
+  retargetIn?: number;       // countdown to this shot's next target re-scan
   age?: number;              // seconds alive; every projectile ages
   splashRadius?: number;     // blast radius on impact (Mortar blessing, Artillery core, Rocket Barrage)
   splashFraction?: number;   // share of the landed hit the rest of the blast takes
@@ -37,9 +40,24 @@ Called from `Game.update` when tower cooldown is ready.
    - Create projectile, emit `projectile_fired`
 
 **Shot variants** (from AP perks in `Game.buildShotVariants`):
-- Extra shots: parallel offset left/right
-- Scatter shots: angled spread (30° + 15° per level)
-- Back shots: 180° reverse
+
+| Variant | Geometry | `damageScale` |
+|---|---|---:|
+| main | none | 1 (field absent) |
+| Twin Arrows (`extra_shots`) | parallel offset left/right, 10 px per lane | **0.55** |
+| Scatter Shot (`scatter_shots`) | angled spread, `min(30° + 15° per level, 75°)` both sides | **0.35** each |
+| Rear Guard (`back_shots`) | 180° reverse, 10 px per lane | **0.55** |
+
+`ShotVariant.damageScale` is what makes the AP projectile perks a **coverage**
+axis rather than a damage multiplier (revamp §7). Every variant used to carry
+the full `rawDamage`, which made the suite worth ~x13 — one first ascension
+bought a 7x multiplier and the run coasted. Each extra lane now carries a
+fraction of the volley's payload, so the whole suite is worth ~x2.8 before
+geometry. The three fractions live in one shared block,
+`PRESTIGE_PROJECTILE_TUNING` in `src/data/prestige.ts`, read by both
+`buildShotVariants` and `sim/model.ts` so the simulator measures what actually
+fires. An absent `damageScale` means 1 — the main shot and the talent/evolution
+variants (Barrage, `double_shot`) are unscaled.
 
 `FireOptions.visual` passes straight through to each created projectile — `'default'` renders as the core's ordinary bolt, and `'rocket'` swaps in the rocket hull + exhaust sprite set (Rocket Barrage is the only emitter that sets it today).
 
@@ -89,6 +107,52 @@ perk actively reduced DPS.
 Because the nearest hit along the segment wins, a fast projectile hits the
 first thing in its path rather than whichever enemy happens to come first in
 the array.
+
+## Homing (`plans/homing.md`)
+
+A homing shot owns its own targeting. The volley's target is only its launch
+heading; everything after that is decided by the projectile, from its own
+position, in `steerHoming`. `turnRate` is the sole "is this a seeker" gate —
+`fire` sets it only for homing shots, and a seeker may legitimately have no
+target at all (a clicked volley, or a spread lane still flying straight).
+
+Each step runs the same three stages. First a **straight-flight delay**: for
+`homingDelay` seconds the shot holds its launch heading at its launch speed and
+does not even look for a target. Then **acquisition**, which prefers the cone
+ahead: `seekNearest` asks the enemy grid for everything within
+`HOMING.seekRadius` and takes the nearest candidate inside `HOMING.acquireCone`
+(75°) of the current heading, falling back to the nearest anywhere only when
+that cone is empty. Preferring the cone is what stops a rear or scatter lane
+from U-turning onto whatever the front lane is already shooting the instant its
+delay expires — a lane adopts something it is broadly already flying at. Then
+the **turn**, which eases from 0 to `turnRate` over `HOMING.ramp`, so the shot
+banks into its curve instead of snapping onto the target on the first frame.
+
+A shot never re-locks a body it has already pierced. `hitEnemies` bars a second
+hit on the same enemy, so chasing it would just orbit a corpse until
+`MAX_PROJECTILE_AGE`; dropping the target on pierce is what lets a piercing
+seeker walk down a column. When a pierced-out shot finds nothing new it flies
+*straight* rather than re-locking the body it went through — straight flight can
+still stumble into something before the age cap, a corkscrew cannot.
+
+Re-scans are cheap and rate-limited: `retargetIn` counts down
+`HOMING.retargetInterval` (0.12 s) between opportunistic scans, and a rival
+enemy only steals a still-valid target if its squared distance is below
+`HOMING.switchMargin²` of the current one. That hysteresis is not decoration — a
+shot flying between two equidistant enemies dithers between them and hits
+neither without it.
+
+Spread lanes launch **fast and slow into their turn**. `fire` scores each lane's
+`angleOffset` 0..1 against `HOMING.spreadFullAngle` (45°) and gives it both a
+proportional `HOMING.spreadDelay` of extra straight flight and a launch speed up
+to `HOMING.spreadLaunchBoost` (1.55x), which then bleeds back to `cruiseSpeed`
+on the `HOMING.speedSettle` clock once steering starts. This is what keeps
+Scatter Shot and Rear Guard from collapsing into Twin Arrows once Seeker Shots
+is drafted: a fully spread lane covers ~460 world units before it so much as
+looks for a target, so by the time the lanes steer they are far apart and
+pointing at different parts of the field, and they acquire different enemies.
+Twin Arrows lanes have `angleOffset` 0, score 0, and converge as tightly as they
+always did — it is the tight perk, deliberately.
 
 ## Lifetime (plan §5.5)
 

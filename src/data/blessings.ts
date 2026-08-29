@@ -46,7 +46,7 @@ export type BlessingBehavior =
   | 'shatter'           // damage +35% vs chilled/slowed enemies
   | 'orb_magnet'        // loot orbs (Part 4) home to the tower at full value
   | 'split_on_kill'     // a kill fires two 40% shards at nearby enemies
-  | 'homing'            // projectiles curve toward their target
+  | 'homing'            // projectiles seek the nearest enemy, re-targeting on pierce
   | 'overkill_carry'    // 25% of overkill damage carries to the next target
   | 'siphon'            // kills restore 1% max mana
   | 'executioner'       // instantly kill non-boss enemies below 8% HP
@@ -70,7 +70,7 @@ export const BLESSING_BEHAVIOR_CONSUMERS: Record<BlessingBehavior, string> = {
   shatter: 'ProjectileManager (on hit, vs EnemyManager.isChilled)',
   orb_magnet: 'LootManager.setMagnetSource("blessing", …) (auto-collect rate + drift speed)',
   split_on_kill: 'Game enemy_killed handler',
-  homing: 'Game.simulate → ProjectileManager.fire({ isHoming })',
+  homing: 'Game.simulate / fireChargedShot → ProjectileManager.steerHoming',
   overkill_carry: 'ProjectileManager (on kill)',
   siphon: 'Game enemy_killed handler',
   executioner: 'ProjectileManager (on hit, pre-damage)',
@@ -310,7 +310,7 @@ export const BLESSINGS: BlessingDef[] = [
     id: 'bl_homing',
     name: 'Seeker Shots',
     icon: 'spiral-arrow',
-    description: 'Projectiles curve toward their target',
+    description: 'Projectiles seek the nearest enemy',
     rarity: 'rare',
     weight: 5,
     maxStacks: 1,

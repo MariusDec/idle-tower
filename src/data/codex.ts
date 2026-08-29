@@ -524,8 +524,8 @@ export const CODEX_ENTRIES: readonly CodexEntry[] = [
     category: 'economy',
     summary: 'Multiplies the value of every loot orb that drops.',
     detail:
-      'orbValueBonus is applied to the gold and XP contents of every loot orb. Orbs are the rarest gold source in the game, so even a small bonus here out-earns the per-kill gold channels by orders of magnitude over a long run.',
-    stats: ['orbValueBonus'],
+      'orbValueBonus is applied to the gold and XP contents of every loot orb. Orbs are the rarest gold source in the game, so even a small bonus here out-earns the per-kill gold channels by orders of magnitude over a long run. orbGoldMultiplier is the narrower channel the Salvage transcendence perk buys: it multiplies gold orbs only, and leaves mana and reroll orbs alone.',
+    stats: ['orbValueBonus', 'orbGoldMultiplier'],
     seeAlso: ['gold-on-kill', 'equipment-find'],
   },
 
