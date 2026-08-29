@@ -858,10 +858,13 @@ export class HUD {
       p.canCallEarly ? `Call +${Math.round(p.callBonus * 100)}%` : 'Call',
     );
     setTitle(this.callWaveBtn, p.canCallEarly
-      ? `Space — start wave now. ${p.intermissionRemaining.toFixed(1)}s skipped`
-        + ` is +${Math.round(p.callBonus * 100)}% gold, banked into momentum`
-        + ` (capped at +${Math.round(p.momentumCap * 100)}%).`
-      : `Available during the intermission (${p.intermissionLength}s at this depth).`);
+      ? `Space — start the next wave now. ${p.earlyCallRemaining.toFixed(1)}s left of the`
+        + ` ${p.earlyCallWindow}s call window is +${Math.round(p.callBonus * 100)}% gold,`
+        + ` banked into momentum (capped at +${Math.round(p.momentumCap * 100)}%).`
+        + ` Anything still alive comes with you.`
+      : `Opens ${p.earlyCallDelay}s into a wave once every enemy has spawned — or as soon`
+        + ` as the wave is cleared — and stays open for ${p.earlyCallWindow}s.`
+        + ` The sooner you call it, the more gold it banks.`);
 
     const hasMomentum = p.momentum > 0;
     toggleClass(this.momentumEl, 'is-visible', hasMomentum);

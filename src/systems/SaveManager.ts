@@ -48,8 +48,16 @@ import type { PassiveAbilityManager } from './PassiveAbilityManager';
 const STORAGE_KEY = 'the-tower-save';
 const SAVE_VERSION = 21;
 
-/** Offline passive XP is paid at a quarter of the live rate. */
-const OFFLINE_PASSIVE_XP_RATE = 0.25;
+/**
+ * Fraction of a wave's passive XP an *offline* wave clear pays.
+ *
+ * Offline waves are paced by `AVG_WAVE_DURATION * 0.25` at their fastest, which
+ * is several times quicker than a live wave at the same depth, so the discount
+ * is what keeps a night's absence from outrunning a session of real play. At
+ * 0.20 a passive parked at its unlock depth takes on the order of two weeks of
+ * 12h-offline + 1h-online days to reach `PASSIVE_MAX_LEVEL`.
+ */
+const OFFLINE_PASSIVE_XP_RATE = 0.20;
 
 function defaultWaveModifier() {
   return {
@@ -161,6 +169,12 @@ export interface OfflineResult {
   rpEarned: number;
   researchElapsed: number;
   xpEarned: number;
+  /**
+   * Passive-ability XP the absence earned, already discounted by
+   * `OFFLINE_PASSIVE_XP_RATE`. Accumulated inside the wave walk that produced
+   * `wavesCleared`, so it is priced at the depths the walk actually reached.
+   */
+  passiveXpEarned: number;
 }
 
 function isStorageAvailable(): boolean {
@@ -1142,6 +1156,7 @@ export class SaveManager {
         rpEarned: 0,
         researchElapsed: 0,
         xpEarned: 0,
+        passiveXpEarned: 0,
       };
     }
     const dps = estimateDPS(persisted.tower);
@@ -1156,6 +1171,7 @@ export class SaveManager {
     let remaining = elapsed;
     let gold = 0;
     let xp = 0;
+    let passiveXp = 0;
     let wavesCleared = 0;
     const goldScale = Math.max(0, goldMultiplier);
     while (remaining > 0 && effectiveDPS > 0 && wavesCleared < MAX_OFFLINE_WAVES) {
@@ -1168,16 +1184,22 @@ export class SaveManager {
       const waveSeconds = Math.max(waveHp / effectiveDPS, AVG_WAVE_DURATION * 0.25);
       const avgGold = averageKillGoldForWave(wave);
       const avgXp = averageKillXPForWave(wave);
+      // Priced at the depth the walk is actually standing on. The walk stops
+      // climbing at `ceiling`, so this cannot pay for depth the run never saw.
+      const wavePassiveXp =
+        passiveXpPerKill('normal', wave) * count + passiveXpPerWaveClear(wave);
       if (waveSeconds > remaining) {
         // Ran out of time partway through: pay out the fraction of the wave's
         // HP that was actually chewed through.
         const fraction = remaining / waveSeconds;
         gold += avgGold * count * fraction * goldScale;
         xp += avgXp * count * fraction * OFFLINE_XP_EFFICIENCY;
+        passiveXp += wavePassiveXp * fraction;
         break;
       }
       gold += avgGold * count * goldScale;
       xp += avgXp * count * OFFLINE_XP_EFFICIENCY;
+      passiveXp += wavePassiveXp;
       remaining -= waveSeconds;
       wavesCleared += 1;
       if (wave < ceiling) wave += 1;
@@ -1200,6 +1222,7 @@ export class SaveManager {
       rpEarned,
       researchElapsed: elapsed,
       xpEarned,
+      passiveXpEarned: Math.max(0, passiveXp * OFFLINE_PASSIVE_XP_RATE),
     };
   }
 
@@ -1231,19 +1254,15 @@ export class SaveManager {
     for (const ability of Object.values(state.abilities)) {
       ability.cooldown = Math.max(0, ability.cooldown - result.elapsedSeconds);
     }
-    // Grant passive ability XP for each estimated wave cleared. Offline pays a
-    // quarter rate — the same discount idle progress takes everywhere else —
-    // and goes through the manager so the level-up rule stays in one place.
-    if (result.wavesCleared > 0) {
-      let wave = Math.max(1, state.wave.number);
-      if (isBossWave(wave)) --wave;
-      let xp = 0;
-      for (let w = wave; w < wave + result.wavesCleared; w++) {
-        const enemies = Math.max(1, Math.floor(spawnCountForWave(w)));
-        xp += passiveXpPerKill('normal', w) * enemies + passiveXpPerWaveClear(w);
-      }
-      passives.addRawXp(xp * OFFLINE_PASSIVE_XP_RATE);
-    }
+    // Passive XP was accumulated by the offline walk itself, so it is priced at
+    // the depths that walk actually reached. It used to be re-derived here by
+    // walking `wavesCleared` waves *forward from the current wave with no
+    // ceiling* — the walk caps at the run's deepest wave and farms there, so a
+    // long absence at wave 15 was being paid as if it had cleared waves 15
+    // through 5015. Since per-wave passive XP grows with the square of depth,
+    // that single mismatch was worth thousands of times the real payout and
+    // maxed every unlocked passive in a night.
+    if (result.passiveXpEarned > 0) passives.addRawXp(result.passiveXpEarned);
   }
 
   /**

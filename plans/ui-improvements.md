@@ -304,6 +304,12 @@ Mechanical, and the only part of this plan that touches every file: replace lite
 shadows and durations in `main.css` with tokens. No visual change is intended in this part beyond
 the palette shift; anything that *looks* different afterwards is a bug to fix here, not later.
 
+### 2.4 Status — implemented (2026-08-29)
+
+`src/styles/tokens.css` (415 lines) and `src/data/palette.ts` are the two sources of truth; the
+`main.css` sweep landed with them, and `tests/palette.test.ts` guards the duplication. Part 5.E
+later extended the same palette to the canvas, so no literal colour survives in the render path.
+
 ---
 
 ## 3. The battlefield: ground, tower, range
@@ -362,6 +368,12 @@ spill, one cached sprite rotated and scaled) and disgorge each enemy with a 0.4 
 (scale-in + alpha + a ground dust ring). This is what makes on-screen spawning at
 `spawnRingScale = 1.04` read as intentional.
 
+### 3.5 Status — implemented (2026-08-29)
+
+All of it lives in `Renderer`: `bakeFarField` / `bakeTerrain` / `bakeLattice` for the static ground
+(baked once and blitted, which is what made §10.A's layer split unnecessary), plus `drawRangeRing`,
+`drawTowerBase`, `drawCoreCrystal`, `drawWall`, `drawShield` and `drawSpawnPortals`.
+
 ---
 
 ## 4. Enemies, projectiles and impacts
@@ -409,6 +421,12 @@ is one-time per key, not per frame.
 A muzzle flash at the turret on every shot, and a one-frame tracer line for very high fire rates
 where individual projectiles blur — this is what makes a maxed tower *feel* maxed.
 
+### 4.5 Status — implemented (2026-08-29)
+
+Including 4.3 and 4.4 (`3ecaeb5`): per-core `SHOT_STYLES`, `advanceImpacts` with `IMPACT_CAP`
+decals, `advanceTurret` recoil and muzzle flash, `pushTracer` under `TRACER_CAP`, hit flash,
+directional death and locomotion bob.
+
 ---
 
 ## 5. Effects, juice and the additive layer
@@ -432,6 +450,14 @@ where individual projectiles blur — this is what makes a maxed tower *feel* ma
   auto-skip when the speed multiplier is above 2× (idle contract).
 - **Pool caps hold.** New effect kinds get their own caps and are drawn from the same pooled arrays.
   A `quality` tier (Part 9) scales particle counts by 1.0 / 0.5 / 0.25.
+
+### 5.8 Status — implemented (2026-08-29)
+
+One sub-part per commit, `7949642` → `edf7dc0`: the routed additive pass (5.A), screen-space tiered
+damage numbers (5.B), the combo flourish (5.C), the boss intro (5.D, with a test pinning the
+sub-two-second budget), the canvas palette (5.E), the quality table (5.F) and the intro budget
+(5.G). Measured effect: the additive routing *improved* the DPR 2 tail (p95 21.1 → 19.1 ms) rather
+than costing anything — see `docs/performance.md`.
 
 ---
 
@@ -484,6 +510,12 @@ One helper: `icon(id, { size, tone, className })` → an `<svg><use>` element, p
 the framed variants (ability tile, rarity-framed item, talent node, upgrade row). Rarity frames are
 CSS (gradient border + inner glow + a corner notch per tier), not per-rarity assets.
 
+### 6.4 Status — implemented (2026-08-29)
+
+`public/icons/sprite.svg`, `scripts/fetch-icons.mjs`, `src/data/icons.ts` + `iconMap.ts`,
+`src/ui/Icon.ts`, `ATTRIBUTION.md` and `docs/icon-system.md`. 13 data tables carry `icon:` and 17 UI
+modules render them; `tests/content-coverage.test.ts` holds the coverage line.
+
 ---
 
 ## 7. HUD, ability bar and combat overlays
@@ -506,6 +538,12 @@ and their CSS sections.
   timer as a draining rim, and the pattern name + its icon.
 - **Toasts / notifications**: stack with a shared motion curve, tier by importance, and never overlap
   the ability bar or the safe area.
+
+### 7.1 Status — implemented (2026-08-29)
+
+Landed across `064e550` / `d47d9da` / `0412584`: the segmented boss bar with the enrage rim, the
+one-language toast stack out from under the dock, the 44 px sweep and the reduced-motion pass. The
+ability dock's hold-to-inspect from this part became the shared long-press helper Part 9.C reused.
 
 ---
 
@@ -533,6 +571,14 @@ and their CSS sections.
   padding) that `RunSummary`, `RunFailed`, `WaveModifier`, `CorePicker`, `WelcomeBack`,
   `BlessingDraft` and `Keybinds` all adopt — today each rolls its own.
 
+### 8.8 Status — implemented (2026-08-29)
+
+`a734b71` → `5d02c4d`: `NAV_GROUPS` as the single information architecture behind the desktop rail,
+the bottom nav and the mobile sheet (8.A); the shared card primitive (8.B); the equipment tower
+(8.C); the talent SVG link layer (8.D); the blessing draft polish (8.E); the seven-adopter modal
+migration onto one shell, one modal per commit as §11 required (8.F); and the tokenized z-index
+ladder (8.G, guarded by `tests/z-index.test.ts`).
+
 ---
 
 ## 9. Mobile and the Capacitor build
@@ -556,6 +602,17 @@ and their CSS sections.
   documented `npx cap add android` path in `docs/ui-system.md`. Actually adding the Capacitor project
   is out of scope for this plan — the point is that nothing here blocks it.
 
+### 9.1 Status — implemented (2026-08-29)
+
+`1f97f0a` → `79566c0`. Safe-area token quartet in `tokens.css` applied to the HUD, sheet and modal
+shell; the portrait branch (two-row HUD, `100dvh`, full-height sheet); touch hardening plus the
+44 px floor, guarded by `tests/touch-targets.test.ts`; quality tiers with the first-run pick and the
+never-promoting 2-second probe (`Game.tickQualityProbe`, `tests/quality*.test.ts`) behind the
+Settings *Graphics* control; `Camera.setDprCap` with the extents-unchanged rescale guard covered in
+`tests/camera.test.ts`; and Capacitor readiness — `theme-color`, `base: './'`, the offline-build
+network guard and the `## Capacitor` section of `docs/ui-system.md`. The 375×812 acceptance sweep
+(9.F) found and fixed six defects.
+
 ---
 
 ## 10. Performance, verification and docs
@@ -574,6 +631,16 @@ and their CSS sections.
   round-tripping, the spawn ellipse and the range cap.
 - **Docs.** `docs/camera-system.md`, `docs/art-direction.md`, `docs/icon-system.md` written; the
   `AGENTS.md` index and content table updated.
+
+### 10.1 Status — implemented (2026-08-29)
+
+`370dfce` → `61b681d`. **Layer canvases were measured and not built** — the ground is already baked
+once, the additive pass is routed, and two full-size composites per frame would add fill rate to a
+path that is not fill-rate bound; the numbers are in §10.A of `plans/ui-improvements-remaining.md`
+and `docs/performance.md`. `__theTower.bench()` is the harness (10.B), the test guards landed in
+10.C, and the doc set (`performance`, `effects-system`, `ui-system`, `art-direction`,
+`xp-talent-system`, `camera-system`, `AGENTS.md` and these status blocks) is 10.D. Baseline on the
+implemented tree: `npm run typecheck` clean, **878/878** vitest.
 
 ---
 

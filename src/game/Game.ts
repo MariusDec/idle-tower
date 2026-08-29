@@ -104,6 +104,7 @@ import { PacingManager } from '../systems/PacingManager';
 import { CONTRACT_SLOTS, CONTRACT_TUNING } from '../data/contracts';
 import {
   COMBO_TIERS,
+  EARLY_CALL_DELAY_SECONDS,
   EARLY_CALL_GOLD_PER_SECOND,
   MAX_RISK,
   MAX_RISK_CEILING,
@@ -3196,8 +3197,10 @@ export class Game {
    */
   callWaveEarly(): boolean {
     if (!this.canCallWaveEarly()) return false;
-    const skipped = this.waveMgr.intermissionRemaining();
-    this.pacingMgr.noteWaveCalledEarly(skipped);
+    // Plan §7.1: the momentum is the *window's* remainder, not the
+    // intermission's — the window opened when this wave's last enemy spawned.
+    const banked = this.waveMgr.earlyCallRemaining();
+    this.pacingMgr.noteWaveCalledEarly(banked);
     this.waveMgr.callWaveEarly();
     this.state.wave = this.waveMgr.snapshot;
     this.state.pacing = this.pacingMgr.snapshot();
@@ -3249,7 +3252,10 @@ export class Game {
       momentumStreak: this.pacingMgr.momentumStreak,
       momentumCap: MOMENTUM_CAP,
       canCallEarly: this.canCallWaveEarly(),
-      callBonus: this.waveMgr.intermissionRemaining() * EARLY_CALL_GOLD_PER_SECOND,
+      callBonus: this.waveMgr.earlyCallRemaining() * EARLY_CALL_GOLD_PER_SECOND,
+      earlyCallRemaining: this.waveMgr.earlyCallRemaining(),
+      earlyCallWindow: this.waveMgr.earlyCallWindowLength(),
+      earlyCallDelay: EARLY_CALL_DELAY_SECONDS,
       intermissionRemaining: this.waveMgr.intermissionRemaining(),
       intermissionLength: intermissionSecondsForWave(this.waveMgr.currentWave),
       combo,

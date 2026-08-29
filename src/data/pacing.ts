@@ -18,8 +18,8 @@ import type { EnemyType } from '../types';
  * the mirror image — a per-shot payload can be far *too* strong at low fire
  * rate. Nothing in this file is denominated in shots or kills:
  *
- *   - the early-call bonus is `%/second of intermission skipped`, and seconds
- *     of intermission are the same length at every tower size;
+ *   - the early-call bonus is `%/second left on a fixed window`, and a second
+ *     of that window is the same length at every tower size;
  *   - the combo meter's tiers are counted in *kills within a window*, which is
  *     a throughput-proportional quantity by construction: a tower with twice
  *     the fire rate reaches tier 3 twice as fast and holds it just as long, so
@@ -34,7 +34,7 @@ import type { EnemyType } from '../types';
 // ── §7.1 Call the wave early ──────────────────────────────────────────────
 
 /**
- * Gold bonus earned per second of intermission the player skips.
+ * Gold bonus earned per second left on the early-call window.
  *
  * §7.1 says +3%/second capped at +40%. **Both numbers measured about four
  * times too strong** and are cut proportionally, which is the only way to cut
@@ -55,9 +55,10 @@ import type { EnemyType } from '../types';
  * credits none of that. The gold bonus is a garnish on a reward the player has
  * already collected.
  *
- * At 1%/second one call is worth +5% at wave 20 or shallower, +3% to wave 50
- * and +2% past it, so the cap takes two to three consecutive calls at every
- * depth — the streak shape §7.1 describes, at a size the curve can pay for.
+ * At 1%/second a call is worth whatever is left of `EARLY_CALL_WINDOW_SECONDS`
+ * when the button is pressed — in practice +5-12%, since a wave's tail has to
+ * be cleared before the next one can be called. The cap still takes two or
+ * three consecutive calls, which is the streak shape §7.1 describes.
  */
 export const EARLY_CALL_GOLD_PER_SECOND = 0.01;
 
@@ -65,9 +66,37 @@ export const EARLY_CALL_GOLD_PER_SECOND = 0.01;
  * Hard ceiling on accumulated momentum, as a gold fraction.
  *
  * The cap binds on the *momentum counter*, not on a single call — see
- * `EARLY_CALL_GOLD_PER_SECOND` for why it is +6% rather than §7.1's +40%.
+ * `EARLY_CALL_GOLD_PER_SECOND` for why it is a small number rather than
+ * §7.1's +40%. Raised from +6% alongside the switch to a 15 s window: the cap
+ * has to sit a few calls above one call's worth or momentum stops being a
+ * streak and becomes a button that is either pressed or not, and one call is
+ * now worth two to three times what it was.
  */
-export const MOMENTUM_CAP = 0.06;
+export const MOMENTUM_CAP = 0.15;
+
+/**
+ * How long the early-call window stays open once it unlocks, in seconds.
+ *
+ * The window used to *be* the intermission, which is 5 s at its longest and
+ * 2 s deep in a run: the whole reward fit in a pause barely long enough to
+ * react to, and it only ever opened once the field was already empty. It now
+ * opens while the wave is still live (see `EARLY_CALL_DELAY_SECONDS`), so the
+ * call is a real decision — take the next wave on top of this one's stragglers
+ * for the full bonus, or mop up first and let the window drain.
+ */
+export const EARLY_CALL_WINDOW_SECONDS = 15;
+
+/**
+ * How far into a wave the call unlocks, in seconds.
+ *
+ * Gated on the wave's roster being fully spawned as well, and that is not a
+ * detail: a call credits the wave as cleared, so calling with enemies still
+ * queued would hand out the clear *and* delete the enemies that were supposed
+ * to pay for it. Deep waves take ~20 s to finish spawning, so in practice the
+ * last spawn is what opens the window and this delay only binds on the short
+ * waves at the top of a run.
+ */
+export const EARLY_CALL_DELAY_SECONDS = 15;
 
 // ── §7.2 Combo meter ──────────────────────────────────────────────────────
 

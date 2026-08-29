@@ -17,6 +17,7 @@ import { CONTRACT_TUNING } from '../src/data/contracts.ts';
 import {
   COMBO_TIERS,
   EARLY_CALL_GOLD_PER_SECOND,
+  EARLY_CALL_WINDOW_SECONDS,
   MAX_RISK,
   MOMENTUM_CAP,
   RISK_GOLD_PER_STEP,
@@ -664,8 +665,9 @@ console.log(pacingTable());
 console.log(
   `\nCombo tiers: ${COMBO_TIERS.map(t => `${t.kills} kills +${(t.gold * 100).toFixed(0)}%`).join(', ')} `
   + `gold and XP, broken by a ${2}s gap between kills.`
-  + `\nEarly call: +${(EARLY_CALL_GOLD_PER_SECOND * 100).toFixed(0)}% gold per second of `
-  + `intermission skipped, momentum capped at +${(MOMENTUM_CAP * 100).toFixed(0)}%.`
+  + `\nEarly call: +${(EARLY_CALL_GOLD_PER_SECOND * 100).toFixed(0)}% gold per second left on `
+  + `the ${EARLY_CALL_WINDOW_SECONDS}s call window, momentum capped at `
+  + `+${(MOMENTUM_CAP * 100).toFixed(0)}%.`
   + `\nIdle wall-wave drift is zero at every tier, which is the standard Parts 2-6 held.\n`,
 );
 console.log('\n=== Gameplay §7.8 Risk dial: idle wall wave per step (the drift check) ===\n');

@@ -30,6 +30,7 @@ import { ENEMY_DEFS } from '../src/data/enemies';
 import {
   COMBO_TIERS,
   COMBO_WINDOW_SECONDS,
+  EARLY_CALL_DELAY_SECONDS,
   EARLY_CALL_GOLD_PER_SECOND,
   MAX_RISK,
   MOMENTUM_CAP,
@@ -132,6 +133,62 @@ describe('call the wave early (plan §7.1)', () => {
     // The next wave arrived on its own — the streak is over.
     p.noteWaveStarted();
     expect(p.momentumBonus).toBe(0);
+  });
+
+  it('opens the call window mid-wave, once the roster is out and the delay is up', () => {
+    const bus = new EventBus();
+    const enemies = new EnemyManager(bus, makeResources());
+    enemies.setBounds(ARENA_W, ARENA_H);
+    const waves = new WaveManager(bus, enemies, ARENA_W, ARENA_H, () => {}, () => {});
+
+    // Wave 40 takes ~20 s to finish spawning, and nothing kills the enemies
+    // here — so the field stays full and the wave never clears on its own.
+    waves.startWave(41);
+    waves.resumeSpawning();
+    expect(waves.canCallEarly()).toBe(false);
+
+    for (let i = 0; i < 60 / DT && !waves.canCallEarly(); i++) waves.tick(DT);
+
+    // The call is live with the wave still running and enemies still alive.
+    expect(waves.snapshot.intermission).toBe(false);
+    expect(enemies.aliveCount()).toBeGreaterThan(0);
+    expect(waves.snapshot.elapsed).toBeGreaterThanOrEqual(EARLY_CALL_DELAY_SECONDS);
+    expect(waves.snapshot.spawning).toBe(false);
+    expect(waves.earlyCallRemaining()).toBeGreaterThan(0);
+
+    // Calling credits the wave it abandons and starts the next one on the spot,
+    // stragglers and all.
+    let cleared = -1;
+    bus.on('wave_cleared', (w: unknown) => { cleared = w as number; });
+    const banked = waves.callWaveEarly();
+    expect(banked).toBeGreaterThan(0);
+    expect(cleared).toBe(41);
+    expect(waves.currentWave).toBe(42);
+    expect(waves.snapshot.intermission).toBe(false);
+    expect(enemies.aliveCount()).toBeGreaterThan(0);
+    // The new wave closes the window until it earns its own.
+    expect(waves.earlyCallRemaining()).toBe(0);
+  });
+
+  it('opens a full window on a wave cleared faster than the delay', () => {
+    const bus = new EventBus();
+    const enemies = new EnemyManager(bus, makeResources());
+    enemies.setBounds(ARENA_W, ARENA_H);
+    const waves = new WaveManager(bus, enemies, ARENA_W, ARENA_H, () => {}, () => {});
+
+    waves.startWave(3);
+    clearToIntermission(waves, enemies);
+    expect(waves.snapshot.intermission).toBe(true);
+    // A fast clear is not punished for never reaching the mid-wave unlock, and
+    // the window is far longer than the 3 s intermission it used to be worth.
+    expect(waves.earlyCallRemaining()).toBe(waves.earlyCallWindowLength());
+    expect(waves.earlyCallRemaining()).toBeGreaterThan(waves.intermissionRemaining());
+
+    // It drains through the intermission, and the call banks what is left of
+    // the window rather than what is left of the intermission.
+    waves.tick(DT);
+    const banked = waves.callWaveEarly();
+    expect(banked).toBeCloseTo(waves.earlyCallWindowLength() - DT, 6);
   });
 
   it('is refused while the intermission is paused, which is what a modal does', () => {

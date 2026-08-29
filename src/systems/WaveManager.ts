@@ -11,7 +11,12 @@ import {
 } from '../data/formulas';
 import { spawnPointOnEllipse } from '../data/arena';
 import { ENEMY_BEHAVIOR, ENEMY_DEFS, spawnPoolForWave } from '../data/enemies';
-import { BASE_INTERMISSION_SECONDS, ENEMY_THREAT_CLASS } from '../data/pacing';
+import {
+  BASE_INTERMISSION_SECONDS,
+  EARLY_CALL_DELAY_SECONDS,
+  EARLY_CALL_WINDOW_SECONDS,
+  ENEMY_THREAT_CLASS,
+} from '../data/pacing';
 import type { EnemyManager } from './EnemyManager';
 import { eliteChanceForWave } from './EnemyManager';
 import { randomBetween } from '../utils/math';
@@ -92,6 +97,18 @@ export class WaveManager {
   private spawnQueue: WavePlanEntry[] = [];
   /** The next wave's roster, rolled at the top of the intermission. */
   private plannedWave: { wave: number; entries: WavePlanEntry[] } | null = null;
+  /**
+   * Seconds left on the §7.1 early-call window, 0 when it is not running.
+   *
+   * Opened while the wave is still live — `EARLY_CALL_DELAY_SECONDS` in, once
+   * the roster has finished spawning — so it ticks down across the tail of the
+   * wave as well as the pause after it. Deliberately not part of `WaveState`:
+   * a window that survived a reload would pay for a wave fought in a previous
+   * session, so a restored wave simply opens its own on schedule.
+   */
+  private earlyCallWindow = 0;
+  /** Whether this wave's window has already opened — it opens once, not again. */
+  private earlyCallOpened = false;
 
   constructor(
     bus: EventBus,
@@ -350,6 +367,10 @@ export class WaveManager {
     this.state.number = wave;
     this.thiefSpawnedThisWave = false;
     this.spawnQueue = [];
+    // A new wave has enemies still to come, so the previous window is over
+    // whether or not it ran out — `spawnOne` opens the next one.
+    this.earlyCallWindow = 0;
+    this.earlyCallOpened = false;
     // Resets the wave's 15% theft ceiling as well as the manager's notion of
     // which wave is running (plan §2.6).
     this.enemies.beginWave(wave);
@@ -368,6 +389,9 @@ export class WaveManager {
       this.onWaveCleared(wave);
       this.bus.emit('wave_cleared', wave);
       this.planNextWave();
+      // A skipped wave spawns nothing, so its last spawn is now: the call
+      // window opens on the same beat it would have if the roster had run out.
+      this.openEarlyCallWindow();
       this.bus.emit('toast', { kind: 'milestone', text: `Wave ${wave} skipped!`, life: 2 });
       return;
     }
@@ -412,6 +436,8 @@ export class WaveManager {
 
   reset(): void {
     this.state = this.makeInitialState();
+    this.earlyCallWindow = 0;
+    this.earlyCallOpened = false;
     this.enemyCountMult = 1;
     this.thiefSpawnedThisWave = false;
     this.spawnQueue = [];
@@ -442,6 +468,8 @@ export class WaveManager {
       enrageStacks: 0,
     };
     this.clearEnrage();
+    this.earlyCallWindow = 0;
+    this.earlyCallOpened = false;
     this.enemyCountMult = 1;
     this.thiefSpawnedThisWave = false;
     this.spawnQueue = [];
@@ -479,6 +507,11 @@ export class WaveManager {
 
   setState(s: WaveState): void {
     this.state = { ...s, elapsed: s.elapsed ?? 0, enrageStacks: s.enrageStacks ?? 0 };
+    // See `earlyCallWindow`: a restored wave has no last-spawn moment to date
+    // the window from. An intermission restored mid-run therefore pays nothing
+    // until the next wave's roster runs out.
+    this.earlyCallWindow = 0;
+    this.earlyCallOpened = false;
     // A restored wave has no roster: live enemies were never persisted, so
     // whatever is left to spawn is rolled fresh by `spawnOne`.
     this.spawnQueue = [];
@@ -529,6 +562,12 @@ export class WaveManager {
   }
 
   tick(dt: number): void {
+    // The window spans the wave's tail *and* the intermission, so it is decayed
+    // before either branch rather than inside one of them.
+    if (this.earlyCallWindow > 0 && !this.intermissionPaused) {
+      this.earlyCallWindow = Math.max(0, this.earlyCallWindow - dt);
+    }
+
     if (this.state.intermission) {
       if (!this.intermissionPaused) {
         this.state.intermissionTimer -= dt;
@@ -550,23 +589,46 @@ export class WaveManager {
       }
     }
 
+    this.maybeOpenEarlyCallWindow();
+
     if (
       !this.state.spawning &&
       this.state.enemiesSpawned >= this.state.enemiesToSpawn &&
       this.enemies.aliveCount() === 0
     ) {
-      const clearedWave = this.state.number;
-      this.onWaveCleared(clearedWave);
-      this.bus.emit('wave_cleared', clearedWave);
+      this.concludeWave(true);
+    }
+  }
+
+  /**
+   * Credit the running wave as cleared and roll what comes next.
+   *
+   * `openIntermission` is false on the one path that does not want the pause:
+   * an early call made while the wave's stragglers are still on the field,
+   * which starts the next wave on the same frame. The wave is credited there
+   * even though enemies are alive — the leftovers carry into the next wave and
+   * still have to be killed, so the call buys tempo at the price of fighting
+   * two rosters at once, which is the whole trade being offered.
+   */
+  private concludeWave(openIntermission: boolean): void {
+    const clearedWave = this.state.number;
+    this.onWaveCleared(clearedWave);
+    this.bus.emit('wave_cleared', clearedWave);
+    this.state.elapsed = 0;
+    this.state.enrageStacks = 0;
+    this.clearEnrage();
+    if (openIntermission) {
       this.state.intermission = true;
       this.state.intermissionTimer = WAVE_INTERMISSION * this.intermissionMultiplier;
-      this.state.elapsed = 0;
-      this.state.enrageStacks = 0;
-      this.clearEnrage();
-      // Plan §7.3: the intermission is a preparation window, so what it is
-      // preparing for has to exist by the time it opens.
-      this.planNextWave();
+      // A wave killed faster than `EARLY_CALL_DELAY_SECONDS` never reached the
+      // unlock, and it would be a strange reward for a fast clear if the call
+      // paid nothing. An empty field cannot be exploited by calling, so the
+      // window simply opens here instead.
+      this.openEarlyCallWindow();
     }
+    // Plan §7.3: the intermission is a preparation window, so what it is
+    // preparing for has to exist by the time it opens.
+    this.planNextWave();
   }
 
   // ── §7.1 Call the wave early ──────────────────────────────────────────────
@@ -577,34 +639,81 @@ export class WaveManager {
     return Math.max(0, this.state.intermissionTimer);
   }
 
-  /**
-   * Whether `callWaveEarly` would do anything right now.
-   *
-   * A paused intermission is excluded on purpose: the pause exists because a
-   * draft or a mutator offer is on screen, and a keypress that skipped the
-   * decision the pause was protecting would be the opposite of what the pause
-   * is for.
-   */
-  canCallEarly(): boolean {
-    return this.state.intermission
-      && !this.intermissionPaused
-      && this.state.intermissionTimer > 0;
+  /** Start the early-call window. Opens once per wave, and never re-opens. */
+  private openEarlyCallWindow(): void {
+    if (this.earlyCallOpened) return;
+    this.earlyCallOpened = true;
+    this.earlyCallWindow = EARLY_CALL_WINDOW_SECONDS;
   }
 
   /**
-   * Start the next wave now, returning the intermission seconds skipped.
+   * Open the window when the wave has run `EARLY_CALL_DELAY_SECONDS` *and* has
+   * nothing left to spawn — see `EARLY_CALL_DELAY_SECONDS` for why both.
+   */
+  private maybeOpenEarlyCallWindow(): void {
+    if (this.earlyCallOpened) return;
+    if (this.state.spawning) return;
+    if (this.state.enemiesSpawned < this.state.enemiesToSpawn) return;
+    if (this.state.elapsed < EARLY_CALL_DELAY_SECONDS) return;
+    this.openEarlyCallWindow();
+  }
+
+  /**
+   * Seconds left on the early-call window — the size of the momentum a call
+   * would bank, in seconds.
    *
-   * Returns 0 and does nothing when the intermission is not callable. The
-   * caller banks the momentum *before* calling, because `startWave` resolves
-   * the new wave's stats and the bonus is meant to apply to the wave it bought.
+   * Runs down to 0 on its own; a call after that still starts the wave, it
+   * just pays nothing.
+   */
+  earlyCallRemaining(): number {
+    return Math.max(0, this.earlyCallWindow);
+  }
+
+  /** The window's full length, for the readouts that draw it as a bar. */
+  earlyCallWindowLength(): number {
+    return EARLY_CALL_WINDOW_SECONDS;
+  }
+
+  /**
+   * Whether `callWaveEarly` would do anything right now.
+   *
+   * Two ways in. During the intermission it is the old behaviour: skip the
+   * pause. During a *live* wave it is open from the moment the window unlocks
+   * — the point of the change, since a button that only lights up once the
+   * field is empty is a button nobody has time to press.
+   *
+   * A paused intermission is excluded on purpose, and so is a paused spawner:
+   * both pauses exist because a draft or a mutator offer is on screen, and a
+   * keypress that skipped the decision the pause was protecting would be the
+   * opposite of what the pause is for. A live boss is excluded too — the
+   * encounter owns the wave it belongs to, and calling out from under it would
+   * leave its bar attached to a wave that has already been credited.
+   */
+  canCallEarly(): boolean {
+    if (this.intermissionPaused) return false;
+    if (this.state.intermission) return this.state.intermissionTimer > 0;
+    if (!this.earlyCallOpened || this.spawnPaused) return false;
+    return this.enemies.bossAliveCount() === 0;
+  }
+
+  /**
+   * Start the next wave now, returning the seconds of window it banked.
+   *
+   * Returns 0 and does nothing when the call is not available. The caller banks
+   * the momentum *before* calling, because `startWave` resolves the new wave's
+   * stats and the bonus is meant to apply to the wave it bought.
    */
   callWaveEarly(): number {
     if (!this.canCallEarly()) return 0;
-    const skipped = this.state.intermissionTimer;
+    const banked = this.earlyCallRemaining();
+    // Called mid-wave the current wave never reaches the clear check, so it is
+    // credited here — with its stragglers left on the field, which is the
+    // price of the tempo (`concludeWave`).
+    if (!this.state.intermission) this.concludeWave(false);
     this.state.intermissionTimer = 0;
     const forceAdvance = isBossWave(this.state.number);
     this.startWave(this.state.number + (this.state.autoProgress || forceAdvance ? 1 : 0));
-    return skipped;
+    return banked;
   }
 
   private spawnOne(): void {

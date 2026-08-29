@@ -23,8 +23,12 @@ export interface PacingHudData {
   momentumCap: number;
   /** True when Space / the HUD button would start the next wave now. */
   canCallEarly: boolean;
-  /** Gold bonus the *current* moment of intermission would bank. */
+  /** Gold bonus a call placed right now would bank. */
   callBonus: number;
+  /** Seconds left on the early-call window, its full length, and its delay. */
+  earlyCallRemaining: number;
+  earlyCallWindow: number;
+  earlyCallDelay: number;
   intermissionRemaining: number;
   intermissionLength: number;
   /** Kill combo: count, tier, and how full the drain bar is. */

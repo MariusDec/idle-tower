@@ -17,6 +17,9 @@ import { TOWER_LEVEL_CAP, TOWER_XP_TABLE, talentPointsAtLevel } from '../src/dat
 import { MAX_RISK_CEILING } from '../src/data/pacing';
 import { AP_PERK_BY_ID, TP_PERK_BY_ID } from '../src/data/prestige';
 import { UPGRADE_BY_ID } from '../src/data/upgrades';
+import { PASSIVE_BY_ID, PASSIVE_MAX_LEVEL } from '../src/data/passiveAbilities';
+import { passiveWaveXpRef, passiveXpForLevel } from '../src/data/xpTables';
+import { expectedWaveSeconds } from '../src/data/formulas';
 
 const STORAGE_KEY = 'the-tower-save';
 
@@ -781,5 +784,63 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     expect(loaded.upgrades.damage).toBe(12);
     expect(loaded.prestige.tpSpent.tp_head_start).toBe(4);
     expect(loaded.prestige.apSpent.ap_warlord).toBe(2);
+  });
+});
+
+/**
+ * Offline passive-ability XP pacing.
+ *
+ * `applyOfflineProgress` used to re-derive passive XP by walking
+ * `result.wavesCleared` waves *forward from the current wave with no ceiling*,
+ * while the walk that produced that count caps at the run's deepest wave and
+ * farms there. Per-wave passive XP grows with the square of depth, so a long
+ * absence at wave 15 was paid as if it had cleared waves 15..5015 — thousands
+ * of times the real payout, enough to max every unlocked passive overnight.
+ */
+describe('offline passive XP', () => {
+  function offlineState(wave: number): GameState {
+    const s = makeState();
+    s.wave = { number: wave, highestWave: wave };
+    s.stats = { ...s.stats, lifetimeHighestWave: wave };
+    s.passiveAbilities = { passive_marksmanship: { level: 0, xp: 0, unlocked: true } };
+    // Enough DPS that the walk is paced by the spawn-cadence floor rather than
+    // by enemy HP: the fastest offline can ever run, so what it pays is the
+    // *lower* bound on time-to-max at this depth.
+    s.tower = { ...s.tower, baseDamage: 5000, fireRate: 5 };
+    return s;
+  }
+
+  /** Passive XP an absence of `hours` at `wave` pays out. */
+  function offlinePassiveXp(wave: number, hours: number): number {
+    const mgr = new SaveManager(stubBus, { getRP: () => 0 });
+    mgr.save(offlineState(wave));
+    const persisted = mgr.load()!;
+    persisted.savedAt -= hours * 3600 * 1000;
+    return mgr.computeOfflineProgress(persisted, 1).passiveXpEarned;
+  }
+
+  it('never pays for depth past the run\'s deepest wave', () => {
+    // The walk stops climbing at the ceiling, so an absence twice as long pays
+    // at most twice as much — not the quadratic-in-depth blowup of the old
+    // forward walk. (Both absences are long enough to sit at the wave cap.)
+    const short = offlinePassiveXp(15, 8);
+    const long = offlinePassiveXp(15, 24);
+    expect(long).toBeLessThanOrEqual(short * 2);
+  });
+
+  it('takes on the order of two weeks to max a passive at its unlock depth', () => {
+    const wave = 15;
+    const def = PASSIVE_BY_ID.passive_marksmanship;
+    let toMax = 0;
+    for (let l = 1; l <= PASSIVE_MAX_LEVEL; l++) toMax += passiveXpForLevel(def, l);
+
+    // A day of play: 12h away (the idle cap trims it) plus an hour at the
+    // keyboard, where a wave pays its full XP over its expected duration.
+    const offline = offlinePassiveXp(wave, 12);
+    const online = (passiveWaveXpRef(wave) / expectedWaveSeconds(wave)) * 3600;
+    const days = toMax / (offline + online);
+
+    expect(days).toBeGreaterThan(7);
+    expect(days).toBeLessThan(28);
   });
 });
