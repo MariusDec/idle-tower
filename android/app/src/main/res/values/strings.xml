@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">The Tower</string>
+    <string name="title_activity_main">The Tower</string>
+    <string name="package_name">com.mariusdonci.thetower</string>
+    <string name="custom_url_scheme">com.mariusdonci.thetower</string>
+</resources>

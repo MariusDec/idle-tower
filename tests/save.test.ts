@@ -9,7 +9,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { SaveManager } from '../src/systems/SaveManager';
+import { SaveManager, type PersistentState } from '../src/systems/SaveManager';
+import { MemorySaveStore, setSaveStore } from '../src/systems/storage';
 import { ContractManager } from '../src/systems/ContractManager';
 import { PacingManager } from '../src/systems/PacingManager';
 import type { GameState } from '../src/types';
@@ -23,31 +24,28 @@ import { expectedWaveSeconds } from '../src/data/formulas';
 
 const STORAGE_KEY = 'the-tower-save';
 
-class MemoryStorage {
-  private data = new Map<string, string>();
-  getItem(k: string): string | null {
-    return this.data.has(k) ? this.data.get(k)! : null;
-  }
-  setItem(k: string, v: string): void {
-    this.data.set(k, String(v));
-  }
-  removeItem(k: string): void {
-    this.data.delete(k);
-  }
-  clear(): void {
-    this.data.clear();
-  }
-}
-
-let storage: MemoryStorage;
+let store: MemorySaveStore;
 
 beforeEach(() => {
-  storage = new MemoryStorage();
-  vi.stubGlobal('localStorage', storage);
+  store = new MemorySaveStore();
+  setSaveStore(store);
 });
 
 /** A minimal bus stub: `SaveManager` only subscribes, never emits. */
 const stubBus = { on: () => {} };
+
+/** Seed the backend with a raw save, the way a previous version would have left it. */
+async function seed(raw: string): Promise<void> {
+  await store.set(STORAGE_KEY, raw);
+}
+
+/** A fresh manager that has read what is in the backend — the boot path, in one line. */
+async function loadFresh(): Promise<PersistentState | null> {
+  const mgr = new SaveManager(stubBus);
+  await mgr.hydrate();
+  await mgr.hydrate();
+  return mgr.load();
+}
 
 function makeState(): GameState {
   return {
@@ -106,8 +104,9 @@ function makeState(): GameState {
 }
 
 describe('save round-trip', () => {
-  it('restores the fields it persisted', () => {
+  it('restores the fields it persisted', async () => {
     const mgr = new SaveManager(stubBus, { getRP: () => 42 });
+    await mgr.hydrate();
     expect(mgr.save(makeState())).toBe(true);
 
     const loaded = mgr.load();
@@ -136,8 +135,9 @@ describe('save round-trip', () => {
     ]);
   });
 
-  it('omits the completion log entirely when the run has none', () => {
+  it('omits the completion log entirely when the run has none', async () => {
     const mgr = new SaveManager(stubBus);
+    await mgr.hydrate();
     const state = makeState();
     delete (state.contracts as { log?: unknown }).log;
     expect(mgr.save(state)).toBe(true);
@@ -147,16 +147,43 @@ describe('save round-trip', () => {
     expect(loaded!.contracts).not.toHaveProperty('log');
   });
 
-  it('discards a corrupt save rather than loading garbage', () => {
-    storage.setItem(STORAGE_KEY, '{not json');
+  it('discards a corrupt save rather than loading garbage', async () => {
+    await seed('{not json');
     const mgr = new SaveManager(stubBus);
+    await mgr.hydrate();
     expect(mgr.load()).toBeNull();
-    expect(storage.getItem(STORAGE_KEY)).toBeNull();
+    await mgr.flushNow();
+    expect(await store.get(STORAGE_KEY)).toBeNull();
   });
 
-  it('rejects a save from an unknown future version', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify({ version: 999, savedAt: Date.now() }));
-    expect(new SaveManager(stubBus).load()).toBeNull();
+  it('adopts a pre-move localStorage save exactly once', async () => {
+    // Produce a genuine v21 payload rather than hand-rolling one: save through a
+    // manager, take the bytes it wrote, then start over with an empty backend.
+    const seedMgr = new SaveManager(stubBus);
+    await seedMgr.hydrate();
+    seedMgr.save(makeState());
+    await seedMgr.flushNow();
+    const legacy = (await store.get(STORAGE_KEY))!;
+
+    store = new MemorySaveStore();
+    setSaveStore(store);
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => (k === STORAGE_KEY ? legacy : null),
+      setItem: () => {},
+      removeItem: () => {},
+    });
+
+    const mgr = new SaveManager(stubBus);
+    await mgr.hydrate();
+    expect(mgr.load()).not.toBeNull();
+    // Adopted *into* the new backend, so the next boot needs no localStorage.
+    expect(await store.get(STORAGE_KEY)).toBe(legacy);
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects a save from an unknown future version', async () => {
+    await seed(JSON.stringify({ version: 999, savedAt: Date.now() }));
+    expect((await loadFresh())).toBeNull();
   });
 });
 
@@ -178,27 +205,28 @@ describe('migration ladder', () => {
     stats: { enemiesKilled: 90 },
   };
 
-  it('walks a v2 save all the way to the current version', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify(v2Save));
-    const loaded = new SaveManager(stubBus).load();
+  it('walks a v2 save all the way to the current version', async () => {
+    await seed(JSON.stringify(v2Save));
+    const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
     expect(loaded!.version).toBeGreaterThanOrEqual(14);
   });
 
-  it('preserves the v2 payload through every step of the ladder', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify(v2Save));
-    const loaded = new SaveManager(stubBus).load()!;
+  it('preserves the v2 payload through every step of the ladder', async () => {
+    await seed(JSON.stringify(v2Save));
+    const loaded = (await loadFresh())!;
     expect(loaded.resources.gold).toBe(500);
     expect(loaded.upgrades.damage).toBe(5);
     expect(loaded.wave.number).toBe(12);
     expect(loaded.stats.enemiesKilled).toBe(90);
   });
 
-  it('accepts every version the ladder claims to handle', () => {
+  it('accepts every version the ladder claims to handle', async () => {
     for (const version of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) {
-      storage.clear();
-      storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version }));
-      const loaded = new SaveManager(stubBus).load();
+      store = new MemorySaveStore();
+      setSaveStore(store);
+      await seed(JSON.stringify({ ...v2Save, version }));
+      const loaded = (await loadFresh());
       expect(loaded, `version ${version} should load`).not.toBeNull();
       expect(loaded!.version).toBeGreaterThanOrEqual(14);
     }
@@ -209,9 +237,9 @@ describe('migration ladder', () => {
    * is the pair: a v9 save with no blessings gets an empty run seeded, and a
    * v10 save with blessings held keeps every stack through the ladder.
    */
-  it('seeds an empty blessing run for a v9 save', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 9 }));
-    const loaded = new SaveManager(stubBus).load()!;
+  it('seeds an empty blessing run for a v9 save', async () => {
+    await seed(JSON.stringify({ ...v2Save, version: 9 }));
+    const loaded = (await loadFresh())!;
     expect(loaded.version).toBe(21);
     expect(loaded.blessings).toEqual({
       held: {},
@@ -222,9 +250,9 @@ describe('migration ladder', () => {
     });
   });
 
-  it('carries blessings held in a v9 save through to v10', () => {
+  it('carries blessings held in a v9 save through to v10', async () => {
     const held = { bl_frost: 1, bl_shatter: 1, bl_cruelty: 3 };
-    storage.setItem(STORAGE_KEY, JSON.stringify({
+    await seed(JSON.stringify({
       ...v2Save,
       version: 9,
       blessings: {
@@ -235,7 +263,7 @@ describe('migration ladder', () => {
         wavesClearedThisRun: 19,
       },
     }));
-    const loaded = new SaveManager(stubBus).load()!;
+    const loaded = (await loadFresh())!;
     expect(loaded.version).toBe(21);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
@@ -248,21 +276,21 @@ describe('migration ladder', () => {
    * risk 0 with no momentum banked, which is exactly what §7.8 requires the
    * migration to mean: risk 0 reproduces the curve the save was playing.
    */
-  it('seeds a risk-0 pacing block for a v13 save', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13 }));
-    const loaded = new SaveManager(stubBus).load()!;
+  it('seeds a risk-0 pacing block for a v13 save', async () => {
+    await seed(JSON.stringify({ ...v2Save, version: 13 }));
+    const loaded = (await loadFresh())!;
     expect(loaded.version).toBe(21);
     expect(loaded.pacing).toEqual({
       risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
     });
   });
 
-  it('carries the risk dial and momentum through a v14 round trip', () => {
+  it('carries the risk dial and momentum through a v14 round trip', async () => {
     const pacing = {
       risk: 4, committedRisk: 3, momentum: 0.045, momentumWaves: 2, comboBest: 61,
     };
-    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 13, pacing }));
-    const loaded = new SaveManager(stubBus).load()!;
+    await seed(JSON.stringify({ ...v2Save, version: 13, pacing }));
+    const loaded = (await loadFresh())!;
     expect(loaded.pacing).toEqual(pacing);
 
     // And the real manager takes it back with both lifetimes intact: the dial
@@ -281,16 +309,16 @@ describe('migration ladder', () => {
    * has simply not been handed any contracts, and one written mid-contract
    * keeps every slot's progress through the ladder.
    */
-  it('seeds an empty contract run for a v11 save', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11 }));
-    const loaded = new SaveManager(stubBus).load()!;
+  it('seeds an empty contract run for a v11 save', async () => {
+    await seed(JSON.stringify({ ...v2Save, version: 11 }));
+    const loaded = (await loadFresh())!;
     expect(loaded.version).toBe(21);
     expect(loaded.contracts).toEqual({
       active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
     });
   });
 
-  it('carries contracts in progress from a v11 save through to v12', () => {
+  it('carries contracts in progress from a v11 save through to v12', async () => {
     const contracts = {
       active: [
         { defId: 'ct_culling', uid: 9, target: 220, progress: 140, drawnAtWave: 21 },
@@ -302,8 +330,8 @@ describe('migration ladder', () => {
       apBonusPct: 0.09,
       uidSeq: 11,
     };
-    storage.setItem(STORAGE_KEY, JSON.stringify({ ...v2Save, version: 11, contracts }));
-    const loaded = new SaveManager(stubBus).load()!;
+    await seed(JSON.stringify({ ...v2Save, version: 11, contracts }));
+    const loaded = (await loadFresh())!;
     expect(loaded.version).toBe(21);
     expect(loaded.contracts).toEqual(contracts);
 
@@ -323,8 +351,8 @@ describe('migration ladder', () => {
    * became `rocket_barrage`). The saved state and its auto-cast toggle must
    * reappear under the new key with their values untouched.
    */
-  it('renames multishot to rocket_barrage in a v15 save', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify({
+  it('renames multishot to rocket_barrage in a v15 save', async () => {
+    await seed(JSON.stringify({
       ...v2Save,
       version: 15,
       abilities: {
@@ -332,7 +360,7 @@ describe('migration ladder', () => {
       },
       prestige: { autoCastEnabled: { multishot: false } },
     }));
-    const loaded = new SaveManager(stubBus).load()!;
+    const loaded = (await loadFresh())!;
     expect(loaded.version).toBe(21);
     expect(loaded.abilities.rocket_barrage).toEqual({
       level: 3, xp: 0, cooldown: 0, active: false, activeTimer: 0,
@@ -345,14 +373,14 @@ describe('migration ladder', () => {
    * v16 -> v17 is the levelling redesign. The old 0-based level is restated
    * onto the new 1-based curve, XP is restated, and all talents are refunded.
    */
-  it('restates level 3 (0-based) to level 4 (1-based) with correct XP', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify({
+  it('restates level 3 (0-based) to level 4 (1-based) with correct XP', async () => {
+    await seed(JSON.stringify({
       ...v2Save,
       version: 16,
       towerXp: { level: 3, xp: 900, totalXpEarned: 1000, unspentTalentPoints: 3 },
       talents: { allocated: { power_core: 2 } },
     }));
-    const loaded = new SaveManager(stubBus).load()!;
+    const loaded = (await loadFresh())!;
     expect(loaded.version).toBe(21);
     expect(loaded.towerXp.level).toBe(4); // 3 + 1 (0-based -> 1-based)
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[4]);
@@ -360,25 +388,25 @@ describe('migration ladder', () => {
     expect(loaded.talents.allocated).toEqual({});
   });
 
-  it('clamps level 500 to TOWER_LEVEL_CAP', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify({
+  it('clamps level 500 to TOWER_LEVEL_CAP', async () => {
+    await seed(JSON.stringify({
       ...v2Save,
       version: 16,
       towerXp: { level: 500, xp: 999999999, totalXpEarned: 1000000000, unspentTalentPoints: 500 },
       talents: { allocated: {} },
     }));
-    const loaded = new SaveManager(stubBus).load()!;
+    const loaded = (await loadFresh())!;
     expect(loaded.version).toBe(21);
     expect(loaded.towerXp.level).toBe(TOWER_LEVEL_CAP);
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[TOWER_LEVEL_CAP]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(TOWER_LEVEL_CAP));
   });
 
-  it('treats missing towerXp as level 0 -> level 1', () => {
+  it('treats missing towerXp as level 0 -> level 1', async () => {
     const save: Record<string, unknown> = { ...v2Save, version: 16 };
     delete save.towerXp;
-    storage.setItem(STORAGE_KEY, JSON.stringify(save));
-    const loaded = new SaveManager(stubBus).load()!;
+    await seed(JSON.stringify(save));
+    const loaded = (await loadFresh())!;
     expect(loaded.towerXp.level).toBe(1);
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[1]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(1));
@@ -390,30 +418,31 @@ describe('migration ladder', () => {
    * unlock is not preserved — the v18 passive set is built fresh from the
    * new table, so any carried state must be discarded on load.
    */
-  it('wipes passiveAbilities when migrating a v17 save', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify({
+  it('wipes passiveAbilities when migrating a v17 save', async () => {
+    await seed(JSON.stringify({
       ...v2Save,
       version: 17,
       passiveAbilities: { marksmanship: { level: 5, xp: 200, unlocked: true } },
     }));
-    const loaded = new SaveManager(stubBus).load()!;
+    const loaded = (await loadFresh())!;
     expect(loaded.version).toBe(21);
     expect(loaded.passiveAbilities).toEqual({});
   });
 
-  it('fills in the enrage clock older saves predate', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify(v2Save));
-    const loaded = new SaveManager(stubBus).load()!;
+  it('fills in the enrage clock older saves predate', async () => {
+    await seed(JSON.stringify(v2Save));
+    const loaded = (await loadFresh())!;
     expect(loaded.wave.elapsed).toBe(0);
     expect(loaded.wave.enrageStacks).toBe(0);
   });
 
-  it('survives a full save -> load -> save -> load cycle', () => {
+  it('survives a full save -> load -> save -> load cycle', async () => {
     const mgr = new SaveManager(stubBus, { getRP: () => 3 });
+    await mgr.hydrate();
     mgr.save(makeState());
     const once = mgr.load()!;
-    storage.setItem(STORAGE_KEY, JSON.stringify(once));
-    const twice = new SaveManager(stubBus).load()!;
+    await seed(JSON.stringify(once));
+    const twice = (await loadFresh())!;
     expect(twice.resources).toEqual(once.resources);
     expect(twice.upgrades).toEqual(once.upgrades);
     expect(twice.stats).toEqual(once.stats);
@@ -421,8 +450,9 @@ describe('migration ladder', () => {
 });
 
 describe('write cadence (plan §5.7)', () => {
-  it('coalesces a burst of requests into a single deferred write', () => {
+  it('coalesces a burst of requests into a single deferred write', async () => {
     const mgr = new SaveManager(stubBus);
+    await mgr.hydrate();
     const state = makeState();
     let writes = 0;
     const onSave = () => (writes++, true);
@@ -440,8 +470,9 @@ describe('write cadence (plan §5.7)', () => {
     expect(mgr.hasPendingSave).toBe(false);
   });
 
-  it('still auto-saves on the slow timer when nothing requested a write', () => {
+  it('still auto-saves on the slow timer when nothing requested a write', async () => {
     const mgr = new SaveManager(stubBus);
+    await mgr.hydrate();
     const state = makeState();
     let writes = 0;
     const onSave = () => (writes++, true);
@@ -452,8 +483,9 @@ describe('write cadence (plan §5.7)', () => {
     expect(writes).toBe(1);
   });
 
-  it('clears the pending flag on a direct save, so no duplicate write follows', () => {
+  it('clears the pending flag on a direct save, so no duplicate write follows', async () => {
     const mgr = new SaveManager(stubBus);
+    await mgr.hydrate();
     const state = makeState();
     mgr.requestSave();
     expect(mgr.save(state)).toBe(true);
@@ -491,9 +523,9 @@ describe('v19 watch block', () => {
   };
 
   // 1. v18 blob loads to v19 with a well-formed watch block.
-  it('migrates a v18 save to v19 and seeds a well-formed watch block', () => {
-    storage.setItem(STORAGE_KEY, JSON.stringify({ ...minimalSave, version: 18 }));
-    const loaded = new SaveManager(stubBus).load();
+  it('migrates a v18 save to v19 and seeds a well-formed watch block', async () => {
+    await seed(JSON.stringify({ ...minimalSave, version: 18 }));
+    const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
     expect(loaded!.version).toBe(21);
     expect(typeof loaded!.watch).toBe('object');
@@ -506,7 +538,7 @@ describe('v19 watch block', () => {
   });
 
   // 2. Malformed watch is repaired, not rejected.
-  it('repairs a malformed watch block rather than rejecting the save', () => {
+  it('repairs a malformed watch block rather than rejecting the save', async () => {
     // Construct a v19 blob whose watch is broken in three places at once:
     //   - `completed` is missing entirely (normalizeWatch resets to [])
     //   - `counters.killsByType` is missing (resets to {})
@@ -523,8 +555,8 @@ describe('v19 watch block', () => {
         },
       },
     };
-    storage.setItem(STORAGE_KEY, JSON.stringify(malformed));
-    const loaded = new SaveManager(stubBus).load();
+    await seed(JSON.stringify(malformed));
+    const loaded = (await loadFresh());
     expect(loaded, 'save should load — normalizeWatch repairs, does not reject').not.toBeNull();
     expect(loaded!.version).toBe(21);
 
@@ -546,7 +578,7 @@ describe('v19 watch block', () => {
   });
 
   // 3. Round trip preserves completed and every counter.
-  it('round-trips completed and every counter through save and load', () => {
+  it('round-trips completed and every counter through save and load', async () => {
     const state = {
       ...makeState(),
       watch: {
@@ -563,6 +595,7 @@ describe('v19 watch block', () => {
       },
     } as unknown as GameState;
     const mgr = new SaveManager(stubBus);
+    await mgr.hydrate();
     expect(mgr.save(state)).toBe(true);
     const loaded = mgr.load();
     expect(loaded).not.toBeNull();
@@ -578,7 +611,7 @@ describe('v19 watch block', () => {
 
   // 4. The snapshot does not alias: mutating the live state after save does
   //    not change what was written.
-  it('snapshots the watch block by value, not by reference', () => {
+  it('snapshots the watch block by value, not by reference', async () => {
     const state = {
       ...makeState(),
       watch: {
@@ -595,6 +628,7 @@ describe('v19 watch block', () => {
       },
     } as unknown as GameState;
     const mgr = new SaveManager(stubBus);
+    await mgr.hydrate();
     expect(mgr.save(state)).toBe(true);
 
     // Now mutate the live state — this must not reach the saved blob.
@@ -626,7 +660,7 @@ describe('v19→v20 ability level clamp', () => {
     stats: { enemiesKilled: 90 },
   };
 
-  it('migrates a v19 save to v20 and clamps ability levels to their def caps', () => {
+  it('migrates a v19 save to v20 and clamps ability levels to their def caps', async () => {
     // rain_of_arrows has maxLevel 10. Plant a v19 blob with one ability below
     // the floor and one above the ceiling.
     const v19 = {
@@ -638,8 +672,8 @@ describe('v19→v20 ability level clamp', () => {
         chain_lightning: { level: -3 },        // under floor → 1
       },
     };
-    storage.setItem(STORAGE_KEY, JSON.stringify(v19));
-    const loaded = new SaveManager(stubBus).load();
+    await seed(JSON.stringify(v19));
+    const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
     expect(loaded!.version).toBe(21);
     // In-range survives unchanged; out-of-range is clamped to [1, maxLevel].
@@ -648,11 +682,12 @@ describe('v19→v20 ability level clamp', () => {
     expect(loaded!.abilities.chain_lightning.level).toBe(1);
   });
 
-  it('survives a v20 round trip without further clamping', () => {
+  it('survives a v20 round trip without further clamping', async () => {
     // After migration, save+load must not re-clamp an in-range level.
     const state = makeState();
     state.abilities.rain_of_arrows = { level: 8 };
     const mgr = new SaveManager(stubBus);
+    await mgr.hydrate();
     expect(mgr.save(state)).toBe(true);
     const loaded = mgr.load();
     expect(loaded).not.toBeNull();
@@ -675,7 +710,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     stats: { enemiesKilled: 90 },
   };
 
-  it('maps tp_midas to tp_salvage L1 and clamps every TP perk to its cap', () => {
+  it('maps tp_midas to tp_salvage L1 and clamps every TP perk to its cap', async () => {
     const v20 = {
       ...minimalSave,
       version: 20,
@@ -695,8 +730,8 @@ describe('v20→v21 revamp balance migration (§11)', () => {
         },
       },
     };
-    storage.setItem(STORAGE_KEY, JSON.stringify(v20));
-    const loaded = new SaveManager(stubBus).load();
+    await seed(JSON.stringify(v20));
+    const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
     expect(loaded!.version).toBe(21);
     const tp = loaded!.prestige.tpSpent;
@@ -714,7 +749,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     expect(tp.tp_gone).toBeUndefined();
   });
 
-  it('clamps AP perks and resolves the warlord/tycoon exclusion', () => {
+  it('clamps AP perks and resolves the warlord/tycoon exclusion', async () => {
     const v20 = {
       ...minimalSave,
       version: 20,
@@ -730,8 +765,8 @@ describe('v20→v21 revamp balance migration (§11)', () => {
         },
       },
     };
-    storage.setItem(STORAGE_KEY, JSON.stringify(v20));
-    const loaded = new SaveManager(stubBus).load()!;
+    await seed(JSON.stringify(v20));
+    const loaded = (await loadFresh())!;
     const ap = loaded.prestige.apSpent;
     expect(ap.ap_extra_shots).toBe(1);
     expect(ap.ap_scatter_shots).toBe(1);
@@ -746,7 +781,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
    * §11's named case, run the whole ladder: a v14 save holding maxed Twin and
    * Scatter, an `upgradeDiscount` level, `tp_midas` and `tp_head_start` L20.
    */
-  it('walks the §11 v14 save all the way to the current version', () => {
+  it('walks the §11 v14 save all the way to the current version', async () => {
     const v14 = {
       ...minimalSave,
       version: 14,
@@ -756,8 +791,8 @@ describe('v20→v21 revamp balance migration (§11)', () => {
         tpSpent: { tp_midas: 1, tp_head_start: 20 },
       },
     };
-    storage.setItem(STORAGE_KEY, JSON.stringify(v14));
-    const loaded = new SaveManager(stubBus).load();
+    await seed(JSON.stringify(v14));
+    const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
     expect(loaded!.version).toBe(21);
     // upgradeDiscount 9 -> prospecting ceil(9/2) = 5, old key gone.
@@ -772,12 +807,13 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     expect(loaded!.prestige.tpSpent.tp_head_start).toBe(TP_PERK_BY_ID.tp_head_start.maxLevel);
   });
 
-  it('leaves an already-v21 save alone through a round trip', () => {
+  it('leaves an already-v21 save alone through a round trip', async () => {
     const state = makeState();
     state.upgrades.damage = 12;
     state.prestige.tpSpent = { tp_head_start: 4 };
     state.prestige.apSpent = { ap_warlord: 2 };
     const mgr = new SaveManager(stubBus);
+    await mgr.hydrate();
     expect(mgr.save(state)).toBe(true);
     const loaded = mgr.load()!;
     expect(loaded.version).toBe(21);
@@ -811,24 +847,25 @@ describe('offline passive XP', () => {
   }
 
   /** Passive XP an absence of `hours` at `wave` pays out. */
-  function offlinePassiveXp(wave: number, hours: number): number {
+  async function offlinePassiveXp(wave: number, hours: number): Promise<number> {
     const mgr = new SaveManager(stubBus, { getRP: () => 0 });
+    await mgr.hydrate();
     mgr.save(offlineState(wave));
     const persisted = mgr.load()!;
     persisted.savedAt -= hours * 3600 * 1000;
     return mgr.computeOfflineProgress(persisted, 1).passiveXpEarned;
   }
 
-  it('never pays for depth past the run\'s deepest wave', () => {
+  it('never pays for depth past the run\'s deepest wave', async () => {
     // The walk stops climbing at the ceiling, so an absence twice as long pays
     // at most twice as much — not the quadratic-in-depth blowup of the old
     // forward walk. (Both absences are long enough to sit at the wave cap.)
-    const short = offlinePassiveXp(15, 8);
-    const long = offlinePassiveXp(15, 24);
+    const short = await offlinePassiveXp(15, 8);
+    const long = await offlinePassiveXp(15, 24);
     expect(long).toBeLessThanOrEqual(short * 2);
   });
 
-  it('takes on the order of two weeks to max a passive at its unlock depth', () => {
+  it('takes on the order of two weeks to max a passive at its unlock depth', async () => {
     const wave = 15;
     const def = PASSIVE_BY_ID.passive_marksmanship;
     let toMax = 0;
@@ -836,7 +873,7 @@ describe('offline passive XP', () => {
 
     // A day of play: 12h away (the idle cap trims it) plus an hour at the
     // keyboard, where a wave pays its full XP over its expected duration.
-    const offline = offlinePassiveXp(wave, 12);
+    const offline = await offlinePassiveXp(wave, 12);
     const online = (passiveWaveXpRef(wave) / expectedWaveSeconds(wave)) * 3600;
     const days = toMax / (offline + online);
 

@@ -19,6 +19,7 @@ import {
   BOSS_ENCOUNTER,
   BOSS_PATTERN_HINTS,
   BOSS_PATTERN_NAMES,
+  ENEMY_BEHAVIOR,
   ENEMY_DEFS,
   bossEncounterOutcome,
   bossNameForWave,
@@ -1191,7 +1192,9 @@ export class Game {
           const owner = this.enemyMgr.findById(p.ownerId);
           if (owner && owner.alive) {
             const thornDmg = Math.floor(owner.maxHp * ts.thorns);
-            if (thornDmg > 0) this.enemyMgr.damage(owner, thornDmg, false);
+            // Not reflectable, for the same reason Bastion's knockback thorns
+            // are not: this is a slice of the siege's own bar.
+            if (thornDmg > 0) this.enemyMgr.damage(owner, thornDmg, false, false);
           }
         }
       }
@@ -1305,7 +1308,18 @@ export class Game {
     });
 
     this.bus.on('thorns_reflected', (amount: unknown) => {
-      const dmg = amount as number;
+      // Capped against the tower's own bar before it enters the mitigation
+      // chain. The reflection is a share of a hit priced against *enemy* HP,
+      // which outgrows tower HP by orders of magnitude — so the raw figure is
+      // the wrong unit to spend the player's health in. A ceiling of
+      // `thornsReflectMaxTowerHpFraction` per hit keeps a thorns elite a
+      // sustained drain the player can read and answer, instead of a death
+      // that lands from across the map with nothing near the tower.
+      const maxHp = this.tower.snapshot.maxHp;
+      const cap = maxHp > 0
+        ? Math.floor(maxHp * ENEMY_BEHAVIOR.thornsReflectMaxTowerHpFraction)
+        : 0;
+      const dmg = cap > 0 ? Math.min(amount as number, cap) : (amount as number);
       if (dmg > 0) {
         this.bus.emit('tower_damaged', dmg);
       }
@@ -3351,6 +3365,16 @@ export class Game {
 
   manualSave(): boolean {
     return this.saveMgr.save(this.state);
+  }
+
+  /** Fill the save cache from the backend. Awaited once, before `tryLoadSave`. */
+  hydrateSave(): Promise<void> {
+    return this.saveMgr.hydrate();
+  }
+
+  /** Resolves once every pending save write has reached the backend. */
+  flushSave(): Promise<void> {
+    return this.saveMgr.flushNow();
   }
 
   clearSave(): void {

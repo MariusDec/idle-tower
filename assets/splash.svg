@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732" width="2732" height="2732">
+  <rect width="2732" height="2732" fill="#0a0d14"/>
+  <g transform="translate(1366 1366) scale(0.6) translate(-512 -491)">
+    <g stroke="#2a2f38" stroke-width="26" stroke-linejoin="round" stroke-linecap="round">
+      <!-- roof -->
+      <path d="M512 210 L706 400 L318 400 Z" fill="#f0b23c"/>
+      <!-- battlements -->
+      <path d="M348 400 h328 v96 h-52 v-48 h-56 v48 h-56 v-48 h-56 v48 h-52 Z" fill="#5b6b7a"/>
+      <!-- body -->
+      <path d="M372 496 L652 496 L688 796 L336 796 Z" fill="#5b6b7a"/>
+      <!-- base -->
+      <path d="M312 796 h400 v56 h-400 Z" fill="#3d4753"/>
+    </g>
+    <!-- arrow slit -->
+    <path d="M512 560 a30 30 0 0 1 30 30 v110 a30 30 0 0 1 -60 0 v-110 a30 30 0 0 1 30 -30 Z"
+          fill="#0a0d14"/>
+    <!-- pennant -->
+    <rect x="502" y="130" width="20" height="100" fill="#c0c4cc"/>
+    <path d="M522 140 L612 168 L522 196 Z" fill="#a95cff"/>
+  </g>
+</svg>

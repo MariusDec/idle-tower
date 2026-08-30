@@ -929,3 +929,46 @@ describe('armor is a fraction of a hit, not a flat subtraction (revamp §5 gap f
       .toBeGreaterThan(tower.applyResists(full, 100, 'physical'));
   });
 });
+
+/**
+ * The thorns aura is a tax on leaving an elite alive, not a way for the
+ * player's own numbers to kill the tower.
+ *
+ * The bug these cover: reflection was an uncapped 10% of *any* `damage()` call,
+ * and several callers pass a figure priced off the enemy's bar rather than a
+ * shot's worth — an execute passes `enemy.hp`, the two thorns keystones pass a
+ * fraction of `enemy.maxHp`. An elite carries 2.5x a wave's HP, which dwarfs
+ * the tower's, so one finisher landed more than the tower's whole bar in a
+ * single frame, from wherever the elite happened to be standing.
+ */
+describe('thorns reflection is bounded by what caused it', () => {
+  function thornsElite(): { h: Harness; elite: Enemy; reflected: () => number } {
+    const h = harness();
+    const elite = h.mgr.spawnElite('normal', 40, world(400), world(400), 'thorns');
+    let total = 0;
+    h.bus.on('thorns_reflected', (amount) => { total += amount as number; });
+    return { h, elite, reflected: () => total };
+  }
+
+  it('reflects a share of an ordinary hit', () => {
+    const { h, elite, reflected } = thornsElite();
+    h.mgr.damage(elite, 1000, false);
+    expect(reflected()).toBeGreaterThan(0);
+  });
+
+  it('reflects nothing from an execute, whose amount is the target bar', () => {
+    const { h, elite, reflected } = thornsElite();
+    h.mgr.damage(elite, elite.hp, false, false);
+    expect(elite.alive).toBe(false);
+    expect(reflected()).toBe(0);
+  });
+
+  it('reflects nothing from knockback thorns, priced off enemy max HP', () => {
+    const { h, elite, reflected } = thornsElite();
+    h.mgr.setThorns(0.5);
+    h.mgr.setThornsOnKnockback(true);
+    h.mgr.applyKnockback(elite, world(20), world(0), world(0));
+    expect(elite.hp).toBeLessThan(elite.maxHp);
+    expect(reflected()).toBe(0);
+  });
+});

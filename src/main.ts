@@ -6,6 +6,7 @@ import { ABILITIES } from './data/abilities';
 import { isQualityTier, type QualityTier } from './data/quality';
 import { FX } from './data/palette';
 import type { EnemyType, TargetingMode } from './types';
+import { initNativeShell, hideNativeSplash, bindNativeLifecycle } from './platform/native';
 
 /** What `__theTower.bench()` accepts (UI plan §10.B). */
 interface BenchOptions {
@@ -143,7 +144,26 @@ function bench(game: Game, opts: BenchOptions = {}): Promise<BenchResult> {
   });
 }
 
-function bootstrap(): void {
+/**
+ * The "get me out of here" ladder, shared by `Escape` and the Android hardware
+ * back button. Returns true when something was actually dismissed — the back
+ * button uses that to decide between consuming the press and backgrounding
+ * the app (src/platform/native.ts).
+ *
+ * Order matters: placement mode is first because it is the state that changes
+ * what the next tap does, and so the one the player most urgently needs out of
+ * (UI plan §4.3).
+ */
+function dismissTopmost(game: Game, ui: UIManager): boolean {
+  if (game.cancelPlacement()) return true;
+  if (ui.isKeybindsOpen()) {
+    ui.closeKeybinds();
+    return true;
+  }
+  return false;
+}
+
+async function bootstrap(): Promise<void> {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement | null;
   if (!canvas) {
     console.error('[main] #game-canvas not found');
@@ -492,17 +512,13 @@ function bootstrap(): void {
       // Plan §4.3: Escape gets the player out of placement mode first — it is
       // the state that changes what the next click does, so it is the one they
       // most urgently need to be able to abandon.
-      if (game.cancelPlacement()) {
-        ev.preventDefault();
-      } else if (ui.isKeybindsOpen()) {
-        ui.closeKeybinds();
-        ev.preventDefault();
-      }
+      if (dismissTopmost(game, ui)) ev.preventDefault();
     }
   });
 
   const canvasWrap = document.querySelector('.canvas-wrap') as HTMLElement | null;
   game.setCanvasWrap(canvasWrap);
+  await game.hydrateSave();
   game.tryLoadSave();
   game.start();
 
@@ -513,6 +529,16 @@ function bootstrap(): void {
     // UI plan §10.B: one global, not two.
     bench: (opts?: BenchOptions) => bench(game, opts),
   };
+
+  bindNativeLifecycle({
+    onBack: () => dismissTopmost(game, ui),
+    // Snapshot synchronously, then wait for the bytes to land — this is the last
+    // moment before Android is free to kill the process (plan §8.1).
+    onPause: async () => { game.manualSave(); await game.flushSave(); },
+  });
+  // The first frame is scheduled by `game.start()`; one rAF later it has painted,
+  // and only then is it safe to take the splash away.
+  requestAnimationFrame(() => { void hideNativeSplash(); });
 }
 
 /**
@@ -524,6 +550,11 @@ function bootstrap(): void {
  * missing sprite costs icons and not the run.
  */
 function start(): void {
+  void initNativeShell();
+  // launchAutoHide is false, so if `bootstrap` throws, nothing else would ever
+  // hide the splash. Five seconds is far longer than a cold start on a slow
+  // device and far shorter than a player's patience.
+  setTimeout(() => { void hideNativeSplash(); }, 5000);
   void loadIconSprite().then(bootstrap);
 }
 

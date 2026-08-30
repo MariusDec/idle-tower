@@ -758,33 +758,75 @@ modal.
 
 ## Capacitor
 
-UI plan §9.E. The game ships to Capacitor as a static `dist/`; nothing in
-this repo provisions the native project. Three things make that work:
+The Android project is **committed** at `android/` and configured by
+`capacitor.config.ts` at the repo root (`plans/capacitor.md`). App id
+`com.mariusdonci.thetower`, app name **The Tower**, `webDir: dist`.
 
-- `index.html` carries `<meta name="theme-color" content="#0a0d14">`. The
-  value pairs with `--surface-0` in `src/styles/tokens.css`; both are the
-  ground the app sits on, and keeping them in sync is what makes a notched
-  device look continuous from chrome to canvas. Update both together.
-- `vite.config.ts` sets `base: './'`. The `dist/` is therefore path-agnostic
-  and resolves from a `capacitor://` or `https://` host without re-bundling.
-  The icon sprite is already loaded as a relative path
-  (`src/ui/Icon.ts:28`) and via `new URL(url, document.baseURI)`, so the
-  sprite resolves the same way at runtime.
-- No runtime network. Fonts and the icon sprite are both committed under
-  `public/`; `src/styles/tokens.css` does not import any web font, and
-  `tests/palette.test.ts` scans `index.html` and `src/styles/*.css` for any
-  `http://` / `https://` URL outside a comment. A future `@import` of a
-  web font fails that test.
+### Building
 
-To add the native project:
+| Script | What it does |
+|--------|--------------|
+| `npm run cap:sync` | `npm run build` then `npx cap sync android` — always go through this |
+| `npm run android:apk` | debug APK → `android/app/build/outputs/apk/debug/app-debug.apk` |
+| `npm run android:release` | release APK (signed when `android/keystore.properties` exists) |
+| `npm run android:bundle` | AAB for the Play Store |
+| `npm run android:dev` | sync and run on a device/emulator |
+| `npm run android:open` | open the project in Android Studio |
+
+Never run `gradlew` directly: it ships whatever `dist/` happened to be in
+`android/app/src/main/assets/public/` last, which during development is
+reliably the wrong bundle. The copied bundle and all build output are
+gitignored; the hand-edited native sources are not.
+
+### Fully offline, by construction
+
+`android/app/src/main/AndroidManifest.xml` deliberately carries **no
+`INTERNET` permission**, and `usesCleartextTraffic="false"`. Capacitor serves
+the app through `WebViewAssetLoader`, which intercepts `https://localhost/…`
+inside the WebView before it reaches the network stack, so the app still
+loads — and no future dependency can quietly phone home. That guarantee rests
+on the same three properties as before:
+
+- `index.html` carries `<meta name="theme-color" content="#0a0d14">`.
+- `vite.config.ts` sets `base: './'`, so `dist/` is path-agnostic and the
+  icon sprite resolves relatively (`src/ui/Icon.ts:28`).
+- No runtime network: fonts and the icon sprite are committed under
+  `public/`, and `tests/palette.test.ts` scans for any `http(s)` URL.
+
+`tests/capacitor.test.ts` guards the manifest, the app name, the pinned
+`https`/`localhost` scheme (changing it would change the WebView origin and
+orphan every save), and the absence of `server.url`.
+
+### Edge-to-edge
+
+`MainActivity.java` calls `WindowCompat.setDecorFitsSystemWindows(window,
+false)`. The WebView only reports non-zero `env(safe-area-inset-*)` once the
+decor view stops fitting system windows, and the HUD, ability bar and bottom
+nav are all positioned off `--safe-t/r/b/l` in `src/styles/tokens.css`.
+`values/styles.xml` backs this with transparent status and navigation bars and
+a `postSplashScreenTheme`, and gives `AppTheme.NoActionBar` a real window
+background (the template's `@null` is what produces a white flash between the
+splash and the first canvas paint). Orientation is unlocked; the activity's
+`configChanges` already survive a rotation.
+
+### `#0a0d14` lives in four places
+
+`--surface-0` in `src/styles/tokens.css`, the `theme-color` meta in
+`index.html`, `backgroundColor` in `capacitor.config.ts`, and
+`android/app/src/main/res/values/colors.xml` (plus
+`values/ic_launcher_background.xml`). **Change them together** — they are the
+one ground the app sits on, from launcher icon to canvas.
+
+### Icon and splash
+
+Source art is in `assets/` (SVG *and* the rasterised PNGs, so a checkout can
+regenerate without a rasteriser). Regenerate the native resources with:
 
 ```bash
-npm run build
-npx cap add android     # or ios
-npx cap copy android
-npx cap open android
+npx @capacitor/assets generate --android \
+  --iconBackgroundColor '#0a0d14' --iconBackgroundColorDark '#0a0d14' \
+  --splashBackgroundColor '#0a0d14' --splashBackgroundColorDark '#0a0d14'
 ```
 
-The splash background is `--surface-0`. The status-bar style is whatever
-`@capacitor/status-bar` is set to in the native project; with the
-`theme-color` meta above, the OS picks a dark variant by default.
+The generator may rewrite `values/styles.xml`; if it does, restore the version
+described above.

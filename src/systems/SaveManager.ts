@@ -44,6 +44,7 @@ import { ABILITIES } from '../data/abilities';
 import { UPGRADE_BY_ID } from '../data/upgrades';
 import { AP_PERK_BY_ID, TP_PERK_BY_ID } from '../data/prestige';
 import type { PassiveAbilityManager } from './PassiveAbilityManager';
+import { getSaveStore, readLegacySave } from './storage';
 
 const STORAGE_KEY = 'the-tower-save';
 const SAVE_VERSION = 21;
@@ -175,17 +176,6 @@ export interface OfflineResult {
    * `wavesCleared`, so it is priced at the depths the walk actually reached.
    */
   passiveXpEarned: number;
-}
-
-function isStorageAvailable(): boolean {
-  try {
-    const probe = '__the_tower_probe__';
-    localStorage.setItem(probe, probe);
-    localStorage.removeItem(probe);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function estimateDPS(tower: TowerState): number {
@@ -858,6 +848,16 @@ export class SaveManager {
   private saveTimer = 0;
   /** Set by `requestSave`; cleared by the next actual write. */
   private savePending = false;
+  /**
+   * The serialized snapshot, as it will be written. This — not the backend — is
+   * what `load()`/`hasSave()` answer from, which is what lets those two stay
+   * synchronous over an asynchronous store (see `plans/capacitor.md` §8.1).
+   */
+  private cached: string | null = null;
+  /** False until `hydrate()` has run. Loading before then is a bug, not an empty save. */
+  private hydrated = false;
+  /** Serializes flushes so two writes can never interleave. */
+  private flushQueue: Promise<void> = Promise.resolve();
   private readonly busListener: (payload: unknown) => void;
   private readonly getRP: () => number;
   /**
@@ -1052,31 +1052,87 @@ export class SaveManager {
     };
   }
 
-  save(state: GameState): boolean {
-    if (!isStorageAvailable()) {
-      return false;
-    }
+  /**
+   * Fill the cache from the backend. Must be awaited once, before `load()`.
+   *
+   * Adopts a pre-move `localStorage` save when the backend has nothing — that is
+   * the entire migration, and it runs exactly once because the adopted value is
+   * written straight back to the new store.
+   */
+  async hydrate(): Promise<void> {
+    if (this.hydrated) return;
+    const store = getSaveStore();
+    let raw: string | null = null;
     try {
-      const snap = this.snapshot(state);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
-      this.saveTimer = 0;
-      this.savePending = false;
-      return true;
+      raw = await store.get(STORAGE_KEY);
+    } catch (err) {
+      console.warn('[SaveManager] hydrate failed:', err);
+    }
+    if (raw === null) {
+      const legacy = readLegacySave(STORAGE_KEY);
+      if (legacy !== null) {
+        raw = legacy;
+        try {
+          await store.set(STORAGE_KEY, legacy);
+        } catch (err) {
+          console.warn('[SaveManager] migrating the legacy save failed:', err);
+        }
+      }
+    }
+    this.cached = raw;
+    this.hydrated = true;
+  }
+
+  /**
+   * Resolves when every write issued so far has reached the backend. The native
+   * `pause` handler awaits this; nothing in the frame loop does.
+   */
+  flushNow(): Promise<void> {
+    return this.flushQueue;
+  }
+
+  /** Chain one write behind the last, newest payload wins. */
+  private scheduleFlush(): void {
+    const payload = this.cached;
+    const store = getSaveStore();
+    this.flushQueue = this.flushQueue
+      .then(() => (payload === null ? store.remove(STORAGE_KEY) : store.set(STORAGE_KEY, payload)))
+      .catch((err) => {
+        console.warn('[SaveManager] flush failed:', err);
+      });
+  }
+
+  /**
+   * Take a snapshot and schedule it for the backend.
+   *
+   * Returns `false` only when *serialization* fails. A backend write that fails
+   * is reported through `console.warn` from the flush instead — by then this
+   * call has long since returned (`plans/capacitor.md` §8.7e).
+   */
+  save(state: GameState): boolean {
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(this.snapshot(state));
     } catch (err) {
       console.warn('[SaveManager] save failed:', err);
       return false;
     }
+    this.cached = serialized;
+    this.saveTimer = 0;
+    this.savePending = false;
+    this.scheduleFlush();
+    return true;
   }
 
   load(): PersistentState | null {
-    if (!isStorageAvailable()) return null;
-    let raw: string | null;
-    try {
-      raw = localStorage.getItem(STORAGE_KEY);
-    } catch (err) {
-      console.warn('[SaveManager] load failed (read):', err);
+    // `hydrate()` is awaited by `bootstrap` before this can be reached. If it
+    // has not run, the honest answer is "unknown", and returning null would be
+    // read as "new player" — which would hand someone a fresh account.
+    if (!this.hydrated) {
+      console.warn('[SaveManager] load() before hydrate(); returning null');
       return null;
     }
+    const raw = this.cached;
     if (raw === null) return null;
     let parsed: unknown;
     try {
@@ -1097,21 +1153,12 @@ export class SaveManager {
   }
 
   clear(): void {
-    if (!isStorageAvailable()) return;
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
+    this.cached = null;
+    this.scheduleFlush();
   }
 
   hasSave(): boolean {
-    if (!isStorageAvailable()) return false;
-    try {
-      return localStorage.getItem(STORAGE_KEY) !== null;
-    } catch {
-      return false;
-    }
+    return this.cached !== null;
   }
 
   /**

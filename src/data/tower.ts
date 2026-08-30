@@ -70,10 +70,12 @@ export const PROJECTILE_SPEED = world(720);
  */
 export const HOMING = {
   /**
-   * Default steering rate, rad/s. Was `Math.PI * 3` (9.42) — deliberately only
-   * ~27% slower, not halved: the ask was "a bit slower, but not by much".
+   * Default steering rate, rad/s. Halved from `Math.PI * 2.2` so a homing shot
+   * traces a circle roughly twice as wide: at the old rate it could wheel back
+   * onto the field and farm enemies from every angle, which made pierce far
+   * stronger than the straight-line shot it is priced against.
    */
-  turnRate: Math.PI * 2.2,
+  turnRate: Math.PI * 1.1,
   /** Seconds over which the turn eases from 0 to `turnRate` once steering starts. */
   ramp: 0.28,
   /** Extra straight-flight seconds a *fully spread* lane gets before steering. */

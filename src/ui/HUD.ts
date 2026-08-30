@@ -326,7 +326,16 @@ export class HUD {
     const waveAlpha = 1 - Math.exp(-dt / waveTau);
     this.displayGold += (state.resources.gold - this.displayGold) * goldAlpha;
     this.displayMana += (state.resources.mana - this.displayMana) * manaAlpha;
-    this.displayHP += (state.tower.hp - this.displayHP) * hpAlpha;
+    // Damage snaps, healing tweens. The smoothing exists so a heal or a Fortify
+    // purchase counts up instead of jumping, but applied to a *loss* it made the
+    // bar lie at the only moment it matters: a burst that emptied the bar inside
+    // one tau left the player watching a third of a bar of health while the
+    // "Tower destroyed" toast came up. Anything downwards is now shown the frame
+    // it happens; `tickBar`'s ghost trail still marks what was lost.
+    const hpTarget = state.tower.hp;
+    this.displayHP = hpTarget < this.displayHP
+      ? hpTarget
+      : this.displayHP + (hpTarget - this.displayHP) * hpAlpha;
     this.displayMaxHP += (state.tower.maxHp - this.displayMaxHP) * hpAlpha;
       this.displayWave += (state.wave.number - this.displayWave) * waveAlpha;
     const dpsAlpha = 1 - Math.exp(-dt / 0.2);

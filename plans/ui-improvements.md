@@ -600,7 +600,8 @@ ladder (8.G, guarded by `tests/z-index.test.ts`).
 - **Capacitor readiness.** Status-bar style, splash background matched to `--surface-0`, `dist/`
   assets all relative-pathed, fonts and the icon sprite self-hosted (no runtime network), and a
   documented `npx cap add android` path in `docs/ui-system.md`. Actually adding the Capacitor project
-  is out of scope for this plan — the point is that nothing here blocks it.
+  is out of scope for this plan — the point is that nothing here blocks it. It was done
+  separately: see [plans/capacitor.md](capacitor.md), and `docs/ui-system.md` § Capacitor.
 
 ### 9.1 Status — implemented (2026-08-29)
 

@@ -194,6 +194,20 @@ export const ENEMY_BEHAVIOR = {
   shieldCalmBeforeRegen: 3,
   /** Seconds per restored shield charge, once calm. */
   shieldRegenInterval: 6,
+
+  /**
+   * Ceiling on one thorns reflection, as a fraction of the tower's max HP.
+   *
+   * A thorns elite reflects a share of every hit it takes, and the hits it
+   * takes are priced against *enemy* HP — an elite carries 2.5x a wave's bar,
+   * which outgrows the tower's own by orders of magnitude. Uncapped, a single
+   * execute or percent-of-max-HP proc on a thorns elite reflected more than the
+   * tower's whole bar and killed it outright, from wherever the elite happened
+   * to be standing. The cap keeps the aura a tax on ignoring it rather than a
+   * one-shot: the punishment scales with how long you leave it alive, not with
+   * how hard you hit it.
+   */
+  thornsReflectMaxTowerHpFraction: 0.05,
 } as const;
 
 /**

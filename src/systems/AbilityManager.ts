@@ -886,11 +886,13 @@ export class AbilityManager {
         // bypass, and boss damage scales with Execute level rather than
         // magic resist.
         const amount = Math.min(e.hp, e.maxHp * bossFrac * this.damageMultiplier);
-        this.enemies.damage(e, amount, false);
+        // Priced off the target's max HP, so not reflectable — see
+        // `EnemyManager.damage`.
+        this.enemies.damage(e, amount, false, false);
       } else {
         if (ratio > gate) continue;
         // Instant-kill: deal damage equal to current HP (minimum 1)
-        this.enemies.damage(e, Math.max(1, e.hp), false);
+        this.enemies.damage(e, Math.max(1, e.hp), false, false);
       }
     }
   }

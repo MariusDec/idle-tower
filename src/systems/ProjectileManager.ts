@@ -45,9 +45,12 @@ const TALENT_EXECUTE_THRESHOLD = 0.5;
  * homing projectile circling a target it can never catch, or one fired into a
  * corner, otherwise stays in the list (and in every projectile-vs-enemy loop)
  * indefinitely. At 720 px/s this is several times longer than crossing the
- * arena takes, so it never truncates a shot that was going to land.
+ * arena takes, so it never truncates a shot that was going to land. Cut from
+ * 4 s: with Seeker Shots plus high pierce a shot had time to loop the field and
+ * mow down enemies from behind, which is the pierce budget spent on geometry
+ * rather than on the line the player aimed.
  */
-const MAX_PROJECTILE_AGE = 4;
+const MAX_PROJECTILE_AGE = 3;
 
 /** Overwatch (revamp §6.1): the fraction of range beyond which it pays. */
 export const OVERWATCH_RANGE_FRACTION = 0.7;
@@ -542,7 +545,9 @@ export class ProjectileManager {
         // Instant kill evolution (non-boss only)
         if (this.instantKillChance > 0 && enemy.type !== 'boss' && Math.random() < this.instantKillChance) {
           const dmg = enemy.hp;
-          this.enemies.damage(enemy, dmg, false);
+          // `dmg` is the target's whole remaining bar, not a shot's worth, so
+          // it is not reflectable — see `EnemyManager.damage`.
+          this.enemies.damage(enemy, dmg, false, false);
           this.bus.emit('tower_damage_dealt', { amount: dmg });
         } else if (this.tryExecute(enemy)) {
           // Executioner blessing already finished it; nothing else to apply.
@@ -701,7 +706,9 @@ export class ProjectileManager {
     if (enemy.maxHp <= 0) return false;
     if (enemy.hp / enemy.maxHp >= BLESSING_TUNING.executeThreshold) return false;
     const dmg = enemy.hp;
-    this.enemies.damage(enemy, dmg, false);
+    // Same as the instant-kill evolution: a finisher's `amount` is the target's
+    // bar, so a thorns elite does not get to reflect a share of it.
+    this.enemies.damage(enemy, dmg, false, false);
     this.bus.emit('tower_damage_dealt', { amount: dmg });
     return true;
   }

@@ -4,7 +4,9 @@
 
 ## Overview
 
-Persists game state to `localStorage` under key `the-tower-save`.
+Persists game state under key `the-tower-save` — in **IndexedDB** on the web
+and in a **private file** on Android. Never `localStorage`; see
+[Persistence backends](#persistence-backends).
 
 ## Save Format (`PersistentState`)
 
@@ -239,7 +241,81 @@ When offline progress > 0, `welcome_back` event triggers `WelcomeBackModal.show(
 
 | Method | Purpose |
 |--------|---------|
-| `save(state)` | Serialize and write to localStorage |
-| `load()` | Read and validate from localStorage |
-| `clear()` | Remove save |
-| `hasSave()` | Check existence |
+| `hydrate()` | **async.** Fill the cache from the backend. Awaited once at boot, before `load()` |
+| `save(state)` | Serialize into the cache and schedule a flush. Returns `false` only if *serialization* fails |
+| `load()` | Validate and migrate the cached snapshot |
+| `clear()` | Drop the save and schedule its removal |
+| `hasSave()` | Check existence (against the cache) |
+| `flushNow()` | **async.** Resolves once every write issued so far has reached the backend |
+
+## Persistence backends
+
+**Files:** `src/systems/storage/` — `SaveStore.ts`, `IdbStore.ts`,
+`FilesystemStore.ts`, `index.ts`. Plan: `plans/capacitor.md` §8.
+
+`localStorage` is the wrong home for a save in a native shell: it is WebView
+data, it shares one ~5 MB origin quota, Android may evict it under storage
+pressure, and a "clear cache" cleanup can take it. So the bytes moved. **The
+format did not** — still `SAVE_VERSION` 21, the same JSON, the same migration
+ladder.
+
+`SaveStore` is a three-method string key/value interface. `SaveManager` owns
+the format; this layer owns the bytes; neither knows anything about the other.
+
+| Implementation | Where | Notes |
+|---|---|---|
+| `IdbSaveStore` | any browser | `idb` over IndexedDB, db `the-tower`, store `kv`. Transactional, so no torn write is possible. Opened lazily so constructing it in node is free |
+| `FilesystemSaveStore` | under Capacitor | one UTF-8 JSON file in `Directory.Data` (`/data/data/<appId>/files/the-tower-save.json`). No 5 MB ceiling, in the app's backup set, not WebView data |
+| `MemorySaveStore` | node, tests, IndexedDB-denied browsers | the session is not persisted — the same thing the old `isStorageAvailable()` false branch meant |
+
+`getSaveStore()` picks one, once. `setSaveStore()` is the test seam.
+
+### A synchronous cache over an asynchronous backend
+
+`localStorage` is synchronous; both replacements are not. Making
+`save()`/`load()` return promises would push `await` into all eight call
+sites — including the frame loop, where an `await` per autosave is a stutter,
+and `visibilitychange`, where nobody can await anything. Impact analysis
+scored that change CRITICAL: 15 impacted symbols across 7 execution flows.
+
+So the four IO methods keep their **exact** synchronous signatures and answer
+from `cached`, an in-memory copy of the serialized snapshot:
+
+- `hydrate()` fills `cached` once, at boot, before `Game.tryLoadSave()`.
+- `save()` updates `cached` synchronously and calls `scheduleFlush()`, which
+  chains the write behind the last one on `flushQueue` — newest payload wins,
+  two writes can never interleave.
+- `load()` before `hydrate()` warns and returns `null`. It cannot return "no
+  save", because that would be read as "new player" and hand someone a fresh
+  account.
+- A backend write that fails is reported by `console.warn` from the flush, not
+  by `save()`'s return value — by then the caller has long since returned.
+
+Boot order (`src/main.ts`): `await game.hydrateSave()` → `game.tryLoadSave()`
+→ `game.start()`. On Android the `pause` handler (`src/platform/native.ts`)
+snapshots synchronously and then `await`s `game.flushSave()` — the last moment
+before the OS is free to kill the process, and the one place waiting for the
+write is both possible and worth it.
+
+### The Android write dance
+
+`writeFile` truncates before it writes, and `load()` responds to unparseable
+JSON by *clearing the save* — so a process death mid-write would turn a
+badly-timed kill into a wiped account. `FilesystemSaveStore.set` therefore
+writes the full payload to a `.tmp` sibling, deletes the target, then renames
+the tmp over it. `get()` falls back to the `.tmp`, so at every instant at
+least one complete file is on disk.
+
+### Migrating off `localStorage`
+
+`hydrate()` adopts a pre-move `localStorage` save when the backend has nothing,
+and writes it straight into the new store — so the migration runs exactly once
+and no player loses progress. The old copy is deliberately **not** deleted:
+that is what makes rolling this release back non-destructive. Deleting it is a
+one-line change for a later release, once nobody is downgrading.
+
+Note the migration is origin-scoped, like `localStorage` itself: a save made
+in a desktop browser cannot migrate into the app, and never could. This is
+also why `capacitor.config.ts` pins `androidScheme: 'https'` /
+`hostname: 'localhost'` — changing either changes the WebView origin and
+orphans every existing save.

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The surface-0 ground. The adaptive icon's background layer is the
+         authored gradient (@mipmap/ic_launcher_background); this is the flat
+         fallback behind it and must never be the template's white. -->
+    <color name="ic_launcher_background">#0a0d14</color>
+</resources>

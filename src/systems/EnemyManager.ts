@@ -479,8 +479,23 @@ export class EnemyManager {
   /**
    * Apply damage to an enemy. For shielded enemies, consumes a charge instead
    * of HP. Returns true if enemy was killed by this hit.
+   *
+   * `reflectable` says whether a thorns elite gets to reflect a share of this
+   * hit back at the tower. It defaults to true, because the overwhelming
+   * majority of damage is an ordinary shot whose size is the player's own DPS —
+   * exactly what the aura is meant to tax. The `false` callers are the ones
+   * whose `amount` is not a DPS figure at all: an execute or instant-kill
+   * passes `enemy.hp`, and the two thorns keystones pass a fraction of
+   * `enemy.maxHp`. Reflecting a share of those made the tower's damage
+   * *reduction* stats and its biggest finishers into the fastest way to kill
+   * itself — a feedback loop, not a trade-off.
    */
-  damage(enemy: Enemy, amount: number, isCrit: boolean = false): boolean {
+  damage(
+    enemy: Enemy,
+    amount: number,
+    isCrit: boolean = false,
+    reflectable: boolean = true,
+  ): boolean {
     if (!enemy.alive) return false;
     // Burrowed and freshly-split enemies are simply not there to be hit
     // (plan §2.1/§2.2). Returning silently — no shield break, no damage number
@@ -538,7 +553,7 @@ export class EnemyManager {
     }
     enemy.hp -= amount;
     // Thorns aura: reflect fraction of damage back to tower (only if not blocked by shield)
-    if (enemy.alive && enemy.aura === 'thorns' && enemy.elite) {
+    if (reflectable && enemy.alive && enemy.aura === 'thorns' && enemy.elite) {
       this.computeThornsReflection(amount);
     }
     // Boss enrage: trigger once when HP drops below 50% of maxHP
@@ -628,7 +643,10 @@ export class EnemyManager {
     // Bastion talent: thorns damage on knockback.
     if (this.thornsOnKnockback && this.thorns > 0) {
       const thornDmg = Math.floor(enemy.maxHp * this.thorns);
-      if (thornDmg > 0) this.damage(enemy, thornDmg, false);
+      // Not reflectable: this is a slice of the *enemy's* bar, so a thorns
+      // elite would turn the player's own thorns stat into tower damage that
+      // grows with enemy HP. Stacking Bastion would speed up your own death.
+      if (thornDmg > 0) this.damage(enemy, thornDmg, false, false);
     }
   }
 
