@@ -47,7 +47,7 @@ import type { PassiveAbilityManager } from './PassiveAbilityManager';
 import { getSaveStore, readLegacySave } from './storage';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 21;
+const SAVE_VERSION = 22;
 
 /**
  * Fraction of a wave's passive XP an *offline* wave clear pays.
@@ -743,6 +743,26 @@ function migrateV20toV21(data: Record<string, unknown>): void {
 }
 
 /**
+ * v22 (prestige-abs §7): the AP tree widens from thirteen rows to nineteen.
+ *
+ * Almost nothing has to happen. New perk ids need no entry — absent means
+ * level 0 — and the only ceiling that moved is `ap_wave_skipper` (15 -> 12),
+ * which `clampPerkLevels` handles off the table rather than off a number
+ * restated here.
+ *
+ * **`ap_auto_upgrader` 25 -> 12 is not refunded.** The precedent is
+ * `migrateV20toV21`'s "no refunds anywhere — this is a balance migration, not
+ * an accounting one", and §6.1's Reforge ships in the same release, so a
+ * player who overpaid can respec and re-buy at the new price.
+ */
+function migrateV21toV22(data: Record<string, unknown>): void {
+  const prestige = data.prestige as Record<string, unknown> | undefined;
+  if (!isObject(prestige)) return;
+  const apSpent = prestige.apSpent as Record<string, unknown> | undefined;
+  if (isObject(apSpent)) clampPerkLevels(apSpent, AP_PERK_BY_ID);
+}
+
+/**
  * Clamp a `{perkId: level}` map to the table's ceilings, dropping ids the
  * table no longer defines and entries that are not positive integers.
  */
@@ -767,7 +787,7 @@ function clampPerkLevels(
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 20 && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 21 && data.version !== 20 && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -802,6 +822,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 18) { migrateV18toV19(data); data.version = 19; }
   if (data.version === 19) { migrateV19toV20(data); data.version = 20; }
   if (data.version === 20) { migrateV20toV21(data); data.version = 21; }
+  if (data.version === 21) { migrateV21toV22(data); data.version = 22; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;

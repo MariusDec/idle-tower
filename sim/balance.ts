@@ -26,7 +26,7 @@ import {
   intermissionSecondsForWave,
   riskApBonus,
 } from '../src/data/pacing.ts';
-import { ASCENSION_UNLOCK_WAVE, apForWave } from '../src/data/prestige.ts';
+import { ASCENSION_UNLOCK_WAVE, AP_PERK_BY_ID, apForWave, computePerkEffect, perkCost } from '../src/data/prestige.ts';
 import { lifetimeAPDamageBonus, lifetimeAPGoldBonus } from '../src/data/formulas.ts';
 
 const SAMPLE_WAVES = [1, 10, 20, 30, 50, 100];
@@ -80,6 +80,43 @@ function curveTable(): string {
   }
   return table(
     ['Wave', 'Avg HP', 'Wave HP', 'Wave gold', 'gold/HP', 'clear'],
+    rows,
+  );
+}
+
+
+/**
+ * prestige-abs §8.3: what a level of Seed Capital is worth on a fresh run.
+ *
+ * Measured against the *fresh* tower (no lifetime AP, no blessings), which is
+ * the run a first ascension actually returns to — the whole point of the node
+ * is the first minute of the next run, and a deep run's income drowns it.
+ */
+function seedCapitalTable(): string {
+  const def = AP_PERK_BY_ID['ap_seed_capital'];
+  const baseline = simulateRun({ unlockWave: ASCENSION_UNLOCK_WAVE, sampleWaves: [], blessings: false });
+  const rows: string[][] = [];
+  for (let level = 0; level <= def.maxLevel; level++) {
+    const startGold = Math.floor(computePerkEffect(def, level));
+    let cumulative = 0;
+    for (let l = 0; l < level; l++) cumulative += perkCost(def, l);
+    const run = simulateRun({
+      unlockWave: ASCENSION_UNLOCK_WAVE,
+      sampleWaves: [],
+      blessings: false,
+      startGold,
+    });
+    rows.push([
+      String(level),
+      fmt(startGold),
+      String(cumulative),
+      String(run.wallWave),
+      `${run.wallWave >= baseline.wallWave ? '+' : ''}${run.wallWave - baseline.wallWave}`,
+      mins(run.timeToUnlockSec),
+    ]);
+  }
+  return table(
+    ['Level', 'Start gold', 'Cumulative AP', 'Wall wave', 'Δ wall', `To wave ${ASCENSION_UNLOCK_WAVE}`],
     rows,
   );
 }
@@ -624,6 +661,13 @@ console.log('\n=== §2.2 Wall wave and run length per prestige tier (no blessing
 console.log(tiersTable(false));
 console.log('\n=== §2.2b Wall wave and run length per prestige tier (with blessings) ===\n');
 console.log(tiersTable(true));
+console.log('\n=== prestige-abs §8.3 Seed Capital: wall wave vs. front-loaded gold ===\n');
+console.log(seedCapitalTable());
+console.log(
+  '\nSeed Capital is the one node in the new tier-1 shelf whose base is a real balance risk:'
+  + '\nfront-loaded gold compounds through the whole upgrade curve. L1 (200 gold) has to feel'
+  + '\ngood; if the ladder measures past the band, §8.3 says cut the base before the ladder.\n',
+);
 console.log('\n=== Gameplay §1.6 Blessing draft: before / after ===\n');
 console.log(blessingDeltaTable());
 console.log('\n=== Gameplay §4.5 Idle parity: fully idle vs. perfect active play ===\n');

@@ -5,7 +5,7 @@ import { upgradeCost, enemyHPForWave } from '../data/formulas';
 import { ENEMY_DEFS, ENEMY_LABELS } from '../data/enemies';
 import { TOWER_MARKS, type TowerMarkDef } from '../data/towerMarks';
 import { formatNumber } from '../utils/bigNumber';
-import { setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
+import { setText, toggleClass, setDisplay, setDataAttr, resetScroll } from '../utils/dom';
 import { iconFrame } from './Icon';
 
 type UpgradeTabId = 'attack' | 'defense' | 'utility';
@@ -754,6 +754,7 @@ export class UpgradePanel {
     for (const el of Array.from(this.root.querySelectorAll<HTMLElement>('.upgrade-tab-panel'))) {
       toggleClass(el, 'active', el.dataset.upgradeTabPanel === id);
     }
+    resetScroll(this.root);
   }
 
   private renderRow(u: UpgradeDef): HTMLElement {

@@ -15,6 +15,7 @@ import {
   setDisplay,
   setDisabled,
   setTitle,
+  resetScroll,
 } from '../utils/dom';
 import { formatNumber } from '../utils/bigNumber';
 import { FX } from '../data/palette';
@@ -887,6 +888,7 @@ export class TalentPanel {
     for (const [branch, btn] of this.respecBtns) {
       toggleClass(btn, 'is-hidden', branch !== id);
     }
+    resetScroll(this.root);
     // The active tab changed; respec labels must be rebuilt next update.
     this.respecSignature = '';
     if (this.resizeObserver) {

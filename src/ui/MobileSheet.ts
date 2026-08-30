@@ -1,4 +1,4 @@
-import { setInnerHTML, toggleClass } from '../utils/dom';
+import { setInnerHTML, toggleClass, resetScroll } from '../utils/dom';
 
 export interface MobileSheetTab {
   id: string;
@@ -176,6 +176,8 @@ export class MobileSheet {
     this.body.className = 'mobile-sheet-body';
     setInnerHTML(this.body, '');
     tab.render(this.body);
+    // Each tab opens at the top, not where the previous tab was scrolled to.
+    resetScroll(this.body, this.root);
   }
 
   private bindSwipe(): void {

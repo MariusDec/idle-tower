@@ -19,6 +19,14 @@ export interface PrestigeInputs {
   apFireRate: number;
   /** Flat pierce from Bodkin Mastery. */
   apPierce: number;
+  /** Prospector's upgrade-cost reduction, as a positive fraction. */
+  apUpgradeDiscount: number;
+  /** Veterancy's XP multiplier (already `1 + x` shaped). */
+  apXpGain: number;
+  /** Field Notes' added RP drop chance, as a fraction. */
+  apRpDrop: number;
+  /** Second Wind's extra revive charges, as a whole number. */
+  apReviveCharges: number;
   /** Transcendence multipliers (already `1 + x` shaped). */
   tpDamage: number;
   tpFireRate: number;
@@ -150,6 +158,10 @@ export function emptyStatContext(): StatContext {
       apGold: 0,
       apFireRate: 1,
       apPierce: 0,
+      apUpgradeDiscount: 0,
+      apXpGain: 1,
+      apRpDrop: 0,
+      apReviveCharges: 0,
       tpDamage: 1,
       tpFireRate: 1,
       tpManaRegen: 1,

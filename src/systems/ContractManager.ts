@@ -131,6 +131,16 @@ export interface ContractManagerDeps {
    * manager with no deps and must stay byte-identical to `HEAD`) sees three.
    */
   slots?: () => number;
+  /**
+   * Multiplier on what a completion pays, `1 + x` shaped. Defaults to 1.
+   *
+   * Broker (prestige-abs §5) is the only writer. It scales the *gold* and the
+   * *RP* — the two payouts that are already sized off wave income — and
+   * deliberately not `apBonusPct`, which has its own run cap that a multiplier
+   * would silently route around, nor `rerolls`, which is an integer token
+   * count that does not divide.
+   */
+  rewardScale?: () => number;
 }
 
 /**
@@ -200,7 +210,13 @@ export class ContractManager {
   /** Gold a contract's reward is worth right now (0 when it pays no gold). */
   goldValue(c: ActiveContract): number {
     if (!c.def.reward.goldWaves) return 0;
-    return Math.max(1, Math.floor(this.deps.waveGold(this.deps.currentWave()) * c.def.reward.goldWaves));
+    const base = this.deps.waveGold(this.deps.currentWave()) * c.def.reward.goldWaves;
+    return Math.max(1, Math.floor(base * this.rewardScale));
+  }
+
+  /** Broker's payout multiplier, floored at 1 so the dep cannot be a penalty. */
+  private get rewardScale(): number {
+    return Math.max(1, this.deps.rewardScale?.() ?? 1);
   }
 
   label(c: ActiveContract): string {
@@ -385,7 +401,7 @@ export class ContractManager {
     return {
       goldWaves: r.goldWaves ?? 0,
       rerolls: r.rerolls ?? 0,
-      rp: r.rp ?? 0,
+      rp: Math.floor((r.rp ?? 0) * this.rewardScale),
       apBonusPct: ap,
     };
   }

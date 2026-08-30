@@ -1483,6 +1483,15 @@ export interface RunOptions {
    * actually ships.
    */
   legacyBuyable?: boolean;
+  /**
+   * Gold the run opens with (prestige-abs §8.3).
+   *
+   * Seed Capital is the one node in the new tier-1 shelf whose base is a
+   * genuine balance risk: front-loaded gold compounds through the whole
+   * upgrade curve, so the model has to credit it as a permanent head start
+   * rather than as a one-off. Defaults to 0, which is the pre-§3.1 curve.
+   */
+  startGold?: number;
 }
 
 export function simulateRun(opts: RunOptions = {}): RunResult {
@@ -1498,6 +1507,7 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
     active = false,
     contracts = true,
     core = DEFAULT_CORE,
+    startGold = 0,
     risk = 0,
     pacing = true,
     legacyBuyable = false,
@@ -1534,7 +1544,7 @@ export function simulateRun(opts: RunOptions = {}): RunResult {
   let lastEarned = 0;
   let growthSum = 0;
   let growthSteps = 0;
-  let gold = 0;
+  let gold = startGold;
   let elapsed = 0;
   let timeToUnlock = Infinity;
   let wave = 1;

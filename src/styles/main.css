@@ -2190,6 +2190,41 @@ button:disabled {
   color: var(--accent);
 }
 
+/* prestige-abs §6.2: the AP shelf is grouped by tier rather than being one
+   flat list of nineteen rows. */
+.perk-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.perk-tier-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+/* prestige-abs §6.1: the AP respec. */
+.perk-reforge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.perk-reforge-text {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  line-height: 1.35;
+}
+
 .perk-list {
   display: flex;
   flex-direction: column;
@@ -4547,11 +4582,40 @@ body.is-resizing * { cursor: ew-resize !important; }
 @media (orientation: portrait) and (max-width: 768px) {
   .hud {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* Two columns, not three: at 375px a third of the row could not hold
+       "101 / 153 XP" and the value was ellipsed to "51/153 …", which is a
+       reading nobody can use. HP and mana — the two that must be legible
+       *while* something is happening — keep the row; XP drops to its own
+       full-width line below and moves its text into a tap popup. */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-content: start;
+    /* The column layout above sets a 4px `gap` for stacked rows; two bars
+       shoulder to shoulder at that distance read as one striped block rather
+       than two readings, so the columns get their own gap. */
+    column-gap: 12px;
   }
   .hud-group { grid-column: 1 / -1; }
   .hud-bar-block { min-width: 0; }
+  /* …and a hairline between them, so the eye has a boundary to stop at even
+     when both bars are near-full. The rule hangs in the middle of the gap
+     rather than hugging either bar. */
+  .hud-mana {
+    border-left: 1px solid var(--stroke-subtle);
+    padding-left: 12px;
+    margin-left: -6px;
+  }
+  /* Tower XP: a bare track spanning the row. It is the one bar that never
+     changes fast enough to need a live readout beside it, so the head — level,
+     XP, the lot — moves into `.hud-xp-popover`, opened by tapping the bar. */
+  .hud-xp {
+    grid-column: 1 / -1;
+    margin-top: 2px;
+    cursor: pointer;
+  }
+  .hud-xp .hud-bar-head { display: none; }
+  /* The track alone is 10px tall; the block carries the rest of the 44px tap
+     target as padding so the touch area matches the other HUD controls. */
+  .hud-xp .hud-bar-track { margin: 6px 0; }
   /* Three bars across 375px is ~115px of track each, and "Tower XP  Lv.1
      0 / 0 XP" needs 149. The written label goes the same way the §7 chip
      labels did — the coloured mark is the label — but it stays in the
@@ -4702,6 +4766,40 @@ body.is-resizing * { cursor: ew-resize !important; }
   color: var(--text-0);
   font-variant-numeric: tabular-nums;
 }
+/* ── Tower XP popup body (phones) ───────────────────────────────────────────
+   The card the XP bar opens. It borrows the bar head's own vocabulary rather
+   than inventing one: `.hud-bar-level` and `.hud-bar-value` are the same
+   elements the desktop HUD prints, so the headline reads identically in both
+   places. `--bar-tone-lit` is what makes the level gold — the block that
+   normally supplies it is `.hud-bar-block[data-tone='gold']`, which this card
+   is not inside, so it restates it here. */
+.hud-xp-info {
+  --bar-tone-lit: var(--amber-300);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hud-xp-info-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--stroke-subtle);
+}
+.hud-xp-info-head .hud-bar-level { font-size: var(--text-2xl); }
+.hud-xp-info-head .hud-bar-value { font-size: var(--text-md); }
+/* The two lines under it are context, not the reading — grey, small, and with
+   the value carrying the only emphasis. */
+.hud-xp-info-sub {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+.hud-xp-info-sub-value { color: var(--text-1); }
+
 .hud-more-popover-actions {
   display: flex;
   flex-wrap: wrap;

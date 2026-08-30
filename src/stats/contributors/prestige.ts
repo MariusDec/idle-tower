@@ -23,6 +23,13 @@ export function contributePrestige(ctx: StatContext, acc: StatAccumulator): void
   ap.add('waveSkipChance', p.waveSkipChance);
   ap.mult('fireRate', p.apFireRate);
   ap.add('pierceExtra', p.apPierce);
+  // prestige-abs §3.1: the tier-1 shelf lands on keys that already have
+  // consumers — the discount is negative-signed the way the talent tree signs
+  // it, so the two compose in one accumulator rather than fighting over sign.
+  ap.add('upgradeCostDiscount', -p.apUpgradeDiscount);
+  ap.mult('xpGainMultiplier', p.apXpGain);
+  ap.add('rpDropChanceBonus', p.apRpDrop);
+  ap.add('reviveCharges', p.apReviveCharges);
   if (p.hasExecuteDamage) {
     ap.add('executeThreshold', PRESTIGE_EXECUTE_THRESHOLD);
     ap.add('executeMultiplier', p.executeDamageMultiplier);

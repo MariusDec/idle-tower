@@ -239,6 +239,9 @@ async function bootstrap(): Promise<void> {
   ui.setOnUnlockCore((id) => {
     game.unlockCore(id);
   });
+  ui.setOnReforge(() => {
+    game.reforgeAP();
+  }, () => game.reforgeValue());
   ui.setOnUnlockResearch((id) => {
     game.startResearch(id);
   });

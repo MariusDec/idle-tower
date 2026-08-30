@@ -3,11 +3,11 @@ import type { PrestigePerkDef } from '../data/prestige';
 import {
   AP_PERKS,
   ASCENSION_UNLOCK_WAVE,
-  PRESTIGE_PROJECTILE_TUNING,
   BASE_IDLE_TIME_SECONDS,
   apForWave,
   perkCost,
   computePerkEffect,
+  describeAPPerkBonus,
   formatIdleDuration,
 } from '../data/prestige';
 import { formatNumber } from '../utils/bigNumber';
@@ -47,13 +47,31 @@ export interface PrestigePanelHandlers {
   /** Plan §6.2: cores are an AP spend, chosen only at the start of a run. */
   coreState: () => CorePanelState;
   onUnlockCore: (id: CoreId) => void;
+  /** prestige-abs §6.1: refund every AP spent on perks. Confirmed by `Game`. */
+  onReforge: () => void;
+  /** AP a reforge would credit back right now. */
+  reforgeValue: () => number;
 }
+
+/**
+ * Headings for the AP tiers (prestige-abs §6.2). Named rather than numbered:
+ * "Tier 2" tells a player nothing, "The Long Game" tells them what the row
+ * above bought them access to.
+ */
+const AP_TIER_TITLES: Record<number, string> = {
+  1: 'Foundations',
+  2: 'Specialisation',
+  3: 'Signature Shots',
+  4: 'The Deep Run',
+};
 
 export class PrestigePanel {
   private readonly handlers: PrestigePanelHandlers;
   private root: HTMLElement | null = null;
 
   private summaryAP!: HTMLElement;
+  private reforgeTextEl: HTMLElement | null = null;
+  private reforgeBtnEl: HTMLButtonElement | null = null;
   private summaryLifetimeAP!: HTMLElement;
   private summaryLifetimeBonus!: HTMLElement;
   private summaryAscensions!: HTMLElement;
@@ -108,6 +126,17 @@ export class PrestigePanel {
     for (const p of AP_PERKS) {
       this.updateAPRow(p, ap, state);
     }
+
+    const refund = this.handlers.reforgeValue();
+    if (this.reforgeTextEl) {
+      setText(
+        this.reforgeTextEl,
+        refund > 0
+          ? `Reforge refunds ${formatNumber(refund)} AP and clears every perk. Tower cores are not refunded.`
+          : 'Reforge refunds every AP spent on perks. Nothing is spent yet.',
+      );
+    }
+    if (this.reforgeBtnEl) this.reforgeBtnEl.disabled = refund <= 0;
     this.updateCores(ap);
   }
 
@@ -202,7 +231,7 @@ export class PrestigePanel {
       setDisplay(currentEl, 'none');
     }
 
-    setText(bonusEl, this.formatAPBonusText(p, level, atMax));
+    setText(bonusEl, describeAPPerkBonus(p, level, atMax));
     setText(costEl, atMax ? '—' : formatNumber(cost));
 
     const blocked = level > 0 ? null : this.handlers.perkBlockedReason(p.id);
@@ -223,57 +252,6 @@ export class PrestigePanel {
     );
   }
 
-  private formatAPBonusText(p: PrestigePerkDef, level: number, atMax: boolean): string {
-    const pct = (scale: number) => Math.round(scale * 100);
-    const extraPct = pct(PRESTIGE_PROJECTILE_TUNING.extraDamageScale);
-    const rearPct = pct(PRESTIGE_PROJECTILE_TUNING.rearDamageScale);
-    const scatterPct = pct(PRESTIGE_PROJECTILE_TUNING.scatterDamageScale);
-    switch (p.effectType) {
-      // Revamp §7/§12.5: these rows state the *payload*, never a bare
-      // projectile count — an extra lane carries a fraction of the volley, and
-      // a player pricing the node against its cost has to be able to see that.
-      case 'extra_shots':
-        return atMax
-          ? `+${level} front projectile${level === 1 ? '' : 's'} at ${extraPct}% damage`
-          : `Adds one front projectile at ${extraPct}% damage`;
-      case 'scatter_shots':
-        return atMax
-          ? `+${level * 2} angled projectile${level * 2 === 1 ? '' : 's'} at ${scatterPct}% damage each`
-          : `Adds two angled projectiles at ${scatterPct}% damage each`;
-      case 'back_shots':
-        return atMax
-          ? `+${level} rear projectile${level === 1 ? '' : 's'} at ${rearPct}% damage`
-          : `Adds one rear projectile at ${rearPct}% damage`;
-      // Coverage, stated as what a shot does rather than as a bare stat name.
-      case 'pierce':
-        return level > 0
-          ? `Shots pass through ${computePerkEffect(p, level).toFixed(0)} more ${computePerkEffect(p, level) === 1 ? 'enemy' : 'enemies'}`
-          : 'Shots pass through one more enemy per level';
-      case 'auto_buy':
-        return 'Unlocks the Auto-Upgrader automation';
-      case 'wave_skip':
-        return atMax
-          ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% wave skip chance`
-          : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% wave skip chance per level`;
-      case 'damage_mult':
-        return level > 0
-          ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% damage`
-          : '';
-      case 'resource_mult':
-        return level > 0
-          ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% gold`
-          : '';
-      case 'research_speed':
-        return level > 0
-          ? `-${(computePerkEffect(p, level) * 100).toFixed(0)}% research time`
-          : '';
-      case 'idle_time':
-        return `+${formatIdleDuration(computePerkEffect(p, 1))} offline cap`;
-      default:
-        return '';
-    }
-  }
-
   private clearMaps(): void {
     this.coreRowById.clear();
     this.coreStatusById.clear();
@@ -285,6 +263,8 @@ export class PrestigePanel {
     this.apCostById.clear();
     this.apBtnById.clear();
     this.apReasonById.clear();
+    this.reforgeTextEl = null;
+    this.reforgeBtnEl = null;
   }
 
   private unmount(): void {
@@ -465,13 +445,59 @@ export class PrestigePanel {
     intro.textContent = 'Spend AP to permanently strengthen your tower. Effects apply for the rest of the run and stack with upgrades.';
     section.appendChild(intro);
 
-    const list = document.createElement('div');
-    list.className = 'perk-list';
+    section.appendChild(this.renderReforgeRow());
+
+    // prestige-abs §6.2: nineteen rows in one flat list is unreadable, so the
+    // shelf is grouped by the `tier` the defs already carry — the same shape
+    // `TranscendencePanel` uses for its branches. The tier is what the
+    // prerequisites are expressed in, so grouping by it is also what makes the
+    // "Requires A or B" lines read as a tree rather than as a list of numbers.
+    const tiers = new Map<number, PrestigePerkDef[]>();
     for (const p of AP_PERKS) {
-      list.appendChild(this.renderAPPerkRow(p));
+      const t = p.tier ?? 1;
+      if (!tiers.has(t)) tiers.set(t, []);
+      tiers.get(t)!.push(p);
     }
-    section.appendChild(list);
+    for (const [tier, perks] of Array.from(tiers.entries()).sort((a, b) => a[0] - b[0])) {
+      const group = document.createElement('div');
+      group.className = `perk-tier perk-tier--${tier}`;
+      const tierHeader = document.createElement('h4');
+      tierHeader.className = 'perk-tier-title';
+      tierHeader.textContent = AP_TIER_TITLES[tier] ?? `Tier ${tier}`;
+      group.appendChild(tierHeader);
+      const list = document.createElement('div');
+      list.className = 'perk-list';
+      for (const p of perks) list.appendChild(this.renderAPPerkRow(p));
+      group.appendChild(list);
+      section.appendChild(group);
+    }
     return section;
+  }
+
+  /**
+   * The Reforge control (prestige-abs §6.1).
+   *
+   * Free and confirmed rather than taxed: a fee on a respec is a tax on
+   * experimenting, which is the thing the widened tier-1 shelf exists to buy.
+   */
+  private renderReforgeRow(): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'perk-reforge';
+
+    const text = document.createElement('div');
+    text.className = 'perk-reforge-text';
+    this.reforgeTextEl = text;
+    wrap.appendChild(text);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-secondary';
+    btn.textContent = 'Reforge';
+    btn.disabled = true;
+    btn.addEventListener('click', () => this.handlers.onReforge());
+    this.reforgeBtnEl = btn;
+    wrap.appendChild(btn);
+    return wrap;
   }
 
   private renderAPPerkRow(p: PrestigePerkDef): HTMLElement {

@@ -90,11 +90,18 @@ function enemyMilestones(): MilestoneDef[] {
 /** The types the strip deliberately does not announce. */
 export const MILESTONE_EXEMPT_ENEMIES: readonly EnemyType[] = ['normal', 'boss'];
 
+/**
+ * Wave the mana system opens on — the floor no ability unlock can go below,
+ * because mana is what an ability spends. Mirrors `AbilityManager`'s own
+ * constant; the two are asserted equal in `tests/content-coverage.test.ts`.
+ */
+export const MANA_MILESTONE_WAVE = 10;
+
 const FIXED_MILESTONES: MilestoneDef[] = [
   {
     id: 'mana:unlock',
     kind: 'mana',
-    wave: 10,
+    wave: MANA_MILESTONE_WAVE,
     label: 'Mana system unlocked',
     detail: 'Abilities become available — spend mana to cast powerful effects.',
     icon: 'magic-swirl',
@@ -132,9 +139,14 @@ export const MILESTONES: MilestoneDef[] = [
  * Includes the transcendence milestone only when the player has reached
  * `TRANSCENDENCE_UNLOCK_AP` ascension points this cycle.
  */
-export function upcomingMilestones(currentWave: number, apThisCycle: number, count = 3): MilestoneDef[] {
+export function upcomingMilestones(
+  currentWave: number,
+  apThisCycle: number,
+  count = 3,
+  abilityWaveOffset = 0,
+): MilestoneDef[] {
   const out: MilestoneDef[] = [];
-  for (const m of MILESTONES) {
+  for (const m of milestonesFor(abilityWaveOffset)) {
     if (m.wave > currentWave) {
       out.push(m);
       if (out.length >= count) break;
@@ -149,8 +161,43 @@ export function upcomingMilestones(currentWave: number, apThisCycle: number, cou
   return out.slice(0, count);
 }
 
-export function milestoneAtWave(wave: number): MilestoneDef[] {
-  return MILESTONES.filter(m => m.wave === wave);
+export function milestoneAtWave(wave: number, abilityWaveOffset = 0): MilestoneDef[] {
+  return milestonesFor(abilityWaveOffset).filter(m => m.wave === wave);
+}
+
+/**
+ * Attunement (prestige-abs §5) pulls ability unlocks forward, so the wave on a
+ * milestone is a *derived* number, not a fixed one. Every reader goes through
+ * here rather than through `MILESTONES` directly — an offset one of them did
+ * not apply is a strip that advertises a wave the gate no longer uses.
+ *
+ * The offset-0 case returns the shared arrays untouched, which is the case
+ * every caller hits until the perk is bought.
+ */
+export function applyAbilityWaveOffset(
+  entries: readonly MilestoneDef[],
+  abilityWaveOffset: number,
+): MilestoneDef[] {
+  const offset = Math.max(0, Math.floor(abilityWaveOffset));
+  if (offset === 0) return entries as MilestoneDef[];
+  return entries
+    .map(m => {
+      if (m.kind !== 'ability') return m;
+      const wave = Math.max(MANA_MILESTONE_WAVE, m.wave - offset);
+      // The detail line quotes the wave too, so it moves with it — half a
+      // shifted milestone is worse than none.
+      return { ...m, wave, detail: `New ability at wave ${wave}.` };
+    })
+    .sort((a, b) => a.wave - b.wave);
+}
+
+function milestonesFor(abilityWaveOffset: number): MilestoneDef[] {
+  return applyAbilityWaveOffset(MILESTONES, abilityWaveOffset);
+}
+
+/** `PROGRESSION_ENTRIES` with Attunement's offset applied (§5). */
+export function progressionEntries(abilityWaveOffset = 0): MilestoneDef[] {
+  return applyAbilityWaveOffset(PROGRESSION_ENTRIES, abilityWaveOffset);
 }
 
 export { TRANSCENDENCE_MILESTONE };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../src/game/EventBus';
 import { PrestigeManager } from '../src/systems/PrestigeManager';
-import { AP_PERKS, AP_PERK_BY_ID, FIRST_ASCENSION_AP, perkCost } from '../src/data/prestige';
+import { AP_PERKS, AP_PERK_BY_ID, FIRST_ASCENSION_AP, perkCost, describeAPPerkBonus } from '../src/data/prestige';
 import { CORES } from '../src/data/cores';
 import type { GameStats, PrestigeState, ResourceState } from '../src/types';
 
@@ -46,6 +46,30 @@ function reachableAllocations(budget: number): Record<string, number>[] {
   return out;
 }
 
+/**
+ * Cheapest total AP that ends with `perkId` at `level`, prerequisites included.
+ *
+ * Prerequisites are OR-based, so the cheapest path takes the cheapest parent.
+ * Memoised on `id:level`; the tree is acyclic, so the recursion terminates.
+ */
+const minCostMemo = new Map<string, number>();
+function minCostToOwn(perkId: string, level = 1): number {
+  const key = `${perkId}:${level}`;
+  const memo = minCostMemo.get(key);
+  if (memo !== undefined) return memo;
+  const def = AP_PERK_BY_ID[perkId];
+  if (!def) return Infinity;
+  let own = 0;
+  for (let l = 0; l < level; l++) own += perkCost(def, l);
+  const reqs = def.prerequisites ?? [];
+  const gate = reqs.length === 0
+    ? 0
+    : Math.min(...reqs.map(r => minCostToOwn(r.perkId, r.minLevel)));
+  const total = own + gate;
+  minCostMemo.set(key, total);
+  return total;
+}
+
 describe('AP tree gates (revamp §8, gates 10 and 11)', () => {
   it('gate 10: a first ascension cannot buy any projectile perk', () => {
     expect(FIRST_ASCENSION_AP).toBe(25);
@@ -55,23 +79,67 @@ describe('AP tree gates (revamp §8, gates 10 and 11)', () => {
     }
   });
 
-  it('gate 10: the first ascension is one utility choice, not a shopping list', () => {
-    // Auto-Upgrader alone is the whole budget; Quiver reaches L4 and Wave
-    // Skipper L3 costs 30, one short (§8.3).
-    expect(perkCost(AP_PERK_BY_ID.ap_auto_upgrader, 0)).toBe(25);
-    const quiver = AP_PERK_BY_ID.ap_quiver;
-    const quiverFour = [0, 1, 2, 3].reduce((sum, l) => sum + perkCost(quiver, l), 0);
-    expect(quiverFour).toBeLessThanOrEqual(27);
-    const skipper = AP_PERK_BY_ID.ap_wave_skipper;
-    const skipperThree = [0, 1, 2].reduce((sum, l) => sum + perkCost(skipper, l), 0);
-    expect(skipperThree).toBeGreaterThan(FIRST_ASCENSION_AP);
+  /**
+   * prestige-abs §8.1 replaces the old gate 10.
+   *
+   * The retired assertion — "the first ascension is one utility choice, not a
+   * shopping list" — was right when 25 AP could buy a 7x damage multiplier. It
+   * became the bug once tier 1 was four scalars: it *codified* a first
+   * ascension worth +2% to +8% composed throughput. The half that still
+   * matters (no projectile coverage at 25 AP) is kept above; these three are
+   * the inversion.
+   */
+  it('gate 10: a first ascension buys a shelf, not a single row', () => {
+    const allocs = reachableAllocations(FIRST_ASCENSION_AP);
+
+    // Three or more *different* perks in one budget — the thing the old gate
+    // forbade and §R6 requires.
+    const widest = Math.max(...allocs.map(a => Object.values(a).filter(l => l > 0).length));
+    expect(widest).toBeGreaterThanOrEqual(3);
+
+    // The shelf is wide as well as deep: eight distinct nodes are reachable.
+    const nodes = new Set<string>();
+    for (const alloc of allocs) {
+      for (const [id, level] of Object.entries(alloc)) if (level > 0) nodes.add(id);
+    }
+    expect(nodes.size).toBeGreaterThanOrEqual(8);
+
+    // At least one reachable build contains something that is not a
+    // percentage — a first ascension that only moves multipliers is the shelf
+    // this plan replaced.
+    const nonScalar = ['ap_auto_upgrader', 'ap_seed_capital'];
+    expect(allocs.some(a => nonScalar.some(id => (a[id] ?? 0) > 0))).toBe(true);
+  });
+
+  it('gate 10: Auto-Upgrader is a purchase, not the whole budget', () => {
+    // §3.2, fault 2: at 25 it consumed a first ascension entirely.
+    expect(perkCost(AP_PERK_BY_ID.ap_auto_upgrader, 0)).toBe(12);
+    expect(perkCost(AP_PERK_BY_ID.ap_auto_upgrader, 0)).toBeLessThan(FIRST_ASCENSION_AP / 2);
+  });
+
+  it('gate: the one-time nodes land on the second ascension, not the fourth', () => {
+    // §3.4: ~45 AP is ascension #2. Lodestone opens on Seed Capital L2 (11 AP)
+    // and Second Wind on Auto-Upgrader (12 AP).
+    const lodestone = mgrWith(45, { ap_seed_capital: 2 });
+    expect(lodestone.canSpendAP('ap_lodestone')).toBe(true);
+    const secondWind = mgrWith(45, { ap_auto_upgrader: 1 });
+    expect(secondWind.canSpendAP('ap_second_wind')).toBe(true);
+    // …and neither is reachable on the first.
+    for (const alloc of reachableAllocations(FIRST_ASCENSION_AP)) {
+      expect(alloc.ap_lodestone ?? 0).toBe(0);
+      expect(alloc.ap_second_wind ?? 0).toBe(0);
+    }
   });
 
   it('gate 11: 82 AP buys at most one signature node plus one utility line', () => {
-    for (const alloc of reachableAllocations(82)) {
-      const signatures = SIGNATURE.reduce((n, id) => n + (alloc[id] ?? 0), 0)
-        + Math.min(1, alloc.ap_pierce ?? 0);
-      expect(signatures).toBeLessThanOrEqual(1);
+    // Argued from the cheapest path to each node rather than from an
+    // exhaustive walk: prestige-abs widened the tree to 23 perks, and the
+    // reachable set at 82 AP is large enough that enumerating it is minutes of
+    // test time for an answer `minCostToOwn` gives exactly. If the *cheapest*
+    // way to own any one signature node already costs more than the budget,
+    // no allocation inside the budget holds one — let alone two.
+    for (const id of [...SIGNATURE, 'ap_pierce']) {
+      expect(minCostToOwn(id)).toBeGreaterThan(82);
     }
   });
 
@@ -86,8 +154,10 @@ describe('AP tree gates (revamp §8, gates 10 and 11)', () => {
 });
 
 describe('AP tree shape (revamp §8.2 / §8.4)', () => {
-  it('is thirteen perks in four tiers', () => {
-    expect(AP_PERKS).toHaveLength(13);
+  it('is twenty-three perks in four tiers', () => {
+    // 13 before prestige-abs, + the six-node tier-1 shelf (§3.1) and the four
+    // hook-carrying nodes (§5).
+    expect(AP_PERKS).toHaveLength(23);
     expect(new Set(AP_PERKS.map(p => p.tier))).toEqual(new Set([1, 2, 3, 4]));
   });
 
@@ -114,6 +184,61 @@ describe('AP tree shape (revamp §8.2 / §8.4)', () => {
     expect(mgr.spendAP('ap_warlord')).toBe(true);
     expect(mgr.isExcluded('ap_tycoon')).toBe(true);
     expect(mgr.canSpendAP('ap_tycoon')).toBe(false);
+  });
+
+  it('gate: prestige-abs §3.1 routes every new node onto a live consumer', () => {
+    const mgr = mgrWith(0, {
+      ap_seed_capital: 3,
+      ap_prospector: 4,
+      ap_veterancy: 2,
+      ap_field_notes: 2,
+      ap_lodestone: 1,
+      ap_second_wind: 1,
+      ap_field_kit: 2,
+      ap_opening_gambit: 1,
+      ap_broker: 2,
+      ap_attunement: 2,
+    });
+    // Seed Capital's ladder is `200 * 1.45^(L-1)`, not a running sum of it.
+    expect(mgr.getStartGold()).toBeCloseTo(200 * Math.pow(1.45, 2), 6);
+    expect(mgr.getAPUpgradeDiscount()).toBeCloseTo(0.06, 6);
+    expect(mgr.getAPXpMultiplier()).toBeCloseTo(1.16, 6);
+    expect(mgr.getAPRpDropBonus()).toBeCloseTo(0.04, 6);
+    expect(mgr.hasOrbMagnet()).toBe(true);
+    expect(mgr.getAPReviveCharges()).toBe(1);
+    expect(mgr.getStartingRerollTokens()).toBe(2);
+    expect(mgr.getFirstDraftWave()).toBe(1);
+    expect(mgr.getContractRewardMultiplier()).toBeCloseTo(1.4, 6);
+    expect(mgr.getAbilityUnlockOffset()).toBe(6);
+  });
+
+  it('gate: an untouched tree leaves every new channel at its identity', () => {
+    const mgr = mgrWith(0);
+    expect(mgr.getStartGold()).toBe(0);
+    expect(mgr.getAPUpgradeDiscount()).toBe(0);
+    expect(mgr.getAPXpMultiplier()).toBe(1);
+    expect(mgr.getAPRpDropBonus()).toBe(0);
+    expect(mgr.hasOrbMagnet()).toBe(false);
+    expect(mgr.getAPReviveCharges()).toBe(0);
+    expect(mgr.getStartingRerollTokens()).toBe(0);
+    expect(mgr.getFirstDraftWave()).toBe(3);
+    expect(mgr.getContractRewardMultiplier()).toBe(1);
+    expect(mgr.getAbilityUnlockOffset()).toBe(0);
+  });
+
+  /**
+   * §8.4: `describeAPPerkBonus` ends in `default: return ''`, so a perk whose
+   * effect type has no arm renders a blank line next to a price rather than
+   * failing to compile. Mirrors the "consumes every perk effect it sells"
+   * test below.
+   */
+  it('gate: every effect type the AP table sells renders a bonus line', () => {
+    for (const p of AP_PERKS) {
+      for (const level of [0, 1, p.maxLevel === 999 ? 10 : p.maxLevel]) {
+        const text = describeAPPerkBonus(p, level, level >= p.maxLevel);
+        expect(text, `${p.id} at level ${level}`).not.toBe('');
+      }
+    }
   });
 
   it('consumes every perk effect it sells', () => {

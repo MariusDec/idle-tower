@@ -109,3 +109,21 @@ export function setSrc(el: HTMLImageElement, value: string): void {
   srcCache.set(el, value);
   el.src = value;
 }
+
+/**
+ * Scroll a panel container back to the top, following the scroll up the tree.
+ *
+ * Switching tabs replaces the content but leaves the scroll offset alone, so a
+ * tab opened after a scrolled one starts mid-panel. The element handed to a
+ * panel is not always the one that scrolls (a panel's own root may scroll, or
+ * its container's container may), so reset `el` and every scrollable ancestor
+ * up to `stopAt` (inclusive) rather than guessing which one it is.
+ */
+export function resetScroll(el: HTMLElement, stopAt?: HTMLElement): void {
+  let node: HTMLElement | null = el;
+  while (node) {
+    if (node.scrollTop !== 0) node.scrollTop = 0;
+    if (node === stopAt || node === document.body) break;
+    node = node.parentElement;
+  }
+}

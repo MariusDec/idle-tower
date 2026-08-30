@@ -109,9 +109,11 @@ export class LootManager {
    * Currently two callers:
    *  - the `orb_magnet` blessing (taken during the draft, wiped on ascension),
    *  - `Gold Rush` (the active ability, plan §D.10 — on for the buff's
-   *    duration, off when the buff expires).
+   *    duration, off when the buff expires),
+   *  - `Lodestone` (the AP perk, prestige-abs §3.1 — permanent once bought,
+   *    so it is the one source that survives an ascension).
    */
-  setMagnetSource(source: 'blessing' | 'goldRush', enabled: boolean): void {
+  setMagnetSource(source: 'blessing' | 'goldRush' | 'prestige', enabled: boolean): void {
     if (enabled) this.magnetSources.add(source);
     else this.magnetSources.delete(source);
     const on = this.magnetSources.size > 0;

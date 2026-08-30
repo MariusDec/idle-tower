@@ -13,8 +13,10 @@ import {
   perkCost,
   computePerkEffect,
   BASE_IDLE_TIME_SECONDS,
+  abilityUnlockOffset,
   type AutomationKey,
 } from '../data/prestige';
+import { BLESSING_FIRST_DRAFT_WAVE } from '../data/blessings';
 import { lifetimeAPDamageBonus, lifetimeAPGoldBonus } from '../data/formulas';
 import { CORE_BY_ID, type CoreId } from '../data/cores';
 import { EventBus } from '../game/EventBus';
@@ -468,6 +470,13 @@ export class PrestigeManager {
     return factor;
   }
 
+  /**
+   * Gold every run opens with, across both layers.
+   *
+   * `tp_head_start` and `ap_seed_capital` (prestige-abs §3.1) are the same
+   * effect bought in two currencies, so they sum here rather than each growing
+   * its own call site in `Game`.
+   */
   getStartGold(): number {
     let total = 0;
     for (const p of TP_PERKS) {
@@ -475,7 +484,116 @@ export class PrestigeManager {
       const lvl = this.getTPLevel(p.id);
       if (lvl > 0) total += computePerkEffect(p, lvl);
     }
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'start_gold') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) total += computePerkEffect(p, lvl);
+    }
     return total;
+  }
+
+  // ── prestige-abs §3.1: the tier-1 shelf ──
+  //
+  // Each of these is the same scan-the-table shape as the rows above; `Game`
+  // reads them once per stat recompute and routes them onto the `StatKey` that
+  // already has a consumer.
+
+  /** Prospector: upgrade-cost reduction as a positive fraction. */
+  getAPUpgradeDiscount(): number {
+    let total = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'upgrade_cost') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) total += computePerkEffect(p, lvl);
+    }
+    return total;
+  }
+
+  /** Veterancy: tower/passive XP multiplier, already `1 + x` shaped. */
+  getAPXpMultiplier(): number {
+    let bonus = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'xp_gain') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) bonus += computePerkEffect(p, lvl);
+    }
+    return 1 + bonus;
+  }
+
+  /** Field Notes: added to the base RP drop chance, as a fraction. */
+  getAPRpDropBonus(): number {
+    let total = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'rp_drop') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) total += computePerkEffect(p, lvl);
+    }
+    return total;
+  }
+
+  /** Second Wind: extra revive charges per run, as a whole number. */
+  getAPReviveCharges(): number {
+    let total = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'revive_charge') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) total += Math.floor(computePerkEffect(p, lvl));
+    }
+    return total;
+  }
+
+  /**
+   * Lodestone: whether the permanent loot magnet is held.
+   *
+   * A boolean rather than a `StatKey`, because the accumulator is
+   * numeric-by-contract and a 0/1 key invites a 0.5 nobody can interpret. It
+   * routes through `LootManager.setMagnetSource('prestige', …)`, which is
+   * ref-counted alongside the `orb_magnet` blessing and Gold Rush.
+   */
+  hasOrbMagnet(): boolean {
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'orb_magnet') continue;
+      if (this.getAPLevel(p.id) > 0) return true;
+    }
+    return false;
+  }
+
+  // ── prestige-abs §5: the nodes with their own manager hook ──
+
+  /** Opening Gambit: the wave the run's first blessing draft lands on. */
+  getFirstDraftWave(): number {
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'first_draft_wave') continue;
+      if (this.getAPLevel(p.id) > 0) return 1;
+    }
+    return BLESSING_FIRST_DRAFT_WAVE;
+  }
+
+  /** Field Kit: blessing reroll tokens banked at the start of every run. */
+  getStartingRerollTokens(): number {
+    let total = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'blessing_rerolls') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) total += Math.floor(computePerkEffect(p, lvl));
+    }
+    return total;
+  }
+
+  /** Attunement: waves every ability unlock is pulled forward by. */
+  getAbilityUnlockOffset(): number {
+    return abilityUnlockOffset(this.ctx.prestige.apSpent);
+  }
+
+  /** Broker: contract gold and RP multiplier, already `1 + x` shaped. */
+  getContractRewardMultiplier(): number {
+    let bonus = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'contract_reward') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) bonus += computePerkEffect(p, lvl);
+    }
+    return 1 + bonus;
   }
 
   /**
@@ -622,6 +740,53 @@ export class PrestigeManager {
     this.ctx.resources.ascensionPoints -= CORE_BY_ID[id].apCost;
     this.bus.emit('ap_spent', { id: `core:${id}`, level: 1 });
     return true;
+  }
+
+  /**
+   * Refund every AP spent on perks and clear the AP tree (prestige-abs §6.1).
+   *
+   * Widening tier 1 into a real decision makes a wrong first choice a
+   * permanent one, and a respec is what makes the decision safe to take. AP
+   * perks are permanent and never run-scoped, so unlike a TP respec there is
+   * nothing here that could be timed against a live run for profit.
+   *
+   * Two things the refund is deliberately *not*:
+   *  - **Cores are not refunded.** They are an AP spend, not a perk, and they
+   *    are not in `apSpent` at all. The confirm dialog says so.
+   *  - **`automationFlags` is not left alone.** `autoBuy` is set true on
+   *    purchase and read back from the stored flag, so clearing the tree
+   *    without re-deriving the flags would leave a player who reforged away
+   *    Auto-Upgrader still auto-buying. Every flag is re-derived against the
+   *    post-reforge tables (which still see the Watch's `overseer` grant).
+   *
+   * Returns the AP credited back.
+   */
+  reforge(): number {
+    let refund = 0;
+    for (const [perkId, level] of Object.entries(this.ctx.prestige.apSpent)) {
+      const def = AP_PERK_BY_ID[perkId];
+      if (!def || !Number.isFinite(level) || level <= 0) continue;
+      for (let l = 0; l < level; l++) refund += perkCost(def, l);
+    }
+    this.ctx.prestige.apSpent = {};
+    this.ctx.resources.ascensionPoints += refund;
+    const flags = this.ctx.prestige.automationFlags;
+    for (const key of Object.keys(flags) as AutomationKey[]) {
+      flags[key] = this.isAutomationUnlocked(key) && flags[key];
+    }
+    this.bus.emit('ap_reforged', { refunded: refund });
+    return refund;
+  }
+
+  /** AP a reforge would credit back right now. Drives the confirm dialog. */
+  reforgeValue(): number {
+    let refund = 0;
+    for (const [perkId, level] of Object.entries(this.ctx.prestige.apSpent)) {
+      const def = AP_PERK_BY_ID[perkId];
+      if (!def || !Number.isFinite(level) || level <= 0) continue;
+      for (let l = 0; l < level; l++) refund += perkCost(def, l);
+    }
+    return refund;
   }
 
   spendPerk(perkId: string): boolean {

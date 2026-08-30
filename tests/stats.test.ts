@@ -360,6 +360,30 @@ describe('once-dead content now reaches a stat', () => {
     }
   });
 
+  /**
+   * prestige-abs §8.6: each of the four new `PrestigeInputs` fields moves its
+   * own `StatKey` and nothing else. The "nothing else" half is the point — the
+   * shelf reuses keys that other layers already write, so a field wired onto
+   * the wrong one would still look right in isolation.
+   */
+  it('routes the prestige-abs tier-1 shelf onto its resolved keys', () => {
+    const base = resolveStats(ctx()).stats;
+    const cases: [Partial<StatContext['prestige']>, keyof typeof base, number][] = [
+      [{ apUpgradeDiscount: 0.09 }, 'upgradeCostDiscount', -0.09],
+      [{ apXpGain: 1.24 }, 'xpGainMultiplier', 1.24],
+      [{ apRpDrop: 0.06 }, 'rpDropChanceBonus', 0.06],
+      [{ apReviveCharges: 2 }, 'reviveCharges', 2],
+    ];
+    for (const [patch, key, expected] of cases) {
+      const { stats } = resolveStats(ctx({ prestige: { ...emptyStatContext().prestige, ...patch } }));
+      expect(stats[key] as number, `prestige ${JSON.stringify(patch)}`).toBeCloseTo(expected, 6);
+      for (const other of STAT_KEYS) {
+        if (other === key) continue;
+        expect(stats[other], `${String(key)} moved ${other}`).toBeCloseTo(base[other], 6);
+      }
+    }
+  });
+
   it('applies the achievement cost reduction and cooldown reward', () => {
     const { stats } = resolveStats(ctx({
       achievements: { upgrade_cost_reduction: 0.05, ability_cdr: 0.2 },

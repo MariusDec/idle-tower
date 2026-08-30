@@ -45,6 +45,16 @@ interface AbilityManagerDeps {
    * build an `AbilityManager` without a `LootManager` to talk to.
    */
   setGoldRushMagnet?: (on: boolean) => void;
+  /**
+   * Waves every ability unlock is pulled forward by (Attunement,
+   * prestige-abs §5). Defaults to 0.
+   *
+   * Read lazily on every gate check rather than snapshotted, so a perk bought
+   * mid-run is felt on the next ability the player looks at. `MANA_UNLOCK_WAVE`
+   * is the floor: mana itself is what the abilities spend, so no offset can
+   * open one before there is anything to cast it with.
+   */
+  unlockWaveOffset?: () => number;
 }
 
 /**
@@ -104,6 +114,7 @@ export class AbilityManager {
    * every call is optional-chained.
    */
   private readonly setGoldRushMagnet?: (on: boolean) => void;
+  private readonly unlockWaveOffset?: () => number;
   private abilityCostMultiplier = 1;
   private cooldownMultiplier = 1;
   private damageMultiplier = 1;
@@ -140,6 +151,7 @@ export class AbilityManager {
     this.getState = deps.getState;
     this.onCast = deps.onCast;
     this.setGoldRushMagnet = deps.setGoldRushMagnet;
+    this.unlockWaveOffset = deps.unlockWaveOffset;
   }
 
   isManaUnlocked(wave: number): boolean {
@@ -217,7 +229,9 @@ export class AbilityManager {
 
   getUnlockWave(id: AbilityId): number {
     const def = ABILITY_BY_ID[id];
-    return def ? def.unlockWave : MANA_UNLOCK_WAVE;
+    if (!def) return MANA_UNLOCK_WAVE;
+    const offset = Math.max(0, Math.floor(this.unlockWaveOffset?.() ?? 0));
+    return Math.max(MANA_UNLOCK_WAVE, def.unlockWave - offset);
   }
 
   isAbilityUnlocked(id: AbilityId, wave: number): boolean {

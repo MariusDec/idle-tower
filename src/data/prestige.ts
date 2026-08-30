@@ -2,6 +2,7 @@ import type { PrestigeLayer } from '../types';
 import type { IconId } from './icons';
 import { evalFormula } from './formulas';
 import { world } from './arena';
+import { formatNumber } from '../utils/bigNumber';
 
 export type PrestigePerkEffect =
   | 'extra_shots'
@@ -26,7 +27,18 @@ export type PrestigePerkEffect =
   | 'auto_buy_speed'
   | 'research_speed'
   | 'game_speed'
-  | 'idle_time';
+  | 'idle_time'
+  // ── prestige-abs §3.1: the tier-1 shelf ──
+  | 'upgrade_cost'
+  | 'xp_gain'
+  | 'rp_drop'
+  | 'orb_magnet'
+  | 'revive_charge'
+  // ── prestige-abs §5: the nodes with their own manager hook ──
+  | 'first_draft_wave'
+  | 'blessing_rerolls'
+  | 'ability_unlock'
+  | 'contract_reward';
 
 export type AutomationKey = 'autoBuy' | 'autoAbilities' | 'autoAscend' | 'autoTranscend';
 
@@ -143,6 +155,14 @@ export const TRANSCENDENCE_UNLOCK_AP = 100;
  * One shared block: `Game.buildShotVariants()` ships it and `sim/model.ts`
  * reads it, so the simulator measures the number that actually fires.
  */
+/**
+ * Waves Attunement (prestige-abs §5) pulls every ability unlock forward, per
+ * level. Shared because three readers have to agree on it: the ability gate
+ * itself, the milestone strip and the progression tab. A constant one of them
+ * did not import is exactly how the strip starts lying about wave numbers.
+ */
+export const ABILITY_UNLOCK_WAVES_PER_LEVEL = 3;
+
 export const PRESTIGE_PROJECTILE_TUNING = {
   extraDamageScale: 0.55,   // Twin Arrows, front lane
   rearDamageScale: 0.55,    // Rear Guard, behind the tower
@@ -170,7 +190,11 @@ export const AP_PERKS: PrestigePerkDef[] = [
     layer: 'ascension',
     name: 'Auto-Upgrader',
     description: 'Unlocks Auto-Upgrade: buys upgrades every 10s using your chosen strategy',
-    costPerLevel: 25,
+    // prestige-abs §3.2 (fault 2): was 25 — exactly a first ascension's whole
+    // budget, so the one transformative tier-1 node was an all-or-nothing
+    // choice. At 12 it is a purchase alongside two or three others, and it is
+    // still worth taking before the Watch's `overseer` hands auto-buy out free.
+    costPerLevel: 12,
     costScaling: 1,
     maxLevel: 1,
     effectType: 'auto_buy',
@@ -184,12 +208,14 @@ export const AP_PERKS: PrestigePerkDef[] = [
     id: 'ap_wave_skipper',
     layer: 'ascension',
     name: 'Wave Skipper',
-    description: '+1% chance per level to skip a wave and instantly collect its rewards',
+    description: '+1.5% chance per level to skip a wave and instantly collect its rewards',
+    // prestige-abs §3.2: the old ladder reached +3% for the first 15 AP, which
+    // is a rounding error on a run. 1.42/1.5% reaches +4.5% for the first 26.
     costPerLevel: 6,
-    costScaling: 1.60,
-    maxLevel: 15,
+    costScaling: 1.42,
+    maxLevel: 12,
     effectType: 'wave_skip',
-    effectPerLevel: 0.01,
+    effectPerLevel: 0.015,
     icon: 'fast-forward-button',
     color: '#3ec46d',
     tier: 1,
@@ -222,6 +248,60 @@ export const AP_PERKS: PrestigePerkDef[] = [
     color: '#5b8def',
     tier: 1
   },
+  // ── prestige-abs §3.1: the widened tier-1 shelf ──────────────────
+  //
+  // Six nodes, each a different *verb*, each visible inside a minute of the
+  // next run starting. Every one resolves through a `StatKey` that already has
+  // a consumer or through a manager method that already exists, so the shelf
+  // is data plus plumbing rather than new combat code (§R3).
+  {
+    id: 'ap_seed_capital',
+    layer: 'ascension',
+    name: 'Seed Capital',
+    description: 'Start each run with bonus gold, growing 45% per level',
+    costPerLevel: 5,
+    costScaling: 1.30,
+    maxLevel: 8,
+    effectType: 'start_gold',
+    // The player-facing figure is `200 * 1.45^(L-1)` — 200 at L1, 2 695 at L8.
+    // `computePerkEffect` *sums* a string `effectPerLevel` from level 2 up, so
+    // the per-level term is the geometric step (`200*1.45^(L-1) -
+    // 200*1.45^(L-2)` = `90*1.45^(L-2)`) and the sum telescopes back to the
+    // quoted curve. Writing the curve itself here would compound it twice.
+    effectPerLevel: '90 * Math.pow(1.45, {level} - 2)',
+    baseEffect: 200,
+    icon: 'shiny-purse',
+    color: '#e8a93b',
+    tier: 1,
+  },
+  {
+    id: 'ap_prospector',
+    layer: 'ascension',
+    name: 'Prospector',
+    description: '-1.5% upgrade cost per level',
+    costPerLevel: 4,
+    costScaling: 1.30,
+    maxLevel: 10,
+    effectType: 'upgrade_cost',
+    effectPerLevel: 0.015,
+    icon: 'gold-mine',
+    color: '#3ec46d',
+    tier: 1,
+  },
+  {
+    id: 'ap_veterancy',
+    layer: 'ascension',
+    name: 'Veterancy',
+    description: '+8% tower XP per level',
+    costPerLevel: 5,
+    costScaling: 1.28,
+    maxLevel: 8,
+    effectType: 'xp_gain',
+    effectPerLevel: 0.08,
+    icon: 'brain',
+    color: '#9b59ff',
+    tier: 1,
+  },
   // ── Tier 2: the unbounded sinks and the research line ────────────
   {
     id: 'ap_might',
@@ -239,6 +319,9 @@ export const AP_PERKS: PrestigePerkDef[] = [
     prerequisites: [
       { perkId: 'ap_auto_upgrader', minLevel: 1 },
       { perkId: 'ap_quiver', minLevel: 3 },
+      // prestige-abs §3.3: a third OR-parent, so the economy opener reaches the
+      // damage sink without buying automation or fire rate first.
+      { perkId: 'ap_prospector', minLevel: 3 },
     ],
   },
   {
@@ -257,6 +340,7 @@ export const AP_PERKS: PrestigePerkDef[] = [
     prerequisites: [
       { perkId: 'ap_auto_upgrader', minLevel: 1 },
       { perkId: 'ap_wave_skipper', minLevel: 2 },
+      { perkId: 'ap_seed_capital', minLevel: 3 },
     ],
   },
   {
@@ -272,7 +356,119 @@ export const AP_PERKS: PrestigePerkDef[] = [
     icon: 'book-pile',
     color: '#9b59ff',
     tier: 2,
-    prerequisites: [{ perkId: 'ap_auto_upgrader', minLevel: 1 }],
+    prerequisites: [
+      { perkId: 'ap_auto_upgrader', minLevel: 1 },
+      { perkId: 'ap_field_notes', minLevel: 2 },
+    ],
+  },
+  {
+    id: 'ap_field_notes',
+    layer: 'ascension',
+    name: 'Field Notes',
+    description: '+2% research point drop chance per level',
+    costPerLevel: 6,
+    costScaling: 1.45,
+    maxLevel: 6,
+    effectType: 'rp_drop',
+    effectPerLevel: 0.02,
+    icon: 'book-pile',
+    color: '#9b59ff',
+    tier: 2,
+    prerequisites: [
+      { perkId: 'ap_veterancy', minLevel: 2 },
+      { perkId: 'ap_auto_upgrader', minLevel: 1 },
+    ],
+  },
+  {
+    id: 'ap_lodestone',
+    layer: 'ascension',
+    name: 'Lodestone',
+    description: 'Loot orbs always home to the tower and are collected at full value',
+    costPerLevel: 18,
+    costScaling: 1,
+    maxLevel: 1,
+    effectType: 'orb_magnet',
+    effectPerLevel: 1,
+    icon: 'magnet',
+    color: '#e8a93b',
+    tier: 2,
+    prerequisites: [
+      { perkId: 'ap_seed_capital', minLevel: 2 },
+      { perkId: 'ap_wave_skipper', minLevel: 2 },
+    ],
+  },
+  {
+    id: 'ap_second_wind',
+    layer: 'ascension',
+    name: 'Second Wind',
+    description: '+1 revive charge per run',
+    costPerLevel: 20,
+    costScaling: 1,
+    maxLevel: 1,
+    effectType: 'revive_charge',
+    effectPerLevel: 1,
+    icon: 'shining-heart',
+    color: '#d04848',
+    tier: 2,
+    prerequisites: [
+      { perkId: 'ap_quiver', minLevel: 3 },
+      { perkId: 'ap_auto_upgrader', minLevel: 1 },
+    ],
+  },
+  // ── prestige-abs §5: the nodes that each cost a manager hook ─────
+  {
+    id: 'ap_field_kit',
+    layer: 'ascension',
+    name: 'Field Kit',
+    description: 'Start each run with one banked blessing reroll per level',
+    costPerLevel: 8,
+    costScaling: 1.5,
+    maxLevel: 3,
+    effectType: 'blessing_rerolls',
+    effectPerLevel: 1,
+    icon: 'knapsack',
+    color: '#3ec46d',
+    tier: 2,
+    prerequisites: [
+      { perkId: 'ap_seed_capital', minLevel: 2 },
+      { perkId: 'ap_veterancy', minLevel: 2 },
+    ],
+  },
+  {
+    id: 'ap_opening_gambit',
+    layer: 'ascension',
+    name: 'Opening Gambit',
+    description: 'The first blessing draft arrives on wave 1 instead of wave 3',
+    costPerLevel: 22,
+    costScaling: 1,
+    maxLevel: 1,
+    effectType: 'first_draft_wave',
+    effectPerLevel: 1,
+    icon: 'prayer',
+    color: '#9b59ff',
+    tier: 2,
+    prerequisites: [
+      { perkId: 'ap_field_kit', minLevel: 1 },
+      { perkId: 'ap_auto_upgrader', minLevel: 1 },
+    ],
+  },
+  {
+    id: 'ap_broker',
+    layer: 'ascension',
+    name: 'Broker',
+    description: '+20% contract gold and research points per level',
+    costPerLevel: 10,
+    costScaling: 1.5,
+    maxLevel: 4,
+    effectType: 'contract_reward',
+    effectPerLevel: 0.20,
+    icon: 'receive-money',
+    color: '#e8a93b',
+    tier: 2,
+    prerequisites: [
+      { perkId: 'ap_prospector', minLevel: 3 },
+      { perkId: 'ap_auto_upgrader', minLevel: 1 },
+    ],
   },
   // ── Tier 3: the signature coverage nodes, one level each ─────────
   {
@@ -322,6 +518,24 @@ export const AP_PERKS: PrestigePerkDef[] = [
     color: '#5b8def',
     tier: 3,
     prerequisites: [{ perkId: 'ap_extra_shots', minLevel: 1 }],
+  },
+  {
+    id: 'ap_attunement',
+    layer: 'ascension',
+    name: 'Attunement',
+    description: 'Abilities unlock 3 waves earlier per level',
+    costPerLevel: 20,
+    costScaling: 1.8,
+    maxLevel: 3,
+    effectType: 'ability_unlock',
+    effectPerLevel: ABILITY_UNLOCK_WAVES_PER_LEVEL,
+    icon: 'concentration-orb',
+    color: '#5b8def',
+    tier: 3,
+    prerequisites: [
+      { perkId: 'ap_field_notes', minLevel: 2 },
+      { perkId: 'ap_veterancy', minLevel: 4 },
+    ],
   },
   // ── Tier 4: the deep-run fork ────────────────────────────────────
   {
@@ -376,6 +590,110 @@ export const AP_PERKS: PrestigePerkDef[] = [
   },
 ];
 
+/**
+ * The bonus line an AP perk row shows (prestige-abs §8.4).
+ *
+ * Lives here rather than on `PrestigePanel` because the panel's `default:
+ * return ''` arm is a silent failure mode: a perk whose effect type has no arm
+ * compiles fine and renders a *blank* line with a price tag next to it. As a
+ * free function over the def it can be asserted non-empty for every effect
+ * type the table actually sells, which is the gate that closes that hole.
+ */
+export function describeAPPerkBonus(p: PrestigePerkDef, level: number, atMax: boolean): string {
+  const pct = (scale: number) => Math.round(scale * 100);
+  const extraPct = pct(PRESTIGE_PROJECTILE_TUNING.extraDamageScale);
+  const rearPct = pct(PRESTIGE_PROJECTILE_TUNING.rearDamageScale);
+  const scatterPct = pct(PRESTIGE_PROJECTILE_TUNING.scatterDamageScale);
+  switch (p.effectType) {
+    // Revamp §7/§12.5: these rows state the *payload*, never a bare
+    // projectile count — an extra lane carries a fraction of the volley, and
+    // a player pricing the node against its cost has to be able to see that.
+    case 'extra_shots':
+      return atMax
+        ? `+${level} front projectile${level === 1 ? '' : 's'} at ${extraPct}% damage`
+        : `Adds one front projectile at ${extraPct}% damage`;
+    case 'scatter_shots':
+      return atMax
+        ? `+${level * 2} angled projectile${level * 2 === 1 ? '' : 's'} at ${scatterPct}% damage each`
+        : `Adds two angled projectiles at ${scatterPct}% damage each`;
+    case 'back_shots':
+      return atMax
+        ? `+${level} rear projectile${level === 1 ? '' : 's'} at ${rearPct}% damage`
+        : `Adds one rear projectile at ${rearPct}% damage`;
+    // Coverage, stated as what a shot does rather than as a bare stat name.
+    case 'pierce':
+      return level > 0
+        ? `Shots pass through ${computePerkEffect(p, level).toFixed(0)} more ${computePerkEffect(p, level) === 1 ? 'enemy' : 'enemies'}`
+        : 'Shots pass through one more enemy per level';
+    case 'auto_buy':
+      return 'Unlocks the Auto-Upgrader automation';
+    case 'wave_skip':
+      return atMax
+        ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% wave skip chance`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% wave skip chance per level`;
+    // The unbought rows quote what the *first* level buys rather than
+    // rendering blank (§8.4) — a price tag with no bonus next to it is the
+    // hole this function was lifted out of the panel to close.
+    case 'damage_mult':
+      return level > 0
+        ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% damage`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% damage per level`;
+    case 'resource_mult':
+      return level > 0
+        ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% gold`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% gold per level`;
+    case 'fire_rate_mult':
+      return level > 0
+        ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% fire rate`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% fire rate per level`;
+    case 'research_speed':
+      return level > 0
+        ? `-${(computePerkEffect(p, level) * 100).toFixed(0)}% research time`
+        : `-${(computePerkEffect(p, 1) * 100).toFixed(0)}% research time per level`;
+    case 'idle_time':
+      return `+${formatIdleDuration(computePerkEffect(p, 1))} offline cap`;
+    // ── prestige-abs §3.1 / §5 ──
+    case 'start_gold':
+      return level > 0
+        ? `${formatNumber(Math.floor(computePerkEffect(p, level)))} starting gold`
+        : `Start with ${formatNumber(Math.floor(computePerkEffect(p, 1)))} gold`;
+    case 'upgrade_cost':
+      return level > 0
+        ? `-${(computePerkEffect(p, level) * 100).toFixed(1)}% upgrade cost`
+        : `-${(computePerkEffect(p, 1) * 100).toFixed(1)}% upgrade cost per level`;
+    case 'xp_gain':
+      return level > 0
+        ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% tower XP`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% tower XP per level`;
+    case 'rp_drop':
+      return level > 0
+        ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% RP drop chance`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% RP drop chance per level`;
+    case 'orb_magnet':
+      return 'Loot orbs home to the tower at full value';
+    case 'revive_charge':
+      return level > 0
+        ? `+${computePerkEffect(p, level).toFixed(0)} revive charge${computePerkEffect(p, level) === 1 ? '' : 's'}`
+        : '+1 revive charge per run';
+    case 'first_draft_wave':
+      return 'First blessing draft on wave 1';
+    case 'blessing_rerolls':
+      return level > 0
+        ? `${computePerkEffect(p, level).toFixed(0)} banked reroll${computePerkEffect(p, level) === 1 ? '' : 's'} each run`
+        : '1 banked blessing reroll per level';
+    case 'ability_unlock':
+      return level > 0
+        ? `Abilities unlock ${computePerkEffect(p, level).toFixed(0)} waves earlier`
+        : `Abilities unlock ${computePerkEffect(p, 1).toFixed(0)} waves earlier per level`;
+    case 'contract_reward':
+      return level > 0
+        ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% contract rewards`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% contract rewards per level`;
+    default:
+      return '';
+  }
+}
+
 export const AP_PERK_BY_ID: Record<string, PrestigePerkDef> = AP_PERKS.reduce(
   (acc, p) => {
     acc[p.id] = p;
@@ -383,6 +701,24 @@ export const AP_PERK_BY_ID: Record<string, PrestigePerkDef> = AP_PERKS.reduce(
   },
   {} as Record<string, PrestigePerkDef>,
 );
+
+/**
+ * Waves every ability unlock is pulled forward by, given a spend map.
+ *
+ * A free function over `apSpent` rather than a `PrestigeManager` method,
+ * because the three readers that must agree on it are not all near a manager:
+ * the ability gate has one, but the milestone strip and the progression tab
+ * only ever see `GameState`. One derivation, three call sites, no drift.
+ */
+export function abilityUnlockOffset(apSpent: Readonly<Record<string, number>>): number {
+  let total = 0;
+  for (const p of AP_PERKS) {
+    if (p.effectType !== 'ability_unlock') continue;
+    const lvl = apSpent[p.id] ?? 0;
+    if (lvl > 0) total += Math.floor(computePerkEffect(p, lvl));
+  }
+  return total;
+}
 
 /**
  * AP banked for ascending at a given wave.

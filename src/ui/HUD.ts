@@ -100,6 +100,24 @@ const BAR_GHOST_TAU = 0.28;
 /** Below this XP/sec the time-to-level estimate is noise, so it is hidden. */
 const MIN_XP_RATE_FOR_ETA = 0.05;
 
+/* XP does not arrive smoothly — it lands in lumps, one per kill and a bigger
+ * one per wave — so a short averaging window measures "how long since the last
+ * kill" rather than a rate, and the ETA built on it swung between 4m and 13m
+ * within seconds. Three things settle it, in order of how much they matter:
+ *
+ *   · `XP_RATE_TAU` averages the rate over half a minute, so the window spans
+ *     several lumps instead of sitting inside the gap between two;
+ *   · `XP_ETA_TAU` smooths the resulting estimate again, which absorbs the step
+ *     the rate takes when a wave clears;
+ *   · `XP_ETA_HYSTERESIS` keeps the printed string still until the estimate has
+ *     actually moved — without it the text rewrites on rounding noise alone.
+ *
+ * The estimate is deliberately slow to follow a real change in rate. It is a
+ * "roughly this long" line under a progress bar; being steady is the point. */
+const XP_RATE_TAU = 30;
+const XP_ETA_TAU = 8;
+const XP_ETA_HYSTERESIS = 0.12;
+
 /** Compact "time until" string for the XP-to-next-level hint. */
 function formatEta(seconds: number): string {
   if (seconds < 60) return `${Math.ceil(seconds)}s`;
@@ -122,8 +140,18 @@ export class HUD {
   private xpPctEl!: HTMLElement;
   private xpLevelEl!: HTMLElement;
   private xpWrapEl!: HTMLElement;
+  /* Mobile-only mirror of the XP bar head: the phone HUD hides the head to fit
+     the bar on one line, so the numbers live here and the bar is the button. */
+  private xpInfoLevelEl!: HTMLElement;
+  private xpInfoXpEl!: HTMLElement;
+  private xpInfoNextEl!: HTMLElement;
+  private xpInfoTalentEl!: HTMLElement;
   /** Rolling XP/sec estimate, for the time-to-next-level readout. */
   private xpRate = 0;
+  /** Smoothed seconds-to-next-level, and the value the text currently shows. */
+  private xpEta = 0;
+  private xpEtaShown = 0;
+  private xpEtaLevel = -1;
   private lastTotalXp = -1;
   private waveEl!: HTMLElement;
   private waveFocal!: HTMLElement;
@@ -350,10 +378,11 @@ export class HUD {
       } else if (dt > 0) {
         const gained = Math.max(0, tx.totalXpEarned - this.lastTotalXp);
         this.lastTotalXp = tx.totalXpEarned;
-        const rateAlpha = 1 - Math.exp(-dt / 5);
+        const rateAlpha = 1 - Math.exp(-dt / XP_RATE_TAU);
         this.xpRate += (gained / dt - this.xpRate) * rateAlpha;
       }
       this.displayXpNeeded = xpForNextLevel(tx.level);
+      this.tickXpEta(tx, dt);
       if (xpToLevel(tx.xp) > tx.level) {
         this.displayXpProgress = 1;
       } else {
@@ -483,6 +512,39 @@ export class HUD {
     }
   }
 
+  /**
+   * Advance the smoothed time-to-next-level.
+   *
+   * Runs per frame off the raw estimate `remaining / rate`. A level-up resets
+   * both the smoothing and the hysteresis: the remaining XP has just jumped to
+   * a whole level's worth, so easing across that step would print a number
+   * that was true for neither the old level nor the new one.
+   */
+  private tickXpEta(tx: NonNullable<GameState['towerXp']>, dt: number): void {
+    const needed = this.displayXpNeeded;
+    if (!Number.isFinite(needed) || needed <= 0 || this.xpRate < MIN_XP_RATE_FOR_ETA) {
+      this.xpEta = 0;
+      this.xpEtaShown = 0;
+      this.xpEtaLevel = tx.level;
+      return;
+    }
+    const xpIntoLevel = Math.min(Math.max(0, tx.xp - TOWER_XP_TABLE[tx.level]), needed);
+    const raw = (needed - xpIntoLevel) / this.xpRate;
+    if (tx.level !== this.xpEtaLevel || this.xpEta <= 0) {
+      this.xpEtaLevel = tx.level;
+      this.xpEta = raw;
+      this.xpEtaShown = raw;
+      return;
+    }
+    this.xpEta += (raw - this.xpEta) * (1 - Math.exp(-dt / XP_ETA_TAU));
+    // Repaint only once the estimate has moved enough to mean something. The
+    // countdown still ticks down: as the smoothed value falls it crosses the
+    // band from above every few seconds and the text follows it down.
+    if (Math.abs(this.xpEta - this.xpEtaShown) > this.xpEtaShown * XP_ETA_HYSTERESIS) {
+      this.xpEtaShown = this.xpEta;
+    }
+  }
+
   private updateXpBar(state: GameState): void {
     const tx = state.towerXp;
     if (!tx) return;
@@ -498,17 +560,24 @@ export class HUD {
       // Only quote an ETA once the rate is high enough to be meaningful —
       // otherwise a near-idle tower reports "75 days at 0 XP/s", which is both
       // useless and alarming.
-      const hasRate = this.xpRate >= MIN_XP_RATE_FOR_ETA;
+      const hasRate = this.xpRate >= MIN_XP_RATE_FOR_ETA && this.xpEtaShown > 0;
       setTitle(
         this.xpWrapEl,
         `Tower level ${tx.level}. ${formatInt(remaining)} XP to level ${tx.level + 1}`
-        + (hasRate ? ` (~${formatEta(remaining / this.xpRate)} at ${formatNumber(this.xpRate)} XP/s).` : '.')
+        + (hasRate ? ` (~${formatEta(this.xpEtaShown)} at ${formatNumber(this.xpRate)} XP/s).` : '.')
         + ` ${formatInt(tx.unspentTalentPoints)} unspent talent point${tx.unspentTalentPoints === 1 ? '' : 's'}.`,
       );
+      setText(this.xpInfoNextEl, `${formatInt(remaining)} XP`
+        + (hasRate ? ` (~${formatEta(this.xpEtaShown)})` : ''));
+      setText(this.xpInfoXpEl, `${formatInt(currentXp)} / ${formatInt(needed)} XP`);
     } else {
       setText(this.xpPctEl, `MAX`);
       setTitle(this.xpWrapEl, 'Tower is at max level.');
+      setText(this.xpInfoXpEl, 'MAX');
+      setText(this.xpInfoNextEl, '\u2014');
     }
+    setText(this.xpInfoLevelEl, `Lv.${tx.level}`);
+    setText(this.xpInfoTalentEl, formatInt(tx.unspentTalentPoints));
   }
 
   private render(): void {
@@ -565,6 +634,7 @@ export class HUD {
     this.xpLevelEl.textContent = 'Lv.1';
     this.xpPctEl.parentElement?.insertBefore(this.xpLevelEl, this.xpPctEl);
     this.root.appendChild(this.xpBar.block);
+    this.installXpInfoPopup();
 
     const groupRight = document.createElement('div');
     groupRight.className = 'hud-group right';
@@ -954,6 +1024,86 @@ export class HUD {
    * screens (DPS, FPS, speed, stats & enemies buttons). Stays open when the
    * user clicks speed controls, so they can adjust and observe the effect.
    */
+  /**
+   * The tap popup behind the XP bar on phones.
+   *
+   * The portrait HUD gives XP a full-width line with no head (see the §9.B CSS
+   * block): three bars sharing one row could not print "101 / 153 XP" without
+   * ellipsing it to nonsense. The head's content is not dropped, it moves —
+   * tapping the bar opens this. Desktop keeps the head and the hover title, so
+   * the tap only arms where the head is actually hidden.
+   */
+  private installXpInfoPopup(): void {
+    const popover = document.createElement('div');
+    // Reuses the More popup's chrome: same overlay, same card, same rows.
+    popover.className = 'hud-more-popover hud-xp-popover';
+
+    const inner = document.createElement('div');
+    inner.className = 'hud-more-popover-inner';
+
+    const header = document.createElement('div');
+    header.className = 'hud-more-popover-header';
+    const title = document.createElement('h4');
+    title.className = 'hud-more-popover-title';
+    title.textContent = 'Tower XP';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'hud-more-popover-close';
+    closeBtn.textContent = '\u00d7';
+    closeBtn.setAttribute('aria-label', 'Close');
+    const close = () => toggleClass(popover, 'is-open', false);
+    closeBtn.addEventListener('click', close);
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    inner.appendChild(header);
+
+    // Headline: the desktop bar head, lifted whole — `Lv.3` in the bar's own
+    // gold, the XP count trailing on the right. Four identical label/value
+    // rows gave the level, the XP, and a footnote about talent points the same
+    // weight; only the first two are the reading.
+    const body = document.createElement('div');
+    body.className = 'hud-xp-info';
+    const headline = document.createElement('div');
+    headline.className = 'hud-xp-info-head';
+    this.xpInfoLevelEl = document.createElement('span');
+    this.xpInfoLevelEl.className = 'hud-bar-level u-display u-tabular';
+    this.xpInfoLevelEl.textContent = 'Lv.1';
+    this.xpInfoXpEl = document.createElement('span');
+    this.xpInfoXpEl.className = 'hud-bar-value u-tabular';
+    headline.appendChild(this.xpInfoLevelEl);
+    headline.appendChild(this.xpInfoXpEl);
+    body.appendChild(headline);
+
+    const subLine = (label: string): HTMLElement => {
+      const line = document.createElement('div');
+      line.className = 'hud-xp-info-sub';
+      const labelEl = document.createElement('span');
+      labelEl.textContent = label;
+      const valueEl = document.createElement('span');
+      valueEl.className = 'hud-xp-info-sub-value u-tabular';
+      line.appendChild(labelEl);
+      line.appendChild(valueEl);
+      body.appendChild(line);
+      return valueEl;
+    };
+    this.xpInfoNextEl = subLine('Next level');
+    this.xpInfoTalentEl = subLine('Talent points');
+    inner.appendChild(body);
+
+    popover.appendChild(inner);
+    popover.addEventListener('click', (e) => {
+      if (e.target === popover) close();
+    });
+    document.body.appendChild(popover);
+
+    this.xpWrapEl.addEventListener('click', () => {
+      // Only where the head is hidden — on desktop the bar already says all of
+      // this in place, and a modal over a readout you can read is noise.
+      if (!window.matchMedia('(orientation: portrait) and (max-width: 768px)').matches) return;
+      toggleClass(popover, 'is-open', !hasClass(popover, 'is-open'));
+    });
+  }
+
   private installMorePopup(): void {
     const popover = document.createElement('div');
     popover.className = 'hud-more-popover';

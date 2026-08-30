@@ -1,7 +1,7 @@
 import type { GameState } from '../types';
 import type { MilestoneDef } from '../data/milestones';
-import { PROGRESSION_ENTRIES, milestoneKindColor, milestoneKindLabel } from '../data/milestones';
-import { TRANSCENDENCE_UNLOCK_AP } from '../data/prestige';
+import { PROGRESSION_ENTRIES, progressionEntries, milestoneKindColor, milestoneKindLabel } from '../data/milestones';
+import { TRANSCENDENCE_UNLOCK_AP, abilityUnlockOffset } from '../data/prestige';
 import {
   BLESSING_MAX_PICKS,
   BLESSING_RARITY_COLORS,
@@ -65,6 +65,9 @@ export interface ProgressionPanelDeps {
 interface RowEls {
   wrap: HTMLElement;
   status: HTMLElement;
+  /** Held so the wave label can move with Attunement (prestige-abs §5). */
+  gate: HTMLElement;
+  detail: HTMLElement;
 }
 
 /**
@@ -141,20 +144,26 @@ export class ProgressionPanel {
     this.updateContracts();
     const highest = state.wave.highestWave;
     const apThisCycle = this.deps.apThisCycle();
+    // Attunement (prestige-abs §5) moves the ability gates, so the wave shown
+    // on a row is derived per update rather than baked at render time. The row
+    // *set* never changes — only the numbers on it — so the DOM is untouched.
+    const entries = progressionEntries(abilityUnlockOffset(state.prestige.apSpent));
     let unlocked = 0;
-    for (const entry of PROGRESSION_ENTRIES) {
+    for (const entry of entries) {
       const els = this.rows.get(entry.id);
       if (!els) continue;
       const isUnlocked = this.isUnlocked(entry, highest, apThisCycle);
       if (isUnlocked) unlocked += 1;
       toggleClass(els.wrap, 'is-unlocked', isUnlocked);
       toggleClass(els.wrap, 'is-locked', !isUnlocked);
+      setText(els.gate, entry.wave > 0 ? `Wave ${entry.wave}` : `${TRANSCENDENCE_UNLOCK_AP} AP`);
+      setText(els.detail, entry.detail);
       setText(els.status, isUnlocked ? 'Unlocked' : this.remainingLabel(entry, highest, apThisCycle));
     }
     if (this.summaryEl) {
       setText(
         this.summaryEl,
-        `${unlocked} / ${PROGRESSION_ENTRIES.length} unlocked · deepest wave ${formatInt(highest)}`,
+        `${unlocked} / ${entries.length} unlocked · deepest wave ${formatInt(highest)}`,
       );
     }
   }
@@ -259,7 +268,9 @@ export class ProgressionPanel {
     if (info.held.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'blessing-held-none';
-      empty.textContent = 'No blessings yet — the first draft lands after wave 3.';
+      empty.textContent = info.nextDraftWave === null
+        ? 'No blessings this run.'
+        : `No blessings yet — the first draft lands after wave ${formatInt(info.nextDraftWave)}.`;
       this.blessingListEl.appendChild(empty);
       return;
     }
@@ -557,7 +568,7 @@ export class ProgressionPanel {
     status.className = 'progression-status';
     wrap.appendChild(status);
 
-    this.rows.set(entry.id, { wrap, status });
+    this.rows.set(entry.id, { wrap, status, gate, detail });
     return wrap;
   }
 }

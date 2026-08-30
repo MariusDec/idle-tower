@@ -29,6 +29,17 @@ export interface BlessingDraftOverrides {
   offerSize?: () => number;
   /** Free rerolls seeded per draft. Defaults to `BLESSING_FREE_REROLLS`. */
   freeRerolls?: () => number;
+  /**
+   * Wave the run's *first* draft lands on. Defaults to
+   * `BLESSING_FIRST_DRAFT_WAVE`.
+   *
+   * Opening Gambit (prestige-abs §5) pulls it to wave 1. It is a dep rather
+   * than a constant read here because the cadence after the first draft is
+   * measured from it — moving the anchor moves the whole ladder, which is
+   * exactly the intent, and doing that from one place is what keeps
+   * `Game.nextBlessingDraftWave` in step.
+   */
+  firstDraftWave?: () => number;
 }
 
 /**
@@ -137,8 +148,14 @@ export class BlessingManager {
    */
   isDraftDue(clearedWave: number): boolean {
     if (this.picksTaken >= BLESSING_MAX_PICKS) return false;
-    if (clearedWave < BLESSING_FIRST_DRAFT_WAVE) return false;
-    return (clearedWave - BLESSING_FIRST_DRAFT_WAVE) % BLESSING_DRAFT_INTERVAL === 0;
+    const first = this.firstDraftWave;
+    if (clearedWave < first) return false;
+    return (clearedWave - first) % BLESSING_DRAFT_INTERVAL === 0;
+  }
+
+  /** The wave the run's first draft lands on (1 with Opening Gambit). */
+  get firstDraftWave(): number {
+    return Math.max(1, Math.floor(this.overrides.firstDraftWave?.() ?? BLESSING_FIRST_DRAFT_WAVE));
   }
 
   get isCapped(): boolean {

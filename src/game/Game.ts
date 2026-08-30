@@ -130,7 +130,6 @@ import { FX, INK, lighten, mix, withAlpha } from '../data/palette';
 import { LOOT_ORB_COLORS, type LootOrbKind } from '../data/loot';
 import {
   BLESSING_BY_ID,
-  BLESSING_FIRST_DRAFT_WAVE,
   BLESSING_FREE_REROLLS,
   BLESSING_MAX_PICKS,
   BLESSING_OFFER_SIZE,
@@ -813,6 +812,10 @@ export class Game {
     this.blessingMgr = new BlessingManager(this.bus, {
       offerSize: () => (this.watchMgr.has('wide_draft') ? BLESSING_OFFER_SIZE + 1 : BLESSING_OFFER_SIZE),
       freeRerolls: () => BLESSING_FREE_REROLLS + (this.watchMgr.has('quartermaster') ? 1 : 0),
+      // Opening Gambit (prestige-abs §5) moves the first draft's *wave*, where
+      // `wide_draft` moves the card count and `quartermaster` the free
+      // rerolls — three separate channels, so they compose (§R1).
+      firstDraftWave: () => this.prestigeMgr.getFirstDraftWave(),
     });
     this.coreMgr = new CoreManager(this.bus);
     this.lootMgr = new LootManager({
@@ -827,6 +830,9 @@ export class Game {
       // The board_expansion Watch unlock (plans/milestones.md §5.2) raises
       // the tracker to four slots. The dep reads lazily.
       slots: () => (this.watchMgr.has('board_expansion') ? CONTRACT_SLOTS + 1 : CONTRACT_SLOTS),
+      // Broker (prestige-abs §5). Lazy, so a mid-run purchase is felt on the
+      // next completion rather than at the next contract draw.
+      rewardScale: () => this.prestigeMgr.getContractRewardMultiplier(),
     });
     // The Long Watch manager (plans/milestones.md §5.0). Constructed here so
     // the blessings / contracts / pacing / prestige deps that read it are all
@@ -892,6 +898,11 @@ export class Game {
       },
       // Plan §D.10: Gold Rush holds the loot magnet for the buff's duration.
       setGoldRushMagnet: (on) => this.lootMgr.setMagnetSource('goldRush', on),
+      // Attunement (prestige-abs §5). The same offset feeds the milestone
+      // strip and the progression tab, both of which derive it from
+      // `state.prestige.apSpent` — one derivation, so the strip cannot
+      // advertise a wave the gate no longer uses.
+      unlockWaveOffset: () => this.prestigeMgr.getAbilityUnlockOffset(),
     });
     this.prestigeMgr = new PrestigeManager(this.bus, {
       resources: this.state.resources,
@@ -2688,6 +2699,35 @@ export class Game {
     return ok;
   }
 
+  /**
+   * Refund the AP tree (prestige-abs §6.1).
+   *
+   * Everything the widened tier-1 shelf buys is a decision, and a decision the
+   * player cannot walk back is one they will not take. The manager owns the
+   * refund arithmetic and the automation-flag re-derivation; `Game` owns the
+   * recompute, the save and the toast — a reforge changes the resolved stats
+   * (auto-buy, start gold, the magnet), so it cannot wait for the next tick.
+   */
+  reforgeAP(): number {
+    const refunded = this.prestigeMgr.reforge();
+    if (refunded <= 0) return 0;
+    this.state.prestige = { ...this.state.prestige };
+    this.applyUpgradeEffects();
+    this.syncUiApis();
+    this.saveMgr.save(this.state);
+    this.bus.emit('toast', {
+      kind: 'milestone',
+      text: `Reforged. ${refunded} AP returned.`,
+      life: 5,
+    });
+    return refunded;
+  }
+
+  /** AP a reforge would return right now. Drives the panel's confirm copy. */
+  reforgeValue(): number {
+    return this.prestigeMgr.reforgeValue();
+  }
+
   startResearch(id: string): boolean {
     const ok = this.researchTree.startResearch(id);
     if (ok) {
@@ -3947,6 +3987,10 @@ export class Game {
         apGold: this.prestigeMgr.getAPGoldBonus(),
         apFireRate: this.prestigeMgr.getAPFireRateMultiplier(),
         apPierce: this.prestigeMgr.getAPPierceBonus(),
+        apUpgradeDiscount: this.prestigeMgr.getAPUpgradeDiscount(),
+        apXpGain: this.prestigeMgr.getAPXpMultiplier(),
+        apRpDrop: this.prestigeMgr.getAPRpDropBonus(),
+        apReviveCharges: this.prestigeMgr.getAPReviveCharges(),
         tpDamage: this.prestigeMgr.getTPDamageMultiplicative(),
         tpFireRate: this.prestigeMgr.getTPFireRateMultiplier(),
         tpManaRegen: this.prestigeMgr.getTPManaRegenMultiplier(),
@@ -4004,7 +4048,7 @@ export class Game {
   private nextBlessingDraftWave(): number | null {
     if (this.blessingMgr.isCapped) return null;
     const current = this.waveMgr.currentWave;
-    let wave = Math.max(BLESSING_FIRST_DRAFT_WAVE, current);
+    let wave = Math.max(this.blessingMgr.firstDraftWave, current);
     while (!this.blessingMgr.isDraftDue(wave)) wave += 1;
     return wave;
   }
@@ -4125,6 +4169,12 @@ export class Game {
     // the same recompute as everything else, so taking the card is felt on
     // the next orb and losing it on ascension is felt immediately.
     this.lootMgr.setMagnetSource('blessing', this.blessingMgr.has('orb_magnet'));
+    // Lodestone (prestige-abs §3.1) is the third magnet source and the only
+    // permanent one. It is a boolean rather than a `StatKey` because the
+    // accumulator is numeric-by-contract; `setMagnetSource` is ref-counted and
+    // early-returns when the composed answer is unchanged, so setting it from
+    // every recompute costs nothing.
+    this.lootMgr.setMagnetSource('prestige', this.prestigeMgr.hasOrbMagnet());
 
     this.abilityMgr.setAbilityCostMultiplier(stats.abilityCostMultiplier);
     this.abilityMgr.setCooldownMultiplier(stats.abilityCooldownMultiplier);
@@ -4275,6 +4325,9 @@ export class Game {
     // best-rarity blessing through an ascension, so one of the previous run's
     // cards does not vanish at the moment the new run's identity is forming.
     this.blessingMgr.reset({ carryBest: this.watchMgr.has('heirloom') });
+    // Field Kit (prestige-abs §5) banks reroll *tokens*, a separate field from
+    // the per-draft free rerolls `quartermaster` grants, so the two stack.
+    this.blessingMgr.grantRerollToken(this.prestigeMgr.getStartingRerollTokens());
     this.state.blessings = this.blessingMgr.snapshot();
     // Orbs are run-scoped *and* frame-scoped: they are never persisted, and a
     // run that ends drops whatever was still in the air (docs/loot-system.md).

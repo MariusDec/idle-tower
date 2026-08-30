@@ -49,6 +49,7 @@ import { EventBus } from '../game/EventBus';
 import { TalentPanel, type TalentAPIDeps } from './TalentPanel';
 import { EquipmentPanel, type EquipmentAPIDeps } from './EquipmentPanel';
 import type { AutomationKey } from '../data/prestige';
+import { abilityUnlockOffset } from '../data/prestige';
 import type { EffectiveAbilityStats } from '../data/abilities';
 import { ABILITIES } from '../data/abilities';
 import {
@@ -60,7 +61,7 @@ import {
   type NavGroupId,
 } from './navGroups';
 import { icon as renderIconEl } from './Icon';
-import { hasClass, toggleClass, setStyle } from '../utils/dom';
+import { hasClass, toggleClass, setStyle, resetScroll } from '../utils/dom';
 import { formatNumber } from '../utils/bigNumber';
 
 const PANEL_WIDTH_KEY = 'the-tower-panel-width';
@@ -350,6 +351,8 @@ export class UIManager {
   private onTranscend: () => void = () => {};
   private onSpendAP: (perkId: string) => void = () => {};
   private onUnlockCore: (id: CoreId) => void = () => {};
+  private onReforge: () => void = () => {};
+  private reforgeValue: () => number = () => 0;
   private onUnlockResearch: (id: string) => void = () => {};
   private onCancelResearch: () => void = () => {};
   private onToggleAutomation: (key: AutomationKey, enabled: boolean) => void = () => {};
@@ -589,6 +592,8 @@ export class UIManager {
       ascendUnlockWave: this.prestigeApi.ascendUnlockWave,
       coreState: () => this.prestigeApi.coreState,
       onUnlockCore: (id) => this.onUnlockCore(id),
+      onReforge: () => this.confirmReforge(),
+      reforgeValue: () => this.reforgeValue(),
     });
     this.transcendencePanel = new TranscendencePanel({
       onTranscend: () => this.onTranscend(),
@@ -733,7 +738,12 @@ export class UIManager {
       getUpcoming: () => {
         const s = this.lastState;
         if (!s) return [];
-        return upcomingMilestones(s.wave.highestWave, s.resources.apThisTranscendence, 3);
+        return upcomingMilestones(
+          s.wave.highestWave,
+          s.resources.apThisTranscendence,
+          3,
+          abilityUnlockOffset(s.prestige.apSpent),
+        );
       },
       onOpenProgression: () => this.setActiveTab('progression'),
     });
@@ -880,7 +890,10 @@ export class UIManager {
       // A new wave means the old stall is moot, and the next one may prompt.
       this.runStalledBanner.reset();
       const w = payload as number;
-      const triggers = milestoneAtWave(w);
+      const triggers = milestoneAtWave(
+        w,
+        this.lastState ? abilityUnlockOffset(this.lastState.prestige.apSpent) : 0,
+      );
       if (triggers.length > 0) {
         this.milestoneStrip.flashLastEntry();
       }
@@ -1192,6 +1205,29 @@ export class UIManager {
   /** Plan §6.2: cores are bought with AP; switching happens at run start. */
   setOnUnlockCore(handler: (id: CoreId) => void): void {
     this.onUnlockCore = handler;
+  }
+
+  /** prestige-abs §6.1: the AP respec, and the figure its dialog quotes. */
+  setOnReforge(handler: () => void, value: () => number): void {
+    this.onReforge = handler;
+    this.reforgeValue = value;
+  }
+
+  /**
+   * Confirm before wiping the tree. Free, but not silent: a reforge undoes
+   * every AP decision at once, and cores — an AP *spend* rather than a perk —
+   * are not part of the refund, which is the one thing a player is likely to
+   * assume otherwise.
+   */
+  private confirmReforge(): void {
+    const refund = this.reforgeValue();
+    if (refund <= 0) return;
+    const ok = window.confirm(
+      `Reforge the ascension tree?\n\n`
+      + `${refund} AP is returned and every ascension perk is cleared, including `
+      + `Auto-Upgrader. Tower cores are an AP spend rather than a perk and are not refunded.`,
+    );
+    if (ok) this.onReforge();
   }
 
   setOnUnlockResearch(handler: (id: string) => void): void {
@@ -1867,6 +1903,9 @@ export class UIManager {
       this.settingsPanel.mount(this.contentRoot);
     }
     this.restoreContainerClass(this.contentRoot, this.contentRootBaseClass);
+    // A new tab always starts at the top, never at the offset the previous one
+    // was left scrolled to.
+    resetScroll(this.contentRoot);
   }
 
   /**
