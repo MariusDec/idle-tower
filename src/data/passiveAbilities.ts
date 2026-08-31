@@ -133,7 +133,7 @@ export interface PassiveAbilityDef {
   unlockGoldCost: number;
   /** Gold for level 0→1. `round2sig(4 * waveGoldRef(unlockWave))`. */
   upgradeBaseCost: number;
-  /** XP for level 1. `round2sig(6 * passiveWaveXpRef(unlockWave))`. */
+  /** XP for level 1. `round2sig(10 * passiveWaveXpRef(unlockWave))`. */
   xpBase: number;
   icon: IconId;
   color: string;
@@ -282,7 +282,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 5,
     unlockGoldCost: 200,
     upgradeBaseCost: 130,
-    xpBase: 250,
+    xpBase: 260,
     effects: [{ stat: 'damage_pct', base: 8, perLevel: 4 }],
     milestones: [
       { at: 5,  label: '+8% armour penetration', grants: [{ stat: 'armor_pen_pct', value: 8 }] },
@@ -302,7 +302,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 18,
     unlockGoldCost: 790,
     upgradeBaseCost: 520,
-    xpBase: 1000,
+    xpBase: 550,
     effects: [{ stat: 'fire_rate_pct', base: 6, perLevel: 3 }],
     milestones: [
       { at: 5,  label: '+8% double-shot chance',      grants: [{ stat: 'double_shot_chance_pct', value: 8 }] },
@@ -322,7 +322,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 40,
     unlockGoldCost: 7800,
     upgradeBaseCost: 5200,
-    xpBase: 3400,
+    xpBase: 1100,
     effects: [
       { stat: 'execute_threshold_pct', base: 3, perLevel: 0.4 },
       { stat: 'execute_damage_multiplier_pct', base: 40, perLevel: 4 },
@@ -345,7 +345,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 75,
     unlockGoldCost: 300000,
     upgradeBaseCost: 200000,
-    xpBase: 10000,
+    xpBase: 2100,
     effects: [{ stat: 'boss_damage_pct', base: 10, perLevel: 4 }],
     milestones: [
       { at: 5,  label: '+6 flat armour ignored', grants: [{ stat: 'armor_pen_flat', value: 6 }] },
@@ -370,7 +370,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 10,
     unlockGoldCost: 340,
     upgradeBaseCost: 230,
-    xpBase: 490,
+    xpBase: 370,
     effects: [{ stat: 'max_hp_pct', base: 10, perLevel: 5 }],
     milestones: [
       { at: 5,  label: '+1.5% life steal',      grants: [{ stat: 'lifesteal_pct', value: 1.5 }] },
@@ -390,7 +390,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 30,
     unlockGoldCost: 2700,
     upgradeBaseCost: 1800,
-    xpBase: 2100,
+    xpBase: 840,
     effects: [{ stat: 'thorns_pct', base: 8, perLevel: 2 }],
     milestones: [
       { at: 5,  label: '+5% dodge chance',      grants: [{ stat: 'dodge_chance_pct', value: 5 }] },
@@ -410,7 +410,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 58,
     unlockGoldCost: 51000,
     upgradeBaseCost: 34000,
-    xpBase: 6400,
+    xpBase: 1600,
     effects: [{ stat: 'mana_shield_pct', base: 4, perLevel: 1.2 }],
     milestones: [
       { at: 5,  label: '+1 shield charge',           grants: [{ stat: 'shield_charges_flat', value: 1 }] },
@@ -432,7 +432,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 14,
     unlockGoldCost: 520,
     upgradeBaseCost: 340,
-    xpBase: 730,
+    xpBase: 460,
     effects: [{ stat: 'gold_mult_pct', base: 10, perLevel: 5 }],
     milestones: [
       { at: 5,  label: '+6% double-gold chance',      grants: [{ stat: 'double_gold_chance_pct', value: 6 }] },
@@ -452,7 +452,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 48,
     unlockGoldCost: 18000,
     upgradeBaseCost: 12000,
-    xpBase: 4600,
+    xpBase: 1300,
     effects: [{ stat: 'upgrade_cost_reduction_pct', base: 1, perLevel: 0.4 }],
     milestones: [
       { at: 5,  label: '+1% interest on banked gold', grants: [{ stat: 'interest_pct', value: 1 }] },
@@ -472,7 +472,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 88,
     unlockGoldCost: 1200000,
     upgradeBaseCost: 780000,
-    xpBase: 14000,
+    xpBase: 2600,
     effects: [{ stat: 'xp_gain_pct', base: 8, perLevel: 4 }],
     milestones: [
       { at: 5,  label: '+3% research point drop chance', grants: [{ stat: 'rp_drop_chance_pct', value: 3 }] },
@@ -494,7 +494,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 24,
     unlockGoldCost: 1500,
     upgradeBaseCost: 980,
-    xpBase: 1500,
+    xpBase: 690,
     effects: [{ stat: 'mana_regen_pct', base: 10, perLevel: 6 }],
     milestones: [
       { at: 5,  label: '+40 max mana',            grants: [{ stat: 'max_mana_flat', value: 40 }] },
@@ -514,7 +514,7 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     unlockWave: 65,
     unlockGoldCost: 110000,
     upgradeBaseCost: 71000,
-    xpBase: 7800,
+    xpBase: 1800,
     effects: [{ stat: 'ability_damage_pct', base: 10, perLevel: 4 }],
     milestones: [
       { at: 5,  label: '+8% shorter ability cooldowns', grants: [{ stat: 'ability_cooldown_pct', value: 8 }] },

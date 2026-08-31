@@ -2,11 +2,27 @@ import type { EquipmentSlot, Equipment, Rarity, EquipmentStatType } from '../typ
 import { rollDrop as dataRollDrop, type DropOptions } from '../data/equipment';
 import { EventBus } from '../game/EventBus';
 
+/**
+ * Gear rolls one wave may spend, per source (plans/economy.md §3.2).
+ *
+ * One each. The *first* elite kill of a wave rolls for gear and the rest do
+ * not; the boss gets its own roll. A miss spends the budget too — that is what
+ * makes the expected value `1 x chance` rather than `elites x chance`, and it
+ * is why the drop rate no longer grows with a wave's body count.
+ */
+const ROLLS_PER_WAVE: Record<'boss' | 'elite' | 'milestone', number> = {
+  elite: 1,
+  boss: 1,
+  milestone: Number.POSITIVE_INFINITY,
+};
+
 export class EquipmentManager {
   private inventory: Equipment[];
   private equipped: Partial<Record<EquipmentSlot, Equipment>>;
   private readonly bus: EventBus;
   private findChanceBonus = 0;
+  /** Rolls already spent on the current wave, keyed by source. */
+  private rollsThisWave: Record<string, number> = {};
 
   constructor(
     inventory: Equipment[],
@@ -36,12 +52,24 @@ export class EquipmentManager {
     source: 'boss' | 'elite' | 'milestone',
     options: DropOptions = {},
   ): Equipment | null {
+    // A guaranteed drop is a reward the player earned (a swift boss kill, a
+    // Windfall chest), not a farm; it neither consumes nor respects the budget.
+    if (options.guaranteed !== true) {
+      const spent = this.rollsThisWave[source] ?? 0;
+      if (spent >= ROLLS_PER_WAVE[source]) return null;
+      this.rollsThisWave[source] = spent + 1;
+    }
     const eq = dataRollDrop(wave, source, this.findChanceBonus, options);
     if (eq) {
       this.inventory.push(eq);
       this.bus.emit('equipment_dropped', { equipment: eq });
     }
     return eq;
+  }
+
+  /** Called on `wave_started`: a new wave gets a fresh budget. */
+  beginWave(): void {
+    this.rollsThisWave = {};
   }
 
   equip(slot: EquipmentSlot, id: string): boolean {
@@ -118,5 +146,6 @@ export class EquipmentManager {
     for (const key of Object.keys(this.equipped)) {
       delete this.equipped[key as EquipmentSlot];
     }
+    this.rollsThisWave = {};
   }
 }

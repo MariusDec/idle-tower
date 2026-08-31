@@ -622,6 +622,24 @@ export interface WaveState {
   enrageStacks: number;
 }
 
+/**
+ * Measured wave-clear times, in **simulation** seconds (plans/economy.md §2).
+ *
+ * Run-scoped: reset on ascension and transcendence, since the new run's tower
+ * is not the old one's. The functions that read and write it live in
+ * `src/data/waveTiming.ts`.
+ */
+export interface WaveTimingState {
+  /** The most recently measured clear, in simulation seconds. 0 = never measured. */
+  lastWaveSeconds: number;
+  /** Running mean of the last `WAVE_TIMING_EMA_WINDOW` clears. 0 = never measured. */
+  avgWaveSeconds: number;
+  /** The wave `avgWaveSeconds` was last updated on, so a stale sample can be rescaled. */
+  sampleWave: number;
+  /** How many clears have fed the average. Caps the EMA warm-up. */
+  samples: number;
+}
+
 export const GAME_SPEEDS: readonly number[] = [0.5, 1.0, 1.5];
 
 export const DEFAULT_SPEED_INDEX = GAME_SPEEDS.indexOf(1.0);
@@ -897,6 +915,8 @@ export interface GameState {
   cores: CoreRunState;
   /** v14+: the risk dial, early-call momentum and the kill combo (plan §7). */
   pacing: PacingState;
+  /** v23+: measured wave-clear times, used to pace offline progress. Run-scoped. */
+  waveTiming: WaveTimingState;
   /** v19+: the Long Watch campaign (permanent — survives both resets). */
   watch: WatchState;
 }

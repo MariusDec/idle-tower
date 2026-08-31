@@ -19,11 +19,11 @@ import type {
   CoreRunState,
   PacingState,
   WatchState,
+  WaveTimingState,
 } from '../types';
 import { MAX_RUN_HISTORY } from '../types';
 import {
   bossEscortCountForWave,
-  enemyHPForWave,
   goldDropForWave,
   spawnCountForWave,
   isBossWave,
@@ -31,8 +31,6 @@ import {
 import {
   ENEMY_DEFS,
   bossGoldForWave,
-  bossMaxHpForWave,
-  bossPhaseHpFactor,
   spawnPoolForWave,
 } from '../data/enemies';
 import { DEFAULT_CORE } from '../data/cores';
@@ -45,20 +43,16 @@ import { UPGRADE_BY_ID } from '../data/upgrades';
 import { AP_PERK_BY_ID, TP_PERK_BY_ID } from '../data/prestige';
 import type { PassiveAbilityManager } from './PassiveAbilityManager';
 import { getSaveStore, readLegacySave } from './storage';
+import { xpPerWaveClear } from '../data/xpTables';
+import { intermissionSecondsForWave } from '../data/pacing';
+import {
+  defaultWaveTiming,
+  offlineWaveSeconds,
+  UNMEASURED_WAVE_PENALTY,
+} from '../data/waveTiming';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 22;
-
-/**
- * Fraction of a wave's passive XP an *offline* wave clear pays.
- *
- * Offline waves are paced by `AVG_WAVE_DURATION * 0.25` at their fastest, which
- * is several times quicker than a live wave at the same depth, so the discount
- * is what keeps a night's absence from outrunning a session of real play. At
- * 0.20 a passive parked at its unlock depth takes on the order of two weeks of
- * 12h-offline + 1h-online days to reach `PASSIVE_MAX_LEVEL`.
- */
-const OFFLINE_PASSIVE_XP_RATE = 0.20;
+const SAVE_VERSION = 23;
 
 function defaultWaveModifier() {
   return {
@@ -93,16 +87,24 @@ const SAVE_DEBOUNCE_SECONDS = 5;
  * wired in the constructor, supplies the live figure.
  */
 const DEFAULT_OFFLINE_CAP_SECONDS = 8 * 60 * 60;
-const OFFLINE_EFFICIENCY = 0.5;
-const AVG_WAVE_DURATION = 18;
+
 /**
- * Ceiling on how many waves the offline walk simulates in one absence. Seven
- * days at a quarter of `AVG_WAVE_DURATION` is ~134k waves; the cap keeps a
- * long absence from turning into a long loop for a result nobody can read.
+ * The offline fraction (plans/economy.md §2).
+ *
+ * One dial, applied to every offline payout: gold, tower XP and passive XP.
+ * It replaces four separate discounts (a 0.5 DPS efficiency, a 0.5 XP factor
+ * and a 0.20 passive-XP rate, all stacked on a wave count paced by an 18 s
+ * average) with a claim the player can read off the Welcome Back card: an
+ * absence pays a quarter of what playing that same wave for that long would.
  */
-const MAX_OFFLINE_WAVES = 5000;
-/** Offline XP is worth half a kill, matching the pre-existing 0.5 factor. */
-const OFFLINE_XP_EFFICIENCY = 0.5;
+const OFFLINE_YIELD_FRACTION = 0.25;
+
+/**
+ * Numeric guard on the repeat count, not a balance lever. Four days (the
+ * maximum idle cap) at the `MIN_WAVE_SECONDS` floor is 69k repeats; this stops
+ * a corrupt timing block from producing an unbounded number.
+ */
+const MAX_OFFLINE_WAVE_REPEATS = 100_000;
 
 export interface PersistentState {
   version: number;
@@ -155,6 +157,8 @@ export interface PersistentState {
   bossRun?: BossRunState;
   /** v19+: the Long Watch campaign (permanent; survives both resets). */
   watch?: WatchState;
+  /** v23+: measured wave-clear times (economy §2). Run-scoped; reset on ascend. */
+  waveTiming?: WaveTimingState;
 }
 
 export interface OfflineResult {
@@ -162,25 +166,20 @@ export interface OfflineResult {
   capped: boolean;
   /** The cap in effect for this absence, so the report can name it (plan §10.1). */
   maxIdleSeconds: number;
-  effectiveDPS: number;
+  /** The wave the absence farmed. Offline never advances (economy §2.6). */
+  wave: number;
+  /** Simulation seconds one clear of `wave` was priced at. */
+  waveSeconds: number;
+  /** How many times that wave was completed. Fractional: 1.5 pays 1.5 waves. */
+  waveRepeats: number;
+  /** False when `waveSeconds` is an estimate rather than a measurement. */
+  measured: boolean;
   goldEarned: number;
-  wavesCleared: number;
-  /** Wave the offline simulation ended on, so the report can show real progress. */
-  endWave: number;
   rpEarned: number;
   researchElapsed: number;
   xpEarned: number;
-  /**
-   * Passive-ability XP the absence earned, already discounted by
-   * `OFFLINE_PASSIVE_XP_RATE`. Accumulated inside the wave walk that produced
-   * `wavesCleared`, so it is priced at the depths the walk actually reached.
-   */
+  /** Passive-ability XP, already scaled by `OFFLINE_YIELD_FRACTION`. */
   passiveXpEarned: number;
-}
-
-function estimateDPS(tower: TowerState): number {
-  const expectedHit = tower.baseDamage * (1 + tower.critChance * (tower.critMultiplier - 1));
-  return Math.max(0, expectedHit * tower.fireRate);
 }
 
 /**
@@ -201,7 +200,7 @@ function bossWaveAverage(wave: number, boss: number, escort: (type: EnemyType) =
   return total / (1 + escortCount);
 }
 
-function averageKillXPForWave(wave: number): number {
+export function averageKillXPForWave(wave: number): number {
   if (isBossWave(wave)) {
     return bossWaveAverage(wave, xpPerKill('boss', wave), t => xpPerKill(t, wave));
   }
@@ -220,7 +219,7 @@ function poolAverage(wave: number, value: (type: EnemyType) => number): number {
   return totalWeight > 0 ? weighted / totalWeight : 0;
 }
 
-function averageKillGoldForWave(wave: number): number {
+export function averageKillGoldForWave(wave: number): number {
   if (isBossWave(wave)) {
     return bossWaveAverage(
       wave,
@@ -229,21 +228,6 @@ function averageKillGoldForWave(wave: number): number {
     );
   }
   return poolAverage(wave, t => goldDropForWave(ENEMY_DEFS[t].baseGold, wave));
-}
-
-function averageKillHPForWave(wave: number): number {
-  // The boss's share is the *encounter* budget minus what the escort holds —
-  // which is exactly the bar it spawns with, times what its phase machine holds
-  // outside that bar. Reading `bossEncounterHpForWave` alone would charge the
-  // offline walk for the escort twice.
-  if (isBossWave(wave)) {
-    return bossWaveAverage(
-      wave,
-      bossMaxHpForWave(wave) * bossPhaseHpFactor(wave),
-      t => enemyHPForWave(ENEMY_DEFS[t].baseHP, wave),
-    );
-  }
-  return poolAverage(wave, t => enemyHPForWave(ENEMY_DEFS[t].baseHP, wave));
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -763,6 +747,17 @@ function migrateV21toV22(data: Record<string, unknown>): void {
 }
 
 /**
+ * v23 (plans/economy.md §2): offline progress is now paced by a measured wave
+ * duration instead of an 18 s average and a DPS walk. Nothing in an older save
+ * carries that measurement, so the block starts empty and the first absence
+ * after the update is priced from `expectedWaveSeconds` at half rate
+ * (`UNMEASURED_WAVE_PENALTY`) until five waves have been cleared.
+ */
+function migrateV22toV23(data: Record<string, unknown>): void {
+  data.waveTiming = defaultWaveTiming();
+}
+
+/**
  * Clamp a `{perkId: level}` map to the table's ceilings, dropping ids the
  * table no longer defines and entries that are not positive integers.
  */
@@ -787,7 +782,7 @@ function clampPerkLevels(
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 21 && data.version !== 20 && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 22 && data.version !== 21 && data.version !== 20 && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -823,6 +818,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 19) { migrateV19toV20(data); data.version = 20; }
   if (data.version === 20) { migrateV20toV21(data); data.version = 21; }
   if (data.version === 21) { migrateV21toV22(data); data.version = 22; }
+  if (data.version === 22) { migrateV22toV23(data); data.version = 23; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -842,6 +838,12 @@ function validate(data: unknown): data is PersistentState {
   if (!isObject(d.pacing)) d.pacing = defaultPacing();
   if (!isObject(d.watch)) d.watch = defaultWatch();
   else normalizeWatch(d.watch as Record<string, unknown>);
+
+  if (!isObject(d.waveTiming)) d.waveTiming = defaultWaveTiming();
+  const wt = d.waveTiming as Record<string, unknown>;
+  for (const key of ['lastWaveSeconds', 'avgWaveSeconds', 'sampleWave', 'samples'] as const) {
+    if (typeof wt[key] !== 'number' || !Number.isFinite(wt[key])) wt[key] = 0;
+  }
 
   return true;
 }
@@ -934,6 +936,7 @@ export class SaveManager {
       contracts: this.snapshotContracts(state.contracts),
       cores: this.snapshotCores(state.cores),
       pacing: this.snapshotPacing(state.pacing),
+      waveTiming: { ...(state.waveTiming ?? defaultWaveTiming()) },
       watch: this.snapshotWatch(state.watch),
     };
   }
@@ -1210,87 +1213,69 @@ export class SaveManager {
     const capSeconds = Math.max(0, this.getIdleCapSeconds());
     const capped = rawElapsed > capSeconds;
     const elapsed = Math.min(rawElapsed, capSeconds);
-    let wave = Math.max(1, persisted.wave.number);
-    if (isBossWave(wave)) --wave;
-    if (elapsed <= 0) {
-      return {
-        elapsedSeconds: 0,
-        capped,
-        maxIdleSeconds: capSeconds,
-        effectiveDPS: 0,
-        goldEarned: 0,
-        wavesCleared: 0,
-        endWave: wave,
-        rpEarned: 0,
-        researchElapsed: 0,
-        xpEarned: 0,
-        passiveXpEarned: 0,
-      };
-    }
-    const dps = estimateDPS(persisted.tower);
-    const effectiveDPS = dps * OFFLINE_EFFICIENCY;
-    // The ceiling is *this run's* deepest wave, not the lifetime best: after an
-    // ascension the lifetime figure can be far beyond anything the current
-    // tower has faced, and while the DPS walk would gate most of that, nothing
-    // here models the tower taking damage. Catching the run back up to where
-    // it already was is the claim this estimate can actually support.
-    const ceiling = Math.max(wave, persisted.wave.highestWave ?? wave);
 
-    let remaining = elapsed;
-    let gold = 0;
-    let xp = 0;
-    let passiveXp = 0;
-    let wavesCleared = 0;
-    const goldScale = Math.max(0, goldMultiplier);
-    while (remaining > 0 && effectiveDPS > 0 && wavesCleared < MAX_OFFLINE_WAVES) {
-      const count = Math.max(1, Math.floor(spawnCountForWave(wave)));
-      const avgHp = averageKillHPForWave(wave);
-      const waveHp = avgHp * count;
-      if (waveHp <= 0) break;
-      // A wave cannot finish faster than its enemies spawn, so a tower that
-      // vastly out-damages the wave is still paced by the spawn cadence.
-      const waveSeconds = Math.max(waveHp / effectiveDPS, AVG_WAVE_DURATION * 0.25);
-      const avgGold = averageKillGoldForWave(wave);
-      const avgXp = averageKillXPForWave(wave);
-      // Priced at the depth the walk is actually standing on. The walk stops
-      // climbing at `ceiling`, so this cannot pay for depth the run never saw.
-      const wavePassiveXp =
-        passiveXpPerKill('normal', wave) * count + passiveXpPerWaveClear(wave);
-      if (waveSeconds > remaining) {
-        // Ran out of time partway through: pay out the fraction of the wave's
-        // HP that was actually chewed through.
-        const fraction = remaining / waveSeconds;
-        gold += avgGold * count * fraction * goldScale;
-        xp += avgXp * count * fraction * OFFLINE_XP_EFFICIENCY;
-        passiveXp += wavePassiveXp * fraction;
-        break;
-      }
-      gold += avgGold * count * goldScale;
-      xp += avgXp * count * OFFLINE_XP_EFFICIENCY;
-      passiveXp += wavePassiveXp;
-      remaining -= waveSeconds;
-      wavesCleared += 1;
-      if (wave < ceiling) wave += 1;
-    }
+    // A boss wave steps back one: offline must not farm boss gold, boss gear
+    // or the encounter's XP, and the wave it repeats has to be an ordinary one.
+    let wave = Math.max(1, Math.floor(persisted.wave.number));
+    if (isBossWave(wave)) wave = Math.max(1, wave - 1);
 
-    const goldEarned = Math.max(0, Math.floor(gold));
-    const xpEarned = Math.max(0, Math.floor(xp));
+    const timing: WaveTimingState = persisted.waveTiming ?? defaultWaveTiming();
+    const inProgress = Math.max(0, persisted.wave.elapsed ?? 0);
+    const { seconds: waveSeconds, measured } = offlineWaveSeconds(timing, wave, inProgress);
+    const cycleSeconds = waveSeconds + intermissionSecondsForWave(wave);
+
     const lifetimeWave = persisted.stats.lifetimeHighestWave ?? 1;
     const rpGainMultiplier = computeRPGainMultiplier(persisted.research ?? {});
     const baseRPRate = 0.05 * lifetimeWave / 60;
     const rpEarned = Math.max(0, Math.floor(baseRPRate * (1 + rpGainMultiplier) * elapsed));
+
+    if (elapsed <= 0 || cycleSeconds <= 0) {
+      return {
+        elapsedSeconds: elapsed,
+        capped,
+        maxIdleSeconds: capSeconds,
+        wave,
+        waveSeconds,
+        waveRepeats: 0,
+        measured,
+        goldEarned: 0,
+        rpEarned: elapsed > 0 ? rpEarned : 0,
+        researchElapsed: Math.max(0, elapsed),
+        xpEarned: 0,
+        passiveXpEarned: 0,
+      };
+    }
+
+    // The fraction is deliberate: an absence of 1.5 wave-cycles pays 1.5 waves
+    // of income, not 1. Truncating would make short absences pay nothing at
+    // depth, where a single wave is minutes long.
+    const waveRepeats = Math.min(MAX_OFFLINE_WAVE_REPEATS, elapsed / cycleSeconds);
+
+    const count = Math.max(1, Math.floor(spawnCountForWave(wave)));
+    const perWaveGold = averageKillGoldForWave(wave) * count * Math.max(0, goldMultiplier);
+    // The clear payout is part of what a wave pays, so a *completed* wave has
+    // to include it. The old walk paid kills only.
+    const perWaveXp = averageKillXPForWave(wave) * count + xpPerWaveClear(wave);
+    const perWavePassiveXp =
+      passiveXpPerKill('normal', wave) * count + passiveXpPerWaveClear(wave);
+
+    // No pioneer bonus: a repeated wave is never a record.
+    const yieldFraction = OFFLINE_YIELD_FRACTION * (measured ? 1 : UNMEASURED_WAVE_PENALTY);
+    const scale = waveRepeats * yieldFraction;
+
     return {
       elapsedSeconds: elapsed,
       capped,
       maxIdleSeconds: capSeconds,
-      effectiveDPS,
-      goldEarned,
-      wavesCleared,
-      endWave: wave,
+      wave,
+      waveSeconds,
+      waveRepeats,
+      measured,
+      goldEarned: Math.max(0, Math.floor(perWaveGold * scale)),
       rpEarned,
       researchElapsed: elapsed,
-      xpEarned,
-      passiveXpEarned: Math.max(0, passiveXp * OFFLINE_PASSIVE_XP_RATE),
+      xpEarned: Math.max(0, Math.floor(perWaveXp * scale)),
+      passiveXpEarned: Math.max(0, perWavePassiveXp * scale),
     };
   }
 

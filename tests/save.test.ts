@@ -9,18 +9,26 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { SaveManager, type PersistentState } from '../src/systems/SaveManager';
+import { SaveManager, type PersistentState, type OfflineResult, averageKillGoldForWave, averageKillXPForWave } from '../src/systems/SaveManager';
 import { MemorySaveStore, setSaveStore } from '../src/systems/storage';
 import { ContractManager } from '../src/systems/ContractManager';
 import { PacingManager } from '../src/systems/PacingManager';
-import type { GameState } from '../src/types';
-import { TOWER_LEVEL_CAP, TOWER_XP_TABLE, talentPointsAtLevel } from '../src/data/xpTables';
-import { MAX_RISK_CEILING } from '../src/data/pacing';
+import type { GameState, WaveTimingState } from '../src/types';
+import { TOWER_LEVEL_CAP, TOWER_XP_TABLE, talentPointsAtLevel, xpPerWaveClear } from '../src/data/xpTables';
+import { MAX_RISK_CEILING, intermissionSecondsForWave } from '../src/data/pacing';
 import { AP_PERK_BY_ID, TP_PERK_BY_ID } from '../src/data/prestige';
 import { UPGRADE_BY_ID } from '../src/data/upgrades';
 import { PASSIVE_BY_ID, PASSIVE_MAX_LEVEL } from '../src/data/passiveAbilities';
 import { passiveWaveXpRef, passiveXpForLevel } from '../src/data/xpTables';
-import { expectedWaveSeconds } from '../src/data/formulas';
+import { expectedWaveSeconds, spawnCountForWave } from '../src/data/formulas';
+import {
+  defaultWaveTiming,
+  offlineWaveSeconds,
+  MIN_WAVE_SECONDS,
+  MAX_WAVE_SECONDS,
+  WAVE_TIMING_RESCALE_MIN,
+  WAVE_TIMING_RESCALE_MAX,
+} from '../src/data/waveTiming';
 
 const STORAGE_KEY = 'the-tower-save';
 
@@ -76,6 +84,7 @@ function makeState(): GameState {
     talents: { allocated: { power_core: 2 } },
     passiveAbilities: { passive_marksmanship: { level: 2, xp: 30, unlocked: true } },
     equipment: [],
+    waveTiming: defaultWaveTiming(),
     equipped: {},
     blessings: {
       held: { bl_sharpen: 2, bl_ricochet: 1 },
@@ -240,7 +249,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', async () => {
     await seed(JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(22);
+    expect(loaded.version).toBe(23);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -264,7 +273,7 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(22);
+    expect(loaded.version).toBe(23);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);
@@ -279,7 +288,7 @@ describe('migration ladder', () => {
   it('seeds a risk-0 pacing block for a v13 save', async () => {
     await seed(JSON.stringify({ ...v2Save, version: 13 }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(22);
+    expect(loaded.version).toBe(23);
     expect(loaded.pacing).toEqual({
       risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
     });
@@ -312,7 +321,7 @@ describe('migration ladder', () => {
   it('seeds an empty contract run for a v11 save', async () => {
     await seed(JSON.stringify({ ...v2Save, version: 11 }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(22);
+    expect(loaded.version).toBe(23);
     expect(loaded.contracts).toEqual({
       active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
     });
@@ -332,7 +341,7 @@ describe('migration ladder', () => {
     };
     await seed(JSON.stringify({ ...v2Save, version: 11, contracts }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(22);
+    expect(loaded.version).toBe(23);
     expect(loaded.contracts).toEqual(contracts);
 
     // And the real manager takes that state back without losing a slot.
@@ -361,7 +370,7 @@ describe('migration ladder', () => {
       prestige: { autoCastEnabled: { multishot: false } },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(22);
+    expect(loaded.version).toBe(23);
     expect(loaded.abilities.rocket_barrage).toEqual({
       level: 3, xp: 0, cooldown: 0, active: false, activeTimer: 0,
     });
@@ -381,7 +390,7 @@ describe('migration ladder', () => {
       talents: { allocated: { power_core: 2 } },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(22);
+    expect(loaded.version).toBe(23);
     expect(loaded.towerXp.level).toBe(4); // 3 + 1 (0-based -> 1-based)
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[4]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(4));
@@ -396,7 +405,7 @@ describe('migration ladder', () => {
       talents: { allocated: {} },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(22);
+    expect(loaded.version).toBe(23);
     expect(loaded.towerXp.level).toBe(TOWER_LEVEL_CAP);
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[TOWER_LEVEL_CAP]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(TOWER_LEVEL_CAP));
@@ -425,7 +434,7 @@ describe('migration ladder', () => {
       passiveAbilities: { marksmanship: { level: 5, xp: 200, unlocked: true } },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(22);
+    expect(loaded.version).toBe(23);
     expect(loaded.passiveAbilities).toEqual({});
   });
 
@@ -527,7 +536,7 @@ describe('v19 watch block', () => {
     await seed(JSON.stringify({ ...minimalSave, version: 18 }));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(22);
+    expect(loaded!.version).toBe(23);
     expect(typeof loaded!.watch).toBe('object');
     expect(loaded!.watch).not.toBeNull();
     expect(Array.isArray(loaded!.watch!.counters.riskWaves)).toBe(true);
@@ -558,7 +567,7 @@ describe('v19 watch block', () => {
     await seed(JSON.stringify(malformed));
     const loaded = (await loadFresh());
     expect(loaded, 'save should load — normalizeWatch repairs, does not reject').not.toBeNull();
-    expect(loaded!.version).toBe(22);
+    expect(loaded!.version).toBe(23);
 
     const w = loaded!.watch!;
     expect(Array.isArray(w.completed)).toBe(true);
@@ -675,7 +684,7 @@ describe('v19→v20 ability level clamp', () => {
     await seed(JSON.stringify(v19));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(22);
+    expect(loaded!.version).toBe(23);
     // In-range survives unchanged; out-of-range is clamped to [1, maxLevel].
     expect(loaded!.abilities.rain_of_arrows.level).toBe(7);
     expect(loaded!.abilities.frost_nova.level).toBe(10);
@@ -691,7 +700,7 @@ describe('v19→v20 ability level clamp', () => {
     expect(mgr.save(state)).toBe(true);
     const loaded = mgr.load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(22);
+    expect(loaded!.version).toBe(23);
     expect(loaded!.abilities.rain_of_arrows.level).toBe(8);
   });
 });
@@ -733,7 +742,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     await seed(JSON.stringify(v20));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(22);
+    expect(loaded!.version).toBe(23);
     const tp = loaded!.prestige.tpSpent;
     expect(tp.tp_midas).toBeUndefined();
     expect(tp.tp_salvage).toBe(1);
@@ -794,7 +803,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     await seed(JSON.stringify(v14));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(22);
+    expect(loaded!.version).toBe(23);
     // upgradeDiscount 9 -> prospecting ceil(9/2) = 5, old key gone.
     expect(loaded!.upgrades.upgradeDiscount).toBeUndefined();
     expect(loaded!.upgrades.prospecting).toBe(5);
@@ -816,7 +825,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     await mgr.hydrate();
     expect(mgr.save(state)).toBe(true);
     const loaded = mgr.load()!;
-    expect(loaded.version).toBe(22);
+    expect(loaded.version).toBe(23);
     expect(loaded.upgrades.damage).toBe(12);
     expect(loaded.prestige.tpSpent.tp_head_start).toBe(4);
     expect(loaded.prestige.apSpent.ap_warlord).toBe(2);
@@ -824,60 +833,121 @@ describe('v20→v21 revamp balance migration (§11)', () => {
 });
 
 /**
- * Offline passive-ability XP pacing.
+ * Offline progress (plans/economy.md §6.3).
  *
- * `applyOfflineProgress` used to re-derive passive XP by walking
- * `result.wavesCleared` waves *forward from the current wave with no ceiling*,
- * while the walk that produced that count caps at the run's deepest wave and
- * farms there. Per-wave passive XP grows with the square of depth, so a long
- * absence at wave 15 was paid as if it had cleared waves 15..5015 — thousands
- * of times the real payout, enough to max every unlocked passive overnight.
+ * Offline no longer simulates a climb. It picks one wave — the wave the run was
+ * standing on — and repeats it for the whole absence, paced by a measured
+ * duration the `WaveTimingState` block carries. The repeat count is a real
+ * number, the payout is closed-form arithmetic, and a single `0.25` dial
+ * discounts every offline payout uniformly. The block below is the test bed
+ * for that claim.
  */
-describe('offline passive XP', () => {
-  function offlineState(wave: number): GameState {
+
+// Wave 33 throughout: a non-boss wave, so `computeOfflineProgress` farms the
+// wave the player was actually on rather than stepping back off a boss.
+const W = 33;
+const CYCLE_INTERMISSION = intermissionSecondsForWave(W); // 5 s at wave 33
+
+describe('offline progress', () => {
+  function offlineState(wave: number, timing?: Partial<WaveTimingState>): GameState {
     const s = makeState();
-    s.wave = { number: wave, highestWave: wave };
+    s.wave = { ...s.wave, number: wave, highestWave: wave, elapsed: 0 };
     s.stats = { ...s.stats, lifetimeHighestWave: wave };
     s.passiveAbilities = { passive_marksmanship: { level: 0, xp: 0, unlocked: true } };
-    // Enough DPS that the walk is paced by the spawn-cadence floor rather than
-    // by enemy HP: the fastest offline can ever run, so what it pays is the
-    // *lower* bound on time-to-max at this depth.
-    s.tower = { ...s.tower, baseDamage: 5000, fireRate: 5 };
+    s.waveTiming = { ...defaultWaveTiming(), ...timing };
     return s;
   }
 
-  /** Passive XP an absence of `hours` at `wave` pays out. */
-  async function offlinePassiveXp(wave: number, hours: number): Promise<number> {
+  async function offlineAt(
+    wave: number, hours: number, timing?: Partial<WaveTimingState>,
+  ): Promise<OfflineResult> {
     const mgr = new SaveManager(stubBus, { getRP: () => 0 });
     await mgr.hydrate();
-    mgr.save(offlineState(wave));
+    mgr.save(offlineState(wave, timing));
     const persisted = mgr.load()!;
     persisted.savedAt -= hours * 3600 * 1000;
-    return mgr.computeOfflineProgress(persisted, 1).passiveXpEarned;
+    return mgr.computeOfflineProgress(persisted, 1);
   }
 
-  it('never pays for depth past the run\'s deepest wave', async () => {
-    // The walk stops climbing at the ceiling, so an absence twice as long pays
-    // at most twice as much — not the quadratic-in-depth blowup of the old
-    // forward walk. (Both absences are long enough to sit at the wave cap.)
-    const short = await offlinePassiveXp(15, 8);
-    const long = await offlinePassiveXp(15, 24);
-    expect(long).toBeLessThanOrEqual(short * 2);
+  /** A fully warmed-up timing block reporting `seconds` per clear at `wave`. */
+  const timed = (seconds: number, wave: number) => ({
+    lastWaveSeconds: seconds, avgWaveSeconds: seconds, sampleWave: wave, samples: 5,
   });
 
-  it('takes on the order of two weeks to max a passive at its unlock depth', async () => {
-    const wave = 15;
-    const def = PASSIVE_BY_ID.passive_marksmanship;
-    let toMax = 0;
-    for (let l = 1; l <= PASSIVE_MAX_LEVEL; l++) toMax += passiveXpForLevel(def, l);
+  it('never advances the wave', async () => {
+    const r = await offlineAt(W, 12, timed(60, W));
+    expect(r.wave).toBe(W);
+  });
 
-    // A day of play: 12h away (the idle cap trims it) plus an hour at the
-    // keyboard, where a wave pays its full XP over its expected duration.
-    const offline = await offlinePassiveXp(wave, 12);
-    const online = (passiveWaveXpRef(wave) / expectedWaveSeconds(wave)) * 3600;
-    const days = toMax / (offline + online);
+  it('steps back off a boss wave so an absence cannot farm one', async () => {
+    const r = await offlineAt(30, 4, timed(60, 29));
+    expect(r.wave).toBe(29);
+  });
 
-    expect(days).toBeGreaterThan(7);
-    expect(days).toBeLessThan(28);
+  it('pays the fraction of a wave an absence did not finish', async () => {
+    // 90 s away against a 60 s wave + 5 s intermission => 90 / 65 = 1.38 repeats.
+    const r = await offlineAt(W, 90 / 3600, timed(60, W));
+    expect(r.waveRepeats).toBeCloseTo(90 / (60 + CYCLE_INTERMISSION), 3);
+    expect(r.waveRepeats).toBeGreaterThan(1);
+    expect(r.waveRepeats).toBeLessThan(2);
+  });
+
+  it('scales linearly with the absence', async () => {
+    const short = await offlineAt(W, 4, timed(60, W));
+    const long = await offlineAt(W, 8, timed(60, W));
+    expect(long.goldEarned / short.goldEarned).toBeCloseTo(2, 1);
+    expect(long.xpEarned / short.xpEarned).toBeCloseTo(2, 1);
+  });
+
+  it('is inversely proportional to the measured wave duration', async () => {
+    const fast = await offlineAt(W, 8, timed(30, W));
+    const slow = await offlineAt(W, 8, timed(60, W));
+    expect(fast.waveRepeats / slow.waveRepeats)
+      .toBeCloseTo((60 + CYCLE_INTERMISSION) / (30 + CYCLE_INTERMISSION), 1);
+  });
+
+  it('pays exactly a quarter of one wave of income per repeat', async () => {
+    const r = await offlineAt(W, 8, timed(60, W));
+    const count = Math.max(1, Math.floor(spawnCountForWave(W)));
+    const perWaveXp = averageKillXPForWave(W) * count + xpPerWaveClear(W);
+    const perWaveGold = averageKillGoldForWave(W) * count;
+    expect(r.xpEarned).toBe(Math.floor(perWaveXp * r.waveRepeats * 0.25));
+    expect(r.goldEarned).toBe(Math.floor(perWaveGold * r.waveRepeats * 0.25));
+  });
+
+  it('halves the payout when no wave has ever been timed', async () => {
+    const measured = await offlineAt(W, 8, timed(expectedWaveSeconds(W), W));
+    const guessed = await offlineAt(W, 8);
+    expect(guessed.measured).toBe(false);
+    expect(measured.measured).toBe(true);
+    expect(guessed.waveSeconds).toBeCloseTo(measured.waveSeconds, 3);
+    expect(guessed.goldEarned / measured.goldEarned).toBeCloseTo(0.5, 2);
+  });
+
+  it('never prices a wave shorter than the part already fought', async () => {
+    const mgr = new SaveManager(stubBus, { getRP: () => 0 });
+    await mgr.hydrate();
+    const s = offlineState(W);
+    s.wave = { ...s.wave, elapsed: 300 };  // five minutes in, never finished
+    mgr.save(s);
+    const persisted = mgr.load()!;
+    persisted.savedAt -= 8 * 3600 * 1000;
+    expect(mgr.computeOfflineProgress(persisted, 1).waveSeconds).toBeGreaterThanOrEqual(300);
+  });
+
+  it('leaves an absence shorter than one wave paying a partial wave, not zero', async () => {
+    const r = await offlineAt(W, 20 / 3600, timed(120, W));
+    expect(r.waveRepeats).toBeGreaterThan(0);
+    expect(r.waveRepeats).toBeLessThan(1);
+    expect(r.goldEarned).toBeGreaterThan(0);
+  });
+
+  it('prices offline in simulation seconds, so game speed cannot buy income', async () => {
+    // A 1.5x player clears a 60 s (simulation) wave in 40 s of wall clock. The
+    // recorded sample is the simulation figure, so the same absence pays the
+    // same whatever the speed dial says (plans/economy.md §2.8).
+    const r = await offlineAt(W, 8, timed(60, W));
+    const cycle = 60 + intermissionSecondsForWave(W);
+    expect(r.waveRepeats).toBeCloseTo((8 * 3600) / cycle, 1);
   });
 });

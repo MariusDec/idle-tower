@@ -25,6 +25,8 @@ import { isTargetable } from '../src/data/enemies';
 import type { AbilityState, GameStats, ResourceState, TowerState } from '../src/types';
 import { BLESSINGS } from '../src/data/blessings';
 import { BlessingManager } from '../src/systems/BlessingManager';
+import { rollDrop } from '../src/data/equipment';
+import { EquipmentManager } from '../src/systems/EquipmentManager';
 
 const TOWER = { x: 500, y: 400 };
 
@@ -515,5 +517,48 @@ describe('automatic ability placement (plan §4.3)', () => {
       return before - pack.reduce((a, e) => a + e.hp, 0);
     };
     expect(damageDealt(true)).toBeGreaterThan(damageDealt(false));
+  });
+});
+
+/**
+ * Equipment drop budget (plans/economy.md §3.4 / §6.5).
+ *
+ * `EquipmentManager.rollDrop` now spends one roll per source per wave, so a
+ * wave's expected gear is `1 × chance` for elites and `1 × chance` for the
+ * boss — independent of how many elites die. Guaranteed drops (the swift-kill
+ * reward, a Windfall chest) bypass the budget because they are earned, not
+ * farmed, and `rollDrop` itself is flat in wave: only rarity moves with depth.
+ */
+describe('equipment drop budget', () => {
+  it('spends at most one elite roll and one boss roll per wave', () => {
+    const mgr = new EquipmentManager([], {}, new EventBus());
+    mgr.beginWave();
+    const elite = Array.from({ length: 50 }, () => mgr.rollDrop(65, 'elite'));
+    expect(elite.filter(Boolean).length).toBeLessThanOrEqual(1);
+    const boss = Array.from({ length: 50 }, () => mgr.rollDrop(65, 'boss'));
+    expect(boss.filter(Boolean).length).toBeLessThanOrEqual(1);
+    // A new wave gets a fresh budget, so two waves can yield at most two elite
+    // pieces however many elites die in them.
+    mgr.beginWave();
+    const nextWave = Array.from({ length: 50 }, () => mgr.rollDrop(65, 'elite'));
+    expect(nextWave.filter(Boolean).length).toBeLessThanOrEqual(1);
+    expect(mgr.inventoryList.length).toBeLessThanOrEqual(4); // 2 elite + 2 boss ceilings
+  });
+
+  it('lets a guaranteed drop through a spent budget', () => {
+    const mgr = new EquipmentManager([], {}, new EventBus());
+    mgr.beginWave();
+    for (let i = 0; i < 10; i++) mgr.rollDrop(65, 'boss');
+    expect(mgr.rollDrop(65, 'boss', { guaranteed: true })).not.toBeNull();
+  });
+
+  it('does not raise the drop chance with depth', () => {
+    // The rate is flat in wave; only rarity moves with depth.
+    const rate = (wave: number) => {
+      let hits = 0;
+      for (let i = 0; i < 4000; i++) if (rollDrop(wave, 'elite', 0) !== null) hits += 1;
+      return hits / 4000;
+    };
+    expect(Math.abs(rate(20) - rate(150))).toBeLessThan(0.04);
   });
 });

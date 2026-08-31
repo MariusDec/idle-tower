@@ -22,6 +22,7 @@ import {
   bossEncounterWeight,
   bossEscortCountForWave,
   bossHPForWave,
+  enemyCountForWave,
   enemyHPForWave,
   expectedWaveSeconds,
   goldDropForWave,
@@ -33,6 +34,15 @@ import {
 import { ASCENSION_UNLOCK_WAVE, apForWave, tpForAP } from '../src/data/prestige';
 import { ENEMY_DEFS } from '../src/data/enemies';
 import { TOWER_XP_TABLE, TOWER_LEVEL_CAP, xpToLevel, xpForNextLevel, talentPointsAtLevel, xpPerKill, xpPerWaveClear, pioneerBonusXp, PIONEER_CLEAR_MULTIPLIER } from '../src/data/xpTables';
+import {
+  defaultWaveTiming,
+  recordWaveTime,
+  offlineWaveSeconds,
+  MIN_WAVE_SECONDS,
+  MAX_WAVE_SECONDS,
+  WAVE_TIMING_RESCALE_MIN,
+  WAVE_TIMING_RESCALE_MAX,
+} from '../src/data/waveTiming';
 import { UPGRADES, UPGRADE_BY_ID } from '../src/data/upgrades';
 import { computeUpgradeValue } from '../src/types';
 
@@ -217,13 +227,35 @@ describe('tower XP table', () => {
   });
 
   it('pays more XP for deeper kills and deeper clears', () => {
-    expect(xpPerKill('normal', 200)).toBeGreaterThan(xpPerKill('normal', 20) * 5);
-    expect(xpPerWaveClear(100)).toBeGreaterThan(xpPerWaveClear(50) * 2);
+    // Deeper still pays more — depth has to reward the player — but it pays
+    // *less than proportionally* (plans/economy.md §4): the kill XP scale is
+    // `sqrt(wave - 1)`, so a wave-200 kill is well under 5x a wave-20 kill, and
+    // wave-clear XP is exactly linear in depth.
+    expect(xpPerKill('normal', 200)).toBeGreaterThan(xpPerKill('normal', 20));
+    expect(xpPerKill('normal', 200)).toBeLessThan(xpPerKill('normal', 20) * 5);
+    expect(xpPerWaveClear(100)).toBeGreaterThan(xpPerWaveClear(50));
+    expect(xpPerWaveClear(200)).toBe(xpPerWaveClear(100) * 2);
   });
 
   it('pays a pioneer bonus only past the lifetime best', () => {
     expect(pioneerBonusXp(40, 40)).toBe(0);
     expect(pioneerBonusXp(41, 40)).toBe(Math.round(xpPerWaveClear(41) * PIONEER_CLEAR_MULTIPLIER));
+  });
+
+  // economy §4: the level curve grows at 1.028 per level, so per-wave XP must
+  // grow *slower* than that. The old linear kill scale (1 + 0.20 * wave) and
+  // superlinear clear scale (w^1.5) made deeper waves worth a larger share of
+  // a level than shallower ones; the new sub-linear shape inverts that.
+  it('decelerates XP gain with depth instead of accelerating it', () => {
+    const waveXp = (w: number) =>
+      enemyCountForWave(w) * xpPerKill('normal', w) + xpPerWaveClear(w);
+    const share = (w: number, l: number) => waveXp(w) / xpForNextLevel(l);
+    expect(share(100, 60)).toBeLessThan(share(40, 28));
+    expect(share(200, 100)).toBeLessThan(share(100, 60));
+  });
+
+  it('keeps a deep kill within a small multiple of a shallow one', () => {
+    expect(xpPerKill('normal', 200)).toBeLessThanOrEqual(xpPerKill('normal', 1) * 4);
   });
 });
 
@@ -359,5 +391,43 @@ describe('economy caps', () => {
       expect(m, `wave ${wave}`).toBeGreaterThanOrEqual(1);
       expect(m, `wave ${wave}`).toBeLessThanOrEqual(3);
     }
+  });
+});
+
+/**
+ * Wave timing (plans/economy.md §2 / §6.4).
+ *
+ * The offline model is paced by `WaveTimingState.avgWaveSeconds`, the running
+ * mean of the last `WAVE_TIMING_EMA_WINDOW` clears measured in **simulation**
+ * seconds. These tests pin the three properties the offline math depends on:
+ * the mean tracks a tower that just got stronger, a single glitched measurement
+ * cannot poison it, and a sample taken at one depth is rescaled for use at
+ * another within bounded limits.
+ */
+describe('wave timing', () => {
+  it('averages the last five clears and tracks a tower getting stronger', () => {
+    const t = defaultWaveTiming();
+    for (const s of [100, 100, 100, 100, 100]) recordWaveTime(t, 33, s);
+    expect(t.avgWaveSeconds).toBeCloseTo(100, 5);
+    for (let i = 0; i < 20; i++) recordWaveTime(t, 33, 20);
+    expect(t.avgWaveSeconds).toBeLessThan(25);
+  });
+
+  it('clamps a nonsense measurement instead of poisoning the average', () => {
+    const t = defaultWaveTiming();
+    recordWaveTime(t, 33, 0.001);
+    expect(t.avgWaveSeconds).toBe(MIN_WAVE_SECONDS);
+    recordWaveTime(t, 33, Number.POSITIVE_INFINITY);
+    expect(t.avgWaveSeconds).toBeLessThanOrEqual(MAX_WAVE_SECONDS);
+  });
+
+  it('rescales a sample taken at another depth, within bounds', () => {
+    const t = defaultWaveTiming();
+    recordWaveTime(t, 33, 60);
+    const deep = offlineWaveSeconds(t, 91).seconds;
+    const shallow = offlineWaveSeconds(t, 11).seconds;
+    expect(deep).toBeGreaterThan(shallow);
+    expect(deep).toBeLessThanOrEqual(60 * WAVE_TIMING_RESCALE_MAX);
+    expect(shallow).toBeGreaterThanOrEqual(60 * WAVE_TIMING_RESCALE_MIN);
   });
 });

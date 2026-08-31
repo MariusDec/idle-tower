@@ -48,7 +48,7 @@ import {
   computePerkEffect,
   tpForAP,
 } from '../src/data/prestige.ts';
-import { talentPointsAtLevel, xpPerKill, TOWER_XP_TABLE, TOWER_LEVEL_CAP, xpToLevel, xpPerWaveClear, pioneerBonusXp, PIONEER_CLEAR_MULTIPLIER } from '../src/data/xpTables.ts';
+import { talentPointsAtLevel, xpPerKill, TOWER_XP_TABLE, TOWER_LEVEL_CAP, xpToLevel, xpPerWaveClear, pioneerBonusXp, PIONEER_CLEAR_MULTIPLIER, xpForNextLevel } from '../src/data/xpTables.ts';
 import { PASSIVE_ABILITIES } from '../src/data/passiveAbilities.ts';
 import { PROGRESSION_ENTRIES } from '../src/data/milestones.ts';
 import { TALENTS_BY_BRANCH, talentRespecCost } from '../src/data/talentTree.ts';
@@ -214,6 +214,20 @@ section('§2.4 tower XP and talent points');
   check('kill XP scales with wave depth', xpPerKill('normal', 50) > xpPerKill('normal', 10) * 1.5,
     `w10=${xpPerKill('normal', 10)} w50=${xpPerKill('normal', 50)}`);
   check('bosses are worth more than trash', xpPerKill('boss', 30) > xpPerKill('normal', 30));
+
+  // economy §4: per-wave XP must decelerate with depth. The level curve grows
+  // geometrically at 1.028, so the share of a level a wave is worth must fall
+  // rather than rise as the wave number climbs.
+  {
+    const share = (w: number, l: number) => {
+      const count = enemyCountForWave(w);
+      return (count * xpPerKill('normal', w) + xpPerWaveClear(w)) / xpForNextLevel(l);
+    };
+    check('per-wave XP decelerates with depth', share(100, 60) < share(40, 28),
+      `share(40,28)=${share(40, 28).toFixed(4)} share(100,60)=${share(100, 60).toFixed(4)}`);
+    check('per-wave XP decelerates between 100 and 200', share(200, 100) < share(100, 60),
+      `share(100,60)=${share(100, 60).toFixed(4)} share(200,100)=${share(200, 100).toFixed(4)}`);
+  }
 
   // One talent point per level, capped at 200.
   check('one point per level, capped at 200',

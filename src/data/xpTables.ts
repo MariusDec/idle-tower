@@ -21,12 +21,21 @@ export const KILL_XP_WEIGHT: Record<EnemyType, number> = {
   boss: 12,
 };
 
-/** Per-kill XP is linear in wave: a wave-200 kill is 41x a wave-1 kill. */
-export const KILL_XP_WAVE_SLOPE = 0.20;
+/**
+ * Per-kill XP grows with the **square root** of wave depth.
+ *
+ * It used to be `1 + 0.20 * wave` — linear — which, multiplied by an enemy
+ * count that is itself linear in wave, made a wave's kill XP quadratic. The
+ * level curve grows at 1.028 per level, so past ~wave 50 one wave was worth a
+ * larger share of a level than the wave before it, and levelling accelerated
+ * with depth instead of slowing. At 0.12 * sqrt(w - 1) a wave-65 kill is
+ * ~2x a wave-1 kill instead of 14x, and a wave-200 kill ~2.7x instead of 41x.
+ */
+export const KILL_XP_WAVE_SLOPE = 0.12;
 
-/** Wave-clear XP is superlinear: clearing deep waves is the real faucet. */
-export const WAVE_CLEAR_XP_BASE = 1.5;
-export const WAVE_CLEAR_XP_EXPONENT = 1.5;
+/** Wave-clear XP is now **linear** in depth; see `KILL_XP_WAVE_SLOPE`. */
+export const WAVE_CLEAR_XP_BASE = 3;
+export const WAVE_CLEAR_XP_EXPONENT = 1.0;
 
 /**
  * Extra multiple of the clear payout for a wave deeper than any ever cleared.
@@ -62,9 +71,9 @@ export const TOWER_XP_TABLE: number[] = (() => {
   return table;
 })();
 
-/** Per-kill wave scale. Linear, so the enemy roster's weights stay legible. */
+/** Per-kill wave scale. Sub-linear, so depth raises the roster's value gently. */
 export function killXpWaveScale(wave: number): number {
-  return 1 + KILL_XP_WAVE_SLOPE * Math.max(1, wave);
+  return 1 + KILL_XP_WAVE_SLOPE * Math.sqrt(Math.max(0, wave - 1));
 }
 
 /**
@@ -126,7 +135,7 @@ export function passiveWaveXpRef(wave: number): number {
 }
 
 /** Waves of play at the unlock wave that level 1 of a passive is priced at. */
-export const PASSIVE_XP_LEVEL_WAVES = 6;
+export const PASSIVE_XP_LEVEL_WAVES = 10;
 
 /** Requirement curve exponents. Polynomial for shape, geometric for the tail. */
 export const PASSIVE_XP_POLY = 1.5;

@@ -53,7 +53,6 @@ import type { BossBarData } from '../ui/BossBar';
 import type { EnemyWatchLine, WatchChapterView, WatchInfo } from '../ui/UIManager';
 import {
   avariceStreakGoldBonus,
-  bossEncounterWeight,
   GOLD_GROWTH,
   isBossWave,
   goldDropForWave,
@@ -84,6 +83,7 @@ import { TALENT_STATS, TALENT_TUNING, type TalentStat } from '../data/talentTree
 import { PASSIVE_ABILITIES } from '../data/passiveAbilities';
 import { ACHIEVEMENT_REWARD_CONSUMERS, type AchievementRewardType } from '../data/achievements';
 import { EVOLUTION_EFFECT_IDS, type EvolutionEffectId } from '../data/upgrades';
+import { recordWaveTime, defaultWaveTiming } from '../data/waveTiming';
 import { EQUIPMENT_STAT_TYPES } from '../data/equipment';
 import {
   BuffRegistry,
@@ -356,6 +356,7 @@ function makeInitialState(): GameState {
     contracts: { active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0 },
     cores: { unlocked: [DEFAULT_CORE], preferred: DEFAULT_CORE, selected: DEFAULT_CORE },
     pacing: { risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0 },
+    waveTiming: defaultWaveTiming(),
     watch: {
       completed: [],
       counters: {
@@ -1041,16 +1042,13 @@ export class Game {
         this.bus.emit('boss_killed', { x: e.x, y: e.y, goldValue: e.goldValue ?? def.baseGold });
         // Death slow-mo + screen flash (P3 + P5)
         this.triggerBossDeathSlowMo();
-        // Equipment drop. Rolled once per *boss the wave is worth*, not once
-        // per body: the pack used to pay `2 + tier` rolls a wave and the lone
-        // boss inherits the whole encounter's gear budget, exactly as it
-        // inherits its gold. One toast for the lot — `2 + tier` separate
-        // "Equipment dropped" toasts is a wave the player cannot read.
+        // One roll, not one per boss the encounter is "worth" (economy §3.5).
+        // The weight exists so a lone boss carries the pack's HP, gold and XP;
+        // multiplying the *gear* budget by it made a wave-70 boss worth eight
+        // rolls at a 50% chance apiece.
         const eqDrops: Equipment[] = [];
-        for (let i = 0; i < bossEncounterWeight(this.waveMgr.currentWave); i++) {
-          const eqDrop = this.equipmentMgr.rollDrop(this.waveMgr.currentWave, 'boss');
-          if (eqDrop) eqDrops.push(eqDrop);
-        }
+        const eqDrop = this.equipmentMgr.rollDrop(this.waveMgr.currentWave, 'boss');
+        if (eqDrop) eqDrops.push(eqDrop);
         if (eqDrops.length === 1) {
           this.bus.emit('toast', { kind: 'milestone', text: `Equipment dropped: ${eqDrops[0].rarity}!`, life: 4 });
         } else if (eqDrops.length > 1) {
@@ -1584,6 +1582,7 @@ export class Game {
       // opened for. A wave transition is exactly that — whatever the player
       // was about to drop the meteor on is gone.
       this.cancelPlacement();
+      this.equipmentMgr.beginWave();
       const ts = this.tower.snapshot;
       if (ts.wallMaxHp > 0) {
         ts.wallHp = ts.wallMaxHp;
@@ -1761,6 +1760,11 @@ export class Game {
       });
       this.state.contracts = this.contractMgr.snapshot();
       this.noteWatchWave();
+    });
+    this.bus.on('wave_timed', (payload: unknown) => {
+      const p = payload as { wave: number; seconds: number };
+      recordWaveTime(this.state.waveTiming, p.wave, p.seconds);
+      this.saveMgr.requestSave();
     });
     this.bus.on('wave_modifier_offer', (nextWave: unknown) => {
       const w = nextWave as number;
@@ -1984,19 +1988,6 @@ export class Game {
     this.bindVisibilityEvents();
   }
 
-  /**
-   * Move the run to the wave the offline walk ended on (plan §4.4).
-   *
-   * `WaveManager.startAtWave` replaces its wave state wholesale, so the
-   * snapshot has to be re-bound afterwards — the same handshake the
-   * head-start path uses.
-   */
-  private applyOfflineWave(endWave: number): void {
-    if (endWave <= this.state.wave.number) return;
-    this.waveMgr.startAtWave(endWave);
-    this.state.wave = this.waveMgr.snapshot;
-  }
-
   private bindVisibilityEvents(): void {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
@@ -2015,9 +2006,7 @@ export class Game {
         if (persisted) {
           const result = this.saveMgr.computeOfflineProgress(persisted, this.computeGoldMultiplier());
           if (result.elapsedSeconds > 0) {
-            const startWave = this.state.wave.number;
             this.saveMgr.applyOfflineProgress(this.state, result, this.passiveMgr);
-            this.applyOfflineWave(result.endWave);
             if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
             if (this.researchTree.advanceResearch(result.researchElapsed)) {
               this.state.research = this.researchTree.getLevelsSnapshot();
@@ -2027,9 +2016,8 @@ export class Game {
               : null;
             this.applyUpgradeEffects();
             this.state.upgrades = this.upgradeMgr.snapshot();
-            const endWave = this.state.wave.number;
             if (result.elapsedSeconds >= MIN_OFFLINE_REPORT_SECONDS) {
-              this.bus.emit('welcome_back', { result, startWave, endWave });
+              this.bus.emit('welcome_back', { result });
             }
             this.saveMgr.save(this.state);
           }
@@ -3378,9 +3366,7 @@ export class Game {
     this.lootMgr.clear();
     const result = this.saveMgr.computeOfflineProgress(persisted, this.computeGoldMultiplier());
     if (result.elapsedSeconds > 0) {
-      const startWave = this.state.wave.number;
       this.saveMgr.applyOfflineProgress(this.state, result, this.passiveMgr);
-      this.applyOfflineWave(result.endWave);
       if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
       this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
       if (this.researchTree.advanceResearch(result.researchElapsed)) {
@@ -3391,12 +3377,9 @@ export class Game {
         : null;
       this.applyUpgradeEffects();
       this.state.upgrades = this.upgradeMgr.snapshot();
-      const endWave = this.state.wave.number;
       if (result.elapsedSeconds >= MIN_OFFLINE_REPORT_SECONDS) {
         this.bus.emit('welcome_back', {
           result,
-          startWave,
-          endWave,
         });
       }
       this.saveMgr.save(this.state);
@@ -4353,6 +4336,9 @@ export class Game {
     // an auto-ascending run reaches several times an hour — the same trap
     // Part 6 found in the core selection.
     this.pacingMgr.reset();
+    // Wave timing is run-scoped: the new run's tower is not the old run's, and
+    // a sample taken at wave 65 must not price an offline absence at wave 1.
+    this.state.waveTiming = defaultWaveTiming();
     this.pacingStatSignature = -1;
     this.prestigeMgr.setRiskApBonus(riskApBonus(this.pacingMgr.activeRisk));
     this.state.pacing = this.pacingMgr.snapshot();
@@ -5106,6 +5092,7 @@ export class Game {
     p.autoBuyReserve = persisted.prestige.autoBuyReserve ?? 0;
 
     this.state.wave = { ...persisted.wave };
+    this.state.waveTiming = { ...(persisted.waveTiming ?? defaultWaveTiming()) };
     this.waveMgr.setState(this.state.wave);
 
     this.state.abilities = {};

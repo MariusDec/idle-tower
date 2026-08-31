@@ -384,6 +384,24 @@ export interface DropOptions {
   rarityBoost?: number;
 }
 
+/**
+ * Base drop chance for an *elite* kill (plans/economy.md §3).
+ *
+ * Flat in wave. It used to be `min(0.15, 0.04 + wave * 0.001 + bonus)`, which
+ * ramped with depth on top of an elite population that itself grows with depth
+ * — ~9.7 elites walk into a wave-65 wave, so the two ramps multiplied into
+ * more than a piece of gear per wave before the boss even spawned.
+ */
+export const ELITE_DROP_CHANCE = 0.12;
+export const ELITE_DROP_CHANCE_CAP = 0.25;
+
+/** Base drop chance for a *boss* kill. Also flat; also capped. */
+export const BOSS_DROP_CHANCE = 0.30;
+export const BOSS_DROP_CHANCE_CAP = 0.60;
+
+/** A milestone chest is the guaranteed source; it is not a chance roll. */
+export const MILESTONE_DROP_CHANCE = 1.0;
+
 export function rollDrop(
   wave: number,
   source: 'boss' | 'elite' | 'milestone',
@@ -392,18 +410,15 @@ export function rollDrop(
 ): Equipment | null {
   const boost = Math.max(0, options.rarityBoost ?? 0);
   const guaranteed = options.guaranteed === true;
-  if (source === 'elite') {
-    const eliteChance = Math.min(0.15, 0.04 + wave * 0.001 + bonusChance);
-    if (!guaranteed && Math.random() > eliteChance) return null;
-    const eliteRarity = upgradeRarity(rollRarity(wave), boost);
-    const elitePool = EQUIPMENT_DEFS.filter(d => d.minWave <= wave && !d.bossOnly);
-    if (elitePool.length === 0) return null;
-    const eliteDef = elitePool[Math.floor(Math.random() * elitePool.length)];
-    return generateEquipment(eliteDef.id, eliteRarity);
-  }
-  const baseChance = source === 'boss' ? 0.15 : 1.0;
-  const scaledChance = Math.min(0.8, baseChance + wave * 0.005 + bonusChance);
-  if (!guaranteed && Math.random() > scaledChance) return null;
+  const bonus = Math.max(0, bonusChance);
+
+  const chance = source === 'elite'
+    ? Math.min(ELITE_DROP_CHANCE_CAP, ELITE_DROP_CHANCE + bonus)
+    : source === 'boss'
+      ? Math.min(BOSS_DROP_CHANCE_CAP, BOSS_DROP_CHANCE + bonus)
+      : MILESTONE_DROP_CHANCE;
+
+  if (!guaranteed && Math.random() > chance) return null;
 
   const rarity = upgradeRarity(rollRarity(wave), boost);
   // Only items whose minWave has been reached can drop; boss-only items are

@@ -4,8 +4,6 @@ import { formatIdleDuration } from '../data/prestige';
 import { Modal } from './Modal';
 export interface WelcomeBackData {
   result: OfflineResult;
-  startWave: number;
-  endWave: number;
 }
 
 function formatDuration(seconds: number): string {
@@ -73,22 +71,18 @@ export class WelcomeBackModal {
     waveStat.className = 'welcome-stat';
     const waveLabel = document.createElement('div');
     waveLabel.className = 'welcome-stat-label';
-    waveLabel.textContent = 'Waves cleared';
+    waveLabel.textContent = 'Wave repeats';
     const waveValue = document.createElement('div');
     waveValue.className = 'welcome-stat-value';
-    waveValue.textContent = data.result.wavesCleared > 0
-      ? `${formatNumber(data.result.wavesCleared)}`
-      : '0';
+    // One decimal, because a fractional repeat is the point: at depth a wave is
+    // minutes long and a short absence is legitimately "1.4 waves".
+    waveValue.textContent = `${data.result.waveRepeats.toFixed(1)}x`;
     waveStat.appendChild(waveLabel);
     waveStat.appendChild(waveValue);
-    // Only worth a row when the run actually moved: once the walk reaches the
-    // player's deepest wave it farms there, and start == end again.
-    if (data.endWave > data.startWave) {
-      const progressValue = document.createElement('div');
-      progressValue.className = 'welcome-stat-sub';
-      progressValue.textContent = `wave ${data.startWave} → ${data.endWave}`;
-      waveStat.appendChild(progressValue);
-    }
+    const waveSub = document.createElement('div');
+    waveSub.className = 'welcome-stat-sub';
+    waveSub.textContent = `wave ${data.result.wave} · ${formatDuration(data.result.waveSeconds)} per clear`;
+    waveStat.appendChild(waveSub);
     stats.appendChild(waveStat);
 
     const xpStat = document.createElement('div');
@@ -109,9 +103,11 @@ export class WelcomeBackModal {
 
     const efficiency = document.createElement('p');
     efficiency.className = 'welcome-modal-note';
-    const dps = Math.floor(data.result.effectiveDPS);
-    efficiency.textContent = `Tower ran at 50% efficiency (≈ ${formatNumber(dps)} effective DPS), `
-      + 'with your full gold multiplier applied.';
+    efficiency.textContent = data.result.measured
+      ? `Your tower repeated wave ${data.result.wave} at 1x speed and 25% efficiency, `
+        + 'with your full gold multiplier applied.'
+      : `Your tower repeated wave ${data.result.wave} at 1x speed. No completed wave had been `
+        + 'timed yet, so the rate was estimated and paid at half the usual 25%.';
     card.appendChild(efficiency);
 
     const btn = document.createElement('button');

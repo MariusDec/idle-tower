@@ -579,7 +579,10 @@ export class WaveManager {
       return;
     }
 
-    this.tickEnrage(dt);
+    // The wave clock is the measurement offline progress is paced by
+    // (plans/economy.md §2.3) as well as the enrage fuse. Neither should run
+    // while the simulation is held open for a mutator offer or a draft.
+    if (!this.spawnPaused && !this.intermissionPaused) this.tickEnrage(dt);
 
     if (this.state.spawning && !this.spawnPaused) {
       this.state.spawnTimer -= dt;
@@ -612,8 +615,25 @@ export class WaveManager {
    */
   private concludeWave(openIntermission: boolean): void {
     const clearedWave = this.state.number;
+    const clearedSeconds = this.state.elapsed;
     this.onWaveCleared(clearedWave);
     this.bus.emit('wave_cleared', clearedWave);
+    // plans/economy.md §2.3: the offline model is paced by how long a wave
+    // *actually* takes this tower. Only a wave that ran to its natural end is
+    // a fair sample, so three cases are excluded:
+    //   - `openIntermission === false` — an early call, which credits the wave
+    //     with stragglers still alive and would under-report the duration;
+    //   - a boss wave, which is a 4x-longer encounter offline never farms;
+    //   - a wave under a mutator, whose enemy count is not this depth's.
+    // The wave-skip path never reaches `concludeWave`, so it is excluded too.
+    if (
+      openIntermission
+      && !isBossWave(clearedWave)
+      && this.state.waveModifier.active === null
+      && clearedSeconds > 0
+    ) {
+      this.bus.emit('wave_timed', { wave: clearedWave, seconds: clearedSeconds });
+    }
     this.state.elapsed = 0;
     this.state.enrageStacks = 0;
     this.clearEnrage();
