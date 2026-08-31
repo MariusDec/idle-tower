@@ -267,8 +267,22 @@ export class AbilityBar {
       ev.preventDefault();
       this.showPopover(def.id, btn);
     });
-    btn.addEventListener('mouseenter', () => this.onHoverStart(def.id, btn));
-    btn.addEventListener('mouseleave', () => this.onHoverEnd());
+    // `pointerenter`/`pointerleave` gated on a real mouse, not `mouseenter`.
+    // A touch fires a compatibility `mouseenter` on tap and never a matching
+    // `mouseleave`, so the dock's inspect tooltip opened on every single tap
+    // and then *stayed* — over the arena, on the frame the player was trying
+    // to aim a targeted ability. Hold-to-inspect is the touch route (§9.C);
+    // hover is the mouse one, and now only the mouse takes it.
+    btn.addEventListener('pointerenter', (ev) => {
+      if (ev.pointerType !== 'mouse') return;
+      this.onHoverStart(def.id, btn);
+    });
+    btn.addEventListener('pointerleave', () => this.onHoverEnd());
+    // A finger that lands on the tile must also kill a tooltip a mouse left
+    // behind (hybrid laptops fire both), so the aim is never obstructed.
+    btn.addEventListener('pointerdown', (ev) => {
+      if (ev.pointerType !== 'mouse') this.onHoverEnd();
+    });
 
     const sweep = document.createElement('div');
     sweep.className = 'ability-cooldown-radial';

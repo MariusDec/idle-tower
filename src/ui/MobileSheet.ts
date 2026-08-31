@@ -71,6 +71,11 @@ export class MobileSheet {
     this.root = root;
 
     this.boundOnKeydown = (ev) => {
+      // `Modal`'s document-level handler runs before this window one, so a
+      // dialog opened over the sheet has already spent the press by the time
+      // it arrives here — closing the sheet as well would take two surfaces
+      // away on one Escape.
+      if (ev.defaultPrevented) return;
       if (ev.key === 'Escape' && this.isOpenFlag) {
         ev.preventDefault();
         this.close();

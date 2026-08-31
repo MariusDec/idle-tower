@@ -5,6 +5,13 @@ import { formatNumber } from '../utils/bigNumber';
 import { setText, toggleClass, setStyle, setDisplay } from '../utils/dom';
 import { bindLongPress } from '../utils/longPress';
 
+/**
+ * At or below this viewport width the compare tooltip always goes above or
+ * below the card, never beside it. Matches the `MOBILE_BREAKPOINT` the nav and
+ * the stylesheet switch on.
+ */
+const MOBILE_PLACEMENT_MAX_VW = 768;
+
 export interface EquipmentAPIDeps {
   inventory: Equipment[];
   equipped: Partial<Record<EquipmentSlot, Equipment>>;
@@ -101,6 +108,8 @@ export class EquipmentPanel {
    * inventory has to unbind explicitly — the listeners do not die with it.
    */
   private longPressUnbinds = new Map<string, () => void>();
+  /** The same, for the eight equipped-slot cards. Keyed by slot, not by item. */
+  private slotLongPressUnbinds = new Map<EquipmentSlot, () => void>();
   /** §8.C.3: the tap-to-select half of the touch route. */
   private selectedItemId: string | null = null;
   /** A drag ends in a `click`; that click must not also be read as a tap. */
@@ -124,6 +133,8 @@ export class EquipmentPanel {
     this.cancelDrag();
     for (const unbind of this.longPressUnbinds.values()) unbind();
     this.longPressUnbinds.clear();
+    for (const unbind of this.slotLongPressUnbinds.values()) unbind();
+    this.slotLongPressUnbinds.clear();
     this.destroyCompareTooltip();
     this.root = null;
     this.selectedItemId = null;
@@ -211,6 +222,37 @@ export class EquipmentPanel {
     this.deps.onItemViewed(item.id);
   }
 
+  /**
+   * The same floating surface, opened from an *equipped* slot rather than from
+   * an inventory card.
+   *
+   * A slot with nothing selected has nothing to compare against, so it renders
+   * the one card on its own; select an inventory item of the same slot first
+   * and the hold shows the real before/after — which is exactly the question a
+   * player holds a slot to ask.
+   */
+  private showSlotTooltip(slot: EquipmentSlot, anchor: HTMLElement): void {
+    const equipped = this.deps.equipped[slot];
+    if (!equipped) return;
+    const selected = this.selectedItemId
+      ? this.deps.inventory.find(i => i.id === this.selectedItemId && i.slot === slot)
+      : undefined;
+    if (selected) {
+      this.showCompareTooltip(selected, anchor);
+      return;
+    }
+    this.ensureCompareTooltip();
+    const tooltip = this.compareTooltip!;
+    tooltip.textContent = '';
+    tooltip.appendChild(this.buildCompareBody(equipped, undefined, { solo: true }));
+    tooltip.style.display = 'block';
+    tooltip.style.visibility = 'hidden';
+    this.positionCompareTooltip(anchor);
+    void tooltip.offsetHeight;
+    tooltip.style.visibility = '';
+    tooltip.classList.add('is-visible');
+  }
+
   private hideCompareTooltip(): void {
     if (this.hoverTimer !== null) {
       clearTimeout(this.hoverTimer);
@@ -234,6 +276,19 @@ export class EquipmentPanel {
     }
   }
 
+  /**
+   * Place the compare tooltip beside the card, or — when nothing fits beside it
+   * — in whichever horizontal band has more room above or below.
+   *
+   * The old version only ever tried "left of the card, else right of it". On a
+   * phone the card spans nearly the full width, so neither fits and both
+   * branches fell through to the same clamp, which parked the tooltip on top of
+   * the card the finger was holding. Picking the taller band instead puts it
+   * where there is actually space, and keeps it clear of the thumb.
+   *
+   * `data-placement` mirrors the choice for the stylesheet, the same hook the
+   * codex tooltip uses.
+   */
   private positionCompareTooltip(anchor: HTMLElement): void {
     const tooltip = this.compareTooltip!;
     const rect = anchor.getBoundingClientRect();
@@ -241,15 +296,38 @@ export class EquipmentPanel {
     const margin = 8;
     const gap = 8;
     const vw = window.innerWidth;
-    let left = rect.left - gap - tipRect.width;
-    if (left < margin) {
-      left = rect.right + gap;
+    const vh = window.innerHeight;
+    const clamp = (v: number, max: number) => Math.max(margin, Math.min(max, v));
+
+    const fitsLeft = rect.left - gap - tipRect.width >= margin;
+    const fitsRight = rect.right + gap + tipRect.width <= vw - margin;
+
+    // Beside the card is a *desktop* placement: it assumes a mouse, spare
+    // horizontal room and a cursor that is not covering the thing it points at.
+    // On a phone a narrow slot card leaves just enough width for the tooltip to
+    // "fit" beside it and land under the thumb that is holding it, so the band
+    // above or below the card is the only placement that reads. Same 768px line
+    // the rest of the UI switches on.
+    const besideAllowed = vw > MOBILE_PLACEMENT_MAX_VW;
+
+    if (besideAllowed && (fitsLeft || fitsRight)) {
+      const left = fitsLeft ? rect.left - gap - tipRect.width : rect.right + gap;
+      const top = rect.top + rect.height / 2 - tipRect.height / 2;
+      tooltip.dataset.placement = fitsLeft ? 'left' : 'right';
+      tooltip.style.left = `${clamp(left, vw - tipRect.width - margin)}px`;
+      tooltip.style.top = `${clamp(top, vh - tipRect.height - margin)}px`;
+      return;
     }
-    let top = rect.top + rect.height / 2 - tipRect.height / 2;
-    top = Math.max(margin, Math.min(window.innerHeight - tipRect.height - margin, top));
-    left = Math.max(margin, Math.min(vw - tipRect.width - margin, left));
-    tooltip.style.top = `${top}px`;
-    tooltip.style.left = `${left}px`;
+
+    // Go above or below, whichever band is taller. The
+    // tooltip is centred on the card horizontally and then clamped, so a card
+    // at the edge of a narrow screen still lands fully on-screen.
+    const above = rect.top - margin >= vh - rect.bottom - margin;
+    const top = above ? rect.top - gap - tipRect.height : rect.bottom + gap;
+    const left = rect.left + rect.width / 2 - tipRect.width / 2;
+    tooltip.dataset.placement = above ? 'above' : 'below';
+    tooltip.style.left = `${clamp(left, vw - tipRect.width - margin)}px`;
+    tooltip.style.top = `${clamp(top, vh - tipRect.height - margin)}px`;
   }
 
   /**
@@ -259,7 +337,11 @@ export class EquipmentPanel {
    * rarity })` and a `data-rarity` attribute the stylesheet reads, so the badge
    * and the name no longer carry an inline colour — §0.3 rule 4.
    */
-  private buildCompareBody(inventory: Equipment, equipped: Equipment | undefined): HTMLElement {
+  private buildCompareBody(
+    inventory: Equipment,
+    equipped: Equipment | undefined,
+    opts?: { solo?: boolean },
+  ): HTMLElement {
     const eqStatMap = new Map<string, number>();
     if (equipped) {
       for (const s of equipped.stats) eqStatMap.set(s.type, s.value);
@@ -349,6 +431,11 @@ export class EquipmentPanel {
 
     const body = document.createElement('div');
     body.className = 'eq-compare-body';
+    if (opts?.solo) {
+      body.classList.add('eq-compare-solo');
+      body.appendChild(buildCard('Equipped', inventory, invStatMap, eqStatMap));
+      return body;
+    }
     body.appendChild(buildCard('Inventory', inventory, invStatMap, eqStatMap));
     const vs = document.createElement('div');
     vs.className = 'eq-compare-vs';
@@ -613,7 +700,11 @@ export class EquipmentPanel {
     // Equip button — the rest of the card is a hover target too. The Sell
     // button is the one affordance that should not also pop a comparison, so
     // hovering it (or any descendant) tears the tooltip down instead.
-    card.addEventListener('mouseover', (e) => {
+    // `pointerover`, gated on a real mouse. A touch fires a compatibility
+    // `mouseover` on tap and never a matching `mouseout`, so tapping a card to
+    // select it also pinned the comparison open over the list.
+    card.addEventListener('pointerover', (e) => {
+      if (e.pointerType !== 'mouse') return;
       const target = e.target as HTMLElement;
       if (target.closest('.btn-sell')) {
         if (this.hoverTimer !== null) { clearTimeout(this.hoverTimer); this.hoverTimer = null; }
@@ -628,7 +719,7 @@ export class EquipmentPanel {
         this.showCompareTooltip(item, card);
       }, HOVER_DELAY_MS);
     });
-    card.addEventListener('mouseout', (e) => {
+    card.addEventListener('pointerout', (e) => {
       const related = e.relatedTarget as HTMLElement | null;
       if (related && card.contains(related)) return;
       this.hideCompareTooltip();
@@ -775,6 +866,35 @@ export class EquipmentPanel {
       if ((e.target as HTMLElement).closest('button')) return;
       this.onSlotTap(slot);
     });
+
+    // The equipped slots had no route to the item card at all — neither hover
+    // nor hold — so the only way to read what you were *wearing* was to
+    // unequip it back into the inventory, where the tooltip lives. Hover for a
+    // mouse, hold for a finger, the same pair the inventory cards use.
+    card.addEventListener('pointerenter', (ev) => {
+      if (ev.pointerType !== 'mouse') return;
+      if (!this.deps.equipped[slot]) return;
+      if (this.dragState) return;
+      if (this.hoverTimer !== null) return;
+      this.hoverTimer = setTimeout(() => {
+        this.hoverTimer = null;
+        this.showSlotTooltip(slot, card);
+      }, HOVER_DELAY_MS);
+    });
+    card.addEventListener('pointerleave', () => this.hideCompareTooltip());
+
+    this.slotLongPressUnbinds.get(slot)?.();
+    this.slotLongPressUnbinds.set(slot, bindLongPress(card, {
+      shouldStart: (_el, ev) => {
+        if ((ev.target as HTMLElement).closest('button')) return false;
+        return this.dragState === null && !!this.deps.equipped[slot];
+      },
+      onLongPress: () => {
+        if (this.hoverTimer !== null) { clearTimeout(this.hoverTimer); this.hoverTimer = null; }
+        this.showSlotTooltip(slot, card);
+      },
+      onRelease: () => this.hideCompareTooltip(),
+    }));
 
     return card;
   }

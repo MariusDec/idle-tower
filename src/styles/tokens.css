@@ -379,7 +379,14 @@
   --z-sheet: 75;
   --z-menu: 80;
   --z-modal: 110;
-  --z-toast: 120;
+  /* Toasts used to top the ladder, which put a "wave restarted" notice over
+     the mobile sheet the player was reading and over every dialog. A toast is
+     an *ambient* report on the run, so it belongs above the play area and the
+     docked chrome and below anything the player deliberately opened: the sheet
+     (75) and the modal root (110) both outrank it now. Still above the corner
+     stack, the dock and the popovers, which is where it has to cover things
+     the way a snackbar does. */
+  --z-toast: 74;
 
   --ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);

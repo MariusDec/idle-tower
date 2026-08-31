@@ -472,6 +472,11 @@ function shotPreviewOf(stats: ResolvedStats): ShotPreview {
     fireRate: stats.fireRate,
     critChance: stats.critChance,
     critMultiplier: stats.critMultiplier,
+    // The whole resolved block rides along so the panel can quote *any* stat
+    // the same way it already quotes damage and fire rate. The four fields
+    // above are the ones `shotsToKill` needs and stay named; everything else
+    // (max HP, armor, regen, range, mana) is read by key off this.
+    resolved: stats,
   };
 }
 

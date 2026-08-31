@@ -31,9 +31,29 @@ html, body, #app {
 html, body, #app {
   overscroll-behavior: none;
 }
-#app {
+/* Not `#app` alone: `MobileSheet` and `Modal` append their roots to
+   `document.body`, so on a phone — where every panel renders inside the sheet —
+   the hardening above was landing on nothing. */
+#app,
+.mobile-sheet,
+#modal-root {
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Every host bound through `utils/longPress`, marked by the helper itself.
+   A long press is *our* gesture on these, so the browser's competing ones have
+   to be off: Chrome on Android answers a long press on selectable text by
+   starting a text selection, and starting one fires `pointercancel`, which
+   cancels the hold before it fires. The equipment cards are text-filled `div`s,
+   so the hold selected the item name and no popup ever appeared. Descendants
+   are included because the press lands on the name or the stat line, not on the
+   card box. */
+.is-hold-surface,
+.is-hold-surface * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* The display face. Condensed, so a wave number or a six-figure gold total gets
@@ -67,9 +87,11 @@ button {
   caret-color: transparent;
   transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, transform var(--dur-instant) ease;
 }
-button:hover:not(:disabled) {
-  background: var(--surface-3);
-  border-color: var(--stroke-strong);
+@media (hover: hover) and (pointer: fine) {
+  button:hover:not(:disabled) {
+    background: var(--surface-3);
+    border-color: var(--stroke-strong);
+  }
 }
 button:active:not(:disabled) { transform: translateY(1px); }
 button:disabled {
@@ -204,7 +226,9 @@ button:disabled {
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
-.rail-btn:hover:not(.active) { background: var(--surface-3); color: var(--text-1); }
+@media (hover: hover) and (pointer: fine) {
+  .rail-btn:hover:not(.active) { background: var(--surface-3); color: var(--text-1); }
+}
 .rail-btn.active {
   background: var(--surface-3);
   border-color: var(--stroke-strong);
@@ -241,9 +265,11 @@ button:disabled {
   border-radius: var(--radius-md);
   white-space: nowrap;
 }
-.tab-btn:hover:not(.active) {
-  background: var(--surface-3);
-  color: var(--text-0);
+@media (hover: hover) and (pointer: fine) {
+  .tab-btn:hover:not(.active) {
+    background: var(--surface-3);
+    color: var(--text-0);
+  }
 }
 .tab-btn.active {
   background: var(--surface-3);
@@ -608,10 +634,12 @@ button:disabled {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
 }
-.hud-wave-restart:hover:not(:disabled) {
-  color: var(--text-0);
-  background: var(--surface-4);
-  border-color: var(--stroke-subtle);
+@media (hover: hover) and (pointer: fine) {
+  .hud-wave-restart:hover:not(:disabled) {
+    color: var(--text-0);
+    background: var(--surface-4);
+    border-color: var(--stroke-subtle);
+  }
 }
 .hud-wave-restart:disabled { opacity: 0.3; }
 
@@ -719,9 +747,11 @@ button:disabled {
   border-color: var(--stroke-subtle);
   position: relative;
 }
-.hud-stats-btn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
+@media (hover: hover) and (pointer: fine) {
+  .hud-stats-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
 }
 .hud-stats-btn.is-active {
   color: var(--accent);
@@ -775,10 +805,12 @@ button:disabled {
   border-radius: var(--radius-sm);
   color: var(--text-0);
 }
-.hud-ctrl-btn:hover:not(:disabled) {
-  background: var(--surface-2);
-  border-color: var(--stroke-strong);
-  filter: brightness(1.1);
+@media (hover: hover) and (pointer: fine) {
+  .hud-ctrl-btn:hover:not(:disabled) {
+    background: var(--surface-2);
+    border-color: var(--stroke-strong);
+    filter: brightness(1.1);
+  }
 }
 .hud-ctrl-btn:disabled {
   opacity: 0.4;
@@ -799,9 +831,11 @@ button:disabled {
   color: var(--text-0);
   cursor: pointer;
 }
-.hud-targeting-select:hover {
-  background: var(--surface-2);
-  border-color: var(--stroke-strong);
+@media (hover: hover) and (pointer: fine) {
+  .hud-targeting-select:hover {
+    background: var(--surface-2);
+    border-color: var(--stroke-strong);
+  }
 }
 
 .hud-ctrl-btn.hud-ctrl-toggle {
@@ -1115,7 +1149,9 @@ button:disabled {
   width: max(100%, 44px);
   height: max(100%, 44px);
 }
-.upgrade-amount-btn:hover:not(.active) { background: var(--surface-3); }
+@media (hover: hover) and (pointer: fine) {
+  .upgrade-amount-btn:hover:not(.active) { background: var(--surface-3); }
+}
 .upgrade-amount-btn.active {
   background: var(--surface-3);
   border-color: var(--accent);
@@ -1271,7 +1307,9 @@ button:disabled {
   border-color: var(--green-500);
   color: var(--white);
 }
-.btn-buy.can-afford:hover { filter: brightness(1.1); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-buy.can-afford:hover { filter: brightness(1.1); }
+}
 
 .welcome-stat-sub {
   margin-top: 2px;
@@ -1333,7 +1371,9 @@ button:disabled {
   border: none;
   cursor: pointer;
 }
-.run-stalled-dismiss:hover { color: var(--text-0); }
+@media (hover: hover) and (pointer: fine) {
+  .run-stalled-dismiss:hover { color: var(--text-0); }
+}
 
 /* Gold-multiplier attribution rows in the stats tooltip (plan §4.2) */
 .stat-breakdown {
@@ -1505,13 +1545,17 @@ button:disabled {
   border-color: var(--fx-arcane);
   color: var(--white);
 }
-.btn-research.can-afford:hover { filter: brightness(1.1); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-research.can-afford:hover { filter: brightness(1.1); }
+}
 .btn-research.btn-cancel {
   background: linear-gradient(180deg, var(--rose-700), var(--rose-800));
   border-color: var(--bad);
   color: var(--white);
 }
-.btn-research.btn-cancel:hover { filter: brightness(1.1); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-research.btn-cancel:hover { filter: brightness(1.1); }
+}
 
 /* Research progress bar */
 .research-progress {
@@ -1556,9 +1600,11 @@ button:disabled {
   cursor: not-allowed;
   pointer-events: auto;
 }
-.tab-btn.tab-locked:hover {
-  background: transparent;
-  color: var(--text-2);
+@media (hover: hover) and (pointer: fine) {
+  .tab-btn.tab-locked:hover {
+    background: transparent;
+    color: var(--text-2);
+  }
 }
 
 /* Ability panel */
@@ -1817,9 +1863,11 @@ button:disabled {
   margin-top: 0;
   text-align: center;
 }
-.ability-upgrade-btn:hover:not(:disabled) {
-  background: var(--surface-3);
-  border-color: var(--stroke-strong);
+@media (hover: hover) and (pointer: fine) {
+  .ability-upgrade-btn:hover:not(:disabled) {
+    background: var(--surface-3);
+    border-color: var(--stroke-strong);
+  }
 }
 .ability-upgrade-btn:active:not(:disabled) {
   transform: translateY(1px);
@@ -1956,7 +2004,16 @@ button:disabled {
    bottom nav and the safe-area inset on both. */
 .toast-root {
   position: fixed;
-  right: max(16px, var(--safe-r));
+  /* Over the *play area*, not over the side panel. The panel is a fixed-width
+     column on the trailing edge, so the toast lane starts where it ends —
+     otherwise a notification lands on top of whatever tab the player has open
+     and covers the upgrade row they are reading. `--panel-width` is 0 on a
+     phone, so this collapses to the plain inset there and the mobile branch
+     below overrides it anyway. `--corner-stack-base` already clears the
+     ability dock; the contract tracker and the milestone strip share the lane
+     and are covered for the few seconds a toast lives, which is what a
+     snackbar is for. */
+  right: calc(var(--toast-lane, var(--panel-width)) + max(16px, var(--safe-r)));
   bottom: var(--corner-stack-base);
   display: flex;
   flex-direction: column;
@@ -2169,7 +2226,9 @@ button:disabled {
   color: var(--white);
   box-shadow: 0 0 14px -2px rgba(var(--rgb-arcane), 0.6);
 }
-.btn-ascend.can-ascend:hover { filter: brightness(1.1); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-ascend.can-ascend:hover { filter: brightness(1.1); }
+}
 .ascend-warning {
   font-size: var(--text-xs);
   color: var(--text-2);
@@ -2365,7 +2424,9 @@ button:disabled {
   color: var(--text-on-amber);
   box-shadow: 0 0 14px -2px rgba(var(--rgb-gold), 0.6);
 }
-.btn-transcend.can-transcend:hover { filter: brightness(1.1); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-transcend.can-transcend:hover { filter: brightness(1.1); }
+}
 .transcend-warning { font-size: var(--text-xs); color: var(--text-2); line-height: 1.35; }
 
 .perk-row-tp {
@@ -2600,10 +2661,12 @@ button:disabled {
   transition: color var(--dur-fast) ease, background var(--dur-fast) ease,
               border-color var(--dur-fast) ease;
 }
-.modal-close:hover {
-  color: var(--text-0);
-  background: var(--surface-3);
-  border-color: var(--stroke-strong);
+@media (hover: hover) and (pointer: fine) {
+  .modal-close:hover {
+    color: var(--text-0);
+    background: var(--surface-3);
+    border-color: var(--stroke-strong);
+  }
 }
 .modal-title {
   margin: 0 0 5px 0;
@@ -2687,7 +2750,9 @@ button:disabled {
   border-color: var(--green-500);
   color: var(--white);
 }
-.btn-claim:hover { filter: brightness(1.1); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-claim:hover { filter: brightness(1.1); }
+}
 
 /* Wave modifier (mutator) picker — content only; the shell is `.modal`. */
 .wave-mod-modal-grid {
@@ -2712,10 +2777,12 @@ button:disabled {
   color: var(--text-0);
   transition: transform var(--dur-fast) ease, filter var(--dur-fast) ease, background var(--dur-fast) ease;
 }
-.wave-mod-card:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.1);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--mod-color) 14%, var(--surface-3)), var(--surface-2));
+@media (hover: hover) and (pointer: fine) {
+  .wave-mod-card:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.1);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--mod-color) 14%, var(--surface-3)), var(--surface-2));
+  }
 }
 .wave-mod-card:focus-visible {
   outline: 2px solid var(--mod-color);
@@ -2778,10 +2845,12 @@ button:disabled {
   border: 1px solid var(--stroke-subtle);
   color: var(--text-1);
 }
-.wave-mod-skip-btn:hover {
-  filter: brightness(1.1);
-  color: var(--text-0);
-  border-color: var(--stroke-strong);
+@media (hover: hover) and (pointer: fine) {
+  .wave-mod-skip-btn:hover {
+    filter: brightness(1.1);
+    color: var(--text-0);
+    border-color: var(--stroke-strong);
+  }
 }
 
 /* Auto-pick controls */
@@ -2992,9 +3061,11 @@ button:disabled {
   transition: color var(--dur-fast) ease, background var(--dur-fast) ease,
     border-color var(--dur-fast) ease;
 }
-.settings-segmented-btn:hover:not(.active) {
-  background: var(--surface-3);
-  color: var(--text-0);
+@media (hover: hover) and (pointer: fine) {
+  .settings-segmented-btn:hover:not(.active) {
+    background: var(--surface-3);
+    color: var(--text-0);
+  }
 }
 .settings-segmented-btn.active {
   background: var(--surface-3);
@@ -3035,7 +3106,9 @@ button:disabled {
   background: var(--surface-3);
   border-color: var(--stroke-strong);
 }
-.btn-mute:hover { filter: brightness(1.1); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-mute:hover { filter: brightness(1.1); }
+}
 .settings-select {
   width: 100%;
   /* UI plan §9.F: 44px floor. */
@@ -3050,10 +3123,12 @@ button:disabled {
   cursor: pointer;
 }
 .settings-select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
-.btn-clear-save:hover:not(:disabled) {
-  background: linear-gradient(180deg, var(--rose-600), var(--rose-700));
-  border-color: var(--rose-500);
-  color: var(--rose-100);
+@media (hover: hover) and (pointer: fine) {
+  .btn-clear-save:hover:not(:disabled) {
+    background: linear-gradient(180deg, var(--rose-600), var(--rose-700));
+    border-color: var(--rose-500);
+    color: var(--rose-100);
+  }
 }
 .btn-clear-save.is-confirming {
   background: linear-gradient(180deg, var(--rose-500), var(--rose-700));
@@ -3416,7 +3491,9 @@ button:disabled {
   pointer-events: auto;
   transition: color var(--dur-fast) ease;
 }
-.contract-tracker-title:hover { color: var(--text-0); }
+@media (hover: hover) and (pointer: fine) {
+  .contract-tracker-title:hover { color: var(--text-0); }
+}
 .contract-tracker-title::before {
   content: '';
   width: 3px;
@@ -3603,9 +3680,11 @@ button:disabled {
   min-height: 26px;
   min-width: fit-content;
 }
-.milestone-collapsed-btn:hover {
-  opacity: 1;
-  border-color: var(--stroke-strong);
+@media (hover: hover) and (pointer: fine) {
+  .milestone-collapsed-btn:hover {
+    opacity: 1;
+    border-color: var(--stroke-strong);
+  }
 }
 .milestone-collapsed-btn.is-pulse {
   animation: milestone-pulse var(--dur-ambient) ease-out 1;
@@ -3704,8 +3783,10 @@ button:disabled {
   min-height: 44px;
   min-width: 44px;
 }
-.journal-collapsed-btn:hover {
-  border-color: var(--stroke-strong);
+@media (hover: hover) and (pointer: fine) {
+  .journal-collapsed-btn:hover {
+    border-color: var(--stroke-strong);
+  }
 }
 .journal-collapsed-btn.is-pulse {
   animation: milestone-pulse var(--dur-ambient) ease-out 1;
@@ -3799,10 +3880,12 @@ button:disabled {
   transform: translateX(-100%);
   transition: color var(--dur-fast) ease, background var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
-#panel-toggle:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--surface-2);
+@media (hover: hover) and (pointer: fine) {
+  #panel-toggle:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--surface-2);
+  }
 }
 .panel-root.collapsed #panel-toggle {
   transform: translateX(-12px);
@@ -3837,10 +3920,15 @@ button:disabled {
   opacity: 0;
   transition: opacity var(--dur-fast) ease, background var(--dur-fast) ease;
 }
-#panel-resizer:hover::after,
 body.is-resizing #panel-resizer::after {
   opacity: 1;
   background: var(--accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  #panel-resizer:hover::after {
+    opacity: 1;
+    background: var(--accent);
+  }
 }
 .panel-root.collapsed #panel-resizer { display: none; }
 
@@ -4173,7 +4261,9 @@ body.is-resizing * { cursor: ew-resize !important; }
   text-transform: uppercase;
   transition: color var(--dur-fast) ease, background var(--dur-fast) ease;
 }
-.bottom-nav-btn:hover { background: var(--surface-2); color: var(--text-1); }
+@media (hover: hover) and (pointer: fine) {
+  .bottom-nav-btn:hover { background: var(--surface-2); color: var(--text-1); }
+}
 .bottom-nav-btn.active { color: var(--accent); }
 /* Plan §8.A: a sprite icon, not a glyph. */
 .bottom-nav-btn-icon {
@@ -4743,7 +4833,9 @@ body.is-resizing * { cursor: ew-resize !important; }
   border-radius: var(--radius-md);
   cursor: pointer;
 }
-.hud-more-popover-close:hover { color: var(--text-0); border-color: var(--stroke-strong); }
+@media (hover: hover) and (pointer: fine) {
+  .hud-more-popover-close:hover { color: var(--text-0); border-color: var(--stroke-strong); }
+}
 .hud-more-popover-row {
   display: flex;
   align-items: center;
@@ -5330,8 +5422,10 @@ body.is-resizing * { cursor: ew-resize !important; }
   opacity: 0.4;
   cursor: default;
 }
-.btn-learn:hover:not(:disabled) {
-  background: var(--warn);
+@media (hover: hover) and (pointer: fine) {
+  .btn-learn:hover:not(:disabled) {
+    background: var(--warn);
+  }
 }
 
 /* Respec */
@@ -5370,7 +5464,9 @@ body.is-resizing * { cursor: ew-resize !important; }
   width: max(100%, 44px);
   height: max(100%, 44px);
 }
-.btn-respec:hover:not(:disabled) { color: var(--text-0); border-color: var(--accent); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-respec:hover:not(:disabled) { color: var(--text-0); border-color: var(--accent); }
+}
 .btn-respec:disabled { opacity: 0.3; cursor: default; }
 .btn-respec.is-hidden { display: none; }
 
@@ -5828,7 +5924,9 @@ body.is-resizing * { cursor: ew-resize !important; }
   cursor: pointer;
   margin-top: auto;
 }
-.eq-unequip-btn:hover { color: var(--good); border-color: var(--good); }
+@media (hover: hover) and (pointer: fine) {
+  .eq-unequip-btn:hover { color: var(--good); border-color: var(--good); }
+}
 .eq-slot-card.eq-empty .eq-unequip-btn { display: none; }
 .eq-inventory {
   display: flex;
@@ -5862,7 +5960,9 @@ body.is-resizing * { cursor: ew-resize !important; }
   color: var(--text-2);
   cursor: pointer;
 }
-.eq-sort-btn:hover { color: var(--text-0); border-color: var(--stroke-strong); }
+@media (hover: hover) and (pointer: fine) {
+  .eq-sort-btn:hover { color: var(--text-0); border-color: var(--stroke-strong); }
+}
 .eq-sort-active { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .eq-inv-card {
   position: relative; /* for the NEW dot */
@@ -5949,13 +6049,17 @@ body.is-resizing * { cursor: ew-resize !important; }
   height: max(100%, 44px);
 }
 .eq-inv-card-actions .btn-buy { background: var(--surface-3); border: 1px solid var(--stroke-strong); color: var(--text-0); }
-.eq-inv-card-actions .btn-buy:hover { filter: brightness(1.1); }
+@media (hover: hover) and (pointer: fine) {
+  .eq-inv-card-actions .btn-buy:hover { filter: brightness(1.1); }
+}
 .eq-inv-card-actions .btn-sell {
   font-weight: 600;
   border: 1px solid var(--warn);
   color: var(--warn);
 }
-.eq-inv-card-actions .btn-sell:hover { color: var(--bad); border-color: var(--bad); }
+@media (hover: hover) and (pointer: fine) {
+  .eq-inv-card-actions .btn-sell:hover { color: var(--bad); border-color: var(--bad); }
+}
 
 .eq-slot-card.eq-drag-over {
   border-color: var(--accent) !important;
@@ -6007,12 +6111,23 @@ body.eq-dragging img { pointer-events: none; }
   border: 1px solid var(--stroke-strong);
   border-radius: var(--radius-lg);
   padding: 12px;
-  z-index: var(--z-tooltip);
+  /* Above the sheet, not on the plain tooltip rung. The element is a
+     `document.body` child, and on a phone the equipment panel it belongs to
+     renders *inside* `.mobile-sheet` (`--z-sheet`) — so at `--z-tooltip` the
+     comparison was painted underneath the very panel that opened it. One rung
+     over the sheet keeps it under the modal root, which still has to win. */
+  z-index: calc(var(--z-sheet) + 1);
   box-shadow: var(--elev-2);
   pointer-events: none;
   font-size: var(--text-xs);
   color: var(--text-1);
-  max-width: 520px;
+  /* Never wider than the screen: the placement code can only clamp a box that
+     already fits, and a 520px card on a 375px phone cannot be placed at all. */
+  max-width: min(520px, calc(100vw - 16px));
+  /* Same for height — an overlong comparison would otherwise be clamped back
+     over the card the finger is holding. */
+  max-height: calc(100dvh - 16px);
+  overflow: hidden;
   opacity: 0;
   transition: opacity var(--dur-fast) ease;
 }
@@ -6025,6 +6140,9 @@ body.eq-dragging img { pointer-events: none; }
   gap: 10px;
   align-items: stretch;
 }
+/* Held an equipped slot with nothing selected to compare it against: one card,
+   so it should not be laid out at the two-card width. */
+.eq-compare-body.eq-compare-solo { min-width: 180px; }
 
 .eq-compare-card {
   flex: 1;
@@ -6147,7 +6265,7 @@ body.eq-dragging img { pointer-events: none; }
 
 @media (max-width: 600px) {
   .eq-compare-tooltip {
-    max-width: 320px;
+    max-width: min(320px, calc(100vw - 16px));
     padding: 8px;
   }
   .eq-compare-body {
@@ -6404,7 +6522,9 @@ body.eq-dragging img { pointer-events: none; }
   align-items: stretch;
   transition: border-color var(--dur-fast) ease, background var(--dur-fast) ease;
 }
-.journal-goal:hover { border-color: var(--accent); }
+@media (hover: hover) and (pointer: fine) {
+  .journal-goal:hover { border-color: var(--accent); }
+}
 .journal-goal:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -6652,9 +6772,11 @@ body.eq-dragging img { pointer-events: none; }
   cursor: pointer;
   flex-shrink: 0;
 }
-.hud-keybinds-btn:hover {
-  color: var(--text-0);
-  border-color: var(--accent);
+@media (hover: hover) and (pointer: fine) {
+  .hud-keybinds-btn:hover {
+    color: var(--text-0);
+    border-color: var(--accent);
+  }
 }
 .keybinds-card { text-align: left; }
 .keybinds-groups {
@@ -6732,10 +6854,12 @@ body.eq-dragging img { pointer-events: none; }
   color: var(--text-0);
   transition: transform var(--dur-fast) ease, filter var(--dur-fast) ease, background var(--dur-fast) ease;
 }
-.blessing-card:hover {
-  transform: translateY(-2px);
-  filter: brightness(1.1);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bl-color) 14%, var(--surface-3)), var(--surface-2));
+@media (hover: hover) and (pointer: fine) {
+  .blessing-card:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.1);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--bl-color) 14%, var(--surface-3)), var(--surface-2));
+  }
 }
 .blessing-card:focus-visible {
   outline: 2px solid var(--bl-color);
@@ -6743,8 +6867,10 @@ body.eq-dragging img { pointer-events: none; }
 }
 /* Press tilt (§8.E): bounded to 4deg — a tilt that overshoots reads as broken,
    not juicy — and paired with the hover lift above. */
-.blessing-card:hover {
-  transform: perspective(600px) rotateX(4deg) translateY(-2px);
+@media (hover: hover) and (pointer: fine) {
+  .blessing-card:hover {
+    transform: perspective(600px) rotateX(4deg) translateY(-2px);
+  }
 }
 .blessing-card:active {
   transform: perspective(600px) rotateX(4deg) translateY(0);
@@ -6766,8 +6892,10 @@ body.eq-dragging img { pointer-events: none; }
   /* Both the stagger and the tilt are decoration; the card is fully legible
      without either. */
   .blessing-card { animation: none; }
-  .blessing-card:hover,
   .blessing-card:active { transform: none; }
+  @media (hover: hover) and (pointer: fine) {
+    .blessing-card:hover { transform: none; }
+  }
 }
 .blessing-card-header {
   display: flex;
@@ -7284,9 +7412,11 @@ body.eq-dragging img { pointer-events: none; }
   color: var(--text-2);
   transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
-.contract-history-toggle:hover {
-  background: var(--surface-3);
-  color: var(--text-0);
+@media (hover: hover) and (pointer: fine) {
+  .contract-history-toggle:hover {
+    background: var(--surface-3);
+    color: var(--text-0);
+  }
 }
 .contract-history-caret {
   display: inline-block;
@@ -7835,7 +7965,9 @@ body.eq-dragging img { pointer-events: none; }
   cursor: pointer;
   font-size: 13px;
 }
-.codex-tab:hover { background: var(--fx-bg-hover, rgba(255,255,255,0.04)); color: var(--text-1); }
+@media (hover: hover) and (pointer: fine) {
+  .codex-tab:hover { background: var(--fx-bg-hover, rgba(255,255,255,0.04)); color: var(--text-1); }
+}
 .codex-tab.is-active {
   background: var(--fx-bg-active, rgba(255,255,255,0.08));
   border-color: var(--fx-border-1, rgba(255,255,255,0.12));
@@ -7884,7 +8016,9 @@ body.eq-dragging img { pointer-events: none; }
    this the search/category filter is a no-op and the list shows every entry. */
 .codex-entry[hidden] { display: none; }
 .codex-list .codex-entry:last-child { border-bottom: none; }
-.codex-entry:hover { background: var(--fx-bg-hover, rgba(255,255,255,0.05)); }
+@media (hover: hover) and (pointer: fine) {
+  .codex-entry:hover { background: var(--fx-bg-hover, rgba(255,255,255,0.05)); }
+}
 .codex-entry.is-active {
   background: var(--fx-bg-active, rgba(255,255,255,0.08));
   border-color: var(--fx-border-1, rgba(255,255,255,0.12));
@@ -8008,7 +8142,9 @@ body.eq-dragging img { pointer-events: none; }
   font: inherit;
   font-size: 12px;
 }
-.codex-chip:hover { background: var(--fx-bg-hover, rgba(255,255,255,0.06)); }
+@media (hover: hover) and (pointer: fine) {
+  .codex-chip:hover { background: var(--fx-bg-hover, rgba(255,255,255,0.06)); }
+}
 .codex-chip-icon { display: inline-flex; }
 .codex-chip-icon > .icon { --icon-size: 16px; }
 
@@ -8052,9 +8188,11 @@ body.eq-dragging img { pointer-events: none; }
   transition: color var(--dur-fast) ease, border-color var(--dur-fast) ease, background var(--dur-fast) ease;
 }
 
-.stats-modal-tab:hover {
-  color: var(--text-0);
-  border-color: var(--stroke-strong);
+@media (hover: hover) and (pointer: fine) {
+  .stats-modal-tab:hover {
+    color: var(--text-0);
+    border-color: var(--stroke-strong);
+  }
 }
 
 .stats-modal-tab.is-active {
@@ -8141,12 +8279,19 @@ body.eq-dragging img { pointer-events: none; }
   transition: color var(--dur-fast) ease, border-color var(--dur-fast) ease, background var(--dur-fast) ease;
 }
 
-.stat-row-help:hover,
 .stat-row-help:focus-visible {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--surface-3);
   outline: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .stat-row-help:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--surface-3);
+    outline: none;
+  }
 }
 
 .stat-row-value {
@@ -8227,7 +8372,7 @@ body.eq-dragging img { pointer-events: none; }
    on `data-placement` so the styles can mirror the entrance direction.
    The element is a `document.body` child, so it must sit above the modal
    root (`--z-modal`) to be visible at all — a `--z-tooltip` rung would be
-   painted underneath the modal card. Still below `--z-toast`. */
+   painted underneath the modal card. */
 .stats-codex-tooltip {
   position: fixed;
   z-index: calc(var(--z-modal) + 1);
@@ -8383,9 +8528,11 @@ body.eq-dragging img { pointer-events: none; }
   transition: color var(--dur-fast) ease, border-color var(--dur-fast) ease, background var(--dur-fast) ease;
 }
 
-.enemy-roster-btn:hover {
-  color: var(--text-0);
-  border-color: var(--stroke-strong);
+@media (hover: hover) and (pointer: fine) {
+  .enemy-roster-btn:hover {
+    color: var(--text-0);
+    border-color: var(--stroke-strong);
+  }
 }
 
 .enemy-roster-btn.is-active {
@@ -8657,7 +8804,9 @@ body.eq-dragging img { pointer-events: none; }
   text-align: left;
   transition: border-color var(--dur-fast) ease, background var(--dur-fast) ease;
 }
-.enemy-page-watch-row:hover { border-color: var(--accent); }
+@media (hover: hover) and (pointer: fine) {
+  .enemy-page-watch-row:hover { border-color: var(--accent); }
+}
 .enemy-page-watch-row:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -8713,9 +8862,11 @@ body.eq-dragging img { pointer-events: none; }
   font-size: var(--text-xs);
   cursor: pointer;
 }
-.enemy-page-chip:hover {
-  background: var(--fx-bg-hover, rgba(255,255,255,0.06));
-  color: var(--text-0);
+@media (hover: hover) and (pointer: fine) {
+  .enemy-page-chip:hover {
+    background: var(--fx-bg-hover, rgba(255,255,255,0.06));
+    color: var(--text-0);
+  }
 }
 
 @media (max-width: 768px) {

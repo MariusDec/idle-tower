@@ -294,6 +294,11 @@ export class UIManager {
   private readonly enemyCodexModal: EnemyCodexModal;
   private abilityBar: AbilityBar | null = null;
   private mobileSheet: MobileSheet | null = null;
+  /* Which panel the bottom sheet currently has mounted, or null when it is
+     closed. `activeTab` deliberately tracks the *desktop* selection and is not
+     touched by a sheet mount (see `mountMobileTab`), so without this the
+     per-frame tick had no idea what the phone was actually looking at. */
+  private mobileSheetTab: PanelTab | null = null;
   private bottomNav: BottomNav | null = null;
   private readonly panelRoot: HTMLElement;
   private readonly abilityBarRoot: HTMLElement;
@@ -936,6 +941,7 @@ export class UIManager {
     this.restorePanelCollapsed();
     this.bindPanelToggle();
     this.bindPanelResizer();
+    this.observeToastLane();
     this.installAbilityBar();
     this.installMobileChrome();
   }
@@ -1033,26 +1039,13 @@ export class UIManager {
       case 'achievements': this.achievementPanel.mount(body); break;
       case 'progression': this.progressionPanel.mount(body); break;
       case 'journal': this.journalPanel.mount(body); break;
+      case 'codex': this.codexPanel.mount(body); break;
       case 'stats': this.statsPanel.mount(body); break;
       case 'settings': this.settingsPanel.mount(body); break;
     }
     this.restoreContainerClass(body, bodyBaseClass);
-    if (this.lastState) {
-      switch (tab) {
-        case 'upgrades': this.upgradePanel.update(this.lastState); break;
-        case 'research': this.researchPanel.update(this.lastState); break;
-        case 'abilities': this.abilityPanel.update(this.lastState); break;
-        case 'passives': this.passivePanel.update(this.lastState); break;
-        case 'talents': this.talentPanel.update(this.lastState); break;
-        case 'equipment': this.equipmentPanel.update(this.lastState); break;
-        case 'prestige': this.prestigePanel.update(this.lastState); break;
-        case 'transcendence': this.transcendencePanel.update(this.lastState); break;
-        case 'achievements': this.achievementPanel.update(this.lastState); break;
-        case 'progression': this.progressionPanel.update(this.lastState); break;
-        case 'journal': this.journalPanel.update(this.lastState); break;
-        case 'stats': this.statsPanel.update(); break;
-      }
-    }
+    this.mobileSheetTab = tab;
+    if (this.lastState) this.updatePanel(tab, this.lastState);
     if (tab === 'equipment') this.setTabBadge('equipment', this.equipmentBadgeCount);
     if (tab === 'passives') this.onPassivesViewed();
   }
@@ -1069,12 +1062,53 @@ export class UIManager {
     this.mobileSheet.open(this.lastTabPerGroup.get(g) ?? firstTabOf(g));
   }
 
+  /**
+   * Publish the side panel's *measured* width as `--toast-lane`.
+   *
+   * The toast stack is laid out beside the panel rather than on top of it, and
+   * the panel's width is not a constant: `--panel-width` is only the default,
+   * the resizer writes an inline width, and collapsing takes it to zero. A
+   * toast anchored to the token alone would sit under the panel after a drag
+   * and float in mid-air after a collapse, so the one number every consumer
+   * needs is the one the panel actually occupies right now.
+   *
+   * `offsetParent === null` covers the mobile branch, where the panel is
+   * `display: none` and the lane is the whole screen.
+   */
+  /**
+   * Keep `--toast-lane` honest for every way the panel's width can move: the
+   * resizer drag, the collapse toggle, the tablet media query swapping
+   * `--panel-width`, and the mobile breakpoint hiding the panel outright. A
+   * `ResizeObserver` sees all four; hand-placed calls at each site saw
+   * whichever ones someone remembered.
+   *
+   * The first observation also fixes the ordering problem a plain constructor
+   * call has: it fires after the first layout, when the panel finally has a
+   * width to measure.
+   */
+  private observeToastLane(): void {
+    if (!this.panelRoot) return;
+    const observer = new ResizeObserver(() => this.syncToastLane());
+    observer.observe(this.panelRoot);
+    this.syncToastLane();
+  }
+
+  private syncToastLane(): void {
+    const el = this.panelRoot;
+    const width = !el || el.offsetParent === null ? 0 : el.getBoundingClientRect().width;
+    document.documentElement.style.setProperty('--toast-lane', `${Math.round(width)}px`);
+  }
+
   private bindPanelToggle(): void {
     if (!this.panelToggle || !this.panelRoot) return;
     this.panelToggle.addEventListener('click', () => {
       const collapsed = !hasClass(this.panelRoot, 'collapsed');
       toggleClass(this.panelRoot, 'collapsed', collapsed);
       try { localStorage.setItem(PANEL_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch {}
+      // Directly, not only through the observer: `ResizeObserver` delivers on
+      // the rendering steps, so the lane would lag the collapse by a frame on
+      // a busy one and by longer on a throttled tab.
+      this.syncToastLane();
     });
   }
 
@@ -1097,6 +1131,7 @@ export class UIManager {
     const dx = this.resizeState.startX - ev.clientX;
     const next = Math.max(PANEL_MIN, Math.min(window.innerWidth - CANVAS_MIN, this.resizeState.startWidth + dx));
     setStyle(this.panelRoot, 'width', `${next}px`);
+    this.syncToastLane();
   }
 
   private onResizeUp(): void {
@@ -1547,6 +1582,29 @@ export class UIManager {
     this.hud.setPacingData(data);
   }
 
+  /**
+   * Push live state into one panel. The panel objects are shared between the
+   * desktop content root and the mobile sheet, so this is the single place
+   * that knows which panel answers to which tab id.
+   */
+  private updatePanel(tab: PanelTab, state: GameState): void {
+    switch (tab) {
+      case 'upgrades': this.upgradePanel.update(state); break;
+      case 'abilities': this.abilityPanel.update(state); break;
+      case 'passives': this.passivePanel.update(state); break;
+      case 'talents': this.talentPanel.update(state); break;
+      case 'equipment': this.equipmentPanel.update(state); break;
+      case 'prestige': this.prestigePanel.update(state); break;
+      case 'transcendence': this.transcendencePanel.update(state); break;
+      case 'research': this.researchPanel.update(state); break;
+      case 'achievements': this.achievementPanel.update(state); break;
+      case 'progression': this.progressionPanel.update(state); break;
+      case 'journal': this.journalPanel.update(state); break;
+      case 'stats': this.statsPanel.update(); break;
+      case 'settings': this.settingsPanel.update(); break;
+    }
+  }
+
   update(state: GameState): void {
     this.lastState = state;
     if (this.abilityBar) this.abilityBar.update(state);
@@ -1618,32 +1676,15 @@ export class UIManager {
     this.hud.update(state);
     this.setTabBadge('talents', state.towerXp?.unspentTalentPoints ?? 0);
     this.pushEquipmentBadge();
-    if (this.activeTab === 'upgrades') {
-      this.upgradePanel.update(state);
-    } else if (this.activeTab === 'abilities') {
-      this.abilityPanel.update(state);
-    } else if (this.activeTab === 'passives') {
-      this.passivePanel.update(state);
-    } else if (this.activeTab === 'talents') {
-      this.talentPanel.update(state);
-    } else if (this.activeTab === 'equipment') {
-      this.equipmentPanel.update(state);
-    } else if (this.activeTab === 'prestige') {
-      this.prestigePanel.update(state);
-    } else if (this.activeTab === 'transcendence') {
-      this.transcendencePanel.update(state);
-    } else if (this.activeTab === 'research') {
-      this.researchPanel.update(state);
-    } else if (this.activeTab === 'achievements') {
-      this.achievementPanel.update(state);
-    } else if (this.activeTab === 'progression') {
-      this.progressionPanel.update(state);
-    } else if (this.activeTab === 'journal') {
-      this.journalPanel.update(state);
-    } else if (this.activeTab === 'stats') {
-      this.statsPanel.update();
-    } else if (this.activeTab === 'settings') {
-      this.settingsPanel.update();
+    this.updatePanel(this.activeTab, state);
+    // The phone's sheet is a second live surface: it mounts the same panel
+    // objects but never sets `activeTab`, so buying a talent on mobile left the
+    // grid frozen on whatever `mountMobileTab` had rendered until the panel was
+    // closed and reopened. Skipped when it is showing the same tab as the
+    // desktop root — one panel, one update per tick.
+    const sheetTab = this.mobileSheetTab;
+    if (sheetTab && sheetTab !== this.activeTab && this.mobileSheet?.isOpen()) {
+      this.updatePanel(sheetTab, state);
     }
     this.pushFrameStats(state);
     this.pushEnemyStats(state);
@@ -1970,6 +2011,21 @@ export class UIManager {
 
   closeKeybinds(): void {
     this.keybindsOverlay.hide();
+  }
+
+  /**
+   * One rung of the shared dismissal ladder (`main.ts`'s `dismissTopmost`):
+   * the mobile bottom sheet. Returns true when it was open and is now closed.
+   *
+   * Android's back gesture is the *only* way a lot of players will ever try to
+   * leave the sheet — the grip swipe and the X are both learned affordances —
+   * and without this rung a back press on an open sheet backgrounded the app
+   * instead, which on an idle game reads as losing the session.
+   */
+  closeMobileSheet(): boolean {
+    if (!this.mobileSheet?.isOpen()) return false;
+    this.mobileSheet.close();
+    return true;
   }
 
   /**

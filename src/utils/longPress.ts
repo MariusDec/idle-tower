@@ -57,6 +57,21 @@ export interface LongPressOptions {
 const CLICK_SUPPRESS_WINDOW_MS = 700;
 
 /**
+ * Marks a host as a hold-to-inspect surface so the stylesheet can turn off the
+ * browser's *own* long-press gestures on it.
+ *
+ * This is the helper's job, not each call site's. Chrome on Android answers a
+ * long press on selectable text by starting a text selection, and starting one
+ * fires `pointercancel` — which lands in `reset()` and destroys the hold before
+ * it can fire. The ability dock never hit this because its targets are
+ * `<button>`s and the base stylesheet already makes buttons unselectable; the
+ * equipment cards are `div`s full of text, so a hold selected the item name and
+ * the popup never came. Anything bound here needs the same treatment, including
+ * call sites that do not exist yet, so the class goes on from inside `bind`.
+ */
+const HOLD_TARGET_CLASS = 'is-hold-surface';
+
+/**
  * Binds hold-to-inspect on `host` and returns the unbind.
  *
  * On fire the target gains `is-long-press`; the class survives until release so
@@ -144,6 +159,7 @@ export function bindLongPress(host: HTMLElement, opts: LongPressOptions): () => 
 
   const onEnd = (): void => reset();
 
+  host.classList.add(HOLD_TARGET_CLASS);
   host.addEventListener('pointerdown', onDown);
   window.addEventListener('pointermove', onMove, { passive: true });
   window.addEventListener('pointerup', onEnd);
@@ -152,6 +168,7 @@ export function bindLongPress(host: HTMLElement, opts: LongPressOptions): () => 
 
   return () => {
     reset();
+    host.classList.remove(HOLD_TARGET_CLASS);
     host.removeEventListener('pointerdown', onDown);
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onEnd);

@@ -22,7 +22,15 @@ const TOKENS = readFileSync(resolve(__dirname, '../src/styles/tokens.css'), 'utf
  */
 const LOCAL_MAX = 5;
 
-/** Every rung the ladder defines, in ascending order. */
+/**
+ * Every rung the ladder defines, in ascending order.
+ *
+ * `z-toast` is deliberately *not* the top rung. A toast is an ambient report
+ * on the run, not something the player opened, so it has to lose to the two
+ * surfaces they did open on purpose — the mobile sheet and the modal root —
+ * and win against everything ambient below it. It sits between `z-popover`
+ * and `z-sheet`, which is where the ascending check below places it.
+ */
 const LADDER = [
   'z-hud',
   'z-canvas-vignette',
@@ -31,10 +39,10 @@ const LADDER = [
   'z-corner',
   'z-tooltip',
   'z-popover',
+  'z-toast',
   'z-sheet',
   'z-menu',
   'z-modal',
-  'z-toast',
 ] as const;
 
 function declarations(css: string): { line: number; value: string }[] {

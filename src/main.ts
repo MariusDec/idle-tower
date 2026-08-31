@@ -2,6 +2,7 @@ import { Game } from './game/Game';
 import { EventBus } from './game/EventBus';
 import { UIManager } from './ui/UIManager';
 import { loadIconSprite } from './ui/Icon';
+import { Modal } from './ui/Modal';
 import { ABILITIES } from './data/abilities';
 import { isQualityTier, type QualityTier } from './data/quality';
 import { FX } from './data/palette';
@@ -156,6 +157,11 @@ function bench(game: Game, opts: BenchOptions = {}): Promise<BenchResult> {
  */
 function dismissTopmost(game: Game, ui: UIManager): boolean {
   if (game.cancelPlacement()) return true;
+  // Modals before the sheet: a picker opened *from* a sheet sits on top of it,
+  // so closing the sheet first would strand the dialog over an empty backdrop.
+  // `Modal.closeTop` also owns the keybinds overlay, which is a modal.
+  if (Modal.closeTop()) return true;
+  if (ui.closeMobileSheet()) return true;
   if (ui.isKeybindsOpen()) {
     ui.closeKeybinds();
     return true;
@@ -515,6 +521,11 @@ async function bootstrap(): Promise<void> {
       // Plan §4.3: Escape gets the player out of placement mode first — it is
       // the state that changes what the next click does, so it is the one they
       // most urgently need to be able to abandon.
+      //
+      // `Modal`'s own document-level handler runs before this window one and
+      // marks the event handled, so a modal dismissed by Escape must not have
+      // its press spent a second time on the surface underneath it.
+      if (ev.defaultPrevented) return;
       if (dismissTopmost(game, ui)) ev.preventDefault();
     }
   });

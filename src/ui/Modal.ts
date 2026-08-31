@@ -50,6 +50,23 @@ export class Modal {
     return Modal.openStack.length > 0;
   }
 
+  /**
+   * Dismiss the innermost open modal, for the shared "get me out of here"
+   * ladder (`main.ts`'s `dismissTopmost`, driven by Escape and the Android
+   * hardware back button).
+   *
+   * Returns true whenever a modal *had* the player's attention, including the
+   * non-dismissible case where nothing closes: a forced choice (a blessing
+   * draft, a wave mutator) must swallow the back press rather than let it fall
+   * through and background the app mid-decision.
+   */
+  static closeTop(): boolean {
+    const top = Modal.openStack[Modal.openStack.length - 1];
+    if (!top) return false;
+    if (top.opts.dismissible !== false) top.close();
+    return true;
+  }
+
   readonly body: HTMLElement;
 
   private readonly opts: ModalOptions;

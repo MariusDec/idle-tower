@@ -49,6 +49,17 @@ export interface ShotPreview {
   fireRate: number;
   critChance: number;
   critMultiplier: number;
+  /**
+   * The full resolved stat block the four fields above were read out of.
+   *
+   * Damage and fire rate quoted the *composed* number — everything a talent, a
+   * blessing, an equipment roll and a core had contributed — while max HP,
+   * armor, regen and the rest quoted the upgrade line's own accumulated value
+   * in isolation. Two rows in the same panel meant two different things by
+   * "current → next", and the isolated one is the less useful of the two: a
+   * player deciding whether to buy HP wants the HP the tower will have.
+   */
+  resolved: Readonly<Record<string, number>>;
 }
 
 export interface UpgradeShotPreview {
@@ -65,6 +76,38 @@ export type ShotPreviewGetter = (id: string, levels: number) => UpgradeShotPrevi
  * "+0.70 fire-rate bonus" (revamp §12.1).
  */
 const COMPOSED_ROWS = new Set(['damage', 'fireRate', 'critChance', 'critDamage']);
+
+/**
+ * Rows whose "current → next" is a *composed* stat read straight off the
+ * resolved block, keyed by the `StatKey` it maps to.
+ *
+ * The four offence lines above already worked this way through
+ * `previewUpgradeShot`; these are the rows that did not, and read out the
+ * upgrade's own accumulated contribution as though nothing else in the game
+ * touched the stat. `health` was the clearest case — a tower at 40k max HP
+ * with talents and equipment quoted a four-digit "5,900 → 6,400 max HP" that
+ * matched no number anywhere else in the UI.
+ *
+ * Only rows where the upgrade and the stat mean the same quantity in the same
+ * unit belong here. `goldMulti` and `xpGain` are deliberately absent: the
+ * upgrade is stated as a percentage bonus and the resolved stat is a
+ * multiplier, so quoting one in place of the other would be a unit change, not
+ * a better number.
+ */
+const COMPOSED_STAT_ROWS: Record<string, { key: string; percent?: boolean }> = {
+  health: { key: 'maxHp' },
+  // Resolved `healthRegen` is a *fraction of max HP per second*, not an
+  // absolute HP/s (see `Tower.effectiveHealthRegen`), so it reads as a percent
+  // exactly like the upgrade's own value did.
+  healthRegen: { key: 'healthRegen', percent: true },
+  defense: { key: 'defense' },
+  armor: { key: 'armor', percent: true },
+  thorns: { key: 'thorns', percent: true },
+  lifesteal: { key: 'lifesteal', percent: true },
+  range: { key: 'range' },
+  manaRegen: { key: 'manaRegen' },
+  maxMana: { key: 'maxMana' },
+};
 
 /**
  * Lines that are saved for rather than trickled into (revamp §12.4). They get
@@ -569,6 +612,26 @@ export class UpgradePanel {
         if (Number.isFinite(b) && Math.abs(a - b) > 0.05) {
           stk = `${formatShots(b)} → ${formatShots(a)} shots to kill a ${ENEMY_LABELS.normal} (wave ${wave})`;
         }
+      }
+    } else if (COMPOSED_STAT_ROWS[u.id] && this.previewFn) {
+      const spec = COMPOSED_STAT_ROWS[u.id];
+      const preview = this.previewFn(u.id, buyLevels);
+      const b = preview?.before.resolved[spec.key];
+      const a = preview?.after.resolved[spec.key];
+      if (b === undefined || a === undefined) {
+        // No resolved block yet (first frame, or a host that never wired the
+        // getter): fall back to the line's own value rather than show nothing.
+        const rawB = computeUpgradeValue(u, level);
+        const rawA = computeUpgradeValue(u, level + buyLevels);
+        const unit = u.scaling?.unit ?? '';
+        const fmt = (v: number) => isPercent(u) ? formatPercentValue(v) : `${formatNumberValue(v, 1)}${unit}`;
+        next = rawA === rawB ? formatNextDelta(u) : `${fmt(rawB)} → ${fmt(rawA)}${EFFECT_LABEL[u.id] ? ` ${EFFECT_LABEL[u.id]}` : ''}`;
+      } else {
+        const fmt = (v: number) => spec.percent ? formatPercentValue(v) : formatNumberValue(v, 1);
+        const label = EFFECT_LABEL[u.id];
+        next = a === b
+          ? formatNextDelta(u)
+          : `${fmt(b)} → ${fmt(a)}${label ? ` ${label}` : ''}`;
       }
     } else if (u.id === 'pierce') {
       next = `passes through ${level} → ${level + buyLevels} extra ${level + buyLevels === 1 ? 'enemy' : 'enemies'}`;
