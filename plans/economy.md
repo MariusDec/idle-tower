@@ -78,7 +78,9 @@ Level requirements for reference: 47→48 = 42,167; 60→61 = 89,243; 100→101 
 
 ### 2.1 The new model in one paragraph
 
-Offline no longer simulates a climb. It takes **one wave** — the wave the player was standing on — measures how long that wave actually takes the player's tower (in *simulation* seconds, so game speed cancels out), and divides the absence by that duration plus the intermission. The resulting **repeat count is a real number**: 1.5 repeats pays 1.5 waves of income. Every payout is then multiplied by a single **offline fraction of 0.25**.
+Offline no longer simulates a climb. It repeats **the last wave the player actually completed**, at the duration that wave was actually completed in (in *simulation* seconds, so game speed cancels out), and divides the absence by that duration plus the wave's intermission. The resulting **repeat count is a real number**: 1.5 repeats pays 1.5 waves of income. Every payout is then multiplied by a single **offline fraction of 0.25**.
+
+The last *completed* wave rather than the wave in progress is the whole basis of the estimate. A wave that has never been finished has no measured duration and no proof the tower can finish it at all; the last completed wave is the deepest thing the run has demonstrated, and its clear time is a fact rather than a model. It also makes the two halves of the estimate — which wave, and how long — the same measurement, so they can never disagree.
 
 This replaces four constants (`OFFLINE_EFFICIENCY` 0.5, `AVG_WAVE_DURATION` 18, `OFFLINE_XP_EFFICIENCY` 0.5, `OFFLINE_PASSIVE_XP_RATE` 0.20) and the `estimateDPS` heuristic with one measured quantity and one dial.
 
@@ -87,6 +89,8 @@ This replaces four constants (`OFFLINE_EFFICIENCY` 0.5, `AVG_WAVE_DURATION` 18, 
 Pure functions and constants, so both `SaveManager` (which computes offline) and `Game` (which records samples) read the same arithmetic, and so tests can exercise it without a live game.
 
 The **interface** goes in `src/types.ts` alongside `WaveState` and `PacingState` (§5.1); the constants and functions go here. `waveTiming.ts` imports the type from `../types`, which is the direction every other `src/data/*` module already uses.
+
+The block records **which wave** was last completed as well as how long it took, because those two are one fact: offline repeats the last *completed* wave, priced at the time that wave actually took. There is no rescaling from one depth to another — the sample and the target are the same wave.
 
 ```ts
 import type { WaveTimingState } from '../types';
@@ -104,6 +108,7 @@ import { expectedWaveSeconds, isBossWave } from './formulas';
  * what "offline always runs at 1x" means: raising the speed dial makes waves
  * pass faster while you are watching and changes nothing while you are away.
  */
+
 /** Clears that feed the running mean. Short enough to track a tower that just got stronger. */
 export const WAVE_TIMING_EMA_WINDOW = 5;
 
@@ -111,14 +116,10 @@ export const WAVE_TIMING_EMA_WINDOW = 5;
 export const MIN_WAVE_SECONDS = 5;
 export const MAX_WAVE_SECONDS = 3600;
 
-/** How far a sample taken at another depth may be rescaled before it is distrusted. */
-export const WAVE_TIMING_RESCALE_MIN = 0.25;
-export const WAVE_TIMING_RESCALE_MAX = 4;
-
 /**
- * Payout multiplier when the run has never actually finished a wave, so the
- * duration below is `expectedWaveSeconds` rather than a measurement. A tower
- * that has not cleared anything must not be paid as if it had.
+ * Payout multiplier when the run has never completed a wave, so the duration
+ * is `expectedWaveSeconds` rather than a measurement. A tower that has not
+ * cleared anything must not be paid as if it had.
  */
 export const UNMEASURED_WAVE_PENALTY = 0.5;
 
@@ -131,18 +132,17 @@ function clampSeconds(seconds: number): number {
   return Math.min(MAX_WAVE_SECONDS, Math.max(MIN_WAVE_SECONDS, seconds));
 }
 
-/** Non-boss reference depth: boss waves have their own, much longer, budget. */
-function referenceWave(wave: number): number {
-  const w = Math.max(1, Math.floor(wave));
-  return isBossWave(w) ? Math.max(1, w - 1) : w;
-}
-
 /**
  * Fold one completed wave into the running mean.
  *
  * The first `WAVE_TIMING_EMA_WINDOW` samples produce a plain running mean
  * (`n` grows 1, 2, 3 …); after that the divisor sticks at the window size and
- * it becomes an exponential moving average with weight `1 / window`.
+ * it becomes an exponential moving average with weight `1 / window`. The mean
+ * is over the last handful of clears, which are all within a few waves of each
+ * other, so it smooths a lucky or unlucky wave without smearing across depths.
+ *
+ * `sampleWave` is overwritten every time: it is *the last completed wave*, and
+ * that is the wave an absence repeats.
  */
 export function recordWaveTime(t: WaveTimingState, wave: number, seconds: number): void {
   if (!Number.isFinite(seconds) || seconds <= 0) return;
@@ -155,35 +155,41 @@ export function recordWaveTime(t: WaveTimingState, wave: number, seconds: number
 }
 
 /**
- * How long one clear of `wave` should be assumed to take while the player is away.
+ * Which wave an absence repeats, and how long one clear of it takes.
  *
- * `inProgressSeconds` is `WaveState.elapsed` at save time — the part of the
- * current wave the player had already fought when the app closed. It is used as
- * a *floor*: a wave that has already been running for 90 s cannot be a 52 s
- * wave, whatever the estimate says. It is not paid out; the kills it already
- * produced were banked live.
+ * **The last completed wave**, at the duration it was completed in. Not the
+ * wave in progress: that wave has never been finished, so nothing is known
+ * about how long it takes or whether the tower can finish it at all, and
+ * paying it would be paying for a claim the run has not made. The last
+ * completed wave is the deepest thing the tower has actually proved it can do.
  *
- * `measured` is false when nothing has ever been clocked, which is what
- * `UNMEASURED_WAVE_PENALTY` answers.
+ * `WaveManager` never records a boss wave, a mutator wave or an early call
+ * (§2.3), so `sampleWave` is always an ordinary wave the tower cleared under
+ * its own power — which is also why nothing here needs a boss step-back.
+ *
+ * The fallback runs only before the first clear of a run. There `currentWave`
+ * is all there is: price it from `expectedWaveSeconds`, step back off a boss,
+ * floor it with however far into the wave the player already was
+ * (`inProgressSeconds` = `WaveState.elapsed` at save time — a wave that has
+ * been running 90 s cannot be a 52 s wave), and pay it at
+ * `UNMEASURED_WAVE_PENALTY`.
  */
-export function offlineWaveSeconds(
+export function offlineWaveTarget(
   t: WaveTimingState | undefined,
-  wave: number,
+  currentWave: number,
   inProgressSeconds = 0,
-): { seconds: number; measured: boolean } {
-  const target = referenceWave(wave);
-  const floor = Math.max(0, inProgressSeconds);
-  if (!t || t.samples <= 0 || !(t.avgWaveSeconds > 0)) {
-    const estimate = Math.max(expectedWaveSeconds(target), floor);
-    return { seconds: clampSeconds(estimate), measured: false };
+): { wave: number; seconds: number; measured: boolean } {
+  if (t && t.samples > 0 && t.avgWaveSeconds > 0 && t.sampleWave > 0) {
+    return {
+      wave: Math.max(1, Math.floor(t.sampleWave)),
+      seconds: clampSeconds(t.avgWaveSeconds),
+      measured: true,
+    };
   }
-  const from = referenceWave(t.sampleWave || target);
-  const fromExpected = expectedWaveSeconds(from);
-  const ratio = fromExpected > 0
-    ? Math.min(WAVE_TIMING_RESCALE_MAX,
-        Math.max(WAVE_TIMING_RESCALE_MIN, expectedWaveSeconds(target) / fromExpected))
-    : 1;
-  return { seconds: clampSeconds(Math.max(t.avgWaveSeconds * ratio, floor)), measured: true };
+  const w = Math.max(1, Math.floor(currentWave));
+  const wave = isBossWave(w) ? Math.max(1, w - 1) : w;
+  const estimate = Math.max(expectedWaveSeconds(wave), Math.max(0, inProgressSeconds));
+  return { wave, seconds: clampSeconds(estimate), measured: false };
 }
 ```
 
@@ -206,7 +212,9 @@ with
     if (!this.spawnPaused && !this.intermissionPaused) this.tickEnrage(dt);
 ```
 
-**(b) Emit the measurement.** In `concludeWave`, capture `elapsed` *before* it is zeroed and emit it when the wave is a fair sample:
+**(b) Emit the measurement.** In `concludeWave`, capture `elapsed` *before* it is zeroed and emit it when the wave is a fair sample.
+
+These exclusions are load-bearing in a way they would not be if the sample only supplied a duration: the last recorded clear is also **the wave an absence repeats** (§2.2), so excluding boss waves is what keeps offline from farming boss gold, boss gear and boss XP, and excluding mutator waves is what keeps a Swarm wave's tripled roster out of the offline payout. A player parked on wave 70 whose last ordinary clear was 69 farms 69.
 
 ```ts
   private concludeWave(openIntermission: boolean): void {
@@ -272,7 +280,7 @@ In `applySavedStateReset` (shared by ascension **and** transcendence), next to `
 
 ### 2.5 `computeOfflineProgress` — the rewrite
 
-**Constants.** In `src/systems/SaveManager.ts`, delete `OFFLINE_EFFICIENCY`, `AVG_WAVE_DURATION`, `OFFLINE_XP_EFFICIENCY`, `OFFLINE_PASSIVE_XP_RATE` and the `estimateDPS` function, and add:
+**Constants and dead code.** In `src/systems/SaveManager.ts`, delete `OFFLINE_EFFICIENCY`, `AVG_WAVE_DURATION`, `OFFLINE_XP_EFFICIENCY`, `OFFLINE_PASSIVE_XP_RATE`, the `estimateDPS` function and `averageKillHPForWave` — the DPS walk was the only consumer of the last two. Drop the `enemyHPForWave`, `bossMaxHpForWave` and `bossPhaseHpFactor` imports if nothing else in the file still uses them. Then add:
 
 ```ts
 /**
@@ -305,7 +313,7 @@ import { xpPerWaveClear } from '../data/xpTables';
 import { intermissionSecondsForWave } from '../data/pacing';
 import {
   defaultWaveTiming,
-  offlineWaveSeconds,
+  offlineWaveTarget,
   UNMEASURED_WAVE_PENALTY,
 } from '../data/waveTiming';
 // `WaveTimingState` joins the existing `import type { … } from '../types'` block
@@ -320,7 +328,7 @@ export interface OfflineResult {
   capped: boolean;
   /** The cap in effect for this absence, so the report can name it (plan §10.1). */
   maxIdleSeconds: number;
-  /** The wave the absence farmed. Offline never advances (economy §2.6). */
+  /** The wave the absence farmed: the last one completed. Offline never advances (§2.6). */
   wave: number;
   /** Simulation seconds one clear of `wave` was priced at. */
   waveSeconds: number;
@@ -345,11 +353,16 @@ export interface OfflineResult {
   /**
    * What an absence earned (plans/economy.md §2).
    *
-   * Offline repeats **one** wave — the wave the run was standing on — for as
-   * long as the absence lasted. It does not advance: catching a run up is one
-   * thing, setting its record depth while nobody is watching is another, and
-   * the old walk that climbed to `highestWave` and farmed there is what let a
-   * night's sleep out-earn a week of play.
+   * Offline repeats **one** wave — the last one the run actually completed —
+   * for as long as the absence lasted. It does not advance: catching a run up
+   * is one thing, setting its record depth while nobody is watching is
+   * another, and the old walk that climbed to `highestWave` and farmed there
+   * is what let a night's sleep out-earn a week of play.
+   *
+   * The wave in progress at save time is deliberately *not* the wave that is
+   * farmed. It has never been finished, so neither its duration nor the
+   * tower's ability to finish it is known; the last completed wave is the
+   * deepest claim the run can actually support.
    *
    * The wave's duration is a *measurement* (`WaveTimingState`), taken in
    * simulation seconds, so the game-speed setting cannot buy offline income:
@@ -368,14 +381,13 @@ export interface OfflineResult {
     const capped = rawElapsed > capSeconds;
     const elapsed = Math.min(rawElapsed, capSeconds);
 
-    // A boss wave steps back one: offline must not farm boss gold, boss gear
-    // or the encounter's XP, and the wave it repeats has to be an ordinary one.
-    let wave = Math.max(1, Math.floor(persisted.wave.number));
-    if (isBossWave(wave)) wave = Math.max(1, wave - 1);
-
+    // The last completed wave and the time it took, as one measurement. The
+    // boss step-back lives inside `offlineWaveTarget`'s fallback branch —
+    // a recorded sample is never a boss wave to begin with (§2.3).
     const timing: WaveTimingState = persisted.waveTiming ?? defaultWaveTiming();
     const inProgress = Math.max(0, persisted.wave.elapsed ?? 0);
-    const { seconds: waveSeconds, measured } = offlineWaveSeconds(timing, wave, inProgress);
+    const { wave, seconds: waveSeconds, measured } =
+      offlineWaveTarget(timing, persisted.wave.number, inProgress);
     const cycleSeconds = waveSeconds + intermissionSecondsForWave(wave);
 
     const lifetimeWave = persisted.stats.lifetimeHighestWave ?? 1;
@@ -444,7 +456,7 @@ In `src/game/Game.ts`:
 2. In `bindVisibilityEvents` (~line 2016) delete the `const startWave = …` line, the `this.applyOfflineWave(result.endWave);` line, the `const endWave = this.state.wave.number;` line, and change the emit to `this.bus.emit('welcome_back', { result });`.
 3. In `tryLoadSave` (~line 3379) make the same three deletions and change the emit to `this.bus.emit('welcome_back', { result });`.
 
-The player comes back standing on exactly the wave they left, mid-wave state and all.
+The player comes back standing on exactly the wave they left, mid-wave state and all. Note the asymmetry this creates and keep it: the run *resumes* on the wave in progress, while the absence *paid* for the last completed wave (§2.2). The card names the wave it paid for, so the two numbers being one apart is legible rather than confusing.
 
 ### 2.7 Welcome Back card: `src/ui/WelcomeBackModal.ts`
 
@@ -471,7 +483,10 @@ Replace the "Waves cleared" stat block with a wave-repeat block, and rewrite the
     waveStat.appendChild(waveValue);
     const waveSub = document.createElement('div');
     waveSub.className = 'welcome-stat-sub';
-    waveSub.textContent = `wave ${data.result.wave} · ${formatDuration(data.result.waveSeconds)} per clear`;
+    // Name the wave *and* its clear time: together they are the whole claim the
+    // card is making, and they are the two numbers a player will want to check.
+    waveSub.textContent =
+      `wave ${data.result.wave} · ${formatDuration(data.result.waveSeconds)} per clear`;
     waveStat.appendChild(waveSub);
     stats.appendChild(waveStat);
 ```
@@ -482,10 +497,10 @@ and
     const efficiency = document.createElement('p');
     efficiency.className = 'welcome-modal-note';
     efficiency.textContent = data.result.measured
-      ? `Your tower repeated wave ${data.result.wave} at 1x speed and 25% efficiency, `
-        + 'with your full gold multiplier applied.'
-      : `Your tower repeated wave ${data.result.wave} at 1x speed. No completed wave had been `
-        + 'timed yet, so the rate was estimated and paid at half the usual 25%.';
+      ? `Your tower replayed wave ${data.result.wave} — the last one you cleared — at 1x speed `
+        + 'and 25% efficiency, with your full gold multiplier applied.'
+      : `Your tower replayed wave ${data.result.wave} at 1x speed. You had not finished a wave `
+        + 'yet, so the pace was estimated and paid at half the usual 25%.';
     card.appendChild(efficiency);
 ```
 
@@ -506,7 +521,7 @@ Two rules follow, both worth a comment in the code and a test in §6:
 
 ### 2.9 Expected outcome
 
-8 h absence, `goldMultiplier = 1`, measured wave duration equal to `expectedWaveSeconds`:
+8 h absence, `goldMultiplier = 1`, measured wave duration equal to `expectedWaveSeconds`. "At wave" is the **last completed** wave — the one the absence repeats; a player showing wave 66 in the HUD is typically farming 65:
 
 | At wave | Cycle | Waves paid (old → new) | Gold | Tower XP | Passive XP |
 |---:|---:|---|---:|---:|---:|
@@ -927,8 +942,10 @@ Two prerequisites:
 Replace the `offline passive XP` describe block with:
 
 ```ts
-// Wave 33 throughout: a non-boss wave, so `computeOfflineProgress` farms the
-// wave the player was actually on rather than stepping back off a boss.
+// W is the **last completed** wave throughout — the wave an absence repeats.
+// The payout tests save the state standing on `W + 1`, so that a test which
+// passes proves the payout came from the completed wave and not from the one
+// in progress. 33 is a non-boss wave, which is what `WaveManager` records.
 const W = 33;
 const CYCLE_INTERMISSION = intermissionSecondsForWave(W); // 3 s at wave 33
 
@@ -953,45 +970,68 @@ describe('offline progress', () => {
     return mgr.computeOfflineProgress(persisted, 1);
   }
 
-  /** A fully warmed-up timing block reporting `seconds` per clear at `wave`. */
+  /**
+   * A fully warmed-up timing block: `wave` is the last wave completed and
+   * `seconds` is what it took. `W` is used as the last completed wave in the
+   * payout tests below, so the wave standing in the HUD is irrelevant to them
+   * — which is the property being asserted.
+   */
   const timed = (seconds: number, wave: number) => ({
     lastWaveSeconds: seconds, avgWaveSeconds: seconds, sampleWave: wave, samples: 5,
   });
 
-  it('never advances the wave', async () => {
-    const r = await offlineAt(W, 12, timed(60, W));
-    expect(r.wave).toBe(W);
+  it('repeats the last completed wave, not the one in progress', async () => {
+    // Standing on wave 40 having last cleared 39: the absence farms 39.
+    const r = await offlineAt(40, 12, timed(60, 39));
+    expect(r.wave).toBe(39);
+    expect(r.waveSeconds).toBeCloseTo(60, 5);
   });
 
-  it('steps back off a boss wave so an absence cannot farm one', async () => {
-    const r = await offlineAt(30, 4, timed(60, 29));
+  it('never advances past the wave it repeats', async () => {
+    const short = await offlineAt(W, 1, timed(60, W - 1));
+    const long = await offlineAt(W, 96, timed(60, W - 1));
+    expect(short.wave).toBe(W - 1);
+    expect(long.wave).toBe(W - 1);
+  });
+
+  it('falls back to the current wave, stepped off a boss, before the first clear', async () => {
+    // No sample at all: wave 30 is a boss, so the estimate prices wave 29.
+    const r = await offlineAt(30, 4);
     expect(r.wave).toBe(29);
+    expect(r.measured).toBe(false);
+  });
+
+  it('never repeats a boss wave, because one is never recorded', async () => {
+    // `WaveManager` excludes boss clears from the sample (§2.3), so a boss
+    // number can only reach `sampleWave` through a corrupt save. Guard anyway.
+    const r = await offlineAt(41, 8, timed(60, 39));
+    expect(isBossWave(r.wave)).toBe(false);
   });
 
   it('pays the fraction of a wave an absence did not finish', async () => {
     // 90 s away against a 60 s wave + 3 s intermission => 90 / 63 = 1.43 repeats.
-    const r = await offlineAt(W, 90 / 3600, timed(60, W));
+    const r = await offlineAt(W + 1, 90 / 3600, timed(60, W));
     expect(r.waveRepeats).toBeCloseTo(90 / (60 + CYCLE_INTERMISSION), 3);
     expect(r.waveRepeats).toBeGreaterThan(1);
     expect(r.waveRepeats).toBeLessThan(2);
   });
 
   it('scales linearly with the absence', async () => {
-    const short = await offlineAt(W, 4, timed(60, W));
-    const long = await offlineAt(W, 8, timed(60, W));
+    const short = await offlineAt(W + 1, 4, timed(60, W));
+    const long = await offlineAt(W + 1, 8, timed(60, W));
     expect(long.goldEarned / short.goldEarned).toBeCloseTo(2, 1);
     expect(long.xpEarned / short.xpEarned).toBeCloseTo(2, 1);
   });
 
   it('is inversely proportional to the measured wave duration', async () => {
-    const fast = await offlineAt(W, 8, timed(30, W));
-    const slow = await offlineAt(W, 8, timed(60, W));
+    const fast = await offlineAt(W + 1, 8, timed(30, W));
+    const slow = await offlineAt(W + 1, 8, timed(60, W));
     expect(fast.waveRepeats / slow.waveRepeats)
       .toBeCloseTo((60 + CYCLE_INTERMISSION) / (30 + CYCLE_INTERMISSION), 1);
   });
 
   it('pays exactly a quarter of one wave of income per repeat', async () => {
-    const r = await offlineAt(W, 8, timed(60, W));
+    const r = await offlineAt(W + 1, 8, timed(60, W));
     const count = Math.max(1, Math.floor(spawnCountForWave(W)));
     const perWaveXp = averageKillXPForWave(W) * count + xpPerWaveClear(W);
     const perWaveGold = averageKillGoldForWave(W) * count;
@@ -1008,19 +1048,36 @@ describe('offline progress', () => {
     expect(guessed.goldEarned / measured.goldEarned).toBeCloseTo(0.5, 2);
   });
 
-  it('never prices a wave shorter than the part already fought', async () => {
+  it('floors the fallback estimate with the part of the wave already fought', async () => {
+    // Only reachable before the run's first clear, which is the one time the
+    // in-progress wave is all the evidence there is.
     const mgr = new SaveManager(stubBus, { getRP: () => 0 });
     await mgr.hydrate();
-    const s = offlineState(W);
-    s.wave = { ...s.wave, elapsed: 300 };  // five minutes in, never finished
+    const s = offlineState(W);                // no timing samples
+    s.wave = { ...s.wave, elapsed: 300 };     // five minutes in, never finished
     mgr.save(s);
     const persisted = mgr.load()!;
     persisted.savedAt -= 8 * 3600 * 1000;
-    expect(mgr.computeOfflineProgress(persisted, 1).waveSeconds).toBeGreaterThanOrEqual(300);
+    const r = mgr.computeOfflineProgress(persisted, 1);
+    expect(r.measured).toBe(false);
+    expect(r.waveSeconds).toBeGreaterThanOrEqual(300);
+  });
+
+  it('ignores the in-progress wave once a wave has been completed', async () => {
+    const mgr = new SaveManager(stubBus, { getRP: () => 0 });
+    await mgr.hydrate();
+    const s = offlineState(W, timed(60, W - 1));
+    s.wave = { ...s.wave, elapsed: 900 };     // stuck fifteen minutes into wave W
+    mgr.save(s);
+    const persisted = mgr.load()!;
+    persisted.savedAt -= 8 * 3600 * 1000;
+    const r = mgr.computeOfflineProgress(persisted, 1);
+    expect(r.wave).toBe(W - 1);
+    expect(r.waveSeconds).toBeCloseTo(60, 5);  // the measurement, not the stall
   });
 
   it('leaves an absence shorter than one wave paying a partial wave, not zero', async () => {
-    const r = await offlineAt(W, 20 / 3600, timed(120, W));
+    const r = await offlineAt(W + 1, 20 / 3600, timed(120, W));
     expect(r.waveRepeats).toBeGreaterThan(0);
     expect(r.waveRepeats).toBeLessThan(1);
     expect(r.goldEarned).toBeGreaterThan(0);
@@ -1047,14 +1104,37 @@ it('clamps a nonsense measurement instead of poisoning the average', () => {
   expect(t.avgWaveSeconds).toBeLessThanOrEqual(MAX_WAVE_SECONDS);
 });
 
-it('rescales a sample taken at another depth, within bounds', () => {
+it('returns the last completed wave and its own clear time, whatever wave is live', () => {
   const t = defaultWaveTiming();
   recordWaveTime(t, 33, 60);
-  const deep = offlineWaveSeconds(t, 91).seconds;
-  const shallow = offlineWaveSeconds(t, 11).seconds;
-  expect(deep).toBeGreaterThan(shallow);
-  expect(deep).toBeLessThanOrEqual(60 * WAVE_TIMING_RESCALE_MAX);
-  expect(shallow).toBeGreaterThanOrEqual(60 * WAVE_TIMING_RESCALE_MIN);
+  // The live wave is irrelevant once something has been completed.
+  for (const live of [34, 40, 91, 1]) {
+    const target = offlineWaveTarget(t, live);
+    expect(target.wave).toBe(33);
+    expect(target.seconds).toBeCloseTo(60, 5);
+    expect(target.measured).toBe(true);
+  }
+});
+
+it('falls back to the live wave, off a boss, only until the first clear', () => {
+  const t = defaultWaveTiming();
+  const before = offlineWaveTarget(t, 30);          // boss wave, no samples
+  expect(before.wave).toBe(29);
+  expect(before.measured).toBe(false);
+  expect(before.seconds).toBeCloseTo(expectedWaveSeconds(29), 5);
+
+  recordWaveTime(t, 29, 45);
+  const after = offlineWaveTarget(t, 30);
+  expect(after.wave).toBe(29);
+  expect(after.seconds).toBeCloseTo(45, 5);
+  expect(after.measured).toBe(true);
+});
+
+it('floors the fallback with the in-progress wave, but never a measurement', () => {
+  const t = defaultWaveTiming();
+  expect(offlineWaveTarget(t, 33, 300).seconds).toBeGreaterThanOrEqual(300);
+  recordWaveTime(t, 33, 45);
+  expect(offlineWaveTarget(t, 33, 300).seconds).toBeCloseTo(45, 5);
 });
 ```
 
@@ -1114,8 +1194,8 @@ it('prices offline in simulation seconds, so game speed cannot buy income', asyn
 | File | Change |
 |---|---|
 | `docs/save-system.md` | Rewrite the whole "Offline Progress" section against §2 (it currently documents a 70%-efficiency DPS walk and an 18 s average wave, both already stale). Add the v22 → v23 row to the migration table. Update "version is 2..21" to "2..23". |
-| `docs/save-system.md` | "Welcome Back Modal" bullet list: duration, gold, **wave repeats at the wave farmed**, tower XP, capped notice. Drop "waves cleared" and "effective DPS". |
-| `docs/wave-system.md` | New short section: the wave clock, what it measures (simulation seconds), when it is a fair sample, and that it feeds offline progress. Note that the clock now pauses with the modal pauses. |
+| `docs/save-system.md` | "Welcome Back Modal" bullet list: duration, gold, **wave repeats at the last completed wave, with its clear time**, tower XP, capped notice. Drop "waves cleared" and "effective DPS". |
+| `docs/wave-system.md` | New short section: the wave clock, what it measures (simulation seconds), which clears count as a fair sample (natural clear, non-boss, no mutator), and that the last such clear is both the wave offline repeats and the duration it is priced at. Note that the clock now pauses with the modal pauses. |
 | `docs/equipment-system.md` | Rewrite "Drops": flat per-source chances (`ELITE_DROP_CHANCE` 0.12/cap 0.25, `BOSS_DROP_CHANCE` 0.30/cap 0.60), one roll per source per wave, guaranteed sources bypass the budget, depth moves rarity not rate. |
 | `docs/xp-talent-system.md` | "Kill XP": `killXpWaveScale(wave) = 1 + 0.12 * sqrt(wave - 1)` and why it is sub-linear. "Wave-clear XP": `3 * wave`, linear. Delete the "superlinear: clearing deep waves is the real faucet" claim. |
 | `docs/passive-system.md` | `PASSIVE_XP_LEVEL_WAVES` is 10; level 1 costs ten waves of play at the unlock depth. |
@@ -1152,13 +1232,14 @@ npm run typecheck && npm run lint && npm run test && npm run checks && npm run s
 
 ### 8.3 Manual verification
 
-1. Start a run, reach wave ~25, clear five waves. Confirm `gameState.waveTiming.samples === 5` and `avgWaveSeconds` is within a few seconds of the stopwatch.
+1. Start a run, reach wave ~25, clear five waves. Confirm `gameState.waveTiming.samples === 5`, `sampleWave` equals the last wave you actually finished, and `avgWaveSeconds` is within a few seconds of the stopwatch.
 2. Set the game speed to 1.5x, clear five more waves, and confirm `avgWaveSeconds` did **not** drop by a third. This is requirement 1.
-3. Hide the tab for 10 minutes, return, and check the Welcome Back card: the wave shown must equal the wave you left, the repeat count must be ≈ `600 / (avgWaveSeconds + intermission)`, and the run must resume on the same wave (requirement 2).
-4. Edit the save's `savedAt` back 8 hours and reload. Gold, tower XP and passive XP should all be ~25% of what the same period of active play at that wave would produce (requirement 3).
-5. Close the app mid-wave with `wave.elapsed` around 60 s on a wave that normally takes 40 s; confirm `result.waveSeconds >= 60` (requirement 4's estimate clause).
-6. Play waves 60–70 and count gear drops. Expect ~2–3 pieces across the ten waves, up to ~5 with a swift boss kill and a Windfall chest (requirement 5).
-7. Note the tower level at wave 60 and again at wave 70. Expect well under one level gained across those ten waves before multipliers (requirement 6).
+3. Hide the tab for 10 minutes, return, and check the Welcome Back card: the wave named must be the **last one you completed** (one behind the HUD if a wave was in progress), the repeat count must be ≈ `600 / (avgWaveSeconds + intermission)`, and the run must resume on the wave it was on, unchanged (requirement 2).
+4. Clear a wave, then let the *next* wave run for a long time without finishing it and close the app. On reload the card must still name the completed wave and its clear time — the stalled wave must not appear in the estimate at all.
+5. Edit the save's `savedAt` back 8 hours and reload. Gold, tower XP and passive XP should all be ~25% of what the same period of active play at that wave would produce (requirement 3).
+6. On a **fresh run** (ascend, so `waveTiming` resets), close the app mid-wave with `wave.elapsed` around 60 s on a wave that normally takes 40 s; confirm `result.waveSeconds >= 60`, `result.measured === false`, and the payout is halved (requirement 4's estimate clause).
+7. Play waves 60–70 and count gear drops. Expect ~2–3 pieces across the ten waves, up to ~5 with a swift boss kill and a Windfall chest (requirement 5).
+8. Note the tower level at wave 60 and again at wave 70. Expect well under one level gained across those ten waves before multipliers (requirement 6).
 
 ---
 
@@ -1170,7 +1251,7 @@ Change one at a time; each has a single home.
 |---|---|---|---|
 | `OFFLINE_YIELD_FRACTION` | `SaveManager.ts` | 0.25 | Every offline payout, linearly. Raise if overnight absences feel dead. |
 | `UNMEASURED_WAVE_PENALTY` | `waveTiming.ts` | 0.5 | Only the first absence of a new run, before five waves are timed. |
-| `WAVE_TIMING_EMA_WINDOW` | `waveTiming.ts` | 5 | How fast the average follows a tower that just got stronger. |
+| `WAVE_TIMING_EMA_WINDOW` | `waveTiming.ts` | 5 | How fast the average follows a tower that just got stronger. Set it to 1 to price offline off `lastWaveSeconds` — the single most recent clear — instead of a smoothed mean. |
 | `ELITE_DROP_CHANCE` / `BOSS_DROP_CHANCE` | `equipment.ts` | 0.12 / 0.30 | Gear rate, flat across all depths. |
 | `ROLLS_PER_WAVE` | `EquipmentManager.ts` | 1 / 1 | The hard ceiling. Raising elite to 2 doubles the non-boss rate. |
 | `KILL_XP_WAVE_SLOPE` | `xpTables.ts` | 0.12 | How much depth is worth per kill. `sqrt` shape; halving it flattens further. |

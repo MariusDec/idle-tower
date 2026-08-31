@@ -37,11 +37,9 @@ import { TOWER_XP_TABLE, TOWER_LEVEL_CAP, xpToLevel, xpForNextLevel, talentPoint
 import {
   defaultWaveTiming,
   recordWaveTime,
-  offlineWaveSeconds,
+  offlineWaveTarget,
   MIN_WAVE_SECONDS,
   MAX_WAVE_SECONDS,
-  WAVE_TIMING_RESCALE_MIN,
-  WAVE_TIMING_RESCALE_MAX,
 } from '../src/data/waveTiming';
 import { UPGRADES, UPGRADE_BY_ID } from '../src/data/upgrades';
 import { computeUpgradeValue } from '../src/types';
@@ -397,12 +395,12 @@ describe('economy caps', () => {
 /**
  * Wave timing (plans/economy.md §2 / §6.4).
  *
- * The offline model is paced by `WaveTimingState.avgWaveSeconds`, the running
- * mean of the last `WAVE_TIMING_EMA_WINDOW` clears measured in **simulation**
- * seconds. These tests pin the three properties the offline math depends on:
- * the mean tracks a tower that just got stronger, a single glitched measurement
- * cannot poison it, and a sample taken at one depth is rescaled for use at
- * another within bounded limits.
+ * The offline model is paced by `WaveTimingState`, which carries both the last
+ * **completed** wave and the running mean of the last `WAVE_TIMING_EMA_WINDOW`
+ * clear times, measured in **simulation** seconds. These tests pin the
+ * properties the offline math depends on: the mean tracks a tower that just got
+ * stronger, a single glitched measurement cannot poison it, and the target is
+ * always the last completed wave rather than whatever wave happens to be live.
  */
 describe('wave timing', () => {
   it('averages the last five clears and tracks a tower getting stronger', () => {
@@ -421,13 +419,39 @@ describe('wave timing', () => {
     expect(t.avgWaveSeconds).toBeLessThanOrEqual(MAX_WAVE_SECONDS);
   });
 
-  it('rescales a sample taken at another depth, within bounds', () => {
+  it('returns the last completed wave and its own clear time, whatever wave is live', () => {
     const t = defaultWaveTiming();
     recordWaveTime(t, 33, 60);
-    const deep = offlineWaveSeconds(t, 91).seconds;
-    const shallow = offlineWaveSeconds(t, 11).seconds;
-    expect(deep).toBeGreaterThan(shallow);
-    expect(deep).toBeLessThanOrEqual(60 * WAVE_TIMING_RESCALE_MAX);
-    expect(shallow).toBeGreaterThanOrEqual(60 * WAVE_TIMING_RESCALE_MIN);
+    // The live wave is irrelevant once something has been completed: an absence
+    // repeats what the tower proved it can clear, not what it was attempting.
+    for (const live of [34, 40, 91, 1]) {
+      const target = offlineWaveTarget(t, live);
+      expect(target.wave, `live ${live}`).toBe(33);
+      expect(target.seconds, `live ${live}`).toBeCloseTo(60, 5);
+      expect(target.measured, `live ${live}`).toBe(true);
+    }
+  });
+
+  it('falls back to the live wave, off a boss, only until the first clear', () => {
+    const t = defaultWaveTiming();
+    const before = offlineWaveTarget(t, 30);          // boss wave, no samples
+    expect(before.wave).toBe(29);
+    expect(before.measured).toBe(false);
+    expect(before.seconds).toBeCloseTo(expectedWaveSeconds(29), 5);
+
+    recordWaveTime(t, 29, 45);
+    const after = offlineWaveTarget(t, 30);
+    expect(after.wave).toBe(29);
+    expect(after.seconds).toBeCloseTo(45, 5);
+    expect(after.measured).toBe(true);
+  });
+
+  it('floors the fallback with the in-progress wave, but never a measurement', () => {
+    const t = defaultWaveTiming();
+    // Nothing cleared yet: a wave already 300 s deep cannot be priced shorter.
+    expect(offlineWaveTarget(t, 33, 300).seconds).toBeGreaterThanOrEqual(300);
+    // Once a clear exists, the stalled attempt is ignored entirely.
+    recordWaveTime(t, 33, 45);
+    expect(offlineWaveTarget(t, 33, 300).seconds).toBeCloseTo(45, 5);
   });
 });

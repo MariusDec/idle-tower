@@ -136,6 +136,14 @@ section('§2.3.3 wave enrage');
   } as unknown as EnemyManager;
   const wm = new WaveManager(bus, stubEnemies, 800, 600, () => {}, () => {});
   wm.startWave(10);
+  // Wave 10 is a boss wave, so `startWave` pauses spawning to put the mutator
+  // offer on screen — and the wave clock stops with it (plans/economy.md §2.3),
+  // both because a wave held open behind a modal must not enrage for the time
+  // the player spent reading and because that time must not reach the offline
+  // measurement. The game resumes when the offer is answered; nothing here is
+  // watching the bus, so answer it directly. Doing this unconditionally also
+  // makes the check immune to the 4% mutator roll on non-boss waves.
+  wm.resumeSpawning();
   applied.length = 0;
   // Advance past the threshold in one-second steps.
   for (let t = 0; t < enrageThresholdSeconds(10, wm.snapshot.enemiesToSpawn) + 20; t++) {
@@ -307,8 +315,16 @@ section('§2.5 passive abilities');
   };
   const early = wavesToLevel(first);
   const late = wavesToLevel(last);
+  // Tolerance, not an absolute: `xpBase` is `round2sig(PASSIVE_XP_LEVEL_WAVES *
+  // passiveWaveXpRef(unlockWave))`, and two significant figures cannot express
+  // that anchor to better than a few percent either way (wave 65's 1800 is 1.3%
+  // under its exact 1823). What this check exists to catch is the pre-redesign
+  // bug where a wave-65 passive gained ten levels inside a single wave — a
+  // hundredfold effect, not a one-percent one. 5% keeps it sensitive to any
+  // real drift in the anchor while ignoring the rounding of the literals.
+  const drift = Math.abs(early - late) / Math.max(1, early);
   check('the last passive is not faster than the first, per wave of play',
-    Math.abs(early - late) <= 3, `early=${early} late=${late}`);
+    drift <= 0.05, `early=${early} late=${late} drift=${(drift * 100).toFixed(1)}%`);
   check('reaching level 5 from XP alone takes real play',
     early >= 25, `waves=${early}`);
 
@@ -631,21 +647,30 @@ section('§2/§6 offline progress');
     lastWaveSeconds: seconds, avgWaveSeconds: seconds, sampleWave: wave, samples: 5,
   });
 
-  // The absence prices the wave the run was standing on, regardless of tower
+  // The absence prices the **last completed** wave, regardless of tower
   // strength: stronger DPS would have shortened the *measured* clear, so what
   // passes through here is duration, not damage. The same absence at the same
   // measurement therefore always reports the same wave.
   const at5 = save.computeOfflineProgress(persisted(5, 40, hour, measured(60, 5)), 1);
   const at5Strong = save.computeOfflineProgress(persisted(5, 40, hour, measured(20, 5)), 1);
-  check('offline farms the wave the run was standing on',
+  check('offline farms the wave the measurement was taken on',
     at5.wave === 5 && at5Strong.wave === 5,
     `at5=${at5.wave} at5Strong=${at5Strong.wave}`);
 
-  // Stepping back off a boss wave: wave 30 is a boss in this era, so an
-  // absence the run would otherwise farm must step back to 29.
-  const atBoss = save.computeOfflineProgress(persisted(30, 40, hour, measured(60, 29)), 1);
-  check('a boss wave steps back before farming', atBoss.wave === 29,
-    `wave=${atBoss.wave}`);
+  // The wave *in progress* is not the wave farmed: standing on 34 having last
+  // cleared 33 farms 33. A wave that was never finished has no measured
+  // duration and no proof the tower can finish it at all.
+  const midWave = save.computeOfflineProgress(persisted(34, 40, hour, measured(60, 33)), 1);
+  check('offline farms the last completed wave, not the one in progress',
+    midWave.wave === 33, `wave=${midWave.wave}`);
+
+  // Only the no-sample fallback looks at the standing wave, and there a boss
+  // wave steps back one: wave 30 is a boss, so a run that has never cleared
+  // anything is priced at 29 rather than at a boss encounter.
+  const atBoss = save.computeOfflineProgress(persisted(30, 40, hour, defaultWaveTiming()), 1);
+  check('the unmeasured fallback steps back off a boss wave',
+    atBoss.wave === 29 && !atBoss.measured,
+    `wave=${atBoss.wave} measured=${atBoss.measured}`);
 
   // A whole absence is a closed-form `repeat` count, not a forward walk.
   const short = save.computeOfflineProgress(persisted(5, 40, 4 * hour, measured(60, 5)), 1);
@@ -663,23 +688,20 @@ section('§2/§6 offline progress');
     fast.waveRepeats > slow.waveRepeats,
     `fast=${fast.waveRepeats} slow=${slow.waveRepeats}`);
 
-  // Plan §2.8: an unmeasured run pays half the rate until 5 samples exist.
+  // An unmeasured run — one that has not completed a wave yet — pays
+  // `UNMEASURED_WAVE_PENALTY = 0.5` of the usual yield. Comparing it against a
+  // measurement of exactly `expectedWaveSeconds` holds the *duration* fixed, so
+  // the only thing left between the two figures is the penalty itself and the
+  // ratio must land on 0.5 rather than merely near it.
   const guess = save.computeOfflineProgress(persisted(5, 40, hour, defaultWaveTiming()), 1);
   check('an unmeasured run still pays, at a quarter', guess.goldEarned > 0,
     `gold=${guess.goldEarned} measured=${guess.measured}`);
-  expectHalf(guess, fast);
-
-  function expectHalf(guess: { goldEarned: number; waveSeconds: number },
-                      measured: { goldEarned: number; waveSeconds: number }) {
-    // An unmeasured absence pays `UNMEASURED_WAVE_PENALTY = 0.5` of the yield
-    // fraction, so the unmeasured gold should be near the measured one
-    // (the measured path also rescales by `expectedWaveSeconds`, which can
-    // nudge the ratio slightly above or below 0.5 — generous tolerance).
-    const ratio = guess.goldEarned / Math.max(1, measured.goldEarned);
-    check('an unmeasured run pays half the measured rate',
-      ratio >= 0.4 && ratio <= 1.2,
-      `guess=${guess.goldEarned} measured=${measured.goldEarned} ratio=${ratio.toFixed(3)}`);
-  }
+  const sameDuration = save.computeOfflineProgress(
+    persisted(5, 40, hour, measured(guess.waveSeconds, 5)), 1);
+  const ratio = guess.goldEarned / Math.max(1, sameDuration.goldEarned);
+  check('an unmeasured run pays exactly half the measured rate',
+    Math.abs(ratio - 0.5) < 0.01,
+    `guess=${guess.goldEarned} measured=${sameDuration.goldEarned} ratio=${ratio.toFixed(4)}`);
 
   // Cap transparency: the report names the cap so the welcome back modal can
   // say so. A 100h absence on the default cap must report capped=true.

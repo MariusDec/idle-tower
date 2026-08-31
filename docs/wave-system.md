@@ -234,30 +234,39 @@ If `waveSkipChance > 0` and roll succeeds:
 
 ## Wave clock (gameplay plan §2 / §6.4)
 
-The offline model is paced by `WaveTimingState.avgWaveSeconds` — a running
-mean of the last `WAVE_TIMING_EMA_WINDOW = 5` clears measured in
-**simulation** seconds (see [data/waveTiming.ts](../../src/data/waveTiming.ts)).
-That block feeds `computeOfflineProgress` and is the dial every absent
-absence is priced against.
+`WaveState.elapsed` is the wave clock: seconds since the wave started, in
+**simulation** time. It drives the enrage fuse, and it is what offline progress
+is priced against (see [data/waveTiming.ts](../../src/data/waveTiming.ts) and
+[save-system.md](save-system.md#offline-progress)).
 
-- **When a sample is fair.** `WaveManager.recordWaveTiming()` is called at
-  `wave_cleared`. A measurement taken while the player was at the keyboard is
-  fair; a measurement taken while the Welcome Back Modal was open is *not*,
-  because the absence simulation runs at the modal's pace, not at the
-  simulation pace the modal is reporting on. The modal pauses the wave
-  timer (`WaveManager.tick` short-circuits while the modal is showing), so the
-  recorded samples are always modal-free.
-- **Sample-depth rescaling.** A measurement at wave 33 is rescaled for use at
-  wave 91 via `expectedWaveSeconds` ratios, clamped to
-  `[WAVE_TIMING_RESCALE_MIN=0.25, WAVE_TIMING_RESCALE_MAX=4]`. The cap
-  protects against a sample taken at a wildly different depth poisoning
-  offline math.
-- **Measurement floor.** `MIN_WAVE_SECONDS = 5` and `MAX_WAVE_SECONDS = 3600`
-  clamp a glitched sample (`Infinity`, a stall, a frame-rate spike) instead
-  of letting it poison the average.
+- **Simulation seconds, not wall clock.** `tick(dt)` receives the simulation
+  delta, already multiplied by the game-speed setting, so a wave that takes 60
+  simulation seconds takes 60 s at 1x and 40 s of wall clock at 1.5x. Offline
+  divides a *wall-clock* absence by this figure, which is exactly what "offline
+  always runs at 1x" means — the speed dial cannot buy idle income.
+- **The clock stops for a modal.** `tickEnrage` only runs when neither
+  `spawnPaused` nor `intermissionPaused` is set, so a wave held open behind a
+  mutator offer or a blessing draft is neither measured for the time the player
+  spent reading nor enraged for it.
+- **When a sample is fair.** `concludeWave` emits `wave_timed` — which `Game`
+  folds into `waveTiming` via `recordWaveTime` — only for a wave that ran to
+  its natural end. Three cases are excluded, and each exclusion matters twice
+  over, because the last recorded clear is both the duration offline uses *and*
+  the wave offline repeats:
+  - an **early call** (`openIntermission === false`) credits the wave with
+    stragglers still alive, so it under-reports the duration;
+  - a **boss wave** is a several-times-longer encounter, and excluding it is
+    what stops an absence farming boss gold, boss gear and boss XP;
+  - a **mutator wave** does not have this depth's roster (Swarm triples it).
+
+  The wave-skip path never reaches `concludeWave`, so it is excluded too.
+- **Measurement clamp.** `MIN_WAVE_SECONDS = 5` and `MAX_WAVE_SECONDS = 3600`
+  clamp a glitched sample (`Infinity`, a stall, a frame-rate spike) instead of
+  letting it poison the average, which is a mean over the last
+  `WAVE_TIMING_EMA_WINDOW = 5` clears.
 - **Persistence.** `waveTiming` is part of `PersistentState` (v23+,
-  run-scoped, reset on ascend). Five measured clears is the threshold at
-  which `UNMEASURED_WAVE_PENALTY = 0.5` is dropped.
+  run-scoped, reset by both prestige layers). `UNMEASURED_WAVE_PENALTY = 0.5`
+  applies until the run's **first** recorded clear, not its fifth.
 
 ## Public API
 

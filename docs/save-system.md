@@ -228,23 +228,33 @@ absence at a closed-form price.
    days (11 levels). The cap is derived from `prestige.apSpent` via a
    `getIdleCapSeconds` callback injected into `SaveManager`; nothing about it
    is persisted, which is why `migrateV14toV15` is a no-op.
-2. **Wave farmed:** the wave the run was standing on. If that wave is a boss
-   (`isBossWave(w) % 10 === 0`), offline steps back one — a run cannot farm a
-   boss without entering it, and entering it is not what "came back" means.
-3. **Wave duration:** `offlineWaveSeconds(waveTiming, wave, inProgress)` — the
-   `WaveTimingState` block's measured average (rescaled for depth if the
-   sample was taken elsewhere), or `expectedWaveSeconds(wave)` until five
-   clears have been timed. A wave the player is already part-way through is
-   never priced shorter than the seconds already spent on it
-   (`inProgressSeconds` floor). See [data/waveTiming.ts](../../src/data/waveTiming.ts).
+2. **Wave farmed and its duration:** one call, `offlineWaveTarget(waveTiming,
+   currentWave, inProgress)`, because the two are one measurement. It returns
+   the **last wave the run actually completed** (`waveTiming.sampleWave`) and
+   the running mean of what that wave took (`waveTiming.avgWaveSeconds`).
+
+   The wave *in progress* at save time is deliberately not the wave farmed: it
+   has never been finished, so neither its duration nor the tower's ability to
+   finish it is known, and paying it would be paying for a claim the run has
+   not made. A player showing wave 70 in the HUD whose last ordinary clear was
+   69 farms **69**. Nothing needs a boss step-back here either — `WaveManager`
+   never records a boss wave, a mutator wave or an early call, so `sampleWave`
+   is always an ordinary wave the tower cleared under its own power.
+3. **Before the run's first clear** there is no sample, and only then does the
+   current wave come into it: `expectedWaveSeconds(wave)` (stepped back one if
+   that wave is a boss), floored by `inProgressSeconds` — a wave already 300 s
+   deep cannot be priced as a 52 s wave — and flagged `measured: false`. See
+   [data/waveTiming.ts](../../src/data/waveTiming.ts).
 4. **Cycle time:** `cycleSeconds = waveSeconds + intermissionSecondsForWave(wave)`.
 5. **Repeats:** `waveRepeats = elapsed / cycleSeconds`, fractional and capped
    at `MAX_OFFLINE_WAVE_REPEATS = 100_000`.
 6. **Yield fraction:** `OFFLINE_YIELD_FRACTION * (1 if measured, UNMEASURED_WAVE_PENALTY = 0.5 otherwise)`.
-   The unmeasured discount halves the yield — so a player who has just
-   ascended pays roughly half what a player with five samples at the same
-   depth pays. The figure is named in the modal so the player can see *why*
-   the absence paid what it did.
+   The unmeasured discount halves the yield, and applies until the run's
+   **first** completed wave — so a player who ascends and closes the app
+   immediately pays half what the same player pays after clearing one wave.
+   `waveTiming` is run-scoped and reset by both prestige layers, so every new
+   run starts unmeasured. The figure is named in the modal so the player can
+   see *why* the absence paid what it did.
 7. **Per-wave gold:** `averageKillGoldForWave(wave) * count` (closed-form
    average across the wave's enemy types and the wave's risks — no
    per-enemy RNG).
@@ -272,15 +282,22 @@ Applied via `applyOfflineProgress(state, result)`:
   line — what used to be "waves cleared", and is now a literal accounting,
   not a number the game had to be persuaded to swallow
 
+Note the asymmetry and keep it: the run **resumes** on the wave it was on,
+mid-wave state and all, while the absence **paid** for the last completed wave.
+The card names the wave it paid for, so the two being one apart is legible
+rather than confusing.
+
 ## Welcome Back Modal
 
 When offline progress > 0, `welcome_back` event triggers `WelcomeBackModal.show()`:
-- Shows duration, gold earned, XP earned, **wave repeats at the wave farmed**
+- Shows duration, gold earned, XP earned, and **wave repeats at the last
+  completed wave**, with that wave's clear time under it
+  (`wave 65 · 54s per clear`)
 - Capped notice if the absence exceeded the idle cap, naming the cap
   (`capped at 8h`, `capped at 1d 8h`, …)
-- Unmeasured-rate notice if the player has fewer than five timed clears
-  (`paid at half the usual rate — no clears timed yet`) — see
-  `WelcomeBackModal.ts` line 488
+- Unmeasured-rate notice when the run has not completed a wave yet
+  (`You had not finished a wave yet, so the pace was estimated and paid at
+  half the usual 25%.`)
 - Modal overlay with Continue button
 
 ## Manual Operations

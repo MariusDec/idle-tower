@@ -20,15 +20,8 @@ import { AP_PERK_BY_ID, TP_PERK_BY_ID } from '../src/data/prestige';
 import { UPGRADE_BY_ID } from '../src/data/upgrades';
 import { PASSIVE_BY_ID, PASSIVE_MAX_LEVEL } from '../src/data/passiveAbilities';
 import { passiveWaveXpRef, passiveXpForLevel } from '../src/data/xpTables';
-import { expectedWaveSeconds, spawnCountForWave } from '../src/data/formulas';
-import {
-  defaultWaveTiming,
-  offlineWaveSeconds,
-  MIN_WAVE_SECONDS,
-  MAX_WAVE_SECONDS,
-  WAVE_TIMING_RESCALE_MIN,
-  WAVE_TIMING_RESCALE_MAX,
-} from '../src/data/waveTiming';
+import { expectedWaveSeconds, isBossWave, spawnCountForWave } from '../src/data/formulas';
+import { defaultWaveTiming } from '../src/data/waveTiming';
 
 const STORAGE_KEY = 'the-tower-save';
 
@@ -891,18 +884,20 @@ describe('v23→v24 watch riskWaves resize', () => {
 /**
  * Offline progress (plans/economy.md §6.3).
  *
- * Offline no longer simulates a climb. It picks one wave — the wave the run was
- * standing on — and repeats it for the whole absence, paced by a measured
- * duration the `WaveTimingState` block carries. The repeat count is a real
- * number, the payout is closed-form arithmetic, and a single `0.25` dial
- * discounts every offline payout uniformly. The block below is the test bed
- * for that claim.
+ * Offline no longer simulates a climb. It picks one wave — the **last one the
+ * run actually completed** — and repeats it for the whole absence, paced by the
+ * duration that wave was completed in, which the `WaveTimingState` block
+ * carries alongside the wave number. The repeat count is a real number, the
+ * payout is closed-form arithmetic, and a single `0.25` dial discounts every
+ * offline payout uniformly. The block below is the test bed for that claim.
  */
 
-// Wave 33 throughout: a non-boss wave, so `computeOfflineProgress` farms the
-// wave the player was actually on rather than stepping back off a boss.
+// W is the **last completed** wave throughout — the wave an absence repeats.
+// The payout tests save the state standing on `W + 1`, so a test that passes
+// proves the payout came from the completed wave rather than the one in
+// progress. 33 is a non-boss wave, which is the only kind `WaveManager` records.
 const W = 33;
-const CYCLE_INTERMISSION = intermissionSecondsForWave(W); // 5 s at wave 33
+const CYCLE_INTERMISSION = intermissionSecondsForWave(W);
 
 describe('offline progress', () => {
   function offlineState(wave: number, timing?: Partial<WaveTimingState>): GameState {
@@ -925,45 +920,69 @@ describe('offline progress', () => {
     return mgr.computeOfflineProgress(persisted, 1);
   }
 
-  /** A fully warmed-up timing block reporting `seconds` per clear at `wave`. */
+  /**
+   * A fully warmed-up timing block: `wave` is the last wave completed and
+   * `seconds` is what it took. The wave standing in the HUD is passed
+   * separately to `offlineAt`, and is irrelevant to every payout test below —
+   * which is the property being asserted.
+   */
   const timed = (seconds: number, wave: number) => ({
     lastWaveSeconds: seconds, avgWaveSeconds: seconds, sampleWave: wave, samples: 5,
   });
 
-  it('never advances the wave', async () => {
-    const r = await offlineAt(W, 12, timed(60, W));
-    expect(r.wave).toBe(W);
+  it('repeats the last completed wave, not the one in progress', async () => {
+    // Standing on wave 40 having last cleared 39: the absence farms 39, at the
+    // 60 s that wave 39 actually took.
+    const r = await offlineAt(40, 12, timed(60, 39));
+    expect(r.wave).toBe(39);
+    expect(r.waveSeconds).toBeCloseTo(60, 5);
   });
 
-  it('steps back off a boss wave so an absence cannot farm one', async () => {
-    const r = await offlineAt(30, 4, timed(60, 29));
+  it('never advances past the wave it repeats', async () => {
+    const short = await offlineAt(W + 1, 1, timed(60, W));
+    const long = await offlineAt(W + 1, 96, timed(60, W));
+    expect(short.wave).toBe(W);
+    expect(long.wave).toBe(W);
+  });
+
+  it('falls back to the current wave, stepped off a boss, before the first clear', async () => {
+    // No sample at all: wave 30 is a boss, so the estimate prices wave 29.
+    const r = await offlineAt(30, 4);
     expect(r.wave).toBe(29);
+    expect(r.measured).toBe(false);
+  });
+
+  it('never repeats a boss wave, because one is never recorded', async () => {
+    // `WaveManager` excludes boss clears from the sample, so a boss number can
+    // only reach `sampleWave` through a corrupt save. Assert the outcome anyway.
+    const r = await offlineAt(41, 8, timed(60, 39));
+    expect(isBossWave(r.wave)).toBe(false);
   });
 
   it('pays the fraction of a wave an absence did not finish', async () => {
     // 90 s away against a 60 s wave + 5 s intermission => 90 / 65 = 1.38 repeats.
-    const r = await offlineAt(W, 90 / 3600, timed(60, W));
+    const r = await offlineAt(W + 1, 90 / 3600, timed(60, W));
     expect(r.waveRepeats).toBeCloseTo(90 / (60 + CYCLE_INTERMISSION), 3);
     expect(r.waveRepeats).toBeGreaterThan(1);
     expect(r.waveRepeats).toBeLessThan(2);
   });
 
   it('scales linearly with the absence', async () => {
-    const short = await offlineAt(W, 4, timed(60, W));
-    const long = await offlineAt(W, 8, timed(60, W));
+    const short = await offlineAt(W + 1, 4, timed(60, W));
+    const long = await offlineAt(W + 1, 8, timed(60, W));
     expect(long.goldEarned / short.goldEarned).toBeCloseTo(2, 1);
     expect(long.xpEarned / short.xpEarned).toBeCloseTo(2, 1);
   });
 
   it('is inversely proportional to the measured wave duration', async () => {
-    const fast = await offlineAt(W, 8, timed(30, W));
-    const slow = await offlineAt(W, 8, timed(60, W));
+    const fast = await offlineAt(W + 1, 8, timed(30, W));
+    const slow = await offlineAt(W + 1, 8, timed(60, W));
     expect(fast.waveRepeats / slow.waveRepeats)
       .toBeCloseTo((60 + CYCLE_INTERMISSION) / (30 + CYCLE_INTERMISSION), 1);
   });
 
   it('pays exactly a quarter of one wave of income per repeat', async () => {
-    const r = await offlineAt(W, 8, timed(60, W));
+    const r = await offlineAt(W + 1, 8, timed(60, W));
     const count = Math.max(1, Math.floor(spawnCountForWave(W)));
     const perWaveXp = averageKillXPForWave(W) * count + xpPerWaveClear(W);
     const perWaveGold = averageKillGoldForWave(W) * count;
@@ -980,19 +999,36 @@ describe('offline progress', () => {
     expect(guessed.goldEarned / measured.goldEarned).toBeCloseTo(0.5, 2);
   });
 
-  it('never prices a wave shorter than the part already fought', async () => {
+  it('floors the fallback estimate with the part of the wave already fought', async () => {
+    // Only reachable before the run's first clear, which is the one time the
+    // in-progress wave is all the evidence there is.
     const mgr = new SaveManager(stubBus, { getRP: () => 0 });
     await mgr.hydrate();
-    const s = offlineState(W);
-    s.wave = { ...s.wave, elapsed: 300 };  // five minutes in, never finished
+    const s = offlineState(W);                // no timing samples
+    s.wave = { ...s.wave, elapsed: 300 };     // five minutes in, never finished
     mgr.save(s);
     const persisted = mgr.load()!;
     persisted.savedAt -= 8 * 3600 * 1000;
-    expect(mgr.computeOfflineProgress(persisted, 1).waveSeconds).toBeGreaterThanOrEqual(300);
+    const r = mgr.computeOfflineProgress(persisted, 1);
+    expect(r.measured).toBe(false);
+    expect(r.waveSeconds).toBeGreaterThanOrEqual(300);
+  });
+
+  it('ignores the in-progress wave once a wave has been completed', async () => {
+    const mgr = new SaveManager(stubBus, { getRP: () => 0 });
+    await mgr.hydrate();
+    const s = offlineState(W + 1, timed(60, W));
+    s.wave = { ...s.wave, elapsed: 900 };     // stuck fifteen minutes into W + 1
+    mgr.save(s);
+    const persisted = mgr.load()!;
+    persisted.savedAt -= 8 * 3600 * 1000;
+    const r = mgr.computeOfflineProgress(persisted, 1);
+    expect(r.wave).toBe(W);
+    expect(r.waveSeconds).toBeCloseTo(60, 5);  // the measurement, not the stall
   });
 
   it('leaves an absence shorter than one wave paying a partial wave, not zero', async () => {
-    const r = await offlineAt(W, 20 / 3600, timed(120, W));
+    const r = await offlineAt(W + 1, 20 / 3600, timed(120, W));
     expect(r.waveRepeats).toBeGreaterThan(0);
     expect(r.waveRepeats).toBeLessThan(1);
     expect(r.goldEarned).toBeGreaterThan(0);
@@ -1002,7 +1038,7 @@ describe('offline progress', () => {
     // A 1.5x player clears a 60 s (simulation) wave in 40 s of wall clock. The
     // recorded sample is the simulation figure, so the same absence pays the
     // same whatever the speed dial says (plans/economy.md §2.8).
-    const r = await offlineAt(W, 8, timed(60, W));
+    const r = await offlineAt(W + 1, 8, timed(60, W));
     const cycle = 60 + intermissionSecondsForWave(W);
     expect(r.waveRepeats).toBeCloseTo((8 * 3600) / cycle, 1);
   });

@@ -81,7 +81,12 @@ export class WelcomeBackModal {
     waveStat.appendChild(waveValue);
     const waveSub = document.createElement('div');
     waveSub.className = 'welcome-stat-sub';
-    waveSub.textContent = `wave ${data.result.wave} · ${formatDuration(data.result.waveSeconds)} per clear`;
+    // Name the wave *and* its clear time: together they are the whole claim the
+    // card is making, and they are the two numbers a player will want to check.
+    // The wave named is the last one *completed*, so it sits one behind the HUD
+    // whenever a wave was in progress when the app closed.
+    waveSub.textContent =
+      `wave ${data.result.wave} · ${formatDuration(data.result.waveSeconds)} per clear`;
     waveStat.appendChild(waveSub);
     stats.appendChild(waveStat);
 
@@ -104,10 +109,10 @@ export class WelcomeBackModal {
     const efficiency = document.createElement('p');
     efficiency.className = 'welcome-modal-note';
     efficiency.textContent = data.result.measured
-      ? `Your tower repeated wave ${data.result.wave} at 1x speed and 25% efficiency, `
-        + 'with your full gold multiplier applied.'
-      : `Your tower repeated wave ${data.result.wave} at 1x speed. No completed wave had been `
-        + 'timed yet, so the rate was estimated and paid at half the usual 25%.';
+      ? `Your tower replayed wave ${data.result.wave} — the last one you cleared — at 1x speed `
+        + 'and 25% efficiency, with your full gold multiplier applied.'
+      : `Your tower replayed wave ${data.result.wave} at 1x speed. You had not finished a wave `
+        + 'yet, so the pace was estimated and paid at half the usual 25%.';
     card.appendChild(efficiency);
 
     const btn = document.createElement('button');

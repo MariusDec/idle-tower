@@ -627,14 +627,15 @@ export interface WaveState {
  *
  * Run-scoped: reset on ascension and transcendence, since the new run's tower
  * is not the old one's. The functions that read and write it live in
- * `src/data/waveTiming.ts`.
+ * `src/data/waveTiming.ts`, and `SaveManager` prices offline progress from it:
+ * an absence repeats `sampleWave` at `avgWaveSeconds` a clear.
  */
 export interface WaveTimingState {
   /** The most recently measured clear, in simulation seconds. 0 = never measured. */
   lastWaveSeconds: number;
   /** Running mean of the last `WAVE_TIMING_EMA_WINDOW` clears. 0 = never measured. */
   avgWaveSeconds: number;
-  /** The wave `avgWaveSeconds` was last updated on, so a stale sample can be rescaled. */
+  /** The last wave actually completed — the wave an absence repeats. 0 = none yet. */
   sampleWave: number;
   /** How many clears have fed the average. Caps the EMA warm-up. */
   samples: number;

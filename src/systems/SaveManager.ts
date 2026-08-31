@@ -47,7 +47,7 @@ import { xpPerWaveClear } from '../data/xpTables';
 import { intermissionSecondsForWave } from '../data/pacing';
 import {
   defaultWaveTiming,
-  offlineWaveSeconds,
+  offlineWaveTarget,
   UNMEASURED_WAVE_PENALTY,
 } from '../data/waveTiming';
 
@@ -166,7 +166,7 @@ export interface OfflineResult {
   capped: boolean;
   /** The cap in effect for this absence, so the report can name it (plan §10.1). */
   maxIdleSeconds: number;
-  /** The wave the absence farmed. Offline never advances (economy §2.6). */
+  /** The wave the absence farmed: the last one completed. Offline never advances. */
   wave: number;
   /** Simulation seconds one clear of `wave` was priced at. */
   waveSeconds: number;
@@ -1218,19 +1218,26 @@ export class SaveManager {
   }
 
   /**
-   * Estimate what the tower did while the tab was closed (plan §4.4/§4.5).
+   * What an absence earned (plans/economy.md §2).
    *
-   * The wave count used to be `elapsed / AVG_WAVE_DURATION` — a clock reading
-   * with no connection to whether the tower could actually kill anything —
-   * while gold came from a single wave's gold-per-damage ratio held constant
-   * for the whole absence. Both are now derived from one wave-by-wave walk at
-   * the tower's estimated DPS, so a tower parked at its wall clears nothing
-   * and a tower with headroom climbs back up.
+   * Offline repeats **one** wave — the last one the run actually completed —
+   * for as long as the absence lasted. It does not advance: catching a run up
+   * is one thing, setting its record depth while nobody is watching is
+   * another, and the DPS walk this replaced (which climbed to `highestWave`,
+   * farmed there, and was floored at 4.5 s a wave) is what let a night's sleep
+   * out-earn a week of play by a factor of thirty.
    *
-   * The walk stops advancing at the player's deepest wave and farms there
-   * instead: offline play catches you up, it does not set records. Nothing
-   * here models the tower *dying*, so letting it push past its best would
-   * hand out depth the player never earned.
+   * The wave *in progress* at save time is deliberately not the wave that is
+   * farmed. It has never been finished, so neither its duration nor the
+   * tower's ability to finish it is known; the last completed wave is the
+   * deepest claim the run can actually support. `offlineWaveTarget` supplies
+   * both halves — which wave, and how long one clear of it takes — from the
+   * same measurement, so the two can never disagree.
+   *
+   * The duration is measured in *simulation* seconds while `elapsed` here is
+   * wall-clock, which is what makes offline run at 1x whatever the game-speed
+   * dial says: raising it shortens a wave on the wall clock, not in the
+   * simulation, so it cannot buy offline income.
    *
    * `goldMultiplier` is the live composed multiplier (`Game.computeGoldMultiplier`).
    * Passing it is what stops offline income from being strictly worse than
@@ -1246,14 +1253,14 @@ export class SaveManager {
     const capped = rawElapsed > capSeconds;
     const elapsed = Math.min(rawElapsed, capSeconds);
 
-    // A boss wave steps back one: offline must not farm boss gold, boss gear
-    // or the encounter's XP, and the wave it repeats has to be an ordinary one.
-    let wave = Math.max(1, Math.floor(persisted.wave.number));
-    if (isBossWave(wave)) wave = Math.max(1, wave - 1);
-
+    // The last completed wave and the time it took, as one measurement. The
+    // boss step-back lives inside `offlineWaveTarget`'s fallback branch — a
+    // recorded sample is never a boss wave to begin with (`WaveManager`
+    // excludes them), so there is nothing to step back off here.
     const timing: WaveTimingState = persisted.waveTiming ?? defaultWaveTiming();
     const inProgress = Math.max(0, persisted.wave.elapsed ?? 0);
-    const { seconds: waveSeconds, measured } = offlineWaveSeconds(timing, wave, inProgress);
+    const { wave, seconds: waveSeconds, measured } =
+      offlineWaveTarget(timing, persisted.wave.number, inProgress);
     const cycleSeconds = waveSeconds + intermissionSecondsForWave(wave);
 
     const lifetimeWave = persisted.stats.lifetimeHighestWave ?? 1;
