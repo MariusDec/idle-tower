@@ -1,5 +1,6 @@
 import type { AbilityId, GameState } from '../types';
 import { ABILITIES, ABILITY_BY_ID, isTargeted, type EffectiveAbilityStats } from '../data/abilities';
+import { abilityXpForLevel } from '../data/xpTables';
 import {
   setAriaLabel,
   setDisabled,
@@ -11,7 +12,7 @@ import {
   setVisibility
 } from '../utils/dom';
 import { AbilityUpgradePopover } from './AbilityUpgradePopover';
-import { renderAbilityTooltip } from './abilityFormat';
+import { renderAbilityTooltip, type AbilityTooltipContext } from './abilityFormat';
 import { renderIcon } from './Icon';
 import { bindLongPress } from '../utils/longPress';
 
@@ -24,6 +25,10 @@ export interface AbilityBarHandlers {
   isMaxed: (id: AbilityId) => boolean;
   getUpgradeCost: (id: AbilityId) => number;
   getEffectiveStats: (id: AbilityId) => EffectiveAbilityStats;
+  /** Plan §7.2: same stats at an arbitrary level, with the live multipliers applied. */
+  getEffectiveStatsAt: (id: AbilityId, level: number) => EffectiveAbilityStats;
+  /** Plan §7.3: ability XP toward the next level, for the tooltip's XP row. */
+  getXp: (id: AbilityId) => number;
   /**
    * The id of the ability currently armed for placement, or null when none.
    * Drives the `is-arming` outline pulse so the player can see which tile the
@@ -101,6 +106,8 @@ export class AbilityBar {
     this.handlers = handlers;
     this.popover = new AbilityUpgradePopover(document.body, {
       getEffectiveStats: (id) => this.handlers.getEffectiveStats(id),
+      getEffectiveStatsAt: (id, level) => this.handlers.getEffectiveStatsAt(id, level),
+      getXp: (id) => this.handlers.getXp(id),
       isMaxed: (id) => this.handlers.isMaxed(id),
       getUpgradeCost: (id) => this.handlers.getUpgradeCost(id),
       canAfford: (id) => {
@@ -406,15 +413,28 @@ export class AbilityBar {
       const stats = this.handlers.getEffectiveStats(id);
       const def = ABILITY_BY_ID[id];
       if (!def) return;
-      const maxed = this.handlers.isMaxed(id);
       const cost = this.handlers.getUpgradeCost(id);
-      const canAfford = this.lastState ? this.lastState.resources.gold >= cost : false;
+      const gold = this.lastState?.resources.gold ?? 0;
+      const towerDamage = this.lastState?.tower.baseDamage ?? 0;
+      const next = stats.isMaxed
+        ? null
+        : this.handlers.getEffectiveStatsAt(id, stats.level + 1);
+      const ctx: AbilityTooltipContext = {
+        stats,
+        next,
+        cost,
+        canAfford: gold >= cost,
+        showCost: true,
+        towerDamage,
+        xp: this.handlers.getXp(id),
+        xpNeeded: abilityXpForLevel(stats.level + 1),
+      };
       this.ensureHoverTooltip();
       if (!this.hoverTooltip) return;
       // A maxed ability still gets its stats read out. It used to get nothing,
       // which meant the description of what an ability does vanished exactly
       // when the player had finished paying for it.
-      setInnerHTML(this.hoverTooltip, renderAbilityTooltip(def, stats, cost, canAfford, !maxed, true));
+      setInnerHTML(this.hoverTooltip, renderAbilityTooltip(def, ctx));
       setVisibility(this.hoverTooltip, 'hidden');
       setDisplay(this.hoverTooltip, 'block');
       this.positionHoverTooltip(anchor);

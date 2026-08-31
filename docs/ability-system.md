@@ -30,18 +30,18 @@ The per-ability gate is layered: a cast attempt before the ability's own `unlock
 
 ## Per-Ability Tuning (base values, all at L1)
 
-| Ability | Mana | CD (s) | Duration (s) | Area (px) | Effect | Hotkey |
-|---|---:|---:|---:|---:|---|:---:|
-| Rain of Arrows | 30 | 12 | instant | 170 | 6.5x tower damage to everything inside the disc | 1 |
-| Berserk | 40 | 30 | 8 | — | Doubles tower fire rate | 5 |
-| Frost Nova | 25 | 18 | 5 | 190 | Global 15% slow, a 50% chill inside the disc, and +25% damage to chilled enemies | 2 |
-| Chain Lightning | 34 | 14 | instant | 120 | Seeds at the placed point for 4.0x and arcs to nearby targets; damage decays by 0.65 per bounce | 3 |
-| Gold Rush | 50 | 40 | 12 | — | 2.6x gold drops **and** the loot magnet for the duration | 7 |
-| Precision Shot | 35 | 22 | 6 | — | +30% crit chance and x1.5 crit damage for 6 s | 4 |
-| Rocket Barrage | 45 | 20 | instant | 220 | Fires 6 homing rockets at enemies inside the disc; each deals 1.65x tower damage and splashes half its hit within a 60 px blast | 0 |
-| Meteor Strike | 60 | 25 | instant | 70 | 18x damage to the highest-HP enemy **inside the crater**, 0.55x splash to the rest of it | 6 |
-| Execute | 50 | 30 | instant | — | Kills non-boss enemies below 12% HP; bosses below 6% HP lose 5% of their **max** HP | 8 |
-| Vampiric Aura | 45 | 35 | 8 | — | +6% lifesteal (additive) and +1% maxHP/s regen for 8 s | 9 |
+| Ability | Mana (L1 → max) | CD (s) | Duration (s) | Area (px) | Effect | Hotkey |
+|---|:---:|---:|---:|---:|---|:---:|
+| Rain of Arrows | 30 → 52 | 12 | instant | 170 | 6.5x tower damage to everything inside the disc | 1 |
+| Berserk | 40 → 69 | 30 | 8 | — | Doubles tower fire rate | 5 |
+| Frost Nova | 25 → 43 | 18 | 5 | 190 | Global 15% slow, a 72.5% chill inside the disc, and +25% damage to chilled enemies | 2 |
+| Chain Lightning | 34 → 58 | 14 | instant | 120 | Seeds at the placed point for 4.0x and arcs to nearby targets; damage decays by 0.82 per bounce | 3 |
+| Gold Rush | 50 → 86 | 40 | 12 | — | 2.6x gold drops **and** the loot magnet for the duration | 7 |
+| Precision Shot | 35 → 60 | 22 | 6 | — | +30% crit chance and ×1.5 crit damage for 6 s (×2.85 at L10) | 4 |
+| Rocket Barrage | 45 → 95 (L15) | 20 | instant | 220 | Fires 6 homing rockets at enemies inside the disc; each deals 1.65x tower damage and splashes half its hit within a 60 px blast | 0 |
+| Meteor Strike | 60 → 103 | 25 | instant | 70 | 18x damage to the highest-HP enemy **inside the crater**, 0.55x splash to the rest of it | 6 |
+| Execute | 50 → 86 | 30 | instant | — | Kills non-boss enemies below 12% HP; bosses below 6% HP lose 5% of their **max** HP | 8 |
+| Vampiric Aura | 45 → 77 | 35 | 8 | — | +6% lifesteal (additive) and +1% maxHP/s regen for 8 s (1% → 5.5% at L10) | 9 |
 
 Areas are quoted in **pre-scale px** — the same units `range` and the enemy codex use, so the
 number is directly comparable to the range ring the player already reads. Five of the ten
@@ -56,14 +56,14 @@ ability except Rocket Barrage, which goes to 15. Per upgrade level:
 |---|---:|:---:|---:|---:|---:|---:|---|
 | Rain of Arrows | 400g | 1.75 | +5 | -0.5 s | 0 | +16 px | +1.15x dmg |
 | Berserk | 900g | 1.85 | +6 | -1.0 s | +0.5 s | — | +0.15x fire rate |
-| Frost Nova | 1300g | 1.80 | +4 | -0.8 s | +0.5 s | +14 px | -0.02 chill factor, +3% brittle |
-| Chain Lightning | 1400g | 1.80 | +3 | -0.4 s | 0 | +8 px | +0.45x dmg; +1 bounce per even level (cap 9) |
+| Frost Nova | 1300g | 1.80 | +4 | -0.8 s | +0.6 s | +14 px | -0.025 chill factor, +5% brittle |
+| Chain Lightning | 1400g | 1.80 | +3 | -0.4 s | 0 | +8 px | +0.55x dmg; +1 bounce per even level (cap 12) |
 | Gold Rush | 3400g | 1.80 | +8 | -1.0 s | +0.6 s | — | +0.30x gold |
-| Precision Shot | 3450g | 1.80 | +4 | -0.6 s | +0.4 s | — | +2% crit chance; crit multiplier +0.1x/lvl (1.5 -> 2.4) |
+| Precision Shot | 3450g | 1.80 | +4 | -0.6 s | +0.4 s | — | +3% crit chance; crit multiplier +0.15x/lvl (1.5 -> 2.85) |
 | Rocket Barrage | 12000g | 1.85 | +3 | -0.3 s | 0 | +10 px | +0.21x per rocket **and** +0.3 rockets/lvl (6 -> ~10 at L15) |
 | Meteor Strike | 19600g | 1.85 | +6 | -0.5 s | 0 | +9 px | +2.2x dmg |
 | Execute | 20000g | 1.85 | +6 | -0.8 s | 0 | — | +2% threshold (12% -> 30%); boss max-HP bite +0.8%/lvl (5% -> 12.2%) |
-| Vampiric Aura | 25000g | 1.85 | +5 | -1.0 s | +0.4 s | — | +2% lifesteal (additive); regen +0.5%/lvl (1% -> 5.5%) |
+| Vampiric Aura | 25000g | 1.85 | +5 | -1.0 s | +0.6 s | — | +2% lifesteal (additive); regen +0.5%/lvl (1% -> 5.5%) |
 
 At max level the discs read: Rain of Arrows 314 px, Frost Nova 316 px, Chain Lightning 192 px,
 Rocket Barrage 360 px (L15), Meteor Strike 151 px. Every one of them stays inside the arena's
@@ -85,14 +85,23 @@ cost(level) = floor(upgradeBaseCost × upgradeCostGrowth^level)
 **Ability XP discount**: casts bank XP, and banked XP pays part of the next level's cost — `cost = base × (1 − xp / xpForNextLevel)`, floored at 1 g. A heavily-cast ability levels itself cheaply; the listed base is the no-XP price.
 
 **Effective stats at level N** (before prestige/research multipliers):
-- `manaCost(level) = def.manaCost + def.manaCostPerLevel × (level − 1)`
+- `manaCost(level) = abilityManaCost(def, level) = round(def.manaCost × (1 + MANA_COST_GROWTH_PER_LEVEL × (level − 1)))`
+  — `MANA_COST_GROWTH_PER_LEVEL = 0.08` (a single fraction-of-base shared by every ability, no longer a per-def additive — see `src/data/abilities.ts`)
 - `cooldown(level) = max(1, def.cooldown − def.cooldownReductionPerLevel × (level − 1))`
 - `duration(level) = def.duration + def.durationPerLevel × (level − 1)`
 - `effectValue(level) = def.effectValue + def.effectValuePerLevel × (level − 1)`
 
-**Example — Rain of Arrows L1 → L10**: damage 4.2× → 11.85×, mana 30 → 75, cooldown 15.0 s → 10.5 s. Total gold spent on upgrades ≈ 143 k before the ability-XP discount.
+`computeEffectiveStats`, `AbilityManager.getBaseManaCost` and the §7
+tooltip all route through `abilityManaCost`; there is no longer a
+`manaCostPerLevel` per-def field. `Rain of Arrows` ends at L10 on
+`round(30 × 1.72) = 52` mana, not 75 — a 1.8x-2.5x growth curve the old
+formula produced was strictly worse per mana at max level than at L1 for
+four of the ten abilities (see `MANA_COST_GROWTH_PER_LEVEL` for the
+worked rationale).
 
-**Frost Nova display inversion**: the internal chill *factor* shrinks (0.50 → 0.32) but the description and tooltip render `(1 − factor) × 100` as the slow **%**, so the player sees 50% → 68%. The global floor outside the disc is a separate, level-independent 15%.
+**Example — Rain of Arrows L1 → L10**: damage 6.5× → 16.85×, mana 30 → 52, cooldown 12.0 s → 8.0 s. Total gold spent on upgrades ≈ 143 k before the ability-XP discount.
+
+**Frost Nova display inversion**: the internal chill *factor* shrinks (0.50 → 0.275) but the description and tooltip render `(1 − factor) × 100` as the slow **%**, so the player sees 50% → 72.5%. The global floor outside the disc is a separate, level-independent 15%.
 
 **Execute display**: the threshold is stored as a percent value. The description and tooltip render it directly. Level-ups *raise* the threshold (12% → 30% at L10), so the ability gets **easier** to trigger as it levels — more enemies qualify for the instant-kill. The boss threshold is always half the non-boss one; bosses never get instakilled, they lose `executeBossFrac(level)` of their max HP below it (5% at L1, 12.2% at L10).
 
@@ -103,12 +112,12 @@ The `AbilityEffectType` union covers all 10 abilities:
 | Type | Abilities | Implementation |
 |---|---|---|
 | `aoe_damage` | Rain of Arrows | **Disc-scoped**: hits every targetable enemy inside `getEffectiveRadius(id)` of the cast point once. A focused cast adds `PLACEMENT_FOCUS_DAMAGE_BONUS` (+25%) across the whole disc |
-| `slow` | Frost Nova | Three layers: a **global floor** (`GLOBAL_NOVA_SLOW` = 0.85, level-independent, so an idle player's panic button never regresses), a **disc chill** (`applyChill` at the level-scaled factor, deepened by `PLACEMENT_FOCUS_CHILL` and lengthened by `PLACEMENT_FOCUS_CHILL_DURATION` on a focused cast), and the **brittle buff** `ability:frostBrittle` adding `frostBrittle(level)` (25% +3%/lvl) to `chilledDamageBonus` for the duration |
+| `slow` | Frost Nova | Three layers: a **global floor** (`GLOBAL_NOVA_SLOW` = 0.85, level-independent, so an idle player's panic button never regresses), a **disc chill** (`applyChill` at the level-scaled factor, deepened by `PLACEMENT_FOCUS_CHILL` and lengthened by `PLACEMENT_FOCUS_CHILL_DURATION` on a focused cast), and the **brittle buff** `ability:frostBrittle` adding `frostBrittle(level)` (25% +5%/lvl → +70% at L10) to `chilledDamageBonus` for the duration |
 | `fire_rate_buff` | Berserk | `BuffRegistry` entry `ability:fireRate`, stat `fireRate`, kind mult at `value × (1 + berserkFireBonus)` |
 | `gold_buff` | Gold Rush | `BuffRegistry` entry `ability:gold`, stat `goldMultiplier`, kind mult at `value`, **plus** `LootManager.setMagnetSource('goldRush', true)` for the duration — the orbs a boosted drop rate produces are worth nothing if they age out uncollected. `clearEffect` drops the source |
 | `single_target_damage` | Meteor Strike | The crater **is** the ability's disc: the heavy hit goes to the highest-HP targetable enemy inside it, and everything else in the disc takes `METEOR_SPLASH_FRACTION` (**0.55**) of that hit. The splash is a fraction, never a multiple — `npm run checks` guards it |
-| `chain_damage` | Chain Lightning | The chain **seeds at the placed point** (tower-centred when there is none); a focused cast reaches +2 extra bounces. Each subsequent bounce picks the nearest unhit enemy within `CHAIN_BOUNCE_RADIUS` (200 px); each subsequent bounce picks the nearest unhit enemy within `CHAIN_BOUNCE_RADIUS` (200 px); damage decays by `CHAIN_DECAY` (0.65) per bounce |
-| `crit_buff` | Precision Shot | Two `BuffRegistry` entries — `critChance` **additive** at `value / 100` (clamped to `[0, 1]`) and `critMultiplier` multiplicative at `precisionCritMultiplier(level)` (`1.5 + 0.1 × (level − 1)`), both applied in `rollShot`. The multiplier curve is what makes the upgrade pitch "+10% crit damage per level" real rather than tooltip-only |
+| `chain_damage` | Chain Lightning | The chain **seeds at the placed point** (tower-centred when there is none); a focused cast reaches +2 extra bounces. Each subsequent bounce picks the nearest unhit enemy within `CHAIN_BOUNCE_RADIUS` (200 px); damage decays by `CHAIN_DECAY` (0.82) per bounce. `chainBounces(level)` is the base hop count (6 → 12 at L13) |
+| `crit_buff` | Precision Shot | Two `BuffRegistry` entries — `critChance` **additive** at `value / 100` (clamped to `[0, 1]`) and `critMultiplier` multiplicative at `precisionCritMultiplier(level)` (`1.5 + 0.15 × (level − 1) → 2.85× at L10`), both applied in `rollShot`. The multiplier curve is what makes the upgrade pitch "+10% crit damage per level" real rather than tooltip-only |
 | `lifesteal_buff` | Vampiric Aura | Two `BuffRegistry` entries — `lifesteal` **additive** at `+6% (+2%/level)` and `healthRegen` additive at `vampiricRegen(level)` = `1% + 0.5% × (level − 1)` of max HP per second. Additive because most builds carry zero base lifesteal and a ×N multiplier had nothing to multiply; the additive bucket still composes with any lifesteal the player does own |
 | `execute_damage` | Execute | Boss threshold = `pct/2`; below it the boss loses `executeBossFrac(level)` of its **max HP** (5% +0.8%/lvl), capped at the bar that is left and deliberately bypassing `applyResists` — an execute a resist can shrug is not an execute. Non-boss = `pct` (instant-kill by dealing `max(1, hp)`). Untargeted: it sweeps the field |
 | `rocket_barrage` | Rocket Barrage | Fires `floor(effectCount)` homing rockets at distinct targetable enemies **inside the disc** (extras double up at random once the field runs out of firsts). Each lands through the ordinary impact path — resists apply — for `effectValue × towerDamage`, then splashes `splashFraction` (0.5) of its hit within `ROCKET_SPLASH_RADIUS` (60 px). Emits `rockets_fired`; each splash pops a decorative `projectile_exploded` |
@@ -213,7 +222,7 @@ condition is always eligible.
    - `fire_rate_buff`: multiply tower fire rate by `effectValue × (1 + berserkFireBonus)`
    - `gold_buff`: multiply gold drops by `effectValue`
    - `single_target_damage`: hit the highest-HP enemy **inside the crater** for `value×`, then `METEOR_SPLASH_FRACTION` (0.55) of that to the rest of the crater
-   - `chain_damage`: chain lightning seeded at the cast point (+2 bounces when focused); bounces = `min(9 + talent bonus, 5 + ⌊level/2⌋ + talent bonus)`, damage = `towerDamage × value × 0.65^index × damageMultiplier`
+   - `chain_damage`: chain lightning seeded at the cast point (+2 bounces when focused); bounces = `min(12 + talent bonus, chainBounces(level) + talent bonus)`, damage = `towerDamage × value × 0.82^index × damageMultiplier` |
    - `crit_buff`: two buffs — `critChance` additive at `value/100` (clamped to `[0, 1]`) and `critMultiplier` multiplicative at `precisionCritMultiplier(level)`
    - `lifesteal_buff`: `lifesteal` **additive** at `value`, plus a second buff adding `vampiricRegen(level)` to `healthRegen` (fraction of max HP per second)
    - `execute_damage`: kill non-boss enemies below `value%` HP; take `executeBossFrac(level)` of **max HP** off a boss below `value/2%` HP
@@ -229,10 +238,50 @@ condition is always eligible.
 
 Each card has an **Upgrade** button (hidden until the ability unlocks) and a small **Lv X** badge next to the ability name. The button is disabled (red border) when gold is insufficient.
 
-**Tooltip on hover** shows:
-- Header: `{name} — Level {cur} → {cur + 1}`
-- Rows: effect value, mana cost, cooldown, duration — current (dim) → next (green)
-- Footer: `Cost: {gold}g` (red when not affordable)
+**Tooltip on hover** shows — `src/ui/abilityFormat.ts:renderAbilityTooltip` is the
+one writer; both the panel hover and the upgrade popover call it with a
+different `AbilityTooltipContext`:
+
+- **Header** — `{name} — Level {cur} → {cur + 1}` (or just `{name} — Level
+  {N}` when maxed)
+- **Description** — the ability's dynamic `displayText` (level-scaled) or
+  the static `def.description` as a fallback
+- **Mana cost** — current → next (the next cost uses
+  `abilityManaCost(def, level + 1)`, the §6.2 helper)
+- **Effect row** — labelled by effect type (`Damage`, `Slow`, `Fire rate`,
+  `Gold`, `Crit chance`, `Threshold`, `Lifesteal`, `Rockets`) from
+  `EFFECT_LABELS`; sourced from `displayEffectValue` so the formatter
+  doesn't reformat strings it didn't build
+- **Damage row** — only for damage-dealing effects (`aoe_damage`,
+  `single_target_damage`, `chain_damage`, `rocket_barrage`), and only when
+  the snapshot has a non-zero `towerDamage` to ground it in. Computes
+  `towerDamage × effectValue × rocketCount` and shows the same number
+  the projectile system would deal — the player gets a number they can
+  reason about, not "exact in the wrong sense"
+- **Cooldown** — current → next
+- **Duration** — hidden for instant-cast abilities (a "0.0s → 0.0s" row
+  lies about whether the ability has a window at all)
+- **Area** — only for targeted abilities (the disc is pre-scaled to
+  display pixels by the manager)
+- **Per-ability extras** — `extraRows(def, level)` in
+  `src/ui/abilityFormat.ts`; each ability contributes its own key/values:
+  Frost Nova's brittle %, Meteor Strike's splash %, Precision Shot's crit
+  multiplier, Chain Lightning's hops + decay, Vampiric Aura's regen
+  %/maxHP/s, Execute's boss bonus, Rocket Barrage's splash radius +
+  damage. Static values (splash) render without an arrow.
+- **Cost** — gold for the next upgrade; `can-afford` / `cannot-afford`
+  class drives the colour; suppressed on the popover and when maxed
+- **Auto-cast** — every ability's `AutoCastCondition` (`minInDisc`,
+  `minEnemies`, `bossOnly`, `bossHpBelow`, `towerHpBelow`) translated to
+  a single sentence in `describeAutoCast`
+- **XP to next** — current XP / XP needed for the next level; suppressed
+  on the popover and when maxed
+- **Unlocks** — only when `def.unlockWave > 10` (wave 10 is when mana
+  itself unlocks, so anything `≤ 10` is already gated by mana)
+
+CSS classes (`.tooltip-header`, `.tooltip-desc`, `.tooltip-row`,
+`.tooltip-row--meta`, `.tooltip-cost`) live in `main.css`; the format
+file only emits the markup.
 
 **Dynamic description**: the card description updates to reflect the level-scaled effect, e.g. `"Strikes all enemies for 7x tower damage"` at L2, `"Slows all enemies by 58% for 7.0s"` for Frost Nova L5.
 

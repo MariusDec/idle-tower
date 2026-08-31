@@ -651,6 +651,21 @@ export class PrestigeManager {
     return total;
   }
 
+  /**
+   * How many upgrades auto-buy may purchase in one tick.
+   *
+   * The Auto-Upgrader perk's *level* is the budget: L1 buys one upgrade per
+   * interval, L3 buys three. A grant from another source — the Watch's
+   * `overseer` unlock — has no level, so it counts as one. Returns 0 when
+   * auto-buy is not unlocked at all, which is what stops the manager from
+   * running a loop it has no permission for.
+   */
+  getAutoBuyCount(): number {
+    const fromPerk = this.getAPLevel('ap_auto_upgrader');
+    if (fromPerk > 0) return fromPerk;
+    return this.isAutomationUnlocked('autoBuy') ? 1 : 0;
+  }
+
   /** Returns the multiplier for research time (e.g. 0.55 = 45% faster). */
   getResearchSpeedMultiplier(): number {
     let reduction = 0;

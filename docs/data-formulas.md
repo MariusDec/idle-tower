@@ -150,7 +150,9 @@ The tower itself has no base damage or HP. Both are provided by the `damage` and
 
 ## Ability Definitions (`src/data/abilities.ts`)
 
-10 abilities, each upgradable 1 → `maxLevel` (10; Rocket Barrage goes to 15): id, name, description, manaCost, cooldown, duration, effectType (`aoe_damage` / `slow` / `fire_rate_buff` / `gold_buff` / `single_target_damage` / `chain_damage` / `crit_buff` / `lifesteal_buff` / `execute_damage` / `rocket_barrage`), effectValue, hotkey (1–9 plus 0), **unlockWave**, **maxLevel**, **upgradeBaseCost**, **upgradeCostGrowth**, **manaCostPerLevel**, **cooldownReductionPerLevel**, **effectValuePerLevel**, **durationPerLevel**, **xpPerCast**, and — for Rocket Barrage's volley — optional `effectCount` / `effectCountPerLevel`. See `docs/ability-system.md` for the per-ability table.
+10 abilities, each upgradable 1 → `maxLevel` (10; Rocket Barrage goes to 15): id, name, description, manaCost, cooldown, duration, effectType (`aoe_damage` / `slow` / `fire_rate_buff` / `gold_buff` / `single_target_damage` / `chain_damage` / `crit_buff` / `lifesteal_buff` / `execute_damage` / `rocket_barrage`), effectValue, hotkey (1–9 plus 0), **unlockWave**, **maxLevel**, **upgradeBaseCost**, **upgradeCostGrowth**, **cooldownReductionPerLevel**, **effectValuePerLevel**, **durationPerLevel**, **xpPerCast**, and — for Rocket Barrage's volley — optional `effectCount` / `effectCountPerLevel`.
+
+Mana-cost growth is **not** a per-def field anymore. `MANA_COST_GROWTH_PER_LEVEL = 0.08` (a fraction of the level-1 cost, applied per level above 1) and the `abilityManaCost(def, level)` helper in `src/data/abilities.ts` are the single source — `computeEffectiveStats`, `AbilityManager.getBaseManaCost` and the §7 tooltip all route through it. See `docs/ability-system.md` for the per-ability table.
 
 ### Effect Type Behaviours
 

@@ -1,10 +1,14 @@
 import type { AbilityId } from '../types';
 import { ABILITY_BY_ID, type EffectiveAbilityStats } from '../data/abilities';
 import { setStyle, setDisplay } from '../utils/dom';
-import { renderAbilityTooltip } from './abilityFormat';
+import { renderAbilityTooltip, type AbilityTooltipContext } from './abilityFormat';
 
 export interface AbilityUpgradePopoverHandlers {
   getEffectiveStats: (id: AbilityId) => EffectiveAbilityStats;
+  /** Plan §7.2: same stats at an arbitrary level, with the live multipliers applied. */
+  getEffectiveStatsAt: (id: AbilityId, level: number) => EffectiveAbilityStats;
+  /** Plan §7.3: ability XP toward the next level, for the tooltip's XP row. */
+  getXp: (id: AbilityId) => number;
   isMaxed: (id: AbilityId) => boolean;
   getUpgradeCost: (id: AbilityId) => number;
   canAfford: (id: AbilityId, wave: number) => boolean;
@@ -43,10 +47,29 @@ export class AbilityUpgradePopover {
     // this is now the primary way to read an ability at all, the sheet has to
     // say what it is about.
     this.titleEl.textContent = isMaxed ? `${def.name} — Max` : `${def.name} — Upgrade`;
+    // Plan §7.2/§7.3: the popover has no live game state — it's an upgrade
+    // dialog, not a damage comparison — so we feed it `towerDamage = 0` (the
+    // Damage row hides itself when it can't compute) and 0 XP (the XP row
+    // hides itself). We still source `next` from the manager so the arrow
+    // column honours the same cost / cooldown multipliers as the current
+    // column.
+    const next = isMaxed
+      ? null
+      : this.handlers.getEffectiveStatsAt(id, currentStats.level + 1);
+    const ctx: AbilityTooltipContext = {
+      stats: currentStats,
+      next,
+      cost,
+      canAfford,
+      showCost: !isMaxed,
+      towerDamage: 0,
+      xp: 0,
+      xpNeeded: 0,
+    };
     // A maxed ability shows its stats without the "→ next level" column. It
     // used to refuse to open at all, so the one surface that explains what an
     // ability does disappeared the moment the player finished paying for it.
-    this.body.innerHTML = renderAbilityTooltip(def, currentStats, cost, canAfford, !isMaxed, false);
+    this.body.innerHTML = renderAbilityTooltip(def, ctx);
     this.upgradeBtn.style.display = isMaxed ? 'none' : 'inline-flex';
     this.upgradeBtn.textContent = `Upgrade · ${formatGold(cost)}g`;
     this.upgradeBtn.disabled = !canAfford;

@@ -118,6 +118,7 @@ import {
   riskApBonus,
 } from '../data/pacing';
 import { WatchManager, type WatchMetrics } from '../systems/WatchManager';
+import { applyPersistedWatch } from '../systems/watchRestore';
 import {
   WATCH_CHAPTERS,
   WATCH_UNLOCKS,
@@ -834,11 +835,16 @@ export class Game {
       currentWave: () => this.waveMgr.currentWave,
       waveGold: (wave) => this.estimateWaveGold(wave),
       // The board_expansion Watch unlock (plans/milestones.md §5.2) raises
-      // the tracker to four slots. The dep reads lazily.
-      slots: () => (this.watchMgr.has('board_expansion') ? CONTRACT_SLOTS + 1 : CONTRACT_SLOTS),
+      // the tracker to four slots. `master_broker` (chapter 18) adds a fifth.
+      // The dep reads lazily.
+      slots: () => CONTRACT_SLOTS
+        + (this.watchMgr.has('board_expansion') ? 1 : 0)
+        + (this.watchMgr.has('master_broker') ? 1 : 0),
       // Broker (prestige-abs §5). Lazy, so a mid-run purchase is felt on the
-      // next completion rather than at the next contract draw.
-      rewardScale: () => this.prestigeMgr.getContractRewardMultiplier(),
+      // next completion rather than at the next contract draw. The
+      // `counting_house` Watch unlock adds another +0.25 on top.
+      rewardScale: () => this.prestigeMgr.getContractRewardMultiplier()
+        + (this.watchMgr.has('counting_house') ? 0.25 : 0),
     });
     // The Long Watch manager (plans/milestones.md §5.0). Constructed here so
     // the blessings / contracts / pacing / prestige deps that read it are all
@@ -936,7 +942,8 @@ export class Game {
     });
     this.saveMgr = new SaveManager(this.bus, {
       getRP: () => this.researchTree.rp,
-      getIdleCapSeconds: () => this.prestigeMgr.getIdleTimeCapSeconds(),
+      getIdleCapSeconds: () => this.prestigeMgr.getIdleTimeCapSeconds()
+        + (this.watchMgr.has('undying_watch') ? 12 * 3600 : 0),
     });
     this.achievementMgr = new AchievementManager(this.bus, {
       getStats: () => this.state.stats,
@@ -3368,7 +3375,7 @@ export class Game {
     if (result.elapsedSeconds > 0) {
       this.saveMgr.applyOfflineProgress(this.state, result, this.passiveMgr);
       if (result.rpEarned > 0) this.researchTree.addRP(result.rpEarned);
-      this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
+      this.researchTree.setSpeedMultiplier(this.researchSpeedMultiplier());
       if (this.researchTree.advanceResearch(result.researchElapsed)) {
         this.state.research = this.researchTree.getLevelsSnapshot();
       }
@@ -3650,6 +3657,7 @@ export class Game {
       autoBuyReserve: this.state.prestige.autoBuyReserve,
       setAutoBuyStrategy: (strategy) => this.setAutoBuyStrategy(strategy),
       setAutoBuyReserve: (fraction) => this.setAutoBuyReserve(fraction),
+      getAutoBuyCount: () => this.prestigeMgr.getAutoBuyCount(),
     });
     this.ui.setResearchAPI({
       rp: this.researchTree.rp,
@@ -3691,6 +3699,11 @@ export class Game {
       isMaxed: (id) => this.abilityMgr.isMaxed(id),
       getUpgradeCost: (id) => this.abilityMgr.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityMgr.getEffectiveStats(id),
+      // Plan §7.2: the tooltip's "→ next level" arrow sources its values from
+      // the same manager (with the same cost/cooldown/area multipliers), so a
+      // -20% ability discount the player already has reads as -20% on both
+      // sides of the arrow rather than pointing at a raw per-def number.
+      getEffectiveStatsAt: (id, level) => this.abilityMgr.getEffectiveStatsAtLevel(id, level),
       getXp: (id) => this.abilityMgr.getXp(id),
       isAutoCastUnlocked: () => this.prestigeMgr.isAutomationUnlocked('autoAbilities'),
       isAutoCastEnabled: (id) => this.state.prestige.autoCastEnabled[id] !== false,
@@ -4164,7 +4177,9 @@ export class Game {
     // every recompute costs nothing.
     this.lootMgr.setMagnetSource('prestige', this.prestigeMgr.hasOrbMagnet());
 
-    this.abilityMgr.setAbilityCostMultiplier(stats.abilityCostMultiplier);
+    this.abilityMgr.setAbilityCostMultiplier(
+      stats.abilityCostMultiplier * (this.watchMgr.has('deep_reserves') ? 0.8 : 1),
+    );
     this.abilityMgr.setCooldownMultiplier(stats.abilityCooldownMultiplier);
     this.abilityMgr.setDamageMultiplier(stats.abilityDamageMultiplier);
     this.abilityMgr.setAreaMultiplier(stats.abilityAreaMultiplier);
@@ -4927,6 +4942,10 @@ export class Game {
         this.coreMgr.unlock('arcane');
         this.state.cores = this.coreMgr.snapshot();
         break;
+      case 'emberforge':
+        this.coreMgr.unlock('bloodforge');
+        this.state.cores = this.coreMgr.snapshot();
+        break;
       default:
         // Every other unlock is read by its consumer through `watchMgr.has()`;
         // there is nothing to perform. Listed exhaustively rather than
@@ -4949,9 +4968,20 @@ export class Game {
    * 6-or-7 cap is enforced everywhere a level is written or read.
    */
   maxRisk(): number {
+    if (this.watchMgr.has('crown_of_thorns')) return 8;
     if (this.watchMgr.has('deep_watch')) return 7;
     if (this.watchMgr.has('riskbearer')) return 6;
     return MAX_RISK;
+  }
+
+  /**
+   * Research time multiplier, including the Archivist Watch unlock.
+   * Both `setSpeedMultiplier` call sites route through this so the two can
+   * never disagree about whether the unlock is in force.
+   */
+  private researchSpeedMultiplier(): number {
+    const base = this.prestigeMgr.getResearchSpeedMultiplier();
+    return base * (this.watchMgr.has('archivist') ? 0.8 : 1);
   }
 
   /**
@@ -5016,7 +5046,10 @@ export class Game {
     // moment the player is asked to give everything else up made transcending
     // read as a punishment.
     this.applySavedStateReset();
-    this.passiveMgr.reset();
+    // The `eternal_kit` Watch unlock keeps the passive track through the one
+    // reset that has always taken it. Everything else in this method still
+    // fires: the AP tree, the automation flags and the AP balances all clear.
+    if (!this.watchMgr.has('eternal_kit')) this.passiveMgr.reset();
     this.state.prestige.apSpent = {};
     this.state.prestige.automationFlags = {
       autoBuy: false,
@@ -5188,10 +5221,15 @@ export class Game {
     this.coreMgr.restore(persisted.cores ?? null);
     this.state.cores = this.coreMgr.snapshot();
 
-    // v15+: The Long Watch (plans/milestones.md §5.0). Restore the unlock set
-    // *and* replay every earned unlock's side effect — the cold forge must
-    // grant `frostwork` on a v15+ load even though `coreMgr.restore` is the
-    // canonical source for the previously-unlocked cores.
+    // v15+: The Long Watch (plans/milestones.md §5.0). The campaign block is
+    // saved (see `SaveManager.snapshotWatch`) but `applyPersistedWatch` —
+    // extracted from this method into `src/systems/watchRestore.ts` so it can
+    // be unit-tested — must run *before* the unlock rebuild, because the
+    // rebuild reads `completed`. Then replay every earned unlock's side
+    // effect — the cold forge must grant `frostwork` on a v15+ load even
+    // though `coreMgr.restore` is the canonical source for the
+    // previously-unlocked cores.
+    applyPersistedWatch(this.state.watch, persisted.watch);
     this.applyWatchUnlocksOnLoad();
 
     // v14+: the risk dial (permanent), momentum and the combo (run-scoped).
@@ -5694,7 +5732,7 @@ export class Game {
     // frame. `RunFailedModal` is owned by `UIManager`, so we proxy through it.
     this.ui.tickRunFailedModal(realDt);
 
-    this.researchTree.setSpeedMultiplier(this.prestigeMgr.getResearchSpeedMultiplier());
+    this.researchTree.setSpeedMultiplier(this.researchSpeedMultiplier());
     this.researchTree.addPassiveRP(
       realDt,
       this.state.stats.lifetimeHighestWave,

@@ -52,7 +52,7 @@ import {
 } from '../data/waveTiming';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 23;
+const SAVE_VERSION = 24;
 
 function defaultWaveModifier() {
   return {
@@ -357,8 +357,8 @@ function computeRPGainMultiplier(research: Record<string, number>): number {
     if (id !== 'rp_gain') continue;
     const lvl = level;
     if (lvl <= 0) continue;
-    const basePerLevel = 0.25;
-    if (lvl >= 10) sum += 5.0;
+    const basePerLevel = 0.12;
+    if (lvl >= 10) sum += 2.0;
     else sum += basePerLevel * lvl;
   }
   return sum;
@@ -758,6 +758,37 @@ function migrateV22toV23(data: Record<string, unknown>): void {
 }
 
 /**
+ * v24 (plans/improvements.md): the research rebalance and the Auto-Upgrader's
+ * two new levels.
+ *
+ * Three things need saying about what this does *not* do:
+ *
+ *  - **RP is not clawed back.** The faucet changes are forward-looking; a
+ *    player who banked 40k RP under the old rates keeps it. Refunding would
+ *    require knowing which RP came from which source, which was never written
+ *    down.
+ *  - **Research levels are not refunded** even though `rp_gain` and
+ *    `rp_drop_chance` now grant less per level. Same rule the v21 upgrade
+ *    rebalance followed: a balance migration re-prices the future, not the past.
+ *  - **The `watch` block is not touched.** It was always saved correctly; the
+ *    v24 fix is on the *load* side (`Game.applyPersistedState`), so an existing
+ *    save's campaign comes back the first time the fixed build reads it.
+ *
+ * The one repair it does perform is the risk histogram: `MAX_RISK_CEILING`
+ * went 7 -> 8 for the Crown of Thorns unlock, so the array gains a slot.
+ * `normalizeWatch` already rebuilds it to `MAX_RISK_CEILING + 1` on every
+ * load, so this is belt-and-braces for a save that skips normalization.
+ */
+function migrateV23toV24(data: Record<string, unknown>): void {
+  const watch = data.watch as Record<string, unknown> | undefined;
+  if (isObject(watch) && isObject(watch.counters)) {
+    normalizeWatch(watch);
+  }
+  const apSpent = (data.prestige as Record<string, unknown> | undefined)?.apSpent;
+  if (isObject(apSpent)) clampPerkLevels(apSpent as Record<string, unknown>, AP_PERK_BY_ID);
+}
+
+/**
  * Clamp a `{perkId: level}` map to the table's ceilings, dropping ids the
  * table no longer defines and entries that are not positive integers.
  */
@@ -782,7 +813,7 @@ function clampPerkLevels(
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 22 && data.version !== 21 && data.version !== 20 && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 23 && data.version !== 22 && data.version !== 21 && data.version !== 20 && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -819,6 +850,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 20) { migrateV20toV21(data); data.version = 21; }
   if (data.version === 21) { migrateV21toV22(data); data.version = 22; }
   if (data.version === 22) { migrateV22toV23(data); data.version = 23; }
+  if (data.version === 23) { migrateV23toV24(data); data.version = 24; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -1226,7 +1258,7 @@ export class SaveManager {
 
     const lifetimeWave = persisted.stats.lifetimeHighestWave ?? 1;
     const rpGainMultiplier = computeRPGainMultiplier(persisted.research ?? {});
-    const baseRPRate = 0.05 * lifetimeWave / 60;
+    const baseRPRate = 0.20 * Math.sqrt(Math.max(1, lifetimeWave)) / 60;
     const rpEarned = Math.max(0, Math.floor(baseRPRate * (1 + rpGainMultiplier) * elapsed));
 
     if (elapsed <= 0 || cycleSeconds <= 0) {

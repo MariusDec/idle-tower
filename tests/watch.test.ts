@@ -28,7 +28,9 @@ import { ICON_IDS } from '../src/data/icons';
 import { ENEMY_DEFS } from '../src/data/enemies';
 import { WatchManager, type WatchMetrics } from '../src/systems/WatchManager';
 import { MAX_RISK_CEILING } from '../src/data/pacing';
-import type { WatchState } from '../src/types';
+import { applyPersistedWatch } from '../src/systems/watchRestore';
+import { SaveManager } from '../src/systems/SaveManager';
+import type { GameState, WatchState } from '../src/types';
 
 /** Every reward key, derived from the closed Record. */
 const UNLOCK_IDS = Object.keys(WATCH_UNLOCKS) as WatchUnlockId[];
@@ -70,10 +72,10 @@ const SYNTHETIC: Record<WatchGoalKind, WatchGoal> = {
 };
 
 describe('the long watch: data', () => {
-  // 1. Twelve chapters, number equal to index + 1, ids unique.
-  it('has twelve chapters numbered by index with unique ids', () => {
-    expect(WATCH_CHAPTERS).toHaveLength(12);
-    expect(WATCH_CHAPTER_COUNT).toBe(12);
+  // 1. Twenty chapters, number equal to index + 1, ids unique.
+  it('has twenty chapters numbered by index with unique ids', () => {
+    expect(WATCH_CHAPTERS).toHaveLength(20);
+    expect(WATCH_CHAPTER_COUNT).toBe(20);
     WATCH_CHAPTERS.forEach((ch, i) => {
       expect(ch.number, `${ch.id} number`).toBe(i + 1);
     });
@@ -112,8 +114,8 @@ describe('the long watch: data', () => {
   });
 
   // 5. Each WatchUnlockId is the reward of exactly one chapter.
-  it('grants each of the twelve unlocks exactly once', () => {
-    expect(UNLOCK_IDS).toHaveLength(12);
+  it('grants each of the twenty unlocks exactly once', () => {
+    expect(UNLOCK_IDS).toHaveLength(20);
     const counts = new Map<WatchUnlockId, number>();
     for (const ch of WATCH_CHAPTERS) {
       counts.set(ch.reward, (counts.get(ch.reward) ?? 0) + 1);
@@ -323,18 +325,18 @@ describe('the long watch: manager', () => {
     expect(h.mgr.has('board_expansion')).toBe(true);
   });
 
-  // 12. Cascade rule: one check() per chapter; twelfth clears the table; thirteenth is a no-op.
-  it('completes at most one chapter per check, twelve checks for all twelve', () => {
+  // 12. Cascade rule: one check() per chapter; twentieth clears the table; twenty-first is a no-op.
+  it('completes at most one chapter per check, twenty checks for all twenty', () => {
     const h = harness();
     h.set(allGoalsMet());
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 20; i++) {
       const chapter = h.mgr.check();
       expect(chapter, `check ${i + 1} should return a chapter`).not.toBeNull();
       expect(chapter?.number, `check ${i + 1} number`).toBe(i + 1);
     }
-    expect(h.events).toHaveLength(12);
+    expect(h.events).toHaveLength(20);
     expect(h.mgr.activeChapter).toBeNull();
-    // Thirteenth call returns null and emits nothing new.
+    // Twenty-first call returns null and emits nothing new.
     const before = h.events.length;
     expect(h.mgr.check()).toBeNull();
     expect(h.events.length).toBe(before);
@@ -408,5 +410,109 @@ describe('the long watch: manager', () => {
 
     // Unknown id was dropped on the floor rather than thrown.
     expect(() => h.mgr.rebuildUnlocks()).not.toThrow();
+  });
+});
+
+/**
+ * Persistence (plan §1.1, test §9.1).
+ *
+ * The Long Watch is permanent — neither ascend nor transcend touches it, and
+ * it is saved — but until §1.1 the saved block was never restored, so every
+ * load silently wiped the campaign. The fix is `applyPersistedWatch` (see
+ * `src/systems/watchRestore.ts`), called from `Game.applyPersistedState`
+ * immediately before `applyWatchUnlocksOnLoad()`. This block round-trips a
+ * non-trivial `WatchState` through the real save pipeline — `SaveManager.snapshot`
+ * → JSON.parse(JSON.stringify(...)) → the restore helper — and asserts the
+ * campaign comes back equal, which is the regression the whole of §1.1 exists
+ * to prevent.
+ */
+describe('the long watch: persistence', () => {
+  it('round-trips a populated WatchState through SaveManager and the restore helper', () => {
+    const original: WatchState = {
+      completed: ['wc_first_watch', 'wc_blood_and_iron'],
+      counters: {
+        killsByType: { normal: 1234, boss: 17, thief: 9 },
+        flawlessWaves: 42,
+        swiftBosses: 7,
+        contractsDone: 88,
+        blessingPicks: 55,
+        mutatorWaves: 12,
+        // One bucket above the current ceiling to prove the restore clamps
+        // rather than carrying an extra slot forward.
+        riskWaves: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+      },
+    };
+
+    const save = new SaveManager({ on: () => {} });
+    // Minimal stub GameState — every field `SaveManager.snapshot` reads must
+    // exist with the shape it expects. Mirrors the round-trip stub used by
+    // `tests/cores.test.ts` (see "survives a full save round trip"). Only
+    // `watch` carries meaningful content.
+    const stubState = {
+      tower: {}, resources: {}, upgrades: {}, research: {}, abilities: {},
+      prestige: { apSpent: {}, tpSpent: {}, automationFlags: {}, autoCastEnabled: {} },
+      wave: {}, stats: {}, achievements: [], runHistory: [], runStartedAt: 0,
+      towerXp: {}, talents: { allocated: {} }, passiveAbilities: {},
+      equipment: [], equipped: {},
+      watch: original,
+    } as unknown as GameState;
+    const persisted = save.snapshot(stubState);
+    const roundTripped = JSON.parse(JSON.stringify(persisted)) as { watch: WatchState };
+
+    const live: WatchState = {
+      completed: [],
+      counters: {
+        killsByType: { tank: 999 },        // pre-existing entry that the restore must clear.
+        flawlessWaves: 0,
+        swiftBosses: 0,
+        contractsDone: 0,
+        blessingPicks: 0,
+        mutatorWaves: 0,
+        riskWaves: new Array(MAX_RISK_CEILING + 1).fill(0),
+      },
+    };
+
+    applyPersistedWatch(live, roundTripped.watch);
+
+    // Completed list — exact order, exact content.
+    expect(live.completed).toEqual(original.completed);
+
+    // killsByType — restored types equal original; the pre-existing `tank`
+    // entry on the live object must be gone after the clear-then-repopulate.
+    expect(live.counters.killsByType).toEqual(original.counters.killsByType);
+
+    // All five numeric scalars.
+    expect(live.counters.flawlessWaves).toBe(original.counters.flawlessWaves);
+    expect(live.counters.swiftBosses).toBe(original.counters.swiftBosses);
+    expect(live.counters.contractsDone).toBe(original.counters.contractsDone);
+    expect(live.counters.blessingPicks).toBe(original.counters.blessingPicks);
+    expect(live.counters.mutatorWaves).toBe(original.counters.mutatorWaves);
+
+    // riskWaves — exactly MAX_RISK_CEILING + 1 slots, populated from the
+    // saved array's prefix; bucket 8 (saved value 9) is dropped because the
+    // live ceiling is MAX_RISK_CEILING.
+    expect(live.counters.riskWaves).toHaveLength(MAX_RISK_CEILING + 1);
+    expect(live.counters.riskWaves).toEqual(
+      original.counters.riskWaves.slice(0, MAX_RISK_CEILING + 1),
+    );
+  });
+
+  it('is a no-op when persisted.watch is absent', () => {
+    const live: WatchState = {
+      completed: ['wc_first_watch'],
+      counters: {
+        killsByType: { normal: 5 },
+        flawlessWaves: 3,
+        swiftBosses: 1,
+        contractsDone: 2,
+        blessingPicks: 4,
+        mutatorWaves: 0,
+        riskWaves: new Array(MAX_RISK_CEILING + 1).fill(0),
+      },
+    };
+
+    const before = JSON.parse(JSON.stringify(live));
+    applyPersistedWatch(live, undefined);
+    expect(live).toEqual(before);
   });
 });

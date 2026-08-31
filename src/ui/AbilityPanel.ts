@@ -3,7 +3,7 @@ import { ABILITIES, ABILITY_BY_ID, computeEffectiveStats, type AbilityDef } from
 import { abilityXpForLevel } from '../data/xpTables';
 import { formatInt } from '../utils/bigNumber';
 import { setAriaLabel, setDisabled, setStyle, setText, toggleClass, setDisplay, setDataAttr } from '../utils/dom';
-import { renderAbilityTooltip } from './abilityFormat';
+import { renderAbilityTooltip, type AbilityTooltipContext } from './abilityFormat';
 import { renderIcon } from './Icon';
 import { bindLongPress } from '../utils/longPress';
 
@@ -16,6 +16,8 @@ export interface AbilityPanelHandlers {
   isMaxed: (id: AbilityId) => boolean;
   getUpgradeCost: (id: AbilityId) => number;
   getEffectiveStats: (id: AbilityId) => ReturnType<typeof computeEffectiveStats>;
+  /** Plan §7.2: same stats at an arbitrary level, with the live multipliers applied. */
+  getEffectiveStatsAt: (id: AbilityId, level: number) => ReturnType<typeof computeEffectiveStats>;
   getXp: (id: AbilityId) => number;
   /** Plan §3.1: auto-cast is unlocked by the Auto-Caster TP perk. */
   isAutoCastUnlocked: () => boolean;
@@ -26,6 +28,9 @@ export interface AbilityPanelHandlers {
 export class AbilityPanel {
   private readonly handlers: AbilityPanelHandlers;
   private root: HTMLElement | null = null;
+  /** Last game state, so the hover tooltip can read `tower.baseDamage` even
+   *  when the mouseover fires between `update()` ticks. */
+  private lastState: GameState | null = null;
 
   // Active ability maps
   private cardsById = new Map<AbilityId, HTMLElement>();
@@ -75,6 +80,7 @@ export class AbilityPanel {
 
   update(state: GameState): void {
     if (!this.root) return;
+    this.lastState = state;
     this.updateActive(state);
   }
 
@@ -197,7 +203,19 @@ export class AbilityPanel {
 
       const tooltip = this.upgradeTooltipById.get(def.id);
       if (tooltip && tooltip.style.display !== 'none') {
-        this.refreshTooltip(def.id, tooltip, def, stats, cost, canAfford, isMaxed);
+        const next = isMaxed
+          ? null
+          : this.handlers.getEffectiveStatsAt(def.id, stats.level + 1);
+        this.refreshTooltip(def.id, tooltip, def, {
+          stats,
+          next,
+          cost,
+          canAfford,
+          showCost: true,
+          towerDamage: state.tower.baseDamage,
+          xp: this.handlers.getXp(def.id),
+          xpNeeded: abilityXpForLevel(stats.level + 1),
+        });
       }
     }
   }
@@ -412,7 +430,19 @@ export class AbilityPanel {
       return;
     }
     const cost = this.handlers.getUpgradeCost(id);
-    this.refreshTooltip(id, tooltip, def, stats, cost, true, false);
+    const gold = this.lastState?.resources.gold ?? 0;
+    const towerDamage = this.lastState?.tower.baseDamage ?? 0;
+    const next = this.handlers.getEffectiveStatsAt(id, stats.level + 1);
+    this.refreshTooltip(id, tooltip, def, {
+      stats,
+      next,
+      cost,
+      canAfford: gold >= cost,
+      showCost: true,
+      towerDamage,
+      xp: this.handlers.getXp(id),
+      xpNeeded: abilityXpForLevel(stats.level + 1),
+    });
     setDisplay(tooltip, 'block');
     this.positionTooltip(id);
   }
@@ -445,11 +475,8 @@ export class AbilityPanel {
     _id: AbilityId,
     tooltip: HTMLElement,
     def: AbilityDef,
-    stats: ReturnType<typeof computeEffectiveStats>,
-    cost: number,
-    canAfford: boolean,
-    isMaxed: boolean,
+    ctx: AbilityTooltipContext,
   ): void {
-    tooltip.innerHTML = renderAbilityTooltip(def, stats, cost, canAfford, !isMaxed, true);
+    tooltip.innerHTML = renderAbilityTooltip(def, ctx);
   }
 }

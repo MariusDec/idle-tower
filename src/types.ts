@@ -71,7 +71,7 @@ export type AbilityId =
   | 'rocket_barrage';
 
 export type PanelTab = 'upgrades' | 'research' | 'abilities' | 'passives' | 'prestige'
-  | 'transcendence' | 'achievements' | 'journal' | 'progression' | 'codex' | 'stats'
+  | 'transcendence' | 'automation' | 'achievements' | 'journal' | 'progression' | 'codex' | 'stats'
   | 'settings' | 'talents' | 'equipment';
 
 export type PrestigeLayer = 'ascension' | 'transcendence';

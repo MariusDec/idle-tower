@@ -117,6 +117,34 @@ describe('AP tree gates (revamp §8, gates 10 and 11)', () => {
     expect(perkCost(AP_PERK_BY_ID.ap_auto_upgrader, 0)).toBeLessThan(FIRST_ASCENSION_AP / 2);
   });
 
+  it('plan §3.2: Auto-Upgrader ladder widens to three levels at 12 / 24 / 48 AP', () => {
+    // costScaling is 2, costPerLevel is 12: the third level lands at 48 AP
+    // and the whole tier at 84 AP. The first ascension-only assertion above
+    // still holds because it talks about the *first* level.
+    expect(perkCost(AP_PERK_BY_ID.ap_auto_upgrader, 0)).toBe(12);
+    expect(perkCost(AP_PERK_BY_ID.ap_auto_upgrader, 1)).toBe(24);
+    expect(perkCost(AP_PERK_BY_ID.ap_auto_upgrader, 2)).toBe(48);
+    expect(AP_PERK_BY_ID.ap_auto_upgrader.maxLevel).toBe(3);
+  });
+
+  it('plan §3.3: getAutoBuyCount honours the perk level and the Watch grant', () => {
+    // Perk level is the budget: L3 buys three per tick. A bare unlock from the
+    // Watch's `overseer` has no level, so it counts as one. With nothing
+    // granting auto-buy at all the count is zero and the manager will not run.
+    const maxed = mgrWith(0, { ap_auto_upgrader: 3 });
+    expect(maxed.getAutoBuyCount()).toBe(3);
+    const none = mgrWith(0);
+    expect(none.getAutoBuyCount()).toBe(0);
+    const overseerBus = new EventBus();
+    const overseer = new PrestigeManager(overseerBus, {
+      resources: { ascensionPoints: 0, lifetimeAP: 0, apThisTranscendence: 0 } as unknown as ResourceState,
+      stats: {} as unknown as GameStats,
+      prestige: { apSpent: {}, tpSpent: {}, automationFlags: {} } as unknown as PrestigeState,
+      externalAutomation: (k) => k === 'autoBuy',
+    });
+    expect(overseer.getAutoBuyCount()).toBe(1);
+  });
+
   it('gate: the one-time nodes land on the second ascension, not the fourth', () => {
     // §3.4: ~45 AP is ascension #2. Lodestone opens on Seed Capital L2 (11 AP)
     // and Second Wind on Auto-Upgrader (12 AP).
@@ -203,7 +231,7 @@ describe('AP tree shape (revamp §8.2 / §8.4)', () => {
     expect(mgr.getStartGold()).toBeCloseTo(200 * Math.pow(1.45, 2), 6);
     expect(mgr.getAPUpgradeDiscount()).toBeCloseTo(0.06, 6);
     expect(mgr.getAPXpMultiplier()).toBeCloseTo(1.16, 6);
-    expect(mgr.getAPRpDropBonus()).toBeCloseTo(0.04, 6);
+    expect(mgr.getAPRpDropBonus()).toBeCloseTo(0.005, 6);
     expect(mgr.hasOrbMagnet()).toBe(true);
     expect(mgr.getAPReviveCharges()).toBe(1);
     expect(mgr.getStartingRerollTokens()).toBe(2);

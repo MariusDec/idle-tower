@@ -39,7 +39,7 @@ export type WatchGoal =
 
 export type WatchGoalKind = WatchGoal['kind'];
 
-/** The twelve rewards. Ordered as the chapters grant them. */
+/** The twenty rewards. Ordered as the chapters grant them. */
 export type WatchUnlockId =
   | 'board_expansion'
   | 'quartermaster'
@@ -52,7 +52,15 @@ export type WatchUnlockId =
   | 'heirloom'
   | 'deep_watch'
   | 'sanctum'
-  | 'long_memory';
+  | 'long_memory'
+  | 'archivist'
+  | 'crown_of_thorns'
+  | 'counting_house'
+  | 'emberforge'
+  | 'eternal_kit'
+  | 'master_broker'
+  | 'deep_reserves'
+  | 'undying_watch';
 
 export interface WatchUnlockDef {
   id: WatchUnlockId;
@@ -126,6 +134,38 @@ export const WATCH_UNLOCKS: Record<WatchUnlockId, WatchUnlockDef> = {
     id: 'long_memory', name: 'Long Memory', icon: 'over-infinity',
     description: 'Ability levels survive an ascension.',
   },
+  archivist: {
+    id: 'archivist', name: 'Archivist', icon: 'wisdom',
+    description: 'Every research project completes 20% faster.',
+  },
+  crown_of_thorns: {
+    id: 'crown_of_thorns', name: 'Crown of Thorns', icon: 'crown',
+    description: 'The risk dial gains an eighth step.',
+  },
+  counting_house: {
+    id: 'counting_house', name: 'The Counting House', icon: 'crown-coin',
+    description: 'Contracts pay 25% more gold and research points.',
+  },
+  emberforge: {
+    id: 'emberforge', name: 'Emberforge', icon: 'explosion-rays',
+    description: 'The Bloodforge core is yours, at no AP cost.',
+  },
+  eternal_kit: {
+    id: 'eternal_kit', name: 'Eternal Kit', icon: 'regeneration',
+    description: 'Passive abilities survive a transcendence.',
+  },
+  master_broker: {
+    id: 'master_broker', name: 'Master Broker', icon: 'receive-money',
+    description: 'A fifth contract runs alongside the other four.',
+  },
+  deep_reserves: {
+    id: 'deep_reserves', name: 'Deep Reserves', icon: 'energy-tank',
+    description: 'Every ability costs 20% less mana.',
+  },
+  undying_watch: {
+    id: 'undying_watch', name: 'The Undying Watch', icon: 'hourglass',
+    description: 'Offline progress banks twelve more hours.',
+  },
 };
 
 /**
@@ -149,6 +189,14 @@ export const WATCH_UNLOCK_CONSUMERS: Record<WatchUnlockId, string> = {
   deep_watch: 'PacingManager.setRisk / clampRisk via the injected maxRisk() dep',
   sanctum: 'Game.applyWatchUnlock — CoreManager.unlock("arcane") on chapter completion and on load',
   long_memory: 'Game.applySavedStateReset — skips abilityMgr.resetLevels()',
+  archivist: 'Game.researchSpeedMultiplier() — the 0.8 factor folded into ResearchTree.setSpeedMultiplier',
+  crown_of_thorns: 'Game.maxRisk() — returns 8, read by PacingManager.setRisk / clampRisk via the maxRisk() dep',
+  counting_house: 'ContractManager rewardScale dep — Game adds +0.25 to getContractRewardMultiplier()',
+  emberforge: 'Game.applyWatchUnlock — CoreManager.unlock("bloodforge") on completion and on load',
+  eternal_kit: 'Game.applyFullTranscendenceReset — skips passiveMgr.reset() when held',
+  master_broker: 'ContractManager.refill via the injected slots() dep — Game passes watch.contractSlots()',
+  deep_reserves: 'Game.applyResolvedStats — multiplies abilityCostMultiplier by 0.8 before setAbilityCostMultiplier',
+  undying_watch: 'Game getIdleCapSeconds closure — adds 12h to PrestigeManager.getIdleTimeCapSeconds()',
 };
 
 export const WATCH_CHAPTERS: readonly WatchChapterDef[] = [
@@ -286,6 +334,94 @@ export const WATCH_CHAPTERS: readonly WatchChapterDef[] = [
       { kind: 'bosses', count: 150 },
     ],
     reward: 'long_memory',
+  },
+  {
+    id: 'wc_quiet_archive', number: 13, name: 'The Quiet Archive',
+    flavour: 'Everything you learned is written down. Nothing that wrote it survives.',
+    icon: 'book-pile', color: '#9b59ff',
+    goals: [
+      { kind: 'reach_wave', wave: 220 },
+      { kind: 'transcendences', count: 10 },
+      { kind: 'upgrades_bought', count: 25_000 },
+    ],
+    reward: 'archivist',
+  },
+  {
+    id: 'wc_hollow_crown', number: 14, name: 'Hollow Crown',
+    flavour: 'They keep sending kings. You keep sending them back.',
+    icon: 'crowned-skull', color: '#c0392b',
+    goals: [
+      { kind: 'reach_wave', wave: 240 },
+      { kind: 'bosses', count: 400 },
+      { kind: 'swift_bosses', count: 150 },
+    ],
+    reward: 'crown_of_thorns',
+  },
+  {
+    id: 'wc_long_ledger', number: 15, name: 'The Long Ledger',
+    flavour: 'Count it twice. The second count is the one the tower is built on.',
+    icon: 'money-stack', color: '#f1c40f',
+    goals: [
+      { kind: 'reach_wave', wave: 265 },
+      { kind: 'gold_earned', amount: 1_000_000_000_000 },
+      { kind: 'contracts_done', count: 500 },
+    ],
+    reward: 'counting_house',
+  },
+  {
+    id: 'wc_ash_and_ember', number: 16, name: 'Ash and Ember',
+    flavour: 'The field never cools now. That is one way to measure a war.',
+    icon: 'fire-bowl', color: '#ff7a1a',
+    goals: [
+      { kind: 'reach_wave', wave: 290 },
+      { kind: 'kills', count: 25_000_000 },
+      { kind: 'mutator_waves', count: 400 },
+    ],
+    reward: 'emberforge',
+  },
+  {
+    id: 'wc_cycles', number: 17, name: 'Cycles',
+    flavour: 'You have given everything away so many times it has started coming back.',
+    icon: 'clockwork', color: '#5b8def',
+    goals: [
+      { kind: 'reach_wave', wave: 320 },
+      { kind: 'ascensions', count: 250 },
+      { kind: 'transcendences', count: 25 },
+    ],
+    reward: 'eternal_kit',
+  },
+  {
+    id: 'wc_wider_board', number: 18, name: 'The Wider Board',
+    flavour: 'More work than one watch can hold, which is why there are more of you now.',
+    icon: 'treasure-map', color: '#3ec46d',
+    goals: [
+      { kind: 'reach_wave', wave: 350 },
+      { kind: 'contracts_done', count: 1_200 },
+      { kind: 'blessing_picks', count: 800 },
+    ],
+    reward: 'master_broker',
+  },
+  {
+    id: 'wc_starfall', number: 19, name: 'Starfall',
+    flavour: 'The sky has run out of things to throw. You have not run out of answers.',
+    icon: 'star-formation', color: '#c77dff',
+    goals: [
+      { kind: 'reach_wave', wave: 400 },
+      { kind: 'abilities_cast', count: 50_000 },
+      { kind: 'tower_level', level: 175 },
+    ],
+    reward: 'deep_reserves',
+  },
+  {
+    id: 'wc_last_watch', number: 20, name: 'The Last Watch',
+    flavour: 'There is no last watch. That is the whole of what you have learned.',
+    icon: 'star-swirl', color: '#e8a93b',
+    goals: [
+      { kind: 'reach_wave', wave: 450 },
+      { kind: 'transcendences', count: 50 },
+      { kind: 'risk_waves', risk: 6, count: 500 },
+    ],
+    reward: 'undying_watch',
   },
 ];
 

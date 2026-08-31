@@ -1,11 +1,9 @@
-import type { AutoBuyStrategy, GameState } from '../types';
-import { AUTO_BUY_STRATEGIES } from '../types';
-import type { PrestigePerkDef, AutomationKey, TPBranch } from '../data/prestige';
+import type { GameState } from '../types';
+import type { PrestigePerkDef, TPBranch } from '../data/prestige';
 import {
   TP_PERKS,
   TRANSCENDENCE_UNLOCK_AP,
   tpForAP,
-  ASCENSION_UNLOCK_WAVE,
   perkCost,
   computePerkEffect,
 } from '../data/prestige';
@@ -17,35 +15,13 @@ import { FX, RARITY } from '../data/palette';
 export interface TranscendencePanelHandlers {
   onTranscend: () => void;
   onSpend: (perkId: string) => void;
-  onToggleAutomation: (key: AutomationKey, enabled: boolean) => void;
-  onTargetWaveChange: (wave: number) => void;
   canTranscend: (ap: number) => boolean;
   canSpend: (perkId: string, ap: number, tp: number) => boolean;
-  isAutomationUnlocked: (key: AutomationKey) => boolean;
-  isAutomationEnabled: (key: AutomationKey) => boolean;
   meetsPrerequisites: (perkId: string) => boolean;
   isExcluded: (perkId: string) => boolean;
   previewTP: (ap: number) => number;
   transcendUnlockAP: number;
-  targetAscendWave: number;
-  /** Plan §3.6: auto-buy tuning, read live so the panel reflects the game state. */
-  getAutoBuyStrategy: () => AutoBuyStrategy;
-  onAutoBuyStrategyChange: (strategy: AutoBuyStrategy) => void;
-  getAutoBuyReserve: () => number;
-  onAutoBuyReserveChange: (fraction: number) => void;
 }
-
-const STRATEGY_LABELS: Record<AutoBuyStrategy, string> = {
-  cheapest: 'Cheapest',
-  balanced: 'Balanced',
-  damage: 'Damage first',
-};
-
-const STRATEGY_HINTS: Record<AutoBuyStrategy, string> = {
-  cheapest: 'Always buys the cheapest affordable upgrade. Fastest level count, weakest tower.',
-  balanced: 'Levels every upgrade evenly, cheapest first among the least-levelled.',
-  damage: 'Buys tower upgrades first, then economy, defense and utility.',
-};
 
 export class TranscendencePanel {
   private readonly handlers: TranscendencePanelHandlers;
@@ -61,23 +37,12 @@ export class TranscendencePanel {
   private transcendUnlockLine!: HTMLElement;
   private transcendPreview!: HTMLElement;
   private transcendBtn!: HTMLButtonElement;
-  private targetWaveLabel!: HTMLElement;
 
   private tpRowById = new Map<string, HTMLElement>();
   private tpLevelById = new Map<string, HTMLElement>();
   private tpBonusById = new Map<string, HTMLElement>();
   private tpCostById = new Map<string, HTMLElement>();
   private tpBtnById = new Map<string, HTMLButtonElement>();
-
-  private autoBuyConfig!: HTMLElement;
-  private strategyBtns = new Map<AutoBuyStrategy, HTMLButtonElement>();
-  private strategyHint!: HTMLElement;
-  private reserveInput!: HTMLInputElement;
-  private reserveLabel!: HTMLElement;
-
-  private autoSwitches: Partial<Record<AutomationKey, HTMLInputElement>> = {};
-  private autoRows: Partial<Record<AutomationKey, HTMLElement>> = {};
-  private autoStatusEls: Partial<Record<AutomationKey, HTMLElement>> = {};
 
   constructor(handlers: TranscendencePanelHandlers) {
     this.handlers = handlers;
@@ -108,29 +73,6 @@ export class TranscendencePanel {
     for (const p of TP_PERKS) {
       this.updateTPRow(p, tp, state);
     }
-
-    const autoKeys: AutomationKey[] = ['autoBuy', 'autoAbilities', 'autoAscend', 'autoTranscend'];
-    for (const key of autoKeys) {
-      this.updateAutomationRow(key);
-    }
-    this.updateAutoBuyConfig();
-  }
-
-  /** Plan §3.6: strategy + reserve controls, only meaningful once auto-buy exists. */
-  private updateAutoBuyConfig(): void {
-    const unlocked = this.handlers.isAutomationUnlocked('autoBuy');
-    setDisplay(this.autoBuyConfig, unlocked ? '' : 'none');
-    if (!unlocked) return;
-    const strategy = this.handlers.getAutoBuyStrategy();
-    for (const [id, btn] of this.strategyBtns) {
-      toggleClass(btn, 'is-selected', id === strategy);
-    }
-    setText(this.strategyHint, STRATEGY_HINTS[strategy]);
-    const reserve = Math.round(this.handlers.getAutoBuyReserve() * 100);
-    if (this.reserveInput.value !== String(reserve)) this.reserveInput.value = String(reserve);
-    setText(this.reserveLabel, reserve > 0
-      ? `Keep ${reserve}% of gold banked`
-      : 'Spend all available gold');
   }
 
   private updateTranscend(canTranscend: boolean, ap: number, preview: number): void {
@@ -155,8 +97,6 @@ export class TranscendencePanel {
       : `At ${formatNumber(this.handlers.transcendUnlockAP)} AP you would earn ${formatNumber(tpForAP(this.handlers.transcendUnlockAP))} TP.`);
     this.transcendBtn.disabled = !canTranscend;
     toggleClass(this.transcendBtn, 'can-transcend', canTranscend);
-
-    setText(this.targetWaveLabel, `Auto-Ascend target wave: ${this.handlers.targetAscendWave}`);
   }
 
   private updateTPRow(p: PrestigePerkDef, tp: number, state: GameState): void {
@@ -226,26 +166,6 @@ export class TranscendencePanel {
         : (isOneTime ? `Unlock (${cost} TP)` : 'Buy'));
   }
 
-  private updateAutomationRow(key: AutomationKey): void {
-    const row = this.autoRows[key];
-    const sw = this.autoSwitches[key];
-    const status = this.autoStatusEls[key];
-    if (!row || !sw || !status) return;
-    const unlocked = this.handlers.isAutomationUnlocked(key);
-    const enabled = this.handlers.isAutomationEnabled(key);
-    toggleClass(row, 'is-locked', !unlocked);
-    toggleClass(row, 'is-unlocked', unlocked);
-    sw.disabled = !unlocked;
-    sw.checked = unlocked && enabled;
-    setText(status, !unlocked
-      ? 'Locked — purchase the matching perk to unlock'
-      : enabled
-      ? 'Active'
-      : 'Inactive');
-    toggleClass(status, 'automation-status-on', unlocked && enabled);
-    toggleClass(status, 'automation-status-off', unlocked && !enabled);
-  }
-
   private computeTpDamage(): number {
     let factor = 1;
     for (const p of TP_PERKS) {
@@ -276,10 +196,6 @@ export class TranscendencePanel {
     this.tpBonusById.clear();
     this.tpCostById.clear();
     this.tpBtnById.clear();
-    this.strategyBtns.clear();
-    this.autoSwitches = {};
-    this.autoRows = {};
-    this.autoStatusEls = {};
   }
 
   private unmount(): void {
@@ -298,7 +214,6 @@ export class TranscendencePanel {
     parent.appendChild(this.renderSummary());
     parent.appendChild(this.renderTranscendCard());
     parent.appendChild(this.renderTPPerksList());
-    parent.appendChild(this.renderAutomationSection());
   }
 
   private renderSummary(): HTMLElement {
@@ -358,33 +273,6 @@ export class TranscendencePanel {
     preview.className = 'transcend-preview';
     this.transcendPreview = preview;
     card.appendChild(preview);
-
-    const targetLabel = document.createElement('div');
-    targetLabel.className = 'transcend-target-line';
-    this.targetWaveLabel = targetLabel;
-    targetLabel.textContent = `Auto-Ascend target wave: ${this.handlers.targetAscendWave}`;
-    card.appendChild(targetLabel);
-
-    const targetRow = document.createElement('div');
-    targetRow.className = 'transcend-target-row';
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.min = String(ASCENSION_UNLOCK_WAVE);
-    input.max = '10000';
-    input.step = '5';
-    input.value = String(this.handlers.targetAscendWave);
-    input.className = 'transcend-target-input';
-    input.addEventListener('change', () => {
-      const next = Math.max(ASCENSION_UNLOCK_WAVE, Math.floor(Number(input.value) || ASCENSION_UNLOCK_WAVE));
-      input.value = String(next);
-      this.handlers.onTargetWaveChange(next);
-    });
-    const inputNote = document.createElement('span');
-    inputNote.className = 'transcend-target-note';
-    inputNote.textContent = 'Used by auto-Ascend (requires matching perk).';
-    targetRow.appendChild(input);
-    targetRow.appendChild(inputNote);
-    card.appendChild(targetRow);
 
     const actions = document.createElement('div');
     actions.className = 'transcend-actions';
@@ -538,130 +426,6 @@ export class TranscendencePanel {
     this.tpBonusById.set(p.id, bonus);
     this.tpCostById.set(p.id, cost);
     this.tpBtnById.set(p.id, btn);
-    return row;
-  }
-
-  private renderAutomationSection(): HTMLElement {
-    const section = document.createElement('div');
-    section.className = 'automation-section';
-    const header = document.createElement('h3');
-    header.className = 'perk-section-title';
-    header.textContent = 'Automation';
-    section.appendChild(header);
-
-    const intro = document.createElement('p');
-    intro.className = 'panel-note';
-    intro.textContent = 'Each automation requires the matching perk (AP or TP). Toggle them on once unlocked.';
-    section.appendChild(intro);
-
-    const list = document.createElement('div');
-    list.className = 'automation-list';
-    const entries: Array<[AutomationKey, string, string]> = [
-      ['autoBuy', 'Auto-Upgrade', 'Buys upgrades every 10s using the strategy below (unlocked by the Auto-Upgrader AP perk)'],
-      ['autoAbilities', 'Auto-Cast', 'Auto-casts ready abilities when mana is sufficient'],
-      ['autoAscend', 'Auto-Ascend', 'Auto-Ascends once you reach the target wave'],
-      ['autoTranscend', 'Auto-Transcend', 'Auto-Transcends once 100 AP is reached'],
-    ];
-    for (const [key, name, desc] of entries) {
-      list.appendChild(this.renderAutomationRow(key, name, desc));
-    }
-    section.appendChild(list);
-    section.appendChild(this.renderAutoBuyConfig());
-    return section;
-  }
-
-  /**
-   * Plan §3.6: auto-buy used one fixed rule (cheapest affordable, one purchase
-   * per interval). These two controls are the whole configuration surface —
-   * what it reaches for, and how much gold it refuses to touch.
-   */
-  private renderAutoBuyConfig(): HTMLElement {
-    const wrap = document.createElement('div');
-    wrap.className = 'autobuy-config';
-    this.autoBuyConfig = wrap;
-    wrap.style.display = 'none';
-
-    const title = document.createElement('div');
-    title.className = 'autobuy-config-title';
-    title.textContent = 'Auto-Upgrade strategy';
-    wrap.appendChild(title);
-
-    const row = document.createElement('div');
-    row.className = 'autobuy-strategy-row';
-    for (const id of AUTO_BUY_STRATEGIES) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'btn autobuy-strategy-btn';
-      btn.textContent = STRATEGY_LABELS[id];
-      btn.addEventListener('click', () => this.handlers.onAutoBuyStrategyChange(id));
-      row.appendChild(btn);
-      this.strategyBtns.set(id, btn);
-    }
-    wrap.appendChild(row);
-
-    const hint = document.createElement('div');
-    hint.className = 'autobuy-config-hint';
-    this.strategyHint = hint;
-    wrap.appendChild(hint);
-
-    const reserveRow = document.createElement('div');
-    reserveRow.className = 'autobuy-reserve-row';
-    const reserveLabel = document.createElement('div');
-    reserveLabel.className = 'autobuy-reserve-label';
-    this.reserveLabel = reserveLabel;
-    reserveRow.appendChild(reserveLabel);
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = '0';
-    slider.max = '90';
-    slider.step = '10';
-    slider.value = '0';
-    slider.className = 'autobuy-reserve-slider';
-    slider.addEventListener('input', () => {
-      this.handlers.onAutoBuyReserveChange(Number(slider.value) / 100);
-    });
-    this.reserveInput = slider;
-    reserveRow.appendChild(slider);
-    wrap.appendChild(reserveRow);
-
-    return wrap;
-  }
-
-  private renderAutomationRow(key: AutomationKey, name: string, desc: string): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'automation-row is-locked';
-    this.autoRows[key] = row;
-
-    const info = document.createElement('div');
-    info.className = 'automation-info';
-    const nameEl = document.createElement('div');
-    nameEl.className = 'automation-name';
-    nameEl.textContent = name;
-    const descEl = document.createElement('div');
-    descEl.className = 'automation-desc';
-    descEl.textContent = desc;
-    const status = document.createElement('div');
-    status.className = 'automation-status';
-    status.textContent = 'Locked';
-    this.autoStatusEls[key] = status;
-    info.appendChild(nameEl);
-    info.appendChild(descEl);
-    info.appendChild(status);
-    row.appendChild(info);
-
-    const switchWrap = document.createElement('label');
-    switchWrap.className = 'automation-switch';
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.disabled = true;
-    input.addEventListener('change', () => this.handlers.onToggleAutomation(key, input.checked));
-    const slider = document.createElement('span');
-    slider.className = 'automation-switch-slider';
-    switchWrap.appendChild(input);
-    switchWrap.appendChild(slider);
-    row.appendChild(switchWrap);
-
-    this.autoSwitches[key] = input;
     return row;
   }
 }

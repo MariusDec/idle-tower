@@ -672,7 +672,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#d04848',
     borderColor: '#ffffff',
     shape: 'circle',
-    rpChance: 0.01,
+    rpChance: 0.005,
   },
   fast: {
     type: 'fast',
@@ -689,7 +689,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#f1c40f',
     borderColor: '#7a6500',
     shape: 'diamond',
-    rpChance: 0.02,
+    rpChance: 0.01,
   },
   tank: {
     type: 'tank',
@@ -706,7 +706,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#2c5b8f',
     borderColor: '#9aa7b5',
     shape: 'circle',
-    rpChance: 0.03,
+    rpChance: 0.015,
   },
   flying: {
     type: 'flying',
@@ -723,7 +723,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#ecf0f1',
     borderColor: '#2c3e50',
     shape: 'winged',
-    rpChance: 0.04,
+    rpChance: 0.02,
   },
   healer: {
     type: 'healer',
@@ -743,7 +743,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     healRange: world(150),
     healFraction: 0.15,
     healCooldown: 2.5,
-    rpChance: 0.05,
+    rpChance: 0.025,
   },
   boss: {
     type: 'boss',
@@ -760,7 +760,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#7b1f1f',
     borderColor: '#ff5050',
     shape: 'circle',
-    rpChance: 0.15,
+    rpChance: 0.075,
   },
   splitter: {
     type: 'splitter',
@@ -780,7 +780,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     splitChildren: 2,
     splitHpFraction: 0.5,
     splitSpeedMultiplier: 1.4,
-    rpChance: 0.03,
+    rpChance: 0.015,
   },
   shielded: {
     type: 'shielded',
@@ -798,7 +798,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     borderColor: '#1a5276',
     shape: 'circle',
     shieldCharges: 3,
-    rpChance: 0.05,
+    rpChance: 0.025,
   },
   // ── Behavioural roster (gameplay plan §2.1) ─────────────────────────────
   //
@@ -821,7 +821,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#a9752f',
     borderColor: '#f0d3a0',
     shape: 'square',
-    rpChance: 0.05,
+    rpChance: 0.025,
   },
   thief: {
     type: 'thief',
@@ -838,7 +838,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#d4af37',
     borderColor: '#3a2c00',
     shape: 'diamond',
-    rpChance: 0.06,
+    rpChance: 0.03,
   },
   blinker: {
     type: 'blinker',
@@ -855,7 +855,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#7f5af0',
     borderColor: '#ded1ff',
     shape: 'circle',
-    rpChance: 0.06,
+    rpChance: 0.03,
   },
   warden: {
     type: 'warden',
@@ -872,7 +872,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#1f7a8c',
     borderColor: '#9fe8f5',
     shape: 'hex',
-    rpChance: 0.07,
+    rpChance: 0.035,
   },
   burrower: {
     type: 'burrower',
@@ -889,7 +889,7 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     color: '#7a5a30',
     borderColor: '#d8b578',
     shape: 'mound',
-    rpChance: 0.06,
+    rpChance: 0.03,
   },
 };
 

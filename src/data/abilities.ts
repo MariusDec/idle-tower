@@ -54,8 +54,6 @@ export interface AbilityDef {
   upgradeBaseCost: number;
   /** Cost multiplier per upgrade level. */
   upgradeCostGrowth: number;
-  /** Extra mana cost added per level above 1. */
-  manaCostPerLevel: number;
   /** Seconds shaved off the cooldown per level above 1. */
   cooldownReductionPerLevel: number;
   /** Delta applied to effectValue per level above 1. */
@@ -124,7 +122,6 @@ export const ABILITIES: AbilityDef[] = [
     maxLevel: 10,
     upgradeBaseCost: 400,
     upgradeCostGrowth: 1.75,
-    manaCostPerLevel: 5,
     cooldownReductionPerLevel: 0.5,
     effectValuePerLevel: 1.15,
     durationPerLevel: 0,
@@ -149,10 +146,9 @@ export const ABILITIES: AbilityDef[] = [
     maxLevel: 10,
     upgradeBaseCost: 1300,
     upgradeCostGrowth: 1.8,
-    manaCostPerLevel: 4,
     cooldownReductionPerLevel: 0.8,
-    effectValuePerLevel: -0.02,
-    durationPerLevel: 0.5,
+    effectValuePerLevel: -0.025,   // was -0.02  → 50% slow at L1, 72.5% at L10
+    durationPerLevel: 0.6,         // was 0.5    → 5s at L1, 10.4s at L10
     xpPerCast: 5,
     areaRadius: world(190),
     areaRadiusPerLevel: world(14),
@@ -174,9 +170,8 @@ export const ABILITIES: AbilityDef[] = [
     maxLevel: 10,
     upgradeBaseCost: 1400,
     upgradeCostGrowth: 1.8,
-    manaCostPerLevel: 3,
     cooldownReductionPerLevel: 0.4,
-    effectValuePerLevel: 0.45,
+    effectValuePerLevel: 0.55,     // was 0.45 → 4.0x at L1, 8.95x at L10
     durationPerLevel: 0,
     xpPerCast: 6,
     areaRadius: world(120),
@@ -199,9 +194,8 @@ export const ABILITIES: AbilityDef[] = [
     maxLevel: 10,
     upgradeBaseCost: 3450,
     upgradeCostGrowth: 1.8,
-    manaCostPerLevel: 4,
     cooldownReductionPerLevel: 0.6,
-    effectValuePerLevel: 2,
+    effectValuePerLevel: 3,        // was 2 → +30% crit chance at L1, +57% at L10
     durationPerLevel: 0.4,
     xpPerCast: 5,
     autoCast: { minEnemies: 3 },
@@ -222,7 +216,6 @@ export const ABILITIES: AbilityDef[] = [
     maxLevel: 10,
     upgradeBaseCost: 900,
     upgradeCostGrowth: 1.85,
-    manaCostPerLevel: 6,
     cooldownReductionPerLevel: 1.0,
     effectValuePerLevel: 0.15,
     durationPerLevel: 0.5,
@@ -245,7 +238,6 @@ export const ABILITIES: AbilityDef[] = [
     maxLevel: 10,
     upgradeBaseCost: 19600,
     upgradeCostGrowth: 1.85,
-    manaCostPerLevel: 6,
     cooldownReductionPerLevel: 0.5,
     effectValuePerLevel: 2.2,
     durationPerLevel: 0,
@@ -270,7 +262,6 @@ export const ABILITIES: AbilityDef[] = [
     maxLevel: 10,
     upgradeBaseCost: 3400,
     upgradeCostGrowth: 1.8,
-    manaCostPerLevel: 8,
     cooldownReductionPerLevel: 1.0,
     effectValuePerLevel: 0.30,
     durationPerLevel: 0.6,
@@ -293,7 +284,6 @@ export const ABILITIES: AbilityDef[] = [
     maxLevel: 10,
     upgradeBaseCost: 20000,
     upgradeCostGrowth: 1.85,
-    manaCostPerLevel: 6,
     cooldownReductionPerLevel: 0.8,
     effectValuePerLevel: 2,
     durationPerLevel: 0,
@@ -316,7 +306,6 @@ export const ABILITIES: AbilityDef[] = [
     maxLevel: 15,
     upgradeBaseCost: 12000,
     upgradeCostGrowth: 1.85,
-    manaCostPerLevel: 3,
     cooldownReductionPerLevel: 0.3,
     effectValuePerLevel: 0.21,
     effectCount: 6,
@@ -343,10 +332,9 @@ export const ABILITIES: AbilityDef[] = [
     maxLevel: 10,
     upgradeBaseCost: 25000,
     upgradeCostGrowth: 1.85,
-    manaCostPerLevel: 5,
     cooldownReductionPerLevel: 1.0,
     effectValuePerLevel: 0.02,
-    durationPerLevel: 0.4,
+    durationPerLevel: 0.6,         // was 0.4 → 8s at L1, 13.4s at L10
     xpPerCast: 7,
     autoCast: { towerHpBelow: 0.75 },
   },
@@ -423,7 +411,7 @@ export function vampiricRegen(level: number): number {
 /** Crit multiplier at level 1. */
 export const CRIT_BUFF_DAMAGE_MULTIPLIER = 1.5;
 /** Extra crit multiplier per level above 1. */
-export const CRIT_BUFF_DAMAGE_PER_LEVEL = 0.1;
+export const CRIT_BUFF_DAMAGE_PER_LEVEL = 0.15;  // was 0.1 → 1.5x at L1, 2.85x at L10
 
 export function precisionCritMultiplier(level: number): number {
   return CRIT_BUFF_DAMAGE_MULTIPLIER + CRIT_BUFF_DAMAGE_PER_LEVEL * (Math.max(1, level) - 1);
@@ -450,7 +438,7 @@ export const BUFF_FROST_BRITTLE = 'ability:frostBrittle';
 /** Brittle damage bonus (additive to chilledDamageBonus) at level 1. */
 export const FROST_BRITTLE_BASE = 0.25;
 /** Extra brittle damage bonus per level above 1. */
-export const FROST_BRITTLE_PER_LEVEL = 0.03;
+export const FROST_BRITTLE_PER_LEVEL = 0.05;   // was 0.03 → +25% at L1, +70% at L10
 
 export function frostBrittle(level: number): number {
   return FROST_BRITTLE_BASE + FROST_BRITTLE_PER_LEVEL * (Math.max(1, level) - 1);
@@ -490,7 +478,7 @@ export function buildAbilityDisplayText(def: AbilityDef, level: number): string 
 export function computeEffectiveStats(def: AbilityDef, level: number): EffectiveAbilityStats {
   const clampedLevel = Math.max(1, Math.min(def.maxLevel, level));
   const lvlOffset = clampedLevel - 1;
-  const manaCost = def.manaCost + def.manaCostPerLevel * lvlOffset;
+  const manaCost = abilityManaCost(def, clampedLevel);
   const cooldown = Math.max(1, def.cooldown - def.cooldownReductionPerLevel * lvlOffset);
   const duration = def.duration + def.durationPerLevel * lvlOffset;
   const effectValue = def.effectValue + def.effectValuePerLevel * lvlOffset;
@@ -595,3 +583,56 @@ export const PLACEMENT_FOCUS_DAMAGE_BONUS = 0.25;
 /** Extra speed removed inside a placed Frost Nova, and its duration scale. */
 export const PLACEMENT_FOCUS_CHILL = 0.25;
 export const PLACEMENT_FOCUS_CHILL_DURATION = 1.5;
+
+/**
+ * Mana cost growth per ability level, as a fraction of the level-1 cost.
+ *
+ * Was a per-def additive (`manaCostPerLevel`), which ran the cost up 1.8x-2.5x
+ * across a ladder that only pays 1.4x-2.6x more power — so four of the ten
+ * abilities were strictly worse per mana at max level than at level 1, with no
+ * matching growth in the mana pool (maxMana caps at 300, regen at 14/s).
+ *
+ * The first pass at 5% of base per level landed too flat: a ten-level ability
+ * ended at only 1.45x cost, so levelling was nearly free in mana terms. 8%
+ * ends a ten-level ability at 1.72x — a levelled ability is meaningfully more
+ * expensive to sustain, while still staying clear of the old 1.8x-2.5x curve
+ * that outran the power gained.
+ */
+export const MANA_COST_GROWTH_PER_LEVEL = 0.08;
+
+export function abilityManaCost(def: AbilityDef, level: number): number {
+  const lvl = Math.max(1, Math.min(def.maxLevel, level));
+  return Math.round(def.manaCost * (1 + MANA_COST_GROWTH_PER_LEVEL * (lvl - 1)));
+}
+
+// ── Chain Lightning: bounce table & decay (plan §6.4) ─────────────────────────
+//
+// These live with the ability table so the §7 tooltip can quote them. Cast path
+// in `AbilityManager.dealChainLightning` adds the talent bounce bonus and the
+// focus-click bonus on top.
+
+/** Bounces a Chain Lightning cast makes at level 1, before any growth. */
+export const CHAIN_BOUNCE_BASE = 6;
+/** Extra bounces per two levels (one every other level). */
+export const CHAIN_BOUNCE_PER_LEVEL = 1;
+/** Hard cap on base bounces — talent and focus bonuses add on top of this. */
+export const CHAIN_BOUNCE_MAX = 12;
+/** Each subsequent bounce carries this fraction of the previous one's damage. */
+export const CHAIN_DECAY = 0.82;
+
+/** Bounces a Chain Lightning cast makes at `level`, before talent bonuses. */
+export function chainBounces(level: number): number {
+  const lvl = Math.max(1, level);
+  return Math.min(CHAIN_BOUNCE_MAX, CHAIN_BOUNCE_BASE + Math.floor(lvl / 2) * CHAIN_BOUNCE_PER_LEVEL);
+}
+
+// ── Rocket Barrage: blast radius & splash share (plan §6.4) ─────────────────
+//
+// The §7 tooltip quotes the splash share, so these constants live with the
+// ability table. `AbilityManager.applyRocketBarrage` reads them straight off
+// the projectile options.
+
+/** Rocket Barrage: blast radius (world units). */
+export const ROCKET_SPLASH_RADIUS = world(60);
+/** Rocket Barrage: splash as a fraction of each rocket's landed hit. */
+export const ROCKET_SPLASH_FRACTION = 0.5;

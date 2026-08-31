@@ -21,6 +21,7 @@ import { PassivePanel, type PassiveAPIDeps } from './PassivePanel';
 import { PrestigePanel, type CorePanelState } from './PrestigePanel';
 import { DEFAULT_CORE, type CoreId } from '../data/cores';
 import { TranscendencePanel } from './TranscendencePanel';
+import { AutomationPanel } from './AutomationPanel';
 import { ResearchPanel, type ResearchPanelHandlers } from './ResearchPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { AchievementPanel } from './AchievementPanel';
@@ -92,6 +93,14 @@ export interface AbilityAPI {
   isMaxed: (id: AbilityId) => boolean;
   getUpgradeCost: (id: AbilityId) => number;
   getEffectiveStats: (id: AbilityId) => EffectiveAbilityStats;
+  /**
+   * Plan §7.2: same as `getEffectiveStats` but at an arbitrary level, with the
+   * same multipliers (cost/cooldown/area) applied. The ability tooltip uses it
+   * to source the "→ next level" arrow values from the manager, so a -20%
+   * mana discount the player already has reads as -20% on both sides of the
+   * arrow.
+   */
+  getEffectiveStatsAt: (id: AbilityId, level: number) => EffectiveAbilityStats;
   getXp: (id: AbilityId) => number;
   /** Plan §3.1: per-ability auto-cast opt-out. */
   isAutoCastUnlocked: () => boolean;
@@ -147,6 +156,8 @@ export interface PrestigeAPI {
   autoBuyReserve: number;
   setAutoBuyStrategy: (strategy: AutoBuyStrategy) => void;
   setAutoBuyReserve: (fraction: number) => void;
+  /** Plan §3.3 / §4.3: Auto-Upgrader level, for the "buys N per tick" readout. */
+  getAutoBuyCount: () => number;
 }
 
 export interface TargetingAPI {
@@ -231,6 +242,7 @@ export class UIManager {
   private readonly passivePanel: PassivePanel;
   private readonly prestigePanel: PrestigePanel;
   private readonly transcendencePanel: TranscendencePanel;
+  private readonly automationPanel: AutomationPanel;
   private readonly researchPanel: ResearchPanel;
   private readonly settingsPanel: SettingsPanel;
   private readonly achievementPanel: AchievementPanel;
@@ -457,6 +469,21 @@ export class UIManager {
       isMaxed: false,
       isUnlocked: false,
     }),
+    getEffectiveStatsAt: (_id, _level) => ({
+      level: 0,
+      manaCost: 0,
+      cooldown: 0,
+      duration: 0,
+      effectValue: 0,
+      area: 0,
+      displayArea: '',
+      displayEffectValue: '',
+      displayDuration: '',
+      displayText: '',
+      upgradeCost: 0,
+      isMaxed: false,
+      isUnlocked: false,
+    }),
     getXp: () => 0,
     isAutoCastUnlocked: () => false,
     isAutoCastEnabled: () => true,
@@ -482,6 +509,7 @@ export class UIManager {
     autoBuyReserve: 0,
     setAutoBuyStrategy: () => {},
     setAutoBuyReserve: () => {},
+    getAutoBuyCount: () => 0,
   };
   private researchApi: ResearchAPI = {
     rp: 0,
@@ -581,6 +609,7 @@ export class UIManager {
       isMaxed: (id) => this.abilityApi.isMaxed(id),
       getUpgradeCost: (id) => this.abilityApi.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityApi.getEffectiveStats(id),
+      getEffectiveStatsAt: (id, level) => this.abilityApi.getEffectiveStatsAt(id, level),
       getXp: (id) => this.abilityApi.getXp(id),
       isAutoCastUnlocked: () => this.abilityApi.isAutoCastUnlocked(),
       isAutoCastEnabled: (id) => this.abilityApi.isAutoCastEnabled(id),
@@ -603,21 +632,24 @@ export class UIManager {
     this.transcendencePanel = new TranscendencePanel({
       onTranscend: () => this.onTranscend(),
       onSpend: (id) => this.onSpendAP(id),
-      onToggleAutomation: (key, enabled) => this.onToggleAutomation(key, enabled),
-      onTargetWaveChange: (w) => this.onTargetWaveChange(w),
       canTranscend: (ap) => this.prestigeApi.canTranscend(ap),
       canSpend: (id, ap, tp) => this.prestigeApi.canSpend(id, ap, tp),
-      isAutomationUnlocked: (key) => this.prestigeApi.isAutomationUnlocked(key),
-      isAutomationEnabled: (key) => this.prestigeApi.isAutomationEnabled(key),
       meetsPrerequisites: (id) => this.prestigeApi.meetsPrerequisites(id),
       isExcluded: (id) => this.prestigeApi.isExcluded(id),
       previewTP: (ap) => this.prestigeApi.previewTP(ap),
       transcendUnlockAP: this.prestigeApi.transcendUnlockAP,
+    });
+    this.automationPanel = new AutomationPanel({
+      onToggleAutomation: (key, enabled) => this.onToggleAutomation(key, enabled),
+      onTargetWaveChange: (w) => this.onTargetWaveChange(w),
+      isAutomationUnlocked: (key) => this.prestigeApi.isAutomationUnlocked(key),
+      isAutomationEnabled: (key) => this.prestigeApi.isAutomationEnabled(key),
       targetAscendWave: this.prestigeApi.targetAscendWave,
       getAutoBuyStrategy: () => this.prestigeApi.autoBuyStrategy,
       onAutoBuyStrategyChange: (strategy) => this.prestigeApi.setAutoBuyStrategy(strategy),
       getAutoBuyReserve: () => this.prestigeApi.autoBuyReserve,
       onAutoBuyReserveChange: (fraction) => this.prestigeApi.setAutoBuyReserve(fraction),
+      getAutoBuyCount: () => this.prestigeApi.getAutoBuyCount(),
     });
     const researchHandlers: ResearchPanelHandlers = {
       onStartResearch: (id) => this.onUnlockResearch(id),
@@ -651,6 +683,7 @@ export class UIManager {
     });
     this.hud.setOnOpenEnemies(() => this.enemyCodexModal.toggle());
     this.hud.setOnOpenStats(() => this.statsPopup.toggle());
+    this.statsPopup.setOnOpenCodex((id) => this.openCodex(id));
     this.settingsPanel = new SettingsPanel({
       onClearSave: () => this.onClearSave(),
       onVolumeChange: (v) => this.onVolumeChange(v),
@@ -957,6 +990,8 @@ export class UIManager {
       isMaxed: (id) => this.abilityApi.isMaxed(id),
       getUpgradeCost: (id) => this.abilityApi.getUpgradeCost(id),
       getEffectiveStats: (id) => this.abilityApi.getEffectiveStats(id),
+      getEffectiveStatsAt: (id, level) => this.abilityApi.getEffectiveStatsAt(id, level),
+      getXp: (id) => this.abilityApi.getXp(id),
       getPendingPlacement: () => this.abilityApi.getPendingPlacement(),
     });
   }
@@ -1036,6 +1071,7 @@ export class UIManager {
       case 'equipment': this.equipmentPanel.mount(body); break;
       case 'prestige': this.prestigePanel.mount(body); break;
       case 'transcendence': this.transcendencePanel.mount(body); break;
+      case 'automation': this.automationPanel.mount(body); break;
       case 'achievements': this.achievementPanel.mount(body); break;
       case 'progression': this.progressionPanel.mount(body); break;
       case 'journal': this.journalPanel.mount(body); break;
@@ -1408,6 +1444,8 @@ export class UIManager {
         this.prestigePanel.update(this.lastState);
       } else if (this.activeTab === 'transcendence') {
         this.transcendencePanel.update(this.lastState);
+      } else if (this.activeTab === 'automation') {
+        this.automationPanel.update(this.lastState);
       }
     }
   }
@@ -1596,6 +1634,7 @@ export class UIManager {
       case 'equipment': this.equipmentPanel.update(state); break;
       case 'prestige': this.prestigePanel.update(state); break;
       case 'transcendence': this.transcendencePanel.update(state); break;
+      case 'automation': this.automationPanel.update(state); break;
       case 'research': this.researchPanel.update(state); break;
       case 'achievements': this.achievementPanel.update(state); break;
       case 'progression': this.progressionPanel.update(state); break;
@@ -1923,6 +1962,9 @@ export class UIManager {
     } else if (id === 'transcendence') {
       this.transcendencePanel.mount(this.contentRoot);
       if (this.lastState) this.transcendencePanel.update(this.lastState);
+    } else if (id === 'automation') {
+      this.automationPanel.mount(this.contentRoot);
+      if (this.lastState) this.automationPanel.update(this.lastState);
     } else if (id === 'research') {
       this.researchPanel.mount(this.contentRoot);
       if (this.lastState) this.researchPanel.update(this.lastState);

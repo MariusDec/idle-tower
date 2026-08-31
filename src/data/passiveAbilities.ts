@@ -475,11 +475,11 @@ export const PASSIVE_ABILITIES: PassiveAbilityDef[] = [
     xpBase: 2600,
     effects: [{ stat: 'xp_gain_pct', base: 8, perLevel: 4 }],
     milestones: [
-      { at: 5,  label: '+3% research point drop chance', grants: [{ stat: 'rp_drop_chance_pct', value: 3 }] },
+      { at: 5,  label: '+0.5% research point drop chance', grants: [{ stat: 'rp_drop_chance_pct', value: 0.5 }] },
       { at: 10, label: '+6% equipment find chance',      grants: [{ stat: 'equipment_find_chance_pct', value: 6 }] },
       { at: 15, label: '+30% loot orb value',            grants: [{ stat: 'orb_value_pct', value: 30 }] },
       { at: 20, label: '+50% momentum gain',             grants: [{ stat: 'momentum_gain_pct', value: 50 }] },
-      { at: 25, label: '+6% research point drop chance', grants: [{ stat: 'rp_drop_chance_pct', value: 6 }] },
+      { at: 25, label: '+1% research point drop chance',   grants: [{ stat: 'rp_drop_chance_pct', value: 1 }] },
     ],
   },
 

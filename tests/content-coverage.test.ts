@@ -810,6 +810,7 @@ describe('nav groups', () => {
     passives: true,
     prestige: true,
     transcendence: true,
+    automation: true,
     achievements: true,
     progression: true,
     codex: true,

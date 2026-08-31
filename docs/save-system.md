@@ -12,7 +12,7 @@ and in a **private file** on Android. Never `localStorage`; see
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 23
+  version: number;       // current = 24
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -57,6 +57,7 @@ interface PersistentState {
 | v20 → v21 | the upgrades revamp's balance migration — `upgradeDiscount` → `prospecting`, `tp_midas` → `tp_salvage`, and every upgrade/perk level clamped to its new ceiling (see below) |
 | v21 → v22 | the Tower XP revamp — the polynomial+geometric curve in `xpTables.xpForNextLevel` replaces the hand-written `TOWER_XP_TABLE`, the talent tree's per-node costs are recomputed from the new curve, the tower's `level`/`xp`/`totalXpEarned` are restated onto it, and every previously allocated talent is refunded (see [xp-talent-system.md](xp-talent-system.md)) |
 | v22 → v23 | the offline model rewrite — `waveTiming` block seeded to `defaultWaveTiming()`. Old absence-walk fields are gone; offline no longer simulates anything, it prices `waveRepeats × averageKillGoldForWave + xpPerWaveClear` against the measured wave duration, with `UNMEASURED_WAVE_PENALTY` until five samples exist (see [Offline Progress](#offline-progress)) |
+| v23 → v24 | research rebalance + Auto-Upgrader's two new levels; the watch risk histogram gains a slot (`MAX_RISK_CEILING` 7→8). The `watch` block is *not* touched here — v24's load-side fix in `Game.applyPersistedState` brings a pre-v24 save's campaign back the first time the fixed build reads it; this migration only widens `riskWaves` and re-clamps `apSpent` (`ap_auto_upgrader` is a widening, so no existing level goes out of range). RP and refund rules are explicitly *not* part of v24. |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -183,8 +184,10 @@ non-array `completed` → `[]`; missing or non-object `counters` →
 the five scalar counters missing or non-finite → `0`; `riskWaves`
 missing, short, or with non-finite entries → resized to
 `MAX_RISK_CEILING + 1` zeros, valid entries copied in. The `riskWaves`
-array is sized to `MAX_RISK_CEILING + 1` (7 indices today, indexed 0–6)
-so a future Watch unlock that raises the dial cannot land out of bounds.
+array is sized to `MAX_RISK_CEILING + 1` (9 indices today — Crown of
+Thorns (chapter 14) raised the ceiling from 7 to 8, so the indexed range
+is 0–8) so a future Watch unlock that raises the dial cannot land out of
+bounds.
 
 ## Auto-Save
 
@@ -211,7 +214,7 @@ write.
 ## Validation
 
 `validate()` checks:
-- version is 2..23 (anything older than the current version is walked up the migration ladder; anything outside the range is rejected)
+- version is 2..24 (anything older than the current version is walked up the migration ladder; anything outside the range is rejected)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress
@@ -299,7 +302,7 @@ When offline progress > 0, `welcome_back` event triggers `WelcomeBackModal.show(
 `localStorage` is the wrong home for a save in a native shell: it is WebView
 data, it shares one ~5 MB origin quota, Android may evict it under storage
 pressure, and a "clear cache" cleanup can take it. So the bytes moved. **The
-format did not** — still `SAVE_VERSION` 23, the same JSON, the same migration
+format did not** — still `SAVE_VERSION` 24, the same JSON, the same migration
 ladder.
 
 `SaveStore` is a three-method string key/value interface. `SaveManager` owns

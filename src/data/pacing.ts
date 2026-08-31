@@ -194,11 +194,11 @@ export const MAX_RISK = 5;
 
 /**
  * The absolute ceiling the dial can ever reach, including Watch unlocks
- * (`riskbearer` → 6, `deep_watch` → 7). Array sizes and save-restore clamps
- * read this rather than `MAX_RISK`, so a later unlock cannot write out of
- * bounds into `WatchCounters.riskWaves`.
+ * (`riskbearer` → 6, `deep_watch` → 7, `crown_of_thorns` → 8). Array sizes and
+ * save-restore clamps read this rather than `MAX_RISK`, so a later unlock
+ * cannot write out of bounds into `WatchCounters.riskWaves`.
  */
-export const MAX_RISK_CEILING = 7;
+export const MAX_RISK_CEILING = 8;
 
 /**
  * What one step of the dial costs and pays.

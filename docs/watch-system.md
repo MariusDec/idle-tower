@@ -12,17 +12,17 @@ Watch is the named thing the player is always working towards.
 
 | | |
 |---|---|
-| Chapters | **12**, strictly ordered, exactly one active at a time |
+| Chapters | **20**, strictly ordered, exactly one active at a time |
 | Scope | **Permanent.** Survives both ascension and transcendence. |
 | Objectives per chapter | **3**, all required |
 | Reward per chapter | **1 content unlock** (never a stat percentage) |
 | Progress | **Derived from lifetime counters** — not stored |
 | Poll cadence | `WATCH_POLL_SECONDS = 1` (`WatchManager.tick`) |
-| Persistence | `PersistentState.watch` (`WatchState`), save **v19** |
+| Persistence | `PersistentState.watch` (`WatchState`), save **v19** (permanently restored from **v24**) |
 
-The mix of objectives is deliberate. Of the **36** objectives across the twelve
-chapters, **28 advance on their own** (lifetime counters a tower earns by
-playing) and **8 ask for intent** — flawless waves, swift bosses, waves
+The mix of objectives is deliberate. Of the **60** objectives across the twenty
+chapters, **47 advance on their own** (lifetime counters a tower earns by
+playing) and **13 ask for intent** — flawless waves, swift bosses, waves
 cleared at high risk, mutator waves. No chapter is made entirely of the
 second sort: every chapter's first goal is a `reach_wave`, which advances for
 everyone.
@@ -48,6 +48,31 @@ strictly across chapters.
 | 10 | **Deep Watch** | Reach wave 150 · Clear 100 waves at risk 5+ · Kill 2 000 000 enemies | `deep_watch` |
 | 11 | **Sanctum** | Reach wave 175 · Transcend 5 times · Reach tower level 100 | `sanctum` |
 | 12 | **The Long Watch** | Reach wave 200 · Ascend 50 times · Kill 1 500 bosses | `long_memory` |
+| 13 | **The Quiet Archive** | Reach wave 220 · Transcend 10 times · Buy 25 000 upgrades | `archivist` |
+| 14 | **Hollow Crown** | Reach wave 240 · Kill 400 bosses · Clear 150 boss encounters swiftly | `crown_of_thorns` |
+| 15 | **The Long Ledger** | Reach wave 265 · Earn 1 000 000 000 000 lifetime gold · Complete 500 contracts | `counting_house` |
+| 16 | **Ash and Ember** | Reach wave 290 · Kill 25 000 000 enemies · Clear 400 mutator waves | `emberforge` |
+| 17 | **Cycles** | Reach wave 320 · Ascend 250 times · Transcend 25 times | `eternal_kit` |
+| 18 | **The Wider Board** | Reach wave 350 · Complete 1 200 contracts · Take 800 blessings | `master_broker` |
+| 19 | **Starfall** | Reach wave 400 · Cast 50 000 abilities · Reach tower level 175 | `deep_reserves` |
+| 20 | **The Last Watch** | Reach wave 450 · Transcend 50 times · Clear 500 waves at risk 6+ | `undying_watch` |
+
+The last eight chapters pick up where the first twelve stopped: chapter 12
+hits wave 200 / 50 ascensions / 1 500 bosses, which was deep endgame at the
+measured curve. The pace stays roughly geometric — `reach_wave` jumps of
+~20 per chapter plus an increase in the *kind* of lifetime commitment
+(transcendences, contracts, mutator waves) — so the campaign is still
+back-half-deep even when every other system has already stretched out, and
+the transcends and contracts it starts counting on chapter 13 are
+available to a player who started the chapter on the previous tab.
+
+Chapter 20's `tower_level: 175` is `TOWER_LEVEL_CAP − 25` (`200`); a chapter
+cannot demand more than the cap reaches without becoming a wall. Chapter
+20's `risk_waves: 6` requires the `riskbearer` unlock at minimum, which
+is well behind on the ladder, and Crown of Thorns (chapter 14) keeps
+crediting the bucket at risk 8 too (`WATCH_PROGRESS.risk_waves` sums every
+risk bucket at or above the asked step, so raising the dial past the
+objective's threshold never *stops* counting it).
 
 Sanity checks that were run against the tree before the numbers were written:
 
@@ -109,7 +134,7 @@ encountered without throwing.
 
 ## The unlock catalogue
 
-Twelve unlocks, a closed union `WatchUnlockId`, each with an entry in
+Twenty unlocks, a closed union `WatchUnlockId`, each with an entry in
 `WATCH_UNLOCK_CONSUMERS: Record<WatchUnlockId, string>` naming the exact
 site that reads it. That map is what `tests/watch.test.ts` item 6 holds to
 a real consumer (no placeholders, no `n/a`), and it is why an unlock
@@ -129,16 +154,25 @@ cannot ship as flavour text.
 | `deep_watch` | Deep Watch | Risk dial goes to **7** | `PacingManager.setRisk / clampRisk via the injected maxRisk() dep` |
 | `sanctum` | Sanctum | The **Arcane core**, free (normally 25 AP) | `Game.applyWatchUnlock — CoreManager.unlock("arcane") on chapter completion and on load` |
 | `long_memory` | Long Memory | **Ability levels survive an ascension** | `Game.applySavedStateReset — skips abilityMgr.resetLevels()` |
+| `archivist` | Archivist | Every research project completes **20% faster** | `Game.researchSpeedMultiplier() — the 0.8 factor folded into both `ResearchTree.setSpeedMultiplier` call sites` |
+| `crown_of_thorns` | Crown of Thorns | Risk dial goes to **8** | `Game.maxRisk() — returns 8, read by PacingManager.setRisk / clampRisk via the maxRisk() dep` |
+| `counting_house` | The Counting House | Contracts pay **+25% gold and RP** | `ContractManager rewardScale dep — Game adds +0.25 to getContractRewardMultiplier()` |
+| `emberforge` | Emberforge | The **Bloodforge core**, free (normally 60 AP) | `Game.applyWatchUnlock — CoreManager.unlock("bloodforge") on chapter completion and on load` |
+| `eternal_kit` | Eternal Kit | **Passive abilities survive a transcendence** | `Game.applyFullTranscendenceReset — skips passiveMgr.reset() when held` |
+| `master_broker` | Master Broker | Contracts run **5 slots** instead of 4 | `ContractManager.refill via the injected slots() dep — Game passes watch.contractSlots()` |
+| `deep_reserves` | Deep Reserves | Every ability costs **−20% mana** | `Game.applyResolvedStats — multiplies abilityCostMultiplier by 0.8 before setAbilityCostMultiplier` |
+| `undying_watch` | The Undying Watch | Offline progress banks **12 more hours** | `Game getIdleCapSeconds closure — adds 12h to PrestigeManager.getIdleTimeCapSeconds()` |
 
-Why these twelve and not stat bonuses: every one of them changes a *rule*.
-After `wide_draft` the draft is a different decision; after `riskbearer` the
-dial has a step that did not exist; after `long_memory` the ascension means
-something different than it did an hour ago. A `+8% damage` reward would be
-invisible inside a curve that already multiplies by lifetime AP. Two
-overlap things the player can also buy with AP (`veteran_start`,
-`overseer`); that is deliberate and harmless — `startWave` is already a
-`Math.max` over four sources and `isAutomationUnlocked` is a boolean OR.
-Neither double-counts. See [prestige-system.md](prestige-system.md).
+Why these twenty and not stat bonuses: every one of them changes a *rule*.
+After `wide_draft` the draft is a different decision; after `crown_of_thorns`
+the dial has a step that did not exist; after `eternal_kit` a transcendence
+no longer wipes everything the player paid for. A `+8% damage` reward would be
+invisible inside a curve that already multiplies by lifetime AP. Several
+overlap things the player can also buy with AP (`veteran_start`, `overseer`)
+or by transcending (`arcane` is both an AP core and Sanctum's reward);
+that is deliberate and harmless — `startWave` is already a `Math.max` over
+four sources and `isAutomationUnlocked` is a boolean OR. Neither
+double-counts. See [prestige-system.md](prestige-system.md).
 
 ## The cascade rule
 
@@ -146,7 +180,7 @@ Neither double-counts. See [prestige-system.md](prestige-system.md).
 `tick` accumulates `dt` until it reaches `WATCH_POLL_SECONDS = 1` then
 calls `check()` once and resets. A player who installs this update deep
 into a save therefore watches chapters land one per second, each with its
-own toast and modal — not twelve at once. The UI queues modals and shows
+own toast and modal — not twenty at once. The UI queues modals and shows
 the next one when the previous is dismissed; the `Modal.anyOpen()` registry
 is what makes the queue correct, so a chapter-completion modal cannot
 stack over a blessing draft or a run summary. See
@@ -200,14 +234,43 @@ is the regression check that catches it.
 `GameState.watch` (`WatchState`), save **v19**. The block carries
 `completed: string[]` (chapter ids in completion order) and `counters:
 WatchCounters` (the seven lifetime counters that had no prior home). The
-`riskWaves` array is sized to `MAX_RISK_CEILING + 1` (7 indices today,
-indexed 0–6) so a future Watch unlock that raises the dial cannot land
-out of bounds. `migrateV18toV19` seeds an empty block via
+`riskWaves` array is sized to `MAX_RISK_CEILING + 1` (9 indices today —
+Crown of Thorns raised the ceiling from 7 to 8, so the indexed range is
+0–8) so a future Watch unlock that raises the dial cannot land out of
+bounds. `migrateV18toV19` seeds an empty block via
 `defaultWatch()`. **Permanent** — neither `applySavedStateReset` nor
 `applyFullTranscendenceReset` may touch it; it is meta-progression, like
 achievements and unlocked cores. See
 [save-system.md](save-system.md#watchstate-v19) for the type definitions,
 the migration note and the `normalizeWatch` repair rules.
+
+### Permanent across every reload — including the one that used to wipe it
+
+`SaveManager.snapshot` has always written the `watch` block; the bug was
+on the *load* side. `Game.applyPersistedState` read every other block
+(`tower`, `resources`, `upgrades`, …) but never `persisted.watch`, so the
+fresh block built by `defaultWatch()` was what `applyWatchUnlocksOnLoad()`
+saw when it called `watchMgr.rebuildUnlocks()`. The effect was that every
+completed chapter and every one of the seven lifetime counters vanished
+on every load — every ascension, every transcendence, every app
+restart, every Android process kill, every browser reload. Players who
+returned to "the Journal reset when I prestige" were experiencing a save
+that was never read, not a save that was lost.
+
+The fix copies the saved block field by field into
+`this.state.watch` immediately before `applyWatchUnlocksOnLoad()` runs,
+because `WatchManager` captured its `state` dep by reference at
+construction and a wholesale replacement would leave the manager reading
+a detached object. `riskWaves` is widened inside that copy to
+`MAX_RISK_CEILING + 1`, so a save written under the v19 ceiling (7) is
+silently brought forward to the v24 ceiling (8) on the first read by the
+fixed build. The save format did not change; the migration ladder's v23 →
+v24 row is just `normalizeWatch` + `clampPerkLevels`, and the watch block
+itself is *not* touched on the way up the ladder because the v24 fix
+runs on load, not on migrate. See
+[save-system.md](save-system.md#migration-ladder) and
+§1.1 of `plans/improvements.md` for the call site and the surrounding
+audit.
 
 ## UI
 
@@ -216,7 +279,7 @@ Three surfaces, all owned by `src/ui/` and described in detail under
 
 - **Journal tab** (`JournalPanel.ts`) — the campaign's home, in the
   `progress` group of `NAV_GROUPS` as its first entry, label "Journal".
-  Five sections: header (`X / 12 chapters`), the active chapter card,
+  Five sections: header (`X / 20 chapters`), the active chapter card,
   the next-up card, the completed list, and the road ahead. View model is
   `Game.watchInfo()` → `UIManager` → `JournalPanel`.
 - **Corner chip** (`JournalStrip.ts`) — the bottom-left "Long Watch"
@@ -253,7 +316,7 @@ unlocked before its chapter's depth gate, and the `reach_wave` targets
 ascending strictly. The **manager block** (items 10–16) drives the real
 `WatchManager` against a stub metrics object and a stub bus: fresh state
 on chapter 1, two-of-three doesn't complete, all-three completes exactly
-one, the cascade rule holds over twelve `check()` calls, `tick` waits
+one, the cascade rule holds over twenty `check()` calls, `tick` waits
 for one second of accumulated `dt`, `progress` clamps to target, `fill`
 stays in `[0, 1]`, `risk_waves` sums every bucket at or above the asked
 step, and `rebuildUnlocks()` reconstructs the unlock set from the
@@ -290,10 +353,7 @@ top of the existing regression check without disturbing it.
   who installs the update deep into a save and immediately closes the
   page still gets the chapters — the manager writes `completed` and
   rebuilds `unlocks` synchronously, then the modal fires. They can come
-  back to twelve completed chapters and a queue of eleven modals.
-- Chapter 13+ is a data edit in `WATCH_CHAPTERS` plus one new
+  back to twenty completed chapters and a queue of nineteen modals.
+- Chapter 21+ is a data edit in `WATCH_CHAPTERS` plus one new
   `WatchUnlockId` with a consumer; the table shape exists so it stays a
-  data change. The plan deliberately stops at twelve: twelve reaches
-  wave 200 and 50 ascensions, which is deep endgame at the measured
-  curve, and a second concurrent chapter would halve the pull of the
-  one already on the board.
+  data change.

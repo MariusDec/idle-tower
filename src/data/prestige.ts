@@ -189,14 +189,16 @@ export const AP_PERKS: PrestigePerkDef[] = [
     id: 'ap_auto_upgrader',
     layer: 'ascension',
     name: 'Auto-Upgrader',
-    description: 'Unlocks Auto-Upgrade: buys upgrades every 10s using your chosen strategy',
+    description: 'Auto-buys 1 upgrade every 10s; each level buys one more per tick',
     // prestige-abs §3.2 (fault 2): was 25 — exactly a first ascension's whole
     // budget, so the one transformative tier-1 node was an all-or-nothing
     // choice. At 12 it is a purchase alongside two or three others, and it is
     // still worth taking before the Watch's `overseer` hands auto-buy out free.
+    // plan §3.2: the perk ladder widens to three levels (12 / 24 / 48 AP,
+    // 84 total) and the per-tick budget equals the level.
     costPerLevel: 12,
-    costScaling: 1,
-    maxLevel: 1,
+    costScaling: 2,
+    maxLevel: 3,
     effectType: 'auto_buy',
     effectPerLevel: 0,
     icon: 'auto-repair',
@@ -365,12 +367,12 @@ export const AP_PERKS: PrestigePerkDef[] = [
     id: 'ap_field_notes',
     layer: 'ascension',
     name: 'Field Notes',
-    description: '+2% research point drop chance per level',
+    description: '+0.25% research point drop chance per level',
     costPerLevel: 6,
     costScaling: 1.45,
     maxLevel: 6,
     effectType: 'rp_drop',
-    effectPerLevel: 0.02,
+    effectPerLevel: 0.0025,
     icon: 'book-pile',
     color: '#9b59ff',
     tier: 2,
@@ -626,7 +628,12 @@ export function describeAPPerkBonus(p: PrestigePerkDef, level: number, atMax: bo
         ? `Shots pass through ${computePerkEffect(p, level).toFixed(0)} more ${computePerkEffect(p, level) === 1 ? 'enemy' : 'enemies'}`
         : 'Shots pass through one more enemy per level';
     case 'auto_buy':
-      return 'Unlocks the Auto-Upgrader automation';
+      // plan §3.2: the perk's level is the per-tick purchase budget, so the
+      // copy states it directly. The unwritten branch must still name the
+      // unlock so a first-time reader knows what they are buying.
+      return level > 0
+        ? `Auto-buys ${level} upgrade${level === 1 ? '' : 's'} per tick`
+        : 'Unlocks Auto-Upgrade (1 upgrade per tick, +1 per level)';
     case 'wave_skip':
       return atMax
         ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% wave skip chance`

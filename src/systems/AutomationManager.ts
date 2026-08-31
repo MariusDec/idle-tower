@@ -32,8 +32,6 @@ const AUTO_CAST_INTERVAL = 1;
 const AUTO_ASCEND_INTERVAL = 1;
 const AUTO_TRANSCEND_INTERVAL = 5;
 const MIN_AUTO_BUY_INTERVAL = 3;
-/** Upper bound on purchases in one auto-buy tick, so a huge bank cannot stall a frame. */
-const MAX_AUTO_BUYS_PER_TICK = 40;
 
 /** Category ranking for the `damage` auto-buy strategy (lower buys first). */
 const DAMAGE_PRIORITY: Partial<Record<UpgradeCategory, number>> = {
@@ -163,19 +161,26 @@ export class AutomationManager {
    *  2. **Reserve.** A purchase only happens if the gold left afterwards still
    *     covers `autoBuyReserve` of the current pile, so a player can bank for a
    *     manual purchase without switching automation off.
-   *  3. **Repeat.** Buying continues within the tick until no rule allows
-   *     another purchase (bounded, so a huge bank cannot stall a frame).
+   *  3. **Repeat.** Buying repeats up to the Auto-Upgrader perk's level, once
+   *     per interval per level (plan §3.3). The perk's level is the per-tick
+   *     budget, so a huge bank can no longer stall a frame by spending the
+   *     whole thing in one go.
    */
   private runAutoBuy(): void {
     const upgrades = this.deps.upgrades;
     const state = this.deps.getState();
+    // The perk's level is the per-tick budget (plan §3.3). One purchase per
+    // interval at L1 is the contract the panel copy promises; the old
+    // unbounded loop spent the entire bank every ten seconds.
+    const budget = this.deps.prestige.getAutoBuyCount();
+    if (budget <= 0) return;
     const strategy: AutoBuyStrategy = state.prestige.autoBuyStrategy ?? 'balanced';
     const reserve = Math.max(
       Math.max(0, Math.min(0.9, state.prestige.autoBuyReserve ?? 0)),
       this.quartermasterReserve,
     );
 
-    for (let i = 0; i < MAX_AUTO_BUYS_PER_TICK; i++) {
+    for (let i = 0; i < budget; i++) {
       const gold = state.resources.gold;
       const budget = gold * (1 - reserve);
       const candidates = upgrades.all

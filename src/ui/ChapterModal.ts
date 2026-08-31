@@ -47,7 +47,7 @@ export class ChapterModal {
   show(payload: ChapterCompletedPayload, onClose?: () => void): void {
     this.hide();
     const chapter = WATCH_CHAPTERS.find(c => c.id === payload.id) ?? null;
-    // Chapter 12 → index 11 is the last; everything past is the "watch is kept"
+    // The last chapter is the last; everything past is the "watch is kept"
     // footer. The manager already emits `next: null` for the last chapter, but
     // we also accept `null` if the table ever grows past `number`.
     const nextChapter = payload.next !== null

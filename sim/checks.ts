@@ -351,6 +351,7 @@ section('§3.1 abilities');
     prestige: {
       getAutomationEnabled: (k: string) => k === 'autoAbilities',
       getAutoBuySpeedReduction: () => 0,
+      getAutoBuyCount: () => 0,
     } as never,
     research: {} as never,
     getState: () => state,
@@ -439,12 +440,13 @@ section('§3.6 auto-buy strategy');
       return true;
     },
   } as never;
-  const makeAuto = (strategy: string, reserve: number) => new AutomationManager({
+  const makeAuto = (strategy: string, reserve: number, autoBuyCount = 1) => new AutomationManager({
     upgrades,
     abilities: { canCast: () => false, tryCast: () => false, autoCastConditionMet: () => true } as never,
     prestige: {
       getAutomationEnabled: (k: string) => k === 'autoBuy',
       getAutoBuySpeedReduction: () => 0,
+      getAutoBuyCount: () => autoBuyCount,
     } as never,
     research: {} as never,
     getState: () => ({
@@ -458,15 +460,35 @@ section('§3.6 auto-buy strategy');
     bus: new EventBus(),
   });
 
+  // plan §3.3: the per-tick budget equals the Auto-Upgrader perk's level, so a
+  // damage-strategy tick at L1 buys exactly one upgrade (the tower category
+  // leads the sort). The old "buys more than one" assertion was the bug we
+  // fixed in §3.4.
   makeAuto('damage', 0).tick(11);
   check('damage strategy opens on a tower upgrade', bought[0] === 'damage',
     `first=${bought[0]}`);
-  check('auto-buy keeps buying within one tick', bought.length > 1,
+
+  // Plan §3.3 / §9.4: the perk's level is the per-tick budget. Reset the
+  // shared state so each check reads its own count cleanly.
+  const resetPurse = () => {
+    purse.gold = 1000;
+    bought.length = 0;
+    levels.damage = 0;
+    levels.greed = 0;
+    levels.trinket = 0;
+  };
+  resetPurse();
+  makeAuto('cheapest', 0, 1).tick(11);
+  check('auto-buy at level 1 buys exactly one per tick', bought.length === 1,
+    `bought=${bought.length}`);
+
+  resetPurse();
+  makeAuto('cheapest', 0, 3).tick(11);
+  check('auto-buy at level 3 buys exactly three per tick', bought.length === 3,
     `bought=${bought.length}`);
 
   // A reserve must leave gold on the table.
-  purse.gold = 1000;
-  bought.length = 0;
+  resetPurse();
   makeAuto('cheapest', 0.5).tick(11);
   check('a 50% reserve stops spending at the floor', purse.gold >= 500,
     `left=${purse.gold}`);

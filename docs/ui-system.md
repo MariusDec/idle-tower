@@ -1,18 +1,21 @@
 # UI System
 
-**Files:** `src/ui/UIManager.ts`, `src/ui/HUD.ts`, `src/ui/UpgradePanel.ts`, `src/ui/AbilityPanel.ts`, `src/ui/PrestigePanel.ts`, `src/ui/TranscendencePanel.ts`, `src/ui/ResearchPanel.ts`, `src/ui/WelcomeBackModal.ts`, `src/styles/main.css`
+**Files:** `src/ui/UIManager.ts`, `src/ui/HUD.ts`, `src/ui/UpgradePanel.ts`, `src/ui/AbilityPanel.ts`, `src/ui/PrestigePanel.ts`, `src/ui/TranscendencePanel.ts`, `src/ui/AutomationPanel.ts`, `src/ui/ResearchPanel.ts`, `src/ui/CodexPanel.ts`, `src/ui/StatsPopup.ts`, `src/ui/codexProse.ts`, `src/ui/WelcomeBackModal.ts`, `src/styles/main.css`
 
 ## Architecture
 
 ```
-UIManager
+  UIManager
   ├── HUD (top bar, never changes tab)
   ├── UpgradePanel (Attack / Defense / Utility sub-tabs)
   ├── AbilityPanel (10 ability cards)
   ├── TalentPanel (4-branch talent tree)
   ├── PrestigePanel (Ascension card + AP perks)
-  ├── TranscendencePanel (Transcendence card + TP perks + Automation)
-  ├── ResearchPanel (4-category research tree)
+  ├── TranscendencePanel (Transcendence card + TP perks only — automation moved out)
+  ├── AutomationPanel (auto-buy strategy, reserve, target wave, toggles, "buys N/tick")
+  ├── ResearchPanel (5-category research tree: combat / economy / arcane / scouting / research)
+  ├── CodexPanel (in-game glossary of mechanics)
+  ├── StatsPopup (post-run debrief / lifetime numbers)
   └── WelcomeBackModal (offline progress dialog)
 ```
 
@@ -26,10 +29,10 @@ one is a single edit.
 
 | Group | Icon | Tabs |
 |---|---|---|
-| `build` | `hammer-nails` | Upgrades, Abilities, Equipment |
+| `build` | `hammer-nails` | Upgrades, Abilities, Passives, Equipment |
 | `research` | `bubbling-flask` | Research, Talents |
-| `prestige` | `star-gate` | Prestige, Transcendence |
-| `progress` | `progression` | Progression, Achievements, Stats |
+| `prestige` | `star-gate` | Prestige, Transcendence, Automation |
+| `progress` | `progression` | Journal, Progression, Codex, Achievements, Stats |
 | `system` | `cog` | Settings |
 
 The module also exports `GROUP_OF` (a reverse index built once at module load),
@@ -226,6 +229,67 @@ branch are mutually exclusive (`exclusiveGroup`).
 
 **Overflow divider** separates the main grid from the endless node, labeled
 "Overflow — no limit". The endless node has `maxPoints: 999`.
+
+## Automation Panel (`AutomationPanel.ts`)
+
+Owns the third tab of the `prestige` nav group (label "Automation"). It
+was carved out of `TranscendencePanel` in plan §4 so the four automation
+toggles, the auto-buy strategy chips, the gold-reserve slider and the
+target-ascend-wave input all sit on a panel whose only job is *how the
+game runs itself*. The Transcendence panel now carries the TP perk tree
+and nothing else.
+
+Layout, top to bottom:
+
+- **Auto-Buy block.** One toggle (`autoBuy`), a three-way strategy
+  segmented control (`cheapest` / `balanced` / `damage`), a 0–50% reserve
+  slider (held-back gold, a fraction the auto-buyer must leave behind),
+  and a live "Buys N upgrades per tick" line. **N** is read from
+  `AutomationPanelHandlers.getAutoBuyCount()` — which routes to
+  `PrestigeManager.getAutoBuyCount()` — every UI tick, so it reflects
+  the Auto-Upgrader perk level (1/2/3) the instant the player buys a
+  level. When auto-buy is not unlocked at all, the line collapses and
+  the strategy / reserve controls are dimmed.
+- **Auto-Cast block.** One toggle (`autoAbilities`). The per-ability
+  opt-out lives on each ability card in the Abilities panel, so the
+  Automation panel does not list them.
+- **Auto-Ascend block.** One toggle (`autoAscend`) plus a target-wave
+  stepper. The stepper reads and writes `targetAscendWave` on `Game`.
+- **Auto-Transcend block.** One toggle (`autoTranscend`). No per-target
+  setting — `AutomationManager.runAutoTranscend` fires the moment
+  `ap >= 100`.
+
+All four toggles key on `AutomationPanelHandlers.isAutomationUnlocked(key)`,
+so an upgrade the player hasn't paid for shows the toggle but reads as
+locked; the `UI Callback Wiring` setters below carry the writes back
+into `Game`.
+
+The strategy labels and the per-strategy hint copy are constants in
+`src/ui/AutomationPanel.ts` (`STRATEGY_LABELS` / `STRATEGY_HINTS`), not
+rendered from the data layer — the strategy is a *preference*, not a
+thing a player unlocks.
+
+## Codex prose helper (`src/ui/codexProse.ts`)
+
+`CodexPanel` and `StatsPopup` share a small prose helper:
+
+- **`friendlyTermName(raw)`** — maps an internal identifier
+  (`focusStackBonus`) to the player-facing label from
+  `STAT_ROW_BY_KEY[raw].label` (`"Focus Bonus"`). Anything the stat row
+  table does not know falls back to a de-camel-cased form, with the
+  common acronyms (`HP` / `XP` / `RP` / `DPS` / `AOE`) upper-cased so they
+  match the rest of the game.
+- **`setProse(host, text)`** — writes `text` into `host`, swapping every
+  embedded camelCase identifier for a `<span class="codex-term">` whose
+  text is `friendlyTermName(id)` and whose `title` is the raw id (so a
+  hover reveals the source-of-truth key). The regex is deliberately
+  narrow — needs a lowercase start *and* an interior capital — so
+  ordinary English words never match.
+
+`CodexPanel` (the in-game glossary in the `progress` group) renders its
+descriptions through `setProse`; `StatsPopup` (the lifetime-numbers
+modal) renders its humanised metric names the same way. The
+`codex-term` styling lives in `main.css`.
 
 ## UI Callback Wiring
 
@@ -487,7 +551,7 @@ sheet. See [watch-system.md](watch-system.md#ui).
 The **Journal tab** (`src/ui/JournalPanel.ts`) is the campaign's home
 and lives in the `progress` group of `NAV_GROUPS` as its first entry,
 label "Journal" — so the tab is one tap away on mobile. Five surfaces,
-top to bottom: a header with `X / 12 chapters`; the **active** chapter
+top to bottom: a header with `X / 20 chapters`; the **active** chapter
 card (accent border, three objective rows with progress bars, reward
 strip); the **next up** card (half prominence, names the upcoming
 chapter and its reward); the **completed** list (newest first, one row

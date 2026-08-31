@@ -17,10 +17,12 @@ import { EventBus } from '../src/game/EventBus';
 import {
   ABILITIES,
   ABILITY_BY_ID,
+  abilityManaCost,
   buildAbilityDisplayText,
   computeEffectiveStats,
   precisionCritMultiplier,
   vampiricRegen,
+  type AbilityDef,
 } from '../src/data/abilities';
 import { world } from '../src/data/arena';
 import { TOWER_BASE } from '../src/data/tower';
@@ -32,6 +34,7 @@ import { ResourceManager } from '../src/systems/ResourceManager';
 import { BuffRegistry } from '../src/stats/BuffRegistry';
 import { emptyStatContext, resolveStats } from '../src/stats';
 import { AbilityManager } from '../src/systems/AbilityManager';
+import { renderAbilityTooltip } from '../src/ui/abilityFormat';
 
 /** One substep at the game's fixed rate. */
 const DT = 1 / 120;
@@ -95,10 +98,10 @@ describe('rocket_barrage display text', () => {
 describe('precision_shot crit curve (phase 4)', () => {
   const def = ABILITY_BY_ID['precision_shot'];
 
-  it('scales the crit multiplier 1.5x -> 2.4x across its levels', () => {
+  it('scales the crit multiplier 1.5x -> 2.85x across its levels', () => {
     expect(precisionCritMultiplier(1)).toBeCloseTo(1.5, 6);
-    // 1.5 + 0.1 * 9
-    expect(precisionCritMultiplier(10)).toBeCloseTo(2.4, 6);
+    // 1.5 + 0.15 * 9
+    expect(precisionCritMultiplier(10)).toBeCloseTo(2.85, 6);
   });
 
   it('quotes both numbers the buff actually grants', () => {
@@ -106,10 +109,10 @@ describe('precision_shot crit curve (phase 4)', () => {
     expect(l1).toContain('Boosts crit chance by 30%');
     expect(l1).toContain('multiplies crit damage by 1.5x');
 
-    // L10: chance 30 + 2*9 = 48%, crit mult 2.4x.
+    // L10: chance 30 + 3*9 = 57%, crit mult 2.85x.
     const l10 = buildAbilityDisplayText(def, 10);
-    expect(l10).toContain('Boosts crit chance by 48%');
-    expect(l10).toContain('multiplies crit damage by 2.4x');
+    expect(l10).toContain('Boosts crit chance by 57%');
+    expect(l10).toContain('multiplies crit damage by 2.85x');
   });
 });
 
@@ -736,5 +739,154 @@ describe('gold rush toggles the loot magnet (plan §D.9)', () => {
     // Tick the buff past its duration to fire the clearEffect hook.
     abilities.tick(20);
     expect(magnetCalls).toEqual([true, false]);
+  });
+});
+
+// ── plan §9.5: mana curve is flat enough, power curve clears it ──────────────
+
+/**
+ * Power at L1 and Lmax, in the form the §6.3 ratio uses.
+ *
+ * - `aoe_damage` / `chain_damage` / `single_target_damage` / `execute_damage`:
+ *   `effectValue` (damage multiplier).
+ * - `rocket_barrage`: `effectValue × count` (per-rocket damage × volley size).
+ * - `crit_buff` / `fire_rate_buff` / `gold_buff` / `lifesteal_buff`: the buff
+ *   value × duration (the buff is what the player actually pays for, and the
+ *   duration is what makes it worth paying for).
+ * - `slow`: `(1 - effectValue) × duration`. `effectValue` is the *speed*
+ *   factor, so the slow fraction (1 - effectValue) is what gets stronger per
+ *   level — multiplying by duration accounts for the longer-lived slow the
+ *   level growth also buys.
+ */
+function powerRatio(def: AbilityDef): number {
+  const l1 = computeEffectiveStats(def, 1);
+  const lmax = computeEffectiveStats(def, def.maxLevel);
+  if (def.effectType === 'slow') {
+    return ((1 - lmax.effectValue) * lmax.duration) / ((1 - l1.effectValue) * l1.duration);
+  }
+  if (def.effectType === 'rocket_barrage') {
+    return (lmax.effectValue * (lmax.count ?? 1)) / (l1.effectValue * (l1.count ?? 1));
+  }
+  if (
+    def.effectType === 'crit_buff'
+    || def.effectType === 'fire_rate_buff'
+    || def.effectType === 'gold_buff'
+    || def.effectType === 'lifesteal_buff'
+  ) {
+    return (lmax.effectValue * lmax.duration) / (l1.effectValue * l1.duration);
+  }
+  return lmax.effectValue / l1.effectValue;
+}
+
+function manaRatio(def: AbilityDef): number {
+  return abilityManaCost(def, def.maxLevel) / def.manaCost;
+}
+
+describe('ability mana curve stays under the power curve (plan §6.2)', () => {
+  // §6.2 shipped 5% per level, which read as too flat in play; the growth is
+  // now 8%. A 10-level ability ends at 1.72x base cost, the 15-level Rocket
+  // Barrage at 2.11x. The whole roster must land in that band — still short
+  // of the pre-§6.2 1.8x-2.5x curve that outran the power gained.
+  for (const def of ABILITIES) {
+    it(`${def.id} mana-cost ratio sits between 1.7 and 2.15`, () => {
+      const ratio = manaRatio(def);
+      expect(ratio).toBeGreaterThanOrEqual(1.7);
+      expect(ratio).toBeLessThanOrEqual(2.15);
+    });
+  }
+
+  it('rocket_barrage specifically lands near the 2.12 cap (15 levels)', () => {
+    // 45 × (1 + 0.08 × 14) = 95.4, rounded to 95, so the realised ratio is
+    // 95/45 = 2.111... — close to but not exactly the 2.12 we wrote down.
+    const def = ABILITY_BY_ID['rocket_barrage'];
+    expect(manaRatio(def)).toBeCloseTo(1 + 0.08 * 14, 1);
+  });
+});
+
+describe('levelling pays for itself (plan §6.3 / §9.5)', () => {
+  // Floor is Berserk at 1.16 (§6.3 "After" table). Every other ability must
+  // come out above the §9.5 > 1.1 threshold, with plenty of margin for the
+  // four abilities whose power curves were also raised.
+  for (const def of ABILITIES) {
+    it(`${def.id} power/mana ratio exceeds 1.1 across the full ladder`, () => {
+      const ratio = powerRatio(def) / manaRatio(def);
+      expect(ratio).toBeGreaterThan(1.1);
+    });
+  }
+});
+
+describe('renderAbilityTooltip (plan §7.4 / §7.2)', () => {
+  // The tooltip is the player's primary readout for what each ability does
+  // and what it costs to upgrade. Two regressions the suite is here to
+  // prevent:
+  //
+  //   1. Instants (duration === 0 at L1 AND durationPerLevel === 0) used to
+  //      print a "Duration: 0.0s → 0.0s" row that lied about whether the
+  //      ability had a window at all.
+  //   2. The arrow column used to point at numbers that the cast would never
+  //      actually cost (raw per-def table values, ignoring the player's
+  //      multipliers). The manager-sourced `next` fixes that — but the suite
+  //      pins the visible contract: maxed → no arrow, not-maxed → arrow.
+  //
+  // Both cases are checked against `renderAbilityTooltip` directly with a
+  // minimal context. The DOM is downstream of this string, and the
+  // hover/panel/popover all share the renderer.
+
+  /** Abilities whose window is zero at every level — they hit, then they're done. */
+  const INSTANTS: AbilityId[] = [
+    'rain_of_arrows',
+    'chain_lightning',
+    'meteor_strike',
+    'execute',
+    'rocket_barrage',
+  ];
+
+  for (const id of INSTANTS) {
+    it(`${id} (instant) omits the Duration row`, () => {
+      const def = ABILITY_BY_ID[id];
+      const stats = computeEffectiveStats(def, 1);
+      const next = computeEffectiveStats(def, 2);
+      const html = renderAbilityTooltip(def, {
+        stats,
+        next,
+        cost: 100,
+        canAfford: true,
+        showCost: true,
+        towerDamage: 100,
+        xp: 0,
+        xpNeeded: 0,
+      });
+      expect(html).not.toContain('>Duration<');
+    });
+  }
+
+  it('emits the arrow column when next is present and omits it when maxed', () => {
+    const def = ABILITY_BY_ID['rain_of_arrows'];
+    const stats = computeEffectiveStats(def, 1);
+    const next = computeEffectiveStats(def, 2);
+
+    const withNext = renderAbilityTooltip(def, {
+      stats,
+      next,
+      cost: 100,
+      canAfford: true,
+      showCost: true,
+      towerDamage: 100,
+      xp: 0,
+      xpNeeded: 0,
+    });
+    expect(withNext).toContain('→');
+
+    const maxed = renderAbilityTooltip(def, {
+      stats: computeEffectiveStats(def, def.maxLevel),
+      next: null,
+      cost: 0,
+      canAfford: false,
+      showCost: true,
+      towerDamage: 100,
+      xp: 0,
+      xpNeeded: 0,
+    });
+    expect(maxed).not.toContain('→');
   });
 });

@@ -322,6 +322,7 @@ async function bootstrap(): Promise<void> {
     isMaxed: (id) => game.abilities.isMaxed(id),
     getUpgradeCost: (id) => game.abilities.getUpgradeCost(id),
     getEffectiveStats: (id) => game.abilities.getEffectiveStats(id),
+    getEffectiveStatsAt: (id, level) => game.abilities.getEffectiveStatsAtLevel(id, level),
     getXp: (id) => game.abilities.getXp(id),
     isAutoCastUnlocked: () => game.prestige.isAutomationUnlocked('autoAbilities'),
     isAutoCastEnabled: (id) => game.gameState.prestige.autoCastEnabled[id] !== false,
@@ -349,6 +350,7 @@ async function bootstrap(): Promise<void> {
     autoBuyReserve: game.gameState.prestige.autoBuyReserve,
     setAutoBuyStrategy: (strategy) => game.setAutoBuyStrategy(strategy),
     setAutoBuyReserve: (fraction) => game.setAutoBuyReserve(fraction),
+    getAutoBuyCount: () => game.prestige.getAutoBuyCount(),
   });
   ui.setResearchAPI({
     rp: game.research.rp,

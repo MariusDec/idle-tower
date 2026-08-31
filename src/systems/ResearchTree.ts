@@ -226,8 +226,19 @@ export class ResearchTree {
     return { ...this.runtime.levels };
   }
 
+  /**
+   * Passive RP, in RP per second.
+   *
+   * Square-root in depth rather than linear (economy §2.2): the old
+   * `0.05 * wave / 60` paid `3 * wave` RP/h, so wave 200 earned 8x what wave
+   * 25 did purely for being deeper, and the drop channel already scales with
+   * depth through the body count. `0.20 * sqrt(wave) / 60` pays `12 * sqrt(w)`
+   * RP/h — 60/h at wave 25, 120/h at wave 100, 240/h at wave 400 — which keeps
+   * depth worth something without making it the whole economy.
+   */
   getPassiveRPRate(lifetimeHighestWave: number, gainMultiplier: number): number {
-    return (0.05 * lifetimeHighestWave / 60) * (1 + gainMultiplier);
+    const wave = Math.max(1, lifetimeHighestWave);
+    return (0.20 * Math.sqrt(wave) / 60) * (1 + gainMultiplier);
   }
 
   addPassiveRP(dt: number, lifetimeHighestWave: number, gainMultiplier: number): void {

@@ -9,10 +9,11 @@ import {
 } from '../data/statDisplay';
 import type { StatKey } from '../stats/keys';
 import { TARGETING_MODES } from '../data/tower';
-import { CODEX_ENTRIES, type CodexEntry } from '../data/codex';
+import { CODEX_CATEGORY_LABELS, CODEX_ENTRIES, type CodexEntry } from '../data/codex';
 import type { GoldSourceEntry, StatsInfo } from '../types';
 import { setAriaLabel, setText, toggleClass } from '../utils/dom';
 import { formatNumber, formatWithOptionalDecimal } from '../utils/bigNumber';
+import { friendlyTermName, setProse } from './codexProse';
 import { renderIcon } from './Icon';
 import { Modal } from './Modal';
 
@@ -104,6 +105,13 @@ export class StatsPopup {
   private tooltipEl: HTMLDivElement | null = null;
   /** Help button that opened the current tooltip, for ARIA and toggle. */
   private activeHelpBtn: HTMLButtonElement | null = null;
+
+  /** Set by UIManager so the tooltip can hand the player to the full entry. */
+  private onOpenCodex: ((entryId: string) => void) | null = null;
+
+  setOnOpenCodex(handler: (entryId: string) => void): void {
+    this.onOpenCodex = handler;
+  }
 
   constructor() {
     // localStorage first so the initial tab/checkbox reflect the saved state
@@ -599,6 +607,10 @@ export class StatsPopup {
     term.className = 'stats-codex-tooltip-term';
     head.appendChild(term);
 
+    const cat = document.createElement('span');
+    cat.className = 'stats-codex-tooltip-cat';
+    head.appendChild(cat);
+
     tooltip.appendChild(head);
 
     const summary = document.createElement('p');
@@ -608,6 +620,14 @@ export class StatsPopup {
     const detail = document.createElement('div');
     detail.className = 'stats-codex-tooltip-detail';
     tooltip.appendChild(detail);
+
+    const stats = document.createElement('div');
+    stats.className = 'stats-codex-tooltip-stats codex-detail-stats';
+    tooltip.appendChild(stats);
+
+    const footer = document.createElement('div');
+    footer.className = 'stats-codex-tooltip-footer';
+    tooltip.appendChild(footer);
 
     return tooltip;
   }
@@ -658,23 +678,69 @@ export class StatsPopup {
     const term = tooltip.querySelector<HTMLElement>('.stats-codex-tooltip-term');
     if (term) setText(term, entry.term);
 
+    // The category chip is what makes the tooltip read as the Codex entry it
+    // is quoting rather than as a floating paragraph.
+    const cat = tooltip.querySelector<HTMLElement>('.stats-codex-tooltip-cat');
+    if (cat) {
+      setText(cat, CODEX_CATEGORY_LABELS[entry.category]);
+      cat.dataset.category = entry.category;
+    }
+
+    // `setProse`, not `setText`: Codex copy is authored against engine keys and
+    // the panel swaps each one for its player-facing name. Doing it in one
+    // place and not the other is what made this tooltip print
+    // "rpDropChanceBonus" where the Codex prints "RP Drop Chance".
     const summary = tooltip.querySelector<HTMLElement>('.stats-codex-tooltip-summary');
-    if (summary) setText(summary, entry.summary);
+    if (summary) setProse(summary, entry.summary);
 
     const detail = tooltip.querySelector<HTMLElement>('.stats-codex-tooltip-detail');
     if (detail) {
       detail.replaceChildren();
-      // Split on blank lines so multi-paragraph detail copy from the Codex
-      // data layer renders as a stack of <p>s. A single paragraph (no \n\n)
-      // produces one <p>, which is the shape that matches today's entries.
-      const paragraphs = entry.detail.split(/\n\n+/);
-      for (const para of paragraphs) {
+      for (const para of entry.detail.split(/\n\n+/)) {
         const trimmed = para.trim();
         if (!trimmed) continue;
         const p = document.createElement('p');
-        setText(p, trimmed);
+        setProse(p, trimmed);
         detail.appendChild(p);
       }
+    }
+
+    const stats = tooltip.querySelector<HTMLElement>('.stats-codex-tooltip-stats');
+    if (stats) {
+      stats.replaceChildren();
+      if (entry.stats && entry.stats.length > 0) {
+        const heading = document.createElement('h5');
+        heading.className = 'codex-detail-stats-heading';
+        heading.textContent = 'Resolves these stats';
+        stats.appendChild(heading);
+        const list = document.createElement('ul');
+        list.className = 'codex-detail-stats-list';
+        for (const stat of entry.stats) {
+          const li = document.createElement('li');
+          li.className = 'codex-detail-stat';
+          const name = document.createElement('span');
+          name.className = 'codex-detail-stat-name';
+          name.textContent = friendlyTermName(stat);
+          name.title = stat;
+          li.appendChild(name);
+          list.appendChild(li);
+        }
+        stats.appendChild(list);
+      }
+    }
+
+    const footer = tooltip.querySelector<HTMLElement>('.stats-codex-tooltip-footer');
+    if (footer) {
+      footer.replaceChildren();
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'stats-codex-tooltip-link';
+      link.textContent = 'Open in Codex →';
+      link.addEventListener('click', () => {
+        this.closeTooltip();
+        this.onOpenCodex?.(entry.id);
+      });
+      footer.appendChild(link);
     }
   }
 

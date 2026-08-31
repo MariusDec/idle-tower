@@ -107,7 +107,7 @@ export class JournalStrip {
     const active = info.active;
     if (!active) {
       // All chapters done — the celebration modal was the last thing, and a
-      // perpetual "12/12" pill in the corner would just be dead pixels.
+      // perpetual "N/N" pill in the corner would just be dead pixels.
       setDisplay(this.collapsedBtn, 'none');
       return;
     }

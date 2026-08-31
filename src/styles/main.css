@@ -1967,6 +1967,19 @@ button:disabled {
 .ability-upgrade-tooltip .tooltip-cost.cannot-afford {
   color: var(--warn);
 }
+/* Plan §7.2: the secondary rows (Auto-cast, XP to next, Unlocks) sit below a
+   hairline and use the dim text colour so the primary stat block (Mana /
+   Effect / Damage / Cooldown / Duration / Area) stays the dominant scan
+   target. The hairline matches the one above `.tooltip-cost` so the cost
+   block, the secondary rows, and the primary rows read as one stack with
+   two hairline breaks instead of three unrelated groups. */
+.ability-upgrade-tooltip .tooltip-row.tooltip-row--meta {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--stroke-subtle);
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
 
 .ability-card.is-upgrade-flash {
   animation: ability-card-flash var(--dur-slow) ease-out;
@@ -2525,6 +2538,12 @@ button:disabled {
 .automation-info { flex: 1 1 0; min-width: 0; }
 .automation-name { font-weight: 600; color: var(--text-0); }
 .automation-desc { color: var(--text-1); font-size: var(--text-sm); margin-top: 2px; }
+.automation-source {
+  margin-top: 4px;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
 .automation-status { font-size: var(--text-xs); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .automation-status-on { color: var(--good); font-weight: 600; }
 .automation-status-off { color: var(--text-2); }
@@ -8453,6 +8472,34 @@ body.eq-dragging img { pointer-events: none; }
 .stats-codex-tooltip-detail p:last-child {
   margin-bottom: 0;
 }
+
+/* Plan §5.3 — grow the tooltip to fit the Codex detail pieces and style the
+   category chip + footer link. Raising max-width from 320→380 gives the stat
+   list and the "Open in Codex" link room to breathe without reflowing onto a
+   narrow phone viewport (the mobile media query below still clamps). */
+.stats-codex-tooltip { max-width: 380px; }
+
+.stats-codex-tooltip-cat {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--stroke-strong);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.stats-codex-tooltip-stats { margin-top: 8px; }
+.stats-codex-tooltip-footer { margin-top: 8px; }
+.stats-codex-tooltip-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.stats-codex-tooltip-link:hover { text-decoration: underline; }
 
 /* Above/below placements reverse the entrance translate so the tooltip
    appears to flow out of the button rather than up from below it. */

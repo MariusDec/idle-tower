@@ -68,6 +68,15 @@ const ELITE_HP_MULT = 2.5;
 const ELITE_GOLD_MULT = 2.5;
 /** RP guaranteed by an elite kill (plan §3.4: elites are a visible RP faucet). */
 const ELITE_RP_DROP = 1;
+/**
+ * Chance that an elite pays its research point (economy §2.4).
+ *
+ * It used to be a guarantee, which at the 20% elite rate past wave 100 made
+ * elites 860 RP/h on their own — five times the whole per-kill drop channel
+ * and the single largest RP faucet in the game. A quarter of that keeps the
+ * "elites are worth research" pitch intact at a size the tree is priced for.
+ */
+const ELITE_RP_DROP_CHANCE = 0.25;
 const AURA_RADIUS = world(180);
 const HASTE_SPEED_BONUS = 0.5;
 const THORNS_REFLECT_FRACTION = 0.1;
@@ -587,7 +596,7 @@ export class EnemyManager {
       const def = ENEMY_DEFS[enemy.type];
       // Plan §3.4: an elite always pays out research, so the player has a
       // concrete reason to want the aura on screen instead of merely surviving it.
-      if (enemy.elite) {
+      if (enemy.elite && Math.random() < ELITE_RP_DROP_CHANCE) {
         this.bus.emit('rp_dropped', { x: enemy.x, y: enemy.y, amount: ELITE_RP_DROP });
         if (this.researchTree) this.researchTree.addRP(ELITE_RP_DROP);
       }

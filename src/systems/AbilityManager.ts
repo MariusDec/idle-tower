@@ -4,11 +4,17 @@ import {
   ABILITIES,
   ABILITY_BY_ID,
   BUFF_FROST_BRITTLE,
+  CHAIN_BOUNCE_MAX,
+  CHAIN_DECAY,
   GLOBAL_NOVA_SLOW,
   METEOR_SPLASH_FRACTION,
   PLACEMENT_FOCUS_CHILL,
   PLACEMENT_FOCUS_CHILL_DURATION,
   PLACEMENT_FOCUS_DAMAGE_BONUS,
+  ROCKET_SPLASH_FRACTION,
+  ROCKET_SPLASH_RADIUS,
+  abilityManaCost,
+  chainBounces,
   computeEffectiveStats,
   executeBossFrac,
   frostBrittle,
@@ -90,14 +96,8 @@ const BUFF_LIFESTEAL = 'ability:lifesteal';
 const BUFF_VAMPIRIC_REGEN = 'ability:vampiricRegen';
 
 const MANA_UNLOCK_WAVE = 10;
-/** Rocket Barrage: blast radius and splash share of each rocket's landed hit. */
-const ROCKET_SPLASH_RADIUS = world(60);
-const ROCKET_SPLASH_FRACTION = 0.5;
-const CHAIN_BOUNCE_BASE = 6;
-const CHAIN_BOUNCE_PER_LEVEL = 1;
-const CHAIN_BOUNCE_MAX = 12;
+/** Chain Lightning: radius each bounce searches for the next unhit target. */
 const CHAIN_BOUNCE_RADIUS = world(200);
-const CHAIN_DECAY = 0.82;
 
 export class AbilityManager {
   private readonly resources: ResourceManager;
@@ -243,8 +243,7 @@ export class AbilityManager {
   getBaseManaCost(id: AbilityId, level: number): number {
     const def = ABILITY_BY_ID[id];
     if (!def) return 0;
-    const lvl = Math.max(1, Math.min(def.maxLevel, level));
-    return def.manaCost + def.manaCostPerLevel * (lvl - 1);
+    return abilityManaCost(def, level);
   }
 
   /** Raw, un-discounted cooldown of the ability at the given level. */
@@ -306,22 +305,45 @@ export class AbilityManager {
     return base * (1 + this.buffDurationBonus) * coreMult;
   }
 
-  getEffectiveStats(id: AbilityId): EffectiveAbilityStats {
+  /**
+   * Fully-multiplied `EffectiveAbilityStats` at `level` (plan §7.2).
+   *
+   * Factored out of `getEffectiveStats` so the §7 tooltip can quote the same
+   * numbers for the *next* level — including the `-20% ability cost` research
+   * or any other multiplier the player has stacked. The previous implementation
+   * sourced `next` from `computeEffectiveStats(def, level + 1)`, which is the
+   * raw per-def curve, so a player with a mana discount saw "24 → 35" — an
+   * arrow pointing at a number the cast would never actually cost.
+   *
+   * `upgradeCost` is left at 0 because the discount reads from the live XP
+   * state; only the current level has a meaningful gold cost. The tooltip does
+   * not use it.
+   */
+  getEffectiveStatsAtLevel(id: AbilityId, level: number): EffectiveAbilityStats {
     const def = ABILITY_BY_ID[id];
-    const level = this.getAbilityLevel(id);
     const stats = computeEffectiveStats(def, level);
     // Apply multipliers + costs on top of the static compute.
     stats.manaCost = Math.max(1, Math.ceil(stats.manaCost * this.abilityCostMultiplier));
     stats.cooldown = Math.max(1, stats.cooldown * this.cooldownMultiplier);
-    stats.upgradeCost = this.getUpgradeCost(id);
+    stats.upgradeCost = 0;
     stats.isMaxed = def ? level >= def.maxLevel : true;
     // Plan §G.4: the tooltip quotes the live, area-multiplied disc so the row
     // matches what the player sees under the cursor and what the effect lands
     // in. Non-targeted abilities keep the 0 / '' pair set by `computeEffectiveStats`.
     if (isTargeted(id)) {
-      stats.area = this.getEffectiveRadius(id);
+      stats.area = placementRadius(id, level) * this.areaMultiplier;
       stats.displayArea = `${Math.round(stats.area / WORLD_SCALE)} px`;
     }
+    return stats;
+  }
+
+  getEffectiveStats(id: AbilityId): EffectiveAbilityStats {
+    const level = this.getAbilityLevel(id);
+    const stats = this.getEffectiveStatsAtLevel(id, level);
+    // `upgradeCost` is the one stat that depends on the player's live XP, not
+    // on `level` alone; pin it from the real state here so the rest of the
+    // codebase (panels, popover, hover) keeps reading the discounted figure.
+    stats.upgradeCost = this.getUpgradeCost(id);
     return stats;
   }
 
@@ -827,8 +849,7 @@ export class AbilityManager {
     // spot" auto-fire.
     const bounces = Math.min(
       CHAIN_BOUNCE_MAX + this.chainBounceBonus,
-      CHAIN_BOUNCE_BASE + Math.floor(level / 2) * CHAIN_BOUNCE_PER_LEVEL
-        + this.chainBounceBonus + (cast.focused ? 2 : 0),
+      chainBounces(level) + this.chainBounceBonus + (cast.focused ? 2 : 0),
     );
     const r2 = CHAIN_BOUNCE_RADIUS * CHAIN_BOUNCE_RADIUS;
     const hit = new Set<number>();

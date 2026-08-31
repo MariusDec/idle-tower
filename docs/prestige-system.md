@@ -72,7 +72,7 @@ saves several runs for.
 
 | Tier | ID | Name | Cost | Scaling | Max | Effect | Requires |
 |---:|----|------|-----:|--------:|----:|--------|----------|
-| 1 | ap_auto_upgrader | Auto-Upgrader | 25 | — | 1 | Auto-buy automation | — |
+| 1 | ap_auto_upgrader | Auto-Upgrader | 12 | 2.0 | 3 | Auto-buy automation; the perk level is the per-tick budget | — |
 | 1 | ap_wave_skipper | Wave Skipper | 6 | 1.60 | 15 | +1% wave skip/level | — |
 | 1 | ap_quiver | Deep Quiver | 5 | 1.22 | 30 | +2% fire rate/level | — |
 | 1 | ap_idle_time | Extended Watch | 14 | 1.6 | 11 | +8 h offline cap/level | — |
@@ -230,6 +230,27 @@ Automation flags are stored in `PrestigeState.automationFlags`:
 - `autoAbilities` — auto-cast abilities
 - `autoAscend` — auto-ascend at target wave
 - `autoTranscend` — auto-transcend when possible
+
+### Auto-Upgrader's per-tick budget
+
+The Auto-Upgrader perk is the only AP perk with a `maxLevel > 1`; the
+ladder is **12 / 24 / 48 AP (84 total)**, three levels deep. The level is
+read by `PrestigeManager.getAutoBuyCount()` (plumbed into
+`AutomationDeps.prestige`) and that number is the per-tick purchase
+budget: L1 buys exactly one upgrade per interval, L3 buys three. When the
+perk is unspent, auto-buy is **not** unlocked at all, so the function
+returns `0` and `AutomationManager.runAutoBuy` short-circuits without
+running a loop it has no permission for. The one exception is a save
+that has unlocked auto-buy some other way — the long-Watch `overseer`
+unlock (chapter 7) grants it free — in which case `getAutoBuyCount`
+returns `1` so the loop runs at the floor a single manual perk purchase
+would have granted.
+
+The `Automation` tab (now its own entry in the `prestige` group of
+`NAV_GROUPS` — see [ui-system.md](ui-system.md)) reads `getAutoBuyCount`
+to render the "Buys N upgrades per tick" line. The panel controls
+(strategy, reserve, auto-ascend target, on/off toggles) live entirely
+on that tab; the Transcendence panel no longer carries any of them.
 
 ## Second, non-AP grant paths via the Watch
 

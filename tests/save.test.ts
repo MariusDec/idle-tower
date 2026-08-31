@@ -249,7 +249,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', async () => {
     await seed(JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(23);
+    expect(loaded.version).toBe(24);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -273,7 +273,7 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(23);
+    expect(loaded.version).toBe(24);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);
@@ -288,7 +288,7 @@ describe('migration ladder', () => {
   it('seeds a risk-0 pacing block for a v13 save', async () => {
     await seed(JSON.stringify({ ...v2Save, version: 13 }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(23);
+    expect(loaded.version).toBe(24);
     expect(loaded.pacing).toEqual({
       risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
     });
@@ -321,7 +321,7 @@ describe('migration ladder', () => {
   it('seeds an empty contract run for a v11 save', async () => {
     await seed(JSON.stringify({ ...v2Save, version: 11 }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(23);
+    expect(loaded.version).toBe(24);
     expect(loaded.contracts).toEqual({
       active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
     });
@@ -341,7 +341,7 @@ describe('migration ladder', () => {
     };
     await seed(JSON.stringify({ ...v2Save, version: 11, contracts }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(23);
+    expect(loaded.version).toBe(24);
     expect(loaded.contracts).toEqual(contracts);
 
     // And the real manager takes that state back without losing a slot.
@@ -370,7 +370,7 @@ describe('migration ladder', () => {
       prestige: { autoCastEnabled: { multishot: false } },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(23);
+    expect(loaded.version).toBe(24);
     expect(loaded.abilities.rocket_barrage).toEqual({
       level: 3, xp: 0, cooldown: 0, active: false, activeTimer: 0,
     });
@@ -390,7 +390,7 @@ describe('migration ladder', () => {
       talents: { allocated: { power_core: 2 } },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(23);
+    expect(loaded.version).toBe(24);
     expect(loaded.towerXp.level).toBe(4); // 3 + 1 (0-based -> 1-based)
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[4]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(4));
@@ -405,7 +405,7 @@ describe('migration ladder', () => {
       talents: { allocated: {} },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(23);
+    expect(loaded.version).toBe(24);
     expect(loaded.towerXp.level).toBe(TOWER_LEVEL_CAP);
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[TOWER_LEVEL_CAP]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(TOWER_LEVEL_CAP));
@@ -434,7 +434,7 @@ describe('migration ladder', () => {
       passiveAbilities: { marksmanship: { level: 5, xp: 200, unlocked: true } },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(23);
+    expect(loaded.version).toBe(24);
     expect(loaded.passiveAbilities).toEqual({});
   });
 
@@ -536,7 +536,7 @@ describe('v19 watch block', () => {
     await seed(JSON.stringify({ ...minimalSave, version: 18 }));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(23);
+    expect(loaded!.version).toBe(24);
     expect(typeof loaded!.watch).toBe('object');
     expect(loaded!.watch).not.toBeNull();
     expect(Array.isArray(loaded!.watch!.counters.riskWaves)).toBe(true);
@@ -567,7 +567,7 @@ describe('v19 watch block', () => {
     await seed(JSON.stringify(malformed));
     const loaded = (await loadFresh());
     expect(loaded, 'save should load — normalizeWatch repairs, does not reject').not.toBeNull();
-    expect(loaded!.version).toBe(23);
+    expect(loaded!.version).toBe(24);
 
     const w = loaded!.watch!;
     expect(Array.isArray(w.completed)).toBe(true);
@@ -615,7 +615,7 @@ describe('v19 watch block', () => {
     expect(loaded!.watch!.counters.contractsDone).toBe(11);
     expect(loaded!.watch!.counters.blessingPicks).toBe(19);
     expect(loaded!.watch!.counters.mutatorWaves).toBe(5);
-    expect(loaded!.watch!.counters.riskWaves).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(loaded!.watch!.counters.riskWaves).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 0]);
   });
 
   // 4. The snapshot does not alias: mutating the live state after save does
@@ -684,7 +684,7 @@ describe('v19→v20 ability level clamp', () => {
     await seed(JSON.stringify(v19));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(23);
+    expect(loaded!.version).toBe(24);
     // In-range survives unchanged; out-of-range is clamped to [1, maxLevel].
     expect(loaded!.abilities.rain_of_arrows.level).toBe(7);
     expect(loaded!.abilities.frost_nova.level).toBe(10);
@@ -700,7 +700,7 @@ describe('v19→v20 ability level clamp', () => {
     expect(mgr.save(state)).toBe(true);
     const loaded = mgr.load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(23);
+    expect(loaded!.version).toBe(24);
     expect(loaded!.abilities.rain_of_arrows.level).toBe(8);
   });
 });
@@ -742,7 +742,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     await seed(JSON.stringify(v20));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(23);
+    expect(loaded!.version).toBe(24);
     const tp = loaded!.prestige.tpSpent;
     expect(tp.tp_midas).toBeUndefined();
     expect(tp.tp_salvage).toBe(1);
@@ -803,7 +803,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     await seed(JSON.stringify(v14));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(23);
+    expect(loaded!.version).toBe(24);
     // upgradeDiscount 9 -> prospecting ceil(9/2) = 5, old key gone.
     expect(loaded!.upgrades.upgradeDiscount).toBeUndefined();
     expect(loaded!.upgrades.prospecting).toBe(5);
@@ -825,10 +825,66 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     await mgr.hydrate();
     expect(mgr.save(state)).toBe(true);
     const loaded = mgr.load()!;
-    expect(loaded.version).toBe(23);
+    expect(loaded.version).toBe(24);
     expect(loaded.upgrades.damage).toBe(12);
     expect(loaded.prestige.tpSpent.tp_head_start).toBe(4);
     expect(loaded.prestige.apSpent.ap_warlord).toBe(2);
+  });
+});
+
+/**
+ * v23 -> v24 (plans/improvements.md §8).
+ *
+ * The save version bumps because two tables moved: the RP faucet was rebalanced
+ * (forward-looking — nothing in an old save gets clawed back) and the
+ * `MAX_RISK_CEILING` ceiling moved 7 -> 8 to make room for the Crown of
+ * Thorns watch unlock. The only repair a v23 save needs on load is the risk
+ * histogram: it was 8 slots under the old ceiling and the new ceiling wants
+ * `MAX_RISK_CEILING + 1` slots.
+ */
+describe('v23→v24 watch riskWaves resize', () => {
+  const minimalSave = {
+    version: 2,
+    savedAt: Date.now(),
+    tower: { hp: 50, maxHp: 100 },
+    resources: { gold: 500, lifetimeGold: 500, mana: 10, maxMana: 100, manaRegen: 1 },
+    upgrades: { damage: 5 },
+    research: {},
+    abilities: {},
+    prestige: {},
+    wave: { number: 12 },
+    stats: { enemiesKilled: 90 },
+  };
+
+  it('grows an 8-slot riskWaves array to MAX_RISK_CEILING + 1 and keeps completed', async () => {
+    // Plant a v23 save whose watch block reflects the old ceiling (8 slots)
+    // and a single completed chapter. After the ladder walks, the array must
+    // have gained one slot and `completed` must come back untouched.
+    const v23 = {
+      ...minimalSave,
+      version: 23,
+      watch: {
+        completed: ['wc_first_watch'],
+        counters: {
+          killsByType: { tank: 42 },
+          flawlessWaves: 7,
+          swiftBosses: 3,
+          contractsDone: 11,
+          blessingPicks: 19,
+          mutatorWaves: 5,
+          riskWaves: [1, 2, 3, 4, 5, 6, 7, 8],
+        },
+      },
+    };
+    await seed(JSON.stringify(v23));
+    const loaded = (await loadFresh())!;
+    expect(loaded.version).toBe(24);
+    expect(loaded.watch!.completed).toEqual(['wc_first_watch']);
+    expect(loaded.watch!.counters.riskWaves).toHaveLength(MAX_RISK_CEILING + 1);
+    // Every original slot survives; the new slot is the zero pad `normalizeWatch`
+    // adds, not the migration itself.
+    expect(loaded.watch!.counters.riskWaves.slice(0, 8)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(loaded.watch!.counters.riskWaves[8]).toBe(0);
   });
 });
 
