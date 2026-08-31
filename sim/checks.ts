@@ -59,7 +59,9 @@ import type {
   ResourceState,
   TalentState,
   TowerXpState,
+  WaveTimingState,
 } from '../src/types.ts';
+import { defaultWaveTiming } from '../src/data/waveTiming.ts';
 
 let failures = 0;
 
@@ -589,52 +591,81 @@ section('§4.1 bulk buy');
   check('an unaffordable bulk buy buys nothing', broke.buyBulk('damage', 10) === 0);
 }
 
-// ── §4.4/4.5 offline progress ─────────────────────────────────────────────
-section('§4.4/4.5 offline progress');
+// ── §2 / §6 offline progress ──────────────────────────────────────────────
+section('§2/§6 offline progress');
 {
-  const persisted = (dps: number, wave: number, highest: number, agoSeconds: number) => ({
+  const persisted = (wave: number, highest: number, agoSeconds: number, timing?: WaveTimingState) => ({
     savedAt: Date.now() - agoSeconds * 1000,
-    tower: { baseDamage: dps, fireRate: 1, critChance: 0, critMultiplier: 1 },
-    wave: { number: wave, highestWave: highest },
+    tower: { baseDamage: 1000, fireRate: 5, critChance: 0, critMultiplier: 1 },
+    wave: { number: wave, highestWave: highest, elapsed: 0 },
     stats: { lifetimeHighestWave: highest },
     research: {},
+    waveTiming: timing ?? defaultWaveTiming(),
   }) as never;
 
   const save = new SaveManager(new EventBus());
   const hour = 3600;
+  const measured = (seconds: number, wave: number): WaveTimingState => ({
+    lastWaveSeconds: seconds, avgWaveSeconds: seconds, sampleWave: wave, samples: 5,
+  });
 
-  const strong = save.computeOfflineProgress(persisted(1e6, 5, 40, hour), 1);
-  check('a strong tower clears waves offline', strong.wavesCleared > 0,
-    `cleared=${strong.wavesCleared}`);
-  check('clearing waves advances the wave', strong.endWave > 5,
-    `endWave=${strong.endWave}`);
-  check('offline never passes this run\'s deepest wave', strong.endWave <= 40,
-    `endWave=${strong.endWave}`);
+  // The absence prices the wave the run was standing on, regardless of tower
+  // strength: stronger DPS would have shortened the *measured* clear, so what
+  // passes through here is duration, not damage. The same absence at the same
+  // measurement therefore always reports the same wave.
+  const at5 = save.computeOfflineProgress(persisted(5, 40, hour, measured(60, 5)), 1);
+  const at5Strong = save.computeOfflineProgress(persisted(5, 40, hour, measured(20, 5)), 1);
+  check('offline farms the wave the run was standing on',
+    at5.wave === 5 && at5Strong.wave === 5,
+    `at5=${at5.wave} at5Strong=${at5Strong.wave}`);
 
-  // The lifetime best must not raise the ceiling: after an ascension it can be
-  // far beyond what the current tower has actually faced.
-  const afterAscend = save.computeOfflineProgress(
-    { ...(persisted(1e6, 3, 6, hour) as object), stats: { lifetimeHighestWave: 200 } } as never,
-    1,
-  );
-  check('the lifetime best does not raise the ceiling', afterAscend.endWave <= 6,
-    `endWave=${afterAscend.endWave}`);
+  // Stepping back off a boss wave: wave 30 is a boss in this era, so an
+  // absence the run would otherwise farm must step back to 29.
+  const atBoss = save.computeOfflineProgress(persisted(30, 40, hour, measured(60, 29)), 1);
+  check('a boss wave steps back before farming', atBoss.wave === 29,
+    `wave=${atBoss.wave}`);
 
-  // Wave 31 rather than 30: the walk backs off a boss wave before starting,
-  // so a boss wave would report an end wave one lower for reasons unrelated
-  // to whether anything was cleared.
-  const weak = save.computeOfflineProgress(persisted(0.001, 31, 40, hour), 1);
-  check('a walled tower clears nothing', weak.wavesCleared === 0,
-    `cleared=${weak.wavesCleared}`);
-  check('a walled tower does not advance', weak.endWave === 31,
-    `endWave=${weak.endWave}`);
+  // A whole absence is a closed-form `repeat` count, not a forward walk.
+  const short = save.computeOfflineProgress(persisted(5, 40, 4 * hour, measured(60, 5)), 1);
+  const long = save.computeOfflineProgress(persisted(5, 40, 8 * hour, measured(60, 5)), 1);
+  check('the offline repeat count is a real number', short.waveRepeats > 0,
+    `repeats=${short.waveRepeats}`);
+  check('offline repeats scale linearly with the absence',
+    Math.abs(long.waveRepeats / Math.max(0.0001, short.waveRepeats) - 2) < 0.01,
+    `short=${short.waveRepeats} long=${long.waveRepeats}`);
 
-  // Plan §4.5: offline income must carry the live gold multiplier.
-  const plain = save.computeOfflineProgress(persisted(1e4, 5, 40, hour), 1);
-  const boosted = save.computeOfflineProgress(persisted(1e4, 5, 40, hour), 4);
-  check('offline gold scales with the multiplier',
-    Math.abs(boosted.goldEarned / Math.max(1, plain.goldEarned) - 4) < 0.01,
-    `plain=${plain.goldEarned} boosted=${boosted.goldEarned}`);
+  // A faster measured wave means more clears for the same wall-clock absence.
+  const fast = save.computeOfflineProgress(persisted(5, 40, hour, measured(30, 5)), 1);
+  const slow = save.computeOfflineProgress(persisted(5, 40, hour, measured(60, 5)), 1);
+  check('faster measures mean more offline clears',
+    fast.waveRepeats > slow.waveRepeats,
+    `fast=${fast.waveRepeats} slow=${slow.waveRepeats}`);
+
+  // Plan §2.8: an unmeasured run pays half the rate until 5 samples exist.
+  const guess = save.computeOfflineProgress(persisted(5, 40, hour, defaultWaveTiming()), 1);
+  check('an unmeasured run still pays, at a quarter', guess.goldEarned > 0,
+    `gold=${guess.goldEarned} measured=${guess.measured}`);
+  expectHalf(guess, fast);
+
+  function expectHalf(guess: { goldEarned: number; waveSeconds: number },
+                      measured: { goldEarned: number; waveSeconds: number }) {
+    // An unmeasured absence pays `UNMEASURED_WAVE_PENALTY = 0.5` of the yield
+    // fraction, so the unmeasured gold should be near the measured one
+    // (the measured path also rescales by `expectedWaveSeconds`, which can
+    // nudge the ratio slightly above or below 0.5 — generous tolerance).
+    const ratio = guess.goldEarned / Math.max(1, measured.goldEarned);
+    check('an unmeasured run pays half the measured rate',
+      ratio >= 0.4 && ratio <= 1.2,
+      `guess=${guess.goldEarned} measured=${measured.goldEarned} ratio=${ratio.toFixed(3)}`);
+  }
+
+  // Cap transparency: the report names the cap so the welcome back modal can
+  // say so. A 100h absence on the default cap must report capped=true.
+  const capped = save.computeOfflineProgress(persisted(5, 40, 100 * hour, measured(60, 5)), 1);
+  check('a long absence reports the cap', capped.capped,
+    `capped=${capped.capped} elapsed=${capped.elapsedSeconds}`);
+  check('the named cap is 8h', capped.maxIdleSeconds === 8 * 3600,
+    `cap=${capped.maxIdleSeconds}`);
 }
 
 // ── §4.6 progression ──────────────────────────────────────────────────────

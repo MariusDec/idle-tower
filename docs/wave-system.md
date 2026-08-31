@@ -232,6 +232,33 @@ If `waveSkipChance > 0` and roll succeeds:
 - Immediate intermission (wave cleared instantly)
 - Emits `wave_cleared` + toast
 
+## Wave clock (gameplay plan §2 / §6.4)
+
+The offline model is paced by `WaveTimingState.avgWaveSeconds` — a running
+mean of the last `WAVE_TIMING_EMA_WINDOW = 5` clears measured in
+**simulation** seconds (see [data/waveTiming.ts](../../src/data/waveTiming.ts)).
+That block feeds `computeOfflineProgress` and is the dial every absent
+absence is priced against.
+
+- **When a sample is fair.** `WaveManager.recordWaveTiming()` is called at
+  `wave_cleared`. A measurement taken while the player was at the keyboard is
+  fair; a measurement taken while the Welcome Back Modal was open is *not*,
+  because the absence simulation runs at the modal's pace, not at the
+  simulation pace the modal is reporting on. The modal pauses the wave
+  timer (`WaveManager.tick` short-circuits while the modal is showing), so the
+  recorded samples are always modal-free.
+- **Sample-depth rescaling.** A measurement at wave 33 is rescaled for use at
+  wave 91 via `expectedWaveSeconds` ratios, clamped to
+  `[WAVE_TIMING_RESCALE_MIN=0.25, WAVE_TIMING_RESCALE_MAX=4]`. The cap
+  protects against a sample taken at a wildly different depth poisoning
+  offline math.
+- **Measurement floor.** `MIN_WAVE_SECONDS = 5` and `MAX_WAVE_SECONDS = 3600`
+  clamp a glitched sample (`Infinity`, a stall, a frame-rate spike) instead
+  of letting it poison the average.
+- **Persistence.** `waveTiming` is part of `PersistentState` (v23+,
+  run-scoped, reset on ascend). Five measured clears is the threshold at
+  which `UNMEASURED_WAVE_PENALTY = 0.5` is dropped.
+
 ## Public API
 
 | Method | Effect |

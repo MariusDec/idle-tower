@@ -12,7 +12,7 @@ and in a **private file** on Android. Never `localStorage`; see
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 21
+  version: number;       // current = 23
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -28,6 +28,7 @@ interface PersistentState {
   cores: CoreRunState;                        // v13+
   pacing: PacingState;                        // v14+
   watch: WatchState;                          // v19+
+  waveTiming: WaveTimingState;                // v23+
 }
 ```
 
@@ -54,6 +55,8 @@ interface PersistentState {
 | v18 → v19 | the Long Watch. Purely additive — `data.watch = defaultWatch()`. |
 | v19 → v20 | the ability redesign. No state-shape change — `migrateV19toV20` only clamps each stored ability level into `[1, maxLevel]` as a safety net. The `instantCast` **localStorage** preference (never part of the save) is read once into `autoCastAutoAim` and removed. |
 | v20 → v21 | the upgrades revamp's balance migration — `upgradeDiscount` → `prospecting`, `tp_midas` → `tp_salvage`, and every upgrade/perk level clamped to its new ceiling (see below) |
+| v21 → v22 | the Tower XP revamp — the polynomial+geometric curve in `xpTables.xpForNextLevel` replaces the hand-written `TOWER_XP_TABLE`, the talent tree's per-node costs are recomputed from the new curve, the tower's `level`/`xp`/`totalXpEarned` are restated onto it, and every previously allocated talent is refunded (see [xp-talent-system.md](xp-talent-system.md)) |
+| v22 → v23 | the offline model rewrite — `waveTiming` block seeded to `defaultWaveTiming()`. Old absence-walk fields are gone; offline no longer simulates anything, it prices `waveRepeats × averageKillGoldForWave + xpPerWaveClear` against the measured wave duration, with `UNMEASURED_WAVE_PENALTY` until five samples exist (see [Offline Progress](#offline-progress)) |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -208,33 +211,73 @@ write.
 ## Validation
 
 `validate()` checks:
-- version is 2..21 (anything older than the current version is walked up the migration ladder; anything outside the range is rejected)
+- version is 2..23 (anything older than the current version is walked up the migration ladder; anything outside the range is rejected)
 - All required fields exist and have correct types (object, array, number checks)
 
 ## Offline Progress
 
-Computed on load via `computeOfflineProgress(persisted, now)`:
+Computed on load via `computeOfflineProgress(persisted, now)`. Offline no
+longer simulates a wave walk — it picks one wave and repeats it for the whole
+absence at a closed-form price.
 
 1. **Elapsed time:** `max(0, (now - savedAt) / 1000)`, capped at the current
    idle cap — 8h base, +8h per level of the `ap_idle_time` AP perk, up to 4
    days (11 levels). The cap is derived from `prestige.apSpent` via a
    `getIdleCapSeconds` callback injected into `SaveManager`; nothing about it
    is persisted, which is why `migrateV14toV15` is a no-op.
-2. **Effective DPS:** `estimateDPS(tower) * 0.7` (70% efficiency)
-3. **Gold earned:** `floor(effectiveDPS * elapsed * goldPerDamage)`
-   - goldPerDamage = `goldDropForWave / enemyHPForWave`
-4. **Waves cleared:** `floor(elapsed / 18)` (18s average wave duration)
+2. **Wave farmed:** the wave the run was standing on. If that wave is a boss
+   (`isBossWave(w) % 10 === 0`), offline steps back one — a run cannot farm a
+   boss without entering it, and entering it is not what "came back" means.
+3. **Wave duration:** `offlineWaveSeconds(waveTiming, wave, inProgress)` — the
+   `WaveTimingState` block's measured average (rescaled for depth if the
+   sample was taken elsewhere), or `expectedWaveSeconds(wave)` until five
+   clears have been timed. A wave the player is already part-way through is
+   never priced shorter than the seconds already spent on it
+   (`inProgressSeconds` floor). See [data/waveTiming.ts](../../src/data/waveTiming.ts).
+4. **Cycle time:** `cycleSeconds = waveSeconds + intermissionSecondsForWave(wave)`.
+5. **Repeats:** `waveRepeats = elapsed / cycleSeconds`, fractional and capped
+   at `MAX_OFFLINE_WAVE_REPEATS = 100_000`.
+6. **Yield fraction:** `OFFLINE_YIELD_FRACTION * (1 if measured, UNMEASURED_WAVE_PENALTY = 0.5 otherwise)`.
+   The unmeasured discount halves the yield — so a player who has just
+   ascended pays roughly half what a player with five samples at the same
+   depth pays. The figure is named in the modal so the player can see *why*
+   the absence paid what it did.
+7. **Per-wave gold:** `averageKillGoldForWave(wave) * count` (closed-form
+   average across the wave's enemy types and the wave's risks — no
+   per-enemy RNG).
+8. **Per-wave XP:** `averageKillXPForWave(wave) * count + xpPerWaveClear(wave)`.
+9. **Totals:** `goldEarned = floor(perWaveGold * waveRepeats * yieldFraction)`,
+   `xpEarned = floor(perWaveXp * waveRepeats * yieldFraction)`, and
+   `passiveXpEarned = floor(passiveWaveXpRef(wave) * waveRepeats * yieldFraction)`.
+   The yield fraction is the *only* offline-vs-active dial; everything else is
+   the same arithmetic the active game runs.
+
+`OfflineResult` carries `elapsedSeconds`, `capped`, `maxIdleSeconds`,
+`wave`, `waveSeconds`, `waveRepeats`, `measured`, `goldEarned`, `rpEarned`,
+`researchElapsed`, `xpEarned`, `passiveXpEarned` — see
+[src/systems/SaveManager.ts](../../src/systems/SaveManager.ts) (line 164).
+The result fields the modal renders are `goldEarned`, `xpEarned`,
+`waveRepeats`, `wave`, `capped`, `maxIdleSeconds`, `elapsedSeconds`,
+`measured`.
 
 Applied via `applyOfflineProgress(state, result)`:
 - Adds gold to `resources.gold`, `resources.lifetimeGold`, `stats.goldEarned`
-- Waves cleared is informational only (displayed in modal)
+- Adds XP to `towerXp.xp`/`totalXpEarned` and may level the tower (the
+  curve at [data/xpTables.ts](../../src/data/xpTables.ts) — `xpForNextLevel`)
+- Records passive XP on each unlocked passive
+- Records `result.waveRepeats` as the modal's "you farmed X clears of wave Y"
+  line — what used to be "waves cleared", and is now a literal accounting,
+  not a number the game had to be persuaded to swallow
 
 ## Welcome Back Modal
 
 When offline progress > 0, `welcome_back` event triggers `WelcomeBackModal.show()`:
-- Shows duration, gold earned, waves cleared, effective DPS
+- Shows duration, gold earned, XP earned, **wave repeats at the wave farmed**
 - Capped notice if the absence exceeded the idle cap, naming the cap
   (`capped at 8h`, `capped at 1d 8h`, …)
+- Unmeasured-rate notice if the player has fewer than five timed clears
+  (`paid at half the usual rate — no clears timed yet`) — see
+  `WelcomeBackModal.ts` line 488
 - Modal overlay with Continue button
 
 ## Manual Operations
@@ -256,7 +299,7 @@ When offline progress > 0, `welcome_back` event triggers `WelcomeBackModal.show(
 `localStorage` is the wrong home for a save in a native shell: it is WebView
 data, it shares one ~5 MB origin quota, Android may evict it under storage
 pressure, and a "clear cache" cleanup can take it. So the bytes moved. **The
-format did not** — still `SAVE_VERSION` 21, the same JSON, the same migration
+format did not** — still `SAVE_VERSION` 23, the same JSON, the same migration
 ladder.
 
 `SaveStore` is a three-method string key/value interface. `SaveManager` owns

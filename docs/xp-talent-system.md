@@ -15,13 +15,20 @@ Character-level progression that persists through both prestige layers.
 `xpPerKill` = `KILL_XP_WEIGHT[type] * killXpWaveScale(wave)`, floored at 1.
 `KILL_XP_WEIGHT` is a per-type table (normal: 1, boss: 12, thief/warden: 2.4,
 etc.) that tracks how much *attention* a type costs, not its HP bar.
-`killXpWaveScale(wave)` = `1 + 0.20 * wave`, so a wave-200 kill is 41x a
-wave-1 kill. The scale is linear so the roster weights stay legible.
+`killXpWaveScale(wave)` = `1 + 0.12 * sqrt(wave - 1)`, so a wave-200 kill is
+~4x a wave-1 kill (the curve is sub-linear: depth rewards the player, but
+not enough that deep kills become the bottleneck). The old linear shape
+(`1 + 0.20 * wave`) made a wave-200 kill worth 41x a wave-1 kill, which
+meant the per-wave XP share grew with depth faster than the level curve
+(~1.028x) — every level took more, and each level's worth of XP also grew.
+That decoupling is what the v22 migration had to unwind.
 
 ### Wave-clear XP
 
-`xpPerWaveClear(wave)` = `1.5 * wave^1.5`, floored at 1. This is superlinear:
-clearing deep waves is the real XP faucet.
+`xpPerWaveClear(wave)` = `3 * wave`, floored at 1 — *exactly* linear in depth,
+so clearing a deep wave pays proportionally more than a shallow one, without
+the superlinear blowup that made the v22 curve rebase land unevenly across
+mid-tier waves.
 
 ### Pioneer bonus
 

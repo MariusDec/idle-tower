@@ -26,10 +26,11 @@ sums both. `describePassiveEffects` turns the result into the panel's lines.
 ## The two tracks
 
 - **XP.** `passiveXpForLevel(def, level) = def.xpBase * level^1.5 * 1.10^(level-1)`.
-  `def.xpBase` is `6 * passiveWaveXpRef(def.unlockWave)` — six waves of play at
-  the wave the passive unlocks at. This is the fix for the old system's headline
-  defect: one shared requirement table against a faucet that grew with the live
-  wave meant a wave-65 passive gained ten levels in its first wave.
+  `def.xpBase` is `PASSIVE_XP_LEVEL_WAVES * passiveWaveXpRef(def.unlockWave)`
+  — `PASSIVE_XP_LEVEL_WAVES = 10` waves of play at the wave the passive
+  unlocks at. This is the fix for the old system's headline defect: one
+  shared requirement table against a faucet that grew with the live wave
+  meant a wave-65 passive gained ten levels in its first wave.
 - **Gold.** `passiveUpgradeCost(def, level) = def.upgradeBaseCost * 2^level`.
   `upgradeBaseCost` is four waves of income at the unlock wave, fitted from the
   balance simulator's §2.1 gold column. Growth is 2.0 because the economy itself

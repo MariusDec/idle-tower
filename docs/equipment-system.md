@@ -18,10 +18,29 @@ and all-damage — all as `_pct`.
 
 ## Drops
 
-`rollDrop(wave, source)` where `source` is `'boss' | 'elite' | 'milestone'`.
-Each source has its own base chance and per-wave ramp; `setFindChanceBonus`
-carries the Lucky Finds talent. The pool is filtered by both `bossOnly` **and**
-`minWave`, so a shallow boss cannot drop deep-wave gear.
+`EquipmentManager.rollDrop(wave, source, options?)` where `source` is
+`'boss' | 'elite' | 'milestone'` and `options` is `{ guaranteed?: boolean;
+rarityBoost?: number }`. The call has **two layers**:
+
+- **The chance is flat in wave.** Elite drops roll at 12% with a 25% cap;
+  boss drops roll at 30% with a 60% cap. A wave at 150 drops at the same rate
+  as a wave at 20 — `chanceForSource` does not ramp with depth. What depth
+  *does* move is **rarity** (`rollRarity(wave)` biases the roll upward), so
+  deeper waves yield the *same number of pieces*, but pieces that are more
+  likely to be rare or epic.
+- **One roll per source, per wave.** `EquipmentManager.beginWave()` resets
+  `rollsThisWave`; the manager spends at most one elite roll and one boss
+  roll no matter how many elites die. A wave's expected gear is therefore
+  `1 × chance` for elites and `1 × chance` for the boss, independent of
+  spawn count. Milestones have no budget cap.
+
+A drop listed `{ guaranteed: true }` bypasses the budget — the swift-kill
+reward and a Windfall chest are *earned*, not farmed, so they must be
+honourable even on a wave that already burned its roll.
+
+The pool is filtered by both `bossOnly` **and** `minWave`, so a shallow boss
+cannot drop deep-wave gear. `setFindChanceBonus` carries the Lucky Finds
+talent.
 
 ## Equipping
 
