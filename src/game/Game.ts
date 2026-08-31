@@ -1503,7 +1503,7 @@ export class Game {
         }
         this.bus.emit('toast', {
           kind: 'warning',
-          text: `Tower destroyed! Restarting at wave ${Math.min(1, this.waveMgr.currentWave - 1)}.`,
+          text: `Tower destroyed! Restarting at wave ${Math.max(1, this.waveMgr.currentWave - 1)}.`,
           life: 4,
         });
         this.restartCurrentWave();
