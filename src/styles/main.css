@@ -2492,6 +2492,12 @@ button:disabled {
   color: var(--text-1);
   margin-bottom: 8px;
 }
+.transcend-target-card {
+  padding-left: 4px;
+}
+.autobuy-config-count {
+  margin-bottom: 8px;
+}
 .autobuy-strategy-row {
   display: flex;
   flex-wrap: wrap;
