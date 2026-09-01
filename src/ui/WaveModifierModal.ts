@@ -31,7 +31,7 @@ export interface WaveModifierCallbacks {
   onSkip: () => void;
 }
 
-const AUTO_PICK_DELAY = 5;
+const AUTO_PICK_DELAY = 10;
 
 const PREFS_KEY = 'the-tower-wave-mod-auto-mode';
 

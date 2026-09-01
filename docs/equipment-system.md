@@ -49,6 +49,27 @@ talent.
 `Partial<Record<EquipmentStatType, number>>` that the stat pipeline
 folds into the stat recompute. `sell(id)` returns `getSellValue(id)` in gold.
 
+## Selling
+
+An item's `level` is the wave it dropped on (`generateEquipment(defId, rarity,
+wave)`). Nothing in the stat pipeline reads it — rarity alone carries an item's
+power — but `equipmentSellValue` does:
+
+```
+floor(SELL_BASE_VALUE x GOLD_GROWTH^(level - 1) x SELL_RARITY_MULT[rarity])
+```
+
+That is the same curve enemy gold follows, so a sale holds a fixed *relative*
+worth at any depth: roughly 7% of a wave's income for a common and most of a
+wave for a legendary. The previous formula was `10 x rarityMult` with no level
+term at all, which sold a legendary pulled off wave 80 for 500g in an economy
+paying tens of thousands per wave. Rarity now multiplies by at most 16x rather
+than 50x, because the level term carries the growth instead.
+
+Items from pre-`level` saves all read `level: 1`; `equipmentSellValue` floors
+the level at the def's `minWave` so an old deep-wave piece is not valued at
+wave-1 rates.
+
 ## Persistence
 
 Inventory and equipped items survive **both** ascension and transcendence.

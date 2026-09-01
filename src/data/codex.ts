@@ -378,7 +378,7 @@ export const CODEX_ENTRIES: readonly CodexEntry[] = [
     category: 'defense',
     summary: 'Extra times the tower may come back from 0 HP in one run.',
     detail:
-      'reviveCharges is added on top of the base revive evolution. Each charge is consumed when the tower reaches 0 HP and resets the tower to a fraction of max HP; charges are integer because half a revive is not a thing the damage system can spend. Once the charges are exhausted the run fails immediately on the next lethal hit.',
+      'reviveCharges is added on top of the base revive evolution. Each charge is consumed when the tower reaches 0 HP and resets the tower to a fraction of max HP; charges are integer because half a revive is not a thing the damage system can spend. Flat passive charges are spent first, then the once-per-run revive evolution with its higher fraction; the Second Wind ascension charge is spent last and restocks five minutes after each use, reviving at 33% to 100% HP by perk level and shoving the field back from level 3. Once nothing is left to spend the run fails immediately on the next lethal hit.',
     stats: ['reviveCharges'],
     seeAlso: ['shields', 'wall'],
   },

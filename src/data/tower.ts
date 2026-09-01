@@ -107,6 +107,61 @@ export const HOMING = {
 } as const;
 
 /**
+ * Ricochet deflection (`plans/bounce.md` §3.1).
+ *
+ * A bounce is not a new steering mode — it re-aims an existing projectile and
+ * then hands it to `steerHoming`, so everything here is about *choosing* the
+ * next body and about how long the shot has to reach it.
+ */
+export const BOUNCE = {
+  /**
+   * Half-angle of the forward cone a bounce prefers, in radians (100°).
+   *
+   * Wide, because a deflection is not a turn: anything roughly ahead of the
+   * shot should be reachable without the ricochet reading as a U-turn.
+   */
+  cone: (100 * Math.PI) / 180,
+  /**
+   * Squared-distance penalty on a candidate *behind* the shot. 2.25 = a 1.5x
+   * handicap on real distance, so a body behind is only taken when it is
+   * clearly the closest thing on the field.
+   */
+  backPenalty: 2.25,
+  /** Candidates closer than this are skipped; guards degenerate headings. */
+  minDistance: world(10),
+  /**
+   * Steering rate a bounced shot gets, rad/s. Sharper than `HOMING.turnRate`
+   * because the bounce already aimed it — this is tracking, not hunting.
+   */
+  turnRate: Math.PI * 2.4,
+  /**
+   * Seconds a bounced shot lives, measured from the bounce. The longest legal
+   * bounce (1053 units with `ricochet_power`) takes 0.56 s at
+   * `PROJECTILE_SPEED`, so this is flight plus a margin and never a cap the
+   * player feels.
+   */
+  lifetime: 0.9,
+} as const;
+
+/**
+ * Splinter shards (`plans/bounce.md` §3.3).
+ *
+ * A shard is a small, fast, hard-turning seeker with a short leash. The fan is
+ * what makes it read as shrapnel: it leaves the corpse sideways and curves in,
+ * rather than teleporting damage onto a neighbour.
+ */
+export const SHARD = {
+  /** Launch and cruise speed. */
+  speed: PROJECTILE_SPEED * 0.75,
+  /** Steering rate, rad/s. High: it has to recover from the launch fan fast. */
+  turnRate: Math.PI * 3.2,
+  /** Seconds a shard lives. Covers `splitShardRange` with room to spare. */
+  lifetime: 0.85,
+  /** Angle between adjacent shard launch headings, in radians (34°). */
+  fan: (34 * Math.PI) / 180,
+} as const;
+
+/**
  * How the tower is built, in world units and palette colours (UI plan §3.3).
  *
  * Before this the tower was a grey circle (`#5b6b7a`), a brown triangle "roof"

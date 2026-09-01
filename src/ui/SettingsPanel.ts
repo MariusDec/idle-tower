@@ -456,6 +456,8 @@ export class SettingsPanel {
     }
 
     this.confirmState = false;
+    setText(this.confirmBtn, 'Clear Save');
+    toggleClass(this.confirmBtn, 'is-confirming', false);
     this.api.onClearSave();
   }
 }

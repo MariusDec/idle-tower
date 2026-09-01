@@ -97,6 +97,14 @@ export class TalentManager {
     return total;
   }
 
+  /**
+   * Drop the behaviour cache after `allocated` is replaced from outside —
+   * a save restore or a full wipe. The cache is rebuilt lazily on next read.
+   */
+  invalidateCache(): void {
+    this.behaviorCache = null;
+  }
+
   /** Every behaviour held, for the stat context. */
   behaviors(): Set<TalentBehavior> {
     if (!this.behaviorCache) {

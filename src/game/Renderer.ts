@@ -5118,13 +5118,29 @@ export class Renderer {
       const magic = p.damageType === 'magic';
       const sprite = p.visual === 'rocket'
         ? this.getRocketExhaustSprite()
-        : magic
-          ? this.getMagicShotSprite(core)
-          : this.getTrailSprite(core, (p.splashRadius ?? 0) > 0);
+        : p.visual === 'shard'
+          ? this.getShardTrailSprite(core)
+          : magic
+            ? this.getMagicShotSprite(core)
+            : this.getTrailSprite(core, (p.splashRadius ?? 0) > 0);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(Math.atan2(p.vy, p.vx));
       ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+      ctx.restore();
+    }
+    // A bounced shot carries a halo that grows with its hop count, so a
+    // ricochet chain is legible as one shot doing three things rather than as
+    // three unrelated shots (`plans/bounce.md` §5.4). Ungated by
+    // `profile.additive` on purpose: this pass sets `lighter` unconditionally,
+    // so gating only the halo would leave it as a flat blob on `low`.
+    for (const p of projectiles) {
+      if (!p.alive || !p.bounces) continue;
+      const halo = this.getBounceHaloSprite(core);
+      const size = halo.width * (1 + Math.min(3, p.bounces) * 0.22);
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      ctx.drawImage(halo, p.x - size / 2, p.y - size / 2, size, size);
       ctx.restore();
     }
     this.drawSparks(ctx, core);
@@ -5136,7 +5152,9 @@ export class Renderer {
       if (!p.alive || p.damageType === 'magic') continue;
       const sprite = p.visual === 'rocket'
         ? this.getRocketSprite()
-        : this.getBoltSprite(core, (p.splashRadius ?? 0) > 0);
+        : p.visual === 'shard'
+          ? this.getShardSprite(core)
+          : this.getBoltSprite(core, (p.splashRadius ?? 0) > 0);
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(Math.atan2(p.vy, p.vx));
@@ -5370,6 +5388,66 @@ export class Renderer {
       g.lineTo(BOLT_LENGTH * 0.4, w);
       g.lineTo(-len, 0);
       g.closePath();
+      g.fill();
+    });
+  }
+
+  /**
+   * A Splinter shard: a short bright sliver, pointing along +x.
+   *
+   * Deliberately unlike the core's bolt — a shard is not a shot the tower
+   * fired, and the player should be able to tell a splinter fan from a volley
+   * without reading the blessing bar.
+   */
+  private getShardSprite(core: CoreId): HTMLCanvasElement {
+    const tint = CORE_BY_ID[core].color;
+    const L = BOLT_LENGTH * 0.55;
+    return this.part(`shard|${core}`, L * 4, (g) => {
+      g.fillStyle = lighten(tint, 0.35);
+      g.beginPath();
+      g.moveTo(L, 0);
+      g.lineTo(-L * 0.6, -L * 0.34);
+      g.lineTo(-L * 0.25, 0);
+      g.lineTo(-L * 0.6, L * 0.34);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = withAlpha(INK['950'], 0.6);
+      g.lineWidth = entity(0.8);
+      g.stroke();
+    });
+  }
+
+  /** The shard's trail: shorter and thinner than a bolt's, same construction. */
+  private getShardTrailSprite(core: CoreId): HTMLCanvasElement {
+    const glow = SHOT_STYLES[core].glow;
+    const len = BOLT_LENGTH * 1.6;
+    return this.part(`shard-trail|${core}`, len * 2.4, (g) => {
+      const w = BOLT_LENGTH * 0.2;
+      const grad = g.createLinearGradient(-len, 0, BOLT_LENGTH * 0.3, 0);
+      grad.addColorStop(0, withAlpha(glow, 0));
+      grad.addColorStop(1, withAlpha(lighten(glow, 0.4), 0.85));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(BOLT_LENGTH * 0.3, -w);
+      g.lineTo(BOLT_LENGTH * 0.3, w);
+      g.lineTo(-len, 0);
+      g.closePath();
+      g.fill();
+    });
+  }
+
+  /** Soft radial glow worn by a projectile that has ricocheted. */
+  private getBounceHaloSprite(core: CoreId): HTMLCanvasElement {
+    const glow = SHOT_STYLES[core].glow;
+    const r = BOLT_LENGTH * 1.5;
+    return this.part(`bounce-halo|${core}`, r * 2, (g) => {
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      grad.addColorStop(0, withAlpha('#ffffff', 0.7));
+      grad.addColorStop(0.35, withAlpha(lighten(glow, 0.3), 0.45));
+      grad.addColorStop(1, withAlpha(glow, 0));
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(0, 0, r, 0, Math.PI * 2);
       g.fill();
     });
   }

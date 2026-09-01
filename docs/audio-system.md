@@ -18,6 +18,8 @@ purely event-driven.
 | Event | Sound |
 |---|---|
 | `projectile_fired` | shot |
+| `projectile_bounced` | ricochet ping (rising triangle, throttled to one per 45 ms) |
+| `shards_split` | Splinter scatter (noise + rising square, throttled to one per 60 ms) |
 | `enemy_damaged` | hit |
 | `enemy_killed` | death |
 | `boss_killed` | boss death sting |

@@ -685,7 +685,14 @@ export class UIManager {
     this.hud.setOnOpenStats(() => this.statsPopup.toggle());
     this.statsPopup.setOnOpenCodex((id) => this.openCodex(id));
     this.settingsPanel = new SettingsPanel({
-      onClearSave: () => this.onClearSave(),
+      onClearSave: () => {
+        // The wipe drops the player back on wave 1 with an empty board. On
+        // mobile the settings sheet covers that, so it closes first — the
+        // confirmation is already spent, and leaving it up reads as "nothing
+        // happened".
+        this.mobileSheet?.close();
+        this.onClearSave();
+      },
       onVolumeChange: (v) => this.onVolumeChange(v),
       onMuteToggle: () => this.onMuteToggle(),
       onTargetingModeChange: (m) => {

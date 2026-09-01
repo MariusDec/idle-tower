@@ -142,6 +142,8 @@ export class AudioManager {
       this.bus.on('boss_killed', () => this.playBossDeath()),
       this.bus.on('rockets_fired', () => this.playRocketLaunch()),
       this.bus.on('projectile_exploded', () => this.playExplosion()),
+      this.bus.on('projectile_bounced', () => this.playRicochet()),
+      this.bus.on('shards_split', () => this.playShards()),
     );
   }
 
@@ -221,6 +223,30 @@ export class AudioManager {
       return;
     }
     this.playTone({ freq: 200, type: 'square', duration: 0.04, volume: 0.18, freqEnd: 120 });
+  }
+
+  private lastRicochetAt = 0;
+  private lastShardsAt = 0;
+
+  /**
+   * Ricochet: a short metallic *ping* that rises, so it reads as "went
+   * somewhere" rather than as a second hit. Rate-limited like the explosion —
+   * a pierce+ricochet build lands several per frame.
+   */
+  private playRicochet(): void {
+    const now = performance.now();
+    if (now - this.lastRicochetAt < 45) return;
+    this.lastRicochetAt = now;
+    this.playTone({ freq: 1150, type: 'triangle', duration: 0.06, volume: 0.13, freqEnd: 1750 });
+  }
+
+  /** Splinter: a dry scatter under the kill chirp. */
+  private playShards(): void {
+    const now = performance.now();
+    if (now - this.lastShardsAt < 60) return;
+    this.lastShardsAt = now;
+    this.playNoiseHit(0.05, 0.09);
+    this.playTone({ freq: 900, type: 'square', duration: 0.05, volume: 0.10, freqEnd: 1400 });
   }
 
   private playKill(p: { type?: string }): void {

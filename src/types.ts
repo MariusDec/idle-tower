@@ -269,9 +269,10 @@ export interface HostileShot {
 
 /**
  * How a projectile draws itself. `'rocket'` opts into the Rocket Barrage
- * sprite set (hull + exhaust flame); anything else renders as the core's bolt.
+ * sprite set (hull + exhaust flame), `'shard'` into the Splinter sliver;
+ * anything else renders as the core's bolt.
  */
-export type ProjectileVisual = 'default' | 'rocket';
+export type ProjectileVisual = 'default' | 'rocket' | 'shard';
 
 export interface Projectile {
   id: number;
@@ -311,6 +312,22 @@ export interface Projectile {
   splashFraction?: number;
   /** Sprite set to draw this projectile with (Rocket Barrage rounds are 'rocket'). */
   visual?: ProjectileVisual;
+  /**
+   * Bounces this shot has already made (Ricochet). Absent on a shot that has
+   * never bounced, so the renderer's halo costs one `undefined` check.
+   */
+  bounces?: number;
+  /**
+   * Bounces still available. Resolved lazily on the first bounce attempt from
+   * the live blessing state, so an ordinary shot carries nothing.
+   */
+  bouncesLeft?: number;
+  /**
+   * Splinter generation. `undefined` on a shot the tower fired, `1` on a shard
+   * thrown by a kill. A shard may not bounce and its kills may not splinter,
+   * which is what bounds the cascade.
+   */
+  splitGen?: number;
 }
 
 export interface ResourceState {

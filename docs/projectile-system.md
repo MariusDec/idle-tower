@@ -79,6 +79,74 @@ variants (Barrage, `double_shot`) are unscaled.
 - Each projectile tracks `piercingRemaining[id]` (number of extra enemies it can hit)
 - Default pierce max = `1 + pierceExtra`
 - Piercing projectiles stay alive after hitting an enemy
+- A `tank` body-blocks: however much pierce the shot has, it stops there
+
+Pierce and the Ricochet bounce are **sequential budgets, not competing ones** —
+see *Ricochet* below.
+
+## Ricochet (`plans/bounce.md`)
+
+With the `ricochet` blessing held, the impact that would have retired a shot
+instead **deflects it**. The rule, in order, per impact:
+
+1. Damage resolves normally.
+2. Pierce left (and not tank-blocked) → the shot passes straight through.
+   **No bounce.**
+3. Otherwise, bounce budget left and a legal target in range → `tryBounce`
+   repositions the shot to the swept-collision point, re-aims it, scales its
+   damage and returns `true`.
+4. Otherwise the shot dies as usual.
+
+`tryBounce` owns every side effect: position, heading, damage, budgets and the
+`hitEnemies` set. `bounceTarget` scores candidates on squared distance with a
+flat `BOUNCE.backPenalty` for anything outside the `BOUNCE.cone` forward
+half-angle, so a ricochet carries on across a pack instead of folding back —
+unless there is genuinely nothing ahead.
+
+A bounced shot **becomes a seeker** for the rest of its life (`BOUNCE.turnRate`,
+`BOUNCE.lifetime`, `age` reset to 0, `homingDelay` and `cruiseSpeed` cleared).
+Without steering, a bounce aimed from up to 1053 units away would visibly miss a
+walking target; with it, `steerHoming` is reused unchanged. A bounce also
+**spends whatever pierce is left**, which is what stops a tank-blocked shot
+getting its pass-throughs back on the far side of the deflection.
+
+| Constant | Base | With `ricochet_power` |
+|---|---|---|
+| Search radius | `BLESSING_TUNING.ricochetRange` = `world(300)` | x`ricochetPowerRangeMult` (1.35) |
+| Bounces | `ricochetBounces` = 1 | `ricochetPowerBounces` = 2 |
+| Damage carried per hop (compounding) | `ricochetDamage` = 0.45 | `ricochetPowerDamage` = 0.85 |
+
+Each bounce emits `projectile_bounced` `{ x, y, inAngle, outAngle, bounces,
+magic }`. This is the **only** feedback a bounce produces: `Renderer`'s impact
+decals are derived from a projectile *disappearing* from the snapshot, and a
+bounced shot does not disappear. `Game` turns the event into
+`EffectsManager.emitRicochetFlash`, and `AudioManager` into a throttled ping.
+Shards (`splitGen`) never bounce.
+
+## Splinter shards (`plans/bounce.md`)
+
+`fireShards(x, y, rawDamage, damageType)` launches
+`BLESSING_TUNING.splitShardCount` homing shards **from a kill point** rather
+than from the tower, at the nearest legal enemies inside
+`splitShardRange` (`world(280)`), on a `SHARD.fan` spread so the pair visibly
+scatters out of the body before curving in.
+
+Shards differ from a tower shot in four ways:
+
+- `splitGen: 1` — they may not bounce, and their kills may not splinter again.
+- `piercingRemaining` forced to 1 — a shard never pierces, whatever the tower's
+  pierce is.
+- `visual: 'shard'` — its own sprite and trail, so a splinter fan is legible
+  against a volley.
+- They emit `shards_split` `{ x, y, count }`, **not** `projectile_fired` —
+  routing them through the tower's shot event would double the shoot sound.
+
+They *do* share `fire`'s damage scaling and the ordinary impact path, which is
+the half of the pipeline the old instant-damage version skipped — that omission
+is why Splinter used to stop mattering a few dozen upgrades into a run.
+
+`SHARD.speed` / `turnRate` / `lifetime` live in `src/data/tower.ts` next to
+`HOMING` and `BOUNCE`.
 
 ## Damage Multipliers
 
@@ -90,10 +158,12 @@ variants (Barrage, `double_shot`) are unscaled.
 | Method | Purpose |
 |--------|---------|
 | `fire(target, towerState, opts)` | Create projectile(s) |
+| `fireShards(x, y, rawDamage, damageType)` | Launch Splinter shards from a kill point |
 | `tick(dt)` | Movement + collision |
 | `reset()` | Clear all projectiles |
 | `setDamageMultipliers(a, m)` | Update damage bonuses |
 | `setPierceExtra(n)` | Set additional pierce count |
+| `shardImpactInProgress` (getter) | True while a shard's own impact resolves; bounds the Splinter cascade |
 
 ## Collision (plan §1.6)
 

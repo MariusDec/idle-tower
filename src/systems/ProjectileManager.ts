@@ -1,7 +1,7 @@
 import type { DamageType, Enemy, Projectile, ProjectileVisual, TowerState } from '../types';
 import { nextId } from '../utils/math';
 import { PROJECTILE_HIT_PAD, world } from '../data/arena';
-import { HOMING, PROJECTILE_SPEED } from '../data/tower';
+import { BOUNCE, HOMING, PROJECTILE_SPEED, SHARD } from '../data/tower';
 import { ENEMY_DEFS, isTargetable } from '../data/enemies';
 import { BLESSING_TUNING, type BlessingBehavior } from '../data/blessings';
 import { CORE_TUNING, type CoreBehavior } from '../data/cores';
@@ -34,6 +34,9 @@ export interface CoreQuery {
 }
 
 const NO_CORE: CoreQuery = { has: () => false };
+
+/** Shared empty exclusion set for `nearestOthers`. Never mutated. */
+const NO_EXCLUSIONS: ReadonlySet<number> = new Set<number>();
 
 /** HP fraction below which the Executioner talent's bonus damage applies. */
 const TALENT_EXECUTE_THRESHOLD = 0.5;
@@ -125,6 +128,22 @@ export class ProjectileManager {
    * anything, so no handler can re-enter and refill the buffer mid-loop.
    */
   private readonly seekScratch: Enemy[] = [];
+  /**
+   * Scratch buffer for the bounce target search. Separate from `seekScratch`
+   * because the two run in different phases of `tick` and sharing one buffer
+   * would make the safety argument depend on call ordering. Safe to reuse
+   * across bounces: the search happens *after* every damage handler for this
+   * impact has already run, and it damages nothing itself.
+   */
+  private readonly bounceScratch: Enemy[] = [];
+  /**
+   * True only while a Splinter shard's own impact is being resolved.
+   *
+   * `Game`'s `enemy_killed` handler reads it and skips the splinter, which is
+   * what bounds the cascade now that shards are real projectiles and their
+   * kills land on a later frame than the kill that spawned them.
+   */
+  private resolvingShard = false;
   private executeThreshold = 0;
   private executeMultiplier = 0;
   /** Executioner talent: bonus damage against enemies below half HP. */
@@ -164,6 +183,11 @@ export class ProjectileManager {
 
   get list(): Projectile[] {
     return this.projectiles;
+  }
+
+  /** See `resolvingShard`. Read by `Game`'s Splinter trigger. */
+  get shardImpactInProgress(): boolean {
+    return this.resolvingShard;
   }
 
   setDamageMultipliers(additive: number, multiplicative: number): void {
@@ -480,6 +504,9 @@ export class ProjectileManager {
   tick(dt: number): void {
     for (const p of this.projectiles) {
       if (!p.alive) continue;
+      // Belt and braces: no path out of the impact block below leaves this set,
+      // but a stale `true` would silently disable Splinter for the whole run.
+      this.resolvingShard = false;
       // Remember where the projectile was: at 720 px/s a single step can cover
       // far more than an enemy's radius (especially at high game speed), so
       // collision is tested against the whole travel segment, not the end point.
@@ -542,6 +569,9 @@ export class ProjectileManager {
       }
       if (hit) {
         const enemy = hit;
+        // Splinter reentrancy (plans/bounce.md §3.3): everything `enemies.damage`
+        // reaches from here is a *shard's* doing if this projectile is one.
+        this.resolvingShard = p.splitGen !== undefined;
         // Instant kill evolution (non-boss only)
         if (this.instantKillChance > 0 && enemy.type !== 'boss' && Math.random() < this.instantKillChance) {
           const dmg = enemy.hp;
@@ -643,9 +673,6 @@ export class ProjectileManager {
             // Damage is already applied here; the ring is presentation only.
             this.bus.emit('projectile_exploded', { x: enemy.x, y: enemy.y, radius: p.splashRadius });
           }
-          if (this.blessings.has('ricochet')) {
-            this.applyRicochet(enemy, final);
-          }
           if (p.isCrit && this.blessings.has('crit_chain')) {
             this.applyCritChain(enemy, final);
           }
@@ -664,12 +691,17 @@ export class ProjectileManager {
           this.piercingRemaining[p.id] = remaining - 1;
           if (!this.hitEnemies[p.id]) this.hitEnemies[p.id] = new Set();
           this.hitEnemies[p.id].add(enemy.id);
+        } else if (this.tryBounce(p, enemy, prevX + segX * hitT, prevY + segY * hitT)) {
+          // `plans/bounce.md` §3.1: pierce is spent first, and a bounce is what
+          // happens *instead of* the shot dying. `tryBounce` owns all of the
+          // bookkeeping — position, heading, damage, budgets, hit set.
         } else {
           p.alive = false;
           delete this.piercingRemaining[p.id];
           delete this.hitEnemies[p.id];
           delete this.homingTargets[p.id];
         }
+        this.resolvingShard = false;
       }
     }
 
@@ -718,7 +750,7 @@ export class ProjectileManager {
     x: number,
     y: number,
     radius: number,
-    exclude: Set<number>,
+    exclude: ReadonlySet<number>,
     count: number,
   ): Enemy[] {
     const found = this.enemies.queryRadius(x, y, radius);
@@ -744,38 +776,203 @@ export class ProjectileManager {
     }
   }
 
+  // ── Ricochet: the shot itself deflects (plans/bounce.md §3) ──
+
   /**
-   * Ricochet: the shot carries on to a nearby target.
+   * Turn a lethal-to-the-shot impact into a deflection, if it can.
    *
-   * `ricochet_power` is the synergy follow-up — it upgrades the bounce to full
-   * damage and lets it chain twice, which is what makes taking the epic on top
-   * of the rare feel like a build rather than a second copy.
+   * Returns `true` when the projectile survives and is now flying at a new
+   * body; `false` when the caller should retire it as usual. Every side effect
+   * lives here so the impact block stays a two-line branch.
+   *
+   * `impactX/impactY` is the swept-collision point, not `p.x/p.y`: at
+   * `PROJECTILE_SPEED` a step can carry the shot most of a body-width past the
+   * thing it hit, and bouncing from the far side of the target looks like a
+   * teleport.
    */
-  private applyRicochet(from: Enemy, final: number): void {
+  private tryBounce(p: Projectile, from: Enemy, impactX: number, impactY: number): boolean {
+    if (!this.blessings.has('ricochet')) return false;
+    // A shard is already a secondary projectile; letting it ricochet turns one
+    // kill into an unbounded fan (plans/bounce.md §3.3).
+    if (p.splitGen !== undefined) return false;
+
     const powered = this.blessings.has('ricochet_power');
-    const bounces = powered ? BLESSING_TUNING.ricochetPowerBounces : 1;
-    const fraction = powered
+    if (p.bouncesLeft === undefined) {
+      p.bouncesLeft = powered
+        ? BLESSING_TUNING.ricochetPowerBounces
+        : BLESSING_TUNING.ricochetBounces;
+    }
+    if (p.bouncesLeft <= 0) return false;
+
+    const radius = powered
+      ? BLESSING_TUNING.ricochetRange * BLESSING_TUNING.ricochetPowerRangeMult
+      : BLESSING_TUNING.ricochetRange;
+
+    let hitSet = this.hitEnemies[p.id];
+    if (!hitSet) {
+      hitSet = new Set();
+      this.hitEnemies[p.id] = hitSet;
+    }
+    hitSet.add(from.id);
+
+    const next = this.bounceTarget(p, impactX, impactY, hitSet, radius);
+    if (!next) {
+      // No legal body: the shot dies here. The set is cleaned up by the caller.
+      return false;
+    }
+
+    // Speed is read *before* `cruiseSpeed` is cleared: a spread lane that is
+    // still riding its launch boost settles to the ordinary cruise on bounce
+    // rather than keeping the boost for the rest of its life.
+    const speed = p.cruiseSpeed ?? PROJECTILE_SPEED;
+    const dx = next.x - impactX;
+    const dy = next.y - impactY;
+    const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+
+    const inAngle = Math.atan2(p.vy, p.vx);
+    p.x = impactX;
+    p.y = impactY;
+    p.vx = (dx / d) * speed;
+    p.vy = (dy / d) * speed;
+    p.damage *= powered
       ? BLESSING_TUNING.ricochetPowerDamage
       : BLESSING_TUNING.ricochetDamage;
-    const dmg = Math.max(1, Math.floor(final * fraction));
-    const struck = new Set<number>([from.id]);
-    let originX = from.x;
-    let originY = from.y;
-    for (let i = 0; i < bounces; i++) {
-      const [next] = this.nearestOthers(
-        originX,
-        originY,
-        BLESSING_TUNING.ricochetRange,
-        struck,
-        1,
-      );
-      if (!next) return;
-      struck.add(next.id);
-      originX = next.x;
-      originY = next.y;
-      this.enemies.damage(next, dmg, false);
-      this.bus.emit('tower_damage_dealt', { amount: dmg });
+    p.bouncesLeft -= 1;
+    p.bounces = (p.bounces ?? 0) + 1;
+    // A bounce spends whatever pierce is left. Without this a tank-blocked shot
+    // (which reaches this branch with its pierce record untouched) would get
+    // its pass-throughs back on the far side of the bounce.
+    this.piercingRemaining[p.id] = 1;
+
+    // The rest of its life it is a seeker: it was aimed at a moving target from
+    // up to 1053 units away, and a straight line would miss most of them
+    // (plans/bounce.md §3.2). This reuses `steerHoming` unchanged.
+    p.turnRate = BOUNCE.turnRate;
+    p.lifetime = BOUNCE.lifetime;
+    p.homingDelay = undefined;
+    p.cruiseSpeed = undefined;
+    p.retargetIn = 0;
+    p.homingTargetId = next.id;
+    this.homingTargets[p.id] = next;
+    // Both lifetime caps in `tick` measure from `age`, so the bounce is what
+    // buys the shot its new leash.
+    p.age = 0;
+
+    this.bus.emit('projectile_bounced', {
+      x: impactX,
+      y: impactY,
+      inAngle,
+      outAngle: Math.atan2(p.vy, p.vx),
+      bounces: p.bounces,
+      magic: p.damageType === 'magic',
+    });
+    return true;
+  }
+
+  /**
+   * The body a bounce should deflect onto.
+   *
+   * Scored on squared distance with a flat penalty for anything outside the
+   * forward cone, so a ricochet carries on across the pack rather than folding
+   * back onto whatever is behind the shot — unless there is genuinely nothing
+   * ahead, which is when a bounce backwards is the right answer.
+   */
+  private bounceTarget(
+    p: Projectile,
+    x: number,
+    y: number,
+    hitSet: Set<number>,
+    radius: number,
+  ): Enemy | null {
+    const heading = Math.atan2(p.vy, p.vx);
+    const minD2 = BOUNCE.minDistance * BOUNCE.minDistance;
+    const found = this.enemies.queryRadius(x, y, radius, this.bounceScratch);
+    let best: Enemy | null = null;
+    let bestScore = Infinity;
+    for (const e of found) {
+      if (!isTargetable(e)) continue;
+      if (hitSet.has(e.id)) continue;
+      const dx = e.x - x;
+      const dy = e.y - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < minD2) continue;
+      let diff = Math.atan2(dy, dx) - heading;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      const score = Math.abs(diff) <= BOUNCE.cone ? d2 : d2 * BOUNCE.backPenalty;
+      if (score < bestScore) {
+        best = e;
+        bestScore = score;
+      }
     }
+    return best;
+  }
+
+  // ── Splinter: shards thrown by a kill (plans/bounce.md §3.3) ──
+
+  /**
+   * Launch Splinter shards from a kill point.
+   *
+   * Not `fire`: `fire` launches from the tower with the volley's spread model,
+   * and a shard launches from a corpse on a fan of its own. It shares `fire`'s
+   * *damage* scaling on purpose — that is the half of the pipeline the old
+   * instant-damage version skipped, which is why Splinter stopped mattering
+   * after a few dozen upgrades (`plans/bounce.md` §2.5).
+   *
+   * @param rawDamage per-shard damage before the projectile multipliers.
+   * @returns the shards created; empty when nothing was in range.
+   */
+  fireShards(x: number, y: number, rawDamage: number, damageType: DamageType): Projectile[] {
+    const targets = this.nearestOthers(
+      x,
+      y,
+      BLESSING_TUNING.splitShardRange,
+      NO_EXCLUSIONS,
+      BLESSING_TUNING.splitShardCount,
+    );
+    if (targets.length === 0) return [];
+
+    const additive = 1 + this.damageMultipliers.additive;
+    const scaled = Math.max(1, rawDamage * additive * this.damageMultipliers.multiplicative);
+    const created: Projectile[] = [];
+
+    for (let i = 0; i < targets.length; i++) {
+      const t = targets[i];
+      // Fanned off the true bearing, so the pair visibly scatters out of the
+      // body before the steering pulls each one back in.
+      const bearing = Math.atan2(t.y - y, t.x - x);
+      const a = bearing + SHARD.fan * (i - (targets.length - 1) / 2);
+      const proj: Projectile = {
+        id: nextId(),
+        x,
+        y,
+        targetId: t.id,
+        vx: Math.cos(a) * SHARD.speed,
+        vy: Math.sin(a) * SHARD.speed,
+        damage: scaled,
+        damageType,
+        isCrit: false,
+        alive: true,
+        homingTargetId: t.id,
+        turnRate: SHARD.turnRate,
+        lifetime: SHARD.lifetime,
+        retargetIn: 0,
+        age: 0,
+        splitGen: 1,
+        visual: 'shard',
+      };
+      // A shard never pierces, whatever the tower's pierce is: it is already
+      // the second hit this kill has paid for.
+      this.piercingRemaining[proj.id] = 1;
+      this.homingTargets[proj.id] = t;
+      this.projectiles.push(proj);
+      created.push(proj);
+    }
+
+    // Deliberately *not* `projectile_fired`: that event is the tower's shot,
+    // and routing shards through it would fire the shoot sound twice per kill.
+    this.bus.emit('shards_split', { x, y, count: created.length });
+    return created;
   }
 
   /** Chain Crit: a crit forks into a short lightning chain. */
@@ -842,6 +1039,7 @@ export class ProjectileManager {
     this.piercingRemaining = {};
     this.hitEnemies = {};
     this.homingTargets = {};
+    this.resolvingShard = false;
     this.focusTargetId = -1;
     this.focusStacks = 0;
   }

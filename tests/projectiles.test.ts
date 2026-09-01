@@ -13,9 +13,10 @@ import { EventBus } from '../src/game/EventBus';
 import { Tower } from '../src/systems/Tower';
 import { EnemyManager } from '../src/systems/EnemyManager';
 import { ResourceManager } from '../src/systems/ResourceManager';
-import { ProjectileManager } from '../src/systems/ProjectileManager';
+import { ProjectileManager, type BlessingQuery } from '../src/systems/ProjectileManager';
 import { PrestigeManager } from '../src/systems/PrestigeManager';
-import { HOMING, PROJECTILE_SPEED } from '../src/data/tower';
+import { BOUNCE, HOMING, PROJECTILE_SPEED } from '../src/data/tower';
+import { BLESSING_TUNING } from '../src/data/blessings';
 import { CORE_TUNING } from '../src/data/cores';
 import {
   PRESTIGE_PROJECTILE_TUNING,
@@ -475,5 +476,336 @@ describe('homing (plans/homing.md)', () => {
     });
     run(projectiles, 2);
     expect(projectiles.list).toHaveLength(0);
+  });
+});
+
+// ── Ricochet & Splinter (plans/bounce.md) ────────────────────────────────────
+
+/**
+ * A two-line `BlessingQuery` stub. The projectile loop only ever asks
+ * `has(behavior)`, which is the whole point of the narrow interface.
+ */
+const held = (...names: string[]): BlessingQuery => ({
+  has: (b: string) => names.includes(b),
+});
+
+describe('ricochet: the shot itself deflects (plans/bounce.md §3.1)', () => {
+  const step = 1 / 60;
+  const run = (projectiles: ProjectileManager, seconds: number) => {
+    for (let i = 0; i < Math.round(seconds / step); i++) projectiles.tick(step);
+  };
+  const beef = (...list: Array<{ hp: number; maxHp: number }>) => {
+    for (const e of list) { e.hp = 1e12; e.maxHp = 1e12; }
+  };
+
+  /** Fire a plain physical shot at `target` from the tower. */
+  const shoot = (
+    h: ReturnType<typeof harness>,
+    target: ReturnType<EnemyManager['spawn']>,
+    damage = 1000,
+  ) => h.projectiles.fire(target, h.towerState, {
+    rawDamage: damage, damageType: 'physical', isCrit: false, targetId: target.id,
+  })[0];
+
+  it('does not bounce without the blessing', () => {
+    const h = harness();
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 500, 300);
+    beef(a, b);
+    shoot(h, a);
+    run(h.projectiles, 1);
+    expect(b.hp).toBe(b.maxHp);
+  });
+
+  it('keeps the shot alive and marks the hop', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 500, 300);
+    beef(a, b);
+    shoot(h, a);
+    // Long enough to reach `a`, short enough that it has not yet reached `b`.
+    run(h.projectiles, 0.18);
+    expect(h.projectiles.list).toHaveLength(1);
+    expect(h.projectiles.list[0].bounces).toBe(1);
+  });
+
+  it('re-aims at the new body', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 500, 420);
+    beef(a, b);
+    shoot(h, a);
+    run(h.projectiles, 0.18);
+    const p = h.projectiles.list[0];
+    const want = Math.atan2(b.y - a.y, b.x - a.x);
+    const got = Math.atan2(p.vy, p.vx);
+    let diff = got - want;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    expect(Math.abs(diff)).toBeLessThan(0.25);
+  });
+
+  it('carries reduced damage into the hop', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 500, 300);
+    beef(a, b);
+    const p = shoot(h, a);
+    const before = p.damage;
+    run(h.projectiles, 0.18);
+    expect(h.projectiles.list[0].damage).toBeCloseTo(
+      before * BLESSING_TUNING.ricochetDamage,
+      5,
+    );
+  });
+
+  it('never hits the body it bounced off twice', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 460, 300);
+    beef(a, b);
+    shoot(h, a, 1000);
+    run(h.projectiles, 1);
+    // One hit each: `a` from the original shot, `b` from the bounce.
+    expect(a.maxHp - a.hp).toBeCloseTo(1000, 0);
+    expect(b.hp).toBeLessThan(b.maxHp);
+  });
+
+  it('spends its budget: one bounce with the base card', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 500, 300);
+    const c = h.enemies.spawn('normal', 1, 600, 300);
+    beef(a, b, c);
+    shoot(h, a);
+    run(h.projectiles, 1.5);
+    expect(b.hp).toBeLessThan(b.maxHp);
+    expect(c.hp).toBe(c.maxHp);
+  });
+
+  it('ricochet_power bounces twice', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet', 'ricochet_power'));
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 500, 300);
+    const c = h.enemies.spawn('normal', 1, 600, 300);
+    beef(a, b, c);
+    shoot(h, a);
+    run(h.projectiles, 1.5);
+    expect(b.hp).toBeLessThan(b.maxHp);
+    expect(c.hp).toBeLessThan(c.maxHp);
+  });
+
+  it('will not bounce past its range', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const far = h.enemies.spawn('normal', 1, 400 + BLESSING_TUNING.ricochetRange + 200, 300);
+    beef(a, far);
+    shoot(h, a);
+    run(h.projectiles, 1.5);
+    expect(far.hp).toBe(far.maxHp);
+  });
+
+  it('prefers a body ahead over a nearer one behind', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    // The shot flies left→right and deflects from the *edge* of `a`, at
+    // roughly x = 353. From there `behind` is 158 away but ~130° off the
+    // heading (158² x 2.25 = 56 086), and `ahead` is 207 away and dead in
+    // front (207² = 43 015) — so the further, forward body wins. `behind` is
+    // offset in y so the inbound shot does not run into it on the way to `a`.
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const behind = h.enemies.spawn('normal', 1, 250, 420);
+    const ahead = h.enemies.spawn('normal', 1, 560, 300);
+    beef(a, behind, ahead);
+    shoot(h, a);
+    run(h.projectiles, 1);
+    expect(ahead.hp).toBeLessThan(ahead.maxHp);
+    expect(behind.hp).toBe(behind.maxHp);
+  });
+
+  it('falls back to a body behind when nothing is ahead', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const behind = h.enemies.spawn('normal', 1, 250, 420);
+    beef(a, behind);
+    shoot(h, a);
+    run(h.projectiles, 1);
+    expect(behind.hp).toBeLessThan(behind.maxHp);
+  });
+
+  it('dies normally when there is nothing to bounce to', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    beef(a);
+    shoot(h, a);
+    run(h.projectiles, 0.5);
+    expect(h.projectiles.list).toHaveLength(0);
+  });
+
+  it('pierce is spent before a bounce is considered', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    h.projectiles.setPierceExtra(1);
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 500, 300);
+    beef(a, b);
+    shoot(h, a);
+    run(h.projectiles, 0.18);
+    // It passed *through* `a`; it did not deflect off it.
+    expect(h.projectiles.list[0].bounces).toBeUndefined();
+  });
+
+  it('bounces once the pierce budget is exhausted', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    h.projectiles.setPierceExtra(1);
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 500, 300);
+    const c = h.enemies.spawn('normal', 1, 560, 420);
+    beef(a, b, c);
+    shoot(h, a);
+    run(h.projectiles, 1.5);
+    expect(c.hp).toBeLessThan(c.maxHp);
+  });
+
+  it('a bounce spends whatever pierce a tank block left over', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    h.projectiles.setPierceExtra(2);
+    const tank = h.enemies.spawn('tank', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 500, 300);
+    const c = h.enemies.spawn('normal', 1, 620, 300);
+    beef(tank, b, c);
+    shoot(h, tank);
+    run(h.projectiles, 1.5);
+    // The tank blocked, the shot bounced to `b`, and died there: its pierce
+    // did not come back on the far side of the deflection.
+    expect(b.hp).toBeLessThan(b.maxHp);
+    expect(c.hp).toBe(c.maxHp);
+  });
+
+  it('retires a bounced shot whose target vanished', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    const b = h.enemies.spawn('normal', 1, 500, 300);
+    beef(a, b);
+    shoot(h, a);
+    run(h.projectiles, 0.18);
+    expect(h.projectiles.list).toHaveLength(1);
+    // Remove the only thing it could hit; it must not fly forever.
+    h.enemies.damage(b, 1e13, false);
+    run(h.projectiles, BOUNCE.lifetime + 0.2);
+    expect(h.projectiles.list).toHaveLength(0);
+  });
+});
+
+describe('splinter shards (plans/bounce.md §3.3)', () => {
+  const step = 1 / 60;
+  const run = (projectiles: ProjectileManager, seconds: number) => {
+    for (let i = 0; i < Math.round(seconds / step); i++) projectiles.tick(step);
+  };
+  const beef = (...list: Array<{ hp: number; maxHp: number }>) => {
+    for (const e of list) { e.hp = 1e12; e.maxHp = 1e12; }
+  };
+
+  it('creates nothing when nothing is in range', () => {
+    const { projectiles } = harness();
+    expect(projectiles.fireShards(400, 300, 100, 'physical')).toEqual([]);
+    expect(projectiles.list).toHaveLength(0);
+  });
+
+  it('creates exactly splitShardCount shards, tagged as shards', () => {
+    const h = harness();
+    for (let i = 0; i < 4; i++) h.enemies.spawn('normal', 1, 420 + i * 20, 300);
+    const shards = h.projectiles.fireShards(400, 300, 100, 'physical');
+    expect(shards).toHaveLength(BLESSING_TUNING.splitShardCount);
+    expect(shards.every(s => s.splitGen === 1)).toBe(true);
+    expect(shards.every(s => s.visual === 'shard')).toBe(true);
+  });
+
+  it('picks the nearest survivors', () => {
+    const h = harness();
+    const near1 = h.enemies.spawn('normal', 1, 440, 300);
+    const near2 = h.enemies.spawn('normal', 1, 480, 300);
+    h.enemies.spawn('normal', 1, 400 + BLESSING_TUNING.splitShardRange - 20, 300);
+    const shards = h.projectiles.fireShards(400, 300, 100, 'physical');
+    const targeted = shards.map(s => s.homingTargetId).sort();
+    expect(targeted).toEqual([near1.id, near2.id].sort());
+  });
+
+  it('respects splitShardRange', () => {
+    const h = harness();
+    h.enemies.spawn('normal', 1, 400 + BLESSING_TUNING.splitShardRange + 200, 300);
+    expect(h.projectiles.fireShards(400, 300, 100, 'physical')).toEqual([]);
+  });
+
+  it('runs through the projectile damage multipliers', () => {
+    const h = harness();
+    h.enemies.spawn('normal', 1, 440, 300);
+    h.projectiles.setDamageMultipliers(1, 2);
+    const [shard] = h.projectiles.fireShards(400, 300, 10, 'physical');
+    expect(shard.damage).toBeCloseTo(10 * 2 * 2, 5);
+  });
+
+  it('never pierces, whatever the tower\'s pierce is', () => {
+    const h = harness();
+    h.projectiles.setPierceExtra(5);
+    const a = h.enemies.spawn('normal', 1, 440, 300);
+    const b = h.enemies.spawn('normal', 1, 560, 300);
+    beef(a, b);
+    h.projectiles.fireShards(400, 300, 1000, 'physical');
+    run(h.projectiles, 1);
+    expect(a.hp).toBeLessThan(a.maxHp);
+    expect(b.hp).toBe(b.maxHp);
+  });
+
+  it('never bounces, even with the blessing held', () => {
+    const h = harness();
+    h.projectiles.setBlessings(held('ricochet'));
+    const a = h.enemies.spawn('normal', 1, 440, 300);
+    const b = h.enemies.spawn('normal', 1, 520, 300);
+    beef(a, b);
+    // Only `a` is targeted; if the shard bounced it would reach `b`.
+    const shards = h.projectiles.fireShards(400, 300, 1000, 'physical');
+    expect(shards.length).toBeGreaterThan(0);
+    run(h.projectiles, 1);
+    expect(h.projectiles.list).toHaveLength(0);
+  });
+
+  it('flags a shard kill so Game can suppress the cascade', () => {
+    const h = harness();
+    const a = h.enemies.spawn('normal', 1, 440, 300);
+    a.hp = 1;
+    a.maxHp = 1;
+    let flagged: boolean | null = null;
+    h.bus.on('enemy_killed', () => { flagged = h.projectiles.shardImpactInProgress; });
+    h.projectiles.fireShards(400, 300, 1000, 'physical');
+    run(h.projectiles, 1);
+    expect(flagged).toBe(true);
+    expect(h.projectiles.shardImpactInProgress).toBe(false);
+  });
+
+  it('does not flag an ordinary shot\'s kill', () => {
+    const h = harness();
+    const a = h.enemies.spawn('normal', 1, 400, 300);
+    a.hp = 1;
+    a.maxHp = 1;
+    let flagged: boolean | null = null;
+    h.bus.on('enemy_killed', () => { flagged = h.projectiles.shardImpactInProgress; });
+    h.projectiles.fire(a, h.towerState, {
+      rawDamage: 1000, damageType: 'physical', isCrit: false, targetId: a.id,
+    });
+    run(h.projectiles, 1);
+    expect(flagged).toBe(false);
   });
 });

@@ -135,6 +135,119 @@ export class EffectsManager {
     }
   }
 
+  /**
+   * A ricochet deflection (`plans/bounce.md` §5.1).
+   *
+   * Three readable parts, and they are three because a bounce has to answer
+   * three questions at a glance: *something was struck* (the ring), *the shot
+   * did not stop* (the outgoing lance of sparks), and *it came from there*
+   * (the thin back-spray along the incoming line).
+   *
+   * @param inAngle  heading the shot arrived on, radians.
+   * @param outAngle heading it left on, radians.
+   */
+  emitRicochetFlash(
+    x: number,
+    y: number,
+    inAngle: number,
+    outAngle: number,
+    color: string,
+  ): void {
+    // The ring: small, bright, gone in a fifth of a second. Undamaging — it
+    // carries no `damage` field, so `tick` never calls `onShockwaveDamage`.
+    this.shockwaves.push({
+      x,
+      y,
+      currentRadius: 0,
+      maxRadius: 26,
+      age: 0,
+      life: 0.2,
+      color: withAlpha(lighten(color, 0.5), 0.85),
+      lineWidth: 2.5,
+    });
+
+    // The lance: a tight cone along the *outgoing* heading. This is the part
+    // that says "it kept going", so it gets the most particles and the longest
+    // life of the three.
+    const lance = this.n(9);
+    for (let i = 0; i < lance; i++) {
+      const angle = outAngle + (Math.random() - 0.5) * 0.55;
+      const speed = 180 + Math.random() * 200;
+      this.pushParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        age: 0,
+        life: 0.2 + Math.random() * 0.16,
+        size: 1.4 + Math.random() * 1.6,
+        color: i % 2 === 0 ? lighten(color, 0.45) : '#ffffff',
+        layer: 'additive',
+      });
+    }
+
+    // The back-spray: a thin fan mirrored about the impact, along the reverse
+    // of the incoming heading. Half the count, half the speed — it is the
+    // shrapnel the deflection shed, not the shot.
+    const back = this.n(4);
+    const backAngle = inAngle + Math.PI;
+    for (let i = 0; i < back; i++) {
+      const angle = backAngle + (Math.random() - 0.5) * 1.1;
+      const speed = 70 + Math.random() * 110;
+      this.pushParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 20,
+        age: 0,
+        life: 0.16 + Math.random() * 0.12,
+        size: 1.2 + Math.random() * 1.2,
+        color: withAlpha(color, 0.8),
+        layer: 'front',
+      });
+    }
+  }
+
+  /**
+   * Splinter: the corpse comes apart (`plans/bounce.md` §5.2).
+   *
+   * Gold-and-white rather than the frost tint the instant version used: these
+   * are the player's own shrapnel, and `art-direction.md` reserves frost for
+   * chill and shields. Scaled by shard count so a one-shard splinter is
+   * visibly smaller than a two-shard one.
+   *
+   * Only the burst is drawn here — the shards themselves are projectiles and
+   * the renderer draws them.
+   */
+  emitSplinterBurst(x: number, y: number, shards: number): void {
+    const n = this.n(6 + shards * 5);
+    for (let i = 0; i < n; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 90 + Math.random() * 170;
+      this.pushParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 40,
+        age: 0,
+        life: 0.28 + Math.random() * 0.22,
+        size: 1.5 + Math.random() * 2,
+        color: i % 3 === 0 ? '#ffffff' : lighten(FX.gold, 0.35),
+        layer: 'additive',
+      });
+    }
+    this.shockwaves.push({
+      x,
+      y,
+      currentRadius: 0,
+      maxRadius: 34,
+      age: 0,
+      life: 0.26,
+      color: withAlpha(lighten(FX.gold, 0.4), 0.7),
+      lineWidth: 2,
+    });
+  }
+
   emitDeathBurst(x: number, y: number, color: string, radius: number, count?: number): void {
     const base = count ?? Math.max(8, Math.round(radius * 0.7));
     const n = this.n(base);

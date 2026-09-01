@@ -1,5 +1,5 @@
-import type { EquipmentSlot, Equipment, Rarity, EquipmentStatType } from '../types';
-import { rollDrop as dataRollDrop, type DropOptions } from '../data/equipment';
+import type { EquipmentSlot, Equipment, EquipmentStatType } from '../types';
+import { rollDrop as dataRollDrop, equipmentSellValue, type DropOptions } from '../data/equipment';
 import { EventBus } from '../game/EventBus';
 
 /**
@@ -115,18 +115,11 @@ export class EquipmentManager {
     return bonuses;
   }
 
+  /** Gold for scrapping an inventory item — see `equipmentSellValue`. */
   getSellValue(id: string): number {
-    const idx = this.inventory.findIndex(e => e.id === id);
-    if (idx === -1) return 0;
-    const item = this.inventory[idx];
-    const rarityMultiplier: Record<Rarity, number> = {
-      common: 1,
-      uncommon: 2,
-      rare: 5,
-      epic: 15,
-      legendary: 50,
-    };
-    return 10 * (rarityMultiplier[item.rarity] ?? 1);
+    const item = this.inventory.find(e => e.id === id);
+    if (!item) return 0;
+    return equipmentSellValue(item);
   }
 
   sell(id: string): number {

@@ -14,6 +14,7 @@ import {
   computePerkEffect,
   BASE_IDLE_TIME_SECONDS,
   abilityUnlockOffset,
+  secondWindTier,
   type AutomationKey,
 } from '../data/prestige';
 import { BLESSING_FIRST_DRAFT_WAVE } from '../data/blessings';
@@ -531,7 +532,14 @@ export class PrestigeManager {
     return total;
   }
 
-  /** Second Wind: extra revive charges per run, as a whole number. */
+  /**
+   * Second Wind: extra revive charges, as a whole number.
+   *
+   * Every level grants the same single charge (see `SECOND_WIND_LEVELS`) — the
+   * levels buy the revive's *quality*, which the two accessors below carry.
+   * Unlike the evolution and the passive charges this one is not once per run:
+   * `Game` puts it on a `SECOND_WIND_RESTOCK_SECONDS` clock after each use.
+   */
   getAPReviveCharges(): number {
     let total = 0;
     for (const p of AP_PERKS) {
@@ -540,6 +548,28 @@ export class PrestigeManager {
       if (lvl > 0) total += Math.floor(computePerkEffect(p, lvl));
     }
     return total;
+  }
+
+  /** Highest Second Wind level held, or 0 when the perk is unbought. */
+  private getReviveLevel(): number {
+    let best = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'revive_charge') continue;
+      best = Math.max(best, this.getAPLevel(p.id));
+    }
+    return best;
+  }
+
+  /** HP fraction a Second Wind revive restores, or 0 without the perk. */
+  getAPReviveHpFraction(): number {
+    const lvl = this.getReviveLevel();
+    return lvl > 0 ? secondWindTier(lvl).hpFraction : 0;
+  }
+
+  /** Whether a Second Wind revive also shoves the field back (level 3+). */
+  hasAPReviveShockwave(): boolean {
+    const lvl = this.getReviveLevel();
+    return lvl > 0 && secondWindTier(lvl).shockwave;
   }
 
   /**

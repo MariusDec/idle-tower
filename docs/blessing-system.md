@@ -182,12 +182,12 @@ than a scan of the pool — the same lookup-cache pattern
 
 | Behavior | Where it fires |
 |---|---|
-| `ricochet` / `ricochet_power` | `ProjectileManager.applyRicochet` on impact |
+| `ricochet` / `ricochet_power` | `ProjectileManager.tryBounce` on the impact that would have retired the shot |
 | `mortar` | shot cadence counted in `Game.simulate`; the blast in `ProjectileManager.applyBlastSplash` |
 | `crit_chain` | `ProjectileManager.applyCritChain`, reusing the chain-lightning visual |
 | `frost_shots` | `EnemyManager.applyChill` on impact (per-enemy, not the global slow) |
 | `shatter` | impact damage, against `EnemyManager.isSlowed(enemy)` |
-| `split_on_kill` | `Game.fireSplitShards` from the `enemy_killed` handler |
+| `split_on_kill` | `Game.fireSplitShards` from the `enemy_killed` handler → `ProjectileManager.fireShards` |
 | `homing` | `fire({ isHoming })` on every volley, clicked or auto; the shot then seeks nearest |
 | `overkill_carry` | `ProjectileManager.applyOverkill` on a killing blow |
 | `siphon` | `enemy_killed` handler |
@@ -196,10 +196,22 @@ than a scan of the pool — the same lookup-cache pattern
 | `greed_engine` | folded into `goldPct` by `BlessingManager.getStatTotals` |
 | `orb_magnet` | `LootManager.setMagnet` — auto-collect rate and drift speed |
 
-`split_on_kill` applies direct damage rather than spawning projectiles, and is
-guarded by a reentrancy flag: `EnemyManager.damage` emits `enemy_killed`
-synchronously, and shards that spawn shards would cascade without bound in a
-dense wave.
+`ricochet` and `split_on_kill` both spawn or redirect **real projectiles** —
+see [projectile-system.md](projectile-system.md) *Ricochet* and *Splinter
+shards*, and `plans/bounce.md` for the rationale. Two consequences worth
+knowing here:
+
+- A ricochet only fires on the impact that would otherwise have retired the
+  shot, so **pierce is spent first**: a pass-through shot goes straight through
+  its first bodies and deflects on the last one. The hop damage is a
+  compounding fraction of what the shot carries (45%, or 85% with
+  `ricochet_power`), resolved through the ordinary impact pipeline — armour,
+  resists and every on-hit modifier included.
+- `split_on_kill` bounds its cascade with a **generation flag** rather than a
+  reentrancy latch: shards carry `splitGen`, and while a shard's own impact is
+  resolving `ProjectileManager.shardImpactInProgress` is set, which the
+  `enemy_killed` handler checks before splintering again. Kills from any other
+  source — abilities, damage over time, shockwaves — still splinter.
 
 `frost_shots` needed a **per-enemy** chill map on `EnemyManager` rather than the
 existing global `slowFactor`, because `shatter` has to be able to ask whether

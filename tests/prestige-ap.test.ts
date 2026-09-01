@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EventBus } from '../src/game/EventBus';
 import { PrestigeManager } from '../src/systems/PrestigeManager';
-import { AP_PERKS, AP_PERK_BY_ID, FIRST_ASCENSION_AP, perkCost, describeAPPerkBonus } from '../src/data/prestige';
+import { AP_PERKS, AP_PERK_BY_ID, FIRST_ASCENSION_AP, SECOND_WIND_LEVELS, perkCost, describeAPPerkBonus } from '../src/data/prestige';
 import { CORES } from '../src/data/cores';
 import type { GameStats, PrestigeState, ResourceState } from '../src/types';
 
@@ -146,17 +146,37 @@ describe('AP tree gates (revamp §8, gates 10 and 11)', () => {
   });
 
   it('gate: the one-time nodes land on the second ascension, not the fourth', () => {
-    // §3.4: ~45 AP is ascension #2. Lodestone opens on Seed Capital L2 (11 AP)
-    // and Second Wind on Auto-Upgrader (12 AP).
+    // §3.4: ~45 AP is ascension #2. Lodestone opens on Seed Capital L2 (11 AP).
     const lodestone = mgrWith(45, { ap_seed_capital: 2 });
     expect(lodestone.canSpendAP('ap_lodestone')).toBe(true);
-    const secondWind = mgrWith(45, { ap_auto_upgrader: 1 });
-    expect(secondWind.canSpendAP('ap_second_wind')).toBe(true);
-    // …and neither is reachable on the first.
+    // …and it is not reachable on the first.
     for (const alloc of reachableAllocations(FIRST_ASCENSION_AP)) {
       expect(alloc.ap_lodestone ?? 0).toBe(0);
-      expect(alloc.ap_second_wind ?? 0).toBe(0);
     }
+  });
+
+  it('Second Wind is a signature-priced ladder, gated but not early', () => {
+    // The perk stopped being a cheap +1 charge: at 120 AP it is a saved-for
+    // purchase, and its five levels buy the revive's quality, never a second
+    // charge. The prerequisite still opens on Auto-Upgrader alone.
+    expect(perkCost(AP_PERK_BY_ID.ap_second_wind, 0)).toBe(120);
+    expect(AP_PERK_BY_ID.ap_second_wind.maxLevel).toBe(SECOND_WIND_LEVELS.length);
+    expect(mgrWith(45, { ap_auto_upgrader: 1 }).canSpendAP('ap_second_wind')).toBe(false);
+    expect(mgrWith(120, { ap_auto_upgrader: 1 }).canSpendAP('ap_second_wind')).toBe(true);
+    for (const lvl of [1, 2, 3, 4, 5]) {
+      expect(mgrWith(0, { ap_second_wind: lvl }).getAPReviveCharges()).toBe(1);
+    }
+    // 33% → 50% → 50% + shove → 75% → a full bar.
+    const fractions = [1, 2, 3, 4, 5].map(
+      lvl => mgrWith(0, { ap_second_wind: lvl }).getAPReviveHpFraction(),
+    );
+    expect(fractions).toEqual([0.33, 0.5, 0.5, 0.75, 1]);
+    const shockwaves = [1, 2, 3, 4, 5].map(
+      lvl => mgrWith(0, { ap_second_wind: lvl }).hasAPReviveShockwave(),
+    );
+    expect(shockwaves).toEqual([false, false, true, true, true]);
+    expect(mgrWith(0).getAPReviveHpFraction()).toBe(0);
+    expect(mgrWith(0).hasAPReviveShockwave()).toBe(false);
   });
 
   it('gate 11: 82 AP buys at most one signature node plus one utility line', () => {

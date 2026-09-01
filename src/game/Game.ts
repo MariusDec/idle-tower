@@ -64,6 +64,7 @@ import type { ShotSplash } from '../data/prestige';
 import {
   DEFAULT_AUTO_ASCEND_WAVE,
   PRESTIGE_PROJECTILE_TUNING,
+  SECOND_WIND_RESTOCK_SECONDS,
   TP_AOE_SPLASH_RADIUS,
   composeShotSplash,
 } from '../data/prestige';
@@ -148,6 +149,10 @@ import {
 const GOLD_LUCK_MULTIPLIER = 3;
 /** HP fraction restored on each passive revive (plan §7.3). */
 const PASSIVE_REVIVE_FRACTION = 0.5;
+/** Radius of the Second Wind revive shockwave, in world units. */
+const SECOND_WIND_SHOCKWAVE_RADIUS = world(220);
+/** How far that shockwave shoves each enemy it catches, in world units. */
+const SECOND_WIND_SHOCKWAVE_PUSH = world(90);
 /** Fire-rate multiplier while the player holds the mouse to aim manually. */
 /** Fire-rate multiplier granted by a quick-shot proc. */
 const QUICK_SHOT_FIRE_RATE = 2;
@@ -726,6 +731,12 @@ export class Game {
   private revivesUsed = 0;
   private extraReviveCharges = 0;
   /**
+   * Seconds left before the Second Wind charge restocks, or 0 when it is
+   * ready. Simulation time, like every ability cooldown, so game speed moves
+   * it at the same rate it moves the fight the charge is being spent on.
+   */
+  private secondWindRestock = 0;
+  /**
    * True while the run-over modal is up (plan §2.3.3). The simulation is
    * frozen so the dead tower is not killed again every frame and the field
    * stays on screen as a backdrop for the decision.
@@ -745,12 +756,6 @@ export class Game {
   private mortarShotCounter = 0;
   /** `splash` upgrade payload, rewritten by `applyResolvedStats`. */
   private shotSplash: ShotSplash = {};
-  /**
-   * Reentrancy guard for `split_on_kill`: the shards damage enemies, which can
-   * kill them, which re-enters this handler synchronously. Without the guard a
-   * dense wave turns one kill into an unbounded cascade.
-   */
-  private splitOnKillActive = false;
   private waveGoldBonus = 0;
 
   /**
@@ -1128,7 +1133,9 @@ export class Game {
           this.state.resources.maxMana * BLESSING_TUNING.siphonManaFraction,
         );
       }
-      if (this.blessingMgr.has('split_on_kill')) this.fireSplitShards(e.x, e.y);
+      if (this.blessingMgr.has('split_on_kill') && !this.projectileMgr.shardImpactInProgress) {
+        this.fireSplitShards(e.x, e.y);
+      }
 
       // ── core behaviors on kill (plan §6.1) ──
       // Bloodforge pays for its own aggression. Applied here rather than in
@@ -1470,23 +1477,9 @@ export class Game {
         this.bus.emit('toast', { kind: 'milestone', text: 'Second Wind!', life: 3 });
       }
       if (ts.hp <= 0) {
-        // Revive: evolution (Titan's Heart) + passive charges (plan §7.3).
-        // The evolution is consumed first; passive charges stack on top.
-        const evoRevive = this.upgradeMgr.hasEvolutionEffect('revive');
-        const totalCharges = (evoRevive ? 1 : 0) + this.extraReviveCharges;
-        if (this.revivesUsed < totalCharges) {
-          const fraction = evoRevive && this.revivesUsed === 0
-            ? Math.max(PASSIVE_REVIVE_FRACTION, this.upgradeMgr.getEvolutionEffectValue('revive'))
-            : PASSIVE_REVIVE_FRACTION;
-          ts.hp = Math.floor(ts.maxHp * fraction);
-          this.revivesUsed += 1;
-          this.bus.emit('toast', {
-            kind: 'milestone',
-            text: `Revived at ${Math.round(fraction * 100)}% HP! (${this.revivesUsed}/${totalCharges})`,
-            life: 4,
-          });
-          return;
-        }
+        // Revive: evolution (Titan's Heart), passive charges (plan §7.3) and
+        // the Second Wind prestige charge, in that order.
+        if (this.tryRevive(ts)) return;
         // Plan §2.3.3: once ascension is available a death is the *end of the
         // run*, not a one-wave rewind. Offer the ascension there and then so
         // the player has a decision to make instead of a wall to re-grind.
@@ -1960,6 +1953,19 @@ export class Game {
       if (p.path && p.path.length >= 2) {
         this.effects.emitChainLightning(p.path);
       }
+    });
+    // Ricochet: the shot survived and is on its way somewhere else. There is no
+    // impact decal for a bounce — the renderer derives those from a projectile
+    // *disappearing* — so this flash is the only thing that says it happened.
+    this.bus.on('projectile_bounced', (payload: unknown) => {
+      const p = payload as {
+        x: number; y: number; inAngle: number; outAngle: number;
+        bounces: number; magic: boolean;
+      };
+      this.effects.emitRicochetFlash(
+        p.x, p.y, p.inAngle, p.outAngle,
+        p.magic ? FX.arcane : FX.gold,
+      );
     });
 
     this.bus.on('enemy_attack', (payload: unknown) => {
@@ -2599,6 +2605,78 @@ export class Game {
       if (this.passiveUnlockNotified.has(def.id)) continue;
       this.passiveUnlockNotified.add(def.id);
       this.ui.notifyPassiveAvailable(def.id);
+    }
+  }
+
+  /**
+   * Spend a revive charge on a tower that just hit 0 HP, if one is available.
+   *
+   * Spent weakest-first, so nothing better is wasted on an early death:
+   *
+   * 1. **Flat passive charges** — once per run, at `PASSIVE_REVIVE_FRACTION`.
+   * 2. **Titan's Heart** — also once per run, but it brings its own (higher)
+   *    HP fraction, so it outlives the plain charges.
+   * 3. **Second Wind** — the prestige charge, which restocks
+   *    `SECOND_WIND_RESTOCK_SECONDS` after each use. Last because it is the
+   *    only one that comes back, which is what makes the restock worth
+   *    anything in a long run.
+   *
+   * Returns true when the tower was revived, i.e. the caller must not run the
+   * run-over path.
+   */
+  private tryRevive(ts: TowerState): boolean {
+    const evoRevive = this.upgradeMgr.hasEvolutionEffect('revive');
+    // `extraReviveCharges` is the `reviveCharges` stat, which the Second Wind
+    // perk also feeds; its charge is netted out here so it is not counted in
+    // both pools at once.
+    const apCharges = this.prestigeMgr.getAPReviveCharges();
+    const passiveCharges = Math.max(0, this.extraReviveCharges - apCharges);
+    const runCharges = passiveCharges + (evoRevive ? 1 : 0);
+    if (this.revivesUsed < runCharges) {
+      // The evolution is the last of the once-per-run pool, so its bigger
+      // fraction is still in hand after the plain charges are gone.
+      const fraction = this.revivesUsed >= passiveCharges
+        ? Math.max(PASSIVE_REVIVE_FRACTION, this.upgradeMgr.getEvolutionEffectValue('revive'))
+        : PASSIVE_REVIVE_FRACTION;
+      ts.hp = Math.floor(ts.maxHp * fraction);
+      this.revivesUsed += 1;
+      this.bus.emit('toast', {
+        kind: 'milestone',
+        text: `Revived at ${Math.round(fraction * 100)}% HP! (${this.revivesUsed}/${runCharges})`,
+        life: 4,
+      });
+      return true;
+    }
+    if (apCharges > 0 && this.secondWindRestock <= 0) {
+      const fraction = this.prestigeMgr.getAPReviveHpFraction();
+      // Floor could round a tiny max-HP tower back to 0 and re-kill it on the
+      // same frame, so the revive is worth at least one point of HP.
+      ts.hp = Math.max(1, Math.floor(ts.maxHp * fraction));
+      this.secondWindRestock = SECOND_WIND_RESTOCK_SECONDS;
+      if (this.prestigeMgr.hasAPReviveShockwave()) this.emitReviveShockwave(ts);
+      this.bus.emit('toast', {
+        kind: 'milestone',
+        text: `Second Wind! Revived at ${Math.round(fraction * 100)}% HP `
+          + `(back in ${Math.round(SECOND_WIND_RESTOCK_SECONDS / 60)} min)`,
+        life: 4,
+      });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Second Wind level 3+: shove everything off the tower on revive.
+   *
+   * Pure displacement, no damage — the point is to buy the revived tower the
+   * few seconds it takes to start shooting again, not to be a nuke.
+   */
+  private emitReviveShockwave(ts: TowerState): void {
+    this.effects.emitShockwaveRing(
+      ts.x, ts.y, SECOND_WIND_SHOCKWAVE_RADIUS, withAlpha(FX.nature, 0.8), 7,
+    );
+    for (const e of this.enemyMgr.queryRadius(ts.x, ts.y, SECOND_WIND_SHOCKWAVE_RADIUS)) {
+      this.enemyMgr.applyKnockback(e, SECOND_WIND_SHOCKWAVE_PUSH, ts.x, ts.y);
     }
   }
 
@@ -3412,6 +3490,15 @@ export class Game {
     return this.saveMgr.flushNow();
   }
 
+  /**
+   * Wipe everything and start over from a brand-new save.
+   *
+   * The rule here is that this method must leave the game in exactly the state
+   * a first-ever load produces — so it mirrors `makeInitialState` field for
+   * field. Anything omitted silently *survives* the wipe, which is the one
+   * failure mode this method exists to prevent; the Watch campaign, contracts,
+   * pacing and wave timing were all leaking across it before.
+   */
   clearSave(): void {
     this.saveMgr.clear();
 
@@ -3428,6 +3515,7 @@ export class Game {
 
     this.waveMgr.reset();
     this.state.wave = this.waveMgr.snapshot;
+    this.state.waveTiming = fresh.waveTiming;
     this.saveLoaded = false;
 
     this.upgradeMgr.reset();
@@ -3435,6 +3523,7 @@ export class Game {
     this.enemyMgr.reset();
     this.projectileMgr.reset();
     this.abilityMgr.reset();
+    this.abilityMgr.resetLevels();
     this.tower.clearTargetLock();
     this.effects.reset();
     this.automation.reset();
@@ -3444,19 +3533,58 @@ export class Game {
     this.announcedMilestones.clear();
     this.researchAnnounced.clear();
     this.achievementMgr.reset();
+    this.lootMgr.reset();
+    this.buffs.reset();
+    this.charge.reset();
+    this.chargeFirePending = false;
+    this.cancelPlacement();
+
+    // Run-scoped counters that `applySavedStateReset` clears on every ascension.
+    // A wipe is at least as strong as an ascension, so it clears them too.
+    this.revivesUsed = 0;
+    this.secondWindRestock = 0;
+    this.runFailed = false;
+    this.killStreak = 0;
+    this.manaFullGoldTimer = 0;
+    this.shotCounter = 0;
+    this.mortarShotCounter = 0;
+    this.bossEncounter = null;
+    this.waveFlawless = true;
+    this.state.bossRun = fresh.bossRun;
+    this.prestigeMgr.setRunApBonus(0, 'boss');
 
     // v6+: Reset RPG state to fresh defaults
     Object.assign(this.state.towerXp, fresh.towerXp);
     this.state.talents.allocated = {};
+    this.talentMgr.invalidateCache();
     const pa = this.state.passiveAbilities;
     for (const k of Object.keys(pa)) delete pa[k];
+    this.passiveMgr.reset();
     this.passiveMgr.ensureInitialized();
     this.state.equipment.length = 0;
     const eqMap = this.state.equipped;
     for (const k of Object.keys(eqMap)) delete (eqMap as Record<string, Equipment>)[k];
+    this.equipmentMgr.reset();
     this.blessingModal.hide();
     this.blessingMgr.reset();
     this.state.blessings = this.blessingMgr.snapshot();
+    // Contracts are dealt from a fresh board, and the AP bonus they had banked
+    // goes with them.
+    this.contractMgr.reset();
+    this.state.contracts = this.contractMgr.snapshot();
+    this.prestigeMgr.setRunApBonus(0, 'contract');
+    // The Long Watch is lifetime progression, so only a full wipe takes it.
+    // The unlock set is derived from `completed`, so rebuilding after the
+    // campaign block is replaced is what actually revokes the unlocks — and it
+    // must happen before `coreMgr.resetAll` is asked for a snapshot, since the
+    // forge chapters are what granted the extra cores.
+    this.state.watch = fresh.watch;
+    this.watchMgr.rebuildUnlocks();
+    // The dial goes back to 0 along with everything it was worth.
+    this.pacingMgr.restore(fresh.pacing);
+    this.state.pacing = this.pacingMgr.snapshot();
+    this.prestigeMgr.setRiskApBonus(riskApBonus(this.pacingMgr.activeRisk));
+    this.pacingStatSignature = -1;
     // A full wipe un-buys the cores too — they cost AP, and this is the path
     // that takes the AP away.
     this.corePicker.hide();
@@ -4307,6 +4435,10 @@ export class Game {
     // chance most runs generated two to four items and then deleted them.
     this.mines = [];
     this.revivesUsed = 0;
+    // A fresh run starts with the Second Wind charge in hand: the restock
+    // clock is a within-run cooldown, not a punishment carried across the
+    // ascension the last death paid for.
+    this.secondWindRestock = 0;
     this.runFailed = false;
     this.killStreak = 0;
     this.manaFullGoldTimer = 0;
@@ -4996,32 +5128,20 @@ export class Game {
   }
 
   /**
-   * Splinter: a kill throws two shards at the nearest survivors.
+   * Splinter: a kill throws two homing shards at the nearest survivors.
    *
-   * Applied as direct damage rather than as projectiles so the reentrancy
-   * guard can be airtight — `EnemyManager.damage` emits `enemy_killed`
-   * synchronously, and shards that spawn shards would cascade without bound in
-   * a dense wave.
+   * The shards are real projectiles now (`plans/bounce.md` §3.3), so they
+   * travel, they resolve through the ordinary impact path — resists, crits,
+   * every on-hit blessing — and they scale with the run instead of being a
+   * fixed slice of `baseDamage`. The cascade is bounded by `splitGen`: a
+   * shard's own kill sets `ProjectileManager.shardImpactInProgress`, and the
+   * caller below skips the splinter while it is set.
    */
   private fireSplitShards(x: number, y: number): void {
-    if (this.splitOnKillActive) return;
     const ts = this.tower.snapshot;
-    const damage = Math.max(1, Math.floor(ts.baseDamage * BLESSING_TUNING.splitShardDamage));
-    const candidates = this.enemyMgr
-      .queryRadius(x, y, BLESSING_TUNING.splitShardRange)
-      .filter(e => e.alive)
-      .slice(0, BLESSING_TUNING.splitShardCount);
-    if (candidates.length === 0) return;
-    this.splitOnKillActive = true;
-    try {
-      for (const target of candidates) {
-        this.effects.emitHitSparks(target.x, target.y, lighten(FX.frost, 0.3), 4);
-        this.enemyMgr.damage(target, damage, false);
-        this.bus.emit('tower_damage_dealt', { amount: damage });
-      }
-    } finally {
-      this.splitOnKillActive = false;
-    }
+    const raw = ts.baseDamage * BLESSING_TUNING.splitShardDamage;
+    const shards = this.projectileMgr.fireShards(x, y, raw, ts.damageType);
+    if (shards.length > 0) this.effects.emitSplinterBurst(x, y, shards.length);
   }
 
   private skipWaveModifier(): void {
@@ -5166,6 +5286,7 @@ export class Game {
     // v6+: Restore RPG state
     Object.assign(this.state.towerXp, persisted.towerXp ?? { xp: 0, level: 1, unspentTalentPoints: 1, totalXpEarned: 0 });
     this.state.talents.allocated = { ...(persisted.talents?.allocated ?? {}) };
+    this.talentMgr.invalidateCache();
 
     // Clear and repopulate passiveAbilities (manager holds reference)
     const pa = this.state.passiveAbilities;
@@ -5349,6 +5470,9 @@ export class Game {
     if (this.bossEncounter) this.bossEncounter.elapsed += dt;
     this.resourceMgr.tick(dt, this.waveMgr.currentWave);
     this.abilityMgr.tick(dt);
+    // Second Wind's charge restocks on the same simulation clock the ability
+    // cooldowns use, so game speed moves it with the fight it is spent in.
+    if (this.secondWindRestock > 0) this.secondWindRestock = Math.max(0, this.secondWindRestock - dt);
 
     // Evolution: mana_full_gold — gold bonus while mana is full
     if (this.upgradeMgr.hasEvolutionEffect('mana_full_gold')) {

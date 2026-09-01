@@ -50,6 +50,8 @@ Simple typed pub/sub. `on()` returns a dispose function. Errors in handlers are 
 | `ability_upgraded` | `{ id, level }` | AbilityManager | UIManager (toast, flash), Game (save) |
 | `projectile_fired` | `{ projectile, isCrit }` | ProjectileManager | — |
 | `projectile_exploded` | `{ x, y, radius }` | ProjectileManager (splash impacts) | Game (decorative ring + sparks), AudioManager (throttled boom) |
+| `projectile_bounced` | `{ x, y, inAngle, outAngle, bounces, magic }` | ProjectileManager (`tryBounce`) | Game (`emitRicochetFlash`), AudioManager (throttled ping) |
+| `shards_split` | `{ x, y, count }` | ProjectileManager (`fireShards`) | AudioManager (throttled scatter) |
 | `ascension_performed` | `{ apGained, rpGained, totalAP, lifetimeAP, ascensions }` | PrestigeManager | — |
 | `transcendence_performed` | `{ tpGained, totalTP, transcendences }` | PrestigeManager | — |
 | `ap_spent` | `{ id, level }` | PrestigeManager | — |

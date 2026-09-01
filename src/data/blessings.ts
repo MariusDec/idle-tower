@@ -38,14 +38,14 @@ export type BlessingStat = typeof BLESSING_STATS[number];
 
 /** Behaviors are queried by id, like upgrade evolutions. */
 export type BlessingBehavior =
-  | 'ricochet'          // shots bounce to one extra target for 60% damage
-  | 'ricochet_power'    // ricochet bounces deal full damage and can chain twice
+  | 'ricochet'          // the shot itself deflects onto one more target
+  | 'ricochet_power'    // ricochet deflects twice, further, for more damage
   | 'mortar'            // every 8th shot lands as a 90px splash
   | 'crit_chain'        // crits fire a 3-bounce chain for 40% damage
   | 'frost_shots'       // hits chill for 20% slow, 1.5s
   | 'shatter'           // damage +35% vs chilled/slowed enemies
   | 'orb_magnet'        // loot orbs (Part 4) home to the tower at full value
-  | 'split_on_kill'     // a kill fires two 40% shards at nearby enemies
+  | 'split_on_kill'     // a kill throws two homing shards at nearby enemies
   | 'homing'            // projectiles seek the nearest enemy, re-targeting on pierce
   | 'overkill_carry'    // 25% of overkill damage carries to the next target
   | 'siphon'            // kills restore 1% max mana
@@ -62,14 +62,14 @@ export type BlessingBehavior =
  * (`orb_magnet`) is still excluded from the offer pool.
  */
 export const BLESSING_BEHAVIOR_CONSUMERS: Record<BlessingBehavior, string> = {
-  ricochet: 'ProjectileManager.applyRicochet',
-  ricochet_power: 'ProjectileManager.applyRicochet (bounce count + damage)',
+  ricochet: 'ProjectileManager.tryBounce',
+  ricochet_power: 'ProjectileManager.tryBounce (bounce count + range + damage)',
   mortar: 'Game.simulate (shot cadence) → ProjectileManager splash on hit',
   crit_chain: 'ProjectileManager.applyCritChain',
   frost_shots: 'ProjectileManager (on hit) → EnemyManager.applyChill',
   shatter: 'ProjectileManager (on hit, vs EnemyManager.isChilled)',
   orb_magnet: 'LootManager.setMagnetSource("blessing", …) (auto-collect rate + drift speed)',
-  split_on_kill: 'Game enemy_killed handler',
+  split_on_kill: 'Game enemy_killed handler → ProjectileManager.fireShards',
   homing: 'Game.simulate / fireChargedShot → ProjectileManager.steerHoming',
   overkill_carry: 'ProjectileManager (on kill)',
   siphon: 'Game enemy_killed handler',
@@ -137,11 +137,30 @@ export const BLESSING_FREE_REROLLS = 1;
  * `ProjectileManager`.
  */
 export const BLESSING_TUNING = {
-  ricochetRange: 200,
-  ricochetDamage: 0.30,
-  ricochetPowerDamage: 0.6,
-  /** Bounces per shot: 1 with `ricochet`, this many with `ricochet_power`. */
+  /**
+   * How far a bounce may look for its next body, in **world** units.
+   *
+   * `world(...)`, unlike the raw 200 this replaces: every other distance in
+   * this table that means "on the ground" is world-scaled, and the unscaled
+   * version covered ~40% of the ground it was designed for after the
+   * `WORLD_SCALE` zoom-out (`plans/bounce.md` §2.1).
+   */
+  ricochetRange: world(300),
+  /** `ricochet_power` widens the search by this much. */
+  ricochetPowerRangeMult: 1.35,
+  /** Bounces per shot with the base card. */
+  ricochetBounces: 1,
+  /** Bounces per shot with `ricochet_power`. */
   ricochetPowerBounces: 2,
+  /**
+   * Fraction of the shot's damage carried into each hop, compounding.
+   *
+   * Higher than the 0.30 of the instant version because a bounce is now a
+   * projectile that has to arrive: it can be outrun, and its target can die
+   * first (`plans/bounce.md` §3.1).
+   */
+  ricochetDamage: 0.45,
+  ricochetPowerDamage: 0.85,
   mortarInterval: 8,
   mortarRadius: world(90),
   /** The mortar shot itself hits for this much of a normal shot. */
@@ -156,8 +175,16 @@ export const BLESSING_TUNING = {
   frostChillDuration: 1.5,
   shatterBonus: 0.15,
   splitShardCount: 2,
-  splitShardDamage: 0.125,
-  splitShardRange: 220,
+  /**
+   * Shard damage as a fraction of `baseDamage`, before the projectile damage
+   * multipliers and the target's resists. Raised from 0.125 because a shard is
+   * now a projectile that travels, resolves through `applyResists` and can
+   * miss — and because the card, this constant and the behavior comment used
+   * to name three different numbers (`plans/bounce.md` §2.4).
+   */
+  splitShardDamage: 0.25,
+  /** World-scaled, for the same reason `ricochetRange` is. */
+  splitShardRange: world(280),
   siphonManaFraction: 0.01,
   executeThreshold: 0.08,
   lastStandHpFraction: 0.3,
@@ -268,7 +295,7 @@ export const BLESSINGS: BlessingDef[] = [
     id: 'bl_ricochet',
     name: 'Ricochet',
     icon: 'zig-arrow',
-    description: 'Shots bounce to one extra target for 30% damage',
+    description: 'Shots ricochet off a target onto another for 45% damage',
     rarity: 'rare',
     weight: 5,
     maxStacks: 1,
@@ -300,7 +327,7 @@ export const BLESSINGS: BlessingDef[] = [
     id: 'bl_split',
     name: 'Splinter',
     icon: 'striking-splinter',
-    description: 'Kills fire two 15% shards at nearby enemies',
+    description: 'Kills throw 2 homing shards for 25% damage each',
     rarity: 'rare',
     weight: 5,
     maxStacks: 1,
@@ -495,7 +522,7 @@ export const BLESSINGS: BlessingDef[] = [
     id: 'bl_ricochet_power',
     name: 'Rebound',
     icon: 'armored-boomerang',
-    description: 'Bounces deal 60% damage and chain twice',
+    description: 'Ricochets travel 35% further, twice, for 85% damage',
     rarity: 'epic',
     weight: 2,
     maxStacks: 1,

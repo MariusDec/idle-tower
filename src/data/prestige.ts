@@ -163,6 +163,38 @@ export const TRANSCENDENCE_UNLOCK_AP = 100;
  */
 export const ABILITY_UNLOCK_WAVES_PER_LEVEL = 3;
 
+/**
+ * Second Wind, level by level (the revive perk's quality ladder).
+ *
+ * The perk always grants exactly *one* charge — what the levels buy is how
+ * much of the bar the tower comes back with, and from level 3 a shockwave
+ * that shoves the field off the tower so the revive is not immediately spent
+ * on the same pack that just killed it. Indexed by `level - 1`.
+ */
+export const SECOND_WIND_LEVELS: readonly { hpFraction: number; shockwave: boolean }[] = [
+  { hpFraction: 0.33, shockwave: false },
+  { hpFraction: 0.50, shockwave: false },
+  { hpFraction: 0.50, shockwave: true },
+  { hpFraction: 0.75, shockwave: true },
+  { hpFraction: 1.00, shockwave: true },
+];
+
+/**
+ * Seconds before a spent Second Wind charge restocks.
+ *
+ * The charge used to be once per run, which made it a flat extension of the
+ * run's length; on a restock clock it is a defensive cooldown the player can
+ * actually play around, and it keeps paying out in the long runs the later
+ * levels are bought for.
+ */
+export const SECOND_WIND_RESTOCK_SECONDS = 300;
+
+/** Second Wind's revive at `level`, clamped to the ladder above. */
+export function secondWindTier(level: number): { hpFraction: number; shockwave: boolean } {
+  const i = Math.min(SECOND_WIND_LEVELS.length, Math.max(1, Math.floor(level))) - 1;
+  return SECOND_WIND_LEVELS[i];
+}
+
 export const PRESTIGE_PROJECTILE_TUNING = {
   extraDamageScale: 0.55,   // Twin Arrows, front lane
   rearDamageScale: 0.55,    // Rear Guard, behind the tower
@@ -403,12 +435,17 @@ export const AP_PERKS: PrestigePerkDef[] = [
     id: 'ap_second_wind',
     layer: 'ascension',
     name: 'Second Wind',
-    description: '+1 revive charge per run',
-    costPerLevel: 20,
-    costScaling: 1,
-    maxLevel: 1,
+    description: 'Revive charge that restocks 5 minutes after it is spent; '
+      + 'later levels revive at more HP and add a shockwave',
+    costPerLevel: 120,
+    costScaling: 1.5,
+    maxLevel: SECOND_WIND_LEVELS.length,
     effectType: 'revive_charge',
-    effectPerLevel: 1,
+    // One charge at every level: the levels buy *quality* of the revive (HP
+    // and the shove), not more of them. `baseEffect` + a zero step keeps
+    // `computePerkEffect` returning 1 from level 1 through 5.
+    baseEffect: 1,
+    effectPerLevel: 0,
     icon: 'shining-heart',
     color: '#d04848',
     tier: 2,
@@ -678,10 +715,14 @@ export function describeAPPerkBonus(p: PrestigePerkDef, level: number, atMax: bo
         : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% RP drop chance per level`;
     case 'orb_magnet':
       return 'Loot orbs home to the tower at full value';
-    case 'revive_charge':
-      return level > 0
-        ? `+${computePerkEffect(p, level).toFixed(0)} revive charge${computePerkEffect(p, level) === 1 ? '' : 's'}`
-        : '+1 revive charge per run';
+    case 'revive_charge': {
+      // Level 0 quotes what the first level buys, like every other row here.
+      const t = secondWindTier(level > 0 ? level : 1);
+      const hp = `Revive at ${Math.round(t.hpFraction * 100)}% HP`;
+      const wave = t.shockwave ? ' + shockwave' : '';
+      const restock = `, restocks ${Math.round(SECOND_WIND_RESTOCK_SECONDS / 60)} min after use`;
+      return `${hp}${wave}${restock}`;
+    }
     case 'first_draft_wave':
       return 'First blessing draft on wave 1';
     case 'blessing_rerolls':

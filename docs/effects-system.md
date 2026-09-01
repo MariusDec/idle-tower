@@ -30,6 +30,8 @@ Manages transient visual effects: particles, floating damage numbers, and expand
 | `emitBerserkPulse(cx, cy)` | Short-lived red burst |
 | `emitGoldRushSparkle(cx, cy)` | Rising golden sparkles |
 | `emitShockwaveRing(cx, cy, radius)` | Expanding ring shockwave effect |
+| `emitRicochetFlash(x, y, inAngle, outAngle, color)` | A bounce deflection: bright ring, a spark lance along the outgoing heading, a thin back-spray along the incoming one |
+| `emitSplinterBurst(x, y, shards)` | Gold/white starburst at a Splinter kill point, scaled by shard count |
 
 ## Damage Numbers (UI plan §5.B)
 

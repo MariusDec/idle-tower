@@ -1,6 +1,7 @@
 import type { EquipmentSlot, Rarity, EquipmentDef, Equipment, EquipmentStat, EquipmentStatType } from '../types';
 import type { IconId } from './icons';
 import { RARITY } from './palette';
+import { goldDropForWave } from './formulas';
 
 // ── Rarity Configuration ──────────────────────────────
 
@@ -350,8 +351,14 @@ function rollStats(def: EquipmentDef, rarity: Rarity): EquipmentStat[] {
   }));
 }
 
-/** Create a fully generated Equipment instance from a defId and rarity. */
-export function generateEquipment(defId: string, rarity: Rarity): Equipment {
+/**
+ * Create a fully generated Equipment instance from a defId and rarity.
+ *
+ * `level` is the item level: the wave the piece dropped on. Stats do not read
+ * it — rarity already carries the power — but the sell value does, so a
+ * wave-60 drop is worth wave-60 money (`equipmentSellValue`).
+ */
+export function generateEquipment(defId: string, rarity: Rarity, level = 1): Equipment {
   const def = EQUIPMENT_DEF_BY_ID[defId];
   if (!def) throw new Error(`Unknown equipment def: ${defId}`);
   return {
@@ -359,10 +366,48 @@ export function generateEquipment(defId: string, rarity: Rarity): Equipment {
     defId,
     slot: def.slot,
     rarity,
-    level: 1,
+    level: Math.max(1, Math.floor(level)),
     stats: rollStats(def, rarity),
     seen: false,
   };
+}
+
+/**
+ * Gold for a level-1 common. Everything else is this scaled by the item level
+ * and the rarity multiplier below.
+ */
+export const SELL_BASE_VALUE = 5;
+
+/**
+ * Rarity is worth far less here than it used to be (it ran to 50x), because
+ * the *level* term now carries the growth. A flat rarity ladder on a flat base
+ * was the whole problem: a legendary pulled off wave 80 sold for 500g in an
+ * economy where a single wave pays thousands.
+ */
+export const SELL_RARITY_MULT: Record<Rarity, number> = {
+  common: 1,
+  uncommon: 2,
+  rare: 4,
+  epic: 8,
+  legendary: 16,
+};
+
+/**
+ * What a piece of gear sells for.
+ *
+ * Scales on `GOLD_GROWTH` with the item level, the same curve enemy gold
+ * follows, so a sale keeps a fixed *relative* worth however deep the run is:
+ * roughly 7% of a wave's income for a common, most of a wave for a legendary.
+ *
+ * Pre-level saves stored `level: 1` on every item; the def's `minWave` is the
+ * shallowest wave the piece could have dropped on, so it stands in as a floor
+ * rather than valuing an old legendary at wave-1 rates.
+ */
+export function equipmentSellValue(item: Equipment): number {
+  const def = EQUIPMENT_DEF_BY_ID[item.defId];
+  const level = Math.max(1, Math.floor(item.level ?? 1), def?.minWave ?? 1);
+  const mult = SELL_RARITY_MULT[item.rarity] ?? 1;
+  return Math.max(1, Math.floor(goldDropForWave(SELL_BASE_VALUE, level) * mult));
 }
 
 /**
@@ -427,5 +472,5 @@ export function rollDrop(
   if (source !== 'boss') dropPool = dropPool.filter(d => !d.bossOnly);
   if (dropPool.length === 0) return null;
   const def = dropPool[Math.floor(Math.random() * dropPool.length)];
-  return generateEquipment(def.id, rarity);
+  return generateEquipment(def.id, rarity, wave);
 }
