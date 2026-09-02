@@ -46,6 +46,16 @@ export interface BossBarData {
   shieldTimer: number;
   phase: number;
   pattern: BossPattern | null;
+  /**
+   * HP fractions this encounter changes phase at (progress-steps A.2).
+   *
+   * Carried on the data rather than read from `BOSS_ENCOUNTER` because an
+   * Ordeal has more of them than an ordinary boss, so the number of dividers
+   * is a property of *this* encounter.
+   */
+  thresholds: readonly number[];
+  /** True on an Ordeal wave — the bar takes its own colour. */
+  ordeal: boolean;
   /** Seconds of slam telegraph left, and its full duration. 0 when not slamming. */
   slamRemaining: number;
   slamTotal: number;
@@ -95,6 +105,10 @@ export class BossBar {
   private rim: HTMLElement | null = null;
   /** Last phase seen, so a crossing fires the flash exactly once. */
   private lastPhase = 0;
+  private track: HTMLElement | null = null;
+  /** Dividers currently in the DOM, so they are only rebuilt when they change. */
+  private dividers: HTMLElement[] = [];
+  private dividerKey = '';
   /** Alternates so a repeat flash restarts without forcing a reflow. */
   private flashPhase = false;
 
@@ -103,6 +117,34 @@ export class BossBar {
   }
 
   /** Pass `null` while no boss is alive; the bar hides itself. */
+  /**
+   * Rebuild the phase dividers when the encounter's threshold list changes.
+   *
+   * Keyed on the list itself, so the common case — the same boss, frame after
+   * frame — touches no DOM at all. The thresholds cut the track into one
+   * segment per phase, so the bar reads as a sequence of fights rather than
+   * one long one: a pip was a 2px hairline over a continuous fill; a divider
+   * that reaches past both edges says "this is a boundary".
+   */
+  private syncDividers(thresholds: readonly number[]): void {
+    const key = thresholds.join(',');
+    if (key === this.dividerKey) return;
+    this.dividerKey = key;
+    for (const d of this.dividers) d.remove();
+    this.dividers = [];
+    if (!this.track) return;
+    thresholds.forEach((threshold, i) => {
+      const div = document.createElement('div');
+      div.className = 'boss-bar-divider';
+      // The boundary index, not an `nth-of-type` position: a positional
+      // selector would quietly match the fill elements instead.
+      div.dataset.boundary = String(i + 1);
+      div.style.left = `${threshold * 100}%`;
+      this.track!.appendChild(div);
+      this.dividers.push(div);
+    });
+  }
+
   update(data: BossBarData | null): void {
     if (!data) {
       if (this.wrap) toggleClass(this.wrap, 'is-visible', false);
@@ -115,6 +157,8 @@ export class BossBar {
     if (!this.wrap) return;
     toggleClass(this.wrap, 'is-visible', true);
 
+    this.syncDividers(data.thresholds);
+    toggleClass(this.wrap, 'is-ordeal', data.ordeal);
     setText(this.nameEl!, data.name);
     setText(this.countEl!, data.count > 1 ? `${data.count} alive` : '');
     toggleClass(this.countEl!, 'is-visible', data.count > 1);
@@ -237,20 +281,10 @@ export class BossBar {
     const shieldFill = document.createElement('div');
     shieldFill.className = 'boss-bar-shield';
     track.appendChild(shieldFill);
-    // The two thresholds cut the track into three segments, one per phase, so
-    // the bar reads as three fights rather than one long one. A pip was a 2px
-    // hairline over a continuous fill; a divider that reaches past both edges
-    // of the track says "this is a boundary" instead of "this is a mark".
-    BOSS_ENCOUNTER.phaseThresholds.forEach((threshold, i) => {
-      const div = document.createElement('div');
-      div.className = 'boss-bar-divider';
-      // The boundary index, not an `nth-of-type` position: the dividers are the
-      // third and fourth `div`s in the track, so a positional selector would
-      // quietly match nothing.
-      div.dataset.boundary = String(i + 1);
-      div.style.left = `${threshold * 100}%`;
-      track.appendChild(div);
-    });
+    // The dividers are built in `syncDividers` rather than here: an Ordeal has
+    // more thresholds than an ordinary boss (progress-steps A.2), so how many
+    // there are is a property of the encounter on screen, not of the class.
+    this.track = track;
     const hpText = document.createElement('span');
     hpText.className = 'boss-bar-hptext';
     track.appendChild(hpText);

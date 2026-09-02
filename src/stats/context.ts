@@ -27,6 +27,10 @@ export interface PrestigeInputs {
   apRpDrop: number;
   /** Second Wind's extra revive charges, as a whole number. */
   apReviveCharges: number;
+  /** Deep Stores' upgrade-cap extension, as a fraction (0.25 = +25% levels). */
+  apUpgradeCapExtension: number;
+  /** Foundry's upgrade-cap extension, as a fraction. Sums with the AP one. */
+  tpUpgradeCapExtension: number;
   /** Transcendence multipliers (already `1 + x` shaped). */
   tpDamage: number;
   tpFireRate: number;
@@ -162,6 +166,8 @@ export function emptyStatContext(): StatContext {
       apXpGain: 1,
       apRpDrop: 0,
       apReviveCharges: 0,
+      apUpgradeCapExtension: 0,
+      tpUpgradeCapExtension: 0,
       tpDamage: 1,
       tpFireRate: 1,
       tpManaRegen: 1,

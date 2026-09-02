@@ -26,7 +26,7 @@ The `Game` class is the central orchestrator. It owns all system instances and r
 ```
 requestAnimationFrame
   ├── dt = (now - lastTime) / 1000, capped at 0.05   ← wall clock
-  ├── gameDt = dt * speed * slowMo                   ← up to 6.5x from the Accelerator perk
+  ├── gameDt = dt * speed * slowMo                   ← up to 4.5x from the Accelerator perk
   ├── update(gameDt, dt)   ← all game logic
   │     ├── simulate(step) x N   ← fixed substeps of 1/60 s, max 6
   │     └── frameUpdate(gameDt, dt)
@@ -38,7 +38,7 @@ requestAnimationFrame
 
 `update` never simulates a step larger than it has to: it runs
 `ceil(gameDt / FIXED_STEP)` substeps, clamped to `MAX_SUBSTEPS` (6). At 1x
-speed that is one step and the loop is unchanged; at 6.5x it is six. When the
+speed that is one step and the loop is unchanged; at 4.5x it is five. When the
 clamp bites, step size grows rather than time being dropped, so the game never
 runs in slow motion under load. See [performance.md](performance.md).
 
@@ -75,7 +75,7 @@ design decision rather than an implementation detail:
 The rule: **if the quantity being timed is produced by the simulation, it is
 simulation time.** The gameplay plan's §7.2 combo window is the clearest case.
 Kills are simulation events, so the interval between two of them is a
-simulation-time quantity; a 2 s window on the wall clock would be 0.3 s at 6.5x
+simulation-time quantity; a 2 s window on the wall clock would be 0.44 s at 4.5x
 speed and no combo would ever chain, which would make the same play pay
 differently depending on a speed setting that is supposed to cost nothing
 (`PacingManager.tickCombo`, `COMBO_WINDOW_SECONDS`).
@@ -86,7 +86,7 @@ measuring a human rather than the field:
 - the **blessing draft countdown** (§1.1) — 20 s to read three cards is 20 s of
   the player's life, not 3 s at high speed;
 - the **charged-shot hold and cooldown** (§4.2) — 1.2 s of holding still, and a
-  4 s cooldown that must not become 0.6 s the moment the Accelerator unlocks;
+  4 s cooldown that must not become 0.9 s the moment the Accelerator unlocks;
 - **research progress and passive RP** — deliberately real-time systems.
 
 Boss enrage, the boss encounter clock, orb drift, the combo window, mutator
@@ -158,9 +158,9 @@ human, so it runs on `realDt`. See
 
 - `GAME_SPEEDS = [0.5, 1.0, 1.5]` (default index 1, max index 1)
 - `maxSpeedIndex` can be increased by research; the Accelerator TP perk extends
-  it to 6.5x via `computeSpeedForIndex`
+  it to 4.5x via `computeSpeedForIndex`
 - Speed scales the simulation delta, not rendering or UI. Substepping keeps the
-  physics step fixed regardless, so DPS at 6.5x matches 1x within ~1%
+  physics step fixed regardless, so DPS at 4.5x matches 1x within ~1%
 
 ## Reset Types
 

@@ -573,7 +573,9 @@ section('§3.4 elites');
   check('elites stay absent early', eliteChanceForWave(10) === 0);
   check('elites are common by wave 100', eliteChanceForWave(100) >= 0.2,
     `chance=${eliteChanceForWave(100)}`);
-  check('the elite rate is capped', eliteChanceForWave(500) <= 0.25);
+  // progress-steps §10.2: the rate now has a *second* ramp, 20% -> 30% over
+  // waves 150-400, so the cap it is checked against is the champion band's.
+  check('the elite rate is capped', eliteChanceForWave(500) <= 0.30);
 }
 
 // ── §3.5 research ─────────────────────────────────────────────────────────

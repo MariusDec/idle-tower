@@ -233,6 +233,10 @@ async function bootstrap(): Promise<void> {
   ui.setOnAscend(() => {
     game.ascend();
   });
+  ui.setOnDeploy(
+    () => { game.deploy(); },
+    () => game.deploymentTarget()?.wave ?? null,
+  );
   ui.setOnResolveRunFailure((action) => {
     game.resolveRunFailure(action);
   });

@@ -56,7 +56,8 @@ landing on boss waves at all.
 
 ## Phases
 
-A boss crosses into phase 2 at **66%** and phase 3 at **33%** of max HP. Each
+A boss crosses into phase 2 at **66%** and phase 3 at **33%** of max HP — below
+wave 200. Past that the thresholds multiply; see [Ordeals](#ordeals). Each
 crossing:
 
 - switches the active pattern,
@@ -73,6 +74,37 @@ in order.
 
 > The pre-existing **50% HP enrage** (`+50%` fire rate, `+30%` speed, a brighter
 > aura) is unchanged and still fires. It sits inside phase 2.
+
+## Ordeals
+
+Every **hundredth wave from 200** is an Ordeal (plans/progress.md §7.3):
+
+- **More phases.** `phaseThresholdsForWave` adds one threshold per hundred
+  waves — `[0.66, 0.33]` below 200, `[0.75, 0.50, 0.25]` from 200,
+  `[0.80, 0.60, 0.40, 0.20]` from 300 — evenly spaced so no phase is ever a
+  sliver, and capped at `BOSS_ENCOUNTER.maxPhaseThresholds` (6, i.e. seven
+  phases). `bossPatternForPhase` has no upper phase clamp any more, so each new
+  threshold draws the next pattern off the existing rotation.
+- **The boss's HP is unchanged.** What grows is how many times it stops,
+  flashes and switches pattern on the way down: the *encounter* gets longer,
+  the bar does not get bigger.
+- **A name.** `ORDEAL_NAMES`, keyed by the hundred, replaces the tier name in
+  `bossNameForWave`, and the bar takes `ORDEAL_BAR_COLOR` (the prestige gold)
+  instead of blood red. Past the table's last entry the name repeats with the
+  wave appended, so the deep game never goes anonymous again.
+- **A guaranteed drop.** The kill rolls with `{ guaranteed: true, rarityBoost:
+  ORDEAL_RARITY_BOOST }` (4) — the one channel through which gear keeps
+  improving past wave 100, where `rollRarity`'s own depth ramp saturates.
+
+Wave 100 is deliberately *not* an Ordeal: it is a player's first three-phase
+boss and that encounter is already the lesson.
+
+The two extra patterns §7.3 describes (`tether`, `eclipse`) need real combat
+code in `EnemyManager.tickBoss` and are **not** implemented — the phases past
+the third draw from the existing four.
+
+The boss bar builds its dividers from the encounter's own threshold list rather
+than from the constant, so a five-phase Ordeal reads as five segments.
 
 ## Patterns
 
@@ -191,7 +223,7 @@ wave-level enrage instead of compounding into it — and so the boss bar can rea
 the stack count straight off `bossEnrageStacks`.
 
 Integrated on the **simulation** clock, so 60 s is 60 s of game time at 1x and
-at 6.5x alike.
+at 4.5x alike.
 
 ## Rewards
 
@@ -214,7 +246,7 @@ Both announce with the existing toast + shockwave vocabulary.
 
 "Lost no HP" means exactly that: a hit the wall or a shield charge absorbed
 costs the player nothing, so the flag is cleared at the point `ts.hp` actually
-drops. The swift-kill window runs on the simulation clock, so 6.5x speed makes
+drops. The swift-kill window runs on the simulation clock, so 4.5x speed makes
 it easier in wall-clock terms and no easier in game terms.
 
 The flawless AP bonus is the **first consumer** of `BlessingManager.grantRerollToken`,

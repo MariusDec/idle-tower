@@ -72,6 +72,9 @@ const ENEMY_INTRO_MILESTONES: Array<{ type: EnemyType; name: string; color: stri
   { type: 'blinker', name: 'Blinkers', color: '#7f5af0' },
   { type: 'warden', name: 'Wardens', color: '#1f7a8c' },
   { type: 'burrower', name: 'Burrowers', color: '#7a5a30' },
+  { type: 'harbinger', name: 'Harbingers', color: '#5b3a7a' },
+  { type: 'leech', name: 'Leeches', color: '#1d6b6b' },
+  { type: 'chorus', name: 'Chorus', color: '#8a6d1f' },
 ];
 
 function enemyMilestones(): MilestoneDef[] {
@@ -115,6 +118,48 @@ const FIXED_MILESTONES: MilestoneDef[] = [
     detail: `Reset your run for Ascension Points (AP). Earn more AP the deeper you go.`,
     icon: 'upgrade',
     color: '#e8a93b',
+  },
+  // ── depth bands (plans/progress.md §7.1/§7.2) ───────────────────────────
+  //
+  // `kind: 'enemy'` because that is what these are to the player — the roster
+  // changing — and it puts them in the same strip lane as a type unlock. They
+  // carry no `refId`, so the two roster assertions in
+  // `tests/content-coverage.test.ts` skip them by id prefix.
+  {
+    id: 'depth:band_120',
+    kind: 'enemy',
+    wave: 120,
+    label: 'The line thickens',
+    detail: 'Armoured and shielded enemies become far more common from here.',
+    icon: 'bordered-shield',
+    color: '#2c5b8f',
+  },
+  {
+    id: 'depth:champions',
+    kind: 'enemy',
+    wave: 150,
+    label: 'Champions appear',
+    detail: 'Elites past this depth carry twice the HP and six times the gold.',
+    icon: 'crown',
+    color: '#e8a93b',
+  },
+  {
+    id: 'depth:band_240',
+    kind: 'enemy',
+    wave: 240,
+    label: 'The clever ones',
+    detail: 'Blinkers, burrowers and siege engines crowd out the rank and file.',
+    icon: 'all-seeing-eye',
+    color: '#7f5af0',
+  },
+  {
+    id: 'depth:band_380',
+    kind: 'enemy',
+    wave: 380,
+    label: 'The deep muster',
+    detail: 'Every type that punishes a single-target build, at once.',
+    icon: 'nested-hexagons',
+    color: '#1f7a8c',
   },
 ];
 

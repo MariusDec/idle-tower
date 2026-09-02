@@ -20,6 +20,46 @@ Four categories: **tower** (11), **economy** (5), **utility** (4), **defense**
 (9). Every line has a real `maxLevel` — the revamp's design rule 6 is that
 nothing compounds forever, so the `999` ceilings are gone.
 
+### The cap extension (`src/data/upgradeCaps.ts`)
+
+A line's `maxLevel` is its *table* ceiling; what binds at runtime is
+`effectiveMaxLevel(def)` = `maxLevel + round(maxLevel × capExtension)`.
+
+`damage`'s 200 levels are worth exactly 200 waves of enemy HP growth
+(`1.11^(L-2)` per level against `ENEMY_HP_GROWTH = 1.11`), so they were also the
+ceiling on what *gold* could ever buy: measured with `npm run sim`, a run handed
+an unlimited gold multiplier still walled at **wave 219**, and past that depth
+every gold system in the game — Fortune, Tycoon, Golden Age, the combo meter,
+the risk dial's payout, contract gold, loot orbs, gear sales — was inert
+(plans/progress.md §1.2). Doubling the literal moves the wall once; a *bought*
+extension keeps gold live at every depth: 219 → **419** with `damage` alone at
+2 000 levels, and the bracket keeps opening as the extension grows.
+
+Three sources sum into one `upgradeCapExtension` stat, capped at
+`MAX_CAP_EXTENSION` (6.0):
+
+| Source | Amount |
+|---|---|
+| `ap_deep_stores` (AP perk, 4 levels) | +25% per level → +1.0 |
+| `tp_foundry` (TP perk, 8 levels) | +50% per level → +4.0 |
+| `deep_stores` (Watch chapter 21 unlock) | +0.5 (`WATCH_CAP_EXTENSION`) |
+
+**A fraction, not a flat number,** because every line's cap is sized against its
+own curve — `damage` 200 against 1.11, `critDamage` 50 against a much flatter
+payout, `pierce` 6 against `3.2^L` costs. A flat "+50 levels" is nothing to
+`damage` and breaks `pierce`.
+
+**Only the scalar lines** (`CAP_EXTENDABLE_UPGRADES`: damage, critDamage,
+health, defense, armor, thorns, lifesteal, goldMulti, waveGold, goldOnKill,
+manaRegen, xpGain). `fireRate` is capped on purpose — two compounding DPS axes
+multiply into a runaway — and `pierce` / `splash` / `doubleShotChance` /
+`quickShotChance` are coverage axes whose ceilings are set by the arena's
+geometry rather than by the economy. A new upgrade is excluded by default, which
+is the safe direction for a mechanism whose failure mode is a runaway.
+
+`UpgradeManager`, `UpgradePanel` and `sim/model.ts` all read the same accessor,
+so the panel can never offer a level the manager refuses.
+
 ### Tower (11)
 | ID | Name | baseCost | growth | effect/level | maxLevel | Ceiling |
 |----|------|---------:|-------:|-------------|---------:|---------|

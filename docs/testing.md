@@ -23,11 +23,11 @@ DOM.
 | `projectiles.test.ts` | Swept collision at every step size the game can produce, first-hit-along-path ordering, and lifetime culling |
 | `content-coverage.test.ts` | Every declared talent stat, achievement reward type, blessing stat/behavior, **boss pattern** and **enemy type** has a consumer — an enemy needs a paintable renderer shape, a distinct colour, a milestone on its real unlock wave, a named behaviour branch and a spawn weight — and no table has dangling prerequisites or duplicate ids |
 | `enemies.test.ts` | The behavioural roster: thief theft/flee/×2 recovery/escape and the per-wave ceiling, blinker cadence and knockback immunity, warden ward absorb/refresh/collapse, burrower untargetability across `Tower.acquireTarget`, projectiles and the ability pickers, siege standoff and `tower_damaged` routing, tank body-block, healer flee, splitter spawn protection, shielded regeneration, priority targeting, the spawn pool and the thief cap |
-| `boss.test.ts` | Boss encounters: the tier→pattern rotation, phase crossings firing exactly once and staying idempotent when a heal re-crosses a threshold, phase-flash untargetability, bulwark healing on timeout but not after a break, summon batching and the field cap, slam telegraph/mitigation/stickiness, siphon drain and heal, the enrage timer, the swift/flawless reward rules, and the lead-boss pick the bar tracks. Every cadence is asserted at **both** `dt = 1/120` and the coarsest substep 6.5x speed produces |
+| `boss.test.ts` | Boss encounters: the tier→pattern rotation, phase crossings firing exactly once and staying idempotent when a heal re-crosses a threshold, phase-flash untargetability, bulwark healing on timeout but not after a break, summon batching and the field cap, slam telegraph/mitigation/stickiness, siphon drain and heal, the enrage timer, the swift/flawless reward rules, and the lead-boss pick the bar tracks. Every cadence is asserted at **both** `dt = 1/120` and the coarsest substep 4.5x speed produces |
 | `contracts.test.ts` | Contracts: every goal kind has a consumer that actually advances a contract (the `Record` is the subject), the three slots never drop below three and never hold a duplicate, the +50% AP cap binds and pays zero past it, run-scoped reset, wave-band tiering at every wave from 1 to 200, and snapshot/restore including a def removed from the pool |
 | `blessings.test.ts` | The in-run draft: offer rules (no duplicates, no maxed or deferred cards, `requires` and wave gates), reroll order, the 30-pick cap, stat summation across stacks, the behavior cache against a linear scan, snapshot/restore |
 | `cores.test.ts` | Tower cores: each stat block resolved to pinned literals, the behavior→consumer map, artillery's blast (hits everything inside, nothing outside, pays a fraction), arcane's every-5th-shot proc spending mana and landing as magic — and degrading to an ordinary shot when the pool is empty, frostwork's chill through the per-enemy map rather than a global slow, the extended nova keyed on effect type, bloodforge's tempo step at the threshold and not above it, AP gating, the picker's two gates, run-scoped reset restoring the *preference*, save round trip, and `corePreference` at 1.5x without ever making a card unreachable |
-| `pacing.test.ts` | Pacing (§7): the early-call bonus and its momentum cap, momentum reset on damage and on a wave that ran its full intermission, refusal while the intermission is paused, the combo's tiers and their gold/XP through the pipeline, decay driven at **both** `dt = 1/120` and the coarsest substep 6.5x produces, the risk dial's next-wave commit and its HP/speed/gold/AP multipliers, overkill carry at 10% and 25% and never onto a dead or untargetable enemy, the truthfulness of the threat preview against what the wave then spawns, and the intermission steps at waves 20 and 50 |
+| `pacing.test.ts` | Pacing (§7): the early-call bonus and its momentum cap, momentum reset on damage and on a wave that ran its full intermission, refusal while the intermission is paused, the combo's tiers and their gold/XP through the pipeline, decay driven at **both** `dt = 1/120` and the coarsest substep 4.5x produces, the risk dial's next-wave commit and its HP/speed/gold/AP multipliers, overkill carry at 10% and 25% and never onto a dead or untargetable enemy, the truthfulness of the threat preview against what the wave then spawns, and the intermission steps at waves 20 and 50 |
 | `stats.test.ts` | Golden stat resolution: a literal `StatContext` in, a pinned damage/fire-rate/gold/mana figure out, plus clamps, breakdown reconstruction, and one case per bug in Part 1 |
 
 ### Conventions
@@ -115,3 +115,32 @@ Four things to know:
 - Repeated `getImageData` on the game canvas makes Chrome move it to a software
   backend, which invalidates any timing measured afterwards. Probe pixels or
   measure performance — not both in one page load.
+
+## Type checking covers `sim/` too
+
+`npm run typecheck` runs `tsc` twice: once over `src` (the build's own config)
+and once over `tsconfig.sim.json`, which adds `sim/`.
+
+The second pass exists because of a real failure. `sim/model.ts` keeps its own
+`Record<EnemyType, number>` tables, and when the roster gained three types those
+tables went stale: every lookup for a new type returned `undefined`, the model's
+arithmetic became `NaN`, and `npm run sim` cheerfully reported a tower that
+never dies — wall 400 at every prestige tier — with every test and check still
+green. A closed `Record` only closes anything if something checks it.
+
+`tests/` is deliberately *not* in that pass yet: it has a backlog of unused
+locals and private-member access that would have to be cleaned up first.
+
+## The ladder report
+
+`sim/ladder.ts`, printed at the end of `npm run sim`, is the only table in the
+repo that measures **run N feeding run N+1**. Every other table fixes a
+lifetime-AP tier and measures one run inside it, which cannot see whether the
+next run gets any further than this one. Read the `dWall` column: a healthy
+ladder advances a roughly constant number of waves per ascension. `dWall`
+decaying to `+0` means the ladder has a fixed point and the game ends there.
+
+The verdict block under the tables states the four design targets from
+`plans/progress.md` §2 (T1 ladder advance, T2 depth reached, T3 run length at
+the speed ceiling, T4 share of run minutes the tower is actually at risk) and
+whether the current tables meet them.

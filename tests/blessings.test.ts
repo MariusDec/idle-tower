@@ -13,6 +13,8 @@ import { BlessingManager } from '../src/systems/BlessingManager';
 import {
   BLESSINGS,
   BLESSING_BY_ID,
+  BLESSING_CAP_GROWTH_WAVE,
+  blessingPickCapForWave,
   BLESSING_DRAFT_INTERVAL,
   BLESSING_FIRST_DRAFT_WAVE,
   BLESSING_MAX_PICKS,
@@ -167,8 +169,10 @@ describe('cadence and the pick cap', () => {
     const mgr = new BlessingManager();
     let wave = BLESSING_FIRST_DRAFT_WAVE;
     let taken = 0;
-    // Walk the real cadence until the manager stops offering.
-    while (taken < BLESSING_MAX_PICKS + 10 && wave < 400) {
+    // Walk the real cadence until the manager stops offering. The walk stops
+    // at `BLESSING_CAP_GROWTH_WAVE`, because past it the cap grows with depth
+    // (progress-steps §8.1) and the base cap is what this test is about.
+    while (taken < BLESSING_MAX_PICKS + 10 && wave <= BLESSING_CAP_GROWTH_WAVE) {
       if (mgr.isDraftDue(wave)) {
         const offer = mgr.openDraft(wave, undefined, seeded(wave));
         if (offer.length === 0) break;
@@ -295,5 +299,26 @@ describe('snapshot and restore', () => {
     expect(mgr.stacks('bl_pierce')).toBe(BLESSING_BY_ID.bl_pierce.maxStacks);
     // A draft that was open when the save was written is not resumed.
     expect(mgr.offerWave).toBeNull();
+  });
+});
+
+describe('the pick cap grows with depth (progress.md §7.4)', () => {
+  it('is 30 up to wave 120 and grows one per 20 waves after', () => {
+    expect(blessingPickCapForWave(1)).toBe(30);
+    expect(blessingPickCapForWave(120)).toBe(30);
+    expect(blessingPickCapForWave(140)).toBe(31);
+    expect(blessingPickCapForWave(340)).toBe(41);
+    expect(blessingPickCapForWave(550)).toBe(51);
+  });
+
+  it('never offers a greater card before pick 30', () => {
+    const mgr = new BlessingManager();
+    // Nothing taken yet: the whole greater tier must be ineligible however
+    // deep the wave is.
+    const eligible = mgr.eligible(600).map(d => d.id);
+    for (const def of BLESSINGS) {
+      if (def.minPicks === undefined) continue;
+      expect(eligible, def.id).not.toContain(def.id);
+    }
   });
 });

@@ -37,7 +37,12 @@ import {
   bossPhaseForHpFraction,
   bossPhaseHpFactor,
   bossSummonCountForWave,
+  bossTierForWave,
+  isOrdealWave,
   isTargetable,
+  ordealNameForWave,
+  phaseThresholdsForWave,
+  ORDEAL_NAMES,
 } from '../src/data/enemies';
 import { bossEncounterWeight, bossHPForWave, goldDropForWave } from '../src/data/formulas';
 import { RARITY_ORDER, rollDrop, upgradeRarity } from '../src/data/equipment';
@@ -693,5 +698,87 @@ describe('boss bar inputs (plan §3.5)', () => {
     const h = harness();
     h.mgr.spawn('normal', 40, TOWER_X, TOWER_Y);
     expect(h.mgr.leadBoss()).toBeNull();
+  });
+});
+
+/**
+ * Ordeals (plans/progress-steps.md A.2).
+ *
+ * The data half only: more phase thresholds with depth, a named boss on every
+ * hundredth wave from 200, and a guaranteed high-rarity drop. The two new
+ * patterns §7.3 describes need combat code and are deliberately not here.
+ */
+describe('Ordeals (progress-steps A.2)', () => {
+  it('adds one phase threshold every hundred waves, to a cap', () => {
+    expect(phaseThresholdsForWave(40)).toEqual([0.66, 0.33]);
+    expect(phaseThresholdsForWave(199)).toEqual([0.66, 0.33]);
+    expect(phaseThresholdsForWave(200)).toEqual([0.75, 0.5, 0.25]);
+    expect(phaseThresholdsForWave(300)).toEqual([0.8, 0.6, 0.4, 0.2]);
+    // The cap holds however deep the wave is, so a wave-5000 boss is a long
+    // encounter rather than an endless one.
+    const deepest = phaseThresholdsForWave(5000);
+    expect(deepest).toHaveLength(BOSS_ENCOUNTER.maxPhaseThresholds);
+    expect(phaseThresholdsForWave(100_000)).toEqual(deepest);
+  });
+
+  it('keeps the pre-Ordeal thresholds bit-identical', () => {
+    // The shallow pair is the table's own, not an evenly spaced recomputation:
+    // 2/3 rounds to 0.67 and every pre-Ordeal boss was measured against 0.66.
+    expect(phaseThresholdsForWave(40)).toEqual([...BOSS_ENCOUNTER.phaseThresholds]);
+    expect(bossPhaseForHpFraction(0.67, 40)).toBe(1);
+    expect(bossPhaseForHpFraction(0.66, 40)).toBe(2);
+  });
+
+  it('maps HP onto every threshold a deep boss has', () => {
+    expect(bossPhaseForHpFraction(1, 300)).toBe(1);
+    expect(bossPhaseForHpFraction(0.8, 300)).toBe(2);
+    expect(bossPhaseForHpFraction(0.6, 300)).toBe(3);
+    expect(bossPhaseForHpFraction(0.4, 300)).toBe(4);
+    expect(bossPhaseForHpFraction(0.2, 300)).toBe(5);
+    expect(bossPhaseForHpFraction(0, 300)).toBe(5);
+  });
+
+  it('draws a distinct pattern for every phase past the third', () => {
+    // The phase clamp is gone, so an Ordeal's fourth and fifth phases pull the
+    // next patterns off the rotation instead of repeating the third forever.
+    const tier = bossTierForWave(300);
+    const patterns = [1, 2, 3, 4].map(p => bossPatternForPhase(tier, p));
+    expect(new Set(patterns).size, patterns.join(',')).toBe(4);
+  });
+
+  it('names every hundredth wave from 200 and nothing else', () => {
+    expect(isOrdealWave(200)).toBe(true);
+    expect(isOrdealWave(700)).toBe(true);
+    // Wave 100 is a player's first three-phase boss; the encounter is already
+    // the lesson, so it is deliberately not an Ordeal.
+    expect(isOrdealWave(100)).toBe(false);
+    expect(isOrdealWave(250)).toBe(false);
+    expect(ordealNameForWave(200)).toBe(ORDEAL_NAMES[2]);
+    expect(ordealNameForWave(250)).toBeNull();
+    // The boss's own name is the Ordeal's on those waves.
+    expect(bossNameForWave(200)).toBe(ORDEAL_NAMES[2]);
+    expect(bossNameForWave(210)).toContain('Wave 210');
+  });
+
+  it('keeps naming Ordeals past the end of the table', () => {
+    // A fixed table would leave the deep game anonymous at exactly the depth
+    // this plan opened up.
+    const deep = ordealNameForWave(1500);
+    expect(deep).toBeTruthy();
+    expect(deep).toContain('wave 1500');
+  });
+
+  it('advances a deep boss through its extra phases in play', () => {
+    const h = harness();
+    const boss = spawnBoss(h, 300);
+    const chip = boss.maxHp * 0.02;
+    const phases = new Set<number>();
+    for (let i = 0; i < 60 && boss.alive; i++) {
+      h.mgr.damage(boss, chip, false);
+      h.run(BOSS_ENCOUNTER.phaseInvulnerability + 0.05);
+      phases.add(boss.bossPhase ?? 1);
+    }
+    // Wave 300 has four thresholds, so the encounter is five phases deep.
+    expect(Math.max(...phases)).toBe(5);
   });
 });

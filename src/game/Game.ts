@@ -1,5 +1,6 @@
 import type { AbilityId, BossPattern, GameState, TowerState, AbilityState, ResourceState, PrestigeState, GameStats, Mine, StatsInfo, TargetingMode, RunRecord, WaveModifierSnapshot, EnemyType, EquipmentSlot, EquipmentStatType, Equipment, AutoBuyStrategy, GoldSourceEntry } from '../types';
-import { GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, MAX_RUN_HISTORY } from '../types';
+import type { DeploymentCheckpoint } from '../types';
+import { GAME_SPEEDS, DEFAULT_SPEED_INDEX, MAX_SPEED_INDEX, SPEED_STEP, MAX_RUN_HISTORY, DEPLOY_CHECKPOINT_STEP, DEPLOY_CHECKPOINT_LIMIT } from '../types';
 
 /**
  * Fixed simulation substep, and the ceiling on substeps per frame (plan §5.2).
@@ -23,6 +24,10 @@ import {
   ENEMY_DEFS,
   bossEncounterOutcome,
   bossNameForWave,
+  isOrdealWave,
+  ordealNameForWave,
+  phaseThresholdsForWave,
+  ORDEAL_RARITY_BOOST,
   ignoresGroundEffects,
   isTargetable,
 } from '../data/enemies';
@@ -53,6 +58,7 @@ import type { BossBarData } from '../ui/BossBar';
 import type { EnemyWatchLine, WatchChapterView, WatchInfo } from '../ui/UIManager';
 import {
   avariceStreakGoldBonus,
+  crowdCompression,
   GOLD_GROWTH,
   isBossWave,
   goldDropForWave,
@@ -120,8 +126,10 @@ import {
 } from '../data/pacing';
 import { WatchManager, type WatchMetrics } from '../systems/WatchManager';
 import { applyPersistedWatch } from '../systems/watchRestore';
+import { setUpgradeCapExtension } from '../data/upgradeCaps';
 import {
   WATCH_CHAPTERS,
+  WATCH_CAP_EXTENSION,
   WATCH_UNLOCKS,
   describeGoal,
   goalTarget,
@@ -375,6 +383,7 @@ function makeInitialState(): GameState {
         riskWaves: new Array(MAX_RISK_CEILING + 1).fill(0),
       },
     },
+    deployment: { checkpoints: {} },
   };
 }
 
@@ -1059,8 +1068,25 @@ export class Game {
         // multiplying the *gear* budget by it made a wave-70 boss worth eight
         // rolls at a 50% chance apiece.
         const eqDrops: Equipment[] = [];
-        const eqDrop = this.equipmentMgr.rollDrop(this.waveMgr.currentWave, 'boss');
+        // An Ordeal's drop cannot miss and lands four tiers better than it
+        // rolled (progress-steps A.2). This is the reward that makes the
+        // every-hundredth-wave encounter worth recognising, and it is the one
+        // channel through which gear keeps improving past wave 100 — where
+        // `rollRarity`'s own depth ramp saturates.
+        const ordeal = isOrdealWave(this.waveMgr.currentWave);
+        const eqDrop = this.equipmentMgr.rollDrop(
+          this.waveMgr.currentWave,
+          'boss',
+          ordeal ? { guaranteed: true, rarityBoost: ORDEAL_RARITY_BOOST } : {},
+        );
         if (eqDrop) eqDrops.push(eqDrop);
+        if (ordeal) {
+          this.bus.emit('toast', {
+            kind: 'milestone',
+            text: `${ordealNameForWave(this.waveMgr.currentWave)} endured.`,
+            life: 6,
+          });
+        }
         if (eqDrops.length === 1) {
           this.bus.emit('toast', { kind: 'milestone', text: `Equipment dropped: ${eqDrops[0].rarity}!`, life: 4 });
         } else if (eqDrops.length > 1) {
@@ -1646,6 +1672,7 @@ export class Game {
     });
     this.bus.on('wave_cleared', (wave: unknown) => {
       const cleared = wave as number;
+      this.recordDeploymentCheckpoint(cleared);
       const wms = this.state.wave.waveModifier;
       // Plan §3.3: a mutator now spans MUTATOR_DURATION_WAVES waves and pays
       // out after each of them, with the reward escalating each time — so
@@ -2371,6 +2398,8 @@ export class Game {
       shieldTimer: Math.max(0, boss.bossShieldTimer ?? 0),
       phase: boss.bossPhase ?? 1,
       pattern: boss.bossPattern ?? null,
+      thresholds: phaseThresholdsForWave(boss.spawnWave ?? this.waveMgr.currentWave),
+      ordeal: isOrdealWave(boss.spawnWave ?? this.waveMgr.currentWave),
       slamRemaining: boss.bossSlamTelegraph ?? 0,
       slamTotal: BOSS_ENCOUNTER.slamTelegraph,
       slamMitigated: boss.bossSlamMitigated === true,
@@ -2734,6 +2763,73 @@ export class Game {
     return ap;
   }
 
+  /**
+   * Ascend, then start the new run at a stored checkpoint (progress.md §6.2).
+   *
+   * The ordering matters and is not negotiable: the ascension has to happen
+   * first, in full, so the AP the finished run earned is banked and every
+   * run-scoped block is cleared by `applySavedStateReset`. The restore below
+   * then overwrites the *opening* of the new run, and nothing else.
+   *
+   * Everything the deploy skips is genuinely skipped: contract progress, Watch
+   * kill counters and tower/passive XP for those waves are not paid. That is
+   * the trade, it is stated on the button, and it is what stops a deploy from
+   * being strictly better than a full run for a player farming a counter.
+   */
+  deploy(): boolean {
+    const target = this.deploymentTarget();
+    if (!target) return false;
+    if (!this.prestigeMgr.canAscend(this.state.wave.highestWave)) return false;
+
+    this.ascend();
+
+    // Upgrades first: the stat pipeline reads them, and the gold below is
+    // sized against the tower they build.
+    this.upgradeMgr.replaceLevels({ ...target.upgradeLevels });
+    this.state.upgrades = this.upgradeMgr.snapshot();
+
+    // Gold is *set*, not added. `applySavedStateReset` has already granted the
+    // start-gold sources, and a deploy must return the run to the state it was
+    // in — not that state plus a second opening bonus.
+    this.state.resources.gold = target.gold;
+
+    for (const [id, level] of Object.entries(target.abilityLevels)) {
+      const a = this.state.abilities[id];
+      if (a) a.level = Math.max(1, Math.floor(level));
+    }
+
+    this.blessingMgr.restore({
+      held: { ...target.blessingHeld },
+      picksTaken: target.blessingPicks,
+      rerolls: 0,
+      pendingOfferForWave: null,
+      wavesClearedThisRun: 0,
+    });
+    this.state.blessings = this.blessingMgr.snapshot();
+
+    this.waveMgr.startAtWave(target.wave);
+    this.state.wave = this.waveMgr.snapshot;
+    this.state.wave.highestWave = Math.max(this.state.wave.highestWave, target.wave);
+
+    // Contracts are banded on the current wave, so they have to be re-drawn
+    // *after* the jump — the same reason `applySavedStateReset` draws them last.
+    this.contractMgr.reset();
+    this.state.contracts = this.contractMgr.snapshot();
+
+    // `applyUpgradeEffects` is this codebase's stat-recompute entry point (the
+    // same one `applySavedStateReset` ends with); `syncUiApis` republishes the
+    // panels' data, which the wave jump above has just invalidated.
+    this.applyUpgradeEffects();
+    this.syncUiApis();
+    this.bus.emit('toast', {
+      kind: 'milestone',
+      text: `Deployed to wave ${target.wave}.`,
+      life: 4,
+    });
+    this.saveMgr.save(this.state);
+    return true;
+  }
+
   transcend(): number {
     const ascensionPoints = this.state.resources.apThisTranscendence;
     if (!this.prestigeMgr.canTranscend(ascensionPoints)) return 0;
@@ -2873,7 +2969,7 @@ export class Game {
   private computeSpeedForIndex(index: number): number {
     if (index < GAME_SPEEDS.length) return GAME_SPEEDS[index];
     const last = GAME_SPEEDS.length - 1;
-    return GAME_SPEEDS[last] + (index - last) * 0.5;
+    return GAME_SPEEDS[last] + (index - last) * SPEED_STEP;
   }
 
   getSpeed(): number {
@@ -3516,6 +3612,9 @@ export class Game {
     this.waveMgr.reset();
     this.state.wave = this.waveMgr.snapshot;
     this.state.waveTiming = fresh.waveTiming;
+    // v25+: the checkpoint store is a record of a tower that no longer exists
+    // once the save is wiped, so it goes with it (progress.md §6).
+    this.state.deployment = fresh.deployment;
     this.saveLoaded = false;
 
     this.upgradeMgr.reset();
@@ -3799,7 +3898,15 @@ export class Game {
         this.rpGainMultiplier(),
       ),
     });
-    this.maxSpeedIndex = MAX_SPEED_INDEX + this.prestigeMgr.getGameSpeedBonus();
+    // `getGameSpeedBonus()` returns a *speed delta* (0.5 x level, per the
+    // Accelerator's own copy) and `maxSpeedIndex` is an *index*, where one step
+    // is worth `SPEED_STEP`. Adding the delta straight into the index halved
+    // the perk — a maxed Accelerator reached 3.0x against the +3.0x it sells —
+    // and left the index on a half-step at odd levels, which
+    // `getAvailableSpeeds()` (whole numbers) could not enumerate, so levels 1,
+    // 3 and 5 added no selectable speed at all.
+    this.maxSpeedIndex = MAX_SPEED_INDEX
+      + Math.round(this.prestigeMgr.getGameSpeedBonus() / SPEED_STEP);
     this.ui.setSpeedAPI({
       speeds: this.getAvailableSpeeds(),
       currentIndex: this.getSpeedIndex(),
@@ -3926,6 +4033,24 @@ export class Game {
           this.state.stats.goldEarned += gold;
           this.bus.emit('gold_changed', this.state.resources.gold);
         }
+      },
+      gold: () => this.state.resources.gold,
+      previewReforge: (ids: string[]) => this.equipmentMgr.previewReforge(ids),
+      // progress-steps A.3. The gold is spent here rather than inside the
+      // manager for the same reason `onSell` credits it here: the manager owns
+      // the items, `Game` owns the purse.
+      onReforge: (ids: string[]) => {
+        const done = this.equipmentMgr.reforge(ids, this.state.resources.gold);
+        if (!done) return false;
+        this.state.resources.gold -= done.cost;
+        this.bus.emit('gold_changed', this.state.resources.gold);
+        this.bus.emit('toast', {
+          kind: 'milestone',
+          text: `Reforged: ${done.item.rarity} (level ${done.item.level}).`,
+          life: 4,
+        });
+        this.syncUiApis();
+        return true;
       },
     });
   }
@@ -4120,6 +4245,8 @@ export class Game {
         apXpGain: this.prestigeMgr.getAPXpMultiplier(),
         apRpDrop: this.prestigeMgr.getAPRpDropBonus(),
         apReviveCharges: this.prestigeMgr.getAPReviveCharges(),
+        apUpgradeCapExtension: this.prestigeMgr.getAPUpgradeCapExtension(),
+        tpUpgradeCapExtension: this.prestigeMgr.getTPUpgradeCapExtension(),
         tpDamage: this.prestigeMgr.getTPDamageMultiplicative(),
         tpFireRate: this.prestigeMgr.getTPFireRateMultiplier(),
         tpManaRegen: this.prestigeMgr.getTPManaRegenMultiplier(),
@@ -4345,6 +4472,14 @@ export class Game {
     this.towerXpMgr.setXpGainMultiplier(stats.xpGainMultiplier);
     this.passiveMgr.setXpGainMultiplier(stats.xpGainMultiplier);
     this.upgradeMgr.setCostDiscount(stats.upgradeCostDiscount);
+    // The cap extension is module state rather than a manager field because
+    // `UpgradePanel` and `sim/model.ts` read it too — see the header of
+    // `src/data/upgradeCaps.ts`. The Watch's `deep_stores` unlock is added here
+    // rather than in the stat contributor for the same reason `deep_reserves`
+    // is applied here: `WatchManager` is not part of the `StatContext`.
+    setUpgradeCapExtension(
+      stats.upgradeCapExtension + (this.watchMgr.has('deep_stores') ? WATCH_CAP_EXTENSION : 0),
+    );
     this.equipmentMgr.setFindChanceBonus(stats.equipmentFindChance);
     this.automation.setAutoBuyIntervalReduction(stats.autoBuyIntervalReduction);
     this.waveMgr.setWaveSkipChance(stats.waveSkipChance);
@@ -4415,6 +4550,65 @@ export class Game {
       });
     }
     return variants;
+  }
+
+  /**
+   * Snapshot the run at a checkpoint boundary (plans/progress.md §6.1).
+   *
+   * Only the *best* snapshot at each wave is kept — a later run that reaches
+   * wave 300 with a stronger tower overwrites the earlier one, and a weaker
+   * run never degrades what is stored. "Better" is measured by gold in hand,
+   * which is the one field that summarises how far ahead of the wave the run
+   * actually is; every other field moves with it.
+   */
+  private recordDeploymentCheckpoint(clearedWave: number): void {
+    if (clearedWave <= 0 || clearedWave % DEPLOY_CHECKPOINT_STEP !== 0) return;
+    const store = this.state.deployment.checkpoints;
+    const existing = store[clearedWave];
+    const gold = this.state.resources.gold;
+    if (existing && existing.gold >= gold) return;
+
+    const abilityLevels: Record<string, number> = {};
+    for (const [id, a] of Object.entries(this.state.abilities)) {
+      abilityLevels[id] = a.level;
+    }
+    store[clearedWave] = {
+      wave: clearedWave,
+      gold,
+      upgradeLevels: this.upgradeMgr.snapshot(),
+      blessingHeld: { ...this.blessingMgr.snapshot().held },
+      blessingPicks: this.blessingMgr.snapshot().picksTaken,
+      abilityLevels,
+      recordedAt: Date.now(),
+    };
+
+    // Bounded store: keep the deepest `DEPLOY_CHECKPOINT_LIMIT`. A shallow
+    // checkpoint that falls off the end is one no perk level can ever target
+    // again, because the deploy depth is a fraction of the deepest one.
+    const waves = Object.keys(store).map(Number).sort((a, b) => b - a);
+    for (const w of waves.slice(DEPLOY_CHECKPOINT_LIMIT)) delete store[w];
+  }
+
+  /**
+   * The checkpoint a deploy would land on, or null when there is none.
+   *
+   * `ap_forward_camp` sells a *fraction* of the deepest checkpoint, and the
+   * store is 50 waves apart, so the answer is the deepest checkpoint at or
+   * below that fraction. Both the panel (to label the button) and `deploy`
+   * (to do the work) go through here, so the button can never promise a wave
+   * the deploy does not deliver.
+   */
+  deploymentTarget(): DeploymentCheckpoint | null {
+    const fraction = this.prestigeMgr.getDeployFraction();
+    if (fraction <= 0) return null;
+    const store = this.state.deployment.checkpoints;
+    const waves = Object.keys(store).map(Number).sort((a, b) => b - a);
+    if (waves.length === 0) return null;
+    const ceiling = Math.floor(waves[0] * fraction);
+    for (const w of waves) {
+      if (w <= ceiling) return store[w];
+    }
+    return null;
   }
 
   private applySavedStateReset(): void {
@@ -4574,7 +4768,8 @@ export class Game {
    * because the exact figure depends on which enemy types roll.
    */
   private estimateWaveGold(wave: number): number {
-    const perEnemy = goldDropForWave(ENEMY_DEFS.normal.baseGold, wave);
+    const perEnemy = goldDropForWave(ENEMY_DEFS.normal.baseGold, wave)
+      * crowdCompression(wave);
     const count = spawnCountForWave(wave);
     return Math.max(0, perEnemy * count * this.computeGoldMultiplier());
   }
@@ -5180,6 +5375,11 @@ export class Game {
     this.state.resources.ascensionPoints = 0;
     this.state.resources.apThisTranscendence = 0;
     this.state.stats.ascensions = 0;
+    // Checkpoints are a record of *this cycle's* tower. A transcendence resets
+    // research, automation and the whole upgrade economy, so a checkpoint from
+    // before it describes a run the new cycle cannot reproduce — deploying to
+    // it would hand back a tower the player no longer has.
+    this.state.deployment = { checkpoints: {} };
   }
 
   private applyPersistedState(persisted: PersistentState): void {
@@ -5352,6 +5552,11 @@ export class Game {
     // previously-unlocked cores.
     applyPersistedWatch(this.state.watch, persisted.watch);
     this.applyWatchUnlocksOnLoad();
+
+    // v25+: deployment checkpoints. `SaveManager.snapshotDeployment` already
+    // validated and bounded the block on the way out, and the same method is
+    // the only writer, so this is a plain adopt.
+    this.state.deployment = persisted.deployment ?? { checkpoints: {} };
 
     // v14+: the risk dial (permanent), momentum and the combo (run-scoped).
     // A save that predates pacing restores at risk 0 with nothing banked,

@@ -217,7 +217,12 @@ seeds, so it has real resolution:
 | Bloodforge | 53.3 | 70.4 | 106.1 | 147.6 | 187.6 | −5.7% |
 | Arcane | 54.7 | 73.3 | 104.7 | 147.6 | 184.7 | −2.7% |
 
-Worst deviation −5.7%, comfortably inside the band.
+> **Stale.** Re-run on the current tree, `npm run sim` prints `OUT OF BAND`
+> twice: `bloodforge` at −27.5% idle / −26.0% drafting, and `frostwork` at
+> +15.9% drafting. Both tables above predate the pacing, contract and
+> prestige-shelf work. The band is still the design rule; the measurement no
+> longer meets it, and re-tuning those two cores is tracked as its own task
+> (progress.md §8.2) rather than silently re-stating the band.
 
 ### What the model can and cannot see
 

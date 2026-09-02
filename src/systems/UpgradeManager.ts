@@ -1,6 +1,7 @@
 import type { UpgradeDef, UpgradeEvolution } from '../types';
 import { UPGRADES, UPGRADE_BY_ID } from '../data/upgrades';
 import { upgradeCost } from '../data/formulas';
+import { effectiveMaxLevel } from '../data/upgradeCaps';
 import type { ResourceManager } from './ResourceManager';
 import { EventBus } from '../game/EventBus';
 
@@ -81,7 +82,8 @@ export class UpgradeManager {
     const def = UPGRADE_BY_ID[id];
     if (!def || count <= 0) return { levels: 0, cost: 0 };
     const start = this.levels[id] ?? 0;
-    const room = def.maxLevel > 0 ? def.maxLevel - start : MAX_BULK_LEVELS;
+    const cap = effectiveMaxLevel(def);
+    const room = cap > 0 ? cap - start : MAX_BULK_LEVELS;
     const levels = Math.min(count, room, MAX_BULK_LEVELS);
     if (levels <= 0) return { levels: 0, cost: 0 };
     let cost = 0;
@@ -112,7 +114,8 @@ export class UpgradeManager {
     const def = UPGRADE_BY_ID[id];
     if (!def) return { levels: 0, cost: 0 };
     const start = this.levels[id] ?? 0;
-    const room = def.maxLevel > 0 ? def.maxLevel - start : MAX_BULK_LEVELS;
+    const cap = effectiveMaxLevel(def);
+    const room = cap > 0 ? cap - start : MAX_BULK_LEVELS;
     let levels = 0;
     let cost = 0;
     while (levels < Math.min(room, MAX_BULK_LEVELS)) {
@@ -128,7 +131,8 @@ export class UpgradeManager {
     const def = UPGRADE_BY_ID[id];
     if (!def) return true;
     const level = this.levels[id] ?? 0;
-    return def.maxLevel > 0 && level >= def.maxLevel;
+    const cap = effectiveMaxLevel(def);
+    return cap > 0 && level >= cap;
   }
 
   canAfford(id: string): boolean {

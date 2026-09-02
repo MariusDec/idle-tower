@@ -163,3 +163,6 @@ android/capacitor-cordova-android-plugins/
 android/keystore.properties
 *.keystore
 *.jks
+
+# Balance sim scratch (progress-steps Phase 0)
+.balance-baseline/

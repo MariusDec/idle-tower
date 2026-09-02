@@ -25,10 +25,32 @@ blessings are, and the next run gets to be a different one.
 | Then | every **4 waves** (3, 7, 11, 15, …) |
 | Offers | **3**, drawn without replacement within the offer |
 | Rerolls | **1 free per draft**, plus any banked tokens (Part 5 grants them) |
-| Cap | **30 picks per run** |
+| Cap | `blessingPickCapForWave(wave)` — **30** to wave 120, then **+1 per 20 waves** |
 
 `BlessingManager.isDraftDue(clearedWave)` owns the whole rule, so the sim and
 the game agree on it by construction rather than by inspection.
+
+### The cap grows with depth
+
+30 picks at one draft per four waves is exhausted on **wave 119**, which is
+where a run's only run-scoped decision layer used to stop — with two thirds of
+the run still to play (plans/progress.md §1.5). Past
+`BLESSING_CAP_GROWTH_WAVE` (120) the ceiling grows one pick per
+`BLESSING_CAP_WAVES_PER_PICK` (20) waves: a wave-550 run takes ~51 picks, not
+135. The rate is deliberately *slower* than the draft cadence, so past wave 120
+most drafts are still refused — the draft becomes a rarer event at depth rather
+than a continuous one. `BlessingManager` records the deepest wave it has been
+offered a draft at (`capWave`) and reads the cap from that.
+
+### The greater tier
+
+Eight cards carry a `minPicks: 30` gate (`bl_greater_*`) — sized at roughly 3×
+a rare, because a run that is 30 picks deep is already carrying 30 cards' worth
+of multipliers. They only exist past the base cap, which is a depth no run
+reached before the cap started growing. A `minPicks` gate rather than a new
+rarity, because rarity is a *weighting* concept here and this is a *gating*
+one; their stack counts are sized to stay under the +120%-per-stat ceiling that
+`tests/content-coverage.test.ts` holds.
 
 ## The run's core biases the offer
 
@@ -266,11 +288,17 @@ with nothing in between. The tables average seven seeds for that reason.
 
 | Lifetime AP | Wall (no blessings) | Wall (blessings) | Picks | Run power |
 |---:|---:|---:|---:|---:|
-| 0 | 39 | 53.3 | 13.3 | 1.73× |
-| 100 | 59 | 71.9 | 17.9 | 2.11× |
-| 1 K | 89 | 104.7 | 26.1 | 2.87× |
-| 10 K | 129 | 147.6 | 30.0 | 3.63× |
-| 100 K | 169 | 184.7 | 30.0 | 3.43× |
+| 0 | 28 | 79.1 | 18.3 | 1.51× |
+| 100 | 109 | 146.3 | 30.0 | 4.35× |
+| 1 K | 145 | 175.0 | 30.0 | 4.22× |
+| 10 K | 189 | 219.4 | 30.0 | 4.34× |
+| 100 K | 239 | 266.7 | 30.0 | 4.22× |
+
+> Re-measured on the current tree with `npm run sim`. The previous table
+> (39/59/89/129/169) predated the pacing, contract and prestige-shelf work and
+> was three rebalances stale. The **picks** column saturating at 30.0 from the
+> 100-AP tier up is the `BLESSING_MAX_PICKS` ceiling binding — see
+> progress.md §1.5.
 
 Run power is composed DPS at the wave the *un-blessed* run walls on, so it
 includes the upgrades the extra gold bought, not just the stats the cards

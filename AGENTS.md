@@ -50,26 +50,26 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 |---|---:|---|
 | Upgrades (with evolutions) | 29 | `src/data/upgrades.ts` |
 | Upgrade evolutions | 17 | `src/data/upgrades.ts` |
-| AP perks / TP perks | 13 / 18 | `src/data/prestige.ts` |
+| AP perks / TP perks | 25 / 19 | `src/data/prestige.ts` |
 | Active abilities | 10 | `src/data/abilities.ts` |
 | Passive abilities | 8 | `src/data/passiveAbilities.ts` |
-| Enemy types | 13 | `src/data/enemies.ts` |
+| Enemy types | 16 | `src/data/enemies.ts` |
 | Boss patterns | 4 | `src/data/enemies.ts` |
 | Elite auras | 5 | `src/systems/EnemyManager.ts` |
 | Targeting modes | 7 | `src/data/tower.ts` |
 | Talents | 37 | `src/data/talentTree.ts` |
-| Research nodes | 18 | `src/data/research.ts` |
+| Research nodes | 19 | `src/data/research.ts` |
 | Achievements | 18 | `src/data/achievements.ts` |
 | Wave modifiers | 9 | `src/data/waveModifiers.ts` |
-| Blessings | 30 | `src/data/blessings.ts` |
+| Blessings | 38 | `src/data/blessings.ts` |
 | Tower cores | 5 | `src/data/cores.ts` |
 | Core shot behaviors | 6 | `src/data/cores.ts` |
 | Tower marks | 10 | `src/data/towerMarks.ts` |
 | Loot orb kinds | 3 | `src/data/loot.ts` |
 | Contracts | 28 | `src/data/contracts.ts` |
 | Contract goal kinds | 10 | `src/data/contracts.ts` |
-| Watch chapters | 20 | `src/data/watch.ts` |
-| Watch unlocks | 20 | `src/data/watch.ts` |
+| Watch chapters | 21 | `src/data/watch.ts` |
+| Watch unlocks | 21 | `src/data/watch.ts` |
 | Placeable abilities | 3 | `src/data/abilities.ts` |
 | Equipment slots / rarities | 8 / 5 | `src/data/equipment.ts` |
 | Combo tiers | 4 | `src/data/pacing.ts` |
@@ -77,7 +77,7 @@ This project is an idle tower defense game built with TypeScript, Vite, HTML5 Ca
 | Enemy threat classes | 3 | `src/data/pacing.ts` |
 | Icons (distinct artwork) | 197 | `public/icons/sprite.svg` |
 | Icon references across tables | 249 | `scripts/fetch-icons.mjs` |
-| Save version | 24 | `src/systems/SaveManager.ts` |
+| Save version | 25 | `src/systems/SaveManager.ts` |
 
 ## Commands
 
@@ -88,6 +88,8 @@ npm run typecheck   # tsc --noEmit
 npm run test        # vitest suite (tests/)
 npm run checks      # behavioural checks driving the real managers (sim/checks.ts)
 npm run sim         # balance simulator, before/after curve tables (sim/balance.ts)
+                    #   ends with the prestige-ladder report (sim/ladder.ts) —
+                    #   run N feeding run N+1, plus the T1-T4 design verdicts
 npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest (needs network)
 ```
 

@@ -60,7 +60,8 @@ export type WatchUnlockId =
   | 'eternal_kit'
   | 'master_broker'
   | 'deep_reserves'
-  | 'undying_watch';
+  | 'undying_watch'
+  | 'deep_stores';
 
 export interface WatchUnlockDef {
   id: WatchUnlockId;
@@ -166,7 +167,21 @@ export const WATCH_UNLOCKS: Record<WatchUnlockId, WatchUnlockDef> = {
     id: 'undying_watch', name: 'The Undying Watch', icon: 'hourglass',
     description: 'Offline progress banks twelve more hours.',
   },
+  deep_stores: {
+    id: 'deep_stores', name: 'Deep Stores', icon: 'knapsack',
+    description: 'Every scalar upgrade may be levelled 50% further.',
+  },
 };
+
+/**
+ * The `deep_stores` unlock's contribution to `upgradeCapExtension`
+ * (progress.md §3.1).
+ *
+ * A constant rather than a literal at the call site, because the number is
+ * quoted in the unlock's own copy above and in `Game.applyResolvedStats`, and
+ * those two must not be able to drift.
+ */
+export const WATCH_CAP_EXTENSION = 0.5;
 
 /**
  * Where each unlock is actually read.
@@ -197,6 +212,7 @@ export const WATCH_UNLOCK_CONSUMERS: Record<WatchUnlockId, string> = {
   master_broker: 'ContractManager.refill via the injected slots() dep — Game passes watch.contractSlots()',
   deep_reserves: 'Game.applyResolvedStats — multiplies abilityCostMultiplier by 0.8 before setAbilityCostMultiplier',
   undying_watch: 'Game getIdleCapSeconds closure — adds 12h to PrestigeManager.getIdleTimeCapSeconds()',
+  deep_stores: 'Game.applyResolvedStats — adds WATCH_CAP_EXTENSION to the fraction passed to setUpgradeCapExtension',
 };
 
 export const WATCH_CHAPTERS: readonly WatchChapterDef[] = [
@@ -320,7 +336,11 @@ export const WATCH_CHAPTERS: readonly WatchChapterDef[] = [
     goals: [
       { kind: 'reach_wave', wave: 175 },
       { kind: 'transcendences', count: 5 },
-      { kind: 'tower_level', level: 100 },
+      // progress.md §7.6: level 100 is 12.3 M cumulative XP, which the ladder
+      // reaches around run 30 — twenty-seven runs after this chapter's own
+      // depth gate (wave 175) falls. Level 40 is what the tower is at the
+      // depth this chapter asks for.
+      { kind: 'tower_level', level: 40 },
     ],
     reward: 'sanctum',
   },
@@ -330,7 +350,7 @@ export const WATCH_CHAPTERS: readonly WatchChapterDef[] = [
     icon: 'star-gate', color: '#e8a93b',
     goals: [
       { kind: 'reach_wave', wave: 200 },
-      { kind: 'ascensions', count: 50 },
+      { kind: 'ascensions', count: 20 },
       { kind: 'bosses', count: 150 },
     ],
     reward: 'long_memory',
@@ -373,7 +393,7 @@ export const WATCH_CHAPTERS: readonly WatchChapterDef[] = [
     flavour: 'The field never cools now. That is one way to measure a war.',
     icon: 'fire-bowl', color: '#ff7a1a',
     goals: [
-      { kind: 'reach_wave', wave: 290 },
+      { kind: 'reach_wave', wave: 320 },
       { kind: 'kills', count: 25_000_000 },
       { kind: 'mutator_waves', count: 400 },
     ],
@@ -384,9 +404,13 @@ export const WATCH_CHAPTERS: readonly WatchChapterDef[] = [
     flavour: 'You have given everything away so many times it has started coming back.',
     icon: 'clockwork', color: '#5b8def',
     goals: [
-      { kind: 'reach_wave', wave: 320 },
-      { kind: 'ascensions', count: 250 },
-      { kind: 'transcendences', count: 25 },
+      { kind: 'reach_wave', wave: 380 },
+      // progress.md §7.6: the depth gates now fall in single-digit run counts,
+      // so a 250-ascension counter is not a *deep* requirement, it is the only
+      // requirement — and the one that has nothing to do with how strong the
+      // tower is.
+      { kind: 'ascensions', count: 40 },
+      { kind: 'transcendences', count: 12 },
     ],
     reward: 'eternal_kit',
   },
@@ -395,7 +419,7 @@ export const WATCH_CHAPTERS: readonly WatchChapterDef[] = [
     flavour: 'More work than one watch can hold, which is why there are more of you now.',
     icon: 'treasure-map', color: '#3ec46d',
     goals: [
-      { kind: 'reach_wave', wave: 350 },
+      { kind: 'reach_wave', wave: 440 },
       { kind: 'contracts_done', count: 1_200 },
       { kind: 'blessing_picks', count: 800 },
     ],
@@ -406,9 +430,12 @@ export const WATCH_CHAPTERS: readonly WatchChapterDef[] = [
     flavour: 'The sky has run out of things to throw. You have not run out of answers.',
     icon: 'star-formation', color: '#c77dff',
     goals: [
-      { kind: 'reach_wave', wave: 400 },
+      { kind: 'reach_wave', wave: 500 },
       { kind: 'abilities_cast', count: 50_000 },
-      { kind: 'tower_level', level: 175 },
+      // progress.md §1.7: level 175 is 300.8 M cumulative XP against a ladder
+      // that produces 6.2 M in sixteen runs and then plateaus — this chapter
+      // was not completable. Level 85 is what the tower is at wave 400.
+      { kind: 'tower_level', level: 85 },
     ],
     reward: 'deep_reserves',
   },
@@ -417,11 +444,27 @@ export const WATCH_CHAPTERS: readonly WatchChapterDef[] = [
     flavour: 'There is no last watch. That is the whole of what you have learned.',
     icon: 'star-swirl', color: '#e8a93b',
     goals: [
-      { kind: 'reach_wave', wave: 450 },
-      { kind: 'transcendences', count: 50 },
+      { kind: 'reach_wave', wave: 560 },
+      { kind: 'transcendences', count: 20 },
       { kind: 'risk_waves', risk: 6, count: 500 },
     ],
     reward: 'undying_watch',
+  },
+  {
+    // plans/progress.md §3.1. A twenty-first chapter, because all twenty
+    // existing ones already grant a unique unlock and displacing one of those
+    // would take a reward off a save that had earned it. Its depth gate sits
+    // past chapter 20's, which is also where the re-priced AP ladder is still
+    // advancing (§4.1) — the campaign should end at the frontier, not behind it.
+    id: 'wc_deep_stores', number: 21, name: 'Deep Stores',
+    flavour: 'You stopped counting what the vault could hold and started counting what it could not.',
+    icon: 'knapsack', color: '#e8a93b',
+    goals: [
+      { kind: 'reach_wave', wave: 620 },
+      { kind: 'ascensions', count: 60 },
+      { kind: 'upgrades_bought', count: 100_000 },
+    ],
+    reward: 'deep_stores',
   },
 ];
 

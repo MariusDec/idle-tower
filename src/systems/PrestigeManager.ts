@@ -533,6 +533,52 @@ export class PrestigeManager {
   }
 
   /**
+   * Deep Stores: fraction added to every scalar upgrade's level ceiling.
+   *
+   * Split from the TP getter below rather than summed here, because the two
+   * layers reach the accumulator through different sources (`ap` and `tp`) and
+   * the stats breakdown has to be able to say which one paid for the ceiling.
+   */
+  getAPUpgradeCapExtension(): number {
+    let total = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'upgrade_cap') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) total += computePerkEffect(p, lvl);
+    }
+    return total;
+  }
+
+  /**
+   * Forward Camp: the fraction of the deepest checkpoint a deploy may start
+   * from. 0 when the perk is unspent, which is what disables the button.
+   *
+   * `Math.max` rather than a sum: the perk is a single ladder and its levels
+   * are cumulative already (`computePerkEffect` walks the formula), so summing
+   * across a hypothetical second source would double-count.
+   */
+  getDeployFraction(): number {
+    let best = 0;
+    for (const p of AP_PERKS) {
+      if (p.effectType !== 'deploy_depth') continue;
+      const lvl = this.getAPLevel(p.id);
+      if (lvl > 0) best = Math.max(best, computePerkEffect(p, lvl));
+    }
+    return Math.min(0.95, best);
+  }
+
+  /** Foundry: the transcendence half of the same fraction. */
+  getTPUpgradeCapExtension(): number {
+    let total = 0;
+    for (const p of TP_PERKS) {
+      if (p.effectType !== 'upgrade_cap') continue;
+      const lvl = this.getTPLevel(p.id);
+      if (lvl > 0) total += computePerkEffect(p, lvl);
+    }
+    return total;
+  }
+
+  /**
    * Second Wind: extra revive charges, as a whole number.
    *
    * Every level grants the same single charge (see `SECOND_WIND_LEVELS`) — the

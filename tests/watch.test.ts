@@ -72,10 +72,10 @@ const SYNTHETIC: Record<WatchGoalKind, WatchGoal> = {
 };
 
 describe('the long watch: data', () => {
-  // 1. Twenty chapters, number equal to index + 1, ids unique.
-  it('has twenty chapters numbered by index with unique ids', () => {
-    expect(WATCH_CHAPTERS).toHaveLength(20);
-    expect(WATCH_CHAPTER_COUNT).toBe(20);
+  // 1. Twenty-one chapters, number equal to index + 1, ids unique.
+  it('has twenty-one chapters numbered by index with unique ids', () => {
+    expect(WATCH_CHAPTERS).toHaveLength(21);
+    expect(WATCH_CHAPTER_COUNT).toBe(21);
     WATCH_CHAPTERS.forEach((ch, i) => {
       expect(ch.number, `${ch.id} number`).toBe(i + 1);
     });
@@ -114,8 +114,8 @@ describe('the long watch: data', () => {
   });
 
   // 5. Each WatchUnlockId is the reward of exactly one chapter.
-  it('grants each of the twenty unlocks exactly once', () => {
-    expect(UNLOCK_IDS).toHaveLength(20);
+  it('grants each of the twenty-one unlocks exactly once', () => {
+    expect(UNLOCK_IDS).toHaveLength(21);
     const counts = new Map<WatchUnlockId, number>();
     for (const ch of WATCH_CHAPTERS) {
       counts.set(ch.reward, (counts.get(ch.reward) ?? 0) + 1);
@@ -325,18 +325,18 @@ describe('the long watch: manager', () => {
     expect(h.mgr.has('board_expansion')).toBe(true);
   });
 
-  // 12. Cascade rule: one check() per chapter; twentieth clears the table; twenty-first is a no-op.
-  it('completes at most one chapter per check, twenty checks for all twenty', () => {
+  // 12. Cascade rule: one check() per chapter; twenty-first clears the table; twenty-second is a no-op.
+  it('completes at most one chapter per check, twenty-one checks for all twenty-one', () => {
     const h = harness();
     h.set(allGoalsMet());
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 21; i++) {
       const chapter = h.mgr.check();
       expect(chapter, `check ${i + 1} should return a chapter`).not.toBeNull();
       expect(chapter?.number, `check ${i + 1} number`).toBe(i + 1);
     }
-    expect(h.events).toHaveLength(20);
+    expect(h.events).toHaveLength(21);
     expect(h.mgr.activeChapter).toBeNull();
-    // Twenty-first call returns null and emits nothing new.
+    // Twenty-second call returns null and emits nothing new.
     const before = h.events.length;
     expect(h.mgr.check()).toBeNull();
     expect(h.events.length).toBe(before);
@@ -514,5 +514,47 @@ describe('the long watch: persistence', () => {
     const before = JSON.parse(JSON.stringify(live));
     applyPersistedWatch(live, undefined);
     expect(live).toEqual(before);
+  });
+});
+
+describe('gates land where the ladder is (progress.md §7.6)', () => {
+  /**
+   * The ladder's measured tower level by depth, from `plans/progress.md` §1.7.
+   * A chapter whose level gate sits above the level its own depth gate implies
+   * is a chapter that cannot be finished when it is offered — which is what
+   * chapter 19 was, by a factor of fifty.
+   */
+  const LEVEL_AT_DEPTH: ReadonlyArray<[wave: number, level: number]> = [
+    // The [175, 40] anchor is progress-steps §7.1a's own pairing — chapter 11
+    // asks for level 40 at wave 175, and the run-indexed anchors either side of
+    // it (run 1 at wave 40, run 3 at wave 249) are too coarse to price a gate
+    // that falls between them.
+    [40, 10], [175, 40], [249, 39], [339, 61], [357, 74], [500, 86], [560, 90],
+  ];
+
+  function levelAtDepth(wave: number): number {
+    let best = LEVEL_AT_DEPTH[0][1];
+    for (const [w, lv] of LEVEL_AT_DEPTH) if (wave >= w) best = lv;
+    return best;
+  }
+
+  it('never asks for a tower level the chapter\'s own depth cannot reach', () => {
+    for (const ch of WATCH_CHAPTERS) {
+      const depth = ch.goals.find(o => o.kind === 'reach_wave');
+      const level = ch.goals.find(o => o.kind === 'tower_level');
+      if (!depth || !level || depth.kind !== 'reach_wave' || level.kind !== 'tower_level') continue;
+      expect(level.level, `${ch.id} (wave ${depth.wave})`)
+        .toBeLessThanOrEqual(levelAtDepth(depth.wave));
+    }
+  });
+
+  it('keeps every depth gate ascending', () => {
+    let previous = 0;
+    for (const ch of WATCH_CHAPTERS) {
+      const depth = ch.goals.find(o => o.kind === 'reach_wave');
+      if (!depth || depth.kind !== 'reach_wave') continue;
+      expect(depth.wave, ch.id).toBeGreaterThan(previous);
+      previous = depth.wave;
+    }
   });
 });

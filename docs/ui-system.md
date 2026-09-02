@@ -131,7 +131,7 @@ All three share the same shape:
   `Game.update` (or, for `RunFailedModal`, from `Game.tickWallClockSystems`).
 - A countdown strip rendered with the matching `*-countdown-track` /
   `*-countdown-fill` / `*-countdown-text` CSS classes.
-- Wall-clock driven, not simulation-clock driven — at 6.5x speed a 20 s
+- Wall-clock driven, not simulation-clock driven — at 4.5x speed a 20 s
   game-time deadline would fire in three real seconds, which is not enough
   time to read the cards and decide.
 - `hide()` drops `callbacks` before invoking them, so a manual click that
@@ -551,7 +551,7 @@ sheet. See [watch-system.md](watch-system.md#ui).
 The **Journal tab** (`src/ui/JournalPanel.ts`) is the campaign's home
 and lives in the `progress` group of `NAV_GROUPS` as its first entry,
 label "Journal" — so the tab is one tap away on mobile. Five surfaces,
-top to bottom: a header with `X / 20 chapters`; the **active** chapter
+top to bottom: a header with `X / 21 chapters`; the **active** chapter
 card (accent border, three objective rows with progress bars, reward
 strip); the **next up** card (half prominence, names the upcoming
 chapter and its reward); the **completed** list (newest first, one row

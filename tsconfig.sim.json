@@ -1,0 +1,16 @@
+{
+  // The `sim/` and `tests/` trees, which `tsconfig.json` deliberately excludes
+  // from the build but which are not therefore exempt from type checking.
+  //
+  // `sim/model.ts` carries its own `Record<EnemyType, …>` tables. When the
+  // roster gained three types (plans/progress-steps.md A.1) those tables went
+  // stale, every lookup for a new type returned `undefined`, and the model
+  // silently reported a tower that never dies — `npm run sim` printed wall 400
+  // at every tier and nothing failed. A closed `Record` only closes anything
+  // if something checks it.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["sim", "src"]
+}

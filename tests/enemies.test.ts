@@ -19,7 +19,16 @@ import { ResourceManager } from '../src/systems/ResourceManager';
 import { ProjectileManager } from '../src/systems/ProjectileManager';
 import { Tower } from '../src/systems/Tower';
 import { WaveManager } from '../src/systems/WaveManager';
-import { bossEscortCountForWave } from '../src/data/formulas';
+import {
+  bossEscortCountForWave,
+  crowdCompression,
+  enemyCountForWave,
+  enemyDamageForWave,
+  enemyHPForWave,
+  goldDropForWave,
+  isBossWave,
+  naturalEnemyCountForWave,
+} from '../src/data/formulas';
 import {
   ARMOR_SOFTENING,
   armorDamageMultiplier,
@@ -970,5 +979,140 @@ describe('thorns reflection is bounded by what caused it', () => {
     h.mgr.applyKnockback(elite, world(20), world(0), world(0));
     expect(elite.hp).toBeLessThan(elite.maxHp);
     expect(reflected()).toBe(0);
+  });
+});
+
+describe('the body cap preserves wave totals (progress.md §5.3)', () => {
+  it('leaves a wave\'s total HP unchanged at every depth', () => {
+    for (const w of [50, 98, 120, 200, 359, 450, 1000]) {
+      if (isBossWave(w)) continue;
+      const perBody = enemyHPForWave(ENEMY_DEFS.normal.baseHP, w) * crowdCompression(w);
+      const total = perBody * enemyCountForWave(w);
+      const uncapped = enemyHPForWave(ENEMY_DEFS.normal.baseHP, w) * naturalEnemyCountForWave(w);
+      expect(total, `wave ${w}`).toBeCloseTo(uncapped, 3);
+    }
+  });
+
+  it('leaves a wave\'s total gold unchanged at every depth', () => {
+    for (const w of [50, 98, 120, 200, 359, 450, 1000]) {
+      if (isBossWave(w)) continue;
+      const perBody = goldDropForWave(ENEMY_DEFS.normal.baseGold, w) * crowdCompression(w);
+      expect(perBody * enemyCountForWave(w), `wave ${w}`)
+        .toBeCloseTo(goldDropForWave(ENEMY_DEFS.normal.baseGold, w) * naturalEnemyCountForWave(w), 3);
+    }
+  });
+
+  it('does not compress the damage each body deals', () => {
+    // Deliberate asymmetry (see `crowdCompression`): fewer bodies means less
+    // total chip damage, which is a margin. Compressing it would mean one
+    // wave-450 body hitting for 4.5x, which is a new way to die.
+    for (const w of [200, 450]) {
+      expect(enemyDamageForWave(ENEMY_DEFS.normal.baseDamage, w))
+        .toBe(enemyDamageForWave(ENEMY_DEFS.normal.baseDamage, w));
+    }
+  });
+});
+
+/**
+ * The deep roster (plans/progress-steps.md A.1).
+ *
+ * Each of the three is a *verb*, not a stat block, so each test asserts the
+ * verb: the harbinger takes the field away, the leech turns mana into armour,
+ * and the chorus spends one bar for three bodies.
+ */
+describe('the deep roster (progress-steps A.1)', () => {
+  it('phases every ally in range out of reach, through isTargetable', () => {
+    const h = harness();
+    // Pinned in place (`speed: 0`), because over the six seconds this takes
+    // everything on the field would otherwise converge on the tower and the
+    // test would be measuring movement rather than the phase's radius.
+    const harb = h.mgr.spawn('harbinger', 200, TOWER_X + world(300), TOWER_Y, { speed: 0 });
+    const near = h.mgr.spawn('normal', 200, harb.x + world(20), harb.y, { speed: 0 });
+    const far = h.mgr.spawn('normal', 200, harb.x + ENEMY_BEHAVIOR.harbingerRange + world(60), harb.y, { speed: 0 });
+    expect(isTargetable(near)).toBe(true);
+
+    // The cadence starts armed, so the first phase lands one interval in.
+    h.run(ENEMY_BEHAVIOR.harbingerInterval + DT);
+    expect(isTargetable(near), 'ally in range is phased out').toBe(false);
+    expect(isTargetable(far), 'ally out of range is untouched').toBe(true);
+    // The harbinger itself stays shootable — that is the whole answer to it.
+    expect(isTargetable(harb), 'the harbinger is always a target').toBe(true);
+
+    h.run(ENEMY_BEHAVIOR.harbingerPhase + DT);
+    expect(isTargetable(near), 'the phase expires').toBe(true);
+  });
+
+  it('drains mana on contact and wears it as absorb', () => {
+    const bus = new EventBus();
+    const { resources, state } = makeResources(0);
+    state.mana = 100;
+    const mgr = new EnemyManager(bus, resources);
+    mgr.setBounds(ARENA_W, ARENA_H);
+    mgr.beginWave(200);
+    // Spawned on top of the tower, so it is in contact on the first substep.
+    const leech = mgr.spawn('leech', 200, TOWER_X, TOWER_Y);
+    for (let i = 0; i < Math.round(3 / DT); i++) mgr.tick(DT, TOWER_X, TOWER_Y, world(2000));
+
+    expect(state.mana, 'mana was drained').toBeLessThan(100);
+    expect(leech.absorbShield ?? 0, 'the drain became absorb').toBeGreaterThan(0);
+    // It reuses the warden's pool rather than adding a second one, so nothing
+    // can strip it by killing a warden that never granted it.
+    expect(leech.wardenId).toBeUndefined();
+  });
+
+  it('takes no shield from an empty mana bar', () => {
+    const bus = new EventBus();
+    const { resources, state } = makeResources(0);
+    state.mana = 0;
+    const mgr = new EnemyManager(bus, resources);
+    mgr.setBounds(ARENA_W, ARENA_H);
+    mgr.beginWave(200);
+    const leech = mgr.spawn('leech', 200, TOWER_X, TOWER_Y);
+    for (let i = 0; i < Math.round(3 / DT); i++) mgr.tick(DT, TOWER_X, TOWER_Y, world(2000));
+    expect(leech.absorbShield ?? 0).toBe(0);
+  });
+
+  it('spends one shared pool for every voice of a chorus', () => {
+    const h = harness();
+    const a = h.mgr.spawn('chorus', 260, TOWER_X + world(300), TOWER_Y, { chorusId: 7 });
+    const b = h.mgr.spawn('chorus', 260, TOWER_X + world(320), TOWER_Y, { chorusId: 7 });
+    const c = h.mgr.spawn('chorus', 260, TOWER_X + world(340), TOWER_Y, { chorusId: 7 });
+    // A voice's bar *is* the group's pool: three bodies' worth of HP.
+    const single = enemyHPForWave(ENEMY_DEFS.chorus.baseHP, 260) * crowdCompression(260);
+    expect(a.maxHp).toBeCloseTo(
+      Math.floor(single * ENEMY_BEHAVIOR.chorusVoices), -1,
+    );
+    expect(b.hp).toBe(a.hp);
+
+    h.mgr.damage(a, Math.floor(a.hp / 2), false);
+    expect(b.hp, 'a hit on one voice is a hit on all').toBe(a.hp);
+    expect(c.hp).toBe(a.hp);
+
+    h.mgr.damage(b, b.hp, false);
+    expect(a.alive, 'the pool ran out, so the group dies together').toBe(false);
+    expect(b.alive).toBe(false);
+    expect(c.alive).toBe(false);
+  });
+
+  it('leaves an unlinked voice alone', () => {
+    // Two chorus bodies from *different* groups share nothing.
+    const h = harness();
+    const a = h.mgr.spawn('chorus', 260, TOWER_X + world(300), TOWER_Y, { chorusId: 1 });
+    const b = h.mgr.spawn('chorus', 260, TOWER_X + world(320), TOWER_Y, { chorusId: 2 });
+    const before = b.hp;
+    h.mgr.damage(a, Math.floor(a.hp / 2), false);
+    expect(b.hp).toBe(before);
+  });
+
+  it('unlocks the three types at the depths the roster is missing them', () => {
+    expect(ENEMY_DEFS.harbinger.unlockWave).toBe(120);
+    expect(ENEMY_DEFS.leech.unlockWave).toBe(180);
+    expect(ENEMY_DEFS.chorus.unlockWave).toBe(240);
+    // And each is actually drawable once unlocked — a type that never spawns
+    // is a stat block with a codex entry.
+    for (const [type, wave] of [['harbinger', 120], ['leech', 180], ['chorus', 240]] as const) {
+      expect(spawnPoolForWave(wave).map(e => e.type), `${type} at ${wave}`).toContain(type);
+      expect(spawnPoolForWave(wave - 1).map(e => e.type), `${type} before ${wave}`).not.toContain(type);
+    }
   });
 });

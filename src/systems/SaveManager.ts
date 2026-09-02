@@ -20,10 +20,12 @@ import type {
   PacingState,
   WatchState,
   WaveTimingState,
+  DeploymentState,
 } from '../types';
-import { MAX_RUN_HISTORY } from '../types';
+import { MAX_RUN_HISTORY, DEPLOY_CHECKPOINT_LIMIT } from '../types';
 import {
   bossEscortCountForWave,
+  crowdCompression,
   goldDropForWave,
   spawnCountForWave,
   isBossWave,
@@ -52,7 +54,7 @@ import {
 } from '../data/waveTiming';
 
 const STORAGE_KEY = 'the-tower-save';
-const SAVE_VERSION = 24;
+const SAVE_VERSION = 25;
 
 function defaultWaveModifier() {
   return {
@@ -159,6 +161,8 @@ export interface PersistentState {
   watch?: WatchState;
   /** v23+: measured wave-clear times (economy §2). Run-scoped; reset on ascend. */
   waveTiming?: WaveTimingState;
+  /** v25+: deployment checkpoints (progress.md §6). */
+  deployment: DeploymentState;
 }
 
 export interface OfflineResult {
@@ -227,7 +231,11 @@ export function averageKillGoldForWave(wave: number): number {
       t => goldDropForWave(ENEMY_DEFS[t].baseGold, wave),
     );
   }
-  return poolAverage(wave, t => goldDropForWave(ENEMY_DEFS[t].baseGold, wave));
+  // The caller multiplies by `spawnCountForWave`, which is capped, so the
+  // per-body figure has to carry the compression or an offline wave at depth
+  // pays a fraction of what the same wave pays live.
+  return poolAverage(wave, t => goldDropForWave(ENEMY_DEFS[t].baseGold, wave))
+    * crowdCompression(wave);
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -789,6 +797,20 @@ function migrateV23toV24(data: Record<string, unknown>): void {
 }
 
 /**
+ * v25 (plans/progress.md §6): deployment checkpoints.
+ *
+ * Seeds an empty store. Deliberately does **not** synthesise a checkpoint from
+ * the save's `highestWave`: a checkpoint is a *snapshot of a tower*, and a
+ * pre-v25 save has no record of what its tower looked like at wave 300. Making
+ * one up would be the one thing the whole mechanism is designed not to do.
+ * A returning player's first run past a 50-wave boundary writes the first real
+ * one.
+ */
+function migrateV24toV25(data: Record<string, unknown>): void {
+  data.deployment = { checkpoints: {} };
+}
+
+/**
  * Clamp a `{perkId: level}` map to the table's ceilings, dropping ids the
  * table no longer defines and entries that are not positive integers.
  */
@@ -813,7 +835,7 @@ function clampPerkLevels(
 function validate(data: unknown): data is PersistentState {
   if (!isObject(data)) return false;
 
-  if (data.version !== SAVE_VERSION && data.version !== 23 && data.version !== 22 && data.version !== 21 && data.version !== 20 && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
+  if (data.version !== SAVE_VERSION && data.version !== 24 && data.version !== 23 && data.version !== 22 && data.version !== 21 && data.version !== 20 && data.version !== 19 && data.version !== 18 && data.version !== 17 && data.version !== 16 && data.version !== 15 && data.version !== 14 && data.version !== 13 && data.version !== 12 && data.version !== 11 && data.version !== 10 && data.version !== 9 && data.version !== 8 && data.version !== 7 && data.version !== 6 && data.version !== 5 && data.version !== 4 && data.version !== 3 && data.version !== 2) return false;
 
   if (typeof data.savedAt !== 'number') return false;
   if (!isObject(data.tower)) return false;
@@ -851,6 +873,7 @@ function validate(data: unknown): data is PersistentState {
   if (data.version === 21) { migrateV21toV22(data); data.version = 22; }
   if (data.version === 22) { migrateV22toV23(data); data.version = 23; }
   if (data.version === 23) { migrateV23toV24(data); data.version = 24; }
+  if (data.version === 24) { migrateV24toV25(data); data.version = 25; }
 
   // Ensure fallback fields exist (applies to all versions)
   const d = data as Record<string, unknown>;
@@ -970,7 +993,40 @@ export class SaveManager {
       pacing: this.snapshotPacing(state.pacing),
       waveTiming: { ...(state.waveTiming ?? defaultWaveTiming()) },
       watch: this.snapshotWatch(state.watch),
+      deployment: this.snapshotDeployment(state.deployment),
     };
+  }
+
+  /**
+   * Checkpoints are copied field by field and re-validated, for the same
+   * reason blessings are: a runtime-only field must not leak into the format,
+   * and a hand-edited save must not be able to hand back a tower that never
+   * existed. Anything malformed is dropped rather than repaired — a missing
+   * checkpoint costs the player one deploy, a repaired one is a grant nobody
+   * earned.
+   */
+  private snapshotDeployment(d: DeploymentState | undefined): DeploymentState {
+    const out: DeploymentState = { checkpoints: {} };
+    if (!d || !isObject(d.checkpoints)) return out;
+    const waves = Object.keys(d.checkpoints)
+      .map(Number)
+      .filter(w => Number.isFinite(w) && w > 0)
+      .sort((a, b) => b - a)
+      .slice(0, DEPLOY_CHECKPOINT_LIMIT);
+    for (const w of waves) {
+      const c = d.checkpoints[w];
+      if (!c || !Number.isFinite(c.gold)) continue;
+      out.checkpoints[w] = {
+        wave: w,
+        gold: Math.max(0, c.gold),
+        upgradeLevels: { ...c.upgradeLevels },
+        blessingHeld: { ...c.blessingHeld },
+        blessingPicks: Math.max(0, Math.floor(c.blessingPicks ?? 0)),
+        abilityLevels: { ...c.abilityLevels },
+        recordedAt: c.recordedAt ?? 0,
+      };
+    }
+    return out;
   }
 
   /**

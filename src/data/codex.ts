@@ -463,6 +463,18 @@ export const CODEX_ENTRIES: readonly CodexEntry[] = [
     aliases: ['discount'],
   },
   {
+    id: 'upgrade-cap-extension',
+    term: 'Level Caps',
+    icon: 'knapsack',
+    category: 'economy',
+    summary: 'A fraction added to the level ceiling of every scalar upgrade.',
+    detail:
+      'upgradeCapExtension raises the maxLevel of the scalar upgrade lines (damage, health, the gold and defence rows) by a fraction of their table ceiling: 1.0 doubles damage\'s 200 levels to 400. It is what keeps gold worth earning at depth — every gold system in the game is inert once the last purchasable level is bought. Coverage and cadence lines (fireRate, pierce, splash, the shot-chance rows) keep their table ceiling forever. Sold by Deep Stores (AP), Foundry (TP) and the Deep Stores Watch unlock, which all sum into one fraction.',
+    stats: ['upgradeCapExtension'],
+    seeAlso: ['cost-discount', 'gold-multiplier'],
+    aliases: ['level cap', 'upgrade cap'],
+  },
+  {
     id: 'equipment-find',
     term: 'Equipment Find Chance',
     icon: 'knapsack',

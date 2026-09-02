@@ -70,6 +70,37 @@ Items from pre-`level` saves all read `level: 1`; `equipmentSellValue` floors
 the level at the def's `minWave` so an old deep-wave piece is not valued at
 wave-1 rates.
 
+## Reforging
+
+`rollRarity`'s depth ramp saturates at wave 100, so from there on every drop is
+rolled from the same distribution however deep the run gets — gear is a solved
+axis (plans/progress.md §7.5). Reforging is the sink that unsticks it, and it
+gives gold a second late home now that upgrade ceilings rise with the player.
+
+`EquipmentManager.reforge(ids, gold)` takes exactly `REFORGE_INPUTS` (**3**)
+inventory items **of the same rarity** and returns one of the **next rarity
+up**, rolled at the **deepest input's level**. It is deliberately
+slot-agnostic: the point is to give a pile of redundant same-tier drops
+somewhere to go, and a slot match would make the sink depend on which slots
+happened to drop. The result's slot is rolled fresh, so a reforge is a trade,
+not an upgrade of one particular item.
+
+- **Cost:** `equipmentSellValue` of the most valuable input x
+  `REFORGE_COST_MULT` (**3**), so the sink scales with wave income exactly the
+  way the sell curve does.
+- **Legendaries** have no tier left to climb, so they climb in *level*:
+  `deepest + REFORGE_LEGENDARY_LEVEL_GAIN` (**+25**), which is what keeps both
+  the stat roll and the sell value moving after the rarity ladder runs out.
+- **All-or-nothing.** `previewReforge` is the same guard the action runs, so
+  an illegal set or short gold consumes nothing — a partial reforge would
+  destroy items for no result. Equipped items live in `equipped`, not
+  `inventory`, so a reforge can never strip the tower mid-run.
+
+The panel marks items with a per-card **Reforge** toggle — a separate selection
+from the tap-to-equip one, so an accidental equip-tap is never part of a set
+that destroys three items — and one button under the grid that carries the real
+cost and result, disabled until the set is legal and affordable.
+
 ## Persistence
 
 Inventory and equipped items survive **both** ascension and transcendence.

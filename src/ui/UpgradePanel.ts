@@ -1,6 +1,7 @@
 import type { UpgradeCategory, UpgradeDef, UpgradeEvolution, GameState } from '../types';
 import { computeUpgradeValue } from '../types';
 import { UPGRADES, splashRadiusForLevel } from '../data/upgrades';
+import { effectiveMaxLevel } from '../data/upgradeCaps';
 import { upgradeCost, enemyHPForWave } from '../data/formulas';
 import { ENEMY_DEFS, ENEMY_LABELS } from '../data/enemies';
 import { TOWER_MARKS, type TowerMarkDef } from '../data/towerMarks';
@@ -431,7 +432,8 @@ export class UpgradePanel {
       const rowEl = this.rowById.get(u.id);
       if (!btn || !costEl || !levelEl || !bonusEl) continue;
       const level = state.upgrades[u.id] ?? 0;
-      const atMax = u.maxLevel > 0 && level >= u.maxLevel;
+      const cap = effectiveMaxLevel(u);
+      const atMax = cap > 0 && level >= cap;
       const amount = this.effectiveAmount();
       let plan = atMax ? { levels: 0, cost: 0 } : this.planFor(u.id, level, amount);
       // At ×Max with nothing affordable there is no plan to price, but the
@@ -553,7 +555,8 @@ export class UpgradePanel {
    */
   private milestoneStepLine(u: UpgradeDef, level: number): string | null {
     if (!MILESTONE_ROWS.has(u.id)) return null;
-    if (u.maxLevel > 0 && level >= u.maxLevel) return null;
+    const cap = effectiveMaxLevel(u);
+    if (cap > 0 && level >= cap) return null;
     const nextLevel = level + 1;
     if (u.id === 'pierce') {
       return `Milestone · Lv${nextLevel}: each shot hits ${nextLevel + 1} enemies in a line`;

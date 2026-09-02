@@ -30,6 +30,13 @@ import {
   spawnCountForWave,
   spawnIntervalForWave,
   upgradeCost,
+  MAX_WAVE_BODIES,
+  MIN_SPAWN_INTERVAL,
+  SPAWN_WINDOW_SECONDS,
+  crowdCompression,
+  naturalEnemyCountForWave,
+  naturalSpawnCountForWave,
+  nominalSpawnIntervalForWave,
 } from '../src/data/formulas';
 import { ASCENSION_UNLOCK_WAVE, apForWave, tpForAP } from '../src/data/prestige';
 import { ENEMY_DEFS } from '../src/data/enemies';
@@ -119,15 +126,15 @@ describe('enemy scaling', () => {
 describe('wave time budget', () => {
   it('gives non-boss waves the flat kill window on top of their spawn cadence', () => {
     for (const w of [1, 5, 15, 37]) {
-      const spawn = spawnIntervalForWave(w) * (spawnCountForWave(w) - 1);
+      const spawn = nominalSpawnIntervalForWave(w) * (naturalSpawnCountForWave(w) - 1);
       expect(expectedWaveSeconds(w)).toBeCloseTo(spawn + TARGET_WAVE_KILL_SECONDS);
     }
   });
 
   it('sizes the boss window off the encounter weight, not the body count', () => {
     for (const w of [10, 20, 100]) {
-      const count = spawnCountForWave(w);
-      const spawn = spawnIntervalForWave(w) * (count - 1);
+      const count = naturalSpawnCountForWave(w);
+      const spawn = nominalSpawnIntervalForWave(w) * (count - 1);
       const kill = TARGET_BOSS_KILL_SECONDS * bossEncounterWeight(w);
       expect(expectedWaveSeconds(w), `wave ${w}`).toBeCloseTo(spawn + kill);
     }
@@ -136,9 +143,11 @@ describe('wave time budget', () => {
   it('pays a mutated boss roster for the time it takes to spawn', () => {
     // The extra bodies a Swarm mutator adds to a boss wave are escort trash,
     // not bosses, so they buy spawn time rather than a second kill window.
+    // Priced at the *nominal* cadence: the budget is deliberately independent
+    // of the spawn window (progress-steps §5.1c).
     const one = expectedWaveSeconds(20, 1);
     const two = expectedWaveSeconds(20, 2);
-    expect(two - one).toBeCloseTo(spawnIntervalForWave(20));
+    expect(two - one).toBeCloseTo(nominalSpawnIntervalForWave(20));
   });
 
   it('leaves a boss wave with more budget than its neighbours', () => {
@@ -175,13 +184,18 @@ describe('prestige curves', () => {
     expect(ASCENSION_UNLOCK_WAVE).toBe(20);
   });
 
+  /**
+   * progress.md §4: the exponent moved 1.06 -> 1.03 because at 1.06 a run at
+   * the wall banked ~250x the player's entire lifetime AP, which spent the
+   * whole designed content in four ascensions and then stalled.
+   */
   it('pays AP that compounds with depth', () => {
     expect([20, 30, 60, 100].map(apForWave)).toMatchInlineSnapshot(`
       [
         20,
-        44,
-        344,
-        4775,
+        37,
+        119,
+        493,
       ]
     `);
   });
@@ -453,5 +467,61 @@ describe('wave timing', () => {
     // Once a clear exists, the stalled attempt is ignored entirely.
     recordWaveTime(t, 33, 45);
     expect(offlineWaveTarget(t, 33, 300).seconds).toBeCloseTo(45, 5);
+  });
+});
+
+describe('spawn window and the body cap (progress.md §5)', () => {
+  it('fits every roster inside the spawn window once the window binds', () => {
+    // The window first binds at wave 11 (17 bodies over 24 s = 1.5 s < 1.56 s).
+    for (let w = 11; w <= 1000; w++) {
+      if (isBossWave(w)) continue;
+      const count = spawnCountForWave(w);
+      const span = spawnIntervalForWave(w, count) * (count - 1);
+      expect(span, `wave ${w}`).toBeLessThanOrEqual(SPAWN_WINDOW_SECONDS + 1e-9);
+    }
+  });
+
+  it('never spawns faster than the natural cadence in the early game', () => {
+    // Waves 1-10, i.e. everything before the window starts binding at 11.
+    for (let w = 1; w <= 10; w++) {
+      expect(spawnIntervalForWave(w), `wave ${w}`)
+        .toBeCloseTo(nominalSpawnIntervalForWave(w), 9);
+    }
+  });
+
+  it('never breaches the minimum interval', () => {
+    for (let w = 1; w <= 2000; w++) {
+      expect(spawnIntervalForWave(w), `wave ${w}`).toBeGreaterThanOrEqual(MIN_SPAWN_INTERVAL);
+    }
+  });
+
+  it('caps the body count and compensates exactly', () => {
+    for (let w = 1; w <= 2000; w++) {
+      if (isBossWave(w)) continue;
+      expect(enemyCountForWave(w), `wave ${w}`).toBeLessThanOrEqual(MAX_WAVE_BODIES);
+      // The invariant the whole phase rests on: capped bodies x what each one
+      // carries is the roster that would have spawned.
+      expect(enemyCountForWave(w) * crowdCompression(w), `wave ${w}`)
+        .toBeCloseTo(naturalEnemyCountForWave(w), 6);
+    }
+  });
+
+  it('leaves the compression at 1 below the cap and on boss waves', () => {
+    for (const w of [1, 20, 50, 97]) expect(crowdCompression(w), `wave ${w}`).toBe(1);
+    for (const w of [10, 100, 200, 450]) {
+      if (isBossWave(w)) expect(crowdCompression(w), `boss ${w}`).toBe(1);
+    }
+    expect(crowdCompression(98)).toBeGreaterThan(1);
+  });
+
+  it('keeps the enrage budget on the pre-window curve', () => {
+    // The fuse must be identical to what it was before the window landed:
+    // nominal cadence, natural body count. If this drifts, the wall moves.
+    for (const w of [1, 20, 60, 100, 200, 359, 450]) {
+      const expected = nominalSpawnIntervalForWave(w)
+        * Math.max(0, naturalSpawnCountForWave(w) - 1)
+        + (isBossWave(w) ? TARGET_BOSS_KILL_SECONDS * bossEncounterWeight(w) : TARGET_WAVE_KILL_SECONDS);
+      expect(expectedWaveSeconds(w), `wave ${w}`).toBeCloseTo(expected, 6);
+    }
   });
 });

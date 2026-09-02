@@ -89,6 +89,15 @@ export interface BlessingDef {
   /** 1 for behaviors, 3–5 for scaling. */
   maxStacks: number;
   minWave?: number;
+  /**
+   * Picks the run must already have taken before this card can be offered.
+   *
+   * The "greater" tier (plans/progress.md §7.4): cards sized for a run that is
+   * past the base 30-pick cap, which is a depth no run reached before the cap
+   * started growing. A `minPicks` gate rather than a new rarity, because rarity
+   * is a *weighting* concept here and this is a *gating* one.
+   */
+  minPicks?: number;
   /** Scaling blessings declare stat deltas; behavior blessings declare `behavior`. */
   effects?: Array<{ stat: BlessingStat; perStack: number }>;
   behavior?: BlessingBehavior;
@@ -127,7 +136,40 @@ export const CORE_PREFERENCE_WEIGHT = 1.5;
 export const BLESSING_FIRST_DRAFT_WAVE = 3;
 export const BLESSING_DRAFT_INTERVAL = 4;
 export const BLESSING_OFFER_SIZE = 3;
+/**
+ * Picks a run may take before the draft closes, at wave 120 and below.
+ *
+ * Kept as the base of `blessingPickCapForWave` rather than deleted, because it
+ * is the number every existing balance table was measured against and the
+ * `npm run sim` §1.6 table has to stay comparable.
+ */
 export const BLESSING_MAX_PICKS = 30;
+
+/** First wave past which the cap starts growing. */
+export const BLESSING_CAP_GROWTH_WAVE = 120;
+
+/** Waves of depth that buy one extra pick past `BLESSING_CAP_GROWTH_WAVE`. */
+export const BLESSING_CAP_WAVES_PER_PICK = 20;
+
+/**
+ * The pick ceiling at a given depth.
+ *
+ * 30 picks at one draft per four waves is exhausted on wave 119, which is where
+ * a run's only run-scoped decision layer used to stop — with two thirds of the
+ * run still to play (plans/progress.md §1.5). Growing the cap by one pick per
+ * 20 waves past 120 keeps the draft alive without turning it back into the
+ * unbounded stat pile the cap was introduced to prevent: a wave-550 run takes
+ * ~51 picks, not 135.
+ *
+ * The rate is deliberately *slower* than the draft cadence (one per 4 waves),
+ * so past wave 120 most drafts are still refused — the draft becomes a rarer
+ * event at depth rather than a continuous one.
+ */
+export function blessingPickCapForWave(wave: number): number {
+  if (wave <= BLESSING_CAP_GROWTH_WAVE) return BLESSING_MAX_PICKS;
+  return BLESSING_MAX_PICKS
+    + Math.floor((wave - BLESSING_CAP_GROWTH_WAVE) / BLESSING_CAP_WAVES_PER_PICK);
+}
 /** Free rerolls granted at the start of each draft, before held tokens. */
 export const BLESSING_FREE_REROLLS = 1;
 
@@ -540,8 +582,119 @@ export const BLESSINGS: BlessingDef[] = [
     maxStacks: 1,
     behavior: 'orb_magnet',
   },
+  // ── Greater tier (plans/progress.md §7.4) ───────────────────────────────
+  //
+  // Eight cards that only exist past the base 30-pick cap, which no run
+  // reached before `blessingPickCapForWave` started growing. They are sized
+  // at roughly 3x a rare, because a run that is 30 picks deep is already
+  // carrying 30 cards' worth of multipliers and a rare's magnitude reads as
+  // nothing against them.
+  //
+  // progress-steps §8.3c named its stats in snake_case (`damage_pct`, …) and
+  // two stats this table has no member for (`defense_pct` / `armor_pct`); as
+  // that step instructs, each is mapped to the closest existing
+  // `BlessingStat` and no union member was added. `Warded Stone` is the one
+  // magnitude that moved: with no mitigation stat to carry it, its second
+  // effect is `enemyDamagePct`, where a stacked -0.50 would remove incoming
+  // damage entirely. Their `maxStacks` are lower than §8.3c's, for the same
+  // reason: `tests/content-coverage.test.ts` holds a +120%-per-stat ceiling at
+  // max stacks (plan §1.6), and the per-stack magnitudes above are what the
+  // tier is for — so the stack counts give way, not the numbers on the card.
+  {
+    id: 'bl_greater_edge',
+    name: 'Sharpened Beyond',
+    icon: 'barbed-arrow',
+    description: '+45% damage.',
+    rarity: 'epic',
+    weight: 6,
+    maxStacks: 2,
+    minPicks: 30,
+    effects: [{ stat: 'damagePct', perStack: 0.45 }],
+  },
+  {
+    id: 'bl_greater_cadence',
+    name: 'Unbroken Cadence',
+    icon: 'lightning-arc',
+    description: '+30% fire rate.',
+    rarity: 'epic',
+    weight: 5,
+    maxStacks: 4,
+    minPicks: 30,
+    effects: [{ stat: 'fireRatePct', perStack: 0.30 }],
+  },
+  {
+    id: 'bl_greater_fortune',
+    name: 'Deep Coffers',
+    icon: 'gems',
+    description: '+60% gold.',
+    rarity: 'epic',
+    weight: 5,
+    maxStacks: 2,
+    minPicks: 30,
+    effects: [{ stat: 'goldPct', perStack: 0.60 }],
+  },
+  {
+    id: 'bl_greater_precision',
+    name: 'Perfect Aim',
+    icon: 'bullseye',
+    description: '+60% critical damage.',
+    rarity: 'epic',
+    weight: 5,
+    maxStacks: 2,
+    minPicks: 30,
+    effects: [{ stat: 'critDamagePct', perStack: 0.60 }],
+  },
+  {
+    id: 'bl_greater_bulwark',
+    name: 'Deep Foundations',
+    icon: 'shining-heart',
+    description: '+70% max HP.',
+    rarity: 'epic',
+    weight: 4,
+    maxStacks: 1,
+    minPicks: 30,
+    effects: [{ stat: 'maxHpPct', perStack: 0.70 }],
+  },
+  {
+    id: 'bl_greater_reach',
+    name: 'The Long Sight',
+    icon: 'arrow-scope',
+    description: '+35% range and +25% damage.',
+    rarity: 'epic',
+    weight: 4,
+    maxStacks: 3,
+    minPicks: 30,
+    effects: [
+      { stat: 'rangePct', perStack: 0.35 },
+      { stat: 'damagePct', perStack: 0.25 },
+    ],
+  },
+  {
+    id: 'bl_greater_ward',
+    name: 'Warded Stone',
+    icon: 'bordered-shield',
+    description: '+50% max HP and \u221210% enemy damage.',
+    rarity: 'epic',
+    weight: 4,
+    maxStacks: 2,
+    minPicks: 30,
+    effects: [
+      { stat: 'maxHpPct', perStack: 0.50 },
+      { stat: 'enemyDamagePct', perStack: -0.10 },
+    ],
+  },
+  {
+    id: 'bl_greater_wellspring',
+    name: 'Endless Wellspring',
+    icon: 'magic-swirl',
+    description: '+80% mana regeneration.',
+    rarity: 'epic',
+    weight: 3,
+    maxStacks: 1,
+    minPicks: 30,
+    effects: [{ stat: 'manaRegenPct', perStack: 0.80 }],
+  },
 ];
-
 export const BLESSING_BY_ID: Record<string, BlessingDef> = BLESSINGS.reduce(
   (acc, b) => {
     acc[b.id] = b;

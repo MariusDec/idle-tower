@@ -1,5 +1,5 @@
 import type { EnemyType } from '../types';
-import { bossEncounterWeight, enemyCountForWave, isBossWave } from './formulas';
+import { bossEncounterWeight, crowdCompression, enemyCountForWave, isBossWave } from './formulas';
 
 /**
  * Per-kill XP weight by type. Tracks how much of the player's *attention* a
@@ -18,6 +18,12 @@ export const KILL_XP_WEIGHT: Record<EnemyType, number> = {
   burrower: 1.6,
   thief: 2.4,
   warden: 2.4,
+  // The deep roster (§7.1): each one costs a specific decision — a burst
+  // window, a mana budget, a coverage build — so each is priced with the
+  // other behavioural types rather than with trash.
+  harbinger: 2.4,
+  leech: 2.0,
+  chorus: 1.4,
   boss: 12,
 };
 
@@ -91,7 +97,10 @@ function killWeight(type: EnemyType, wave: number): number {
 export function xpPerKill(type: EnemyType, wave: number): number {
   return Math.max(
     1,
-    Math.round(KILL_XP_WEIGHT[type] * killXpWaveScale(wave) * killWeight(type, wave)),
+    Math.round(
+      KILL_XP_WEIGHT[type] * killXpWaveScale(wave) * killWeight(type, wave)
+      * crowdCompression(wave),
+    ),
   );
 }
 
@@ -113,7 +122,7 @@ export const PASSIVE_WAVE_CLEAR_XP_MULTIPLIER = 12;
 /** Passive XP a single kill of `type` at depth `wave` pays. */
 export function passiveXpPerKill(type: EnemyType, wave: number): number {
   return KILL_XP_WEIGHT[type] * killXpWaveScale(wave) * PASSIVE_KILL_XP_FACTOR
-    * killWeight(type, wave);
+    * killWeight(type, wave) * crowdCompression(wave);
 }
 
 /** Passive XP clearing wave `wave` pays, on top of the kills in it. */

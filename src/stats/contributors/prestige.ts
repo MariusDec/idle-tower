@@ -30,6 +30,11 @@ export function contributePrestige(ctx: StatContext, acc: StatAccumulator): void
   ap.mult('xpGainMultiplier', p.apXpGain);
   ap.add('rpDropChanceBonus', p.apRpDrop);
   ap.add('reviveCharges', p.apReviveCharges);
+  // The two prestige layers and the Watch unlock all add into one fraction
+  // (progress.md §3.1) rather than each holding its own ceiling — a ceiling per
+  // source is how two of them end up multiplying by accident.
+  ap.add('upgradeCapExtension', p.apUpgradeCapExtension);
+  tp.add('upgradeCapExtension', p.tpUpgradeCapExtension);
   if (p.hasExecuteDamage) {
     ap.add('executeThreshold', PRESTIGE_EXECUTE_THRESHOLD);
     ap.add('executeMultiplier', p.executeDamageMultiplier);

@@ -18,6 +18,7 @@
 import {
   enemyHPForWave,
   bossEscortCountForWave,
+  crowdCompression,
   goldDropForWave,
   spawnCountForWave,
   spawnIntervalForWave,
@@ -35,6 +36,7 @@ import {
   bossPhaseHpFactor,
   spawnPoolForWave,
 } from '../src/data/enemies.ts';
+import { effectiveMaxLevel } from '../src/data/upgradeCaps.ts';
 import { LOOT_TUNING, orbGoldValue } from '../src/data/loot.ts';
 import {
   COMBO_WINDOW_SECONDS,
@@ -43,7 +45,6 @@ import {
   comboBonus,
   comboTierIndex,
   intermissionSecondsForWave,
-  riskApBonus,
   riskGoldMult,
   riskHpMult,
 } from '../src/data/pacing.ts';
@@ -232,6 +233,18 @@ const EFFECTIVE_HP_FACTOR: Record<EnemyType, number> = {
   blinker: 1.1,
   warden: 2.2,
   burrower: 1.25,
+  // The deep roster (progress-steps A.1):
+  //   - `harbinger` 1.6: it is not durable itself, but the 2 s it takes the
+  //     field away every 6 s is a third of the tower's uptime against whatever
+  //     it is escorting. Priced on the escort's behalf, conservatively.
+  //   - `leech` 1.4: converts the mana bar into absorb on itself. The model
+  //     has no mana economy, so this is the only place its cost can land.
+  //   - `chorus` 1.0: three voices sharing one pool is exactly three bodies'
+  //     worth of HP, and `EnemyManager.spawn` already multiplies the bar by
+  //     `chorusVoices`. Anything above 1.0 here would count it twice.
+  harbinger: 1.6,
+  leech: 1.4,
+  chorus: 1,
 };
 
 /**
@@ -353,13 +366,18 @@ export function waveProfile(wave: number, risk = 0): WaveProfile {
     ? Math.min(ENEMY_BEHAVIOR.thiefWaveTheftCap, THIEF_GOLD_DRAG)
     : 0;
 
+  // `count` is the capped roster and `compression` is what each surviving body
+  // carries, so `count * compression` is the natural body count and both
+  // totals below are unchanged by the cap — which is the invariant
+  // `tests/enemies.test.ts` holds.
+  const compression = crowdCompression(wave);
   return {
     count,
-    totalHp: hpPer * count * riskHpMult(risk),
+    totalHp: hpPer * count * compression * riskHpMult(risk),
     avgArmor: armorPer,
     avgMagicResist: magicResistPer,
-    baseGold: goldPer * count * (1 - theftDrag) * riskGoldMult(risk),
-    spawnDuration: spawnIntervalForWave(wave) * (count - 1),
+    baseGold: goldPer * count * compression * (1 - theftDrag) * riskGoldMult(risk),
+    spawnDuration: spawnIntervalForWave(wave, count) * (count - 1),
   };
 }
 
@@ -1286,7 +1304,8 @@ export function waveIncome(l: Loadout, wave = l.wave): number {
 export function costOf(l: Loadout, id: BuyableId): number {
   const def = UPGRADE_BY_ID[id];
   const level = l.levels[id] ?? 0;
-  if (def.maxLevel > 0 && level >= def.maxLevel) return Infinity;
+  const cap = effectiveMaxLevel(def);
+  if (cap > 0 && level >= cap) return Infinity;
   return upgradeCost(def.baseCost, def.costGrowth, level);
 }
 

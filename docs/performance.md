@@ -14,7 +14,7 @@ improvements plan, Part 5.
 | `Game.frameUpdate(dt, realDt)` | once per frame | particles, notifications, automation, HUD tweening, research, auto-save, achievements, audio |
 
 `dt` reaching `simulate` is the *game* delta — wall-clock delta clamped to
-0.05 s, times game speed (up to 6.5x with the Accelerator TP perk), times the
+0.05 s, times game speed (up to 4.5x with the Accelerator TP perk), times the
 slow-mo factor. Without substepping that is a single 0.325 s physics step in
 the worst case, which quietly changes the game: enemy movement overshoots,
 attack cadence coarsens, and the tower fires at most once per frame no matter

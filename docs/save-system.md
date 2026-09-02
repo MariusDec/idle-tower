@@ -12,7 +12,7 @@ and in a **private file** on Android. Never `localStorage`; see
 
 ```typescript
 interface PersistentState {
-  version: number;       // current = 24
+  version: number;       // current = 25
   savedAt: number;       // Date.now()
   tower: TowerState;
   resources: ResourceState;
@@ -29,6 +29,7 @@ interface PersistentState {
   pacing: PacingState;                        // v14+
   watch: WatchState;                          // v19+
   waveTiming: WaveTimingState;                // v23+
+  deployment: DeploymentState;                // v25+ — the deploy checkpoint store
 }
 ```
 
@@ -58,6 +59,7 @@ interface PersistentState {
 | v21 → v22 | the Tower XP revamp — the polynomial+geometric curve in `xpTables.xpForNextLevel` replaces the hand-written `TOWER_XP_TABLE`, the talent tree's per-node costs are recomputed from the new curve, the tower's `level`/`xp`/`totalXpEarned` are restated onto it, and every previously allocated talent is refunded (see [xp-talent-system.md](xp-talent-system.md)) |
 | v22 → v23 | the offline model rewrite — `waveTiming` block seeded to `defaultWaveTiming()`. Old absence-walk fields are gone; offline no longer simulates anything, it prices `waveRepeats × averageKillGoldForWave + xpPerWaveClear` against the measured wave duration, with `UNMEASURED_WAVE_PENALTY` until five samples exist (see [Offline Progress](#offline-progress)) |
 | v23 → v24 | research rebalance + Auto-Upgrader's two new levels; the watch risk histogram gains a slot (`MAX_RISK_CEILING` 7→8). The `watch` block is *not* touched here — v24's load-side fix in `Game.applyPersistedState` brings a pre-v24 save's campaign back the first time the fixed build reads it; this migration only widens `riskWaves` and re-clamps `apSpent` (`ap_auto_upgrader` is a widening, so no existing level goes out of range). RP and refund rules are explicitly *not* part of v24. |
+| v24 → v25 | deployment checkpoints (plans/progress.md §6) — `migrateV24toV25` seeds an empty `deployment` store. It deliberately does **not** synthesise a checkpoint from the save's `highestWave`: a checkpoint is a *snapshot of a tower*, and a pre-v25 save has no record of what its tower looked like at wave 300, so making one up would be the one thing the whole mechanism is designed not to do. The first run past a 50-wave boundary writes the first real one. `snapshotDeployment` re-validates and bounds the block (deepest `DEPLOY_CHECKPOINT_LIMIT` = 12) on the way out, dropping anything malformed rather than repairing it. |
 
 Every step is additive: it fills in defaults rather than transforming, and
 nothing is ever dropped. `migrateV9toV10` seeds an empty blessing run, so a
@@ -319,7 +321,7 @@ When offline progress > 0, `welcome_back` event triggers `WelcomeBackModal.show(
 `localStorage` is the wrong home for a save in a native shell: it is WebView
 data, it shares one ~5 MB origin quota, Android may evict it under storage
 pressure, and a "clear cache" cleanup can take it. So the bytes moved. **The
-format did not** — still `SAVE_VERSION` 24, the same JSON, the same migration
+format did not** — the same JSON and the same migration
 ladder.
 
 `SaveStore` is a three-method string key/value interface. `SaveManager` owns

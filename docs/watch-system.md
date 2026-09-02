@@ -46,16 +46,27 @@ strictly across chapters.
 | 8 | **Storm Caller** | Reach wave 110 · Clear 60 waves under a mutator · Kill 300 wardens | `storm_caller` |
 | 9 | **Reliquary** | Reach wave 130 · Take 200 blessings · Complete 150 contracts | `heirloom` |
 | 10 | **Deep Watch** | Reach wave 150 · Clear 100 waves at risk 5+ · Kill 2 000 000 enemies | `deep_watch` |
-| 11 | **Sanctum** | Reach wave 175 · Transcend 5 times · Reach tower level 100 | `sanctum` |
-| 12 | **The Long Watch** | Reach wave 200 · Ascend 50 times · Kill 1 500 bosses | `long_memory` |
+| 11 | **Sanctum** | Reach wave 175 · Transcend 5 times · Reach tower level 40 | `sanctum` |
+| 12 | **The Long Watch** | Reach wave 200 · Ascend 20 times · Kill 1 500 bosses | `long_memory` |
 | 13 | **The Quiet Archive** | Reach wave 220 · Transcend 10 times · Buy 25 000 upgrades | `archivist` |
 | 14 | **Hollow Crown** | Reach wave 240 · Kill 400 bosses · Clear 150 boss encounters swiftly | `crown_of_thorns` |
 | 15 | **The Long Ledger** | Reach wave 265 · Earn 1 000 000 000 000 lifetime gold · Complete 500 contracts | `counting_house` |
-| 16 | **Ash and Ember** | Reach wave 290 · Kill 25 000 000 enemies · Clear 400 mutator waves | `emberforge` |
-| 17 | **Cycles** | Reach wave 320 · Ascend 250 times · Transcend 25 times | `eternal_kit` |
-| 18 | **The Wider Board** | Reach wave 350 · Complete 1 200 contracts · Take 800 blessings | `master_broker` |
-| 19 | **Starfall** | Reach wave 400 · Cast 50 000 abilities · Reach tower level 175 | `deep_reserves` |
-| 20 | **The Last Watch** | Reach wave 450 · Transcend 50 times · Clear 500 waves at risk 6+ | `undying_watch` |
+| 16 | **Ash and Ember** | Reach wave 320 · Kill 25 000 000 enemies · Clear 400 mutator waves | `emberforge` |
+| 17 | **Cycles** | Reach wave 380 · Ascend 40 times · Transcend 12 times | `eternal_kit` |
+| 18 | **The Wider Board** | Reach wave 440 · Complete 1 200 contracts · Take 800 blessings | `master_broker` |
+| 19 | **Starfall** | Reach wave 500 · Cast 50 000 abilities · Reach tower level 85 | `deep_reserves` |
+| 20 | **The Last Watch** | Reach wave 560 · Transcend 20 times · Clear 500 waves at risk 6+ | `undying_watch` |
+| 21 | **Deep Stores** | Reach wave 620 · Ascend 60 times · Buy 100 000 upgrades | `deep_stores` |
+
+The level and count gates were re-priced in plans/progress.md §7.6 against what
+the ladder actually produces. Chapter 11 asked for tower level 100 (12.3 M
+cumulative XP, ~run 30) behind a depth gate that falls in run 3; chapter 19
+asked for level 175 — 300.8 M XP against a ladder that produces 6.2 M in sixteen
+runs — so it could not be completed at all. The five deepest depth gates were
+stretched at the same time, so the campaign now ends where the ladder is still
+moving rather than well inside it. `tests/watch.test.ts` holds both directions:
+no chapter may ask a level its own depth gate cannot reach, and the depth gates
+must ascend.
 
 The last eight chapters pick up where the first twelve stopped: chapter 12
 hits wave 200 / 50 ascensions / 1 500 bosses, which was deep endgame at the
@@ -66,8 +77,9 @@ back-half-deep even when every other system has already stretched out, and
 the transcends and contracts it starts counting on chapter 13 are
 available to a player who started the chapter on the previous tab.
 
-Chapter 20's `tower_level: 175` is `TOWER_LEVEL_CAP − 25` (`200`); a chapter
-cannot demand more than the cap reaches without becoming a wall. Chapter
+Chapter 19's `tower_level` is now **85** — what the tower is at wave 400 on the
+measured ladder — rather than 175. A chapter cannot demand more than the XP
+economy reaches without becoming a wall. Chapter
 20's `risk_waves: 6` requires the `riskbearer` unlock at minimum, which
 is well behind on the ladder, and Crown of Thorns (chapter 14) keeps
 crediting the bucket at risk 8 too (`WATCH_PROGRESS.risk_waves` sums every
@@ -84,7 +96,9 @@ Sanity checks that were run against the tree before the numbers were written:
   `riskbearer` is the ceiling and asking for the ceiling would make the
   chapter a wall. Chapter 10 asks for 5+ *after* the dial has been raised
   twice, so it is no longer the ceiling either.
-- Chapter 11's tower level 100 is half the level cap (`TOWER_LEVEL_CAP = 200`).
+- Chapter 11's tower level gate is **40**, which is where the ladder's tower
+  sits at the depth that chapter asks for (wave 175). It used to be 100 — half
+  the level cap — which was a run-30 requirement behind a run-3 depth gate.
 
 ## Objective kinds
 
@@ -162,8 +176,9 @@ cannot ship as flavour text.
 | `master_broker` | Master Broker | Contracts run **5 slots** instead of 4 | `ContractManager.refill via the injected slots() dep — Game passes watch.contractSlots()` |
 | `deep_reserves` | Deep Reserves | Every ability costs **−20% mana** | `Game.applyResolvedStats — multiplies abilityCostMultiplier by 0.8 before setAbilityCostMultiplier` |
 | `undying_watch` | The Undying Watch | Offline progress banks **12 more hours** | `Game getIdleCapSeconds closure — adds 12h to PrestigeManager.getIdleTimeCapSeconds()` |
+| `deep_stores` | Deep Stores | Every scalar upgrade may be levelled **50% further** | `Game.applyResolvedStats — adds WATCH_CAP_EXTENSION to the fraction passed to setUpgradeCapExtension` |
 
-Why these twenty and not stat bonuses: every one of them changes a *rule*.
+Why these twenty-one and not stat bonuses: every one of them changes a *rule*.
 After `wide_draft` the draft is a different decision; after `crown_of_thorns`
 the dial has a step that did not exist; after `eternal_kit` a transcendence
 no longer wipes everything the player paid for. A `+8% damage` reward would be
@@ -279,7 +294,7 @@ Three surfaces, all owned by `src/ui/` and described in detail under
 
 - **Journal tab** (`JournalPanel.ts`) — the campaign's home, in the
   `progress` group of `NAV_GROUPS` as its first entry, label "Journal".
-  Five sections: header (`X / 20 chapters`), the active chapter card,
+  Five sections: header (`X / 21 chapters`), the active chapter card,
   the next-up card, the completed list, and the road ahead. View model is
   `Game.watchInfo()` → `UIManager` → `JournalPanel`.
 - **Corner chip** (`JournalStrip.ts`) — the bottom-left "Long Watch"

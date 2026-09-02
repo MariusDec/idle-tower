@@ -297,6 +297,9 @@ export const ENEMY_THREAT_CLASS: Record<EnemyType, ThreatClass> = {
   thief: 'threat',
   blinker: 'threat',
   warden: 'threat',
+  harbinger: 'threat',
+  leech: 'threat',
+  chorus: 'threat',
   burrower: 'threat',
   boss: 'boss',
 };

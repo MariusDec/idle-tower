@@ -30,6 +30,9 @@ export type EnemyShape = 'circle' | 'diamond' | 'winged' | 'square' | 'hex' | 'm
  * nameless.
  */
 export const ENEMY_LABELS: Record<EnemyType, string> = {
+  harbinger: 'Harbinger',
+  leech: 'Leech',
+  chorus: 'Chorus',
   normal: 'Grunt',
   fast: 'Runner',
   tank: 'Tank',
@@ -111,6 +114,12 @@ export const ENEMY_GAIT: Record<EnemyType, {
   blinker: { freq: 2, bob: entity(1.6), squash: 0.06, float: true },
   warden: { freq: 3.2, bob: entity(2), squash: 0.02, float: true },
   burrower: { freq: 8, bob: entity(0.9), squash: 0.09, float: false },
+  // Slow and deliberate — a thing that arrives rather than charges.
+  harbinger: { freq: 2.4, bob: entity(1.8), squash: 0.04, float: true },
+  // A gliding drift, so the moment it latches on reads as a change of state.
+  leech: { freq: 4, bob: entity(1.5), squash: 0.08, float: true },
+  // Three of them move in step by design — the shared pool made visible.
+  chorus: { freq: 6, bob: entity(1.3), squash: 0.06, float: false },
 };
 
 /**
@@ -190,6 +199,33 @@ export const ENEMY_BEHAVIOR = {
   /** Speed multiplier applied to that scatter. */
   splitterScatterSpeedMult: 1.6,
 
+  /**
+   * Harbinger (plans/progress.md §7.1). Every `harbingerInterval` it makes
+   * every ally in range untargetable for `harbingerPhase`, which is what turns
+   * a sustained-DPS build's uptime into wasted seconds.
+   */
+  harbingerInterval: 6,
+  harbingerPhase: 2,
+  harbingerRange: world(200),
+
+  /**
+   * Leech (§7.1). On contact it drains `leechManaSteal` mana and turns each
+   * point into `leechShieldPerMana` × its own `baseHP` of absorb on itself —
+   * the mana bar becomes a defensive resource rather than a purely offensive
+   * one.
+   */
+  leechManaSteal: 8,
+  leechShieldPerMana: 3,
+
+  /**
+   * Chorus (§7.1). Spawns as `chorusVoices` bodies sharing one HP pool,
+   * scattered over `chorusSpread` at one point. Damage to any voice is applied
+   * to the pool, so pierce and splash hit it once per body per volley and a
+   * single-target build hits it once.
+   */
+  chorusVoices: 3,
+  chorusSpread: world(30),
+
   /** Seconds of taking no damage before a shielded enemy starts rebuilding. */
   shieldCalmBeforeRegen: 3,
   /** Seconds per restored shield charge, once calm. */
@@ -218,8 +254,16 @@ export const ENEMY_BEHAVIOR = {
  * game time at `dt = 1/120` and at 6.5x speed alike.
  */
 export const BOSS_ENCOUNTER = {
-  /** HP fractions the boss crosses into phase 2 and phase 3 at (§3.1). */
+  /**
+   * HP fractions the boss crosses into phase 2 and phase 3 at (§3.1).
+   *
+   * The shallow-water shape, and the one every pre-Ordeal balance figure was
+   * measured against. Past wave 200 the count grows — see
+   * `phaseThresholdsForWave`, which is what every consumer should call.
+   */
   phaseThresholds: [0.66, 0.33] as const,
+  /** Most thresholds an Ordeal will ever field, however deep it is (A.2). */
+  maxPhaseThresholds: 6,
   /** Seconds of untargetable flash on each crossing. */
   phaseInvulnerability: 0.7,
 
@@ -365,6 +409,11 @@ export function bossTierForWave(wave: number): number {
 
 /** `Wave 40 Warden` — the name the boss bar shows. */
 export function bossNameForWave(wave: number): string {
+  // An Ordeal is announced by its own name rather than by its tier: the point
+  // of the every-hundredth-wave encounter is that the player recognises it
+  // (progress-steps A.2).
+  const ordeal = ordealNameForWave(wave);
+  if (ordeal) return ordeal;
   const tier = bossTierForWave(wave);
   return `Wave ${wave} ${BOSS_TIER_NAMES[(tier - 1) % BOSS_TIER_NAMES.length]}`;
 }
@@ -384,7 +433,10 @@ export function bossNameForWave(wave: number): string {
  */
 export function bossPatternForPhase(tier: number, phase: number): BossPattern {
   const t = Math.max(1, Math.floor(tier));
-  const p = Math.max(1, Math.min(3, Math.floor(phase)));
+  // No upper clamp: an Ordeal runs up to seven phases (A.2), and each one past
+  // the third draws the next pattern from the same rotation rather than
+  // repeating the third forever. The modulo below already wraps it.
+  const p = Math.max(1, Math.floor(phase));
   const poolSize = t <= 1 ? 1 : t === 2 ? 2 : t === 3 ? 3 : 4;
   if (poolSize < 4) return BOSS_PATTERNS[(p - 1) % poolSize];
   return BOSS_PATTERNS[(t - 4 + p - 1) % BOSS_PATTERNS.length];
@@ -589,13 +641,92 @@ export function bossEnrageStacksFor(elapsed: number): number {
   return 1 + Math.floor((elapsed - BOSS_ENCOUNTER.enrageDelay) / BOSS_ENCOUNTER.enrageInterval);
 }
 
-/** Phase a boss at this HP fraction belongs in — 1, 2 or 3. */
-export function bossPhaseForHpFraction(fraction: number): number {
-  const [p2, p3] = BOSS_ENCOUNTER.phaseThresholds;
-  if (fraction <= p3) return 3;
-  if (fraction <= p2) return 2;
+/**
+ * The HP fractions a boss on this wave changes phase at (progress-steps A.2).
+ *
+ * Every 100 waves a boss gains one threshold: `[0.66, 0.33]` below 200,
+ * `[0.75, 0.50, 0.25]` from 200, `[0.80, 0.60, 0.40, 0.20]` from 300, and so
+ * on to `maxPhaseThresholds`. The thresholds are always evenly spaced —
+ * `i / (n + 1)` — so a boss's bar is cut into equal pieces however many pieces
+ * there are, and no phase is ever a sliver.
+ *
+ * A deeper boss is not tougher for this: its HP is unchanged. What changes is
+ * how many times it stops, flashes and switches pattern on the way down, which
+ * is the *encounter* getting longer rather than the bar getting bigger.
+ */
+export function phaseThresholdsForWave(wave: number): number[] {
+  const extra = Math.max(0, Math.floor(wave / 100) - 1);
+  const n = Math.min(BOSS_ENCOUNTER.maxPhaseThresholds, 2 + extra);
+  // The two-threshold case returns the table's own pair rather than an evenly
+  // spaced recomputation. `2/3` rounds to 0.67 and the shipped constant is
+  // 0.66 — a one-point drift that would move every pre-Ordeal boss's first
+  // crossing, which is a balance change this function is not allowed to make.
+  if (n === 2) return [...BOSS_ENCOUNTER.phaseThresholds];
+  const out: number[] = [];
+  for (let i = n; i >= 1; i--) out.push(Math.round((i / (n + 1)) * 100) / 100);
+  return out;
+}
+
+/**
+ * Phase a boss at this HP fraction belongs in.
+ *
+ * 1-3 below wave 200 and up to `maxPhaseThresholds + 1` past it. `wave`
+ * defaults to 0, which reproduces the two-threshold shape exactly — every
+ * caller that predates Ordeals keeps the behaviour it was written against.
+ */
+export function bossPhaseForHpFraction(fraction: number, wave = 0): number {
+  const thresholds = phaseThresholdsForWave(wave);
+  // Walked deepest-first: the phase is the count of thresholds already crossed.
+  for (let i = thresholds.length - 1; i >= 0; i--) {
+    if (fraction <= thresholds[i]) return i + 2;
+  }
   return 1;
 }
+
+/**
+ * Waves that are Ordeals — a named boss with its own bar colour and a
+ * guaranteed legendary (A.2).
+ *
+ * Every hundredth wave from 200. Wave 100 is deliberately not one: it is a
+ * player's first three-phase boss and the encounter is already the lesson.
+ */
+export function isOrdealWave(wave: number): boolean {
+  return wave >= 200 && wave % 100 === 0;
+}
+
+/**
+ * Names for the Ordeals, keyed by the hundred they fall on (A.2).
+ *
+ * Past the last entry the name repeats with the hundred appended, so a wave
+ * 1500 boss is still *named* rather than falling back to "Boss" — a fixed
+ * table would have made the deep game anonymous again at exactly the depth
+ * this plan opened up.
+ */
+export const ORDEAL_NAMES: Record<number, string> = {
+  2: 'The Second Ordeal — Vigil',
+  3: 'The Third Ordeal — Attrition',
+  4: 'The Fourth Ordeal — The Long Dark',
+  5: 'The Fifth Ordeal — Cinder',
+  6: 'The Sixth Ordeal — The Hollow Choir',
+  7: 'The Seventh Ordeal — Sundering',
+  8: 'The Eighth Ordeal — The Last Gate',
+};
+
+/** Bar colour an Ordeal's boss is painted with — distinct from the ordinary boss. */
+export const ORDEAL_BAR_COLOR = '#e8a93b';
+
+/** The Ordeal's name for `wave`, or null when the wave is not one. */
+export function ordealNameForWave(wave: number): string | null {
+  if (!isOrdealWave(wave)) return null;
+  const hundred = Math.floor(wave / 100);
+  const named = ORDEAL_NAMES[hundred];
+  if (named) return named;
+  const last = ORDEAL_NAMES[8];
+  return `${last} (wave ${wave})`;
+}
+
+/** Rarity boost an Ordeal's guaranteed drop is rolled with (A.2). */
+export const ORDEAL_RARITY_BOOST = 4;
 
 /**
  * Where each type's behaviour actually lives.
@@ -620,6 +751,9 @@ export const ENEMY_BEHAVIOR_CONSUMERS: Record<EnemyType, string> = {
   blinker: 'EnemyManager.tick — teleports 140 px every 3 s, ignoring knockback, mines and the wall',
   warden: 'EnemyManager.tick — projects a regenerating absorb shield onto up to five nearby allies',
   burrower: 'EnemyManager.tick — untargetable and invulnerable underground until it surfaces at 120 px',
+  harbinger: 'EnemyManager.tick — every 6 s it phases every ally in 200 px out of `isTargetable` for 2 s',
+  leech: 'EnemyManager.tick — drains mana on contact and converts it into absorb on itself',
+  chorus: 'WaveManager.buildRoster spawns three linked voices; EnemyManager.damage applies every hit to the shared pool',
 };
 
 /** Types the `priority` targeting mode reaches for, most urgent first. */
@@ -643,7 +777,10 @@ export function isTargetable(enemy: Enemy): boolean {
   return enemy.alive
     && enemy.burrowed !== true
     && (enemy.spawnProtection ?? 0) <= 0
-    && (enemy.bossInvulnerable ?? 0) <= 0;
+    && (enemy.bossInvulnerable ?? 0) <= 0
+    // The harbinger's phase is a *term here* rather than a mechanism of its
+    // own, for exactly the reason the boss's phase flash is (§7.1).
+    && (enemy.phasedOut ?? 0) <= 0;
 }
 
 /** True when land mines and knockback pass straight through this enemy. */
@@ -891,6 +1028,38 @@ export const ENEMY_DEFS: Record<EnemyType, EnemyDef> = {
     shape: 'mound',
     rpChance: 0.03,
   },
+  // ── the deep roster (plans/progress.md §7.1) ────────────────────────────
+  //
+  // Sized against `warden`, the deepest existing type, on the same baseHP
+  // 9-14 band: they take draw weight from `normal` and `fast` rather than
+  // adding it, so a wave's total HP is unchanged.
+  harbinger: {
+    type: 'harbinger',
+    icon: 'skull-crack',
+    baseHP: 13, baseSpeed: world(40), armor: 1, magicResist: 0.1,
+    baseDamage: 3, fireRate: 0.9, baseGold: 3,
+    unlockWave: 120, radius: entity(17),
+    color: '#5b3a7a', borderColor: '#c9a6f5', shape: 'hex',
+    rpChance: 0.04,
+  },
+  leech: {
+    type: 'leech',
+    icon: 'crystal-shine',
+    baseHP: 10, baseSpeed: world(50), armor: 0, magicResist: 0.3,
+    baseDamage: 2, fireRate: 1.0, baseGold: 3,
+    unlockWave: 180, radius: entity(14),
+    color: '#1d6b6b', borderColor: '#8ff0e6', shape: 'diamond',
+    rpChance: 0.04,
+  },
+  chorus: {
+    type: 'chorus',
+    icon: 'beveled-star',
+    baseHP: 11, baseSpeed: world(42), armor: 1, magicResist: 0.15,
+    baseDamage: 3, fireRate: 0.9, baseGold: 3,
+    unlockWave: 240, radius: entity(15),
+    color: '#8a6d1f', borderColor: '#ffe9a3', shape: 'circle',
+    rpChance: 0.04,
+  },
 };
 
 /**
@@ -1045,6 +1214,31 @@ export const ENEMY_CODEX: Record<EnemyType, EnemyCodexEntry> = {
       { name: 'Ward', text: `Absorb shield worth ${(ENEMY_BEHAVIOR.wardShieldFraction * 100).toFixed(0)}% of its max HP onto up to ${ENEMY_BEHAVIOR.wardMaxTargets} allies in ${ENEMY_BEHAVIOR.wardRange} px. Refreshes every ${ENEMY_BEHAVIOR.wardRefresh} s.` },
     ],
   },
+  harbinger: {
+    tagline: `Phases its escort out of reach every ${ENEMY_BEHAVIOR.harbingerInterval} s.`,
+    description: `Every ${ENEMY_BEHAVIOR.harbingerInterval} s it makes every ally within ${ENEMY_BEHAVIOR.harbingerRange} px untargetable for ${ENEMY_BEHAVIOR.harbingerPhase} s. Nothing about the harbinger is durable; what it costs you is *uptime*.`,
+    answer: 'Burst windows. A pure sustained-DPS build spends a third of its shots on an empty field — hold a charged shot or an ability for the moment the wave comes back.',
+    effects: [
+      { name: 'Phase', text: `Every ${ENEMY_BEHAVIOR.harbingerInterval} s, allies within ${ENEMY_BEHAVIOR.harbingerRange} px become untargetable for ${ENEMY_BEHAVIOR.harbingerPhase} s.` },
+    ],
+  },
+  leech: {
+    tagline: 'Drinks your mana and wears it as armour.',
+    description: `On contact it drains ${ENEMY_BEHAVIOR.leechManaSteal} mana and converts every point into ${ENEMY_BEHAVIOR.leechShieldPerMana}× its own base HP of absorb on itself.`,
+    answer: 'Kill it before contact, or accept that mana is now a defensive resource — Meditation and Mana Well stop being purely offensive purchases.',
+    effects: [
+      { name: 'Drain', text: `Steals ${ENEMY_BEHAVIOR.leechManaSteal} mana on contact.` },
+      { name: 'Mana Ward', text: `Converts each stolen point into ${ENEMY_BEHAVIOR.leechShieldPerMana}× its base HP of absorb on itself.` },
+    ],
+  },
+  chorus: {
+    tagline: `${ENEMY_BEHAVIOR.chorusVoices} bodies, one HP pool.`,
+    description: `Spawns as ${ENEMY_BEHAVIOR.chorusVoices} voices scattered over ${ENEMY_BEHAVIOR.chorusSpread} px that share a single HP pool. Damage to any one voice is taken from the pool, and the others flash as it lands.`,
+    answer: 'Coverage over single-target. Pierce and splash hit the pool once per body per volley; a single-target build hits it once.',
+    effects: [
+      { name: 'Shared Pool', text: `All ${ENEMY_BEHAVIOR.chorusVoices} voices draw from one HP pool — every voice hit spends the same bar.` },
+    ],
+  },
   burrower: {
     tagline: 'Untouchable underground until it surfaces beside the tower.',
     description: `Untargtable and invulnerable underground, moving at ${ENEMY_BEHAVIOR.burrowSpeedMult}× speed. Surfaces for ${ENEMY_BEHAVIOR.burrowTelegraph} s at ${ENEMY_BEHAVIOR.burrowSurfaceDistance} px from the tower before meleeing.`,
@@ -1070,6 +1264,14 @@ export const ENEMY_CODEX: Record<EnemyType, EnemyCodexEntry> = {
  * wave HP not to rise. `boss` is 0: boss waves bypass the pool entirely.
  */
 export const ENEMY_SPAWN_WEIGHTS: Record<EnemyType, number> = {
+  // §2.4 asks the deep roster to *replace* draw weight rather than add it, and
+  // `SPAWN_WEIGHT_BANDS` below already does exactly that at exactly the right
+  // depths: `normal` x0.6/x0.4/x0.3 and `fast` x0.8/x0.6/x0.5 from waves
+  // 120/240/380, which is where `harbinger`, `leech` and `chorus` unlock.
+  // Cutting these two here as well would have taken the weight a second time
+  // — and taken it from waves 1-119, where none of the three has unlocked and
+  // nothing replaces it, which measurably shifted the wave-100 RP-drop average
+  // out of the band `tests/research-economy.test.ts` holds.
   normal: 5,
   fast: 3,
   tank: 2,
@@ -1082,16 +1284,74 @@ export const ENEMY_SPAWN_WEIGHTS: Record<EnemyType, number> = {
   blinker: 2,
   warden: 1,
   burrower: 2,
+  harbinger: 1,
+  leech: 1,
+  chorus: 1,
   boss: 0,
 };
+
+/**
+ * Depth bands that re-weight the pool (plans/progress.md §7.1).
+ *
+ * The table above is flat in depth, so a wave-500 roster was drawn from exactly
+ * the same distribution as a wave-50 one and depth only ever meant "the same
+ * soup, with bigger numbers". Each band below shifts weight from the two types
+ * that ask nothing of the player (`normal`, `fast`) onto the types that each
+ * pose a specific question — which is the cheapest possible way to make a deep
+ * wave *read* differently without a single new enemy.
+ *
+ * Multipliers, not replacements, so the table above stays the one place a
+ * type's baseline presence is set. A band's entries are applied in full once
+ * its wave is reached; bands do **not** stack (the deepest reached one wins),
+ * because two multiplicative bands would quietly square a weight.
+ */
+export const SPAWN_WEIGHT_BANDS: ReadonlyArray<{
+  minWave: number;
+  label: string;
+  multipliers: Partial<Record<EnemyType, number>>;
+}> = [
+  {
+    minWave: 120,
+    label: 'The line thickens',
+    // Armour and bodies: the first band a tower that one-shots trash notices.
+    multipliers: { normal: 0.6, fast: 0.8, tank: 2.0, shielded: 1.8, warden: 1.5 },
+  },
+  {
+    minWave: 240,
+    label: 'The clever ones',
+    // Positioning problems: things that will not stand still to be shot.
+    multipliers: { normal: 0.4, fast: 0.6, blinker: 2.2, burrower: 2.0, siege: 1.8, warden: 2.0 },
+  },
+  {
+    minWave: 380,
+    label: 'The deep muster',
+    // Everything that punishes a single-target build, at once.
+    multipliers: {
+      normal: 0.3, fast: 0.5, tank: 2.0, shielded: 2.0,
+      healer: 2.5, warden: 2.5, blinker: 2.0, thief: 1.8,
+    },
+  },
+];
+
+/** The deepest band `wave` has reached, or null below the first one. */
+export function spawnBandForWave(wave: number) {
+  let band: (typeof SPAWN_WEIGHT_BANDS)[number] | null = null;
+  for (const b of SPAWN_WEIGHT_BANDS) {
+    if (wave >= b.minWave) band = b;
+  }
+  return band;
+}
 
 /** Types with a non-zero weight that have unlocked by `wave`, in table order. */
 export function spawnPoolForWave(wave: number): Array<{ type: EnemyType; weight: number }> {
   const out: Array<{ type: EnemyType; weight: number }> = [];
+  const band = spawnBandForWave(wave);
   for (const type of Object.keys(ENEMY_SPAWN_WEIGHTS) as EnemyType[]) {
-    const weight = ENEMY_SPAWN_WEIGHTS[type];
-    if (weight <= 0) continue;
+    const base = ENEMY_SPAWN_WEIGHTS[type];
+    if (base <= 0) continue;
     if (wave < ENEMY_DEFS[type].unlockWave) continue;
+    const weight = base * (band?.multipliers[type] ?? 1);
+    if (weight <= 0) continue;
     out.push({ type, weight });
   }
   return out;

@@ -5,6 +5,9 @@ import {
   BLESSING_FIRST_DRAFT_WAVE,
   BLESSING_FREE_REROLLS,
   BLESSING_MAX_PICKS,
+  BLESSING_CAP_GROWTH_WAVE,
+  BLESSING_CAP_WAVES_PER_PICK,
+  blessingPickCapForWave,
   BLESSING_OFFER_SIZE,
   BLESSING_TUNING,
   type BlessingBehavior,
@@ -59,6 +62,15 @@ export class BlessingManager {
   private readonly overrides: BlessingDraftOverrides;
   private held: Record<string, number> = {};
   private picksTaken = 0;
+  /**
+   * The deepest wave this run has offered a draft at.
+   *
+   * `choose` and `isCapped` need the pick ceiling, and neither is handed a
+   * wave. Recording it at the one point that *is* — `isDraftDue`, which every
+   * draft goes through — keeps the cap a function of depth without threading a
+   * wave through four more signatures.
+   */
+  private capWave = 0;
   /** Reroll tokens banked from other systems (Part 5 grants them). */
   private rerollTokens = 0;
   /** Free rerolls left in the draft currently open. */
@@ -147,7 +159,8 @@ export class BlessingManager {
    * not become an unbounded stat pile.
    */
   isDraftDue(clearedWave: number): boolean {
-    if (this.picksTaken >= BLESSING_MAX_PICKS) return false;
+    this.capWave = Math.max(this.capWave, clearedWave);
+    if (this.picksTaken >= this.pickCap) return false;
     const first = this.firstDraftWave;
     if (clearedWave < first) return false;
     return (clearedWave - first) % BLESSING_DRAFT_INTERVAL === 0;
@@ -158,8 +171,13 @@ export class BlessingManager {
     return Math.max(1, Math.floor(this.overrides.firstDraftWave?.() ?? BLESSING_FIRST_DRAFT_WAVE));
   }
 
+  /** The pick ceiling at the depth this run has reached. */
+  get pickCap(): number {
+    return blessingPickCapForWave(this.capWave);
+  }
+
   get isCapped(): boolean {
-    return this.picksTaken >= BLESSING_MAX_PICKS;
+    return this.picksTaken >= this.pickCap;
   }
 
   // ── the draft ──
@@ -173,6 +191,7 @@ export class BlessingManager {
     for (const def of BLESSINGS) {
       if (def.offerable === false) continue;
       if (def.minWave !== undefined && wave < def.minWave) continue;
+      if (def.minPicks !== undefined && this.picksTaken < def.minPicks) continue;
       if ((this.held[def.id] ?? 0) >= def.maxStacks) continue;
       if (def.requires && (this.held[def.requires] ?? 0) <= 0) continue;
       void core;
@@ -249,7 +268,7 @@ export class BlessingManager {
   choose(id: string): boolean {
     const def = BLESSING_BY_ID[id];
     if (!def) return false;
-    if (this.picksTaken >= BLESSING_MAX_PICKS) return false;
+    if (this.picksTaken >= this.pickCap) return false;
     if ((this.held[id] ?? 0) >= def.maxStacks) return false;
     this.held[id] = (this.held[id] ?? 0) + 1;
     this.picksTaken += 1;
@@ -297,6 +316,7 @@ export class BlessingManager {
     const keep = opts.carryBest ? this.bestHeldId() : null;
     this.held = {};
     this.picksTaken = 0;
+    this.capWave = 0;
     this.rerollTokens = 0;
     this.wavesClearedThisRun = 0;
     this.closeDraft();
@@ -355,6 +375,11 @@ export class BlessingManager {
     // on load would silently hand out a different choice than the one the
     // player was looking at.
     this.closeDraft();
+    // A restored run has already been to whatever depth it reached; seeding the
+    // cap wave from the picks it took is the closest honest reconstruction, and
+    // `isDraftDue` corrects it upward on the very next wave.
+    this.capWave = BLESSING_CAP_GROWTH_WAVE
+      + Math.max(0, this.picksTaken - BLESSING_MAX_PICKS) * BLESSING_CAP_WAVES_PER_PICK;
     this.rebuildCaches();
   }
 

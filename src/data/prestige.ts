@@ -30,6 +30,16 @@ export type PrestigePerkEffect =
   | 'idle_time'
   // ── prestige-abs §3.1: the tier-1 shelf ──
   | 'upgrade_cost'
+  /**
+   * Fraction of the deepest deployment checkpoint a run may start from
+   * (progress.md §6.2). 0.85 = "start 85% of the way to your record".
+   */
+  | 'deploy_depth'
+  /**
+   * Fraction added to every scalar upgrade's level ceiling (progress.md §3).
+   * Sold by one AP perk and one TP perk; both sum into `upgradeCapExtension`.
+   */
+  | 'upgrade_cap'
   | 'xp_gain'
   | 'rp_drop'
   | 'orb_magnet'
@@ -627,6 +637,74 @@ export const AP_PERKS: PrestigePerkDef[] = [
     prerequisites: [{ perkId: 'ap_fortune', minLevel: 10 }],
     exclusive: ['ap_warlord'],
   },
+  {
+    id: 'ap_forward_camp',
+    layer: 'ascension',
+    name: 'Forward Camp',
+    description: 'Ascend straight to a checkpoint of your best run',
+    /*
+     * progress.md §6. The node that removes the re-climb.
+     *
+     * Measured with `npm run sim`'s ladder report: at the depths the ladder
+     * reaches, 88% of a run's minutes are spent on waves whose length is the
+     * spawn queue rather than a fight, and the tower cannot lose any of them.
+     * A deploy skips exactly that stretch and starts the run inside the band
+     * where the wall actually is.
+     *
+     * The ladder is 0.50 / 0.70 / 0.85 of the deepest checkpoint, resolved
+     * down to a stored 50-wave boundary. It is *not* linear because the value
+     * of a level is not linear: run time is now linear in depth (§5), so going
+     * from 70% to 85% halves what is left of the run again.
+     *
+     * 150 x 2.4^L is 150 / 360 / 864 = 1 374 AP for all three levels. Priced
+     * against `ap_deep_stores` (4 500) because this node saves *time* rather
+     * than adding power — it must be affordable early enough to be felt.
+     */
+    costPerLevel: 150,
+    costScaling: 2.4,
+    maxLevel: 3,
+    effectType: 'deploy_depth',
+    // Level 1 is `baseEffect`; levels 2 and 3 add 0.20 and 0.15 through the
+    // formula string, giving 0.50 / 0.70 / 0.85.
+    effectPerLevel: '({level} === 2 ? 0.20 : 0.15)',
+    baseEffect: 0.50,
+    icon: 'walking-scout',
+    color: '#3ec46d',
+    tier: 3,
+    prerequisites: [{ perkId: 'ap_veterancy', minLevel: 2 }],
+  },
+  {
+    id: 'ap_deep_stores',
+    layer: 'ascension',
+    name: 'Deep Stores',
+    description: '+25% to every scalar upgrade\'s level cap, per level',
+    /*
+     * progress.md §3. The first AP node that is not decoration at depth.
+     *
+     * Every other AP damage node adds into the same bracket as
+     * `lifetimeAPDamageBonus`, which is `0.02 * AP^0.7` — at 1e5 lifetime AP
+     * that bracket reads `1 + 63.2 + 0.88`, so the whole chosen tree is 1.4% of
+     * it. This node does not add to a bracket at all: it raises the ceiling on
+     * what *gold* can buy, which is the one channel the automatic term cannot
+     * reach. Measured with `npm run sim`, an unlimited gold multiplier walls at
+     * wave 219 against the stock caps and 419 with `damage` alone at 2 000
+     * levels.
+     *
+     * 300 x 2.0^L is 300 / 600 / 1 200 / 2 400 = 4 500 AP for the ladder —
+     * roughly a third of the whole pre-existing bounded tree (24 144 AP), and
+     * affordable from the second ascension on, which is the depth the ceiling
+     * first starts to bind at.
+     */
+    costPerLevel: 300,
+    costScaling: 2.0,
+    maxLevel: 4,
+    effectType: 'upgrade_cap',
+    effectPerLevel: 0.25,
+    icon: 'knapsack',
+    color: '#e8a93b',
+    tier: 4,
+    prerequisites: [{ perkId: 'ap_might', minLevel: 5 }],
+  },
 ];
 
 /**
@@ -715,6 +793,14 @@ export function describeAPPerkBonus(p: PrestigePerkDef, level: number, atMax: bo
         : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% RP drop chance per level`;
     case 'orb_magnet':
       return 'Loot orbs home to the tower at full value';
+    case 'deploy_depth':
+      return level > 0
+        ? `Deploy at ${(computePerkEffect(p, level) * 100).toFixed(0)}% of your best run`
+        : `Deploy at ${(computePerkEffect(p, 1) * 100).toFixed(0)}% of your best run`;
+    case 'upgrade_cap':
+      return level > 0
+        ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% upgrade level caps`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% upgrade level caps per level`;
     case 'revive_charge': {
       // Level 0 quotes what the first level buys, like every other row here.
       const t = secondWindTier(level > 0 ? level : 1);
@@ -769,18 +855,49 @@ export function abilityUnlockOffset(apSpent: Readonly<Record<string, number>>): 
 }
 
 /**
+ * Growth of banked AP per wave of depth.
+ *
+ * ## Why 1.03 and not 1.06
+ *
+ * The exponent is the single dial for "how long is the game", and 1.06 set it
+ * to *four runs*. Measured with `npm run sim`'s ladder report
+ * (plans/progress.md §1.1): a run at the wall banked between 85x and 250x the
+ * player's entire lifetime AP, so runs 2, 3 and 4 advanced the wall +98, +111
+ * and +59 waves — and then the ladder hit its fixed point and advanced +0.
+ *
+ * The fixed point is arithmetic, not bad luck. A run at wall `W` banks
+ * `1.06^W`; lifetime AP converts to damage at `A^0.7`, so damage grows at
+ * `1.06^(0.7W) = 1.0415^W` against enemy HP at `1.11^W`. Each run therefore
+ * returns 0.39 of the depth it launched from, plus whatever the in-run economy
+ * carries on its own — and `W* = c / 0.61` is where that converges.
+ *
+ * At 1.03 the ladder advances +120, +90, +79, +50, +40, +30, +20, +20, +10 …
+ * and is still moving at run 16. It reaches wave 450 — the Long Watch's last
+ * depth gate — around run 7-8 instead of never.
+ *
+ * Two things this deliberately does **not** do. It does not touch
+ * `lifetimeAPDamageBonus`'s 0.7 exponent: raising that to 0.9 fixes the ladder
+ * by making runs 55 hours long, and re-creates the "one automatic number is the
+ * whole game" problem §1.6 describes. And it does not re-price a single perk —
+ * runs 1-3 barely move (run 3 still banks 72 K AP against a 24 K tree), and
+ * what keeps AP live *after* that is `ap_deep_stores` and the endless nodes,
+ * not a cheaper tree.
+ */
+export const AP_DEPTH_GROWTH = 1.03;
+
+/**
  * AP banked for ascending at a given wave.
  *
  * The old shape (`20 + 1.13^(w-30) * sqrt(w-30)`) was tuned for a wall around
  * wave 37. With the flatter HP curve of §2.3.1 the wall sits far deeper, and
  * `1.13^depth` turned a first run into thousands of AP — enough to skip the
- * entire ascension layer. The gentler `1.06^depth` keeps a 20-wave-deeper run
- * worth ~3x as much AP, which is roughly what it costs to get there.
+ * entire ascension layer. See `AP_DEPTH_GROWTH` for why the exponent is what
+ * it is now.
  */
 export function apForWave(waveNumber: number): number {
   if (waveNumber < ASCENSION_UNLOCK_WAVE) return 0;
   const depth = waveNumber - ASCENSION_UNLOCK_WAVE;
-  return Math.max(0, 15 + Math.floor(5 * Math.pow(1.06, depth) * Math.sqrt(depth + 1)));
+  return Math.max(0, 15 + Math.floor(5 * Math.pow(AP_DEPTH_GROWTH, depth) * Math.sqrt(depth + 1)));
 }
 
 export const TP_PERKS: PrestigePerkDef[] = [
@@ -963,6 +1080,31 @@ export const TP_PERKS: PrestigePerkDef[] = [
       { perkId: 'tp_treasure', minLevel: 2 },
       { perkId: 'tp_mana', minLevel: 2 },
     ],
+  },
+  {
+    id: 'tp_foundry',
+    layer: 'transcendence',
+    name: 'Foundry',
+    description: '+50% to every scalar upgrade\'s level cap, per level',
+    /*
+     * progress.md §3. The transcendence half of the ceiling, and the larger
+     * half: TP is the one currency in the game whose supply is not outrun by
+     * its tree (`4 * AP^0.4` against a 33 568 TP tree), so it is the right
+     * place to sell the thing that has to keep being bought.
+     *
+     * 12 x 1.55^L is 12 / 18 / 28 / 44 / 69 / 107 / 166 / 258 = 702 TP for all
+     * eight levels — about two mid-ladder transcendences.
+     */
+    costPerLevel: 12,
+    costScaling: 1.55,
+    maxLevel: 8,
+    effectType: 'upgrade_cap',
+    effectPerLevel: 0.5,
+    icon: 'hammer-nails',
+    color: '#e8a93b',
+    branch: 'fortune',
+    tier: 3,
+    prerequisites: [{ perkId: 'tp_head_start', minLevel: 3 }],
   },
   {
     id: 'tp_salvage',

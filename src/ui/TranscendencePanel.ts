@@ -152,6 +152,10 @@ export class TranscendencePanel {
       setText(bonusEl, level > 0
         ? `-${level}s interval`
         : '-1s per level');
+    } else if (p.effectType === 'upgrade_cap') {
+      setText(bonusEl, level > 0
+        ? `+${(computePerkEffect(p, level) * 100).toFixed(0)}% level caps`
+        : `+${(computePerkEffect(p, 1) * 100).toFixed(0)}% per level`);
     } else {
       setText(bonusEl, '');
     }

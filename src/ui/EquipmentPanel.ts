@@ -1,5 +1,5 @@
-import type { GameState, EquipmentSlot, Equipment, EquipmentStatType } from '../types';
-import { EQUIPMENT_DEF_BY_ID, RARITY_COLORS, RARITY_NAMES, SLOT_ICONS } from '../data/equipment';
+import type { GameState, EquipmentSlot, Equipment, EquipmentStatType, Rarity } from '../types';
+import { EQUIPMENT_DEF_BY_ID, RARITY_COLORS, RARITY_NAMES, REFORGE_INPUTS, SLOT_ICONS } from '../data/equipment';
 import { icon as iconSvg, iconFrame, setIcon } from './Icon';
 import { formatNumber } from '../utils/bigNumber';
 import { setText, toggleClass, setStyle, setDisplay } from '../utils/dom';
@@ -21,6 +21,15 @@ export interface EquipmentAPIDeps {
   /** The player viewed an item (tooltip shown / tapped on mobile). */
   onItemViewed: (id: string) => void;
   onSell: (id: string) => void;
+  /**
+   * Reforge three same-rarity items into one of the next tier up
+   * (plans/progress-steps.md A.3). Returns false when the gold is not there.
+   */
+  onReforge: (ids: string[]) => boolean;
+  /** Cost and result of reforging `ids`, or null when that is not a legal set. */
+  previewReforge: (ids: string[]) => { cost: number; rarity: Rarity; level: number } | null;
+  /** Gold in hand, for the affordability state on the reforge button. */
+  gold: () => number;
 }
 
 const SLOT_ORDER: EquipmentSlot[] = [
@@ -112,6 +121,17 @@ export class EquipmentPanel {
   private slotLongPressUnbinds = new Map<EquipmentSlot, () => void>();
   /** §8.C.3: the tap-to-select half of the touch route. */
   private selectedItemId: string | null = null;
+  /**
+   * Items marked for a reforge (A.3).
+   *
+   * A *second*, separate selection from `selectedItemId`, which is the
+   * tap-to-equip affordance: one is "which item am I about to place", the
+   * other is "which three am I about to destroy". Merging them would make an
+   * accidental equip-tap part of a reforge set.
+   */
+  private reforgeIds: string[] = [];
+  private reforgeBtn: HTMLButtonElement | null = null;
+  private reforgeNote: HTMLElement | null = null;
   /** A drag ends in a `click`; that click must not also be read as a tap. */
   private suppressTapUntil = 0;
 
@@ -138,6 +158,9 @@ export class EquipmentPanel {
     this.destroyCompareTooltip();
     this.root = null;
     this.selectedItemId = null;
+    this.reforgeIds = [];
+    this.reforgeBtn = null;
+    this.reforgeNote = null;
     this.inventoryRows.clear();
     this.newDots.clear();
     this.emptyNoteEl = null;
@@ -544,6 +567,10 @@ export class EquipmentPanel {
       }
     }
 
+    // The marks and the button's affordability both follow the inventory and
+    // the purse, so they are repainted on the same beat the rows are (A.3).
+    this.syncReforgeUi();
+
     const currentIds = this.deps.inventory.map(i => i.id).join(',');
     if (currentIds === this.prevInventoryIds && this.sortMode === this.prevSortMode) return;
     this.prevInventoryIds = currentIds;
@@ -677,6 +704,17 @@ export class EquipmentPanel {
     });
     actions.appendChild(equipBtn);
 
+    const reforgeToggle = document.createElement('button');
+    reforgeToggle.type = 'button';
+    reforgeToggle.className = 'btn btn-reforge-pick';
+    reforgeToggle.title = 'Mark for reforging: three items of one rarity become one of the next.';
+    reforgeToggle.textContent = 'Reforge';
+    reforgeToggle.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      this.toggleReforgePick(item.id);
+    });
+    actions.appendChild(reforgeToggle);
+
     const sellBtn = document.createElement('button');
     sellBtn.type = 'button';
     sellBtn.className = 'btn btn-sell';
@@ -809,6 +847,84 @@ export class EquipmentPanel {
     this.inventoryEl = document.createElement('div');
     this.inventoryEl.className = 'eq-inventory';
     parent.appendChild(this.inventoryEl);
+
+    // A.3: `rollRarity`'s depth ramp saturates at wave 100, so gear stops
+    // improving there. Reforging is the sink that unsticks it — and the one
+    // late home gold has that is not an upgrade level.
+    const reforgeBar = document.createElement('div');
+    reforgeBar.className = 'eq-reforge-bar';
+    const reforgeBtn = document.createElement('button');
+    reforgeBtn.type = 'button';
+    reforgeBtn.className = 'btn btn-reforge';
+    reforgeBtn.disabled = true;
+    reforgeBtn.addEventListener('click', () => {
+      if (this.deps.onReforge(this.reforgeIds)) {
+        this.reforgeIds = [];
+        this.syncReforgeUi();
+      }
+    });
+    this.reforgeBtn = reforgeBtn;
+    reforgeBar.appendChild(reforgeBtn);
+    const note = document.createElement('div');
+    note.className = 'eq-reforge-note';
+    this.reforgeNote = note;
+    reforgeBar.appendChild(note);
+    parent.appendChild(reforgeBar);
+    this.syncReforgeUi();
+  }
+
+  /**
+   * Add or remove an item from the reforge set (A.3).
+   *
+   * The set is capped at `REFORGE_INPUTS`; picking a fourth replaces the
+   * oldest rather than refusing, because a refusal with three already marked
+   * reads as a broken button.
+   */
+  private toggleReforgePick(id: string): void {
+    const at = this.reforgeIds.indexOf(id);
+    if (at !== -1) this.reforgeIds.splice(at, 1);
+    else {
+      this.reforgeIds.push(id);
+      if (this.reforgeIds.length > REFORGE_INPUTS) this.reforgeIds.shift();
+    }
+    this.syncReforgeUi();
+  }
+
+  /** Repaint the marks, the button's label and why it is disabled. */
+  private syncReforgeUi(): void {
+    // Anything sold or reforged out from under the set drops out of it.
+    const live = new Set(this.deps.inventory.map(i => i.id));
+    this.reforgeIds = this.reforgeIds.filter(id => live.has(id));
+
+    for (const [id, row] of this.inventoryRows) {
+      toggleClass(row, 'is-reforge-pick', this.reforgeIds.includes(id));
+    }
+    if (!this.reforgeBtn || !this.reforgeNote) return;
+
+    const preview = this.deps.previewReforge(this.reforgeIds);
+    const picked = this.reforgeIds.length;
+    if (!preview) {
+      this.reforgeBtn.disabled = true;
+      setText(this.reforgeBtn, `Reforge (${picked}/${REFORGE_INPUTS})`);
+      setText(
+        this.reforgeNote,
+        picked === 0
+          ? `Mark ${REFORGE_INPUTS} items of the same rarity to reforge them into one of the next tier.`
+          : picked < REFORGE_INPUTS
+            ? `Mark ${REFORGE_INPUTS - picked} more of the same rarity.`
+            : 'All three must be the same rarity.',
+      );
+      return;
+    }
+    const affordable = this.deps.gold() >= preview.cost;
+    this.reforgeBtn.disabled = !affordable;
+    setText(this.reforgeBtn, `Reforge (${formatNumber(preview.cost)}g)`);
+    setText(
+      this.reforgeNote,
+      affordable
+        ? `Consumes ${REFORGE_INPUTS} items for one ${RARITY_NAMES[preview.rarity]} at level ${preview.level}.`
+        : `Needs ${formatNumber(preview.cost)}g.`,
+    );
   }
 
   private renderSlotCard(slot: EquipmentSlot): HTMLElement {

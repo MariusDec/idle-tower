@@ -10,12 +10,46 @@ Two prestige layers: Ascension (wave 20+) and Transcendence (100+ AP).
 
 **Unlock:** Wave 20 (`ASCENSION_UNLOCK_WAVE`)
 
-**AP Formula:** `apForWave(w)` = `15 + floor(5 * 1.06^d * sqrt(d + 1))` where
-`d = w - 20`, and `0` below the unlock wave. The old
-`20 + 1.13^(w-30) * sqrt(w-30)` was tuned for a wall around wave 37; with the
-flatter HP curve the wall sits far deeper and `1.13^depth` turned a first run
-into thousands of AP. At `1.06^depth` a 20-wave-deeper run is worth ~3x as
-much, which is roughly what it costs to get there.
+**AP Formula:** `apForWave(w)` = `15 + floor(5 * AP_DEPTH_GROWTH^d * sqrt(d + 1))`
+where `d = w - 20`, `AP_DEPTH_GROWTH` is **1.03**, and the result is `0` below
+the unlock wave. The old `20 + 1.13^(w-30) * sqrt(w-30)` was tuned for a wall
+around wave 37; with the flatter HP curve the wall sits far deeper and
+`1.13^depth` turned a first run into thousands of AP.
+
+The exponent is the single dial for *how long the game is*, and 1.06 set it to
+four runs (plans/progress.md §1.1). Measured with `npm run sim`'s ladder report,
+a run at the wall banked 85–250× the player's entire lifetime AP: runs 2, 3 and
+4 advanced the wall +98, +111 and +59 waves, and then the ladder hit a fixed
+point and advanced +0 forever. That fixed point is arithmetic, not bad luck — a
+run at wall `W` banks `1.06^W`, lifetime AP converts to damage at `A^0.7`, so
+damage grows at `1.0415^W` against enemy HP at `1.11^W`, and each run returns
+only 0.39 of the depth it launched from.
+
+At 1.03 the ladder keeps advancing and is still moving at run 16. Two things
+this deliberately does *not* do: it does not touch `lifetimeAPDamageBonus`'s 0.7
+exponent (raising it fixes the ladder by making runs 55 hours long), and it does
+not re-price a single perk — what keeps AP live at depth is `ap_deep_stores`,
+`ap_forward_camp` and the endless nodes, not a cheaper tree.
+
+### Deployment (progress.md §6)
+
+`ap_forward_camp` ("Forward Camp", tier 3, 150 × 2.4^L, 3 levels) lets an
+ascension start from a **checkpoint of a previous run**: 50% / 70% / 85% of the
+deepest stored one, resolved down to a stored 50-wave boundary. The Deploy
+button sits next to Ascend and is hidden until the perk is bought.
+
+A checkpoint is a **snapshot, not a grant** — gold in hand, upgrade levels,
+ability levels, blessings held and picks taken, all values the player actually
+held at that wave — so a deploy can never hand back more than the run that wrote
+it earned. `Game.recordDeploymentCheckpoint` writes one every 50 waves and keeps
+only the best (by gold in hand) at each wave, deepest twelve. `deploy()` runs a
+full `ascend()` first and only then overwrites the *opening* of the new run.
+
+What a deploy does **not** pay: contract progress, Watch kill counters, and
+tower/passive XP for every wave it skipped. That is the trade, and it is what
+stops a deploy from being strictly better than a full run. Checkpoints survive
+ascension and are cleared by transcendence — a checkpoint from before a
+transcendence describes a tower the new cycle cannot reproduce.
 
 `FIRST_ASCENSION_AP` (**25**) is a floor on the player's very first ascension,
 so the first prestige is worth taking rather than something to postpone.
@@ -63,7 +97,10 @@ both again for the transcendence path.
 
 ### AP Perks
 
-Thirteen perks in four tiers (revamp §8). The old tree let one first
+Twenty-five perks in four tiers (revamp §8, widened by prestige-abs §3.1 —
+the table below lists the original thirteen; `AP_PERKS` in
+`src/data/prestige.ts` is the source of truth for the full set). The old tree
+let one first
 ascension buy seven full-damage projectiles — a ~7x multiplier bought once and
 never revisited. The three projectile nodes are now **single-level signature
 purchases**, each carrying only a *fraction* of the volley, so the first
@@ -85,6 +122,8 @@ saves several runs for.
 | 4 | ap_scatter_shots | Scatter Shot | 200 | — | 1 | +2 angled projectiles at 35% damage each | Rear Guard **or** Bodkin Mastery 2 |
 | 4 | ap_warlord | Warlord | 40 | 1.32 | 12 | +5% all damage/level — locks out Tycoon | Might 10 |
 | 4 | ap_tycoon | Tycoon | 40 | 1.32 | 12 | +5% all gold/level — locks out Warlord | Fortune 10 |
+| 3 | ap_forward_camp | Forward Camp | 150 | 2.4 | 3 | Deploy at 50/70/85% of your best run (progress.md §6) | Veterancy 2 |
+| 4 | ap_deep_stores | Deep Stores | 300 | 2.0 | 4 | +25%/level to every scalar upgrade's level cap (progress.md §3) | Might 5 |
 
 `perkCost(def, level)` = `floor(costPerLevel * costScaling^level)`; a perk with
 `costScaling: 1` is a flat one-off price. Prerequisites are **OR**-based in
@@ -164,7 +203,7 @@ the TP.
 
 ### TP Perks
 
-Eighteen perks across three branches — **Wrath** (offensive), **Fortune**
+Nineteen perks across three branches — **Wrath** (offensive), **Fortune**
 (economic) and **Dominion** (utility/automation). Same `perkCost`,
 prerequisite and `exclusive` machinery as the AP tree.
 
@@ -195,6 +234,7 @@ core — and its fraction sums into `SPLASH_FRACTION_CAP` (0.40) through
 | 2 | tp_treasure | Treasure Hunter | 4 | 1.38 | 15 | +2% chance of a 3x gold drop/level | Astral Harvest 3 |
 | 2 | tp_mana | Mana Well | 4 | 1.38 | 15 | +10% mana regen/level | Astral Harvest 3 |
 | 3 | tp_head_start | Head Start | 5 | 1.7 | 12 | Start each ascension with `400 x 1.30^(L-1)` gold | Treasure Hunter 2 **or** Mana Well 2 |
+| 3 | tp_foundry | Foundry | 12 | 1.55 | 8 | +50%/level to every scalar upgrade's level cap (progress.md §3) | Head Start 3 |
 | 4 | tp_salvage | Salvage | 28 | — | 1 | +40% gold from loot orbs — locks out Arcane Abundance | Head Start 5 |
 | 4 | tp_arcane | Arcane Abundance | 28 | — | 1 | −30% ability cooldowns, −40% ability mana costs — locks out Salvage | Head Start 5 |
 

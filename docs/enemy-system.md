@@ -30,6 +30,21 @@ The design rule the roster is built on:
 | **blinker** | 9 | 28 | 0 | 0.25 | 2 | 2 | circle+`✦` | 35 | **DPS and AoE** — control has no answer |
 | **warden** | 14 | 44 | 2 | 0.2 | 2 | 3 | hex | 40 | **Target priority** — the `priority` mode, or manual aim |
 | **burrower** | 9 | 52 | 1 | 0 | 3 | 2 | mound | 45 | **Close-range defence** — shockwave, thorns, mines |
+| **harbinger** | 13 | 40 | 1 | 0.1 | 3 | 3 | hex | 120 | **Burst windows** — it takes the field away on a timer |
+| **leech** | 10 | 50 | 0 | 0.3 | 2 | 3 | diamond | 180 | **Kill it before contact** — it wears your mana as armour |
+| **chorus** | 11 | 42 | 1 | 0.15 | 3 | 3 | circle | 240 | **Coverage** — three bodies, one HP pool |
+
+The last three are the deep roster (plans/progress.md §7.1). Before them the
+roster's last new type arrived at wave 45, so from there to the wall the game
+presented one composition of one roster with no new mechanic. Their unlock
+waves — 120 / 180 / 240 — line up with the `SPAWN_WEIGHT_BANDS` steps below,
+so each band both re-weights the pool *and* introduces something.
+
+They take their draw weight from the bands rather than from a flat cut to
+`normal` and `fast`: those two are already multiplied down from wave 120, which
+is exactly where the first of the three unlocks. Cutting the table as well would
+have taken the weight twice — and taken it from waves 1-119, where none of the
+three has unlocked and nothing replaces it.
 
 Per-wave scaling is unchanged (`src/data/formulas.ts`):
 
@@ -58,7 +73,7 @@ A stance is one of:
 
 All tuning lives in `ENEMY_BEHAVIOR` in `src/data/enemies.ts`, in **simulation**
 seconds. Everything is integrated inside `Game.simulate`'s fixed substeps, so
-every cadence below is correct at `dt = 1/120` and at 6.5x game speed alike.
+every cadence below is correct at `dt = 1/120` and at 4.5x game speed alike.
 
 ### siege
 
@@ -163,12 +178,76 @@ dodge (Evasion talent) → research DR → mana-shield evolution → wall
 The list is capped at 64 shells; the oldest is dropped rather than letting the
 draw loop grow without bound.
 
-## Elites
+## Elites and champions
 
-Unchanged. From wave 21, a non-boss spawn has a `2% → 20%` (linear to wave 100)
-chance to be an elite: `2.5×` HP, `2.5×` gold, a guaranteed RP drop, and one of
-five auras (haste, thorns, greed, vitality, retribution). The elite roll happens
-per pack member, so packing `fast` does not change the elite rate.
+From wave 21, a non-boss spawn has a `2% → 20%` (linear to wave 100) chance to
+be an elite: `2.5×` HP, `2.5×` gold, a guaranteed RP drop, and one of five auras
+(haste, thorns, greed, vitality, retribution). The elite roll happens per pack
+member, so packing `fast` does not change the elite rate.
+
+**Champions** (plans/progress.md §7.2, `CHAMPION_WAVE = 150`). From wave 150 an
+elite is worth `5.0×` HP and `6.0×` gold instead — the same entity, the same
+aura, the same code path, twice as loud on both sides of the trade. The rate
+gets a second, deliberately shallower ramp on top of the first: `20% → 30%` over
+waves 150–400 (`eliteChanceForWave`). The escalation past 150 is carried by what
+an elite *is* rather than by how many there are, because body count is what
+`MAX_WAVE_BODIES` is capping.
+
+### The deep roster's verbs
+
+- **Harbinger** (`harbingerInterval` 6 s) makes every ally within
+  `harbingerRange` (200 px) untargetable for `harbingerPhase` (2 s). It is not
+  durable itself; what it costs is *uptime*, so a pure sustained-DPS build
+  spends a third of its shots on an empty field. It writes `phasedOut`, which
+  is a term inside `isTargetable` rather than a second invulnerability
+  mechanism — the same discipline the boss's phase flash follows.
+- **Leech** drains `leechManaSteal` (8) mana on contact and converts each point
+  into `leechShieldPerMana` (3) × its own base HP of absorb **on itself**. It
+  reuses the warden's `absorbShield` pool rather than adding a second one, and
+  carries no `wardenId`, so nothing can strip it by killing a warden. An empty
+  mana bar yields it nothing — which is what makes Meditation and Mana Well
+  defensive purchases at depth rather than purely offensive ones.
+- **Chorus** spawns as `chorusVoices` (3) bodies sharing one HP pool. Every
+  voice's `hp` *is* the pool, so a hit on any one is a hit on all three and the
+  group dies together; `EnemyManager.spawn` multiplies the bar by the voice
+  count, so the group's total HP is exactly three bodies' worth. Pierce and
+  splash spend that one bar once per body they touch; single-target spends it
+  once. The voices are linked by a `chorusId` assigned in
+  `WaveManager.buildRoster`, the way the splitter's children are linked.
+
+## Crowd compression
+
+`crowdCompression(wave)` = natural roster ÷ capped roster — 1.00 up to wave 97,
+2.03 at wave 200, 4.53 at wave 450, and always 1 on a boss wave. Above
+`MAX_WAVE_BODIES` (120) the wave fields fewer bodies and each one carries the
+share of the ones that were cut, so **`count × per-body` is unchanged at every
+depth** and every balance table stays valid.
+
+It multiplies **HP, gold and XP**, at exactly these sites: `EnemyManager.spawn`
+(hp, gold), `xpPerKill` / `passiveXpPerKill`, `SaveManager.averageKillGoldForWave`,
+`Game.estimateWaveGold` and `sim/model.ts`'s `waveProfile`.
+
+It deliberately does **not** multiply `enemyDamageForWave`. Total incoming chip
+damage falls with the body count, which is a margin the player cannot exploit;
+compressing it instead would mean a single wave-450 body hitting for 4.5×, which
+is a new way to die rather than the same wave in fewer pieces.
+
+## Depth bands
+
+`SPAWN_WEIGHT_BANDS` re-weights the spawn pool with depth (plans/progress.md
+§7.1). The weight table itself is flat, so a wave-500 roster used to be drawn
+from the same distribution as a wave-50 one. Each band multiplies the baseline
+weights; bands do **not** stack — the deepest one reached wins.
+
+| From wave | Band | Shift |
+|---:|---|---|
+| 120 | The line thickens | `normal ×0.6`, `fast ×0.8`, `tank ×2.0`, `shielded ×1.8`, `warden ×1.5` |
+| 240 | The clever ones | `normal ×0.4`, `fast ×0.6`, `blinker ×2.2`, `burrower ×2.0`, `siege ×1.8`, `warden ×2.0` |
+| 380 | The deep muster | `normal ×0.3`, `fast ×0.5`, `tank ×2.0`, `shielded ×2.0`, `healer ×2.5`, `warden ×2.5`, `blinker ×2.0`, `thief ×1.8` |
+
+Composition moves; totals do not. `SaveManager`'s offline averages and
+`sim/model.ts`'s `typeMix` both read `spawnPoolForWave`, so the model prices the
+re-weighted wave. Each band is announced in the milestone strip.
 
 ## Combat
 

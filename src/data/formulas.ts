@@ -45,8 +45,65 @@ export function goldDropForWave(baseGold: number, wave: number): number {
   return baseGold * Math.pow(GOLD_GROWTH, Math.max(0, wave - 1));
 }
 
-export function enemyCountForWave(wave: number): number {
+/**
+ * Bodies a wave would field if nothing capped it.
+ *
+ * Kept separate from `enemyCountForWave` because two different questions are
+ * being asked of the same curve. The *enrage budget* asks "how much wave is
+ * this?", and the answer has to keep growing with depth or the fuse shortens
+ * as the roster caps. The *spawner* asks "how many things do I put on the
+ * field?", and past a point that answer has to stop growing or the renderer,
+ * the spatial grid and the projectile pool all pay for a crowd nobody can read.
+ */
+export function naturalEnemyCountForWave(wave: number): number {
   return 5 + Math.floor((wave - 1) * 1.2);
+}
+
+/**
+ * The most bodies a non-boss wave will ever put on the field at once.
+ *
+ * Binds from wave 98. Above it, depth stops arriving as *more things* and
+ * starts arriving as *tougher things* — `crowdCompression` hands the cut
+ * bodies' HP, gold and XP to the survivors, so no wave total moves and every
+ * balance table stays valid (plans/progress.md §5.3).
+ *
+ * 120 is the renderer's comfortable ceiling at the `high` quality tier. It is a
+ * pure performance/feel dial: raising or lowering it changes nothing any
+ * balance table measures, because the compression below cancels it exactly.
+ */
+export const MAX_WAVE_BODIES = 120;
+
+export function enemyCountForWave(wave: number): number {
+  return Math.min(MAX_WAVE_BODIES, naturalEnemyCountForWave(wave));
+}
+
+/**
+ * What each surviving body is worth when the roster is capped.
+ *
+ * `natural / capped` — 1.00 up to wave 97, 2.03 at wave 200, 4.53 at wave 450.
+ * Multiplied into an enemy's **HP, gold and XP** at exactly the sites listed
+ * below, so `count x per-body` is unchanged at every depth:
+ *
+ *   - `EnemyManager.spawn` — hp and gold
+ *   - `xpPerKill` / `passiveXpPerKill` — tower and passive XP
+ *   - `SaveManager.averageKillGoldForWave` — the offline estimate
+ *   - `Game.estimateWaveGold` — the mutator projection
+ *   - `sim/model.ts waveProfile` — `totalHp` and `baseGold`
+ *
+ * Deliberately **not** multiplied into `enemyDamageForWave`. Total incoming
+ * chip damage falls with the body count, which is a safety margin the player
+ * did not ask for but cannot exploit; compressing it instead would mean a
+ * single wave-450 body hitting for 4.5x, which is a new way to die rather than
+ * the same wave in fewer pieces.
+ *
+ * Boss waves return 1: their roster is one boss and an escort sized by
+ * `bossEscortCountForWave`, which is small at every depth and never capped.
+ */
+export function crowdCompression(wave: number): number {
+  if (isBossWave(wave)) return 1;
+  const natural = naturalEnemyCountForWave(wave);
+  const capped = Math.min(MAX_WAVE_BODIES, natural);
+  return capped > 0 ? natural / capped : 1;
 }
 
 /**
@@ -95,7 +152,70 @@ export function spawnCountForWave(wave: number): number {
   return enemyCountForWave(wave);
 }
 
-export function spawnIntervalForWave(wave: number): number {
+/** `spawnCountForWave` before the body cap — the enrage budget's body count. */
+export function naturalSpawnCountForWave(wave: number): number {
+  if (isBossWave(wave)) return 1 + bossEscortCountForWave(wave);
+  return naturalEnemyCountForWave(wave);
+}
+
+/**
+ * How long a wave's roster is allowed to take to arrive, in seconds.
+ *
+ * The spawner used to run at a fixed *interval* with a 0.4 s floor, so the
+ * spawn phase grew linearly with the body count — 26 s at wave 51, 97 s at
+ * wave 200, 173 s at wave 359 — and `npm run sim` measured the clear time as
+ * being *equal to* that floor for three hundred consecutive waves. The tower's
+ * damage was irrelevant for the entire middle of every run; the wave took
+ * exactly as long as the portal needed to empty (plans/progress.md §1.3).
+ *
+ * A fixed window instead of a fixed interval makes the spawn phase the same
+ * length at every depth, which turns run time from quadratic in depth into
+ * linear. Deep waves arrive in tighter clusters, which is a real difficulty
+ * increase and a deliberate one — it is also what makes AoE worth casting at
+ * depth.
+ */
+export const SPAWN_WINDOW_SECONDS = 24;
+
+/**
+ * Floor on the gap between two spawns. A guard, not a shape: with
+ * `MAX_WAVE_BODIES` at 120 the window divides to 0.202 s at its tightest, so
+ * this never binds. It exists so lifting the body cap cannot produce a
+ * same-frame stampede.
+ */
+export const MIN_SPAWN_INTERVAL = 0.08;
+
+/**
+ * The cadence a wave *actually* spawns at.
+ *
+ * `count` defaults to the wave's own roster but must be passed when a mutator
+ * has changed it — a Swarm wave fields 3x the bodies and still has to fit them
+ * in the window.
+ *
+ * Note this is **not** what `expectedWaveSeconds` uses; see
+ * `nominalSpawnIntervalForWave`.
+ */
+export function spawnIntervalForWave(
+  wave: number,
+  count: number = spawnCountForWave(wave),
+): number {
+  const natural = nominalSpawnIntervalForWave(wave);
+  if (count <= 1) return natural;
+  return Math.max(MIN_SPAWN_INTERVAL, Math.min(natural, SPAWN_WINDOW_SECONDS / (count - 1)));
+}
+
+/**
+ * The cadence the **enrage budget** is priced from — the pre-window formula,
+ * unchanged.
+ *
+ * The fuse and the spawner deliberately read different numbers. If the fuse
+ * shortened with the spawn window, a wave that now empties the portal in 24 s
+ * would also lose two thirds of the time it has to be cleared in, and the wall
+ * would move several waves shallower for a change that was only supposed to
+ * remove dead time. Keeping the budget nominal means this change can only ever
+ * move the wall *deeper* — the wave still has every second it used to have,
+ * and now it also stops waiting for the queue.
+ */
+export function nominalSpawnIntervalForWave(wave: number): number {
   return Math.max(0.4, 2.0 - wave * 0.04);
 }
 
@@ -194,11 +314,17 @@ export const ENRAGE_SPEED_PER_STACK = 0.15;
  * been; the escort is paid for through the spawn cadence below, like any other
  * body on any other wave.
  */
-export function expectedWaveSeconds(wave: number, enemyCount = spawnCountForWave(wave)): number {
+export function expectedWaveSeconds(
+  wave: number,
+  enemyCount = naturalSpawnCountForWave(wave),
+): number {
   const kill = isBossWave(wave)
     ? TARGET_BOSS_KILL_SECONDS * bossEncounterWeight(wave)
     : TARGET_WAVE_KILL_SECONDS;
-  return spawnIntervalForWave(wave) * Math.max(0, enemyCount - 1) + kill;
+  // Nominal cadence and natural body count, both deliberately — see
+  // `nominalSpawnIntervalForWave`. This function is the wall condition, and it
+  // must read the same numbers before and after the spawn window landed.
+  return nominalSpawnIntervalForWave(wave) * Math.max(0, enemyCount - 1) + kill;
 }
 
 /** Seconds into a wave at which enrage begins. */

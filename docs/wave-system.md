@@ -20,9 +20,11 @@ tick() called each simulation substep:
 
 | Field | Formula | Description |
 |-------|---------|-------------|
-| Enemy count | `5 + floor((wave-1) * 1.2)` | How many enemies to spawn (`enemyCountForWave`) |
+| Natural enemy count | `5 + floor((wave-1) * 1.2)` | The roster before the body cap (`naturalEnemyCountForWave`) |
+| Enemy count | `min(MAX_WAVE_BODIES, natural)` | What actually spawns (`enemyCountForWave`) — capped at **120 bodies from wave 98** |
 | Spawn count | `spawnCountForWave` | Boss waves spawn `1 + bossEscortCountForWave` instead |
-| Spawn interval | `max(0.4, 2.0 - wave * 0.04)` | Time between spawns |
+| Spawn interval | `min(nominal, SPAWN_WINDOW_SECONDS / (count - 1))` | The **window**, not a fixed gap (`spawnIntervalForWave`) |
+| Nominal interval | `max(0.4, 2.0 - wave * 0.04)` | The pre-window cadence the enrage budget is priced from (`nominalSpawnIntervalForWave`) |
 | Expected duration | `expectedWaveSeconds` | Spawn cadence + a kill window — see [Enrage](#enrage) |
 | Intermission | 5 s / 3 s / 2 s | Pause between waves — see [Intermission length](#intermission-length) |
 | Auto-progress | default ON | Advance waves automatically |
@@ -205,12 +207,33 @@ simply stops killing fast enough while enemies trickle in too slowly to finish
 the wave — the run neither ends nor progresses.
 
 ```
-expectedWaveSeconds(wave)  = spawnIntervalForWave(wave) * (count - 1) + kill
+expectedWaveSeconds(wave)  = nominalSpawnIntervalForWave(wave) * (naturalCount - 1) + kill
   kill = TARGET_WAVE_KILL_SECONDS (20)
        | TARGET_BOSS_KILL_SECONDS (28) * bossEncounterWeight(wave)   on a boss wave
 enrageThresholdSeconds(wave) = expectedWaveSeconds(wave) * ENRAGE_THRESHOLD_MULTIPLIER (2)
 enrageStacksFor(wave, t)     = 1 + floor((t - threshold) / ENRAGE_STACK_INTERVAL (8))
 ```
+
+### The window and the budget read different numbers
+
+`spawnIntervalForWave` fits the whole roster inside `SPAWN_WINDOW_SECONDS`
+(24 s), so the spawn phase is the same length at every depth. It used to be a
+fixed *interval* with a 0.4 s floor, which made the spawn phase grow linearly
+with the body count — 97 s at wave 200, 173 s at wave 359 — and for hundreds of
+consecutive waves the measured clear time simply *was* that floor: the tower's
+damage did not matter (plans/progress.md §1.3).
+
+`expectedWaveSeconds` deliberately does **not** follow it. The fuse is priced
+from `nominalSpawnIntervalForWave` and the *natural* (uncapped) body count, so
+it is bit-identical to what it was before the window landed. That is the
+invariant: a wave that now empties the portal in 24 s still has every second of
+budget it used to have, so the window can only ever move the wall *deeper*.
+Shortening the fuse alongside the window would have moved the wall shallower
+for a change that was only supposed to remove dead time.
+
+`MAX_WAVE_BODIES` (120) caps the roster from wave 98. `crowdCompression` hands
+the removed bodies' HP, gold and XP to the survivors, so no wave total moves —
+see [Enemy system](enemy-system.md).
 
 Each stack is **+40% damage to the tower** (`ENRAGE_DAMAGE_PER_STACK`) and
 **+15% movement speed** (`ENRAGE_SPEED_PER_STACK`), additive — the same

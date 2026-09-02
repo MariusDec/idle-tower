@@ -16,7 +16,10 @@ import { evalFormula } from './data/formulas';
  */
 export type EnemyType =
   | 'normal' | 'fast' | 'tank' | 'flying' | 'healer' | 'boss' | 'splitter' | 'shielded'
-  | 'siege' | 'thief' | 'blinker' | 'warden' | 'burrower';
+  | 'siege' | 'thief' | 'blinker' | 'warden' | 'burrower'
+  // The deep roster (plans/progress.md §7.1). Three types whose unlock waves
+  // (120 / 180 / 240) sit past the depth the old roster stopped changing at.
+  | 'harbinger' | 'leech' | 'chorus';
 
 export type AuraType = 'haste' | 'thorns' | 'greed' | 'vitality' | 'retribution';
 
@@ -198,6 +201,26 @@ export interface Enemy {
   absorbMax?: number;
   /** Id of the warden maintaining `absorbShield`; the pool dies with it. */
   wardenId?: number;
+  /** Harbinger: seconds until it next phases the field. */
+  harbingerTimer?: number;
+  /**
+   * Harbinger: seconds this enemy is phased out of reach for.
+   *
+   * Read by `isTargetable`, which is the single predicate every one of the
+   * target-selection sites already goes through — a *term* in that predicate
+   * rather than a second invulnerability mechanism each picker would have to
+   * remember on its own (see the comment above `PRIORITY_TARGET_ORDER`).
+   */
+  phasedOut?: number;
+  /**
+   * Chorus: id of the group this voice belongs to.
+   *
+   * Every voice in a group carries the same shared HP pool as its own `hp`, so
+   * damage to any one of them is damage to the pool and the group dies
+   * together. Modelled the way the splitter's linked children are — an id on
+   * the enemy, resolved by a scan, rather than a second roster structure.
+   */
+  chorusId?: number;
   /** Burrower: true while underground — invulnerable and untargetable. */
   burrowed?: boolean;
   /** Burrower: seconds of surfacing telegraph left (it cannot act during it). */
@@ -663,6 +686,16 @@ export const GAME_SPEEDS: readonly number[] = [0.5, 1.0, 1.5];
 export const DEFAULT_SPEED_INDEX = GAME_SPEEDS.indexOf(1.0);
 export const MAX_SPEED_INDEX = GAME_SPEEDS.length - 1;
 
+/**
+ * Speed added by one index step past the end of `GAME_SPEEDS`.
+ *
+ * `Game.computeSpeedForIndex` extrapolates past the array at this rate, and
+ * `Game.syncUiApis` divides the Accelerator's speed delta by it to convert the
+ * perk's effect into index steps. Two call sites, one constant — they used to
+ * disagree, and the perk shipped at half strength because of it.
+ */
+export const SPEED_STEP = 0.5;
+
 export interface AbilityState {
   level: number;
   cooldown: number;
@@ -895,6 +928,54 @@ export interface EnemyWaveStatsEntry {
   watch: readonly EnemyWatchLine[];
 }
 
+/**
+ * One restorable run state, snapshotted at a 50-wave boundary.
+ *
+ * A **snapshot, not a grant**: every field is a value the player actually
+ * held at that wave, so deploying can never hand back more than the run that
+ * wrote it earned. That is what makes the whole mechanism exploit-free without
+ * any new economy arithmetic (plans/progress.md §6.1).
+ */
+export interface DeploymentCheckpoint {
+  /** The wave this was taken at. Always a multiple of `DEPLOY_CHECKPOINT_STEP`. */
+  wave: number;
+  /** Gold in hand at the moment the wave was cleared. */
+  gold: number;
+  /** Every upgrade's level. Ids the table no longer defines are dropped on load. */
+  upgradeLevels: Record<string, number>;
+  /** Blessing stacks held, keyed by blessing id. */
+  blessingHeld: Record<string, number>;
+  /** Picks spent, so the draft cap still binds after a deploy. */
+  blessingPicks: number;
+  /** Every ability's level. */
+  abilityLevels: Record<string, number>;
+  /** Wall-clock time the snapshot was written. Presentation only. */
+  recordedAt: number;
+}
+
+/**
+ * The checkpoint store (permanent across ascension, cleared by transcendence).
+ *
+ * Keyed by wave rather than a bare list, because a deploy has to be able to
+ * land at *a* checkpoint at or below the perk's depth, not only at the deepest
+ * one. Only the best snapshot ever written at each wave is kept.
+ */
+export interface DeploymentState {
+  checkpoints: Record<number, DeploymentCheckpoint>;
+}
+
+/** Waves between checkpoints. A deploy lands at most this far short of its target. */
+export const DEPLOY_CHECKPOINT_STEP = 50;
+
+/**
+ * How many checkpoints the save keeps, deepest first.
+ *
+ * A 550-wave run writes eleven; twelve is one more than that, so the store is
+ * bounded without ever discarding a checkpoint a live run could still deploy
+ * to.
+ */
+export const DEPLOY_CHECKPOINT_LIMIT = 12;
+
 export interface GameState {
   timestamp: number;
   tower: TowerState;
@@ -937,6 +1018,8 @@ export interface GameState {
   waveTiming: WaveTimingState;
   /** v19+: the Long Watch campaign (permanent — survives both resets). */
   watch: WatchState;
+  /** v25+: restorable run snapshots (survives ascension, cleared by transcendence). */
+  deployment: DeploymentState;
 }
 
 /**

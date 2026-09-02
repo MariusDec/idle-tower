@@ -4203,6 +4203,75 @@ export class Renderer {
         g.stroke();
         break;
       }
+      // Harbinger: a hollow ring with a slow inner gyre. It reads as
+      // *absence* on purpose — the thing it does to the wave is take it away.
+      case 'harbinger': {
+        g.strokeStyle = withAlpha(def.borderColor, 0.7);
+        g.lineWidth = entity(1.6);
+        g.beginPath();
+        g.arc(0, 0, r * 0.62, 0, Math.PI * 2);
+        g.stroke();
+        g.strokeStyle = pale(0.4);
+        g.lineWidth = entity(1.1);
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.arc(0, 0, r * 0.34, dir * 0.4, dir * 0.4 + Math.PI * 0.8);
+          g.stroke();
+        }
+        g.fillStyle = dark(0.55);
+        g.beginPath();
+        g.arc(0, 0, r * 0.18, 0, Math.PI * 2);
+        g.fill();
+        break;
+      }
+      // Leech: a proboscis and a fill line, so a fed one is visibly heavier
+      // than a hungry one — the absorb pool it is carrying, made legible.
+      case 'leech': {
+        g.fillStyle = withAlpha(def.borderColor, 0.5);
+        g.beginPath();
+        g.moveTo(0, -r * 0.1);
+        g.lineTo(-r * 0.16, r * 0.85);
+        g.lineTo(r * 0.16, r * 0.85);
+        g.closePath();
+        g.fill();
+        g.strokeStyle = pale(0.45);
+        g.lineWidth = entity(1.2);
+        g.beginPath();
+        g.moveTo(-r * 0.45, -r * 0.2);
+        g.lineTo(r * 0.45, -r * 0.2);
+        g.stroke();
+        g.fillStyle = withAlpha(def.borderColor, 0.8);
+        for (const dir of [-1, 1]) {
+          g.beginPath();
+          g.arc(dir * r * 0.26, -r * 0.42, r * 0.09, 0, Math.PI * 2);
+          g.fill();
+        }
+        break;
+      }
+      // Chorus: three linked points around one lit core — the shared pool,
+      // drawn. A player who sees three of these should read one health bar.
+      case 'chorus': {
+        g.strokeStyle = withAlpha(def.borderColor, 0.6);
+        g.lineWidth = entity(1.2);
+        g.beginPath();
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+          const px = Math.cos(a) * r * 0.55;
+          const py = Math.sin(a) * r * 0.55;
+          if (i === 0) g.moveTo(px, py);
+          else g.lineTo(px, py);
+        }
+        g.closePath();
+        g.stroke();
+        const core = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.4);
+        core.addColorStop(0, withAlpha(def.borderColor, 0.9));
+        core.addColorStop(1, withAlpha(def.borderColor, 0));
+        g.fillStyle = core;
+        g.beginPath();
+        g.arc(0, 0, r * 0.4, 0, Math.PI * 2);
+        g.fill();
+        break;
+      }
       default: {
         // Closed union: a new enemy type has to be given a look.
         const exhaustive: never = def.type;

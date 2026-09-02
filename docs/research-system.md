@@ -6,8 +6,8 @@
 
 Research Points (RP) earned on each Ascension (RP = AP gained). Spent on
 permanent upgrades in **5 categories** — combat, economy, arcane, scouting,
-and research — across **18 nodes**. Most nodes are single-level with a
-fixed cost and time, but three are laddered: `veteran_scouts` (5 levels
+and research — across **19 nodes**. Most nodes are single-level with a
+fixed cost and time, but four are laddered: `veteran_scouts` (5 levels
 of start-wave), `rp_gain` (10 levels of passive-RP multiplier) and
 `rp_drop_chance` (10 levels of enemy RP-drop chance). The walls between
 categories are visual, not data-driven — `ResearchCategory` is purely a
@@ -43,6 +43,27 @@ honest:
 | scouting | `battle_intel` | Battle Intel | 1 000 | 7 200 | 1 | swift_prep | −10% enemy HP |
 | **research** | `rp_gain` | Increased Focus | 40 → 9 600 (10 lvls) | 600 → 28 800 (10 lvls) | 10 | — | +12% passive RP per level (×2 at L10) |
 | research | `rp_drop_chance` | Loot Insights | 60 → 12 000 (10 lvls) | 1 200 → 43 200 (10 lvls) | 10 | rp_gain | +0.1% drop chance per level (+1% at L10) |
+| research | `field_studies` | Field Studies | 2 000 → 1 441 151 (15 lvls) | 3 600 → 2 594 071 (15 lvls) | **999** | rp_gain | +5% gold per level — repeatable forever |
+
+**`field_studies` is the tree's only unbounded node** (plans/progress.md §7.5),
+and the reason RP is not a dead currency once the eighteenth project lands: the
+bounded tree costs 66 730 RP against a faucet that pays `RP = AP gained`, which
+is tens of thousands by run 3.
+
+It is gated by **time, not cost**. Research runs one project at a time on the
+wall clock and its time ladder grows 1.6× per level: level 10 is 6.9 hours,
+level 15 is ~30 days, and past the array's last entry every further level costs
+that same 30 days — which is what makes "repeatable forever" a fifteen-entry
+table rather than a 999-entry one.
+
+It grants **gold rather than damage** because `ResearchDef.effectType` is a
+closed union with no damage arm; adding one would mean a new effect type, a new
+`ResearchInputs` field and a new contributor line for a node whose whole job is
+to be a sink. `gold_multi` already has a consumer
+(`ResearchTree.getGoldMultiplicative`), so the node is live purely by being in
+the table — and since the upgrade ceilings now rise with the player
+([upgrade-system.md](upgrade-system.md)), a gold multiplier is a damage
+multiplier with one more step in the chain.
 
 `cost` and `researchTime` are typed as `number | number[]` — a flat value
 for single-level nodes, an array that drives the per-level ladder for the
@@ -161,7 +182,7 @@ proportional to bodies killed**, and the two channels sum on the RP bar.
 
 Research ticks on **wall-clock** time (`realDt`), not simulation time —
 it must not accelerate when the player raises the game speed, and a 30 s
-research must cost 30 s of the player's life at 1x and at 6.5x alike.
+research must cost 30 s of the player's life at 1x and at 4.5x alike.
 
 It also ticks while the run-over prompt is up: `Game.tickWallClockSystems`
 sits outside the `if (!this.runFailed) this.update(...)` gate, so research

@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { GAME_SPEEDS, MAX_SPEED_INDEX, SPEED_STEP } from '../src/types';
 import { SpatialGrid } from '../src/utils/SpatialGrid';
 import { EffectsManager } from '../src/systems/EffectsManager';
 import { UpgradeManager } from '../src/systems/UpgradeManager';
@@ -279,5 +280,27 @@ describe('UPGRADE_BY_ID (plan §5.8)', () => {
 
   it('has no duplicate ids to lose entries to', () => {
     expect(new Set(UPGRADES.map((u) => u.id)).size).toBe(UPGRADES.length);
+  });
+});
+
+describe('Accelerator speed ladder', () => {
+  /**
+   * progress-steps §1: the perk sells +0.5x per level over a 1.5x base, so the
+   * ladder is 1.5 / 2.0 / 2.5 / 3.0 / 3.5 / 4.0 / 4.5 and *every* level adds
+   * exactly one selectable speed. It used to add half a step, which meant odd
+   * levels added nothing at all and a maxed perk topped out at 3.0x.
+   */
+  it('adds one whole selectable speed per level', () => {
+    const expected = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5];
+    for (let level = 0; level <= 6; level++) {
+      const maxIndex = MAX_SPEED_INDEX + Math.round((0.5 * level) / SPEED_STEP);
+      expect(maxIndex, `level ${level}`).toBe(2 + level);
+      const top = maxIndex < GAME_SPEEDS.length
+        ? GAME_SPEEDS[maxIndex]
+        : GAME_SPEEDS[GAME_SPEEDS.length - 1]
+          + (maxIndex - (GAME_SPEEDS.length - 1)) * SPEED_STEP;
+      expect(top, `level ${level}`).toBeCloseTo(expected[level], 6);
+      expect(Number.isInteger(maxIndex), `level ${level} index is whole`).toBe(true);
+    }
   });
 });

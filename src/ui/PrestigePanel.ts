@@ -37,6 +37,10 @@ export interface CorePanelState {
 
 export interface PrestigePanelHandlers {
   onAscend: () => void;
+  /** progress.md §6.2: ascend and restart at a stored checkpoint. */
+  onDeploy: () => void;
+  /** The wave a deploy would land on right now, or null when unavailable. */
+  deployTargetWave: () => number | null;
   onSpend: (perkId: string) => void;
   canAscend: (wave: number) => boolean;
   canSpend: (perkId: string, ap: number, tp: number) => boolean;
@@ -82,6 +86,7 @@ export class PrestigePanel {
   private ascendUnlockLine!: HTMLElement;
   private ascendPreview!: HTMLElement;
   private ascendBtn!: HTMLButtonElement;
+  private deployBtn!: HTMLButtonElement;
 
   private apRowById = new Map<string, HTMLElement>();
   private apLevelById = new Map<string, HTMLElement>();
@@ -200,6 +205,21 @@ export class PrestigePanel {
       : `At wave ${this.handlers.ascendUnlockWave} you would earn ${formatNumber(apForWave(this.handlers.ascendUnlockWave))} AP.`);
     this.ascendBtn.disabled = !canAscend;
     toggleClass(this.ascendBtn, 'can-ascend', canAscend);
+
+    // Deploy is Ascend plus a jump, so it is never available when Ascend is
+    // not, and it hides entirely until Forward Camp has been bought — a
+    // disabled button with no explanation is worse than no button.
+    const deployWave = this.handlers.deployTargetWave();
+    const canDeploy = canAscend && deployWave !== null;
+    this.deployBtn.hidden = deployWave === null && !canDeploy;
+    this.deployBtn.textContent = deployWave !== null
+      ? `Deploy to wave ${deployWave}`
+      : 'Deploy';
+    this.deployBtn.title = deployWave !== null
+      ? `Ascends, then restarts at wave ${deployWave} with the gold, upgrades, abilities and blessings that run reached it with. Skipped waves pay no XP, contract progress or Watch counters.`
+      : '';
+    this.deployBtn.disabled = !canDeploy;
+    toggleClass(this.deployBtn, 'can-ascend', canDeploy);
   }
 
   private updateAPRow(p: PrestigePerkDef, ap: number, state: GameState): void {
@@ -422,10 +442,19 @@ export class PrestigePanel {
     btn.disabled = true;
     btn.addEventListener('click', () => this.handlers.onAscend());
     this.ascendBtn = btn;
+    const deployBtn = document.createElement('button');
+    deployBtn.type = 'button';
+    deployBtn.className = 'btn btn-ascend btn-deploy';
+    deployBtn.textContent = 'Deploy';
+    deployBtn.disabled = true;
+    deployBtn.addEventListener('click', () => this.handlers.onDeploy());
+    this.deployBtn = deployBtn;
+
     const note = document.createElement('div');
     note.className = 'ascend-warning';
     note.textContent = 'Resets gold, mana, upgrades, current wave, and any unspent research. Keeps spent AP perks, spent research unlocks (until Transcendence), lifetime AP, and stats.';
     actions.appendChild(btn);
+    actions.appendChild(deployBtn);
     actions.appendChild(note);
     card.appendChild(actions);
 

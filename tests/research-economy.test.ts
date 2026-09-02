@@ -29,7 +29,9 @@ import {
 } from '../src/systems/SaveManager';
 import {
   RESEARCH_NODES,
+  RESEARCH_BY_ID,
   getResearchCost,
+  getResearchTime,
 } from '../src/data/research';
 import {
   ENEMY_DEFS,
@@ -193,9 +195,13 @@ describe('research economy rebalance (§2)', () => {
   });
 
   describe('whole-tree cost (66,730 RP, §2.8)', () => {
-    it('sums every level of every node to exactly 66,730', () => {
+    it('sums every level of every bounded node to exactly 66,730', () => {
       let total = 0;
       for (const def of RESEARCH_NODES) {
+        // `field_studies` is repeatable forever (progress-steps §9.1) — it is
+        // the sink that keeps RP live once the bounded tree is finished, so it
+        // has no whole-tree cost to sum. The other eighteen still do.
+        if (def.id === 'field_studies') continue;
         for (let lvl = 1; lvl <= def.maxLevel; lvl++) {
           total += getResearchCost(def, lvl);
         }
@@ -218,5 +224,29 @@ describe('research economy rebalance (§2)', () => {
       expect(mean).toBeGreaterThan(0.0185 - 0.0005);
       expect(mean).toBeLessThan(0.0185 + 0.0005);
     });
+  });
+});
+
+describe('Field Studies (progress.md §7.5)', () => {
+  it('is repeatable and holds its top rung past the ladder', () => {
+    const def = RESEARCH_BY_ID.field_studies;
+    expect(def.maxLevel).toBeGreaterThan(100);
+    // Past the last array entry the cost and time hold rather than
+    // extrapolating — that is what `min(level - 1, lastIndex)` buys.
+    expect(getResearchCost(def, 15)).toBe(getResearchCost(def, 99));
+    expect(getResearchTime(def, 15)).toBe(getResearchTime(def, 99));
+  });
+
+  it('is gated behind time, not cost', () => {
+    // Level 15 is ~30 days of real time. Whatever the RP economy does, the
+    // node cannot be rushed, which is what makes it safe to leave unbounded.
+    expect(getResearchTime(RESEARCH_BY_ID.field_studies, 15))
+      .toBeGreaterThan(30 * 24 * 3600 * 0.9);
+  });
+
+  it('reaches the gold multiplier that already exists', () => {
+    // The node is live purely by being in the table: `gold_multi` has a
+    // consumer, which is why this needed no new effect type.
+    expect(RESEARCH_BY_ID.field_studies.effectType).toBe('gold_multi');
   });
 });

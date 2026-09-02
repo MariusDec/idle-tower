@@ -105,6 +105,15 @@ export type StatKey =
   | 'critIgnoreArmor'
   // ── wave & meta ──
   | 'waveSkipChance'
+  /**
+   * Fraction added to the level ceiling of every *scalar* tower upgrade
+   * (`src/data/upgradeCaps.ts`). 1.0 doubles `damage`'s 200 levels to 400.
+   *
+   * A stat rather than a manager field because three sources feed it — a TP
+   * perk, an AP perk and a Watch unlock — and the accumulator is where sources
+   * are supposed to meet. See plans/progress.md §3.
+   */
+  | 'upgradeCapExtension'
   | 'intermissionMultiplier'
   | 'enemyHpReduction'
   | 'rpDropChanceBonus'
@@ -235,6 +244,7 @@ export const STAT_BASES: Record<StatKey, number> = {
   critIgnoreArmor: 0,
 
   waveSkipChance: 0,
+  upgradeCapExtension: 0,
   intermissionMultiplier: 1,
   enemyHpReduction: 0,
   rpDropChanceBonus: 0,
@@ -333,6 +343,9 @@ export const STAT_CLAMPS: Partial<Record<StatKey, StatClamp>> = {
   enemyHpReduction: { min: 0, max: 0.9 },
   intermissionMultiplier: { min: 0.1, max: 1 },
   waveSkipChance: { min: 0, max: 1 },
+  // Ceiling mirrors `MAX_CAP_EXTENSION`; the clamp is here as well so a
+  // contributor cannot write a value the accessor would silently truncate.
+  upgradeCapExtension: { min: 0, max: 6 },
   // ── talent tree (levelling redesign step 4) ──
   focusStackBonus: { min: 0 },
   killFrenzyPerStack: { min: 0 },

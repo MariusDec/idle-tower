@@ -23,6 +23,9 @@ export const CONTRACT_ENEMY_LABELS: Record<EnemyType, string> = {
   thief: 'thieves',
   blinker: 'blinkers',
   warden: 'wardens',
+  harbinger: 'harbingers',
+  leech: 'leeches',
+  chorus: 'chorus voices',
   burrower: 'burrowers',
   boss: 'bosses',
 };

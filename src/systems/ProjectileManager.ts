@@ -854,9 +854,11 @@ export class ProjectileManager {
     p.retargetIn = 0;
     p.homingTargetId = next.id;
     this.homingTargets[p.id] = next;
-    // Both lifetime caps in `tick` measure from `age`, so the bounce is what
-    // buys the shot its new leash.
-    p.age = 0;
+    // Both lifetime caps in `tick` measure from `age`, so the *first* bounce is
+    // what buys the shot its new leash — and only the first. Resetting on every
+    // hop let a ricochet chain renew `BOUNCE.lifetime` indefinitely; now the
+    // whole tail is one second long however many bodies it finds.
+    if (p.bounces === 1) p.age = 0;
 
     this.bus.emit('projectile_bounced', {
       x: impactX,

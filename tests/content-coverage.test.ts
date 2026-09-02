@@ -596,6 +596,10 @@ describe('enemy roster', () => {
   it('announces each type on the wave it actually unlocks', () => {
     for (const m of MILESTONES) {
       if (m.kind !== 'enemy') continue;
+      // The depth bands (progress-steps §10.3) ride the enemy lane of the
+      // strip without being a type unlock, so they have no `refId` and no
+      // unlock wave to check against.
+      if (m.id.startsWith('depth:')) continue;
       const type = m.refId as EnemyType;
       expect(m.wave, type).toBe(ENEMY_DEFS[type].unlockWave);
     }
@@ -655,6 +659,8 @@ describe('enemy roster', () => {
     // taglines, so they are checked separately.
     for (const m of MILESTONES) {
       if (m.kind !== 'enemy') continue;
+      // Depth bands carry no `refId` — see the skip in the unlock-wave test.
+      if (m.id.startsWith('depth:')) continue;
       expect(ENEMY_CODEX[m.refId as EnemyType].tagline, m.refId).toBe(m.detail);
     }
   });
@@ -745,14 +751,17 @@ describe('icons', () => {
     expect(ABILITIES.length).toBe(10);
     expect(PASSIVE_ABILITIES.length).toBe(12);
     expect(UPGRADES.length).toBe(29);
-    expect(RESEARCH_NODES.length).toBe(18);
+    // 18 bounded projects + the repeatable `field_studies` (progress-steps §9.1).
+    expect(RESEARCH_NODES.length).toBe(19);
     expect(TALENTS.length).toBe(60);
-    expect(BLESSINGS.length).toBe(30);
+    // 30 + the eight-card greater tier (progress-steps §8.3).
+    expect(BLESSINGS.length).toBe(38);
     expect(CORES.length).toBe(5);
     expect(EQUIPMENT_DEFS.length).toBe(10);
     expect(Object.keys(SLOT_ICONS)).toHaveLength(8);
     expect(Object.keys(RARITY_ICONS)).toHaveLength(5);
-    expect(Object.keys(ENEMY_DEFS)).toHaveLength(13);
+    // 13 + the deep roster: harbinger, leech, chorus (progress-steps A.1).
+    expect(Object.keys(ENEMY_DEFS)).toHaveLength(16);
     expect(STAT_ICON_KEYS.length).toBeGreaterThanOrEqual(16);
   });
 

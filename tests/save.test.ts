@@ -102,6 +102,8 @@ function makeState(): GameState {
       apBonusPct: 0.06,
       uidSeq: 6,
     },
+    // v25+: the deployment checkpoint store (progress.md §6).
+    deployment: { checkpoints: {} },
   } as unknown as GameState;
 }
 
@@ -242,7 +244,7 @@ describe('migration ladder', () => {
   it('seeds an empty blessing run for a v9 save', async () => {
     await seed(JSON.stringify({ ...v2Save, version: 9 }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.blessings).toEqual({
       held: {},
       picksTaken: 0,
@@ -266,7 +268,7 @@ describe('migration ladder', () => {
       },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.blessings!.held).toEqual(held);
     expect(loaded.blessings!.picksTaken).toBe(5);
     expect(loaded.blessings!.rerolls).toBe(2);
@@ -281,7 +283,7 @@ describe('migration ladder', () => {
   it('seeds a risk-0 pacing block for a v13 save', async () => {
     await seed(JSON.stringify({ ...v2Save, version: 13 }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.pacing).toEqual({
       risk: 0, committedRisk: 0, momentum: 0, momentumWaves: 0, comboBest: 0,
     });
@@ -314,7 +316,7 @@ describe('migration ladder', () => {
   it('seeds an empty contract run for a v11 save', async () => {
     await seed(JSON.stringify({ ...v2Save, version: 11 }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.contracts).toEqual({
       active: [], completed: [], completedCount: 0, apBonusPct: 0, uidSeq: 0,
     });
@@ -334,7 +336,7 @@ describe('migration ladder', () => {
     };
     await seed(JSON.stringify({ ...v2Save, version: 11, contracts }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.contracts).toEqual(contracts);
 
     // And the real manager takes that state back without losing a slot.
@@ -363,7 +365,7 @@ describe('migration ladder', () => {
       prestige: { autoCastEnabled: { multishot: false } },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.abilities.rocket_barrage).toEqual({
       level: 3, xp: 0, cooldown: 0, active: false, activeTimer: 0,
     });
@@ -383,7 +385,7 @@ describe('migration ladder', () => {
       talents: { allocated: { power_core: 2 } },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.towerXp.level).toBe(4); // 3 + 1 (0-based -> 1-based)
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[4]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(4));
@@ -398,7 +400,7 @@ describe('migration ladder', () => {
       talents: { allocated: {} },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.towerXp.level).toBe(TOWER_LEVEL_CAP);
     expect(loaded.towerXp.xp).toBe(TOWER_XP_TABLE[TOWER_LEVEL_CAP]);
     expect(loaded.towerXp.unspentTalentPoints).toBe(talentPointsAtLevel(TOWER_LEVEL_CAP));
@@ -427,7 +429,7 @@ describe('migration ladder', () => {
       passiveAbilities: { marksmanship: { level: 5, xp: 200, unlocked: true } },
     }));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.passiveAbilities).toEqual({});
   });
 
@@ -529,7 +531,7 @@ describe('v19 watch block', () => {
     await seed(JSON.stringify({ ...minimalSave, version: 18 }));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(24);
+    expect(loaded!.version).toBe(25);
     expect(typeof loaded!.watch).toBe('object');
     expect(loaded!.watch).not.toBeNull();
     expect(Array.isArray(loaded!.watch!.counters.riskWaves)).toBe(true);
@@ -560,7 +562,7 @@ describe('v19 watch block', () => {
     await seed(JSON.stringify(malformed));
     const loaded = (await loadFresh());
     expect(loaded, 'save should load — normalizeWatch repairs, does not reject').not.toBeNull();
-    expect(loaded!.version).toBe(24);
+    expect(loaded!.version).toBe(25);
 
     const w = loaded!.watch!;
     expect(Array.isArray(w.completed)).toBe(true);
@@ -677,7 +679,7 @@ describe('v19→v20 ability level clamp', () => {
     await seed(JSON.stringify(v19));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(24);
+    expect(loaded!.version).toBe(25);
     // In-range survives unchanged; out-of-range is clamped to [1, maxLevel].
     expect(loaded!.abilities.rain_of_arrows.level).toBe(7);
     expect(loaded!.abilities.frost_nova.level).toBe(10);
@@ -693,7 +695,7 @@ describe('v19→v20 ability level clamp', () => {
     expect(mgr.save(state)).toBe(true);
     const loaded = mgr.load();
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(24);
+    expect(loaded!.version).toBe(25);
     expect(loaded!.abilities.rain_of_arrows.level).toBe(8);
   });
 });
@@ -735,7 +737,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     await seed(JSON.stringify(v20));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(24);
+    expect(loaded!.version).toBe(25);
     const tp = loaded!.prestige.tpSpent;
     expect(tp.tp_midas).toBeUndefined();
     expect(tp.tp_salvage).toBe(1);
@@ -796,7 +798,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     await seed(JSON.stringify(v14));
     const loaded = (await loadFresh());
     expect(loaded).not.toBeNull();
-    expect(loaded!.version).toBe(24);
+    expect(loaded!.version).toBe(25);
     // upgradeDiscount 9 -> prospecting ceil(9/2) = 5, old key gone.
     expect(loaded!.upgrades.upgradeDiscount).toBeUndefined();
     expect(loaded!.upgrades.prospecting).toBe(5);
@@ -818,7 +820,7 @@ describe('v20→v21 revamp balance migration (§11)', () => {
     await mgr.hydrate();
     expect(mgr.save(state)).toBe(true);
     const loaded = mgr.load()!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.upgrades.damage).toBe(12);
     expect(loaded.prestige.tpSpent.tp_head_start).toBe(4);
     expect(loaded.prestige.apSpent.ap_warlord).toBe(2);
@@ -871,7 +873,7 @@ describe('v23→v24 watch riskWaves resize', () => {
     };
     await seed(JSON.stringify(v23));
     const loaded = (await loadFresh())!;
-    expect(loaded.version).toBe(24);
+    expect(loaded.version).toBe(25);
     expect(loaded.watch!.completed).toEqual(['wc_first_watch']);
     expect(loaded.watch!.counters.riskWaves).toHaveLength(MAX_RISK_CEILING + 1);
     // Every original slot survives; the new slot is the zero pad `normalizeWatch`
@@ -1041,5 +1043,60 @@ describe('offline progress', () => {
     const r = await offlineAt(W + 1, 8, timed(60, W));
     const cycle = 60 + intermissionSecondsForWave(W);
     expect(r.waveRepeats).toBeCloseTo((8 * 3600) / cycle, 1);
+  });
+});
+
+describe('deployment checkpoints (progress.md §6)', () => {
+  it('round-trips through a save', () => {
+    const state = makeState();
+    state.deployment.checkpoints[100] = {
+      wave: 100,
+      gold: 12345,
+      upgradeLevels: { damage: 40, fireRate: 9 },
+      blessingHeld: { bl_frost: 2 },
+      blessingPicks: 7,
+      abilityLevels: { fireball: 3 },
+      recordedAt: 1,
+    };
+    const snap = new SaveManager(stubBus).snapshot(state);
+    expect(snap.deployment.checkpoints[100].gold).toBe(12345);
+    expect(snap.deployment.checkpoints[100].upgradeLevels.damage).toBe(40);
+    expect(snap.deployment.checkpoints[100].blessingPicks).toBe(7);
+  });
+
+  it('bounds the store at the deepest twelve', () => {
+    const state = makeState();
+    for (let w = 50; w <= 1000; w += 50) {
+      state.deployment.checkpoints[w] = {
+        wave: w, gold: w, upgradeLevels: {}, blessingHeld: {},
+        blessingPicks: 0, abilityLevels: {}, recordedAt: 0,
+      };
+    }
+    const snap = new SaveManager(stubBus).snapshot(state);
+    const kept = Object.keys(snap.deployment.checkpoints).map(Number).sort((a, b) => a - b);
+    expect(kept.length).toBeLessThanOrEqual(12);
+    expect(Math.max(...kept)).toBe(1000);
+  });
+
+  it('gives a v24 save an empty store rather than inventing one', async () => {
+    // A checkpoint is a snapshot of a tower. A pre-v25 save has no record of
+    // what its tower looked like at depth, so synthesising one would hand back
+    // a run that never happened.
+    const v24 = {
+      version: 24,
+      savedAt: Date.now(),
+      tower: { hp: 50, maxHp: 100 },
+      resources: { gold: 500, lifetimeGold: 500, mana: 10, maxMana: 100, manaRegen: 1 },
+      upgrades: { damage: 5 },
+      research: {},
+      abilities: {},
+      prestige: {},
+      wave: { number: 300 },
+      stats: { enemiesKilled: 90, lifetimeHighestWave: 300 },
+    };
+    await seed(JSON.stringify(v24));
+    const loaded = (await loadFresh())!;
+    expect(loaded.version).toBe(25);
+    expect(loaded.deployment.checkpoints).toEqual({});
   });
 });

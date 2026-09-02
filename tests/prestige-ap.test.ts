@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EventBus } from '../src/game/EventBus';
 import { PrestigeManager } from '../src/systems/PrestigeManager';
-import { AP_PERKS, AP_PERK_BY_ID, FIRST_ASCENSION_AP, SECOND_WIND_LEVELS, perkCost, describeAPPerkBonus } from '../src/data/prestige';
+import { AP_PERKS, AP_PERK_BY_ID, TP_PERK_BY_ID, FIRST_ASCENSION_AP, SECOND_WIND_LEVELS, perkCost, computePerkEffect, describeAPPerkBonus } from '../src/data/prestige';
+import { UPGRADES, UPGRADE_BY_ID } from '../src/data/upgrades';
+import {
+  effectiveMaxLevel,
+  setUpgradeCapExtension,
+  resetUpgradeCapExtension,
+  MAX_CAP_EXTENSION,
+} from '../src/data/upgradeCaps';
+import { WATCH_CAP_EXTENSION } from '../src/data/watch';
 import { CORES } from '../src/data/cores';
 import type { GameStats, PrestigeState, ResourceState } from '../src/types';
 
@@ -202,10 +210,11 @@ describe('AP tree gates (revamp §8, gates 10 and 11)', () => {
 });
 
 describe('AP tree shape (revamp §8.2 / §8.4)', () => {
-  it('is twenty-three perks in four tiers', () => {
-    // 13 before prestige-abs, + the six-node tier-1 shelf (§3.1) and the four
-    // hook-carrying nodes (§5).
-    expect(AP_PERKS).toHaveLength(23);
+  it('is twenty-five perks in four tiers', () => {
+    // 13 before prestige-abs, + the six-node tier-1 shelf (§3.1), the four
+    // hook-carrying nodes (§5), Deep Stores (progress-steps §3.10) and
+    // Forward Camp (§6.4).
+    expect(AP_PERKS).toHaveLength(25);
     expect(new Set(AP_PERKS.map(p => p.tier))).toEqual(new Set([1, 2, 3, 4]));
   });
 
@@ -303,5 +312,55 @@ describe('AP tree shape (revamp §8.2 / §8.4)', () => {
     expect(costs).toMatchObject({
       marksman: 0, artillery: 30, frostwork: 45, bloodforge: 60, arcane: 90,
     });
+  });
+});
+
+describe('upgrade cap extension (progress.md §3)', () => {
+  beforeEach(() => resetUpgradeCapExtension());
+  afterEach(() => resetUpgradeCapExtension());
+
+  it('leaves every cap alone at extension 0', () => {
+    for (const u of UPGRADES) {
+      expect(effectiveMaxLevel(u), u.id).toBe(u.maxLevel);
+    }
+  });
+
+  it('extends only the scalar lines', () => {
+    setUpgradeCapExtension(1.0);
+    expect(effectiveMaxLevel(UPGRADE_BY_ID.damage)).toBe(400);
+    expect(effectiveMaxLevel(UPGRADE_BY_ID.health)).toBe(400);
+    // Coverage and cadence axes keep their table ceiling forever — extending
+    // them is the runaway the original caps were written to prevent.
+    expect(effectiveMaxLevel(UPGRADE_BY_ID.fireRate)).toBe(45);
+    expect(effectiveMaxLevel(UPGRADE_BY_ID.pierce)).toBe(6);
+    expect(effectiveMaxLevel(UPGRADE_BY_ID.splash)).toBe(25);
+  });
+
+  it('clamps at MAX_CAP_EXTENSION', () => {
+    setUpgradeCapExtension(999);
+    expect(effectiveMaxLevel(UPGRADE_BY_ID.damage)).toBe(200 + 200 * MAX_CAP_EXTENSION);
+  });
+
+  it('sums the three sources into one fraction', () => {
+    // Deep Stores 4 (+1.0) + Foundry 8 (+4.0) + the Watch unlock (+0.5) = 5.5
+    const ap = computePerkEffect(AP_PERK_BY_ID.ap_deep_stores, 4);
+    const tp = computePerkEffect(TP_PERK_BY_ID.tp_foundry, 8);
+    expect(ap).toBeCloseTo(1.0, 6);
+    expect(tp).toBeCloseTo(4.0, 6);
+    expect(ap + tp + WATCH_CAP_EXTENSION).toBeCloseTo(5.5, 6);
+  });
+});
+
+describe('Forward Camp (progress.md §6.2)', () => {
+  it('sells 50 / 70 / 85 percent', () => {
+    const p = AP_PERK_BY_ID.ap_forward_camp;
+    expect(computePerkEffect(p, 1)).toBeCloseTo(0.50, 6);
+    expect(computePerkEffect(p, 2)).toBeCloseTo(0.70, 6);
+    expect(computePerkEffect(p, 3)).toBeCloseTo(0.85, 6);
+  });
+
+  it('is zero until bought', () => {
+    expect(mgrWith(0, {}).getDeployFraction()).toBe(0);
+    expect(mgrWith(0, { ap_forward_camp: 3 }).getDeployFraction()).toBeCloseTo(0.85, 6);
   });
 });

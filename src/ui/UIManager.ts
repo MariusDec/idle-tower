@@ -364,6 +364,8 @@ export class UIManager {
   private onCastAbility: (id: AbilityId) => void = () => {};
   private onUpgradeAbility: (id: AbilityId) => void = () => {};
   private onAscend: () => void = () => {};
+  private onDeploy: () => void = () => {};
+  private deployTargetWave: () => number | null = () => null;
   private onResolveRunFailure: (action: 'ascend' | 'retry') => void = () => {};
   private onTranscend: () => void = () => {};
   private onSpendAP: (perkId: string) => void = () => {};
@@ -430,6 +432,9 @@ export class UIManager {
     getSellValue: () => 0,
     onItemViewed: () => {},
     onSell: () => {},
+    onReforge: () => false,
+    previewReforge: () => null,
+    gold: () => 0,
   };
   private audioApi: AudioAPI = (() => {
     let volume = 0.6;
@@ -618,6 +623,8 @@ export class UIManager {
     this.passivePanel = new PassivePanel(this.passiveApi);
     this.prestigePanel = new PrestigePanel({
       onAscend: () => this.onAscend(),
+      onDeploy: () => this.onDeploy(),
+      deployTargetWave: () => this.deployTargetWave(),
       onSpend: (id) => this.onSpendAP(id),
       canAscend: (w) => this.prestigeApi.canAscend(w),
       canSpend: (id, ap, tp) => this.prestigeApi.canSpend(id, ap, tp),
@@ -1266,6 +1273,12 @@ export class UIManager {
 
   setOnAscend(handler: () => void): void {
     this.onAscend = handler;
+  }
+
+  /** progress.md §6.2: Deploy's click handler and the wave it would land on. */
+  setOnDeploy(handler: () => void, targetWave: () => number | null): void {
+    this.onDeploy = handler;
+    this.deployTargetWave = targetWave;
   }
 
   setOnResolveRunFailure(handler: (action: 'ascend' | 'retry') => void): void {

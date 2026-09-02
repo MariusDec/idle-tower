@@ -403,6 +403,28 @@ export const SELL_RARITY_MULT: Record<Rarity, number> = {
  * shallowest wave the piece could have dropped on, so it stands in as a floor
  * rather than valuing an old legendary at wave-1 rates.
  */
+/**
+ * Items a reforge consumes, and what the result gains (progress-steps A.3).
+ *
+ * `rollRarity`'s depth ramp saturates at wave 100, so from there on gear is a
+ * solved axis: every drop is the same distribution however deep the run gets.
+ * Reforging is the sink that unsticks it — and it gives gold a second late
+ * home, which matters now that the upgrade ceilings rise with the player.
+ */
+export const REFORGE_INPUTS = 3;
+
+/**
+ * Levels a legendary reforge adds on top of the deepest input.
+ *
+ * Legendary is the top of `RARITY_ORDER`, so a legendary reforge has no tier
+ * to climb into. It climbs in *level* instead, which is what keeps both the
+ * stat roll and the sell value moving after the rarity ladder has run out.
+ */
+export const REFORGE_LEGENDARY_LEVEL_GAIN = 25;
+
+/** Multiple of the most valuable input's sell value that a reforge costs. */
+export const REFORGE_COST_MULT = 3;
+
 export function equipmentSellValue(item: Equipment): number {
   const def = EQUIPMENT_DEF_BY_ID[item.defId];
   const level = Math.max(1, Math.floor(item.level ?? 1), def?.minWave ?? 1);

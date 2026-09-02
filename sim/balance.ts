@@ -10,6 +10,7 @@
  */
 
 import { simulateRun, waveProfile, orbGoldForWave, comboGoldMult, type WaveSample } from './model.ts';
+import { ladderTable, ladderVerdict } from './ladder.ts';
 import { CORE_BY_ID, CORE_IDS, DEFAULT_CORE, describeCoreStats } from '../src/data/cores.ts';
 import { MANUAL_AIM } from '../src/data/tower.ts';
 import { LOOT_TUNING } from '../src/data/loot.ts';
@@ -730,3 +731,16 @@ console.log(
   + 'it is in the game.\n',
 );
 console.log(`\nAscension unlocks at wave ${ASCENSION_UNLOCK_WAVE}.\n`);
+
+console.log('\n=== progress.md §1.1 The prestige ladder (idle, no blessings) ===\n');
+console.log(ladderTable(false));
+console.log('\n=== progress.md §1.1 The prestige ladder (drafting) ===\n');
+console.log(ladderTable(true));
+console.log(
+  '\nEach row is one ascension: the AP it banks is the next row\'s multiplier, which is '
+  + 'the\nonly thing every other table in this file cannot see. `dWall` decaying to +0 means '
+  + 'the\nladder has a fixed point — the game stops there however healthy the per-tier tables '
+  + 'look.\n',
+);
+console.log(ladderVerdict(true));
+console.log('');

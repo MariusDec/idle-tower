@@ -309,8 +309,52 @@ export const RESEARCH_NODES: ResearchDef[] = [
     color: '#ffb347',
     effectDefinitions: { 10: { effectValue: 0.01 } },
   },
+  {
+    id: 'field_studies',
+    name: 'Field Studies',
+    description: '+5% gold per level. Repeatable forever.',
+    /*
+     * plans/progress.md §7.5. The tree's only unbounded node, and the reason RP
+     * is not a dead currency once the eighteenth project lands.
+     *
+     * ## Why gold and not damage
+     *
+     * `ResearchDef.effectType` is a closed union and there is no damage arm in
+     * it — every combat node in the tree grants pierce, an AoE or a defensive
+     * fraction, never a flat multiplier. Adding one would mean a new effect
+     * type, a new `ResearchInputs` field and a new contributor line for a node
+     * whose whole job is to be a *sink*. Gold does the job on its own now:
+     * after `plans/progress.md` §3 raised the upgrade ceilings, gold buys
+     * levels at every depth instead of stopping at wave 219, so a gold
+     * multiplier is a damage multiplier with one more step in the chain.
+     *
+     * ## Why it cannot run away
+     *
+     * *Time*, not cost. Research runs one project at a time on the wall clock
+     * and the time ladder grows 1.6x per level: level 10 is 6.9 hours, level 15
+     * is 30 days, and past the array's last entry every further level costs the
+     * same 30 days. `getResearchCost` / `getResearchTime` walk their arrays by
+     * `min(level - 1, lastIndex)`, so the top rung holds forever — which is
+     * what makes "repeatable forever" a fifteen-entry table rather than a
+     * 999-entry one.
+     */
+    cost: [
+      2000, 3200, 5120, 8192, 13107, 20972, 33554, 53687,
+      85899, 137439, 219902, 351844, 562950, 900720, 1441151,
+    ],
+    researchTime: [
+      3600, 5760, 9216, 14746, 23593, 37749, 60398, 96637,
+      154619, 247390, 395824, 633318, 1013309, 1621294, 2594071,
+    ],
+    category: 'research',
+    effectType: 'gold_multi',
+    effectPerLevel: 0.05,
+    maxLevel: 999,
+    prerequisites: ['rp_gain'],
+    icon: 'book-pile',
+    color: '#c77dff',
+  },
 ];
-
 export const RESEARCH_BY_ID: Record<string, ResearchDef> = RESEARCH_NODES.reduce(
   (acc, n) => {
     acc[n.id] = n;

@@ -1,5 +1,15 @@
-import type { EquipmentSlot, Equipment, EquipmentStatType } from '../types';
-import { rollDrop as dataRollDrop, equipmentSellValue, type DropOptions } from '../data/equipment';
+import type { EquipmentSlot, Equipment, EquipmentStatType, Rarity } from '../types';
+import {
+  rollDrop as dataRollDrop,
+  equipmentSellValue,
+  generateEquipment,
+  upgradeRarity,
+  EQUIPMENT_DEFS,
+  REFORGE_COST_MULT,
+  REFORGE_INPUTS,
+  REFORGE_LEGENDARY_LEVEL_GAIN,
+  type DropOptions,
+} from '../data/equipment';
 import { EventBus } from '../game/EventBus';
 
 /**
@@ -128,6 +138,84 @@ export class EquipmentManager {
     const value = this.getSellValue(id);
     this.inventory.splice(idx, 1);
     return value;
+  }
+
+  /**
+   * What a reforge of these three items would cost and produce, or null when
+   * the selection is not a legal reforge (progress-steps A.3).
+   *
+   * Split from `reforge` so the panel can label the button with the real
+   * numbers and the action can never promise something it will not deliver —
+   * the same split `Game.deploymentTarget` / `deploy` uses.
+   */
+  previewReforge(ids: string[]): { cost: number; rarity: Rarity; level: number } | null {
+    const items = this.resolveReforgeInputs(ids);
+    if (!items) return null;
+    const rarity = items[0].rarity;
+    const deepest = items.reduce((a, e) => Math.max(a, e.level ?? 1), 1);
+    const priciest = items.reduce((a, e) => Math.max(a, equipmentSellValue(e)), 0);
+    return {
+      cost: Math.max(1, Math.floor(priciest * REFORGE_COST_MULT)),
+      rarity: upgradeRarity(rarity, 1),
+      // A legendary has no tier left to climb, so it climbs in level instead.
+      level: rarity === 'legendary' ? deepest + REFORGE_LEGENDARY_LEVEL_GAIN : deepest,
+    };
+  }
+
+  /**
+   * Consume three same-rarity inventory items and return one of the next
+   * rarity up, rolled at the deepest input's level (A.3).
+   *
+   * Deliberately slot-agnostic: the point is to give a pile of redundant
+   * same-tier drops somewhere to go, and requiring a slot match would make the
+   * sink depend on which slots happened to drop rather than on how much gear
+   * the player has. The *result's* slot is rolled fresh, so a reforge is a
+   * trade rather than an upgrade of one particular item.
+   *
+   * Returns null and consumes nothing when the selection is illegal or the
+   * gold is not there — a partial reforge would destroy items for nothing.
+   */
+  reforge(ids: string[], gold: number): { item: Equipment; cost: number } | null {
+    const preview = this.previewReforge(ids);
+    if (!preview) return null;
+    if (gold < preview.cost) return null;
+    const items = this.resolveReforgeInputs(ids);
+    if (!items) return null;
+
+    // Equipped items are not in `inventory`, so nothing here can strip the
+    // tower mid-run; `resolveReforgeInputs` only ever resolves against it.
+    for (const item of items) {
+      const idx = this.inventory.findIndex(e => e.id === item.id);
+      if (idx !== -1) this.inventory.splice(idx, 1);
+    }
+    const pool = EQUIPMENT_DEFS.filter(d => d.minWave <= preview.level);
+    const def = (pool.length > 0 ? pool : EQUIPMENT_DEFS)[
+      Math.floor(Math.random() * (pool.length > 0 ? pool.length : EQUIPMENT_DEFS.length))
+    ];
+    const item = generateEquipment(def.id, preview.rarity, preview.level);
+    this.inventory.push(item);
+    this.bus.emit('equipment_reforged', { item, cost: preview.cost, consumed: ids.length });
+    return { item, cost: preview.cost };
+  }
+
+  /**
+   * The three distinct inventory items `ids` names, all of one rarity, or null.
+   *
+   * Every rejection reason is the same answer — null — because the button is
+   * only enabled on a legal selection; this is the guard that makes the API
+   * safe to call from anywhere, not the place that explains the rule.
+   */
+  private resolveReforgeInputs(ids: string[]): Equipment[] | null {
+    if (ids.length !== REFORGE_INPUTS) return null;
+    if (new Set(ids).size !== ids.length) return null;
+    const items: Equipment[] = [];
+    for (const id of ids) {
+      const item = this.inventory.find(e => e.id === id);
+      if (!item) return null;
+      items.push(item);
+    }
+    if (!items.every(e => e.rarity === items[0].rarity)) return null;
+    return items;
   }
 
   getSlot(slot: EquipmentSlot): Equipment | null {

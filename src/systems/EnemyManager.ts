@@ -17,6 +17,7 @@ import {
 } from '../data/enemies';
 import {
   bossEncounterWeight,
+  crowdCompression,
   enemyDamageForWave,
   enemyHPForWave,
   enemySpeedForWave,
@@ -66,6 +67,38 @@ const ELITE_SPAWN_CHANCE_MAX = 0.20;
 const ELITE_HP_MULT = 2.5;
 /** Gold multiplier every elite carries, on top of any aura bonus. */
 const ELITE_GOLD_MULT = 2.5;
+
+/**
+ * Depth at which an elite becomes a *champion* (plans/progress.md §7.2).
+ *
+ * The elite rate caps at wave 100 and nothing about an elite changes after
+ * that, so from wave 100 to the wall the texture of a wave is fixed — which is
+ * one of the three reasons the deep game reads as empty (§1.5).
+ *
+ * A champion is not a new entity: it is the same elite, with the same aura and
+ * the same code path, worth twice as much on both sides of the trade. That
+ * keeps the escalation to two constants and a comparison, and it keeps the
+ * *decision* the same — an elite is still "kill it first or eat the aura",
+ * just louder.
+ */
+const CHAMPION_WAVE = 150;
+const CHAMPION_HP_MULT = 5.0;
+const CHAMPION_GOLD_MULT = 6.0;
+
+/** True when an elite spawned at `wave` is a champion. */
+export function isChampionWave(wave: number): boolean {
+  return wave >= CHAMPION_WAVE;
+}
+
+/** HP multiplier an elite carries at `wave`. */
+export function eliteHpMultForWave(wave: number): number {
+  return isChampionWave(wave) ? CHAMPION_HP_MULT : ELITE_HP_MULT;
+}
+
+/** Gold multiplier an elite carries at `wave`. */
+export function eliteGoldMultForWave(wave: number): number {
+  return isChampionWave(wave) ? CHAMPION_GOLD_MULT : ELITE_GOLD_MULT;
+}
 /** RP guaranteed by an elite kill (plan §3.4: elites are a visible RP faucet). */
 const ELITE_RP_DROP = 1;
 /**
@@ -97,15 +130,30 @@ const RETRIBUTION_BUFF_SPEED_MULT = 1.5;
  */
 const GRID_CELL_SIZE = world(128);
 
-/** Compute elite spawn chance for a given wave. */
+/** Rate the champion band climbs to, and the wave it gets there. */
+const CHAMPION_SPAWN_CHANCE_MAX = 0.30;
+const CHAMPION_SPAWN_CHANCE_MAX_WAVE = 400;
+
+/**
+ * Compute elite spawn chance for a given wave.
+ *
+ * Two ramps: 2% -> 20% over waves 21-100 (unchanged), then 20% -> 30% over
+ * waves 150-400 as elites become champions. The second ramp is deliberately
+ * shallower than the first — the escalation past wave 150 is meant to be
+ * carried by what an elite *is* (`eliteHpMultForWave`), not by how many of
+ * them there are, because body count is what `MAX_WAVE_BODIES` is capping.
+ */
 export function eliteChanceForWave(wave: number): number {
   if (wave < ELITE_UNLOCK_WAVE) return 0;
-  return Math.min(
+  const base = Math.min(
     ELITE_SPAWN_CHANCE_MAX,
     ELITE_SPAWN_CHANCE_BASE +
       ((wave - ELITE_UNLOCK_WAVE) * (ELITE_SPAWN_CHANCE_MAX - ELITE_SPAWN_CHANCE_BASE)) /
         (ELITE_SPAWN_CHANCE_MAX_WAVE - ELITE_UNLOCK_WAVE),
   );
+  if (wave < CHAMPION_WAVE) return base;
+  const t = Math.min(1, (wave - CHAMPION_WAVE) / (CHAMPION_SPAWN_CHANCE_MAX_WAVE - CHAMPION_WAVE));
+  return ELITE_SPAWN_CHANCE_MAX + t * (CHAMPION_SPAWN_CHANCE_MAX - ELITE_SPAWN_CHANCE_MAX);
 }
 
 const ELITE_AURA_COLORS: Record<AuraType, string> = {
@@ -406,17 +454,35 @@ export class EnemyManager {
     let hp: number;
     // The boss *bar*: shrunk by whatever its phase machine holds outside it,
     // so the encounter costs the same total damage it always did (§3.7).
+    // `crowdCompression` is 1 below wave 98 and on every boss wave, so this is
+    // a no-op for most of the game. Above the body cap it hands the cut
+    // bodies' HP to the ones that remain, which is what keeps a wave's total
+    // HP — the number every balance table is written against — unchanged.
+    const compression = crowdCompression(wave);
     if (type === 'boss') hp = bossMaxHpForWave(wave);
-    else hp = enemyHPForWave(def.baseHP, wave);
+    else hp = enemyHPForWave(def.baseHP, wave) * compression;
     if (this.hpReduction > 0) hp = Math.max(1, Math.floor(hp * (1 - this.hpReduction)));
     if (this.hpMult !== 1) hp = Math.max(1, Math.floor(hp * this.hpMult));
     if (this.statHpMult !== 1) hp = Math.max(1, Math.floor(hp * this.statHpMult));
     const isElite = overrides.elite === true;
-    if (isElite) hp = Math.max(1, Math.floor(hp * ELITE_HP_MULT));
+    if (isElite) hp = Math.max(1, Math.floor(hp * eliteHpMultForWave(wave)));
     const speed = enemySpeedForWave(def.baseSpeed, wave) * this.speedMult;
     // The lone boss is paid the whole encounter's purse — it is the only thing
     // on the wave the pack's gold can be attached to now (§3.7).
-    const gold = type === 'boss' ? bossGoldForWave(wave) : goldDropForWave(def.baseGold, wave);
+    // Same compression as the HP above, for the same reason: fewer bodies
+    // paying the same total. Without this the economy would fall by the
+    // compression factor — 4.5x at wave 450 — for a change that was only ever
+    // supposed to be about how many things are on screen.
+    const gold = type === 'boss'
+      ? bossGoldForWave(wave)
+      : goldDropForWave(def.baseGold, wave) * compression;
+    // A chorus voice carries the *whole* group's HP as its own bar, and every
+    // voice's bar is the same pool (§7.1): three bodies, one health bar of
+    // three bodies' worth. Total effective HP is therefore identical to three
+    // separate enemies — what changes is that pierce and splash spend the same
+    // bar once per body they touch, so coverage answers it and single-target
+    // does not.
+    if (type === 'chorus') hp = Math.max(1, Math.floor(hp * ENEMY_BEHAVIOR.chorusVoices));
     const damage = enemyDamageForWave(def.baseDamage, wave);
     const fireRate = Math.max(0.2, def.fireRate);
     const enemy: Enemy = {
@@ -461,6 +527,9 @@ export class EnemyManager {
       ...(type === 'thief' ? { stolenGold: 0, fleeing: false } : {}),
       ...(type === 'blinker' ? { blinkTimer: ENEMY_BEHAVIOR.blinkInterval, blinkImmunity: 0 } : {}),
       ...(type === 'warden' ? { wardTimer: 0 } : {}),
+      // Same rule as the siege and the blinker: the cadence starts armed, so a
+      // harbinger cannot phase the field on its first substep.
+      ...(type === 'harbinger' ? { harbingerTimer: ENEMY_BEHAVIOR.harbingerInterval } : {}),
       ...(type === 'burrower' ? { burrowed: true, surfacing: 0 } : {}),
       ...overrides,
     };
@@ -478,10 +547,18 @@ export class EnemyManager {
   /**
    * Spawn an elite version of an enemy with the given aura.
    */
-  spawnElite(type: EnemyType, wave: number, spawnX: number, spawnY: number, aura: AuraType): Enemy {
+  spawnElite(
+    type: EnemyType,
+    wave: number,
+    spawnX: number,
+    spawnY: number,
+    aura: AuraType,
+    chorusId?: number,
+  ): Enemy {
     return this.spawn(type, wave, spawnX, spawnY, {
       elite: true,
       aura,
+      ...(chorusId !== undefined ? { chorusId } : {}),
     });
   }
 
@@ -561,6 +638,11 @@ export class EnemyManager {
       }
     }
     enemy.hp -= amount;
+    // Every voice's `hp` *is* the shared pool, so a hit on one is a hit on all
+    // three. Mirrored rather than summed: the pool is one number, and keeping
+    // one copy per voice is what lets every existing damage site — projectile,
+    // splash, mine, ability, thorns — spend it without knowing chorus exists.
+    if (enemy.chorusId !== undefined) this.syncChorus(enemy);
     // Thorns aura: reflect fraction of damage back to tower (only if not blocked by shield)
     if (reflectable && enemy.alive && enemy.aura === 'thorns' && enemy.elite) {
       this.computeThornsReflection(amount);
@@ -590,6 +672,9 @@ export class EnemyManager {
         this.bus.emit('gold_recovered', { x: enemy.x, y: enemy.y, amount: recovered });
       }
       if (enemy.type === 'warden') this.clearWardsFrom(enemy.id);
+      // The pool is empty, so every voice drawing on it dies — the group is
+      // one health bar and it has just run out (§7.1).
+      if (enemy.chorusId !== undefined) this.collapseChorus(enemy);
       this.bus.emit('enemy_damaged', { enemy, amount, killed: true, isCrit });
       this.bus.emit('enemy_killed', enemy);
       this.resources.addGold(this.computeGold(enemy, isCrit));
@@ -616,7 +701,7 @@ export class EnemyManager {
     let amount = base * this.goldMultiplier;
     if (this.killStreakGoldBonus > 0) amount *= 1 + this.killStreakGoldBonus;
     if (this.manaFullGoldBonus > 0) amount *= 1 + this.manaFullGoldBonus;
-    if (enemy.elite) amount *= ELITE_GOLD_MULT;
+    if (enemy.elite) amount *= eliteGoldMultForWave(enemy.spawnWave ?? this.currentWave);
     if (enemy.aura === 'greed' && enemy.elite) amount *= GREED_GOLD_MULT;
     if (this.goldLuckChance > 0 && Math.random() < this.goldLuckChance) {
       amount *= this.goldLuckMultiplier;
@@ -750,6 +835,7 @@ export class EnemyManager {
       if ((e.blinkImmunity ?? 0) > 0) e.blinkImmunity = Math.max(0, (e.blinkImmunity ?? 0) - dt);
       if (e.afterImageAge !== undefined) e.afterImageAge += dt;
       if ((e.spawnProtection ?? 0) > 0) e.spawnProtection = Math.max(0, (e.spawnProtection ?? 0) - dt);
+      if ((e.phasedOut ?? 0) > 0) e.phasedOut = Math.max(0, (e.phasedOut ?? 0) - dt);
       if ((e.scatterTimer ?? 0) > 0) e.scatterTimer = Math.max(0, (e.scatterTimer ?? 0) - dt);
 
       const dx = towerX - e.x;
@@ -830,6 +916,9 @@ export class EnemyManager {
           e.attackCooldown -= dt;
           if (e.attackCooldown <= 0) {
             this.bus.emit('enemy_attack', { x: e.x, y: e.y, type: e.type });
+            // "On contact": the leech's drain resolves on the same beat its
+            // melee lands, so a hit that is survived still costs something.
+            if (e.type === 'leech') this.drainManaTo(e);
             let dmgMult = this.damageToTowerMult * this.enrageDamageMult * this.statDamageMult;
             if (this.retributionBuffs.has(e.id)) dmgMult *= RETRIBUTION_BUFF_DAMAGE_MULT;
             if ((e.bossEnrageStacks ?? 0) > 0) dmgMult *= this.bossEnrageDamageMult(e);
@@ -1051,6 +1140,30 @@ export class EnemyManager {
         return 'advance';
       }
 
+      // Takes the wave *away* on a timer. Nothing about your damage answers
+      // this — only saving burst for the moment the field comes back does
+      // (plans/progress.md §7.1).
+      case 'harbinger': {
+        e.harbingerTimer = (e.harbingerTimer ?? 0) - dt;
+        if (e.harbingerTimer <= 0) {
+          e.harbingerTimer += ENEMY_BEHAVIOR.harbingerInterval;
+          this.phaseAllies(e);
+        }
+        return 'advance';
+      }
+
+      // Turns your mana bar into its own armour. It advances and melees like
+      // anything else; what it costs you is the resource you were spending on
+      // abilities (§7.1). The drain itself is at the contact site, with the
+      // thief's, because that is where "on contact" is resolved.
+      case 'leech':
+        return 'advance';
+
+      // Three bodies, one pool. The group is linked at spawn and `damage`
+      // spends the shared bar; there is nothing to run per tick (§7.1).
+      case 'chorus':
+        return 'advance';
+
       // Crosses the whole approach corridor underground, where range cannot
       // reach it, and comes up inside your close defences (plan §2.1).
       case 'burrower': {
@@ -1111,7 +1224,12 @@ export class EnemyManager {
       this.bus.emit('boss_enrage_stack', { enemy: e, stacks, x: e.x, y: e.y });
     }
 
-    const target = bossPhaseForHpFraction(e.maxHp > 0 ? e.hp / e.maxHp : 1);
+    // Wave-aware: past 200 an Ordeal has more thresholds to cross, so the
+    // phase the bar is in is a function of depth as well as HP (A.2).
+    const target = bossPhaseForHpFraction(
+      e.maxHp > 0 ? e.hp / e.maxHp : 1,
+      e.spawnWave ?? this.currentWave,
+    );
     while ((e.bossPhase ?? 1) < target) {
       e.bossPhase = (e.bossPhase ?? 1) + 1;
       this.enterBossPhase(e);
@@ -1514,6 +1632,91 @@ export class EnemyManager {
     }
     if (granted > 0) {
       this.bus.emit('ward_projected', { x: warden.x, y: warden.y, count: granted, amount });
+    }
+  }
+
+  /**
+   * Phase every ally around the harbinger out of reach (progress.md §7.1).
+   *
+   * Writes `phasedOut`, which `isTargetable` reads — so every target picker in
+   * the game honours it without knowing it exists. Harbingers do not phase each
+   * other, for the same reason wardens do not shield each other: a pair would
+   * be far more than twice the problem of one.
+   */
+  private phaseAllies(harbinger: Enemy): void {
+    const r2 = ENEMY_BEHAVIOR.harbingerRange * ENEMY_BEHAVIOR.harbingerRange;
+    let phased = 0;
+    for (const other of this.enemies) {
+      if (!other.alive || other.id === harbinger.id) continue;
+      if (other.type === 'harbinger' || other.type === 'boss') continue;
+      const dx = other.x - harbinger.x;
+      const dy = other.y - harbinger.y;
+      if (dx * dx + dy * dy > r2) continue;
+      other.phasedOut = ENEMY_BEHAVIOR.harbingerPhase;
+      phased += 1;
+    }
+    if (phased > 0) {
+      this.bus.emit('harbinger_phased', {
+        x: harbinger.x,
+        y: harbinger.y,
+        count: phased,
+        seconds: ENEMY_BEHAVIOR.harbingerPhase,
+      });
+    }
+  }
+
+  /**
+   * Drain the player's mana into the leech's own absorb pool (§7.1).
+   *
+   * Reuses `absorbShield` — the warden's pool — rather than adding a second
+   * one, so every site that already spends absorb before HP handles this for
+   * free. It carries no `wardenId`, so a dying warden cannot strip it.
+   *
+   * The conversion is capped by what was actually drained: `spendMana` returns
+   * false on an empty bar, and a leech that finds no mana gets no shield.
+   */
+  private drainManaTo(leech: Enemy): void {
+    const want = ENEMY_BEHAVIOR.leechManaSteal;
+    const available = Math.min(want, Math.max(0, this.resources.mana));
+    if (available <= 0) return;
+    if (!this.resources.spendMana(available)) return;
+    const gain = Math.max(
+      1,
+      Math.floor(available * ENEMY_BEHAVIOR.leechShieldPerMana * ENEMY_DEFS.leech.baseHP),
+    );
+    const pool = (leech.absorbShield ?? 0) + gain;
+    leech.absorbShield = pool;
+    leech.absorbMax = Math.max(leech.absorbMax ?? 0, pool);
+    this.bus.emit('leech_drained', { x: leech.x, y: leech.y, mana: available, shield: gain });
+  }
+
+  /**
+   * Copy a struck voice's remaining pool onto its siblings (§7.1).
+   *
+   * The other voices flash rather than merely dropping, so the shared bar is
+   * legible on the field: a player who shoots one and sees three react has
+   * been told the rule without a tutorial.
+   */
+  private syncChorus(struck: Enemy): void {
+    for (const other of this.enemies) {
+      if (!other.alive || other.id === struck.id) continue;
+      if (other.chorusId !== struck.chorusId) continue;
+      other.hp = struck.hp;
+      other.undamagedFor = 0;
+      this.bus.emit('enemy_damaged', { enemy: other, amount: 0, killed: false, isCrit: false, blocked: true });
+    }
+  }
+
+  /** The shared pool is spent: the rest of the group goes with it. */
+  private collapseChorus(dead: Enemy): void {
+    for (const other of this.enemies) {
+      if (!other.alive || other.id === dead.id) continue;
+      if (other.chorusId !== dead.chorusId) continue;
+      other.hp = 0;
+      other.alive = false;
+      this.bus.emit('enemy_damaged', { enemy: other, amount: 0, killed: true, isCrit: false });
+      this.bus.emit('enemy_killed', other);
+      this.resources.addGold(this.computeGold(other, false));
     }
   }
 

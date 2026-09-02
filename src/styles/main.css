@@ -2233,6 +2233,15 @@ button:disabled {
   border-color: var(--violet-700);
   color: var(--violet-200);
 }
+/* progress.md §6.2: Deploy sits next to Ascend and reads as the quieter of the
+   two — it is the same action with a shortcut attached, not a bigger one. */
+.btn-deploy {
+  margin-top: 6px;
+  opacity: 0.92;
+}
+.btn-deploy[hidden] {
+  display: none;
+}
 .btn-ascend.can-ascend {
   background: linear-gradient(180deg, var(--violet-600), var(--violet-700));
   border-color: var(--fx-arcane);
@@ -5953,6 +5962,33 @@ body.is-resizing * { cursor: ew-resize !important; }
   .eq-unequip-btn:hover { color: var(--good); border-color: var(--good); }
 }
 .eq-slot-card.eq-empty .eq-unequip-btn { display: none; }
+/* progress-steps A.3: reforging. The pick control is a quiet toggle on each
+   card — it destroys items, so it must never be the thing a thumb hits by
+   accident — and the marked cards carry a ring rather than a fill, so the
+   rarity colour the card is already using stays readable. */
+.eq-reforge-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.eq-reforge-note {
+  font-size: var(--text-xs);
+  color: var(--ink-300, #9aa0aa);
+}
+.btn-reforge-pick {
+  opacity: 0.8;
+  font-size: var(--text-xs);
+}
+.eq-inv-card.is-reforge-pick {
+  box-shadow: 0 0 0 2px var(--fx-arcane, #7f5af0) inset;
+}
+.eq-inv-card.is-reforge-pick .btn-reforge-pick {
+  opacity: 1;
+  font-weight: 700;
+}
+
 .eq-inventory {
   display: flex;
   flex-wrap: wrap;
@@ -7137,6 +7173,16 @@ body.eq-dragging img { pointer-events: none; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--blood-100);
+}
+/* progress-steps A.2: an Ordeal is every hundredth wave from 200, and it is
+   supposed to be recognised on sight — the bar takes the gold the rest of the
+   game reserves for prestige rather than the ordinary boss's blood red. */
+.boss-bar.is-ordeal .boss-bar-name {
+  color: var(--gold-100, #e8a93b);
+  text-shadow: 0 0 12px rgba(232, 169, 59, 0.5);
+}
+.boss-bar.is-ordeal .boss-bar-hp {
+  background: linear-gradient(180deg, #f3c96b, #e8a93b);
 }
 .boss-bar-count {
   display: none;

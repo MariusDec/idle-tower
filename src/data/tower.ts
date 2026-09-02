@@ -135,12 +135,13 @@ export const BOUNCE = {
    */
   turnRate: Math.PI * 2.4,
   /**
-   * Seconds a bounced shot lives, measured from the bounce. The longest legal
-   * bounce (1053 units with `ricochet_power`) takes 0.56 s at
-   * `PROJECTILE_SPEED`, so this is flight plus a margin and never a cap the
-   * player feels.
+   * Seconds a bounced shot lives, measured from its *first* bounce — not from
+   * each one. The longest legal bounce (1053 units with `ricochet_power`)
+   * takes 0.56 s at `PROJECTILE_SPEED`, so a chain still has room to land,
+   * but the whole ricochet tail is over one second after it starts instead of
+   * renewing its leash on every hop.
    */
-  lifetime: 0.9,
+  lifetime: 1,
 } as const;
 
 /**
@@ -156,7 +157,7 @@ export const SHARD = {
   /** Steering rate, rad/s. High: it has to recover from the launch fan fast. */
   turnRate: Math.PI * 3.2,
   /** Seconds a shard lives. Covers `splitShardRange` with room to spare. */
-  lifetime: 0.85,
+  lifetime: 1,
   /** Angle between adjacent shard launch headings, in radians (34°). */
   fan: (34 * Math.PI) / 180,
 } as const;

@@ -1,6 +1,7 @@
 import type { EnemyType, AuraType, WaveState } from '../types';
 import {
   enemyCountForWave,
+  naturalSpawnCountForWave,
   spawnCountForWave,
   isBossWave,
   spawnIntervalForWave,
@@ -46,6 +47,14 @@ export interface WavePlanEntry {
   y: number;
   elite: boolean;
   aura: AuraType | null;
+  /**
+   * Chorus: which group this voice belongs to (plans/progress.md §7.1).
+   *
+   * Assigned here rather than at the spawn site because the group is a
+   * property of the *roster* — three slots rolled together — and the spawner
+   * only ever sees one entry at a time.
+   */
+  chorusId?: number;
 }
 
 /**
@@ -95,6 +104,8 @@ export class WaveManager {
    * before the roster was pre-rolled.
    */
   private spawnQueue: WavePlanEntry[] = [];
+  /** Monotonic group id for chorus voices. Never reused within a session. */
+  private nextChorusId = 1;
   /** The next wave's roster, rolled at the top of the intermission. */
   private plannedWave: { wave: number; entries: WavePlanEntry[] } | null = null;
   /**
@@ -184,7 +195,7 @@ export class WaveManager {
       spawning: true,
       enemiesSpawned: 0,
       enemiesToSpawn: enemyCountForWave(1),
-      spawnInterval: spawnIntervalForWave(1),
+      spawnInterval: spawnIntervalForWave(1, enemyCountForWave(1)),
       spawnTimer: 0.5,
       intermission: false,
       intermissionTimer: 0,
@@ -254,11 +265,20 @@ export class WaveManager {
       // reads as a rush rather than a trickle. The pack counts against the
       // wave's budget in full — it takes slots, it does not add them.
       const remaining = total - entries.length;
+      // A chorus is spawned like a `fast` pack — several bodies from one point
+      // — but the three voices share one HP pool rather than merely arriving
+      // together, so they also share a group id (§7.1). Like the pack, the
+      // group counts against the wave's budget in full.
       const packSize = type === 'fast'
         ? Math.max(1, Math.min(ENEMY_BEHAVIOR.fastPackSize, remaining))
-        : 1;
+        : type === 'chorus'
+          ? Math.max(1, Math.min(ENEMY_BEHAVIOR.chorusVoices, remaining))
+          : 1;
+      const chorusId = type === 'chorus' ? this.nextChorusId++ : undefined;
       for (let i = 0; i < packSize; i++) {
-        const spread = packSize > 1 ? ENEMY_BEHAVIOR.fastPackSpread : 0;
+        const spread = packSize > 1
+          ? (type === 'chorus' ? ENEMY_BEHAVIOR.chorusSpread : ENEMY_BEHAVIOR.fastPackSpread)
+          : 0;
         // Elite roll: wave >= 21, not bosses, linear 2%→20% chance. Rolled per
         // pack member, so packing `fast` does not change the elite rate.
         const elite = wave >= 21 && type !== 'boss' && Math.random() < eliteChanceForWave(wave);
@@ -268,6 +288,7 @@ export class WaveManager {
           y: y + (spread > 0 ? randomBetween(-spread, spread) : 0),
           elite,
           aura: elite ? ALL_AURAS[Math.floor(Math.random() * ALL_AURAS.length)] : null,
+          ...(chorusId !== undefined ? { chorusId } : {}),
         });
       }
     }
@@ -277,6 +298,16 @@ export class WaveManager {
   /** How many enemies the given wave will spawn under the current mutator. */
   private plannedCountFor(wave: number): number {
     return Math.max(1, Math.floor(spawnCountForWave(wave) * this.enemyCountMult));
+  }
+
+  /**
+   * The wave's body count *before* `MAX_WAVE_BODIES`, mutator included.
+   *
+   * Only the enrage budget reads this. The two counts are the same below wave
+   * 98 and diverge above it; see `crowdCompression`.
+   */
+  private naturalCountFor(wave: number): number {
+    return Math.max(1, Math.floor(naturalSpawnCountForWave(wave) * this.enemyCountMult));
   }
 
   /**
@@ -409,7 +440,10 @@ export class WaveManager {
       : this.buildRoster(wave, this.state.enemiesToSpawn);
     this.plannedWave = null;
     this.thiefSpawnedThisWave = this.spawnQueue.some(e => e.type === 'thief');
-    this.state.spawnInterval = spawnIntervalForWave(wave);
+    // The cadence follows the roster the wave actually rolled, mutator
+    // included: a Swarm wave has three times the bodies and still has to fit
+    // them inside `SPAWN_WINDOW_SECONDS`.
+    this.state.spawnInterval = spawnIntervalForWave(wave, this.state.enemiesToSpawn);
     this.state.spawnTimer = 0.5;
     this.state.spawning = true;
     this.state.intermission = false;
@@ -458,7 +492,7 @@ export class WaveManager {
       spawning: true,
       enemiesSpawned: 0,
       enemiesToSpawn: spawnCountForWave(target),
-      spawnInterval: spawnIntervalForWave(target),
+      spawnInterval: spawnIntervalForWave(target, spawnCountForWave(target)),
       spawnTimer: 0.4,
       intermission: false,
       intermissionTimer: 0,
@@ -540,10 +574,14 @@ export class WaveManager {
    */
   private tickEnrage(dt: number): void {
     this.state.elapsed += dt;
+    // The *natural* roster, not the capped one. `enemiesToSpawn` is what walks
+    // through the portal; the budget is priced on what the wave is worth, and
+    // capping the body count must not also cap the time the wave is given to
+    // be cleared in (see `nominalSpawnIntervalForWave`).
     const stacks = enrageStacksFor(
       this.state.number,
       this.state.elapsed,
-      this.state.enemiesToSpawn,
+      this.naturalCountFor(this.state.number),
     );
     if (stacks === this.state.enrageStacks) return;
     const wasCalm = this.state.enrageStacks === 0;
@@ -759,9 +797,11 @@ export class WaveManager {
     }
     if (entry.type === 'thief') this.thiefSpawnedThisWave = true;
     if (entry.elite && entry.aura) {
-      this.enemies.spawnElite(entry.type, wave, entry.x, entry.y, entry.aura);
+      this.enemies.spawnElite(entry.type, wave, entry.x, entry.y, entry.aura, entry.chorusId);
     } else {
-      this.enemies.spawn(entry.type, wave, entry.x, entry.y);
+      this.enemies.spawn(entry.type, wave, entry.x, entry.y, entry.chorusId !== undefined
+        ? { chorusId: entry.chorusId }
+        : undefined);
     }
     this.state.enemiesSpawned += 1;
 
