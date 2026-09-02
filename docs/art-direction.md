@@ -195,6 +195,10 @@ The mapping, so the next person does not have to ask why `#ff6633` became ember 
 | `#e74c3c`, `#f1c40f` (talent branches) | TalentPanel | `FX.blood`, `FX.gold` |
 | `'#ffffff'`, `'#000'` | anywhere | **allowed** — the only two literals the guard test whitelists |
 
+### The flier's wing membrane is a token-derived wash
+
+The flier's wing fill is `lighten(borderColor, 0.18 → 0.50)` — a root-to-tip wash derived from the token, not a literal. Retuning the flier's `borderColor` moves its wings with it; the gradient runs inside each wing's local transform so the same code paints both wings without a second path.
+
 ### `critical` and `blood` are off-limits to the combo flourish
 
 The §5.C combo edge glow and its embers tint with `FX.gold` and `FX.ember` only, cross-faded by

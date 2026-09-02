@@ -21,6 +21,7 @@ export interface TranscendencePanelHandlers {
   isExcluded: (perkId: string) => boolean;
   previewTP: (ap: number) => number;
   transcendUnlockAP: number;
+  pendingAscensionAP: () => number;
 }
 
 export class TranscendencePanel {
@@ -57,7 +58,10 @@ export class TranscendencePanel {
 
   update(state: GameState): void {
     if (!this.root) return;
-    const ap = state.resources.apThisTranscendence;
+    // Transcending banks the current run's AP first, so every number in this
+    // panel is priced on the cycle total *plus* what the run would pay out.
+    const pending = this.handlers.pendingAscensionAP();
+    const ap = state.resources.apThisTranscendence + pending;
     const tp = state.resources.transcendencePoints;
     const transcendences = state.stats.transcendences;
     const previewTP = this.handlers.previewTP(ap);
@@ -68,14 +72,14 @@ export class TranscendencePanel {
     setText(this.summaryTpDamage, `+${formatNumber((this.computeTpDamage() - 1) * 100)}%`);
     setText(this.summaryTpResource, `+${formatNumber((this.computeTpResource() - 1) * 100)}%`);
 
-    this.updateTranscend(canTranscend, ap, previewTP);
+    this.updateTranscend(canTranscend, ap, previewTP, pending);
 
     for (const p of TP_PERKS) {
       this.updateTPRow(p, tp, state);
     }
   }
 
-  private updateTranscend(canTranscend: boolean, ap: number, preview: number): void {
+  private updateTranscend(canTranscend: boolean, ap: number, preview: number, pending: number): void {
     if (canTranscend) {
       toggleClass(this.transcendCard, 'is-locked', false);
       toggleClass(this.transcendStatus, 'transcend-status-locked', false);
@@ -92,8 +96,11 @@ export class TranscendencePanel {
       setText(this.transcendUnlockLine, `${formatNumber(remaining)} more AP to go.`);
     }
 
+    const pendingNote = pending > 0
+      ? ` Includes ${formatNumber(pending)} AP banked from the current run.`
+      : '';
     setText(this.transcendPreview, canTranscend
-      ? `Transcending now would grant ${formatNumber(preview)} TP.`
+      ? `Transcending now would grant ${formatNumber(preview)} TP.${pendingNote}`
       : `At ${formatNumber(this.handlers.transcendUnlockAP)} AP you would earn ${formatNumber(tpForAP(this.handlers.transcendUnlockAP))} TP.`);
     this.transcendBtn.disabled = !canTranscend;
     toggleClass(this.transcendBtn, 'can-transcend', canTranscend);

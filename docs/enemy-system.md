@@ -312,3 +312,44 @@ underneath the loop still walking it.
 | `gold_stolen` / `gold_recovered` / `gold_escaped` | `{x, y, amount}` | Toasts — a theft the player does not notice is a bug report, not a mechanic |
 | `tower_damaged` | `number` | The single mitigation chain — melee, shells and boss slams alike |
 | `boss_*` | see [boss-encounters.md](boss-encounters.md#events) | Phases, patterns, telegraphs, enrage and rewards |
+
+## How enemies are drawn on a small viewport
+
+The presentation layer scales bodies up on a small viewport so that an `entity(1.7)` outline and a 35 px tank do not turn into a point cloud on a phone. The scale-up is **render-only** — it never feeds back into gameplay.
+
+### Render-only body boost
+
+`ENEMY_DEFS[].radius` is a *gameplay* number. `ProjectileManager.hitRadius` and `EnemyManager.contactRadius` both read it, and so does every collision, projectile and AoE test in the simulation. It must stay where it is — that is the rule the legibility work operates under.
+
+What changes is the *drawn* radius. `Renderer.enemyDrawRadius` returns
+
+```
+ENEMY_DEFS[enemy.type].radius
+  × (enemy.elite ? ELITE_RADIUS_SCALE : 1)
+  × Renderer.bodyBoost()
+```
+
+The first factor is gameplay, the second is the elite silhouette, the third is the viewport scale-up. `bodyBoost()` is `viewBodyBoost(camera.transform.scale, camera.transform.dpr)` from `src/data/arena.ts`, and is exactly **1** on every desktop transform (where `cssPerWorld ≥ REFERENCE_CSS_PER_WORLD = 0.34`) and **1.45** on a phone. So the boost is **not** a radius change — it is a presentation change layered on top of the gameplay number.
+
+### Why `ENEMY_DEFS[].radius` is not it
+
+`ENEMY_DEFS[].radius` is the only field every gameplay test reads. Raising it on a phone would change collision, projectile hit and contact radius alike — out of scope for a legibility fix, and a cheat the simulation would never be able to undo. The boost wraps around it instead: every read of `ENEMY_DEFS[].radius` in `EnemyManager` and `ProjectileManager` keeps the gameplay value, and only the renderer sees the multiplied version.
+
+### The slack that bounds the boost
+
+A body drawn larger than the radius the simulation tests against is a lie the player can feel — a shot that visibly clips an enemy and does nothing. The projectile test is `radius + PROJECTILE_HIT_PAD` (27 world units), so the drawn size can grow into that pad without changing a single hit:
+
+| Type | `radius` | drawn at 1.45 (× 1.25 if elite) | hit radius | slack |
+|---|---:|---:|---:|---:|
+| tank | 30.6 | 55.5 | 57.6 | **2.1** |
+| harbinger | 28.9 | 52.4 | 55.9 | 3.5 |
+| boss (never elite) | 51.0 | 74.0 | 78.0 | 4.0 |
+| splitter / warden | 27.2 | 49.3 | 54.2 | 4.9 |
+| siege / chorus | 25.5 | 46.2 | 52.5 | 6.3 |
+| healer / shielded / leech | 23.8 | 43.1 | 50.8 | 7.7 |
+| burrower | 22.1 | 40.1 | 49.1 | 9.0 |
+| normal / blinker | 20.4 | 37.0 | 47.4 | 10.4 |
+| flying / thief | 18.7 | 33.9 | 45.7 | 11.8 |
+| fast | 17.0 | 30.8 | 44.0 | 13.2 |
+
+The tank binds, and the boost where it would break is **1.506**. `MAX_BODY_BOOST = 1.45` leaves 4% of headroom; `tests/enemy-scale.test.ts` pins the invariant by asserting every entry's `radius × MAX_BODY_BOOST × (boss ? 1 : ELITE_RADIUS_SCALE)` is `≤ radius + PROJECTILE_HIT_PAD`, so raising the ceiling by hand turns into a red test before it can ship.

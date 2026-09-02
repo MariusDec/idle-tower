@@ -1,6 +1,7 @@
 import type { RenderSnapshot, Enemy, HostileShot, Projectile, Particle, ParticleLayer, DamageNumber, Shockwave, Mine, AuraType, LootOrb, BossIntroView } from '../types';
 import { LOOT_ORB_COLORS, LOOT_TUNING, type LootOrbKind } from '../data/loot';
-import { ARENA, ARENA_RANGE_CAP, entity, world } from '../data/arena';
+import { ARENA, ARENA_RANGE_CAP, entity, viewBodyBoost, viewPenWidth, world } from '../data/arena';
+import { MIN_STROKE_PX } from '../data/arena';
 import type { Camera } from './Camera';
 import { TOWER_VISUAL } from '../data/tower';
 import { DEFAULT_TOWER_MARKS, type TowerMarks } from '../data/towerMarks';
@@ -14,10 +15,31 @@ import { formatWithOptionalDecimal } from '../utils/bigNumber';
 import { ELITE_AURA_COLORS, AURA_RADIUS } from '../systems/EnemyManager';
 
 /** How much larger an elite renders than a normal enemy of the same type. */
-const ELITE_RADIUS_SCALE = 1.25;
+export const ELITE_RADIUS_SCALE = 1.25;
+/**
+ * The wingbeat (§5).
+ *
+ * `WING_FREQ` is radians per second on the wall clock now (§2), so 11 rad/s is
+ * a real 1.75 Hz rather than 1.75 Hz-at-60-fps. `WING_REST` is the pose held
+ * under `prefers-reduced-motion`: a clear raised V, because the old -0.15 rad
+ * was a flat wing and a flat wing on a 7 px body is no wing at all.
+ */
+const WING_FREQ = 11;
+const WING_AMPLITUDE = 0.62;
+const WING_REST = -0.34;
 
-/** Frame step every animation in this file advances on. See `Renderer.time`. */
+/** Fallback frame step when a caller does not supply one. See `Renderer.dt`. */
 const FRAME_DT = 1 / 60;
+/**
+ * The clamp on a real frame delta.
+ *
+ * The floor keeps a 240 Hz display from advancing the clock in slivers the
+ * `Math.sin` arguments cannot resolve; the ceiling keeps a 300 ms stall —
+ * a sprite bake, a save write, a tab coming back — from teleporting every
+ * animation in the file forward by a third of a second on the frame after.
+ */
+const MIN_FRAME_DT = 1 / 240;
+const MAX_FRAME_DT = 1 / 20;
 
 /**
  * The Part 2 display face, as one string, kept byte-identical to
@@ -427,9 +449,18 @@ export class Renderer {
    */
   private readonly reducedMotion: boolean;
   private time = 0;
+  /**
+   * Seconds the last frame took, clamped. Every age, ease and decay in this
+   * file steps by this rather than by a fixed 1/60 — a phone that renders 200
+   * bodies at 25 fps used to run every loop here at 42% speed, which is what
+   * made the flier's wingbeat read as drift (plans/enemies.md §1.6).
+   */
+  private dt = FRAME_DT;
   private bgCanvas: HTMLCanvasElement | null = null;
   /** World scale the background was baked at, so a zoom change re-bakes it. */
   private bgScale = 0;
+  /** Camera scale the enemy sprites were baked at, so a zoom change re-bakes them. */
+  private spriteScale = 0;
   /** Core the ground was baked for; a new core re-tints the wash and the embers. */
   private bgCore: CoreId | null = null;
   /** The seeded terrain tile, baked once and tiled as a pattern. */
@@ -729,8 +760,20 @@ export class Renderer {
     this.comboEdgeEmber = null;
   }
 
-  draw(snapshot: RenderSnapshot, options?: RenderOptions): void {
-    this.time += FRAME_DT;
+  draw(snapshot: RenderSnapshot, options?: RenderOptions, realDt: number = FRAME_DT): void {
+    this.dt = Math.min(MAX_FRAME_DT, Math.max(MIN_FRAME_DT, realDt));
+    this.time += this.dt;
+    // Body sprites bake their own stroke widths and their boosted radius, both of
+    // which are functions of the camera scale. A resize, a rotation or a quality
+    // tier change moves it; `invalidateBackground` does not fire for the last of
+    // those, so the check lives here rather than there.
+    const bakeScale = this.camera.transform.scale;
+    if (bakeScale !== this.spriteScale) {
+      this.spriteScale = bakeScale;
+      this.enemySprites.clear();
+      this.shadowSprites.clear();
+      this.partSprites.clear();
+    }
     const ctx = this.ctx;
     const camera = this.camera;
     this.towerX = snapshot.tower.x;
@@ -887,7 +930,7 @@ export class Renderer {
   private advanceCombo(snap: RenderSnapshot): void {
     const tier = snap.combo?.tier ?? 0;
     const target = COMBO_INTENSITY[Math.min(Math.max(tier, 0), 4)];
-    const k = 1 - Math.exp(-FRAME_DT / Renderer.COMBO_TAU);
+    const k = 1 - Math.exp(-this.dt / Renderer.COMBO_TAU);
     this.comboGlow += (target - this.comboGlow) * k;
     // Snap to off so both passes can early-out instead of blitting a
     // transparent full-screen sprite forever after a combo ends.
@@ -901,15 +944,15 @@ export class Renderer {
       return;
     }
 
-    this.emberDebt += this.comboGlow * EMBER_RATE * FRAME_DT;
+    this.emberDebt += this.comboGlow * EMBER_RATE * this.dt;
     while (this.emberDebt >= 1) {
       this.emberDebt -= 1;
       this.pushEmber(snap);
     }
     for (let i = this.embers.length - 1; i >= 0; i--) {
       const e = this.embers[i];
-      e.age += FRAME_DT;
-      e.y += e.vy * FRAME_DT;
+      e.age += this.dt;
+      e.y += e.vy * this.dt;
       if (e.age >= e.life) this.embers.splice(i, 1);
     }
   }
@@ -981,7 +1024,7 @@ export class Renderer {
 
     for (let i = this.impacts.length - 1; i >= 0; i--) {
       const im = this.impacts[i];
-      im.age += FRAME_DT;
+      im.age += this.dt;
       if (im.age >= DECAL_TIME) this.impacts.splice(i, 1);
     }
   }
@@ -1032,7 +1075,7 @@ export class Renderer {
       // that lands entirely on a shield does not flash the body — which is
       // correct: the shield arc is the read for that one.
       if (e.hp < track.hp) track.flash = HIT_FLASH_TIME;
-      else if (track.flash > 0) track.flash = Math.max(0, track.flash - FRAME_DT);
+      else if (track.flash > 0) track.flash = Math.max(0, track.flash - this.dt);
       track.hp = e.hp;
       track.seen = stamp;
       track.x = e.x;
@@ -1049,7 +1092,7 @@ export class Renderer {
 
     for (let i = this.deaths.length - 1; i >= 0; i--) {
       const d = this.deaths[i];
-      d.age += FRAME_DT;
+      d.age += this.dt;
       if (d.age >= DEATH_TIME) this.deaths.splice(i, 1);
     }
   }
@@ -1102,14 +1145,14 @@ export class Renderer {
       this.rangeBloom = 1;
     }
     if (this.rangeEase < 1) {
-      this.rangeEase = Math.min(1, this.rangeEase + FRAME_DT / RANGE_EASE_TIME);
+      this.rangeEase = Math.min(1, this.rangeEase + this.dt / RANGE_EASE_TIME);
       this.rangeDrawn = this.rangeFrom
         + (this.rangeTo - this.rangeFrom) * easeOutCubic(this.rangeEase);
     } else {
       this.rangeDrawn = this.rangeTo;
     }
     if (this.rangeBloom > 0) {
-      this.rangeBloom = Math.max(0, this.rangeBloom - FRAME_DT / RANGE_BLOOM_TIME);
+      this.rangeBloom = Math.max(0, this.rangeBloom - this.dt / RANGE_BLOOM_TIME);
     }
   }
 
@@ -1154,7 +1197,7 @@ export class Renderer {
     }
 
     for (let i = this.tracers.length - 1; i >= 0; i--) {
-      this.tracers[i].age += FRAME_DT;
+      this.tracers[i].age += this.dt;
       if (this.tracers[i].age >= TRACER_TIME) this.tracers.splice(i, 1);
     }
 
@@ -1169,8 +1212,8 @@ export class Renderer {
       this.chaseTurret(Math.atan2(snap.aimLine.y - t.y, snap.aimLine.x - t.x));
     }
 
-    if (this.recoil > 0) this.recoil = Math.max(0, this.recoil - FRAME_DT / TOWER_VISUAL.recoilTime);
-    if (this.muzzle > 0) this.muzzle = Math.max(0, this.muzzle - FRAME_DT / TOWER_VISUAL.muzzleTime);
+    if (this.recoil > 0) this.recoil = Math.max(0, this.recoil - this.dt / TOWER_VISUAL.recoilTime);
+    if (this.muzzle > 0) this.muzzle = Math.max(0, this.muzzle - this.dt / TOWER_VISUAL.muzzleTime);
   }
 
   /** Pooled push: the oldest tracer is dropped once the cap is reached. */
@@ -1201,9 +1244,9 @@ export class Renderer {
       // and will clear it out from under us the moment the wave starts.
       this.portalLanes.length = 0;
       for (const lane of lanes) this.portalLanes.push({ x: lane.x, y: lane.y });
-      this.portalOpen = Math.min(1, this.portalOpen + FRAME_DT / PORTAL_OPEN_TIME);
+      this.portalOpen = Math.min(1, this.portalOpen + this.dt / PORTAL_OPEN_TIME);
     } else {
-      this.portalOpen = Math.max(0, this.portalOpen - FRAME_DT / PORTAL_OPEN_TIME);
+      this.portalOpen = Math.max(0, this.portalOpen - this.dt / PORTAL_OPEN_TIME);
       if (this.portalOpen === 0) this.portalLanes.length = 0;
     }
 
@@ -1227,7 +1270,7 @@ export class Renderer {
 
     for (let i = this.emergences.length - 1; i >= 0; i--) {
       const em = this.emergences[i];
-      em.age += FRAME_DT;
+      em.age += this.dt;
       if (em.age >= EMERGENCE_TIME) this.emergences.splice(i, 1);
     }
   }
@@ -3564,9 +3607,28 @@ export class Renderer {
     return c;
   }
 
-  /** Radius an enemy of this type renders at, elite scaling included. */
+  /**
+   * A stroke width that survives the viewport it is drawn into (§3).
+   *
+   * Every `entity(k)` line width in this file is in world units, so its real
+   * width is `entity(k) x camera.transform.scale` — 1.98 device px on a laptop
+   * and 0.58 on a phone at the `low` tier. This floors it.
+   */
+  private penWidth(worldWidth: number, minPx: number = MIN_STROKE_PX): number {
+    return viewPenWidth(worldWidth, this.camera.transform.scale, minPx);
+  }
+
+  /** Render-only body scale-up on a small viewport. 1 on every desktop. */
+  private bodyBoost(): number {
+    const t = this.camera.transform;
+    return viewBodyBoost(t.scale, t.dpr);
+  }
+
+  /** Radius an enemy of this type renders at: elite scaling and viewport boost included. */
   private enemyDrawRadius(enemy: Enemy): number {
-    return ENEMY_DEFS[enemy.type].radius * (enemy.elite ? ELITE_RADIUS_SCALE : 1);
+    return ENEMY_DEFS[enemy.type].radius
+      * (enemy.elite ? ELITE_RADIUS_SCALE : 1)
+      * this.bodyBoost();
   }
 
   /**
@@ -3586,7 +3648,10 @@ export class Renderer {
 
   /** Slack a type's sprite needs around its radius for details that overhang. */
   private spritePadding(type: Enemy['type']): number {
-    return type === 'siege' ? entity(12) : SPRITE_PADDING;
+    const base = type === 'siege' ? entity(12) : SPRITE_PADDING;
+    // The outline is floored at 2 device px (§3.3); at a phone's `scale` that is
+    // 10 world units wide, and half of it hangs outside the traced silhouette.
+    return this.penWidth(base, 4);
   }
 
   private getEnemySprite(enemy: Enemy): HTMLCanvasElement {
@@ -3696,7 +3761,7 @@ export class Renderer {
     rim.addColorStop(0.55, withAlpha(INK['050'], 0.12));
     rim.addColorStop(1, withAlpha(INK['050'], 0));
     g.strokeStyle = rim;
-    g.lineWidth = entity(3.4);
+    g.lineWidth = this.penWidth(entity(3.4), 2);
     trace();
     g.stroke();
 
@@ -3706,7 +3771,7 @@ export class Renderer {
     // Outline last, unclipped, so the silhouette holds against a lit floor.
     trace();
     g.strokeStyle = def.borderColor;
-    g.lineWidth = entity(type === 'tank' || type === 'boss' ? 2.4 : 1.7);
+    g.lineWidth = this.penWidth(entity(type === 'tank' || type === 'boss' ? 2.4 : 1.7), 2);
     g.lineJoin = 'round';
     g.stroke();
 
@@ -3715,7 +3780,7 @@ export class Renderer {
       // "this is the danger it carries" are the same read at a glance.
       trace();
       g.strokeStyle = withAlpha(v.aura ? ELITE_CROWN_COLORS[v.aura] : INK['050'], 0.9);
-      g.lineWidth = entity(1.6);
+      g.lineWidth = this.penWidth(entity(1.6), 1.5);
       g.stroke();
     }
   }
@@ -3872,7 +3937,7 @@ export class Renderer {
       // three reads as *moving* even standing still at contact range.
       case 'fast': {
         g.strokeStyle = dark(0.45);
-        g.lineWidth = entity(1.8);
+        g.lineWidth = this.penWidth(entity(1.8));
         g.lineCap = 'round';
         for (let i = 0; i < 3; i++) {
           const x = -r * 0.5 + i * r * 0.38;
@@ -3901,7 +3966,7 @@ export class Renderer {
           g.fillStyle = pale(0.1);
           g.fill();
           g.strokeStyle = dark(0.6);
-          g.lineWidth = entity(1.6);
+          g.lineWidth = this.penWidth(entity(1.6));
           g.stroke();
           // Rivets along the plate's leading edge.
           g.fillStyle = pale(0.34);
@@ -3976,7 +4041,7 @@ export class Renderer {
         g.arc(0, 0, r * 0.55, 0, Math.PI * 2);
         g.fill();
         g.strokeStyle = dark(0.65);
-        g.lineWidth = entity(1.9);
+        g.lineWidth = this.penWidth(entity(1.9));
         g.lineCap = 'round';
         for (let i = 0; i < 5; i++) {
           const a = (i / 5) * Math.PI * 2 + 0.4;
@@ -3992,7 +4057,7 @@ export class Renderer {
       // read; this is what the thing looks like once they are gone.
       case 'shielded': {
         g.strokeStyle = dark(0.45);
-        g.lineWidth = entity(2.2);
+        g.lineWidth = this.penWidth(entity(2.2));
         for (const at of [0.72, 0.44]) {
           g.beginPath();
           g.arc(0, 0, r * at, light - 1.2, light + 1.2);
@@ -4011,7 +4076,7 @@ export class Renderer {
         g.fillRect(-r * 0.95, -r * 0.84, r * 1.9, r * 0.28);
         g.fillRect(-r * 0.95, r * 0.56, r * 1.9, r * 0.28);
         g.strokeStyle = pale(0.22);
-        g.lineWidth = entity(1.2);
+        g.lineWidth = this.penWidth(entity(1.2));
         for (let i = 0; i < 5; i++) {
           const x = -r * 0.78 + i * r * 0.39;
           g.beginPath();
@@ -4032,7 +4097,7 @@ export class Renderer {
         g.arc(r * 1.34, 0, r * 0.14, 0, Math.PI * 2);
         g.fill();
         g.strokeStyle = dark(0.5);
-        g.lineWidth = entity(1.4);
+        g.lineWidth = this.penWidth(entity(1.4));
         g.beginPath();
         g.moveTo(r * 0.9, -r * 0.2);
         g.lineTo(r * 0.9, r * 0.2);
@@ -4054,7 +4119,7 @@ export class Renderer {
           g.fill();
         }
         g.strokeStyle = dark(0.45);
-        g.lineWidth = entity(1.6);
+        g.lineWidth = this.penWidth(entity(1.6));
         g.beginPath();
         g.arc(0, 0, r * 0.78, Math.PI * 1.1, Math.PI * 1.9);
         g.stroke();
@@ -4089,7 +4154,7 @@ export class Renderer {
         g.arc(0, 0, r * 0.17, 0, Math.PI * 2);
         g.fill();
         g.strokeStyle = withAlpha(def.borderColor, 0.45);
-        g.lineWidth = entity(1.2);
+        g.lineWidth = this.penWidth(entity(1.2));
         g.beginPath();
         g.arc(0, 0, r * 0.86, 0, Math.PI * 2);
         g.stroke();
@@ -4107,7 +4172,7 @@ export class Renderer {
         g.arc(0, 0, r * 0.8, 0, Math.PI * 2);
         g.fill();
         g.strokeStyle = pale(0.5);
-        g.lineWidth = entity(1.6);
+        g.lineWidth = this.penWidth(entity(1.6));
         g.beginPath();
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
@@ -4119,7 +4184,7 @@ export class Renderer {
         g.closePath();
         g.stroke();
         g.strokeStyle = withAlpha(def.borderColor, 0.75);
-        g.lineWidth = entity(1.3);
+        g.lineWidth = this.penWidth(entity(1.3));
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2;
           g.beginPath();
@@ -4148,7 +4213,7 @@ export class Renderer {
           break;
         }
         g.strokeStyle = withAlpha(def.borderColor, 0.95);
-        g.lineWidth = entity(2.2);
+        g.lineWidth = this.penWidth(entity(2.2));
         g.lineCap = 'round';
         for (const dir of [-1, 1]) {
           g.beginPath();
@@ -4172,7 +4237,7 @@ export class Renderer {
       // tier; this is what makes it a *thing* rather than a polygon.
       case 'boss': {
         g.strokeStyle = dark(0.55);
-        g.lineWidth = entity(2.6);
+        g.lineWidth = this.penWidth(entity(2.6));
         for (const at of [0.78, 0.54]) {
           g.beginPath();
           g.arc(0, 0, r * at, light - 1.35, light + 1.35);
@@ -4196,7 +4261,7 @@ export class Renderer {
           g.fill();
         }
         g.strokeStyle = dark(0.45);
-        g.lineWidth = entity(2);
+        g.lineWidth = this.penWidth(entity(2));
         g.beginPath();
         g.moveTo(0, r * 0.06);
         g.lineTo(0, r * 0.8);
@@ -4207,12 +4272,12 @@ export class Renderer {
       // *absence* on purpose — the thing it does to the wave is take it away.
       case 'harbinger': {
         g.strokeStyle = withAlpha(def.borderColor, 0.7);
-        g.lineWidth = entity(1.6);
+        g.lineWidth = this.penWidth(entity(1.6));
         g.beginPath();
         g.arc(0, 0, r * 0.62, 0, Math.PI * 2);
         g.stroke();
         g.strokeStyle = pale(0.4);
-        g.lineWidth = entity(1.1);
+        g.lineWidth = this.penWidth(entity(1.1));
         for (const dir of [-1, 1]) {
           g.beginPath();
           g.arc(0, 0, r * 0.34, dir * 0.4, dir * 0.4 + Math.PI * 0.8);
@@ -4235,7 +4300,7 @@ export class Renderer {
         g.closePath();
         g.fill();
         g.strokeStyle = pale(0.45);
-        g.lineWidth = entity(1.2);
+        g.lineWidth = this.penWidth(entity(1.2));
         g.beginPath();
         g.moveTo(-r * 0.45, -r * 0.2);
         g.lineTo(r * 0.45, -r * 0.2);
@@ -4252,7 +4317,7 @@ export class Renderer {
       // drawn. A player who sees three of these should read one health bar.
       case 'chorus': {
         g.strokeStyle = withAlpha(def.borderColor, 0.6);
-        g.lineWidth = entity(1.2);
+        g.lineWidth = this.penWidth(entity(1.2));
         g.beginPath();
         for (let i = 0; i < 3; i++) {
           const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
@@ -4377,7 +4442,10 @@ export class Renderer {
     for (const e of enemies) {
       if (!e.alive) continue;
       this.drawAfterImage(ctx, e);
-      if (this.profile.shadows) this.drawEnemyShadow(ctx, e);
+      // The drop shadow is the only thing that says a flier is in the air, and the
+      // `low` tier — which is exactly the phone where the body is smallest — is
+      // where it was being dropped. A handful of fliers is a handful of blits.
+      if (this.profile.shadows || e.type === 'flying') this.drawEnemyShadow(ctx, e);
       this.drawEnemy(ctx, e);
     }
   }
@@ -4453,7 +4521,7 @@ export class Renderer {
     if (!anyWarden) return;
     const pulse = 0.3 + Math.sin(this.time * 3) * 0.12;
     ctx.save();
-    ctx.lineWidth = entity(1.5);
+    ctx.lineWidth = this.penWidth(entity(1.5));
     ctx.strokeStyle = withAlpha(FX.frost, pulse);
     for (const w of enemies) {
       if (!w.alive || w.type !== 'warden') continue;
@@ -4485,7 +4553,7 @@ export class Renderer {
     ctx.save();
     ctx.globalAlpha = fade * 0.35;
     ctx.strokeStyle = ENEMY_DEFS.blinker.borderColor;
-    ctx.lineWidth = entity(2);
+    ctx.lineWidth = this.penWidth(entity(2));
     ctx.setLineDash([entity(4), entity(5)]);
     ctx.beginPath();
     ctx.moveTo(enemy.afterImageX, enemy.afterImageY);
@@ -4495,7 +4563,7 @@ export class Renderer {
   }
 
   private drawEnemyShadow(ctx: CanvasRenderingContext2D, enemy: Enemy): void {
-    const r = ENEMY_DEFS[enemy.type].radius;
+    const r = this.enemyDrawRadius(enemy);
     const airborne = enemy.type === 'flying';
     const sprite = this.getShadowSprite(r, airborne);
     // Thrown away from the key light, and further for something in the air.
@@ -4520,6 +4588,7 @@ export class Renderer {
     // frequency is per type, which means a Runner and a Tank are told apart by
     // how they move before their silhouettes resolve.
     const gait = ENEMY_GAIT[enemy.type];
+    const boost = this.bodyBoost();
     let bob = 0;
     let squash = 0;
     if (!this.reducedMotion) {
@@ -4527,7 +4596,7 @@ export class Renderer {
         + enemy.id * 1.7;
       squash = Math.sin(phase) * gait.squash;
       const lift = Math.sin(phase * 0.5);
-      bob = gait.float ? lift * gait.bob : -Math.abs(lift) * gait.bob;
+      bob = (gait.float ? lift * gait.bob : -Math.abs(lift) * gait.bob) * boost;
     }
 
     // Elite aura (drawn behind the enemy body)
@@ -4601,7 +4670,7 @@ export class Renderer {
       const p = 0.4 + Math.sin(this.time * 8) * 0.3;
       ctx.save();
       ctx.strokeStyle = withAlpha(FX.arcane, p);
-      ctx.lineWidth = entity(3);
+      ctx.lineWidth = this.penWidth(entity(3));
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y + bob, r + 5, 0, Math.PI * 2);
       ctx.stroke();
@@ -4622,7 +4691,7 @@ export class Renderer {
   private drawFrostCrust(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
     const sprite = this.part(`frost|${r.toFixed(1)}`, (r + entity(5)) * 2, (g) => {
       g.strokeStyle = withAlpha(FX.frost, 0.75);
-      g.lineWidth = entity(1.5);
+      g.lineWidth = this.penWidth(entity(1.5));
       g.lineCap = 'round';
       for (let i = 0; i < 9; i++) {
         const a = (i / 9) * Math.PI * 2;
@@ -4658,7 +4727,7 @@ export class Renderer {
     const ratio = Math.max(0, Math.min(1, left / ENEMY_BEHAVIOR.splitterSpawnProtection));
     ctx.save();
     ctx.strokeStyle = withAlpha(INK['050'], 0.2 + ratio * 0.4);
-    ctx.lineWidth = entity(1.4);
+    ctx.lineWidth = this.penWidth(entity(1.4));
     ctx.setLineDash([entity(4), entity(4)]);
     ctx.lineDashOffset = -this.time * 26;
     ctx.beginPath();
@@ -4668,43 +4737,57 @@ export class Renderer {
   }
 
   /**
-   * Tattered wings (§4.1), drawn live because they flap.
+   * Tattered wings (§4.1, §5), drawn live because they flap.
    *
    * They used to be one flat triangle per side — a nine-pixel spike that read
    * as a fin. A scalloped membrane on two struts is barely more geometry and it
    * is the difference between "a white circle with fins" and a thing that
    * flies; the notches in the trailing edge are what make it *tattered* rather
-   * than merely pointed.
+   * than merely pointed. The membrane is now a root-to-tip wash derived from
+   * the flier's own `borderColor` token (§5), so a contrast retune moves the
+   * wings with the body.
    */
   private drawWings(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
     const def = ENEMY_DEFS[enemy.type];
-    const flap = this.reducedMotion ? -0.15 : Math.sin(this.time * 12 + enemy.id) * 0.45;
-    const span = r * 2.1;
+    const flap = this.reducedMotion
+      ? WING_REST
+      : Math.sin(this.time * WING_FREQ + enemy.id * 1.7) * WING_AMPLITUDE;
+    // A wing swept up or down is foreshortened — the span the viewer sees is the
+    // true span times the cosine of the beat angle. Without it the two wings are
+    // rigid sticks on a hinge, which is the read a rotation alone gives you.
+    const foreshorten = 0.82 + 0.18 * Math.cos(flap);
+    const span = r * 2.35;
     ctx.save();
     ctx.translate(enemy.x, enemy.y + bob);
     for (const dir of [-1, 1]) {
       ctx.save();
       ctx.rotate(flap * dir);
-      ctx.scale(dir, 1);
+      ctx.scale(dir * foreshorten, 1);
       // Membrane: a leading edge out to the tip, then three scallops back in.
       ctx.beginPath();
       ctx.moveTo(r * 0.5, -r * 0.15);
-      ctx.quadraticCurveTo(span * 0.7, -r * 0.95, span, -r * 0.5);
+      ctx.quadraticCurveTo(span * 0.7, -r * 1.05, span, -r * 0.5);
       ctx.quadraticCurveTo(span * 0.82, -r * 0.05, span * 0.66, -r * 0.3);
       ctx.quadraticCurveTo(span * 0.6, r * 0.2, span * 0.42, -r * 0.1);
       ctx.quadraticCurveTo(span * 0.34, r * 0.32, r * 0.62, r * 0.12);
       ctx.closePath();
-      ctx.fillStyle = withAlpha(def.borderColor, 0.92);
+      // Root-to-tip wash. The flat `borderColor` fill this replaces is #2c3e50
+      // against an ink-800 floor — a contrast that survives a laptop and vanishes
+      // at a phone's 0.20 CSS px per world unit. Derived from the token rather
+      // than a second literal, so retuning the flier moves its wings with it.
+      const wash = ctx.createLinearGradient(r * 0.5, 0, span, 0);
+      wash.addColorStop(0, withAlpha(lighten(def.borderColor, 0.18), 0.95));
+      wash.addColorStop(1, withAlpha(lighten(def.borderColor, 0.5), 0.95));
+      ctx.fillStyle = wash;
       ctx.fill();
-      // A lit edge in the *body's* colour. The membrane is the flier's dark
-      // navy `borderColor`, which on this floor is very nearly the floor —
-      // without the edge the wings are geometry nobody can see.
-      ctx.strokeStyle = withAlpha(def.color, 0.55);
-      ctx.lineWidth = entity(1.2);
+      // Lit leading edge, in the body's own pale.
+      ctx.strokeStyle = withAlpha(def.color, 0.8);
+      ctx.lineWidth = this.penWidth(entity(1.6), 1.5);
       ctx.stroke();
-      // Struts.
-      ctx.strokeStyle = withAlpha(def.color, 0.3);
-      ctx.lineWidth = entity(1.1);
+      // Struts. Dark now rather than pale: against a lightened membrane they are
+      // structure, and against the old dark one they were the only thing visible.
+      ctx.strokeStyle = withAlpha(INK['950'], 0.45);
+      ctx.lineWidth = this.penWidth(entity(1.1));
       ctx.beginPath();
       ctx.moveTo(r * 0.5, -r * 0.15);
       ctx.lineTo(span * 0.66, -r * 0.3);
@@ -4812,7 +4895,7 @@ export class Renderer {
       ctx.fillStyle = withAlpha(FX.frost, 0.65);
       ctx.fill();
       ctx.strokeStyle = withAlpha(lighten(FX.frost, 0.4), 0.9);
-      ctx.lineWidth = entity(1);
+      ctx.lineWidth = this.penWidth(entity(1));
       ctx.stroke();
     }
     ctx.restore();
@@ -4845,7 +4928,7 @@ export class Renderer {
     ctx.save();
     ctx.translate(enemy.x, enemy.y + bob);
     ctx.strokeStyle = withAlpha(FX.frost, 0.35 + ratio * 0.45);
-    ctx.lineWidth = entity(1.5) + ratio * 2;
+    ctx.lineWidth = this.penWidth(entity(1.5)) + ratio * 2;
     ctx.beginPath();
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2 - Math.PI / 2 + this.time * 0.6;
@@ -4869,7 +4952,7 @@ export class Renderer {
   private drawSiegeStance(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number): void {
     ctx.save();
     ctx.strokeStyle = withAlpha(lighten(FX.gold, 0.2), 0.28);
-    ctx.lineWidth = entity(1.5);
+    ctx.lineWidth = this.penWidth(entity(1.5));
     ctx.setLineDash([entity(7), entity(9)]);
     ctx.beginPath();
     ctx.arc(enemy.x, enemy.y, r + 14, 0, Math.PI * 2);
@@ -4888,7 +4971,7 @@ export class Renderer {
         const t = ((this.time * 0.55 + i * 0.5 + enemy.id * 0.13) % 1);
         ctx.globalAlpha = (1 - t) * 0.3;
         ctx.strokeStyle = withAlpha(INK['200'], 1);
-        ctx.lineWidth = entity(1.6) + t * entity(3);
+        ctx.lineWidth = this.penWidth(entity(1.6)) + t * entity(3);
         ctx.beginPath();
         ctx.moveTo(r * 1.34, 0);
         ctx.quadraticCurveTo(
@@ -4908,7 +4991,7 @@ export class Renderer {
     const progress = 1 - remaining / reload;
     if (progress > 0) {
       ctx.strokeStyle = withAlpha(mix(FX.ember, FX.gold, 0.5), 0.85);
-      ctx.lineWidth = entity(3);
+      ctx.lineWidth = this.penWidth(entity(3));
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 8, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
       ctx.stroke();
@@ -4933,7 +5016,7 @@ export class Renderer {
       const t = invuln / BOSS_ENCOUNTER.phaseInvulnerability;
       ctx.save();
       ctx.strokeStyle = withAlpha(lighten(FX.gold, 0.55), 0.35 + t * 0.5);
-      ctx.lineWidth = entity(3) + t * 3;
+      ctx.lineWidth = this.penWidth(entity(3)) + t * 3;
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 10 + (1 - t) * 26, 0, Math.PI * 2);
       ctx.stroke();
@@ -4947,7 +5030,7 @@ export class Renderer {
       const ratio = Math.max(0, Math.min(1, shield / shieldMax));
       ctx.save();
       ctx.strokeStyle = withAlpha(FX.frost, 0.85);
-      ctx.lineWidth = entity(4);
+      ctx.lineWidth = this.penWidth(entity(4));
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 7, -Math.PI / 2, -Math.PI / 2 + ratio * Math.PI * 2);
       ctx.stroke();
@@ -4965,12 +5048,12 @@ export class Renderer {
       ctx.strokeStyle = mitigated
         ? withAlpha(lighten(FX.frost, 0.2), 0.5 + progress * 0.4)
         : withAlpha(FX.ember, 0.45 + progress * 0.5);
-      ctx.lineWidth = entity(3) + progress * 4;
+      ctx.lineWidth = this.penWidth(entity(3)) + progress * 4;
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, outer, 0, Math.PI * 2);
       ctx.stroke();
       // A filling inner disc outline, so the last half-second is unmistakable.
-      ctx.lineWidth = entity(2);
+      ctx.lineWidth = this.penWidth(entity(2));
       ctx.setLineDash([entity(6), entity(8)]);
       ctx.beginPath();
       ctx.arc(enemy.x, enemy.y, r + 20 + progress * 12, 0, Math.PI * 2);
@@ -4986,7 +5069,7 @@ export class Renderer {
       const pulse = 0.35 + Math.sin(this.time * 9 + enemy.id) * 0.2;
       ctx.save();
       ctx.strokeStyle = withAlpha(FX.mana, pulse);
-      ctx.lineWidth = entity(2.5);
+      ctx.lineWidth = this.penWidth(entity(2.5));
       ctx.setLineDash([entity(10), entity(8)]);
       ctx.lineDashOffset = -this.time * 90;
       ctx.beginPath();
@@ -5046,7 +5129,7 @@ export class Renderer {
     const progress = 1 - surfacing / ENEMY_BEHAVIOR.burrowTelegraph;
     ctx.save();
     ctx.strokeStyle = withAlpha(lighten(FX.gold, 0.12), 0.75 * (1 - progress));
-    ctx.lineWidth = entity(4);
+    ctx.lineWidth = this.penWidth(entity(4));
     ctx.beginPath();
     ctx.arc(enemy.x, enemy.y, r + 6 + progress * 42, 0, Math.PI * 2);
     ctx.stroke();
@@ -5078,11 +5161,11 @@ export class Renderer {
       g.arc(0, 0, r, 0, Math.PI * 2);
       g.fill();
       g.strokeStyle = withAlpha(INK['950'], 0.7);
-      g.lineWidth = entity(1.2);
+      g.lineWidth = this.penWidth(entity(1.2));
       g.stroke();
       // Milled edge: short ticks around the rim.
       g.strokeStyle = withAlpha(INK['950'], 0.35);
-      g.lineWidth = entity(0.9);
+      g.lineWidth = this.penWidth(entity(0.9));
       for (let i = 0; i < 10; i++) {
         const a = (i / 10) * Math.PI * 2;
         g.beginPath();
@@ -5145,10 +5228,13 @@ export class Renderer {
 
   private drawEnemyHpBar(ctx: CanvasRenderingContext2D, enemy: Enemy, r: number, bob: number): void {
     if (enemy.hp >= enemy.maxHp) return;
+    // World units per device pixel, so the bar has a floor in real pixels rather
+    // than in a unit the viewport is free to shrink to nothing.
+    const px = 1 / this.camera.transform.scale;
     const barW = Math.max(20, r * 2);
-    const barH = enemy.type === 'boss' ? 6 : 4;
+    const barH = Math.max(enemy.type === 'boss' ? 6 : 4, (enemy.type === 'boss' ? 3.5 : 2.5) * px);
     const x = enemy.x - barW / 2;
-    const y = enemy.y - r - 10 + bob;
+    const y = enemy.y - r - Math.max(10, 4 * px) + bob;
     const ratio = Math.max(0, enemy.hp / enemy.maxHp);
     ctx.fillStyle = withAlpha('#000', 0.6);
     ctx.fillRect(x, y, barW, barH);
@@ -5156,7 +5242,7 @@ export class Renderer {
     ctx.fillRect(x, y, barW * ratio, barH);
     if (enemy.type === 'boss') {
       ctx.strokeStyle = withAlpha('#ffffff', 0.4);
-      ctx.lineWidth = entity(1);
+      ctx.lineWidth = this.penWidth(entity(1));
       ctx.strokeRect(x - 0.5, y - 0.5, barW + 1, barH + 1);
     }
   }

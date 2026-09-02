@@ -346,6 +346,7 @@ async function bootstrap(): Promise<void> {
     isAutomationEnabled: (key) => game.prestige.getAutomationEnabled(key),
     ascendUnlockWave: game.prestige.ascensionUnlockWave(),
     transcendUnlockAP: game.prestige.transcendenceUnlockAP(),
+    pendingAscensionAP: () => game.pendingAscensionAP(),
     targetAscendWave: game.gameState.prestige.targetAscendWave,
     meetsPrerequisites: (id) => game.prestige.meetsPrerequisites(id),
     isExcluded: (id) => game.prestige.isExcluded(id),

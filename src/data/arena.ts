@@ -125,6 +125,63 @@ export const PROJECTILE_HIT_PAD = Math.round(
   world(6) + (WORLD_SCALE - ENTITY_SCALE) * 13,
 );
 
+/**
+ * Least a stroke may measure, in **device** pixels.
+ *
+ * Below one device pixel the browser does not draw a thin line, it draws a
+ * fraction of a pixel's alpha — and an `entity(1.2)` detail stroke is 0.41
+ * device px on a phone at the `low` tier, which is why every interior detail
+ * on an enemy dissolves there (plans/enemies.md §1.4). 1.25 rather than 1.0
+ * so the line survives landing between two pixel centres.
+ */
+export const MIN_STROKE_PX = 1.25;
+
+/**
+ * The `cssPerWorld` a desktop window gets, and the reference the small-viewport
+ * body scale-up aims at. Measured: 0.3312 on a 900x620 dpr-1 desktop, 0.3419
+ * on a 1000x640 laptop, 0.4060 on a 1140x760 one.
+ */
+export const REFERENCE_CSS_PER_WORLD = 0.34;
+
+/**
+ * Ceiling on that scale-up.
+ *
+ * Not a taste value: a drawn body must stay inside the radius a projectile
+ * actually tests against, which is `radius + PROJECTILE_HIT_PAD`. The tank is
+ * the binding case — `entity(18) x 1.45 x ELITE_RADIUS_SCALE` = 55.5 against a
+ * 57.6 hit radius — and the ceiling where it breaks is 1.506. See
+ * `tests/enemy-scale.test.ts`, which is what stops this being raised blind.
+ */
+export const MAX_BODY_BOOST = 1.45;
+
+/**
+ * A world-unit stroke width with a device-pixel floor.
+ *
+ * `scale` is `ViewTransform.scale` — backing-store pixels per world unit — so
+ * `minPx / scale` is that many device pixels expressed in world units. Works
+ * unchanged inside a baked sprite, because a body sprite is baked at 1 canvas
+ * pixel per world unit and blitted under the same transform.
+ */
+export function viewPenWidth(worldWidth: number, scale: number, minPx: number = MIN_STROKE_PX): number {
+  if (!(scale > 0)) return worldWidth;
+  return Math.max(worldWidth, minPx / scale);
+}
+
+/**
+ * How much larger than its true radius a body is drawn, so that a phone's
+ * 0.20 CSS px per world unit does not turn the roster into a point cloud.
+ *
+ * Exactly 1 at and above `REFERENCE_CSS_PER_WORLD`, so no desktop changes.
+ * Driven by `cssPerWorld`, not by `scale`, so the same phone gets the same
+ * apparent size on all three quality tiers.
+ */
+export function viewBodyBoost(scale: number, dpr: number): number {
+  if (!(scale > 0) || !(dpr > 0)) return 1;
+  const cssPerWorld = scale / dpr;
+  if (cssPerWorld >= REFERENCE_CSS_PER_WORLD) return 1;
+  return Math.min(MAX_BODY_BOOST, REFERENCE_CSS_PER_WORLD / cssPerWorld);
+}
+
 export interface ArenaExtents {
   /** Half-width of the world rectangle, in world units. */
   halfWidth: number;

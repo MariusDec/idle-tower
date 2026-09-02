@@ -101,7 +101,9 @@ export const ENEMY_GAIT: Record<EnemyType, {
   normal: { freq: 7, bob: entity(1.2), squash: 0.05, float: false },
   fast: { freq: 15, bob: entity(2.2), squash: 0.1, float: false },
   tank: { freq: 3.4, bob: entity(0.8), squash: 0.035, float: false },
-  flying: { freq: 5, bob: entity(3), squash: 0.03, float: true },
+  // The bob is the flier's altitude, and at entity(3) it was 1.0 CSS px on a
+  // phone. Presentation only; nothing outside `Renderer` reads this table.
+  flying: { freq: 5.5, bob: entity(4.5), squash: 0.03, float: true },
   healer: { freq: 5.5, bob: entity(1.4), squash: 0.05, float: false },
   boss: { freq: 2.6, bob: entity(1.6), squash: 0.06, float: false },
   splitter: { freq: 4.5, bob: entity(1.6), squash: 0.11, float: false },

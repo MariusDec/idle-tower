@@ -2830,9 +2830,24 @@ export class Game {
     return true;
   }
 
+  /**
+   * AP the in-progress run would pay out if it ascended right now, or 0 when
+   * the run has not reached the ascension gate. Transcending banks this, so the
+   * UI has to price it in too — otherwise the TP preview under-reports.
+   */
+  pendingAscensionAP(): number {
+    if (!this.prestigeMgr.canAscend(this.state.wave.highestWave)) return 0;
+    return this.prestigeMgr.previewAP(this.state.wave.highestWave);
+  }
+
   transcend(): number {
-    const ascensionPoints = this.state.resources.apThisTranscendence;
+    // The current run's AP is real progress the player earned; a transcendence
+    // that wiped it would punish them for not ascending first. Bank it before
+    // the cycle total is read, so it counts toward the TP payout.
+    const pending = this.pendingAscensionAP();
+    const ascensionPoints = this.state.resources.apThisTranscendence + pending;
     if (!this.prestigeMgr.canTranscend(ascensionPoints)) return 0;
+    const banked = pending > 0 ? this.prestigeMgr.performAscension(this.state).ap : 0;
     const { tp } = this.prestigeMgr.performTranscendence(this.state);
     if (tp <= 0) return 0;
     const record = this.finalizeRun('transcendence', tp, 0);
@@ -2842,7 +2857,9 @@ export class Game {
     this.syncUiApis();
     this.bus.emit('toast', {
       kind: 'milestone',
-      text: `Transcendence! +${tp} TP. Gear and talents carry over; passives reset.`,
+      text: banked > 0
+        ? `Transcendence! +${tp} TP (banked ${formatInt(banked)} AP from this run). Gear and talents carry over; passives reset.`
+        : `Transcendence! +${tp} TP. Gear and talents carry over; passives reset.`,
       life: 7,
     });
     this.bus.emit('run_ended', {
@@ -3879,6 +3896,7 @@ export class Game {
       coreState: this.corePanelState(),
       ascendUnlockWave: this.prestigeMgr.ascensionUnlockWave(),
       transcendUnlockAP: this.prestigeMgr.transcendenceUnlockAP(),
+      pendingAscensionAP: () => this.pendingAscensionAP(),
       targetAscendWave: this.state.prestige.targetAscendWave,
       autoBuyStrategy: this.state.prestige.autoBuyStrategy,
       autoBuyReserve: this.state.prestige.autoBuyReserve,
@@ -5614,7 +5632,7 @@ export class Game {
     // auto-resolve countdown keeps moving, and the player's saved state stays
     // current. See `tickWallClockSystems` for what is and isn't included.
     this.tickWallClockSystems(dt);
-    this.draw();
+    this.draw(dt);
     this.state.wave = this.waveMgr.snapshot;
     this.ui.update(this.state);
 
@@ -6103,7 +6121,7 @@ export class Game {
     }
   }
 
-  private draw(): void {
+  private draw(realDt: number): void {
     this.renderer.draw({
       tower: this.tower.snapshot,
       enemies: this.enemyMgr.list,
@@ -6142,6 +6160,6 @@ export class Game {
       shieldFlash: this.shieldFlash,
       vignette: this.vignette,
       chainPaths: this.effects.activeChainPaths,
-    });
+    }, realDt);
   }
 }

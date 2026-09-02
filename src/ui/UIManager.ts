@@ -150,6 +150,8 @@ export interface PrestigeAPI {
   coreState: CorePanelState;
   ascendUnlockWave: number;
   transcendUnlockAP: number;
+  /** AP the in-progress run banks on transcend (Game.pendingAscensionAP). */
+  pendingAscensionAP: () => number;
   targetAscendWave: number;
   /** Plan §3.6: auto-buy tuning. */
   autoBuyStrategy: AutoBuyStrategy;
@@ -509,6 +511,7 @@ export class UIManager {
     perkBlockedReason: () => null,
     ascendUnlockWave: 30,
     transcendUnlockAP: 100,
+    pendingAscensionAP: () => 0,
     targetAscendWave: 30,
     autoBuyStrategy: 'balanced',
     autoBuyReserve: 0,
@@ -645,6 +648,7 @@ export class UIManager {
       isExcluded: (id) => this.prestigeApi.isExcluded(id),
       previewTP: (ap) => this.prestigeApi.previewTP(ap),
       transcendUnlockAP: this.prestigeApi.transcendUnlockAP,
+      pendingAscensionAP: () => this.prestigeApi.pendingAscensionAP(),
     });
     this.automationPanel = new AutomationPanel({
       onToggleAutomation: (key, enabled) => this.onToggleAutomation(key, enabled),

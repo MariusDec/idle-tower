@@ -74,6 +74,10 @@ from **266 to 0**, and `drawEnemies` from 2.24 ms to 1.26 ms.
 it must not go in the body sprite. Add it to the live pass, or add it to the
 sprite key.
 
+### The enemy sprite cache is keyed by the camera scale as well
+
+`enemySprites`, `shadowSprites` and `partSprites` all bake `bodyBoost()` and `penWidth()` directly into the offscreen canvas — both of which are functions of `camera.transform.scale`. So a resize, an orientation change, or a quality-tier change (which moves `dprCap`, and therefore `scale`) leaves stale bakes behind. The check that catches every path lives at the top of `Renderer.draw`, comparing the current `bakeScale` against a cached `spriteScale`: a mismatch clears `enemySprites`, `shadowSprites` and `partSprites`, and the next frame re-bakes lazily. `towerSprites` is **not** part of this change — nothing in the enemy-legibility work touches the tower's bakes. Three map clears on a resize is cheap; it is the right place to pay the cost.
+
 ## Spatial grid
 
 `src/utils/SpatialGrid.ts` is a uniform grid. `EnemyManager` owns one

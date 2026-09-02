@@ -48,6 +48,28 @@ number exists:
 resolution change. Its cost is that an enemy is a ~35% smaller target in world terms, paid back by
 `PROJECTILE_HIT_PAD`.
 
+### Stroke widths and apparent size
+
+`ViewTransform.scale` is the same `scale` `Camera.applyWorld` multiplies the world by — **backing-store pixels per world unit**. It is what stroke widths are denominated in: an `entity(1.7)` outline is `entity(1.7) × scale` device pixels wide.
+
+Apparent size is `scale / dpr` — the dpr-independent figure, `cssPerWorld`, which says how big a thing *looks* in CSS pixels per world unit. The two conversions live in `src/data/arena.ts`:
+
+- `viewPenWidth(worldWidth, scale, minPx?)` floors a world-unit stroke at `minPx` device pixels (`MIN_STROKE_PX = 1.25`).
+- `viewBodyBoost(scale, dpr)` returns a render-only scale-up that is exactly 1 at and above `REFERENCE_CSS_PER_WORLD = 0.34` (a desktop reference) and is capped at `MAX_BODY_BOOST = 1.45` for the smallest phones.
+
+Measured across the realistic viewport / tier band:
+
+| Viewport | dpr cap (tier) | `scale` | `cssPerWorld` |
+|---|---|---|---|
+| Phone 375 × 442 | 2 (`high`) | 0.4006 | 0.2003 |
+| Phone 375 × 442 | 1.5 (`medium`) | 0.3005 | 0.2003 |
+| Phone 375 × 442 | 1 (`low`) | 0.2003 | 0.2003 |
+| Desktop 900 × 620 | 1 | 0.3312 | 0.3312 |
+| Laptop 1000 × 640 | 2 | 0.6838 | 0.3419 |
+| Desktop 1140 × 760 | 2 | 0.8120 | 0.4060 |
+
+A phone shows an enemy at **59% of a laptop's apparent size** — and, worse, resolves it with **as little as 29% of a laptop's pixels per world unit**. On a phone the `entity(1.7)` outline resolves at **0.58–1.16 device px without the floor** that `viewPenWidth` enforces; that is the gap `plans/enemies.md` §1.4 measured and §3 fixed.
+
 ## 3. The arena
 
 `arenaExtents(viewWidth, viewHeight)` takes a viewport *shape* (any units) and returns the world
