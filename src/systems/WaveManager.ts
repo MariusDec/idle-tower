@@ -482,9 +482,23 @@ export class WaveManager {
     this.onWaveStarted(this.state.number);
   }
 
-  startAtWave(wave: number): void {
+  /**
+   * Jump the wave counter to `wave`.
+   *
+   * `freshRun` is the difference between a jump *inside* a run and the start
+   * of a new one. A rewind or a mid-run deploy keeps the run's high-water
+   * mark, because the run really did reach it. A run that has just been reset
+   * by an ascension or a transcendence has not: `highestWave` is what every
+   * wave gate reads (ascension availability and its AP payout, mana, each
+   * ability's unlock wave), so carrying the previous run's mark across the
+   * reset left the whole tower unlocked at wave 1 and priced an ascension at
+   * the *old* run's depth. Only the `startWave > 1` path hit it — a plain
+   * `reset()` builds a fresh state — which is why it took a research/Watch
+   * head start to see it.
+   */
+  startAtWave(wave: number, opts: { freshRun?: boolean } = {}): void {
     const target = Math.max(1, Math.floor(wave));
-    const highestWave = Math.max(this.state.highestWave, target);
+    const highestWave = opts.freshRun ? target : Math.max(this.state.highestWave, target);
 
     this.state = {
       number: target,

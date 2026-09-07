@@ -264,7 +264,7 @@ export class TranscendencePanel {
     headTitle.textContent = 'Transcendence';
     const headHint = document.createElement('div');
     headHint.className = 'transcend-card-hint';
-    headHint.textContent = `Unlocks at ${TRANSCENDENCE_UNLOCK_AP} AP. Resets gold, upgrades, ability levels, passives and the whole ascension layer for permanent TP multipliers and automation. Talents, tower XP, research, achievements and equipment carry over.`;
+    headHint.textContent = `Unlocks at ${TRANSCENDENCE_UNLOCK_AP} AP. Resets gold, upgrades, ability levels, passives, research and the whole ascension layer for permanent TP multipliers and automation. Talents, tower XP, achievements and equipment carry over.`;
     header.appendChild(headTitle);
     header.appendChild(headHint);
     card.appendChild(header);

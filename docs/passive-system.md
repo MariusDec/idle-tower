@@ -1,6 +1,6 @@
 # Passive Abilities
 
-12 permanent bonuses in 4 families, unlocked with gold behind a *lifetime*
+12 permanent bonuses in 4 families, unlocked with gold behind a *cycle*
 wave gate and levelled by a blend of XP and gold. `PassiveAbilityManager`,
 `src/data/passiveAbilities.ts`, `src/ui/PassivePanel.ts`.
 
@@ -46,11 +46,16 @@ Prospector and the pacing combo accelerate both.
 
 ## Unlock and persistence
 
-- `canUnlock(id, lifetimeHighestWave)`. **Lifetime**, not the run's wave: the
-  levels survive an Ascension, so the gate has to as well.
+- `canUnlock(id, highestWaveThisTranscendence)`. **Not the run's wave**: the
+  levels survive an Ascension, so the gate has to as well. **Not the lifetime
+  wave either**: a Transcendence wipes the track, so it wipes the permission to
+  re-buy it, and `GameStats.highestWaveThisTranscendence` is the mark that
+  resets with the cycle (the cycle-scoped twin of `lifetimeHighestWave`,
+  mirroring `apThisTranscendence`).
 - Unlocking grants every effect's `base` immediately — a purchase that does
   nothing until the first upgrade is not a purchase.
 - **Passives survive Ascension and are wiped by Transcendence**
   (`Game.applyFullTranscendenceReset`). They are progression *inside* one
-  transcendence cycle, alongside the AP layer they were bought with. Equipment,
-  talents, tower XP, research and achievements all still carry over.
+  transcendence cycle, alongside the AP layer and the research they were bought
+  beside. Equipment, talents, tower XP and achievements all still carry over.
+  The `eternal_kit` Watch unlock keeps both the track and the cycle wave mark.

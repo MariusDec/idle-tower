@@ -316,6 +316,7 @@ function makeInitialState(): GameState {
     damageDealt: 0,
     shotsFired: 0,
     lifetimeHighestWave: 1,
+    highestWaveThisTranscendence: 1,
     abilitiesCast: 0,
     ascensions: 0,
     lifetimeAscensions: 0,
@@ -813,6 +814,9 @@ export class Game {
         if (wave > this.state.stats.lifetimeHighestWave) {
           this.state.stats.lifetimeHighestWave = wave;
         }
+        if (wave > this.state.stats.highestWaveThisTranscendence) {
+          this.state.stats.highestWaveThisTranscendence = wave;
+        }
       },
       (wave) => {
         this.applyUpgradeEffects();
@@ -822,6 +826,9 @@ export class Game {
         }
         if (wave > this.state.stats.lifetimeHighestWave) {
           this.state.stats.lifetimeHighestWave = wave;
+        }
+        if (wave > this.state.stats.highestWaveThisTranscendence) {
+          this.state.stats.highestWaveThisTranscendence = wave;
         }
         this.checkPassiveUnlocks(wave);
       },
@@ -2585,7 +2592,7 @@ export class Game {
   }
 
   unlockPassive(id: string): boolean {
-    if (!this.passiveMgr.canUnlock(id, this.state.stats.lifetimeHighestWave)) return false;
+    if (!this.passiveMgr.canUnlock(id, this.state.stats.highestWaveThisTranscendence)) return false;
     const cost = this.passiveMgr.getUnlockCost(id);
     if (cost <= 0 || this.state.resources.gold < cost) return false;
     this.state.resources.gold -= cost;
@@ -2858,8 +2865,8 @@ export class Game {
     this.bus.emit('toast', {
       kind: 'milestone',
       text: banked > 0
-        ? `Transcendence! +${tp} TP (banked ${formatInt(banked)} AP from this run). Gear and talents carry over; passives reset.`
-        : `Transcendence! +${tp} TP. Gear and talents carry over; passives reset.`,
+        ? `Transcendence! +${tp} TP (banked ${formatInt(banked)} AP from this run). Gear and talents carry over; passives and research reset.`
+        : `Transcendence! +${tp} TP. Gear and talents carry over; passives and research reset.`,
       life: 7,
     });
     this.bus.emit('run_ended', {
@@ -3985,12 +3992,12 @@ export class Game {
       getLevel: (id: string) => this.passiveMgr.getLevel(id),
       getXp: (id: string) => this.passiveMgr.getXp(id),
       getXpForNextLevel: (id: string) => this.passiveMgr.getXpForNextLevel(id),
-      highestWave: () => this.state.stats.lifetimeHighestWave,
+      highestWave: () => this.state.stats.highestWaveThisTranscendence,
       unlockedCount: () => this.passiveMgr.unlockedCount,
       totalLevels: () => this.passiveMgr.totalLevels,
       isUnlocked: (id: string) => this.passiveMgr.isUnlocked(id),
       isMaxed: (id: string) => this.passiveMgr.isMaxed(id),
-      canUnlock: (id: string) => this.passiveMgr.canUnlock(id, this.state.stats.lifetimeHighestWave),
+      canUnlock: (id: string) => this.passiveMgr.canUnlock(id, this.state.stats.highestWaveThisTranscendence),
       getUnlockCost: (id: string) => this.passiveMgr.getUnlockCost(id),
       onUnlock: (id: string) => this.unlockPassive(id),
       getFullUpgradeCost: (id: string) => this.passiveMgr.getFullUpgradeCost(id),
@@ -4721,8 +4728,11 @@ export class Game {
       this.watchMgr.has('veteran_start') ? 6 : 0,
     );
     if (startWave > 1) {
-      this.waveMgr.startAtWave(startWave);
-      this.state.wave.highestWave = startWave;
+      // `freshRun`: this is a new run, so its high-water mark is the wave it
+      // opens on — not the mark of the run the ascension just ended. The
+      // assignment that used to stand in for this wrote to the *outgoing*
+      // `state.wave` object and was discarded by the snapshot two lines down.
+      this.waveMgr.startAtWave(startWave, { freshRun: true });
     } else {
       this.waveMgr.reset();
     }
@@ -5372,6 +5382,19 @@ export class Game {
 
   private applyFullTranscendenceReset(): void {
     this.automation.reset();
+    // Research is a *cycle* layer, like the AP tree it sits beside: it is
+    // bought with RP earned by the ascensions of this cycle, and
+    // docs/prestige-system.md has always described transcendence as "ascension
+    // reset + clears research + automation". It was the one item that never
+    // actually cleared, which left a new cycle holding the previous one's
+    // start-wave, gold and RP bonuses. Cleared *before* `applySavedStateReset`
+    // because that method reads `researchTree.getStartWave()` to open the run.
+    this.researchTree.replaceLevels({}, 0, null);
+    this.state.research = {};
+    this.state.researchInProgress = null;
+    // The completion toast is deduped by `id:level` for the session; a cycle
+    // that re-buys a node has earned the toast again.
+    this.researchAnnounced.clear();
     // Passives are progression *inside* one transcendence cycle: they survive
     // every Ascension (that is what makes an ascension cheap to take) and are
     // wiped here, alongside the AP layer they were bought with. Equipment is
@@ -5393,6 +5416,18 @@ export class Game {
     this.state.resources.ascensionPoints = 0;
     this.state.resources.apThisTranscendence = 0;
     this.state.stats.ascensions = 0;
+    // The passive gate's cycle mark restarts with the cycle, at the wave the
+    // first run of it opens on (a Watch or talent head start can be > 1).
+    // `eternal_kit` keeps the mark for the same reason it keeps the track: a
+    // player who was promised their passives through a transcendence was not
+    // promised the half of them they had not bought yet.
+    if (!this.watchMgr.has('eternal_kit')) {
+      this.state.stats.highestWaveThisTranscendence = this.state.wave.highestWave;
+    }
+    // The "Transcendence available" toast is one-shot per cycle, not per
+    // session: the next cycle has to earn its 100 AP again and deserves to be
+    // told when it has.
+    this.transcendenceUnlockedAnnounced = false;
     // Checkpoints are a record of *this cycle's* tower. A transcendence resets
     // research, automation and the whole upgrade economy, so a checkpoint from
     // before it describes a run the new cycle cannot reproduce — deploying to
@@ -5419,6 +5454,11 @@ export class Game {
     s.damageDealt = persisted.stats.damageDealt;
     s.shotsFired = persisted.stats.shotsFired;
     s.lifetimeHighestWave = persisted.stats.lifetimeHighestWave;
+    // Saves written before the cycle-scoped mark existed fall back to the
+    // lifetime one: a returning player keeps every passive they could already
+    // buy, and the next transcendence is what narrows it.
+    s.highestWaveThisTranscendence =
+      persisted.stats.highestWaveThisTranscendence ?? persisted.stats.lifetimeHighestWave ?? 1;
     s.abilitiesCast = persisted.stats.abilitiesCast;
     s.ascensions = persisted.stats.ascensions;
     s.lifetimeAscensions = persisted.stats.lifetimeAscensions ?? 0;

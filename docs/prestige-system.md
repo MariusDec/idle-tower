@@ -199,7 +199,17 @@ the TP.
 **Performs:**
 1. Calculates TP from current AP
 2. Adds TP to `transcendencePoints`
-3. Calls `applyFullTranscendenceReset()` — same as ascension reset + clears research + automation
+3. Calls `applyFullTranscendenceReset()` — same as ascension reset + clears
+   research (levels, RP and the in-progress node, *before* the run reset, which
+   reads `getStartWave()`), the AP tree, automation and the passive track, and
+   restarts `stats.highestWaveThisTranscendence`
+
+The run the reset opens is a *fresh* run: `applySavedStateReset` passes
+`freshRun` to `WaveManager.startAtWave`, so `wave.highestWave` is the wave the
+new run opens on and not the mark the finished run reached. Every wave gate
+reads it — ascension availability and its AP payout, mana, each ability's
+unlock wave — so carrying it across the reset left a new cycle fully unlocked
+at wave 1.
 
 ### TP Perks
 

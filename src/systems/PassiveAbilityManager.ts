@@ -156,11 +156,18 @@ export class PassiveAbilityManager {
     return n;
   }
 
-  canUnlock(id: string, lifetimeHighestWave: number): boolean {
+  /**
+   * `highestWave` is the mark for the *current transcendence cycle*
+   * (`GameStats.highestWaveThisTranscendence`), not the lifetime one: a
+   * transcendence wipes the passive track, so it has to wipe the permission to
+   * re-buy it too. Across an ascension the mark stands, which is what keeps a
+   * cycle's passives buyable from wave 1 of every run in it.
+   */
+  canUnlock(id: string, highestWave: number): boolean {
     const s = this.state[id];
     const def = PASSIVE_BY_ID[id];
     if (!s || !def || s.unlocked) return false;
-    return lifetimeHighestWave >= def.unlockWave;
+    return highestWave >= def.unlockWave;
   }
 
   getUnlockCost(id: string): number {

@@ -743,6 +743,17 @@ export interface GameStats {
   damageDealt: number;
   shotsFired: number;
   lifetimeHighestWave: number;
+  /**
+   * Highest wave reached since the last transcendence.
+   *
+   * The cycle-scoped twin of `lifetimeHighestWave`, and the gate the passive
+   * track reads. Passives are wiped by a transcendence, so the permission to
+   * re-buy them has to be wiped with them — on the lifetime mark a fresh cycle
+   * opened with every passive purchasable at wave 1. It still survives an
+   * ascension, which is what keeps passives buyable across the runs of one
+   * cycle. Mirrors `ResourceState.apThisTranscendence`.
+   */
+  highestWaveThisTranscendence: number;
   abilitiesCast: number;
   ascensions: number;
   lifetimeAscensions: number;
