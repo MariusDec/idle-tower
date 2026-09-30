@@ -18,6 +18,8 @@ async function main(): Promise<void> {
     overlay: byId('overlay-root'),
   });
   await app.boot();
+  // Dev only: a console handle for inspection and render stress tests.
+  if (import.meta.env.DEV) (globalThis as { tower?: App }).tower = app;
   void hideNativeSplash();
 }
 

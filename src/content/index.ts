@@ -1,4 +1,7 @@
+import { ENEMIES } from './enemies';
 import { FRAMES } from './frames';
+import { REGIONS } from './regions';
+import { WEAPONS } from './weapons';
 import type { ContentEntry } from './types';
 
 /**
@@ -7,4 +10,7 @@ import type { ContentEntry } from './types';
  */
 export const CONTENT: Readonly<Record<string, readonly ContentEntry[]>> = {
   frames: FRAMES,
+  enemies: ENEMIES,
+  regions: REGIONS,
+  weapons: WEAPONS,
 };

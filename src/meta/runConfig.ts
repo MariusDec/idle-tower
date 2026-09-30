@@ -1,16 +1,17 @@
 import type { Profile } from './profile';
+import { baseTowerStats } from '../sim/stats';
+import type { RunConfig } from '../sim/state';
+
+export type { RunConfig };
 
 /**
- * The frozen input to a run (§12.3). `buildRunConfig` resolves every Forge,
- * relic and frame effect once, so `sim/` never reads the profile.
- *
- * At P0 there is nothing to resolve yet; the shape grows with the Forge (P3).
+ * Profile → frozen `RunConfig` (§12.3). Resolves every Forge, relic and frame
+ * effect once per run. There is nothing to resolve yet; the Forge is P3.
  */
-export interface RunConfig {
-  readonly frameId: string;
-  readonly regionId: number;
-}
-
 export function buildRunConfig(_profile: Profile): RunConfig {
-  return Object.freeze({ frameId: 'arcanist', regionId: 1 });
+  return Object.freeze({
+    frameId: 'arcanist',
+    regionId: 1,
+    stats: Object.freeze(baseTowerStats()),
+  });
 }

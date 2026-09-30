@@ -1,7 +1,9 @@
 # The Tower, rebuilt — a ground-up redesign
 
-**Status:** approved; decisions D1–D6 confirmed (§16). P0 is done on the
-`rebuild` branch; the next step is P1 (§14).
+**Status:** approved; decisions D1–D6 confirmed (§16). P0 and P1 are built
+on the `rebuild` branch. P1's gate still needs the owner's 60-second watch
+test and a frame-rate check on a mid-range Android device; P2 (§14) starts
+after that.
 
 **Supersedes:** every other file in `plans/`. Those describe the current game;
 P0 (§14) moves them to `plans/archive/`.

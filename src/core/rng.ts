@@ -57,6 +57,16 @@ export class Rng {
     }
   }
 
+  /**
+   * An `Rng` that draws from `state` in place, so the owner of the state (a
+   * `RunState`) sees every advance. The constructor copies; this does not.
+   */
+  static wrap(state: RngState): Rng {
+    const r = Object.create(Rng.prototype) as Rng;
+    (r as { state: RngState }).state = state;
+    return r;
+  }
+
   /** A child stream keyed by `label`. Does not advance this stream. */
   split(label: string): Rng {
     return new Rng((this.state.seed ^ hashString(label)) >>> 0);

@@ -41,9 +41,10 @@ export class Hud {
 
   update(run: RunState): void {
     setText(this.wave, String(run.wave));
-    const t = run.tower;
-    const frac = t.maxHp > 0 ? Math.max(0, t.hp) / t.maxHp : 0;
+    const hp = Math.max(0, run.tower.hp);
+    const max = run.stats.maxHp;
+    const frac = max > 0 ? hp / max : 0;
     setStyle(this.hpFill, 'transform', `scaleX(${frac.toFixed(3)})`);
-    setText(this.hpText, `${formatNumber(Math.ceil(Math.max(0, t.hp)))} / ${formatNumber(t.maxHp)}`);
+    setText(this.hpText, `${formatNumber(Math.ceil(hp))} / ${formatNumber(max)}`);
   }
 }

@@ -1,5 +1,5 @@
 import { ICON_IDS } from './icons';
-import type { ContentEntry } from './types';
+import type { ContentEntry, EnemyDef, FrameDef, RegionDef, WeaponDef } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
 export const MAX_TEXT_WORDS = 15;
@@ -46,7 +46,30 @@ export const entryBasics: LintRule = (tables) => {
   return out;
 };
 
-export const RULES: readonly LintRule[] = [uniqueIds, entryBasics];
+/** Cross-references resolve: region pools and beats name real enemies, frames real weapons. */
+export const references: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const enemies = new Set((tables.enemies as readonly EnemyDef[] | undefined ?? []).map((e) => e.id));
+  const weapons = new Set((tables.weapons as readonly WeaponDef[] | undefined ?? []).map((w) => w.id));
+  for (const r of (tables.regions as readonly RegionDef[] | undefined) ?? []) {
+    for (const p of r.pool) {
+      if (!enemies.has(p.enemy)) out.push({ table: 'regions', id: r.id, problem: `pool names unknown enemy "${p.enemy}"` });
+    }
+    for (const [wave, beat] of Object.entries(r.beats)) {
+      if (beat.kind === 'introduce' && !enemies.has(beat.enemy)) {
+        out.push({ table: 'regions', id: r.id, problem: `wave ${wave} introduces unknown enemy "${beat.enemy}"` });
+      }
+    }
+    const types = new Set(r.pool.map((p) => p.enemy));
+    if (types.size !== 3) out.push({ table: 'regions', id: r.id, problem: `has ${types.size} enemy types (want 3)` });
+  }
+  for (const f of (tables.frames as readonly FrameDef[] | undefined) ?? []) {
+    if (!weapons.has(f.startingWeapon)) out.push({ table: 'frames', id: f.id, problem: `unknown starting weapon "${f.startingWeapon}"` });
+  }
+  return out;
+};
+
+export const RULES: readonly LintRule[] = [uniqueIds, entryBasics, references];
 
 export function lintContent(
   tables: Readonly<Record<string, readonly ContentEntry[]>>,

@@ -22,4 +22,15 @@ describe('content lint (§12.6)', () => {
     expect(problems).toContain('id is not kebab-case');
     expect(problems).toContain('text is 16 words (max 15)');
   });
+
+  it('catches dangling references', () => {
+    const problems = lintContent({
+      ...CONTENT,
+      frames: [{ id: 'f', name: 'F', icon: 'crystal-ball', text: 'x', startingWeapon: 'nope' } as ContentEntry],
+      regions: [{ ...CONTENT.regions[0], pool: [{ enemy: 'ghost', from: 1, weight: 1 }] } as ContentEntry],
+    }).map((i) => i.problem);
+    expect(problems).toContain('unknown starting weapon "nope"');
+    expect(problems).toContain('pool names unknown enemy "ghost"');
+    expect(problems).toContain('has 1 enemy types (want 3)');
+  });
 });

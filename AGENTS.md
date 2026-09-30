@@ -22,6 +22,14 @@ from tsconfig, Vite and Vitest; never import from it.
 | `src/ui/` | DOM: HUD, screens, modal, icon helper | anything but `sim/` internals |
 | `src/platform/` | Capacitor shell hooks | — |
 | `tools/` | Headless: `inspect.ts` (per-wave table), `pacing.ts` (from P3) | `src/` minus DOM |
+
+The sim's step order (`sim/run.ts`): waves place bodies → enemies walk and hit
+the wall → separation spreads crowds (tangentially at the wall) → weapons
+fire → projectiles fly and kill → the dead are swept → the tower regenerates
+or falls. Presentation learns what happened from `RunState.events`, which the
+app hands to the renderer and clears each frame.
+
+In dev builds, `1`/`2`/`3` set sim speed and `globalThis.tower` is the `App`.
 | `tests/` | Vitest, node environment | — |
 
 ## Rules that keep the sim honest
@@ -43,7 +51,8 @@ npm run dev         # vite dev server
 npm run build       # tsc + vite build
 npm run typecheck   # src, then tools + tests
 npm test            # vitest suite (tests/)
-npm run inspect -- --seed 7   # one seeded run, headless
+npm run inspect -- --seed 7   # one seeded run → per-wave table (pool, clear time, carried, damage taken)
+npm run inspect -- --seeds 50 # many runs → first-kill time and death-wave distribution
 npm run pacing      # pacing report (stub until P3)
 npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest (needs network)
 ```
@@ -51,7 +60,7 @@ npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **idle-tower** (7334 symbols, 26001 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **idle-tower** (7485 symbols, 26476 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

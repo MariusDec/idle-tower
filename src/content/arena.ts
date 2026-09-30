@@ -7,14 +7,15 @@
  * camera fits this rectangle into whatever box it is given; surplus shows as
  * extra floor, never as extra arena.
  *
- * Units are world units. At 375 CSS px wide the arena spans ~0.35 CSS px per
- * unit, which is where the body radii and strokes below were chosen to read.
+ * Units are world units. The ellipse's 0.52 aspect matches a phone's stage
+ * under the HUD, so a 375 px wide screen shows ~0.35 CSS px per unit; body
+ * radii in `enemies.ts` were chosen to read at that scale.
  */
 export const ARENA = {
   /** Half-width of the playable ellipse. The short axis on a phone. */
-  halfWidth: 520,
+  halfWidth: 500,
   /** Half-height of the playable ellipse. */
-  halfHeight: 800,
+  halfHeight: 960,
   /**
    * Spawn ellipse, as a multiple of the playable half-extents. Just over 1:
    * enemies appear at the rim and walk in.

@@ -61,6 +61,11 @@ export class App {
     return this.screen;
   }
 
+  /** The live run, for the dev console and stress tests. Never written through. */
+  get currentRun(): RunState | null {
+    return this.run;
+  }
+
   async boot(): Promise<void> {
     const loaded = await loadProfile(Date.now());
     this.profile = loaded.profile;
@@ -101,12 +106,23 @@ export class App {
     if (!run || run.outcome) return;
     step(run, SIM_DT, this.pending);
     this.pending = {};
-    if (run.outcome) this.endRun(run);
+    // A retreat banks at once; a fall plays out first (§4.6), see `frame`.
+    // (Re-read through the type: TS narrowed `outcome` to null above.)
+    const outcome = run.outcome as RunState['outcome'];
+    if (outcome?.kind === 'retreat') this.endRun(run);
   }
 
   private frame(alpha: number, realDt: number): void {
-    this.renderer.render(this.screen === 'run' || this.screen === 'results' ? this.run : null, alpha, realDt);
-    if (this.screen === 'run' && this.run) this.hud.update(this.run);
+    const run = this.screen === 'run' || this.screen === 'results' ? this.run : null;
+    if (run) {
+      this.renderer.consume(run.events);
+      run.events.length = 0;
+    }
+    this.renderer.render(run, alpha, realDt);
+    if (this.screen === 'run' && run) {
+      this.hud.update(run);
+      if (run.outcome?.kind === 'fell' && this.renderer.fallDone) this.endRun(run);
+    }
     this.sinceSave += realDt;
     if (this.sinceSave >= AUTOSAVE_SECONDS) void this.save();
   }
@@ -165,6 +181,10 @@ export class App {
     });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.back();
+      // Dev only: sim speed on 1/2/3. The player-facing ×2 is a Forge unlock (P3).
+      if (import.meta.env.DEV && (e.key === '1' || e.key === '2' || e.key === '3')) {
+        this.profile.settings.speed = Number(e.key) as 1 | 2 | 3;
+      }
     });
     bindNativeLifecycle({ onBack: () => this.back(), onPause: () => this.save() });
   }

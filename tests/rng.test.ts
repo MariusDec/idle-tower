@@ -51,3 +51,16 @@ describe('Rng', () => {
     expect(counts[1] / counts[0]).toBeLessThan(2.2);
   });
 });
+
+describe('Rng.wrap', () => {
+  it('advances the state it wraps', () => {
+    const owner = new Rng(11);
+    const state = owner.state;
+    const before = [...state.s];
+    Rng.wrap(state).nextU32();
+    expect(state.s).not.toEqual(before);
+    const copy = new Rng(11);
+    copy.nextU32();
+    expect(owner.nextU32()).toBe(copy.nextU32());
+  });
+});
