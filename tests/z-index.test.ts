@@ -8,7 +8,7 @@ const MAIN = readFileSync(resolve(__dirname, '../src/styles/main.css'), 'utf8');
 const TOKENS = readFileSync(resolve(__dirname, '../src/styles/tokens.css'), 'utf8');
 
 /**
- * UI plan §8.G: z-index is a token ladder, not a field of hand-tuned numbers.
+ * z-index is a token ladder, not a field of hand-tuned numbers.
  *
  * The plan's acceptance line was a bare `grep -n "z-index: [0-9]"`, which is
  * the right rule for *cross-component* layering and the wrong one for stacking
@@ -55,7 +55,7 @@ function declarations(css: string): { line: number; value: string }[] {
   return out;
 }
 
-describe('z-index ladder (UI plan §8.G)', () => {
+describe('z-index ladder', () => {
   it('defines every rung in tokens.css', () => {
     for (const name of LADDER) {
       expect(TOKENS, `missing --${name}`).toMatch(new RegExp(`--${name}:\\s*-?\\d+;`));

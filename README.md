@@ -1,7 +1,7 @@
 # idle-tower
 
-**The Tower** — an idle tower-defence game. TypeScript + Vite, canvas renderer,
-no runtime network.
+**The Tower** — an incremental roguelite tower defence. TypeScript + Vite,
+canvas renderer, no runtime network. Being rebuilt; see `plans/rebuild.md`.
 
 ## Web
 
@@ -11,6 +11,7 @@ npm run dev        # dev server on :5173
 npm run build      # typecheck + bundle to dist/
 npm run typecheck
 npm test
+npm run inspect    # one seeded run, headless
 ```
 
 ## Android
@@ -31,8 +32,9 @@ Always go through these scripts rather than `gradlew` directly — each one runs
 project.
 
 The shipped app is fully offline: it is built without the `INTERNET`
-permission. See `docs/ui-system.md` § Capacitor and `plans/capacitor.md`.
+permission.
 
 ## Docs
 
-`AGENTS.md` indexes `docs/`. Design plans live in `plans/`.
+`AGENTS.md` describes the source layout. The design is `plans/rebuild.md`;
+older plans are in `plans/archive/`, and the old game is in `legacy/`.

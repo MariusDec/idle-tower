@@ -1,16 +1,12 @@
 /**
- * The quality auto-detect (UI plan §9.D).
- *
- * The probe is integration-tested through the live game; this file is for the
- * pure inputs — `initialQualityTier` is a function of `navigator` and
- * `matchMedia`, both mockable, and the §10.C table needs a test for the
- * "3x phone buffer falls to medium" branch.
+ * The quality auto-detect: `initialQualityTier` is a function of `navigator`
+ * and `matchMedia`, both mockable here.
  */
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { initialQualityTier, readStoredQuality } from '../src/game/Game';
-import { QUALITY } from '../src/data/quality';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { initialQualityTier, readStoredQuality } from '../src/render/quality';
+import { QUALITY } from '../src/render/quality';
 
-describe('initialQualityTier (UI plan §9.D)', () => {
+describe('initialQualityTier', () => {
   const originalNavigator = globalThis.navigator;
   const originalMatchMedia = globalThis.matchMedia;
   const originalWindow = (globalThis as unknown as { window?: unknown }).window;
@@ -87,7 +83,7 @@ describe('initialQualityTier (UI plan §9.D)', () => {
   });
 });
 
-describe('readStoredQuality (UI plan §9.D)', () => {
+describe('readStoredQuality', () => {
   const originalLocalStorage = globalThis.localStorage;
   let store: Record<string, string>;
 
@@ -130,7 +126,7 @@ describe('the high-tier cap matches the historic camera cap', () => {
   // whose preference is stored as `high` will see a different frame cost
   // than they used to — a silent regression no other test catches.
   it('QUALITY.high.dprCap equals ARENA.maxDevicePixelRatio', async () => {
-    const { ARENA } = await import('../src/data/arena');
+    const { ARENA } = await import('../src/content/arena');
     expect(QUALITY.high.dprCap).toBe(ARENA.maxDevicePixelRatio);
   });
 });

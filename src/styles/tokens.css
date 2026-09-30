@@ -2,7 +2,7 @@
    The Tower — design tokens
    ───────────────────────────────────────────────────────────────────────────
    The vocabulary every other stylesheet speaks. Nothing here styles anything;
-   it only names values. See docs/art-direction.md.
+   it only names values.
 
    The rule this file exists to enforce: **a literal colour, radius, duration or
    font size inside a component block is a bug.** If you need a value that is not
@@ -15,7 +15,7 @@
                       This is the layer components use.
      3. Layout      — sizes the JS also knows about (--panel-width, …).
 
-   The --fx-* and --rarity-* groups are mirrored in src/data/palette.ts so the
+   The --fx-* and --rarity-* groups are mirrored in src/render/palette.ts so the
    canvas renderer and the DOM cannot drift. tests/palette.test.ts fails if the
    two lists disagree, so edit both together.
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -192,7 +192,7 @@
   --text-on-amber: var(--amber-900);
 
   /* ── Effect colours (--fx-*) ──────────────────────────────────────────────
-     Mirrored in src/data/palette.ts. Edit both, or tests/palette.test.ts fails.
+     Mirrored in src/render/palette.ts. Edit both, or tests/palette.test.ts fails.
      Written as literals rather than `var(--amber-400)` precisely so that test
      can compare them without resolving the cascade. */
   --fx-gold: #f0b23c; /* = --amber-400 */
@@ -397,46 +397,10 @@
      so there is exactly one place to look for "how wide is the panel".
      ═════════════════════════════════════════════════════════════════════════ */
 
-  /* Side panel sizing. Overridden by JS via inline style. */
-  --panel-width: 420px;
-  --panel-min-width: 280px;
-  --panel-max-width: 720px;
-  --panel-collapsed-width: 56px;
-
-  /* Contract tracker (gameplay plan §5.3): three rows in the bottom-left, with
-     the milestone strip sitting directly above it. A constant rather than a
-     measured height because the tracker is always exactly three rows. */
-  /* Plans/milestones.md §5.2: the board_expansion Watch unlock raises the
-     tracker to four rows. The strip is sized large enough for both three and
-     four rows so the layout does not jump when the chapter completes. */
-  /* This is only the **first-frame fallback**. `ContractTracker` measures its
-     own root with a `ResizeObserver` and rewrites this property on :root, so
-     the strip sits on the tracker's real height — three rows or four, open or
-     folded — rather than on a constant sized for the worst case. It was that
-     constant that made folding the tracker on a phone reclaim nothing. */
-  --contract-tracker-height: 120px;
-  /* Plans/milestones.md §6.5: the Long Watch chip sits one row above the
-     milestone strip. The strip's own height is reserved here so the chip's
-     bottom offset is a single read instead of a hand-measured value, and so
-     the journal chip never lands on top of the milestone pill on mobile where
-     both are visible. */
-  --milestone-strip-height: 48px;
-  /* Bottom ability dock height. 56px tile + the level pip row + the name,
-     plus its padding (UI plan §7). Four other overlays offset themselves by
-     this, so it is a declared constant rather than a measured one; the mobile
-     branch overrides it, where the dock drops the name and the hotkey badge. */
-  --ability-bar-height: 96px;
-  /* Bottom mobile nav height. */
-  --bottom-nav-height: 60px;
-  /* Where the bottom-corner overlay stack starts, measured up from the viewport
-     edge: clear of the ability dock, of the bottom nav where there is one, and
-     of the device's gesture bar. The contract tracker sits at this offset, the
-     milestone strip one tracker higher, and on a phone the toast stack rides
-     the same ladder. Added by Part 7, which is when four overlays each doing
-     this arithmetic themselves stopped being tenable — the tracker had already
-     drifted under the dock. The mobile branch of main.css adds the nav. */
-  --corner-stack-base: calc(
-    var(--ability-bar-height) + var(--safe-b) + 12px);
+  /* Width of the portrait stage on desktop, and of the hub docked beside it
+     (D4). A phone gets the whole viewport for the stage. */
+  --stage-max-width: 480px;
+  --hub-width: 420px;
 
   /* Safe-area insets (UI plan §9.A). The browser only reports these on a
      viewport with `viewport-fit=cover` (index.html), and a notch, a gesture bar
@@ -448,32 +412,6 @@
   --safe-r: env(safe-area-inset-right, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
-  /* Approximate mobile HUD height. Used to position the milestone strip and
-     toasts above the canvas — it is a reservation, not a layout input, so it
-     wants to be at or above the real height rather than exact.
-
-     UI plan §9.B asked for this to be verified against the Part 7 HUD, which
-     grew: measured at 375x812 the two-row portrait HUD is 202px (chips + More
-     on 44, the wave block on 104, the three resource bars sharing 29, plus
-     gaps and padding), not the 90px this token claimed when it described a
-     pre-Part-7 HUD of a wave block and two bars. */
-  --hud-height-mobile: 204px;
-
   /* Strength of the low-HP vignette. Written from TS as the tower's HP falls. */
   --vignette-alpha: 0.4;
-
-  /* ═════════════════════════════════════════════════════════════════════════
-     DEPRECATED ALIASES
-     Kept only so the two selectors owned by the camera work (`.canvas-wrap`,
-     `#game-canvas`) keep resolving. Do not use them in new rules.
-     ═════════════════════════════════════════════════════════════════════════ */
-  --bg-0: var(--surface-0);
-  --bg-1: var(--surface-1);
-  --bg-2: var(--surface-2);
-  --bg-3: var(--surface-3);
-  --border: var(--stroke-subtle);
-  --border-strong: var(--stroke-strong);
-  --font: var(--font-ui);
-  --radius: var(--radius-lg);
-  --shadow: var(--elev-2);
 }

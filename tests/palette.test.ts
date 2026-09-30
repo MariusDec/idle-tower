@@ -3,10 +3,10 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   FX, INK, RARITY, fxVar, inkVar, lighten, mix, rarityVar, toRgb, withAlpha,
-} from '../src/data/palette';
+} from '../src/render/palette';
 
 /**
- * `src/data/palette.ts` and `src/styles/tokens.css` both declare the effect and
+ * `src/render/palette.ts` and `src/styles/tokens.css` both declare the effect and
  * rarity colours: the canvas cannot read a CSS custom property cheaply, and the
  * stylesheet must not need the bundle to have run before it can paint. That is a
  * deliberate duplication (see the note at the top of `palette.ts`) and this file
@@ -181,8 +181,7 @@ describe('no runtime network', () => {
  * they are the ends of the canvas compositing range (masks, `destination-out`
  * clears, full-strength highlights) and naming them would be worse, not better.
  *
- * Note the scope: `src/data/*` content tables are deliberately *not* scanned.
- * Enemy body colours, rarity swatches and the like are content data, and
+ * Note the scope: `src/content/*` tables are deliberately *not* scanned, and
  * `palette.ts` itself has to spell its hexes out.
  */
 describe('no literal colour in the render path', () => {
@@ -197,19 +196,18 @@ describe('no literal colour in the render path', () => {
       .join('\n');
   }
 
-  const uiDir = resolve(__dirname, '../src/ui');
-  const FILES: string[] = [
-    'src/game/Renderer.ts',
-    'src/systems/EffectsManager.ts',
-    'src/game/Game.ts',
-    ...readdirSync(uiDir)
-      .filter(f => f.endsWith('.ts'))
-      .sort()
-      .map(f => `src/ui/${f}`),
-  ];
+  /** Every `.ts` under the render and UI trees, recursively. */
+  function walk(rel: string): string[] {
+    const abs = resolve(__dirname, '..', rel);
+    return readdirSync(abs, { withFileTypes: true }).flatMap(e =>
+      e.isDirectory() ? walk(`${rel}/${e.name}`) : e.name.endsWith('.ts') ? [`${rel}/${e.name}`] : []);
+  }
+  const FILES: string[] = [...walk('src/render'), ...walk('src/ui')]
+    .filter(f => f !== 'src/render/palette.ts')
+    .sort();
 
   it('scans a non-empty file list, so a moved file cannot silently opt out', () => {
-    expect(FILES.length).toBeGreaterThan(20);
+    expect(FILES.length).toBeGreaterThan(3);
   });
 
   for (const rel of FILES) {

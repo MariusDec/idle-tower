@@ -6,7 +6,7 @@
  * bakes them into three committed artefacts:
  *
  *   public/icons/sprite.svg   one <symbol> per icon, referenced by <use href="#gi-…">
- *   src/data/icons.ts         the closed `IconId` union + per-icon credit metadata
+ *   src/content/icons.ts         the closed `IconId` union + per-icon credit metadata
  *   ATTRIBUTION.md            the CC BY 3.0 credit the licence actually requires
  *
  * All three are checked in, so a clean checkout — and the Capacitor build —
@@ -326,12 +326,12 @@ async function main() {
   await mkdir(resolve(ROOT, 'public/icons'), { recursive: true });
   await writeFile(resolve(ROOT, 'public/icons/sprite.svg'), `${sprite}\n`);
   await writeFile(resolve(ROOT, 'ATTRIBUTION.md'), attributionMarkdown(MANIFEST));
-  await writeFile(resolve(ROOT, 'src/data/icons.ts'), iconsModule(MANIFEST));
+  await writeFile(resolve(ROOT, 'src/content/icons.ts'), iconsModule(MANIFEST));
 
   const kb = (sprite.length / 1024).toFixed(1);
   console.log(`public/icons/sprite.svg  ${MANIFEST.length} symbols, ${kb} KB`);
   console.log('ATTRIBUTION.md           regenerated');
-  console.log('src/data/icons.ts        regenerated');
+  console.log('src/content/icons.ts        regenerated');
 }
 
 main().catch((err) => {
