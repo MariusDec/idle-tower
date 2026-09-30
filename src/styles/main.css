@@ -59,9 +59,7 @@ body {
 
 .hud-root {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  inset: 0;
   z-index: var(--z-hud);
   pointer-events: none;
 }
@@ -122,13 +120,93 @@ body {
   padding: 0 var(--space-7);
 }
 
+/* ── Icons ───────────────────────────────────────────────────────────────── */
+
+.icon {
+  --icon-size: 24px;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  fill: currentColor;
+  vertical-align: -0.15em;
+  pointer-events: none;
+}
+
 /* ── HUD ─────────────────────────────────────────────────────────────────── */
 
 .hud {
-  padding: max(var(--space-3), var(--safe-t)) var(--space-3) 0;
+  height: 100%;
+  padding: max(var(--space-3), var(--safe-t)) var(--space-3) max(var(--space-3), var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.hud-top,
+.hud-bottom {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.hud-row-bottom {
+  align-items: flex-end;
+}
+
+.hud-level {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  color: var(--fx-gold);
+  text-shadow: 0 1px 2px var(--surface-scrim);
+}
+
+.hud-xp {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  overflow: hidden;
+}
+
+.hud-xp-fill {
+  height: 100%;
+  background: var(--fx-gold);
+  transform-origin: left center;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+/* The ultimate: a ring that fills with charge, then glows. */
+.hud-ult {
+  --charge: 0;
+  pointer-events: auto;
+  width: 64px;
+  height: 64px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 2px solid var(--surface-4);
+  border-radius: var(--radius-full);
+  background:
+    radial-gradient(circle, var(--surface-1) 58%, transparent 60%),
+    conic-gradient(var(--fx-arcane) calc(var(--charge) * 1turn), var(--surface-overlay) 0);
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.hud-ult.is-ready {
+  border-color: var(--fx-arcane);
+  color: var(--text-0);
+  background: radial-gradient(circle, rgba(var(--rgb-arcane), 0.55), var(--surface-1) 70%);
+  animation: ult-ready var(--dur-pulse) var(--ease-in-out) infinite alternate;
+}
+
+@keyframes ult-ready {
+  from { box-shadow: 0 0 6px rgba(var(--rgb-arcane), 0.5); }
+  to { box-shadow: 0 0 22px rgba(var(--rgb-arcane), 0.95); }
 }
 
 .hud-row {
@@ -267,6 +345,218 @@ body {
   display: flex;
   gap: var(--space-3);
   margin-top: var(--space-4);
+}
+
+/* ── Draft (§4.5, §10.1) ──────────────────────────────────────────────────── */
+
+/* The arena keeps running behind it, so the scrim only darkens the lower half. */
+.draft {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-3) max(var(--space-6), var(--safe-b));
+  background: linear-gradient(to bottom, transparent 20%, var(--surface-scrim) 55%);
+}
+
+.draft-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-5xl);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fx-gold);
+  text-shadow: 0 2px 6px var(--surface-scrim);
+}
+
+.draft-hint {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--text-sm);
+}
+
+.draft-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.draft-card {
+  position: relative;
+  min-width: 44px;
+  min-height: 44px;
+  height: 232px;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-xl);
+  background: var(--surface-1);
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  text-align: center;
+  cursor: pointer;
+  overflow: hidden;
+  animation: card-in var(--dur-slow) var(--ease-spring) both;
+}
+
+.draft-card:nth-child(2) { animation-delay: 60ms; }
+.draft-card:nth-child(3) { animation-delay: 120ms; }
+
+@keyframes card-in {
+  from { transform: perspective(600px) rotateY(80deg); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.draft-card:focus-visible {
+  outline: 2px solid var(--fx-gold);
+  outline-offset: 2px;
+}
+
+.draft-card.is-suggested {
+  border-color: var(--fx-gold);
+  box-shadow: 0 0 0 1px var(--fx-gold), 0 0 16px rgba(var(--rgb-gold), 0.45);
+}
+
+.draft-card-head {
+  min-height: 16px;
+  display: flex;
+  justify-content: center;
+  gap: var(--space-1);
+}
+
+.draft-card-new,
+.draft-card-suggested {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-display);
+  font-size: var(--text-3xs);
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.draft-card-new {
+  background: var(--fx-nature);
+  color: var(--text-on-fill);
+}
+
+.draft-card-suggested {
+  background: var(--fx-gold);
+  color: var(--text-on-amber);
+}
+
+.draft-card-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--fx-gold);
+}
+
+.draft-card-icon .icon {
+  --icon-size: 34px;
+}
+
+.draft-card-weapon .draft-card-icon { color: var(--fx-arcane); }
+.draft-card-fallback .draft-card-icon { color: var(--fx-nature); }
+
+.draft-card-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+}
+
+.draft-card-kind {
+  margin: 0;
+  font-size: var(--text-3xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.draft-card-text {
+  margin: 0;
+  flex: 1;
+  font-size: var(--text-sm);
+  line-height: var(--leading-tight);
+  color: var(--text-1);
+}
+
+.draft-card-num {
+  color: var(--fx-gold);
+  font-weight: var(--weight-bold);
+}
+
+.draft-card-pips {
+  display: flex;
+  gap: 3px;
+}
+
+.draft-card-pips .pip {
+  width: 10px;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--surface-4);
+}
+
+.draft-card-pips .pip.is-owned { background: var(--fx-gold); }
+.draft-card-pips .pip.is-next { background: var(--text-0); }
+
+/* Hold for details (R4): the card turns over to its full text. */
+.draft-card-details {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--surface-2);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-tight);
+  text-align: left;
+  white-space: pre-wrap;
+  color: var(--text-1);
+}
+
+.draft-card-details p {
+  margin: 0;
+}
+
+.draft-card.is-detail .draft-card-details {
+  display: flex;
+}
+
+.draft-timer {
+  width: 100%;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  overflow: hidden;
+}
+
+.draft-timer-fill {
+  height: 100%;
+  background: var(--fx-gold);
+  transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draft-card,
+  .hud-ult.is-ready {
+    animation: none;
+  }
 }
 
 /* ── Modal ───────────────────────────────────────────────────────────────── */

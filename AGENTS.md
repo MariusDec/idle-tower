@@ -21,13 +21,23 @@ from tsconfig, Vite and Vitest; never import from it.
 | `src/render/` | `camera.ts`, `renderer.ts`, `painters/`, `palette.ts`, `quality.ts`. Reads `RunState`, never writes it | `core/`, `content/`, `sim/` types |
 | `src/ui/` | DOM: HUD, screens, modal, icon helper | anything but `sim/` internals |
 | `src/platform/` | Capacitor shell hooks | — |
-| `tools/` | Headless: `inspect.ts` (per-wave table), `pacing.ts` (from P3) | `src/` minus DOM |
+| `tools/` | Headless: `bot.ts` (input policies), `inspect.ts` (per-wave table), `pacing.ts` (from P3) | `src/` minus DOM |
 
-The sim's step order (`sim/run.ts`): waves place bodies → enemies walk and hit
-the wall → separation spreads crowds (tangentially at the wall) → weapons
-fire → projectiles fly and kill → the dead are swept → the tower regenerates
-or falls. Presentation learns what happened from `RunState.events`, which the
-app hands to the renderer and clears each frame.
+The sim's step order (`sim/run.ts`): input → waves place bodies → enemies walk
+and hit the wall → separation spreads crowds (tangentially at the wall) →
+weapons fire → projectiles fly and kill (kills feed XP and the ultimate) → the
+dead are swept → a banked draft opens → the tower regenerates or falls.
+Presentation learns what happened from `RunState.events`, which the app hands
+to the renderer and clears each frame.
+
+The draft never stops the sim: the sim offers cards (`systems/draft.ts`) and
+`sim/suggest.ts` scores them; the app runs the arena at 15% while a draft is
+open, times it out onto the suggestion, and pauses only for the very first
+draft of a profile. Picks and the ultimate go through `applyInput`, between
+steps. Stats are resolved by `sim/stats.ts` from `StatMod`s, once at run start
+and again whenever a passive changes. Until the Forge exists (P3),
+`meta/runConfig.ts` grants a stand-in: weapon slot 2, Scattershot and Chain
+Lightning.
 
 In dev builds, `1`/`2`/`3` set sim speed and `globalThis.tower` is the `App`.
 | `tests/` | Vitest, node environment | — |
@@ -51,8 +61,9 @@ npm run dev         # vite dev server
 npm run build       # tsc + vite build
 npm run typecheck   # src, then tools + tests
 npm test            # vitest suite (tests/)
-npm run inspect -- --seed 7   # one seeded run → per-wave table (pool, clear time, carried, damage taken)
-npm run inspect -- --seeds 50 # many runs → first-kill time and death-wave distribution
+npm run inspect -- --seed 7   # one bot-drafted run → per-wave table (level, DPS, pool, clear time, carried, damage taken)
+npm run inspect -- --seeds 50 # many runs → death waves, level-up pace, loadouts
+npm run inspect -- --seeds 50 --bare  # the same, for a level-1 tower that never drafts
 npm run pacing      # pacing report (stub until P3)
 npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest (needs network)
 ```

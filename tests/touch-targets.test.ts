@@ -73,6 +73,8 @@ describe('44 px floor', () => {
   const AUDIT: { sel: string; axes: ('min-width' | 'min-height')[] }[] = [
     { sel: '.btn', axes: ['min-width', 'min-height'] },
     { sel: '.hud-pause', axes: ['min-width', 'min-height'] },
+    { sel: '.hud-ult', axes: ['min-width', 'min-height'] },
+    { sel: '.draft-card', axes: ['min-width', 'min-height'] },
   ];
 
   for (const { sel, axes } of AUDIT) {

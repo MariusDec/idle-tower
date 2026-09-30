@@ -1,12 +1,13 @@
 import type { Projectile } from '../../sim/state';
 import { FX, lighten, withAlpha } from '../palette';
 
-/** Trail length, as seconds of travel behind the bolt. */
+/** Trail length, as seconds of travel behind the shot. */
 const TRAIL_SECONDS = 0.05;
 
 /**
- * Arcane bolts: a violet glow, a hot core and a short trail along the
- * velocity. Crits burn gold, so a crit is visible before it lands.
+ * Projectiles, one look per weapon (§10.5). Arcane bolts are a violet glow
+ * with a hot core; Scattershot pellets are short amber streaks. Crits burn
+ * gold, so a crit is visible before it lands.
  */
 export function paintProjectiles(
   ctx: CanvasRenderingContext2D,
@@ -21,24 +22,49 @@ export function paintProjectiles(
     if (!p.alive) continue;
     const x = p.px + (p.x - p.px) * alpha;
     const y = p.py + (p.y - p.py) * alpha;
-    const tint = p.crit ? FX.gold : FX.arcane;
-    const r = p.crit ? 7 : 5.5;
-
-    ctx.strokeStyle = withAlpha(tint, 0.55);
-    ctx.lineWidth = r * 1.2;
-    ctx.beginPath();
-    ctx.moveTo(x - p.vx * TRAIL_SECONDS, y - p.vy * TRAIL_SECONDS);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-
-    ctx.fillStyle = withAlpha(tint, 0.3);
-    ctx.beginPath();
-    ctx.arc(x, y, r * 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = lighten(tint, 0.55);
-    ctx.beginPath();
-    ctx.arc(x, y, r * 0.8, 0, Math.PI * 2);
-    ctx.fill();
+    switch (p.weapon) {
+      case 'arcane-bolt': {
+        const tint = p.crit ? FX.gold : FX.arcane;
+        const r = p.crit ? 7 : 5.5;
+        ctx.strokeStyle = withAlpha(tint, 0.55);
+        ctx.lineWidth = r * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x - p.vx * TRAIL_SECONDS, y - p.vy * TRAIL_SECONDS);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.fillStyle = withAlpha(tint, 0.3);
+        ctx.beginPath();
+        ctx.arc(x, y, r * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = lighten(tint, 0.55);
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'scattershot': {
+        const tint = p.crit ? FX.gold : FX.ember;
+        ctx.strokeStyle = withAlpha(tint, 0.8);
+        ctx.lineWidth = p.crit ? 5 : 3.5;
+        ctx.beginPath();
+        ctx.moveTo(x - p.vx * TRAIL_SECONDS * 0.7, y - p.vy * TRAIL_SECONDS * 0.7);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.fillStyle = lighten(tint, 0.5);
+        ctx.beginPath();
+        ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'chain-lightning':
+        // Instant: drawn as an arc effect, never a projectile.
+        break;
+      default: {
+        const exhaustive: never = p.weapon;
+        ctx.restore();
+        return exhaustive;
+      }
+    }
   }
   ctx.restore();
 }

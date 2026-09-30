@@ -1,9 +1,12 @@
 # The Tower, rebuilt — a ground-up redesign
 
-**Status:** approved; decisions D1–D6 confirmed (§16). P0 and P1 are built
-on the `rebuild` branch. P1's gate still needs the owner's 60-second watch
-test and a frame-rate check on a mid-range Android device; P2 (§14) starts
-after that.
+**Status:** approved; decisions D1–D6 confirmed (§16). P0, P1 and P2 are
+built on the `rebuild` branch. P2's gate numbers come from the real sim (a
+bot-drafted run falls at wave 11 median; runs end with different loadouts; only
+the first draft pauses). Until the Forge lands in P3, every run gets a
+stand-in for its ring-1 unlocks (weapon slot 2, Scattershot, Chain Lightning)
+so the draft has something to choose between. Still open from P1: the
+frame-rate check on a mid-range Android device. P3 (§14) is next.
 
 **Supersedes:** every other file in `plans/`. Those describe the current game;
 P0 (§14) moves them to `plans/archive/`.

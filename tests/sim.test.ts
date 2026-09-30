@@ -94,7 +94,10 @@ describe('wave overlap rule (§4.2)', () => {
 
   it('a strong tower chains waves faster than a weak one', () => {
     const weak = runFor(9, 40);
-    const strongCfg = { ...config(), stats: { ...config().stats, damageMult: 20, fireRateMult: 3, maxHp: 1e9 } };
+    const strongCfg = {
+      ...config(),
+      mods: [{ key: 'damage', mult: 20 }, { key: 'attackSpeed', mult: 3 }, { key: 'maxHp', mult: 1e7 }] as const,
+    };
     const strong = createRun(strongCfg, 9);
     for (let i = 0; i < Math.round(40 / SIM_DT); i++) { step(strong, SIM_DT); strong.events.length = 0; }
     expect(strong.wave).toBeGreaterThan(weak.wave);

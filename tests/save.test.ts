@@ -71,6 +71,14 @@ describe('migration ladder', () => {
     expect(migrate(v1, ladder, 1)).toBe(v1);
   });
 
+  it('the shipped ladder takes a v1 profile to the current version', () => {
+    const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
+    expect(out.version).toBe(PROFILE_VERSION);
+    expect(out.seenCards).toEqual([]);
+    expect(out.tutorial).toEqual({ firstDraft: false });
+    expect(out.shards).toBe(4);
+  });
+
   it('refuses a missing rung, a future version and a rung that skips', () => {
     expect(() => migrate(v1, {}, 2)).toThrow(MigrationError);
     expect(() => migrate({ version: 3 }, ladder, 2)).toThrow(MigrationError);

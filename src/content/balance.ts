@@ -5,8 +5,8 @@
 export const BALANCE = {
   tower: {
     maxHp: 100,
-    /** HP per second. */
-    regen: 0.5,
+    /** Fraction of Max HP per second. */
+    regen: 0.005,
     /** Flat reduction on each contact hit. */
     armor: 0,
     /** Enemies stop at `radius + their radius` and attack from there. */
@@ -14,6 +14,41 @@ export const BALANCE = {
     range: 380,
     critChance: 0.05,
     critMult: 2,
+  },
+  /** Slots at the start of a run, before the Forge (§4.4). */
+  slots: { weapon: 1, passive: 2 },
+  /** Weapons and passives top out here (§4.4). */
+  maxLevel: 5,
+  xp: {
+    /** XP from level 1 to 2. Tuned so the first draft lands near 0:15 (§7.1). */
+    first: 8,
+    /** Each level needs this much more than the last, added… */
+    perLevel: 4,
+    /** …and then multiplied, so late levels stretch out (§4.5: 15–25 s early, 30–40 s later). */
+    growth: 1.1,
+  },
+  draft: {
+    /** Cards per draft (§4.5). */
+    choices: 3,
+    /** Wall-clock seconds before the suggested card is taken. */
+    seconds: 10,
+    /** Arena speed while a draft is open. */
+    slowMotion: 0.15,
+    /** Fallback cards. */
+    healFraction: 0.3,
+    shardBonus: 10,
+  },
+  ultimate: {
+    /** Kill XP (before XP gain) that fills the first charge: ~30–45 s of killing (§4.4). */
+    charge: 40,
+    /** Each cast makes the next charge this much longer, so later waves' kill rate doesn't spam it. */
+    growth: 1.2,
+  },
+  projectiles: {
+    /** Seconds a homing bolt lives before fizzling. */
+    homingLife: 2,
+    /** A straight shot flies this multiple of the tower's range. */
+    reach: 1.15,
   },
   damage: {
     /**

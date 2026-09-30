@@ -6,7 +6,7 @@ import { FX, withAlpha } from './palette';
 import { bakeArena } from './painters/arena';
 import { EnemyPainter } from './painters/enemies';
 import { paintProjectiles } from './painters/projectiles';
-import { paintRangeRing, paintTower } from './painters/tower';
+import { mountOffset, paintRangeRing, paintTower, type Mount } from './painters/tower';
 import { QUALITY, type QualityTier } from './quality';
 
 /** Sim ticks the crystal stays flared after a contact hit. */
@@ -15,6 +15,8 @@ const HURT_TICKS = 12;
 export const FALL_SECONDS = 1.2;
 /** HP fraction below which the edge vignette starts. */
 const VIGNETTE_FROM = 0.35;
+/** The hub's backdrop tower: the frame's starting weapon, facing up. */
+const IDLE_MOUNTS: readonly Mount[] = [{ id: 'arcane-bolt', level: 1, aim: -Math.PI / 2 }];
 
 /**
  * The renderer (§12.3). Reads a `RunState`, never writes it. Everything it
@@ -64,7 +66,30 @@ export class Renderer {
           break;
         case 'kill':
           this.effects.deathBurst(ev.x, ev.y, ENEMY_BY_ID[ev.enemy].color, ev.radius);
+          this.effects.xpMote(ev.x, ev.y);
           break;
+        case 'chain':
+          this.effects.lightning(ev.points);
+          break;
+        case 'levelUp':
+          this.effects.levelUp(this.lastRun?.stats.radius ?? 46);
+          break;
+        case 'nova':
+          this.effects.nova(this.lastRun?.stats.radius ?? 46, ev.radius);
+          this.camera.shake(10);
+          this.camera.zoomPunch();
+          break;
+        case 'picked': {
+          // A new weapon: a flash where its mount just appeared.
+          const run = this.lastRun;
+          if (ev.card.kind === 'weapon' && ev.card.level === 1 && run) {
+            const slot = run.weapons.findIndex((w) => w.id === ev.card.id);
+            const R = run.stats.radius;
+            const o = mountOffset(Math.max(0, slot), R);
+            this.effects.pulse(o.x, o.y, R * 0.5, FX.gold);
+          }
+          break;
+        }
         case 'towerHit': {
           const d = Math.hypot(ev.x, ev.y) || 1;
           const wall = this.lastRun?.stats.radius ?? 46;
@@ -81,6 +106,8 @@ export class Renderer {
         case 'fire':
         case 'waveStart':
         case 'firstSight':
+        case 'draftOpen':
+        case 'ultReady':
           break;
         default: {
           const exhaustive: never = ev;
@@ -120,10 +147,10 @@ export class Renderer {
       const sinceHurt = run.tick - run.tower.hurtTick;
       const hurt = run.tower.hurtTick >= 0 && sinceHurt < HURT_TICKS ? 1 - sinceHurt / HURT_TICKS : 0;
       const fallen = this.fallT === null ? 0 : Math.min(1, this.fallT / (FALL_SECONDS * 0.6));
-      paintTower(ctx, run.stats.radius, run.tower.aim, this.clock, hurt, fallen);
+      paintTower(ctx, run.stats.radius, run.weapons, this.clock, hurt, fallen);
       paintProjectiles(ctx, run.projectiles, alpha, additive);
     } else {
-      paintTower(ctx, 46, -Math.PI / 2, this.clock, 0, 0);
+      paintTower(ctx, 46, IDLE_MOUNTS, this.clock, 0, 0);
     }
     this.effects.drawWorld(ctx);
 

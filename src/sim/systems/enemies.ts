@@ -12,15 +12,15 @@ const near: Enemy[] = [];
 
 /**
  * Enemies walk straight at the tower, stop at its wall, and hit it on their
- * attack interval (§4.2). Contact damage is the only way a Region 1 enemy
- * hurts the tower.
+ * attack interval (§4.2). A stunned body does neither. Contact damage is
+ * the only way a Region 1 enemy hurts the tower.
  */
 export function tickEnemies(run: RunState, dt: number): void {
   const reach = run.stats.radius;
   for (const e of run.enemies) {
     e.px = e.x;
     e.py = e.y;
-    if (!e.alive) continue;
+    if (!e.alive || e.stunnedUntil > run.time) continue;
     const d = Math.hypot(e.x, e.y);
     const stop = reach + e.radius;
     if (d > stop) {

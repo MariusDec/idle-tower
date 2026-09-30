@@ -1,0 +1,221 @@
+import { describe, expect, it } from 'vitest';
+import { applyInput, createRun, step } from '../src/sim/run';
+import { buildRunConfig, FIRST_DRAFT } from '../src/meta/runConfig';
+import { newProfile, type Profile } from '../src/meta/profile';
+import { SIM_DT } from '../src/app/loop';
+import { BALANCE } from '../src/content/balance';
+import { hashString } from '../src/core/rng';
+import { resolveStat, resolveStats } from '../src/sim/stats';
+import {
+  applyCard, candidateCards, cardKey, gainXp, pickCard, tickDraft, xpToNext,
+} from '../src/sim/systems/draft';
+import { castUltimate } from '../src/sim/systems/ultimate';
+import type { Card, RunState } from '../src/sim/state';
+import { botInput, type Policy } from '../tools/bot';
+
+function veteran(): Profile {
+  const p = newProfile(0);
+  p.tutorial.firstDraft = true;
+  return p;
+}
+
+const fresh = (seed = 1): RunState => createRun(buildRunConfig(veteran()), seed);
+
+function play(seed: number, seconds: number, policy: Policy): RunState {
+  const run = fresh(seed);
+  const ticks = Math.round(seconds / SIM_DT);
+  for (let i = 0; i < ticks && !run.outcome; i++) {
+    step(run, SIM_DT, botInput(run, policy));
+    run.events.length = 0;
+  }
+  return run;
+}
+
+function stateHash(run: RunState): number {
+  const { events: _events, ...rest } = run;
+  return hashString(JSON.stringify(rest));
+}
+
+/** Level the run up and open its draft, without playing. */
+function levelUp(run: RunState): void {
+  gainXp(run, run.xpNext / run.stats.xpMult + 1e-9);
+  tickDraft(run);
+}
+
+describe('stat resolver (§12.3)', () => {
+  it('adds flat, then sums percentages, then multiplies', () => {
+    const r = resolveStat('damage', [
+      { key: 'damage', add: 1 },
+      { key: 'damage', pct: 0.15 },
+      { key: 'damage', pct: 0.15 },
+      { key: 'damage', mult: 2 },
+      { key: 'maxHp', mult: 99 },
+    ]);
+    expect(r.value).toBeCloseTo((1 + 1) * 1.3 * 2);
+  });
+
+  it('regen is a fraction of Max HP', () => {
+    const s = resolveStats([{ key: 'maxHp', pct: 1 }]);
+    expect(s.regen).toBeCloseTo(s.maxHp * BALANCE.tower.regen);
+  });
+});
+
+describe('XP and levels', () => {
+  it('each level costs more than the last', () => {
+    for (let l = 1; l < 40; l++) expect(xpToNext(l + 1)).toBeGreaterThan(xpToNext(l));
+  });
+
+  it('banks one draft per level, even when one kill crosses several', () => {
+    const run = fresh();
+    gainXp(run, (xpToNext(1) + xpToNext(2) + 0.5) / run.stats.xpMult);
+    expect(run.level).toBe(3);
+    expect(run.pendingDrafts).toBe(2);
+  });
+});
+
+describe('the draft (§4.5)', () => {
+  it('offers distinct cards and suggests one of them', () => {
+    const run = fresh(3);
+    levelUp(run);
+    const d = run.draft!;
+    expect(d.cards).toHaveLength(BALANCE.draft.choices);
+    expect(new Set(d.cards.map(cardKey)).size).toBe(d.cards.length);
+    expect(d.suggested).toBeGreaterThanOrEqual(0);
+    expect(d.suggested).toBeLessThan(d.cards.length);
+  });
+
+  it('never offers a new item for a slot type that is full', () => {
+    const run = fresh();
+    applyCard(run, { kind: 'weapon', id: 'scattershot', level: 1 });
+    applyCard(run, { kind: 'passive', id: 'power', level: 1 });
+    applyCard(run, { kind: 'passive', id: 'haste', level: 1 });
+    expect(run.weapons).toHaveLength(run.weaponSlots);
+    expect(run.passives).toHaveLength(run.passiveSlots);
+    for (const c of candidateCards(run)) {
+      expect(c.kind === 'fallback' || c.level > 1, cardKey(c)).toBe(true);
+    }
+  });
+
+  it('never offers a maxed item, and pads with fallbacks once nothing is left', () => {
+    const run = fresh();
+    applyCard(run, { kind: 'weapon', id: 'scattershot', level: 1 });
+    applyCard(run, { kind: 'passive', id: 'power', level: 1 });
+    applyCard(run, { kind: 'passive', id: 'haste', level: 1 });
+    for (const w of run.weapons) w.level = BALANCE.maxLevel;
+    for (const p of run.passives) p.level = BALANCE.maxLevel;
+    expect(candidateCards(run)).toEqual([]);
+    levelUp(run);
+    expect(run.draft!.cards.every((c) => c.kind === 'fallback')).toBe(true);
+  });
+
+  it('only offers weapons that are in the pool', () => {
+    const run = fresh();
+    run.pool = run.pool.filter((id) => id !== 'chain-lightning');
+    const offered = candidateCards(run);
+    expect(offered.some((c) => c.kind === 'weapon' && c.id === 'scattershot')).toBe(true);
+    expect(offered.some((c) => c.kind === 'weapon' && c.id === 'chain-lightning')).toBe(false);
+  });
+
+  it('a pick applies the card and closes the draft; the next banked one opens', () => {
+    const run = fresh(5);
+    gainXp(run, (xpToNext(1) + xpToNext(2)) / run.stats.xpMult + 0.01);
+    tickDraft(run);
+    const card = run.draft!.cards[0];
+    pickCard(run, 0);
+    expect(run.draft).toBeNull();
+    if (card.kind === 'weapon') expect(run.weapons.find((w) => w.id === card.id)?.level).toBe(card.level);
+    tickDraft(run);
+    expect(run.draft).not.toBeNull();
+    expect(run.pendingDrafts).toBe(1);
+  });
+
+  it('a passive re-resolves stats, and Max HP gained is HP gained', () => {
+    const run = fresh();
+    run.tower.hp = 50;
+    applyCard(run, { kind: 'passive', id: 'fortify', level: 1 });
+    expect(run.stats.maxHp).toBeCloseTo(BALANCE.tower.maxHp * 1.2);
+    expect(run.tower.hp).toBeCloseTo(50 + BALANCE.tower.maxHp * 0.2);
+  });
+
+  it('the run keeps going while a draft is open', () => {
+    const run = fresh(2);
+    levelUp(run);
+    const t = run.time;
+    for (let i = 0; i < 60; i++) step(run, SIM_DT);
+    expect(run.time).toBeGreaterThan(t);
+    expect(run.draft).not.toBeNull();
+  });
+
+  it('the first draft of the game is the authored one, once', () => {
+    const run = createRun(buildRunConfig(newProfile(0)), 9);
+    levelUp(run);
+    expect(run.draft!.cards).toEqual(FIRST_DRAFT);
+    pickCard(run, 1);
+    levelUp(run);
+    expect(run.draft!.cards).not.toEqual(FIRST_DRAFT);
+    expect(buildRunConfig(veteran()).firstDraft).toBeNull();
+  });
+});
+
+describe('the ultimate (§4.4)', () => {
+  it('fires only when charged, then charges slower', () => {
+    const run = fresh();
+    expect(castUltimate(run)).toBe(false);
+    run.ult.charge = 1;
+    const need = run.ult.need;
+    expect(castUltimate(run)).toBe(true);
+    expect(run.ult.charge).toBe(0);
+    expect(run.ult.need).toBeGreaterThan(need);
+  });
+
+  it('hurts and throws back everything in range', () => {
+    const run = play(4, 20, 'bare');
+    const inRange = run.enemies.filter((e) => e.alive && Math.hypot(e.x, e.y) <= run.stats.range);
+    expect(inRange.length).toBeGreaterThan(0);
+    const before = inRange.map((e) => ({ hp: e.hp, d: Math.hypot(e.x, e.y) }));
+    run.ult.charge = 1;
+    applyInput(run, { ult: true });
+    inRange.forEach((e, i) => {
+      if (!e.alive) return;
+      expect(e.hp).toBeLessThan(before[i].hp);
+      expect(Math.hypot(e.x, e.y)).toBeGreaterThan(before[i].d);
+    });
+  });
+});
+
+describe('determinism with inputs', () => {
+  it('the same seed and policy give the same run', () => {
+    expect(stateHash(play(21, 120, 'active'))).toBe(stateHash(play(21, 120, 'active')));
+  });
+});
+
+describe('the P2 gate, measured on the real sim', () => {
+  const SEEDS = 12;
+  const runs = Array.from({ length: SEEDS }, (_, i) => play(i + 1, 900, 'active'));
+
+  it('a bot-drafted run with no meta progression reaches about wave 10', () => {
+    const waves = runs.map((r) => r.outcome?.wave ?? r.wave).sort((a, b) => a - b);
+    const median = waves[waves.length >> 1];
+    expect(median).toBeGreaterThanOrEqual(8);
+    expect(median).toBeLessThanOrEqual(13);
+  });
+
+  it('runs end up with different towers', () => {
+    const loadouts = new Set(runs.map((r) => r.weapons.map((w) => `${w.id}:${w.level}`).sort().join(',')));
+    expect(loadouts.size).toBeGreaterThan(1);
+    const weapons = new Set(runs.flatMap((r) => r.weapons.map((w) => w.id)));
+    expect(weapons.size).toBe(3);
+  });
+
+  it('every card the bot is offered is legal when it is offered', () => {
+    const run = fresh(8);
+    while (!run.outcome && run.time < 600) {
+      if (run.draft) {
+        const legal = new Set(candidateCards(run).map((c: Card) => JSON.stringify(c)));
+        for (const c of run.draft.cards) if (c.kind !== 'fallback') expect(legal.has(JSON.stringify(c))).toBe(true);
+      }
+      step(run, SIM_DT, botInput(run, 'active'));
+      run.events.length = 0;
+    }
+  });
+});

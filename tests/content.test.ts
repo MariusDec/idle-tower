@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CONTENT } from '../src/content';
 import { lintContent } from '../src/content/lint';
-import type { ContentEntry } from '../src/content/types';
+import type { ContentEntry, WeaponDef } from '../src/content/types';
 
 describe('content lint (§12.6)', () => {
   it('the shipped content is clean', () => {
@@ -26,11 +26,25 @@ describe('content lint (§12.6)', () => {
   it('catches dangling references', () => {
     const problems = lintContent({
       ...CONTENT,
-      frames: [{ id: 'f', name: 'F', icon: 'crystal-ball', text: 'x', startingWeapon: 'nope' } as ContentEntry],
+      frames: [{ ...CONTENT.frames[0], startingWeapon: 'nope' } as ContentEntry],
       regions: [{ ...CONTENT.regions[0], pool: [{ enemy: 'ghost', from: 1, weight: 1 }] } as ContentEntry],
     }).map((i) => i.problem);
     expect(problems).toContain('unknown starting weapon "nope"');
     expect(problems).toContain('pool names unknown enemy "ghost"');
     expect(problems).toContain('has 1 enemy types (want 3)');
+  });
+});
+
+describe('level lint', () => {
+  it('catches a missing step, a silent step and a stat-less passive', () => {
+    const weapon = CONTENT.weapons[0] as WeaponDef;
+    const problems = lintContent({
+      ...CONTENT,
+      weapons: [{ ...weapon, steps: [...weapon.steps.slice(0, 2), { text: 'Nothing.' }] } as ContentEntry],
+      passives: [{ ...CONTENT.passives[0], perLevel: [] } as ContentEntry],
+    }).map((i) => i.problem);
+    expect(problems).toContain('has 3 level steps (want 4)');
+    expect(problems).toContain('level 4 changes nothing');
+    expect(problems).toContain('moves no stat');
   });
 });

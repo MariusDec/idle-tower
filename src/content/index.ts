@@ -1,5 +1,6 @@
 import { ENEMIES } from './enemies';
 import { FRAMES } from './frames';
+import { FALLBACKS, PASSIVES } from './passives';
 import { REGIONS } from './regions';
 import { WEAPONS } from './weapons';
 import type { ContentEntry } from './types';
@@ -13,4 +14,6 @@ export const CONTENT: Readonly<Record<string, readonly ContentEntry[]>> = {
   enemies: ENEMIES,
   regions: REGIONS,
   weapons: WEAPONS,
+  passives: PASSIVES,
+  fallbacks: FALLBACKS,
 };
