@@ -97,7 +97,7 @@ describe('the draft (§4.5)', () => {
     expect(run.weapons).toHaveLength(run.weaponSlots);
     expect(run.passives).toHaveLength(run.passiveSlots);
     for (const c of candidateCards(run)) {
-      expect(c.kind === 'fallback' || c.level > 1, cardKey(c)).toBe(true);
+      expect(c.kind === 'fallback' || c.kind === 'evolution' || c.level > 1, cardKey(c)).toBe(true);
     }
   });
 
@@ -108,6 +108,11 @@ describe('the draft (§4.5)', () => {
     applyCard(run, { kind: 'passive', id: 'haste', level: 1 });
     for (const w of run.weapons) w.level = BALANCE.maxLevel;
     for (const p of run.passives) p.level = BALANCE.maxLevel;
+    expect(candidateCards(run)).toEqual([]);
+    // With Alchemy, Scattershot + Power is a recipe: nothing is left once it has evolved.
+    run.behaviours.alchemy = 1;
+    expect(candidateCards(run)).toEqual([{ kind: 'evolution', id: 'dragonbreath' }]);
+    applyCard(run, { kind: 'evolution', id: 'dragonbreath' });
     expect(candidateCards(run)).toEqual([]);
     levelUp(run);
     expect(run.draft!.cards.every((c) => c.kind === 'fallback')).toBe(true);

@@ -4,7 +4,9 @@ import type { BranchId, ForgeNodeDef } from './types';
  * The Forge (§5.1, §11.4): one radial web, five branches. Rings 1–2 of
  * Might, Bulwark, Fortune and Arsenal and Engineering's first ring came in
  * P3; P4 adds ring 3, sealed until the Gatekeeper falls (a few nodes wait
- * for the Bog Mother), and Offline I.
+ * for the Bog Mother), and Offline I. P5 adds the last four weapons, Alchemy
+ * (evolutions, §4.4) and the keystones, one per branch but Engineering; the
+ * last two sealed by the Bog Mother.
  *
  * Only Might, Bulwark and Fortune hang from the root, so a fresh Forge shows
  * three nodes (§7.1). Arsenal hangs from Might and Engineering from Fortune:
@@ -93,6 +95,16 @@ export const FORGE: readonly ForgeNodeDef[] = [
     branch: 'might', type: 'notable', ring: 2, angle: 30, links: ['overkill'], maxLevel: 1, cost: 220,
     effects: [{ kind: 'behaviour', id: 'executioner' }],
   },
+  {
+    id: 'glass-cannon', name: 'Glass Cannon', icon: 'cannon', text: 'Damage ×1.8, but Max HP is halved and nothing regenerates.',
+    branch: 'might', type: 'keystone', ring: 3, angle: 24, links: ['executioner'], maxLevel: 1, cost: 1500,
+    effects: [
+      { kind: 'stat', mod: { key: 'damage', mult: 1.8 } },
+      { kind: 'stat', mod: { key: 'maxHp', mult: 0.5 } },
+      { kind: 'stat', mod: { key: 'regen', mult: 0 } },
+    ],
+    sealed: 'bog-mother',
+  },
 
   // ── Arsenal ────────────────────────────────────────────────────────────
   {
@@ -117,13 +129,44 @@ export const FORGE: readonly ForgeNodeDef[] = [
   },
   {
     id: 'twin-mount', name: 'Twin Mount', icon: 'double-shot', text: 'Start runs with a second, random weapon.',
-    branch: 'arsenal', type: 'notable', ring: 3, angle: 80, links: ['frost-ring', 'passive-slot'], maxLevel: 1, cost: 380,
+    branch: 'arsenal', type: 'notable', ring: 3, angle: 82, links: ['frost-ring', 'passive-slot'], maxLevel: 1, cost: 380,
     effects: [{ kind: 'behaviour', id: 'twin-mount' }], sealed: 'gatekeeper',
   },
   {
     id: 'passive-slot-2', name: 'Third Focus', icon: 'nested-hexagons', text: '+1 passive slot.',
-    branch: 'arsenal', type: 'notable', ring: 3, angle: 64, links: ['passive-slot'], maxLevel: 1, cost: 1400,
+    branch: 'arsenal', type: 'notable', ring: 3, angle: 62, links: ['passive-slot'], maxLevel: 1, cost: 1400,
     effects: [{ kind: 'slot', slot: 'passive', n: 1 }], sealed: 'bog-mother',
+  },
+  {
+    id: 'mortar', name: 'Mortar', icon: 'mortar', text: 'Mortar joins the draft.',
+    branch: 'arsenal', type: 'notable', ring: 2, angle: 100, links: ['frost-ring'], maxLevel: 1, cost: 240,
+    effects: [{ kind: 'unlockCard', id: 'mortar' }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'sunlance', name: 'Sunlance', icon: 'sunbeams', text: 'Sunlance joins the draft.',
+    branch: 'arsenal', type: 'notable', ring: 3, angle: 94, links: ['mortar'], maxLevel: 1, cost: 560,
+    effects: [{ kind: 'unlockCard', id: 'sunlance' }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'glaives', name: 'Glaives', icon: 'spinning-blades', text: 'Glaives join the draft.',
+    branch: 'arsenal', type: 'notable', ring: 3, angle: 106, links: ['mortar'], maxLevel: 1, cost: 620,
+    effects: [{ kind: 'unlockCard', id: 'glaives' }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'sentinel-drones', name: 'Sentinel Drones', icon: 'delivery-drone', text: 'Sentinel Drones join the draft.',
+    branch: 'arsenal', type: 'notable', ring: 3, angle: 116, links: ['glaives'], maxLevel: 1, cost: 1200,
+    effects: [{ kind: 'unlockCard', id: 'sentinel-drones' }], sealed: 'bog-mother',
+  },
+  {
+    id: 'alchemy', name: 'Alchemy', icon: 'bubbling-flask', text: 'Weapons at level 5 evolve when you own their partner passive.',
+    branch: 'arsenal', type: 'notable', ring: 3, angle: 72, links: ['passive-slot'], maxLevel: 1, cost: 2000,
+    effects: [{ kind: 'behaviour', id: 'alchemy' }], sealed: 'bog-mother',
+  },
+  {
+    id: 'specialist', name: 'Specialist', icon: 'bullseye', text: 'One weapon slot only, but it deals ×3 damage and evolves at level 3.',
+    branch: 'arsenal', type: 'keystone', ring: 3, angle: 52, links: ['passive-slot'], maxLevel: 1, cost: 1500,
+    effects: [{ kind: 'behaviour', id: 'specialist' }, { kind: 'stat', mod: { key: 'damage', mult: 3 } }],
+    sealed: 'bog-mother',
   },
 
   // ── Engineering ────────────────────────────────────────────────────────
@@ -199,6 +242,12 @@ export const FORGE: readonly ForgeNodeDef[] = [
     branch: 'fortune', type: 'notable', ring: 2, angle: 234, links: ['reroll'], maxLevel: 1, cost: 305,
     effects: [{ kind: 'behaviour', id: 'extra-choice' }],
   },
+  {
+    id: 'hoarder', name: 'Hoarder', icon: 'money-stack', text: 'Shards ×2, but one fewer card in every draft.',
+    branch: 'fortune', type: 'keystone', ring: 3, angle: 238, links: ['choice'], maxLevel: 1, cost: 1500,
+    effects: [{ kind: 'stat', mod: { key: 'shardGain', mult: 2 } }, { kind: 'behaviour', id: 'hoarder' }],
+    sealed: 'bog-mother',
+  },
 
   // ── Bulwark ────────────────────────────────────────────────────────────
   {
@@ -225,6 +274,16 @@ export const FORGE: readonly ForgeNodeDef[] = [
     id: 'thorns', name: 'Thorns', icon: 'spiked-armor', text: 'Enemies that hit the tower take 50% of it back.',
     branch: 'bulwark', type: 'notable', ring: 2, angle: 270, links: ['bulwark-regen'], maxLevel: 1, cost: 75,
     effects: [{ kind: 'behaviour', id: 'thorns' }],
+  },
+  {
+    id: 'fortress', name: 'Fortress', icon: 'castle', text: 'Attack speed −30%, Max HP ×2, and Thorns bite three times as hard.',
+    branch: 'bulwark', type: 'keystone', ring: 3, angle: 266, links: ['thorns'], maxLevel: 1, cost: 1500,
+    effects: [
+      { kind: 'stat', mod: { key: 'attackSpeed', mult: 0.7 } },
+      { kind: 'stat', mod: { key: 'maxHp', mult: 2 } },
+      { kind: 'behaviour', id: 'fortress' },
+    ],
+    sealed: 'bog-mother',
   },
   {
     id: 'bulwark-regen-2', name: 'Living Stone', icon: 'life-tap', text: 'Regenerate +0.5% of Max HP per second.',

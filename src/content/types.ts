@@ -29,7 +29,14 @@ export type StatKey =
   | 'armor'
   | 'xpGain'
   | 'shardGain'
-  | 'ultCharge';
+  | 'ultCharge'
+  /** Every blast, pulse, blade and burning patch: a multiplier on its radius. */
+  | 'area'
+  /** Slows, stuns, freezes, burns and burning ground last longer; a beam ramps faster. */
+  | 'duration'
+  | 'projectileSpeed'
+  /** Extra bodies a shot passes through. */
+  | 'pierce';
 
 /**
  * One contribution to a stat. Resolved as
@@ -62,6 +69,12 @@ export type BehaviourId =
   | 'reroll'
   | 'bounty'
   | 'twin-mount'
+  /** Evolutions are offered at all (§4.4): sealed by the Bog Mother, so the first lands near 1.5–2 h (§7.1). */
+  | 'alchemy'
+  // Keystones (§11.4): each defines a build, with a trade-off.
+  | 'fortress'
+  | 'hoarder'
+  | 'specialist'
   // Relics (§11.5): the count is the relic's rank.
   | 'extra-level'
   | 'quick-start'
@@ -280,13 +293,20 @@ export interface BossDef extends ContentEntry {
   readonly lore: string;
 }
 
-export type WeaponId = 'arcane-bolt' | 'scattershot' | 'chain-lightning' | 'frost-ring';
+export type WeaponId =
+  | 'arcane-bolt' | 'scattershot' | 'chain-lightning' | 'frost-ring'
+  | 'mortar' | 'sunlance' | 'glaives' | 'sentinel-drones';
 
 /**
  * How a weapon attacks (§4.4). A closed union: `sim/systems/combat.ts`
  * switches on it exhaustively, and the tower painter draws one mount per kind.
+ *
+ *   homing  bolts that steer       lob    shells at the densest cluster
+ *   cone    a fan of pellets       beam   a lance that ramps on one target
+ *   chain   lightning that leaps   orbit  blades circling the tower
+ *   pulse   a ring round the tower drone  drones that hunt and fire
  */
-export type WeaponPattern = 'homing' | 'cone' | 'chain' | 'pulse';
+export type WeaponPattern = 'homing' | 'cone' | 'chain' | 'pulse' | 'lob' | 'beam' | 'orbit' | 'drone';
 
 /**
  * A weapon's numbers at one level. Every pattern reads the fields it needs;
@@ -313,12 +333,25 @@ export interface WeaponParams {
   readonly stun: number;
   /** World units per second; 0 for instant weapons. */
   readonly projectileSpeed: number;
-  /** A pulse's reach from the tower's centre, world units. */
+  /**
+   * World units: a pulse's reach from the tower's centre, a shell's blast,
+   * or the blades' orbit.
+   */
   readonly radius: number;
   /** Fraction of speed a struck body loses… */
   readonly slow: number;
   /** …for this many seconds. */
   readonly slowSeconds: number;
+  /** Small shells a landing shell scatters, each a share of its damage (Mortar). */
+  readonly bomblets: number;
+  /** A beam's damage multiplier gained per second on one target… */
+  readonly ramp: number;
+  /** …up to this. */
+  readonly rampCap: number;
+  /** An orbit's turn, radians per second; attack speed turns it faster. An orbit has no `fireRate`: a blade cuts as it passes. */
+  readonly spin: number;
+  /** A blade's reach around its centre, world units. */
+  readonly blade: number;
 }
 
 /**
@@ -337,18 +370,46 @@ export interface WeaponStep {
 export interface WeaponDef extends ContentEntry {
   readonly id: WeaponId;
   readonly pattern: WeaponPattern;
+  /** What it is strong against (§11.2): the draft scorer leans toward it where these walk. */
+  readonly counters: readonly EnemyId[];
   /** Level 1. */
   readonly base: WeaponParams;
   /** Levels 2–5, in order. */
   readonly steps: readonly WeaponStep[];
 }
 
-export type PassiveId = 'power' | 'haste' | 'precision' | 'fortify' | 'mending' | 'insight';
+export type PassiveId =
+  | 'power' | 'haste' | 'precision' | 'fortify' | 'mending' | 'insight'
+  | 'area' | 'reach' | 'focus' | 'bulwark' | 'velocity' | 'greed';
 
 /** A passive (§4.4, §11.3). Each level adds `perLevel` again. */
 export interface PassiveDef extends ContentEntry {
   readonly id: PassiveId;
   readonly perLevel: readonly StatMod[];
+  /** Added once more at the last level (Velocity's pierce). */
+  readonly atMax?: readonly StatMod[];
+  /**
+   * The pool grows with unlocks (§4.5): a passive with this joins the draft
+   * once that weapon is in it. Without it, the passive is there from the start.
+   */
+  readonly joinsWith?: WeaponId;
+}
+
+export type EvolutionId =
+  | 'seeker-swarm' | 'dragonbreath' | 'storm-crown' | 'absolute-zero'
+  | 'meteorfall' | 'judgment' | 'halo' | 'hive';
+
+/**
+ * An evolution (§4.4, §11.2): a maxed weapon and its partner passive make a
+ * new pattern. Hidden until found, then kept in the Recipe Book. What each
+ * one does is `sim/systems/combat.ts`'s; its numbers, `BALANCE.evolutions`.
+ */
+export interface EvolutionDef extends ContentEntry {
+  readonly id: EvolutionId;
+  readonly weapon: WeaponId;
+  readonly passive: PassiveId;
+  /** The Recipe Book's nudge once the weapon has been maxed a few times (§5.3). */
+  readonly hint: string;
 }
 
 export type FallbackId = 'heal' | 'shards';
@@ -449,7 +510,9 @@ export type FeatGoal =
   /** Different relics found. */
   | { readonly kind: 'relics'; readonly n: number }
   /** Reach wave n with a single weapon. */
-  | { readonly kind: 'lone'; readonly wave: number };
+  | { readonly kind: 'lone'; readonly wave: number }
+  /** Evolve any weapon. */
+  | { readonly kind: 'evolve' };
 
 /** A feat (§5.4): one finite list, each paying shards once. */
 export interface FeatDef extends ContentEntry {

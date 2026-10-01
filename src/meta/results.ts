@@ -3,12 +3,13 @@ import { FORGE } from '../content/forge';
 import { FRAMES } from '../content/frames';
 import { REGIONS } from '../content/regions';
 import { bossRelic } from '../content/relics';
-import type { BossId, EnemyId, FeatDef, RelicId } from '../content/types';
+import type { BossId, EnemyId, EvolutionId, FeatDef, RelicId } from '../content/types';
 import type { RunState } from '../sim/state';
 import { bossDown, frameUnlocked, gainRelic, hubUnlocks, regionUnlocked, relicSlots } from './collection';
 import { checkFeats } from './feats';
 import { nextGoal, type ForgeGoal } from './forge';
 import { recordFarm } from './offline';
+import { recipesOpen, recordRecipes } from './recipes';
 import type { Profile } from './profile';
 
 /** A record broken this run: the old value is shown struck through (§7.3). */
@@ -43,6 +44,8 @@ export interface RunSummary {
   newEnemies: EnemyId[];
   /** Draft cards (`cardKey`) first seen this run. */
   newCards: string[];
+  /** Evolutions found for the first time this run (§5.3). */
+  newRecipes: EvolutionId[];
   boss: BossResult | null;
   /** Relics found this run, with the rank each now has (0: it was already maxed). */
   relics: { id: RelicId; rank: number }[];
@@ -66,6 +69,7 @@ function unlockList(profile: Profile): Map<string, string> {
   const hub = hubUnlocks(profile);
   if (hub.map) add('The Map');
   if (hub.feats) add('Feats');
+  if (recipesOpen(profile)) add('The Recipe Book');
   for (const r of REGIONS) if (r.index > 1 && regionUnlocked(profile, r.index)) add(r.name);
   for (const f of FRAMES) if (f.unlock.kind !== 'start' && frameUnlocked(profile, f)) add(`${f.name} frame`);
   const slots = relicSlots(profile);
@@ -130,6 +134,7 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
   }
   for (const id of run.relics) relics.push({ id, rank: gainRelic(profile, id) });
 
+  const newRecipes = recordRecipes(profile, run);
   const feats = checkFeats(profile, run);
   const after = unlockList(profile);
   const unlocks = [...after].filter(([key]) => !before.has(key)).map(([, label]) => label);
@@ -146,6 +151,7 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
     records,
     newEnemies,
     newCards: [...newCards],
+    newRecipes,
     boss,
     relics,
     feats,

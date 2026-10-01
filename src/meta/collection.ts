@@ -6,6 +6,7 @@ import { RELICS, RELIC_BY_ID } from '../content/relics';
 import { BALANCE } from '../content/balance';
 import type { BossId, FrameDef, RegionDef, RelicDef, RelicId } from '../content/types';
 import type { Profile } from './profile';
+import { recipesOpen } from './recipes';
 
 /**
  * What the profile has unlocked between runs (§5.2–§5.3, §7.1): regions,
@@ -140,10 +141,11 @@ export function hubUnlocks(profile: Profile): HubUnlocks {
 }
 
 /** The Collection's pages (§5.3), each once it has something on it. */
-export function collectionPages(profile: Profile): { bestiary: boolean; relics: boolean; frames: boolean } {
+export function collectionPages(profile: Profile): { bestiary: boolean; relics: boolean; recipes: boolean; frames: boolean } {
   return {
     bestiary: profile.seenEnemies.length >= BESTIARY_AT,
     relics: Object.keys(profile.relics).length > 0,
+    recipes: recipesOpen(profile),
     frames: FRAMES.some((f) => f.unlock.kind !== 'start' && frameUnlocked(profile, f)),
   };
 }

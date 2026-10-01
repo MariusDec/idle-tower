@@ -198,6 +198,10 @@ export function spawnEnemy(
     attackTimer: 0,
     inContact: false,
     hitTick: -1,
+    burn: 0,
+    burnUntil: 0,
+    burnTimer: 0,
+    frozenUntil: 0,
   };
   run.enemies.push(enemy);
   if (run.current && wave === run.current.n) run.current.alive++;

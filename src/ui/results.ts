@@ -1,6 +1,7 @@
 import type { RunSummary } from '../meta/results';
 import { BOSS_BY_ID } from '../content/bosses';
 import { ENEMY_BY_ID } from '../content/enemies';
+import { EVOLUTION_BY_ID } from '../content/evolutions';
 import { RELIC_BY_ID } from '../content/relics';
 import { FALLBACKS, PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
@@ -17,6 +18,8 @@ function cardEntry(key: string): ContentEntry | null {
   const [kind, id] = key.split(':');
   if (kind === 'weapon') return WEAPON_BY_ID[id as WeaponId] ?? null;
   if (kind === 'passive') return PASSIVE_BY_ID[id as PassiveId] ?? null;
+  // An evolution card shows as its recipe, from `newRecipes`.
+  if (kind === 'evolution') return null;
   return FALLBACKS.find((f) => f.id === id) ?? null;
 }
 
@@ -191,6 +194,7 @@ export class ResultsScreen {
     this.shards.setAttribute('aria-expanded', 'false');
 
     this.finds.replaceChildren(
+      ...s.newRecipes.map((id) => chip(EVOLUTION_BY_ID[id], 'recipe')),
       ...s.newEnemies.map((id) => chip(ENEMY_BY_ID[id], 'enemy')),
       ...s.newCards.map(cardEntry).filter((e): e is ContentEntry => e !== null).map((e) => chip(e, 'card')),
     );

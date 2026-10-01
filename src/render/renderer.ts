@@ -1,4 +1,5 @@
 import { BOSS_BY_ID } from '../content/bosses';
+import { EVOLUTION_BY_ID } from '../content/evolutions';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { regionByIndex } from '../content/regions';
 import type { RunState } from '../sim/state';
@@ -8,6 +9,7 @@ import { FX, INK, lighten, mix, withAlpha } from './palette';
 import { bakeArena } from './painters/arena';
 import { EnemyPainter } from './painters/enemies';
 import { paintProjectiles } from './painters/projectiles';
+import { paintArsenal, paintFires, paintStatus } from './painters/arsenal';
 import { paintAegis, paintBoss, paintRings, paintShots } from './painters/bosses';
 import { mountOffset, paintRangeRing, paintTower, type Mount } from './painters/tower';
 import { QUALITY, type QualityTier } from './quality';
@@ -221,6 +223,44 @@ export class Renderer {
         case 'blocked':
           this.effects.hitSparks(ev.x, ev.y, FX.gold, true);
           break;
+        case 'lance':
+          // Judgment's forks: gold, where the chain's are frost.
+          for (let i = 0; i < ev.points.length; i += 4) this.effects.lightning(ev.points.slice(i, i + 4), FX.gold);
+          break;
+        case 'blast':
+          switch (ev.style) {
+            case 'shell':
+              this.effects.ring(ev.x, ev.y, ev.radius * 0.3, ev.radius, withAlpha(FX.ember, 0.85), 0.35, 8);
+              this.effects.spray(ev.x, ev.y, FX.ember, 14, 240, 4);
+              this.camera.shake(1.5);
+              break;
+            case 'bomblet':
+              this.effects.ring(ev.x, ev.y, ev.radius * 0.3, ev.radius, withAlpha(FX.gold, 0.75), 0.25, 4);
+              break;
+            case 'meteor':
+              this.effects.ring(ev.x, ev.y, ev.radius * 0.2, ev.radius * 1.2, withAlpha(lighten(FX.gold, 0.4), 0.95), 0.5, 14);
+              this.effects.spray(ev.x, ev.y, FX.ember, 40, 360, 6, 80);
+              this.camera.shake(6);
+              break;
+            case 'shatter':
+              this.effects.ring(ev.x, ev.y, 8, ev.radius, withAlpha(lighten(FX.frost, 0.4), 0.9), 0.35, 6);
+              this.effects.spray(ev.x, ev.y, lighten(FX.frost, 0.5), 16, 300, 4);
+              break;
+            default: {
+              const exhaustive: never = ev.style;
+              return exhaustive;
+            }
+          }
+          break;
+        case 'evolve':
+          // The spotlight (§10.3): the light gathers on the tower as the weapon turns.
+          this.effects.evolve(run.stats.radius);
+          this.camera.zoomPunch();
+          this.showBanner('Evolved', EVOLUTION_BY_ID[ev.evolution].name, 'gold');
+          break;
+        case 'ignite':
+          this.effects.spray(ev.x, ev.y, FX.ember, 5, 120, 3, 60);
+          break;
         case 'fire':
         case 'waveStart':
         case 'firstSight':
@@ -263,13 +303,16 @@ export class Renderer {
     if (run) {
       paintRangeRing(ctx, run.stats.range);
       paintRings(ctx, run.rings);
+      paintFires(ctx, run.fires, run.time, this.clock);
       this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock);
+      paintStatus(ctx, run.enemies, alpha, run.time, this.clock);
       const b = run.boss;
       if (b && b.killedIn === null) {
         const body = run.enemies.find((e) => e.id === b.enemy && e.alive);
         if (body) paintBoss(ctx, body, b, alpha, run.tick, run.time, this.clock);
       }
       paintShots(ctx, run.shots, alpha);
+      paintArsenal(ctx, run, alpha, this.clock, additive);
       const sinceHurt = run.tick - run.tower.hurtTick;
       const hurt = run.tower.hurtTick >= 0 && sinceHurt < HURT_TICKS ? 1 - sinceHurt / HURT_TICKS : 0;
       const fallen = this.fallT === null ? 0 : Math.min(1, this.fallT / (FALL_SECONDS * 0.6));

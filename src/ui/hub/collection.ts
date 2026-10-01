@@ -4,29 +4,32 @@ import { FRAMES } from '../../content/frames';
 import { REGIONS } from '../../content/regions';
 import { RELICS } from '../../content/relics';
 import { BALANCE } from '../../content/balance';
+import { PASSIVE_BY_ID } from '../../content/passives';
+import { WEAPON_BY_ID } from '../../content/weapons';
 import type { BossId, EnemyId, RelicId } from '../../content/types';
 import { formatNumber } from '../../core/format';
 import {
   bestiary, collectionPages, frameUnlocked, relicRank, relicSlots, selectedFrame,
 } from '../../meta/collection';
 import type { Profile } from '../../meta/profile';
+import { recipeBook } from '../../meta/recipes';
 import { toggleClass } from '../dom';
 import { icon } from '../icon';
 
-export type CollectionPage = 'bestiary' | 'relics' | 'frames';
+export type CollectionPage = 'bestiary' | 'relics' | 'recipes' | 'frames';
 
 export interface CollectionActions {
   toggleRelic(id: RelicId): boolean;
   selectFrame(id: string): void;
 }
 
-const PAGE_NAME: Record<CollectionPage, string> = { bestiary: 'Bestiary', relics: 'Relics', frames: 'Frames' };
+const PAGE_NAME: Record<CollectionPage, string> = { bestiary: 'Bestiary', relics: 'Relics', recipes: 'Recipes', frames: 'Frames' };
 
 /**
  * The Collection (§5.3): one tab, its pages appearing as they fill. The
  * Bestiary (every enemy and boss, revealed on first sight), Relics (worn
- * into the next run, up to the slots the bosses opened) and Frames.
- * Recipes join in P5.
+ * into the next run, up to the slots the bosses opened), Recipes (the
+ * evolutions, "??? + ???" until found) and Frames.
  */
 export class CollectionView {
   readonly root: HTMLElement;
@@ -83,6 +86,9 @@ export class CollectionView {
         break;
       case 'relics':
         this.body.replaceChildren(...this.relics(p));
+        break;
+      case 'recipes':
+        this.body.replaceChildren(this.recipes(p));
         break;
       case 'frames':
         this.body.replaceChildren(this.frames(p));
@@ -180,6 +186,37 @@ export class CollectionView {
       list.append(li);
     }
     return [head, list];
+  }
+
+  /** The Recipe Book (§5.3): each half shows as it is earned, the riddle before the find. */
+  private recipes(p: Profile): HTMLElement {
+    const list = document.createElement('ul');
+    list.className = 'entry-list';
+    for (const r of recipeBook(p)) {
+      const e = r.evolution;
+      const li = document.createElement('li');
+      li.className = `entry${r.found ? ' is-evolution' : ' is-unknown'}`;
+      const h = document.createElement('div');
+      h.className = 'entry-head';
+      const n = document.createElement('span');
+      n.className = 'entry-name';
+      n.textContent = r.found ? e.name : '???';
+      h.append(icon(r.found ? e.icon : r.weapon ? WEAPON_BY_ID[e.weapon].icon : 'locked-chest'), n);
+      const recipe = document.createElement('p');
+      recipe.className = 'entry-text';
+      const weapon = r.weapon ? `${WEAPON_BY_ID[e.weapon].name} (level ${BALANCE.evolutions.evolveAt})` : '???';
+      const passive = r.found ? PASSIVE_BY_ID[e.passive].name : '???';
+      recipe.textContent = `${weapon} + ${passive}`;
+      li.append(h, recipe);
+      if (r.found || r.hint) {
+        const line = document.createElement('p');
+        line.className = 'entry-lore';
+        line.textContent = r.found ? e.text : e.hint;
+        li.append(line);
+      }
+      list.append(li);
+    }
+    return list;
   }
 
   private frames(p: Profile): HTMLElement {

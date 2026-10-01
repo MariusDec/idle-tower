@@ -1,4 +1,5 @@
 import { BALANCE } from '../content/balance';
+import { EVOLUTIONS } from '../content/evolutions';
 import { PASSIVES } from '../content/passives';
 import type { BehaviourId, CardItemId, Effect, StatMod } from '../content/types';
 import { bossDown, equippedRelics, relicSlots, selectedFrame, selectedRegion } from './collection';
@@ -24,7 +25,7 @@ export function buildRunConfig(profile: Profile): RunConfig {
   const frame = selectedFrame(profile);
   const region = selectedRegion(profile);
   const mods: StatMod[] = [];
-  const pool: CardItemId[] = [frame.startingWeapon, ...PASSIVES.map((p) => p.id)];
+  const pool: CardItemId[] = [frame.startingWeapon];
   let weaponSlots: number = BALANCE.slots.weapon;
   let passiveSlots: number = BALANCE.slots.passive;
   const behaviours: Partial<Record<BehaviourId, number>> = {};
@@ -62,6 +63,10 @@ export function buildRunConfig(profile: Profile): RunConfig {
       }
     }
   }
+  // Passives that join with a weapon (§4.5) follow it into the pool.
+  for (const p of PASSIVES) if (!p.joinsWith || pool.includes(p.joinsWith)) pool.push(p.id);
+  // Specialist (§11.4): one weapon slot, whatever else the Forge gave.
+  if (behaviours.specialist) weaponSlots = 1;
   return Object.freeze({
     frameId: frame.id,
     regionId: region.index,
@@ -73,5 +78,6 @@ export function buildRunConfig(profile: Profile): RunConfig {
     behaviours: Object.freeze(behaviours),
     firstKill: !bossDown(profile, region.boss),
     relicDrops: relicSlots(profile) > 0,
+    recipes: Object.freeze(EVOLUTIONS.filter((e) => profile.recipes.found.includes(e.id)).map((e) => e.id)),
   });
 }

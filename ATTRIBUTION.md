@@ -4,7 +4,7 @@
 
 ## Icons
 
-The 197 icons in `public/icons/sprite.svg` come from
+The 206 icons in `public/icons/sprite.svg` come from
 [game-icons.net](https://game-icons.net) (source: [https://github.com/game-icons/icons](https://github.com/game-icons/icons)).
 
 Icons marked **CC BY 3.0** are used under the
@@ -16,7 +16,7 @@ The artwork is unmodified except for two mechanical steps applied by the fetch s
 the black background plate is removed, and the explicit white fill is dropped so the
 path inherits `currentColor` from CSS.
 
-### Lorc — 119 icons
+### Lorc — 124 icons
 
 Icons made by [Lorc](https://lorcblog.blogspot.com), licensed **CC BY 3.0**.
 
@@ -59,6 +59,7 @@ Icons made by [Lorc](https://lorcblog.blogspot.com), licensed **CC BY 3.0**.
 | `dead-eye` | [dead-eye](https://github.com/game-icons/icons/blob/master/lorc/dead-eye.svg) | CC BY 3.0 |
 | `deadly-strike` | [deadly-strike](https://github.com/game-icons/icons/blob/master/lorc/deadly-strike.svg) | CC BY 3.0 |
 | `double-shot` | [double-shot](https://github.com/game-icons/icons/blob/master/lorc/double-shot.svg) | CC BY 3.0 |
+| `dragon-breath` | [dragon-breath](https://github.com/game-icons/icons/blob/master/lorc/dragon-breath.svg) | CC BY 3.0 |
 | `dripping-blade` | [dripping-blade](https://github.com/game-icons/icons/blob/master/lorc/dripping-blade.svg) | CC BY 3.0 |
 | `droplets` | [droplets](https://github.com/game-icons/icons/blob/master/lorc/droplets.svg) | CC BY 3.0 |
 | `echo-ripples` | [echo-ripples](https://github.com/game-icons/icons/blob/master/lorc/echo-ripples.svg) | CC BY 3.0 |
@@ -94,6 +95,7 @@ Icons made by [Lorc](https://lorcblog.blogspot.com), licensed **CC BY 3.0**.
 | `life-tap` | [life-tap](https://github.com/game-icons/icons/blob/master/lorc/life-tap.svg) | CC BY 3.0 |
 | `lightning-arc` | [lightning-arc](https://github.com/game-icons/icons/blob/master/lorc/lightning-arc.svg) | CC BY 3.0 |
 | `lightning-branches` | [lightning-branches](https://github.com/game-icons/icons/blob/master/lorc/lightning-branches.svg) | CC BY 3.0 |
+| `lightning-storm` | [lightning-storm](https://github.com/game-icons/icons/blob/master/lorc/lightning-storm.svg) | CC BY 3.0 |
 | `lightning-trio` | [lightning-trio](https://github.com/game-icons/icons/blob/master/lorc/lightning-trio.svg) | CC BY 3.0 |
 | `lob-arrow` | [lob-arrow](https://github.com/game-icons/icons/blob/master/lorc/lob-arrow.svg) | CC BY 3.0 |
 | `locked-chest` | [locked-chest](https://github.com/game-icons/icons/blob/master/lorc/locked-chest.svg) | CC BY 3.0 |
@@ -123,12 +125,15 @@ Icons made by [Lorc](https://lorcblog.blogspot.com), licensed **CC BY 3.0**.
 | `spiked-halo` | [spiked-halo](https://github.com/game-icons/icons/blob/master/lorc/spiked-halo.svg) | CC BY 3.0 |
 | `spiky-explosion` | [spiky-explosion](https://github.com/game-icons/icons/blob/master/lorc/spiky-explosion.svg) | CC BY 3.0 |
 | `spine-arrow` | [spine-arrow](https://github.com/game-icons/icons/blob/master/lorc/spine-arrow.svg) | CC BY 3.0 |
+| `spinning-blades` | [spinning-blades](https://github.com/game-icons/icons/blob/master/lorc/spinning-blades.svg) | CC BY 3.0 |
 | `spiral-arrow` | [spiral-arrow](https://github.com/game-icons/icons/blob/master/lorc/spiral-arrow.svg) | CC BY 3.0 |
 | `standing-potion` | [standing-potion](https://github.com/game-icons/icons/blob/master/lorc/standing-potion.svg) | CC BY 3.0 |
 | `star-swirl` | [star-swirl](https://github.com/game-icons/icons/blob/master/lorc/star-swirl.svg) | CC BY 3.0 |
 | `stone-block` | [stone-block](https://github.com/game-icons/icons/blob/master/lorc/stone-block.svg) | CC BY 3.0 |
 | `striking-arrows` | [striking-arrows](https://github.com/game-icons/icons/blob/master/lorc/striking-arrows.svg) | CC BY 3.0 |
 | `striking-splinter` | [striking-splinter](https://github.com/game-icons/icons/blob/master/lorc/striking-splinter.svg) | CC BY 3.0 |
+| `sun` | [sun](https://github.com/game-icons/icons/blob/master/lorc/sun.svg) | CC BY 3.0 |
+| `sunbeams` | [sunbeams](https://github.com/game-icons/icons/blob/master/lorc/sunbeams.svg) | CC BY 3.0 |
 | `supersonic-arrow` | [supersonic-arrow](https://github.com/game-icons/icons/blob/master/lorc/supersonic-arrow.svg) | CC BY 3.0 |
 | `surrounded-shield` | [surrounded-shield](https://github.com/game-icons/icons/blob/master/lorc/surrounded-shield.svg) | CC BY 3.0 |
 | `swords-emblem` | [swords-emblem](https://github.com/game-icons/icons/blob/master/lorc/swords-emblem.svg) | CC BY 3.0 |
@@ -142,7 +147,7 @@ Icons made by [Lorc](https://lorcblog.blogspot.com), licensed **CC BY 3.0**.
 | `wizard-staff` | [wizard-staff](https://github.com/game-icons/icons/blob/master/lorc/wizard-staff.svg) | CC BY 3.0 |
 | `zig-arrow` | [zig-arrow](https://github.com/game-icons/icons/blob/master/lorc/zig-arrow.svg) | CC BY 3.0 |
 
-### Delapouite — 58 icons
+### Delapouite — 62 icons
 
 Icons made by [Delapouite](https://delapouite.com), licensed **CC BY 3.0**.
 
@@ -154,13 +159,16 @@ Icons made by [Delapouite](https://delapouite.com), licensed **CC BY 3.0**.
 | `armored-boomerang` | [armored-boomerang](https://github.com/game-icons/icons/blob/master/delapouite/armored-boomerang.svg) | CC BY 3.0 |
 | `attack-gauge` | [attack-gauge](https://github.com/game-icons/icons/blob/master/delapouite/attack-gauge.svg) | CC BY 3.0 |
 | `bat` | [bat](https://github.com/game-icons/icons/blob/master/delapouite/bat.svg) | CC BY 3.0 |
+| `beehive` | [beehive](https://github.com/game-icons/icons/blob/master/delapouite/beehive.svg) | CC BY 3.0 |
 | `bolt-spell-cast` | [bolt-spell-cast](https://github.com/game-icons/icons/blob/master/delapouite/bolt-spell-cast.svg) | CC BY 3.0 |
 | `book-pile` | [book-pile](https://github.com/game-icons/icons/blob/master/delapouite/book-pile.svg) | CC BY 3.0 |
 | `bow-arrow` | [bow-arrow](https://github.com/game-icons/icons/blob/master/delapouite/bow-arrow.svg) | CC BY 3.0 |
 | `brick-wall` | [brick-wall](https://github.com/game-icons/icons/blob/master/delapouite/brick-wall.svg) | CC BY 3.0 |
+| `castle` | [castle](https://github.com/game-icons/icons/blob/master/delapouite/castle.svg) | CC BY 3.0 |
 | `checkered-flag` | [checkered-flag](https://github.com/game-icons/icons/blob/master/delapouite/checkered-flag.svg) | CC BY 3.0 |
 | `coins-pile` | [coins-pile](https://github.com/game-icons/icons/blob/master/delapouite/coins-pile.svg) | CC BY 3.0 |
 | `crosshair` | [crosshair](https://github.com/game-icons/icons/blob/master/delapouite/crosshair.svg) | CC BY 3.0 |
+| `delivery-drone` | [delivery-drone](https://github.com/game-icons/icons/blob/master/delapouite/delivery-drone.svg) | CC BY 3.0 |
 | `drum` | [drum](https://github.com/game-icons/icons/blob/master/delapouite/drum.svg) | CC BY 3.0 |
 | `energy-tank` | [energy-tank](https://github.com/game-icons/icons/blob/master/delapouite/energy-tank.svg) | CC BY 3.0 |
 | `enrage` | [enrage](https://github.com/game-icons/icons/blob/master/delapouite/enrage.svg) | CC BY 3.0 |
@@ -179,6 +187,7 @@ Icons made by [Delapouite](https://delapouite.com), licensed **CC BY 3.0**.
 | `metal-plate` | [metal-plate](https://github.com/game-icons/icons/blob/master/delapouite/metal-plate.svg) | CC BY 3.0 |
 | `mighty-force` | [mighty-force](https://github.com/game-icons/icons/blob/master/delapouite/mighty-force.svg) | CC BY 3.0 |
 | `money-stack` | [money-stack](https://github.com/game-icons/icons/blob/master/delapouite/money-stack.svg) | CC BY 3.0 |
+| `mortar` | [mortar](https://github.com/game-icons/icons/blob/master/delapouite/mortar.svg) | CC BY 3.0 |
 | `nested-hexagons` | [nested-hexagons](https://github.com/game-icons/icons/blob/master/delapouite/nested-hexagons.svg) | CC BY 3.0 |
 | `orc-head` | [orc-head](https://github.com/game-icons/icons/blob/master/delapouite/orc-head.svg) | CC BY 3.0 |
 | `progression` | [progression](https://github.com/game-icons/icons/blob/master/delapouite/progression.svg) | CC BY 3.0 |
@@ -189,6 +198,7 @@ Icons made by [Delapouite](https://delapouite.com), licensed **CC BY 3.0**.
 | `rolling-dices` | [rolling-dices](https://github.com/game-icons/icons/blob/master/delapouite/rolling-dices.svg) | CC BY 3.0 |
 | `roman-shield` | [roman-shield](https://github.com/game-icons/icons/blob/master/delapouite/roman-shield.svg) | CC BY 3.0 |
 | `round-star` | [round-star](https://github.com/game-icons/icons/blob/master/delapouite/round-star.svg) | CC BY 3.0 |
+| `shop` | [shop](https://github.com/game-icons/icons/blob/master/delapouite/shop.svg) | CC BY 3.0 |
 | `sparkles` | [sparkles](https://github.com/game-icons/icons/blob/master/delapouite/sparkles.svg) | CC BY 3.0 |
 | `split-arrows` | [split-arrows](https://github.com/game-icons/icons/blob/master/delapouite/split-arrows.svg) | CC BY 3.0 |
 | `star-formation` | [star-formation](https://github.com/game-icons/icons/blob/master/delapouite/star-formation.svg) | CC BY 3.0 |

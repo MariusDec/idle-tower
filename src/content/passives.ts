@@ -1,8 +1,12 @@
 import type { FallbackDef, PassiveDef, PassiveId } from './types';
 
 /**
- * Passives (§4.4, §11.3). Six at P2: the three evolution partners of the P2
- * weapons (Power, Haste, Precision) and three that keep the tower standing.
+ * Passives (§4.4, §11.3): Act 1's twelve. Eight are each a weapon's
+ * evolution partner (`content/evolutions.ts`). The first six are in the
+ * draft from the start; the rest join it with a weapon (`joinsWith`), so the
+ * opening draft stays small and the pool grows with the Forge (§4.5). All but
+ * Bulwark join with weapons sealed by the Gatekeeper, so Region 1's hands are
+ * the six it was tuned on.
  */
 export const PASSIVES: readonly PassiveDef[] = [
   {
@@ -46,6 +50,55 @@ export const PASSIVES: readonly PassiveDef[] = [
     icon: 'wisdom',
     text: '+15% XP.',
     perLevel: [{ key: 'xpGain', pct: 0.15 }],
+  },
+  {
+    id: 'velocity',
+    name: 'Velocity',
+    icon: 'supersonic-arrow',
+    text: '+20% projectile speed; at level 5, shots pierce +1.',
+    perLevel: [{ key: 'projectileSpeed', pct: 0.2 }],
+    atMax: [{ key: 'pierce', add: 1 }],
+    joinsWith: 'sentinel-drones',
+  },
+  {
+    id: 'greed',
+    name: 'Greed',
+    icon: 'shiny-purse',
+    text: '+15% shards.',
+    perLevel: [{ key: 'shardGain', pct: 0.15 }],
+    joinsWith: 'mortar',
+  },
+  {
+    id: 'bulwark',
+    name: 'Bulwark',
+    icon: 'shield',
+    text: '+2 armour: every hit on the tower is 2 weaker.',
+    perLevel: [{ key: 'armor', add: 2 }],
+    joinsWith: 'frost-ring',
+  },
+  {
+    id: 'area',
+    name: 'Area',
+    icon: 'explosion-rays',
+    text: '+15% area: blasts, pulses and blades reach wider.',
+    perLevel: [{ key: 'area', pct: 0.15 }],
+    joinsWith: 'mortar',
+  },
+  {
+    id: 'focus',
+    name: 'Focus',
+    icon: 'concentration-orb',
+    text: '+20% duration: slows and burns last longer, beams heat faster.',
+    perLevel: [{ key: 'duration', pct: 0.2 }],
+    joinsWith: 'sunlance',
+  },
+  {
+    id: 'reach',
+    name: 'Reach',
+    icon: 'arrow-scope',
+    text: '+10% range.',
+    perLevel: [{ key: 'range', pct: 0.1 }],
+    joinsWith: 'glaives',
   },
 ];
 

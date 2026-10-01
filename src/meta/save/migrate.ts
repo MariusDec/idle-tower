@@ -36,6 +36,13 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
     region: 1,
     frame: 'arcanist',
   }),
+  // v5 (P5): the Recipe Book and the sound toggle.
+  4: (raw) => ({
+    ...raw,
+    version: 5,
+    recipes: { found: [], carried: {}, readied: {} },
+    settings: { sound: true, ...(raw.settings as object) },
+  }),
 };
 
 export class MigrationError extends Error {}

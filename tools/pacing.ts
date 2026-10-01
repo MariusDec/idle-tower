@@ -32,6 +32,7 @@ import { claimAll } from '../src/meta/feats';
 import { BRANCH_NAME, FORGE, FORGE_BY_ID } from '../src/content/forge';
 import { BOSSES, BOSS_BY_ID } from '../src/content/bosses';
 import { ENEMY_BY_ID } from '../src/content/enemies';
+import { EVOLUTION_BY_ID } from '../src/content/evolutions';
 import { RELIC_BY_ID } from '../src/content/relics';
 import { Rng } from '../src/core/rng';
 import { formatDuration } from '../src/core/format';
@@ -84,6 +85,8 @@ export interface PacingReport {
   firstWave20: number | null;
   /** Wall seconds when each boss first fell, by id. */
   bossKills: Record<string, number>;
+  /** Wall seconds of the first evolution (§7.1 aims at 1.5–2 h); null if none yet. */
+  firstEvolution: number | null;
   /** The longest gap between reveals inside I6's window, and where it starts. */
   worstGap: { seconds: number; from: number };
   i1a: boolean;
@@ -130,6 +133,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
   const branches = new Set<BranchId>();
   let clock = 0;
   let firstWave20: number | null = null;
+  let firstEvolution: number | null = null;
   const bossKills: Record<string, number> = {};
   const metBosses = new Set<string>();
   const seenAuras = new Set<string>();
@@ -193,6 +197,9 @@ export function runPacing(hours: number, seed: number): PacingReport {
           // Each aura is a new enemy to read (§7.2), the plain elite included.
           seenAuras.add(ev.aura ?? 'plain');
           reveals.push({ at, what: `elite: ${ev.aura ?? 'plain'}` });
+        } else if (ev.kind === 'evolve' && !profile.recipes.found.includes(ev.evolution)) {
+          firstEvolution ??= at;
+          reveals.push({ at, what: `evolution: ${EVOLUTION_BY_ID[ev.evolution].name}` });
         } else if (ev.kind === 'relicDrop' && !(profile.relics[ev.relic] > 0)) {
           reveals.push({ at, what: `relic: ${RELIC_BY_ID[ev.relic].name}` });
         }
@@ -256,6 +263,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
     reveals,
     firstWave20,
     bossKills,
+    firstEvolution,
     worstGap,
     i1a: boss1 !== null && boss1 >= I1A.min && boss1 <= I1A.max,
     i3,
@@ -313,6 +321,8 @@ function main(): void {
     console.log(`  I1a passes ${count((r) => r.i1a)} (boss 1 within 20:00–40:00)`);
     const b2 = medianBossKill(reports, 'bog-mother');
     console.log(`        median first Bog Mother kill ${fmt(b2)} (§7.1 aims at 60:00–75:00)`);
+    console.log(`  first evolution: ${reports.map((r) => fmt(r.firstEvolution)).join(' ')}`);
+    console.log(`        median first evolution ${fmt(medianOf(reports, (r) => r.firstEvolution))} (§7.1 aims at 1:30:00–2:00:00)`);
     return;
   }
   const csv = arg('csv', '');

@@ -944,6 +944,27 @@ body {
 .draft-card-weapon .draft-card-icon { color: var(--fx-arcane); }
 .draft-card-fallback .draft-card-icon { color: var(--fx-nature); }
 
+/* Evolutions glow (§10.1): the one card worth stopping for. */
+.draft-card-evolution {
+  border-color: var(--fx-gold);
+  background: linear-gradient(180deg, rgba(var(--rgb-gold), 0.16), transparent 60%), var(--surface-1);
+}
+
+.draft-card-evolution .draft-card-icon {
+  color: var(--text-on-amber);
+  background: var(--fx-gold);
+  animation: evolution-glow 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes evolution-glow {
+  from { box-shadow: 0 0 6px rgba(var(--rgb-gold), 0.4); }
+  to { box-shadow: 0 0 22px rgba(var(--rgb-gold), 0.9); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draft-card-evolution .draft-card-icon { animation: none; }
+}
+
 .draft-card-name {
   margin: 0;
   font-family: var(--font-display);
@@ -1455,6 +1476,7 @@ body {
 .entry:has(.entry-btn) { padding: 0; }
 .entry.is-unknown { background: var(--surface-sunken); color: var(--text-3); }
 .entry.is-worn { border-color: var(--fx-arcane); }
+.entry.is-evolution { border-color: var(--fx-gold); }
 .entry.is-boss .entry-head .icon { color: var(--fx-blood); }
 
 .entry-btn {

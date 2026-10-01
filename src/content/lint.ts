@@ -1,7 +1,7 @@
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
 import type {
-  AuraDef, BossDef, ContentEntry, EnemyDef, FeatDef, ForgeNodeDef, FrameDef, PassiveDef, RegionDef, RelicDef, WeaponDef,
+  AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, ForgeNodeDef, FrameDef, PassiveDef, RegionDef, RelicDef, WeaponDef,
 } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
@@ -215,7 +215,39 @@ export const bossesAndLoot: LintRule = (tables) => {
   return out;
 };
 
-export const RULES: readonly LintRule[] = [uniqueIds, entryBasics, references, levels, forgeWeb, bossesAndLoot];
+/**
+ * Evolutions hold together (§12.6): each names a real weapon and a real
+ * partner passive, every weapon has exactly one, no passive partners two,
+ * and the riddle obeys R4. A passive that joins with a weapon names a real one.
+ */
+export const evolutions: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const evos = (tables.evolutions as readonly EvolutionDef[] | undefined) ?? [];
+  if (evos.length === 0) return out;
+  const weapons = (tables.weapons as readonly WeaponDef[] | undefined) ?? [];
+  const passives = (tables.passives as readonly PassiveDef[] | undefined) ?? [];
+  const passiveIds = new Set<string>(passives.map((p) => p.id));
+  const weaponIds = new Set<string>(weapons.map((w) => w.id));
+  const partners = new Set<string>();
+  for (const e of evos) {
+    if (!weaponIds.has(e.weapon)) out.push({ table: 'evolutions', id: e.id, problem: `unknown weapon "${e.weapon}"` });
+    if (!passiveIds.has(e.passive)) out.push({ table: 'evolutions', id: e.id, problem: `unknown partner passive "${e.passive}"` });
+    if (partners.has(e.passive)) out.push({ table: 'evolutions', id: e.id, problem: `passive "${e.passive}" already partners another` });
+    partners.add(e.passive);
+    const words = wordCount(e.hint);
+    if (words === 0 || words > MAX_TEXT_WORDS) out.push({ table: 'evolutions', id: e.id, problem: `hint is ${words} words` });
+  }
+  for (const w of weapons) {
+    const n = evos.filter((e) => e.weapon === w.id).length;
+    if (n !== 1) out.push({ table: 'weapons', id: w.id, problem: `has ${n} evolutions (want 1)` });
+  }
+  for (const p of passives) {
+    if (p.joinsWith && !weaponIds.has(p.joinsWith)) out.push({ table: 'passives', id: p.id, problem: `joins with unknown weapon "${p.joinsWith}"` });
+  }
+  return out;
+};
+
+export const RULES: readonly LintRule[] = [uniqueIds, entryBasics, references, levels, forgeWeb, bossesAndLoot, evolutions];
 
 export function lintContent(
   tables: Readonly<Record<string, readonly ContentEntry[]>>,

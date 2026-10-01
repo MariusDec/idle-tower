@@ -1,26 +1,27 @@
 # The Tower, rebuilt — a ground-up redesign
 
-**Status:** approved; decisions D1–D6 confirmed (§16). P0–P4 are built on
+**Status:** approved; decisions D1–D6 confirmed (§16). P0–P5 are built on
 the `rebuild` branch. The pacing numbers come from the real sim with the
 active bot buying cheapest-first, claiming feats and pushing the frontier
-(`npm run pacing -- --seeds 8 --hours 1.5`):
+(`npm run pacing -- --seeds 8 --hours 2.5`):
 
-- The Gatekeeper first falls at 34:44 median (29:24–38:04), mostly on its
-  second sighting. The Bog Mother falls at 64:41 (59:55–69:12).
-- Wave 20 is first reached at 27:33 (22:24–32:04). That was 22:38 in P3;
-  Region 1's elites slowed it.
-- I3 holds on every profile. I6 holds through the Bog Mother's fall on 7 of
-  8 profiles; the eighth goes 11:33 without a reveal in the Mire just before
-  the Bog Mother arrives. After her fall P4 runs out of content, which is
-  P7's gap to fill.
+- Wave 20 is first reached at 26:46 median (24:12–38:51). The Gatekeeper
+  first falls at 33:24 (24:44–39:21), the Bog Mother at 66:06
+  (54:16–72:42).
+- The first evolution lands at 1:47:45 (1:36:45–1:52:07), inside §7.1's
+  1.5–2 h.
+- I1a, I3 and I6 hold on all 8 profiles; the worst reveal gap is 9:56.
+- I4 (`npm run arsenal`, 48 seeds per region): Regions 1–2 spread the
+  new-weapon picks; the most-picked weapon is Mortar at 28% of Region 2's
+  picks, and every weapon is taken.
 
 P4 departs from the plan in a few places:
 
 - **Rings.** P3 shipped ring 2 unsealed, so the Gatekeeper unseals ring 3 and
   Night Watch (Offline I), not ring 2. The Bog Mother unseals one ring-3 node
-  (Third Focus) on top of the Bastion and relic slot 2. The Forge is 45 nodes.
+  (Third Focus) on top of the Bastion and relic slot 2.
 - **Frost Ring** arrives in P4 as the Bastion's starting weapon, and as an
-  Arsenal ring-2 notable. P5 adds the other four weapons.
+  Arsenal ring-2 notable.
 - **Elites.** Region 1 has plain elites at waves 10 and 15 (§7.1's "first
   elite"); auras start in Region 2 (§4.3). Elites drop relics only once relic
   slot 1 exists. Splitter fragments pay a quarter of a body each.
@@ -29,14 +30,36 @@ P4 departs from the plan in a few places:
 - **Feats** are claimed in the Feats tab, so the tab opens on a batch of
   them.
 
+P5 departs from the plan in a few places:
+
+- **Alchemy.** Evolutions need an Arsenal notable, *Alchemy* (ring 3,
+  sealed by the Bog Mother). With §4.4's rule alone, a maxed Arcane Bolt
+  met Precision inside 20 minutes, and evolutions took the Bog Mother down
+  at 40 minutes against §7.1's 60–75. The Recipe Book's hints still build
+  from the first runs.
+- **The scorer steers only toward found recipes.** An unknown recipe is
+  found by chance, as a player would find it; the suggestion never hunts it.
+- **Weapon unlocks.** Mortar (ring 2), Sunlance and Glaives (ring 3) wait for
+  the Gatekeeper; Sentinel Drones (ring 3) wait for the Bog Mother, not
+  Forgeheart, until Region 4 exists. The keystones are ring 3, sealed by the
+  Bog Mother. Evolution Insight waits for P7. The Forge is 53 nodes.
+- **Passives join the pool with a weapon.** The six P2 passives are there
+  from the start; Bulwark joins with Frost Ring and the other five with the
+  Gatekeeper's weapons, so Region 1's hands stay the ones P3–P4 were tuned on.
+- **Recipes page** opens with the first weapon half revealed (three runs
+  carrying it), not the first find, so its hints can lead to the find.
+- **Audio** is new in P5: the synth and every cue in §10.4, with a sound
+  toggle in the pause menu until P9's settings.
+
 Still open:
 
-- playtest #1 (P3's gate) and playtest #2 (P4's gate)
-- I6's thin margin in the Mire before the Bog Mother (see above): a Region 2
-  reveal or a tuning pass, after playtest #2
-- from P1, the frame-rate check on a mid-range Android device
+- playtest #1 (P3's gate) and playtest #2 (P4's gate); P5's gate playtest
+  (recipes found organically by about 2 h)
+- from P1, the frame-rate check on a mid-range Android device, now with
+  four-weapon evolved builds
+- after the Bog Mother P5 still runs out of content, which is P7's gap to fill
 
-P5 (§14) is next.
+P6 (§14) is next.
 
 **Supersedes:** every other file in `plans/`. Those describe the current game;
 P0 (§14) moves them to `plans/archive/`.

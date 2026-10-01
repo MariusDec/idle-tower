@@ -1,11 +1,13 @@
 import { Rng } from '../../core/rng';
 import { BALANCE } from '../../content/balance';
 import { FALLBACKS } from '../../content/passives';
+import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../../content/evolutions';
 import { WEAPON_BY_ID } from '../../content/weapons';
 import type { CardItemId, WeaponId } from '../../content/types';
 import type { Card, RunState } from '../state';
 import { allMods, resolveStats } from '../stats';
 import { suggest } from '../suggest';
+import { evolveAt, newWeapon } from './arms';
 
 /**
  * XP, level-ups and the draft (§4.5). The sim only offers and applies cards;
@@ -41,12 +43,30 @@ export function cardKey(card: Card): string {
 }
 
 /**
+ * Evolutions ready now (§4.4): once Alchemy is owned, a weapon at its
+ * evolving level, not yet evolved, with its partner passive owned.
+ * Specialist evolves earlier.
+ */
+export function evolutionCards(run: RunState): Card[] {
+  if (!run.behaviours.alchemy) return [];
+  const at = evolveAt((run.behaviours.specialist ?? 0) > 0);
+  const out: Card[] = [];
+  for (const w of run.weapons) {
+    if (w.evolved || w.level < at) continue;
+    const evo = EVOLUTION_OF[w.id];
+    if (run.passives.some((p) => p.id === evo.passive)) out.push({ kind: 'evolution', id: evo.id });
+  }
+  return out;
+}
+
+/**
  * Every card the draft may offer now. A new item appears only while a slot
- * of its type is free; a maxed item never appears (§12.6).
+ * of its type is free; a maxed item never appears (§12.6). Evolutions come
+ * first: they are always in the hand (see `rollOffer`).
  */
 export function candidateCards(run: RunState): Card[] {
   const max = BALANCE.maxLevel;
-  const out: Card[] = [];
+  const out: Card[] = evolutionCards(run);
   for (const w of run.weapons) if (w.level < max) out.push({ kind: 'weapon', id: w.id, level: w.level + 1 });
   for (const p of run.passives) if (p.level < max) out.push({ kind: 'passive', id: p.id, level: p.level + 1 });
   const weaponFree = run.weapons.length < run.weaponSlots;
@@ -61,9 +81,13 @@ export function candidateCards(run: RunState): Card[] {
   return out;
 }
 
-/** Cards per draft: the base, plus Choice (§11.4). */
+/** Cards per draft: the base, plus Choice, less Hoarder (§11.4), never below the floor. */
 export function draftChoices(run: RunState): number {
-  return BALANCE.draft.choices + BALANCE.behaviours.extraChoice * (run.behaviours['extra-choice'] ?? 0);
+  const B = BALANCE.behaviours;
+  const n = BALANCE.draft.choices
+    + B.extraChoice * (run.behaviours['extra-choice'] ?? 0)
+    - B.hoarderChoices * (run.behaviours.hoarder ?? 0);
+  return Math.max(BALANCE.draft.minChoices, n);
 }
 
 /** Roll a hand: distinct cards from the candidates, padded with fallbacks. */
@@ -75,13 +99,15 @@ export function rollOffer(run: RunState, rng: Rng): Card[] {
     const scripted = run.firstDraft.filter((c) => legal.has(`${cardKey(c)}:${'level' in c ? c.level : 0}`));
     if (scripted.length > 0) return scripted.slice(0, n);
   }
-  // Partial Fisher–Yates: the first `n` are a uniform sample.
-  const hand = candidates.slice();
-  for (let i = 0; i < Math.min(n, hand.length); i++) {
+  // A ready evolution is always offered (§4.4: "the next level-up offers
+  // it"); the rest of the hand is a uniform sample, by partial Fisher–Yates.
+  const forced = candidates.filter((c) => c.kind === 'evolution').slice(0, n);
+  const hand = candidates.filter((c) => c.kind !== 'evolution');
+  for (let i = 0; i < Math.min(n - forced.length, hand.length); i++) {
     const j = rng.int(i, hand.length - 1);
     [hand[i], hand[j]] = [hand[j], hand[i]];
   }
-  const out = hand.slice(0, n);
+  const out = [...forced, ...hand.slice(0, n - forced.length)];
   for (const f of FALLBACKS) {
     if (out.length >= n) break;
     out.push({ kind: 'fallback', id: f.id });
@@ -132,7 +158,16 @@ export function applyCard(run: RunState, card: Card): void {
     case 'weapon': {
       const w = run.weapons.find((x) => x.id === card.id);
       if (w) w.level = card.level;
-      else run.weapons.push({ id: card.id, level: 1, cooldown: 0, aim: -Math.PI / 2 });
+      else run.weapons.push(newWeapon(card.id, 1));
+      return;
+    }
+    case 'evolution': {
+      const evo = EVOLUTION_BY_ID[card.id];
+      const w = run.weapons.find((x) => x.id === evo.weapon);
+      if (!w || w.evolved) return;
+      w.evolved = true;
+      run.evolved.push(evo.id);
+      run.events.push({ kind: 'evolve', weapon: w.id, evolution: evo.id });
       return;
     }
     case 'passive': {

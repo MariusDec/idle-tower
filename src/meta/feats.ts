@@ -38,6 +38,8 @@ export function featMet(profile: Profile, goal: FeatGoal, run: RunState | null):
       return Object.keys(profile.relics).length >= goal.n;
     case 'lone':
       return !!run && run.loneWave >= goal.wave;
+    case 'evolve':
+      return profile.recipes.found.length > 0;
     default: {
       const exhaustive: never = goal;
       return exhaustive;
@@ -72,6 +74,7 @@ export function featProgress(profile: Profile, feat: FeatDef): number {
     case 'level':
     case 'maxWeapon':
     case 'lone':
+    case 'evolve':
       return featMet(profile, g, null) ? 1 : 0;
     default: {
       const exhaustive: never = g;

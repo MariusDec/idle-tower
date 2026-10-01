@@ -8,6 +8,7 @@ import { ENEMY_BY_ID } from '../src/content/enemies';
 import { regionByIndex } from '../src/content/regions';
 import { isEliteWave, rollWave, spawnEnemy, waveHp } from '../src/sim/systems/waves';
 import { damageEnemy, tickWeapons } from '../src/sim/systems/combat';
+import { newWeapon } from '../src/sim/systems/arms';
 import { tickEnemies } from '../src/sim/systems/enemies';
 import { tickShots } from '../src/sim/systems/tower';
 import { Rng } from '../src/core/rng';
@@ -142,7 +143,7 @@ describe('elites (§4.3)', () => {
 describe('Frost Ring and Aegis (§11.2, §11.6)', () => {
   it('a pulse hits everything inside its radius and slows it', () => {
     const run = inRegion(1);
-    run.weapons = [{ id: 'frost-ring', level: 1, cooldown: 0, aim: 0 }];
+    run.weapons = [newWeapon('frost-ring', 1)];
     const a = body(run, { x: 100, y: 0, hp: 1000, maxHp: 1000 });
     const b = body(run, { x: 0, y: -120, hp: 1000, maxHp: 1000 });
     const far = body(run, { x: 300, y: 0, hp: 1000, maxHp: 1000 });
@@ -156,7 +157,7 @@ describe('Frost Ring and Aegis (§11.2, §11.6)', () => {
 
   it('a pulse spares the fragments its own kill bursts into', () => {
     const run = inRegion(2);
-    run.weapons = [{ id: 'frost-ring', level: 1, cooldown: 0, aim: 0 }];
+    run.weapons = [newWeapon('frost-ring', 1)];
     const s = spawnEnemy(run, regionByIndex(2), 'splitter', 3, 100, 0);
     s.hp = 1;
     tickWeapons(run, SIM_DT);

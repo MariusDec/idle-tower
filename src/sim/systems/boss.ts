@@ -74,6 +74,10 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     attackTimer: 0,
     inContact: false,
     hitTick: -1,
+    burn: 0,
+    burnUntil: 0,
+    burnTimer: 0,
+    frozenUntil: 0,
   };
   run.enemies.push(body);
   if (run.current) run.current.alive++;

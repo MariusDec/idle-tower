@@ -166,6 +166,11 @@ const MANIFEST = dedupe([
 
   // ── Wave modifiers ──────────────────────────────────
   ['lorc', 'pentagram-rose'], ['lorc', 'eclipse'],
+
+  // ── Arsenal (rebuild P5): weapons, evolutions, keystones ──
+  ['delapouite', 'mortar'], ['lorc', 'sunbeams'], ['lorc', 'spinning-blades'],
+  ['delapouite', 'delivery-drone'], ['lorc', 'dragon-breath'], ['lorc', 'lightning-storm'],
+  ['delapouite', 'beehive'], ['lorc', 'sun'], ['delapouite', 'castle'],
 ]);
 
 function dedupe(pairs) {

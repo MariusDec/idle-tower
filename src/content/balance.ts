@@ -30,6 +30,8 @@ export const BALANCE = {
   draft: {
     /** Cards per draft (§4.5). */
     choices: 3,
+    /** Never fewer than this, whatever takes cards away (Hoarder). */
+    minChoices: 2,
     /** Wall-clock seconds before the suggested card is taken. */
     seconds: 10,
     /** Arena speed while a draft is open. */
@@ -70,6 +72,67 @@ export const BALANCE = {
     extraChoice: 1,
     /** Bounty: elites drop this many times their shards. */
     bounty: 3,
+    /** Fortress (keystone): Thorns bite this many times harder, owned or not. */
+    fortressThorns: 3,
+    /** Hoarder (keystone): cards taken from every draft. */
+    hoarderChoices: 1,
+    /** Specialist (keystone): the one weapon evolves at this level instead. */
+    specialistEvolveAt: 3,
+  },
+  /**
+   * Evolutions (§4.4, §11.2): offered once a weapon reaches `evolveAt` with
+   * its partner passive owned. `damage` is each one's spike on top of its
+   * weapon's last level; the rest are its own numbers.
+   */
+  evolutions: {
+    evolveAt: 5,
+    'seeker-swarm': { damage: 1.25, seekers: 2, seekerDamage: 0.6 },
+    /** Burn: damage per second as a share of the pellet's hit, for `burnSeconds`; spreads `spread` far on death. */
+    dragonbreath: { damage: 1.25, burn: 0.6, burnSeconds: 3, spread: 90 },
+    /** Storms orbit at `orbit` × range, each casting a chain from where it is. */
+    'storm-crown': { damage: 1.2, storms: 3, orbit: 0.55, spin: 0.5 },
+    /** Freeze seconds (not bosses), and a slain frozen body's burst: × the pulse's hit, `shatterRadius` wide. */
+    'absolute-zero': { damage: 1.3, freeze: 1, shatter: 2.5, shatterRadius: 70 },
+    /** A meteor every `every` s: × the shell's hit, `radius` wide, leaving burning ground. */
+    meteorfall: { damage: 1.25, every: 3, meteor: 4, radius: 100, groundRadius: 85, groundSeconds: 4, burn: 0.35 },
+    /** At full heat, the beam also strikes `splits` more targets near the first. */
+    judgment: { damage: 1.2, splits: 2, splitRange: 220 },
+    /** The orbit sweeps from the wall to the edge of range and back every `period` s. */
+    halo: { damage: 1.4, period: 3 },
+    /** Each drone kill calls a drone that lasts `seconds`. */
+    hive: { damage: 1.25, seconds: 5 },
+  },
+  /**
+   * Hard caps on what a weapon puts on screen (§12.5). Anything past a cap
+   * becomes damage instead, so a late build keeps its frame rate.
+   */
+  caps: {
+    bolts: 6,
+    blades: 8,
+    drones: 8,
+  },
+  /** Weapon feel that isn't per level. */
+  weapons: {
+    /** Mortar bomblets: each a share of the shell's hit, this fraction of its blast, scattered this far. */
+    bombletDamage: 0.4,
+    bombletRadius: 0.5,
+    bombletScatter: 55,
+    /** A piercing beam's half-width, world units. */
+    beamWidth: 12,
+    /** Drones: flight speed, how far from their quarry they hover, and how far past range they may roam. */
+    droneSpeed: 300,
+    droneHover: 140,
+    droneLeash: 1.1,
+    /** Seconds between a burn's bites. */
+    burnTick: 0.5,
+    /** A meteor's fall speed, and where it falls from, relative to where it lands. */
+    meteorSpeed: 900,
+    meteorFrom: { x: -170, y: -480 },
+  },
+  /** The Recipe Book's hints (§5.3): runs carrying a weapon before its half shows, maxed runs before the riddle. */
+  recipes: {
+    weaponRuns: 3,
+    riddleRuns: 2,
   },
   /**
    * Relic numbers (§11.5), indexed by rank − 1. A relic's behaviour count is

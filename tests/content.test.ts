@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CONTENT } from '../src/content';
 import { lintContent } from '../src/content/lint';
-import type { BossDef, ContentEntry, WeaponDef } from '../src/content/types';
+import type { BossDef, ContentEntry, EvolutionDef, WeaponDef } from '../src/content/types';
 
 describe('content lint (§12.6)', () => {
   it('the shipped content is clean', () => {
@@ -67,5 +67,21 @@ describe('level lint', () => {
     const steps = [...weapon.steps.slice(0, 3), { text: '+10% damage.', damageMult: 1.1 }];
     const problems = lintContent({ ...CONTENT, weapons: [{ ...weapon, steps } as ContentEntry] }).map((i) => i.problem);
     expect(problems).toContain('level 5 is only ×1.1 damage (want ≥ ×1.25)');
+  });
+});
+
+describe('evolution lint (§12.6)', () => {
+  it('catches a missing partner, a weapon with two evolutions and one with none', () => {
+    const evo = CONTENT.evolutions[0] as EvolutionDef;
+    const problems = lintContent({
+      ...CONTENT,
+      evolutions: [
+        ...CONTENT.evolutions.filter((e) => (e as EvolutionDef).weapon !== 'mortar'),
+        { ...evo, id: 'twin', passive: 'ghost' } as ContentEntry,
+      ],
+    }).map((i) => i.problem);
+    expect(problems).toContain('unknown partner passive "ghost"');
+    expect(problems).toContain('has 2 evolutions (want 1)');
+    expect(problems).toContain('has 0 evolutions (want 1)');
   });
 });

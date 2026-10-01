@@ -96,7 +96,7 @@ describe('migration ladder', () => {
       version: 3, createdAt: 5, shards: 50, records: { runs: 9, bestWave: 19, bestShards: 80, kills: 900 },
       forge: { 'might-damage': 2 }, seenCards: [], seenEnemies: ['grunt'], tutorial: { firstDraft: true, forgeIntro: true },
       settings: { speed: 2 },
-    });
+    }, MIGRATIONS, 4);
     expect(out.version).toBe(4);
     expect(out.records).toEqual({ runs: 9, bestWave: 19, bestShards: 80, kills: 900, elites: 0 });
     expect(out.forge).toEqual({ 'might-damage': 2 });
@@ -107,6 +107,13 @@ describe('migration ladder', () => {
     expect(out.frame).toBe('arcanist');
     expect(out.lastSeen).toBe(5);
     expect(isProfile(out)).toBe(true);
+  });
+
+  it('walks a v4 profile to v5: an empty Recipe Book, the sound on, the speed kept', () => {
+    const out = migrate({ version: 4, createdAt: 5, shards: 50, settings: { speed: 3 } }, MIGRATIONS, 5);
+    expect(out.version).toBe(5);
+    expect(out.recipes).toEqual({ found: [], carried: {}, readied: {} });
+    expect(out.settings).toEqual({ speed: 3, sound: true });
   });
 
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {

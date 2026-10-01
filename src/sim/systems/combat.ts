@@ -3,9 +3,10 @@ import { BALANCE } from '../../content/balance';
 import { AURA_BY_ID, ENEMY_BY_ID } from '../../content/enemies';
 import { eliteRelics } from '../../content/relics';
 import { regionByIndex } from '../../content/regions';
-import { WEAPON_BY_ID, weaponParams } from '../../content/weapons';
-import type { WeaponParams, WeaponPattern } from '../../content/types';
+import { WEAPON_BY_ID } from '../../content/weapons';
+import type { WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
 import type { Enemy, Projectile, RunState, WeaponState } from '../state';
+import { armed } from './arms';
 import { onBossKilled } from './boss';
 import { mitigate } from './damage';
 import { gainXp } from './draft';
@@ -17,12 +18,17 @@ const HIT_PAD = 6;
 const RETARGET_RADIUS = 220;
 /** Angle between the bolts of one volley as they leave the tower, radians. */
 const VOLLEY_FAN = 0.3;
+/** How far a storm (Storm Crown) reaches for its first strike, as a multiple of the chain's leap. */
+const STORM_REACH = 1.5;
+/** Where an idle drone waits, as a multiple of the tower's wall radius. */
+const DRONE_REST = 1.8;
 
 /**
- * What dealt a hit: a weapon's pattern, the ultimate, or the wall itself.
- * Bog Lantern reads it; an Overkill carry never carries again.
+ * What dealt a hit: a weapon's pattern, the ultimate, the wall itself, or
+ * what a weapon left behind (a burn, a frozen body's shatter). Bog Lantern
+ * reads it; an Overkill carry never carries again; Hive counts the drones'.
  */
-export type DamageSource = WeaponPattern | 'nova' | 'thorns' | 'reflect' | 'overkill';
+export type DamageSource = WeaponPattern | 'nova' | 'thorns' | 'reflect' | 'overkill' | 'burn' | 'shatter';
 
 /** Sources that count as lightning, frost or Nova for Bog Lantern (§11.5). */
 const STORM: ReadonlySet<DamageSource> = new Set<DamageSource>(['chain', 'pulse', 'nova']);
@@ -69,13 +75,23 @@ function enemyById(run: RunState, id: number): Enemy | null {
   return null;
 }
 
+/** The weapon of this id the tower carries, if evolved; null otherwise. */
+function evolvedWeapon(run: RunState, id: WeaponId): WeaponState | null {
+  for (const w of run.weapons) if (w.id === id) return w.evolved ? w : null;
+  return null;
+}
+
 /** One hit's damage, crit rolled. */
 function rollHit(run: RunState, p: WeaponParams, crit: Rng): { damage: number; crit: boolean } {
   const isCrit = crit.chance(run.stats.critChance);
   return { damage: p.damage * run.stats.damageMult * (isCrit ? run.stats.critMult : 1), crit: isCrit };
 }
 
-/** Weapons fire at the nearest enemy in range, each in its own pattern (§4.4). */
+/**
+ * Weapons act, each in its own pattern (§4.4). Most fire on a cooldown at
+ * the nearest enemy in range; blades and drones act every step, and a beam
+ * heats every step it holds its target.
+ */
 export function tickWeapons(run: RunState, dt: number): void {
   const crit = Rng.wrap(run.streams.crit);
   const B = BALANCE.behaviours;
@@ -83,50 +99,102 @@ export function tickWeapons(run: RunState, dt: number): void {
   const desperate = run.behaviours['last-stand'] && run.tower.hp < run.stats.maxHp * B.lastStandBelow;
   const rateMult = run.stats.fireRateMult * (desperate ? 1 + B.lastStandSpeed : 1);
   for (const w of run.weapons) {
-    w.cooldown -= dt;
-    if (w.cooldown > 0) continue;
-    const p = weaponParams(w.id, w.level);
+    const p = armed(run.stats, w);
     const pattern = WEAPON_BY_ID[w.id].pattern;
-    // A pulse needs a body inside its own radius; everything else, inside range.
-    const target = nearestEnemy(run, 0, 0, pattern === 'pulse' ? p.radius : run.stats.range);
-    if (!target) {
-      // Idle: ready to fire the moment something enters range, with no backlog.
-      w.cooldown = 0;
-      continue;
-    }
-    // Carry the overshoot into the next interval, so the fire rate is exact
-    // rather than rounded up to whole steps (a +12% Haste stays +12%). At
-    // most one attack per step, so the carry never builds up past one step.
-    w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * rateMult));
-    const angle = Math.atan2(target.y, target.x);
-    w.aim = angle;
     switch (pattern) {
+      case 'orbit':
+        sweepBlades(run, w, p, dt * rateMult, crit);
+        break;
+      case 'drone':
+        flyDrones(run, w, p, dt, rateMult, crit);
+        break;
+      case 'beam':
+        holdBeam(run, w, p, dt, rateMult, crit);
+        break;
       case 'homing':
-        fireVolley(run, w, p, target, angle, crit);
-        break;
       case 'cone':
-        fireCone(run, w, p, angle, crit);
-        break;
       case 'chain':
-        chainStrike(run, target, p, crit);
-        break;
       case 'pulse':
-        frostPulse(run, p, crit);
+      case 'lob':
+        fireOnCooldown(run, w, p, pattern, dt, rateMult, crit);
         break;
       default: {
         const exhaustive: never = pattern;
         return exhaustive;
       }
     }
-    run.events.push({ kind: 'fire', weapon: w.id, angle });
   }
 }
 
-function launch(run: RunState, w: WeaponState, angle: number, over: Partial<Projectile>): void {
-  const start = run.stats.radius * 0.6;
-  const x = Math.cos(angle) * start;
-  const y = Math.sin(angle) * start;
-  const speed = weaponParams(w.id, w.level).projectileSpeed;
+function fireOnCooldown(
+  run: RunState, w: WeaponState, p: WeaponParams, pattern: 'homing' | 'cone' | 'chain' | 'pulse' | 'lob',
+  dt: number, rateMult: number, crit: Rng,
+): void {
+  if (pattern === 'chain' && w.evolved) w.spin += BALANCE.evolutions['storm-crown'].spin * dt;
+  if (pattern === 'lob' && w.evolved) rainMeteors(run, w, p, dt * rateMult, crit);
+  w.cooldown -= dt;
+  if (w.cooldown > 0) return;
+  // A pulse needs a body inside its own radius; everything else, inside range.
+  const target = pattern === 'lob'
+    ? densest(run, p.radius, [])
+    : nearestEnemy(run, 0, 0, pattern === 'pulse' ? p.radius : run.stats.range);
+  if (!target) {
+    // Idle: ready to fire the moment something enters range, with no backlog.
+    w.cooldown = 0;
+    return;
+  }
+  // Carry the overshoot into the next interval, so the fire rate is exact
+  // rather than rounded up to whole steps (a +12% Haste stays +12%). At
+  // most one attack per step, so the carry never builds up past one step.
+  w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * rateMult));
+  const angle = Math.atan2(target.y, target.x);
+  w.aim = angle;
+  switch (pattern) {
+    case 'homing':
+      fireVolley(run, w, p, target, angle, crit);
+      break;
+    case 'cone':
+      fireCone(run, w, p, angle, crit);
+      break;
+    case 'chain': {
+      const start = run.stats.radius * 0.6;
+      chainStrike(run, Math.cos(angle) * start, Math.sin(angle) * start, target, p, crit);
+      // Storm Crown: each storm casts its own lightning from where it circles.
+      if (w.evolved) {
+        for (const s of storms(run, w)) {
+          const first = nearestEnemy(run, s.x, s.y, p.jumpRange * STORM_REACH);
+          if (first) chainStrike(run, s.x, s.y, first, p, crit);
+        }
+      }
+      break;
+    }
+    case 'pulse':
+      frostPulse(run, w, p, crit);
+      break;
+    case 'lob':
+      lobShells(run, w, p, target, crit);
+      break;
+    default: {
+      const exhaustive: never = pattern;
+      return exhaustive;
+    }
+  }
+  run.events.push({ kind: 'fire', weapon: w.id, angle });
+}
+
+/** Storm Crown's storms, where they circle now (§11.2). The painter reads this too. */
+export function storms(run: RunState, w: WeaponState): { x: number; y: number }[] {
+  const S = BALANCE.evolutions['storm-crown'];
+  const r = run.stats.range * S.orbit;
+  const out: { x: number; y: number }[] = [];
+  for (let i = 0; i < S.storms; i++) {
+    const a = w.spin + (i / S.storms) * Math.PI * 2;
+    out.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+  }
+  return out;
+}
+
+function launch(run: RunState, w: WeaponState, x: number, y: number, angle: number, speed: number, over: Partial<Projectile>): void {
   run.projectiles.push({
     alive: true,
     weapon: w.id,
@@ -142,8 +210,22 @@ function launch(run: RunState, w: WeaponState, angle: number, over: Partial<Proj
     ignore: 0,
     knockback: 0,
     life: 0,
+    blast: 0,
+    tx: 0,
+    ty: 0,
+    sx: x,
+    sy: y,
+    bomblets: 0,
+    meteor: false,
+    seeker: false,
     ...over,
   });
+}
+
+/** Launch from the tower's lip, in direction `angle`. */
+function launchFromTower(run: RunState, w: WeaponState, angle: number, speed: number, over: Partial<Projectile>): void {
+  const start = run.stats.radius * 0.6;
+  launch(run, w, Math.cos(angle) * start, Math.sin(angle) * start, angle, speed, over);
 }
 
 /** Homing bolts, one per body in reach, fanned as they leave the tower. */
@@ -151,7 +233,7 @@ function fireVolley(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy
   const targets = p.count > 1 ? nearestToTower(run, run.stats.range, p.count) : [first];
   for (let i = 0; i < p.count; i++) {
     const hit = rollHit(run, p, crit);
-    launch(run, w, angle + (i - (p.count - 1) / 2) * VOLLEY_FAN, {
+    launchFromTower(run, w, angle + (i - (p.count - 1) / 2) * VOLLEY_FAN, p.projectileSpeed, {
       ...hit,
       homing: true,
       target: targets[i % targets.length].id,
@@ -166,16 +248,14 @@ function fireCone(run: RunState, w: WeaponState, p: WeaponParams, angle: number,
   const life = (run.stats.range * BALANCE.projectiles.reach) / p.projectileSpeed;
   for (let i = 0; i < p.count; i++) {
     const offset = p.count === 1 ? 0 : p.spread * (i / (p.count - 1) - 0.5);
-    launch(run, w, angle + offset, { ...rollHit(run, p, crit), pierce: p.pierce, knockback: p.knockback, life });
+    launchFromTower(run, w, angle + offset, p.projectileSpeed, { ...rollHit(run, p, crit), pierce: p.pierce, knockback: p.knockback, life });
   }
 }
 
-/** Instant lightning: the first body, then leaps to the nearest unstruck one in reach. */
-function chainStrike(run: RunState, first: Enemy, p: WeaponParams, crit: Rng): void {
+/** Instant lightning from (x, y): the first body, then leaps to the nearest unstruck one in reach. */
+function chainStrike(run: RunState, x: number, y: number, first: Enemy, p: WeaponParams, crit: Rng): void {
   const struck: number[] = [];
-  const start = run.stats.radius * 0.6;
-  const a = Math.atan2(first.y, first.x);
-  const points = [Math.cos(a) * start, Math.sin(a) * start];
+  const points = [x, y];
   let cur: Enemy | null = first;
   for (let j = 0; j < p.jumps && cur; j++) {
     const hit = rollHit(run, p, crit);
@@ -188,15 +268,24 @@ function chainStrike(run: RunState, first: Enemy, p: WeaponParams, crit: Rng): v
   run.events.push({ kind: 'chain', points });
 }
 
-/** Frost Ring: every body within the pulse is hit and slowed (§11.2). */
-function frostPulse(run: RunState, p: WeaponParams, crit: Rng): void {
+/**
+ * Frost Ring: every body within the pulse is hit and slowed (§11.2).
+ * Absolute Zero freezes them solid instead; a boss is only slowed.
+ */
+function frostPulse(run: RunState, w: WeaponState, p: WeaponParams, crit: Rng): void {
   const r2 = p.radius * p.radius;
+  const freeze = w.evolved ? BALANCE.evolutions['absolute-zero'].freeze * run.stats.durationMult : 0;
   // Only what was there when it went off: a Splitter's fragments, born of
   // this pulse's kill, are the next pulse's (§11.1: AoE *after* the split).
   const n = run.enemies.length;
   for (let i = 0; i < n; i++) {
     const e = run.enemies[i];
     if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
+    // Frozen before the hit lands, so a pulse that kills can shatter.
+    if (freeze > 0 && !e.boss) {
+      e.frozenUntil = run.time + freeze;
+      e.stunnedUntil = Math.max(e.stunnedUntil, e.frozenUntil);
+    }
     const hit = rollHit(run, p, crit);
     damageEnemy(run, e, hit.damage, hit.crit, 'pulse');
     if (e.alive) {
@@ -221,13 +310,322 @@ function nearestUnstruck(run: RunState, x: number, y: number, radius: number, st
   return best;
 }
 
-/** Projectiles: homing bolts steer and retarget; straight shots hit whatever they cross. */
+/**
+ * The body in range with the most others within `radius` of it: where a
+ * shell does the most (§11.2). Bodies near a point in `taken` are skipped,
+ * so a salvo's shells spread over clusters. Ties go to the nearer body.
+ */
+function densest(run: RunState, radius: number, taken: readonly { x: number; y: number }[]): Enemy | null {
+  const range2 = run.stats.range * run.stats.range;
+  const r2 = radius * radius;
+  let best: Enemy | null = null;
+  let bestN = -1;
+  let bestD = Infinity;
+  for (const e of run.enemies) {
+    if (!targetable(run, e)) continue;
+    const d = e.x * e.x + e.y * e.y;
+    if (d > range2) continue;
+    if (taken.some((t) => (t.x - e.x) ** 2 + (t.y - e.y) ** 2 <= r2)) continue;
+    let n = 0;
+    for (const o of run.enemies) {
+      if (o !== e && targetable(run, o) && (o.x - e.x) ** 2 + (o.y - e.y) ** 2 <= r2) n++;
+    }
+    if (n > bestN || (n === bestN && d < bestD)) {
+      bestN = n;
+      bestD = d;
+      best = e;
+    }
+  }
+  return best;
+}
+
+/** Mortar: a salvo of shells, each lobbed at a cluster, bursting where it lands. */
+function lobShells(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy, crit: Rng): void {
+  const taken: { x: number; y: number }[] = [];
+  let target: Enemy | null = first;
+  for (let i = 0; i < p.count; i++) {
+    // More shells than clusters: the spare ones land on the first.
+    const t: Enemy = target ?? first;
+    taken.push({ x: t.x, y: t.y });
+    lob(run, w, p, t.x, t.y, crit, false);
+    target = densest(run, p.radius, taken);
+  }
+}
+
+function lob(run: RunState, w: WeaponState, p: WeaponParams, tx: number, ty: number, crit: Rng, meteor: boolean): void {
+  const hit = rollHit(run, p, crit);
+  if (meteor) {
+    const M = BALANCE.evolutions.meteorfall;
+    const from = BALANCE.weapons.meteorFrom;
+    const sx = tx + from.x;
+    const sy = ty + from.y;
+    const speed = BALANCE.weapons.meteorSpeed;
+    launch(run, w, sx, sy, Math.atan2(ty - sy, tx - sx), speed, {
+      damage: hit.damage * M.meteor, crit: hit.crit, blast: M.radius * run.stats.areaMult,
+      tx, ty, life: Math.hypot(tx - sx, ty - sy) / speed, meteor: true,
+    });
+    return;
+  }
+  const start = run.stats.radius * 0.6;
+  const angle = Math.atan2(ty, tx);
+  const sx = Math.cos(angle) * start;
+  const sy = Math.sin(angle) * start;
+  launch(run, w, sx, sy, angle, p.projectileSpeed, {
+    ...hit, blast: p.radius, tx, ty, bomblets: p.bomblets,
+    life: Math.hypot(tx - sx, ty - sy) / p.projectileSpeed,
+  });
+}
+
+/** Meteorfall (§11.2): every few seconds a meteor on the densest crowd. */
+function rainMeteors(run: RunState, w: WeaponState, p: WeaponParams, dt: number, crit: Rng): void {
+  w.meteor -= dt;
+  if (w.meteor > 0) return;
+  const t = densest(run, BALANCE.evolutions.meteorfall.radius * run.stats.areaMult, []);
+  if (!t) {
+    w.meteor = 0;
+    return;
+  }
+  w.meteor += BALANCE.evolutions.meteorfall.every;
+  lob(run, w, p, t.x, t.y, crit, true);
+}
+
+/** Damage every body within `radius` of (x, y). Only those there when it lands. */
+function burstAt(run: RunState, x: number, y: number, radius: number, damage: number, crit: boolean, source: DamageSource, skip = 0): void {
+  const n = run.enemies.length;
+  for (let i = 0; i < n; i++) {
+    const e = run.enemies[i];
+    if (!targetable(run, e) || e.id === skip) continue;
+    const r = radius + e.radius;
+    if ((e.x - x) ** 2 + (e.y - y) ** 2 <= r * r) damageEnemy(run, e, damage, crit, source);
+  }
+}
+
+/** A shell or meteor lands: its burst, its bomblets, its burning ground. */
+function detonate(run: RunState, p: Projectile): void {
+  const W = BALANCE.weapons;
+  burstAt(run, p.tx, p.ty, p.blast, p.damage, p.crit, 'lob');
+  run.events.push({ kind: 'blast', x: p.tx, y: p.ty, radius: p.blast, weapon: p.weapon, style: p.meteor ? 'meteor' : 'shell' });
+  if (p.bomblets > 0) {
+    const rng = Rng.wrap(run.streams.arms);
+    for (let i = 0; i < p.bomblets; i++) {
+      const a = (i / p.bomblets) * Math.PI * 2 + rng.range(-0.5, 0.5);
+      const d = W.bombletScatter * rng.range(0.6, 1.2);
+      const bx = p.tx + Math.cos(a) * d;
+      const by = p.ty + Math.sin(a) * d;
+      const r = p.blast * W.bombletRadius;
+      burstAt(run, bx, by, r, p.damage * W.bombletDamage, false, 'lob');
+      run.events.push({ kind: 'blast', x: bx, y: by, radius: r, weapon: p.weapon, style: 'bomblet' });
+    }
+  }
+  if (p.meteor) {
+    const M = BALANCE.evolutions.meteorfall;
+    run.fires.push({
+      x: p.tx, y: p.ty, radius: M.groundRadius * run.stats.areaMult,
+      dps: (p.damage / M.meteor) * M.burn, until: run.time + M.groundSeconds * run.stats.durationMult,
+    });
+  }
+}
+
+/**
+ * Sunlance (§11.2): a beam that holds one body and burns hotter the longer it
+ * holds. It lands on the cooldown; it heats every step. Judgment splits the
+ * beam at full heat; at level 4 it burns through everything in its line.
+ */
+function holdBeam(run: RunState, w: WeaponState, p: WeaponParams, dt: number, rateMult: number, crit: Rng): void {
+  let target = w.beamTarget ? enemyById(run, w.beamTarget) : null;
+  const range2 = run.stats.range * run.stats.range;
+  if (target && target.x * target.x + target.y * target.y > range2) target = null;
+  if (!target) {
+    target = nearestEnemy(run, 0, 0, run.stats.range);
+    w.heat = 1;
+    w.beamTarget = target ? target.id : 0;
+  }
+  w.cooldown -= dt;
+  if (!target) {
+    w.cooldown = 0;
+    return;
+  }
+  w.heat = Math.min(p.rampCap, w.heat + p.ramp * dt);
+  w.aim = Math.atan2(target.y, target.x);
+  if (w.cooldown > 0) return;
+  w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * rateMult));
+  const hit = rollHit(run, p, crit);
+  const damage = hit.damage * w.heat;
+  if (p.pierce > 0) {
+    // Through everything in its line, out to the edge of range.
+    const ux = Math.cos(w.aim);
+    const uy = Math.sin(w.aim);
+    const n = run.enemies.length;
+    for (let i = 0; i < n; i++) {
+      const e = run.enemies[i];
+      if (!targetable(run, e)) continue;
+      const along = e.x * ux + e.y * uy;
+      if (along < 0 || along > run.stats.range + e.radius) continue;
+      const off = Math.abs(e.x * uy - e.y * ux);
+      if (off <= BALANCE.weapons.beamWidth + e.radius) damageEnemy(run, e, damage, hit.crit, 'beam');
+    }
+  } else {
+    damageEnemy(run, target, damage, hit.crit, 'beam');
+  }
+  if (w.evolved && w.heat >= p.rampCap) {
+    // Judgment: at full heat the beam forks to the nearest others.
+    const J = BALANCE.evolutions.judgment;
+    const struck = [target.id];
+    const points: number[] = [];
+    for (let i = 0; i < J.splits; i++) {
+      const o = nearestUnstruck(run, target.x, target.y, J.splitRange, struck);
+      if (!o) break;
+      struck.push(o.id);
+      points.push(target.x, target.y, o.x, o.y);
+      damageEnemy(run, o, damage, hit.crit, 'beam');
+    }
+    if (points.length > 0) run.events.push({ kind: 'lance', points });
+  }
+  run.events.push({ kind: 'fire', weapon: w.id, angle: w.aim });
+}
+
+/** Where Glaives' blades circle now: Halo sweeps them from the wall to the edge of range and back. */
+export function bladeOrbit(run: RunState, w: WeaponState, p: WeaponParams): number {
+  if (!w.evolved) return p.radius;
+  const lo = run.stats.radius + p.blade;
+  const hi = run.stats.range;
+  const t = (run.time / BALANCE.evolutions.halo.period) * Math.PI * 2;
+  return lo + (hi - lo) * (0.5 - 0.5 * Math.cos(t));
+}
+
+/**
+ * Glaives (§11.2): blades circle the tower and cut whatever they pass. A body
+ * is hit when a blade's sweep this step crosses it, so the hit rate is the
+ * blades' turn rate, and attack speed turns them faster.
+ */
+function sweepBlades(run: RunState, w: WeaponState, p: WeaponParams, dt: number, crit: Rng): void {
+  const from = w.spin;
+  const sweep = p.spin * dt;
+  w.spin = (w.spin + sweep) % (Math.PI * 2);
+  w.aim = w.spin;
+  const r = bladeOrbit(run, w, p);
+  const TAU = Math.PI * 2;
+  const n = run.enemies.length;
+  for (let i = 0; i < n; i++) {
+    const e = run.enemies[i];
+    if (!targetable(run, e)) continue;
+    const d = Math.hypot(e.x, e.y);
+    const reach = p.blade + e.radius;
+    if (Math.abs(d - r) > reach) continue;
+    // A blade cuts once per pass: when its centre crosses the body's near edge.
+    const edge = Math.atan2(e.y, e.x) - reach / Math.max(r, 1);
+    for (let k = 0; k < p.count; k++) {
+      const start = from + (k / p.count) * TAU;
+      const delta = (((edge - start) % TAU) + TAU) % TAU;
+      if (delta < sweep) {
+        const hit = rollHit(run, p, crit);
+        damageEnemy(run, e, hit.damage, hit.crit, 'orbit');
+        break;
+      }
+    }
+  }
+}
+
+/**
+ * Sentinel Drones (§11.2): each flies to its own quarry, hovers off it and
+ * fires homing shots. Hive's drones, called by kills, fade on a timer.
+ */
+function flyDrones(run: RunState, w: WeaponState, p: WeaponParams, dt: number, rateMult: number, crit: Rng): void {
+  const W = BALANCE.weapons;
+  const R = run.stats.radius;
+  // The weapon's own drones: as many as its level gives, the first at the tower.
+  const owned = w.drones.filter((d) => d.until === null).length;
+  for (let i = owned; i < p.count; i++) {
+    const a = (i / p.count) * Math.PI * 2;
+    w.drones.unshift({ x: Math.cos(a) * R, y: Math.sin(a) * R, px: Math.cos(a) * R, py: Math.sin(a) * R, cooldown: 0, until: null });
+  }
+  w.drones = w.drones.filter((d) => d.until === null || d.until > run.time);
+  const leash = run.stats.range * W.droneLeash;
+  const leash2 = leash * leash;
+  w.drones.forEach((d, i) => {
+    d.px = d.x;
+    d.py = d.y;
+    let quarry: Enemy | null = null;
+    let best = Infinity;
+    for (const e of run.enemies) {
+      if (!targetable(run, e) || e.x * e.x + e.y * e.y > leash2) continue;
+      const dd = (e.x - d.x) ** 2 + (e.y - d.y) ** 2;
+      if (dd < best) {
+        best = dd;
+        quarry = e;
+      }
+    }
+    let gx: number;
+    let gy: number;
+    if (quarry) {
+      const dist = Math.sqrt(best) || 1;
+      gx = quarry.x - ((quarry.x - d.x) / dist) * W.droneHover;
+      gy = quarry.y - ((quarry.y - d.y) / dist) * W.droneHover;
+    } else {
+      const a = (i / Math.max(1, w.drones.length)) * Math.PI * 2 + run.time * 0.4;
+      gx = Math.cos(a) * R * DRONE_REST;
+      gy = Math.sin(a) * R * DRONE_REST;
+    }
+    const mx = gx - d.x;
+    const my = gy - d.y;
+    const md = Math.hypot(mx, my);
+    const stepLen = Math.min(md, W.droneSpeed * dt);
+    if (md > 1e-6) {
+      d.x += (mx / md) * stepLen;
+      d.y += (my / md) * stepLen;
+    }
+    d.cooldown -= dt;
+    if (!quarry || d.cooldown > 0) {
+      d.cooldown = Math.max(0, d.cooldown);
+      return;
+    }
+    if (Math.sqrt(best) > W.droneHover * 1.6) return;
+    d.cooldown += 1 / (p.fireRate * rateMult);
+    const angle = Math.atan2(quarry.y - d.y, quarry.x - d.x);
+    launch(run, w, d.x, d.y, angle, p.projectileSpeed, {
+      ...rollHit(run, p, crit), homing: true, target: quarry.id, pierce: p.pierce, life: BALANCE.projectiles.homingLife,
+    });
+    run.events.push({ kind: 'fire', weapon: w.id, angle });
+  });
+}
+
+/** Hive (§11.2): a drone's kill calls another drone for a while, up to the cap. */
+function callHiveDrone(run: RunState, x: number, y: number): void {
+  const w = evolvedWeapon(run, 'sentinel-drones');
+  if (!w) return;
+  const until = run.time + BALANCE.evolutions.hive.seconds * run.stats.durationMult;
+  if (w.drones.length < BALANCE.caps.drones) {
+    w.drones.push({ x, y, px: x, py: y, cooldown: 0, until });
+    return;
+  }
+  // At the cap: the oldest called drone stays longer instead.
+  const called = w.drones.find((d) => d.until !== null);
+  if (called) called.until = until;
+}
+
+/** Projectiles: homing shots steer and retarget, straight shots hit what they cross, shells fly to their mark. */
 export function tickProjectiles(run: RunState, dt: number): void {
-  for (const p of run.projectiles) {
+  // Indexed: a seeker launched mid-loop waits for the next step.
+  const n = run.projectiles.length;
+  for (let i = 0; i < n; i++) {
+    const p = run.projectiles[i];
     p.px = p.x;
     p.py = p.y;
     if (!p.alive) continue;
     p.life -= dt;
+    if (p.blast > 0) {
+      // Lobbed: over everything, to burst where it was aimed.
+      if (p.life <= 0) {
+        p.x = p.tx;
+        p.y = p.ty;
+        p.alive = false;
+        detonate(run, p);
+        continue;
+      }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      continue;
+    }
     if (p.life <= 0) {
       p.alive = false;
       continue;
@@ -284,14 +682,76 @@ function firstAlong(run: RunState, p: Projectile, dt: number): Enemy | null {
 }
 
 function strike(run: RunState, p: Projectile, e: Enemy): void {
+  const ex = e.x;
+  const ey = e.y;
   damageEnemy(run, e, p.damage, p.crit, WEAPON_BY_ID[p.weapon].pattern);
   if (p.knockback > 0 && e.alive) knockBack(e, p.knockback);
+  // Dragonbreath (§11.2): the pellets set what they hit alight.
+  if (p.weapon === 'scattershot' && e.alive && evolvedWeapon(run, 'scattershot')) {
+    const D = BALANCE.evolutions.dragonbreath;
+    ignite(run, e, p.damage * D.burn, D.burnSeconds * run.stats.durationMult);
+  }
+  // Seeker Swarm (§11.2): a critical bolt bursts into seekers that hunt fresh targets.
+  if (p.weapon === 'arcane-bolt' && p.crit && !p.seeker) {
+    const w = evolvedWeapon(run, 'arcane-bolt');
+    if (w) {
+      const S = BALANCE.evolutions['seeker-swarm'];
+      const struck = [e.id];
+      for (let i = 0; i < S.seekers; i++) {
+        const t = nearestUnstruck(run, ex, ey, RETARGET_RADIUS * 1.5, struck) ?? nearestEnemy(run, ex, ey, RETARGET_RADIUS * 1.5, e.id);
+        if (t) struck.push(t.id);
+        const angle = t ? Math.atan2(t.y - ey, t.x - ex) : (i / S.seekers) * Math.PI * 2;
+        launch(run, w, ex, ey, angle, p.speed * 0.8, {
+          damage: p.damage * S.seekerDamage, homing: true, target: t ? t.id : 0, ignore: e.id,
+          life: BALANCE.projectiles.homingLife, seeker: true,
+        });
+      }
+    }
+  }
   if (p.pierce > 0) {
     p.pierce--;
     p.ignore = e.id;
     p.target = 0;
   } else {
     p.alive = false;
+  }
+}
+
+/** Set a body burning: the hotter of its burn and this one, for at least `seconds`. */
+function ignite(run: RunState, e: Enemy, dps: number, seconds: number): void {
+  if (e.burnUntil <= run.time) {
+    e.burn = 0;
+    e.burnTimer = BALANCE.weapons.burnTick;
+    run.events.push({ kind: 'ignite', x: e.x, y: e.y });
+  }
+  e.burn = Math.max(e.burn, dps);
+  e.burnUntil = Math.max(e.burnUntil, run.time + seconds);
+}
+
+/**
+ * Burns bite on their own clock, and burning ground sets alight what stands
+ * in it (§11.2). After the weapons, so a burn lit this step bites later.
+ */
+export function tickBurns(run: RunState, dt: number): void {
+  if (run.fires.length > 0) {
+    run.fires = run.fires.filter((f) => f.until > run.time);
+    for (const f of run.fires) {
+      for (const e of run.enemies) {
+        if (!targetable(run, e)) continue;
+        const r = f.radius + e.radius;
+        if ((e.x - f.x) ** 2 + (e.y - f.y) ** 2 <= r * r) ignite(run, e, f.dps, BALANCE.weapons.burnTick * 2);
+      }
+    }
+  }
+  const tick = BALANCE.weapons.burnTick;
+  const n = run.enemies.length;
+  for (let i = 0; i < n; i++) {
+    const e = run.enemies[i];
+    if (!e.alive || e.burnUntil <= run.time) continue;
+    e.burnTimer -= dt;
+    if (e.burnTimer > 0) continue;
+    e.burnTimer += tick;
+    damageEnemy(run, e, e.burn * tick, false, 'burn');
   }
 }
 
@@ -302,6 +762,34 @@ export function knockBack(e: Enemy, push: number): void {
   e.x += (e.x / d) * move;
   e.y += (e.y / d) * move;
   e.inContact = false;
+}
+
+/**
+ * What a body leaves when it falls to a weapon's evolution: Dragonbreath's
+ * fire leaps to its neighbours, a frozen body shatters (§11.2), and a
+ * drone's kill calls a Hive drone.
+ */
+function evolvedDeath(run: RunState, e: Enemy, source: DamageSource): void {
+  if (e.burnUntil > run.time && evolvedWeapon(run, 'scattershot')) {
+    const D = BALANCE.evolutions.dragonbreath;
+    const r2 = D.spread * D.spread;
+    const left = e.burnUntil - run.time;
+    for (const o of run.enemies) {
+      if (o !== e && targetable(run, o) && (o.x - e.x) ** 2 + (o.y - e.y) ** 2 <= r2) ignite(run, o, e.burn, left);
+    }
+  }
+  if (e.frozenUntil > run.time) {
+    const w = evolvedWeapon(run, 'frost-ring');
+    if (w) {
+      e.frozenUntil = 0;
+      const A = BALANCE.evolutions['absolute-zero'];
+      const r = A.shatterRadius * run.stats.areaMult;
+      const hit = armed(run.stats, w).damage * run.stats.damageMult * A.shatter;
+      run.events.push({ kind: 'blast', x: e.x, y: e.y, radius: r, weapon: 'frost-ring', style: 'shatter' });
+      burstAt(run, e.x, e.y, r, hit, false, 'shatter', e.id);
+    }
+  }
+  if (source === 'drone') callHiveDrone(run, e.x, e.y);
 }
 
 /** Relic rank numbers: rank n reads index n − 1. */
@@ -369,6 +857,7 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
     u.charge = Math.min(1, u.charge + (e.xp * run.stats.ultChargeMult) / u.need);
     if (u.charge >= 1) run.events.push({ kind: 'ultReady' });
   }
+  evolvedDeath(run, e, source);
   if (e.boss) {
     onBossKilled(run, e);
     return;

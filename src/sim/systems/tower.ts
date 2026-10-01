@@ -26,8 +26,13 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
   const b = run.boss;
   if (b && b.killedIn === null) b.minHp = Math.min(b.minHp, Math.max(0, t.hp) / run.stats.maxHp);
   run.events.push({ kind: 'towerHit', amount, x, y });
-  // Thorns (§11.4): the wall bites back at what touches it.
-  if (source && run.behaviours.thorns) damageEnemy(run, source, amount * BALANCE.behaviours.thorns, false, 'thorns');
+  // Thorns (§11.4): the wall bites back at what touches it. Fortress
+  // (the keystone) brings its own thorns, three times as sharp.
+  const B = BALANCE.behaviours;
+  const fortress = (run.behaviours.fortress ?? 0) > 0;
+  if (source && (run.behaviours.thorns || fortress)) {
+    damageEnemy(run, source, amount * B.thorns * (fortress ? B.fortressThorns : 1), false, 'thorns');
+  }
   return amount;
 }
 

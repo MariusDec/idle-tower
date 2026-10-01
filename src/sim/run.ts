@@ -4,9 +4,10 @@ import { frameById } from '../content/frames';
 import { regionByIndex } from '../content/regions';
 import type { BehaviourId, RegionDef, StatMod, WeaponId } from '../content/types';
 import type { RunConfig, RunInput, RunState, WeaponState } from './state';
+import { newWeapon } from './systems/arms';
 import { allMods, resolveStats } from './stats';
 import { separateEnemies, sweepEnemies, tickEnemies } from './systems/enemies';
-import { sweepProjectiles, tickProjectiles, tickWeapons } from './systems/combat';
+import { sweepProjectiles, tickBurns, tickProjectiles, tickWeapons } from './systems/combat';
 import { isWeaponId, pickCard, rerollDraft, tickDraft, xpToNext } from './systems/draft';
 import { tickBoss, tickRings } from './systems/boss';
 import { tickShots } from './systems/tower';
@@ -43,11 +44,11 @@ export function createRun(config: RunConfig, seed: number): RunState {
   // Head Start and Gatekeeper's Seal: the levels are real, so each banks its draft at once.
   const level = 1 + B.headStart * owned('head-start') + owned('extra-level');
   const startLevel = Math.min(BALANCE.maxLevel, 1 + B.openingSalvo * owned('opening-salvo'));
-  const weapons: WeaponState[] = [{ id: frame.startingWeapon, level: startLevel, cooldown: 0, aim: -Math.PI / 2 }];
+  const weapons: WeaponState[] = [newWeapon(frame.startingWeapon, startLevel)];
   // Twin Mount (§11.4): a second weapon from the pool, if a slot is free for it.
   const spares = config.pool.filter((id): id is WeaponId => isWeaponId(id) && id !== frame.startingWeapon);
   if (owned('twin-mount') > 0 && config.weaponSlots >= 2 && spares.length > 0) {
-    weapons.push({ id: root.split('loadout').pick(spares), level: 1, cooldown: 0, aim: -Math.PI / 2 });
+    weapons.push(newWeapon(root.split('loadout').pick(spares), 1));
   }
   return {
     seed,
@@ -83,6 +84,9 @@ export function createRun(config: RunConfig, seed: number): RunState {
     loneWave: 0,
     shots: [],
     rings: [],
+    fires: [],
+    evolved: [],
+    recipes: [...config.recipes],
     behaviours: { ...config.behaviours },
     rerolls: owned('reroll'),
     revives: owned('second-wind'),
@@ -99,6 +103,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
       crit: root.split('crit').state,
       draft: root.split('draft').state,
       loot: root.split('loot').state,
+      arms: root.split('arms').state,
     },
     outcome: null,
     events: [],
@@ -125,7 +130,7 @@ export function applyInput(run: RunState, input: RunInput): void {
 /**
  * Advance the run by one fixed step of `dt` seconds. System order is part of
  * the contract: input, waves place bodies, the boss acts, bodies move, act
- * and spread, weapons fire, projectiles fly and kill, hostile shots and
+ * and spread, weapons fire, projectiles fly and kill, burns bite, hostile shots and
  * shockwaves land, the dead are swept, a banked draft opens, then the tower
  * regenerates or falls.
  */
@@ -142,6 +147,7 @@ export function step(run: RunState, dt: number, input: RunInput = {}): void {
   separateEnemies(run);
   tickWeapons(run, dt);
   tickProjectiles(run, dt);
+  tickBurns(run, dt);
   tickShots(run, dt);
   tickRings(run, dt);
   sweepEnemies(run);

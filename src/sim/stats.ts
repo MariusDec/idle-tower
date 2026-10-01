@@ -21,6 +21,10 @@ const BASE: Readonly<Record<StatKey, number>> = {
   xpGain: 1,
   shardGain: 1,
   ultCharge: 1,
+  area: 1,
+  duration: 1,
+  projectileSpeed: 1,
+  pierce: 0,
 };
 
 export interface StatBreakdown {
@@ -61,6 +65,10 @@ export function resolveStats(mods: readonly StatMod[]): TowerStats {
     xpMult: v('xpGain'),
     shardMult: v('shardGain'),
     ultChargeMult: v('ultCharge'),
+    areaMult: v('area'),
+    durationMult: v('duration'),
+    projectileSpeedMult: v('projectileSpeed'),
+    pierce: Math.round(v('pierce')),
   };
 }
 
@@ -69,14 +77,20 @@ export function baseTowerStats(): TowerStats {
   return resolveStats([]);
 }
 
-/** A passive's contribution at `level`: its per-level mods, `level` times over. */
+/**
+ * A passive's contribution at `level`: its per-level mods, `level` times
+ * over, and its `atMax` mods once it reaches the last level.
+ */
 export function passiveMods(id: PassiveId, level: number): StatMod[] {
-  return PASSIVE_BY_ID[id].perLevel.map((m) => ({
+  const def = PASSIVE_BY_ID[id];
+  const out: StatMod[] = def.perLevel.map((m) => ({
     key: m.key,
     add: (m.add ?? 0) * level,
     pct: (m.pct ?? 0) * level,
     mult: Math.pow(m.mult ?? 1, level),
   }));
+  if (def.atMax && level >= BALANCE.maxLevel) out.push(...def.atMax);
+  return out;
 }
 
 export function allMods(base: readonly StatMod[], passives: readonly PassiveState[]): StatMod[] {

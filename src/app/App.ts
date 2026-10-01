@@ -28,6 +28,8 @@ import { ResultsScreen } from '../ui/results';
 import { Toasts } from '../ui/toast';
 import { bindNativeLifecycle } from '../platform/native';
 import { Loop, SIM_DT } from './loop';
+import { Synth } from '../audio/synth';
+import { Cues } from '../audio/cues';
 import { assertTransition, type Screen } from './screens';
 
 /** Autosave cadence (§12.4), on the wall clock. */
@@ -76,6 +78,8 @@ export class App {
   private readonly modal: Modal;
   private readonly draft: DraftPanel;
   private readonly toasts: Toasts;
+  private readonly synth = new Synth();
+  private readonly cues = new Cues(this.synth);
 
   constructor(private readonly els: AppElements) {
     this.renderer = new Renderer(els.canvas, els.stage);
@@ -124,6 +128,7 @@ export class App {
   async boot(): Promise<void> {
     const loaded = await loadProfile(Date.now());
     this.profile = loaded.profile;
+    this.synth.setEnabled(this.profile.settings.sound);
     if (loaded.backedUpLegacy) console.info('[save] legacy save backed up; starting a fresh profile');
     const resume = await loadRunSnapshot(this.profile);
     this.bindLifecycle();
@@ -307,6 +312,7 @@ export class App {
     const run = this.screen === 'run' || this.screen === 'results' ? this.run : null;
     if (run) {
       if (this.screen === 'run') this.announce(run);
+      this.cues.play(run.events);
       this.renderer.consume(run);
       run.events.length = 0;
     }
@@ -370,6 +376,7 @@ export class App {
 
   private buy(id: string): boolean {
     if (this.screen !== 'hub' || !buyNode(this.profile, id)) return false;
+    this.cues.purchase();
     void this.save();
     return true;
   }
@@ -393,8 +400,19 @@ export class App {
     this.paused = true;
     this.modal.show('Paused', body, [
       { label: 'Retreat', onClick: () => this.retreat() },
+      // The sound toggle (§10.4); P9 brings the full settings.
+      { label: this.profile.settings.sound ? 'Sound off' : 'Sound on', onClick: () => this.toggleSound() },
       { label: 'Resume', primary: true, onClick: () => { this.paused = false; this.loop.resetClock(); } },
     ]);
+  }
+
+  private toggleSound(): void {
+    this.profile.settings.sound = !this.profile.settings.sound;
+    this.synth.setEnabled(this.profile.settings.sound);
+    void this.save();
+    // The modal closed on the click: the game is still paused, so reopen it.
+    this.paused = false;
+    this.openPause();
   }
 
   /** A retreat banks at once, exactly like a fall (§4.2), even mid-draft. */
@@ -444,7 +462,11 @@ export class App {
         this.welcomeBack(Date.now());
       }
     });
+    // Browsers start audio only from a gesture: the first one anywhere wakes it.
+    const wake = (): void => this.synth.start();
+    document.addEventListener('pointerdown', wake);
     document.addEventListener('keydown', (e) => {
+      wake();
       if (e.key === 'Escape') this.back();
       if (e.key === ' ' && this.screen === 'run') {
         e.preventDefault();

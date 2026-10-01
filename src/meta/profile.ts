@@ -7,7 +7,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 4;
+  version: 5;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -43,6 +43,15 @@ export interface Profile {
   farm: number[];
   /** Wall-clock ms the game was last open, for offline earnings (§6.1). */
   lastSeen: number;
+  /**
+   * The Recipe Book (§5.3): evolutions found, and for the hints, runs that
+   * carried each weapon and runs that took it to its evolving level, by id.
+   */
+  recipes: {
+    found: string[];
+    carried: Record<string, number>;
+    readied: Record<string, number>;
+  };
   /** A boss whose first fall still owes the map its ceremony (§7.3). */
   ceremony: string | null;
   /** The region and frame the next run uses (§5.2, §4.4). */
@@ -58,10 +67,12 @@ export interface Profile {
   settings: {
     /** Sim speed multiplier, 1–3 (§12.3). */
     speed: 1 | 2 | 3;
+    /** Sound on or off (§10.4); the pause menu toggles it. */
+    sound: boolean;
   };
 }
 
-export const PROFILE_VERSION = 4;
+export const PROFILE_VERSION = 5;
 
 export function newProfile(now: number): Profile {
   return {
@@ -79,11 +90,12 @@ export function newProfile(now: number): Profile {
     equipped: [],
     feats: {},
     farm: [],
+    recipes: { found: [], carried: {}, readied: {} },
     lastSeen: now,
     ceremony: null,
     region: 1,
     frame: 'arcanist',
     tutorial: { firstDraft: false, forgeIntro: false },
-    settings: { speed: 1 },
+    settings: { speed: 1, sound: true },
   };
 }

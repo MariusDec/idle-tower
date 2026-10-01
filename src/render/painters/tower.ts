@@ -8,6 +8,8 @@ export interface Mount {
   readonly id: WeaponId;
   readonly level: number;
   readonly aim: number;
+  /** An evolved weapon wears a gold halo on its mount (§4.4). */
+  readonly evolved?: boolean;
 }
 
 /**
@@ -137,6 +139,14 @@ function paintPod(ctx: CanvasRenderingContext2D, r: number, lx: number, ly: numb
 function paintMount(ctx: CanvasRenderingContext2D, m: Mount, r: number, time: number, fallen: number): void {
   const p = weaponParams(m.id, m.level);
   const dim = (c: string): string => (fallen > 0 ? mix(c, INK['700'], fallen) : c);
+  if (m.evolved) {
+    // The evolved weapon's halo: gold, slowly breathing.
+    ctx.strokeStyle = withAlpha(FX.gold, (0.55 + 0.25 * Math.sin(time * 3)) * (1 - fallen));
+    ctx.lineWidth = Math.max(2, r * 0.1);
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.02, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   ctx.save();
   ctx.rotate(m.aim);
   switch (m.id) {
@@ -231,6 +241,75 @@ function paintMount(ctx: CanvasRenderingContext2D, m: Mount, r: number, time: nu
       ctx.beginPath();
       ctx.arc(0, 0, r * (0.3 + p.slow * 0.3), 0, Math.PI * 2);
       ctx.fill();
+      break;
+    }
+    case 'mortar': {
+      // Squat tubes, one per shell; wider as the blast grows, banded once it scatters bomblets.
+      const n = p.count;
+      const w = r * (0.3 + (p.radius - 55) / 160);
+      for (let i = 0; i < n; i++) {
+        const off = (i - (n - 1) / 2) * w * 1.1;
+        ctx.fillStyle = dim(INK['800']);
+        ctx.fillRect(-r * 0.1, off - w / 2, r * 0.75, w);
+        ctx.fillStyle = dim(mix(FX.ember, INK['800'], 0.5));
+        ctx.fillRect(r * 0.55, off - w * 0.6, r * 0.2, w * 1.2);
+        if (p.bomblets > 0) {
+          ctx.fillStyle = dim(FX.gold);
+          ctx.fillRect(r * 0.2, off - w / 2, r * 0.08, w);
+        }
+      }
+      break;
+    }
+    case 'sunlance': {
+      // A long lens on a mast: the crystal at its tip warms as the beam levels.
+      ctx.fillStyle = dim(INK['700']);
+      ctx.fillRect(0, -r * 0.09, r * (p.pierce > 0 ? 1.05 : 0.9), r * 0.18);
+      ctx.fillStyle = dim(mix(FX.gold, INK['700'], 0.3));
+      ctx.beginPath();
+      ctx.moveTo(r * 0.55, -r * 0.24);
+      ctx.lineTo(r * 0.95, 0);
+      ctx.lineTo(r * 0.55, r * 0.24);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = withAlpha(lighten(FX.gold, 0.4), (0.5 + 0.2 * p.rampCap / 5 + 0.2 * Math.sin(time * 5)) * (1 - fallen));
+      ctx.beginPath();
+      ctx.arc(r * 0.95, 0, r * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'glaives': {
+      // A hub with one spoke per blade, spinning with them.
+      const n = p.count;
+      ctx.strokeStyle = dim(INK['200']);
+      ctx.lineWidth = Math.max(2, r * 0.12);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7);
+        ctx.stroke();
+      }
+      ctx.fillStyle = dim(INK['600']);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'sentinel-drones': {
+      // A docking pad: one light per drone, blinking as they report in.
+      const n = p.count;
+      ctx.fillStyle = dim(INK['700']);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2);
+      ctx.fill();
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const on = 0.5 + 0.5 * Math.sin(time * 4 + i * 1.7);
+        ctx.fillStyle = withAlpha(FX.mana, (0.4 + 0.6 * on) * (1 - fallen));
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * r * 0.42, Math.sin(a) * r * 0.42, r * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
       break;
     }
     default: {

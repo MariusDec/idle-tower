@@ -49,6 +49,7 @@ interface Arc {
   points: number[];
   age: number;
   life: number;
+  tint: string;
 }
 
 /** An XP mote drifting from a kill into the tower. */
@@ -188,8 +189,8 @@ export class Effects {
     }
   }
 
-  /** A chain strike: a jagged frost-white path through `points` (flat x, y pairs). */
-  lightning(points: readonly number[]): void {
+  /** A chain strike: a jagged path through `points` (flat x, y pairs), frost-white unless tinted. */
+  lightning(points: readonly number[], tint: string = FX.frost): void {
     if (points.length < 4) return;
     const out: number[] = [points[0], points[1]];
     for (let i = 2; i < points.length; i += 2) {
@@ -208,7 +209,14 @@ export class Effects {
       out.push(bx, by);
     }
     if (this.arcs.length >= MAX_ARCS) this.arcs.shift();
-    this.arcs.push({ points: out, age: 0, life: ARC_LIFE });
+    this.arcs.push({ points: out, age: 0, life: ARC_LIFE, tint });
+  }
+
+  /** Evolution (§10.3): a slow spotlight on the tower while the weapon transforms. */
+  evolve(radius: number): void {
+    this.pushRing({ x: 0, y: 0, age: 0, life: 1, from: radius * 4, to: radius * 0.8, color: withAlpha(FX.gold, 0.9), width: 10 });
+    this.pushRing({ x: 0, y: 0, age: 0, life: 1.1, from: radius, to: radius * 7, color: withAlpha(INK['050'], 0.6), width: 5 });
+    this.spray(0, 0, FX.gold, 50, 360, 5, 80);
   }
 
   /** XP leaving a kill for the tower (§4.5: collected automatically, never picked up). */
@@ -341,7 +349,7 @@ export class Effects {
       const t = a.age / a.life;
       // Flicker: lightning reads as a strobe, not a fade.
       ctx.globalAlpha = (1 - t) * (0.7 + 0.3 * Math.random());
-      for (const [color, width] of [[withAlpha(FX.frost, 0.6), 9], [lighten(FX.frost, 0.7), 3]] as const) {
+      for (const [color, width] of [[withAlpha(a.tint, 0.6), 9], [lighten(a.tint, 0.7), 3]] as const) {
         ctx.strokeStyle = color;
         ctx.lineWidth = width;
         ctx.beginPath();

@@ -1,6 +1,6 @@
 import type { RngState } from '../core/rng';
 import type {
-  AuraId, BehaviourId, BossId, CardItemId, EnemyId, FallbackId, PassiveId, RelicId, StatMod, WeaponId,
+  AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, PassiveId, RelicId, StatMod, WeaponId,
 } from '../content/types';
 
 /**
@@ -36,6 +36,11 @@ export interface RunConfig {
   readonly firstKill: boolean;
   /** True once a relic slot is open: until then, elites drop no relics (§5.3). */
   readonly relicDrops: boolean;
+  /**
+   * Recipes found (§5.3). The suggestion steers only toward these: an
+   * unknown recipe is found by chance, never hunted.
+   */
+  readonly recipes: readonly EvolutionId[];
 }
 
 /**
@@ -55,6 +60,13 @@ export interface TowerStats {
   xpMult: number;
   shardMult: number;
   ultChargeMult: number;
+  /** Radius multiplier on blasts, pulses, blades and burning ground. */
+  areaMult: number;
+  /** Multiplier on slows, stuns, freezes and burns, and on a beam's ramp. */
+  durationMult: number;
+  projectileSpeedMult: number;
+  /** Extra bodies every shot passes through. */
+  pierce: number;
 }
 
 export interface TowerState {
@@ -117,6 +129,13 @@ export interface Enemy {
   inContact: boolean;
   /** Tick it was last hit, for the hit flash. */
   hitTick: number;
+  /** Burning (Dragonbreath, Meteorfall's ground): damage per second until `burnUntil`. */
+  burn: number;
+  burnUntil: number;
+  /** Seconds until the burn next bites. */
+  burnTimer: number;
+  /** Frozen by Absolute Zero until then: slain while frozen, it shatters. */
+  frozenUntil: number;
 }
 
 export interface Projectile {
@@ -141,6 +160,43 @@ export interface Projectile {
   ignore: number;
   knockback: number;
   life: number;
+  /**
+   * A lobbed shell (Mortar) or a meteor: it flies over everything to
+   * (tx, ty) and bursts there, `blast` wide. 0 for a shot that hits bodies.
+   */
+  blast: number;
+  tx: number;
+  ty: number;
+  /** Where a shell left from, for the painter's arc. */
+  sx: number;
+  sy: number;
+  /** Bomblets a shell scatters as it bursts. */
+  bomblets: number;
+  /** A meteor: its burst leaves burning ground. */
+  meteor: boolean;
+  /** A Seeker Swarm seeker: never splits again. */
+  seeker: boolean;
+}
+
+/** Burning ground (Meteorfall): bodies standing in it catch fire. */
+export interface FirePatch {
+  x: number;
+  y: number;
+  radius: number;
+  /** Burn per second it sets on a body inside. */
+  dps: number;
+  until: number;
+}
+
+/** A Sentinel Drone in flight. */
+export interface Drone {
+  x: number;
+  y: number;
+  px: number;
+  py: number;
+  cooldown: number;
+  /** Run time a Hive drone fades; null for a drone the weapon owns. */
+  until: number | null;
 }
 
 /** A hostile shot (a Spitter's): flies straight at the tower and lands for `damage`. */
@@ -199,6 +255,17 @@ export interface WeaponState {
   cooldown: number;
   /** Angle of its last shot, for its mount on the tower. */
   aim: number;
+  /** True once evolved (§4.4): a new pattern on top of its last level. */
+  evolved: boolean;
+  /** Orbit (Glaives) and storm (Storm Crown) angle, radians. */
+  spin: number;
+  /** Sunlance: the body the beam holds (0 = none), and how hot it has run on it. */
+  beamTarget: number;
+  heat: number;
+  /** Meteorfall: seconds until the next meteor. */
+  meteor: number;
+  /** Sentinel Drones in the air; empty for every other weapon. */
+  drones: Drone[];
 }
 
 export interface PassiveState {
@@ -213,6 +280,8 @@ export interface PassiveState {
 export type Card =
   | { readonly kind: 'weapon'; readonly id: WeaponId; readonly level: number }
   | { readonly kind: 'passive'; readonly id: PassiveId; readonly level: number }
+  /** A weapon's evolution (§4.4): offered once its recipe is complete. */
+  | { readonly kind: 'evolution'; readonly id: EvolutionId }
   | { readonly kind: 'fallback'; readonly id: FallbackId };
 
 export interface DraftOffer {
@@ -263,6 +332,8 @@ export type SimEvent =
   | { kind: 'hit'; x: number; y: number; amount: number; crit: boolean }
   /** A chain strike's path: tower, then each body, as flat x, y pairs. */
   | { kind: 'chain'; points: number[] }
+  /** Judgment's forks: flat x1, y1, x2, y2 quads. */
+  | { kind: 'lance'; points: number[] }
   | { kind: 'levelUp'; level: number }
   | { kind: 'draftOpen' }
   | { kind: 'picked'; card: Card }
@@ -298,7 +369,13 @@ export type SimEvent =
   | { kind: 'aegis'; seconds: number }
   /** Aegis turned a hit away. */
   | { kind: 'blocked'; x: number; y: number }
-  | { kind: 'fell' };
+  | { kind: 'fell' }
+  /** A shell, bomblet or meteor burst; or a frozen body shattered. */
+  | { kind: 'blast'; x: number; y: number; radius: number; weapon: WeaponId; style: 'shell' | 'bomblet' | 'meteor' | 'shatter' }
+  /** A weapon evolved (§10.3: the tower's spotlight). */
+  | { kind: 'evolve'; weapon: WeaponId; evolution: EvolutionId }
+  /** A body caught fire. */
+  | { kind: 'ignite'; x: number; y: number };
 
 export interface RunState {
   seed: number;
@@ -347,6 +424,12 @@ export interface RunState {
   loneWave: number;
   shots: HostileShot[];
   rings: SlamRing[];
+  /** Burning ground (Meteorfall). */
+  fires: FirePatch[];
+  /** Weapons evolved this run, in order, for the Recipe Book (§5.3). */
+  evolved: EvolutionId[];
+  /** Recipes known going in (from the config): what the suggestion steers toward. */
+  recipes: EvolutionId[];
   /** Forge behaviours owned, by level count. */
   behaviours: Partial<Record<BehaviourId, number>>;
   /** Draft rerolls left this run (Fortune's Reroll). */

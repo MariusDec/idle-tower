@@ -1,4 +1,5 @@
 import { BALANCE } from '../content/balance';
+import { EVOLUTION_BY_ID } from '../content/evolutions';
 import { FALLBACKS, PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
 import type { ContentEntry } from '../content/types';
@@ -33,6 +34,8 @@ function describe(card: Card): { entry: ContentEntry; line: string; kind: string
     }
     case 'passive':
       return { entry: PASSIVE_BY_ID[card.id], line: PASSIVE_BY_ID[card.id].text, kind: 'Passive' };
+    case 'evolution':
+      return { entry: EVOLUTION_BY_ID[card.id], line: EVOLUTION_BY_ID[card.id].text, kind: 'Evolution' };
     case 'fallback': {
       const def = FALLBACKS.find((f) => f.id === card.id)!;
       return { entry: def, line: def.text, kind: '' };
@@ -53,6 +56,10 @@ function details(card: Card): string[] {
     }
     case 'passive':
       return [`Level ${card.level} of ${BALANCE.maxLevel}.`, `Each level: ${PASSIVE_BY_ID[card.id].text}`];
+    case 'evolution': {
+      const e = EVOLUTION_BY_ID[card.id];
+      return [`${WEAPON_BY_ID[e.weapon].name} + ${PASSIVE_BY_ID[e.passive].name}.`, e.text, 'Found recipes are kept in the Recipe Book.'];
+    }
     case 'fallback':
       return [describe(card).line];
     default: {
@@ -211,7 +218,7 @@ export class DraftPanel {
 
     el.appendChild(lineWithNumber(line));
 
-    if (card.kind !== 'fallback') {
+    if (card.kind === 'weapon' || card.kind === 'passive') {
       const pips = document.createElement('div');
       pips.className = 'draft-card-pips';
       for (let i = 1; i <= BALANCE.maxLevel; i++) {
