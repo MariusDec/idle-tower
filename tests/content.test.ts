@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CONTENT } from '../src/content';
 import { lintContent } from '../src/content/lint';
-import type { ContentEntry, WeaponDef } from '../src/content/types';
+import type { BossDef, ContentEntry, WeaponDef } from '../src/content/types';
 
 describe('content lint (§12.6)', () => {
   it('the shipped content is clean', () => {
@@ -32,6 +32,20 @@ describe('content lint (§12.6)', () => {
     expect(problems).toContain('unknown starting weapon "nope"');
     expect(problems).toContain('pool names unknown enemy "ghost"');
     expect(problems).toContain('has 1 enemy types (want 3)');
+  });
+});
+
+describe('boss and loot lint', () => {
+  it('catches a boss nobody fights, a phase that climbs and a relic from nowhere', () => {
+    const boss = CONTENT.bosses[0] as BossDef;
+    const problems = lintContent({
+      ...CONTENT,
+      bosses: [...CONTENT.bosses, { ...boss, id: 'stray', phases: [boss.phases[0], { ...boss.phases[1], below: 1 }] } as ContentEntry],
+      relics: [...CONTENT.relics, { ...CONTENT.relics[0], id: 'lost', source: { kind: 'boss', boss: 'nobody' } } as ContentEntry],
+    }).map((i) => i.problem);
+    expect(problems).toContain('no region has this boss');
+    expect(problems).toContain('phase 2 does not step down');
+    expect(problems).toContain('unknown boss "nobody"');
   });
 });
 

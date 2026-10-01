@@ -1,15 +1,32 @@
 import { Rng } from '../core/rng';
 import { BALANCE } from '../content/balance';
-import { FRAMES } from '../content/frames';
+import { frameById } from '../content/frames';
 import { regionByIndex } from '../content/regions';
-import type { BehaviourId } from '../content/types';
-import type { RunConfig, RunInput, RunState } from './state';
+import type { BehaviourId, RegionDef, StatMod, WeaponId } from '../content/types';
+import type { RunConfig, RunInput, RunState, WeaponState } from './state';
 import { allMods, resolveStats } from './stats';
 import { separateEnemies, sweepEnemies, tickEnemies } from './systems/enemies';
 import { sweepProjectiles, tickProjectiles, tickWeapons } from './systems/combat';
-import { pickCard, rerollDraft, tickDraft, xpToNext } from './systems/draft';
+import { isWeaponId, pickCard, rerollDraft, tickDraft, xpToNext } from './systems/draft';
+import { tickBoss, tickRings } from './systems/boss';
+import { tickShots } from './systems/tower';
 import { castUltimate } from './systems/ultimate';
 import { tickWaves } from './systems/waves';
+
+/** A region's rule as stat contributions (§11.1). The rule's one consumer. */
+export function regionMods(region: RegionDef): StatMod[] {
+  const rule = region.rule;
+  if (!rule) return [];
+  const e = rule.effect;
+  switch (e.kind) {
+    case 'stat':
+      return [e.mod];
+    default: {
+      const exhaustive: never = e.kind;
+      return exhaustive;
+    }
+  }
+}
 
 /**
  * The sim's entry points. The same `(config, seed, inputs)` always gives the
@@ -17,13 +34,21 @@ import { tickWaves } from './systems/waves';
  */
 export function createRun(config: RunConfig, seed: number): RunState {
   const root = new Rng(seed);
-  const frame = FRAMES.find((f) => f.id === config.frameId) ?? FRAMES[0];
-  const mods = [...config.mods];
+  const frame = frameById(config.frameId);
+  const region = regionByIndex(config.regionId);
+  const mods = [...config.mods, ...regionMods(region)];
   const stats = resolveStats(allMods(mods, []));
   const owned = (id: BehaviourId): number => config.behaviours[id] ?? 0;
   const B = BALANCE.behaviours;
-  const level = 1 + B.headStart * owned('head-start');
+  // Head Start and Gatekeeper's Seal: the levels are real, so each banks its draft at once.
+  const level = 1 + B.headStart * owned('head-start') + owned('extra-level');
   const startLevel = Math.min(BALANCE.maxLevel, 1 + B.openingSalvo * owned('opening-salvo'));
+  const weapons: WeaponState[] = [{ id: frame.startingWeapon, level: startLevel, cooldown: 0, aim: -Math.PI / 2 }];
+  // Twin Mount (§11.4): a second weapon from the pool, if a slot is free for it.
+  const spares = config.pool.filter((id): id is WeaponId => isWeaponId(id) && id !== frame.startingWeapon);
+  if (owned('twin-mount') > 0 && config.weaponSlots >= 2 && spares.length > 0) {
+    weapons.push({ id: root.split('loadout').pick(spares), level: 1, cooldown: 0, aim: -Math.PI / 2 });
+  }
   return {
     seed,
     regionId: config.regionId,
@@ -33,13 +58,12 @@ export function createRun(config: RunConfig, seed: number): RunState {
     frameId: frame.id,
     mods,
     stats,
-    tower: { hp: stats.maxHp, hurtTick: -1 },
+    tower: { hp: stats.maxHp, hurtTick: -1, invulnUntil: 0 },
     weaponSlots: config.weaponSlots,
     passiveSlots: config.passiveSlots,
     pool: [...config.pool],
-    weapons: [{ id: frame.startingWeapon, level: startLevel, cooldown: 0, aim: -Math.PI / 2 }],
+    weapons,
     passives: [],
-    // Head Start: the levels are real, so each banks its draft at once.
     level,
     xp: 0,
     xpNext: xpToNext(level),
@@ -49,7 +73,16 @@ export function createRun(config: RunConfig, seed: number): RunState {
     firstDraft: config.firstDraft ? [...config.firstDraft] : null,
     ult: { charge: 0, need: BALANCE.ultimate.charge, casts: 0 },
     shards: 0,
-    shardsFrom: { kills: 0, waves: 0, cards: 0 },
+    shardsFrom: { kills: 0, waves: 0, cards: 0, elites: 0, boss: 0 },
+    firstKill: config.firstKill,
+    relicDrops: config.relicDrops,
+    boss: null,
+    relics: [],
+    elitesKilled: 0,
+    firstHurtWave: null,
+    loneWave: 0,
+    shots: [],
+    rings: [],
     behaviours: { ...config.behaviours },
     rerolls: owned('reroll'),
     revives: owned('second-wind'),
@@ -59,11 +92,13 @@ export function createRun(config: RunConfig, seed: number): RunState {
     nextEnemyId: 1,
     seen: [],
     kills: 0,
+    killsBy: {},
     rng: root.state,
     streams: {
       waves: root.split('waves').state,
       crit: root.split('crit').state,
       draft: root.split('draft').state,
+      loot: root.split('loot').state,
     },
     outcome: null,
     events: [],
@@ -89,9 +124,10 @@ export function applyInput(run: RunState, input: RunInput): void {
 
 /**
  * Advance the run by one fixed step of `dt` seconds. System order is part of
- * the contract: input, waves place bodies, bodies move, hit and spread,
- * weapons fire, projectiles fly and kill, the dead are swept, a banked draft
- * opens, then the tower regenerates or falls.
+ * the contract: input, waves place bodies, the boss acts, bodies move, act
+ * and spread, weapons fire, projectiles fly and kill, hostile shots and
+ * shockwaves land, the dead are swept, a banked draft opens, then the tower
+ * regenerates or falls.
  */
 export function step(run: RunState, dt: number, input: RunInput = {}): void {
   if (run.outcome) return;
@@ -101,10 +137,13 @@ export function step(run: RunState, dt: number, input: RunInput = {}): void {
   if (run.outcome) return;
   const region = regionByIndex(run.regionId);
   tickWaves(run, region);
+  tickBoss(run, region, dt);
   tickEnemies(run, dt);
   separateEnemies(run);
   tickWeapons(run, dt);
   tickProjectiles(run, dt);
+  tickShots(run, dt);
+  tickRings(run, dt);
   sweepEnemies(run);
   sweepProjectiles(run);
   tickDraft(run);
@@ -123,5 +162,15 @@ export function step(run: RunState, dt: number, input: RunInput = {}): void {
     run.events.push({ kind: 'fell' });
     return;
   }
-  t.hp = Math.min(run.stats.maxHp, t.hp + run.stats.regen * dt);
+  t.hp = Math.min(run.stats.maxHp, t.hp + run.stats.regen * regenMult(run) * dt);
+}
+
+/** Mother's Tear (§11.5): regen multiplies while no enemy is within half range. */
+function regenMult(run: RunState): number {
+  const rank = run.behaviours['still-regen'] ?? 0;
+  if (rank === 0) return 1;
+  const r2 = (run.stats.range / 2) ** 2;
+  for (const e of run.enemies) if (e.alive && e.x * e.x + e.y * e.y <= r2) return 1;
+  const R = BALANCE.relics.stillRegen;
+  return R[Math.min(rank, R.length) - 1];
 }

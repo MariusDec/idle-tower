@@ -19,6 +19,23 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
     seenEnemies: [],
     tutorial: { forgeIntro: false, ...(raw.tutorial as object) },
   }),
+  // v4 (P4): bosses, regions, relics, feats, frames and the offline farm rate.
+  3: (raw) => ({
+    ...raw,
+    version: 4,
+    records: { elites: 0, ...(raw.records as object) },
+    killsBy: {},
+    regions: {},
+    bosses: {},
+    relics: {},
+    equipped: [],
+    feats: {},
+    farm: [],
+    lastSeen: raw.createdAt,
+    ceremony: null,
+    region: 1,
+    frame: 'arcanist',
+  }),
 };
 
 export class MigrationError extends Error {}

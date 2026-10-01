@@ -1,7 +1,7 @@
 import { ENEMY_BY_ID } from '../../content/enemies';
-import type { EnemyDef, EnemyId } from '../../content/types';
+import type { AuraId, EnemyDef, EnemyId } from '../../content/types';
 import type { Enemy } from '../../sim/state';
-import { FX, INK, withAlpha } from '../palette';
+import { FX, INK, mix, withAlpha } from '../palette';
 
 /**
  * Enemy bodies, salvaged from the legacy renderer's `paintEnemyBody`: a base
@@ -23,6 +23,18 @@ const GAIT: Record<EnemyId, { freq: number; bob: number }> = {
   grunt: { freq: 7, bob: 1.2 },
   runner: { freq: 15, bob: 2 },
   brute: { freq: 3.4, bob: 0.8 },
+  splitter: { freq: 4.5, bob: 1.6 },
+  spitter: { freq: 5, bob: 1 },
+  mender: { freq: 5.5, bob: 1.4 },
+};
+
+/** Each aura's colour on an elite's halo (§4.3); a plain elite wears gold. */
+const AURA_COLOR: Record<AuraId, string> = {
+  haste: FX.ember,
+  regen: FX.nature,
+  shield: FX.frost,
+  split: FX.arcane,
+  vengeful: FX.blood,
 };
 
 interface Sprite {
@@ -53,18 +65,35 @@ export class EnemyPainter {
 
   /**
    * Draw every living enemy, interpolated `alpha` of the way from its last
-   * position. `tick` is the sim tick, for the hit flash; `time` the wall
-   * clock, for the gait.
+   * position. `tick` is the sim tick, for the hit flash; `simTime` the run's
+   * clock, for slows; `time` the wall clock, for the gait.
    */
-  draw(ctx: CanvasRenderingContext2D, enemies: readonly Enemy[], alpha: number, tick: number, time: number): void {
+  draw(ctx: CanvasRenderingContext2D, enemies: readonly Enemy[], alpha: number, tick: number, simTime: number, time: number): void {
     for (const e of enemies) {
-      if (!e.alive) continue;
+      // Bosses have their own painter (`bosses.ts`).
+      if (!e.alive || e.boss) continue;
       const x = e.px + (e.x - e.px) * alpha;
       const g = GAIT[e.type];
-      const moving = !e.inContact;
-      const y = e.py + (e.y - e.py) * alpha + (moving ? Math.sin(time * g.freq + e.id) * g.bob : 0);
+      const y = e.py + (e.y - e.py) * alpha + (e.moving ? Math.sin(time * g.freq + e.id) * g.bob : 0);
+      if (e.elite) drawHalo(ctx, x, y, e.radius, e.aura ? AURA_COLOR[e.aura] : FX.gold, time + e.id);
       const s = this.sprite(e.type);
-      ctx.drawImage(s.canvas, x - s.half, y - s.half, s.half * 2, s.half * 2);
+      // Sprites are baked at the type's radius; elites and fragments scale it.
+      const k = e.radius / ENEMY_BY_ID[e.type].radius;
+      ctx.drawImage(s.canvas, x - s.half * k, y - s.half * k, s.half * 2 * k, s.half * 2 * k);
+      if (e.slowUntil > simTime && e.slow > 0) {
+        ctx.strokeStyle = withAlpha(FX.frost, 0.7);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, e.radius + 2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (e.fury > 1) {
+        ctx.strokeStyle = withAlpha(FX.blood, 0.8);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(x, y, e.radius + 4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
 
       const sinceHit = tick - e.hitTick;
       if (e.hitTick >= 0 && sinceHit < 5) {
@@ -78,6 +107,24 @@ export class EnemyPainter {
       if (e.hp < e.maxHp) drawHpBar(ctx, x, y - e.radius - 8, e.radius, e.hp / e.maxHp);
     }
   }
+}
+
+/** An elite's halo: a slow-turning dashed ring in its aura's colour. */
+function drawHalo(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, t: number): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(t * 0.8);
+  ctx.fillStyle = withAlpha(color, 0.16);
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.45, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = withAlpha(color, 0.9);
+  ctx.lineWidth = 3;
+  ctx.setLineDash([r * 0.5, r * 0.3]);
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.3, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawHpBar(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, frac: number): void {
@@ -116,6 +163,14 @@ function traceShape(g: CanvasRenderingContext2D, def: EnemyDef, r: number): void
       g.lineTo(r, 0);
       g.lineTo(0, r);
       g.lineTo(-r, 0);
+      g.closePath();
+      break;
+    case 'hexagon':
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        if (i === 0) g.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        else g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
       g.closePath();
       break;
     default: {
@@ -234,6 +289,65 @@ function paintDetail(g: CanvasRenderingContext2D, def: EnemyDef, r: number, pen:
           g.fill();
         }
       }
+      break;
+    }
+    // Splitter: a cracked shell with the core showing through: about to come apart.
+    case 'splitter': {
+      const core = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.55);
+      core.addColorStop(0, pale(0.85));
+      core.addColorStop(0.5, withAlpha(def.borderColor, 0.5));
+      core.addColorStop(1, withAlpha(def.borderColor, 0));
+      g.fillStyle = core;
+      g.beginPath();
+      g.arc(0, 0, r * 0.55, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = dark(0.65);
+      g.lineWidth = pen(r * 0.08);
+      g.lineCap = 'round';
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + 0.4;
+        g.beginPath();
+        g.moveTo(Math.cos(a) * r * 0.18, Math.sin(a) * r * 0.18);
+        g.lineTo(Math.cos(a + 0.22) * r * 0.6, Math.sin(a + 0.22) * r * 0.6);
+        g.lineTo(Math.cos(a - 0.1) * r, Math.sin(a - 0.1) * r);
+        g.stroke();
+      }
+      break;
+    }
+    // Spitter: a swollen throat sac and a dark maw: it fights from range.
+    case 'spitter': {
+      g.fillStyle = withAlpha(mix(def.color, FX.nature, 0.4), 0.7);
+      g.beginPath();
+      g.ellipse(0, r * 0.2, r * 0.55, r * 0.42, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = dark(0.85);
+      g.beginPath();
+      g.ellipse(0, -r * 0.28, r * 0.32, r * 0.16, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = withAlpha(def.borderColor, 0.9);
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.arc(dir * r * 0.42, -r * 0.5, r * 0.09, 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
+    // Mender: a cross sigil over a soft nature glow.
+    case 'mender': {
+      const glow = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.9);
+      glow.addColorStop(0, withAlpha(FX.nature, 0.5));
+      glow.addColorStop(1, withAlpha(FX.nature, 0));
+      g.fillStyle = glow;
+      g.beginPath();
+      g.arc(0, 0, r * 0.9, 0, Math.PI * 2);
+      g.fill();
+      const arm = r * 0.6;
+      const bar = r * 0.22;
+      g.fillStyle = pale(0.92);
+      g.fillRect(-bar / 2, -arm, bar, arm * 2);
+      g.fillRect(-arm, -bar / 2, arm * 2, bar);
+      g.fillStyle = withAlpha(FX.nature, 0.55);
+      g.fillRect(-bar / 2, -arm, bar, arm * 0.5);
       break;
     }
     default: {

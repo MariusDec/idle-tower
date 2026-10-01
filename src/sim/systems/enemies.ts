@@ -1,9 +1,9 @@
 import { SpatialGrid } from '../../core/spatialGrid';
 import { BALANCE } from '../../content/balance';
-import { ENEMIES } from '../../content/enemies';
+import { AURA_BY_ID, ENEMIES, ENEMY_BY_ID } from '../../content/enemies';
+import { BOSS_BY_ID } from '../../content/bosses';
 import type { Enemy, RunState } from '../state';
-import { damageEnemy } from './combat';
-import { mitigate } from './damage';
+import { hurtTower } from './tower';
 
 /**
  * Rebuilt from scratch every step, so it carries nothing between steps and
@@ -12,30 +12,100 @@ import { mitigate } from './damage';
 const grid = new SpatialGrid<Enemy>(64);
 const near: Enemy[] = [];
 /** The largest body radius, so a small body's query still finds a big neighbour. */
-const MAX_RADIUS = Math.max(...ENEMIES.map((d) => d.radius));
+const MAX_RADIUS = Math.max(...ENEMIES.map((d) => d.radius)) * BALANCE.elites.scale;
+
+/** True while a body is under the water: nothing can target or hit it. */
+export function isHidden(run: RunState, e: Enemy): boolean {
+  return e.hiddenUntil > run.time;
+}
+
+/** Where a body stops walking: the wall, a ranged body's standoff, or a boss's post. */
+function stopDistance(run: RunState, e: Enemy): number {
+  const wall = run.stats.radius + e.radius;
+  if (e.boss) return run.boss?.enraged ? wall : Math.max(wall, BOSS_BY_ID[e.boss].standoff);
+  const verb = ENEMY_BY_ID[e.type].verb;
+  return verb.kind === 'ranged' ? Math.max(wall, verb.standoff) : wall;
+}
 
 /**
- * Enemies walk straight at the tower, stop at its wall, and hit it on their
- * attack interval (§4.2). A stunned body does neither. Contact damage is
- * the only way a Region 1 enemy hurts the tower.
+ * Elite auras (§4.3), recomputed each step: Haste speeds it and its
+ * neighbours, Regen heals them, Shield halves the damage its neighbours take.
+ */
+function applyAuras(run: RunState, dt: number): void {
+  for (const e of run.enemies) {
+    e.buffSpeed = 1;
+    e.buffShield = 1;
+  }
+  const E = BALANCE.elites;
+  for (const src of run.enemies) {
+    if (!src.alive || !src.aura) continue;
+    const aura = src.aura;
+    const r2 = AURA_BY_ID[aura].radius ** 2;
+    if (r2 === 0) continue;
+    for (const e of run.enemies) {
+      if (!e.alive || (e.x - src.x) ** 2 + (e.y - src.y) ** 2 > r2) continue;
+      switch (aura) {
+        case 'haste':
+          e.buffSpeed = Math.max(e.buffSpeed, E.haste);
+          break;
+        case 'regen':
+          e.hp = Math.min(e.maxHp, e.hp + e.maxHp * E.regen * dt);
+          break;
+        case 'shield':
+          if (e !== src) e.buffShield = Math.min(e.buffShield, E.shield);
+          break;
+        case 'split':
+        case 'vengeful':
+          break;
+        default: {
+          const exhaustive: never = aura;
+          return exhaustive;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Enemies walk straight at the tower, stop at its wall (or their standoff),
+ * and act: walkers hit the wall on their attack interval, Spitters lob shots,
+ * Menders heal (§4.3). A stunned or submerged body does nothing.
  */
 export function tickEnemies(run: RunState, dt: number): void {
-  const reach = run.stats.radius;
+  applyAuras(run, dt);
   for (const e of run.enemies) {
     e.px = e.x;
     e.py = e.y;
-    if (!e.alive || e.stunnedUntil > run.time) continue;
+    e.moving = false;
+    if (!e.alive || e.stunnedUntil > run.time || isHidden(run, e)) continue;
+    const verb = e.boss ? null : ENEMY_BY_ID[e.type].verb;
+    if (verb?.kind === 'heal') mend(run, e, verb, dt);
+
     const d = Math.hypot(e.x, e.y);
-    const stop = reach + e.radius;
-    if (d > stop) {
-      const stepLen = Math.min(e.speed * dt, d - stop);
+    const stop = stopDistance(run, e);
+    if (d > stop + 1e-6) {
+      const slow = e.slowUntil > run.time ? 1 - e.slow : 1;
+      const stepLen = Math.min(e.speed * e.buffSpeed * e.fury * slow * dt, d - stop);
       e.x -= (e.x / d) * stepLen;
       e.y -= (e.y / d) * stepLen;
-      e.inContact = d - stepLen <= stop + 1e-6;
+      e.moving = stepLen > 0;
+      const wall = run.stats.radius + e.radius;
+      e.inContact = stop <= wall && d - stepLen <= stop + 1e-6;
       // The first hit lands a beat after arrival, not on the arrival frame.
       if (e.inContact) e.attackTimer = e.attackInterval * 0.5;
       continue;
     }
+    if (verb?.kind === 'ranged') {
+      e.actTimer -= dt;
+      if (e.actTimer <= 0) {
+        e.actTimer += verb.interval;
+        const k = verb.shotSpeed / (d || 1);
+        run.shots.push({ x: e.x, y: e.y, px: e.x, py: e.y, vx: -e.x * k, vy: -e.y * k, damage: e.damage * e.fury, life: BALANCE.shots.life });
+        run.events.push({ kind: 'shot', x: e.x, y: e.y });
+      }
+      continue;
+    }
+    if (e.boss && !run.boss?.enraged) continue;
     if (!e.inContact) {
       // Reached the wall without walking there (shoved by the crowd): the
       // first hit still waits a beat, as it does for a body that walked in.
@@ -45,35 +115,47 @@ export function tickEnemies(run: RunState, dt: number): void {
     e.attackTimer -= dt;
     if (e.attackTimer <= 0) {
       e.attackTimer += e.attackInterval;
-      const amount = mitigate(e.damage, run.stats.armor);
-      run.tower.hp -= amount;
-      run.tower.hurtTick = run.tick;
-      run.events.push({ kind: 'towerHit', amount, x: e.x, y: e.y });
-      // Thorns (§11.4): the wall bites back.
-      if (run.behaviours.thorns) damageEnemy(run, e, amount * BALANCE.behaviours.thorns, false);
+      hurtTower(run, e.damage * e.fury, e.x, e.y, e);
     }
   }
+}
+
+/** A Mender's pulse: every other body near it is healed a share of its Max HP. */
+function mend(run: RunState, e: Enemy, verb: { radius: number; interval: number; fraction: number }, dt: number): void {
+  e.actTimer -= dt;
+  if (e.actTimer > 0) return;
+  e.actTimer += verb.interval;
+  const r2 = verb.radius * verb.radius;
+  let healed = false;
+  for (const o of run.enemies) {
+    if (o === e || !o.alive || o.hp >= o.maxHp) continue;
+    if ((o.x - e.x) ** 2 + (o.y - e.y) ** 2 > r2) continue;
+    o.hp = Math.min(o.maxHp, o.hp + o.maxHp * verb.fraction);
+    healed = true;
+  }
+  if (healed) run.events.push({ kind: 'mend', x: e.x, y: e.y, radius: verb.radius });
 }
 
 /**
  * Bodies push apart so a crowd reads as a crowd, not one blob. At the wall
  * the push is tangential only: bodies spread around the ring but never leave
- * it, so separation changes how a wave looks, not how hard it hits.
+ * it, so separation changes how a wave looks, not how hard it hits. A boss
+ * holds its ground: it shoves, but is never shoved.
  */
 export function separateEnemies(run: RunState): void {
   const strength = BALANCE.separation;
   grid.rebuild(run.enemies);
   const reach = run.stats.radius;
   for (const e of run.enemies) {
-    if (!e.alive) continue;
+    if (!e.alive || e.boss || isHidden(run, e)) continue;
     near.length = 0;
     // Two bodies overlap within the sum of their radii, so query that far:
     // a Runner must feel a Brute it touches, not only the reverse.
-    grid.query(e.x, e.y, e.radius + MAX_RADIUS, near);
+    grid.query(e.x, e.y, e.radius + Math.max(MAX_RADIUS, run.boss ? BOSS_BY_ID[run.boss.id].radius : 0), near);
     let fx = 0;
     let fy = 0;
     for (const o of near) {
-      if (o === e) continue;
+      if (o === e || isHidden(run, o)) continue;
       let dx = e.x - o.x;
       let dy = e.y - o.y;
       let d = Math.hypot(dx, dy);

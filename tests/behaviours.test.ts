@@ -9,24 +9,14 @@ import type { BehaviourId } from '../src/content/types';
 import { damageEnemy } from '../src/sim/systems/combat';
 import { gainXp } from '../src/sim/systems/draft';
 import { tickEnemies } from '../src/sim/systems/enemies';
-import type { Enemy, RunState } from '../src/sim/state';
+import type { RunState } from '../src/sim/state';
+import { body } from './helpers/body';
 
 function withForge(forge: Record<string, number>, seed = 1): RunState {
   const p = newProfile(0);
   p.tutorial.firstDraft = true;
   p.forge = forge;
   return createRun(buildRunConfig(p), seed);
-}
-
-function body(run: RunState, over: Partial<Enemy> = {}): Enemy {
-  const e: Enemy = {
-    id: run.nextEnemyId++, type: 'grunt', wave: 1, alive: true, x: 200, y: 0, px: 200, py: 0,
-    hp: 100, maxHp: 100, armor: 0, speed: 0, radius: 20, damage: 10, attackInterval: 1,
-    xp: 1, shards: 1, mass: 1, stunnedUntil: 0, attackTimer: 0, inContact: false, hitTick: -1,
-    ...over,
-  };
-  run.enemies.push(e);
-  return e;
 }
 
 const behaviour = (id: BehaviourId, n = 1): RunState => {

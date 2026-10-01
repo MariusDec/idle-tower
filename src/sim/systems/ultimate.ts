@@ -1,7 +1,8 @@
 import { BALANCE } from '../../content/balance';
-import { FRAMES } from '../../content/frames';
+import { frameById } from '../../content/frames';
 import { weaponParams } from '../../content/weapons';
 import type { RunState } from '../state';
+import { staggerBoss } from './boss';
 import { damageEnemy, knockBack } from './combat';
 
 /**
@@ -11,23 +12,29 @@ import { damageEnemy, knockBack } from './combat';
 export function castUltimate(run: RunState): boolean {
   const u = run.ult;
   if (u.charge < 1) return false;
-  const frame = FRAMES.find((f) => f.id === run.frameId) ?? FRAMES[0];
+  const frame = frameById(run.frameId);
   const ult = frame.ultimate;
   switch (ult.id) {
     case 'nova': {
       const level = run.weapons.find((w) => w.id === frame.startingWeapon)?.level ?? 1;
       const damage = weaponParams(frame.startingWeapon, level).damage * ult.damage * run.stats.damageMult;
       const r2 = run.stats.range * run.stats.range;
+      // A Nova into a boss's wind-up staggers it (§4.3).
+      staggerBoss(run);
       for (const e of run.enemies) {
         if (!e.alive || e.x * e.x + e.y * e.y > r2) continue;
-        damageEnemy(run, e, damage, false);
-        if (e.alive) knockBack(e, ult.knockback);
+        damageEnemy(run, e, damage, false, 'nova');
+        if (e.alive && !e.boss) knockBack(e, ult.knockback);
       }
       run.events.push({ kind: 'nova', radius: run.stats.range });
       break;
     }
+    case 'aegis':
+      run.tower.invulnUntil = run.time + ult.seconds;
+      run.events.push({ kind: 'aegis', seconds: ult.seconds });
+      break;
     default: {
-      const exhaustive: never = ult.id;
+      const exhaustive: never = ult;
       return exhaustive;
     }
   }

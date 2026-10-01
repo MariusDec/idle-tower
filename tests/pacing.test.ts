@@ -6,7 +6,7 @@ import { medianWave20, runPacing } from '../tools/pacing';
  * simulated hour on the real sim, three profiles. The full report is
  * `npm run pacing -- --seeds 8`, run by hand at each phase gate.
  */
-describe('pacing: the first hour (§8.4, P3 gate)', () => {
+describe('pacing: the first hour (§8.4, P3 and P4 gates)', () => {
   const reports = [1, 2, 3].map((seed) => runPacing(1, seed));
 
   it('I3: every results screen shows an affordable node or ≥ 50% toward one', () => {
@@ -22,6 +22,10 @@ describe('pacing: the first hour (§8.4, P3 gate)', () => {
     expect(m).not.toBeNull();
     expect(m!).toBeGreaterThanOrEqual(15 * 60);
     expect(m!).toBeLessThanOrEqual(30 * 60);
+  });
+
+  it('I1 (first half): the Gatekeeper first falls within 20–40 minutes', () => {
+    for (const r of reports) expect(r.i1a).toBe(true);
   });
 
   it('the first run ends in about two minutes and pays for a node', () => {

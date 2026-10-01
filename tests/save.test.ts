@@ -10,7 +10,8 @@ import type { RunState } from '../src/sim/state';
 import { SIM_DT } from '../src/app/loop';
 import { hashString } from '../src/core/rng';
 import { botInput } from '../tools/bot';
-import { MigrationError, migrate, type Migration, type RawProfile } from '../src/meta/save/migrate';
+import { MIGRATIONS, MigrationError, migrate, type Migration, type RawProfile } from '../src/meta/save/migrate';
+import { isProfile } from '../src/meta/save/schema';
 import { PROFILE_VERSION, newProfile } from '../src/meta/profile';
 
 describe('profile save', () => {
@@ -82,7 +83,7 @@ describe('migration ladder', () => {
     const out = migrate({
       version: 2, createdAt: 0, shards: 9, records: { runs: 3, bestWave: 8 },
       seenCards: ['weapon:arcane-bolt'], tutorial: { firstDraft: true }, settings: { speed: 1 },
-    });
+    }, MIGRATIONS, 3);
     expect(out.records).toEqual({ runs: 3, bestWave: 8, bestShards: 0, kills: 0 });
     expect(out.tutorial).toEqual({ firstDraft: true, forgeIntro: false });
     expect(out.forge).toEqual({});
@@ -90,14 +91,34 @@ describe('migration ladder', () => {
     expect(out.seenCards).toEqual(['weapon:arcane-bolt']);
   });
 
-  it('the shipped ladder takes a v1 profile to the current version', () => {
+  it('walks a v3 profile to v4, keeping its Forge and totals', () => {
+    const out = migrate({
+      version: 3, createdAt: 5, shards: 50, records: { runs: 9, bestWave: 19, bestShards: 80, kills: 900 },
+      forge: { 'might-damage': 2 }, seenCards: [], seenEnemies: ['grunt'], tutorial: { firstDraft: true, forgeIntro: true },
+      settings: { speed: 2 },
+    });
+    expect(out.version).toBe(4);
+    expect(out.records).toEqual({ runs: 9, bestWave: 19, bestShards: 80, kills: 900, elites: 0 });
+    expect(out.forge).toEqual({ 'might-damage': 2 });
+    expect(out.bosses).toEqual({});
+    expect(out.relics).toEqual({});
+    expect(out.equipped).toEqual([]);
+    expect(out.region).toBe(1);
+    expect(out.frame).toBe('arcanist');
+    expect(out.lastSeen).toBe(5);
+    expect(isProfile(out)).toBe(true);
+  });
+
+  it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);
     expect(out.seenCards).toEqual([]);
     expect(out.tutorial).toEqual({ firstDraft: false, forgeIntro: false });
     expect(out.forge).toEqual({});
-    expect(out.records).toEqual({ runs: 2, bestWave: 5, bestShards: 0, kills: 0 });
+    expect(out.records).toEqual({ runs: 2, bestWave: 5, bestShards: 0, kills: 0, elites: 0 });
     expect(out.shards).toBe(4);
+    // Every field a fresh profile has, the migrated one has too.
+    expect(Object.keys(out).sort()).toEqual(Object.keys(newProfile(0)).sort());
   });
 
   it('refuses a missing rung, a future version and a rung that skips', () => {

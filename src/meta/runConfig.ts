@@ -1,7 +1,7 @@
 import { BALANCE } from '../content/balance';
-import { FRAMES } from '../content/frames';
 import { PASSIVES } from '../content/passives';
 import type { BehaviourId, CardItemId, Effect, StatMod } from '../content/types';
+import { bossDown, equippedRelics, relicSlots, selectedFrame, selectedRegion } from './collection';
 import { ownedNodes } from './forge';
 import type { Profile } from './profile';
 import type { Card, RunConfig } from '../sim/state';
@@ -16,11 +16,13 @@ export const FIRST_DRAFT: readonly Card[] = [
 ];
 
 /**
- * Profile → frozen `RunConfig` (§12.3). Resolves every frame, Forge and relic
- * effect once per run, so the sim never sees the profile.
+ * Profile → frozen `RunConfig` (§12.3). Resolves the chosen frame and region
+ * and every Forge and relic effect once per run, so the sim never sees the
+ * profile. The region's rule is the sim's: it reads the region it runs in.
  */
 export function buildRunConfig(profile: Profile): RunConfig {
-  const frame = FRAMES[0];
+  const frame = selectedFrame(profile);
+  const region = selectedRegion(profile);
   const mods: StatMod[] = [];
   const pool: CardItemId[] = [frame.startingWeapon, ...PASSIVES.map((p) => p.id)];
   let weaponSlots: number = BALANCE.slots.weapon;
@@ -30,6 +32,11 @@ export function buildRunConfig(profile: Profile): RunConfig {
   const effects: Effect[] = [...frame.effects];
   for (const { node, level } of ownedNodes(profile)) {
     for (let i = 0; i < level; i++) effects.push(...node.effects);
+  }
+  // A relic's effects at rank I, and its per-rank effects once per rank past it (§5.3).
+  for (const { relic, rank } of equippedRelics(profile)) {
+    effects.push(...relic.effects);
+    for (let i = 1; i < rank; i++) effects.push(...relic.perRank);
   }
   for (const e of effects) {
     switch (e.kind) {
@@ -57,12 +64,14 @@ export function buildRunConfig(profile: Profile): RunConfig {
   }
   return Object.freeze({
     frameId: frame.id,
-    regionId: 1,
+    regionId: region.index,
     mods: Object.freeze(mods),
     weaponSlots,
     passiveSlots,
     pool: Object.freeze(pool),
     firstDraft: profile.tutorial.firstDraft ? null : FIRST_DRAFT,
     behaviours: Object.freeze(behaviours),
+    firstKill: !bossDown(profile, region.boss),
+    relicDrops: relicSlots(profile) > 0,
   });
 }

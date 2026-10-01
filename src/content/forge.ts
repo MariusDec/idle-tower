@@ -1,8 +1,10 @@
 import type { BranchId, ForgeNodeDef } from './types';
 
 /**
- * The Forge (§5.1, §11.4): one radial web, five branches. P3 ships rings 1–2
- * of Might, Bulwark, Fortune and Arsenal, and Engineering's first ring.
+ * The Forge (§5.1, §11.4): one radial web, five branches. Rings 1–2 of
+ * Might, Bulwark, Fortune and Arsenal and Engineering's first ring came in
+ * P3; P4 adds ring 3, sealed until the Gatekeeper falls (a few nodes wait
+ * for the Bog Mother), and Offline I.
  *
  * Only Might, Bulwark and Fortune hang from the root, so a fresh Forge shows
  * three nodes (§7.1). Arsenal hangs from Might and Engineering from Fortune:
@@ -72,6 +74,21 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'behaviour', id: 'overkill' }],
   },
   {
+    id: 'might-damage-3', name: 'Honed Edge', icon: 'rune-sword', text: 'Damage +15%.',
+    branch: 'might', type: 'minor', ring: 3, angle: 4, links: ['might-damage-2'], maxLevel: 5, cost: 320,
+    effects: [{ kind: 'stat', mod: { key: 'damage', pct: 0.15 } }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'might-speed-3', name: 'Battle Rhythm', icon: 'pentarrows-tornado', text: 'Attack speed +8%.',
+    branch: 'might', type: 'minor', ring: 3, angle: -8, links: ['might-speed-2'], maxLevel: 5, cost: 360,
+    effects: [{ kind: 'stat', mod: { key: 'attackSpeed', pct: 0.08 } }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'might-crit-3', name: 'Dead Eye', icon: 'dead-eye', text: 'Crit chance +3%.',
+    branch: 'might', type: 'minor', ring: 3, angle: -20, links: ['might-crit'], maxLevel: 5, cost: 340,
+    effects: [{ kind: 'stat', mod: { key: 'critChance', add: 0.03 } }], sealed: 'gatekeeper',
+  },
+  {
     id: 'executioner', name: 'Executioner', icon: 'executioner-hood', text: 'Enemies under 10% HP die when hit.',
     branch: 'might', type: 'notable', ring: 2, angle: 30, links: ['overkill'], maxLevel: 1, cost: 220,
     effects: [{ kind: 'behaviour', id: 'executioner' }],
@@ -93,6 +110,21 @@ export const FORGE: readonly ForgeNodeDef[] = [
     branch: 'arsenal', type: 'notable', ring: 2, angle: 70, links: ['scattershot', 'chain-lightning'], maxLevel: 1, cost: 205,
     effects: [{ kind: 'slot', slot: 'passive', n: 1 }],
   },
+  {
+    id: 'frost-ring', name: 'Frost Ring', icon: 'frozen-orb', text: 'Frost Ring joins the draft.',
+    branch: 'arsenal', type: 'notable', ring: 2, angle: 88, links: ['chain-lightning'], maxLevel: 1, cost: 180,
+    effects: [{ kind: 'unlockCard', id: 'frost-ring' }],
+  },
+  {
+    id: 'twin-mount', name: 'Twin Mount', icon: 'double-shot', text: 'Start runs with a second, random weapon.',
+    branch: 'arsenal', type: 'notable', ring: 3, angle: 80, links: ['frost-ring', 'passive-slot'], maxLevel: 1, cost: 380,
+    effects: [{ kind: 'behaviour', id: 'twin-mount' }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'passive-slot-2', name: 'Third Focus', icon: 'nested-hexagons', text: '+1 passive slot.',
+    branch: 'arsenal', type: 'notable', ring: 3, angle: 64, links: ['passive-slot'], maxLevel: 1, cost: 1400,
+    effects: [{ kind: 'slot', slot: 'passive', n: 1 }], sealed: 'bog-mother',
+  },
 
   // ── Engineering ────────────────────────────────────────────────────────
   {
@@ -104,6 +136,11 @@ export const FORGE: readonly ForgeNodeDef[] = [
     id: 'auto-restart', name: 'Auto-restart', icon: 'clockwork', text: 'The next run starts 5 s after the results.',
     branch: 'engineering', type: 'notable', ring: 1, angle: 136, links: ['speed-2'], maxLevel: 1, cost: 45,
     effects: [{ kind: 'automation', id: 'auto-restart' }],
+  },
+  {
+    id: 'offline', name: 'Night Watch', icon: 'eclipse', text: 'Earn shards while away: 25% of your farm rate, up to 2 h.',
+    branch: 'engineering', type: 'notable', ring: 2, angle: 132, links: ['auto-restart'], maxLevel: 1, cost: 150,
+    effects: [{ kind: 'automation', id: 'offline' }], sealed: 'gatekeeper',
   },
   {
     id: 'ult-charge', name: 'Capacitor', icon: 'energy-tank', text: 'Ultimate charges 15% faster.',
@@ -141,6 +178,21 @@ export const FORGE: readonly ForgeNodeDef[] = [
     id: 'reroll', name: 'Reroll', icon: 'rolling-dices', text: '+1 draft reroll per run.',
     branch: 'fortune', type: 'notable', ring: 2, angle: 222, links: ['fortune-shards'], maxLevel: 3, cost: 65,
     effects: [{ kind: 'behaviour', id: 'reroll' }],
+  },
+  {
+    id: 'fortune-shards-3', name: 'Mother Lode', icon: 'gold-mine', text: 'Shards +10%.',
+    branch: 'fortune', type: 'minor', ring: 3, angle: 210, links: ['fortune-shards-2'], maxLevel: 5, cost: 300,
+    effects: [{ kind: 'stat', mod: { key: 'shardGain', pct: 0.1 } }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'fortune-xp-3', name: 'Lorekeeper', icon: 'wisdom', text: 'XP +10%.',
+    branch: 'fortune', type: 'minor', ring: 3, angle: 196, links: ['fortune-xp-2'], maxLevel: 5, cost: 300,
+    effects: [{ kind: 'stat', mod: { key: 'xpGain', pct: 0.1 } }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'bounty', name: 'Bounty', icon: 'wanted-reward', text: 'Elites drop ×3 shards.',
+    branch: 'fortune', type: 'notable', ring: 3, angle: 224, links: ['fortune-shards-3', 'reroll'], maxLevel: 1, cost: 520,
+    effects: [{ kind: 'behaviour', id: 'bounty' }], sealed: 'gatekeeper',
   },
   {
     id: 'choice', name: 'Choice', icon: 'nested-hexagons', text: '+1 card in every draft.',
@@ -188,6 +240,21 @@ export const FORGE: readonly ForgeNodeDef[] = [
     id: 'second-wind', name: 'Second Wind', icon: 'fountain', text: 'Once per run, rise again at 50% HP.',
     branch: 'bulwark', type: 'notable', ring: 2, angle: 306, links: ['bulwark-armor'], maxLevel: 1, cost: 190,
     effects: [{ kind: 'behaviour', id: 'second-wind' }],
+  },
+  {
+    id: 'bulwark-hp-3', name: 'Keep Walls', icon: 'brick-wall', text: 'Max HP +20%.',
+    branch: 'bulwark', type: 'minor', ring: 3, angle: 294, links: ['bulwark-hp-2'], maxLevel: 5, cost: 300,
+    effects: [{ kind: 'stat', mod: { key: 'maxHp', pct: 0.2 } }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'bulwark-regen-3', name: 'Wellspring', icon: 'fountain', text: 'Regenerate +0.5% of Max HP per second.',
+    branch: 'bulwark', type: 'minor', ring: 3, angle: 280, links: ['bulwark-regen-2'], maxLevel: 5, cost: 320,
+    effects: [{ kind: 'stat', mod: { key: 'regen', add: 0.005 } }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'bulwark-armor-3', name: 'Tower Shield', icon: 'roman-shield', text: 'Armour +2: every hit on the tower is 2 weaker.',
+    branch: 'bulwark', type: 'minor', ring: 3, angle: 308, links: ['bulwark-armor-2'], maxLevel: 5, cost: 360,
+    effects: [{ kind: 'stat', mod: { key: 'armor', add: 2 } }], sealed: 'gatekeeper',
   },
   {
     id: 'bulwark-armor-2', name: 'Riveted Plate', icon: 'layered-armor', text: 'Armour +1: every hit on the tower is 1 weaker.',

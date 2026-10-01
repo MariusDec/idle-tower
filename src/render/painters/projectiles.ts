@@ -57,7 +57,8 @@ export function paintProjectiles(
         break;
       }
       case 'chain-lightning':
-        // Instant: drawn as an arc effect, never a projectile.
+      case 'frost-ring':
+        // Instant: drawn as an effect, never a projectile.
         break;
       default: {
         const exhaustive: never = p.weapon;

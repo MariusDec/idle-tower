@@ -12,6 +12,7 @@ import { rollWave, shouldAdvance } from '../src/sim/systems/waves';
 import { tickWeapons } from '../src/sim/systems/combat';
 import { weaponParams } from '../src/content/weapons';
 import type { RunState, WaveState } from '../src/sim/state';
+import { body } from './helpers/body';
 
 const config = () => buildRunConfig(newProfile(0));
 
@@ -171,11 +172,7 @@ describe('fire rate', () => {
   it('fires at the exact rate, not rounded up to whole steps', () => {
     const run = createRun({ ...config(), mods: [{ key: 'attackSpeed', pct: 0.12 }] }, 1);
     // One immortal body parked in range, so the bolt always has a target.
-    run.enemies.push({
-      id: 1, type: 'grunt', wave: 1, alive: true, x: 100, y: 0, px: 100, py: 0,
-      hp: 1e12, maxHp: 1e12, armor: 0, speed: 0, radius: 20, damage: 0, attackInterval: 1,
-      xp: 0, shards: 0, mass: 1, stunnedUntil: 0, attackTimer: 0, inContact: false, hitTick: -1,
-    });
+    body(run, { x: 100, px: 100, hp: 1e12, maxHp: 1e12, damage: 0, xp: 0, shards: 0 });
     let shots = 0;
     const seconds = 60;
     for (let i = 0; i < Math.round(seconds / SIM_DT); i++) {

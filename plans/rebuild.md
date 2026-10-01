@@ -1,13 +1,38 @@
 # The Tower, rebuilt — a ground-up redesign
 
-**Status:** approved; decisions D1–D6 confirmed (§16). P0–P3 are built on
-the `rebuild` branch. P3's pacing numbers come from the real sim with the
-active bot buying cheapest-first (`npm run pacing -- --seeds 8`): wave 20 is
-first reached at 22:38 median (13:20–32:45 across profiles), I3 and I6 hold
-on every profile over the first hour, and runs buy about 3 nodes each. The
-P3 Forge is 32 nodes, not ~40: Arsenal's ring 2 waits for P5's weapons.
-Still open: playtest #1 (the P3 gate), and from P1 the frame-rate check on a
-mid-range Android device. P4 (§14) is next.
+**Status:** approved; decisions D1–D6 confirmed (§16). P0–P4 are built on
+the `rebuild` branch. The pacing numbers come from the real sim with the
+active bot buying cheapest-first, claiming feats and pushing the frontier
+(`npm run pacing -- --seeds 8 --hours 1.5`):
+
+- The Gatekeeper first falls at 34:44 median (29:24–38:04), mostly on its
+  second sighting. The Bog Mother falls at 65:01 (58:41–68:46).
+- Wave 20 is first reached at 27:33 (22:24–32:04). That was 22:38 in P3;
+  Region 1's elites slowed it.
+- I3 holds on every profile. I6 holds through the Bog Mother's fall. After
+  that P4 runs out of content, which is P7's gap to fill.
+
+P4 departs from the plan in a few places:
+
+- **Rings.** P3 shipped ring 2 unsealed, so the Gatekeeper unseals ring 3 and
+  Night Watch (Offline I), not ring 2. The Bog Mother unseals one ring-3 node
+  (Third Focus) on top of the Bastion and relic slot 2. The Forge is 45 nodes.
+- **Frost Ring** arrives in P4 as the Bastion's starting weapon, and as an
+  Arsenal ring-2 notable. P5 adds the other four weapons.
+- **Elites.** Region 1 has plain elites at waves 10 and 15 (§7.1's "first
+  elite"); auras start in Region 2 (§4.3). Elites drop relics only once relic
+  slot 1 exists. Splitter fragments pay a quarter of a body each.
+- **Ceremony.** The boss fight carries on into overtime, so the map
+  cutscene plays when the results screen leads to the Map.
+- **Feats** are claimed in the Feats tab, so the tab opens on a batch of
+  them.
+
+Still open:
+
+- playtest #1 (P3's gate) and playtest #2 (P4's gate)
+- from P1, the frame-rate check on a mid-range Android device
+
+P5 (§14) is next.
 
 **Supersedes:** every other file in `plans/`. Those describe the current game;
 P0 (§14) moves them to `plans/archive/`.
@@ -1160,7 +1185,7 @@ and boots to an empty arena.
 
 ### P5: Arsenal depth (M)
 
-- The remaining 5 weapons and 6 passives.
+- The remaining 4 weapons (Frost Ring came in P4) and 6 passives.
 - 8 evolutions, the Recipe Book and its hints.
 - A better draft scorer.
 - Per-weapon audio and visuals.

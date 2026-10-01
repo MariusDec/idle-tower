@@ -7,6 +7,7 @@
  *   npm run inspect -- --seed 7 --max 600  cap the run at 600 s
  *   npm run inspect -- --forge ring1       a Forge preset: none (default), arsenal
  *                                          (P2's loadout), ring1 or all, bought out
+ *   npm run inspect -- --region 2          a region other than the first (its rule applies)
  *
  * Headless: it drives the real sim, not a model of it.
  */
@@ -72,8 +73,8 @@ export function veteran(preset: ForgePreset = 'none'): Profile {
   return p;
 }
 
-export function simulate(seed: number, maxSeconds: number, policy: Policy, preset: ForgePreset = 'none'): RunReport {
-  const run = createRun(buildRunConfig(veteran(preset)), seed);
+export function simulate(seed: number, maxSeconds: number, policy: Policy, preset: ForgePreset = 'none', regionIndex = 1): RunReport {
+  const run = createRun({ ...buildRunConfig(veteran(preset)), regionId: regionIndex }, seed);
   const region = regionByIndex(run.regionId);
   const rows: WaveRow[] = [];
   const levelUps: number[] = [];
@@ -146,6 +147,7 @@ function main(): void {
   const policy: Policy = flag('bare') ? 'bare' : 'active';
   const fi = process.argv.indexOf('--forge');
   const preset = (fi >= 0 ? process.argv[fi + 1] : 'none') as ForgePreset;
+  const region = arg('region', 1);
   if (seeds > 0) {
     const deaths = new Map<number, number>();
     const firsts: number[] = [];
@@ -156,7 +158,7 @@ function main(): void {
     const waves: number[] = [];
     const lengths: number[] = [];
     for (let s = 1; s <= seeds; s++) {
-      const r = simulate(s, maxSeconds, policy, preset);
+      const r = simulate(s, maxSeconds, policy, preset, region);
       deaths.set(r.run.wave, (deaths.get(r.run.wave) ?? 0) + 1);
       waves.push(r.run.wave);
       lengths.push(r.run.time);
@@ -170,7 +172,7 @@ function main(): void {
       const key = r.run.weapons.map((w) => w.id).sort().join(' + ');
       loadouts.set(key, (loadouts.get(key) ?? 0) + 1);
     }
-    console.log(`${seeds} runs, policy ${policy}, forge ${preset}`);
+    console.log(`${seeds} runs, policy ${policy}, forge ${preset}, region ${region}`);
     console.log(`first kill: median ${median(firsts).toFixed(2)}s, worst ${Math.max(...firsts).toFixed(2)}s`);
     console.log(`death wave: median ${median(waves)} · ` + [...deaths.entries()].sort((a, b) => a[0] - b[0]).map(([w, n]) => `w${w}×${n}`).join('  '));
     console.log(`run length: median ${median(lengths).toFixed(0)}s`);
@@ -181,8 +183,8 @@ function main(): void {
     return;
   }
   const seed = arg('seed', 1);
-  const r = simulate(seed, maxSeconds, policy, preset);
-  console.log(`seed ${seed} · policy ${policy} · forge ${preset} · first kill ${r.firstKill?.toFixed(2) ?? '—'}s · ${r.levelUps.length} level-ups · ${r.ultCasts} novas`);
+  const r = simulate(seed, maxSeconds, policy, preset, region);
+  console.log(`seed ${seed} · policy ${policy} · forge ${preset} · region ${region} · first kill ${r.firstKill?.toFixed(2) ?? '—'}s · ${r.levelUps.length} level-ups · ${r.ultCasts} novas`);
   console.log('wave  start  dur  lvl    dps  bodies   pool   clear  carried  taken  kills  hp');
   for (const w of r.rows) {
     const clear = w.hpPool / w.dps;
@@ -193,6 +195,8 @@ function main(): void {
     );
   }
   console.log(`build: ${describeBuild(r.run)}`);
+  const b = r.run.boss;
+  if (b) console.log(`boss ${b.id}: ${b.killedIn === null ? 'stood' : `fell in ${b.killedIn.toFixed(1)}s`}${b.enraged ? ' (enraged)' : ''}`);
   const o = r.run.outcome;
   console.log(o ? `${o.kind} at wave ${o.wave}, ${o.time.toFixed(1)}s` : `still standing at ${r.run.time.toFixed(0)}s`);
 }

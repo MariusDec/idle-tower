@@ -244,6 +244,29 @@ export class Effects {
     }
   }
 
+  /** A ring rolling out from a point: the general-purpose shockwave. */
+  ring(x: number, y: number, from: number, to: number, color: string, life = 0.5, width = 4): void {
+    this.pushRing({ x, y, age: 0, life, from, to, color, width });
+  }
+
+  /** A spray of `n` sparks from a point, `up` biasing them upward (a fountain). */
+  spray(x: number, y: number, color: string, n: number, speed: number, size = 4, up = 0): void {
+    const k = this.count(n);
+    for (let i = 0; i < k; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const v = speed * (0.4 + Math.random() * 0.6);
+      this.pushParticle({
+        x, y,
+        vx: Math.cos(a) * v,
+        vy: Math.sin(a) * v - up * (0.5 + Math.random()),
+        age: 0,
+        life: 0.4 + Math.random() * 0.6,
+        size: size * (0.6 + Math.random() * 0.8),
+        color,
+      });
+    }
+  }
+
   /** A soft ring at a point, e.g. a new mount appearing on the tower. */
   pulse(x: number, y: number, radius: number, color: string): void {
     this.pushRing({ x, y, age: 0, life: 0.5, from: radius * 0.5, to: radius * 2.2, color: withAlpha(color, 0.85), width: 4 });

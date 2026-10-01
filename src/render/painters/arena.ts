@@ -1,11 +1,12 @@
 import { ARENA } from '../../content/arena';
-import { FX, INK, withAlpha } from '../palette';
+import { FX, INK, mix, withAlpha } from '../palette';
 
 /**
  * The ground: the Blight outside, the circle of light inside (§3). Baked once
- * per backing-store size into an offscreen canvas and blitted each frame.
+ * per backing-store size and region into an offscreen canvas and blitted
+ * each frame.
  */
-export function bakeArena(width: number, height: number, scale: number): HTMLCanvasElement {
+export function bakeArena(width: number, height: number, scale: number, tint: string | null = null): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = width;
   c.height = height;
@@ -21,9 +22,11 @@ export function bakeArena(width: number, height: number, scale: number): HTMLCan
   g.save();
   g.scale(1, ry / rx);
   const light = g.createRadialGradient(0, 0, rx * 0.05, 0, 0, rx);
-  light.addColorStop(0, INK['600']);
-  light.addColorStop(0.55, INK['700']);
-  light.addColorStop(1, INK['800']);
+  // A region's ground tint (§10.5) washes the stone, strongest at the core.
+  const ground = (c: string, k: number): string => (tint ? mix(c, tint, k) : c);
+  light.addColorStop(0, ground(INK['600'], 0.45));
+  light.addColorStop(0.55, ground(INK['700'], 0.35));
+  light.addColorStop(1, ground(INK['800'], 0.25));
   g.fillStyle = light;
   g.beginPath();
   g.arc(0, 0, rx, 0, Math.PI * 2);

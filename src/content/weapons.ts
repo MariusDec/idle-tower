@@ -3,10 +3,12 @@ import type { WeaponDef, WeaponId, WeaponParams } from './types';
 const ZERO: WeaponParams = {
   damage: 0, fireRate: 0, count: 0, pierce: 0, spread: 0,
   knockback: 0, jumps: 0, jumpRange: 0, stun: 0, projectileSpeed: 0,
+  radius: 0, slow: 0, slowSeconds: 0,
 };
 
 /**
- * Weapons (§4.4, §11.2). Three at P2. Each level step is a visible change or
+ * Weapons (§4.4, §11.2). Four at P4: Frost Ring arrives early as the
+ * Bastion's starting weapon. Each level step is a visible change or
  * at least +25% damage; the step's `text` is its card line.
  */
 export const WEAPONS: readonly WeaponDef[] = [
@@ -50,6 +52,20 @@ export const WEAPONS: readonly WeaponDef[] = [
       { text: '+30% damage.', damageMult: 1.3 },
       { text: 'Arcs to +1 enemy.', add: { jumps: 1 } },
       { text: 'Stuns each enemy struck for 0.2 s.', add: { stun: 0.2 } },
+    ],
+  },
+  {
+    id: 'frost-ring',
+    name: 'Frost Ring',
+    icon: 'frozen-orb',
+    text: 'Pulses frost around the tower, slowing everything it touches.',
+    pattern: 'pulse',
+    base: { ...ZERO, damage: 7, fireRate: 0.75, radius: 160, slow: 0.3, slowSeconds: 1.5 },
+    steps: [
+      { text: 'Pulses reach 25% farther.', add: { radius: 40 } },
+      { text: 'Slows 15% more.', add: { slow: 0.15 } },
+      { text: '+30% damage.', damageMult: 1.3 },
+      { text: 'Pulses 30% faster.', add: { fireRate: 0.225 } },
     ],
   },
 ];

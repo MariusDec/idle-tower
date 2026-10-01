@@ -68,6 +68,91 @@ export const BALANCE = {
     lastStandSpeed: 0.4,
     /** Choice: cards added per owned level. */
     extraChoice: 1,
+    /** Bounty: elites drop this many times their shards. */
+    bounty: 3,
+  },
+  /**
+   * Relic numbers (§11.5), indexed by rank − 1. A relic's behaviour count is
+   * its rank, so rank II reads `[1]`.
+   */
+  relics: {
+    /** Tallow Candle: waves 1–5 spawn and chain this much faster. */
+    quickStart: [1.5, 1.75, 2],
+    quickStartWaves: 5,
+    /** Hunter's Tally: damage per 100 kills this run. */
+    tally: [0.05, 0.075, 0.1],
+    /** Mother's Tear: regen multiplier while no enemy is within half range. */
+    stillRegen: [2, 2.5, 3],
+    /** Bog Lantern: XP multiplier for lightning, frost and Nova kills. */
+    stormXp: [2, 2.5, 3],
+    /** Mire Lily: Splitter fragments' HP multiplier. */
+    frailSplits: [0.5, 0.4, 0.3],
+    /** Stillwater Charm: damage taken by bodies that are not moving. */
+    stillTarget: [0.25, 0.35, 0.45],
+    /** Chance an elite kill drops one of its region's relics (§4.3). */
+    eliteDrop: 0.3,
+    /** Ranks top out here (§5.3: I → III). */
+    maxRank: 3,
+  },
+  /** Elites (§4.3). */
+  elites: {
+    /** HP multiple over a plain body of the same type. */
+    hp: 8,
+    /** Body radius multiple. */
+    scale: 1.3,
+    /** Shards multiple over the same body (§8.3). */
+    shards: 10,
+    /** XP multiple. */
+    xp: 5,
+    /** Haste: speed multiplier for it and its neighbours. */
+    haste: 1.4,
+    /** Regen: fraction of Max HP per second for it and its neighbours. */
+    regen: 0.03,
+    /** Shield: damage its neighbours take (not itself). */
+    shield: 0.5,
+    /** Split: copies it bursts into, each a plain body of its type. */
+    split: 3,
+    /** Vengeful: speed and damage multiplier its death gives nearby bodies. */
+    vengeful: 1.5,
+  },
+  /** Bosses (§4.3, §8.2). */
+  boss: {
+    /** Shards for a boss kill multiply this on the first kill (§8.1). */
+    firstKill: 5,
+    /**
+     * A boss that outlasts this many seconds enrages: its slams hit
+     * `enrageGrowth` harder for every further `enrageEvery` s, so a fight
+     * the tower can't win ends instead of stalling.
+     */
+    enrageAfter: 90,
+    enrageEvery: 10,
+    enrageGrowth: 1.25,
+    /** A Nova that lands during a slam's wind-up staggers the boss: the slam is lost. */
+    staggerSeconds: 1.5,
+    /** Seconds between an enraged boss's hits at the wall. */
+    attackInterval: 1.4,
+    /** A submerged boss rises this far round its ring, radians, either way. */
+    emergeArc: [0.9, 1.8],
+  },
+  /** Overtime (§8.2): waves past the boss. */
+  overtime: {
+    hpGrowth: 1.25,
+    shardGrowth: 1.12,
+  },
+  /** Hostile shots (Spitters). */
+  shots: {
+    /** A shot that lives this long without landing fizzles. */
+    life: 6,
+  },
+  /** Offline (§6.3). Efficiency and cap per tier; P4 ships tier I. */
+  offline: {
+    tiers: [{ efficiency: 0.25, capHours: 2 }],
+    /** Absences shorter than this pay nothing. */
+    minSeconds: 60,
+    /** Runs shorter than this don't count toward the farm rate. */
+    minRunSeconds: 60,
+    /** The farm rate is the median of this many recent runs. */
+    runs: 5,
   },
   projectiles: {
     /** Seconds a homing bolt lives before fizzling. */
@@ -94,6 +179,8 @@ export const BALANCE = {
      */
     clearFraction: 0.25,
     overlapSeconds: 10,
+    /** Seconds between a boss's fall and the first overtime wave (§4.2). */
+    afterBoss: 3,
     /**
      * Wave 1 comes in from the flanks (within this many radians of
      * horizontal), the short walk on a portrait arena, so the opening has

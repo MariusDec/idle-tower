@@ -1,8 +1,10 @@
 /**
  * The pacing report (§13): a fresh profile, played by the active bot over
- * the real sim for N simulated hours. It buys in the Forge between runs and
- * checks the invariants this phase can see (§8.4):
+ * the real sim for N simulated hours. Between runs it buys in the Forge,
+ * claims feats and pushes to the frontier region, and it checks the
+ * invariants this phase can see (§8.4):
  *
+ *   I1a boss 1 first falls within 20–40 min (P4's gate: 25–40)
  *   I3  every results screen shows an affordable node, or ≥ 50% toward one
  *   I6  no gap between reveals longer than 10 min (in the first 2 h)
  *   P3  wave 20 is first reached within 15–30 min
@@ -25,8 +27,12 @@ import { newProfile, type Profile } from '../src/meta/profile';
 import { maxSpeed, runSpeed } from '../src/meta/automation';
 import { buyNode, canAfford, levelOf, nodeCost, nodeStates } from '../src/meta/forge';
 import { bankRun } from '../src/meta/results';
+import { frontier, hubUnlocks } from '../src/meta/collection';
+import { claimAll } from '../src/meta/feats';
 import { BRANCH_NAME, FORGE, FORGE_BY_ID } from '../src/content/forge';
+import { BOSSES, BOSS_BY_ID } from '../src/content/bosses';
 import { ENEMY_BY_ID } from '../src/content/enemies';
+import { RELIC_BY_ID } from '../src/content/relics';
 import { Rng } from '../src/core/rng';
 import { formatDuration } from '../src/core/format';
 import type { BranchId } from '../src/content/types';
@@ -37,7 +43,7 @@ const DRAFT_SECONDS = 2;
 const FIRST_DRAFT_SECONDS = 5;
 /** Wall seconds between runs: the results screen, plus shopping when there is shopping. */
 const BETWEEN_RUNS = { idle: 6, shopping: 15 };
-/** A run that outlives this is cut off (P3 has no boss to end it). */
+/** A run that outlives this is cut off: a safety net, since overtime always ends a run. */
 const MAX_RUN_SECONDS = 3600;
 /** The milestone waves that count as reveals (§7.1). */
 const MILESTONE_WAVES = [10, 15, 20];
@@ -66,6 +72,9 @@ export interface RunRow {
   /** I3's measure at this results screen: 1 when a node is affordable. */
   nextProgress: number;
   bought: string[];
+  region: number;
+  /** Seconds the boss took to fall, or null if it stood or never came. */
+  bossKilledIn: number | null;
 }
 
 export interface PacingReport {
@@ -73,12 +82,18 @@ export interface PacingReport {
   runs: RunRow[];
   reveals: Reveal[];
   firstWave20: number | null;
+  /** Wall seconds when each boss first fell, by id. */
+  bossKills: Record<string, number>;
   /** The longest gap between reveals inside I6's window, and where it starts. */
   worstGap: { seconds: number; from: number };
+  i1a: boolean;
   i3: boolean;
   i6: boolean;
   wave20: boolean;
 }
+
+/** I1's first half (§8.4): boss 1's first kill, in wall minutes. */
+const I1A = { min: 20 * 60, max: 40 * 60 };
 
 /**
  * The active bot's shopping: the cheapest buyable level first, again and
@@ -115,6 +130,10 @@ export function runPacing(hours: number, seed: number): PacingReport {
   const branches = new Set<BranchId>();
   let clock = 0;
   let firstWave20: number | null = null;
+  const bossKills: Record<string, number> = {};
+  const metBosses = new Set<string>();
+  const seenAuras = new Set<string>();
+  let tabs = hubUnlocks(profile);
   let i3 = true;
 
   /** A branch's first node on the web, fog included, is a reveal; the starting three are not. */
@@ -164,6 +183,18 @@ export function runPacing(hours: number, seed: number): PacingReport {
           reached.add(ev.wave);
           reveals.push({ at, what: `wave ${ev.wave}` });
           if (ev.wave === 20) firstWave20 = at;
+        } else if (ev.kind === 'bossArrive' && !metBosses.has(ev.boss)) {
+          metBosses.add(ev.boss);
+          reveals.push({ at, what: `boss: ${BOSS_BY_ID[ev.boss].name} arrives` });
+        } else if (ev.kind === 'bossKill' && ev.first && !(ev.boss in bossKills)) {
+          bossKills[ev.boss] = at;
+          reveals.push({ at, what: `boss: ${BOSS_BY_ID[ev.boss].name} falls` });
+        } else if (ev.kind === 'eliteSpawn' && !seenAuras.has(ev.aura ?? 'plain')) {
+          // Each aura is a new enemy to read (§7.2), the plain elite included.
+          seenAuras.add(ev.aura ?? 'plain');
+          reveals.push({ at, what: `elite: ${ev.aura ?? 'plain'}` });
+        } else if (ev.kind === 'relicDrop' && !(profile.relics[ev.relic] > 0)) {
+          reveals.push({ at, what: `relic: ${RELIC_BY_ID[ev.relic].name}` });
         }
       }
       run.events.length = 0;
@@ -171,10 +202,19 @@ export function runPacing(hours: number, seed: number): PacingReport {
     profile.seenCards = [...seenCards];
     wall += run.time / speed;
     clock = start + wall;
-    const summary = bankRun(profile, run, newCards);
+    const summary = bankRun(profile, run, newCards, speed);
     if (runs.length === 0) reveals.push({ at: clock, what: 'results and the Forge' });
     const progress = summary.next?.progress ?? 1;
     if (progress < 0.5) i3 = false;
+    for (const u of summary.unlocks) reveals.push({ at: clock, what: `unlock: ${u}` });
+    const now = hubUnlocks(profile);
+    for (const k of ['map', 'collection', 'feats'] as const) {
+      if (now[k] && !tabs[k]) reveals.push({ at: clock, what: `tab: ${k}` });
+    }
+    tabs = now;
+    // The active player claims what waits in Feats, and pushes the frontier.
+    if (tabs.feats) claimAll(profile);
+    profile.region = frontier(profile).index;
 
     const bought = shop(profile);
     for (const id of bought) {
@@ -192,24 +232,32 @@ export function runPacing(hours: number, seed: number): PacingReport {
       shards: summary.shards,
       nextProgress: progress,
       bought,
+      region: summary.regionId,
+      bossKilledIn: summary.boss?.killedIn ?? null,
     });
     clock += bought.length > 0 ? BETWEEN_RUNS.shopping : BETWEEN_RUNS.idle;
   }
 
   reveals.sort((a, b) => a.at - b.at);
-  const window = Math.min(clock, I6_WINDOW);
+  // I6 reads the first two hours, or up to the fall of the last boss this
+  // build has: past it the content runs out, which is a later phase's gap.
+  const lastBoss = BOSSES[BOSSES.length - 1].id;
+  const window = Math.min(clock, I6_WINDOW, bossKills[lastBoss] ?? Infinity);
   let worstGap = { seconds: 0, from: 0 };
   let prev = 0;
   for (const r of [...reveals.filter((x) => x.at <= window), { at: window, what: 'end' }]) {
     if (r.at - prev > worstGap.seconds) worstGap = { seconds: r.at - prev, from: prev };
     prev = r.at;
   }
+  const boss1 = bossKills.gatekeeper ?? null;
   return {
     seconds: clock,
     runs,
     reveals,
     firstWave20,
+    bossKills,
     worstGap,
+    i1a: boss1 !== null && boss1 >= I1A.min && boss1 <= I1A.max,
     i3,
     i6: worstGap.seconds <= MAX_REVEAL_GAP,
     wave20: firstWave20 !== null && firstWave20 >= 15 * 60 && firstWave20 <= 30 * 60,
@@ -225,11 +273,21 @@ function pad(v: string | number, n: number): string {
   return String(v).padStart(n);
 }
 
-/** The P3 gate's reading over several profiles: one lucky run shouldn't decide it. */
-export function medianWave20(reports: readonly PacingReport[]): number | null {
-  const times = reports.map((r) => r.firstWave20 ?? Infinity).sort((a, b) => a - b);
+/** The median of a per-profile time over several profiles: one lucky run shouldn't decide a gate. */
+function medianOf(reports: readonly PacingReport[], at: (r: PacingReport) => number | null): number | null {
+  const times = reports.map((r) => at(r) ?? Infinity).sort((a, b) => a - b);
   const m = times[times.length >> 1];
   return Number.isFinite(m) ? m : null;
+}
+
+/** The P3 gate's reading: the median first wave 20. */
+export function medianWave20(reports: readonly PacingReport[]): number | null {
+  return medianOf(reports, (r) => r.firstWave20);
+}
+
+/** The P4 gate's reading: the median first kill of a boss. */
+export function medianBossKill(reports: readonly PacingReport[], boss: string): number | null {
+  return medianOf(reports, (r) => r.bossKills[boss] ?? null);
 }
 
 function main(): void {
@@ -246,12 +304,21 @@ function main(): void {
     console.log(`  worst reveal gaps: ${reports.map((r) => formatDuration(r.worstGap.seconds)).join(' ')}`);
     console.log(`  first wave 20: ${w20.join(' ')}`);
     console.log(`  ${median !== null && median >= 900 && median <= 1800 ? 'PASS' : 'FAIL'}  P3  median first wave 20 ${median === null ? 'never' : formatDuration(median)} (want 15:00–30:00)`);
+    const fmt = (t: number | null): string => (t === null ? 'never' : formatDuration(t));
+    for (const id of Object.keys(BOSS_BY_ID)) {
+      console.log(`  first ${BOSS_BY_ID[id as keyof typeof BOSS_BY_ID].name}: ${reports.map((r) => fmt(r.bossKills[id] ?? null)).join(' ')}`);
+    }
+    const b1 = medianBossKill(reports, 'gatekeeper');
+    console.log(`  ${b1 !== null && b1 >= 25 * 60 && b1 <= 40 * 60 ? 'PASS' : 'FAIL'}  P4  median first Gatekeeper kill ${fmt(b1)} (want 25:00–40:00)`);
+    console.log(`  I1a passes ${count((r) => r.i1a)} (boss 1 within 20:00–40:00)`);
+    const b2 = medianBossKill(reports, 'bog-mother');
+    console.log(`        median first Bog Mother kill ${fmt(b2)} (§7.1 aims at 60:00–75:00)`);
     return;
   }
   const csv = arg('csv', '');
   const r = runPacing(hours, seed);
   console.log(`pacing · ${hours} h · seed ${seed} · ${r.runs.length} runs\n`);
-  console.log('  run   start  wave    sim   wall  spd  shards  next  bought');
+  console.log('  run   start  reg  wave    sim   wall  spd  shards  next  boss   bought');
   for (const x of r.runs) {
     const bought = x.bought.map((id) => FORGE_BY_ID[id].name);
     const grouped = [...new Set(bought)].map((b) => {
@@ -259,9 +326,9 @@ function main(): void {
       return k > 1 ? `${b} ×${k}` : b;
     });
     console.log(
-      `${pad(x.n, 5)} ${pad(formatDuration(x.start), 7)} ${pad(x.wave, 5)} ${pad(formatDuration(x.simSeconds), 6)}`
+      `${pad(x.n, 5)} ${pad(formatDuration(x.start), 7)} ${pad(x.region, 4)} ${pad(x.wave, 5)} ${pad(formatDuration(x.simSeconds), 6)}`
       + ` ${pad(formatDuration(x.wallSeconds), 6)} ${pad(`${x.speed}×`, 4)} ${pad(x.shards, 7)}`
-      + ` ${pad(`${Math.floor(x.nextProgress * 100)}%`, 5)}  ${grouped.join(', ')}`,
+      + ` ${pad(`${Math.floor(x.nextProgress * 100)}%`, 5)} ${pad(x.bossKilledIn === null ? '' : formatDuration(x.bossKilledIn), 5)}  ${grouped.join(', ')}`,
     );
   }
   console.log('\nreveals:');
@@ -271,6 +338,8 @@ function main(): void {
   console.log(`  ${mark(r.i3)}  I3  every results screen shows a node at ≥ 50%`);
   console.log(`  ${mark(r.i6)}  I6  longest gap between reveals ${formatDuration(r.worstGap.seconds)} (from ${formatDuration(r.worstGap.from)}; max 10:00)`);
   console.log(`  ${mark(r.wave20)}  P3  wave 20 first reached at ${r.firstWave20 === null ? 'never' : formatDuration(r.firstWave20)} (want 15:00–30:00)`);
+  const g = r.bossKills.gatekeeper;
+  console.log(`  ${mark(r.i1a)}  I1a the Gatekeeper first falls at ${g === undefined ? 'never' : formatDuration(g)} (want 20:00–40:00)`);
   if (csv) {
     writeFileSync(csv, ['seconds,reveal', ...r.reveals.map((v) => `${v.at.toFixed(1)},"${v.what}"`)].join('\n') + '\n');
     console.log(`\nreveal timeline written to ${csv}`);

@@ -1,6 +1,6 @@
 import type { RngState } from '../core/rng';
 import type {
-  BehaviourId, CardItemId, EnemyId, FallbackId, PassiveId, StatMod, WeaponId,
+  AuraId, BehaviourId, BossId, CardItemId, EnemyId, FallbackId, PassiveId, RelicId, StatMod, WeaponId,
 } from '../content/types';
 
 /**
@@ -30,8 +30,12 @@ export interface RunConfig {
    * on every other run.
    */
   readonly firstDraft: readonly Card[] | null;
-  /** Forge behaviours owned, by how many levels (§11.4). Absent means 0. */
+  /** Forge behaviours owned, by how many levels (§11.4), and relics by rank. Absent means 0. */
   readonly behaviours: Readonly<Partial<Record<BehaviourId, number>>>;
+  /** True while this region's boss has never fallen: its kill pays ×5 (§8.1). */
+  readonly firstKill: boolean;
+  /** True once a relic slot is open: until then, elites drop no relics (§5.3). */
+  readonly relicDrops: boolean;
 }
 
 /**
@@ -57,11 +61,21 @@ export interface TowerState {
   hp: number;
   /** Tick of the last contact hit taken, for the hurt flash. */
   hurtTick: number;
+  /** Run time until which the tower takes no damage (Aegis). */
+  invulnUntil: number;
 }
 
 export interface Enemy {
   id: number;
+  /** The enemy type; for a boss, the type its kills and summons are read as. */
   type: EnemyId;
+  /** Set on the one body that is a region's boss (§4.3). */
+  boss: BossId | null;
+  /** An elite (§4.3): ×8 HP, and from Region 2 on, an aura. */
+  elite: boolean;
+  aura: AuraId | null;
+  /** 0 for a spawned body; 1 for a Splitter's fragment, which never splits again. */
+  gen: number;
   /** The wave that spawned it, for the overlap rule. */
   wave: number;
   alive: boolean;
@@ -84,6 +98,20 @@ export interface Enemy {
   mass: number;
   /** Run time until which it neither walks nor hits. */
   stunnedUntil: number;
+  /** Fraction of speed lost to frost, until `slowUntil`. */
+  slow: number;
+  slowUntil: number;
+  /** Run time until which it can't be targeted or hit (a boss under the water). */
+  hiddenUntil: number;
+  /** Seconds until its verb acts again: a Spitter's shot, a Mender's pulse. */
+  actTimer: number;
+  /** True if it moved this step; Stillwater Charm reads it. */
+  moving: boolean;
+  /** Elite auras on it this step: speed multiplier and damage taken (§4.3). */
+  buffSpeed: number;
+  buffShield: number;
+  /** Enraged by a Vengeful elite's death: a lasting speed and damage multiplier. */
+  fury: number;
   /** Seconds until the next contact hit; counts only while in contact. */
   attackTimer: number;
   inContact: boolean;
@@ -113,6 +141,55 @@ export interface Projectile {
   ignore: number;
   knockback: number;
   life: number;
+}
+
+/** A hostile shot (a Spitter's): flies straight at the tower and lands for `damage`. */
+export interface HostileShot {
+  x: number;
+  y: number;
+  px: number;
+  py: number;
+  vx: number;
+  vy: number;
+  damage: number;
+  life: number;
+}
+
+/** A boss's shockwave: a ring rolling out from where it slammed. */
+export interface SlamRing {
+  x: number;
+  y: number;
+  radius: number;
+  speed: number;
+  damage: number;
+  /** True once it has reached the tower. */
+  hit: boolean;
+}
+
+/** The region's boss, from its arrival at wave 20 (§4.3). */
+export interface BossState {
+  id: BossId;
+  /** Its body's enemy id. */
+  enemy: number;
+  phase: number;
+  /** Run time it arrived. */
+  arrivedAt: number;
+  /** Seconds until each of the phase's patterns fires next, by index. */
+  timers: number[];
+  /** Seconds left of a slam's wind-up; 0 when not winding up. */
+  windup: number;
+  /** True while it is under the water (Submerge); it rises somewhere else. */
+  submerged: boolean;
+  /** True once it has outlasted `BALANCE.boss.enrageAfter` and walks to the wall. */
+  enraged: boolean;
+  /** The pattern index of the slam being wound up. */
+  windupPattern: number;
+  /** Run time until which it is staggered (a Nova broke its wind-up). */
+  staggeredUntil: number;
+  /** The tower's lowest HP fraction since it arrived (the Steady Hand feat). */
+  minHp: number;
+  /** Seconds from arrival to its fall; null while it stands. */
+  killedIn: number | null;
 }
 
 export interface WeaponState {
@@ -160,6 +237,8 @@ export interface SpawnEntry {
   at: number;
   enemy: EnemyId;
   angle: number;
+  /** An elite (§4.3), with its aura, or null for a plain elite. Absent for a plain body. */
+  elite?: { aura: AuraId | null };
 }
 
 export interface WaveState {
@@ -195,6 +274,30 @@ export type SimEvent =
   | { kind: 'firstSight'; enemy: EnemyId }
   /** Second Wind: the tower rose again instead of falling. */
   | { kind: 'revive' }
+  /** A Frost Ring pulse. */
+  | { kind: 'pulse'; radius: number }
+  /** A Mender's heal. */
+  | { kind: 'mend'; x: number; y: number; radius: number }
+  /** A Splitter, or a Split elite, came apart. */
+  | { kind: 'split'; x: number; y: number; n: number }
+  | { kind: 'eliteSpawn'; x: number; y: number; aura: AuraId | null }
+  | { kind: 'eliteKill'; x: number; y: number }
+  /** A Vengeful elite's death enraged its neighbours. */
+  | { kind: 'fury'; x: number; y: number; radius: number }
+  | { kind: 'relicDrop'; relic: RelicId; x: number; y: number }
+  | { kind: 'shot'; x: number; y: number }
+  | { kind: 'bossArrive'; boss: BossId }
+  | { kind: 'bossPhase'; boss: BossId; phase: number }
+  | { kind: 'windup'; x: number; y: number; seconds: number }
+  | { kind: 'slam'; x: number; y: number }
+  | { kind: 'stagger'; x: number; y: number }
+  | { kind: 'submerge'; x: number; y: number }
+  | { kind: 'emerge'; x: number; y: number }
+  | { kind: 'enrage' }
+  | { kind: 'bossKill'; boss: BossId; first: boolean; x: number; y: number }
+  | { kind: 'aegis'; seconds: number }
+  /** Aegis turned a hit away. */
+  | { kind: 'blocked'; x: number; y: number }
   | { kind: 'fell' };
 
 export interface RunState {
@@ -228,7 +331,22 @@ export interface RunState {
   /** Shards earned this run (§8.3), unrounded; banked at the run's end. */
   shards: number;
   /** Where `shards` came from, for the results breakdown (§4.6). */
-  shardsFrom: { kills: number; waves: number; cards: number };
+  shardsFrom: { kills: number; waves: number; cards: number; elites: number; boss: number };
+  /** True while this region's boss has never fallen (from the config). */
+  firstKill: boolean;
+  /** True when elites may drop relics (from the config). */
+  relicDrops: boolean;
+  /** The boss, from its arrival; it stays after its fall for the results. */
+  boss: BossState | null;
+  /** Relics dropped this run, in order (banked at the run's end). */
+  relics: RelicId[];
+  elitesKilled: number;
+  /** The wave the tower first took damage in; null if it never has (the Unbroken feat). */
+  firstHurtWave: number | null;
+  /** The highest wave reached while holding a single weapon (the Lone Tower feat). */
+  loneWave: number;
+  shots: HostileShot[];
+  rings: SlamRing[];
   /** Forge behaviours owned, by level count. */
   behaviours: Partial<Record<BehaviourId, number>>;
   /** Draft rerolls left this run (Fortune's Reroll). */
@@ -243,6 +361,8 @@ export interface RunState {
   /** Enemy types seen this run, for first-sight bestiary cards. */
   seen: EnemyId[];
   kills: number;
+  /** Kills by type this run, for the Bestiary's counts (§5.3). Bosses aren't counted here. */
+  killsBy: Partial<Record<EnemyId, number>>;
   rng: RngState;
   /** Named child-stream states, so each system's draws stay independent. */
   streams: Record<string, RngState>;

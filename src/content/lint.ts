@@ -1,7 +1,7 @@
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
 import type {
-  ContentEntry, EnemyDef, ForgeNodeDef, FrameDef, PassiveDef, RegionDef, WeaponDef,
+  AuraDef, BossDef, ContentEntry, EnemyDef, FeatDef, ForgeNodeDef, FrameDef, PassiveDef, RegionDef, RelicDef, WeaponDef,
 } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
@@ -161,7 +161,61 @@ export const forgeWeb: LintRule = (tables) => {
   return out;
 };
 
-export const RULES: readonly LintRule[] = [uniqueIds, entryBasics, references, levels, forgeWeb];
+/**
+ * Bosses, relics, feats and seals hold together (§12.6): every region has a
+ * boss that exists and three enemies; a boss's phases start at full HP and
+ * step down, each with a line of 15 words or fewer, and summon real enemies;
+ * every relic, seal, feat and frame names a real boss or region; elites wear
+ * real auras; and each region gives four relics.
+ */
+export const bossesAndLoot: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const bosses = (tables.bosses as readonly BossDef[] | undefined) ?? [];
+  const regions = (tables.regions as readonly RegionDef[] | undefined) ?? [];
+  const relics = (tables.relics as readonly RelicDef[] | undefined) ?? [];
+  const bossIds = new Set<string>(bosses.map((b) => b.id));
+  const regionIdx = new Set(regions.map((r) => r.index));
+  const enemies = new Set((tables.enemies as readonly EnemyDef[] | undefined ?? []).map((e) => e.id as string));
+  const auras = new Set((tables.auras as readonly AuraDef[] | undefined ?? []).map((a) => a.id as string));
+  for (const r of regions) {
+    if (!bossIds.has(r.boss)) out.push({ table: 'regions', id: r.id, problem: `unknown boss "${r.boss}"` });
+    for (const a of r.elites.auras) if (!auras.has(a)) out.push({ table: 'regions', id: r.id, problem: `unknown aura "${a}"` });
+    if (r.rule && wordCount(r.rule.text) > MAX_TEXT_WORDS) out.push({ table: 'regions', id: r.id, problem: 'rule text too long' });
+    const n = relics.filter((x) => (x.source.kind === 'elite' ? x.source.region === r.index : x.source.boss === r.boss)).length;
+    if (relics.length > 0 && n !== 4) out.push({ table: 'regions', id: r.id, problem: `gives ${n} relics (want 4)` });
+  }
+  for (const b of bosses) {
+    if (b.phases.length === 0 || b.phases[0].below !== 1) out.push({ table: 'bosses', id: b.id, problem: 'first phase must start at full HP' });
+    b.phases.forEach((ph, i) => {
+      if (i > 0 && ph.below >= b.phases[i - 1].below) out.push({ table: 'bosses', id: b.id, problem: `phase ${i + 1} does not step down` });
+      const words = wordCount(ph.line);
+      if (words === 0 || words > MAX_TEXT_WORDS) out.push({ table: 'bosses', id: b.id, problem: `phase ${i + 1} line is ${words} words` });
+      for (const p of ph.patterns) {
+        if (p.kind === 'summon' && !enemies.has(p.enemy)) out.push({ table: 'bosses', id: b.id, problem: `summons unknown enemy "${p.enemy}"` });
+      }
+    });
+    if (!regions.some((r) => r.boss === b.id)) out.push({ table: 'bosses', id: b.id, problem: 'no region has this boss' });
+  }
+  for (const x of relics) {
+    if (x.source.kind === 'boss' && !bossIds.has(x.source.boss)) out.push({ table: 'relics', id: x.id, problem: `unknown boss "${x.source.boss}"` });
+    if (x.source.kind === 'elite' && !regionIdx.has(x.source.region)) out.push({ table: 'relics', id: x.id, problem: `unknown region ${x.source.region}` });
+  }
+  for (const n of (tables.forge as readonly ForgeNodeDef[] | undefined) ?? []) {
+    if (n.sealed && !bossIds.has(n.sealed)) out.push({ table: 'forge', id: n.id, problem: `sealed by unknown boss "${n.sealed}"` });
+  }
+  for (const f of (tables.feats as readonly FeatDef[] | undefined) ?? []) {
+    const g = f.goal;
+    if (g.kind === 'boss' && !bossIds.has(g.boss)) out.push({ table: 'feats', id: f.id, problem: `unknown boss "${g.boss}"` });
+    if (g.kind === 'bestiary' && !regionIdx.has(g.region)) out.push({ table: 'feats', id: f.id, problem: `unknown region ${g.region}` });
+    if (!(f.reward > 0)) out.push({ table: 'feats', id: f.id, problem: 'reward must be positive' });
+  }
+  for (const f of (tables.frames as readonly FrameDef[] | undefined) ?? []) {
+    if (f.unlock.kind === 'boss' && !bossIds.has(f.unlock.boss)) out.push({ table: 'frames', id: f.id, problem: `unlocked by unknown boss "${f.unlock.boss}"` });
+  }
+  return out;
+};
+
+export const RULES: readonly LintRule[] = [uniqueIds, entryBasics, references, levels, forgeWeb, bossesAndLoot];
 
 export function lintContent(
   tables: Readonly<Record<string, readonly ContentEntry[]>>,

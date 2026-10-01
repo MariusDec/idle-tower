@@ -209,6 +209,30 @@ function paintMount(ctx: CanvasRenderingContext2D, m: Mount, r: number, time: nu
       ctx.fill();
       break;
     }
+    case 'frost-ring': {
+      // A ring of ice shards round a frost core; the ring widens with reach.
+      const shards = 6;
+      const reach = r * (0.5 + (p.radius - 160) / 400);
+      for (let i = 0; i < shards; i++) {
+        const a = (i / shards) * Math.PI * 2 + time * 0.6;
+        ctx.save();
+        ctx.rotate(a);
+        ctx.fillStyle = dim(i % 2 === 0 ? FX.frost : lighten(FX.frost, 0.35));
+        ctx.beginPath();
+        ctx.moveTo(reach + r * 0.28, 0);
+        ctx.lineTo(reach, -r * 0.1);
+        ctx.lineTo(reach - r * 0.12, 0);
+        ctx.lineTo(reach, r * 0.1);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = withAlpha(FX.frost, (0.35 + 0.15 * Math.sin(time * 3)) * (1 - fallen));
+      ctx.beginPath();
+      ctx.arc(0, 0, r * (0.3 + p.slow * 0.3), 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
     default: {
       const exhaustive: never = m.id;
       ctx.restore();

@@ -1,8 +1,8 @@
-import type { EnemyDef, EnemyId } from './types';
+import type { AuraDef, AuraId, EnemyDef, EnemyId } from './types';
 
 /**
- * The enemy roster (§4.3, §11.1). Region 1 only at P1. Body colours are
- * content data, carried over from the legacy grunt/fast/tank.
+ * The enemy roster (§4.3, §11.1): Regions 1–2. Body colours are content
+ * data, carried over from the legacy grunt/fast/tank/splitter/healer/siege.
  */
 export const ENEMIES: readonly EnemyDef[] = [
   {
@@ -22,6 +22,8 @@ export const ENEMIES: readonly EnemyDef[] = [
     shape: 'circle',
     color: '#d04848',
     borderColor: '#ffffff',
+    verb: { kind: 'walker' },
+    lore: 'The Blight wears the dead of the Fields like a coat, and sends them first.',
   },
   {
     id: 'runner',
@@ -40,6 +42,8 @@ export const ENEMIES: readonly EnemyDef[] = [
     shape: 'diamond',
     color: '#f1c40f',
     borderColor: '#7a6500',
+    verb: { kind: 'walker' },
+    lore: 'They hunt as the wolves of the Fields once did: low, many, and never alone.',
   },
   {
     id: 'brute',
@@ -58,9 +62,87 @@ export const ENEMIES: readonly EnemyDef[] = [
     shape: 'plated',
     color: '#2c5b8f',
     borderColor: '#9aa7b5',
+    verb: { kind: 'walker' },
+    lore: 'Old siege plate, grown over. Whatever is inside stopped feeling pain long ago.',
+  },
+  {
+    id: 'splitter',
+    name: 'Splitter',
+    icon: 'transparent-slime',
+    text: 'Splits in three when slain. Area beats the pieces.',
+    hp: 1.6,
+    speed: 62,
+    radius: 25,
+    damage: 1,
+    attackInterval: 1,
+    armor: 0,
+    pack: [1, 2],
+    xp: 1,
+    mass: 1.2,
+    shape: 'circle',
+    color: '#9b59ff',
+    borderColor: '#d3b3ff',
+    verb: { kind: 'split', count: 3, hp: 0.3, scale: 0.6, reward: 0.25 },
+    lore: 'Mire spawn. Cut one and the water simply makes more of it.',
+  },
+  {
+    id: 'spitter',
+    name: 'Spitter',
+    icon: 'droplets',
+    text: 'Stops at range and lobs shots. Reach it, or kill it first.',
+    hp: 0.9,
+    speed: 70,
+    radius: 22,
+    damage: 0.9,
+    attackInterval: 1,
+    armor: 0,
+    pack: [1, 2],
+    xp: 1,
+    mass: 1,
+    shape: 'hexagon',
+    color: '#a9752f',
+    borderColor: '#f0d3a0',
+    verb: { kind: 'ranged', standoff: 290, interval: 2.6, shotSpeed: 260 },
+    lore: 'It fills its throat with bog-water and patience. It has a great deal of both.',
+  },
+  {
+    id: 'mender',
+    name: 'Mender',
+    icon: 'healing',
+    text: 'Heals the enemies around it. Burst it down first.',
+    hp: 1.2,
+    speed: 58,
+    radius: 22,
+    damage: 0.7,
+    attackInterval: 1.2,
+    armor: 0,
+    pack: [1, 1],
+    xp: 1.5,
+    mass: 1,
+    shape: 'circle',
+    color: '#27ae60',
+    borderColor: '#0e3a1d',
+    verb: { kind: 'heal', radius: 150, interval: 2, fraction: 0.12 },
+    lore: 'The Mire does not let its children die easily. The Menders see to that.',
   },
 ];
 
 export const ENEMY_BY_ID: Readonly<Record<EnemyId, EnemyDef>> = Object.fromEntries(
   ENEMIES.map((e) => [e.id, e]),
 ) as Record<EnemyId, EnemyDef>;
+
+/**
+ * Elite auras (§4.3). An elite is a regular body with ×8 HP and one aura;
+ * Region 1's elites wear none. Numbers live in `BALANCE.elites`.
+ */
+export const AURAS: readonly AuraDef[] = [
+  { id: 'haste', name: 'Haste', icon: 'wingfoot', text: 'It and its neighbours move faster.', radius: 160 },
+  { id: 'regen', name: 'Regen', icon: 'regeneration', text: 'It and its neighbours regenerate.', radius: 160 },
+  { id: 'shield', name: 'Shield', icon: 'energy-shield', text: 'Its neighbours take half damage. Kill it first.', radius: 160 },
+  { id: 'split', name: 'Split', icon: 'split-arrows', text: 'Bursts into three of its kind when slain.', radius: 0 },
+  { id: 'vengeful', name: 'Vengeful', icon: 'enrage', text: 'Its death enrages everything near it.', radius: 200 },
+];
+
+export const AURA_BY_ID: Readonly<Record<AuraId, AuraDef>> = Object.fromEntries(
+  AURAS.map((a) => [a.id, a]),
+) as Record<AuraId, AuraDef>;

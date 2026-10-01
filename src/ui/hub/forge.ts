@@ -1,3 +1,4 @@
+import { BOSS_BY_ID } from '../../content/bosses';
 import { BRANCH_NAME, FORGE, FORGE_BY_ID } from '../../content/forge';
 import type { ForgeNodeDef } from '../../content/types';
 import { formatNumber } from '../../core/format';
@@ -96,12 +97,14 @@ export class ForgeView {
     requestAnimationFrame(() => this.fit());
   }
 
-  /** Centre the root and zoom so ring 2 fits the narrow side, within limits. */
+  /** Centre the root and zoom so the outermost ring on show fits the narrow side, within limits. */
   private fit(): void {
     const w = this.svg.clientWidth;
     const h = this.svg.clientHeight;
-    if (w === 0 || h === 0) return;
-    const outer = ringRadius(2) + RADIUS.notable;
+    if (w === 0 || h === 0 || !this.profile) return;
+    const states = nodeStates(this.profile);
+    const ring = Math.max(1, ...FORGE.filter((n) => states.get(n.id) !== 'hidden').map((n) => n.ring));
+    const outer = ringRadius(Math.min(2, ring)) + RADIUS.notable;
     const scale = Math.min(w, h) / 2 / outer;
     // Never so small that a node is hard to tap; pan and pinch show the rest.
     this.view = { x: 0, y: 0, scale: Math.min(1.2, Math.max(0.7, scale)) };
@@ -126,7 +129,7 @@ export class ForgeView {
 
     const linkClass = (a: NodeState, b: NodeState): string => {
       if (a === 'owned' && b === 'owned') return 'is-owned';
-      if (a === 'fog' || b === 'fog') return 'is-fog';
+      if (a === 'fog' || b === 'fog' || a === 'sealed' || b === 'sealed') return 'is-fog';
       return 'is-open';
     };
     for (const n of FORGE) {
@@ -159,7 +162,7 @@ export class ForgeView {
     const r = RADIUS[n.type];
     const level = levelOf(p, n.id);
     const classes = ['forge-node', `is-${state}`, `type-${n.type}`, `branch-${n.branch}`];
-    if (state !== 'fog' && canAfford(p, n.id)) classes.push('is-affordable');
+    if (state !== 'fog' && state !== 'sealed' && canAfford(p, n.id)) classes.push('is-affordable');
     if (level >= n.maxLevel) classes.push('is-maxed');
     if (n.id === this.selected) classes.push('is-selected');
     if (n.id === this.hinted) classes.push('is-hinted');
@@ -179,6 +182,8 @@ export class ForgeView {
       const t = el('text', { class: 'forge-unknown', 'text-anchor': 'middle', 'dominant-baseline': 'central' });
       t.textContent = '?';
       g.appendChild(t);
+    } else if (state === 'sealed') {
+      g.appendChild(iconUse('locked-chest', r * 1.1));
     } else {
       g.appendChild(iconUse(n.icon, r * 1.1));
       if (n.maxLevel > 1) {
@@ -217,6 +222,22 @@ export class ForgeView {
       text.className = 'forge-detail-text';
       text.textContent = 'Buy a node next to it to reveal it.';
       this.detail.append(head, kind, text);
+      this.detail.hidden = false;
+      return;
+    }
+    if (state === 'sealed' && n.sealed) {
+      // Sealed (§5.1): what it is shows; it waits for its boss.
+      head.append(icon('locked-chest'));
+      name.textContent = n.name;
+      head.append(name);
+      kind.textContent = `${BRANCH_NAME[n.branch]} · ${typeName}`;
+      const text = document.createElement('p');
+      text.className = 'forge-detail-text';
+      text.textContent = n.text;
+      const seal = document.createElement('p');
+      seal.className = 'forge-detail-seal';
+      seal.textContent = `Sealed — defeat ${BOSS_BY_ID[n.sealed].name}.`;
+      this.detail.append(head, kind, text, seal);
       this.detail.hidden = false;
       return;
     }

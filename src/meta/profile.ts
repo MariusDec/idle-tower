@@ -7,7 +7,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 3;
+  version: 4;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -19,13 +19,35 @@ export interface Profile {
     /** Most shards banked by one run. */
     bestShards: number;
     kills: number;
+    elites: number;
   };
   /** Forge levels owned, by node id (§5.1). A missing id is level 0. */
   forge: Record<string, number>;
   /** Draft cards seen at least once, by `cardKey`, for the NEW stamp (§4.5). */
   seenCards: string[];
-  /** Enemy types ever seen, for the results screen's discoveries (§4.6). */
+  /** Enemy types ever seen, for discoveries and the Bestiary (§5.3). */
   seenEnemies: string[];
+  /** Lifetime kills by enemy type, for the Bestiary. */
+  killsBy: Record<string, number>;
+  /** Best wave per region, by region index (§5.2). */
+  regions: Record<string, { bestWave: number }>;
+  /** Bosses met, by id: kills and the fastest kill in seconds (§5.2's trophy). */
+  bosses: Record<string, { kills: number; fastest: number | null }>;
+  /** Relics owned, by id, at their rank 1–3 (§5.3). */
+  relics: Record<string, number>;
+  /** Relics worn into the next run; never more than the relic slots. */
+  equipped: string[];
+  /** Feats earned ('done') and paid ('claimed'), by id (§5.4). */
+  feats: Record<string, 'done' | 'claimed'>;
+  /** Shards per minute of the most recent runs, newest last: the offline farm rate (§6.3). */
+  farm: number[];
+  /** Wall-clock ms the game was last open, for offline earnings (§6.1). */
+  lastSeen: number;
+  /** A boss whose first fall still owes the map its ceremony (§7.3). */
+  ceremony: string | null;
+  /** The region and frame the next run uses (§5.2, §4.4). */
+  region: number;
+  frame: string;
   /** One-time teaching moments (§7.1), true once done. */
   tutorial: {
     /** The first draft of the game: authored, and the only one that pauses. */
@@ -39,17 +61,28 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 3;
+export const PROFILE_VERSION = 4;
 
 export function newProfile(now: number): Profile {
   return {
     version: PROFILE_VERSION,
     createdAt: now,
     shards: 0,
-    records: { runs: 0, bestWave: 0, bestShards: 0, kills: 0 },
+    records: { runs: 0, bestWave: 0, bestShards: 0, kills: 0, elites: 0 },
     forge: {},
     seenCards: [],
     seenEnemies: [],
+    killsBy: {},
+    regions: {},
+    bosses: {},
+    relics: {},
+    equipped: [],
+    feats: {},
+    farm: [],
+    lastSeen: now,
+    ceremony: null,
+    region: 1,
+    frame: 'arcanist',
     tutorial: { firstDraft: false, forgeIntro: false },
     settings: { speed: 1 },
   };

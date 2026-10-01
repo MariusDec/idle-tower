@@ -1,6 +1,7 @@
 import { BALANCE } from '../content/balance';
 import { FORGE, FORGE_BY_ID } from '../content/forge';
 import type { ForgeNodeDef } from '../content/types';
+import { bossDown } from './collection';
 import type { Profile } from './profile';
 
 /**
@@ -16,10 +17,16 @@ import type { Profile } from './profile';
  * How a node shows on the web (§5.1):
  *   owned   bought at least once
  *   open    touches an owned node (or the root): its effect and cost show
+ *   sealed  would be open, but waits for a boss: "Sealed — defeat the Gatekeeper"
  *   fog     touches an open node: a "?" in its branch colour and type
  *   hidden  not drawn
  */
-export type NodeState = 'owned' | 'open' | 'fog' | 'hidden';
+export type NodeState = 'owned' | 'open' | 'sealed' | 'fog' | 'hidden';
+
+/** True while a node waits for its boss's first fall (§5.1). */
+export function isSealed(profile: Profile, node: ForgeNodeDef): boolean {
+  return !!node.sealed && !bossDown(profile, node.sealed);
+}
 
 /** Every node's neighbours, both directions. */
 const NEIGHBOURS: ReadonlyMap<string, readonly string[]> = (() => {
@@ -62,7 +69,7 @@ export function nodeStates(profile: Profile): Map<string, NodeState> {
   const out = new Map<string, NodeState>();
   for (const n of FORGE) {
     if (levelOf(profile, n.id) > 0) out.set(n.id, 'owned');
-    else if (touchesOwned(profile.forge, n)) out.set(n.id, 'open');
+    else if (touchesOwned(profile.forge, n)) out.set(n.id, isSealed(profile, n) ? 'sealed' : 'open');
   }
   for (const n of FORGE) {
     if (out.has(n.id)) continue;
@@ -76,7 +83,7 @@ export function isBuyable(profile: Profile, id: string): boolean {
   const node = FORGE_BY_ID[id];
   if (!node) return false;
   const owned = levelOf(profile, id);
-  if (owned >= node.maxLevel) return false;
+  if (owned >= node.maxLevel || isSealed(profile, node)) return false;
   return owned > 0 || touchesOwned(profile.forge, node);
 }
 

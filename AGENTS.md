@@ -15,20 +15,24 @@ from tsconfig, Vite and Vitest; never import from it.
 |---|---|---|
 | `src/app/` | `main.ts` boot, `App.ts` owner of profile/run/loop/screens, `loop.ts` fixed 1/60 s timestep, `screens.ts` the boot → hub ⇄ run → results state machine | anything |
 | `src/core/` | `rng.ts` seeded splittable RNG, `math.ts`, `events.ts` typed bus, `spatialGrid.ts`, `format.ts` | nothing outside `core/` |
-| `src/content/` | Data tables (`forge.ts` is the Forge web), `balance.ts` (every tunable constant), `arena.ts` (the fixed world), `icons.ts` (generated), `lint.ts` | `core/` |
+| `src/content/` | Data tables (`forge.ts` is the Forge web; `bosses.ts`, `relics.ts`, `feats.ts`; `enemies.ts` also holds the elite auras), `balance.ts` (every tunable constant), `arena.ts` (the fixed world), `icons.ts` (generated), `lint.ts` | `core/` |
 | `src/sim/` | DOM-free, deterministic: `RunState`, `createRun`, `step` | `core/`, `content/` only |
-| `src/meta/` | `profile.ts`, `forge.ts` (adjacency, fog, costs, buy/refund, the "Next:" goal), `runConfig.ts` (profile → frozen `RunConfig`), `automation.ts` (Engineering's speed and auto-restart), `results.ts` (`bankRun`: a finished run into the profile), `save/` (schema, migration ladder, run snapshot, storage backends) | `core/`, `content/`, `sim/` types |
+| `src/meta/` | `profile.ts`, `forge.ts` (adjacency, fog, seals, costs, buy/refund, the "Next:" goal), `collection.ts` (what is unlocked: regions, frames, relic slots, hub tabs; relics worn and gained), `feats.ts`, `offline.ts` (farm rate, offline earnings), `goals.ts` (the hub's Next goal), `runConfig.ts` (profile → frozen `RunConfig`), `automation.ts` (Engineering's speed, auto-restart, offline), `results.ts` (`bankRun`: a finished run into the profile), `save/` (schema, migration ladder, run snapshot, storage backends) | `core/`, `content/`, `sim/` types |
 | `src/render/` | `camera.ts`, `renderer.ts`, `painters/`, `palette.ts`, `quality.ts`. Reads `RunState`, never writes it | `core/`, `content/`, `sim/` types |
-| `src/ui/` | DOM: HUD, draft, results, `hub/` (home and the Forge web), modal, icon helper | anything but `sim/` internals |
+| `src/ui/` | DOM: HUD (with the boss bar), draft, results, toasts, `hub/` (home, the Forge web, the Map, the Collection, Feats), modal, icon helper | anything but `sim/` internals |
 | `src/platform/` | Capacitor shell hooks | — |
 | `tools/` | Headless: `bot.ts` (input policies), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants) | `src/` minus DOM |
 | `tests/` | Vitest, node environment | — |
 
-The sim's step order (`sim/run.ts`): input → waves place bodies → enemies walk
-and hit the wall → separation spreads crowds (tangentially at the wall) →
-weapons fire → projectiles fly and kill (kills feed XP, shards and the
-ultimate; reaching a wave pays for the last) → the dead are swept → a banked
-draft opens → the tower regenerates, rises on Second Wind, or falls.
+The sim's step order (`sim/run.ts`): input → waves place bodies (wave 20 is
+the boss, `systems/boss.ts`; overtime follows) → the boss acts → enemies walk
+and act on their verb (hit the wall, lob a shot, mend) → separation spreads
+crowds (tangentially at the wall) → weapons fire → projectiles fly and kill
+(kills feed XP, shards and the ultimate; a Splitter bursts, an elite's aura
+has its last word and may drop a relic; reaching a wave pays for the last) →
+hostile shots and shockwaves land (`systems/tower.ts#hurtTower` is the one
+way the tower takes damage) → the dead are swept → a banked draft opens →
+the tower regenerates, rises on Second Wind, or falls.
 Presentation learns what happened from `RunState.events`, which the app hands
 to the renderer and clears each frame.
 
@@ -40,7 +44,10 @@ steps. Stats are resolved by `sim/stats.ts` from `StatMod`s, once at run start
 and again whenever a passive changes.
 
 The meta loop: `meta/results.ts#bankRun` is the one place a run's rewards
-reach the profile (the app and the pacing bot both call it). The Forge's
+reach the profile (the app and the pacing bot both call it): shards,
+records, the boss's trophy and first-kill relic, relics found, feats earned
+and the list of what opened up. A first boss kill sets `profile.ceremony`,
+and the results screen leads to the Map, where the light spreads. The Forge's
 rules live in `meta/forge.ts`; `buildRunConfig` applies every owned node's
 effects once per level. `behaviour` effects become `RunConfig.behaviours`
 counts the sim reads; `automation` effects are the app's
@@ -73,15 +80,16 @@ npm run inspect -- --seed 7   # one bot-drafted run → per-wave table (level, D
 npm run inspect -- --seeds 50 # many runs → death waves, level-up pace, loadouts
 npm run inspect -- --seeds 50 --bare  # the same, for a level-1 tower that never drafts
 npm run inspect -- --seeds 50 --forge ring1  # the same with a Forge preset: none, arsenal (P2's loadout), ring1, all
-npm run pacing      # a fresh profile, one simulated hour: run table, reveal timeline, I3 / I6 / wave-20 verdicts
-npm run pacing -- --seeds 8   # eight profiles: pass counts and the median first wave 20 (the P3 gate's reading)
+npm run inspect -- --seed 3 --forge all --region 2  # a run in another region (its rule applies), with the boss's time
+npm run pacing      # a fresh profile, one simulated hour: run table, reveal timeline, I1a / I3 / I6 / wave-20 verdicts
+npm run pacing -- --seeds 8 --hours 1.5   # eight profiles: pass counts, median first wave 20 and first boss kills (the P3 and P4 gates' readings)
 npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest (needs network)
 ```
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **idle-tower** (7659 symbols, 27107 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **idle-tower** (7809 symbols, 27901 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

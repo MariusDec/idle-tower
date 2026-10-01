@@ -4,8 +4,16 @@ import {
 import type { Profile } from '../meta/profile';
 import { buildRunConfig } from '../meta/runConfig';
 import { automations, maxSpeed, runSpeed } from '../meta/automation';
-import { buyNode, refundNode } from '../meta/forge';
+import { buyNode, canAfford, refundNode } from '../meta/forge';
 import { bankRun } from '../meta/results';
+import { frameUnlocked, regionUnlocked, toggleRelic } from '../meta/collection';
+import { claimAll, claimFeat } from '../meta/feats';
+import { offlineEarnings } from '../meta/offline';
+import { FORGE } from '../content/forge';
+import { ENEMY_BY_ID } from '../content/enemies';
+import { frameById } from '../content/frames';
+import { RELIC_BY_ID } from '../content/relics';
+import { formatNumber } from '../core/format';
 import { applyInput, createRun, step } from '../sim/run';
 import { cardKey } from '../sim/systems/draft';
 import type { DraftOffer, RunState } from '../sim/state';
@@ -15,14 +23,19 @@ import { resolveQuality } from '../render/quality';
 import { DraftPanel } from '../ui/draft';
 import { Hud } from '../ui/hud';
 import { HubScreen, type HubView } from '../ui/hub/hub';
-import { Modal } from '../ui/modal';
+import { Modal, type ModalButton } from '../ui/modal';
 import { ResultsScreen } from '../ui/results';
+import { Toasts } from '../ui/toast';
 import { bindNativeLifecycle } from '../platform/native';
 import { Loop, SIM_DT } from './loop';
 import { assertTransition, type Screen } from './screens';
 
 /** Autosave cadence (§12.4), on the wall clock. */
 const AUTOSAVE_SECONDS = 30;
+/** The killing blow on a boss plays out slowly (§7.3): wall seconds, at this speed. */
+const BOSS_KILL_SLOWMO = { seconds: 0.9, speed: 0.2 };
+/** A boss's phase change stops the arena for a beat (§10.3). */
+const PHASE_HITSTOP = { seconds: 0.12, speed: 0 };
 
 export interface AppElements {
   canvas: HTMLCanvasElement;
@@ -52,6 +65,8 @@ export class App {
   private devSpeed: number | null = null;
   /** Writes go out in order, so a late snapshot never lands after its clear. */
   private writes: Promise<void> = Promise.resolve();
+  /** A slow-motion or hit-stop beat on the wall clock: seconds left and the speed meanwhile. */
+  private slowMo = { left: 0, speed: 1 };
 
   private readonly renderer: Renderer;
   private readonly loop: Loop;
@@ -60,18 +75,29 @@ export class App {
   private readonly results: ResultsScreen;
   private readonly modal: Modal;
   private readonly draft: DraftPanel;
+  private readonly toasts: Toasts;
 
   constructor(private readonly els: AppElements) {
     this.renderer = new Renderer(els.canvas, els.stage);
     this.renderer.setQuality(resolveQuality());
     this.hud = new Hud(els.hud, () => this.openPause(), () => this.castUltimate(), () => this.cycleSpeed());
-    this.hub = new HubScreen(
-      els.screens,
-      () => this.startRun(),
-      { buy: (id) => this.buy(id), refund: (id) => this.refund(id) },
-      () => this.forgeOpened(),
-    );
-    this.results = new ResultsScreen(els.screens, () => this.go('hub', 'forge'), () => this.startRun());
+    this.hub = new HubScreen(els.screens, {
+      start: () => this.startRun(),
+      buy: (id) => this.buy(id),
+      refund: (id) => this.refund(id),
+      forgeOpened: () => this.forgeOpened(),
+      selectRegion: (index) => this.between(() => {
+        if (regionUnlocked(this.profile, index)) this.profile.region = index;
+      }),
+      toggleRelic: (id) => this.between(() => toggleRelic(this.profile, id)) ?? false,
+      selectFrame: (id) => this.between(() => {
+        if (frameUnlocked(this.profile, frameById(id))) this.profile.frame = id;
+      }),
+      claim: (id) => this.between(() => claimFeat(this.profile, id)) ?? 0,
+      claimAll: () => this.between(() => claimAll(this.profile)) ?? 0,
+    });
+    this.results = new ResultsScreen(els.screens, () => this.leaveResults(), () => this.startRun());
+    this.toasts = new Toasts(els.overlay);
     this.draft = new DraftPanel(els.overlay, (i) => this.pick(i), () => this.reroll());
     this.modal = new Modal(els.overlay);
     this.loop = new Loop({
@@ -105,16 +131,67 @@ export class App {
     this.go('hub');
     // A run the app was killed in resumes at its last wave boundary (§12.4).
     if (resume) this.startRun(resume);
+    this.welcomeBack(Date.now());
   }
 
-  private go(to: Screen, view: HubView = 'home'): void {
+  /** Run a hub action on the profile, then save. Ignored outside the hub. */
+  private between<T>(fn: () => T): T | undefined {
+    if (this.screen !== 'hub') return undefined;
+    const out = fn();
+    void this.save();
+    return out;
+  }
+
+  /**
+   * Offline earnings (§6.3): any absence over a minute since the profile was
+   * last seen pays the farm rate, cut and capped by the Offline tier, and a
+   * welcome-back card says what it bought.
+   */
+  private welcomeBack(now: number): void {
+    const away = (now - this.profile.lastSeen) / 1000;
+    this.profile.lastSeen = now;
+    const earned = offlineEarnings(this.profile, away);
+    if (!earned) return;
+    const before = new Set(FORGE.filter((n) => canAfford(this.profile, n.id)).map((n) => n.id));
+    this.profile.shards += earned.shards;
+    void this.save();
+    this.hub.update();
+    const fresh = FORGE.filter((n) => canAfford(this.profile, n.id) && !before.has(n.id)).map((n) => n.name);
+    const hours = Math.floor(earned.away / 3600);
+    const mins = Math.floor((earned.away % 3600) / 60);
+    const gone = hours > 0 ? `${hours} h ${mins} min` : `${mins} min`;
+    const body = `You were away ${gone}. The tower gathered ${formatNumber(earned.shards)} shards.`
+      + (earned.paid < earned.away ? ' (Night Watch holds two hours at most.)' : '')
+      + (fresh.length > 0 ? ` Now affordable: ${fresh.slice(0, 4).join(', ')}.` : '');
+    if (this.screen === 'run') {
+      this.paused = true;
+      this.modal.show('Welcome back', body, [{ label: 'Resume', primary: true, onClick: () => { this.paused = false; this.loop.resetClock(); } }]);
+      return;
+    }
+    const buttons: ModalButton[] = [{ label: 'Close', onClick: () => {} }];
+    if (this.screen === 'hub' && fresh.length > 0) {
+      buttons.push({ label: 'Forge', primary: true, onClick: () => this.hub.show(this.profile, 'forge') });
+    }
+    this.modal.show('Welcome back', body, buttons);
+  }
+
+  /** Results → hub: the Forge, or after a first boss kill, the Map and its light (§7.3). */
+  private leaveResults(): void {
+    const ceremony = this.profile.ceremony !== null;
+    this.profile.ceremony = null;
+    if (ceremony) void this.save();
+    this.go('hub', ceremony ? 'map' : 'forge', ceremony);
+  }
+
+  private go(to: Screen, view: HubView = 'home', spread = false): void {
     assertTransition(this.screen, to);
     this.screen = to;
     this.hub.hide();
     this.results.hide();
     this.hud.hide();
+    this.toasts.clear();
     this.els.stage.dataset.screen = to;
-    if (to === 'hub') this.hub.show(this.profile, view);
+    if (to === 'hub') this.hub.show(this.profile, view, spread);
     if (to === 'run') this.hud.show();
   }
 
@@ -127,6 +204,7 @@ export class App {
     this.shownDraft = null;
     this.newCards = [];
     this.snapshotWave = this.run.wave;
+    this.slowMo = { left: 0, speed: 1 };
     this.draft.hide();
     this.loop.resetClock();
     this.go('run');
@@ -137,7 +215,7 @@ export class App {
   private simSpeed(): number {
     const run = this.run;
     if (this.screen !== 'run' || this.paused || !run || run.outcome) return 0;
-    const speed = this.devSpeed ?? runSpeed(this.profile);
+    const speed = (this.devSpeed ?? runSpeed(this.profile)) * (this.slowMo.left > 0 ? this.slowMo.speed : 1);
     if (run.draft) {
       // The game never waits (§4.5), except for the first draft it ever shows.
       if (!this.profile.tutorial.firstDraft) return 0;
@@ -225,9 +303,12 @@ export class App {
   private frame(alpha: number, realDt: number): void {
     const run = this.screen === 'run' || this.screen === 'results' ? this.run : null;
     if (run) {
+      if (this.screen === 'run') this.announce(run);
       this.renderer.consume(run);
       run.events.length = 0;
     }
+    this.slowMo.left = Math.max(0, this.slowMo.left - realDt);
+    this.toasts.tick(realDt);
     this.renderer.render(run, alpha, realDt);
     if (this.screen === 'run' && run) {
       this.syncDraft(run, realDt);
@@ -239,15 +320,48 @@ export class App {
     if (this.sinceSave >= AUTOSAVE_SECONDS) void this.save();
   }
 
+  /**
+   * What the app makes of this frame's sim events: the Bestiary's card on an
+   * enemy's first sight (§4.3), a relic found, and the beats that bend time
+   * (the slow killing blow on a boss, a hit-stop on its phase change).
+   */
+  private announce(run: RunState): void {
+    for (const ev of run.events) {
+      switch (ev.kind) {
+        case 'firstSight':
+          if (!this.profile.seenEnemies.includes(ev.enemy)) {
+            const def = ENEMY_BY_ID[ev.enemy];
+            this.toasts.show(def.icon, `New · ${def.name}`, def.text, 'enemy');
+          }
+          break;
+        case 'relicDrop': {
+          const def = RELIC_BY_ID[ev.relic];
+          this.toasts.show(def.icon, `Relic · ${def.name}`, def.text, 'relic');
+          break;
+        }
+        case 'bossKill':
+          this.slowMo = { left: BOSS_KILL_SLOWMO.seconds, speed: BOSS_KILL_SLOWMO.speed };
+          break;
+        case 'bossPhase':
+          this.slowMo = { left: PHASE_HITSTOP.seconds, speed: PHASE_HITSTOP.speed };
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
   private endRun(run: RunState): void {
-    const summary = bankRun(this.profile, run, this.newCards);
+    const summary = bankRun(this.profile, run, this.newCards, runSpeed(this.profile));
     this.write(() => clearRunSnapshot());
     void this.save();
     this.modal.close();
     this.draft.hide();
     this.shownDraft = null;
     this.go('results');
-    this.results.show(summary, automations(this.profile).has('auto-restart'));
+    // A first boss kill holds the results for its ceremony: no auto-restart past it.
+    const ceremony = this.profile.ceremony !== null;
+    this.results.show(summary, automations(this.profile).has('auto-restart') && !ceremony, ceremony ? 'Map' : 'Forge');
   }
 
   private buy(id: string): boolean {
@@ -310,6 +424,7 @@ export class App {
   private save(): Promise<void> {
     this.sinceSave = 0;
     const profile = this.profile;
+    profile.lastSeen = Date.now();
     this.write(() => saveProfile(profile));
     return this.writes;
   }
@@ -321,6 +436,8 @@ export class App {
         void this.save();
       } else {
         this.loop.resetClock();
+        // Absence (§6.1): the save stamped when it went; anything over a minute pays.
+        this.welcomeBack(Date.now());
       }
     });
     document.addEventListener('keydown', (e) => {

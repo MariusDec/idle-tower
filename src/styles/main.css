@@ -326,7 +326,10 @@ body {
   background: linear-gradient(to bottom, var(--surface-scrim), transparent 45%, var(--surface-scrim));
 }
 
-.hub[data-view="forge"] {
+.hub[data-view="forge"],
+.hub[data-view="map"],
+.hub[data-view="collection"],
+.hub[data-view="feats"] {
   background: var(--surface-0);
 }
 
@@ -357,22 +360,25 @@ body {
 
 .hub-tabs {
   display: flex;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-1);
 }
 
+/* Five tabs must fit 375 px (D4): tight padding, a smaller face. */
 .hub-tab {
   position: relative;
   min-width: 44px;
   min-height: 44px;
-  padding: 0 var(--space-5);
+  padding: 0 var(--space-3);
   border: 1px solid var(--surface-4);
   border-radius: var(--radius-full);
   background: var(--surface-1);
   color: var(--text-2);
   font-family: var(--font-display);
-  font-size: var(--text-xl);
+  font-size: var(--text-md);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   cursor: pointer;
 }
 
@@ -1076,4 +1082,520 @@ body {
   display: flex;
   justify-content: center;
   gap: var(--space-3);
+}
+
+/* ── HUD: the boss bar (§4.3) ────────────────────────────────────────────── */
+
+.hud-boss {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-family: var(--font-display);
+  text-shadow: 0 1px 2px var(--surface-scrim);
+}
+
+.hud-boss-name {
+  font-size: var(--text-xl);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-0);
+}
+
+.hud-boss-pips {
+  font-size: var(--text-md);
+  color: var(--fx-blood);
+}
+
+.hud-boss-bar {
+  height: 10px;
+  border: 1px solid var(--fx-blood);
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  overflow: hidden;
+}
+
+.hud-boss-fill {
+  height: 100%;
+  background: var(--fx-blood);
+  transform-origin: left center;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.hud-boss.is-enraged .hud-boss-name { color: var(--fx-blood); }
+
+/* ── Toasts (§4.3: the Bestiary's one-line card) ─────────────────────────── */
+
+.toasts {
+  position: absolute;
+  top: calc(max(var(--space-3), var(--safe-t)) + 132px);
+  left: var(--space-4);
+  right: var(--space-4);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+
+.toast {
+  width: min(100%, 340px);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--surface-4);
+  border-left: 3px solid var(--fx-gold);
+  border-radius: var(--radius-lg);
+  background: var(--surface-overlay-deep);
+  text-align: left;
+  animation: toast-in var(--dur-base) var(--ease-out) both;
+}
+
+.toast-enemy { border-left-color: var(--fx-blood); }
+.toast-relic { border-left-color: var(--fx-arcane); }
+
+.toast-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.toast-head .icon { --icon-size: 20px; }
+.toast-enemy .toast-head .icon { color: var(--fx-blood); }
+.toast-relic .toast-head .icon { color: var(--fx-arcane); }
+
+.toast-title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.toast-line {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-md);
+  color: var(--text-1);
+}
+
+@keyframes toast-in {
+  from { transform: translateY(-8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* ── Hub home: the next run, and the Next goal line (§7.4) ───────────────── */
+
+.hub-loadout {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+
+.hub-goal {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  grid-template-areas: 'label icon text' 'bar bar bar';
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  width: min(100%, 340px);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-overlay);
+  text-align: left;
+}
+
+.hub-goal-label {
+  grid-area: label;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.hub-goal-icon { grid-area: icon; color: var(--fx-gold); }
+.hub-goal-text { grid-area: text; font-size: var(--text-md); }
+
+.hub-goal-bar {
+  grid-area: bar;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.hub-goal-fill {
+  height: 100%;
+  background: var(--fx-gold);
+  transform-origin: left center;
+}
+
+/* ── Shared view chrome: Map, Collection, Feats ──────────────────────────── */
+
+.map,
+.collection,
+.feats {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--dock-h);
+  text-align: left;
+}
+
+.view-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.view-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-5xl);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fx-gold);
+}
+
+/* ── The Map (§5.2) ──────────────────────────────────────────────────────── */
+
+.map-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--radius-xl);
+  background: var(--surface-sunken);
+}
+
+/* Registered so the light's reach can transition (§7.3). */
+@property --lit {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+/* The light climbs from the bottom as bosses fall; the Blight is the rest. */
+.map-light {
+  --lit: 0%;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to top,
+    rgba(var(--rgb-gold), 0.22) 0%,
+    rgba(var(--rgb-gold), 0.08) var(--lit),
+    transparent calc(var(--lit) + 12%));
+}
+
+.map-light.is-spreading {
+  transition: --lit var(--dur-ambient) var(--ease-out);
+  animation: map-dawn var(--dur-ambient) var(--ease-out) both;
+}
+
+@keyframes map-dawn {
+  from { filter: brightness(0.6); }
+  to { filter: none; }
+}
+
+/* Anchored to the bottom: the Fields sit in the light, the frontier above. */
+.map-list {
+  position: relative;
+  min-height: 100%;
+  margin: 0;
+  padding: var(--space-3);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.map-region {
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-xl);
+  background: var(--surface-1);
+}
+
+.map-region.is-cleared { border-color: rgba(var(--rgb-gold), 0.5); }
+.map-region.is-chosen { border-color: var(--fx-gold); box-shadow: 0 0 0 1px var(--fx-gold); }
+
+.map-region.is-dark {
+  padding: var(--space-3);
+  border-style: dashed;
+  background: var(--surface-sunken);
+  color: var(--text-3);
+}
+
+.map-region-btn {
+  display: block;
+  width: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  padding: var(--space-3);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-region-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--fx-gold);
+}
+
+.map-region-name {
+  margin: 0;
+  flex: 1 1 auto;
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  color: var(--text-0);
+}
+
+.map-region-tag {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fx-gold);
+}
+
+.map-region-stats {
+  display: flex;
+  gap: var(--space-5);
+  margin: var(--space-2) 0;
+}
+
+.map-region-stats dt {
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.map-region-stats dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+}
+
+.map-region-trophy,
+.map-region-rule,
+.map-region-enemies {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-md);
+  color: var(--text-1);
+}
+
+.map-region-trophy .icon { color: var(--fx-blood); }
+.map-region-enemies { color: var(--text-2); }
+
+/* ── Collection and Feats lists (§5.3, §5.4) ─────────────────────────────── */
+
+.segmented {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.segmented-btn {
+  flex: 1 1 0;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-1);
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.segmented-btn.is-active {
+  border-color: var(--fx-gold);
+  color: var(--fx-gold);
+}
+
+.collection-body,
+.feats-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.collection-note {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+  color: var(--text-2);
+}
+
+.entry-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.entry {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.entry:has(.entry-btn) { padding: 0; }
+.entry.is-unknown { background: var(--surface-sunken); color: var(--text-3); }
+.entry.is-worn { border-color: var(--fx-arcane); }
+.entry.is-boss .entry-head .icon { color: var(--fx-blood); }
+
+.entry-btn {
+  display: block;
+  width: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.entry-btn:disabled { cursor: default; opacity: 0.6; }
+
+.entry-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.entry-head .icon { --icon-size: 22px; color: var(--fx-gold); }
+
+.entry-name {
+  flex: 1 1 auto;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+}
+
+.entry-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.entry-count .icon { --icon-size: 14px; color: var(--fx-frost); }
+
+.entry-text {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-md);
+  color: var(--text-1);
+}
+
+.entry-lore {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--text-3);
+}
+
+.feats-count {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  color: var(--text-2);
+}
+
+.feats-all { align-self: stretch; }
+
+.feat.is-ready { border-color: var(--fx-gold); }
+.feat.is-claimed { opacity: 0.55; }
+
+.feat-claim {
+  margin-top: var(--space-2);
+}
+
+.feat-bar {
+  height: 4px;
+  margin-top: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.feat-fill {
+  height: 100%;
+  background: var(--fx-gold);
+  transform-origin: left center;
+}
+
+/* ── Results: the boss and the rewards stack (§7.3) ──────────────────────── */
+
+.results-boss {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  color: var(--text-1);
+}
+
+.results-boss.is-first {
+  color: var(--fx-gold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.results-rewards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  max-width: 360px;
+}
+
+.results-reward {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-1);
+  font-size: var(--text-sm);
+  animation: toast-in var(--dur-slow) var(--ease-out) both;
+}
+
+.results-reward.is-unlock { border-color: var(--fx-gold); color: var(--fx-gold); }
+.results-reward.is-relic { border-color: var(--fx-arcane); }
+.results-reward.is-relic .icon { color: var(--fx-arcane); }
+.results-reward.is-feat .icon { color: var(--fx-gold); }
+.results-reward:nth-child(2) { animation-delay: 120ms; }
+.results-reward:nth-child(3) { animation-delay: 240ms; }
+.results-reward:nth-child(4) { animation-delay: 360ms; }
+.results-reward:nth-child(n + 5) { animation-delay: 480ms; }
+
+/* ── Forge: sealed nodes (§5.1) ──────────────────────────────────────────── */
+
+.forge-node.is-sealed .forge-shape { fill: var(--surface-sunken); stroke-dasharray: 2 4; stroke-opacity: 0.8; }
+.forge-node.is-sealed use { fill: var(--text-3); }
+
+.forge-detail-seal {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fx-blood);
 }

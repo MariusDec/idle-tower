@@ -18,6 +18,9 @@ import { allMods, resolveStats } from './stats';
 /** How much of a cone's pellets land, on average, and how much a leap is worth. */
 const CONE_HIT_RATE = 0.55;
 const CHAIN_LEAP_VALUE = 0.7;
+/** Bodies a pulse catches, on average, per 100 units of radius; and what its slow is worth. */
+const PULSE_BODIES_PER_100 = 1.4;
+const SLOW_VALUE = 1;
 /** Value of +XP, and of a shard windfall, in "fraction of build" units. */
 const XP_VALUE = 0.4;
 const SHARD_VALUE = 0.01;
@@ -36,6 +39,8 @@ export function weaponDps(id: WeaponId, level: number, stats: TowerStats): numbe
       return perAttack * rate * p.count * CONE_HIT_RATE * (1 + p.knockback / 100);
     case 'chain':
       return perAttack * rate * (1 + (p.jumps - 1) * CHAIN_LEAP_VALUE) * (1 + p.stun * 2);
+    case 'pulse':
+      return perAttack * rate * (p.radius / 100) * PULSE_BODIES_PER_100 * (1 + p.slow * SLOW_VALUE);
     default: {
       const exhaustive: never = pattern;
       return exhaustive;
