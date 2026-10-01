@@ -17,7 +17,7 @@ import { hurtTower } from '../src/sim/systems/tower';
 import type { WeaponId } from '../src/content/types';
 import type { RunConfig, RunState, SimEvent } from '../src/sim/state';
 import { botInput } from '../tools/bot';
-import { arsenalReport, I4_MAX_SHARE } from '../tools/arsenal';
+import { ALL_REGIONS, arsenalReport, I4_MAX_SHARE } from '../tools/arsenal';
 import { body } from './helpers/body';
 
 const ALL_WEAPONS = WEAPONS.map((w) => w.id);
@@ -378,12 +378,11 @@ describe('determinism with the whole arsenal', () => {
 });
 
 /**
- * I4 (§8.4), across Regions 1–2: the active bot, with every weapon in its
- * pool, never leans on one. The full report is `npm run arsenal`; P7
- * extends it to every region.
+ * I4 (§8.4), across every region: the active bot, with every weapon in its
+ * pool, never leans on one. The full report is `npm run arsenal`.
  */
 describe('I4: no dominant weapon', () => {
-  const r = arsenalReport([1, 2], 12);
+  const r = arsenalReport(ALL_REGIONS, 12);
 
   it(`no weapon takes more than ${I4_MAX_SHARE * 100}% of the new-weapon picks`, () => {
     expect(r.worst.share).toBeLessThanOrEqual(I4_MAX_SHARE);
@@ -394,6 +393,6 @@ describe('I4: no dominant weapon', () => {
   });
 
   it('evolutions happen at the frontier', () => {
-    expect(r.evolutions[1] + r.evolutions[2]).toBeGreaterThan(0);
+    expect(Object.values(r.evolutions).reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
   });
 }, 60_000);

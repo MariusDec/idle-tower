@@ -48,6 +48,8 @@ export function frameUnlocked(profile: Profile, frame: FrameDef): boolean {
       return true;
     case 'boss':
       return bossDown(profile, u.boss);
+    case 'feat':
+      return !!profile.feats[u.feat];
     default: {
       const exhaustive: never = u;
       return exhaustive;

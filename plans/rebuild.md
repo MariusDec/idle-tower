@@ -1,23 +1,28 @@
 # The Tower, rebuilt — a ground-up redesign
 
-**Status:** approved; decisions D1–D6 confirmed (§16). P0–P6 are built on
-the `rebuild` branch. The pacing numbers come from the real sim with the
-active bot buying cheapest-first, claiming feats and pushing the frontier
-(`npm run pacing -- --seeds 8 --hours 2.5`):
+**Status:** approved; decisions D1–D6 confirmed (§16). P0–P7 are built on
+the `rebuild` branch: Act 1 is complete, with six regions, 18 enemy types,
+six bosses, four frames, 119 Forge nodes, 24 relics and 40 feats. The
+pacing numbers come from the real sim with the active bot buying
+cheapest-first, claiming feats and pushing the frontier
+(`npm run pacing -- --hours 12 --seeds 8`):
 
 - Wave 20 is first reached at 26:46 median (24:12–38:53). The Gatekeeper
-  first falls at 33:24 (24:44–39:21), the Bog Mother at 70:48
-  (60:37–75:36).
-- The first evolution lands at 1:51:36 (1:47:50–1:57:27), inside §7.1's
+  first falls at 33:24 (24:44–39:21), the Bog Mother at 70:41
+  (60:36–74:51).
+- The later bosses first fall at a median of: the Prism 1:57 (1:31–2:33),
+  Forgeheart 2:46 (2:17–3:36), the Hollow King 5:38 (4:53–6:03) and the
+  Blight 9:09 (7:35–11:02). I1 holds on all 8 profiles.
+- The first evolution lands at 1:33:53 (1:30:42–1:41:29), inside §7.1's
   1.5–2 h.
-- I1a, I3 and I6 hold on all 8 profiles; the worst reveal gap is 9:16.
-- I4 (`npm run arsenal`, 48 seeds per region): Regions 1–2 spread the
-  new-weapon picks; the most-picked weapon is Mortar at 28% of Region 2's
+- I3 holds on all 8 profiles. I6 holds on 5; the worst reveal gap is 12:06
+  (see Still open).
+- I4 (`npm run arsenal`, 16 seeds per region): every region spreads the
+  new-weapon picks; the most-picked weapon is Mortar at 31% of Region 2's
   picks, and every weapon is taken.
-- I2 and I5 (`npm run pacing -- --idle --seeds 4`, two 20-minute check-ins
-  a day): the idle bot first fells the Bog Mother after 2.5–3.0 days, and
-  Act 1 projects to 6.0 days median (5.4–6.3). Active play earns 1.31×
-  idle per hour mid-Region 2 and 1.23× at the Bog Mother.
+- I2 and I5 (`npm run pacing -- --idle --hours 12 --seeds 4`, two 20-minute
+  check-ins a day): the idle bot ends Act 1 in 8.0 days median (5.5–9.5).
+  Active play earns 1.24–1.46× idle per hour from Region 2 to the Blight.
 
 P4 departs from the plan in a few places:
 
@@ -84,16 +89,54 @@ P6 departs from the plan in a few places:
   kill between the two writes never pays a run twice. A stalled frame
   (a laptop lid, a frozen tab) counts as an absence, like a hidden page.
 
+P7 departs from the plan in a few places:
+
+- **Region 6's roster.** Its third type is the Phantom, not a third new
+  type: a Brute on Region 6's damage curve dealt about 85% of the damage
+  the tower took, and its armour walled a fully bought Forge.
+- **Region HP steps.** Regions 3–6 start at 95, 290, 1450 and 1300 HP
+  (×3–5 per region, not a flat ×4). Region 6's base sits below Region 5's
+  because the Blight's rule puts an ×8 elite in every wave.
+- **The Forge lasts to the finale.** Ring 5 costs ×2 and ring 6 ×3 what
+  ×4 per ring would give: at that rate a bought-out Forge came about
+  three hours before the Blight, and with nothing left to buy her fall
+  came down to luck.
+- **Ring 4 in Region 3.** Evolution Insight, Second Thoughts, Bright Steel
+  and Ricochet aren't sealed, so a player stuck in the Glass Wastes still
+  has something to buy, and something new to see (I6). Ring 4's notables
+  cost 6–8k, close to its minors, so they're bought among them rather than
+  after them.
+- **Bosses.** The Prism is 50× a wave-20 body, Forgeheart 40× with plates
+  of 0.04 → 0.015 → 0 of its HP, and the Blight 70× over five phases. With
+  heavier plates the idle bot's builds failed Forgeheart for eight days.
+- **Hands of five and six.** Choice, Foresight and Jackpot each add a
+  card, so a hand can hold six (§4.5 says four). Past four cards the hand
+  wraps into two rows of three.
+- **Secret feats** (4 of the 40) surface once Forgeheart falls. Tinkerer
+  ("Four hands, no heart.") earns the Artificer.
+- **The pacing tool.** I1b reads the finale's first kill, I2 is measured
+  (the idle bot's check-ins to the Blight, capped at 20 days), I5 is held
+  at Region 2 and at every boss after the Gatekeeper, and I6 reads the full
+  first two hours.
+
 Still open:
 
 - playtest #1 (P3's gate) and playtest #2 (P4's gate); P5's gate playtest
   (recipes found organically by about 2 h); P6's gate on a device: kill the
-  app mid-run and check it resumes within one wave
+  app mid-run and check it resumes within one wave; playtest #3 (P7's gate),
+  over several days
 - from P1, the frame-rate check on a mid-range Android device, now with
   four-weapon evolved builds
-- after the Bog Mother P5 still runs out of content, which is P7's gap to fill
+- **§7.2's 1–3 runs per boss** doesn't hold late: the Hollow King takes
+  about an hour from first sighting, and the Blight 2–31 attempts. Most
+  failed attempts reach wave 20 already overrun (Region 6's last waves
+  carry 100+ bodies into the boss wave), so the ramp of waves 15–19 is
+  the place to tune, against playtest #3
+- **I6 in Region 3:** 5 of 8 profiles hold; the other three have one gap of
+  10–12 min late in the Glass Wastes, while the bot buys ring-3 minor levels
+- one idle profile in four to eight takes about 11 days (I2's band is 5–10)
 
-P7 (§14) is next.
+P8 (§14) is next.
 
 **Supersedes:** every other file in `plans/`. Those describe the current game;
 P0 (§14) moves them to `plans/archive/`.

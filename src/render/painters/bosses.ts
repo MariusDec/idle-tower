@@ -1,6 +1,6 @@
 import { BOSS_BY_ID } from '../../content/bosses';
 import type { BossDef, BossId } from '../../content/types';
-import type { BossState, Enemy, HostileShot, SlamRing } from '../../sim/state';
+import type { BossState, Enemy, HostileShot, MoltenPool, RunState, SlamRing } from '../../sim/state';
 import { FX, INK, lighten, mix, withAlpha } from '../palette';
 import { LIGHT_ANGLE } from './enemies';
 
@@ -19,6 +19,20 @@ const PROFILE: Record<BossId, (a: number, t: number) => number> = {
   },
   // The Bog Mother: a slow, lumpy swell that never holds one shape.
   'bog-mother': (a, t) => 1 + 0.08 * Math.sin(a * 5 + t * 1.3) + 0.05 * Math.sin(a * 3 - t * 0.9),
+  // The Prism: a hard hexagon, cut glass.
+  prism: (a) => {
+    const k = Math.PI / 3;
+    return Math.cos(k / 2) / Math.cos(((((a % k) + k) % k) - k / 2));
+  },
+  // Forgeheart: a heavy drum with bolted plates standing proud.
+  forgeheart: (a) => 1 + 0.07 * Math.sign(Math.sin(a * 6)),
+  // The Hollow King: a round head under five crown points, all at the top.
+  'hollow-king': (a) => {
+    const up = -Math.sin(a);
+    return up > 0.45 ? 1 + 0.25 * Math.abs(Math.sin(a * 10)) : 1;
+  },
+  // The Blight: a heart that beats, and thorns that never hold still.
+  blight: (a, t) => 1 + 0.06 * Math.sin(t * 5) + 0.12 * Math.max(0, Math.sin(a * 9 + t * 0.7)),
 };
 
 function traceBoss(ctx: CanvasRenderingContext2D, id: BossId, r: number, t: number): void {
@@ -70,10 +84,144 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
       ctx.fill();
       break;
     }
+    case 'prism': {
+      // Light caught inside the glass: rays from the core.
+      ctx.strokeStyle = withAlpha(INK['050'], 0.45);
+      ctx.lineWidth = r * 0.04;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + t * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        ctx.stroke();
+      }
+      ctx.fillStyle = withAlpha(INK['050'], 0.75);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'forgeheart': {
+      // A molten heart behind a grille.
+      const heat = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.55);
+      heat.addColorStop(0, lighten(FX.gold, 0.3));
+      heat.addColorStop(1, withAlpha(FX.ember, 0));
+      ctx.fillStyle = heat;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * (0.5 + 0.04 * Math.sin(t * 6)), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = withAlpha(INK['950'], 0.7);
+      ctx.lineWidth = r * 0.07;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * r * 0.18, -r * 0.45);
+        ctx.lineTo(i * r * 0.18, r * 0.45);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'hollow-king': {
+      // A skull's two hollows and the band of the crown.
+      ctx.fillStyle = withAlpha(INK['950'], 0.85);
+      for (const dir of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(dir * r * 0.3, 0, r * 0.15, r * 0.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = lighten(FX.gold, 0.1);
+      ctx.fillRect(-r * 0.7, -r * 0.62, r * 1.4, r * 0.14);
+      break;
+    }
+    case 'blight': {
+      // Veins running out of a beating core.
+      ctx.strokeStyle = withAlpha(lighten(FX.blood, 0.3), 0.55);
+      ctx.lineWidth = r * 0.05;
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(Math.cos(a + 0.4) * r * 0.5, Math.sin(a + 0.4) * r * 0.5, Math.cos(a) * r, Math.sin(a) * r);
+        ctx.stroke();
+      }
+      ctx.fillStyle = lighten(FX.blood, 0.15 + 0.15 * Math.sin(t * 5));
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
     default: {
       const exhaustive: never = def.id;
       return exhaustive;
     }
+  }
+}
+
+/** The Prism's mirror: bright arcs of glass turning round it. */
+export function paintFacets(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, facets: readonly { angle: number; arc: number }[]): void {
+  if (facets.length === 0) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (const f of facets) {
+    ctx.strokeStyle = withAlpha(INK['050'], 0.85);
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 1.25, f.angle - f.arc / 2, f.angle + f.arc / 2);
+    ctx.stroke();
+    ctx.strokeStyle = withAlpha(FX.frost, 0.8);
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * The Hollow King's shades: his silhouette, see-through, at his size. The
+ * crowned body, his own or a shade, wears a gold ring above it.
+ */
+export function paintCourt(
+  ctx: CanvasRenderingContext2D, run: RunState, alpha: number, time: number,
+): void {
+  const b = run.boss;
+  if (!b || b.killedIn !== null) return;
+  const def = BOSS_BY_ID[b.id];
+  for (const e of run.enemies) {
+    if (!e.alive || (e.court === 0 && e.id !== b.enemy)) continue;
+    const x = e.px + (e.x - e.px) * alpha;
+    const y = e.py + (e.y - e.py) * alpha;
+    if (e.court) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.globalAlpha = 0.45;
+      traceBoss(ctx, def.id, e.radius, time);
+      ctx.fillStyle = mix(def.color, INK['950'], 0.3);
+      ctx.fill();
+      ctx.strokeStyle = def.borderColor;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (e.id === b.crown) {
+      ctx.strokeStyle = lighten(FX.gold, 0.2);
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.ellipse(x, y - e.radius * 1.3, e.radius * 0.45, e.radius * 0.14, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
+/** Molten pools at the wall (Forgeheart): a glowing spill, crusting as it cools. */
+export function paintPools(ctx: CanvasRenderingContext2D, pools: readonly MoltenPool[], simTime: number, time: number): void {
+  for (const p of pools) {
+    const left = Math.min(1, (p.until - simTime) / 1.5);
+    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius);
+    g.addColorStop(0, withAlpha(lighten(FX.gold, 0.2), 0.75 * left));
+    g.addColorStop(0.6, withAlpha(FX.ember, 0.55 * left));
+    g.addColorStop(1, withAlpha(FX.ember, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius * (1 + 0.04 * Math.sin(time * 4 + p.x)), 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 

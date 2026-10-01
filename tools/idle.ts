@@ -51,8 +51,6 @@ export interface IdleReport {
   played: number;
   checkins: number;
   runs: number;
-  /** The profile once every awaited boss has fallen, its shards spent: I2's projection starts there. */
-  after: Profile | null;
 }
 
 /** The chores at a check-in, or between manual runs. */
@@ -69,7 +67,7 @@ function chores(profile: Profile): void {
 export function runIdle(days: number, seed: number, bosses: readonly string[] = Object.keys(BOSS_BY_ID)): IdleReport {
   const profile = newProfile(0);
   const seeds = new Rng(seed);
-  const report: IdleReport = { bossKills: {}, offline: 0, played: 0, checkins: 0, runs: 0, after: null };
+  const report: IdleReport = { bossKills: {}, offline: 0, played: 0, checkins: 0, runs: 0 };
   const end = days * 86400;
   /** The run the app was closed in, as its last wave-start snapshot. */
   let pending: RunState | null = null;
@@ -111,10 +109,6 @@ export function runIdle(days: number, seed: number, bosses: readonly string[] = 
       report.runs++;
       report.played += summary.shards;
       marchOn(profile, summary);
-      if (!report.after && bosses.every((b) => b in report.bossKills)) {
-        report.after = structuredClone(profile);
-        chores(report.after);
-      }
       if (automations(profile).has('auto-restart')) {
         clock += BALANCE.automation.restartSeconds;
       } else {
@@ -163,17 +157,4 @@ export function farmRatio(profile: Profile, n: number, seed: number): { active: 
   const active = farmRate(profile, 'active', n, seed).perHour;
   const idle = farmRate(profile, 'idle', n, seed).perHour;
   return { active, idle, ratio: active / Math.max(1e-9, idle) };
-}
-
-/**
- * What one idle day is worth at this Forge state, in hours of the active
- * bot's play: two sessions of hands-off runs plus two absences of offline
- * earnings (§6.3, at the profile's own farm rate and tier), over the active
- * bot's shards per hour. I2's projection runs the rest of Act 1 at this rate.
- */
-export function idleDayInActiveHours(profile: Profile, n: number, seed: number): number {
-  const active = farmRate(profile, 'active', n, seed).perHour;
-  const idle = farmRate(profile, 'idle', n, seed).perHour;
-  const perCheckin = idle * (SESSION / 3600) + (offlineEarnings(profile, CHECKIN_EVERY - SESSION)?.shards ?? 0);
-  return (perCheckin * (86400 / CHECKIN_EVERY)) / Math.max(1e-9, active);
 }

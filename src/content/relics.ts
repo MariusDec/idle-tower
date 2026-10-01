@@ -1,7 +1,7 @@
 import type { BossId, RelicDef, RelicId } from './types';
 
 /**
- * Relics v1 (§5.3, §11.5): four per region, the boss's first-kill relic and
+ * Relics (§5.3, §11.5): twenty-four, four per region: the boss's first-kill relic and
  * three its elites drop. Qualitative, 15 words or fewer, each leaning on a
  * weapon family or the region's verb. Duplicates rank a relic up to III;
  * `perRank` is what each rank past I adds. Rank numbers: `BALANCE.relics`.
@@ -58,6 +58,102 @@ export const RELICS: readonly RelicDef[] = [
     text: 'Enemies standing still take +25% damage.',
     source: { kind: 'elite', region: 2 },
     effects: [{ kind: 'behaviour', id: 'still-target' }], perRank: [{ kind: 'behaviour', id: 'still-target' }],
+  },
+  {
+    id: 'prism-heart', name: 'Prism Heart', icon: 'floating-crystal',
+    text: 'A fifth of your shots refract into a second target.',
+    source: { kind: 'boss', boss: 'prism' },
+    effects: [{ kind: 'behaviour', id: 'refract' }], perRank: [{ kind: 'behaviour', id: 'refract' }],
+  },
+  {
+    id: 'frost-brand', name: 'Frost Brand', icon: 'frozen-arrow',
+    text: 'Slowed enemies take +25% damage.',
+    source: { kind: 'elite', region: 3 },
+    effects: [{ kind: 'behaviour', id: 'frost-brand' }], perRank: [{ kind: 'behaviour', id: 'frost-brand' }],
+  },
+  {
+    id: 'mirror-shard', name: 'Mirror Shard', icon: 'crystal-shine',
+    text: 'Your first hit on every enemy is a critical hit.',
+    source: { kind: 'elite', region: 3 },
+    effects: [{ kind: 'behaviour', id: 'first-crit' }], perRank: [{ kind: 'stat', mod: { key: 'critDamage', add: 0.25 } }],
+  },
+  {
+    id: 'hourglass-sand', name: 'Hourglass Sand', icon: 'hourglass',
+    text: 'Enemies within a third of your range take +30% damage.',
+    source: { kind: 'elite', region: 3 },
+    effects: [{ kind: 'behaviour', id: 'close-quarters' }], perRank: [{ kind: 'behaviour', id: 'close-quarters' }],
+  },
+  {
+    id: 'forgeheart-core', name: 'Forgeheart Core', icon: 'frostfire',
+    text: 'Every 10 s, your weapons hit three times as hard for a second.',
+    source: { kind: 'boss', boss: 'forgeheart' },
+    effects: [{ kind: 'behaviour', id: 'surge' }], perRank: [{ kind: 'behaviour', id: 'surge' }],
+  },
+  {
+    id: 'ember-ward', name: 'Ember Ward', icon: 'lantern-flame',
+    text: 'Burning enemies take +30% damage.',
+    source: { kind: 'elite', region: 4 },
+    effects: [{ kind: 'behaviour', id: 'kindling' }], perRank: [{ kind: 'behaviour', id: 'kindling' }],
+  },
+  {
+    id: 'blast-shield', name: 'Blast Shield', icon: 'cracked-shield',
+    text: 'Blasts and shards that reach the wall land at half strength.',
+    source: { kind: 'elite', region: 4 },
+    effects: [{ kind: 'behaviour', id: 'blast-shield' }], perRank: [{ kind: 'behaviour', id: 'blast-shield' }],
+  },
+  {
+    id: 'spyglass', name: 'Spyglass', icon: 'telescope',
+    text: 'The tower sees 15% farther.',
+    source: { kind: 'elite', region: 4 },
+    effects: [{ kind: 'stat', mod: { key: 'range', pct: 0.15 } }], perRank: [{ kind: 'stat', mod: { key: 'range', pct: 0.05 } }],
+  },
+  {
+    id: 'hollow-crown', name: 'Hollow Crown', icon: 'crown',
+    text: 'Each ultimate also restores 25% of Max HP.',
+    source: { kind: 'boss', boss: 'hollow-king' },
+    effects: [{ kind: 'behaviour', id: 'ult-heal' }], perRank: [{ kind: 'behaviour', id: 'ult-heal' }],
+  },
+  {
+    id: 'soul-jar', name: 'Soul Jar', icon: 'vial',
+    text: 'Every 50 kills restore 5% of Max HP.',
+    source: { kind: 'elite', region: 5 },
+    effects: [{ kind: 'behaviour', id: 'soul-jar' }], perRank: [{ kind: 'behaviour', id: 'soul-jar' }],
+  },
+  {
+    id: 'warding-salt', name: 'Warding Salt', icon: 'stone-block',
+    text: 'Enemies that strike the wall are slowed 30%.',
+    source: { kind: 'elite', region: 5 },
+    effects: [{ kind: 'behaviour', id: 'salt' }], perRank: [{ kind: 'behaviour', id: 'salt' }],
+  },
+  {
+    id: 'last-light', name: 'Last Light', icon: 'extraction-orb',
+    text: 'Below half HP, your ultimate charges twice as fast.',
+    source: { kind: 'elite', region: 5 },
+    effects: [{ kind: 'behaviour', id: 'last-light' }], perRank: [{ kind: 'behaviour', id: 'last-light' }],
+  },
+  {
+    id: 'heart-of-light', name: 'Heart of Light', icon: 'shining-heart',
+    text: '+1 weapon slot.',
+    source: { kind: 'boss', boss: 'blight' },
+    effects: [{ kind: 'slot', slot: 'weapon', n: 1 }], perRank: [{ kind: 'stat', mod: { key: 'damage', pct: 0.1 } }],
+  },
+  {
+    id: 'blight-thorn', name: 'Blight Thorn', icon: 'spikes',
+    text: 'Elites take +50% damage.',
+    source: { kind: 'elite', region: 6 },
+    effects: [{ kind: 'behaviour', id: 'elite-bane' }], perRank: [{ kind: 'behaviour', id: 'elite-bane' }],
+  },
+  {
+    id: 'pale-lantern', name: 'Pale Lantern', icon: 'concentration-orb',
+    text: 'Bosses take +20% damage.',
+    source: { kind: 'elite', region: 6 },
+    effects: [{ kind: 'behaviour', id: 'boss-bane' }], perRank: [{ kind: 'behaviour', id: 'boss-bane' }],
+  },
+  {
+    id: 'starseed', name: 'Starseed', icon: 'star-swirl',
+    text: 'Each level-up restores 10% of Max HP.',
+    source: { kind: 'elite', region: 6 },
+    effects: [{ kind: 'behaviour', id: 'level-heal' }], perRank: [{ kind: 'behaviour', id: 'level-heal' }],
   },
 ];
 

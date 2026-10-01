@@ -1,9 +1,13 @@
+import { Rng } from '../../core/rng';
 import { SpatialGrid } from '../../core/spatialGrid';
 import { BALANCE } from '../../content/balance';
 import { AURA_BY_ID, ENEMIES, ENEMY_BY_ID } from '../../content/enemies';
 import { BOSS_BY_ID } from '../../content/bosses';
+import { regionByIndex } from '../../content/regions';
+import type { EnemyVerb } from '../../content/types';
 import type { Enemy, RunState } from '../state';
 import { hurtTower } from './tower';
+import { spawnEnemy } from './waves';
 
 /**
  * Rebuilt from scratch every step, so it carries nothing between steps and
@@ -14,17 +18,25 @@ const near: Enemy[] = [];
 /** The largest body radius, so a small body's query still finds a big neighbour. */
 const MAX_RADIUS = Math.max(...ENEMIES.map((d) => d.radius)) * BALANCE.elites.scale;
 
-/** True while a body is under the water: nothing can target or hit it. */
+/** True while a body is out of reach: under the water, phased out, or under the ground. */
 export function isHidden(run: RunState, e: Enemy): boolean {
-  return e.hiddenUntil > run.time;
+  return e.hiddenUntil > run.time || e.under;
 }
 
-/** Where a body stops walking: the wall, a ranged body's standoff, or a boss's post. */
+/** Where a body stops walking: the wall, a ranged body's standoff, or a boss's (and its court's) post. */
 function stopDistance(run: RunState, e: Enemy): number {
   const wall = run.stats.radius + e.radius;
-  if (e.boss) return run.boss?.enraged ? wall : Math.max(wall, BOSS_BY_ID[e.boss].standoff);
+  const boss = e.boss ?? (e.court && run.boss ? run.boss.id : null);
+  if (boss) return run.boss?.enraged ? wall : Math.max(wall, BOSS_BY_ID[boss].standoff);
   const verb = ENEMY_BY_ID[e.type].verb;
-  return verb.kind === 'ranged' ? Math.max(wall, verb.standoff) : wall;
+  switch (verb.kind) {
+    case 'ranged':
+    case 'summon':
+    case 'silence':
+      return Math.max(wall, verb.standoff);
+    default:
+      return wall;
+  }
 }
 
 /**
@@ -73,18 +85,23 @@ function applyAuras(run: RunState, dt: number): void {
  */
 export function tickEnemies(run: RunState, dt: number): void {
   applyAuras(run, dt);
-  for (const e of run.enemies) {
+  // Indexed: what a Summoner calls this step walks from the next.
+  const n = run.enemies.length;
+  for (let i = 0; i < n; i++) {
+    const e = run.enemies[i];
     e.px = e.x;
     e.py = e.y;
     e.moving = false;
-    if (!e.alive || e.stunnedUntil > run.time || isHidden(run, e)) continue;
-    const verb = e.boss ? null : ENEMY_BY_ID[e.type].verb;
-    if (verb?.kind === 'heal') mend(run, e, verb, dt);
+    if (!e.alive || e.stunnedUntil > run.time) continue;
+    // A submerged boss holds still; a phased or buried body walks on.
+    if (e.boss && isHidden(run, e)) continue;
+    const verb = e.boss || e.court ? null : ENEMY_BY_ID[e.type].verb;
+    if (verb) before(run, e, verb, dt);
 
     const d = Math.hypot(e.x, e.y);
     const stop = stopDistance(run, e);
+    const slow = e.slowUntil > run.time ? 1 - e.slow : 1;
     if (d > stop + 1e-6) {
-      const slow = e.slowUntil > run.time ? 1 - e.slow : 1;
       const stepLen = Math.min(e.speed * e.buffSpeed * e.fury * slow * dt, d - stop);
       e.x -= (e.x / d) * stepLen;
       e.y -= (e.y / d) * stepLen;
@@ -105,7 +122,18 @@ export function tickEnemies(run: RunState, dt: number): void {
       }
       continue;
     }
+    if (verb?.kind === 'summon') {
+      summon(run, e, verb, dt);
+      continue;
+    }
+    if (verb?.kind === 'silence') {
+      silence(run, e, verb, dt);
+      continue;
+    }
+    if (e.court) continue;
     if (e.boss && !run.boss?.enraged) continue;
+    // Phased out, it can't touch the wall either.
+    if (e.hiddenUntil > run.time) continue;
     if (!e.inContact) {
       // Reached the wall without walking there (shoved by the crowd): the
       // first hit still waits a beat, as it does for a body that walked in.
@@ -116,8 +144,94 @@ export function tickEnemies(run: RunState, dt: number): void {
     if (e.attackTimer <= 0) {
       e.attackTimer += e.attackInterval;
       hurtTower(run, e.damage * e.fury, e.x, e.y, e);
+      if (verb?.kind === 'leech' && run.ult.charge > 0) {
+        run.ult.charge = Math.max(0, run.ult.charge - verb.drain);
+        run.events.push({ kind: 'drain', x: e.x, y: e.y });
+      }
     }
   }
+}
+
+/** What a verb does before its body walks: heal, phase, surface, blink. */
+function before(run: RunState, e: Enemy, verb: EnemyVerb, dt: number): void {
+  switch (verb.kind) {
+    case 'heal':
+      mend(run, e, verb, dt);
+      return;
+    case 'phase':
+      e.actTimer -= dt;
+      if (e.actTimer <= 0) {
+        e.actTimer += verb.cycle;
+        e.hiddenUntil = run.time + verb.hidden;
+      }
+      return;
+    case 'burrow':
+      if (e.under && Math.hypot(e.x, e.y) <= verb.surface) {
+        e.under = false;
+        run.events.push({ kind: 'surface', x: e.x, y: e.y });
+      }
+      return;
+    case 'blink': {
+      // Slowed, its next jump comes later: frost is an answer (§11.1).
+      const slow = e.slowUntil > run.time ? 1 - e.slow : 1;
+      e.actTimer -= dt * slow;
+      if (e.actTimer > 0) return;
+      e.actTimer += verb.interval;
+      const d = Math.hypot(e.x, e.y);
+      const room = d - stopDistance(run, e) - BALANCE.foes.blinkMargin;
+      if (room <= 0) return;
+      const jump = Math.min(verb.distance, room);
+      const fx = e.x;
+      const fy = e.y;
+      e.x -= (e.x / d) * jump;
+      e.y -= (e.y / d) * jump;
+      e.px = e.x;
+      e.py = e.y;
+      run.events.push({ kind: 'blink', x: fx, y: fy, tx: e.x, ty: e.y });
+      return;
+    }
+    case 'walker':
+    case 'split':
+    case 'ranged':
+    case 'shield':
+    case 'shards':
+    case 'explode':
+    case 'leech':
+    case 'summon':
+    case 'silence':
+    case 'chorus':
+      return;
+    default: {
+      const exhaustive: never = verb;
+      return exhaustive;
+    }
+  }
+}
+
+/** A Summoner at its post calls its servants beside it, while the field has room. */
+function summon(run: RunState, e: Enemy, verb: Extract<EnemyVerb, { kind: 'summon' }>, dt: number): void {
+  e.actTimer -= dt;
+  if (e.actTimer > 0) return;
+  e.actTimer += verb.interval;
+  const region = regionByIndex(run.regionId);
+  for (let k = 0; k < verb.count && run.enemies.length < BALANCE.maxEnemies; k++) {
+    const a = Math.atan2(e.y, e.x) + (k - (verb.count - 1) / 2) * 0.35;
+    const r = e.radius * 1.5;
+    spawnEnemy(run, region, verb.enemy, e.wave, e.x + Math.cos(a) * r, e.y + Math.sin(a) * r);
+  }
+  run.events.push({ kind: 'rise', x: e.x, y: e.y });
+}
+
+/** A Harbinger at its post silences one of the tower's weapons that still fires. */
+function silence(run: RunState, e: Enemy, verb: Extract<EnemyVerb, { kind: 'silence' }>, dt: number): void {
+  e.actTimer -= dt;
+  if (e.actTimer > 0) return;
+  e.actTimer += verb.interval;
+  const live = run.weapons.filter((w) => w.silencedUntil <= run.time);
+  if (live.length === 0) return;
+  const w = Rng.wrap(run.streams.foes).pick(live);
+  w.silencedUntil = run.time + verb.seconds;
+  run.events.push({ kind: 'silence', x: e.x, y: e.y, weapon: w.id });
 }
 
 /** A Mender's pulse: every other body near it is healed a share of its Max HP. */
@@ -147,7 +261,7 @@ export function separateEnemies(run: RunState): void {
   grid.rebuild(run.enemies);
   const reach = run.stats.radius;
   for (const e of run.enemies) {
-    if (!e.alive || e.boss || isHidden(run, e)) continue;
+    if (!e.alive || e.boss || e.court || isHidden(run, e)) continue;
     near.length = 0;
     // Two bodies overlap within the sum of their radii, so query that far:
     // a Runner must feel a Brute it touches, not only the reverse.

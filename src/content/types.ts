@@ -82,7 +82,29 @@ export type BehaviourId =
   | 'still-regen'
   | 'storm-xp'
   | 'frail-splits'
-  | 'still-target';
+  | 'still-target'
+  | 'refract'
+  | 'frost-brand'
+  | 'first-crit'
+  | 'close-quarters'
+  | 'surge'
+  | 'kindling'
+  | 'blast-shield'
+  | 'ult-heal'
+  | 'soul-jar'
+  | 'salt'
+  | 'last-light'
+  | 'elite-bane'
+  | 'boss-bane'
+  | 'level-heal'
+  // Later Forge notables (P7).
+  | 'rampart'
+  | 'oath'
+  | 'relic-luck'
+  | 'drilled'
+  | 'charged-start'
+  // Frame quirks (§11.6).
+  | 'stormcaller';
 
 /**
  * What the Engineering branch automates (§6.2). The app reads these, never
@@ -91,8 +113,10 @@ export type BehaviourId =
 export type AutomationId =
   | 'speed-2' | 'speed-3' | 'auto-restart' | 'frontier-march' | 'auto-ult'
   | 'tactician' | 'tactician-2'
-  /** Offline tiers I–III (§6.3); the highest owned applies. Tier IV waits for P7's regions. */
-  | 'offline' | 'offline-2' | 'offline-3';
+  /** Offline tiers I–IV (§6.3); the highest owned applies. */
+  | 'offline' | 'offline-2' | 'offline-3' | 'offline-4'
+  /** Evolution Insight (§11.4): every recipe's weapon half shows in the Recipe Book. */
+  | 'insight';
 
 /**
  * Effects are data (§12.3, R8). Every kind has one exhaustive consumer, in
@@ -159,14 +183,36 @@ export type UltimateDef =
     readonly seconds: number;
     /** Fraction of a blocked contact hit dealt back to its attacker. */
     readonly reflect: number;
+  }
+  | {
+    readonly id: 'tempest';
+    readonly name: string;
+    readonly text: string;
+    readonly seconds: number;
+    /** Strikes per second, each on a random body in range… */
+    readonly rate: number;
+    /** …for this multiple of the starting weapon's hit. */
+    readonly damage: number;
+  }
+  | {
+    readonly id: 'overclock';
+    readonly name: string;
+    readonly text: string;
+    readonly seconds: number;
+    /** Attack speed multiplier while it lasts. */
+    readonly speed: number;
   };
 
 export type UltimateId = UltimateDef['id'];
 
-export type FrameId = 'arcanist' | 'bastion';
+export type FrameId = 'arcanist' | 'bastion' | 'stormcaller' | 'artificer';
 
 /** How a frame is earned (§11.6). */
-export type FrameUnlock = { readonly kind: 'start' } | { readonly kind: 'boss'; readonly boss: BossId };
+export type FrameUnlock =
+  | { readonly kind: 'start' }
+  | { readonly kind: 'boss'; readonly boss: BossId }
+  /** A secret feat earns it (§5.4, §11.6). */
+  | { readonly kind: 'feat'; readonly feat: string };
 
 /** A frame: the tower's chassis, chosen before a run (§4.4). */
 export interface FrameDef extends ContentEntry {
@@ -178,10 +224,16 @@ export interface FrameDef extends ContentEntry {
   readonly unlock: FrameUnlock;
 }
 
-export type EnemyId = 'grunt' | 'runner' | 'brute' | 'splitter' | 'spitter' | 'mender';
+export type EnemyId =
+  | 'grunt' | 'runner' | 'brute'
+  | 'splitter' | 'spitter' | 'mender'
+  | 'shieldbearer' | 'burrower' | 'shardling'
+  | 'bomber' | 'blinker' | 'siege-engine'
+  | 'phantom' | 'leech' | 'summoner' | 'imp'
+  | 'harbinger' | 'chorus';
 
 /** Silhouettes the enemy painter knows. A closed union: a new one must be drawn first. */
-export type EnemyShape = 'circle' | 'diamond' | 'plated' | 'hexagon';
+export type EnemyShape = 'circle' | 'diamond' | 'plated' | 'hexagon' | 'triangle' | 'square';
 
 /**
  * An enemy's verb in the sim (§4.3): what it does besides walking in. A
@@ -198,7 +250,27 @@ export type EnemyVerb =
   /** Stops `standoff` from the tower and lobs a shot every `interval` s at `shotSpeed`. */
   | { readonly kind: 'ranged'; readonly standoff: number; readonly interval: number; readonly shotSpeed: number }
   /** Every `interval` s, heals each other enemy within `radius` by `fraction` of its Max HP. */
-  | { readonly kind: 'heal'; readonly radius: number; readonly interval: number; readonly fraction: number };
+  | { readonly kind: 'heal'; readonly radius: number; readonly interval: number; readonly fraction: number }
+  /** A frontal shield: shots flying within `arc` radians of head-on are turned away. Area, chains and blades pass. */
+  | { readonly kind: 'shield'; readonly arc: number }
+  /** Underground, untargetable, until it is within `surface` of the tower's centre. */
+  | { readonly kind: 'burrow'; readonly surface: number }
+  /** On death, `count` shards fly at the tower: they reach only `reach` units, for `damage` × its contact hit each. */
+  | { readonly kind: 'shards'; readonly count: number; readonly reach: number; readonly damage: number }
+  /** On death, a blast `radius` wide: if it reaches the wall, the tower takes `damage` × its contact hit. */
+  | { readonly kind: 'explode'; readonly radius: number; readonly damage: number }
+  /** Every `interval` s (slowed: longer), jumps `distance` straight in. */
+  | { readonly kind: 'blink'; readonly interval: number; readonly distance: number }
+  /** Phases out for `hidden` s of every `cycle`: untargetable, and it never hits while out. */
+  | { readonly kind: 'phase'; readonly cycle: number; readonly hidden: number }
+  /** Each contact hit also drains `drain` of the ultimate's charge. */
+  | { readonly kind: 'leech'; readonly drain: number }
+  /** Stops at `standoff` and calls `count` of `enemy` every `interval` s, until slain. */
+  | { readonly kind: 'summon'; readonly enemy: EnemyId; readonly count: number; readonly interval: number; readonly standoff: number }
+  /** Stops at `standoff`; every `interval` s, silences one weapon for `seconds`. */
+  | { readonly kind: 'silence'; readonly standoff: number; readonly interval: number; readonly seconds: number }
+  /** Arrives as `count` bodies sharing one pool of HP: a hit on one is a hit on all. */
+  | { readonly kind: 'chorus'; readonly count: number };
 
 /**
  * An enemy type (§4.3). Each has one verb that makes one answer right.
@@ -246,7 +318,7 @@ export interface AuraDef extends ContentEntry {
   readonly radius: number;
 }
 
-export type BossId = 'gatekeeper' | 'bog-mother';
+export type BossId = 'gatekeeper' | 'bog-mother' | 'prism' | 'forgeheart' | 'hollow-king' | 'blight';
 
 /**
  * One thing a boss does (§4.3: one readable pattern per phase). A closed
@@ -261,7 +333,20 @@ export type BossPattern =
   /** Calls `packs` packs of `enemy` from the rim. `every` 0: once, on entering the phase. */
   | { readonly kind: 'summon'; readonly enemy: EnemyId; readonly packs: number; readonly every: number }
   /** Sinks for `seconds` (untargetable), then rises somewhere else on its ring. */
-  | { readonly kind: 'submerge'; readonly every: number; readonly seconds: number };
+  | { readonly kind: 'submerge'; readonly every: number; readonly seconds: number }
+  /**
+   * Mirrored facets turn about it at `spin` rad/s: a shot that strikes one of
+   * the `facets` (each `arc` wide) flies back at the tower for `damage` × the
+   * wave's contact damage. Beams, chains and blasts pass.
+   */
+  | { readonly kind: 'mirror'; readonly facets: number; readonly arc: number; readonly spin: number; readonly damage: number }
+  /** A molten pool opens at the wall: it burns the tower for `dps` × the wave's contact damage a second, for `seconds`. */
+  | { readonly kind: 'pool'; readonly every: number; readonly seconds: number; readonly dps: number; readonly radius: number }
+  /**
+   * Splits into `shades` bodies (itself one) sharing its HP; one wears the
+   * crown, moving every `every` s. Hits on the others land at `share`.
+   */
+  | { readonly kind: 'court'; readonly shades: number; readonly every: number; readonly share: number };
 
 export interface BossPhase {
   /** The phase begins once the boss is at or below this fraction of its HP. */
@@ -269,6 +354,8 @@ export interface BossPhase {
   /** What the phase does, in one line: shown when it begins (§4.3). */
   readonly line: string;
   readonly patterns: readonly BossPattern[];
+  /** Armour from this phase on, as a multiple of the region's wave-20 HP: plates breaking away (Forgeheart). */
+  readonly armor?: number;
 }
 
 /** A region's boss (§4.3, §11.1): wave 20. */
@@ -294,6 +381,8 @@ export interface BossDef extends ContentEntry {
   readonly phases: readonly BossPhase[];
   /** Its first kill opens a relic slot (§11.1). */
   readonly relicSlot: boolean;
+  /** Its first kill ends Act 1 (§7.1): the ending plays on the Map. */
+  readonly finale?: boolean;
   readonly color: string;
   readonly borderColor: string;
   /** The Bestiary's line of lore. */
@@ -430,7 +519,19 @@ export interface FallbackDef extends ContentEntry {
  * A region's rule (§11.1). A closed union with one consumer
  * (`sim/run.ts#regionMods`); P7's rules extend it.
  */
-export type RegionRule = { readonly kind: 'stat'; readonly mod: StatMod };
+export type RegionRule =
+  | { readonly kind: 'stat'; readonly mod: StatMod }
+  /** Brittle: blasts, pulses, burns, shatters and the ultimate hit this much harder. */
+  | { readonly kind: 'areaDamage'; readonly mult: number }
+  /**
+   * Cinders: a kill leaves burning ground `radius` wide for `seconds`, setting
+   * alight what walks in for `burn` × the slain body's Max HP a second.
+   */
+  | { readonly kind: 'cinders'; readonly radius: number; readonly seconds: number; readonly burn: number }
+  /** Echoes: `chance` of a kill rises once as a shade with `hp` of its Max HP, paying `reward` of its worth. */
+  | { readonly kind: 'echoes'; readonly chance: number; readonly hp: number; readonly reward: number }
+  /** Blight: every wave brings an elite. */
+  | { readonly kind: 'blight' };
 
 /** A wave beat (§4.2): the moment that gives a region its rhythm. */
 export type WaveBeat =
@@ -467,12 +568,22 @@ export interface RegionDef extends ContentEntry {
    * Elites (§4.3): one on wave `from`, then every `every` waves. Each wears
    * one of `auras`; an empty list means plain elites (Region 1).
    */
-  readonly elites: { readonly from: number; readonly every: number; readonly auras: readonly AuraId[] };
+  readonly elites: {
+    readonly from: number;
+    readonly every: number;
+    readonly auras: readonly AuraId[];
+    /** The types an elite may be, when not the region's own (Blight Heart: earlier regions', crowned). */
+    readonly types?: readonly EnemyId[];
+  };
 }
 
 export type RelicId =
   | 'gatekeepers-seal' | 'tallow-candle' | 'cracked-lens' | 'hunters-tally'
-  | 'mothers-tear' | 'bog-lantern' | 'mire-lily' | 'stillwater-charm';
+  | 'mothers-tear' | 'bog-lantern' | 'mire-lily' | 'stillwater-charm'
+  | 'prism-heart' | 'frost-brand' | 'mirror-shard' | 'hourglass-sand'
+  | 'forgeheart-core' | 'ember-ward' | 'blast-shield' | 'spyglass'
+  | 'hollow-crown' | 'soul-jar' | 'warding-salt' | 'last-light'
+  | 'heart-of-light' | 'blight-thorn' | 'pale-lantern' | 'starseed';
 
 /** Where a relic drops (§5.3): its boss's first kill, or that region's elites. */
 export type RelicSource = { readonly kind: 'boss'; readonly boss: BossId } | { readonly kind: 'elite'; readonly region: number };
@@ -519,10 +630,29 @@ export type FeatGoal =
   /** Reach wave n with a single weapon. */
   | { readonly kind: 'lone'; readonly wave: number }
   /** Evolve any weapon. */
-  | { readonly kind: 'evolve' };
+  | { readonly kind: 'evolve' }
+  /** Find n different recipes. */
+  | { readonly kind: 'recipes'; readonly n: number }
+  /** Own n frames. */
+  | { readonly kind: 'frames'; readonly n: number }
+  /** Bank n shards from one run. */
+  | { readonly kind: 'runShards'; readonly n: number }
+  /** Own every notable of a Forge branch. */
+  | { readonly kind: 'branch'; readonly branch: BranchId }
+  /** Defeat a boss without casting the ultimate. */
+  | { readonly kind: 'bossNoUlt' }
+  /** Defeat a boss carrying `weapons` weapons, all at their last level, and no passives. */
+  | { readonly kind: 'bareArsenal'; readonly weapons: number };
 
 /** A feat (§5.4): one finite list, each paying shards once. */
 export interface FeatDef extends ContentEntry {
   readonly goal: FeatGoal;
   readonly reward: number;
+  /**
+   * A secret feat (§5.4) shows as "???" with this riddle until earned. Its
+   * `text` is what it asked, revealed once done.
+   */
+  readonly riddle?: string;
+  /** Surfaces only once this boss has fallen (§7.1: secret feats surface in Region 5). */
+  readonly after?: BossId;
 }

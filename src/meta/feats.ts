@@ -3,7 +3,11 @@ import { FEATS } from '../content/feats';
 import { regionByIndex } from '../content/regions';
 import type { FeatDef, FeatGoal } from '../content/types';
 import type { RunState } from '../sim/state';
-import { bossDown } from './collection';
+import { FORGE } from '../content/forge';
+import { FRAMES } from '../content/frames';
+import type { BranchId, ForgeNodeDef } from '../content/types';
+import { bossDown, frameUnlocked } from './collection';
+import { levelOf } from './forge';
 import type { Profile } from './profile';
 
 /**
@@ -40,11 +44,34 @@ export function featMet(profile: Profile, goal: FeatGoal, run: RunState | null):
       return !!run && run.loneWave >= goal.wave;
     case 'evolve':
       return profile.recipes.found.length > 0;
+    case 'recipes':
+      return profile.recipes.found.length >= goal.n;
+    case 'frames':
+      return FRAMES.filter((f) => frameUnlocked(profile, f)).length >= goal.n;
+    case 'runShards':
+      return profile.records.bestShards >= goal.n;
+    case 'branch':
+      return branchNotables(goal.branch).every((n) => levelOf(profile, n.id) > 0);
+    case 'bossNoUlt':
+      return run?.boss?.killedIn != null && run.ult.casts === 0;
+    case 'bareArsenal':
+      return run?.boss?.killedIn != null && run.passives.length === 0
+        && run.weapons.length >= goal.weapons && run.weapons.every((w) => w.level >= BALANCE.maxLevel);
     default: {
       const exhaustive: never = goal;
       return exhaustive;
     }
   }
+}
+
+/** A branch's notables: what "own every notable" asks for. */
+function branchNotables(branch: BranchId): ForgeNodeDef[] {
+  return FORGE.filter((n) => n.branch === branch && n.type === 'notable');
+}
+
+/** True once a feat shows in the list: a secret one surfaces after its boss (§5.4). */
+export function featVisible(profile: Profile, feat: FeatDef): boolean {
+  return !feat.after || bossDown(profile, feat.after) || !!profile.feats[feat.id];
 }
 
 /**
@@ -67,6 +94,18 @@ export function featProgress(profile: Profile, feat: FeatDef): number {
       const pool = regionByIndex(g.region).pool;
       return pool.filter((p) => profile.seenEnemies.includes(p.enemy)).length / pool.length;
     }
+    case 'recipes':
+      return Math.min(1, profile.recipes.found.length / g.n);
+    case 'frames':
+      return Math.min(1, FRAMES.filter((f) => frameUnlocked(profile, f)).length / g.n);
+    case 'runShards':
+      return Math.min(1, profile.records.bestShards / g.n);
+    case 'branch': {
+      const all = branchNotables(g.branch);
+      return all.filter((n) => levelOf(profile, n.id) > 0).length / Math.max(1, all.length);
+    }
+    case 'bossNoUlt':
+    case 'bareArsenal':
     case 'boss':
     case 'bossFast':
     case 'bossHealthy':

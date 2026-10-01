@@ -8,6 +8,8 @@ import type { BranchId, ForgeNodeDef } from './types';
  * (evolutions, §4.4) and the keystones, one per branch but Engineering; the
  * last two sealed by the Bog Mother. P6 fills out Engineering (§6.2):
  * Frontier March, Tactician I–II, Autocaster, Night Watch II–III and speed ×3.
+ * P7 adds rings 4–6, sealed by the Prism, Forgeheart and the Hollow King:
+ * weapon slots 3–4, Evolution Insight, Night Watch IV and the late minors.
  *
  * Only Might, Bulwark and Fortune hang from the root, so a fresh Forge shows
  * three nodes (§7.1). Arsenal hangs from Might and Engineering from Fortune:
@@ -107,6 +109,76 @@ export const FORGE: readonly ForgeNodeDef[] = [
     sealed: 'bog-mother',
   },
 
+  {
+    id: 'might-damage-4', name: "Bright Steel", icon: 'rune-sword', text: "Damage +15%.",
+    branch: 'might', type: 'minor', ring: 4, angle: 4, links: ['might-damage-3'], maxLevel: 5, cost: 5200,
+    effects: [{ kind: 'stat', mod: { key: 'damage', pct: 0.15 } }],
+  },
+  {
+    id: 'might-speed-4', name: "Whirlwind", icon: 'pentarrows-tornado', text: "Attack speed +8%.",
+    branch: 'might', type: 'minor', ring: 4, angle: -8, links: ['might-speed-3'], maxLevel: 5, cost: 5600,
+    effects: [{ kind: 'stat', mod: { key: 'attackSpeed', pct: 0.08 } }], sealed: 'prism',
+  },
+  {
+    id: 'might-crit-damage-4', name: "Cleave", icon: 'deadly-strike', text: "Crit damage +25%.",
+    branch: 'might', type: 'minor', ring: 4, angle: -20, links: ['might-crit-3'], maxLevel: 5, cost: 5200,
+    effects: [{ kind: 'stat', mod: { key: 'critDamage', add: 0.25 } }], sealed: 'prism',
+  },
+  {
+    id: 'might-range-4', name: "Far Sight", icon: 'arrow-scope', text: "Range +5%.",
+    branch: 'might', type: 'minor', ring: 4, angle: -30, links: ['might-crit-damage-4'], maxLevel: 5, cost: 4800,
+    effects: [{ kind: 'stat', mod: { key: 'range', pct: 0.05 } }], sealed: 'prism',
+  },
+  {
+    id: 'ricochet', name: "Ricochet", icon: 'return-arrow', text: "Every shot pierces one more enemy.",
+    branch: 'might', type: 'notable', ring: 4, angle: 16, links: ['might-damage-4'], maxLevel: 1, cost: 6000,
+    effects: [{ kind: 'stat', mod: { key: 'pierce', add: 1 } }],
+  },
+  {
+    id: 'might-damage-5', name: "Sunforged", icon: 'bloody-sword', text: "Damage +15%.",
+    branch: 'might', type: 'minor', ring: 5, angle: 4, links: ['might-damage-4'], maxLevel: 5, cost: 40000,
+    effects: [{ kind: 'stat', mod: { key: 'damage', pct: 0.15 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'might-speed-5', name: "Storm of Blows", icon: 'fast-arrow', text: "Attack speed +8%.",
+    branch: 'might', type: 'minor', ring: 5, angle: -8, links: ['might-speed-4'], maxLevel: 5, cost: 44000,
+    effects: [{ kind: 'stat', mod: { key: 'attackSpeed', pct: 0.08 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'might-crit-5', name: "Killing Eye", icon: 'dead-eye', text: "Crit chance +3%.",
+    branch: 'might', type: 'minor', ring: 5, angle: -20, links: ['might-crit-damage-4'], maxLevel: 5, cost: 41600,
+    effects: [{ kind: 'stat', mod: { key: 'critChance', add: 0.03 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'might-range-5', name: "Eagle Sight", icon: 'arrow-scope', text: "Range +5%.",
+    branch: 'might', type: 'minor', ring: 5, angle: -30, links: ['might-range-4'], maxLevel: 5, cost: 40000,
+    effects: [{ kind: 'stat', mod: { key: 'range', pct: 0.05 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'overcharge', name: "Overcharge", icon: 'bolt-spell-cast', text: "Damage +40%, but attack speed \u221210%.",
+    branch: 'might', type: 'notable', ring: 5, angle: 18, links: ['might-damage-5'], maxLevel: 1, cost: 120000,
+    effects: [{ kind: 'stat', mod: { key: 'damage', pct: 0.4 } }, { kind: 'stat', mod: { key: 'attackSpeed', pct: -0.1 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'might-damage-6', name: "Lightbringer", icon: 'swords-emblem', text: "Damage +15%.",
+    branch: 'might', type: 'minor', ring: 6, angle: 4, links: ['might-damage-5'], maxLevel: 5, cost: 243000,
+    effects: [{ kind: 'stat', mod: { key: 'damage', pct: 0.15 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'might-speed-6', name: "Tempest Hands", icon: 'supersonic-arrow', text: "Attack speed +8%.",
+    branch: 'might', type: 'minor', ring: 6, angle: -8, links: ['might-speed-5'], maxLevel: 5, cost: 256500,
+    effects: [{ kind: 'stat', mod: { key: 'attackSpeed', pct: 0.08 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'might-crit-6', name: "Ruin", icon: 'crosshair', text: "Crit damage +25%.",
+    branch: 'might', type: 'minor', ring: 6, angle: -20, links: ['might-crit-5'], maxLevel: 5, cost: 243000,
+    effects: [{ kind: 'stat', mod: { key: 'critDamage', add: 0.25 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'annihilator', name: "Annihilator", icon: 'guillotine', text: "Enemies under 10% HP die when hit; with Executioner, under 20%.",
+    branch: 'might', type: 'notable', ring: 6, angle: 20, links: ['overcharge'], maxLevel: 1, cost: 675000,
+    effects: [{ kind: 'behaviour', id: 'executioner' }], sealed: 'hollow-king',
+  },
   // ── Arsenal ────────────────────────────────────────────────────────────
   {
     id: 'scattershot', name: 'Scattershot', icon: 'striking-arrows', text: 'Scattershot joins the draft, and +1 weapon slot.',
@@ -170,6 +242,71 @@ export const FORGE: readonly ForgeNodeDef[] = [
     sealed: 'bog-mother',
   },
 
+  {
+    id: 'weapon-slot-3', name: "Third Mount", icon: 'upgrade', text: "+1 weapon slot.",
+    branch: 'arsenal', type: 'notable', ring: 4, angle: 88, links: ['twin-mount'], maxLevel: 1, cost: 7500,
+    effects: [{ kind: 'slot', slot: 'weapon', n: 1 }], sealed: 'prism',
+  },
+  {
+    id: 'evolution-insight', name: "Evolution Insight", icon: 'book-pile', text: "Every recipe's weapon half shows in the Recipe Book.",
+    branch: 'arsenal', type: 'notable', ring: 4, angle: 72, links: ['alchemy'], maxLevel: 1, cost: 3000,
+    effects: [{ kind: 'automation', id: 'insight' }],
+  },
+  {
+    id: 'veteran-arms', name: "Veteran Arms", icon: 'double-shot', text: "Your starting weapon begins one more level up.",
+    branch: 'arsenal', type: 'notable', ring: 4, angle: 60, links: ['passive-slot-2'], maxLevel: 1, cost: 6500,
+    effects: [{ kind: 'behaviour', id: 'opening-salvo' }], sealed: 'prism',
+  },
+  {
+    id: 'arsenal-area', name: "Wide Arcs", icon: 'bright-explosion', text: "Area +10%.",
+    branch: 'arsenal', type: 'minor', ring: 4, angle: 100, links: ['sunlance'], maxLevel: 5, cost: 5200,
+    effects: [{ kind: 'stat', mod: { key: 'area', pct: 0.1 } }], sealed: 'prism',
+  },
+  {
+    id: 'arsenal-duration', name: "Lingering", icon: 'extra-time', text: "Slows, burns and stuns last 10% longer.",
+    branch: 'arsenal', type: 'minor', ring: 4, angle: 112, links: ['glaives'], maxLevel: 5, cost: 5200,
+    effects: [{ kind: 'stat', mod: { key: 'duration', pct: 0.1 } }], sealed: 'prism',
+  },
+  {
+    id: 'drilled', name: "Drilled", icon: 'progression', text: "New weapons join at level 2.",
+    branch: 'arsenal', type: 'notable', ring: 5, angle: 90, links: ['weapon-slot-3'], maxLevel: 1, cost: 128000,
+    effects: [{ kind: 'behaviour', id: 'drilled' }], sealed: 'forgeheart',
+  },
+  {
+    id: 'arsenal-range', name: "Long Barrels", icon: 'target-laser', text: "Range +5%.",
+    branch: 'arsenal', type: 'minor', ring: 5, angle: 78, links: ['weapon-slot-3'], maxLevel: 5, cost: 40000,
+    effects: [{ kind: 'stat', mod: { key: 'range', pct: 0.05 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'arsenal-area-2', name: "Vast Arcs", icon: 'spiky-explosion', text: "Area +10%.",
+    branch: 'arsenal', type: 'minor', ring: 5, angle: 102, links: ['arsenal-area'], maxLevel: 5, cost: 44000,
+    effects: [{ kind: 'stat', mod: { key: 'area', pct: 0.1 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'arsenal-duration-2', name: "Enduring", icon: 'hourglass', text: "Slows, burns and stuns last 10% longer.",
+    branch: 'arsenal', type: 'minor', ring: 5, angle: 114, links: ['arsenal-duration'], maxLevel: 5, cost: 44000,
+    effects: [{ kind: 'stat', mod: { key: 'duration', pct: 0.1 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'weapon-slot-4', name: "Fourth Mount", icon: 'nested-hexagons', text: "+1 weapon slot.",
+    branch: 'arsenal', type: 'notable', ring: 6, angle: 90, links: ['drilled'], maxLevel: 1, cost: 810000,
+    effects: [{ kind: 'slot', slot: 'weapon', n: 1 }], sealed: 'hollow-king',
+  },
+  {
+    id: 'arsenal-range-2', name: "Siege Sights", icon: 'target-arrows', text: "Range +5%.",
+    branch: 'arsenal', type: 'minor', ring: 6, angle: 78, links: ['arsenal-range'], maxLevel: 5, cost: 270000,
+    effects: [{ kind: 'stat', mod: { key: 'range', pct: 0.05 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'arsenal-area-3', name: "Cataclysm", icon: 'explosion-rays', text: "Area +10%.",
+    branch: 'arsenal', type: 'minor', ring: 6, angle: 102, links: ['arsenal-area-2'], maxLevel: 5, cost: 270000,
+    effects: [{ kind: 'stat', mod: { key: 'area', pct: 0.1 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'arsenal-duration-3', name: "Eternity", icon: 'over-infinity', text: "Slows, burns and stuns last 10% longer.",
+    branch: 'arsenal', type: 'minor', ring: 6, angle: 114, links: ['arsenal-duration-2'], maxLevel: 5, cost: 270000,
+    effects: [{ kind: 'stat', mod: { key: 'duration', pct: 0.1 } }], sealed: 'hollow-king',
+  },
   // ── Engineering ────────────────────────────────────────────────────────
   {
     id: 'speed-2', name: 'Overdrive', icon: 'fast-forward-button', text: 'Unlocks game speed ×2.',
@@ -227,6 +364,51 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'stat', mod: { key: 'ultCharge', pct: 0.15 } }],
   },
 
+  {
+    id: 'ult-charge-2', name: "Capacitor II", icon: 'energy-tank', text: "Ultimate charges 15% faster.",
+    branch: 'engineering', type: 'minor', ring: 4, angle: 150, links: ['auto-ult'], maxLevel: 3, cost: 6000,
+    effects: [{ kind: 'stat', mod: { key: 'ultCharge', pct: 0.15 } }], sealed: 'prism',
+  },
+  {
+    id: 'charged-start', name: "Primed", icon: 'concentration-orb', text: "Your ultimate starts every run fully charged.",
+    branch: 'engineering', type: 'notable', ring: 4, angle: 162, links: ['speed-3'], maxLevel: 1, cost: 6000,
+    effects: [{ kind: 'behaviour', id: 'charged-start' }], sealed: 'prism',
+  },
+  {
+    id: 'offline-4', name: "Night Watch IV", icon: 'star-gate', text: "Offline earns 75% of your farm rate, up to 12 h.",
+    branch: 'engineering', type: 'notable', ring: 4, angle: 176, links: ['offline-3'], maxLevel: 1, cost: 36000,
+    effects: [{ kind: 'automation', id: 'offline-4' }], sealed: 'forgeheart',
+  },
+  {
+    id: 'ult-charge-3', name: "Capacitor III", icon: 'energy-tank', text: "Ultimate charges 15% faster.",
+    branch: 'engineering', type: 'minor', ring: 5, angle: 150, links: ['ult-charge-2'], maxLevel: 3, cost: 48000,
+    effects: [{ kind: 'stat', mod: { key: 'ultCharge', pct: 0.15 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'eng-xp', name: "Recorder", icon: 'graduate-cap', text: "XP +10%.",
+    branch: 'engineering', type: 'minor', ring: 5, angle: 164, links: ['charged-start'], maxLevel: 5, cost: 40000,
+    effects: [{ kind: 'stat', mod: { key: 'xpGain', pct: 0.1 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'refinery', name: "Refinery", icon: 'gold-bar', text: "Shards +10%.",
+    branch: 'engineering', type: 'minor', ring: 5, angle: 136, links: ['ult-charge-3'], maxLevel: 5, cost: 44000,
+    effects: [{ kind: 'stat', mod: { key: 'shardGain', pct: 0.1 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'ult-charge-4', name: "Capacitor IV", icon: 'energy-tank', text: "Ultimate charges 15% faster.",
+    branch: 'engineering', type: 'minor', ring: 6, angle: 150, links: ['ult-charge-3'], maxLevel: 3, cost: 297000,
+    effects: [{ kind: 'stat', mod: { key: 'ultCharge', pct: 0.15 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'eng-xp-2', name: "Archivist", icon: 'wisdom', text: "XP +10%.",
+    branch: 'engineering', type: 'minor', ring: 6, angle: 164, links: ['eng-xp'], maxLevel: 5, cost: 243000,
+    effects: [{ kind: 'stat', mod: { key: 'xpGain', pct: 0.1 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'refinery-2', name: "Refinery II", icon: 'gold-bar', text: "Shards +10%.",
+    branch: 'engineering', type: 'minor', ring: 6, angle: 136, links: ['refinery'], maxLevel: 5, cost: 270000,
+    effects: [{ kind: 'stat', mod: { key: 'shardGain', pct: 0.1 } }], sealed: 'hollow-king',
+  },
   // ── Fortune ────────────────────────────────────────────────────────────
   {
     id: 'fortune-shards', name: 'Prospector', icon: 'gems', text: 'Shards +10%.',
@@ -285,6 +467,61 @@ export const FORGE: readonly ForgeNodeDef[] = [
     sealed: 'bog-mother',
   },
 
+  {
+    id: 'fortune-shards-4', name: "Seam", icon: 'gems', text: "Shards +10%.",
+    branch: 'fortune', type: 'minor', ring: 4, angle: 210, links: ['fortune-shards-3'], maxLevel: 5, cost: 4800,
+    effects: [{ kind: 'stat', mod: { key: 'shardGain', pct: 0.1 } }], sealed: 'prism',
+  },
+  {
+    id: 'fortune-xp-4', name: "Sage", icon: 'brain', text: "XP +10%.",
+    branch: 'fortune', type: 'minor', ring: 4, angle: 196, links: ['fortune-xp-3'], maxLevel: 5, cost: 4800,
+    effects: [{ kind: 'stat', mod: { key: 'xpGain', pct: 0.1 } }], sealed: 'prism',
+  },
+  {
+    id: 'reroll-2', name: "Second Thoughts", icon: 'rolling-dices', text: "+1 draft reroll per run.",
+    branch: 'fortune', type: 'notable', ring: 4, angle: 222, links: ['bounty'], maxLevel: 3, cost: 2000,
+    effects: [{ kind: 'behaviour', id: 'reroll' }],
+  },
+  {
+    id: 'foresight', name: "Foresight", icon: 'all-seeing-eye', text: "+1 card in every draft.",
+    branch: 'fortune', type: 'notable', ring: 4, angle: 234, links: ['bounty'], maxLevel: 1, cost: 8000,
+    effects: [{ kind: 'behaviour', id: 'extra-choice' }], sealed: 'prism',
+  },
+  {
+    id: 'fortune-shards-5', name: "Glittering Deep", icon: 'gold-nuggets', text: "Shards +10%.",
+    branch: 'fortune', type: 'minor', ring: 5, angle: 210, links: ['fortune-shards-4'], maxLevel: 5, cost: 40000,
+    effects: [{ kind: 'stat', mod: { key: 'shardGain', pct: 0.1 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'fortune-xp-5', name: "Loremaster", icon: 'book-pile', text: "XP +10%.",
+    branch: 'fortune', type: 'minor', ring: 5, angle: 196, links: ['fortune-xp-4'], maxLevel: 5, cost: 40000,
+    effects: [{ kind: 'stat', mod: { key: 'xpGain', pct: 0.1 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'veteran', name: "Veteran", icon: 'graduate-cap', text: "Start runs two levels higher.",
+    branch: 'fortune', type: 'notable', ring: 5, angle: 186, links: ['fortune-xp-5'], maxLevel: 1, cost: 128000,
+    effects: [{ kind: 'behaviour', id: 'head-start' }], sealed: 'forgeheart',
+  },
+  {
+    id: 'treasure-hunter', name: "Treasure Hunter", icon: 'treasure-map', text: "Elites drop relics twice as often.",
+    branch: 'fortune', type: 'notable', ring: 5, angle: 224, links: ['fortune-shards-5'], maxLevel: 1, cost: 96000,
+    effects: [{ kind: 'behaviour', id: 'relic-luck' }], sealed: 'forgeheart',
+  },
+  {
+    id: 'fortune-shards-6', name: "Starfall Vein", icon: 'gold-mine', text: "Shards +10%.",
+    branch: 'fortune', type: 'minor', ring: 6, angle: 210, links: ['fortune-shards-5'], maxLevel: 5, cost: 243000,
+    effects: [{ kind: 'stat', mod: { key: 'shardGain', pct: 0.1 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'fortune-xp-6', name: "Omniscience", icon: 'wisdom', text: "XP +10%.",
+    branch: 'fortune', type: 'minor', ring: 6, angle: 196, links: ['fortune-xp-5'], maxLevel: 5, cost: 243000,
+    effects: [{ kind: 'stat', mod: { key: 'xpGain', pct: 0.1 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'jackpot', name: "Jackpot", icon: 'coinflip', text: "+1 card in every draft.",
+    branch: 'fortune', type: 'notable', ring: 6, angle: 230, links: ['treasure-hunter'], maxLevel: 1, cost: 1080000,
+    effects: [{ kind: 'behaviour', id: 'extra-choice' }], sealed: 'hollow-king',
+  },
   // ── Bulwark ────────────────────────────────────────────────────────────
   {
     id: 'bulwark-hp', name: 'Stoneworks', icon: 'health-increase', text: 'Max HP +20%.',
@@ -355,6 +592,66 @@ export const FORGE: readonly ForgeNodeDef[] = [
     id: 'bulwark-armor-2', name: 'Riveted Plate', icon: 'layered-armor', text: 'Armour +1: every hit on the tower is 1 weaker.',
     branch: 'bulwark', type: 'minor', ring: 2, angle: 318, links: ['bulwark-armor'], maxLevel: 5, cost: 90,
     effects: [{ kind: 'stat', mod: { key: 'armor', add: 1 } }],
+  },
+  {
+    id: 'bulwark-hp-4', name: "Citadel", icon: 'health-increase', text: "Max HP +20%.",
+    branch: 'bulwark', type: 'minor', ring: 4, angle: 294, links: ['bulwark-hp-3'], maxLevel: 5, cost: 4800,
+    effects: [{ kind: 'stat', mod: { key: 'maxHp', pct: 0.2 } }], sealed: 'prism',
+  },
+  {
+    id: 'bulwark-regen-4', name: "Deep Roots", icon: 'heart-drop', text: "Regenerate +0.5% of Max HP per second.",
+    branch: 'bulwark', type: 'minor', ring: 4, angle: 280, links: ['bulwark-regen-3'], maxLevel: 5, cost: 5200,
+    effects: [{ kind: 'stat', mod: { key: 'regen', add: 0.005 } }], sealed: 'prism',
+  },
+  {
+    id: 'bulwark-armor-4', name: "Bastion Plate", icon: 'breastplate', text: "Armour +3: every hit on the tower is 3 weaker.",
+    branch: 'bulwark', type: 'minor', ring: 4, angle: 308, links: ['bulwark-armor-3'], maxLevel: 5, cost: 5600,
+    effects: [{ kind: 'stat', mod: { key: 'armor', add: 3 } }], sealed: 'prism',
+  },
+  {
+    id: 'rampart', name: "Rampart", icon: 'stone-wall', text: "No contact hit takes more than 8% of Max HP.",
+    branch: 'bulwark', type: 'notable', ring: 4, angle: 318, links: ['bulwark-armor-4'], maxLevel: 1, cost: 7000,
+    effects: [{ kind: 'behaviour', id: 'rampart' }], sealed: 'prism',
+  },
+  {
+    id: 'bulwark-hp-5', name: "Unbreaking", icon: 'shining-heart', text: "Max HP +20%.",
+    branch: 'bulwark', type: 'minor', ring: 5, angle: 294, links: ['bulwark-hp-4'], maxLevel: 5, cost: 40000,
+    effects: [{ kind: 'stat', mod: { key: 'maxHp', pct: 0.2 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'bulwark-regen-5', name: "Evergreen", icon: 'regeneration', text: "Regenerate +0.5% of Max HP per second.",
+    branch: 'bulwark', type: 'minor', ring: 5, angle: 280, links: ['bulwark-regen-4'], maxLevel: 5, cost: 41600,
+    effects: [{ kind: 'stat', mod: { key: 'regen', add: 0.005 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'bulwark-armor-5', name: "Adamant", icon: 'metal-plate', text: "Armour +5: every hit on the tower is 5 weaker.",
+    branch: 'bulwark', type: 'minor', ring: 5, angle: 308, links: ['bulwark-armor-4'], maxLevel: 5, cost: 44000,
+    effects: [{ kind: 'stat', mod: { key: 'armor', add: 5 } }], sealed: 'forgeheart',
+  },
+  {
+    id: 'undying', name: "Undying", icon: 'fountain', text: "Once more per run, rise again at 50% HP.",
+    branch: 'bulwark', type: 'notable', ring: 5, angle: 268, links: ['bulwark-regen-5'], maxLevel: 1, cost: 120000,
+    effects: [{ kind: 'behaviour', id: 'second-wind' }], sealed: 'forgeheart',
+  },
+  {
+    id: 'bulwark-hp-6', name: "Eternal Walls", icon: 'castle', text: "Max HP +20%.",
+    branch: 'bulwark', type: 'minor', ring: 6, angle: 294, links: ['bulwark-hp-5'], maxLevel: 5, cost: 243000,
+    effects: [{ kind: 'stat', mod: { key: 'maxHp', pct: 0.2 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'bulwark-regen-6', name: "Font of Life", icon: 'healing', text: "Regenerate +0.5% of Max HP per second.",
+    branch: 'bulwark', type: 'minor', ring: 6, angle: 280, links: ['bulwark-regen-5'], maxLevel: 5, cost: 243000,
+    effects: [{ kind: 'stat', mod: { key: 'regen', add: 0.005 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'bulwark-armor-6', name: "Godplate", icon: 'armor-upgrade', text: "Armour +8: every hit on the tower is 8 weaker.",
+    branch: 'bulwark', type: 'minor', ring: 6, angle: 308, links: ['bulwark-armor-5'], maxLevel: 5, cost: 256500,
+    effects: [{ kind: 'stat', mod: { key: 'armor', add: 8 } }], sealed: 'hollow-king',
+  },
+  {
+    id: 'oath', name: "Oath of Stone", icon: 'surrounded-shield', text: "Regen is tripled while a boss stands.",
+    branch: 'bulwark', type: 'notable', ring: 6, angle: 300, links: ['bulwark-hp-6'], maxLevel: 1, cost: 606000,
+    effects: [{ kind: 'behaviour', id: 'oath' }], sealed: 'hollow-king',
   },
 ];
 

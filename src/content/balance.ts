@@ -78,6 +78,15 @@ export const BALANCE = {
     hoarderChoices: 1,
     /** Specialist (keystone): the one weapon evolves at this level instead. */
     specialistEvolveAt: 3,
+    /** Rampart: a contact hit takes at most this fraction of Max HP. */
+    rampartCap: 0.08,
+    /** Oath: regen multiplier while a boss stands. */
+    oathRegen: 3,
+    /** Treasure Hunter: an elite's relic chance multiplies by this. */
+    relicLuck: 2,
+    /** Stormcaller's quirk: a crit leaps to the nearest other body within this, for this share of the hit. */
+    stormLeap: 200,
+    stormShare: 0.6,
   },
   /**
    * Evolutions (§4.4, §11.2): offered once a weapon reaches `evolveAt` with
@@ -152,6 +161,36 @@ export const BALANCE = {
     frailSplits: [0.5, 0.4, 0.3],
     /** Stillwater Charm: damage taken by bodies that are not moving. */
     stillTarget: [0.25, 0.35, 0.45],
+    /** Prism Heart: chance a shot refracts into a second target. */
+    refract: [0.2, 0.3, 0.4],
+    /** Frost Brand: damage taken by slowed bodies. */
+    frostBrand: [0.25, 0.35, 0.45],
+    /** Hourglass Sand: damage taken by bodies within a third of range. */
+    closeQuarters: [0.3, 0.4, 0.5],
+    /** Forgeheart Core: every `surgeEvery` s, weapons hit this hard for `surgeSeconds`. */
+    surge: [3, 3.5, 4],
+    surgeEvery: 10,
+    surgeSeconds: 1,
+    /** Ember Ward: damage taken by burning bodies. */
+    kindling: [0.3, 0.4, 0.5],
+    /** Blast Shield: what's left of a Bomber's or Shardling's blast at the wall. */
+    blastShield: [0.5, 0.35, 0.2],
+    /** Hollow Crown: Max HP restored by each ultimate cast. */
+    ultHeal: [0.25, 0.35, 0.45],
+    /** Soul Jar: every `soulKills` kills restore this much Max HP. */
+    soulJar: [0.05, 0.07, 0.1],
+    soulKills: 50,
+    /** Warding Salt: a body that hits the wall is slowed this much, for `saltSeconds`. */
+    salt: [0.3, 0.4, 0.5],
+    saltSeconds: 2,
+    /** Last Light: ultimate charge multiplier below half HP. */
+    lastLight: [2, 2.5, 3],
+    /** Blight Thorn: damage taken by elites. */
+    eliteBane: [0.5, 0.7, 0.9],
+    /** Pale Lantern: damage taken by bosses. */
+    bossBane: [0.2, 0.3, 0.4],
+    /** Starseed: Max HP restored on each level-up. */
+    levelHeal: [0.1, 0.15, 0.2],
     /** Chance an elite kill drops one of its region's relics (§4.3). */
     eliteDrop: 0.3,
     /** Ranks top out here (§5.3: I → III). */
@@ -196,6 +235,13 @@ export const BALANCE = {
     attackInterval: 1.4,
     /** A submerged boss rises this far round its ring, radians, either way. */
     emergeArc: [0.9, 1.8],
+  },
+  /** Enemy verbs that need a number not in the type's data (§4.3). */
+  foes: {
+    /** A Shardling's shards: how fast they fly at the tower. */
+    shardSpeed: 420,
+    /** A Blinker never lands closer than this to the wall. */
+    blinkMargin: 20,
   },
   /** Overtime (§8.2): waves past the boss. */
   overtime: {

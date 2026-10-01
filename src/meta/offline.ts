@@ -23,8 +23,8 @@ export function farmRate(profile: Profile): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-/** Night Watch I–III, in tier order (§6.2). */
-const TIERS = ['offline', 'offline-2', 'offline-3'] as const;
+/** Night Watch I–IV, in tier order (§6.2). */
+const TIERS = ['offline', 'offline-2', 'offline-3', 'offline-4'] as const;
 
 /** The highest owned offline tier, or null before Night Watch (§6.2). */
 export function offlineTier(profile: Profile): { efficiency: number; capHours: number } | null {

@@ -6,7 +6,7 @@ import { RELICS } from '../../content/relics';
 import { BALANCE } from '../../content/balance';
 import { PASSIVE_BY_ID } from '../../content/passives';
 import { WEAPON_BY_ID } from '../../content/weapons';
-import type { BossId, EnemyId, RelicId } from '../../content/types';
+import type { BossId, EnemyId, FrameUnlock, RelicId } from '../../content/types';
 import { formatNumber } from '../../core/format';
 import {
   bestiary, collectionPages, frameUnlocked, relicRank, relicSlots, selectedFrame,
@@ -15,6 +15,22 @@ import type { Profile } from '../../meta/profile';
 import { recipeBook } from '../../meta/recipes';
 import { toggleClass } from '../dom';
 import { icon } from '../icon';
+
+/** How a locked frame is earned, in words (§11.6). */
+function lockedLine(u: FrameUnlock): string {
+  switch (u.kind) {
+    case 'start':
+      return '';
+    case 'boss':
+      return `Defeat ${BOSS_BY_ID[u.boss].name}.`;
+    case 'feat':
+      return 'Earned by a secret feat.';
+    default: {
+      const exhaustive: never = u;
+      return exhaustive;
+    }
+  }
+}
 
 export type CollectionPage = 'bestiary' | 'relics' | 'recipes' | 'frames';
 
@@ -243,7 +259,7 @@ export class CollectionView {
       h.append(icon(open ? f.icon : 'locked-chest'), n, tag);
       const t = document.createElement('p');
       t.className = 'entry-text';
-      t.textContent = open ? f.text : `Defeat ${f.unlock.kind === 'boss' ? BOSS_BY_ID[f.unlock.boss].name : 'the first boss'}.`;
+      t.textContent = open ? f.text : lockedLine(f.unlock);
       const u = document.createElement('p');
       u.className = 'entry-lore';
       u.textContent = `${f.ultimate.name}: ${f.ultimate.text}`;

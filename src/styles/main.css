@@ -876,6 +876,16 @@ body {
   gap: var(--space-2);
 }
 
+/* Five or six cards (Foresight, Jackpot): two rows of three, shorter. */
+.draft-row.is-many {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.draft-row.is-many .draft-card {
+  height: 196px;
+}
+
 .draft-card {
   position: relative;
   min-width: 44px;

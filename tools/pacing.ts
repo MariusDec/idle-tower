@@ -2,9 +2,10 @@
  * The pacing report (§13): a fresh profile, played by the active bot over
  * the real sim for N simulated hours. Between runs it buys in the Forge,
  * claims feats and pushes to the frontier region, and it checks the
- * invariants this phase can see (§8.4):
+ * invariants (§8.4):
  *
  *   I1a boss 1 first falls within 20–40 min (P4's gate: 25–40)
+ *   I1b the Act 1 finale first falls within 7–12 h (needs --hours 12)
  *   I3  every results screen shows an affordable node, or ≥ 50% toward one
  *   I6  no gap between reveals longer than 10 min (in the first 2 h)
  *   P3  wave 20 is first reached within 15–30 min
@@ -13,9 +14,10 @@
  *   npm run pacing -- --hours 2 --seed 3
  *   npm run pacing -- --csv reveals.csv  also write the reveal timeline
  *   npm run pacing -- --seeds 8          eight profiles: pass counts and the
- *                                        median first wave 20 (the gate's reading)
+ *                                        medians (the gates' reading)
+ *   npm run pacing -- --hours 12 --seeds 8
+ *                                        the full report, Act 1 to its end (P7's gate)
  *   npm run pacing -- --idle --seeds 4   the idle bot (tools/idle.ts): I2 and I5
- *                                        for Regions 1–2, extrapolated (P6's gate)
  *
  * Times are the player's wall clock: sim time divided by the game speed,
  * plus the moments a person spends on drafts and between runs.
@@ -39,7 +41,7 @@ import { formatDuration } from '../src/core/format';
 import type { BranchId } from '../src/content/types';
 import { playRun } from './play';
 import { shop } from './shop';
-import { CHECKIN_EVERY, SESSION, farmRatio, idleDayInActiveHours, runIdle } from './idle';
+import { CHECKIN_EVERY, SESSION, farmRatio, runIdle } from './idle';
 
 /** Wall seconds between runs: the results screen, plus shopping when there is shopping. */
 const BETWEEN_RUNS = { idle: 6, shopping: 15 };
@@ -97,13 +99,19 @@ export interface PacingReport {
    */
   checkpoints: { label: string; at: number; profile: Profile }[];
   i1a: boolean;
+  /** I1's second half: the finale first fell within 7–12 h. */
+  i1b: boolean;
   i3: boolean;
   i6: boolean;
   wave20: boolean;
 }
 
-/** I1's first half (§8.4): boss 1's first kill, in wall minutes. */
+/** I1's first half (§8.4): boss 1's first kill, in wall seconds. */
 const I1A = { min: 20 * 60, max: 40 * 60 };
+/** I1's second half (§8.4): the Act 1 finale's first kill, in wall seconds. */
+export const I1B = { min: 7 * 3600, max: 12 * 3600 };
+/** The boss whose fall ends Act 1. */
+export const FINALE = BOSSES.find((b) => b.finale)!.id;
 
 export function runPacing(hours: number, seed: number): PacingReport {
   const profile = newProfile(0);
@@ -217,10 +225,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
   }
 
   reveals.sort((a, b) => a.at - b.at);
-  // I6 reads the first two hours, or up to the fall of the last boss this
-  // build has: past it the content runs out, which is a later phase's gap.
-  const lastBoss = BOSSES[BOSSES.length - 1].id;
-  const window = Math.min(clock, I6_WINDOW, bossKills[lastBoss] ?? Infinity);
+  const window = Math.min(clock, I6_WINDOW);
   let worstGap = { seconds: 0, from: 0 };
   let prev = 0;
   for (const r of [...reveals.filter((x) => x.at <= window), { at: window, what: 'end' }]) {
@@ -228,6 +233,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
     prev = r.at;
   }
   const boss1 = bossKills.gatekeeper ?? null;
+  const finale = bossKills[FINALE] ?? null;
   return {
     seconds: clock,
     runs,
@@ -238,6 +244,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
     worstGap,
     checkpoints,
     i1a: boss1 !== null && boss1 >= I1A.min && boss1 <= I1A.max,
+    i1b: finale !== null && finale >= I1B.min && finale <= I1B.max,
     i3,
     i6: worstGap.seconds <= MAX_REVEAL_GAP,
     wave20: firstWave20 !== null && firstWave20 >= 15 * 60 && firstWave20 <= 30 * 60,
@@ -270,19 +277,17 @@ export function medianBossKill(reports: readonly PacingReport[], boss: string): 
   return medianOf(reports, (r) => r.bossKills[boss] ?? null);
 }
 
-/** I1's Act 1 band (§8.4), hours with the active bot: the midpoint scales the idle projection. */
-const ACT1_ACTIVE_HOURS = (7 + 12) / 2;
 /** I2's band (§8.4): Act 1 for the idle bot, in days. */
 export const I2_DAYS = { min: 5, max: 10 };
 /** I5's band (§8.4): active shards per hour over idle, at the same Forge state. */
 export const I5_RATIO = { min: 1.15, max: 1.5 };
 /**
- * The checkpoints I5 is held to: Region 2, once §6.2's idle kit (Tactician,
- * the Autocaster) can be owned. Before it, drafts wait their full ten
- * seconds and no ultimate casts itself: the report shows that reading, but
- * §6.1 has the player active there anyway.
+ * The checkpoints I5 is held to: from Region 2 on, once §6.2's idle kit
+ * (Tactician, the Autocaster) can be owned. Before it, drafts wait their
+ * full ten seconds and no ultimate casts itself: the report shows that
+ * reading, but §6.1 has the player active there anyway.
  */
-export const I5_GATED: readonly string[] = ['region-2', 'bog-mother'];
+export const I5_GATED: readonly string[] = ['region-2', ...BOSSES.filter((b) => b.id !== 'gatekeeper').map((b) => b.id)];
 
 /** I5's median at one checkpoint across profiles; null if no profile reached it. */
 export function medianRatio(verdicts: readonly IdleVerdict[], label: string): number | null {
@@ -290,59 +295,49 @@ export function medianRatio(verdicts: readonly IdleVerdict[], label: string): nu
   return rs.length > 0 ? rs[rs.length >> 1] : null;
 }
 
-/** I2's median projection across profiles; null if a profile never got there counts as never. */
-export function medianProjection(verdicts: readonly IdleVerdict[]): number | null {
-  const proj = verdicts.map((v) => v.projectedDays ?? Infinity).sort((x, y) => x - y);
-  const m = proj[proj.length >> 1];
+/** I2's median across profiles, in days; a profile that never got there counts as never. */
+export function medianDays(verdicts: readonly IdleVerdict[]): number | null {
+  const days = verdicts.map((v) => (v.idle === null ? Infinity : v.idle / 86400)).sort((x, y) => x - y);
+  const m = days[days.length >> 1];
   return Number.isFinite(m) ? m : null;
 }
 
 export interface IdleVerdict {
-  /** The idle bot's wall seconds to the last boss this build has, and the active bot's. */
+  /** The idle bot's wall seconds to the finale's first fall (I2), or null if it never fell. */
   idle: number | null;
-  active: number | null;
-  /** Hours of active play one idle day is worth from there on. */
-  dayWorth: number | null;
-  /** Act 1 for the idle bot, in days, projected (see `idleVerdict`). */
-  projectedDays: number | null;
+  /** Wall seconds the idle bot took to each boss's first fall. */
+  bossKills: Record<string, number>;
   /** I5 at each checkpoint of the active run. */
   ratios: { label: string; active: number; idle: number; ratio: number }[];
 }
 
+/** How long the idle bot may take before I2 calls it never, in days: past the band, with room to read. */
+const IDLE_DAYS_CAP = 20;
+
 /**
- * I2 and I5 for Regions 1–2, extrapolated (P6's gate). Act 1 doesn't exist
- * past the Bog Mother yet, so I2 is projected: the idle bot's measured days
- * to her, plus the rest of the active Act 1 target (I1's midpoint less the
- * active bot's time to her) at what an idle day is worth at the Forge state
- * she leaves it in. Later offline tiers only shorten that tail, so the
- * projection leans long.
+ * I2 and I5 (§8.4). I2 is measured: the idle bot's check-ins from a fresh
+ * profile to the finale's first fall. I5 compares the two players at the
+ * active bot's checkpoints over `activeHours` of its play: the later
+ * bosses' checkpoints need the full twelve.
  */
-export function idleVerdict(seed: number, runsPerPolicy = 6): IdleVerdict {
-  const last = BOSSES[BOSSES.length - 1].id;
-  const active = runPacing(3, seed);
-  const idle = runIdle(30, seed, [last]);
-  const a = active.bossKills[last] ?? null;
-  const i = idle.bossKills[last] ?? null;
-  const dayWorth = idle.after ? idleDayInActiveHours(idle.after, runsPerPolicy, seed) : null;
-  const projectedDays = a !== null && i !== null && dayWorth
-    ? i / 86400 + Math.max(0, ACT1_ACTIVE_HOURS - a / 3600) / dayWorth
-    : null;
+export function idleVerdict(seed: number, runsPerPolicy = 6, activeHours = 3): IdleVerdict {
+  const active = runPacing(activeHours, seed);
+  const idle = runIdle(IDLE_DAYS_CAP, seed, [FINALE]);
   const ratios = active.checkpoints.map((c) => ({ label: c.label, ...farmRatio(c.profile, runsPerPolicy, seed) }));
-  return { idle: i, active: a, dayWorth, projectedDays, ratios };
+  return { idle: idle.bossKills[FINALE] ?? null, bossKills: idle.bossKills, ratios };
 }
 
-function idleMain(seeds: number): void {
-  const fmt = (t: number | null): string => (t === null ? 'never' : formatDuration(t));
-  const days = (t: number | null): string => (t === null ? 'never' : `${(t / 86400).toFixed(2)} d`);
+function idleMain(seeds: number, activeHours: number): void {
+  const days = (t: number | null | undefined): string => (t == null ? 'never' : `${(t / 86400).toFixed(1)} d`);
   console.log(`idle · ${seeds} profiles · check-ins every ${CHECKIN_EVERY / 3600} h, ${SESSION / 60} min each`);
-  const verdicts = Array.from({ length: seeds }, (_, k) => idleVerdict(k + 1));
+  const verdicts = Array.from({ length: seeds }, (_, k) => idleVerdict(k + 1, 6, activeHours));
   for (const [k, v] of verdicts.entries()) {
-    const ratios = v.ratios.map((r) => `${r.label} ${r.ratio.toFixed(2)}`).join(' · ');
-    console.log(`  seed ${k + 1}: Bog Mother idle ${days(v.idle)} vs active ${fmt(v.active)}; an idle day ≈ ${v.dayWorth?.toFixed(1) ?? '?'} active h → Act 1 ≈ ${v.projectedDays?.toFixed(1) ?? '?'} d · I5 ${ratios}`);
+    const bosses = BOSSES.map((b) => `${b.name.replace(/^The /, '')} ${days(v.bossKills[b.id])}`).join(' · ');
+    console.log(`  seed ${k + 1}: ${bosses}`);
   }
-  const m = medianProjection(verdicts);
+  const m = medianDays(verdicts);
   const ok2 = m !== null && m >= I2_DAYS.min && m <= I2_DAYS.max;
-  console.log(`  ${ok2 ? 'PASS' : 'FAIL'}  I2  median projected Act 1 ${m?.toFixed(1) ?? 'never'} d (want ${I2_DAYS.min}–${I2_DAYS.max})`);
+  console.log(`  ${ok2 ? 'PASS' : 'FAIL'}  I2  median Act 1 ${m?.toFixed(1) ?? 'never'} d (want ${I2_DAYS.min}–${I2_DAYS.max}; ${verdicts.map((v) => days(v.idle)).join(' ')})`);
   const all = verdicts.flatMap((v) => v.ratios);
   for (const label of [...new Set(all.map((r) => r.label))]) {
     const med = medianRatio(verdicts, label);
@@ -360,7 +355,8 @@ function main(): void {
   const seed = Number(arg('seed', '1'));
   const seeds = Number(arg('seeds', '0'));
   if (process.argv.includes('--idle')) {
-    idleMain(Math.max(1, seeds || 1));
+    // I5's later checkpoints need the active bot to get there: --hours 12.
+    idleMain(Math.max(1, seeds || 1), Math.max(3, hours));
     return;
   }
   if (seeds > 0) {
@@ -382,6 +378,9 @@ function main(): void {
     console.log(`  I1a passes ${count((r) => r.i1a)} (boss 1 within 20:00–40:00)`);
     const b2 = medianBossKill(reports, 'bog-mother');
     console.log(`        median first Bog Mother kill ${fmt(b2)} (§7.1 aims at 60:00–75:00)`);
+    const fin = medianBossKill(reports, FINALE);
+    const okFin = fin !== null && fin >= I1B.min && fin <= I1B.max;
+    console.log(`  ${okFin ? 'PASS' : 'FAIL'}  I1b median first ${BOSS_BY_ID[FINALE].name} kill ${fmt(fin)} (want 7:00:00–12:00:00) · passes ${count((r) => r.i1b)}`);
     console.log(`  first evolution: ${reports.map((r) => fmt(r.firstEvolution)).join(' ')}`);
     console.log(`        median first evolution ${fmt(medianOf(reports, (r) => r.firstEvolution))} (§7.1 aims at 1:30:00–2:00:00)`);
     return;
@@ -411,6 +410,8 @@ function main(): void {
   console.log(`  ${mark(r.wave20)}  P3  wave 20 first reached at ${r.firstWave20 === null ? 'never' : formatDuration(r.firstWave20)} (want 15:00–30:00)`);
   const g = r.bossKills.gatekeeper;
   console.log(`  ${mark(r.i1a)}  I1a the Gatekeeper first falls at ${g === undefined ? 'never' : formatDuration(g)} (want 20:00–40:00)`);
+  const f = r.bossKills[FINALE];
+  console.log(`  ${mark(r.i1b)}  I1b ${BOSS_BY_ID[FINALE].name} first falls at ${f === undefined ? 'never' : formatDuration(f)} (want 7:00:00–12:00:00)`);
   if (csv) {
     writeFileSync(csv, ['seconds,reveal', ...r.reveals.map((v) => `${v.at.toFixed(1)},"${v.what}"`)].join('\n') + '\n');
     console.log(`\nreveal timeline written to ${csv}`);

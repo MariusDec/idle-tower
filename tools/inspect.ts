@@ -6,7 +6,8 @@
  *   npm run inspect -- --seed 7 --bare     a level-1 tower that never drafts
  *   npm run inspect -- --seed 7 --max 600  cap the run at 600 s
  *   npm run inspect -- --forge ring1       a Forge preset: none (default), arsenal
- *                                          (P2's loadout), ring1 or all, bought out
+ *                                          (P2's loadout), ring1–ring6 (every ring up
+ *                                          to it) or all, bought out, keystones aside
  *   npm run inspect -- --region 2          a region other than the first (its rule applies)
  *
  * Headless: it drives the real sim, not a model of it.
@@ -56,7 +57,7 @@ export interface RunReport {
   run: RunState;
 }
 
-export type ForgePreset = 'none' | 'arsenal' | 'ring1' | 'all';
+export type ForgePreset = 'none' | 'arsenal' | `ring${1 | 2 | 3 | 4 | 5 | 6}` | 'all';
 
 /**
  * A profile past the first-draft lesson, so every run rolls its drafts, with
@@ -67,8 +68,11 @@ export function veteran(preset: ForgePreset = 'none'): Profile {
   const p = newProfile(0);
   p.tutorial.firstDraft = true;
   if (preset === 'arsenal') p.forge = { 'might-damage': 1, scattershot: 1, 'chain-lightning': 1 };
-  if (preset === 'ring1' || preset === 'all') {
-    for (const n of FORGE) if (preset === 'all' || n.ring === 1) p.forge[n.id] = n.maxLevel;
+  // `ringN` buys out every ring up to N; `all`, the whole web. Keystones are
+  // builds, chosen on purpose (§5.1), so a preset leaves them alone.
+  const upTo = preset === 'all' ? Infinity : preset.startsWith('ring') ? Number(preset.slice(4)) : 0;
+  if (upTo > 0) {
+    for (const n of FORGE) if (n.type !== 'keystone' && n.ring <= upTo) p.forge[n.id] = n.maxLevel;
   }
   return p;
 }

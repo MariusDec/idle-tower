@@ -13,6 +13,8 @@ import { claimAll, claimFeat } from '../meta/feats';
 import { offlineEarnings, offlineTier } from '../meta/offline';
 import { FORGE } from '../content/forge';
 import { ENEMY_BY_ID } from '../content/enemies';
+import { BOSS_BY_ID } from '../content/bosses';
+import type { BossId } from '../content/types';
 import { frameById } from '../content/frames';
 import { RELIC_BY_ID } from '../content/relics';
 import { formatNumber } from '../core/format';
@@ -201,10 +203,25 @@ export class App {
 
   /** Results → hub: the Forge, or after a first boss kill, the Map and its light (§7.3). */
   private leaveResults(): void {
-    const ceremony = this.profile.ceremony !== null;
+    const boss = this.profile.ceremony;
     this.profile.ceremony = null;
-    if (ceremony) void this.save();
-    this.go('hub', ceremony ? 'map' : 'forge', ceremony);
+    if (boss !== null) void this.save();
+    this.go('hub', boss !== null ? 'map' : 'forge', boss !== null);
+    if (boss !== null && BOSS_BY_ID[boss as BossId]?.finale) this.ending();
+  }
+
+  /**
+   * The Act 1 ending (§7.1): the light has reached the Blight Heart. It
+   * waits on the Map while the light spreads, then says what it took.
+   */
+  private ending(): void {
+    const r = this.profile.records;
+    const days = Math.max(1, Math.round((Date.now() - this.profile.createdAt) / 86_400_000));
+    const body = 'The Blight is broken. Its heart goes dark, and the light runs out to the edge of the world. '
+      + `It took ${formatNumber(r.runs)} runs, ${formatNumber(r.kills)} enemies and ${days} day${days === 1 ? '' : 's'}. `
+      + 'The tower stands. Act 1 is complete. Every region stays open to farm and to finish: the feats, the relics, '
+      + 'the recipes still to find.';
+    window.setTimeout(() => this.modal.show('The light returns', body, [{ label: 'Onward', primary: true, onClick: () => {} }]), 2400);
   }
 
   private go(to: Screen, view: HubView = 'home', spread = false): void {

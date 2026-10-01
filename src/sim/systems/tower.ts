@@ -18,7 +18,16 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
     if (source && ult.id === 'aegis') damageEnemy(run, source, raw * ult.reflect, false, 'reflect');
     return 0;
   }
-  const amount = mitigate(raw, run.stats.armor);
+  let amount = mitigate(raw, run.stats.armor);
+  // Rampart (§11.4): no contact hit takes more than a slice of the wall.
+  if (source && run.behaviours.rampart) amount = Math.min(amount, run.stats.maxHp * BALANCE.behaviours.rampartCap);
+  // Warding Salt (§11.5): what strikes the wall is slowed.
+  const salt = run.behaviours.salt ?? 0;
+  if (source && salt > 0 && !source.boss) {
+    const R = BALANCE.relics;
+    source.slow = Math.max(source.slowUntil > run.time ? source.slow : 0, R.salt[Math.min(salt, R.salt.length) - 1]);
+    source.slowUntil = run.time + R.saltSeconds;
+  }
   t.hp -= amount;
   t.hurtTick = run.tick;
   if (run.firstHurtWave === null) run.firstHurtWave = run.wave;

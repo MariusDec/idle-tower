@@ -4,12 +4,13 @@
  * takes. No weapon may take more than 40% of the new-weapon picks, and every
  * weapon must be taken somewhere.
  *
- *   npm run arsenal                     Regions 1–2, 16 seeds each
+ *   npm run arsenal                     Regions 1–6, 16 seeds each
  *   npm run arsenal -- --seeds 40
  *
  * The loadout is each region's frontier one: every Forge node up to the
- * ring its boss unseals, half bought, with every weapon in the pool and a
- * third weapon slot (Region 3's, §11.1) so each run makes two weapon picks.
+ * ring its boss unseals, half bought, with every weapon in the pool and at
+ * least three weapon slots (Region 3's, §11.1) so each run makes two or more
+ * weapon picks.
  * Twin Mount and the keystones are left out: they pick for the player.
  */
 import { createRun, step } from '../src/sim/run';
@@ -19,6 +20,7 @@ import { SIM_DT } from '../src/app/loop';
 import { FORGE } from '../src/content/forge';
 import { PASSIVES } from '../src/content/passives';
 import { WEAPONS } from '../src/content/weapons';
+import { REGIONS } from '../src/content/regions';
 import type { WeaponId } from '../src/content/types';
 import { botInput } from './bot';
 
@@ -28,6 +30,8 @@ const RUN_SECONDS = 600;
 const BOUGHT = 0.5;
 /** I4's ceiling on one weapon's share of the picks. */
 export const I4_MAX_SHARE = 0.4;
+/** Every Act 1 region (§11.1). */
+export const ALL_REGIONS: readonly number[] = REGIONS.map((r) => r.index);
 
 export interface ArsenalReport {
   /** New-weapon picks by weapon, per region. */
@@ -53,11 +57,11 @@ function frontierConfig(region: number) {
     ...base,
     regionId: region,
     pool: [...WEAPONS.map((w) => w.id), ...PASSIVES.map((p) => p.id)],
-    weaponSlots: base.weaponSlots + 1,
+    weaponSlots: Math.max(base.weaponSlots, 3),
   };
 }
 
-export function arsenalReport(regions: readonly number[] = [1, 2], seeds = 16): ArsenalReport {
+export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 16): ArsenalReport {
   const picks: ArsenalReport['picks'] = {};
   const evolutions: ArsenalReport['evolutions'] = {};
   for (const region of regions) {
@@ -96,7 +100,7 @@ function main(): void {
   const args = process.argv.slice(2);
   const seedsAt = args.indexOf('--seeds');
   const seeds = seedsAt >= 0 ? Number(args[seedsAt + 1]) : 16;
-  const r = arsenalReport([1, 2], seeds);
+  const r = arsenalReport(ALL_REGIONS, seeds);
   for (const [region, tally] of Object.entries(r.picks)) {
     const total = Object.values(tally).reduce((a, b) => a + (b ?? 0), 0);
     console.log(`Region ${region}: ${total} new-weapon picks, ${r.evolutions[Number(region)]} evolutions`);

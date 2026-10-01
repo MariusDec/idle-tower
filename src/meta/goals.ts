@@ -3,7 +3,7 @@ import { FEATS } from '../content/feats';
 import { REGIONS } from '../content/regions';
 import type { IconId } from '../content/icons';
 import { bossDown, frontier, regionRelics, relicRank } from './collection';
-import { featProgress } from './feats';
+import { featProgress, featVisible } from './feats';
 import { nextGoal } from './forge';
 import type { Profile } from './profile';
 
@@ -31,7 +31,7 @@ export function hubGoal(profile: Profile): HubGoal | null {
   }
   let feat: { icon: IconId; text: string; progress: number } | null = null;
   for (const f of FEATS) {
-    if (profile.feats[f.id]) continue;
+    if (profile.feats[f.id] || f.riddle || !featVisible(profile, f)) continue;
     const p = featProgress(profile, f);
     if (!feat || p > feat.progress) feat = { icon: f.icon, text: `Feat: ${f.text}`, progress: p };
   }

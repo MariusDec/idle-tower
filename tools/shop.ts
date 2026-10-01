@@ -7,6 +7,10 @@ import type { Profile } from '../src/meta/profile';
  * The active bot's shopping: the cheapest buyable level first, again and
  * again, until nothing is affordable — what the results screen's "Next:"
  * line points at. Speed goes to the fastest unlocked.
+ *
+ * Keystones are left alone: each is a build with a trade-off (§5.1), chosen
+ * on purpose, and bought blindly together (Specialist's one weapon under
+ * Glass Cannon's halved HP) they end every run at wave 3.
  */
 export function shop(profile: Profile): string[] {
   const bought: string[] = [];
@@ -14,7 +18,7 @@ export function shop(profile: Profile): string[] {
     let best: string | null = null;
     let bestCost = Infinity;
     for (const n of FORGE) {
-      if (!canAfford(profile, n.id)) continue;
+      if (n.type === 'keystone' || !canAfford(profile, n.id)) continue;
       const cost = nodeCost(n, levelOf(profile, n.id));
       if (cost < bestCost) {
         bestCost = cost;

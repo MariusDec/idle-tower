@@ -9,12 +9,16 @@ import { allMods, resolveStats } from './stats';
 import { separateEnemies, sweepEnemies, tickEnemies } from './systems/enemies';
 import { sweepProjectiles, tickBurns, tickProjectiles, tickWeapons } from './systems/combat';
 import { isWeaponId, pickCard, rerollDraft, tickDraft, xpToNext } from './systems/draft';
-import { tickBoss, tickRings } from './systems/boss';
+import { tickBoss, tickPools, tickRings } from './systems/boss';
 import { tickShots } from './systems/tower';
-import { castUltimate } from './systems/ultimate';
+import { castUltimate, tickUltimate } from './systems/ultimate';
 import { tickWaves } from './systems/waves';
 
-/** A region's rule as stat contributions (§11.1). The rule's one consumer. */
+/**
+ * A region's rule as stat contributions (§11.1). The rule's one switch: the
+ * rest are read where they act (`systems/waves.ts#regionRule`), Brittle on every hit, Cinders
+ * and Echoes on a kill, Blight on the wave roll.
+ */
 export function regionMods(region: RegionDef): StatMod[] {
   const rule = region.rule;
   if (!rule) return [];
@@ -22,8 +26,13 @@ export function regionMods(region: RegionDef): StatMod[] {
   switch (e.kind) {
     case 'stat':
       return [e.mod];
+    case 'areaDamage':
+    case 'cinders':
+    case 'echoes':
+    case 'blight':
+      return [];
     default: {
-      const exhaustive: never = e.kind;
+      const exhaustive: never = e;
       return exhaustive;
     }
   }
@@ -72,7 +81,8 @@ export function createRun(config: RunConfig, seed: number): RunState {
     draft: null,
     draftsOpened: 0,
     firstDraft: config.firstDraft ? [...config.firstDraft] : null,
-    ult: { charge: 0, need: BALANCE.ultimate.charge, casts: 0 },
+    // Primed (§11.4): the first ultimate is ready the moment the run starts.
+    ult: { charge: owned('charged-start') > 0 ? 1 : 0, need: BALANCE.ultimate.charge, casts: 0, until: 0, timer: 0 },
     shards: 0,
     shardsFrom: { kills: 0, waves: 0, cards: 0, elites: 0, boss: 0 },
     firstKill: config.firstKill,
@@ -85,6 +95,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     shots: [],
     rings: [],
     fires: [],
+    pools: [],
     evolved: [],
     recipes: [...config.recipes],
     priority: config.priority ? [...config.priority] : null,
@@ -105,6 +116,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
       draft: root.split('draft').state,
       loot: root.split('loot').state,
       arms: root.split('arms').state,
+      foes: root.split('foes').state,
     },
     outcome: null,
     events: [],
@@ -147,10 +159,12 @@ export function step(run: RunState, dt: number, input: RunInput = {}): void {
   tickEnemies(run, dt);
   separateEnemies(run);
   tickWeapons(run, dt);
+  tickUltimate(run, dt);
   tickProjectiles(run, dt);
   tickBurns(run, dt);
   tickShots(run, dt);
   tickRings(run, dt);
+  tickPools(run, dt);
   sweepEnemies(run);
   sweepProjectiles(run);
   tickDraft(run);
@@ -172,12 +186,17 @@ export function step(run: RunState, dt: number, input: RunInput = {}): void {
   t.hp = Math.min(run.stats.maxHp, t.hp + run.stats.regen * regenMult(run) * dt);
 }
 
-/** Mother's Tear (§11.5): regen multiplies while no enemy is within half range. */
+/**
+ * Mother's Tear (§11.5): regen multiplies while no enemy is within half
+ * range. Oath of Stone (§11.4): it triples while a boss stands.
+ */
 function regenMult(run: RunState): number {
+  const b = run.boss;
+  const oath = run.behaviours.oath && b && b.killedIn === null ? BALANCE.behaviours.oathRegen : 1;
   const rank = run.behaviours['still-regen'] ?? 0;
-  if (rank === 0) return 1;
+  if (rank === 0) return oath;
   const r2 = (run.stats.range / 2) ** 2;
-  for (const e of run.enemies) if (e.alive && e.x * e.x + e.y * e.y <= r2) return 1;
+  for (const e of run.enemies) if (e.alive && e.x * e.x + e.y * e.y <= r2) return oath;
   const R = BALANCE.relics.stillRegen;
-  return R[Math.min(rank, R.length) - 1];
+  return oath * R[Math.min(rank, R.length) - 1];
 }

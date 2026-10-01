@@ -1,6 +1,6 @@
 import type { FrameDef, FrameId } from './types';
 
-/** Frames (§4.4, §11.6): the tower's chassis, chosen before a run. Two at P4. */
+/** Frames (§4.4, §11.6): the tower's chassis, chosen before a run. Four in Act 1. */
 export const FRAMES: readonly FrameDef[] = [
   {
     id: 'arcanist',
@@ -36,6 +36,41 @@ export const FRAMES: readonly FrameDef[] = [
       reflect: 1,
     },
     unlock: { kind: 'boss', boss: 'bog-mother' },
+  },  {
+    id: 'stormcaller',
+    name: 'Stormcaller',
+    icon: 'lightning-storm',
+    text: 'Starts with Chain Lightning. Every crit leaps to one more enemy.',
+    startingWeapon: 'chain-lightning',
+    effects: [{ kind: 'behaviour', id: 'stormcaller' }],
+    ultimate: {
+      id: 'tempest',
+      name: 'Tempest',
+      text: 'A six-second storm strikes random enemies in range.',
+      seconds: 6,
+      rate: 8,
+      damage: 3,
+    },
+    unlock: { kind: 'boss', boss: 'forgeheart' },
+  },
+  {
+    id: 'artificer',
+    name: 'Artificer',
+    icon: 'vintage-robot',
+    text: 'Starts with Sentinel Drones. +1 weapon slot, −1 passive slot.',
+    startingWeapon: 'sentinel-drones',
+    effects: [
+      { kind: 'slot', slot: 'weapon', n: 1 },
+      { kind: 'slot', slot: 'passive', n: -1 },
+    ],
+    ultimate: {
+      id: 'overclock',
+      name: 'Overclock',
+      text: 'For six seconds, every weapon fires twice as fast.',
+      seconds: 6,
+      speed: 2,
+    },
+    unlock: { kind: 'feat', feat: 'tinkerer' },
   },
 ];
 

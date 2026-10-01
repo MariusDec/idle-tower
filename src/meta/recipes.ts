@@ -3,6 +3,7 @@ import { EVOLUTIONS } from '../content/evolutions';
 import type { EvolutionDef, EvolutionId } from '../content/types';
 import type { RunState } from '../sim/state';
 import type { Profile } from './profile';
+import { automations } from './automation';
 
 /**
  * The Recipe Book (§5.3): evolutions show as "??? + ???" until found. Runs
@@ -22,12 +23,14 @@ export interface RecipeEntry {
 export function recipeBook(profile: Profile): RecipeEntry[] {
   const R = profile.recipes;
   const B = BALANCE.recipes;
+  // Evolution Insight (§11.4): every weapon half shows.
+  const insight = automations(profile).has('insight');
   return EVOLUTIONS.map((evolution) => {
     const found = R.found.includes(evolution.id);
     return {
       evolution,
       found,
-      weapon: found || (R.carried[evolution.weapon] ?? 0) >= B.weaponRuns,
+      weapon: found || insight || (R.carried[evolution.weapon] ?? 0) >= B.weaponRuns,
       hint: !found && (R.readied[evolution.weapon] ?? 0) >= B.riddleRuns,
     };
   });

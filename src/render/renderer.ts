@@ -10,7 +10,9 @@ import { bakeArena } from './painters/arena';
 import { EnemyPainter } from './painters/enemies';
 import { paintProjectiles } from './painters/projectiles';
 import { paintArsenal, paintFires, paintStatus } from './painters/arsenal';
-import { paintAegis, paintBoss, paintRings, paintShots } from './painters/bosses';
+import { paintAegis, paintBoss, paintCourt, paintFacets, paintPools, paintRings, paintShots } from './painters/bosses';
+import { mirrorFacets } from '../sim/systems/boss';
+import { WEAPON_BY_ID } from '../content/weapons';
 import { mountOffset, paintRangeRing, paintTower, type Mount } from './painters/tower';
 import { QUALITY, type QualityTier } from './quality';
 
@@ -261,6 +263,42 @@ export class Renderer {
         case 'ignite':
           this.effects.spray(ev.x, ev.y, FX.ember, 5, 120, 3, 60);
           break;
+        case 'deflect':
+          this.effects.hitSparks(ev.x, ev.y, INK['050'], true);
+          break;
+        case 'surface':
+          this.effects.spray(ev.x, ev.y, INK['300'], 12, 160, 4);
+          break;
+        case 'blink':
+          this.effects.ring(ev.x, ev.y, 6, 40, withAlpha(FX.arcane, 0.7), 0.3, 3);
+          this.effects.ring(ev.tx, ev.ty, 40, 6, withAlpha(FX.arcane, 0.8), 0.3, 3);
+          break;
+        case 'silence': {
+          // The gaze: a red line from the Harbinger to the tower.
+          this.effects.lightning([ev.x, ev.y, 0, 0], FX.blood);
+          this.showBanner('Silenced', `${WEAPON_BY_ID[ev.weapon].name} is silenced.`, 'blood');
+          break;
+        }
+        case 'explode':
+          this.effects.ring(ev.x, ev.y, ev.radius * 0.2, ev.radius, withAlpha(FX.blood, 0.8), 0.4, 8);
+          this.effects.spray(ev.x, ev.y, FX.ember, 18, 260, 4);
+          break;
+        case 'pool':
+          this.effects.spray(ev.x, ev.y, FX.ember, 20, 180, 5);
+          break;
+        case 'crown':
+          this.effects.ring(ev.x, ev.y, 10, 90, withAlpha(FX.gold, 0.9), 0.5, 5);
+          break;
+        case 'rise':
+          this.effects.ring(ev.x, ev.y, 30, 6, withAlpha(FX.arcane, 0.6), 0.5, 4);
+          break;
+        case 'drain':
+          this.effects.spray(ev.x, ev.y, FX.mana, 8, 140, 3);
+          break;
+        case 'ultStart':
+          this.effects.pulse(0, 0, run.stats.radius * 2, FX.arcane);
+          this.camera.zoomPunch();
+          break;
         case 'fire':
         case 'waveStart':
         case 'firstSight':
@@ -304,12 +342,17 @@ export class Renderer {
       paintRangeRing(ctx, run.stats.range);
       paintRings(ctx, run.rings);
       paintFires(ctx, run.fires, run.time, this.clock);
+      paintPools(ctx, run.pools, run.time, this.clock);
       this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock);
       paintStatus(ctx, run.enemies, alpha, run.time, this.clock);
       const b = run.boss;
       if (b && b.killedIn === null) {
         const body = run.enemies.find((e) => e.id === b.enemy && e.alive);
-        if (body) paintBoss(ctx, body, b, alpha, run.tick, run.time, this.clock);
+        paintCourt(ctx, run, alpha, this.clock);
+        if (body) {
+          paintBoss(ctx, body, b, alpha, run.tick, run.time, this.clock);
+          paintFacets(ctx, body.px + (body.x - body.px) * alpha, body.py + (body.y - body.py) * alpha, body.radius, mirrorFacets(run));
+        }
       }
       paintShots(ctx, run.shots, alpha);
       paintArsenal(ctx, run, alpha, this.clock, additive);

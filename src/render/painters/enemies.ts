@@ -26,7 +26,23 @@ const GAIT: Record<EnemyId, { freq: number; bob: number }> = {
   splitter: { freq: 4.5, bob: 1.6 },
   spitter: { freq: 5, bob: 1 },
   mender: { freq: 5.5, bob: 1.4 },
+  shieldbearer: { freq: 4, bob: 0.8 },
+  burrower: { freq: 9, bob: 1.4 },
+  shardling: { freq: 12, bob: 1.6 },
+  bomber: { freq: 6, bob: 1.8 },
+  blinker: { freq: 3, bob: 2.4 },
+  'siege-engine': { freq: 2.4, bob: 0.6 },
+  phantom: { freq: 2, bob: 3 },
+  leech: { freq: 14, bob: 1.2 },
+  summoner: { freq: 2.6, bob: 1.8 },
+  imp: { freq: 16, bob: 1.4 },
+  harbinger: { freq: 1.6, bob: 2 },
+  chorus: { freq: 3.2, bob: 2.2 },
 };
+
+/** How see-through a phased-out body, and a risen shade, is drawn. */
+const PHASED_ALPHA = 0.22;
+const SHADE_ALPHA = 0.55;
 
 /** Each aura's colour on an elite's halo (§4.3); a plain elite wears gold. */
 const AURA_COLOR: Record<AuraId, string> = {
@@ -69,17 +85,25 @@ export class EnemyPainter {
    * clock, for slows; `time` the wall clock, for the gait.
    */
   draw(ctx: CanvasRenderingContext2D, enemies: readonly Enemy[], alpha: number, tick: number, simTime: number, time: number): void {
+    drawChorusLinks(ctx, enemies, alpha, time);
     for (const e of enemies) {
-      // Bosses have their own painter (`bosses.ts`).
-      if (!e.alive || e.boss) continue;
+      // Bosses and the Hollow King's court have their own painter (`bosses.ts`).
+      if (!e.alive || e.boss || e.court) continue;
       const x = e.px + (e.x - e.px) * alpha;
       const g = GAIT[e.type];
+      if (e.under) {
+        drawMound(ctx, x, e.py + (e.y - e.py) * alpha, e.radius, time + e.id);
+        continue;
+      }
       const y = e.py + (e.y - e.py) * alpha + (e.moving ? Math.sin(time * g.freq + e.id) * g.bob : 0);
+      const fade = e.hiddenUntil > simTime ? PHASED_ALPHA : e.shade ? SHADE_ALPHA : 1;
+      ctx.globalAlpha = fade;
       if (e.elite) drawHalo(ctx, x, y, e.radius, e.aura ? AURA_COLOR[e.aura] : FX.gold, time + e.id);
       const s = this.sprite(e.type);
       // Sprites are baked at the type's radius; elites and fragments scale it.
       const k = e.radius / ENEMY_BY_ID[e.type].radius;
       ctx.drawImage(s.canvas, x - s.half * k, y - s.half * k, s.half * 2 * k, s.half * 2 * k);
+      if (ENEMY_BY_ID[e.type].verb.kind === 'shield') drawShield(ctx, x, y, e.radius);
       if (e.slowUntil > simTime && e.slow > 0) {
         ctx.strokeStyle = withAlpha(FX.frost, 0.7);
         ctx.lineWidth = 2;
@@ -105,8 +129,56 @@ export class EnemyPainter {
         ctx.globalAlpha = 1;
       }
       if (e.hp < e.maxHp) drawHpBar(ctx, x, y - e.radius - 8, e.radius, e.hp / e.maxHp);
+      ctx.globalAlpha = 1;
     }
   }
+}
+
+/** A Shieldbearer's shield: a bright arc on the side that faces the tower. */
+function drawShield(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  const face = Math.atan2(-y, -x);
+  ctx.strokeStyle = withAlpha(INK['050'], 0.9);
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(x, y, r + 5, face - 0.95, face + 0.95);
+  ctx.stroke();
+  ctx.strokeStyle = withAlpha(FX.frost, 0.7);
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+/** A Burrower under the ground: a moving mound and the grit it throws up. */
+function drawMound(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, t: number): void {
+  ctx.fillStyle = withAlpha(INK['700'], 0.75);
+  ctx.beginPath();
+  ctx.ellipse(x, y, r * 0.9, r * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = withAlpha(INK['300'], 0.6);
+  for (let i = 0; i < 3; i++) {
+    const a = t * 6 + i * 2.1;
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(a) * r * 0.6, y - Math.abs(Math.sin(a)) * r * 0.5, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/** A Chorus's bodies are one: a faint thread runs between each and its leader. */
+function drawChorusLinks(ctx: CanvasRenderingContext2D, enemies: readonly Enemy[], alpha: number, t: number): void {
+  const leaders = new Map<number, Enemy>();
+  for (const e of enemies) if (e.alive && e.group === e.id) leaders.set(e.id, e);
+  if (leaders.size === 0) return;
+  ctx.strokeStyle = withAlpha(FX.arcane, 0.35 + 0.15 * Math.sin(t * 3));
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (const e of enemies) {
+    if (!e.alive || !e.group || e.group === e.id) continue;
+    const l = leaders.get(e.group);
+    if (!l) continue;
+    ctx.moveTo(l.px + (l.x - l.px) * alpha, l.py + (l.y - l.py) * alpha);
+    ctx.lineTo(e.px + (e.x - e.px) * alpha, e.py + (e.y - e.py) * alpha);
+  }
+  ctx.stroke();
 }
 
 /** An elite's halo: a slow-turning dashed ring in its aura's colour. */
@@ -173,6 +245,20 @@ function traceShape(g: CanvasRenderingContext2D, def: EnemyDef, r: number): void
       }
       g.closePath();
       break;
+    case 'triangle':
+      // Point first, toward the light: a shard, or an imp's hood.
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+        if (i === 0) g.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        else g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      g.closePath();
+      break;
+    case 'square': {
+      const h = r * 0.86;
+      g.rect(-h, -h, h * 2, h * 2);
+      break;
+    }
     default: {
       const exhaustive: never = def.shape;
       return exhaustive;
@@ -348,6 +434,188 @@ function paintDetail(g: CanvasRenderingContext2D, def: EnemyDef, r: number, pen:
       g.fillRect(-arm, -bar / 2, arm * 2, bar);
       g.fillStyle = withAlpha(FX.nature, 0.55);
       g.fillRect(-bar / 2, -arm, bar, arm * 0.5);
+      break;
+    }
+    // Shieldbearer: a tower-shield's boss and bands; the shield itself is drawn live.
+    case 'shieldbearer': {
+      g.strokeStyle = dark(0.55);
+      g.lineWidth = pen(r * 0.1);
+      g.strokeRect(-r * 0.55, -r * 0.55, r * 1.1, r * 1.1);
+      g.fillStyle = pale(0.6);
+      g.beginPath();
+      g.arc(0, 0, r * 0.2, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Burrower: digging claws and a blunt snout.
+    case 'burrower': {
+      g.fillStyle = dark(0.55);
+      g.beginPath();
+      g.ellipse(0, -r * 0.25, r * 0.35, r * 0.25, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = pale(0.7);
+      g.lineWidth = pen(r * 0.08);
+      g.lineCap = 'round';
+      for (const dir of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          g.beginPath();
+          g.moveTo(dir * r * (0.35 + i * 0.12), r * 0.2);
+          g.lineTo(dir * r * (0.45 + i * 0.14), r * 0.6);
+          g.stroke();
+        }
+      }
+      break;
+    }
+    // Shardling: facets catching the light.
+    case 'shardling': {
+      g.strokeStyle = pale(0.7);
+      g.lineWidth = pen(r * 0.07);
+      g.beginPath();
+      g.moveTo(0, -r);
+      g.lineTo(0, r * 0.5);
+      g.moveTo(-r * 0.85, r * 0.5);
+      g.lineTo(0, 0);
+      g.lineTo(r * 0.85, r * 0.5);
+      g.stroke();
+      break;
+    }
+    // Bomber: a lit fuse and a hot core: it is going to go off.
+    case 'bomber': {
+      const core = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.7);
+      core.addColorStop(0, withAlpha(FX.gold, 0.9));
+      core.addColorStop(1, withAlpha(FX.ember, 0));
+      g.fillStyle = core;
+      g.beginPath();
+      g.arc(0, 0, r * 0.7, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = dark(0.8);
+      g.lineWidth = pen(r * 0.12);
+      g.beginPath();
+      g.moveTo(0, -r * 0.6);
+      g.quadraticCurveTo(r * 0.3, -r, r * 0.1, -r * 1.2);
+      g.stroke();
+      break;
+    }
+    // Blinker: a spiral that never sits still.
+    case 'blinker': {
+      g.strokeStyle = pale(0.75);
+      g.lineWidth = pen(r * 0.09);
+      g.beginPath();
+      for (let i = 0; i <= 24; i++) {
+        const a = i * 0.45;
+        const rr = (i / 24) * r * 0.7;
+        if (i === 0) g.moveTo(0, 0);
+        else g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      }
+      g.stroke();
+      break;
+    }
+    // Siege Engine: a throwing arm over plated wheels.
+    case 'siege-engine': {
+      g.strokeStyle = dark(0.7);
+      g.lineWidth = pen(r * 0.12);
+      g.beginPath();
+      g.moveTo(-r * 0.6, r * 0.4);
+      g.lineTo(r * 0.5, -r * 0.6);
+      g.stroke();
+      g.fillStyle = withAlpha(FX.ember, 0.85);
+      g.beginPath();
+      g.arc(r * 0.5, -r * 0.6, r * 0.18, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = dark(0.6);
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.arc(dir * r * 0.5, r * 0.55, r * 0.22, 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
+    // Phantom: two hollow eyes and a trailing hem.
+    case 'phantom': {
+      g.fillStyle = dark(0.85);
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.ellipse(dir * r * 0.3, -r * 0.2, r * 0.14, r * 0.22, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.strokeStyle = pale(0.5);
+      g.lineWidth = pen(r * 0.08);
+      g.beginPath();
+      for (let i = 0; i <= 6; i++) {
+        const x = -r + (i / 6) * r * 2;
+        const y = r * 0.55 + (i % 2 ? r * 0.15 : 0);
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.stroke();
+      break;
+    }
+    // Leech: a ring of teeth round a dark mouth.
+    case 'leech': {
+      g.fillStyle = dark(0.9);
+      g.beginPath();
+      g.arc(0, 0, r * 0.45, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = withAlpha(def.borderColor, 0.9);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        g.beginPath();
+        g.moveTo(Math.cos(a) * r * 0.45, Math.sin(a) * r * 0.45);
+        g.lineTo(Math.cos(a + 0.2) * r * 0.25, Math.sin(a + 0.2) * r * 0.25);
+        g.lineTo(Math.cos(a - 0.2) * r * 0.25, Math.sin(a - 0.2) * r * 0.25);
+        g.fill();
+      }
+      break;
+    }
+    // Summoner: a five-point sigil, glowing.
+    case 'summoner': {
+      g.strokeStyle = withAlpha(def.borderColor, 0.9);
+      g.lineWidth = pen(r * 0.08);
+      g.beginPath();
+      for (let i = 0; i <= 5; i++) {
+        const a = ((i * 2) / 5) * Math.PI * 2 - Math.PI / 2;
+        if (i === 0) g.moveTo(Math.cos(a) * r * 0.6, Math.sin(a) * r * 0.6);
+        else g.lineTo(Math.cos(a) * r * 0.6, Math.sin(a) * r * 0.6);
+      }
+      g.stroke();
+      break;
+    }
+    // Imp: two horns and a grin.
+    case 'imp': {
+      g.fillStyle = pale(0.85);
+      g.beginPath();
+      g.arc(-r * 0.25, 0, r * 0.12, 0, Math.PI * 2);
+      g.arc(r * 0.25, 0, r * 0.12, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Harbinger: one great eye.
+    case 'harbinger': {
+      g.fillStyle = pale(0.85);
+      g.beginPath();
+      g.ellipse(0, 0, r * 0.6, r * 0.32, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = withAlpha(def.borderColor, 1);
+      g.beginPath();
+      g.arc(0, 0, r * 0.24, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = dark(0.95);
+      g.beginPath();
+      g.ellipse(0, 0, r * 0.07, r * 0.2, 0, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Chorus: an open singing mouth over a soft glow.
+    case 'chorus': {
+      const glow = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      glow.addColorStop(0, pale(0.5));
+      glow.addColorStop(1, pale(0));
+      g.fillStyle = glow;
+      g.fillRect(-r, -r, r * 2, r * 2);
+      g.fillStyle = dark(0.85);
+      g.beginPath();
+      g.ellipse(0, r * 0.15, r * 0.22, r * 0.32, 0, 0, Math.PI * 2);
+      g.fill();
       break;
     }
     default: {

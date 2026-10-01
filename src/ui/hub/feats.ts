@@ -1,6 +1,6 @@
 import { FEATS } from '../../content/feats';
 import { formatNumber } from '../../core/format';
-import { claimable, featProgress } from '../../meta/feats';
+import { claimable, featProgress, featVisible } from '../../meta/feats';
 import type { Profile } from '../../meta/profile';
 import { setStyle } from '../dom';
 import { icon, iconMarkup } from '../icon';
@@ -52,26 +52,29 @@ export class FeatsView {
     const total = waiting.reduce((s, f) => s + f.reward, 0);
     this.all.hidden = waiting.length < 2;
     this.all.innerHTML = `Claim all · ${iconMarkup('crystal-cluster')} ${formatNumber(total)}`;
-    this.count.textContent = `${FEATS.filter((f) => p.feats[f.id]).length}/${FEATS.length}`;
+    const shown = FEATS.filter((f) => featVisible(p, f));
+    this.count.textContent = `${FEATS.filter((f) => p.feats[f.id]).length}/${shown.length}`;
     // Waiting first, then the rest in table order, the paid ones last.
     const rank = (id: string): number => (p.feats[id] === 'done' ? 0 : p.feats[id] === 'claimed' ? 2 : 1);
-    const feats = [...FEATS].sort((a, b) => rank(a.id) - rank(b.id));
+    const feats = [...shown].sort((a, b) => rank(a.id) - rank(b.id));
     this.list.replaceChildren(...feats.map((f) => {
       const state = p.feats[f.id];
+      // A secret feat (§5.4) is "???" and its riddle until earned.
+      const secret = !!f.riddle && !state;
       const li = document.createElement('li');
-      li.className = `entry feat${state === 'done' ? ' is-ready' : state === 'claimed' ? ' is-claimed' : ''}`;
+      li.className = `entry feat${state === 'done' ? ' is-ready' : state === 'claimed' ? ' is-claimed' : ''}${secret ? ' is-unknown' : ''}`;
       const head = document.createElement('div');
       head.className = 'entry-head';
       const name = document.createElement('span');
       name.className = 'entry-name';
-      name.textContent = f.name;
+      name.textContent = secret ? '???' : f.name;
       const reward = document.createElement('span');
       reward.className = 'entry-count';
       reward.innerHTML = `${iconMarkup('crystal-cluster')} ${formatNumber(f.reward)}`;
-      head.append(icon(f.icon), name, reward);
+      head.append(icon(secret ? 'locked-chest' : f.icon), name, reward);
       const text = document.createElement('p');
-      text.className = 'entry-text';
-      text.textContent = f.text;
+      text.className = secret ? 'entry-lore' : 'entry-text';
+      text.textContent = secret ? `“${f.riddle}”` : f.text;
       li.append(head, text);
       if (state === 'done') {
         const claim = document.createElement('button');
@@ -82,7 +85,7 @@ export class FeatsView {
           if (this.actions.claim(f.id) > 0) this.render();
         });
         li.append(claim);
-      } else if (!state) {
+      } else if (!state && !secret) {
         const prog = featProgress(p, f);
         if (prog > 0) {
           const bar = document.createElement('div');

@@ -7,7 +7,7 @@ import type { Card } from '../sim/state';
 import { cardKey } from '../sim/systems/draft';
 import { icon } from './icon';
 import { bindLongPress } from './longPress';
-import { setStyle } from './dom';
+import { setStyle, toggleClass } from './dom';
 
 export interface DraftView {
   /** The level this draft was earned at. */
@@ -163,6 +163,8 @@ export class DraftPanel {
     this.reroll.hidden = view.rerolls <= 0 || !view.timed;
     this.reroll.textContent = `Reroll · ${view.rerolls}`;
     this.row.replaceChildren(...view.cards.map((c, i) => this.card(c, i, i === view.suggested, !view.seen(cardKey(c)))));
+    // Past four cards (Choice, Foresight, Jackpot), the hand wraps into rows of three.
+    toggleClass(this.row, 'is-many', view.cards.length > 4);
     this.root.hidden = false;
   }
 

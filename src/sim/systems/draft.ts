@@ -34,6 +34,12 @@ export function gainXp(run: RunState, amount: number): void {
     run.xpNext = xpToNext(run.level);
     run.pendingDrafts++;
     run.events.push({ kind: 'levelUp', level: run.level });
+    // Starseed (§11.5): each level mends the tower.
+    const seed = run.behaviours['level-heal'] ?? 0;
+    if (seed > 0) {
+      const R = BALANCE.relics.levelHeal;
+      run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * R[Math.min(seed, R.length) - 1]);
+    }
   }
 }
 
@@ -158,7 +164,8 @@ export function applyCard(run: RunState, card: Card): void {
     case 'weapon': {
       const w = run.weapons.find((x) => x.id === card.id);
       if (w) w.level = card.level;
-      else run.weapons.push(newWeapon(card.id, 1));
+      // Drilled (§11.4): a new weapon joins a level up.
+      else run.weapons.push(newWeapon(card.id, Math.min(BALANCE.maxLevel, 1 + (run.behaviours.drilled ?? 0))));
       return;
     }
     case 'evolution': {

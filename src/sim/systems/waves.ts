@@ -3,7 +3,8 @@ import { TAU } from '../../core/math';
 import { BALANCE } from '../../content/balance';
 import { ENEMY_BY_ID } from '../../content/enemies';
 import { spawnPoint } from '../../content/arena';
-import type { AuraId, EnemyId, RegionDef } from '../../content/types';
+import type { AuraId, EnemyId, EnemyVerb, RegionDef, RegionRule } from '../../content/types';
+import { regionByIndex } from '../../content/regions';
 import type { Enemy, RunState, SpawnEntry, WaveState } from '../state';
 import { arriveBoss } from './boss';
 
@@ -32,8 +33,14 @@ export function waveShardMult(n: number): number {
   return n > BOSS_WAVE ? Math.pow(BALANCE.overtime.shardGrowth, n - BOSS_WAVE) : 1;
 }
 
-/** True when wave `n` brings an elite (§4.3). The boss wave never does. */
+/** The effect of the rule of the region a run is in, or null (§11.1). */
+export function regionRule(run: RunState): RegionRule | null {
+  return regionByIndex(run.regionId).rule?.effect ?? null;
+}
+
+/** True when wave `n` brings an elite (§4.3); under the Blight's rule, every wave. The boss wave never does. */
 export function isEliteWave(region: RegionDef, n: number): boolean {
+  if (region.rule?.effect.kind === 'blight') return n !== BOSS_WAVE;
   const e = region.elites;
   return n !== BOSS_WAVE && n >= e.from && (n - e.from) % e.every === 0;
 }
@@ -92,7 +99,9 @@ export function rollWave(region: RegionDef, n: number, rng: Rng, pace = 1): Spaw
   if (isEliteWave(region, n)) {
     const auras = region.elites.auras;
     const aura: AuraId | null = auras.length > 0 ? rng.pick(auras) : null;
-    out.push({ at: duration / 2, enemy: pool[rng.weighted(weights)].enemy, angle: angle(), elite: { aura } });
+    const types = region.elites.types;
+    const enemy = types && types.length > 0 ? rng.pick(types) : pool[rng.weighted(weights)].enemy;
+    out.push({ at: duration / 2, enemy, angle: angle(), elite: { aura } });
   }
   out.sort((a, b) => a.at - b.at);
   // The first body of every wave arrives at once: a wave that opens with
@@ -141,6 +150,10 @@ export interface SpawnOptions {
    * one body is worth rather than four.
    */
   fragment?: { hp: number; scale: number; share: number };
+  /** A shade (Echoes, §11.1): risen once, it never rises again. */
+  shade?: boolean;
+  /** One body, even of a type that arrives as several (a Chorus's sibling, a boss's call). */
+  single?: boolean;
 }
 
 /**
@@ -161,7 +174,9 @@ export function spawnEnemy(
     radius = def.radius * opts.fragment.scale;
   }
   const share = opts.fragment?.share ?? 1;
-  const xp = def.xp * (elite ? E.xp : 1) * share;
+  // A Chorus (§11.1) arrives as its bodies at once; each pays its share.
+  const chorus = def.verb.kind === 'chorus' && !elite && !opts.fragment && !opts.single ? def.verb.count : 1;
+  const xp = (def.xp * (elite ? E.xp : 1) * share) / chorus;
   const bounty = elite && run.behaviours.bounty ? BALANCE.behaviours.bounty : 1;
   const enemy: Enemy = {
     id: run.nextEnemyId++,
@@ -184,13 +199,13 @@ export function spawnEnemy(
     damage: waveDamage(region, wave) * def.damage,
     attackInterval: def.attackInterval,
     xp,
-    shards: region.shardBase * def.xp * share * waveShardMult(wave) * (elite ? E.shards * bounty : 1),
+    shards: (region.shardBase * def.xp * share * waveShardMult(wave) * (elite ? E.shards * bounty : 1)) / chorus,
     mass: def.mass * (elite ? E.scale * E.scale : 1),
     stunnedUntil: 0,
     slow: 0,
     slowUntil: 0,
     hiddenUntil: 0,
-    actTimer: def.verb.kind === 'ranged' || def.verb.kind === 'heal' ? def.verb.interval * 0.5 : 0,
+    actTimer: firstAct(def.verb),
     moving: true,
     buffSpeed: 1,
     buffShield: 1,
@@ -202,6 +217,10 @@ export function spawnEnemy(
     burnUntil: 0,
     burnTimer: 0,
     frozenUntil: 0,
+    under: def.verb.kind === 'burrow',
+    group: 0,
+    shade: opts.shade ?? false,
+    court: 0,
   };
   run.enemies.push(enemy);
   if (run.current && wave === run.current.n) run.current.alive++;
@@ -210,7 +229,45 @@ export function spawnEnemy(
     run.events.push({ kind: 'firstSight', enemy: def.id });
   }
   if (elite) run.events.push({ kind: 'eliteSpawn', x, y, aura: enemy.aura });
+  if (chorus > 1) {
+    enemy.group = enemy.id;
+    for (let i = 1; i < chorus; i++) {
+      const a = (i / chorus) * Math.PI * 2;
+      const r = enemy.radius * 1.6;
+      const sib = spawnEnemy(run, region, type, wave, x + Math.cos(a) * r, y + Math.sin(a) * r, { single: true, shade: opts.shade });
+      sib.group = enemy.id;
+      sib.xp = enemy.xp;
+      sib.shards = enemy.shards;
+    }
+  }
   return enemy;
+}
+
+/** Seconds until a verb first acts: half its interval, so a new body acts soon but not at once. */
+function firstAct(verb: EnemyVerb): number {
+  switch (verb.kind) {
+    case 'ranged':
+    case 'heal':
+    case 'blink':
+    case 'summon':
+    case 'silence':
+      return verb.interval * 0.5;
+    case 'phase':
+      return verb.cycle - verb.hidden;
+    case 'walker':
+    case 'split':
+    case 'shield':
+    case 'burrow':
+    case 'shards':
+    case 'explode':
+    case 'leech':
+    case 'chorus':
+      return 0;
+    default: {
+      const exhaustive: never = verb;
+      return exhaustive;
+    }
+  }
 }
 
 function place(run: RunState, region: RegionDef, wave: WaveState, entry: SpawnEntry): void {

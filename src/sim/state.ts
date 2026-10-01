@@ -141,6 +141,14 @@ export interface Enemy {
   burnTimer: number;
   /** Frozen by Absolute Zero until then: slain while frozen, it shatters. */
   frozenUntil: number;
+  /** A Burrower still under the ground: nothing can target or hit it. */
+  under: boolean;
+  /** A Chorus: the id its bodies share their HP under; 0 for anything else. */
+  group: number;
+  /** Risen once already (Echoes): it never rises again. */
+  shade: boolean;
+  /** One of the Hollow King's shades: the king's body id. Its hits land on him. */
+  court: number;
 }
 
 export interface Projectile {
@@ -191,6 +199,18 @@ export interface FirePatch {
   /** Burn per second it sets on a body inside. */
   dps: number;
   until: number;
+}
+
+/** A molten pool at the wall (Forgeheart): it burns the tower while it lasts. */
+export interface MoltenPool {
+  x: number;
+  y: number;
+  radius: number;
+  /** Damage to the tower per second. */
+  dps: number;
+  until: number;
+  /** Seconds until it next bites. */
+  timer: number;
 }
 
 /** A Sentinel Drone in flight. */
@@ -247,6 +267,10 @@ export interface BossState {
   windupPattern: number;
   /** Run time until which it is staggered (a Nova broke its wind-up). */
   staggeredUntil: number;
+  /** The mirrored facets' turn, radians (the Prism). */
+  facet: number;
+  /** The body wearing the crown (the Hollow King's court); 0 before he splits. */
+  crown: number;
   /** The tower's lowest HP fraction since it arrived (the Steady Hand feat). */
   minHp: number;
   /** Seconds from arrival to its fall; null while it stands. */
@@ -271,6 +295,8 @@ export interface WeaponState {
   meteor: number;
   /** Sentinel Drones in the air; empty for every other weapon. */
   drones: Drone[];
+  /** Run time until which it cannot fire: a Harbinger's gaze. */
+  silencedUntil: number;
 }
 
 export interface PassiveState {
@@ -303,6 +329,10 @@ export interface UltimateState {
   /** Kill XP the current charge needs. */
   need: number;
   casts: number;
+  /** Run time a lasting ultimate (Tempest, Overclock) ends; 0 when none is going. */
+  until: number;
+  /** Seconds until a Tempest's next strike. */
+  timer: number;
 }
 
 /** One entry in a wave's pre-rolled spawn list. */
@@ -380,7 +410,27 @@ export type SimEvent =
   /** A weapon evolved (§10.3: the tower's spotlight). */
   | { kind: 'evolve'; weapon: WeaponId; evolution: EvolutionId }
   /** A body caught fire. */
-  | { kind: 'ignite'; x: number; y: number };
+  | { kind: 'ignite'; x: number; y: number }
+  /** A shield, or a boss's mirror, turned a shot away. */
+  | { kind: 'deflect'; x: number; y: number }
+  /** A Burrower broke the surface. */
+  | { kind: 'surface'; x: number; y: number }
+  /** A Blinker jumped. */
+  | { kind: 'blink'; x: number; y: number; tx: number; ty: number }
+  /** A Harbinger's gaze silenced a weapon. */
+  | { kind: 'silence'; x: number; y: number; weapon: WeaponId }
+  /** A Bomber blew, or a Shardling burst. */
+  | { kind: 'explode'; x: number; y: number; radius: number }
+  /** A molten pool opened at the wall. */
+  | { kind: 'pool'; x: number; y: number; radius: number }
+  /** The Hollow King's crown moved to another body. */
+  | { kind: 'crown'; x: number; y: number }
+  /** A slain body rose as a shade (Echoes), or a Summoner called. */
+  | { kind: 'rise'; x: number; y: number }
+  /** A Leech drained the ultimate. */
+  | { kind: 'drain'; x: number; y: number }
+  /** A lasting ultimate began (Tempest, Overclock). */
+  | { kind: 'ultStart'; seconds: number };
 
 export interface RunState {
   seed: number;
@@ -429,8 +479,10 @@ export interface RunState {
   loneWave: number;
   shots: HostileShot[];
   rings: SlamRing[];
-  /** Burning ground (Meteorfall). */
+  /** Burning ground (Meteorfall, Cinders). */
   fires: FirePatch[];
+  /** Molten pools at the wall (Forgeheart). */
+  pools: MoltenPool[];
   /** Weapons evolved this run, in order, for the Recipe Book (§5.3). */
   evolved: EvolutionId[];
   /** Recipes known going in (from the config): what the suggestion steers toward. */
