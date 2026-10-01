@@ -20,9 +20,9 @@ pushing the frontier (`npm run pacing -- --hours 12 --seeds 8`):
   1.5–2 h.
 - I3 holds on all 8 profiles. I6 holds on 5; the worst reveal gap is 12:09
   (see Still open).
-- I4 (`npm run arsenal`, 16 seeds per region): every region spreads the
-  new-weapon picks; the most-picked weapon is Gilded Rail at 25% of
-  Region 3's picks, and every weapon is taken.
+- I4 (`npm run arsenal`, 16 seeds per region, Act 1's cards): every
+  region spreads the new-weapon picks; the most-picked weapon is Mortar at
+  31% of Region 2's picks, and every weapon is taken.
 - I2 and I5 (`npm run pacing -- --idle --hours 12 --seeds 4`, two 20-minute
   check-ins a day): the idle bot ends Act 1 in 5.0–9.0 days (8.0 median).
   Active play earns 1.24–1.46× idle per hour from Region 2 to the Blight.
@@ -124,12 +124,36 @@ P7 departs from the plan in a few places:
   at Region 2 and at every boss after the Gatekeeper, and I6 reads the full
   first two hours.
 
-P8 shipped without a status entry; its content is described in §9 and
-`docs/act2.md`. One effect of it on Act 1 showed up in P9's pacing: the
-Blight's first fall, already the most variable boss, moved from 9:13 to
-11:09 median, and 2 of 8 profiles missed it inside 12 hours. Earlier
-bosses fell at the same minutes; the profiles that moved were the ones
-whose attempts reach wave 20 already overrun.
+P8 departs from the plan in a few places (the whole of it is in
+`docs/act2.md`):
+
+- **Floors.** An Abyss floor is ten waves on one region's template (its
+  enemies and rule) with four Abyss natives mixed in, not a mix of regions
+  per wave; its tenth wave is a boss, the template's own or, every fifth
+  floor, one of two Abyss bosses (the Deepwarden, the Hunger). Pacts hold
+  only in the regions.
+- **Blight Surge** is per region (`RegionDef.surge`): the rule turns
+  harsher where it is a hazard (Mist, Echoes, the Blight), and where it
+  helps the tower or there is none, a stat toll instead.
+- **Two passives** (Zeal, Conduit) join the draft from the Smith beside the
+  four weapons; Act 2's evolutions partner the four Act 1 passives that had
+  none. The Constellations are 40 nodes in five figures, ×1.5 a level,
+  with no refunds; the Crown unseals the masteries (ring 7 of the Forge,
+  1.5M shards, ×1.3 a level), the Lantern lights the four relic sets and a
+  sixth relic slot.
+- **Enraged bosses** walk through frost and knockback (Act 1 too): with
+  Daybreak's slow and Act 2's knockback, a fight could otherwise stall.
+  It is the plainest P8 change to Act 1's fights. Act 1's pacing moved in
+  one place after P8: the Blight's first fall, already the most variable
+  boss, went from 9:13 to 11:09 median, and 2 of 8 profiles missed it
+  inside 12 hours, until P9 softened Region 6's wave-15 swarm.
+- **Hands** cap at six cards (`BALANCE.draft.maxChoices`) and Scarcity
+  never takes them below two.
+
+P8's gate (`npm run pacing -- --act2 --hours 12 --seeds 4`): the heat
+1–10 reading is not yet recorded here (see Still open).
+`tests/act2.test.ts` holds the numbers gate: Abyss HP, damage and shards
+are finite and format cleanly past 10³⁰.
 
 P9 departs from the plan in a few places:
 
@@ -171,6 +195,8 @@ Still open:
 - **I6 in Region 3:** 5 of 8 profiles hold; the other three have one gap of
   10–12 min late in the Glass Wastes, while the bot buys ring-3 minor levels
 - a signing keystore for the release build (README.md)
+- P8's gate reading: the Act 2 bot's median time to heat 10 at the
+  frontier (want 3–12 h after the Blight)
 
 P0–P9 are done; what remains is the open list above.
 

@@ -566,6 +566,21 @@ describe('Act 2 frames (§9)', () => {
     damageEnemy(run, e, 1e9, false);
     expect(run.tower.hp).toBeCloseTo(10 + run.stats.maxHp * BALANCE.behaviours.siphon);
   });
+
+  it('Eclipse strikes a shared pool of HP once: a Chorus loses a quarter, not a quarter per body', () => {
+    const p = act2Profile();
+    p.stars = { 'warden-lamplighter': 1, 'warden-conduit': 1, 'warden-gravekeeper': 1 };
+    p.frame = 'gravekeeper';
+    const run = createRun({ ...buildRunConfig(p), regionId: 6 }, 1);
+    const c = spawnEnemy(run, regionByIndex(6), 'chorus', 3, 200, 0);
+    const all = run.enemies.filter((e) => e.group === c.id);
+    expect(all.length).toBeGreaterThan(1);
+    // Armour aside: the share is of what is left, and armour is the run's own sum.
+    for (const e of all) e.armor = 0;
+    run.ult.charge = 1;
+    castUltimate(run);
+    for (const e of all) expect(e.hp).toBeCloseTo(c.maxHp * 0.75);
+  });
 });
 
 describe('the fight still ends (§4.3)', () => {

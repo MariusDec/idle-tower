@@ -1,7 +1,6 @@
 import type { Profile } from '../meta/profile';
 import type { Synth } from '../audio/synth';
 import type { Renderer } from '../render/renderer';
-import { setPaletteMode } from '../render/palette';
 
 /**
  * The settings (§10.1, P9) reach the game from here, and only from here:
@@ -37,7 +36,7 @@ export function applySettings(s: Settings, t: SettingsTargets): void {
   const reduced = motionReduced(s);
   t.renderer.setMotion(reduced, s.shake);
   t.renderer.setTextScale(s.textScale);
-  setPaletteMode(s.palette);
+  t.renderer.setPalette(s.palette);
   t.root.dataset.motion = reduced ? 'reduce' : 'full';
   t.root.style.setProperty('--text-scale', String(s.textScale));
 }

@@ -144,7 +144,7 @@ export class App {
     this.draft = new DraftPanel(els.overlay, (i) => this.pick(i), () => this.reroll());
     this.modal = new Modal(els.overlay);
     this.settings = new SettingsPanel(els.overlay, {
-      change: (edit) => this.changeSettings(edit),
+      change: (edit, save) => this.changeSettings(edit, save),
       quality: () => ({ pref: readStoredQuality(), tier: this.renderer.quality }),
       setQuality: (pref) => {
         storeQuality(pref);
@@ -553,10 +553,10 @@ export class App {
     }
   }
 
-  private changeSettings(edit: (s: Settings) => void): void {
+  private changeSettings(edit: (s: Settings) => void, save = true): void {
     edit(this.profile.settings);
     this.applySettings();
-    void this.save();
+    if (save) void this.save();
   }
 
   private applySettings(): void {

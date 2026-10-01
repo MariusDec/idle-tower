@@ -47,13 +47,20 @@ export function castUltimate(run: RunState): boolean {
       run.events.push({ kind: 'ultStart', seconds: ult.seconds });
       break;
     case 'eclipse': {
-      // A share of what each body has left (§9): a boss loses less.
+      // A share of what each body has left (§9): a boss loses less. A pool
+      // of HP is struck once: a Chorus through one of its bodies, a court
+      // through its king (a shade's own HP is never spent).
       const r2 = run.stats.range * run.stats.range;
       const n = run.enemies.length;
+      const groups = new Set<number>();
       for (let i = 0; i < n; i++) {
         const e = run.enemies[i];
-        if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
-        damageEnemy(run, e, e.hp * (e.boss || e.court ? ult.bossFraction : ult.fraction), false, 'eclipse');
+        if (e.court || !targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
+        if (e.group) {
+          if (groups.has(e.group)) continue;
+          groups.add(e.group);
+        }
+        damageEnemy(run, e, e.hp * (e.boss ? ult.bossFraction : ult.fraction), false, 'eclipse');
       }
       run.events.push({ kind: 'eclipse', radius: run.stats.range });
       break;

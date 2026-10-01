@@ -8,10 +8,11 @@
  *   npm run arsenal -- --seeds 40
  *
  * The loadout is each region's frontier one: every Forge node up to the
- * ring its boss unseals, half bought, with every weapon in the pool and at
- * least three weapon slots (Region 3's, §11.1) so each run makes two or more
- * weapon picks.
- * Twin Mount and the keystones are left out: they pick for the player.
+ * ring its boss unseals, half bought, with every Act 1 weapon and passive in
+ * the pool and at least three weapon slots (Region 3's, §11.1) so each run
+ * makes two or more weapon picks.
+ * Twin Mount and the keystones are left out: they pick for the player. So
+ * is Act 2 (§9): the masteries, and the cards the Constellations light.
  */
 import { createRun, step } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
@@ -21,6 +22,7 @@ import { FORGE } from '../src/content/forge';
 import { PASSIVES } from '../src/content/passives';
 import { WEAPONS } from '../src/content/weapons';
 import { REGIONS } from '../src/content/regions';
+import { STAR_CARDS } from '../src/content/stars';
 import type { WeaponId } from '../src/content/types';
 import { botInput } from './bot';
 
@@ -32,6 +34,9 @@ const BOUGHT = 0.5;
 export const I4_MAX_SHARE = 0.4;
 /** Every Act 1 region (§11.1). */
 export const ALL_REGIONS: readonly number[] = REGIONS.map((r) => r.index);
+/** Act 1's weapons and passives: none a Constellation lights (§9). */
+const ACT1_WEAPONS = WEAPONS.filter((w) => !STAR_CARDS.has(w.id));
+const ACT1_PASSIVES = PASSIVES.filter((p) => !STAR_CARDS.has(p.id));
 
 export interface ArsenalReport {
   /** New-weapon picks by weapon, per region. */
@@ -49,14 +54,14 @@ function frontierConfig(region: number) {
   const profile = newProfile(0);
   profile.tutorial.firstDraft = true;
   for (const n of FORGE) {
-    if (n.ring > region + 1 || n.type === 'keystone' || n.id === 'twin-mount') continue;
+    if (n.ring > region + 1 || n.type === 'keystone' || n.type === 'mastery' || n.id === 'twin-mount') continue;
     profile.forge[n.id] = Math.max(1, Math.round(n.maxLevel * BOUGHT));
   }
   const base = buildRunConfig(profile);
   return {
     ...base,
     regionId: region,
-    pool: [...WEAPONS.map((w) => w.id), ...PASSIVES.map((p) => p.id)],
+    pool: [...ACT1_WEAPONS.map((w) => w.id), ...ACT1_PASSIVES.map((p) => p.id)],
     weaponSlots: Math.max(base.weaponSlots, 3),
   };
 }
@@ -80,7 +85,7 @@ export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 
       }
     }
   }
-  let worst: ArsenalReport['worst'] = { weapon: WEAPONS[0].id, share: 0, region: regions[0] };
+  let worst: ArsenalReport['worst'] = { weapon: ACT1_WEAPONS[0].id, share: 0, region: regions[0] };
   const taken = new Set<WeaponId>();
   for (const region of regions) {
     const tally = picks[region];
@@ -93,7 +98,7 @@ export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 
   }
   // The starting weapon is mounted, never picked: it counts as taken.
   taken.add(frontierConfig(regions[0]).pool[0] as WeaponId);
-  return { picks, evolutions, worst, unpicked: WEAPONS.map((w) => w.id).filter((id) => !taken.has(id)) };
+  return { picks, evolutions, worst, unpicked: ACT1_WEAPONS.map((w) => w.id).filter((id) => !taken.has(id)) };
 }
 
 function main(): void {
@@ -104,7 +109,7 @@ function main(): void {
   for (const [region, tally] of Object.entries(r.picks)) {
     const total = Object.values(tally).reduce((a, b) => a + (b ?? 0), 0);
     console.log(`Region ${region}: ${total} new-weapon picks, ${r.evolutions[Number(region)]} evolutions`);
-    for (const w of WEAPONS) {
+    for (const w of ACT1_WEAPONS) {
       const n = tally[w.id] ?? 0;
       console.log(`  ${w.name.padEnd(16)} ${String(n).padStart(4)}  ${((n / Math.max(1, total)) * 100).toFixed(0).padStart(3)}%`);
     }

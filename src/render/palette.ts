@@ -91,7 +91,9 @@ export type PaletteMode = 'standard' | 'safe';
 /**
  * Swap the canvas's effect colours in place. Painters read `FX` when they
  * draw, so the next frame wears the new palette; nothing that caches a
- * colour may hold an `FX` value (look it up by name instead).
+ * colour may hold an `FX` value (look it up by name instead). What is baked
+ * from `FX` (the ground, enemy sprites) must rebake: go through
+ * `Renderer.setPalette`, which drops them.
  */
 export function setPaletteMode(mode: PaletteMode): void {
   Object.assign(FX, mode === 'safe' ? SAFE_FX : STANDARD_FX);

@@ -42,7 +42,8 @@ portrait arena is centred.
 Behind the hub's gear, and in the pause menu mid-run. The panel asks the
 app to change the profile's settings (`SettingsActions.change`); the app
 applies and saves them through `app/settings.ts#applySettings`, the only
-place settings reach the game.
+place settings reach the game. A volume slider is heard while it is
+dragged and saved when it is let go.
 
 | Section | Controls |
 |---|---|

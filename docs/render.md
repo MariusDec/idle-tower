@@ -81,12 +81,14 @@ tower in danger), `INK` (the ground's ramp) and `RARITY` are mirrored as
 CSS tokens in `styles/tokens.css`; `tests/palette.test.ts` fails if they
 drift or a literal colour appears in `render/` or `ui/`.
 
-`setPaletteMode('safe')` swaps `FX` in place for `SAFE_FX`, the
-colourblind-safe set (Okabe & Ito, Paul Tol): weapon families apart in
-lightness and on the blue–yellow axis. It is canvas-only; the DOM keeps its
-tokens. Painters read `FX` when they draw, so the swap shows on the next
-frame — which is why nothing may cache an `FX` *value* (look it up by
-name, as `AURA_COLOR` does).
+`Renderer.setPalette('safe')` swaps `FX` in place for `SAFE_FX`
+(`setPaletteMode`), the colourblind-safe set (Okabe & Ito, Paul Tol):
+weapon families apart in lightness and on the blue–yellow axis. It is
+canvas-only; the DOM keeps its tokens. Painters read `FX` when they draw,
+so the swap shows on the next frame — which is why nothing may cache an
+`FX` *value* (look it up by name, as `AURA_COLOR` does). What is baked from
+`FX`, the arena's ground and the enemy sprites, the renderer drops on a
+swap, and they rebake on the next frame.
 
 ## Quality
 

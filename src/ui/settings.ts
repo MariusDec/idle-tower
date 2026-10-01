@@ -7,8 +7,11 @@ type Settings = Profile['settings'];
 
 /** Everything the settings can ask the app to do. */
 export interface SettingsActions {
-  /** Change the profile's settings: the app applies and saves them. */
-  change(edit: (s: Settings) => void): void;
+  /**
+   * Change the profile's settings: the app applies them, and saves them
+   * unless `save` is false (a slider mid-drag; it saves when let go).
+   */
+  change(edit: (s: Settings) => void, save?: boolean): void;
   /** The stored quality preference and the tier in force. */
   quality(): { pref: 'auto' | QualityTier; tier: QualityTier };
   setQuality(pref: 'auto' | QualityTier): void;
@@ -126,9 +129,9 @@ export class SettingsPanel {
     body.append(
       section('Sound',
         row('Sound', segmented(ON_OFF, s.sound, (v) => set((x) => { x.sound = v; }), 'Sound')),
-        row('Master', slider(s.volume.master, (v) => this.actions.change((x) => { x.volume.master = v; }), 'Master volume')),
-        row('Effects', slider(s.volume.sfx, (v) => this.actions.change((x) => { x.volume.sfx = v; }), 'Effects volume')),
-        row('Music', slider(s.volume.music, (v) => this.actions.change((x) => { x.volume.music = v; }), 'Music volume')),
+        row('Master', slider(s.volume.master, (v, save) => this.actions.change((x) => { x.volume.master = v; }, save), 'Master volume')),
+        row('Effects', slider(s.volume.sfx, (v, save) => this.actions.change((x) => { x.volume.sfx = v; }, save), 'Effects volume')),
+        row('Music', slider(s.volume.music, (v, save) => this.actions.change((x) => { x.volume.music = v; }, save), 'Music volume')),
       ),
       section('Display',
         row('Quality', segmented(QUALITY_CHOICES, q.pref, (v) => { this.actions.setQuality(v); this.render(); }, 'Quality')),
@@ -252,8 +255,11 @@ function segmented<T>(choices: readonly Choice<T>[], current: T, pick: (v: T) =>
   return g;
 }
 
-/** A 0–1 level as a 0–100 slider. It reports while dragging and never re-renders under the thumb. */
-function slider(value: number, change: (v: number) => void, label: string): HTMLElement {
+/**
+ * A 0–1 level as a 0–100 slider. It reports while dragging, to be heard at
+ * once, and again when let go, to be saved; it never re-renders under the thumb.
+ */
+function slider(value: number, change: (v: number, save: boolean) => void, label: string): HTMLElement {
   const input = document.createElement('input');
   input.type = 'range';
   input.className = 'settings-slider';
@@ -262,6 +268,7 @@ function slider(value: number, change: (v: number) => void, label: string): HTML
   input.step = '5';
   input.value = String(Math.round(value * 100));
   input.setAttribute('aria-label', label);
-  input.addEventListener('input', () => change(Number(input.value) / 100));
+  input.addEventListener('input', () => change(Number(input.value) / 100, false));
+  input.addEventListener('change', () => change(Number(input.value) / 100, true));
   return input;
 }

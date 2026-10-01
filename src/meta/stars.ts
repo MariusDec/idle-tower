@@ -83,7 +83,7 @@ export function starGifts(profile: Profile): StarGifts {
   return out;
 }
 
-/** Stars lit, counting levels: what the Firmament feats count. */
+/** Stars lit: nodes owned, whatever their levels. What the Starlit–Firmament feats count. */
 export function starsLit(profile: Profile): number {
   return STAR_WEB.ownedNodes(profile).length;
 }

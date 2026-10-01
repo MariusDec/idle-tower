@@ -74,6 +74,11 @@ export class EnemyPainter {
     this.cache.clear();
   }
 
+  /** Drop every baked sprite: the palette changed under them (`setPaletteMode`). */
+  clear(): void {
+    this.cache.clear();
+  }
+
   private sprite(type: EnemyId): Sprite {
     let s = this.cache.get(type);
     if (!s) {

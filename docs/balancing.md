@@ -31,7 +31,7 @@ P8's heat 1–10 at the frontier within the target time
 | `idle.ts` | the idle bot: two 20-minute check-ins a day with the hands off, offline between; and the active/idle farm comparison at the same Forge states |
 | `act2.ts` | the active bot carried past the Blight: heat ladders, stars, the Abyss |
 | `inspect.ts` | one seeded run (or many) as a per-wave table: level, DPS, HP pool, clear time, carried bodies, damage taken; Forge presets `none`, `arsenal`, `ring1`–`ring6`, `all`; any region |
-| `arsenal.ts` | I4: the bot's weapon picks in each region over many seeds |
+| `arsenal.ts` | I4: the bot's weapon picks in each region over many seeds, with Act 1's cards (none a Constellation lights) |
 
 Times in the reports are the player's wall clock: sim time over the game
 speed, plus the moments a person spends on drafts and between runs.

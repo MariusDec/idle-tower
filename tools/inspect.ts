@@ -69,10 +69,11 @@ export function veteran(preset: ForgePreset = 'none'): Profile {
   p.tutorial.firstDraft = true;
   if (preset === 'arsenal') p.forge = { 'might-damage': 1, scattershot: 1, 'chain-lightning': 1 };
   // `ringN` buys out every ring up to N; `all`, the whole web. Keystones are
-  // builds, chosen on purpose (§5.1), so a preset leaves them alone.
+  // builds, chosen on purpose (§5.1), so a preset leaves them alone; a
+  // mastery (§9) has no last level to buy out, and is Act 2's.
   const upTo = preset === 'all' ? Infinity : preset.startsWith('ring') ? Number(preset.slice(4)) : 0;
   if (upTo > 0) {
-    for (const n of FORGE) if (n.type !== 'keystone' && n.ring <= upTo) p.forge[n.id] = n.maxLevel;
+    for (const n of FORGE) if (n.type !== 'keystone' && n.type !== 'mastery' && n.ring <= upTo) p.forge[n.id] = n.maxLevel;
   }
   return p;
 }

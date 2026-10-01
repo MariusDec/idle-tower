@@ -1,4 +1,4 @@
-import type { ConstellationId, StarNodeDef } from './types';
+import type { CardItemId, ConstellationId, StarNodeDef } from './types';
 
 /**
  * The Constellations (§9): Act 2's tree, bought with Starlight. Forty
@@ -241,4 +241,13 @@ export const STARS: readonly StarNodeDef[] = [
 
 export const STAR_BY_ID: Readonly<Record<string, StarNodeDef>> = Object.fromEntries(
   STARS.map((n) => [n.id, n]),
+);
+
+/**
+ * The cards a Constellation puts in the draft (§9): Act 2's weapons and
+ * passives. Act 1's readings (the Recipe Book's list, the I4 arsenal
+ * report) leave them out.
+ */
+export const STAR_CARDS: ReadonlySet<CardItemId> = new Set(
+  STARS.flatMap((n) => n.effects).flatMap((e) => (e.kind === 'unlockCard' ? [e.id] : [])),
 );

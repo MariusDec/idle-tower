@@ -42,8 +42,12 @@ demotion is visible.
 ## Measuring
 
 **CI: `tests/perf.test.ts`.** The sim's share of a frame, headless: a run
-with every Forge node, the bot's draft and its evolutions, against 300
-bodies that never fall, 600 steps after a warm-up. The mean step must stay
+with every Forge node bought out (the keystones and the endless masteries
+aside: `inspect`'s `all` preset), the bot's draft and its evolutions,
+against 300 bodies that never fall, 600 steps after a warm-up. It first
+checks that every stat is finite: a mastery "bought out" to its endless
+last level once made the build kill everything at once, so the field
+refilled instead of being shot at. The mean step must stay
 under 2 ms on a dev machine; at 3× that is three steps a frame, and a
 mid-range phone is several times slower.
 
@@ -69,11 +73,11 @@ Arcane Bolt tower, 6 s per tier: frames at 16.7 ms (p95 16.8) on every
 tier, `Renderer.render` at 0.6–0.7 ms p50 and 0.9–1.1 ms p95.
 
 The sim, headless (Node, same machine): natural late-game runs (Regions
-3–7, the whole Forge) peak at about 90 live bodies and cost about 0.02 ms a
-step. The synthetic worst case — 300 bodies, a four-weapon evolved build,
-bodies refilled every step — fell from 2.0 to 1.36 ms a step when P9 made
-`feedMaws` (Maws feeding on every kill) reject non-Maws with one set
-lookup.
+3–6 and the Abyss, the Forge bought out) peak at 50–160 live bodies and
+cost 0.01–0.03 ms a step. The synthetic worst case — 300 bodies that never
+fall, shot at by a four-weapon build — costs about 0.45 ms a step (p95
+0.7 ms). `feedMaws` (Maws feeding on every kill) rejects non-Maws with one
+set lookup, so a kill no longer walks the field.
 
 **Caveats.** These are desktop numbers; the phone check (P1's gate, now
 with four-weapon evolved builds) is still open.

@@ -5,7 +5,7 @@ import { regionByIndex } from '../content/regions';
 import type { RunState } from '../sim/state';
 import { Camera } from './camera';
 import { Effects } from './effects';
-import { FX, INK, lighten, mix, withAlpha } from './palette';
+import { FX, INK, lighten, mix, setPaletteMode, withAlpha, type PaletteMode } from './palette';
 import { bakeArena } from './painters/arena';
 import { EnemyPainter } from './painters/enemies';
 import { paintProjectiles } from './painters/projectiles';
@@ -66,6 +66,8 @@ export class Renderer {
   private reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   /** The settings' text size, for the banners and damage numbers. */
   private textScale = 1;
+  /** The palette the canvas wears, and its baked sprites were drawn in. */
+  private palette: PaletteMode = 'standard';
 
   constructor(canvas: HTMLCanvasElement, host: HTMLElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
@@ -84,6 +86,18 @@ export class Renderer {
   setMotion(reduced: boolean, shake: boolean): void {
     this.reducedMotion = reduced;
     this.camera.setMotion(reduced, shake);
+  }
+
+  /**
+   * The settings' colours (standard or colourblind-safe). The baked ground
+   * and enemy sprites hold the old colours, so they rebake on the next frame.
+   */
+  setPalette(mode: PaletteMode): void {
+    if (mode === this.palette) return;
+    this.palette = mode;
+    setPaletteMode(mode);
+    this.background = null;
+    this.enemies.clear();
   }
 
   /** The settings' text size, applied to text painted on the canvas. */

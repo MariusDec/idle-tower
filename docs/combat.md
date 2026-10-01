@@ -86,4 +86,7 @@ Gravekeeper (Eclipse).
 The ultimate charges from kill XP (`BALANCE.ultimate.charge`, about 30–45
 s of killing) and fires on the player's tap; each cast makes the next
 charge 1.2× longer. A Nova landing during a boss slam's wind-up staggers
-it. The Autocaster ([idle.md](idle.md)) casts on the same rule as the bot.
+it. An Eclipse takes a share of what each body has left, so it strikes a
+shared pool of HP once: a Chorus through one of its bodies, the Hollow
+King's or the Hunger's court through the king alone. The Autocaster
+([idle.md](idle.md)) casts on the same rule as the bot.

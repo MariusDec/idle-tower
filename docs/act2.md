@@ -34,7 +34,7 @@ Act 2's currency (the third and last, §8.1). A region's boss felled at a
 new heat record pays `BALANCE.starlight.perHeat[region − 1]` for every heat
 level the record passes, once (`recordStarlight`, `recordHeat`): the
 frontier pays most. A new deepest Abyss floor pays on a log curve,
-`12 × log2(1 + floor)` in all (`recordFloor`). The Lantern's stars can
+`12 × log2(1 + floor)` in all (`recordFloor`). The Deep's Stargazer stars
 multiply payouts (`starGifts(profile).starlight`).
 
 ## The Constellations
@@ -48,7 +48,7 @@ paid in Starlight, and nothing refunds:
 | The Warden | the Lamplighter and Gravekeeper frames, the walls |
 | The Lantern | the Abyss's four relic sets, a sixth relic slot |
 | The Crown | the Forge's five masteries |
-| The Deep | the descent |
+| The Deep | the descent, and the Stargazers: more Starlight per payout |
 
 Every figure has a node on the root, so the sky opens five ways at once.
 Stat, card, slot and behaviour effects reach runs through
@@ -70,7 +70,8 @@ Region index 7: the only endless mode, and the only place big numbers live.
 - A new floor re-resolves the run's stats with its rule (`enterFloor`).
 - No overtime: the descent goes on until the tower falls.
 - `core/format.ts#formatNumber` writes big numbers with suffixes up to
-  about 10³⁰, then in exponent form; damage numbers use it too.
+  10⁶³ (`Vg`), then in exponent form (`1.23e66`); damage numbers use it
+  too. P8's gate asks for clean numbers to about 10³⁰.
 
 ## Act 2 feats
 

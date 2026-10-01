@@ -26,6 +26,8 @@ const MEASURE = 600;
 describe('frame budget (§12.5)', () => {
   it(`steps a late build against ${BALANCE.maxEnemies} bodies inside ${STEP_BUDGET_MS} ms`, () => {
     const run = createRun({ ...buildRunConfig(veteran('all')), regionId: 6 }, 11);
+    // A real late build: an endless node bought "out" would make every stat infinite.
+    for (const [key, v] of Object.entries(run.stats)) expect(Number.isFinite(v), key).toBe(true);
     // Play until the build is grown: four weapons, or the boss wave's door.
     while (!run.outcome && run.wave < 15 && run.weapons.length < 4) step(run, SIM_DT, botInput(run, 'active'));
     run.events.length = 0;
