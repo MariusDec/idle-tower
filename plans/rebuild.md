@@ -150,8 +150,13 @@ P8 departs from the plan in a few places (the whole of it is in
 - **Hands** cap at six cards (`BALANCE.draft.maxChoices`) and Scarcity
   never takes them below two.
 
-P8's gate (`npm run pacing -- --act2 --hours 12 --seeds 4`): the heat
-1–10 reading is not yet recorded here (see Still open).
+P8's gate (`npm run pacing -- --act2 --hours 12 --seeds 4`, from each
+profile's Blight, which fell at 8:58–11:10): heat 10 at the frontier
+falls at 10:57 median after the Blight (10:41–10:57 on the 3 of 4
+profiles that reach it; the fourth stalls at heat 6). Heat 1–5 come
+inside the first two hours (1:11–1:44 median), heat 6–9 at 3:05–10:47.
+By hour 12 the bot has lit 24–27 of the 40 stars and owns 41–43 mastery
+levels.
 `tests/act2.test.ts` holds the numbers gate: Abyss HP, damage and shards
 are finite and format cleanly past 10³⁰.
 
@@ -195,8 +200,12 @@ Still open:
 - **I6 in Region 3:** 5 of 8 profiles hold; the other three have one gap of
   10–12 min late in the Glass Wastes, while the bot buys ring-3 minor levels
 - a signing keystore for the release build (README.md)
-- P8's gate reading: the Act 2 bot's median time to heat 10 at the
-  frontier (want 3–12 h after the Blight)
+- **The Abyss walls early:** every Act 2 profile reaches floor 4 within
+  its first hour and none passes floor 5 (the Deepwarden) in 12 hours,
+  while stars and masteries keep growing. Each floor's ×2.2 HP outruns
+  them; `BALANCE.abyss` is the place to tune, so depth keeps paying
+- one profile in four stalls at heat 6 at the frontier for its last ten
+  hours (the gate's median passes without it)
 
 P0–P9 are done; what remains is the open list above.
 
