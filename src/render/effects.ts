@@ -212,6 +212,12 @@ export class Effects {
     this.arcs.push({ points: out, age: 0, life: ARC_LIFE, tint });
   }
 
+  /** A straight streak from (x1, y1) to (x2, y2): a Gilded Rail's slug (§9). */
+  streak(x1: number, y1: number, x2: number, y2: number, tint: string): void {
+    if (this.arcs.length >= MAX_ARCS) this.arcs.shift();
+    this.arcs.push({ points: [x1, y1, x2, y2], age: 0, life: ARC_LIFE * 1.6, tint });
+  }
+
   /** Evolution (§10.3): a slow spotlight on the tower while the weapon transforms. */
   evolve(radius: number): void {
     this.pushRing({ x: 0, y: 0, age: 0, life: 1, from: radius * 4, to: radius * 0.8, color: withAlpha(FX.gold, 0.9), width: 10 });

@@ -6,6 +6,7 @@ import { WEAPON_BY_ID } from '../../content/weapons';
 import type { CardItemId, WeaponId } from '../../content/types';
 import type { Card, RunState } from '../state';
 import { allMods, resolveStats } from '../stats';
+import { pactLoad } from '../pacts';
 import { suggest } from '../suggest';
 import { evolveAt, newWeapon } from './arms';
 
@@ -87,13 +88,14 @@ export function candidateCards(run: RunState): Card[] {
   return out;
 }
 
-/** Cards per draft: the base, plus Choice, less Hoarder (§11.4), never below the floor. */
+/** Cards per draft: the base, plus Choice, less Hoarder (§11.4) and Scarcity (§9), never below the floor. */
 export function draftChoices(run: RunState): number {
   const B = BALANCE.behaviours;
   const n = BALANCE.draft.choices
     + B.extraChoice * (run.behaviours['extra-choice'] ?? 0)
-    - B.hoarderChoices * (run.behaviours.hoarder ?? 0);
-  return Math.max(BALANCE.draft.minChoices, n);
+    - B.hoarderChoices * (run.behaviours.hoarder ?? 0)
+    + pactLoad(run.pacts).choices;
+  return Math.min(BALANCE.draft.maxChoices, Math.max(BALANCE.draft.minChoices, n));
 }
 
 /** Roll a hand: distinct cards from the candidates, padded with fallbacks. */

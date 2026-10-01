@@ -50,6 +50,15 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
     tactics: {},
     settings: { autoUlt: true, ...(raw.settings as object) },
   }),
+  // v7 (P8): Act 2: Starlight, the Constellations, the pacts and the Abyss.
+  6: (raw) => ({
+    ...raw,
+    version: 7,
+    starlight: 0,
+    stars: {},
+    pacts: { ranks: {}, best: {} },
+    abyss: { best: 0 },
+  }),
 };
 
 export class MigrationError extends Error {}

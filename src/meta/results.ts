@@ -1,16 +1,19 @@
-import { BOSSES } from '../content/bosses';
+import { ABYSS_INDEX, floorOf } from '../content/abyss';
+import { BOSSES, BOSS_BY_ID } from '../content/bosses';
 import { FORGE } from '../content/forge';
 import { FRAMES } from '../content/frames';
 import { REGIONS } from '../content/regions';
 import { bossRelic } from '../content/relics';
 import type { BossId, EnemyId, EvolutionId, FeatDef, RelicId } from '../content/types';
 import type { RunState } from '../sim/state';
-import { bossDown, frameUnlocked, gainRelic, hubUnlocks, regionUnlocked, relicSlots } from './collection';
+import { act2Open, bossDown, frameUnlocked, gainRelic, hubUnlocks, regionUnlocked, relicSlots } from './collection';
 import { checkFeats } from './feats';
 import { nextGoal, type ForgeGoal } from './forge';
 import { recordFarm } from './offline';
 import { recipesOpen, recordRecipes } from './recipes';
+import { recordFloor, recordHeat, type StarRecord } from './pacts';
 import type { Profile } from './profile';
+import { pactLoad } from '../sim/pacts';
 
 /** A record broken this run: the old value is shown struck through (§7.3). */
 export interface RecordBroken {
@@ -55,6 +58,14 @@ export interface RunSummary {
   unlocks: string[];
   /** The "Next:" line, after the shards are banked. */
   next: ForgeGoal | null;
+  /** The heat the run was under (§9); 0 before Act 2 and in the Abyss. */
+  heat: number;
+  /** A region cleared at a new heat record, and the Starlight it paid (§9). */
+  heatRecord: StarRecord | null;
+  /** In the Abyss (§9): the floor the run ended on, and floors cleared. Null in a region. */
+  abyss: { floor: number; cleared: number } | null;
+  /** A new deepest floor, and the Starlight it paid. */
+  floorRecord: StarRecord | null;
 }
 
 /**
@@ -69,6 +80,11 @@ function unlockList(profile: Profile): Map<string, string> {
   const hub = hubUnlocks(profile);
   if (hub.map) add('The Map');
   if (hub.feats) add('Feats');
+  if (act2Open(profile)) {
+    add('Pacts');
+    add('The Constellations');
+    add('The Abyss');
+  }
   if (recipesOpen(profile)) add('The Recipe Book');
   for (const r of REGIONS) if (r.index > 1 && regionUnlocked(profile, r.index)) add(r.name);
   for (const f of FRAMES) if (f.unlock.kind !== 'start' && frameUnlocked(profile, f)) add(`${f.name} frame`);
@@ -95,18 +111,22 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
   const shards = Math.floor(run.shards);
   const before = unlockList(profile);
   const r = profile.records;
+  // The Abyss counts its waves across floors (§9): they are no region's record.
+  const abyss = run.regionId === ABYSS_INDEX;
   const records = {
-    wave: wave > r.bestWave && r.runs > 0 ? { old: r.bestWave, now: wave } : null,
+    wave: !abyss && wave > r.bestWave && r.runs > 0 ? { old: r.bestWave, now: wave } : null,
     shards: shards > r.bestShards && r.runs > 0 ? { old: r.bestShards, now: shards } : null,
   };
   r.runs++;
   r.kills += run.kills;
   r.elites += run.elitesKilled;
-  r.bestWave = Math.max(r.bestWave, wave);
+  if (!abyss) r.bestWave = Math.max(r.bestWave, wave);
   r.bestShards = Math.max(r.bestShards, shards);
   profile.shards += shards;
-  const region = (profile.regions[run.regionId] ??= { bestWave: 0 });
-  region.bestWave = Math.max(region.bestWave, wave);
+  if (!abyss) {
+    const region = (profile.regions[run.regionId] ??= { bestWave: 0 });
+    region.bestWave = Math.max(region.bestWave, wave);
+  }
   for (const [type, n] of Object.entries(run.killsBy)) profile.killsBy[type] = (profile.killsBy[type] ?? 0) + (n ?? 0);
   recordFarm(profile, shards, time / Math.max(1, speed));
 
@@ -115,9 +135,18 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
   profile.seenEnemies.push(...newEnemies);
 
   // The boss: met, maybe felled; a first fall pays its relic and owes the map its ceremony.
+  // In the Abyss only its own bosses keep records (§9): the floors' guardians are their regions'.
   let boss: BossResult | null = null;
   const relics: { id: RelicId; rank: number }[] = [];
-  if (run.boss) {
+  if (abyss) {
+    for (const id of run.felled) {
+      if (!BOSS_BY_ID[id].abyss) continue;
+      const rec = (profile.bosses[id] ??= { kills: 0, fastest: null });
+      rec.kills++;
+    }
+    const standing = run.boss && run.boss.killedIn === null ? run.boss.id : null;
+    if (standing && BOSS_BY_ID[standing].abyss) profile.bosses[standing] ??= { kills: 0, fastest: null };
+  } else if (run.boss) {
     const b = run.boss;
     const rec = (profile.bosses[b.id] ??= { kills: 0, fastest: null });
     const first = b.killedIn !== null && rec.kills === 0;
@@ -133,6 +162,11 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
     }
   }
   for (const id of run.relics) relics.push({ id, rank: gainRelic(profile, id) });
+
+  // Starlight (§9): a region's boss felled at a new heat record, or a new deepest floor.
+  const heat = pactLoad(run.pacts).heat;
+  const heatRecord = !abyss && run.boss?.killedIn != null ? recordHeat(profile, run.regionId, heat) : null;
+  const floorRecord = abyss ? recordFloor(profile, run.floors) : null;
 
   const newRecipes = recordRecipes(profile, run);
   const feats = checkFeats(profile, run);
@@ -157,5 +191,9 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
     feats,
     unlocks,
     next: nextGoal(profile),
+    heat,
+    heatRecord,
+    abyss: abyss ? { floor: floorOf(Math.max(1, wave)), cleared: run.floors } : null,
+    floorRecord,
   };
 }

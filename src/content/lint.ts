@@ -1,7 +1,8 @@
+import { ABYSS_INDEX } from './abyss';
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
 import type {
-  AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, ForgeNodeDef, FrameDef, PassiveDef, RegionDef, RelicDef, WeaponDef,
+  AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, PactDef, PassiveDef, RegionDef, RelicDef, WeaponDef, WebNodeDef,
 } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
@@ -114,24 +115,34 @@ export const levels: LintRule = (tables) => {
 };
 
 /**
- * The Forge web holds together (§12.6): links name real nodes one ring in or
- * on the same ring, every node is reachable from the root, the costs and
- * levels are sane, the unlocks name real cards, and minors stay at most 60%
- * of the web (§5.1).
+ * A web holds together (§12.6): links name real nodes one ring in or on the
+ * same ring, every node is reachable from the root, the costs and levels are
+ * sane, the unlocks name real cards, minors stay at most 60% of the web
+ * (§5.1), and a mastery (§9) is endless and hangs from its own branch.
  */
-export const forgeWeb: LintRule = (tables) => {
+function webRule(table: 'forge' | 'stars'): LintRule {
+  return (tables) => lintWeb(tables, table);
+}
+
+function lintWeb(tables: Readonly<Record<string, readonly ContentEntry[]>>, table: string): LintIssue[] {
   const out: LintIssue[] = [];
-  const nodes = (tables.forge as readonly ForgeNodeDef[] | undefined) ?? [];
+  const nodes = (tables[table] as readonly WebNodeDef[] | undefined) ?? [];
   if (nodes.length === 0) return out;
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const cards = new Set([
     ...((tables.weapons as readonly WeaponDef[] | undefined) ?? []).map((w) => w.id as string),
     ...((tables.passives as readonly PassiveDef[] | undefined) ?? []).map((p) => p.id as string),
   ]);
-  const issue = (id: string, problem: string): void => { out.push({ table: 'forge', id, problem }); };
+  const issue = (id: string, problem: string): void => { out.push({ table, id, problem }); };
   for (const n of nodes) {
     if (n.maxLevel < 1) issue(n.id, 'max level below 1');
-    if (n.type !== 'minor' && n.effects.some((e) => e.kind === 'stat') && n.maxLevel > 1) {
+    if (n.type === 'mastery') {
+      if (n.maxLevel !== Infinity) issue(n.id, 'a mastery has no last level');
+      if (n.links.some((l) => byId.get(l)?.branch !== n.branch)) issue(n.id, 'a mastery hangs from its own branch');
+    } else if (n.maxLevel === Infinity) {
+      issue(n.id, 'only a mastery is endless');
+    }
+    if (n.type !== 'minor' && n.type !== 'mastery' && n.effects.some((e) => e.kind === 'stat') && n.maxLevel > 1) {
       issue(n.id, 'a stat with levels is a minor');
     }
     if (!(n.cost > 0)) issue(n.id, 'cost must be positive');
@@ -159,6 +170,26 @@ export const forgeWeb: LintRule = (tables) => {
   const minors = nodes.filter((n) => n.type === 'minor').length;
   if (minors > nodes.length * 0.6) issue('*', `${minors} of ${nodes.length} nodes are minors (max 60%)`);
   return out;
+}
+
+export const forgeWeb: LintRule = webRule('forge');
+export const starWeb: LintRule = webRule('stars');
+
+/**
+ * Pacts hold together (§9): 3–5 ranks each, and every region says what the
+ * Blight Surge does there, in a line that obeys R4.
+ */
+export const pacts: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  for (const p of (tables.pacts as readonly PactDef[] | undefined) ?? []) {
+    if (p.ranks < 3 || p.ranks > 5) out.push({ table: 'pacts', id: p.id, problem: `has ${p.ranks} ranks (want 3–5)` });
+  }
+  for (const r of (tables.regions as readonly RegionDef[] | undefined) ?? []) {
+    const words = wordCount(r.surge.text);
+    if (words === 0 || words > MAX_TEXT_WORDS) out.push({ table: 'regions', id: r.id, problem: `surge text is ${words} words` });
+    if (r.surge.effect.kind === 'rule' && !r.rule) out.push({ table: 'regions', id: r.id, problem: 'surges a rule it does not have' });
+  }
+  return out;
 };
 
 /**
@@ -174,14 +205,15 @@ export const bossesAndLoot: LintRule = (tables) => {
   const regions = (tables.regions as readonly RegionDef[] | undefined) ?? [];
   const relics = (tables.relics as readonly RelicDef[] | undefined) ?? [];
   const bossIds = new Set<string>(bosses.map((b) => b.id));
-  const regionIdx = new Set(regions.map((r) => r.index));
+  // The Abyss (§9) counts as a region where a feat or relic names one.
+  const regionIdx = new Set([...regions.map((r) => r.index), ABYSS_INDEX]);
   const enemies = new Set((tables.enemies as readonly EnemyDef[] | undefined ?? []).map((e) => e.id as string));
   const auras = new Set((tables.auras as readonly AuraDef[] | undefined ?? []).map((a) => a.id as string));
   for (const r of regions) {
     if (!bossIds.has(r.boss)) out.push({ table: 'regions', id: r.id, problem: `unknown boss "${r.boss}"` });
     for (const a of r.elites.auras) if (!auras.has(a)) out.push({ table: 'regions', id: r.id, problem: `unknown aura "${a}"` });
     if (r.rule && wordCount(r.rule.text) > MAX_TEXT_WORDS) out.push({ table: 'regions', id: r.id, problem: 'rule text too long' });
-    const n = relics.filter((x) => (x.source.kind === 'elite' ? x.source.region === r.index : x.source.boss === r.boss)).length;
+    const n = relics.filter((x) => (x.source.kind === 'elite' ? x.source.region === r.index : x.source.kind === 'boss' && x.source.boss === r.boss)).length;
     if (relics.length > 0 && n !== 4) out.push({ table: 'regions', id: r.id, problem: `gives ${n} relics (want 4)` });
   }
   for (const b of bosses) {
@@ -194,14 +226,23 @@ export const bossesAndLoot: LintRule = (tables) => {
         if (p.kind === 'summon' && !enemies.has(p.enemy)) out.push({ table: 'bosses', id: b.id, problem: `summons unknown enemy "${p.enemy}"` });
       }
     });
-    if (!regions.some((r) => r.boss === b.id)) out.push({ table: 'bosses', id: b.id, problem: 'no region has this boss' });
+    // An Abyss boss (§9) holds the Abyss's fifth floors, not a region.
+    if (!b.abyss && !regions.some((r) => r.boss === b.id)) out.push({ table: 'bosses', id: b.id, problem: 'no region has this boss' });
   }
   for (const x of relics) {
     if (x.source.kind === 'boss' && !bossIds.has(x.source.boss)) out.push({ table: 'relics', id: x.id, problem: `unknown boss "${x.source.boss}"` });
     if (x.source.kind === 'elite' && !regionIdx.has(x.source.region)) out.push({ table: 'relics', id: x.id, problem: `unknown region ${x.source.region}` });
   }
-  for (const n of (tables.forge as readonly ForgeNodeDef[] | undefined) ?? []) {
+  for (const n of (tables.forge as readonly WebNodeDef[] | undefined) ?? []) {
     if (n.sealed && !bossIds.has(n.sealed)) out.push({ table: 'forge', id: n.id, problem: `sealed by unknown boss "${n.sealed}"` });
+  }
+  // Abyss relics come in sets of three (§9), and each set is lit by a star.
+  const sets = new Map<number, number>();
+  for (const x of relics) if (x.source.kind === 'abyss') sets.set(x.source.set, (sets.get(x.source.set) ?? 0) + 1);
+  const lit = new Set(((tables.stars as readonly WebNodeDef[] | undefined) ?? []).flatMap((n) => n.effects).flatMap((e) => (e.kind === 'relics' ? [e.set] : [])));
+  for (const [set, n] of sets) {
+    if (n !== 3) out.push({ table: 'relics', id: `set-${set}`, problem: `Abyss set ${set} has ${n} relics (want 3)` });
+    if (tables.stars && !lit.has(set)) out.push({ table: 'relics', id: `set-${set}`, problem: `no star lights Abyss set ${set}` });
   }
   for (const f of (tables.feats as readonly FeatDef[] | undefined) ?? []) {
     const g = f.goal;
@@ -209,8 +250,10 @@ export const bossesAndLoot: LintRule = (tables) => {
     if (g.kind === 'bestiary' && !regionIdx.has(g.region)) out.push({ table: 'feats', id: f.id, problem: `unknown region ${g.region}` });
     if (!(f.reward > 0)) out.push({ table: 'feats', id: f.id, problem: 'reward must be positive' });
   }
+  const starFrames = new Set(((tables.stars as readonly WebNodeDef[] | undefined) ?? []).flatMap((n) => n.effects).flatMap((e) => (e.kind === 'frame' ? [e.id as string] : [])));
   for (const f of (tables.frames as readonly FrameDef[] | undefined) ?? []) {
     if (f.unlock.kind === 'boss' && !bossIds.has(f.unlock.boss)) out.push({ table: 'frames', id: f.id, problem: `unlocked by unknown boss "${f.unlock.boss}"` });
+    if (f.unlock.kind === 'star' && tables.stars && !starFrames.has(f.id)) out.push({ table: 'frames', id: f.id, problem: 'no star lights this frame' });
   }
   return out;
 };
@@ -241,13 +284,16 @@ export const evolutions: LintRule = (tables) => {
     const n = evos.filter((e) => e.weapon === w.id).length;
     if (n !== 1) out.push({ table: 'weapons', id: w.id, problem: `has ${n} evolutions (want 1)` });
   }
+  // A starred passive (§9) joins only through a star: one must light it.
+  const starCards = new Set(((tables.stars as readonly WebNodeDef[] | undefined) ?? []).flatMap((n) => n.effects).flatMap((e) => (e.kind === 'unlockCard' ? [e.id as string] : [])));
   for (const p of passives) {
     if (p.joinsWith && !weaponIds.has(p.joinsWith)) out.push({ table: 'passives', id: p.id, problem: `joins with unknown weapon "${p.joinsWith}"` });
+    if (p.starred && tables.stars && !starCards.has(p.id)) out.push({ table: 'passives', id: p.id, problem: 'no star lights this passive' });
   }
   return out;
 };
 
-export const RULES: readonly LintRule[] = [uniqueIds, entryBasics, references, levels, forgeWeb, bossesAndLoot, evolutions];
+export const RULES: readonly LintRule[] = [uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions];
 
 export function lintContent(
   tables: Readonly<Record<string, readonly ContentEntry[]>>,

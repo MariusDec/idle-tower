@@ -1,4 +1,4 @@
-import type { Enemy, FirePatch, RunState, WeaponState } from '../../sim/state';
+import type { Enemy, FirePatch, Rune, RunState, WeaponState } from '../../sim/state';
 import { armed } from '../../sim/systems/arms';
 import { bladeOrbit, storms } from '../../sim/systems/combat';
 import { BALANCE } from '../../content/balance';
@@ -7,9 +7,38 @@ import { FX, INK, lighten, mix, withAlpha } from '../palette';
 /**
  * What the arsenal puts in the field besides projectiles (§4.4, §10.5): the
  * Sunlance's beam, Glaives' blades, Sentinel Drones, Storm Crown's storms,
- * Meteorfall's burning ground, and the marks a weapon leaves on a body
- * (burning, frozen). Reads the run; writes nothing.
+ * Meteorfall's burning ground, Rune Traps' runes and Soul Tether's threads
+ * (§9), and the marks a weapon leaves on a body (burning, frozen, gilded).
+ * Reads the run; writes nothing.
  */
+
+/** Runes on the ground, under the bodies: dim while arming, bright once armed. */
+export function paintRunes(ctx: CanvasRenderingContext2D, runes: readonly Rune[], time: number, clock: number): void {
+  if (runes.length === 0) return;
+  ctx.save();
+  for (const r of runes) {
+    const armed = r.armAt <= time;
+    const fade = Math.min(1, (r.until - time) / 0.8);
+    const a = (r.echo ? 0.5 : 1) * fade * (armed ? 0.75 + 0.25 * Math.sin(clock * 6 + r.x) : 0.35);
+    const s = 13;
+    ctx.strokeStyle = withAlpha(FX.arcane, a);
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, s, 0, Math.PI * 2);
+    ctx.stroke();
+    // A five-pointed glyph inside the circle.
+    ctx.beginPath();
+    for (let i = 0; i <= 5; i++) {
+      const t = -Math.PI / 2 + (i * 4 * Math.PI) / 5;
+      const px = r.x + Math.cos(t) * s * 0.8;
+      const py = r.y + Math.sin(t) * s * 0.8;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 
 /** Burning ground, under the bodies. */
 export function paintFires(ctx: CanvasRenderingContext2D, fires: readonly FirePatch[], time: number, clock: number): void {
@@ -38,9 +67,17 @@ export function paintStatus(ctx: CanvasRenderingContext2D, enemies: readonly Ene
     if (!e.alive) continue;
     const burning = e.burnUntil > time;
     const frozen = e.frozenUntil > time;
-    if (!burning && !frozen) continue;
+    const gilded = e.gildedUntil > time;
+    if (!burning && !frozen && !gilded) continue;
     const x = e.px + (e.x - e.px) * alpha;
     const y = e.py + (e.y - e.py) * alpha;
+    if (gilded) {
+      // Midas Lance (§9): a gold rim, and it pays double.
+      ctx.strokeStyle = withAlpha(FX.gold, 0.85);
+      ctx.beginPath();
+      ctx.arc(x, y, e.radius * 1.12, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     if (frozen) {
       ctx.fillStyle = withAlpha(FX.frost, 0.35);
       ctx.strokeStyle = withAlpha(lighten(FX.frost, 0.5), 0.9);
@@ -84,10 +121,16 @@ export function paintArsenal(ctx: CanvasRenderingContext2D, run: RunState, alpha
       case 'chain-lightning':
         if (w.evolved) paintStorms(ctx, run, w, clock, additive);
         break;
+      case 'soul-tether':
+        paintTethers(ctx, run, w, alpha, clock, additive);
+        break;
       case 'arcane-bolt':
       case 'scattershot':
       case 'frost-ring':
       case 'mortar':
+      case 'moonblade':
+      case 'rune-traps':
+      case 'gilded-rail':
         break;
       default: {
         const exhaustive: never = w.id;
@@ -136,6 +179,36 @@ function paintBeam(ctx: CanvasRenderingContext2D, run: RunState, w: WeaponState,
   ctx.beginPath();
   ctx.arc(tx, ty, 6 + heat * 8, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+}
+
+/** Soul Tether's threads: a wavering green line from the tower to each body it holds. */
+function paintTethers(ctx: CanvasRenderingContext2D, run: RunState, w: WeaponState, alpha: number, clock: number, additive: boolean): void {
+  if (w.tethers.length === 0 || w.silencedUntil > run.time) return;
+  const R = run.stats.radius * 0.6;
+  ctx.save();
+  if (additive) ctx.globalCompositeOperation = 'lighter';
+  const tint = w.evolved ? lighten(FX.nature, 0.35) : FX.nature;
+  for (const id of w.tethers) {
+    const e = run.enemies.find((x) => x.id === id && x.alive);
+    if (!e) continue;
+    const tx = e.px + (e.x - e.px) * alpha;
+    const ty = e.py + (e.y - e.py) * alpha;
+    const a = Math.atan2(ty, tx);
+    const sx = Math.cos(a) * R;
+    const sy = Math.sin(a) * R;
+    const mx = (sx + tx) / 2 - Math.sin(a) * 14 * Math.sin(clock * 7 + id);
+    const my = (sy + ty) / 2 + Math.cos(a) * 14 * Math.sin(clock * 7 + id);
+    ctx.strokeStyle = withAlpha(tint, 0.3);
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(mx, my, tx, ty);
+    ctx.stroke();
+    ctx.strokeStyle = withAlpha(lighten(tint, 0.4), 0.85);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
   ctx.restore();
 }
 

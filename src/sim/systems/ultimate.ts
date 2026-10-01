@@ -39,11 +39,25 @@ export function castUltimate(run: RunState): boolean {
       break;
     case 'tempest':
     case 'overclock':
-      // Lasting: `tickUltimate` strikes (Tempest), the weapons read it (Overclock).
+    case 'daybreak':
+      // Lasting: `tickUltimate` strikes (Tempest) and slows (Daybreak); the
+      // weapons read Overclock, `damageTaken` Daybreak's vulnerability.
       u.until = run.time + ult.seconds;
       u.timer = 0;
       run.events.push({ kind: 'ultStart', seconds: ult.seconds });
       break;
+    case 'eclipse': {
+      // A share of what each body has left (§9): a boss loses less.
+      const r2 = run.stats.range * run.stats.range;
+      const n = run.enemies.length;
+      for (let i = 0; i < n; i++) {
+        const e = run.enemies[i];
+        if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
+        damageEnemy(run, e, e.hp * (e.boss || e.court ? ult.bossFraction : ult.fraction), false, 'eclipse');
+      }
+      run.events.push({ kind: 'eclipse', radius: run.stats.range });
+      break;
+    }
     default: {
       const exhaustive: never = ult;
       return exhaustive;
@@ -61,12 +75,24 @@ export function castUltimate(run: RunState): boolean {
   return true;
 }
 
-/** A lasting ultimate, each step: Tempest strikes random bodies in range at its rate (§11.6). */
+/**
+ * A lasting ultimate, each step: Tempest strikes random bodies in range at
+ * its rate (§11.6); Daybreak holds everything in range slowed (§9).
+ */
 export function tickUltimate(run: RunState, dt: number): void {
   const u = run.ult;
   if (u.until <= run.time) return;
   const frame = frameById(run.frameId);
   const ult = frame.ultimate;
+  if (ult.id === 'daybreak') {
+    const r2 = run.stats.range * run.stats.range;
+    for (const e of run.enemies) {
+      if (!e.alive || e.x * e.x + e.y * e.y > r2) continue;
+      e.slow = Math.max(e.slowUntil > run.time ? e.slow : 0, ult.slow);
+      e.slowUntil = Math.max(e.slowUntil, run.time + dt * 2);
+    }
+    return;
+  }
   if (ult.id !== 'tempest') return;
   u.timer -= dt;
   if (u.timer > 0) return;

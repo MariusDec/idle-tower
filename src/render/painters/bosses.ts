@@ -33,6 +33,17 @@ const PROFILE: Record<BossId, (a: number, t: number) => number> = {
   },
   // The Blight: a heart that beats, and thorns that never hold still.
   blight: (a, t) => 1 + 0.06 * Math.sin(t * 5) + 0.12 * Math.max(0, Math.sin(a * 9 + t * 0.7)),
+  // The Deepwarden: a standing stone, eight-sided and squared off.
+  deepwarden: (a) => {
+    const k = Math.PI / 4;
+    return 0.95 * Math.cos(k / 2) / Math.cos(((((a % k) + k) % k) - k / 2));
+  },
+  // The Hunger: a mouth that opens and closes, a gap in the ring.
+  hunger: (a, t) => {
+    const open = 0.35 + 0.25 * Math.sin(t * 2.2);
+    const off = Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));
+    return off < open ? 0.55 + 0.45 * (off / open) : 1 + 0.04 * Math.sin(a * 12);
+  },
 };
 
 function traceBoss(ctx: CanvasRenderingContext2D, id: BossId, r: number, t: number): void {
@@ -147,6 +158,43 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
       ctx.beginPath();
       ctx.arc(0, 0, r * 0.28, 0, Math.PI * 2);
       ctx.fill();
+      break;
+    }
+    case 'deepwarden': {
+      // Carved bands, and a ward-glyph glowing at its heart.
+      ctx.strokeStyle = withAlpha(def.borderColor, 0.5);
+      ctx.lineWidth = r * 0.05;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.7, i * r * 0.35);
+        ctx.lineTo(r * 0.7, i * r * 0.35);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = withAlpha(lighten(FX.frost, 0.3), 0.6 + 0.3 * Math.sin(t * 2));
+      ctx.lineWidth = r * 0.07;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+    case 'hunger': {
+      // Teeth round the mouth, and a dark gullet.
+      ctx.fillStyle = withAlpha(INK['950'], 0.75);
+      ctx.beginPath();
+      ctx.arc(r * 0.2, 0, r * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = INK['050'];
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + t * 0.3;
+        const x = Math.cos(a) * r * 0.62;
+        const y = Math.sin(a) * r * 0.62;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x * 0.8 + Math.cos(a + 1.6) * r * 0.06, y * 0.8 + Math.sin(a + 1.6) * r * 0.06);
+        ctx.lineTo(x * 0.8 - Math.cos(a + 1.6) * r * 0.06, y * 0.8 - Math.sin(a + 1.6) * r * 0.06);
+        ctx.closePath();
+        ctx.fill();
+      }
       break;
     }
     default: {

@@ -3,11 +3,12 @@ import type { WeaponDef, WeaponId, WeaponParams } from './types';
 const ZERO: WeaponParams = {
   damage: 0, fireRate: 0, count: 0, pierce: 0, spread: 0,
   knockback: 0, jumps: 0, jumpRange: 0, stun: 0, projectileSpeed: 0,
-  radius: 0, slow: 0, slowSeconds: 0, bomblets: 0, ramp: 0, rampCap: 0, spin: 0, blade: 0,
+  radius: 0, slow: 0, slowSeconds: 0, bomblets: 0, ramp: 0, rampCap: 0, spin: 0, blade: 0, fuse: 0,
 };
 
 /**
- * Weapons (§4.4, §11.2): Act 1's eight, each with its own pattern. Each
+ * Weapons (§4.4, §11.2): Act 1's eight and Act 2's four (§9), each with its
+ * own pattern. Each
  * level step is a visible change or at least +25% damage; the step's `text`
  * is its card line. `counters` are the enemies it answers (§4.3), which
  * the draft scorer reads.
@@ -131,6 +132,67 @@ export const WEAPONS: readonly WeaponDef[] = [
       { text: '+30% damage.', damageMult: 1.3 },
       { text: 'Drones fire 35% faster.', add: { fireRate: 0.4 } },
       { text: '+1 drone.', add: { count: 1 } },
+    ],
+  },
+  // ── Act 2 (§9): lit in the Constellations ─────────────────────────────
+  {
+    id: 'moonblade',
+    name: 'Moonblade',
+    icon: 'armored-boomerang',
+    text: 'A crescent thrown out and back, cutting everything both ways.',
+    pattern: 'boomerang',
+    counters: ['shieldbearer', 'chorus', 'grunt'],
+    base: { ...ZERO, damage: 11, fireRate: 0.75, count: 1, spread: 0.5, projectileSpeed: 620 },
+    steps: [
+      { text: '+1 crescent per throw.', add: { count: 1 } },
+      { text: '+30% damage.', damageMult: 1.3 },
+      { text: 'Crescents fly 30% faster.', add: { projectileSpeed: 190 } },
+      { text: '+1 crescent per throw.', add: { count: 1 } },
+    ],
+  },
+  {
+    id: 'rune-traps',
+    name: 'Rune Traps',
+    icon: 'land-mine',
+    text: 'Lays runes in the path; each bursts under whatever steps on it.',
+    pattern: 'mine',
+    counters: ['runner', 'blinker', 'ram', 'burrower'],
+    base: { ...ZERO, damage: 26, fireRate: 0.9, count: 3, radius: 60, fuse: 8 },
+    steps: [
+      { text: '+2 runes on the field.', add: { count: 2 } },
+      { text: '+30% damage.', damageMult: 1.3 },
+      { text: 'Bursts reach 30% wider.', add: { radius: 18 } },
+      { text: 'Each burst stuns for 0.5 s.', add: { stun: 0.5 } },
+    ],
+  },
+  {
+    id: 'soul-tether',
+    name: 'Soul Tether',
+    icon: 'magic-swirl',
+    text: 'Threads of light hold two enemies, draining them without pause.',
+    pattern: 'tether',
+    counters: ['husk', 'leech', 'summoner'],
+    base: { ...ZERO, damage: 2.4, fireRate: 5, count: 2 },
+    steps: [
+      { text: '+1 tether.', add: { count: 1 } },
+      { text: '+30% damage.', damageMult: 1.3 },
+      { text: 'Tethers drain 30% faster.', add: { fireRate: 1.5 } },
+      { text: '+1 tether.', add: { count: 1 } },
+    ],
+  },
+  {
+    id: 'gilded-rail',
+    name: 'Gilded Rail',
+    icon: 'target-laser',
+    text: 'A slow, heavy slug that passes through everything in its line.',
+    pattern: 'rail',
+    counters: ['brute', 'shieldbearer', 'wardstone', 'siege-engine'],
+    base: { ...ZERO, damage: 70, fireRate: 0.32, count: 1, radius: 14 },
+    steps: [
+      { text: '+40% damage.', damageMult: 1.4 },
+      { text: 'The slug cuts a line twice as wide.', add: { radius: 14 } },
+      { text: 'Charges 30% faster.', add: { fireRate: 0.1 } },
+      { text: 'Fires a second slug at another target.', add: { count: 1 } },
     ],
   },
 ];

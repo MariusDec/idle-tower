@@ -21,6 +21,14 @@ export function countCap(pattern: WeaponPattern): number {
       return C.blades;
     case 'drone':
       return C.drones;
+    case 'boomerang':
+      return C.crescents;
+    case 'mine':
+      return C.runes;
+    case 'tether':
+      return C.tethers;
+    case 'rail':
+      return C.slugs;
     case 'cone':
     case 'chain':
     case 'pulse':
@@ -37,6 +45,11 @@ export function countCap(pattern: WeaponPattern): number {
 /** Patterns whose shots are bodies in flight: pierce and projectile speed reach them. */
 function shoots(pattern: WeaponPattern): boolean {
   return pattern === 'homing' || pattern === 'cone' || pattern === 'drone';
+}
+
+/** Patterns that fly but cut everything they cross: projectile speed reaches them, pierce has nothing to add. */
+function sweeps(pattern: WeaponPattern): boolean {
+  return pattern === 'boomerang';
 }
 
 /** The evolution's damage spike, once evolved. */
@@ -66,7 +79,7 @@ export function armed(stats: TowerStats, w: Pick<WeaponState, 'id' | 'level' | '
     slowSeconds: base.slowSeconds * stats.durationMult,
     stun: base.stun * stats.durationMult,
     ramp: base.ramp * stats.durationMult,
-    projectileSpeed: flies || pattern === 'lob' ? base.projectileSpeed * stats.projectileSpeedMult : base.projectileSpeed,
+    projectileSpeed: flies || pattern === 'lob' || sweeps(pattern) ? base.projectileSpeed * stats.projectileSpeedMult : base.projectileSpeed,
     pierce: flies ? base.pierce + stats.pierce : base.pierce,
   };
 }
@@ -80,6 +93,6 @@ export function evolveAt(specialist: boolean): number {
 export function newWeapon(id: WeaponId, level: number): WeaponState {
   return {
     id, level, cooldown: 0, aim: -Math.PI / 2, evolved: false,
-    spin: 0, beamTarget: 0, heat: 1, meteor: 0, drones: [], silencedUntil: 0,
+    spin: 0, beamTarget: 0, heat: 1, meteor: 0, drones: [], silencedUntil: 0, tethers: [],
   };
 }

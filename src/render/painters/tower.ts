@@ -16,9 +16,10 @@ export interface Mount {
  * Where weapon slot `slot` sits, as a multiple of the wall radius (§4.4:
  * each equipped weapon is drawn on the tower). Slot 0 is the turret on the
  * drum; the rest are pods on the plinth's lower corners and its crown, so a
- * new weapon lands somewhere the eye already rests.
+ * new weapon lands somewhere the eye already rests; Act 2's fifth and sixth
+ * (§9) sit at its flanks.
  */
-const POD_ANGLES = [Math.PI * 0.75, Math.PI * 0.25, -Math.PI * 0.5];
+const POD_ANGLES = [Math.PI * 0.75, Math.PI * 0.25, -Math.PI * 0.5, Math.PI, 0];
 const POD_DISTANCE = 1.04;
 /** Pod radius, as a multiple of the wall radius: big enough to read on a phone. */
 const POD_RADIUS = 0.52;
@@ -308,6 +309,88 @@ function paintMount(ctx: CanvasRenderingContext2D, m: Mount, r: number, time: nu
         ctx.fillStyle = withAlpha(FX.mana, (0.4 + 0.6 * on) * (1 - fallen));
         ctx.beginPath();
         ctx.arc(Math.cos(a) * r * 0.42, Math.sin(a) * r * 0.42, r * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'moonblade': {
+      // A cradle of crescents, one per throw, nested like moons.
+      const n = p.count;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < n; i++) {
+        const c = r * (0.35 + i * 0.16);
+        ctx.strokeStyle = dim(i % 2 === 0 ? lighten(FX.frost, 0.5) : INK['100']);
+        ctx.lineWidth = Math.max(2, r * 0.12);
+        ctx.beginPath();
+        ctx.arc(-r * 0.15, 0, c, -0.9, 0.9);
+        ctx.stroke();
+      }
+      ctx.fillStyle = dim(INK['700']);
+      ctx.beginPath();
+      ctx.arc(-r * 0.15, 0, r * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'rune-traps': {
+      // A rune-stone: one glyph-notch per rune it can keep down, glowing as it charges.
+      const n = p.count;
+      ctx.fillStyle = dim(INK['600']);
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        if (i === 0) ctx.moveTo(Math.cos(a) * r * 0.66, Math.sin(a) * r * 0.66);
+        else ctx.lineTo(Math.cos(a) * r * 0.66, Math.sin(a) * r * 0.66);
+      }
+      ctx.closePath();
+      ctx.fill();
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + time * 0.4;
+        ctx.fillStyle = withAlpha(FX.arcane, (0.45 + 0.35 * Math.sin(time * 3 + i)) * (1 - fallen));
+        ctx.fillRect(Math.cos(a) * r * 0.42 - r * 0.06, Math.sin(a) * r * 0.42 - r * 0.06, r * 0.12, r * 0.12);
+      }
+      if (p.stun > 0) {
+        ctx.strokeStyle = dim(FX.gold);
+        ctx.lineWidth = Math.max(1.5, r * 0.07);
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'soul-tether': {
+      // A spindle with one thread per tether, wound and glowing.
+      const n = p.count;
+      ctx.fillStyle = dim(INK['700']);
+      ctx.fillRect(-r * 0.1, -r * 0.16, r * 0.8, r * 0.32);
+      for (let i = 0; i < n; i++) {
+        const off = (i - (n - 1) / 2) * r * 0.16;
+        ctx.strokeStyle = withAlpha(lighten(FX.nature, 0.3), (0.5 + 0.4 * Math.sin(time * 5 + i)) * (1 - fallen));
+        ctx.lineWidth = Math.max(1.5, r * 0.06);
+        ctx.beginPath();
+        ctx.moveTo(r * 0.1, off);
+        ctx.quadraticCurveTo(r * 0.6, off + Math.sin(time * 4 + i) * r * 0.12, r * 1.0, off * 0.4);
+        ctx.stroke();
+      }
+      ctx.fillStyle = dim(lighten(FX.nature, 0.5));
+      ctx.beginPath();
+      ctx.arc(r * 1.0, 0, r * 0.14, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'gilded-rail': {
+      // Twin gilded rails, a slug between them; a second barrel once it fires two.
+      const n = p.count;
+      const gap = r * (0.14 + (p.radius - 14) / 120);
+      for (let i = 0; i < n; i++) {
+        const off = (i - (n - 1) / 2) * gap * 3;
+        ctx.fillStyle = dim(FX.gold);
+        ctx.fillRect(0, off - gap - r * 0.06, r * 1.1, r * 0.08);
+        ctx.fillRect(0, off + gap - r * 0.02, r * 1.1, r * 0.08);
+        ctx.fillStyle = dim(INK['800']);
+        ctx.fillRect(-r * 0.15, off - gap * 0.7, r * 0.4, gap * 1.4);
+        ctx.fillStyle = withAlpha(lighten(FX.gold, 0.6), (0.4 + 0.4 * Math.sin(time * 2)) * (1 - fallen));
+        ctx.beginPath();
+        ctx.arc(r * 0.5, off, gap * 0.6, 0, Math.PI * 2);
         ctx.fill();
       }
       break;

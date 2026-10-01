@@ -1,5 +1,7 @@
 import { BALANCE } from '../content/balance';
+import { BOSSES } from '../content/bosses';
 import { EVOLUTIONS } from '../content/evolutions';
+import { STARS } from '../content/stars';
 import type { EvolutionDef, EvolutionId } from '../content/types';
 import type { RunState } from '../sim/state';
 import type { Profile } from './profile';
@@ -20,12 +22,17 @@ export interface RecipeEntry {
   hint: boolean;
 }
 
+/** Weapons a Constellation lights (§9): their recipes stay off the Book until Act 2. */
+const STARRED = new Set<string>(STARS.flatMap((n) => n.effects).flatMap((e) => (e.kind === 'unlockCard' ? [e.id] : [])));
+const FINALE = BOSSES.find((b) => b.finale)!.id;
+
 export function recipeBook(profile: Profile): RecipeEntry[] {
   const R = profile.recipes;
   const B = BALANCE.recipes;
   // Evolution Insight (§11.4): every weapon half shows.
   const insight = automations(profile).has('insight');
-  return EVOLUTIONS.map((evolution) => {
+  const act2 = (profile.bosses[FINALE]?.kills ?? 0) > 0;
+  return EVOLUTIONS.filter((e) => act2 || !STARRED.has(e.weapon)).map((evolution) => {
     const found = R.found.includes(evolution.id);
     return {
       evolution,

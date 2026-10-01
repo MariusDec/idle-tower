@@ -1,12 +1,11 @@
 import { BALANCE } from '../content/balance';
 import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../content/evolutions';
-import { regionByIndex } from '../content/regions';
 import { WEAPON_BY_ID } from '../content/weapons';
 import type { PassiveId, WeaponId } from '../content/types';
 import type { Card, RunState, TowerStats, WeaponState } from './state';
 import { allMods, resolveStats } from './stats';
 import { armed, evolveAt } from './systems/arms';
-import { waveDamage } from './systems/waves';
+import { runRegion, waveDamage } from './systems/waves';
 
 /**
  * The draft scorer (§4.5, §13). One scorer powers both the card the game
@@ -48,6 +47,13 @@ const SHARD_VALUE = 0.01;
 const GREED_VALUE = 0.15;
 /** Projectile speed lands more of what misses; a little. */
 const SPEED_VALUE = 0.1;
+/** Bodies a crescent cuts, on average, on each of its two passes. */
+const CRESCENT_BODIES = 1.3;
+/** A rune that bursts on one body catches this many more per unit of radius; and how many laid runes burst before they fade. */
+const RUNE_BODIES_PER_UNIT = 1 / 45;
+const RUNE_TRIP_RATE = 0.8;
+/** Bodies in a slug's line, on average, beyond the one it is aimed at, per unit of its width. */
+const RAIL_BODIES_PER_UNIT = 1 / 18;
 /** A new weapon that answers the region, per share of its enemy pool it counters. */
 const COUNTER_VALUE = 0.35;
 /** A new weapon into an empty slot: another line of fire, worth this much beyond its DPS. */
@@ -106,6 +112,22 @@ export function weaponDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stat
       const hive = w.evolved ? 1.4 : 1;
       return perAttack * rate * p.count * (1 + 0.5 * p.pierce) * hive;
     }
+    case 'boomerang': {
+      const ring = w.evolved ? 1 + (E['crescent-storm'].ring / Math.max(1, p.count)) * 0.5 : 1;
+      return perAttack * rate * p.count * 2 * CRESCENT_BODIES * ring;
+    }
+    case 'mine': {
+      const walls = w.evolved ? 1.4 : 1;
+      return perAttack * rate * (1 + p.radius * RUNE_BODIES_PER_UNIT) * RUNE_TRIP_RATE * (1 + p.stun) * walls;
+    }
+    case 'tether': {
+      const bloom = w.evolved ? 1.3 : 1;
+      return perAttack * rate * p.count * bloom;
+    }
+    case 'rail': {
+      const midas = w.evolved ? 1 + E['midas-lance'].vulnerable : 1;
+      return perAttack * rate * p.count * (1 + p.radius * RAIL_BODIES_PER_UNIT) * midas;
+    }
     default: {
       const exhaustive: never = pattern;
       return exhaustive;
@@ -127,7 +149,7 @@ function danger(run: RunState): number {
 
 /** The share of this region's enemy pool a weapon counters (§11.2's "strong against"). */
 function counterShare(run: RunState, id: WeaponId): number {
-  const pool = regionByIndex(run.regionId).pool;
+  const pool = runRegion(run).pool;
   const counters = WEAPON_BY_ID[id].counters;
   return pool.filter((p) => counters.includes(p.enemy)).length / Math.max(1, pool.length);
 }
@@ -180,7 +202,7 @@ export function scoreCard(run: RunState, card: Card): number {
       // Ten seconds of regen, as a fraction of Max HP.
       const sustain = ((stats.regen / stats.maxHp) - (run.stats.regen / run.stats.maxHp)) * 10;
       // Armour as a share of a typical contact hit this wave.
-      const hit = Math.max(1, waveDamage(regionByIndex(run.regionId), Math.max(1, run.wave)));
+      const hit = Math.max(1, waveDamage(runRegion(run), Math.max(1, run.wave)));
       const armor = Math.min(1, (stats.armor - run.stats.armor) / hit);
       const xp = (stats.xpMult / run.stats.xpMult - 1) * XP_VALUE;
       const shards = (stats.shardMult / run.stats.shardMult - 1) * GREED_VALUE;

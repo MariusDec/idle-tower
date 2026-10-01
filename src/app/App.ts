@@ -11,6 +11,8 @@ import { bankRun } from '../meta/results';
 import { frameUnlocked, regionUnlocked, toggleRelic } from '../meta/collection';
 import { claimAll, claimFeat } from '../meta/feats';
 import { offlineEarnings, offlineTier } from '../meta/offline';
+import { setPactRank } from '../meta/pacts';
+import { STAR_WEB } from '../meta/stars';
 import { FORGE } from '../content/forge';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { BOSS_BY_ID } from '../content/bosses';
@@ -120,6 +122,12 @@ export class App {
         const key = tacticsKey(this.profile);
         if (key !== null) this.profile.tactics[key] = [...list];
       }),
+      buyStar: (id) => {
+        const bought = this.between(() => STAR_WEB.buy(this.profile, id)) ?? false;
+        if (bought) this.cues.purchase();
+        return bought;
+      },
+      setPact: (id, rank) => this.between(() => setPactRank(this.profile, id, rank)) ?? false,
     });
     this.results = new ResultsScreen(els.screens, () => this.leaveResults(), () => this.startRun());
     this.toasts = new Toasts(els.overlay);
@@ -219,9 +227,13 @@ export class App {
     const days = Math.max(1, Math.round((Date.now() - this.profile.createdAt) / 86_400_000));
     const body = 'The Blight is broken. Its heart goes dark, and the light runs out to the edge of the world. '
       + `It took ${formatNumber(r.runs)} runs, ${formatNumber(r.kills)} enemies and ${days} day${days === 1 ? '' : 's'}. `
-      + 'The tower stands. Act 1 is complete. Every region stays open to farm and to finish: the feats, the relics, '
-      + 'the recipes still to find.';
-    window.setTimeout(() => this.modal.show('The light returns', body, [{ label: 'Onward', primary: true, onClick: () => {} }]), 2400);
+      + 'The tower stands. Act 1 is complete. '
+      + 'But the stars have come out, and something stirs below. Act 2 begins: take on Pacts for Starlight, '
+      + 'light the Constellations, and descend into the Abyss.';
+    window.setTimeout(() => this.modal.show('The light returns', body, [
+      { label: 'The stars', onClick: () => this.hub.show(this.profile, 'stars') },
+      { label: 'Onward', primary: true, onClick: () => {} },
+    ]), 2400);
   }
 
   private go(to: Screen, view: HubView = 'home', spread = false): void {

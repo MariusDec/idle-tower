@@ -2,7 +2,8 @@ import type { EvolutionDef, EvolutionId, WeaponId } from './types';
 
 /**
  * Evolutions (§4.4, §11.2): a weapon at its last level and its partner
- * passive make a new pattern and a power spike. Eight recipes, hidden until
+ * passive make a new pattern and a power spike. Twelve recipes (Act 2 adds
+ * four, §9), hidden until
  * found and then kept in the Recipe Book (§5.3). `hint` is the nudge the
  * Book shows once the weapon has been maxed a few times.
  */
@@ -54,6 +55,31 @@ export const EVOLUTIONS: readonly EvolutionDef[] = [
     text: 'Drone kills call more drones for a few seconds.',
     weapon: 'sentinel-drones', passive: 'insight',
     hint: 'The drones want to learn from each kill.',
+  },
+  // Act 2 (§9): partnered with the four Act 1 passives that had none.
+  {
+    id: 'crescent-storm', name: 'Crescent Storm', icon: 'spinning-blades',
+    text: 'Every throw also looses a ring of crescents in all directions.',
+    weapon: 'moonblade', passive: 'velocity',
+    hint: 'The crescents want to fly faster.',
+  },
+  {
+    id: 'bulwark-runes', name: 'Bulwark Runes', icon: 'pentagram-rose',
+    text: 'Anything that strikes the wall sets off a rune where it stands.',
+    weapon: 'rune-traps', passive: 'fortify',
+    hint: 'The runes want stronger walls to guard.',
+  },
+  {
+    id: 'lifebloom', name: 'Lifebloom', icon: 'heart-plus',
+    text: 'Each tether mends the tower; a kill passes its thread on at once.',
+    weapon: 'soul-tether', passive: 'mending',
+    hint: 'The threads want to carry life back.',
+  },
+  {
+    id: 'midas-lance', name: 'Midas Lance', icon: 'gold-bar',
+    text: 'What the slug pierces turns to gold: it takes more and pays double.',
+    weapon: 'gilded-rail', passive: 'greed',
+    hint: 'The slug wants a greedier hand.',
   },
 ];
 

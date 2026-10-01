@@ -2,7 +2,8 @@ import type { BossId, RelicDef, RelicId } from './types';
 
 /**
  * Relics (§5.3, §11.5): twenty-four, four per region: the boss's first-kill relic and
- * three its elites drop. Qualitative, 15 words or fewer, each leaning on a
+ * three its elites drop; and Act 2's twelve (§9), in four sets of three that
+ * the Lantern's stars light, dropped by the Abyss's elites. Qualitative, 15 words or fewer, each leaning on a
  * weapon family or the region's verb. Duplicates rank a relic up to III;
  * `perRank` is what each rank past I adds. Rank numbers: `BALANCE.relics`.
  */
@@ -155,6 +156,79 @@ export const RELICS: readonly RelicDef[] = [
     source: { kind: 'elite', region: 6 },
     effects: [{ kind: 'behaviour', id: 'level-heal' }], perRank: [{ kind: 'behaviour', id: 'level-heal' }],
   },
+  // ── Act 2 (§9): the Abyss's, set by set ───────────────────────────────
+  {
+    id: 'moonstone', name: 'Moonstone', icon: 'round-star',
+    text: 'Moonblade crescents come back twice as fast.',
+    source: { kind: 'abyss', set: 1 },
+    effects: [{ kind: 'behaviour', id: 'swift-return' }], perRank: [{ kind: 'behaviour', id: 'swift-return' }],
+  },
+  {
+    id: 'rune-chalk', name: 'Rune Chalk', icon: 'pentagram-rose',
+    text: 'A rune that bursts leaves a fainter rune where it stood.',
+    source: { kind: 'abyss', set: 1 },
+    effects: [{ kind: 'behaviour', id: 'echo-rune' }], perRank: [{ kind: 'behaviour', id: 'echo-rune' }],
+  },
+  {
+    id: 'husk-splinter', name: 'Husk Splinter', icon: 'striking-splinter',
+    text: 'Husk shells swallow two fewer hits.',
+    source: { kind: 'abyss', set: 1 },
+    effects: [{ kind: 'behaviour', id: 'brittle-shell' }], perRank: [{ kind: 'behaviour', id: 'brittle-shell' }],
+  },
+  {
+    id: 'tether-knot', name: 'Tether Knot', icon: 'magic-swirl',
+    text: 'Soul Tether holds one more enemy.',
+    source: { kind: 'abyss', set: 2 },
+    effects: [{ kind: 'behaviour', id: 'extra-tether' }], perRank: [{ kind: 'behaviour', id: 'extra-tether' }],
+  },
+  {
+    id: 'gilt-edge', name: 'Gilt Edge', icon: 'gold-nuggets',
+    text: 'A slug’s kill bursts, striking everything near it.',
+    source: { kind: 'abyss', set: 2 },
+    effects: [{ kind: 'behaviour', id: 'rail-burst' }], perRank: [{ kind: 'behaviour', id: 'rail-burst' }],
+  },
+  {
+    id: 'anchor-stone', name: 'Anchor Stone', icon: 'stone-block',
+    text: 'Slowed enemies cannot charge or blink.',
+    source: { kind: 'abyss', set: 2 },
+    effects: [{ kind: 'behaviour', id: 'anchor' }], perRank: [{ kind: 'stat', mod: { key: 'duration', pct: 0.1 } }],
+  },
+  {
+    id: 'ward-breaker', name: 'Ward Breaker', icon: 'armor-punch',
+    text: 'Wards and shield auras protect enemies half as well.',
+    source: { kind: 'abyss', set: 3 },
+    effects: [{ kind: 'behaviour', id: 'wardbreak' }], perRank: [{ kind: 'behaviour', id: 'wardbreak' }],
+  },
+  {
+    id: 'maw-tooth', name: 'Maw Tooth', icon: 'fangs-circle',
+    text: 'Maws cannot feed on the fallen.',
+    source: { kind: 'abyss', set: 3 },
+    effects: [{ kind: 'behaviour', id: 'starve' }], perRank: [{ kind: 'stat', mod: { key: 'damage', pct: 0.05 } }],
+  },
+  {
+    id: 'abyssal-pearl', name: 'Abyssal Pearl', icon: 'extraction-orb',
+    text: 'Each floor of the Abyss cleared restores 25% of Max HP.',
+    source: { kind: 'abyss', set: 3 },
+    effects: [{ kind: 'behaviour', id: 'floor-heal' }], perRank: [{ kind: 'behaviour', id: 'floor-heal' }],
+  },
+  {
+    id: 'executioners-coin', name: "Executioner's Coin", icon: 'coinflip',
+    text: 'Enemies under 10% health die when hit.',
+    source: { kind: 'abyss', set: 4 },
+    effects: [{ kind: 'behaviour', id: 'executioner' }], perRank: [{ kind: 'stat', mod: { key: 'critChance', add: 0.03 } }],
+  },
+  {
+    id: 'phoenix-feather', name: 'Phoenix Feather', icon: 'arrow-flights',
+    text: 'Once per run, rise again at half health.',
+    source: { kind: 'abyss', set: 4 },
+    effects: [{ kind: 'behaviour', id: 'second-wind' }], perRank: [{ kind: 'stat', mod: { key: 'maxHp', pct: 0.1 } }],
+  },
+  {
+    id: 'whetstone', name: 'Whetstone', icon: 'hammer-nails',
+    text: 'Every new weapon joins the tower one level higher.',
+    source: { kind: 'abyss', set: 4 },
+    effects: [{ kind: 'behaviour', id: 'drilled' }], perRank: [{ kind: 'behaviour', id: 'reroll' }],
+  },
 ];
 
 export const RELIC_BY_ID: Readonly<Record<RelicId, RelicDef>> = Object.fromEntries(
@@ -164,6 +238,11 @@ export const RELIC_BY_ID: Readonly<Record<RelicId, RelicDef>> = Object.fromEntri
 /** The relics a region's elites drop (§5.3). */
 export function eliteRelics(region: number): RelicId[] {
   return RELICS.filter((r) => r.source.kind === 'elite' && r.source.region === region).map((r) => r.id);
+}
+
+/** The relics the Abyss's elites drop once these sets are lit (§9). */
+export function abyssRelics(sets: readonly number[]): RelicId[] {
+  return RELICS.filter((r) => r.source.kind === 'abyss' && sets.includes(r.source.set)).map((r) => r.id);
 }
 
 /** A boss's first-kill relic (§5.3), if it has one. */

@@ -9,9 +9,10 @@ import { FX, INK, lighten, mix, withAlpha } from './palette';
 import { bakeArena } from './painters/arena';
 import { EnemyPainter } from './painters/enemies';
 import { paintProjectiles } from './painters/projectiles';
-import { paintArsenal, paintFires, paintStatus } from './painters/arsenal';
+import { paintArsenal, paintFires, paintRunes, paintStatus } from './painters/arsenal';
 import { paintAegis, paintBoss, paintCourt, paintFacets, paintPools, paintRings, paintShots } from './painters/bosses';
-import { mirrorFacets } from '../sim/systems/boss';
+import { mirrorFacets, phasesOf } from '../sim/systems/boss';
+import { runRegion } from '../sim/systems/waves';
 import { WEAPON_BY_ID } from '../content/weapons';
 import { mountOffset, paintRangeRing, paintTower, type Mount } from './painters/tower';
 import { QUALITY, type QualityTier } from './quality';
@@ -29,6 +30,8 @@ const INTRO_SECONDS = 2.8;
 /** Seconds a banner (a boss phase, REGION CLEARED) holds. */
 const BANNER_SECONDS = 2.4;
 const DISPLAY_FONT = 'Oswald, "Arial Narrow", sans-serif';
+/** What the Abyss's ground darkens toward (§9). */
+const ABYSS_DARK = INK['950'];
 
 /** A line of display text over the arena, in screen space. */
 interface Banner {
@@ -57,7 +60,7 @@ export class Renderer {
   /** Wall-clock seconds since the tower fell; null while it stands. */
   private fallT: number | null = null;
   /** The region the background was baked for. */
-  private bakedRegion = 0;
+  private bakedRegion = '';
   private banner: Banner | null = null;
   /** Honour the OS setting: the letterbox is the moving part, so it goes. */
   private readonly reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -184,9 +187,9 @@ export class Renderer {
           break;
         }
         case 'bossPhase': {
-          // A brief jolt on each phase change (§10.3), and its one line.
+          // A brief jolt on each phase change (§10.3), and its one line (Tyranny's too, §9).
           const def = BOSS_BY_ID[ev.boss];
-          this.showBanner(def.name, def.phases[ev.phase].line, 'blood');
+          this.showBanner(def.name, phasesOf(run, def)[ev.phase]?.line ?? '', 'blood');
           this.camera.shake(10);
           this.camera.zoomPunch();
           break;
@@ -217,7 +220,38 @@ export class Renderer {
           this.effects.ring(ev.x, ev.y, 30, 700, withAlpha(INK['050'], 0.8), 1.1, 10);
           this.camera.shake(26);
           this.camera.zoomPunch();
-          this.showBanner(ev.first ? 'Region cleared' : 'Boss defeated', ev.first ? 'The light pushes outward.' : 'Overtime begins.', 'gold');
+          if (!runRegion(run).abyss) {
+            this.showBanner(ev.first ? 'Region cleared' : 'Boss defeated', ev.first ? 'The light pushes outward.' : 'Overtime begins.', 'gold');
+          }
+          break;
+        case 'floor':
+          // The Abyss (§9): a floor cleared; the next one is deeper still.
+          this.showBanner(`Floor ${ev.floor} cleared`, 'The dark goes deeper.', 'gold');
+          break;
+        case 'eclipse':
+          this.effects.ring(0, 0, ev.radius, run.stats.radius, withAlpha(INK['950'], 0.9), 0.6, 30);
+          this.effects.ring(0, 0, run.stats.radius, ev.radius, withAlpha(FX.arcane, 0.7), 0.5, 8);
+          this.camera.shake(8);
+          this.camera.zoomPunch();
+          break;
+        case 'rail':
+          this.effects.streak(ev.x1, ev.y1, ev.x2, ev.y2, ev.gilded ? lighten(FX.gold, 0.3) : FX.gold);
+          this.camera.shake(2);
+          break;
+        case 'rune':
+          if (ev.burst) {
+            this.effects.ring(ev.x, ev.y, ev.radius * 0.2, ev.radius, withAlpha(FX.arcane, 0.85), 0.35, 7);
+            this.effects.spray(ev.x, ev.y, FX.arcane, 12, 220, 4);
+          }
+          break;
+        case 'shell':
+          this.effects.hitSparks(ev.x, ev.y, INK['200'], false);
+          break;
+        case 'charge':
+          this.effects.ring(ev.x, ev.y, 8, 50, withAlpha(FX.blood, 0.7), 0.35, 4);
+          break;
+        case 'feed':
+          this.effects.ring(ev.x, ev.y, 50, 8, withAlpha(FX.blood, 0.6), 0.4, 5);
           break;
         case 'aegis':
           this.effects.pulse(0, 0, run.stats.radius * 1.8, FX.gold);
@@ -328,10 +362,12 @@ export class Renderer {
     const view = this.camera.transform;
     this.enemies.setScale(view.scale);
 
-    const region = run?.regionId ?? 1;
-    if (!this.background || region !== this.bakedRegion) {
-      this.background = bakeArena(view.pixelWidth, view.pixelHeight, view.scale, regionByIndex(region).tint);
-      this.bakedRegion = region;
+    // An Abyss floor wears its template's ground, gone dark (§9).
+    const region = run ? runRegion(run) : regionByIndex(1);
+    if (!this.background || region.id !== this.bakedRegion) {
+      const tint = region.abyss ? mix(region.tint ?? INK['800'], ABYSS_DARK, 0.55) : region.tint;
+      this.background = bakeArena(view.pixelWidth, view.pixelHeight, view.scale, tint);
+      this.bakedRegion = region.id;
     }
     this.camera.applyDevice(ctx);
     ctx.drawImage(this.background, 0, 0);
@@ -342,6 +378,7 @@ export class Renderer {
       paintRangeRing(ctx, run.stats.range);
       paintRings(ctx, run.rings);
       paintFires(ctx, run.fires, run.time, this.clock);
+      paintRunes(ctx, run.runes, run.time, this.clock);
       paintPools(ctx, run.pools, run.time, this.clock);
       this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock);
       paintStatus(ctx, run.enemies, alpha, run.time, this.clock);

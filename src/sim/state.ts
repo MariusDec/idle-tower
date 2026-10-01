@@ -1,6 +1,6 @@
 import type { RngState } from '../core/rng';
 import type {
-  AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, PassiveId, RelicId, StatMod, WeaponId,
+  AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, PactId, PassiveId, RelicId, StatMod, WeaponId,
 } from '../content/types';
 
 /**
@@ -46,6 +46,10 @@ export interface RunConfig {
    * highest-ranked item on offer. Null: the scorer decides alone.
    */
   readonly priority: readonly CardItemId[] | null;
+  /** The pacts this run is under (§9), by rank; absent is 0. Always empty in the Abyss. */
+  readonly pacts: Readonly<Partial<Record<PactId, number>>>;
+  /** What the Abyss's elites may drop (§9): the relics of the lit sets. */
+  readonly abyssRelics: readonly RelicId[];
 }
 
 /**
@@ -149,6 +153,14 @@ export interface Enemy {
   shade: boolean;
   /** One of the Hollow King's shades: the king's body id. Its hits land on him. */
   court: number;
+  /** A Husk's shell: hits it still swallows whole (§9). */
+  shell: number;
+  /** Run time a Ram's charge ends; 0 when not charging. */
+  dashUntil: number;
+  /** Gilded by Midas Lance until then: it takes more, and pays double if slain so. */
+  gildedUntil: number;
+  /** Times a Maw has fed. */
+  feeds: number;
 }
 
 export interface Projectile {
@@ -189,6 +201,29 @@ export interface Projectile {
   meteor: boolean;
   /** A Seeker Swarm seeker: never splits again. */
   seeker: boolean;
+  /**
+   * A Moonblade crescent (§9): it flies out `life` seconds, then comes home
+   * to the tower, cutting every body it crosses once each way.
+   */
+  boomerang: boolean;
+  /** True once a crescent has turned for home. */
+  returning: boolean;
+  /** Bodies this pass of a crescent has cut. */
+  struck: number[];
+}
+
+/** A rune on the ground (Rune Traps, §9): armed after a beat, it bursts under the first body to step on it. */
+export interface Rune {
+  x: number;
+  y: number;
+  armAt: number;
+  until: number;
+  damage: number;
+  crit: boolean;
+  radius: number;
+  stun: number;
+  /** A fainter rune left by a burst (Rune Chalk): it leaves none of its own. */
+  echo: boolean;
 }
 
 /** Burning ground (Meteorfall): bodies standing in it catch fire. */
@@ -275,6 +310,8 @@ export interface BossState {
   minHp: number;
   /** Seconds from arrival to its fall; null while it stands. */
   killedIn: number | null;
+  /** The wave it holds: 20 in a region, a floor's tenth in the Abyss. */
+  wave: number;
 }
 
 export interface WeaponState {
@@ -297,6 +334,8 @@ export interface WeaponState {
   drones: Drone[];
   /** Run time until which it cannot fire: a Harbinger's gaze. */
   silencedUntil: number;
+  /** Soul Tether: the bodies its threads hold, by id. Empty for every other weapon. */
+  tethers: number[];
 }
 
 export interface PassiveState {
@@ -429,8 +468,22 @@ export type SimEvent =
   | { kind: 'rise'; x: number; y: number }
   /** A Leech drained the ultimate. */
   | { kind: 'drain'; x: number; y: number }
-  /** A lasting ultimate began (Tempest, Overclock). */
-  | { kind: 'ultStart'; seconds: number };
+  /** A lasting ultimate began (Tempest, Overclock, Daybreak). */
+  | { kind: 'ultStart'; seconds: number }
+  /** An Eclipse fell over the field. */
+  | { kind: 'eclipse'; radius: number }
+  /** A slug's line, tower to the edge of range (Gilded Rail). */
+  | { kind: 'rail'; x1: number; y1: number; x2: number; y2: number; gilded: boolean }
+  /** A rune was laid, or burst. */
+  | { kind: 'rune'; x: number; y: number; burst: boolean; radius: number }
+  /** A Husk's shell swallowed a hit. */
+  | { kind: 'shell'; x: number; y: number }
+  /** A Ram began its charge. */
+  | { kind: 'charge'; x: number; y: number }
+  /** A Maw fed on the fallen. */
+  | { kind: 'feed'; x: number; y: number }
+  /** A floor of the Abyss was cleared (§9). */
+  | { kind: 'floor'; floor: number };
 
 export interface RunState {
   seed: number;
@@ -441,7 +494,9 @@ export interface RunState {
   /** The highest wave started. */
   wave: number;
   frameId: string;
-  /** Stat contributions from outside the run; passives are added on top. */
+  /** Stat contributions from outside the run and its region: frame, Forge, stars, relics, pacts. */
+  outerMods: StatMod[];
+  /** `outerMods` and the region rule's share (§11.1); passives are added on top. */
   mods: StatMod[];
   stats: TowerStats;
   tower: TowerState;
@@ -468,8 +523,20 @@ export interface RunState {
   firstKill: boolean;
   /** True when elites may drop relics (from the config). */
   relicDrops: boolean;
-  /** The boss, from its arrival; it stays after its fall for the results. */
+  /** The boss, from its arrival; it stays after its fall for the results. In the Abyss, the latest floor's. */
   boss: BossState | null;
+  /** Bosses felled this run, in order: one in a region, a floor's each in the Abyss. */
+  felled: BossId[];
+  /** Floors of the Abyss cleared this run (§9); 0 in a region. */
+  floors: number;
+  /** The pacts this run is under (from the config). */
+  pacts: Partial<Record<PactId, number>>;
+  /** What the Abyss's elites may drop (from the config). */
+  abyssRelics: RelicId[];
+  /** Runes on the ground (Rune Traps). */
+  runes: Rune[];
+  /** Run time a Bulwark Rune last went off at the wall. */
+  wallRuneAt: number;
   /** Relics dropped this run, in order (banked at the run's end). */
   relics: RelicId[];
   elitesKilled: number;

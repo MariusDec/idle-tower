@@ -20,6 +20,8 @@ const GAP_MS: Readonly<Record<string, number>> = {
   shatter: 80,
   towerHit: 90,
   lance: 120,
+  rune: 70,
+  shell: 60,
 };
 
 /** Each weapon's shot (§10.4): a pattern you could pick out with your eyes shut. */
@@ -51,6 +53,22 @@ function shot(s: Synth, weapon: WeaponId, pitch: number): void {
       return;
     case 'sentinel-drones':
       s.tone({ freq: 1600 * pitch, freqEnd: 1100 * pitch, type: 'square', duration: 0.035, volume: 0.025 });
+      return;
+    case 'moonblade':
+      // A whoosh that bends up as the crescent leaves.
+      s.noise(0.12, 0.05, 1800 * pitch, 'bandpass');
+      s.tone({ freq: 380 * pitch, freqEnd: 620 * pitch, type: 'sine', duration: 0.12, volume: 0.05 });
+      return;
+    case 'rune-traps':
+      s.tone({ freq: 660 * pitch, freqEnd: 990 * pitch, type: 'triangle', duration: 0.08, volume: 0.04 });
+      return;
+    case 'soul-tether':
+      s.tone({ freq: 300 * pitch, freqEnd: 290 * pitch, type: 'sine', duration: 0.05, volume: 0.025 });
+      return;
+    case 'gilded-rail':
+      // The slug: a crack and a ringing rail.
+      s.noise(0.08, 0.16, 4200, 'highpass');
+      s.tone({ freq: 1800 * pitch, freqEnd: 240, type: 'sawtooth', duration: 0.22, volume: 0.07 });
       return;
     default: {
       const exhaustive: never = weapon;
@@ -133,9 +151,22 @@ export class Cues {
             s.tone({ freq: f, type: 'triangle', duration: 0.5 - i * 0.05, volume: 0.12, delay: i * 0.08 });
           }
           break;
+        case 'rune':
+          if (ev.burst && this.ready('rune', now)) {
+            s.noise(0.12, 0.1, 1600, 'bandpass');
+            s.tone({ freq: 440, freqEnd: 180, type: 'triangle', duration: 0.12, volume: 0.08 });
+          }
+          break;
+        case 'shell':
+          if (this.ready('shell', now)) s.tone({ freq: 1100, freqEnd: 900, type: 'square', duration: 0.03, volume: 0.03 });
+          break;
+        case 'floor':
+          for (const [i, f] of [392, 494, 587, 784].entries()) s.tone({ freq: f, type: 'sine', duration: 0.6, volume: 0.1, delay: i * 0.1 });
+          break;
         case 'nova':
         case 'aegis':
         case 'ultStart':
+        case 'eclipse':
           for (const [i, f] of [520, 700, 940].entries()) s.tone({ freq: f, type: 'triangle', duration: 0.1, volume: 0.15, delay: i * 0.06 });
           break;
         case 'bossArrive':

@@ -18,6 +18,10 @@
  *   npm run pacing -- --hours 12 --seeds 8
  *                                        the full report, Act 1 to its end (P7's gate)
  *   npm run pacing -- --idle --seeds 4   the idle bot (tools/idle.ts): I2 and I5
+ *   npm run pacing -- --act2 --hours 12 --seeds 4
+ *                                        Act 2 (tools/act2.ts, P8's gate): from the
+ *                                        Blight's fall, N hours of heat, stars and the
+ *                                        Abyss; heat 1–10 at the frontier, timed
  *
  * Times are the player's wall clock: sim time divided by the game speed,
  * plus the moments a person spends on drafts and between runs.
@@ -42,6 +46,7 @@ import type { BranchId } from '../src/content/types';
 import { playRun } from './play';
 import { shop } from './shop';
 import { CHECKIN_EVERY, SESSION, farmRatio, runIdle } from './idle';
+import { runAct2, type Act2Report } from './act2';
 
 /** Wall seconds between runs: the results screen, plus shopping when there is shopping. */
 const BETWEEN_RUNS = { idle: 6, shopping: 15 };
@@ -350,10 +355,69 @@ function idleMain(seeds: number, activeHours: number): void {
   }
 }
 
+/** P8's gate (§14): the bot clears heat 1–10 at the frontier within this many wall hours of the Blight's fall. */
+export const HEAT_10_HOURS = { min: 3, max: 12 };
+/** Wall hours the Act 1 bot is given to fell the Blight before Act 2 starts. */
+const ACT1_HOURS = 14;
+
+export interface Act2Verdict {
+  /** Wall seconds into Act 1 the Blight fell; null if it never did. */
+  act1: number | null;
+  report: Act2Report | null;
+}
+
+/** Act 1 to the Blight's fall, then `hours` of Act 2 (§9). */
+export function act2Verdict(seed: number, hours: number): Act2Verdict {
+  const act1 = runPacing(ACT1_HOURS, seed);
+  const at = act1.checkpoints.find((c) => c.label === FINALE);
+  if (!at) return { act1: null, report: null };
+  const profile = structuredClone(at.profile);
+  return { act1: at.at, report: runAct2(profile, hours, seed) };
+}
+
+/** P8's reading: the median time to heat `h` at the frontier, in wall seconds after the Blight; null for never. */
+export function medianHeat(verdicts: readonly Act2Verdict[], h: number): number | null {
+  const times = verdicts.map((v) => v.report?.heatFrontier[h] ?? Infinity).sort((a, b) => a - b);
+  const m = times[times.length >> 1];
+  return Number.isFinite(m) ? m : null;
+}
+
+function act2Main(seeds: number, hours: number): void {
+  const fmt = (t: number | null | undefined): string => (t == null ? 'never' : formatDuration(t));
+  console.log(`act 2 · ${hours} h after the Blight · ${seeds} profiles`);
+  const verdicts = Array.from({ length: seeds }, (_, k) => act2Verdict(k + 1, hours));
+  for (const [k, v] of verdicts.entries()) {
+    const r = v.report;
+    if (!r) {
+      console.log(`  seed ${k + 1}: the Blight never fell in ${ACT1_HOURS} h`);
+      continue;
+    }
+    const ladder = Array.from({ length: 10 }, (_, i) => fmt(r.heatFrontier[i + 1])).join(' ');
+    console.log(`  seed ${k + 1}: Blight at ${fmt(v.act1)} · runs ${r.runs} (${r.abyssRuns} Abyss) · stars ${r.stars} · masteries ${r.masteries} · floor ${r.floor} · Starlight ${r.starlight}`);
+    console.log(`           frontier heat 1–10: ${ladder}`);
+    console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')}`);
+    if (k === 0) {
+      for (const h of r.hourly) {
+        console.log(`           hour ${pad(h.hour, 2)}: stars ${pad(h.stars, 2)} · masteries ${pad(h.masteries, 3)} · floor ${pad(h.floor, 2)} · frontier heat ${pad(h.frontier, 2)} · Starlight ${h.starlight}`);
+      }
+    }
+  }
+  for (let h = 1; h <= 10; h++) {
+    const m = medianHeat(verdicts, h);
+    const gate = h === 10 ? (m !== null && m >= HEAT_10_HOURS.min * 3600 && m <= HEAT_10_HOURS.max * 3600 ? 'PASS' : 'FAIL') : '    ';
+    const want = h === 10 ? ` (want ${HEAT_10_HOURS.min}–${HEAT_10_HOURS.max} h)` : '';
+    console.log(`  ${gate}  heat ${pad(h, 2)} at the frontier: median ${fmt(m)}${want}`);
+  }
+}
+
 function main(): void {
   const hours = Number(arg('hours', '1'));
   const seed = Number(arg('seed', '1'));
   const seeds = Number(arg('seeds', '0'));
+  if (process.argv.includes('--act2')) {
+    act2Main(Math.max(1, seeds || 1), hours);
+    return;
+  }
   if (process.argv.includes('--idle')) {
     // I5's later checkpoints need the active bot to get there: --hours 12.
     idleMain(Math.max(1, seeds || 1), Math.max(3, hours));

@@ -1,22 +1,25 @@
 import type { Profile } from '../../meta/profile';
 import { formatNumber } from '../../core/format';
-import { hubUnlocks, selectedFrame, selectedRegion, type HubUnlocks } from '../../meta/collection';
+import { act2Open, hubUnlocks, inAbyss, selectedFrame, selectedRegion, type HubUnlocks } from '../../meta/collection';
 import { hubGoal } from '../../meta/goals';
-import type { RelicId } from '../../content/types';
+import { heat } from '../../meta/pacts';
+import type { PactId, RelicId } from '../../content/types';
 import { setStyle, setText, toggleClass } from '../dom';
 import { icon } from '../icon';
 import { CollectionView } from './collection';
 import { FeatsView, featsBadge } from './feats';
-import { ForgeView, forgeBadge } from './forge';
+import { ForgeView, StarsView, forgeBadge, starsBadge } from './forge';
 import { MapView } from './map';
+import { PactsView } from './pacts';
 import { TacticsView } from './tactics';
 import { tacticsKey } from '../../meta/automation';
 
 /**
  * The hub's views. A tab exists only once its view is unlocked (R3);
- * Tactics has no tab, it opens from the home view once the Tactician is owned.
+ * Tactics and Pacts have no tab: they open from the home view once the
+ * Tactician is owned, and once Act 2 opens (§9).
  */
-export type HubView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'tactics';
+export type HubView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'stars' | 'tactics' | 'pacts';
 
 /** Everything the hub can ask the app to do. */
 export interface HubActions {
@@ -32,14 +35,19 @@ export interface HubActions {
   claimAll(): number;
   /** The Tactician's list for the next run (§6.2). */
   setTactics(list: readonly string[]): void;
+  /** Light a Constellation node (§9). */
+  buyStar(id: string): boolean;
+  /** Set a pact's rank for the next run (§9). */
+  setPact(id: PactId, rank: number): boolean;
 }
 
 /** Tabs in the order they unlock and sit (§10.1). */
-const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics'>; label: string }[] = [
+const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics' | 'pacts'>; label: string }[] = [
   { view: 'forge', label: 'Forge' },
   { view: 'map', label: 'Map' },
   { view: 'collection', label: 'Collection' },
   { view: 'feats', label: 'Feats' },
+  { view: 'stars', label: 'Stars' },
 ];
 
 /**
@@ -65,6 +73,11 @@ export class HubScreen {
   private readonly feats: FeatsView;
   private readonly tactics: TacticsView;
   private readonly tacticsBtn: HTMLButtonElement;
+  private readonly stars: StarsView;
+  private readonly pacts: PactsView;
+  private readonly pactsBtn: HTMLButtonElement;
+  private readonly starlightStat: HTMLElement;
+  private readonly starlightN: HTMLElement;
   private profile: Profile | null = null;
   private view: HubView = 'home';
 
@@ -83,9 +96,13 @@ export class HubScreen {
           <dl class="hub-stats">
             <div><dt>Shards</dt><dd class="hub-shards">0</dd></div>
             <div><dt>Best wave</dt><dd class="hub-best">—</dd></div>
+            <div class="hub-starlight" hidden><dt>Starlight</dt><dd class="hub-starlight-n">0</dd></div>
           </dl>
           <p class="hub-loadout"></p>
-          <button type="button" class="btn hub-tactics" hidden>Tactics</button>
+          <div class="hub-actions">
+            <button type="button" class="btn hub-tactics" hidden>Tactics</button>
+            <button type="button" class="btn hub-pacts" hidden>Pacts</button>
+          </div>
           <div class="hub-goal" hidden>
             <span class="hub-goal-label">Next</span>
             <span class="hub-goal-icon"></span>
@@ -110,6 +127,10 @@ export class HubScreen {
     this.tabs = q('.hub-tabs');
     this.tacticsBtn = q('.hub-tactics');
     this.tacticsBtn.addEventListener('click', () => this.setView('tactics'));
+    this.pactsBtn = q('.hub-pacts');
+    this.pactsBtn.addEventListener('click', () => this.setView('pacts'));
+    this.starlightStat = q('.hub-starlight');
+    this.starlightN = q('.hub-starlight-n');
     const dock = q('.hub-dock');
     const refreshing = <T>(fn: () => T): T => {
       const out = fn();
@@ -137,7 +158,16 @@ export class HubScreen {
       setTactics: (list) => actions.setTactics(list),
       done: () => this.setView('home'),
     });
-    for (const v of [this.forge.root, this.map.root, this.collection.root, this.feats.root, this.tactics.root]) this.root.insertBefore(v, dock);
+    this.stars = new StarsView(this.root, {
+      buy: (id) => refreshing(() => actions.buyStar(id)),
+      refund: () => false,
+    });
+    this.pacts = new PactsView(this.root, {
+      setPact: (id, rank) => refreshing(() => actions.setPact(id, rank)),
+      done: () => this.setView('home'),
+    });
+    const views = [this.forge.root, this.map.root, this.collection.root, this.feats.root, this.stars.root, this.tactics.root, this.pacts.root];
+    for (const v of views) this.root.insertBefore(v, dock);
     this.tabs.addEventListener('click', (e) => {
       const tab = (e.target as HTMLElement).closest<HTMLElement>('.hub-tab');
       if (tab) this.setView(tab.dataset.view as HubView);
@@ -152,7 +182,8 @@ export class HubScreen {
     this.profile = profile;
     this.root.hidden = false;
     this.renderTabs(hubUnlocks(profile));
-    const open = view === 'home' || (view === 'tactics' ? tacticsKey(profile) !== null : hubUnlocks(profile)[view]);
+    const open = view === 'home'
+      || (view === 'tactics' ? tacticsKey(profile) !== null : view === 'pacts' ? act2Open(profile) : hubUnlocks(profile)[view]);
     this.setView(open ? view : 'home', spread);
   }
 
@@ -168,6 +199,7 @@ export class HubScreen {
   private renderTabs(unlocks: HubUnlocks): void {
     const shown = TABS.filter((t) => unlocks[t.view]);
     this.tabs.hidden = shown.length === 0;
+    toggleClass(this.tabs, 'is-crowded', shown.length >= TABS.length);
     const home = document.createElement('button');
     home.type = 'button';
     home.className = 'hub-tab';
@@ -195,7 +227,9 @@ export class HubScreen {
     this.map.root.hidden = view !== 'map';
     this.collection.root.hidden = view !== 'collection';
     this.feats.root.hidden = view !== 'feats';
+    this.stars.root.hidden = view !== 'stars';
     this.tactics.root.hidden = view !== 'tactics';
+    this.pacts.root.hidden = view !== 'pacts';
     for (const t of this.tabs.querySelectorAll<HTMLElement>('.hub-tab')) {
       const on = t.dataset.view === view;
       toggleClass(t, 'is-active', on);
@@ -206,6 +240,8 @@ export class HubScreen {
     if (view === 'collection') this.collection.show(p);
     if (view === 'feats') this.feats.show(p);
     if (view === 'tactics') this.tactics.show(p);
+    if (view === 'stars') this.stars.show(p, false);
+    if (view === 'pacts') this.pacts.show(p);
     this.refresh();
   }
 
@@ -215,8 +251,13 @@ export class HubScreen {
     if (!p) return;
     setText(this.shards, formatNumber(p.shards));
     setText(this.best, p.records.bestWave > 0 ? String(p.records.bestWave) : '—');
-    setText(this.loadout, `${selectedFrame(p).name} · ${selectedRegion(p).name}`);
+    setText(this.loadout, `${selectedFrame(p).name} · ${inAbyss(p) ? 'The Abyss' : selectedRegion(p).name}`);
     this.tacticsBtn.hidden = tacticsKey(p) === null;
+    const act2 = act2Open(p);
+    this.pactsBtn.hidden = !act2;
+    this.starlightStat.hidden = !act2;
+    setText(this.starlightN, formatNumber(p.starlight));
+    setText(this.pactsBtn, `Pacts · Heat ${heat(p)}`);
     const goal = p.records.runs > 0 ? hubGoal(p) : null;
     this.goal.hidden = goal === null;
     if (goal) {
@@ -227,7 +268,7 @@ export class HubScreen {
     }
     for (const t of this.tabs.querySelectorAll<HTMLElement>('.hub-tab')) {
       const v = t.dataset.view;
-      const dot = v !== this.view && ((v === 'forge' && forgeBadge(p)) || (v === 'feats' && featsBadge(p)));
+      const dot = v !== this.view && ((v === 'forge' && forgeBadge(p)) || (v === 'feats' && featsBadge(p)) || (v === 'stars' && starsBadge(p)));
       toggleClass(t, 'has-badge', dot);
     }
   }

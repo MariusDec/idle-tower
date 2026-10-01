@@ -10,6 +10,8 @@ import type { BranchId, ForgeNodeDef } from './types';
  * Frontier March, Tactician I–II, Autocaster, Night Watch II–III and speed ×3.
  * P7 adds rings 4–6, sealed by the Prism, Forgeheart and the Hollow King:
  * weapon slots 3–4, Evolution Insight, Night Watch IV and the late minors.
+ * P8 adds a mastery at the end of each branch (§9): unlimited levels at
+ * +3% each, every level ×1.3 the last, unsealed by its Crown constellation.
  *
  * Only Might, Bulwark and Fortune hang from the root, so a fresh Forge shows
  * three nodes (§7.1). Arsenal hangs from Might and Engineering from Fortune:
@@ -652,6 +654,33 @@ export const FORGE: readonly ForgeNodeDef[] = [
     id: 'oath', name: "Oath of Stone", icon: 'surrounded-shield', text: "Regen is tripled while a boss stands.",
     branch: 'bulwark', type: 'notable', ring: 6, angle: 300, links: ['bulwark-hp-6'], maxLevel: 1, cost: 606000,
     effects: [{ kind: 'behaviour', id: 'oath' }], sealed: 'hollow-king',
+  },
+
+  // ── Masteries (§9): the idle-forever sink, one per branch ──────────────
+  {
+    id: 'might-mastery', name: 'Might Mastery', icon: 'mighty-force', text: 'Damage +3% per level, without end.',
+    branch: 'might', type: 'mastery', ring: 7, angle: 4, links: ['might-damage-6'], maxLevel: Infinity, cost: 1_500_000, growth: 1.3,
+    effects: [{ kind: 'stat', mod: { key: 'damage', pct: 0.03 } }],
+  },
+  {
+    id: 'arsenal-mastery', name: 'Arsenal Mastery', icon: 'quiver', text: 'Attack speed +3% per level, without end.',
+    branch: 'arsenal', type: 'mastery', ring: 7, angle: 90, links: ['weapon-slot-4'], maxLevel: Infinity, cost: 1_500_000, growth: 1.3,
+    effects: [{ kind: 'stat', mod: { key: 'attackSpeed', pct: 0.03 } }],
+  },
+  {
+    id: 'engineering-mastery', name: 'Engineering Mastery', icon: 'clockwork', text: 'Ultimate charge +3% per level, without end.',
+    branch: 'engineering', type: 'mastery', ring: 7, angle: 150, links: ['ult-charge-4'], maxLevel: Infinity, cost: 1_500_000, growth: 1.3,
+    effects: [{ kind: 'stat', mod: { key: 'ultCharge', pct: 0.03 } }],
+  },
+  {
+    id: 'fortune-mastery', name: 'Fortune Mastery', icon: 'gold-mine', text: 'Shards +3% per level, without end.',
+    branch: 'fortune', type: 'mastery', ring: 7, angle: 210, links: ['fortune-shards-6'], maxLevel: Infinity, cost: 1_500_000, growth: 1.3,
+    effects: [{ kind: 'stat', mod: { key: 'shardGain', pct: 0.03 } }],
+  },
+  {
+    id: 'bulwark-mastery', name: 'Bulwark Mastery', icon: 'magic-shield', text: 'Max HP +3% per level, without end.',
+    branch: 'bulwark', type: 'mastery', ring: 7, angle: 294, links: ['bulwark-hp-6'], maxLevel: Infinity, cost: 1_500_000, growth: 1.3,
+    effects: [{ kind: 'stat', mod: { key: 'maxHp', pct: 0.03 } }],
   },
 ];
 

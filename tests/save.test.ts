@@ -116,6 +116,16 @@ describe('migration ladder', () => {
     expect(out.settings).toEqual({ speed: 3, sound: true });
   });
 
+  it('walks a v6 profile to v7: no Starlight, no stars, no pacts, the Abyss untouched (§9)', () => {
+    const out = migrate({ version: 6, createdAt: 5, shards: 50, region: 6, settings: { speed: 3 } }, MIGRATIONS, 7);
+    expect(out.version).toBe(7);
+    expect(out.starlight).toBe(0);
+    expect(out.stars).toEqual({});
+    expect(out.pacts).toEqual({ ranks: {}, best: {} });
+    expect(out.abyss).toEqual({ best: 0 });
+    expect(out.region).toBe(6);
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);

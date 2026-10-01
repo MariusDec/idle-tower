@@ -1,15 +1,13 @@
 import { BOSS_BY_ID } from '../../content/bosses';
 import { ENEMY_BY_ID } from '../../content/enemies';
-import { FRAMES } from '../../content/frames';
 import { REGIONS } from '../../content/regions';
-import { RELICS } from '../../content/relics';
 import { BALANCE } from '../../content/balance';
 import { PASSIVE_BY_ID } from '../../content/passives';
 import { WEAPON_BY_ID } from '../../content/weapons';
-import type { BossId, EnemyId, FrameUnlock, RelicId } from '../../content/types';
+import type { BossId, EnemyId, FrameUnlock, RelicDef, RelicId } from '../../content/types';
 import { formatNumber } from '../../core/format';
 import {
-  bestiary, collectionPages, frameUnlocked, relicRank, relicSlots, selectedFrame,
+  bestiary, collectionPages, frameUnlocked, listedFrames, listedRelics, relicRank, relicSlots, selectedFrame,
 } from '../../meta/collection';
 import type { Profile } from '../../meta/profile';
 import { recipeBook } from '../../meta/recipes';
@@ -25,8 +23,27 @@ function lockedLine(u: FrameUnlock): string {
       return `Defeat ${BOSS_BY_ID[u.boss].name}.`;
     case 'feat':
       return 'Earned by a secret feat.';
+    case 'star':
+      return 'Lit in the Constellations.';
     default: {
       const exhaustive: never = u;
+      return exhaustive;
+    }
+  }
+}
+
+/** Where a relic drops, in words, for its silhouette (§5.3). */
+function relicWhere(r: RelicDef): string {
+  const s = r.source;
+  switch (s.kind) {
+    case 'boss':
+      return BOSS_BY_ID[s.boss].name;
+    case 'elite':
+      return `${REGIONS.find((x) => x.index === s.region)?.name ?? 'Unknown'} elites`;
+    case 'abyss':
+      return `the Abyss's elites, once Lantern ${['I', 'II', 'III', 'IV'][s.set - 1] ?? s.set} is lit`;
+    default: {
+      const exhaustive: never = s;
       return exhaustive;
     }
   }
@@ -154,14 +171,12 @@ export class CollectionView {
     head.textContent = `Worn ${p.equipped.length}/${slots}. Tap a relic to wear it into your next run.`;
     const list = document.createElement('ul');
     list.className = 'entry-list';
-    for (const r of RELICS) {
+    for (const r of listedRelics(p)) {
       const rank = relicRank(p, r.id);
       const worn = p.equipped.includes(r.id);
       const li = document.createElement('li');
       li.className = `entry${rank === 0 ? ' is-unknown' : ''}${worn ? ' is-worn' : ''}`;
-      const where = r.source.kind === 'boss'
-        ? BOSS_BY_ID[r.source.boss].name
-        : `${REGIONS.find((x) => x.index === (r.source as { region: number }).region)?.name ?? 'Unknown'} elites`;
+      const where = relicWhere(r);
       if (rank === 0) {
         // Undiscovered: a silhouette naming where it drops (§5.3).
         const h = document.createElement('div');
@@ -239,7 +254,7 @@ export class CollectionView {
     const list = document.createElement('ul');
     list.className = 'entry-list';
     const chosen = selectedFrame(p).id;
-    for (const f of FRAMES) {
+    for (const f of listedFrames(p)) {
       const open = frameUnlocked(p, f);
       const li = document.createElement('li');
       li.className = `entry${open ? '' : ' is-unknown'}${f.id === chosen ? ' is-worn' : ''}`;

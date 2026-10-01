@@ -1,8 +1,10 @@
 import type { RunState } from '../sim/state';
+import { FLOOR_WAVES, floorOf, floorTemplate, floorWave } from '../content/abyss';
 import { BOSS_BY_ID } from '../content/bosses';
 import { frameById } from '../content/frames';
-import { regionByIndex } from '../content/regions';
-import { BOSS_WAVE } from '../sim/systems/waves';
+import { pactLoad } from '../sim/pacts';
+import { phasesOf } from '../sim/systems/boss';
+import { BOSS_WAVE, runRegion } from '../sim/systems/waves';
 import { formatNumber } from '../core/format';
 import { setAriaLabel, setStyle, setText, toggleClass } from './dom';
 import { iconMarkup } from './icon';
@@ -121,12 +123,23 @@ export class Hud {
   }
 
   update(run: RunState): void {
-    // "7/20" in the region; past the boss, overtime counts on (§4.2).
-    const overtime = run.wave > BOSS_WAVE;
-    setText(this.waveLabel, overtime ? 'Overtime' : 'Wave');
-    setText(this.wave, overtime ? `+${run.wave - BOSS_WAVE}` : `${Math.max(1, run.wave)}/${BOSS_WAVE}`);
-    const region = regionByIndex(run.regionId);
-    setText(this.region, region.rule ? `${region.name} · ${region.rule.name}` : region.name);
+    const region = runRegion(run);
+    const wave = Math.max(1, run.wave);
+    if (region.abyss) {
+      // The Abyss (§9): "Floor 3 · 7/10", and the template's rule.
+      setText(this.waveLabel, `Floor ${floorOf(wave)}`);
+      setText(this.wave, `${floorWave(wave)}/${FLOOR_WAVES}`);
+      const rule = floorTemplate(floorOf(wave)).rule;
+      setText(this.region, rule ? `The Abyss · ${rule.name}` : 'The Abyss');
+    } else {
+      // "7/20" in the region; past the boss, overtime counts on (§4.2).
+      const overtime = run.wave > BOSS_WAVE;
+      setText(this.waveLabel, overtime ? 'Overtime' : 'Wave');
+      setText(this.wave, overtime ? `+${run.wave - BOSS_WAVE}` : `${wave}/${BOSS_WAVE}`);
+      const heat = pactLoad(run.pacts).heat;
+      const name = region.rule ? `${region.name} · ${region.rule.name}` : region.name;
+      setText(this.region, heat > 0 ? `${name} · Heat ${heat}` : name);
+    }
     this.updateBoss(run);
     setText(this.shards, formatNumber(Math.floor(run.shards)));
     const hp = Math.max(0, run.tower.hp);
@@ -155,7 +168,7 @@ export class Hud {
     const def = BOSS_BY_ID[b.id];
     setText(this.bossName, b.enraged ? `${def.name} · Enraged` : def.name);
     setStyle(this.bossFill, 'transform', `scaleX(${Math.max(0, body.hp / body.maxHp).toFixed(3)})`);
-    setText(this.bossPips, def.phases.map((_, i) => (i <= b.phase ? '◆' : '◇')).join(' '));
+    setText(this.bossPips, phasesOf(run, def).map((_, i) => (i <= b.phase ? '◆' : '◇')).join(' '));
     toggleClass(this.boss, 'is-enraged', b.enraged);
   }
 }

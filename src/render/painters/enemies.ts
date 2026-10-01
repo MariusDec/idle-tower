@@ -38,6 +38,10 @@ const GAIT: Record<EnemyId, { freq: number; bob: number }> = {
   imp: { freq: 16, bob: 1.4 },
   harbinger: { freq: 1.6, bob: 2 },
   chorus: { freq: 3.2, bob: 2.2 },
+  husk: { freq: 3.8, bob: 0.8 },
+  ram: { freq: 6, bob: 1.2 },
+  wardstone: { freq: 1.4, bob: 0.6 },
+  maw: { freq: 4, bob: 1.6 },
 };
 
 /** How see-through a phased-out body, and a risen shade, is drawn. */
@@ -103,7 +107,30 @@ export class EnemyPainter {
       // Sprites are baked at the type's radius; elites and fragments scale it.
       const k = e.radius / ENEMY_BY_ID[e.type].radius;
       ctx.drawImage(s.canvas, x - s.half * k, y - s.half * k, s.half * 2 * k, s.half * 2 * k);
-      if (ENEMY_BY_ID[e.type].verb.kind === 'shield') drawShield(ctx, x, y, e.radius);
+      const verb = ENEMY_BY_ID[e.type].verb;
+      if (verb.kind === 'shield') drawShield(ctx, x, y, e.radius);
+      // A Husk's shell (§9): plates round it while it still swallows hits, a notch per hit.
+      if (e.shell > 0) drawShell(ctx, x, y, e.radius, e.shell);
+      // A Wardstone's ward: a faint ring as wide as it reaches.
+      if (verb.kind === 'ward' && e.hiddenUntil <= simTime) {
+        ctx.strokeStyle = withAlpha(FX.frost, 0.22);
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 8]);
+        ctx.beginPath();
+        ctx.arc(x, y, verb.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      // A Ram mid-charge: a streak behind it.
+      if (e.dashUntil > simTime) {
+        const d = Math.hypot(x, y) || 1;
+        ctx.strokeStyle = withAlpha(FX.blood, 0.55);
+        ctx.lineWidth = e.radius * 0.8;
+        ctx.beginPath();
+        ctx.moveTo(x + (x / d) * e.radius * 2.5, y + (y / d) * e.radius * 2.5);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+      }
       if (e.slowUntil > simTime && e.slow > 0) {
         ctx.strokeStyle = withAlpha(FX.frost, 0.7);
         ctx.lineWidth = 2;
@@ -131,6 +158,19 @@ export class EnemyPainter {
       if (e.hp < e.maxHp) drawHpBar(ctx, x, y - e.radius - 8, e.radius, e.hp / e.maxHp);
       ctx.globalAlpha = 1;
     }
+  }
+}
+
+/** A Husk's shell: one plate per hit it can still swallow, round its rim. */
+function drawShell(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, plates: number): void {
+  ctx.strokeStyle = withAlpha(INK['100'], 0.75);
+  ctx.lineWidth = 3;
+  const n = Math.min(8, plates);
+  for (let i = 0; i < n; i++) {
+    const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+    ctx.beginPath();
+    ctx.arc(x, y, r + 3, a + 0.08, a + (Math.PI * 2) / 8 - 0.08);
+    ctx.stroke();
   }
 }
 
@@ -616,6 +656,65 @@ function paintDetail(g: CanvasRenderingContext2D, def: EnemyDef, r: number, pen:
       g.beginPath();
       g.ellipse(0, r * 0.15, r * 0.22, r * 0.32, 0, 0, Math.PI * 2);
       g.fill();
+      break;
+    }
+    // Husk: cracked plates over a dark seam.
+    case 'husk': {
+      g.strokeStyle = dark(0.7);
+      g.lineWidth = pen(r * 0.08);
+      g.beginPath();
+      g.moveTo(-r * 0.5, -r * 0.3);
+      g.lineTo(-r * 0.1, r * 0.05);
+      g.lineTo(r * 0.2, -r * 0.2);
+      g.lineTo(r * 0.5, r * 0.25);
+      g.stroke();
+      break;
+    }
+    // Ram: a lowered horn-plate, pointing at the wall.
+    case 'ram': {
+      g.fillStyle = pale(0.8);
+      g.beginPath();
+      g.moveTo(-r * 0.55, -r * 0.3);
+      g.quadraticCurveTo(0, -r * 0.75, r * 0.55, -r * 0.3);
+      g.lineTo(r * 0.3, -r * 0.15);
+      g.quadraticCurveTo(0, -r * 0.45, -r * 0.3, -r * 0.15);
+      g.closePath();
+      g.fill();
+      break;
+    }
+    // Wardstone: a carved glyph, cold blue.
+    case 'wardstone': {
+      g.strokeStyle = withAlpha(def.borderColor, 0.9);
+      g.lineWidth = pen(r * 0.09);
+      g.beginPath();
+      g.arc(0, 0, r * 0.35, 0, Math.PI * 2);
+      g.moveTo(0, -r * 0.6);
+      g.lineTo(0, r * 0.6);
+      g.moveTo(-r * 0.5, 0);
+      g.lineTo(r * 0.5, 0);
+      g.stroke();
+      break;
+    }
+    // Maw: a wide mouth, all teeth.
+    case 'maw': {
+      g.fillStyle = dark(0.9);
+      g.beginPath();
+      g.ellipse(0, r * 0.05, r * 0.6, r * 0.4, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = withAlpha(def.borderColor, 0.95);
+      for (let i = 0; i < 6; i++) {
+        const x = -r * 0.45 + (i / 5) * r * 0.9;
+        g.beginPath();
+        g.moveTo(x - r * 0.07, -r * 0.3);
+        g.lineTo(x + r * 0.07, -r * 0.3);
+        g.lineTo(x, -r * 0.08);
+        g.fill();
+        g.beginPath();
+        g.moveTo(x - r * 0.07, r * 0.4);
+        g.lineTo(x + r * 0.07, r * 0.4);
+        g.lineTo(x, r * 0.18);
+        g.fill();
+      }
       break;
     }
     default: {

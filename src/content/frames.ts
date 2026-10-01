@@ -1,6 +1,6 @@
 import type { FrameDef, FrameId } from './types';
 
-/** Frames (§4.4, §11.6): the tower's chassis, chosen before a run. Four in Act 1. */
+/** Frames (§4.4, §11.6): the tower's chassis, chosen before a run. Four in Act 1; Act 2's two come from the Constellations (§9). */
 export const FRAMES: readonly FrameDef[] = [
   {
     id: 'arcanist',
@@ -72,6 +72,42 @@ export const FRAMES: readonly FrameDef[] = [
       speed: 2,
     },
     unlock: { kind: 'feat', feat: 'tinkerer' },
+  },
+  {
+    id: 'lamplighter',
+    name: 'Lamplighter',
+    icon: 'lantern-flame',
+    text: 'Starts with Moonblade. +20% area, +10% range.',
+    startingWeapon: 'moonblade',
+    effects: [
+      { kind: 'stat', mod: { key: 'area', pct: 0.2 } },
+      { kind: 'stat', mod: { key: 'range', pct: 0.1 } },
+    ],
+    ultimate: {
+      id: 'daybreak',
+      name: 'Daybreak',
+      text: 'For six seconds, everything in range is slowed and takes double damage.',
+      seconds: 6,
+      slow: 0.5,
+      vulnerable: 2,
+    },
+    unlock: { kind: 'star' },
+  },
+  {
+    id: 'gravekeeper',
+    name: 'Gravekeeper',
+    icon: 'reaper-scythe',
+    text: 'Starts with Soul Tether. Every kill mends the tower a little.',
+    startingWeapon: 'soul-tether',
+    effects: [{ kind: 'behaviour', id: 'siphon' }],
+    ultimate: {
+      id: 'eclipse',
+      name: 'Eclipse',
+      text: 'Everything in range loses a quarter of its health; a boss, a twentieth.',
+      fraction: 0.25,
+      bossFraction: 0.05,
+    },
+    unlock: { kind: 'star' },
   },
 ];
 

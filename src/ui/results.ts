@@ -1,4 +1,5 @@
 import type { RunSummary } from '../meta/results';
+import { floorWave } from '../content/abyss';
 import { BALANCE } from '../content/balance';
 import { BOSS_BY_ID } from '../content/bosses';
 import { ENEMY_BY_ID } from '../content/enemies';
@@ -129,15 +130,21 @@ export class ResultsScreen {
   /** `hubLabel` names where the other button goes: the Forge, or the Map after a first kill. */
   show(s: RunSummary, autoRestart: boolean, hubLabel = 'Forge'): void {
     this.hubBtn.textContent = hubLabel;
-    const where = s.wave > 20 ? `Overtime +${s.wave - 20}` : `Wave ${s.wave}`;
+    const where = s.abyss
+      ? `Floor ${s.abyss.floor}, wave ${floorWave(s.wave)}`
+      : s.wave > 20 ? `Overtime +${s.wave - 20}` : `Wave ${s.wave}`;
     this.headline.textContent = s.outcome === 'retreat'
       ? `The tower withdraws. ${where}.`
       : `The light recedes. ${where}.`;
 
-    // The boss: felled (and how fast), or still standing.
+    // The boss: felled (and how fast), or still standing. The Abyss counts floors (§9).
     const b = s.boss;
-    this.bossLine.hidden = b === null;
-    if (b) {
+    this.bossLine.hidden = b === null && s.abyss === null;
+    if (s.abyss) {
+      const n = s.abyss.cleared;
+      this.bossLine.textContent = n > 0 ? `${n} floor${n === 1 ? '' : 's'} of the Abyss cleared.` : 'The first floor holds.';
+      this.bossLine.classList.toggle('is-first', s.floorRecord !== null);
+    } else if (b) {
       const name = BOSS_BY_ID[b.id].name;
       this.bossLine.textContent = b.killedIn === null
         ? `${name} still stands.`
@@ -155,7 +162,15 @@ export class ResultsScreen {
       li.append(t);
       return li;
     };
+    const starlight: HTMLElement[] = [];
+    if (s.heatRecord) {
+      starlight.push(reward('round-star', `Heat record ${s.heatRecord.now} · +${formatNumber(s.heatRecord.starlight)} Starlight`, 'unlock'));
+    }
+    if (s.floorRecord) {
+      starlight.push(reward('round-star', `Deepest floor ${s.floorRecord.now} · +${formatNumber(s.floorRecord.starlight)} Starlight`, 'unlock'));
+    }
     this.rewards.replaceChildren(
+      ...starlight,
       ...s.unlocks.map((u) => reward('star-gate', u, 'unlock')),
       ...s.relics.map((r) => {
         const def = RELIC_BY_ID[r.id];

@@ -1,11 +1,13 @@
 import { BOSS_BY_ID } from '../../content/bosses';
-import { BRANCH_NAME, FORGE, FORGE_BY_ID } from '../../content/forge';
-import type { ForgeNodeDef } from '../../content/types';
+import { BRANCH_NAME, FORGE } from '../../content/forge';
+import type { IconId } from '../../content/icons';
+import { CONSTELLATION_NAME, STARS } from '../../content/stars';
+import type { ForgeNodeDef, StarNodeDef, WebNodeDef } from '../../content/types';
 import { formatNumber } from '../../core/format';
-import {
-  canAfford, canRefund, isBuyable, levelOf, neighbours, nodeCost, nodeStates, nextGoal, type NodeState,
-} from '../../meta/forge';
+import { FORGE_WEB, canAfford } from '../../meta/forge';
 import type { Profile } from '../../meta/profile';
+import { STAR_WEB } from '../../meta/stars';
+import type { NodeState, Web } from '../../meta/web';
 import { setText } from '../dom';
 import { icon, iconMarkup, iconUse } from '../icon';
 
@@ -14,7 +16,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 /** Radius of ring n: wide enough that ring 1's close neighbours never touch. */
 const ringRadius = (ring: number): number => 30 + 120 * ring;
 /** Node radii by type, world units. */
-const RADIUS = { minor: 26, notable: 32, keystone: 36 } as const;
+const RADIUS = { minor: 26, notable: 32, keystone: 36, mastery: 38 } as const;
 /** Each node's tap area, world units: ≥ 42 px across at the default zoom. */
 const HIT_RADIUS = 30;
 /** The root's radius: the tower glyph the web grows from. */
@@ -30,7 +32,29 @@ export interface ForgeActions {
   refund(id: string): boolean;
 }
 
-function position(n: ForgeNodeDef): { x: number; y: number } {
+/** What a web view draws, and what it calls the things it draws (§5.1, §9). */
+export interface WebViewSource<N extends WebNodeDef> {
+  readonly web: Web<N>;
+  /** The root's class: `forge` for the Forge, `forge stars` for the Constellations. */
+  readonly className: string;
+  readonly title: string;
+  readonly currencyIcon: IconId;
+  readonly currencyName: string;
+  wallet(profile: Profile): number;
+  /** The first-visit line (§7.1). */
+  readonly hint: string;
+  readonly rootIcon: IconId;
+  branchName(branch: N['branch']): string;
+  /** Why a sealed node waits, in words. */
+  sealLine(node: N): string;
+}
+
+/** A node's level, out of its last: a mastery (§9) has no last. */
+function levelText(level: number, max: number): string {
+  return max === Infinity ? `${level}` : `${level}/${max}`;
+}
+
+function position(n: WebNodeDef): { x: number; y: number } {
   const a = (n.angle * Math.PI) / 180;
   const r = ringRadius(n.ring);
   return { x: Math.sin(a) * r, y: -Math.cos(a) * r };
@@ -43,11 +67,12 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
 }
 
 /**
- * The Forge (§5.1): a radial web around the tower, with fog, three node
- * types and costs. Drag to pan, pinch or wheel to zoom, tap a node for its
- * card. A purchase ripples out along the owned web.
+ * A web (§5.1): radial, around a glyph, with fog, node types and costs.
+ * Drag to pan, pinch or wheel to zoom, tap a node for its card. A purchase
+ * ripples out along the owned web. The Forge and the Constellations (§9)
+ * are both one.
  */
-export class ForgeView {
+export class WebView<N extends WebNodeDef> {
   readonly root: HTMLElement;
   private readonly svg: SVGSVGElement;
   private readonly world: SVGGElement;
@@ -63,20 +88,20 @@ export class ForgeView {
   private press: { x: number; y: number; moved: boolean } | null = null;
   private pinch: { d: number; scale: number } | null = null;
 
-  constructor(host: HTMLElement, private readonly actions: ForgeActions) {
+  constructor(host: HTMLElement, private readonly actions: ForgeActions, private readonly src: WebViewSource<N>) {
     this.root = document.createElement('div');
-    this.root.className = 'forge';
+    this.root.className = src.className;
     this.root.innerHTML = `
       <header class="forge-head">
-        <h2 class="forge-title">Forge</h2>
-        <span class="forge-shards" aria-label="Shards">${iconMarkup('crystal-cluster')}<span class="forge-shards-n">0</span></span>
+        <h2 class="forge-title">${src.title}</h2>
+        <span class="forge-shards" aria-label="${src.currencyName}">${iconMarkup(src.currencyIcon)}<span class="forge-shards-n">0</span></span>
       </header>
-      <p class="forge-hint" hidden>Spend shards on the web. Every node applies from your next run.</p>
+      <p class="forge-hint" hidden>${src.hint}</p>
       <div class="forge-detail" hidden></div>`;
     this.shards = this.root.querySelector('.forge-shards-n')!;
     this.hint = this.root.querySelector('.forge-hint')!;
     this.detail = this.root.querySelector('.forge-detail')!;
-    this.svg = el('svg', { class: 'forge-web', role: 'application', 'aria-label': 'Forge web' });
+    this.svg = el('svg', { class: 'forge-web', role: 'application', 'aria-label': `${src.title} web` });
     this.world = el('g', { class: 'forge-world' });
     this.svg.appendChild(this.world);
     this.root.insertBefore(this.svg, this.hint);
@@ -87,7 +112,7 @@ export class ForgeView {
   /** Draw the web for `profile`. `intro` highlights a first node to buy (§7.1). */
   show(profile: Profile, intro: boolean): void {
     this.profile = profile;
-    this.hinted = intro ? nextGoal(profile)?.node.id ?? null : null;
+    this.hinted = intro ? this.src.web.nextGoal(profile)?.node.id ?? null : null;
     this.hint.hidden = !intro;
     this.selected = null;
     this.fitted = false;
@@ -102,8 +127,8 @@ export class ForgeView {
     const w = this.svg.clientWidth;
     const h = this.svg.clientHeight;
     if (w === 0 || h === 0 || !this.profile) return;
-    const states = nodeStates(this.profile);
-    const ring = Math.max(1, ...FORGE.filter((n) => states.get(n.id) !== 'hidden').map((n) => n.ring));
+    const states = this.src.web.states(this.profile);
+    const ring = Math.max(1, ...this.src.web.nodes.filter((n) => states.get(n.id) !== 'hidden').map((n) => n.ring));
     const outer = ringRadius(Math.min(2, ring)) + RADIUS.notable;
     const scale = Math.min(w, h) / 2 / outer;
     // Never so small that a node is hard to tap; pan and pinch show the rest.
@@ -122,8 +147,9 @@ export class ForgeView {
   private redraw(): void {
     const p = this.profile;
     if (!p) return;
-    setText(this.shards, formatNumber(p.shards));
-    const states = nodeStates(p);
+    setText(this.shards, formatNumber(this.src.wallet(p)));
+    const web = this.src.web;
+    const states = web.states(p);
     const links = el('g', { class: 'forge-links' });
     const nodes = el('g', { class: 'forge-nodes' });
 
@@ -132,7 +158,7 @@ export class ForgeView {
       if (a === 'fog' || b === 'fog' || a === 'sealed' || b === 'sealed') return 'is-fog';
       return 'is-open';
     };
-    for (const n of FORGE) {
+    for (const n of web.nodes) {
       const s = states.get(n.id)!;
       if (s === 'hidden') continue;
       const at = position(n);
@@ -140,7 +166,7 @@ export class ForgeView {
         links.appendChild(el('line', { class: `forge-link ${linkClass('owned', s)}`, x1: 0, y1: 0, x2: at.x, y2: at.y, 'data-a': 'root', 'data-b': n.id }));
       }
       for (const l of n.links) {
-        const other = FORGE_BY_ID[l];
+        const other = web.node(l)!;
         const so = states.get(l)!;
         if (so === 'hidden') continue;
         const to = position(other);
@@ -151,18 +177,18 @@ export class ForgeView {
 
     const root = el('g', { class: 'forge-root' });
     root.appendChild(el('circle', { r: ROOT_RADIUS }));
-    root.appendChild(iconUse('heart-tower', ROOT_RADIUS * 1.2));
+    root.appendChild(iconUse(this.src.rootIcon, ROOT_RADIUS * 1.2));
     nodes.appendChild(root);
     this.world.replaceChildren(links, nodes);
     if (this.fitted) this.applyView();
   }
 
-  private node(n: ForgeNodeDef, state: NodeState, p: Profile): SVGGElement {
+  private node(n: N, state: NodeState, p: Profile): SVGGElement {
     const at = position(n);
     const r = RADIUS[n.type];
-    const level = levelOf(p, n.id);
+    const level = this.src.web.levelOf(p, n.id);
     const classes = ['forge-node', `is-${state}`, `type-${n.type}`, `branch-${n.branch}`];
-    if (state !== 'fog' && state !== 'sealed' && canAfford(p, n.id)) classes.push('is-affordable');
+    if (state !== 'fog' && state !== 'sealed' && this.src.web.canAfford(p, n.id)) classes.push('is-affordable');
     if (level >= n.maxLevel) classes.push('is-maxed');
     if (n.id === this.selected) classes.push('is-selected');
     if (n.id === this.hinted) classes.push('is-hinted');
@@ -172,6 +198,14 @@ export class ForgeView {
       const pts = Array.from({ length: 6 }, (_, i) => {
         const a = (Math.PI / 3) * i;
         return `${(Math.cos(a) * r).toFixed(1)},${(Math.sin(a) * r).toFixed(1)}`;
+      }).join(' ');
+      g.appendChild(el('polygon', { class: 'forge-shape', points: pts }));
+    } else if (n.type === 'mastery') {
+      // A mastery (§9): an eight-pointed star, endless.
+      const pts = Array.from({ length: 16 }, (_, i) => {
+        const a = (Math.PI / 8) * i - Math.PI / 2;
+        const rr = i % 2 === 0 ? r : r * 0.72;
+        return `${(Math.cos(a) * rr).toFixed(1)},${(Math.sin(a) * rr).toFixed(1)}`;
       }).join(' ');
       g.appendChild(el('polygon', { class: 'forge-shape', points: pts }));
     } else {
@@ -188,7 +222,7 @@ export class ForgeView {
       g.appendChild(iconUse(n.icon, r * 1.1));
       if (n.maxLevel > 1) {
         const t = el('text', { class: 'forge-level', y: r + 13, 'text-anchor': 'middle' });
-        t.textContent = `${level}/${n.maxLevel}`;
+        t.textContent = levelText(level, n.maxLevel);
         g.appendChild(t);
       }
     }
@@ -203,8 +237,9 @@ export class ForgeView {
       this.detail.hidden = true;
       return;
     }
-    const n = FORGE_BY_ID[id];
-    const state = nodeStates(p).get(id)!;
+    const web = this.src.web;
+    const n = web.node(id)!;
+    const state = web.states(p).get(id)!;
     this.detail.replaceChildren();
     this.detail.className = `forge-detail branch-${n.branch}`;
     const head = document.createElement('div');
@@ -216,7 +251,7 @@ export class ForgeView {
     if (state === 'fog') {
       head.append(icon('locked-chest'));
       name.textContent = `Unknown ${n.type}`;
-      kind.textContent = BRANCH_NAME[n.branch];
+      kind.textContent = this.src.branchName(n.branch);
       head.append(name);
       const text = document.createElement('p');
       text.className = 'forge-detail-text';
@@ -225,43 +260,43 @@ export class ForgeView {
       this.detail.hidden = false;
       return;
     }
-    if (state === 'sealed' && n.sealed) {
-      // Sealed (§5.1): what it is shows; it waits for its boss.
+    if (state === 'sealed') {
+      // Sealed (§5.1): what it is shows; it waits for its boss, or its star (§9).
       head.append(icon('locked-chest'));
       name.textContent = n.name;
       head.append(name);
-      kind.textContent = `${BRANCH_NAME[n.branch]} · ${typeName}`;
+      kind.textContent = `${this.src.branchName(n.branch)} · ${typeName}`;
       const text = document.createElement('p');
       text.className = 'forge-detail-text';
       text.textContent = n.text;
       const seal = document.createElement('p');
       seal.className = 'forge-detail-seal';
-      seal.textContent = `Sealed — defeat ${BOSS_BY_ID[n.sealed].name}.`;
+      seal.textContent = this.src.sealLine(n);
       this.detail.append(head, kind, text, seal);
       this.detail.hidden = false;
       return;
     }
-    const level = levelOf(p, id);
+    const level = web.levelOf(p, id);
     head.append(icon(n.icon));
     name.textContent = n.name;
     head.append(name);
-    kind.textContent = `${BRANCH_NAME[n.branch]} · ${typeName}${n.maxLevel > 1 ? ` · Level ${level}/${n.maxLevel}` : ''}`;
+    kind.textContent = `${this.src.branchName(n.branch)} · ${typeName}${n.maxLevel > 1 ? ` · Level ${levelText(level, n.maxLevel)}` : ''}`;
     const text = document.createElement('p');
     text.className = 'forge-detail-text';
     text.textContent = n.text;
     const actions = document.createElement('div');
     actions.className = 'forge-detail-actions';
     if (level < n.maxLevel) {
-      const cost = nodeCost(n, level);
+      const cost = web.cost(n, level);
       const buy = document.createElement('button');
       buy.type = 'button';
       buy.className = 'btn btn-primary forge-buy';
-      const affordable = canAfford(p, id);
+      const affordable = web.canAfford(p, id);
       buy.disabled = !affordable;
-      buy.innerHTML = `${iconMarkup('crystal-cluster')}<span>${formatNumber(cost)}</span>`;
-      buy.setAttribute('aria-label', `${level > 0 ? 'Upgrade' : 'Buy'} for ${cost} shards`);
+      buy.innerHTML = `${iconMarkup(this.src.currencyIcon)}<span>${formatNumber(cost)}</span>`;
+      buy.setAttribute('aria-label', `${level > 0 ? 'Upgrade' : 'Buy'} for ${formatNumber(cost)} ${this.src.currencyName.toLowerCase()}`);
       buy.addEventListener('click', () => this.buy(id));
-      if (!isBuyable(p, id)) buy.disabled = true;
+      if (!web.isBuyable(p, id)) buy.disabled = true;
       actions.append(buy);
     } else {
       const done = document.createElement('span');
@@ -269,7 +304,7 @@ export class ForgeView {
       done.textContent = n.maxLevel > 1 ? 'Maxed' : 'Owned';
       actions.append(done);
     }
-    if (canRefund(p, id)) {
+    if (web.canRefund(p, id)) {
       const refund = document.createElement('button');
       refund.type = 'button';
       refund.className = 'btn forge-refund';
@@ -300,7 +335,7 @@ export class ForgeView {
   /** The purchase ripple (§10.3): a ring from the node, then the owned web lights outward. */
   private ripple(id: string): void {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const at = position(FORGE_BY_ID[id]);
+    const at = position(this.src.web.node(id)!);
     const ring = el('circle', { class: 'forge-ripple', cx: at.x, cy: at.y, r: RADIUS.notable });
     this.world.appendChild(ring);
     ring.addEventListener('animationend', () => ring.remove());
@@ -310,8 +345,8 @@ export class ForgeView {
     const queue = [id];
     while (queue.length > 0) {
       const cur = queue.shift()!;
-      for (const nb of neighbours(cur)) {
-        if (dist.has(nb) || levelOf(p, nb) === 0) continue;
+      for (const nb of this.src.web.neighbours(cur)) {
+        if (dist.has(nb) || this.src.web.levelOf(p, nb) === 0) continue;
         dist.set(nb, dist.get(cur)! + 1);
         queue.push(nb);
       }
@@ -394,7 +429,50 @@ export class ForgeView {
   }
 }
 
+/** The Forge (§5.1): paid in shards, sealed by bosses and, for a mastery, by its star. */
+export class ForgeView extends WebView<ForgeNodeDef> {
+  constructor(host: HTMLElement, actions: ForgeActions) {
+    super(host, actions, {
+      web: FORGE_WEB,
+      className: 'forge',
+      title: 'Forge',
+      currencyIcon: 'crystal-cluster',
+      currencyName: 'Shards',
+      wallet: (p) => p.shards,
+      hint: 'Spend shards on the web. Every node applies from your next run.',
+      rootIcon: 'heart-tower',
+      branchName: (b) => BRANCH_NAME[b],
+      sealLine: (n) => (n.type === 'mastery'
+        ? `Sealed — light ${n.name} in the Crown.`
+        : `Sealed — defeat ${n.sealed ? BOSS_BY_ID[n.sealed].name : 'its boss'}.`),
+    });
+  }
+}
+
+/** The Constellations (§9): Act 2's web, paid in Starlight. */
+export class StarsView extends WebView<StarNodeDef> {
+  constructor(host: HTMLElement, actions: ForgeActions) {
+    super(host, actions, {
+      web: STAR_WEB,
+      className: 'forge stars',
+      title: 'Constellations',
+      currencyIcon: 'round-star',
+      currencyName: 'Starlight',
+      wallet: (p) => p.starlight,
+      hint: 'Clear regions at new heat, and descend the Abyss, for Starlight. Spend it here.',
+      rootIcon: 'star-swirl',
+      branchName: (b) => CONSTELLATION_NAME[b],
+      sealLine: () => 'Sealed.',
+    });
+  }
+}
+
 /** True when some node can be bought now: the Forge tab shows a dot. */
 export function forgeBadge(profile: Profile): boolean {
   return FORGE.some((n) => canAfford(profile, n.id));
+}
+
+/** True when some star can be lit now: the Stars tab shows a dot. */
+export function starsBadge(profile: Profile): boolean {
+  return STARS.some((n) => STAR_WEB.canAfford(profile, n.id));
 }

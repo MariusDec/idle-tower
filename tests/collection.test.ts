@@ -29,7 +29,7 @@ describe('unlocks (§5.2, §7.1)', () => {
   it('Region 2, the Map, Feats and relic slot 1 open with the Gatekeeper', () => {
     const fresh = newProfile(0);
     expect(regionUnlocked(fresh, 2)).toBe(false);
-    expect(hubUnlocks(fresh)).toEqual({ forge: false, map: false, collection: false, feats: false });
+    expect(hubUnlocks(fresh)).toEqual({ forge: false, map: false, collection: false, feats: false, stars: false });
     expect(relicSlots(fresh)).toBe(0);
     const p = killed('gatekeeper');
     expect(regionUnlocked(p, 2)).toBe(true);

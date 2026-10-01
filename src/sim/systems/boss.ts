@@ -3,10 +3,10 @@ import { BALANCE } from '../../content/balance';
 import { BOSS_BY_ID } from '../../content/bosses';
 import { ENEMY_BY_ID } from '../../content/enemies';
 import { spawnPoint } from '../../content/arena';
-import type { BossDef, BossPattern, RegionDef } from '../../content/types';
-import { regionByIndex } from '../../content/regions';
+import type { BossDef, BossPattern, BossPhase, RegionDef } from '../../content/types';
 import type { BossState, Enemy, RunState } from '../state';
-import { BOSS_WAVE, spawnEnemy, waveDamage, waveHp } from './waves';
+import { bossPhases, pactLoad } from '../pacts';
+import { runRegion, spawnEnemy, waveDamage, waveHp, waveShardMult } from './waves';
 import { hurtTower } from './tower';
 
 /**
@@ -27,6 +27,11 @@ export function bossBody(run: RunState): Enemy | null {
 /** A timer that never comes round again. */
 const ONCE = 1e9;
 
+/** The boss's phases as this run fights them: Tyranny adds more (§9). */
+export function phasesOf(run: RunState, def: BossDef): readonly BossPhase[] {
+  return bossPhases(def, pactLoad(run.pacts).tyranny);
+}
+
 /** How often a pattern acts: 0 for once, on entering its phase (a mirror is always on). */
 function period(p: BossPattern): number {
   return p.kind === 'mirror' ? 0 : p.every;
@@ -44,7 +49,11 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
   // From a flank: the short walk on a portrait arena (see `waves.openingArc`).
   const angle = rng.pick([0, Math.PI]);
   const p = spawnPoint(angle);
-  const hp = waveHp(region, BOSS_WAVE) * def.hp;
+  // The wave it holds: 20, or the floor's tenth in the Abyss, where a
+  // guardian is a lighter fight (§9). Vigour and Tyranny swell it.
+  const wave = run.wave;
+  const load = pactLoad(run.pacts);
+  const hp = waveHp(region, wave) * def.hp * (region.abyss ? BALANCE.abyss.bossHp : 1) * load.hp * load.bossHp;
   const body: Enemy = {
     id: run.nextEnemyId++,
     type: region.pool[0].enemy,
@@ -52,7 +61,7 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     elite: false,
     aura: null,
     gen: 0,
-    wave: BOSS_WAVE,
+    wave,
     alive: true,
     x: p.x,
     y: p.y,
@@ -60,13 +69,13 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     py: p.y,
     hp,
     maxHp: hp,
-    armor: waveHp(region, BOSS_WAVE) * def.armor,
-    speed: def.speed,
+    armor: waveHp(region, wave) * def.armor,
+    speed: def.speed * load.speed,
     radius: def.radius,
-    damage: waveDamage(region, BOSS_WAVE) * def.damage,
+    damage: waveDamage(region, wave) * def.damage,
     attackInterval: BALANCE.boss.attackInterval,
     xp: def.xp,
-    shards: region.shardBase * def.shards * (run.firstKill ? BALANCE.boss.firstKill : 1),
+    shards: region.shardBase * def.shards * waveShardMult(wave, region) * (run.firstKill ? BALANCE.boss.firstKill : 1),
     mass: def.mass,
     stunnedUntil: 0,
     slow: 0,
@@ -88,6 +97,10 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     group: 0,
     shade: false,
     court: 0,
+    shell: 0,
+    dashUntil: 0,
+    gildedUntil: 0,
+    feeds: 0,
   };
   run.enemies.push(body);
   if (run.current) run.current.alive++;
@@ -106,6 +119,7 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     crown: 0,
     minHp: Math.max(0, run.tower.hp) / run.stats.maxHp,
     killedIn: null,
+    wave,
   };
   run.boss = state;
   run.events.push({ kind: 'bossArrive', boss: def.id });
@@ -122,22 +136,23 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
   const e = bossBody(run);
   if (!b || !e) return;
   const def = BOSS_BY_ID[b.id];
+  const phases = phasesOf(run, def);
 
   // Phases turn at HP thresholds; a big hit may skip one.
   const frac = e.hp / e.maxHp;
-  while (b.phase + 1 < def.phases.length && frac <= def.phases[b.phase + 1].below) {
+  while (b.phase + 1 < phases.length && frac <= phases[b.phase + 1].below) {
     b.phase++;
-    const ph = def.phases[b.phase];
+    const ph = phases[b.phase];
     b.timers = phaseTimers(ph.patterns);
     b.windup = 0;
     // Plates break away (Forgeheart): the phase sets what armour is left.
-    if (ph.armor !== undefined) e.armor = waveHp(region, BOSS_WAVE) * ph.armor;
+    if (ph.armor !== undefined) e.armor = waveHp(region, b.wave) * ph.armor;
     // A phase with no court gathers the shades back in.
     if (!ph.patterns.some((p) => p.kind === 'court')) dismissCourt(run);
     run.events.push({ kind: 'bossPhase', boss: b.id, phase: b.phase });
   }
   // The mirror turns all the time, not on a timer.
-  for (const p of def.phases[b.phase].patterns) if (p.kind === 'mirror') b.facet += p.spin * dt;
+  for (const p of phases[b.phase].patterns) if (p.kind === 'mirror') b.facet += p.spin * dt;
 
   const B = BALANCE.boss;
   const since = run.time - b.arrivedAt;
@@ -146,7 +161,7 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
     run.events.push({ kind: 'enrage' });
   }
   const fury = b.enraged ? Math.pow(B.enrageGrowth, Math.floor((since - B.enrageAfter) / B.enrageEvery) + 1) : 1;
-  e.damage = waveDamage(region, BOSS_WAVE) * def.damage * fury;
+  e.damage = waveDamage(region, b.wave) * def.damage * fury;
 
   // Under the water: it rises somewhere else on the same ring.
   if (b.submerged) {
@@ -164,9 +179,9 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
     b.windup -= dt;
     if (b.windup <= 0) {
       b.windup = 0;
-      const p = def.phases[b.phase].patterns[b.windupPattern];
+      const p = phases[b.phase].patterns[b.windupPattern];
       if (p?.kind === 'slam') {
-        run.rings.push({ x: e.x, y: e.y, radius: e.radius, speed: p.speed, damage: p.damage * waveDamage(region, BOSS_WAVE) * fury, hit: false });
+        run.rings.push({ x: e.x, y: e.y, radius: e.radius, speed: p.speed, damage: p.damage * waveDamage(region, b.wave) * fury, hit: false });
         run.events.push({ kind: 'slam', x: e.x, y: e.y });
       }
     }
@@ -174,7 +189,7 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
   }
   if (run.time < b.staggeredUntil) return;
 
-  const patterns = def.phases[b.phase].patterns;
+  const patterns = phases[b.phase].patterns;
   for (let i = 0; i < patterns.length; i++) {
     b.timers[i] -= dt;
     if (b.timers[i] > 0) continue;
@@ -201,7 +216,7 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
           const size = rng.int(pack[0], pack[1]);
           for (let j = 0; j < size; j++) {
             const at = spawnPoint(a + rng.range(-spread, spread));
-            spawnEnemy(run, region, p.enemy, BOSS_WAVE, at.x, at.y);
+            spawnEnemy(run, region, p.enemy, b.wave, at.x, at.y);
           }
         }
         break;
@@ -225,7 +240,7 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
         const d = run.stats.radius + p.radius * 0.5;
         const x = Math.cos(a) * d;
         const y = Math.sin(a) * d;
-        run.pools.push({ x, y, radius: p.radius, dps: p.dps * waveDamage(region, BOSS_WAVE) * fury, until: run.time + p.seconds, timer: POOL_TICK });
+        run.pools.push({ x, y, radius: p.radius, dps: p.dps * waveDamage(region, b.wave) * fury, until: run.time + p.seconds, timer: POOL_TICK });
         run.events.push({ kind: 'pool', x, y, radius: p.radius });
         break;
       }
@@ -282,7 +297,7 @@ function holdCourt(run: RunState, region: RegionDef, king: Enemy, shades: number
     const a0 = Math.atan2(king.y, king.x);
     for (let k = 1; k < shades; k++) {
       const a = a0 + (k / shades) * Math.PI * 2;
-      const s = spawnEnemy(run, region, king.type, BOSS_WAVE, Math.cos(a) * d, Math.sin(a) * d, { single: true });
+      const s = spawnEnemy(run, region, king.type, b.wave, Math.cos(a) * d, Math.sin(a) * d, { single: true });
       Object.assign(s, {
         court: king.id, under: false, hp: king.maxHp, maxHp: king.maxHp, armor: king.armor, radius: king.radius * 0.85,
         speed: king.speed, mass: king.mass, xp: 0, shards: 0, hiddenUntil: 0,
@@ -316,7 +331,7 @@ function dismissCourt(run: RunState): void {
 export function reflectShot(run: RunState, e: Enemy, x: number, y: number): boolean {
   const b = run.boss;
   if (!b || b.enemy !== e.id) return false;
-  const p = BOSS_BY_ID[b.id].phases[b.phase].patterns.find((q) => q.kind === 'mirror');
+  const p = phasesOf(run, BOSS_BY_ID[b.id])[b.phase].patterns.find((q) => q.kind === 'mirror');
   if (p?.kind !== 'mirror') return false;
   const at = Math.atan2(y - e.y, x - e.x);
   let hit = false;
@@ -328,10 +343,9 @@ export function reflectShot(run: RunState, e: Enemy, x: number, y: number): bool
   if (!hit) return false;
   const d = Math.hypot(e.x, e.y) || 1;
   const speed = BALANCE.boss.reflectSpeed;
-  const region = regionByIndex(run.regionId);
   run.shots.push({
     x: e.x, y: e.y, px: e.x, py: e.y, vx: (-e.x / d) * speed, vy: (-e.y / d) * speed,
-    damage: p.damage * waveDamage(region, BOSS_WAVE), life: BALANCE.shots.life,
+    damage: p.damage * waveDamage(runRegion(run), b.wave), life: BALANCE.shots.life,
   });
   run.events.push({ kind: 'deflect', x, y });
   return true;
@@ -341,7 +355,7 @@ export function reflectShot(run: RunState, e: Enemy, x: number, y: number): bool
 export function mirrorFacets(run: RunState): { angle: number; arc: number }[] {
   const b = run.boss;
   if (!b || b.killedIn !== null) return [];
-  const p = BOSS_BY_ID[b.id].phases[b.phase].patterns.find((q) => q.kind === 'mirror');
+  const p = phasesOf(run, BOSS_BY_ID[b.id])[b.phase].patterns.find((q) => q.kind === 'mirror');
   if (p?.kind !== 'mirror') return [];
   return Array.from({ length: p.facets }, (_, k) => ({ angle: b.facet + (k / p.facets) * Math.PI * 2, arc: p.arc }));
 }
@@ -363,7 +377,10 @@ export function tickRings(run: RunState, dt: number): void {
   run.rings.length = w;
 }
 
-/** The boss fell: its time, and the ceremony's cue. Shards come with the kill. */
+/**
+ * The boss fell: its time, and the ceremony's cue. Shards come with the
+ * kill. In the Abyss its fall clears the floor (§9).
+ */
 export function onBossKilled(run: RunState, e: Enemy): void {
   const b = run.boss;
   if (!b || b.enemy !== e.id || b.killedIn !== null) return;
@@ -371,5 +388,16 @@ export function onBossKilled(run: RunState, e: Enemy): void {
   b.windup = 0;
   dismissCourt(run);
   run.pools.length = 0;
+  run.felled.push(b.id);
   run.events.push({ kind: 'bossKill', boss: b.id, first: run.firstKill, x: e.x, y: e.y });
+  if (runRegion(run).abyss) {
+    run.floors++;
+    run.events.push({ kind: 'floor', floor: run.floors });
+    // Abyssal Pearl (§9): each floor cleared mends the tower.
+    const pearl = run.behaviours['floor-heal'] ?? 0;
+    if (pearl > 0) {
+      const R = BALANCE.relics.floorHeal;
+      run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * R[Math.min(pearl, R.length) - 1]);
+    }
+  }
 }

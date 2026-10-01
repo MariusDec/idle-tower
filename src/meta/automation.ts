@@ -21,6 +21,10 @@ export function automations(profile: Profile): ReadonlySet<AutomationId> {
         case 'unlockCard':
         case 'slot':
         case 'behaviour':
+        case 'frame':
+        case 'mastery':
+        case 'relics':
+        case 'starlight':
           break;
         default: {
           const exhaustive: never = e;

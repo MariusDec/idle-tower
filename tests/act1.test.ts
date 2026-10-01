@@ -59,7 +59,7 @@ function shot(run: RunState, x: number, y: number, vx: number, vy: number, damag
   const p: Projectile = {
     alive: true, weapon: 'scattershot', x, y, px: x, py: y, vx, vy, speed: Math.hypot(vx, vy), damage, crit: false,
     homing: false, target: 0, pierce: 0, ignore: 0, knockback: 0, life: 2, blast: 0, tx: 0, ty: 0, sx: x, sy: y,
-    bomblets: 0, meteor: false, seeker: false,
+    bomblets: 0, meteor: false, seeker: false, boomerang: false, returning: false, struck: [],
   };
   run.projectiles.push(p);
   return p;

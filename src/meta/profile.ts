@@ -7,7 +7,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 6;
+  version: 7;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -59,7 +59,20 @@ export interface Profile {
    * for Tactician I, and with Tactician II one per frame id.
    */
   tactics: Record<string, string[]>;
-  /** The region and frame the next run uses (§5.2, §4.4). */
+  /** Starlight (§9): Act 2's currency, spent in the Constellations. Whole only. */
+  starlight: number;
+  /** Constellation levels owned, by node id (§9). A missing id is level 0. */
+  stars: Record<string, number>;
+  /** The pacts (§9). */
+  pacts: {
+    /** The ranks the next run in a region is under, by pact id. */
+    ranks: Record<string, number>;
+    /** The highest heat each region's boss has fallen at, by region index: the records Starlight pays for. */
+    best: Record<string, number>;
+  };
+  /** The Abyss (§9): the deepest floor whose boss has fallen. */
+  abyss: { best: number };
+  /** The region and frame the next run uses (§5.2, §4.4); the Abyss is `ABYSS_INDEX`. */
   region: number;
   frame: string;
   /** One-time teaching moments (§7.1), true once done. */
@@ -79,7 +92,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 6;
+export const PROFILE_VERSION = 7;
 
 export function newProfile(now: number): Profile {
   return {
@@ -101,6 +114,10 @@ export function newProfile(now: number): Profile {
     lastSeen: now,
     ceremony: null,
     tactics: {},
+    starlight: 0,
+    stars: {},
+    pacts: { ranks: {}, best: {} },
+    abyss: { best: 0 },
     region: 1,
     frame: 'arcanist',
     tutorial: { firstDraft: false, forgeIntro: false },

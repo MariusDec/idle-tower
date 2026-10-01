@@ -1,8 +1,10 @@
 import type { FallbackDef, PassiveDef, PassiveId } from './types';
 
 /**
- * Passives (§4.4, §11.3): Act 1's twelve. Eight are each a weapon's
- * evolution partner (`content/evolutions.ts`). The first six are in the
+ * Passives (§4.4, §11.3): Act 1's twelve, and Act 2's two (§9), which join
+ * from the Constellations. Twelve are each a weapon's evolution partner
+ * (`content/evolutions.ts`): Act 1's eight, and Velocity, Fortify, Mending
+ * and Greed for Act 2's weapons. The first six are in the
  * draft from the start; the rest join it with a weapon (`joinsWith`), so the
  * opening draft stays small and the pool grows with the Forge (§4.5). All but
  * Bulwark join with weapons sealed by the Gatekeeper, so Region 1's hands are
@@ -99,6 +101,23 @@ export const PASSIVES: readonly PassiveDef[] = [
     text: '+10% range.',
     perLevel: [{ key: 'range', pct: 0.1 }],
     joinsWith: 'glaives',
+  },
+  // Act 2 (§9): they join the draft from the Constellations, not with a weapon.
+  {
+    id: 'zeal',
+    name: 'Zeal',
+    icon: 'attack-gauge',
+    text: '+8% damage and +8% attack speed.',
+    perLevel: [{ key: 'damage', pct: 0.08 }, { key: 'attackSpeed', pct: 0.08 }],
+    starred: true,
+  },
+  {
+    id: 'conduit',
+    name: 'Conduit',
+    icon: 'energy-tank',
+    text: 'The ultimate charges 15% faster.',
+    perLevel: [{ key: 'ultCharge', pct: 0.15 }],
+    starred: true,
   },
 ];
 

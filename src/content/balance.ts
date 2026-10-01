@@ -30,8 +30,10 @@ export const BALANCE = {
   draft: {
     /** Cards per draft (§4.5). */
     choices: 3,
-    /** Never fewer than this, whatever takes cards away (Hoarder). */
+    /** Never fewer than this, whatever takes cards away (Hoarder, Scarcity)… */
     minChoices: 2,
+    /** …and never more than this: two rows of three is all a phone's arena can spare (§9). */
+    maxChoices: 6,
     /** Wall-clock seconds before the suggested card is taken. */
     seconds: 10,
     /** Arena speed while a draft is open. */
@@ -87,6 +89,8 @@ export const BALANCE = {
     /** Stormcaller's quirk: a crit leaps to the nearest other body within this, for this share of the hit. */
     stormLeap: 200,
     stormShare: 0.6,
+    /** Gravekeeper's quirk: Max HP each kill restores. */
+    siphon: 0.002,
   },
   /**
    * Evolutions (§4.4, §11.2): offered once a weapon reaches `evolveAt` with
@@ -110,6 +114,14 @@ export const BALANCE = {
     halo: { damage: 1.4, period: 3 },
     /** Each drone kill calls a drone that lasts `seconds`. */
     hive: { damage: 1.25, seconds: 5 },
+    /** Every throw also looses `ring` crescents evenly around the tower. */
+    'crescent-storm': { damage: 1.25, ring: 6 },
+    /** A body striking the wall sets off a rune where it stands, at most once per `every` s. */
+    'bulwark-runes': { damage: 1.25, every: 0.25 },
+    /** Each tether mends the tower by `heal` of Max HP a second. */
+    lifebloom: { damage: 1.2, heal: 0.0025 },
+    /** What the slug pierces is gilded for `seconds`: it takes `vulnerable` more, and pays `shards` times if slain so. */
+    'midas-lance': { damage: 1.25, seconds: 4, vulnerable: 0.3, shards: 2 },
   },
   /**
    * Hard caps on what a weapon puts on screen (§12.5). Anything past a cap
@@ -119,6 +131,10 @@ export const BALANCE = {
     bolts: 6,
     blades: 8,
     drones: 8,
+    crescents: 6,
+    runes: 8,
+    tethers: 6,
+    slugs: 4,
   },
   /** Weapon feel that isn't per level. */
   weapons: {
@@ -137,6 +153,17 @@ export const BALANCE = {
     /** A meteor's fall speed, and where it falls from, relative to where it lands. */
     meteorSpeed: 900,
     meteorFrom: { x: -170, y: -480 },
+    /** Moonblade: how far a crescent flies out, as a multiple of range, and how much faster it comes home. */
+    crescentReach: 1,
+    crescentReturn: 1.3,
+    /** A crescent's cutting reach beyond a body's radius. */
+    crescentWidth: 14,
+    /** Rune Traps: seconds before a laid rune arms; how close a body must come; where it is laid, as a share of its mark's distance. */
+    runeArm: 0.35,
+    runeTrigger: 22,
+    runeLay: 0.7,
+    /** Gilded Rail: a slug's flash on screen, seconds (the painter's). */
+    railFlash: 0.18,
   },
   /** The Recipe Book's hints (§5.3): runs carrying a weapon before its half shows, maxed runs before the riddle. */
   recipes: {
@@ -191,6 +218,19 @@ export const BALANCE = {
     bossBane: [0.2, 0.3, 0.4],
     /** Starseed: Max HP restored on each level-up. */
     levelHeal: [0.1, 0.15, 0.2],
+    /** Moonstone: how much faster crescents come home. */
+    swiftReturn: [2, 2.5, 3],
+    /** Rune Chalk: the echo rune's share of the burst. */
+    echoRune: [0.5, 0.65, 0.8],
+    /** Husk Splinter: hits a Husk's shell swallows fewer. */
+    brittleShell: [2, 3, 4],
+    /** Gilt Edge: a slug's kill bursts this wide, for this share of the hit. */
+    railBurst: [0.5, 0.7, 0.9],
+    railBurstRadius: 90,
+    /** Ward Breaker: the share of a ward's or Shield aura's protection taken away. */
+    wardbreak: [0.5, 0.75, 1],
+    /** Abyssal Pearl: Max HP restored as a floor's boss falls. */
+    floorHeal: [0.25, 0.35, 0.5],
     /** Chance an elite kill drops one of its region's relics (§4.3). */
     eliteDrop: 0.3,
     /** Ranks top out here (§5.3: I → III). */
@@ -249,6 +289,45 @@ export const BALANCE = {
   overtime: {
     hpGrowth: 1.25,
     shardGrowth: 1.12,
+  },
+  /** Pacts (§9): heat, and what it pays. */
+  pacts: {
+    /** Shards rise by this share for each point of heat (§9: × (1 + 0.1 × heat)). */
+    shardsPerHeat: 0.1,
+  },
+  /**
+   * Starlight (§9). A new heat record in a region pays, for each heat level
+   * it passes, this much by region index − 1: the frontier pays most.
+   */
+  starlight: {
+    perHeat: [1, 1, 2, 2, 3, 4],
+  },
+  /**
+   * The Abyss (§9): sized by depth. HP, damage and shards grow per wave with
+   * no cap; wave numbers run on across floors, so these are per global wave.
+   */
+  abyss: {
+    /** About the Blight Heart's middle waves at floor 1; ×2.2 a floor after. */
+    hpBase: 4000,
+    hpGrowth: 1.08,
+    /** Damage grows slower than HP: deeper floors are lost to the crowd, not to one blow. */
+    damageBase: 50,
+    damageGrowth: 1.025,
+    /** Shards a weight-1 kill pays at wave 1, and the growth per wave: below HP's, so depth pays, but less per blow. */
+    shardBase: 150,
+    shardGrowth: 1.05,
+    /** Shards for holding a wave, before its growth. */
+    waveShards: 300,
+    /** Bodies on a floor's wave n: `base + perWave × (n − 1)`. */
+    count: { base: 10, perWave: 2.5 },
+    /** How often each native walks, against a template type's weight of about 1. */
+    nativeWeight: 0.3,
+    /** Elites on a floor's waves 3, 6 and 9. */
+    elites: { from: 3, every: 3 },
+    /** A floor's boss: its HP multiple of the floor's last wave, times this. */
+    bossHp: 0.35,
+    /** Starlight for a best floor F: `starlight × log2(1 + F)` in all. */
+    starlight: 12,
   },
   /** Hostile shots (Spitters). */
   shots: {

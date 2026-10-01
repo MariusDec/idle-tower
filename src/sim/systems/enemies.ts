@@ -3,11 +3,10 @@ import { SpatialGrid } from '../../core/spatialGrid';
 import { BALANCE } from '../../content/balance';
 import { AURA_BY_ID, ENEMIES, ENEMY_BY_ID } from '../../content/enemies';
 import { BOSS_BY_ID } from '../../content/bosses';
-import { regionByIndex } from '../../content/regions';
 import type { EnemyVerb } from '../../content/types';
 import type { Enemy, RunState } from '../state';
 import { hurtTower } from './tower';
-import { spawnEnemy } from './waves';
+import { runRegion, spawnEnemy } from './waves';
 
 /**
  * Rebuilt from scratch every step, so it carries nothing between steps and
@@ -33,15 +32,22 @@ function stopDistance(run: RunState, e: Enemy): number {
     case 'ranged':
     case 'summon':
     case 'silence':
+    case 'ward':
       return Math.max(wall, verb.standoff);
     default:
       return wall;
   }
 }
 
+/** True while a slowed body is held by Anchor Stone (§9): it can neither charge nor blink. */
+function anchored(run: RunState, e: Enemy): boolean {
+  return (run.behaviours.anchor ?? 0) > 0 && e.slowUntil > run.time && e.slow > 0;
+}
+
 /**
  * Elite auras (§4.3), recomputed each step: Haste speeds it and its
  * neighbours, Regen heals them, Shield halves the damage its neighbours take.
+ * A Wardstone's ward (§9) shields its neighbours the same way.
  */
 function applyAuras(run: RunState, dt: number): void {
   for (const e of run.enemies) {
@@ -49,6 +55,16 @@ function applyAuras(run: RunState, dt: number): void {
     e.buffShield = 1;
   }
   const E = BALANCE.elites;
+  for (const src of run.enemies) {
+    if (!src.alive || src.boss || src.court) continue;
+    const verb = ENEMY_BY_ID[src.type].verb;
+    if (verb.kind !== 'ward' || src.hiddenUntil > run.time) continue;
+    const r2 = verb.radius * verb.radius;
+    for (const e of run.enemies) {
+      if (e === src || !e.alive || (e.x - src.x) ** 2 + (e.y - src.y) ** 2 > r2) continue;
+      e.buffShield = Math.min(e.buffShield, verb.shield);
+    }
+  }
   for (const src of run.enemies) {
     if (!src.alive || !src.aura) continue;
     const aura = src.aura;
@@ -100,9 +116,13 @@ export function tickEnemies(run: RunState, dt: number): void {
 
     const d = Math.hypot(e.x, e.y);
     const stop = stopDistance(run, e);
-    const slow = e.slowUntil > run.time ? 1 - e.slow : 1;
+    // An enraged boss walks through frost too: a fight it can't lose must still end (§4.3).
+    const furious = e.boss !== null && run.boss?.enraged === true;
+    const slow = e.slowUntil > run.time && !furious ? 1 - e.slow : 1;
+    // A Ram mid-charge (§9) runs at its charge's pace.
+    const dash = verb?.kind === 'charge' && e.dashUntil > run.time ? verb.speed : 1;
     if (d > stop + 1e-6) {
-      const stepLen = Math.min(e.speed * e.buffSpeed * e.fury * slow * dt, d - stop);
+      const stepLen = Math.min(e.speed * e.buffSpeed * e.fury * slow * dash * dt, d - stop);
       e.x -= (e.x / d) * stepLen;
       e.y -= (e.y / d) * stepLen;
       e.moving = stepLen > 0;
@@ -130,6 +150,8 @@ export function tickEnemies(run: RunState, dt: number): void {
       silence(run, e, verb, dt);
       continue;
     }
+    // A Wardstone stands off and wards; it never touches the wall.
+    if (verb?.kind === 'ward') continue;
     if (e.court) continue;
     if (e.boss && !run.boss?.enraged) continue;
     // Phased out, it can't touch the wall either.
@@ -175,7 +197,7 @@ function before(run: RunState, e: Enemy, verb: EnemyVerb, dt: number): void {
       // Slowed, its next jump comes later: frost is an answer (§11.1).
       const slow = e.slowUntil > run.time ? 1 - e.slow : 1;
       e.actTimer -= dt * slow;
-      if (e.actTimer > 0) return;
+      if (e.actTimer > 0 || anchored(run, e)) return;
       e.actTimer += verb.interval;
       const d = Math.hypot(e.x, e.y);
       const room = d - stopDistance(run, e) - BALANCE.foes.blinkMargin;
@@ -190,6 +212,17 @@ function before(run: RunState, e: Enemy, verb: EnemyVerb, dt: number): void {
       run.events.push({ kind: 'blink', x: fx, y: fy, tx: e.x, ty: e.y });
       return;
     }
+    case 'charge': {
+      // Slowed, it winds up more slowly and charges less far: frost and knockback answer it (§9).
+      const slow = e.slowUntil > run.time ? 1 - e.slow : 1;
+      if (e.dashUntil > run.time) return;
+      e.actTimer -= dt * slow;
+      if (e.actTimer > 0 || anchored(run, e)) return;
+      e.actTimer += verb.interval;
+      e.dashUntil = run.time + verb.seconds * slow;
+      run.events.push({ kind: 'charge', x: e.x, y: e.y });
+      return;
+    }
     case 'walker':
     case 'split':
     case 'ranged':
@@ -200,6 +233,9 @@ function before(run: RunState, e: Enemy, verb: EnemyVerb, dt: number): void {
     case 'summon':
     case 'silence':
     case 'chorus':
+    case 'carapace':
+    case 'ward':
+    case 'devour':
       return;
     default: {
       const exhaustive: never = verb;
@@ -213,7 +249,7 @@ function summon(run: RunState, e: Enemy, verb: Extract<EnemyVerb, { kind: 'summo
   e.actTimer -= dt;
   if (e.actTimer > 0) return;
   e.actTimer += verb.interval;
-  const region = regionByIndex(run.regionId);
+  const region = runRegion(run);
   for (let k = 0; k < verb.count && run.enemies.length < BALANCE.maxEnemies; k++) {
     const a = Math.atan2(e.y, e.x) + (k - (verb.count - 1) / 2) * 0.35;
     const r = e.radius * 1.5;

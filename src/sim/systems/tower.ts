@@ -1,7 +1,7 @@
 import { BALANCE } from '../../content/balance';
 import { frameById } from '../../content/frames';
 import type { Enemy, RunState } from '../state';
-import { damageEnemy } from './combat';
+import { damageEnemy, wallRune } from './combat';
 import { mitigate } from './damage';
 
 /**
@@ -42,6 +42,8 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
   if (source && (run.behaviours.thorns || fortress)) {
     damageEnemy(run, source, amount * B.thorns * (fortress ? B.fortressThorns : 1), false, 'thorns');
   }
+  // Bulwark Runes (§9): what strikes the wall sets off a rune where it stands.
+  if (source && source.alive) wallRune(run, source);
   return amount;
 }
 

@@ -1,3 +1,4 @@
+import { ABYSS_INDEX, NATIVES, abyssFloor } from '../content/abyss';
 import { BOSSES } from '../content/bosses';
 import { ENEMIES } from '../content/enemies';
 import { FRAMES, frameById } from '../content/frames';
@@ -7,6 +8,7 @@ import { BALANCE } from '../content/balance';
 import type { BossId, FrameDef, RegionDef, RelicDef, RelicId } from '../content/types';
 import type { Profile } from './profile';
 import { recipesOpen } from './recipes';
+import { starGifts } from './stars';
 
 /**
  * What the profile has unlocked between runs (§5.2–§5.3, §7.1): regions,
@@ -22,9 +24,26 @@ export function bossDown(profile: Profile, id: BossId): boolean {
   return bossKills(profile, id) > 0;
 }
 
-/** Region 1 always; each later region once the one before it has been cleared. */
+/** The boss whose fall ends Act 1 (§7.1). */
+const FINALE = BOSSES.find((b) => b.finale)!.id;
+
+/** Act 2 (§9): open once the Blight has fallen. Pacts, Starlight, the Constellations and the Abyss. */
+export function act2Open(profile: Profile): boolean {
+  return bossDown(profile, FINALE);
+}
+
+/** True when the next run goes down into the Abyss (§9). */
+export function inAbyss(profile: Profile): boolean {
+  return profile.region === ABYSS_INDEX && act2Open(profile);
+}
+
+/**
+ * Region 1 always; each later region once the one before it has been
+ * cleared; the Abyss once Act 2 is open.
+ */
 export function regionUnlocked(profile: Profile, index: number): boolean {
   if (index === 1) return true;
+  if (index === ABYSS_INDEX) return act2Open(profile);
   const prev = REGIONS.find((r) => r.index === index - 1);
   return !!prev && REGIONS.some((r) => r.index === index) && bossDown(profile, prev.boss);
 }
@@ -36,9 +55,10 @@ export function frontier(profile: Profile): RegionDef {
   return best;
 }
 
-/** The region the next run goes to: the chosen one, if it is still unlocked. */
+/** The region the next run goes to: the chosen one, if it is still unlocked; the Abyss's first floor for the Abyss. */
 export function selectedRegion(profile: Profile): RegionDef {
-  return regionUnlocked(profile, profile.region) ? regionByIndex(profile.region) : REGIONS[0];
+  if (inAbyss(profile)) return abyssFloor(1);
+  return regionUnlocked(profile, profile.region) && profile.region !== ABYSS_INDEX ? regionByIndex(profile.region) : REGIONS[0];
 }
 
 export function frameUnlocked(profile: Profile, frame: FrameDef): boolean {
@@ -50,6 +70,8 @@ export function frameUnlocked(profile: Profile, frame: FrameDef): boolean {
       return bossDown(profile, u.boss);
     case 'feat':
       return !!profile.feats[u.feat];
+    case 'star':
+      return starGifts(profile).frames.includes(frame.id);
     default: {
       const exhaustive: never = u;
       return exhaustive;
@@ -63,9 +85,9 @@ export function selectedFrame(profile: Profile): FrameDef {
   return frameUnlocked(profile, f) ? f : FRAMES[0];
 }
 
-/** Relic slots (§5.3): one per boss whose first kill opens one. */
+/** Relic slots (§5.3): one per boss whose first kill opens one, and the Lantern's (§9). */
 export function relicSlots(profile: Profile): number {
-  return BOSSES.filter((b) => b.relicSlot && bossDown(profile, b.id)).length;
+  return BOSSES.filter((b) => b.relicSlot && bossDown(profile, b.id)).length + starGifts(profile).relicSlots;
 }
 
 export function relicRank(profile: Profile, id: RelicId): number {
@@ -109,7 +131,21 @@ export function gainRelic(profile: Profile, id: RelicId): number {
 
 /** Relics a region can give, and how many of them this profile has (§5.2's card). */
 export function regionRelics(region: number): RelicDef[] {
-  return RELICS.filter((r) => (r.source.kind === 'elite' ? r.source.region === region : regionOfBossIndex(r.source.boss) === region));
+  return RELICS.filter((r) => {
+    const s = r.source;
+    switch (s.kind) {
+      case 'elite':
+        return s.region === region;
+      case 'boss':
+        return regionOfBossIndex(s.boss) === region;
+      case 'abyss':
+        return region === ABYSS_INDEX;
+      default: {
+        const exhaustive: never = s;
+        return exhaustive;
+      }
+    }
+  });
 }
 
 function regionOfBossIndex(boss: BossId): number {
@@ -127,6 +163,8 @@ export interface HubUnlocks {
   map: boolean;
   collection: boolean;
   feats: boolean;
+  /** The Constellations (§9), once the Blight has fallen. */
+  stars: boolean;
 }
 
 /** Enemy types seen before the Bestiary opens (§7.1: "after 3+ enemy types seen"). */
@@ -139,6 +177,7 @@ export function hubUnlocks(profile: Profile): HubUnlocks {
     map: bossDown(profile, firstBoss),
     collection: profile.seenEnemies.length >= BESTIARY_AT,
     feats: bossDown(profile, firstBoss),
+    stars: act2Open(profile),
   };
 }
 
@@ -152,12 +191,31 @@ export function collectionPages(profile: Profile): { bestiary: boolean; relics: 
   };
 }
 
-/** Bestiary rows: every enemy and boss, revealed on first sight. */
+/**
+ * Bestiary rows: every enemy and boss, revealed on first sight. The Abyss's
+ * own (§9) join the list once Act 2 opens, so Act 1's list is Act 1's.
+ */
 export function bestiary(profile: Profile): { id: string; seen: boolean; kills: number; boss: boolean }[] {
   const seen = new Set(profile.seenEnemies);
+  const act2 = act2Open(profile);
+  const native = new Set<string>(NATIVES.map((n) => n.enemy));
   return [
-    ...ENEMIES.map((e) => ({ id: e.id as string, seen: seen.has(e.id), kills: profile.killsBy[e.id] ?? 0, boss: false })),
-    ...BOSSES.map((b) => ({ id: b.id as string, seen: b.id in profile.bosses, kills: bossKills(profile, b.id), boss: true })),
+    ...ENEMIES.filter((e) => act2 || !native.has(e.id))
+      .map((e) => ({ id: e.id as string, seen: seen.has(e.id), kills: profile.killsBy[e.id] ?? 0, boss: false })),
+    ...BOSSES.filter((b) => act2 || !b.abyss)
+      .map((b) => ({ id: b.id as string, seen: b.id in profile.bosses, kills: bossKills(profile, b.id), boss: true })),
   ];
+}
+
+/** Relics the Collection lists: the Abyss's (§9) only once Act 2 opens. */
+export function listedRelics(profile: Profile): RelicDef[] {
+  const act2 = act2Open(profile);
+  return RELICS.filter((r) => act2 || r.source.kind !== 'abyss');
+}
+
+/** Frames the Collection lists: the Constellations' (§9) only once Act 2 opens. */
+export function listedFrames(profile: Profile): FrameDef[] {
+  const act2 = act2Open(profile);
+  return FRAMES.filter((f) => act2 || f.unlock.kind !== 'star');
 }
 

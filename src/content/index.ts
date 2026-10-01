@@ -4,9 +4,11 @@ import { EVOLUTIONS } from './evolutions';
 import { FEATS } from './feats';
 import { FORGE } from './forge';
 import { FRAMES } from './frames';
+import { PACTS } from './pacts';
 import { FALLBACKS, PASSIVES } from './passives';
 import { REGIONS } from './regions';
 import { RELICS } from './relics';
+import { STARS } from './stars';
 import { WEAPONS } from './weapons';
 import type { ContentEntry } from './types';
 
@@ -27,4 +29,6 @@ export const CONTENT: Readonly<Record<string, readonly ContentEntry[]>> = {
   forge: FORGE,
   relics: RELICS,
   feats: FEATS,
+  pacts: PACTS,
+  stars: STARS,
 };

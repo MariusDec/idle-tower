@@ -3,7 +3,9 @@ import type { RegionDef } from './types';
 /**
  * Regions (§4.2, §11.1). Each is 20 waves; wave 20 is the boss, and overtime
  * follows. Region k's wave-1 bodies have about ×4 the HP of region k − 1's,
- * and pay about ×3.5 the shards (§8.2, §8.3).
+ * and pay about ×3.5 the shards (§8.2, §8.3). `surge` is what the Blight
+ * Surge pact does there (§9): the rule made harsher where it is a hazard,
+ * a toll on the tower where it favours the tower or there is none.
  */
 export const REGIONS: readonly RegionDef[] = [
   {
@@ -30,6 +32,7 @@ export const REGIONS: readonly RegionDef[] = [
       15: { kind: 'swarm', countMult: 1.6 },
     },
     rule: null,
+    surge: { text: 'Ash falls: the tower sees 10% less far.', effect: { kind: 'stat', mod: { key: 'range', pct: -0.1 } } },
     boss: 'gatekeeper',
     tint: null,
     elites: { from: 10, every: 5, auras: [] },
@@ -58,6 +61,7 @@ export const REGIONS: readonly RegionDef[] = [
       15: { kind: 'swarm', countMult: 1.5 },
     },
     rule: { name: 'Mist', text: 'The tower sees 15% less far.', effect: { kind: 'stat', mod: { key: 'range', pct: -0.15 } } },
+    surge: { text: 'The mist thickens: 15% less range again.', effect: { kind: 'rule' } },
     boss: 'bog-mother',
     tint: '#1d4a3c',
     elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'split', 'vengeful'] },
@@ -86,6 +90,7 @@ export const REGIONS: readonly RegionDef[] = [
       15: { kind: 'swarm', countMult: 1.5 },
     },
     rule: { name: 'Brittle', text: 'Blasts, pulses, burns and the ultimate hit 25% harder.', effect: { kind: 'areaDamage', mult: 1.25 } },
+    surge: { text: 'Glare off the glass: the tower attacks 10% slower.', effect: { kind: 'stat', mod: { key: 'attackSpeed', pct: -0.1 } } },
     boss: 'prism',
     tint: '#4a5a66',
     elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'split', 'vengeful'] },
@@ -114,6 +119,7 @@ export const REGIONS: readonly RegionDef[] = [
       15: { kind: 'swarm', countMult: 1.5 },
     },
     rule: { name: 'Cinders', text: 'Every kill leaves burning ground that sets the next walker alight.', effect: { kind: 'cinders', radius: 45, seconds: 3, burn: 0.15 } },
+    surge: { text: 'The heat rises: the tower has 10% less Max HP.', effect: { kind: 'stat', mod: { key: 'maxHp', pct: -0.1 } } },
     boss: 'forgeheart',
     tint: '#4a2416',
     elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'split', 'vengeful'] },
@@ -142,6 +148,7 @@ export const REGIONS: readonly RegionDef[] = [
       15: { kind: 'swarm', countMult: 1.5 },
     },
     rule: { name: 'Echoes', text: 'One kill in ten rises once more as a shade.', effect: { kind: 'echoes', chance: 0.1, hp: 0.5, reward: 0.5 } },
+    surge: { text: 'One more in ten of the slain rises as a shade.', effect: { kind: 'rule' } },
     boss: 'hollow-king',
     tint: '#1e1a33',
     elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'split', 'vengeful'] },
@@ -170,6 +177,7 @@ export const REGIONS: readonly RegionDef[] = [
       15: { kind: 'swarm', countMult: 1.5 },
     },
     rule: { name: 'Blight', text: 'Every wave brings an elite: old enemies, crowned.', effect: { kind: 'blight' } },
+    surge: { text: 'Every wave brings one more elite.', effect: { kind: 'rule' } },
     boss: 'blight',
     tint: '#3a0f1a',
     elites: {

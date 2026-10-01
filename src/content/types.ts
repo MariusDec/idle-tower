@@ -104,7 +104,19 @@ export type BehaviourId =
   | 'drilled'
   | 'charged-start'
   // Frame quirks (§11.6).
-  | 'stormcaller';
+  | 'stormcaller'
+  /** The Gravekeeper's quirk: every kill mends the tower a little. */
+  | 'siphon'
+  // Act 2 relics (§9), lit in the Constellations and found in the Abyss.
+  | 'swift-return'
+  | 'echo-rune'
+  | 'brittle-shell'
+  | 'extra-tether'
+  | 'rail-burst'
+  | 'anchor'
+  | 'wardbreak'
+  | 'starve'
+  | 'floor-heal';
 
 /**
  * What the Engineering branch automates (§6.2). The app reads these, never
@@ -121,28 +133,45 @@ export type AutomationId =
 /**
  * Effects are data (§12.3, R8). Every kind has one exhaustive consumer, in
  * `meta/runConfig.ts`, that ends in `never`; `automation` is the app's, and
- * `meta/automation.ts` is its consumer.
+ * `meta/automation.ts` is its consumer. The last four are the profile's,
+ * between runs (Act 2, §9): `meta/stars.ts` reads them.
  */
 export type Effect =
   | { readonly kind: 'stat'; readonly mod: StatMod }
   | { readonly kind: 'unlockCard'; readonly id: CardItemId }
-  | { readonly kind: 'slot'; readonly slot: 'weapon' | 'passive'; readonly n: number }
+  /** A relic slot is the profile's: `meta/collection.ts#relicSlots` counts it, the run never sees it. */
+  | { readonly kind: 'slot'; readonly slot: 'weapon' | 'passive' | 'relic'; readonly n: number }
   | { readonly kind: 'behaviour'; readonly id: BehaviourId }
-  | { readonly kind: 'automation'; readonly id: AutomationId };
+  | { readonly kind: 'automation'; readonly id: AutomationId }
+  /** A frame joins the Collection (§9: two come from the Constellations). */
+  | { readonly kind: 'frame'; readonly id: FrameId }
+  /** A Forge branch's mastery node is unsealed (§9). */
+  | { readonly kind: 'mastery'; readonly branch: BranchId }
+  /** A set of Act 2 relics starts dropping in the Abyss (§9). */
+  | { readonly kind: 'relics'; readonly set: number }
+  /** Every Starlight payout is this much larger. */
+  | { readonly kind: 'starlight'; readonly pct: number };
 
 /** The Forge's five branches (§5.1). */
 export type BranchId = 'might' | 'bulwark' | 'fortune' | 'arsenal' | 'engineering';
 
-/** §5.1: a minor is a stat with levels, a notable a qualitative change, a keystone a build. */
-export type NodeType = 'minor' | 'notable' | 'keystone';
+/**
+ * §5.1: a minor is a stat with levels, a notable a qualitative change, a
+ * keystone a build. A mastery (§9) is a branch's endless sink: unlimited
+ * levels, unsealed by its constellation.
+ */
+export type NodeType = 'minor' | 'notable' | 'keystone' | 'mastery';
+
+/** The Constellations' five figures (§9): the Starlight tree's branches. */
+export type ConstellationId = 'smith' | 'warden' | 'lantern' | 'crown' | 'deep';
 
 /**
- * One Forge node (§5.1, §11.4). Its effects apply once per owned level. A
- * node can be bought when any of its `links` is owned, or when it links to
- * the root (`links` empty).
+ * One node of a web: the Forge (§5.1, §11.4) or the Constellations (§9).
+ * Its effects apply once per owned level. A node can be bought when any of
+ * its `links` is owned, or when it links to the root (`links` empty).
  */
-export interface ForgeNodeDef extends ContentEntry {
-  readonly branch: BranchId;
+export interface WebNodeDef<B extends string = string> extends ContentEntry {
+  readonly branch: B;
   readonly type: NodeType;
   /** Distance from the root; sets the base cost (§5.1) and the web radius. */
   readonly ring: number;
@@ -150,9 +179,12 @@ export interface ForgeNodeDef extends ContentEntry {
   readonly angle: number;
   /** Nodes it hangs from, toward the root. Empty: it hangs from the root. */
   readonly links: readonly string[];
+  /** Levels it may be bought to; Infinity for a mastery. */
   readonly maxLevel: number;
-  /** Shards for level 1; each further level costs `BALANCE.forge.levelGrowth` more. */
+  /** Level 1's price; each further level costs `growth` (or the web's default) more. */
   readonly cost: number;
+  /** Cost growth per level, when not the web's default (a mastery's ×1.3, §9). */
+  readonly growth?: number;
   readonly effects: readonly Effect[];
   /**
    * Sealed until this boss first falls (§5.1): "Sealed — defeat the
@@ -160,6 +192,12 @@ export interface ForgeNodeDef extends ContentEntry {
    */
   readonly sealed?: BossId;
 }
+
+/** A Forge node, paid in shards. */
+export type ForgeNodeDef = WebNodeDef<BranchId>;
+
+/** A Constellation node (§9), paid in Starlight. */
+export type StarNodeDef = WebNodeDef<ConstellationId>;
 
 /**
  * A frame's ultimate (§4.4): charged by kills, the only active button in a
@@ -201,18 +239,39 @@ export type UltimateDef =
     readonly seconds: number;
     /** Attack speed multiplier while it lasts. */
     readonly speed: number;
+  }
+  | {
+    readonly id: 'daybreak';
+    readonly name: string;
+    readonly text: string;
+    readonly seconds: number;
+    /** While it lasts, every body in range loses this share of its speed… */
+    readonly slow: number;
+    /** …and takes this many times the damage. */
+    readonly vulnerable: number;
+  }
+  | {
+    readonly id: 'eclipse';
+    readonly name: string;
+    readonly text: string;
+    /** Every body in range loses this share of its current HP… */
+    readonly fraction: number;
+    /** …a boss only this much. */
+    readonly bossFraction: number;
   };
 
 export type UltimateId = UltimateDef['id'];
 
-export type FrameId = 'arcanist' | 'bastion' | 'stormcaller' | 'artificer';
+export type FrameId = 'arcanist' | 'bastion' | 'stormcaller' | 'artificer' | 'lamplighter' | 'gravekeeper';
 
 /** How a frame is earned (§11.6). */
 export type FrameUnlock =
   | { readonly kind: 'start' }
   | { readonly kind: 'boss'; readonly boss: BossId }
   /** A secret feat earns it (§5.4, §11.6). */
-  | { readonly kind: 'feat'; readonly feat: string };
+  | { readonly kind: 'feat'; readonly feat: string }
+  /** A Constellation node with a `frame` effect for it lights it (§9). */
+  | { readonly kind: 'star' };
 
 /** A frame: the tower's chassis, chosen before a run (§4.4). */
 export interface FrameDef extends ContentEntry {
@@ -230,7 +289,9 @@ export type EnemyId =
   | 'shieldbearer' | 'burrower' | 'shardling'
   | 'bomber' | 'blinker' | 'siege-engine'
   | 'phantom' | 'leech' | 'summoner' | 'imp'
-  | 'harbinger' | 'chorus';
+  | 'harbinger' | 'chorus'
+  // The Abyss's own (§9).
+  | 'husk' | 'ram' | 'wardstone' | 'maw';
 
 /** Silhouettes the enemy painter knows. A closed union: a new one must be drawn first. */
 export type EnemyShape = 'circle' | 'diamond' | 'plated' | 'hexagon' | 'triangle' | 'square';
@@ -270,7 +331,18 @@ export type EnemyVerb =
   /** Stops at `standoff`; every `interval` s, silences one weapon for `seconds`. */
   | { readonly kind: 'silence'; readonly standoff: number; readonly interval: number; readonly seconds: number }
   /** Arrives as `count` bodies sharing one pool of HP: a hit on one is a hit on all. */
-  | { readonly kind: 'chorus'; readonly count: number };
+  | { readonly kind: 'chorus'; readonly count: number }
+  /** A shell that swallows its first `hits` hits whole, whatever their size. */
+  | { readonly kind: 'carapace'; readonly hits: number }
+  /** Every `interval` s, charges for `seconds` at `speed` times its pace; slowed, it charges less far. */
+  | { readonly kind: 'charge'; readonly interval: number; readonly seconds: number; readonly speed: number }
+  /** Stops at `standoff`; every other body within `radius` takes only `shield` of its damage. */
+  | { readonly kind: 'ward'; readonly standoff: number; readonly radius: number; readonly shield: number }
+  /**
+   * Feeds on bodies that fall within `radius`: each heals it `heal` of its
+   * Max HP and grows it by `grow`, up to `feeds` times.
+   */
+  | { readonly kind: 'devour'; readonly radius: number; readonly heal: number; readonly grow: number; readonly feeds: number };
 
 /**
  * An enemy type (§4.3). Each has one verb that makes one answer right.
@@ -318,7 +390,9 @@ export interface AuraDef extends ContentEntry {
   readonly radius: number;
 }
 
-export type BossId = 'gatekeeper' | 'bog-mother' | 'prism' | 'forgeheart' | 'hollow-king' | 'blight';
+export type BossId = 'gatekeeper' | 'bog-mother' | 'prism' | 'forgeheart' | 'hollow-king' | 'blight'
+  // The Abyss's own (§9): they hold every fifth floor.
+  | 'deepwarden' | 'hunger';
 
 /**
  * One thing a boss does (§4.3: one readable pattern per phase). A closed
@@ -383,6 +457,8 @@ export interface BossDef extends ContentEntry {
   readonly relicSlot: boolean;
   /** Its first kill ends Act 1 (§7.1): the ending plays on the Map. */
   readonly finale?: boolean;
+  /** An Abyss boss (§9): no region of its own; it holds the Abyss's fifth floors. */
+  readonly abyss?: boolean;
   readonly color: string;
   readonly borderColor: string;
   /** The Bestiary's line of lore. */
@@ -391,7 +467,9 @@ export interface BossDef extends ContentEntry {
 
 export type WeaponId =
   | 'arcane-bolt' | 'scattershot' | 'chain-lightning' | 'frost-ring'
-  | 'mortar' | 'sunlance' | 'glaives' | 'sentinel-drones';
+  | 'mortar' | 'sunlance' | 'glaives' | 'sentinel-drones'
+  // Act 2's four (§9), lit in the Constellations.
+  | 'moonblade' | 'rune-traps' | 'soul-tether' | 'gilded-rail';
 
 /**
  * How a weapon attacks (§4.4). A closed union: `sim/systems/combat.ts`
@@ -401,8 +479,15 @@ export type WeaponId =
  *   cone    a fan of pellets       beam   a lance that ramps on one target
  *   chain   lightning that leaps   orbit  blades circling the tower
  *   pulse   a ring round the tower drone  drones that hunt and fire
+ *
+ * Act 2 (§9):
+ *
+ *   boomerang  a blade out and back   tether  draining threads held on several
+ *   mine       runes laid in the path rail    a slug through everything in line
  */
-export type WeaponPattern = 'homing' | 'cone' | 'chain' | 'pulse' | 'lob' | 'beam' | 'orbit' | 'drone';
+export type WeaponPattern =
+  | 'homing' | 'cone' | 'chain' | 'pulse' | 'lob' | 'beam' | 'orbit' | 'drone'
+  | 'boomerang' | 'mine' | 'tether' | 'rail';
 
 /**
  * A weapon's numbers at one level. Every pattern reads the fields it needs;
@@ -448,6 +533,8 @@ export interface WeaponParams {
   readonly spin: number;
   /** A blade's reach around its centre, world units. */
   readonly blade: number;
+  /** Seconds a laid rune lasts before it fades (Rune Traps). */
+  readonly fuse: number;
 }
 
 /**
@@ -476,7 +563,9 @@ export interface WeaponDef extends ContentEntry {
 
 export type PassiveId =
   | 'power' | 'haste' | 'precision' | 'fortify' | 'mending' | 'insight'
-  | 'area' | 'reach' | 'focus' | 'bulwark' | 'velocity' | 'greed';
+  | 'area' | 'reach' | 'focus' | 'bulwark' | 'velocity' | 'greed'
+  // Act 2's two (§9, §11.8).
+  | 'zeal' | 'conduit';
 
 /** A passive (§4.4, §11.3). Each level adds `perLevel` again. */
 export interface PassiveDef extends ContentEntry {
@@ -489,11 +578,14 @@ export interface PassiveDef extends ContentEntry {
    * once that weapon is in it. Without it, the passive is there from the start.
    */
   readonly joinsWith?: WeaponId;
+  /** It joins only through a Constellation node's `unlockCard` (§9), never on its own. */
+  readonly starred?: boolean;
 }
 
 export type EvolutionId =
   | 'seeker-swarm' | 'dragonbreath' | 'storm-crown' | 'absolute-zero'
-  | 'meteorfall' | 'judgment' | 'halo' | 'hive';
+  | 'meteorfall' | 'judgment' | 'halo' | 'hive'
+  | 'crescent-storm' | 'bulwark-runes' | 'lifebloom' | 'midas-lance';
 
 /**
  * An evolution (§4.4, §11.2): a maxed weapon and its partner passive make a
@@ -517,7 +609,7 @@ export interface FallbackDef extends ContentEntry {
 
 /**
  * A region's rule (§11.1). A closed union with one consumer
- * (`sim/run.ts#regionMods`); P7's rules extend it.
+ * (`sim/systems/waves.ts#regionMods`); P7's rules extend it.
  */
 export type RegionRule =
   | { readonly kind: 'stat'; readonly mod: StatMod }
@@ -532,6 +624,17 @@ export type RegionRule =
   | { readonly kind: 'echoes'; readonly chance: number; readonly hp: number; readonly reward: number }
   /** Blight: every wave brings an elite. */
   | { readonly kind: 'blight' };
+
+/**
+ * What the Blight Surge pact does in a region (§9), once per rank: the
+ * region's own rule made harsher, or, where the rule favours the tower or
+ * there is none, a toll on the tower. A closed union; `sim/run.ts` reads it.
+ */
+export type SurgeEffect =
+  /** The rule's numbers, (1 + rank) times over: Mist, Echoes, the Blight. */
+  | { readonly kind: 'rule' }
+  /** A tower stat, once per rank. */
+  | { readonly kind: 'stat'; readonly mod: StatMod };
 
 /** A wave beat (§4.2): the moment that gives a region its rhythm. */
 export type WaveBeat =
@@ -560,6 +663,10 @@ export interface RegionDef extends ContentEntry {
   readonly beats: Readonly<Record<number, WaveBeat>>;
   /** The region's rule, named and in one line, or null for none. */
   readonly rule: { readonly name: string; readonly text: string; readonly effect: RegionRule } | null;
+  /** What the Blight Surge pact does here, per rank (§9), in one line. */
+  readonly surge: { readonly text: string; readonly effect: SurgeEffect };
+  /** Set on a floor of the Abyss (§9): a region's template, sized for that depth. */
+  readonly abyss?: { readonly floor: number };
   /** Wave 20 (§4.2). */
   readonly boss: BossId;
   /** The ground's tint (§10.5), mixed into the lit field. Null keeps the plain stone. */
@@ -583,10 +690,21 @@ export type RelicId =
   | 'prism-heart' | 'frost-brand' | 'mirror-shard' | 'hourglass-sand'
   | 'forgeheart-core' | 'ember-ward' | 'blast-shield' | 'spyglass'
   | 'hollow-crown' | 'soul-jar' | 'warding-salt' | 'last-light'
-  | 'heart-of-light' | 'blight-thorn' | 'pale-lantern' | 'starseed';
+  | 'heart-of-light' | 'blight-thorn' | 'pale-lantern' | 'starseed'
+  // Act 2 (§9): four sets of three, lit in the Constellations, found in the Abyss.
+  | 'moonstone' | 'rune-chalk' | 'husk-splinter'
+  | 'tether-knot' | 'gilt-edge' | 'anchor-stone'
+  | 'ward-breaker' | 'maw-tooth' | 'abyssal-pearl'
+  | 'executioners-coin' | 'phoenix-feather' | 'whetstone';
 
-/** Where a relic drops (§5.3): its boss's first kill, or that region's elites. */
-export type RelicSource = { readonly kind: 'boss'; readonly boss: BossId } | { readonly kind: 'elite'; readonly region: number };
+/**
+ * Where a relic drops (§5.3): its boss's first kill, that region's elites,
+ * or the Abyss's elites once its set is lit in the Constellations (§9).
+ */
+export type RelicSource =
+  | { readonly kind: 'boss'; readonly boss: BossId }
+  | { readonly kind: 'elite'; readonly region: number }
+  | { readonly kind: 'abyss'; readonly set: number };
 
 /**
  * A relic (§5.3, §11.5): qualitative, equipped between runs. `effects` apply
@@ -642,7 +760,18 @@ export type FeatGoal =
   /** Defeat a boss without casting the ultimate. */
   | { readonly kind: 'bossNoUlt' }
   /** Defeat a boss carrying `weapons` weapons, all at their last level, and no passives. */
-  | { readonly kind: 'bareArsenal'; readonly weapons: number };
+  | { readonly kind: 'bareArsenal'; readonly weapons: number }
+  // Act 2 (§9).
+  /** Clear any region at heat n or more. */
+  | { readonly kind: 'heat'; readonly heat: number }
+  /** Clear a region at heat n or more in every region. */
+  | { readonly kind: 'heatAll'; readonly heat: number }
+  /** Clear floor n of the Abyss. */
+  | { readonly kind: 'abyss'; readonly floor: number }
+  /** Own n Constellation nodes. */
+  | { readonly kind: 'stars'; readonly n: number }
+  /** Own n mastery levels in all. */
+  | { readonly kind: 'mastery'; readonly levels: number };
 
 /** A feat (§5.4): one finite list, each paying shards once. */
 export interface FeatDef extends ContentEntry {
@@ -653,6 +782,37 @@ export interface FeatDef extends ContentEntry {
    * `text` is what it asked, revealed once done.
    */
   readonly riddle?: string;
-  /** Surfaces only once this boss has fallen (§7.1: secret feats surface in Region 5). */
+  /** Surfaces only once this boss has fallen (§7.1: secret feats surface in Region 5; Act 2's after the Blight). */
   readonly after?: BossId;
+}
+
+export type PactId = 'hordes' | 'vigour' | 'haste' | 'elites' | 'frailty' | 'scarcity' | 'tyranny' | 'surge';
+
+/**
+ * What one rank of a pact does (§9). A closed union; the run's numbers come
+ * from `sim/pacts.ts`, its one consumer.
+ */
+export type PactEffect =
+  /** Waves bring `pct` more bodies. */
+  | { readonly kind: 'count'; readonly pct: number }
+  /** Every body has `mult` times the HP, compounding. */
+  | { readonly kind: 'hp'; readonly mult: number }
+  /** Every body moves `pct` faster. */
+  | { readonly kind: 'speed'; readonly pct: number }
+  /** Every elite wave brings `n` more elites. */
+  | { readonly kind: 'elites'; readonly n: number }
+  /** A toll on the tower's stats. */
+  | { readonly kind: 'stat'; readonly mod: StatMod }
+  /** Cards per draft. */
+  | { readonly kind: 'choices'; readonly n: number }
+  /** The boss rises once more, with `hp` more HP. */
+  | { readonly kind: 'tyranny'; readonly hp: number }
+  /** The region's surge (`RegionDef.surge`). */
+  | { readonly kind: 'surge' };
+
+/** A pact (§9): difficulty the player opts into, rank by rank, for heat. */
+export interface PactDef extends ContentEntry {
+  readonly id: PactId;
+  readonly ranks: number;
+  readonly effect: PactEffect;
 }

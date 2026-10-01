@@ -113,7 +113,8 @@ describe('buildRunConfig from the Forge (§12.3)', () => {
     const p = newProfile(0);
     p.forge = { 'might-damage': 3, scattershot: 1, reroll: 2, 'speed-2': 1 };
     const c = buildRunConfig(p);
-    expect(c.mods.filter((m) => m.key === 'damage')).toHaveLength(3);
+    // Three levels arrive as one contribution three times the size (§9: a mastery stays one line).
+    expect(c.mods.filter((m) => m.key === 'damage').reduce((sum, m) => sum + (m.pct ?? 0), 0)).toBeCloseTo(0.15 * 3);
     expect(c.weaponSlots).toBe(BALANCE.slots.weapon + 1);
     expect(c.pool).toContain('scattershot');
     expect(c.behaviours.reroll).toBe(2);

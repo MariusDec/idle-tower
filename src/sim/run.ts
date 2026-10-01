@@ -1,42 +1,20 @@
 import { Rng } from '../core/rng';
 import { BALANCE } from '../content/balance';
 import { frameById } from '../content/frames';
-import { regionByIndex } from '../content/regions';
-import type { BehaviourId, RegionDef, StatMod, WeaponId } from '../content/types';
+import type { BehaviourId, WeaponId } from '../content/types';
 import type { RunConfig, RunInput, RunState, WeaponState } from './state';
 import { newWeapon } from './systems/arms';
 import { allMods, resolveStats } from './stats';
+import { pactLoad, ruleSurge, surgeMods } from './pacts';
 import { separateEnemies, sweepEnemies, tickEnemies } from './systems/enemies';
-import { sweepProjectiles, tickBurns, tickProjectiles, tickWeapons } from './systems/combat';
+import { sweepProjectiles, tickBurns, tickProjectiles, tickRunes, tickWeapons } from './systems/combat';
 import { isWeaponId, pickCard, rerollDraft, tickDraft, xpToNext } from './systems/draft';
 import { tickBoss, tickPools, tickRings } from './systems/boss';
 import { tickShots } from './systems/tower';
 import { castUltimate, tickUltimate } from './systems/ultimate';
-import { tickWaves } from './systems/waves';
+import { regionAt, regionMods, runRegion, tickWaves } from './systems/waves';
 
-/**
- * A region's rule as stat contributions (§11.1). The rule's one switch: the
- * rest are read where they act (`systems/waves.ts#regionRule`), Brittle on every hit, Cinders
- * and Echoes on a kill, Blight on the wave roll.
- */
-export function regionMods(region: RegionDef): StatMod[] {
-  const rule = region.rule;
-  if (!rule) return [];
-  const e = rule.effect;
-  switch (e.kind) {
-    case 'stat':
-      return [e.mod];
-    case 'areaDamage':
-    case 'cinders':
-    case 'echoes':
-    case 'blight':
-      return [];
-    default: {
-      const exhaustive: never = e;
-      return exhaustive;
-    }
-  }
-}
+export { regionMods };
 
 /**
  * The sim's entry points. The same `(config, seed, inputs)` always gives the
@@ -45,8 +23,12 @@ export function regionMods(region: RegionDef): StatMod[] {
 export function createRun(config: RunConfig, seed: number): RunState {
   const root = new Rng(seed);
   const frame = frameById(config.frameId);
-  const region = regionByIndex(config.regionId);
-  const mods = [...config.mods, ...regionMods(region)];
+  const region = regionAt(config.regionId, 1);
+  // The pacts' tolls (§9) sit with the Forge's; the rule's share is kept
+  // apart, so an Abyss floor can swap its rule for the next one's.
+  const load = pactLoad(config.pacts);
+  const outerMods = [...config.mods, ...load.mods, ...surgeMods(load, region)];
+  const mods = [...outerMods, ...regionMods(region, ruleSurge(load, region))];
   const stats = resolveStats(allMods(mods, []));
   const owned = (id: BehaviourId): number => config.behaviours[id] ?? 0;
   const B = BALANCE.behaviours;
@@ -66,6 +48,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     time: 0,
     wave: 0,
     frameId: frame.id,
+    outerMods,
     mods,
     stats,
     tower: { hp: stats.maxHp, hurtTick: -1, invulnUntil: 0 },
@@ -88,6 +71,12 @@ export function createRun(config: RunConfig, seed: number): RunState {
     firstKill: config.firstKill,
     relicDrops: config.relicDrops,
     boss: null,
+    felled: [],
+    floors: 0,
+    pacts: { ...config.pacts },
+    abyssRelics: [...config.abyssRelics],
+    runes: [],
+    wallRuneAt: -1e9,
     relics: [],
     elitesKilled: 0,
     firstHurtWave: null,
@@ -143,7 +132,7 @@ export function applyInput(run: RunState, input: RunInput): void {
 /**
  * Advance the run by one fixed step of `dt` seconds. System order is part of
  * the contract: input, waves place bodies, the boss acts, bodies move, act
- * and spread, weapons fire, projectiles fly and kill, burns bite, hostile shots and
+ * and spread, weapons fire, projectiles fly and kill, runes burst, burns bite, hostile shots and
  * shockwaves land, the dead are swept, a banked draft opens, then the tower
  * regenerates or falls.
  */
@@ -153,7 +142,7 @@ export function step(run: RunState, dt: number, input: RunInput = {}): void {
   run.time = run.tick * dt;
   applyInput(run, input);
   if (run.outcome) return;
-  const region = regionByIndex(run.regionId);
+  const region = runRegion(run);
   tickWaves(run, region);
   tickBoss(run, region, dt);
   tickEnemies(run, dt);
@@ -161,6 +150,7 @@ export function step(run: RunState, dt: number, input: RunInput = {}): void {
   tickWeapons(run, dt);
   tickUltimate(run, dt);
   tickProjectiles(run, dt);
+  tickRunes(run);
   tickBurns(run, dt);
   tickShots(run, dt);
   tickRings(run, dt);

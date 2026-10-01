@@ -1,19 +1,20 @@
 import { Rng } from '../../core/rng';
+import { ABYSS_INDEX } from '../../content/abyss';
 import { BALANCE } from '../../content/balance';
 import { AURA_BY_ID, ENEMY_BY_ID } from '../../content/enemies';
 import { eliteRelics } from '../../content/relics';
-import { regionByIndex } from '../../content/regions';
 import { frameById } from '../../content/frames';
 import { WEAPON_BY_ID } from '../../content/weapons';
 import type { EnemyVerb, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
 import { BOSS_BY_ID } from '../../content/bosses';
 import type { Enemy, Projectile, RunState, WeaponState } from '../state';
+import { pactLoad, ruleSurge } from '../pacts';
 import { armed } from './arms';
-import { bossBody, onBossKilled, reflectShot } from './boss';
+import { bossBody, onBossKilled, phasesOf, reflectShot } from './boss';
 import { mitigate } from './damage';
 import { gainXp } from './draft';
 import { hurtTower } from './tower';
-import { regionRule, spawnEnemy } from './waves';
+import { regionRule, runRegion, spawnEnemy } from './waves';
 
 /** How close a projectile must pass, beyond the body radius, to hit. */
 const HIT_PAD = 6;
@@ -32,15 +33,15 @@ const DRONE_REST = 1.8;
  * reads it; an Overkill carry never carries again; Hive counts the drones'.
  */
 export type DamageSource =
-  | WeaponPattern | 'nova' | 'tempest' | 'thorns' | 'reflect' | 'overkill' | 'burn' | 'shatter'
+  | WeaponPattern | 'nova' | 'tempest' | 'eclipse' | 'thorns' | 'reflect' | 'overkill' | 'burn' | 'shatter'
   /** Stormcaller's quirk: a crit's leap to the next body. It never leaps again. */
   | 'leap';
 
 /** Sources that count as lightning, frost or Nova for Bog Lantern (§11.5). */
 const STORM: ReadonlySet<DamageSource> = new Set<DamageSource>(['chain', 'pulse', 'nova', 'tempest', 'leap']);
 
-/** Sources that count as area for Brittle (§11.1): blasts, pulses, burns, shatters and the ultimate. */
-const AREA: ReadonlySet<DamageSource> = new Set<DamageSource>(['lob', 'pulse', 'burn', 'shatter', 'nova', 'tempest']);
+/** Sources that count as area for Brittle (§11.1): blasts, pulses, rune bursts, burns, shatters and the ultimate. */
+const AREA: ReadonlySet<DamageSource> = new Set<DamageSource>(['lob', 'pulse', 'mine', 'burn', 'shatter', 'nova', 'tempest', 'eclipse']);
 
 /** A body that can be targeted and hit: alive, and not under the water, phased out or underground. */
 export function targetable(run: RunState, e: Enemy): boolean {
@@ -129,11 +130,17 @@ export function tickWeapons(run: RunState, dt: number): void {
       case 'beam':
         holdBeam(run, w, p, dt, rateMult, crit);
         break;
+      case 'tether':
+        holdTethers(run, w, p, dt, rateMult, crit);
+        break;
       case 'homing':
       case 'cone':
       case 'chain':
       case 'pulse':
       case 'lob':
+      case 'boomerang':
+      case 'mine':
+      case 'rail':
         fireOnCooldown(run, w, p, pattern, dt, rateMult, crit);
         break;
       default: {
@@ -151,14 +158,21 @@ function overclock(run: RunState): number {
   return ult.id === 'overclock' ? ult.speed : 1;
 }
 
+type CooldownPattern = 'homing' | 'cone' | 'chain' | 'pulse' | 'lob' | 'boomerang' | 'mine' | 'rail';
+
 function fireOnCooldown(
-  run: RunState, w: WeaponState, p: WeaponParams, pattern: 'homing' | 'cone' | 'chain' | 'pulse' | 'lob',
+  run: RunState, w: WeaponState, p: WeaponParams, pattern: CooldownPattern,
   dt: number, rateMult: number, crit: Rng,
 ): void {
   if (pattern === 'chain' && w.evolved) w.spin += BALANCE.evolutions['storm-crown'].spin * dt;
   if (pattern === 'lob' && w.evolved) rainMeteors(run, w, p, dt * rateMult, crit);
   w.cooldown -= dt;
   if (w.cooldown > 0) return;
+  // Every rune the field can hold is down: wait for one to burst.
+  if (pattern === 'mine' && run.runes.filter((r) => !r.echo).length >= p.count) {
+    w.cooldown = 0;
+    return;
+  }
   // A pulse needs a body inside its own radius; everything else, inside range.
   const target = pattern === 'lob'
     ? densest(run, p.radius, [])
@@ -198,6 +212,15 @@ function fireOnCooldown(
       break;
     case 'lob':
       lobShells(run, w, p, target, crit);
+      break;
+    case 'boomerang':
+      throwCrescents(run, w, p, angle, crit);
+      break;
+    case 'mine':
+      layRune(run, p, target, crit);
+      break;
+    case 'rail':
+      fireSlugs(run, w, p, target, crit);
       break;
     default: {
       const exhaustive: never = pattern;
@@ -243,6 +266,9 @@ function launch(run: RunState, w: WeaponState, x: number, y: number, angle: numb
     bomblets: 0,
     meteor: false,
     seeker: false,
+    boomerang: false,
+    returning: false,
+    struck: [],
     ...over,
   });
 }
@@ -399,6 +425,236 @@ function lob(run: RunState, w: WeaponState, p: WeaponParams, tx: number, ty: num
     ...hit, blast: p.radius, tx, ty, bomblets: p.bomblets,
     life: Math.hypot(tx - sx, ty - sy) / p.projectileSpeed,
   });
+}
+
+/**
+ * Moonblade (§9): crescents thrown in a fan, out to the edge of range and
+ * home again, cutting every body they cross once each way. Crescent Storm
+ * also looses a ring of them in every direction.
+ */
+function throwCrescents(run: RunState, w: WeaponState, p: WeaponParams, angle: number, crit: Rng): void {
+  const life = (run.stats.range * BALANCE.weapons.crescentReach) / p.projectileSpeed;
+  const throwOne = (a: number): void => {
+    launchFromTower(run, w, a, p.projectileSpeed, { ...rollHit(run, p, crit), boomerang: true, life });
+  };
+  for (let i = 0; i < p.count; i++) throwOne(angle + (p.count === 1 ? 0 : p.spread * (i / (p.count - 1) - 0.5)));
+  if (w.evolved) {
+    const ring = BALANCE.evolutions['crescent-storm'].ring;
+    for (let k = 0; k < ring; k++) throwOne(angle + Math.PI / ring + (k / ring) * Math.PI * 2);
+  }
+}
+
+/** A crescent, one step: out, then home, cutting what it crosses (§9). */
+function flyCrescent(run: RunState, p: Projectile, dt: number): void {
+  if (!p.returning && p.life <= 0) turnHome(run, p);
+  if (p.returning) {
+    // Home to the tower's heart; it is caught at the wall.
+    const d = Math.hypot(p.x, p.y) || 1;
+    if (d <= run.stats.radius * 0.6 + p.speed * dt) {
+      p.alive = false;
+      return;
+    }
+    p.vx = (-p.x / d) * p.speed;
+    p.vy = (-p.y / d) * p.speed;
+  }
+  const sx = p.vx * dt;
+  const sy = p.vy * dt;
+  const len2 = sx * sx + sy * sy || 1;
+  const reach = BALANCE.weapons.crescentWidth;
+  const n = run.enemies.length;
+  for (let i = 0; i < n; i++) {
+    const e = run.enemies[i];
+    if (!targetable(run, e) || p.struck.includes(e.id)) continue;
+    const t = Math.max(0, Math.min(1, ((e.x - p.x) * sx + (e.y - p.y) * sy) / len2));
+    const cx = p.x + sx * t - e.x;
+    const cy = p.y + sy * t - e.y;
+    const r = e.radius + reach;
+    if (cx * cx + cy * cy > r * r) continue;
+    p.struck.push(e.id);
+    // A shield (or a mirror) turns its edge on the way out; coming home, it cuts the shield from behind.
+    if (turnedAway(run, p, e)) continue;
+    damageEnemy(run, e, p.damage, p.crit, 'boomerang');
+  }
+  p.x += sx;
+  p.y += sy;
+}
+
+/** A crescent turns for home: a fresh pass, and faster (Moonstone faster still). */
+function turnHome(run: RunState, p: Projectile): void {
+  const stone = run.behaviours['swift-return'] ?? 0;
+  p.returning = true;
+  p.struck = [];
+  p.speed *= BALANCE.weapons.crescentReturn * (stone > 0 ? rankValue(BALANCE.relics.swiftReturn, stone) : 1);
+}
+
+/** Rune Traps (§9): a rune laid in the path of `target`, between it and the wall. */
+function layRune(run: RunState, p: WeaponParams, target: Enemy, crit: Rng): void {
+  const hit = rollHit(run, p, crit);
+  const k = BALANCE.weapons.runeLay;
+  const x = target.x * k;
+  const y = target.y * k;
+  run.runes.push({
+    x, y, armAt: run.time + BALANCE.weapons.runeArm, until: run.time + p.fuse * run.stats.durationMult,
+    damage: hit.damage, crit: hit.crit, radius: p.radius, stun: p.stun, echo: false,
+  });
+  run.events.push({ kind: 'rune', x, y, burst: false, radius: p.radius });
+}
+
+/** A rune bursts: everything in reach is hit and, from level 5, stunned. Rune Chalk leaves an echo. */
+function burstRune(run: RunState, r: (typeof run.runes)[number]): void {
+  run.events.push({ kind: 'rune', x: r.x, y: r.y, burst: true, radius: r.radius });
+  const n = run.enemies.length;
+  for (let i = 0; i < n; i++) {
+    const e = run.enemies[i];
+    if (!targetable(run, e)) continue;
+    const reach = r.radius + e.radius;
+    if ((e.x - r.x) ** 2 + (e.y - r.y) ** 2 > reach * reach) continue;
+    damageEnemy(run, e, r.damage, r.crit, 'mine');
+    if (r.stun > 0 && e.alive && !e.boss) e.stunnedUntil = Math.max(e.stunnedUntil, run.time + r.stun * run.stats.durationMult);
+  }
+  const chalk = run.behaviours['echo-rune'] ?? 0;
+  if (chalk > 0 && !r.echo) {
+    run.runes.push({
+      ...r, damage: r.damage * rankValue(BALANCE.relics.echoRune, chalk), crit: false, echo: true,
+      armAt: run.time + BALANCE.weapons.runeArm, until: run.time + (r.until - r.armAt),
+    });
+  }
+}
+
+/** Runes on the ground: an armed one bursts under the first body to reach it; old ones fade. */
+export function tickRunes(run: RunState): void {
+  if (run.runes.length === 0) return;
+  const trigger = BALANCE.weapons.runeTrigger;
+  const keep: typeof run.runes = [];
+  // Indexed: an echo laid by a burst waits for the next step.
+  const runes = run.runes;
+  run.runes = [];
+  for (const r of runes) {
+    if (r.until <= run.time) continue;
+    if (r.armAt > run.time) {
+      keep.push(r);
+      continue;
+    }
+    let tripped = false;
+    for (const e of run.enemies) {
+      if (!targetable(run, e)) continue;
+      const reach = trigger + e.radius;
+      if ((e.x - r.x) ** 2 + (e.y - r.y) ** 2 <= reach * reach) {
+        tripped = true;
+        break;
+      }
+    }
+    if (tripped) burstRune(run, r);
+    else keep.push(r);
+  }
+  run.runes = [...keep, ...run.runes];
+}
+
+/**
+ * Bulwark Runes (§9): a body that strikes the wall sets off a rune where it
+ * stands, at most once every so often. Called from `hurtTower`.
+ */
+export function wallRune(run: RunState, source: Enemy): void {
+  const w = evolvedWeapon(run, 'rune-traps');
+  if (!w || run.time - run.wallRuneAt < BALANCE.evolutions['bulwark-runes'].every) return;
+  run.wallRuneAt = run.time;
+  const p = armed(run.stats, w);
+  burstRune(run, {
+    x: source.x, y: source.y, armAt: run.time, until: run.time, damage: p.damage * run.stats.damageMult,
+    crit: false, radius: p.radius, stun: p.stun, echo: true,
+  });
+}
+
+/**
+ * Soul Tether (§9): threads held on the nearest bodies in range, draining
+ * them on a fast tick: many small hits, which a Husk's shell soon runs out
+ * of. Lifebloom mends the tower through them, and passes a thread on the
+ * moment its body falls.
+ */
+function holdTethers(run: RunState, w: WeaponState, p: WeaponParams, dt: number, rateMult: number, crit: Rng): void {
+  const range2 = run.stats.range * run.stats.range;
+  const knot = run.behaviours['extra-tether'] ?? 0;
+  const count = Math.min(BALANCE.caps.tethers, p.count + knot);
+  const holding = (e: Enemy): boolean => targetable(run, e) && e.x * e.x + e.y * e.y <= range2;
+  const thread = (): void => {
+    w.tethers = w.tethers.filter((id) => {
+      const e = enemyById(run, id);
+      return !!e && holding(e);
+    });
+    if (w.tethers.length >= count) return;
+    const free = run.enemies
+      .filter((e) => holding(e) && !w.tethers.includes(e.id))
+      .map((e) => ({ e, d: e.x * e.x + e.y * e.y }))
+      .sort((a, b) => a.d - b.d || a.e.id - b.e.id);
+    for (const f of free) {
+      if (w.tethers.length >= count) break;
+      w.tethers.push(f.e.id);
+    }
+  };
+  thread();
+  w.cooldown -= dt;
+  if (w.tethers.length === 0) {
+    w.cooldown = Math.max(0, w.cooldown);
+    return;
+  }
+  if (w.evolved) {
+    const L = BALANCE.evolutions.lifebloom;
+    run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * L.heal * w.tethers.length * dt);
+  }
+  const first = enemyById(run, w.tethers[0]);
+  if (first) w.aim = Math.atan2(first.y, first.x);
+  if (w.cooldown > 0) return;
+  w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * rateMult));
+  for (const id of [...w.tethers]) {
+    const e = enemyById(run, id);
+    if (!e) continue;
+    const hit = rollHit(run, p, crit);
+    damageEnemy(run, e, hit.damage, hit.crit, 'tether');
+  }
+  if (w.evolved) thread();
+  run.events.push({ kind: 'fire', weapon: w.id, angle: w.aim });
+}
+
+/**
+ * Gilded Rail (§9): a slug through everything in its line, from the tower
+ * to the edge of range: one heavy hit on each body. Not a shot in flight, so
+ * shields and mirrors don't turn it. Midas Lance gilds what it pierces.
+ */
+function fireSlugs(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy, crit: Rng): void {
+  const targets = p.count > 1 ? nearestToTower(run, run.stats.range, p.count) : [first];
+  const M = BALANCE.evolutions['midas-lance'];
+  const burstRank = run.behaviours['rail-burst'] ?? 0;
+  for (let k = 0; k < p.count; k++) {
+    const t = targets[k % targets.length];
+    const a = Math.atan2(t.y, t.x);
+    const ux = Math.cos(a);
+    const uy = Math.sin(a);
+    const hit = rollHit(run, p, crit);
+    const struck: Enemy[] = [];
+    const n = run.enemies.length;
+    for (let i = 0; i < n; i++) {
+      const e = run.enemies[i];
+      if (!targetable(run, e)) continue;
+      const along = e.x * ux + e.y * uy;
+      if (along < 0 || along > run.stats.range + e.radius) continue;
+      if (Math.abs(e.x * uy - e.y * ux) <= p.radius + e.radius) struck.push(e);
+    }
+    for (const e of struck) {
+      if (w.evolved && e.alive) e.gildedUntil = run.time + M.seconds * run.stats.durationMult;
+      damageEnemy(run, e, hit.damage, hit.crit, 'rail');
+      // Gilt Edge (§9): a slug's kill bursts.
+      if (!e.alive && burstRank > 0) {
+        const r = BALANCE.relics.railBurstRadius * run.stats.areaMult;
+        burstAt(run, e.x, e.y, r, hit.damage * rankValue(BALANCE.relics.railBurst, burstRank), false, 'shatter', e.id);
+        run.events.push({ kind: 'blast', x: e.x, y: e.y, radius: r, weapon: w.id, style: 'shatter' });
+      }
+    }
+    const start = run.stats.radius * 0.6;
+    run.events.push({
+      kind: 'rail', x1: ux * start, y1: uy * start, x2: ux * run.stats.range, y2: uy * run.stats.range, gilded: w.evolved,
+    });
+    w.aim = a;
+  }
 }
 
 /** Meteorfall (§11.2): every few seconds a meteor on the densest crowd. */
@@ -644,6 +900,10 @@ export function tickProjectiles(run: RunState, dt: number): void {
     p.py = p.y;
     if (!p.alive) continue;
     p.life -= dt;
+    if (p.boomerang) {
+      flyCrescent(run, p, dt);
+      continue;
+    }
     if (p.blast > 0) {
       // Lobbed: over everything, to burst where it was aimed.
       if (p.life <= 0) {
@@ -750,7 +1010,8 @@ function strike(run: RunState, p: Projectile, e: Enemy): void {
       }
     }
   }
-  if (p.knockback > 0 && e.alive) knockBack(e, p.knockback);
+  // An enraged boss's fury carries it through any shove: it reaches the wall (§4.3).
+  if (p.knockback > 0 && e.alive && !(e.boss && run.boss?.enraged)) knockBack(e, p.knockback);
   // Dragonbreath (§11.2): the pellets set what they hit alight.
   if (p.weapon === 'scattershot' && e.alive && evolvedWeapon(run, 'scattershot')) {
     const D = BALANCE.evolutions.dragonbreath;
@@ -870,7 +1131,16 @@ function rankValue(table: readonly number[], rank: number): number {
 function damageTaken(run: RunState, e: Enemy, raw: number, source: DamageSource): number {
   const R = BALANCE.relics;
   const b = run.behaviours;
-  let out = raw * e.buffShield;
+  // Ward Breaker (§9): a ward or Shield aura protects only part as well.
+  const wb = b.wardbreak ? rankValue(R.wardbreak, b.wardbreak) : 0;
+  let out = raw * (1 - (1 - e.buffShield) * (1 - wb));
+  // Midas Lance (§9): gilded, it takes more.
+  if (e.gildedUntil > run.time) out *= 1 + BALANCE.evolutions['midas-lance'].vulnerable;
+  // Daybreak (§9): everything in range takes more while it lasts.
+  if (run.ult.until > run.time && e.x * e.x + e.y * e.y <= run.stats.range ** 2) {
+    const ult = frameById(run.frameId).ultimate;
+    if (ult.id === 'daybreak') out *= ult.vulnerable;
+  }
   const tally = b.tally ?? 0;
   if (tally > 0) out *= 1 + rankValue(R.tally, tally) * Math.floor(run.kills / 100);
   const still = b['still-target'] ?? 0;
@@ -925,13 +1195,20 @@ function courtShare(run: RunState, e: Enemy): number {
   const b = run.boss;
   if (!b || b.crown === 0 || (!e.court && !e.boss)) return 1;
   if (e.id === b.crown) return 1;
-  const pattern = BOSS_BY_ID[b.id].phases[b.phase].patterns.find((p) => p.kind === 'court');
+  const pattern = phasesOf(run, BOSS_BY_ID[b.id])[b.phase].patterns.find((p) => p.kind === 'court');
   return pattern?.kind === 'court' ? pattern.share : 1;
 }
 
 /** Armour, the kill, and what a kill carries over. A Chorus's bodies share the hit (§11.1). */
 function hitBody(run: RunState, e: Enemy, raw: number, crit: boolean, source: DamageSource): number {
   const B = BALANCE.behaviours;
+  // A Husk's shell (§9) swallows a hit whole, whatever its size.
+  if (e.shell > 0) {
+    e.shell--;
+    e.hitTick = run.tick;
+    run.events.push({ kind: 'shell', x: e.x, y: e.y });
+    return 0;
+  }
   const before = e.hp;
   let amount = mitigate(damageTaken(run, e, raw, source), e.armor);
   // Executioner (§11.4): a hit on a body already this low finishes it. Not a
@@ -970,7 +1247,9 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   const lantern = run.behaviours['storm-xp'] ?? 0;
   const xpMult = lantern > 0 && STORM.has(source) ? rankValue(BALANCE.relics.stormXp, lantern) : 1;
   gainXp(run, e.xp * xpMult);
-  const shards = e.shards * run.stats.shardMult;
+  // Midas Lance (§9): slain gilded, it pays more.
+  const gilt = e.gildedUntil > run.time ? BALANCE.evolutions['midas-lance'].shards : 1;
+  const shards = e.shards * run.stats.shardMult * gilt;
   run.shards += shards;
   if (e.boss) run.shardsFrom.boss += shards;
   else if (e.elite) run.shardsFrom.elites += shards;
@@ -988,7 +1267,12 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   if (jar > 0 && run.kills % BALANCE.relics.soulKills === 0) {
     run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * rankValue(BALANCE.relics.soulJar, jar));
   }
+  // The Gravekeeper (§9): every kill mends the tower a little.
+  if (run.behaviours.siphon) {
+    run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * BALANCE.behaviours.siphon);
+  }
   evolvedDeath(run, e, source);
+  feedMaws(run, e);
   if (e.boss) {
     onBossKilled(run, e);
     return;
@@ -1003,6 +1287,22 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   if (e.elite) eliteDeath(run, e);
   lastWord(run, e, verb);
   ruleOnKill(run, e);
+}
+
+/** Maws near a fallen body feed on it (§9): healed, and grown, a few times over. Maw Tooth starves them. */
+function feedMaws(run: RunState, dead: Enemy): void {
+  if (run.behaviours.starve) return;
+  for (const m of run.enemies) {
+    if (m === dead || !m.alive || m.boss || m.court) continue;
+    const verb = ENEMY_BY_ID[m.type].verb;
+    if (verb.kind !== 'devour' || m.feeds >= verb.feeds) continue;
+    if ((m.x - dead.x) ** 2 + (m.y - dead.y) ** 2 > verb.radius * verb.radius) continue;
+    m.feeds++;
+    m.maxHp *= 1 + verb.grow;
+    m.hp = Math.min(m.maxHp, m.hp + m.maxHp * verb.heal);
+    m.radius *= 1 + verb.grow / 3;
+    run.events.push({ kind: 'feed', x: m.x, y: m.y });
+  }
 }
 
 /** What a body's verb does as it dies: a Bomber's blast, a Shardling's shards (§11.1). */
@@ -1041,6 +1341,10 @@ function lastWord(run: RunState, e: Enemy, verb: EnemyVerb): void {
     case 'summon':
     case 'silence':
     case 'chorus':
+    case 'carapace':
+    case 'charge':
+    case 'ward':
+    case 'devour':
       return;
     default: {
       const exhaustive: never = verb;
@@ -1059,8 +1363,11 @@ function ruleOnKill(run: RunState, e: Enemy): void {
       return;
     case 'echoes': {
       if (e.shade || e.gen > 0 || e.group) return;
-      if (!Rng.wrap(run.streams.foes).chance(rule.chance)) return;
-      const shade = spawnEnemy(run, regionByIndex(run.regionId), e.type, e.wave, e.x, e.y, { shade: true, single: true });
+      // Blight Surge (§9): more of the slain rise.
+      const region = runRegion(run);
+      const chance = rule.chance * (1 + ruleSurge(pactLoad(run.pacts), region));
+      if (!Rng.wrap(run.streams.foes).chance(chance)) return;
+      const shade = spawnEnemy(run, region, e.type, e.wave, e.x, e.y, { shade: true, single: true });
       shade.hp = shade.maxHp = e.maxHp * rule.hp;
       shade.xp = e.xp * rule.reward;
       shade.shards = e.shards * rule.reward;
@@ -1081,7 +1388,7 @@ function ruleOnKill(run: RunState, e: Enemy): void {
 
 /** Bodies of `e`'s type bursting out of where it fell. */
 function burst(run: RunState, e: Enemy, n: number, opts: Parameters<typeof spawnEnemy>[6]): void {
-  const region = regionByIndex(run.regionId);
+  const region = runRegion(run);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + e.id;
     const r = e.radius * 0.6;
@@ -1105,7 +1412,8 @@ function eliteDeath(run: RunState, e: Enemy): void {
     run.events.push({ kind: 'fury', x: e.x, y: e.y, radius });
   }
   // Relics drop only once there is somewhere to wear them (a relic slot, §5.3).
-  const pool = run.relicDrops ? eliteRelics(run.regionId) : [];
+  // The Abyss's elites drop its lit sets instead (§9).
+  const pool = run.regionId === ABYSS_INDEX ? run.abyssRelics : run.relicDrops ? eliteRelics(run.regionId) : [];
   const loot = Rng.wrap(run.streams.loot);
   // Treasure Hunter (§11.4): relics drop more often.
   const luck = run.behaviours['relic-luck'] ? BALANCE.behaviours.relicLuck : 1;

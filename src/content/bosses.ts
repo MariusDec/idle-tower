@@ -7,6 +7,10 @@ import type { BossDef, BossId } from './types';
  *
  * HP is a multiple of the region's wave-20 HP (§8.2: about 25–35 s of the
  * DPS expected there); `npm run inspect -- --forge all --region 2` reads the fight.
+ *
+ * The last two are the Abyss's own (§9): they hold every fifth floor, where
+ * the rest come back as the floors' guardians. In the Abyss a boss's HP is a
+ * multiple of its floor's last wave, times `BALANCE.abyss.bossHp`.
  */
 export const BOSSES: readonly BossDef[] = [
   {
@@ -298,6 +302,99 @@ export const BOSSES: readonly BossDef[] = [
     color: '#4a0e1c',
     borderColor: '#ff6b8b',
     lore: 'Not a creature. A hunger that learned to wear faces. It has saved the best for last.',
+  },
+  // ── The Abyss (§9) ─────────────────────────────────────────────────────
+  {
+    id: 'deepwarden',
+    name: 'The Deepwarden',
+    icon: 'nested-hexagons',
+    text: 'Raises Wardstones, sinks into the dark, and turns its mirror on you.',
+    hp: 60,
+    armor: 0.02,
+    speed: 24,
+    radius: 66,
+    standoff: 230,
+    damage: 4,
+    xp: 80,
+    shards: 400,
+    mass: 16,
+    relicSlot: false,
+    abyss: true,
+    phases: [
+      {
+        below: 1,
+        line: 'It raises Wardstones around itself. Break them, then it.',
+        patterns: [
+          { kind: 'summon', enemy: 'wardstone', packs: 1, every: 9 },
+          { kind: 'slam', every: 5.5, windup: 1.2, speed: 440, damage: 3.5 },
+        ],
+      },
+      {
+        below: 0.6,
+        line: 'It sinks into the dark, and Husks crawl out.',
+        patterns: [
+          { kind: 'submerge', every: 8, seconds: 3 },
+          { kind: 'summon', enemy: 'husk', packs: 2, every: 7 },
+        ],
+      },
+      {
+        below: 0.3,
+        line: 'Its mirror turns. Shots that strike the glass come back.',
+        patterns: [
+          { kind: 'mirror', facets: 3, arc: 0.8, spin: 1, damage: 0.4 },
+          { kind: 'slam', every: 4, windup: 1.1, speed: 480, damage: 3.5 },
+        ],
+      },
+    ],
+    color: '#1c2a3a',
+    borderColor: '#8fd8ff',
+    lore: 'Something has to keep the deep from rising. It decided, long ago, that it would be the deep.',
+  },
+  {
+    id: 'hunger',
+    name: 'The Hunger',
+    icon: 'fangs-circle',
+    text: 'Calls Maws to feed, splits into shades, and starves faster than you.',
+    hp: 60,
+    armor: 0,
+    speed: 26,
+    radius: 64,
+    standoff: 240,
+    damage: 4,
+    xp: 80,
+    shards: 400,
+    mass: 16,
+    relicSlot: false,
+    abyss: true,
+    phases: [
+      {
+        below: 1,
+        line: 'It calls its Maws to feed, and fire to the wall.',
+        patterns: [
+          { kind: 'summon', enemy: 'maw', packs: 1, every: 8 },
+          { kind: 'pool', every: 7, seconds: 5, dps: 0.4, radius: 80 },
+        ],
+      },
+      {
+        below: 0.66,
+        line: 'It splits in three. Strike the one that wears the crown.',
+        patterns: [
+          { kind: 'court', shades: 3, every: 6, share: 0.25 },
+          { kind: 'summon', enemy: 'ram', packs: 1, every: 9 },
+        ],
+      },
+      {
+        below: 0.33,
+        line: 'Starving, it slams without pause.',
+        patterns: [
+          { kind: 'slam', every: 3.2, windup: 1, speed: 500, damage: 4 },
+          { kind: 'summon', enemy: 'husk', packs: 2, every: 8 },
+        ],
+      },
+    ],
+    color: '#3a0f22',
+    borderColor: '#ff8fb0',
+    lore: 'The Blight was only its appetite. This is what was doing the eating.',
   },
 ];
 

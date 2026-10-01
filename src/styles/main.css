@@ -358,7 +358,7 @@ body {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-7) * 3);
+  gap: calc(var(--space-7) * 2.5);
 }
 
 /* Tabs and the always-visible Run button (§10.1). */
@@ -403,6 +403,14 @@ body {
   color: var(--fx-gold);
 }
 
+/* Act 2's Stars make seven (§9): tighter still, so one row still holds them at 375 px. */
+.hub-tabs.is-crowded { gap: 2px; }
+.hub-tabs.is-crowded .hub-tab {
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  letter-spacing: 0;
+}
+
 /* Something in the Forge is affordable. */
 .hub-tab.has-badge::after {
   content: '';
@@ -421,7 +429,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 .hub-group + .hub-group {
@@ -445,7 +453,7 @@ body {
 .hub-stats {
   display: flex;
   gap: var(--space-7);
-  margin: var(--space-2) 0 var(--space-4);
+  margin: var(--space-2) 0 var(--space-2);
 }
 
 .hub-stats dt {
@@ -1591,7 +1599,13 @@ body {
 
 /* ── Tactics: the Tactician's priority list (§6.2) ───────────────────────── */
 
-.hub-tactics { align-self: center; }
+/* Tactics and, in Act 2, the Pacts (§9): side by side, so the home view keeps its height. */
+.hub-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+}
+.hub-actions:not(:has(> :not([hidden]))) { display: none; }
 
 .tactics-head {
   margin: var(--space-3) 0 var(--space-2);
@@ -1709,3 +1723,54 @@ body {
   letter-spacing: 0.05em;
   color: var(--fx-blood);
 }
+
+/* ── Act 2 (§9): the Constellations, the Pacts, the Abyss ────────────────── */
+
+/* The Constellations wear the Forge's web under a night sky. */
+.forge.stars .forge-web {
+  background:
+    radial-gradient(1px 1px at 12% 18%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 68% 34%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 38% 72%, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(1px 1px at 84% 82%, rgba(255, 255, 255, 0.45), transparent),
+    var(--surface-sunken);
+}
+.forge.stars .forge-title { color: var(--fx-frost); }
+.branch-smith { --branch: var(--fx-gold); }
+.branch-warden { --branch: var(--fx-nature); }
+.branch-lantern { --branch: var(--fx-ember); }
+.branch-crown { --branch: var(--fx-arcane); }
+.branch-deep { --branch: var(--fx-mana); }
+.forge-node.type-mastery .forge-shape { stroke-width: 3; }
+
+.pacts {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--dock-h);
+  text-align: left;
+}
+.pacts-heat {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  color: var(--fx-ember);
+}
+.pacts-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.pacts-row .entry-head { gap: var(--space-2); }
+.pacts-row .icon { --icon-size: 22px; color: var(--fx-ember); }
+.pacts-row .entry-name { flex: 1 1 auto; min-width: 0; font-size: var(--text-xl); }
+.pacts-pips { color: var(--fx-ember); letter-spacing: 0.1em; }
+
+.map-region.is-abyss {
+  border-color: rgba(var(--rgb-arcane), 0.6);
+  background: linear-gradient(to bottom, var(--surface-1), var(--surface-sunken));
+}
+.map-region.is-abyss.is-chosen { border-color: var(--fx-arcane); box-shadow: 0 0 0 1px var(--fx-arcane); }
+.map-region.is-abyss .map-region-name { color: var(--fx-arcane); }

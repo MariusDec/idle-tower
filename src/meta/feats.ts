@@ -1,14 +1,36 @@
+import { ABYSS_INDEX, NATIVES } from '../content/abyss';
 import { BALANCE } from '../content/balance';
 import { FEATS } from '../content/feats';
-import { regionByIndex } from '../content/regions';
+import { REGIONS, regionByIndex } from '../content/regions';
 import type { FeatDef, FeatGoal } from '../content/types';
 import type { RunState } from '../sim/state';
 import { FORGE } from '../content/forge';
 import { FRAMES } from '../content/frames';
 import type { BranchId, ForgeNodeDef } from '../content/types';
 import { bossDown, frameUnlocked } from './collection';
-import { levelOf } from './forge';
+import { FORGE_WEB, levelOf } from './forge';
 import type { Profile } from './profile';
+import { starsLit } from './stars';
+
+/** A region's enemy types, or the Abyss's own four (§9). */
+function poolOf(region: number): string[] {
+  return region === ABYSS_INDEX ? NATIVES.map((n) => n.enemy) : regionByIndex(region).pool.map((p) => p.enemy);
+}
+
+/** The heat each region's boss has fallen at, at worst: what "every region" feats read. */
+function coolestRegion(profile: Profile): number {
+  return Math.min(...REGIONS.map((r) => profile.pacts.best[r.index] ?? 0));
+}
+
+/** The highest heat any region's boss has fallen at. */
+function hottestRegion(profile: Profile): number {
+  return Math.max(0, ...REGIONS.map((r) => profile.pacts.best[r.index] ?? 0));
+}
+
+/** Mastery levels owned in all (§9). */
+function masteryLevels(profile: Profile): number {
+  return FORGE_WEB.ownedNodes(profile).filter((o) => o.node.type === 'mastery').reduce((s, o) => s + o.level, 0);
+}
 
 /**
  * Feats (§5.4): checked when a run is banked, against that run and the
@@ -37,7 +59,7 @@ export function featMet(profile: Profile, goal: FeatGoal, run: RunState | null):
     case 'elites':
       return profile.records.elites >= goal.n;
     case 'bestiary':
-      return regionByIndex(goal.region).pool.every((p) => profile.seenEnemies.includes(p.enemy));
+      return poolOf(goal.region).every((id) => profile.seenEnemies.includes(id));
     case 'relics':
       return Object.keys(profile.relics).length >= goal.n;
     case 'lone':
@@ -57,6 +79,16 @@ export function featMet(profile: Profile, goal: FeatGoal, run: RunState | null):
     case 'bareArsenal':
       return run?.boss?.killedIn != null && run.passives.length === 0
         && run.weapons.length >= goal.weapons && run.weapons.every((w) => w.level >= BALANCE.maxLevel);
+    case 'heat':
+      return hottestRegion(profile) >= goal.heat;
+    case 'heatAll':
+      return coolestRegion(profile) >= goal.heat;
+    case 'abyss':
+      return profile.abyss.best >= goal.floor;
+    case 'stars':
+      return starsLit(profile) >= goal.n;
+    case 'mastery':
+      return masteryLevels(profile) >= goal.levels;
     default: {
       const exhaustive: never = goal;
       return exhaustive;
@@ -91,9 +123,19 @@ export function featProgress(profile: Profile, feat: FeatDef): number {
     case 'relics':
       return Math.min(1, Object.keys(profile.relics).length / g.n);
     case 'bestiary': {
-      const pool = regionByIndex(g.region).pool;
-      return pool.filter((p) => profile.seenEnemies.includes(p.enemy)).length / pool.length;
+      const pool = poolOf(g.region);
+      return pool.filter((id) => profile.seenEnemies.includes(id)).length / pool.length;
     }
+    case 'heat':
+      return Math.min(1, hottestRegion(profile) / g.heat);
+    case 'heatAll':
+      return Math.min(1, coolestRegion(profile) / g.heat);
+    case 'abyss':
+      return Math.min(1, profile.abyss.best / g.floor);
+    case 'stars':
+      return Math.min(1, starsLit(profile) / g.n);
+    case 'mastery':
+      return Math.min(1, masteryLevels(profile) / g.levels);
     case 'recipes':
       return Math.min(1, profile.recipes.found.length / g.n);
     case 'frames':

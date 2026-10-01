@@ -12,7 +12,8 @@ const SHELL_ARC = 0.28;
  * with a hot core, Seeker Swarm's seekers smaller ones; Scattershot pellets
  * are short amber streaks; Mortar shells are dark balls lobbed on an arc
  * with a fuse spark; meteors are burning streaks; drone shots are blue-violet
- * darts. Crits burn gold, so a crit is visible before it lands.
+ * darts; Moonblade's crescents are pale moons that spin as they fly. Crits
+ * burn gold, so a crit is visible before it lands.
  */
 export function paintProjectiles(
   ctx: CanvasRenderingContext2D,
@@ -101,11 +102,33 @@ export function paintProjectiles(
         ctx.fill();
         break;
       }
+      case 'moonblade': {
+        const tint = p.crit ? FX.gold : lighten(FX.frost, 0.55);
+        const spin = Math.atan2(p.vy, p.vx) + (p.returning ? Math.PI : 0) + x * 0.05;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(spin);
+        ctx.strokeStyle = withAlpha(tint, 0.35);
+        ctx.lineWidth = 9;
+        ctx.beginPath();
+        ctx.arc(0, 0, 11, -1.2, 1.2);
+        ctx.stroke();
+        ctx.strokeStyle = tint;
+        ctx.lineWidth = 3.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, 11, -1.2, 1.2);
+        ctx.stroke();
+        ctx.restore();
+        break;
+      }
       case 'chain-lightning':
       case 'frost-ring':
       case 'sunlance':
       case 'glaives':
-        // Instant or held: drawn as an effect or by the arsenal painter, never a projectile.
+      case 'rune-traps':
+      case 'soul-tether':
+      case 'gilded-rail':
+        // Instant, held or laid: drawn as an effect or by the arsenal painter, never a projectile.
         break;
       default: {
         const exhaustive: never = p.weapon;
