@@ -21,7 +21,10 @@ export function castUltimate(run: RunState): boolean {
       const r2 = run.stats.range * run.stats.range;
       // A Nova into a boss's wind-up staggers it (§4.3).
       staggerBoss(run);
-      for (const e of run.enemies) {
+      // Only what was there when it went off, not what its kills burst into.
+      const n = run.enemies.length;
+      for (let i = 0; i < n; i++) {
+        const e = run.enemies[i];
         if (!e.alive || e.x * e.x + e.y * e.y > r2) continue;
         damageEnemy(run, e, damage, false, 'nova');
         if (e.alive && !e.boss) knockBack(e, ult.knockback);

@@ -200,6 +200,9 @@ export class App {
     // A fresh seed per run; the sim is deterministic *given* it.
     const seed = (Math.random() * 2 ** 32) >>> 0;
     this.run = resumed ?? createRun(buildRunConfig(this.profile), seed);
+    // Run again past a first kill skips the Map's ceremony rather than
+    // owing it to a later run, whose results would hold auto-restart for it.
+    this.profile.ceremony = null;
     this.paused = false;
     this.shownDraft = null;
     this.newCards = [];
@@ -315,7 +318,8 @@ export class App {
       this.hud.update(run);
       if (run.outcome?.kind === 'fell' && this.renderer.fallDone) this.endRun(run);
     }
-    if (this.screen === 'results') this.results.tick(realDt);
+    // Auto-restart waits while a card (welcome back) is up, so a run never starts under it.
+    if (this.screen === 'results' && !this.modal.open) this.results.tick(realDt);
     this.sinceSave += realDt;
     if (this.sinceSave >= AUTOSAVE_SECONDS) void this.save();
   }

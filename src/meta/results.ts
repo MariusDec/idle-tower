@@ -1,3 +1,4 @@
+import { BOSSES } from '../content/bosses';
 import { FORGE } from '../content/forge';
 import { FRAMES } from '../content/frames';
 import { REGIONS } from '../content/regions';
@@ -53,18 +54,28 @@ export interface RunSummary {
   next: ForgeGoal | null;
 }
 
-/** Everything that may open between runs, as words, so a run's unlocks are a diff. */
-function unlockList(profile: Profile): Set<string> {
-  const out = new Set<string>();
+/**
+ * Everything that may open between runs, keyed, with its words, so a run's
+ * unlocks are a diff of two of these.
+ */
+function unlockList(profile: Profile): Map<string, string> {
+  const out = new Map<string, string>();
+  const add = (label: string, key = label): void => {
+    out.set(key, label);
+  };
   const hub = hubUnlocks(profile);
-  if (hub.map) out.add('The Map');
-  if (hub.feats) out.add('Feats');
-  for (const r of REGIONS) if (r.index > 1 && regionUnlocked(profile, r.index)) out.add(r.name);
-  for (const f of FRAMES) if (f.unlock.kind !== 'start' && frameUnlocked(profile, f)) out.add(`${f.name} frame`);
+  if (hub.map) add('The Map');
+  if (hub.feats) add('Feats');
+  for (const r of REGIONS) if (r.index > 1 && regionUnlocked(profile, r.index)) add(r.name);
+  for (const f of FRAMES) if (f.unlock.kind !== 'start' && frameUnlocked(profile, f)) add(`${f.name} frame`);
   const slots = relicSlots(profile);
-  for (let i = 1; i <= slots; i++) out.add(`Relic slot ${i}`);
-  const unsealed = FORGE.filter((n) => n.sealed && bossDown(profile, n.sealed)).length;
-  if (unsealed > 0) out.add(`${unsealed} Forge nodes unsealed`);
+  for (let i = 1; i <= slots; i++) add(`Relic slot ${i}`);
+  // One line per boss, for the nodes its fall unseals.
+  for (const b of BOSSES) {
+    if (!bossDown(profile, b.id)) continue;
+    const n = FORGE.filter((x) => x.sealed === b.id).length;
+    if (n > 0) add(`${n} Forge node${n === 1 ? '' : 's'} unsealed`, `seal:${b.id}`);
+  }
   return out;
 }
 
@@ -121,8 +132,7 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
 
   const feats = checkFeats(profile, run);
   const after = unlockList(profile);
-  // Unsealed counts only grow, so a new count replaces the old line.
-  const unlocks = [...after].filter((u) => !before.has(u));
+  const unlocks = [...after].filter(([key]) => !before.has(key)).map(([, label]) => label);
 
   return {
     outcome: run.outcome?.kind ?? 'retreat',

@@ -22,6 +22,9 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
   t.hp -= amount;
   t.hurtTick = run.tick;
   if (run.firstHurtWave === null) run.firstHurtWave = run.wave;
+  // Steady Hand reads the low point here, before Second Wind can lift it.
+  const b = run.boss;
+  if (b && b.killedIn === null) b.minHp = Math.min(b.minHp, Math.max(0, t.hp) / run.stats.maxHp);
   run.events.push({ kind: 'towerHit', amount, x, y });
   // Thorns (§11.4): the wall bites back at what touches it.
   if (source && run.behaviours.thorns) damageEnemy(run, source, amount * BALANCE.behaviours.thorns, false, 'thorns');

@@ -154,6 +154,17 @@ describe('Frost Ring and Aegis (§11.2, §11.6)', () => {
     expect(a.slowUntil).toBeGreaterThan(run.time);
   });
 
+  it('a pulse spares the fragments its own kill bursts into', () => {
+    const run = inRegion(2);
+    run.weapons = [{ id: 'frost-ring', level: 1, cooldown: 0, aim: 0 }];
+    const s = spawnEnemy(run, regionByIndex(2), 'splitter', 3, 100, 0);
+    s.hp = 1;
+    tickWeapons(run, SIM_DT);
+    const frags = run.enemies.filter((e) => e.alive && e.gen === 1);
+    expect(frags).toHaveLength(3);
+    for (const f of frags) expect(f.hp).toBe(f.maxHp);
+  });
+
   it('the Bastion starts with Frost Ring and +50% Max HP', () => {
     const p = newProfile(0);
     p.bosses['bog-mother'] = { kills: 1, fastest: 60 };

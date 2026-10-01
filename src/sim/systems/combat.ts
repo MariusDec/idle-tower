@@ -191,7 +191,11 @@ function chainStrike(run: RunState, first: Enemy, p: WeaponParams, crit: Rng): v
 /** Frost Ring: every body within the pulse is hit and slowed (§11.2). */
 function frostPulse(run: RunState, p: WeaponParams, crit: Rng): void {
   const r2 = p.radius * p.radius;
-  for (const e of run.enemies) {
+  // Only what was there when it went off: a Splitter's fragments, born of
+  // this pulse's kill, are the next pulse's (§11.1: AoE *after* the split).
+  const n = run.enemies.length;
+  for (let i = 0; i < n; i++) {
+    const e = run.enemies[i];
     if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
     const hit = rollHit(run, p, crit);
     damageEnemy(run, e, hit.damage, hit.crit, 'pulse');

@@ -106,7 +106,6 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
   const e = bossBody(run);
   if (!b || !e) return;
   const def = BOSS_BY_ID[b.id];
-  b.minHp = Math.min(b.minHp, Math.max(0, run.tower.hp) / run.stats.maxHp);
 
   // Phases turn at HP thresholds; a big hit may skip one.
   const frac = e.hp / e.maxHp;

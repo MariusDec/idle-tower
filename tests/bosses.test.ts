@@ -9,6 +9,7 @@ import { regionByIndex } from '../src/content/regions';
 import { BOSS_WAVE, rollWave, startWave, waveHp, waveShardMult } from '../src/sim/systems/waves';
 import { bossBody, tickBoss, tickRings } from '../src/sim/systems/boss';
 import { damageEnemy } from '../src/sim/systems/combat';
+import { hurtTower } from '../src/sim/systems/tower';
 import { Rng } from '../src/core/rng';
 import type { RunState } from '../src/sim/state';
 
@@ -139,5 +140,15 @@ describe('boss patterns', () => {
     expect(run.boss!.enraged).toBe(true);
     const e = bossBody(run)!;
     expect(Math.hypot(e.x, e.y)).toBeCloseTo(run.stats.radius + e.radius, 0);
+  });
+
+  it('remembers the low point of the fight, even one Second Wind lifts', () => {
+    const run = atBoss();
+    run.revives = 1;
+    hurtTower(run, run.stats.maxHp * 2, 0, 100, null);
+    step(run, SIM_DT);
+    expect(run.outcome).toBeNull();
+    expect(run.tower.hp).toBeGreaterThan(0);
+    expect(run.boss!.minHp).toBe(0);
   });
 });

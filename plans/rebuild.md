@@ -6,11 +6,13 @@ active bot buying cheapest-first, claiming feats and pushing the frontier
 (`npm run pacing -- --seeds 8 --hours 1.5`):
 
 - The Gatekeeper first falls at 34:44 median (29:24–38:04), mostly on its
-  second sighting. The Bog Mother falls at 65:01 (58:41–68:46).
+  second sighting. The Bog Mother falls at 64:41 (59:55–69:12).
 - Wave 20 is first reached at 27:33 (22:24–32:04). That was 22:38 in P3;
   Region 1's elites slowed it.
-- I3 holds on every profile. I6 holds through the Bog Mother's fall. After
-  that P4 runs out of content, which is P7's gap to fill.
+- I3 holds on every profile. I6 holds through the Bog Mother's fall on 7 of
+  8 profiles; the eighth goes 11:33 without a reveal in the Mire just before
+  the Bog Mother arrives. After her fall P4 runs out of content, which is
+  P7's gap to fill.
 
 P4 departs from the plan in a few places:
 
@@ -30,6 +32,8 @@ P4 departs from the plan in a few places:
 Still open:
 
 - playtest #1 (P3's gate) and playtest #2 (P4's gate)
+- I6's thin margin in the Mire before the Bog Mother (see above): a Region 2
+  reveal or a tuning pass, after playtest #2
 - from P1, the frame-rate check on a mid-range Android device
 
 P5 (§14) is next.

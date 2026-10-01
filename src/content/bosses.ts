@@ -6,7 +6,7 @@ import type { BossDef, BossId } from './types';
  * outlasts `BALANCE.boss.enrageAfter` walks to the wall instead.
  *
  * HP is a multiple of the region's wave-20 HP (§8.2: about 25–35 s of the
- * DPS expected there); `npm run inspect -- --boss` reads the fight.
+ * DPS expected there); `npm run inspect -- --forge all --region 2` reads the fight.
  */
 export const BOSSES: readonly BossDef[] = [
   {

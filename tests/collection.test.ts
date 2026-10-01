@@ -195,6 +195,21 @@ describe('banking a boss (§4.6, §7.3)', () => {
     expect(again.unlocks).toEqual([]);
   });
 
+  it('a later boss lists only the nodes its own fall unseals', () => {
+    const p = killed('gatekeeper');
+    p.tutorial.firstDraft = true;
+    p.region = 2;
+    const run = createRun(buildRunConfig(p), 3);
+    startWave(run, regionByIndex(2), BOSS_WAVE);
+    for (let i = 0; i < 30; i++) step(run, SIM_DT);
+    damageEnemy(run, bossBody(run)!, 1e12, false);
+    run.outcome = { kind: 'retreat', wave: run.wave, time: run.time };
+    const n = FORGE.filter((x) => x.sealed === 'bog-mother').length;
+    const s = bankRun(p, run);
+    expect(s.unlocks).toContain(`${n} Forge node${n === 1 ? '' : 's'} unsealed`);
+    expect(s.unlocks.filter((u) => u.includes('unsealed'))).toHaveLength(1);
+  });
+
   it('the hub goal points at the frontier boss once nothing is affordable', () => {
     const p = newProfile(0);
     p.records.runs = 1;
