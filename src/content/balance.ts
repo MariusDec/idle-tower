@@ -235,6 +235,8 @@ export const BALANCE = {
     attackInterval: 1.4,
     /** A submerged boss rises this far round its ring, radians, either way. */
     emergeArc: [0.9, 1.8],
+    /** How fast a shot the Prism's mirror throws back flies at the tower. */
+    reflectSpeed: 360,
   },
   /** Enemy verbs that need a number not in the type's data (§4.3). */
   foes: {

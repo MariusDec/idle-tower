@@ -36,7 +36,8 @@ export const FRAMES: readonly FrameDef[] = [
       reflect: 1,
     },
     unlock: { kind: 'boss', boss: 'bog-mother' },
-  },  {
+  },
+  {
     id: 'stormcaller',
     name: 'Stormcaller',
     icon: 'lightning-storm',

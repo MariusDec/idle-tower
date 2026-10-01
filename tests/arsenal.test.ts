@@ -130,6 +130,30 @@ describe('the new patterns (§4.4, §11.2)', () => {
     for (const d of run.weapons[0].drones) expect(Math.hypot(d.x - target.x, d.y - target.y)).toBeLessThan(BALANCE.weapons.droneHover * 1.6);
     expect(target.hp).toBeLessThan(1e6);
   });
+
+  it('Sentinel Drones arrive ready to fire, not with a backlog from the flight', () => {
+    const run = armory();
+    only(run, 'sentinel-drones');
+    // At the edge of the leash: a long flight before the first shot.
+    body(run, { x: run.stats.range, y: 0, ...tough });
+    const shots: number[] = [];
+    const n = Math.round(4 / SIM_DT);
+    for (let i = 0; i < n; i++) {
+      for (const e of fight(run, SIM_DT)) if (e.kind === 'fire') shots.push(run.time);
+    }
+    expect(shots.length).toBeGreaterThan(0);
+    // Two drones, each at most one shot per interval: never more than two in a quarter second.
+    for (const t of shots) expect(shots.filter((u) => u >= t && u < t + 0.25).length).toBeLessThanOrEqual(2);
+  });
+
+  it('Glaives sound a shot on each step a blade cuts', () => {
+    const run = armory();
+    only(run, 'glaives');
+    const p = armed(run.stats, run.weapons[0]);
+    body(run, { x: p.radius, y: 0, ...tough });
+    const events = fight(run, 2);
+    expect(events.some((e) => e.kind === 'fire' && e.weapon === 'glaives')).toBe(true);
+  });
 });
 
 function weaponLevel(id: WeaponId, level: number) {

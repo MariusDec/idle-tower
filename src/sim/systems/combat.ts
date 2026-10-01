@@ -108,8 +108,15 @@ export function tickWeapons(run: RunState, dt: number): void {
   const desperate = run.behaviours['last-stand'] && run.tower.hp < run.stats.maxHp * B.lastStandBelow;
   const rateMult = run.stats.fireRateMult * (desperate ? 1 + B.lastStandSpeed : 1) * overclock(run);
   for (const w of run.weapons) {
-    // A Harbinger's gaze (§11.1): silenced, it holds its fire.
-    if (w.silencedUntil > run.time) continue;
+    // A Harbinger's gaze (§11.1): silenced, it holds its fire. Its drones
+    // hang where they are, settled so the painter doesn't jitter them.
+    if (w.silencedUntil > run.time) {
+      for (const d of w.drones) {
+        d.px = d.x;
+        d.py = d.y;
+      }
+      continue;
+    }
     const p = armed(run.stats, w);
     const pattern = WEAPON_BY_ID[w.id].pattern;
     switch (pattern) {
@@ -524,6 +531,7 @@ function sweepBlades(run: RunState, w: WeaponState, p: WeaponParams, dt: number,
   const r = bladeOrbit(run, w, p);
   const TAU = Math.PI * 2;
   const n = run.enemies.length;
+  let cut = false;
   for (let i = 0; i < n; i++) {
     const e = run.enemies[i];
     if (!targetable(run, e)) continue;
@@ -538,10 +546,13 @@ function sweepBlades(run: RunState, w: WeaponState, p: WeaponParams, dt: number,
       if (delta < sweep) {
         const hit = rollHit(run, p, crit);
         damageEnemy(run, e, hit.damage, hit.crit, 'orbit');
+        cut = true;
         break;
       }
     }
   }
+  // Blades have no volley: a step that cuts is their shot (§10.4's sound).
+  if (cut) run.events.push({ kind: 'fire', weapon: w.id, angle: w.spin });
 }
 
 /**
@@ -593,11 +604,13 @@ function flyDrones(run: RunState, w: WeaponState, p: WeaponParams, dt: number, r
       d.y += (my / md) * stepLen;
     }
     d.cooldown -= dt;
-    if (!quarry || d.cooldown > 0) {
+    // Idle or still closing in: ready to fire on arrival, with no backlog
+    // (a drone that flew for two seconds must not arrive with a burst).
+    if (!quarry || Math.sqrt(best) > W.droneHover * 1.6) {
       d.cooldown = Math.max(0, d.cooldown);
       return;
     }
-    if (Math.sqrt(best) > W.droneHover * 1.6) return;
+    if (d.cooldown > 0) return;
     d.cooldown += 1 / (p.fireRate * rateMult);
     const angle = Math.atan2(quarry.y - d.y, quarry.x - d.x);
     launch(run, w, d.x, d.y, angle, p.projectileSpeed, {

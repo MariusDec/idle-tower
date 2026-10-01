@@ -16,7 +16,7 @@ import { tickEnemies } from '../src/sim/systems/enemies';
 import { hurtTower, tickShots } from '../src/sim/systems/tower';
 import { applyCard } from '../src/sim/systems/draft';
 import { frameUnlocked } from '../src/meta/collection';
-import { featVisible } from '../src/meta/feats';
+import { checkFeats, featMet, featVisible } from '../src/meta/feats';
 import { Rng } from '../src/core/rng';
 import type { EnemyVerb, FrameId } from '../src/content/types';
 import type { Enemy, Projectile, RunConfig, RunState } from '../src/sim/state';
@@ -394,6 +394,19 @@ describe('secret feats (§5.4)', () => {
     for (const f of secret) expect(featVisible(p, f)).toBe(false);
     p.bosses.forgeheart = { kills: 1, fastest: 60 };
     for (const f of secret) expect(featVisible(p, f)).toBe(true);
+  });
+
+  it('cannot be earned before they surface', () => {
+    // A Gatekeeper felled without the ultimate: Unlit's goal, but no secret yet.
+    const p = newProfile(0);
+    p.bosses.gatekeeper = { kills: 1, fastest: 60 };
+    const run = inRegion(1);
+    run.boss = { killedIn: 60 } as RunState['boss'];
+    const unlit = FEATS.find((f) => f.id === 'unlit')!;
+    expect(featMet(p, unlit.goal, run)).toBe(true);
+    expect(checkFeats(p, run).map((f) => f.id)).not.toContain('unlit');
+    p.bosses.forgeheart = { kills: 1, fastest: 60 };
+    expect(checkFeats(p, run).map((f) => f.id)).toContain('unlit');
   });
 });
 

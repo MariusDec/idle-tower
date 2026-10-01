@@ -100,7 +100,8 @@ export function paintArsenal(ctx: CanvasRenderingContext2D, run: RunState, alpha
 }
 
 function paintBeam(ctx: CanvasRenderingContext2D, run: RunState, w: WeaponState, alpha: number, clock: number, additive: boolean): void {
-  if (!w.beamTarget) return;
+  // Silenced by a Harbinger, the beam is out.
+  if (!w.beamTarget || w.silencedUntil > run.time) return;
   const t = run.enemies.find((e) => e.id === w.beamTarget && e.alive);
   if (!t) return;
   const p = armed(run.stats, w);

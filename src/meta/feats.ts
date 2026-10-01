@@ -122,11 +122,15 @@ export function featProgress(profile: Profile, feat: FeatDef): number {
   }
 }
 
-/** Mark every newly met feat done. Returns them, in table order. */
+/**
+ * Mark every newly met feat done. Returns them, in table order. A secret
+ * feat counts only once it has surfaced: an ultimate held back at the
+ * Gatekeeper is no secret yet, and its reward is priced for Region 4.
+ */
 export function checkFeats(profile: Profile, run: RunState | null): FeatDef[] {
   const out: FeatDef[] = [];
   for (const f of FEATS) {
-    if (profile.feats[f.id]) continue;
+    if (profile.feats[f.id] || !featVisible(profile, f)) continue;
     if (featMet(profile, f.goal, run)) {
       profile.feats[f.id] = 'done';
       out.push(f);

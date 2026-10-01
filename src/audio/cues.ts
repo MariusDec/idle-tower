@@ -135,6 +135,7 @@ export class Cues {
           break;
         case 'nova':
         case 'aegis':
+        case 'ultStart':
           for (const [i, f] of [520, 700, 940].entries()) s.tone({ freq: f, type: 'triangle', duration: 0.1, volume: 0.15, delay: i * 0.06 });
           break;
         case 'bossArrive':

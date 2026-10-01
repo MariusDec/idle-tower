@@ -327,7 +327,7 @@ export function reflectShot(run: RunState, e: Enemy, x: number, y: number): bool
   }
   if (!hit) return false;
   const d = Math.hypot(e.x, e.y) || 1;
-  const speed = 360;
+  const speed = BALANCE.boss.reflectSpeed;
   const region = regionByIndex(run.regionId);
   run.shots.push({
     x: e.x, y: e.y, px: e.x, py: e.y, vx: (-e.x / d) * speed, vy: (-e.y / d) * speed,

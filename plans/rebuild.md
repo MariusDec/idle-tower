@@ -11,11 +11,11 @@ cheapest-first, claiming feats and pushing the frontier
   first falls at 33:24 (24:44–39:21), the Bog Mother at 70:41
   (60:36–74:51).
 - The later bosses first fall at a median of: the Prism 1:57 (1:31–2:33),
-  Forgeheart 2:46 (2:17–3:36), the Hollow King 5:38 (4:53–6:03) and the
-  Blight 9:09 (7:35–11:02). I1 holds on all 8 profiles.
-- The first evolution lands at 1:33:53 (1:30:42–1:41:29), inside §7.1's
+  Forgeheart 2:50 (2:17–3:36), the Hollow King 5:42 (4:53–5:50) and the
+  Blight 9:13 (7:34–10:47). I1 holds on all 8 profiles.
+- The first evolution lands at 1:33:51 (1:30:34–1:41:05), inside §7.1's
   1.5–2 h.
-- I3 holds on all 8 profiles. I6 holds on 5; the worst reveal gap is 12:06
+- I3 holds on all 8 profiles. I6 holds on 5; the worst reveal gap is 12:08
   (see Still open).
 - I4 (`npm run arsenal`, 16 seeds per region): every region spreads the
   new-weapon picks; the most-picked weapon is Mortar at 31% of Region 2's
@@ -112,8 +112,10 @@ P7 departs from the plan in a few places:
 - **Hands of five and six.** Choice, Foresight and Jackpot each add a
   card, so a hand can hold six (§4.5 says four). Past four cards the hand
   wraps into two rows of three.
-- **Secret feats** (4 of the 40) surface once Forgeheart falls. Tinkerer
-  ("Four hands, no heart.") earns the Artificer.
+- **Secret feats** (4 of the 40) surface once Forgeheart falls, and count
+  only from then: their rewards are priced for Region 4, and a Gatekeeper
+  felled without the ultimate would otherwise pay *Unlit*'s 6,000 at
+  half an hour. Tinkerer ("Four hands, no heart.") earns the Artificer.
 - **The pacing tool.** I1b reads the finale's first kill, I2 is measured
   (the idle bot's check-ins to the Blight, capped at 20 days), I5 is held
   at Region 2 and at every boss after the Gatekeeper, and I6 reads the full
