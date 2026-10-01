@@ -5,12 +5,15 @@
  *   npm run inspect -- --seeds 50          many runs: death waves, level-up pace, builds
  *   npm run inspect -- --seed 7 --bare     a level-1 tower that never drafts
  *   npm run inspect -- --seed 7 --max 600  cap the run at 600 s
+ *   npm run inspect -- --forge ring1       a Forge preset: none (default), arsenal
+ *                                          (P2's loadout), ring1 or all, bought out
  *
  * Headless: it drives the real sim, not a model of it.
  */
 import { createRun, step } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
-import { newProfile } from '../src/meta/profile';
+import { newProfile, type Profile } from '../src/meta/profile';
+import { FORGE } from '../src/content/forge';
 import { SIM_DT } from '../src/app/loop';
 import { ENEMY_BY_ID } from '../src/content/enemies';
 import { regionByIndex } from '../src/content/regions';
@@ -52,15 +55,25 @@ export interface RunReport {
   run: RunState;
 }
 
-/** A profile past the first-draft lesson, so every run rolls its drafts. */
-function veteran(): ReturnType<typeof newProfile> {
+export type ForgePreset = 'none' | 'arsenal' | 'ring1' | 'all';
+
+/**
+ * A profile past the first-draft lesson, so every run rolls its drafts, with
+ * a Forge preset bought out: `arsenal` is the loadout P2's gate was measured
+ * on (weapon slot 2, Scattershot, Chain Lightning).
+ */
+export function veteran(preset: ForgePreset = 'none'): Profile {
   const p = newProfile(0);
   p.tutorial.firstDraft = true;
+  if (preset === 'arsenal') p.forge = { 'might-damage': 1, scattershot: 1, 'chain-lightning': 1 };
+  if (preset === 'ring1' || preset === 'all') {
+    for (const n of FORGE) if (preset === 'all' || n.ring === 1) p.forge[n.id] = n.maxLevel;
+  }
   return p;
 }
 
-export function simulate(seed: number, maxSeconds: number, policy: Policy): RunReport {
-  const run = createRun(buildRunConfig(veteran()), seed);
+export function simulate(seed: number, maxSeconds: number, policy: Policy, preset: ForgePreset = 'none'): RunReport {
+  const run = createRun(buildRunConfig(veteran(preset)), seed);
   const region = regionByIndex(run.regionId);
   const rows: WaveRow[] = [];
   const levelUps: number[] = [];
@@ -131,6 +144,8 @@ function main(): void {
   const maxSeconds = arg('max', 1800);
   const seeds = arg('seeds', 0);
   const policy: Policy = flag('bare') ? 'bare' : 'active';
+  const fi = process.argv.indexOf('--forge');
+  const preset = (fi >= 0 ? process.argv[fi + 1] : 'none') as ForgePreset;
   if (seeds > 0) {
     const deaths = new Map<number, number>();
     const firsts: number[] = [];
@@ -141,7 +156,7 @@ function main(): void {
     const waves: number[] = [];
     const lengths: number[] = [];
     for (let s = 1; s <= seeds; s++) {
-      const r = simulate(s, maxSeconds, policy);
+      const r = simulate(s, maxSeconds, policy, preset);
       deaths.set(r.run.wave, (deaths.get(r.run.wave) ?? 0) + 1);
       waves.push(r.run.wave);
       lengths.push(r.run.time);
@@ -155,7 +170,7 @@ function main(): void {
       const key = r.run.weapons.map((w) => w.id).sort().join(' + ');
       loadouts.set(key, (loadouts.get(key) ?? 0) + 1);
     }
-    console.log(`${seeds} runs, policy ${policy}`);
+    console.log(`${seeds} runs, policy ${policy}, forge ${preset}`);
     console.log(`first kill: median ${median(firsts).toFixed(2)}s, worst ${Math.max(...firsts).toFixed(2)}s`);
     console.log(`death wave: median ${median(waves)} · ` + [...deaths.entries()].sort((a, b) => a[0] - b[0]).map(([w, n]) => `w${w}×${n}`).join('  '));
     console.log(`run length: median ${median(lengths).toFixed(0)}s`);
@@ -166,8 +181,8 @@ function main(): void {
     return;
   }
   const seed = arg('seed', 1);
-  const r = simulate(seed, maxSeconds, policy);
-  console.log(`seed ${seed} · policy ${policy} · first kill ${r.firstKill?.toFixed(2) ?? '—'}s · ${r.levelUps.length} level-ups · ${r.ultCasts} novas`);
+  const r = simulate(seed, maxSeconds, policy, preset);
+  console.log(`seed ${seed} · policy ${policy} · forge ${preset} · first kill ${r.firstKill?.toFixed(2) ?? '—'}s · ${r.levelUps.length} level-ups · ${r.ultCasts} novas`);
   console.log('wave  start  dur  lvl    dps  bodies   pool   clear  carried  taken  kills  hp');
   for (const w of r.rows) {
     const clear = w.hpPool / w.dps;

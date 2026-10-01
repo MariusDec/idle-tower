@@ -61,11 +61,12 @@ describe('gesture guards', () => {
     }
   });
 
-  it('keeps `touch-action: none` on the canvas and nowhere else', () => {
+  it('keeps `touch-action: none` on the surfaces that pan themselves and nowhere else', () => {
+    // The arena canvas, and the Forge web, which pans and pinches itself.
     const owners = RULES
       .filter(r => /touch-action:\s*none/.test(r.body))
       .map(r => r.selector);
-    expect(owners).toEqual(['#game-canvas']);
+    expect(owners).toEqual(['#game-canvas', '.forge-web']);
   });
 });
 
@@ -75,6 +76,9 @@ describe('44 px floor', () => {
     { sel: '.hud-pause', axes: ['min-width', 'min-height'] },
     { sel: '.hud-ult', axes: ['min-width', 'min-height'] },
     { sel: '.draft-card', axes: ['min-width', 'min-height'] },
+    { sel: '.hud-speed', axes: ['min-width', 'min-height'] },
+    { sel: '.hub-tab', axes: ['min-width', 'min-height'] },
+    { sel: '.results-shards', axes: ['min-width', 'min-height'] },
   ];
 
   for (const { sel, axes } of AUDIT) {

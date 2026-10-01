@@ -1,12 +1,13 @@
 # The Tower, rebuilt — a ground-up redesign
 
-**Status:** approved; decisions D1–D6 confirmed (§16). P0, P1 and P2 are
-built on the `rebuild` branch. P2's gate numbers come from the real sim (a
-bot-drafted run falls at wave 11 median; runs end with different loadouts; only
-the first draft pauses). Until the Forge lands in P3, every run gets a
-stand-in for its ring-1 unlocks (weapon slot 2, Scattershot, Chain Lightning)
-so the draft has something to choose between. Still open from P1: the
-frame-rate check on a mid-range Android device. P3 (§14) is next.
+**Status:** approved; decisions D1–D6 confirmed (§16). P0–P3 are built on
+the `rebuild` branch. P3's pacing numbers come from the real sim with the
+active bot buying cheapest-first (`npm run pacing -- --seeds 8`): wave 20 is
+first reached at 22:38 median (13:20–32:45 across profiles), I3 and I6 hold
+on every profile over the first hour, and runs buy about 3 nodes each. The
+P3 Forge is 32 nodes, not ~40: Arsenal's ring 2 waits for P5's weapons.
+Still open: playtest #1 (the P3 gate), and from P1 the frame-rate check on a
+mid-range Android device. P4 (§14) is next.
 
 **Supersedes:** every other file in `plans/`. Those describe the current game;
 P0 (§14) moves them to `plans/archive/`.

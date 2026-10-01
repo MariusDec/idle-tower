@@ -1,23 +1,12 @@
 import { BALANCE } from '../content/balance';
 import { FRAMES } from '../content/frames';
 import { PASSIVES } from '../content/passives';
-import type { CardItemId, Effect, StatMod } from '../content/types';
+import type { BehaviourId, CardItemId, Effect, StatMod } from '../content/types';
+import { ownedNodes } from './forge';
 import type { Profile } from './profile';
 import type { Card, RunConfig } from '../sim/state';
 
 export type { RunConfig };
-
-/**
- * What the Forge will grant by the time the draft has something to choose
- * between: weapon slot 2 and the two ring-1 weapons (§7.1, runs 2–4). There
- * is no Forge until P3, so every run gets them; P3 replaces this list with
- * the player's owned nodes.
- */
-const FORGE_STANDIN: readonly Effect[] = [
-  { kind: 'slot', slot: 'weapon', n: 1 },
-  { kind: 'unlockCard', id: 'scattershot' },
-  { kind: 'unlockCard', id: 'chain-lightning' },
-];
 
 /** The first draft of the game (§7.1): one of each kind of card, nothing to misread. */
 export const FIRST_DRAFT: readonly Card[] = [
@@ -36,7 +25,13 @@ export function buildRunConfig(profile: Profile): RunConfig {
   const pool: CardItemId[] = [frame.startingWeapon, ...PASSIVES.map((p) => p.id)];
   let weaponSlots: number = BALANCE.slots.weapon;
   let passiveSlots: number = BALANCE.slots.passive;
-  for (const e of [...frame.effects, ...FORGE_STANDIN]) {
+  const behaviours: Partial<Record<BehaviourId, number>> = {};
+  // Every effect applies once per owned level; a frame's quirk is one level.
+  const effects: Effect[] = [...frame.effects];
+  for (const { node, level } of ownedNodes(profile)) {
+    for (let i = 0; i < level; i++) effects.push(...node.effects);
+  }
+  for (const e of effects) {
     switch (e.kind) {
       case 'stat':
         mods.push(e.mod);
@@ -47,6 +42,12 @@ export function buildRunConfig(profile: Profile): RunConfig {
       case 'slot':
         if (e.slot === 'weapon') weaponSlots += e.n;
         else passiveSlots += e.n;
+        break;
+      case 'behaviour':
+        behaviours[e.id] = (behaviours[e.id] ?? 0) + 1;
+        break;
+      case 'automation':
+        // The app's, not the run's: `meta/automation.ts` consumes it.
         break;
       default: {
         const exhaustive: never = e;
@@ -62,5 +63,6 @@ export function buildRunConfig(profile: Profile): RunConfig {
     passiveSlots,
     pool: Object.freeze(pool),
     firstDraft: profile.tutorial.firstDraft ? null : FIRST_DRAFT,
+    behaviours: Object.freeze(behaviours),
   });
 }

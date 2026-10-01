@@ -1,4 +1,5 @@
 import { ENEMIES } from './enemies';
+import { FORGE } from './forge';
 import { FRAMES } from './frames';
 import { FALLBACKS, PASSIVES } from './passives';
 import { REGIONS } from './regions';
@@ -16,4 +17,5 @@ export const CONTENT: Readonly<Record<string, readonly ContentEntry[]>> = {
   weapons: WEAPONS,
   passives: PASSIVES,
   fallbacks: FALLBACKS,
+  forge: FORGE,
 };

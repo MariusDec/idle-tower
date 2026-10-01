@@ -17,6 +17,8 @@ export interface DraftView {
   timed: boolean;
   /** True for a card the player has seen before (no NEW stamp). */
   seen: (key: string) => boolean;
+  /** Rerolls left this run; the button shows only when there are some. */
+  rerolls: number;
 }
 
 /** The first number-ish token in a card line, highlighted (§10.1). */
@@ -91,7 +93,13 @@ export class DraftPanel {
   private timed = false;
   private holding = false;
 
-  constructor(host: HTMLElement, private readonly onPick: (index: number) => void) {
+  private readonly reroll: HTMLButtonElement;
+
+  constructor(
+    host: HTMLElement,
+    private readonly onPick: (index: number) => void,
+    onReroll: () => void,
+  ) {
     this.root = document.createElement('section');
     this.root.className = 'draft';
     this.root.setAttribute('role', 'dialog');
@@ -100,7 +108,10 @@ export class DraftPanel {
       <h2 class="draft-title"></h2>
       <p class="draft-hint"></p>
       <div class="draft-row"></div>
+      <button type="button" class="btn draft-reroll" hidden></button>
       <div class="draft-timer" aria-hidden="true"><div class="draft-timer-fill"></div></div>`;
+    this.reroll = this.root.querySelector('.draft-reroll')!;
+    this.reroll.addEventListener('click', onReroll);
     this.title = this.root.querySelector('.draft-title')!;
     this.hint = this.root.querySelector('.draft-hint')!;
     this.row = this.root.querySelector('.draft-row')!;
@@ -138,6 +149,8 @@ export class DraftPanel {
     this.holding = false;
     this.timer.hidden = !view.timed;
     setStyle(this.timerFill, 'transform', 'scaleX(1)');
+    this.reroll.hidden = view.rerolls <= 0 || !view.timed;
+    this.reroll.textContent = `Reroll · ${view.rerolls}`;
     this.row.replaceChildren(...view.cards.map((c, i) => this.card(c, i, i === view.suggested, !view.seen(cardKey(c)))));
     this.root.hidden = false;
   }

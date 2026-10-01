@@ -2,11 +2,12 @@ import { Rng } from '../core/rng';
 import { BALANCE } from '../content/balance';
 import { FRAMES } from '../content/frames';
 import { regionByIndex } from '../content/regions';
+import type { BehaviourId } from '../content/types';
 import type { RunConfig, RunInput, RunState } from './state';
 import { allMods, resolveStats } from './stats';
 import { separateEnemies, sweepEnemies, tickEnemies } from './systems/enemies';
 import { sweepProjectiles, tickProjectiles, tickWeapons } from './systems/combat';
-import { pickCard, tickDraft, xpToNext } from './systems/draft';
+import { pickCard, rerollDraft, tickDraft, xpToNext } from './systems/draft';
 import { castUltimate } from './systems/ultimate';
 import { tickWaves } from './systems/waves';
 
@@ -19,6 +20,10 @@ export function createRun(config: RunConfig, seed: number): RunState {
   const frame = FRAMES.find((f) => f.id === config.frameId) ?? FRAMES[0];
   const mods = [...config.mods];
   const stats = resolveStats(allMods(mods, []));
+  const owned = (id: BehaviourId): number => config.behaviours[id] ?? 0;
+  const B = BALANCE.behaviours;
+  const level = 1 + B.headStart * owned('head-start');
+  const startLevel = Math.min(BALANCE.maxLevel, 1 + B.openingSalvo * owned('opening-salvo'));
   return {
     seed,
     regionId: config.regionId,
@@ -32,17 +37,22 @@ export function createRun(config: RunConfig, seed: number): RunState {
     weaponSlots: config.weaponSlots,
     passiveSlots: config.passiveSlots,
     pool: [...config.pool],
-    weapons: [{ id: frame.startingWeapon, level: 1, cooldown: 0, aim: -Math.PI / 2 }],
+    weapons: [{ id: frame.startingWeapon, level: startLevel, cooldown: 0, aim: -Math.PI / 2 }],
     passives: [],
-    level: 1,
+    // Head Start: the levels are real, so each banks its draft at once.
+    level,
     xp: 0,
-    xpNext: xpToNext(1),
-    pendingDrafts: 0,
+    xpNext: xpToNext(level),
+    pendingDrafts: level - 1,
     draft: null,
     draftsOpened: 0,
     firstDraft: config.firstDraft ? [...config.firstDraft] : null,
     ult: { charge: 0, need: BALANCE.ultimate.charge, casts: 0 },
     shards: 0,
+    shardsFrom: { kills: 0, waves: 0, cards: 0 },
+    behaviours: { ...config.behaviours },
+    rerolls: owned('reroll'),
+    revives: owned('second-wind'),
     enemies: [],
     projectiles: [],
     current: null,
@@ -72,6 +82,7 @@ export function applyInput(run: RunState, input: RunInput): void {
     run.outcome = { kind: 'retreat', wave: run.wave, time: run.time };
     return;
   }
+  if (input.reroll) rerollDraft(run);
   if (input.pick !== undefined) pickCard(run, input.pick);
   if (input.ult) castUltimate(run);
 }
@@ -99,6 +110,12 @@ export function step(run: RunState, dt: number, input: RunInput = {}): void {
   tickDraft(run);
 
   const t = run.tower;
+  if (t.hp <= 0 && run.revives > 0) {
+    // Second Wind (§11.4): once per owned level, the fall becomes a rise.
+    run.revives--;
+    t.hp = run.stats.maxHp * BALANCE.behaviours.secondWindHp;
+    run.events.push({ kind: 'revive' });
+  }
   if (t.hp <= 0) {
     t.hp = 0;
     run.draft = null;

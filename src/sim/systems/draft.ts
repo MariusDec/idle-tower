@@ -61,10 +61,15 @@ export function candidateCards(run: RunState): Card[] {
   return out;
 }
 
+/** Cards per draft: the base, plus Choice (§11.4). */
+export function draftChoices(run: RunState): number {
+  return BALANCE.draft.choices + BALANCE.behaviours.extraChoice * (run.behaviours['extra-choice'] ?? 0);
+}
+
 /** Roll a hand: distinct cards from the candidates, padded with fallbacks. */
 export function rollOffer(run: RunState, rng: Rng): Card[] {
   const candidates = candidateCards(run);
-  const n = BALANCE.draft.choices;
+  const n = draftChoices(run);
   if (run.firstDraft && run.draftsOpened === 0) {
     const legal = new Set(candidates.map((c) => `${cardKey(c)}:${'level' in c ? c.level : 0}`));
     const scripted = run.firstDraft.filter((c) => legal.has(`${cardKey(c)}:${'level' in c ? c.level : 0}`));
@@ -94,6 +99,20 @@ export function tickDraft(run: RunState): void {
     level: run.level - run.pendingDrafts + 1,
   };
   run.draftsOpened++;
+  run.events.push({ kind: 'draftOpen' });
+}
+
+/**
+ * Spend a reroll (§4.5): the open draft is replaced by a fresh hand from the
+ * same stream. The first, authored draft cannot be rerolled.
+ */
+export function rerollDraft(run: RunState): void {
+  const d = run.draft;
+  if (!d || run.rerolls <= 0 || (run.firstDraft && run.draftsOpened === 1)) return;
+  run.rerolls--;
+  const cards = rollOffer(run, Rng.wrap(run.streams.draft));
+  // A new offer object, so presentation sees a new hand.
+  run.draft = { cards, suggested: suggest(run, cards), level: d.level };
   run.events.push({ kind: 'draftOpen' });
 }
 
@@ -131,6 +150,7 @@ export function applyCard(run: RunState, card: Card): void {
           return;
         case 'shards':
           run.shards += BALANCE.draft.shardBonus;
+          run.shardsFrom.cards += BALANCE.draft.shardBonus;
           return;
         default: {
           const exhaustive: never = id;

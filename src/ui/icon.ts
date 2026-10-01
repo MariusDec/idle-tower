@@ -144,6 +144,19 @@ export function renderIcon(
   host.appendChild(icon(id, opts));
 }
 
+/**
+ * The artwork alone, centred on (0, 0) at `size` units, for drawing inside
+ * another `<svg>` (the Forge web), where a nested `.icon` box would not size.
+ */
+export function iconUse(id: IconId, size: number): SVGUseElement {
+  const use = makeUse(id);
+  use.setAttribute('x', String(-size / 2));
+  use.setAttribute('y', String(-size / 2));
+  use.setAttribute('width', String(size));
+  use.setAttribute('height', String(size));
+  return use;
+}
+
 function makeUse(id: IconId): SVGUseElement {
   const use = document.createElementNS(SVG_NS, 'use');
   const href = `#${iconSymbolId(id)}`;

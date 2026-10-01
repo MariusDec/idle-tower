@@ -59,6 +59,10 @@ function rollHit(run: RunState, p: WeaponParams, crit: Rng): { damage: number; c
 /** Weapons fire at the nearest enemy in range, each in its own pattern (§4.4). */
 export function tickWeapons(run: RunState, dt: number): void {
   const crit = Rng.wrap(run.streams.crit);
+  const B = BALANCE.behaviours;
+  // Last Stand (§11.4): the tower fights harder near the end.
+  const desperate = run.behaviours['last-stand'] && run.tower.hp < run.stats.maxHp * B.lastStandBelow;
+  const rateMult = run.stats.fireRateMult * (desperate ? 1 + B.lastStandSpeed : 1);
   for (const w of run.weapons) {
     w.cooldown -= dt;
     if (w.cooldown > 0) continue;
@@ -72,7 +76,7 @@ export function tickWeapons(run: RunState, dt: number): void {
     // Carry the overshoot into the next interval, so the fire rate is exact
     // rather than rounded up to whole steps (a +12% Haste stays +12%). At
     // most one attack per step, so the carry never builds up past one step.
-    w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * run.stats.fireRateMult));
+    w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * rateMult));
     const angle = Math.atan2(target.y, target.x);
     w.aim = angle;
     const pattern = WEAPON_BY_ID[w.id].pattern;
@@ -258,13 +262,29 @@ export function knockBack(e: Enemy, push: number): void {
   e.inContact = false;
 }
 
-/** Armour-mitigated damage to one body. Returns what landed. */
-export function damageEnemy(run: RunState, e: Enemy, raw: number, crit: boolean): number {
-  const amount = mitigate(raw, e.armor);
+/**
+ * Armour-mitigated damage to one body. Returns what landed. `carried` marks
+ * an Overkill carry, which never carries again.
+ */
+export function damageEnemy(run: RunState, e: Enemy, raw: number, crit: boolean, carried = false): number {
+  if (!e.alive) return 0;
+  const B = BALANCE.behaviours;
+  const before = e.hp;
+  let amount = mitigate(raw, e.armor);
+  // Executioner (§11.4): a hit on a body already this low finishes it.
+  if (run.behaviours.executioner && e.hp - amount > 0 && e.hp <= e.maxHp * B.executeBelow) amount = e.hp;
   e.hp -= amount;
   e.hitTick = run.tick;
   run.events.push({ kind: 'hit', x: e.x, y: e.y, amount, crit });
-  if (e.hp <= 0) kill(run, e);
+  if (e.hp <= 0) {
+    kill(run, e);
+    // Overkill (§11.4): what the kill didn't need lands on the nearest body.
+    const excess = amount - before;
+    if (run.behaviours.overkill && !carried && excess > 0) {
+      const next = nearestEnemy(run, e.x, e.y, B.overkillRange, e.id);
+      if (next) damageEnemy(run, next, excess, false, true);
+    }
+  }
   return amount;
 }
 
@@ -275,9 +295,12 @@ export function kill(run: RunState, e: Enemy): void {
   if (run.current && e.wave === run.current.n) run.current.alive--;
   run.events.push({ kind: 'kill', x: e.x, y: e.y, enemy: e.type, radius: e.radius });
   gainXp(run, e.xp);
+  const shards = e.shards * run.stats.shardMult;
+  run.shards += shards;
+  run.shardsFrom.kills += shards;
   const u = run.ult;
   if (u.charge < 1) {
-    u.charge = Math.min(1, u.charge + e.xp / u.need);
+    u.charge = Math.min(1, u.charge + (e.xp * run.stats.ultChargeMult) / u.need);
     if (u.charge >= 1) run.events.push({ kind: 'ultReady' });
   }
 }

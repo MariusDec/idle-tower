@@ -109,6 +109,12 @@ export class Renderer {
           this.camera.shake(3);
           break;
         }
+        case 'revive':
+          // Second Wind: the light flares back out of the crystal.
+          this.effects.pulse(0, 0, run.stats.radius * 2.5, FX.gold);
+          this.effects.levelUp(run.stats.radius);
+          this.camera.zoomPunch();
+          break;
         case 'fell':
           this.fallT = 0;
           this.effects.towerFall(run.stats.radius);

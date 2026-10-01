@@ -44,6 +44,31 @@ export const BALANCE = {
     /** Each cast makes the next charge this much longer, so later waves' kill rate doesn't spam it. */
     growth: 1.2,
   },
+  /** The Forge's costs (§5.1). Base costs are per-node data. */
+  forge: {
+    /** Each further level of a multi-level node costs this much more than the last. */
+    levelGrowth: 1.7,
+  },
+  /** Numbers behind the Forge's behaviour notables (§11.4). */
+  behaviours: {
+    /** Opening Salvo: levels the starting weapon begins above 1. */
+    openingSalvo: 1,
+    /** Head Start: levels the tower starts above 1, each a banked draft. */
+    headStart: 2,
+    /** Overkill: how far excess damage may leap to the nearest enemy. */
+    overkillRange: 180,
+    /** Executioner: below this fraction of its Max HP, any hit kills. */
+    executeBelow: 0.1,
+    /** Second Wind: HP restored, as a fraction of Max HP. */
+    secondWindHp: 0.5,
+    /** Thorns: fraction of a contact hit dealt back to its attacker. */
+    thorns: 0.5,
+    /** Last Stand: below this HP fraction, attack speed rises by `lastStandSpeed`. */
+    lastStandBelow: 0.3,
+    lastStandSpeed: 0.4,
+    /** Choice: cards added per owned level. */
+    extraChoice: 1,
+  },
   projectiles: {
     /** Seconds a homing bolt lives before fizzling. */
     homingLife: 2,

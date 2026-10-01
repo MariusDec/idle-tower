@@ -1,5 +1,7 @@
 import type { RngState } from '../core/rng';
-import type { CardItemId, EnemyId, FallbackId, PassiveId, StatMod, WeaponId } from '../content/types';
+import type {
+  BehaviourId, CardItemId, EnemyId, FallbackId, PassiveId, StatMod, WeaponId,
+} from '../content/types';
 
 /**
  * Everything a run is (§12.3). Plain data, so it can be hashed for the
@@ -28,6 +30,8 @@ export interface RunConfig {
    * on every other run.
    */
   readonly firstDraft: readonly Card[] | null;
+  /** Forge behaviours owned, by how many levels (§11.4). Absent means 0. */
+  readonly behaviours: Readonly<Partial<Record<BehaviourId, number>>>;
 }
 
 /**
@@ -46,6 +50,7 @@ export interface TowerStats {
   fireRateMult: number;
   xpMult: number;
   shardMult: number;
+  ultChargeMult: number;
 }
 
 export interface TowerState {
@@ -74,6 +79,8 @@ export interface Enemy {
   attackInterval: number;
   /** XP (and ultimate charge) the kill drops. */
   xp: number;
+  /** Shards the kill drops, before the tower's shard gain (§8.3). */
+  shards: number;
   mass: number;
   /** Run time until which it neither walks nor hits. */
   stunnedUntil: number;
@@ -186,6 +193,8 @@ export type SimEvent =
   | { kind: 'towerHit'; amount: number; x: number; y: number }
   | { kind: 'waveStart'; wave: number }
   | { kind: 'firstSight'; enemy: EnemyId }
+  /** Second Wind: the tower rose again instead of falling. */
+  | { kind: 'revive' }
   | { kind: 'fell' };
 
 export interface RunState {
@@ -216,8 +225,16 @@ export interface RunState {
   draftsOpened: number;
   firstDraft: Card[] | null;
   ult: UltimateState;
-  /** Shards from fallback cards; kill and wave shards arrive in P3. */
+  /** Shards earned this run (§8.3), unrounded; banked at the run's end. */
   shards: number;
+  /** Where `shards` came from, for the results breakdown (§4.6). */
+  shardsFrom: { kills: number; waves: number; cards: number };
+  /** Forge behaviours owned, by level count. */
+  behaviours: Partial<Record<BehaviourId, number>>;
+  /** Draft rerolls left this run (Fortune's Reroll). */
+  rerolls: number;
+  /** Second Winds left this run. */
+  revives: number;
   enemies: Enemy[];
   projectiles: Projectile[];
   /** The wave currently spawning or most recently spawned; null before wave 1. */
@@ -238,6 +255,8 @@ export interface RunInput {
   retreat?: boolean;
   /** Take card `pick` of the open draft. */
   pick?: number;
+  /** Spend a reroll on the open draft. */
+  reroll?: boolean;
   /** Fire the ultimate, if charged. */
   ult?: boolean;
 }

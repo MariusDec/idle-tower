@@ -20,6 +20,7 @@ const BASE: Readonly<Record<StatKey, number>> = {
   armor: BALANCE.tower.armor,
   xpGain: 1,
   shardGain: 1,
+  ultCharge: 1,
 };
 
 export interface StatBreakdown {
@@ -59,6 +60,7 @@ export function resolveStats(mods: readonly StatMod[]): TowerStats {
     fireRateMult: v('attackSpeed'),
     xpMult: v('xpGain'),
     shardMult: v('shardGain'),
+    ultChargeMult: v('ultCharge'),
   };
 }
 

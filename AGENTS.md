@@ -15,19 +15,20 @@ from tsconfig, Vite and Vitest; never import from it.
 |---|---|---|
 | `src/app/` | `main.ts` boot, `App.ts` owner of profile/run/loop/screens, `loop.ts` fixed 1/60 s timestep, `screens.ts` the boot → hub ⇄ run → results state machine | anything |
 | `src/core/` | `rng.ts` seeded splittable RNG, `math.ts`, `events.ts` typed bus, `spatialGrid.ts`, `format.ts` | nothing outside `core/` |
-| `src/content/` | Data tables, `balance.ts` (every tunable constant), `arena.ts` (the fixed world), `icons.ts` (generated), `lint.ts` | `core/` |
+| `src/content/` | Data tables (`forge.ts` is the Forge web), `balance.ts` (every tunable constant), `arena.ts` (the fixed world), `icons.ts` (generated), `lint.ts` | `core/` |
 | `src/sim/` | DOM-free, deterministic: `RunState`, `createRun`, `step` | `core/`, `content/` only |
-| `src/meta/` | `profile.ts`, `runConfig.ts` (profile → frozen `RunConfig`), `save/` (schema, migration ladder, storage backends) | `core/`, `content/` |
+| `src/meta/` | `profile.ts`, `forge.ts` (adjacency, fog, costs, buy/refund, the "Next:" goal), `runConfig.ts` (profile → frozen `RunConfig`), `automation.ts` (Engineering's speed and auto-restart), `results.ts` (`bankRun`: a finished run into the profile), `save/` (schema, migration ladder, run snapshot, storage backends) | `core/`, `content/`, `sim/` types |
 | `src/render/` | `camera.ts`, `renderer.ts`, `painters/`, `palette.ts`, `quality.ts`. Reads `RunState`, never writes it | `core/`, `content/`, `sim/` types |
-| `src/ui/` | DOM: HUD, screens, modal, icon helper | anything but `sim/` internals |
+| `src/ui/` | DOM: HUD, draft, results, `hub/` (home and the Forge web), modal, icon helper | anything but `sim/` internals |
 | `src/platform/` | Capacitor shell hooks | — |
-| `tools/` | Headless: `bot.ts` (input policies), `inspect.ts` (per-wave table), `pacing.ts` (from P3) | `src/` minus DOM |
+| `tools/` | Headless: `bot.ts` (input policies), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants) | `src/` minus DOM |
 | `tests/` | Vitest, node environment | — |
 
 The sim's step order (`sim/run.ts`): input → waves place bodies → enemies walk
 and hit the wall → separation spreads crowds (tangentially at the wall) →
-weapons fire → projectiles fly and kill (kills feed XP and the ultimate) → the
-dead are swept → a banked draft opens → the tower regenerates or falls.
+weapons fire → projectiles fly and kill (kills feed XP, shards and the
+ultimate; reaching a wave pays for the last) → the dead are swept → a banked
+draft opens → the tower regenerates, rises on Second Wind, or falls.
 Presentation learns what happened from `RunState.events`, which the app hands
 to the renderer and clears each frame.
 
@@ -36,9 +37,16 @@ The draft never stops the sim: the sim offers cards (`systems/draft.ts`) and
 open, times it out onto the suggestion, and pauses only for the very first
 draft of a profile. Picks and the ultimate go through `applyInput`, between
 steps. Stats are resolved by `sim/stats.ts` from `StatMod`s, once at run start
-and again whenever a passive changes. Until the Forge exists (P3),
-`meta/runConfig.ts` grants a stand-in: weapon slot 2, Scattershot and Chain
-Lightning.
+and again whenever a passive changes.
+
+The meta loop: `meta/results.ts#bankRun` is the one place a run's rewards
+reach the profile (the app and the pacing bot both call it). The Forge's
+rules live in `meta/forge.ts`; `buildRunConfig` applies every owned node's
+effects once per level. `behaviour` effects become `RunConfig.behaviours`
+counts the sim reads; `automation` effects are the app's
+(`meta/automation.ts`). The app writes a run snapshot (`tower-run`) at every
+wave start and resumes from it on boot; bump `SNAPSHOT_VERSION` in
+`meta/save/index.ts` when `RunState` changes shape.
 
 In dev builds, `1`/`2`/`3` set sim speed and `globalThis.tower` is the `App`.
 
@@ -64,7 +72,9 @@ npm test            # vitest suite (tests/)
 npm run inspect -- --seed 7   # one bot-drafted run → per-wave table (level, DPS, pool, clear time, carried, damage taken)
 npm run inspect -- --seeds 50 # many runs → death waves, level-up pace, loadouts
 npm run inspect -- --seeds 50 --bare  # the same, for a level-1 tower that never drafts
-npm run pacing      # pacing report (stub until P3)
+npm run inspect -- --seeds 50 --forge ring1  # the same with a Forge preset: none, arsenal (P2's loadout), ring1, all
+npm run pacing      # a fresh profile, one simulated hour: run table, reveal timeline, I3 / I6 / wave-20 verdicts
+npm run pacing -- --seeds 8   # eight profiles: pass counts and the median first wave 20 (the P3 gate's reading)
 npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest (needs network)
 ```
 

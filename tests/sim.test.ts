@@ -174,7 +174,7 @@ describe('fire rate', () => {
     run.enemies.push({
       id: 1, type: 'grunt', wave: 1, alive: true, x: 100, y: 0, px: 100, py: 0,
       hp: 1e12, maxHp: 1e12, armor: 0, speed: 0, radius: 20, damage: 0, attackInterval: 1,
-      xp: 0, mass: 1, stunnedUntil: 0, attackTimer: 0, inContact: false, hitTick: -1,
+      xp: 0, shards: 0, mass: 1, stunnedUntil: 0, attackTimer: 0, inContact: false, hitTick: -1,
     });
     let shots = 0;
     const seconds = 60;

@@ -1,0 +1,34 @@
+import { describe, expect, it } from 'vitest';
+import { medianWave20, runPacing } from '../tools/pacing';
+
+/**
+ * The CI-sized pacing check (§12.6): a fresh profile, the active bot, one
+ * simulated hour on the real sim, three profiles. The full report is
+ * `npm run pacing -- --seeds 8`, run by hand at each phase gate.
+ */
+describe('pacing: the first hour (§8.4, P3 gate)', () => {
+  const reports = [1, 2, 3].map((seed) => runPacing(1, seed));
+
+  it('I3: every results screen shows an affordable node or ≥ 50% toward one', () => {
+    for (const r of reports) expect(r.i3).toBe(true);
+  });
+
+  it('I6: no gap between reveals longer than 10 minutes', () => {
+    for (const r of reports) expect(r.worstGap.seconds).toBeLessThanOrEqual(600);
+  });
+
+  it('wave 20 is first reached within 15–30 minutes (median of profiles)', () => {
+    const m = medianWave20(reports);
+    expect(m).not.toBeNull();
+    expect(m!).toBeGreaterThanOrEqual(15 * 60);
+    expect(m!).toBeLessThanOrEqual(30 * 60);
+  });
+
+  it('the first run ends in about two minutes and pays for a node', () => {
+    for (const r of reports) {
+      expect(r.runs[0].simSeconds).toBeGreaterThan(90);
+      expect(r.runs[0].simSeconds).toBeLessThan(180);
+      expect(r.runs[0].bought.length).toBeGreaterThan(0);
+    }
+  });
+}, 120_000);

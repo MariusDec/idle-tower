@@ -11,6 +11,8 @@ export const REGIONS: readonly RegionDef[] = [
     name: 'Ashen Fields',
     icon: 'level-end-flag',
     text: 'Where the Blight first broke through. No rule.',
+    shardBase: 0.2,
+    waveShards: 0.4,
     hpBase: 10,
     hpGrowth: 1.17,
     damageBase: 3.2,

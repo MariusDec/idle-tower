@@ -80,6 +80,12 @@ export function rollWave(region: RegionDef, n: number, rng: Rng): SpawnEntry[] {
 }
 
 export function startWave(run: RunState, region: RegionDef, n: number): void {
+  // Reaching wave n pays for holding wave n − 1 (§8.3).
+  if (n > 1) {
+    const bonus = region.waveShards * (n - 1) * run.stats.shardMult;
+    run.shards += bonus;
+    run.shardsFrom.waves += bonus;
+  }
   const rng = Rng.wrap(run.streams.waves);
   run.current = {
     n,
@@ -114,6 +120,7 @@ function place(run: RunState, region: RegionDef, wave: WaveState, entry: SpawnEn
     damage: waveDamage(region, wave.n) * def.damage,
     attackInterval: def.attackInterval,
     xp: def.xp,
+    shards: region.shardBase * def.xp,
     mass: def.mass,
     stunnedUntil: 0,
     attackTimer: 0,

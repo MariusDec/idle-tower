@@ -1,6 +1,7 @@
 import { newProfile, type Profile } from '../profile';
 import { migrate, type RawProfile } from './migrate';
-import { isProfile } from './schema';
+import type { RunState } from '../../sim/state';
+import { isProfile, isRunState } from './schema';
 import { getSaveStore, type SaveStore } from './stores';
 
 /** The rebuild's key (§12.4). */
@@ -55,4 +56,55 @@ async function backUpLegacySave(store: SaveStore): Promise<boolean> {
   if ((await store.get(LEGACY_BACKUP_KEY)) !== null) return false;
   await store.set(LEGACY_BACKUP_KEY, legacy);
   return true;
+}
+
+/** Where the live run's snapshot is kept (§12.4). */
+export const RUN_KEY = 'tower-run';
+
+/**
+ * The snapshot's own format version. A snapshot is short-lived — it only has
+ * to survive the app being killed mid-run — so it has no ladder: bump this
+ * when `RunState` changes shape, and an older snapshot is dropped.
+ */
+export const SNAPSHOT_VERSION = 1;
+
+interface RunSnapshot {
+  version: number;
+  /** The profile it belongs to; a snapshot never crosses into another profile. */
+  profile: number;
+  run: RunState;
+}
+
+/**
+ * The run as it stands, serialised now (§12.4). The app takes this at every
+ * wave start, on a step boundary, so a resumed run continues exactly as the
+ * original would have from that wave; the write itself may land later.
+ */
+export function snapshotRun(run: RunState, profile: Profile): string {
+  const snap: RunSnapshot = { version: SNAPSHOT_VERSION, profile: profile.createdAt, run: { ...run, events: [] } };
+  return JSON.stringify(snap);
+}
+
+export async function saveRunSnapshot(snapshot: string, store: SaveStore = getSaveStore()): Promise<void> {
+  await store.set(RUN_KEY, snapshot);
+}
+
+/** The run to resume, or null. A snapshot that doesn't fit is dropped, never fatal. */
+export async function loadRunSnapshot(profile: Profile, store: SaveStore = getSaveStore()): Promise<RunState | null> {
+  const raw = await store.get(RUN_KEY);
+  if (raw === null) return null;
+  try {
+    const snap = JSON.parse(raw) as Partial<RunSnapshot>;
+    if (snap.version !== SNAPSHOT_VERSION || snap.profile !== profile.createdAt) throw new Error('stale snapshot');
+    if (!isRunState(snap.run)) throw new Error('not a run');
+    return snap.run;
+  } catch (err) {
+    console.warn('[save] run snapshot dropped', err);
+    await store.remove(RUN_KEY);
+    return null;
+  }
+}
+
+export async function clearRunSnapshot(store: SaveStore = getSaveStore()): Promise<void> {
+  await store.remove(RUN_KEY);
 }

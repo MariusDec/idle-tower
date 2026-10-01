@@ -2,6 +2,7 @@ import { SpatialGrid } from '../../core/spatialGrid';
 import { BALANCE } from '../../content/balance';
 import { ENEMIES } from '../../content/enemies';
 import type { Enemy, RunState } from '../state';
+import { damageEnemy } from './combat';
 import { mitigate } from './damage';
 
 /**
@@ -48,6 +49,8 @@ export function tickEnemies(run: RunState, dt: number): void {
       run.tower.hp -= amount;
       run.tower.hurtTick = run.tick;
       run.events.push({ kind: 'towerHit', amount, x: e.x, y: e.y });
+      // Thorns (§11.4): the wall bites back.
+      if (run.behaviours.thorns) damageEnemy(run, e, amount * BALANCE.behaviours.thorns, false);
     }
   }
 }

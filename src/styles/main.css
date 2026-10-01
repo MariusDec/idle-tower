@@ -265,6 +265,45 @@ body {
   color: var(--text-0);
 }
 
+/* Region and the run's shards, under the HP bar. */
+.hud-meta {
+  font-size: var(--text-md);
+  color: var(--text-1);
+  text-shadow: 0 1px 2px var(--surface-scrim);
+}
+
+.hud-shards {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--fx-frost);
+  font-size: var(--text-xl);
+}
+
+.hud-shards .icon {
+  --icon-size: 16px;
+}
+
+.hud-speed {
+  pointer-events: auto;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0 auto var(--space-2);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  color: var(--text-1);
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  cursor: pointer;
+}
+
+.hud-speed.is-fast {
+  border-color: var(--fx-gold);
+  color: var(--fx-gold);
+}
+
 /* ── Full-stage screens (hub, results) ───────────────────────────────────── */
 
 .screen {
@@ -281,12 +320,77 @@ body {
 }
 
 .hub {
+  --dock-h: 128px;
+  align-items: stretch;
+  justify-content: flex-start;
   background: linear-gradient(to bottom, var(--surface-scrim), transparent 45%, var(--surface-scrim));
-  /*
-   * The backdrop tower sits at the stage centre. Two equal-height groups
-   * hug a clear band around it, whatever each group holds.
-   */
+}
+
+.hub[data-view="forge"] {
+  background: var(--surface-0);
+}
+
+/*
+ * The backdrop tower sits at the stage centre. Two equal-height groups
+ * hug a clear band around it, whatever each group holds; the dock floats
+ * over the bottom so it doesn't move the centre.
+ */
+.hub-home {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   gap: calc(var(--space-7) * 3);
+}
+
+/* Tabs and the always-visible Run button (§10.1). */
+.hub-dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) max(var(--space-5), var(--safe-b));
+}
+
+.hub-tabs {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.hub-tab {
+  position: relative;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-1);
+  color: var(--text-2);
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.hub-tab.is-active {
+  border-color: var(--fx-gold);
+  color: var(--fx-gold);
+}
+
+/* Something in the Forge is affordable. */
+.hub-tab.has-badge::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--fx-gold);
 }
 
 .hub-group {
@@ -345,8 +449,13 @@ body {
   font-size: var(--text-6xl);
 }
 
-.results-record {
+.results-records {
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.results-record {
   font-family: var(--font-display);
   font-size: var(--text-2xl);
   text-transform: uppercase;
@@ -354,15 +463,354 @@ body {
   color: var(--fx-gold);
 }
 
-.results-detail {
+.results-record s {
+  color: var(--text-3);
+}
+
+.results-stats {
+  display: flex;
+  gap: var(--space-6);
+  align-items: flex-start;
+}
+
+.results-stats > * {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.results-stat-n {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-display);
+  font-size: var(--text-4xl);
+}
+
+.results-stat-l {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+/* The haul: a button, because a tap opens the breakdown (§4.6). */
+.results-shards {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  border: 1px dashed var(--surface-4);
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--fx-frost);
+  cursor: pointer;
+}
+
+.results-shards .icon {
+  --icon-size: 22px;
+}
+
+.results-breakdown {
   margin: 0;
   color: var(--text-2);
+  font-size: var(--text-md);
+}
+
+.results-finds {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.results-find {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-1);
+  font-size: var(--text-md);
+}
+
+.results-find::after {
+  content: 'New';
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--fx-gold);
+  color: var(--text-on-amber);
+  font-size: var(--text-3xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.results-find .icon {
+  --icon-size: 20px;
+  color: var(--fx-arcane);
+}
+
+/* "Next:" — one line, one bar (§4.6). */
+.results-next {
+  width: min(340px, 100%);
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  grid-template-areas:
+    "label icon name value"
+    "bar   bar  bar  bar";
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  text-align: left;
+}
+
+.results-next-label {
+  grid-area: label;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.results-next-icon { grid-area: icon; color: var(--fx-gold); }
+.results-next-name { grid-area: name; font-family: var(--font-display); font-size: var(--text-xl); }
+.results-next-value { grid-area: value; font-family: var(--font-display); font-size: var(--text-xl); color: var(--text-1); }
+.results-next.is-ready .results-next-value { color: var(--fx-gold); }
+
+.results-next-bar {
+  grid-area: bar;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  overflow: hidden;
+}
+
+.results-next-fill {
+  height: 100%;
+  background: var(--fx-gold);
+  transform-origin: left center;
 }
 
 .results-actions {
   display: flex;
   gap: var(--space-3);
   margin-top: var(--space-4);
+}
+
+/* ── Forge (§5.1) ────────────────────────────────────────────────────────── */
+
+.forge {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--dock-h);
+}
+
+.forge-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.forge-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-5xl);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fx-gold);
+}
+
+.forge-shards {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-display);
+  font-size: var(--text-4xl);
+  color: var(--fx-frost);
+}
+
+.forge-hint {
+  margin: 0;
+  color: var(--text-1);
+}
+
+/* The web pans and pinches itself, so it opts out of browser gestures. */
+.forge-web {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.forge-node { --branch: var(--text-2); cursor: pointer; }
+.branch-might { --branch: var(--fx-ember); }
+.branch-bulwark { --branch: var(--fx-nature); }
+.branch-fortune { --branch: var(--fx-gold); }
+.branch-arsenal { --branch: var(--fx-arcane); }
+.branch-engineering { --branch: var(--fx-frost); }
+
+.forge-hit { fill: transparent; }
+
+.forge-shape {
+  fill: var(--surface-1);
+  stroke: var(--branch);
+  stroke-width: 2;
+  stroke-opacity: 0.55;
+}
+
+.forge-ring {
+  fill: none;
+  stroke: var(--branch);
+  stroke-opacity: 0.35;
+}
+
+.forge-node use { fill: var(--text-2); }
+.forge-node.is-open use { fill: var(--text-1); }
+.forge-node.is-owned .forge-shape { fill: var(--branch); fill-opacity: 0.22; stroke-opacity: 1; }
+.forge-node.is-owned use { fill: var(--branch); }
+.forge-node.is-maxed .forge-shape { fill-opacity: 0.4; }
+.forge-node.is-affordable .forge-shape { stroke: var(--fx-gold); stroke-opacity: 1; stroke-width: 3; }
+.forge-node.is-fog .forge-shape { fill: var(--surface-0); stroke-dasharray: 4 4; stroke-opacity: 0.45; }
+.forge-node.is-selected .forge-shape { stroke: var(--text-0); stroke-width: 3; stroke-opacity: 1; }
+
+.forge-unknown {
+  fill: var(--branch);
+  fill-opacity: 0.6;
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+}
+
+.forge-level {
+  fill: var(--text-2);
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+}
+
+.forge-node.is-hinted .forge-shape {
+  animation: forge-hint var(--dur-pulse) var(--ease-in-out) infinite alternate;
+}
+
+@keyframes forge-hint {
+  from { stroke-width: 3; }
+  to { stroke-width: 9; }
+}
+
+.forge-root circle {
+  fill: var(--surface-2);
+  stroke: var(--fx-gold);
+  stroke-width: 2;
+}
+
+.forge-root use { fill: var(--fx-gold); }
+
+.forge-link {
+  stroke: var(--stroke-strong);
+  stroke-width: 2;
+}
+
+.forge-link.is-fog { stroke-dasharray: 3 6; stroke-opacity: 0.5; }
+.forge-link.is-owned { stroke: var(--fx-gold); stroke-opacity: 0.8; stroke-width: 3; }
+.forge-link.is-flash { animation: forge-flash var(--dur-slower) var(--ease-out) both; }
+
+@keyframes forge-flash {
+  0% { stroke: var(--fx-gold); stroke-width: 3; }
+  30% { stroke: var(--text-0); stroke-width: 7; }
+  100% { stroke: var(--fx-gold); stroke-width: 3; }
+}
+
+/* The purchase ripple (§10.3). */
+.forge-ripple {
+  fill: none;
+  stroke: var(--fx-gold);
+  stroke-width: 4;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: forge-ripple var(--dur-slower) var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+@keyframes forge-ripple {
+  from { transform: scale(0.8); opacity: 1; }
+  to { transform: scale(3); opacity: 0; }
+}
+
+/* The selected node's card, above the dock. Its branch class sets --branch. */
+.forge-detail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--dock-h);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--surface-4);
+  border-top: 3px solid var(--branch);
+  border-radius: var(--radius-xl);
+  background: var(--surface-1);
+  text-align: left;
+}
+
+.forge-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--branch);
+}
+
+.forge-detail-head .icon { --icon-size: 28px; }
+
+.forge-detail-head h3 {
+  margin: 0;
+  color: var(--text-0);
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+}
+
+.forge-detail-kind {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+}
+
+.forge-detail-text {
+  margin: var(--space-2) 0;
+  color: var(--text-1);
+}
+
+.forge-detail-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.forge-buy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.forge-buy:disabled {
+  background: var(--surface-2);
+  border-color: var(--surface-4);
+  color: var(--text-3);
+  cursor: default;
+}
+
+.forge-detail-done {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  text-transform: uppercase;
+  color: var(--fx-gold);
 }
 
 /* ── Draft (§4.5, §10.1) ──────────────────────────────────────────────────── */
@@ -400,7 +848,9 @@ body {
 .draft-row {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Three cards, or four with Choice. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 
@@ -572,9 +1022,17 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .draft-card,
-  .hud-ult.is-ready {
+  .hud-ult.is-ready,
+  .forge-node.is-hinted .forge-shape,
+  .forge-link.is-flash {
     animation: none;
   }
+}
+
+/* Reroll (Fortune): under the hand, out of the way of the cards. */
+.draft-reroll {
+  pointer-events: auto;
+  font-size: var(--text-md);
 }
 
 /* ── Modal ───────────────────────────────────────────────────────────────── */

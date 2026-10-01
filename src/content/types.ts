@@ -28,7 +28,8 @@ export type StatKey =
   | 'regen'
   | 'armor'
   | 'xpGain'
-  | 'shardGain';
+  | 'shardGain'
+  | 'ultCharge';
 
 /**
  * One contribution to a stat. Resolved as
@@ -46,13 +47,60 @@ export interface StatMod {
 export type CardItemId = WeaponId | PassiveId;
 
 /**
+ * Run behaviours a Forge notable switches on (§11.4). Each is a count: how
+ * many owned levels grant it. Its numbers live in `BALANCE.behaviours`.
+ */
+export type BehaviourId =
+  | 'opening-salvo'
+  | 'head-start'
+  | 'overkill'
+  | 'executioner'
+  | 'second-wind'
+  | 'last-stand'
+  | 'thorns'
+  | 'extra-choice'
+  | 'reroll';
+
+/** What the Engineering branch automates (§6.2). The app reads these, never the sim. */
+export type AutomationId = 'speed-2' | 'auto-restart';
+
+/**
  * Effects are data (§12.3, R8). Every kind has one exhaustive consumer, in
- * `meta/runConfig.ts`, that ends in `never`.
+ * `meta/runConfig.ts`, that ends in `never`; `automation` is the app's, and
+ * `meta/automation.ts` is its consumer.
  */
 export type Effect =
   | { readonly kind: 'stat'; readonly mod: StatMod }
   | { readonly kind: 'unlockCard'; readonly id: CardItemId }
-  | { readonly kind: 'slot'; readonly slot: 'weapon' | 'passive'; readonly n: number };
+  | { readonly kind: 'slot'; readonly slot: 'weapon' | 'passive'; readonly n: number }
+  | { readonly kind: 'behaviour'; readonly id: BehaviourId }
+  | { readonly kind: 'automation'; readonly id: AutomationId };
+
+/** The Forge's five branches (§5.1). */
+export type BranchId = 'might' | 'bulwark' | 'fortune' | 'arsenal' | 'engineering';
+
+/** §5.1: a minor is a stat with levels, a notable a qualitative change, a keystone a build. */
+export type NodeType = 'minor' | 'notable' | 'keystone';
+
+/**
+ * One Forge node (§5.1, §11.4). Its effects apply once per owned level. A
+ * node can be bought when any of its `links` is owned, or when it links to
+ * the root (`links` empty).
+ */
+export interface ForgeNodeDef extends ContentEntry {
+  readonly branch: BranchId;
+  readonly type: NodeType;
+  /** Distance from the root; sets the base cost (§5.1) and the web radius. */
+  readonly ring: number;
+  /** Where it sits on the web, degrees clockwise from straight up. */
+  readonly angle: number;
+  /** Nodes it hangs from, toward the root. Empty: it hangs from the root. */
+  readonly links: readonly string[];
+  readonly maxLevel: number;
+  /** Shards for level 1; each further level costs `BALANCE.forge.levelGrowth` more. */
+  readonly cost: number;
+  readonly effects: readonly Effect[];
+}
 
 export type UltimateId = 'nova';
 
@@ -194,6 +242,10 @@ export type WaveBeat =
 export interface RegionDef extends ContentEntry {
   /** 1–6, the order on the map. */
   readonly index: number;
+  /** Shards a weight-1 kill drops (§8.3); an enemy's weight is its `xp`. */
+  readonly shardBase: number;
+  /** Shards for reaching wave n + 1: `waveShards × n` (§8.3). */
+  readonly waveShards: number;
   /** Wave-1 HP of a weight-1 enemy (§8.2). */
   readonly hpBase: number;
   /** Per-wave HP growth (§8.2: ~×1.17). */

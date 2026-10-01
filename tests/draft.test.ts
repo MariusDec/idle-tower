@@ -13,9 +13,14 @@ import { castUltimate } from '../src/sim/systems/ultimate';
 import type { Card, RunState } from '../src/sim/state';
 import { botInput, type Policy } from '../tools/bot';
 
+/**
+ * Past the first-draft lesson, and owning Arsenal's ring 1 (weapon slot 2,
+ * Scattershot, Chain Lightning): the loadout the P2 gate was measured on.
+ */
 function veteran(): Profile {
   const p = newProfile(0);
   p.tutorial.firstDraft = true;
+  p.forge = { 'might-damage': 1, scattershot: 1, 'chain-lightning': 1 };
   return p;
 }
 

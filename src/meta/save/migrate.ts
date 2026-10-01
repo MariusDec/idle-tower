@@ -10,6 +10,15 @@ export type Migration = (raw: RawProfile) => RawProfile;
 export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   // v2 (P2): the draft's NEW stamps and the first-draft lesson.
   1: (raw) => ({ ...raw, version: 2, seenCards: [], tutorial: { firstDraft: false } }),
+  // v3 (P3): the Forge, run totals and the enemies seen.
+  2: (raw) => ({
+    ...raw,
+    version: 3,
+    records: { bestShards: 0, kills: 0, ...(raw.records as object) },
+    forge: {},
+    seenEnemies: [],
+    tutorial: { forgeIntro: false, ...(raw.tutorial as object) },
+  }),
 };
 
 export class MigrationError extends Error {}

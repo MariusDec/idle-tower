@@ -1,6 +1,8 @@
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
-import type { ContentEntry, EnemyDef, FrameDef, PassiveDef, RegionDef, WeaponDef } from './types';
+import type {
+  ContentEntry, EnemyDef, ForgeNodeDef, FrameDef, PassiveDef, RegionDef, WeaponDef,
+} from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
 export const MAX_TEXT_WORDS = 15;
@@ -111,7 +113,55 @@ export const levels: LintRule = (tables) => {
   return out;
 };
 
-export const RULES: readonly LintRule[] = [uniqueIds, entryBasics, references, levels];
+/**
+ * The Forge web holds together (§12.6): links name real nodes one ring in or
+ * on the same ring, every node is reachable from the root, the costs and
+ * levels are sane, the unlocks name real cards, and minors stay at most 60%
+ * of the web (§5.1).
+ */
+export const forgeWeb: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const nodes = (tables.forge as readonly ForgeNodeDef[] | undefined) ?? [];
+  if (nodes.length === 0) return out;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const cards = new Set([
+    ...((tables.weapons as readonly WeaponDef[] | undefined) ?? []).map((w) => w.id as string),
+    ...((tables.passives as readonly PassiveDef[] | undefined) ?? []).map((p) => p.id as string),
+  ]);
+  const issue = (id: string, problem: string): void => { out.push({ table: 'forge', id, problem }); };
+  for (const n of nodes) {
+    if (n.maxLevel < 1) issue(n.id, 'max level below 1');
+    if (n.type !== 'minor' && n.effects.some((e) => e.kind === 'stat') && n.maxLevel > 1) {
+      issue(n.id, 'a stat with levels is a minor');
+    }
+    if (!(n.cost > 0)) issue(n.id, 'cost must be positive');
+    if (n.effects.length === 0) issue(n.id, 'has no effect');
+    if (n.ring < 1) issue(n.id, 'ring below 1');
+    if (n.links.length === 0 && n.ring !== 1) issue(n.id, 'only ring 1 may hang from the root');
+    for (const l of n.links) {
+      const to = byId.get(l);
+      if (!to) issue(n.id, `links to unknown node "${l}"`);
+      else if (to.ring > n.ring || to.ring < n.ring - 1) issue(n.id, `links across rings to "${l}"`);
+    }
+    for (const e of n.effects) {
+      if (e.kind === 'unlockCard' && !cards.has(e.id)) issue(n.id, `unlocks unknown card "${e.id}"`);
+    }
+  }
+  // Reachability: walk outward from the root over links in both directions.
+  const adj = new Map<string, string[]>(nodes.map((n) => [n.id, []]));
+  for (const n of nodes) for (const l of n.links) if (adj.has(l)) { adj.get(n.id)!.push(l); adj.get(l)!.push(n.id); }
+  const reached = new Set(nodes.filter((n) => n.links.length === 0).map((n) => n.id));
+  const queue = [...reached];
+  while (queue.length > 0) {
+    for (const m of adj.get(queue.pop()!) ?? []) if (!reached.has(m)) { reached.add(m); queue.push(m); }
+  }
+  for (const n of nodes) if (!reached.has(n.id)) issue(n.id, 'unreachable from the root');
+  const minors = nodes.filter((n) => n.type === 'minor').length;
+  if (minors > nodes.length * 0.6) issue('*', `${minors} of ${nodes.length} nodes are minors (max 60%)`);
+  return out;
+};
+
+export const RULES: readonly LintRule[] = [uniqueIds, entryBasics, references, levels, forgeWeb];
 
 export function lintContent(
   tables: Readonly<Record<string, readonly ContentEntry[]>>,
