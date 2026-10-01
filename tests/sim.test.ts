@@ -9,6 +9,8 @@ import { ENEMY_BY_ID } from '../src/content/enemies';
 import { hashString, Rng } from '../src/core/rng';
 import { mitigate } from '../src/sim/systems/damage';
 import { rollWave, shouldAdvance } from '../src/sim/systems/waves';
+import { tickWeapons } from '../src/sim/systems/combat';
+import { weaponParams } from '../src/content/weapons';
 import type { RunState, WaveState } from '../src/sim/state';
 
 const config = () => buildRunConfig(newProfile(0));
@@ -162,5 +164,27 @@ describe('the P1 gate, measured on the real sim', () => {
     const run = runFor(4, 5);
     step(run, SIM_DT, { retreat: true });
     expect(run.outcome?.kind).toBe('retreat');
+  });
+});
+
+describe('fire rate', () => {
+  it('fires at the exact rate, not rounded up to whole steps', () => {
+    const run = createRun({ ...config(), mods: [{ key: 'attackSpeed', pct: 0.12 }] }, 1);
+    // One immortal body parked in range, so the bolt always has a target.
+    run.enemies.push({
+      id: 1, type: 'grunt', wave: 1, alive: true, x: 100, y: 0, px: 100, py: 0,
+      hp: 1e12, maxHp: 1e12, armor: 0, speed: 0, radius: 20, damage: 0, attackInterval: 1,
+      xp: 0, mass: 1, stunnedUntil: 0, attackTimer: 0, inContact: false, hitTick: -1,
+    });
+    let shots = 0;
+    const seconds = 60;
+    for (let i = 0; i < Math.round(seconds / SIM_DT); i++) {
+      tickWeapons(run, SIM_DT);
+      shots += run.events.filter((e) => e.kind === 'fire').length;
+      run.events.length = 0;
+    }
+    const rate = weaponParams('arcane-bolt', 1).fireRate * 1.12;
+    expect(shots).toBeGreaterThanOrEqual(Math.floor(rate * seconds));
+    expect(shots).toBeLessThanOrEqual(Math.ceil(rate * seconds) + 1);
   });
 });

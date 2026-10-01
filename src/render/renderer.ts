@@ -1,5 +1,5 @@
 import { ENEMY_BY_ID } from '../content/enemies';
-import type { RunState, SimEvent } from '../sim/state';
+import type { RunState } from '../sim/state';
 import { Camera } from './camera';
 import { Effects } from './effects';
 import { FX, withAlpha } from './palette';
@@ -56,9 +56,22 @@ export class Renderer {
     return this.fallT !== null && this.fallT >= FALL_SECONDS;
   }
 
-  /** Turn this step's sim events into effects. The caller clears the list. */
-  consume(events: readonly SimEvent[]): void {
-    for (const ev of events) {
+  /**
+   * Switch to `run` if it is not the one on screen: drop the old run's
+   * effects and fall state. Both `consume` and `render` call it, so the first
+   * frame of a new run never reads the previous run's tower.
+   */
+  private attach(run: RunState | null): void {
+    if (run === this.lastRun) return;
+    this.lastRun = run;
+    this.effects.clear();
+    this.fallT = null;
+  }
+
+  /** Turn `run`'s pending sim events into effects. The caller clears the list. */
+  consume(run: RunState): void {
+    this.attach(run);
+    for (const ev of run.events) {
       switch (ev.kind) {
         case 'hit':
           this.effects.hitSparks(ev.x, ev.y, ev.crit ? FX.gold : FX.arcane, ev.crit);
@@ -72,17 +85,16 @@ export class Renderer {
           this.effects.lightning(ev.points);
           break;
         case 'levelUp':
-          this.effects.levelUp(this.lastRun?.stats.radius ?? 46);
+          this.effects.levelUp(run.stats.radius);
           break;
         case 'nova':
-          this.effects.nova(this.lastRun?.stats.radius ?? 46, ev.radius);
+          this.effects.nova(run.stats.radius, ev.radius);
           this.camera.shake(10);
           this.camera.zoomPunch();
           break;
         case 'picked': {
           // A new weapon: a flash where its mount just appeared.
-          const run = this.lastRun;
-          if (ev.card.kind === 'weapon' && ev.card.level === 1 && run) {
+          if (ev.card.kind === 'weapon' && ev.card.level === 1) {
             const slot = run.weapons.findIndex((w) => w.id === ev.card.id);
             const R = run.stats.radius;
             const o = mountOffset(Math.max(0, slot), R);
@@ -92,14 +104,14 @@ export class Renderer {
         }
         case 'towerHit': {
           const d = Math.hypot(ev.x, ev.y) || 1;
-          const wall = this.lastRun?.stats.radius ?? 46;
+          const wall = run.stats.radius;
           this.effects.wallHit((ev.x / d) * wall, (ev.y / d) * wall);
           this.camera.shake(3);
           break;
         }
         case 'fell':
           this.fallT = 0;
-          this.effects.towerFall(this.lastRun?.stats.radius ?? 46);
+          this.effects.towerFall(run.stats.radius);
           this.camera.shake(24);
           this.camera.zoomPunch();
           break;
@@ -122,11 +134,7 @@ export class Renderer {
    * the arena and a quiet tower still show as a backdrop.
    */
   render(run: RunState | null, alpha: number, realDt: number): void {
-    if (run !== this.lastRun) {
-      this.lastRun = run;
-      this.effects.clear();
-      this.fallT = null;
-    }
+    this.attach(run);
     const ctx = this.ctx;
     this.clock += realDt;
     if (this.fallT !== null) this.fallT += realDt;

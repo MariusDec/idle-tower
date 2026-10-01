@@ -5,6 +5,9 @@ import type { ContentEntry, EnemyDef, FrameDef, PassiveDef, RegionDef, WeaponDef
 /** Longest a card, node or relic line may be (§12.6). */
 export const MAX_TEXT_WORDS = 15;
 
+/** Least damage multiplier a weapon level with no visible change may give (§4.4). */
+export const MIN_DAMAGE_STEP = 1.25;
+
 export interface LintIssue {
   table: string;
   id: string;
@@ -90,7 +93,12 @@ export const levels: LintRule = (tables) => {
       if (words === 0 || words > MAX_TEXT_WORDS) {
         out.push({ table: 'weapons', id: w.id, problem: `level ${i + 2} text is ${words} words` });
       }
-      if (!s.add && (s.damageMult ?? 1) === 1) out.push({ table: 'weapons', id: w.id, problem: `level ${i + 2} changes nothing` });
+      if (!s.add && (s.damageMult ?? 1) === 1) {
+        out.push({ table: 'weapons', id: w.id, problem: `level ${i + 2} changes nothing` });
+      } else if (!s.add && (s.damageMult ?? 1) < MIN_DAMAGE_STEP) {
+        // §4.4: a level is a visible step or a damage step big enough to feel.
+        out.push({ table: 'weapons', id: w.id, problem: `level ${i + 2} is only ×${s.damageMult} damage (want ≥ ×${MIN_DAMAGE_STEP})` });
+      }
     });
   }
   for (const p of (tables.passives as readonly PassiveDef[] | undefined) ?? []) {

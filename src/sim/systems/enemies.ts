@@ -1,5 +1,6 @@
 import { SpatialGrid } from '../../core/spatialGrid';
 import { BALANCE } from '../../content/balance';
+import { ENEMIES } from '../../content/enemies';
 import type { Enemy, RunState } from '../state';
 import { mitigate } from './damage';
 
@@ -9,6 +10,8 @@ import { mitigate } from './damage';
  */
 const grid = new SpatialGrid<Enemy>(64);
 const near: Enemy[] = [];
+/** The largest body radius, so a small body's query still finds a big neighbour. */
+const MAX_RADIUS = Math.max(...ENEMIES.map((d) => d.radius));
 
 /**
  * Enemies walk straight at the tower, stop at its wall, and hit it on their
@@ -32,7 +35,12 @@ export function tickEnemies(run: RunState, dt: number): void {
       if (e.inContact) e.attackTimer = e.attackInterval * 0.5;
       continue;
     }
-    e.inContact = true;
+    if (!e.inContact) {
+      // Reached the wall without walking there (shoved by the crowd): the
+      // first hit still waits a beat, as it does for a body that walked in.
+      e.inContact = true;
+      e.attackTimer = e.attackInterval * 0.5;
+    }
     e.attackTimer -= dt;
     if (e.attackTimer <= 0) {
       e.attackTimer += e.attackInterval;
@@ -56,7 +64,9 @@ export function separateEnemies(run: RunState): void {
   for (const e of run.enemies) {
     if (!e.alive) continue;
     near.length = 0;
-    grid.query(e.x, e.y, e.radius * 2.2, near);
+    // Two bodies overlap within the sum of their radii, so query that far:
+    // a Runner must feel a Brute it touches, not only the reverse.
+    grid.query(e.x, e.y, e.radius + MAX_RADIUS, near);
     let fx = 0;
     let fy = 0;
     for (const o of near) {

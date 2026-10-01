@@ -47,4 +47,11 @@ describe('level lint', () => {
     expect(problems).toContain('level 4 changes nothing');
     expect(problems).toContain('moves no stat');
   });
+
+  it('catches a damage-only step too small to feel (§4.4)', () => {
+    const weapon = CONTENT.weapons[0] as WeaponDef;
+    const steps = [...weapon.steps.slice(0, 3), { text: '+10% damage.', damageMult: 1.1 }];
+    const problems = lintContent({ ...CONTENT, weapons: [{ ...weapon, steps } as ContentEntry] }).map((i) => i.problem);
+    expect(problems).toContain('level 5 is only ×1.1 damage (want ≥ ×1.25)');
+  });
 });

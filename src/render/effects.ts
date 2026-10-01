@@ -7,8 +7,9 @@ import { QUALITY, type QualityTier } from './quality';
  * for systems the rebuild dropped.
  *
  * Everything here runs on the wall clock and may use `Math.random` — none of
- * it reaches the sim. Pools are fixed-size arrays with swap-remove, so a
- * steady state allocates nothing; overflow drops the oldest entry.
+ * it reaches the sim. Each kind lives in a capped array. Expired particles are
+ * swap-removed (so the array is not in age order); once particles hit their
+ * cap, a new one overwrites a slot round-robin, O(1) however busy the fight.
  */
 
 interface Particle {
@@ -76,6 +77,8 @@ const NUMBER_RISE_CSS = 38;
 
 export class Effects {
   private particles: Particle[] = [];
+  /** Next slot a particle overwrites once the cap is reached. */
+  private overflow = 0;
   private rings: Ring[] = [];
   private numbers: DamageNumber[] = [];
   private arcs: Arc[] = [];
@@ -105,8 +108,13 @@ export class Effects {
   }
 
   private pushParticle(p: Particle): void {
-    if (this.particles.length >= this.maxParticles) this.particles.shift();
-    this.particles.push(p);
+    const ps = this.particles;
+    if (ps.length < this.maxParticles) {
+      ps.push(p);
+      return;
+    }
+    this.overflow = (this.overflow + 1) % ps.length;
+    ps[this.overflow] = p;
   }
 
   private pushRing(r: Ring): void {

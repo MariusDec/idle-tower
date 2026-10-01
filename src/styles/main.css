@@ -282,6 +282,24 @@ body {
 
 .hub {
   background: linear-gradient(to bottom, var(--surface-scrim), transparent 45%, var(--surface-scrim));
+  /*
+   * The backdrop tower sits at the stage centre. Two equal-height groups
+   * hug a clear band around it, whatever each group holds.
+   */
+  gap: calc(var(--space-7) * 3);
+}
+
+.hub-group {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+.hub-group + .hub-group {
+  justify-content: flex-start;
 }
 
 .hub-title {

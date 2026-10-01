@@ -150,7 +150,9 @@ export class App {
 
   private castUltimate(): void {
     const run = this.run;
-    if (!run || run.outcome || this.paused || this.screen !== 'run') return;
+    // Not while the arena is stopped (paused, or the first draft waiting for
+    // a pick): a Nova there would land on a frozen field.
+    if (!run || this.simSpeed() === 0) return;
     applyInput(run, { ult: true });
   }
 
@@ -165,7 +167,7 @@ export class App {
   private frame(alpha: number, realDt: number): void {
     const run = this.screen === 'run' || this.screen === 'results' ? this.run : null;
     if (run) {
-      this.renderer.consume(run.events);
+      this.renderer.consume(run);
       run.events.length = 0;
     }
     this.renderer.render(run, alpha, realDt);

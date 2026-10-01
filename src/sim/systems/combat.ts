@@ -60,12 +60,19 @@ function rollHit(run: RunState, p: WeaponParams, crit: Rng): { damage: number; c
 export function tickWeapons(run: RunState, dt: number): void {
   const crit = Rng.wrap(run.streams.crit);
   for (const w of run.weapons) {
-    w.cooldown = Math.max(0, w.cooldown - dt);
+    w.cooldown -= dt;
     if (w.cooldown > 0) continue;
     const target = nearestEnemy(run, 0, 0, run.stats.range);
-    if (!target) continue;
+    if (!target) {
+      // Idle: ready to fire the moment something enters range, with no backlog.
+      w.cooldown = 0;
+      continue;
+    }
     const p = weaponParams(w.id, w.level);
-    w.cooldown = 1 / (p.fireRate * run.stats.fireRateMult);
+    // Carry the overshoot into the next interval, so the fire rate is exact
+    // rather than rounded up to whole steps (a +12% Haste stays +12%). At
+    // most one attack per step, so the carry never builds up past one step.
+    w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * run.stats.fireRateMult));
     const angle = Math.atan2(target.y, target.x);
     w.aim = angle;
     const pattern = WEAPON_BY_ID[w.id].pattern;

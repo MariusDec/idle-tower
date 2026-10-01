@@ -22,6 +22,7 @@ from tsconfig, Vite and Vitest; never import from it.
 | `src/ui/` | DOM: HUD, screens, modal, icon helper | anything but `sim/` internals |
 | `src/platform/` | Capacitor shell hooks | — |
 | `tools/` | Headless: `bot.ts` (input policies), `inspect.ts` (per-wave table), `pacing.ts` (from P3) | `src/` minus DOM |
+| `tests/` | Vitest, node environment | — |
 
 The sim's step order (`sim/run.ts`): input → waves place bodies → enemies walk
 and hit the wall → separation spreads crowds (tangentially at the wall) →
@@ -40,7 +41,6 @@ and again whenever a passive changes. Until the Forge exists (P3),
 Lightning.
 
 In dev builds, `1`/`2`/`3` set sim speed and `globalThis.tower` is the `App`.
-| `tests/` | Vitest, node environment | — |
 
 ## Rules that keep the sim honest
 
@@ -71,7 +71,7 @@ npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **idle-tower** (7485 symbols, 26476 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **idle-tower** (7659 symbols, 27107 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
