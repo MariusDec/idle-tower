@@ -41,6 +41,11 @@ export interface RunConfig {
    * unknown recipe is found by chance, never hunted.
    */
   readonly recipes: readonly EvolutionId[];
+  /**
+   * The Tactician's list (§6.2), best first: the suggestion takes the
+   * highest-ranked item on offer. Null: the scorer decides alone.
+   */
+  readonly priority: readonly CardItemId[] | null;
 }
 
 /**
@@ -430,6 +435,8 @@ export interface RunState {
   evolved: EvolutionId[];
   /** Recipes known going in (from the config): what the suggestion steers toward. */
   recipes: EvolutionId[];
+  /** The Tactician's list (from the config), or null. */
+  priority: CardItemId[] | null;
   /** Forge behaviours owned, by level count. */
   behaviours: Partial<Record<BehaviourId, number>>;
   /** Draft rerolls left this run (Fortune's Reroll). */

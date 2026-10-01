@@ -16,6 +16,8 @@ export interface DraftView {
   suggested: number;
   /** False only for the first draft of the game, which waits for the player. */
   timed: boolean;
+  /** Seconds before the suggestion is taken (shorter once the Tactician writes it, §6.2). */
+  seconds: number;
   /** True for a card the player has seen before (no NEW stamp). */
   seen: (key: string) => boolean;
   /** Rerolls left this run; the button shows only when there are some. */
@@ -98,6 +100,7 @@ export class DraftPanel {
   private readonly timerFill: HTMLElement;
   private remaining = 0;
   private timed = false;
+  private seconds: number = BALANCE.draft.seconds;
   private holding = false;
 
   private readonly reroll: HTMLButtonElement;
@@ -152,7 +155,8 @@ export class DraftPanel {
     this.hint.textContent = view.timed ? '' : 'Pick one. Every level-up offers new cards.';
     this.hint.hidden = view.timed;
     this.timed = view.timed;
-    this.remaining = BALANCE.draft.seconds;
+    this.seconds = view.seconds;
+    this.remaining = view.seconds;
     this.holding = false;
     this.timer.hidden = !view.timed;
     setStyle(this.timerFill, 'transform', 'scaleX(1)');
@@ -171,7 +175,7 @@ export class DraftPanel {
   tick(realDt: number): boolean {
     if (!this.open || !this.timed || this.holding) return false;
     this.remaining = Math.max(0, this.remaining - realDt);
-    setStyle(this.timerFill, 'transform', `scaleX(${(this.remaining / BALANCE.draft.seconds).toFixed(3)})`);
+    setStyle(this.timerFill, 'transform', `scaleX(${(this.remaining / this.seconds).toFixed(3)})`);
     return this.remaining === 0;
   }
 

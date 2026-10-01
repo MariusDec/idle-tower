@@ -7,7 +7,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 5;
+  version: 6;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -54,6 +54,11 @@ export interface Profile {
   };
   /** A boss whose first fall still owes the map its ceremony (§7.3). */
   ceremony: string | null;
+  /**
+   * The Tactician's priority lists (§6.2), card item ids best first: `all`
+   * for Tactician I, and with Tactician II one per frame id.
+   */
+  tactics: Record<string, string[]>;
   /** The region and frame the next run uses (§5.2, §4.4). */
   region: number;
   frame: string;
@@ -69,10 +74,12 @@ export interface Profile {
     speed: 1 | 2 | 3;
     /** Sound on or off (§10.4); the pause menu toggles it. */
     sound: boolean;
+    /** Autocaster on or off, once owned (§6.2); the HUD toggles it. */
+    autoUlt: boolean;
   };
 }
 
-export const PROFILE_VERSION = 5;
+export const PROFILE_VERSION = 6;
 
 export function newProfile(now: number): Profile {
   return {
@@ -93,9 +100,10 @@ export function newProfile(now: number): Profile {
     recipes: { found: [], carried: {}, readied: {} },
     lastSeen: now,
     ceremony: null,
+    tactics: {},
     region: 1,
     frame: 'arcanist',
     tutorial: { firstDraft: false, forgeIntro: false },
-    settings: { speed: 1, sound: true },
+    settings: { speed: 1, sound: true, autoUlt: true },
   };
 }

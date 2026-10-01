@@ -43,6 +43,13 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
     recipes: { found: [], carried: {}, readied: {} },
     settings: { sound: true, ...(raw.settings as object) },
   }),
+  // v6 (P6): the Tactician's lists and the Autocaster toggle.
+  5: (raw) => ({
+    ...raw,
+    version: 6,
+    tactics: {},
+    settings: { autoUlt: true, ...(raw.settings as object) },
+  }),
 };
 
 export class MigrationError extends Error {}

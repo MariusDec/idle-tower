@@ -6,7 +6,8 @@ import type { BranchId, ForgeNodeDef } from './types';
  * P3; P4 adds ring 3, sealed until the Gatekeeper falls (a few nodes wait
  * for the Bog Mother), and Offline I. P5 adds the last four weapons, Alchemy
  * (evolutions, §4.4) and the keystones, one per branch but Engineering; the
- * last two sealed by the Bog Mother.
+ * last two sealed by the Bog Mother. P6 fills out Engineering (§6.2):
+ * Frontier March, Tactician I–II, Autocaster, Night Watch II–III and speed ×3.
  *
  * Only Might, Bulwark and Fortune hang from the root, so a fresh Forge shows
  * three nodes (§7.1). Arsenal hangs from Might and Engineering from Fortune:
@@ -184,6 +185,41 @@ export const FORGE: readonly ForgeNodeDef[] = [
     id: 'offline', name: 'Night Watch', icon: 'eclipse', text: 'Earn shards while away: 25% of your farm rate, up to 2 h.',
     branch: 'engineering', type: 'notable', ring: 2, angle: 132, links: ['auto-restart'], maxLevel: 1, cost: 150,
     effects: [{ kind: 'automation', id: 'offline' }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'frontier-march', name: 'Frontier March', icon: 'knight-banner', text: 'After a boss first falls, auto-restart marches to the next region.',
+    branch: 'engineering', type: 'notable', ring: 2, angle: 164, links: ['speed-2'], maxLevel: 1, cost: 160,
+    effects: [{ kind: 'automation', id: 'frontier-march' }],
+  },
+  {
+    id: 'tactician', name: 'Tactician', icon: 'gears', text: 'The suggested card follows a priority list you write.',
+    branch: 'engineering', type: 'notable', ring: 2, angle: 118, links: ['offline'], maxLevel: 1, cost: 200,
+    effects: [{ kind: 'automation', id: 'tactician' }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'auto-ult', name: 'Autocaster', icon: 'auto-repair', text: 'The ultimate casts itself into a crowd, or at a boss.',
+    branch: 'engineering', type: 'notable', ring: 3, angle: 152, links: ['ult-charge'], maxLevel: 1, cost: 420,
+    effects: [{ kind: 'automation', id: 'auto-ult' }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'offline-2', name: 'Night Watch II', icon: 'lantern-flame', text: 'Offline earns 40% of your farm rate, up to 4 h.',
+    branch: 'engineering', type: 'notable', ring: 3, angle: 140, links: ['offline'], maxLevel: 1, cost: 480,
+    effects: [{ kind: 'automation', id: 'offline-2' }], sealed: 'gatekeeper',
+  },
+  {
+    id: 'tactician-2', name: 'Tactician II', icon: 'vintage-robot', text: 'Each frame keeps its own priority list.',
+    branch: 'engineering', type: 'notable', ring: 3, angle: 128, links: ['tactician'], maxLevel: 1, cost: 900,
+    effects: [{ kind: 'automation', id: 'tactician-2' }], sealed: 'bog-mother',
+  },
+  {
+    id: 'offline-3', name: 'Night Watch III', icon: 'crystal-ball', text: 'Offline earns 60% of your farm rate, up to 8 h.',
+    branch: 'engineering', type: 'notable', ring: 3, angle: 176, links: ['speed-3'], maxLevel: 1, cost: 1600,
+    effects: [{ kind: 'automation', id: 'offline-3' }], sealed: 'bog-mother',
+  },
+  {
+    id: 'speed-3', name: 'Overclock', icon: 'hourglass', text: 'Unlocks game speed ×3.',
+    branch: 'engineering', type: 'notable', ring: 3, angle: 164, links: ['frontier-march', 'auto-ult'], maxLevel: 1, cost: 2400,
+    effects: [{ kind: 'automation', id: 'speed-3' }], sealed: 'bog-mother',
   },
   {
     id: 'ult-charge', name: 'Capacitor', icon: 'energy-tank', text: 'Ultimate charges 15% faster.',

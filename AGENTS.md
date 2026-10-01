@@ -17,11 +17,11 @@ from tsconfig, Vite and Vitest; never import from it.
 | `src/core/` | `rng.ts` seeded splittable RNG, `math.ts`, `events.ts` typed bus, `spatialGrid.ts`, `format.ts` | nothing outside `core/` |
 | `src/content/` | Data tables (`forge.ts` is the Forge web; `bosses.ts`, `relics.ts`, `feats.ts`; `enemies.ts` also holds the elite auras), `balance.ts` (every tunable constant), `arena.ts` (the fixed world), `icons.ts` (generated), `lint.ts` | `core/` |
 | `src/sim/` | DOM-free, deterministic: `RunState`, `createRun`, `step` | `core/`, `content/` only |
-| `src/meta/` | `profile.ts`, `forge.ts` (adjacency, fog, seals, costs, buy/refund, the "Next:" goal), `collection.ts` (what is unlocked: regions, frames, relic slots, hub tabs; relics worn and gained), `feats.ts`, `offline.ts` (farm rate, offline earnings), `goals.ts` (the hub's Next goal), `runConfig.ts` (profile → frozen `RunConfig`), `automation.ts` (Engineering's speed, auto-restart, offline), `results.ts` (`bankRun`: a finished run into the profile), `save/` (schema, migration ladder, run snapshot, storage backends) | `core/`, `content/`, `sim/` types |
+| `src/meta/` | `profile.ts`, `forge.ts` (adjacency, fog, seals, costs, buy/refund, the "Next:" goal), `collection.ts` (what is unlocked: regions, frames, relic slots, hub tabs; relics worn and gained), `feats.ts`, `offline.ts` (farm rate, offline tiers and earnings), `goals.ts` (the hub's Next goal), `runConfig.ts` (profile → frozen `RunConfig`), `automation.ts` (Engineering's automation: speed, auto-restart, Frontier March, the Autocaster, the Tactician's lists and draft timer), `results.ts` (`bankRun`: a finished run into the profile), `save/` (schema, migration ladder, run snapshot, storage backends) | `core/`, `content/`, `sim/` types |
 | `src/render/` | `camera.ts`, `renderer.ts`, `painters/`, `palette.ts`, `quality.ts`. Reads `RunState`, never writes it | `core/`, `content/`, `sim/` types |
-| `src/ui/` | DOM: HUD (with the boss bar), draft, results, toasts, `hub/` (home, the Forge web, the Map, the Collection, Feats), modal, icon helper | anything but `sim/` internals |
+| `src/ui/` | DOM: HUD (with the boss bar), draft, results, toasts, `hub/` (home, the Forge web, the Map, the Collection, Feats, the Tactician's editor), modal, icon helper | anything but `sim/` internals |
 | `src/platform/` | Capacitor shell hooks | — |
-| `tools/` | Headless: `bot.ts` (input policies), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants) | `src/` minus DOM |
+| `tools/` | Headless: `bot.ts` (input policies), `play.ts` (one run under the active or idle policy, with the wall clock), `shop.ts` (the bots' Forge buying), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants), `idle.ts` (the idle bot's check-ins and the active/idle farm comparison) | `src/` minus DOM |
 | `tests/` | Vitest, node environment | — |
 
 The sim's step order (`sim/run.ts`): input → waves place bodies (wave 20 is
@@ -51,9 +51,15 @@ and the results screen leads to the Map, where the light spreads. The Forge's
 rules live in `meta/forge.ts`; `buildRunConfig` applies every owned node's
 effects once per level. `behaviour` effects become `RunConfig.behaviours`
 counts the sim reads; `automation` effects are the app's
-(`meta/automation.ts`). The app writes a run snapshot (`tower-run`) at every
-wave start and resumes from it on boot; bump `SNAPSHOT_VERSION` in
-`meta/save/index.ts` when `RunState` changes shape.
+(`meta/automation.ts`); the one that reaches the sim is the Tactician's list,
+as `RunConfig.priority`, which `sim/suggest.ts` follows ahead of its scorer.
+The app writes a run snapshot (`tower-run`) at every wave start and resumes
+from it on boot; bump `SNAPSHOT_VERSION` in `meta/save/index.ts` when
+`RunState` changes shape. A snapshot carries the run count it was taken at,
+and the app saves the banked profile before clearing it, so a kill between
+the two writes never pays a run twice. Any absence (the page hidden, the
+native pause, a stalled frame) settles through `App#absent`: the loop drops
+the gap and offline earnings pay (§6.1); the sim is never fast-forwarded.
 
 In dev builds, `1`/`2`/`3` set sim speed and `globalThis.tower` is the `App`.
 
@@ -83,13 +89,14 @@ npm run inspect -- --seeds 50 --forge ring1  # the same with a Forge preset: non
 npm run inspect -- --seed 3 --forge all --region 2  # a run in another region (its rule applies), with the boss's time
 npm run pacing      # a fresh profile, one simulated hour: run table, reveal timeline, I1a / I3 / I6 / wave-20 verdicts
 npm run pacing -- --seeds 8 --hours 1.5   # eight profiles: pass counts, median first wave 20 and first boss kills (the P3 and P4 gates' readings)
+npm run pacing -- --idle --seeds 4        # the idle bot: I2 projected to Act 1, I5 at the active run's checkpoints (P6's gate)
 npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest (needs network)
 ```
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **idle-tower** (8258 symbols, 29789 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **idle-tower** (8375 symbols, 30238 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

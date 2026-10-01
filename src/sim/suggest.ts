@@ -214,8 +214,37 @@ export function scoreCard(run: RunState, card: Card): number {
   }
 }
 
-/** Index of the best card; the first on a tie. */
+/**
+ * Where a card stands on the Tactician's list (§6.2): an evolution ahead of
+ * everything (it is its weapon's best step), then the listed items in order.
+ * Infinity for an unlisted card, which the scorer ranks below the list.
+ */
+function rank(priority: readonly string[], card: Card): number {
+  if (card.kind === 'evolution') return -1;
+  if (card.kind === 'fallback') return Infinity;
+  const i = priority.indexOf(card.id);
+  return i < 0 ? Infinity : i;
+}
+
+/**
+ * Index of the card to suggest: with a Tactician list, the best-ranked card
+ * on it; otherwise, or when nothing on offer is listed, the scorer's best,
+ * the first on a tie.
+ */
 export function suggest(run: RunState, cards: readonly Card[]): number {
+  const priority = run.priority;
+  if (priority) {
+    let top = -1;
+    let topRank = Infinity;
+    cards.forEach((c, i) => {
+      const r = rank(priority, c);
+      if (r < topRank) {
+        topRank = r;
+        top = i;
+      }
+    });
+    if (top >= 0) return top;
+  }
   let best = 0;
   let bestScore = -Infinity;
   cards.forEach((c, i) => {

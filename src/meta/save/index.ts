@@ -66,12 +66,18 @@ export const RUN_KEY = 'tower-run';
  * to survive the app being killed mid-run — so it has no ladder: bump this
  * when `RunState` changes shape, and an older snapshot is dropped.
  */
-export const SNAPSHOT_VERSION = 3;
+export const SNAPSHOT_VERSION = 4;
 
 interface RunSnapshot {
   version: number;
   /** The profile it belongs to; a snapshot never crosses into another profile. */
   profile: number;
+  /**
+   * `records.runs` when it was taken: the run's own number. Once the run is
+   * banked the count moves on, so a snapshot whose clear never landed (the
+   * app killed between the two writes) is dropped, never paid twice.
+   */
+  runs: number;
   run: RunState;
 }
 
@@ -81,7 +87,9 @@ interface RunSnapshot {
  * original would have from that wave; the write itself may land later.
  */
 export function snapshotRun(run: RunState, profile: Profile): string {
-  const snap: RunSnapshot = { version: SNAPSHOT_VERSION, profile: profile.createdAt, run: { ...run, events: [] } };
+  const snap: RunSnapshot = {
+    version: SNAPSHOT_VERSION, profile: profile.createdAt, runs: profile.records.runs, run: { ...run, events: [] },
+  };
   return JSON.stringify(snap);
 }
 
@@ -96,6 +104,7 @@ export async function loadRunSnapshot(profile: Profile, store: SaveStore = getSa
   try {
     const snap = JSON.parse(raw) as Partial<RunSnapshot>;
     if (snap.version !== SNAPSHOT_VERSION || snap.profile !== profile.createdAt) throw new Error('stale snapshot');
+    if (snap.runs !== profile.records.runs) throw new Error('run already banked');
     if (!isRunState(snap.run)) throw new Error('not a run');
     return snap.run;
   } catch (err) {

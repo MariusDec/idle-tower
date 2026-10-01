@@ -1,4 +1,5 @@
 import type { RunSummary } from '../meta/results';
+import { BALANCE } from '../content/balance';
 import { BOSS_BY_ID } from '../content/bosses';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { EVOLUTION_BY_ID } from '../content/evolutions';
@@ -10,8 +11,6 @@ import { formatDuration, formatNumber } from '../core/format';
 import { setStyle, setText } from './dom';
 import { icon, iconMarkup } from './icon';
 
-/** Seconds before auto-restart starts the next run (§4.6, §6.2). */
-export const AUTO_RESTART_SECONDS = 5;
 
 /** A `cardKey` ("weapon:scattershot") back to its content entry. */
 function cardEntry(key: string): ContentEntry | null {
@@ -210,7 +209,7 @@ export class ResultsScreen {
       this.next.classList.toggle('is-ready', goal.progress >= 1);
     }
 
-    this.countdown = autoRestart ? AUTO_RESTART_SECONDS : null;
+    this.countdown = autoRestart ? BALANCE.automation.restartSeconds : null;
     this.paintAgain();
     this.root.hidden = false;
   }

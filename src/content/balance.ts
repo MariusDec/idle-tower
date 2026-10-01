@@ -207,15 +207,32 @@ export const BALANCE = {
     /** A shot that lives this long without landing fizzles. */
     life: 6,
   },
-  /** Offline (§6.3). Efficiency and cap per tier; P4 ships tier I. */
+  /** Offline (§6.3). Efficiency and cap per tier, I–IV; P6 ships I–III, P7's regions bring IV. */
   offline: {
-    tiers: [{ efficiency: 0.25, capHours: 2 }],
+    tiers: [
+      { efficiency: 0.25, capHours: 2 },
+      { efficiency: 0.4, capHours: 4 },
+      { efficiency: 0.6, capHours: 8 },
+      { efficiency: 0.75, capHours: 12 },
+    ],
     /** Absences shorter than this pay nothing. */
     minSeconds: 60,
     /** Runs shorter than this don't count toward the farm rate. */
     minRunSeconds: 60,
     /** The farm rate is the median of this many recent runs. */
     runs: 5,
+  },
+  /** Engineering's automation (§6.2). */
+  automation: {
+    /** Seconds after the results before auto-restart starts the next run. */
+    restartSeconds: 5,
+    /**
+     * Wall seconds a draft waits once the Tactician writes the suggestion: the
+     * player's own plan needs no ten seconds of thought (§6.2, §6.4).
+     */
+    tacticianSeconds: 6,
+    /** Autocaster: bodies within range that are worth an ultimate (a standing boss always is). */
+    autoUltCrowd: 8,
   },
   projectiles: {
     /** Seconds a homing bolt lives before fizzling. */

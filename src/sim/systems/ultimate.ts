@@ -46,3 +46,23 @@ export function castUltimate(run: RunState): boolean {
   u.need *= BALANCE.ultimate.growth;
   return true;
 }
+
+/** Living bodies within the tower's range: what a Nova would catch. */
+export function enemiesInRange(run: RunState): number {
+  const r2 = run.stats.range * run.stats.range;
+  let n = 0;
+  for (const e of run.enemies) if (e.alive && e.x * e.x + e.y * e.y <= r2) n++;
+  return n;
+}
+
+/**
+ * The Autocaster's rule (§6.2): a charged ultimate goes off when `crowd`
+ * bodies are in range, or when a boss stands above the water. The app and
+ * the idle bot both cast on it.
+ */
+export function autoUltWanted(run: RunState, crowd: number): boolean {
+  if (run.ult.charge < 1) return false;
+  const b = run.boss;
+  if (b && b.killedIn === null && !b.submerged) return true;
+  return enemiesInRange(run) >= crowd;
+}

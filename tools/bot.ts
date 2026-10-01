@@ -7,6 +7,7 @@
  *   bare    never picks, never casts: a level-1 tower (the P1 gate)
  */
 import type { RunInput, RunState } from '../src/sim/state';
+import { enemiesInRange } from '../src/sim/systems/ultimate';
 
 export type Policy = 'active' | 'bare';
 
@@ -19,11 +20,8 @@ export function botInput(run: RunState, policy: Policy): RunInput {
   if (policy === 'bare') return {};
   const input: RunInput = {};
   if (run.draft) input.pick = run.draft.suggested;
-  if (run.ult.charge >= 1) {
-    const r2 = run.stats.range * run.stats.range;
-    let crowd = 0;
-    for (const e of run.enemies) if (e.alive && e.x * e.x + e.y * e.y <= r2) crowd++;
-    if (crowd >= ULT_CROWD || run.tower.hp < run.stats.maxHp * ULT_PANIC_HP) input.ult = true;
+  if (run.ult.charge >= 1 && (enemiesInRange(run) >= ULT_CROWD || run.tower.hp < run.stats.maxHp * ULT_PANIC_HP)) {
+    input.ult = true;
   }
   return input;
 }

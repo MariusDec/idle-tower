@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { medianWave20, runPacing } from '../tools/pacing';
+import { I2_DAYS, I5_GATED, I5_RATIO, idleVerdict, medianWave20, runPacing } from '../tools/pacing';
 
 /**
  * The CI-sized pacing check (§12.6): a fresh profile, the active bot, one
@@ -33,6 +33,30 @@ describe('pacing: the first hour (§8.4, P3 and P4 gates)', () => {
       expect(r.runs[0].simSeconds).toBeGreaterThan(90);
       expect(r.runs[0].simSeconds).toBeLessThan(180);
       expect(r.runs[0].bought.length).toBeGreaterThan(0);
+    }
+  });
+}, 120_000);
+
+/**
+ * The CI-sized idle check (P6's gate, §8.4): one profile through the idle
+ * bot's check-ins to the Bog Mother, and the farm comparison at the active
+ * run's checkpoints. The full reading is `npm run pacing -- --idle --seeds 4`.
+ */
+describe('pacing: the idle bot (§8.4, P6 gate)', () => {
+  const v = idleVerdict(1, 4);
+
+  it('I2 (extrapolated): Act 1 projects to 5–10 days of two check-ins a day', () => {
+    expect(v.projectedDays).not.toBeNull();
+    expect(v.projectedDays!).toBeGreaterThanOrEqual(I2_DAYS.min);
+    expect(v.projectedDays!).toBeLessThanOrEqual(I2_DAYS.max);
+  });
+
+  it('I5: once the idle kit exists, active play earns 1.15–1.5× idle per hour', () => {
+    for (const label of I5_GATED) {
+      const r = v.ratios.find((x) => x.label === label);
+      expect(r, label).toBeDefined();
+      expect(r!.ratio, label).toBeGreaterThanOrEqual(I5_RATIO.min);
+      expect(r!.ratio, label).toBeLessThanOrEqual(I5_RATIO.max);
     }
   });
 }, 120_000);

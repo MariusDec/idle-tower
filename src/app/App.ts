@@ -3,12 +3,14 @@ import {
 } from '../meta/save';
 import type { Profile } from '../meta/profile';
 import { buildRunConfig } from '../meta/runConfig';
-import { automations, maxSpeed, runSpeed } from '../meta/automation';
+import {
+  autoUlt, automations, draftSeconds, marchOn, maxSpeed, runSpeed, tacticsKey,
+} from '../meta/automation';
 import { buyNode, canAfford, refundNode } from '../meta/forge';
 import { bankRun } from '../meta/results';
 import { frameUnlocked, regionUnlocked, toggleRelic } from '../meta/collection';
 import { claimAll, claimFeat } from '../meta/feats';
-import { offlineEarnings } from '../meta/offline';
+import { offlineEarnings, offlineTier } from '../meta/offline';
 import { FORGE } from '../content/forge';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { frameById } from '../content/frames';
@@ -16,6 +18,7 @@ import { RELIC_BY_ID } from '../content/relics';
 import { formatNumber } from '../core/format';
 import { applyInput, createRun, step } from '../sim/run';
 import { cardKey } from '../sim/systems/draft';
+import { autoUltWanted } from '../sim/systems/ultimate';
 import type { DraftOffer, RunState } from '../sim/state';
 import { BALANCE } from '../content/balance';
 import { Renderer } from '../render/renderer';
@@ -34,6 +37,11 @@ import { assertTransition, type Screen } from './screens';
 
 /** Autosave cadence (§12.4), on the wall clock. */
 const AUTOSAVE_SECONDS = 30;
+/**
+ * A gap between frames this long, with the page never hidden (a laptop lid,
+ * a frozen tab), is an absence too (§6.1): it pays offline, never a catch-up.
+ */
+const STALL_SECONDS = 60;
 /** The killing blow on a boss plays out slowly (§7.3): wall seconds, at this speed. */
 const BOSS_KILL_SLOWMO = { seconds: 0.9, speed: 0.2 };
 /** A boss's phase change stops the arena for a beat (§10.3). */
@@ -69,6 +77,8 @@ export class App {
   private writes: Promise<void> = Promise.resolve();
   /** A slow-motion or hit-stop beat on the wall clock: seconds left and the speed meanwhile. */
   private slowMo = { left: 0, speed: 1 };
+  /** Wall-clock ms of the last frame, to notice a stall (§6.1). */
+  private lastFrame = Date.now();
 
   private readonly renderer: Renderer;
   private readonly loop: Loop;
@@ -84,7 +94,12 @@ export class App {
   constructor(private readonly els: AppElements) {
     this.renderer = new Renderer(els.canvas, els.stage);
     this.renderer.setQuality(resolveQuality());
-    this.hud = new Hud(els.hud, () => this.openPause(), () => this.castUltimate(), () => this.cycleSpeed());
+    this.hud = new Hud(els.hud, {
+      pause: () => this.openPause(),
+      ult: () => this.castUltimate(),
+      speed: () => this.cycleSpeed(),
+      autoUlt: () => this.toggleAutoUlt(),
+    });
     this.hub = new HubScreen(els.screens, {
       start: () => this.startRun(),
       buy: (id) => this.buy(id),
@@ -99,6 +114,10 @@ export class App {
       }),
       claim: (id) => this.between(() => claimFeat(this.profile, id)) ?? 0,
       claimAll: () => this.between(() => claimAll(this.profile)) ?? 0,
+      setTactics: (list) => this.between(() => {
+        const key = tacticsKey(this.profile);
+        if (key !== null) this.profile.tactics[key] = [...list];
+      }),
     });
     this.results = new ResultsScreen(els.screens, () => this.leaveResults(), () => this.startRun());
     this.toasts = new Toasts(els.overlay);
@@ -166,7 +185,7 @@ export class App {
     const mins = Math.floor((earned.away % 3600) / 60);
     const gone = hours > 0 ? `${hours} h ${mins} min` : `${mins} min`;
     const body = `You were away ${gone}. The tower gathered ${formatNumber(earned.shards)} shards.`
-      + (earned.paid < earned.away ? ' (Night Watch holds two hours at most.)' : '')
+      + (earned.paid < earned.away ? ` (Night Watch holds ${offlineTier(this.profile)?.capHours ?? 0} hours at most.)` : '')
       + (fresh.length > 0 ? ` Now affordable: ${fresh.slice(0, 4).join(', ')}.` : '');
     if (this.screen === 'run') {
       this.paused = true;
@@ -207,7 +226,9 @@ export class App {
     this.run = resumed ?? createRun(buildRunConfig(this.profile), seed);
     // Run again past a first kill skips the Map's ceremony rather than
     // owing it to a later run, whose results would hold auto-restart for it.
-    this.profile.ceremony = null;
+    // Under Frontier March nothing holds auto-restart, so the ceremony waits
+    // for the player's next visit to the Map instead (§6.2).
+    if (!automations(this.profile).has('frontier-march')) this.profile.ceremony = null;
     this.paused = false;
     this.shownDraft = null;
     this.newCards = [];
@@ -217,6 +238,7 @@ export class App {
     this.loop.resetClock();
     this.go('run');
     this.hud.setSpeed(maxSpeed(this.profile), runSpeed(this.profile));
+    this.hud.setAutoUlt(automations(this.profile).has('auto-ult'), this.profile.settings.autoUlt);
     if (resumed) this.openPause(`The run resumes at wave ${resumed.wave}.`);
   }
 
@@ -252,6 +274,7 @@ export class App {
           cards: run.draft.cards,
           suggested: run.draft.suggested,
           timed: this.profile.tutorial.firstDraft,
+          seconds: draftSeconds(this.profile),
           seen: (key) => seen.has(key),
           rerolls: run.rerolls,
         });
@@ -298,8 +321,10 @@ export class App {
     const run = this.run;
     if (!run || run.outcome) return;
     // Input lands between steps (`applyInput`); a fall plays out before the
-    // results screen (§4.6), see `frame`.
-    step(run, SIM_DT);
+    // results screen (§4.6), see `frame`. The Autocaster casts on the same
+    // rule as the idle bot (§6.2).
+    const ult = autoUlt(this.profile) && autoUltWanted(run, BALANCE.automation.autoUltCrowd);
+    step(run, SIM_DT, ult ? { ult } : undefined);
     // A new wave: snapshot on this step boundary (§12.4).
     if (run.wave > this.snapshotWave && !run.outcome) {
       this.snapshotWave = run.wave;
@@ -309,6 +334,9 @@ export class App {
   }
 
   private frame(alpha: number, realDt: number): void {
+    const now = Date.now();
+    if (now - this.lastFrame > STALL_SECONDS * 1000) this.absent(now);
+    this.lastFrame = now;
     const run = this.screen === 'run' || this.screen === 'results' ? this.run : null;
     if (run) {
       if (this.screen === 'run') this.announce(run);
@@ -363,15 +391,21 @@ export class App {
 
   private endRun(run: RunState): void {
     const summary = bankRun(this.profile, run, this.newCards, runSpeed(this.profile));
-    this.write(() => clearRunSnapshot());
+    const marched = marchOn(this.profile, summary);
+    // The banked profile lands before the snapshot is cleared: killed between
+    // the two, the snapshot is stale (its run count is behind) and is dropped
+    // on boot, so the run is paid exactly once.
     void this.save();
+    this.write(() => clearRunSnapshot());
     this.modal.close();
     this.draft.hide();
     this.shownDraft = null;
     this.go('results');
-    // A first boss kill holds the results for its ceremony: no auto-restart past it.
+    // A first boss kill holds the results for its ceremony: no auto-restart
+    // past it, unless Frontier March is carrying the next run onward.
     const ceremony = this.profile.ceremony !== null;
-    this.results.show(summary, automations(this.profile).has('auto-restart') && !ceremony, ceremony ? 'Map' : 'Forge');
+    const restart = automations(this.profile).has('auto-restart') && (!ceremony || marched);
+    this.results.show(summary, restart, ceremony ? 'Map' : 'Forge');
   }
 
   private buy(id: string): boolean {
@@ -454,12 +488,9 @@ export class App {
   private bindLifecycle(): void {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
-        if (this.screen === 'run') this.openPause();
-        void this.save();
+        void this.hidden();
       } else {
-        this.loop.resetClock();
-        // Absence (§6.1): the save stamped when it went; anything over a minute pays.
-        this.welcomeBack(Date.now());
+        this.absent(Date.now());
       }
     });
     // Browsers start audio only from a gesture: the first one anywhere wakes it.
@@ -477,6 +508,36 @@ export class App {
         this.devSpeed = Number(e.key);
       }
     });
-    bindNativeLifecycle({ onBack: () => this.back(), onPause: () => this.save() });
+    bindNativeLifecycle({
+      onBack: () => this.back(),
+      onPause: () => this.hidden(),
+      onResume: () => this.absent(Date.now()),
+    });
+  }
+
+  /** Going away (§6.1): the run pauses, and the profile is stamped and saved. */
+  private hidden(): Promise<void> {
+    if (this.screen === 'run') this.openPause();
+    return this.save();
+  }
+
+  /**
+   * Back from an absence (§6.1), however it was noticed: the page shown
+   * again, the native resume, or a stalled frame. The loop drops the gap
+   * rather than fast-forwarding the sim, and anything over a minute since
+   * the profile was last stamped pays offline. Safe to call twice: the
+   * first call stamps the profile.
+   */
+  private absent(now: number): void {
+    this.loop.resetClock();
+    this.lastFrame = now;
+    this.welcomeBack(now);
+  }
+
+  /** The HUD's Autocaster switch (§6.2). */
+  private toggleAutoUlt(): void {
+    this.profile.settings.autoUlt = !this.profile.settings.autoUlt;
+    this.hud.setAutoUlt(automations(this.profile).has('auto-ult'), this.profile.settings.autoUlt);
+    void this.save();
   }
 }

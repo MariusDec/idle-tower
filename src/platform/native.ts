@@ -55,11 +55,15 @@ export async function hideNativeSplash(): Promise<void> {
  * of it: this is the last hook that reliably runs before the OS is free to kill
  * the process from the background. It returns a promise because the save
  * backend is asynchronous, and this is the one place where waiting for the
- * write is both possible and worth it.
+ * write is both possible and worth it. `onResume` may fire twice for one
+ * return (the state change and the resume event); the app's handler is
+ * idempotent.
  */
 export function bindNativeLifecycle(handlers: {
   onBack: () => boolean;
   onPause: () => Promise<void> | void;
+  /** Back in front: the app settles the absence (offline earnings, §6.1). */
+  onResume: () => void;
 }): void {
   if (!isNative()) return;
 
@@ -69,7 +73,9 @@ export function bindNativeLifecycle(handlers: {
 
   void App.addListener('appStateChange', ({ isActive }) => {
     if (!isActive) void handlers.onPause();
+    else handlers.onResume();
   });
 
   void App.addListener('pause', () => { void handlers.onPause(); });
+  void App.addListener('resume', () => { handlers.onResume(); });
 }

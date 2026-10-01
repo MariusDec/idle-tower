@@ -87,6 +87,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     fires: [],
     evolved: [],
     recipes: [...config.recipes],
+    priority: config.priority ? [...config.priority] : null,
     behaviours: { ...config.behaviours },
     rerolls: owned('reroll'),
     revives: owned('second-wind'),

@@ -1,19 +1,23 @@
 # The Tower, rebuilt — a ground-up redesign
 
-**Status:** approved; decisions D1–D6 confirmed (§16). P0–P5 are built on
+**Status:** approved; decisions D1–D6 confirmed (§16). P0–P6 are built on
 the `rebuild` branch. The pacing numbers come from the real sim with the
 active bot buying cheapest-first, claiming feats and pushing the frontier
 (`npm run pacing -- --seeds 8 --hours 2.5`):
 
-- Wave 20 is first reached at 26:46 median (24:12–38:51). The Gatekeeper
-  first falls at 33:24 (24:44–39:21), the Bog Mother at 66:06
-  (54:16–72:42).
-- The first evolution lands at 1:47:45 (1:36:45–1:52:07), inside §7.1's
+- Wave 20 is first reached at 26:46 median (24:12–38:53). The Gatekeeper
+  first falls at 33:24 (24:44–39:21), the Bog Mother at 70:48
+  (60:37–75:36).
+- The first evolution lands at 1:51:36 (1:47:50–1:57:27), inside §7.1's
   1.5–2 h.
-- I1a, I3 and I6 hold on all 8 profiles; the worst reveal gap is 9:56.
+- I1a, I3 and I6 hold on all 8 profiles; the worst reveal gap is 9:16.
 - I4 (`npm run arsenal`, 48 seeds per region): Regions 1–2 spread the
   new-weapon picks; the most-picked weapon is Mortar at 28% of Region 2's
   picks, and every weapon is taken.
+- I2 and I5 (`npm run pacing -- --idle --seeds 4`, two 20-minute check-ins
+  a day): the idle bot first fells the Bog Mother after 2.5–3.0 days, and
+  Act 1 projects to 6.0 days median (5.4–6.3). Active play earns 1.31×
+  idle per hour mid-Region 2 and 1.23× at the Bog Mother.
 
 P4 departs from the plan in a few places:
 
@@ -51,15 +55,45 @@ P5 departs from the plan in a few places:
 - **Audio** is new in P5: the synth and every cue in §10.4, with a sound
   toggle in the pause menu until P9's settings.
 
+P6 departs from the plan in a few places:
+
+- **Placement.** Regions 3–5 don't exist yet, so §6.2's later automation is
+  sealed by the two bosses there are. Tactician I, the Autocaster and Night
+  Watch II wait for the Gatekeeper; Tactician II, Night Watch III and speed
+  ×3 wait for the Bog Mother. Frontier March is an unsealed ring-2 node, so
+  it can carry the Gatekeeper's fall into Region 2. Night Watch IV waits
+  for P7. Offline tiers are 25%/2 h, 40%/4 h and 60%/8 h (IV is 75%/12 h).
+- **The Tactician's list.** Items the player ranks come first, best first;
+  everything unlisted ranks below them by the scorer, so buying the
+  Tactician never makes the suggestion worse. An evolution always outranks
+  the list. With the Tactician, a draft waits 6 s instead of 10: the
+  player's own plan needs no thinking time. Without that, idle earned 1.6×
+  less than active even with the whole kit.
+- **I2 is projected, not measured.** The idle bot plays to the Bog Mother,
+  and the rest of Act 1 is projected at what an idle day earns at the
+  Forge state she leaves (offline included), in active hours. Later tiers
+  only shorten that tail, so the projection leans long.
+- **I5 is held from Region 2 on**, once the idle kit can be owned. Before
+  it, active play earns about 1.6× idle (drafts wait the full 10 s, nothing
+  casts the ultimate), and §6.1 has the player active there anyway.
+- **Frontier March and the ceremony.** With March owned, a first boss kill
+  no longer holds auto-restart: the next run marches on, and the Map's
+  ceremony waits for the player's next visit.
+- **Kill safety.** A run snapshot carries the run count it was taken at,
+  and the banked profile is written before the snapshot is cleared, so a
+  kill between the two writes never pays a run twice. A stalled frame
+  (a laptop lid, a frozen tab) counts as an absence, like a hidden page.
+
 Still open:
 
 - playtest #1 (P3's gate) and playtest #2 (P4's gate); P5's gate playtest
-  (recipes found organically by about 2 h)
+  (recipes found organically by about 2 h); P6's gate on a device: kill the
+  app mid-run and check it resumes within one wave
 - from P1, the frame-rate check on a mid-range Android device, now with
   four-weapon evolved builds
 - after the Bog Mother P5 still runs out of content, which is P7's gap to fill
 
-P6 (§14) is next.
+P7 (§14) is next.
 
 **Supersedes:** every other file in `plans/`. Those describe the current game;
 P0 (§14) moves them to `plans/archive/`.

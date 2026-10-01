@@ -4,6 +4,7 @@ import { PASSIVES } from '../content/passives';
 import type { BehaviourId, CardItemId, Effect, StatMod } from '../content/types';
 import { bossDown, equippedRelics, relicSlots, selectedFrame, selectedRegion } from './collection';
 import { ownedNodes } from './forge';
+import { priorityList } from './automation';
 import type { Profile } from './profile';
 import type { Card, RunConfig } from '../sim/state';
 
@@ -79,5 +80,12 @@ export function buildRunConfig(profile: Profile): RunConfig {
     firstKill: !bossDown(profile, region.boss),
     relicDrops: relicSlots(profile) > 0,
     recipes: Object.freeze(EVOLUTIONS.filter((e) => profile.recipes.found.includes(e.id)).map((e) => e.id)),
+    priority: tactics(priorityList(profile), pool),
   });
+}
+
+/** The Tactician's list as the run sees it: only items in the pool, frozen; null when none are. */
+function tactics(list: CardItemId[] | null, pool: readonly CardItemId[]): readonly CardItemId[] | null {
+  const ranked = list?.filter((id) => pool.includes(id)) ?? [];
+  return ranked.length > 0 ? Object.freeze(ranked) : null;
 }

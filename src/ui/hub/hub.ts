@@ -9,9 +9,14 @@ import { CollectionView } from './collection';
 import { FeatsView, featsBadge } from './feats';
 import { ForgeView, forgeBadge } from './forge';
 import { MapView } from './map';
+import { TacticsView } from './tactics';
+import { tacticsKey } from '../../meta/automation';
 
-/** The hub's views. A tab exists only once its view is unlocked (R3). */
-export type HubView = 'home' | 'forge' | 'map' | 'collection' | 'feats';
+/**
+ * The hub's views. A tab exists only once its view is unlocked (R3);
+ * Tactics has no tab, it opens from the home view once the Tactician is owned.
+ */
+export type HubView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'tactics';
 
 /** Everything the hub can ask the app to do. */
 export interface HubActions {
@@ -25,10 +30,12 @@ export interface HubActions {
   selectFrame(id: string): void;
   claim(id: string): number;
   claimAll(): number;
+  /** The Tactician's list for the next run (§6.2). */
+  setTactics(list: readonly string[]): void;
 }
 
 /** Tabs in the order they unlock and sit (§10.1). */
-const TABS: readonly { view: Exclude<HubView, 'home'>; label: string }[] = [
+const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics'>; label: string }[] = [
   { view: 'forge', label: 'Forge' },
   { view: 'map', label: 'Map' },
   { view: 'collection', label: 'Collection' },
@@ -56,6 +63,8 @@ export class HubScreen {
   private readonly map: MapView;
   private readonly collection: CollectionView;
   private readonly feats: FeatsView;
+  private readonly tactics: TacticsView;
+  private readonly tacticsBtn: HTMLButtonElement;
   private profile: Profile | null = null;
   private view: HubView = 'home';
 
@@ -76,6 +85,7 @@ export class HubScreen {
             <div><dt>Best wave</dt><dd class="hub-best">—</dd></div>
           </dl>
           <p class="hub-loadout"></p>
+          <button type="button" class="btn hub-tactics" hidden>Tactics</button>
           <div class="hub-goal" hidden>
             <span class="hub-goal-label">Next</span>
             <span class="hub-goal-icon"></span>
@@ -98,6 +108,8 @@ export class HubScreen {
     this.goalText = q('.hub-goal-text');
     this.goalFill = q('.hub-goal-fill');
     this.tabs = q('.hub-tabs');
+    this.tacticsBtn = q('.hub-tactics');
+    this.tacticsBtn.addEventListener('click', () => this.setView('tactics'));
     const dock = q('.hub-dock');
     const refreshing = <T>(fn: () => T): T => {
       const out = fn();
@@ -121,7 +133,11 @@ export class HubScreen {
       claim: (id) => refreshing(() => actions.claim(id)),
       claimAll: () => refreshing(() => actions.claimAll()),
     });
-    for (const v of [this.forge.root, this.map.root, this.collection.root, this.feats.root]) this.root.insertBefore(v, dock);
+    this.tactics = new TacticsView(this.root, {
+      setTactics: (list) => actions.setTactics(list),
+      done: () => this.setView('home'),
+    });
+    for (const v of [this.forge.root, this.map.root, this.collection.root, this.feats.root, this.tactics.root]) this.root.insertBefore(v, dock);
     this.tabs.addEventListener('click', (e) => {
       const tab = (e.target as HTMLElement).closest<HTMLElement>('.hub-tab');
       if (tab) this.setView(tab.dataset.view as HubView);
@@ -136,7 +152,7 @@ export class HubScreen {
     this.profile = profile;
     this.root.hidden = false;
     this.renderTabs(hubUnlocks(profile));
-    const open = view === 'home' || hubUnlocks(profile)[view];
+    const open = view === 'home' || (view === 'tactics' ? tacticsKey(profile) !== null : hubUnlocks(profile)[view]);
     this.setView(open ? view : 'home', spread);
   }
 
@@ -179,6 +195,7 @@ export class HubScreen {
     this.map.root.hidden = view !== 'map';
     this.collection.root.hidden = view !== 'collection';
     this.feats.root.hidden = view !== 'feats';
+    this.tactics.root.hidden = view !== 'tactics';
     for (const t of this.tabs.querySelectorAll<HTMLElement>('.hub-tab')) {
       const on = t.dataset.view === view;
       toggleClass(t, 'is-active', on);
@@ -188,6 +205,7 @@ export class HubScreen {
     if (view === 'map') this.map.show(p, spread);
     if (view === 'collection') this.collection.show(p);
     if (view === 'feats') this.feats.show(p);
+    if (view === 'tactics') this.tactics.show(p);
     this.refresh();
   }
 
@@ -198,6 +216,7 @@ export class HubScreen {
     setText(this.shards, formatNumber(p.shards));
     setText(this.best, p.records.bestWave > 0 ? String(p.records.bestWave) : '—');
     setText(this.loadout, `${selectedFrame(p).name} · ${selectedRegion(p).name}`);
+    this.tacticsBtn.hidden = tacticsKey(p) === null;
     const goal = p.records.runs > 0 ? hubGoal(p) : null;
     this.goal.hidden = goal === null;
     if (goal) {

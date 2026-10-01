@@ -84,8 +84,15 @@ export type BehaviourId =
   | 'frail-splits'
   | 'still-target';
 
-/** What the Engineering branch automates (§6.2). The app reads these, never the sim. */
-export type AutomationId = 'speed-2' | 'auto-restart' | 'offline';
+/**
+ * What the Engineering branch automates (§6.2). The app reads these, never
+ * the sim; `tactician` reaches the sim only as `RunConfig.priority`.
+ */
+export type AutomationId =
+  | 'speed-2' | 'speed-3' | 'auto-restart' | 'frontier-march' | 'auto-ult'
+  | 'tactician' | 'tactician-2'
+  /** Offline tiers I–III (§6.3); the highest owned applies. Tier IV waits for P7's regions. */
+  | 'offline' | 'offline-2' | 'offline-3';
 
 /**
  * Effects are data (§12.3, R8). Every kind has one exhaustive consumer, in

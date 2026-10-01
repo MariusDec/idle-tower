@@ -23,10 +23,14 @@ export function farmRate(profile: Profile): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-/** The owned offline tier, or null before Night Watch (§6.2). */
+/** Night Watch I–III, in tier order (§6.2). */
+const TIERS = ['offline', 'offline-2', 'offline-3'] as const;
+
+/** The highest owned offline tier, or null before Night Watch (§6.2). */
 export function offlineTier(profile: Profile): { efficiency: number; capHours: number } | null {
-  if (!automations(profile).has('offline')) return null;
-  return BALANCE.offline.tiers[0];
+  const owned = automations(profile);
+  for (let i = TIERS.length - 1; i >= 0; i--) if (owned.has(TIERS[i])) return BALANCE.offline.tiers[i];
+  return null;
 }
 
 export interface OfflineEarnings {

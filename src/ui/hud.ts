@@ -10,8 +10,16 @@ import { iconMarkup } from './icon';
 /**
  * The battle HUD (§10.1): HP, wave, region and the run's shards on top, and
  * the boss bar while a boss stands; the XP bar, the level, the speed toggle
- * (once owned) and the ultimate at the bottom, under the thumb. Nothing else.
+ * and the Autocaster switch (each once owned) and the ultimate at the
+ * bottom, under the thumb. Nothing else.
  */
+export interface HudActions {
+  pause(): void;
+  ult(): void;
+  speed(): void;
+  autoUlt(): void;
+}
+
 export class Hud {
   private readonly root: HTMLElement;
   private readonly wave: HTMLElement;
@@ -24,13 +32,14 @@ export class Hud {
   private readonly region: HTMLElement;
   private readonly shards: HTMLElement;
   private readonly speed: HTMLButtonElement;
+  private readonly auto: HTMLButtonElement;
   private readonly waveLabel: HTMLElement;
   private readonly boss: HTMLElement;
   private readonly bossName: HTMLElement;
   private readonly bossFill: HTMLElement;
   private readonly bossPips: HTMLElement;
 
-  constructor(host: HTMLElement, onPause: () => void, onUlt: () => void, onSpeed: () => void) {
+  constructor(host: HTMLElement, actions: HudActions) {
     this.root = document.createElement('div');
     this.root.className = 'hud';
     this.root.innerHTML = `
@@ -55,7 +64,10 @@ export class Hud {
       <div class="hud-bottom">
         <div class="hud-row hud-row-bottom">
           <div class="hud-level"><span class="hud-label">Lv</span> <span class="hud-level-n">1</span></div>
-          <button type="button" class="hud-speed" hidden>1×</button>
+          <div class="hud-toggles">
+            <button type="button" class="hud-speed" hidden>1×</button>
+            <button type="button" class="hud-auto" hidden>Auto</button>
+          </div>
           <button type="button" class="hud-ult"><span class="hud-ult-label"></span></button>
         </div>
         <div class="hud-xp" role="meter" aria-label="Experience"><div class="hud-xp-fill"></div></div>
@@ -70,14 +82,16 @@ export class Hud {
     this.region = this.root.querySelector('.hud-region')!;
     this.shards = this.root.querySelector('.hud-shards-n')!;
     this.speed = this.root.querySelector('.hud-speed')!;
+    this.auto = this.root.querySelector('.hud-auto')!;
     this.waveLabel = this.root.querySelector('.hud-wave-label')!;
     this.boss = this.root.querySelector('.hud-boss')!;
     this.bossName = this.root.querySelector('.hud-boss-name')!;
     this.bossFill = this.root.querySelector('.hud-boss-fill')!;
     this.bossPips = this.root.querySelector('.hud-boss-pips')!;
-    this.speed.addEventListener('click', onSpeed);
-    this.root.querySelector('.hud-pause')!.addEventListener('click', onPause);
-    this.ult.addEventListener('click', onUlt);
+    this.speed.addEventListener('click', () => actions.speed());
+    this.auto.addEventListener('click', () => actions.autoUlt());
+    this.root.querySelector('.hud-pause')!.addEventListener('click', () => actions.pause());
+    this.ult.addEventListener('click', () => actions.ult());
     host.appendChild(this.root);
     this.hide();
   }
@@ -96,6 +110,14 @@ export class Hud {
     setText(this.speed, `${current}×`);
     setAriaLabel(this.speed, `Game speed ${current}×`);
     toggleClass(this.speed, 'is-fast', current > 1);
+  }
+
+  /** The Autocaster switch (§6.2): hidden until it is owned, lit while it is on. */
+  setAutoUlt(owned: boolean, on: boolean): void {
+    this.auto.hidden = !owned;
+    this.auto.setAttribute('aria-pressed', String(on));
+    setAriaLabel(this.auto, on ? 'Autocaster on' : 'Autocaster off');
+    toggleClass(this.auto, 'is-on', on);
   }
 
   update(run: RunState): void {
