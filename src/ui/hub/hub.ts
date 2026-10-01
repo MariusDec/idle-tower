@@ -5,7 +5,7 @@ import { hubGoal } from '../../meta/goals';
 import { heat } from '../../meta/pacts';
 import type { PactId, RelicId } from '../../content/types';
 import { setStyle, setText, toggleClass } from '../dom';
-import { icon } from '../icon';
+import { icon, iconMarkup } from '../icon';
 import { CollectionView } from './collection';
 import { FeatsView, featsBadge } from './feats';
 import { ForgeView, StarsView, forgeBadge, starsBadge } from './forge';
@@ -39,6 +39,8 @@ export interface HubActions {
   buyStar(id: string): boolean;
   /** Set a pact's rank for the next run (§9). */
   setPact(id: PactId, rank: number): boolean;
+  /** Open the settings (§10.1: behind the gear). */
+  settings(): void;
 }
 
 /** Tabs in the order they unlock and sit (§10.1). */
@@ -87,6 +89,7 @@ export class HubScreen {
     // Two groups, above and below the centre, so the backdrop tower the
     // renderer draws there stays in the clear between them.
     this.root.innerHTML = `
+      <button type="button" class="hub-gear" aria-label="Settings">${iconMarkup('cog')}</button>
       <div class="hub-home">
         <div class="hub-group">
           <h1 class="hub-title">The Tower</h1>
@@ -173,6 +176,7 @@ export class HubScreen {
       if (tab) this.setView(tab.dataset.view as HubView);
     });
     q('.hub-start').addEventListener('click', () => actions.start());
+    q('.hub-gear').addEventListener('click', () => actions.settings());
     host.appendChild(this.root);
     this.hide();
   }

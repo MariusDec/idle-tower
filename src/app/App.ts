@@ -1,7 +1,7 @@
 import {
   clearRunSnapshot, loadProfile, loadRunSnapshot, saveProfile, saveRunSnapshot, snapshotRun,
 } from '../meta/save';
-import type { Profile } from '../meta/profile';
+import { newProfile, type Profile } from '../meta/profile';
 import { buildRunConfig } from '../meta/runConfig';
 import {
   autoUlt, automations, draftSeconds, marchOn, maxSpeed, runSpeed, tacticsKey,
@@ -26,7 +26,12 @@ import { autoUltWanted } from '../sim/systems/ultimate';
 import type { DraftOffer, RunState } from '../sim/state';
 import { BALANCE } from '../content/balance';
 import { Renderer } from '../render/renderer';
-import { resolveQuality } from '../render/quality';
+import { QualityProbe, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
+import { runRegion } from '../sim/systems/waves';
+import { SettingsPanel } from '../ui/settings';
+import { Music } from '../audio/music';
+import { bench, type BenchOptions, type BenchResult } from './bench';
+import { applySettings, onOsMotionChange, type Settings } from './settings';
 import { DraftPanel } from '../ui/draft';
 import { Hud } from '../ui/hud';
 import { HubScreen, type HubView } from '../ui/hub/hub';
@@ -94,6 +99,10 @@ export class App {
   private readonly toasts: Toasts;
   private readonly synth = new Synth();
   private readonly cues = new Cues(this.synth);
+  private readonly music = new Music(this.synth);
+  private readonly settings: SettingsPanel;
+  /** Once a session, on `'auto'`: may demote the quality tier (docs/performance.md). */
+  private readonly probe = new QualityProbe();
 
   constructor(private readonly els: AppElements) {
     this.renderer = new Renderer(els.canvas, els.stage);
@@ -116,8 +125,8 @@ export class App {
       selectFrame: (id) => this.between(() => {
         if (frameUnlocked(this.profile, frameById(id))) this.profile.frame = id;
       }),
-      claim: (id) => this.between(() => claimFeat(this.profile, id)) ?? 0,
-      claimAll: () => this.between(() => claimAll(this.profile)) ?? 0,
+      claim: (id) => this.claimed(this.between(() => claimFeat(this.profile, id)) ?? 0),
+      claimAll: () => this.claimed(this.between(() => claimAll(this.profile)) ?? 0),
       setTactics: (list) => this.between(() => {
         const key = tacticsKey(this.profile);
         if (key !== null) this.profile.tactics[key] = [...list];
@@ -128,11 +137,24 @@ export class App {
         return bought;
       },
       setPact: (id, rank) => this.between(() => setPactRank(this.profile, id, rank)) ?? false,
+      settings: () => this.openSettings(),
     });
     this.results = new ResultsScreen(els.screens, () => this.leaveResults(), () => this.startRun());
     this.toasts = new Toasts(els.overlay);
     this.draft = new DraftPanel(els.overlay, (i) => this.pick(i), () => this.reroll());
     this.modal = new Modal(els.overlay);
+    this.settings = new SettingsPanel(els.overlay, {
+      change: (edit) => this.changeSettings(edit),
+      quality: () => ({ pref: readStoredQuality(), tier: this.renderer.quality }),
+      setQuality: (pref) => {
+        storeQuality(pref);
+        // An explicit choice ends the probe for good; Auto starts from the device's guess.
+        this.probe.abandon();
+        this.renderer.setQuality(resolveQuality());
+      },
+      reset: () => void this.reset(),
+      closed: () => this.settingsClosed(),
+    });
     this.loop = new Loop({
       step: () => this.step(),
       render: (alpha, realDt) => this.frame(alpha, realDt),
@@ -149,6 +171,12 @@ export class App {
     return this.run;
   }
 
+  /** Dev only: the frame-budget harness (§12.5), during a run. */
+  bench(opts?: BenchOptions): Promise<BenchResult> {
+    if (!this.run || this.screen !== 'run') return Promise.reject(new Error('bench needs a run'));
+    return bench(this.run, this.renderer, opts);
+  }
+
   /** The profile, for the dev console. */
   get currentProfile(): Profile {
     return this.profile;
@@ -157,7 +185,9 @@ export class App {
   async boot(): Promise<void> {
     const loaded = await loadProfile(Date.now());
     this.profile = loaded.profile;
-    this.synth.setEnabled(this.profile.settings.sound);
+    this.applySettings();
+    onOsMotionChange(() => this.applySettings());
+    this.music.start();
     if (loaded.backedUpLegacy) console.info('[save] legacy save backed up; starting a fresh profile');
     const resume = await loadRunSnapshot(this.profile);
     this.bindLifecycle();
@@ -374,6 +404,8 @@ export class App {
       run.events.length = 0;
     }
     this.slowMo.left = Math.max(0, this.slowMo.left - realDt);
+    this.tune(run);
+    if (this.screen === 'run') this.measure(realDt);
     this.toasts.tick(realDt);
     this.renderer.render(run, alpha, realDt);
     if (this.screen === 'run' && run) {
@@ -385,6 +417,37 @@ export class App {
     if (this.screen === 'results' && !this.modal.open) this.results.tick(realDt);
     this.sinceSave += realDt;
     if (this.sinceSave >= AUTOSAVE_SECONDS) void this.save();
+  }
+
+  /** The music's mood (§10.4): the hub's drift, a run's walk, a boss fight's churn. */
+  private tune(run: RunState | null): void {
+    if (!run || this.screen !== 'run') {
+      this.music.set('hub', this.profile.region);
+      return;
+    }
+    const boss = run.boss !== null && run.boss.killedIn === null;
+    this.music.set(boss ? 'boss' : 'run', runRegion(run).index);
+  }
+
+  /** Feed the quality probe a real frame: at 1×, unpaused, with no draft slowing the arena. */
+  private measure(realDt: number): void {
+    if (this.probe.finished) return;
+    // A tier the player chose is theirs: the probe stands down for the session.
+    if (readStoredQuality() !== 'auto') {
+      this.probe.abandon();
+      return;
+    }
+    const speed = this.simSpeed();
+    if (speed === 0) return;
+    if (speed > 1) {
+      this.probe.abandon();
+      return;
+    }
+    const drop = this.probe.tick(realDt, this.renderer.quality);
+    if (drop) {
+      console.info(`[quality] frames over budget: ${this.renderer.quality} → ${drop}`);
+      this.renderer.setQuality(drop);
+    }
   }
 
   /**
@@ -435,6 +498,13 @@ export class App {
     const ceremony = this.profile.ceremony !== null;
     const restart = automations(this.profile).has('auto-restart') && (!ceremony || marched);
     this.results.show(summary, restart, ceremony ? 'Map' : 'Forge');
+    if (summary.unlocks.length > 0) this.cues.unlock();
+  }
+
+  /** A feat's reward paid: its chime, and the shards passed back to the view. */
+  private claimed(shards: number): number {
+    if (shards > 0) this.cues.claim();
+    return shards;
   }
 
   private buy(id: string): boolean {
@@ -463,19 +533,46 @@ export class App {
     this.paused = true;
     this.modal.show('Paused', body, [
       { label: 'Retreat', onClick: () => this.retreat() },
-      // The sound toggle (§10.4); P9 brings the full settings.
-      { label: this.profile.settings.sound ? 'Sound off' : 'Sound on', onClick: () => this.toggleSound() },
+      { label: 'Settings', onClick: () => this.openSettings() },
       { label: 'Resume', primary: true, onClick: () => { this.paused = false; this.loop.resetClock(); } },
     ]);
   }
 
-  private toggleSound(): void {
-    this.profile.settings.sound = !this.profile.settings.sound;
-    this.synth.setEnabled(this.profile.settings.sound);
+  /** The settings (§10.1): from the hub's gear, or from the pause menu mid-run. */
+  private openSettings(): void {
+    if (this.screen === 'run') this.paused = true;
+    this.settings.show(this.profile, this.screen === 'hub');
+  }
+
+  /** Back from the settings: a run returns to its pause menu, still paused. */
+  private settingsClosed(): void {
     void this.save();
-    // The modal closed on the click: the game is still paused, so reopen it.
-    this.paused = false;
-    this.openPause();
+    if (this.screen === 'run') {
+      this.paused = false;
+      this.openPause();
+    }
+  }
+
+  private changeSettings(edit: (s: Settings) => void): void {
+    edit(this.profile.settings);
+    this.applySettings();
+    void this.save();
+  }
+
+  private applySettings(): void {
+    applySettings(this.profile.settings, { synth: this.synth, renderer: this.renderer, root: document.documentElement });
+  }
+
+  /**
+   * Erase the profile (P9's reset), between runs only: a fresh profile and no
+   * run snapshot are written, then the page reloads onto them.
+   */
+  private async reset(): Promise<void> {
+    if (this.screen !== 'hub') return;
+    this.profile = newProfile(Date.now());
+    this.write(() => clearRunSnapshot());
+    await this.save();
+    window.location.reload();
   }
 
   /** A retreat banks at once, exactly like a fall (§4.2), even mid-draft. */
@@ -489,6 +586,10 @@ export class App {
 
   /** Close whatever is open. True when something was closed (the back button). */
   private back(): boolean {
+    if (this.settings.open) {
+      this.settings.close();
+      return true;
+    }
     if (this.modal.open) {
       this.modal.close();
       this.paused = false;
@@ -546,7 +647,9 @@ export class App {
 
   /** Going away (§6.1): the run pauses, and the profile is stamped and saved. */
   private hidden(): Promise<void> {
-    if (this.screen === 'run') this.openPause();
+    // A hidden page's frames are not real frames: a probe mid-measurement gives up.
+    if (this.probe.measuring) this.probe.abandon();
+    if (this.screen === 'run' && !this.settings.open) this.openPause();
     return this.save();
   }
 

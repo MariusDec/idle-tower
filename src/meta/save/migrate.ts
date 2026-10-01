@@ -59,6 +59,19 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
     pacts: { ranks: {}, best: {} },
     abyss: { best: 0 },
   }),
+  // v8 (P9): the settings: volumes, screen shake, motion, palette, text size.
+  7: (raw) => ({
+    ...raw,
+    version: 8,
+    settings: {
+      volume: { master: 1, sfx: 1, music: 0.6 },
+      shake: true,
+      motion: 'system',
+      palette: 'standard',
+      textScale: 1,
+      ...(raw.settings as object),
+    },
+  }),
 };
 
 export class MigrationError extends Error {}

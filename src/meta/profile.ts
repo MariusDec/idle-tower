@@ -7,7 +7,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 7;
+  version: 8;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -85,14 +85,43 @@ export interface Profile {
   settings: {
     /** Sim speed multiplier, 1–3 (§12.3). */
     speed: 1 | 2 | 3;
-    /** Sound on or off (§10.4); the pause menu toggles it. */
+    /** Sound on or off (§10.4): the master switch, over the volumes. */
     sound: boolean;
     /** Autocaster on or off, once owned (§6.2); the HUD toggles it. */
     autoUlt: boolean;
+    /** Master, effects and music levels, 0–1 each (§10.4). */
+    volume: { master: number; sfx: number; music: number };
+    /** Screen shake (§10.3). */
+    shake: boolean;
+    /** Reduced motion: follow the device's setting, or force it on or off. */
+    motion: MotionSetting;
+    /** The canvas's weapon and effect colours: standard, or colourblind-safe. */
+    palette: 'standard' | 'safe';
+    /** The text size, as a multiple of the base type ramp. */
+    textScale: number;
   };
 }
 
-export const PROFILE_VERSION = 7;
+export const PROFILE_VERSION = 8;
+
+export type MotionSetting = 'system' | 'reduce' | 'full';
+
+/** The text sizes the settings offer. */
+export const TEXT_SCALES: readonly number[] = [1, 1.15, 1.3];
+
+/** The settings a new profile starts with (and the v8 rung fills in). */
+export function defaultSettings(): Profile['settings'] {
+  return {
+    speed: 1,
+    sound: true,
+    autoUlt: true,
+    volume: { master: 1, sfx: 1, music: 0.6 },
+    shake: true,
+    motion: 'system',
+    palette: 'standard',
+    textScale: 1,
+  };
+}
 
 export function newProfile(now: number): Profile {
   return {
@@ -121,6 +150,6 @@ export function newProfile(now: number): Profile {
     region: 1,
     frame: 'arcanist',
     tutorial: { firstDraft: false, forgeIntro: false },
-    settings: { speed: 1, sound: true, autoUlt: true },
+    settings: defaultSettings(),
   };
 }

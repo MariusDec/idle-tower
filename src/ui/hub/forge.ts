@@ -8,7 +8,7 @@ import { FORGE_WEB, canAfford } from '../../meta/forge';
 import type { Profile } from '../../meta/profile';
 import { STAR_WEB } from '../../meta/stars';
 import type { NodeState, Web } from '../../meta/web';
-import { setText } from '../dom';
+import { motionReduced, setText } from '../dom';
 import { icon, iconMarkup, iconUse } from '../icon';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -334,7 +334,7 @@ export class WebView<N extends WebNodeDef> {
 
   /** The purchase ripple (§10.3): a ring from the node, then the owned web lights outward. */
   private ripple(id: string): void {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (motionReduced()) return;
     const at = position(this.src.web.node(id)!);
     const ring = el('circle', { class: 'forge-ripple', cx: at.x, cy: at.y, r: RADIUS.notable });
     this.world.appendChild(ring);

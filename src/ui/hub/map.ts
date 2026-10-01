@@ -7,7 +7,7 @@ import { formatDuration, formatNumber } from '../../core/format';
 import { act2Open, bossDown, inAbyss, regionRelics, regionUnlocked, relicRank, selectedRegion } from '../../meta/collection';
 import { bestHeat } from '../../meta/pacts';
 import type { Profile } from '../../meta/profile';
-import { setStyle } from '../dom';
+import { motionReduced, setStyle } from '../dom';
 import { icon } from '../icon';
 
 /** Six regions in Act 1 (§5.2); the ones not yet built show as the Blight. */
@@ -47,7 +47,7 @@ export class MapView {
   show(profile: Profile, spread = false): void {
     const cleared = REGIONS.filter((r) => bossDown(profile, r.boss)).length;
     const reach = (n: number): string => `${Math.min(100, ((n + 0.5) / ACT_REGIONS) * 100).toFixed(1)}%`;
-    if (spread && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (spread && !motionReduced()) {
       setStyle(this.light, '--lit', reach(Math.max(0, cleared - 1)));
       this.light.classList.remove('is-spreading');
       // Next frame: let the old reach paint, then roll to the new one.

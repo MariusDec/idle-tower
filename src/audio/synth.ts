@@ -18,13 +18,28 @@ export interface Tone {
   delay?: number;
 }
 
-/** The master level with the sound on. */
+/** The master level with the sound on and the slider full. */
 const MASTER = 0.5;
 
+/** The player's levels, 0–1 each (§10.4). */
+export interface Volumes {
+  master: number;
+  sfx: number;
+  music: number;
+}
+
+/**
+ * Two buses under the master: effects (every `tone` and `noise`) and music
+ * (`Music` plays into `musicBus`). The sound switch and the master slider
+ * both act on the master, so muting never loses the player's levels.
+ */
 export class Synth {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private sfx: GainNode | null = null;
+  private music: GainNode | null = null;
   private on = true;
+  private volumes: Volumes = { master: 1, sfx: 1, music: 1 };
   /** One cached second of white noise, sliced for every burst. */
   private noiseBuffer: AudioBuffer | null = null;
 
@@ -39,8 +54,14 @@ export class Synth {
       if (!Ctx) return;
       this.ctx = new Ctx();
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.on ? MASTER : 0;
+      this.master.gain.value = this.masterLevel();
       this.master.connect(this.ctx.destination);
+      this.sfx = this.ctx.createGain();
+      this.sfx.gain.value = this.volumes.sfx;
+      this.sfx.connect(this.master);
+      this.music = this.ctx.createGain();
+      this.music.gain.value = this.volumes.music;
+      this.music.connect(this.master);
     } catch (err) {
       console.warn('[audio] no AudioContext', err);
       this.ctx = null;
@@ -49,20 +70,50 @@ export class Synth {
 
   setEnabled(on: boolean): void {
     this.on = on;
-    if (!this.ctx || !this.master) return;
-    const now = this.ctx.currentTime;
-    this.master.gain.cancelScheduledValues(now);
-    // A short glide, so muting never clicks.
-    this.master.gain.setTargetAtTime(on ? MASTER : 0, now, 0.03);
+    this.glide(this.master, this.masterLevel());
+  }
+
+  setVolumes(v: Volumes): void {
+    this.volumes = { ...v };
+    this.glide(this.master, this.masterLevel());
+    this.glide(this.sfx, v.sfx);
+    this.glide(this.music, v.music);
   }
 
   get enabled(): boolean {
     return this.on;
   }
 
-  /** True when a sound would be heard: worth the caller's throttling work. */
+  /** True when an effect would be heard: worth the caller's throttling work. */
   get live(): boolean {
-    return this.on && this.ctx !== null && this.ctx.state === 'running';
+    return this.audible && this.volumes.sfx > 0;
+  }
+
+  /** True when anything at all would be heard. */
+  get audible(): boolean {
+    return this.on && this.volumes.master > 0 && this.ctx !== null && this.ctx.state === 'running';
+  }
+
+  /** True when the music slider is up. */
+  get musicOn(): boolean {
+    return this.volumes.music > 0;
+  }
+
+  /** The running context and the music bus, for `Music`; null until started. */
+  get musicOut(): { ctx: AudioContext; bus: GainNode } | null {
+    return this.ctx && this.music ? { ctx: this.ctx, bus: this.music } : null;
+  }
+
+  private masterLevel(): number {
+    return this.on ? MASTER * this.volumes.master : 0;
+  }
+
+  /** A short glide to `level`, so a change never clicks. */
+  private glide(node: GainNode | null, level: number): void {
+    if (!this.ctx || !node) return;
+    const now = this.ctx.currentTime;
+    node.gain.cancelScheduledValues(now);
+    node.gain.setTargetAtTime(level, now, 0.03);
   }
 
   tone(t: Tone): void {
@@ -81,7 +132,7 @@ export class Synth {
     g.gain.linearRampToValueAtTime(vol, t0 + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     osc.connect(g);
-    g.connect(this.master!);
+    g.connect(this.sfx!);
     osc.start(t0);
     osc.stop(t0 + dur + 0.02);
   }
@@ -108,7 +159,7 @@ export class Synth {
     g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
     src.connect(filter);
     filter.connect(g);
-    g.connect(this.master!);
+    g.connect(this.sfx!);
     src.start(now, Math.random() * 0.5);
     src.stop(now + dur + 0.02);
   }

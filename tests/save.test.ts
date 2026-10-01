@@ -126,6 +126,21 @@ describe('migration ladder', () => {
     expect(out.region).toBe(6);
   });
 
+  it('walks a v7 profile to v8: the settings gain their defaults, and keep what was set (P9)', () => {
+    const out = migrate({ version: 7, createdAt: 5, shards: 50, settings: { speed: 2, sound: false, autoUlt: true } }, MIGRATIONS, 8);
+    expect(out.version).toBe(8);
+    expect(out.settings).toEqual({
+      speed: 2,
+      sound: false,
+      autoUlt: true,
+      volume: { master: 1, sfx: 1, music: 0.6 },
+      shake: true,
+      motion: 'system',
+      palette: 'standard',
+      textScale: 1,
+    });
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);
@@ -136,6 +151,7 @@ describe('migration ladder', () => {
     expect(out.shards).toBe(4);
     // Every field a fresh profile has, the migrated one has too.
     expect(Object.keys(out).sort()).toEqual(Object.keys(newProfile(0)).sort());
+    expect(Object.keys(out.settings as object).sort()).toEqual(Object.keys(newProfile(0).settings).sort());
   });
 
   it('refuses a missing rung, a future version and a rung that skips', () => {

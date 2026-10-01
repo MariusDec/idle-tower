@@ -202,7 +202,7 @@
   --fx-blood: #d9534f; /* = --blood-400 — enemies and damage ONLY */
   --fx-frost: #79d2ff; /* = --azure-300 */
   --fx-nature: #4ec97a; /* = --green-400 */
-  --fx-critical: #ff4d3d; /* the tower in peril ONLY — see docs/art-direction.md */
+  --fx-critical: #ff4d3d; /* the tower in peril ONLY — see docs/render.md */
 
   /* rgb triplets for the same colours, so a translucent fill can be written
      `rgba(var(--rgb-blood), 0.3)` instead of retyping the channels. */
@@ -267,25 +267,29 @@
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
     'Liberation Mono', monospace;
 
+  /* The settings' text size (P9): every step of the ramp below scales with
+     it. Set on :root by src/app/settings.ts. */
+  --text-scale: 1;
+
   /* Type scale. These are the sizes the UI actually uses today; Parts 7-8 of the
      UI plan tighten the ramp as they rebuild each surface. */
-  --text-3xs: 9px;
-  --text-2xs: 10px;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-md: 13px;
-  --text-base: 14px;
-  --text-lg: 15px;
-  --text-xl: 16px;
-  --text-2xl: 18px;
-  --text-3xl: 20px;
-  --text-4xl: 22px;
-  --text-5xl: 24px;
-  --text-6xl: 28px;
+  --text-3xs: calc(9px * var(--text-scale));
+  --text-2xs: calc(10px * var(--text-scale));
+  --text-xs: calc(11px * var(--text-scale));
+  --text-sm: calc(12px * var(--text-scale));
+  --text-md: calc(13px * var(--text-scale));
+  --text-base: calc(14px * var(--text-scale));
+  --text-lg: calc(15px * var(--text-scale));
+  --text-xl: calc(16px * var(--text-scale));
+  --text-2xl: calc(18px * var(--text-scale));
+  --text-3xl: calc(20px * var(--text-scale));
+  --text-4xl: calc(22px * var(--text-scale));
+  --text-5xl: calc(24px * var(--text-scale));
+  --text-6xl: calc(28px * var(--text-scale));
   /* Added by Part 7 for the wave number, which is the one figure in the HUD
      that has to read as a focal element rather than as a large label. The ramp
      stopped at 28px because nothing before Part 7 asked for more. */
-  --text-7xl: 34px;
+  --text-7xl: calc(34px * var(--text-scale));
 
   --weight-regular: 400;
   --weight-medium: 500;

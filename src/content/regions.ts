@@ -174,7 +174,9 @@ export const REGIONS: readonly RegionDef[] = [
     beats: {
       5: { kind: 'introduce', enemy: 'harbinger', packs: 1 },
       10: { kind: 'swarm', countMult: 1.3 },
-      15: { kind: 'swarm', countMult: 1.5 },
+      // Softer than the other regions' 1.5: with an elite on every wave, the
+      // full swarm carried 100+ bodies into the Blight's wave (P9).
+      15: { kind: 'swarm', countMult: 1.25 },
     },
     rule: { name: 'Blight', text: 'Every wave brings an elite: old enemies, crowned.', effect: { kind: 'blight' } },
     surge: { text: 'Every wave brings one more elite.', effect: { kind: 'rule' } },

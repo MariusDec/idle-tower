@@ -1,7 +1,7 @@
 import { ENEMY_BY_ID } from '../../content/enemies';
 import type { AuraId, EnemyDef, EnemyId } from '../../content/types';
 import type { Enemy } from '../../sim/state';
-import { FX, INK, mix, withAlpha } from '../palette';
+import { FX, INK, mix, withAlpha, type FxColorName } from '../palette';
 
 /**
  * Enemy bodies, salvaged from the legacy renderer's `paintEnemyBody`: a base
@@ -49,12 +49,12 @@ const PHASED_ALPHA = 0.22;
 const SHADE_ALPHA = 0.55;
 
 /** Each aura's colour on an elite's halo (§4.3); a plain elite wears gold. */
-const AURA_COLOR: Record<AuraId, string> = {
-  haste: FX.ember,
-  regen: FX.nature,
-  shield: FX.frost,
-  split: FX.arcane,
-  vengeful: FX.blood,
+const AURA_COLOR: Record<AuraId, FxColorName> = {
+  haste: 'ember',
+  regen: 'nature',
+  shield: 'frost',
+  split: 'arcane',
+  vengeful: 'blood',
 };
 
 interface Sprite {
@@ -102,7 +102,7 @@ export class EnemyPainter {
       const y = e.py + (e.y - e.py) * alpha + (e.moving ? Math.sin(time * g.freq + e.id) * g.bob : 0);
       const fade = e.hiddenUntil > simTime ? PHASED_ALPHA : e.shade ? SHADE_ALPHA : 1;
       ctx.globalAlpha = fade;
-      if (e.elite) drawHalo(ctx, x, y, e.radius, e.aura ? AURA_COLOR[e.aura] : FX.gold, time + e.id);
+      if (e.elite) drawHalo(ctx, x, y, e.radius, FX[e.aura ? AURA_COLOR[e.aura] : 'gold'], time + e.id);
       const s = this.sprite(e.type);
       // Sprites are baked at the type's radius; elites and fragments scale it.
       const k = e.radius / ENEMY_BY_ID[e.type].radius;

@@ -15,7 +15,7 @@
  * not be able to read `--surface-0`, and a stylesheet that cannot be understood
  * without running the game is a bad stylesheet. Declaring the values in CSS and
  * asserting the agreement in CI keeps both files readable on their own and still
- * makes drift a build failure. See `docs/art-direction.md`.
+ * makes drift a build failure. See `docs/render.md`.
  *
  * Art direction ("arcane siege", plan §2.1):
  * - warm amber  → everything the player owns: the tower, gold, physical shots
@@ -62,6 +62,40 @@ export const FX: Record<FxColorName, string> = {
   /** The tower is in peril. Low HP, the vignette, a wall breach. */
   critical: '#ff4d3d',
 };
+
+/** The standard palette, kept aside so `setPaletteMode` can return to it. */
+const STANDARD_FX: Readonly<Record<FxColorName, string>> = { ...FX };
+
+/**
+ * The colourblind-safe palette (P9), for the canvas only. The standard
+ * weapon colours sit close together for a red-green deficiency: violet and
+ * blue-violet, amber and ember and the enemy red. Here each family moves
+ * apart on the blue–yellow axis and in lightness, after Paul Tol's and
+ * Okabe & Ito's schemes: arcane a clear blue, mana a bright cyan, frost
+ * near white, ember a deep orange, gold a pale yellow, blood a rose.
+ * `critical` keeps its hot scarlet: the vignette reads by lightness anyway.
+ */
+export const SAFE_FX: Readonly<Record<FxColorName, string>> = {
+  gold: '#ffe45c',
+  ember: '#d9700f',
+  mana: '#4fd8e0',
+  arcane: '#5b8cff',
+  blood: '#ee5f8a',
+  frost: '#d2efff',
+  nature: '#3fbf9a',
+  critical: '#ff4d3d',
+};
+
+export type PaletteMode = 'standard' | 'safe';
+
+/**
+ * Swap the canvas's effect colours in place. Painters read `FX` when they
+ * draw, so the next frame wears the new palette; nothing that caches a
+ * colour may hold an `FX` value (look it up by name instead).
+ */
+export function setPaletteMode(mode: PaletteMode): void {
+  Object.assign(FX, mode === 'safe' ? SAFE_FX : STANDARD_FX);
+}
 
 /**
  * Steps on the ink ramp, lightest first. Mirrors `--ink-*` in `tokens.css`.

@@ -1,6 +1,6 @@
 /**
  * Uniform grid for radius queries over the enemy list: targeting, AoE, auras.
- * Ported unchanged from the legacy game (legacy/src/utils/SpatialGrid.ts).
+ * Ported unchanged from the legacy game (`src/utils/SpatialGrid.ts` at the tag `legacy-final`).
  *
  * A uniform grid suits this arena better than a tree: enemies are spread
  * fairly evenly over a fixed-size field, they all move every step (so any

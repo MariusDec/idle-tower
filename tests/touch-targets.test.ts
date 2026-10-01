@@ -85,6 +85,8 @@ describe('44 px floor', () => {
     { sel: '.map-region-btn', axes: ['min-width', 'min-height'] },
     { sel: '.entry-btn', axes: ['min-width', 'min-height'] },
     { sel: '.segmented-btn', axes: ['min-width', 'min-height'] },
+    { sel: '.hub-gear', axes: ['min-width', 'min-height'] },
+    { sel: '.settings-slider', axes: ['min-height'] },
   ];
 
   for (const { sel, axes } of AUDIT) {

@@ -1,27 +1,30 @@
 # The Tower, rebuilt — a ground-up redesign
 
-**Status:** approved; decisions D1–D6 confirmed (§16). P0–P7 are built on
+**Status:** approved; decisions D1–D6 confirmed (§16). P0–P9 are built on
 the `rebuild` branch: Act 1 is complete, with six regions, 18 enemy types,
-six bosses, four frames, 119 Forge nodes, 24 relics and 40 feats. The
-pacing numbers come from the real sim with the active bot buying
-cheapest-first, claiming feats and pushing the frontier
-(`npm run pacing -- --hours 12 --seeds 8`):
+six bosses, four frames, 124 Forge nodes, 24 relics and 40 feats; Act 2
+adds the pacts, Starlight, 40 Constellations, the Abyss and its two
+bosses, four weapons, two frames, twelve relics and twenty feats. P9 added
+settings, accessibility, the audio and performance passes, `docs/`, and
+the release build, and deleted `legacy/`. The pacing numbers come from the
+real sim with the active bot buying cheapest-first, claiming feats and
+pushing the frontier (`npm run pacing -- --hours 12 --seeds 8`):
 
 - Wave 20 is first reached at 26:46 median (24:12–38:53). The Gatekeeper
-  first falls at 33:24 (24:44–39:21), the Bog Mother at 70:41
+  first falls at 33:24 (24:44–39:21), the Bog Mother at 70:40
   (60:36–74:51).
-- The later bosses first fall at a median of: the Prism 1:57 (1:31–2:33),
-  Forgeheart 2:50 (2:17–3:36), the Hollow King 5:42 (4:53–5:50) and the
-  Blight 9:13 (7:34–10:47). I1 holds on all 8 profiles.
+- The later bosses first fall at a median of: the Prism 1:54 (1:31–2:33),
+  Forgeheart 2:45 (2:17–3:36), the Hollow King 5:26 (4:54–6:18) and the
+  Blight 10:10 (8:57–11:57). I1 holds on all 8 profiles.
 - The first evolution lands at 1:33:51 (1:30:34–1:41:05), inside §7.1's
   1.5–2 h.
-- I3 holds on all 8 profiles. I6 holds on 5; the worst reveal gap is 12:08
+- I3 holds on all 8 profiles. I6 holds on 5; the worst reveal gap is 12:09
   (see Still open).
 - I4 (`npm run arsenal`, 16 seeds per region): every region spreads the
-  new-weapon picks; the most-picked weapon is Mortar at 31% of Region 2's
-  picks, and every weapon is taken.
+  new-weapon picks; the most-picked weapon is Gilded Rail at 25% of
+  Region 3's picks, and every weapon is taken.
 - I2 and I5 (`npm run pacing -- --idle --hours 12 --seeds 4`, two 20-minute
-  check-ins a day): the idle bot ends Act 1 in 8.0 days median (5.5–9.5).
+  check-ins a day): the idle bot ends Act 1 in 5.0–9.0 days (8.0 median).
   Active play earns 1.24–1.46× idle per hour from Region 2 to the Blight.
 
 P4 departs from the plan in a few places:
@@ -121,6 +124,37 @@ P7 departs from the plan in a few places:
   at Region 2 and at every boss after the Gatekeeper, and I6 reads the full
   first two hours.
 
+P8 shipped without a status entry; its content is described in §9 and
+`docs/act2.md`. One effect of it on Act 1 showed up in P9's pacing: the
+Blight's first fall, already the most variable boss, moved from 9:13 to
+11:09 median, and 2 of 8 profiles missed it inside 12 hours. Earlier
+bosses fell at the same minutes; the profiles that moved were the ones
+whose attempts reach wave 20 already overrun.
+
+P9 departs from the plan in a few places:
+
+- **Region 6's wave-15 swarm** is ×1.25, not ×1.5. With an elite on every
+  wave, the full swarm carried 100+ bodies into the Blight's wave; softened,
+  she falls on all 8 profiles (above), and idle play still ends Act 1 in
+  5–9 days.
+- **Settings** live in the profile (v8: volumes, shake, motion, palette,
+  text size), except the quality tier, which is per device. They are one
+  overlay, opened from the hub's gear and from the pause menu; reset is
+  offered between runs only and asks twice. The Stats page (§10.2) is a
+  second page of the same overlay.
+- **Music** is a generative pad (three moods, a key per region), not
+  tracks: the synth has no assets, and this keeps it that way.
+- **Colourblind-safe colours** swap the canvas's effect palette only; the
+  DOM keeps its tokens, which carry text and shape as well as hue.
+- **The frame-budget harness** is two halves: `tests/perf.test.ts` (the
+  sim, headless, in CI) and the dev-only `tower.bench()` (the renderer,
+  per tier). The quality probe is ported too. On a desktop, rendering 300
+  bodies costs about 1 ms p95 at every tier, and the only sim hot spot
+  found (Maws feeding on every kill) is fixed; the low tier needed no
+  further cuts that could be measured here.
+- **The release APK is unsigned.** There is no keystore in the repo, by
+  design; README.md has the one-time steps to make one and sign.
+
 Still open:
 
 - playtest #1 (P3's gate) and playtest #2 (P4's gate); P5's gate playtest
@@ -128,17 +162,17 @@ Still open:
   app mid-run and check it resumes within one wave; playtest #3 (P7's gate),
   over several days
 - from P1, the frame-rate check on a mid-range Android device, now with
-  four-weapon evolved builds
+  four-weapon evolved builds (`tower.bench()` in a dev build, or the
+  quality probe's verdict in a release one)
 - **§7.2's 1–3 runs per boss** doesn't hold late: the Hollow King takes
-  about an hour from first sighting, and the Blight 2–31 attempts. Most
-  failed attempts reach wave 20 already overrun (Region 6's last waves
-  carry 100+ bodies into the boss wave), so the ramp of waves 15–19 is
-  the place to tune, against playtest #3
+  about an hour from first sighting, and the Blight many attempts. P9
+  softened Region 6's wave-15 swarm; the rest of the ramp of waves 15–19
+  is still the place to tune, against playtest #3
 - **I6 in Region 3:** 5 of 8 profiles hold; the other three have one gap of
   10–12 min late in the Glass Wastes, while the bot buys ring-3 minor levels
-- one idle profile in four to eight takes about 11 days (I2's band is 5–10)
+- a signing keystore for the release build (README.md)
 
-P8 (§14) is next.
+P0–P9 are done; what remains is the open list above.
 
 **Supersedes:** every other file in `plans/`. Those describe the current game;
 P0 (§14) moves them to `plans/archive/`.
@@ -1127,7 +1161,7 @@ tests/
 
 ### 12.5 Performance
 
-Keep the current budgets and techniques (see `legacy/docs/performance.md`):
+Keep the current budgets and techniques (see `docs/performance.md`):
 
 - at most 300 live enemies
 - pooled projectiles and particles

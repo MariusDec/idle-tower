@@ -995,9 +995,7 @@ body {
   to { box-shadow: 0 0 22px rgba(var(--rgb-gold), 0.9); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .draft-card-evolution .draft-card-icon { animation: none; }
-}
+:root[data-motion='reduce'] .draft-card-evolution .draft-card-icon { animation: none; }
 
 .draft-card-name {
   margin: 0;
@@ -1081,13 +1079,12 @@ body {
   transform-origin: left center;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .draft-card,
-  .hud-ult.is-ready,
-  .forge-node.is-hinted .forge-shape,
-  .forge-link.is-flash {
-    animation: none;
-  }
+/* Reduced motion: the device's setting or the player's (src/app/settings.ts). */
+:root[data-motion='reduce'] .draft-card,
+:root[data-motion='reduce'] .hud-ult.is-ready,
+:root[data-motion='reduce'] .forge-node.is-hinted .forge-shape,
+:root[data-motion='reduce'] .forge-link.is-flash {
+  animation: none;
 }
 
 /* Reroll (Fortune): under the hand, out of the way of the cards. */
@@ -1774,3 +1771,126 @@ body {
 }
 .map-region.is-abyss.is-chosen { border-color: var(--fx-arcane); box-shadow: 0 0 0 1px var(--fx-arcane); }
 .map-region.is-abyss .map-region-name { color: var(--fx-arcane); }
+
+/* ── Settings (§10.1, P9) ────────────────────────────────────────────────── */
+
+/* The gear: the home view's top-right corner, clear of the safe area. */
+.hub-gear {
+  position: absolute;
+  top: max(var(--space-3), var(--safe-t));
+  right: max(var(--space-3), var(--safe-r));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  color: var(--text-1);
+  cursor: pointer;
+}
+
+.hub:not([data-view="home"]) .hub-gear {
+  display: none;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: min(400px, calc(100% - var(--space-6) - var(--safe-l) - var(--safe-r)));
+  text-align: left;
+}
+
+.settings .modal-title {
+  margin: 0;
+  text-align: center;
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.settings-heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Label above its control, so a control keeps the full width at 130% text. */
+.settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.settings-label {
+  color: var(--text-1);
+  font-size: var(--text-base);
+}
+
+.settings-row .segmented-btn {
+  font-size: var(--text-sm);
+  padding: 0 var(--space-1);
+}
+
+.settings-slider {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  accent-color: var(--fx-gold);
+}
+
+.settings-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+
+.settings-reset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.btn-danger {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.settings-stats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.settings-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--surface-3);
+}
+
+.settings-stats dt {
+  color: var(--text-2);
+}
+
+.settings-stats dd {
+  margin: 0;
+  font-family: var(--font-display);
+  color: var(--text-0);
+}

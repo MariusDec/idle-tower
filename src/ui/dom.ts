@@ -127,3 +127,11 @@ export function resetScroll(el: HTMLElement, stopAt?: HTMLElement): void {
     node = node.parentElement;
   }
 }
+
+/**
+ * Reduced motion, as the settings resolved it (the device's setting, or the
+ * player's): `src/app/settings.ts` keeps it on the root element.
+ */
+export function motionReduced(): boolean {
+  return document.documentElement.dataset.motion === 'reduce';
+}

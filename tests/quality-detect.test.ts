@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { initialQualityTier, readStoredQuality } from '../src/render/quality';
-import { QUALITY } from '../src/render/quality';
+import { QUALITY, QualityProbe, type QualityTier } from '../src/render/quality';
 
 describe('initialQualityTier', () => {
   const originalNavigator = globalThis.navigator;
@@ -128,5 +128,40 @@ describe('the high-tier cap matches the historic camera cap', () => {
   it('QUALITY.high.dprCap equals ARENA.maxDevicePixelRatio', async () => {
     const { ARENA } = await import('../src/content/arena');
     expect(QUALITY.high.dprCap).toBe(ARENA.maxDevicePixelRatio);
+  });
+});
+
+describe('the quality probe (P9)', () => {
+  const run = (probe: QualityProbe, frameMs: number, tier: QualityTier, frames = 200): QualityTier | null => {
+    let out: QualityTier | null = null;
+    for (let i = 0; i < frames && out === null; i++) out = probe.tick(frameMs / 1000, tier);
+    return out;
+  };
+
+  it('keeps the tier when frames hold 60 fps', () => {
+    const probe = new QualityProbe();
+    expect(run(probe, 16.7, 'high')).toBeNull();
+    expect(probe.finished).toBe(true);
+  });
+
+  it('demotes exactly one tier when the mean frame is over budget, once', () => {
+    const probe = new QualityProbe();
+    expect(run(probe, 25, 'high')).toBe('medium');
+    expect(run(probe, 40, 'medium')).toBeNull();
+  });
+
+  it('holds low to a 45 fps floor and never goes below it', () => {
+    expect(run(new QualityProbe(), 20, 'low')).toBeNull();
+    expect(run(new QualityProbe(), 40, 'low')).toBeNull();
+  });
+
+  it('ignores the warm-up frames, and gives up when abandoned', () => {
+    const probe = new QualityProbe();
+    expect(probe.measuring).toBe(false);
+    for (let i = 0; i < 30; i++) expect(probe.tick(1, 'high')).toBeNull();
+    expect(probe.finished).toBe(false);
+    expect(probe.measuring).toBe(true);
+    probe.abandon();
+    expect(run(probe, 50, 'high')).toBeNull();
   });
 });

@@ -62,8 +62,10 @@ export class Renderer {
   /** The region the background was baked for. */
   private bakedRegion = '';
   private banner: Banner | null = null;
-  /** Honour the OS setting: the letterbox is the moving part, so it goes. */
-  private readonly reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** Reduced motion (the OS's or the player's): the letterbox is the moving part, so it goes. */
+  private reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** The settings' text size, for the banners and damage numbers. */
+  private textScale = 1;
 
   constructor(canvas: HTMLCanvasElement, host: HTMLElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
@@ -76,6 +78,18 @@ export class Renderer {
     this.tier = tier;
     this.camera.setDprCap(QUALITY[tier].dprCap);
     this.effects.setQuality(tier);
+  }
+
+  /** The player's motion settings (reduced motion, screen shake). */
+  setMotion(reduced: boolean, shake: boolean): void {
+    this.reducedMotion = reduced;
+    this.camera.setMotion(reduced, shake);
+  }
+
+  /** The settings' text size, applied to text painted on the canvas. */
+  setTextScale(scale: number): void {
+    this.textScale = scale;
+    this.effects.setTextScale(scale);
   }
 
   get quality(): QualityTier {
@@ -442,17 +456,18 @@ export class Renderer {
     ctx.scale(settle, settle);
     ctx.lineWidth = 5;
     ctx.strokeStyle = withAlpha(INK['950'], 0.85);
-    ctx.font = `700 ${b.letterbox ? 34 : 28}px ${DISPLAY_FONT}`;
+    ctx.font = `700 ${Math.round((b.letterbox ? 34 : 28) * this.textScale)}px ${DISPLAY_FONT}`;
     const title = b.title.toUpperCase();
     ctx.strokeText(title, 0, 0);
     ctx.fillStyle = b.tone === 'gold' ? lighten(FX.gold, 0.2) : mix(FX.blood, INK['050'], 0.45);
     ctx.fillText(title, 0, 0);
     if (b.line) {
-      ctx.font = `500 15px ${DISPLAY_FONT}`;
+      ctx.font = `500 ${Math.round(15 * this.textScale)}px ${DISPLAY_FONT}`;
       ctx.lineWidth = 4;
-      ctx.strokeText(b.line, 0, 30);
+      const below = 30 * this.textScale;
+      ctx.strokeText(b.line, 0, below);
       ctx.fillStyle = INK['100'];
-      ctx.fillText(b.line, 0, 30);
+      ctx.fillText(b.line, 0, below);
     }
     ctx.restore();
   }

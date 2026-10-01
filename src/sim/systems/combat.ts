@@ -1,7 +1,7 @@
 import { Rng } from '../../core/rng';
 import { ABYSS_INDEX } from '../../content/abyss';
 import { BALANCE } from '../../content/balance';
-import { AURA_BY_ID, ENEMY_BY_ID } from '../../content/enemies';
+import { AURA_BY_ID, ENEMIES, ENEMY_BY_ID } from '../../content/enemies';
 import { eliteRelics } from '../../content/relics';
 import { frameById } from '../../content/frames';
 import { WEAPON_BY_ID } from '../../content/weapons';
@@ -1289,11 +1289,14 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   ruleOnKill(run, e);
 }
 
+/** The types that feed on the fallen: every kill looks for them, so the look is one set lookup a body. */
+const DEVOURERS: ReadonlySet<string> = new Set(ENEMIES.filter((d) => d.verb.kind === 'devour').map((d) => d.id));
+
 /** Maws near a fallen body feed on it (§9): healed, and grown, a few times over. Maw Tooth starves them. */
 function feedMaws(run: RunState, dead: Enemy): void {
   if (run.behaviours.starve) return;
   for (const m of run.enemies) {
-    if (m === dead || !m.alive || m.boss || m.court) continue;
+    if (!DEVOURERS.has(m.type) || m === dead || !m.alive || m.boss || m.court) continue;
     const verb = ENEMY_BY_ID[m.type].verb;
     if (verb.kind !== 'devour' || m.feeds >= verb.feeds) continue;
     if ((m.x - dead.x) ** 2 + (m.y - dead.y) ** 2 > verb.radius * verb.radius) continue;

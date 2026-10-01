@@ -191,6 +191,19 @@ export class Cues {
     }
   }
 
+  /** Something opened up (§10.4: reveal/unlock): a bright rising arpeggio. */
+  unlock(): void {
+    for (const [i, f] of [523, 659, 784, 1047, 1319].entries()) {
+      this.synth.tone({ freq: f, type: 'sine', duration: 0.35, volume: 0.09, delay: i * 0.07 });
+    }
+  }
+
+  /** A feat claimed: a coin's chime. */
+  claim(): void {
+    this.synth.tone({ freq: 1320, type: 'triangle', duration: 0.12, volume: 0.1 });
+    this.synth.tone({ freq: 1760, type: 'sine', duration: 0.3, volume: 0.08, delay: 0.07 });
+  }
+
   /** A Forge purchase (§10.4): two rising notes. */
   purchase(): void {
     this.synth.tone({ freq: 600, type: 'triangle', duration: 0.08, volume: 0.15 });

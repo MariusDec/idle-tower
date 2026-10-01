@@ -85,7 +85,10 @@ export class Camera {
   private shakeX = 0;
   private shakeY = 0;
   private punchTime = 0;
-  private readonly reducedMotion: boolean;
+  /** Reduced motion (the OS setting, or the player's): no shake, no punch. */
+  private reducedMotion: boolean;
+  /** The settings' screen-shake switch (§10.3); the punch is not a shake. */
+  private shakeOn = true;
 
   /** Fired after the backing store has been resized. Anything baked at buffer size rebakes. */
   onResize: ((view: ViewTransform) => void) | null = null;
@@ -151,11 +154,24 @@ export class Camera {
 
   /** Shake in world units. A stronger shake mid-decay wins rather than stacking. */
   shake(strength = 10): void {
-    if (this.reducedMotion) return;
+    if (this.reducedMotion || !this.shakeOn) return;
     const amount = Math.min(SHAKE_MAX_WORLD, Math.max(0, strength));
     if (amount <= this.shakeAmount * (this.shakeTime / SHAKE_DECAY)) return;
     this.shakeAmount = amount;
     this.shakeTime = SHAKE_DECAY;
+  }
+
+  /** The player's motion settings, applied from the next shake on. */
+  setMotion(reduced: boolean, shake: boolean): void {
+    this.reducedMotion = reduced;
+    this.shakeOn = shake;
+    if (reduced || !shake) {
+      this.shakeTime = 0;
+      this.shakeAmount = 0;
+      this.shakeX = 0;
+      this.shakeY = 0;
+    }
+    if (reduced) this.punchTime = 0;
   }
 
   zoomPunch(): void {

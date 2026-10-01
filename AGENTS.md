@@ -1,27 +1,29 @@
 # Source Code Documentation for AI Agents
 
-**The Tower** is an incremental roguelite tower defence, being rebuilt from
-scratch on the `rebuild` branch. The design, the phase plan and every
+**The Tower** is an incremental roguelite tower defence, rebuilt from
+scratch on the `rebuild` branch (P0–P9). The design, the phase plan and every
 confirmed decision live in [plans/rebuild.md](plans/rebuild.md) — read it
-first. TypeScript, Vite, HTML5 canvas and vanilla DOM; Capacitor for Android.
+first. [docs/](docs/README.md) has one file per system, describing the code
+as it is. TypeScript, Vite, HTML5 canvas and vanilla DOM; Capacitor for
+Android.
 
-The old game is kept in `legacy/` as a porting reference until P9 (tag
-`legacy-final` is the last commit of it on `main`). `legacy/` is excluded
-from tsconfig, Vite and Vitest; never import from it.
+The old game is the tag `legacy-final` (the last commit of it on `main`);
+P9 deleted the `legacy/` copy.
 
 ## Layout (plan §12.3)
 
 | Dir | What | May import |
 |---|---|---|
-| `src/app/` | `main.ts` boot, `App.ts` owner of profile/run/loop/screens, `loop.ts` fixed 1/60 s timestep, `screens.ts` the boot → hub ⇄ run → results state machine | anything |
+| `src/app/` | `main.ts` boot, `App.ts` owner of profile/run/loop/screens, `loop.ts` fixed 1/60 s timestep, `screens.ts` the boot → hub ⇄ run → results state machine, `settings.ts` (the one place settings reach the game: synth, renderer, `data-motion`, `--text-scale`), `bench.ts` (dev frame-budget harness) | anything |
 | `src/core/` | `rng.ts` seeded splittable RNG, `math.ts`, `events.ts` typed bus, `spatialGrid.ts`, `format.ts` | nothing outside `core/` |
 | `src/content/` | Data tables (`forge.ts` is the Forge web; `bosses.ts`, `relics.ts`, `feats.ts`; `enemies.ts` also holds the elite auras), `balance.ts` (every tunable constant), `arena.ts` (the fixed world), `icons.ts` (generated), `lint.ts` | `core/` |
 | `src/sim/` | DOM-free, deterministic: `RunState`, `createRun`, `step` | `core/`, `content/` only |
 | `src/meta/` | `profile.ts`, `forge.ts` (adjacency, fog, seals, costs, buy/refund, the "Next:" goal), `collection.ts` (what is unlocked: regions, frames, relic slots, hub tabs; relics worn and gained), `feats.ts`, `offline.ts` (farm rate, offline tiers and earnings), `goals.ts` (the hub's Next goal), `runConfig.ts` (profile → frozen `RunConfig`), `automation.ts` (Engineering's automation: speed, auto-restart, Frontier March, the Autocaster, the Tactician's lists and draft timer), `results.ts` (`bankRun`: a finished run into the profile), `save/` (schema, migration ladder, run snapshot, storage backends) | `core/`, `content/`, `sim/` types |
-| `src/render/` | `camera.ts`, `renderer.ts`, `painters/`, `palette.ts`, `quality.ts`. Reads `RunState`, never writes it | `core/`, `content/`, `sim/` types |
-| `src/ui/` | DOM: HUD (with the boss bar), draft, results, toasts, `hub/` (home, the Forge web, the Map, the Collection, Feats, the Tactician's editor), modal, icon helper | anything but `sim/` internals |
+| `src/render/` | `camera.ts`, `renderer.ts`, `painters/`, `effects.ts`, `palette.ts` (with the colourblind-safe `SAFE_FX`), `quality.ts` (tiers, stored preference, the quality probe). Reads `RunState`, never writes it | `core/`, `content/`, `sim/` types |
+| `src/audio/` | `synth.ts` (Web Audio, master/sfx/music buses), `cues.ts` (sim events → sounds), `music.ts` (generative pad by mood and region) | `sim/` types |
+| `src/ui/` | DOM: HUD (with the boss bar), draft, results, toasts, `hub/` (home, the Forge web, the Map, the Collection, Feats, the Tactician's editor, Stars, Pacts), `settings.ts` (options and Stats), modal, icon helper | anything but `sim/` internals |
 | `src/platform/` | Capacitor shell hooks | — |
-| `tools/` | Headless: `bot.ts` (input policies), `play.ts` (one run under the active or idle policy, with the wall clock), `shop.ts` (the bots' Forge buying), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants), `idle.ts` (the idle bot's check-ins and the active/idle farm comparison) | `src/` minus DOM |
+| `tools/` | Headless: `bot.ts` (input policies), `play.ts` (one run under the active or idle policy, with the wall clock), `shop.ts` (the bots' Forge buying), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants), `idle.ts` (the idle bot's check-ins and the active/idle farm comparison), `act2.ts` (the bot past the Blight: heat, stars, the Abyss), `arsenal.ts` (I4) | `src/` minus DOM |
 | `tests/` | Vitest, node environment | — |
 
 The sim's step order (`sim/run.ts`): input → waves place bodies (wave 20 is
@@ -61,7 +63,17 @@ the two writes never pays a run twice. Any absence (the page hidden, the
 native pause, a stalled frame) settles through `App#absent`: the loop drops
 the gap and offline earnings pay (§6.1); the sim is never fast-forwarded.
 
-In dev builds, `1`/`2`/`3` set sim speed and `globalThis.tower` is the `App`.
+Settings live in `profile.settings` (volumes, shake, motion, palette, text
+size; v8) except the quality tier, which is per device (`localStorage`).
+`app/settings.ts#applySettings` applies them all; nothing else reads them
+for presentation. Reduced motion is `:root[data-motion='reduce']` in CSS
+and `ui/dom.ts#motionReduced` in the UI, never `matchMedia` directly. The
+canvas palette is swapped in place (`setPaletteMode`), so never cache an
+`FX` *value*; look colours up by name.
+
+In dev builds, `1`/`2`/`3` set sim speed, `globalThis.tower` is the `App`,
+and `await tower.bench({ enemies, seconds, tier })` measures frames during
+a run (docs/performance.md).
 
 ## Rules that keep the sim honest
 
@@ -89,14 +101,18 @@ npm run inspect -- --seeds 50 --forge ring1  # the same with a Forge preset: non
 npm run inspect -- --seed 3 --forge all --region 2  # a run in another region (its rule applies), with the boss's time
 npm run pacing      # a fresh profile, one simulated hour: run table, reveal timeline, I1a / I3 / I6 / wave-20 verdicts
 npm run pacing -- --seeds 8 --hours 1.5   # eight profiles: pass counts, median first wave 20 and first boss kills (the P3 and P4 gates' readings)
-npm run pacing -- --idle --seeds 4        # the idle bot: I2 projected to Act 1, I5 at the active run's checkpoints (P6's gate)
+npm run pacing -- --hours 12 --seeds 8   # the full Act 1 report: I1a, I1b, I3, I6
+npm run pacing -- --idle --hours 12 --seeds 4  # the idle bot: I2 and I5
+npm run pacing -- --act2 --hours 12 --seeds 4  # Act 2: heat 1–10 at the frontier
+npm run arsenal     # I4: the bot's weapon picks per region
+npm run android:release  # release APK (signing: README.md)
 npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest (needs network)
 ```
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **idle-tower** (8440 symbols, 30640 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **idle-tower** (2988 symbols, 9308 relationships, 254 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

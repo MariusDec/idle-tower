@@ -1,3 +1,4 @@
+import { formatNumber } from '../core/format';
 import { FX, INK, lighten, withAlpha } from './palette';
 import { QUALITY, type QualityTier } from './quality';
 
@@ -41,6 +42,8 @@ interface DamageNumber {
   rise: number;
   age: number;
   life: number;
+  /** The damage it shows: hits landing together on one spot add up (§10.2). */
+  amount: number;
   text: string;
 }
 
@@ -75,6 +78,10 @@ const MAX_MOTES = 90;
 const MOTE_LIFE = 0.55;
 const NUMBER_LIFE = 0.9;
 const NUMBER_RISE_CSS = 38;
+/** A crit this close to a young number, in world units and seconds, adds to it. */
+const NUMBER_MERGE_DIST = 26;
+const NUMBER_MERGE_AGE = 0.15;
+const NUMBER_FONT_PX = 17;
 
 export class Effects {
   private particles: Particle[] = [];
@@ -87,6 +94,8 @@ export class Effects {
   private scale = 1;
   private maxParticles = QUALITY.high.maxParticles;
   private additive = true;
+  /** The settings' text size, for damage numbers. */
+  private textScale = 1;
 
   setQuality(tier: QualityTier): void {
     const q = QUALITY[tier];
@@ -94,6 +103,10 @@ export class Effects {
     this.maxParticles = q.maxParticles;
     this.additive = q.additive;
     if (this.particles.length > this.maxParticles) this.particles.length = this.maxParticles;
+  }
+
+  setTextScale(scale: number): void {
+    this.textScale = scale;
   }
 
   clear(): void {
@@ -286,10 +299,21 @@ export class Effects {
     this.pushRing({ x, y, age: 0, life: 0.5, from: radius * 0.5, to: radius * 2.2, color: withAlpha(color, 0.85), width: 4 });
   }
 
-  /** Crits only (P1 scope): a number that rises and fades. */
+  /**
+   * Crits only (§10.2): a number that rises and fades. Crits landing on one
+   * spot together (a pellet spread, a pierce through a crowd) add into one
+   * number rather than stacking a smear of them.
+   */
   critNumber(x: number, y: number, amount: number): void {
+    for (const d of this.numbers) {
+      if (d.age < NUMBER_MERGE_AGE && Math.abs(d.x - x) < NUMBER_MERGE_DIST && Math.abs(d.y - y) < NUMBER_MERGE_DIST) {
+        d.amount += amount;
+        d.text = formatNumber(Math.round(d.amount));
+        return;
+      }
+    }
     if (this.numbers.length >= MAX_NUMBERS) this.numbers.shift();
-    this.numbers.push({ x, y, rise: 0, age: 0, life: NUMBER_LIFE, text: String(Math.round(amount)) });
+    this.numbers.push({ x, y, rise: 0, age: 0, life: NUMBER_LIFE, amount, text: formatNumber(Math.round(amount)) });
   }
 
   tick(dt: number): void {
@@ -397,7 +421,7 @@ export class Effects {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '700 17px Oswald, "Arial Narrow", sans-serif';
+    ctx.font = `700 ${Math.round(NUMBER_FONT_PX * this.textScale)}px Oswald, "Arial Narrow", sans-serif`;
     ctx.lineWidth = 3;
     ctx.strokeStyle = withAlpha(INK['950'], 0.85);
     for (const d of this.numbers) {
