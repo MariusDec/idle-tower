@@ -1,0 +1,9 @@
+{
+  // `tools/` and `tests/` run in node, so they get node's types; `src/` stays
+  // browser-only in `tsconfig.json`. Both are type-checked by `npm run typecheck`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src", "tools", "tests"]
+}

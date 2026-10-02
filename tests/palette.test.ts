@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-  FX, INK, RARITY, fxVar, inkVar, lighten, mix, rarityVar, toRgb, withAlpha,
-} from '../src/data/palette';
+  FX, INK, RARITY, SAFE_FX, fxVar, inkVar, lighten, mix, rarityVar, setPaletteMode, toRgb, withAlpha,
+} from '../src/render/palette';
 
 /**
- * `src/data/palette.ts` and `src/styles/tokens.css` both declare the effect and
+ * `src/render/palette.ts` and `src/styles/tokens.css` both declare the effect and
  * rarity colours: the canvas cannot read a CSS custom property cheaply, and the
  * stylesheet must not need the bundle to have run before it can paint. That is a
  * deliberate duplication (see the note at the top of `palette.ts`) and this file
@@ -100,6 +100,33 @@ describe('palette ↔ tokens.css', () => {
   });
 });
 
+describe('the colourblind-safe palette (P9)', () => {
+  it('swaps the canvas colours in place and puts the standard ones back', () => {
+    const standard = { ...FX };
+    setPaletteMode('safe');
+    expect({ ...FX }).toEqual(SAFE_FX);
+    setPaletteMode('standard');
+    expect({ ...FX }).toEqual(standard);
+  });
+
+  it('keeps every weapon family apart in lightness or on the blue–yellow axis', () => {
+    // A red-green deficiency leaves lightness and blue–yellow; on those two
+    // axes alone, no two of the weapons' colours may sit close together.
+    const axes = (hex: string): [number, number] => {
+      const { r, g, b } = toRgb(hex);
+      return [0.2126 * r + 0.7152 * g + 0.0722 * b, (r + g) / 2 - b];
+    };
+    const names = ['gold', 'ember', 'mana', 'arcane', 'frost', 'nature'] as const;
+    for (let i = 0; i < names.length; i++) {
+      for (let j = i + 1; j < names.length; j++) {
+        const [l1, y1] = axes(SAFE_FX[names[i]]);
+        const [l2, y2] = axes(SAFE_FX[names[j]]);
+        expect(Math.hypot(l1 - l2, y1 - y2), `${names[i]} vs ${names[j]}`).toBeGreaterThan(40);
+      }
+    }
+  });
+});
+
 describe('palette helpers', () => {
   it('expands #rgb and #rrggbb alike', () => {
     expect(toRgb('#fff')).toEqual({ r: 255, g: 255, b: 255 });
@@ -181,8 +208,7 @@ describe('no runtime network', () => {
  * they are the ends of the canvas compositing range (masks, `destination-out`
  * clears, full-strength highlights) and naming them would be worse, not better.
  *
- * Note the scope: `src/data/*` content tables are deliberately *not* scanned.
- * Enemy body colours, rarity swatches and the like are content data, and
+ * Note the scope: `src/content/*` tables are deliberately *not* scanned, and
  * `palette.ts` itself has to spell its hexes out.
  */
 describe('no literal colour in the render path', () => {
@@ -197,19 +223,18 @@ describe('no literal colour in the render path', () => {
       .join('\n');
   }
 
-  const uiDir = resolve(__dirname, '../src/ui');
-  const FILES: string[] = [
-    'src/game/Renderer.ts',
-    'src/systems/EffectsManager.ts',
-    'src/game/Game.ts',
-    ...readdirSync(uiDir)
-      .filter(f => f.endsWith('.ts'))
-      .sort()
-      .map(f => `src/ui/${f}`),
-  ];
+  /** Every `.ts` under the render and UI trees, recursively. */
+  function walk(rel: string): string[] {
+    const abs = resolve(__dirname, '..', rel);
+    return readdirSync(abs, { withFileTypes: true }).flatMap(e =>
+      e.isDirectory() ? walk(`${rel}/${e.name}`) : e.name.endsWith('.ts') ? [`${rel}/${e.name}`] : []);
+  }
+  const FILES: string[] = [...walk('src/render'), ...walk('src/ui')]
+    .filter(f => f !== 'src/render/palette.ts')
+    .sort();
 
   it('scans a non-empty file list, so a moved file cannot silently opt out', () => {
-    expect(FILES.length).toBeGreaterThan(20);
+    expect(FILES.length).toBeGreaterThan(3);
   });
 
   for (const rel of FILES) {

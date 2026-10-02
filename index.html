@@ -4,45 +4,22 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <!-- UI plan §9.E: theme-color for the Capacitor status bar. The pairing
-         with --surface-0 in tokens.css is deliberate — both are the ground
-         the app sits on, and keeping them in sync is what makes a notched
-         device look continuous from chrome to canvas. -->
+    <!-- Paired with --surface-0 in tokens.css: the ground the app sits on. -->
     <meta name="theme-color" content="#0a0d14" />
     <title>The Tower</title>
-    <!-- The display face is self-hosted (no runtime network for the Capacitor
-         build) and discovered only once the CSS has parsed, so preload the latin
-         cut to overlap the fetch with the stylesheet. See src/styles/tokens.css. -->
     <link rel="preload" href="/fonts/oswald-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/src/styles/main.css" />
   </head>
   <body>
     <div id="app">
-      <header id="hud-root" class="hud-root"></header>
-
-      <main class="game-layout">
-        <section class="canvas-wrap">
-          <!-- No width/height attributes: the Camera owns the backing store and
-               sizes it from the CSS box x devicePixelRatio. See docs/camera-system.md. -->
-          <canvas id="game-canvas" aria-label="Game world"></canvas>
-          <div id="overlay-root" class="overlay-root"></div>
-        </section>
-
-        <aside id="panel-root" class="panel-root">
-          <button id="panel-toggle" type="button" aria-label="Collapse panel"></button>
-          <div id="panel-resizer" aria-hidden="true"></div>
-          <nav class="panel-tabs" id="panel-tabs"></nav>
-          <div class="panel-content" id="panel-content"></div>
-        </aside>
+      <main id="stage" class="stage" data-screen="boot">
+        <!-- No width/height: the camera owns the backing store (src/render/camera.ts). -->
+        <canvas id="game-canvas" aria-label="Arena"></canvas>
+        <div id="hud-root" class="hud-root"></div>
+        <div id="screen-root" class="screen-root"></div>
+        <div id="overlay-root" class="overlay-root"></div>
       </main>
-
-      <div id="ability-bar-root" class="ability-bar-host"></div>
-      <nav id="bottom-nav-root"></nav>
-      <div id="mobile-sheet-root"></div>
-
-      <div id="toast-root" class="toast-root" aria-live="polite" aria-atomic="true"></div>
     </div>
-
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/app/main.ts"></script>
   </body>
 </html>

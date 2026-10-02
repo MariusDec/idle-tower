@@ -1,354 +1,205 @@
-/**
- * The camera and the arena (UI plan §1).
- *
- * Everything the camera does that could be *wrong* is arithmetic, and all of
- * that arithmetic is pure — `makeViewTransform`, `arenaExtents`,
- * `spawnPointOnEllipse` and the range clamp take numbers and return numbers.
- * So this file needs no canvas, no DOM and no `ResizeObserver`; the class in
- * `Camera.ts` is only the part that reads a CSS box and calls `setTransform`.
- *
- * The two ratios asserted below are the plan's acceptance criteria (§12.1),
- * not incidental numbers: the range ring must be ~32% of the short half-extent
- * at wave 1, and a fully range-stacked build must never exceed 70% of it.
- * Written down here so a future re-tune of `TOWER_BASE.range`, of the `range`
- * upgrade or of `ARENA.minHalfExtent` fails a test rather than quietly undoing
- * the zoom-out.
- */
-
 import { describe, expect, it } from 'vitest';
-import {
-  ARENA,
-  ARENA_RANGE_CAP,
-  ENTITY_SCALE,
-  WORLD_SCALE,
-  arenaExtents,
-  spawnPointOnEllipse,
-} from '../src/data/arena';
-import { Camera, makeViewTransform, screenToWorld, worldToScreen, type CameraResize } from '../src/game/Camera';
-import { clampStat } from '../src/stats/accumulator';
-import { TOWER_BASE } from '../src/data/tower';
-import { UPGRADE_BY_ID } from '../src/data/upgrades';
-import { computeUpgradeValue } from '../src/types';
+import { ARENA, PHONE_OVAL, inLight, lightRadius, rimAxes, spawnPoint, type Oval } from '../src/content/arena';
+import { Camera, RIM, ZOOM, fitExtent, makeViewTransform, rimBox, screenToWorld, stageOval, worldToScreen } from '../src/render/camera';
+import { QUALITY } from '../src/render/quality';
 
-const [MIN_ASPECT, MAX_ASPECT] = ARENA.aspectClamp;
+/**
+ * The camera frames the light (plans/camera-and-fog.md §5): fully out, the
+ * light's oval rim runs near the stage's sides and level with the HP bar at
+ * either end, whatever the window's shape. All of it is arithmetic, so a
+ * stub canvas stands in for the DOM.
+ */
+const VIEWPORTS: [number, number][] = [[375, 812], [375, 640], [1280, 800], [480, 900], [900, 400]];
 
-describe('arena extents', () => {
-  it('guarantees the same half-extent along the short axis at every aspect', () => {
-    for (const [w, h] of [[1600, 900], [1440, 1080], [1280, 800], [900, 1600], [1000, 1000]]) {
-      const { halfWidth, halfHeight } = arenaExtents(w, h);
-      expect(Math.min(halfWidth, halfHeight)).toBeCloseTo(ARENA.minHalfExtent, 6);
+function stubCanvas(w: number, h: number): HTMLCanvasElement {
+  return {
+    clientWidth: w,
+    clientHeight: h,
+    width: 0,
+    height: 0,
+    getBoundingClientRect: () => ({ width: w, height: h }),
+  } as unknown as HTMLCanvasElement;
+}
+
+/** The fit for a 375 × 812 phone stage. */
+const fit = (light: number, oval: Oval = PHONE_OVAL): number => fitExtent(light, oval, 375, 812);
+
+describe('view transform', () => {
+  it("fits the stage's own oval to its rim box: near the sides, level with the HP bar", () => {
+    const light = 900;
+    for (const [w, h] of VIEWPORTS) {
+      const oval = stageOval(w, h);
+      const t = makeViewTransform(w, h, 1, 2, fitExtent(light, oval, w, h));
+      const rim = rimBox(w, h);
+      const axes = rimAxes(ARENA.lightBase, oval);
+      const base = makeViewTransform(w, h, 1, 2, fitExtent(ARENA.lightBase, oval, w, h));
+      expect(axes.x * base.scale).toBeCloseTo(rim.hw, 3);
+      expect(axes.y * base.scale).toBeCloseTo(rim.hh, 3);
+      // A grown light rounds out: it fits the binding axis, never past the rim box.
+      const grown = rimAxes(light, oval);
+      expect(grown.x * t.scale).toBeLessThanOrEqual(rim.hw + 1e-6);
+      expect(grown.y * t.scale).toBeLessThanOrEqual(rim.hh + 1e-6);
+      // The long axis ends `endInset` from the stage's edges, top and bottom alike.
+      const long = Math.max(w, h) / 2 - Math.max(rim.hw, rim.hh);
+      expect(long).toBeCloseTo(RIM.endInset, 6);
     }
   });
 
-  it('derives the long axis from the viewport aspect', () => {
-    const { halfWidth, halfHeight } = arenaExtents(1600, 900);
-    expect(halfWidth / halfHeight).toBeCloseTo(1600 / 900, 6);
-    // 16:9 is exactly the old 1280x720 canvas, zoomed out by WORLD_SCALE.
-    expect(halfWidth * 2).toBeCloseTo(1280 * WORLD_SCALE, 6);
-    expect(halfHeight * 2).toBeCloseTo(720 * WORLD_SCALE, 6);
+  it('a phone stage takes the shape the game was tuned on', () => {
+    const o = stageOval(375, 812);
+    expect(o.sx).toBe(1);
+    expect(o.sy).toBeCloseTo(PHONE_OVAL.sy, 1);
+    const wide = stageOval(1280, 600);
+    expect(wide.sy).toBe(1);
+    expect(wide.sx).toBeGreaterThan(1);
   });
 
-  it('clamps an ultrawide aspect so the arena is not a telescope', () => {
-    const wide = arenaExtents(4000, 900); // 4.44:1
-    expect(wide.halfWidth / wide.halfHeight).toBeCloseTo(MAX_ASPECT, 6);
-    expect(wide.halfHeight).toBeCloseTo(ARENA.minHalfExtent, 6);
+  it('puts the tower at the centre of the screen', () => {
+    const t = makeViewTransform(375, 812, 3);
+    const p = worldToScreen(t, 0, 0);
+    expect(p.x).toBeCloseTo(375 / 2, 6);
+    expect(p.y).toBeCloseTo(812 / 2, 6);
   });
 
-  it('clamps an extreme portrait aspect so the field is not crushed', () => {
-    const tall = arenaExtents(375, 1200); // 0.31:1
-    expect(tall.halfWidth / tall.halfHeight).toBeCloseTo(MIN_ASPECT, 6);
-    expect(tall.halfWidth).toBeCloseTo(ARENA.minHalfExtent, 6);
+  it('round-trips world ↔ screen', () => {
+    const t = makeViewTransform(375, 812, 2, 2, 400);
+    for (const [x, y] of [[0, 0], [100, -250], [-520, 800]]) {
+      const s = worldToScreen(t, x, y);
+      const w = screenToWorld(t, s.x, s.y);
+      expect(w.x).toBeCloseTo(x, 6);
+      expect(w.y).toBeCloseTo(y, 6);
+    }
   });
 
-  it('is a no-op on shape, not on size', () => {
-    // Only the *ratio* is read, so CSS pixels and device pixels agree.
-    expect(arenaExtents(1600, 900)).toEqual(arenaExtents(3200, 1800));
+  it('caps devicePixelRatio and never drops below 1', () => {
+    expect(makeViewTransform(375, 812, 3).dpr).toBe(ARENA.maxDevicePixelRatio);
+    expect(makeViewTransform(375, 812, 3, 1.5).dpr).toBe(1.5);
+    expect(makeViewTransform(375, 812, 0.5).dpr).toBe(1);
   });
 
-  it('survives a degenerate box rather than dividing by zero', () => {
-    const { halfWidth, halfHeight } = arenaExtents(0, 0);
-    expect(Number.isFinite(halfWidth)).toBe(true);
-    expect(Number.isFinite(halfHeight)).toBe(true);
-    expect(halfWidth).toBeGreaterThan(0);
-    expect(halfHeight).toBeGreaterThan(0);
+  it('a DPR change does not change what is visible', () => {
+    const a = makeViewTransform(375, 812, 1);
+    const b = makeViewTransform(375, 812, 2);
+    expect(a.scale / a.dpr).toBeCloseTo(b.scale / b.dpr, 9);
+  });
+
+  it('the high tier keeps the arena DPR cap', () => {
+    expect(QUALITY.high.dprCap).toBe(ARENA.maxDevicePixelRatio);
   });
 });
 
-describe('the view transform', () => {
-  it('caps devicePixelRatio, because a 3x buffer buys nothing visible', () => {
-    expect(makeViewTransform(800, 600, 3).dpr).toBe(ARENA.maxDevicePixelRatio);
-    expect(makeViewTransform(800, 600, 2).dpr).toBe(2);
-    expect(makeViewTransform(800, 600, 1).dpr).toBe(1);
-    // A browser that reports nonsense still gets a usable buffer.
-    expect(makeViewTransform(800, 600, 0).dpr).toBe(1);
+describe('the camera follows the light, or the player', () => {
+  const settle = (cam: Camera): void => {
+    for (let i = 0; i < 200; i++) cam.update(0.05);
+  };
+
+  it('follows a growing light when fully out', () => {
+    const cam = new Camera(stubCanvas(375, 812));
+    cam.setLight(700, PHONE_OVAL, true);
+    settle(cam);
+    expect(cam.transform.extent).toBeCloseTo(fit(700), 3);
+    cam.setLight(1100, PHONE_OVAL, true);
+    settle(cam);
+    expect(cam.transform.extent).toBeCloseTo(fit(1100), 3);
+    expect(cam.zoomedIn).toBe(false);
   });
 
-  it('honours an explicit dprCap, which the quality tier feeds in (UI plan §9.D)', () => {
-    // The cap is a ceiling: a 2x buffer under a 1.5 cap resolves to 1.5.
-    expect(makeViewTransform(800, 600, 2, 1.5).dpr).toBe(1.5);
-    expect(makeViewTransform(800, 600, 3, 1).dpr).toBe(1);
-    // And under the 1.5 cap, the 1x buffer stays 1x.
-    expect(makeViewTransform(800, 600, 1, 1.5).dpr).toBe(1);
+  it('zooms between the close limit and the fit, and snaps back to following', () => {
+    const cam = new Camera(stubCanvas(375, 812));
+    cam.setLight(700, PHONE_OVAL, true);
+    settle(cam);
+    cam.zoomBy(100, true);
+    expect(cam.transform.extent).toBe(ZOOM.close);
+    expect(cam.userFraming).toBe(ZOOM.close);
+    expect(cam.zoomedIn).toBe(true);
+    cam.zoomBy(0.01, true);
+    expect(cam.userFraming).toBeNull();
+    expect(cam.transform.extent).toBeCloseTo(fit(700), 6);
+    // Nearly fully out counts as fully out, once the gesture ends.
+    cam.zoomBy(1.02, true);
+    expect(cam.userFraming).not.toBeNull();
+    cam.settle();
+    expect(cam.userFraming).toBeNull();
+    // A button press snaps at once.
+    cam.zoomBy(1.02);
+    expect(cam.userFraming).toBeNull();
   });
 
-  it('a dprCap change moves pixelWidth and scale but leaves worldWidth untouched', () => {
-    // UI plan §9.D: the enemy-rescale guard. A DPR cap change must rebuild the
-    // backing store and recompute `scale`, but the world rectangle is the same
-    // for both calls — if the camera fed the resize handler here, every enemy
-    // would shift by 1.0 (a no-op) and the next refactor that tightens the
-    // `sx !== 1` guard would teleport them.
-    const t2 = makeViewTransform(800, 600, 2, 2);
-    const t1 = makeViewTransform(800, 600, 2, 1);
-    expect(t2.worldWidth).toBe(t1.worldWidth);
-    expect(t2.worldHeight).toBe(t1.worldHeight);
-    expect(t2.pixelWidth).toBeGreaterThan(t1.pixelWidth);
-    expect(t2.pixelHeight).toBeGreaterThan(t1.pixelHeight);
-    // Scale (backing-store px per world unit) is exactly halved under the
-    // halved cap — that is the whole point of the cap.
-    expect(t2.scale).toBeCloseTo(t1.scale * 2, 6);
+  it('a pinch arriving as many small steps zooms in (it never snaps mid-gesture)', () => {
+    const cam = new Camera(stubCanvas(375, 812));
+    cam.setLight(700, PHONE_OVAL, true);
+    settle(cam);
+    for (let i = 0; i < 40; i++) cam.zoomBy(1.02, true);
+    cam.settle();
+    expect(cam.userFraming).not.toBeNull();
+    expect(cam.transform.extent).toBeCloseTo(fit(700) / 1.02 ** 40, 3);
   });
 
-  it('sizes the backing store as cssPx x dpr', () => {
-    const t = makeViewTransform(800, 450, 2);
-    expect(t.pixelWidth).toBe(1600);
-    expect(t.pixelHeight).toBe(900);
+  it('holds a framing while the light grows, and clamps it when the light shrinks inside it', () => {
+    const cam = new Camera(stubCanvas(375, 812));
+    cam.setLight(900, PHONE_OVAL, true);
+    settle(cam);
+    cam.zoomBy(2, true);
+    const framing = cam.userFraming!;
+    expect(framing).toBeCloseTo(fit(900) / 2, 6);
+    cam.setLight(1400, PHONE_OVAL, true);
+    settle(cam);
+    expect(cam.transform.extent).toBeCloseTo(framing, 6);
+    // A Fog-caller pulls the light in past the framing.
+    const small = 200;
+    cam.setLight(small, PHONE_OVAL, true);
+    settle(cam);
+    expect(fit(small)).toBeLessThan(framing);
+    expect(cam.transform.extent).toBeCloseTo(fit(small), 3);
+    expect(cam.userFraming).toBe(framing);
   });
 
-  it('fits the whole world rectangle on screen — never crops it', () => {
-    for (const [w, h, dpr] of [[1600, 900, 1], [800, 600, 2], [375, 700, 3], [3000, 800, 1]]) {
-      const t = makeViewTransform(w, h, dpr);
-      expect(t.worldWidth * t.scale).toBeLessThanOrEqual(t.pixelWidth + 1e-6);
-      expect(t.worldHeight * t.scale).toBeLessThanOrEqual(t.pixelHeight + 1e-6);
+  it('shows the whole light on a screen without a run, whatever the saved framing', () => {
+    const cam = new Camera(stubCanvas(375, 812));
+    cam.setFraming(300);
+    cam.setLight(ARENA.lightBase, PHONE_OVAL, false);
+    settle(cam);
+    expect(cam.transform.extent).toBeCloseTo(fit(ARENA.lightBase), 3);
+  });
+});
+
+describe('the light (camera-and-fog §3)', () => {
+  it('is never less than its base, and always past range by the margin', () => {
+    for (const range of [200, 380, 600, 1000, 2400]) {
+      const L = lightRadius(range);
+      expect(L).toBeGreaterThanOrEqual(ARENA.lightBase);
+      expect(L).toBeGreaterThanOrEqual(range + ARENA.lightMargin);
     }
   });
 
-  it('puts the centre of the world at the centre of the canvas', () => {
-    const t = makeViewTransform(1600, 900, 2);
-    const centre = worldToScreen(t, t.worldWidth / 2, t.worldHeight / 2);
-    expect(centre.x).toBeCloseTo(t.cssWidth / 2, 6);
-    expect(centre.y).toBeCloseTo(t.cssHeight / 2, 6);
+  it('a Fog-caller dims it, but never inside range plus the margin', () => {
+    expect(lightRadius(380, 0.9)).toBeLessThan(lightRadius(380));
+    expect(lightRadius(1000 * 0.9, 0.9)).toBeGreaterThanOrEqual(900 + ARENA.lightMargin);
   });
 
-  it('round-trips world → screen → world at every dpr and aspect', () => {
-    for (const [w, h, dpr] of [[1600, 900, 1], [800, 600, 2], [375, 700, 3], [1000, 1000, 1.5]]) {
-      const t = makeViewTransform(w, h, dpr);
-      for (const [x, y] of [[0, 0], [t.worldWidth, t.worldHeight], [123.5, 987.25]]) {
-        const screen = worldToScreen(t, x, y);
-        const back = screenToWorld(t, screen.x, screen.y);
-        expect(back.x).toBeCloseTo(x, 6);
-        expect(back.y).toBeCloseTo(y, 6);
+  it('spawns just past the rim, in the soft edge of the dark, where it can already be hit', () => {
+    for (const [L, oval] of [[lightRadius(380), PHONE_OVAL], [lightRadius(1400), stageOval(1280, 700)]] as const) {
+      for (let i = 0; i < 16; i++) {
+        const p = spawnPoint((i / 16) * Math.PI * 2, L, oval);
+        const q = Math.hypot(p.x / rimAxes(L, oval).x, p.y / rimAxes(L, oval).y);
+        expect(q).toBeGreaterThan(1);
+        expect(inLight(p.x, p.y, 0, L, oval)).toBe(true);
       }
     }
   });
 
-  it('round-trips screen → world → screen, which is the direction input uses', () => {
-    const t = makeViewTransform(1280, 720, 2);
-    for (const [x, y] of [[0, 0], [1280, 720], [640, 360], [17.5, 601.25]]) {
-      const worldPoint = screenToWorld(t, x, y);
-      const back = worldToScreen(t, worldPoint.x, worldPoint.y);
-      expect(back.x).toBeCloseTo(x, 6);
-      expect(back.y).toBeCloseTo(y, 6);
-    }
+  it('a body shows, and can be hit, until it is wholly in the full dark past the soft edge', () => {
+    const L = 500;
+    const rim = rimAxes(L, PHONE_OVAL);
+    const k = ARENA.darkScale;
+    expect(inLight(rim.x * k + 10, 0, 12, L, PHONE_OVAL)).toBe(true);
+    expect(inLight(0, rim.y * k + 10, 8, L, PHONE_OVAL)).toBe(false);
   });
 
-  it('maps the corners of the canvas outside the world rect only by the fit surplus', () => {
-    // Inside the aspect clamp the world rectangle *is* the visible rectangle,
-    // so the canvas corners land exactly on the world corners.
-    const t = makeViewTransform(1600, 900, 1);
-    const topLeft = screenToWorld(t, 0, 0);
-    expect(topLeft.x).toBeCloseTo(0, 6);
-    expect(topLeft.y).toBeCloseTo(0, 6);
-  });
-});
-
-describe('the spawn ellipse', () => {
-  const halfW = 1664;
-  const halfH = 936;
-  const cx = halfW;
-  const cy = halfH;
-
-  it('lands every point just outside the world rectangle', () => {
-    for (let i = 0; i < 64; i++) {
-      const p = spawnPointOnEllipse(cx, cy, halfW, halfH, (i / 64) * Math.PI * 2);
-      // Normalised ellipse radius: 1 is the arena edge.
-      const r = Math.hypot((p.x - cx) / halfW, (p.y - cy) / halfH);
-      expect(r).toBeCloseTo(ARENA.spawnRingScale, 6);
-    }
-  });
-
-  it('removes the corner/edge walk-in asymmetry the rectangle had', () => {
-    // The old rectangle put a corner spawn ~1.4x further from the tower than
-    // an edge spawn, so a wave's length depended on how its rolls fell.
-    let min = Infinity;
-    let max = 0;
-    for (let i = 0; i < 360; i++) {
-      const p = spawnPointOnEllipse(cx, cy, halfW, halfH, (i / 360) * Math.PI * 2);
-      const d = Math.hypot(p.x - cx, p.y - cy);
-      min = Math.min(min, d);
-      max = Math.max(max, d);
-    }
-    // The remaining spread is the viewport's own aspect, not a geometry bug:
-    // the long axis is genuinely further away than the short one.
-    expect(max / min).toBeCloseTo(halfW / halfH, 6);
-    const rectangleWorstCase = Math.SQRT2;
-    expect(max / min).toBeLessThan((halfW / halfH) * rectangleWorstCase);
-  });
-
-  it('is symmetric about the arena centre', () => {
-    const a = spawnPointOnEllipse(cx, cy, halfW, halfH, 0.7);
-    const b = spawnPointOnEllipse(cx, cy, halfW, halfH, 0.7 + Math.PI);
-    expect(a.x + b.x).toBeCloseTo(cx * 2, 6);
-    expect(a.y + b.y).toBeCloseTo(cy * 2, 6);
-  });
-});
-
-describe('the range cap (plan §1.2)', () => {
-  it('caps a stacked build at 70% of the short half-extent', () => {
-    expect(clampStat('range', 1_000_000)).toBeCloseTo(ARENA_RANGE_CAP, 6);
-    expect(ARENA_RANGE_CAP / ARENA.minHalfExtent).toBeCloseTo(0.70, 6);
-  });
-
-  it('leaves an ordinary build alone', () => {
-    expect(clampStat('range', TOWER_BASE.range)).toBe(TOWER_BASE.range);
-    expect(clampStat('range', 500)).toBe(500);
-  });
-
-  it('still floors at 1, so a stacked penalty cannot blind the tower', () => {
-    expect(clampStat('range', -50)).toBe(1);
-  });
-
-  it('puts the wave-1 ring at ~32% of the short half-extent', () => {
-    expect(TOWER_BASE.range / ARENA.minHalfExtent).toBeCloseTo(0.32, 2);
-  });
-
-  it('puts the flat upgrade maximum at ~48%, i.e. short of the cap', () => {
-    const longbow = UPGRADE_BY_ID['range'];
-    expect(longbow).toBeTruthy();
-    const flatMax = TOWER_BASE.range + computeUpgradeValue(longbow, longbow.maxLevel);
-    expect(flatMax).toBe(450);
-    expect(flatMax / ARENA.minHalfExtent).toBeCloseTo(0.48, 2);
-    // The cap has to be somewhere a *built* tower gets to, not somewhere the
-    // upgrade alone lands — otherwise talents and blessings buy nothing.
-    expect(flatMax).toBeLessThan(ARENA_RANGE_CAP);
-  });
-});
-
-describe('the two scales', () => {
-  it('zooms the world out further than it zooms the entities', () => {
-    // This gap is the zoom-out. If the two ever converge, the arena grows and
-    // nothing on it looks any smaller — which is a resolution change, not a
-    // camera.
-    expect(ENTITY_SCALE).toBeLessThan(WORLD_SCALE);
-    expect(ENTITY_SCALE / WORLD_SCALE).toBeCloseTo(0.65, 2);
-  });
-
-  it('leaves range out of the multiplication, which is the whole mechanism', () => {
-    // 300 is the pre-camera base. It must stay 300: scaling it would move the
-    // ring with the arena and the zoom-out would be invisible.
-    expect(TOWER_BASE.range).toBe(300);
-  });
-});
-
-describe('Camera.setDprCap (UI plan §9.D)', () => {
-  // The enemy-rescale guard. `Game.onCameraResize` multiplies every live
-  // enemy, projectile, hostile shot and loot orb by
-  // `worldWidth / previousWorldWidth`. A DPR-cap change leaves the world
-  // rectangle identical, so the resize it emits must report the *same* world
-  // extents on both sides — anything else is a mid-wave teleport waiting for
-  // the next refactor that tightens the `sx !== 1` short-circuit.
-  const makeCanvas = (cssWidth: number, cssHeight: number): HTMLCanvasElement => {
-    const canvas = {
-      width: 0,
-      height: 0,
-      clientWidth: cssWidth,
-      clientHeight: cssHeight,
-      getBoundingClientRect: () => ({ width: cssWidth, height: cssHeight }),
-    };
-    return canvas as unknown as HTMLCanvasElement;
-  };
-
-  const withDevicePixelRatio = <T>(dpr: number, fn: () => T): T => {
-    const had = Object.prototype.hasOwnProperty.call(globalThis, 'devicePixelRatio');
-    const previous = (globalThis as { devicePixelRatio?: number }).devicePixelRatio;
-    (globalThis as { devicePixelRatio?: number }).devicePixelRatio = dpr;
-    try {
-      return fn();
-    } finally {
-      if (had) (globalThis as { devicePixelRatio?: number }).devicePixelRatio = previous;
-      else delete (globalThis as { devicePixelRatio?: number }).devicePixelRatio;
-    }
-  };
-
-  it('resizes the backing store without moving the world rectangle', () => {
-    withDevicePixelRatio(3, () => {
-      const canvas = makeCanvas(800, 600);
-      const camera = new Camera(canvas);
-      const resizes: CameraResize[] = [];
-      camera.onResize = (info) => { resizes.push(info); };
-
-      const before = camera.transform;
-      expect(camera.currentDprCap).toBe(ARENA.maxDevicePixelRatio);
-
-      camera.setDprCap(1);
-
-      const after = camera.transform;
-      expect(after.dpr).toBe(1);
-      expect(after.pixelWidth).toBe(800);
-      expect(canvas.width).toBe(800);
-      expect(after.pixelWidth).toBeLessThan(before.pixelWidth);
-      // The world is untouched: same extents, so nothing may be rescaled.
-      expect(after.worldWidth).toBe(before.worldWidth);
-      expect(after.worldHeight).toBe(before.worldHeight);
-
-      expect(resizes).toHaveLength(1);
-      const info = resizes[0];
-      expect(info.previousWorldWidth).toBe(info.worldWidth);
-      expect(info.previousWorldHeight).toBe(info.worldHeight);
-      // i.e. the scale factors Game computes are exactly 1 on both axes.
-      expect(info.worldWidth / info.previousWorldWidth).toBe(1);
-      expect(info.worldHeight / info.previousWorldHeight).toBe(1);
-
-      camera.destroy();
-    });
-  });
-
-  it('is a no-op when the cap does not change, and rejects nonsense', () => {
-    withDevicePixelRatio(2, () => {
-      const camera = new Camera(makeCanvas(800, 600));
-      const resizes: CameraResize[] = [];
-      camera.onResize = (info) => { resizes.push(info); };
-
-      camera.setDprCap(ARENA.maxDevicePixelRatio);   // already the cap
-      camera.setDprCap(0);                            // nonsense
-      camera.setDprCap(-1);
-      expect(resizes).toHaveLength(0);
-      expect(camera.currentDprCap).toBe(ARENA.maxDevicePixelRatio);
-
-      camera.destroy();
-    });
-  });
-
-  it('still reports the real previous extents when the world does change shape', () => {
-    withDevicePixelRatio(1, () => {
-      const canvas = makeCanvas(1600, 900);
-      const camera = new Camera(canvas);
-      const resizes: CameraResize[] = [];
-      camera.onResize = (info) => { resizes.push(info); };
-
-      const before = camera.transform;
-      // A genuine viewport change: portrait phone box.
-      canvas.clientWidth = 400;
-      canvas.clientHeight = 900;
-      (canvas as unknown as { getBoundingClientRect: () => { width: number; height: number } })
-        .getBoundingClientRect = () => ({ width: 400, height: 900 });
-      camera.measure();
-
-      expect(resizes).toHaveLength(1);
-      expect(resizes[0].previousWorldWidth).toBe(before.worldWidth);
-      expect(resizes[0].previousWorldHeight).toBe(before.worldHeight);
-      expect(resizes[0].worldWidth).not.toBe(before.worldWidth);
-
-      camera.destroy();
-    });
+  it('grows the long axis by a constant, so the long walk stays the same as range grows', () => {
+    const small = rimAxes(500, PHONE_OVAL);
+    const big = rimAxes(900, PHONE_OVAL);
+    expect(small.y).toBeCloseTo(960, 6);
+    expect(big.y - big.x).toBeCloseTo(small.y - small.x, 6);
   });
 });

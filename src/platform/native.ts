@@ -1,5 +1,5 @@
 /**
- * The Capacitor shell's only web-side surface. See `plans/capacitor.md` §9.
+ * The Capacitor shell's only web-side surface. Kept from the legacy game.
  *
  * Every entry point is guarded by `Capacitor.isNativePlatform()`, so importing
  * this module from a browser tab (dev server, `vite preview`) costs one branch
@@ -51,17 +51,19 @@ export async function hideNativeSplash(): Promise<void> {
  * a killed process is a lost session, and Android's own convention for a single
  * -activity app at the root of its stack is to go to the launcher.
  *
- * `onPause` exists next to the existing `visibilitychange` handler in
- * `Game.bindVisibilityEvents`, not instead of it. `visibilitychange` is the one
- * that stops the loop; this one is the last hook that reliably runs before the
- * OS is free to kill the process from the background. It returns a promise
- * because the save backend is asynchronous now (§8) — taking the snapshot is
- * synchronous, but getting it onto disk is not, and this is the one place in the
- * app where waiting for the write is both possible and worth it.
+ * `onPause` exists next to the app's `visibilitychange` handler, not instead
+ * of it: this is the last hook that reliably runs before the OS is free to kill
+ * the process from the background. It returns a promise because the save
+ * backend is asynchronous, and this is the one place where waiting for the
+ * write is both possible and worth it. `onResume` may fire twice for one
+ * return (the state change and the resume event); the app's handler is
+ * idempotent.
  */
 export function bindNativeLifecycle(handlers: {
   onBack: () => boolean;
   onPause: () => Promise<void> | void;
+  /** Back in front: the app settles the absence (offline earnings, §6.1). */
+  onResume: () => void;
 }): void {
   if (!isNative()) return;
 
@@ -71,7 +73,9 @@ export function bindNativeLifecycle(handlers: {
 
   void App.addListener('appStateChange', ({ isActive }) => {
     if (!isActive) void handlers.onPause();
+    else handlers.onResume();
   });
 
   void App.addListener('pause', () => { void handlers.onPause(); });
+  void App.addListener('resume', () => { handlers.onResume(); });
 }
