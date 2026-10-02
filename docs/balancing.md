@@ -154,3 +154,38 @@ after re-fitting the rail constants to the line doctrine (`RAIL_BODIES`
 `npm test`: everything but two of `tests/pacing.test.ts`'s CI seeds: I6
 (its 10:27 gap was 10:43 at Q1) and I2, whose one CI profile moved from
 5.0 d to 4.5 d, the full report's median. Both are Q1's retune.
+
+### Q3 (post-rebuild new mechanics), 2026-10-02
+
+N1–N7 built (Banish, tower tiers, region auras, Champions and trophies,
+Trials, relic sets, the Foreman). The pacing bot now tries an open Trial
+behind the frontier every 8th run (at most twice each), and reports I6's
+later clause (2–10 h, ≤ 30 min) and the Hollow King → Blight stretch.
+Q1's retune is still owed, so its failing gates still fail.
+
+`npm run pacing -- --hours 12 --seeds 8`:
+
+| | Q2 | Q3 |
+|---|---|---|
+| first wave 20 (P3) | 27:22 PASS | 27:22 PASS |
+| Gatekeeper (P4) · I1a | 32:10 · 8/8 | 32:10 · 8/8 |
+| Bog Mother | 72:56 | 70:50 |
+| Forgeheart | ~141 | ~147 |
+| Hollow King | — | ~222 |
+| Blight · I1b | 389:56 · 0/8 FAIL | 310:47 · 0/8 FAIL |
+| I3 · I6 (first 2 h) | 6/8 · 2/8 | 4/8 · 4/8 |
+| first evolution | 97:59 | 94:06 |
+
+Q3's gate readings:
+- **Hollow King → Blight**, longest gap between reveals: 14:02–32:11,
+  7/8 within 30 min (Champions, the regions' auras, trophies, Trials and
+  sets fill it).
+- **I6 from 2 h to 10 h: 0/8, gaps 2–5 h.** Every gap starts at the
+  Blight's fall (~5 h): the Act 1 bot reveals nothing after Act 1 ends, and
+  this report doesn't play Act 2. The clause only means something once I1b
+  puts the Blight back at 7–12 h (Q1's retune), or read over Act 1's span.
+- **The Blight comes ~80 min sooner** than at Q2: trial notables (Dawn
+  Muster, Drill Sergeant, Mire Sight), relic ranks from Trials and set
+  bonuses all add power. Q1's retune must now absorb that too.
+- Trials won by 12 h: 13–14 of 18.
+- Arsenal and keystone sweeps: not yet re-read.

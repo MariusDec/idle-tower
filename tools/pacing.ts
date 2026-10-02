@@ -23,11 +23,14 @@
  *                                        Act 2 (tools/act2.ts, P8's gate): from the
  *                                        Blight's fall, N hours of heat, stars and the
  *                                        Abyss; heat 1–10 at the frontier, timed
+ *   npm run pacing -- --act2 --reuse     …from the post-Blight profiles the last
+ *                                        --act2 saved (T4): minutes, not half an
+ *                                        hour, but only while Act 1 is unchanged
  *
  * Times are the player's wall clock: sim time divided by the game speed,
  * plus the moments a person spends on drafts and between runs.
  */
-import { writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRun } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile, type Profile } from '../src/meta/profile';
@@ -424,13 +427,26 @@ export interface Act2Verdict {
   report: Act2Report | null;
 }
 
-/** Act 1 to the Blight's fall, then `hours` of Act 2 (§9). */
-export function act2Verdict(seed: number, hours: number): Act2Verdict {
-  const act1 = runPacing(ACT1_HOURS, seed);
-  const at = act1.checkpoints.find((c) => c.label === FINALE);
-  if (!at) return { act1: null, report: null };
-  const profile = structuredClone(at.profile);
-  return { act1: at.at, report: runAct2(profile, hours, seed) };
+/** Where `--act2` keeps each seed's profile at the Blight's fall, for `--reuse` (T4). */
+const ACT2_STARTS = 'node_modules/.tmp/act2-starts';
+
+/** Act 1 to the Blight's fall (or the saved fall, with `reuse`), then `hours` of Act 2 (§9). */
+export function act2Verdict(seed: number, hours: number, reuse = false): Act2Verdict {
+  const file = `${ACT2_STARTS}/seed-${seed}.json`;
+  let start: { at: number; profile: Profile } | null = null;
+  if (reuse && existsSync(file)) {
+    start = JSON.parse(readFileSync(file, 'utf8')) as { at: number; profile: Profile };
+  } else {
+    const at = runPacing(ACT1_HOURS, seed).checkpoints.find((c) => c.label === FINALE);
+    if (at) {
+      start = { at: at.at, profile: at.profile };
+      mkdirSync(ACT2_STARTS, { recursive: true });
+      writeFileSync(file, JSON.stringify(start));
+    }
+  }
+  if (!start) return { act1: null, report: null };
+  const profile = structuredClone(start.profile);
+  return { act1: start.at, report: runAct2(profile, hours, seed) };
 }
 
 /** P8's reading: the median time to heat `h` at the frontier, in wall seconds after the Blight; null for never. */
@@ -440,10 +456,10 @@ export function medianHeat(verdicts: readonly Act2Verdict[], h: number): number 
   return Number.isFinite(m) ? m : null;
 }
 
-async function act2Main(seeds: number, hours: number): Promise<void> {
+async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<void> {
   const fmt = (t: number | null | undefined): string => (t == null ? 'never' : formatDuration(t));
-  console.log(`act 2 · ${hours} h after the Blight · ${seeds} profiles`);
-  const verdicts = await runSeeds<Act2Verdict>('act2', seedsOf(seeds).map((k) => [k, hours]));
+  console.log(`act 2 · ${hours} h after the Blight · ${seeds} profiles${reuse ? ' · saved starts' : ''}`);
+  const verdicts = await runSeeds<Act2Verdict>('act2', seedsOf(seeds).map((k) => [k, hours, reuse]));
   for (const [k, v] of verdicts.entries()) {
     const r = v.report;
     if (!r) {
@@ -473,7 +489,7 @@ async function main(): Promise<void> {
   const seed = Number(arg('seed', '1'));
   const seeds = Number(arg('seeds', '0'));
   if (process.argv.includes('--act2')) {
-    await act2Main(Math.max(1, seeds || 1), hours);
+    await act2Main(Math.max(1, seeds || 1), hours, process.argv.includes('--reuse'));
     return;
   }
   if (process.argv.includes('--idle')) {
