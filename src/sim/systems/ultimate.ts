@@ -1,7 +1,7 @@
 import { BALANCE } from '../../content/balance';
 import { frameById } from '../../content/frames';
 import { weaponParams } from '../../content/weapons';
-import type { RunState } from '../state';
+import type { Enemy, RunState } from '../state';
 import { Rng } from '../../core/rng';
 import { staggerBoss } from './boss';
 import { damageEnemy, knockBack, targetable } from './combat';
@@ -27,7 +27,7 @@ export function castUltimate(run: RunState): boolean {
       for (let i = 0; i < n; i++) {
         const e = run.enemies[i];
         if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
-        damageEnemy(run, e, damage, false, 'nova');
+        damageEnemy(run, e, floored(e, damage, ult.floor), false, 'nova');
         if (e.alive && !e.boss) knockBack(e, ult.knockback);
       }
       run.events.push({ kind: 'nova', radius: run.stats.range });
@@ -111,7 +111,16 @@ export function tickUltimate(run: RunState, dt: number): void {
   const level = run.weapons.find((w) => w.id === frame.startingWeapon)?.level ?? 1;
   const damage = weaponParams(frame.startingWeapon, level).damage * ult.damage * run.stats.damageMult;
   run.events.push({ kind: 'chain', points: [e.x - 40, e.y - 260, e.x + 20, e.y - 120, e.x, e.y] });
-  damageEnemy(run, e, damage, false, 'tempest');
+  damageEnemy(run, e, floored(e, damage, ult.floor), false, 'tempest');
+}
+
+/**
+ * An ultimate's hit on one body (S3): the starting weapon's multiple, or a
+ * share of the body's Max HP if that is more, so the button keeps pace with
+ * the region. A boss and its parts (a shade, a plate) take only the hit.
+ */
+function floored(e: Enemy, hit: number, floor: number): number {
+  return e.boss || e.court || e.plate ? hit : Math.max(hit, e.maxHp * floor);
 }
 
 /** Living bodies within the tower's range: what a Nova would catch. */

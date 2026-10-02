@@ -50,14 +50,17 @@ describe('determinism', () => {
 });
 
 describe('damage and armour', () => {
-  it('subtracts armour flat', () => {
-    expect(mitigate(100, 30)).toBe(70);
+  it('is a curve (S2): hit / (hit + armour) of the hit lands', () => {
     expect(mitigate(100, 0)).toBe(100);
+    expect(mitigate(90, 30)).toBeCloseTo(67.5);
+    expect(mitigate(30, 30)).toBeCloseTo(15);
+    // Bigger hits land a bigger share; there is no cliff between them.
+    const shares = [5, 10, 20, 40, 80].map((h) => mitigate(h, 20) / h);
+    for (let i = 1; i < shares.length; i++) expect(shares[i]).toBeGreaterThan(shares[i - 1]);
   });
 
   it('always lets the floor through', () => {
-    expect(mitigate(10, 1000)).toBeCloseTo(10 * BALANCE.damage.minFraction);
-    expect(mitigate(10, 9.5)).toBeCloseTo(10 * BALANCE.damage.minFraction);
+    expect(mitigate(10, 1e6)).toBeCloseTo(10 * BALANCE.damage.minFraction);
   });
 
   it('ignores negative armour and non-positive hits', () => {

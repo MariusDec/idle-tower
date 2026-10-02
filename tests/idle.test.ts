@@ -95,7 +95,7 @@ describe('the Autocaster rule', () => {
     const run = charged();
     run.boss = {
       id: 'gatekeeper', enemy: 1, phase: 0, arrivedAt: 0, timers: [], windup: 0, submerged: false,
-      enraged: false, windupPattern: -1, staggeredUntil: 0, facet: 0, crown: 0, minHp: 1, killedIn: null, wave: 20,
+      enraged: false, windupPattern: -1, staggeredUntil: 0, facet: 0, crown: 0, plates: 0, minHp: 1, killedIn: null, wave: 20,
     };
     expect(autoUltWanted(run, 99)).toBe(true);
     run.boss.submerged = true;
@@ -160,7 +160,7 @@ describe('Frontier March (§6.2)', () => {
     const run = createRun(buildRunConfig(p), 1);
     run.boss = {
       id: 'gatekeeper', enemy: 1, phase: 0, arrivedAt: 0, timers: [], windup: 0, submerged: false,
-      enraged: false, windupPattern: -1, staggeredUntil: 0, facet: 0, crown: 0, minHp: 1, killedIn: 30, wave: 20,
+      enraged: false, windupPattern: -1, staggeredUntil: 0, facet: 0, crown: 0, plates: 0, minHp: 1, killedIn: 30, wave: 20,
     };
     run.outcome = { kind: 'fell', wave: 21, time: 600 };
     return bankRun(p, run);

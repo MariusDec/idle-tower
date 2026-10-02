@@ -9,6 +9,8 @@
  *                                          (P2's loadout), ring1–ring6 (every ring up
  *                                          to it) or all, bought out, keystones aside
  *   npm run inspect -- --region 2          a region other than the first (its rule applies)
+ *   npm run inspect -- --seeds 20 --by-weapon
+ *                                          the share of damage landed by each weapon (T1)
  *
  * Headless: it drives the real sim, not a model of it.
  */
@@ -21,7 +23,7 @@ import { ENEMY_BY_ID } from '../src/content/enemies';
 import { regionByIndex } from '../src/content/regions';
 import { waveHp } from '../src/sim/systems/waves';
 import { buildDps } from '../src/sim/suggest';
-import type { RunState } from '../src/sim/state';
+import type { DamageBy, RunState } from '../src/sim/state';
 import { botInput, type Policy } from './bot';
 
 function arg(name: string, fallback: number): number {
@@ -137,6 +139,15 @@ export function describeBuild(run: RunState): string {
   return p ? `${w} | ${p}` : w;
 }
 
+/** Damage landed by each source, largest first, as shares: "arcane-bolt 62% · mortar 30% · ult 8%". */
+export function describeDamage(by: Partial<Record<DamageBy, number>>): string {
+  const total = Object.values(by).reduce((a, b) => a + (b ?? 0), 0) || 1;
+  return (Object.entries(by) as [DamageBy, number][])
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `${k} ${Math.round((v / total) * 100)}%`)
+    .join(' · ');
+}
+
 function pad(v: string | number, n: number): string {
   return String(v).padStart(n);
 }
@@ -162,11 +173,15 @@ function main(): void {
     const loadouts = new Map<string, number>();
     const waves: number[] = [];
     const lengths: number[] = [];
+    const dealt: Partial<Record<DamageBy, number>> = {};
     for (let s = 1; s <= seeds; s++) {
       const r = simulate(s, maxSeconds, policy, preset, region);
       deaths.set(r.run.wave, (deaths.get(r.run.wave) ?? 0) + 1);
       waves.push(r.run.wave);
       lengths.push(r.run.time);
+      // Each run counts once, whatever its length: its shares, not its totals.
+      const total = Object.values(r.run.damageBy).reduce((a, b) => a + (b ?? 0), 0) || 1;
+      for (const [k, v] of Object.entries(r.run.damageBy) as [DamageBy, number][]) dealt[k] = (dealt[k] ?? 0) + v / total;
       if (r.firstKill !== null) firsts.push(r.firstKill);
       if (r.levelUps.length > 0) firstLevel.push(r.levelUps[0]);
       r.levelUps.forEach((t, i) => {
@@ -185,6 +200,7 @@ function main(): void {
       console.log(`level-ups: first median ${median(firstLevel).toFixed(1)}s · gap before 1:30 median ${median(early).toFixed(1)}s · after ${median(late).toFixed(1)}s`);
     }
     console.log('loadouts: ' + [...loadouts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ×${n}`).join('  ·  '));
+    if (flag('by-weapon')) console.log(`damage by: ${describeDamage(dealt)}`);
     return;
   }
   const seed = arg('seed', 1);
@@ -200,6 +216,7 @@ function main(): void {
     );
   }
   console.log(`build: ${describeBuild(r.run)}`);
+  console.log(`damage by: ${describeDamage(r.run.damageBy)}`);
   const b = r.run.boss;
   if (b) console.log(`boss ${b.id}: ${b.killedIn === null ? 'stood' : `fell in ${b.killedIn.toFixed(1)}s`}${b.enraged ? ' (enraged)' : ''}`);
   const o = r.run.outcome;

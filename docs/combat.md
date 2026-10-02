@@ -36,7 +36,9 @@ disagree about a weapon.
 `counters` on each weapon names the enemies it answers (§4.3), and
 `weakAgainst` the ones that blunt it (frontal shots into a Shieldbearer,
 blades into Shardlings and Bombers); the scorer reads both to favour a
-weapon that suits the region. The lint (`counters`) holds every region's
+weapon that suits the region, and counts only a quarter of a weapon's
+damage on a type it is weak against. Scattershot's pellets hit ×1.5 inside
+a third of range (`pointBlank`, S5). The lint (`counters`) holds every region's
 pool answered by at least one Act 1 weapon.
 
 A Harbinger never silences the tower's last firing weapon; against a lone
@@ -47,9 +49,17 @@ or Executioner's Coin, plus Annihilator: 20%, `executeMax`).
 ## Damage and armour
 
 A hit rolls its crit on the `crit` stream (`critChance`, `critMult`),
-then `damage.ts#mitigate` takes armour off: armour is a flat reduction
-with a floor, so a hit always lands at least `BALANCE.damage.minFraction`
-(15%) of itself. The same rule holds for enemies and the tower. On top of
+then `damage.ts#mitigate` takes armour off. Armour is a curve, not a cliff
+(Q1, S2): a hit lands `hit / (hit + armour)` of itself, so a hit three
+times the armour lands 75%, one equal to it half, and a small one never
+quite nothing; `BALANCE.damage.minFraction` (5%) is only a backstop. The
+same rule holds for enemies and the tower.
+
+Every hit is credited (T1, `combat.ts#damageBy`): to the weapon whose
+pattern dealt it (each weapon has its own pattern; the lint holds it), the
+ultimate, Thorns, a burn, or a rule's extra (Overkill, a leap, a shatter).
+`RunState.damageBy` sums what landed, short of overkill, and the `hit`
+event carries `by`. `npm run inspect -- --by-weapon` prints the shares. On top of
 that sit the region's rule (Brittle's area bonus), statuses (gilded,
 frozen, slowed, burning) and behaviours from the Forge and relics
 (Overkill's leap, Executioner below 10% HP, Thorns, Rampart's cap).
@@ -93,8 +103,11 @@ Gravekeeper (Eclipse).
 
 The ultimate charges from kill XP (`BALANCE.ultimate.charge`, about 30–45
 s of killing) and fires on the player's tap; each cast makes the next
-charge 1.2× longer. A Nova landing during a boss slam's wind-up staggers
-it. An Eclipse takes a share of what each body has left, so it strikes a
+charge 1.2× longer. Nova and Tempest keep pace with the region (S3):
+each hit is the starting weapon's multiple or a share of the body's Max HP
+(`floor`: Nova 40%, Tempest 15%), whichever is more; a boss, a shade or a
+plate takes only the hit. A Nova landing during a boss slam's wind-up
+staggers it. An Eclipse takes a share of what each body has left, so it strikes a
 shared pool of HP once: a Chorus through one of its bodies, the Hollow
 King's or the Hunger's court through the king alone. The Autocaster
 ([idle.md](idle.md)) casts on the same rule as the bot.

@@ -160,6 +160,11 @@ export class Cues {
         case 'shell':
           if (this.ready('shell', now)) s.tone({ freq: 1100, freqEnd: 900, type: 'square', duration: 0.03, volume: 0.03 });
           break;
+        case 'plateBreak':
+          // Iron giving way: a low clank and grit.
+          s.noise(0.18, 0.14, 900, 'lowpass');
+          s.tone({ freq: 160, freqEnd: 70, type: 'square', duration: 0.25, volume: 0.1 });
+          break;
         case 'floor':
           for (const [i, f] of [392, 494, 587, 784].entries()) s.tone({ freq: f, type: 'sine', duration: 0.6, volume: 0.1, delay: i * 0.1 });
           break;

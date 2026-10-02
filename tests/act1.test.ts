@@ -9,7 +9,7 @@ import { ENEMY_BY_ID } from '../src/content/enemies';
 import { FEATS } from '../src/content/feats';
 import { FRAME_BY_ID } from '../src/content/frames';
 import { regionByIndex } from '../src/content/regions';
-import { BOSS_WAVE, rollWave, spawnEnemy, startWave, waveHp } from '../src/sim/systems/waves';
+import { BOSS_WAVE, rollWave, spawnEnemy, startWave } from '../src/sim/systems/waves';
 import { bossBody, tickBoss, tickPools } from '../src/sim/systems/boss';
 import { damageEnemy, tickProjectiles, tickWeapons } from '../src/sim/systems/combat';
 import { tickEnemies } from '../src/sim/systems/enemies';
@@ -303,18 +303,34 @@ describe('Act 1 bosses (§11.1)', () => {
     expect(fire(facet + Math.PI / 2)).toBeGreaterThan(0);
   });
 
-  it('Forgeheart sheds its plates phase by phase, and its pools burn the wall', () => {
+  it('Forgeheart wears plates (S2): they guard the heart until struck off, and crack away by phase', () => {
     const run = atBoss(4);
     const region = regionByIndex(4);
     const e = bossBody(run)!;
-    const plated = e.armor;
+    const def = BOSS_BY_ID.forgeheart;
+    const plates = (): Enemy[] => run.enemies.filter((o) => o.alive && o.plate === e.id);
+    tickBoss(run, region, SIM_DT);
+    expect(plates()).toHaveLength(2);
+    expect(run.boss!.plates).toBe(2);
+    // Hung before the heart, between it and the tower.
+    for (const o of plates()) expect(Math.hypot(o.x, o.y)).toBeLessThan(Math.hypot(e.x, e.y));
+    // While a plate stands the heart takes its guard's share; the same hit lands whole after.
+    e.armor = 0;
+    const guarded = damageEnemy(run, e, 100, false);
+    expect(guarded).toBeCloseTo(100 * def.plates!.guard);
+    const first = plates()[0];
+    damageEnemy(run, first, first.hp * 1e3, false);
+    expect(first.alive).toBe(false);
+    expect(run.boss!.plates).toBe(1);
+    expect(run.events.some((ev) => ev.kind === 'plateBreak')).toBe(true);
+    // Phase 2 wears one: none cracks, it has one already. Phase 3 wears none.
     e.hp = e.maxHp * 0.5;
     tickBoss(run, region, SIM_DT);
-    expect(e.armor).toBeCloseTo(waveHp(region, BOSS_WAVE) * BOSS_BY_ID.forgeheart.phases[1].armor!);
-    expect(e.armor).toBeLessThan(plated);
+    expect(plates()).toHaveLength(1);
     e.hp = e.maxHp * 0.2;
     tickBoss(run, region, SIM_DT);
-    expect(e.armor).toBe(0);
+    expect(plates()).toHaveLength(0);
+    expect(damageEnemy(run, e, 100, false)).toBeCloseTo(100);
     for (let i = 0; i < 10 / SIM_DT && run.pools.length === 0; i++) {
       run.tick++;
       run.time = run.tick * SIM_DT;

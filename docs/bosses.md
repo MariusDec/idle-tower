@@ -27,8 +27,15 @@ one line of text and one or two readable patterns:
 
 Patterns fire on timers; a phase opens with its new pattern half-way
 charged, so it never starts with a lull. A **Nova** landing during a slam's
-wind-up staggers the boss and the slam is lost. Forgeheart wears plates
-that swallow a share of its HP per phase.
+wind-up staggers the boss and the slam is lost.
+
+**Forgeheart's plates** (Q1, S2; `BossDef.plates`, `BossPhase.plates`):
+two iron plates hang before the heart, between it and the tower. Each is a
+body with 12% of the boss's HP and heavy armour, so big hits strip them;
+while one stands the heart takes half of every hit (`plateGuard`). Phase 2
+wears one plate, phase 3 none: the extra crack away. A phase Tyranny
+replays hangs them anew. Plates ride on the boss (`placePlates`), never
+walk or get shoved, pay nothing, and fall with it (`plateBreak`).
 
 **Enrage.** A boss that outlasts `BALANCE.boss.enrageAfter` (90 s) enrages:
 its slams hit ×1.25 harder every further 10 s, and it walks to the wall.

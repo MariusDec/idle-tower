@@ -258,6 +258,52 @@ export function paintCourt(
   }
 }
 
+/**
+ * Forgeheart's plates (S2): iron slabs hung before the heart, facing the
+ * tower, cracking as they take damage.
+ */
+export function paintPlates(ctx: CanvasRenderingContext2D, run: RunState, alpha: number): void {
+  const b = run.boss;
+  if (!b || b.plates === 0) return;
+  const def = BOSS_BY_ID[b.id];
+  for (const e of run.enemies) {
+    if (!e.alive || !e.plate) continue;
+    const x = e.px + (e.x - e.px) * alpha;
+    const y = e.py + (e.y - e.py) * alpha;
+    const r = e.radius;
+    ctx.save();
+    ctx.translate(x, y);
+    // Broad side to the tower.
+    ctx.rotate(Math.atan2(-y, -x));
+    ctx.beginPath();
+    ctx.roundRect(-r * 0.45, -r, r * 0.9, r * 2, r * 0.2);
+    ctx.fillStyle = mix(INK['600'], def.color, 0.35);
+    ctx.fill();
+    ctx.strokeStyle = def.borderColor;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // Rivets, then a crack for every quarter of its HP gone.
+    ctx.fillStyle = INK['300'];
+    for (const ry of [-0.7, 0, 0.7]) {
+      ctx.beginPath();
+      ctx.arc(0, r * ry, r * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const cracks = Math.floor((1 - e.hp / e.maxHp) * 4);
+    ctx.strokeStyle = withAlpha(FX.ember, 0.9);
+    ctx.lineWidth = 2;
+    for (let k = 0; k < cracks; k++) {
+      const cy = r * (-0.8 + k * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.4, cy);
+      ctx.lineTo(0, cy + r * 0.2);
+      ctx.lineTo(r * 0.4, cy + r * 0.05);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 /** Molten pools at the wall (Forgeheart): a glowing spill, crusting as it cools. */
 export function paintPools(ctx: CanvasRenderingContext2D, pools: readonly MoltenPool[], simTime: number, time: number): void {
   for (const p of pools) {

@@ -105,6 +105,8 @@ export function tickEnemies(run: RunState, dt: number): void {
   const n = run.enemies.length;
   for (let i = 0; i < n; i++) {
     const e = run.enemies[i];
+    // A plate rides on its boss (`boss.ts` moves it); it neither walks nor acts.
+    if (e.plate) continue;
     e.px = e.x;
     e.py = e.y;
     e.moving = false;
@@ -308,7 +310,7 @@ export function separateEnemies(run: RunState): void {
   grid.rebuild(run.enemies);
   const reach = run.stats.radius;
   for (const e of run.enemies) {
-    if (!e.alive || e.boss || e.court || isHidden(run, e)) continue;
+    if (!e.alive || e.boss || e.court || e.plate || isHidden(run, e)) continue;
     near.length = 0;
     // Two bodies overlap within the sum of their radii, so query that far:
     // a Runner must feel a Brute it touches, not only the reverse.

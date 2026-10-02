@@ -36,10 +36,11 @@ export const WEAPONS: readonly WeaponDef[] = [
     id: 'scattershot',
     name: 'Scattershot',
     icon: 'striking-arrows',
-    text: 'A 5-pellet cone that knocks enemies back.',
+    text: 'A 5-pellet cone that knocks enemies back; ×1.5 damage up close.',
     pattern: 'cone',
     counters: ['grunt', 'runner', 'blinker', 'imp', 'bomber'],
     weakAgainst: ['shieldbearer'],
+    pointBlank: 1.5,
     base: { ...ZERO, damage: 5, fireRate: 0.8, count: 5, spread: 0.55, knockback: 16, projectileSpeed: 900 },
     steps: [
       { text: '+2 pellets per blast.', add: { count: 2, spread: 0.1 } },

@@ -10,7 +10,7 @@ import { bakeArena } from './painters/arena';
 import { EnemyPainter } from './painters/enemies';
 import { paintProjectiles } from './painters/projectiles';
 import { paintArsenal, paintFires, paintRunes, paintStatus } from './painters/arsenal';
-import { paintAegis, paintBoss, paintCourt, paintFacets, paintPools, paintRings, paintShots } from './painters/bosses';
+import { paintAegis, paintBoss, paintCourt, paintFacets, paintPlates, paintPools, paintRings, paintShots } from './painters/bosses';
 import { mirrorFacets, phasesOf } from '../sim/systems/boss';
 import { runRegion } from '../sim/systems/waves';
 import { WEAPON_BY_ID } from '../content/weapons';
@@ -275,6 +275,11 @@ export class Renderer {
         case 'shell':
           this.effects.hitSparks(ev.x, ev.y, INK['200'], false);
           break;
+        case 'plateBreak':
+          this.effects.spray(ev.x, ev.y, INK['300'], 18, 260, 5);
+          this.effects.ring(ev.x, ev.y, ev.radius * 0.4, ev.radius * 2, withAlpha(FX.ember, 0.8), 0.4, 6);
+          this.camera.shake(4);
+          break;
         case 'charge':
           this.effects.ring(ev.x, ev.y, 8, 50, withAlpha(FX.blood, 0.7), 0.35, 4);
           break;
@@ -414,6 +419,7 @@ export class Renderer {
       if (b && b.killedIn === null) {
         const body = run.enemies.find((e) => e.id === b.enemy && e.alive);
         paintCourt(ctx, run, alpha, this.clock);
+        paintPlates(ctx, run, alpha);
         if (body) {
           paintBoss(ctx, body, b, alpha, run.tick, run.time, this.clock);
           paintFacets(ctx, body.px + (body.x - body.px) * alpha, body.py + (body.y - body.py) * alpha, body.radius, mirrorFacets(run));

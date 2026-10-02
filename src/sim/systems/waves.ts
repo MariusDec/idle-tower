@@ -6,10 +6,12 @@ import { ENEMY_BY_ID } from '../../content/enemies';
 import { spawnPoint } from '../../content/arena';
 import type { AuraId, EnemyId, EnemyVerb, RegionDef, RegionRule, StatMod } from '../../content/types';
 import { regionByIndex } from '../../content/regions';
+import { PASSIVE_BY_ID } from '../../content/passives';
 import type { Enemy, RunState, SpawnEntry, WaveState } from '../state';
 import { pactLoad, ruleSurge, scaleMod } from '../pacts';
 import { allMods, resolveStats } from '../stats';
 import { arriveBoss } from './boss';
+import { refreshStats } from './draft';
 
 /**
  * Waves (§4.2): pre-rolled from the region template at wave start, placed on
@@ -38,13 +40,18 @@ export function runRegion(run: RunState): RegionDef {
 }
 
 /** Wave `n` as its region counts it: the floor's own number in the Abyss. */
-function localWave(region: RegionDef, n: number): number {
+export function localWave(region: RegionDef, n: number): number {
   return region.abyss ? floorWave(n) : n;
 }
 
 /** True when wave `n` is its region's boss wave: the 20th, or a floor's tenth. */
 export function isBossWave(region: RegionDef, n: number): boolean {
   return region.abyss ? floorWave(n) === FLOOR_WAVES : n === BOSS_WAVE;
+}
+
+/** What every body's HP multiplies by in this run: Vigour's ranks (§9) and Hoarder's toll (B2). */
+export function foeHp(run: RunState): number {
+  return pactLoad(run.pacts).hp * (run.behaviours.hoarder ? BALANCE.behaviours.hoarderHp : 1);
 }
 
 /** HP of a weight-1 enemy in wave `n` (§8.2). Overtime grows faster; the Abyss grows without a cap (§9). */
@@ -235,6 +242,11 @@ export function startWave(run: RunState, region: RegionDef, n: number): void {
     alive: 0,
   };
   run.wave = n;
+  // Greed's hoard (S5): what grows with each wave reached while it is held.
+  if (run.passives.some((p) => PASSIVE_BY_ID[p.id].perWave)) {
+    for (const p of run.passives) if (PASSIVE_BY_ID[p.id].perWave) p.waves = (p.waves ?? 0) + 1;
+    refreshStats(run);
+  }
   if (region.abyss && n > 1 && floorWave(n) === 1) enterFloor(run, region);
   if (run.weapons.length === 1) run.loneWave = n;
   run.events.push({ kind: 'waveStart', wave: n });
@@ -267,7 +279,7 @@ export function spawnEnemy(
   const E = BALANCE.elites;
   const load = pactLoad(run.pacts);
   const elite = opts.elite !== undefined;
-  let hp = waveHp(region, wave) * def.hp * (elite ? E.hp : 1) * load.hp;
+  let hp = waveHp(region, wave) * def.hp * (elite ? E.hp : 1) * foeHp(run);
   let radius = def.radius * (elite ? E.scale : 1);
   if (opts.fragment) {
     hp = opts.fragment.hp;
@@ -321,6 +333,8 @@ export function spawnEnemy(
     group: 0,
     shade: opts.shade ?? false,
     court: 0,
+    plate: 0,
+    slot: 0,
     shell: def.verb.kind === 'carapace' ? Math.max(0, def.verb.hits - brittleShell(run)) : 0,
     dashUntil: 0,
     gildedUntil: 0,

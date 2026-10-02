@@ -40,14 +40,19 @@ export type StatKey =
 
 /**
  * One contribution to a stat. Resolved as
- * `(base + Σadd) × (1 + Σpct) × Πmult`: flat first, then the additive
- * percentages every "+15%" line sums into, then true multipliers (keystones).
+ * `(base + Σadd) × (1 + Σpct_meta) × (1 + Σpct_run) × Πmult`: flat first,
+ * then two buckets of additive percentages, then true multipliers
+ * (keystones, masteries). The buckets (S1) keep a card's "+15%" worth the
+ * same however much of the Forge is owned: the run's own passives write
+ * `run`; the Forge, stars, relics, frames, rules and pacts are `meta`.
  */
 export interface StatMod {
   readonly key: StatKey;
   readonly add?: number;
   readonly pct?: number;
   readonly mult?: number;
+  /** Which percentage bucket `pct` sums into; absent is `meta`. */
+  readonly bucket?: 'meta' | 'run';
 }
 
 /** Anything that can enter the draft's card pool. */
@@ -183,7 +188,7 @@ export interface WebNodeDef<B extends string = string> extends ContentEntry {
   readonly maxLevel: number;
   /** Level 1's price; each further level costs `growth` (or the web's default) more. */
   readonly cost: number;
-  /** Cost growth per level, when not the web's default (a mastery's ×1.3, §9). */
+  /** Cost growth per level, when not the web's default (a mastery's ×1.2, §9; a two-level late minor's ×3, S1). */
   readonly growth?: number;
   readonly effects: readonly Effect[];
   /**
@@ -210,6 +215,8 @@ export type UltimateDef =
     readonly text: string;
     /** Multiple of the starting weapon's current hit damage. */
     readonly damage: number;
+    /** …or this share of a body's Max HP, if more (S3: it keeps pace with the region). Never a boss's. */
+    readonly floor: number;
     /** World units a weight-1 body is thrown outward. */
     readonly knockback: number;
   }
@@ -229,8 +236,10 @@ export type UltimateDef =
     readonly seconds: number;
     /** Strikes per second, each on a random body in range… */
     readonly rate: number;
-    /** …for this multiple of the starting weapon's hit. */
+    /** …for this multiple of the starting weapon's hit… */
     readonly damage: number;
+    /** …or this share of the body's Max HP, if more (S3). Never a boss's. */
+    readonly floor: number;
   }
   | {
     readonly id: 'overclock';
@@ -428,8 +437,26 @@ export interface BossPhase {
   /** What the phase does, in one line: shown when it begins (§4.3). */
   readonly line: string;
   readonly patterns: readonly BossPattern[];
-  /** Armour from this phase on, as a multiple of the region's wave-20 HP: plates breaking away (Forgeheart). */
+  /** Armour from this phase on, as a multiple of the region's wave-20 HP. */
   readonly armor?: number;
+  /** Plates it wears from this phase on (S2): the first phase hangs them, later ones crack the extra away. */
+  readonly plates?: number;
+}
+
+/**
+ * A boss's breakable plates (S2, Forgeheart): bodies hung before it, each
+ * with its own share of HP and heavy armour, so big hits strip them. While
+ * any stands, the boss takes only `guard` of a hit.
+ */
+export interface BossPlates {
+  /** Each plate's HP, as a share of the boss's. */
+  readonly hp: number;
+  /** Each plate's armour, as a multiple of the region's wave-20 HP. */
+  readonly armor: number;
+  /** The share of a hit the boss takes while a plate stands. */
+  readonly guard: number;
+  /** Radius of a plate's body. */
+  readonly radius: number;
 }
 
 /** A region's boss (§4.3, §11.1): wave 20. */
@@ -453,6 +480,8 @@ export interface BossDef extends ContentEntry {
   readonly mass: number;
   /** Phases in order; the first has `below: 1`. */
   readonly phases: readonly BossPhase[];
+  /** Breakable plates, if it wears any (a phase's `plates` says how many). */
+  readonly plates?: BossPlates;
   /** Its first kill opens a relic slot (§11.1). */
   readonly relicSlot: boolean;
   /** Its first kill ends Act 1 (§7.1): the ending plays on the Map. */
@@ -557,6 +586,8 @@ export interface WeaponDef extends ContentEntry {
   readonly counters: readonly EnemyId[];
   /** What blunts it: the scorer counts these against it where they walk. */
   readonly weakAgainst?: readonly EnemyId[];
+  /** Its shots hit this many times harder on a body inside a third of range (Scattershot's point-blank, S5). */
+  readonly pointBlank?: number;
   /** Level 1. */
   readonly base: WeaponParams;
   /** Levels 2–5, in order. */
@@ -573,8 +604,10 @@ export type PassiveId =
 export interface PassiveDef extends ContentEntry {
   readonly id: PassiveId;
   readonly perLevel: readonly StatMod[];
-  /** Added once more at the last level (Velocity's pierce). */
-  readonly atMax?: readonly StatMod[];
+  /** Added once on reaching each of these levels (Velocity's pierce at 3 and 5, S5). */
+  readonly atLevels?: readonly { readonly level: number; readonly mods: readonly StatMod[] }[];
+  /** Added once more for every wave reached while it is held, `level` times over (Greed's hoard, S5). */
+  readonly perWave?: readonly StatMod[];
   /**
    * The pool grows with unlocks (§4.5): a passive with this joins the draft
    * once that weapon is in it. Without it, the passive is there from the start.

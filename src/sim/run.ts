@@ -91,6 +91,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     priority: config.priority ? [...config.priority] : null,
     behaviours: { ...config.behaviours },
     rerolls: owned('reroll'),
+    swap: owned('specialist') > 0,
     revives: owned('second-wind'),
     enemies: [],
     projectiles: [],
@@ -99,6 +100,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     seen: [],
     kills: 0,
     killsBy: {},
+    damageBy: {},
     rng: root.state,
     streams: {
       waves: root.split('waves').state,

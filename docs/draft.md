@@ -27,7 +27,7 @@ and Gatekeeper's Seal start a run above level 1, each level a banked draft.
 partial Fisher–Yates on the `draft` stream, padded with **fallback** cards
 (heal 30%, a pinch of shards) when nothing else is left. The hand is
 `BALANCE.draft.choices` (3), plus Choice and Foresight and Jackpot, less
-Hoarder and Scarcity, clamped to 2–6. Past four cards the panel wraps into
+Scarcity, clamped to 2–6. Past four cards the panel wraps into
 two rows of three.
 
 The profile's **first draft** is authored (`meta/runConfig.ts`): one card
@@ -44,7 +44,7 @@ current strength:
 
 | Term | What it values |
 |---|---|
-| offence | DPS gain, from the same armed numbers the sim fires |
+| offence | DPS gain: `damageDps` (fitted to the sim, T2) through the wave's armour and the weapon's weaknesses, times its control's `utility` |
 | defence | survival gain, weighted by how much danger the tower is in |
 | counters | a new weapon that answers what walks in this region, less what blunts it there (`weakAgainst`) |
 | recipes | a step toward a *known* evolution (unknown ones are found by chance) |
@@ -56,6 +56,16 @@ bottom row.
 
 The Windfall fallback pays three of this wave's wave pays (at least 10),
 through the shard multiplier, so it keeps pace with the region.
+
+`damageDps` is checked against the sim by `npm run calibrate` (T2): each
+weapon at levels 1, 3 and 5 and evolved, on a fixed frontier-like crowd
+(eight bodies in loose pairs, refilled as they fall); it fails past 25%
+drift (`tests/calibration.test.ts`). Its constants are fitted there, not
+by hand. Greed is valued at what it will be over the rest of a typical run.
+
+**Specialist** (S4): until its first weapon card, its one slot may be
+swapped. A new weapon on offer takes the starting weapon's place at its
+level (`run.swap`; the card reads "Swap weapon"); any weapon card locks it.
 
 The suggested card is highlighted, and taken when the timer runs out. The
 same scorer drives every bot in `tools/`, so a better bot is better idle

@@ -87,7 +87,12 @@ export const references: LintRule = (tables) => {
  */
 export const levels: LintRule = (tables) => {
   const out: LintIssue[] = [];
+  const patterns = new Map<string, string>();
   for (const w of (tables.weapons as readonly WeaponDef[] | undefined) ?? []) {
+    // T1: a hit is credited to the weapon its pattern names.
+    const twin = patterns.get(w.pattern);
+    if (twin) out.push({ table: 'weapons', id: w.id, problem: `shares pattern "${w.pattern}" with ${twin}` });
+    patterns.set(w.pattern, w.id);
     if (w.steps.length !== BALANCE.maxLevel - 1) {
       out.push({ table: 'weapons', id: w.id, problem: `has ${w.steps.length} level steps (want ${BALANCE.maxLevel - 1})` });
     }

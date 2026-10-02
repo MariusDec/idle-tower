@@ -12,8 +12,9 @@ export const FRAMES: readonly FrameDef[] = [
     ultimate: {
       id: 'nova',
       name: 'Nova',
-      text: '600% damage to every enemy in range, and throws them back.',
+      text: '600% damage, at least 40% of their health, to all in range; throws them back.',
       damage: 6,
+      floor: 0.4,
       knockback: 160,
     },
     unlock: { kind: 'start' },
@@ -47,10 +48,11 @@ export const FRAMES: readonly FrameDef[] = [
     ultimate: {
       id: 'tempest',
       name: 'Tempest',
-      text: 'A six-second storm strikes random enemies in range.',
+      text: 'A six-second storm strikes random enemies in range, each for at least 15% health.',
       seconds: 6,
       rate: 8,
       damage: 3,
+      floor: 0.15,
     },
     unlock: { kind: 'boss', boss: 'forgeheart' },
   },

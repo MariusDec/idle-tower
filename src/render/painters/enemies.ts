@@ -96,8 +96,8 @@ export class EnemyPainter {
   draw(ctx: CanvasRenderingContext2D, enemies: readonly Enemy[], alpha: number, tick: number, simTime: number, time: number): void {
     drawChorusLinks(ctx, enemies, alpha, time);
     for (const e of enemies) {
-      // Bosses and the Hollow King's court have their own painter (`bosses.ts`).
-      if (!e.alive || e.boss || e.court) continue;
+      // Bosses, the Hollow King's court and Forgeheart's plates have their own painter (`bosses.ts`).
+      if (!e.alive || e.boss || e.court || e.plate) continue;
       const x = e.px + (e.x - e.px) * alpha;
       const g = GAIT[e.type];
       if (e.under) {

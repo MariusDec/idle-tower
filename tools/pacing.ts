@@ -47,6 +47,7 @@ import { playRun } from './play';
 import { shop } from './shop';
 import { CHECKIN_EVERY, SESSION, farmRatio, runIdle } from './idle';
 import { runAct2, type Act2Report } from './act2';
+import { IN_WORKER, parallel, workerJobs } from './parallel';
 
 /** Wall seconds between runs: the results screen, plus shopping when there is shopping. */
 const BETWEEN_RUNS = { idle: 6, shopping: 15 };
@@ -332,10 +333,15 @@ export function idleVerdict(seed: number, runsPerPolicy = 6, activeHours = 3): I
   return { idle: idle.bossKills[FINALE] ?? null, bossKills: idle.bossKills, ratios };
 }
 
-function idleMain(seeds: number, activeHours: number): void {
+/** Each seed's job, run in its own worker (`tools/parallel.ts`). */
+const JOBS = { pacing: runPacing, idle: idleVerdict, act2: act2Verdict };
+const seedsOf = (n: number): number[] => Array.from({ length: n }, (_, k) => k + 1);
+const runSeeds = <T>(name: keyof typeof JOBS, argLists: unknown[][]): Promise<T[]> => parallel<T>(process.argv[1], name, argLists);
+
+async function idleMain(seeds: number, activeHours: number): Promise<void> {
   const days = (t: number | null | undefined): string => (t == null ? 'never' : `${(t / 86400).toFixed(1)} d`);
   console.log(`idle · ${seeds} profiles · check-ins every ${CHECKIN_EVERY / 3600} h, ${SESSION / 60} min each`);
-  const verdicts = Array.from({ length: seeds }, (_, k) => idleVerdict(k + 1, 6, activeHours));
+  const verdicts = await runSeeds<IdleVerdict>('idle', seedsOf(seeds).map((k) => [k, 6, activeHours]));
   for (const [k, v] of verdicts.entries()) {
     const bosses = BOSSES.map((b) => `${b.name.replace(/^The /, '')} ${days(v.bossKills[b.id])}`).join(' · ');
     console.log(`  seed ${k + 1}: ${bosses}`);
@@ -382,10 +388,10 @@ export function medianHeat(verdicts: readonly Act2Verdict[], h: number): number 
   return Number.isFinite(m) ? m : null;
 }
 
-function act2Main(seeds: number, hours: number): void {
+async function act2Main(seeds: number, hours: number): Promise<void> {
   const fmt = (t: number | null | undefined): string => (t == null ? 'never' : formatDuration(t));
   console.log(`act 2 · ${hours} h after the Blight · ${seeds} profiles`);
-  const verdicts = Array.from({ length: seeds }, (_, k) => act2Verdict(k + 1, hours));
+  const verdicts = await runSeeds<Act2Verdict>('act2', seedsOf(seeds).map((k) => [k, hours]));
   for (const [k, v] of verdicts.entries()) {
     const r = v.report;
     if (!r) {
@@ -410,21 +416,21 @@ function act2Main(seeds: number, hours: number): void {
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const hours = Number(arg('hours', '1'));
   const seed = Number(arg('seed', '1'));
   const seeds = Number(arg('seeds', '0'));
   if (process.argv.includes('--act2')) {
-    act2Main(Math.max(1, seeds || 1), hours);
+    await act2Main(Math.max(1, seeds || 1), hours);
     return;
   }
   if (process.argv.includes('--idle')) {
     // I5's later checkpoints need the active bot to get there: --hours 12.
-    idleMain(Math.max(1, seeds || 1), Math.max(3, hours));
+    await idleMain(Math.max(1, seeds || 1), Math.max(3, hours));
     return;
   }
   if (seeds > 0) {
-    const reports = Array.from({ length: seeds }, (_, i) => runPacing(hours, i + 1));
+    const reports = await runSeeds<PacingReport>('pacing', seedsOf(seeds).map((k) => [hours, k]));
     const count = (f: (r: PacingReport) => boolean): string => `${reports.filter(f).length}/${seeds}`;
     const w20 = reports.map((r) => (r.firstWave20 === null ? 'never' : formatDuration(r.firstWave20)));
     const median = medianWave20(reports);
@@ -482,5 +488,7 @@ function main(): void {
   }
 }
 
-// Only when run as the script, so tests can import `runPacing`.
-if (process.argv[1]?.includes('pacing')) main();
+// Only when run as the script, so tests can import `runPacing`; in a seed's
+// worker, only that seed's job.
+if (IN_WORKER) workerJobs(JOBS);
+else if (process.argv[1]?.includes('pacing')) void main();

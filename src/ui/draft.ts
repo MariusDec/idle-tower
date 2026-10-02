@@ -22,16 +22,20 @@ export interface DraftView {
   seen: (key: string) => boolean;
   /** Rerolls left this run; the button shows only when there are some. */
   rerolls: number;
+  /** Specialist's one weapon while its slot may still be swapped (S4); null otherwise. */
+  swapFor?: string | null;
 }
 
 /** The first number-ish token in a card line, highlighted (§10.1). */
 const KEY_NUMBER = /[+×]?\d+(?:\.\d+)?%?(?: s\b)?/;
 
-/** The card's content entry and its one line for the level it leads to. */
-function describe(card: Card): { entry: ContentEntry; line: string; kind: string } {
+/** The card's content entry and its one line for the level it leads to; `swapFor`, see `DraftView`. */
+function describe(card: Card, swapFor: string | null = null): { entry: ContentEntry; line: string; kind: string } {
   switch (card.kind) {
     case 'weapon': {
       const def = WEAPON_BY_ID[card.id];
+      // Specialist (S4): a new weapon takes the carried one's place, at its level.
+      if (swapFor && swapFor !== card.id) return { entry: def, line: def.text, kind: 'Swap weapon' };
       return { entry: def, line: card.level === 1 ? def.text : def.steps[card.level - 2].text, kind: 'Weapon' };
     }
     case 'passive':
@@ -162,7 +166,7 @@ export class DraftPanel {
     setStyle(this.timerFill, 'transform', 'scaleX(1)');
     this.reroll.hidden = view.rerolls <= 0 || !view.timed;
     this.reroll.textContent = `Reroll · ${view.rerolls}`;
-    this.row.replaceChildren(...view.cards.map((c, i) => this.card(c, i, i === view.suggested, !view.seen(cardKey(c)))));
+    this.row.replaceChildren(...view.cards.map((c, i) => this.card(c, i, i === view.suggested, !view.seen(cardKey(c)), view.swapFor ?? null)));
     // Past four cards (Choice, Foresight, Jackpot), the hand wraps into rows of three.
     toggleClass(this.row, 'is-many', view.cards.length > 4);
     this.root.hidden = false;
@@ -181,8 +185,8 @@ export class DraftPanel {
     return this.remaining === 0;
   }
 
-  private card(card: Card, index: number, suggested: boolean, isNew: boolean): HTMLElement {
-    const { entry, line, kind } = describe(card);
+  private card(card: Card, index: number, suggested: boolean, isNew: boolean, swapFor: string | null): HTMLElement {
+    const { entry, line, kind } = describe(card, swapFor);
     const el = document.createElement('button');
     el.type = 'button';
     el.className = `draft-card draft-card-${card.kind}${suggested ? ' is-suggested' : ''}`;
@@ -218,7 +222,8 @@ export class DraftPanel {
     if (kind) {
       const k = document.createElement('p');
       k.className = 'draft-card-kind';
-      k.textContent = 'level' in card && card.level === 1 ? `New ${kind.toLowerCase()}` : kind;
+      const fresh = 'level' in card && card.level === 1 && (kind === 'Weapon' || kind === 'Passive');
+      k.textContent = fresh ? `New ${kind.toLowerCase()}` : kind;
       el.appendChild(k);
     }
 

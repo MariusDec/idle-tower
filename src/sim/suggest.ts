@@ -1,11 +1,14 @@
 import { BALANCE } from '../content/balance';
 import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../content/evolutions';
+import { ENEMY_BY_ID } from '../content/enemies';
+import { PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
-import type { PassiveId, WeaponId } from '../content/types';
+import type { EnemyId, PassiveId, WeaponId } from '../content/types';
 import type { Card, RunState, TowerStats, WeaponState } from './state';
 import { allMods, resolveStats } from './stats';
 import { armed, evolveAt } from './systems/arms';
-import { runRegion, waveDamage } from './systems/waves';
+import { landedShare } from './systems/damage';
+import { localWave, runRegion, waveDamage, waveHp } from './systems/waves';
 
 /**
  * The draft scorer (§4.5, §13). One scorer powers both the card the game
@@ -26,20 +29,35 @@ import { runRegion, waveDamage } from './systems/waves';
  * (`tests/arsenal.test.ts`) keep them honest.
  */
 
-/** How much of a cone's pellets land, on average, and how much a leap is worth. */
-const CONE_HIT_RATE = 0.55;
-const CHAIN_LEAP_VALUE = 0.7;
+/*
+ * The damage constants below are fitted to the sim (T2: `npm run calibrate`
+ * measures each weapon on a frontier-like crowd and fails past 25% drift).
+ */
+/** How much of a cone's pellets land, on average; and a Dragonbreath burn's worth, as a share of its full burn. */
+const CONE_HIT_RATE = 0.95;
+/** The share of a cone's pellets that land point-blank (S5): it fires at the nearest body. */
+const CONE_CLOSE_SHARE = 0.6;
+const DRAGON_BURN_SHARE = 0.02;
+/** Each leap of a chain is this much likelier to find no one than the last: fields are thin. */
+const CHAIN_FADE = 0.55;
+/** A homing bolt's pierce finds another body this often. */
+const HOMING_PIERCE_VALUE = 0.9;
 /** Bodies a pulse catches, on average, per 100 units of radius; and what its slow is worth. */
-const PULSE_BODIES_PER_100 = 1.4;
+const PULSE_BODIES_PER_100 = 1;
 const SLOW_VALUE = 1;
-/** Bodies a shell's blast catches, beyond the one it is aimed at, per unit of radius. */
-const LOB_BODIES_PER_UNIT = 1 / 40;
-/** Bodies in the blades' band at once, per unit of blade width, beyond the first. */
-const ORBIT_BODIES_PER_UNIT = 1 / 14;
+/** Bodies a shell's blast catches, beyond the one it is aimed at, per unit of radius; and a bomblet's share of a body. */
+const LOB_BODIES_PER_UNIT = 1 / 60;
+const BOMBLET_HIT_RATE = 0.2;
+/** Bodies in the blades' band at once, per unit of blade width, beyond the first; and what Halo's sweep adds. */
+const ORBIT_BODIES_PER_UNIT = 1 / 20;
+const HALO_VALUE = 0.88;
 /** Seconds a beam holds one target, on average: how hot it runs. */
 const BEAM_HOLD = 3;
-/** A beam that burns through its line catches this many more. */
-const BEAM_PIERCE_VALUE = 0.8;
+/** A beam that burns through its line catches this many more; Judgment's forks, per split. */
+const BEAM_PIERCE_VALUE = 0.1;
+const JUDGMENT_SPLIT_VALUE = 0.07;
+/** Hive's drones, called by kills: what they add to the swarm's damage. */
+const HIVE_VALUE = 1.9;
 /** What a freeze and its shatter are worth over a slow (Absolute Zero). */
 const FREEZE_VALUE = 0.6;
 /** Value of +XP, of a shard windfall and of +shards, in "fraction of build" units. */
@@ -48,13 +66,22 @@ const SHARD_VALUE = 0.01;
 const GREED_VALUE = 0.15;
 /** Projectile speed lands more of what misses; a little. */
 const SPEED_VALUE = 0.1;
-/** Bodies a crescent cuts, on average, on each of its two passes. */
-const CRESCENT_BODIES = 1.3;
+/** Bodies the first crescent of a throw cuts on each of its two passes, and each further one. */
+const CRESCENT_BODIES = 2.2;
+const CRESCENT_EXTRA = 0.8;
 /** A rune that bursts on one body catches this many more per unit of radius; and how many laid runes burst before they fade. */
 const RUNE_BODIES_PER_UNIT = 1 / 45;
 const RUNE_TRIP_RATE = 0.8;
-/** Bodies in a slug's line, on average, beyond the one it is aimed at, per unit of its width. */
-const RAIL_BODIES_PER_UNIT = 1 / 18;
+/** Bodies in a slug's line, on average, and more per unit of its width; a second slug finds this share fresh. */
+const RAIL_BODIES = 1.9;
+const RAIL_BODIES_PER_UNIT = 1 / 40;
+const RAIL_EXTRA_SLUG = 0.6;
+/** Midas Lance's mark: the share of its vulnerability that lands before the gilded body falls. */
+const MIDAS_VALUE = 0.1;
+/** Waves a typical run lasts, overtime included: how long a passive that grows with the waves has to grow. */
+const RUN_WAVES = 24;
+/** What a weapon lands on a body it is weak against, as a share of its hit. */
+const WEAK_LANDED = 0.25;
 /** A new weapon that answers the region, per share of its enemy pool it counters. */
 const COUNTER_VALUE = 0.35;
 /** A new weapon into an empty slot: another line of fire, worth this much beyond its DPS. */
@@ -64,71 +91,78 @@ const RECIPE_VALUE = 0.6;
 /** An evolution on offer: its spike, and this much for the new pattern. */
 const EVOLUTION_VALUE = 1;
 
-/** Rough sustained DPS of one weapon: an estimate, not the sim. */
-export function weaponDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stats: TowerStats): number {
+/**
+ * What a hit meets this wave (S2): each type in the region's pool by now,
+ * its armour, and its weight as a share of the wave's HP. Armour lives on
+ * the big bodies, so it is weighted by where the HP is, not by head count.
+ */
+export type Foes = readonly { readonly enemy: EnemyId; readonly armor: number; readonly share: number }[];
+
+export function foesOf(run: RunState): Foes {
+  const region = runRegion(run);
+  const wave = Math.max(1, run.wave);
+  const hp = waveHp(region, wave);
+  const live = region.pool.filter((p) => p.from <= Math.max(1, localWave(region, wave)));
+  const total = live.reduce((a, p) => a + p.weight * ENEMY_BY_ID[p.enemy].hp, 0) || 1;
+  return live.map((p) => ({ enemy: p.enemy, armor: hp * ENEMY_BY_ID[p.enemy].armor, share: (p.weight * ENEMY_BY_ID[p.enemy].hp) / total }));
+}
+
+/**
+ * The share of a hit of `raw` from weapon `id` that lands on `foes`: through
+ * their armour, and only `WEAK_LANDED` of it on a type the weapon is weak
+ * against (a shield turns a shot from the front). All of it with no foes.
+ */
+export function landedOn(foes: Foes | undefined, raw: number, id?: WeaponId): number {
+  if (!foes) return 1;
+  const weak = id ? WEAPON_BY_ID[id].weakAgainst ?? [] : [];
+  let out = 0;
+  for (const f of foes) out += f.share * landedShare(raw, f.armor) * (weak.includes(f.enemy) ? WEAK_LANDED : 1);
+  return out;
+}
+
+/**
+ * Rough sustained value of one weapon, in DPS: its damage (`damageDps`)
+ * times what its control is worth (`utility`). An estimate, not the sim.
+ * With `foes`, what lands through their armour (S2): a weapon of small hits
+ * is worth less where the bodies are plated.
+ */
+export function weaponDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stats: TowerStats, foes?: Foes): number {
+  return damageDps(w, stats, foes) * utility(w, stats);
+}
+
+/** How hot a beam runs on average over its hold. */
+function beamHeat(p: { rampCap: number; ramp: number }): number {
+  return (1 + Math.min(p.rampCap, 1 + p.ramp * BEAM_HOLD)) / 2;
+}
+
+/**
+ * What a weapon's control is worth on top of its damage, as a multiplier:
+ * knockback, stuns, slows and freezes, and the parts of an evolution that
+ * pay off in kills or at the wall rather than in damage (Hive's drones,
+ * Bulwark Runes, Lifebloom's mending).
+ */
+export function utility(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stats: TowerStats): number {
   const p = armed(stats, w);
-  const E = BALANCE.evolutions;
-  const crit = 1 + stats.critChance * (stats.critMult - 1);
-  const perAttack = p.damage * stats.damageMult * crit;
-  const rate = p.fireRate * stats.fireRateMult;
   const pattern = WEAPON_BY_ID[w.id].pattern;
   switch (pattern) {
-    case 'homing': {
-      const seekers = w.evolved ? 1 + stats.critChance * E['seeker-swarm'].seekers * E['seeker-swarm'].seekerDamage : 1;
-      return perAttack * rate * p.count * (1 + 0.5 * p.pierce) * seekers;
-    }
-    case 'cone': {
-      const D = E.dragonbreath;
-      const burn = w.evolved ? 1 + D.burn * D.burnSeconds * stats.durationMult * 0.5 : 1;
-      return perAttack * rate * p.count * CONE_HIT_RATE * (1 + p.knockback / 100) * (1 + 0.5 * p.pierce) * burn;
-    }
-    case 'chain': {
-      const storms = w.evolved ? 1 + E['storm-crown'].storms * 0.6 : 1;
-      return perAttack * rate * (1 + (p.jumps - 1) * CHAIN_LEAP_VALUE) * (1 + p.stun * 2) * storms;
-    }
-    case 'pulse': {
-      const freeze = w.evolved ? 1 + FREEZE_VALUE : 1;
-      return perAttack * rate * (p.radius / 100) * PULSE_BODIES_PER_100 * (1 + p.slow * SLOW_VALUE) * freeze;
-    }
-    case 'lob': {
-      const bodies = 1 + p.radius * LOB_BODIES_PER_UNIT;
-      const W = BALANCE.weapons;
-      const bomblets = 1 + p.bomblets * W.bombletDamage * 0.5;
-      const M = E.meteorfall;
-      const meteors = w.evolved ? (perAttack * M.meteor * (1 + M.radius * LOB_BODIES_PER_UNIT)) / M.every : 0;
-      return perAttack * rate * p.count * bodies * bomblets + meteors;
-    }
-    case 'beam': {
-      const heat = (1 + Math.min(p.rampCap, 1 + p.ramp * BEAM_HOLD)) / 2;
-      const judgment = w.evolved ? 1 + E.judgment.splits * 0.5 : 1;
-      return perAttack * rate * heat * (p.pierce > 0 ? 1 + BEAM_PIERCE_VALUE : 1) * judgment;
-    }
-    case 'orbit': {
-      const passes = (p.count * p.spin * stats.fireRateMult) / (Math.PI * 2);
-      const bodies = 1 + p.blade * ORBIT_BODIES_PER_UNIT;
-      // Halo sweeps the whole field instead of the ring at the wall.
-      return perAttack * passes * bodies * (w.evolved ? 2 : 1);
-    }
-    case 'drone': {
-      const hive = w.evolved ? 1.4 : 1;
-      return perAttack * rate * p.count * (1 + 0.5 * p.pierce) * hive;
-    }
-    case 'boomerang': {
-      const ring = w.evolved ? 1 + (E['crescent-storm'].ring / Math.max(1, p.count)) * 0.5 : 1;
-      return perAttack * rate * p.count * 2 * CRESCENT_BODIES * ring;
-    }
-    case 'mine': {
-      const walls = w.evolved ? 1.4 : 1;
-      return perAttack * rate * (1 + p.radius * RUNE_BODIES_PER_UNIT) * RUNE_TRIP_RATE * (1 + p.stun) * walls;
-    }
-    case 'tether': {
-      const bloom = w.evolved ? 1.3 : 1;
-      return perAttack * rate * p.count * bloom;
-    }
-    case 'rail': {
-      const midas = w.evolved ? 1 + E['midas-lance'].vulnerable : 1;
-      return perAttack * rate * p.count * (1 + p.radius * RAIL_BODIES_PER_UNIT) * midas;
-    }
+    case 'cone':
+      return 1 + p.knockback / 100;
+    case 'chain':
+      return 1 + p.stun * 2;
+    case 'pulse':
+      return (1 + p.slow * SLOW_VALUE) * (w.evolved ? 1 + FREEZE_VALUE : 1);
+    case 'mine':
+      return (1 + p.stun) * (w.evolved ? 1.4 : 1);
+    case 'tether':
+      return w.evolved ? 1.3 : 1;
+    case 'homing':
+    case 'drone':
+    case 'lob':
+    case 'beam':
+    case 'orbit':
+    case 'boomerang':
+    case 'rail':
+      return 1;
     default: {
       const exhaustive: never = pattern;
       return exhaustive;
@@ -136,9 +170,85 @@ export function weaponDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stat
   }
 }
 
-export function buildDps(weapons: readonly Pick<WeaponState, 'id' | 'level' | 'evolved'>[], stats: TowerStats): number {
+/**
+ * The damage one weapon lands per second, on average, over a mid-wave crowd
+ * (T2: `npm run calibrate` checks it against the sim's own tally). With
+ * `foes`, through their armour.
+ */
+export function damageDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stats: TowerStats, foes?: Foes): number {
+  const p = armed(stats, w);
+  const E = BALANCE.evolutions;
+  const crit = 1 + stats.critChance * (stats.critMult - 1);
+  const perAttack = p.damage * stats.damageMult * crit;
+  const rate = p.fireRate * stats.fireRateMult;
+  const pattern = WEAPON_BY_ID[w.id].pattern;
+  // A beam's hits grow with its heat: the armour meets the hot hit.
+  const landed = landedOn(foes, pattern === 'beam' ? perAttack * beamHeat(p) : perAttack, w.id);
+  return landed * rawDamage();
+
+  function rawDamage(): number {
+    switch (pattern) {
+      case 'homing': {
+        const seekers = w.evolved ? 1 + stats.critChance * E['seeker-swarm'].seekers * E['seeker-swarm'].seekerDamage : 1;
+        return perAttack * rate * p.count * (1 + HOMING_PIERCE_VALUE * p.pierce) * seekers;
+      }
+      case 'cone': {
+        const D = E.dragonbreath;
+        const burn = w.evolved ? 1 + D.burn * D.burnSeconds * stats.durationMult * DRAGON_BURN_SHARE : 1;
+        const close = WEAPON_BY_ID[w.id].pointBlank ?? 1;
+        return perAttack * rate * p.count * CONE_HIT_RATE * (1 + CONE_CLOSE_SHARE * (close - 1)) * (1 + 0.5 * p.pierce) * burn;
+      }
+      case 'chain': {
+        const storms = w.evolved ? 1 + E['storm-crown'].storms * 0.6 : 1;
+        // 1 + f + f² + …: each leap is likelier to find no one.
+        const bodies = (1 - Math.pow(CHAIN_FADE, p.jumps)) / (1 - CHAIN_FADE);
+        return perAttack * rate * bodies * storms;
+      }
+      case 'pulse':
+        return perAttack * rate * (p.radius / 100) * PULSE_BODIES_PER_100;
+      case 'lob': {
+        const bodies = 1 + p.radius * LOB_BODIES_PER_UNIT;
+        const bomblets = 1 + p.bomblets * BALANCE.weapons.bombletDamage * BOMBLET_HIT_RATE;
+        const M = E.meteorfall;
+        const meteors = w.evolved ? (perAttack * M.meteor * (1 + M.radius * LOB_BODIES_PER_UNIT)) / M.every : 0;
+        return perAttack * rate * p.count * bodies * bomblets + meteors;
+      }
+      case 'beam': {
+        const judgment = w.evolved ? 1 + E.judgment.splits * JUDGMENT_SPLIT_VALUE : 1;
+        return perAttack * rate * beamHeat(p) * (p.pierce > 0 ? 1 + BEAM_PIERCE_VALUE : 1) * judgment;
+      }
+      case 'orbit': {
+        const passes = (p.count * p.spin * stats.fireRateMult) / (Math.PI * 2);
+        const bodies = 1 + p.blade * ORBIT_BODIES_PER_UNIT;
+        // Halo sweeps the whole field instead of the ring at the wall.
+        return perAttack * passes * bodies * (w.evolved ? HALO_VALUE : 1);
+      }
+      case 'drone':
+        return perAttack * rate * p.count * (1 + HOMING_PIERCE_VALUE * p.pierce) * (w.evolved ? HIVE_VALUE : 1);
+      case 'boomerang': {
+        const ring = w.evolved ? 1 + (E['crescent-storm'].ring / Math.max(1, p.count)) * 0.5 : 1;
+        return perAttack * rate * 2 * (CRESCENT_BODIES + (p.count - 1) * CRESCENT_EXTRA) * ring;
+      }
+      case 'mine':
+        return perAttack * rate * (1 + p.radius * RUNE_BODIES_PER_UNIT) * RUNE_TRIP_RATE;
+      case 'tether':
+        return perAttack * rate * p.count;
+      case 'rail': {
+        const midas = w.evolved ? 1 + E['midas-lance'].vulnerable * MIDAS_VALUE : 1;
+        const slugs = 1 + (p.count - 1) * RAIL_EXTRA_SLUG;
+        return perAttack * rate * slugs * (RAIL_BODIES + p.radius * RAIL_BODIES_PER_UNIT) * midas;
+      }
+      default: {
+        const exhaustive: never = pattern;
+        return exhaustive;
+      }
+    }
+  }
+}
+
+export function buildDps(weapons: readonly Pick<WeaponState, 'id' | 'level' | 'evolved'>[], stats: TowerStats, foes?: Foes): number {
   let dps = 0;
-  for (const w of weapons) dps += weaponDps(w, stats);
+  for (const w of weapons) dps += weaponDps(w, stats, foes);
   return dps;
 }
 
@@ -185,15 +295,18 @@ function evolved(weapons: readonly WeaponState[], id: WeaponId): WeaponState[] {
 }
 
 export function scoreCard(run: RunState, card: Card): number {
-  const before = Math.max(1e-9, buildDps(run.weapons, run.stats));
+  const foes = foesOf(run);
+  const before = Math.max(1e-9, buildDps(run.weapons, run.stats, foes));
   switch (card.kind) {
     case 'weapon': {
       const owned = run.weapons.find((w) => w.id === card.id);
       const next = { id: card.id, level: card.level, evolved: owned?.evolved ?? false } as WeaponState;
-      const weapons = run.weapons.filter((w) => w.id !== card.id).concat(next);
-      let score = buildDps(weapons, run.stats) / before - 1;
+      // Specialist's swap (S4): the new weapon replaces the one it has.
+      const swap = !owned && run.swap;
+      const weapons = swap ? [next] : run.weapons.filter((w) => w.id !== card.id).concat(next);
+      let score = buildDps(weapons, run.stats, foes) / before - 1;
       if (!owned) {
-        score += counterShare(run, card.id) * COUNTER_VALUE + SLOT_VALUE;
+        score += counterShare(run, card.id) * COUNTER_VALUE + (swap ? 0 : SLOT_VALUE);
       } else if (!owned.evolved && knows(run, card.id) && run.passives.some((p) => p.id === EVOLUTION_OF[card.id].passive)) {
         // Each level toward an evolution whose partner is already owned.
         score += RECIPE_VALUE * (readiness(run, card.level) - readiness(run, owned.level));
@@ -201,9 +314,13 @@ export function scoreCard(run: RunState, card: Card): number {
       return score;
     }
     case 'passive': {
-      const passives = run.passives.filter((p) => p.id !== card.id).concat({ id: card.id, level: card.level });
+      // A passive that grows with the waves (Greed, S5) is worth what it will
+      // be on average over the rest of a typical run (D-11).
+      const owned = run.passives.find((p) => p.id === card.id);
+      const ahead = PASSIVE_BY_ID[card.id].perWave ? Math.max(0, RUN_WAVES - run.wave) / 2 : 0;
+      const passives = run.passives.filter((p) => p.id !== card.id).concat({ id: card.id, level: card.level, waves: (owned?.waves ?? 0) + ahead });
       const stats = resolveStats(allMods(run.mods, passives));
-      const offence = buildDps(run.weapons, stats) / before - 1;
+      const offence = buildDps(run.weapons, stats, foes) / before - 1;
       const hp = stats.maxHp / run.stats.maxHp - 1;
       // Ten seconds of regen, as a fraction of Max HP.
       const sustain = ((stats.regen / stats.maxHp) - (run.stats.regen / run.stats.maxHp)) * 10;
@@ -218,7 +335,7 @@ export function scoreCard(run: RunState, card: Card): number {
     }
     case 'evolution': {
       const id = EVOLUTION_BY_ID[card.id].weapon;
-      return buildDps(evolved(run.weapons, id), run.stats) / before - 1 + EVOLUTION_VALUE;
+      return buildDps(evolved(run.weapons, id), run.stats, foes) / before - 1 + EVOLUTION_VALUE;
     }
     case 'fallback': {
       const id = card.id;

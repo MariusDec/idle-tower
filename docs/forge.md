@@ -19,12 +19,21 @@ branches, paid in shards. Code: `meta/web.ts` (the rules of any web),
 A fresh Forge shows three nodes (§7.1). Node types:
 
 - **minor** (66): a stat step, several levels, costs ×1.7 a level
-  (`BALANCE.forge.levelGrowth`);
+  (`BALANCE.forge.levelGrowth`). In rings 4–6 (Q1, S1) the damage, attack
+  speed, Max HP, shard, XP and ultimate-charge minors are two levels of a
+  true multiplier (×1.07–×1.12), level 1 at three times the old first
+  level's price and level 2 ×3 again, so every late buy is a felt step;
+  range, area and duration stay percentages (they show on the field);
 - **notable** (49): one qualitative unlock (a weapon card, a slot, a
   behaviour, an automation);
-- **keystone** (4): a build-defining trade, ring 3;
-- **mastery** (5, Act 2): unlimited levels at +3% each, ×1.3 a level,
-  the idle-forever sink (§9).
+- **keystone** (4): a build-defining trade, ring 3: Glass Cannon (damage
+  ×1.8, Max HP and regen halved), Specialist (one weapon, the first one
+  picked, ×3 damage, evolves at 3), Hoarder (shards ×2, every enemy ×1.5
+  HP: a personal heat, B2), Fortress. `npm run arsenal -- --keystones`
+  sweeps each against none (T4);
+- **mastery** (5, Act 2): unlimited levels at ×1.03 each, compounding,
+  ×1.2 the cost a level: the idle-forever sink (§9; S1: the Abyss is
+  exponential, so its sink is too).
 
 Rings 1–2 are open from the start; ring 3 is sealed until the Gatekeeper
 falls (a few nodes until the Bog Mother), rings 4–6 by the Prism,

@@ -62,7 +62,13 @@ like.
 `sim/stats.ts` resolves about twenty keys (damage, attack speed, crit
 chance and multiplier, area, duration, range, projectile speed, pierce,
 Max HP, regen, armour, XP gain, shard gain, ultimate charge, …) as
-`(base + Σadd) × (1 + Σpct) × Πmult` from a list of `StatMod`s. The run
+`(base + Σadd) × (1 + Σpct_meta) × (1 + Σpct_run) × Πmult` from a list of
+`StatMod`s. The two percentage buckets (Q1, S1) keep a card's worth fixed:
+the run's passives write `bucket: 'run'`, everything brought into the run
+(Forge, stars, relics, frame, rule, pacts) the default `meta`, so Power is
++15% a level over a bare tower or a full Forge. A passive's `atLevels`
+add once at a level (Velocity's pierce at 3 and 5); its `perWave` grow
+with the waves it is held (`PassiveState.waves`, Greed). The run
 resolves once at start (Forge, frame, relics, stars, pacts, the region's
 rule) and again whenever a passive changes or an Abyss floor swaps its
 rule. `run.outerMods` keeps the part that never changes within a run.

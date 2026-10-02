@@ -80,8 +80,8 @@ export const BALANCE = {
     bounty: 3,
     /** Fortress (keystone): Thorns bite this many times harder, owned or not. */
     fortressThorns: 3,
-    /** Hoarder (keystone): cards taken from every draft. */
-    hoarderChoices: 1,
+    /** Hoarder (keystone, B2): every enemy's HP multiplies by this; a personal heat. */
+    hoarderHp: 1.5,
     /** Specialist (keystone): the one weapon evolves at this level instead. */
     specialistEvolveAt: 3,
     /** Rampart: a contact hit takes at most this fraction of Max HP. */
@@ -162,6 +162,8 @@ export const BALANCE = {
     crescentReturn: 1.3,
     /** A crescent's cutting reach beyond a body's radius. */
     crescentWidth: 14,
+    /** A weapon's point-blank bonus (S5) holds inside this share of the tower's range. */
+    pointBlankReach: 1 / 3,
     /** Rune Traps: seconds before a laid rune arms; how close a body must come; where it is laid, as a share of its mark's distance. */
     runeArm: 0.35,
     runeTrigger: 22,
@@ -375,10 +377,10 @@ export const BALANCE = {
   },
   damage: {
     /**
-     * The least of a hit that armour lets through. Without a floor, armour
-     * past a weapon's damage makes an enemy immortal instead of merely costly.
+     * The least of a hit that armour lets through: a backstop under the
+     * curve (S2), which only reaches it at armour ~19× the hit.
      */
-    minFraction: 0.15,
+    minFraction: 0.05,
   },
   waves: {
     /** Seconds before wave 1 starts spawning. */

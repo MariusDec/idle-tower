@@ -153,6 +153,10 @@ export interface Enemy {
   shade: boolean;
   /** One of the Hollow King's shades: the king's body id. Its hits land on him. */
   court: number;
+  /** One of Forgeheart's plates (S2): the boss's body id; 0 for anything else. */
+  plate: number;
+  /** A plate's place on its boss: its angle off the boss's line to the tower. */
+  slot: number;
   /** A Husk's shell: hits it still swallows whole (§9). */
   shell: number;
   /** Run time a Ram's charge ends; 0 when not charging. */
@@ -306,6 +310,8 @@ export interface BossState {
   facet: number;
   /** The body wearing the crown (the Hollow King's court); 0 before he splits. */
   crown: number;
+  /** Plates still standing on it (Forgeheart, S2): while any do, it takes its guard's share. */
+  plates: number;
   /** The tower's lowest HP fraction since it arrived (the Steady Hand feat). */
   minHp: number;
   /** Seconds from arrival to its fall; null while it stands. */
@@ -343,6 +349,8 @@ export interface WeaponState {
 export interface PassiveState {
   id: PassiveId;
   level: number;
+  /** Waves reached while it was held, for a passive that grows with them (Greed, S5). */
+  waves?: number;
 }
 
 /**
@@ -400,12 +408,19 @@ export interface WaveState {
 }
 
 /**
+ * Who a hit is credited to (T1): the weapon whose pattern dealt it, the
+ * ultimate, the wall's own answer (Thorns, Aegis), a burn, or a rule's
+ * extra (Overkill's carry, Stormcaller's leap, a shatter or a relic's burst).
+ */
+export type DamageBy = WeaponId | 'ult' | 'thorns' | 'burn' | 'rule';
+
+/**
  * What happened this step, for presentation. Not part of the run's identity:
  * excluded from the determinism hash and never read back by the sim.
  */
 export type SimEvent =
   | { kind: 'fire'; weapon: WeaponId; angle: number }
-  | { kind: 'hit'; x: number; y: number; amount: number; crit: boolean }
+  | { kind: 'hit'; x: number; y: number; amount: number; crit: boolean; by: DamageBy }
   /** A chain strike's path: tower, then each body, as flat x, y pairs. */
   | { kind: 'chain'; points: number[] }
   /** Judgment's forks: flat x1, y1, x2, y2 quads. */
@@ -435,6 +450,8 @@ export type SimEvent =
   | { kind: 'shot'; x: number; y: number }
   | { kind: 'bossArrive'; boss: BossId }
   | { kind: 'bossPhase'; boss: BossId; phase: number }
+  /** A plate falls from the boss (S2): struck off, or cracked away by a phase. */
+  | { kind: 'plateBreak'; x: number; y: number; radius: number }
   | { kind: 'windup'; x: number; y: number; seconds: number }
   | { kind: 'slam'; x: number; y: number }
   | { kind: 'stagger'; x: number; y: number }
@@ -562,6 +579,8 @@ export interface RunState {
   behaviours: Partial<Record<BehaviourId, number>>;
   /** Draft rerolls left this run (Fortune's Reroll). */
   rerolls: number;
+  /** Specialist (S4): its one slot may still be swapped for the first new weapon taken. */
+  swap: boolean;
   /** Second Winds left this run. */
   revives: number;
   enemies: Enemy[];
@@ -574,6 +593,8 @@ export interface RunState {
   kills: number;
   /** Kills by type this run, for the Bestiary's counts (§5.3). Bosses aren't counted here. */
   killsBy: Partial<Record<EnemyId, number>>;
+  /** Damage landed this run, after armour and short of overkill, by what dealt it (T1). */
+  damageBy: Partial<Record<DamageBy, number>>;
   rng: RngState;
   /** Named child-stream states, so each system's draws stay independent. */
   streams: Record<string, RngState>;

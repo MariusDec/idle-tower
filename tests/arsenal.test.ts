@@ -14,6 +14,8 @@ import { armed, newWeapon } from '../src/sim/systems/arms';
 import { bladeOrbit, damageEnemy, tickBurns, tickProjectiles, tickWeapons } from '../src/sim/systems/combat';
 import { applyCard, candidateCards, draftChoices, rollOffer } from '../src/sim/systems/draft';
 import { hurtTower } from '../src/sim/systems/tower';
+import { spawnEnemy, startWave } from '../src/sim/systems/waves';
+import { regionByIndex } from '../src/content/regions';
 import type { WeaponId } from '../src/content/types';
 import type { RunConfig, RunState, SimEvent } from '../src/sim/state';
 import { botInput } from '../tools/bot';
@@ -317,15 +319,38 @@ describe('evolutions (§4.4)', () => {
 });
 
 describe('keystones (§11.4)', () => {
-  it('Hoarder takes a card from every draft, never below the floor', () => {
-    expect(draftChoices(armory({ behaviours: { hoarder: 1 } }))).toBe(BALANCE.draft.choices - 1);
-    expect(draftChoices(armory({ behaviours: { hoarder: 5 } }))).toBe(BALANCE.draft.minChoices);
+  it('Hoarder (B2) leaves the draft alone, but every enemy is tougher', () => {
+    const plain = armory();
+    const hoard = armory({ behaviours: { hoarder: 1 } });
+    expect(draftChoices(hoard)).toBe(draftChoices(plain));
+    const region = regionByIndex(1);
+    const a = spawnEnemy(plain, region, 'grunt', 5, 300, 0);
+    const b = spawnEnemy(hoard, region, 'grunt', 5, 300, 0);
+    expect(b.maxHp).toBeCloseTo(a.maxHp * BALANCE.behaviours.hoarderHp);
   });
 
   it('Specialist leaves one weapon slot, whatever the Forge gave', () => {
     const p = newProfile(0);
     p.forge = { 'might-damage': 1, scattershot: 1, specialist: 1 };
     expect(buildRunConfig(p).weaponSlots).toBe(1);
+  });
+
+  it('Specialist (S4) chooses its weapon: the first new one swaps in at its level, then the slot locks', () => {
+    const run = armory({ behaviours: { specialist: 1 }, weaponSlots: 1 });
+    run.weapons = [newWeapon('arcane-bolt', 2)];
+    const offer = candidateCards(run).filter((c) => c.kind === 'weapon' && c.id !== 'arcane-bolt');
+    expect(offer.length).toBeGreaterThan(0);
+    expect(offer.every((c) => c.kind === 'weapon' && c.level === 2)).toBe(true);
+    applyCard(run, { kind: 'weapon', id: 'mortar', level: 2 });
+    expect(run.weapons.map((w) => [w.id, w.level])).toEqual([['mortar', 2]]);
+    expect(candidateCards(run).some((c) => c.kind === 'weapon' && c.id !== 'mortar')).toBe(false);
+  });
+
+  it('Specialist keeps its starting weapon once it takes a level of it', () => {
+    const run = armory({ behaviours: { specialist: 1 }, weaponSlots: 1 });
+    run.weapons = [newWeapon('arcane-bolt', 1)];
+    applyCard(run, { kind: 'weapon', id: 'arcane-bolt', level: 2 });
+    expect(candidateCards(run).some((c) => c.kind === 'weapon' && c.id !== 'arcane-bolt')).toBe(false);
   });
 
   it('Fortress bites back three times as hard, Thorns owned or not', () => {
@@ -338,12 +363,13 @@ describe('keystones (§11.4)', () => {
     expect(1e6 - b.hp).toBeCloseTo((1e6 - a.hp) * BALANCE.behaviours.fortressThorns);
   });
 
-  it('Glass Cannon halves Max HP and stops regeneration', () => {
+  it('Glass Cannon halves Max HP and regeneration (S4)', () => {
     const p = newProfile(0);
     p.forge = { 'glass-cannon': 1 };
     const run = createRun(buildRunConfig(p), 1);
+    const plain = createRun(buildRunConfig(newProfile(0)), 1);
     expect(run.stats.maxHp).toBeCloseTo(BALANCE.tower.maxHp / 2);
-    expect(run.stats.regen).toBe(0);
+    expect(run.stats.regen).toBeCloseTo(plain.stats.regen / 4);
   });
 });
 
@@ -355,12 +381,24 @@ describe('the pool grows with the Forge (§4.5)', () => {
     expect(buildRunConfig(p).pool).toContain('area');
   });
 
-  it('Velocity pierces at its last level', () => {
+  it('Velocity pierces +1 at level 3 and again at 5 (S5)', () => {
     const run = armory();
-    applyCard(run, { kind: 'passive', id: 'velocity', level: 1 });
-    expect(run.stats.pierce).toBe(0);
-    applyCard(run, { kind: 'passive', id: 'velocity', level: BALANCE.maxLevel });
-    expect(run.stats.pierce).toBe(1);
+    const pierceAt = (level: number): number => {
+      applyCard(run, { kind: 'passive', id: 'velocity', level });
+      return run.stats.pierce;
+    };
+    expect(pierceAt(1)).toBe(0);
+    expect(pierceAt(3)).toBe(1);
+    expect(pierceAt(5)).toBe(2);
+  });
+
+  it('Greed grows with every wave it is held (S5)', () => {
+    const run = armory();
+    applyCard(run, { kind: 'passive', id: 'greed', level: 1 });
+    const fresh = run.stats.shardMult;
+    const region = regionByIndex(1);
+    for (let n = 1; n <= 10; n++) startWave(run, region, n);
+    expect(run.stats.shardMult / fresh).toBeCloseTo(1 + 10 * 0.01 / 1.15, 2);
   });
 });
 

@@ -5,13 +5,16 @@ import { newProfile, type Profile } from '../src/meta/profile';
 import { SIM_DT } from '../src/app/loop';
 import { BALANCE } from '../src/content/balance';
 import { hashString } from '../src/core/rng';
-import { resolveStat, resolveStats } from '../src/sim/stats';
+import { allMods, passiveMods, resolveStat, resolveStats } from '../src/sim/stats';
+import { FORGE } from '../src/content/forge';
 import {
   applyCard, candidateCards, cardKey, gainXp, pickCard, tickDraft, xpToNext,
 } from '../src/sim/systems/draft';
 import { castUltimate } from '../src/sim/systems/ultimate';
 import type { Card, RunState } from '../src/sim/state';
 import { botInput, type Policy } from '../tools/bot';
+import { FRAME_BY_ID } from '../src/content/frames';
+import { body } from './helpers/body';
 
 /**
  * Past the first-draft lesson, and owning Arsenal's ring 1 (weapon slot 2,
@@ -57,6 +60,29 @@ describe('stat resolver (§12.3)', () => {
       { key: 'maxHp', mult: 99 },
     ]);
     expect(r.value).toBeCloseTo((1 + 1) * 1.3 * 2);
+  });
+
+  it('a Power card is worth at least +10% damage with the whole Forge owned (S1)', () => {
+    const full = newProfile(0);
+    for (const n of FORGE) if (n.type !== 'keystone') full.forge[n.id] = n.type === 'mastery' ? 20 : n.maxLevel;
+    const mods = buildRunConfig(full).mods;
+    const without = resolveStats(allMods(mods, [])).damageMult;
+    const withPower = resolveStats(allMods(mods, [{ id: 'power', level: 1 }])).damageMult;
+    expect(withPower / without).toBeGreaterThanOrEqual(1.1);
+  });
+
+  it("keeps the run's passives in their own bucket (S1)", () => {
+    const r = resolveStat('damage', [
+      { key: 'damage', pct: 0.5 },
+      { key: 'damage', pct: 0.5 },
+      { key: 'damage', pct: 0.25, bucket: 'run' },
+    ]);
+    expect(r.value).toBeCloseTo(2 * 1.25);
+    // A Power level is worth the same over a bare tower as over a full Forge.
+    const power = passiveMods('power', 1);
+    const bare = resolveStat('damage', []).value;
+    const full = resolveStat('damage', [{ key: 'damage', pct: 5 }]).value;
+    expect(resolveStat('damage', power).value / bare).toBeCloseTo(resolveStat('damage', [{ key: 'damage', pct: 5 }, ...power]).value / full);
   });
 
   it('regen is a fraction of Max HP', () => {
@@ -190,6 +216,21 @@ describe('the ultimate (§4.4)', () => {
       expect(e.hp).toBeLessThan(before[i].hp);
       expect(Math.hypot(e.x, e.y)).toBeGreaterThan(before[i].d);
     });
+  });
+});
+
+describe('the ultimate keeps pace with the region (S3)', () => {
+  it("a Nova takes at least its floor of a body's Max HP, and only its hit from a boss", () => {
+    const run = fresh();
+    const big = body(run, { hp: 1e9, maxHp: 1e9 });
+    const boss = body(run, { hp: 1e9, maxHp: 1e9, boss: 'gatekeeper', y: 40 });
+    run.ult.charge = 1;
+    castUltimate(run);
+    const nova = FRAME_BY_ID.arcanist.ultimate;
+    if (nova.id !== 'nova') throw new Error('the Arcanist casts Nova');
+    expect(1e9 - big.hp).toBeCloseTo(1e9 * nova.floor);
+    expect(1e9 - boss.hp).toBeLessThan(1e6);
+    expect(1e9 - boss.hp).toBeGreaterThan(0);
   });
 });
 

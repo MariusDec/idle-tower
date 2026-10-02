@@ -23,7 +23,7 @@ P9 deleted the `legacy/` copy.
 | `src/audio/` | `synth.ts` (Web Audio, master/sfx/music buses), `cues.ts` (sim events → sounds), `music.ts` (generative pad by mood and region) | `sim/` types |
 | `src/ui/` | DOM: HUD (with the boss bar), draft, results, toasts, `hub/` (home, the Forge web, the Map, the Collection, Feats, the Tactician's editor, Stars, Pacts), `settings.ts` (options and Stats), modal, icon helper | anything but `sim/` internals |
 | `src/platform/` | Capacitor shell hooks | — |
-| `tools/` | Headless: `bot.ts` (input policies), `play.ts` (one run under the active or idle policy, with the wall clock), `shop.ts` (the bots' Forge buying), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants), `idle.ts` (the idle bot's check-ins and the active/idle farm comparison), `act2.ts` (the bot past the Blight: heat, stars, the Abyss), `arsenal.ts` (I4), `contentReport.ts` (icons shared by unrelated entries) | `src/` minus DOM |
+| `tools/` | Headless: `parallel.ts` (seeds in worker threads), `calibrate.ts` (T2: the scorer against the sim), `bot.ts` (input policies), `play.ts` (one run under the active or idle policy, with the wall clock), `shop.ts` (the bots' Forge buying), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants), `idle.ts` (the idle bot's check-ins and the active/idle farm comparison), `act2.ts` (the bot past the Blight: heat, stars, the Abyss), `arsenal.ts` (I4), `contentReport.ts` (icons shared by unrelated entries) | `src/` minus DOM |
 | `tests/` | Vitest, node environment | — |
 
 The sim's step order (`sim/run.ts`): input → waves place bodies (wave 20 is
@@ -105,6 +105,9 @@ npm run pacing -- --hours 12 --seeds 8   # the full Act 1 report: I1a, I1b, I3, 
 npm run pacing -- --idle --hours 12 --seeds 4  # the idle bot: I2 and I5
 npm run pacing -- --act2 --hours 12 --seeds 4  # Act 2: heat 1–10 at the frontier
 npm run arsenal     # I4: the bot's weapon picks per region
+npm run arsenal -- --keystones  # T4: each keystone against none, Regions 3–6; free or trap fails
+npm run calibrate   # T2: the scorer's damage estimate against the sim, every weapon and level
+npm run inspect -- --seeds 20 --by-weapon  # damage landed by each weapon (T1)
 npm run android:release  # release APK (signing: README.md)
 npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest (needs network)
 ```
@@ -112,7 +115,7 @@ npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **idle-tower** (2988 symbols, 9308 relationships, 254 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **idle-tower** (3093 symbols, 9500 relationships, 263 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

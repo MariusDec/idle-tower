@@ -90,6 +90,7 @@ export function scaleMod(m: StatMod, n: number): StatMod {
     ...(m.add !== undefined ? { add: m.add * n } : {}),
     ...(m.pct !== undefined ? { pct: m.pct * n } : {}),
     ...(m.mult !== undefined ? { mult: Math.pow(m.mult, n) } : {}),
+    ...(m.bucket !== undefined ? { bucket: m.bucket } : {}),
   };
 }
 
@@ -124,6 +125,7 @@ export function bossPhases(def: BossDef, tyranny: number): readonly BossPhase[] 
       line: `Tyranny: it rises again. ${from.line}`,
       patterns: from.patterns,
       ...(from.armor !== undefined ? { armor: from.armor } : {}),
+      ...(from.plates !== undefined ? { plates: from.plates } : {}),
     });
   }
   const out = [...def.phases, ...extra];

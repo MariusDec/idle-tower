@@ -6,6 +6,10 @@
  *
  *   npm run arsenal                     Regions 1–6, 16 seeds each
  *   npm run arsenal -- --seeds 40
+ *   npm run arsenal -- --keystones      T4: each keystone against none, Regions 3–6
+ *                                       (the next ring bought out), 8 seeds each: median
+ *                                       wave, shards and boss time. A keystone that only
+ *                                       gains is free; one that only loses is a trap
  *
  * The loadout is each region's frontier one: every Forge node up to the
  * ring its boss unseals, half bought, with every Act 1 weapon and passive in
@@ -25,6 +29,8 @@ import { REGIONS } from '../src/content/regions';
 import { STAR_CARDS } from '../src/content/stars';
 import type { WeaponId } from '../src/content/types';
 import { botInput } from './bot';
+import { veteran, type ForgePreset } from './inspect';
+import { IN_WORKER, parallel, workerJobs } from './parallel';
 
 /** Most of a run's drafts happen before this; the overtime tail adds no new weapons. */
 const RUN_SECONDS = 600;
@@ -101,8 +107,112 @@ export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 
   return { picks, evolutions, worst, unpicked: ACT1_WEAPONS.map((w) => w.id).filter((id) => !taken.has(id)) };
 }
 
-function main(): void {
+/** The keystones (§11.4): builds a player picks on purpose, so the sweep measures what each trades. */
+export const KEYSTONES: readonly string[] = FORGE.filter((n) => n.type === 'keystone').map((n) => n.id);
+/** Regions a keystone can be worn in: they are sealed until the Bog Mother falls. */
+export const KEYSTONE_REGIONS: readonly number[] = ALL_REGIONS.filter((r) => r >= 3);
+/** A sweep's run is cut off here: overtime has ended every run long before. */
+const SWEEP_SECONDS = 1800;
+
+export interface SweepCell {
+  region: number;
+  /** The keystone worn, or null for none. */
+  keystone: string | null;
+  waves: number[];
+  shards: number[];
+  /** Seconds the boss took to fall, per seed; null where it stood. */
+  boss: (number | null)[];
+}
+
+/** One region and one keystone (or none), the region's next ring bought out, over `seeds` runs of the active bot. */
+export function sweepCell(region: number, keystone: string | null, seeds: number): SweepCell {
+  const profile = veteran(`ring${Math.min(6, region + 1)}` as ForgePreset);
+  if (keystone) profile.forge[keystone] = 1;
+  const config = { ...buildRunConfig(profile), regionId: region };
+  const out: SweepCell = { region, keystone, waves: [], shards: [], boss: [] };
+  for (let seed = 1; seed <= seeds; seed++) {
+    const run = createRun(config, seed * 7919 + region);
+    for (let i = 0; i < SWEEP_SECONDS / SIM_DT && !run.outcome; i++) {
+      step(run, SIM_DT, botInput(run, 'active'));
+      run.events.length = 0;
+    }
+    out.waves.push(run.wave);
+    out.shards.push(run.shards);
+    out.boss.push(run.boss?.killedIn ?? null);
+  }
+  return out;
+}
+
+function median(xs: readonly number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  return s[s.length >> 1];
+}
+
+/** What a keystone did against none in one region: each reading's direction. */
+export interface SweepVerdict {
+  shards: number;
+  waves: number;
+  kills: number;
+  bossTime: number | null;
+  gain: boolean;
+  loss: boolean;
+}
+
+/** A gain or a loss is a step past the noise: 10% of shards or boss time, a wave, or a boss kill. */
+export function judge(cell: SweepCell, base: SweepCell): SweepVerdict {
+  const shards = median(cell.shards) / Math.max(1, median(base.shards));
+  const waves = median(cell.waves) - median(base.waves);
+  const kills = cell.boss.filter((b) => b !== null).length - base.boss.filter((b) => b !== null).length;
+  const times = (c: SweepCell): number => median(c.boss.map((b) => b ?? Infinity));
+  const t = times(cell);
+  const t0 = times(base);
+  const bossTime = Number.isFinite(t) && Number.isFinite(t0) ? t / t0 : null;
+  const gain = shards >= 1.1 || waves >= 1 || kills > 0 || (bossTime !== null && bossTime <= 0.9);
+  const loss = shards <= 0.9 || waves <= -1 || kills < 0 || (bossTime !== null && bossTime >= 1.1);
+  return { shards, waves, kills, bossTime, gain, loss };
+}
+
+async function keystoneMain(seeds: number): Promise<void> {
+  const jobs = KEYSTONE_REGIONS.flatMap((r) => [null, ...KEYSTONES].map((k) => [r, k, seeds]));
+  const cells = await parallel<SweepCell>(process.argv[1], 'sweep', jobs);
+  const at = (r: number, k: string | null): SweepCell => cells.find((c) => c.region === r && c.keystone === k)!;
+  const fmtBoss = (c: SweepCell): string => c.boss.map((b) => (b === null ? '—' : Math.round(b))).join(' ');
+  console.log(`keystones · Regions ${KEYSTONE_REGIONS.join(', ')} · next ring bought out · ${seeds} seeds`);
+  console.log('region  keystone        wave   shards   ×shards  boss (s)');
+  const gains = new Map<string, number>();
+  const losses = new Map<string, number>();
+  for (const r of KEYSTONE_REGIONS) {
+    const base = at(r, null);
+    for (const k of [null, ...KEYSTONES]) {
+      const c = at(r, k);
+      const v = k ? judge(c, base) : null;
+      if (k && v) {
+        if (v.gain) gains.set(k, (gains.get(k) ?? 0) + 1);
+        if (v.loss) losses.set(k, (losses.get(k) ?? 0) + 1);
+      }
+      const mark = !v ? '' : v.gain && v.loss ? '  trade' : v.gain ? '  gain' : v.loss ? '  loss' : '  even';
+      console.log(`${String(r).padStart(6)}  ${(k ?? 'none').padEnd(14)} ${String(median(c.waves)).padStart(5)} ${String(Math.round(median(c.shards))).padStart(8)}`
+        + ` ${(v ? `×${v.shards.toFixed(2)}` : '').padStart(8)}  ${fmtBoss(c)}${mark}`);
+    }
+  }
+  let ok = true;
+  for (const k of KEYSTONES) {
+    const g = gains.get(k) ?? 0;
+    const l = losses.get(k) ?? 0;
+    const verdict = g > 0 && l === 0 ? 'FAIL (free: gains, no cost)' : l > 0 && g === 0 ? 'FAIL (a trap: costs, no gain)' : 'PASS';
+    if (verdict !== 'PASS') ok = false;
+    console.log(`  ${verdict.startsWith('PASS') ? 'PASS' : 'FAIL'}  ${k}: gains in ${g} region(s), costs in ${l}${verdict === 'PASS' ? '' : ` — ${verdict.slice(5)}`}`);
+  }
+  console.log(`keystones ${ok ? 'PASS' : 'FAIL'}`);
+}
+
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  if (args.includes('--keystones')) {
+    const at = args.indexOf('--seeds');
+    await keystoneMain(at >= 0 ? Number(args[at + 1]) : 8);
+    return;
+  }
   const seedsAt = args.indexOf('--seeds');
   const seeds = seedsAt >= 0 ? Number(args[seedsAt + 1]) : 16;
   const r = arsenalReport(ALL_REGIONS, seeds);
@@ -119,4 +229,5 @@ function main(): void {
     + (r.unpicked.length > 0 ? `; never taken: ${r.unpicked.join(', ')}` : ''));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (IN_WORKER) workerJobs({ sweep: sweepCell });
+else if (import.meta.url === `file://${process.argv[1]}`) void main();

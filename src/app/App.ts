@@ -339,6 +339,7 @@ export class App {
           seconds: draftSeconds(this.profile),
           seen: (key) => seen.has(key),
           rerolls: run.rerolls,
+          swapFor: run.swap ? run.weapons[0]?.id ?? null : null,
         });
         for (const c of run.draft.cards) {
           const key = cardKey(c);

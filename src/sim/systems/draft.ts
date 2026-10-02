@@ -77,11 +77,14 @@ export function candidateCards(run: RunState): Card[] {
   const out: Card[] = evolutionCards(run);
   for (const w of run.weapons) if (w.level < max) out.push({ kind: 'weapon', id: w.id, level: w.level + 1 });
   for (const p of run.passives) if (p.level < max) out.push({ kind: 'passive', id: p.id, level: p.level + 1 });
-  const weaponFree = run.weapons.length < run.weaponSlots;
+  // Specialist (S4): until its first weapon card, the one slot may be swapped.
+  const weaponFree = run.weapons.length < run.weaponSlots || run.swap;
+  // A swapped-in weapon takes the place, and the level, of the one it replaces.
+  const joins = run.swap ? run.weapons[0].level : 1;
   const passiveFree = run.passives.length < run.passiveSlots;
   for (const id of run.pool) {
     if (isWeaponId(id)) {
-      if (weaponFree && !run.weapons.some((w) => w.id === id)) out.push({ kind: 'weapon', id, level: 1 });
+      if (weaponFree && !run.weapons.some((w) => w.id === id)) out.push({ kind: 'weapon', id, level: joins });
     } else if (passiveFree && !run.passives.some((p) => p.id === id)) {
       out.push({ kind: 'passive', id, level: 1 });
     }
@@ -89,12 +92,11 @@ export function candidateCards(run: RunState): Card[] {
   return out;
 }
 
-/** Cards per draft: the base, plus Choice, less Hoarder (§11.4) and Scarcity (§9), never below the floor. */
+/** Cards per draft: the base, plus Choice, less Scarcity (§9), never below the floor. */
 export function draftChoices(run: RunState): number {
   const B = BALANCE.behaviours;
   const n = BALANCE.draft.choices
     + B.extraChoice * (run.behaviours['extra-choice'] ?? 0)
-    - B.hoarderChoices * (run.behaviours.hoarder ?? 0)
     + pactLoad(run.pacts).choices;
   return Math.min(BALANCE.draft.maxChoices, Math.max(BALANCE.draft.minChoices, n));
 }
@@ -166,7 +168,12 @@ export function applyCard(run: RunState, card: Card): void {
   switch (card.kind) {
     case 'weapon': {
       const w = run.weapons.find((x) => x.id === card.id);
+      const swap = run.swap;
+      // Specialist (S4): its first weapon card locks the one slot.
+      run.swap = false;
       if (w) w.level = card.level;
+      // …and a new one takes the starting weapon's place, at its level.
+      else if (swap) run.weapons = [newWeapon(card.id, card.level)];
       // Drilled (§11.4): a new weapon joins a level up.
       else run.weapons.push(newWeapon(card.id, Math.min(BALANCE.maxLevel, 1 + (run.behaviours.drilled ?? 0))));
       return;

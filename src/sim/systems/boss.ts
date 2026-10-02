@@ -6,7 +6,7 @@ import { spawnPoint } from '../../content/arena';
 import type { BossDef, BossPattern, BossPhase, RegionDef } from '../../content/types';
 import type { BossState, Enemy, RunState } from '../state';
 import { bossPhases, pactLoad } from '../pacts';
-import { runRegion, spawnEnemy, waveDamage, waveHp, waveShardMult } from './waves';
+import { foeHp, runRegion, spawnEnemy, waveDamage, waveHp, waveShardMult } from './waves';
 import { hurtTower } from './tower';
 
 /**
@@ -53,7 +53,7 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
   // guardian is a lighter fight (§9). Vigour and Tyranny swell it.
   const wave = run.wave;
   const load = pactLoad(run.pacts);
-  const hp = waveHp(region, wave) * def.hp * (region.abyss ? BALANCE.abyss.bossHp : 1) * load.hp * load.bossHp;
+  const hp = waveHp(region, wave) * def.hp * (region.abyss ? BALANCE.abyss.bossHp : 1) * foeHp(run) * load.bossHp;
   const body: Enemy = {
     id: run.nextEnemyId++,
     type: region.pool[0].enemy,
@@ -97,6 +97,8 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     group: 0,
     shade: false,
     court: 0,
+    plate: 0,
+    slot: 0,
     shell: 0,
     dashUntil: 0,
     gildedUntil: 0,
@@ -117,12 +119,74 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     staggeredUntil: 0,
     facet: 0,
     crown: 0,
+    plates: 0,
     minHp: Math.max(0, run.tower.hp) / run.stats.maxHp,
     killedIn: null,
     wave,
   };
   run.boss = state;
+  wearPlates(run, region, body, def, def.phases[0].plates, true);
   run.events.push({ kind: 'bossArrive', boss: def.id });
+}
+
+/** How far out a plate hangs off its boss's rim, and how wide its plates fan, radians either side of the line to the tower. */
+const PLATE_REACH = 0.6;
+const PLATE_FAN = 0.6;
+
+/**
+ * Forgeheart's plates (S2): a phase says how many it wears. Extra plates
+ * crack away; `hang` (its arrival, or a phase Tyranny replays) hangs new
+ * ones up to the count. Each is a body with its own HP and heavy armour.
+ */
+function wearPlates(run: RunState, region: RegionDef, boss: Enemy, def: BossDef, n: number | undefined, hang: boolean): void {
+  const spec = def.plates;
+  const b = run.boss;
+  if (!spec || n === undefined || !b) return;
+  const worn = run.enemies.filter((o) => o.alive && o.plate === boss.id);
+  for (const o of worn.slice(n)) dropPlate(run, o);
+  if (!hang) return;
+  for (let k = worn.length; k < n; k++) {
+    const s = spawnEnemy(run, region, boss.type, b.wave, boss.x, boss.y, { single: true });
+    Object.assign(s, {
+      plate: boss.id, slot: n === 1 ? 0 : PLATE_FAN * (2 * (k / (n - 1)) - 1),
+      hp: boss.maxHp * spec.hp, maxHp: boss.maxHp * spec.hp, armor: waveHp(region, b.wave) * spec.armor,
+      radius: spec.radius, speed: 0, mass: def.mass, xp: 0, shards: 0, under: false, shell: 0, hiddenUntil: 0,
+    });
+    b.plates++;
+  }
+  placePlates(run, boss);
+}
+
+/** Plates ride on their boss, facing the tower. */
+function placePlates(run: RunState, boss: Enemy): void {
+  if (!run.boss || run.boss.plates === 0) return;
+  const toward = Math.atan2(-boss.y, -boss.x);
+  for (const o of run.enemies) {
+    if (!o.alive || o.plate !== boss.id) continue;
+    const a = toward + o.slot;
+    const d = boss.radius + o.radius * PLATE_REACH;
+    o.px = o.x;
+    o.py = o.y;
+    o.x = boss.x + Math.cos(a) * d;
+    o.y = boss.y + Math.sin(a) * d;
+  }
+}
+
+/** A plate falls: struck off (`kill`, which also calls this) or cracked away. */
+export function dropPlate(run: RunState, o: Enemy): void {
+  if (o.alive) {
+    o.alive = false;
+    if (run.current && o.wave === run.current.n) run.current.alive--;
+  }
+  if (run.boss) run.boss.plates = Math.max(0, run.boss.plates - 1);
+  run.events.push({ kind: 'plateBreak', x: o.x, y: o.y, radius: o.radius });
+}
+
+/** The share of a hit the boss takes now: its guard while a plate stands, else all of it. */
+export function plateGuard(run: RunState): number {
+  const b = run.boss;
+  if (!b || b.plates === 0) return 1;
+  return BOSS_BY_ID[b.id].plates?.guard ?? 1;
 }
 
 /** True once the boss has walked in to where it works from. */
@@ -145,12 +209,14 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
     const ph = phases[b.phase];
     b.timers = phaseTimers(ph.patterns);
     b.windup = 0;
-    // Plates break away (Forgeheart): the phase sets what armour is left.
     if (ph.armor !== undefined) e.armor = waveHp(region, b.wave) * ph.armor;
+    // Plates crack away (Forgeheart); a phase Tyranny replays hangs them anew.
+    wearPlates(run, region, e, def, ph.plates, b.phase >= def.phases.length);
     // A phase with no court gathers the shades back in.
     if (!ph.patterns.some((p) => p.kind === 'court')) dismissCourt(run);
     run.events.push({ kind: 'bossPhase', boss: b.id, phase: b.phase });
   }
+  placePlates(run, e);
   // The mirror turns all the time, not on a timer.
   for (const p of phases[b.phase].patterns) if (p.kind === 'mirror') b.facet += p.spin * dt;
 
@@ -387,6 +453,7 @@ export function onBossKilled(run: RunState, e: Enemy): void {
   b.killedIn = run.time - b.arrivedAt;
   b.windup = 0;
   dismissCourt(run);
+  for (const o of run.enemies) if (o.alive && o.plate === e.id) dropPlate(run, o);
   run.pools.length = 0;
   run.felled.push(b.id);
   run.events.push({ kind: 'bossKill', boss: b.id, first: run.firstKill, x: e.x, y: e.y });

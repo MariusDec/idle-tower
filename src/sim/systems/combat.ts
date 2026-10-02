@@ -4,13 +4,13 @@ import { BALANCE } from '../../content/balance';
 import { AURA_BY_ID, ENEMIES, ENEMY_BY_ID } from '../../content/enemies';
 import { eliteRelics } from '../../content/relics';
 import { frameById } from '../../content/frames';
-import { WEAPON_BY_ID } from '../../content/weapons';
+import { WEAPONS, WEAPON_BY_ID } from '../../content/weapons';
 import type { EnemyVerb, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
 import { BOSS_BY_ID } from '../../content/bosses';
-import type { Enemy, Projectile, RunState, WeaponState } from '../state';
+import type { DamageBy, Enemy, Projectile, RunState, WeaponState } from '../state';
 import { pactLoad, ruleSurge } from '../pacts';
 import { armed } from './arms';
-import { bossBody, onBossKilled, phasesOf, reflectShot } from './boss';
+import { bossBody, dropPlate, onBossKilled, phasesOf, plateGuard, reflectShot } from './boss';
 import { mitigate } from './damage';
 import { gainXp } from './draft';
 import { hurtTower } from './tower';
@@ -36,6 +36,28 @@ export type DamageSource =
   | WeaponPattern | 'nova' | 'tempest' | 'eclipse' | 'thorns' | 'reflect' | 'overkill' | 'burn' | 'shatter'
   /** Stormcaller's quirk: a crit's leap to the next body. It never leaps again. */
   | 'leap';
+
+/** Each weapon has its own pattern, so a pattern names the weapon a hit is credited to (T1). */
+const PATTERN_WEAPON = new Map<DamageSource, WeaponId>(WEAPONS.map((w) => [w.pattern, w.id]));
+
+/** Who a hit from `source` is credited to (T1). */
+export function damageBy(source: DamageSource): DamageBy {
+  const weapon = PATTERN_WEAPON.get(source);
+  if (weapon) return weapon;
+  switch (source) {
+    case 'nova':
+    case 'tempest':
+    case 'eclipse':
+      return 'ult';
+    case 'thorns':
+    case 'reflect':
+      return 'thorns';
+    case 'burn':
+      return 'burn';
+    default:
+      return 'rule';
+  }
+}
 
 /** Sources that count as lightning, frost or Nova for Bog Lantern (§11.5). */
 const STORM: ReadonlySet<DamageSource> = new Set<DamageSource>(['chain', 'pulse', 'nova', 'tempest', 'leap']);
@@ -997,7 +1019,10 @@ function strike(run: RunState, p: Projectile, e: Enemy): void {
     p.alive = false;
     return;
   }
-  damageEnemy(run, e, p.damage, p.crit, WEAPON_BY_ID[p.weapon].pattern);
+  // Point-blank (S5): Scattershot's pellets bite harder inside a third of range.
+  const close = WEAPON_BY_ID[p.weapon].pointBlank;
+  const near = close !== undefined && ex * ex + ey * ey <= (run.stats.range * BALANCE.weapons.pointBlankReach) ** 2;
+  damageEnemy(run, e, p.damage * (near ? close : 1), p.crit, WEAPON_BY_ID[p.weapon].pattern);
   // Prism Heart (§11.5): a share of shots refract into a second target.
   const refract = run.behaviours.refract ?? 0;
   if (refract > 0 && !p.seeker && Rng.wrap(run.streams.arms).chance(rankValue(BALANCE.relics.refract, refract))) {
@@ -1155,7 +1180,9 @@ function damageTaken(run: RunState, e: Enemy, raw: number, source: DamageSource)
   if (b.surge && run.time % R.surgeEvery < R.surgeSeconds) out *= rankValue(R.surge, b.surge);
   if (b.kindling && e.burnUntil > run.time) out *= 1 + rankValue(R.kindling, b.kindling);
   if (b['elite-bane'] && e.elite) out *= 1 + rankValue(R.eliteBane, b['elite-bane']);
-  if (b['boss-bane'] && (e.boss || e.court)) out *= 1 + rankValue(R.bossBane, b['boss-bane']);
+  if (b['boss-bane'] && (e.boss || e.court || e.plate)) out *= 1 + rankValue(R.bossBane, b['boss-bane']);
+  // Forgeheart's plates (S2): while one stands, the heart takes its guard's share.
+  if (e.boss) out *= plateGuard(run);
   return out;
 }
 
@@ -1219,7 +1246,10 @@ function hitBody(run: RunState, e: Enemy, raw: number, crit: boolean, source: Da
   if (execute > 0 && !e.boss && e.hp - amount > 0 && e.hp <= e.maxHp * B.executeBelow * execute) amount = e.hp;
   e.hp -= amount;
   e.hitTick = run.tick;
-  run.events.push({ kind: 'hit', x: e.x, y: e.y, amount, crit });
+  // T1: what the hit took off, not what it would have: overkill isn't landed.
+  const by = damageBy(source);
+  run.damageBy[by] = (run.damageBy[by] ?? 0) + Math.min(amount, Math.max(0, before));
+  run.events.push({ kind: 'hit', x: e.x, y: e.y, amount, crit, by });
   if (e.group) {
     for (const o of run.enemies) {
       if (o === e || !o.alive || o.group !== e.group) continue;
@@ -1277,6 +1307,11 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   feedMaws(run, e);
   if (e.boss) {
     onBossKilled(run, e);
+    return;
+  }
+  if (e.plate) {
+    // Already down: `dropPlate` only counts it off and marks where it fell.
+    dropPlate(run, e);
     return;
   }
   run.killsBy[e.type] = (run.killsBy[e.type] ?? 0) + 1;

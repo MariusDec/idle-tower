@@ -1,6 +1,7 @@
 # The Tower, after the rebuild — improvements
 
-**Status:** proposal, 2026-10-01. Nothing here is built yet.
+**Status:** proposal, 2026-10-01. Nothing here is built yet. The owner's
+decisions were made on 2026-10-02 (§8).
 
 **Where this comes from:** a read of all of `src/`, `tools/` and `docs/` on
 the `rebuild` branch (`a6c9c27`); a fresh profile played at 375×812 on the
@@ -22,7 +23,7 @@ the real sim, headless:
 **How to read this:** §1 is the short version and the order of work. §2 is
 bugs and data errors. §3 is balance. §4 is UX and quality of life. §5 is new
 mechanics and content. §6 is code and tooling. §7 is the phased work order
-and §8 the decisions that are the owner's to make.
+and §8 the owner's decisions.
 
 Each item has an ID, what is wrong, the evidence (a `file:line` or a measured
 number), the proposal, and how to check it. `plans/rebuild.md`'s rules R1–R8
@@ -135,7 +136,7 @@ has the gates.
     describe a player who never takes the best node in the Forge.
   - A player who finds Hoarder at the Bog Mother (around 70 min) progresses
     about twice as fast as every number in `plans/rebuild.md`.
-- **Proposal:** pick one of these (decision D-2):
+- **Proposal:** pick one of these (decision D-2: **(c) chosen**):
   - (a) Shards ×1.6, two fewer cards, and no rerolls.
   - (b) Shards ×2, and the suggestion is fixed. The player can't pick, and
     the Tactician can't steer: "the hoard decides". That keeps it an idle
@@ -226,8 +227,8 @@ has the gates.
 - **Also:** a draft can't be skipped, so a hand of three passive cards
   forces a passive and fails the run.
 - **Proposal:**
-  - Surface it after the Hollow King, or make it "three level-5 weapons, no
-    passives" so it fits Region 4–5.
+  - Make it "three level-5 weapons, no passives" so it fits Regions 4–5
+    (D-9).
   - N1 (Banish) gives the player a way out of a passive-only hand.
 
 ### B9. Small rules that disagree with their text (low)
@@ -240,12 +241,14 @@ has the gates.
   20%" (`content/forge.ts:180`). The rule sums `executioner` counts
   (`sim/systems/combat.ts:1216`), so Executioner's Coin makes it 30%. Either
   cap it at the highest owned tier, or say so on the relic.
+  **Decided (D-10): cap it.**
 - **Windfall is flat:** the fallback card pays a flat 10 shards
   (`content/balance.ts:43`) in every region, where Region 6 kills pay 100×
   Region 1's. Pay `region.waveShards × wave`, through the shard multiplier.
 - **Max-rank duplicates are wasted:** a duplicate relic at rank III shows
   "already at its peak" and is gone (`meta/collection.ts:124`). Convert it to
-  shards (an elite's bounty ×5), or to set progress (N6).
+  shards (an elite's bounty ×5), then to set progress once N6 exists
+  (D-12).
 
 ### B10. A Harbinger can silence a Specialist's only weapon (low)
 
@@ -398,8 +401,7 @@ has the gates.
        of range), so it has a niche.
      - Drones target standoff enemies first (U14), so they fill theirs.
      - Greed becomes a farming card: shards, plus a +1% shard bonus a wave
-       while held. Value it by expected run length. Or keep it out of Act 1
-       until Gilded Rail.
+       while held. Value it by expected run length (D-11).
      - Velocity gets +1 pierce at L3 and L5, so it does something on screen
        (R1).
 - **Check:** I4, plus a new I4b: no weapon's measured DPS share at L5 is
@@ -478,13 +480,10 @@ has the gates.
   2. **Act 2 feats pay Starlight** (5–40) on top of their shards.
   3. **Starlight per heat level weights the heat, not the region:**
      `1 + floor(h / 5)` a level. Heat 29 then pays the same in every region,
-     and the hard part is the high heat rather than the late region. Or
-     scale earlier regions' pacts by the frontier, so a heat record there
-     stays a challenge.
+     and the hard part is the high heat rather than the late region (D-8).
   4. **Grade the pacts by their weight.** Vigour's ×1.5 HP a rank is several
      times the load of a Scarcity or Haste rank. Make it ×1.25 a rank with
-     more ranks, or let one Vigour rank count as 2 heat. Either removes the
-     heat-6 wall.
+     more ranks (D-7). That removes the heat-6 wall.
   5. **Make the Abyss's first boss passable:** compounding masteries (S1.3),
      and the Abyss's floor-5 guardian at `bossHp` 0.25 rather than 0.35
      until the bot reaches floor 10 in about 12 h.
@@ -989,20 +988,32 @@ what a player notices first. Q3 and Q4 are where new fun comes from.
 
 ---
 
-## 8. Decisions for the owner
+## 8. Decisions (resolved 2026-10-02)
 
-- **D-1, S1 (stat buckets):** a full retune of Regions 4–6 is the price.
-  Accept it, or keep the single bucket and only enlarge the late-ring
-  steps?
-- **D-2, B2 (Hoarder):** option (a) ×1.6 with −2 cards and no rerolls, (b)
-  the suggestion is fixed, or (c) a personal heat?
-- **D-3, S2 (armour):** the smooth `hit²/(hit+armour)` formula everywhere,
-  or keep the flat rule and give only Forgeheart breakable plates?
-- **D-4, U11 (camera):** try the closer framing in the playtest, or leave
-  it?
-- **D-5, N5 vs N8 vs N9:** which of Trials, Boss Rush and fusions to build
-  first, if only one.
-- **D-6, S7 (Starlight):** per-floor Starlight in the Abyss, or cheaper
-  stars?
-- **D-7, S7 (pacts):** soften Vigour's rank to ×1.25, or count each Vigour
-  rank as 2 heat?
+- **D-1, S1 (stat buckets):** split the buckets
+  (`(1 + Σpct_meta) × (1 + Σpct_run)`), and accept the full retune of
+  Regions 4–6.
+- **D-2, B2 (Hoarder):** option (c). Shards ×2 and enemies ×1.5 HP, a
+  personal heat.
+- **D-3, S2 (armour):** both. The smooth `hit²/(hit+armour)` formula
+  everywhere (with `minFraction` as a backstop), and breakable plates on
+  Forgeheart. `weaponDps` becomes armour-aware.
+- **D-4, U11 (camera):** build the closer framing behind a setting and
+  compare it in playtest #3. Whichever wins becomes the default.
+- **D-5, N5 vs N8 vs N9:** Trials (N5) first.
+- **D-6, S7 (Starlight):** the Abyss pays per floor (2 per new floor, +10
+  per Abyss boss), and Act 2 feats pay Starlight. Star costs stay.
+- **D-7, S7 (pacts):** Vigour becomes ×1.25 a rank, with more ranks.
+- **D-8, S7.3 (heat records):** Starlight per heat level is
+  `1 + floor(h / 5)` in every region. Earlier regions' pacts don't scale
+  with the frontier.
+- **D-9, B8 (*Tinkerer*):** the goal becomes "three level-5 weapons, no
+  passives". It still surfaces after Forgeheart.
+- **D-10, B9 (Annihilator):** cap it at the highest Executioner tier owned
+  (20%, not 30%).
+- **D-11, S5 (Greed):** it becomes the farming card: shards, plus a +1%
+  shard bonus a wave while held. Score it by expected run length.
+- **D-12, B9 / N6 (max-rank duplicates):** pay shards (an elite's bounty ×5)
+  from Q0. Once N6 lands, a duplicate adds set progress instead.
+- **Still open:** N10 (ascended minors vs Rekindle). The plan prefers
+  ascended minors. Decide after S7 is measured.

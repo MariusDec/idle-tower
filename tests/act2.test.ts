@@ -230,7 +230,7 @@ describe('Starlight (§9)', () => {
     const run = createRun(buildRunConfig(p), 1);
     run.boss = {
       id: 'gatekeeper', enemy: 1, phase: 0, arrivedAt: 0, timers: [], windup: 0, submerged: false, enraged: false,
-      windupPattern: -1, staggeredUntil: 0, facet: 0, crown: 0, minHp: 1, killedIn: 40, wave: 20,
+      windupPattern: -1, staggeredUntil: 0, facet: 0, crown: 0, plates: 0, minHp: 1, killedIn: 40, wave: 20,
     };
     run.outcome = { kind: 'fell', wave: 22, time: 500 };
     const s = bankRun(p, run);
@@ -275,19 +275,19 @@ describe('the Constellations (§9)', () => {
     expect(buildRunConfig(p).weaponSlots).toBe(weapons + 1);
   });
 
-  it('a mastery waits for its star, then grows ×1.3 a level without end, as one contribution', () => {
+  it('a mastery waits for its star, then costs ×1.2 a level and compounds without end, as one contribution', () => {
     const p = act2Profile();
     const node = FORGE_BY_ID['might-mastery'];
     expect(isSealed(p, node)).toBe(true);
     p.stars = { 'crown-might': 1 };
     expect(isSealed(p, node)).toBe(false);
-    expect(nodeCost(node, 10) / nodeCost(node, 9)).toBeCloseTo(1.3, 2);
+    expect(nodeCost(node, 10) / nodeCost(node, 9)).toBeCloseTo(1.2, 2);
     expect(FORGE_WEB.canRefund(p, 'might-mastery')).toBe(false);
     p.forge['might-damage-6'] = 1;
     p.shards = 1e12;
     expect(buyNode(p, 'might-mastery')).toBe(true);
     p.forge['might-mastery'] = 200;
-    const damage = buildRunConfig(p).mods.filter((m) => m.key === 'damage' && m.pct && Math.abs(m.pct - 6) < 1e-9);
+    const damage = buildRunConfig(p).mods.filter((m) => m.key === 'damage' && m.mult && Math.abs(m.mult / Math.pow(1.03, 200) - 1) < 1e-9);
     expect(damage).toHaveLength(1);
   });
 

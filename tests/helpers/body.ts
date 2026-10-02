@@ -9,7 +9,7 @@ export function body(run: RunState, over: Partial<Enemy> = {}): Enemy {
     xp: 1, shards: 1, mass: 1, stunnedUntil: 0, slow: 0, slowUntil: 0, hiddenUntil: 0, actTimer: 0,
     moving: false, buffSpeed: 1, buffShield: 1, fury: 1, attackTimer: 0, inContact: false, hitTick: -1,
     burn: 0, burnUntil: 0, burnTimer: 0, frozenUntil: 0, under: false, group: 0, shade: false, court: 0,
-    shell: 0, dashUntil: 0, gildedUntil: 0, feeds: 0,
+    plate: 0, slot: 0, shell: 0, dashUntil: 0, gildedUntil: 0, feeds: 0,
     ...over,
   };
   run.enemies.push(e);

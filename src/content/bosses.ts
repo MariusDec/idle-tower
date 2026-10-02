@@ -147,9 +147,9 @@ export const BOSSES: readonly BossDef[] = [
     id: 'forgeheart',
     name: 'Forgeheart',
     icon: 'frostfire',
-    text: 'Heavy plates break away each phase; molten pools burn the wall.',
+    text: 'Iron plates guard its heart; break them. Molten pools burn the wall.',
     hp: 40,
-    armor: 0.04,
+    armor: 0.01,
     speed: 24,
     radius: 66,
     standoff: 230,
@@ -158,10 +158,14 @@ export const BOSSES: readonly BossDef[] = [
     shards: 400,
     mass: 18,
     relicSlot: true,
+    // S2: two plates before the heart. Heavy armour, so big hits strip them;
+    // while one stands, the heart takes half.
+    plates: { hp: 0.12, armor: 0.04, guard: 0.5, radius: 30 },
     phases: [
       {
         below: 1,
         line: 'Plated in iron. Big hits, or burn it out.',
+        plates: 2,
         patterns: [
           { kind: 'pool', every: 9, seconds: 6, dps: 0.35, radius: 70 },
           { kind: 'summon', enemy: 'bomber', packs: 2, every: 10 },
@@ -170,7 +174,7 @@ export const BOSSES: readonly BossDef[] = [
       {
         below: 0.66,
         line: 'A plate cracks away. It pours out more fire.',
-        armor: 0.015,
+        plates: 1,
         patterns: [
           { kind: 'pool', every: 7, seconds: 6, dps: 0.4, radius: 75 },
           { kind: 'slam', every: 6, windup: 1.3, speed: 420, damage: 3.5 },
@@ -181,6 +185,7 @@ export const BOSSES: readonly BossDef[] = [
         below: 0.33,
         line: 'The last plate falls. The heart is bare.',
         armor: 0,
+        plates: 0,
         patterns: [
           { kind: 'pool', every: 5, seconds: 6, dps: 0.45, radius: 80 },
           { kind: 'slam', every: 4, windup: 1.1, speed: 480, damage: 3.5 },
