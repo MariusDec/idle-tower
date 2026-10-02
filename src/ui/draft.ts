@@ -23,6 +23,10 @@ export interface DraftView {
   seen: (key: string) => boolean;
   /** Rerolls left this run; the button shows only when there are some. */
   rerolls: number;
+  /** Banish charges left this run (N1); the button shows only when there are some. */
+  banishes?: number;
+  /** Which cards Banish may strike (new items only), by index. */
+  banishable?: readonly boolean[];
   /** Specialist's one weapon while its slot may still be swapped (S4); null otherwise. */
   swapFor?: string | null;
   /** Drafts banked, this one included: from two, one tap takes every suggestion (U2). */
@@ -138,7 +142,10 @@ export class DraftPanel {
   private holding = false;
 
   private readonly reroll: HTMLButtonElement;
+  private readonly banish: HTMLButtonElement;
   private readonly take: HTMLButtonElement;
+  /** True while a tap on a card banishes it instead of taking it (N1). */
+  private banishing = false;
   /** Seconds left before the Opening takes every suggestion; null when it waits. */
   private autoTake: number | null = null;
   private takeLabel = '';
@@ -148,6 +155,8 @@ export class DraftPanel {
     private readonly onPick: (index: number) => void,
     onReroll: () => void,
     onTakeAll: () => void,
+    /** Banish card `index` (N1). */
+    private readonly onBanish: (index: number) => void,
     /** The player touched the Opening: it stops counting down, to be reviewed. */
     private readonly onReview: () => void = () => {},
   ) {
@@ -161,11 +170,14 @@ export class DraftPanel {
       <div class="draft-row"></div>
       <div class="draft-actions">
         <button type="button" class="btn draft-reroll" hidden></button>
+        <button type="button" class="btn draft-banish" hidden aria-pressed="false"></button>
         <button type="button" class="btn draft-take" hidden></button>
       </div>
       <div class="draft-timer" aria-hidden="true"><div class="draft-timer-fill"></div></div>`;
     this.reroll = this.root.querySelector('.draft-reroll')!;
     this.reroll.addEventListener('click', onReroll);
+    this.banish = this.root.querySelector('.draft-banish')!;
+    this.banish.addEventListener('click', () => this.setBanishing(!this.banishing));
     this.take = this.root.querySelector('.draft-take')!;
     this.take.addEventListener('click', () => {
       this.autoTake = null;
@@ -185,7 +197,15 @@ export class DraftPanel {
     this.timerFill = this.root.querySelector('.draft-timer-fill')!;
     this.row.addEventListener('click', (ev) => {
       const el = (ev.target as HTMLElement).closest<HTMLElement>('.draft-card');
-      if (el) this.onPick(Number(el.dataset.index));
+      if (!el) return;
+      if (!this.banishing) {
+        this.onPick(Number(el.dataset.index));
+        return;
+      }
+      // Banish mode (N1): a card it may strike goes; any other tap leaves the mode.
+      const index = Number(el.dataset.index);
+      this.setBanishing(false);
+      if (el.classList.contains('is-banishable')) this.onBanish(index);
     });
     bindLongPress(this.row, {
       selector: '.draft-card',
@@ -219,6 +239,10 @@ export class DraftPanel {
     setStyle(this.timerFill, 'transform', 'scaleX(1)');
     this.reroll.hidden = view.rerolls <= 0 || !view.timed;
     this.reroll.textContent = `Reroll · ${view.rerolls}`;
+    const banishes = view.banishes ?? 0;
+    this.banish.hidden = banishes <= 0 || !view.timed || !(view.banishable ?? []).some(Boolean);
+    this.banish.textContent = `Banish · ${banishes}`;
+    this.setBanishing(false);
     // Two or more banked (U2): one tap takes every suggestion. In the Opening it leads.
     const banked = view.banked ?? 1;
     this.take.hidden = banked < 2 || !view.timed;
@@ -226,7 +250,11 @@ export class DraftPanel {
     this.takeLabel = opening ? `Take all ${banked} suggested` : `Take suggested ×${banked}`;
     this.autoTake = opening && view.timed ? view.autoTake ?? null : null;
     this.paintTake();
-    this.row.replaceChildren(...view.cards.map((c, i) => this.card(c, i, i === view.suggested, !view.seen(cardKey(c)), view.swapFor ?? null, view.badges?.[i] ?? [])));
+    this.row.replaceChildren(...view.cards.map((c, i) => {
+      const el = this.card(c, i, i === view.suggested, !view.seen(cardKey(c)), view.swapFor ?? null, view.badges?.[i] ?? []);
+      toggleClass(el, 'is-banishable', banishes > 0 && (view.banishable?.[i] ?? false));
+      return el;
+    }));
     // Past four cards (Choice, Foresight, Jackpot), the hand wraps into rows of three.
     toggleClass(this.row, 'is-many', view.cards.length > 4);
     this.root.hidden = false;
@@ -236,11 +264,24 @@ export class DraftPanel {
     this.root.hidden = true;
     this.holding = false;
     this.autoTake = null;
+    this.setBanishing(false);
+  }
+
+  /** Banish mode (N1): the cards it may strike wear a mark, and the next tap on one strikes it. */
+  private setBanishing(on: boolean): void {
+    this.banishing = on;
+    this.banish.setAttribute('aria-pressed', String(on));
+    toggleClass(this.banish, 'is-active', on);
+    toggleClass(this.row, 'is-banishing', on);
+    this.hint.hidden = !on && this.timed;
+    if (on) this.hint.textContent = 'Tap a new card to banish it for this run.';
+    else if (this.timed) this.hint.textContent = '';
   }
 
   /** Run the timers on the wall clock: the draft's own, and the Opening's take-all (U2). */
   tick(realDt: number): DraftTick {
-    if (!this.open || !this.timed || this.holding) return null;
+    // Holding a card, or choosing what to banish, stops the clock.
+    if (!this.open || !this.timed || this.holding || this.banishing) return null;
     if (this.autoTake !== null) {
       this.autoTake = Math.max(0, this.autoTake - realDt);
       this.paintTake();

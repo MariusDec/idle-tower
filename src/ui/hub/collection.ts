@@ -1,15 +1,17 @@
 import { BOSS_BY_ID } from '../../content/bosses';
 import { ENEMY_BY_ID } from '../../content/enemies';
 import { REGIONS } from '../../content/regions';
+import { RELIC_SETS, eliteRelics } from '../../content/relics';
 import { BALANCE } from '../../content/balance';
 import { PASSIVE_BY_ID } from '../../content/passives';
 import { WEAPON_BY_ID } from '../../content/weapons';
 import type { BossId, EnemyId, FrameUnlock, RelicDef, RelicId } from '../../content/types';
 import { formatNumber } from '../../core/format';
 import {
-  bestiary, collectionPages, frameUnlocked, listedFrames, listedRelics, relicRank, relicSlots, selectedFrame,
+  activeSets, bestiary, collectionPages, frameUnlocked, listedFrames, listedRelics, relicRank, relicSlots, selectedFrame, setRank,
 } from '../../meta/collection';
 import type { Profile } from '../../meta/profile';
+import { levelOf } from '../../meta/forge';
 import { recipeBook } from '../../meta/recipes';
 import { toggleClass } from '../dom';
 import { icon } from '../icon';
@@ -121,7 +123,7 @@ export class CollectionView {
         this.body.replaceChildren(...this.relics(p));
         break;
       case 'recipes':
-        this.body.replaceChildren(this.recipes(p));
+        this.body.replaceChildren(...this.recipes(p));
         break;
       case 'frames':
         this.body.replaceChildren(this.frames(p));
@@ -216,11 +218,52 @@ export class CollectionView {
       li.append(btn);
       list.append(li);
     }
+    return [head, list, ...this.sets(p)];
+  }
+
+  /** Relic sets (N6): a region's three elite relics, worn together for a bonus. Shown once one of a set is found. */
+  private sets(p: Profile): HTMLElement[] {
+    const shown = RELIC_SETS.filter((set) => eliteRelics(set.region).some((id) => relicRank(p, id) > 0));
+    if (shown.length === 0) return [];
+    const head = document.createElement('p');
+    head.className = 'collection-note';
+    head.textContent = 'Sets: wear all three of a region\'s elite relics for its bonus. Duplicates past III rank it up.';
+    const list = document.createElement('ul');
+    list.className = 'entry-list';
+    const active = new Set(activeSets(p).map((x) => x.set.id));
+    for (const set of shown) {
+      const owned = eliteRelics(set.region).filter((id) => relicRank(p, id) > 0).length;
+      const rank = setRank(p, set.region);
+      const li = document.createElement('li');
+      li.className = `entry${active.has(set.id) ? ' is-worn' : ''}${owned < 3 ? ' is-unknown' : ''}`;
+      const h = document.createElement('div');
+      h.className = 'entry-head';
+      const n = document.createElement('span');
+      n.className = 'entry-name';
+      n.textContent = set.name;
+      const count = document.createElement('span');
+      count.className = 'entry-count';
+      const progress = p.sets[set.region] ?? 0;
+      const next = rank < BALANCE.sets.maxRank ? ` · ${progress % BALANCE.sets.perRank}/${BALANCE.sets.perRank}` : ' · max';
+      count.textContent = owned < 3 ? `${owned}/3 found` : `${'I'.repeat(rank)}${next}${active.has(set.id) ? ' · worn' : ''}`;
+      h.append(icon(set.icon), n, count);
+      const t = document.createElement('p');
+      t.className = 'entry-text';
+      t.textContent = set.text;
+      li.append(h, t);
+      list.append(li);
+    }
     return [head, list];
   }
 
   /** The Recipe Book (§5.3): each half shows as it is earned, the riddle before the find. */
-  private recipes(p: Profile): HTMLElement {
+  private recipes(p: Profile): HTMLElement[] {
+    // Without Alchemy nothing evolves, however the Book reads: say so first.
+    const head = document.createElement('p');
+    head.className = 'collection-note';
+    head.textContent = levelOf(p, 'alchemy') > 0
+      ? `A weapon at level ${BALANCE.evolutions.evolveAt} with its partner passive evolves at the next level-up.`
+      : 'Evolutions need Alchemy from the Forge (Arsenal). Until then, no weapon evolves.';
     const list = document.createElement('ul');
     list.className = 'entry-list';
     for (const r of recipeBook(p)) {
@@ -247,7 +290,7 @@ export class CollectionView {
       }
       list.append(li);
     }
-    return list;
+    return [head, list];
   }
 
   private frames(p: Profile): HTMLElement {

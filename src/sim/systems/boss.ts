@@ -60,6 +60,7 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     boss: def.id,
     elite: false,
     aura: null,
+    champion: false,
     gen: 0,
     wave,
     alive: true,
@@ -103,6 +104,7 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     dashUntil: 0,
     gildedUntil: 0,
     feeds: 0,
+    auraTimer: 0,
   };
   run.enemies.push(body);
   if (run.current) run.current.alive++;

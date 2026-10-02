@@ -2,7 +2,7 @@ import { ABYSS_INDEX } from './abyss';
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
 import type {
-  AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, PactDef, PassiveDef, RegionDef, RelicDef, WeaponDef, WebNodeDef,
+  AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, PactDef, PassiveDef, RegionDef, RelicDef, TrialDef, WeaponDef, WebNodeDef,
 } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
@@ -348,6 +348,11 @@ export const uniqueNames: LintRule = (tables) => {
     for (const e of entries) {
       add(table, e);
       if (table === 'frames') add(table, e, (e as FrameDef).ultimate.name);
+      // A Trial's notable or trim is named like a node: it must not echo one (N5).
+      if (table === 'trials') {
+        const r = (e as TrialDef).reward;
+        if (r.kind !== 'relic') add(table, e, r.name);
+      }
     }
   }
   const echoes = (x: { table: string; e: ContentEntry }, all: readonly { table: string; e: ContentEntry }[]): boolean => {

@@ -12,7 +12,7 @@ import { pactLoad, ruleSurge } from '../pacts';
 import { armed } from './arms';
 import { bossBody, dropPlate, onBossKilled, phasesOf, plateGuard, reflectShot } from './boss';
 import { mitigate } from './damage';
-import { gainXp } from './draft';
+import { gainXp, refreshStats } from './draft';
 import { hurtTower } from './tower';
 import { regionRule, runRegion, spawnEnemy } from './waves';
 
@@ -428,9 +428,29 @@ function chainStrike(run: RunState, x: number, y: number, first: Enemy, p: Weapo
     struck.push(cur.id);
     damageEnemy(run, cur, hit.damage, hit.crit, 'chain');
     if (p.stun > 0 && cur.alive) cur.stunnedUntil = Math.max(cur.stunnedUntil, run.time + p.stun);
-    cur = nearestUnstruck(run, cur.x, cur.y, p.jumpRange, struck);
+    // Deep Arc (a Trial's notable, N5): the leap goes to the burrowed first, and brings them up.
+    const dug: Enemy | null = run.behaviours['deep-arc'] ? unearth(run, cur.x, cur.y, p.jumpRange) : null;
+    cur = dug ?? nearestUnstruck(run, cur.x, cur.y, p.jumpRange, struck);
   }
   run.events.push({ kind: 'chain', points });
+}
+
+/** The nearest burrowed body within `radius` of (x, y), brought to the surface; null if none. */
+function unearth(run: RunState, x: number, y: number, radius: number): Enemy | null {
+  let best: Enemy | null = null;
+  let bestD = radius * radius;
+  for (const e of run.enemies) {
+    if (!e.alive || !e.under) continue;
+    const d = (e.x - x) ** 2 + (e.y - y) ** 2;
+    if (d <= bestD) {
+      bestD = d;
+      best = e;
+    }
+  }
+  if (!best) return null;
+  best.under = false;
+  run.events.push({ kind: 'surface', x: best.x, y: best.y });
+  return best;
 }
 
 /**
@@ -536,7 +556,8 @@ function lob(run: RunState, w: WeaponState, p: WeaponParams, tx: number, ty: num
   const sx = Math.cos(angle) * start;
   const sy = Math.sin(angle) * start;
   launch(run, w, sx, sy, angle, p.projectileSpeed, {
-    ...hit, blast: p.radius, tx, ty, bomblets: p.bomblets,
+    // Heavy Shells (a Trial's notable, N5): more bomblets in every shell.
+    ...hit, blast: p.radius, tx, ty, bomblets: p.bomblets + BALANCE.behaviours.heavyShells * (run.behaviours['heavy-shells'] ?? 0),
     life: Math.hypot(tx - sx, ty - sy) / p.projectileSpeed,
   });
 }
@@ -1104,6 +1125,11 @@ function firstAlong(run: RunState, p: Projectile, dt: number): Enemy | null {
  */
 function turnedAway(run: RunState, p: Projectile, e: Enemy): boolean {
   if (e.boss) return reflectShot(run, e, p.x, p.y);
+  // A Mirrored elite (N3): a shield on every side.
+  if (e.aura === 'mirrored') {
+    run.events.push({ kind: 'deflect', x: e.x, y: e.y });
+    return true;
+  }
   const verb = ENEMY_BY_ID[e.type].verb;
   if (verb.kind !== 'shield' || e.court) return false;
   // The shield faces the tower: a shot flying outward, near head-on, meets it.
@@ -1309,6 +1335,8 @@ export function damageEnemy(run: RunState, e: Enemy, raw: number, crit: boolean,
     crit = true;
   }
   const amount = hitBody(run, e, raw * court, crit, source);
+  // Field Kit (N6): a crit shoves its body back.
+  if (crit && run.behaviours['set-fields'] && e.alive && !e.boss && !e.plate) knockBack(e, BALANCE.sets.fieldsPush);
   // Stormcaller (§11.6): a crit leaps to one more body.
   if (crit && run.behaviours.stormcaller && source !== 'leap' && source !== 'overkill') {
     const o = nearestEnemy(run, e.x, e.y, B.stormLeap, e.id);
@@ -1341,6 +1369,8 @@ function hitBody(run: RunState, e: Enemy, raw: number, crit: boolean, source: Da
   }
   const before = e.hp;
   let amount = mitigate(damageTaken(run, e, raw, source), e.armor);
+  // Mire Lore (N6): a Splitter's fragment dies to any area hit.
+  if (run.behaviours['set-mire'] && e.gen > 0 && AREA.has(source)) amount = Math.max(amount, e.hp);
   // Executioner (§11.4): a hit on a body already this low finishes it. Not a
   // boss. Annihilator, a second level of it, doubles the line.
   // Two sources at most: the Coin stands in for Executioner, never a third line.
@@ -1407,6 +1437,7 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   }
   evolvedDeath(run, e, source);
   feedMaws(run, e);
+  feedHungering(run, e);
   if (e.boss) {
     onBossKilled(run, e);
     return;
@@ -1447,6 +1478,18 @@ function feedMaws(run: RunState, dead: Enemy): void {
   }
 }
 
+/** Hungering elites (N3) near a fallen body heal on it, as a Maw feeds. Maw Tooth starves them too. */
+function feedHungering(run: RunState, dead: Enemy): void {
+  if (run.behaviours.starve) return;
+  const r2 = AURA_BY_ID.hungering.radius ** 2;
+  for (const h of run.enemies) {
+    if (h.aura !== 'hungering' || h === dead || !h.alive) continue;
+    if ((h.x - dead.x) ** 2 + (h.y - dead.y) ** 2 > r2) continue;
+    h.hp = Math.min(h.maxHp, h.hp + h.maxHp * BALANCE.elites.hunger);
+    run.events.push({ kind: 'feed', x: h.x, y: h.y });
+  }
+}
+
 /** What a body's verb does as it dies: a Bomber's blast, a Shardling's shards (§11.1). */
 function lastWord(run: RunState, e: Enemy, verb: EnemyVerb): void {
   const shield = run.behaviours['blast-shield'] ?? 0;
@@ -1455,6 +1498,11 @@ function lastWord(run: RunState, e: Enemy, verb: EnemyVerb): void {
     case 'explode': {
       run.events.push({ kind: 'explode', x: e.x, y: e.y, radius: verb.radius });
       if (Math.hypot(e.x, e.y) - run.stats.radius <= verb.radius) hurtTower(run, e.damage * verb.damage * soften, e.x, e.y, null, 'blasts');
+      // Rift Warden (N6): slain short of the wall, it leaves fire for its pack to walk through.
+      else if (run.behaviours['set-rift']) {
+        const S = BALANCE.sets;
+        run.fires.push({ x: e.x, y: e.y, radius: verb.radius, dps: e.maxHp * S.riftBurn, until: run.time + S.riftSeconds });
+      }
       return;
     }
     case 'shards': {
@@ -1511,8 +1559,10 @@ function ruleOnKill(run: RunState, e: Enemy): void {
       if (!Rng.wrap(run.streams.foes).chance(chance)) return;
       const shade = spawnEnemy(run, region, e.type, e.wave, e.x, e.y, { shade: true, single: true });
       shade.hp = shade.maxHp = e.maxHp * rule.hp;
-      shade.xp = e.xp * rule.reward;
-      shade.shards = e.shards * rule.reward;
+      // Gravewatch (N6): a shade pays as much as the body it rose from.
+      const reward = run.behaviours['set-hollow'] ? 1 : rule.reward;
+      shade.xp = e.xp * reward;
+      shade.shards = e.shards * reward;
       shade.elite = false;
       run.events.push({ kind: 'rise', x: e.x, y: e.y });
       return;
@@ -1543,9 +1593,25 @@ function burst(run: RunState, e: Enemy, n: number, opts: Parameters<typeof spawn
 /** An elite fell (§4.3): its aura's last act, then a chance at a relic. */
 function eliteDeath(run: RunState, e: Enemy): void {
   run.elitesKilled++;
+  // Blightbane (N6): each elite slain mends the tower.
+  if (run.behaviours['set-blight']) run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * BALANCE.sets.blightHeal);
   run.events.push({ kind: 'eliteKill', x: e.x, y: e.y });
   const E = BALANCE.elites;
   if (e.aura === 'split') burst(run, e, E.split, {});
+  // Molten (N3): slain near the wall, it leaves a burning pool there.
+  if (e.aura === 'molten') {
+    const M = E.molten;
+    const d = Math.hypot(e.x, e.y) || 1;
+    if (d - run.stats.radius <= run.stats.range * M.reach) {
+      const at = run.stats.radius + M.radius * 0.5;
+      const x = (e.x / d) * at;
+      const y = (e.y / d) * at;
+      run.pools.push({ x, y, radius: M.radius, dps: e.damage * M.dps, until: run.time + M.seconds, timer: 0.5 });
+      run.events.push({ kind: 'pool', x, y, radius: M.radius });
+    }
+  }
+  // A Fog-caller (N3): the mist lifts with it.
+  if (e.aura === 'fog') refreshStats(run);
   if (e.aura === 'vengeful') {
     const radius = AURA_BY_ID.vengeful.radius;
     for (const o of run.enemies) {
@@ -1559,7 +1625,8 @@ function eliteDeath(run: RunState, e: Enemy): void {
   const loot = Rng.wrap(run.streams.loot);
   // Treasure Hunter (§11.4): relics drop more often.
   const luck = run.behaviours['relic-luck'] ? BALANCE.behaviours.relicLuck : 1;
-  if (pool.length > 0 && loot.chance(BALANCE.relics.eliteDrop * luck)) {
+  // A Champion (N4) always drops one; at rank III it melts to shards as it banks.
+  if (pool.length > 0 && (e.champion || loot.chance(BALANCE.relics.eliteDrop * luck))) {
     const relic = loot.pick(pool);
     run.relics.push(relic);
     run.events.push({ kind: 'relicDrop', relic, x: e.x, y: e.y });

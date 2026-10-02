@@ -68,6 +68,14 @@ function applyAuras(run: RunState, dt: number): void {
   for (const src of run.enemies) {
     if (!src.alive || !src.aura) continue;
     const aura = src.aura;
+    // A Wraith (N3) phases on its own clock, like a Phantom's.
+    if (aura === 'wraith') {
+      src.auraTimer -= dt;
+      if (src.auraTimer <= 0) {
+        src.auraTimer += E.wraith.cycle;
+        src.hiddenUntil = run.time + E.wraith.hidden;
+      }
+    }
     const r2 = AURA_BY_ID[aura].radius ** 2;
     if (r2 === 0) continue;
     for (const e of run.enemies) {
@@ -84,6 +92,11 @@ function applyAuras(run: RunState, dt: number): void {
           break;
         case 'split':
         case 'vengeful':
+        case 'fog':
+        case 'mirrored':
+        case 'molten':
+        case 'wraith':
+        case 'hungering':
           break;
         default: {
           const exhaustive: never = aura;
@@ -190,7 +203,8 @@ function before(run: RunState, e: Enemy, verb: EnemyVerb, dt: number): void {
       }
       return;
     case 'burrow':
-      if (e.under && Math.hypot(e.x, e.y) <= verb.surface) {
+      // Glasswright (N6): they break the surface further out.
+      if (e.under && Math.hypot(e.x, e.y) <= verb.surface * (run.behaviours['set-wastes'] ? BALANCE.sets.wastesSurface : 1)) {
         e.under = false;
         run.events.push({ kind: 'surface', x: e.x, y: e.y });
       }

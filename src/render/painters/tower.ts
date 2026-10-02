@@ -1,5 +1,5 @@
 import { weaponParams } from '../../content/weapons';
-import type { WeaponId } from '../../content/types';
+import type { TrimId, WeaponId } from '../../content/types';
 import { FX, INK, lighten, mix, withAlpha } from '../palette';
 import { LIGHT_ANGLE } from './enemies';
 
@@ -10,6 +10,209 @@ export interface Mount {
   readonly aim: number;
   /** An evolved weapon wears a gold halo on its mount (§4.4). */
   readonly evolved?: boolean;
+}
+
+/**
+ * What the tower wears beyond its weapons (N2): its tier (one stage per Forge
+ * ring completed), a light per overtime trophy (N4), and the trims Trials
+ * paid (N5). The app sets it from the profile; the sim never sees it.
+ */
+export interface TowerLook {
+  readonly tier: number;
+  readonly trophies: number;
+  readonly trims: readonly TrimId[];
+}
+
+export const PLAIN_LOOK: TowerLook = { tier: 1, trophies: 0, trims: [] };
+
+/** The plinth's eight corners, at `k` × the wall radius. */
+function corners(R: number, k: number): { x: number; y: number }[] {
+  return Array.from({ length: 8 }, (_, i) => {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    return { x: Math.cos(a) * R * k, y: Math.sin(a) * R * k };
+  });
+}
+
+/** Beneath the plinth: the stone course (tier 2) and the buttresses (tier 5). */
+function paintFooting(ctx: CanvasRenderingContext2D, R: number, look: TowerLook): void {
+  if (look.tier >= 5) {
+    ctx.fillStyle = INK['600'];
+    for (const c of corners(R, 1.2)) {
+      const a = Math.atan2(c.y, c.x);
+      ctx.beginPath();
+      ctx.moveTo(c.x + Math.cos(a + 1.3) * R * 0.12, c.y + Math.sin(a + 1.3) * R * 0.12);
+      ctx.lineTo(c.x + Math.cos(a) * R * 0.32, c.y + Math.sin(a) * R * 0.32);
+      ctx.lineTo(c.x + Math.cos(a - 1.3) * R * 0.12, c.y + Math.sin(a - 1.3) * R * 0.12);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  if (look.tier >= 2) {
+    ctx.strokeStyle = INK['500'];
+    ctx.lineWidth = R * 0.12;
+    ctx.beginPath();
+    corners(R, 1.34).forEach((c, i) => (i === 0 ? ctx.moveTo(c.x, c.y) : ctx.lineTo(c.x, c.y)));
+    ctx.closePath();
+    ctx.stroke();
+    // Its joints: a block every corner and between.
+    ctx.strokeStyle = INK['700'];
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * R * 1.27, Math.sin(a) * R * 1.27);
+      ctx.lineTo(Math.cos(a) * R * 1.41, Math.sin(a) * R * 1.41);
+      ctx.stroke();
+    }
+  }
+}
+
+/** On the plinth: the gilt edge (tier 4), banners (tier 3), lamps (tier 6) and the trims. */
+function paintDress(ctx: CanvasRenderingContext2D, R: number, look: TowerLook, time: number): void {
+  const at = corners(R, 1.2);
+  if (look.tier >= 4) {
+    ctx.strokeStyle = withAlpha(FX.gold, 0.85);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    corners(R, 1.12).forEach((c, i) => (i === 0 ? ctx.moveTo(c.x, c.y) : ctx.lineTo(c.x, c.y)));
+    ctx.closePath();
+    ctx.stroke();
+  }
+  if (look.tier >= 3) {
+    // Four banners on the diagonal corners, stirring.
+    for (let i = 1; i < 8; i += 2) {
+      const c = at[i];
+      const sway = Math.sin(time * 2 + i) * R * 0.05;
+      ctx.fillStyle = look.trims.includes('pennants') ? FX.frost : FX.blood;
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y - R * 0.3);
+      ctx.lineTo(c.x + R * 0.26 + sway, c.y - R * 0.2);
+      ctx.lineTo(c.x, c.y - R * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = INK['200'];
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y);
+      ctx.lineTo(c.x, c.y - R * 0.32);
+      ctx.stroke();
+    }
+  }
+  if (look.tier >= 6) {
+    for (let i = 0; i < 8; i += 2) {
+      const c = at[i];
+      const glow = 0.6 + 0.4 * Math.sin(time * 3 + i);
+      ctx.fillStyle = withAlpha(FX.gold, 0.25 * glow);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, R * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = lighten(FX.gold, 0.3);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, R * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  for (const trim of look.trims) paintTrim(ctx, R, trim, time);
+}
+
+/** One trim (N5). */
+function paintTrim(ctx: CanvasRenderingContext2D, R: number, trim: TrimId, time: number): void {
+  switch (trim) {
+    case 'ivy':
+      ctx.fillStyle = withAlpha(FX.nature, 0.9);
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2 + 0.2;
+        const r = R * (1.12 + 0.05 * Math.sin(i * 2.3));
+        ctx.beginPath();
+        ctx.ellipse(Math.cos(a) * r, Math.sin(a) * r, R * 0.07, R * 0.04, a, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    case 'pennants':
+      // The banners fly frost-blue (`paintDress`); and a ring of small flags at the course.
+      ctx.fillStyle = withAlpha(FX.frost, 0.7);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * R * 1.45, Math.sin(a) * R * 1.45, R * 0.04, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    case 'runes':
+      ctx.strokeStyle = withAlpha(FX.arcane, 0.5 + 0.3 * Math.sin(time * 1.5));
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const x = Math.cos(a) * R * 0.98;
+        const y = Math.sin(a) * R * 0.98;
+        ctx.beginPath();
+        ctx.moveTo(x - R * 0.05, y - R * 0.06);
+        ctx.lineTo(x + R * 0.05, y);
+        ctx.lineTo(x - R * 0.05, y + R * 0.06);
+        ctx.stroke();
+      }
+      return;
+    case 'gilt':
+      ctx.strokeStyle = lighten(FX.gold, 0.2);
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, R * 0.9, 0, Math.PI * 2);
+      ctx.stroke();
+      return;
+    case 'embers':
+      for (let i = 0; i < 6; i++) {
+        const a = time * 0.7 + (i / 6) * Math.PI * 2;
+        const lift = ((time * 0.5 + i / 6) % 1);
+        ctx.fillStyle = withAlpha(FX.ember, 0.8 * (1 - lift));
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * R * (1.1 + lift * 0.4), Math.sin(a) * R * (1.1 + lift * 0.4), R * 0.04, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    case 'starlit':
+      // Drawn over the crystal, in `paintCrown`.
+      return;
+    default: {
+      const exhaustive: never = trim;
+      return exhaustive;
+    }
+  }
+}
+
+/** Over the crystal: the crown of light (tier 7), the trophies' lights (N4), and a starlit crystal. */
+function paintCrown(ctx: CanvasRenderingContext2D, R: number, look: TowerLook, time: number): void {
+  if (look.trims.includes('starlit')) {
+    ctx.fillStyle = withAlpha(INK['050'], 0.9);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + time * 0.4;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * R * 0.32, Math.sin(a) * R * 0.32, R * 0.035, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (look.tier >= 7) {
+    const pulse = 0.7 + 0.3 * Math.sin(time * 1.6);
+    ctx.strokeStyle = withAlpha(lighten(FX.gold, 0.3), 0.55 * pulse);
+    ctx.lineWidth = R * 0.08;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 1.62, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // A light per trophy, turning slowly round the tower.
+  const n = Math.min(look.trophies, 18);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + time * 0.25;
+    const x = Math.cos(a) * R * 1.8;
+    const y = Math.sin(a) * R * 1.8;
+    ctx.fillStyle = withAlpha(FX.gold, 0.3);
+    ctx.beginPath();
+    ctx.arc(x, y, R * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = lighten(FX.gold, 0.35);
+    ctx.beginPath();
+    ctx.arc(x, y, R * 0.045, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 /**
@@ -46,6 +249,7 @@ export function paintTower(
   time: number,
   hurt: number,
   fallen: number,
+  look: TowerLook = PLAIN_LOOK,
 ): void {
   const lx = Math.cos(LIGHT_ANGLE);
   const ly = Math.sin(LIGHT_ANGLE);
@@ -55,6 +259,7 @@ export function paintTower(
   ctx.beginPath();
   ctx.ellipse(-lx * 6, -ly * 6, R * 1.3, R * 1.3, 0, 0, Math.PI * 2);
   ctx.fill();
+  paintFooting(ctx, R, look);
 
   // Plinth.
   ctx.beginPath();
@@ -73,6 +278,7 @@ export function paintTower(
   ctx.strokeStyle = INK['300'];
   ctx.lineWidth = 2.5;
   ctx.stroke();
+  paintDress(ctx, R, look, time);
 
   // Drum.
   const drum = ctx.createRadialGradient(lx * R * 0.35, ly * R * 0.35, R * 0.1, 0, 0, R * 0.85);
@@ -115,6 +321,7 @@ export function paintTower(
   ctx.closePath();
   ctx.fill();
 
+  if (fallen < 1) paintCrown(ctx, R, look, time);
   if (fallen > 0) paintCracks(ctx, R, fallen);
 }
 

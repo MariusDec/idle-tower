@@ -14,7 +14,8 @@ import { paintAegis, paintBoss, paintCourt, paintFacets, paintPlates, paintPools
 import { mirrorFacets, phasesOf } from '../sim/systems/boss';
 import { runRegion } from '../sim/systems/waves';
 import { WEAPON_BY_ID } from '../content/weapons';
-import { mountOffset, paintRangeRing, paintTower, type Mount } from './painters/tower';
+import { PLAIN_LOOK, mountOffset, paintRangeRing, paintTower, type Mount, type TowerLook } from './painters/tower';
+import type { WeaponId } from '../content/types';
 import { QUALITY, type QualityTier } from './quality';
 
 /** Sim ticks the crystal stays flared after a contact hit. */
@@ -23,8 +24,8 @@ const HURT_TICKS = 12;
 export const FALL_SECONDS = 1.2;
 /** HP fraction below which the edge vignette starts. */
 const VIGNETTE_FROM = 0.35;
-/** The hub's backdrop tower: the frame's starting weapon, facing up. */
-const IDLE_MOUNTS: readonly Mount[] = [{ id: 'arcane-bolt', level: 1, aim: -Math.PI / 2 }];
+/** The hub's backdrop tower (N2): the selected frame's starting weapon, facing up, at its tier's level. */
+const IDLE_AIM = -Math.PI / 2;
 /** Seconds the boss intro's letterbox and name hold (§4.3: reuse the legacy intro). */
 const INTRO_SECONDS = 2.8;
 /** Seconds a banner (a boss phase, REGION CLEARED) holds. */
@@ -68,6 +69,9 @@ export class Renderer {
   private textScale = 1;
   /** The palette the canvas wears, and its baked sprites were drawn in. */
   private palette: PaletteMode = 'standard';
+  /** What the tower wears (N2), and the hub's mount: the profile's, set by the app. */
+  private look: TowerLook = PLAIN_LOOK;
+  private idle: readonly Mount[] = [{ id: 'arcane-bolt', level: 1, aim: IDLE_AIM }];
 
   constructor(canvas: HTMLCanvasElement, host: HTMLElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
@@ -104,6 +108,15 @@ export class Renderer {
   setTextScale(scale: number): void {
     this.textScale = scale;
     this.effects.setTextScale(scale);
+  }
+
+  /**
+   * The tower's look from the profile (N2): its tier, trophies and trims,
+   * and the frame whose starting weapon the hub's tower mounts, at the tier's level.
+   */
+  setTower(look: TowerLook, weapon: WeaponId): void {
+    this.look = look;
+    this.idle = [{ id: weapon, level: Math.min(5, look.tier), aim: IDLE_AIM }];
   }
 
   get quality(): QualityTier {
@@ -195,7 +208,8 @@ export class Renderer {
           this.effects.spray(ev.x, ev.y, FX.arcane, 10, 180, 3);
           break;
         case 'eliteSpawn':
-          this.effects.ring(ev.x, ev.y, 20, 90, withAlpha(FX.gold, 0.8), 0.6, 5);
+          this.effects.ring(ev.x, ev.y, 20, ev.champion ? 160 : 90, withAlpha(FX.gold, 0.8), ev.champion ? 0.9 : 0.6, ev.champion ? 8 : 5);
+          if (ev.champion) this.camera.shake(6);
           break;
         case 'eliteKill':
           this.effects.spray(ev.x, ev.y, FX.gold, 24, 260, 4, 120);
@@ -413,7 +427,8 @@ export class Renderer {
       paintFires(ctx, run.fires, run.time, this.clock);
       paintRunes(ctx, run.runes, run.time, this.clock);
       paintPools(ctx, run.pools, run.time, this.clock);
-      this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock);
+      const lord = BOSS_BY_ID[region.boss];
+      this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock, { color: lord.color, border: lord.borderColor });
       paintStatus(ctx, run.enemies, alpha, run.time, this.clock);
       const b = run.boss;
       if (b && b.killedIn === null) {
@@ -430,11 +445,11 @@ export class Renderer {
       const sinceHurt = run.tick - run.tower.hurtTick;
       const hurt = run.tower.hurtTick >= 0 && sinceHurt < HURT_TICKS ? 1 - sinceHurt / HURT_TICKS : 0;
       const fallen = this.fallT === null ? 0 : Math.min(1, this.fallT / (FALL_SECONDS * 0.6));
-      paintTower(ctx, run.stats.radius, run.weapons, this.clock, hurt, fallen);
+      paintTower(ctx, run.stats.radius, run.weapons, this.clock, hurt, fallen, this.look);
       if (run.tower.invulnUntil > run.time) paintAegis(ctx, run.stats.radius, run.tower.invulnUntil - run.time, this.clock);
       paintProjectiles(ctx, run.projectiles, alpha, additive);
     } else {
-      paintTower(ctx, 46, IDLE_MOUNTS, this.clock, 0, 0);
+      paintTower(ctx, 46, this.idle, this.clock, 0, 0, this.look);
     }
     this.effects.drawWorld(ctx);
 

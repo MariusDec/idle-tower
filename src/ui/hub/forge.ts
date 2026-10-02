@@ -8,6 +8,7 @@ import { resolveStat } from '../../sim/stats';
 import { STAT_LABEL } from '../build';
 import { formatNumber } from '../../core/format';
 import { FORGE_WEB, canAfford } from '../../meta/forge';
+import { WISHLIST_MAX } from '../../meta/automation';
 import type { Profile } from '../../meta/profile';
 import { STAR_WEB } from '../../meta/stars';
 import type { NodeState, Web } from '../../meta/web';
@@ -40,6 +41,10 @@ const LABEL_GAP = 12;
 export interface ForgeActions {
   buy(id: string): boolean;
   refund(id: string): boolean;
+  /** Pin a node to the Foreman's wishlist, or unpin it (N7). Absent for a web without one. */
+  pin?(id: string): boolean;
+  /** The wishlist, in order, once the Foreman is owned; null before. */
+  pinned?(profile: Profile): readonly string[] | null;
 }
 
 /** What a web view draws, and what it calls the things it draws (§5.1, §9). */
@@ -242,6 +247,8 @@ export class WebView<N extends WebNodeDef> {
     if (level >= n.maxLevel) classes.push('is-maxed');
     if (n.id === this.selected) classes.push('is-selected');
     if (n.id === this.hinted) classes.push('is-hinted');
+    const pin = this.actions.pinned?.(p)?.indexOf(n.id) ?? -1;
+    if (pin >= 0) classes.push('is-pinned');
     const g = el('g', { class: classes.join(' '), transform: `translate(${at.x} ${at.y})`, 'data-id': n.id });
     g.appendChild(el('circle', { class: 'forge-hit', r: Math.max(r, HIT_RADIUS) }));
     let shape: SVGElement;
@@ -288,6 +295,12 @@ export class WebView<N extends WebNodeDef> {
         t.textContent = levelText(level, n.maxLevel);
         g.appendChild(t);
       }
+    }
+    // The Foreman's wishlist (N7): its place in the queue, on a tag over the node.
+    if (pin >= 0) {
+      const t = el('text', { class: 'forge-pin', y: -r - 6, 'text-anchor': 'middle' });
+      t.textContent = `#${pin + 1}`;
+      g.appendChild(t);
     }
     return g;
   }
@@ -367,6 +380,24 @@ export class WebView<N extends WebNodeDef> {
       done.className = 'forge-detail-done';
       done.textContent = n.maxLevel > 1 ? 'Maxed' : 'Owned';
       actions.append(done);
+    }
+    // The Foreman (N7): pin it, and the Forge buys it as shards arrive.
+    const pinned = this.actions.pinned?.(p) ?? null;
+    if (pinned && this.actions.pin && level < n.maxLevel) {
+      const at = pinned.indexOf(id);
+      const pin = document.createElement('button');
+      pin.type = 'button';
+      pin.className = 'btn forge-pin-btn';
+      pin.setAttribute('aria-pressed', String(at >= 0));
+      pin.textContent = at >= 0 ? `Unpin #${at + 1}` : 'Pin';
+      pin.disabled = at < 0 && pinned.length >= WISHLIST_MAX;
+      pin.addEventListener('click', () => {
+        if (this.actions.pin?.(id)) {
+          this.redraw();
+          this.renderDetail();
+        }
+      });
+      actions.append(pin);
     }
     if (web.canRefund(p, id)) {
       const refund = document.createElement('button');

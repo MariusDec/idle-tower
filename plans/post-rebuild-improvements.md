@@ -1,8 +1,8 @@
 # The Tower, after the rebuild — improvements
 
 **Status:** 2026-10-02. Q0 is built; Q1's mechanics are built and its
-retune is still owed (`plans/q1-balancing.md`); Q2 is built (see §7's Q2
-for what it left to later phases). The owner's decisions were made on
+retune is still owed (`plans/q1-balancing.md`); Q2 and Q3 are built (see
+§7's Q2 and Q3 for what each left to later phases). The owner's decisions were made on
 2026-10-02 (§8).
 
 **Where this comes from:** a read of all of `src/`, `tools/` and `docs/` on

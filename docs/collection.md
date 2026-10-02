@@ -54,10 +54,52 @@ each leans on a weapon family or the region's verb. A duplicate ranks a
 relic up to III; `perRank` is what each rank adds. A duplicate past III is
 melted down for that wave's wave pay (`relics.peakWaves`; five cut Act 1 by ~2.7 h).
 
+**Relic sets** (N6, `RELIC_SETS`): a region's three elite relics worn
+together give a bonus that leans on its verb (`activeSets`, applied by
+`buildRunConfig` like a relic). Each set has ranks I–III: a duplicate past
+a relic's rank III adds a point of its set's progress (D-12), and every
+`BALANCE.sets.perRank` (5) points is a rank (+5% damage each past I); once
+the set is at III, duplicates melt to shards again. Boss relics and the
+Abyss's belong to no set.
+
+| Set | Region | Bonus |
+|---|---|---|
+| Field Kit | Ashen Fields | crits knock enemies back |
+| Mire Lore | Drowned Mire | Splitter fragments die to any blast, pulse or burn |
+| Glasswright | Glass Wastes | Burrowers surface twice as far out |
+| Rift Warden | Ember Rift | Bombers slain short of the wall leave fire for their pack |
+| Gravewatch | The Hollow | risen shades pay full shards and XP |
+| Blightbane | Blight Heart | each elite slain restores 5% of Max HP |
+
 Relic slots: one per boss with `relicSlot` felled, plus the
 Constellations' gift (`relicSlots`). `equipped` lists what is worn;
 `equippedRelics` trims it to the slots. Relics drop only in live runs,
 never offline.
+
+## Trials (N5)
+
+Three authored runs per region (`content/trials.ts`), opened by its boss
+(`meta/trials.ts`). Each is an ordinary run in that region under fixed
+rules, won by felling the boss, and pays once:
+
+| Rule | What it does to the run (`buildRunConfig`) |
+|---|---|
+| `frame` | the run is that frame's |
+| `weapons` | the first is mounted at the start (`RunConfig.startingWeapon`); the pool's weapons are those, unlocked or not |
+| `slots` | a ceiling on weapon and passive slots |
+| `omen` | Act 2's pacts as Act 1 omens, in place of the pacts; they pay no heat record |
+
+| Reward | |
+|---|---|
+| `relic` | a rank of the region's boss relic |
+| `trim` | a decoration on the tower, in the hub and in runs (N2) |
+| `notable` | effects no Forge node gives, applied to every run like a node's: Drill Sergeant (starting weapon +1 level), Mire Sight (+1 reroll), Deep Arc (Chain Lightning leaps to burrowed bodies first and surfaces them), Heavy Shells (+2 bomblets), Clear Mind (+1 Banish), Dawn Muster (start two levels higher) |
+
+The Map's region card lists them; **Begin** sets `profile.trial` (and the
+region) and starts the run at once. `bankRun` marks a win, pays it
+(`winTrial`), and clears `profile.trial` either way: the next run is an
+ordinary one. A run's trial is `RunState.trial`, so a resumed snapshot
+stays one.
 
 ## The Bestiary
 

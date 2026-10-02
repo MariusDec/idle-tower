@@ -7,8 +7,9 @@ import { FRAMES } from './frames';
 import { PACTS } from './pacts';
 import { FALLBACKS, PASSIVES } from './passives';
 import { REGIONS } from './regions';
-import { RELICS } from './relics';
+import { RELICS, RELIC_SETS } from './relics';
 import { STARS } from './stars';
+import { TRIALS } from './trials';
 import { WEAPONS } from './weapons';
 import type { ContentEntry } from './types';
 
@@ -28,7 +29,9 @@ export const CONTENT: Readonly<Record<string, readonly ContentEntry[]>> = {
   fallbacks: FALLBACKS,
   forge: FORGE,
   relics: RELICS,
+  sets: RELIC_SETS,
   feats: FEATS,
   pacts: PACTS,
   stars: STARS,
+  trials: TRIALS,
 };

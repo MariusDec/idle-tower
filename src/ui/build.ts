@@ -1,3 +1,4 @@
+import { FORGE_BY_ID } from '../content/forge';
 import { BALANCE } from '../content/balance';
 import { EVOLUTION_OF } from '../content/evolutions';
 import type { IconId } from '../content/icons';
@@ -163,4 +164,13 @@ export function tallyBars(rows: readonly TallyRow[], label: string): HTMLElement
     ul.append(li);
   }
   return ul;
+}
+
+/** What the Foreman bought (N7), in words: "Sharpened ×2, Banish". */
+export function foremanLine(ids: readonly string[]): string {
+  const names = ids.map((id) => FORGE_BY_ID[id]?.name ?? id);
+  return [...new Set(names)].map((n) => {
+    const k = names.filter((x) => x === n).length;
+    return k > 1 ? `${n} ×${k}` : n;
+  }).join(', ');
 }

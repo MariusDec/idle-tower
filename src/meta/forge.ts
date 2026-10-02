@@ -90,3 +90,18 @@ export function nextGoal(profile: Profile): ForgeGoal | null {
 export function ownedNodes(profile: Profile): { node: ForgeNodeDef; level: number }[] {
   return FORGE_WEB.ownedNodes(profile);
 }
+
+/**
+ * The tower's tier (N2, §5.1): 1, plus one for every Forge ring completed in
+ * turn from the first. A ring is complete when every node on it is owned;
+ * keystones (build trades) and masteries (endless) don't count.
+ */
+export function towerTier(profile: Profile): number {
+  let tier = 1;
+  for (let ring = 1; ring <= 6; ring++) {
+    const nodes = FORGE.filter((n) => n.ring === ring && n.type !== 'keystone' && n.type !== 'mastery');
+    if (nodes.length === 0 || nodes.some((n) => levelOf(profile, n.id) === 0)) break;
+    tier++;
+  }
+  return tier;
+}

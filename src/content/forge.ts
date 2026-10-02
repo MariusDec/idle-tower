@@ -366,6 +366,11 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'automation', id: 'speed-3' }], sealed: 'bog-mother',
   },
   {
+    id: 'foreman', name: 'Foreman', icon: 'shop', text: 'Pin up to 5 nodes: the Forge buys them as shards arrive.',
+    branch: 'engineering', type: 'notable', ring: 4, angle: 126, links: ['tactician-2'], maxLevel: 1, cost: 4000,
+    effects: [{ kind: 'automation', id: 'foreman' }], sealed: 'bog-mother',
+  },
+  {
     id: 'ult-charge', name: 'Capacitor', icon: 'energy-tank', text: 'Ultimate charges 15% faster.',
     branch: 'engineering', type: 'minor', ring: 2, angle: 148, links: ['auto-restart', 'speed-2'], maxLevel: 3, cost: 120,
     effects: [{ kind: 'stat', mod: { key: 'ultCharge', pct: 0.15 } }],
@@ -468,6 +473,11 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'behaviour', id: 'extra-choice' }],
   },
   {
+    id: 'banish', name: 'Banish', icon: 'punch-blast', text: "+1 Banish per run: strike a new card from this run's draft.",
+    branch: 'fortune', type: 'notable', ring: 2, angle: 246, links: ['choice'], maxLevel: 3, cost: 120,
+    effects: [{ kind: 'behaviour', id: 'banish' }],
+  },
+  {
     id: 'hoarder', name: 'Hoarder', icon: 'money-stack', text: 'Shards ×2, but every enemy has ×1.5 health.',
     branch: 'fortune', type: 'keystone', ring: 3, angle: 238, links: ['choice'], maxLevel: 1, cost: 1500,
     effects: [{ kind: 'stat', mod: { key: 'shardGain', mult: 2 } }, { kind: 'behaviour', id: 'hoarder' }],
@@ -493,6 +503,11 @@ export const FORGE: readonly ForgeNodeDef[] = [
     id: 'foresight', name: "Foresight", icon: 'all-seeing-eye', text: "+1 card in every draft.",
     branch: 'fortune', type: 'notable', ring: 4, angle: 234, links: ['bounty'], maxLevel: 1, cost: 8000,
     effects: [{ kind: 'behaviour', id: 'extra-choice' }], sealed: 'prism',
+  },
+  {
+    id: 'banish-2', name: 'Clean Slate', icon: 'punch-blast', text: '+1 Banish per run.',
+    branch: 'fortune', type: 'notable', ring: 4, angle: 246, links: ['foresight'], maxLevel: 2, cost: 9000,
+    effects: [{ kind: 'behaviour', id: 'banish' }], sealed: 'prism',
   },
   {
     id: 'fortune-shards-5', name: "Glittering Deep", icon: 'gold-nuggets', text: "Shards ×1.07.",

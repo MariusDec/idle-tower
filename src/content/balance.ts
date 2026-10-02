@@ -95,6 +95,8 @@ export const BALANCE = {
     stormShare: 0.6,
     /** Gravekeeper's quirk: Max HP each kill restores. */
     siphon: 0.002,
+    /** Heavy Shells (a Trial's notable, N5): bomblets a shell scatters beyond its own. */
+    heavyShells: 2,
   },
   /**
    * Evolutions (§4.4, §11.2): offered once a weapon reaches `evolveAt` with
@@ -244,6 +246,20 @@ export const BALANCE = {
     /** A duplicate past the last rank pays this many waves' pay where it fell. Late elites drop many: 5 took ~2.7 h off Act 1. */
     peakWaves: 1,
   },
+  /** Relic sets (N6): rank I, then a rank per `perRank` duplicates past a relic's rank III, to `maxRank`. */
+  sets: {
+    perRank: 5,
+    maxRank: 3,
+    /** Field Kit: how far a crit shoves a weight-1 body. */
+    fieldsPush: 40,
+    /** Glasswright: Burrowers surface this many times as far out. */
+    wastesSurface: 2,
+    /** Rift Warden: a Bomber's fire, a share of its Max HP a second, for `riftSeconds`. */
+    riftBurn: 0.25,
+    riftSeconds: 3,
+    /** Blightbane: Max HP each elite kill restores. */
+    blightHeal: 0.05,
+  },
   /** Elites (§4.3). */
   elites: {
     /** HP multiple over a plain body of the same type. */
@@ -264,6 +280,33 @@ export const BALANCE = {
     split: 3,
     /** Vengeful: speed and damage multiplier its death gives nearby bodies. */
     vengeful: 1.5,
+    // The regions' own auras (N3).
+    /** Fog-caller: the tower's range is cut by this share while one lives (they don't stack). */
+    fog: 0.1,
+    /** Molten: slain within `reach` × range of the wall, a pool opens there, burning `dps` × its contact hit a second. */
+    molten: { reach: 0.5, dps: 0.4, seconds: 4, radius: 50 },
+    /** Wraith: out for `hidden` s of every `cycle`. */
+    wraith: { cycle: 4, hidden: 1.5 },
+    /** Hungering: Max HP it heals for each body that falls near it. */
+    hunger: 0.08,
+  },
+  /**
+   * Overtime Champions (N4): every `every`th wave past the boss brings one, an
+   * elite this many times an elite's HP and shards, sure to drop a relic.
+   */
+  champions: {
+    every: 5,
+    hp: 2.5,
+    shards: 4,
+  },
+  /**
+   * Overtime trophies (N4): reaching these waves past a region's boss earns a
+   * mark on the Map and a light on the hub tower, once, paying `pay` times
+   * that wave's wave pay.
+   */
+  trophies: {
+    overtime: [5, 10, 15],
+    pay: 10,
   },
   /** Bosses (§4.3, §8.2). */
   boss: {

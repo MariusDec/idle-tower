@@ -64,7 +64,7 @@ export const REGIONS: readonly RegionDef[] = [
     surge: { text: 'The mist thickens: 15% less range again.', effect: { kind: 'rule' } },
     boss: 'bog-mother',
     tint: '#1d4a3c',
-    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'split', 'vengeful'] },
+    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'fog', 'vengeful'] },
   },
   {
     id: 'glass-wastes',
@@ -93,7 +93,7 @@ export const REGIONS: readonly RegionDef[] = [
     surge: { text: 'Glare off the glass: the tower attacks 10% slower.', effect: { kind: 'stat', mod: { key: 'attackSpeed', pct: -0.1 } } },
     boss: 'prism',
     tint: '#4a5a66',
-    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'split', 'vengeful'] },
+    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'mirrored', 'split', 'vengeful'] },
   },
   {
     id: 'ember-rift',
@@ -122,7 +122,7 @@ export const REGIONS: readonly RegionDef[] = [
     surge: { text: 'The heat rises: the tower has 10% less Max HP.', effect: { kind: 'stat', mod: { key: 'maxHp', pct: -0.1 } } },
     boss: 'forgeheart',
     tint: '#4a2416',
-    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'split', 'vengeful'] },
+    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'molten', 'vengeful'] },
   },
   {
     id: 'the-hollow',
@@ -151,7 +151,7 @@ export const REGIONS: readonly RegionDef[] = [
     surge: { text: 'One more in ten of the slain rises as a shade.', effect: { kind: 'rule' } },
     boss: 'hollow-king',
     tint: '#1e1a33',
-    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'split', 'vengeful'] },
+    elites: { from: 5, every: 4, auras: ['haste', 'wraith', 'shield', 'split', 'vengeful'] },
   },
   {
     id: 'blight-heart',
@@ -183,7 +183,7 @@ export const REGIONS: readonly RegionDef[] = [
     boss: 'blight',
     tint: '#3a0f1a',
     elites: {
-      from: 1, every: 1, auras: ['haste', 'regen', 'shield', 'split', 'vengeful'],
+      from: 1, every: 1, auras: ['haste', 'hungering', 'shield', 'split', 'vengeful'],
       types: ['spitter', 'mender', 'shieldbearer', 'blinker', 'leech'],
     },
   },

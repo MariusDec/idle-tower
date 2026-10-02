@@ -31,6 +31,10 @@ A fresh Forge shows three nodes (§7.1). Node types:
   picked, ×3 damage, evolves at 3), Hoarder (shards ×2, every enemy ×1.5
   HP: a personal heat, B2), Fortress. `npm run arsenal -- --keystones`
   sweeps each against none (T4);
+- Q3 adds **Banish** (Fortune ring 2, 3 levels) and **Clean Slate**
+  (ring 4, 2 levels, the Prism) for N1's charges, and the **Foreman**
+  (Engineering ring 4, off Tactician II, the Bog Mother) for N7's
+  wishlist ([idle.md](idle.md));
 - **mastery** (5, Act 2): unlimited levels at ×1.03 each, compounding,
   ×1.2 the cost a level: the idle-forever sink (§9; S1: the Abyss is
   exponential, so its sink is too).
@@ -40,6 +44,11 @@ falls (a few nodes until the Bog Mother), rings 4–6 by the Prism,
 Forgeheart and the Hollow King. A few ring-4 nodes are unsealed so a player
 stuck in Region 3 still has something to buy. Ring 5 costs ×2 and ring 6
 ×3 what ×4 a ring would give, so the Forge lasts to the finale.
+
+**The tower's tier** (N2, `towerTier`): 1, plus one for every ring
+completed in turn from the first, keystones and masteries aside. Each tier
+adds a stage to the tower's sprite ([render.md](render.md)), in the hub and
+in every run.
 
 ## Rules (`meta/web.ts`)
 

@@ -55,6 +55,12 @@ const AURA_COLOR: Record<AuraId, FxColorName> = {
   shield: 'frost',
   split: 'arcane',
   vengeful: 'blood',
+  // The regions' own (N3); each shares a colour only with an aura its region lacks.
+  fog: 'mana',
+  mirrored: 'frost',
+  molten: 'critical',
+  wraith: 'mana',
+  hungering: 'nature',
 };
 
 interface Sprite {
@@ -93,7 +99,11 @@ export class EnemyPainter {
    * position. `tick` is the sim tick, for the hit flash; `simTime` the run's
    * clock, for slows; `time` the wall clock, for the gait.
    */
-  draw(ctx: CanvasRenderingContext2D, enemies: readonly Enemy[], alpha: number, tick: number, simTime: number, time: number): void {
+  draw(
+    ctx: CanvasRenderingContext2D, enemies: readonly Enemy[], alpha: number, tick: number, simTime: number, time: number,
+    /** The region's boss colours, which a Champion wears (N4). */
+    champion: { color: string; border: string } | null = null,
+  ): void {
     drawChorusLinks(ctx, enemies, alpha, time);
     for (const e of enemies) {
       // Bosses, the Hollow King's court and Forgeheart's plates have their own painter (`bosses.ts`).
@@ -107,6 +117,11 @@ export class EnemyPainter {
       const y = e.py + (e.y - e.py) * alpha + (e.moving ? Math.sin(time * g.freq + e.id) * g.bob : 0);
       const fade = e.hiddenUntil > simTime ? PHASED_ALPHA : e.shade ? SHADE_ALPHA : 1;
       ctx.globalAlpha = fade;
+      // A Champion (N4) wears its region's boss colours: a second, wider halo outside its aura's.
+      if (e.champion && champion) {
+        drawHalo(ctx, x, y, e.radius * 1.3, champion.border, -(time + e.id));
+        drawHalo(ctx, x, y, e.radius, champion.color, time + e.id);
+      }
       if (e.elite) drawHalo(ctx, x, y, e.radius, FX[e.aura ? AURA_COLOR[e.aura] : 'gold'], time + e.id);
       const s = this.sprite(e.type);
       // Sprites are baked at the type's radius; elites and fragments scale it.

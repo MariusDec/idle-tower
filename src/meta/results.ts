@@ -4,11 +4,15 @@ import { BOSSES, BOSS_BY_ID } from '../content/bosses';
 import { FORGE } from '../content/forge';
 import { FRAMES } from '../content/frames';
 import { REGIONS } from '../content/regions';
-import { bossRelic } from '../content/relics';
+import { RELIC_SETS, bossRelic, setOf } from '../content/relics';
 import type { BossId, EnemyId, EvolutionId, FeatDef, PassiveId, RelicId, WeaponId } from '../content/types';
 import type { DamageBy, HurtBy, RunState } from '../sim/state';
-import { act2Open, bossDown, frameUnlocked, gainRelic, hubUnlocks, regionUnlocked, relicSlots } from './collection';
+import {
+  act2Open, bossDown, frameUnlocked, gainRelic, hubUnlocks, regionUnlocked, relicSlots, setOwned, setRank, trophiesAt,
+} from './collection';
 import { checkFeats } from './feats';
+import { foremanBuy } from './automation';
+import { trialsOpen, winTrial, type TrialPaid } from './trials';
 import { nextGoal, type ForgeGoal } from './forge';
 import { recordFarm } from './offline';
 import { recipesOpen, recordRecipes } from './recipes';
@@ -78,8 +82,11 @@ export interface RunSummary {
   /** Evolutions found for the first time this run (§5.3). */
   newRecipes: EvolutionId[];
   boss: BossResult | null;
-  /** Relics found this run, with the rank each now has (0: it was already maxed, and paid `shards` instead). */
-  relics: { id: RelicId; rank: number; shards?: number }[];
+  /**
+   * Relics found this run, with the rank each now has (0: it was already
+   * maxed, and paid `shards`, or added to its set's progress, `set`, instead).
+   */
+  relics: { id: RelicId; rank: number; shards?: number; set?: string }[];
   /** Feats earned this run, waiting in the Feats tab. */
   feats: FeatDef[];
   /** True once the Feats tab is open: before it, feats are earned quietly, for the tab's first burst (§5.4). */
@@ -96,6 +103,12 @@ export interface RunSummary {
   abyss: { floor: number; cleared: number } | null;
   /** A new deepest floor, and the Starlight it paid. */
   floorRecord: StarRecord | null;
+  /** The Trial this run was (N5): whether it was won, and what it paid the first time. Null for an ordinary run. */
+  trial: { id: string; won: boolean; paid: TrialPaid | null } | null;
+  /** What the Foreman bought as the run banked (N7): Forge node ids, one per level. */
+  foreman: string[];
+  /** Overtime trophies earned this run (N4): the overtime wave each marks, and its one-time shards. */
+  trophies: { overtime: number; shards: number }[];
 }
 
 /**
@@ -117,6 +130,14 @@ function unlockList(profile: Profile): Map<string, string> {
   }
   if (recipesOpen(profile)) add('The Recipe Book');
   for (const r of REGIONS) if (r.index > 1 && regionUnlocked(profile, r.index)) add(r.name);
+  for (const r of REGIONS) if (trialsOpen(profile, r.index)) add(`Trials: ${r.name}`);
+  // A relic set owned whole (N6): it can be worn for its bonus; each rank it reaches, too.
+  for (const set of RELIC_SETS) {
+    if (!setOwned(profile, set)) continue;
+    add(`Relic set: ${set.name}`);
+    const rank = setRank(profile, set.region);
+    if (rank > 1) add(`${set.name} rank ${'I'.repeat(rank)}`);
+  }
   for (const f of FRAMES) if (f.unlock.kind !== 'start' && frameUnlocked(profile, f)) add(`${f.name} frame`);
   const slots = relicSlots(profile);
   for (let i = 1; i <= slots; i++) add(`Relic slot ${i}`);
@@ -156,9 +177,19 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
   if (!abyss) r.bestWave = Math.max(r.bestWave, wave);
   r.bestShards = Math.max(r.bestShards, shards);
   profile.shards += shards;
+  const trophies: { overtime: number; shards: number }[] = [];
   if (!abyss) {
     const region = (profile.regions[run.regionId] ??= { bestWave: 0 });
+    const had = trophiesAt(region.bestWave);
     region.bestWave = Math.max(region.bestWave, wave);
+    // Overtime trophies (N4): each threshold first passed pays once, by that wave's pay.
+    for (const k of trophiesAt(region.bestWave)) {
+      if (had.includes(k)) continue;
+      const n = BOSS_WAVE + k;
+      const pay = Math.floor(BALANCE.trophies.pay * waveBonus(regionAt(run.regionId, n), n) * run.stats.shardMult);
+      profile.shards += pay;
+      trophies.push({ overtime: k, shards: pay });
+    }
   }
   for (const [type, n] of Object.entries(run.killsBy)) profile.killsBy[type] = (profile.killsBy[type] ?? 0) + (n ?? 0);
   recordFarm(profile, shards, time / Math.max(1, speed));
@@ -170,7 +201,7 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
   // The boss: met, maybe felled; a first fall pays its relic and owes the map its ceremony.
   // In the Abyss only its own bosses keep records (§9): the floors' guardians are their regions'.
   let boss: BossResult | null = null;
-  const relics: { id: RelicId; rank: number; shards?: number }[] = [];
+  const relics: RunSummary['relics'] = [];
   if (abyss) {
     for (const id of run.felled) {
       if (!BOSS_BY_ID[id].abyss) continue;
@@ -195,9 +226,16 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
     }
   }
   for (const id of run.relics) relics.push({ id, rank: gainRelic(profile, id) });
-  // A relic already at its peak is melted down: a few waves' pay where it fell (§5.3).
+  // A relic already at its peak goes to its set's progress (N6), while the set
+  // can still rank up; else it is melted down: a few waves' pay where it fell (§5.3).
   for (const x of relics) {
     if (x.rank !== 0) continue;
+    const set = setOf(x.id);
+    if (set && setRank(profile, set.region) < BALANCE.sets.maxRank) {
+      profile.sets[set.region] = (profile.sets[set.region] ?? 0) + 1;
+      x.set = set.name;
+      continue;
+    }
     const n = Math.max(1, wave);
     x.shards = Math.floor(BALANCE.relics.peakWaves * waveBonus(regionAt(run.regionId, n), n) * run.stats.shardMult);
     profile.shards += x.shards;
@@ -205,11 +243,21 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
 
   // Starlight (§9): a region's boss felled at a new heat record, or a new deepest floor.
   const heat = pactLoad(run.pacts).heat;
-  const heatRecord = !abyss && run.boss?.killedIn != null ? recordHeat(profile, run.regionId, heat) : null;
+  // A Trial's omens (N5) are no pacts: they pay no heat record.
+  const heatRecord = !abyss && !run.trial && run.boss?.killedIn != null ? recordHeat(profile, run.regionId, heat) : null;
+  // A Trial (N5) is won by its region's boss falling; either way, the next run is an ordinary one.
+  let trial: RunSummary['trial'] = null;
+  if (run.trial) {
+    const won = run.boss?.killedIn != null;
+    trial = { id: run.trial, won, paid: won ? winTrial(profile, run.trial) : null };
+    profile.trial = null;
+  }
   const floorRecord = abyss ? recordFloor(profile, run.floors) : null;
 
   const newRecipes = recordRecipes(profile, run);
   const feats = checkFeats(profile, run);
+  // The Foreman (N7) spends the run's shards on the wishlist before the Next line is read.
+  const foreman = foremanBuy(profile);
   const after = unlockList(profile);
   const unlocks = [...after].filter(([key]) => !before.has(key)).map(([, label]) => label);
 
@@ -240,5 +288,8 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
     heatRecord,
     abyss: abyss ? { floor: floorOf(Math.max(1, wave)), cleared: run.floors } : null,
     floorRecord,
+    trophies,
+    foreman,
+    trial,
   };
 }

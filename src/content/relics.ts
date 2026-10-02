@@ -1,4 +1,4 @@
-import type { BossId, RelicDef, RelicId } from './types';
+import type { BossId, RelicDef, RelicId, RelicSetDef } from './types';
 
 /**
  * Relics (§5.3, §11.5): twenty-four, four per region: the boss's first-kill relic and
@@ -248,4 +248,47 @@ export function abyssRelics(sets: readonly number[]): RelicId[] {
 /** A boss's first-kill relic (§5.3), if it has one. */
 export function bossRelic(boss: BossId): RelicId | null {
   return RELICS.find((r) => r.source.kind === 'boss' && r.source.boss === boss)?.id ?? null;
+}
+
+/**
+ * Relic sets (N6): wear all three of a region's elite relics for its bonus.
+ * Each leans on its region's verb; each rank past I adds 5% damage.
+ */
+export const RELIC_SETS: readonly RelicSetDef[] = [
+  {
+    id: 'fields-set', name: 'Field Kit', icon: 'level-end-flag', region: 1,
+    text: 'Critical hits knock enemies back.',
+    effects: [{ kind: 'behaviour', id: 'set-fields' }], perRank: [{ kind: 'stat', mod: { key: 'damage', pct: 0.05 } }],
+  },
+  {
+    id: 'mire-set', name: 'Mire Lore', icon: 'droplets', region: 2,
+    text: 'Splitter fragments die to any blast, pulse or burn.',
+    effects: [{ kind: 'behaviour', id: 'set-mire' }], perRank: [{ kind: 'stat', mod: { key: 'damage', pct: 0.05 } }],
+  },
+  {
+    id: 'wastes-set', name: 'Glasswright', icon: 'crystal-shine', region: 3,
+    text: 'Burrowers surface twice as far out.',
+    effects: [{ kind: 'behaviour', id: 'set-wastes' }], perRank: [{ kind: 'stat', mod: { key: 'damage', pct: 0.05 } }],
+  },
+  {
+    id: 'rift-set', name: 'Rift Warden', icon: 'fire-bowl', region: 4,
+    text: 'Bombers slain short of the wall leave fire that burns their pack.',
+    effects: [{ kind: 'behaviour', id: 'set-rift' }], perRank: [{ kind: 'stat', mod: { key: 'damage', pct: 0.05 } }],
+  },
+  {
+    id: 'hollow-set', name: 'Gravewatch', icon: 'eclipse', region: 5,
+    text: 'Risen shades pay full shards and XP.',
+    effects: [{ kind: 'behaviour', id: 'set-hollow' }], perRank: [{ kind: 'stat', mod: { key: 'damage', pct: 0.05 } }],
+  },
+  {
+    id: 'blight-set', name: 'Blightbane', icon: 'glass-heart', region: 6,
+    text: 'Each elite slain restores 5% of Max HP.',
+    effects: [{ kind: 'behaviour', id: 'set-blight' }], perRank: [{ kind: 'stat', mod: { key: 'damage', pct: 0.05 } }],
+  },
+];
+
+/** The set a relic belongs to (N6): its region's, for an elite relic; null for a boss's or the Abyss's. */
+export function setOf(id: RelicId): RelicSetDef | null {
+  const s = RELIC_BY_ID[id].source;
+  return s.kind === 'elite' ? RELIC_SETS.find((x) => x.region === s.region) ?? null : null;
 }

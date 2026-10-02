@@ -7,7 +7,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 9;
+  version: 10;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -75,6 +75,17 @@ export interface Profile {
   };
   /** The Abyss (§9): the deepest floor whose boss has fallen. */
   abyss: { best: number };
+  /** The Foreman's wishlist (N7): Forge node ids, in the order it buys them. At most `WISHLIST_MAX`. */
+  wishlist: string[];
+  /** Trials won (N5), by trial id: each pays once. */
+  trials: Record<string, true>;
+  /** The trial the next run is (N5), or null for an ordinary run. Cleared once that run banks. */
+  trial: string | null;
+  /**
+   * Relic-set progress (N6), by region index: duplicates of a set's relics
+   * past rank III. It ranks the set's bonus up.
+   */
+  sets: Record<string, number>;
   /** The region and frame the next run uses (§5.2, §4.4); the Abyss is `ABYSS_INDEX`. */
   region: number;
   frame: string;
@@ -105,7 +116,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 9;
+export const PROFILE_VERSION = 10;
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
@@ -151,6 +162,10 @@ export function newProfile(now: number): Profile {
     stars: {},
     pacts: { ranks: {}, best: {} },
     abyss: { best: 0 },
+    wishlist: [],
+    trials: {},
+    trial: null,
+    sets: {},
     region: 1,
     frame: 'arcanist',
     tutorial: { firstDraft: false, forgeIntro: false },

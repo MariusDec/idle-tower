@@ -6,15 +6,16 @@ import { exportProfile, listBackups, pushBackup, readBackup } from '../meta/save
 import { copyText, pickTextFile, saveTextFile } from '../platform/files';
 import { buildRunConfig } from '../meta/runConfig';
 import {
-  autoUlt, automations, draftSeconds, marchOn, maxSpeed, openingSeconds, runSpeed, tacticsScopes,
+  autoUlt, automations, draftSeconds, foremanBuy, marchOn, maxSpeed, openingSeconds, runSpeed, tacticsScopes, togglePin,
 } from '../meta/automation';
-import { buyNode, canAfford, refundNode } from '../meta/forge';
+import { buyNode, canAfford, refundNode, towerTier } from '../meta/forge';
 import { bankRun, buildOf } from '../meta/results';
-import { buildList, statsList } from '../ui/build';
-import { frameUnlocked, regionUnlocked, toggleRelic } from '../meta/collection';
+import { buildList, foremanLine, statsList } from '../ui/build';
+import { frameUnlocked, regionUnlocked, selectedFrame, toggleRelic, trophyCount } from '../meta/collection';
 import { claimAll, claimFeat } from '../meta/feats';
 import { offlineEarnings, offlineTier } from '../meta/offline';
 import { setPactRank } from '../meta/pacts';
+import { chooseTrial, trims } from '../meta/trials';
 import { STAR_WEB } from '../meta/stars';
 import { FORGE } from '../content/forge';
 import { ENEMY_BY_ID } from '../content/enemies';
@@ -22,9 +23,10 @@ import { BOSS_BY_ID } from '../content/bosses';
 import type { BossId } from '../content/types';
 import { frameById } from '../content/frames';
 import { RELIC_BY_ID } from '../content/relics';
+import { TRIAL_BY_ID } from '../content/trials';
 import { formatNumber } from '../core/format';
 import { applyInput, createRun, step } from '../sim/run';
-import { cardKey } from '../sim/systems/draft';
+import { banishable, cardKey } from '../sim/systems/draft';
 import { autoUltWanted } from '../sim/systems/ultimate';
 import { cardBadges } from '../sim/suggest';
 import type { DraftOffer, RunState } from '../sim/state';
@@ -125,13 +127,18 @@ export class App {
       start: () => this.startRun(),
       buy: (id) => this.buy(id),
       refund: (id) => this.refund(id),
+      pin: (id) => this.between(() => togglePin(this.profile, id)) ?? false,
       forgeOpened: () => this.forgeOpened(),
       selectRegion: (index) => this.between(() => {
         if (regionUnlocked(this.profile, index)) this.profile.region = index;
       }),
+      trial: (id) => {
+        if (this.between(() => chooseTrial(this.profile, id))) this.startRun();
+      },
       toggleRelic: (id) => this.between(() => toggleRelic(this.profile, id)) ?? false,
       selectFrame: (id) => this.between(() => {
         if (frameUnlocked(this.profile, frameById(id))) this.profile.frame = id;
+        this.dressTower();
       }),
       claim: (id) => this.claimed(this.between(() => claimFeat(this.profile, id)) ?? 0),
       claimAll: () => this.claimed(this.between(() => claimAll(this.profile)) ?? 0),
@@ -156,7 +163,8 @@ export class App {
     this.results = new ResultsScreen(els.screens, () => this.leaveResults(), () => this.startRun());
     this.toasts = new Toasts(els.overlay);
     this.draft = new DraftPanel(
-      els.overlay, (i) => this.pick(i), () => this.reroll(), () => this.takeAll(), () => { this.openingReviewed = true; },
+      els.overlay, (i) => this.pick(i), () => this.reroll(), () => this.takeAll(), (i) => this.banish(i),
+      () => { this.openingReviewed = true; },
     );
     this.modal = new Modal(els.overlay);
     this.settings = new SettingsPanel(els.overlay, {
@@ -240,6 +248,9 @@ export class App {
     if (!earned) return;
     const before = new Set(FORGE.filter((n) => canAfford(this.profile, n.id)).map((n) => n.id));
     this.profile.shards += earned.shards;
+    // The Foreman (N7) spends what landed on the wishlist, between runs only.
+    const bought = this.screen === 'run' ? [] : foremanBuy(this.profile);
+    if (bought.length > 0) this.dressTower();
     void this.save();
     this.hub.update();
     const fresh = FORGE.filter((n) => canAfford(this.profile, n.id) && !before.has(n.id)).map((n) => n.name);
@@ -248,6 +259,7 @@ export class App {
     const gone = hours > 0 ? `${hours} h ${mins} min` : `${mins} min`;
     const body = `You were away ${gone}. The tower gathered ${formatNumber(earned.shards)} shards.`
       + (earned.paid < earned.away ? ` (Night Watch holds ${offlineTier(this.profile)?.capHours ?? 0} hours at most.)` : '')
+      + (bought.length > 0 ? ` The Foreman bought ${foremanLine(bought)}.` : '')
       + (fresh.length > 0 ? ` Now affordable: ${fresh.slice(0, 4).join(', ')}.` : '');
     if (this.screen === 'run') {
       // Mid-run the pause menu (or the Settings over it) stays where it is:
@@ -294,6 +306,7 @@ export class App {
   private go(to: Screen, view: HubView = 'home', spread = false): void {
     assertTransition(this.screen, to);
     this.screen = to;
+    this.dressTower();
     this.hub.hide();
     this.results.hide();
     this.hud.hide();
@@ -301,6 +314,16 @@ export class App {
     this.els.stage.dataset.screen = to;
     if (to === 'hub') this.hub.show(this.profile, view, spread);
     if (to === 'run') this.hud.show();
+  }
+
+  /**
+   * What the tower wears (N2): its tier from the Forge's rings, a light per
+   * trophy (N4), the Trials' trims (N5), and on the hub the selected frame's
+   * weapon. Set whenever the profile may have changed under it.
+   */
+  private dressTower(): void {
+    const p = this.profile;
+    this.renderer.setTower({ tier: towerTier(p), trophies: trophyCount(p), trims: trims(p) }, selectedFrame(p).startingWeapon);
   }
 
   /** Start a fresh run, or carry on with `resumed` from its snapshot. */
@@ -326,6 +349,8 @@ export class App {
     this.hud.setSpeed(maxSpeed(this.profile), runSpeed(this.profile));
     this.hud.setAutoUlt(automations(this.profile).has('auto-ult'), this.profile.settings.autoUlt);
     if (resumed) this.openPause(`The run resumes at wave ${resumed.wave}.`);
+    const trial = this.run.trial ? TRIAL_BY_ID[this.run.trial] : null;
+    if (trial) this.toasts.show(trial.icon, `Trial · ${trial.name}`, trial.text);
   }
 
   private simSpeed(): number {
@@ -364,6 +389,8 @@ export class App {
           seconds: draftSeconds(this.profile),
           seen: (key) => seen.has(key),
           rerolls: run.rerolls,
+          banishes: run.banishes,
+          banishable: run.draft.cards.map((c) => banishable(run, c)),
           swapFor: run.swap ? run.weapons[0]?.id ?? null : null,
           banked: run.pendingDrafts,
           opening: opening ? { at: run.draftsOpened, of: this.opening } : null,
@@ -417,6 +444,13 @@ export class App {
     const run = this.run;
     if (!run?.draft || this.paused || this.screen !== 'run') return;
     applyInput(run, { reroll: true });
+  }
+
+  /** Strike card `index` from the draft for this run (N1). */
+  private banish(index: number): void {
+    const run = this.run;
+    if (!run?.draft || this.paused || this.screen !== 'run') return;
+    applyInput(run, { banish: index });
   }
 
   private castUltimate(): void {
@@ -520,6 +554,9 @@ export class App {
           this.toasts.show(def.icon, `Relic · ${def.name}`, def.text, 'relic');
           break;
         }
+        case 'eliteSpawn':
+          if (ev.champion) this.toasts.show('vertical-banner', 'A Champion comes', 'Slay it for a relic.', 'relic');
+          break;
         case 'bossKill':
           this.slowMo = { left: BOSS_KILL_SLOWMO.seconds, speed: BOSS_KILL_SLOWMO.speed };
           break;
@@ -564,12 +601,14 @@ export class App {
   private buy(id: string): boolean {
     if (this.screen !== 'hub' || !buyNode(this.profile, id)) return false;
     this.cues.purchase();
+    this.dressTower();
     void this.save();
     return true;
   }
 
   private refund(id: string): boolean {
     if (this.screen !== 'hub' || !refundNode(this.profile, id)) return false;
+    this.dressTower();
     void this.save();
     return true;
   }

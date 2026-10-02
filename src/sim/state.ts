@@ -19,6 +19,10 @@ import type {
 export interface RunConfig {
   readonly frameId: string;
   readonly regionId: number;
+  /** The weapon mounted at the start: the frame's, or a Trial's first (N5). Absent: the frame's. */
+  readonly startingWeapon?: WeaponId;
+  /** The Trial this run is (N5), or null. Absent: none. */
+  readonly trial?: string | null;
   /** Every stat contribution from outside the run: frame quirk, Forge, relics. */
   readonly mods: readonly StatMod[];
   readonly weaponSlots: number;
@@ -100,6 +104,8 @@ export interface Enemy {
   /** An elite (§4.3): ×8 HP, and from Region 2 on, an aura. */
   elite: boolean;
   aura: AuraId | null;
+  /** An overtime Champion (N4): an elite in its region's boss colours, sure to drop a relic. */
+  champion: boolean;
   /** 0 for a spawned body; 1 for a Splitter's fragment, which never splits again. */
   gen: number;
   /** The wave that spawned it, for the overlap rule. */
@@ -170,6 +176,8 @@ export interface Enemy {
   gildedUntil: number;
   /** Times a Maw has fed. */
   feeds: number;
+  /** Seconds until a Wraith elite next phases out (N3). */
+  auraTimer: number;
 }
 
 export interface Projectile {
@@ -395,8 +403,8 @@ export interface SpawnEntry {
   at: number;
   enemy: EnemyId;
   angle: number;
-  /** An elite (§4.3), with its aura, or null for a plain elite. Absent for a plain body. */
-  elite?: { aura: AuraId | null };
+  /** An elite (§4.3), with its aura, or null for a plain elite; a Champion (N4) is one too. Absent for a plain body. */
+  elite?: { aura: AuraId | null; champion?: boolean };
 }
 
 export interface WaveState {
@@ -453,7 +461,7 @@ export type SimEvent =
   | { kind: 'mend'; x: number; y: number; radius: number }
   /** A Splitter, or a Split elite, came apart. */
   | { kind: 'split'; x: number; y: number; n: number }
-  | { kind: 'eliteSpawn'; x: number; y: number; aura: AuraId | null }
+  | { kind: 'eliteSpawn'; x: number; y: number; aura: AuraId | null; champion: boolean }
   | { kind: 'eliteKill'; x: number; y: number }
   /** A Vengeful elite's death enraged its neighbours. */
   | { kind: 'fury'; x: number; y: number; radius: number }
@@ -518,6 +526,8 @@ export type SimEvent =
 export interface RunState {
   seed: number;
   regionId: number;
+  /** The Trial this run is (N5), or null (from the config). */
+  trial: string | null;
   /** Sim steps taken. `time` is derived from it so it never drifts. */
   tick: number;
   time: number;
@@ -592,6 +602,10 @@ export interface RunState {
   behaviours: Partial<Record<BehaviourId, number>>;
   /** Draft rerolls left this run (Fortune's Reroll). */
   rerolls: number;
+  /** Banish charges left this run (N1). */
+  banishes: number;
+  /** Items banished this run (N1): never offered again. */
+  banished: CardItemId[];
   /** Specialist (S4): its one slot may still be swapped for the first new weapon taken. */
   swap: boolean;
   /** Second Winds left this run. */
@@ -624,6 +638,8 @@ export interface RunInput {
   pick?: number;
   /** Spend a reroll on the open draft. */
   reroll?: boolean;
+  /** Spend a Banish charge on card `banish` of the open draft (N1). */
+  banish?: number;
   /** Take the suggestion on the open draft and every banked one after it (U2). */
   takeAll?: boolean;
   /** Fire the ultimate, if charged. */

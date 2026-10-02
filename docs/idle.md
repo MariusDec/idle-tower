@@ -19,6 +19,7 @@ them; `automations(profile)` is their one consumer.
 | `auto-ult` | the Autocaster casts the ultimate on its own rule (U13, below) | `autoUlt`, `autoUltWanted` |
 | `tactician`, `tactician-2` | the player's priority and Never lists for draft picks; II keeps them per frame, and per frame in a region; the Opening takes itself (U2) | `tacticsScopes`, `priorityList`, `neverList`, `openingSeconds` |
 | `offline` … `offline-4` | Night Watch I–IV: offline earnings | `offlineTier` |
+| `foreman` | the Foreman's wishlist (N7, below) | `togglePin`, `foremanBuy` |
 
 Auto-restart waits while a card (welcome back) is up, and a first boss kill
 holds the results for its ceremony unless Frontier March carries the next
@@ -47,12 +48,26 @@ player's own plan needs no thinking time. An empty list hands the choice
 back to the scorer.
 
 **Never** (U7): `profile.tacticsNever`, keyed like the lists; a Never card
-is suggested only when nothing else is offered (Banish, N1, will spend its
-charges on them). **Tactician II** keeps lists per frame (`arcanist`) and,
+is suggested only when nothing else is offered, and once Banish (N1) is
+owned the run spends its charges on them by itself: a Never item's new
+card is struck as its hand is dealt (`draft.ts#autoBanish`). **Tactician II** keeps lists per frame (`arcanist`) and,
 if the player chooses, per frame in a region (`arcanist@3`); a run follows
 the most specific key the player has written, then the frame's, then the
 shared one. **The Opening** (U2): with the Tactician, a run that starts
 with drafts banked takes every suggestion after 2 s unless touched.
+
+### The Foreman (N7)
+
+An Engineering notable (ring 4, off Tactician II, sealed by the Bog
+Mother; the plan's ring 3 has no room there). The Forge's node card gets
+**Pin**: up to five nodes (`WISHLIST_MAX`), shown on the web with their
+place in the queue. `foremanBuy` buys the list in order whenever the
+profile changes hands between runs: at the end of `bankRun` (the results
+list what it bought) and when offline shards land (the welcome-back card
+says so). A pinned node that can't be bought yet (sealed, or not reached)
+waits its turn; the first one that can be bought but not afforded stops
+the buying, so the shards are kept for it. A node at its last level comes
+off the list. Never mid-run.
 
 ## Offline (§6.3)
 

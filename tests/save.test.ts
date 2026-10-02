@@ -149,6 +149,16 @@ describe('migration ladder', () => {
     expect(out.tactics).toEqual({ all: ['power'] });
   });
 
+  it('walks a v9 profile to v10: an empty wishlist, no trials, no set progress (Q3)', () => {
+    const out = migrate({ version: 9, createdAt: 5, shards: 50, tacticsNever: {} }, MIGRATIONS, 10);
+    expect(out.version).toBe(10);
+    expect(out.wishlist).toEqual([]);
+    expect(out.trials).toEqual({});
+    expect(out.trial).toBeNull();
+    expect(out.sets).toEqual({});
+    expect(out.shards).toBe(50);
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);

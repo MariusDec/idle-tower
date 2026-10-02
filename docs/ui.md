@@ -22,7 +22,7 @@ portrait arena is centred.
   ultimate at the bottom, under the thumb. Nothing else: no kills counter,
   no DPS meter (§10.2).
 - **Build** (`build.ts`, U3, U5): one icon per weapon and passive with its
-  level as pips; an evolved weapon shows its evolution and glows; one a
+  level as pips, in the draft cards' colours (weapons arcane, passives gold); an evolved weapon shows its evolution and glows; one a
   Harbinger silenced is slashed. The HUD strip redraws only when the build
   changes (`buildKey`). The pause menu lists it with the tower's stats
   (`statsList`: each value, and what this run's passives add).
@@ -32,24 +32,38 @@ portrait arena is centred.
   glow; the suggestion is marked; a countdown bar; tap to pick, long-press
   for details; past four cards, two rows of three. With two or more drafts
   banked, *Take suggested ×N*; a run that starts with drafts banked opens
-  on the **Opening** ([draft.md](draft.md), U2).
+  on the **Opening** ([draft.md](draft.md), U2). With Banish charges (N1),
+  *Banish · n* beside Reroll arms the panel: the cards it may strike (new
+  items) wear a scarlet ✕ and the rest dim; the next tap on one strikes
+  it, any other tap disarms.
 - **Results** (`results.ts`, §4.6): wave reached, shards and where they came
   from, records broken (the region's own wave record, told as overtime
   past the boss), discoveries, what opened up (feat chips only once the
-  Feats tab is open), the build, the Next goal, and Run
+  Feats tab is open), trophies (N4), what the Foreman bought (N7), a
+  Trial won or not yet (N5), a relic at its peak feeding its set (N6),
+  the build, the Next goal, and Run
   again / Forge (or Map after a first boss kill); auto-restart counts down
   when owned. *How it went* (U5) opens a sheet over it: damage dealt by
   weapon (T1's tally) and what wore the tower down (`run.takenBy`: at the
   wall, shots, shockwaves, molten pools, blasts); the countdown waits while
   it is open.
-- **Toasts** (`toast.ts`): a new enemy's Bestiary card, a relic found.
+- **Toasts** (`toast.ts`): a new enemy's Bestiary card, a relic found, a
+  Champion's coming (N4), a Trial beginning (N5).
 - **Modal** (`modal.ts`): pause (with the build and stats, U3), welcome
   back, the Act 1 ending.
 - **Forge** (`hub/forge.ts`, U8): it opens fitted to what is on show (every
   node, else all but the fog, else what can be bought), never zoomed out
   past a tappable 0.7; ⌖ recentres. A stat node's card adds the web's
   total on that stat, now and after the next level ("Forge total · Damage
-  +60% → +75%").
+  +60% → +75%"). With the Foreman (N7), the card has **Pin** / **Unpin #n**,
+  and a pinned node wears its place in the queue over a dashed gold rim.
+- **Map** (`hub/map.ts`): a region's best wave is told as `20 · +n` past
+  its boss, with its trophy stars (N4); a cleared region has **Trials n/3**
+  under its card (N5), opening its three trials, each with its rule, what
+  it pays and **Begin** (or **Again**), which starts that run at once.
+- **Collection, Relics** (`hub/collection.ts`): below the relics, the sets
+  (N6) once one of a set is found: found n/3, or its rank and the progress
+  to the next, and *worn* when all three are.
 - **Tactics** (`hub/tactics.ts`, U7): Priority, Never and Not listed; with
   Tactician II, the frame's lists for all regions or kept for one.
 - **Hub** (`hub/hub.ts`): the home view (title, shards, the selected region's best wave or the Abyss's deepest floor, the next

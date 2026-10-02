@@ -4,11 +4,31 @@ import { ENEMY_BY_ID } from '../../content/enemies';
 import { REGIONS } from '../../content/regions';
 import type { RegionDef } from '../../content/types';
 import { formatDuration, formatNumber } from '../../core/format';
-import { act2Open, bossDown, inAbyss, regionRelics, regionUnlocked, relicRank, selectedRegion } from '../../meta/collection';
+import { act2Open, bossDown, inAbyss, regionRelics, regionTrophies, regionUnlocked, relicRank, selectedRegion } from '../../meta/collection';
+import { BALANCE } from '../../content/balance';
 import { bestHeat } from '../../meta/pacts';
+import { regionTrials, trialWon, trialsOpen } from '../../meta/trials';
+import { RELIC_BY_ID } from '../../content/relics';
+import type { TrialReward } from '../../content/types';
 import type { Profile } from '../../meta/profile';
 import { motionReduced, setStyle } from '../dom';
 import { icon } from '../icon';
+
+/** What a Trial pays (N5), in a few words. */
+function rewardText(r: TrialReward): string {
+  switch (r.kind) {
+    case 'relic':
+      return `a rank of ${RELIC_BY_ID[r.relic].name}`;
+    case 'trim':
+      return `a tower trim, ${r.name}`;
+    case 'notable':
+      return `${r.name} — ${r.text}`;
+    default: {
+      const exhaustive: never = r;
+      return exhaustive;
+    }
+  }
+}
 
 /** Six regions in Act 1 (§5.2); the ones not yet built show as the Blight. */
 const ACT_REGIONS = 6;
@@ -26,7 +46,16 @@ export class MapView {
   private readonly list: HTMLElement;
   private readonly light: HTMLElement;
 
-  constructor(host: HTMLElement, private readonly onSelect: (region: number) => void) {
+  /** Regions whose trials list is open (N5). */
+  private readonly expanded = new Set<number>();
+  private profile: Profile | null = null;
+
+  constructor(
+    host: HTMLElement,
+    private readonly onSelect: (region: number) => void,
+    /** Begin a Trial (N5): the next run, at once. */
+    private readonly onTrial: (id: string) => void = () => {},
+  ) {
     this.root = document.createElement('div');
     this.root.className = 'map';
     this.root.innerHTML = `
@@ -45,6 +74,7 @@ export class MapView {
    * its old reach and rolls outward to the new one (§7.3).
    */
   show(profile: Profile, spread = false): void {
+    this.profile = profile;
     const cleared = REGIONS.filter((r) => bossDown(profile, r.boss)).length;
     const reach = (n: number): string => `${Math.min(100, ((n + 0.5) / ACT_REGIONS) * 100).toFixed(1)}%`;
     if (spread && !motionReduced()) {
@@ -154,7 +184,11 @@ export class MapView {
       d.append(dt, dd);
       stats.append(d);
     };
-    stat('Best wave', String(profile.regions[r.index]?.bestWave ?? 0));
+    const best = profile.regions[r.index]?.bestWave ?? 0;
+    // Past its boss, the record is told as overtime (§7.3), with its trophies (N4).
+    stat('Best wave', best > 20 ? `20 · +${best - 20}` : String(best));
+    const marks = regionTrophies(profile, r.index).length;
+    if (marks > 0) stat('Trophies', '★'.repeat(marks) + '☆'.repeat(BALANCE.trophies.overtime.length - marks));
     stat('Enemies', `${seen}/${r.pool.length}`);
     stat('Relics', `${found}/${relics.length}`);
     // Act 2 (§9): the heat its boss has fallen at.
@@ -177,7 +211,55 @@ export class MapView {
 
     btn.append(head, stats, trophy, rule, enemies);
     li.append(btn);
+    if (trialsOpen(profile, r.index)) li.append(this.trials(profile, r.index));
     return li;
+  }
+
+  /** A cleared region's Trials (N5): a count that opens the list, each with its rules, reward and Begin. */
+  private trials(profile: Profile, region: number): HTMLElement {
+    const list = regionTrials(region);
+    const won = list.filter((t) => trialWon(profile, t.id)).length;
+    const open = this.expanded.has(region);
+    const box = document.createElement('div');
+    box.className = 'map-trials';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'btn map-trials-toggle';
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.append(icon('checkered-flag'), ` Trials ${won}/${list.length}`);
+    toggle.addEventListener('click', () => {
+      if (open) this.expanded.delete(region);
+      else this.expanded.add(region);
+      if (this.profile) this.show(this.profile);
+    });
+    box.append(toggle);
+    if (!open) return box;
+    const ol = document.createElement('ol');
+    ol.className = 'map-trials-list';
+    for (const t of list) {
+      const done = trialWon(profile, t.id);
+      const row = document.createElement('li');
+      row.className = `map-trial${done ? ' is-won' : ''}`;
+      const name = document.createElement('p');
+      name.className = 'map-trial-name';
+      name.textContent = done ? `${t.name} ✓` : t.name;
+      const rule = document.createElement('p');
+      rule.className = 'map-trial-rule';
+      rule.textContent = t.text;
+      const pays = document.createElement('p');
+      pays.className = 'map-trial-reward';
+      pays.textContent = `${done ? 'Paid' : 'Pays'}: ${rewardText(t.reward)}`;
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = `btn map-trial-go${done ? '' : ' btn-primary'}`;
+      go.textContent = done ? 'Again' : 'Begin';
+      go.setAttribute('aria-label', `${done ? 'Run again' : 'Begin'}: ${t.name}`);
+      go.addEventListener('click', () => this.onTrial(t.id));
+      row.append(name, rule, pays, go);
+      ol.append(row);
+    }
+    box.append(ol);
+    return box;
   }
 
   private silhouette(title: string, line: string): HTMLElement {

@@ -8,7 +8,7 @@ import { allMods, resolveStats } from './stats';
 import { pactLoad, ruleSurge, surgeMods } from './pacts';
 import { separateEnemies, sweepEnemies, tickEnemies } from './systems/enemies';
 import { sweepProjectiles, tickBurns, tickProjectiles, tickRunes, tickWeapons } from './systems/combat';
-import { isWeaponId, pickCard, rerollDraft, takeSuggested, tickDraft, xpToNext } from './systems/draft';
+import { banishCard, isWeaponId, pickCard, rerollDraft, takeSuggested, tickDraft, xpToNext } from './systems/draft';
 import { tickBoss, tickPools, tickRings } from './systems/boss';
 import { tickShots } from './systems/tower';
 import { castUltimate, tickUltimate } from './systems/ultimate';
@@ -35,9 +35,11 @@ export function createRun(config: RunConfig, seed: number): RunState {
   // Head Start and Gatekeeper's Seal: the levels are real, so each banks its draft at once.
   const level = 1 + B.headStart * owned('head-start') + owned('extra-level');
   const startLevel = Math.min(BALANCE.maxLevel, 1 + B.openingSalvo * owned('opening-salvo'));
-  const weapons: WeaponState[] = [newWeapon(frame.startingWeapon, startLevel)];
+  // A Trial (N5) may mount another weapon than the frame's.
+  const first = config.startingWeapon ?? frame.startingWeapon;
+  const weapons: WeaponState[] = [newWeapon(first, startLevel)];
   // Twin Mount (§11.4): a second weapon from the pool, if a slot is free for it.
-  const spares = config.pool.filter((id): id is WeaponId => isWeaponId(id) && id !== frame.startingWeapon);
+  const spares = config.pool.filter((id): id is WeaponId => isWeaponId(id) && id !== first);
   if (owned('twin-mount') > 0 && config.weaponSlots >= 2 && spares.length > 0) {
     // Drilled and the Whetstone (§11.4) lift it like any new weapon.
     weapons.push(newWeapon(root.split('loadout').pick(spares), Math.min(BALANCE.maxLevel, 1 + owned('drilled'))));
@@ -45,6 +47,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
   return {
     seed,
     regionId: config.regionId,
+    trial: config.trial ?? null,
     tick: 0,
     time: 0,
     wave: 0,
@@ -92,6 +95,8 @@ export function createRun(config: RunConfig, seed: number): RunState {
     never: config.never ? [...config.never] : null,
     behaviours: { ...config.behaviours },
     rerolls: owned('reroll'),
+    banishes: owned('banish'),
+    banished: [],
     swap: owned('specialist') > 0,
     revives: owned('second-wind'),
     enemies: [],
@@ -130,6 +135,7 @@ export function applyInput(run: RunState, input: RunInput): void {
     return;
   }
   if (input.reroll) rerollDraft(run);
+  if (input.banish !== undefined) banishCard(run, input.banish);
   if (input.pick !== undefined) pickCard(run, input.pick);
   if (input.takeAll) takeSuggested(run);
   if (input.ult) castUltimate(run);

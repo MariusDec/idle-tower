@@ -3,12 +3,13 @@ import { BOSSES } from '../content/bosses';
 import { ENEMIES } from '../content/enemies';
 import { FRAMES, frameById } from '../content/frames';
 import { REGIONS, regionByIndex } from '../content/regions';
-import { RELICS, RELIC_BY_ID } from '../content/relics';
+import { RELICS, RELIC_BY_ID, RELIC_SETS, eliteRelics } from '../content/relics';
 import { BALANCE } from '../content/balance';
-import type { BossId, FrameDef, RegionDef, RelicDef, RelicId } from '../content/types';
+import type { BossId, FrameDef, RegionDef, RelicDef, RelicId, RelicSetDef } from '../content/types';
 import type { Profile } from './profile';
 import { recipesOpen } from './recipes';
 import { starGifts } from './stars';
+import { BOSS_WAVE } from '../sim/systems/waves';
 
 /**
  * What the profile has unlocked between runs (§5.2–§5.3, §7.1): regions,
@@ -127,6 +128,43 @@ export function gainRelic(profile: Profile, id: RelicId): number {
   profile.relics[id] = rank + 1;
   if (rank === 0 && profile.equipped.length < relicSlots(profile)) profile.equipped.push(id);
   return rank + 1;
+}
+
+/**
+ * Overtime trophies (N4): the thresholds past its boss a region's best wave
+ * has reached, as overtime waves (+5, +10, +15).
+ */
+export function trophiesAt(bestWave: number): number[] {
+  return BALANCE.trophies.overtime.filter((k) => bestWave >= BOSS_WAVE + k);
+}
+
+/** A region's trophies, by its best wave. */
+export function regionTrophies(profile: Profile, index: number): number[] {
+  return trophiesAt(profile.regions[index]?.bestWave ?? 0);
+}
+
+/** Every trophy the profile holds: one light each on the hub tower. */
+export function trophyCount(profile: Profile): number {
+  return REGIONS.reduce((n, r) => n + regionTrophies(profile, r.index).length, 0);
+}
+
+/** A set's rank (N6): I, and one more per `BALANCE.sets.perRank` duplicates past rank III. */
+export function setRank(profile: Profile, region: number): number {
+  const S = BALANCE.sets;
+  return Math.min(S.maxRank, 1 + Math.floor((profile.sets[region] ?? 0) / S.perRank));
+}
+
+/** True when every relic of the set is owned: it can be worn whole. */
+export function setOwned(profile: Profile, set: RelicSetDef): boolean {
+  return eliteRelics(set.region).every((id) => relicRank(profile, id) > 0);
+}
+
+/** The sets worn whole into the next run (N6), at their ranks: what `buildRunConfig` applies. */
+export function activeSets(profile: Profile): { set: RelicSetDef; rank: number }[] {
+  const worn = new Set<string>(equippedRelics(profile).map((x) => x.relic.id));
+  return RELIC_SETS
+    .filter((set) => eliteRelics(set.region).every((id) => worn.has(id)))
+    .map((set) => ({ set, rank: setRank(profile, set.region) }));
 }
 
 /** Relics a region can give, and how many of them this profile has (§5.2's card). */

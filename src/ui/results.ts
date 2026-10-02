@@ -1,13 +1,14 @@
 import type { RunSummary } from '../meta/results';
 import type { DamageBy, HurtBy } from '../sim/state';
 import { frameById } from '../content/frames';
-import { buildList, tallyBars, type TallyRow } from './build';
+import { buildList, foremanLine, tallyBars, type TallyRow } from './build';
 import { floorWave } from '../content/abyss';
 import { BALANCE } from '../content/balance';
 import { BOSS_BY_ID } from '../content/bosses';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { EVOLUTION_BY_ID } from '../content/evolutions';
 import { RELIC_BY_ID } from '../content/relics';
+import { TRIAL_BY_ID } from '../content/trials';
 import { FALLBACKS, PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
 import type { ContentEntry, PassiveId, WeaponId } from '../content/types';
@@ -69,6 +70,13 @@ function chip(entry: ContentEntry, kind: string): HTMLElement {
  * the damage each weapon dealt and what wore the tower down; the countdown
  * waits while that is open.
  */
+/** What became of a Trial (N5), in one line. */
+function trialLine(t: NonNullable<RunSummary['trial']>): string {
+  const name = TRIAL_BY_ID[t.id]?.name ?? t.id;
+  if (!t.won) return `Trial: ${name} · not yet`;
+  return t.paid ? `Trial won: ${name} · ${t.paid.line}` : `Trial won again: ${name}`;
+}
+
 export class ResultsScreen {
   private readonly root: HTMLElement;
   private readonly headline: HTMLElement;
@@ -222,10 +230,16 @@ export class ResultsScreen {
     }
     this.rewards.replaceChildren(
       ...starlight,
+      // Overtime trophies (N4): a mark on the Map, a light on the tower, once.
+      ...s.trophies.map((t) => reward('star-medal', `Trophy · overtime +${t.overtime} · +${formatNumber(t.shards)} shards`, 'unlock')),
+      ...(s.foreman.length > 0 ? [reward('shop', `The Foreman bought ${foremanLine(s.foreman)}`, 'unlock')] : []),
+      // A Trial (N5): won, and what it paid the first time; or what still stands.
+      ...(s.trial ? [reward('checkered-flag', trialLine(s.trial), s.trial.paid ? 'unlock' : 'feat')] : []),
       ...s.unlocks.map((u) => reward('star-gate', u, 'unlock')),
       ...s.relics.map((r) => {
         const def = RELIC_BY_ID[r.id];
-        const rank = r.rank === 0 ? `at its peak · +${formatNumber(r.shards ?? 0)} shards` : r.rank === 1 ? 'new relic' : `rank ${'I'.repeat(r.rank)}`;
+        const peak = r.set ? `at its peak · ${r.set} grows` : `at its peak · +${formatNumber(r.shards ?? 0)} shards`;
+        const rank = r.rank === 0 ? peak : r.rank === 1 ? 'new relic' : `rank ${'I'.repeat(r.rank)}`;
         return reward(def.icon, `${def.name} · ${rank}`, 'relic');
       }),
       // Before the Feats tab opens, feats are earned quietly: the tab opens on the batch (§5.4).

@@ -123,6 +123,11 @@ export function isEliteWave(region: RegionDef, n: number): boolean {
   return w >= e.from && (w - e.from) % e.every === 0;
 }
 
+/** True when overtime wave `n` brings a Champion (N4): every fifth past the boss. Never in the Abyss. */
+export function isChampionWave(region: RegionDef, n: number): boolean {
+  return !region.abyss && n > BOSS_WAVE && (n - BOSS_WAVE) % BALANCE.champions.every === 0;
+}
+
 /** What the pacts add to a wave's roll (§9): more bodies, more elites. */
 export interface WaveExtra {
   /** Bodies multiply by this (Hordes). */
@@ -196,6 +201,14 @@ export function rollWave(region: RegionDef, n: number, rng: Rng, pace = 1, extra
       out.push({ at: duration / 2 + k * 1.5, enemy, angle: angle(), elite: { aura } });
     }
   }
+  // A Champion (N4) walks in last, the overtime wave's own event.
+  if (isChampionWave(region, n)) {
+    const auras = region.elites.auras;
+    const aura: AuraId | null = auras.length > 0 ? rng.pick(auras) : null;
+    const types = region.elites.types;
+    const enemy = types && types.length > 0 ? rng.pick(types) : pool[rng.weighted(weights)].enemy;
+    out.push({ at: duration * 0.7, enemy, angle: angle(), elite: { aura, champion: true } });
+  }
   out.sort((a, b) => a.at - b.at);
   // The first body of every wave arrives at once: a wave that opens with
   // several seconds of nothing reads as a stall. The run's very first body
@@ -254,7 +267,7 @@ export function startWave(run: RunState, region: RegionDef, n: number): void {
 }
 
 export interface SpawnOptions {
-  elite?: { aura: AuraId | null };
+  elite?: { aura: AuraId | null; champion?: boolean };
   /**
    * Split fragments: generation 1, `hp` outright, a smaller body, and
    * `share` of a whole body's XP and shards, so a split pays about what
@@ -279,7 +292,9 @@ export function spawnEnemy(
   const E = BALANCE.elites;
   const load = pactLoad(run.pacts);
   const elite = opts.elite !== undefined;
-  let hp = waveHp(region, wave) * def.hp * (elite ? E.hp : 1) * foeHp(run);
+  const champion = opts.elite?.champion === true;
+  const C = BALANCE.champions;
+  let hp = waveHp(region, wave) * def.hp * (elite ? E.hp : 1) * (champion ? C.hp : 1) * foeHp(run);
   let radius = def.radius * (elite ? E.scale : 1);
   if (opts.fragment) {
     hp = opts.fragment.hp;
@@ -296,6 +311,7 @@ export function spawnEnemy(
     boss: null,
     elite,
     aura: opts.elite?.aura ?? null,
+    champion,
     gen: opts.fragment ? 1 : 0,
     wave,
     alive: true,
@@ -311,7 +327,7 @@ export function spawnEnemy(
     damage: waveDamage(region, wave) * def.damage,
     attackInterval: def.attackInterval,
     xp,
-    shards: (region.shardBase * def.xp * share * waveShardMult(wave, region) * (elite ? E.shards * bounty : 1)) / chorus,
+    shards: (region.shardBase * def.xp * share * waveShardMult(wave, region) * (elite ? E.shards * bounty : 1) * (champion ? C.shards : 1)) / chorus,
     mass: def.mass * (elite ? E.scale * E.scale : 1),
     stunnedUntil: 0,
     slow: 0,
@@ -339,14 +355,17 @@ export function spawnEnemy(
     dashUntil: 0,
     gildedUntil: 0,
     feeds: 0,
+    auraTimer: BALANCE.elites.wraith.cycle - BALANCE.elites.wraith.hidden,
   };
   run.enemies.push(enemy);
+  // A Fog-caller (N3): the mist closes in while it lives.
+  if (enemy.aura === 'fog') refreshStats(run);
   if (run.current && wave === run.current.n) run.current.alive++;
   if (!run.seen.includes(def.id)) {
     run.seen.push(def.id);
     run.events.push({ kind: 'firstSight', enemy: def.id });
   }
-  if (elite) run.events.push({ kind: 'eliteSpawn', x, y, aura: enemy.aura });
+  if (elite) run.events.push({ kind: 'eliteSpawn', x, y, aura: enemy.aura, champion });
   if (chorus > 1) {
     enemy.group = enemy.id;
     for (let i = 1; i < chorus; i++) {

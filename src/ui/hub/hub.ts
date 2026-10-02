@@ -12,7 +12,7 @@ import { ForgeView, StarsView, forgeBadge, starsBadge } from './forge';
 import { MapView } from './map';
 import { PactsView } from './pacts';
 import { TacticsView } from './tactics';
-import { tacticsKey } from '../../meta/automation';
+import { automations, tacticsKey } from '../../meta/automation';
 
 /**
  * The hub's views. A tab exists only once its view is unlocked (R3);
@@ -26,9 +26,13 @@ export interface HubActions {
   start(): void;
   buy(id: string): boolean;
   refund(id: string): boolean;
+  /** Pin a Forge node to the Foreman's wishlist, or unpin it (N7). */
+  pin(id: string): boolean;
   /** The first time the Forge opens (§7.1): the app records the lesson. */
   forgeOpened(): boolean;
   selectRegion(index: number): void;
+  /** Begin a Trial (N5): the next run, at once. */
+  trial(id: string): void;
   toggleRelic(id: RelicId): boolean;
   selectFrame(id: string): void;
   claim(id: string): number;
@@ -145,12 +149,14 @@ export class HubScreen {
     this.forge = new ForgeView(this.root, {
       buy: (id) => refreshing(() => actions.buy(id)),
       refund: (id) => refreshing(() => actions.refund(id)),
+      pin: (id) => actions.pin(id),
+      pinned: (p) => (automations(p).has('foreman') ? p.wishlist : null),
     });
     this.map = new MapView(this.root, (index) => {
       actions.selectRegion(index);
       if (this.profile) this.map.show(this.profile);
       this.refresh();
-    });
+    }, (id) => actions.trial(id));
     this.collection = new CollectionView(this.root, {
       toggleRelic: (id) => refreshing(() => actions.toggleRelic(id)),
       selectFrame: (id) => refreshing(() => actions.selectFrame(id)),

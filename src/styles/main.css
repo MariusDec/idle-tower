@@ -210,8 +210,10 @@ body {
   background: var(--surface-overlay);
 }
 
+/* The draft cards' colours (§10.1): weapons arcane, passives gold. */
 .build-chip .icon { --icon-size: 22px; color: var(--text-1); }
-.build-chip.is-weapon .icon { color: var(--fx-gold); }
+.build-chip.is-weapon .icon { color: var(--fx-arcane); }
+.build-chip.is-passive .icon { color: var(--fx-gold); }
 .build-chip.is-passive { background: none; }
 .build-chip.is-evolved { box-shadow: 0 0 6px 1px var(--fx-gold); }
 
@@ -898,6 +900,19 @@ body {
   paint-order: stroke;
 }
 
+/* The Foreman's wishlist (N7): a pinned node wears its place in the queue. */
+.forge-pin {
+  fill: var(--fx-gold);
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+}
+
+.forge-node.is-pinned .forge-shape {
+  stroke: var(--fx-gold);
+  stroke-dasharray: 4 3;
+}
+
 .forge-node.is-hinted .forge-shape {
   animation: forge-hint var(--dur-pulse) var(--ease-in-out) infinite alternate;
 }
@@ -985,7 +1000,7 @@ body {
 }
 
 .forge-detail-total {
-  margin: 0;
+  margin: 0 0 var(--space-2);
   font-size: var(--text-md);
   color: var(--fx-gold);
 }
@@ -1329,8 +1344,34 @@ body {
 }
 
 .draft-reroll,
+.draft-banish,
 .draft-take {
   font-size: var(--text-md);
+}
+
+/* Banish (N1): while armed, the cards it may strike wear a scarlet mark; the rest dim. */
+.draft-banish.is-active {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.draft-row.is-banishing .draft-card:not(.is-banishable) {
+  opacity: 0.45;
+}
+
+.draft-row.is-banishing .draft-card.is-banishable {
+  border-color: var(--bad);
+  box-shadow: 0 0 0 1px var(--bad);
+}
+
+.draft-row.is-banishing .draft-card.is-banishable::after {
+  content: '✕';
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-2);
+  color: var(--bad);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
 }
 
 /* ── Modal ───────────────────────────────────────────────────────────────── */
@@ -1660,7 +1701,8 @@ body {
 
 .map-region-stats {
   display: flex;
-  gap: var(--space-5);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
   margin: var(--space-2) 0;
 }
 
@@ -1687,6 +1729,67 @@ body {
 
 .map-region-trophy .icon { color: var(--fx-blood); }
 .map-region-enemies { color: var(--text-2); }
+
+/* A cleared region's Trials (N5): a toggle under the card, and the list it opens. */
+.map-trials {
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.map-trials-toggle {
+  width: 100%;
+  justify-content: flex-start;
+  font-size: var(--text-md);
+}
+
+.map-trials-toggle .icon { color: var(--fx-gold); }
+
+.map-trials-list {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.map-trial {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+
+.map-trial p {
+  grid-column: 1;
+  margin: 0;
+}
+
+.map-trial-name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  color: var(--text-0);
+}
+
+.map-trial.is-won .map-trial-name { color: var(--fx-gold); }
+
+.map-trial-rule {
+  font-size: var(--text-sm);
+  color: var(--text-1);
+}
+
+.map-trial-reward {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+}
+
+.map-trial-go {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  font-size: var(--text-md);
+}
 
 /* ── Collection and Feats lists (§5.3, §5.4) ─────────────────────────────── */
 

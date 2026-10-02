@@ -7,7 +7,8 @@
  *   I1a boss 1 first falls within 20–40 min (P4's gate: 25–40)
  *   I1b the Act 1 finale first falls within 7–12 h (needs --hours 12)
  *   I3  every results screen shows an affordable node, or ≥ 50% toward one
- *   I6  no gap between reveals longer than 10 min (in the first 2 h)
+ *   I6  no gap between reveals longer than 10 min (in the first 2 h), and
+ *       none longer than 30 min from 2 h to 10 h (S6, Q3's gate; needs --hours 10)
  *   P3  wave 20 is first reached within 15–30 min
  *
  *   npm run pacing                       one hour, seed 1
@@ -40,6 +41,8 @@ import { BOSSES, BOSS_BY_ID } from '../src/content/bosses';
 import { ENEMY_BY_ID } from '../src/content/enemies';
 import { EVOLUTION_BY_ID } from '../src/content/evolutions';
 import { RELIC_BY_ID } from '../src/content/relics';
+import { TRIALS, TRIAL_BY_ID } from '../src/content/trials';
+import { chooseTrial, trialWon, trialsOpen } from '../src/meta/trials';
 import { Rng } from '../src/core/rng';
 import { formatDuration } from '../src/core/format';
 import type { BranchId } from '../src/content/types';
@@ -58,8 +61,16 @@ const MAX_REVEAL_GAP = 10 * 60;
 /** I5's checkpoints by the clock: the first results past these many wall seconds (Region 2's in Region 2). */
 const CHECKPOINT_REGION_1 = 20 * 60;
 const CHECKPOINT_REGION_2 = 50 * 60;
-/** I6 only applies to the first two hours. */
+/** I6 only applies to the first two hours… */
 const I6_WINDOW = 2 * 3600;
+/** …and past them, to ten hours, at one reveal per 30 min (S6). */
+const I6_LATE = { from: 2 * 3600, to: 10 * 3600, gap: 30 * 60 };
+/**
+ * The active bot tries an open Trial (N5) every this many runs: one it has
+ * not won, in a region behind the frontier, at most `TRIAL_TRIES` times.
+ */
+const TRIAL_EVERY = 8;
+const TRIAL_TRIES = 2;
 
 export interface Reveal {
   /** Wall seconds since the profile was made. */
@@ -97,6 +108,12 @@ export interface PacingReport {
   firstEvolution: number | null;
   /** The longest gap between reveals inside I6's window, and where it starts. */
   worstGap: { seconds: number; from: number };
+  /** The same from 2 h to 10 h (or the report's end), I6's later clause (S6). */
+  worstLateGap: { seconds: number; from: number };
+  /** The longest gap between reveals from the Hollow King's first fall to the Blight's (Q3's gate); null if either never fell. */
+  stretchGap: { seconds: number; from: number } | null;
+  /** Trials won, by the wall second each was won (N5). */
+  trials: Record<string, number>;
   /**
    * Copies of the profile at moments I5 compares the players at (§8.4):
    * `region-1` and `region-2` at the first results past 20 and 50 min
@@ -109,7 +126,20 @@ export interface PacingReport {
   i1b: boolean;
   i3: boolean;
   i6: boolean;
+  /** I6's later clause: no gap over 30 min from 2 h to 10 h. True when the report never got past 2 h. */
+  i6late: boolean;
   wave20: boolean;
+}
+
+/** The longest gap between reveals in [from, to], and where it starts. */
+function worstGapIn(reveals: readonly Reveal[], from: number, to: number): { seconds: number; from: number } {
+  let worst = { seconds: 0, from };
+  let prev = from;
+  for (const r of [...reveals.filter((x) => x.at > from && x.at <= to), { at: to, what: 'end' }]) {
+    if (r.at - prev > worst.seconds) worst = { seconds: r.at - prev, from: prev };
+    prev = r.at;
+  }
+  return worst;
 }
 
 /** I1's first half (§8.4): boss 1's first kill, in wall seconds. */
@@ -136,6 +166,8 @@ export function runPacing(hours: number, seed: number): PacingReport {
   let tabs = hubUnlocks(profile);
   let i3 = true;
   const checkpoints: PacingReport['checkpoints'] = [];
+  const trials: Record<string, number> = {};
+  const tries: Record<string, number> = {};
   const checkpoint = (label: string): void => {
     if (!checkpoints.some((c) => c.label === label)) checkpoints.push({ label, at: clock, profile: structuredClone(profile) });
   };
@@ -177,6 +209,10 @@ export function runPacing(hours: number, seed: number): PacingReport {
         } else if (ev.kind === 'bossKill' && ev.first && !(ev.boss in bossKills)) {
           bossKills[ev.boss] = at;
           reveals.push({ at, what: `boss: ${BOSS_BY_ID[ev.boss].name} falls` });
+        } else if (ev.kind === 'eliteSpawn' && ev.champion && !seenAuras.has(`champion@${run.regionId}`)) {
+          // A region's first Champion (N4) is its own reveal.
+          seenAuras.add(`champion@${run.regionId}`);
+          reveals.push({ at, what: `champion: Region ${run.regionId}` });
         } else if (ev.kind === 'eliteSpawn' && !seenAuras.has(ev.aura ?? 'plain')) {
           // Each aura is a new enemy to read (§7.2), the plain elite included.
           seenAuras.add(ev.aura ?? 'plain');
@@ -196,6 +232,11 @@ export function runPacing(hours: number, seed: number): PacingReport {
     const progress = summary.next?.progress ?? 1;
     if (progress < 0.5) i3 = false;
     for (const u of summary.unlocks) reveals.push({ at: clock, what: `unlock: ${u}` });
+    for (const t of summary.trophies) reveals.push({ at: clock, what: `trophy: Region ${summary.regionId} +${t.overtime}` });
+    if (summary.trial?.paid) {
+      trials[summary.trial.id] = clock;
+      reveals.push({ at: clock, what: `trial: ${TRIAL_BY_ID[summary.trial.id].name} · ${summary.trial.paid.line}` });
+    }
     const now = hubUnlocks(profile);
     for (const k of ['map', 'collection', 'feats'] as const) {
       if (now[k] && !tabs[k]) reveals.push({ at: clock, what: `tab: ${k}` });
@@ -204,6 +245,12 @@ export function runPacing(hours: number, seed: number): PacingReport {
     // The active player claims what waits in Feats, and pushes the frontier.
     if (tabs.feats) claimAll(profile);
     profile.region = frontier(profile).index;
+    // Now and then, a Trial (N5) behind the frontier: an open one not yet won, tried at most twice.
+    if (runs.length % TRIAL_EVERY === TRIAL_EVERY - 1) {
+      const t = TRIALS.find((x) => x.region < profile.region && trialsOpen(profile, x.region)
+        && !trialWon(profile, x.id) && (tries[x.id] ?? 0) < TRIAL_TRIES);
+      if (t && chooseTrial(profile, t.id)) tries[t.id] = (tries[t.id] ?? 0) + 1;
+    }
 
     const bought = shop(profile);
     for (const id of bought) {
@@ -231,15 +278,13 @@ export function runPacing(hours: number, seed: number): PacingReport {
   }
 
   reveals.sort((a, b) => a.at - b.at);
-  const window = Math.min(clock, I6_WINDOW);
-  let worstGap = { seconds: 0, from: 0 };
-  let prev = 0;
-  for (const r of [...reveals.filter((x) => x.at <= window), { at: window, what: 'end' }]) {
-    if (r.at - prev > worstGap.seconds) worstGap = { seconds: r.at - prev, from: prev };
-    prev = r.at;
-  }
+  const worstGap = worstGapIn(reveals, 0, Math.min(clock, I6_WINDOW));
+  const lateEnd = Math.min(clock, I6_LATE.to);
+  const worstLateGap = lateEnd > I6_LATE.from ? worstGapIn(reveals, I6_LATE.from, lateEnd) : { seconds: 0, from: I6_LATE.from };
   const boss1 = bossKills.gatekeeper ?? null;
   const finale = bossKills[FINALE] ?? null;
+  const king = bossKills['hollow-king'] ?? null;
+  const stretchGap = king !== null && finale !== null ? worstGapIn(reveals, king, finale) : null;
   return {
     seconds: clock,
     runs,
@@ -248,11 +293,15 @@ export function runPacing(hours: number, seed: number): PacingReport {
     bossKills,
     firstEvolution,
     worstGap,
+    worstLateGap,
+    stretchGap,
+    trials,
     checkpoints,
     i1a: boss1 !== null && boss1 >= I1A.min && boss1 <= I1A.max,
     i1b: finale !== null && finale >= I1B.min && finale <= I1B.max,
     i3,
     i6: worstGap.seconds <= MAX_REVEAL_GAP,
+    i6late: worstLateGap.seconds <= I6_LATE.gap,
     wave20: firstWave20 !== null && firstWave20 >= 15 * 60 && firstWave20 <= 30 * 60,
   };
 }
@@ -440,6 +489,12 @@ async function main(): Promise<void> {
     console.log(`pacing · ${hours} h · ${seeds} profiles`);
     console.log(`  I3 passes ${count((r) => r.i3)} · I6 passes ${count((r) => r.i6)}`);
     console.log(`  worst reveal gaps: ${reports.map((r) => formatDuration(r.worstGap.seconds)).join(' ')}`);
+    if (hours > 2) {
+      console.log(`  I6 (2–10 h, ≤ 30:00) passes ${count((r) => r.i6late)} · worst: ${reports.map((r) => formatDuration(r.worstLateGap.seconds)).join(' ')}`);
+      const st = reports.map((r) => (r.stretchGap ? formatDuration(r.stretchGap.seconds) : '—'));
+      console.log(`  Hollow King → Blight worst gap (want ≤ 30:00): ${st.join(' ')}`);
+      console.log(`  trials won: ${reports.map((r) => Object.keys(r.trials).length).join(' ')}`);
+    }
     console.log(`  first wave 20: ${w20.join(' ')}`);
     console.log(`  ${median !== null && median >= 900 && median <= 1800 ? 'PASS' : 'FAIL'}  P3  median first wave 20 ${median === null ? 'never' : formatDuration(median)} (want 15:00–30:00)`);
     const fmt = (t: number | null): string => (t === null ? 'never' : formatDuration(t));
@@ -480,6 +535,10 @@ async function main(): Promise<void> {
   const mark = (ok: boolean): string => (ok ? 'PASS' : 'FAIL');
   console.log(`  ${mark(r.i3)}  I3  every results screen shows a node at ≥ 50%`);
   console.log(`  ${mark(r.i6)}  I6  longest gap between reveals ${formatDuration(r.worstGap.seconds)} (from ${formatDuration(r.worstGap.from)}; max 10:00)`);
+  if (hours > 2) {
+    console.log(`  ${mark(r.i6late)}  I6  from 2 h: longest gap ${formatDuration(r.worstLateGap.seconds)} (from ${formatDuration(r.worstLateGap.from)}; max 30:00)`);
+    if (r.stretchGap) console.log(`        Hollow King → Blight: longest gap ${formatDuration(r.stretchGap.seconds)} (from ${formatDuration(r.stretchGap.from)})`);
+  }
   console.log(`  ${mark(r.wave20)}  P3  wave 20 first reached at ${r.firstWave20 === null ? 'never' : formatDuration(r.firstWave20)} (want 15:00–30:00)`);
   const g = r.bossKills.gatekeeper;
   console.log(`  ${mark(r.i1a)}  I1a the Gatekeeper first falls at ${g === undefined ? 'never' : formatDuration(g)} (want 20:00–40:00)`);

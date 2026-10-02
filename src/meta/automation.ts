@@ -1,7 +1,8 @@
 import { BALANCE } from '../content/balance';
 import type { AutomationId, CardItemId } from '../content/types';
 import { frontier, selectedFrame } from './collection';
-import { ownedNodes } from './forge';
+import { FORGE_BY_ID } from '../content/forge';
+import { buyNode, isBuyable, levelOf, ownedNodes } from './forge';
 import type { Profile } from './profile';
 import type { RunSummary } from './results';
 
@@ -144,4 +145,39 @@ export function openingSeconds(profile: Profile): number | null {
 /** Wall seconds a draft waits before taking the suggestion (§4.5): shorter once the Tactician writes it. */
 export function draftSeconds(profile: Profile): number {
   return automations(profile).has('tactician') ? BALANCE.automation.tacticianSeconds : BALANCE.draft.seconds;
+}
+
+/** How many Forge nodes the Foreman's wishlist holds (N7). */
+export const WISHLIST_MAX = 5;
+
+/** Pin a node to the Foreman's wishlist, or unpin it (N7). False, and nothing changes, when it can't be. */
+export function togglePin(profile: Profile, id: string): boolean {
+  const node = FORGE_BY_ID[id];
+  if (!node || !automations(profile).has('foreman')) return false;
+  const i = profile.wishlist.indexOf(id);
+  if (i >= 0) {
+    profile.wishlist.splice(i, 1);
+    return true;
+  }
+  if (profile.wishlist.length >= WISHLIST_MAX || levelOf(profile, id) >= node.maxLevel) return false;
+  profile.wishlist.push(id);
+  return true;
+}
+
+/**
+ * The Foreman (N7): between runs, and as offline shards land, buy the
+ * wishlist in order. A pinned node that can't be bought yet (sealed, or not
+ * reached) waits its turn; the first one that can be bought but not afforded
+ * stops the buying, so the shards are saved for it. A node bought to its last
+ * level comes off the list. Returns the ids bought, one per level.
+ */
+export function foremanBuy(profile: Profile): string[] {
+  if (profile.wishlist.length === 0 || !automations(profile).has('foreman')) return [];
+  const bought: string[] = [];
+  for (;;) {
+    profile.wishlist = profile.wishlist.filter((id) => FORGE_BY_ID[id] && levelOf(profile, id) < FORGE_BY_ID[id].maxLevel);
+    const next = profile.wishlist.find((id) => isBuyable(profile, id));
+    if (next === undefined || !buyNode(profile, next)) return bought;
+    bought.push(next);
+  }
 }

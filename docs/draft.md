@@ -99,10 +99,21 @@ everything by itself after `BALANCE.automation.openingSeconds` (2 s); any
 touch on the panel stops that count, so the player can review card by
 card. Cards taken unseen are marked seen: they are on the tower.
 
-## Rerolls
+## Rerolls and Banish
 
 Fortune's reroll notable gives rerolls per run (`run.rerolls`). A reroll
 replaces the open hand with a fresh one from the same stream.
+
+**Banish** (N1): Fortune's Banish (ring 2, up to 3) and Clean Slate (ring
+4, up to 2) give a charge a level (`run.banishes`); so does a Trial's
+notable. `applyInput({ banish: i })` strikes card `i`'s item from the run
+(`run.banished`): `candidateCards` never offers it again, and the card is
+replaced from the draft stream (another candidate, else a fallback). Only a
+**new** item can be banished: what the tower carries is never clutter, and
+an evolution or a fallback is no item. The first, authored draft can't be.
+With the Tactician's Never list (U7), the run spends its charges on Never
+items by itself as each hand is dealt. Banished items are part of the run's
+state, so a snapshot keeps them.
 
 ## NEW stamps
 

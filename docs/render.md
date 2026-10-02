@@ -27,11 +27,16 @@ backdrop.
 | Painter | Draws |
 |---|---|
 | `arena.ts` | the baked ground: tint, light, rim |
-| `tower.ts` | the tower by tier, its mounts (one per weapon, aimed), hurt flare, fall |
-| `enemies.ts` | bodies from a sprite cache per type and view scale, gait, elite halos by aura, shields, shells, wards, slows, hit flash, HP bars |
+| `tower.ts` | the tower by tier (N2: a stone course, banners, a gilt edge, buttresses, lamps, a crown of light, one stage per Forge ring), a light per trophy (N4), the Trials' trims (N5), its mounts (one per weapon, aimed), hurt flare, fall |
+| `enemies.ts` | bodies from a sprite cache per type and view scale, gait, elite halos by aura (a Champion's in its region's boss colours too, N4), shields, shells, wards, slows, hit flash, HP bars |
 | `bosses.ts` | the boss, its court, facets, pools, hostile shots, Aegis |
 | `projectiles.ts` | one look per weapon; crits burn gold |
 | `arsenal.ts` | weapons that are not projectiles: orbits, drones, beams, tethers, runes, fires, statuses |
+
+The tower's look (`TowerLook`) is the profile's, not the run's: the app
+sets it with `Renderer#setTower` (from `towerTier`, `trophyCount` and
+`trims`) on every screen change and purchase. The hub's backdrop tower
+mounts the selected frame's starting weapon at its tier's level.
 
 Enemy sprites are baked once per type at the current scale and dropped
 when the scale changes. Colours are cached by *name*, never by value (see

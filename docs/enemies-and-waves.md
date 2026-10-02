@@ -47,6 +47,16 @@ Reaching a wave pays the last one's bonus (`waveBonus`). Wave 20 holds
 until its boss falls; the first overtime wave follows 3 s later, its HP
 growing ×1.25 and its shards ×1.12 a wave until the tower falls.
 
+**Champions and trophies (N4).** Every fifth overtime wave (25, 30, …;
+`isChampionWave`, never in the Abyss) brings a **Champion**: an elite with
+`BALANCE.champions` × an elite's HP and shards, in its region's boss
+colours (a second, wider halo), sure to drop one of its region's relics
+(once a relic slot exists; at rank III a drop feeds its set, N6, or melts
+to shards). Reaching overtime +5, +10 and +15 in a region earns a
+**trophy** (`meta/collection.ts#trophiesAt`, read off the region's best
+wave): `bankRun` pays it once, `BALANCE.trophies.pay` × that wave's wave
+pay; the Map card shows its stars and the tower wears a light for each.
+
 ## Enemy verbs
 
 Every type does one readable thing, its `verb` (§4.3): `walker`, `split`,
@@ -70,6 +80,18 @@ A type's first sight in a profile shows a Bestiary toast
 `region.elites` says which waves bring an elite (from, every) and which
 types and auras it draws. An elite has `BALANCE.elites` × HP, size, XP and
 shards, and from Region 2 an aura: `haste`, `regen`, `shield`, `split` or
-`vengeful` (§4.3), drawn on the canvas as a coloured halo. An elite kill
+`vengeful` (§4.3), drawn on the canvas as a coloured halo. From the Mire on,
+each region swaps one of those five for its own (N3), each an old verb made
+an elite's:
+
+| Region | Aura | In place of | What it does | Where |
+|---|---|---|---|---|
+| Drowned Mire | Fog-caller | split | while one lives, the tower's range is ×0.9 again (they don't stack) | `refreshStats` |
+| Glass Wastes | Mirrored | shield | turns shots away from every side, like a Shieldbearer all round; blasts, chains and beams pass | `turnedAway` |
+| Ember Rift | Molten | split | slain within half range of the wall, it opens a molten pool there | `eliteDeath` |
+| The Hollow | Wraith | regen | phases out 1.5 s of every 4, like a Phantom: untargetable and harmless | `applyAuras` |
+| Blight Heart | Hungering | regen | heals 8% of its Max HP for each body that falls within 160 (Maw Tooth starves it too) | `feedHungering` |
+
+Their numbers are in `BALANCE.elites`. An elite kill
 may drop one of its region's relics once a relic slot exists (30%, more
 with Treasure Hunter).

@@ -72,6 +72,8 @@ export type BehaviourId =
   | 'thorns'
   | 'extra-choice'
   | 'reroll'
+  /** Banish (N1): a charge per owned level, to strike a new item from this run's draft. */
+  | 'banish'
   | 'bounty'
   | 'twin-mount'
   /** Evolutions are offered at all (§4.4): sealed by the Bog Mother, so the first lands near 1.5–2 h (§7.1). */
@@ -108,6 +110,18 @@ export type BehaviourId =
   | 'relic-luck'
   | 'drilled'
   | 'charged-start'
+  // Trial notables (N5): earned only by a Trial.
+  /** Chain Lightning leaps to burrowed bodies first, and they surface. */
+  | 'deep-arc'
+  /** Mortar shells scatter more bomblets. */
+  | 'heavy-shells'
+  // Relic sets (N6): a region's three elite relics worn together. The count is the set's rank.
+  | 'set-fields'
+  | 'set-mire'
+  | 'set-wastes'
+  | 'set-rift'
+  | 'set-hollow'
+  | 'set-blight'
   // Frame quirks (§11.6).
   | 'stormcaller'
   /** The Gravekeeper's quirk: every kill mends the tower a little. */
@@ -133,7 +147,9 @@ export type AutomationId =
   /** Offline tiers I–IV (§6.3); the highest owned applies. */
   | 'offline' | 'offline-2' | 'offline-3' | 'offline-4'
   /** Evolution Insight (§11.4): every recipe's weapon half shows in the Recipe Book. */
-  | 'insight';
+  | 'insight'
+  /** The Foreman (N7): pinned Forge nodes are bought as shards arrive. */
+  | 'foreman';
 
 /**
  * Effects are data (§12.3, R8). Every kind has one exhaustive consumer, in
@@ -412,8 +428,12 @@ export interface EnemyDef extends ContentEntry {
   readonly lore: string;
 }
 
-/** An elite's aura (§4.3): one per elite, from Region 2 on. */
-export type AuraId = 'haste' | 'regen' | 'shield' | 'split' | 'vengeful';
+/**
+ * An elite's aura (§4.3): one per elite, from Region 2 on. The last five are
+ * each one region's own (N3), in place of one of the first five there.
+ */
+export type AuraId = 'haste' | 'regen' | 'shield' | 'split' | 'vengeful'
+  | 'fog' | 'mirrored' | 'molten' | 'wraith' | 'hungering';
 
 export interface AuraDef extends ContentEntry {
   readonly id: AuraId;
@@ -791,6 +811,18 @@ export interface RelicDef extends ContentEntry {
 }
 
 /**
+ * A relic set (N6): a region's three elite relics, worn together, give a
+ * bonus that leans on its verb. `effects` apply at rank I, `perRank` once
+ * more for each rank past it; duplicates past a relic's rank III are the
+ * set's progress, and progress is its rank.
+ */
+export interface RelicSetDef extends ContentEntry {
+  readonly region: number;
+  readonly effects: readonly Effect[];
+  readonly perRank: readonly Effect[];
+}
+
+/**
  * What a feat asks for (§5.4). A closed union; `meta/feats.ts` is its one
  * consumer. "In a run" goals read the finished run; the rest read the profile.
  */
@@ -887,4 +919,43 @@ export interface PactDef extends ContentEntry {
   readonly id: PactId;
   readonly ranks: number;
   readonly effect: PactEffect;
+}
+
+/**
+ * A hub-tower trim (N2, N5): a decoration a Trial pays, worn by the tower in
+ * the hub and in every run. A closed union; `render/painters/tower.ts` draws each.
+ */
+export type TrimId = 'ivy' | 'pennants' | 'runes' | 'gilt' | 'embers' | 'starlit';
+
+/**
+ * A Trial's constraint (N5), applied to the run's config. A closed union;
+ * `meta/runConfig.ts` is its one consumer.
+ */
+export type TrialRule =
+  /** The run is this frame's. */
+  | { readonly kind: 'frame'; readonly frame: FrameId }
+  /** Only these weapons: the first is mounted at the start, the rest are all the draft may offer. */
+  | { readonly kind: 'weapons'; readonly ids: readonly WeaponId[] }
+  /** Slots, whatever the Forge gave. */
+  | { readonly kind: 'slots'; readonly weapon?: number; readonly passive?: number }
+  /** An omen (§9's pacts, in Act 1): this pact at this rank. It pays no heat. */
+  | { readonly kind: 'omen'; readonly pact: PactId; readonly rank: number };
+
+/** What a Trial pays, once (N5). A closed union; `meta/trials.ts` is its one consumer. */
+export type TrialReward =
+  /** One rank of a relic (a new one at rank I). */
+  | { readonly kind: 'relic'; readonly relic: RelicId }
+  /** A trim for the tower. */
+  | { readonly kind: 'trim'; readonly trim: TrimId; readonly name: string }
+  /** A notable only a Trial earns: its effects apply to every run, like a Forge node's. */
+  | { readonly kind: 'notable'; readonly name: string; readonly text: string; readonly effects: readonly Effect[] };
+
+/**
+ * A Trial (N5): an authored run in a region, opened by its boss. Won by
+ * felling that boss under the trial's rules; it pays its reward once.
+ */
+export interface TrialDef extends ContentEntry {
+  readonly region: number;
+  readonly rules: readonly TrialRule[];
+  readonly reward: TrialReward;
 }

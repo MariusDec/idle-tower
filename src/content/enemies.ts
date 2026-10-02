@@ -464,6 +464,12 @@ export const AURAS: readonly AuraDef[] = [
   { id: 'shield', name: 'Shield', icon: 'energy-shield', text: 'Its neighbours take half damage. Kill it first.', radius: 160 },
   { id: 'split', name: 'Split', icon: 'split-arrows', text: 'Bursts into three of its kind when slain.', radius: 0 },
   { id: 'vengeful', name: 'Vengeful', icon: 'enrage', text: 'Its death enrages everything near it.', radius: 200 },
+  // Each region's own (N3): one per region from the Mire on, each an old verb made an elite's.
+  { id: 'fog', name: 'Fog-caller', icon: 'droplets', text: 'While it lives, the tower sees 10% less far.', radius: 0 },
+  { id: 'mirrored', name: 'Mirrored', icon: 'beveled-star', text: 'Turns shots away from every side. Blasts, chains and beams pass.', radius: 0 },
+  { id: 'molten', name: 'Molten', icon: 'fragmented-meteor', text: 'Slain near the wall, it leaves a burning pool there.', radius: 0 },
+  { id: 'wraith', name: 'Wraith', icon: 'magic-swirl', text: 'Phases out like a Phantom: untouchable, and harmless, while out.', radius: 0 },
+  { id: 'hungering', name: 'Hungering', icon: 'barbed-star', text: 'Heals whenever something near it dies.', radius: 160 },
 ];
 
 export const AURA_BY_ID: Readonly<Record<AuraId, AuraDef>> = Object.fromEntries(

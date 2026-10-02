@@ -83,6 +83,8 @@ export function candidateCards(run: RunState): Card[] {
   const joins = run.swap ? run.weapons[0].level : 1;
   const passiveFree = run.passives.length < run.passiveSlots;
   for (const id of run.pool) {
+    // Banished (N1): struck from this run's draft for good.
+    if (run.banished.includes(id)) continue;
     if (isWeaponId(id)) {
       if (weaponFree && !run.weapons.some((w) => w.id === id)) out.push({ kind: 'weapon', id, level: joins });
     } else if (passiveFree && !run.passives.some((p) => p.id === id)) {
@@ -126,10 +128,17 @@ export function rollOffer(run: RunState, rng: Rng): Card[] {
   return out;
 }
 
+/** True while the open draft is the profile's first, authored one: no reroll, no Banish. */
+function authored(run: RunState): boolean {
+  return run.firstDraft !== null && run.draftsOpened === 1;
+}
+
 /** Open the next banked draft, if none is open. */
 export function tickDraft(run: RunState): void {
   if (run.draft || run.pendingDrafts <= 0) return;
-  const cards = rollOffer(run, Rng.wrap(run.streams.draft));
+  const first = run.firstDraft !== null && run.draftsOpened === 0;
+  const rolled = rollOffer(run, Rng.wrap(run.streams.draft));
+  const cards = first ? rolled : autoBanish(run, rolled);
   run.draft = {
     cards,
     suggested: suggest(run, cards),
@@ -145,12 +154,68 @@ export function tickDraft(run: RunState): void {
  */
 export function rerollDraft(run: RunState): void {
   const d = run.draft;
-  if (!d || run.rerolls <= 0 || (run.firstDraft && run.draftsOpened === 1)) return;
+  if (!d || run.rerolls <= 0 || authored(run)) return;
   run.rerolls--;
-  const cards = rollOffer(run, Rng.wrap(run.streams.draft));
+  const cards = autoBanish(run, rollOffer(run, Rng.wrap(run.streams.draft)));
   // A new offer object, so presentation sees a new hand.
   run.draft = { cards, suggested: suggest(run, cards), level: d.level };
   run.events.push({ kind: 'draftOpen' });
+}
+
+/**
+ * A card Banish may strike (N1): a new weapon or passive, not yet on the
+ * tower. What the tower carries is never clutter, and an evolution or a
+ * fallback is not an item in the pool.
+ */
+export function banishable(run: RunState, card: Card): boolean {
+  if (card.kind === 'weapon') return !run.weapons.some((w) => w.id === card.id);
+  if (card.kind === 'passive') return !run.passives.some((p) => p.id === card.id);
+  return false;
+}
+
+/**
+ * Spend a Banish charge on card `index` of the open draft (N1): its item
+ * leaves this run's pool, and the card is replaced from the same stream.
+ */
+export function banishCard(run: RunState, index: number): void {
+  const d = run.draft;
+  const card = d?.cards[index];
+  if (!d || !card || run.banishes <= 0 || authored(run) || !banishable(run, card)) return;
+  run.banishes--;
+  const cards = strike(run, d.cards, index);
+  // A new offer object, so presentation sees a new hand.
+  run.draft = { cards, suggested: suggest(run, cards), level: d.level };
+}
+
+/** Banish card `index`'s item and put a fresh card in its place: another candidate, else a fallback. */
+function strike(run: RunState, cards: readonly Card[], index: number): Card[] {
+  const card = cards[index];
+  if (card.kind === 'weapon' || card.kind === 'passive') run.banished.push(card.id);
+  const held = new Set(cards.map(cardKey));
+  const fresh = candidateCards(run).filter((c) => c.kind !== 'evolution' && !held.has(cardKey(c)));
+  const out = [...cards];
+  if (fresh.length > 0) {
+    out[index] = Rng.wrap(run.streams.draft).pick(fresh);
+    return out;
+  }
+  const f = FALLBACKS.find((x) => !held.has(`fallback:${x.id}`));
+  if (f) out[index] = { kind: 'fallback', id: f.id };
+  else if (out.length > 1) out.splice(index, 1);
+  return out;
+}
+
+/** The Tactician's Never list spends Banish charges by itself (U7, N1): a listed new item is struck at once. */
+function autoBanish(run: RunState, cards: Card[]): Card[] {
+  const never = run.never;
+  if (!never) return cards;
+  let hand = cards;
+  for (;;) {
+    if (run.banishes <= 0) return hand;
+    const i = hand.findIndex((c) => (c.kind === 'weapon' || c.kind === 'passive') && never.includes(c.id) && banishable(run, c));
+    if (i < 0) return hand;
+    run.banishes--;
+    hand = strike(run, hand, i);
+  }
 }
 
 /** Take card `index` of the open draft. Out-of-range indices take the suggestion. */
@@ -237,10 +302,14 @@ export function applyCard(run: RunState, card: Card): void {
   }
 }
 
-/** Re-resolve stats after a passive changes. Max HP gained is HP gained. */
+/**
+ * Re-resolve stats after a passive changes, or a Fog-caller comes or goes
+ * (N3). Max HP gained is HP gained.
+ */
 export function refreshStats(run: RunState): void {
   const oldMax = run.stats.maxHp;
   run.stats = resolveStats(allMods(run.mods, run.passives));
+  if (run.enemies.some((e) => e.alive && e.aura === 'fog')) run.stats.range *= 1 - BALANCE.elites.fog;
   const gained = run.stats.maxHp - oldMax;
   run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + Math.max(0, gained));
 }
