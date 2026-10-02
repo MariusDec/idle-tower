@@ -128,5 +128,5 @@ export const PASSIVE_BY_ID: Readonly<Record<PassiveId, PassiveDef>> = Object.fro
 /** Fallback cards (§4.5): offered only when nothing else fills the hand. */
 export const FALLBACKS: readonly FallbackDef[] = [
   { id: 'heal', name: 'Mend', icon: 'healing', text: 'Restore 30% of Max HP.' },
-  { id: 'shards', name: 'Windfall', icon: 'crystal-cluster', text: '+10 shards.' },
+  { id: 'shards', name: 'Windfall', icon: 'crystal-cluster', text: 'Shards worth three waves.' },
 ];

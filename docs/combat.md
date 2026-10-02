@@ -33,8 +33,16 @@ area, duration, projectile speed and pierce stats. The sim fires these
 numbers and the draft scorer estimates from them, so the two never
 disagree about a weapon.
 
-`counters` on each weapon names the enemies it answers (§4.3); the scorer
-reads it to favour a weapon that suits the region.
+`counters` on each weapon names the enemies it answers (§4.3), and
+`weakAgainst` the ones that blunt it (frontal shots into a Shieldbearer,
+blades into Shardlings and Bombers); the scorer reads both to favour a
+weapon that suits the region. The lint (`counters`) holds every region's
+pool answered by at least one Act 1 weapon.
+
+A Harbinger never silences the tower's last firing weapon; against a lone
+weapon (Specialist) its gaze halves that weapon's fire instead
+(`WeaponState.dampedUntil`). Executioner sources stop at two (Executioner
+or Executioner's Coin, plus Annihilator: 20%, `executeMax`).
 
 ## Damage and armour
 

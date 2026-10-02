@@ -258,13 +258,24 @@ function summon(run: RunState, e: Enemy, verb: Extract<EnemyVerb, { kind: 'summo
   run.events.push({ kind: 'rise', x: e.x, y: e.y });
 }
 
-/** A Harbinger at its post silences one of the tower's weapons that still fires. */
+/**
+ * A Harbinger at its post silences one of the tower's weapons that still
+ * fires, never the last one. A tower with a single weapon (Specialist) has
+ * that weapon's fire halved for as long instead.
+ */
 function silence(run: RunState, e: Enemy, verb: Extract<EnemyVerb, { kind: 'silence' }>, dt: number): void {
   e.actTimer -= dt;
   if (e.actTimer > 0) return;
   e.actTimer += verb.interval;
   const live = run.weapons.filter((w) => w.silencedUntil <= run.time);
   if (live.length === 0) return;
+  if (run.weapons.length === 1) {
+    const w = run.weapons[0];
+    w.dampedUntil = run.time + verb.seconds;
+    run.events.push({ kind: 'silence', x: e.x, y: e.y, weapon: w.id });
+    return;
+  }
+  if (live.length === 1) return;
   const w = Rng.wrap(run.streams.foes).pick(live);
   w.silencedUntil = run.time + verb.seconds;
   run.events.push({ kind: 'silence', x: e.x, y: e.y, weapon: w.id });

@@ -63,6 +63,7 @@ export class HubScreen {
   private readonly home: HTMLElement;
   private readonly shards: HTMLElement;
   private readonly best: HTMLElement;
+  private readonly bestLabel: HTMLElement;
   private readonly loadout: HTMLElement;
   private readonly goal: HTMLElement;
   private readonly goalIcon: HTMLElement;
@@ -98,7 +99,7 @@ export class HubScreen {
         <div class="hub-group">
           <dl class="hub-stats">
             <div><dt>Shards</dt><dd class="hub-shards">0</dd></div>
-            <div><dt>Best wave</dt><dd class="hub-best">—</dd></div>
+            <div><dt class="hub-best-label">Best wave</dt><dd class="hub-best">—</dd></div>
             <div class="hub-starlight" hidden><dt>Starlight</dt><dd class="hub-starlight-n">0</dd></div>
           </dl>
           <p class="hub-loadout"></p>
@@ -122,6 +123,7 @@ export class HubScreen {
     this.home = q('.hub-home');
     this.shards = q('.hub-shards');
     this.best = q('.hub-best');
+    this.bestLabel = q('.hub-best-label');
     this.loadout = q('.hub-loadout');
     this.goal = q('.hub-goal');
     this.goalIcon = q('.hub-goal-icon');
@@ -254,7 +256,11 @@ export class HubScreen {
     const p = this.profile;
     if (!p) return;
     setText(this.shards, formatNumber(p.shards));
-    setText(this.best, p.records.bestWave > 0 ? String(p.records.bestWave) : '—');
+    // The selected region's own best (§7.3), or the deepest floor in the Abyss.
+    const abyss = inAbyss(p);
+    const best = abyss ? p.abyss.best : (p.regions[selectedRegion(p).index]?.bestWave ?? 0);
+    setText(this.bestLabel, abyss ? 'Deepest floor' : 'Best wave');
+    setText(this.best, best > 0 ? String(best) : '—');
     setText(this.loadout, `${selectedFrame(p).name} · ${inAbyss(p) ? 'The Abyss' : selectedRegion(p).name}`);
     this.tacticsBtn.hidden = tacticsKey(p) === null;
     const act2 = act2Open(p);

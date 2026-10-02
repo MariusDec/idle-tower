@@ -174,24 +174,26 @@ export class ResultsScreen {
       ...s.unlocks.map((u) => reward('star-gate', u, 'unlock')),
       ...s.relics.map((r) => {
         const def = RELIC_BY_ID[r.id];
-        const rank = r.rank === 0 ? 'already at its peak' : r.rank === 1 ? 'new relic' : `rank ${'I'.repeat(r.rank)}`;
+        const rank = r.rank === 0 ? `at its peak · +${formatNumber(r.shards ?? 0)} shards` : r.rank === 1 ? 'new relic' : `rank ${'I'.repeat(r.rank)}`;
         return reward(def.icon, `${def.name} · ${rank}`, 'relic');
       }),
-      ...s.feats.map((f) => reward(f.icon, `Feat: ${f.name}`, 'feat')),
+      // Before the Feats tab opens, feats are earned quietly: the tab opens on the batch (§5.4).
+      ...(s.featsOpen ? s.feats : []).map((f) => reward(f.icon, `Feat: ${f.name}`, 'feat')),
     );
     this.rewards.hidden = this.rewards.childElementCount === 0;
 
     this.records.replaceChildren();
-    const rec = (label: string, r: { old: number; now: number } | null): void => {
+    const rec = (label: string, r: { old: number; now: number } | null, fmt = formatNumber): void => {
       if (!r) return;
       const li = document.createElement('li');
       li.className = 'results-record';
       const old = document.createElement('s');
-      old.textContent = formatNumber(r.old);
-      li.append(`New record · ${label} `, old, ` ${formatNumber(r.now)}`);
+      old.textContent = fmt(r.old);
+      li.append(`New record · ${label} `, old, ` ${fmt(r.now)}`);
       this.records.append(li);
     };
     rec('wave', s.records.wave);
+    rec('overtime', s.records.overtime, (n) => `+${formatNumber(n)}`);
     rec('shards', s.records.shards);
     this.records.hidden = this.records.childElementCount === 0;
 

@@ -93,6 +93,6 @@ export function evolveAt(specialist: boolean): number {
 export function newWeapon(id: WeaponId, level: number): WeaponState {
   return {
     id, level, cooldown: 0, aim: -Math.PI / 2, evolved: false,
-    spin: 0, beamTarget: 0, heat: 1, meteor: 0, drones: [], silencedUntil: 0, tethers: [],
+    spin: 0, beamTarget: 0, heat: 1, meteor: 0, drones: [], silencedUntil: 0, dampedUntil: 0, tethers: [],
   };
 }

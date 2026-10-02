@@ -16,7 +16,8 @@ import { runRegion, waveDamage } from './systems/waves';
  *
  *   offence   its DPS gain, from the same armed numbers the sim fires
  *   defence   its survival gain, weighted by how much danger the tower is in
- *   counters  a new weapon that answers what walks in this region (§4.3)
+ *   counters  a new weapon that answers what walks in this region (§4.3),
+ *             less what blunts it there
  *   recipes   a step toward a *known* evolution: its partner, or its last
  *             levels. Unknown recipes are found by chance, as a player would
  *   slots     a new weapon in an empty slot is a second line of fire
@@ -147,11 +148,16 @@ function danger(run: RunState): number {
   return 0.35 + (1 - frac);
 }
 
-/** The share of this region's enemy pool a weapon counters (§11.2's "strong against"). */
+/**
+ * The share of this region's enemy pool a weapon counters (§11.2's "strong
+ * against"), less the share that blunts it.
+ */
 function counterShare(run: RunState, id: WeaponId): number {
   const pool = runRegion(run).pool;
-  const counters = WEAPON_BY_ID[id].counters;
-  return pool.filter((p) => counters.includes(p.enemy)).length / Math.max(1, pool.length);
+  const { counters, weakAgainst = [] } = WEAPON_BY_ID[id];
+  const strong = pool.filter((p) => counters.includes(p.enemy)).length;
+  const weak = pool.filter((p) => weakAgainst.includes(p.enemy)).length;
+  return (strong - weak) / Math.max(1, pool.length);
 }
 
 /** How close a weapon is to evolving, 0–1 by level. */

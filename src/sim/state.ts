@@ -334,6 +334,8 @@ export interface WeaponState {
   drones: Drone[];
   /** Run time until which it cannot fire: a Harbinger's gaze. */
   silencedUntil: number;
+  /** Run time until which it fires at half rate: a Harbinger's gaze on a lone weapon. */
+  dampedUntil: number;
   /** Soul Tether: the bodies its threads hold, by id. Empty for every other weapon. */
   tethers: number[];
 }

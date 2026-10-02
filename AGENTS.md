@@ -23,7 +23,7 @@ P9 deleted the `legacy/` copy.
 | `src/audio/` | `synth.ts` (Web Audio, master/sfx/music buses), `cues.ts` (sim events → sounds), `music.ts` (generative pad by mood and region) | `sim/` types |
 | `src/ui/` | DOM: HUD (with the boss bar), draft, results, toasts, `hub/` (home, the Forge web, the Map, the Collection, Feats, the Tactician's editor, Stars, Pacts), `settings.ts` (options and Stats), modal, icon helper | anything but `sim/` internals |
 | `src/platform/` | Capacitor shell hooks | — |
-| `tools/` | Headless: `bot.ts` (input policies), `play.ts` (one run under the active or idle policy, with the wall clock), `shop.ts` (the bots' Forge buying), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants), `idle.ts` (the idle bot's check-ins and the active/idle farm comparison), `act2.ts` (the bot past the Blight: heat, stars, the Abyss), `arsenal.ts` (I4) | `src/` minus DOM |
+| `tools/` | Headless: `bot.ts` (input policies), `play.ts` (one run under the active or idle policy, with the wall clock), `shop.ts` (the bots' Forge buying), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants), `idle.ts` (the idle bot's check-ins and the active/idle farm comparison), `act2.ts` (the bot past the Blight: heat, stars, the Abyss), `arsenal.ts` (I4), `contentReport.ts` (icons shared by unrelated entries) | `src/` minus DOM |
 | `tests/` | Vitest, node environment | — |
 
 The sim's step order (`sim/run.ts`): input → waves place bodies (wave 20 is

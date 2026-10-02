@@ -45,6 +45,8 @@ back to the scorer.
 - **When.** On boot and on every return from an absence (`App#absent`):
   the page shown again, the native resume, or a stalled frame. The
   welcome-back card says what was earned and what became affordable.
+  Mid-run it is a toast over the pause menu (or the Settings over it), and
+  only the pause menu's Resume resumes.
 
 **Invariant:** the sim is never fast-forwarded. An absence is paid by the
 offline formula, never by catching the loop up.

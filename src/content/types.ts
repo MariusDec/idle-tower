@@ -555,6 +555,8 @@ export interface WeaponDef extends ContentEntry {
   readonly pattern: WeaponPattern;
   /** What it is strong against (§11.2): the draft scorer leans toward it where these walk. */
   readonly counters: readonly EnemyId[];
+  /** What blunts it: the scorer counts these against it where they walk. */
+  readonly weakAgainst?: readonly EnemyId[];
   /** Level 1. */
   readonly base: WeaponParams;
   /** Levels 2–5, in order. */

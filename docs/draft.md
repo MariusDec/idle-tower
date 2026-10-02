@@ -46,9 +46,16 @@ current strength:
 |---|---|
 | offence | DPS gain, from the same armed numbers the sim fires |
 | defence | survival gain, weighted by how much danger the tower is in |
-| counters | a new weapon that answers what walks in this region |
+| counters | a new weapon that answers what walks in this region, less what blunts it there (`weakAgainst`) |
 | recipes | a step toward a *known* evolution (unknown ones are found by chance) |
 | slots | a new weapon in an empty slot: a second line of fire |
+
+The panel lets taps through (B3): pause, speed, the Autocaster and the
+ultimate stay live during a draft, and the cards sit above the HUD's
+bottom row.
+
+The Windfall fallback pays three of this wave's wave pays (at least 10),
+through the shard multiplier, so it keeps pace with the region.
 
 The suggested card is highlighted, and taken when the timer runs out. The
 same scorer drives every bot in `tools/`, so a better bot is better idle

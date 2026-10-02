@@ -228,8 +228,11 @@ export class App {
       + (earned.paid < earned.away ? ` (Night Watch holds ${offlineTier(this.profile)?.capHours ?? 0} hours at most.)` : '')
       + (fresh.length > 0 ? ` Now affordable: ${fresh.slice(0, 4).join(', ')}.` : '');
     if (this.screen === 'run') {
+      // Mid-run the pause menu (or the Settings over it) stays where it is:
+      // the welcome is a toast on top, and only the pause menu resumes (B4).
       this.paused = true;
-      this.modal.show('Welcome back', body, [{ label: 'Resume', primary: true, onClick: () => { this.paused = false; this.loop.resetClock(); } }]);
+      if (!this.settings.open && !this.modal.open) this.openPause();
+      this.toasts.show('crystal-cluster', 'Welcome back', `Away ${gone} · +${formatNumber(earned.shards)} shards`);
       return;
     }
     const buttons: ModalButton[] = [{ label: 'Close', onClick: () => {} }];

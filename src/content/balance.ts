@@ -40,7 +40,9 @@ export const BALANCE = {
     slowMotion: 0.15,
     /** Fallback cards. */
     healFraction: 0.3,
+    /** Windfall: the least it pays, and how many of this wave's wave pays it is worth (§8.3). */
     shardBonus: 10,
+    shardWaves: 3,
   },
   ultimate: {
     /** Kill XP (before XP gain) that fills the first charge: ~30–45 s of killing (§4.4). */
@@ -63,6 +65,8 @@ export const BALANCE = {
     overkillRange: 180,
     /** Executioner: below this fraction of its Max HP, any hit kills. */
     executeBelow: 0.1,
+    /** Executioner sources that count (Executioner or the Coin, and Annihilator): the line stops at 20%. */
+    executeMax: 2,
     /** Second Wind: HP restored, as a fraction of Max HP. */
     secondWindHp: 0.5,
     /** Thorns: fraction of a contact hit dealt back to its attacker. */
@@ -235,6 +239,8 @@ export const BALANCE = {
     eliteDrop: 0.3,
     /** Ranks top out here (§5.3: I → III). */
     maxRank: 3,
+    /** A duplicate past the last rank pays this many waves' pay where it fell. Late elites drop many: 5 took ~2.7 h off Act 1. */
+    peakWaves: 1,
   },
   /** Elites (§4.3). */
   elites: {

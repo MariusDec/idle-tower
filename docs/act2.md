@@ -16,7 +16,7 @@ Eight pacts, each with 3–5 ranks set between runs:
 |---|---|---|
 | Hordes | +30% enemies | 5 |
 | Vigour | enemies ×1.5 HP | 5 |
-| Haste | enemies 15% faster | 3 |
+| Quickening | enemies 15% faster | 3 |
 | Elites | +1 elite on every elite wave | 3 |
 | Frailty | −15% Max HP | 4 |
 | Scarcity | one fewer card a draft | 3 |

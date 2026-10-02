@@ -51,7 +51,8 @@ Twenty-four in Act 1, four per region: the boss's first-kill relic and
 three its elites drop. Act 2 adds twelve in four sets, dropped by the
 Abyss's elites once their Lantern stars are lit. Relics are qualitative and
 each leans on a weapon family or the region's verb. A duplicate ranks a
-relic up to III; `perRank` is what each rank adds.
+relic up to III; `perRank` is what each rank adds. A duplicate past III is
+melted down for that wave's wave pay (`relics.peakWaves`; five cut Act 1 by ~2.7 h).
 
 Relic slots: one per boss with `relicSlot` felled, plus the
 Constellations' gift (`relicSlots`). `equipped` lists what is worn;

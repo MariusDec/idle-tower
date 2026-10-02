@@ -119,19 +119,20 @@ export function tickWeapons(run: RunState, dt: number): void {
       continue;
     }
     const p = armed(run.stats, w);
+    const rate = w.dampedUntil > run.time ? rateMult * 0.5 : rateMult;
     const pattern = WEAPON_BY_ID[w.id].pattern;
     switch (pattern) {
       case 'orbit':
-        sweepBlades(run, w, p, dt * rateMult, crit);
+        sweepBlades(run, w, p, dt * rate, crit);
         break;
       case 'drone':
-        flyDrones(run, w, p, dt, rateMult, crit);
+        flyDrones(run, w, p, dt, rate, crit);
         break;
       case 'beam':
-        holdBeam(run, w, p, dt, rateMult, crit);
+        holdBeam(run, w, p, dt, rate, crit);
         break;
       case 'tether':
-        holdTethers(run, w, p, dt, rateMult, crit);
+        holdTethers(run, w, p, dt, rate, crit);
         break;
       case 'homing':
       case 'cone':
@@ -141,7 +142,7 @@ export function tickWeapons(run: RunState, dt: number): void {
       case 'boomerang':
       case 'mine':
       case 'rail':
-        fireOnCooldown(run, w, p, pattern, dt, rateMult, crit);
+        fireOnCooldown(run, w, p, pattern, dt, rate, crit);
         break;
       default: {
         const exhaustive: never = pattern;
@@ -1213,7 +1214,8 @@ function hitBody(run: RunState, e: Enemy, raw: number, crit: boolean, source: Da
   let amount = mitigate(damageTaken(run, e, raw, source), e.armor);
   // Executioner (§11.4): a hit on a body already this low finishes it. Not a
   // boss. Annihilator, a second level of it, doubles the line.
-  const execute = run.behaviours.executioner ?? 0;
+  // Two sources at most: the Coin stands in for Executioner, never a third line.
+  const execute = Math.min(B.executeMax, run.behaviours.executioner ?? 0);
   if (execute > 0 && !e.boss && e.hp - amount > 0 && e.hp <= e.maxHp * B.executeBelow * execute) amount = e.hp;
   e.hp -= amount;
   e.hitTick = run.tick;

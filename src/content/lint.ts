@@ -293,7 +293,121 @@ export const evolutions: LintRule = (tables) => {
   return out;
 };
 
-export const RULES: readonly LintRule[] = [uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions];
+/** Weapons a star lights are Act 2's (§9); the rest are the Forge's, Act 1's. */
+function act1Weapons(tables: Readonly<Record<string, readonly ContentEntry[]>>): WeaponDef[] {
+  const starCards = new Set(((tables.stars as readonly WebNodeDef[] | undefined) ?? []).flatMap((n) => n.effects).flatMap((e) => (e.kind === 'unlockCard' ? [e.id as string] : [])));
+  return ((tables.weapons as readonly WeaponDef[] | undefined) ?? []).filter((w) => !starCards.has(w.id));
+}
+
+/**
+ * Every region's enemies are answered (T3a): each type in a pool is in the
+ * `counters` of at least one Act 1 weapon, so the scorer can draft for it;
+ * `counters` and `weakAgainst` name real enemies and never the same one.
+ */
+export const counters: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const weapons = (tables.weapons as readonly WeaponDef[] | undefined) ?? [];
+  if (weapons.length === 0) return out;
+  const enemies = new Set((tables.enemies as readonly EnemyDef[] | undefined ?? []).map((e) => e.id as string));
+  for (const w of weapons) {
+    for (const id of [...w.counters, ...(w.weakAgainst ?? [])]) {
+      if (enemies.size > 0 && !enemies.has(id)) out.push({ table: 'weapons', id: w.id, problem: `counters names unknown enemy "${id}"` });
+    }
+    for (const id of w.weakAgainst ?? []) {
+      if (w.counters.includes(id)) out.push({ table: 'weapons', id: w.id, problem: `both counters and is weak against "${id}"` });
+    }
+  }
+  const answered = new Set(act1Weapons(tables).flatMap((w) => w.counters as readonly string[]));
+  for (const r of (tables.regions as readonly RegionDef[] | undefined) ?? []) {
+    for (const p of r.pool) {
+      if (!answered.has(p.enemy)) out.push({ table: 'regions', id: r.id, problem: `no Act 1 weapon counters "${p.enemy}"` });
+    }
+  }
+  return out;
+};
+
+/**
+ * One name, one thing (T3c): no two entries share a name, except a web node
+ * named for the card it unlocks and a star that opens a Forge mastery of
+ * the same name. A frame's ultimate counts as an entry.
+ */
+export const uniqueNames: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const byName = new Map<string, { table: string; e: ContentEntry }[]>();
+  const add = (table: string, e: ContentEntry, name = e.name): void => {
+    const list = byName.get(name) ?? [];
+    list.push({ table, e });
+    byName.set(name, list);
+  };
+  for (const [table, entries] of Object.entries(tables)) {
+    for (const e of entries) {
+      add(table, e);
+      if (table === 'frames') add(table, e, (e as FrameDef).ultimate.name);
+    }
+  }
+  const echoes = (x: { table: string; e: ContentEntry }, all: readonly { table: string; e: ContentEntry }[]): boolean => {
+    if (x.table !== 'forge' && x.table !== 'stars') return false;
+    const effects = (x.e as WebNodeDef).effects;
+    return effects.some((f) => (f.kind === 'unlockCard' && all.some((o) => o.e.id === f.id && o.table !== x.table))
+      || (f.kind === 'mastery' && all.some((o) => o.table === 'forge' && (o.e as WebNodeDef).type === 'mastery')));
+  };
+  for (const [name, list] of byName) {
+    const own = list.filter((x) => !echoes(x, list));
+    if (own.length > 1) out.push({ table: own[1].table, id: own[1].e.id, problem: `name "${name}" is also ${own[0].table}:${own[0].e.id}` });
+  }
+  return out;
+};
+
+/**
+ * A relic that grants a behaviour the Forge or the stars also grant says how
+ * the two stack (T3d), in words: "stacks", or "once more".
+ */
+export const stacking: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const web = [...((tables.forge as readonly WebNodeDef[] | undefined) ?? []), ...((tables.stars as readonly WebNodeDef[] | undefined) ?? [])];
+  const shared = new Set(web.flatMap((n) => n.effects).flatMap((e) => (e.kind === 'behaviour' ? [e.id as string] : [])));
+  for (const x of (tables.relics as readonly RelicDef[] | undefined) ?? []) {
+    const ids = x.effects.flatMap((e) => (e.kind === 'behaviour' ? [e.id as string] : []));
+    if (ids.some((id) => shared.has(id)) && !/stack|once more/i.test(x.text)) {
+      out.push({ table: 'relics', id: x.id, problem: 'shares a Forge behaviour but does not say how it stacks' });
+    }
+  }
+  return out;
+};
+
+export const RULES: readonly LintRule[] = [
+  uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, counters, uniqueNames, stacking,
+];
+
+/**
+ * Icons shared by unrelated entries (T3b): a report, not a rule, since some
+ * sharing is deliberate. A web node and the card it unlocks, a mastery and
+ * its star, or a feat and the boss it names are related; the rest are listed
+ * by `npm run content-report` for an artist to look over.
+ */
+export function sharedIcons(tables: Readonly<Record<string, readonly ContentEntry[]>>): { icon: string; entries: string[] }[] {
+  const byIcon = new Map<string, string[]>();
+  for (const [table, entries] of Object.entries(tables)) {
+    for (const e of entries) {
+      const list = byIcon.get(e.icon) ?? [];
+      list.push(`${table}:${e.id}`);
+      byIcon.set(e.icon, list);
+    }
+  }
+  const unlocks = new Map<string, string>();
+  for (const t of ['forge', 'stars']) {
+    for (const n of (tables[t] as readonly WebNodeDef[] | undefined) ?? []) {
+      for (const f of n.effects) if (f.kind === 'unlockCard') unlocks.set(`${t}:${n.id}`, f.id);
+    }
+  }
+  const out: { icon: string; entries: string[] }[] = [];
+  for (const [icon, list] of byIcon) {
+    // Drop a node that only repeats the icon of the card it unlocks.
+    const own = list.filter((k) => !list.some((o) => unlocks.get(k) !== undefined && o.endsWith(`:${unlocks.get(k)}`) && o !== k));
+    if (own.length > 1) out.push({ icon, entries: own });
+  }
+  return out.sort((a, b) => b.entries.length - a.entries.length);
+}
 
 export function lintContent(
   tables: Readonly<Record<string, readonly ContentEntry[]>>,

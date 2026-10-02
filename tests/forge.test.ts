@@ -149,6 +149,7 @@ describe('banking a run (§4.6)', () => {
     const p = newProfile(0);
     p.records.runs = 1;
     p.records.bestWave = 4;
+    p.regions[1] = { bestWave: 4 };
     const run = createRun(buildRunConfig(p), 1);
     run.shards = 12.7;
     run.wave = 6;
@@ -164,6 +165,22 @@ describe('banking a run (§4.6)', () => {
     expect(s.next).not.toBeNull();
     run.outcome = { kind: 'fell', wave: 3, time: 40 };
     expect(bankRun(p, run).newEnemies).toEqual([]);
+  });
+
+  it('wave records are the region\'s own, and past the boss they are overtime (B6)', () => {
+    const p = newProfile(0);
+    p.records.runs = 5;
+    p.records.bestWave = 26;
+    p.regions[1] = { bestWave: 26 };
+    p.regions[2] = { bestWave: 12 };
+    const run = createRun({ ...buildRunConfig(p), regionId: 2 }, 1);
+    run.outcome = { kind: 'fell', wave: 15, time: 300 };
+    expect(bankRun(p, run).records.wave).toEqual({ old: 12, now: 15 });
+    run.outcome = { kind: 'fell', wave: 23, time: 600 };
+    const s = bankRun(p, run);
+    expect(s.records.wave).toBeNull();
+    expect(s.records.overtime).toEqual({ old: 0, now: 3 });
+    expect(p.records.bestWave).toBe(26);
   });
 });
 

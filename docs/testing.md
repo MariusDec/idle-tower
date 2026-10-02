@@ -37,7 +37,9 @@ nothing tests a model of the game.
 - **New migration rung ⇒ new fixture** in `save.test.ts`.
 - **New `RunState` field ⇒ bump `SNAPSHOT_VERSION`**, and make sure the
   determinism hash still covers it.
-- **New content ⇒ the lint** catches missing icons, long text and dangling
-  references; add a behaviour test for anything with a rule.
+- **New content ⇒ the lint** catches missing icons, long text, dangling
+  references, unanswered enemies, name collisions and relics that do not
+  say how they stack; add a behaviour test for anything with a rule.
+  `npm run content-report` lists icons shared by unrelated entries.
 - The full pacing reports are too slow for CI; run them by hand at each
   phase gate ([balancing.md](balancing.md)).

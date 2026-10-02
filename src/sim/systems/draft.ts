@@ -9,6 +9,7 @@ import { allMods, resolveStats } from '../stats';
 import { pactLoad } from '../pacts';
 import { suggest } from '../suggest';
 import { evolveAt, newWeapon } from './arms';
+import { runRegion, waveBonus } from './waves';
 
 /**
  * XP, level-ups and the draft (§4.5). The sim only offers and applies cards;
@@ -192,10 +193,14 @@ export function applyCard(run: RunState, card: Card): void {
         case 'heal':
           run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * BALANCE.draft.healFraction);
           return;
-        case 'shards':
-          run.shards += BALANCE.draft.shardBonus;
-          run.shardsFrom.cards += BALANCE.draft.shardBonus;
+        case 'shards': {
+          // Worth a few waves' pay where it is drawn, so it keeps pace with the region.
+          const n = Math.max(1, run.wave);
+          const pay = Math.max(BALANCE.draft.shardBonus, BALANCE.draft.shardWaves * waveBonus(runRegion(run), n) * run.stats.shardMult);
+          run.shards += pay;
+          run.shardsFrom.cards += pay;
           return;
+        }
         default: {
           const exhaustive: never = id;
           return exhaustive;

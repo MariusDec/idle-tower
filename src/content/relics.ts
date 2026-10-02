@@ -213,19 +213,19 @@ export const RELICS: readonly RelicDef[] = [
   },
   {
     id: 'executioners-coin', name: "Executioner's Coin", icon: 'coinflip',
-    text: 'Enemies under 10% health die when hit.',
+    text: 'Enemies under 10% health die when hit; stacks with Executioner.',
     source: { kind: 'abyss', set: 4 },
     effects: [{ kind: 'behaviour', id: 'executioner' }], perRank: [{ kind: 'stat', mod: { key: 'critChance', add: 0.03 } }],
   },
   {
     id: 'phoenix-feather', name: 'Phoenix Feather', icon: 'arrow-flights',
-    text: 'Once per run, rise again at half health.',
+    text: 'Once more per run, rise again at half health.',
     source: { kind: 'abyss', set: 4 },
     effects: [{ kind: 'behaviour', id: 'second-wind' }], perRank: [{ kind: 'stat', mod: { key: 'maxHp', pct: 0.1 } }],
   },
   {
     id: 'whetstone', name: 'Whetstone', icon: 'hammer-nails',
-    text: 'Every new weapon joins the tower one level higher.',
+    text: 'New weapons join one more level up; stacks with Drilled.',
     source: { kind: 'abyss', set: 4 },
     effects: [{ kind: 'behaviour', id: 'drilled' }], perRank: [{ kind: 'behaviour', id: 'reroll' }],
   },

@@ -54,3 +54,25 @@ bots' policy, so improving the bot improves idle play.
   that reason.
 - Playtests (§13) calibrate the bot against people; their five questions
   are in the plan.
+
+## Readings
+
+### Q0 (post-rebuild bugs and data), 2026-10-02
+
+`npm run pacing -- --hours 12 --seeds 4` and `npm run arsenal`, before
+(`d3cea42`) and after Q0:
+
+| | Before | After |
+|---|---|---|
+| first Blight kill, per profile | 537 · 598 · 605 · 669 min | 477 · 537 · 555 · 555 min |
+| I1b median | 10:05 (PASS 4/4) | 9:14 (PASS 4/4) |
+| first wave 20 (P3) | 31:44 median, FAIL | unchanged |
+| I3 · I6 | 4/4 · 3/4 | 4/4 · 3/4 |
+| I4 worst | Mortar 31% (Region 2) | unchanged |
+| Drones, Regions 5 / 6 | 13% / 4% | 27% / 21% |
+
+The weapons' new `counters` and `weakAgainst` (B1) take ~45 min off the
+Blight on their own. Melting a rank-III duplicate for five waves' pay
+took a further ~2.7 h (late elites drop many) and failed I1b at 6:38; it
+pays one wave's pay. Scaling the Windfall card measured as nothing.
+P3 fails as it did before Q0 on this 4-seed sample (T4: gates read 8).

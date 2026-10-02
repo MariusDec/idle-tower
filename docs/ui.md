@@ -25,12 +25,14 @@ portrait arena is centred.
   cards glow; the suggestion is marked; a countdown bar; tap to pick,
   long-press for details; past four cards, two rows of three.
 - **Results** (`results.ts`, §4.6): wave reached, shards and where they came
-  from, records broken, discoveries, what opened up, the Next goal, and Run
+  from, records broken (the region's own wave record, told as overtime
+  past the boss), discoveries, what opened up (feat chips only once the
+  Feats tab is open), the Next goal, and Run
   again / Forge (or Map after a first boss kill); auto-restart counts down
   when owned.
 - **Toasts** (`toast.ts`): a new enemy's Bestiary card, a relic found.
 - **Modal** (`modal.ts`): pause, welcome back, the Act 1 ending.
-- **Hub** (`hub/hub.ts`): the home view (title, shards, best wave, the next
+- **Hub** (`hub/hub.ts`): the home view (title, shards, the selected region's best wave or the Abyss's deepest floor, the next
   run's frame and region, the Next goal) and, as they unlock, the Forge,
   Map, Collection, Feats and Stars behind bottom tabs; Tactics and Pacts
   from the home view; the gear (settings) in its top-right corner; the

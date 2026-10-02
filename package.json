@@ -12,6 +12,7 @@
     "pacing": "esbuild tools/pacing.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/pacing.mjs --log-level=warning && node node_modules/.tmp/pacing.mjs",
     "inspect": "esbuild tools/inspect.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/inspect.mjs --log-level=warning && node node_modules/.tmp/inspect.mjs",
     "arsenal": "esbuild tools/arsenal.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/arsenal.mjs --log-level=warning && node node_modules/.tmp/arsenal.mjs",
+    "content-report": "esbuild tools/contentReport.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/content-report.mjs --log-level=warning && node node_modules/.tmp/content-report.mjs",
     "icons": "node scripts/fetch-icons.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

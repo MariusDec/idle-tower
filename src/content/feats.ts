@@ -46,7 +46,7 @@ export const FEATS: readonly FeatDef[] = [
   { id: 'overtime', name: 'Into the Dark', icon: 'extra-time', text: 'Reach wave 30.', goal: { kind: 'wave', wave: 30 }, reward: 800 },
   { id: 'many-faces', name: 'Many Faces', icon: 'swords-emblem', text: 'Own three frames.', goal: { kind: 'frames', n: 3 }, reward: 8000 },
   { id: 'quartermaster', name: 'Quartermaster', icon: 'quiver', text: 'Own every Arsenal notable.', goal: { kind: 'branch', branch: 'arsenal' }, reward: 30000 },
-  { id: 'windfall', name: 'Windfall', icon: 'coins-pile', text: 'Bank 5,000 shards from one run.', goal: { kind: 'runShards', n: 5000 }, reward: 2000 },
+  { id: 'windfall', name: 'Rich Haul', icon: 'coins-pile', text: 'Bank 5,000 shards from one run.', goal: { kind: 'runShards', n: 5000 }, reward: 2000 },
   { id: 'lone-champion', name: 'Lone Champion', icon: 'archery-target', text: 'Reach wave 20 with a single weapon.', goal: { kind: 'lone', wave: 20 }, reward: 1500 },
   // Secret (§5.4): "???" and a riddle until earned.
   {

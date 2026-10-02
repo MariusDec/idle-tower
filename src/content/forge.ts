@@ -177,7 +177,7 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'stat', mod: { key: 'critDamage', add: 0.25 } }], sealed: 'hollow-king',
   },
   {
-    id: 'annihilator', name: "Annihilator", icon: 'guillotine', text: "Enemies under 10% HP die when hit; with Executioner, under 20%.",
+    id: 'annihilator', name: "Annihilator", icon: 'guillotine', text: "Enemies under 10% HP die when hit; with Executioner or the Coin, under 20%.",
     branch: 'might', type: 'notable', ring: 6, angle: 20, links: ['overcharge'], maxLevel: 1, cost: 675000,
     effects: [{ kind: 'behaviour', id: 'executioner' }], sealed: 'hollow-king',
   },
@@ -255,7 +255,7 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'automation', id: 'insight' }],
   },
   {
-    id: 'veteran-arms', name: "Veteran Arms", icon: 'double-shot', text: "Your starting weapon begins one more level up.",
+    id: 'veteran-arms', name: "Seasoned Arms", icon: 'double-shot', text: "Your starting weapon begins one more level up.",
     branch: 'arsenal', type: 'notable', ring: 4, angle: 60, links: ['passive-slot-2'], maxLevel: 1, cost: 6500,
     effects: [{ kind: 'behaviour', id: 'opening-salvo' }], sealed: 'prism',
   },
@@ -356,7 +356,7 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'automation', id: 'offline-3' }], sealed: 'bog-mother',
   },
   {
-    id: 'speed-3', name: 'Overclock', icon: 'hourglass', text: 'Unlocks game speed ×3.',
+    id: 'speed-3', name: 'Full Throttle', icon: 'hourglass', text: 'Unlocks game speed ×3.',
     branch: 'engineering', type: 'notable', ring: 3, angle: 164, links: ['frontier-march', 'auto-ult'], maxLevel: 1, cost: 2400,
     effects: [{ kind: 'automation', id: 'speed-3' }], sealed: 'bog-mother',
   },
@@ -428,7 +428,7 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'behaviour', id: 'head-start' }],
   },
   {
-    id: 'fortune-xp-2', name: 'Scholar', icon: 'brain', text: 'XP +10%.',
+    id: 'fortune-xp-2', name: 'Quick Study', icon: 'brain', text: 'XP +10%.',
     branch: 'fortune', type: 'minor', ring: 2, angle: 198, links: ['fortune-xp'], maxLevel: 5, cost: 75,
     effects: [{ kind: 'stat', mod: { key: 'xpGain', pct: 0.1 } }],
   },

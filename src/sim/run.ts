@@ -39,7 +39,8 @@ export function createRun(config: RunConfig, seed: number): RunState {
   // Twin Mount (§11.4): a second weapon from the pool, if a slot is free for it.
   const spares = config.pool.filter((id): id is WeaponId => isWeaponId(id) && id !== frame.startingWeapon);
   if (owned('twin-mount') > 0 && config.weaponSlots >= 2 && spares.length > 0) {
-    weapons.push(newWeapon(root.split('loadout').pick(spares), 1));
+    // Drilled and the Whetstone (§11.4) lift it like any new weapon.
+    weapons.push(newWeapon(root.split('loadout').pick(spares), Math.min(BALANCE.maxLevel, 1 + owned('drilled'))));
   }
   return {
     seed,

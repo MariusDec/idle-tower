@@ -108,3 +108,19 @@ describe('44 px floor', () => {
     expect(declares('.hud', /padding:\s*max\(var\(--space-\d\),\s*var\(--safe-t\)\)/)).toBe(true);
   });
 });
+
+describe('the draft leaves the HUD live (B3)', () => {
+  it('the panel lets taps through to pause, speed and the ultimate', () => {
+    expect(RULES.some(r => r.selector === '.draft' && /pointer-events:\s*none/.test(r.body))).toBe(true);
+  });
+
+  it('its own controls still take taps', () => {
+    for (const part of ['.draft-row', '.draft-reroll']) {
+      expect(declares(part, /pointer-events:\s*auto/), part).toBe(true);
+    }
+  });
+
+  it('the cards clear the HUD\'s bottom row', () => {
+    expect(RULES.some(r => r.selector === '.draft' && /padding:[^;]*--hud-bottom-clear/.test(r.body))).toBe(true);
+  });
+});

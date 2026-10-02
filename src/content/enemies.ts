@@ -459,7 +459,7 @@ export const ENEMY_BY_ID: Readonly<Record<EnemyId, EnemyDef>> = Object.fromEntri
  * Region 1's elites wear none. Numbers live in `BALANCE.elites`.
  */
 export const AURAS: readonly AuraDef[] = [
-  { id: 'haste', name: 'Haste', icon: 'wingfoot', text: 'It and its neighbours move faster.', radius: 160 },
+  { id: 'haste', name: 'Swift', icon: 'wingfoot', text: 'It and its neighbours move faster.', radius: 160 },
   { id: 'regen', name: 'Regen', icon: 'regeneration', text: 'It and its neighbours regenerate.', radius: 160 },
   { id: 'shield', name: 'Shield', icon: 'energy-shield', text: 'Its neighbours take half damage. Kill it first.', radius: 160 },
   { id: 'split', name: 'Split', icon: 'split-arrows', text: 'Bursts into three of its kind when slain.', radius: 0 },

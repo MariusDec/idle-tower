@@ -15,6 +15,7 @@ import { damageEnemy, tickProjectiles, tickWeapons } from '../src/sim/systems/co
 import { tickEnemies } from '../src/sim/systems/enemies';
 import { hurtTower, tickShots } from '../src/sim/systems/tower';
 import { applyCard } from '../src/sim/systems/draft';
+import { newWeapon } from '../src/sim/systems/arms';
 import { frameUnlocked } from '../src/meta/collection';
 import { checkFeats, featMet, featVisible } from '../src/meta/feats';
 import { Rng } from '../src/core/rng';
@@ -218,17 +219,31 @@ describe('Region 5 verbs (§4.3, §11.1)', () => {
 });
 
 describe('Region 6 verbs (§4.3, §11.1)', () => {
-  it('a Harbinger at its post silences a weapon for a while', () => {
+  it('a Harbinger at its post silences a weapon for a while, never the last one firing', () => {
     const verb = verbOf('harbinger', 'silence');
     const run = inRegion(6);
+    run.weapons.push(newWeapon('scattershot', 1));
+    spawnEnemy(run, regionByIndex(6), 'harbinger', 3, verb.standoff + 2, 0);
+    walk(run, verb.interval);
+    const silenced = run.weapons.filter((w) => w.silencedUntil > run.time);
+    expect(silenced.length).toBe(1);
+    const w = silenced[0];
+    const shots = run.projectiles.length;
+    w.cooldown = 0;
+    run.weapons = [w];
+    tickWeapons(run, SIM_DT);
+    expect(run.projectiles.length).toBe(shots);
+  });
+
+  it('a Harbinger halves a lone weapon\'s fire instead of silencing it (B10)', () => {
+    const verb = verbOf('harbinger', 'silence');
+    const run = inRegion(6);
+    expect(run.weapons.length).toBe(1);
     spawnEnemy(run, regionByIndex(6), 'harbinger', 3, verb.standoff + 2, 0);
     walk(run, verb.interval);
     const w = run.weapons[0];
-    expect(w.silencedUntil).toBeGreaterThan(run.time);
-    const shots = run.projectiles.length;
-    w.cooldown = 0;
-    tickWeapons(run, SIM_DT);
-    expect(run.projectiles.length).toBe(shots);
+    expect(w.silencedUntil).toBeLessThanOrEqual(run.time);
+    expect(w.dampedUntil).toBeGreaterThan(run.time);
   });
 
   it('a Chorus arrives as three bodies with one pool of HP, paying one body between them', () => {
