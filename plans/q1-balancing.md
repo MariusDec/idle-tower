@@ -6,6 +6,13 @@ retune that is still owed, written for a fresh session to pick up.
 Q3 and Q4 will need their own balance pass later. This one only has to
 leave Q1's gate green.
 
+**Pass 1 (later, 2026-10-02):** problems 1–2 done (Regions 5–6: HP up,
+pay down; I1b 8/8 at 8:23, I2 5.0 d). Stopped at 3: I3 needs a mechanic
+(Twin Mount draws Scattershot into the last slot, and Region 3's shields
+take both weapons). Readings and the probe in `docs/balancing.md`, "Q1
+balancing". The CI P3 median also fails (31:24) since the camera and fog
+merge.
+
 ## What changed under the numbers
 
 Read these before tuning. Each moves the balance on its own:

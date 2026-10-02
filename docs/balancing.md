@@ -189,3 +189,104 @@ Q3's gate readings:
   bonuses all add power. Q1's retune must now absorb that too.
 - Trials won by 12 h: 13–14 of 18.
 - Arsenal and keystone sweeps: not yet re-read.
+
+### Q1 balancing (the retune, `plans/q1-balancing.md`), 2026-10-02
+
+Read against `3e9ac3b` (Q2–Q4, camera and fog) on the same seeds. Known
+problems 1–2 are done; the pass stopped at 3 (I3), which numbers alone
+can't meet (below). Items 4–10 are not started.
+
+One change: Regions 5–6 (`content/regions.ts`), HP up and pay down.
+
+| | Region 5 | Region 6 |
+|---|---|---|
+| hpBase | 1600 → **2200** | 2000 → **2300** |
+| shardBase · waveShards | 29 · 58 → **20 · 40** | 100 · 200 → **60 · 120** |
+
+`npm run pacing -- --hours 12 --seeds 8`:
+
+| | Before | After |
+|---|---|---|
+| first wave 20 (P3) | 27:51 PASS | 27:51 PASS |
+| Gatekeeper (P4) · I1a | 32:09 · 8/8 | 32:09 · 8/8 |
+| Bog Mother | 71:46 | 71:46 |
+| Prism | 108:43 | 108:43 |
+| Forgeheart (gate 132–198) | 148:37 PASS | 148:37 PASS |
+| Hollow King | 228:42 | 311:29 |
+| Blight · I1b | 328:36 · 0/8 FAIL | 502:57 · 8/8 PASS (424–583) |
+| I3 · I6 (first 2 h) | 4/8 · 7/8 | 4/8 · 7/8 |
+| first evolution | 95:00 | 95:00 |
+| Hollow King → Blight, gaps ≤ 30 min | 7/8 (19:33–32:03) | 0/8 (38:18–102:42) |
+| I6 2–10 h | 0/8 | 0/8 |
+| Trials won by 12 h | 13–14 | 11–13 |
+
+`npm run pacing -- --idle --hours 12 --seeds 4`: I2 4.5 d FAIL (4.5 4.0
+4.5 4.0) → **5.0 d PASS** (5.5 5.0 5.0 4.0). I5 PASS at every gated
+checkpoint: Region 2 1.25, Bog Mother 1.20, Prism 1.34, Forgeheart 1.28,
+Hollow King 1.24, Blight 1.24.
+
+Other gates, after: `npm run arsenal` I4 PASS (worst Mortar 31%, Region
+2; Drones 21–31% in Regions 3–6). `npm run arsenal -- --keystones` PASS,
+the same shape as Q2 (Specialist gains in four regions, ×3.04 shards in
+Region 6 and the only Blight kills; Fortress gains only Region 3's boss
+kills and costs in four). `npm run calibrate` T2 PASS, 0 of 48.
+`tests/draft.test.ts` (a Power level ≥ +10% with the full Forge) passes.
+`npm test`: one failure, the CI P3 median (below); the CI I2 profile now
+passes (5.5 d).
+
+`npm run pacing -- --act2 --hours 12 --seeds 4` (P8, item 9 not started):
+heat 10 at the frontier 74:33 → 93:21 (want 3–12 h, FAIL both); 183–193
+→ 155–176 mastery levels in 12 h; best Abyss floor median 9 both; no
+last star in 12 h. Region 6's lower pay slows Act 2 a little; the
+masteries' price is still item 9's.
+
+How it was found (8 seeds, HP alone, the pay unchanged):
+
+| Region 5 · 6 hpBase | Hollow King | Blight · I1b | idle Blight (4 seeds) |
+|---|---|---|---|
+| 1800 · 2300 | 243 | 371 · 0/8 | 4.0–5.5 d, I2 5.0 |
+| 2200 · 3200 | 269 | 530 · 8/8 | never (20 d) |
+| 2600 · 2800 | 339 | 503 · 8/8 | never (12 d) |
+| 3000 · 2300 | — | — | Hollow King never on 2 of 4 |
+
+HP alone can't do it, because of the idle bot. Offline pay at the frontier
+buys a late ring out in one check-in (Region 6 pays 80–130M a check-in,
+120–200M before; ring 6 costs 57M), and Act 1 has no sink past the ring (the masteries are
+Act 2's), so the idle bot meets each late boss with its ring full: the boss
+falls to that or never. The active bot fells the Blight with 21–43M of
+ring 6 unbought, on ~57 relic ranks (Trials) to the idle bot's ~40 and
+casting by hand. So late HP is capped where the idle bot's full ring still
+wins (Region 6 ~2300, Region 5 ~2600), and the active bot's hours come
+from the pay. At 2300 the idle Blight is a coin toss once ring 6 is full
+(it falls 1–3 check-ins later): I2 passes at 5.0 d but has no margin.
+
+The Hollow King → Blight stretch is ~190 min now (Q3's gate wants it to
+hold a reveal every 30 min): the Champions, trophies and Trials that filled
+~100 min don't fill this. That is Q3's to fill, as its readings expected.
+
+**I3 can't be met with numbers alone.** A probe from the real pacing state
+(each seed's profile at the Bog Mother's fall, shopped, then 12 Region 3
+runs each, 8 seeds) wipes at wave 2–3 in 21 of 96 runs, and every wipe is
+Arcane Bolt + Scattershot in a two-slot tower: Twin Mount's random second
+weapon is Scattershot about one run in six, both slots are then full, and
+neither weapon lands on Region 3's shield-only waves 1–4, so no draft can
+add one that does. The plan's levers, measured on the same probe:
+- Burrowers from wave 3 (pool and beat): 21 → 21 wipes; the tower is dead
+  before they surface.
+- Ring 3's weapons cheaper (Sunlance 400, Glaives 440, Drones 700): 21 → 22
+  wipes; I3 4/8 on the 3 h report. Only dilution, and Twin Mount still
+  draws Scattershot.
+- A new-weapon card when nothing has landed (`draft.ts#rollOffer`): no free
+  slot to take it into.
+- Region 3 later: doesn't change Twin Mount's draw, and a later arrival
+  only makes the next node dearer against a wipe's pay.
+Without Twin Mount the same probe wipes 6 of 96 (the scorer still drafts
+Scattershot there, its `weakAgainst` counted at ¼ where the sim lands
+none). A fix needs a mechanic: Twin Mount drawing a weapon the region's
+opening doesn't blunt, or a third slot before Region 3.
+
+**The CI P3 reading fails** (median of seeds 1–3, 31:24: 34:31 24:56
+31:24), as it has since the camera and fog merge; the 8-seed P3 passes at
+27:51. Not on the plan's list, so not touched. A lever seen in passing:
+Region 1 `hpGrowth` 1.18 → 1.175 puts the CI median at 25:59 (8 seeds
+26:05) but moves I6 (read on 2 h only).

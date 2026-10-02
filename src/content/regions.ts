@@ -130,9 +130,12 @@ export const REGIONS: readonly RegionDef[] = [
     name: 'The Hollow',
     icon: 'eclipse',
     text: 'The dark at the bottom of the world, where the dead keep house.',
-    shardBase: 29,
-    waveShards: 58,
-    hpBase: 1600,
+    // Q1: shards 29/58 → 20/40, HP 1600 → 2200. The late game ran ~3.5 h short
+    // (I1b); the HP is held where the idle bot's full ring 5 still fells the
+    // Hollow King, so the rest of the time is in the pay.
+    shardBase: 20,
+    waveShards: 40,
+    hpBase: 2200,
     hpGrowth: 1.17,
     damageBase: 38,
     damageGrowth: 1.06,
@@ -159,9 +162,12 @@ export const REGIONS: readonly RegionDef[] = [
     name: 'Blight Heart',
     icon: 'glass-heart',
     text: 'Where the Blight began. It is listening.',
-    shardBase: 100,
-    waveShards: 200,
-    hpBase: 2000,
+    // Q1: shards 100/200 → 60/120, HP 2000 → 2300. Past ~2300 the idle bot's
+    // full Forge can't fell the Blight (2800: never in 12 days, I2), so the
+    // active bot's hours here come from the pay, not the HP.
+    shardBase: 60,
+    waveShards: 120,
+    hpBase: 2300,
     hpGrowth: 1.17,
     damageBase: 45,
     damageGrowth: 1.06,
