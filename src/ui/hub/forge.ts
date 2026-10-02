@@ -244,12 +244,13 @@ export class WebView<N extends WebNodeDef> {
     if (n.id === this.hinted) classes.push('is-hinted');
     const g = el('g', { class: classes.join(' '), transform: `translate(${at.x} ${at.y})`, 'data-id': n.id });
     g.appendChild(el('circle', { class: 'forge-hit', r: Math.max(r, HIT_RADIUS) }));
+    let shape: SVGElement;
     if (n.type === 'keystone') {
       const pts = Array.from({ length: 6 }, (_, i) => {
         const a = (Math.PI / 3) * i;
         return `${(Math.cos(a) * r).toFixed(1)},${(Math.sin(a) * r).toFixed(1)}`;
       }).join(' ');
-      g.appendChild(el('polygon', { class: 'forge-shape', points: pts }));
+      shape = el('polygon', { class: 'forge-shape', points: pts });
     } else if (n.type === 'mastery') {
       // A mastery (§9): an eight-pointed star, endless.
       const pts = Array.from({ length: 16 }, (_, i) => {
@@ -257,11 +258,16 @@ export class WebView<N extends WebNodeDef> {
         const rr = i % 2 === 0 ? r : r * 0.72;
         return `${(Math.cos(a) * rr).toFixed(1)},${(Math.sin(a) * rr).toFixed(1)}`;
       }).join(' ');
-      g.appendChild(el('polygon', { class: 'forge-shape', points: pts }));
+      shape = el('polygon', { class: 'forge-shape', points: pts });
     } else {
-      g.appendChild(el('circle', { class: 'forge-shape', r }));
-      if (n.type === 'notable') g.appendChild(el('circle', { class: 'forge-ring', r: r - 5 }));
+      shape = el('circle', { class: 'forge-shape', r });
     }
+    // An opaque base of the backdrop under the shape: an owned node's fill is
+    // see-through, and the links behind it must not show.
+    const base = shape.cloneNode() as SVGElement;
+    base.setAttribute('class', 'forge-base');
+    g.append(base, shape);
+    if (n.type === 'notable') g.appendChild(el('circle', { class: 'forge-ring', r: r - 5 }));
     if (state === 'fog') {
       const t = el('text', { class: 'forge-unknown', 'text-anchor': 'middle', 'dominant-baseline': 'central' });
       t.textContent = '?';

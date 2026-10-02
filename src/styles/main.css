@@ -838,6 +838,8 @@ body {
 
 /* The web pans and pinches itself, so it opts out of browser gestures. */
 .forge-web {
+  /* What the web is drawn on: a node's base wears it, hiding the links. */
+  --web-bg: var(--surface-0);
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
@@ -853,6 +855,7 @@ body {
 .branch-engineering { --branch: var(--fx-frost); }
 
 .forge-hit { fill: transparent; }
+.forge-base { fill: var(--web-bg); }
 
 .forge-shape {
   fill: var(--surface-1);
@@ -1976,6 +1979,7 @@ body {
 
 /* The Constellations wear the Forge's web under a night sky. */
 .forge.stars .forge-web {
+  --web-bg: var(--surface-sunken);
   background:
     radial-gradient(1px 1px at 12% 18%, rgba(255, 255, 255, 0.5), transparent),
     radial-gradient(1px 1px at 68% 34%, rgba(255, 255, 255, 0.4), transparent),
