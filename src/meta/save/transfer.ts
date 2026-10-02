@@ -2,6 +2,7 @@ import type { Profile } from '../profile';
 import { migrate, type RawProfile } from './migrate';
 import { isProfile } from './schema';
 import { getSaveStore, type SaveStore } from './stores';
+import { seal, unseal } from './seal';
 
 /**
  * Carrying a profile across installs, and keeping a few behind it (U12).
@@ -10,19 +11,20 @@ import { getSaveStore, type SaveStore } from './stores';
  * looks like a profile is undone from a rolling backup.
  */
 
-/** The profile as text, to copy or save to a file. */
+/** The profile as text, to copy or save to a file. Sealed, as the save is (see `seal.ts`). */
 export function exportProfile(profile: Profile): string {
-  return JSON.stringify(profile);
+  return seal(JSON.stringify(profile));
 }
 
 /**
- * Text back into a profile: parsed, walked up the migration ladder and
- * checked. Throws on anything that is not a profile.
+ * Text back into a profile: unsealed, parsed, walked up the migration ladder
+ * and checked. Throws on anything that is not a profile, plain JSON and
+ * edited text included.
  */
 export function importProfile(text: string): Profile {
   let raw: unknown;
   try {
-    raw = JSON.parse(text.trim());
+    raw = JSON.parse(unseal(text));
   } catch {
     throw new Error('That is not a saved profile.');
   }

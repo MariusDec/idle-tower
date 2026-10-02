@@ -3,6 +3,7 @@ import { migrate, type RawProfile } from './migrate';
 import type { RunState } from '../../sim/state';
 import { isProfile, isRunState } from './schema';
 import { getSaveStore, type SaveStore } from './stores';
+import { isSealed, seal, unseal } from './seal';
 
 /** The rebuild's key (§12.4). */
 export const PROFILE_KEY = 'tower-profile';
@@ -11,6 +12,12 @@ export const CORRUPT_KEY = 'tower-profile-corrupt';
 /** The legacy game's save key, and where it is copied to once (D3). */
 export const LEGACY_KEY = 'the-tower-save';
 export const LEGACY_BACKUP_KEY = 'the-tower-save-legacy-backup';
+/**
+ * Set once the profile has been written sealed. Before it, a plain-JSON
+ * profile (from a build without the seal) is read and resealed on the spot;
+ * after it, plain JSON is an edit and reads as corrupt.
+ */
+export const SEALED_KEY = 'tower-sealed';
 
 export interface LoadResult {
   profile: Profile;
@@ -32,8 +39,15 @@ export async function loadProfile(now: number, store: SaveStore = getSaveStore()
   const raw = await store.get(PROFILE_KEY);
   if (raw === null) return { profile: newProfile(now), fresh: 'new', backedUpLegacy };
   try {
-    const migrated = migrate(JSON.parse(raw) as RawProfile);
+    const plain = !isSealed(raw);
+    if (plain && (await store.get(SEALED_KEY)) !== null) throw new Error('unsealed profile');
+    const migrated = migrate(JSON.parse(plain ? raw : unseal(raw)) as RawProfile);
     if (!isProfile(migrated)) throw new Error('not a profile');
+    if (plain) {
+      // Reseal before marking, so a kill between the two still reads next time.
+      await saveProfile(migrated, store);
+      await store.set(SEALED_KEY, '1');
+    }
     return { profile: migrated, fresh: null, backedUpLegacy };
   } catch (err) {
     console.error('[save] profile unreadable; starting fresh', err);
@@ -43,7 +57,7 @@ export async function loadProfile(now: number, store: SaveStore = getSaveStore()
 }
 
 export async function saveProfile(profile: Profile, store: SaveStore = getSaveStore()): Promise<void> {
-  await store.set(PROFILE_KEY, JSON.stringify(profile));
+  await store.set(PROFILE_KEY, seal(JSON.stringify(profile)));
 }
 
 /**
@@ -90,7 +104,7 @@ export function snapshotRun(run: RunState, profile: Profile): string {
   const snap: RunSnapshot = {
     version: SNAPSHOT_VERSION, profile: profile.createdAt, runs: profile.records.runs, run: { ...run, events: [] },
   };
-  return JSON.stringify(snap);
+  return seal(JSON.stringify(snap));
 }
 
 export async function saveRunSnapshot(snapshot: string, store: SaveStore = getSaveStore()): Promise<void> {
@@ -102,7 +116,7 @@ export async function loadRunSnapshot(profile: Profile, store: SaveStore = getSa
   const raw = await store.get(RUN_KEY);
   if (raw === null) return null;
   try {
-    const snap = JSON.parse(raw) as Partial<RunSnapshot>;
+    const snap = JSON.parse(unseal(raw)) as Partial<RunSnapshot>;
     if (snap.version !== SNAPSHOT_VERSION || snap.profile !== profile.createdAt) throw new Error('stale snapshot');
     if (snap.runs !== profile.records.runs) throw new Error('run already banked');
     if (!isRunState(snap.run)) throw new Error('not a run');

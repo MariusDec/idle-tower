@@ -12,7 +12,7 @@ export async function saveTextFile(name: string, text: string): Promise<string> 
     await Filesystem.writeFile({ path, data: text, directory: Directory.Documents, encoding: Encoding.UTF8, recursive: true });
     return `Documents/${path}`;
   }
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
   const a = document.createElement('a');
   a.href = url;
   a.download = name;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemorySaveStore } from '../src/meta/save/stores/SaveStore';
 import {
-  CORRUPT_KEY, LEGACY_BACKUP_KEY, LEGACY_KEY, PROFILE_KEY, RUN_KEY, SNAPSHOT_VERSION,
+  CORRUPT_KEY, LEGACY_BACKUP_KEY, LEGACY_KEY, PROFILE_KEY, RUN_KEY, SEALED_KEY, SNAPSHOT_VERSION,
   clearRunSnapshot, loadProfile, loadRunSnapshot, saveProfile, saveRunSnapshot, snapshotRun,
 } from '../src/meta/save';
 import { buildRunConfig } from '../src/meta/runConfig';
@@ -14,6 +14,7 @@ import { MIGRATIONS, MigrationError, migrate, type Migration, type RawProfile } 
 import { isProfile } from '../src/meta/save/schema';
 import { PROFILE_VERSION, newProfile } from '../src/meta/profile';
 import { exportProfile, importProfile, listBackups, pushBackup, readBackup } from '../src/meta/save/transfer';
+import { seal, unseal } from '../src/meta/save/seal';
 
 describe('profile save', () => {
   it('starts fresh on an empty store', async () => {
@@ -31,6 +32,32 @@ describe('profile save', () => {
     const res = await loadProfile(0, store);
     expect(res.fresh).toBeNull();
     expect(res.profile).toEqual(p);
+  });
+
+  it('writes the profile sealed, and reads an edited one as corrupt', async () => {
+    const store = new MemorySaveStore();
+    const p = newProfile(5);
+    p.shards = 123;
+    await saveProfile(p, store);
+    const raw = (await store.get(PROFILE_KEY))!;
+    expect(raw).not.toContain('shards');
+    const flipped = raw.slice(0, 40) + (raw[40] === 'A' ? 'B' : 'A') + raw.slice(41);
+    await store.set(PROFILE_KEY, flipped);
+    expect((await loadProfile(0, store)).fresh).toBe('corrupt');
+  });
+
+  it('reseals a plain profile from before the seal once, and refuses plain JSON after', async () => {
+    const store = new MemorySaveStore();
+    const p = newProfile(5);
+    p.shards = 50;
+    await store.set(PROFILE_KEY, JSON.stringify(p));
+    const first = await loadProfile(0, store);
+    expect(first.fresh).toBeNull();
+    expect(first.profile.shards).toBe(50);
+    expect(await store.get(SEALED_KEY)).not.toBeNull();
+    expect(JSON.parse(unseal((await store.get(PROFILE_KEY))!))).toEqual(p);
+    await store.set(PROFILE_KEY, JSON.stringify({ ...p, shards: 1e9 }));
+    expect((await loadProfile(0, store)).fresh).toBe('corrupt');
   });
 
   it('parks an unreadable profile before replacing it', async () => {
@@ -240,7 +267,7 @@ describe('carrying a profile (U12)', () => {
   });
 
   it('walks an old export up the ladder', () => {
-    const out = importProfile(JSON.stringify({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } }));
+    const out = importProfile(seal(JSON.stringify({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } })));
     expect(out.version).toBe(PROFILE_VERSION);
     expect(out.shards).toBe(4);
   });
@@ -248,7 +275,18 @@ describe('carrying a profile (U12)', () => {
   it('refuses what is not a profile', () => {
     expect(() => importProfile('not json')).toThrow();
     expect(() => importProfile('{"hello": 1}')).toThrow();
-    expect(() => importProfile(JSON.stringify({ ...newProfile(0), version: PROFILE_VERSION + 1 }))).toThrow();
+    expect(() => importProfile(seal(JSON.stringify({ ...newProfile(0), version: PROFILE_VERSION + 1 })))).toThrow();
+  });
+
+  it('refuses plain JSON and edited text', () => {
+    const p = newProfile(7);
+    expect(() => importProfile(JSON.stringify(p))).toThrow();
+    const text = exportProfile(p);
+    const json = unseal(text);
+    expect(JSON.parse(json)).toEqual(p);
+    const edited = text.slice(0, 30) + (text[30] === 'x' ? 'y' : 'x') + text.slice(31);
+    expect(() => importProfile(edited)).toThrow();
+    expect(() => importProfile(seal(json).replace('TWR1.', 'TWR1.AA'))).toThrow();
   });
 
   it('keeps the last three runs\' profiles, newest first', async () => {

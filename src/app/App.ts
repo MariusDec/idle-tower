@@ -180,7 +180,7 @@ export class App {
       },
       reset: () => void this.replace(newProfile(Date.now())),
       copySave: () => copyText(exportProfile(this.profile)),
-      saveFile: () => saveTextFile(`tower-save-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`, exportProfile(this.profile)),
+      saveFile: () => saveTextFile(`tower-save-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.txt`, exportProfile(this.profile)),
       pickFile: () => pickTextFile(),
       backups: () => listBackups(),
       readBackup: (slot) => readBackup(slot),
