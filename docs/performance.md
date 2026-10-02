@@ -25,19 +25,32 @@ four-weapon build, at 3× speed. Code: `render/quality.ts`,
 | medium | ×0.5 | 360 | yes | 1.5 |
 | low | ×0.25 | 200 | no | 1 |
 
-**Starting tier.** `initialQualityTier()` guesses from device signals:
-≥ 8 cores (16 on a touch device) for `high`, ≥ 4 for `medium`, else `low`;
-a touch device above DPR 2 is demoted out of `high`. A stored preference
-(`the-tower-quality` in `localStorage`, per device) overrides the guess.
+**Starting tier.** `initialQualityTier()` starts every device with ≥ 4
+cores at `high`, and anything weaker at `low`; the scaler settles it from
+real frames. (The legacy guess, which needed 16 cores on a touch device and
+demoted any phone above DPR 2, kept every phone, flagships included, at
+`medium` or below.) A stored preference (`the-tower-quality` in
+`localStorage`, per device) overrides the guess and idles the scaler.
 
-**The quality probe.** `QualityProbe`, ported from the legacy game: once
-per session, on the first run with the preference on Auto, it drops 30
-warm-up frames, then averages two seconds of real frames. Over 17 ms (22
-ms when already at `low`) demotes exactly one tier. It gives up if the run
-goes above 1×, the page hides mid-measurement or the player picks a tier.
-It never promotes: climbing back is the settings' job, and a choice there
-stops the probe for good. Settings shows the tier in force under Auto, so a
-demotion is visible.
+**The quality scaler.** `QualityScaler`, while the preference is Auto and
+a run is on screen and moving: it drops 30 warm-up frames, then averages
+two-second windows of real frames, timing `Renderer.render` alongside.
+
+- A window whose mean frame is over 17 ms drops one tier.
+- Three windows in a row under 17 ms *and* under 6 ms mean draw time climb
+  one. The frame interval cannot show headroom (vsync clamps it to the
+  refresh), so the draw time does; 6 ms leaves room for the next tier's
+  roughly doubled fill cost. Canvas raster can land outside `render`, which
+  is why the frame interval, not the draw time, decides a drop.
+- A tier dropped from may not be retried for 30 measured seconds, then 60,
+  120…, for the session: a device on a tier's edge settles below it rather
+  than oscillating, and each change rebakes the sprites.
+- Every change, a hidden page, a paused arena or a dev `bench()` drops the
+  window under way and warms up again. Speeds above 1× are measured: the
+  sim's extra steps are part of the frame the player feels.
+
+Settings shows the tier in force under Auto, so the scaler's moves are
+visible.
 
 ## Measuring
 

@@ -26,7 +26,7 @@ nothing tests a model of the game.
 | `save.test.ts` | save round-trip, every migration rung with a fixture, the run snapshot |
 | `screens.test.ts` | the screen state machine |
 | `rng.test.ts` | the seeded RNG and its splits |
-| `camera.test.ts`, `quality-detect.test.ts` | the view transform; the starting quality tier, the stored preference, the quality probe |
+| `camera.test.ts`, `quality-detect.test.ts` | the view transform; the starting quality tier, the stored preference, the quality scaler |
 | `palette.test.ts` | palette ↔ tokens agreement, the colourblind-safe palette, no runtime network, no literal colour in `render/` or `ui/` |
 | `touch-targets.test.ts`, `z-index.test.ts` | gesture guards and the 44 px floor; the overlay stacking ladder |
 

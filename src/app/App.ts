@@ -32,7 +32,7 @@ import { cardBadges } from '../sim/suggest';
 import type { DraftOffer, RunState } from '../sim/state';
 import { BALANCE } from '../content/balance';
 import { Renderer } from '../render/renderer';
-import { QualityProbe, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
+import { QualityScaler, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
 import { runRegion } from '../sim/systems/waves';
 import { SettingsPanel } from '../ui/settings';
 import { Music } from '../audio/music';
@@ -111,8 +111,10 @@ export class App {
   private readonly cues = new Cues(this.synth);
   private readonly music = new Music(this.synth);
   private readonly settings: SettingsPanel;
-  /** Once a session, on `'auto'`: may demote the quality tier (docs/performance.md). */
-  private readonly probe = new QualityProbe();
+  /** On `'auto'`: moves the quality tier with the frame rate (docs/performance.md). */
+  private readonly scaler = new QualityScaler();
+  /** A dev `bench()` is running: it owns the quality tier. */
+  private benching = false;
 
   constructor(private readonly els: AppElements) {
     this.renderer = new Renderer(els.canvas, els.stage);
@@ -172,8 +174,8 @@ export class App {
       quality: () => ({ pref: readStoredQuality(), tier: this.renderer.quality }),
       setQuality: (pref) => {
         storeQuality(pref);
-        // An explicit choice ends the probe for good; Auto starts from the device's guess.
-        this.probe.abandon();
+        // An explicit choice idles the scaler; Auto starts from the device's guess and measures afresh.
+        this.scaler.reset();
         this.renderer.setQuality(resolveQuality());
       },
       reset: () => void this.replace(newProfile(Date.now())),
@@ -204,7 +206,12 @@ export class App {
   /** Dev only: the frame-budget harness (§12.5), during a run. */
   bench(opts?: BenchOptions): Promise<BenchResult> {
     if (!this.run || this.screen !== 'run') return Promise.reject(new Error('bench needs a run'));
-    return bench(this.run, this.renderer, opts);
+    // The bench picks its own tier: the scaler must not move it mid-measurement.
+    this.benching = true;
+    return bench(this.run, this.renderer, opts).finally(() => {
+      this.benching = false;
+      this.scaler.reset();
+    });
   }
 
   /** The profile, for the dev console. */
@@ -490,9 +497,10 @@ export class App {
     }
     this.slowMo.left = Math.max(0, this.slowMo.left - realDt);
     this.tune(run);
-    if (this.screen === 'run') this.measure(realDt);
     this.toasts.tick(realDt);
+    const t0 = performance.now();
     this.renderer.render(run, alpha, realDt);
+    if (this.screen === 'run') this.measure(realDt, performance.now() - t0);
     if (this.screen === 'run' && run) {
       this.syncDraft(run, realDt);
       this.hud.update(run);
@@ -516,24 +524,20 @@ export class App {
     this.music.set(boss ? 'boss' : 'run', runRegion(run).index);
   }
 
-  /** Feed the quality probe a real frame: at 1×, unpaused, with no draft slowing the arena. */
-  private measure(realDt: number): void {
-    if (this.probe.finished) return;
-    // A tier the player chose is theirs: the probe stands down for the session.
-    if (readStoredQuality() !== 'auto') {
-      this.probe.abandon();
+  /** Feed the quality scaler a real frame: its wall time and the ms spent drawing it. */
+  private measure(realDt: number, drawMs: number): void {
+    // A tier the player chose is theirs: the scaler stands by.
+    if (this.benching || readStoredQuality() !== 'auto') return;
+    // A paused arena draws next to nothing: its frames say nothing about a busy one.
+    if (this.simSpeed() === 0) {
+      this.scaler.reset();
       return;
     }
-    const speed = this.simSpeed();
-    if (speed === 0) return;
-    if (speed > 1) {
-      this.probe.abandon();
-      return;
-    }
-    const drop = this.probe.tick(realDt, this.renderer.quality);
-    if (drop) {
-      console.info(`[quality] frames over budget: ${this.renderer.quality} → ${drop}`);
-      this.renderer.setQuality(drop);
+    const from = this.renderer.quality;
+    const to = this.scaler.tick(realDt, drawMs, from);
+    if (to) {
+      console.info(`[quality] ${from} → ${to}`);
+      this.renderer.setQuality(to);
     }
   }
 
@@ -753,8 +757,8 @@ export class App {
 
   /** Going away (§6.1): the run pauses, and the profile is stamped and saved. */
   private hidden(): Promise<void> {
-    // A hidden page's frames are not real frames: a probe mid-measurement gives up.
-    if (this.probe.measuring) this.probe.abandon();
+    // A hidden page's frames are not real frames: the scaler's window is dropped.
+    this.scaler.reset();
     if (this.screen === 'run' && !this.settings.open) this.openPause();
     return this.save();
   }

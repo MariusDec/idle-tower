@@ -23,6 +23,6 @@ depends on. [AGENTS.md](../AGENTS.md) is the short version for agents.
 | [render.md](render.md) | Renderer, painters, effects, camera, palette, quality tiers |
 | [audio.md](audio.md) | The synth, its buses, the cue map, the music |
 | [ui.md](ui.md) | HUD, draft panel, results, the hub and its views, settings, accessibility |
-| [performance.md](performance.md) | Budgets, caps, the frame-budget test and harness, the quality probe |
+| [performance.md](performance.md) | Budgets, caps, the frame-budget test and harness, the quality scaler |
 | [balancing.md](balancing.md) | The pacing, inspect and arsenal tools; invariants I1–I6 |
 | [testing.md](testing.md) | What the suite covers and where |

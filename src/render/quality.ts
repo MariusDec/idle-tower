@@ -34,18 +34,13 @@ export function isQualityTier(value: unknown): value is QualityTier {
 }
 
 /**
- * The tier a device starts on when the preference is `'auto'`. Core count
- * decides the band; a touch device needs twice the cores for `high`, and a
- * >2× phone buffer is demoted to `medium` because its fill-rate cost is real.
+ * The tier a device starts on when the preference is `'auto'`. Only a very
+ * weak device (under 4 cores) starts at `low`; everything else starts at
+ * `high` and the scaler, which watches real frames, settles it from there.
  */
 export function initialQualityTier(): QualityTier {
   const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
-  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
-  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-  const highThreshold = coarse ? 16 : 8;
-  let t: QualityTier = cores >= highThreshold ? 'high' : cores >= 4 ? 'medium' : 'low';
-  if (coarse && dpr > 2 && t === 'high') t = 'medium';
-  return t;
+  return cores >= 4 ? 'high' : 'low';
 }
 
 /** The stored preference. Anything unrecognised reads as `'auto'`. */
@@ -64,7 +59,7 @@ export function resolveQuality(): QualityTier {
   return pref === 'auto' ? initialQualityTier() : pref;
 }
 
-/** Store the player's choice; `'auto'` hands the tier back to the device guess and the probe. */
+/** Store the player's choice; `'auto'` hands the tier back to the device guess and the scaler. */
 export function storeQuality(pref: 'auto' | QualityTier): void {
   try {
     localStorage.setItem(QUALITY_PREF_KEY, pref);
@@ -73,52 +68,92 @@ export function storeQuality(pref: 'auto' | QualityTier): void {
   }
 }
 
-/** The probe's budgets: the mean frame in ms that demotes a tier (a 45 fps floor at `low`). */
-const PROBE_BUDGET_MS = 17;
-const PROBE_BUDGET_LOW_MS = 22;
-/** Frames discarded first (JIT warm-up, the first bakes), then seconds measured. */
-const PROBE_WARMUP_FRAMES = 30;
-const PROBE_SECONDS = 2;
+const TIERS: readonly QualityTier[] = ['low', 'medium', 'high'];
+
+/** The mean frame in ms over a window that demotes a tier: 60 fps with a little slack. */
+const FRAME_BUDGET_MS = 17;
+/**
+ * The mean ms inside `Renderer.render` under which a tier may climb. The next
+ * tier up costs roughly twice the fill (1.5× → 2× DPR is 1.8× the pixels,
+ * twice the particles), so this leaves that doubled cost inside the budget.
+ */
+const PROMOTE_DRAW_MS = 6;
+/** Frames discarded after a (re)start or a tier change: JIT warm-up, the rebakes. */
+const WARMUP_FRAMES = 30;
+/** Seconds of frames per verdict. */
+const WINDOW_SECONDS = 2;
+/** Consecutive windows with headroom before a climb. */
+const PROMOTE_WINDOWS = 3;
+/** Measured seconds before a tier that failed may be tried again; doubles per failure. */
+const RETRY_SECONDS = 30;
 
 /**
- * The quality probe, ported from the legacy game (see docs/performance.md):
- * once a session, on the first run at 1× with the preference on `'auto'`,
- * it measures two seconds of real frames and may demote the tier by one.
- * It never promotes: climbing back is the settings' job.
+ * The dynamic quality scaler (see docs/performance.md). While the preference
+ * is `'auto'`, it averages two-second windows of real frames: a window over
+ * the frame budget drops one tier; three windows in a row that hold it with
+ * draw-time headroom climb one. A tier that was dropped from may not be
+ * retried for 30 measured seconds, then 60, 120…, so a device on the edge of
+ * a tier settles below it instead of oscillating (each change rebakes sprites).
  */
-export class QualityProbe {
+export class QualityScaler {
+  private warmup = WARMUP_FRAMES;
   private frames = 0;
   private time = 0;
-  private done = false;
+  private draw = 0;
+  private steady = 0;
+  /** Measured seconds so far: the clock the retry backoff runs on. */
+  private clock = 0;
+  private readonly failures: Record<QualityTier, number> = { low: 0, medium: 0, high: 0 };
+  private readonly retryAt: Record<QualityTier, number> = { low: 0, medium: 0, high: 0 };
 
   /**
-   * Feed one frame's wall seconds. Returns the tier to drop to when the
-   * mean frame was over budget, once; null otherwise.
+   * Feed one frame: its wall seconds and the ms spent drawing it. Returns
+   * the tier to move to when a window settles on a change; null otherwise.
    */
-  tick(realDt: number, tier: QualityTier): QualityTier | null {
-    if (this.done) return null;
+  tick(realDt: number, drawMs: number, tier: QualityTier): QualityTier | null {
+    if (this.warmup > 0) {
+      this.warmup--;
+      return null;
+    }
     this.frames++;
-    if (this.frames <= PROBE_WARMUP_FRAMES) return null;
     this.time += realDt;
-    if (this.time < PROBE_SECONDS) return null;
-    this.done = true;
-    const mean = (this.time * 1000) / (this.frames - PROBE_WARMUP_FRAMES);
-    const budget = tier === 'low' ? PROBE_BUDGET_LOW_MS : PROBE_BUDGET_MS;
-    if (mean <= budget || tier === 'low') return null;
-    return tier === 'high' ? 'medium' : 'low';
+    this.draw += drawMs;
+    this.clock += realDt;
+    if (this.time < WINDOW_SECONDS) return null;
+    const frameMean = (this.time * 1000) / this.frames;
+    const drawMean = this.draw / this.frames;
+    this.frames = 0;
+    this.time = 0;
+    this.draw = 0;
+    const i = TIERS.indexOf(tier);
+    if (frameMean > FRAME_BUDGET_MS) {
+      this.steady = 0;
+      if (i === 0) return null;
+      this.failures[tier]++;
+      this.retryAt[tier] = this.clock + RETRY_SECONDS * 2 ** (this.failures[tier] - 1);
+      this.reset();
+      return TIERS[i - 1];
+    }
+    if (drawMean > PROMOTE_DRAW_MS || i === TIERS.length - 1) {
+      this.steady = 0;
+      return null;
+    }
+    const up = TIERS[i + 1];
+    if (++this.steady < PROMOTE_WINDOWS || this.clock < this.retryAt[up]) return null;
+    this.reset();
+    return up;
   }
 
-  /** Give up for the session: what it would measure is not a real frame (hidden, fast-forwarded). */
-  abandon(): void {
-    this.done = true;
-  }
-
-  get finished(): boolean {
-    return this.done;
-  }
-
-  /** Started on real frames and not yet done. */
-  get measuring(): boolean {
-    return this.frames > 0 && !this.done;
+  /**
+   * Drop the window under way and warm up again: after a tier change, or
+   * when the frames stop being real (hidden, paused, another tier chosen).
+   * The retry backoff is kept: what failed on this device stays failed.
+   */
+  reset(): void {
+    this.warmup = WARMUP_FRAMES;
+    this.frames = 0;
+    this.time = 0;
+    this.draw = 0;
+    this.steady = 0;
   }
 }

@@ -70,7 +70,7 @@ Any absence settles through `App#absent`: the page shown again
 (more than 60 s between frames with the page never hidden: a laptop lid, a
 frozen tab). The loop drops the gap rather than fast-forwarding the sim,
 and anything over a minute since the profile was last stamped pays offline
-(§6.1). Going away (`hidden`) pauses a run, abandons the quality probe and
+(§6.1). Going away (`hidden`) pauses a run, drops the quality scaler's window and
 saves.
 
 ## Input

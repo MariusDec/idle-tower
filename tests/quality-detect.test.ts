@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { initialQualityTier, readStoredQuality } from '../src/render/quality';
-import { QUALITY, QualityProbe, type QualityTier } from '../src/render/quality';
+import { QUALITY, QualityScaler, type QualityTier } from '../src/render/quality';
 
 describe('initialQualityTier', () => {
   const originalNavigator = globalThis.navigator;
@@ -43,43 +43,24 @@ describe('initialQualityTier', () => {
     (globalThis as unknown as { localStorage?: Storage }).localStorage = originalLocalStorage;
   });
 
-  it('an 8-core desktop with a fine pointer is high', () => {
+  it('an 8-core desktop is high', () => {
     setHardware(8, 2, false);
     expect(initialQualityTier()).toBe('high');
   });
 
-  it('a 6-core desktop with a fine pointer falls to medium', () => {
-    setHardware(6, 2, false);
-    expect(initialQualityTier()).toBe('medium');
+  it('an 8-core phone at dpr > 2 is high: the scaler, not the guess, demotes it', () => {
+    setHardware(8, 3, true);
+    expect(initialQualityTier()).toBe('high');
   });
 
-  it('a 2-core phone with a coarse pointer is low', () => {
+  it('a 4-core device is high', () => {
+    setHardware(4, 2, true);
+    expect(initialQualityTier()).toBe('high');
+  });
+
+  it('a 2-core device is low', () => {
     setHardware(2, 2, true);
     expect(initialQualityTier()).toBe('low');
-  });
-
-  it('a 4-core phone with a coarse pointer is medium (not high)', () => {
-    // A coarse pointer needs 16 cores to qualify for high — the dpr rule
-    // keeps 3x phone buffers out of the high tier.
-    setHardware(4, 2, true);
-    expect(initialQualityTier()).toBe('medium');
-  });
-
-  it('a coarse pointer at dpr > 2 demotes high one notch to medium', () => {
-    // 16 cores + coarse + dpr > 2 picks high on cores alone, then the dpr
-    // rule demotes. This is the only branch that uses dpr at all.
-    setHardware(16, 3, true);
-    expect(initialQualityTier()).toBe('medium');
-  });
-
-  it('a coarse pointer at dpr 2 is not demoted (the rule is "dpr > 2")', () => {
-    setHardware(16, 2, true);
-    expect(initialQualityTier()).toBe('high');
-  });
-
-  it('a fine pointer at dpr 3 stays high on cores alone', () => {
-    setHardware(8, 3, false);
-    expect(initialQualityTier()).toBe('high');
   });
 });
 
@@ -131,37 +112,54 @@ describe('the high-tier cap matches the historic camera cap', () => {
   });
 });
 
-describe('the quality probe (P9)', () => {
-  const run = (probe: QualityProbe, frameMs: number, tier: QualityTier, frames = 200): QualityTier | null => {
-    let out: QualityTier | null = null;
-    for (let i = 0; i < frames && out === null; i++) out = probe.tick(frameMs / 1000, tier);
-    return out;
+describe('the quality scaler', () => {
+  /** Feed `seconds` of frames; returns the first change, or null. */
+  const run = (scaler: QualityScaler, frameMs: number, drawMs: number, tier: QualityTier, seconds = 4): QualityTier | null => {
+    const frames = 30 + Math.ceil((seconds * 1000) / frameMs);
+    for (let i = 0; i < frames; i++) {
+      const out = scaler.tick(frameMs / 1000, drawMs, tier);
+      if (out) return out;
+    }
+    return null;
   };
 
-  it('keeps the tier when frames hold 60 fps', () => {
-    const probe = new QualityProbe();
-    expect(run(probe, 16.7, 'high')).toBeNull();
-    expect(probe.finished).toBe(true);
+  it('holds a tier that keeps 60 fps without headroom', () => {
+    expect(run(new QualityScaler(), 16.7, 10, 'high', 20)).toBeNull();
+    expect(run(new QualityScaler(), 16.7, 10, 'medium', 20)).toBeNull();
   });
 
-  it('demotes exactly one tier when the mean frame is over budget, once', () => {
-    const probe = new QualityProbe();
-    expect(run(probe, 25, 'high')).toBe('medium');
-    expect(run(probe, 40, 'medium')).toBeNull();
+  it('drops one tier when a window is over budget', () => {
+    const s = new QualityScaler();
+    expect(run(s, 25, 12, 'high')).toBe('medium');
+    expect(run(s, 25, 12, 'medium')).toBe('low');
+    expect(run(s, 40, 12, 'low', 20)).toBeNull();
   });
 
-  it('holds low to a 45 fps floor and never goes below it', () => {
-    expect(run(new QualityProbe(), 20, 'low')).toBeNull();
-    expect(run(new QualityProbe(), 40, 'low')).toBeNull();
+  it('climbs after three steady windows with draw-time headroom', () => {
+    const s = new QualityScaler();
+    expect(run(s, 16.7, 3, 'low', 5)).toBeNull();
+    expect(run(new QualityScaler(), 16.7, 3, 'low', 7)).toBe('medium');
+    expect(run(new QualityScaler(), 8.3, 3, 'medium', 7)).toBe('high');
   });
 
-  it('ignores the warm-up frames, and gives up when abandoned', () => {
-    const probe = new QualityProbe();
-    expect(probe.measuring).toBe(false);
-    for (let i = 0; i < 30; i++) expect(probe.tick(1, 'high')).toBeNull();
-    expect(probe.finished).toBe(false);
-    expect(probe.measuring).toBe(true);
-    probe.abandon();
-    expect(run(probe, 50, 'high')).toBeNull();
+  it('backs off before retrying a tier it dropped from, longer each time', () => {
+    const s = new QualityScaler();
+    expect(run(s, 25, 12, 'high')).toBe('medium');
+    // Headroom at medium, but high failed: 30 measured seconds first.
+    expect(run(s, 16.7, 3, 'medium', 20)).toBeNull();
+    expect(run(s, 16.7, 3, 'medium', 20)).toBe('high');
+    expect(run(s, 25, 12, 'high')).toBe('medium');
+    // The second failure doubles the wait to 60 s.
+    expect(run(s, 16.7, 3, 'medium', 40)).toBeNull();
+    expect(run(s, 16.7, 3, 'medium', 30)).toBe('high');
+  });
+
+  it('ignores the warm-up frames, and drops the window on reset', () => {
+    const s = new QualityScaler();
+    for (let i = 0; i < 30; i++) expect(s.tick(1, 50, 'high')).toBeNull();
+    for (let i = 0; i < 100; i++) s.tick(0.025, 12, 'high');
+    s.reset();
+    // The slow window was dropped; fast frames after the warm-up hold.
+    expect(run(s, 16.7, 10, 'high')).toBeNull();
   });
 });
