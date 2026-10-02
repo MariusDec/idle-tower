@@ -884,9 +884,15 @@ body {
 }
 
 .forge-level {
-  fill: var(--text-2);
+  fill: var(--text-1);
+  fill-opacity: 0.8;
   font-family: var(--font-display);
   font-size: var(--text-xs);
+  /* A halo of the backdrop, so a link passing behind never cuts the digits. */
+  stroke: var(--surface-0);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  paint-order: stroke;
 }
 
 .forge-node.is-hinted .forge-shape {

@@ -16,8 +16,8 @@ import { icon, iconMarkup, iconUse } from '../icon';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/** Radius of ring n: wide enough that ring 1's close neighbours never touch. */
-const ringRadius = (ring: number): number => 30 + 120 * ring;
+/** Radius of ring n: wide enough that neighbours 12° apart on ring 2 never touch. */
+const ringRadius = (ring: number): number => 40 + 160 * ring;
 /** Node radii by type, world units. */
 const RADIUS = { minor: 26, notable: 32, keystone: 36, mastery: 38 } as const;
 /** Each node's tap area, world units: ≥ 42 px across at the default zoom. */
@@ -32,8 +32,10 @@ const RIPPLE_STEP_MS = 70;
 /** The fit never zooms out past this, so a node stays easy to tap (42 px at `HIT_RADIUS`); nor in past `FIT_MAX`. */
 const FIT_MIN = 0.7;
 const FIT_MAX = 1.2;
-/** Room kept around the fitted nodes, px: a node's level label hangs below it. */
-const FIT_PAD = 24;
+/** Room kept around the fitted nodes, px: a node's level label sits just outside it. */
+const FIT_PAD = 32;
+/** Gap between a node's edge and its level label, world units. */
+const LABEL_GAP = 12;
 
 export interface ForgeActions {
   buy(id: string): boolean;
@@ -269,7 +271,14 @@ export class WebView<N extends WebNodeDef> {
     } else {
       g.appendChild(iconUse(n.icon, r * 1.1));
       if (n.maxLevel > 1) {
-        const t = el('text', { class: 'forge-level', y: r + 13, 'text-anchor': 'middle' });
+        // On the side away from the root: the ring's neighbours sit to either
+        // side, and the next ring is a full step out.
+        const a = (n.angle * Math.PI) / 180;
+        const d = r + LABEL_GAP * (1 + 0.4 * Math.abs(Math.sin(a)));
+        const t = el('text', {
+          class: 'forge-level', x: (Math.sin(a) * d).toFixed(1), y: (-Math.cos(a) * d).toFixed(1),
+          'text-anchor': 'middle', 'dominant-baseline': 'central',
+        });
         t.textContent = levelText(level, n.maxLevel);
         g.appendChild(t);
       }
