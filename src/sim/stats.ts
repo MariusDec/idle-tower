@@ -1,3 +1,4 @@
+import { lightRadius } from '../content/arena';
 import { BALANCE } from '../content/balance';
 import { PASSIVE_BY_ID } from '../content/passives';
 import type { PassiveId, StatKey, StatMod } from '../content/types';
@@ -60,12 +61,14 @@ export function resolveStat(key: StatKey, mods: readonly StatMod[]): StatBreakdo
 export function resolveStats(mods: readonly StatMod[]): TowerStats {
   const v = (key: StatKey): number => resolveStat(key, mods).value;
   const maxHp = v('maxHp');
+  const range = v('range');
   return {
     maxHp,
     regen: maxHp * v('regen'),
     armor: v('armor'),
     radius: BALANCE.tower.radius,
-    range: v('range'),
+    range,
+    light: lightRadius(range),
     critChance: Math.min(1, v('critChance')),
     critMult: v('critDamage'),
     damageMult: v('damage'),

@@ -58,9 +58,9 @@ function abyssBossHp(region: RegionDef): number {
 export function arriveBoss(run: RunState, region: RegionDef): void {
   const def = BOSS_BY_ID[region.boss];
   const rng = Rng.wrap(run.streams.waves);
-  // From a flank: the short walk on a portrait arena (see `waves.openingArc`).
+  // From a flank, level with the tower (see `waves.openingArc`).
   const angle = rng.pick([0, Math.PI]);
-  const p = spawnPoint(angle);
+  const p = spawnPoint(angle, run.stats.light, run.arena);
   // The wave it holds: 20, or the floor's tenth in the Abyss, where a
   // guardian is a lighter fight (§9). Vigour and Tyranny swell it.
   const wave = run.wave;
@@ -295,7 +295,7 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
           const a = rng.range(0, Math.PI * 2);
           const size = rng.int(pack[0], pack[1]);
           for (let j = 0; j < size; j++) {
-            const at = spawnPoint(a + rng.range(-spread, spread));
+            const at = spawnPoint(a + rng.range(-spread, spread), run.stats.light, run.arena);
             spawnEnemy(run, region, p.enemy, b.wave, at.x, at.y);
           }
         }

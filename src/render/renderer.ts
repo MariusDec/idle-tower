@@ -6,10 +6,10 @@ import { regionByIndex } from '../content/regions';
 import { RUSH_STAGES } from '../content/rush';
 import { formatDuration } from '../core/format';
 import type { RunState } from '../sim/state';
-import { Camera } from './camera';
+import { Camera, stageOval } from './camera';
 import { Effects } from './effects';
 import { FX, INK, lighten, mix, setPaletteMode, withAlpha, type PaletteMode } from './palette';
-import { bakeArena } from './painters/arena';
+import { paintDark, paintGround, paintRim, type WorldBox } from './painters/arena';
 import { EnemyPainter } from './painters/enemies';
 import { paintProjectiles } from './painters/projectiles';
 import { paintArsenal, paintFires, paintRunes, paintStatus } from './painters/arsenal';
@@ -20,6 +20,7 @@ import { WEAPON_BY_ID } from '../content/weapons';
 import { PLAIN_LOOK, mountOffset, paintRangeRing, paintTower, type Mount, type TowerLook } from './painters/tower';
 import type { WeaponId } from '../content/types';
 import { QUALITY, type QualityTier } from './quality';
+import { ARENA, type Oval } from '../content/arena';
 
 /** Sim ticks the crystal stays flared after a contact hit. */
 const HURT_TICKS = 12;
@@ -36,6 +37,19 @@ const BANNER_SECONDS = 2.4;
 const DISPLAY_FONT = 'Oswald, "Arial Narrow", sans-serif';
 /** What the Abyss's ground darkens toward (§9). */
 const ABYSS_DARK = INK['950'];
+/** The boss's edge marker (camera-and-fog §5.3): inset from the stage's edge, and its size, CSS px. */
+const MARKER_INSET = 26;
+const MARKER_SIZE = 11;
+
+/**
+ * The scale enemy sprites are baked at: the view's, rounded up to a step of
+ * √2. A pinch or the light easing out never rebakes every frame; a sprite is
+ * at most √2 finer than it is drawn, so a close-up stays sharp.
+ */
+function spriteScale(scale: number): number {
+  if (!(scale > 0) || !Number.isFinite(scale)) return 1;
+  return 2 ** (Math.ceil(Math.log2(scale) * 2) / 2);
+}
 
 /** A line of display text over the arena, in screen space. */
 interface Banner {
@@ -57,14 +71,11 @@ export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly effects = new Effects();
   private readonly enemies = new EnemyPainter();
-  private background: HTMLCanvasElement | null = null;
   private tier: QualityTier = 'high';
   private clock = 0;
   private lastRun: RunState | null = null;
   /** Wall-clock seconds since the tower fell; null while it stands. */
   private fallT: number | null = null;
-  /** The region the background was baked for. */
-  private bakedRegion = '';
   private banner: Banner | null = null;
   /** Reduced motion (the OS's or the player's): the letterbox is the moving part, so it goes. */
   private reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -79,7 +90,6 @@ export class Renderer {
   constructor(canvas: HTMLCanvasElement, host: HTMLElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.camera = new Camera(canvas);
-    this.camera.onResize = () => { this.background = null; };
     this.camera.setHost(host);
   }
 
@@ -89,6 +99,12 @@ export class Renderer {
     this.effects.setQuality(tier);
   }
 
+  /** The light's shape for the stage as it is now: what a new run takes (`RunConfig.arena`). */
+  stageOval(): Oval {
+    const t = this.camera.transform;
+    return stageOval(t.cssWidth, t.cssHeight);
+  }
+
   /** The player's motion settings (reduced motion, screen shake). */
   setMotion(reduced: boolean, shake: boolean): void {
     this.reducedMotion = reduced;
@@ -96,14 +112,13 @@ export class Renderer {
   }
 
   /**
-   * The settings' colours (standard or colourblind-safe). The baked ground
-   * and enemy sprites hold the old colours, so they rebake on the next frame.
+   * The settings' colours (standard or colourblind-safe). The baked enemy
+   * sprites hold the old colours, so they rebake on the next frame.
    */
   setPalette(mode: PaletteMode): void {
     if (mode === this.palette) return;
     this.palette = mode;
     setPaletteMode(mode);
-    this.background = null;
     this.enemies.clear();
   }
 
@@ -421,31 +436,38 @@ export class Renderer {
     const ctx = this.ctx;
     this.clock += realDt;
     if (this.fallT !== null) this.fallT += realDt;
+    // The light is the sim's (camera-and-fog §2); the camera only frames it.
+    // The hub has no run: the base light, fully out.
+    // A run's light keeps the shape of the stage it started on; the hub's follows the stage.
+    const light = run ? run.stats.light : ARENA.lightBase;
+    const oval = run ? run.arena : this.stageOval();
+    this.camera.setLight(light, oval, run !== null);
     this.camera.update(realDt);
     this.effects.tick(realDt);
     const view = this.camera.transform;
-    this.enemies.setScale(view.scale);
+    this.enemies.setScale(spriteScale(view.scale));
+    /** World units per CSS pixel: thin lines are drawn live at this width. */
+    const px = view.dpr / view.scale;
+    const box: WorldBox = { halfWidth: this.camera.viewHalfWidth, halfHeight: this.camera.viewHalfHeight };
+
+    this.camera.applyDevice(ctx);
+    ctx.fillStyle = INK['950'];
+    ctx.fillRect(0, 0, view.pixelWidth, view.pixelHeight);
 
     // An Abyss floor wears its template's ground, gone dark (§9).
     const region = run ? runRegion(run) : regionByIndex(1);
-    if (!this.background || region.id !== this.bakedRegion) {
-      const tint = region.abyss ? mix(region.tint ?? INK['800'], ABYSS_DARK, 0.55) : region.tint;
-      this.background = bakeArena(view.pixelWidth, view.pixelHeight, view.scale, tint);
-      this.bakedRegion = region.id;
-    }
-    this.camera.applyDevice(ctx);
-    ctx.drawImage(this.background, 0, 0);
-
+    const tint = region.abyss ? mix(region.tint ?? INK['800'], ABYSS_DARK, 0.55) : region.tint;
     this.camera.applyWorld(ctx);
+    paintGround(ctx, light, oval, tint, px, this.palette);
     const additive = QUALITY[this.tier].additive;
     if (run) {
-      paintRangeRing(ctx, run.stats.range);
+      paintRangeRing(ctx, run.stats.range, px);
       paintRings(ctx, run.rings);
       paintFires(ctx, run.fires, run.time, this.clock);
       paintRunes(ctx, run.runes, run.time, this.clock);
       paintPools(ctx, run.pools, run.time, this.clock);
       const lord = BOSS_BY_ID[region.boss];
-      this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock, { color: lord.color, border: lord.borderColor });
+      this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock, light, oval, { color: lord.color, border: lord.borderColor });
       paintStatus(ctx, run.enemies, alpha, run.time, this.clock);
       const b = run.boss;
       if (b && b.killedIn === null) {
@@ -453,7 +475,7 @@ export class Renderer {
         paintCourt(ctx, run, alpha, this.clock);
         paintPlates(ctx, run, alpha);
         if (body) {
-          paintBoss(ctx, body, b, alpha, run.tick, run.time, this.clock);
+          paintBoss(ctx, body, b, alpha, run.tick, run.time, this.clock, light, oval);
           paintFacets(ctx, body.px + (body.x - body.px) * alpha, body.py + (body.y - body.py) * alpha, body.radius, mirrorFacets(run));
         }
       }
@@ -471,10 +493,16 @@ export class Renderer {
       paintTower(ctx, 46, this.idle, this.clock, 0, 0, this.look);
     }
     this.effects.drawWorld(ctx);
+    // The dark over everything out there: bodies fade in as they walk out of it.
+    paintDark(ctx, light, oval, box, this.palette);
+    paintRim(ctx, light, oval, px);
 
     this.camera.applyScreen(ctx);
     this.effects.drawScreen(ctx, (x, y) => this.camera.worldToScreen(x, y));
-    if (run) this.drawVignette(ctx, run);
+    if (run) {
+      this.drawBossMarker(ctx, run, alpha);
+      this.drawVignette(ctx, run);
+    }
     this.drawBanner(ctx, realDt);
   }
 
@@ -523,6 +551,53 @@ export class Renderer {
       ctx.fillStyle = INK['100'];
       ctx.fillText(b.line, 0, below);
     }
+    ctx.restore();
+  }
+
+  /**
+   * A close-up may leave the boss off-screen (camera-and-fog §5.3): a small
+   * marker on the stage's edge points at it, in its colour. The one
+   * off-screen marker the game draws.
+   */
+  private drawBossMarker(ctx: CanvasRenderingContext2D, run: RunState, alpha: number): void {
+    const b = run.boss;
+    if (!b || b.killedIn !== null) return;
+    const body = run.enemies.find((e) => e.id === b.enemy && e.alive);
+    if (!body) return;
+    const t = this.camera.transform;
+    const x = body.px + (body.x - body.px) * alpha;
+    const y = body.py + (body.y - body.py) * alpha;
+    const at = this.camera.worldToScreen(x, y);
+    const r = (body.radius * t.scale) / t.dpr;
+    const w = t.cssWidth;
+    const h = t.cssHeight;
+    if (at.x + r >= 0 && at.x - r <= w && at.y + r >= 0 && at.y - r <= h) return;
+    // Where the line from the centre to the boss leaves the inset box.
+    const cx = w / 2;
+    const cy = h / 2;
+    const dx = at.x - cx;
+    const dy = at.y - cy;
+    const k = Math.min((cx - MARKER_INSET) / Math.max(1e-6, Math.abs(dx)), (cy - MARKER_INSET) / Math.max(1e-6, Math.abs(dy)));
+    const mx = cx + dx * k;
+    const my = cy + dy * k;
+    const a = Math.atan2(dy, dx);
+    const def = BOSS_BY_ID[b.id];
+    const s = MARKER_SIZE;
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.rotate(a);
+    ctx.globalAlpha = 0.75 + 0.25 * Math.sin(this.clock * 4);
+    ctx.beginPath();
+    ctx.moveTo(s * 1.3, 0);
+    ctx.lineTo(-s * 0.7, -s);
+    ctx.lineTo(-s * 0.3, 0);
+    ctx.lineTo(-s * 0.7, s);
+    ctx.closePath();
+    ctx.fillStyle = def.color;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = withAlpha(INK['950'], 0.85);
+    ctx.stroke();
     ctx.restore();
   }
 

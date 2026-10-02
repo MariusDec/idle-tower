@@ -1,4 +1,5 @@
 import type { RngState } from '../core/rng';
+import type { Oval } from '../content/arena';
 import type {
   AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, StatMod, WeaponId,
 } from '../content/types';
@@ -29,6 +30,11 @@ export interface RunConfig {
   readonly passiveSlots: number;
   /** Weapons and passives the draft may offer (§4.5: the pool grows with unlocks). */
   readonly pool: readonly CardItemId[];
+  /**
+   * The light's shape (plans/camera-and-fog.md): the stage's, taken when the
+   * run starts. Absent: a phone's (`PHONE_OVAL`), as the headless tools play.
+   */
+  readonly arena?: Oval;
   /**
    * The very first draft of the game is authored (§7.1), not rolled. Null
    * on every other run.
@@ -73,6 +79,13 @@ export interface TowerStats {
   armor: number;
   radius: number;
   range: number;
+  /**
+   * The light's short half-axis `L` (plans/camera-and-fog.md): always past
+   * `range`, never less than `ARENA.lightBase`; `RunState.arena` stretches
+   * it into an oval. Nothing outside it can be hit, and enemies spawn just
+   * past its rim, in the dark.
+   */
+  light: number;
   critChance: number;
   critMult: number;
   damageMult: number;
@@ -538,6 +551,8 @@ export type SimEvent =
 export interface RunState {
   seed: number;
   regionId: number;
+  /** The light's shape for the whole run (`content/arena.ts`); its size is `stats.light`. */
+  readonly arena: Oval;
   /** The Trial this run is (N5), or null (from the config). */
   trial: string | null;
   /** Sim steps taken. `time` is derived from it so it never drifts. */

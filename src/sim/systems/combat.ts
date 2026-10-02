@@ -1,6 +1,7 @@
 import { Rng } from '../../core/rng';
 import { ABYSS_INDEX } from '../../content/abyss';
 import { BALANCE } from '../../content/balance';
+import { inLight } from '../../content/arena';
 import { AURA_BY_ID, ENEMIES, ENEMY_BY_ID } from '../../content/enemies';
 import { eliteRelics } from '../../content/relics';
 import { frameById } from '../../content/frames';
@@ -65,9 +66,15 @@ const STORM: ReadonlySet<DamageSource> = new Set<DamageSource>(['chain', 'pulse'
 /** Sources that count as area for Brittle (§11.1): blasts, pulses, rune bursts, burns, shatters and the ultimate. */
 const AREA: ReadonlySet<DamageSource> = new Set<DamageSource>(['lob', 'pulse', 'mine', 'burn', 'shatter', 'nova', 'tempest', 'eclipse']);
 
-/** A body that can be targeted and hit: alive, and not under the water, phased out or underground. */
+/**
+ * A body that can be targeted and hit: alive, not under the water, phased
+ * out or underground, and touching the light. What the tower can hit is
+ * what's lit (plans/camera-and-fog.md §2): a chain, a blast or a stray shot
+ * never reaches into the fog.
+ */
 export function targetable(run: RunState, e: Enemy): boolean {
-  return e.alive && e.hiddenUntil <= run.time && !e.under;
+  if (!e.alive || e.hiddenUntil > run.time || e.under) return false;
+  return inLight(e.x, e.y, e.radius, run.stats.light, run.arena);
 }
 
 /** The nearest targetable enemy to (x, y) within `radius`, or null. `exclude` is skipped. */

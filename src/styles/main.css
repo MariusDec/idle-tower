@@ -447,6 +447,54 @@ body {
   color: var(--text-3);
 }
 
+/*
+ * Manual zoom (camera-and-fog §5.4): a column on the right edge, clear of
+ * the top and bottom bars: `+ / −` (a phone can also pinch, a desktop
+ * scroll), and the fit chip while zoomed in.
+ */
+.hud {
+  position: relative;
+}
+
+.hud-zoom {
+  position: absolute;
+  right: max(var(--space-3), var(--safe-r));
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.hud-zoom-step,
+.hud-zoom-fit {
+  pointer-events: auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  color: var(--text-1);
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  cursor: pointer;
+}
+
+.hud-zoom-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.hud-zoom-fit {
+  font-size: var(--text-sm);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-color: var(--fx-gold);
+  color: var(--fx-gold);
+}
+
 /* ── Full-stage screens (hub, results) ───────────────────────────────────── */
 
 .screen {

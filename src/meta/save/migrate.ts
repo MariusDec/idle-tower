@@ -78,6 +78,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   9: (raw) => ({ ...raw, version: 10, wishlist: [], trials: {}, trial: null, sets: {} }),
   // v11 (Q4): Boss Rush's records (N8) and the fusions found (N9).
   10: (raw) => ({ ...raw, version: 11, rush: { best: 0, time: null }, fusions: [] }),
+  // v12: the camera's framing (plans/camera-and-fog.md §5.4), fully out.
+  11: (raw) => ({ ...raw, version: 12, settings: { framing: null, ...(raw.settings as object) } }),
 };
 
 export class MigrationError extends Error {}

@@ -485,8 +485,9 @@ export const BALANCE = {
     afterBoss: 3,
     /**
      * Wave 1 comes in from the flanks (within this many radians of
-     * horizontal), the short walk on a portrait arena, so the opening has
-     * action at once and the first kill lands inside 3 s (P1 gate).
+     * horizontal), level with the tower where a phone's stage is narrowest,
+     * so the opening has action at once and the first kill lands inside 3 s
+     * (P1 gate).
      */
     openingArc: 0.6,
     /** Spread of a pack around its shared spawn point, radians and seconds. */

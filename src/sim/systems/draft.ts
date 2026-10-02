@@ -1,5 +1,6 @@
 import { Rng } from '../../core/rng';
 import { BALANCE } from '../../content/balance';
+import { lightRadius } from '../../content/arena';
 import { FALLBACKS } from '../../content/passives';
 import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../../content/evolutions';
 import { FUSION_BY_ID } from '../../content/fusions';
@@ -342,7 +343,12 @@ export function applyCard(run: RunState, card: Card): void {
 export function refreshStats(run: RunState): void {
   const oldMax = run.stats.maxHp;
   run.stats = resolveStats(allMods(run.mods, run.passives));
-  if (run.enemies.some((e) => e.alive && e.aura === 'fog')) run.stats.range *= 1 - BALANCE.elites.fog;
+  // A Fog-caller closes the light in with the range: the fog is its look.
+  if (run.enemies.some((e) => e.alive && e.aura === 'fog')) {
+    const dim = 1 - BALANCE.elites.fog;
+    run.stats.range *= dim;
+    run.stats.light = lightRadius(run.stats.range, dim);
+  }
   const gained = run.stats.maxHp - oldMax;
   run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + Math.max(0, gained));
 }

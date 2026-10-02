@@ -17,13 +17,18 @@ import { iconMarkup } from './icon';
  * The battle HUD (§10.1): HP, wave, region and the run's shards on top, and
  * the boss bar while a boss stands; the build strip (U3), the XP bar, the
  * level, the speed toggle and the Autocaster switch (each once owned) and
- * the ultimate at the bottom, under the thumb. Nothing else.
+ * the ultimate at the bottom, under the thumb; and manual zoom's buttons on
+ * the right edge (camera-and-fog §5.4): `+ / −`, and a fit chip only while
+ * zoomed in. Nothing else.
  */
 export interface HudActions {
   pause(): void;
   ult(): void;
   speed(): void;
   autoUlt(): void;
+  zoomIn(): void;
+  zoomOut(): void;
+  zoomFit(): void;
 }
 
 export class Hud {
@@ -45,6 +50,9 @@ export class Hud {
   private readonly bossFill: HTMLElement;
   private readonly bossPips: HTMLElement;
   private readonly build: HTMLElement;
+  private readonly zoomIn: HTMLButtonElement;
+  private readonly zoomOut: HTMLButtonElement;
+  private readonly zoomFit: HTMLButtonElement;
   /** The build as last drawn (`buildKey`), so the strip redraws only when it changes. */
   private buildDrawn = '';
 
@@ -69,6 +77,11 @@ export class Hud {
           <div class="hud-row"><span class="hud-boss-name"></span><span class="hud-boss-pips"></span></div>
           <div class="hud-boss-bar" role="meter" aria-label="Boss health"><div class="hud-boss-fill"></div></div>
         </div>
+      </div>
+      <div class="hud-zoom">
+        <button type="button" class="hud-zoom-step hud-zoom-in" aria-label="Zoom in">+</button>
+        <button type="button" class="hud-zoom-step hud-zoom-out" aria-label="Zoom out" disabled>−</button>
+        <button type="button" class="hud-zoom-fit" aria-label="Show the whole light" hidden>Fit</button>
       </div>
       <div class="hud-bottom">
         <div class="hud-row hud-row-bottom">
@@ -99,6 +112,12 @@ export class Hud {
     this.bossFill = this.root.querySelector('.hud-boss-fill')!;
     this.bossPips = this.root.querySelector('.hud-boss-pips')!;
     this.build = this.root.querySelector('.hud-build')!;
+    this.zoomOut = this.root.querySelector('.hud-zoom-out')!;
+    this.zoomFit = this.root.querySelector('.hud-zoom-fit')!;
+    this.zoomIn = this.root.querySelector('.hud-zoom-in')!;
+    this.zoomIn.addEventListener('click', () => actions.zoomIn());
+    this.zoomOut.addEventListener('click', () => actions.zoomOut());
+    this.zoomFit.addEventListener('click', () => actions.zoomFit());
     this.speed.addEventListener('click', () => actions.speed());
     this.auto.addEventListener('click', () => actions.autoUlt());
     this.root.querySelector('.hud-pause')!.addEventListener('click', () => actions.pause());
@@ -130,6 +149,16 @@ export class Hud {
     this.auto.setAttribute('aria-pressed', String(on));
     setAriaLabel(this.auto, on ? 'Autocaster on' : 'Autocaster off');
     toggleClass(this.auto, 'is-on', on);
+  }
+
+  /**
+   * Manual zoom's state: the fit chip shows, and `−` works, only while
+   * zoomed in; `+` stops at the close limit.
+   */
+  setZoomed(zoomedIn: boolean, atClose: boolean): void {
+    this.zoomFit.hidden = !zoomedIn;
+    this.zoomOut.disabled = !zoomedIn;
+    this.zoomIn.disabled = atClose;
   }
 
   update(run: RunState): void {

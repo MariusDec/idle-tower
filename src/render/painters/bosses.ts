@@ -3,6 +3,8 @@ import type { BossDef, BossId } from '../../content/types';
 import type { BossState, Enemy, HostileShot, MoltenPool, RunState, SlamRing } from '../../sim/state';
 import { FX, INK, lighten, mix, withAlpha } from '../palette';
 import { LIGHT_ANGLE } from './enemies';
+import { emergence } from './arena';
+import type { Oval } from '../../content/arena';
 
 /**
  * Bosses (§4.3, §10.3), the hostile shots and the shockwaves. A boss is
@@ -325,11 +327,16 @@ export function paintPools(ctx: CanvasRenderingContext2D, pools: readonly Molten
  */
 export function paintBoss(
   ctx: CanvasRenderingContext2D, e: Enemy, b: BossState, alpha: number, tick: number, simTime: number, time: number,
+  light: number,
+  oval: Oval,
 ): void {
   const def = BOSS_BY_ID[b.id];
   const x = e.px + (e.x - e.px) * alpha;
   const y = e.py + (e.y - e.py) * alpha;
   const r = e.radius;
+  // It walks out of the fog like any body (camera-and-fog §4).
+  const rise = emergence(x, y, light, oval);
+  if (rise <= 0) return;
   if (e.hiddenUntil > simTime) {
     // Submerged: rings on the water.
     ctx.save();
@@ -347,6 +354,7 @@ export function paintBoss(
 
   ctx.save();
   ctx.translate(x, y);
+  ctx.globalAlpha = rise;
   // Shadow.
   ctx.fillStyle = withAlpha(INK['950'], 0.45);
   ctx.beginPath();
@@ -383,11 +391,11 @@ export function paintBoss(
   // Hit flash.
   const sinceHit = tick - e.hitTick;
   if (e.hitTick >= 0 && sinceHit < 4) {
-    ctx.globalAlpha = 0.35 * (1 - sinceHit / 4);
+    ctx.globalAlpha = 0.35 * (1 - sinceHit / 4) * rise;
     traceBoss(ctx, def.id, r * breathe, time);
     ctx.fillStyle = INK['050'];
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = rise;
   }
 
   // The wind-up: a tightening ring and a glowing body — the tell a Nova answers.
@@ -398,11 +406,11 @@ export function paintBoss(
     ctx.beginPath();
     ctx.arc(0, 0, r * (1.25 + b.windup * 0.5), 0, Math.PI * 2);
     ctx.stroke();
-    ctx.globalAlpha = 0.25 + 0.2 * pulse;
+    ctx.globalAlpha = (0.25 + 0.2 * pulse) * rise;
     traceBoss(ctx, def.id, r * breathe, time);
     ctx.fillStyle = lighten(FX.blood, 0.3);
     ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = rise;
   }
   if (b.staggeredUntil > simTime) {
     // Staggered: stars of light circling its crown.

@@ -49,9 +49,12 @@ import { Loop, SIM_DT } from './loop';
 import { Synth } from '../audio/synth';
 import { Cues } from '../audio/cues';
 import { assertTransition, type Screen } from './screens';
+import { bindZoom } from '../ui/zoom';
 
 /** Autosave cadence (§12.4), on the wall clock. */
 const AUTOSAVE_SECONDS = 30;
+/** One press of the zoom buttons: this much closer, or further. */
+const ZOOM_STEP = 1.4;
 /**
  * A gap between frames this long, with the page never hidden (a laptop lid,
  * a frozen tab), is an absence too (§6.1): it pays offline, never a catch-up.
@@ -124,7 +127,18 @@ export class App {
       ult: () => this.castUltimate(),
       speed: () => this.cycleSpeed(),
       autoUlt: () => this.toggleAutoUlt(),
+      zoomIn: () => this.renderer.camera.zoomBy(ZOOM_STEP),
+      zoomOut: () => this.renderer.camera.zoomBy(1 / ZOOM_STEP),
+      zoomFit: () => this.renderer.camera.fitView(),
     });
+    // Manual zoom (camera-and-fog §5): during a run only; the framing is a
+    // setting, saved with the next autosave rather than on every wheel tick.
+    bindZoom(els.canvas, {
+      zoomBy: (factor) => this.renderer.camera.zoomBy(factor, true),
+      settle: () => this.renderer.camera.settle(),
+      active: () => this.screen === 'run',
+    });
+    this.renderer.camera.onFraming = (framing) => this.changeSettings((s) => { s.framing = framing; }, false);
     this.hub = new HubScreen(els.screens, {
       start: () => this.startRun(),
       buy: (id) => this.buy(id),
@@ -337,7 +351,7 @@ export class App {
   private startRun(resumed?: RunState): void {
     // A fresh seed per run; the sim is deterministic *given* it.
     const seed = (Math.random() * 2 ** 32) >>> 0;
-    this.run = resumed ?? createRun(buildRunConfig(this.profile), seed);
+    this.run = resumed ?? createRun({ ...buildRunConfig(this.profile), arena: this.renderer.stageOval() }, seed);
     // Run again past a first kill skips the Map's ceremony rather than
     // owing it to a later run, whose results would hold auto-restart for it.
     // Under Frontier March nothing holds auto-restart, so the ceremony waits
@@ -504,6 +518,7 @@ export class App {
     if (this.screen === 'run' && run) {
       this.syncDraft(run, realDt);
       this.hud.update(run);
+      this.hud.setZoomed(this.renderer.camera.zoomedIn, this.renderer.camera.atClose);
       if (run.outcome?.kind === 'fell' && this.renderer.fallDone) this.endRun(run);
       // Boss Rush won (N8): the sim held the last kill's beat; the results follow.
       if (run.outcome?.kind === 'cleared') this.endRun(run);

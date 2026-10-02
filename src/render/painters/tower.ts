@@ -638,11 +638,12 @@ function paintCracks(ctx: CanvasRenderingContext2D, R: number, t: number): void 
 }
 
 /** The faint ring that shows how far the tower reaches (§4.1). */
-export function paintRangeRing(ctx: CanvasRenderingContext2D, range: number): void {
+export function paintRangeRing(ctx: CanvasRenderingContext2D, range: number, px: number): void {
   ctx.save();
   ctx.strokeStyle = withAlpha(FX.arcane, 0.3);
-  ctx.lineWidth = 2;
-  ctx.setLineDash([14, 12]);
+  // Sized in CSS pixels (`px` world units each), so it stays thin and evenly dashed at any zoom.
+  ctx.lineWidth = px;
+  ctx.setLineDash([5 * px, 4 * px]);
   ctx.beginPath();
   ctx.arc(0, 0, range, 0, Math.PI * 2);
   ctx.stroke();

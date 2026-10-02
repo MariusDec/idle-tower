@@ -87,6 +87,7 @@ export function bindLongPress(host: HTMLElement, opts: LongPressOptions): () => 
   let fired = false;
   let startX = 0;
   let startY = 0;
+  let pointer = -1;
 
   const clearTimer = (): void => {
     if (timer !== null) {
@@ -138,6 +139,7 @@ export function bindLongPress(host: HTMLElement, opts: LongPressOptions): () => 
     if (!el) return;
     if (opts.shouldStart && !opts.shouldStart(el, ev)) return;
     target = el;
+    pointer = ev.pointerId;
     startX = ev.clientX;
     startY = ev.clientY;
     timer = window.setTimeout(() => {
@@ -159,8 +161,14 @@ export function bindLongPress(host: HTMLElement, opts: LongPressOptions): () => 
 
   const onEnd = (): void => reset();
 
+  /** A second finger landing anywhere is a pinch, not a hold (camera-and-fog §5.4). */
+  const onAnyDown = (ev: PointerEvent): void => {
+    if (target !== null && timer !== null && ev.pointerId !== pointer) reset();
+  };
+
   host.classList.add(HOLD_TARGET_CLASS);
   host.addEventListener('pointerdown', onDown);
+  window.addEventListener('pointerdown', onAnyDown, true);
   window.addEventListener('pointermove', onMove, { passive: true });
   window.addEventListener('pointerup', onEnd);
   window.addEventListener('pointercancel', onEnd);
@@ -170,6 +178,7 @@ export function bindLongPress(host: HTMLElement, opts: LongPressOptions): () => 
     reset();
     host.classList.remove(HOLD_TARGET_CLASS);
     host.removeEventListener('pointerdown', onDown);
+    window.removeEventListener('pointerdown', onAnyDown, true);
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onEnd);
     window.removeEventListener('pointercancel', onEnd);

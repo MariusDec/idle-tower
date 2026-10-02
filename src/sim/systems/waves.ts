@@ -216,7 +216,7 @@ export function rollWave(region: RegionDef, n: number, rng: Rng, pace = 1, extra
   out.sort((a, b) => a.at - b.at);
   // The first body of every wave arrives at once: a wave that opens with
   // several seconds of nothing reads as a stall. The run's very first body
-  // comes dead level with the tower, the shortest walk on a portrait arena.
+  // comes dead level with the tower, where a phone's stage is narrowest.
   if (out.length > 0) {
     out[0] = { ...out[0], at: 0, angle: n === 1 ? rng.pick([0, Math.PI]) : out[0].angle };
   }
@@ -423,7 +423,7 @@ function firstAct(verb: EnemyVerb): number {
 }
 
 function place(run: RunState, region: RegionDef, wave: WaveState, entry: SpawnEntry): void {
-  const p = spawnPoint(entry.angle);
+  const p = spawnPoint(entry.angle, run.stats.light, run.arena);
   spawnEnemy(run, region, entry.enemy, wave.n, p.x, p.y, entry.elite ? { elite: entry.elite } : {});
 }
 

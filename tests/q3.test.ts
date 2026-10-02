@@ -226,9 +226,9 @@ describe('region auras (N3)', () => {
   it('a Hungering elite heals on what dies near it', () => {
     const run = at(6);
     const r = regionByIndex(6);
-    const h = spawnEnemy(run, r, 'chorus', 5, 600, 0, { elite: { aura: 'hungering' }, single: true });
+    const h = spawnEnemy(run, r, 'chorus', 5, 300, 0, { elite: { aura: 'hungering' }, single: true });
     h.hp = h.maxHp / 2;
-    const prey = spawnEnemy(run, r, 'harbinger', 5, 640, 0);
+    const prey = spawnEnemy(run, r, 'harbinger', 5, 340, 0);
     damageEnemy(run, prey, 1e12, false);
     expect(h.hp).toBeGreaterThan(h.maxHp / 2);
   });

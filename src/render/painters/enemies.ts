@@ -1,7 +1,9 @@
 import { ENEMY_BY_ID } from '../../content/enemies';
 import type { AuraId, EnemyDef, EnemyId } from '../../content/types';
+import type { Oval } from '../../content/arena';
 import type { Enemy } from '../../sim/state';
 import { FX, INK, mix, withAlpha, type FxColorName } from '../palette';
+import { emergence } from './arena';
 
 /**
  * Enemy bodies, salvaged from the legacy renderer's `paintEnemyBody`: a base
@@ -97,10 +99,13 @@ export class EnemyPainter {
   /**
    * Draw every living enemy, interpolated `alpha` of the way from its last
    * position. `tick` is the sim tick, for the hit flash; `simTime` the run's
-   * clock, for slows; `time` the wall clock, for the gait.
+   * clock, for slows; `time` the wall clock, for the gait; `light` the
+   * sim's light and its shape, which a body fades in from as it walks in.
    */
   draw(
     ctx: CanvasRenderingContext2D, enemies: readonly Enemy[], alpha: number, tick: number, simTime: number, time: number,
+    light: number,
+    oval: Oval,
     /** The region's boss colours, which a Champion wears (N4). */
     champion: { color: string; border: string } | null = null,
   ): void {
@@ -115,7 +120,9 @@ export class EnemyPainter {
         continue;
       }
       const y = e.py + (e.y - e.py) * alpha + (e.moving ? Math.sin(time * g.freq + e.id) * g.bob : 0);
-      const fade = e.hiddenUntil > simTime ? PHASED_ALPHA : e.shade ? SHADE_ALPHA : 1;
+      const rise = emergence(x, y, light, oval);
+      if (rise <= 0) continue;
+      const fade = (e.hiddenUntil > simTime ? PHASED_ALPHA : e.shade ? SHADE_ALPHA : 1) * rise;
       ctx.globalAlpha = fade;
       // A Champion (N4) wears its region's boss colours: a second, wider halo outside its aura's.
       if (e.champion && champion) {
@@ -168,12 +175,12 @@ export class EnemyPainter {
 
       const sinceHit = tick - e.hitTick;
       if (e.hitTick >= 0 && sinceHit < 5) {
-        ctx.globalAlpha = 0.65 * (1 - sinceHit / 5);
+        ctx.globalAlpha = 0.65 * (1 - sinceHit / 5) * rise;
         ctx.fillStyle = INK['050'];
         ctx.beginPath();
         ctx.arc(x, y, e.radius, 0, Math.PI * 2);
         ctx.fill();
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = rise;
       }
       if (e.hp < e.maxHp) drawHpBar(ctx, x, y - e.radius - 8, e.radius, e.hp / e.maxHp);
       ctx.globalAlpha = 1;

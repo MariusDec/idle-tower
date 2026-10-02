@@ -7,7 +7,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 11;
+  version: 12;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -117,10 +117,15 @@ export interface Profile {
     palette: 'standard' | 'safe';
     /** The text size, as a multiple of the base type ramp. */
     textScale: number;
+    /**
+     * The player's camera framing (camera-and-fog §5.4), in world units from
+     * the tower to the screen's short edge; null follows the light, fully out.
+     */
+    framing: number | null;
   };
 }
 
-export const PROFILE_VERSION = 11;
+export const PROFILE_VERSION = 12;
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
@@ -138,6 +143,7 @@ export function defaultSettings(): Profile['settings'] {
     motion: 'system',
     palette: 'standard',
     textScale: 1,
+    framing: null,
   };
 }
 

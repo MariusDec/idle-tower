@@ -194,6 +194,13 @@ describe('migration ladder', () => {
     expect(out.shards).toBe(50);
   });
 
+  it('walks a v11 profile to v12: the camera follows the light (camera-and-fog)', () => {
+    const out = migrate({ version: 11, createdAt: 5, shards: 50, settings: { speed: 2 } }, MIGRATIONS, 12);
+    expect(out.version).toBe(12);
+    expect(out.settings).toEqual({ speed: 2, framing: null });
+    expect(out.shards).toBe(50);
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);

@@ -1,5 +1,6 @@
 import { Rng } from '../core/rng';
 import { BALANCE } from '../content/balance';
+import { PHONE_OVAL } from '../content/arena';
 import { frameById } from '../content/frames';
 import { isRush } from '../content/rush';
 import type { BehaviourId, WeaponId } from '../content/types';
@@ -50,6 +51,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
   return {
     seed,
     regionId: config.regionId,
+    arena: config.arena ?? PHONE_OVAL,
     trial: config.trial ?? null,
     tick: 0,
     time: 0,

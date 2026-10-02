@@ -37,6 +37,7 @@ export function applySettings(s: Settings, t: SettingsTargets): void {
   t.renderer.setMotion(reduced, s.shake);
   t.renderer.setTextScale(s.textScale);
   t.renderer.setPalette(s.palette);
+  t.renderer.camera.setFraming(s.framing);
   t.root.dataset.motion = reduced ? 'reduce' : 'full';
   t.root.style.setProperty('--text-scale', String(s.textScale));
 }
