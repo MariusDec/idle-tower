@@ -3,16 +3,15 @@ import { EVOLUTIONS } from '../content/evolutions';
 import { PASSIVES } from '../content/passives';
 import { abyssRelics } from '../content/relics';
 import { frameById } from '../content/frames';
-import type { BehaviourId, CardItemId, Effect, FrameId, PactId, StatMod, TrialDef, WeaponId } from '../content/types';
+import type { BehaviourId, CardItemId, Effect, FrameId, FusionId, PactId, StatMod, TrialDef, WeaponId } from '../content/types';
 import { isWeaponId } from '../sim/systems/draft';
 import { selectedTrial, trialEffects } from './trials';
-import { activeSets, bossDown, equippedRelics, inAbyss, relicSlots, selectedFrame, selectedRegion } from './collection';
-import { ownedNodes } from './forge';
+import { activeSets, bossDown, equippedRelics, inAbyss, pastRegions, relicSlots, selectedFrame, selectedRegion } from './collection';
+import { FORGE_WEB, ownedNodes } from './forge';
 import { neverList, priorityList } from './automation';
 import { runPacts } from './pacts';
 import type { Profile } from './profile';
 import { STAR_WEB, starGifts } from './stars';
-import { scaleMod } from '../sim/pacts';
 import type { Card, RunConfig } from '../sim/state';
 
 export type { RunConfig };
@@ -32,8 +31,8 @@ export const FIRST_DRAFT: readonly Card[] = [
  */
 export function buildRunConfig(profile: Profile): RunConfig {
   const abyss = inAbyss(profile);
-  // A Trial (N5) sets the frame, the weapons, the slots and the omens; never in the Abyss.
-  const trial = abyss ? null : selectedTrial(profile);
+  // A Trial (N5) sets the frame, the weapons, the slots and the omens; never in the Abyss or Boss Rush.
+  const trial = pastRegions(profile) ? null : selectedTrial(profile);
   const rules = trialRules(trial);
   const frame = rules.frame ? frameById(rules.frame) : selectedFrame(profile);
   const region = selectedRegion(profile);
@@ -43,14 +42,20 @@ export function buildRunConfig(profile: Profile): RunConfig {
   let weaponSlots: number = BALANCE.slots.weapon;
   let passiveSlots: number = BALANCE.slots.passive;
   const behaviours: Partial<Record<BehaviourId, number>> = {};
+  const fusions: FusionId[] = [];
   // Every effect applies once per owned level; a frame's quirk is one level.
   // A stat applies as one contribution of `level` times its size: the same
   // to the resolver, and a mastery hundreds of levels deep stays one line.
+  // An ascended star's levels past its last (N10) are one multiplier more.
   const effects: Effect[] = [...frame.effects];
-  for (const { node, level } of [...ownedNodes(profile), ...STAR_WEB.ownedNodes(profile)]) {
+  const webs = [
+    ...ownedNodes(profile).map((o) => ({ ...o, stats: FORGE_WEB.statMods(o.node, o.level) })),
+    ...STAR_WEB.ownedNodes(profile).map((o) => ({ ...o, stats: STAR_WEB.statMods(o.node, o.level) })),
+  ];
+  for (const { node, level, stats } of webs) {
+    mods.push(...stats);
     for (const e of node.effects) {
-      if (e.kind === 'stat') mods.push(scaleMod(e.mod, level));
-      else for (let i = 0; i < level; i++) effects.push(e);
+      if (e.kind !== 'stat') for (let i = 0; i < level; i++) effects.push(e);
     }
   }
   // The notables Trials paid (N5) apply to every run, like a Forge node's.
@@ -83,6 +88,9 @@ export function buildRunConfig(profile: Profile): RunConfig {
         break;
       case 'automation':
         // The app's, not the run's: `meta/automation.ts` consumes it.
+        break;
+      case 'fusion':
+        if (!fusions.includes(e.id)) fusions.push(e.id);
         break;
       case 'frame':
       case 'mastery':
@@ -124,10 +132,11 @@ export function buildRunConfig(profile: Profile): RunConfig {
     pool: Object.freeze(pool),
     firstDraft: profile.tutorial.firstDraft ? null : FIRST_DRAFT,
     behaviours: Object.freeze(behaviours),
-    // The Abyss's guardians are never a first kill: their regions' are.
-    firstKill: !abyss && !bossDown(profile, region.boss),
+    // The Abyss's guardians and Boss Rush's bosses are never a first kill: their regions' are.
+    firstKill: !pastRegions(profile) && !bossDown(profile, region.boss),
     relicDrops: relicSlots(profile) > 0,
     recipes: Object.freeze(EVOLUTIONS.filter((e) => profile.recipes.found.includes(e.id)).map((e) => e.id)),
+    fusions: Object.freeze(fusions),
     priority: tactics(priorityList(profile), pool),
     never: tactics(neverList(profile), pool),
     // A Trial's omens stand in for the pacts (N5): it is authored, and pays no heat.

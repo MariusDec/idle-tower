@@ -1,4 +1,5 @@
-import type { WebNodeDef } from '../content/types';
+import type { StatMod, WebNodeDef } from '../content/types';
+import { scaleMod } from '../sim/pacts';
 import type { Profile } from './profile';
 
 /**
@@ -43,6 +44,17 @@ export interface WebSpec<N extends WebNodeDef> {
   sealed(profile: Profile, node: N): boolean;
   /** True for a node bought levels may be returned for, between runs. */
   refundable(node: N): boolean;
+  /**
+   * Levels past a node's last (N10, ascension): which nodes may go on, and
+   * when; each such level costs `cost` times the curve's next, and its stats
+   * apply as a multiplier of `share` of one level's percentage, compounding.
+   */
+  readonly beyond?: {
+    can(node: N): boolean;
+    open(profile: Profile): boolean;
+    readonly cost: number;
+    readonly share: number;
+  };
 }
 
 export class Web<N extends WebNodeDef> {
@@ -81,9 +93,41 @@ export class Web<N extends WebNodeDef> {
     return this.spec.sealed(profile, node);
   }
 
-  /** The price of the next level of `node`, given `owned` levels already bought. */
+  /** The price of the next level of `node`, given `owned` levels already bought; past its last, ascension's. */
   cost(node: N, owned: number): number {
-    return Math.round(node.cost * Math.pow(node.growth ?? this.spec.growth, owned));
+    const past = owned >= node.maxLevel && this.spec.beyond ? this.spec.beyond.cost : 1;
+    return Math.round(node.cost * Math.pow(node.growth ?? this.spec.growth, owned) * past);
+  }
+
+  /** The levels `node` may be bought to now: its last, or without end once it may ascend (N10). */
+  maxOf(profile: Profile, node: N): number {
+    const b = this.spec.beyond;
+    return b && b.can(node) && b.open(profile) ? Infinity : node.maxLevel;
+  }
+
+  /** True for a node that may ascend past its last level once ascension opens (N10). */
+  canAscend(node: N): boolean {
+    return !!this.spec.beyond?.can(node);
+  }
+
+  /**
+   * A node's stat effects at `level`, as contributions: each up to its last
+   * level as `level` copies, and each ascended level past it (N10) as a
+   * multiplier of `share` of one level's percentage, compounding.
+   */
+  statMods(node: N, level: number): StatMod[] {
+    const out: StatMod[] = [];
+    const base = Math.min(level, node.maxLevel);
+    const past = level - base;
+    const share = this.spec.beyond?.share ?? 0;
+    for (const e of node.effects) {
+      if (e.kind !== 'stat') continue;
+      out.push(scaleMod(e.mod, base));
+      if (past > 0 && e.mod.pct !== undefined) {
+        out.push({ key: e.mod.key, mult: Math.pow(1 + e.mod.pct * share, past), ...(e.mod.bucket ? { bucket: e.mod.bucket } : {}) });
+      }
+    }
+    return out;
   }
 
   /** Everything spent on a node's `owned` levels: what a refund returns. */
@@ -117,7 +161,7 @@ export class Web<N extends WebNodeDef> {
     const node = this.byId.get(id);
     if (!node) return false;
     const owned = this.levelOf(profile, id);
-    if (owned >= node.maxLevel || this.spec.sealed(profile, node)) return false;
+    if (owned >= this.maxOf(profile, node) || this.spec.sealed(profile, node)) return false;
     return owned > 0 || this.touchesOwned(this.spec.owned(profile), node);
   }
 

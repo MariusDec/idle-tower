@@ -877,6 +877,9 @@ body {
 .forge-node.is-owned .forge-shape { fill: var(--branch); fill-opacity: 0.22; stroke-opacity: 1; }
 .forge-node.is-owned use { fill: var(--branch); }
 .forge-node.is-maxed .forge-shape { fill-opacity: 0.4; }
+/* An ascended star (N10): past its last level, ringed in gold. */
+.forge-node.is-ascended .forge-shape { fill-opacity: 0.4; stroke: var(--fx-gold); stroke-opacity: 0.9; stroke-width: 3; }
+.forge-node.is-ascended .forge-level { fill: var(--fx-gold); }
 .forge-node.is-affordable .forge-shape { stroke: var(--fx-gold); stroke-opacity: 1; stroke-width: 3; }
 .forge-node.is-fog .forge-shape { fill: var(--surface-0); stroke-dasharray: 4 4; stroke-opacity: 0.45; }
 .forge-node.is-selected .forge-shape { stroke: var(--text-0); stroke-width: 3; stroke-opacity: 1; }
@@ -1197,13 +1200,15 @@ body {
 .draft-card-weapon .draft-card-icon { color: var(--fx-arcane); }
 .draft-card-fallback .draft-card-icon { color: var(--fx-nature); }
 
-/* Evolutions glow (§10.1): the one card worth stopping for. */
-.draft-card-evolution {
+/* Evolutions glow (§10.1): the one card worth stopping for. A fusion (N9) too. */
+.draft-card-evolution,
+.draft-card-fusion {
   border-color: var(--fx-gold);
   background: linear-gradient(180deg, rgba(var(--rgb-gold), 0.16), transparent 60%), var(--surface-1);
 }
 
-.draft-card-evolution .draft-card-icon {
+.draft-card-evolution .draft-card-icon,
+.draft-card-fusion .draft-card-icon {
   color: var(--text-on-amber);
   background: var(--fx-gold);
   animation: evolution-glow 1.4s ease-in-out infinite alternate;
@@ -1214,7 +1219,8 @@ body {
   to { box-shadow: 0 0 22px rgba(var(--rgb-gold), 0.9); }
 }
 
-:root[data-motion='reduce'] .draft-card-evolution .draft-card-icon { animation: none; }
+:root[data-motion='reduce'] .draft-card-evolution .draft-card-icon,
+:root[data-motion='reduce'] .draft-card-fusion .draft-card-icon { animation: none; }
 
 .draft-card-name {
   margin: 0;
@@ -1830,6 +1836,15 @@ body {
 .collection-note {
   margin: 0 0 var(--space-2);
   font-size: var(--text-md);
+  color: var(--text-2);
+}
+
+/* The Recipe Book's second page (N9): fusions, under their own heading. */
+.collection-heading {
+  margin: var(--space-4) 0 var(--space-2);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: normal;
   color: var(--text-2);
 }
 

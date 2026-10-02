@@ -50,8 +50,9 @@ export class FeatsView {
     if (!p) return;
     const waiting = claimable(p);
     const total = waiting.reduce((s, f) => s + f.reward, 0);
+    const light = waiting.reduce((s, f) => s + (f.starlight ?? 0), 0);
     this.all.hidden = waiting.length < 2;
-    this.all.innerHTML = `Claim all · ${iconMarkup('crystal-cluster')} ${formatNumber(total)}`;
+    this.all.innerHTML = `Claim all · ${rewardMarkup(total, light)}`;
     const shown = FEATS.filter((f) => featVisible(p, f));
     this.count.textContent = `${FEATS.filter((f) => p.feats[f.id]).length}/${shown.length}`;
     // Waiting first, then the rest in table order, the paid ones last.
@@ -70,7 +71,7 @@ export class FeatsView {
       name.textContent = secret ? '???' : f.name;
       const reward = document.createElement('span');
       reward.className = 'entry-count';
-      reward.innerHTML = `${iconMarkup('crystal-cluster')} ${formatNumber(f.reward)}`;
+      reward.innerHTML = rewardMarkup(f.reward, f.starlight ?? 0);
       head.append(icon(secret ? 'locked-chest' : f.icon), name, reward);
       const text = document.createElement('p');
       text.className = secret ? 'entry-lore' : 'entry-text';
@@ -100,6 +101,12 @@ export class FeatsView {
       return li;
     }));
   }
+}
+
+/** Shards, and Starlight when there is any (S7.2). */
+function rewardMarkup(shards: number, starlight: number): string {
+  const out = `${iconMarkup('crystal-cluster')} ${formatNumber(shards)}`;
+  return starlight > 0 ? `${out} ${iconMarkup('round-star')} ${formatNumber(starlight)}` : out;
 }
 
 /** True when a feat waits to be claimed: the Feats tab shows a dot. */

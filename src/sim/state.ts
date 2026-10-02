@@ -1,6 +1,6 @@
 import type { RngState } from '../core/rng';
 import type {
-  AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, PactId, PassiveId, RelicId, StatMod, WeaponId,
+  AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, StatMod, WeaponId,
 } from '../content/types';
 
 /**
@@ -45,6 +45,8 @@ export interface RunConfig {
    * unknown recipe is found by chance, never hunted.
    */
   readonly recipes: readonly EvolutionId[];
+  /** Fusions a Constellation star has lit (N9): the draft may offer them. Absent: none. */
+  readonly fusions?: readonly FusionId[];
   /**
    * The Tactician's list (§6.2), best first: the suggestion takes the
    * highest-ranked item on offer. Null: the scorer decides alone.
@@ -342,6 +344,10 @@ export interface WeaponState {
   aim: number;
   /** True once evolved (§4.4): a new pattern on top of its last level. */
   evolved: boolean;
+  /** The fusion it is half of (N9), or null. */
+  fusion: FusionId | null;
+  /** True for a fusion's second half: it fires from its partner's mount and takes no slot of its own. */
+  joined: boolean;
   /** Orbit (Glaives) and storm (Storm Crown) angle, radians. */
   spin: number;
   /** Sunlance: the body the beam holds (0 = none), and how hot it has run on it. */
@@ -375,6 +381,8 @@ export type Card =
   | { readonly kind: 'passive'; readonly id: PassiveId; readonly level: number }
   /** A weapon's evolution (§4.4): offered once its recipe is complete. */
   | { readonly kind: 'evolution'; readonly id: EvolutionId }
+  /** Two evolved weapons made one (N9): offered once both are evolved and its star is lit. */
+  | { readonly kind: 'fusion'; readonly id: FusionId }
   | { readonly kind: 'fallback'; readonly id: FallbackId };
 
 export interface DraftOffer {
@@ -482,10 +490,14 @@ export type SimEvent =
   /** Aegis turned a hit away. */
   | { kind: 'blocked'; x: number; y: number }
   | { kind: 'fell' }
+  /** Boss Rush's last boss is down (N8): the run is won. */
+  | { kind: 'cleared' }
   /** A shell, bomblet or meteor burst; or a frozen body shattered. */
   | { kind: 'blast'; x: number; y: number; radius: number; weapon: WeaponId; style: 'shell' | 'bomblet' | 'meteor' | 'shatter' }
   /** A weapon evolved (§10.3: the tower's spotlight). */
   | { kind: 'evolve'; weapon: WeaponId; evolution: EvolutionId }
+  /** Two weapons fused (N9): the tower's spotlight, on the mount they share. */
+  | { kind: 'fuse'; weapon: WeaponId; fusion: FusionId }
   /** A body caught fire. */
   | { kind: 'ignite'; x: number; y: number }
   /** A shield, or a boss's mirror, turned a shot away. */
@@ -592,6 +604,9 @@ export interface RunState {
   pools: MoltenPool[];
   /** Weapons evolved this run, in order, for the Recipe Book (§5.3). */
   evolved: EvolutionId[];
+  /** Fusions lit going in (from the config), and those made this run, in order (N9). */
+  fusions: FusionId[];
+  fused: FusionId[];
   /** Recipes known going in (from the config): what the suggestion steers toward. */
   recipes: EvolutionId[];
   /** The Tactician's list (from the config), or null. */
@@ -627,7 +642,8 @@ export interface RunState {
   rng: RngState;
   /** Named child-stream states, so each system's draws stay independent. */
   streams: Record<string, RngState>;
-  outcome: null | { kind: 'fell' | 'retreat'; wave: number; time: number };
+  /** How the run ended: the tower fell, withdrew, or (Boss Rush, N8) cleared every stage. */
+  outcome: null | { kind: 'fell' | 'retreat' | 'cleared'; wave: number; time: number };
   events: SimEvent[];
 }
 

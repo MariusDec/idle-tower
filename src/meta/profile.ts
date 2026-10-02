@@ -7,7 +7,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 10;
+  version: 11;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -75,6 +75,10 @@ export interface Profile {
   };
   /** The Abyss (§9): the deepest floor whose boss has fallen. */
   abyss: { best: number };
+  /** Boss Rush (N8): the most stages cleared in one run, and the fastest full clear in sim seconds. */
+  rush: { best: number; time: number | null };
+  /** Fusions found (N9), by id, in the order found: the Recipe Book's second page. */
+  fusions: string[];
   /** The Foreman's wishlist (N7): Forge node ids, in the order it buys them. At most `WISHLIST_MAX`. */
   wishlist: string[];
   /** Trials won (N5), by trial id: each pays once. */
@@ -86,7 +90,7 @@ export interface Profile {
    * past rank III. It ranks the set's bonus up.
    */
   sets: Record<string, number>;
-  /** The region and frame the next run uses (§5.2, §4.4); the Abyss is `ABYSS_INDEX`. */
+  /** The region and frame the next run uses (§5.2, §4.4); the Abyss is `ABYSS_INDEX`, Boss Rush `RUSH_INDEX`. */
   region: number;
   frame: string;
   /** One-time teaching moments (§7.1), true once done. */
@@ -116,7 +120,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 10;
+export const PROFILE_VERSION = 11;
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
@@ -162,6 +166,8 @@ export function newProfile(now: number): Profile {
     stars: {},
     pacts: { ranks: {}, best: {} },
     abyss: { best: 0 },
+    rush: { best: 0, time: null },
+    fusions: [],
     wishlist: [],
     trials: {},
     trial: null,

@@ -5,6 +5,7 @@ import { RELIC_SETS, eliteRelics } from '../../content/relics';
 import { BALANCE } from '../../content/balance';
 import { PASSIVE_BY_ID } from '../../content/passives';
 import { WEAPON_BY_ID } from '../../content/weapons';
+import { EVOLUTION_OF } from '../../content/evolutions';
 import type { BossId, EnemyId, FrameUnlock, RelicDef, RelicId } from '../../content/types';
 import { formatNumber } from '../../core/format';
 import {
@@ -12,7 +13,7 @@ import {
 } from '../../meta/collection';
 import type { Profile } from '../../meta/profile';
 import { levelOf } from '../../meta/forge';
-import { recipeBook } from '../../meta/recipes';
+import { fusionBook, recipeBook } from '../../meta/recipes';
 import { toggleClass } from '../dom';
 import { icon } from '../icon';
 
@@ -290,7 +291,44 @@ export class CollectionView {
       }
       list.append(li);
     }
-    return [head, list];
+    return [head, list, ...this.fusions(p)];
+  }
+
+  /** The Book's second page (N9): fusions, their halves once their star is lit, the riddle once both are evolved. */
+  private fusions(p: Profile): HTMLElement[] {
+    const book = fusionBook(p);
+    if (book.length === 0) return [];
+    const head = document.createElement('h3');
+    head.className = 'collection-heading';
+    head.textContent = 'Fusions';
+    const note = document.createElement('p');
+    note.className = 'collection-note';
+    note.textContent = 'Two evolved weapons, once a Smith star lights their fusion, become one card: one mount, a slot freed.';
+    const list = document.createElement('ul');
+    list.className = 'entry-list';
+    for (const r of book) {
+      const f = r.fusion;
+      const li = document.createElement('li');
+      li.className = `entry${r.found ? ' is-evolution' : ' is-unknown'}`;
+      const h = document.createElement('div');
+      h.className = 'entry-head';
+      const n = document.createElement('span');
+      n.className = 'entry-name';
+      n.textContent = r.found || r.lit ? f.name : '???';
+      h.append(icon(r.found || r.lit ? f.icon : 'locked-chest'), n);
+      const recipe = document.createElement('p');
+      recipe.className = 'entry-text';
+      recipe.textContent = r.lit ? f.weapons.map((w) => EVOLUTION_OF[w].name).join(' + ') : '??? + ???';
+      li.append(h, recipe);
+      if (r.found || r.hint) {
+        const line = document.createElement('p');
+        line.className = 'entry-lore';
+        line.textContent = r.found ? f.text : f.hint;
+        li.append(line);
+      }
+      list.append(li);
+    }
+    return [head, note, list];
   }
 
   private frames(p: Profile): HTMLElement {

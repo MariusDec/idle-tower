@@ -1,12 +1,12 @@
 import { BALANCE } from '../../content/balance';
 import { EVOLUTION_OF } from '../../content/evolutions';
 import { WEAPON_BY_ID, weaponParams } from '../../content/weapons';
-import type { WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
-import type { TowerStats, WeaponState } from '../state';
+import type { FusionId, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
+import type { RunState, TowerStats, WeaponState } from '../state';
 
 /**
  * A weapon as the tower fields it (§4.4): its level's numbers, its
- * evolution's spike, the tower's area, duration, projectile-speed and pierce
+ * evolution's spike and its fusion's (N9), the tower's area, duration, projectile-speed and pierce
  * stats, and the count caps (§12.5). The sim fires these numbers and the
  * draft scorer estimates from them, so the two never disagree on a weapon.
  */
@@ -57,10 +57,12 @@ export function evolutionSpike(id: WeaponId, evolved: boolean): number {
   return evolved ? BALANCE.evolutions[EVOLUTION_OF[id].id].damage : 1;
 }
 
-export function armed(stats: TowerStats, w: Pick<WeaponState, 'id' | 'level' | 'evolved'>): WeaponParams {
+export function armed(stats: TowerStats, w: Pick<WeaponState, 'id' | 'level' | 'evolved'> & { fusion?: FusionId | null }): WeaponParams {
   const base = weaponParams(w.id, w.level);
   const pattern = WEAPON_BY_ID[w.id].pattern;
-  let damage = base.damage * evolutionSpike(w.id, w.evolved);
+  // A fusion (N9): both halves hit harder.
+  const fused = w.fusion ? BALANCE.fusions.damage : 1;
+  let damage = base.damage * evolutionSpike(w.id, w.evolved) * fused;
   let count = base.count;
   // Past the cap, every extra body becomes damage on the ones that fly (§12.5).
   const cap = countCap(pattern);
@@ -92,7 +94,12 @@ export function evolveAt(specialist: boolean): number {
 /** A weapon freshly mounted. */
 export function newWeapon(id: WeaponId, level: number): WeaponState {
   return {
-    id, level, cooldown: 0, aim: -Math.PI / 2, evolved: false,
+    id, level, cooldown: 0, aim: -Math.PI / 2, evolved: false, fusion: null, joined: false,
     spin: 0, beamTarget: 0, heat: 1, meteor: 0, drones: [], silencedUntil: 0, dampedUntil: 0, tethers: [],
   };
+}
+
+/** Weapon slots in use: a fusion's second half rides on its partner's mount (N9). */
+export function slotsUsed(run: Pick<RunState, 'weapons'>): number {
+  return run.weapons.filter((w) => !w.joined).length;
 }

@@ -1,5 +1,6 @@
 import { BALANCE } from '../content/balance';
-import { EVOLUTION_BY_ID } from '../content/evolutions';
+import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../content/evolutions';
+import { FUSION_BY_ID } from '../content/fusions';
 import { FALLBACKS, PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
 import type { ContentEntry } from '../content/types';
@@ -76,6 +77,8 @@ function describe(card: Card, swapFor: string | null = null): { entry: ContentEn
       return { entry: PASSIVE_BY_ID[card.id], line: PASSIVE_BY_ID[card.id].text, kind: 'Passive' };
     case 'evolution':
       return { entry: EVOLUTION_BY_ID[card.id], line: EVOLUTION_BY_ID[card.id].text, kind: 'Evolution' };
+    case 'fusion':
+      return { entry: FUSION_BY_ID[card.id], line: FUSION_BY_ID[card.id].text, kind: 'Fusion' };
     case 'fallback': {
       const def = FALLBACKS.find((f) => f.id === card.id)!;
       return { entry: def, line: def.text, kind: '' };
@@ -99,6 +102,12 @@ function details(card: Card): string[] {
     case 'evolution': {
       const e = EVOLUTION_BY_ID[card.id];
       return [`${WEAPON_BY_ID[e.weapon].name} + ${PASSIVE_BY_ID[e.passive].name}.`, e.text, 'Found recipes are kept in the Recipe Book.'];
+    }
+    case 'fusion': {
+      const f = FUSION_BY_ID[card.id];
+      const [a, b] = f.weapons.map((id) => EVOLUTION_OF[id].name);
+      const more = Math.round((BALANCE.fusions.damage - 1) * 100);
+      return [`${a} + ${b}: one mount, a slot freed, both +${more}% damage.`, f.text, 'Found fusions are kept in the Recipe Book.'];
     }
     case 'fallback':
       return [describe(card).line];

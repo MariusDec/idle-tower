@@ -1,6 +1,7 @@
 import type { Profile } from '../../meta/profile';
-import { formatNumber } from '../../core/format';
-import { act2Open, hubUnlocks, inAbyss, selectedFrame, selectedRegion, type HubUnlocks } from '../../meta/collection';
+import { formatDuration, formatNumber } from '../../core/format';
+import { act2Open, hubUnlocks, inAbyss, inRush, selectedFrame, selectedRegion, type HubUnlocks } from '../../meta/collection';
+import { RUSH_STAGES } from '../../content/rush';
 import { hubGoal } from '../../meta/goals';
 import { heat } from '../../meta/pacts';
 import type { PactId, RelicId } from '../../content/types';
@@ -262,12 +263,15 @@ export class HubScreen {
     const p = this.profile;
     if (!p) return;
     setText(this.shards, formatNumber(p.shards));
-    // The selected region's own best (§7.3), or the deepest floor in the Abyss.
+    // The selected region's own best (§7.3), the deepest floor in the Abyss, or Boss Rush's record (N8).
     const abyss = inAbyss(p);
-    const best = abyss ? p.abyss.best : (p.regions[selectedRegion(p).index]?.bestWave ?? 0);
-    setText(this.bestLabel, abyss ? 'Deepest floor' : 'Best wave');
-    setText(this.best, best > 0 ? String(best) : '—');
-    setText(this.loadout, `${selectedFrame(p).name} · ${inAbyss(p) ? 'The Abyss' : selectedRegion(p).name}`);
+    const rush = inRush(p);
+    const best = abyss ? p.abyss.best : rush ? p.rush.best : (p.regions[selectedRegion(p).index]?.bestWave ?? 0);
+    setText(this.bestLabel, abyss ? 'Deepest floor' : rush ? 'Record' : 'Best wave');
+    const record = rush && p.rush.time !== null ? formatDuration(p.rush.time) : rush && best > 0 ? `${best}/${RUSH_STAGES}` : null;
+    setText(this.best, record ?? (best > 0 ? String(best) : '—'));
+    const where = abyss ? 'The Abyss' : rush ? 'Boss Rush' : selectedRegion(p).name;
+    setText(this.loadout, `${selectedFrame(p).name} · ${where}`);
     this.tacticsBtn.hidden = tacticsKey(p) === null;
     const act2 = act2Open(p);
     this.pactsBtn.hidden = !act2;

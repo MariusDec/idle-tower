@@ -23,8 +23,9 @@ recipes), regions and bosses, relics owned and worn, feats, the farm rate
 and `lastSeen` for offline, the ceremony owed, the Tactician's lists and
 its Never lists (`tacticsNever`, v9), the pacts and the Abyss record, the
 Foreman's `wishlist`, the Trials won (`trials`) and the one chosen for the
-next run (`trial`), relic-set progress (`sets`, v10), the next run's region and frame, the one-time
-lessons and the **settings**:
+next run (`trial`), relic-set progress (`sets`, v10), Boss Rush's record
+(`rush`) and the fusions found (`fusions`, v11), the next run's region and
+frame, the one-time lessons and the **settings**:
 
 | Setting | Values |
 |---|---|
@@ -50,7 +51,7 @@ parse or migrate is never dropped silently: it is copied to
 ## The migration ladder
 
 `MIGRATIONS[n]` takes a raw object at version `n` to `n + 1`; `migrate`
-walks it to `PROFILE_VERSION` (10) and throws on a version from the future
+walks it to `PROFILE_VERSION` (11) and throws on a version from the future
 or a missing rung. Every rung has a fixture in `tests/save.test.ts`, and a
 test walks a v1 profile all the way up and checks it has every field a new
 profile has, settings included.
@@ -66,6 +67,7 @@ profile has, settings included.
 | 7 → 8 | P9 | volumes, shake, motion, palette, text size |
 | 8 → 9 | Q2 | the Tactician's Never lists |
 | 9 → 10 | Q3 | the Foreman's wishlist, Trials won and chosen, relic-set progress |
+| 10 → 11 | Q4 | Boss Rush's record, the fusions found |
 
 **Rules:** a rung writes literal values, never a call to today's defaults
 (those may change; the rung must not); and fields the player already set

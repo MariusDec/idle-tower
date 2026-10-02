@@ -1,7 +1,10 @@
 import { BOSS_BY_ID } from '../content/bosses';
 import { EVOLUTION_BY_ID } from '../content/evolutions';
+import { FUSION_BY_ID } from '../content/fusions';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { regionByIndex } from '../content/regions';
+import { RUSH_STAGES } from '../content/rush';
+import { formatDuration } from '../core/format';
 import type { RunState } from '../sim/state';
 import { Camera } from './camera';
 import { Effects } from './effects';
@@ -262,9 +265,16 @@ export class Renderer {
           this.effects.ring(ev.x, ev.y, 30, 700, withAlpha(INK['050'], 0.8), 1.1, 10);
           this.camera.shake(26);
           this.camera.zoomPunch();
-          if (!runRegion(run).abyss) {
+          if (runRegion(run).rush) {
+            // Boss Rush (N8): the next one comes; the last one's banner is `cleared`'s.
+            const stage = runRegion(run).rush!.stage;
+            if (stage < RUSH_STAGES) this.showBanner(`Stage ${stage} of ${RUSH_STAGES}`, 'The next one comes.', 'gold');
+          } else if (!runRegion(run).abyss) {
             this.showBanner(ev.first ? 'Region cleared' : 'Boss defeated', ev.first ? 'The light pushes outward.' : 'Overtime begins.', 'gold');
           }
+          break;
+        case 'cleared':
+          this.showBanner('Boss Rush cleared', `Every boss down in ${formatDuration(run.outcome?.time ?? run.time)}.`, 'gold');
           break;
         case 'floor':
           // The Abyss (§9): a floor cleared; the next one is deeper still.
@@ -340,6 +350,13 @@ export class Renderer {
           this.effects.evolve(run.stats.radius);
           this.camera.zoomPunch();
           this.showBanner('Evolved', EVOLUTION_BY_ID[ev.evolution].name, 'gold');
+          break;
+        case 'fuse':
+          // A fusion (N9): the evolution's spotlight, twice over.
+          this.effects.evolve(run.stats.radius);
+          this.effects.pulse(0, 0, run.stats.radius * 3, FX.gold);
+          this.camera.zoomPunch();
+          this.showBanner('Fused', FUSION_BY_ID[ev.fusion].name, 'gold');
           break;
         case 'ignite':
           this.effects.spray(ev.x, ev.y, FX.ember, 5, 120, 3, 60);
@@ -445,7 +462,9 @@ export class Renderer {
       const sinceHurt = run.tick - run.tower.hurtTick;
       const hurt = run.tower.hurtTick >= 0 && sinceHurt < HURT_TICKS ? 1 - sinceHurt / HURT_TICKS : 0;
       const fallen = this.fallT === null ? 0 : Math.min(1, this.fallT / (FALL_SECONDS * 0.6));
-      paintTower(ctx, run.stats.radius, run.weapons, this.clock, hurt, fallen, this.look);
+      // A fusion's second half (N9) rides on its partner's mount: no pod of its own.
+      const mounts = run.fused.length > 0 ? run.weapons.filter((w) => !w.joined) : run.weapons;
+      paintTower(ctx, run.stats.radius, mounts, this.clock, hurt, fallen, this.look);
       if (run.tower.invulnUntil > run.time) paintAegis(ctx, run.stats.radius, run.tower.invulnUntil - run.time, this.clock);
       paintProjectiles(ctx, run.projectiles, alpha, additive);
     } else {

@@ -1,11 +1,12 @@
 import type { RunState } from '../sim/state';
 import { FLOOR_WAVES, floorOf, floorTemplate, floorWave } from '../content/abyss';
 import { BOSS_BY_ID } from '../content/bosses';
+import { RUSH_STAGES } from '../content/rush';
 import { frameById } from '../content/frames';
 import { pactLoad } from '../sim/pacts';
 import { phasesOf } from '../sim/systems/boss';
 import { BOSS_WAVE, runRegion } from '../sim/systems/waves';
-import { formatNumber } from '../core/format';
+import { formatDuration, formatNumber } from '../core/format';
 import type { WeaponId } from '../content/types';
 import { buildOf } from '../meta/results';
 import { buildChips, buildKey } from './build';
@@ -140,6 +141,11 @@ export class Hud {
       setText(this.wave, `${floorWave(wave)}/${FLOOR_WAVES}`);
       const rule = floorTemplate(floorOf(wave)).rule;
       setText(this.region, rule ? `The Abyss · ${rule.name}` : 'The Abyss');
+    } else if (region.rush) {
+      // Boss Rush (N8): "Boss 3/8", and the clock, which is the record.
+      setText(this.waveLabel, 'Boss');
+      setText(this.wave, `${region.rush.stage}/${RUSH_STAGES}`);
+      setText(this.region, `Boss Rush · ${formatDuration(run.time)}`);
     } else {
       // "7/20" in the region; past the boss, overtime counts on (§4.2).
       const overtime = run.wave > BOSS_WAVE;

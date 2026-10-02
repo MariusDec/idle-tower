@@ -76,6 +76,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   8: (raw) => ({ ...raw, version: 9, tacticsNever: {} }),
   // v10 (Q3): the Foreman's wishlist (N7), Trials won and chosen (N5), relic-set progress (N6).
   9: (raw) => ({ ...raw, version: 10, wishlist: [], trials: {}, trial: null, sets: {} }),
+  // v11 (Q4): Boss Rush's records (N8) and the fusions found (N9).
+  10: (raw) => ({ ...raw, version: 11, rush: { best: 0, time: null }, fusions: [] }),
 };
 
 export class MigrationError extends Error {}

@@ -1,7 +1,7 @@
 import { PACTS } from '../../content/pacts';
 import type { PactId } from '../../content/types';
 import { formatNumber } from '../../core/format';
-import { inAbyss, selectedRegion } from '../../meta/collection';
+import { inAbyss, inRush, selectedRegion } from '../../meta/collection';
 import { bestHeat, heat, heatShards, pactRank, recordStarlight } from '../../meta/pacts';
 import type { Profile } from '../../meta/profile';
 import { starGifts } from '../../meta/stars';
@@ -58,6 +58,8 @@ export class PactsView {
     const region = selectedRegion(p);
     if (inAbyss(p)) {
       this.note.textContent = 'The Abyss has its own depth: pacts hold only in the regions.';
+    } else if (inRush(p)) {
+      this.note.textContent = 'Boss Rush races the clock: pacts hold only in the regions.';
     } else {
       const best = bestHeat(p, region.index);
       const pay = Math.round(recordStarlight(p, region.index, h) * starGifts(p).starlight);

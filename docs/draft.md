@@ -17,13 +17,15 @@ and Gatekeeper's Seal start a run above level 1, each level a banked draft.
 
 `candidateCards` lists what may be offered now:
 
+- a ready **fusion** (N9: its Smith star lit, both its weapons carried and
+  evolved) — always in the hand;
 - a ready **evolution** (weapon at its last level, partner passive owned,
   Alchemy owned) — always in the hand;
 - the next level of every owned weapon and passive below level 5;
 - a **new** weapon or passive from the pool, only while a slot of its kind
   is free.
 
-`rollOffer` fills the hand: evolutions first, then a uniform sample by
+`rollOffer` fills the hand: fusions and evolutions first, then a uniform sample by
 partial Fisher–Yates on the `draft` stream, padded with **fallback** cards
 (heal 30%, a pinch of shards) when nothing else is left. The hand is
 `BALANCE.draft.choices` (3), plus Choice and Foresight and Jackpot, less
@@ -35,7 +37,8 @@ of each kind, nothing to misread. It is the only draft that stops the
 arena, and it cannot be rerolled.
 
 **Invariant:** the draft never offers a new item for a slot type that is
-already full (`tests/draft.test.ts`).
+already full (`tests/draft.test.ts`). A fusion's second half rides on its
+partner's mount (`joined`) and takes no slot (`slotsUsed`).
 
 ## The suggestion
 
@@ -71,8 +74,8 @@ The suggested card is highlighted, and taken when the timer runs out. The
 same scorer drives every bot in `tools/`, so a better bot is better idle
 play (§13).
 
-With the Tactician ([idle.md](idle.md)), `run.priority` ranks first: an
-evolution ahead of everything, then the listed items in the player's order,
+With the Tactician ([idle.md](idle.md)), `run.priority` ranks first: a
+fusion or an evolution ahead of everything, then the listed items in the player's order,
 then the scorer for anything unlisted. A card on `run.never` (U7) is never
 suggested while anything else is offered.
 

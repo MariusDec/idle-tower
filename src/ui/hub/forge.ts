@@ -3,7 +3,6 @@ import { BRANCH_NAME, FORGE } from '../../content/forge';
 import type { IconId } from '../../content/icons';
 import { CONSTELLATION_NAME, STARS } from '../../content/stars';
 import type { ForgeNodeDef, StarNodeDef, StatKey, StatMod, WebNodeDef } from '../../content/types';
-import { scaleMod } from '../../sim/pacts';
 import { resolveStat } from '../../sim/stats';
 import { STAT_LABEL } from '../build';
 import { formatNumber } from '../../core/format';
@@ -64,9 +63,10 @@ export interface WebViewSource<N extends WebNodeDef> {
   sealLine(node: N): string;
 }
 
-/** A node's level, out of its last: a mastery (§9) has no last. */
+/** A node's level, out of its last: a mastery (§9) has no last, and an ascended star (N10) counts on past it. */
 function levelText(level: number, max: number): string {
-  return max === Infinity ? `${level}` : `${level}/${max}`;
+  if (max === Infinity) return `${level}`;
+  return level > max ? `${max}+${level - max}` : `${level}/${max}`;
 }
 
 function position(n: WebNodeDef): { x: number; y: number } {
@@ -244,7 +244,8 @@ export class WebView<N extends WebNodeDef> {
     const level = this.src.web.levelOf(p, n.id);
     const classes = ['forge-node', `is-${state}`, `type-${n.type}`, `branch-${n.branch}`];
     if (state !== 'fog' && state !== 'sealed' && this.src.web.canAfford(p, n.id)) classes.push('is-affordable');
-    if (level >= n.maxLevel) classes.push('is-maxed');
+    if (level >= this.src.web.maxOf(p, n)) classes.push('is-maxed');
+    if (level > n.maxLevel) classes.push('is-ascended');
     if (n.id === this.selected) classes.push('is-selected');
     if (n.id === this.hinted) classes.push('is-hinted');
     const pin = this.actions.pinned?.(p)?.indexOf(n.id) ?? -1;
@@ -363,7 +364,8 @@ export class WebView<N extends WebNodeDef> {
     const total = this.totals(p, n, level);
     const actions = document.createElement('div');
     actions.className = 'forge-detail-actions';
-    if (level < n.maxLevel) {
+    const max = web.maxOf(p, n);
+    if (level < max) {
       const cost = web.cost(n, level);
       const buy = document.createElement('button');
       buy.type = 'button';
@@ -371,19 +373,21 @@ export class WebView<N extends WebNodeDef> {
       const affordable = web.canAfford(p, id);
       buy.disabled = !affordable;
       buy.innerHTML = `${iconMarkup(this.src.currencyIcon)}<span>${formatNumber(cost)}</span>`;
-      buy.setAttribute('aria-label', `${level > 0 ? 'Upgrade' : 'Buy'} for ${formatNumber(cost)} ${this.src.currencyName.toLowerCase()}`);
+      const verb = level >= n.maxLevel ? 'Ascend' : level > 0 ? 'Upgrade' : 'Buy';
+      buy.setAttribute('aria-label', `${verb} for ${formatNumber(cost)} ${this.src.currencyName.toLowerCase()}`);
       buy.addEventListener('click', () => this.buy(id));
       if (!web.isBuyable(p, id)) buy.disabled = true;
       actions.append(buy);
     } else {
       const done = document.createElement('span');
       done.className = 'forge-detail-done';
-      done.textContent = n.maxLevel > 1 ? 'Maxed' : 'Owned';
+      // A minor that ascends once the sky is whole (N10) says so.
+      done.textContent = web.canAscend(n) ? 'Maxed · ascends once every star is lit' : n.maxLevel > 1 ? 'Maxed' : 'Owned';
       actions.append(done);
     }
     // The Foreman (N7): pin it, and the Forge buys it as shards arrive.
     const pinned = this.actions.pinned?.(p) ?? null;
-    if (pinned && this.actions.pin && level < n.maxLevel) {
+    if (pinned && this.actions.pin && level < max) {
       const at = pinned.indexOf(id);
       const pin = document.createElement('button');
       pin.type = 'button';
@@ -412,6 +416,11 @@ export class WebView<N extends WebNodeDef> {
       });
       actions.append(refund);
     }
+    // Ascension (N10): what each level past the last does, once it may go on.
+    if (level >= n.maxLevel && web.maxOf(p, n) === Infinity && web.canAscend(n)) {
+      const steps = web.statMods(n, n.maxLevel + 1).filter((m) => m.mult !== undefined);
+      text.textContent = `${n.text} Ascended: each level past ${n.maxLevel}, ${steps.map((m) => `${STAT_LABEL[m.key]} ×${m.mult!.toFixed(2)}`).join(', ')}.`;
+    }
     this.detail.append(head, kind, text, ...(total ? [total] : []), actions);
     this.detail.hidden = false;
   }
@@ -424,16 +433,15 @@ export class WebView<N extends WebNodeDef> {
   private totals(p: Profile, n: N, level: number): HTMLElement | null {
     const keys = [...new Set(n.effects.flatMap((e) => (e.kind === 'stat' ? [e.mod.key] : [])))];
     if (keys.length === 0) return null;
+    const web = this.src.web;
     const mods = (extra: number): StatMod[] => {
       const out: StatMod[] = [];
-      for (const { node, level: l } of this.src.web.ownedNodes(p)) {
-        for (const e of node.effects) if (e.kind === 'stat') out.push(scaleMod(e.mod, l + (node.id === n.id ? extra : 0)));
-      }
-      if (level === 0 && extra > 0) for (const e of n.effects) if (e.kind === 'stat') out.push(scaleMod(e.mod, extra));
+      for (const { node, level: l } of web.ownedNodes(p)) out.push(...web.statMods(node, l + (node.id === n.id ? extra : 0)));
+      if (level === 0 && extra > 0) out.push(...web.statMods(n, extra));
       return out;
     };
     const now = mods(0);
-    const next = level < n.maxLevel ? mods(1) : null;
+    const next = level < web.maxOf(p, n) ? mods(1) : null;
     const line = document.createElement('p');
     line.className = 'forge-detail-total';
     line.textContent = `${this.src.title} total · ` + keys.map((k) => {

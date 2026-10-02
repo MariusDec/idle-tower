@@ -1,3 +1,4 @@
+import { BALANCE } from '../content/balance';
 import { STARS } from '../content/stars';
 import type { BranchId, Effect, FrameId, StarNodeDef } from '../content/types';
 import type { Profile } from './profile';
@@ -12,6 +13,9 @@ import { Web, type NodeState, type WebGoal } from './web';
  *
  * Nothing in the Constellations refunds: a frame or a relic set taken back
  * would strand what the player already wears.
+ *
+ * Once every star is lit, the percentage minors ascend (N10): levels past
+ * their last, at twice the curve's price, each a compounding multiplier.
  */
 export const STAR_WEB = new Web<StarNodeDef>({
   nodes: STARS,
@@ -21,7 +25,25 @@ export const STAR_WEB = new Web<StarNodeDef>({
   pay: (p, n) => { p.starlight -= n; },
   sealed: () => false,
   refundable: () => false,
+  // Ascension (N10): the long tail, once the sky is whole.
+  beyond: {
+    can: (n) => ascendable(n),
+    open: (p) => skyWhole(p),
+    cost: BALANCE.ascend.cost,
+    share: BALANCE.ascend.share,
+  },
 });
+
+/** A minor whose every effect is a percentage stat: it may ascend past its last level (N10). */
+export function ascendable(node: StarNodeDef): boolean {
+  return node.type === 'minor' && node.effects.length > 0
+    && node.effects.every((e) => e.kind === 'stat' && e.mod.pct !== undefined);
+}
+
+/** True once every star is lit (*Firmament*): ascension opens (N10). */
+export function skyWhole(profile: Profile): boolean {
+  return STARS.every((n) => (profile.stars[n.id] ?? 0) > 0);
+}
 
 export type StarState = NodeState;
 export type StarGoal = WebGoal<StarNodeDef>;
@@ -72,6 +94,7 @@ export function starGifts(profile: Profile): StarGifts {
       case 'unlockCard':
       case 'behaviour':
       case 'automation':
+      case 'fusion':
         // The run's (or the app's): `buildRunConfig` and `automations` take these.
         break;
       default: {

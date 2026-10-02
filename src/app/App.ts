@@ -497,6 +497,8 @@ export class App {
       this.syncDraft(run, realDt);
       this.hud.update(run);
       if (run.outcome?.kind === 'fell' && this.renderer.fallDone) this.endRun(run);
+      // Boss Rush won (N8): the sim held the last kill's beat; the results follow.
+      if (run.outcome?.kind === 'cleared') this.endRun(run);
     }
     // Auto-restart waits while a card (welcome back) is up, so a run never starts under it.
     if (this.screen === 'results' && !this.modal.open) this.results.tick(realDt);

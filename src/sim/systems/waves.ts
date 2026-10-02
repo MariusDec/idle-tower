@@ -6,6 +6,7 @@ import { ENEMY_BY_ID } from '../../content/enemies';
 import { spawnPoint } from '../../content/arena';
 import type { AuraId, EnemyId, EnemyVerb, RegionDef, RegionRule, StatMod } from '../../content/types';
 import { regionByIndex } from '../../content/regions';
+import { RUSH_STAGES, isRush, rushStage } from '../../content/rush';
 import { PASSIVE_BY_ID } from '../../content/passives';
 import type { Enemy, RunState, SpawnEntry, WaveState } from '../state';
 import { pactLoad, ruleSurge, scaleMod } from '../pacts';
@@ -21,7 +22,8 @@ import { refreshStats } from './draft';
  *
  * In the Abyss (§9) every ten waves are a floor: its own region (a
  * template's enemies and rule, sized for the depth), its tenth wave a boss,
- * and no overtime. Wave numbers run on across floors, and HP, damage and
+ * and no overtime. In Boss Rush (N8) every wave is a boss, each its own
+ * stage, and the run is won when the last falls. Wave numbers run on across floors, and HP, damage and
  * shards grow by the global number; counts, beats and elites go by the
  * floor's own.
  */
@@ -29,9 +31,10 @@ import { refreshStats } from './draft';
 /** The boss wave (§4.2). */
 export const BOSS_WAVE = 20;
 
-/** The region wave `n` of a run in `regionId` is fought in: the region, or that floor of the Abyss. */
+/** The region wave `n` of a run in `regionId` is fought in: the region, that floor of the Abyss, or that stage of Boss Rush. */
 export function regionAt(regionId: number, n: number): RegionDef {
-  return regionId === ABYSS_INDEX ? abyssFloor(floorOf(n)) : regionByIndex(regionId);
+  if (regionId === ABYSS_INDEX) return abyssFloor(floorOf(n));
+  return isRush(regionId) ? rushStage(n) : regionByIndex(regionId);
 }
 
 /** The region the run is fighting in now. */
@@ -44,8 +47,9 @@ export function localWave(region: RegionDef, n: number): number {
   return region.abyss ? floorWave(n) : n;
 }
 
-/** True when wave `n` is its region's boss wave: the 20th, or a floor's tenth. */
+/** True when wave `n` is its region's boss wave: the 20th, a floor's tenth, or every wave of Boss Rush. */
 export function isBossWave(region: RegionDef, n: number): boolean {
+  if (region.rush) return true;
   return region.abyss ? floorWave(n) === FLOOR_WAVES : n === BOSS_WAVE;
 }
 
@@ -445,6 +449,13 @@ export function tickWaves(run: RunState, region: RegionDef): void {
     // The boss wave holds until the boss falls; overtime (or the next floor) follows a beat later.
     const b = run.boss;
     if (b?.killedIn != null && run.time - (b.arrivedAt + b.killedIn) >= W.afterBoss) {
+      // Boss Rush's last boss down (N8): the run is won.
+      if (region.rush && cur.n >= RUSH_STAGES) {
+        run.outcome = { kind: 'cleared', wave: cur.n, time: b.arrivedAt + b.killedIn };
+        run.draft = null;
+        run.events.push({ kind: 'cleared' });
+        return;
+      }
       startWave(run, next, cur.n + 1);
     }
     return;

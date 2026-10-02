@@ -1,11 +1,12 @@
 import type { CardItemId, ConstellationId, StarNodeDef } from './types';
 
 /**
- * The Constellations (§9): Act 2's tree, bought with Starlight. Forty
+ * The Constellations (§9): Act 2's tree, bought with Starlight. Forty-four
  * nodes in five figures, laid out like the Forge (same rings, links and
  * fog) but qualitative first: Act 2's four weapons and two passives, two
  * frames, the fifth weapon slot, a sixth relic slot, the Abyss's four relic
- * sets and the Forge's five masteries. The minors are big steps (§2.1: felt).
+ * sets, the Forge's five masteries and four fusions (N9). The minors are big
+ * steps (§2.1: felt).
  *
  * Every figure has a node on the root, so the sky opens five ways at once
  * when the Blight falls.
@@ -68,6 +69,27 @@ export const STARS: readonly StarNodeDef[] = [
     id: 'smith-rail', name: 'Gilded Rail', icon: 'target-laser', text: 'Gilded Rail joins the draft.',
     branch: 'smith', type: 'notable', ring: 3, angle: 18, links: ['smith-zeal'], maxLevel: 1, cost: 18,
     effects: [{ kind: 'unlockCard', id: 'gilded-rail' }],
+  },
+  // Fusions (N9): each lights one, for two evolved weapons to become one.
+  {
+    id: 'smith-blizzard', name: 'Blizzard', icon: 'frozen-orb', text: 'Storm Crown and Absolute Zero may fuse: Blizzard.',
+    branch: 'smith', type: 'notable', ring: 4, angle: -20, links: ['smith-mount'], maxLevel: 1, cost: 40,
+    effects: [{ kind: 'fusion', id: 'blizzard' }],
+  },
+  {
+    id: 'smith-firestorm', name: 'Firestorm', icon: 'fragmented-meteor', text: 'Meteorfall and Dragonbreath may fuse: Firestorm.',
+    branch: 'smith', type: 'notable', ring: 4, angle: -7, links: ['smith-mount'], maxLevel: 1, cost: 40,
+    effects: [{ kind: 'fusion', id: 'firestorm' }],
+  },
+  {
+    id: 'smith-dawnstar', name: 'Dawnstar', icon: 'sunbeams', text: 'Judgment and Seeker Swarm may fuse: Dawnstar.',
+    branch: 'smith', type: 'notable', ring: 4, angle: 6, links: ['smith-tether'], maxLevel: 1, cost: 40,
+    effects: [{ kind: 'fusion', id: 'dawnstar' }],
+  },
+  {
+    id: 'smith-sky-hive', name: 'Sky Hive', icon: 'delivery-drone', text: 'Halo and Hive may fuse: Sky Hive.',
+    branch: 'smith', type: 'notable', ring: 4, angle: 19, links: ['smith-rail'], maxLevel: 1, cost: 40,
+    effects: [{ kind: 'fusion', id: 'sky-hive' }],
   },
 
   // ── The Warden: frames and walls ──────────────────────────────────────

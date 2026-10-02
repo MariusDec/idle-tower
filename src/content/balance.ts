@@ -347,11 +347,12 @@ export const BALANCE = {
     shardsPerHeat: 0.1,
   },
   /**
-   * Starlight (§9). A new heat record in a region pays, for each heat level
-   * it passes, this much by region index − 1: the frontier pays most.
+   * Starlight (§9, S7). A new heat record in a region pays, for each heat
+   * level h it passes, `1 + floor(h / every)`, the same in every region
+   * (D-8): the hard part is the high heat, not the late region.
    */
   starlight: {
-    perHeat: [1, 1, 2, 2, 3, 4],
+    every: 5,
   },
   /**
    * The Abyss (§9): sized by depth. HP, damage and shards grow per wave with
@@ -375,11 +376,50 @@ export const BALANCE = {
     nativeWeight: 0.3,
     /** Elites on a floor's waves 3, 6 and 9. */
     elites: { from: 3, every: 3 },
-    /** A floor's boss: its HP multiple of the floor's last wave, times this. */
+    /** A floor's boss: its HP multiple of the floor's last wave, times this… */
     bossHp: 0.35,
-    /** Starlight for a best floor F: `starlight × log2(1 + F)` in all. */
-    starlight: 12,
+    /** …and the Abyss's own guardians, every fifth floor, times this instead (S7.5: the first is passable). */
+    guardianHp: 0.25,
+    /** Starlight (S7, D-6): each new deepest floor pays `perFloor`, and each guardian's (every fifth) `perGuardian` more. */
+    starlight: { perFloor: 2, perGuardian: 10 },
   },
+  /**
+   * Boss Rush (N8): the six Act 1 bosses, then the Abyss's two, back to
+   * back. Each is sized like the guardian of an Abyss floor
+   * (`BALANCE.abyss.guardianHp` of that floor's last wave): `floors[i]` is
+   * the floor stage i + 1 is sized for.
+   */
+  rush: {
+    floors: [2, 2, 3, 3, 4, 4, 5, 6],
+    /** The tower starts at this level: there are no waves to grow on, so the drafts come first. */
+    level: 16,
+    /**
+     * Starlight (N8): each stage first cleared pays `perStage`; a full clear
+     * pays `clear × log2(1 + par / seconds)` in all, so a faster record pays
+     * the difference, on a curve.
+     */
+    starlight: { perStage: 4, clear: 20, par: 600 },
+  },
+  /**
+   * Fusions (N9): both halves of a fusion hit `damage` times harder, on top
+   * of their evolutions, and each pair's own interaction has its numbers here.
+   */
+  fusions: {
+    damage: 1.25,
+    /** Blizzard: lightning on a frozen body hits `frozen` times as hard, and freezes what it strikes for `freeze` s. */
+    blizzard: { frozen: 2, freeze: 0.6 },
+    /** Firestorm: shells and meteors set alight for `burn` of the hit a second, `seconds` long; a burning body takes `burning` times as much from them. */
+    firestorm: { burning: 1.5, burn: 0.2, seconds: 3 },
+    /** Dawnstar: bolts hit the beam's body `marked` times as hard. */
+    dawnstar: { marked: 1.75 },
+  },
+  /**
+   * Ascension (N10): once every star is lit, a Constellation minor whose
+   * stat is a percentage goes on past its last level. Each such level costs
+   * `cost` times the curve's next, and multiplies the stat by
+   * `1 + share × its percentage`, compounding: felt, and without end.
+   */
+  ascend: { cost: 2, share: 0.5 },
   /** Hostile shots (Spitters). */
   shots: {
     /** A shot that lives this long without landing fizzles. */

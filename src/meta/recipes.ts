@@ -1,11 +1,13 @@
 import { BALANCE } from '../content/balance';
 import { BOSSES } from '../content/bosses';
-import { EVOLUTIONS } from '../content/evolutions';
+import { EVOLUTIONS, EVOLUTION_OF } from '../content/evolutions';
+import { FUSIONS } from '../content/fusions';
 import { STAR_CARDS } from '../content/stars';
-import type { EvolutionDef, EvolutionId } from '../content/types';
+import type { EvolutionDef, EvolutionId, FusionDef, FusionId } from '../content/types';
 import type { RunState } from '../sim/state';
 import type { Profile } from './profile';
 import { automations } from './automation';
+import { STAR_WEB } from './stars';
 
 /**
  * The Recipe Book (§5.3): evolutions show as "??? + ???" until found. Runs
@@ -56,5 +58,34 @@ export function recordRecipes(profile: Profile, run: RunState): EvolutionId[] {
   }
   const fresh = run.evolved.filter((id) => !R.found.includes(id));
   R.found.push(...fresh);
+  return fresh;
+}
+
+/** A fusion on the Recipe Book's second page (N9). */
+export interface FusionEntry {
+  fusion: FusionDef;
+  found: boolean;
+  /** Its star is lit: the two halves show. */
+  lit: boolean;
+  /** Both halves' evolutions found, and not yet fused: the riddle shows. */
+  hint: boolean;
+}
+
+/** The second page (N9): every fusion once Act 2 is open; its halves once its star is lit. */
+export function fusionBook(profile: Profile): FusionEntry[] {
+  if ((profile.bosses[FINALE]?.kills ?? 0) === 0) return [];
+  const lit = new Set<FusionId>();
+  for (const { node } of STAR_WEB.ownedNodes(profile)) for (const e of node.effects) if (e.kind === 'fusion') lit.add(e.id);
+  return FUSIONS.map((fusion) => {
+    const found = profile.fusions.includes(fusion.id);
+    const halves = fusion.weapons.every((w) => profile.recipes.found.includes(EVOLUTION_OF[w].id));
+    return { fusion, found, lit: found || lit.has(fusion.id), hint: !found && halves };
+  });
+}
+
+/** Bank a run's fusions (N9). Returns those found for the first time. */
+export function recordFusions(profile: Profile, run: RunState): FusionId[] {
+  const fresh = run.fused.filter((id) => !profile.fusions.includes(id));
+  profile.fusions.push(...fresh);
   return fresh;
 }

@@ -1,6 +1,7 @@
 import { Rng } from '../core/rng';
 import { BALANCE } from '../content/balance';
 import { frameById } from '../content/frames';
+import { isRush } from '../content/rush';
 import type { BehaviourId, WeaponId } from '../content/types';
 import type { RunConfig, RunInput, RunState, WeaponState } from './state';
 import { newWeapon } from './systems/arms';
@@ -33,7 +34,9 @@ export function createRun(config: RunConfig, seed: number): RunState {
   const owned = (id: BehaviourId): number => config.behaviours[id] ?? 0;
   const B = BALANCE.behaviours;
   // Head Start and Gatekeeper's Seal: the levels are real, so each banks its draft at once.
-  const level = 1 + B.headStart * owned('head-start') + owned('extra-level');
+  // Boss Rush (N8) has no waves to grow on: the tower starts high.
+  const rush = isRush(config.regionId) ? BALANCE.rush.level : 1;
+  const level = Math.max(rush, 1 + B.headStart * owned('head-start') + owned('extra-level'));
   const startLevel = Math.min(BALANCE.maxLevel, 1 + B.openingSalvo * owned('opening-salvo'));
   // A Trial (N5) may mount another weapon than the frame's.
   const first = config.startingWeapon ?? frame.startingWeapon;
@@ -90,6 +93,8 @@ export function createRun(config: RunConfig, seed: number): RunState {
     fires: [],
     pools: [],
     evolved: [],
+    fusions: [...(config.fusions ?? [])],
+    fused: [],
     recipes: [...config.recipes],
     priority: config.priority ? [...config.priority] : null,
     never: config.never ? [...config.never] : null,

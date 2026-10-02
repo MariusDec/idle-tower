@@ -114,3 +114,7 @@ its half of the recipe (`BALANCE.recipes`); runs taking it to its last
 level add the riddle (`hint`) pointing at the other half. The page opens
 once a first weapon is half revealed, so its hints can lead to the find.
 `run.recipes` (the found ones) is what the draft scorer steers toward.
+
+Its second page (N9, Act 2) lists the four fusions: "??? + ???" until a
+Smith star lights one, its two evolutions after, and its riddle once both
+have been found (`fusionBook`). `profile.fusions` keeps those made.

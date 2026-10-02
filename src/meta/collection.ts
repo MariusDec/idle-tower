@@ -3,6 +3,7 @@ import { BOSSES } from '../content/bosses';
 import { ENEMIES } from '../content/enemies';
 import { FRAMES, frameById } from '../content/frames';
 import { REGIONS, regionByIndex } from '../content/regions';
+import { RUSH_INDEX, rushStage } from '../content/rush';
 import { RELICS, RELIC_BY_ID, RELIC_SETS, eliteRelics } from '../content/relics';
 import { BALANCE } from '../content/balance';
 import type { BossId, FrameDef, RegionDef, RelicDef, RelicId, RelicSetDef } from '../content/types';
@@ -38,13 +39,29 @@ export function inAbyss(profile: Profile): boolean {
   return profile.region === ABYSS_INDEX && act2Open(profile);
 }
 
+/** Boss Rush (N8): open once the Deepwarden, the Abyss's first guardian, has fallen. */
+export function rushOpen(profile: Profile): boolean {
+  return act2Open(profile) && bossDown(profile, 'deepwarden');
+}
+
+/** True when the next run is Boss Rush (N8). */
+export function inRush(profile: Profile): boolean {
+  return profile.region === RUSH_INDEX && rushOpen(profile);
+}
+
+/** True when the next run is past the regions: the Abyss or Boss Rush, where pacts and Trials don't hold. */
+export function pastRegions(profile: Profile): boolean {
+  return inAbyss(profile) || inRush(profile);
+}
+
 /**
  * Region 1 always; each later region once the one before it has been
- * cleared; the Abyss once Act 2 is open.
+ * cleared; the Abyss once Act 2 is open; Boss Rush once the Deepwarden falls.
  */
 export function regionUnlocked(profile: Profile, index: number): boolean {
   if (index === 1) return true;
   if (index === ABYSS_INDEX) return act2Open(profile);
+  if (index === RUSH_INDEX) return rushOpen(profile);
   const prev = REGIONS.find((r) => r.index === index - 1);
   return !!prev && REGIONS.some((r) => r.index === index) && bossDown(profile, prev.boss);
 }
@@ -56,10 +73,13 @@ export function frontier(profile: Profile): RegionDef {
   return best;
 }
 
-/** The region the next run goes to: the chosen one, if it is still unlocked; the Abyss's first floor for the Abyss. */
+/** The region the next run goes to: the chosen one, if it is still unlocked; the first floor or stage past the regions. */
 export function selectedRegion(profile: Profile): RegionDef {
   if (inAbyss(profile)) return abyssFloor(1);
-  return regionUnlocked(profile, profile.region) && profile.region !== ABYSS_INDEX ? regionByIndex(profile.region) : REGIONS[0];
+  if (inRush(profile)) return rushStage(1);
+  return regionUnlocked(profile, profile.region) && profile.region !== ABYSS_INDEX && profile.region !== RUSH_INDEX
+    ? regionByIndex(profile.region)
+    : REGIONS[0];
 }
 
 export function frameUnlocked(profile: Profile, frame: FrameDef): boolean {

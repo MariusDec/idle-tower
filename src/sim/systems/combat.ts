@@ -5,7 +5,7 @@ import { AURA_BY_ID, ENEMIES, ENEMY_BY_ID } from '../../content/enemies';
 import { eliteRelics } from '../../content/relics';
 import { frameById } from '../../content/frames';
 import { WEAPONS, WEAPON_BY_ID } from '../../content/weapons';
-import type { EnemyId, EnemyVerb, Targeting, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
+import type { EnemyId, EnemyVerb, FusionId, Targeting, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
 import { BOSS_BY_ID } from '../../content/bosses';
 import type { DamageBy, Enemy, Projectile, RunState, WeaponState } from '../state';
 import { pactLoad, ruleSurge } from '../pacts';
@@ -197,6 +197,40 @@ function enemyById(run: RunState, id: number): Enemy | null {
   // Linear, but only on the rare retarget path; enemies stay sorted by id.
   for (const e of run.enemies) if (e.id === id) return targetable(run, e) ? e : null;
   return null;
+}
+
+/** True once this run has made fusion `id` (N9). */
+function fused(run: RunState, id: FusionId): boolean {
+  return run.fused.includes(id);
+}
+
+/**
+ * What a fusion (N9) does to a hit, as a multiplier: Blizzard's lightning on
+ * a frozen body, Firestorm's blasts on a burning one, Dawnstar's bolts on
+ * the beam's body.
+ */
+function fusionTaken(run: RunState, e: Enemy, source: DamageSource): number {
+  if (run.fused.length === 0) return 1;
+  const F = BALANCE.fusions;
+  if (source === 'chain' && e.frozenUntil > run.time && fused(run, 'blizzard')) return F.blizzard.frozen;
+  if (source === 'lob' && e.burnUntil > run.time && fused(run, 'firestorm')) return F.firestorm.burning;
+  if (source === 'homing' && fused(run, 'dawnstar') && run.weapons.some((w) => w.id === 'sunlance' && w.beamTarget === e.id)) {
+    return F.dawnstar.marked;
+  }
+  return 1;
+}
+
+/** What a fusion's hit leaves behind (N9): Blizzard's lightning freezes, Firestorm's blasts set alight. */
+function fusionHit(run: RunState, e: Enemy, source: DamageSource, amount: number): void {
+  if (run.fused.length === 0 || !e.alive) return;
+  const F = BALANCE.fusions;
+  if (source === 'chain' && !e.boss && fused(run, 'blizzard')) {
+    e.frozenUntil = Math.max(e.frozenUntil, run.time + F.blizzard.freeze * run.stats.durationMult);
+    e.stunnedUntil = Math.max(e.stunnedUntil, e.frozenUntil);
+  }
+  if (source === 'lob' && amount > 0 && fused(run, 'firestorm')) {
+    ignite(run, e, amount * F.firestorm.burn, F.firestorm.seconds * run.stats.durationMult);
+  }
 }
 
 /** The weapon of this id the tower carries, if evolved; null otherwise. */
@@ -1247,7 +1281,7 @@ export function knockBack(e: Enemy, push: number): void {
 /**
  * What a body leaves when it falls to a weapon's evolution: Dragonbreath's
  * fire leaps to its neighbours, a frozen body shatters (§11.2), and a
- * drone's kill calls a Hive drone.
+ * drone's kill (or with Sky Hive, a blade's) calls a Hive drone.
  */
 function evolvedDeath(run: RunState, e: Enemy, source: DamageSource): void {
   if (e.burnUntil > run.time && evolvedWeapon(run, 'scattershot')) {
@@ -1269,7 +1303,8 @@ function evolvedDeath(run: RunState, e: Enemy, source: DamageSource): void {
       burstAt(run, e.x, e.y, r, hit, false, 'shatter', e.id);
     }
   }
-  if (source === 'drone') callHiveDrone(run, e.x, e.y);
+  // Sky Hive (N9): a blade's kill calls one too.
+  if (source === 'drone' || (source === 'orbit' && fused(run, 'sky-hive'))) callHiveDrone(run, e.x, e.y);
 }
 
 /** Relic rank numbers: rank n reads index n − 1. */
@@ -1311,7 +1346,7 @@ function damageTaken(run: RunState, e: Enemy, raw: number, source: DamageSource)
   if (b['boss-bane'] && (e.boss || e.court || e.plate)) out *= 1 + rankValue(R.bossBane, b['boss-bane']);
   // Forgeheart's plates (S2): while one stands, the heart takes its guard's share.
   if (e.boss) out *= plateGuard(run);
-  return out;
+  return out * fusionTaken(run, e, source);
 }
 
 /**
@@ -1378,6 +1413,7 @@ function hitBody(run: RunState, e: Enemy, raw: number, crit: boolean, source: Da
   if (execute > 0 && !e.boss && e.hp - amount > 0 && e.hp <= e.maxHp * B.executeBelow * execute) amount = e.hp;
   e.hp -= amount;
   e.hitTick = run.tick;
+  fusionHit(run, e, source, amount);
   // T1: what the hit took off, not what it would have: overkill isn't landed.
   const by = damageBy(source);
   run.damageBy[by] = (run.damageBy[by] ?? 0) + Math.min(amount, Math.max(0, before));

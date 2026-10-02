@@ -2,7 +2,7 @@ import { ABYSS_INDEX } from './abyss';
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
 import type {
-  AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, PactDef, PassiveDef, RegionDef, RelicDef, TrialDef, WeaponDef, WebNodeDef,
+  AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, TrialDef, WeaponDef, WebNodeDef,
 } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
@@ -181,13 +181,14 @@ export const forgeWeb: LintRule = webRule('forge');
 export const starWeb: LintRule = webRule('stars');
 
 /**
- * Pacts hold together (§9): 3–5 ranks each, and every region says what the
- * Blight Surge does there, in a line that obeys R4.
+ * Pacts hold together (§9): 3–9 ranks each (a heavy pact is graded finer,
+ * D-7), and every region says what the Blight Surge does there, in a line
+ * that obeys R4.
  */
 export const pacts: LintRule = (tables) => {
   const out: LintIssue[] = [];
   for (const p of (tables.pacts as readonly PactDef[] | undefined) ?? []) {
-    if (p.ranks < 3 || p.ranks > 5) out.push({ table: 'pacts', id: p.id, problem: `has ${p.ranks} ranks (want 3–5)` });
+    if (p.ranks < 3 || p.ranks > 9) out.push({ table: 'pacts', id: p.id, problem: `has ${p.ranks} ranks (want 3–9)` });
   }
   for (const r of (tables.regions as readonly RegionDef[] | undefined) ?? []) {
     const words = wordCount(r.surge.text);
@@ -358,12 +359,38 @@ export const uniqueNames: LintRule = (tables) => {
   const echoes = (x: { table: string; e: ContentEntry }, all: readonly { table: string; e: ContentEntry }[]): boolean => {
     if (x.table !== 'forge' && x.table !== 'stars') return false;
     const effects = (x.e as WebNodeDef).effects;
-    return effects.some((f) => (f.kind === 'unlockCard' && all.some((o) => o.e.id === f.id && o.table !== x.table))
+    return effects.some((f) => ((f.kind === 'unlockCard' || f.kind === 'fusion') && all.some((o) => o.e.id === f.id && o.table !== x.table))
       || (f.kind === 'mastery' && all.some((o) => o.table === 'forge' && (o.e as WebNodeDef).type === 'mastery')));
   };
   for (const [name, list] of byName) {
     const own = list.filter((x) => !echoes(x, list));
     if (own.length > 1) out.push({ table: own[1].table, id: own[1].e.id, problem: `name "${name}" is also ${own[0].table}:${own[0].e.id}` });
+  }
+  return out;
+};
+
+/**
+ * Fusions hold together (N9): two different real weapons, no weapon in two
+ * fusions, a hint that obeys R4, and a star that lights each one.
+ */
+export const fusions: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const list = (tables.fusions as readonly FusionDef[] | undefined) ?? [];
+  const weaponIds = new Set<string>(((tables.weapons as readonly WeaponDef[] | undefined) ?? []).map((w) => w.id));
+  const lit = new Set(((tables.stars as readonly WebNodeDef[] | undefined) ?? []).flatMap((n) => n.effects).flatMap((e) => (e.kind === 'fusion' ? [e.id as string] : [])));
+  const used = new Set<string>();
+  for (const f of list) {
+    const issue = (problem: string): void => { out.push({ table: 'fusions', id: f.id, problem }); };
+    const [a, b] = f.weapons;
+    if (a === b) issue('fuses a weapon with itself');
+    for (const w of f.weapons) {
+      if (!weaponIds.has(w)) issue(`unknown weapon "${w}"`);
+      if (used.has(w)) issue(`weapon "${w}" is already in another fusion`);
+      used.add(w);
+    }
+    const words = wordCount(f.hint);
+    if (words === 0 || words > MAX_TEXT_WORDS) issue(`hint is ${words} words`);
+    if (tables.stars && !lit.has(f.id)) issue('no star lights this fusion');
   }
   return out;
 };
@@ -386,7 +413,7 @@ export const stacking: LintRule = (tables) => {
 };
 
 export const RULES: readonly LintRule[] = [
-  uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, counters, uniqueNames, stacking,
+  uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking,
 ];
 
 /**

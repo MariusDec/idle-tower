@@ -2,6 +2,7 @@ import { Rng } from '../../core/rng';
 import { BALANCE } from '../../content/balance';
 import { BOSS_BY_ID } from '../../content/bosses';
 import { ENEMY_BY_ID } from '../../content/enemies';
+import { guardianFloor } from '../../content/abyss';
 import { spawnPoint } from '../../content/arena';
 import type { BossDef, BossPattern, BossPhase, RegionDef } from '../../content/types';
 import type { BossState, Enemy, RunState } from '../state';
@@ -43,6 +44,17 @@ function phaseTimers(patterns: readonly BossPattern[]): number[] {
   return patterns.map((p) => (period(p) === 0 || p.kind === 'court' ? 0 : period(p) * 0.5));
 }
 
+/**
+ * A boss's HP share in the Abyss (§9): a floor's boss is lighter than its
+ * region's, and a guardian lighter still (S7.5). Boss Rush's are all sized
+ * like guardians (N8).
+ */
+function abyssBossHp(region: RegionDef): number {
+  if (region.rush) return BALANCE.abyss.guardianHp;
+  if (!region.abyss) return 1;
+  return guardianFloor(region.abyss.floor) ? BALANCE.abyss.guardianHp : BALANCE.abyss.bossHp;
+}
+
 export function arriveBoss(run: RunState, region: RegionDef): void {
   const def = BOSS_BY_ID[region.boss];
   const rng = Rng.wrap(run.streams.waves);
@@ -53,7 +65,7 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
   // guardian is a lighter fight (§9). Vigour and Tyranny swell it.
   const wave = run.wave;
   const load = pactLoad(run.pacts);
-  const hp = waveHp(region, wave) * def.hp * (region.abyss ? BALANCE.abyss.bossHp : 1) * foeHp(run) * load.bossHp;
+  const hp = waveHp(region, wave) * def.hp * abyssBossHp(region) * foeHp(run) * load.bossHp;
   const body: Enemy = {
     id: run.nextEnemyId++,
     type: region.pool[0].enemy,

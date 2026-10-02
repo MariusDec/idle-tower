@@ -2,9 +2,12 @@ import { ABYSS_INDEX, abyssStarlight } from '../../content/abyss';
 import { BOSS_BY_ID } from '../../content/bosses';
 import { ENEMY_BY_ID } from '../../content/enemies';
 import { REGIONS } from '../../content/regions';
+import { RUSH_INDEX, RUSH_STAGES, rushStarlight } from '../../content/rush';
 import type { RegionDef } from '../../content/types';
 import { formatDuration, formatNumber } from '../../core/format';
-import { act2Open, bossDown, inAbyss, regionRelics, regionTrophies, regionUnlocked, relicRank, selectedRegion } from '../../meta/collection';
+import {
+  act2Open, bossDown, inAbyss, inRush, regionRelics, regionTrophies, regionUnlocked, relicRank, rushOpen, selectedRegion,
+} from '../../meta/collection';
 import { BALANCE } from '../../content/balance';
 import { bestHeat } from '../../meta/pacts';
 import { regionTrials, trialWon, trialsOpen } from '../../meta/trials';
@@ -89,7 +92,7 @@ export class MapView {
       setStyle(this.light, '--lit', reach(cleared));
     }
 
-    const chosen = inAbyss(profile) ? ABYSS_INDEX : selectedRegion(profile).index;
+    const chosen = inAbyss(profile) ? ABYSS_INDEX : inRush(profile) ? RUSH_INDEX : selectedRegion(profile).index;
     const items: HTMLElement[] = [];
     for (const r of REGIONS) {
       if (regionUnlocked(profile, r.index)) items.push(this.card(profile, r, r.index === chosen));
@@ -104,35 +107,56 @@ export class MapView {
       if (bossDown(profile, last.boss)) items.push(this.silhouette(`Region ${REGIONS.length + 1}`, 'The Blight runs deeper still.'));
     }
     if (act2Open(profile)) items.push(this.abyss(profile, chosen === ABYSS_INDEX));
+    if (rushOpen(profile)) items.push(this.rush(profile, chosen === RUSH_INDEX));
     // The Fields at the bottom, the frontier at the top: the light climbs.
     this.list.replaceChildren(...items.reverse());
   }
 
   /** The Abyss's card (§9): the deepest floor cleared, and what the next record pays. */
   private abyss(profile: Profile, chosen: boolean): HTMLElement {
+    const best = profile.abyss.best;
+    return this.pastCard(ABYSS_INDEX, 'The Abyss', 'over-infinity', chosen, [
+      ['Deepest floor', String(best)],
+      ['Next floor pays', `${formatNumber(abyssStarlight(best + 1) - abyssStarlight(best))} ✦`],
+    ], 'Endless. Ten waves a floor, a boss at the bottom of each; every floor deeper than the last.');
+  }
+
+  /** Boss Rush's card (N8): the record, and what the next stage pays. */
+  private rush(profile: Profile, chosen: boolean): HTMLElement {
+    const { best, time } = profile.rush;
+    const next = best < RUSH_STAGES
+      ? ['Next boss pays', `${formatNumber(rushStarlight(best + 1, null) - rushStarlight(best, null))} ✦`] as const
+      : ['A faster clear pays', 'more ✦'] as const;
+    return this.pastCard(RUSH_INDEX, 'Boss Rush', 'crowned-skull', chosen, [
+      ['Record', time !== null ? formatDuration(time) : `${best}/${RUSH_STAGES} bosses`],
+      next,
+    ], `Every boss, back to back, against the clock. The tower starts at level ${BALANCE.rush.level}.`);
+  }
+
+  /** A card past the regions: a mode the player picks like a region. */
+  private pastCard(
+    index: number, title: string, iconId: Parameters<typeof icon>[0], chosen: boolean,
+    rows: readonly (readonly [string, string])[], text: string,
+  ): HTMLElement {
     const li = document.createElement('li');
     li.className = `map-region is-abyss${chosen ? ' is-chosen' : ''}`;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'map-region-btn';
     btn.setAttribute('aria-pressed', String(chosen));
-    btn.addEventListener('click', () => this.onSelect(ABYSS_INDEX));
+    btn.addEventListener('click', () => this.onSelect(index));
     const head = document.createElement('div');
     head.className = 'map-region-head';
     const name = document.createElement('span');
     name.className = 'map-region-name';
-    name.textContent = 'The Abyss';
+    name.textContent = title;
     const tag = document.createElement('span');
     tag.className = 'map-region-tag';
     tag.textContent = chosen ? 'Next run' : '';
-    head.append(icon('over-infinity'), name, tag);
-    const best = profile.abyss.best;
+    head.append(icon(iconId), name, tag);
     const stats = document.createElement('dl');
     stats.className = 'map-region-stats';
-    for (const [label, value] of [
-      ['Deepest floor', String(best)],
-      ['Next floor pays', `${formatNumber(abyssStarlight(best + 1) - abyssStarlight(best))} ✦`],
-    ] as const) {
+    for (const [label, value] of rows) {
       const d = document.createElement('div');
       const dt = document.createElement('dt');
       dt.textContent = label;
@@ -143,7 +167,7 @@ export class MapView {
     }
     const rule = document.createElement('p');
     rule.className = 'map-region-rule';
-    rule.textContent = 'Endless. Ten waves a floor, a boss at the bottom of each; every floor deeper than the last.';
+    rule.textContent = text;
     btn.append(head, stats, rule);
     li.append(btn);
     return li;

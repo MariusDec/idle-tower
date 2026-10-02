@@ -159,6 +159,14 @@ describe('migration ladder', () => {
     expect(out.shards).toBe(50);
   });
 
+  it('walks a v10 profile to v11: no Boss Rush records or fusions yet (Q4)', () => {
+    const out = migrate({ version: 10, createdAt: 5, shards: 50, sets: {} }, MIGRATIONS, 11);
+    expect(out.version).toBe(11);
+    expect(out.rush).toEqual({ best: 0, time: null });
+    expect(out.fusions).toEqual([]);
+    expect(out.shards).toBe(50);
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);

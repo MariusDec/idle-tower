@@ -1,4 +1,5 @@
 import { ABYSS_INDEX } from './abyss';
+import { STARS } from './stars';
 import type { FeatDef } from './types';
 
 /**
@@ -9,7 +10,9 @@ import type { FeatDef } from './types';
  * fallen (§7.1). *Tinkerer* also earns the Artificer frame (§11.6).
  *
  * Act 2 (§9) adds twenty, pointing at heat, the Abyss, the Constellations
- * and the masteries. They surface once the Blight has fallen.
+ * and the masteries. They surface once the Blight has fallen, and pay
+ * Starlight on top of their shards (S7.2): by then shards buy only
+ * masteries.
  */
 export const FEATS: readonly FeatDef[] = [
   { id: 'first-light', name: 'First Light', icon: 'sparkles', text: 'Reach wave 10.', goal: { kind: 'wave', wave: 10 }, reward: 30 },
@@ -66,24 +69,24 @@ export const FEATS: readonly FeatDef[] = [
     riddle: 'Let nothing touch the stone until the boss comes.', after: 'forgeheart', goal: { kind: 'untouched', wave: 20 }, reward: 10000,
   },
   // ── Act 2 (§9): surface once the Blight has fallen ────────────────────
-  { id: 'kindled', name: 'Kindled', icon: 'fire-bowl', text: 'Clear a region under any pact.', after: 'blight', goal: { kind: 'heat', heat: 1 }, reward: 50_000 },
-  { id: 'heat-5', name: 'Fevered', icon: 'frostfire', text: 'Clear a region at heat 5.', after: 'blight', goal: { kind: 'heat', heat: 5 }, reward: 150_000 },
-  { id: 'heat-10', name: 'White Heat', icon: 'sun', text: 'Clear a region at heat 10.', after: 'blight', goal: { kind: 'heat', heat: 10 }, reward: 500_000 },
-  { id: 'heat-20', name: 'Furnace Heart', icon: 'burning-meteor', text: 'Clear a region at heat 20.', after: 'blight', goal: { kind: 'heat', heat: 20 }, reward: 3_000_000 },
-  { id: 'heat-all-5', name: 'Wildfire', icon: 'explosion-rays', text: 'Clear every region at heat 5 or more.', after: 'blight', goal: { kind: 'heatAll', heat: 5 }, reward: 2_000_000 },
-  { id: 'heat-all-10', name: 'World Aflame', icon: 'spiky-explosion', text: 'Clear every region at heat 10 or more.', after: 'blight', goal: { kind: 'heatAll', heat: 10 }, reward: 8_000_000 },
-  { id: 'the-descent', name: 'The Descent', icon: 'well', text: 'Clear the first floor of the Abyss.', after: 'blight', goal: { kind: 'abyss', floor: 1 }, reward: 100_000 },
-  { id: 'warden-fallen', name: 'Warden Fallen', icon: 'nested-hexagons', text: 'Defeat the Deepwarden.', after: 'blight', goal: { kind: 'boss', boss: 'deepwarden' }, reward: 400_000 },
-  { id: 'hunger-sated', name: 'Hunger Sated', icon: 'fangs-circle', text: 'Defeat the Hunger.', after: 'blight', goal: { kind: 'boss', boss: 'hunger' }, reward: 2_000_000 },
-  { id: 'abyss-20', name: 'Bottomless', icon: 'over-infinity', text: 'Clear floor 20 of the Abyss.', after: 'blight', goal: { kind: 'abyss', floor: 20 }, reward: 10_000_000 },
-  { id: 'abyss-naturalist', name: 'Abyss Naturalist', icon: 'telescope', text: 'Discover every enemy of the Abyss.', after: 'blight', goal: { kind: 'bestiary', region: ABYSS_INDEX }, reward: 500_000 },
-  { id: 'starlit', name: 'Starlit', icon: 'sparkles', text: 'Light 10 stars.', after: 'blight', goal: { kind: 'stars', n: 10 }, reward: 100_000 },
-  { id: 'constellations', name: 'Constellations', icon: 'star-formation', text: 'Light 25 stars.', after: 'blight', goal: { kind: 'stars', n: 25 }, reward: 1_000_000 },
-  { id: 'firmament', name: 'Firmament', icon: 'star-swirl', text: 'Light every star.', after: 'blight', goal: { kind: 'stars', n: 40 }, reward: 10_000_000 },
-  { id: 'mastery-10', name: 'Journeyman', icon: 'hammer-nails', text: 'Own 10 mastery levels.', after: 'blight', goal: { kind: 'mastery', levels: 10 }, reward: 1_000_000 },
-  { id: 'mastery-50', name: 'Grandmaster', icon: 'trophy', text: 'Own 50 mastery levels.', after: 'blight', goal: { kind: 'mastery', levels: 50 }, reward: 10_000_000 },
-  { id: 'master-alchemist', name: 'Master Alchemist', icon: 'bubbling-flask', text: 'Find all 12 evolutions.', after: 'blight', goal: { kind: 'recipes', n: 12 }, reward: 3_000_000 },
-  { id: 'six-faces', name: 'Six Faces', icon: 'swords-emblem', text: 'Own all six frames.', after: 'blight', goal: { kind: 'frames', n: 6 }, reward: 2_000_000 },
-  { id: 'relic-vault', name: 'Relic Vault', icon: 'open-treasure-chest', text: 'Find 30 different relics.', after: 'blight', goal: { kind: 'relics', n: 30 }, reward: 3_000_000 },
-  { id: 'million-dead', name: 'The Million', icon: 'reaper-scythe', text: 'Slay 1,000,000 enemies.', after: 'blight', goal: { kind: 'kills', n: 1_000_000 }, reward: 5_000_000 },
+  { id: 'kindled', name: 'Kindled', icon: 'fire-bowl', text: 'Clear a region under any pact.', after: 'blight', goal: { kind: 'heat', heat: 1 }, reward: 50_000, starlight: 5 },
+  { id: 'heat-5', name: 'Fevered', icon: 'frostfire', text: 'Clear a region at heat 5.', after: 'blight', goal: { kind: 'heat', heat: 5 }, reward: 150_000, starlight: 10 },
+  { id: 'heat-10', name: 'White Heat', icon: 'sun', text: 'Clear a region at heat 10.', after: 'blight', goal: { kind: 'heat', heat: 10 }, reward: 500_000, starlight: 15 },
+  { id: 'heat-20', name: 'Furnace Heart', icon: 'burning-meteor', text: 'Clear a region at heat 20.', after: 'blight', goal: { kind: 'heat', heat: 20 }, reward: 3_000_000, starlight: 30 },
+  { id: 'heat-all-5', name: 'Wildfire', icon: 'explosion-rays', text: 'Clear every region at heat 5 or more.', after: 'blight', goal: { kind: 'heatAll', heat: 5 }, reward: 2_000_000, starlight: 20 },
+  { id: 'heat-all-10', name: 'World Aflame', icon: 'spiky-explosion', text: 'Clear every region at heat 10 or more.', after: 'blight', goal: { kind: 'heatAll', heat: 10 }, reward: 8_000_000, starlight: 40 },
+  { id: 'the-descent', name: 'The Descent', icon: 'well', text: 'Clear the first floor of the Abyss.', after: 'blight', goal: { kind: 'abyss', floor: 1 }, reward: 100_000, starlight: 5 },
+  { id: 'warden-fallen', name: 'Warden Fallen', icon: 'nested-hexagons', text: 'Defeat the Deepwarden.', after: 'blight', goal: { kind: 'boss', boss: 'deepwarden' }, reward: 400_000, starlight: 15 },
+  { id: 'hunger-sated', name: 'Hunger Sated', icon: 'fangs-circle', text: 'Defeat the Hunger.', after: 'blight', goal: { kind: 'boss', boss: 'hunger' }, reward: 2_000_000, starlight: 25 },
+  { id: 'abyss-20', name: 'Bottomless', icon: 'over-infinity', text: 'Clear floor 20 of the Abyss.', after: 'blight', goal: { kind: 'abyss', floor: 20 }, reward: 10_000_000, starlight: 40 },
+  { id: 'abyss-naturalist', name: 'Abyss Naturalist', icon: 'telescope', text: 'Discover every enemy of the Abyss.', after: 'blight', goal: { kind: 'bestiary', region: ABYSS_INDEX }, reward: 500_000, starlight: 15 },
+  { id: 'starlit', name: 'Starlit', icon: 'sparkles', text: 'Light 10 stars.', after: 'blight', goal: { kind: 'stars', n: 10 }, reward: 100_000, starlight: 10 },
+  { id: 'constellations', name: 'Constellations', icon: 'star-formation', text: 'Light 25 stars.', after: 'blight', goal: { kind: 'stars', n: 25 }, reward: 1_000_000, starlight: 25 },
+  { id: 'firmament', name: 'Firmament', icon: 'star-swirl', text: 'Light every star.', after: 'blight', goal: { kind: 'stars', n: STARS.length }, reward: 10_000_000, starlight: 40 },
+  { id: 'mastery-10', name: 'Journeyman', icon: 'hammer-nails', text: 'Own 10 mastery levels.', after: 'blight', goal: { kind: 'mastery', levels: 10 }, reward: 1_000_000, starlight: 10 },
+  { id: 'mastery-50', name: 'Grandmaster', icon: 'trophy', text: 'Own 50 mastery levels.', after: 'blight', goal: { kind: 'mastery', levels: 50 }, reward: 10_000_000, starlight: 30 },
+  { id: 'master-alchemist', name: 'Master Alchemist', icon: 'bubbling-flask', text: 'Find all 12 evolutions.', after: 'blight', goal: { kind: 'recipes', n: 12 }, reward: 3_000_000, starlight: 20 },
+  { id: 'six-faces', name: 'Six Faces', icon: 'swords-emblem', text: 'Own all six frames.', after: 'blight', goal: { kind: 'frames', n: 6 }, reward: 2_000_000, starlight: 15 },
+  { id: 'relic-vault', name: 'Relic Vault', icon: 'open-treasure-chest', text: 'Find 30 different relics.', after: 'blight', goal: { kind: 'relics', n: 30 }, reward: 3_000_000, starlight: 20 },
+  { id: 'million-dead', name: 'The Million', icon: 'reaper-scythe', text: 'Slay 1,000,000 enemies.', after: 'blight', goal: { kind: 'kills', n: 1_000_000 }, reward: 5_000_000, starlight: 30 },
 ];

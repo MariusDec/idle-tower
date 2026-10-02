@@ -2,6 +2,7 @@ import { BOSSES } from './bosses';
 import { AURAS, ENEMIES } from './enemies';
 import { EVOLUTIONS } from './evolutions';
 import { FEATS } from './feats';
+import { FUSIONS } from './fusions';
 import { FORGE } from './forge';
 import { FRAMES } from './frames';
 import { PACTS } from './pacts';
@@ -26,6 +27,7 @@ export const CONTENT: Readonly<Record<string, readonly ContentEntry[]>> = {
   weapons: WEAPONS,
   passives: PASSIVES,
   evolutions: EVOLUTIONS,
+  fusions: FUSIONS,
   fallbacks: FALLBACKS,
   forge: FORGE,
   relics: RELICS,

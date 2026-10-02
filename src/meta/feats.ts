@@ -10,7 +10,7 @@ import type { BranchId, ForgeNodeDef } from '../content/types';
 import { bossDown, frameUnlocked } from './collection';
 import { FORGE_WEB, levelOf } from './forge';
 import type { Profile } from './profile';
-import { starsLit } from './stars';
+import { payStarlight, starsLit } from './stars';
 
 /** A region's enemy types, or the Abyss's own four (§9). */
 function poolOf(region: number): string[] {
@@ -186,12 +186,13 @@ export function claimable(profile: Profile): FeatDef[] {
   return FEATS.filter((f) => profile.feats[f.id] === 'done');
 }
 
-/** Pay a feat's shards. Returns what was paid; 0 if it wasn't claimable. */
+/** Pay a feat's shards, and its Starlight (S7.2). Returns the shards paid; 0 if it wasn't claimable. */
 export function claimFeat(profile: Profile, id: string): number {
   const f = FEATS.find((x) => x.id === id);
   if (!f || profile.feats[id] !== 'done') return 0;
   profile.feats[id] = 'claimed';
   profile.shards += f.reward;
+  payStarlight(profile, f.starlight ?? 0);
   return f.reward;
 }
 

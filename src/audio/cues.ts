@@ -149,6 +149,7 @@ export class Cues {
           if (this.ready('picked', now)) s.tone({ freq: 740, freqEnd: 880, type: 'sine', duration: 0.08, volume: 0.1 });
           break;
         case 'evolve':
+        case 'fuse':
           for (const [i, f] of [392, 523, 659, 784, 1047].entries()) {
             s.tone({ freq: f, type: 'triangle', duration: 0.5 - i * 0.05, volume: 0.12, delay: i * 0.08 });
           }
@@ -184,6 +185,9 @@ export class Cues {
           s.tone({ freq: 80, type: 'sawtooth', duration: 0.5, volume: 0.25 });
           s.noise(0.7, 0.28, 900);
           for (const [i, f] of [523, 659, 784].entries()) s.tone({ freq: f, type: 'sine', duration: 0.9, volume: 0.1, delay: 0.35 + i * 0.12 });
+          break;
+        case 'cleared':
+          for (const [i, f] of [523, 659, 784, 1047].entries()) s.tone({ freq: f, type: 'triangle', duration: 1.2, volume: 0.12, delay: i * 0.15 });
           break;
         case 'enrage':
           s.tone({ freq: 120, freqEnd: 400, type: 'sawtooth', duration: 0.45, volume: 0.15 });

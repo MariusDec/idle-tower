@@ -127,7 +127,7 @@ describe('the draft (§4.5)', () => {
     expect(run.weapons).toHaveLength(run.weaponSlots);
     expect(run.passives).toHaveLength(run.passiveSlots);
     for (const c of candidateCards(run)) {
-      expect(c.kind === 'fallback' || c.kind === 'evolution' || c.level > 1, cardKey(c)).toBe(true);
+      expect(c.kind === 'fallback' || c.kind === 'evolution' || c.kind === 'fusion' || c.level > 1, cardKey(c)).toBe(true);
     }
   });
 

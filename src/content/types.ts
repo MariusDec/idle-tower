@@ -171,7 +171,9 @@ export type Effect =
   /** A set of Act 2 relics starts dropping in the Abyss (§9). */
   | { readonly kind: 'relics'; readonly set: number }
   /** Every Starlight payout is this much larger. */
-  | { readonly kind: 'starlight'; readonly pct: number };
+  | { readonly kind: 'starlight'; readonly pct: number }
+  /** A fusion (N9) may be drafted: its two evolved weapons become one. */
+  | { readonly kind: 'fusion'; readonly id: FusionId };
 
 /** The Forge's five branches (§5.1). */
 export type BranchId = 'might' | 'bulwark' | 'fortune' | 'arsenal' | 'engineering';
@@ -692,6 +694,22 @@ export interface EvolutionDef extends ContentEntry {
   readonly hint: string;
 }
 
+export type FusionId = 'blizzard' | 'firestorm' | 'dawnstar' | 'sky-hive';
+
+/**
+ * A fusion (N9, Act 2): two evolved weapons, once a Constellation star has
+ * lit it, become one card. Both keep firing from one mount, a slot is freed,
+ * both hit harder, and they work together in one way of their own. What
+ * that is is `sim/systems/combat.ts`'s; its numbers, `BALANCE.fusions`.
+ */
+export interface FusionDef extends ContentEntry {
+  readonly id: FusionId;
+  /** The two weapons, each evolved. The first is the mount the pair shares. */
+  readonly weapons: readonly [WeaponId, WeaponId];
+  /** The Recipe Book's nudge once both halves have been evolved (§5.3). */
+  readonly hint: string;
+}
+
 export type FallbackId = 'heal' | 'shards';
 
 /** What the draft offers once every slot is full and maxed (§4.5). */
@@ -759,6 +777,8 @@ export interface RegionDef extends ContentEntry {
   readonly surge: { readonly text: string; readonly effect: SurgeEffect };
   /** Set on a floor of the Abyss (§9): a region's template, sized for that depth. */
   readonly abyss?: { readonly floor: number };
+  /** Set on a stage of Boss Rush (N8): a boss's home region, sized like an Abyss guardian. */
+  readonly rush?: { readonly stage: number };
   /** Wave 20 (§4.2). */
   readonly boss: BossId;
   /** The ground's tint (§10.5), mixed into the lit field. Null keeps the plain stone. */
@@ -880,7 +900,10 @@ export type FeatGoal =
 /** A feat (§5.4): one finite list, each paying shards once. */
 export interface FeatDef extends ContentEntry {
   readonly goal: FeatGoal;
+  /** Shards, paid when claimed… */
   readonly reward: number;
+  /** …and Starlight on top (S7.2): Act 2's feats only. */
+  readonly starlight?: number;
   /**
    * A secret feat (§5.4) shows as "???" with this riddle until earned. Its
    * `text` is what it asked, revealed once done.

@@ -34,6 +34,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRun } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile, type Profile } from '../src/meta/profile';
+import { migrate, type RawProfile } from '../src/meta/save/migrate';
 import { runSpeed } from '../src/meta/automation';
 import { levelOf, nodeStates } from '../src/meta/forge';
 import { bankRun } from '../src/meta/results';
@@ -418,6 +419,9 @@ async function idleMain(seeds: number, activeHours: number): Promise<void> {
 
 /** P8's gate (§14): the bot clears heat 1–10 at the frontier within this many wall hours of the Blight's fall. */
 export const HEAT_10_HOURS = { min: 3, max: 12 };
+/** S7's readings: the best Abyss floor at 12 h, and the hours of Act 2 the last star should take (B7). */
+const ABYSS_FLOOR_12H = 10;
+const LAST_STAR_HOURS = { min: 20, max: 40 };
 /** Wall hours the Act 1 bot is given to fell the Blight before Act 2 starts. */
 const ACT1_HOURS = 14;
 
@@ -435,7 +439,9 @@ export function act2Verdict(seed: number, hours: number, reuse = false): Act2Ver
   const file = `${ACT2_STARTS}/seed-${seed}.json`;
   let start: { at: number; profile: Profile } | null = null;
   if (reuse && existsSync(file)) {
-    start = JSON.parse(readFileSync(file, 'utf8')) as { at: number; profile: Profile };
+    // Saved by an older build, perhaps: walked up the ladder like any save.
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as { at: number; profile: RawProfile };
+    start = { at: saved.at, profile: migrate(saved.profile) as unknown as Profile };
   } else {
     const at = runPacing(ACT1_HOURS, seed).checkpoints.find((c) => c.label === FINALE);
     if (at) {
@@ -469,7 +475,11 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
     const ladder = Array.from({ length: 10 }, (_, i) => fmt(r.heatFrontier[i + 1])).join(' ');
     console.log(`  seed ${k + 1}: Blight at ${fmt(v.act1)} · runs ${r.runs} (${r.abyssRuns} Abyss) · stars ${r.stars} · masteries ${r.masteries} · floor ${r.floor} · Starlight ${r.starlight}`);
     console.log(`           frontier heat 1–10: ${ladder}`);
-    console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')}`);
+    console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')} · last star ${fmt(r.lastStar)}`);
+    const src = r.sources;
+    console.log(`           Starlight from: ${Object.entries(src.heat).map(([i, n]) => `R${i} ${n}`).join(' · ')} · Abyss ${src.abyss} · Rush ${src.rush} · feats ${src.feats}`);
+    const rush = r.rush.time !== null ? formatDuration(r.rush.time) : `${r.rush.best} bosses`;
+    console.log(`           Boss Rush: ${r.rushRuns} runs · record ${rush}`);
     if (k === 0) {
       for (const h of r.hourly) {
         console.log(`           hour ${pad(h.hour, 2)}: stars ${pad(h.stars, 2)} · masteries ${pad(h.masteries, 3)} · floor ${pad(h.floor, 2)} · frontier heat ${pad(h.frontier, 2)} · Starlight ${h.starlight}`);
@@ -482,6 +492,19 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
     const want = h === 10 ? ` (want ${HEAT_10_HOURS.min}–${HEAT_10_HOURS.max} h)` : '';
     console.log(`  ${gate}  heat ${pad(h, 2)} at the frontier: median ${fmt(m)}${want}`);
   }
+  const reports = verdicts.flatMap((v) => (v.report ? [v.report] : []));
+  const med = (xs: number[]): number => [...xs].sort((a, b) => a - b)[xs.length >> 1] ?? 0;
+  const floors = reports.map((r) => r.floor);
+  const okFloor = med(floors) >= ABYSS_FLOOR_12H;
+  console.log(`  ${okFloor ? 'PASS' : 'FAIL'}  best Abyss floor at ${hours} h: median ${med(floors)} (want ≥ ${ABYSS_FLOOR_12H} at 12 h; ${floors.join(' ')})`);
+  const last = reports.map((r) => r.lastStar ?? Infinity);
+  const mLast = med(last);
+  const okLast = mLast >= LAST_STAR_HOURS.min * 3600 && mLast <= LAST_STAR_HOURS.max * 3600;
+  console.log(`  ${okLast ? 'PASS' : 'FAIL'}  last star lit: median ${Number.isFinite(mLast) ? formatDuration(mLast) : `not in ${hours} h`} (want ${LAST_STAR_HOURS.min}–${LAST_STAR_HOURS.max} h; ${last.map((t) => fmt(Number.isFinite(t) ? t : null)).join(' ')})`);
+  const perHour = reports.map((r) => r.hourly.map((h, i) => h.masteries - (i > 0 ? r.hourly[i - 1].masteries : r.hourly[0].masteries)));
+  const cols = Math.max(0, ...perHour.map((p) => p.length));
+  const line = Array.from({ length: cols }, (_, i) => med(perHour.flatMap((p) => (i < p.length ? [p[i]] : [])))).join(' ');
+  console.log(`        mastery levels per hour (median by hour, from hour 2): ${line}`);
 }
 
 async function main(): Promise<void> {

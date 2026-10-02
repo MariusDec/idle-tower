@@ -1,12 +1,13 @@
 import { BALANCE } from '../content/balance';
 import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../content/evolutions';
+import { FUSION_BY_ID } from '../content/fusions';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
 import type { EnemyId, EvolutionId, PassiveId, WeaponId } from '../content/types';
 import type { Card, RunState, TowerStats, WeaponState } from './state';
 import { allMods, resolveStats } from './stats';
-import { armed, evolveAt } from './systems/arms';
+import { armed, evolveAt, slotsUsed } from './systems/arms';
 import { landedShare } from './systems/damage';
 import { localWave, runRegion, waveDamage, waveHp } from './systems/waves';
 
@@ -315,7 +316,7 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
       }
       if (!owned) {
         if (counterShare(run, card.id) > 0) out.push({ kind: 'counter' });
-        if (!run.swap) out.push({ kind: 'slot', slot: run.weapons.length + 1, of: run.weaponSlots });
+        if (!run.swap) out.push({ kind: 'slot', slot: slotsUsed(run) + 1, of: run.weaponSlots });
       }
       return out;
     }
@@ -332,6 +333,7 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
       return out;
     }
     case 'evolution':
+    case 'fusion':
     case 'fallback':
       return out;
     default: {
@@ -388,6 +390,12 @@ export function scoreCard(run: RunState, card: Card): number {
       const id = EVOLUTION_BY_ID[card.id].weapon;
       return buildDps(evolved(run.weapons, id), run.stats, foes) / before - 1 + EVOLUTION_VALUE;
     }
+    case 'fusion': {
+      // A fusion (N9): both halves' spike, a slot freed, and its own step past evolution.
+      const pair: readonly WeaponId[] = FUSION_BY_ID[card.id].weapons;
+      const weapons = run.weapons.map((w) => (pair.includes(w.id) ? { ...w, fusion: card.id } : w));
+      return buildDps(weapons, run.stats, foes) / before - 1 + EVOLUTION_VALUE + SLOT_VALUE;
+    }
     case 'fallback': {
       const id = card.id;
       switch (id) {
@@ -411,12 +419,13 @@ export function scoreCard(run: RunState, card: Card): number {
 }
 
 /**
- * Where a card stands on the Tactician's list (§6.2): an evolution ahead of
- * everything (it is its weapon's best step), then the listed items in order.
- * Infinity for an unlisted card, which the scorer ranks below the list.
+ * Where a card stands on the Tactician's list (§6.2): a fusion or an
+ * evolution ahead of everything (it is its weapons' best step), then the
+ * listed items in order. Infinity for an unlisted card, which the scorer
+ * ranks below the list.
  */
 function rank(priority: readonly string[], card: Card): number {
-  if (card.kind === 'evolution') return -1;
+  if (card.kind === 'evolution' || card.kind === 'fusion') return -1;
   if (card.kind === 'fallback') return Infinity;
   const i = priority.indexOf(card.id);
   return i < 0 ? Infinity : i;

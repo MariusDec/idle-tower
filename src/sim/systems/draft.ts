@@ -2,13 +2,14 @@ import { Rng } from '../../core/rng';
 import { BALANCE } from '../../content/balance';
 import { FALLBACKS } from '../../content/passives';
 import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../../content/evolutions';
+import { FUSION_BY_ID } from '../../content/fusions';
 import { WEAPON_BY_ID } from '../../content/weapons';
 import type { CardItemId, WeaponId } from '../../content/types';
 import type { Card, RunState } from '../state';
 import { allMods, resolveStats } from '../stats';
 import { pactLoad } from '../pacts';
 import { suggest } from '../suggest';
-import { evolveAt, newWeapon } from './arms';
+import { evolveAt, newWeapon, slotsUsed } from './arms';
 import { runRegion, waveBonus } from './waves';
 
 /**
@@ -68,17 +69,36 @@ export function evolutionCards(run: RunState): Card[] {
 }
 
 /**
+ * Fusions ready now (N9): its star lit, both its weapons carried and
+ * evolved, and neither already half of a fusion.
+ */
+export function fusionCards(run: RunState): Card[] {
+  const out: Card[] = [];
+  for (const id of run.fusions) {
+    if (run.fused.includes(id)) continue;
+    const ready = FUSION_BY_ID[id].weapons.every((wid) => run.weapons.some((w) => w.id === wid && w.evolved && !w.fusion));
+    if (ready) out.push({ kind: 'fusion', id });
+  }
+  return out;
+}
+
+/** True for a card that is always in the hand when ready: an evolution or a fusion. */
+export function isForced(card: Card): boolean {
+  return card.kind === 'evolution' || card.kind === 'fusion';
+}
+
+/**
  * Every card the draft may offer now. A new item appears only while a slot
- * of its type is free; a maxed item never appears (§12.6). Evolutions come
- * first: they are always in the hand (see `rollOffer`).
+ * of its type is free; a maxed item never appears (§12.6). Fusions and
+ * evolutions come first: they are always in the hand (see `rollOffer`).
  */
 export function candidateCards(run: RunState): Card[] {
   const max = BALANCE.maxLevel;
-  const out: Card[] = evolutionCards(run);
+  const out: Card[] = [...fusionCards(run), ...evolutionCards(run)];
   for (const w of run.weapons) if (w.level < max) out.push({ kind: 'weapon', id: w.id, level: w.level + 1 });
   for (const p of run.passives) if (p.level < max) out.push({ kind: 'passive', id: p.id, level: p.level + 1 });
   // Specialist (S4): until its first weapon card, the one slot may be swapped.
-  const weaponFree = run.weapons.length < run.weaponSlots || run.swap;
+  const weaponFree = slotsUsed(run) < run.weaponSlots || run.swap;
   // A swapped-in weapon takes the place, and the level, of the one it replaces.
   const joins = run.swap ? run.weapons[0].level : 1;
   const passiveFree = run.passives.length < run.passiveSlots;
@@ -112,10 +132,10 @@ export function rollOffer(run: RunState, rng: Rng): Card[] {
     const scripted = run.firstDraft.filter((c) => legal.has(`${cardKey(c)}:${'level' in c ? c.level : 0}`));
     if (scripted.length > 0) return scripted.slice(0, n);
   }
-  // A ready evolution is always offered (§4.4: "the next level-up offers
-  // it"); the rest of the hand is a uniform sample, by partial Fisher–Yates.
-  const forced = candidates.filter((c) => c.kind === 'evolution').slice(0, n);
-  const hand = candidates.filter((c) => c.kind !== 'evolution');
+  // A ready evolution or fusion is always offered (§4.4: "the next level-up
+  // offers it"); the rest of the hand is a uniform sample, by partial Fisher–Yates.
+  const forced = candidates.filter(isForced).slice(0, n);
+  const hand = candidates.filter((c) => !isForced(c));
   for (let i = 0; i < Math.min(n - forced.length, hand.length); i++) {
     const j = rng.int(i, hand.length - 1);
     [hand[i], hand[j]] = [hand[j], hand[i]];
@@ -192,7 +212,7 @@ function strike(run: RunState, cards: readonly Card[], index: number): Card[] {
   const card = cards[index];
   if (card.kind === 'weapon' || card.kind === 'passive') run.banished.push(card.id);
   const held = new Set(cards.map(cardKey));
-  const fresh = candidateCards(run).filter((c) => c.kind !== 'evolution' && !held.has(cardKey(c)));
+  const fresh = candidateCards(run).filter((c) => !isForced(c) && !held.has(cardKey(c)));
   const out = [...cards];
   if (fresh.length > 0) {
     out[index] = Rng.wrap(run.streams.draft).pick(fresh);
@@ -266,6 +286,19 @@ export function applyCard(run: RunState, card: Card): void {
       w.evolved = true;
       run.evolved.push(evo.id);
       run.events.push({ kind: 'evolve', weapon: w.id, evolution: evo.id });
+      return;
+    }
+    case 'fusion': {
+      // The first weapon is the mount; the second joins it there, and its slot is free (N9).
+      const [a, b] = FUSION_BY_ID[card.id].weapons;
+      const host = run.weapons.find((x) => x.id === a);
+      const partner = run.weapons.find((x) => x.id === b);
+      if (!host || !partner || host.fusion || partner.fusion || run.fused.includes(card.id)) return;
+      host.fusion = card.id;
+      partner.fusion = card.id;
+      partner.joined = true;
+      run.fused.push(card.id);
+      run.events.push({ kind: 'fuse', weapon: host.id, fusion: card.id });
       return;
     }
     case 'passive': {

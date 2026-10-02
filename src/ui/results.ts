@@ -3,10 +3,12 @@ import type { DamageBy, HurtBy } from '../sim/state';
 import { frameById } from '../content/frames';
 import { buildList, foremanLine, tallyBars, type TallyRow } from './build';
 import { floorWave } from '../content/abyss';
+import { RUSH_STAGES } from '../content/rush';
 import { BALANCE } from '../content/balance';
 import { BOSS_BY_ID } from '../content/bosses';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { EVOLUTION_BY_ID } from '../content/evolutions';
+import { FUSION_BY_ID } from '../content/fusions';
 import { RELIC_BY_ID } from '../content/relics';
 import { TRIAL_BY_ID } from '../content/trials';
 import { FALLBACKS, PASSIVE_BY_ID } from '../content/passives';
@@ -22,8 +24,8 @@ function cardEntry(key: string): ContentEntry | null {
   const [kind, id] = key.split(':');
   if (kind === 'weapon') return WEAPON_BY_ID[id as WeaponId] ?? null;
   if (kind === 'passive') return PASSIVE_BY_ID[id as PassiveId] ?? null;
-  // An evolution card shows as its recipe, from `newRecipes`.
-  if (kind === 'evolution') return null;
+  // An evolution or fusion card shows as its recipe, from `newRecipes` and `newFusions`.
+  if (kind === 'evolution' || kind === 'fusion') return null;
   return FALLBACKS.find((f) => f.id === id) ?? null;
 }
 
@@ -191,15 +193,22 @@ export class ResultsScreen {
     this.hubBtn.textContent = hubLabel;
     const where = s.abyss
       ? `Floor ${s.abyss.floor}, wave ${floorWave(s.wave)}`
-      : s.wave > 20 ? `Overtime +${s.wave - 20}` : `Wave ${s.wave}`;
-    this.headline.textContent = s.outcome === 'retreat'
-      ? `The tower withdraws. ${where}.`
-      : `The light recedes. ${where}.`;
+      : s.rush ? `Boss Rush, stage ${s.wave} of ${RUSH_STAGES}`
+        : s.wave > 20 ? `Overtime +${s.wave - 20}` : `Wave ${s.wave}`;
+    this.headline.textContent = s.outcome === 'cleared'
+      ? `Boss Rush cleared in ${formatDuration(s.rush?.time ?? s.time)}.`
+      : s.outcome === 'retreat'
+        ? `The tower withdraws. ${where}.`
+        : `The light recedes. ${where}.`;
 
     // The boss: felled (and how fast), or still standing. The Abyss counts floors (§9).
     const b = s.boss;
-    this.bossLine.hidden = b === null && s.abyss === null;
-    if (s.abyss) {
+    this.bossLine.hidden = b === null && s.abyss === null && s.rush === null;
+    if (s.rush) {
+      const n = s.rush.stages;
+      this.bossLine.textContent = n > 0 ? `${n} of ${RUSH_STAGES} bosses fell.` : 'The first boss still stands.';
+      this.bossLine.classList.toggle('is-first', s.rushRecord !== null);
+    } else if (s.abyss) {
       const n = s.abyss.cleared;
       this.bossLine.textContent = n > 0 ? `${n} floor${n === 1 ? '' : 's'} of the Abyss cleared.` : 'The first floor holds.';
       this.bossLine.classList.toggle('is-first', s.floorRecord !== null);
@@ -227,6 +236,11 @@ export class ResultsScreen {
     }
     if (s.floorRecord) {
       starlight.push(reward('round-star', `Deepest floor ${s.floorRecord.now} · +${formatNumber(s.floorRecord.starlight)} Starlight`, 'unlock'));
+    }
+    if (s.rushRecord) {
+      const now = s.rushRecord.now;
+      const what = now.time !== null ? `Boss Rush record ${formatDuration(now.time)}` : `Boss Rush record: ${now.stages} bosses`;
+      starlight.push(reward('round-star', `${what} · +${formatNumber(s.rushRecord.starlight)} Starlight`, 'unlock'));
     }
     this.rewards.replaceChildren(
       ...starlight,
@@ -276,6 +290,7 @@ export class ResultsScreen {
 
     this.finds.replaceChildren(
       ...s.newRecipes.map((id) => chip(EVOLUTION_BY_ID[id], 'recipe')),
+      ...s.newFusions.map((id) => chip(FUSION_BY_ID[id], 'recipe')),
       ...s.newEnemies.map((id) => chip(ENEMY_BY_ID[id], 'enemy')),
       ...s.newCards.map(cardEntry).filter((e): e is ContentEntry => e !== null).map((e) => chip(e, 'card')),
     );

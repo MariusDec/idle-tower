@@ -63,7 +63,13 @@ node linking to it; a node with no links touches the always-owned root.
 | fog | touches an open node: a "?" in its branch colour and type |
 | hidden | not drawn |
 
-Cost of the next level is `cost × growth^owned`. **Refunds:** notables and
+Cost of the next level is `cost × growth^owned`. A web may let nodes go
+past their last level (`WebSpec.beyond`): the Constellations do, once
+every star is lit (N10, **ascension**). A minor whose stat is a percentage
+goes on at `BALANCE.ascend.cost` (×2) the curve's price, and each level
+past its last multiplies the stat by `1 + share × pct` (share 0.5),
+compounding (`Web#statMods`, which `buildRunConfig` and the totals line
+read). **Refunds:** notables and
 keystones refund in full, between runs; minors and masteries never do, so
 the web keeps its shape. `nextGoal` is the cheapest buyable node and how
 close the player is to it: the results screen's and hub's "Next" line.

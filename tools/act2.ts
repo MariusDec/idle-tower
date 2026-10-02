@@ -11,13 +11,18 @@
  *                 the tower grows (a star lit, a mastery level bought)
  *   the Abyss     every few runs, and whenever every ladder is set aside:
  *                 its floors pay Starlight, and its shards buy masteries
+ *   Boss Rush     once the Deepwarden falls, now and then (N8): its records
+ *                 pay Starlight too
  *
  * Pacts are taken in a fixed order, the mildest first for a strong tower
  * (`PACT_LADDER`), so heat h always means the same pacts.
  */
 import { ABYSS_INDEX } from '../src/content/abyss';
+import { RUSH_INDEX } from '../src/content/rush';
+import { rushOpen } from '../src/meta/collection';
 import { PACTS } from '../src/content/pacts';
 import { REGIONS, regionByIndex } from '../src/content/regions';
+import { STARS } from '../src/content/stars';
 import type { PactId } from '../src/content/types';
 import { Rng } from '../src/core/rng';
 import { runSpeed } from '../src/meta/automation';
@@ -92,8 +97,10 @@ export function masteryLevels(profile: Profile): number {
 const BETWEEN_RUNS = { idle: 6, shopping: 15 };
 /** A region's next heat level is set aside after this many failures in a row. */
 const FAIL_LIMIT = 2;
-/** One run in this many goes down into the Abyss, ladders or not. */
+/** One run in this many goes down into the Abyss, ladders or not… */
 const ABYSS_EVERY = 4;
+/** …and one in this many, once it is open, is Boss Rush (N8). */
+const RUSH_EVERY = 10;
 
 export interface Act2Report {
   /** Wall seconds of Act 2 played. */
@@ -106,10 +113,17 @@ export interface Act2Report {
   heatFrontier: Record<number, number>;
   /** Starlight earned in all, and stars lit, at the end. */
   starlight: number;
+  /** Where the Starlight came from (S7): heat records by region index, the Abyss, feats. */
+  sources: { heat: Record<number, number>; abyss: number; rush: number; feats: number };
+  /** Wall seconds since the Blight fell when the last star was lit; null if it wasn't (B7). */
+  lastStar: number | null;
   stars: number;
   masteries: number;
   /** The deepest floor of the Abyss, at the end. */
   floor: number;
+  /** Boss Rush runs, and its record at the end: stages cleared, and a full clear's time (N8). */
+  rushRuns: number;
+  rush: { best: number; time: number | null };
   /** Each region's heat record at the end, by index. */
   best: Record<number, number>;
   /** A line every hour: wall hour, stars lit, mastery levels, deepest floor, frontier heat. */
@@ -133,6 +147,9 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   const heatFrontier: Record<number, number> = {};
   const hourly: Act2Report['hourly'] = [];
   let earned = 0;
+  const sources: Act2Report['sources'] = { heat: {}, abyss: 0, rush: 0, feats: 0 };
+  let rushRuns = 0;
+  let lastStar: number | null = null;
 
   while (clock < end) {
     if (hourly.length < Math.floor(clock / 3600)) {
@@ -150,8 +167,12 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
       target = { region: r.index, heat: h };
       break;
     }
-    const abyss = target === null || runs % ABYSS_EVERY === ABYSS_EVERY - 1;
-    if (abyss) {
+    const rush = rushOpen(profile) && runs % RUSH_EVERY === RUSH_EVERY - 1;
+    const abyss = !rush && (target === null || runs % ABYSS_EVERY === ABYSS_EVERY - 1);
+    if (rush) {
+      profile.region = RUSH_INDEX;
+      rushRuns++;
+    } else if (abyss) {
       profile.region = ABYSS_INDEX;
       abyssRuns++;
     } else {
@@ -165,9 +186,14 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     clock += played.wall;
     const summary = bankRun(profile, run, played.newCards, speed);
     runs++;
-    const light = (summary.heatRecord?.starlight ?? 0) + (summary.floorRecord?.starlight ?? 0);
-    earned += light;
-    if (!abyss && target) {
+    const fromHeat = summary.heatRecord?.starlight ?? 0;
+    const fromFloor = summary.floorRecord?.starlight ?? 0;
+    if (fromHeat > 0) sources.heat[profile.region] = (sources.heat[profile.region] ?? 0) + fromHeat;
+    const fromRush = summary.rushRecord?.starlight ?? 0;
+    sources.abyss += fromFloor;
+    sources.rush += fromRush;
+    earned += fromHeat + fromFloor + fromRush;
+    if (!abyss && !rush && target) {
       const key = `${target.region}:${target.heat}`;
       if (summary.heatRecord) {
         fails.delete(key);
@@ -181,7 +207,10 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
       }
     }
     // Between runs: feats, the Forge, the stars.
+    const before = profile.starlight;
     claimAll(profile);
+    sources.feats += profile.starlight - before;
+    earned += profile.starlight - before;
     const bought = [...shop(profile), ...shopStars(profile)];
     const now = starsLit(profile) + masteryLevels(profile);
     if (now > power) {
@@ -189,11 +218,12 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
       fails.clear();
     }
     clock += bought.length > 0 ? BETWEEN_RUNS.shopping : BETWEEN_RUNS.idle;
+    if (lastStar === null && starsLit(profile) === STARS.length) lastStar = clock;
   }
   const best: Record<number, number> = {};
   for (const r of REGIONS) best[r.index] = bestHeat(profile, r.index);
   return {
-    seconds: clock, runs, abyssRuns, heatAny, heatFrontier, starlight: earned, stars: starsLit(profile),
-    masteries: masteryLevels(profile), floor: profile.abyss.best, best, hourly,
+    seconds: clock, runs, abyssRuns, heatAny, heatFrontier, starlight: earned, sources, lastStar, stars: starsLit(profile),
+    masteries: masteryLevels(profile), floor: profile.abyss.best, rushRuns, rush: { ...profile.rush }, best, hourly,
   };
 }

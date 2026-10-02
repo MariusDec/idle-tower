@@ -11,7 +11,8 @@ import type { PactDef, PactId } from './types';
  */
 export const PACTS: readonly PactDef[] = [
   { id: 'hordes', name: 'Hordes', icon: 'crossed-bones', text: 'Waves bring 30% more enemies.', ranks: 5, effect: { kind: 'count', pct: 0.3 } },
-  { id: 'vigour', name: 'Vigour', icon: 'heart-plus', text: 'Enemies have half again as much health.', ranks: 5, effect: { kind: 'hp', mult: 1.5 } },
+  // Graded by weight (S7, D-7): a quarter more a rank over nine, where it was half more over five; the top is the same.
+  { id: 'vigour', name: 'Vigour', icon: 'heart-plus', text: 'Enemies have 25% more health.', ranks: 9, effect: { kind: 'hp', mult: 1.25 } },
   { id: 'haste', name: 'Quickening', icon: 'fast-arrow', text: 'Enemies move 15% faster.', ranks: 3, effect: { kind: 'speed', pct: 0.15 } },
   { id: 'elites', name: 'Elites', icon: 'crowned-skull', text: 'Every elite wave brings one more elite.', ranks: 3, effect: { kind: 'elites', n: 1 } },
   { id: 'frailty', name: 'Frailty', icon: 'cracked-shield', text: 'The tower has 15% less Max HP.', ranks: 4, effect: { kind: 'stat', mod: { key: 'maxHp', pct: -0.15 } } },

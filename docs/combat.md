@@ -108,6 +108,24 @@ The Specialist keystone lets its one weapon evolve at level 3.
 **Invariant:** an evolution card is offered if and only if its recipe is
 satisfied (`tests/draft.test.ts`).
 
+## Fusions (N9, Act 2)
+
+Two evolved weapons, once a Smith star lights their fusion
+(`content/fusions.ts`), are offered as one card. Taken, both are half of
+the fusion (`WeaponState.fusion`): the second rides on the first's mount
+(`joined`), which frees a slot, both hit `BALANCE.fusions.damage` (×1.25)
+harder, and the pair works together in one way of its own, in
+`combat.ts#fusionTaken` and `#fusionHit`:
+
+| Fusion | Halves | Together |
+|---|---|---|
+| Blizzard | Storm Crown + Absolute Zero | lightning freezes what it strikes, and strikes frozen bodies ×2 |
+| Firestorm | Meteorfall + Dragonbreath | shells and meteors set alight; burning bodies take ×1.5 from them |
+| Dawnstar | Judgment + Seeker Swarm | bolts hit the beam's body ×1.75 |
+| Sky Hive | Halo + Hive | a blade's kill calls a Hive drone |
+
+Fusions found go on the Recipe Book's second page.
+
 ## Frames and the ultimate
 
 A frame is the tower's chassis: a starting weapon, a quirk (a behaviour)

@@ -10,8 +10,8 @@ import type { BossId, EnemyId, RegionDef, WaveBeat } from './types';
  *
  * Depth, not the region, sets the size: HP, damage and shards grow per wave
  * (`BALANCE.abyss`) with no cap, and wave numbers run on across floors, so
- * floor 3's first wave is wave 21. Floor records pay Starlight on a log
- * curve. Pacts hold only in the regions.
+ * floor 3's first wave is wave 21. Floor records pay Starlight per floor,
+ * and more for each guardian. Pacts hold only in the regions.
  */
 
 /** The Abyss's place on the Map and in a run's `regionId`: past the six regions. */
@@ -52,7 +52,7 @@ export function floorTemplate(floor: number): RegionDef {
 
 /** The boss at the bottom of floor `floor`. */
 export function floorBoss(floor: number): BossId {
-  if (floor % 5 === 0) return ABYSS_BOSSES[(floor / 5 - 1) % ABYSS_BOSSES.length];
+  if (guardianFloor(floor)) return ABYSS_BOSSES[(floor / 5 - 1) % ABYSS_BOSSES.length];
   return floorTemplate(floor).boss;
 }
 
@@ -101,7 +101,14 @@ export function abyssFloor(floor: number): RegionDef {
   return region;
 }
 
-/** The Starlight a best floor of `floor` has paid in all: a log curve (§9). */
+/** True for a floor one of the Abyss's own guardians holds: every fifth. */
+export function guardianFloor(floor: number): boolean {
+  return floor % 5 === 0;
+}
+
+/** The Starlight a best floor of `floor` has paid in all (S7): per floor, and more for each guardian. */
 export function abyssStarlight(floor: number): number {
-  return floor <= 0 ? 0 : Math.floor(BALANCE.abyss.starlight * Math.log2(1 + floor));
+  if (floor <= 0) return 0;
+  const S = BALANCE.abyss.starlight;
+  return S.perFloor * floor + S.perGuardian * Math.floor(floor / 5);
 }

@@ -12,7 +12,7 @@ import { FORGE_BY_ID } from '../src/content/forge';
 import { FRAME_BY_ID } from '../src/content/frames';
 import { MAX_HEAT, PACTS } from '../src/content/pacts';
 import { RELICS, abyssRelics } from '../src/content/relics';
-import { regionByIndex } from '../src/content/regions';
+import { REGIONS, regionByIndex } from '../src/content/regions';
 import { STARS } from '../src/content/stars';
 import { EVOLUTIONS } from '../src/content/evolutions';
 import { formatNumber } from '../src/core/format';
@@ -21,7 +21,7 @@ import type { EnemyVerb, PactId, WeaponId } from '../src/content/types';
 import { act2Open, bestiary, frameUnlocked, inAbyss, listedRelics, regionUnlocked, relicSlots } from '../src/meta/collection';
 import { checkFeats, featVisible } from '../src/meta/feats';
 import { FORGE_WEB, buyNode, isSealed, nodeCost } from '../src/meta/forge';
-import { bestHeat, heat, heatShards, recordFloor, recordHeat, runPacts, setPactRank } from '../src/meta/pacts';
+import { bestHeat, heat, heatShards, heatStarlight, recordFloor, recordHeat, recordStarlight, runPacts, setPactRank } from '../src/meta/pacts';
 import { recipeBook } from '../src/meta/recipes';
 import { bankRun } from '../src/meta/results';
 import { STAR_WEB, starGifts } from '../src/meta/stars';
@@ -138,7 +138,7 @@ describe('pacts and heat (§9)', () => {
     const load = pactLoad({ hordes: 2, vigour: 2, haste: 1, elites: 1, frailty: 2, scarcity: 1, tyranny: 1, surge: 2 });
     expect(load.heat).toBe(12);
     expect(load.count).toBeCloseTo(1.6);
-    expect(load.hp).toBeCloseTo(2.25);
+    expect(load.hp).toBeCloseTo(1.5625);
     expect(load.speed).toBeCloseTo(1.15);
     expect(load.elites).toBe(1);
     expect(load.choices).toBe(-1);
@@ -158,7 +158,7 @@ describe('pacts and heat (§9)', () => {
       .toBeGreaterThan(rollWave(r, 8, new Rng(3)).length);
     const a = spawnEnemy(plain, r, 'grunt', 5, 300, 0);
     const b = spawnEnemy(hard, r, 'grunt', 5, 300, 0);
-    expect(b.maxHp / a.maxHp).toBeCloseTo(2.25);
+    expect(b.maxHp / a.maxHp).toBeCloseTo(1.5625);
     expect(b.speed / a.speed).toBeCloseTo(1.3);
     expect(draftChoices(hard)).toBe(Math.max(BALANCE.draft.minChoices, draftChoices(plain) - 1));
     expect(hard.stats.shardMult).toBeCloseTo(plain.stats.shardMult * heatShards(8));
@@ -194,23 +194,33 @@ describe('pacts and heat (§9)', () => {
 });
 
 describe('Starlight (§9)', () => {
-  it('a new heat record pays each level past the old one, once, by region', () => {
+  it('a new heat record pays each level past the old one, once, by the heat and not the region (D-8)', () => {
     const p = act2Profile();
-    const R = BALANCE.starlight.perHeat;
-    expect(recordHeat(p, 6, 3)?.starlight).toBe(3 * R[5]);
+    expect([1, 4, 5, 9, 10, 29].map(heatStarlight)).toEqual([1, 1, 2, 2, 3, 6]);
+    expect(recordHeat(p, 6, 3)?.starlight).toBe(3);
     expect(recordHeat(p, 6, 3)).toBeNull();
-    expect(recordHeat(p, 6, 5)?.starlight).toBe(2 * R[5]);
-    expect(recordHeat(p, 1, 2)?.starlight).toBe(2 * R[0]);
-    expect(bestHeat(p, 6)).toBe(5);
-    expect(p.starlight).toBe(5 * R[5] + 2 * R[0]);
+    expect(recordHeat(p, 6, 6)?.starlight).toBe(1 + 2 + 2);
+    expect(recordHeat(p, 1, 6)?.starlight).toBe(recordStarlight(act2Profile(), 6, 6));
+    expect(bestHeat(p, 6)).toBe(6);
+    expect(p.starlight).toBe(16);
   });
 
-  it('a new deepest floor pays on a log curve', () => {
+  it('a new deepest floor pays per floor, and more for each guardian (S7, D-6)', () => {
     const p = act2Profile();
+    expect(abyssStarlight(4)).toBe(8);
+    expect(abyssStarlight(5)).toBe(20);
+    expect(abyssStarlight(10)).toBe(40);
     expect(recordFloor(p, 3)?.starlight).toBe(abyssStarlight(3));
     expect(recordFloor(p, 7)?.starlight).toBe(abyssStarlight(7) - abyssStarlight(3));
     expect(recordFloor(p, 2)).toBeNull();
-    expect(abyssStarlight(15) - abyssStarlight(7)).toBeLessThan(abyssStarlight(7) - abyssStarlight(0));
+  });
+
+  it('every star can be lit (B7): every region at the top heat, floor 75 and the feats pay past the sky', () => {
+    const p = act2Profile();
+    const heatAll = REGIONS.reduce((s, r) => s + recordStarlight(p, r.index, MAX_HEAT), 0);
+    const feats = FEATS.reduce((s, f) => s + (f.starlight ?? 0), 0);
+    const sky = STARS.reduce((s, n) => s + STAR_WEB.spentOn(n, n.maxLevel), 0);
+    expect(heatAll + abyssStarlight(30) + feats).toBeGreaterThanOrEqual(sky);
   });
 
   it('the Stargazers grow every payout', () => {
@@ -220,7 +230,7 @@ describe('Starlight (§9)', () => {
     expect(starGifts(p).starlight).toBeCloseTo(1.25);
     const before = p.starlight;
     recordHeat(p, 6, 2);
-    expect(p.starlight - before).toBe(Math.round(2 * BALANCE.starlight.perHeat[5] * 1.25));
+    expect(p.starlight - before).toBe(Math.round(2 * 1.25));
   });
 
   it('a boss felled under heat banks the record; one that stands banks nothing', () => {
@@ -235,7 +245,7 @@ describe('Starlight (§9)', () => {
     run.outcome = { kind: 'fell', wave: 22, time: 500 };
     const s = bankRun(p, run);
     expect(s.heat).toBe(2);
-    expect(s.heatRecord).toEqual({ old: 0, now: 2, starlight: 2 * BALANCE.starlight.perHeat[0] });
+    expect(s.heatRecord).toEqual({ old: 0, now: 2, starlight: 2 });
     expect(checkFeats(p, null).map((f) => f.id)).not.toContain('kindled');
     expect(p.feats.kindled).toBe('done');
   });

@@ -26,6 +26,7 @@ export function automations(profile: Profile): ReadonlySet<AutomationId> {
         case 'mastery':
         case 'relics':
         case 'starlight':
+        case 'fusion':
           break;
         default: {
           const exhaustive: never = e;

@@ -46,7 +46,7 @@ export const TRIALS: readonly TrialDef[] = [
   {
     id: 'mire-omen', name: 'Omen of the Deep', icon: 'checkered-flag', region: 2,
     text: 'Enemies have half again as much health.',
-    rules: [{ kind: 'omen', pact: 'vigour', rank: 1 }],
+    rules: [{ kind: 'omen', pact: 'vigour', rank: 2 }],
     reward: {
       kind: 'notable', name: 'Mire Sight', text: '+1 draft reroll per run.',
       effects: [{ kind: 'behaviour', id: 'reroll' }],
