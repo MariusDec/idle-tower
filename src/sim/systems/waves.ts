@@ -10,7 +10,6 @@ import { RUSH_STAGES, isRush, rushStage } from '../../content/rush';
 import { PASSIVE_BY_ID } from '../../content/passives';
 import type { Enemy, RunState, SpawnEntry, WaveState } from '../state';
 import { pactLoad, ruleSurge, scaleMod } from '../pacts';
-import { allMods, resolveStats } from '../stats';
 import { arriveBoss } from './boss';
 import { refreshStats } from './draft';
 
@@ -110,12 +109,14 @@ export function regionMods(region: RegionDef, surge = 0): StatMod[] {
 
 /**
  * A new floor of the Abyss (§9) brings its own rule: the run's stats are
- * re-resolved with it in place of the last floor's.
+ * re-resolved with it in place of the last floor's, under a Fog-caller's mist
+ * if one still lives (N3). A new floor heals nothing.
  */
 function enterFloor(run: RunState, region: RegionDef): void {
   run.mods = [...run.outerMods, ...regionMods(region, ruleSurge(pactLoad(run.pacts), region))];
-  run.stats = resolveStats(allMods(run.mods, run.passives));
-  run.tower.hp = Math.min(run.tower.hp, run.stats.maxHp);
+  const hp = run.tower.hp;
+  refreshStats(run);
+  run.tower.hp = Math.min(hp, run.stats.maxHp);
 }
 
 /** True when wave `n` brings an elite (§4.3); under the Blight's rule, every wave. The boss wave never does. */

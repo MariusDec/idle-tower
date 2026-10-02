@@ -240,6 +240,11 @@ export class App {
     onOsMotionChange(() => this.applySettings());
     this.music.start();
     if (loaded.backedUpLegacy) console.info('[save] legacy save backed up; starting a fresh profile');
+    if (loaded.fresh === 'corrupt') {
+      console.warn(loaded.restoredFrom !== null
+        ? `[save] restored the backup from ${new Date(loaded.restoredFrom).toISOString()}`
+        : '[save] no backup would read; starting a fresh profile');
+    }
     const resume = await loadRunSnapshot(this.profile);
     this.bindLifecycle();
     this.loop.start();

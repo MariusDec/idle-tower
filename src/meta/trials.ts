@@ -25,10 +25,14 @@ export function trialWon(profile: Profile, id: string): boolean {
   return profile.trials[id] === true;
 }
 
-/** The trial the next run is, if one is chosen and still open; null for an ordinary run. */
+/**
+ * The trial the next run is, if one is chosen, still open, and in the
+ * region the next run goes to; null for an ordinary run. A trial left
+ * chosen (its run's snapshot lost) never follows the player elsewhere.
+ */
 export function selectedTrial(profile: Profile): TrialDef | null {
   const t = profile.trial ? TRIAL_BY_ID[profile.trial] : undefined;
-  return t && trialsOpen(profile, t.region) && regionUnlocked(profile, t.region) ? t : null;
+  return t && profile.region === t.region && trialsOpen(profile, t.region) && regionUnlocked(profile, t.region) ? t : null;
 }
 
 /**

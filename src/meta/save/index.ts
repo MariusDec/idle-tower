@@ -4,6 +4,7 @@ import type { RunState } from '../../sim/state';
 import { isProfile, isRunState } from './schema';
 import { getSaveStore, type SaveStore } from './stores';
 import { isSealed, seal, unseal } from './seal';
+import { listBackups, readBackup } from './transfer';
 
 /** The rebuild's key (§12.4). */
 export const PROFILE_KEY = 'tower-profile';
@@ -23,6 +24,8 @@ export interface LoadResult {
   profile: Profile;
   /** Why the profile is fresh, if it is. For the dev log, never the player. */
   fresh: 'new' | 'corrupt' | null;
+  /** On `'corrupt'`: when the rolling backup the profile was restored from was taken; null if none would read. */
+  restoredFrom: number | null;
   /** True when a legacy save was found and backed up this load. */
   backedUpLegacy: boolean;
 }
@@ -32,27 +35,38 @@ export interface LoadResult {
  *
  * A save that fails to parse or migrate is never silently dropped: it is
  * copied to `CORRUPT_KEY` first, so a bug in a migration costs a restore, not
- * a profile.
+ * a profile. The newest rolling backup that reads takes its place: a fresh
+ * profile would overwrite every backup within `BACKUPS` runs.
  */
 export async function loadProfile(now: number, store: SaveStore = getSaveStore()): Promise<LoadResult> {
   const backedUpLegacy = await backUpLegacySave(store);
   const raw = await store.get(PROFILE_KEY);
-  if (raw === null) return { profile: newProfile(now), fresh: 'new', backedUpLegacy };
+  const marked = (await store.get(SEALED_KEY)) !== null;
+  // Every profile written from here on is sealed, so from here on plain JSON is an edit.
+  const mark = async (): Promise<void> => {
+    if (!marked) await store.set(SEALED_KEY, '1');
+  };
+  if (raw === null) {
+    await mark();
+    return { profile: newProfile(now), fresh: 'new', restoredFrom: null, backedUpLegacy };
+  }
   try {
     const plain = !isSealed(raw);
-    if (plain && (await store.get(SEALED_KEY)) !== null) throw new Error('unsealed profile');
+    if (plain && marked) throw new Error('unsealed profile');
     const migrated = migrate(JSON.parse(plain ? raw : unseal(raw)) as RawProfile);
     if (!isProfile(migrated)) throw new Error('not a profile');
-    if (plain) {
-      // Reseal before marking, so a kill between the two still reads next time.
-      await saveProfile(migrated, store);
-      await store.set(SEALED_KEY, '1');
-    }
-    return { profile: migrated, fresh: null, backedUpLegacy };
+    // Reseal before marking, so a kill between the two still reads next time.
+    if (plain) await saveProfile(migrated, store);
+    await mark();
+    return { profile: migrated, fresh: null, restoredFrom: null, backedUpLegacy };
   } catch (err) {
-    console.error('[save] profile unreadable; starting fresh', err);
+    console.error('[save] profile unreadable', err);
     await store.set(CORRUPT_KEY, raw);
-    return { profile: newProfile(now), fresh: 'corrupt', backedUpLegacy };
+    const [newest] = await listBackups(store);
+    const backup = newest ? await readBackup(newest.slot, store) : null;
+    return {
+      profile: backup ?? newProfile(now), fresh: 'corrupt', restoredFrom: backup ? newest.savedAt : null, backedUpLegacy,
+    };
   }
 }
 

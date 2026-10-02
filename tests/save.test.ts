@@ -60,6 +60,31 @@ describe('profile save', () => {
     expect((await loadProfile(0, store)).fresh).toBe('corrupt');
   });
 
+  it('refuses plain JSON on a profile that started sealed', async () => {
+    const store = new MemorySaveStore();
+    await loadProfile(0, store);
+    expect(await store.get(SEALED_KEY)).not.toBeNull();
+    await store.set(PROFILE_KEY, JSON.stringify({ ...newProfile(0), shards: 1e9 }));
+    expect((await loadProfile(0, store)).fresh).toBe('corrupt');
+  });
+
+  it('restores the newest backup that reads in place of a corrupt profile', async () => {
+    const store = new MemorySaveStore();
+    for (const runs of [4, 5, 6]) {
+      const p = newProfile(5);
+      p.records.runs = runs;
+      p.shards = runs * 100;
+      p.lastSeen = runs;
+      await pushBackup(p, store);
+    }
+    await store.set(PROFILE_KEY, '{not json');
+    const res = await loadProfile(0, store);
+    expect(res.fresh).toBe('corrupt');
+    expect(res.restoredFrom).toBe(6);
+    expect(res.profile.shards).toBe(600);
+    expect(await store.get(CORRUPT_KEY)).toBe('{not json');
+  });
+
   it('parks an unreadable profile before replacing it', async () => {
     const store = new MemorySaveStore();
     await store.set(PROFILE_KEY, '{not json');

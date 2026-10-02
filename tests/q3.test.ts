@@ -265,6 +265,16 @@ describe('Trials (N5)', () => {
     expect(buildRunConfig(p).pacts).toEqual({ hordes: 2 });
   });
 
+  it('a trial left chosen never follows the player to another region', () => {
+    const p = profile({}, ['gatekeeper', 'bog-mother']);
+    chooseTrial(p, 'bare-stone');
+    p.region = 2;
+    expect(selectedTrial(p)).toBeNull();
+    expect(buildRunConfig(p).trial).toBeNull();
+    p.region = 1;
+    expect(selectedTrial(p)?.id).toBe('bare-stone');
+  });
+
   it('a weapons trial mounts its first and offers only its own', () => {
     const p = profile({}, ['gatekeeper', 'bog-mother', 'prism', 'forgeheart']);
     chooseTrial(p, 'shell-and-beam');
