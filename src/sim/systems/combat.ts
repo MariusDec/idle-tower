@@ -10,7 +10,7 @@ import type { EnemyId, EnemyVerb, FusionId, Targeting, WeaponId, WeaponParams, W
 import { BOSS_BY_ID } from '../../content/bosses';
 import type { DamageBy, Enemy, Projectile, RunState, WeaponState } from '../state';
 import { pactLoad, ruleSurge } from '../pacts';
-import { armed } from './arms';
+import { armed, mountOf, muzzle } from './arms';
 import { bossBody, dropPlate, onBossKilled, phasesOf, plateGuard, reflectShot } from './boss';
 import { mitigate } from './damage';
 import { gainXp, refreshStats } from './draft';
@@ -100,9 +100,9 @@ const STANDOFF: ReadonlySet<EnemyId> = new Set(ENEMIES.filter((d) => 'standoff' 
 /**
  * The body a weapon aims at from the tower (U14), by its doctrine.
  * `radius` is how far it reaches; `width` is the blast or line half-width
- * a crowd is counted in.
+ * a crowd is counted in; `from` is the mount a line is drawn from.
  */
-function aim(run: RunState, doctrine: Targeting, radius: number, width: number): Enemy | null {
+function aim(run: RunState, doctrine: Targeting, radius: number, width: number, from: { x: number; y: number }): Enemy | null {
   switch (doctrine) {
     case 'nearest':
       return nearestEnemy(run, 0, 0, radius);
@@ -111,7 +111,7 @@ function aim(run: RunState, doctrine: Targeting, radius: number, width: number):
     case 'toughest':
       return toughest(run, radius);
     case 'line':
-      return bestLine(run, width, []);
+      return bestLine(run, from.x, from.y, width, []);
     case 'standoff':
       return standoffFirst(run, 0, 0, radius);
     default: {
@@ -137,18 +137,20 @@ function toughest(run: RunState, radius: number): Enemy | null {
   return best;
 }
 
-/** True when a line from the tower toward angle (ux, uy), `width` wide, crosses `e` within range. */
-function onLine(run: RunState, e: Enemy, ux: number, uy: number, width: number): boolean {
-  const along = e.x * ux + e.y * uy;
+/** True when a line from (ox, oy) toward angle (ux, uy), `width` wide, crosses `e` within range. */
+function onLine(run: RunState, e: Enemy, ox: number, oy: number, ux: number, uy: number, width: number): boolean {
+  const dx = e.x - ox;
+  const dy = e.y - oy;
+  const along = dx * ux + dy * uy;
   if (along < 0 || along > run.stats.range + e.radius) return false;
-  return Math.abs(e.x * uy - e.y * ux) <= width + e.radius;
+  return Math.abs(dx * uy - dy * ux) <= width + e.radius;
 }
 
 /**
- * The body in range whose line from the tower crosses the most bodies not
+ * The body in range whose line from (ox, oy) crosses the most bodies not
  * yet `struck`: where a slug does the most. Ties go to the nearer body.
  */
-function bestLine(run: RunState, width: number, struck: readonly number[]): Enemy | null {
+function bestLine(run: RunState, ox: number, oy: number, width: number, struck: readonly number[]): Enemy | null {
   const range2 = run.stats.range * run.stats.range;
   let best: Enemy | null = null;
   let bestN = 0;
@@ -157,11 +159,11 @@ function bestLine(run: RunState, width: number, struck: readonly number[]): Enem
     if (!targetable(run, e)) continue;
     const d = e.x * e.x + e.y * e.y;
     if (d > range2) continue;
-    const len = Math.sqrt(d) || 1;
-    const ux = e.x / len;
-    const uy = e.y / len;
+    const len = Math.hypot(e.x - ox, e.y - oy) || 1;
+    const ux = (e.x - ox) / len;
+    const uy = (e.y - oy) / len;
     let n = 0;
-    for (const o of run.enemies) if (targetable(run, o) && !struck.includes(o.id) && onLine(run, o, ux, uy, width)) n++;
+    for (const o of run.enemies) if (targetable(run, o) && !struck.includes(o.id) && onLine(run, o, ox, oy, ux, uy, width)) n++;
     if (n > bestN || (n === bestN && n > 0 && d < bestD)) {
       bestN = n;
       bestD = d;
@@ -331,7 +333,8 @@ function fireOnCooldown(
   }
   // A pulse needs a body inside its own radius; everything else, inside
   // range. Whom it aims at there is its doctrine (U14).
-  const target = aim(run, WEAPON_BY_ID[w.id].targeting, pattern === 'pulse' ? p.radius : run.stats.range, p.radius);
+  const m = mountOf(run, w);
+  const target = aim(run, WEAPON_BY_ID[w.id].targeting, pattern === 'pulse' ? p.radius : run.stats.range, p.radius, m);
   if (!target) {
     // Idle: ready to fire the moment something enters range, with no backlog.
     w.cooldown = 0;
@@ -341,7 +344,8 @@ function fireOnCooldown(
   // rather than rounded up to whole steps (a +12% Haste stays +12%). At
   // most one attack per step, so the carry never builds up past one step.
   w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * rateMult));
-  const angle = Math.atan2(target.y, target.x);
+  // Aimed from its own mount, so the barrel the eye sees points at the target.
+  const angle = Math.atan2(target.y - m.y, target.x - m.x);
   w.aim = angle;
   switch (pattern) {
     case 'homing':
@@ -351,8 +355,8 @@ function fireOnCooldown(
       fireCone(run, w, p, angle, crit);
       break;
     case 'chain': {
-      const start = run.stats.radius * 0.6;
-      chainStrike(run, Math.cos(angle) * start, Math.sin(angle) * start, target, p, crit);
+      const o = muzzle(run, w, angle);
+      chainStrike(run, o.x, o.y, target, p, crit);
       // Storm Crown: each storm casts its own lightning from where it circles.
       if (w.evolved) {
         for (const s of storms(run, w)) {
@@ -428,10 +432,10 @@ function launch(run: RunState, w: WeaponState, x: number, y: number, angle: numb
   });
 }
 
-/** Launch from the tower's lip, in direction `angle`. */
-function launchFromTower(run: RunState, w: WeaponState, angle: number, speed: number, over: Partial<Projectile>): void {
-  const start = run.stats.radius * 0.6;
-  launch(run, w, Math.cos(angle) * start, Math.sin(angle) * start, angle, speed, over);
+/** Launch from the weapon's barrel on the tower, in direction `angle`. */
+function launchFromMount(run: RunState, w: WeaponState, angle: number, speed: number, over: Partial<Projectile>): void {
+  const o = muzzle(run, w, angle);
+  launch(run, w, o.x, o.y, angle, speed, over);
 }
 
 /** Homing bolts, one per body in reach, fanned as they leave the tower. */
@@ -439,7 +443,7 @@ function fireVolley(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy
   const targets = p.count > 1 ? nearestToTower(run, run.stats.range, p.count) : [first];
   for (let i = 0; i < p.count; i++) {
     const hit = rollHit(run, p, crit);
-    launchFromTower(run, w, angle + (i - (p.count - 1) / 2) * VOLLEY_FAN, p.projectileSpeed, {
+    launchFromMount(run, w, angle + (i - (p.count - 1) / 2) * VOLLEY_FAN, p.projectileSpeed, {
       ...hit,
       homing: true,
       target: targets[i % targets.length].id,
@@ -454,7 +458,7 @@ function fireCone(run: RunState, w: WeaponState, p: WeaponParams, angle: number,
   const life = (run.stats.range * BALANCE.projectiles.reach) / p.projectileSpeed;
   for (let i = 0; i < p.count; i++) {
     const offset = p.count === 1 ? 0 : p.spread * (i / (p.count - 1) - 0.5);
-    launchFromTower(run, w, angle + offset, p.projectileSpeed, { ...rollHit(run, p, crit), pierce: p.pierce, knockback: p.knockback, life });
+    launchFromMount(run, w, angle + offset, p.projectileSpeed, { ...rollHit(run, p, crit), pierce: p.pierce, knockback: p.knockback, life });
   }
 }
 
@@ -592,10 +596,9 @@ function lob(run: RunState, w: WeaponState, p: WeaponParams, tx: number, ty: num
     });
     return;
   }
-  const start = run.stats.radius * 0.6;
-  const angle = Math.atan2(ty, tx);
-  const sx = Math.cos(angle) * start;
-  const sy = Math.sin(angle) * start;
+  const m = mountOf(run, w);
+  const angle = Math.atan2(ty - m.y, tx - m.x);
+  const { x: sx, y: sy } = muzzle(run, w, angle);
   launch(run, w, sx, sy, angle, p.projectileSpeed, {
     // Heavy Shells (a Trial's notable, N5): more bomblets in every shell.
     ...hit, blast: p.radius, tx, ty, bomblets: p.bomblets + BALANCE.behaviours.heavyShells * (run.behaviours['heavy-shells'] ?? 0),
@@ -611,7 +614,7 @@ function lob(run: RunState, w: WeaponState, p: WeaponParams, tx: number, ty: num
 function throwCrescents(run: RunState, w: WeaponState, p: WeaponParams, angle: number, crit: Rng): void {
   const life = (run.stats.range * BALANCE.weapons.crescentReach) / p.projectileSpeed;
   const throwOne = (a: number): void => {
-    launchFromTower(run, w, a, p.projectileSpeed, { ...rollHit(run, p, crit), boomerang: true, life });
+    launchFromMount(run, w, a, p.projectileSpeed, { ...rollHit(run, p, crit), boomerang: true, life });
   };
   for (let i = 0; i < p.count; i++) throwOne(angle + (p.count === 1 ? 0 : p.spread * (i / (p.count - 1) - 0.5)));
   if (w.evolved) {
@@ -778,7 +781,10 @@ function holdTethers(run: RunState, w: WeaponState, p: WeaponParams, dt: number,
     run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * L.heal * w.tethers.length * dt);
   }
   const first = enemyById(run, w.tethers[0]);
-  if (first) w.aim = Math.atan2(first.y, first.x);
+  if (first) {
+    const m = mountOf(run, w);
+    w.aim = Math.atan2(first.y - m.y, first.x - m.x);
+  }
   if (w.cooldown > 0) return;
   w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * rateMult));
   for (const id of [...w.tethers]) {
@@ -801,9 +807,10 @@ function fireSlugs(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy,
   const burstRank = run.behaviours['rail-burst'] ?? 0;
   /** Bodies this volley's slugs have crossed: a further slug looks for the line through the most fresh ones (U14). */
   const crossed: number[] = [];
+  const m = mountOf(run, w);
   for (let k = 0; k < p.count; k++) {
-    const t = k === 0 ? first : bestLine(run, p.radius, crossed) ?? first;
-    const a = Math.atan2(t.y, t.x);
+    const t = k === 0 ? first : bestLine(run, m.x, m.y, p.radius, crossed) ?? first;
+    const a = Math.atan2(t.y - m.y, t.x - m.x);
     const ux = Math.cos(a);
     const uy = Math.sin(a);
     const hit = rollHit(run, p, crit);
@@ -811,7 +818,7 @@ function fireSlugs(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy,
     const n = run.enemies.length;
     for (let i = 0; i < n; i++) {
       const e = run.enemies[i];
-      if (targetable(run, e) && onLine(run, e, ux, uy, p.radius)) struck.push(e);
+      if (targetable(run, e) && onLine(run, e, m.x, m.y, ux, uy, p.radius)) struck.push(e);
     }
     for (const e of struck) {
       crossed.push(e.id);
@@ -824,9 +831,9 @@ function fireSlugs(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy,
         run.events.push({ kind: 'blast', x: e.x, y: e.y, radius: r, weapon: w.id, style: 'shatter' });
       }
     }
-    const start = run.stats.radius * 0.6;
+    const o = muzzle(run, w, a);
     run.events.push({
-      kind: 'rail', x1: ux * start, y1: uy * start, x2: ux * run.stats.range, y2: uy * run.stats.range, gilded: w.evolved,
+      kind: 'rail', x1: o.x, y1: o.y, x2: m.x + ux * run.stats.range, y2: m.y + uy * run.stats.range, gilded: w.evolved,
     });
     w.aim = a;
   }
@@ -894,7 +901,7 @@ function holdBeam(run: RunState, w: WeaponState, p: WeaponParams, dt: number, ra
   // Its doctrine (U14): it holds what it has, unless something that matters
   // more (a plate, a boss, an elite) is in range.
   const doctrine = WEAPON_BY_ID[w.id].targeting;
-  const best = !target || (doctrine === 'toughest' && toughness(target) < 3) ? aim(run, doctrine, run.stats.range, 0) : target;
+  const best = !target || (doctrine === 'toughest' && toughness(target) < 3) ? aim(run, doctrine, run.stats.range, 0, mountOf(run, w)) : target;
   if (best && (!target || toughness(best) > toughness(target))) {
     target = best;
     w.heat = 1;
@@ -909,7 +916,8 @@ function holdBeam(run: RunState, w: WeaponState, p: WeaponParams, dt: number, ra
     return;
   }
   w.heat = Math.min(p.rampCap, w.heat + p.ramp * dt);
-  w.aim = Math.atan2(target.y, target.x);
+  const m = mountOf(run, w);
+  w.aim = Math.atan2(target.y - m.y, target.x - m.x);
   if (w.cooldown > 0) return;
   w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * rateMult));
   const hit = rollHit(run, p, crit);
@@ -921,11 +929,7 @@ function holdBeam(run: RunState, w: WeaponState, p: WeaponParams, dt: number, ra
     const n = run.enemies.length;
     for (let i = 0; i < n; i++) {
       const e = run.enemies[i];
-      if (!targetable(run, e)) continue;
-      const along = e.x * ux + e.y * uy;
-      if (along < 0 || along > run.stats.range + e.radius) continue;
-      const off = Math.abs(e.x * uy - e.y * ux);
-      if (off <= BALANCE.weapons.beamWidth + e.radius) damageEnemy(run, e, damage, hit.crit, 'beam');
+      if (targetable(run, e) && onLine(run, e, m.x, m.y, ux, uy, BALANCE.weapons.beamWidth)) damageEnemy(run, e, damage, hit.crit, 'beam');
     }
   } else {
     damageEnemy(run, target, damage, hit.crit, 'beam');

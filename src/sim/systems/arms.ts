@@ -1,5 +1,6 @@
 import { BALANCE } from '../../content/balance';
 import { EVOLUTION_OF } from '../../content/evolutions';
+import { mountOffset, muzzleAt } from '../../content/mounts';
 import { WEAPON_BY_ID, weaponParams } from '../../content/weapons';
 import type { FusionId, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
 import type { RunState, TowerStats, WeaponState } from '../state';
@@ -102,4 +103,20 @@ export function newWeapon(id: WeaponId, level: number): WeaponState {
 /** Weapon slots in use: a fusion's second half rides on its partner's mount (N9). */
 export function slotsUsed(run: Pick<RunState, 'weapons'>): number {
   return run.weapons.filter((w) => !w.joined).length;
+}
+
+/** The mount slot `w` fires from: its own, or its fusion host's (N9). The painter draws them in this order. */
+export function mountSlot(run: Pick<RunState, 'weapons'>, w: WeaponState): number {
+  const host = w.joined ? run.weapons.find((x) => x.fusion === w.fusion && !x.joined) ?? w : w;
+  return Math.max(0, run.weapons.filter((x) => !x.joined).indexOf(host));
+}
+
+/** The centre of `w`'s mount on the tower. */
+export function mountOf(run: Pick<RunState, 'weapons' | 'stats'>, w: WeaponState): { x: number; y: number } {
+  return mountOffset(mountSlot(run, w), run.stats.radius);
+}
+
+/** Where `w`'s shot leaves its barrel, aimed at `angle`. */
+export function muzzle(run: Pick<RunState, 'weapons' | 'stats'>, w: WeaponState, angle: number): { x: number; y: number } {
+  return muzzleAt(w.id, mountSlot(run, w), run.stats.radius, angle);
 }

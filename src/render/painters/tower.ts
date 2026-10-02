@@ -1,4 +1,5 @@
 import { weaponParams } from '../../content/weapons';
+import { mountOffset, mountRadius } from '../../content/mounts';
 import type { TrimId, WeaponId } from '../../content/types';
 import { FX, INK, lighten, mix, withAlpha } from '../palette';
 import { LIGHT_ANGLE } from './enemies';
@@ -216,24 +217,6 @@ function paintCrown(ctx: CanvasRenderingContext2D, R: number, look: TowerLook, t
 }
 
 /**
- * Where weapon slot `slot` sits, as a multiple of the wall radius (§4.4:
- * each equipped weapon is drawn on the tower). Slot 0 is the turret on the
- * drum; the rest are pods on the plinth's lower corners and its crown, so a
- * new weapon lands somewhere the eye already rests; Act 2's fifth and sixth
- * (§9) sit at its flanks.
- */
-const POD_ANGLES = [Math.PI * 0.75, Math.PI * 0.25, -Math.PI * 0.5, Math.PI, 0];
-const POD_DISTANCE = 1.04;
-/** Pod radius, as a multiple of the wall radius: big enough to read on a phone. */
-const POD_RADIUS = 0.52;
-
-export function mountOffset(slot: number, R: number): { x: number; y: number } {
-  if (slot === 0) return { x: 0, y: 0 };
-  const a = POD_ANGLES[(slot - 1) % POD_ANGLES.length];
-  return { x: Math.cos(a) * R * POD_DISTANCE, y: Math.sin(a) * R * POD_DISTANCE };
-}
-
-/**
  * The tower (§10.5): an octagonal stone plinth, an amber drum with the
  * violet crystal at its heart, and one mount per equipped weapon, each
  * turning to its own last shot. Drawn in world space at the origin; `R` is
@@ -298,11 +281,11 @@ export function paintTower(
     const o = mountOffset(i, R);
     ctx.save();
     ctx.translate(o.x, o.y);
-    paintPod(ctx, R * POD_RADIUS, lx, ly);
-    paintMount(ctx, mounts[i], R * POD_RADIUS, time, fallen);
+    paintPod(ctx, mountRadius(i, R), lx, ly);
+    paintMount(ctx, mounts[i], mountRadius(i, R), time, fallen);
     ctx.restore();
   }
-  if (mounts.length > 0) paintMount(ctx, mounts[0], R * 0.82, time, fallen);
+  if (mounts.length > 0) paintMount(ctx, mounts[0], mountRadius(0, R), time, fallen);
 
   // Crystal: pulses slowly; flares scarlet when hit.
   const pulse = 0.85 + 0.15 * Math.sin(time * 2.4);

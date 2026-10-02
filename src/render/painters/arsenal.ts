@@ -1,5 +1,5 @@
 import type { Enemy, FirePatch, Rune, RunState, WeaponState } from '../../sim/state';
-import { armed } from '../../sim/systems/arms';
+import { armed, mountOf, muzzle } from '../../sim/systems/arms';
 import { bladeOrbit, storms } from '../../sim/systems/combat';
 import { BALANCE } from '../../content/balance';
 import { FX, INK, lighten, mix, withAlpha } from '../palette';
@@ -150,14 +150,14 @@ function paintBeam(ctx: CanvasRenderingContext2D, run: RunState, w: WeaponState,
   const p = armed(run.stats, w);
   const tx = t.px + (t.x - t.px) * alpha;
   const ty = t.py + (t.y - t.py) * alpha;
-  const a = Math.atan2(ty, tx);
-  const start = run.stats.radius * 0.7;
-  const sx = Math.cos(a) * start;
-  const sy = Math.sin(a) * start;
+  // From the lens on its mount.
+  const m = mountOf(run, w);
+  const a = Math.atan2(ty - m.y, tx - m.x);
+  const { x: sx, y: sy } = muzzle(run, w, a);
   // A piercing lance runs on to the edge of range.
-  const reach = p.pierce > 0 ? run.stats.range : Math.hypot(tx, ty);
-  const ex = Math.cos(a) * reach;
-  const ey = Math.sin(a) * reach;
+  const reach = p.pierce > 0 ? run.stats.range : Math.hypot(tx - m.x, ty - m.y);
+  const ex = m.x + Math.cos(a) * reach;
+  const ey = m.y + Math.sin(a) * reach;
   const heat = (w.heat - 1) / Math.max(1e-6, p.rampCap - 1);
   const full = w.evolved && w.heat >= p.rampCap;
   const shimmer = 0.85 + 0.15 * Math.sin(clock * 40);
@@ -182,10 +182,10 @@ function paintBeam(ctx: CanvasRenderingContext2D, run: RunState, w: WeaponState,
   ctx.restore();
 }
 
-/** Soul Tether's threads: a wavering green line from the tower to each body it holds. */
+/** Soul Tether's threads: a wavering green line from its spindle to each body it holds. */
 function paintTethers(ctx: CanvasRenderingContext2D, run: RunState, w: WeaponState, alpha: number, clock: number, additive: boolean): void {
   if (w.tethers.length === 0 || w.silencedUntil > run.time) return;
-  const R = run.stats.radius * 0.6;
+  const m = mountOf(run, w);
   ctx.save();
   if (additive) ctx.globalCompositeOperation = 'lighter';
   const tint = w.evolved ? lighten(FX.nature, 0.35) : FX.nature;
@@ -194,9 +194,8 @@ function paintTethers(ctx: CanvasRenderingContext2D, run: RunState, w: WeaponSta
     if (!e) continue;
     const tx = e.px + (e.x - e.px) * alpha;
     const ty = e.py + (e.y - e.py) * alpha;
-    const a = Math.atan2(ty, tx);
-    const sx = Math.cos(a) * R;
-    const sy = Math.sin(a) * R;
+    const a = Math.atan2(ty - m.y, tx - m.x);
+    const { x: sx, y: sy } = muzzle(run, w, a);
     const mx = (sx + tx) / 2 - Math.sin(a) * 14 * Math.sin(clock * 7 + id);
     const my = (sy + ty) / 2 + Math.cos(a) * 14 * Math.sin(clock * 7 + id);
     ctx.strokeStyle = withAlpha(tint, 0.3);

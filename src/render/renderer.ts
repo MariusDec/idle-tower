@@ -16,8 +16,9 @@ import { paintArsenal, paintFires, paintRunes, paintStatus } from './painters/ar
 import { paintAegis, paintBoss, paintCourt, paintFacets, paintPlates, paintPools, paintRings, paintShots } from './painters/bosses';
 import { mirrorFacets, phasesOf } from '../sim/systems/boss';
 import { runRegion } from '../sim/systems/waves';
+import { mountOf } from '../sim/systems/arms';
 import { WEAPON_BY_ID } from '../content/weapons';
-import { PLAIN_LOOK, mountOffset, paintRangeRing, paintTower, type Mount, type TowerLook } from './painters/tower';
+import { PLAIN_LOOK, paintRangeRing, paintTower, type Mount, type TowerLook } from './painters/tower';
 import type { WeaponId } from '../content/types';
 import { QUALITY, type QualityTier } from './quality';
 import { ARENA, type Oval } from '../content/arena';
@@ -190,10 +191,9 @@ export class Renderer {
         case 'picked': {
           // A new weapon: a flash where its mount just appeared.
           if (ev.card.kind === 'weapon' && ev.card.level === 1) {
-            const slot = run.weapons.findIndex((w) => w.id === ev.card.id);
-            const R = run.stats.radius;
-            const o = mountOffset(Math.max(0, slot), R);
-            this.effects.pulse(o.x, o.y, R * 0.5, FX.gold);
+            const w = run.weapons.find((x) => x.id === ev.card.id);
+            const o = w ? mountOf(run, w) : { x: 0, y: 0 };
+            this.effects.pulse(o.x, o.y, run.stats.radius * 0.5, FX.gold);
           }
           break;
         }
