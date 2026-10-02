@@ -142,6 +142,15 @@ export class HubScreen {
     this.starlightStat = q('.hub-starlight');
     this.starlightN = q('.hub-starlight-n');
     const dock = q('.hub-dock');
+    // The views pad by the dock's height; tabs wrapping to two rows grows it.
+    // Only the part above the hub's own bottom padding, which the views already sit inside.
+    const fitDock = new ResizeObserver(() => {
+      const contentBottom = this.root.getBoundingClientRect().bottom - parseFloat(getComputedStyle(this.root).paddingBottom);
+      const h = Math.max(0, contentBottom - dock.getBoundingClientRect().top);
+      this.root.style.setProperty('--dock-h', `${Math.ceil(h)}px`);
+    });
+    fitDock.observe(dock);
+    fitDock.observe(this.root);
     const refreshing = <T>(fn: () => T): T => {
       const out = fn();
       this.refresh();
