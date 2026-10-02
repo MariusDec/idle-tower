@@ -22,6 +22,8 @@ const GAP_MS: Readonly<Record<string, number>> = {
   lance: 120,
   rune: 70,
   shell: 60,
+  // Several drafts taken at once (U2) chime once.
+  picked: 150,
 };
 
 /** Each weapon's shot (§10.4): a pattern you could pick out with your eyes shut. */
@@ -144,7 +146,7 @@ export class Cues {
           s.tone({ freq: 990, type: 'triangle', duration: 0.12, volume: 0.12, delay: 0.07 });
           break;
         case 'picked':
-          s.tone({ freq: 740, freqEnd: 880, type: 'sine', duration: 0.08, volume: 0.1 });
+          if (this.ready('picked', now)) s.tone({ freq: 740, freqEnd: 880, type: 'sine', duration: 0.08, volume: 0.1 });
           break;
         case 'evolve':
           for (const [i, f] of [392, 523, 659, 784, 1047].entries()) {

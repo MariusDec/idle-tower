@@ -358,8 +358,8 @@ describe('keystones (§11.4)', () => {
     const fort = armory({ behaviours: { fortress: 1 } });
     const a = body(plain, { x: 70, y: 0, ...tough });
     const b = body(fort, { x: 70, y: 0, ...tough });
-    hurtTower(plain, 10, a.x, a.y, a);
-    hurtTower(fort, 10, b.x, b.y, b);
+    hurtTower(plain, 10, a.x, a.y, a, 'contact');
+    hurtTower(fort, 10, b.x, b.y, b, 'contact');
     expect(1e6 - b.hp).toBeCloseTo((1e6 - a.hp) * BALANCE.behaviours.fortressThorns);
   });
 

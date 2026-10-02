@@ -167,7 +167,7 @@ export function tickEnemies(run: RunState, dt: number): void {
     e.attackTimer -= dt;
     if (e.attackTimer <= 0) {
       e.attackTimer += e.attackInterval;
-      hurtTower(run, e.damage * e.fury, e.x, e.y, e);
+      hurtTower(run, e.damage * e.fury, e.x, e.y, e, 'contact');
       if (verb?.kind === 'leech' && run.ult.charge > 0) {
         run.ult.charge = Math.max(0, run.ult.charge - verb.drain);
         run.events.push({ kind: 'drain', x: e.x, y: e.y });

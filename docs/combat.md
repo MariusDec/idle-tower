@@ -41,6 +41,20 @@ damage on a type it is weak against. Scattershot's pellets hit ×1.5 inside
 a third of range (`pointBlank`, S5). The lint (`counters`) holds every region's
 pool answered by at least one Act 1 weapon.
 
+**Targeting doctrine** (U14): each weapon's `targeting` says whom it aims
+at, read by `combat.ts#aim` through an exhaustive switch:
+
+| Doctrine | Weapons | Aims at |
+|---|---|---|
+| `nearest` | most | the closest body |
+| `densest` | Mortar | the body with the most others inside its blast |
+| `toughest` | Sunlance | a plate, then a boss, then an elite, else the most HP in range; it holds its target until it falls or leaves range, but switches up to a tougher kind |
+| `line` | Gilded Rail | the line from the tower through the most bodies; a second slug takes the line through the most it hasn't crossed |
+| `standoff` | Sentinel Drones | bodies whose verb holds off at range (Spitter, Siege Engine, Summoner, Harbinger, Wardstone) on its leash first, else the nearest to the drone |
+
+The scorer's rail constants are fitted to the line doctrine (`npm run
+calibrate`).
+
 A Harbinger never silences the tower's last firing weapon; against a lone
 weapon (Specialist) its gaze halves that weapon's fire instead
 (`WeaponState.dampedUntil`). Executioner sources stop at two (Executioner
@@ -110,4 +124,5 @@ plate takes only the hit. A Nova landing during a boss slam's wind-up
 staggers it. An Eclipse takes a share of what each body has left, so it strikes a
 shared pool of HP once: a Chorus through one of its bodies, the Hollow
 King's or the Hunger's court through the king alone. The Autocaster
-([idle.md](idle.md)) casts on the same rule as the bot.
+([idle.md](idle.md)) casts each ultimate on its own rule (U13), and the
+idle bot on the same one.

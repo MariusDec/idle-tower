@@ -2,6 +2,8 @@ import type { MotionSetting, Profile } from '../meta/profile';
 import { TEXT_SCALES } from '../meta/profile';
 import type { QualityTier } from '../render/quality';
 import { formatNumber } from '../core/format';
+import { importProfile, type BackupInfo } from '../meta/save/transfer';
+import { segmented, type Choice } from './controls';
 
 type Settings = Profile['settings'];
 
@@ -17,13 +19,19 @@ export interface SettingsActions {
   setQuality(pref: 'auto' | QualityTier): void;
   /** Erase the profile and start over (P9). Only offered between runs. */
   reset(): void;
+  /** Copy the profile to the clipboard as text (U12); false if the platform refused. */
+  copySave(): Promise<boolean>;
+  /** Save the profile to a file (U12); where it went, in words. */
+  saveFile(): Promise<string>;
+  /** Ask for a save file and read it (U12); null if none was chosen. */
+  pickFile(): Promise<string | null>;
+  /** The rolling backups kept (U12), newest first, and one read back. */
+  backups(): Promise<BackupInfo[]>;
+  readBackup(slot: number): Promise<Profile | null>;
+  /** Replace the profile with `profile` (an import or a backup) and start from it. Between runs only. */
+  replace(profile: Profile): void;
   /** The panel closed. */
   closed(): void;
-}
-
-interface Choice<T> {
-  value: T;
-  label: string;
 }
 
 const QUALITY_CHOICES: readonly Choice<'auto' | QualityTier>[] = [
@@ -46,11 +54,26 @@ const ON_OFF: readonly Choice<boolean>[] = [
   { value: false, label: 'Off' },
 ];
 
+/** A loaded profile waiting for the player's word, and where it came from. */
+interface Pending {
+  profile: Profile;
+  from: string;
+}
+
+/** How long ago a wall-clock time was, in a few words. */
+function ago(ms: number): string {
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60_000));
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
+}
+
 /**
  * Settings (§10.1: behind the hub's gear, and in the pause menu): sound
  * and its three levels (§10.4), quality, text size, colours, screen shake
  * and reduced motion, a Stats page (§10.2: the numbers the HUD leaves
- * out), and, between runs, a reset that asks twice.
+ * out), and, between runs, the save (U12: copy, file, load, backups) and a
+ * reset that asks twice.
  */
 export class SettingsPanel {
   private el: HTMLElement | null = null;
@@ -58,6 +81,13 @@ export class SettingsPanel {
   private profile: Profile | null = null;
   private canReset = false;
   private confirming = false;
+  /** U12: the paste box is open, with what is in it. */
+  private loading: { text: string } | null = null;
+  /** U12: a profile read from a paste, a file or a backup, waiting to replace this one. */
+  private pending: Pending | null = null;
+  /** U12: the last thing the save controls did, or what went wrong. */
+  private message = '';
+  private backupList: BackupInfo[] = [];
 
   constructor(private readonly host: HTMLElement, private readonly actions: SettingsActions) {}
 
@@ -69,7 +99,16 @@ export class SettingsPanel {
     this.profile = profile;
     this.canReset = canReset;
     this.confirming = false;
+    this.loading = null;
+    this.pending = null;
+    this.message = '';
     this.page = 'options';
+    if (canReset) {
+      void this.actions.backups().then((list) => {
+        this.backupList = list;
+        if (this.open) this.render();
+      });
+    }
     if (!this.el) {
       const scrim = document.createElement('div');
       scrim.className = 'modal-scrim';
@@ -149,6 +188,7 @@ export class SettingsPanel {
       body.append(section('Progress', note('Reset is in the hub\'s settings, between runs.')));
       return;
     }
+    body.append(section('Save', this.transfer()));
     const reset = document.createElement('div');
     reset.className = 'settings-reset';
     if (this.confirming) {
@@ -161,6 +201,79 @@ export class SettingsPanel {
       reset.append(button('Reset progress', 'btn', () => { this.confirming = true; this.render(); }));
     }
     body.append(section('Progress', reset));
+  }
+
+  /** The save (U12): take the profile elsewhere as text or a file, bring one back, or restore a backup. */
+  private transfer(): HTMLElement {
+    const box = document.createElement('div');
+    box.className = 'settings-transfer';
+    const say = (text: string): void => {
+      this.message = text;
+      this.render();
+    };
+    const take = (text: string, from: string): void => {
+      try {
+        this.pending = { profile: importProfile(text), from };
+        this.loading = null;
+        this.message = '';
+      } catch (err) {
+        this.message = err instanceof Error ? err.message : 'That is not a saved profile.';
+      }
+      this.render();
+    };
+    if (this.pending) {
+      const p = this.pending.profile;
+      box.append(
+        note(`Replace this profile with ${this.pending.from}? ${formatNumber(p.records.runs)} run${p.records.runs === 1 ? '' : 's'}, ${formatNumber(p.shards)} shards, best wave ${p.records.bestWave}. This one is lost unless you saved it.`),
+        button('Keep mine', 'btn', () => { this.pending = null; this.render(); }),
+        button('Replace', 'btn btn-danger', () => this.actions.replace(p)),
+      );
+      return box;
+    }
+    if (this.loading) {
+      const area = document.createElement('textarea');
+      area.className = 'settings-paste';
+      area.rows = 3;
+      area.placeholder = 'Paste a saved profile here';
+      area.setAttribute('aria-label', 'Saved profile');
+      area.value = this.loading.text;
+      area.addEventListener('input', () => { if (this.loading) this.loading.text = area.value; });
+      box.append(
+        area,
+        button('Check', 'btn btn-primary', () => take(area.value, 'the pasted one')),
+        button('Choose file', 'btn', () => void this.actions.pickFile().then((text) => {
+          if (text !== null) take(text, 'the one in the file');
+        })),
+        button('Cancel', 'btn', () => { this.loading = null; this.message = ''; this.render(); }),
+        note(this.message),
+      );
+      return box;
+    }
+    box.append(
+      note('Take your progress to another install, or bring it back.'),
+      button('Copy save', 'btn', () => void this.actions.copySave().then((ok) => say(ok ? 'Copied. Paste it somewhere safe.' : 'The clipboard said no. Try Save file.'))),
+      button('Save file', 'btn', () => void this.actions.saveFile().then((where) => say(`Saved to ${where}.`), () => say('The file could not be saved.'))),
+      button('Load save', 'btn', () => { this.loading = { text: '' }; this.message = ''; this.render(); }),
+      note(this.message),
+    );
+    if (this.backupList.length > 0) {
+      const list = document.createElement('ul');
+      list.className = 'settings-backups';
+      list.setAttribute('aria-label', 'Backups');
+      for (const b of this.backupList) {
+        const li = document.createElement('li');
+        const label = document.createElement('span');
+        label.textContent = `Run ${formatNumber(b.runs)} · ${formatNumber(b.shards)} shards · ${ago(b.savedAt)}`;
+        li.append(label, button('Restore', 'btn', () => void this.actions.readBackup(b.slot).then((profile) => {
+          if (!profile) return say('That backup does not read any more.');
+          this.pending = { profile, from: `the backup from ${ago(b.savedAt)}` };
+          this.render();
+        })));
+        list.append(li);
+      }
+      box.append(note('Kept at the end of each of your last runs:'), list);
+    }
+    return box;
   }
 
   private stats(body: HTMLElement, p: Profile): void {
@@ -231,28 +344,6 @@ function button(label: string, cls: string, onClick: () => void): HTMLButtonElem
   b.textContent = label;
   b.addEventListener('click', onClick);
   return b;
-}
-
-/** A row of mutually exclusive buttons, the current one marked. */
-function segmented<T>(choices: readonly Choice<T>[], current: T, pick: (v: T) => void, label: string): HTMLElement {
-  const g = document.createElement('div');
-  g.className = 'segmented';
-  g.setAttribute('role', 'radiogroup');
-  g.setAttribute('aria-label', label);
-  for (const c of choices) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    const on = c.value === current;
-    b.className = `segmented-btn${on ? ' is-active' : ''}`;
-    b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', String(on));
-    b.textContent = c.label;
-    b.addEventListener('click', () => {
-      if (!on) pick(c.value);
-    });
-    g.append(b);
-  }
-  return g;
 }
 
 /**

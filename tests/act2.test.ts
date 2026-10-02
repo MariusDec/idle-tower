@@ -532,7 +532,7 @@ describe('Act 2 weapons (§9)', () => {
     const run = runIn(1);
     arm(run, 'rune-traps', 5, true);
     const near = body(run, { x: run.stats.radius + 20, y: 0, hp: 1e6, maxHp: 1e6 });
-    hurtTower(run, 1, near.x, near.y, near);
+    hurtTower(run, 1, near.x, near.y, near, 'contact');
     expect(near.hp).toBeLessThan(1e6);
   });
 });

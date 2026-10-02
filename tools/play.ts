@@ -3,11 +3,13 @@
  * player's wall clock kept beside it. Shared by the pacing report's active
  * bot and the idle bot, so both read time the same way:
  *
- *   active  takes the suggested card at once, a couple of seconds per draft,
- *           and casts the ultimate by hand (`botInput`)
+ *   active  takes the suggested card at once, a couple of seconds per draft
+ *           (one tap takes every banked draft, U2), and casts the
+ *           ultimate by hand (`botInput`)
  *   idle    touches nothing: each draft runs its timer out at slow motion
- *           and the suggestion is taken (§4.5); the ultimate goes off only
- *           through the Autocaster, if owned (§6.2)
+ *           and the suggestion is taken (§4.5); with the Tactician, the
+ *           Opening takes every banked draft after its own short wait (U2);
+ *           the ultimate goes off only through the Autocaster, if owned (§6.2)
  *
  * The first draft of a profile pauses for both: it waits for a tap.
  */
@@ -36,6 +38,8 @@ export interface PlayOptions {
   autoUlt?: boolean;
   /** Wall seconds an idle draft waits before the suggestion is taken (`draftSeconds`). */
   draftSeconds?: number;
+  /** Wall seconds the idle Opening waits before taking every banked draft (`openingSeconds`); null: one by one. */
+  openingSeconds?: number | null;
   /** Stop once the wall clock passes this many seconds of play (a session ends), the run unfinished. */
   until?: number;
   /** Every sim event, with the wall seconds into play it happened at. */
@@ -51,6 +55,12 @@ export interface PlayResult {
   wall: number;
   /** Draft cards first seen this stretch (`cardKey`), for `bankRun`. */
   newCards: string[];
+  /**
+   * Wall seconds from the run's start to its first moment with no draft open
+   * or banked (U2): how long the Opening held the run. Null for a resumed
+   * run, or one that never got clear.
+   */
+  opening: number | null;
 }
 
 /**
@@ -66,6 +76,9 @@ export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayRe
   let shown: unknown = null;
   /** Wall seconds the open draft has been up (idle: its timer). */
   let draftUp = 0;
+  /** Drafts banked before the first step: the Opening (U2). */
+  const opening = run.tick === 0 ? run.pendingDrafts : 0;
+  let openingDone: number | null = run.tick === 0 && opening === 0 ? 0 : null;
   while (!run.outcome && run.tick < maxTicks && (o.until === undefined || wall < o.until)) {
     if (run.draft && run.draft !== shown) {
       shown = run.draft;
@@ -93,23 +106,34 @@ export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayRe
     if (o.policy === 'active') {
       input = botInput(run, 'active');
     } else {
-      const pick = run.draft && draftUp >= (o.draftSeconds ?? BALANCE.draft.seconds) ? run.draft.suggested : undefined;
-      const ult = o.autoUlt === true && autoUltWanted(run, BALANCE.automation.autoUltCrowd);
-      input = { pick, ult: ult || undefined };
+      const inOpening = run.draft !== null && run.draftsOpened <= opening && opening > 1;
+      const takeAll = inOpening && o.openingSeconds != null && draftUp >= o.openingSeconds;
+      const pick = run.draft && !takeAll && draftUp >= (o.draftSeconds ?? BALANCE.draft.seconds) ? run.draft.suggested : undefined;
+      const ult = o.autoUlt === true && autoUltWanted(run);
+      input = { pick, takeAll: takeAll || undefined, ult: ult || undefined };
     }
-    const drafting = o.policy === 'idle' && run.draft !== null && input.pick === undefined;
+    const drafting = o.policy === 'idle' && run.draft !== null && input.pick === undefined && !input.takeAll;
     const before = run.wave;
     step(run, SIM_DT, input);
     // An idle draft runs the arena at 15% while its timer counts wall seconds.
     const dt = SIM_DT / (o.speed * (drafting ? slow : 1));
     wall += dt;
     if (drafting) draftUp += dt;
-    for (const ev of run.events) o.onEvent?.(ev, wall);
+    for (const ev of run.events) {
+      o.onEvent?.(ev, wall);
+      // A card taken unseen (U2's take-all) is seen now: it is on the tower.
+      if (ev.kind === 'picked' && ev.card.kind !== 'fallback' && !seen.has(cardKey(ev.card))) {
+        seen.add(cardKey(ev.card));
+        newCards.push(cardKey(ev.card));
+        o.onDraft?.([cardKey(ev.card)], false, wall);
+      }
+    }
     run.events.length = 0;
+    if (openingDone === null && opening > 0 && !run.draft && run.pendingDrafts === 0) openingDone = wall;
     if (run.wave > before && !run.outcome) o.onWave?.(run);
   }
   profile.seenCards = [...seen];
-  return { wall, newCards };
+  return { wall, newCards, opening: openingDone };
 }
 
 /** A deep copy of a run as the app's snapshot holds it: plain data, no events. */

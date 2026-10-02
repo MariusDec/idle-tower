@@ -314,7 +314,8 @@ export interface IdleVerdict {
   /** Wall seconds the idle bot took to each boss's first fall. */
   bossKills: Record<string, number>;
   /** I5 at each checkpoint of the active run. */
-  ratios: { label: string; active: number; idle: number; ratio: number }[];
+  /** `opening`: the idle bot's median wall seconds from a run's start to its first draft-free moment (U2). */
+  ratios: { label: string; active: number; idle: number; ratio: number; opening: number }[];
 }
 
 /** How long the idle bot may take before I2 calls it never, in days: past the band, with room to read. */
@@ -357,7 +358,9 @@ async function idleMain(seeds: number, activeHours: number): Promise<void> {
     const ok5 = med !== null && med >= I5_RATIO.min && med <= I5_RATIO.max;
     const mark = gated ? (ok5 ? 'PASS' : 'FAIL') : '    ';
     const note = gated ? '' : ' · before the idle kit, the player is active here anyway (§6.1)';
-    console.log(`  ${mark}  I5  ${label}: median active/idle ${med?.toFixed(2) ?? '?'} (want ${I5_RATIO.min}–${I5_RATIO.max}; ${rs})${note}`);
+    const open = all.filter((r) => r.label === label).map((r) => r.opening).sort((x, y) => x - y);
+    const opening = open.length > 0 ? ` · idle opening ${open[open.length >> 1].toFixed(0)} s` : '';
+    console.log(`  ${mark}  I5  ${label}: median active/idle ${med?.toFixed(2) ?? '?'} (want ${I5_RATIO.min}–${I5_RATIO.max}; ${rs})${opening}${note}`);
   }
 }
 

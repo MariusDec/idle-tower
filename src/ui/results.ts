@@ -1,4 +1,7 @@
 import type { RunSummary } from '../meta/results';
+import type { DamageBy, HurtBy } from '../sim/state';
+import { frameById } from '../content/frames';
+import { buildList, tallyBars, type TallyRow } from './build';
 import { floorWave } from '../content/abyss';
 import { BALANCE } from '../content/balance';
 import { BOSS_BY_ID } from '../content/bosses';
@@ -23,6 +26,29 @@ function cardEntry(key: string): ContentEntry | null {
   return FALLBACKS.find((f) => f.id === id) ?? null;
 }
 
+/** What a damage tally's sources are called (U5). */
+const TAKEN: Readonly<Record<HurtBy, string>> = {
+  contact: 'At the wall',
+  shots: 'Shots',
+  slams: 'Shockwaves',
+  pools: 'Molten pools',
+  blasts: 'Blasts',
+};
+
+function dealtRows(s: RunSummary): TallyRow[] {
+  return Object.entries(s.damageBy).map(([by, value]) => {
+    const id = by as DamageBy;
+    const weapon = WEAPON_BY_ID[id as WeaponId];
+    if (weapon) return { label: weapon.name, icon: weapon.icon, value: value ?? 0 };
+    const label = id === 'ult' ? frameById(s.frameId).ultimate.name : id === 'thorns' ? 'Thorns' : id === 'burn' ? 'Burns' : 'Other';
+    return { label, value: value ?? 0 };
+  });
+}
+
+function takenRows(s: RunSummary): TallyRow[] {
+  return Object.entries(s.takenBy).map(([by, value]) => ({ label: TAKEN[by as HurtBy], value: value ?? 0 }));
+}
+
 function chip(entry: ContentEntry, kind: string): HTMLElement {
   const el = document.createElement('li');
   el.className = 'results-find';
@@ -39,7 +65,9 @@ function chip(entry: ContentEntry, kind: string): HTMLElement {
  * language: the wave, the haul (tap for the breakdown), records with the old
  * value struck through, what was discovered, and one "Next:" line. Two
  * buttons, Forge and Run again; once auto-restart is owned, Run again fires
- * itself after a short countdown.
+ * itself after a short countdown. The build shows (U5), and behind a tap
+ * the damage each weapon dealt and what wore the tower down; the countdown
+ * waits while that is open.
  */
 export class ResultsScreen {
   private readonly root: HTMLElement;
@@ -60,6 +88,10 @@ export class ResultsScreen {
   private readonly nextValue: HTMLElement;
   private readonly again: HTMLButtonElement;
   private readonly hubBtn: HTMLButtonElement;
+  private readonly reportBtn: HTMLButtonElement;
+  private readonly report: HTMLElement;
+  private readonly reportBody: HTMLElement;
+  private readonly build: HTMLElement;
   /** Seconds left before auto-restart; null when it is off. */
   private countdown: number | null = null;
 
@@ -82,6 +114,15 @@ export class ResultsScreen {
       </div>
       <p class="results-breakdown" hidden></p>
       <ul class="results-finds"></ul>
+      <div class="results-build"></div>
+      <button type="button" class="btn results-report-btn" aria-expanded="false">How it went</button>
+      <div class="results-report" role="dialog" aria-label="How it went" hidden>
+        <div class="results-report-card">
+          <h2 class="modal-title">How it went</h2>
+          <div class="results-report-body"></div>
+          <button type="button" class="btn btn-primary results-report-close">Close</button>
+        </div>
+      </div>
       <div class="results-next">
         <span class="results-next-label">Next</span>
         <span class="results-next-icon"></span>
@@ -111,6 +152,16 @@ export class ResultsScreen {
     this.nextValue = q('.results-next-value');
     this.again = q('.results-again');
     this.hubBtn = q('.results-forge');
+    this.reportBtn = q('.results-report-btn');
+    this.report = q('.results-report');
+    this.reportBody = q('.results-report-body');
+    this.build = q('.results-build');
+    const setReport = (open: boolean): void => {
+      this.report.hidden = !open;
+      this.reportBtn.setAttribute('aria-expanded', String(open));
+    };
+    this.reportBtn.addEventListener('click', () => setReport(true));
+    q('.results-report-close').addEventListener('click', () => setReport(false));
     this.shards.addEventListener('click', () => {
       this.breakdown.hidden = !this.breakdown.hidden;
       this.shards.setAttribute('aria-expanded', String(!this.breakdown.hidden));
@@ -226,6 +277,27 @@ export class ResultsScreen {
       this.next.classList.toggle('is-ready', goal.progress >= 1);
     }
 
+    // The build (U5) on the screen; behind a tap, what dealt the damage and what took it.
+    this.build.replaceChildren(buildList(s.build));
+    const section = (title: string, node: HTMLElement): HTMLElement[] => {
+      const h = document.createElement('h3');
+      h.className = 'results-report-head';
+      h.textContent = title;
+      return [h, node];
+    };
+    const taken = tallyBars(takenRows(s), 'Damage taken');
+    taken.classList.add('is-taken');
+    const tookNone = takenRows(s).every((r) => r.value === 0);
+    const none = document.createElement('p');
+    none.className = 'tactics-empty';
+    none.textContent = 'Nothing touched the tower.';
+    this.reportBody.replaceChildren(
+      ...section('Damage dealt', tallyBars(dealtRows(s), 'Damage dealt')),
+      ...section('What wore it down', tookNone ? none : taken),
+    );
+    this.report.hidden = true;
+    this.reportBtn.setAttribute('aria-expanded', 'false');
+
     this.countdown = autoRestart ? BALANCE.automation.restartSeconds : null;
     this.paintAgain();
     this.root.hidden = false;
@@ -238,7 +310,7 @@ export class ResultsScreen {
 
   /** Run the auto-restart countdown on the wall clock. */
   tick(realDt: number): void {
-    if (this.countdown === null || this.root.hidden) return;
+    if (this.countdown === null || this.root.hidden || !this.report.hidden) return;
     this.countdown = Math.max(0, this.countdown - realDt);
     this.paintAgain();
     if (this.countdown === 0) {

@@ -5,7 +5,7 @@ import { abyssRelics } from '../content/relics';
 import type { BehaviourId, CardItemId, Effect, StatMod } from '../content/types';
 import { bossDown, equippedRelics, inAbyss, relicSlots, selectedFrame, selectedRegion } from './collection';
 import { ownedNodes } from './forge';
-import { priorityList } from './automation';
+import { neverList, priorityList } from './automation';
 import { runPacts } from './pacts';
 import type { Profile } from './profile';
 import { STAR_WEB, starGifts } from './stars';
@@ -104,12 +104,13 @@ export function buildRunConfig(profile: Profile): RunConfig {
     relicDrops: relicSlots(profile) > 0,
     recipes: Object.freeze(EVOLUTIONS.filter((e) => profile.recipes.found.includes(e.id)).map((e) => e.id)),
     priority: tactics(priorityList(profile), pool),
+    never: tactics(neverList(profile), pool),
     pacts: Object.freeze(runPacts(profile)),
     abyssRelics: Object.freeze(abyss ? abyssRelics(starGifts(profile).relicSets) : []),
   });
 }
 
-/** The Tactician's list as the run sees it: only items in the pool, frozen; null when none are. */
+/** A Tactician's list as the run sees it: only items in the pool, frozen; null when none are. */
 function tactics(list: CardItemId[] | null, pool: readonly CardItemId[]): readonly CardItemId[] | null {
   const ranked = list?.filter((id) => pool.includes(id)) ?? [];
   return ranked.length > 0 ? Object.freeze(ranked) : null;

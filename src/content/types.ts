@@ -208,7 +208,29 @@ export type StarNodeDef = WebNodeDef<ConstellationId>;
  * A frame's ultimate (§4.4): charged by kills, the only active button in a
  * run. A closed union: `sim/systems/ultimate.ts` switches on `id`.
  */
-export type UltimateDef =
+/**
+ * When the Autocaster fires an ultimate (U13), as data:
+ * `sim/systems/ultimate.ts#autoUltWanted` reads it through an exhaustive
+ * switch. The idle bot casts on the same rule.
+ *   windup  into a boss's slam wind-up, which a Nova staggers (a boss with
+ *           no slam in its phase: at once), or a crowd of `crowd` in range
+ *   wall    a shockwave within `within` seconds of the wall, or HP under
+ *           `hp` with `contact` bodies at the wall
+ *   pool    the HP in range is worth `bodies` of the wave's bodies, or a boss
+ *   crowd   a standing boss, or a crowd of `crowd` in range
+ */
+export type AutoRule =
+  | { readonly kind: 'windup'; readonly crowd: number }
+  | { readonly kind: 'wall'; readonly within: number; readonly hp: number; readonly contact: number }
+  | { readonly kind: 'pool'; readonly bodies: number }
+  | { readonly kind: 'crowd'; readonly crowd: number };
+
+export type UltimateDef = UltimateKind & {
+  /** When the Autocaster fires it (U13). */
+  readonly auto: AutoRule;
+};
+
+type UltimateKind =
   | {
     readonly id: 'nova';
     readonly name: string;
@@ -519,6 +541,19 @@ export type WeaponPattern =
   | 'boomerang' | 'mine' | 'tether' | 'rail';
 
 /**
+ * Whom a weapon aims at (U14), read by `sim/systems/combat.ts#aim` through
+ * an exhaustive switch:
+ *   nearest   the closest body
+ *   densest   the body with the most others within its blast (Mortar)
+ *   toughest  a boss or an elite first, else the most HP in range; held
+ *             until it falls or leaves range (Sunlance)
+ *   line      the line from the tower through the most bodies (Gilded Rail)
+ *   standoff  bodies that hold off and act from range first: a verb with a
+ *             `standoff` (Drones); else the nearest
+ */
+export type Targeting = 'nearest' | 'densest' | 'toughest' | 'line' | 'standoff';
+
+/**
  * A weapon's numbers at one level. Every pattern reads the fields it needs;
  * the rest stay at zero.
  */
@@ -582,6 +617,8 @@ export interface WeaponStep {
 export interface WeaponDef extends ContentEntry {
   readonly id: WeaponId;
   readonly pattern: WeaponPattern;
+  /** Whom it aims at (U14). */
+  readonly targeting: Targeting;
   /** What it is strong against (§11.2): the draft scorer leans toward it where these walk. */
   readonly counters: readonly EnemyId[];
   /** What blunts it: the scorer counts these against it where they walk. */

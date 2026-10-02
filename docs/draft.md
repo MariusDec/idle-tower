@@ -73,7 +73,14 @@ play (§13).
 
 With the Tactician ([idle.md](idle.md)), `run.priority` ranks first: an
 evolution ahead of everything, then the listed items in the player's order,
-then the scorer for anything unlisted.
+then the scorer for anything unlisted. A card on `run.never` (U7) is never
+suggested while anything else is offered.
+
+**Badges** (U4): `cardBadges` names how a card fits the build, from the
+scorer's own terms, and the card shows each as a word: *Recipe* (a step
+toward a known evolution) or *Completes* (the one that readies it),
+*Strong here* (a new weapon whose `counters` walk in this region), and
+*Slot n/m* (a new item into an empty slot). Long-press says each in full.
 
 ## Timing (the app's)
 
@@ -81,6 +88,16 @@ The sim never stops for a draft. While one is open the app runs the arena
 at 15% speed (`BALANCE.draft.slowMotion`) and the panel counts down
 `BALANCE.draft.seconds` (10 s) of wall time, or 6 s with the Tactician,
 then picks the suggestion. Picks and rerolls go through `applyInput`.
+
+**Take suggested ×N** (U2): with two or more drafts banked, one tap takes
+every suggestion (`applyInput({ takeAll })` → `takeSuggested`): each hand
+is rolled and scored in turn, exactly as one-by-one picks would be. A run
+that starts with drafts banked (Head Start, Veteran, the Seal) opens on
+the **Opening**: the same panel, titled "Opening · 1 of N", with take-all
+as its primary button. Once the Tactician is owned, the Opening takes
+everything by itself after `BALANCE.automation.openingSeconds` (2 s); any
+touch on the panel stops that count, so the player can review card by
+card. Cards taken unseen are marked seen: they are on the tower.
 
 ## Rerolls
 

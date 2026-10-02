@@ -1,15 +1,16 @@
 import { BALANCE } from '../../content/balance';
 import { frameById } from '../../content/frames';
-import type { Enemy, RunState } from '../state';
+import type { Enemy, HurtBy, RunState } from '../state';
 import { damageEnemy, wallRune } from './combat';
 import { mitigate } from './damage';
 
 /**
  * Everything that hurts the tower comes through here: contact hits, Spitter
  * shots and boss shockwaves. `source` is the body that struck it in contact,
- * for Thorns and Aegis's reflection; null for anything at range.
+ * for Thorns and Aegis's reflection; null for anything at range. `by` is
+ * what kind of harm it was, for the results' tally (U5).
  */
-export function hurtTower(run: RunState, raw: number, x: number, y: number, source: Enemy | null): number {
+export function hurtTower(run: RunState, raw: number, x: number, y: number, source: Enemy | null, by: HurtBy): number {
   const t = run.tower;
   if (run.time < t.invulnUntil) {
     // Aegis (§11.6): the hit is turned away, and a contact hit goes back.
@@ -28,6 +29,7 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
     source.slow = Math.max(source.slowUntil > run.time ? source.slow : 0, R.salt[Math.min(salt, R.salt.length) - 1]);
     source.slowUntil = run.time + R.saltSeconds;
   }
+  run.takenBy[by] = (run.takenBy[by] ?? 0) + Math.min(amount, Math.max(0, t.hp));
   t.hp -= amount;
   t.hurtTick = run.tick;
   if (run.firstHurtWave === null) run.firstHurtWave = run.wave;
@@ -58,7 +60,7 @@ export function tickShots(run: RunState, dt: number): void {
     s.x += s.vx * dt;
     s.y += s.vy * dt;
     if (Math.hypot(s.x, s.y) <= R) {
-      hurtTower(run, s.damage, s.x, s.y, null);
+      hurtTower(run, s.damage, s.x, s.y, null, 'shots');
       continue;
     }
     if (s.life > 0) run.shots[w++] = s;

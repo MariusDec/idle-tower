@@ -13,6 +13,7 @@ import { botInput } from '../tools/bot';
 import { MIGRATIONS, MigrationError, migrate, type Migration, type RawProfile } from '../src/meta/save/migrate';
 import { isProfile } from '../src/meta/save/schema';
 import { PROFILE_VERSION, newProfile } from '../src/meta/profile';
+import { exportProfile, importProfile, listBackups, pushBackup, readBackup } from '../src/meta/save/transfer';
 
 describe('profile save', () => {
   it('starts fresh on an empty store', async () => {
@@ -141,6 +142,13 @@ describe('migration ladder', () => {
     });
   });
 
+  it('walks a v8 profile to v9: no Never lists, the Tactician\'s lists kept (U7)', () => {
+    const out = migrate({ version: 8, createdAt: 5, shards: 50, tactics: { all: ['power'] } }, MIGRATIONS, 9);
+    expect(out.version).toBe(9);
+    expect(out.tacticsNever).toEqual({});
+    expect(out.tactics).toEqual({ all: ['power'] });
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);
@@ -202,5 +210,39 @@ describe('run snapshot (§12.4)', () => {
     await saveRunSnapshot(snapshotRun(run, profile), store);
     await clearRunSnapshot(store);
     expect(await loadRunSnapshot(profile, store)).toBeNull();
+  });
+});
+
+describe('carrying a profile (U12)', () => {
+  it('exports and imports a profile unchanged', () => {
+    const p = newProfile(7);
+    p.shards = 1234;
+    p.forge = { 'might-damage': 3 };
+    expect(importProfile(exportProfile(p))).toEqual(p);
+  });
+
+  it('walks an old export up the ladder', () => {
+    const out = importProfile(JSON.stringify({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } }));
+    expect(out.version).toBe(PROFILE_VERSION);
+    expect(out.shards).toBe(4);
+  });
+
+  it('refuses what is not a profile', () => {
+    expect(() => importProfile('not json')).toThrow();
+    expect(() => importProfile('{"hello": 1}')).toThrow();
+    expect(() => importProfile(JSON.stringify({ ...newProfile(0), version: PROFILE_VERSION + 1 }))).toThrow();
+  });
+
+  it('keeps the last three runs\' profiles, newest first', async () => {
+    const store = new MemorySaveStore();
+    for (let runs = 1; runs <= 5; runs++) {
+      const p = newProfile(0);
+      p.records.runs = runs;
+      p.lastSeen = runs * 1000;
+      await pushBackup(p, store);
+    }
+    const list = await listBackups(store);
+    expect(list.map((b) => b.runs)).toEqual([5, 4, 3]);
+    expect((await readBackup(list[0].slot, store))?.records.runs).toBe(5);
   });
 });

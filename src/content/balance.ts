@@ -366,8 +366,12 @@ export const BALANCE = {
      * player's own plan needs no ten seconds of thought (§6.2, §6.4).
      */
     tacticianSeconds: 6,
-    /** Autocaster: bodies within range that are worth an ultimate (a standing boss always is). */
-    autoUltCrowd: 8,
+    /**
+     * Wall seconds the Opening (a run that starts with drafts banked) waits,
+     * once the Tactician is owned, before it takes every one's suggestion
+     * at once (U2). A tap on it stops the count, to review.
+     */
+    openingSeconds: 2,
   },
   projectiles: {
     /** Seconds a homing bolt lives before fizzling. */

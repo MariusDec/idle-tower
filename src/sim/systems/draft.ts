@@ -164,6 +164,22 @@ export function pickCard(run: RunState, index: number): void {
   run.events.push({ kind: 'picked', card });
 }
 
+/**
+ * Take the suggestion on the open draft and on every banked draft after it
+ * (U2's "Take suggested ×N"): each hand is rolled and scored in turn, just
+ * as it would have been one at a time. Returns how many were taken.
+ */
+export function takeSuggested(run: RunState): number {
+  let n = 0;
+  while (run.pendingDrafts > 0) {
+    if (!run.draft) tickDraft(run);
+    if (!run.draft) break;
+    pickCard(run, run.draft.suggested);
+    n++;
+  }
+  return n;
+}
+
 export function applyCard(run: RunState, card: Card): void {
   switch (card.kind) {
     case 'weapon': {

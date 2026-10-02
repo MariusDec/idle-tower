@@ -446,7 +446,7 @@ describe('later Forge notables (§11.4)', () => {
     const run = inRegion(1, { behaviours: { rampart: 1 } });
     const e = body(run, { x: run.stats.radius + 10, y: 0 });
     const hp = run.tower.hp;
-    hurtTower(run, 1e9, e.x, e.y, e);
+    hurtTower(run, 1e9, e.x, e.y, e, 'contact');
     expect(hp - run.tower.hp).toBeCloseTo(run.stats.maxHp * BALANCE.behaviours.rampartCap);
   });
 

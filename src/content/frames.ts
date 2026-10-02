@@ -11,6 +11,7 @@ export const FRAMES: readonly FrameDef[] = [
     effects: [{ kind: 'stat', mod: { key: 'xpGain', pct: 0.1 } }],
     ultimate: {
       id: 'nova',
+      auto: { kind: 'windup', crowd: 8 },
       name: 'Nova',
       text: '600% damage, at least 40% of their health, to all in range; throws them back.',
       damage: 6,
@@ -31,6 +32,7 @@ export const FRAMES: readonly FrameDef[] = [
     ],
     ultimate: {
       id: 'aegis',
+      auto: { kind: 'wall', within: 0.6, hp: 0.4, contact: 3 },
       name: 'Aegis',
       text: 'Five seconds of invulnerability; blocked contact hits are reflected.',
       seconds: 5,
@@ -47,6 +49,7 @@ export const FRAMES: readonly FrameDef[] = [
     effects: [{ kind: 'behaviour', id: 'stormcaller' }],
     ultimate: {
       id: 'tempest',
+      auto: { kind: 'crowd', crowd: 8 },
       name: 'Tempest',
       text: 'A six-second storm strikes random enemies in range, each for at least 15% health.',
       seconds: 6,
@@ -68,6 +71,7 @@ export const FRAMES: readonly FrameDef[] = [
     ],
     ultimate: {
       id: 'overclock',
+      auto: { kind: 'crowd', crowd: 8 },
       name: 'Overclock',
       text: 'For six seconds, every weapon fires twice as fast.',
       seconds: 6,
@@ -87,6 +91,7 @@ export const FRAMES: readonly FrameDef[] = [
     ],
     ultimate: {
       id: 'daybreak',
+      auto: { kind: 'crowd', crowd: 8 },
       name: 'Daybreak',
       text: 'For six seconds, everything in range is slowed and takes double damage.',
       seconds: 6,
@@ -104,6 +109,7 @@ export const FRAMES: readonly FrameDef[] = [
     effects: [{ kind: 'behaviour', id: 'siphon' }],
     ultimate: {
       id: 'eclipse',
+      auto: { kind: 'pool', bodies: 6 },
       name: 'Eclipse',
       text: 'Everything in range loses a quarter of its health; a boss, a twentieth.',
       fraction: 0.25,

@@ -2,7 +2,10 @@ import { BOSS_BY_ID } from '../../content/bosses';
 import { BRANCH_NAME, FORGE } from '../../content/forge';
 import type { IconId } from '../../content/icons';
 import { CONSTELLATION_NAME, STARS } from '../../content/stars';
-import type { ForgeNodeDef, StarNodeDef, WebNodeDef } from '../../content/types';
+import type { ForgeNodeDef, StarNodeDef, StatKey, StatMod, WebNodeDef } from '../../content/types';
+import { scaleMod } from '../../sim/pacts';
+import { resolveStat } from '../../sim/stats';
+import { STAT_LABEL } from '../build';
 import { formatNumber } from '../../core/format';
 import { FORGE_WEB, canAfford } from '../../meta/forge';
 import type { Profile } from '../../meta/profile';
@@ -26,6 +29,11 @@ const ZOOM = { min: 0.5, max: 2.2 };
 const TAP_SLOP = 8;
 /** Delay per link step as a purchase ripples out over the web, ms. */
 const RIPPLE_STEP_MS = 70;
+/** The fit never zooms out past this, so a node stays easy to tap (42 px at `HIT_RADIUS`); nor in past `FIT_MAX`. */
+const FIT_MIN = 0.7;
+const FIT_MAX = 1.2;
+/** Room kept around the fitted nodes, px: a node's level label hangs below it. */
+const FIT_PAD = 24;
 
 export interface ForgeActions {
   buy(id: string): boolean;
@@ -58,6 +66,20 @@ function position(n: WebNodeDef): { x: number; y: number } {
   const a = (n.angle * Math.PI) / 180;
   const r = ringRadius(n.ring);
   return { x: Math.sin(a) * r, y: -Math.cos(a) * r };
+}
+
+/**
+ * What a stat's total from one web looks like (U8): a percentage for what
+ * multiplies, points for a chance, and a plain number for what adds.
+ */
+function statTotal(key: StatKey, mods: readonly StatMod[]): string {
+  const b = resolveStat(key, mods);
+  if (b.add !== 0 && b.pct === 0 && b.mult === 1) {
+    if (key === 'critChance' || key === 'regen') return `+${(b.add * 100).toFixed(1).replace(/\.0$/, '')}%`;
+    if (key === 'critDamage') return `+${b.add.toFixed(2)}×`;
+    return `+${formatNumber(Math.round(b.add))}`;
+  }
+  return `+${formatNumber(Math.round(((1 + b.pct) * b.mult - 1) * 100))}%`;
 }
 
 function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
@@ -97,10 +119,12 @@ export class WebView<N extends WebNodeDef> {
         <span class="forge-shards" aria-label="${src.currencyName}">${iconMarkup(src.currencyIcon)}<span class="forge-shards-n">0</span></span>
       </header>
       <p class="forge-hint" hidden>${src.hint}</p>
+      <button type="button" class="forge-recentre" aria-label="Recentre the web">⌖</button>
       <div class="forge-detail" hidden></div>`;
     this.shards = this.root.querySelector('.forge-shards-n')!;
     this.hint = this.root.querySelector('.forge-hint')!;
     this.detail = this.root.querySelector('.forge-detail')!;
+    this.root.querySelector('.forge-recentre')!.addEventListener('click', () => this.fit());
     this.svg = el('svg', { class: 'forge-web', role: 'application', 'aria-label': `${src.title} web` });
     this.world = el('g', { class: 'forge-world' });
     this.svg.appendChild(this.world);
@@ -122,17 +146,41 @@ export class WebView<N extends WebNodeDef> {
     requestAnimationFrame(() => this.fit());
   }
 
-  /** Centre the root and zoom so the outermost ring on show fits the narrow side, within limits. */
+  /**
+   * Fit what matters into view (U8): every node on show if they fit at a
+   * tappable zoom; else everything but the fog; else what can be bought
+   * now. Centred on what is fitted, never zoomed out past `FIT_MIN`: pan
+   * and pinch show the rest.
+   */
   private fit(): void {
     const w = this.svg.clientWidth;
     const h = this.svg.clientHeight;
     if (w === 0 || h === 0 || !this.profile) return;
     const states = this.src.web.states(this.profile);
-    const ring = Math.max(1, ...this.src.web.nodes.filter((n) => states.get(n.id) !== 'hidden').map((n) => n.ring));
-    const outer = ringRadius(Math.min(2, ring)) + RADIUS.notable;
-    const scale = Math.min(w, h) / 2 / outer;
-    // Never so small that a node is hard to tap; pan and pinch show the rest.
-    this.view = { x: 0, y: 0, scale: Math.min(1.2, Math.max(0.7, scale)) };
+    const shown = this.src.web.nodes.filter((n) => states.get(n.id) !== 'hidden');
+    const sets = [
+      shown,
+      shown.filter((n) => states.get(n.id) !== 'fog'),
+      shown.filter((n) => states.get(n.id) === 'open'),
+    ];
+    let box = { x0: -ROOT_RADIUS, y0: -ROOT_RADIUS, x1: ROOT_RADIUS, y1: ROOT_RADIUS };
+    let scale = FIT_MAX;
+    for (const set of sets) {
+      const b = { x0: -ROOT_RADIUS, y0: -ROOT_RADIUS, x1: ROOT_RADIUS, y1: ROOT_RADIUS };
+      for (const n of set) {
+        const at = position(n);
+        const r = RADIUS[n.type];
+        b.x0 = Math.min(b.x0, at.x - r);
+        b.x1 = Math.max(b.x1, at.x + r);
+        b.y0 = Math.min(b.y0, at.y - r);
+        b.y1 = Math.max(b.y1, at.y + r);
+      }
+      box = b;
+      scale = Math.min((w - FIT_PAD * 2) / (b.x1 - b.x0), (h - FIT_PAD * 2) / (b.y1 - b.y0));
+      if (scale >= FIT_MIN) break;
+    }
+    const s = Math.min(FIT_MAX, Math.max(FIT_MIN, scale));
+    this.view = { x: -((box.x0 + box.x1) / 2) * s, y: -((box.y0 + box.y1) / 2) * s, scale: s };
     this.fitted = true;
     this.applyView();
   }
@@ -284,6 +332,7 @@ export class WebView<N extends WebNodeDef> {
     const text = document.createElement('p');
     text.className = 'forge-detail-text';
     text.textContent = n.text;
+    const total = this.totals(p, n, level);
     const actions = document.createElement('div');
     actions.className = 'forge-detail-actions';
     if (level < n.maxLevel) {
@@ -317,8 +366,35 @@ export class WebView<N extends WebNodeDef> {
       });
       actions.append(refund);
     }
-    this.detail.append(head, kind, text, actions);
+    this.detail.append(head, kind, text, ...(total ? [total] : []), actions);
     this.detail.hidden = false;
+  }
+
+  /**
+   * The web's total on each stat this node raises (U8), now and after its
+   * next level: "Forge total · Damage +60% → +75%". Null for a node with no
+   * stat.
+   */
+  private totals(p: Profile, n: N, level: number): HTMLElement | null {
+    const keys = [...new Set(n.effects.flatMap((e) => (e.kind === 'stat' ? [e.mod.key] : [])))];
+    if (keys.length === 0) return null;
+    const mods = (extra: number): StatMod[] => {
+      const out: StatMod[] = [];
+      for (const { node, level: l } of this.src.web.ownedNodes(p)) {
+        for (const e of node.effects) if (e.kind === 'stat') out.push(scaleMod(e.mod, l + (node.id === n.id ? extra : 0)));
+      }
+      if (level === 0 && extra > 0) for (const e of n.effects) if (e.kind === 'stat') out.push(scaleMod(e.mod, extra));
+      return out;
+    };
+    const now = mods(0);
+    const next = level < n.maxLevel ? mods(1) : null;
+    const line = document.createElement('p');
+    line.className = 'forge-detail-total';
+    line.textContent = `${this.src.title} total · ` + keys.map((k) => {
+      const a = statTotal(k, now);
+      return `${STAT_LABEL[k]} ${next ? `${a} → ${statTotal(k, next)}` : a}`;
+    }).join(' · ');
+    return line;
   }
 
   private buy(id: string): void {

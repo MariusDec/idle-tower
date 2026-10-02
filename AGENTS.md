@@ -18,11 +18,11 @@ P9 deleted the `legacy/` copy.
 | `src/core/` | `rng.ts` seeded splittable RNG, `math.ts`, `events.ts` typed bus, `spatialGrid.ts`, `format.ts` | nothing outside `core/` |
 | `src/content/` | Data tables (`forge.ts` is the Forge web; `bosses.ts`, `relics.ts`, `feats.ts`; `enemies.ts` also holds the elite auras), `balance.ts` (every tunable constant), `arena.ts` (the fixed world), `icons.ts` (generated), `lint.ts` | `core/` |
 | `src/sim/` | DOM-free, deterministic: `RunState`, `createRun`, `step` | `core/`, `content/` only |
-| `src/meta/` | `profile.ts`, `forge.ts` (adjacency, fog, seals, costs, buy/refund, the "Next:" goal), `collection.ts` (what is unlocked: regions, frames, relic slots, hub tabs; relics worn and gained), `feats.ts`, `offline.ts` (farm rate, offline tiers and earnings), `goals.ts` (the hub's Next goal), `runConfig.ts` (profile → frozen `RunConfig`), `automation.ts` (Engineering's automation: speed, auto-restart, Frontier March, the Autocaster, the Tactician's lists and draft timer), `results.ts` (`bankRun`: a finished run into the profile), `save/` (schema, migration ladder, run snapshot, storage backends) | `core/`, `content/`, `sim/` types |
+| `src/meta/` | `profile.ts`, `forge.ts` (adjacency, fog, seals, costs, buy/refund, the "Next:" goal), `collection.ts` (what is unlocked: regions, frames, relic slots, hub tabs; relics worn and gained), `feats.ts`, `offline.ts` (farm rate, offline tiers and earnings), `goals.ts` (the hub's Next goal), `runConfig.ts` (profile → frozen `RunConfig`), `automation.ts` (Engineering's automation: speed, auto-restart, Frontier March, the Autocaster, the Tactician's lists and draft timer), `results.ts` (`bankRun`: a finished run into the profile), `save/` (schema, migration ladder, run snapshot, storage backends, `transfer.ts`: export, import and rolling backups) | `core/`, `content/`, `sim/` types |
 | `src/render/` | `camera.ts`, `renderer.ts`, `painters/`, `effects.ts`, `palette.ts` (with the colourblind-safe `SAFE_FX`), `quality.ts` (tiers, stored preference, the quality probe). Reads `RunState`, never writes it | `core/`, `content/`, `sim/` types |
 | `src/audio/` | `synth.ts` (Web Audio, master/sfx/music buses), `cues.ts` (sim events → sounds), `music.ts` (generative pad by mood and region) | `sim/` types |
-| `src/ui/` | DOM: HUD (with the boss bar), draft, results, toasts, `hub/` (home, the Forge web, the Map, the Collection, Feats, the Tactician's editor, Stars, Pacts), `settings.ts` (options and Stats), modal, icon helper | anything but `sim/` internals |
-| `src/platform/` | Capacitor shell hooks | — |
+| `src/ui/` | DOM: HUD (with the boss bar and the build strip), draft, results, toasts, `hub/` (home, the Forge web, the Map, the Collection, Feats, the Tactician's editor, Stars, Pacts), `settings.ts` (options, the save's export/import/backups, and Stats), `build.ts` (the build's icons, the stats list, tally bars), `controls.ts` (segmented control), modal, icon helper | anything but `sim/` internals |
+| `src/platform/` | Capacitor shell hooks; `files.ts` (save a file, pick one, copy text) | — |
 | `tools/` | Headless: `parallel.ts` (seeds in worker threads), `calibrate.ts` (T2: the scorer against the sim), `bot.ts` (input policies), `play.ts` (one run under the active or idle policy, with the wall clock), `shop.ts` (the bots' Forge buying), `inspect.ts` (per-wave table), `pacing.ts` (a fresh profile played for hours: runs, Forge buys, reveals, invariants), `idle.ts` (the idle bot's check-ins and the active/idle farm comparison), `act2.ts` (the bot past the Blight: heat, stars, the Abyss), `arsenal.ts` (I4), `contentReport.ts` (icons shared by unrelated entries) | `src/` minus DOM |
 | `tests/` | Vitest, node environment | — |
 
@@ -115,7 +115,7 @@ npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **idle-tower** (3093 symbols, 9500 relationships, 263 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **idle-tower** (3187 symbols, 9767 relationships, 271 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

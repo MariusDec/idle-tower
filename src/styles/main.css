@@ -175,6 +175,132 @@ body {
   transition: transform var(--dur-fast) var(--ease-out);
 }
 
+/* ── The build (U3, U5): an icon per weapon and passive, level as pips ──── */
+
+.hud-build,
+.build-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The HUD's strip reads at a glance and takes no taps. */
+.hud-build {
+  pointer-events: none;
+  min-height: 34px;
+}
+
+.build-list {
+  justify-content: center;
+  margin-bottom: var(--space-3);
+}
+
+.build-chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 30px;
+  padding: 2px 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-overlay);
+}
+
+.build-chip .icon { --icon-size: 22px; color: var(--text-1); }
+.build-chip.is-weapon .icon { color: var(--fx-gold); }
+.build-chip.is-passive { background: none; }
+.build-chip.is-evolved { box-shadow: 0 0 6px 1px var(--fx-gold); }
+
+/* Silenced by a Harbinger: slashed through. */
+.build-chip.is-silenced .icon { opacity: 0.35; }
+.build-chip.is-silenced::after {
+  content: '';
+  position: absolute;
+  inset: 45% 2px auto;
+  height: 2px;
+  background: var(--bad);
+  transform: rotate(-35deg);
+}
+
+.build-pips {
+  display: flex;
+  gap: 1px;
+}
+
+.build-pip {
+  width: 4px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--surface-4);
+}
+
+.build-pip.is-owned { background: var(--fx-gold); }
+
+.build-stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-md);
+  text-align: left;
+}
+
+.build-stats dt { color: var(--text-2); }
+.build-stats dd { margin: 0; color: var(--text-0); text-align: right; }
+.build-stat-run { color: var(--text-3); font-size: var(--text-sm); }
+
+/* A tally (U5): label, a bar against the largest row, and its share. */
+.tally {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tally-row {
+  display: grid;
+  grid-template-columns: 8.5em 1fr 3em;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+}
+
+.tally-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-1);
+}
+
+.tally-label .icon { --icon-size: 16px; flex: none; color: var(--fx-gold); }
+
+.tally-bar {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  overflow: hidden;
+}
+
+.tally-fill {
+  display: block;
+  height: 100%;
+  background: var(--fx-gold);
+  transform-origin: left center;
+}
+
+.tally.is-taken .tally-fill { background: var(--bad); }
+.tally-value { text-align: right; color: var(--text-2); }
+
 /* The ultimate: a ring that fills with charge, then glows. */
 .hud-ult {
   --charge: 0;
@@ -471,6 +597,43 @@ body {
 
 .results {
   background: var(--surface-scrim);
+}
+
+.results-build .build-list { margin: 0; }
+
+/* How it went (U5): a sheet over the results, so the screen stays one screen. */
+.results-report {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-sheet);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-scrim);
+}
+
+.results-report[hidden] { display: none; }
+
+.results-report-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(360px, calc(100% - var(--space-6) - var(--safe-l) - var(--safe-r)));
+  max-height: calc(100% - var(--space-6));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-5);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-2xl);
+  background: var(--surface-1);
+}
+
+.results-report-head {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: normal;
+  color: var(--text-2);
 }
 
 .results-headline {
@@ -812,6 +975,27 @@ body {
   color: var(--text-3);
 }
 
+.forge-detail-total {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--fx-gold);
+}
+
+/* Recentre (U8): back to the fitted view after a pan. */
+.forge-recentre {
+  position: absolute;
+  top: calc(var(--space-8) + var(--space-6));
+  right: var(--space-3);
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-size: var(--text-xl);
+  cursor: pointer;
+}
+
 .forge-detail-text {
   margin: var(--space-2) 0;
   color: var(--text-1);
@@ -850,7 +1034,7 @@ body {
    controls take them, and the cards sit above the HUD's bottom row so the
    ultimate stays in reach. */
 .draft {
-  --hud-bottom-clear: 104px;
+  --hud-bottom-clear: 140px;
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -866,7 +1050,7 @@ body {
 .draft-title,
 .draft-hint,
 .draft-row,
-.draft-reroll {
+.draft-actions {
   pointer-events: auto;
 }
 
@@ -1076,6 +1260,31 @@ body {
   display: flex;
 }
 
+/* How a card fits the build (U4): small words under its line. */
+.draft-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+}
+
+.draft-card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-overlay);
+  color: var(--text-1);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.draft-card-badge .icon { --icon-size: 12px; color: var(--fx-gold); }
+.draft-card-badge.is-complete { color: var(--fx-gold); }
+.draft-card-badge.is-counter { color: var(--good); }
+
 .draft-timer {
   width: 100%;
   height: 4px;
@@ -1098,9 +1307,20 @@ body {
   animation: none;
 }
 
-/* Reroll (Fortune): under the hand, out of the way of the cards. */
-.draft-reroll {
-  pointer-events: auto;
+/* Reroll (Fortune) and Take suggested (U2): under the hand, out of the way of the cards. */
+.draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.draft-actions:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+.draft-reroll,
+.draft-take {
   font-size: var(--text-md);
 }
 
@@ -1669,7 +1889,21 @@ body {
 
 .tactics-btn:disabled { opacity: 0.3; cursor: default; }
 
-.tactics-done { align-self: stretch; }
+/* The name takes the room; the buttons sit at the row's end. */
+.tactics-row .entry-name { flex: 1; }
+.tactics-row.is-never .icon { color: var(--text-3); }
+.tactics-row.is-never .entry-name { color: var(--text-3); text-decoration: line-through; }
+
+.tactics-btn-wide {
+  padding: 0 var(--space-2);
+  font-size: var(--text-md);
+  color: var(--text-1);
+}
+
+.tactics-scope:not([hidden]) { margin-bottom: var(--space-2); }
+
+.tactics-done,
+.tactics-reset { align-self: stretch; }
 
 /* ── Results: the boss and the rewards stack (§7.3) ──────────────────────── */
 
@@ -1870,10 +2104,45 @@ body {
   font-size: var(--text-sm);
 }
 
-.settings-reset {
+.settings-reset,
+.settings-transfer {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
+}
+
+.settings-transfer .settings-note { flex-basis: 100%; }
+
+.settings-paste {
+  flex-basis: 100%;
+  min-height: 44px;
+  padding: var(--space-2);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  color: var(--text-0);
+  font: inherit;
+  font-size: var(--text-sm);
+  resize: vertical;
+}
+
+.settings-backups {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-backups li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-1);
 }
 
 .btn-danger {

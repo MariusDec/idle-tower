@@ -1,7 +1,9 @@
 # The Tower, after the rebuild — improvements
 
-**Status:** proposal, 2026-10-01. Nothing here is built yet. The owner's
-decisions were made on 2026-10-02 (§8).
+**Status:** 2026-10-02. Q0 is built; Q1's mechanics are built and its
+retune is still owed (`plans/q1-balancing.md`); Q2 is built (see §7's Q2
+for what it left to later phases). The owner's decisions were made on
+2026-10-02 (§8).
 
 **Where this comes from:** a read of all of `src/`, `tools/` and `docs/` on
 the `rebuild` branch (`a6c9c27`); a fresh profile played at 375×812 on the
@@ -960,6 +962,11 @@ gate.
   - Every screen is checked at 375×812 (D4).
   - I5 is re-read after U2 and U13.
   - Playtest #3 (still open from P7): five questions, over several days.
+- **Built (2026-10-02):** U2, U3, U4, U5, U7 (Never lists, per-region
+  lists), U8 (fit-to-visible, recentre, totals), U12, U13, U14. Left for
+  later: U7's optional "Recipes first" toggle; Never spending Banish
+  charges waits for N1, and U8's wishlist is N7 (both Q3). Readings in
+  `docs/balancing.md` under Q2; playtest #3 is the owner's.
 
 ### Q3. New mechanics (L)
 

@@ -6,14 +6,17 @@ import { pactLoad } from '../sim/pacts';
 import { phasesOf } from '../sim/systems/boss';
 import { BOSS_WAVE, runRegion } from '../sim/systems/waves';
 import { formatNumber } from '../core/format';
+import type { WeaponId } from '../content/types';
+import { buildOf } from '../meta/results';
+import { buildChips, buildKey } from './build';
 import { setAriaLabel, setStyle, setText, toggleClass } from './dom';
 import { iconMarkup } from './icon';
 
 /**
  * The battle HUD (§10.1): HP, wave, region and the run's shards on top, and
- * the boss bar while a boss stands; the XP bar, the level, the speed toggle
- * and the Autocaster switch (each once owned) and the ultimate at the
- * bottom, under the thumb. Nothing else.
+ * the boss bar while a boss stands; the build strip (U3), the XP bar, the
+ * level, the speed toggle and the Autocaster switch (each once owned) and
+ * the ultimate at the bottom, under the thumb. Nothing else.
  */
 export interface HudActions {
   pause(): void;
@@ -40,6 +43,9 @@ export class Hud {
   private readonly bossName: HTMLElement;
   private readonly bossFill: HTMLElement;
   private readonly bossPips: HTMLElement;
+  private readonly build: HTMLElement;
+  /** The build as last drawn (`buildKey`), so the strip redraws only when it changes. */
+  private buildDrawn = '';
 
   constructor(host: HTMLElement, actions: HudActions) {
     this.root = document.createElement('div');
@@ -72,6 +78,7 @@ export class Hud {
           </div>
           <button type="button" class="hud-ult"><span class="hud-ult-label"></span></button>
         </div>
+        <ul class="hud-build" aria-label="Build"></ul>
         <div class="hud-xp" role="meter" aria-label="Experience"><div class="hud-xp-fill"></div></div>
       </div>`;
     this.wave = this.root.querySelector('.hud-wave-n')!;
@@ -90,6 +97,7 @@ export class Hud {
     this.bossName = this.root.querySelector('.hud-boss-name')!;
     this.bossFill = this.root.querySelector('.hud-boss-fill')!;
     this.bossPips = this.root.querySelector('.hud-boss-pips')!;
+    this.build = this.root.querySelector('.hud-build')!;
     this.speed.addEventListener('click', () => actions.speed());
     this.auto.addEventListener('click', () => actions.autoUlt());
     this.root.querySelector('.hud-pause')!.addEventListener('click', () => actions.pause());
@@ -100,6 +108,7 @@ export class Hud {
 
   show(): void {
     this.root.hidden = false;
+    this.buildDrawn = '';
   }
 
   hide(): void {
@@ -141,6 +150,7 @@ export class Hud {
       setText(this.region, heat > 0 ? `${name} · Heat ${heat}` : name);
     }
     this.updateBoss(run);
+    this.updateBuild(run);
     setText(this.shards, formatNumber(Math.floor(run.shards)));
     const hp = Math.max(0, run.tower.hp);
     const max = run.stats.maxHp;
@@ -157,6 +167,16 @@ export class Hud {
     setStyle(this.ult, '--charge', run.ult.charge.toFixed(3));
     toggleClass(this.ult, 'is-ready', ready);
     setAriaLabel(this.ult, ready ? `${name}: ready` : `${name}: charging`);
+  }
+
+  /** The build strip (U3): what the tower holds, at what level, and what is silenced. */
+  private updateBuild(run: RunState): void {
+    const silenced = new Set<WeaponId>(run.weapons.filter((w) => w.silencedUntil > run.time).map((w) => w.id));
+    const build = buildOf(run);
+    const key = buildKey(build, silenced);
+    if (key === this.buildDrawn) return;
+    this.buildDrawn = key;
+    this.build.replaceChildren(...buildChips(build, silenced));
   }
 
   /** The boss bar (§4.3): its name, its HP, a pip per phase. Only while it stands. */

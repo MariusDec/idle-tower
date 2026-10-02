@@ -33,8 +33,8 @@ export interface HubActions {
   selectFrame(id: string): void;
   claim(id: string): number;
   claimAll(): number;
-  /** The Tactician's list for the next run (§6.2). */
-  setTactics(list: readonly string[]): void;
+  /** The Tactician's lists under a key (§6.2, U7); null drops the key's own. */
+  setTactics(key: string, lists: { order: readonly string[]; never: readonly string[] } | null): void;
   /** Light a Constellation node (§9). */
   buyStar(id: string): boolean;
   /** Set a pact's rank for the next run (§9). */
@@ -160,7 +160,7 @@ export class HubScreen {
       claimAll: () => refreshing(() => actions.claimAll()),
     });
     this.tactics = new TacticsView(this.root, {
-      setTactics: (list) => actions.setTactics(list),
+      setTactics: (key, lists) => actions.setTactics(key, lists),
       done: () => this.setView('home'),
     });
     this.stars = new StarsView(this.root, {

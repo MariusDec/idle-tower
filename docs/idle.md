@@ -16,13 +16,25 @@ them; `automations(profile)` is their one consumer.
 | `speed-2`, `speed-3` | the HUD's speed toggle goes to 2×, 3× | `maxSpeed`, `runSpeed` |
 | `auto-restart` | the results screen starts the next run after 5 s | `App#endRun`, `ResultsScreen` |
 | `frontier-march` | after a first boss kill, the next run moves to the new frontier | `marchOn` |
-| `auto-ult` | the Autocaster casts the ultimate into a crowd of 8, or at a standing boss | `autoUlt`, `autoUltWanted` |
-| `tactician`, `tactician-2` | the player's priority list for draft picks; II keeps one per frame | `tacticsKey`, `priorityList` |
+| `auto-ult` | the Autocaster casts the ultimate on its own rule (U13, below) | `autoUlt`, `autoUltWanted` |
+| `tactician`, `tactician-2` | the player's priority and Never lists for draft picks; II keeps them per frame, and per frame in a region; the Opening takes itself (U2) | `tacticsScopes`, `priorityList`, `neverList`, `openingSeconds` |
 | `offline` … `offline-4` | Night Watch I–IV: offline earnings | `offlineTier` |
 
 Auto-restart waits while a card (welcome back) is up, and a first boss kill
 holds the results for its ceremony unless Frontier March carries the next
 run onward.
+
+### The Autocaster's rules (U13)
+
+Each ultimate carries its rule as data (`UltimateDef.auto`), read by
+`sim/systems/ultimate.ts#autoUltWanted`; the app and the idle bot cast on it.
+
+| Ultimate | Casts |
+|---|---|
+| Nova | into a boss's slam wind-up, which it staggers (at once if the boss's phase has no slam), or a crowd of 8 |
+| Aegis | a shockwave within 0.6 s of the wall, or HP under 40% with 3 at the wall |
+| Eclipse | HP in range worth 6 of the wave's bodies, or a boss |
+| Tempest, Overclock, Daybreak | a standing boss, or a crowd of 8 |
 
 ### The Tactician
 
@@ -33,6 +45,14 @@ then the scorer for everything unlisted, so buying the Tactician never
 makes the suggestion worse. With it, a draft waits 6 s instead of 10: the
 player's own plan needs no thinking time. An empty list hands the choice
 back to the scorer.
+
+**Never** (U7): `profile.tacticsNever`, keyed like the lists; a Never card
+is suggested only when nothing else is offered (Banish, N1, will spend its
+charges on them). **Tactician II** keeps lists per frame (`arcanist`) and,
+if the player chooses, per frame in a region (`arcanist@3`); a run follows
+the most specific key the player has written, then the frame's, then the
+shared one. **The Opening** (U2): with the Tactician, a run that starts
+with drafts banked takes every suggestion after 2 s unless touched.
 
 ## Offline (§6.3)
 

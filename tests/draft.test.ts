@@ -11,6 +11,10 @@ import {
   applyCard, candidateCards, cardKey, gainXp, pickCard, tickDraft, xpToNext,
 } from '../src/sim/systems/draft';
 import { castUltimate } from '../src/sim/systems/ultimate';
+import { cardBadges } from '../src/sim/suggest';
+import { EVOLUTION_OF } from '../src/content/evolutions';
+import { WEAPON_BY_ID } from '../src/content/weapons';
+import { runRegion } from '../src/sim/systems/waves';
 import type { Card, RunState } from '../src/sim/state';
 import { botInput, type Policy } from '../tools/bot';
 import { FRAME_BY_ID } from '../src/content/frames';
@@ -190,6 +194,54 @@ describe('the draft (§4.5)', () => {
     levelUp(run);
     expect(run.draft!.cards).not.toEqual(FIRST_DRAFT);
     expect(buildRunConfig(veteran()).firstDraft).toBeNull();
+  });
+});
+
+describe('take suggested ×N (U2)', () => {
+  it('takes every banked draft, exactly as picking each suggestion in turn would', () => {
+    const one = fresh(5);
+    one.pendingDrafts = 4;
+    const all = structuredClone(one);
+    while (one.pendingDrafts > 0) {
+      tickDraft(one);
+      pickCard(one, one.draft!.suggested);
+    }
+    tickDraft(all);
+    applyInput(all, { takeAll: true });
+    expect(all.pendingDrafts).toBe(0);
+    expect(all.draft).toBeNull();
+    expect(all.events.filter((e) => e.kind === 'picked')).toHaveLength(4);
+    expect({ w: all.weapons, p: all.passives, s: all.streams.draft }).toEqual({ w: one.weapons, p: one.passives, s: one.streams.draft });
+  });
+
+  it('does nothing with nothing banked', () => {
+    const run = fresh(5);
+    run.pendingDrafts = 0;
+    applyInput(run, { takeAll: true });
+    expect(run.weapons).toHaveLength(fresh(5).weapons.length);
+    expect(run.passives).toHaveLength(0);
+  });
+});
+
+describe('card badges (U4)', () => {
+  it('a new weapon names its slot, and says when it answers the region', () => {
+    const run = fresh(5);
+    const card: Card = { kind: 'weapon', id: 'chain-lightning', level: 1 };
+    const badges = cardBadges(run, card);
+    expect(badges).toContainEqual({ kind: 'slot', slot: run.weapons.length + 1, of: run.weaponSlots });
+    const counters = WEAPON_BY_ID['chain-lightning'].counters.some((id) => runRegion(run).pool.some((p) => p.enemy === id));
+    expect(badges.some((b) => b.kind === 'counter')).toBe(counters);
+  });
+
+  it('a known recipe\'s partner is a step; at the evolving level it completes it', () => {
+    const run = fresh(5);
+    const evo = EVOLUTION_OF['arcane-bolt'];
+    const partner: Card = { kind: 'passive', id: evo.passive, level: 1 };
+    expect(cardBadges(run, partner).some((b) => b.kind === 'recipe')).toBe(false);
+    run.recipes = [evo.id];
+    expect(cardBadges(run, partner)).toContainEqual({ kind: 'recipe', evolution: evo.id, completes: false });
+    run.weapons.find((w) => w.id === 'arcane-bolt')!.level = BALANCE.maxLevel;
+    expect(cardBadges(run, partner)).toContainEqual({ kind: 'recipe', evolution: evo.id, completes: true });
   });
 });
 

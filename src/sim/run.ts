@@ -8,7 +8,7 @@ import { allMods, resolveStats } from './stats';
 import { pactLoad, ruleSurge, surgeMods } from './pacts';
 import { separateEnemies, sweepEnemies, tickEnemies } from './systems/enemies';
 import { sweepProjectiles, tickBurns, tickProjectiles, tickRunes, tickWeapons } from './systems/combat';
-import { isWeaponId, pickCard, rerollDraft, tickDraft, xpToNext } from './systems/draft';
+import { isWeaponId, pickCard, rerollDraft, takeSuggested, tickDraft, xpToNext } from './systems/draft';
 import { tickBoss, tickPools, tickRings } from './systems/boss';
 import { tickShots } from './systems/tower';
 import { castUltimate, tickUltimate } from './systems/ultimate';
@@ -89,6 +89,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     evolved: [],
     recipes: [...config.recipes],
     priority: config.priority ? [...config.priority] : null,
+    never: config.never ? [...config.never] : null,
     behaviours: { ...config.behaviours },
     rerolls: owned('reroll'),
     swap: owned('specialist') > 0,
@@ -101,6 +102,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     kills: 0,
     killsBy: {},
     damageBy: {},
+    takenBy: {},
     rng: root.state,
     streams: {
       waves: root.split('waves').state,
@@ -129,6 +131,7 @@ export function applyInput(run: RunState, input: RunInput): void {
   }
   if (input.reroll) rerollDraft(run);
   if (input.pick !== undefined) pickCard(run, input.pick);
+  if (input.takeAll) takeSuggested(run);
   if (input.ult) castUltimate(run);
 }
 

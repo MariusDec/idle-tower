@@ -3,8 +3,10 @@ import { frameById } from '../../content/frames';
 import { weaponParams } from '../../content/weapons';
 import type { Enemy, RunState } from '../state';
 import { Rng } from '../../core/rng';
-import { staggerBoss } from './boss';
+import { BOSS_BY_ID } from '../../content/bosses';
+import { phasesOf, staggerBoss } from './boss';
 import { damageEnemy, knockBack, targetable } from './combat';
+import { runRegion, waveHp } from './waves';
 
 /**
  * The frame's ultimate (§4.4): charged by kills (see `kill`), fired on the
@@ -132,13 +134,45 @@ export function enemiesInRange(run: RunState): number {
 }
 
 /**
- * The Autocaster's rule (§6.2): a charged ultimate goes off when `crowd`
- * bodies are in range, or when a boss stands above the water. The app and
- * the idle bot both cast on it.
+ * The Autocaster's rule (§6.2, U13): each ultimate has its own moment, as
+ * data on the frame (`AutoRule`). The app and the idle bot both cast on it.
  */
-export function autoUltWanted(run: RunState, crowd: number): boolean {
+export function autoUltWanted(run: RunState): boolean {
   if (run.ult.charge < 1) return false;
+  const rule = frameById(run.frameId).ultimate.auto;
   const b = run.boss;
-  if (b && b.killedIn === null && !b.submerged) return true;
-  return enemiesInRange(run) >= crowd;
+  const boss = b && b.killedIn === null && !b.submerged ? b : null;
+  switch (rule.kind) {
+    case 'windup': {
+      if (boss && boss.windup > 0) return true;
+      // A boss with no slam to break: no point waiting for one.
+      if (boss && !phasesOf(run, BOSS_BY_ID[boss.id])[boss.phase]?.patterns.some((p) => p.kind === 'slam')) return true;
+      return enemiesInRange(run) >= rule.crowd;
+    }
+    case 'wall': {
+      const R = run.stats.radius;
+      for (const r of run.rings) {
+        if (r.hit) continue;
+        const reach = Math.hypot(r.x, r.y) - R - r.radius;
+        if (reach / r.speed <= rule.within) return true;
+      }
+      if (run.tower.hp >= run.stats.maxHp * rule.hp) return false;
+      let contact = 0;
+      for (const e of run.enemies) if (e.alive && e.inContact) contact++;
+      return contact >= rule.contact;
+    }
+    case 'pool': {
+      if (boss) return true;
+      const r2 = run.stats.range * run.stats.range;
+      let hp = 0;
+      for (const e of run.enemies) if (targetable(run, e) && !e.court && e.x * e.x + e.y * e.y <= r2) hp += e.hp;
+      return hp >= rule.bodies * waveHp(runRegion(run), Math.max(1, run.wave));
+    }
+    case 'crowd':
+      return boss !== null || enemiesInRange(run) >= rule.crowd;
+    default: {
+      const exhaustive: never = rule;
+      return exhaustive;
+    }
+  }
 }

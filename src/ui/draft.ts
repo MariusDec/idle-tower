@@ -4,10 +4,11 @@ import { FALLBACKS, PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
 import type { ContentEntry } from '../content/types';
 import type { Card } from '../sim/state';
+import type { CardBadge } from '../sim/suggest';
 import { cardKey } from '../sim/systems/draft';
 import { icon } from './icon';
 import { bindLongPress } from './longPress';
-import { setStyle, toggleClass } from './dom';
+import { setStyle, setText, toggleClass } from './dom';
 
 export interface DraftView {
   /** The level this draft was earned at. */
@@ -24,7 +25,36 @@ export interface DraftView {
   rerolls: number;
   /** Specialist's one weapon while its slot may still be swapped (S4); null otherwise. */
   swapFor?: string | null;
+  /** Drafts banked, this one included: from two, one tap takes every suggestion (U2). */
+  banked?: number;
+  /** The Opening (U2): the run started with drafts banked; this is draft `at` of `of`. */
+  opening?: { at: number; of: number } | null;
+  /** Wall seconds before the Opening takes every suggestion by itself (the Tactician); null: it waits. */
+  autoTake?: number | null;
+  /** How each card fits the build (U4), by card index. */
+  badges?: readonly (readonly CardBadge[])[];
 }
+
+/** A badge's word on the card, and its line in the long-press details (R4). */
+function badgeText(b: CardBadge): { short: string; long: string } {
+  switch (b.kind) {
+    case 'recipe': {
+      const name = EVOLUTION_BY_ID[b.evolution].name;
+      return b.completes ? { short: 'Completes', long: `Completes ${name}.` } : { short: 'Recipe', long: `A step toward ${name}.` };
+    }
+    case 'counter':
+      return { short: 'Strong here', long: 'Strong against what walks in this region.' };
+    case 'slot':
+      return { short: `Slot ${b.slot}/${b.of}`, long: `Fills slot ${b.slot} of ${b.of}.` };
+    default: {
+      const exhaustive: never = b;
+      return exhaustive;
+    }
+  }
+}
+
+/** What the draft's wall clock did this frame. */
+export type DraftTick = 'timeout' | 'take-all' | null;
 
 /** The first number-ish token in a card line, highlighted (§10.1). */
 const KEY_NUMBER = /[+×]?\d+(?:\.\d+)?%?(?: s\b)?/;
@@ -108,11 +138,18 @@ export class DraftPanel {
   private holding = false;
 
   private readonly reroll: HTMLButtonElement;
+  private readonly take: HTMLButtonElement;
+  /** Seconds left before the Opening takes every suggestion; null when it waits. */
+  private autoTake: number | null = null;
+  private takeLabel = '';
 
   constructor(
     host: HTMLElement,
     private readonly onPick: (index: number) => void,
     onReroll: () => void,
+    onTakeAll: () => void,
+    /** The player touched the Opening: it stops counting down, to be reviewed. */
+    private readonly onReview: () => void = () => {},
   ) {
     this.root = document.createElement('section');
     this.root.className = 'draft';
@@ -122,10 +159,25 @@ export class DraftPanel {
       <h2 class="draft-title"></h2>
       <p class="draft-hint"></p>
       <div class="draft-row"></div>
-      <button type="button" class="btn draft-reroll" hidden></button>
+      <div class="draft-actions">
+        <button type="button" class="btn draft-reroll" hidden></button>
+        <button type="button" class="btn draft-take" hidden></button>
+      </div>
       <div class="draft-timer" aria-hidden="true"><div class="draft-timer-fill"></div></div>`;
     this.reroll = this.root.querySelector('.draft-reroll')!;
     this.reroll.addEventListener('click', onReroll);
+    this.take = this.root.querySelector('.draft-take')!;
+    this.take.addEventListener('click', () => {
+      this.autoTake = null;
+      onTakeAll();
+    });
+    // Any other touch on the panel stops the Opening's count: the player is reading.
+    this.root.addEventListener('pointerdown', (ev) => {
+      if (this.autoTake === null || (ev.target as HTMLElement).closest('.draft-take')) return;
+      this.autoTake = null;
+      this.paintTake();
+      this.onReview();
+    });
     this.title = this.root.querySelector('.draft-title')!;
     this.hint = this.root.querySelector('.draft-hint')!;
     this.row = this.root.querySelector('.draft-row')!;
@@ -155,7 +207,8 @@ export class DraftPanel {
   }
 
   show(view: DraftView): void {
-    this.title.textContent = `Level ${view.level}`;
+    const opening = view.opening ?? null;
+    this.title.textContent = opening ? `Opening · ${opening.at} of ${opening.of}` : `Level ${view.level}`;
     this.hint.textContent = view.timed ? '' : 'Pick one. Every level-up offers new cards.';
     this.hint.hidden = view.timed;
     this.timed = view.timed;
@@ -166,7 +219,14 @@ export class DraftPanel {
     setStyle(this.timerFill, 'transform', 'scaleX(1)');
     this.reroll.hidden = view.rerolls <= 0 || !view.timed;
     this.reroll.textContent = `Reroll · ${view.rerolls}`;
-    this.row.replaceChildren(...view.cards.map((c, i) => this.card(c, i, i === view.suggested, !view.seen(cardKey(c)), view.swapFor ?? null)));
+    // Two or more banked (U2): one tap takes every suggestion. In the Opening it leads.
+    const banked = view.banked ?? 1;
+    this.take.hidden = banked < 2 || !view.timed;
+    toggleClass(this.take, 'btn-primary', opening !== null);
+    this.takeLabel = opening ? `Take all ${banked} suggested` : `Take suggested ×${banked}`;
+    this.autoTake = opening && view.timed ? view.autoTake ?? null : null;
+    this.paintTake();
+    this.row.replaceChildren(...view.cards.map((c, i) => this.card(c, i, i === view.suggested, !view.seen(cardKey(c)), view.swapFor ?? null, view.badges?.[i] ?? [])));
     // Past four cards (Choice, Foresight, Jackpot), the hand wraps into rows of three.
     toggleClass(this.row, 'is-many', view.cards.length > 4);
     this.root.hidden = false;
@@ -175,17 +235,30 @@ export class DraftPanel {
   hide(): void {
     this.root.hidden = true;
     this.holding = false;
+    this.autoTake = null;
   }
 
-  /** Run the timer on the wall clock. True when it has just run out. */
-  tick(realDt: number): boolean {
-    if (!this.open || !this.timed || this.holding) return false;
+  /** Run the timers on the wall clock: the draft's own, and the Opening's take-all (U2). */
+  tick(realDt: number): DraftTick {
+    if (!this.open || !this.timed || this.holding) return null;
+    if (this.autoTake !== null) {
+      this.autoTake = Math.max(0, this.autoTake - realDt);
+      this.paintTake();
+      if (this.autoTake === 0) {
+        this.autoTake = null;
+        return 'take-all';
+      }
+    }
     this.remaining = Math.max(0, this.remaining - realDt);
     setStyle(this.timerFill, 'transform', `scaleX(${(this.remaining / this.seconds).toFixed(3)})`);
-    return this.remaining === 0;
+    return this.remaining === 0 ? 'timeout' : null;
   }
 
-  private card(card: Card, index: number, suggested: boolean, isNew: boolean, swapFor: string | null): HTMLElement {
+  private paintTake(): void {
+    setText(this.take, this.autoTake === null ? this.takeLabel : `${this.takeLabel} · ${Math.ceil(this.autoTake)}`);
+  }
+
+  private card(card: Card, index: number, suggested: boolean, isNew: boolean, swapFor: string | null, badges: readonly CardBadge[]): HTMLElement {
     const { entry, line, kind } = describe(card, swapFor);
     const el = document.createElement('button');
     el.type = 'button';
@@ -229,6 +302,21 @@ export class DraftPanel {
 
     el.appendChild(lineWithNumber(line));
 
+    // How it fits the build (U4): a word each; the details say the rest.
+    if (badges.length > 0) {
+      const row = document.createElement('div');
+      row.className = 'draft-card-badges';
+      for (const b of badges) {
+        const tag = document.createElement('span');
+        tag.className = `draft-card-badge is-${b.kind}${b.kind === 'recipe' && b.completes ? ' is-complete' : ''}`;
+        if (b.kind === 'recipe') tag.append(icon(EVOLUTION_BY_ID[b.evolution].icon));
+        tag.append(badgeText(b).short);
+        row.appendChild(tag);
+      }
+      el.appendChild(row);
+      el.setAttribute('aria-label', `${entry.name}. ${line} ${badges.map((b) => badgeText(b).long).join(' ')}`);
+    }
+
     if (card.kind === 'weapon' || card.kind === 'passive') {
       const pips = document.createElement('div');
       pips.className = 'draft-card-pips';
@@ -242,7 +330,7 @@ export class DraftPanel {
 
     const more = document.createElement('div');
     more.className = 'draft-card-details';
-    for (const d of details(card)) {
+    for (const d of [...details(card), ...badges.map((b) => badgeText(b).long)]) {
       const p = document.createElement('p');
       p.textContent = d;
       more.appendChild(p);

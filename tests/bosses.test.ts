@@ -145,7 +145,7 @@ describe('boss patterns', () => {
   it('remembers the low point of the fight, even one Second Wind lifts', () => {
     const run = atBoss();
     run.revives = 1;
-    hurtTower(run, run.stats.maxHp * 2, 0, 100, null);
+    hurtTower(run, run.stats.maxHp * 2, 0, 100, null, 'slams');
     step(run, SIM_DT);
     expect(run.outcome).toBeNull();
     expect(run.tower.hp).toBeGreaterThan(0);

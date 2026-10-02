@@ -25,7 +25,7 @@ import { BOSS_BY_ID } from '../src/content/bosses';
 import { Rng } from '../src/core/rng';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile, type Profile } from '../src/meta/profile';
-import { autoUlt, automations, draftSeconds, marchOn, runSpeed } from '../src/meta/automation';
+import { autoUlt, automations, draftSeconds, marchOn, openingSeconds, runSpeed } from '../src/meta/automation';
 import { bankRun } from '../src/meta/results';
 import { frontier, hubUnlocks } from '../src/meta/collection';
 import { claimAll } from '../src/meta/feats';
@@ -93,6 +93,7 @@ export function runIdle(days: number, seed: number, bosses: readonly string[] = 
         speed,
         autoUlt: autoUlt(profile),
         draftSeconds: draftSeconds(profile),
+        openingSeconds: openingSeconds(profile),
         until: close - clock,
         onWave: (r) => { snap = snapshotOf(r); },
         onEvent: (ev, wall) => {
@@ -126,6 +127,8 @@ export interface FarmRate {
   /** Shards per wall hour, first-kill boss bonuses left out. */
   perHour: number;
   runs: number;
+  /** Median wall seconds a run's Opening held it (U2); 0 when no run opened on banked drafts. */
+  opening: number;
 }
 
 /**
@@ -137,11 +140,15 @@ export function farmRate(profile: Profile, policy: PlayPolicy, n: number, seed: 
   const seeds = new Rng(seed);
   let shards = 0;
   let wall = 0;
+  const openings: number[] = [];
   for (let i = 0; i < n; i++) {
     const p = structuredClone(profile);
     const speed = runSpeed(p);
     const run = createRun(buildRunConfig(p), seeds.nextU32());
-    const played = playRun(p, run, { policy, speed, autoUlt: autoUlt(p), draftSeconds: draftSeconds(p) });
+    const played = playRun(p, run, {
+      policy, speed, autoUlt: autoUlt(p), draftSeconds: draftSeconds(p), openingSeconds: openingSeconds(p),
+    });
+    openings.push(played.opening ?? 0);
     const summary = bankRun(p, run, played.newCards, speed);
     shards += summary.shards - (summary.boss?.first ? summary.shardsFrom.boss : 0);
     const between = policy === 'active'
@@ -149,12 +156,13 @@ export function farmRate(profile: Profile, policy: PlayPolicy, n: number, seed: 
       : automations(p).has('auto-restart') ? BALANCE.automation.restartSeconds : MANUAL_RESTART;
     wall += played.wall + between;
   }
-  return { perHour: shards / (wall / 3600), runs: n };
+  openings.sort((a, b) => a - b);
+  return { perHour: shards / (wall / 3600), runs: n, opening: openings[openings.length >> 1] ?? 0 };
 }
 
 /** I5's reading at one Forge state: active shards per hour over idle. */
-export function farmRatio(profile: Profile, n: number, seed: number): { active: number; idle: number; ratio: number } {
+export function farmRatio(profile: Profile, n: number, seed: number): { active: number; idle: number; ratio: number; opening: number } {
   const active = farmRate(profile, 'active', n, seed).perHour;
-  const idle = farmRate(profile, 'idle', n, seed).perHour;
-  return { active, idle, ratio: active / Math.max(1e-9, idle) };
+  const idle = farmRate(profile, 'idle', n, seed);
+  return { active, idle: idle.perHour, ratio: active / Math.max(1e-9, idle.perHour), opening: idle.opening };
 }

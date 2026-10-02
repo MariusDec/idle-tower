@@ -3,7 +3,7 @@ import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../content/evolutions';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
-import type { EnemyId, PassiveId, WeaponId } from '../content/types';
+import type { EnemyId, EvolutionId, PassiveId, WeaponId } from '../content/types';
 import type { Card, RunState, TowerStats, WeaponState } from './state';
 import { allMods, resolveStats } from './stats';
 import { armed, evolveAt } from './systems/arms';
@@ -72,12 +72,15 @@ const CRESCENT_EXTRA = 0.8;
 /** A rune that bursts on one body catches this many more per unit of radius; and how many laid runes burst before they fade. */
 const RUNE_BODIES_PER_UNIT = 1 / 45;
 const RUNE_TRIP_RATE = 0.8;
-/** Bodies in a slug's line, on average, and more per unit of its width; a second slug finds this share fresh. */
-const RAIL_BODIES = 1.9;
-const RAIL_BODIES_PER_UNIT = 1 / 40;
-const RAIL_EXTRA_SLUG = 0.6;
+/**
+ * Bodies in a slug's line, on average, and more per unit of its width: it
+ * aims down the most crowded line (U14). A second slug finds this share fresh.
+ */
+const RAIL_BODIES = 1.45;
+const RAIL_BODIES_PER_UNIT = 1 / 9;
+const RAIL_EXTRA_SLUG = 0.37;
 /** Midas Lance's mark: the share of its vulnerability that lands before the gilded body falls. */
-const MIDAS_VALUE = 0.1;
+const MIDAS_VALUE = 0.16;
 /** Waves a typical run lasts, overtime included: how long a passive that grows with the waves has to grow. */
 const RUN_WAVES = 24;
 /** What a weapon lands on a body it is weak against, as a share of its hit. */
@@ -290,6 +293,54 @@ function recipeBonus(run: RunState, passive: PassiveId): number {
   return best * RECIPE_VALUE;
 }
 
+/**
+ * How a card fits the build (U4), from the scorer's own terms: a step toward
+ * a known recipe (or the one that completes it), a new weapon that answers
+ * this region, and a new item into an empty slot.
+ */
+export type CardBadge =
+  | { readonly kind: 'recipe'; readonly evolution: EvolutionId; readonly completes: boolean }
+  | { readonly kind: 'counter' }
+  | { readonly kind: 'slot'; readonly slot: number; readonly of: number };
+
+export function cardBadges(run: RunState, card: Card): CardBadge[] {
+  const out: CardBadge[] = [];
+  const at = evolveAt((run.behaviours.specialist ?? 0) > 0);
+  switch (card.kind) {
+    case 'weapon': {
+      const owned = run.weapons.find((w) => w.id === card.id);
+      const evo = EVOLUTION_OF[card.id];
+      if (owned && !owned.evolved && knows(run, card.id) && run.passives.some((p) => p.id === evo.passive)) {
+        out.push({ kind: 'recipe', evolution: evo.id, completes: card.level >= at });
+      }
+      if (!owned) {
+        if (counterShare(run, card.id) > 0) out.push({ kind: 'counter' });
+        if (!run.swap) out.push({ kind: 'slot', slot: run.weapons.length + 1, of: run.weaponSlots });
+      }
+      return out;
+    }
+    case 'passive': {
+      if (card.level === 1) {
+        for (const w of run.weapons) {
+          const evo = EVOLUTION_OF[w.id];
+          if (w.evolved || !knows(run, w.id) || evo.passive !== card.id) continue;
+          out.push({ kind: 'recipe', evolution: evo.id, completes: w.level >= at });
+          break;
+        }
+        out.push({ kind: 'slot', slot: run.passives.length + 1, of: run.passiveSlots });
+      }
+      return out;
+    }
+    case 'evolution':
+    case 'fallback':
+      return out;
+    default: {
+      const exhaustive: never = card;
+      return exhaustive;
+    }
+  }
+}
+
 function evolved(weapons: readonly WeaponState[], id: WeaponId): WeaponState[] {
   return weapons.map((w) => (w.id === id ? { ...w, evolved: true } : w));
 }
@@ -374,14 +425,19 @@ function rank(priority: readonly string[], card: Card): number {
 /**
  * Index of the card to suggest: with a Tactician list, the best-ranked card
  * on it; otherwise, or when nothing on offer is listed, the scorer's best,
- * the first on a tie.
+ * the first on a tie. A card on the Never list (U7) is suggested only when
+ * nothing else is offered.
  */
 export function suggest(run: RunState, cards: readonly Card[]): number {
+  const never = run.never;
+  const ruledOut = (c: Card): boolean => !!never && (c.kind === 'weapon' || c.kind === 'passive') && never.includes(c.id);
+  const open = cards.some((c) => !ruledOut(c)) ? (c: Card): boolean => !ruledOut(c) : (): boolean => true;
   const priority = run.priority;
   if (priority) {
     let top = -1;
     let topRank = Infinity;
     cards.forEach((c, i) => {
+      if (!open(c)) return;
       const r = rank(priority, c);
       if (r < topRank) {
         topRank = r;
@@ -393,6 +449,7 @@ export function suggest(run: RunState, cards: readonly Card[]): number {
   let best = 0;
   let bestScore = -Infinity;
   cards.forEach((c, i) => {
+    if (!open(c)) return;
     const s = scoreCard(run, c);
     if (s > bestScore) {
       bestScore = s;

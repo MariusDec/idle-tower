@@ -7,7 +7,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 8;
+  version: 9;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -56,9 +56,12 @@ export interface Profile {
   ceremony: string | null;
   /**
    * The Tactician's priority lists (§6.2), card item ids best first: `all`
-   * for Tactician I, and with Tactician II one per frame id.
+   * for Tactician I; with Tactician II one per frame id, and one per frame
+   * in a region, `frame@region` (U7).
    */
   tactics: Record<string, string[]>;
+  /** The Tactician's Never lists (U7), keyed as `tactics`: never suggested while anything else is offered. */
+  tacticsNever: Record<string, string[]>;
   /** Starlight (§9): Act 2's currency, spent in the Constellations. Whole only. */
   starlight: number;
   /** Constellation levels owned, by node id (§9). A missing id is level 0. */
@@ -102,7 +105,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 8;
+export const PROFILE_VERSION = 9;
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
@@ -143,6 +146,7 @@ export function newProfile(now: number): Profile {
     lastSeen: now,
     ceremony: null,
     tactics: {},
+    tacticsNever: {},
     starlight: 0,
     stars: {},
     pacts: { ranks: {}, best: {} },

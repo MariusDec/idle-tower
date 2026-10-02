@@ -46,6 +46,11 @@ export interface RunConfig {
    * highest-ranked item on offer. Null: the scorer decides alone.
    */
   readonly priority: readonly CardItemId[] | null;
+  /**
+   * The Tactician's Never list (U7): these are never suggested while
+   * anything else is offered. Null: nothing is ruled out.
+   */
+  readonly never: readonly CardItemId[] | null;
   /** The pacts this run is under (§9), by rank; absent is 0. Always empty in the Abyss. */
   readonly pacts: Readonly<Partial<Record<PactId, number>>>;
   /** What the Abyss's elites may drop (§9): the relics of the lit sets. */
@@ -415,6 +420,12 @@ export interface WaveState {
 export type DamageBy = WeaponId | 'ult' | 'thorns' | 'burn' | 'rule';
 
 /**
+ * What hurt the tower (U5): a body at the wall, a hostile shot, a boss's
+ * shockwave, a molten pool, or a blast (a Bomber).
+ */
+export type HurtBy = 'contact' | 'shots' | 'slams' | 'pools' | 'blasts';
+
+/**
  * What happened this step, for presentation. Not part of the run's identity:
  * excluded from the determinism hash and never read back by the sim.
  */
@@ -575,6 +586,8 @@ export interface RunState {
   recipes: EvolutionId[];
   /** The Tactician's list (from the config), or null. */
   priority: CardItemId[] | null;
+  /** The Tactician's Never list (from the config), or null. */
+  never: CardItemId[] | null;
   /** Forge behaviours owned, by level count. */
   behaviours: Partial<Record<BehaviourId, number>>;
   /** Draft rerolls left this run (Fortune's Reroll). */
@@ -595,6 +608,8 @@ export interface RunState {
   killsBy: Partial<Record<EnemyId, number>>;
   /** Damage landed this run, after armour and short of overkill, by what dealt it (T1). */
   damageBy: Partial<Record<DamageBy, number>>;
+  /** Damage the tower took this run, after armour, by what dealt it (U5). */
+  takenBy: Partial<Record<HurtBy, number>>;
   rng: RngState;
   /** Named child-stream states, so each system's draws stay independent. */
   streams: Record<string, RngState>;
@@ -609,6 +624,8 @@ export interface RunInput {
   pick?: number;
   /** Spend a reroll on the open draft. */
   reroll?: boolean;
+  /** Take the suggestion on the open draft and every banked one after it (U2). */
+  takeAll?: boolean;
   /** Fire the ultimate, if charged. */
   ult?: boolean;
 }

@@ -22,6 +22,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'bolt-spell-cast',
     text: 'A homing bolt at the nearest enemy.',
     pattern: 'homing',
+    targeting: 'nearest',
     counters: ['spitter', 'phantom', 'shardling'],
     weakAgainst: ['shieldbearer'],
     base: { ...ZERO, damage: 12, fireRate: 1.3, count: 1, projectileSpeed: 720 },
@@ -38,6 +39,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'striking-arrows',
     text: 'A 5-pellet cone that knocks enemies back; ×1.5 damage up close.',
     pattern: 'cone',
+    targeting: 'nearest',
     counters: ['grunt', 'runner', 'blinker', 'imp', 'bomber'],
     weakAgainst: ['shieldbearer'],
     pointBlank: 1.5,
@@ -55,6 +57,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'chain-lightning',
     text: 'Lightning that arcs across 3 enemies.',
     pattern: 'chain',
+    targeting: 'nearest',
     counters: ['runner', 'splitter', 'chorus', 'imp'],
     base: { ...ZERO, damage: 9, fireRate: 0.9, jumps: 3, jumpRange: 160 },
     steps: [
@@ -70,6 +73,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'frozen-orb',
     text: 'Pulses frost around the tower, slowing everything it touches.',
     pattern: 'pulse',
+    targeting: 'nearest',
     counters: ['runner', 'blinker', 'burrower', 'leech'],
     base: { ...ZERO, damage: 7, fireRate: 0.75, radius: 160, slow: 0.3, slowSeconds: 1.5 },
     steps: [
@@ -85,6 +89,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'mortar',
     text: 'Lobs shells at the densest crowd; each bursts in an area.',
     pattern: 'lob',
+    targeting: 'densest',
     counters: ['splitter', 'grunt', 'shieldbearer', 'chorus', 'summoner'],
     base: { ...ZERO, damage: 18, fireRate: 0.55, count: 1, radius: 55, projectileSpeed: 480 },
     steps: [
@@ -100,6 +105,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'sunbeams',
     text: 'A beam that burns hotter the longer it holds one target.',
     pattern: 'beam',
+    targeting: 'toughest',
     counters: ['brute', 'mender', 'harbinger', 'summoner'],
     base: { ...ZERO, damage: 2.5, fireRate: 4, ramp: 0.5, rampCap: 3 },
     steps: [
@@ -115,6 +121,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'spinning-blades',
     text: 'Blades circle the tower, cutting whatever comes close.',
     pattern: 'orbit',
+    targeting: 'nearest',
     counters: ['grunt', 'runner', 'burrower', 'leech', 'imp'],
     weakAgainst: ['shardling', 'bomber'],
     base: { ...ZERO, damage: 9, count: 2, radius: 82, spin: 3.5, blade: 16 },
@@ -131,6 +138,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'delivery-drone',
     text: 'Drones that fly out, hunt and fire on their own.',
     pattern: 'drone',
+    targeting: 'standoff',
     counters: ['spitter', 'mender', 'siege-engine', 'shieldbearer', 'phantom', 'harbinger', 'summoner'],
     base: { ...ZERO, damage: 6, fireRate: 1.1, count: 2, projectileSpeed: 560 },
     steps: [
@@ -147,6 +155,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'armored-boomerang',
     text: 'A crescent thrown out and back, cutting everything both ways.',
     pattern: 'boomerang',
+    targeting: 'nearest',
     counters: ['shieldbearer', 'chorus', 'grunt'],
     base: { ...ZERO, damage: 11, fireRate: 0.75, count: 1, spread: 0.5, projectileSpeed: 620 },
     steps: [
@@ -162,6 +171,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'land-mine',
     text: 'Lays runes in the path; each bursts under whatever steps on it.',
     pattern: 'mine',
+    targeting: 'nearest',
     counters: ['runner', 'blinker', 'ram', 'burrower'],
     base: { ...ZERO, damage: 26, fireRate: 0.9, count: 3, radius: 60, fuse: 8 },
     steps: [
@@ -177,6 +187,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'magic-swirl',
     text: 'Threads of light hold two enemies, draining them without pause.',
     pattern: 'tether',
+    targeting: 'nearest',
     counters: ['husk', 'leech', 'summoner'],
     base: { ...ZERO, damage: 2.4, fireRate: 5, count: 2 },
     steps: [
@@ -192,6 +203,7 @@ export const WEAPONS: readonly WeaponDef[] = [
     icon: 'target-laser',
     text: 'A slow, heavy slug that passes through everything in its line.',
     pattern: 'rail',
+    targeting: 'line',
     counters: ['brute', 'shieldbearer', 'wardstone', 'siege-engine'],
     base: { ...ZERO, damage: 70, fireRate: 0.32, count: 1, radius: 14 },
     steps: [

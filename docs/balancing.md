@@ -112,3 +112,45 @@ What moved what (ablations, 8 seeds): the armour curve alone takes ~5 min
 off the Gatekeeper (Brutes stop flooring hits); the buckets alone take
 ~18 min off the Bog Mother and hours off the late game. Regions 4–6 were
 easier by 3–5 waves at their own ring before their HP was raised.
+
+### Q2 (post-rebuild UX), 2026-10-02
+
+What Q2 moves in the sim: U14's targeting (Sunlance holds the toughest
+body, Gilded Rail aims down the most crowded line, Drones hunt standoff
+bodies), U13's per-ultimate Autocaster rules, and U2's take-all (the
+active bot takes every banked draft in one tap; the idle bot's Opening
+takes itself after 2 s once the Tactician is owned). Q1's retune is still
+owed (`plans/q1-balancing.md`), so the gates it fails still fail; these are
+read against `58cba67` (Q1) on the same seeds.
+
+`npm run pacing -- --hours 12 --seeds 8`:
+
+| | Q1 | Q2 |
+|---|---|---|
+| first wave 20 (P3) | 27:22 PASS | 27:22 PASS |
+| Gatekeeper (P4) · I1a | 32:10 · 8/8 | 32:10 · 8/8 |
+| Bog Mother | 73:56 | 72:56 |
+| Forgeheart | ~145 | ~141 |
+| Blight · I1b | 400:28 · 1/8 FAIL | 389:56 · 0/8 FAIL |
+| I3 · I6 | 5/8 · 3/8 | 6/8 · 2/8 |
+| first evolution | 99:56 | 97:59 |
+
+`npm run pacing -- --idle --hours 12 --seeds 4` (I5 re-read after U2 and
+U13): I2 median 4.5 d both (FAIL, Q1's; seeds 5.0 4.0 4.5 4.5 → 4.5 4.0
+4.5 5.0). I5 PASS at every gated checkpoint, idle now relatively closer:
+Region 2 1.32 → 1.27, Bog Mother 1.32 → 1.20, Prism 1.43 → 1.32,
+Forgeheart 1.42 → 1.36, Hollow King 1.49 → 1.36, Blight 1.46 → 1.37. The
+idle Opening (run start to the first draft-free moment) is 30 s at the
+Gatekeeper checkpoint, before the Tactician, and 2 s from Region 2 on.
+
+`npm run arsenal`: I4 PASS (worst Mortar 31%, Region 2); Drones rise to
+21–31% of new-weapon picks in Regions 3–6. `npm run arsenal --
+--keystones`: PASS, the same shape as Q1 (Specialist gains in four
+regions, Fortress loses in four). `npm run calibrate`: T2 PASS, 0 of 48,
+after re-fitting the rail constants to the line doctrine (`RAIL_BODIES`
+1.9 → 1.45, `RAIL_BODIES_PER_UNIT` 1/40 → 1/9, `RAIL_EXTRA_SLUG` 0.6 →
+0.37, `MIDAS_VALUE` 0.1 → 0.16).
+
+`npm test`: everything but two of `tests/pacing.test.ts`'s CI seeds: I6
+(its 10:27 gap was 10:43 at Q1) and I2, whose one CI profile moved from
+5.0 d to 4.5 d, the full report's median. Both are Q1's retune.

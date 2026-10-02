@@ -18,7 +18,8 @@ export class Modal {
     return this.el !== null;
   }
 
-  show(title: string, body: string, buttons: ModalButton[]): void {
+  /** `body` is a line of text, or a node drawn as given (the pause menu's build, U3). */
+  show(title: string, body: string | Node, buttons: ModalButton[]): void {
     this.close();
     const scrim = document.createElement('div');
     scrim.className = 'modal-scrim';
@@ -30,7 +31,9 @@ export class Modal {
     h.className = 'modal-title';
     h.textContent = title;
     card.appendChild(h);
-    if (body) {
+    if (typeof body !== 'string') {
+      card.appendChild(body);
+    } else if (body) {
       const p = document.createElement('p');
       p.className = 'modal-body';
       p.textContent = body;

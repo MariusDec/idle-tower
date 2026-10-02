@@ -2,12 +2,15 @@ import {
   clearRunSnapshot, loadProfile, loadRunSnapshot, saveProfile, saveRunSnapshot, snapshotRun,
 } from '../meta/save';
 import { newProfile, type Profile } from '../meta/profile';
+import { exportProfile, listBackups, pushBackup, readBackup } from '../meta/save/transfer';
+import { copyText, pickTextFile, saveTextFile } from '../platform/files';
 import { buildRunConfig } from '../meta/runConfig';
 import {
-  autoUlt, automations, draftSeconds, marchOn, maxSpeed, runSpeed, tacticsKey,
+  autoUlt, automations, draftSeconds, marchOn, maxSpeed, openingSeconds, runSpeed, tacticsScopes,
 } from '../meta/automation';
 import { buyNode, canAfford, refundNode } from '../meta/forge';
-import { bankRun } from '../meta/results';
+import { bankRun, buildOf } from '../meta/results';
+import { buildList, statsList } from '../ui/build';
 import { frameUnlocked, regionUnlocked, toggleRelic } from '../meta/collection';
 import { claimAll, claimFeat } from '../meta/feats';
 import { offlineEarnings, offlineTier } from '../meta/offline';
@@ -23,6 +26,7 @@ import { formatNumber } from '../core/format';
 import { applyInput, createRun, step } from '../sim/run';
 import { cardKey } from '../sim/systems/draft';
 import { autoUltWanted } from '../sim/systems/ultimate';
+import { cardBadges } from '../sim/suggest';
 import type { DraftOffer, RunState } from '../sim/state';
 import { BALANCE } from '../content/balance';
 import { Renderer } from '../render/renderer';
@@ -78,6 +82,10 @@ export class App {
   private shownDraft: DraftOffer | null = null;
   /** Cards stamped NEW this run, for the results screen's discoveries. */
   private newCards: string[] = [];
+  /** Drafts banked when this run started (U2's Opening); 0 for a resumed run. */
+  private opening = 0;
+  /** True once the player touched the Opening: it no longer takes itself. */
+  private openingReviewed = false;
   /** The wave the last run snapshot was taken at. */
   private snapshotWave = 0;
   /** Dev only: a sim speed that overrides the unlocked one. */
@@ -127,9 +135,15 @@ export class App {
       }),
       claim: (id) => this.claimed(this.between(() => claimFeat(this.profile, id)) ?? 0),
       claimAll: () => this.claimed(this.between(() => claimAll(this.profile)) ?? 0),
-      setTactics: (list) => this.between(() => {
-        const key = tacticsKey(this.profile);
-        if (key !== null) this.profile.tactics[key] = [...list];
+      setTactics: (key, lists) => this.between(() => {
+        if (!tacticsScopes(this.profile).includes(key)) return;
+        if (lists) {
+          this.profile.tactics[key] = [...lists.order];
+          this.profile.tacticsNever[key] = [...lists.never];
+        } else {
+          delete this.profile.tactics[key];
+          delete this.profile.tacticsNever[key];
+        }
       }),
       buyStar: (id) => {
         const bought = this.between(() => STAR_WEB.buy(this.profile, id)) ?? false;
@@ -141,7 +155,9 @@ export class App {
     });
     this.results = new ResultsScreen(els.screens, () => this.leaveResults(), () => this.startRun());
     this.toasts = new Toasts(els.overlay);
-    this.draft = new DraftPanel(els.overlay, (i) => this.pick(i), () => this.reroll());
+    this.draft = new DraftPanel(
+      els.overlay, (i) => this.pick(i), () => this.reroll(), () => this.takeAll(), () => { this.openingReviewed = true; },
+    );
     this.modal = new Modal(els.overlay);
     this.settings = new SettingsPanel(els.overlay, {
       change: (edit, save) => this.changeSettings(edit, save),
@@ -152,7 +168,13 @@ export class App {
         this.probe.abandon();
         this.renderer.setQuality(resolveQuality());
       },
-      reset: () => void this.reset(),
+      reset: () => void this.replace(newProfile(Date.now())),
+      copySave: () => copyText(exportProfile(this.profile)),
+      saveFile: () => saveTextFile(`tower-save-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.json`, exportProfile(this.profile)),
+      pickFile: () => pickTextFile(),
+      backups: () => listBackups(),
+      readBackup: (slot) => readBackup(slot),
+      replace: (profile) => void this.replace(profile),
       closed: () => this.settingsClosed(),
     });
     this.loop = new Loop({
@@ -294,6 +316,8 @@ export class App {
     this.paused = false;
     this.shownDraft = null;
     this.newCards = [];
+    this.opening = resumed ? 0 : this.run.pendingDrafts;
+    this.openingReviewed = false;
     this.snapshotWave = this.run.wave;
     this.slowMo = { left: 0, speed: 1 };
     this.draft.hide();
@@ -331,6 +355,7 @@ export class App {
       this.shownDraft = run.draft;
       if (run.draft) {
         const seen = new Set(this.profile.seenCards);
+        const opening = this.opening > 1 && run.draftsOpened <= this.opening;
         this.draft.show({
           level: run.draft.level,
           cards: run.draft.cards,
@@ -340,6 +365,10 @@ export class App {
           seen: (key) => seen.has(key),
           rerolls: run.rerolls,
           swapFor: run.swap ? run.weapons[0]?.id ?? null : null,
+          banked: run.pendingDrafts,
+          opening: opening ? { at: run.draftsOpened, of: this.opening } : null,
+          autoTake: opening && !this.openingReviewed ? openingSeconds(this.profile) : null,
+          badges: run.draft.cards.map((c) => cardBadges(run, c)),
         });
         for (const c of run.draft.cards) {
           const key = cardKey(c);
@@ -351,7 +380,10 @@ export class App {
         this.draft.hide();
       }
     }
-    if (run.draft && !this.paused && this.draft.tick(realDt)) this.pick(run.draft.suggested);
+    if (!run.draft || this.paused) return;
+    const tick = this.draft.tick(realDt);
+    if (tick === 'timeout') this.pick(run.draft.suggested);
+    else if (tick === 'take-all') this.takeAll();
   }
 
   /** Take a card now, between steps: the first draft is taken with the arena stopped. */
@@ -364,6 +396,21 @@ export class App {
       this.loop.resetClock();
       void this.save();
     }
+  }
+
+  /** Take every banked draft's suggestion at once (U2). The cards it took are seen: they are on the tower. */
+  private takeAll(): void {
+    const run = this.run;
+    if (!run?.draft || this.paused || this.screen !== 'run') return;
+    const from = run.events.length;
+    applyInput(run, { takeAll: true });
+    const seen = new Set(this.profile.seenCards);
+    for (const ev of run.events.slice(from)) {
+      if (ev.kind !== 'picked' || ev.card.kind === 'fallback' || seen.has(cardKey(ev.card))) continue;
+      seen.add(cardKey(ev.card));
+      this.newCards.push(cardKey(ev.card));
+    }
+    this.profile.seenCards = [...seen];
   }
 
   private reroll(): void {
@@ -386,7 +433,7 @@ export class App {
     // Input lands between steps (`applyInput`); a fall plays out before the
     // results screen (§4.6), see `frame`. The Autocaster casts on the same
     // rule as the idle bot (§6.2).
-    const ult = autoUlt(this.profile) && autoUltWanted(run, BALANCE.automation.autoUltCrowd);
+    const ult = autoUlt(this.profile) && autoUltWanted(run);
     step(run, SIM_DT, ult ? { ult } : undefined);
     // A new wave: snapshot on this step boundary (§12.4).
     if (run.wave > this.snapshotWave && !run.outcome) {
@@ -493,6 +540,9 @@ export class App {
     // on boot, so the run is paid exactly once.
     void this.save();
     this.write(() => clearRunSnapshot());
+    // A rolling backup at every run's end (U12): the last few profiles, should a write go wrong.
+    const kept = this.profile;
+    this.write(() => pushBackup(kept));
     this.modal.close();
     this.draft.hide();
     this.shownDraft = null;
@@ -532,9 +582,19 @@ export class App {
     return true;
   }
 
-  private openPause(body = ''): void {
+  private openPause(note = ''): void {
     if (this.screen !== 'run' || this.modal.open) return;
     this.paused = true;
+    // The full build and the tower's stats (U3): what the HUD strip only hints at.
+    const body = document.createElement('div');
+    body.className = 'pause-body';
+    if (note) {
+      const p = document.createElement('p');
+      p.className = 'modal-body';
+      p.textContent = note;
+      body.append(p);
+    }
+    if (this.run) body.append(buildList(buildOf(this.run)), statsList(this.run));
     this.modal.show('Paused', body, [
       { label: 'Retreat', onClick: () => this.retreat() },
       { label: 'Settings', onClick: () => this.openSettings() },
@@ -568,12 +628,13 @@ export class App {
   }
 
   /**
-   * Erase the profile (P9's reset), between runs only: a fresh profile and no
-   * run snapshot are written, then the page reloads onto them.
+   * Replace the profile, between runs only: P9's reset (a fresh one), or
+   * U12's import and restore. It and no run snapshot are written, then the
+   * page reloads onto them.
    */
-  private async reset(): Promise<void> {
+  private async replace(profile: Profile): Promise<void> {
     if (this.screen !== 'hub') return;
-    this.profile = newProfile(Date.now());
+    this.profile = profile;
     this.write(() => clearRunSnapshot());
     await this.save();
     window.location.reload();

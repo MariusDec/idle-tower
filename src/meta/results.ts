@@ -5,8 +5,8 @@ import { FORGE } from '../content/forge';
 import { FRAMES } from '../content/frames';
 import { REGIONS } from '../content/regions';
 import { bossRelic } from '../content/relics';
-import type { BossId, EnemyId, EvolutionId, FeatDef, RelicId } from '../content/types';
-import type { RunState } from '../sim/state';
+import type { BossId, EnemyId, EvolutionId, FeatDef, PassiveId, RelicId, WeaponId } from '../content/types';
+import type { DamageBy, HurtBy, RunState } from '../sim/state';
 import { act2Open, bossDown, frameUnlocked, gainRelic, hubUnlocks, regionUnlocked, relicSlots } from './collection';
 import { checkFeats } from './feats';
 import { nextGoal, type ForgeGoal } from './forge';
@@ -32,10 +32,32 @@ export interface BossResult {
   first: boolean;
 }
 
+/** The tower as the run left it (U3, U5): its weapons and passives, with their levels. */
+export interface BuildSummary {
+  weapons: { id: WeaponId; level: number; evolved: boolean }[];
+  passives: { id: PassiveId; level: number }[];
+}
+
+/** The build a run holds now, for the HUD strip, the pause menu and the results. */
+export function buildOf(run: RunState): BuildSummary {
+  return {
+    weapons: run.weapons.map((w) => ({ id: w.id, level: w.level, evolved: w.evolved })),
+    passives: run.passives.map((p) => ({ id: p.id, level: p.level })),
+  };
+}
+
 /** Everything the results screen shows (§4.6), resolved once at the run's end. */
 export interface RunSummary {
   outcome: 'fell' | 'retreat';
   regionId: number;
+  /** The frame it ran with, for its ultimate's name in the damage tally. */
+  frameId: string;
+  /** The tower at the end (U5). */
+  build: BuildSummary;
+  /** Damage landed, by what dealt it (T1, U5). */
+  damageBy: Partial<Record<DamageBy, number>>;
+  /** Damage taken, by what dealt it (U5): what wore the tower down. */
+  takenBy: Partial<Record<HurtBy, number>>;
   wave: number;
   time: number;
   kills: number;
@@ -194,6 +216,10 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
   return {
     outcome: run.outcome?.kind ?? 'retreat',
     regionId: run.regionId,
+    frameId: run.frameId,
+    build: buildOf(run),
+    damageBy: { ...run.damageBy },
+    takenBy: { ...run.takenBy },
     wave,
     time,
     kills: run.kills,

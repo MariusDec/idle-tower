@@ -72,6 +72,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
       ...(raw.settings as object),
     },
   }),
+  // v9 (Q2, U7): the Tactician's Never lists.
+  8: (raw) => ({ ...raw, version: 9, tacticsNever: {} }),
 };
 
 export class MigrationError extends Error {}

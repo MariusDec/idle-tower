@@ -346,7 +346,7 @@ export function tickPools(run: RunState, dt: number): void {
     p.timer -= dt;
     if (p.timer > 0) continue;
     p.timer += POOL_TICK;
-    hurtTower(run, p.dps * POOL_TICK, p.x, p.y, null);
+    hurtTower(run, p.dps * POOL_TICK, p.x, p.y, null, 'pools');
   }
 }
 
@@ -435,7 +435,7 @@ export function tickRings(run: RunState, dt: number): void {
     const d = Math.hypot(r.x, r.y);
     if (!r.hit && r.radius >= d - R) {
       r.hit = true;
-      hurtTower(run, r.damage, r.x, r.y, null);
+      hurtTower(run, r.damage, r.x, r.y, null, 'slams');
     }
     // Kept a little past the tower so the ring visibly rolls through it.
     if (r.radius < d + R * 3) run.rings[w++] = r;

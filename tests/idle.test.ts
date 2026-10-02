@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../src/content/balance';
 import { newProfile, type Profile } from '../src/meta/profile';
 import {
-  TACTICS_ALL, autoUlt, draftSeconds, marchOn, maxSpeed, priorityList, tacticsKey,
+  TACTICS_ALL, autoUlt, draftSeconds, marchOn, maxSpeed, neverList, priorityList, tacticsFor, tacticsKey, tacticsScopes,
 } from '../src/meta/automation';
 import { offlineEarnings, offlineTier } from '../src/meta/offline';
 import { buildRunConfig } from '../src/meta/runConfig';
@@ -18,6 +18,7 @@ import { autoUltWanted, enemiesInRange } from '../src/sim/systems/ultimate';
 import { SIM_DT } from '../src/app/loop';
 import { botInput } from '../tools/bot';
 import { playRun } from '../tools/play';
+import { body } from './helpers/body';
 
 /** A profile owning these Forge nodes, with these bosses down. */
 function owning(nodes: string[], bosses: string[] = []): Profile {
@@ -74,32 +75,81 @@ describe('Engineering automation (§6.2)', () => {
   });
 });
 
-describe('the Autocaster rule', () => {
-  const charged = (): RunState => {
+describe('the Autocaster rule (U13)', () => {
+  const charged = (frame = 'arcanist'): RunState => {
     const run = createRun(buildRunConfig(owning([])), 3);
+    run.frameId = frame;
     run.ult.charge = 1;
     return run;
   };
-
-  it('waits for a charge, then casts into a crowd', () => {
-    const run = charged();
-    run.ult.charge = 0.5;
-    expect(autoUltWanted(run, 0)).toBe(false);
-    run.ult.charge = 1;
-    expect(enemiesInRange(run)).toBe(0);
-    expect(autoUltWanted(run, 1)).toBe(false);
-    expect(autoUltWanted(run, 0)).toBe(true);
-  });
-
-  it('casts at a standing boss, but not one under the water', () => {
-    const run = charged();
+  const standing = (run: RunState, over: Partial<NonNullable<RunState['boss']>> = {}): void => {
     run.boss = {
       id: 'gatekeeper', enemy: 1, phase: 0, arrivedAt: 0, timers: [], windup: 0, submerged: false,
       enraged: false, windupPattern: -1, staggeredUntil: 0, facet: 0, crown: 0, plates: 0, minHp: 1, killedIn: null, wave: 20,
+      ...over,
     };
-    expect(autoUltWanted(run, 99)).toBe(true);
-    run.boss.submerged = true;
-    expect(autoUltWanted(run, 99)).toBe(false);
+  };
+  const crowd = (run: RunState, n: number): void => {
+    for (let i = 0; i < n; i++) body(run, { x: 100 + i, y: 0 });
+  };
+
+  it('waits for a charge', () => {
+    const run = charged();
+    crowd(run, 20);
+    run.ult.charge = 0.5;
+    expect(autoUltWanted(run)).toBe(false);
+    run.ult.charge = 1;
+    expect(autoUltWanted(run)).toBe(true);
+  });
+
+  it('Nova: into a crowd of eight, or a boss\'s slam wind-up, never under the water', () => {
+    const run = charged();
+    crowd(run, 7);
+    expect(enemiesInRange(run)).toBe(7);
+    expect(autoUltWanted(run)).toBe(false);
+    crowd(run, 1);
+    expect(autoUltWanted(run)).toBe(true);
+    const lone = charged();
+    // The Gatekeeper slams: a Nova waits for the wind-up it can break.
+    standing(lone);
+    expect(autoUltWanted(lone)).toBe(false);
+    lone.boss!.windup = 0.5;
+    expect(autoUltWanted(lone)).toBe(true);
+    lone.boss!.submerged = true;
+    expect(autoUltWanted(lone)).toBe(false);
+  });
+
+  it('Aegis: a shockwave about to reach the wall, or low HP with three at the wall', () => {
+    const run = charged('bastion');
+    crowd(run, 20);
+    expect(autoUltWanted(run)).toBe(false);
+    run.rings.push({ x: 300, y: 0, radius: 40, speed: 400, damage: 10, hit: false });
+    // 300 − wall − 40 at 400 a second: inside 0.6 s.
+    expect(autoUltWanted(run)).toBe(true);
+    run.rings.length = 0;
+    run.tower.hp = run.stats.maxHp * 0.3;
+    expect(autoUltWanted(run)).toBe(false);
+    for (const e of run.enemies.slice(0, 3)) e.inContact = true;
+    expect(autoUltWanted(run)).toBe(true);
+  });
+
+  it('Eclipse: a pool of HP worth six bodies, or a boss', () => {
+    const run = charged('gravekeeper');
+    run.wave = 1;
+    body(run, { hp: 1 });
+    expect(autoUltWanted(run)).toBe(false);
+    body(run, { hp: 1e9 });
+    expect(autoUltWanted(run)).toBe(true);
+    const lone = charged('gravekeeper');
+    standing(lone);
+    expect(autoUltWanted(lone)).toBe(true);
+  });
+
+  it('the lasting ultimates: a standing boss, or a crowd', () => {
+    const run = charged('stormcaller');
+    expect(autoUltWanted(run)).toBe(false);
+    standing(run);
+    expect(autoUltWanted(run)).toBe(true);
   });
 });
 
@@ -145,6 +195,37 @@ describe('the Tactician (§6.2)', () => {
     p.tactics[TACTICS_ALL] = ['mending'];
     const other = createRun(buildRunConfig(p), 1);
     expect(suggest(other, [BOLT, POWER, FORTIFY])).toBe(free);
+  });
+
+  it('Tactician II keeps a frame\'s lists per region too, falling back to the frame\'s (U7)', () => {
+    const p = owning(['tactician', 'tactician-2'], ['bog-mother']);
+    p.tactics.arcanist = ['fortify'];
+    expect(tacticsScopes(p)).toEqual(['arcanist@1', 'arcanist', TACTICS_ALL]);
+    expect(tacticsFor(p, 'arcanist@1').order).toEqual(['fortify']);
+    p.tactics['arcanist@1'] = ['power'];
+    p.tacticsNever['arcanist@1'] = ['greed'];
+    expect(priorityList(p)).toEqual(['power']);
+    expect(neverList(p)).toEqual(['greed']);
+    // Another region follows the frame's lists.
+    p.region = 2;
+    expect(priorityList(p)).toEqual(['fortify']);
+    expect(neverList(p)).toBeNull();
+    // An empty list the player wrote is still theirs: nothing listed, not a fallback.
+    p.tactics.arcanist = [];
+    expect(priorityList(p)).toBeNull();
+  });
+
+  it('a Never card is suggested only when nothing else is offered (U7)', () => {
+    const p = owning(['tactician']);
+    p.tacticsNever[TACTICS_ALL] = ['power', 'fortify'];
+    const run = createRun(buildRunConfig(p), 1);
+    expect(run.never).toEqual(['power', 'fortify']);
+    expect(suggest(run, [POWER, FORTIFY, BOLT])).toBe(2);
+    // Listed and ruled out: Never wins.
+    p.tactics[TACTICS_ALL] = ['power'];
+    expect(suggest(createRun(buildRunConfig(p), 1), [POWER, BOLT])).toBe(1);
+    // Nothing else on offer: the scorer picks among them.
+    expect([0, 1]).toContain(suggest(run, [POWER, FORTIFY]));
   });
 
   it('an evolution outranks the list', () => {

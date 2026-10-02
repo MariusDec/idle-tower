@@ -5,7 +5,7 @@ import { AURA_BY_ID, ENEMIES, ENEMY_BY_ID } from '../../content/enemies';
 import { eliteRelics } from '../../content/relics';
 import { frameById } from '../../content/frames';
 import { WEAPONS, WEAPON_BY_ID } from '../../content/weapons';
-import type { EnemyVerb, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
+import type { EnemyId, EnemyVerb, Targeting, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
 import { BOSS_BY_ID } from '../../content/bosses';
 import type { DamageBy, Enemy, Projectile, RunState, WeaponState } from '../state';
 import { pactLoad, ruleSurge } from '../pacts';
@@ -85,6 +85,98 @@ export function nearestEnemy(run: RunState, x: number, y: number, radius: number
     }
   }
   return best;
+}
+
+/** Types that hold off and act from range (U14): what Drones hunt first. */
+const STANDOFF: ReadonlySet<EnemyId> = new Set(ENEMIES.filter((d) => 'standoff' in d.verb).map((d) => d.id));
+
+/**
+ * The body a weapon aims at from the tower (U14), by its doctrine.
+ * `radius` is how far it reaches; `width` is the blast or line half-width
+ * a crowd is counted in.
+ */
+function aim(run: RunState, doctrine: Targeting, radius: number, width: number): Enemy | null {
+  switch (doctrine) {
+    case 'nearest':
+      return nearestEnemy(run, 0, 0, radius);
+    case 'densest':
+      return densest(run, width, []);
+    case 'toughest':
+      return toughest(run, radius);
+    case 'line':
+      return bestLine(run, width, []);
+    case 'standoff':
+      return standoffFirst(run, 0, 0, radius);
+    default: {
+      const exhaustive: never = doctrine;
+      return exhaustive;
+    }
+  }
+}
+
+/** How much a body matters to a weapon that hunts the toughest: a plate (it guards its boss), a boss, an elite, the rest. */
+function toughness(e: Enemy): number {
+  return e.plate ? 3 : e.boss ? 2 : e.elite ? 1 : 0;
+}
+
+/** The toughest targetable body within `radius` of the tower: the highest `toughness`, then the most HP. */
+function toughest(run: RunState, radius: number): Enemy | null {
+  const r2 = radius * radius;
+  let best: Enemy | null = null;
+  for (const e of run.enemies) {
+    if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
+    if (!best || toughness(e) > toughness(best) || (toughness(e) === toughness(best) && e.hp > best.hp)) best = e;
+  }
+  return best;
+}
+
+/** True when a line from the tower toward angle (ux, uy), `width` wide, crosses `e` within range. */
+function onLine(run: RunState, e: Enemy, ux: number, uy: number, width: number): boolean {
+  const along = e.x * ux + e.y * uy;
+  if (along < 0 || along > run.stats.range + e.radius) return false;
+  return Math.abs(e.x * uy - e.y * ux) <= width + e.radius;
+}
+
+/**
+ * The body in range whose line from the tower crosses the most bodies not
+ * yet `struck`: where a slug does the most. Ties go to the nearer body.
+ */
+function bestLine(run: RunState, width: number, struck: readonly number[]): Enemy | null {
+  const range2 = run.stats.range * run.stats.range;
+  let best: Enemy | null = null;
+  let bestN = 0;
+  let bestD = Infinity;
+  for (const e of run.enemies) {
+    if (!targetable(run, e)) continue;
+    const d = e.x * e.x + e.y * e.y;
+    if (d > range2) continue;
+    const len = Math.sqrt(d) || 1;
+    const ux = e.x / len;
+    const uy = e.y / len;
+    let n = 0;
+    for (const o of run.enemies) if (targetable(run, o) && !struck.includes(o.id) && onLine(run, o, ux, uy, width)) n++;
+    if (n > bestN || (n === bestN && n > 0 && d < bestD)) {
+      bestN = n;
+      bestD = d;
+      best = e;
+    }
+  }
+  return best;
+}
+
+/** The nearest standoff body to (x, y) within `radius` (bosses aside); else the nearest of any kind. */
+function standoffFirst(run: RunState, x: number, y: number, radius: number): Enemy | null {
+  let best: Enemy | null = null;
+  let bestD = radius * radius;
+  for (const e of run.enemies) {
+    if (!targetable(run, e) || e.boss || !STANDOFF.has(e.type)) continue;
+    const d = (e.x - x) ** 2 + (e.y - y) ** 2;
+    if (d <= bestD) {
+      bestD = d;
+      best = e;
+    }
+  }
+  return best ?? nearestEnemy(run, x, y, radius);
 }
 
 /** Up to `n` targetable enemies within `radius` of the tower, nearest first. */
@@ -196,10 +288,9 @@ function fireOnCooldown(
     w.cooldown = 0;
     return;
   }
-  // A pulse needs a body inside its own radius; everything else, inside range.
-  const target = pattern === 'lob'
-    ? densest(run, p.radius, [])
-    : nearestEnemy(run, 0, 0, pattern === 'pulse' ? p.radius : run.stats.range);
+  // A pulse needs a body inside its own radius; everything else, inside
+  // range. Whom it aims at there is its doctrine (U14).
+  const target = aim(run, WEAPON_BY_ID[w.id].targeting, pattern === 'pulse' ? p.radius : run.stats.range, p.radius);
   if (!target) {
     // Idle: ready to fire the moment something enters range, with no backlog.
     w.cooldown = 0;
@@ -644,11 +735,12 @@ function holdTethers(run: RunState, w: WeaponState, p: WeaponParams, dt: number,
  * shields and mirrors don't turn it. Midas Lance gilds what it pierces.
  */
 function fireSlugs(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy, crit: Rng): void {
-  const targets = p.count > 1 ? nearestToTower(run, run.stats.range, p.count) : [first];
   const M = BALANCE.evolutions['midas-lance'];
   const burstRank = run.behaviours['rail-burst'] ?? 0;
+  /** Bodies this volley's slugs have crossed: a further slug looks for the line through the most fresh ones (U14). */
+  const crossed: number[] = [];
   for (let k = 0; k < p.count; k++) {
-    const t = targets[k % targets.length];
+    const t = k === 0 ? first : bestLine(run, p.radius, crossed) ?? first;
     const a = Math.atan2(t.y, t.x);
     const ux = Math.cos(a);
     const uy = Math.sin(a);
@@ -657,12 +749,10 @@ function fireSlugs(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy,
     const n = run.enemies.length;
     for (let i = 0; i < n; i++) {
       const e = run.enemies[i];
-      if (!targetable(run, e)) continue;
-      const along = e.x * ux + e.y * uy;
-      if (along < 0 || along > run.stats.range + e.radius) continue;
-      if (Math.abs(e.x * uy - e.y * ux) <= p.radius + e.radius) struck.push(e);
+      if (targetable(run, e) && onLine(run, e, ux, uy, p.radius)) struck.push(e);
     }
     for (const e of struck) {
+      crossed.push(e.id);
       if (w.evolved && e.alive) e.gildedUntil = run.time + M.seconds * run.stats.durationMult;
       damageEnemy(run, e, hit.damage, hit.crit, 'rail');
       // Gilt Edge (§9): a slug's kill bursts.
@@ -739,10 +829,17 @@ function holdBeam(run: RunState, w: WeaponState, p: WeaponParams, dt: number, ra
   let target = w.beamTarget ? enemyById(run, w.beamTarget) : null;
   const range2 = run.stats.range * run.stats.range;
   if (target && target.x * target.x + target.y * target.y > range2) target = null;
-  if (!target) {
-    target = nearestEnemy(run, 0, 0, run.stats.range);
+  // Its doctrine (U14): it holds what it has, unless something that matters
+  // more (a plate, a boss, an elite) is in range.
+  const doctrine = WEAPON_BY_ID[w.id].targeting;
+  const best = !target || (doctrine === 'toughest' && toughness(target) < 3) ? aim(run, doctrine, run.stats.range, 0) : target;
+  if (best && (!target || toughness(best) > toughness(target))) {
+    target = best;
     w.heat = 1;
-    w.beamTarget = target ? target.id : 0;
+    w.beamTarget = target.id;
+  } else if (!target) {
+    w.heat = 1;
+    w.beamTarget = 0;
   }
   w.cooldown -= dt;
   if (!target) {
@@ -853,14 +950,19 @@ function flyDrones(run: RunState, w: WeaponState, p: WeaponParams, dt: number, r
   w.drones.forEach((d, i) => {
     d.px = d.x;
     d.py = d.y;
+    // Its doctrine (U14): standoff bodies on its leash first, else the nearest to it.
     let quarry: Enemy | null = null;
     let best = Infinity;
+    let standoff = false;
     for (const e of run.enemies) {
       if (!targetable(run, e) || e.x * e.x + e.y * e.y > leash2) continue;
+      const first = WEAPON_BY_ID[w.id].targeting === 'standoff' && !e.boss && STANDOFF.has(e.type);
+      if (standoff && !first) continue;
       const dd = (e.x - d.x) ** 2 + (e.y - d.y) ** 2;
-      if (dd < best) {
+      if (dd < best || (first && !standoff)) {
         best = dd;
         quarry = e;
+        standoff = first;
       }
     }
     let gx: number;
@@ -1352,7 +1454,7 @@ function lastWord(run: RunState, e: Enemy, verb: EnemyVerb): void {
   switch (verb.kind) {
     case 'explode': {
       run.events.push({ kind: 'explode', x: e.x, y: e.y, radius: verb.radius });
-      if (Math.hypot(e.x, e.y) - run.stats.radius <= verb.radius) hurtTower(run, e.damage * verb.damage * soften, e.x, e.y, null);
+      if (Math.hypot(e.x, e.y) - run.stats.radius <= verb.radius) hurtTower(run, e.damage * verb.damage * soften, e.x, e.y, null, 'blasts');
       return;
     }
     case 'shards': {
