@@ -7,9 +7,12 @@ import type { BranchId, ForgeNodeDef } from './types';
  * for the Bog Mother), and Offline I. P5 adds the last four weapons, Alchemy
  * (evolutions, §4.4) and the keystones, one per branch but Engineering; the
  * last two sealed by the Bog Mother. P6 fills out Engineering (§6.2):
- * Frontier March, Tactician I–II, Autocaster, Night Watch II–III and speed ×3.
+ * Frontier March, Tactician I–II, Autocaster, Night Watch II and speed ×3.
  * P7 adds rings 4–6, sealed by the Prism, Forgeheart and the Hollow King:
- * weapon slots 3–4, Evolution Insight, Night Watch IV and the late minors.
+ * weapon slots 3–4, Evolution Insight, Night Watch III–IV and the late
+ * minors. Night Watch II keeps I's 25% and only stretches the cap; the
+ * better rates wait for the Prism (III) and Forgeheart (IV), so time away
+ * never outpaces the frontier.
  * P8 adds a mastery at the end of each branch (§9): unlimited levels at
  * ×1.03 each, compounding (S1: the Abyss is exponential, so its sink is
  * too), every level ×1.2 the cost of the last, unsealed by its Crown
@@ -347,7 +350,7 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'automation', id: 'auto-ult' }], sealed: 'gatekeeper',
   },
   {
-    id: 'offline-2', name: 'Night Watch II', icon: 'lantern-flame', text: 'Offline earns 40% of your farm rate, up to 4 h.',
+    id: 'offline-2', name: 'Night Watch II', icon: 'lantern-flame', text: 'Offline earns 25% of your farm rate, up to 4 h.',
     branch: 'engineering', type: 'notable', ring: 3, angle: 140, links: ['offline'], maxLevel: 1, cost: 480,
     effects: [{ kind: 'automation', id: 'offline-2' }], sealed: 'gatekeeper',
   },
@@ -355,11 +358,6 @@ export const FORGE: readonly ForgeNodeDef[] = [
     id: 'tactician-2', name: 'Tactician II', icon: 'vintage-robot', text: 'Each frame keeps its own priority list.',
     branch: 'engineering', type: 'notable', ring: 3, angle: 128, links: ['tactician'], maxLevel: 1, cost: 900,
     effects: [{ kind: 'automation', id: 'tactician-2' }], sealed: 'bog-mother',
-  },
-  {
-    id: 'offline-3', name: 'Night Watch III', icon: 'crystal-ball', text: 'Offline earns 60% of your farm rate, up to 8 h.',
-    branch: 'engineering', type: 'notable', ring: 3, angle: 176, links: ['speed-3'], maxLevel: 1, cost: 1600,
-    effects: [{ kind: 'automation', id: 'offline-3' }], sealed: 'bog-mother',
   },
   {
     id: 'speed-3', name: 'Full Throttle', icon: 'hourglass', text: 'Unlocks game speed ×3.',
@@ -388,8 +386,13 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'behaviour', id: 'charged-start' }], sealed: 'prism',
   },
   {
-    id: 'offline-4', name: "Night Watch IV", icon: 'star-gate', text: "Offline earns 75% of your farm rate, up to 12 h.",
-    branch: 'engineering', type: 'notable', ring: 4, angle: 176, links: ['offline-3'], maxLevel: 1, cost: 36000,
+    id: 'offline-3', name: 'Night Watch III', icon: 'crystal-ball', text: 'Offline earns 40% of your farm rate, up to 8 h.',
+    branch: 'engineering', type: 'notable', ring: 4, angle: 176, links: ['speed-3'], maxLevel: 1, cost: 8000,
+    effects: [{ kind: 'automation', id: 'offline-3' }], sealed: 'prism',
+  },
+  {
+    id: 'offline-4', name: "Night Watch IV", icon: 'star-gate', text: "Offline earns 60% of your farm rate, up to 12 h.",
+    branch: 'engineering', type: 'notable', ring: 5, angle: 176, links: ['offline-3'], maxLevel: 1, cost: 36000,
     effects: [{ kind: 'automation', id: 'offline-4' }], sealed: 'forgeheart',
   },
   {

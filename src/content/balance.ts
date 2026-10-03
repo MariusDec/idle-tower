@@ -435,9 +435,9 @@ export const BALANCE = {
   offline: {
     tiers: [
       { efficiency: 0.25, capHours: 2 },
-      { efficiency: 0.4, capHours: 4 },
-      { efficiency: 0.6, capHours: 8 },
-      { efficiency: 0.75, capHours: 12 },
+      { efficiency: 0.25, capHours: 4 },
+      { efficiency: 0.4, capHours: 8 },
+      { efficiency: 0.6, capHours: 12 },
     ],
     /** Absences shorter than this pay nothing. */
     minSeconds: 60,
