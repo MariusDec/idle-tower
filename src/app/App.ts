@@ -15,7 +15,7 @@ import { frameUnlocked, regionUnlocked, selectedFrame, toggleRelic, trophyCount 
 import { claimAll, claimFeat } from '../meta/feats';
 import { offlineEarnings, offlineTier } from '../meta/offline';
 import { setPactRank } from '../meta/pacts';
-import { chooseTrial, trims } from '../meta/trials';
+import { chooseTrial, toggleTrim, wornTrims } from '../meta/trials';
 import { explainersFor, markExplained, unreadExplainers } from '../meta/explainers';
 import { STAR_WEB } from '../meta/stars';
 import { FORGE } from '../content/forge';
@@ -156,6 +156,10 @@ export class App {
       toggleRelic: (id) => this.between(() => toggleRelic(this.profile, id)) ?? false,
       selectFrame: (id) => this.between(() => {
         if (frameUnlocked(this.profile, frameById(id))) this.profile.frame = id;
+        this.dressTower();
+      }),
+      toggleTrim: (trim) => this.between(() => {
+        toggleTrim(this.profile, trim);
         this.dressTower();
       }),
       claim: (id) => this.claimed(this.between(() => claimFeat(this.profile, id)) ?? 0),
@@ -347,12 +351,12 @@ export class App {
 
   /**
    * What the tower wears (N2): its tier from the Forge's rings, a light per
-   * trophy (N4), the Trials' trims (N5), and on the hub the selected frame's
+   * trophy (N4), the Trials' trims the player wears (N5), and on the hub the selected frame's
    * weapon. Set whenever the profile may have changed under it.
    */
   private dressTower(): void {
     const p = this.profile;
-    this.renderer.setTower({ tier: towerTier(p), trophies: trophyCount(p), trims: trims(p) }, selectedFrame(p).startingWeapon);
+    this.renderer.setTower({ tier: towerTier(p), trophies: trophyCount(p), trims: wornTrims(p) }, selectedFrame(p).startingWeapon);
   }
 
   /** Start a fresh run, or carry on with `resumed` from its snapshot. */

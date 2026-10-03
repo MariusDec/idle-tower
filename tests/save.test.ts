@@ -232,6 +232,13 @@ describe('migration ladder', () => {
     expect(out.tutorial).toEqual({ firstDraft: true, forgeIntro: true, explained: [] });
   });
 
+  it('walks a v13 profile to v14: every trim still worn (N5)', () => {
+    const out = migrate({ version: 13, createdAt: 5, shards: 50, trials: { 'bare-stone': true } }, MIGRATIONS, 14);
+    expect(out.version).toBe(14);
+    expect(out.trimsOff).toEqual([]);
+    expect(out.trials).toEqual({ 'bare-stone': true });
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);

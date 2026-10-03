@@ -4,7 +4,7 @@ import { act2Open, hubUnlocks, inAbyss, inRush, selectedFrame, selectedRegion, t
 import { RUSH_STAGES } from '../../content/rush';
 import { hubGoal } from '../../meta/goals';
 import { heat } from '../../meta/pacts';
-import type { PactId, RelicId } from '../../content/types';
+import type { PactId, RelicId, TrimId } from '../../content/types';
 import { setStyle, setText, toggleClass } from '../dom';
 import { icon, iconMarkup } from '../icon';
 import { CollectionView } from './collection';
@@ -37,6 +37,7 @@ export interface HubActions {
   trial(id: string): void;
   toggleRelic(id: RelicId): boolean;
   selectFrame(id: string): void;
+  toggleTrim(trim: TrimId): void;
   claim(id: string): number;
   claimAll(): number;
   /** The Tactician's lists under a key (§6.2, U7); null drops the key's own. */
@@ -183,6 +184,7 @@ export class HubScreen {
     this.collection = new CollectionView(this.root, {
       toggleRelic: (id) => refreshing(() => actions.toggleRelic(id)),
       selectFrame: (id) => refreshing(() => actions.selectFrame(id)),
+      toggleTrim: (trim) => refreshing(() => actions.toggleTrim(trim)),
     });
     this.feats = new FeatsView(this.root, {
       claim: (id) => refreshing(() => actions.claim(id)),

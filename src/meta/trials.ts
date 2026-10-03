@@ -53,7 +53,26 @@ export function chooseTrial(profile: Profile, id: string | null): boolean {
 
 /** The trims Trials have paid (N2), for the tower's look. */
 export function trims(profile: Profile): TrimId[] {
-  return TRIALS.flatMap((t) => (trialWon(profile, t.id) && t.reward.kind === 'trim' ? [t.reward.trim] : []));
+  return wonTrims(profile).map((t) => t.trim);
+}
+
+/** The trims Trials have paid, with their names: the Collection's list to wear or take off. */
+export function wonTrims(profile: Profile): { trim: TrimId; name: string }[] {
+  return TRIALS.flatMap((t) => (trialWon(profile, t.id) && t.reward.kind === 'trim' ? [{ trim: t.reward.trim, name: t.reward.name }] : []));
+}
+
+/** The trims the tower wears: every one paid, less those taken off. */
+export function wornTrims(profile: Profile): TrimId[] {
+  return trims(profile).filter((t) => !profile.trimsOff.includes(t));
+}
+
+/** Take a paid trim off, or put it back on. False when it was never paid. */
+export function toggleTrim(profile: Profile, trim: TrimId): boolean {
+  if (!trims(profile).includes(trim)) return false;
+  const i = profile.trimsOff.indexOf(trim);
+  if (i >= 0) profile.trimsOff.splice(i, 1);
+  else profile.trimsOff.push(trim);
+  return true;
 }
 
 /** The effects of every notable Trials have paid: they apply to every run, like a Forge node's (N5). */

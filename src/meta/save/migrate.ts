@@ -82,6 +82,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   11: (raw) => ({ ...raw, version: 12, settings: { framing: null, ...(raw.settings as object) } }),
   // v13: the explainers read (§7.1). None yet: a player who has the mechanics is told of each once.
   12: (raw) => ({ ...raw, version: 13, tutorial: { explained: [], ...(raw.tutorial as object) } }),
+  // v14: trims can be taken off (N5); every one stays worn.
+  13: (raw) => ({ ...raw, version: 14, trimsOff: [] }),
 };
 
 export class MigrationError extends Error {}

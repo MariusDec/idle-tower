@@ -1,3 +1,5 @@
+import type { TrimId } from '../content/types';
+
 /**
  * The profile: all meta state (§12.4). Owned by `meta/`; `sim/` never sees it,
  * only the frozen `RunConfig` that `buildRunConfig` derives from it.
@@ -7,7 +9,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 13;
+  version: 14;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -85,6 +87,8 @@ export interface Profile {
   trials: Record<string, true>;
   /** The trial the next run is (N5), or null for an ordinary run. Cleared once that run banks. */
   trial: string | null;
+  /** Trims the player has taken off the tower (N5): every won trim is worn unless listed here. */
+  trimsOff: TrimId[];
   /**
    * Relic-set progress (N6), by region index: duplicates of a set's relics
    * past rank III. It ranks the set's bonus up.
@@ -127,7 +131,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 13;
+export const PROFILE_VERSION = 14;
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
@@ -179,6 +183,7 @@ export function newProfile(now: number): Profile {
     wishlist: [],
     trials: {},
     trial: null,
+    trimsOff: [],
     sets: {},
     region: 1,
     frame: 'arcanist',

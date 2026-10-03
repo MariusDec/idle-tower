@@ -5,7 +5,7 @@ import { bankRun } from '../src/meta/results';
 import { activeSets, setRank, trophyCount } from '../src/meta/collection';
 import { foremanBuy, togglePin } from '../src/meta/automation';
 import { levelOf, towerTier } from '../src/meta/forge';
-import { chooseTrial, selectedTrial, trims, trialWon } from '../src/meta/trials';
+import { chooseTrial, selectedTrial, toggleTrim, trims, trialWon, wornTrims } from '../src/meta/trials';
 import { applyInput, createRun, step } from '../src/sim/run';
 import { candidateCards, gainXp, tickDraft } from '../src/sim/systems/draft';
 import { damageEnemy } from '../src/sim/systems/combat';
@@ -296,6 +296,19 @@ describe('Trials (N5)', () => {
     expect(p.trial).toBeNull();
     expect(s.heatRecord).toBeNull();
     expect(buildRunConfig(p).trial).toBeNull();
+  });
+
+  it('a won trim can be taken off and put back on; an unwon one cannot', () => {
+    const p = profile({}, ['gatekeeper']);
+    p.trials['bare-stone'] = true;
+    expect(wornTrims(p)).toEqual(['ivy']);
+    expect(toggleTrim(p, 'ivy')).toBe(true);
+    expect(wornTrims(p)).toEqual([]);
+    expect(trims(p)).toEqual(['ivy']);
+    expect(toggleTrim(p, 'ivy')).toBe(true);
+    expect(wornTrims(p)).toEqual(['ivy']);
+    expect(toggleTrim(p, 'gilt')).toBe(false);
+    expect(p.trimsOff).toEqual([]);
   });
 
   it('a won notable applies to every run after', () => {

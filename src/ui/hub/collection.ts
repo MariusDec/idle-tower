@@ -6,7 +6,7 @@ import { BALANCE } from '../../content/balance';
 import { PASSIVE_BY_ID } from '../../content/passives';
 import { WEAPON_BY_ID } from '../../content/weapons';
 import { EVOLUTION_OF } from '../../content/evolutions';
-import type { BossId, EnemyId, FrameUnlock, RelicDef, RelicId } from '../../content/types';
+import type { BossId, EnemyId, FrameUnlock, RelicDef, RelicId, TrimId } from '../../content/types';
 import { formatNumber } from '../../core/format';
 import {
   activeSets, bestiary, collectionPages, frameUnlocked, listedFrames, listedRelics, relicRank, relicSlots, selectedFrame, setRank,
@@ -14,6 +14,7 @@ import {
 import type { Profile } from '../../meta/profile';
 import { levelOf } from '../../meta/forge';
 import { fusionBook, recipeBook } from '../../meta/recipes';
+import { wonTrims } from '../../meta/trials';
 import { toggleClass } from '../dom';
 import { icon } from '../icon';
 
@@ -57,6 +58,7 @@ export type CollectionPage = 'bestiary' | 'relics' | 'recipes' | 'frames';
 export interface CollectionActions {
   toggleRelic(id: RelicId): boolean;
   selectFrame(id: string): void;
+  toggleTrim(trim: TrimId): void;
 }
 
 const PAGE_NAME: Record<CollectionPage, string> = { bestiary: 'Bestiary', relics: 'Relics', recipes: 'Recipes', frames: 'Frames' };
@@ -102,7 +104,9 @@ export class CollectionView {
   private render(): void {
     const p = this.profile;
     if (!p) return;
+    // Trims (N5) are worn on the Frames page, so a won trim opens it too.
     const open = collectionPages(p);
+    open.frames ||= wonTrims(p).length > 0;
     if (!open[this.page]) this.page = 'bestiary';
     this.pages.replaceChildren(...(Object.keys(PAGE_NAME) as CollectionPage[]).filter((k) => open[k]).map((k) => {
       const b = document.createElement('button');
@@ -127,7 +131,7 @@ export class CollectionView {
         this.body.replaceChildren(...this.recipes(p));
         break;
       case 'frames':
-        this.body.replaceChildren(this.frames(p));
+        this.body.replaceChildren(this.frames(p), ...this.trims(p));
         break;
       default: {
         const exhaustive: never = this.page;
@@ -368,5 +372,42 @@ export class CollectionView {
       list.append(li);
     }
     return list;
+  }
+
+  /** Trims the Trials paid (N5): each worn on the tower until tapped off. Shown once one is won. */
+  private trims(p: Profile): HTMLElement[] {
+    const won = wonTrims(p);
+    if (won.length === 0) return [];
+    const head = document.createElement('p');
+    head.className = 'collection-note';
+    head.textContent = 'Trims: tap one to take it off the tower, or put it back on.';
+    const list = document.createElement('ul');
+    list.className = 'entry-list';
+    for (const t of won) {
+      const worn = !p.trimsOff.includes(t.trim);
+      const li = document.createElement('li');
+      li.className = `entry${worn ? ' is-worn' : ''}`;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'entry-btn';
+      btn.setAttribute('aria-pressed', String(worn));
+      const h = document.createElement('div');
+      h.className = 'entry-head';
+      const n = document.createElement('span');
+      n.className = 'entry-name';
+      n.textContent = t.name;
+      const tag = document.createElement('span');
+      tag.className = 'entry-count';
+      tag.textContent = worn ? 'Worn' : 'Off';
+      h.append(icon('checkered-flag'), n, tag);
+      btn.append(h);
+      btn.addEventListener('click', () => {
+        this.actions.toggleTrim(t.trim);
+        this.render();
+      });
+      li.append(btn);
+      list.append(li);
+    }
+    return [head, list];
   }
 }
