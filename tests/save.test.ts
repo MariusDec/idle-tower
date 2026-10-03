@@ -226,11 +226,17 @@ describe('migration ladder', () => {
     expect(out.shards).toBe(50);
   });
 
+  it('walks a v12 profile to v13: no explainers read, the lessons kept (§7.1)', () => {
+    const out = migrate({ version: 12, createdAt: 5, shards: 50, tutorial: { firstDraft: true, forgeIntro: true } }, MIGRATIONS, 13);
+    expect(out.version).toBe(13);
+    expect(out.tutorial).toEqual({ firstDraft: true, forgeIntro: true, explained: [] });
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);
     expect(out.seenCards).toEqual([]);
-    expect(out.tutorial).toEqual({ firstDraft: false, forgeIntro: false });
+    expect(out.tutorial).toEqual({ firstDraft: false, forgeIntro: false, explained: [] });
     expect(out.forge).toEqual({});
     expect(out.records).toEqual({ runs: 2, bestWave: 5, bestShards: 0, kills: 0, elites: 0 });
     expect(out.shards).toBe(4);

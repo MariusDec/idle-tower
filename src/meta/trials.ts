@@ -64,7 +64,7 @@ export function trialEffects(profile: Profile): Effect[] {
 /** What a won trial paid, in words for the results screen. */
 export interface TrialPaid {
   id: string;
-  /** "Gatekeeper's Seal · rank II", "Trim: Ivy", "Notable: Deep Arc". */
+  /** "Gatekeeper's Seal · rank II", "Tower trim: Ivy (cosmetic)", "Deep Arc: …". */
   line: string;
 }
 
@@ -85,7 +85,7 @@ export function winTrial(profile: Profile, id: string): TrialPaid | null {
       return { id, line: rank === 0 ? `${name} · already at its peak` : `${name} · ${rank === 1 ? 'new relic' : `rank ${'I'.repeat(rank)}`}` };
     }
     case 'trim':
-      return { id, line: `Tower trim: ${r.name}` };
+      return { id, line: `Tower trim: ${r.name} (cosmetic)` };
     case 'notable':
       return { id, line: `${r.name}: ${r.text}` };
     default: {

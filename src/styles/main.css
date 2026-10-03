@@ -1471,6 +1471,29 @@ body {
   gap: var(--space-3);
 }
 
+/* An explainer (§7.1): a mechanic told in a few paragraphs. */
+.explainer {
+  margin: 0 0 var(--space-4);
+  color: var(--text-2);
+}
+
+.explainer-line {
+  margin: 0 0 var(--space-3);
+}
+
+.explainer-line:last-child {
+  margin-bottom: 0;
+}
+
+.explainer-title {
+  margin: var(--space-4) 0 var(--space-2);
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-1);
+}
+
 /* ── HUD: the boss bar (§4.3) ────────────────────────────────────────────── */
 
 .hud-boss {
@@ -2210,6 +2233,56 @@ body {
   background: var(--surface-overlay);
   color: var(--text-1);
   cursor: pointer;
+}
+
+/* A view's "?" (§7.1): in its title, or on the home view beside the gear. */
+.help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: var(--space-2);
+  padding: 0;
+  vertical-align: middle;
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: 0;
+  cursor: pointer;
+  position: relative;
+}
+
+/* A 44px target around the 28px disc. */
+.help-btn::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.help-btn[hidden] {
+  display: none;
+}
+
+.hub-help {
+  position: absolute;
+  top: max(var(--space-3), var(--safe-t));
+  right: calc(max(var(--space-3), var(--safe-r)) + 44px + var(--space-2));
+  width: 44px;
+  height: 44px;
+  margin: 0;
+}
+
+.hub-help::after {
+  content: none;
+}
+
+.hub:not([data-view="home"]) .hub-help {
+  display: none;
 }
 
 .hub:not([data-view="home"]) .hub-gear {

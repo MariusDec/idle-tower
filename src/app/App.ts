@@ -16,6 +16,7 @@ import { claimAll, claimFeat } from '../meta/feats';
 import { offlineEarnings, offlineTier } from '../meta/offline';
 import { setPactRank } from '../meta/pacts';
 import { chooseTrial, trims } from '../meta/trials';
+import { explainersFor, markExplained, unreadExplainers } from '../meta/explainers';
 import { STAR_WEB } from '../meta/stars';
 import { FORGE } from '../content/forge';
 import { ENEMY_BY_ID } from '../content/enemies';
@@ -42,6 +43,7 @@ import { DraftPanel } from '../ui/draft';
 import { Hud } from '../ui/hud';
 import { HubScreen, type HubView } from '../ui/hub/hub';
 import { Modal, type ModalButton } from '../ui/modal';
+import { explainerBody } from '../ui/explainer';
 import { ResultsScreen } from '../ui/results';
 import { Toasts } from '../ui/toast';
 import { bindNativeLifecycle } from '../platform/native';
@@ -175,6 +177,7 @@ export class App {
       },
       setPact: (id, rank) => this.between(() => setPactRank(this.profile, id, rank)) ?? false,
       settings: () => this.openSettings(),
+      explain: (view, asked, wait) => this.explain(view, asked, wait),
     });
     this.results = new ResultsScreen(els.screens, () => this.leaveResults(), () => this.startRun());
     this.toasts = new Toasts(els.overlay);
@@ -637,6 +640,30 @@ export class App {
     this.dressTower();
     void this.save();
     return true;
+  }
+
+  /**
+   * A hub view's explainers (§7.1): the unread ones when it opens, all of
+   * them when its "?" is pressed. They count as read once dismissed, so a
+   * card that pushes one aside (welcome back, the ending) leaves it for the
+   * next visit; none is told over another card, or after the view has gone.
+   */
+  private explain(view: HubView, asked: boolean, wait: number): void {
+    if (wait > 0) {
+      window.setTimeout(() => this.explain(view, asked, 0), wait);
+      return;
+    }
+    if (this.screen !== 'hub' || this.hub.current !== view || this.modal.open) return;
+    const defs = asked ? explainersFor(this.profile, view) : unreadExplainers(this.profile, view);
+    if (defs.length === 0) return;
+    this.modal.show(defs[0].title, explainerBody(defs), [{
+      label: 'Got it',
+      primary: true,
+      onClick: () => {
+        markExplained(this.profile, defs.map((d) => d.id));
+        void this.save();
+      },
+    }]);
   }
 
   /** The Forge opened. True the very first time, when it teaches (§7.1). */

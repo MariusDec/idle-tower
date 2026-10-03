@@ -290,7 +290,7 @@ describe('Trials (N5)', () => {
     const p = profile({}, ['gatekeeper']);
     chooseTrial(p, 'bare-stone');
     const s = winBoss(p, createRun(buildRunConfig(p), 3));
-    expect(s.trial).toEqual({ id: 'bare-stone', won: true, paid: { id: 'bare-stone', line: 'Tower trim: Ivy' } });
+    expect(s.trial).toEqual({ id: 'bare-stone', won: true, paid: { id: 'bare-stone', line: 'Tower trim: Ivy (cosmetic)' } });
     expect(trialWon(p, 'bare-stone')).toBe(true);
     expect(trims(p)).toEqual(['ivy']);
     expect(p.trial).toBeNull();

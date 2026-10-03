@@ -24,6 +24,21 @@ Feats → Stars (`hubUnlocks`):
 Tactics and Pacts have no tab: they open from the home view once the
 Tactician is owned, and once Act 2 opens.
 
+## Explainers (§7.1)
+
+Each mechanic the hub unlocks has an explainer (`content/explainers.ts`):
+a title and a few paragraphs on what it is and whether it changes a run.
+`meta/explainers.ts#explainerOpen` says when each opens, from the same
+functions as the tabs and pages (`hubUnlocks`, `collectionPages`,
+`trialsOpen`, `act2Open`, `rushOpen`, `tacticsKey`; the home view's
+*tower's look* once it wears a tier, trophy or trim). Opening a view tells
+its unread ones in one card (the Map waits for its light to spread), and
+`profile.tutorial.explained` records them once dismissed, so a card pushed
+aside by another (welcome back, the ending) comes back next visit. A view
+with any open shows a **?** in its title (on the home view, beside the
+gear) that tells them all again. `tests/explainers.test.ts` fails when a
+tab, a Collection page, Tactics or Pacts has none.
+
 ## The Map (§5.2)
 
 The regions as a path from the tower's light toward the Blight Heart.
@@ -92,7 +107,7 @@ rules, won by felling the boss, and pays once:
 | Reward | |
 |---|---|
 | `relic` | a rank of the region's boss relic |
-| `trim` | a decoration on the tower, in the hub and in runs (N2) |
+| `trim` | a decoration on the tower, in the hub and in runs (N2); cosmetic only, and the Map and results say so |
 | `notable` | effects no Forge node gives, applied to every run like a node's: Drill Sergeant (starting weapon +1 level), Mire Sight (+1 reroll), Deep Arc (Chain Lightning leaps to burrowed bodies first and surfaces them), Heavy Shells (+2 bomblets), Clear Mind (+1 Banish), Dawn Muster (start two levels higher) |
 
 The Map's region card lists them; **Begin** sets `profile.trial` (and the

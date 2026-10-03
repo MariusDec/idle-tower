@@ -7,7 +7,7 @@
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 12;
+  version: 13;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -99,6 +99,8 @@ export interface Profile {
     firstDraft: boolean;
     /** The first visit to the Forge, which highlights a node to buy. */
     forgeIntro: boolean;
+    /** Explainers read (`content/explainers.ts`), by id: each is told unasked once. */
+    explained: string[];
   };
   settings: {
     /** Sim speed multiplier, 1–3 (§12.3). */
@@ -125,7 +127,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 12;
+export const PROFILE_VERSION = 13;
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
@@ -180,7 +182,7 @@ export function newProfile(now: number): Profile {
     sets: {},
     region: 1,
     frame: 'arcanist',
-    tutorial: { firstDraft: false, forgeIntro: false },
+    tutorial: { firstDraft: false, forgeIntro: false, explained: [] },
     settings: defaultSettings(),
   };
 }

@@ -68,6 +68,8 @@ profile has, settings included.
 | 8 → 9 | Q2 | the Tactician's Never lists |
 | 9 → 10 | Q3 | the Foreman's wishlist, Trials won and chosen, relic-set progress |
 | 10 → 11 | Q4 | Boss Rush's record, the fusions found |
+| 11 → 12 | — | the camera's framing |
+| 12 → 13 | — | the explainers read (`tutorial.explained`) |
 
 **Rules:** a rung writes literal values, never a call to today's defaults
 (those may change; the rung must not); and fields the player already set

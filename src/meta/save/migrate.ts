@@ -80,6 +80,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   10: (raw) => ({ ...raw, version: 11, rush: { best: 0, time: null }, fusions: [] }),
   // v12: the camera's framing (plans/camera-and-fog.md §5.4), fully out.
   11: (raw) => ({ ...raw, version: 12, settings: { framing: null, ...(raw.settings as object) } }),
+  // v13: the explainers read (§7.1). None yet: a player who has the mechanics is told of each once.
+  12: (raw) => ({ ...raw, version: 13, tutorial: { explained: [], ...(raw.tutorial as object) } }),
 };
 
 export class MigrationError extends Error {}

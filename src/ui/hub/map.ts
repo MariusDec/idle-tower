@@ -23,7 +23,7 @@ function rewardText(r: TrialReward): string {
     case 'relic':
       return `a rank of ${RELIC_BY_ID[r.relic].name}`;
     case 'trim':
-      return `a tower trim, ${r.name}`;
+      return `${r.name}, a cosmetic tower trim`;
     case 'notable':
       return `${r.name} — ${r.text}`;
     default: {

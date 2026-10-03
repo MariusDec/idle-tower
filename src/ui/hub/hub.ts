@@ -14,6 +14,7 @@ import { MapView } from './map';
 import { PactsView } from './pacts';
 import { TacticsView } from './tactics';
 import { automations, tacticsKey } from '../../meta/automation';
+import { explainersFor } from '../../meta/explainers';
 
 /**
  * The hub's views. A tab exists only once its view is unlocked (R3);
@@ -46,7 +47,18 @@ export interface HubActions {
   setPact(id: PactId, rank: number): boolean;
   /** Open the settings (§10.1: behind the gear). */
   settings(): void;
+  /**
+   * A view opened, or its "?" was pressed (§7.1): the app tells its
+   * explainers, unread ones only unless `asked`, after `wait` ms.
+   */
+  explain(view: HubView, asked: boolean, wait: number): void;
 }
+
+/**
+ * How long an explainer waits on the Map's light spreading (§7.3, 1.6 s);
+ * past the Act 1 ending's card (`App#ending`, 2.4 s), which then goes first.
+ */
+const SPREAD_MS = 2600;
 
 /** Tabs in the order they unlock and sit (§10.1). */
 const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics' | 'pacts'>; label: string }[] = [
@@ -96,6 +108,7 @@ export class HubScreen {
     // renderer draws there stays in the clear between them.
     this.root.innerHTML = `
       <button type="button" class="hub-gear" aria-label="Settings">${iconMarkup('cog')}</button>
+      <button type="button" class="help-btn hub-help" data-view="home" aria-label="How this works" hidden>?</button>
       <div class="hub-home">
         <div class="hub-group">
           <h1 class="hub-title">The Tower</h1>
@@ -187,8 +200,26 @@ export class HubScreen {
       setPact: (id, rank) => refreshing(() => actions.setPact(id, rank)),
       done: () => this.setView('home'),
     });
-    const views = [this.forge.root, this.map.root, this.collection.root, this.feats.root, this.stars.root, this.tactics.root, this.pacts.root];
-    for (const v of views) this.root.insertBefore(v, dock);
+    const views: [HubView, HTMLElement][] = [
+      ['forge', this.forge.root], ['map', this.map.root], ['collection', this.collection.root], ['feats', this.feats.root],
+      ['stars', this.stars.root], ['tactics', this.tactics.root], ['pacts', this.pacts.root],
+    ];
+    for (const [view, v] of views) {
+      this.root.insertBefore(v, dock);
+      // Each view's "?" (§7.1) sits in its title.
+      const help = document.createElement('button');
+      help.type = 'button';
+      help.className = 'help-btn';
+      help.dataset.view = view;
+      help.setAttribute('aria-label', 'How this works');
+      help.textContent = '?';
+      help.hidden = true;
+      v.querySelector('h2')?.append(help);
+    }
+    this.root.addEventListener('click', (e) => {
+      const help = (e.target as HTMLElement).closest<HTMLElement>('.help-btn');
+      if (help) actions.explain(help.dataset.view as HubView, true, 0);
+    });
     this.tabs.addEventListener('click', (e) => {
       const tab = (e.target as HTMLElement).closest<HTMLElement>('.hub-tab');
       if (tab) this.setView(tab.dataset.view as HubView);
@@ -215,7 +246,12 @@ export class HubScreen {
 
   /** Redraw the open view after the profile changed underneath it (offline shards, say). */
   update(): void {
-    if (this.profile && !this.root.hidden) this.setView(this.view);
+    if (this.profile && !this.root.hidden) this.setView(this.view, false, false);
+  }
+
+  /** The view on screen, or null while the hub is hidden. */
+  get current(): HubView | null {
+    return this.root.hidden ? null : this.view;
   }
 
   private renderTabs(unlocks: HubUnlocks): void {
@@ -239,7 +275,8 @@ export class HubScreen {
     }));
   }
 
-  private setView(view: HubView, spread = false): void {
+  /** `tell`: tell the view's unread explainers (§7.1), after the light spreads when it does. */
+  private setView(view: HubView, spread = false, tell = true): void {
     const p = this.profile;
     if (!p) return;
     this.view = view;
@@ -265,6 +302,7 @@ export class HubScreen {
     if (view === 'stars') this.stars.show(p, false);
     if (view === 'pacts') this.pacts.show(p);
     this.refresh();
+    if (tell) this.actions.explain(view, false, spread ? SPREAD_MS : 0);
   }
 
   /** Numbers that move when shards are spent, and the tabs' dots. */
@@ -281,6 +319,9 @@ export class HubScreen {
     setText(this.best, record ?? (best > 0 ? String(best) : '—'));
     const where = abyss ? 'The Abyss' : rush ? 'Boss Rush' : selectedRegion(p).name;
     setText(this.loadout, `${selectedFrame(p).name} · ${where}`);
+    for (const help of this.root.querySelectorAll<HTMLElement>('.help-btn')) {
+      help.hidden = explainersFor(p, help.dataset.view as HubView).length === 0;
+    }
     this.tacticsBtn.hidden = tacticsKey(p) === null;
     const act2 = act2Open(p);
     this.pactsBtn.hidden = !act2;
