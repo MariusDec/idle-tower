@@ -75,18 +75,28 @@ function position(n: WebNodeDef): { x: number; y: number } {
   return { x: Math.sin(a) * r, y: -Math.cos(a) * r };
 }
 
+/** Stats a web raises in points, not by a factor: their total is what it adds to the base. */
+const ADDITIVE: ReadonlySet<StatKey> = new Set(['critChance', 'critDamage', 'regen', 'armor', 'pierce']);
+
+const signed = (v: number, s: string): string => `${v < 0 ? '−' : '+'}${s}`;
+
 /**
- * What a stat's total from one web looks like (U8): a percentage for what
- * multiplies, points for a chance, and a plain number for what adds.
+ * What a stat's total from one web looks like (U8): points for what adds
+ * (a keystone's ×0.5 halves them, base and all), a percentage for what
+ * multiplies, or a factor once a true multiplier is in play (`asFactor`),
+ * so "halved" reads ×3 → ×1.5 rather than +200% → +50%.
  */
-function statTotal(key: StatKey, mods: readonly StatMod[]): string {
+function statTotal(key: StatKey, mods: readonly StatMod[], asFactor: boolean): string {
   const b = resolveStat(key, mods);
-  if (b.add !== 0 && b.pct === 0 && b.mult === 1) {
-    if (key === 'critChance' || key === 'regen') return `+${(b.add * 100).toFixed(1).replace(/\.0$/, '')}%`;
-    if (key === 'critDamage') return `+${b.add.toFixed(2)}×`;
-    return `+${formatNumber(Math.round(b.add))}`;
+  if (ADDITIVE.has(key)) {
+    const d = b.value - b.base;
+    if (key === 'critChance' || key === 'regen') return signed(d, `${Math.abs(d * 100).toFixed(2).replace(/\.?0+$/, '')}%`);
+    if (key === 'critDamage') return signed(d, `${Math.abs(d).toFixed(2).replace(/\.?0+$/, '')}×`);
+    return signed(d, formatNumber(Math.round(Math.abs(d))));
   }
-  return `+${formatNumber(Math.round(((1 + b.pct) * b.mult - 1) * 100))}%`;
+  const f = (1 + b.pct) * b.mult;
+  if (asFactor) return `×${f >= 100 ? formatNumber(Math.round(f)) : f.toFixed(2).replace(/\.?0+$/, '')}`;
+  return signed(f - 1, `${formatNumber(Math.round(Math.abs(f - 1) * 100))}%`);
 }
 
 function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
@@ -445,8 +455,9 @@ export class WebView<N extends WebNodeDef> {
     const line = document.createElement('p');
     line.className = 'forge-detail-total';
     line.textContent = `${this.src.title} total · ` + keys.map((k) => {
-      const a = statTotal(k, now);
-      return `${STAT_LABEL[k]} ${next ? `${a} → ${statTotal(k, next)}` : a}`;
+      const asFactor = [now, next].some((m) => m !== null && resolveStat(k, m).mult !== 1);
+      const a = statTotal(k, now, asFactor);
+      return `${STAT_LABEL[k]} ${next ? `${a} → ${statTotal(k, next, asFactor)}` : a}`;
     }).join(' · ');
     return line;
   }
