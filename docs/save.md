@@ -51,7 +51,7 @@ parse or migrate is never dropped silently: it is copied to
 ## The migration ladder
 
 `MIGRATIONS[n]` takes a raw object at version `n` to `n + 1`; `migrate`
-walks it to `PROFILE_VERSION` (11) and throws on a version from the future
+walks it to `PROFILE_VERSION` (15) and throws on a version from the future
 or a missing rung. Every rung has a fixture in `tests/save.test.ts`, and a
 test walks a v1 profile all the way up and checks it has every field a new
 profile has, settings included.
@@ -70,6 +70,8 @@ profile has, settings included.
 | 10 → 11 | Q4 | Boss Rush's record, the fusions found |
 | 11 → 12 | — | the camera's framing |
 | 12 → 13 | — | the explainers read (`tutorial.explained`) |
+| 13 → 14 | — | trims taken off (`trimsOff`) |
+| 14 → 15 | — | keystones switched off (`keystonesOff`) |
 
 **Rules:** a rung writes literal values, never a call to today's defaults
 (those may change; the rung must not); and fields the player already set

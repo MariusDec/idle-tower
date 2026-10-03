@@ -71,7 +71,14 @@ past its last multiplies the stat by `1 + share × pct` (share 0.5),
 compounding (`Web#statMods`, which `buildRunConfig` and the totals line
 read). **Refunds:** notables and
 keystones refund in full, between runs; minors and masteries never do, so
-the web keeps its shape. `nextGoal` is the cheapest buyable node and how
+the web keeps its shape. **Switching keystones off:** an owned keystone can be
+switched off between runs, and on again, for free (`toggleKeystone`;
+`profile.keystonesOff`). It stays owned, so adjacency, the tower's tier
+and refunds are unchanged, but `activeNodes` leaves it out, so
+`buildRunConfig` applies none of its effects and the Forge's totals line
+doesn't count it. A refund clears the switch. In the web an off keystone is
+hollow, dashed, struck through and tagged OFF; its card has an On/Off
+control and previews the totals with it switched the other way. `nextGoal` is the cheapest buyable node and how
 close the player is to it: the results screen's and hub's "Next" line.
 
 **Invariant (I3):** every Act 1 results screen shows an affordable node or

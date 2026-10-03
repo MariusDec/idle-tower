@@ -9,7 +9,7 @@ import type { TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 14;
+  version: 15;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -25,6 +25,8 @@ export interface Profile {
   };
   /** Forge levels owned, by node id (§5.1). A missing id is level 0. */
   forge: Record<string, number>;
+  /** Owned keystones switched off (§11.4): kept, but no run applies them. */
+  keystonesOff: string[];
   /** Draft cards seen at least once, by `cardKey`, for the NEW stamp (§4.5). */
   seenCards: string[];
   /** Enemy types ever seen, for discoveries and the Bestiary (§5.3). */
@@ -131,7 +133,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 14;
+export const PROFILE_VERSION = 15;
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
@@ -160,6 +162,7 @@ export function newProfile(now: number): Profile {
     shards: 0,
     records: { runs: 0, bestWave: 0, bestShards: 0, kills: 0, elites: 0 },
     forge: {},
+    keystonesOff: [],
     seenCards: [],
     seenEnemies: [],
     killsBy: {},

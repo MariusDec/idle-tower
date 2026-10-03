@@ -6,7 +6,8 @@ import { CONTENT } from '../src/content';
 import type { ContentEntry, ForgeNodeDef } from '../src/content/types';
 import { newProfile, type Profile } from '../src/meta/profile';
 import {
-  buyNode, canRefund, isBuyable, nextGoal, nodeCost, nodeStates, refundNode, spentOn,
+  buyNode, canRefund, canSwitch, isBuyable, isSwitchedOff, nextGoal, nodeCost, nodeStates, refundNode, spentOn,
+  toggleKeystone,
 } from '../src/meta/forge';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { automations, maxSpeed, runSpeed } from '../src/meta/automation';
@@ -82,6 +83,44 @@ describe('Forge: refunds (§5.1)', () => {
     for (const id of ['might-damage', 'scattershot', 'chain-lightning']) expect(buyNode(p, id)).toBe(true);
     expect(canRefund(p, 'scattershot')).toBe(false);
     expect(canRefund(p, 'chain-lightning')).toBe(true);
+  });
+});
+
+describe('Forge: keystones switch off and on (§11.4)', () => {
+  it('only an owned keystone switches; off, no run applies it; on again, it does', () => {
+    const p = newProfile(0);
+    expect(toggleKeystone(p, 'glass-cannon')).toBe(false);
+    expect(toggleKeystone(p, 'might-damage')).toBe(false);
+    const bare = buildRunConfig(p);
+    p.forge['glass-cannon'] = 1;
+    p.forge['might-damage'] = 1;
+    expect(canSwitch(p, 'glass-cannon')).toBe(true);
+    expect(canSwitch(p, 'might-damage')).toBe(false);
+    const on = buildRunConfig(p).mods.filter((m) => m.key === 'maxHp');
+    expect(on.some((m) => m.mult === 0.5)).toBe(true);
+    expect(toggleKeystone(p, 'glass-cannon')).toBe(true);
+    expect(isSwitchedOff(p, 'glass-cannon')).toBe(true);
+    expect(p.forge['glass-cannon']).toBe(1);
+    expect(buildRunConfig(p).mods.filter((m) => m.key === 'maxHp')).toEqual(bare.mods.filter((m) => m.key === 'maxHp'));
+    expect(toggleKeystone(p, 'glass-cannon')).toBe(true);
+    expect(isSwitchedOff(p, 'glass-cannon')).toBe(false);
+  });
+
+  it("a keystone's behaviour goes with it", () => {
+    const p = newProfile(0);
+    p.forge.hoarder = 1;
+    expect(buildRunConfig(p).behaviours.hoarder).toBe(1);
+    toggleKeystone(p, 'hoarder');
+    expect(buildRunConfig(p).behaviours.hoarder).toBeUndefined();
+  });
+
+  it('a refund clears the switch: bought again, it starts on', () => {
+    const p = rich();
+    for (const id of ['might-damage', 'opening-salvo']) buyNode(p, id);
+    p.forge['glass-cannon'] = 1;
+    toggleKeystone(p, 'glass-cannon');
+    expect(refundNode(p, 'glass-cannon')).toBe(true);
+    expect(p.keystonesOff).toEqual([]);
   });
 });
 

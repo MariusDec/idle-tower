@@ -7,7 +7,7 @@ import type { BehaviourId, CardItemId, Effect, FrameId, FusionId, PactId, StatMo
 import { isWeaponId } from '../sim/systems/draft';
 import { selectedTrial, trialEffects } from './trials';
 import { activeSets, bossDown, equippedRelics, inAbyss, pastRegions, relicSlots, selectedFrame, selectedRegion } from './collection';
-import { FORGE_WEB, ownedNodes } from './forge';
+import { FORGE_WEB, activeNodes } from './forge';
 import { neverList, priorityList } from './automation';
 import { runPacts } from './pacts';
 import type { Profile } from './profile';
@@ -43,13 +43,13 @@ export function buildRunConfig(profile: Profile): RunConfig {
   let passiveSlots: number = BALANCE.slots.passive;
   const behaviours: Partial<Record<BehaviourId, number>> = {};
   const fusions: FusionId[] = [];
-  // Every effect applies once per owned level; a frame's quirk is one level.
+  // Every effect applies once per owned level (a keystone switched off, none); a frame's quirk is one level.
   // A stat applies as one contribution of `level` times its size: the same
   // to the resolver, and a mastery hundreds of levels deep stays one line.
   // An ascended star's levels past its last (N10) are one multiplier more.
   const effects: Effect[] = [...frame.effects];
   const webs = [
-    ...ownedNodes(profile).map((o) => ({ ...o, stats: FORGE_WEB.statMods(o.node, o.level) })),
+    ...activeNodes(profile).map((o) => ({ ...o, stats: FORGE_WEB.statMods(o.node, o.level) })),
     ...STAR_WEB.ownedNodes(profile).map((o) => ({ ...o, stats: STAR_WEB.statMods(o.node, o.level) })),
   ];
   for (const { node, level, stats } of webs) {

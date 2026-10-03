@@ -11,6 +11,7 @@ import { WISHLIST_MAX } from '../../meta/automation';
 import type { Profile } from '../../meta/profile';
 import { STAR_WEB } from '../../meta/stars';
 import type { NodeState, Web } from '../../meta/web';
+import { segmented } from '../controls';
 import { motionReduced, setText } from '../dom';
 import { icon, iconMarkup, iconUse } from '../icon';
 
@@ -44,6 +45,12 @@ export interface ForgeActions {
   pin?(id: string): boolean;
   /** The wishlist, in order, once the Foreman is owned; null before. */
   pinned?(profile: Profile): readonly string[] | null;
+  /** True when the node is an owned keystone, which can be switched off and on (§11.4). Absent for a web without any. */
+  switchable?(profile: Profile, id: string): boolean;
+  /** True when an owned keystone is switched off. */
+  off?(profile: Profile, id: string): boolean;
+  /** Switch an owned keystone off, or back on. */
+  toggle?(id: string): boolean;
 }
 
 /** What a web view draws, and what it calls the things it draws (§5.1, §9). */
@@ -260,6 +267,8 @@ export class WebView<N extends WebNodeDef> {
     if (n.id === this.hinted) classes.push('is-hinted');
     const pin = this.actions.pinned?.(p)?.indexOf(n.id) ?? -1;
     if (pin >= 0) classes.push('is-pinned');
+    const off = this.actions.off?.(p, n.id) ?? false;
+    if (off) classes.push('is-off');
     const g = el('g', { class: classes.join(' '), transform: `translate(${at.x} ${at.y})`, 'data-id': n.id });
     g.appendChild(el('circle', { class: 'forge-hit', r: Math.max(r, HIT_RADIUS) }));
     let shape: SVGElement;
@@ -313,6 +322,13 @@ export class WebView<N extends WebNodeDef> {
       t.textContent = `#${pin + 1}`;
       g.appendChild(t);
     }
+    // A keystone switched off (§11.4): struck through, and tagged under the node.
+    if (off) {
+      g.appendChild(el('line', { class: 'forge-off-slash', x1: -r * 0.7, y1: r * 0.7, x2: r * 0.7, y2: -r * 0.7 }));
+      const t = el('text', { class: 'forge-off', y: r + 14, 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+      t.textContent = 'OFF';
+      g.appendChild(t);
+    }
     return g;
   }
 
@@ -364,10 +380,13 @@ export class WebView<N extends WebNodeDef> {
       return;
     }
     const level = web.levelOf(p, id);
+    const switchable = this.actions.switchable?.(p, id) ?? false;
+    const off = switchable && (this.actions.off?.(p, id) ?? false);
+    if (off) this.detail.classList.add('is-off');
     head.append(icon(n.icon));
     name.textContent = n.name;
     head.append(name);
-    kind.textContent = `${this.src.branchName(n.branch)} · ${typeName}${n.maxLevel > 1 ? ` · Level ${levelText(level, n.maxLevel)}` : ''}`;
+    kind.textContent = `${this.src.branchName(n.branch)} · ${typeName}${n.maxLevel > 1 ? ` · Level ${levelText(level, n.maxLevel)}` : ''}${switchable ? (off ? ' · Off' : ' · On') : ''}`;
     const text = document.createElement('p');
     text.className = 'forge-detail-text';
     text.textContent = n.text;
@@ -393,7 +412,16 @@ export class WebView<N extends WebNodeDef> {
       done.className = 'forge-detail-done';
       // A minor that ascends once the sky is whole (N10) says so.
       done.textContent = web.canAscend(n) ? 'Maxed · ascends once every star is lit' : n.maxLevel > 1 ? 'Maxed' : 'Owned';
-      actions.append(done);
+      // A keystone's switch (§11.4) says it all; the "Owned" would only crowd it.
+      if (!switchable) actions.append(done);
+    }
+    if (switchable) {
+      actions.append(segmented([{ value: true, label: 'On' }, { value: false, label: 'Off' }], !off, () => {
+        if (this.actions.toggle?.(id)) {
+          this.redraw();
+          this.renderDetail();
+        }
+      }, `${n.name}: on or off`));
     }
     // The Foreman (N7): pin it, and the Forge buys it as shards arrive.
     const pinned = this.actions.pinned?.(p) ?? null;
@@ -431,34 +459,47 @@ export class WebView<N extends WebNodeDef> {
       const steps = web.statMods(n, n.maxLevel + 1).filter((m) => m.mult !== undefined);
       text.textContent = `${n.text} Ascended: each level past ${n.maxLevel}, ${steps.map((m) => `${STAT_LABEL[m.key]} ×${m.mult!.toFixed(2)}`).join(', ')}.`;
     }
-    this.detail.append(head, kind, text, ...(total ? [total] : []), actions);
+    const note: HTMLElement[] = [];
+    if (off) {
+      const p2 = document.createElement('p');
+      p2.className = 'forge-detail-off';
+      p2.textContent = 'Switched off: still yours, but no run feels it until you switch it back on.';
+      note.push(p2);
+    }
+    this.detail.append(head, kind, text, ...(total ? [total] : []), ...note, actions);
     this.detail.hidden = false;
   }
 
   /**
    * The web's total on each stat this node raises (U8), now and after its
-   * next level: "Forge total · Damage +60% → +75%". Null for a node with no
-   * stat.
+   * next level: "Forge total · Damage +60% → +75%". For an owned keystone,
+   * now and with it switched the other way (§11.4). A keystone switched off
+   * counts for nothing. Null for a node with no stat.
    */
   private totals(p: Profile, n: N, level: number): HTMLElement | null {
     const keys = [...new Set(n.effects.flatMap((e) => (e.kind === 'stat' ? [e.mod.key] : [])))];
     if (keys.length === 0) return null;
     const web = this.src.web;
-    const mods = (extra: number): StatMod[] => {
+    const switchable = this.actions.switchable?.(p, n.id) ?? false;
+    const off = (id: string): boolean => this.actions.off?.(p, id) ?? false;
+    const mods = (extra: number, flip: boolean): StatMod[] => {
       const out: StatMod[] = [];
-      for (const { node, level: l } of web.ownedNodes(p)) out.push(...web.statMods(node, l + (node.id === n.id ? extra : 0)));
+      for (const { node, level: l } of web.ownedNodes(p)) {
+        if (off(node.id) !== (flip && node.id === n.id)) continue;
+        out.push(...web.statMods(node, l + (node.id === n.id ? extra : 0)));
+      }
       if (level === 0 && extra > 0) out.push(...web.statMods(n, extra));
       return out;
     };
-    const now = mods(0);
-    const next = level < web.maxOf(p, n) ? mods(1) : null;
+    const now = mods(0, false);
+    const next = switchable ? mods(0, true) : level < web.maxOf(p, n) ? mods(1, false) : null;
     const line = document.createElement('p');
     line.className = 'forge-detail-total';
     line.textContent = `${this.src.title} total · ` + keys.map((k) => {
       const asFactor = [now, next].some((m) => m !== null && resolveStat(k, m).mult !== 1);
       const a = statTotal(k, now, asFactor);
       return `${STAT_LABEL[k]} ${next ? `${a} → ${statTotal(k, next, asFactor)}` : a}`;
-    }).join(' · ');
+    }).join(' · ') + (switchable ? (off(n.id) ? ' (if on)' : ' (if off)') : '');
     return line;
   }
 

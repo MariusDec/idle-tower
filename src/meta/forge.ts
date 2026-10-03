@@ -14,6 +14,7 @@ import { Web, type NodeState, type WebGoal } from './web';
  * A node is sealed until its boss falls, and a mastery (§9) until its
  * constellation in the Crown is lit. Notables and keystones refund for free
  * between runs; minors and masteries never do, so the web keeps its shape.
+ * An owned keystone can also be switched off (and on) without a refund.
  */
 export type { NodeState };
 
@@ -76,7 +77,29 @@ export function canRefund(profile: Profile, id: string): boolean {
 }
 
 export function refundNode(profile: Profile, id: string): boolean {
-  return FORGE_WEB.refund(profile, id);
+  if (!FORGE_WEB.refund(profile, id)) return false;
+  // Bought again, a keystone starts on.
+  profile.keystonesOff = profile.keystonesOff.filter((k) => k !== id);
+  return true;
+}
+
+/** A keystone is a trade (§11.4): once owned, it can be switched off between runs, and on again, for free. */
+export function canSwitch(profile: Profile, id: string): boolean {
+  return FORGE_WEB.node(id)?.type === 'keystone' && levelOf(profile, id) > 0;
+}
+
+/** True when an owned keystone is switched off: it stays owned, but no run feels it. */
+export function isSwitchedOff(profile: Profile, id: string): boolean {
+  return profile.keystonesOff.includes(id);
+}
+
+/** Switch an owned keystone off, or back on. False when it isn't an owned keystone. */
+export function toggleKeystone(profile: Profile, id: string): boolean {
+  if (!canSwitch(profile, id)) return false;
+  const i = profile.keystonesOff.indexOf(id);
+  if (i >= 0) profile.keystonesOff.splice(i, 1);
+  else profile.keystonesOff.push(id);
+  return true;
 }
 
 /** The "Next:" line (§4.6, §7.4): the cheapest node that can be bought, and how close it is. */
@@ -86,9 +109,14 @@ export function nextGoal(profile: Profile): ForgeGoal | null {
   return FORGE_WEB.nextGoal(profile);
 }
 
-/** Owned nodes with their levels, in table order: what `buildRunConfig` resolves. */
+/** Owned nodes with their levels, in table order. */
 export function ownedNodes(profile: Profile): { node: ForgeNodeDef; level: number }[] {
   return FORGE_WEB.ownedNodes(profile);
+}
+
+/** Owned nodes less the keystones switched off: what `buildRunConfig` resolves. */
+export function activeNodes(profile: Profile): { node: ForgeNodeDef; level: number }[] {
+  return ownedNodes(profile).filter((o) => !isSwitchedOff(profile, o.node.id));
 }
 
 /**

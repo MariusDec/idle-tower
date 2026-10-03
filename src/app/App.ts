@@ -8,7 +8,7 @@ import { buildRunConfig } from '../meta/runConfig';
 import {
   autoUlt, automations, draftSeconds, foremanBuy, marchOn, maxSpeed, runSpeed, tacticsScopes, togglePin,
 } from '../meta/automation';
-import { buyNode, canAfford, refundNode, towerTier } from '../meta/forge';
+import { buyNode, canAfford, refundNode, toggleKeystone, towerTier } from '../meta/forge';
 import { bankRun, buildOf } from '../meta/results';
 import { buildList, foremanLine, statsList } from '../ui/build';
 import { frameUnlocked, regionUnlocked, selectedFrame, toggleRelic, trophyCount } from '../meta/collection';
@@ -145,6 +145,7 @@ export class App {
       buy: (id) => this.buy(id),
       refund: (id) => this.refund(id),
       pin: (id) => this.between(() => togglePin(this.profile, id)) ?? false,
+      toggleKeystone: (id) => this.between(() => toggleKeystone(this.profile, id)) ?? false,
       forgeOpened: () => this.forgeOpened(),
       selectRegion: (index) => this.between(() => {
         if (regionUnlocked(this.profile, index)) this.profile.region = index;

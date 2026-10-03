@@ -15,6 +15,7 @@ import { PactsView } from './pacts';
 import { TacticsView } from './tactics';
 import { automations, tacticsKey } from '../../meta/automation';
 import { explainersFor } from '../../meta/explainers';
+import { canSwitch, isSwitchedOff } from '../../meta/forge';
 
 /**
  * The hub's views. A tab exists only once its view is unlocked (R3);
@@ -30,6 +31,8 @@ export interface HubActions {
   refund(id: string): boolean;
   /** Pin a Forge node to the Foreman's wishlist, or unpin it (N7). */
   pin(id: string): boolean;
+  /** Switch an owned keystone off, or back on (§11.4). */
+  toggleKeystone(id: string): boolean;
   /** The first time the Forge opens (§7.1): the app records the lesson. */
   forgeOpened(): boolean;
   selectRegion(index: number): void;
@@ -175,6 +178,9 @@ export class HubScreen {
       refund: (id) => refreshing(() => actions.refund(id)),
       pin: (id) => actions.pin(id),
       pinned: (p) => (automations(p).has('foreman') ? p.wishlist : null),
+      switchable: (p, id) => canSwitch(p, id),
+      off: (p, id) => isSwitchedOff(p, id),
+      toggle: (id) => refreshing(() => actions.toggleKeystone(id)),
     });
     this.map = new MapView(this.root, (index) => {
       actions.selectRegion(index);

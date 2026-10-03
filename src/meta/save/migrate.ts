@@ -84,6 +84,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   12: (raw) => ({ ...raw, version: 13, tutorial: { explained: [], ...(raw.tutorial as object) } }),
   // v14: trims can be taken off (N5); every one stays worn.
   13: (raw) => ({ ...raw, version: 14, trimsOff: [] }),
+  // v15: owned keystones can be switched off (§11.4); every one stays on.
+  14: (raw) => ({ ...raw, version: 15, keystonesOff: [] }),
 };
 
 export class MigrationError extends Error {}
