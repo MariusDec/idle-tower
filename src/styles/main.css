@@ -647,13 +647,19 @@ body {
 
 .results {
   background: var(--surface-scrim);
+  /* A long summary scrolls; `safe` keeps its top reachable instead of
+     centring it off-screen, and the actions stay pinned below. */
+  overflow-y: auto;
+  justify-content: safe center;
 }
+
+.results > * { flex-shrink: 0; }
 
 .results-build .build-list { margin: 0; }
 
 /* How it went (U5): a sheet over the results, so the screen stays one screen. */
 .results-report {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: var(--z-sheet);
   display: flex;
@@ -841,9 +847,12 @@ body {
 }
 
 .results-actions {
+  position: sticky;
+  bottom: 0;
   display: flex;
   gap: var(--space-3);
   margin-top: var(--space-4);
+  padding-block: var(--space-2);
 }
 
 /* ── Forge (§5.1) ────────────────────────────────────────────────────────── */
