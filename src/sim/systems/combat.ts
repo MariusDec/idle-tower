@@ -500,7 +500,8 @@ function unearth(run: RunState, x: number, y: number, radius: number): Enemy | n
 
 /**
  * Frost Ring: every body within the pulse is hit and slowed (§11.2).
- * Absolute Zero freezes them solid instead; a boss is only slowed.
+ * Absolute Zero freezes them solid instead, once per body: a thawed body is
+ * only slowed after, or it would never move again. A boss is only slowed.
  */
 function frostPulse(run: RunState, w: WeaponState, p: WeaponParams, crit: Rng): void {
   const r2 = p.radius * p.radius;
@@ -512,7 +513,7 @@ function frostPulse(run: RunState, w: WeaponState, p: WeaponParams, crit: Rng): 
     const e = run.enemies[i];
     if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
     // Frozen before the hit lands, so a pulse that kills can shatter.
-    if (freeze > 0 && !e.boss) {
+    if (freeze > 0 && !e.boss && e.frozenUntil === 0) {
       e.frozenUntil = run.time + freeze;
       e.stunnedUntil = Math.max(e.stunnedUntil, e.frozenUntil);
     }

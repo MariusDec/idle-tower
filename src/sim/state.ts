@@ -169,7 +169,7 @@ export interface Enemy {
   burnUntil: number;
   /** Seconds until the burn next bites. */
   burnTimer: number;
-  /** Frozen by Absolute Zero until then: slain while frozen, it shatters. */
+  /** Frozen by Absolute Zero until then (0: never frozen; it freezes once): slain while frozen, it shatters. */
   frozenUntil: number;
   /** A Burrower still under the ground: nothing can target or hit it. */
   under: boolean;

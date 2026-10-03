@@ -283,6 +283,18 @@ describe('evolutions (§4.4)', () => {
     expect(near.hp).toBeLessThan(1e6);
   });
 
+  it('Absolute Zero: a thawed body is not frozen again', () => {
+    const run = armory();
+    only(run, 'frost-ring', 5, true);
+    const a = body(run, { x: 120, y: 0, ...tough });
+    fight(run, SIM_DT);
+    const first = a.frozenUntil;
+    expect(first).toBeGreaterThan(run.time);
+    fight(run, first - run.time + 5);
+    expect(a.frozenUntil).toBe(first);
+    expect(a.frozenUntil).toBeLessThan(run.time);
+  });
+
   it('Meteorfall: meteors fall on crowds and leave the ground burning', () => {
     const run = armory();
     only(run, 'mortar', 5, true);
