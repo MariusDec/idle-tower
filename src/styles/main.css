@@ -1961,7 +1961,7 @@ body {
 }
 
 .collection-note {
-  margin: 0 0 var(--space-2);
+  margin: var(--space-2) 0 var(--space-2);
   font-size: var(--text-md);
   color: var(--text-2);
 }
