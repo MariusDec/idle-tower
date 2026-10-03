@@ -27,8 +27,8 @@ A fresh Forge shows three nodes (§7.1). Node types:
 - **notable** (49): one qualitative unlock (a weapon card, a slot, a
   behaviour, an automation);
 - **keystone** (4): a build-defining trade, ring 3: Glass Cannon (damage
-  ×1.8, Max HP and regen halved), Specialist (one weapon, the first one
-  picked, ×3 damage, evolves at 3), Hoarder (shards ×2, every enemy ×1.5
+  ×1.8, Max HP and regen halved), Specialist (the starting weapon
+  ×2.5 damage and evolves at 3, all other damage ×0.75; no slot is lost), Hoarder (shards ×2, every enemy ×1.5
   HP: a personal heat, B2), Fortress. `npm run arsenal -- --keystones`
   sweeps each against none (T4);
 - Q3 adds **Banish** (Fortune ring 2, 3 levels) and **Clean Slate**

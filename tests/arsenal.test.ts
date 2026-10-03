@@ -209,11 +209,13 @@ describe('evolutions (§4.4)', () => {
     for (let i = 0; i < 20; i++) expect(rollOffer(run, rng).some((c) => c.kind === 'evolution')).toBe(true);
   });
 
-  it('Specialist evolves at level 3', () => {
+  it('Specialist evolves its starting weapon at level 3, and only that one', () => {
     const run = armory({ behaviours: { specialist: 1 } });
-    run.weapons = [newWeapon('glaives', 3)];
-    run.passives = [{ id: 'reach', level: 1 }];
-    expect(candidateCards(run)).toContainEqual({ kind: 'evolution', id: 'halo' });
+    run.weapons = [{ ...newWeapon('glaives', 3), signature: true }, newWeapon('mortar', 3)];
+    run.passives = [{ id: 'reach', level: 1 }, { id: 'power', level: 1 }];
+    const cards = candidateCards(run);
+    expect(cards).toContainEqual({ kind: 'evolution', id: 'halo' });
+    expect(cards).not.toContainEqual({ kind: 'evolution', id: 'meteorfall' });
   });
 
   it('evolving marks the weapon, records the recipe and spikes its damage', () => {
@@ -329,28 +331,27 @@ describe('keystones (§11.4)', () => {
     expect(b.maxHp).toBeCloseTo(a.maxHp * BALANCE.behaviours.hoarderHp);
   });
 
-  it('Specialist leaves one weapon slot, whatever the Forge gave', () => {
+  it('Specialist keeps every weapon slot the Forge gave', () => {
     const p = newProfile(0);
-    p.forge = { 'might-damage': 1, scattershot: 1, specialist: 1 };
-    expect(buildRunConfig(p).weaponSlots).toBe(1);
+    p.forge = { 'might-damage': 1, scattershot: 1 };
+    const slots = buildRunConfig(p).weaponSlots;
+    p.forge = { ...p.forge, specialist: 1 };
+    expect(buildRunConfig(p).weaponSlots).toBe(slots);
   });
 
-  it('Specialist (S4) chooses its weapon: the first new one swaps in at its level, then the slot locks', () => {
-    const run = armory({ behaviours: { specialist: 1 }, weaponSlots: 1 });
-    run.weapons = [newWeapon('arcane-bolt', 2)];
-    const offer = candidateCards(run).filter((c) => c.kind === 'weapon' && c.id !== 'arcane-bolt');
-    expect(offer.length).toBeGreaterThan(0);
-    expect(offer.every((c) => c.kind === 'weapon' && c.level === 2)).toBe(true);
-    applyCard(run, { kind: 'weapon', id: 'mortar', level: 2 });
-    expect(run.weapons.map((w) => [w.id, w.level])).toEqual([['mortar', 2]]);
-    expect(candidateCards(run).some((c) => c.kind === 'weapon' && c.id !== 'mortar')).toBe(false);
-  });
-
-  it('Specialist keeps its starting weapon once it takes a level of it', () => {
-    const run = armory({ behaviours: { specialist: 1 }, weaponSlots: 1 });
-    run.weapons = [newWeapon('arcane-bolt', 1)];
-    applyCard(run, { kind: 'weapon', id: 'arcane-bolt', level: 2 });
-    expect(candidateCards(run).some((c) => c.kind === 'weapon' && c.id !== 'arcane-bolt')).toBe(false);
+  it("Specialist: the starting weapon deals ×2.5, every other weapon ×0.75, and new weapons join beside it", () => {
+    const p = newProfile(0);
+    const plain = createRun(buildRunConfig(p), 1);
+    p.forge = { specialist: 1 };
+    const run = createRun(buildRunConfig(p), 1);
+    expect(run.weapons[0].signature).toBe(true);
+    const B = BALANCE.behaviours;
+    const hit = (r: RunState, w: Parameters<typeof armed>[1]): number => armed(r.stats, w).damage * r.stats.damageMult;
+    expect(hit(run, run.weapons[0])).toBeCloseTo(hit(plain, plain.weapons[0]) * B.specialistDamage);
+    expect(hit(run, newWeapon('mortar', 1))).toBeCloseTo(hit(plain, newWeapon('mortar', 1)) * B.specialistOthers);
+    run.weaponSlots = 2;
+    applyCard(run, { kind: 'weapon', id: 'mortar', level: 1 });
+    expect(run.weapons.map((w) => w.id)).toEqual([plain.weapons[0].id, 'mortar']);
   });
 
   it('Fortress bites back three times as hard, Thorns owned or not', () => {

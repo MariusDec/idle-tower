@@ -58,12 +58,14 @@ export function evolutionSpike(id: WeaponId, evolved: boolean): number {
   return evolved ? BALANCE.evolutions[EVOLUTION_OF[id].id].damage : 1;
 }
 
-export function armed(stats: TowerStats, w: Pick<WeaponState, 'id' | 'level' | 'evolved'> & { fusion?: FusionId | null }): WeaponParams {
+export function armed(stats: TowerStats, w: Pick<WeaponState, 'id' | 'level' | 'evolved' | 'signature'> & { fusion?: FusionId | null }): WeaponParams {
   const base = weaponParams(w.id, w.level);
   const pattern = WEAPON_BY_ID[w.id].pattern;
   // A fusion (N9): both halves hit harder.
   const fused = w.fusion ? BALANCE.fusions.damage : 1;
-  let damage = base.damage * evolutionSpike(w.id, w.evolved) * fused;
+  // Specialist (§11.4): the node's stat lowers all damage; its starting weapon is lifted back past it.
+  const signature = w.signature ? BALANCE.behaviours.specialistDamage / BALANCE.behaviours.specialistOthers : 1;
+  let damage = base.damage * evolutionSpike(w.id, w.evolved) * fused * signature;
   let count = base.count;
   // Past the cap, every extra body becomes damage on the ones that fly (§12.5).
   const cap = countCap(pattern);
@@ -87,9 +89,9 @@ export function armed(stats: TowerStats, w: Pick<WeaponState, 'id' | 'level' | '
   };
 }
 
-/** The level an evolution unlocks at: the last, or Specialist's earlier one (§11.4). */
-export function evolveAt(specialist: boolean): number {
-  return specialist ? BALANCE.behaviours.specialistEvolveAt : BALANCE.evolutions.evolveAt;
+/** The level `w` evolves at: the last, or Specialist's earlier one for its starting weapon (§11.4). */
+export function evolveAt(w: Pick<WeaponState, 'signature'>): number {
+  return w.signature ? BALANCE.behaviours.specialistEvolveAt : BALANCE.evolutions.evolveAt;
 }
 
 /** A weapon freshly mounted. */

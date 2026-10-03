@@ -275,8 +275,8 @@ function counterShare(run: RunState, id: WeaponId): number {
 }
 
 /** How close a weapon is to evolving, 0–1 by level. */
-function readiness(run: RunState, level: number): number {
-  return Math.min(1, level / evolveAt((run.behaviours.specialist ?? 0) > 0));
+function readiness(w: Pick<WeaponState, 'signature'>, level: number): number {
+  return Math.min(1, level / evolveAt(w));
 }
 
 /** True when the profile has found this weapon's recipe, so the suggestion may steer for it. */
@@ -289,7 +289,7 @@ function recipeBonus(run: RunState, passive: PassiveId): number {
   let best = 0;
   for (const w of run.weapons) {
     if (w.evolved || !knows(run, w.id) || EVOLUTION_OF[w.id].passive !== passive) continue;
-    best = Math.max(best, readiness(run, w.level));
+    best = Math.max(best, readiness(w, w.level));
   }
   return best * RECIPE_VALUE;
 }
@@ -306,17 +306,16 @@ export type CardBadge =
 
 export function cardBadges(run: RunState, card: Card): CardBadge[] {
   const out: CardBadge[] = [];
-  const at = evolveAt((run.behaviours.specialist ?? 0) > 0);
   switch (card.kind) {
     case 'weapon': {
       const owned = run.weapons.find((w) => w.id === card.id);
       const evo = EVOLUTION_OF[card.id];
       if (owned && !owned.evolved && knows(run, card.id) && run.passives.some((p) => p.id === evo.passive)) {
-        out.push({ kind: 'recipe', evolution: evo.id, completes: card.level >= at });
+        out.push({ kind: 'recipe', evolution: evo.id, completes: card.level >= evolveAt(owned) });
       }
       if (!owned) {
         if (counterShare(run, card.id) > 0) out.push({ kind: 'counter' });
-        if (!run.swap) out.push({ kind: 'slot', slot: slotsUsed(run) + 1, of: run.weaponSlots });
+        out.push({ kind: 'slot', slot: slotsUsed(run) + 1, of: run.weaponSlots });
       }
       return out;
     }
@@ -325,7 +324,7 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
         for (const w of run.weapons) {
           const evo = EVOLUTION_OF[w.id];
           if (w.evolved || !knows(run, w.id) || evo.passive !== card.id) continue;
-          out.push({ kind: 'recipe', evolution: evo.id, completes: w.level >= at });
+          out.push({ kind: 'recipe', evolution: evo.id, completes: w.level >= evolveAt(w) });
           break;
         }
         out.push({ kind: 'slot', slot: run.passives.length + 1, of: run.passiveSlots });
@@ -353,16 +352,14 @@ export function scoreCard(run: RunState, card: Card): number {
   switch (card.kind) {
     case 'weapon': {
       const owned = run.weapons.find((w) => w.id === card.id);
-      const next = { id: card.id, level: card.level, evolved: owned?.evolved ?? false } as WeaponState;
-      // Specialist's swap (S4): the new weapon replaces the one it has.
-      const swap = !owned && run.swap;
-      const weapons = swap ? [next] : run.weapons.filter((w) => w.id !== card.id).concat(next);
+      const next = { id: card.id, level: card.level, evolved: owned?.evolved ?? false, signature: owned?.signature } as WeaponState;
+      const weapons = run.weapons.filter((w) => w.id !== card.id).concat(next);
       let score = buildDps(weapons, run.stats, foes) / before - 1;
       if (!owned) {
-        score += counterShare(run, card.id) * COUNTER_VALUE + (swap ? 0 : SLOT_VALUE);
+        score += counterShare(run, card.id) * COUNTER_VALUE + SLOT_VALUE;
       } else if (!owned.evolved && knows(run, card.id) && run.passives.some((p) => p.id === EVOLUTION_OF[card.id].passive)) {
         // Each level toward an evolution whose partner is already owned.
-        score += RECIPE_VALUE * (readiness(run, card.level) - readiness(run, owned.level));
+        score += RECIPE_VALUE * (readiness(owned, card.level) - readiness(owned, owned.level));
       }
       return score;
     }

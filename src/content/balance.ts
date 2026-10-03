@@ -84,8 +84,12 @@ export const BALANCE = {
     hoarderHp: 1.5,
     /** Twin Mount: its draw avoids weapons the region's first this-many waves' enemy types blunt (Q1, I3). */
     twinMountOpening: 4,
-    /** Specialist (keystone): the one weapon evolves at this level instead. */
+    /** Specialist (keystone): the starting weapon evolves at this level instead. */
     specialistEvolveAt: 3,
+    /** Specialist (keystone): the starting weapon's damage, all told; the node's own stat lowers every other source. */
+    specialistDamage: 2.5,
+    /** Specialist (keystone): the node's damage multiplier on every source; its stat in `forge.ts` must match. */
+    specialistOthers: 0.75,
     /** Rampart: a contact hit takes at most this fraction of Max HP. */
     rampartCap: 0.08,
     /** Oath: regen multiplier while a boss stands. */

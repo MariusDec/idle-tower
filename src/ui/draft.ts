@@ -28,8 +28,6 @@ export interface DraftView {
   banishes?: number;
   /** Which cards Banish may strike (new items only), by index. */
   banishable?: readonly boolean[];
-  /** Specialist's one weapon while its slot may still be swapped (S4); null otherwise. */
-  swapFor?: string | null;
   /** Drafts banked, this one included: from two, one tap takes every suggestion (U2). */
   banked?: number;
   /** The Opening (U2): the run started with drafts banked; this is draft `at` of `of`. */
@@ -64,13 +62,11 @@ export type DraftTick = 'timeout' | 'take-all' | null;
 /** The first number-ish token in a card line, highlighted (§10.1). */
 const KEY_NUMBER = /[+×]?\d+(?:\.\d+)?%?(?: s\b)?/;
 
-/** The card's content entry and its one line for the level it leads to; `swapFor`, see `DraftView`. */
-function describe(card: Card, swapFor: string | null = null): { entry: ContentEntry; line: string; kind: string } {
+/** The card's content entry and its one line for the level it leads to. */
+function describe(card: Card): { entry: ContentEntry; line: string; kind: string } {
   switch (card.kind) {
     case 'weapon': {
       const def = WEAPON_BY_ID[card.id];
-      // Specialist (S4): a new weapon takes the carried one's place, at its level.
-      if (swapFor && swapFor !== card.id) return { entry: def, line: def.text, kind: 'Swap weapon' };
       return { entry: def, line: card.level === 1 ? def.text : def.steps[card.level - 2].text, kind: 'Weapon' };
     }
     case 'passive':
@@ -260,7 +256,7 @@ export class DraftPanel {
     this.autoTake = opening && view.timed ? view.autoTake ?? null : null;
     this.paintTake();
     this.row.replaceChildren(...view.cards.map((c, i) => {
-      const el = this.card(c, i, i === view.suggested, !view.seen(cardKey(c)), view.swapFor ?? null, view.badges?.[i] ?? []);
+      const el = this.card(c, i, i === view.suggested, !view.seen(cardKey(c)), view.badges?.[i] ?? []);
       toggleClass(el, 'is-banishable', banishes > 0 && (view.banishable?.[i] ?? false));
       return el;
     }));
@@ -308,8 +304,8 @@ export class DraftPanel {
     setText(this.take, this.autoTake === null ? this.takeLabel : `${this.takeLabel} · ${Math.ceil(this.autoTake)}`);
   }
 
-  private card(card: Card, index: number, suggested: boolean, isNew: boolean, swapFor: string | null, badges: readonly CardBadge[]): HTMLElement {
-    const { entry, line, kind } = describe(card, swapFor);
+  private card(card: Card, index: number, suggested: boolean, isNew: boolean, badges: readonly CardBadge[]): HTMLElement {
+    const { entry, line, kind } = describe(card);
     const el = document.createElement('button');
     el.type = 'button';
     el.className = `draft-card draft-card-${card.kind}${suggested ? ' is-suggested' : ''}`;

@@ -361,6 +361,8 @@ export interface WeaponState {
   fusion: FusionId | null;
   /** True for a fusion's second half: it fires from its partner's mount and takes no slot of its own. */
   joined: boolean;
+  /** Specialist (§11.4): the starting weapon, which hits harder and evolves sooner. Absent on runs saved before it. */
+  signature?: boolean;
   /** Orbit (Glaives) and storm (Storm Crown) angle, radians. */
   spin: number;
   /** Sunlance: the body the beam holds (0 = none), and how hot it has run on it. */
@@ -636,8 +638,6 @@ export interface RunState {
   banishes: number;
   /** Items banished this run (N1): never offered again. */
   banished: CardItemId[];
-  /** Specialist (S4): its one slot may still be swapped for the first new weapon taken. */
-  swap: boolean;
   /** Second Winds left this run. */
   revives: number;
   enemies: Enemy[];

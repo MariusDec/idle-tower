@@ -66,9 +66,9 @@ weapon at levels 1, 3 and 5 and evolved, on a fixed frontier-like crowd
 drift (`tests/calibration.test.ts`). Its constants are fitted there, not
 by hand. Greed is valued at what it will be over the rest of a typical run.
 
-**Specialist** (S4): until its first weapon card, its one slot may be
-swapped. A new weapon on offer takes the starting weapon's place at its
-level (`run.swap`; the card reads "Swap weapon"); any weapon card locks it.
+**Specialist** (S4): the starting weapon is its signature
+(`WeaponState.signature`): the scorer values its levels toward an evolution
+at level 3, every other weapon's at the usual level.
 
 The suggested card is highlighted, and taken when the timer runs out. The
 same scorer drives every bot in `tools/`, so a better bot is better idle

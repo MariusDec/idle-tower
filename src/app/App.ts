@@ -422,7 +422,6 @@ export class App {
           rerolls: run.rerolls,
           banishes: run.banishes,
           banishable: run.draft.cards.map((c) => banishable(run, c)),
-          swapFor: run.swap ? run.weapons[0]?.id ?? null : null,
           banked: run.pendingDrafts,
           opening: opening ? { at: run.draftsOpened, of: this.opening } : null,
           autoTake: null,

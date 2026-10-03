@@ -55,14 +55,13 @@ export function cardKey(card: Card): string {
 /**
  * Evolutions ready now (§4.4): once Alchemy is owned, a weapon at its
  * evolving level, not yet evolved, with its partner passive owned.
- * Specialist evolves earlier.
+ * Specialist's starting weapon evolves earlier.
  */
 export function evolutionCards(run: RunState): Card[] {
   if (!run.behaviours.alchemy) return [];
-  const at = evolveAt((run.behaviours.specialist ?? 0) > 0);
   const out: Card[] = [];
   for (const w of run.weapons) {
-    if (w.evolved || w.level < at) continue;
+    if (w.evolved || w.level < evolveAt(w)) continue;
     const evo = EVOLUTION_OF[w.id];
     if (run.passives.some((p) => p.id === evo.passive)) out.push({ kind: 'evolution', id: evo.id });
   }
@@ -98,16 +97,13 @@ export function candidateCards(run: RunState): Card[] {
   const out: Card[] = [...fusionCards(run), ...evolutionCards(run)];
   for (const w of run.weapons) if (w.level < max) out.push({ kind: 'weapon', id: w.id, level: w.level + 1 });
   for (const p of run.passives) if (p.level < max) out.push({ kind: 'passive', id: p.id, level: p.level + 1 });
-  // Specialist (S4): until its first weapon card, the one slot may be swapped.
-  const weaponFree = slotsUsed(run) < run.weaponSlots || run.swap;
-  // A swapped-in weapon takes the place, and the level, of the one it replaces.
-  const joins = run.swap ? run.weapons[0].level : 1;
+  const weaponFree = slotsUsed(run) < run.weaponSlots;
   const passiveFree = run.passives.length < run.passiveSlots;
   for (const id of run.pool) {
     // Banished (N1): struck from this run's draft for good.
     if (run.banished.includes(id)) continue;
     if (isWeaponId(id)) {
-      if (weaponFree && !run.weapons.some((w) => w.id === id)) out.push({ kind: 'weapon', id, level: joins });
+      if (weaponFree && !run.weapons.some((w) => w.id === id)) out.push({ kind: 'weapon', id, level: 1 });
     } else if (passiveFree && !run.passives.some((p) => p.id === id)) {
       out.push({ kind: 'passive', id, level: 1 });
     }
@@ -270,12 +266,7 @@ export function applyCard(run: RunState, card: Card): void {
   switch (card.kind) {
     case 'weapon': {
       const w = run.weapons.find((x) => x.id === card.id);
-      const swap = run.swap;
-      // Specialist (S4): its first weapon card locks the one slot.
-      run.swap = false;
       if (w) w.level = card.level;
-      // …and a new one takes the starting weapon's place, at its level.
-      else if (swap) run.weapons = [newWeapon(card.id, card.level)];
       // Drilled (§11.4): a new weapon joins a level up.
       else run.weapons.push(newWeapon(card.id, Math.min(BALANCE.maxLevel, 1 + (run.behaviours.drilled ?? 0))));
       return;

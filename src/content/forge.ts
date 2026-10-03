@@ -244,9 +244,9 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'behaviour', id: 'alchemy' }], sealed: 'bog-mother',
   },
   {
-    id: 'specialist', name: 'Specialist', icon: 'bullseye', text: 'One weapon, your first pick, at ×3 damage; it evolves at level 3.',
+    id: 'specialist', name: 'Specialist', icon: 'bullseye', text: 'Your starting weapon deals ×2.5 damage and evolves at 3. All other damage −25%.',
     branch: 'arsenal', type: 'keystone', ring: 3, angle: 52, links: ['passive-slot'], maxLevel: 1, cost: 1500,
-    effects: [{ kind: 'behaviour', id: 'specialist' }, { kind: 'stat', mod: { key: 'damage', mult: 3 } }],
+    effects: [{ kind: 'behaviour', id: 'specialist' }, { kind: 'stat', mod: { key: 'damage', mult: 0.75 } }],
     sealed: 'bog-mother',
   },
 

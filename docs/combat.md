@@ -56,7 +56,7 @@ The scorer's rail constants are fitted to the line doctrine (`npm run
 calibrate`).
 
 A Harbinger never silences the tower's last firing weapon; against a lone
-weapon (Specialist) its gaze halves that weapon's fire instead
+weapon (a Trial's one slot) its gaze halves that weapon's fire instead
 (`WeaponState.dampedUntil`). Executioner sources stop at two (Executioner
 or Executioner's Coin, plus Annihilator: 20%, `executeMax`).
 
@@ -103,7 +103,8 @@ owned in the Forge (P5). Evolving keeps the weapon's slot, adds a damage
 spike (`BALANCE.evolutions[id].damage`) and a new pattern feature (seekers,
 burning ground, orbiting storms, a freeze and shatter, meteors…). Each
 evolution found goes into the Recipe Book ([collection.md](collection.md)).
-The Specialist keystone lets its one weapon evolve at level 3.
+The Specialist keystone lets the starting weapon (`WeaponState.signature`)
+evolve at level 3.
 
 **Invariant:** an evolution card is offered if and only if its recipe is
 satisfied (`tests/draft.test.ts`).

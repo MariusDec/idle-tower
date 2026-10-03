@@ -116,8 +116,6 @@ export function buildRunConfig(profile: Profile): RunConfig {
     if (p.starred || pool.includes(p.id)) continue;
     if (!p.joinsWith || pool.includes(p.joinsWith)) pool.push(p.id);
   }
-  // Specialist (§11.4): one weapon slot, whatever else the Forge gave.
-  if (behaviours.specialist) weaponSlots = 1;
   // A Trial's slots (N5) are a ceiling on what the Forge gave.
   if (rules.weaponSlots !== undefined) weaponSlots = Math.min(weaponSlots, rules.weaponSlots);
   if (rules.passiveSlots !== undefined) passiveSlots = Math.min(passiveSlots, rules.passiveSlots);

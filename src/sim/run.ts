@@ -67,7 +67,8 @@ export function createRun(config: RunConfig, seed: number): RunState {
   const startLevel = Math.min(BALANCE.maxLevel, 1 + B.openingSalvo * owned('opening-salvo'));
   // A Trial (N5) may mount another weapon than the frame's.
   const first = config.startingWeapon ?? frame.startingWeapon;
-  const weapons: WeaponState[] = [newWeapon(first, startLevel)];
+  // Specialist (§11.4): the starting weapon is its signature.
+  const weapons: WeaponState[] = [{ ...newWeapon(first, startLevel), signature: owned('specialist') > 0 }];
   // Twin Mount (§11.4): a second weapon from the pool, if a slot is free for
   // it, and not one the region's opening blunts (Q1, `twinSpares`).
   const spares = config.pool.filter((id): id is WeaponId => isWeaponId(id) && id !== first);
@@ -131,7 +132,6 @@ export function createRun(config: RunConfig, seed: number): RunState {
     rerolls: owned('reroll'),
     banishes: owned('banish'),
     banished: [],
-    swap: owned('specialist') > 0,
     revives: owned('second-wind'),
     enemies: [],
     projectiles: [],
