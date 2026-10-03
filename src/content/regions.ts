@@ -103,7 +103,10 @@ export const REGIONS: readonly RegionDef[] = [
     text: 'A wound in the world that never stopped burning.',
     shardBase: 8.4,
     waveShards: 16.8,
-    hpBase: 460,
+    // Q1: 460 → 580. Twin Mount's smarter draw (I3) brought the Prism ~30 min
+    // sooner; this puts Forgeheart back mid-gate (132–198) and every Blight
+    // past 7 h.
+    hpBase: 580,
     hpGrowth: 1.17,
     damageBase: 22,
     damageGrowth: 1.06,

@@ -13,6 +13,13 @@ take both weapons). Readings and the probe in `docs/balancing.md`, "Q1
 balancing". The CI P3 median also fails (31:24) since the camera and fog
 merge.
 
+**Pass 2 (2026-10-03):** Twin Mount's draw now skips the region's
+blockers (the owner's I3 fix); Twin Mount 300, Region 4 hpBase 580. I3
+8/8, I1b 8/8, Forgeheart 149, I2 6.0 d. Stopped at 4: I6 4/8 can't be met
+with numbers (a 21-min Trial run with no in-run reveals on two seeds;
+Region 2's Forge stretch at a coin toss on the rest). Problems 5–10 not
+started. `docs/balancing.md`, "Q1 balancing (continued)".
+
 ## What changed under the numbers
 
 Read these before tuning. Each moves the balance on its own:

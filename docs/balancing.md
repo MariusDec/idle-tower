@@ -327,3 +327,81 @@ leaving 10:36–15:56 gaps at 95–115 min (Region 3's ring-3 Forge stretch).
 
 Idle (4 seeds): I2 5.0 → **6.0 d PASS** (7.0 5.0 4.5 6.0); I5 PASS at
 every gated checkpoint (1.22–1.33).
+
+### Q1 balancing (continued), 2026-10-03
+
+On top of the Twin Mount commit. Problem 1 again (the Prism's sooner fall
+pulled Forgeheart to 135 and two Blights under 7 h), problem 3's last
+seed, then problem 4 (I6), where the pass stops: I6 can't be met with
+numbers alone (below). Problems 5–10 are not started.
+
+Two changes:
+
+| | Before | After | Why |
+|---|---|---|---|
+| Twin Mount cost | 380 | **300** | the bot owns it before Region 3 (I3's last seed: a wave-5 death at 32%) |
+| Region 4 hpBase | 460 | **580** | Forgeheart back mid-gate, every Blight past 7 h |
+
+`npm run pacing -- --hours 12 --seeds 8`:
+
+| | Twin Mount commit | After |
+|---|---|---|
+| first wave 20 (P3) · Gatekeeper · I1a | 27:51 · 32:09 · 8/8 | unchanged |
+| Bog Mother | 71:27 | 67:57 |
+| Prism | 79:50 | 79:39 |
+| Forgeheart (gate 132–198) | 134:59 | **148:44** PASS |
+| Hollow King | 303:21 | 303:00 |
+| Blight · I1b | 445:46 · 6/8 | **482:09 · 8/8** PASS (431–571) |
+| I3 · I6 (first 2 h) | 7/8 · 5/8 | **8/8** · 4/8 |
+| first evolution | — | 86:32 (§7.1 aims at 90–120) |
+| Hollow King → Blight, gaps ≤ 30 min | 0/8 | 0/8 (44–115 min) |
+| Trials won by 12 h | 10–14 | 10–14 |
+
+Idle (4 seeds): I2 **6.0 d PASS** (6.5 5.0 4.5 6.0); I5 PASS at every
+gated checkpoint (medians 1.21–1.31). `npm run arsenal`: I4 PASS (Mortar
+31%, Region 2). `--keystones`: PASS (Specialist gains in four regions,
+×3.05 shards in Region 6; Fortress gains only Region 3's boss times).
+`npm run calibrate`: T2 PASS, 0 of 48. `npm run pacing -- --act2 --hours
+12 --seeds 4` (item 9 not started): heat 10 at the frontier 91:29 (FAIL,
+want 3–12 h; 93:21 at the first Q1 commit), 155–169 mastery levels, best
+Abyss floor median 9, no last star in 12 h. `npm test`: one failure, the
+CI P3 median (below); `tests/perf.test.ts` passes when run on an idle
+machine (it failed once beside 12 pacing workers).
+
+What else was tried (8 seeds, one change each, from the Twin Mount commit):
+
+| Change | Forgeheart | Blight · I1b | I3 | I6 |
+|---|---|---|---|---|
+| Region 4 hpBase 520 | 135:09 | 475 · 7/8 | 7/8 | 5/8 |
+| Region 4 hpBase 580 | 149:43 | 481 · 8/8 | 7/8 | 3/8 |
+| Prism HP 50 → 65 / 80 | 137 / 138 | 461 / 469 · 7/8 | 7/8 | 5/8 |
+| Ring-4 notables ≥ 6000 ×2 / ×3 | 137 / 137 | 471 / 479 | 7/8 | 3/8 / 1/8 |
+| Region 3 hpBase 100 / 112 | 136 / 157 | 456 / 498 | 7/8 / 8/8 | 5/8 / 2/8 |
+| Evolution Insight 3000 → 2200 (2.2 h) | — | — | 7/8 | 5/8 |
+| Twin Mount 300 + Region 2 shards ±15% (2.2 h) | — | — | 8/8 | 2/8 (+) · 6/8 (−) |
+| Twin Mount 300 + R4 580 + Autocaster 420 → 340 (2.2 h) | — | — | 8/8 | 4/8 |
+
+The Prism's HP doesn't move its fall (79:36 → 79:50 at ×1.6): the time is
+in reaching wave 20, not in the boss. Raising ring 4's notables takes the
+reveals that fill 96–110 min out of the window. Region 2's pay −15% reads
+6/8 but puts the Bog Mother at 81 min (§7.1: 60–75).
+
+**I6 can't be met with numbers alone.** The four failures are two kinds:
+- Seeds 2 and 7 (13:17, 18:07): one Trial run, Still Water (Region 2,
+  Bastion only), tried behind the frontier at 91–99 min with ring 4
+  bought, lasts 20:47–20:51 of wall time to overtime wave 49–50 and pays
+  ~100–115k shards. Inside it only the first Champion reveals; its three
+  trophies, the Trial's win and the notables it buys all land at the
+  results screen. This gap is in every variant above. The number that
+  ends it, overtime HP growth (×1.25), S6 asks to soften for 8–20 min
+  farming runs, the other way. A fix needs a mechanic (a trophy or a
+  later Champion revealed in the run, as it is reached) or a different
+  Trial policy in the bot.
+- Seeds 4 and 5 (10:02, 10:13): Region 2's Forge stretch between Choice
+  and the Autocaster at ~46–56 min. Every cost or pay that closes one
+  opens another a few seconds over 10 min on a neighbour (the table): the
+  first two hours run at about one reveal per 8–10 min, so 8/8 on 8 seeds
+  is a coin toss on each, not a tuning target.
+
+The CI P3 reading is unchanged at 31:24 (seeds 1–3: 34:31 24:56 31:24),
+still failing; none of this work touches the first 35 minutes.

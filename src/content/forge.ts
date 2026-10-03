@@ -208,8 +208,9 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'unlockCard', id: 'frost-ring' }],
   },
   {
+    // Q1: 380 → 300, so the bot owns it before Region 3's shields (I3).
     id: 'twin-mount', name: 'Twin Mount', icon: 'double-shot', text: "Start runs with a second, random weapon, never one the region's first enemies shrug off.",
-    branch: 'arsenal', type: 'notable', ring: 3, angle: 82, links: ['frost-ring', 'passive-slot'], maxLevel: 1, cost: 380,
+    branch: 'arsenal', type: 'notable', ring: 3, angle: 82, links: ['frost-ring', 'passive-slot'], maxLevel: 1, cost: 300,
     effects: [{ kind: 'behaviour', id: 'twin-mount' }], sealed: 'gatekeeper',
   },
   {
