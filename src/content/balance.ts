@@ -84,8 +84,6 @@ export const BALANCE = {
     hoarderHp: 1.5,
     /** Twin Mount: its draw avoids weapons the region's first this-many waves' enemy types blunt (Q1, I3). */
     twinMountOpening: 4,
-    /** Specialist (keystone): the starting weapon evolves at this level instead. */
-    specialistEvolveAt: 3,
     /** Specialist (keystone): the starting weapon's damage, all told; the node's own stat lowers every other source. */
     specialistDamage: 2.5,
     /** Specialist (keystone): the node's damage multiplier on every source; its stat in `forge.ts` must match. */
@@ -105,12 +103,13 @@ export const BALANCE = {
     heavyShells: 2,
   },
   /**
-   * Evolutions (§4.4, §11.2): offered once a weapon reaches `evolveAt` with
-   * its partner passive owned. `damage` is each one's spike on top of its
+   * Evolutions (§4.4, §11.2): drawable once a weapon reaches `evolveAt` with
+   * its partner passive at `passiveAt`. `damage` is each one's spike on top of its
    * weapon's last level; the rest are its own numbers.
    */
   evolutions: {
     evolveAt: 5,
+    passiveAt: 5,
     'seeker-swarm': { damage: 1.25, seekers: 2, seekerDamage: 0.6 },
     /** Burn: damage per second as a share of the pellet's hit, for `burnSeconds`; spreads `spread` far on death. */
     dragonbreath: { damage: 1.25, burn: 0.6, burnSeconds: 3, spread: 90 },

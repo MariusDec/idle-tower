@@ -181,14 +181,18 @@ describe('count caps (§12.5)', () => {
 });
 
 describe('evolutions (§4.4)', () => {
-  it('are offered if and only if the weapon is maxed and its partner owned', () => {
+  it('are offered if and only if the weapon and its partner are both maxed', () => {
+    const E = BALANCE.evolutions;
     for (const evo of EVOLUTIONS) {
       const run = armory();
-      run.weapons = [newWeapon(evo.weapon, BALANCE.maxLevel - 1)];
+      run.weapons = [newWeapon(evo.weapon, E.evolveAt - 1)];
       applyCard(run, { kind: 'passive', id: evo.passive, level: 1 });
-      expect(candidateCards(run).some((c) => c.kind === 'evolution'), `${evo.id} early`).toBe(false);
-      run.weapons[0].level = BALANCE.maxLevel;
+      run.passives[0].level = E.passiveAt;
+      expect(candidateCards(run).some((c) => c.kind === 'evolution'), `${evo.id} weapon early`).toBe(false);
+      run.weapons[0].level = E.evolveAt;
       expect(candidateCards(run).filter((c) => c.kind === 'evolution')).toEqual([{ kind: 'evolution', id: evo.id }]);
+      run.passives[0].level = E.passiveAt - 1;
+      expect(candidateCards(run).some((c) => c.kind === 'evolution'), `${evo.id} partner early`).toBe(false);
       run.passives = [];
       expect(candidateCards(run).some((c) => c.kind === 'evolution'), `${evo.id} without partner`).toBe(false);
     }
@@ -197,25 +201,29 @@ describe('evolutions (§4.4)', () => {
   it('wait for Alchemy', () => {
     const run = armory({ behaviours: { alchemy: 0 } });
     run.weapons = [newWeapon('arcane-bolt', 5)];
-    run.passives = [{ id: 'precision', level: 1 }];
+    run.passives = [{ id: 'precision', level: 5 }];
     expect(candidateCards(run).some((c) => c.kind === 'evolution')).toBe(false);
   });
 
-  it('a ready evolution is in every hand', () => {
+  it('a ready evolution is drawn like any other card: in some hands, not all', () => {
     const run = armory();
     run.weapons = [newWeapon('arcane-bolt', 5)];
-    run.passives = [{ id: 'precision', level: 1 }];
+    run.passives = [{ id: 'precision', level: 5 }];
+    // Enough else on offer that a hand cannot hold every card.
+    expect(candidateCards(run).length).toBeGreaterThan(draftChoices(run));
     const rng = new Rng(3);
-    for (let i = 0; i < 20; i++) expect(rollOffer(run, rng).some((c) => c.kind === 'evolution')).toBe(true);
+    const hits = Array.from({ length: 60 }, () => rollOffer(run, rng).some((c) => c.kind === 'evolution')).filter(Boolean).length;
+    expect(hits).toBeGreaterThan(0);
+    expect(hits).toBeLessThan(60);
   });
 
-  it('Specialist evolves its starting weapon at level 3, and only that one', () => {
+  it('Specialist evolves its starting weapon at the usual level', () => {
     const run = armory({ behaviours: { specialist: 1 } });
-    run.weapons = [{ ...newWeapon('glaives', 3), signature: true }, newWeapon('mortar', 3)];
-    run.passives = [{ id: 'reach', level: 1 }, { id: 'power', level: 1 }];
-    const cards = candidateCards(run);
-    expect(cards).toContainEqual({ kind: 'evolution', id: 'halo' });
-    expect(cards).not.toContainEqual({ kind: 'evolution', id: 'meteorfall' });
+    run.weapons = [{ ...newWeapon('glaives', 3), signature: true }];
+    run.passives = [{ id: 'reach', level: 5 }];
+    expect(candidateCards(run)).not.toContainEqual({ kind: 'evolution', id: 'halo' });
+    run.weapons[0].level = BALANCE.evolutions.evolveAt;
+    expect(candidateCards(run)).toContainEqual({ kind: 'evolution', id: 'halo' });
   });
 
   it('evolving marks the weapon, records the recipe and spikes its damage', () => {

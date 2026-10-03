@@ -10,7 +10,7 @@ import type { Card, RunState } from '../state';
 import { allMods, resolveStats } from '../stats';
 import { pactLoad } from '../pacts';
 import { suggest } from '../suggest';
-import { evolveAt, newWeapon, slotsUsed } from './arms';
+import { newWeapon, slotsUsed } from './arms';
 import { runRegion, waveBonus } from './waves';
 
 /**
@@ -54,16 +54,16 @@ export function cardKey(card: Card): string {
 
 /**
  * Evolutions ready now (§4.4): once Alchemy is owned, a weapon at its
- * evolving level, not yet evolved, with its partner passive owned.
- * Specialist's starting weapon evolves earlier.
+ * evolving level, not yet evolved, with its partner passive at its own.
  */
 export function evolutionCards(run: RunState): Card[] {
   if (!run.behaviours.alchemy) return [];
+  const E = BALANCE.evolutions;
   const out: Card[] = [];
   for (const w of run.weapons) {
-    if (w.evolved || w.level < evolveAt(w)) continue;
+    if (w.evolved || w.level < E.evolveAt) continue;
     const evo = EVOLUTION_OF[w.id];
-    if (run.passives.some((p) => p.id === evo.passive)) out.push({ kind: 'evolution', id: evo.id });
+    if (run.passives.some((p) => p.id === evo.passive && p.level >= E.passiveAt)) out.push({ kind: 'evolution', id: evo.id });
   }
   return out;
 }
@@ -82,15 +82,18 @@ export function fusionCards(run: RunState): Card[] {
   return out;
 }
 
-/** True for a card that is always in the hand when ready: an evolution or a fusion. */
+/**
+ * True for a card that is always in the hand when ready: a fusion. A ready
+ * evolution is drawn like any other card, so it may wait a level-up or two.
+ */
 export function isForced(card: Card): boolean {
-  return card.kind === 'evolution' || card.kind === 'fusion';
+  return card.kind === 'fusion';
 }
 
 /**
  * Every card the draft may offer now. A new item appears only while a slot
- * of its type is free; a maxed item never appears (§12.6). Fusions and
- * evolutions come first: they are always in the hand (see `rollOffer`).
+ * of its type is free; a maxed item never appears (§12.6). Fusions come
+ * first: they are always in the hand (see `rollOffer`).
  */
 export function candidateCards(run: RunState): Card[] {
   const max = BALANCE.maxLevel;
@@ -129,8 +132,8 @@ export function rollOffer(run: RunState, rng: Rng): Card[] {
     const scripted = run.firstDraft.filter((c) => legal.has(`${cardKey(c)}:${'level' in c ? c.level : 0}`));
     if (scripted.length > 0) return scripted.slice(0, n);
   }
-  // A ready evolution or fusion is always offered (§4.4: "the next level-up
-  // offers it"); the rest of the hand is a uniform sample, by partial Fisher–Yates.
+  // A ready fusion is always offered; the rest of the hand, a ready evolution
+  // among it, is a uniform sample, by partial Fisher–Yates.
   const forced = candidates.filter(isForced).slice(0, n);
   const hand = candidates.filter((c) => !isForced(c));
   for (let i = 0; i < Math.min(n - forced.length, hand.length); i++) {

@@ -267,7 +267,7 @@ export class CollectionView {
     const head = document.createElement('p');
     head.className = 'collection-note';
     head.textContent = levelOf(p, 'alchemy') > 0
-      ? `A weapon at level ${BALANCE.evolutions.evolveAt} with its partner passive evolves at the next level-up.`
+      ? `A weapon at level ${BALANCE.evolutions.evolveAt} with its partner passive at level ${BALANCE.evolutions.passiveAt} can evolve: its card joins the draft.`
       : 'Evolutions need Alchemy from the Forge (Arsenal). Until then, no weapon evolves.';
     const list = document.createElement('ul');
     list.className = 'entry-list';
@@ -284,7 +284,7 @@ export class CollectionView {
       const recipe = document.createElement('p');
       recipe.className = 'entry-text';
       const weapon = r.weapon ? `${WEAPON_BY_ID[e.weapon].name} (level ${BALANCE.evolutions.evolveAt})` : '???';
-      const passive = r.found ? PASSIVE_BY_ID[e.passive].name : '???';
+      const passive = r.found ? `${PASSIVE_BY_ID[e.passive].name} (level ${BALANCE.evolutions.passiveAt})` : '???';
       recipe.textContent = `${weapon} + ${passive}`;
       li.append(h, recipe);
       if (r.found || r.hint) {

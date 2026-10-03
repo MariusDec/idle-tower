@@ -233,15 +233,17 @@ describe('card badges (U4)', () => {
     expect(badges.some((b) => b.kind === 'counter')).toBe(counters);
   });
 
-  it('a known recipe\'s partner is a step; at the evolving level it completes it', () => {
+  it('a known recipe\'s partner is a step at every level; its last, with the weapon maxed, completes it', () => {
     const run = fresh(5);
     const evo = EVOLUTION_OF['arcane-bolt'];
     const partner: Card = { kind: 'passive', id: evo.passive, level: 1 };
+    const last: Card = { kind: 'passive', id: evo.passive, level: BALANCE.evolutions.passiveAt };
     expect(cardBadges(run, partner).some((b) => b.kind === 'recipe')).toBe(false);
     run.recipes = [evo.id];
     expect(cardBadges(run, partner)).toContainEqual({ kind: 'recipe', evolution: evo.id, completes: false });
     run.weapons.find((w) => w.id === 'arcane-bolt')!.level = BALANCE.maxLevel;
-    expect(cardBadges(run, partner)).toContainEqual({ kind: 'recipe', evolution: evo.id, completes: true });
+    expect(cardBadges(run, partner)).toContainEqual({ kind: 'recipe', evolution: evo.id, completes: false });
+    expect(cardBadges(run, last)).toContainEqual({ kind: 'recipe', evolution: evo.id, completes: true });
   });
 });
 

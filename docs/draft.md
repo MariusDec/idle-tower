@@ -19,13 +19,14 @@ and Gatekeeper's Seal start a run above level 1, each level a banked draft.
 
 - a ready **fusion** (N9: its Smith star lit, both its weapons carried and
   evolved) — always in the hand;
-- a ready **evolution** (weapon at its last level, partner passive owned,
-  Alchemy owned) — always in the hand;
+- a ready **evolution** (weapon at its last level, partner passive at its
+  last level, Alchemy owned) — drawn like any other card, so it may wait a
+  level-up or two;
 - the next level of every owned weapon and passive below level 5;
 - a **new** weapon or passive from the pool, only while a slot of its kind
   is free.
 
-`rollOffer` fills the hand: fusions and evolutions first, then a uniform sample by
+`rollOffer` fills the hand: fusions first, then a uniform sample by
 partial Fisher–Yates on the `draft` stream, padded with **fallback** cards
 (heal 30%, a pinch of shards) when nothing else is left. The hand is
 `BALANCE.draft.choices` (3), plus Choice and Foresight and Jackpot, less
@@ -65,10 +66,6 @@ weapon at levels 1, 3 and 5 and evolved, on a fixed frontier-like crowd
 (eight bodies in loose pairs, refilled as they fall); it fails past 25%
 drift (`tests/calibration.test.ts`). Its constants are fitted there, not
 by hand. Greed is valued at what it will be over the rest of a typical run.
-
-**Specialist** (S4): the starting weapon is its signature
-(`WeaponState.signature`): the scorer values its levels toward an evolution
-at level 3, every other weapon's at the usual level.
 
 The suggested card is highlighted, and taken when the timer runs out. The
 same scorer drives every bot in `tools/`, so a better bot is better idle

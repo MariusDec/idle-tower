@@ -7,7 +7,7 @@ import { WEAPON_BY_ID } from '../content/weapons';
 import type { EnemyId, EvolutionId, PassiveId, WeaponId } from '../content/types';
 import type { Card, RunState, TowerStats, WeaponState } from './state';
 import { allMods, resolveStats } from './stats';
-import { armed, evolveAt, slotsUsed } from './systems/arms';
+import { armed, slotsUsed } from './systems/arms';
 import { landedShare } from './systems/damage';
 import { localWave, runRegion, waveDamage, waveHp } from './systems/waves';
 
@@ -22,8 +22,8 @@ import { localWave, runRegion, waveDamage, waveHp } from './systems/waves';
  *   defence   its survival gain, weighted by how much danger the tower is in
  *   counters  a new weapon that answers what walks in this region (§4.3),
  *             less what blunts it there
- *   recipes   a step toward a *known* evolution: its partner, or its last
- *             levels. Unknown recipes are found by chance, as a player would
+ *   recipes   a step toward a *known* evolution: a level of its weapon or of
+ *             its partner passive. Unknown recipes are found by chance, as a player would
  *   slots     a new weapon in an empty slot is a second line of fire
  *
  * The weights are rough on purpose; the pacing report and the I4 check
@@ -274,9 +274,20 @@ function counterShare(run: RunState, id: WeaponId): number {
   return (strong - weak) / Math.max(1, pool.length);
 }
 
-/** How close a weapon is to evolving, 0–1 by level. */
-function readiness(w: Pick<WeaponState, 'signature'>, level: number): number {
-  return Math.min(1, level / evolveAt(w));
+/** How close a recipe's half is to its evolving level, 0–1. */
+function readiness(level: number, at: number): number {
+  return Math.min(1, level / at);
+}
+
+/** The level a carried weapon's partner passive is at, 0 if not owned. */
+function partnerLevel(run: RunState, id: WeaponId): number {
+  return run.passives.find((p) => p.id === EVOLUTION_OF[id].passive)?.level ?? 0;
+}
+
+/** True when both halves of a recipe have reached their evolving levels. */
+function completes(weaponLevel: number, passiveLevel: number): boolean {
+  const E = BALANCE.evolutions;
+  return weaponLevel >= E.evolveAt && passiveLevel >= E.passiveAt;
 }
 
 /** True when the profile has found this weapon's recipe, so the suggestion may steer for it. */
@@ -284,14 +295,14 @@ function knows(run: RunState, id: WeaponId): boolean {
   return run.recipes.includes(EVOLUTION_OF[id].id);
 }
 
-/** A passive that completes a carried weapon's known recipe is worth more the closer that weapon is. */
-function recipeBonus(run: RunState, passive: PassiveId): number {
-  let best = 0;
+/** Each level of a carried weapon's known partner passive is a step toward its evolution. */
+function recipeBonus(run: RunState, passive: PassiveId, level: number): number {
+  const at = BALANCE.evolutions.passiveAt;
   for (const w of run.weapons) {
     if (w.evolved || !knows(run, w.id) || EVOLUTION_OF[w.id].passive !== passive) continue;
-    best = Math.max(best, readiness(w, w.level));
+    return RECIPE_VALUE * (readiness(level, at) - readiness(level - 1, at));
   }
-  return best * RECIPE_VALUE;
+  return 0;
 }
 
 /**
@@ -311,7 +322,7 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
       const owned = run.weapons.find((w) => w.id === card.id);
       const evo = EVOLUTION_OF[card.id];
       if (owned && !owned.evolved && knows(run, card.id) && run.passives.some((p) => p.id === evo.passive)) {
-        out.push({ kind: 'recipe', evolution: evo.id, completes: card.level >= evolveAt(owned) });
+        out.push({ kind: 'recipe', evolution: evo.id, completes: completes(card.level, partnerLevel(run, card.id)) });
       }
       if (!owned) {
         if (counterShare(run, card.id) > 0) out.push({ kind: 'counter' });
@@ -320,15 +331,13 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
       return out;
     }
     case 'passive': {
-      if (card.level === 1) {
-        for (const w of run.weapons) {
-          const evo = EVOLUTION_OF[w.id];
-          if (w.evolved || !knows(run, w.id) || evo.passive !== card.id) continue;
-          out.push({ kind: 'recipe', evolution: evo.id, completes: w.level >= evolveAt(w) });
-          break;
-        }
-        out.push({ kind: 'slot', slot: run.passives.length + 1, of: run.passiveSlots });
+      for (const w of run.weapons) {
+        const evo = EVOLUTION_OF[w.id];
+        if (w.evolved || !knows(run, w.id) || evo.passive !== card.id) continue;
+        out.push({ kind: 'recipe', evolution: evo.id, completes: completes(w.level, card.level) });
+        break;
       }
+      if (card.level === 1) out.push({ kind: 'slot', slot: run.passives.length + 1, of: run.passiveSlots });
       return out;
     }
     case 'evolution':
@@ -359,7 +368,8 @@ export function scoreCard(run: RunState, card: Card): number {
         score += counterShare(run, card.id) * COUNTER_VALUE + SLOT_VALUE;
       } else if (!owned.evolved && knows(run, card.id) && run.passives.some((p) => p.id === EVOLUTION_OF[card.id].passive)) {
         // Each level toward an evolution whose partner is already owned.
-        score += RECIPE_VALUE * (readiness(owned, card.level) - readiness(owned, owned.level));
+        const at = BALANCE.evolutions.evolveAt;
+        score += RECIPE_VALUE * (readiness(card.level, at) - readiness(owned.level, at));
       }
       return score;
     }
@@ -380,7 +390,7 @@ export function scoreCard(run: RunState, card: Card): number {
       const xp = (stats.xpMult / run.stats.xpMult - 1) * XP_VALUE;
       const shards = (stats.shardMult / run.stats.shardMult - 1) * GREED_VALUE;
       const speed = (stats.projectileSpeedMult / run.stats.projectileSpeedMult - 1) * SPEED_VALUE;
-      const recipe = card.level === 1 ? recipeBonus(run, card.id) : 0;
+      const recipe = recipeBonus(run, card.id, card.level);
       return offence + (hp + sustain + armor) * danger(run) + xp + shards + speed + recipe;
     }
     case 'evolution': {

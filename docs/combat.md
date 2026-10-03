@@ -98,15 +98,14 @@ its strength.
 ## Evolutions
 
 A weapon at `BALANCE.evolutions.evolveAt` (level 5) with its partner
-passive owned is offered its evolution as a draft card, once Alchemy is
-owned in the Forge (P5). Evolving keeps the weapon's slot, adds a damage
+passive at `BALANCE.evolutions.passiveAt` (level 5) adds its evolution to
+the draft's pool, once Alchemy is owned in the Forge (P5). The card is
+drawn like any other, so it may take a level-up or two to show. Evolving keeps the weapon's slot, adds a damage
 spike (`BALANCE.evolutions[id].damage`) and a new pattern feature (seekers,
 burning ground, orbiting storms, a freeze and shatter, meteors…). Each
 evolution found goes into the Recipe Book ([collection.md](collection.md)).
-The Specialist keystone lets the starting weapon (`WeaponState.signature`)
-evolve at level 3.
 
-**Invariant:** an evolution card is offered if and only if its recipe is
+**Invariant:** an evolution card is a candidate if and only if its recipe is
 satisfied (`tests/draft.test.ts`).
 
 ## Fusions (N9, Act 2)

@@ -533,7 +533,7 @@ describe('Act 2 weapons (§9)', () => {
     for (const [w, p] of Object.entries(partners)) {
       const run = runIn(1, { behaviours: { alchemy: 1 } });
       run.weapons = [newWeapon(w as WeaponId, BALANCE.evolutions.evolveAt)];
-      run.passives = [{ id: p as never, level: 1 }];
+      run.passives = [{ id: p as never, level: BALANCE.evolutions.passiveAt }];
       expect(evolutionCards(run).map((c) => c.kind)).toEqual(['evolution']);
     }
   });

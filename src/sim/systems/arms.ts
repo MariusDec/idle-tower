@@ -89,10 +89,6 @@ export function armed(stats: TowerStats, w: Pick<WeaponState, 'id' | 'level' | '
   };
 }
 
-/** The level `w` evolves at: the last, or Specialist's earlier one for its starting weapon (§11.4). */
-export function evolveAt(w: Pick<WeaponState, 'signature'>): number {
-  return w.signature ? BALANCE.behaviours.specialistEvolveAt : BALANCE.evolutions.evolveAt;
-}
 
 /** A weapon freshly mounted. */
 export function newWeapon(id: WeaponId, level: number): WeaponState {

@@ -97,7 +97,7 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
   {
     id: 'recipes', view: 'collection', title: 'Recipes',
     lines: [
-      'Once the Forge’s Alchemy is owned, a weapon at level 5 with its partner passive can evolve into something stronger. The Recipe Book tracks the pairs.',
+      'Once the Forge’s Alchemy is owned, a weapon at level 5 with its partner passive at level 5 can evolve into something stronger: its card joins the draft. The Recipe Book tracks the pairs.',
       'Carrying a weapon reveals its half of a recipe. Taking it to its last level adds a riddle that points at the other half.',
     ],
   },

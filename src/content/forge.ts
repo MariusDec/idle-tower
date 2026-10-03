@@ -242,12 +242,12 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'unlockCard', id: 'sentinel-drones' }], sealed: 'bog-mother',
   },
   {
-    id: 'alchemy', name: 'Alchemy', icon: 'bubbling-flask', text: 'Weapons at level 5 evolve when you own their partner passive.',
+    id: 'alchemy', name: 'Alchemy', icon: 'bubbling-flask', text: 'Weapons at level 5 can evolve once their partner passive is at level 5.',
     branch: 'arsenal', type: 'notable', ring: 3, angle: 72, links: ['passive-slot'], maxLevel: 1, cost: 2000,
     effects: [{ kind: 'behaviour', id: 'alchemy' }], sealed: 'bog-mother',
   },
   {
-    id: 'specialist', name: 'Specialist', icon: 'bullseye', text: 'Your starting weapon deals ×2.5 damage and evolves at 3. All other damage −25%.',
+    id: 'specialist', name: 'Specialist', icon: 'bullseye', text: 'Your starting weapon deals ×2.5 damage. All other damage −25%.',
     branch: 'arsenal', type: 'keystone', ring: 3, angle: 52, links: ['passive-slot'], maxLevel: 1, cost: 1500,
     effects: [{ kind: 'behaviour', id: 'specialist' }, { kind: 'stat', mod: { key: 'damage', mult: 0.75 } }],
     sealed: 'bog-mother',

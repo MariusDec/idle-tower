@@ -18,6 +18,7 @@
  * Twin Mount and the keystones are left out: they pick for the player. So
  * is Act 2 (§9): the masteries, and the cards the Constellations light.
  */
+import { EVOLUTIONS } from '../src/content/evolutions';
 import { createRun, step } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile } from '../src/meta/profile';
@@ -59,6 +60,8 @@ export interface ArsenalReport {
 function frontierConfig(region: number) {
   const profile = newProfile(0);
   profile.tutorial.firstDraft = true;
+  // A player at the frontier has found the recipes, so the bot steers for them.
+  profile.recipes.found = EVOLUTIONS.map((e) => e.id);
   for (const n of FORGE) {
     if (n.ring > region + 1 || n.type === 'keystone' || n.type === 'mastery' || n.id === 'twin-mount') continue;
     profile.forge[n.id] = Math.max(1, Math.round(n.maxLevel * BOUGHT));
