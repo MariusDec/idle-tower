@@ -6,7 +6,7 @@ import { exportProfile, listBackups, pushBackup, readBackup } from '../meta/save
 import { copyText, pickTextFile, saveTextFile } from '../platform/files';
 import { buildRunConfig } from '../meta/runConfig';
 import {
-  autoUlt, automations, draftSeconds, foremanBuy, marchOn, maxSpeed, openingSeconds, runSpeed, tacticsScopes, togglePin,
+  autoUlt, automations, draftSeconds, foremanBuy, marchOn, maxSpeed, runSpeed, tacticsScopes, togglePin,
 } from '../meta/automation';
 import { buyNode, canAfford, refundNode, towerTier } from '../meta/forge';
 import { bankRun, buildOf } from '../meta/results';
@@ -92,7 +92,6 @@ export class App {
   /** Drafts banked when this run started (U2's Opening); 0 for a resumed run. */
   private opening = 0;
   /** True once the player touched the Opening: it no longer takes itself. */
-  private openingReviewed = false;
   /** The wave the last run snapshot was taken at. */
   private snapshotWave = 0;
   /** Dev only: a sim speed that overrides the unlocked one. */
@@ -187,7 +186,7 @@ export class App {
     this.toasts = new Toasts(els.overlay);
     this.draft = new DraftPanel(
       els.overlay, (i) => this.pick(i), () => this.reroll(), () => this.takeAll(), (i) => this.banish(i),
-      () => { this.openingReviewed = true; },
+      () => {},
     );
     this.modal = new Modal(els.overlay);
     this.settings = new SettingsPanel(els.overlay, {
@@ -373,7 +372,6 @@ export class App {
     this.shownDraft = null;
     this.newCards = [];
     this.opening = resumed ? 0 : this.run.pendingDrafts;
-    this.openingReviewed = false;
     this.snapshotWave = this.run.wave;
     this.slowMo = { left: 0, speed: 1 };
     this.draft.hide();
@@ -427,7 +425,7 @@ export class App {
           swapFor: run.swap ? run.weapons[0]?.id ?? null : null,
           banked: run.pendingDrafts,
           opening: opening ? { at: run.draftsOpened, of: this.opening } : null,
-          autoTake: opening && !this.openingReviewed ? openingSeconds(this.profile) : null,
+          autoTake: null,
           badges: run.draft.cards.map((c) => cardBadges(run, c)),
         });
         for (const c of run.draft.cards) {
