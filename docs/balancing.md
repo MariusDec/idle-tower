@@ -290,3 +290,40 @@ opening doesn't blunt, or a third slot before Region 3.
 27:51. Not on the plan's list, so not touched. A lever seen in passing:
 Region 1 `hpGrowth` 1.18 → 1.175 puts the CI median at 25:59 (8 seeds
 26:05) but moves I6 (read on 2 h only).
+
+### Q1: Twin Mount avoids the region's blockers (I3), 2026-10-03
+
+The mechanic the I3 probe asked for, chosen by the owner. Twin Mount's
+second weapon is drawn, on the same `loadout` stream, from the spares not
+weak against (`weakAgainst`) any type the region's first 4 waves can bring
+(`behaviours.twinMountOpening`; pool and introduced types), preferring
+those that counter one; every spare blocked, the old uniform draw
+(`run.ts#twinSpares`, `docs/forge.md`). The scorer's ¼ for blocked shots
+is unchanged.
+
+The I3 probe (each seed's profile at the Bog Mother's fall, 12 Region 3
+runs, 8 seeds): wipes at wave ≤ 6 **21/96 → 0/96**, I3-low results 8/96
+→ 0/96.
+
+`npm run pacing -- --hours 12 --seeds 8`, against the Q1 balancing commit:
+
+| | Before | After |
+|---|---|---|
+| first wave 20 (P3) · Gatekeeper · I1a | 27:51 · 32:09 · 8/8 | unchanged |
+| Bog Mother | 71:46 | 71:27 |
+| Prism | 108:43 | 79:50 |
+| Forgeheart (gate 132–198) | 148:37 | 134:59 PASS |
+| Hollow King | 311:29 | 303:21 |
+| Blight · I1b | 502:57 · 8/8 | 445:46 · 6/8 PASS (414–569) |
+| I3 · I6 (first 2 h) | 4/8 · 7/8 | **7/8** · 5/8 |
+
+The Prism falls ~30 min sooner: Region 3 is no longer a wipe a run in
+five, and Twin Mount there now draws a shield-counter (Mortar, Drones)
+rather than any spare. Forgeheart follows to 135 (the gate's floor is 132).
+I3's last failure (seed 7, a Region 3 wave-5 death at 80 min with 32%
+toward the next node) is an ordinary early death, not a blocked opening.
+I6 loses two seeds: the Prism stretch that held reveals now ends sooner,
+leaving 10:36–15:56 gaps at 95–115 min (Region 3's ring-3 Forge stretch).
+
+Idle (4 seeds): I2 5.0 → **6.0 d PASS** (7.0 5.0 4.5 6.0); I5 PASS at
+every gated checkpoint (1.22–1.33).

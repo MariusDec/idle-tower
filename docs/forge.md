@@ -95,3 +95,11 @@ through an exhaustive switch:
 
 The one automation that reaches the sim is the Tactician's list, as
 `config.priority`.
+
+Twin Mount is read at `createRun`: a second weapon from the pool's spares,
+on the run's `loadout` stream. The draw skips any spare weak against
+(`weakAgainst`, B1) an enemy type the region's first
+`behaviours.twinMountOpening` waves can bring (its pool, and types a beat
+introduces), and of the rest takes one that counters such a type if any
+does (`run.ts#twinSpares`, Q1). Every spare blocked: the plain draw. So
+Region 3's shields never meet Arcane Bolt and Scattershot together.

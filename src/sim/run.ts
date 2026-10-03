@@ -3,7 +3,8 @@ import { BALANCE } from '../content/balance';
 import { PHONE_OVAL } from '../content/arena';
 import { frameById } from '../content/frames';
 import { isRush } from '../content/rush';
-import type { BehaviourId, WeaponId } from '../content/types';
+import { WEAPON_BY_ID } from '../content/weapons';
+import type { BehaviourId, EnemyId, RegionDef, WeaponId } from '../content/types';
 import type { RunConfig, RunInput, RunState, WeaponState } from './state';
 import { newWeapon } from './systems/arms';
 import { allMods, resolveStats } from './stats';
@@ -17,6 +18,31 @@ import { castUltimate, tickUltimate } from './systems/ultimate';
 import { regionAt, regionMods, runRegion, tickWaves } from './systems/waves';
 
 export { regionMods };
+
+/** The enemy types a region's first `twinMountOpening` waves can bring: its pool, and any type a beat introduces. */
+function openingTypes(region: RegionDef): Set<EnemyId> {
+  const last = BALANCE.behaviours.twinMountOpening;
+  const types = new Set<EnemyId>(region.pool.filter((p) => p.from <= last).map((p) => p.enemy));
+  for (const [wave, beat] of Object.entries(region.beats)) {
+    if (Number(wave) <= last && beat.kind === 'introduce') types.add(beat.enemy);
+  }
+  return types;
+}
+
+/**
+ * What Twin Mount may draw (Q1, I3): the spares not weak against any of the
+ * region's opening types (B1's `weakAgainst`), and of those the ones that
+ * counter one, if any do. A tower whose both slots its opening blocks (Arcane
+ * Bolt and Scattershot against Region 3's shields) lands nothing, so it gets
+ * no drafts to mend it. Every spare blocked: all of them, as before.
+ */
+export function twinSpares(spares: readonly WeaponId[], region: RegionDef): readonly WeaponId[] {
+  const opening = openingTypes(region);
+  const clear = spares.filter((id) => !(WEAPON_BY_ID[id].weakAgainst ?? []).some((e) => opening.has(e)));
+  if (clear.length === 0) return spares;
+  const answers = clear.filter((id) => WEAPON_BY_ID[id].counters.some((e) => opening.has(e)));
+  return answers.length > 0 ? answers : clear;
+}
 
 /**
  * The sim's entry points. The same `(config, seed, inputs)` always gives the
@@ -42,11 +68,12 @@ export function createRun(config: RunConfig, seed: number): RunState {
   // A Trial (N5) may mount another weapon than the frame's.
   const first = config.startingWeapon ?? frame.startingWeapon;
   const weapons: WeaponState[] = [newWeapon(first, startLevel)];
-  // Twin Mount (§11.4): a second weapon from the pool, if a slot is free for it.
+  // Twin Mount (§11.4): a second weapon from the pool, if a slot is free for
+  // it, and not one the region's opening blunts (Q1, `twinSpares`).
   const spares = config.pool.filter((id): id is WeaponId => isWeaponId(id) && id !== first);
   if (owned('twin-mount') > 0 && config.weaponSlots >= 2 && spares.length > 0) {
     // Drilled and the Whetstone (§11.4) lift it like any new weapon.
-    weapons.push(newWeapon(root.split('loadout').pick(spares), Math.min(BALANCE.maxLevel, 1 + owned('drilled'))));
+    weapons.push(newWeapon(root.split('loadout').pick(twinSpares(spares, region)), Math.min(BALANCE.maxLevel, 1 + owned('drilled'))));
   }
   return {
     seed,

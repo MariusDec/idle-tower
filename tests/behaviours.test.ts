@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { applyInput, createRun, step } from '../src/sim/run';
+import { applyInput, createRun, step, twinSpares } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile } from '../src/meta/profile';
 import { SIM_DT } from '../src/app/loop';
 import { BALANCE } from '../src/content/balance';
 import { regionByIndex } from '../src/content/regions';
-import type { BehaviourId } from '../src/content/types';
+import type { BehaviourId, WeaponId } from '../src/content/types';
+import { WEAPON_BY_ID } from '../src/content/weapons';
 import { damageEnemy } from '../src/sim/systems/combat';
 import { gainXp } from '../src/sim/systems/draft';
 import { tickEnemies } from '../src/sim/systems/enemies';
@@ -122,5 +123,41 @@ describe('Forge behaviours (§11.4)', () => {
     const again = run.draft;
     applyInput(run, { reroll: true });
     expect(run.draft).toBe(again);
+  });
+});
+
+describe('Twin Mount avoids the region\'s blockers (Q1, I3)', () => {
+  const shielded = (id: WeaponId): boolean => (WEAPON_BY_ID[id].weakAgainst ?? []).includes('shieldbearer');
+  const twin = (region: number, unlocks: string[], seed: number): RunState => {
+    const p = newProfile(0);
+    p.tutorial.firstDraft = true;
+    p.forge = { 'twin-mount': 1, scattershot: 1, ...Object.fromEntries(unlocks.map((id) => [id, 1])) };
+    return createRun({ ...buildRunConfig(p), regionId: region }, seed);
+  };
+
+  it('in Region 3, the second weapon is never one shields blunt while a spare gets round them', () => {
+    // Scattershot (blunted) and Chain Lightning (not): every seed takes the chain.
+    const seen = new Set<WeaponId>();
+    for (let seed = 1; seed <= 40; seed++) {
+      const run = twin(3, ['chain-lightning'], seed);
+      expect(run.weapons).toHaveLength(2);
+      expect(shielded(run.weapons[1].id)).toBe(false);
+      seen.add(run.weapons[1].id);
+    }
+    expect([...seen]).toEqual(['chain-lightning']);
+  });
+
+  it('prefers a spare that counters the opening', () => {
+    // Mortar counters Shieldbearers; Chain Lightning and Frost Ring are only not blunted.
+    expect(twinSpares(['scattershot', 'chain-lightning', 'frost-ring', 'mortar'], regionByIndex(3))).toEqual(['mortar']);
+    expect(twin(3, ['chain-lightning', 'frost-ring', 'mortar'], 1).weapons[1].id).toBe('mortar');
+  });
+
+  it('falls back to the uniform draw when every spare is blunted, and is deterministic', () => {
+    expect(twinSpares(['scattershot'], regionByIndex(3))).toEqual(['scattershot']);
+    expect(twin(3, [], 7).weapons[1].id).toBe('scattershot');
+    const a = twin(1, ['chain-lightning', 'frost-ring'], 9);
+    const b = twin(1, ['chain-lightning', 'frost-ring'], 9);
+    expect(a.weapons.map((w) => w.id)).toEqual(b.weapons.map((w) => w.id));
   });
 });

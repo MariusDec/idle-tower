@@ -82,6 +82,8 @@ export const BALANCE = {
     fortressThorns: 3,
     /** Hoarder (keystone, B2): every enemy's HP multiplies by this; a personal heat. */
     hoarderHp: 1.5,
+    /** Twin Mount: its draw avoids weapons the region's first this-many waves' enemy types blunt (Q1, I3). */
+    twinMountOpening: 4,
     /** Specialist (keystone): the one weapon evolves at this level instead. */
     specialistEvolveAt: 3,
     /** Rampart: a contact hit takes at most this fraction of Max HP. */
