@@ -187,10 +187,14 @@ body {
   list-style: none;
 }
 
-/* The HUD's strip reads at a glance and takes no taps. */
+/* The HUD's strip reads at a glance; its chips take only a hold, for their card. */
 .hud-build {
   pointer-events: none;
   min-height: 34px;
+}
+
+.hud-build .build-chip {
+  pointer-events: auto;
 }
 
 .build-list {
@@ -210,12 +214,37 @@ body {
   background: var(--surface-overlay);
 }
 
-/* The draft cards' colours (§10.1): weapons arcane, passives gold. */
+/* The draft cards' colours (§10.1): weapons arcane, passives gold, evolutions frost. */
 .build-chip .icon { --icon-size: 22px; color: var(--text-1); }
 .build-chip.is-weapon .icon { color: var(--fx-arcane); }
 .build-chip.is-passive .icon { color: var(--fx-gold); }
 .build-chip.is-passive { background: none; }
-.build-chip.is-evolved { box-shadow: 0 0 6px 1px var(--fx-gold); }
+.build-chip.is-evolved { box-shadow: 0 0 6px 1px var(--fx-frost); }
+.build-chip.is-evolved .icon { color: var(--fx-frost); }
+
+/* Hold a chip (src/ui/peek.ts): its card, drawn as the draft drew it, above the chip. */
+.build-peek {
+  position: absolute;
+  z-index: 1;
+  width: min(156px, 42vw);
+  pointer-events: none;
+  animation: peek-in var(--dur-fast) var(--ease-out) both;
+}
+
+.build-peek .draft-card {
+  width: 100%;
+  height: auto;
+  min-height: 200px;
+  animation: none;
+  box-shadow: var(--elev-4);
+}
+
+@keyframes peek-in {
+  from { transform: translateY(6px) scale(0.96); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+:root[data-motion='reduce'] .build-peek { animation: none; }
 
 /* Silenced by a Harbinger: slashed through. */
 .build-chip.is-silenced .icon { opacity: 0.35; }
@@ -1304,23 +1333,27 @@ body {
 .draft-card-weapon .draft-card-icon { color: var(--fx-arcane); }
 .draft-card-fallback .draft-card-icon { color: var(--fx-nature); }
 
-/* Evolutions glow (§10.1): the one card worth stopping for. A fusion (N9) too. */
+/* Evolutions glow (§10.1): the one card worth stopping for. A fusion (N9) too.
+   Frost, not gold: gold already means passives, and the suggested card. */
 .draft-card-evolution,
 .draft-card-fusion {
-  border-color: var(--fx-gold);
-  background: linear-gradient(180deg, rgba(var(--rgb-gold), 0.16), transparent 60%), var(--surface-1);
+  border-color: var(--fx-frost);
+  background: linear-gradient(180deg, rgba(var(--rgb-frost), 0.16), transparent 60%), var(--surface-1);
 }
 
 .draft-card-evolution .draft-card-icon,
 .draft-card-fusion .draft-card-icon {
-  color: var(--text-on-amber);
-  background: var(--fx-gold);
+  color: var(--surface-0);
+  background: var(--fx-frost);
   animation: evolution-glow 1.4s ease-in-out infinite alternate;
 }
 
+.draft-card-evolution .draft-card-num,
+.draft-card-fusion .draft-card-num { color: var(--fx-frost); }
+
 @keyframes evolution-glow {
-  from { box-shadow: 0 0 6px rgba(var(--rgb-gold), 0.4); }
-  to { box-shadow: 0 0 22px rgba(var(--rgb-gold), 0.9); }
+  from { box-shadow: 0 0 6px rgba(var(--rgb-frost), 0.4); }
+  to { box-shadow: 0 0 22px rgba(var(--rgb-frost), 0.9); }
 }
 
 :root[data-motion='reduce'] .draft-card-evolution .draft-card-icon,
@@ -1415,8 +1448,8 @@ body {
   white-space: nowrap;
 }
 
-.draft-card-badge .icon { --icon-size: 12px; color: var(--fx-gold); }
-.draft-card-badge.is-complete { color: var(--fx-gold); }
+.draft-card-badge .icon { --icon-size: 12px; color: var(--fx-frost); }
+.draft-card-badge.is-complete { color: var(--fx-frost); }
 .draft-card-badge.is-counter { color: var(--good); }
 
 .draft-timer {
@@ -1431,6 +1464,10 @@ body {
   height: 100%;
   background: var(--fx-gold);
   transform-origin: left center;
+}
+
+.draft-timer.is-halted .draft-timer-fill {
+  background: var(--text-3);
 }
 
 /* Reduced motion: the device's setting or the player's (src/app/settings.ts). */
@@ -1455,8 +1492,15 @@ body {
 
 .draft-reroll,
 .draft-banish,
-.draft-take {
+.draft-take,
+.draft-hold {
   font-size: var(--text-md);
+}
+
+/* Pause (the timer and the arena both wait): lit while it holds. */
+.draft-hold.is-active {
+  border-color: var(--fx-gold);
+  color: var(--fx-gold);
 }
 
 /* Banish (N1): while armed, the cards it may strike wear a scarlet mark; the rest dim. */

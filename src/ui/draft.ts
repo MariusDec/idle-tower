@@ -145,10 +145,13 @@ export class DraftPanel {
   private timed = false;
   private seconds: number = BALANCE.draft.seconds;
   private holding = false;
+  /** The player stopped the clock (and the arena) to read the hand. */
+  private halted = false;
 
   private readonly reroll: HTMLButtonElement;
   private readonly banish: HTMLButtonElement;
   private readonly take: HTMLButtonElement;
+  private readonly hold: HTMLButtonElement;
   /** True while a tap on a card banishes it instead of taking it (N1). */
   private banishing = false;
   /** Seconds left before the Opening takes every suggestion; null when it waits. */
@@ -177,6 +180,7 @@ export class DraftPanel {
         <button type="button" class="btn draft-reroll" hidden></button>
         <button type="button" class="btn draft-banish" hidden aria-pressed="false"></button>
         <button type="button" class="btn draft-take" hidden></button>
+        <button type="button" class="btn draft-hold" hidden aria-pressed="false"></button>
       </div>
       <div class="draft-timer" aria-hidden="true"><div class="draft-timer-fill"></div></div>`;
     this.reroll = this.root.querySelector('.draft-reroll')!;
@@ -184,13 +188,15 @@ export class DraftPanel {
     this.banish = this.root.querySelector('.draft-banish')!;
     this.banish.addEventListener('click', () => this.setBanishing(!this.banishing));
     this.take = this.root.querySelector('.draft-take')!;
+    this.hold = this.root.querySelector('.draft-hold')!;
+    this.hold.addEventListener('click', () => this.setHalted(!this.halted));
     this.take.addEventListener('click', () => {
       this.autoTake = null;
       onTakeAll();
     });
     // Any other touch on the panel stops the Opening's count: the player is reading.
     this.root.addEventListener('pointerdown', (ev) => {
-      if (this.autoTake === null || (ev.target as HTMLElement).closest('.draft-take')) return;
+      if (this.autoTake === null || (ev.target as HTMLElement).closest('.draft-take, .draft-hold')) return;
       this.autoTake = null;
       this.paintTake();
       this.onReview();
@@ -231,6 +237,11 @@ export class DraftPanel {
     return !this.root.hidden;
   }
 
+  /** True while the player has stopped the draft to read it: the arena waits too. */
+  get stopped(): boolean {
+    return this.open && this.halted;
+  }
+
   show(view: DraftView): void {
     const opening = view.opening ?? null;
     this.title.textContent = opening ? `Opening · ${opening.at} of ${opening.of}` : `Level ${view.level}`;
@@ -248,6 +259,8 @@ export class DraftPanel {
     this.banish.hidden = banishes <= 0 || !view.timed || !(view.banishable ?? []).some(Boolean);
     this.banish.textContent = `Banish · ${banishes}`;
     this.setBanishing(false);
+    this.hold.hidden = !view.timed;
+    this.setHalted(false);
     // Two or more banked (U2): one tap takes every suggestion. In the Opening it leads.
     const banked = view.banked ?? 1;
     this.take.hidden = banked < 2 || !view.timed;
@@ -256,7 +269,8 @@ export class DraftPanel {
     this.autoTake = opening && view.timed ? view.autoTake ?? null : null;
     this.paintTake();
     this.row.replaceChildren(...view.cards.map((c, i) => {
-      const el = this.card(c, i, i === view.suggested, !view.seen(cardKey(c)), view.badges?.[i] ?? []);
+      const el = cardFace(c, { suggested: i === view.suggested, isNew: !view.seen(cardKey(c)), badges: view.badges?.[i] ?? [] });
+      el.dataset.index = String(i);
       toggleClass(el, 'is-banishable', banishes > 0 && (view.banishable?.[i] ?? false));
       return el;
     }));
@@ -270,6 +284,17 @@ export class DraftPanel {
     this.holding = false;
     this.autoTake = null;
     this.setBanishing(false);
+    this.setHalted(false);
+  }
+
+  /** Stop or restart the clock: a hand worth reading gets read, the arena held still meanwhile. */
+  private setHalted(on: boolean): void {
+    this.halted = on;
+    this.hold.setAttribute('aria-pressed', String(on));
+    this.hold.setAttribute('aria-label', on ? 'Resume the timer' : 'Pause the timer');
+    this.hold.textContent = on ? 'Resume' : 'Pause';
+    toggleClass(this.hold, 'is-active', on);
+    toggleClass(this.timer, 'is-halted', on);
   }
 
   /** Banish mode (N1): the cards it may strike wear a mark, and the next tap on one strikes it. */
@@ -285,8 +310,8 @@ export class DraftPanel {
 
   /** Run the timers on the wall clock: the draft's own, and the Opening's take-all (U2). */
   tick(realDt: number): DraftTick {
-    // Holding a card, or choosing what to banish, stops the clock.
-    if (!this.open || !this.timed || this.holding || this.banishing) return null;
+    // Holding a card, choosing what to banish, or the pause button stops the clock.
+    if (!this.open || !this.timed || this.holding || this.banishing || this.halted) return null;
     if (this.autoTake !== null) {
       this.autoTake = Math.max(0, this.autoTake - realDt);
       this.paintTake();
@@ -303,85 +328,94 @@ export class DraftPanel {
   private paintTake(): void {
     setText(this.take, this.autoTake === null ? this.takeLabel : `${this.takeLabel} · ${Math.ceil(this.autoTake)}`);
   }
+}
 
-  private card(card: Card, index: number, suggested: boolean, isNew: boolean, badges: readonly CardBadge[]): HTMLElement {
-    const { entry, line, kind } = describe(card);
-    const el = document.createElement('button');
-    el.type = 'button';
-    el.className = `draft-card draft-card-${card.kind}${suggested ? ' is-suggested' : ''}`;
-    el.dataset.index = String(index);
-    el.setAttribute('aria-label', `${entry.name}. ${line}`);
+export interface CardFaceOptions {
+  suggested?: boolean;
+  isNew?: boolean;
+  badges?: readonly CardBadge[];
+  /** Drawn for something already held (the build strip's peek): its level is owned, not offered. */
+  owned?: boolean;
+}
 
-    const head = document.createElement('div');
-    head.className = 'draft-card-head';
-    if (isNew) {
-      const stamp = document.createElement('span');
-      stamp.className = 'draft-card-new';
-      stamp.textContent = 'New';
-      head.appendChild(stamp);
-    }
-    if (suggested) {
-      const tag = document.createElement('span');
-      tag.className = 'draft-card-suggested';
-      tag.textContent = 'Suggested';
-      head.appendChild(tag);
-    }
-    el.appendChild(head);
+/** A card's face, as the draft draws it; the build strip's peek draws the same. */
+export function cardFace(card: Card, opts: CardFaceOptions = {}): HTMLElement {
+  const { suggested = false, isNew = false, badges = [], owned = false } = opts;
+  const { entry, line, kind } = describe(card);
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = `draft-card draft-card-${card.kind}${suggested ? ' is-suggested' : ''}`;
+  el.setAttribute('aria-label', `${entry.name}. ${line}`);
 
-    const art = document.createElement('div');
-    art.className = 'draft-card-icon';
-    art.appendChild(icon(entry.icon));
-    el.appendChild(art);
-
-    const name = document.createElement('h3');
-    name.className = 'draft-card-name';
-    name.textContent = entry.name;
-    el.appendChild(name);
-
-    if (kind) {
-      const k = document.createElement('p');
-      k.className = 'draft-card-kind';
-      const fresh = 'level' in card && card.level === 1 && (kind === 'Weapon' || kind === 'Passive');
-      k.textContent = fresh ? `New ${kind.toLowerCase()}` : kind;
-      el.appendChild(k);
-    }
-
-    el.appendChild(lineWithNumber(line));
-
-    // How it fits the build (U4): a word each; the details say the rest.
-    if (badges.length > 0) {
-      const row = document.createElement('div');
-      row.className = 'draft-card-badges';
-      for (const b of badges) {
-        const tag = document.createElement('span');
-        tag.className = `draft-card-badge is-${b.kind}${b.kind === 'recipe' && b.completes ? ' is-complete' : ''}`;
-        if (b.kind === 'recipe') tag.append(icon(EVOLUTION_BY_ID[b.evolution].icon));
-        tag.append(badgeText(b).short);
-        row.appendChild(tag);
-      }
-      el.appendChild(row);
-      el.setAttribute('aria-label', `${entry.name}. ${line} ${badges.map((b) => badgeText(b).long).join(' ')}`);
-    }
-
-    if (card.kind === 'weapon' || card.kind === 'passive') {
-      const pips = document.createElement('div');
-      pips.className = 'draft-card-pips';
-      for (let i = 1; i <= BALANCE.maxLevel; i++) {
-        const pip = document.createElement('span');
-        pip.className = i < card.level ? 'pip is-owned' : i === card.level ? 'pip is-next' : 'pip';
-        pips.appendChild(pip);
-      }
-      el.appendChild(pips);
-    }
-
-    const more = document.createElement('div');
-    more.className = 'draft-card-details';
-    for (const d of [...details(card), ...badges.map((b) => badgeText(b).long)]) {
-      const p = document.createElement('p');
-      p.textContent = d;
-      more.appendChild(p);
-    }
-    el.appendChild(more);
-    return el;
+  const head = document.createElement('div');
+  head.className = 'draft-card-head';
+  if (isNew) {
+    const stamp = document.createElement('span');
+    stamp.className = 'draft-card-new';
+    stamp.textContent = 'New';
+    head.appendChild(stamp);
   }
+  if (suggested) {
+    const tag = document.createElement('span');
+    tag.className = 'draft-card-suggested';
+    tag.textContent = 'Suggested';
+    head.appendChild(tag);
+  }
+  el.appendChild(head);
+
+  const art = document.createElement('div');
+  art.className = 'draft-card-icon';
+  art.appendChild(icon(entry.icon));
+  el.appendChild(art);
+
+  const name = document.createElement('h3');
+  name.className = 'draft-card-name';
+  name.textContent = entry.name;
+  el.appendChild(name);
+
+  if (kind) {
+    const k = document.createElement('p');
+    k.className = 'draft-card-kind';
+    const fresh = !owned && 'level' in card && card.level === 1 && (kind === 'Weapon' || kind === 'Passive');
+    k.textContent = fresh ? `New ${kind.toLowerCase()}` : kind;
+    el.appendChild(k);
+  }
+
+  el.appendChild(lineWithNumber(line));
+
+  // How it fits the build (U4): a word each; the details say the rest.
+  if (badges.length > 0) {
+    const row = document.createElement('div');
+    row.className = 'draft-card-badges';
+    for (const b of badges) {
+      const tag = document.createElement('span');
+      tag.className = `draft-card-badge is-${b.kind}${b.kind === 'recipe' && b.completes ? ' is-complete' : ''}`;
+      if (b.kind === 'recipe') tag.append(icon(EVOLUTION_BY_ID[b.evolution].icon));
+      tag.append(badgeText(b).short);
+      row.appendChild(tag);
+    }
+    el.appendChild(row);
+    el.setAttribute('aria-label', `${entry.name}. ${line} ${badges.map((b) => badgeText(b).long).join(' ')}`);
+  }
+
+  if (card.kind === 'weapon' || card.kind === 'passive') {
+    const pips = document.createElement('div');
+    pips.className = 'draft-card-pips';
+    for (let i = 1; i <= BALANCE.maxLevel; i++) {
+      const pip = document.createElement('span');
+      pip.className = i < card.level || (owned && i === card.level) ? 'pip is-owned' : i === card.level ? 'pip is-next' : 'pip';
+      pips.appendChild(pip);
+    }
+    el.appendChild(pips);
+  }
+
+  const more = document.createElement('div');
+  more.className = 'draft-card-details';
+  for (const d of [...details(card), ...badges.map((b) => badgeText(b).long)]) {
+    const p = document.createElement('p');
+    p.textContent = d;
+    more.appendChild(p);
+  }
+  el.appendChild(more);
+  return el;
 }

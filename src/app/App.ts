@@ -40,6 +40,7 @@ import { Music } from '../audio/music';
 import { bench, type BenchOptions, type BenchResult } from './bench';
 import { applySettings, onOsMotionChange, type Settings } from './settings';
 import { DraftPanel } from '../ui/draft';
+import { bindBuildPeek } from '../ui/peek';
 import { Hud } from '../ui/hud';
 import { HubScreen, type HubView } from '../ui/hub/hub';
 import { Modal, type ModalButton } from '../ui/modal';
@@ -190,6 +191,8 @@ export class App {
       () => {},
     );
     this.modal = new Modal(els.overlay);
+    // Hold a build chip for its card: the HUD strip, the pause menu, the results.
+    for (const host of [els.hud, els.overlay, els.screens]) bindBuildPeek(host, els.overlay);
     this.settings = new SettingsPanel(els.overlay, {
       change: (edit, save) => this.changeSettings(edit, save),
       quality: () => ({ pref: readStoredQuality(), tier: this.renderer.quality }),
@@ -391,7 +394,7 @@ export class App {
     const speed = (this.devSpeed ?? runSpeed(this.profile)) * (this.slowMo.left > 0 ? this.slowMo.speed : 1);
     if (run.draft) {
       // The game never waits (§4.5), except for the first draft it ever shows.
-      if (!this.profile.tutorial.firstDraft) return 0;
+      if (!this.profile.tutorial.firstDraft || this.draft.stopped) return 0;
       return BALANCE.draft.slowMotion * speed;
     }
     return speed;

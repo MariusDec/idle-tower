@@ -51,9 +51,15 @@ export function buildChips(build: BuildSummary, silenced: ReadonlySet<WeaponId> 
     const cls = ['is-weapon', w.evolved ? 'is-evolved' : '', silenced.has(w.id) ? 'is-silenced' : ''].filter(Boolean).join(' ');
     const el = chip(def.icon, def.name, w.level, cls);
     if (silenced.has(w.id)) el.setAttribute('aria-label', `${def.name}, level ${w.level}, silenced`);
+    // What the chip stands for, for the hold-to-peek card (src/ui/peek.ts).
+    Object.assign(el.dataset, { kind: 'weapon', id: w.id, level: String(w.level), fusion: w.fusion ?? '' });
     out.push(el);
   }
-  for (const p of build.passives) out.push(chip(PASSIVE_BY_ID[p.id].icon, PASSIVE_BY_ID[p.id].name, p.level, 'is-passive'));
+  for (const p of build.passives) {
+    const el = chip(PASSIVE_BY_ID[p.id].icon, PASSIVE_BY_ID[p.id].name, p.level, 'is-passive');
+    Object.assign(el.dataset, { kind: 'passive', id: p.id, level: String(p.level) });
+    out.push(el);
+  }
   return out;
 }
 
