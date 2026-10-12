@@ -328,6 +328,11 @@ export class WebView<N extends WebNodeDef> {
       const t = el('text', { class: 'forge-off', y: r + 14, 'text-anchor': 'middle', 'dominant-baseline': 'central' });
       t.textContent = 'OFF';
       g.appendChild(t);
+    } else if (this.actions.switchable?.(p, n.id)) {
+      // Switched on, it says so in the same place: a scan finds every switch.
+      const t = el('text', { class: 'forge-on', y: r + 14, 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+      t.textContent = 'ON';
+      g.appendChild(t);
     }
     return g;
   }

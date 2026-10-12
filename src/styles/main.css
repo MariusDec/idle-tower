@@ -1025,8 +1025,12 @@ body {
   pointer-events: none;
 }
 
-.forge-off {
-  fill: var(--text-2);
+/* Its twin switched on: the same tag in green, so every switch shows on a scan. */
+.forge-off { fill: var(--text-2); }
+.forge-on { fill: var(--good); }
+
+.forge-off,
+.forge-on {
   font-family: var(--font-display);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
