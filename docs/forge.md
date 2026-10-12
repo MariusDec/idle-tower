@@ -104,7 +104,10 @@ The one automation that reaches the sim is the Tactician's list, as
 `config.priority`.
 
 Twin Mount is read at `createRun`: a second weapon from the pool's spares,
-on the run's `loadout` stream. The draw skips any spare weak against
+on the run's `loadout` stream. It is not mounted: it waits in
+`run.twinOffer`, and the run's first draft holds it like a fusion
+(`rollOffer`; a scripted first draft defers it to the next). Taking any card
+from that draft spends the offer. The draw skips any spare weak against
 (`weakAgainst`, B1) an enemy type the region's first
 `behaviours.twinMountOpening` waves can bring (its pool, and types a beat
 introduces), and of the rest takes one that counters such a type if any

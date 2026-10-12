@@ -132,10 +132,12 @@ export function rollOffer(run: RunState, rng: Rng): Card[] {
     const scripted = run.firstDraft.filter((c) => legal.has(`${cardKey(c)}:${'level' in c ? c.level : 0}`));
     if (scripted.length > 0) return scripted.slice(0, n);
   }
-  // A ready fusion is always offered; the rest of the hand, a ready evolution
-  // among it, is a uniform sample, by partial Fisher–Yates.
-  const forced = candidates.filter(isForced).slice(0, n);
-  const hand = candidates.filter((c) => !isForced(c));
+  // A ready fusion is always offered, and so is Twin Mount's weapon while it
+  // is still a new card; the rest of the hand, a ready evolution among it,
+  // is a uniform sample, by partial Fisher–Yates.
+  const twin = (c: Card): boolean => c.kind === 'weapon' && c.id === run.twinOffer && c.level === 1;
+  const forced = [...candidates.filter(isForced), ...candidates.filter(twin)].slice(0, n);
+  const hand = candidates.filter((c) => !isForced(c) && !twin(c));
   for (let i = 0; i < Math.min(n - forced.length, hand.length); i++) {
     const j = rng.int(i, hand.length - 1);
     [hand[i], hand[j]] = [hand[j], hand[i]];
@@ -244,6 +246,8 @@ export function pickCard(run: RunState, index: number): void {
   if (!d) return;
   const card = d.cards[index] ?? d.cards[d.suggested];
   applyCard(run, card);
+  // Twin Mount's offer stands for one draft, whatever was taken from it.
+  run.twinOffer = null;
   run.draft = null;
   run.pendingDrafts--;
   run.events.push({ kind: 'picked', card });

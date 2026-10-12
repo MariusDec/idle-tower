@@ -70,12 +70,12 @@ export function createRun(config: RunConfig, seed: number): RunState {
   // Specialist (§11.4): the starting weapon is its signature.
   const weapons: WeaponState[] = [{ ...newWeapon(first, startLevel), signature: owned('specialist') > 0 }];
   // Twin Mount (§11.4): a second weapon from the pool, if a slot is free for
-  // it, and not one the region's opening blunts (Q1, `twinSpares`).
+  // it, and not one the region's opening blunts (Q1, `twinSpares`). It is not
+  // mounted: the first draft is sure to offer it (`rollOffer`).
   const spares = config.pool.filter((id): id is WeaponId => isWeaponId(id) && id !== first);
-  if (owned('twin-mount') > 0 && config.weaponSlots >= 2 && spares.length > 0) {
-    // Drilled and the Whetstone (§11.4) lift it like any new weapon.
-    weapons.push(newWeapon(root.split('loadout').pick(twinSpares(spares, region)), Math.min(BALANCE.maxLevel, 1 + owned('drilled'))));
-  }
+  const twinOffer = owned('twin-mount') > 0 && config.weaponSlots >= 2 && spares.length > 0
+    ? root.split('loadout').pick(twinSpares(spares, region))
+    : null;
   return {
     seed,
     regionId: config.regionId,
@@ -101,6 +101,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     draft: null,
     draftsOpened: 0,
     firstDraft: config.firstDraft ? [...config.firstDraft] : null,
+    twinOffer,
     // Primed (§11.4): the first ultimate is ready the moment the run starts.
     ult: { charge: owned('charged-start') > 0 ? 1 : 0, need: BALANCE.ultimate.charge, casts: 0, until: 0, timer: 0 },
     shards: 0,

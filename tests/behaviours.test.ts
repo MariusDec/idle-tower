@@ -8,7 +8,7 @@ import { regionByIndex } from '../src/content/regions';
 import type { BehaviourId, WeaponId } from '../src/content/types';
 import { WEAPON_BY_ID } from '../src/content/weapons';
 import { damageEnemy } from '../src/sim/systems/combat';
-import { gainXp } from '../src/sim/systems/draft';
+import { gainXp, pickCard, tickDraft } from '../src/sim/systems/draft';
 import { tickEnemies } from '../src/sim/systems/enemies';
 import type { RunState } from '../src/sim/state';
 import { body } from './helpers/body';
@@ -140,9 +140,9 @@ describe('Twin Mount avoids the region\'s blockers (Q1, I3)', () => {
     const seen = new Set<WeaponId>();
     for (let seed = 1; seed <= 40; seed++) {
       const run = twin(3, ['chain-lightning'], seed);
-      expect(run.weapons).toHaveLength(2);
-      expect(shielded(run.weapons[1].id)).toBe(false);
-      seen.add(run.weapons[1].id);
+      expect(run.twinOffer).not.toBeNull();
+      expect(shielded(run.twinOffer!)).toBe(false);
+      seen.add(run.twinOffer!);
     }
     expect([...seen]).toEqual(['chain-lightning']);
   });
@@ -150,14 +150,27 @@ describe('Twin Mount avoids the region\'s blockers (Q1, I3)', () => {
   it('prefers a spare that counters the opening', () => {
     // Mortar counters Shieldbearers; Chain Lightning and Frost Ring are only not blunted.
     expect(twinSpares(['scattershot', 'chain-lightning', 'frost-ring', 'mortar'], regionByIndex(3))).toEqual(['mortar']);
-    expect(twin(3, ['chain-lightning', 'frost-ring', 'mortar'], 1).weapons[1].id).toBe('mortar');
+    expect(twin(3, ['chain-lightning', 'frost-ring', 'mortar'], 1).twinOffer).toBe('mortar');
   });
 
   it('falls back to the uniform draw when every spare is blunted, and is deterministic', () => {
     expect(twinSpares(['scattershot'], regionByIndex(3))).toEqual(['scattershot']);
-    expect(twin(3, [], 7).weapons[1].id).toBe('scattershot');
+    expect(twin(3, [], 7).twinOffer).toBe('scattershot');
     const a = twin(1, ['chain-lightning', 'frost-ring'], 9);
     const b = twin(1, ['chain-lightning', 'frost-ring'], 9);
-    expect(a.weapons.map((w) => w.id)).toEqual(b.weapons.map((w) => w.id));
+    expect(a.twinOffer).toBe(b.twinOffer);
+  });
+
+  it('starts with the frame\'s weapon alone, and the first draft is sure to offer the twin', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const run = twin(4, ['chain-lightning', 'frost-ring', 'mortar'], seed);
+      expect(run.weapons).toHaveLength(1);
+      const id = run.twinOffer!;
+      gainXp(run, run.xpNext);
+      tickDraft(run);
+      expect(run.draft!.cards).toContainEqual({ kind: 'weapon', id, level: 1 });
+      pickCard(run, run.draft!.cards.findIndex((c) => !(c.kind === 'weapon' && c.id === id)));
+      expect(run.twinOffer).toBeNull();
+    }
   });
 });

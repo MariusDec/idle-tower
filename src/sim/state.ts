@@ -583,6 +583,8 @@ export interface RunState {
   draft: DraftOffer | null;
   draftsOpened: number;
   firstDraft: Card[] | null;
+  /** Twin Mount's weapon (§11.4): sure to be in the next draft's hand, until a card is taken from one. */
+  twinOffer: WeaponId | null;
   ult: UltimateState;
   /** Shards earned this run (§8.3), unrounded; banked at the run's end. */
   shards: number;
