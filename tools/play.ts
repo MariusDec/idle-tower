@@ -30,16 +30,28 @@ export const FIRST_DRAFT_SECONDS = 5;
 /** A run that outlives this many sim seconds is cut off: a safety net, since overtime always ends a run. */
 export const MAX_RUN_SECONDS = 3600;
 
-/** How many of the game's steps one `--fast` step stands for. */
-export const FAST_STEPS = 3;
+/**
+ * How many of the game's steps one `--fast` step stands for: 3, or the
+ * number given (`--fast=6`). Weapons still act once per game step
+ * (`step`'s `weaponSteps`), so a fast build's fire rate isn't capped.
+ */
+export const FAST_STEPS = fastSteps(process.argv);
 /**
  * The step the bots play at. The game's own `SIM_DT`, unless the tool was
- * started with `--fast`: then three of its steps at once, for about a third
+ * started with `--fast`: then several of its steps at once, for a fraction
  * of the time. A seed then plays a different game in its details, but the
  * medians hold within seed noise (`docs/balancing.md`), so `--fast` is for a
  * quick look and a gate's reading is taken without it.
  */
-export const PLAY_DT = process.argv.includes('--fast') ? SIM_DT * FAST_STEPS : SIM_DT;
+export const PLAY_DT = SIM_DT * FAST_STEPS;
+
+function fastSteps(argv: readonly string[]): number {
+  const flag = argv.find((a) => a === '--fast' || a.startsWith('--fast='));
+  if (flag === undefined) return 1;
+  const n = flag === '--fast' ? 3 : Number(flag.slice('--fast='.length));
+  if (!Number.isInteger(n) || n < 1) throw new Error(`--fast wants a whole number of steps, not ${flag}`);
+  return n;
+}
 
 export interface PlayOptions {
   policy: PlayPolicy;
@@ -125,7 +137,7 @@ export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayRe
     }
     const drafting = o.policy === 'idle' && run.draft !== null && input.pick === undefined && !input.takeAll;
     const before = run.wave;
-    step(run, PLAY_DT, input);
+    step(run, PLAY_DT, input, FAST_STEPS);
     // An idle draft runs the arena at 15% while its timer counts wall seconds.
     const dt = PLAY_DT / (o.speed * (drafting ? slow : 1));
     wall += dt;

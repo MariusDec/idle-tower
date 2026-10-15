@@ -104,7 +104,7 @@ npm run pacing -- --seeds 8 --hours 1.5   # eight profiles: pass counts, median 
 npm run pacing -- --hours 12 --seeds 8   # the full Act 1 report: I1a, I1b, I3, I6
 npm run pacing -- --idle --hours 12 --seeds 4  # the idle bot: I2 and I5
 npm run pacing -- --act2 --hours 12 --seeds 4  # Act 2: heat 1–10 at the frontier
-npm run pacing -- --hours 12 --seeds 8 --fast  # any pacing report at about half the time: medians hold, seeds don't (a look, not a gate)
+npm run pacing -- --hours 12 --seeds 8 --fast  # any pacing report in a fraction of the time (--fast=6: coarser still): medians hold, seeds don't (a look, not a gate)
 npm run arsenal     # I4: the bot's weapon picks per region
 npm run arsenal -- --keystones  # T4: each keystone against none, Regions 3–6; free or trap fails
 npm run calibrate   # T2: the scorer's damage estimate against the sim, every weapon and level

@@ -182,8 +182,13 @@ export function applyInput(run: RunState, input: RunInput): void {
  * and spread, weapons fire, projectiles fly and kill, runes burst, burns bite, hostile shots and
  * shockwaves land, the dead are swept, a banked draft opens, then the tower
  * regenerates or falls.
+ *
+ * `weaponSteps` is for the balance tools' coarse steps (`--fast`) alone: the
+ * weapons act that many times in `dt`, each over its share, since a weapon
+ * attacks at most once each time it acts. A late build fires 30–80 times a
+ * second; one coarse step for three of the game's would cap it at 20.
  */
-export function step(run: RunState, dt: number, input: RunInput = {}): void {
+export function step(run: RunState, dt: number, input: RunInput = {}, weaponSteps = 1): void {
   if (run.outcome) return;
   run.tick++;
   run.time = run.tick * dt;
@@ -194,7 +199,7 @@ export function step(run: RunState, dt: number, input: RunInput = {}): void {
   tickBoss(run, region, dt);
   tickEnemies(run, dt);
   separateEnemies(run);
-  tickWeapons(run, dt);
+  for (let k = 0; k < weaponSteps; k++) tickWeapons(run, dt / weaponSteps);
   tickUltimate(run, dt);
   tickProjectiles(run, dt);
   tickRunes(run);

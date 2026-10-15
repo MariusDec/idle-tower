@@ -70,9 +70,11 @@ goes on at `BALANCE.ascend.cost` (×2) the curve's price, and each level
 past its last multiplies the stat by `1 + share × pct` (share 0.5),
 compounding (`Web#statMods`, which `buildRunConfig` and the totals line
 read). The Forge does the same once the Gatekeeper falls (**tempering**,
-`BALANCE.forge.temper`, ×2 and share 0.5; `temperable`, `TEMPER_BOSS`):
+`BALANCE.forge.temper`, ×2 and share 0.2; `temperable`, `TEMPER_BOSS`):
 Act 1's sink past the ring, so time spent farming keeps buying an easier
-run instead of piling up once a ring is full. Its card says Temper and
+run instead of piling up once a ring is full. Only combat stats temper:
+shard and XP gain stop at their last level, so the pay never compounds
+with the power that earns it. Its card says Temper and
 Tempered where a star's says Ascend and Ascended (`WebViewSource.beyond`);
 the Foreman keeps a pinned tempered node and buys it on. **Refunds:** notables and
 keystones refund in full, between runs; minors and masteries never do, so

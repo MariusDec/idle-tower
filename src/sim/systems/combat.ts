@@ -27,6 +27,88 @@ const aimGrid = new SpatialGrid<Enemy>(AIM_CELL);
 const aimCells: (readonly Enemy[])[] = [];
 /** This step's burning ground, hottest first (`tickBurns`); carries nothing between steps. */
 const hottest: FirePatch[] = [];
+/**
+ * `firstAlong`'s bodies by position: a late field holds hundreds of bodies
+ * and the shots crossing it. A flat grid over the living bodies' bounds, each
+ * cell their indices in the list (a counting sort: two passes, no maps), so
+ * rebuilding is cheap enough to do whenever anything since may have moved or
+ * added a body (a strike, a blast, a crescent): it never answers stale.
+ * Carries nothing between steps.
+ */
+const shotGrid = {
+  stale: true,
+  x0: 0,
+  y0: 0,
+  cols: 0,
+  rows: 0,
+  /** How far from a shot's path an indexed body can be hit: the largest radius, plus the pad. */
+  reach: 0,
+  /** Cell `c`'s bodies are `order[start[c]] … order[start[c + 1] - 1]`, by their index in the list. */
+  start: new Int32Array(0),
+  order: new Int32Array(0),
+  /** Each living body's cell this rebuild, -1 for the dead. */
+  cellOf: new Int32Array(0),
+  /** The fill's next free slot in each cell. */
+  cursor: new Int32Array(0),
+};
+const SHOT_CELL = 64;
+/** Below this many bodies a shot tests them all: the grid would cost more than it saves. */
+const SHOT_GRID_MIN = 48;
+
+function rebuildShotGrid(enemies: readonly Enemy[]): void {
+  const g = shotGrid;
+  const n = enemies.length;
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  let reach = 0;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (e.x < x0) x0 = e.x;
+    if (e.x > x1) x1 = e.x;
+    if (e.y < y0) y0 = e.y;
+    if (e.y > y1) y1 = e.y;
+    if (e.radius > reach) reach = e.radius;
+  }
+  g.stale = false;
+  g.reach = reach + HIT_PAD;
+  if (x0 === Infinity) {
+    g.cols = 0;
+    g.rows = 0;
+    return;
+  }
+  g.x0 = x0;
+  g.y0 = y0;
+  g.cols = Math.floor((x1 - x0) / SHOT_CELL) + 1;
+  g.rows = Math.floor((y1 - y0) / SHOT_CELL) + 1;
+  const cells = g.cols * g.rows;
+  if (g.start.length < cells + 1) g.start = new Int32Array(cells * 2 + 1);
+  if (g.order.length < n) {
+    g.order = new Int32Array(n * 2);
+    g.cellOf = new Int32Array(n * 2);
+  }
+  const { start, order, cellOf } = g;
+  start.fill(0, 0, cells + 1);
+  for (let i = 0; i < n; i++) {
+    const e = enemies[i];
+    if (!e.alive) {
+      cellOf[i] = -1;
+      continue;
+    }
+    const c = Math.floor((e.y - y0) / SHOT_CELL) * g.cols + Math.floor((e.x - x0) / SHOT_CELL);
+    cellOf[i] = c;
+    start[c + 1]++;
+  }
+  for (let c = 0; c < cells; c++) start[c + 1] += start[c];
+  // Filled front to back, so a cell lists its bodies in list order.
+  const cursor = g.cursor.length < cells ? (g.cursor = new Int32Array(cells * 2)) : g.cursor;
+  cursor.set(start.subarray(0, cells));
+  for (let i = 0; i < n; i++) {
+    const c = cellOf[i];
+    if (c >= 0) order[cursor[c]++] = i;
+  }
+}
 /** How far a bolt whose target died looks for a new one. */
 const RETARGET_RADIUS = 220;
 /** Angle between the bolts of one volley as they leave the tower, radians. */
@@ -90,14 +172,13 @@ export function nearestEnemy(run: RunState, x: number, y: number, radius: number
   let best: Enemy | null = null;
   let bestD = radius * radius;
   for (const e of run.enemies) {
-    if (!targetable(run, e) || e.id === exclude) continue;
     const dx = e.x - x;
     const dy = e.y - y;
     const d = dx * dx + dy * dy;
-    if (d <= bestD) {
-      bestD = d;
-      best = e;
-    }
+    // Distance first: `targetable`'s light test is the costlier, and pure.
+    if (d > bestD || e.id === exclude || !targetable(run, e)) continue;
+    bestD = d;
+    best = e;
   }
   return best;
 }
@@ -554,12 +635,28 @@ function nearestUnstruck(run: RunState, x: number, y: number, radius: number, st
  * shell does the most (§11.2). Bodies near a point in `taken` are skipped,
  * so a salvo's shells spread over clusters. Ties go to the nearer body.
  */
-function densest(run: RunState, radius: number, taken: readonly { x: number; y: number }[]): Enemy | null {
+function densest(run: RunState, radius: number, taken: readonly { x: number; y: number }[], crowd?: Crowd): Enemy | null {
   const range2 = run.stats.range * run.stats.range;
   const r2 = radius * radius;
   let best: Enemy | null = null;
   let bestN = -1;
   let bestD = Infinity;
+  if (crowd?.counted) {
+    // The salvo's later shells: the same field, so the same counts.
+    for (let i = 0; i < crowd.bodies.length; i++) {
+      const e = crowd.bodies[i];
+      const d = e.x * e.x + e.y * e.y;
+      if (d > range2) continue;
+      if (taken.some((t) => (t.x - e.x) ** 2 + (t.y - e.y) ** 2 <= r2)) continue;
+      const n = crowd.counts[i];
+      if (n > bestN || (n === bestN && d < bestD)) {
+        bestN = n;
+        bestD = d;
+        best = e;
+      }
+    }
+    return best;
+  }
   // Every body against every other is the hot spot of a late run: the light
   // test once a body, and the neighbours counted from the cells around it.
   aimable.length = 0;
@@ -577,10 +674,26 @@ function densest(run: RunState, radius: number, taken: readonly { x: number; y: 
     aimCells.length = 0;
     if (gridded) aimGrid.cellsNear(e.x, e.y, radius, aimCells);
     else aimCells.push(aimable);
-    for (const cell of aimCells) {
+    // The count this body needs to win, and the most it can still reach (all
+    // it looks at but itself): once a miss leaves it short, it can't win. A
+    // salvo's crowd counts every body in full, for its later shells.
+    const need = crowd ? -1 : d < bestD ? bestN : bestN + 1;
+    let bound = -1;
+    for (const cell of aimCells) bound += cell.length;
+    if (bound < need) continue;
+    count: for (const cell of aimCells) {
       for (const o of cell) {
-        if (o !== e && (o.x - e.x) ** 2 + (o.y - e.y) ** 2 <= r2) n++;
+        if (o === e) continue;
+        if ((o.x - e.x) ** 2 + (o.y - e.y) ** 2 <= r2) n++;
+        else if (--bound < need) {
+          n = -1;
+          break count;
+        }
       }
+    }
+    if (crowd) {
+      crowd.bodies.push(e);
+      crowd.counts.push(n);
     }
     if (n > bestN || (n === bestN && d < bestD)) {
       bestN = n;
@@ -588,19 +701,33 @@ function densest(run: RunState, radius: number, taken: readonly { x: number; y: 
       best = e;
     }
   }
+  if (crowd) crowd.counted = true;
   return best;
+}
+
+/**
+ * `densest`'s count of each body's neighbours, kept over a salvo: a lob only
+ * launches, so nothing moves, dies or spawns between its shells' picks.
+ * The bodies a pick could take (in range, clear of `taken` then), in order.
+ */
+interface Crowd {
+  counted: boolean;
+  bodies: Enemy[];
+  counts: number[];
 }
 
 /** Mortar: a salvo of shells, each lobbed at a cluster, bursting where it lands. */
 function lobShells(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy, crit: Rng): void {
   const taken: { x: number; y: number }[] = [];
+  const crowd: Crowd = { counted: false, bodies: [], counts: [] };
   let target: Enemy | null = first;
   for (let i = 0; i < p.count; i++) {
     // More shells than clusters: the spare ones land on the first.
     const t: Enemy = target ?? first;
     taken.push({ x: t.x, y: t.y });
     lob(run, w, p, t.x, t.y, crit, false);
-    target = densest(run, p.radius, taken);
+    // The last shell's pick would go unused.
+    if (i < p.count - 1) target = densest(run, p.radius, taken, crowd);
   }
 }
 
@@ -1107,6 +1234,7 @@ function callHiveDrone(run: RunState, x: number, y: number): void {
 export function tickProjectiles(run: RunState, dt: number): void {
   // Indexed: a seeker launched mid-loop waits for the next step.
   const n = run.projectiles.length;
+  shotGrid.stale = true;
   for (let i = 0; i < n; i++) {
     const p = run.projectiles[i];
     p.px = p.x;
@@ -1115,6 +1243,7 @@ export function tickProjectiles(run: RunState, dt: number): void {
     p.life -= dt;
     if (p.boomerang) {
       flyCrescent(run, p, dt);
+      shotGrid.stale = true;
       continue;
     }
     if (p.blast > 0) {
@@ -1124,6 +1253,7 @@ export function tickProjectiles(run: RunState, dt: number): void {
         p.y = p.ty;
         p.alive = false;
         detonate(run, p);
+        shotGrid.stale = true;
         continue;
       }
       p.x += p.vx * dt;
@@ -1149,6 +1279,7 @@ export function tickProjectiles(run: RunState, dt: number): void {
         // Swept: a bolt that would pass through its target this step hits it.
         if (d <= target.radius + HIT_PAD + p.speed * dt) {
           strike(run, p, target);
+          shotGrid.stale = true;
           if (!p.alive) continue;
         }
       }
@@ -1156,6 +1287,7 @@ export function tickProjectiles(run: RunState, dt: number): void {
       const e = firstAlong(run, p, dt);
       if (e) {
         strike(run, p, e);
+        shotGrid.stale = true;
         if (!p.alive) continue;
       }
     }
@@ -1171,15 +1303,47 @@ function firstAlong(run: RunState, p: Projectile, dt: number): Enemy | null {
   const len2 = sx * sx + sy * sy || 1;
   let best: Enemy | null = null;
   let bestT = Infinity;
-  for (const e of run.enemies) {
-    if (!targetable(run, e) || e.id === p.ignore) continue;
-    const t = Math.max(0, Math.min(1, ((e.x - p.x) * sx + (e.y - p.y) * sy) / len2));
-    const cx = p.x + sx * t - e.x;
-    const cy = p.y + sy * t - e.y;
-    const r = e.radius + HIT_PAD;
-    if (cx * cx + cy * cy <= r * r && t < bestT) {
+  // Every straight shot against every body is the hot spot of a late run:
+  // on a full field only the bodies in the cells around the path, the
+  // geometry first, and `targetable`'s light test (pure) only on a hit.
+  const enemies = run.enemies;
+  if (enemies.length < SHOT_GRID_MIN) {
+    for (const e of enemies) {
+      const t = Math.max(0, Math.min(1, ((e.x - p.x) * sx + (e.y - p.y) * sy) / len2));
+      const cx = p.x + sx * t - e.x;
+      const cy = p.y + sy * t - e.y;
+      const r = e.radius + HIT_PAD;
+      if (cx * cx + cy * cy > r * r || t >= bestT || e.id === p.ignore || !targetable(run, e)) continue;
       bestT = t;
       best = e;
+    }
+    return best;
+  }
+  const g = shotGrid;
+  if (g.stale) rebuildShotGrid(enemies);
+  // The cells the path's box, widened by the reach, overlaps.
+  const reach = g.reach;
+  const cx0 = Math.max(0, Math.floor((Math.min(p.x, p.x + sx) - reach - g.x0) / SHOT_CELL));
+  const cx1 = Math.min(g.cols - 1, Math.floor((Math.max(p.x, p.x + sx) + reach - g.x0) / SHOT_CELL));
+  const cy0 = Math.max(0, Math.floor((Math.min(p.y, p.y + sy) - reach - g.y0) / SHOT_CELL));
+  const cy1 = Math.min(g.rows - 1, Math.floor((Math.max(p.y, p.y + sy) + reach - g.y0) / SHOT_CELL));
+  let bestI = -1;
+  for (let cy = cy0; cy <= cy1; cy++) {
+    for (let cx = cx0; cx <= cx1; cx++) {
+      const c = cy * g.cols + cx;
+      for (let k = g.start[c], end = g.start[c + 1]; k < end; k++) {
+        const i = g.order[k];
+        const e = enemies[i];
+        const t = Math.max(0, Math.min(1, ((e.x - p.x) * sx + (e.y - p.y) * sy) / len2));
+        const qx = p.x + sx * t - e.x;
+        const qy = p.y + sy * t - e.y;
+        const r = e.radius + HIT_PAD;
+        // A tie goes to the body first in the list, as a scan of it finds.
+        if (qx * qx + qy * qy > r * r || t > bestT || (t === bestT && i > bestI) || e.id === p.ignore || !targetable(run, e)) continue;
+        bestT = t;
+        bestI = i;
+        best = e;
+      }
     }
   }
   return best;
@@ -1289,7 +1453,10 @@ export function tickBurns(run: RunState, dt: number): void {
     // Meteorfall), over a full field; this keeps that one patch a body.
     hottest.length = 0;
     hottest.push(...run.fires);
-    hottest.sort((a, b) => b.dps - a.dps);
+    // Often already in order (one weapon lays them all): the stable sort would leave it as is.
+    let sorted = true;
+    for (let i = 1; i < hottest.length && sorted; i++) sorted = hottest[i - 1].dps >= hottest[i].dps;
+    if (!sorted) hottest.sort((a, b) => b.dps - a.dps);
     for (const e of run.enemies) {
       if (!targetable(run, e)) continue;
       for (const f of hottest) {
@@ -1435,6 +1602,33 @@ function courtShare(run: RunState, e: Enemy): number {
   return pattern?.kind === 'court' ? pattern.share : 1;
 }
 
+/** `chorusOf`'s index, for one run and one step. */
+const chorusCache: { run: RunState | null; tick: number; groups: Map<number, Enemy[]> } = { run: null, tick: -1, groups: new Map() };
+
+/**
+ * A Chorus's bodies (§11.1), in list order: what a scan of the list for the
+ * group finds, the dead included. Indexed once a step, and again when a group
+ * is newer than the index: a Chorus spawns whole, so no group gains a body
+ * after, and the sweep keeps the list's order. A full field hits its Choruses
+ * hundreds of times a step.
+ */
+function chorusOf(run: RunState, group: number): readonly Enemy[] {
+  const c = chorusCache;
+  const known = c.run === run && c.tick === run.tick ? c.groups.get(group) : undefined;
+  if (known) return known;
+  // New arrays, not cleared ones: a caller up the stack may still walk its own.
+  c.run = run;
+  c.tick = run.tick;
+  c.groups = new Map();
+  for (const o of run.enemies) {
+    if (!o.group) continue;
+    const g = c.groups.get(o.group);
+    if (g) g.push(o);
+    else c.groups.set(o.group, [o]);
+  }
+  return c.groups.get(group) ?? [];
+}
+
 /** Armour, the kill, and what a kill carries over. A Chorus's bodies share the hit (§11.1). */
 function hitBody(run: RunState, e: Enemy, raw: number, crit: boolean, source: DamageSource): number {
   const B = BALANCE.behaviours;
@@ -1462,8 +1656,8 @@ function hitBody(run: RunState, e: Enemy, raw: number, crit: boolean, source: Da
   run.damageBy[by] = (run.damageBy[by] ?? 0) + Math.min(amount, Math.max(0, before));
   run.events.push({ kind: 'hit', x: e.x, y: e.y, amount, crit, by });
   if (e.group) {
-    for (const o of run.enemies) {
-      if (o === e || !o.alive || o.group !== e.group) continue;
+    for (const o of chorusOf(run, e.group)) {
+      if (o === e || !o.alive) continue;
       o.hp = e.hp;
       o.hitTick = run.tick;
       if (o.hp <= 0) kill(run, o, source);

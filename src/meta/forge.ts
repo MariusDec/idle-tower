@@ -1,6 +1,6 @@
 import { BALANCE } from '../content/balance';
 import { FORGE } from '../content/forge';
-import type { BossId, ForgeNodeDef } from '../content/types';
+import type { BossId, ForgeNodeDef, StatKey } from '../content/types';
 import { bossDown } from './collection';
 import type { Profile } from './profile';
 import { starGifts } from './stars';
@@ -16,10 +16,12 @@ import { Web, type NodeState, type WebGoal } from './web';
  * between runs; minors and masteries never do, so the web keeps its shape.
  * An owned keystone can also be switched off (and on) without a refund.
  *
- * Tempering: once the Gatekeeper falls, the percentage minors go on past
- * their last level (`BALANCE.forge.temper`), each level a compounding
- * multiplier at twice the curve's price. It is Act 1's sink past the ring:
- * the time a player puts into farming keeps buying an easier run.
+ * Tempering: once the Gatekeeper falls, the combat minors whose stat is a
+ * percentage go on past their last level (`BALANCE.forge.temper`), each
+ * level a compounding multiplier at twice the curve's price. It is Act 1's
+ * sink past the ring: the time a player puts into farming keeps buying an
+ * easier run. Shard and XP gain stop at their last level, or the pay would
+ * compound with the power that earns it.
  */
 export type { NodeState };
 
@@ -48,10 +50,13 @@ export const FORGE_WEB = new Web<ForgeNodeDef>({
 /** The boss whose first fall opens tempering. */
 export const TEMPER_BOSS: BossId = 'gatekeeper';
 
-/** A minor whose every effect is a percentage stat: it may be tempered past its last level. */
+/** Stats that never temper: the economy, which would feed back into itself. */
+const UNTEMPERED: ReadonlySet<StatKey> = new Set<StatKey>(['shardGain', 'xpGain']);
+
+/** A minor whose every effect is a percentage combat stat: it may be tempered past its last level. */
 export function temperable(node: ForgeNodeDef): boolean {
   return node.type === 'minor' && node.effects.length > 0
-    && node.effects.every((e) => e.kind === 'stat' && e.mod.pct !== undefined);
+    && node.effects.every((e) => e.kind === 'stat' && e.mod.pct !== undefined && !UNTEMPERED.has(e.mod.key));
 }
 
 export function neighbours(id: string): readonly string[] {

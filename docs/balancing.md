@@ -48,11 +48,23 @@ bots' policy, so improving the bot improves idle play.
 ## Tuning practice
 
 - `--fast` (pacing, `--idle`, `--act2`) steps the bots three game steps
-  at a time, for about half the time. Each seed then plays a slightly
-  different game, but on 2.5 h × 8 the medians held within seed noise
-  (Gatekeeper 32:09 → 31:00, Bog Mother 68:16 → 70:06, Blight 115:30 →
-  115:16; I3 and I6 unchanged). Use it to look; read a gate without it.
-  `--act2 --fast` keeps its saved starts apart from the full ones.
+  at a time; `--fast=N`, N of them. The weapons still act once per game
+  step (`step`'s `weaponSteps`): a weapon attacks at most once each time it
+  acts, and a late build fires 30–80 times a second, so a coarse step
+  alone capped it at 20 and lost late runs ~10 waves. Each seed then plays
+  a slightly different game, but on 2.5 h × 8 the medians held within seed
+  noise (wave 20 27:51 → 27:59 / 27:50 at `--fast=6`, Gatekeeper 32:09 →
+  31:00 / 30:54, Bog Mother 68:16 → 69:58 / 69:11, Blight 115:30 → 118:49 /
+  115:35; I3 unchanged), except the first evolution, ~8 min early in both
+  (93:34 → 85:55 / 85:39). Since the weapons are most of a late step, it
+  saves less there: a 300-body overtime run is ~1.5× faster at 3, ~2× at 6.
+  Use it to look; read a gate without it. `--act2 --fast` keeps its saved
+  starts apart from the full ones, per N.
+
+- A long reading's time goes on the late runs: past the Blight the bot
+  farms overtime against a full field (300 bodies) for 30–60 sim minutes a
+  run. One 4 h profile took 36:40 before the October 2026 sim speedups and
+  14:47 after (the same report to the byte); 5:34 with `--fast`.
 
 - Change one number, rerun the report that reads it, compare per profile
   (not only the median): the seeds are deterministic, so a profile that
@@ -412,3 +424,56 @@ reveals that fill 96–110 min out of the window. Region 2's pay −15% reads
 
 The CI P3 reading is unchanged at 31:24 (seeds 1–3: 34:31 24:56 31:24),
 still failing; none of this work touches the first 35 minutes.
+
+### Tempering, 2026-10-15
+
+Read against `a943776` (tempering, offline cut to 15–25%) with the
+uncommitted sim speedups, `--fast`. Tempering as committed (share 0.5,
+every percentage minor) turned Regions 4–6 from a wall into a bypass.
+
+Without tempering (one seed, 5 h), Region 4 was a wall: ~110 min of runs
+dying at wave 15 (the swarm), one cheap node every other run, Region 5
+then 50+ runs at waves 9–12; Forgeheart at 211 min, no Hollow King by
+5 h. A probe shows why: each region against a tower with the ring it
+opens bought out (`inspect --forge ringN --region N`, 16 seeds) reaches
+wave 19–20 in Regions 1–3, but only 15–16 in Regions 4–6. Region 4's HP
+is ×6.6 Region 3's (Q1 raised it 290 → 580) on ×3.5 the pay, and ring 4
+costs ×16 ring 3 (66k → 1.05M), mostly in additive minors.
+
+With tempering as committed, seed 2's Blight fell at 1:52 and its pay ran
+to 2·10¹¹ shards a run by 4.5 h: some twenty minors, each on its own
+cheap curve (ring 1's damage tempers from 227 shards), grow DPS about as
+fast as the pay. Leaving shard and XP gain out (`temperable`) isn't
+enough on its own.
+
+`npm run pacing -- --hours 9 --seeds 8 --fast`, medians, combat stats only:
+
+| | share 0.5 | 0.5, ×4 price | 0.5, ×3 a level | 0.25, ×4 price | **0.2** |
+|---|---|---|---|---|---|
+| Bog Mother | 69:58 | 72:56 | 71:23 | 75:33 | 75:38 |
+| Prism | 79:58 | 80:38 | 80:30 | 94:54 | 109:15 |
+| Forgeheart | 110:55 | 117:39 | 117:07 | 158:38 | 167:12 |
+| Hollow King | 125:19 | 136:11 | 149:31 | 216:44 | 234:20 |
+| Blight · I1b | 137:47 · 0/8 | 159:58 · 0/8 | 195:47 · 0/8 | 273:16 · 0/8 | **303:14 · 0/8** |
+| I3 · I6 (first 2 h) | 8/8 · 6/8 | 8/8 · 5/8 | 8/8 · 6/8 | 8/8 · 5/8 | 8/8 · 1/8 |
+
+(The first two columns read 6 h; "×3 a level" grew each tempered level's price
+×3 rather than the curve's ×1.7, in `Web#cost`: not kept.)
+
+Chosen: share 0.2, combat stats only. From the Prism each region takes
+about an hour (medians: Region 3 34 min, 4 58, 5 67, 6 69), and inside a region the
+runs creep on: seed 2's Region 4 reads waves 11 → 13 → 15 → 19 → the
+boss over 35 runs, 1–3 buys a run. `tests/pacing.test.ts`'s I2 profile
+passes again (it failed at `a943776`). The cost: I6 in the first 2 h
+falls to 1/8 (gaps 6:05–14:44), since Region 3 now takes ~34 min rather
+than ~10 and reveals too little to fill it (§7.1 wants it 2–3 h long, so
+that is Region 3's content to fix, not tempering's). Still failing, as
+before: the CI P3 median and I6, and `tests/arsenal.test.ts`'s
+"evolutions happen at the frontier".
+
+Open: I1b. The Blight at ~5 h is short of 7–12 h, but the late game it
+lost was the wall. Lengthen it with the regions' pay or a lower share,
+or move the gate. I6 past 2 h fails 0/8 (66–117 min gaps in Regions
+4–6): the late regions reveal too little between their bosses. Neither
+the idle report (I2, I5 over 4 seeds) nor Act 2 has been read with the
+offline cut and tempering.

@@ -92,7 +92,7 @@ describe('Forge: tempering past the last level', () => {
     const after = buildRunConfig(p).mods.filter((m) => m.key === 'damage');
     const pct = FORGE_BY_ID['might-damage'].effects[0].kind === 'stat' ? FORGE_BY_ID['might-damage'].effects[0].mod.pct! : 0;
     expect(after.length).toBe(before.length + 1);
-    expect(after.at(-1)?.mult).toBeCloseTo(1 + pct * BALANCE.forge.temper.share);
+    expect(after[after.length - 1]?.mult).toBeCloseTo(1 + pct * BALANCE.forge.temper.share);
   });
 
   it('only percentage minors temper: a notable stays owned, a ×-multiplier minor stays at its last', () => {
@@ -101,6 +101,15 @@ describe('Forge: tempering past the last level', () => {
     buyNode(p, 'might-damage');
     expect(buyNode(p, 'opening-salvo')).toBe(true);
     expect(isBuyable(p, 'opening-salvo')).toBe(false);
+  });
+
+  it('shard and XP gain stop at their last level: the pay never compounds with its own power', () => {
+    const p = rich(1e9);
+    p.bosses.gatekeeper = { kills: 1, fastest: null };
+    for (const id of ['fortune-shards', 'fortune-xp']) {
+      while (buyNode(p, id));
+      expect(p.forge[id]).toBe(FORGE_BY_ID[id].maxLevel);
+    }
   });
 });
 

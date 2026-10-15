@@ -60,8 +60,13 @@ export const BALANCE = {
      * (offline pay used to fill a ring in one check-in, then had nothing to
      * buy). Each such level costs `cost` times the curve's next and
      * multiplies the stat by `1 + share × its percentage`, compounding.
+     * At share 0.5 it outran the regions: some twenty minors, each on its
+     * own cheap curve, grew DPS about as fast as the pay, and the Blight
+     * fell at ~2 h even with shard and XP gain left out (8 profiles,
+     * 2:04–2:33). At 0.2 it is a slope: each region from the Prism takes
+     * ~1 h, the Blight ~5 h (docs/balancing.md, "Tempering").
      */
-    temper: { cost: 2, share: 0.5 },
+    temper: { cost: 2, share: 0.2 },
   },
   /** Numbers behind the Forge's behaviour notables (§11.4). */
   behaviours: {
