@@ -83,9 +83,9 @@ export function rimAxes(light: number, oval: Oval): { x: number; y: number } {
  * opaque edge is this same oval scaled by `darkScale`.)
  */
 export function inLight(x: number, y: number, r: number, light: number, oval: Oval): boolean {
-  const rim = rimAxes(light, oval);
-  const ax = rim.x * ARENA.darkScale + r;
-  const ay = rim.y * ARENA.darkScale + r;
+  // `rimAxes` written out: every targeting loop asks this, many times a step.
+  const ax = (light + ARENA.lightBase * (oval.sx - 1)) * ARENA.darkScale + r;
+  const ay = (light + ARENA.lightBase * (oval.sy - 1)) * ARENA.darkScale + r;
   return (x / ax) ** 2 + (y / ay) ** 2 <= 1;
 }
 

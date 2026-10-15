@@ -190,6 +190,7 @@ export class Cues {
           for (const [i, f] of [523, 659, 784, 1047].entries()) s.tone({ freq: f, type: 'triangle', duration: 1.2, volume: 0.12, delay: i * 0.15 });
           break;
         case 'enrage':
+        case 'hordeEnrage':
           s.tone({ freq: 120, freqEnd: 400, type: 'sawtooth', duration: 0.45, volume: 0.15 });
           break;
         case 'relicDrop':

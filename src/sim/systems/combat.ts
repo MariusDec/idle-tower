@@ -1,4 +1,5 @@
 import { Rng } from '../../core/rng';
+import { SpatialGrid } from '../../core/spatialGrid';
 import { ABYSS_INDEX } from '../../content/abyss';
 import { BALANCE } from '../../content/balance';
 import { inLight } from '../../content/arena';
@@ -8,7 +9,7 @@ import { frameById } from '../../content/frames';
 import { WEAPONS, WEAPON_BY_ID } from '../../content/weapons';
 import type { EnemyId, EnemyVerb, FusionId, Targeting, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
 import { BOSS_BY_ID } from '../../content/bosses';
-import type { DamageBy, Enemy, Projectile, RunState, WeaponState } from '../state';
+import type { DamageBy, Enemy, FirePatch, Projectile, RunState, WeaponState } from '../state';
 import { pactLoad, ruleSurge } from '../pacts';
 import { armed, mountOf, muzzle } from './arms';
 import { bossBody, dropPlate, onBossKilled, phasesOf, plateGuard, reflectShot } from './boss';
@@ -19,6 +20,13 @@ import { regionRule, runRegion, spawnEnemy } from './waves';
 
 /** How close a projectile must pass, beyond the body radius, to hit. */
 const HIT_PAD = 6;
+/** `densest`'s scratch: the bodies it may aim at, and them by position. Carry nothing between calls. */
+const aimable: Enemy[] = [];
+const AIM_CELL = 64;
+const aimGrid = new SpatialGrid<Enemy>(AIM_CELL);
+const aimCells: (readonly Enemy[])[] = [];
+/** This step's burning ground, hottest first (`tickBurns`); carries nothing between steps. */
+const hottest: FirePatch[] = [];
 /** How far a bolt whose target died looks for a new one. */
 const RETARGET_RADIUS = 220;
 /** Angle between the bolts of one volley as they leave the tower, radians. */
@@ -552,14 +560,27 @@ function densest(run: RunState, radius: number, taken: readonly { x: number; y: 
   let best: Enemy | null = null;
   let bestN = -1;
   let bestD = Infinity;
-  for (const e of run.enemies) {
-    if (!targetable(run, e)) continue;
+  // Every body against every other is the hot spot of a late run: the light
+  // test once a body, and the neighbours counted from the cells around it.
+  aimable.length = 0;
+  for (const e of run.enemies) if (targetable(run, e)) aimable.push(e);
+  // A wide blast (an evolved Meteorfall's) spans more cells than there are
+  // bodies: then each counts over all of them.
+  const span = (2 * radius) / AIM_CELL + 2;
+  const gridded = span * span < aimable.length;
+  if (gridded) aimGrid.rebuild(aimable);
+  for (const e of aimable) {
     const d = e.x * e.x + e.y * e.y;
     if (d > range2) continue;
     if (taken.some((t) => (t.x - e.x) ** 2 + (t.y - e.y) ** 2 <= r2)) continue;
     let n = 0;
-    for (const o of run.enemies) {
-      if (o !== e && targetable(run, o) && (o.x - e.x) ** 2 + (o.y - e.y) ** 2 <= r2) n++;
+    aimCells.length = 0;
+    if (gridded) aimGrid.cellsNear(e.x, e.y, radius, aimCells);
+    else aimCells.push(aimable);
+    for (const cell of aimCells) {
+      for (const o of cell) {
+        if (o !== e && (o.x - e.x) ** 2 + (o.y - e.y) ** 2 <= r2) n++;
+      }
     }
     if (n > bestN || (n === bestN && d < bestD)) {
       bestN = n;
@@ -1261,11 +1282,21 @@ function ignite(run: RunState, e: Enemy, dps: number, seconds: number): void {
 export function tickBurns(run: RunState, dt: number): void {
   if (run.fires.length > 0) {
     run.fires = run.fires.filter((f) => f.until > run.time);
-    for (const f of run.fires) {
-      for (const e of run.enemies) {
-        if (!targetable(run, e)) continue;
+    // Every patch lights for the same time and `ignite` keeps the hotter, so
+    // a body standing in several burns as in the hottest of them: it looks
+    // down the patches hottest first and stops at the first it stands in.
+    // Late runs hold hundreds of patches, often arena-wide (an evolved
+    // Meteorfall), over a full field; this keeps that one patch a body.
+    hottest.length = 0;
+    hottest.push(...run.fires);
+    hottest.sort((a, b) => b.dps - a.dps);
+    for (const e of run.enemies) {
+      if (!targetable(run, e)) continue;
+      for (const f of hottest) {
         const r = f.radius + e.radius;
-        if ((e.x - f.x) ** 2 + (e.y - f.y) ** 2 <= r * r) ignite(run, e, f.dps, BALANCE.weapons.burnTick * 2);
+        if ((e.x - f.x) ** 2 + (e.y - f.y) ** 2 > r * r) continue;
+        ignite(run, e, f.dps, BALANCE.weapons.burnTick * 2);
+        break;
       }
     }
   }
@@ -1301,7 +1332,7 @@ function evolvedDeath(run: RunState, e: Enemy, source: DamageSource): void {
     const r2 = D.spread * D.spread;
     const left = e.burnUntil - run.time;
     for (const o of run.enemies) {
-      if (o !== e && targetable(run, o) && (o.x - e.x) ** 2 + (o.y - e.y) ** 2 <= r2) ignite(run, o, e.burn, left);
+      if (o !== e && (o.x - e.x) ** 2 + (o.y - e.y) ** 2 <= r2 && targetable(run, o)) ignite(run, o, e.burn, left);
     }
   }
   if (e.frozenUntil > run.time) {

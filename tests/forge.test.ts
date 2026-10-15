@@ -66,6 +66,44 @@ describe('Forge: costs and buying', () => {
   });
 });
 
+describe('Forge: tempering past the last level', () => {
+  const maxed = (p: Profile): void => {
+    for (let i = 0; i < FORGE_BY_ID['might-damage'].maxLevel; i++) expect(buyNode(p, 'might-damage')).toBe(true);
+  };
+
+  it('a maxed percentage minor waits for the Gatekeeper, then goes on at twice the curve', () => {
+    const p = rich();
+    maxed(p);
+    expect(isBuyable(p, 'might-damage')).toBe(false);
+    p.bosses.gatekeeper = { kills: 1, fastest: null };
+    expect(isBuyable(p, 'might-damage')).toBe(true);
+    const n = FORGE_BY_ID['might-damage'];
+    expect(nodeCost(n, n.maxLevel)).toBe(Math.round(n.cost * BALANCE.forge.levelGrowth ** n.maxLevel * BALANCE.forge.temper.cost));
+    expect(buyNode(p, 'might-damage')).toBe(true);
+    expect(p.forge['might-damage']).toBe(n.maxLevel + 1);
+  });
+
+  it('a tempered level is a compounding multiplier on the stat', () => {
+    const p = rich();
+    maxed(p);
+    p.bosses.gatekeeper = { kills: 1, fastest: null };
+    const before = buildRunConfig(p).mods.filter((m) => m.key === 'damage');
+    buyNode(p, 'might-damage');
+    const after = buildRunConfig(p).mods.filter((m) => m.key === 'damage');
+    const pct = FORGE_BY_ID['might-damage'].effects[0].kind === 'stat' ? FORGE_BY_ID['might-damage'].effects[0].mod.pct! : 0;
+    expect(after.length).toBe(before.length + 1);
+    expect(after.at(-1)?.mult).toBeCloseTo(1 + pct * BALANCE.forge.temper.share);
+  });
+
+  it('only percentage minors temper: a notable stays owned, a ×-multiplier minor stays at its last', () => {
+    const p = rich(1e9);
+    p.bosses.gatekeeper = { kills: 1, fastest: null };
+    buyNode(p, 'might-damage');
+    expect(buyNode(p, 'opening-salvo')).toBe(true);
+    expect(isBuyable(p, 'opening-salvo')).toBe(false);
+  });
+});
+
 describe('Forge: refunds (§5.1)', () => {
   it('refunds a notable in full, and never a minor', () => {
     const p = rich();

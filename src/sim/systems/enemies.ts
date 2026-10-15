@@ -13,7 +13,13 @@ import { runRegion, spawnEnemy } from './waves';
  * is not part of the run's state.
  */
 const grid = new SpatialGrid<Enemy>(64);
-const near: Enemy[] = [];
+const nearCells: (readonly Enemy[])[] = [];
+/**
+ * Squared distances past `(r1 + r2)² × this` cannot overlap: a cheap test
+ * ahead of `Math.hypot`, far wider than any rounding gap between the two, so
+ * the pairs that reach the exact test, and its answers, are unchanged.
+ */
+const OVERLAP_SLACK = 1 + 1e-9;
 /** The largest body radius, so a small body's query still finds a big neighbour. */
 const MAX_RADIUS = Math.max(...ENEMIES.map((d) => d.radius)) * BALANCE.elites.scale;
 
@@ -323,30 +329,40 @@ export function separateEnemies(run: RunState): void {
   const strength = BALANCE.separation;
   grid.rebuild(run.enemies);
   const reach = run.stats.radius;
+  const biggest = Math.max(MAX_RADIUS, run.boss ? BOSS_BY_ID[run.boss.id].radius : 0);
   for (const e of run.enemies) {
     if (!e.alive || e.boss || e.court || e.plate || isHidden(run, e)) continue;
-    near.length = 0;
-    // Two bodies overlap within the sum of their radii, so query that far:
-    // a Runner must feel a Brute it touches, not only the reverse.
-    grid.query(e.x, e.y, e.radius + Math.max(MAX_RADIUS, run.boss ? BOSS_BY_ID[run.boss.id].radius : 0), near);
+    // Two bodies overlap within the sum of their radii, so look that far:
+    // a Runner must feel a Brute it touches, not only the reverse. This is
+    // the hottest loop in the sim, so it walks the grid's cells itself
+    // rather than collecting a `query` and walking that again.
+    const range = e.radius + biggest;
+    const range2 = range * range;
+    nearCells.length = 0;
+    grid.cellsNear(e.x, e.y, range, nearCells);
     let fx = 0;
     let fy = 0;
-    for (const o of near) {
-      if (o === e || isHidden(run, o)) continue;
-      let dx = e.x - o.x;
-      let dy = e.y - o.y;
-      let d = Math.hypot(dx, dy);
-      const min = e.radius + o.radius;
-      if (d >= min) continue;
-      if (d < 1e-6) {
-        // Exactly stacked: split them by id so the result is deterministic.
-        dx = e.id < o.id ? 1 : -1;
-        dy = 0;
-        d = 1;
+    for (const cell of nearCells) {
+      for (const o of cell) {
+        if (!o.alive || o === e) continue;
+        let dx = e.x - o.x;
+        let dy = e.y - o.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > range2) continue;
+        const min = e.radius + o.radius;
+        if (d2 >= min * min * OVERLAP_SLACK || isHidden(run, o)) continue;
+        let d = Math.hypot(dx, dy);
+        if (d >= min) continue;
+        if (d < 1e-6) {
+          // Exactly stacked: split them by id so the result is deterministic.
+          dx = e.id < o.id ? 1 : -1;
+          dy = 0;
+          d = 1;
+        }
+        const overlap = (min - d) / min;
+        fx += (dx / d) * overlap;
+        fy += (dy / d) * overlap;
       }
-      const overlap = (min - d) / min;
-      fx += (dx / d) * overlap;
-      fy += (dy / d) * overlap;
     }
     if (fx === 0 && fy === 0) continue;
     const dist = Math.hypot(e.x, e.y) || 1;

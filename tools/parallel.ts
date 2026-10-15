@@ -30,7 +30,8 @@ export function parallel<T>(script: string, name: string, argLists: readonly unk
     while (next < argLists.length) {
       const i = next++;
       out[i] = await new Promise<T>((resolve, reject) => {
-        const w = new Worker(script, { workerData: { tower: true, name, args: argLists[i] } });
+        // The tool's own flags too, so a worker reads the same options (`--fast`).
+        const w = new Worker(script, { argv: process.argv.slice(2), workerData: { tower: true, name, args: argLists[i] } });
         w.once('message', (v: T) => {
           resolve(v);
           void w.terminate();

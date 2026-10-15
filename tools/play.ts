@@ -30,6 +30,17 @@ export const FIRST_DRAFT_SECONDS = 5;
 /** A run that outlives this many sim seconds is cut off: a safety net, since overtime always ends a run. */
 export const MAX_RUN_SECONDS = 3600;
 
+/** How many of the game's steps one `--fast` step stands for. */
+export const FAST_STEPS = 3;
+/**
+ * The step the bots play at. The game's own `SIM_DT`, unless the tool was
+ * started with `--fast`: then three of its steps at once, for about a third
+ * of the time. A seed then plays a different game in its details, but the
+ * medians hold within seed noise (`docs/balancing.md`), so `--fast` is for a
+ * quick look and a gate's reading is taken without it.
+ */
+export const PLAY_DT = process.argv.includes('--fast') ? SIM_DT * FAST_STEPS : SIM_DT;
+
 export interface PlayOptions {
   policy: PlayPolicy;
   /** Game speed the run plays at. */
@@ -70,7 +81,7 @@ export interface PlayResult {
 export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayResult {
   const seen = new Set(profile.seenCards);
   const newCards: string[] = [];
-  const maxTicks = Math.round(MAX_RUN_SECONDS / SIM_DT);
+  const maxTicks = Math.round(MAX_RUN_SECONDS / PLAY_DT);
   const slow = BALANCE.draft.slowMotion;
   let wall = 0;
   let shown: unknown = null;
@@ -114,9 +125,9 @@ export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayRe
     }
     const drafting = o.policy === 'idle' && run.draft !== null && input.pick === undefined && !input.takeAll;
     const before = run.wave;
-    step(run, SIM_DT, input);
+    step(run, PLAY_DT, input);
     // An idle draft runs the arena at 15% while its timer counts wall seconds.
-    const dt = SIM_DT / (o.speed * (drafting ? slow : 1));
+    const dt = PLAY_DT / (o.speed * (drafting ? slow : 1));
     wall += dt;
     if (drafting) draftUp += dt;
     for (const ev of run.events) {

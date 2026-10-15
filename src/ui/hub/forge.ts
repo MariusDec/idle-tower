@@ -6,7 +6,7 @@ import type { ForgeNodeDef, StarNodeDef, StatKey, StatMod, WebNodeDef } from '..
 import { resolveStat } from '../../sim/stats';
 import { STAT_LABEL } from '../build';
 import { formatNumber } from '../../core/format';
-import { FORGE_WEB, canAfford } from '../../meta/forge';
+import { FORGE_WEB, TEMPER_BOSS, canAfford } from '../../meta/forge';
 import { WISHLIST_MAX } from '../../meta/automation';
 import type { Profile } from '../../meta/profile';
 import { STAR_WEB } from '../../meta/stars';
@@ -68,6 +68,15 @@ export interface WebViewSource<N extends WebNodeDef> {
   branchName(branch: N['branch']): string;
   /** Why a sealed node waits, in words. */
   sealLine(node: N): string;
+  /** Levels past a node's last (the Forge's tempering, a star's ascension, N10), in words. */
+  readonly beyond: {
+    /** The buy button's verb past the last level. */
+    readonly verb: string;
+    /** The detail's word for a node past its last level. */
+    readonly past: string;
+    /** A maxed node that may go on later says when. */
+    readonly waiting: string;
+  };
 }
 
 /** A node's level, out of its last: a mastery (§9) has no last, and an ascended star (N10) counts on past it. */
@@ -407,7 +416,7 @@ export class WebView<N extends WebNodeDef> {
       const affordable = web.canAfford(p, id);
       buy.disabled = !affordable;
       buy.innerHTML = `${iconMarkup(this.src.currencyIcon)}<span>${formatNumber(cost)}</span>`;
-      const verb = level >= n.maxLevel ? 'Ascend' : level > 0 ? 'Upgrade' : 'Buy';
+      const verb = level >= n.maxLevel ? this.src.beyond.verb : level > 0 ? 'Upgrade' : 'Buy';
       buy.setAttribute('aria-label', `${verb} for ${formatNumber(cost)} ${this.src.currencyName.toLowerCase()}`);
       buy.addEventListener('click', () => this.buy(id));
       if (!web.isBuyable(p, id)) buy.disabled = true;
@@ -415,8 +424,8 @@ export class WebView<N extends WebNodeDef> {
     } else {
       const done = document.createElement('span');
       done.className = 'forge-detail-done';
-      // A minor that ascends once the sky is whole (N10) says so.
-      done.textContent = web.canAscend(n) ? 'Maxed · ascends once every star is lit' : n.maxLevel > 1 ? 'Maxed' : 'Owned';
+      // A minor that goes on later (tempering, or ascension once the sky is whole) says so.
+      done.textContent = web.canAscend(n) ? `Maxed · ${this.src.beyond.waiting}` : n.maxLevel > 1 ? 'Maxed' : 'Owned';
       // A keystone's switch (§11.4) says it all; the "Owned" would only crowd it.
       if (!switchable) actions.append(done);
     }
@@ -459,10 +468,10 @@ export class WebView<N extends WebNodeDef> {
       });
       actions.append(refund);
     }
-    // Ascension (N10): what each level past the last does, once it may go on.
+    // Tempering or ascension (N10): what each level past the last does, once it may go on.
     if (level >= n.maxLevel && web.maxOf(p, n) === Infinity && web.canAscend(n)) {
       const steps = web.statMods(n, n.maxLevel + 1).filter((m) => m.mult !== undefined);
-      text.textContent = `${n.text} Ascended: each level past ${n.maxLevel}, ${steps.map((m) => `${STAT_LABEL[m.key]} ×${m.mult!.toFixed(2)}`).join(', ')}.`;
+      text.textContent = `${n.text} ${this.src.beyond.past}: each level past ${n.maxLevel}, ${steps.map((m) => `${STAT_LABEL[m.key]} ×${m.mult!.toFixed(2)}`).join(', ')}.`;
     }
     const note: HTMLElement[] = [];
     if (off) {
@@ -632,6 +641,7 @@ export class ForgeView extends WebView<ForgeNodeDef> {
       sealLine: (n) => (n.type === 'mastery'
         ? `Sealed — light ${n.name} in the Crown.`
         : `Sealed — defeat ${n.sealed ? BOSS_BY_ID[n.sealed].name : 'its boss'}.`),
+      beyond: { verb: 'Temper', past: 'Tempered', waiting: `tempers once ${BOSS_BY_ID[TEMPER_BOSS].name} falls` },
     });
   }
 }
@@ -650,6 +660,7 @@ export class StarsView extends WebView<StarNodeDef> {
       rootIcon: 'star-swirl',
       branchName: (b) => CONSTELLATION_NAME[b],
       sealLine: () => 'Sealed.',
+      beyond: { verb: 'Ascend', past: 'Ascended', waiting: 'ascends once every star is lit' },
     });
   }
 }

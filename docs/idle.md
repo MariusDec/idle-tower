@@ -74,8 +74,11 @@ off the list. Never mid-run.
 - **Farm rate.** `bankRun` records shards per minute of every run of at
   least 60 s; the farm rate is the median of the last five.
 - **Earnings.** `rate × minutes away × efficiency`, with time capped by the
-  tier: 25% for 2 h, 25% for 4 h, 40% for 8 h (after the Prism), 60% for
-  12 h (after Forgeheart). Absences under 60 s pay nothing.
+  tier: 15% for 2 h, 15% for 4 h, 20% for 8 h (after the Prism), 25% for
+  12 h (after Forgeheart). Absences under 60 s pay nothing. Kept low on
+  purpose: at 60% a night away bought a late Forge ring out whole, and a
+  player who sat out did as well as one who farmed. Time away tops the
+  Forge up; tempering ([forge.md](forge.md)) is where farming goes.
 - **Shards only.** No simulated combat, no bosses, relics or feats offline.
 - **When.** On boot and on every return from an absence (`App#absent`):
   the page shown again, the native resume, or a stalled frame. The

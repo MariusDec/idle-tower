@@ -57,7 +57,7 @@ describe('Engineering automation (§6.2)', () => {
     const b = offlineEarnings(two, away)!;
     expect(a.paid).toBe(2 * 3600);
     expect(b.paid).toBe(4 * 3600);
-    expect(b.shards).toBe(Math.floor(60 * 240 * 0.25));
+    expect(b.shards).toBe(Math.floor(60 * 240 * BALANCE.offline.tiers[1].efficiency));
     expect(b.shards).toBeGreaterThan(a.shards);
   });
 

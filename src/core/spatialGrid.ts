@@ -90,6 +90,25 @@ export class SpatialGrid<T extends GridItem> {
     return out;
   }
 
+  /**
+   * The non-empty cells that `query` would scan for this circle, in the same
+   * order, appended to `out`: for a hot caller that runs its own distance
+   * test and would only walk `query`'s result again. Cells may hold the dead.
+   */
+  cellsNear(x: number, y: number, radius: number, out: (readonly T[])[]): (readonly T[])[] {
+    const minCx = Math.floor((x - radius) / this.cellSize);
+    const maxCx = Math.floor((x + radius) / this.cellSize);
+    const minCy = Math.floor((y - radius) / this.cellSize);
+    const maxCy = Math.floor((y + radius) / this.cellSize);
+    for (let cx = minCx; cx <= maxCx; cx++) {
+      for (let cy = minCy; cy <= maxCy; cy++) {
+        const bucket = this.cells.get(this.key(cx, cy));
+        if (bucket !== undefined && bucket.length > 0) out.push(bucket);
+      }
+    }
+    return out;
+  }
+
   clear(): void {
     for (const k of this.used) {
       const bucket = this.cells.get(k);

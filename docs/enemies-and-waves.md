@@ -47,6 +47,17 @@ Reaching a wave pays the last one's bonus (`waveBonus`). Wave 20 holds
 until its boss falls; the first overtime wave follows 3 s later, its HP
 growing ×1.25 and its shards ×1.12 a wave until the tower falls.
 
+**A stalled wave enrages its horde.** Overtime only ends a run while
+waves keep coming. A field full of bodies the tower can't kill (Menders
+healing a crowd of overtime HP) holds the next spawns back, the wave
+never finishes, HP stops growing, and a tower that also can't be hurt
+would wait forever, idle or not. So past the boss (and in the Abyss), a
+wave held back by the full field with no spawn placed for
+`BALANCE.overtime.stallAfter` (30 s) enrages its horde (`hordeEnrage`):
+every hit on the tower grows ×1.25 each further 5 s (`hordeFury`) until
+the wall falls. A spawn getting in (the tower made room) restarts the
+clock. Before the boss a full field is only a hard wave.
+
 **Champions and trophies (N4).** Every fifth overtime wave (25, 30, …;
 `isChampionWave`, never in the Abyss) brings a **Champion**: an elite with
 `BALANCE.champions` × an elite's HP and shards, in its region's boss

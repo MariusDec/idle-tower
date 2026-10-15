@@ -50,7 +50,8 @@ import { chooseTrial, trialWon, trialsOpen } from '../src/meta/trials';
 import { Rng } from '../src/core/rng';
 import { formatDuration } from '../src/core/format';
 import type { BranchId } from '../src/content/types';
-import { playRun } from './play';
+import { FAST_STEPS, PLAY_DT, playRun } from './play';
+import { SIM_DT } from '../src/app/loop';
 import { shop } from './shop';
 import { CHECKIN_EVERY, SESSION, farmRatio, runIdle } from './idle';
 import { runAct2, type Act2Report } from './act2';
@@ -436,7 +437,8 @@ const ACT2_STARTS = 'node_modules/.tmp/act2-starts';
 
 /** Act 1 to the Blight's fall (or the saved fall, with `reuse`), then `hours` of Act 2 (§9). */
 export function act2Verdict(seed: number, hours: number, reuse = false): Act2Verdict {
-  const file = `${ACT2_STARTS}/seed-${seed}.json`;
+  // A --fast start is kept apart, so a full reading never reuses one.
+  const file = `${ACT2_STARTS}/seed-${seed}${PLAY_DT !== SIM_DT ? '-fast' : ''}.json`;
   let start: { at: number; profile: Profile } | null = null;
   if (reuse && existsSync(file)) {
     // Saved by an older build, perhaps: walked up the ladder like any save.
@@ -508,6 +510,7 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
 }
 
 async function main(): Promise<void> {
+  if (PLAY_DT !== SIM_DT) console.log(`--fast: the bots step ${FAST_STEPS} game steps at a time; medians, not seeds, compare with a full reading\n`);
   const hours = Number(arg('hours', '1'));
   const seed = Number(arg('seed', '1'));
   const seeds = Number(arg('seeds', '0'));

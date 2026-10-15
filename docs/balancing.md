@@ -33,7 +33,7 @@ P8's heat 1–10 at the frontier within the target time
 | `inspect.ts` | one seeded run (or many) as a per-wave table: level, DPS, HP pool, clear time, carried bodies, damage taken, damage by weapon (`--by-weapon` over many); Forge presets `none`, `arsenal`, `ring1`–`ring6`, `all`; any region |
 | `arsenal.ts` | I4: the bot's weapon picks in each region over many seeds, with Act 1's cards (none a Constellation lights); `--keystones` (T4): each keystone against none in Regions 3–6, the next ring bought out, with a verdict: a keystone that only gains is free, one that only loses a trap |
 | `calibrate.ts` | T2: the scorer's `damageDps` against what the sim lands, every weapon at L1/L3/L5 and evolved; fails past 25% (`npm run calibrate`, `tests/calibration.test.ts`) |
-| `parallel.ts` | seeds in worker threads, one per core: the pacing gates read 8 seeds in about the time one took (12 h × 8 ≈ 100 s) |
+| `parallel.ts` | seeds in worker threads, one per core, with the tool's own flags: the pacing gates read 8 seeds in about the time the slowest one took |
 
 Times in the reports are the player's wall clock: sim time over the game
 speed, plus the moments a person spends on drafts and between runs.
@@ -46,6 +46,13 @@ survival gain, counters, recipe progress and slot fill. The same scorer is the i
 bots' policy, so improving the bot improves idle play.
 
 ## Tuning practice
+
+- `--fast` (pacing, `--idle`, `--act2`) steps the bots three game steps
+  at a time, for about half the time. Each seed then plays a slightly
+  different game, but on 2.5 h × 8 the medians held within seed noise
+  (Gatekeeper 32:09 → 31:00, Bog Mother 68:16 → 70:06, Blight 115:30 →
+  115:16; I3 and I6 unchanged). Use it to look; read a gate without it.
+  `--act2 --fast` keeps its saved starts apart from the full ones.
 
 - Change one number, rerun the report that reads it, compare per profile
   (not only the median): the seeds are deterministic, so a profile that

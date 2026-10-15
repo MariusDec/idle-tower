@@ -10,6 +10,14 @@ import { mitigate } from './damage';
  * for Thorns and Aegis's reflection; null for anything at range. `by` is
  * what kind of harm it was, for the results' tally (U5).
  */
+/** How much harder a stalled wave's horde hits (`BALANCE.overtime.stallAfter`): 1 until it enrages. */
+export function hordeFury(run: RunState): number {
+  const cur = run.current;
+  if (!cur?.stalled || cur.heldSince === undefined) return 1;
+  const O = BALANCE.overtime;
+  return Math.pow(O.stallGrowth, Math.floor((run.time - cur.heldSince - O.stallAfter) / O.stallEvery) + 1);
+}
+
 export function hurtTower(run: RunState, raw: number, x: number, y: number, source: Enemy | null, by: HurtBy): number {
   const t = run.tower;
   if (run.time < t.invulnUntil) {
@@ -19,7 +27,7 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
     if (source && ult.id === 'aegis') damageEnemy(run, source, raw * ult.reflect, false, 'reflect');
     return 0;
   }
-  let amount = mitigate(raw, run.stats.armor);
+  let amount = mitigate(raw * hordeFury(run), run.stats.armor);
   // Rampart (§11.4): no contact hit takes more than a slice of the wall.
   if (source && run.behaviours.rampart) amount = Math.min(amount, run.stats.maxHp * BALANCE.behaviours.rampartCap);
   // Warding Salt (§11.5): what strikes the wall is slowed.

@@ -54,6 +54,14 @@ export const BALANCE = {
   forge: {
     /** Each further level of a multi-level node costs this much more than the last. */
     levelGrowth: 1.7,
+    /**
+     * Tempering: once the Gatekeeper falls, a minor whose stat is a
+     * percentage goes on past its last level, the Act 1 sink past the ring
+     * (offline pay used to fill a ring in one check-in, then had nothing to
+     * buy). Each such level costs `cost` times the curve's next and
+     * multiplies the stat by `1 + share × its percentage`, compounding.
+     */
+    temper: { cost: 2, share: 0.5 },
   },
   /** Numbers behind the Forge's behaviour notables (§11.4). */
   behaviours: {
@@ -345,6 +353,16 @@ export const BALANCE = {
   overtime: {
     hpGrowth: 1.25,
     shardGrowth: 1.12,
+    /**
+     * A wave the full field holds back (`maxEnemies`) can stall a run for
+     * good: nothing more spawns, so overtime stops growing, and a tower that
+     * neither kills nor falls would wait forever. Held this many seconds,
+     * the horde enrages: its hits on the tower grow `stallGrowth` for every
+     * further `stallEvery` s, as a boss's slams do, so the run ends.
+     */
+    stallAfter: 30,
+    stallEvery: 5,
+    stallGrowth: 1.25,
   },
   /** Pacts (§9): heat, and what it pays. */
   pacts: {
@@ -430,13 +448,17 @@ export const BALANCE = {
     /** A shot that lives this long without landing fizzles. */
     life: 6,
   },
-  /** Offline (§6.3). Efficiency and cap per tier, I–IV; P6 ships I–III, P7's regions bring IV. */
+  /**
+   * Offline (§6.3). Efficiency and cap per tier, I–IV; P6 ships I–III, P7's
+   * regions bring IV. Kept low: time away tops the Forge up, it doesn't
+   * fill it (a night at 60% bought a late ring out whole).
+   */
   offline: {
     tiers: [
-      { efficiency: 0.25, capHours: 2 },
-      { efficiency: 0.25, capHours: 4 },
-      { efficiency: 0.4, capHours: 8 },
-      { efficiency: 0.6, capHours: 12 },
+      { efficiency: 0.15, capHours: 2 },
+      { efficiency: 0.15, capHours: 4 },
+      { efficiency: 0.2, capHours: 8 },
+      { efficiency: 0.25, capHours: 12 },
     ],
     /** Absences shorter than this pay nothing. */
     minSeconds: 60,

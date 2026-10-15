@@ -2,7 +2,7 @@ import { BALANCE } from '../content/balance';
 import type { AutomationId, CardItemId } from '../content/types';
 import { frontier, selectedFrame } from './collection';
 import { FORGE_BY_ID } from '../content/forge';
-import { buyNode, isBuyable, levelOf, ownedNodes } from './forge';
+import { FORGE_WEB, buyNode, isBuyable, levelOf, ownedNodes } from './forge';
 import type { Profile } from './profile';
 import type { RunSummary } from './results';
 
@@ -160,7 +160,7 @@ export function togglePin(profile: Profile, id: string): boolean {
     profile.wishlist.splice(i, 1);
     return true;
   }
-  if (profile.wishlist.length >= WISHLIST_MAX || levelOf(profile, id) >= node.maxLevel) return false;
+  if (profile.wishlist.length >= WISHLIST_MAX || levelOf(profile, id) >= FORGE_WEB.maxOf(profile, node)) return false;
   profile.wishlist.push(id);
   return true;
 }
@@ -176,7 +176,7 @@ export function foremanBuy(profile: Profile): string[] {
   if (profile.wishlist.length === 0 || !automations(profile).has('foreman')) return [];
   const bought: string[] = [];
   for (;;) {
-    profile.wishlist = profile.wishlist.filter((id) => FORGE_BY_ID[id] && levelOf(profile, id) < FORGE_BY_ID[id].maxLevel);
+    profile.wishlist = profile.wishlist.filter((id) => FORGE_BY_ID[id] && levelOf(profile, id) < FORGE_WEB.maxOf(profile, FORGE_BY_ID[id]));
     const next = profile.wishlist.find((id) => isBuyable(profile, id));
     if (next === undefined || !buyNode(profile, next)) return bought;
     bought.push(next);

@@ -441,6 +441,14 @@ export interface WaveState {
   doneAt: number | null;
   /** Bodies this wave has placed that are still alive. */
   alive: number;
+  /**
+   * Run time the full field began holding this overtime wave's spawns back
+   * with none placed since; absent while it has room or a spawn gets in. Held long enough, the horde enrages
+   * (`BALANCE.overtime.stallAfter`).
+   */
+  heldSince?: number;
+  /** True once the held wave's horde has enraged (its event sent). */
+  stalled?: boolean;
 }
 
 /**
@@ -500,6 +508,7 @@ export type SimEvent =
   | { kind: 'submerge'; x: number; y: number }
   | { kind: 'emerge'; x: number; y: number }
   | { kind: 'enrage' }
+  | { kind: 'hordeEnrage' }
   | { kind: 'bossKill'; boss: BossId; first: boolean; x: number; y: number }
   | { kind: 'aegis'; seconds: number }
   /** Aegis turned a hit away. */

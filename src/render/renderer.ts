@@ -273,6 +273,10 @@ export class Renderer {
           this.showBanner('Enraged', 'It has had enough. It comes for the wall.', 'blood');
           this.camera.shake(12);
           break;
+        case 'hordeEnrage':
+          this.showBanner('The horde rages', 'The field is full. Every hit grows until the wall falls.', 'blood');
+          this.camera.shake(8);
+          break;
         case 'bossKill':
           // The killing blow (§7.3): a shatter, a shard fountain, the banner.
           this.effects.spray(ev.x, ev.y, FX.blood, 60, 420, 7);

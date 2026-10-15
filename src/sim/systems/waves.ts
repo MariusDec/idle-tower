@@ -437,11 +437,30 @@ export function tickWaves(run: RunState, region: RegionDef): void {
     return;
   }
   const elapsed = run.time - cur.startedAt;
+  let held = false;
+  let placed = false;
   while (cur.next < cur.spawns.length && cur.spawns[cur.next].at <= elapsed) {
     // The live-enemy ceiling holds spawns back rather than dropping them.
-    if (run.enemies.length >= BALANCE.maxEnemies) break;
+    if (run.enemies.length >= BALANCE.maxEnemies) {
+      held = true;
+      break;
+    }
     place(run, region, cur, cur.spawns[cur.next]);
     cur.next++;
+    placed = true;
+  }
+  // Past the boss (or down in the Abyss), a wave held back with no spawn
+  // placed for too long enrages its horde, so a run that can neither win
+  // nor fall still ends. A tower still killing makes room: no stall.
+  if (held && !placed && (region.abyss || cur.n > BOSS_WAVE)) {
+    cur.heldSince ??= run.time;
+    if (!cur.stalled && run.time - cur.heldSince >= BALANCE.overtime.stallAfter) {
+      cur.stalled = true;
+      run.events.push({ kind: 'hordeEnrage' });
+    }
+  } else if (cur.heldSince !== undefined) {
+    delete cur.heldSince;
+    delete cur.stalled;
   }
   if (cur.doneAt === null && cur.next >= cur.spawns.length) cur.doneAt = run.time;
   // The next wave may be on the next floor of the Abyss: its own region.
