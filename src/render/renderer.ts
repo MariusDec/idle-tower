@@ -87,6 +87,10 @@ export class Renderer {
   /** What the tower wears (N2), and the hub's mount: the profile's, set by the app. */
   private look: TowerLook = PLAIN_LOOK;
   private idle: readonly Mount[] = [{ id: 'arcane-bolt', level: 1, aim: IDLE_AIM }];
+  /** A setting or the run changed since the last frame drawn: the picture is stale. */
+  private dirty = true;
+  /** The camera's `version` the last frame was drawn at. */
+  private drawnView = -1;
 
   constructor(canvas: HTMLCanvasElement, host: HTMLElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
@@ -96,6 +100,7 @@ export class Renderer {
 
   setQuality(tier: QualityTier): void {
     this.tier = tier;
+    this.dirty = true;
     this.camera.setDprCap(QUALITY[tier].dprCap);
     this.effects.setQuality(tier);
   }
@@ -109,6 +114,7 @@ export class Renderer {
   /** The player's motion settings (reduced motion, screen shake). */
   setMotion(reduced: boolean, shake: boolean): void {
     this.reducedMotion = reduced;
+    this.dirty = true;
     this.camera.setMotion(reduced, shake);
   }
 
@@ -119,6 +125,7 @@ export class Renderer {
   setPalette(mode: PaletteMode): void {
     if (mode === this.palette) return;
     this.palette = mode;
+    this.dirty = true;
     setPaletteMode(mode);
     this.enemies.clear();
   }
@@ -126,6 +133,7 @@ export class Renderer {
   /** The settings' text size, applied to text painted on the canvas. */
   setTextScale(scale: number): void {
     this.textScale = scale;
+    this.dirty = true;
     this.effects.setTextScale(scale);
   }
 
@@ -135,11 +143,22 @@ export class Renderer {
    */
   setTower(look: TowerLook, weapon: WeaponId): void {
     this.look = look;
+    this.dirty = true;
     this.idle = [{ id: weapon, level: Math.min(5, look.tier), aim: IDLE_AIM }];
   }
 
   get quality(): QualityTier {
     return this.tier;
+  }
+
+  /**
+   * True when another frame would draw the same picture: nothing set since
+   * the last one, the camera at rest, no effects or banner left, no fall
+   * playing. The app stops drawing a stopped arena once this holds.
+   */
+  get settled(): boolean {
+    return !this.dirty && this.camera.version === this.drawnView && this.camera.still
+      && this.effects.idle && this.banner === null && (this.fallT === null || this.fallDone);
   }
 
   /** True once the fall animation has played out. */
@@ -155,6 +174,7 @@ export class Renderer {
   private attach(run: RunState | null): void {
     if (run === this.lastRun) return;
     this.lastRun = run;
+    this.dirty = true;
     this.effects.clear();
     this.fallT = null;
     this.banner = null;
@@ -508,6 +528,8 @@ export class Renderer {
       this.drawVignette(ctx, run);
     }
     this.drawBanner(ctx, realDt);
+    this.dirty = false;
+    this.drawnView = this.camera.version;
   }
 
   /**

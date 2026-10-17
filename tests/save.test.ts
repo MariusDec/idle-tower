@@ -5,7 +5,7 @@ import {
   clearRunSnapshot, loadProfile, loadRunSnapshot, saveProfile, saveRunSnapshot, snapshotRun,
 } from '../src/meta/save';
 import { buildRunConfig } from '../src/meta/runConfig';
-import { createRun, step } from '../src/sim/run';
+import { applyInput, createRun, step } from '../src/sim/run';
 import type { RunState } from '../src/sim/state';
 import { SIM_DT } from '../src/app/loop';
 import { hashString } from '../src/core/rng';
@@ -290,6 +290,29 @@ describe('run snapshot (§12.4)', () => {
     expect(resumed).not.toBeNull();
     play(run, (r) => r.time > 120);
     play(resumed!, (r) => r.time > 120);
+    expect(hash(resumed!)).toBe(hash(run));
+  });
+
+  it('a snapshot taken mid-wave, right after a pick, resumes exactly too', async () => {
+    // Any step boundary will do (plans/android-gpu-crash.md §2): the run carries its own RNG.
+    const store = new MemorySaveStore();
+    const profile = newProfile(7);
+    profile.tutorial.firstDraft = true;
+    const run = createRun(buildRunConfig(profile), 41);
+    play(run, (r) => r.wave >= 2 && r.draft !== null);
+    expect(run.draft).not.toBeNull();
+    applyInput(run, { pick: 0 });
+    run.events.length = 0;
+    await saveRunSnapshot(snapshotRun(run, profile), store);
+    const resumed = await loadRunSnapshot(profile, store);
+    expect(resumed).not.toBeNull();
+    expect(hash(resumed!)).toBe(hash(run));
+    for (let i = 0; i < 3000 && !run.outcome; i++) {
+      step(run, SIM_DT, botInput(run, 'active'));
+      step(resumed!, SIM_DT, botInput(resumed!, 'active'));
+      run.events.length = 0;
+      resumed!.events.length = 0;
+    }
     expect(hash(resumed!)).toBe(hash(run));
   });
 

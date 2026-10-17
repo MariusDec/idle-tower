@@ -56,6 +56,8 @@ import { bindZoom } from '../ui/zoom';
 
 /** Autosave cadence (§12.4), on the wall clock. */
 const AUTOSAVE_SECONDS = 30;
+/** The least wall-clock time between two run snapshots taken for card picks. */
+const PICK_SNAPSHOT_MS = 2000;
 /** One press of the zoom buttons: this much closer, or further. */
 const ZOOM_STEP = 1.4;
 /**
@@ -95,6 +97,12 @@ export class App {
   /** True once the player touched the Opening: it no longer takes itself. */
   /** The wave the last run snapshot was taken at. */
   private snapshotWave = 0;
+  /** Wall-clock ms of the last run snapshot, whatever took it. */
+  private snapshotAt = 0;
+  /** A card was taken since the last snapshot: the next one is owed. */
+  private runDirty = false;
+  /** What `data-arena` on the stage says now: the CSS glows pause while stopped. */
+  private arena: 'stopped' | 'live' = 'live';
   /** Dev only: a sim speed that overrides the unlocked one. */
   private devSpeed: number | null = null;
   /** Writes go out in order, so a late snapshot never lands after its clear. */
@@ -377,6 +385,7 @@ export class App {
     this.newCards = [];
     this.opening = resumed ? 0 : this.run.pendingDrafts;
     this.snapshotWave = this.run.wave;
+    this.runDirty = false;
     this.slowMo = { left: 0, speed: 1 };
     this.draft.hide();
     this.loop.resetClock();
@@ -384,6 +393,8 @@ export class App {
     this.hud.setSpeed(maxSpeed(this.profile), runSpeed(this.profile));
     this.hud.setAutoUlt(automations(this.profile).has('auto-ult'), this.profile.settings.autoUlt);
     if (resumed) this.openPause(`The run resumes at wave ${resumed.wave}.`);
+    // A fresh run is covered at once, before wave 2: a Trial or a Pact cost something to enter.
+    else this.snapshot(this.run);
     const trial = this.run.trial ? TRIAL_BY_ID[this.run.trial] : null;
     if (trial) this.toasts.show(trial.icon, `Trial · ${trial.name}`, trial.text);
   }
@@ -452,6 +463,7 @@ export class App {
     const run = this.run;
     if (!run?.draft || this.paused || this.screen !== 'run') return;
     applyInput(run, { pick: index });
+    this.runDirty = true;
     if (!this.profile.tutorial.firstDraft) {
       this.profile.tutorial.firstDraft = true;
       this.loop.resetClock();
@@ -465,6 +477,7 @@ export class App {
     if (!run?.draft || this.paused || this.screen !== 'run') return;
     const from = run.events.length;
     applyInput(run, { takeAll: true });
+    this.runDirty = true;
     const seen = new Set(this.profile.seenCards);
     for (const ev of run.events.slice(from)) {
       if (ev.kind !== 'picked' || ev.card.kind === 'fallback' || seen.has(cardKey(ev.card))) continue;
@@ -478,6 +491,7 @@ export class App {
     const run = this.run;
     if (!run?.draft || this.paused || this.screen !== 'run') return;
     applyInput(run, { reroll: true });
+    this.runDirty = true;
   }
 
   /** Strike card `index` from the draft for this run (N1). */
@@ -485,6 +499,7 @@ export class App {
     const run = this.run;
     if (!run?.draft || this.paused || this.screen !== 'run') return;
     applyInput(run, { banish: index });
+    this.runDirty = true;
   }
 
   private castUltimate(): void {
@@ -506,9 +521,20 @@ export class App {
     // A new wave: snapshot on this step boundary (§12.4).
     if (run.wave > this.snapshotWave && !run.outcome) {
       this.snapshotWave = run.wave;
-      const snapshot = snapshotRun(run, this.profile);
-      this.write(() => saveRunSnapshot(snapshot));
+      this.snapshot(run);
     }
+  }
+
+  /**
+   * Serialise the run now and queue its write. Any step boundary will do,
+   * not only a wave start: the run carries its own RNG and input lands
+   * between steps, so a snapshot resumes exactly.
+   */
+  private snapshot(run: RunState): void {
+    this.snapshotAt = Date.now();
+    this.runDirty = false;
+    const snapshot = snapshotRun(run, this.profile);
+    this.write(() => saveRunSnapshot(snapshot));
   }
 
   private frame(alpha: number, realDt: number): void {
@@ -525,10 +551,18 @@ export class App {
     this.slowMo.left = Math.max(0, this.slowMo.left - realDt);
     this.tune(run);
     this.toasts.tick(realDt);
-    const t0 = performance.now();
-    this.renderer.render(run, alpha, realDt);
-    if (this.screen === 'run') this.measure(realDt, performance.now() - t0);
+    // A stopped arena draws until what still moves has finished, then rests
+    // the GPU until something changes (plans/android-gpu-crash.md §1).
+    const stopped = this.screen === 'run' && this.simSpeed() === 0;
+    this.setArena(stopped ? 'stopped' : 'live');
+    if (!(stopped && this.renderer.settled)) {
+      const t0 = performance.now();
+      this.renderer.render(run, alpha, realDt);
+      if (this.screen === 'run') this.measure(realDt, performance.now() - t0);
+    }
     if (this.screen === 'run' && run) {
+      // Cards taken since the last snapshot: one more, at most every couple of seconds.
+      if (this.runDirty && !run.outcome && now - this.snapshotAt >= PICK_SNAPSHOT_MS) this.snapshot(run);
       this.syncDraft(run, realDt);
       this.hud.update(run);
       this.hud.setZoomed(this.renderer.camera.zoomedIn, this.renderer.camera.atClose);
@@ -540,6 +574,13 @@ export class App {
     if (this.screen === 'results' && !this.modal.open) this.results.tick(realDt);
     this.sinceSave += realDt;
     if (this.sinceSave >= AUTOSAVE_SECONDS) void this.save();
+  }
+
+  /** Mark the stage stopped or live, touching the DOM only on a change. */
+  private setArena(arena: 'stopped' | 'live'): void {
+    if (arena === this.arena) return;
+    this.arena = arena;
+    this.els.stage.dataset.arena = arena;
   }
 
   /** The music's mood (§10.4): the hub's drift, a run's walk, a boss fight's churn. */
@@ -610,6 +651,7 @@ export class App {
     // the two, the snapshot is stale (its run count is behind) and is dropped
     // on boot, so the run is paid exactly once.
     void this.save();
+    this.runDirty = false;
     this.write(() => clearRunSnapshot());
     // A rolling backup at every run's end (U12): the last few profiles, should a write go wrong.
     const kept = this.profile;
@@ -812,6 +854,8 @@ export class App {
     // A hidden page's frames are not real frames: the scaler's window is dropped.
     this.scaler.reset();
     if (this.screen === 'run' && !this.settings.open) this.openPause();
+    // Android may kill a backgrounded app outright: the run is kept as it stands.
+    if (this.screen === 'run' && this.run && !this.run.outcome) this.snapshot(this.run);
     return this.save();
   }
 

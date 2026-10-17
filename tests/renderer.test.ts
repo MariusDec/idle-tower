@@ -1,0 +1,68 @@
+import { describe, expect, it } from 'vitest';
+import { Renderer } from '../src/render/renderer';
+import { PLAIN_LOOK } from '../src/render/painters/tower';
+
+/**
+ * The renderer reports a still picture (plans/android-gpu-crash.md §1a), so
+ * the app can stop drawing a stopped arena. A context whose every method is
+ * a no-op stands in for the canvas: only the flag logic is under test.
+ */
+function stubContext(): CanvasRenderingContext2D {
+  const noop: unknown = new Proxy(function () {}, {
+    get: (_t, key) => (key === Symbol.toPrimitive ? () => 0 : noop),
+    apply: () => noop,
+    set: () => true,
+  });
+  return noop as CanvasRenderingContext2D;
+}
+
+function stubCanvas(w: number, h: number): HTMLCanvasElement {
+  const ctx = stubContext();
+  return {
+    clientWidth: w,
+    clientHeight: h,
+    width: 0,
+    height: 0,
+    getBoundingClientRect: () => ({ width: w, height: h }),
+    getContext: () => ctx,
+  } as unknown as HTMLCanvasElement;
+}
+
+/** The hub backdrop drawn until the camera has eased in and nothing is left moving. */
+function settledRenderer(): Renderer {
+  const canvas = stubCanvas(375, 812);
+  const r = new Renderer(canvas, canvas as unknown as HTMLElement);
+  for (let i = 0; i < 200; i++) r.render(null, 1, 0.05);
+  return r;
+}
+
+describe('renderer settled', () => {
+  it('settles once a frame is drawn with nothing moving', () => {
+    expect(settledRenderer().settled).toBe(true);
+  });
+
+  const setters: [string, (r: Renderer) => void][] = [
+    ['setQuality', (r) => r.setQuality('low')],
+    ['setPalette', (r) => r.setPalette('safe')],
+    ['setTower', (r) => r.setTower(PLAIN_LOOK, 'arcane-bolt')],
+    ['setTextScale', (r) => r.setTextScale(1.2)],
+    ['setMotion', (r) => r.setMotion(true, false)],
+  ];
+  for (const [name, set] of setters) {
+    it(`${name} makes the picture stale until the next frame`, () => {
+      const r = settledRenderer();
+      set(r);
+      expect(r.settled).toBe(false);
+      r.render(null, 1, 0.05);
+      expect(r.settled).toBe(true);
+    });
+  }
+
+  it('a shake keeps it drawing until the shake is done', () => {
+    const r = settledRenderer();
+    r.camera.shake(10);
+    expect(r.settled).toBe(false);
+    for (let i = 0; i < 20; i++) r.render(null, 1, 0.05);
+    expect(r.settled).toBe(true);
+  });
+});

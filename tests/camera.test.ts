@@ -163,6 +163,55 @@ describe('the camera follows the light, or the player', () => {
   });
 });
 
+describe('a still camera (plans/android-gpu-crash.md §1a)', () => {
+  const settle = (cam: Camera): void => {
+    for (let i = 0; i < 200; i++) cam.update(0.05);
+  };
+  const fresh = (): Camera => {
+    const cam = new Camera(stubCanvas(375, 812));
+    cam.setLight(700, PHONE_OVAL, true);
+    settle(cam);
+    return cam;
+  };
+
+  it('is still once settled, and not while a shake plays', () => {
+    const cam = fresh();
+    expect(cam.still).toBe(true);
+    cam.shake(10);
+    expect(cam.still).toBe(false);
+    settle(cam);
+    expect(cam.still).toBe(true);
+  });
+
+  it('is not still while a zoom punch plays', () => {
+    const cam = fresh();
+    cam.zoomPunch();
+    expect(cam.still).toBe(false);
+    settle(cam);
+    expect(cam.still).toBe(true);
+  });
+
+  it('is not still while easing toward a new framing or light', () => {
+    const cam = fresh();
+    cam.setLight(1100, PHONE_OVAL, true);
+    expect(cam.still).toBe(false);
+    settle(cam);
+    expect(cam.still).toBe(true);
+    cam.zoomBy(2);
+    expect(cam.still).toBe(false);
+    settle(cam);
+    expect(cam.still).toBe(true);
+  });
+
+  it('bumps its version on a pinch, which lands at once', () => {
+    const cam = fresh();
+    const v = cam.version;
+    cam.zoomBy(1.5, true);
+    expect(cam.still).toBe(true);
+    expect(cam.version).toBeGreaterThan(v);
+  });
+});
+
 describe('the light (camera-and-fog §3)', () => {
   it('is never less than its base, and always past range by the margin', () => {
     for (const range of [200, 380, 600, 1000, 2400]) {

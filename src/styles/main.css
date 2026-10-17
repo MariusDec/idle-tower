@@ -1363,6 +1363,14 @@ body {
 :root[data-motion='reduce'] .draft-card-evolution .draft-card-icon,
 :root[data-motion='reduce'] .draft-card-fusion .draft-card-icon { animation: none; }
 
+/* A stopped arena rests the GPU (plans/android-gpu-crash.md §1c): the
+   box-shadow glows repaint every frame, so they hold where they are. */
+[data-arena='stopped'] .hud-ult.is-ready,
+[data-arena='stopped'] .draft-card-evolution .draft-card-icon,
+[data-arena='stopped'] .draft-card-fusion .draft-card-icon {
+  animation-play-state: paused;
+}
+
 .draft-card-name {
   margin: 0;
   font-family: var(--font-display);

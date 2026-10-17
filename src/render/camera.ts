@@ -147,6 +147,8 @@ export class Camera {
   private framing: number | null = null;
   /** False on screens with no run (the hub): the framing waits for the next run. */
   private framingOn = false;
+  /** Bumped whenever the view transform changes: a pinch, an ease step, a resize. */
+  private viewVersion = 0;
 
   /** Fired after the backing store has been resized. */
   onResize: ((view: ViewTransform) => void) | null = null;
@@ -190,6 +192,16 @@ export class Camera {
   /** The player's framing, or null while the camera follows the light. */
   get userFraming(): number | null {
     return this.framing;
+  }
+
+  /** Counts changes to the view transform; the renderer redraws when it moves. */
+  get version(): number {
+    return this.viewVersion;
+  }
+
+  /** True when nothing moves the view on its own: no shake, no punch, no ease left. */
+  get still(): boolean {
+    return this.shakeTime === 0 && this.punchTime === 0 && this.view.extent === this.target();
   }
 
   /** True while the view is closer than fully out. */
@@ -262,6 +274,7 @@ export class Camera {
     if (extent === this.view.extent) return;
     const t = this.view;
     this.view = makeViewTransform(t.cssWidth, t.cssHeight, t.dpr, this.dprCap, extent);
+    this.viewVersion++;
   }
 
   /**
@@ -367,6 +380,7 @@ export class Camera {
       && next.scale === prev.scale
     ) return;
     this.view = next;
+    this.viewVersion++;
     this.applyBackingSize();
     this.onResize?.(next);
   }

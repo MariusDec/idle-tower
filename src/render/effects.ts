@@ -109,6 +109,12 @@ export class Effects {
     this.textScale = scale;
   }
 
+  /** True when nothing is left to animate. */
+  get idle(): boolean {
+    return this.particles.length === 0 && this.rings.length === 0 && this.arcs.length === 0
+      && this.motes.length === 0 && this.numbers.length === 0;
+  }
+
   clear(): void {
     this.particles.length = 0;
     this.rings.length = 0;
