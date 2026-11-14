@@ -53,6 +53,9 @@ export class Hud {
   private readonly zoomIn: HTMLButtonElement;
   private readonly zoomOut: HTMLButtonElement;
   private readonly zoomFit: HTMLButtonElement;
+  private readonly storedChip: HTMLElement;
+  private readonly stored: HTMLElement;
+  private readonly storedFill: HTMLElement;
   /** The build as last drawn (`buildKey`), so the strip redraws only when it changes. */
   private buildDrawn = '';
 
@@ -71,8 +74,12 @@ export class Hud {
         </div>
         <div class="hud-row hud-meta">
           <span class="hud-region"></span>
-          <span class="hud-shards" aria-label="Shards this run">${iconMarkup('crystal-cluster')}<span class="hud-shards-n">0</span></span>
+          <span class="hud-shards-group">
+            <span class="hud-stored-chip" hidden></span>
+            <span class="hud-shards" aria-label="Shards this run">${iconMarkup('crystal-cluster')}<span class="hud-shards-n">0</span></span>
+          </span>
         </div>
+        <div class="hud-stored" role="meter" aria-label="Stored Light" aria-valuemin="0" aria-valuemax="100" hidden><div class="hud-stored-fill"></div></div>
         <div class="hud-boss" hidden>
           <div class="hud-row"><span class="hud-boss-name"></span><span class="hud-boss-pips"></span></div>
           <div class="hud-boss-bar" role="meter" aria-label="Boss health"><div class="hud-boss-fill"></div></div>
@@ -112,6 +119,9 @@ export class Hud {
     this.bossFill = this.root.querySelector('.hud-boss-fill')!;
     this.bossPips = this.root.querySelector('.hud-boss-pips')!;
     this.build = this.root.querySelector('.hud-build')!;
+    this.storedChip = this.root.querySelector('.hud-stored-chip')!;
+    this.stored = this.root.querySelector('.hud-stored')!;
+    this.storedFill = this.root.querySelector('.hud-stored-fill')!;
     this.zoomOut = this.root.querySelector('.hud-zoom-out')!;
     this.zoomFit = this.root.querySelector('.hud-zoom-fit')!;
     this.zoomIn = this.root.querySelector('.hud-zoom-in')!;
@@ -149,6 +159,29 @@ export class Hud {
     this.auto.setAttribute('aria-pressed', String(on));
     setAriaLabel(this.auto, on ? 'Autocaster on' : 'Autocaster off');
     toggleClass(this.auto, 'is-on', on);
+  }
+
+  /**
+   * Stored Light (plans/late-game/01 §2): a chip before the shards, lit at
+   * the played rate while the wave counts as played and dimmed to the
+   * hands-off rate while it doesn't, and a gauge draining as the run's bonus
+   * is reserved against the pool. Both hidden while there is no pool.
+   */
+  setStored(frac: number, rate: number, left: number, played: boolean): void {
+    const on = rate > 0 && (left > 0 || frac > 0);
+    this.storedChip.hidden = !on;
+    this.stored.hidden = !on;
+    if (!on) return;
+    setText(this.storedChip, `×${rate}`);
+    toggleClass(this.storedChip, 'is-played', played);
+    setAriaLabel(this.storedChip, played ? `Stored Light ×${rate}: playing` : `Stored Light ×${rate}: left alone`);
+    const pct = Math.max(0, Math.min(1, frac));
+    setStyle(this.storedFill, 'transform', `scaleX(${pct.toFixed(3)})`);
+    const now = String(Math.round(pct * 100));
+    if (this.stored.getAttribute('aria-valuenow') !== now) {
+      this.stored.setAttribute('aria-valuenow', now);
+      this.stored.setAttribute('aria-valuetext', `${formatNumber(Math.floor(left))} left`);
+    }
   }
 
   /**

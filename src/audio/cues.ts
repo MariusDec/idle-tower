@@ -216,6 +216,18 @@ export class Cues {
     this.synth.tone({ freq: 1760, type: 'sine', duration: 0.3, volume: 0.08, delay: 0.07 });
   }
 
+  /** A welcome-back that stored Stored Light (plans/late-game/01): a low, slow swell. */
+  storedSwell(): void {
+    this.synth.tone({ freq: 196, type: 'sine', duration: 0.9, volume: 0.08 });
+    this.synth.tone({ freq: 294, type: 'sine', duration: 0.8, volume: 0.06, delay: 0.15 });
+  }
+
+  /** Stored Light ran dry mid-run: a short fall. */
+  storedDry(): void {
+    this.synth.tone({ freq: 440, type: 'triangle', duration: 0.12, volume: 0.07 });
+    this.synth.tone({ freq: 330, type: 'triangle', duration: 0.2, volume: 0.06, delay: 0.09 });
+  }
+
   /** A Forge purchase (§10.4): two rising notes. */
   purchase(): void {
     this.synth.tone({ freq: 600, type: 'triangle', duration: 0.08, volume: 0.15 });

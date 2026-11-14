@@ -24,7 +24,8 @@ and `lastSeen` for offline, the ceremony owed, the Tactician's lists and
 its Never lists (`tacticsNever`, v9), the pacts and the Abyss record, the
 Foreman's `wishlist`, the Trials won (`trials`) and the one chosen for the
 next run (`trial`), relic-set progress (`sets`, v10), Boss Rush's record
-(`rush`) and the fusions found (`fusions`, v11), the next run's region and
+(`rush`) and the fusions found (`fusions`, v11), the Stored Light pool
+(`storedLight`, and `records.storedBurned`, v16), the next run's region and
 frame, the one-time lessons and the **settings**:
 
 | Setting | Values |
@@ -51,7 +52,7 @@ parse or migrate is never dropped silently: it is copied to
 ## The migration ladder
 
 `MIGRATIONS[n]` takes a raw object at version `n` to `n + 1`; `migrate`
-walks it to `PROFILE_VERSION` (15) and throws on a version from the future
+walks it to `PROFILE_VERSION` (16) and throws on a version from the future
 or a missing rung. Every rung has a fixture in `tests/save.test.ts`, and a
 test walks a v1 profile all the way up and checks it has every field a new
 profile has, settings included.
@@ -72,6 +73,7 @@ profile has, settings included.
 | 12 → 13 | — | the explainers read (`tutorial.explained`) |
 | 13 → 14 | — | trims taken off (`trimsOff`) |
 | 14 → 15 | — | keystones switched off (`keystonesOff`) |
+| 15 → 16 | — | Stored Light (`storedLight`, `records.storedBurned`) |
 
 **Rules:** a rung writes literal values, never a call to today's defaults
 (those may change; the rung must not); and fields the player already set
@@ -82,7 +84,11 @@ win over the rung's defaults (`{ ...defaults, ...raw.settings }`).
 A snapshot carries its own `SNAPSHOT_VERSION` (no ladder: bump it whenever
 `RunState` changes shape, and an old snapshot is dropped), the profile it
 belongs to, and `records.runs` when it was taken. On boot a snapshot
-resumes the run at its wave boundary, paused. On run end the app writes the
+resumes the run at its wave boundary, paused. Beside the run the
+envelope may hold Stored Light's tally (`burn`: played and left-alone base
+shards, and the shards when the current wave began); it is optional, so a
+snapshot without it resumes with an empty tally and no version bump is
+needed. On run end the app writes the
 banked profile *before* clearing the snapshot: killed between the two
 writes, the snapshot's run count is behind the profile's and it is
 dropped, so a run is paid exactly once.

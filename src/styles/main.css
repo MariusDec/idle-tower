@@ -441,6 +441,47 @@ body {
   --icon-size: 16px;
 }
 
+/* Stored Light (plans/late-game/01): the rate chip before the shards, lit
+   while the wave counts as played, and the gauge under the meta row. */
+.hud-shards-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.hud-stored-chip {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  color: var(--stored-dim);
+  transition: color var(--dur-fast);
+}
+
+.hud-stored-chip.is-played {
+  color: var(--stored);
+}
+
+.hud-stored {
+  position: relative;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  overflow: hidden;
+}
+
+.hud-stored-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--stored);
+  transform-origin: left center;
+}
+
+.results-stored {
+  color: var(--stored);
+  font-size: var(--text-sm);
+  text-align: center;
+  margin: 0;
+}
+
 /* The speed toggle and the Autocaster switch (§6.2), centred between level and ultimate. */
 .hud-toggles {
   display: flex;

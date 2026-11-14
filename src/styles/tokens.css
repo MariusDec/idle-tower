@@ -247,6 +247,9 @@
   --warn: var(--amber-500);
   --bad: var(--rose-400);
   --critical: var(--fx-critical);
+  /* Stored Light (plans/late-game/01): a night kept back for runs to burn. Warm amber. */
+  --stored: var(--amber-300);
+  --stored-dim: var(--amber-700);
 
   /* Domain accents, used as the default for a `--x-color` a component sets
      per-item from the data tables. */

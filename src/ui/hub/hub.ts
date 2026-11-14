@@ -102,6 +102,8 @@ export class HubScreen {
   private readonly pactsBtn: HTMLButtonElement;
   private readonly starlightStat: HTMLElement;
   private readonly starlightN: HTMLElement;
+  private readonly storedStat: HTMLElement;
+  private readonly storedN: HTMLElement;
   private profile: Profile | null = null;
   private view: HubView = 'home';
 
@@ -123,6 +125,7 @@ export class HubScreen {
             <div><dt>Shards</dt><dd class="hub-shards">0</dd></div>
             <div><dt class="hub-best-label">Best wave</dt><dd class="hub-best">—</dd></div>
             <div class="hub-starlight" hidden><dt>Starlight</dt><dd class="hub-starlight-n">0</dd></div>
+            <div class="hub-stored" hidden><dt>Stored Light</dt><dd class="hub-stored-n">0</dd></div>
           </dl>
           <p class="hub-loadout"></p>
           <div class="hub-actions">
@@ -158,6 +161,8 @@ export class HubScreen {
     this.pactsBtn.addEventListener('click', () => this.setView('pacts'));
     this.starlightStat = q('.hub-starlight');
     this.starlightN = q('.hub-starlight-n');
+    this.storedStat = q('.hub-stored');
+    this.storedN = q('.hub-stored-n');
     const dock = q('.hub-dock');
     // The views pad by the dock's height; tabs wrapping to two rows grows it.
     // Only the part above the hub's own bottom padding, which the views already sit inside.
@@ -335,6 +340,8 @@ export class HubScreen {
     this.pactsBtn.hidden = !act2;
     this.starlightStat.hidden = !act2;
     setText(this.starlightN, formatNumber(p.starlight));
+    this.storedStat.hidden = p.storedLight <= 0;
+    setText(this.storedN, formatNumber(Math.floor(p.storedLight)));
     setText(this.pactsBtn, `Pacts · Heat ${heat(p)}`);
     const goal = p.records.runs > 0 ? hubGoal(p) : null;
     this.goal.hidden = goal === null;

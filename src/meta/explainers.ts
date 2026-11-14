@@ -11,6 +11,8 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
   switch (id) {
     case 'tower':
       return towerTier(profile) > 1 || trophyCount(profile) > 0 || trims(profile).length > 0;
+    case 'stored':
+      return profile.storedLight > 0 || profile.records.storedBurned > 0;
     case 'forge':
       return hubUnlocks(profile).forge;
     case 'map':

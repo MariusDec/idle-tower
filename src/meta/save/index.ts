@@ -1,6 +1,7 @@
 import { newProfile, type Profile } from '../profile';
 import { migrate, type RawProfile } from './migrate';
 import type { RunState } from '../../sim/state';
+import type { BurnTally } from '../storedLight';
 import { isProfile, isRunState } from './schema';
 import { getSaveStore, type SaveStore } from './stores';
 import { isSealed, seal, unseal } from './seal';
@@ -107,6 +108,22 @@ interface RunSnapshot {
    */
   runs: number;
   run: RunState;
+  /**
+   * Stored Light's tally so far (plans/late-game/01 §5), in the envelope so
+   * `RunState` and this version stay as they are. `waveShards` is
+   * `run.shards` when the current wave began. Optional: a snapshot from
+   * before it resumes with an empty tally.
+   */
+  burn?: SnapshotBurn;
+}
+
+/** The burn tally a snapshot carries, with the current wave's starting shards. */
+export type SnapshotBurn = BurnTally & { waveShards: number };
+
+/** A run to resume, and its Stored Light tally if the snapshot kept one. */
+export interface Resume {
+  run: RunState;
+  burn: SnapshotBurn | null;
 }
 
 /**
@@ -114,10 +131,11 @@ interface RunSnapshot {
  * wave start, on a step boundary, so a resumed run continues exactly as the
  * original would have from that wave; the write itself may land later.
  */
-export function snapshotRun(run: RunState, profile: Profile): string {
+export function snapshotRun(run: RunState, profile: Profile, burn?: SnapshotBurn): string {
   const snap: RunSnapshot = {
     version: SNAPSHOT_VERSION, profile: profile.createdAt, runs: profile.records.runs, run: { ...run, events: [] },
   };
+  if (burn) snap.burn = { engaged: burn.engaged, handsOff: burn.handsOff, waveShards: burn.waveShards };
   return seal(JSON.stringify(snap));
 }
 
@@ -127,6 +145,11 @@ export async function saveRunSnapshot(snapshot: string, store: SaveStore = getSa
 
 /** The run to resume, or null. A snapshot that doesn't fit is dropped, never fatal. */
 export async function loadRunSnapshot(profile: Profile, store: SaveStore = getSaveStore()): Promise<RunState | null> {
+  return (await loadResume(profile, store))?.run ?? null;
+}
+
+/** The run to resume with its Stored Light tally, or null; as `loadRunSnapshot`. */
+export async function loadResume(profile: Profile, store: SaveStore = getSaveStore()): Promise<Resume | null> {
   const raw = await store.get(RUN_KEY);
   if (raw === null) return null;
   try {
@@ -134,12 +157,18 @@ export async function loadRunSnapshot(profile: Profile, store: SaveStore = getSa
     if (snap.version !== SNAPSHOT_VERSION || snap.profile !== profile.createdAt) throw new Error('stale snapshot');
     if (snap.runs !== profile.records.runs) throw new Error('run already banked');
     if (!isRunState(snap.run)) throw new Error('not a run');
-    return snap.run;
+    return { run: snap.run, burn: isBurn(snap.burn) ? snap.burn : null };
   } catch (err) {
     console.warn('[save] run snapshot dropped', err);
     await store.remove(RUN_KEY);
     return null;
   }
+}
+
+function isBurn(raw: unknown): raw is SnapshotBurn {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const b = raw as Partial<SnapshotBurn>;
+  return typeof b.engaged === 'number' && typeof b.handsOff === 'number' && typeof b.waveShards === 'number';
 }
 
 export async function clearRunSnapshot(store: SaveStore = getSaveStore()): Promise<void> {

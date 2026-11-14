@@ -16,6 +16,7 @@ import { foremanBuy } from './automation';
 import { trialsOpen, winTrial, type TrialPaid } from './trials';
 import { nextGoal, type ForgeGoal } from './forge';
 import { recordFarm } from './offline';
+import { burnBonus, type BurnTally } from './storedLight';
 import { recipesOpen, recordFusions, recordRecipes } from './recipes';
 import { recordFloor, recordHeat, recordRush, type RushRecord, type StarRecord } from './pacts';
 import type { Profile } from './profile';
@@ -51,6 +52,24 @@ export function buildOf(run: RunState): BuildSummary {
   };
 }
 
+/**
+ * A reward only a present player can earn (I9, plans/late-game/01 §9.1).
+ * Each late-game plan adds its own kind; the hands-off bot must never see one.
+ */
+export type ActiveOnlyKind = 'stored-played';
+
+/** What Stored Light paid this run (plans/late-game/01 §2). */
+export interface StoredSummary {
+  /** Shards the pool paid, on top of the run's own. */
+  bonus: number;
+  /** The part of `bonus` played waves earned. */
+  engagedBonus: number;
+  /** The pool after the burn. */
+  left: number;
+  /** The multiple a played wave ran at. */
+  rate: number;
+}
+
 /** Everything the results screen shows (§4.6), resolved once at the run's end. */
 export interface RunSummary {
   outcome: 'fell' | 'retreat' | 'cleared';
@@ -67,8 +86,12 @@ export interface RunSummary {
   time: number;
   kills: number;
   level: number;
-  /** Whole shards banked. */
+  /** Whole shards the run itself earned: records, the farm rate and feats read these. */
   shards: number;
+  /** Stored Light's burn on top of `shards` (plans/late-game/01); null when the pool paid nothing. */
+  stored: StoredSummary | null;
+  /** Rewards only a present player earns (I9): empty for a run left alone. */
+  activeOnly: { kind: ActiveOnlyKind; amount: number }[];
   /** The breakdown behind `shards`, unrounded. */
   shardsFrom: { kills: number; waves: number; cards: number; elites: number; boss: number };
   /**
@@ -162,9 +185,13 @@ function unlockList(profile: Profile): Map<string, string> {
  * Bank a finished run into the profile and describe it (§4.6). The one place
  * a run's rewards reach the profile, for the app and the pacing bot alike.
  * `newCards` are the cards the app stamped NEW during the run; `speed` is
- * the game speed it ran at, for the offline farm rate (§6.3).
+ * the game speed it ran at, for the offline farm rate (§6.3). `tally` splits
+ * the run's base shards into played and left-alone waves, for Stored Light's
+ * burn (plans/late-game/01); without it the pool is left as it is.
  */
-export function bankRun(profile: Profile, run: RunState, newCards: readonly string[] = [], speed = 1): RunSummary {
+export function bankRun(
+  profile: Profile, run: RunState, newCards: readonly string[] = [], speed = 1, tally?: BurnTally,
+): RunSummary {
   const wave = run.outcome?.wave ?? run.wave;
   const time = run.outcome?.time ?? run.time;
   const shards = Math.floor(run.shards);
@@ -271,6 +298,16 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
   const newRecipes = recordRecipes(profile, run);
   const newFusions = recordFusions(profile, run);
   const feats = checkFeats(profile, run);
+  // Stored Light (plans/late-game/01): after everything that reads the run's
+  // own shards, before the Foreman, so a played run feeds the wishlist.
+  const burn = tally ? burnBonus(profile, tally) : null;
+  const activeOnly: RunSummary['activeOnly'] = [];
+  if (burn) {
+    profile.shards += burn.bonus;
+    profile.storedLight = burn.left;
+    r.storedBurned += burn.bonus;
+    if (burn.engagedBonus > 0) activeOnly.push({ kind: 'stored-played', amount: burn.engagedBonus });
+  }
   // The Foreman (N7) spends the run's shards on the wishlist before the Next line is read.
   const foreman = foremanBuy(profile);
   const after = unlockList(profile);
@@ -288,6 +325,8 @@ export function bankRun(profile: Profile, run: RunState, newCards: readonly stri
     kills: run.kills,
     level: run.level,
     shards,
+    stored: burn,
+    activeOnly,
     shardsFrom: { ...run.shardsFrom },
     records,
     newEnemies,

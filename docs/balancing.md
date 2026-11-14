@@ -15,6 +15,12 @@ verdict is the game's, not a model's (§13). Every tunable number lives in
 | I4 | no weapon takes over 40% of the bot's new-weapon picks; every weapon is taken somewhere | `npm run arsenal` |
 | I5 | active shards per hour ÷ idle shards per hour within 1.15–1.5 | the idle report, from Region 2 on |
 | I6 | no gap between reveals longer than 10 min in the first 2 h | the pacing report |
+| I7 | the engaged idle-schedule bot reaches the Blight with ≤ 0.70× the hands-off bot's screen time (median, 4 seeds) | `npm run pacing -- --idle --hours 12 --seeds 4` |
+| I8 | the hands-off bot finishes Act 1 in 5–10 days for every seed; median aims at 6–8 | the same |
+| I9 | no active-only reward (`RunSummary.activeOnly`, `tools/play.ts#ACTIVE_INPUTS`) reaches the hands-off bot | the same, and `tests/storedLight.test.ts` |
+
+I7–I9 come from `plans/late-game/01-stored-light.md` §9.1 and are shared by
+every late-game plan. I5 is read with the Stored Light pool zeroed.
 
 Phase gates add their own readings: P3's first wave 20 within 15–30 min,
 P8's heat 1–10 at the frontier within the target time
@@ -477,3 +483,27 @@ or move the gate. I6 past 2 h fails 0/8 (66–117 min gaps in Regions
 4–6): the late regions reveal too little between their bosses. Neither
 the idle report (I2, I5 over 4 seeds) nor Act 2 has been read with the
 offline cut and tempering.
+
+### Stored Light (`plans/late-game/01-stored-light.md`), 2026-11-14
+
+From Night Watch III the night's second part is stored, not paid, and
+only runs burn it (×5 / ×8 played, ×2 / ×2.5 left alone). The sim is
+untouched: the active bot's run table (`--hours 3 --seed 2`) is
+byte-identical to before.
+
+`npm run pacing -- --idle --hours 12 --seeds 4`:
+
+| | Reading | Want |
+|---|---|---|
+| I2 | median 6.0 d (6.5 5.5 6.0 5.5) PASS | 5–10 d |
+| I7 | engaged/hands-off screen time to the Blight, median **0.58** (0.50 0.56 0.58 0.58) PASS; engaged 125–142 min, hands-off 223–269 min | ≤ 0.70 |
+| I8 | every seed 5.5–6.5 d PASS; median 6.0 d, at the target's floor | 5–10 d, median 6–8 |
+| I9 | the hands-off bot's tally `engaged` 0 and `activeOnly` empty, every seed PASS | empty |
+| I5 | 1.23–1.32 at every gated checkpoint, PASS (pool zeroed) | 1.15–1.5 |
+
+The engaged bot burns its whole pool before the Blight (3.0–3.5 days in);
+the hands-off bot reaches it holding 23–53 M unspent, as §3.6 intends. The
+per-screen-hour diagnostic reads 0.85–3.65: it compares *total* income to
+the Blight, and the hands-off bot's extra late days dominate it, so it is
+not yet the README's 2–3× reading. Untuned: the three dials stay at the
+plan's defaults.

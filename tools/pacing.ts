@@ -52,7 +52,7 @@ import { formatDuration } from '../src/core/format';
 import type { BranchId } from '../src/content/types';
 import { FAST_STEPS, playRun } from './play';
 import { shop } from './shop';
-import { CHECKIN_EVERY, SESSION, farmRatio, runIdle } from './idle';
+import { CHECKIN_EVERY, SESSION, farmRatio, runIdle, type IdleReport } from './idle';
 import { runAct2, type Act2Report } from './act2';
 import { IN_WORKER, parallel, workerJobs } from './parallel';
 
@@ -338,6 +338,10 @@ export function medianBossKill(reports: readonly PacingReport[], boss: string): 
 
 /** I2's band (§8.4): Act 1 for the idle bot, in days. */
 export const I2_DAYS = { min: 5, max: 10 };
+/** I7 (plans/late-game/01 §9.1): the engaged bot's screen time to the Blight, over the hands-off bot's, at most. */
+export const I7_SCREEN = 0.7;
+/** I8: every seed's hands-off Act 1 in this band, in days; the median aims at `target`. */
+export const I8_DAYS = { min: 5, max: 10, target: { min: 6, max: 8 } };
 /** I5's band (§8.4): active shards per hour over idle, at the same Forge state. */
 export const I5_RATIO = { min: 1.15, max: 1.5 };
 /**
@@ -369,6 +373,9 @@ export interface IdleVerdict {
   /** I5 at each checkpoint of the active run. */
   /** `opening`: the idle bot's median wall seconds from a run's start to its first draft-free moment (U2). */
   ratios: { label: string; active: number; idle: number; ratio: number; opening: number }[];
+  /** The idle schedule played hands off (I2, I8, I9) and engaged (I7), with Stored Light's books. */
+  handsOff: IdleReport;
+  engaged: IdleReport;
 }
 
 /** How long the idle bot may take before I2 calls it never, in days: past the band, with room to read. */
@@ -383,8 +390,9 @@ const IDLE_DAYS_CAP = 20;
 export function idleVerdict(seed: number, runsPerPolicy = 6, activeHours = 3): IdleVerdict {
   const active = runPacing(activeHours, seed);
   const idle = runIdle(IDLE_DAYS_CAP, seed, [FINALE]);
+  const engaged = runIdle(IDLE_DAYS_CAP, seed, [FINALE], 'engaged');
   const ratios = active.checkpoints.map((c) => ({ label: c.label, ...farmRatio(c.profile, runsPerPolicy, seed) }));
-  return { idle: idle.bossKills[FINALE] ?? null, bossKills: idle.bossKills, ratios };
+  return { idle: idle.bossKills[FINALE] ?? null, bossKills: idle.bossKills, ratios, handsOff: idle, engaged };
 }
 
 /** Each seed's job, run in its own worker (`tools/parallel.ts`). */
@@ -403,6 +411,40 @@ async function idleMain(seeds: number, activeHours: number): Promise<void> {
   const m = medianDays(verdicts);
   const ok2 = m !== null && m >= I2_DAYS.min && m <= I2_DAYS.max;
   console.log(`  ${ok2 ? 'PASS' : 'FAIL'}  I2  median Act 1 ${m?.toFixed(1) ?? 'never'} d (want ${I2_DAYS.min}–${I2_DAYS.max}; ${verdicts.map((v) => days(v.idle)).join(' ')})`);
+  // Stored Light (plans/late-game/01 §9.1): I7, I8 and I9.
+  const hm = (t: number | undefined): string => (t === undefined ? 'never' : formatDuration(t));
+  for (const [k, v] of verdicts.entries()) {
+    const h = v.handsOff;
+    const e = v.engaged;
+    console.log(`  seed ${k + 1} screen to the Blight: hands-off ${hm(h.screen[FINALE])} · engaged ${hm(e.screen[FINALE])}`
+      + ` · engaged Act 1 ${days(e.bossKills[FINALE])}`);
+    for (const r of [h, e]) {
+      console.log(`           ${r.mode.padEnd(9)} instant ${r.offline} · stored ${r.stored} · burned ${r.burned} · pool at the Blight ${r.poolAtEnd}`);
+    }
+  }
+  const screens = verdicts
+    .map((v) => {
+      const h = v.handsOff.screen[FINALE];
+      const e = v.engaged.screen[FINALE];
+      return h === undefined || e === undefined ? Infinity : e / h;
+    })
+    .sort((a, b) => a - b);
+  const m7 = screens[screens.length >> 1];
+  const ok7 = Number.isFinite(m7) && m7 <= I7_SCREEN;
+  console.log(`  ${ok7 ? 'PASS' : 'FAIL'}  I7  median engaged/hands-off screen time to the Blight ${Number.isFinite(m7) ? m7.toFixed(2) : 'never'} (want ≤ ${I7_SCREEN}; ${screens.map((x) => (Number.isFinite(x) ? x.toFixed(2) : 'never')).join(' ')})`);
+  const tail = verdicts.map((v) => (v.idle === null ? Infinity : v.idle / 86400));
+  const ok8 = tail.every((d) => d >= I8_DAYS.min && d <= I8_DAYS.max);
+  const inTarget = m !== null && m >= I8_DAYS.target.min && m <= I8_DAYS.target.max;
+  console.log(`  ${ok8 ? 'PASS' : 'FAIL'}  I8  every hands-off Act 1 in ${I8_DAYS.min}–${I8_DAYS.max} d (${tail.map((d) => (Number.isFinite(d) ? d.toFixed(1) : 'never')).join(' ')}) · median ${m?.toFixed(1) ?? 'never'} d ${inTarget ? 'in' : 'outside'} the ${I8_DAYS.target.min}–${I8_DAYS.target.max} d target`);
+  const leaks = verdicts.filter((v) => v.handsOff.tally.engaged > 0 || Object.keys(v.handsOff.activeOnly).length > 0);
+  console.log(`  ${leaks.length === 0 ? 'PASS' : 'FAIL'}  I9  no active-only reward reached the hands-off bot${leaks.length > 0 ? ` (${leaks.length} seeds leaked)` : ''}`);
+  const perHour = verdicts.map((v) => {
+    const income = (r: IdleReport): number => r.offline + r.played + r.burned;
+    const he = v.engaged.screen[FINALE];
+    const hh = v.handsOff.screen[FINALE];
+    return he && hh ? (income(v.engaged) / he) / (income(v.handsOff) / hh) : NaN;
+  });
+  console.log(`        shards per screen hour, engaged/hands-off: ${perHour.map((x) => (Number.isFinite(x) ? x.toFixed(2) : '?')).join(' ')} (README: 2–3)`);
   const all = verdicts.flatMap((v) => v.ratios);
   for (const label of [...new Set(all.map((r) => r.label))]) {
     const med = medianRatio(verdicts, label);

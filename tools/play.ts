@@ -24,6 +24,13 @@ import { botInput } from './bot';
 
 export type PlayPolicy = 'active' | 'idle';
 
+/**
+ * Inputs only a present player sends (I9, plans/late-game/01 §9.1): a late-game
+ * plan that adds one lists it here, and the idle branch below asserts it
+ * never sets one. Stored Light adds none: it is app-side.
+ */
+export const ACTIVE_INPUTS: readonly (keyof RunInput)[] = [];
+
 /** Wall seconds an active player spends on a draft, and anyone on the first (paused) one. */
 export const DRAFT_SECONDS = 2;
 export const FIRST_DRAFT_SECONDS = 5;
@@ -134,6 +141,7 @@ export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayRe
       const pick = run.draft && !takeAll && draftUp >= (o.draftSeconds ?? BALANCE.draft.seconds) ? run.draft.suggested : undefined;
       const ult = o.autoUlt === true && autoUltWanted(run);
       input = { pick, takeAll: takeAll || undefined, ult: ult || undefined };
+      for (const k of ACTIVE_INPUTS) if (input[k] !== undefined) throw new Error(`I9: the idle policy sent ${k}`);
     }
     const drafting = o.policy === 'idle' && run.draft !== null && input.pick === undefined && !input.takeAll;
     const before = run.wave;

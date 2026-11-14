@@ -74,11 +74,24 @@ off the list. Never mid-run.
 - **Farm rate.** `bankRun` records shards per minute of every run of at
   least 60 s; the farm rate is the median of the last five.
 - **Earnings.** `rate × minutes away × efficiency`, with time capped by the
-  tier: 15% for 2 h, 15% for 4 h, 20% for 8 h (after the Prism), 25% for
-  12 h (after Forgeheart). Absences under 60 s pay nothing. Kept low on
+  tier: 15% for 2 h, then 15% for 4 h from Night Watch II on. Absences
+  under 60 s pay nothing. Kept low on
   purpose: at 60% a night away bought a late Forge ring out whole, and a
   player who sat out did as well as one who farmed. Time away tops the
   Forge up; tempering ([forge.md](forge.md)) is where farming goes.
+- **Stored Light** (`plans/late-game/01-stored-light.md`). From Night
+  Watch III (after the Prism) a second part of the night, 20% for 8 h, and
+  from IV (after Forgeheart) 25% for 12 h, is not paid but **stored**
+  (`profile.storedLight`). Only runs burn it: at the bank (`bankRun`'s
+  `tally`) each wave's base shards are matched from the pool, ×5 / ×8 on
+  a played wave and ×2 / ×2.5 on one left alone (`BALANCE.offline.tiers`'
+  `stored`). A wave counts as played after any trusted touch or key on the
+  run screen during it or in the 30 s before it ended (`App#lastTouch`,
+  `meta/storedLight.ts#waveEngaged`); the draft timer, the Opening, the
+  Autocaster and auto-restart never stamp it. The pool never fades and has
+  no cap. Records, the farm rate and feats read base shards only, so a
+  burn never raises the next night's store. The tally rides in the run
+  snapshot's envelope (`burn`), not in `RunState`: the sim never knows.
 - **Shards only.** No simulated combat, no bosses, relics or feats offline.
 - **When.** On boot and on every return from an absence (`App#absent`):
   the page shown again, the native resume, or a stalled frame. The
@@ -93,5 +106,7 @@ offline formula, never by catching the loop up.
 
 The idle bot (`tools/idle.ts`) checks in twice a day for 20 minutes with
 the whole kit. I2 (Act 1 in 5–10 days idle) and I5 (active earns 1.15–1.5×
-idle per hour from Region 2 on) are measured on it; see
+idle per hour from Region 2 on) are measured on it; `--idle` also plays the
+same schedule **engaged** (the `active` policy, shopping between runs) for
+I7, and holds I8 and I9 on the hands-off bot; see
 [balancing.md](balancing.md).

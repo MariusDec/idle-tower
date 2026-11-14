@@ -1,5 +1,5 @@
 import {
-  clearRunSnapshot, loadProfile, loadRunSnapshot, saveProfile, saveRunSnapshot, snapshotRun,
+  clearRunSnapshot, loadProfile, loadResume, saveProfile, saveRunSnapshot, snapshotRun, type SnapshotBurn,
 } from '../meta/save';
 import { newProfile, type Profile } from '../meta/profile';
 import { exportProfile, listBackups, pushBackup, readBackup } from '../meta/save/transfer';
@@ -8,17 +8,18 @@ import { buildRunConfig } from '../meta/runConfig';
 import {
   autoUlt, automations, draftSeconds, foremanBuy, marchOn, maxSpeed, runSpeed, tacticsScopes, togglePin,
 } from '../meta/automation';
-import { buyNode, canAfford, refundNode, toggleKeystone, towerTier } from '../meta/forge';
+import { buyNode, canAfford, isBuyable, levelOf, nodeCost, refundNode, toggleKeystone, towerTier } from '../meta/forge';
 import { bankRun, buildOf } from '../meta/results';
 import { buildList, foremanLine, statsList } from '../ui/build';
-import { frameUnlocked, regionUnlocked, selectedFrame, toggleRelic, trophyCount } from '../meta/collection';
+import { frameUnlocked, frontier, regionUnlocked, selectedFrame, toggleRelic, trophyCount } from '../meta/collection';
 import { claimAll, claimFeat } from '../meta/feats';
-import { offlineEarnings, offlineTier } from '../meta/offline';
+import { offlineEarnings, offlineTier, storedRates } from '../meta/offline';
+import { emptyTally, storedWant, tallyWave, waveEngaged, type BurnTally } from '../meta/storedLight';
 import { setPactRank } from '../meta/pacts';
 import { chooseTrial, toggleTrim, wornTrims } from '../meta/trials';
 import { explainersFor, markExplained, unreadExplainers } from '../meta/explainers';
 import { STAR_WEB } from '../meta/stars';
-import { FORGE } from '../content/forge';
+import { FORGE, FORGE_BY_ID } from '../content/forge';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { BOSS_BY_ID } from '../content/bosses';
 import type { BossId } from '../content/types';
@@ -111,6 +112,21 @@ export class App {
   private slowMo = { left: 0, speed: 1 };
   /** Wall-clock ms of the last frame, to notice a stall (§6.1). */
   private lastFrame = Date.now();
+  /**
+   * Stored Light (plans/late-game/01 §3.3): wall-clock ms of the player's last
+   * touch or key on the run screen. Nothing the app does by itself (the draft
+   * timer, the Opening, the Autocaster, auto-restart) stamps it.
+   */
+  private lastTouch = 0;
+  /** The run's base shards so far, by waves played and left alone. */
+  private burn: BurnTally = emptyTally();
+  /** `run.shards` and the wall-clock ms when the current wave began. */
+  private waveShards = 0;
+  private waveWall = 0;
+  /** The pool as the run began (plus anything a mid-run absence stored): the gauge's full width. */
+  private poolAtStart = 0;
+  /** The pool ran dry this run: its toast has been told. */
+  private poolDry = false;
 
   private readonly renderer: Renderer;
   private readonly loop: Loop;
@@ -263,12 +279,12 @@ export class App {
         ? `[save] restored the backup from ${new Date(loaded.restoredFrom).toISOString()}`
         : '[save] no backup would read; starting a fresh profile');
     }
-    const resume = await loadRunSnapshot(this.profile);
+    const resume = await loadResume(this.profile);
     this.bindLifecycle();
     this.loop.start();
     this.go('hub');
     // A run the app was killed in resumes at its last wave boundary (§12.4).
-    if (resume) this.startRun(resume);
+    if (resume) this.startRun(resume.run, resume.burn);
     this.welcomeBack(Date.now());
   }
 
@@ -292,6 +308,13 @@ export class App {
     if (!earned) return;
     const before = new Set(FORGE.filter((n) => canAfford(this.profile, n.id)).map((n) => n.id));
     this.profile.shards += earned.shards;
+    // Stored Light (plans/late-game/01): kept back for runs to burn. The Foreman buys from the instant part only.
+    this.profile.storedLight += earned.stored;
+    if (earned.stored > 0) {
+      this.poolAtStart += earned.stored;
+      this.poolDry = false;
+      this.cues.storedSwell();
+    }
     // The Foreman (N7) spends what landed on the wishlist, between runs only.
     const bought = this.screen === 'run' ? [] : foremanBuy(this.profile);
     if (bought.length > 0) this.dressTower();
@@ -301,23 +324,57 @@ export class App {
     const hours = Math.floor(earned.away / 3600);
     const mins = Math.floor((earned.away % 3600) / 60);
     const gone = hours > 0 ? `${hours} h ${mins} min` : `${mins} min`;
-    const body = `You were away ${gone}. The tower gathered ${formatNumber(earned.shards)} shards.`
-      + (earned.paid < earned.away ? ` (Night Watch holds ${offlineTier(this.profile)?.capHours ?? 0} hours at most.)` : '')
+    const rates = storedRates(this.profile);
+    const stored = earned.stored > 0 && rates
+      ? `, and stored ${formatNumber(earned.stored)} as Stored Light. Play to spend it: ×${rates.engaged} while you play, ×${rates.handsOff} left alone.`
+      : '.';
+    const holds = this.foremanHeld();
+    // The cap note names the longest part that applies: from Night Watch III, the store's.
+    const tier = offlineTier(this.profile);
+    const capHours = tier?.stored?.capHours ?? tier?.capHours ?? 0;
+    const body = `You were away ${gone}. The tower gathered ${formatNumber(earned.shards)} shards${stored}`
+      + (earned.away > capHours * 3600 ? ` (Night Watch holds ${capHours} hours at most.)` : '')
       + (bought.length > 0 ? ` The Foreman bought ${foremanLine(bought)}.` : '')
+      + (holds !== null ? ` The Foreman's next pin needs ${formatNumber(holds)}: Stored Light holds it.` : '')
       + (fresh.length > 0 ? ` Now affordable: ${fresh.slice(0, 4).join(', ')}.` : '');
     if (this.screen === 'run') {
       // Mid-run the pause menu (or the Settings over it) stays where it is:
       // the welcome is a toast on top, and only the pause menu resumes (B4).
       this.paused = true;
       if (!this.settings.open && !this.modal.open) this.openPause();
-      this.toasts.show('crystal-cluster', 'Welcome back', `Away ${gone} · +${formatNumber(earned.shards)} shards`);
+      const more = earned.stored > 0 ? ` · +${formatNumber(earned.stored)} stored` : '';
+      this.toasts.show('crystal-cluster', 'Welcome back', `Away ${gone} · +${formatNumber(earned.shards)} shards${more}`);
       return;
     }
     const buttons: ModalButton[] = [{ label: 'Close', onClick: () => {} }];
+    const play = this.screen === 'hub' && earned.stored > 0;
     if (this.screen === 'hub' && fresh.length > 0) {
-      buttons.push({ label: 'Forge', primary: true, onClick: () => this.hub.show(this.profile, 'forge') });
+      buttons.push({ label: 'Forge', primary: !play, onClick: () => this.hub.show(this.profile, 'forge') });
     }
+    // A night stored: the way to spend it is a run at the frontier.
+    if (play) buttons.push({ label: 'Play', primary: true, onClick: () => this.playFrontier() });
     this.modal.show('Welcome back', body, buttons);
+  }
+
+  /**
+   * The Foreman's next pin's price, when the shards fall short of it but
+   * Stored Light covers the gap (plans/late-game/01 §3.4); else null.
+   */
+  private foremanHeld(): number | null {
+    const p = this.profile;
+    if (p.storedLight <= 0 || !automations(p).has('foreman')) return null;
+    const id = p.wishlist.find((x) => FORGE_BY_ID[x] && isBuyable(p, x));
+    if (id === undefined) return null;
+    const cost = nodeCost(FORGE_BY_ID[id], levelOf(p, id));
+    const short = cost - p.shards;
+    return short > 0 && p.storedLight >= short ? cost : null;
+  }
+
+  /** The welcome-back's Play: a run at the frontier, to spend what the night stored. */
+  private playFrontier(): void {
+    if (this.screen !== 'hub') return;
+    this.profile.region = frontier(this.profile).index;
+    this.startRun();
   }
 
   /** Results → hub: the Forge, or after a first boss kill, the Map and its light (§7.3). */
@@ -371,7 +428,7 @@ export class App {
   }
 
   /** Start a fresh run, or carry on with `resumed` from its snapshot. */
-  private startRun(resumed?: RunState): void {
+  private startRun(resumed?: RunState, burn?: SnapshotBurn | null): void {
     // A fresh seed per run; the sim is deterministic *given* it.
     const seed = (Math.random() * 2 ** 32) >>> 0;
     this.run = resumed ?? createRun({ ...buildRunConfig(this.profile), arena: this.renderer.stageOval() }, seed);
@@ -387,6 +444,12 @@ export class App {
     this.snapshotWave = this.run.wave;
     this.runDirty = false;
     this.slowMo = { left: 0, speed: 1 };
+    // Stored Light's tally (plans/late-game/01 §3.3): carried over from the snapshot, if it kept one.
+    this.burn = burn ? { engaged: burn.engaged, handsOff: burn.handsOff } : emptyTally();
+    this.waveShards = burn ? burn.waveShards : this.run.shards;
+    this.waveWall = Date.now();
+    this.poolAtStart = this.profile.storedLight;
+    this.poolDry = false;
     this.draft.hide();
     this.loop.resetClock();
     this.go('run');
@@ -518,9 +581,10 @@ export class App {
     // rule as the idle bot (§6.2).
     const ult = autoUlt(this.profile) && autoUltWanted(run);
     step(run, SIM_DT, ult ? { ult } : undefined);
-    // A new wave: snapshot on this step boundary (§12.4).
+    // A new wave: tally the one just ended, and snapshot on this step boundary (§12.4).
     if (run.wave > this.snapshotWave && !run.outcome) {
       this.snapshotWave = run.wave;
+      this.tallyWave(run);
       this.snapshot(run);
     }
   }
@@ -533,8 +597,39 @@ export class App {
   private snapshot(run: RunState): void {
     this.snapshotAt = Date.now();
     this.runDirty = false;
-    const snapshot = snapshotRun(run, this.profile);
+    const snapshot = snapshotRun(run, this.profile, { ...this.burn, waveShards: this.waveShards });
     this.write(() => saveRunSnapshot(snapshot));
+  }
+
+  /**
+   * Stored Light (plans/late-game/01 §3.3): the wave since `waveWall` goes to
+   * the played bucket if a touch landed in it or in the window before now.
+   */
+  private tallyWave(run: RunState): void {
+    const now = Date.now();
+    tallyWave(this.burn, run.shards - this.waveShards, waveEngaged(this.lastTouch, this.waveWall, now));
+    this.waveShards = run.shards;
+    this.waveWall = now;
+  }
+
+  /** The HUD's Stored Light chip and gauge: what the pool has left once this run's bonus is reserved. */
+  private showStored(run: RunState): void {
+    const rates = storedRates(this.profile);
+    if (!rates || this.poolAtStart <= 0) {
+      this.hud.setStored(0, 0, 0, false);
+      return;
+    }
+    const now = Date.now();
+    const played = waveEngaged(this.lastTouch, this.waveWall, now);
+    const tally = { ...this.burn };
+    tallyWave(tally, run.shards - this.waveShards, played);
+    const left = Math.max(0, this.profile.storedLight - storedWant(this.profile, tally));
+    this.hud.setStored(left / this.poolAtStart, played ? rates.engaged : rates.handsOff, left, played);
+    if (left <= 0 && !this.poolDry) {
+      this.poolDry = true;
+      this.toasts.show('crystal-cluster', 'Stored Light spent', 'The rest of the run earns its own shards.');
+      this.cues.storedDry();
+    }
   }
 
   private frame(alpha: number, realDt: number): void {
@@ -565,6 +660,7 @@ export class App {
       if (this.runDirty && !run.outcome && now - this.snapshotAt >= PICK_SNAPSHOT_MS) this.snapshot(run);
       this.syncDraft(run, realDt);
       this.hud.update(run);
+      this.showStored(run);
       this.hud.setZoomed(this.renderer.camera.zoomedIn, this.renderer.camera.atClose);
       if (run.outcome?.kind === 'fell' && this.renderer.fallDone) this.endRun(run);
       // Boss Rush won (N8): the sim held the last kill's beat; the results follow.
@@ -645,7 +741,11 @@ export class App {
   }
 
   private endRun(run: RunState): void {
-    const summary = bankRun(this.profile, run, this.newCards, runSpeed(this.profile));
+    // The last part-wave goes to its bucket like the others (plans/late-game/01 §3.3).
+    this.tallyWave(run);
+    const summary = bankRun(this.profile, run, this.newCards, runSpeed(this.profile), this.burn);
+    this.burn = emptyTally();
+    this.poolAtStart = 0;
     const marched = marchOn(this.profile, summary);
     // The banked profile lands before the snapshot is cleared: killed between
     // the two, the snapshot is stale (its run count is behind) and is dropped
@@ -830,6 +930,13 @@ export class App {
     // Browsers start audio only from a gesture: the first one anywhere wakes it.
     const wake = (): void => this.synth.start();
     document.addEventListener('pointerdown', wake);
+    // Stored Light's "played" (plans/late-game/01 §3.3): any touch or key on the
+    // run screen, caught before any handler, so no input needs listing.
+    const touched = (e: Event): void => {
+      if (this.screen === 'run' && e.isTrusted) this.lastTouch = Date.now();
+    };
+    document.addEventListener('pointerdown', touched, true);
+    document.addEventListener('keydown', touched, true);
     document.addEventListener('keydown', (e) => {
       wake();
       if (e.key === 'Escape') this.back();

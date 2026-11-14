@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MemorySaveStore } from '../src/meta/save/stores/SaveStore';
 import {
   CORRUPT_KEY, LEGACY_BACKUP_KEY, LEGACY_KEY, PROFILE_KEY, RUN_KEY, SEALED_KEY, SNAPSHOT_VERSION,
-  clearRunSnapshot, loadProfile, loadRunSnapshot, saveProfile, saveRunSnapshot, snapshotRun,
+  clearRunSnapshot, loadProfile, loadResume, loadRunSnapshot, saveProfile, saveRunSnapshot, snapshotRun,
 } from '../src/meta/save';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { applyInput, createRun, step } from '../src/sim/run';
@@ -246,13 +246,21 @@ describe('migration ladder', () => {
     expect(out.forge).toEqual({ hoarder: 1 });
   });
 
+  it('walks a v15 profile to v16: an empty Stored Light pool, nothing burned (plans/late-game/01)', () => {
+    const out = migrate({ version: 15, createdAt: 5, shards: 50, records: { runs: 3, kills: 9 } }, MIGRATIONS, 16);
+    expect(out.version).toBe(16);
+    expect(out.storedLight).toBe(0);
+    expect(out.records).toEqual({ runs: 3, kills: 9, storedBurned: 0 });
+    expect(out.shards).toBe(50);
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);
     expect(out.seenCards).toEqual([]);
     expect(out.tutorial).toEqual({ firstDraft: false, forgeIntro: false, explained: [] });
     expect(out.forge).toEqual({});
-    expect(out.records).toEqual({ runs: 2, bestWave: 5, bestShards: 0, kills: 0, elites: 0 });
+    expect(out.records).toEqual({ runs: 2, bestWave: 5, bestShards: 0, kills: 0, elites: 0, storedBurned: 0 });
     expect(out.shards).toBe(4);
     // Every field a fresh profile has, the migrated one has too.
     expect(Object.keys(out).sort()).toEqual(Object.keys(newProfile(0)).sort());
@@ -314,6 +322,20 @@ describe('run snapshot (§12.4)', () => {
       resumed!.events.length = 0;
     }
     expect(hash(resumed!)).toBe(hash(run));
+  });
+
+  it('keeps Stored Light\'s tally in the envelope; a snapshot without one resumes with none', async () => {
+    const store = new MemorySaveStore();
+    const profile = newProfile(7);
+    const run = createRun(buildRunConfig(profile), 3);
+    await saveRunSnapshot(snapshotRun(run, profile, { engaged: 120, handsOff: 40, waveShards: 160 }), store);
+    const a = await loadResume(profile, store);
+    expect(a?.burn).toEqual({ engaged: 120, handsOff: 40, waveShards: 160 });
+    // A snapshot from before Stored Light (same SNAPSHOT_VERSION, no burn): the run still resumes.
+    await saveRunSnapshot(snapshotRun(run, profile), store);
+    const b = await loadResume(profile, store);
+    expect(b?.run).toBeTruthy();
+    expect(b?.burn).toBeNull();
   });
 
   it('drops a snapshot from another profile, a stale version or a broken file', async () => {

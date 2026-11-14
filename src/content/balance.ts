@@ -2,6 +2,23 @@
  * Every tunable number that is not per-item data (§13). Nothing tunable lives
  * in `sim/` code.
  */
+/** Stored Light's part of a Night Watch tier (plans/late-game/01 §3). */
+export interface StoredTier {
+  readonly efficiency: number;
+  readonly capHours: number;
+  /** The burn multiple on a played wave's base shards. */
+  readonly engaged: number;
+  /** The burn multiple on a wave left alone. */
+  readonly handsOff: number;
+}
+
+/** One Night Watch tier: the instant part, and the stored part from tier III. */
+export interface OfflineTier {
+  readonly efficiency: number;
+  readonly capHours: number;
+  readonly stored: StoredTier | null;
+}
+
 export const BALANCE = {
   tower: {
     maxHp: 100,
@@ -454,23 +471,27 @@ export const BALANCE = {
     life: 6,
   },
   /**
-   * Offline (§6.3). Efficiency and cap per tier, I–IV; P6 ships I–III, P7's
-   * regions bring IV. Kept low: time away tops the Forge up, it doesn't
-   * fill it (a night at 60% bought a late ring out whole).
+   * Offline (§6.3). Each Night Watch tier pays an instant part (efficiency
+   * and cap) and, from tier III, a stored part (plans/late-game/01): Stored
+   * Light, which only runs burn, at `engaged`× a played wave's base shards
+   * and `handsOff`× a wave left alone. The instant part is frozen at tier
+   * II's: buying III or IV adds a store, it never shrinks the first number.
    */
   offline: {
     tiers: [
-      { efficiency: 0.15, capHours: 2 },
-      { efficiency: 0.15, capHours: 4 },
-      { efficiency: 0.2, capHours: 8 },
-      { efficiency: 0.25, capHours: 12 },
-    ],
+      { efficiency: 0.15, capHours: 2, stored: null },
+      { efficiency: 0.15, capHours: 4, stored: null },
+      { efficiency: 0.15, capHours: 4, stored: { efficiency: 0.2, capHours: 8, engaged: 5, handsOff: 2 } },
+      { efficiency: 0.15, capHours: 4, stored: { efficiency: 0.25, capHours: 12, engaged: 8, handsOff: 2.5 } },
+    ] as readonly OfflineTier[],
     /** Absences shorter than this pay nothing. */
     minSeconds: 60,
     /** Runs shorter than this don't count toward the farm rate. */
     minRunSeconds: 60,
     /** The farm rate is the median of this many recent runs. */
     runs: 5,
+    /** A wave counts as played after a touch this recent, in wall seconds. */
+    engagedSeconds: 30,
   },
   /** Engineering's automation (§6.2). */
   automation: {

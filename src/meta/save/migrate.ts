@@ -86,6 +86,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   13: (raw) => ({ ...raw, version: 14, trimsOff: [] }),
   // v15: owned keystones can be switched off (§11.4); every one stays on.
   14: (raw) => ({ ...raw, version: 15, keystonesOff: [] }),
+  // v16: Stored Light (plans/late-game/01): an empty pool, nothing burned yet.
+  15: (raw) => ({ ...raw, version: 16, storedLight: 0, records: { storedBurned: 0, ...(raw.records as object) } }),
 };
 
 export class MigrationError extends Error {}

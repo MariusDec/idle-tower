@@ -90,6 +90,7 @@ export class ResultsScreen {
   private readonly shards: HTMLButtonElement;
   private readonly shardsN: HTMLElement;
   private readonly breakdown: HTMLElement;
+  private readonly storedLine: HTMLElement;
   private readonly finds: HTMLElement;
   private readonly next: HTMLElement;
   private readonly nextIcon: HTMLElement;
@@ -122,6 +123,7 @@ export class ResultsScreen {
           <span class="results-stat-l">Shards</span>
         </button>
       </div>
+      <p class="results-stored" hidden></p>
       <p class="results-breakdown" hidden></p>
       <ul class="results-finds"></ul>
       <div class="results-build"></div>
@@ -154,6 +156,7 @@ export class ResultsScreen {
     this.shards = q('.results-shards');
     this.shardsN = q('.results-shards-n');
     this.breakdown = q('.results-breakdown');
+    this.storedLine = q('.results-stored');
     this.finds = q('.results-finds');
     this.next = q('.results-next');
     this.nextIcon = q('.results-next-icon');
@@ -278,12 +281,20 @@ export class ResultsScreen {
 
     setText(this.kills, formatNumber(s.kills));
     setText(this.time, formatDuration(s.time));
-    setText(this.shardsN, formatNumber(s.shards));
+    const st = s.stored;
+    setText(this.shardsN, formatNumber(s.shards + (st?.bonus ?? 0)));
+    // Stored Light (plans/late-game/01 §2): what the pool paid, at what rate, and what is left.
+    this.storedLine.hidden = st === null;
+    if (st) {
+      const played = st.engagedBonus > 0 ? ` · ×${st.rate} played` : '';
+      setText(this.storedLine, `Stored Light +${formatNumber(st.bonus)}${played} · ${formatNumber(st.left)} left`);
+    }
     const f = s.shardsFrom;
     const parts = [`Kills ${formatNumber(f.kills)}`, `Waves ${formatNumber(f.waves)}`];
     if (f.elites > 0) parts.push(`Elites ${formatNumber(f.elites)}`);
     if (f.boss > 0) parts.push(`Boss ${formatNumber(f.boss)}`);
     if (f.cards > 0) parts.push(`Cards ${formatNumber(f.cards)}`);
+    if (st) parts.push(`Stored ${formatNumber(st.bonus)}`);
     this.breakdown.textContent = parts.join(' · ');
     this.breakdown.hidden = true;
     this.shards.setAttribute('aria-expanded', 'false');

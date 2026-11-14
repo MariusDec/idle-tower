@@ -12,6 +12,7 @@ export type ExplainerView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 
 
 export type ExplainerId =
   | 'tower'
+  | 'stored'
   | 'forge'
   | 'map'
   | 'trials'
@@ -41,6 +42,14 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
     lines: [
       'The tower wears what you have earned: a new course of stone for each Forge ring you complete, a light for each overtime trophy, and a trim for each Trial that pays one.',
       'All of it is cosmetic. It shows how far you have come and changes no stats.',
+    ],
+  },
+  {
+    id: 'stored', view: 'home', title: 'Stored Light',
+    lines: [
+      'From Night Watch III, most of a night away is stored as Stored Light instead of paid at once.',
+      'While you play, every shard a run earns is matched from the store, several times over. Left to play itself, a run spends it slowly.',
+      'Any touch in the last 30 seconds counts as playing. Stored Light never fades and never runs out on its own.',
     ],
   },
   {

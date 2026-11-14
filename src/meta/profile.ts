@@ -9,7 +9,7 @@ import type { TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 15;
+  version: 16;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -22,6 +22,8 @@ export interface Profile {
     bestShards: number;
     kills: number;
     elites: number;
+    /** Shards Stored Light has paid out, in all (plans/late-game/01). */
+    storedBurned: number;
   };
   /** Forge levels owned, by node id (§5.1). A missing id is level 0. */
   forge: Record<string, number>;
@@ -45,6 +47,11 @@ export interface Profile {
   feats: Record<string, 'done' | 'claimed'>;
   /** Shards per minute of the most recent runs, newest last: the offline farm rate (§6.3). */
   farm: number[];
+  /**
+   * Stored Light (plans/late-game/01): shards a night away kept back from
+   * Night Watch III on, paid out only as runs burn it. Never fades, no cap.
+   */
+  storedLight: number;
   /** Wall-clock ms the game was last open, for offline earnings (§6.1). */
   lastSeen: number;
   /**
@@ -133,7 +140,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 15;
+export const PROFILE_VERSION = 16;
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
@@ -160,7 +167,7 @@ export function newProfile(now: number): Profile {
     version: PROFILE_VERSION,
     createdAt: now,
     shards: 0,
-    records: { runs: 0, bestWave: 0, bestShards: 0, kills: 0, elites: 0 },
+    records: { runs: 0, bestWave: 0, bestShards: 0, kills: 0, elites: 0, storedBurned: 0 },
     forge: {},
     keystonesOff: [],
     seenCards: [],
@@ -172,6 +179,7 @@ export function newProfile(now: number): Profile {
     equipped: [],
     feats: {},
     farm: [],
+    storedLight: 0,
     recipes: { found: [], carried: {}, readied: {} },
     lastSeen: now,
     ceremony: null,

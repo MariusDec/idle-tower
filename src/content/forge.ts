@@ -330,7 +330,7 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'automation', id: 'auto-restart' }],
   },
   {
-    id: 'offline', name: 'Night Watch', icon: 'eclipse', text: 'Earn shards while away: 25% of your farm rate, up to 2 h.',
+    id: 'offline', name: 'Night Watch', icon: 'eclipse', text: 'Earn shards while away: 15% of your farm rate, up to 2 h.',
     branch: 'engineering', type: 'notable', ring: 2, angle: 132, links: ['auto-restart'], maxLevel: 1, cost: 150,
     effects: [{ kind: 'automation', id: 'offline' }], sealed: 'gatekeeper',
   },
@@ -350,7 +350,7 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'automation', id: 'auto-ult' }], sealed: 'gatekeeper',
   },
   {
-    id: 'offline-2', name: 'Night Watch II', icon: 'lantern-flame', text: 'Offline earns 25% of your farm rate, up to 4 h.',
+    id: 'offline-2', name: 'Night Watch II', icon: 'lantern-flame', text: 'Offline earns 15% of your farm rate, up to 4 h.',
     branch: 'engineering', type: 'notable', ring: 3, angle: 140, links: ['offline'], maxLevel: 1, cost: 480,
     effects: [{ kind: 'automation', id: 'offline-2' }], sealed: 'gatekeeper',
   },
@@ -386,12 +386,12 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'behaviour', id: 'charged-start' }], sealed: 'prism',
   },
   {
-    id: 'offline-3', name: 'Night Watch III', icon: 'crystal-ball', text: 'Offline earns 40% of your farm rate, up to 8 h.',
+    id: 'offline-3', name: 'Night Watch III', icon: 'crystal-ball', text: 'Nights also fill Stored Light, up to 8 h. Play spends it at ×5.',
     branch: 'engineering', type: 'notable', ring: 4, angle: 176, links: ['speed-3'], maxLevel: 1, cost: 8000,
     effects: [{ kind: 'automation', id: 'offline-3' }], sealed: 'prism',
   },
   {
-    id: 'offline-4', name: "Night Watch IV", icon: 'star-gate', text: "Offline earns 60% of your farm rate, up to 12 h.",
+    id: 'offline-4', name: "Night Watch IV", icon: 'star-gate', text: "Stored Light fills for up to 12 h, and play spends it at ×8.",
     branch: 'engineering', type: 'notable', ring: 5, angle: 176, links: ['offline-3'], maxLevel: 1, cost: 36000,
     effects: [{ kind: 'automation', id: 'offline-4' }], sealed: 'forgeheart',
   },
