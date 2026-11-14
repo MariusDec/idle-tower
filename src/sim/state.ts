@@ -75,6 +75,35 @@ export interface RunConfig {
    * rates. `rate`: a multiplier on the chance (a Daily Omen's boon). Absent: none.
    */
   readonly rifts?: RiftConfig | null;
+  /**
+   * Reliquaries (plans/late-game/03): what the Abyss's elites and guardians
+   * may leave, filtered to the run's pool. Null outside the Abyss. Absent: none.
+   */
+  readonly reliquaries?: ReliquaryConfig | null;
+}
+
+/** What a run's reliquaries hold (plans/late-game/03 §3.1). */
+export interface ReliquaryConfig {
+  /** The cursed relics an elite may leave (rolled at `BALANCE.cursed.eliteDrop`). */
+  readonly elite: readonly RelicId[];
+  /** Each guardian's relic. */
+  readonly boss: Readonly<Partial<Record<BossId, RelicId>>>;
+  /** Guardians whose relic is not yet owned: their fall always leaves it. */
+  readonly sure: readonly BossId[];
+  /** The profile's first reliquary is still owed: its window is the lesson's (`firstClaimSeconds`). */
+  readonly first: boolean;
+}
+
+/** A reliquary on the field (plans/late-game/03 §3.4): where a body fell, until a tap claims it or it fades. */
+export interface ReliquaryState {
+  /** The run's own count, from 1: what `RunInput.claim` names. */
+  id: number;
+  relic: RelicId;
+  x: number;
+  y: number;
+  /** Run time it dropped, and the time it fades. */
+  at: number;
+  until: number;
 }
 
 /** What a run's rifts are rolled from (plans/late-game/02 §5). */
@@ -601,7 +630,11 @@ export type SimEvent =
   /** A rift opened, shut untouched, or was taken (choice null: left). */
   | { kind: 'riftAppear'; id: RiftId; x: number; y: number }
   | { kind: 'riftShut'; id: RiftId; x: number; y: number }
-  | { kind: 'riftTaken'; id: RiftId; choice: number | null; x: number; y: number };
+  | { kind: 'riftTaken'; id: RiftId; choice: number | null; x: number; y: number }
+  /** A reliquary dropped, was claimed by a tap, or faded untouched (plans/late-game/03). */
+  | { kind: 'reliquary'; id: number; relic: RelicId; x: number; y: number; first: boolean }
+  | { kind: 'reliquaryClaim'; id: number; relic: RelicId; x: number; y: number }
+  | { kind: 'reliquaryFade'; id: number; relic: RelicId; x: number; y: number };
 
 export interface RunState {
   seed: number;
@@ -728,6 +761,15 @@ export interface RunState {
   riftLog: { id: RiftId; wave: number; choice: number | null; tapped: boolean }[];
   /** A forged hand is owed (Blood Price): the next draft offers evolutions, ready or not. */
   forgedHand: boolean;
+  /** What this run's reliquaries hold (from the config); null: none drop. */
+  reliquaryCfg: ReliquaryConfig | null;
+  /** Reliquaries on the field, oldest first (plans/late-game/03). */
+  reliquaries: ReliquaryState[];
+  /** Reliquaries dropped this run: the next one's id. */
+  reliquaryCount: number;
+  /** Reliquaries claimed by a tap, and those that faded (the results' count). */
+  reliquariesClaimed: number;
+  reliquariesFaded: number;
   /** How the run ended: the tower fell, withdrew, or (Boss Rush, N8) cleared every stage. */
   outcome: null | { kind: 'fell' | 'retreat' | 'cleared'; wave: number; time: number };
   events: SimEvent[];
@@ -750,4 +792,6 @@ export interface RunInput {
   tapRift?: boolean;
   /** Take choice `chooseRift` of the open rift; −1 leaves it. */
   chooseRift?: number;
+  /** Claim reliquary `claim` (its id) by a tap (plans/late-game/03 §3.4). Never set by the idle bot (I9). */
+  claim?: number;
 }

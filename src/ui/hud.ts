@@ -11,7 +11,7 @@ import type { WeaponId } from '../content/types';
 import { buildOf } from '../meta/results';
 import { buildChips, buildKey } from './build';
 import { setAriaLabel, setStyle, setText, toggleClass } from './dom';
-import { iconMarkup } from './icon';
+import { icon, iconMarkup } from './icon';
 
 /**
  * The battle HUD (§10.1): HP, wave, region and the run's shards on top, and
@@ -31,6 +31,14 @@ export interface HudActions {
   zoomFit(): void;
   /** Open the rift on the field (plans/late-game/02): the chip's path. */
   rift(): void;
+  /** Claim the reliquary nearest to fading (plans/late-game/03): the chip's path. */
+  reliquary(): void;
+}
+
+/** The HUD's reliquary chip (plans/late-game/03 §3.4): the share of the soonest one's window left, and how many wait. */
+export interface ReliquaryChip {
+  left: number;
+  count: number;
 }
 
 /** The HUD's rift chip (plans/late-game/02 §2): its rarity, the share of its window left, and whether a draft holds it shut. */
@@ -67,6 +75,8 @@ export class Hud {
   private readonly storedFill: HTMLElement;
   private readonly rift: HTMLButtonElement;
   private readonly riftLabel: HTMLElement;
+  private readonly reliquary: HTMLButtonElement;
+  private readonly reliquaryCount: HTMLElement;
   /** The build as last drawn (`buildKey`), so the strip redraws only when it changes. */
   private buildDrawn = '';
 
@@ -108,6 +118,7 @@ export class Hud {
             <button type="button" class="hud-speed" hidden>1×</button>
             <button type="button" class="hud-auto" hidden>Auto</button>
           </div>
+          <button type="button" class="hud-reliquary" hidden aria-label="Claim the reliquary"><span class="hud-reliquary-count" hidden></span></button>
           <button type="button" class="hud-rift" hidden aria-label="Open the rift"><span class="hud-rift-label">Rift</span></button>
           <button type="button" class="hud-ult"><span class="hud-ult-label"></span></button>
         </div>
@@ -147,6 +158,10 @@ export class Hud {
     this.rift = this.root.querySelector('.hud-rift')!;
     this.riftLabel = this.root.querySelector('.hud-rift-label')!;
     this.rift.addEventListener('click', () => actions.rift());
+    this.reliquary = this.root.querySelector('.hud-reliquary')!;
+    this.reliquary.prepend(icon('locked-chest'));
+    this.reliquaryCount = this.root.querySelector('.hud-reliquary-count')!;
+    this.reliquary.addEventListener('click', () => actions.reliquary());
     host.appendChild(this.root);
     this.hide();
   }
@@ -204,6 +219,15 @@ export class Hud {
    * waits, its ring draining with the window and coloured by rarity; dimmed,
    * "after the draft", while a draft is open.
    */
+  setReliquary(chip: ReliquaryChip | null): void {
+    this.reliquary.hidden = chip === null;
+    if (!chip) return;
+    setStyle(this.reliquary, '--left', chip.left.toFixed(3));
+    this.reliquaryCount.hidden = chip.count < 2;
+    setText(this.reliquaryCount, String(chip.count));
+    setAriaLabel(this.reliquary, chip.count > 1 ? `Claim a reliquary (${chip.count} waiting)` : 'Claim the reliquary');
+  }
+
   setRift(chip: RiftChip | null): void {
     this.rift.hidden = chip === null;
     if (!chip) return;

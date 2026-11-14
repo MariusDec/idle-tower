@@ -521,7 +521,8 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
       continue;
     }
     const ladder = Array.from({ length: 10 }, (_, i) => fmt(r.heatFrontier[i + 1])).join(' ');
-    console.log(`  seed ${k + 1}: Blight at ${fmt(v.act1)} · runs ${r.runs} (${r.abyssRuns} Abyss) · stars ${r.stars} · masteries ${r.masteries} · floor ${r.floor} · Starlight ${r.starlight}`);
+    console.log(`  seed ${k + 1}: Blight at ${fmt(v.act1)} · runs ${r.runs} (${r.abyssRuns} Abyss) · stars ${r.stars} · masteries ${r.masteries} · floor ${r.floor} · Starlight ${r.starlight}`
+      + ` · reliquaries ${r.reliquaries.claimed}/${r.reliquaries.seen} claimed`);
     console.log(`           frontier heat 1–10: ${ladder}`);
     console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')} · last star ${fmt(r.lastStar)}`);
     const src = r.sources;

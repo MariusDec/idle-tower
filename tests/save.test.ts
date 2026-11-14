@@ -261,11 +261,20 @@ describe('migration ladder', () => {
     expect(out.tutorial).toEqual({ firstDraft: true, forgeIntro: true, explained: ['forge'], firstRift: false });
   });
 
+  it('walks a v17 profile to v18: no curses worn or bound, the first reliquary a lesson (plans/late-game/03)', () => {
+    const out = migrate({ version: 17, createdAt: 5, shards: 50, tutorial: { firstDraft: true, forgeIntro: true, explained: [], firstRift: true } }, MIGRATIONS, 18);
+    expect(out.version).toBe(18);
+    expect(out.cursedWorn).toEqual([]);
+    expect(out.bound).toEqual({});
+    expect(out.cursedBest).toEqual({});
+    expect(out.tutorial).toEqual({ firstDraft: true, forgeIntro: true, explained: [], firstRift: true, firstReliquary: false });
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);
     expect(out.seenCards).toEqual([]);
-    expect(out.tutorial).toEqual({ firstDraft: false, forgeIntro: false, explained: [], firstRift: false });
+    expect(out.tutorial).toEqual({ firstDraft: false, forgeIntro: false, explained: [], firstRift: false, firstReliquary: false });
     expect(out.forge).toEqual({});
     expect(out.records).toEqual({ runs: 2, bestWave: 5, bestShards: 0, kills: 0, elites: 0, storedBurned: 0 });
     expect(out.shards).toBe(4);

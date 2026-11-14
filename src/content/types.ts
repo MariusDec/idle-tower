@@ -68,6 +68,8 @@ export type BehaviourId =
   | 'overkill'
   | 'executioner'
   | 'second-wind'
+  /** Glass Crown's curse (plans/late-game/03): the tower never rises again. */
+  | 'unrisen'
   | 'last-stand'
   | 'thorns'
   | 'extra-choice'
@@ -807,7 +809,15 @@ export type RelicId =
   | 'moonstone' | 'rune-chalk' | 'husk-splinter'
   | 'tether-knot' | 'gilt-edge' | 'anchor-stone'
   | 'ward-breaker' | 'maw-tooth' | 'abyssal-pearl'
-  | 'executioners-coin' | 'phoenix-feather' | 'whetstone';
+  | 'executioners-coin' | 'phoenix-feather' | 'whetstone'
+  // Cursed relics (plans/late-game/03): a boon and a curse, worn in the Abyss only.
+  | 'glass-crown';
+
+/**
+ * The Abyss's strata (plans/late-game/08), as cursed relics name where they
+ * drop. Until 08 lands, the Gate stands for today's Deepwarden floors.
+ */
+export type StratumId = 'gate' | 'inversion' | 'narrowing' | 'lightless' | 'root';
 
 /**
  * Where a relic drops (§5.3): its boss's first kill, that region's elites,
@@ -816,7 +826,18 @@ export type RelicId =
 export type RelicSource =
   | { readonly kind: 'boss'; readonly boss: BossId }
   | { readonly kind: 'elite'; readonly region: number }
-  | { readonly kind: 'abyss'; readonly set: number };
+  | { readonly kind: 'abyss'; readonly set: number }
+  /** A cursed relic (plans/late-game/03 §3.1): a stratum's elites, or its guardian (`boss`). */
+  | { readonly kind: 'cursed'; readonly stratum: StratumId | 'below'; readonly boss: BossId | null };
+
+/**
+ * A cursed relic's curse (plans/late-game/03): its line, drawn after a ☾,
+ * and what it does. Applied once, whatever the rank; it never lifts.
+ */
+export interface CurseDef {
+  readonly text: string;
+  readonly effects: readonly Effect[];
+}
 
 /**
  * A relic (§5.3, §11.5): qualitative, equipped between runs. `effects` apply
@@ -828,6 +849,10 @@ export interface RelicDef extends ContentEntry {
   readonly source: RelicSource;
   readonly effects: readonly Effect[];
   readonly perRank: readonly Effect[];
+  /** A cursed relic's curse (plans/late-game/03): present exactly when `source.kind` is 'cursed'. */
+  readonly curse?: CurseDef;
+  /** The weapon a cursed relic leans on, if one (plans/late-game/03 §4). */
+  readonly leans?: WeaponId;
 }
 
 /**

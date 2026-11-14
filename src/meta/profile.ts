@@ -9,7 +9,7 @@ import type { TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 17;
+  version: 18;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -58,6 +58,15 @@ export interface Profile {
    * choice was taken, by index.
    */
   rifts: Record<string, RiftRecord>;
+  /**
+   * Cursed relics worn in the cursed slot (plans/late-game/03 §3.3); their
+   * ranks are in `relics`. A Bound one may sit in `equipped` instead.
+   */
+  cursedWorn: string[];
+  /** Binding points by cursed relic: duplicates past rank III; Bound at `BALANCE.cursed.bindAt`. */
+  bound: Record<string, number>;
+  /** The deepest Abyss floor each cursed relic was worn to, for the compare sheet. */
+  cursedBest: Record<string, number>;
   /** Wall-clock ms the game was last open, for offline earnings (§6.1). */
   lastSeen: number;
   /**
@@ -122,6 +131,8 @@ export interface Profile {
     explained: string[];
     /** The First Tear has been opened (plans/late-game/02 §2): rifts roll from now on. */
     firstRift: boolean;
+    /** A reliquary has been claimed (plans/late-game/03 §2): the next one's window is no longer the lesson's. */
+    firstReliquary: boolean;
   };
   settings: {
     /** Sim speed multiplier, 1–3 (§12.3). */
@@ -148,7 +159,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 17;
+export const PROFILE_VERSION = 18;
 
 /** One rift's journal entry (plans/late-game/02 §5). */
 export interface RiftRecord {
@@ -196,6 +207,9 @@ export function newProfile(now: number): Profile {
     farm: [],
     storedLight: 0,
     rifts: {},
+    cursedWorn: [],
+    bound: {},
+    cursedBest: {},
     recipes: { found: [], carried: {}, readied: {} },
     lastSeen: now,
     ceremony: null,
@@ -214,7 +228,7 @@ export function newProfile(now: number): Profile {
     sets: {},
     region: 1,
     frame: 'arcanist',
-    tutorial: { firstDraft: false, forgeIntro: false, explained: [], firstRift: false },
+    tutorial: { firstDraft: false, forgeIntro: false, explained: [], firstRift: false, firstReliquary: false },
     settings: defaultSettings(),
   };
 }

@@ -17,6 +17,7 @@ import { tickShots } from './systems/tower';
 import { castUltimate, tickUltimate } from './systems/ultimate';
 import { regionAt, regionMods, runRegion, tickWaves } from './systems/waves';
 import { chooseRift, shutRift, tapRift, tickRifts } from './systems/rifts';
+import { claimReliquary, fadeReliquaries, tickReliquaries } from './systems/reliquaries';
 
 export { regionMods };
 
@@ -155,6 +156,8 @@ export function createRun(config: RunConfig, seed: number): RunState {
       // Rifts (plans/late-game/02): `split` leaves the root as it is, so older seeds play as before.
       rifts: root.split('rifts').state,
       riftFx: root.split('riftFx').state,
+      // Cursed relics (plans/late-game/03): their own stream, so a run with none draws as before.
+      curse: root.split('curse').state,
     },
     riftCfg: config.rifts ?? null,
     rift: null,
@@ -162,6 +165,11 @@ export function createRun(config: RunConfig, seed: number): RunState {
     riftHolds: [],
     riftLog: [],
     forgedHand: false,
+    reliquaryCfg: config.reliquaries ?? null,
+    reliquaries: [],
+    reliquaryCount: 0,
+    reliquariesClaimed: 0,
+    reliquariesFaded: 0,
     outcome: null,
     events: [],
   };
@@ -177,9 +185,11 @@ export function applyInput(run: RunState, input: RunInput): void {
   if (run.outcome) return;
   if (input.retreat) {
     shutRift(run);
+    fadeReliquaries(run);
     run.outcome = { kind: 'retreat', wave: run.wave, time: run.time };
     return;
   }
+  if (input.claim !== undefined) claimReliquary(run, input.claim);
   if (input.tapRift) tapRift(run);
   if (input.chooseRift !== undefined) chooseRift(run, input.chooseRift);
   if (input.reroll) rerollDraft(run);
@@ -225,9 +235,11 @@ export function step(run: RunState, dt: number, input: RunInput = {}, weaponStep
   sweepEnemies(run);
   sweepProjectiles(run);
   tickDraft(run);
+  tickReliquaries(run);
 
   const t = run.tower;
-  if (t.hp <= 0 && run.revives > 0) {
+  // Glass Crown's curse (plans/late-game/03): the tower never rises again.
+  if (t.hp <= 0 && run.revives > 0 && !run.behaviours.unrisen) {
     // Second Wind (§11.4): once per owned level, the fall becomes a rise.
     run.revives--;
     t.hp = run.stats.maxHp * BALANCE.behaviours.secondWindHp;
@@ -237,6 +249,7 @@ export function step(run: RunState, dt: number, input: RunInput = {}, weaponStep
     t.hp = 0;
     run.draft = null;
     shutRift(run);
+    fadeReliquaries(run);
     run.outcome = { kind: 'fell', wave: run.wave, time: run.time };
     run.events.push({ kind: 'fell' });
     return;

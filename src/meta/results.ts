@@ -5,11 +5,12 @@ import { BOSSES, BOSS_BY_ID } from '../content/bosses';
 import { FORGE } from '../content/forge';
 import { FRAMES } from '../content/frames';
 import { REGIONS } from '../content/regions';
-import { RELIC_SETS, bossRelic, setOf } from '../content/relics';
+import { RELIC_BY_ID, RELIC_SETS, bossRelic, setOf } from '../content/relics';
+import { isCursed } from '../content/cursed';
 import type { BossId, EnemyId, EvolutionId, FeatDef, FusionId, PassiveId, RelicId, RiftId, WeaponId } from '../content/types';
 import type { DamageBy, HurtBy, RunState } from '../sim/state';
 import {
-  act2Open, bossDown, frameUnlocked, gainRelic, hubUnlocks, regionUnlocked, relicSlots, rushOpen, setOwned, setRank, trophiesAt,
+  act2Open, bossDown, frameUnlocked, gainRelic, wornCursed, hubUnlocks, regionUnlocked, relicSlots, rushOpen, setOwned, setRank, trophiesAt,
 } from './collection';
 import { checkFeats } from './feats';
 import { foremanBuy } from './automation';
@@ -56,7 +57,7 @@ export function buildOf(run: RunState): BuildSummary {
  * A reward only a present player can earn (I9, plans/late-game/01 §9.1).
  * Each late-game plan adds its own kind; the hands-off bot must never see one.
  */
-export type ActiveOnlyKind = 'stored-played' | 'rift';
+export type ActiveOnlyKind = 'stored-played' | 'rift' | 'reliquary';
 
 /** What Stored Light paid this run (plans/late-game/01 §2). */
 export interface StoredSummary {
@@ -124,7 +125,12 @@ export interface RunSummary {
    * Relics found this run, with the rank each now has (0: it was already
    * maxed, and paid `shards`, or added to its set's progress, `set`, instead).
    */
-  relics: { id: RelicId; rank: number; shards?: number; set?: string }[];
+  relics: { id: RelicId; rank: number; shards?: number; set?: string; bound?: number }[];
+  /**
+   * Reliquaries (plans/late-game/03): claimed by a tap, and faded untouched
+   * (the results' "1 reliquary faded", a count). Zero outside the Abyss.
+   */
+  reliquaries: { claimed: number; faded: number };
   /** Feats earned this run, waiting in the Feats tab. */
   feats: FeatDef[];
   /** True once the Feats tab is open: before it, feats are earned quietly, for the tab's first burst (§5.4). */
@@ -213,6 +219,8 @@ export function bankRun(
   const abyss = run.regionId === ABYSS_INDEX;
   const rush = isRush(run.regionId);
   const past = abyss || rush;
+  // The curses this run wore (plans/late-game/03): wearing changes only between runs.
+  const cursedWorn = wornCursed(profile).map((x) => x.relic.id);
   const regionBest = past ? undefined : profile.regions[run.regionId]?.bestWave;
   const waveRecord = regionBest !== undefined && wave > regionBest;
   const records = {
@@ -280,6 +288,11 @@ export function bankRun(
   // can still rank up; else it is melted down: a few waves' pay where it fell (§5.3).
   for (const x of relics) {
     if (x.rank !== 0) continue;
+    // A cursed relic past III binds (plans/late-game/03 §3.3): at `bindAt` it may sit in an ordinary slot.
+    if (isCursed(RELIC_BY_ID[x.id]) && (profile.bound[x.id] ?? 0) < BALANCE.cursed.bindAt) {
+      x.bound = profile.bound[x.id] = (profile.bound[x.id] ?? 0) + 1;
+      continue;
+    }
     const set = setOf(x.id);
     if (set && setRank(profile, set.region) < BALANCE.sets.maxRank) {
       profile.sets[set.region] = (profile.sets[set.region] ?? 0) + 1;
@@ -324,6 +337,14 @@ export function bankRun(
   // Rifts (I9): what they paid, and one entry per taken rift.
   if (run.shardsFrom.rifts > 0) activeOnly.push({ kind: 'rift', amount: run.shardsFrom.rifts });
   for (const x of rifts) if (x.choice !== null) activeOnly.push({ kind: 'rift', amount: 0 });
+  // Reliquaries (plans/late-game/03, I9): one entry per tap; the lesson's window is spent once one is claimed.
+  for (let i = 0; i < run.reliquariesClaimed; i++) activeOnly.push({ kind: 'reliquary', amount: 1 });
+  if (run.reliquariesClaimed > 0) profile.tutorial.firstReliquary = true;
+  // The deepest floor each worn curse went to, for the compare sheet.
+  if (abyss) {
+    const floor = floorOf(Math.max(1, wave));
+    for (const id of cursedWorn) profile.cursedBest[id] = Math.max(profile.cursedBest[id] ?? 0, floor);
+  }
   // The Foreman (N7) spends the run's shards on the wishlist before the Next line is read.
   const foreman = foremanBuy(profile);
   const after = unlockList(profile);
@@ -352,6 +373,7 @@ export function bankRun(
     newFusions,
     boss,
     relics,
+    reliquaries: { claimed: run.reliquariesClaimed, faded: run.reliquariesFaded + run.reliquaries.length },
     feats,
     featsOpen: hubUnlocks(profile).feats,
     unlocks,

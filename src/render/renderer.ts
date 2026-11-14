@@ -22,6 +22,7 @@ import { PLAIN_LOOK, paintRangeRing, paintTower, type Mount, type TowerLook } fr
 import type { WeaponId } from '../content/types';
 import { QUALITY, type QualityTier } from './quality';
 import { paintRift } from './painters/rift';
+import { CURSE_COLOR, paintReliquaries } from './painters/reliquary';
 import { RIFT_BY_ID } from '../content/rifts';
 import { ARENA, type Oval } from '../content/arena';
 
@@ -457,6 +458,18 @@ export class Renderer {
           }
           break;
         }
+        case 'reliquary':
+          // A dark chest lands where the body fell (plans/late-game/03): a ring marks it.
+          this.effects.ring(ev.x, ev.y, 6, 46, withAlpha(CURSE_COLOR, 0.8), 0.5, 3);
+          break;
+        case 'reliquaryClaim':
+          this.effects.ring(ev.x, ev.y, 8, 110, withAlpha(CURSE_COLOR, 0.9), 0.6, 5);
+          this.effects.spray(ev.x, ev.y, CURSE_COLOR, 16, 180, 3);
+          break;
+        case 'reliquaryFade':
+          // It sinks: a small implosion.
+          this.effects.ring(ev.x, ev.y, 40, 4, withAlpha(CURSE_COLOR, 0.5), 0.45, 3);
+          break;
         case 'fire':
         case 'waveStart':
         case 'firstSight':
@@ -542,6 +555,10 @@ export class Renderer {
     // The dark over everything out there: bodies fade in as they walk out of it.
     paintDark(ctx, light, oval, box, this.palette);
     paintRim(ctx, light, oval, px);
+    // Reliquaries (plans/late-game/03): above the dark, so no floor's fog hides one.
+    if (run && run.reliquaries.length > 0) {
+      paintReliquaries(ctx, run.reliquaries, run.time, this.clock, { reducedMotion: this.reducedMotion, px });
+    }
 
     this.camera.applyScreen(ctx);
     this.effects.drawScreen(ctx, (x, y) => this.camera.worldToScreen(x, y));

@@ -6,16 +6,21 @@ import { frameById } from '../content/frames';
 import type { BehaviourId, CardItemId, Effect, FrameId, FusionId, PactId, StatMod, TrialDef, WeaponId } from '../content/types';
 import { isWeaponId } from '../sim/systems/draft';
 import { selectedTrial, trialEffects } from './trials';
-import { act2Open, activeSets, bossDown, equippedRelics, inAbyss, inRush, pastRegions, relicSlots, selectedFrame, selectedRegion } from './collection';
+import {
+  act2Open, activeSets, bossDown, equippedRelics, inAbyss, inRush, pastRegions, relicRank, relicSlots, selectedFrame, selectedRegion, wornCursed,
+} from './collection';
+import { cursedTable, isCursed } from '../content/cursed';
+import { WEAPON_BY_ID } from '../content/weapons';
 import { FORGE_WEB, activeNodes } from './forge';
 import { neverList, priorityList } from './automation';
 import { runPacts } from './pacts';
 import { pactLoad } from '../sim/pacts';
 import type { Profile } from './profile';
 import { STAR_WEB, starGifts } from './stars';
-import type { Card, RiftConfig, RunConfig } from '../sim/state';
+import type { Card, ReliquaryConfig, RiftConfig, RunConfig } from '../sim/state';
 import { BOSSES } from '../content/bosses';
-import type { RiftId } from '../content/types';
+import type { BossId, RelicId, RiftId } from '../content/types';
+import { RELIC_BY_ID } from '../content/relics';
 
 export type { RunConfig };
 
@@ -64,9 +69,16 @@ export function buildRunConfig(profile: Profile): RunConfig {
   // The notables Trials paid (N5) apply to every run, like a Forge node's.
   effects.push(...trialEffects(profile));
   // A relic's effects at rank I, and its per-rank effects once per rank past it (§5.3).
+  // A cursed relic (plans/late-game/03) holds only in the Abyss: its boon at rank, its curse once.
   for (const { relic, rank } of equippedRelics(profile)) {
+    if (isCursed(relic)) continue;
     effects.push(...relic.effects);
     for (let i = 1; i < rank; i++) effects.push(...relic.perRank);
+  }
+  for (const { relic, rank } of wornCursed(profile)) {
+    effects.push(...relic.effects);
+    for (let i = 1; i < rank; i++) effects.push(...relic.perRank);
+    effects.push(...(relic.curse?.effects ?? []));
   }
   // A set worn whole (N6) adds its bonus the same way, at the set's rank.
   for (const { set, rank } of activeSets(profile)) {
@@ -144,6 +156,28 @@ export function buildRunConfig(profile: Profile): RunConfig {
     pacts: Object.freeze(trial ? rules.pacts : runPacts(profile)),
     abyssRelics: Object.freeze(abyss ? abyssRelics(starGifts(profile).relicSets) : []),
     rifts: riftConfig(profile, trial !== null),
+    reliquaries: abyss ? reliquaryConfig(profile, pool) : null,
+  });
+}
+
+/**
+ * Reliquaries (plans/late-game/03 §3.1): the Abyss only. Until plan 08's
+ * strata ship every floor is the Gate's, so only the Deepwarden leaves one.
+ * A relic leaning on a weapon missing from the pool never drops.
+ */
+export function reliquaryConfig(profile: Profile, pool: readonly CardItemId[]): ReliquaryConfig {
+  const t = cursedTable('gate');
+  const usable = (id: RelicId): boolean => {
+    const leans = RELIC_BY_ID[id].leans;
+    return !leans || (WEAPON_BY_ID[leans] !== undefined && pool.includes(leans));
+  };
+  const boss: Partial<Record<BossId, RelicId>> = {};
+  for (const [b, id] of Object.entries(t.boss) as [BossId, RelicId][]) if (usable(id)) boss[b] = id;
+  return Object.freeze({
+    elite: Object.freeze(t.elite.filter(usable)),
+    boss: Object.freeze(boss),
+    sure: Object.freeze((Object.keys(boss) as BossId[]).filter((b) => relicRank(profile, boss[b]!) === 0)),
+    first: !profile.tutorial.firstReliquary,
   });
 }
 

@@ -2619,6 +2619,84 @@ body {
   cursor: default;
 }
 
+/*
+ * The reliquary chip (plans/late-game/03 §3.4): beside the ultimate while a
+ * reliquary waits, its ring draining with the window. A chest may land under
+ * the HUD or off-screen; the chip always works. A count when several wait.
+ */
+.hud-reliquary {
+  --left: 1;
+  pointer-events: auto;
+  position: relative;
+  width: 52px;
+  height: 52px;
+  min-width: 48px;
+  min-height: 48px;
+  margin-right: var(--space-2);
+  padding: 0;
+  border: 2px solid var(--curse);
+  border-radius: var(--radius-full);
+  background:
+    radial-gradient(circle, var(--surface-1) 58%, transparent 60%),
+    conic-gradient(var(--curse) calc(var(--left) * 1turn), var(--surface-overlay) 0);
+  color: var(--curse);
+  cursor: pointer;
+}
+
+.hud-reliquary .icon { --icon-size: 22px; }
+
+.hud-reliquary-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--curse);
+  color: var(--surface-1);
+  font-size: var(--text-2xs);
+  line-height: 18px;
+}
+
+/* Cursed relics (plans/late-game/03 §2): the curse line has its own token and the ☾ glyph. */
+.entry-curse {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-md);
+  color: var(--curse);
+}
+
+.entry.is-cursed.is-worn { border-color: var(--curse); }
+
+.segmented-sub { margin-bottom: var(--space-2); }
+
+.cursed-alt {
+  margin: 0 var(--space-3) var(--space-2);
+}
+
+.cursed-compare {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  text-align: left;
+}
+
+.cursed-compare .cursed-card {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--curse);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.cursed-compare-label {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.results-wear { margin-left: auto; }
+
 /* The offer: the draft's shell, rows instead of cards. */
 .rift-panel .draft-row {
   grid-auto-flow: row;

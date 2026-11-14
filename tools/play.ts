@@ -30,7 +30,7 @@ export type PlayPolicy = 'active' | 'idle';
  * plan that adds one lists it here, and the idle branch below asserts it
  * never sets one. Stored Light adds none: it is app-side.
  */
-export const ACTIVE_INPUTS: readonly (keyof RunInput)[] = ['tapRift', 'chooseRift'];
+export const ACTIVE_INPUTS: readonly (keyof RunInput)[] = ['tapRift', 'chooseRift', 'claim'];
 
 /** Wall seconds an active player spends reading a tapped rift: the arena is stopped meanwhile (plans/late-game/02 §8). */
 export const RIFT_SECONDS = 3;

@@ -14,7 +14,8 @@ import { RELIC_BY_ID } from '../content/relics';
 import { TRIAL_BY_ID } from '../content/trials';
 import { FALLBACKS, PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
-import type { ContentEntry, PassiveId, WeaponId } from '../content/types';
+import type { ContentEntry, PassiveId, RelicId, WeaponId } from '../content/types';
+import { curseLine, isCursed } from '../content/cursed';
 import { formatDuration, formatNumber } from '../core/format';
 import { setStyle, setText } from './dom';
 import { icon, iconMarkup } from './icon';
@@ -93,6 +94,7 @@ export class ResultsScreen {
   private readonly breakdown: HTMLElement;
   private readonly storedLine: HTMLElement;
   private readonly riftLine: HTMLElement;
+  private readonly reliquaryLine: HTMLElement;
   private readonly finds: HTMLElement;
   private readonly next: HTMLElement;
   private readonly nextIcon: HTMLElement;
@@ -109,7 +111,11 @@ export class ResultsScreen {
   private countdown: number | null = null;
 
   /** `onForge` leads to the hub (the Map, after a first boss kill); `onAgain` starts the next run. */
-  constructor(host: HTMLElement, onForge: () => void, private readonly onAgain: () => void) {
+  constructor(
+    host: HTMLElement, onForge: () => void, private readonly onAgain: () => void,
+    /** Wear a cursed relic just claimed (plans/late-game/03 §2); `done(worn)` redraws its button. */
+    private readonly onWear: (id: RelicId, done: (worn: boolean) => void) => void = () => {},
+  ) {
     this.root = document.createElement('section');
     this.root.className = 'screen results';
     this.root.innerHTML = `
@@ -127,6 +133,7 @@ export class ResultsScreen {
       </div>
       <p class="results-stored" hidden></p>
       <p class="results-rifts" hidden></p>
+      <p class="results-rifts results-reliquaries" hidden></p>
       <p class="results-breakdown" hidden></p>
       <ul class="results-finds"></ul>
       <div class="results-build"></div>
@@ -161,6 +168,7 @@ export class ResultsScreen {
     this.breakdown = q('.results-breakdown');
     this.storedLine = q('.results-stored');
     this.riftLine = q('.results-rifts');
+    this.reliquaryLine = q('.results-reliquaries');
     this.finds = q('.results-finds');
     this.next = q('.results-next');
     this.nextIcon = q('.results-next-icon');
@@ -259,9 +267,30 @@ export class ResultsScreen {
       ...s.unlocks.map((u) => reward('star-gate', u, 'unlock')),
       ...s.relics.map((r) => {
         const def = RELIC_BY_ID[r.id];
-        const peak = r.set ? `at its peak · ${r.set} grows` : `at its peak · +${formatNumber(r.shards ?? 0)} shards`;
-        const rank = r.rank === 0 ? peak : r.rank === 1 ? 'new relic' : `rank ${'I'.repeat(r.rank)}`;
-        return reward(def.icon, `${def.name} · ${rank}`, 'relic');
+        const peak = r.bound !== undefined
+          ? `binding ${r.bound}/${BALANCE.cursed.bindAt}${r.bound >= BALANCE.cursed.bindAt ? ' · Bound' : ''}`
+          : r.set ? `at its peak · ${r.set} grows` : `at its peak · +${formatNumber(r.shards ?? 0)} shards`;
+        const rank = r.rank === 0 ? peak : r.rank === 1 ? (isCursed(def) ? 'new cursed relic' : 'new relic') : `rank ${'I'.repeat(r.rank)}`;
+        const li = reward(def.icon, `${def.name} · ${rank}`, 'relic');
+        // A cursed relic (plans/late-game/03 §2): its curse, and a Wear button; never worn by itself.
+        if (isCursed(def)) {
+          const curse = document.createElement('span');
+          curse.className = 'entry-curse';
+          curse.textContent = ` ${curseLine(def)}`;
+          li.append(curse);
+          if (r.rank === 1) {
+            const wear = document.createElement('button');
+            wear.type = 'button';
+            wear.className = 'btn results-wear';
+            wear.textContent = 'Wear';
+            wear.addEventListener('click', () => this.onWear(r.id, (worn) => {
+              wear.textContent = worn ? 'Worn' : 'Wear';
+              wear.disabled = worn;
+            }));
+            li.append(wear);
+          }
+        }
+        return li;
       }),
       // Before the Feats tab opens, feats are earned quietly: the tab opens on the batch (§5.4).
       ...(s.featsOpen ? s.feats : []).map((f) => reward(f.icon, `Feat: ${f.name}`, 'feat')),
@@ -297,6 +326,10 @@ export class ResultsScreen {
     const line = riftLine(s.rifts);
     this.riftLine.hidden = line === null;
     if (line) setText(this.riftLine, line);
+    // Reliquaries (plans/late-game/03 §2): a count, not a scolding.
+    const faded = s.reliquaries.faded;
+    this.reliquaryLine.hidden = faded === 0;
+    if (faded > 0) setText(this.reliquaryLine, `${faded} reliquar${faded === 1 ? 'y' : 'ies'} faded.`);
     const f = s.shardsFrom;
     const parts = [`Kills ${formatNumber(f.kills)}`, `Waves ${formatNumber(f.waves)}`];
     if (f.elites > 0) parts.push(`Elites ${formatNumber(f.elites)}`);

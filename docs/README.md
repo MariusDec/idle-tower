@@ -19,6 +19,7 @@ depends on. [AGENTS.md](../AGENTS.md) is the short version for agents.
 | [feats.md](feats.md) | Feats and their rewards |
 | [idle.md](idle.md) | Automation, the Tactician, offline earnings |
 | [rifts.md](rifts.md) | Rifts: the mid-wave tear, its roll, its offers, the journal |
+| [cursed.md](cursed.md) | Cursed relics: reliquaries, the claim, the cursed slot, binding |
 | [act2.md](act2.md) | Pacts and heat, Starlight, the Constellations, the Abyss |
 | [save.md](save.md) | Profile, migration ladder, run snapshot, storage backends |
 | [render.md](render.md) | Renderer, painters, effects, camera, palette, quality tiers |

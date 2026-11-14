@@ -1,7 +1,7 @@
 import { EXPLAINERS, type ExplainerDef, type ExplainerId, type ExplainerView } from '../content/explainers';
 import { REGIONS } from '../content/regions';
 import { tacticsKey } from './automation';
-import { act2Open, collectionPages, hubUnlocks, rushOpen, trophyCount } from './collection';
+import { act2Open, collectionPages, hubUnlocks, ownedCursed, rushOpen, trophyCount } from './collection';
 import { towerTier } from './forge';
 import type { Profile } from './profile';
 import { trims, trialsOpen } from './trials';
@@ -33,6 +33,8 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
       return collectionPages(profile).frames;
     case 'rifts':
       return collectionPages(profile).rifts;
+    case 'cursed':
+      return ownedCursed(profile).length > 0;
     case 'feats':
       return hubUnlocks(profile).feats;
     case 'stars':

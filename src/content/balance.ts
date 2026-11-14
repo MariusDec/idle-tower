@@ -548,6 +548,29 @@ export const BALANCE = {
     packStagger: 0.12,
   },
   /**
+   * Cursed relics (plans/late-game/03 §3.5): a reliquary drops where an
+   * elite, Keeper or guardian fell in the Abyss, and only a tap claims it.
+   * One roll each on the `curse` stream; Treasure Hunter's `relicLuck`
+   * multiplies the elites'. A guardian's first fall is sure.
+   */
+  cursed: {
+    eliteDrop: 0.04,
+    /** Plan 08's Keepers (the beat that ends floors 1–5): likelier than an elite. */
+    keeperDrop: 0.12,
+    /** A guardian's later falls: waypoint farming can't buy its relic's ranks in an evening. */
+    bossDrop: 0.35,
+    /** Sim seconds a reliquary waits for its tap: about a wave. */
+    claimSeconds: 40,
+    /** A profile's first reliquary is a lesson: twice as long. */
+    firstClaimSeconds: 80,
+    /** Duplicates past rank III that bind a cursed relic: a set rank's count. */
+    bindAt: 5,
+    /** Curses worn at once, in any slots: two cursed slots and one Bound. */
+    maxWorn: 3,
+    /** Glass Crown: damage ×mult at rank I, ×perRank more for each rank past it. */
+    glassCrown: { mult: 1.5, perRank: 1.1 },
+  },
+  /**
    * Rifts (plans/late-game/02 §3): a tear opens mid-wave; a watching player
    * taps it for an authored offer. One roll per eligible wave on the `rifts`
    * stream, at `chance + ramp × (eligible waves since the last rift)`.

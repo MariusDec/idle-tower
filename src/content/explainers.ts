@@ -23,6 +23,7 @@ export type ExplainerId =
   | 'recipes'
   | 'frames'
   | 'rifts'
+  | 'cursed'
   | 'feats'
   | 'stars'
   | 'tactics'
@@ -125,6 +126,14 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
       'Some offers are gifts; most are wagers. Leaving is always free.',
       'Only a player who is watching can open one. The Autocaster never does.',
       'Each region has its own rifts. The ones you have met are kept here.',
+    ],
+  },
+  {
+    id: 'cursed', view: 'collection', title: 'Cursed relics',
+    lines: [
+      'The Abyss’s elites, Keepers and guardians can leave a reliquary. Tap it before it fades to claim a cursed relic.',
+      'Each has a boon and a curse. They hold only in the Abyss, in their own slot. Duplicates rank the boon up; the curse never changes.',
+      'Past rank III, five more duplicates bind a cursed relic: it may then sit in an ordinary slot too. At most three curses are worn at once.',
     ],
   },
   {

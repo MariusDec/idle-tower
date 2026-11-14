@@ -216,6 +216,21 @@ export class Cues {
           for (const [i, f] of [392, 494, top].entries()) s.tone({ freq: f, type: 'triangle', duration: 0.6, volume: 0.09, delay: i * 0.05 });
           break;
         }
+        case 'reliquary': {
+          // A dark chest lands: a low knock and a falling shimmer, panned by where.
+          const pan = Math.max(-1, Math.min(1, ev.x / 300));
+          s.tone({ freq: 110, freqEnd: 80, type: 'sine', duration: 0.35, volume: 0.14, pan });
+          s.tone({ freq: 620, freqEnd: 410, type: 'triangle', duration: 0.6, volume: 0.05, delay: 0.06, pan });
+          break;
+        }
+        case 'reliquaryClaim':
+          // It opens on a low chord, minor and a little sour: a boon with a price.
+          for (const [i, f] of [147, 175, 220, 233].entries()) s.tone({ freq: f, type: 'triangle', duration: 0.9, volume: 0.08, delay: i * 0.06 });
+          break;
+        case 'reliquaryFade':
+          // It sinks: a soft falling breath.
+          s.noise(0.45, 0.03, 500, 'bandpass');
+          break;
         case 'relicDrop':
           s.tone({ freq: 880, type: 'sine', duration: 0.4, volume: 0.1 });
           s.tone({ freq: 1320, type: 'sine', duration: 0.5, volume: 0.08, delay: 0.1 });

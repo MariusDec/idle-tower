@@ -39,6 +39,8 @@ export interface HubActions {
   /** Begin a Trial (N5): the next run, at once. */
   trial(id: string): void;
   toggleRelic(id: RelicId): boolean;
+  toggleCursed(id: RelicId): boolean;
+  compareCursed(out: RelicId, id: RelicId, done: () => void): void;
   selectFrame(id: string): void;
   toggleTrim(trim: TrimId): void;
   claim(id: string): number;
@@ -194,6 +196,8 @@ export class HubScreen {
     }, (id) => actions.trial(id));
     this.collection = new CollectionView(this.root, {
       toggleRelic: (id) => refreshing(() => actions.toggleRelic(id)),
+      toggleCursed: (id) => refreshing(() => actions.toggleCursed(id)),
+      compareCursed: (out, id, done) => actions.compareCursed(out, id, () => refreshing(done)),
       selectFrame: (id) => refreshing(() => actions.selectFrame(id)),
       toggleTrim: (trim) => refreshing(() => actions.toggleTrim(trim)),
     });

@@ -6,6 +6,11 @@
  *   active  takes the suggested card at once (every banked one in one tap,
  *           U2); casts the ultimate into a crowd
  *   bare    never picks, never casts: a level-1 tower (the P1 gate)
+ *
+ * The active bot claims a reliquary on the frame it appears (plans/late-game/03
+ * §6), `--claim-rate` of the time (default 0.9: a player looks away now and
+ * then); which ones it misses is a hash of the seed and the reliquary, so a
+ * run replays the same. `bare` and the idle policy never claim (I9).
  */
 import { RIFT_BY_ID } from '../src/content/rifts';
 import type { RunInput, RunState } from '../src/sim/state';
@@ -26,10 +31,36 @@ export function botInput(run: RunState, policy: Policy): RunInput {
   if (run.draft && run.pendingDrafts > 1) input.takeAll = true;
   else if (run.draft) input.pick = run.draft.suggested;
   Object.assign(input, riftInput(run));
+  const claim = reliquaryInput(run);
+  if (claim !== undefined) input.claim = claim;
   if (run.ult.charge >= 1 && (enemiesInRange(run) >= ULT_CROWD || run.tower.hp < run.stats.maxHp * ULT_PANIC_HP)) {
     input.ult = true;
   }
   return input;
+}
+
+/** Share of reliquaries the active bot claims (`--claim-rate`). */
+export const CLAIM_RATE = claimRate(typeof process === 'undefined' ? [] : process.argv);
+
+function claimRate(argv: readonly string[]): number {
+  const i = argv.findIndex((a) => a === '--claim-rate' || a.startsWith('--claim-rate='));
+  if (i < 0) return 0.9;
+  const raw = argv[i].includes('=') ? argv[i].split('=')[1] : argv[i + 1];
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0.9;
+}
+
+/**
+ * The reliquary the active bot claims this frame, if any: one that just
+ * dropped, unless the hash says this one was missed (it then fades).
+ */
+export function reliquaryInput(run: RunState, rate = CLAIM_RATE): number | undefined {
+  for (const r of run.reliquaries) {
+    if (run.time - r.at > 0.5) continue;
+    const h = Math.imul((run.seed ^ (r.id * 0x9e3779b1)) >>> 0, 0x85ebca6b) >>> 0;
+    if ((h % 10000) / 10000 < rate) return r.id;
+  }
+  return undefined;
 }
 
 /** A risky cost is left alone below this HP share, or with the boss next (plans/late-game/02 §8). */

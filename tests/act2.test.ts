@@ -102,7 +102,8 @@ describe('Act 2 opens with the Blight (§9)', () => {
     expect(recipeBook(p)).toHaveLength(8);
     const q = act2Profile();
     expect(bestiary(q).filter((r) => natives.has(r.id))).toHaveLength(4);
-    expect(listedRelics(q)).toHaveLength(RELICS.length);
+    // Cursed relics (plans/late-game/03) are the Relics page's own segment, not this list.
+    expect(listedRelics(q)).toHaveLength(RELICS.filter((r) => r.source.kind !== 'cursed').length);
     expect(recipeBook(q)).toHaveLength(EVOLUTIONS.length);
   });
 

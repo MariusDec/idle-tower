@@ -7,6 +7,7 @@ import { RUSH_INDEX, rushStage } from '../content/rush';
 import { RELICS, RELIC_BY_ID, RELIC_SETS, eliteRelics } from '../content/relics';
 import { BALANCE } from '../content/balance';
 import { RIFTS } from '../content/rifts';
+import { isCursed } from '../content/cursed';
 import type { BossId, FrameDef, RegionDef, RelicDef, RelicId, RelicSetDef, RiftDef } from '../content/types';
 import type { Profile } from './profile';
 import { recipesOpen } from './recipes';
@@ -116,11 +117,16 @@ export function relicRank(profile: Profile, id: RelicId): number {
   return profile.relics[id] ?? 0;
 }
 
-/** The relics worn into the next run, at their ranks: what `buildRunConfig` applies. */
+/**
+ * The relics worn in the ordinary slots, at their ranks. A cursed one sits
+ * here only once Bound (plans/late-game/03 §3.3); `buildRunConfig` applies
+ * it only in the Abyss, as it does the cursed slot's.
+ */
 export function equippedRelics(profile: Profile): { relic: RelicDef; rank: number }[] {
   const slots = relicSlots(profile);
   return profile.equipped
     .filter((id) => RELIC_BY_ID[id as RelicId] && relicRank(profile, id as RelicId) > 0)
+    .filter((id) => !isCursed(RELIC_BY_ID[id as RelicId]) || isBound(profile, id as RelicId))
     .slice(0, slots)
     .map((id) => ({ relic: RELIC_BY_ID[id as RelicId], rank: relicRank(profile, id as RelicId) }));
 }
@@ -134,21 +140,104 @@ export function toggleRelic(profile: Profile, id: RelicId): boolean {
     return true;
   }
   if (profile.equipped.length >= relicSlots(profile)) return false;
+  // A cursed relic takes an ordinary slot only once Bound, and within the cap on curses.
+  const def = RELIC_BY_ID[id];
+  if (isCursed(def)) {
+    if (!isBound(profile, id) || profile.cursedWorn.includes(id) || cursesWorn(profile) >= BALANCE.cursed.maxWorn) return false;
+  }
   profile.equipped.push(id);
   return true;
 }
 
 /**
  * A relic found (§5.3): new at rank I, a duplicate one rank up to III. A new
- * relic is worn at once if a slot is free. Returns the rank it now has, or 0
+ * relic is worn at once if a slot is free; a cursed one never is: the curse
+ * is a choice (plans/late-game/03 §2). Returns the rank it now has, or 0
  * when it was already maxed.
  */
 export function gainRelic(profile: Profile, id: RelicId): number {
   const rank = relicRank(profile, id);
   if (rank >= BALANCE.relics.maxRank) return 0;
   profile.relics[id] = rank + 1;
-  if (rank === 0 && profile.equipped.length < relicSlots(profile)) profile.equipped.push(id);
+  if (rank === 0 && !isCursed(RELIC_BY_ID[id]) && profile.equipped.length < relicSlots(profile)) profile.equipped.push(id);
   return rank + 1;
+}
+
+// ── Cursed relics (plans/late-game/03 §3.3) ─────────────────────────────
+
+/** Cursed relics owned, at any rank. */
+export function ownedCursed(profile: Profile): RelicDef[] {
+  return RELICS.filter((r) => isCursed(r) && relicRank(profile, r.id) > 0);
+}
+
+/**
+ * Cursed slots: the first opens with the first cursed relic owned, no
+ * Starlight. Plan 08's bottom (the Hunger's first fall on floor 30) opens
+ * the second; until the strata ship there is none.
+ */
+export function cursedSlots(profile: Profile): number {
+  return ownedCursed(profile).length > 0 ? 1 : 0;
+}
+
+/** True once a cursed relic has `bindAt` duplicates past III: it may also sit in an ordinary slot. */
+export function isBound(profile: Profile, id: RelicId): boolean {
+  return (profile.bound[id] ?? 0) >= BALANCE.cursed.bindAt;
+}
+
+/** Curses worn now, in any slot: the cursed slot's and Bound ones in ordinary slots. */
+export function cursesWorn(profile: Profile): number {
+  return wornCursedAnywhere(profile).length;
+}
+
+/** Every cursed relic worn, in any slot, with its rank. Shown in any region; applied only in the Abyss. */
+export function wornCursedAnywhere(profile: Profile): { relic: RelicDef; rank: number }[] {
+  const inSlot = profile.cursedWorn
+    .filter((id) => RELIC_BY_ID[id as RelicId] && relicRank(profile, id as RelicId) > 0)
+    .slice(0, cursedSlots(profile))
+    .map((id) => ({ relic: RELIC_BY_ID[id as RelicId], rank: relicRank(profile, id as RelicId) }));
+  const bound = equippedRelics(profile).filter((x) => isCursed(x.relic));
+  return [...inSlot, ...bound].slice(0, BALANCE.cursed.maxWorn);
+}
+
+/**
+ * The cursed relics worn into the next run: the cursed slot's, and Bound
+ * ones in ordinary slots. Empty outside the Abyss (§3.2): a region run, Boss
+ * Rush and Trials never feel a curse.
+ */
+export function wornCursed(profile: Profile): { relic: RelicDef; rank: number }[] {
+  return inAbyss(profile) ? wornCursedAnywhere(profile) : [];
+}
+
+/**
+ * Wear or take off a cursed relic in the cursed slot. False, and nothing
+ * changes, when it can't be done (not owned, the slot full, `maxWorn` reached).
+ */
+export function toggleCursed(profile: Profile, id: RelicId): boolean {
+  if (relicRank(profile, id) === 0 || !isCursed(RELIC_BY_ID[id])) return false;
+  const i = profile.cursedWorn.indexOf(id);
+  if (i >= 0) {
+    profile.cursedWorn.splice(i, 1);
+    return true;
+  }
+  if (profile.cursedWorn.length >= cursedSlots(profile) || cursesWorn(profile) >= BALANCE.cursed.maxWorn) return false;
+  // Worn in one slot at a time: a Bound relic moves here from an ordinary one.
+  const j = profile.equipped.indexOf(id);
+  if (j >= 0) profile.equipped.splice(j, 1);
+  profile.cursedWorn.push(id);
+  return true;
+}
+
+/**
+ * Swap `id` into the full cursed slot in place of `out` (the compare
+ * sheet's Swap). False when either is not what it should be.
+ */
+export function swapCursed(profile: Profile, out: RelicId, id: RelicId): boolean {
+  const i = profile.cursedWorn.indexOf(out);
+  if (i < 0 || relicRank(profile, id) === 0 || !isCursed(RELIC_BY_ID[id]) || profile.cursedWorn.includes(id)) return false;
+  const j = profile.equipped.indexOf(id);
+  if (j >= 0) profile.equipped.splice(j, 1);
+  profile.cursedWorn[i] = id;
+  return true;
 }
 
 /**
@@ -198,6 +287,7 @@ export function regionRelics(region: number): RelicDef[] {
       case 'boss':
         return regionOfBossIndex(s.boss) === region;
       case 'abyss':
+      case 'cursed':
         return region === ABYSS_INDEX;
       default: {
         const exhaustive: never = s;
@@ -268,10 +358,15 @@ export function bestiary(profile: Profile): { id: string; seen: boolean; kills: 
   ];
 }
 
-/** Relics the Collection lists: the Abyss's (§9) only once Act 2 opens. */
+/** Relics the Collection's Relics segment lists: the Abyss's (§9) only once Act 2 opens; the cursed have their own. */
 export function listedRelics(profile: Profile): RelicDef[] {
   const act2 = act2Open(profile);
-  return RELICS.filter((r) => act2 || r.source.kind !== 'abyss');
+  return RELICS.filter((r) => !isCursed(r) && (act2 || r.source.kind !== 'abyss'));
+}
+
+/** The Collection's Cursed segment (plans/late-game/03 §2): every cursed relic, owned or a silhouette. */
+export function listedCursed(): RelicDef[] {
+  return RELICS.filter(isCursed);
 }
 
 /** Frames the Collection lists: the Constellations' (§9) only once Act 2 opens. */

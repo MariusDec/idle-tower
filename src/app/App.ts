@@ -11,7 +11,9 @@ import {
 import { buyNode, canAfford, isBuyable, levelOf, nodeCost, refundNode, toggleKeystone, towerTier } from '../meta/forge';
 import { bankRun, buildOf } from '../meta/results';
 import { buildList, foremanLine, statsList } from '../ui/build';
-import { frameUnlocked, frontier, regionUnlocked, selectedFrame, toggleRelic, trophyCount } from '../meta/collection';
+import { cursedSlots, frameUnlocked, frontier, regionUnlocked, selectedFrame, swapCursed, toggleCursed, toggleRelic, trophyCount } from '../meta/collection';
+import { cursedCard } from '../ui/cursed';
+import { curseLine } from '../content/cursed';
 import { claimAll, claimFeat } from '../meta/feats';
 import { offlineEarnings, offlineTier, storedRates } from '../meta/offline';
 import { emptyTally, storedWant, tallyWave, waveEngaged, type BurnTally } from '../meta/storedLight';
@@ -22,7 +24,7 @@ import { STAR_WEB } from '../meta/stars';
 import { FORGE, FORGE_BY_ID } from '../content/forge';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { BOSS_BY_ID } from '../content/bosses';
-import type { BossId } from '../content/types';
+import type { BossId, RelicId } from '../content/types';
 import { frameById } from '../content/frames';
 import { RELIC_BY_ID } from '../content/relics';
 import { TRIAL_BY_ID } from '../content/trials';
@@ -54,7 +56,7 @@ import { Synth } from '../audio/synth';
 import { Cues } from '../audio/cues';
 import { assertTransition, type Screen } from './screens';
 import { bindZoom } from '../ui/zoom';
-import { bindClaim } from '../ui/claim';
+import { bindClaim, type ClaimTarget } from '../ui/claim';
 import { RiftPanel } from '../ui/rift';
 import { RIFT_BY_ID } from '../content/rifts';
 
@@ -161,6 +163,7 @@ export class App {
       zoomOut: () => this.renderer.camera.zoomBy(1 / ZOOM_STEP),
       zoomFit: () => this.renderer.camera.fitView(),
       rift: () => this.tapRift(),
+      reliquary: () => this.claimReliquary(this.run?.reliquaries[0]?.id),
     });
     // Manual zoom (camera-and-fog §5): during a run only; the framing is a
     // setting, saved with the next autosave rather than on every wheel tick.
@@ -169,12 +172,19 @@ export class App {
       settle: () => this.renderer.camera.settle(),
       active: () => this.screen === 'run',
     });
-    // Rifts (plans/late-game/02 §2): a one-finger tap near the tear opens it; the HUD chip is the other path.
-    bindClaim<'rift'>(els.canvas, {
+    // Rifts (plans/late-game/02 §2) and reliquaries (plans/late-game/03 §3.4): a
+    // one-finger tap near one claims it, the nearer of two; the HUD chips are the other path.
+    bindClaim<'rift' | 'reliquary'>(els.canvas, {
       active: () => this.screen === 'run' && this.simSpeed() > 0,
-      targets: () => (this.run?.rift?.phase === 'shown' ? [{ kind: 'rift', x: this.run.rift.x, y: this.run.rift.y }] : []),
+      targets: () => {
+        const run = this.run;
+        if (!run) return [];
+        const out: ClaimTarget<'rift' | 'reliquary'>[] = run.reliquaries.map((r) => ({ kind: 'reliquary', id: r.id, x: r.x, y: r.y }));
+        if (run.rift?.phase === 'shown') out.push({ kind: 'rift', x: run.rift.x, y: run.rift.y });
+        return out;
+      },
       toScreen: (x, y) => this.renderer.camera.worldToScreen(x, y),
-      claim: () => this.tapRift(),
+      claim: (t) => (t.kind === 'rift' ? this.tapRift() : this.claimReliquary(t.id)),
     });
     this.renderer.camera.onFraming = (framing) => this.changeSettings((s) => { s.framing = framing; }, false);
     this.hub = new HubScreen(els.screens, {
@@ -191,6 +201,8 @@ export class App {
         if (this.between(() => chooseTrial(this.profile, id))) this.startRun();
       },
       toggleRelic: (id) => this.between(() => toggleRelic(this.profile, id)) ?? false,
+      toggleCursed: (id) => this.between(() => toggleCursed(this.profile, id)) ?? false,
+      compareCursed: (out, id, done) => this.compareCursed(out, id, done),
       selectFrame: (id) => this.between(() => {
         if (frameUnlocked(this.profile, frameById(id))) this.profile.frame = id;
         this.dressTower();
@@ -220,7 +232,7 @@ export class App {
       settings: () => this.openSettings(),
       explain: (view, asked, wait) => this.explain(view, asked, wait),
     });
-    this.results = new ResultsScreen(els.screens, () => this.leaveResults(), () => this.startRun());
+    this.results = new ResultsScreen(els.screens, () => this.leaveResults(), () => this.startRun(), (id, done) => this.wearFromResults(id, done));
     this.toasts = new Toasts(els.overlay);
     this.draft = new DraftPanel(
       els.overlay, (i) => this.pick(i), () => this.reroll(), () => this.takeAll(), (i) => this.banish(i),
@@ -492,6 +504,74 @@ export class App {
     return speed;
   }
 
+  /**
+   * The results' Wear (plans/late-game/03 §2): into the cursed slot, or the
+   * compare sheet if it is full. Saved at once, as a hub change is.
+   */
+  private wearFromResults(id: RelicId, done: (worn: boolean) => void): void {
+    if (this.screen !== 'results') return;
+    const out = this.profile.cursedWorn[0] as RelicId | undefined;
+    if (this.profile.cursedWorn.length >= cursedSlots(this.profile) && out) {
+      this.compareCursed(out, id, () => done(this.profile.cursedWorn.includes(id)), () => this.screen === 'results');
+      return;
+    }
+    const worn = toggleCursed(this.profile, id);
+    if (worn) void this.save();
+    done(worn);
+  }
+
+  /**
+   * The compare sheet (plans/late-game/03 §2): the cursed slot is full, so
+   * the worn relic sits above the new one, each with its rank and deepest
+   * floor; one Swap.
+   */
+  private compareCursed(out: RelicId, id: RelicId, done: () => void, allowed = (): boolean => this.screen === 'hub'): void {
+    const body = document.createElement('div');
+    body.className = 'cursed-compare';
+    const label = (text: string): HTMLElement => {
+      const h = document.createElement('p');
+      h.className = 'cursed-compare-label';
+      h.textContent = text;
+      return h;
+    };
+    body.append(
+      label('Worn'), cursedCard(this.profile, RELIC_BY_ID[out], { worn: true }),
+      label('New'), cursedCard(this.profile, RELIC_BY_ID[id], { worn: false }),
+    );
+    this.modal.show('Swap the curse?', body, [
+      { label: 'Keep', onClick: () => {} },
+      {
+        label: 'Swap', primary: true, onClick: () => {
+          if (!allowed() || !swapCursed(this.profile, out, id)) return;
+          void this.save();
+          done();
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Claim reliquary `id` (plans/late-game/03 §3.4): the canvas tap or the HUD
+   * chip. It is input, so it is in the replay. Both are trusted pointer
+   * events, so the capture listener has already stamped `lastTouch` (engaged).
+   * The Autocaster never calls this.
+   */
+  private claimReliquary(id: number | undefined): void {
+    const run = this.run;
+    if (id === undefined || !run || this.screen !== 'run' || run.outcome) return;
+    applyInput(run, { claim: id });
+    this.runDirty = true;
+  }
+
+  /** Keep the reliquary chip in step with the run: the soonest to fade drains it. */
+  private syncReliquaries(run: RunState): void {
+    const r = run.reliquaries[0];
+    this.hud.setReliquary(r ? {
+      left: Math.max(0, Math.min(1, (r.until - run.time) / Math.max(0.001, r.until - r.at))),
+      count: run.reliquaries.length,
+    } : null);
+  }
+
   /** A touch this recent counts as a watching player (plans/late-game/01 §3.3). */
   private engaged(): boolean {
     return Date.now() - this.lastTouch <= BALANCE.offline.engagedSeconds * 1000;
@@ -715,6 +795,7 @@ export class App {
       if (this.runDirty && !run.outcome && now - this.snapshotAt >= PICK_SNAPSHOT_MS) this.snapshot(run);
       this.syncDraft(run, realDt);
       this.syncRift(run);
+      this.syncReliquaries(run);
       this.hud.update(run);
       this.showStored(run);
       this.hud.setZoomed(this.renderer.camera.zoomedIn, this.renderer.camera.atClose);
@@ -784,6 +865,15 @@ export class App {
         case 'eliteSpawn':
           if (ev.champion) this.toasts.show('vertical-banner', 'A Champion comes', 'Slay it for a relic.', 'relic');
           break;
+        case 'reliquary':
+          // Taught by the toast (plans/late-game/03 §2), as the Champion's is; the first says where to look.
+          this.toasts.show('locked-chest', 'A reliquary', ev.first ? 'Tap the chest, or the chip by your ultimate, before it fades.' : 'Tap it before it fades.', 'relic');
+          break;
+        case 'reliquaryClaim': {
+          const def = RELIC_BY_ID[ev.relic];
+          this.toasts.show(def.icon, `Cursed · ${def.name}`, `${def.text} ${curseLine(def)}`, 'relic');
+          break;
+        }
         case 'riftAppear':
           // The First Tear teaches itself (plans/late-game/02 §2): a toast, never an arena stop.
           if (ev.id === 'first-tear') this.toasts.show(RIFT_BY_ID[ev.id].icon, 'A rift!', 'Tap it before it closes.', 'relic');
@@ -820,6 +910,7 @@ export class App {
     this.draft.hide();
     this.riftPanel.hide();
     this.hud.setRift(null);
+    this.hud.setReliquary(null);
     this.music.duck(false);
     this.shownDraft = null;
     this.go('results');

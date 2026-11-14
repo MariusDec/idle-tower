@@ -9,6 +9,7 @@ import type { BossState, Enemy, RunState } from '../state';
 import { bossPhases, pactLoad } from '../pacts';
 import { foeHp, runRegion, spawnEnemy, waveDamage, waveHp, waveShardMult } from './waves';
 import { hurtTower } from './tower';
+import { guardianReliquary } from './reliquaries';
 
 /**
  * Bosses (§4.3): wave 20. A boss walks in from a flank to its standoff and
@@ -471,6 +472,8 @@ export function onBossKilled(run: RunState, e: Enemy): void {
   run.pools.length = 0;
   run.felled.push(b.id);
   run.events.push({ kind: 'bossKill', boss: b.id, first: run.firstKill, x: e.x, y: e.y });
+  // A guardian's reliquary (plans/late-game/03 §3.1): only the Abyss's config holds any.
+  guardianReliquary(run, b.id, e.x, e.y);
   if (runRegion(run).abyss) {
     run.floors++;
     run.events.push({ kind: 'floor', floor: run.floors });

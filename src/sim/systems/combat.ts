@@ -18,6 +18,7 @@ import { gainXp, refreshStats } from './draft';
 import { riftShardMult } from './rifts';
 import { hurtTower } from './tower';
 import { regionRule, runRegion, spawnEnemy } from './waves';
+import { eliteReliquary } from './reliquaries';
 
 /** How close a projectile must pass, beyond the body radius, to hit. */
 const HIT_PAD = 6;
@@ -1911,6 +1912,8 @@ function eliteDeath(run: RunState, e: Enemy): void {
     run.relics.push(relic);
     run.events.push({ kind: 'relicDrop', relic, x: e.x, y: e.y });
   }
+  // A cursed relic's reliquary (plans/late-game/03 §3.1): its own roll, its own stream.
+  eliteReliquary(run, e);
 }
 
 export function sweepProjectiles(run: RunState): void {

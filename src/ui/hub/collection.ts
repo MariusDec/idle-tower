@@ -9,8 +9,10 @@ import { EVOLUTION_OF } from '../../content/evolutions';
 import type { BossId, EnemyId, FrameUnlock, RelicDef, RelicId, TrimId } from '../../content/types';
 import { formatNumber } from '../../core/format';
 import {
-  activeSets, bestiary, collectionPages, riftJournal, frameUnlocked, listedFrames, listedRelics, relicRank, relicSlots, selectedFrame, setRank,
+  activeSets, bestiary, collectionPages, cursedSlots, cursesWorn, isBound, riftJournal, frameUnlocked, listedCursed, listedFrames, listedRelics,
+  ownedCursed, relicRank, relicSlots, selectedFrame, setRank,
 } from '../../meta/collection';
+import { cursedCard, cursedWhere } from '../cursed';
 import type { Profile } from '../../meta/profile';
 import { levelOf } from '../../meta/forge';
 import { fusionBook, recipeBook } from '../../meta/recipes';
@@ -46,6 +48,8 @@ function relicWhere(r: RelicDef): string {
       return `${REGIONS.find((x) => x.index === s.region)?.name ?? 'Unknown'} elites`;
     case 'abyss':
       return `the Abyss's elites, once Lantern ${['I', 'II', 'III', 'IV'][s.set - 1] ?? s.set} is lit`;
+    case 'cursed':
+      return s.boss ? BOSS_BY_ID[s.boss].name : 'the Abyss';
     default: {
       const exhaustive: never = s;
       return exhaustive;
@@ -57,6 +61,10 @@ export type CollectionPage = 'bestiary' | 'relics' | 'recipes' | 'frames' | 'rif
 
 export interface CollectionActions {
   toggleRelic(id: RelicId): boolean;
+  /** Wear or take off a cursed relic in the cursed slot (plans/late-game/03). */
+  toggleCursed(id: RelicId): boolean;
+  /** The cursed slot is full: open the compare sheet for `id` against the worn `out`; `done` redraws. */
+  compareCursed(out: RelicId, id: RelicId, done: () => void): void;
   selectFrame(id: string): void;
   toggleTrim(trim: TrimId): void;
 }
@@ -74,6 +82,8 @@ export class CollectionView {
   private readonly pages: HTMLElement;
   private readonly body: HTMLElement;
   private page: CollectionPage = 'bestiary';
+  /** The Relics page's segment (plans/late-game/03 §2): the ordinary relics, or the cursed. */
+  private relicSeg: 'relics' | 'cursed' = 'relics';
   private profile: Profile | null = null;
 
   constructor(host: HTMLElement, private readonly actions: CollectionActions) {
@@ -231,6 +241,103 @@ export class CollectionView {
   }
 
   private relics(p: Profile): HTMLElement[] {
+    // Cursed relics (plans/late-game/03 §2) are a segment of their own, once one is owned.
+    if (ownedCursed(p).length === 0) this.relicSeg = 'relics';
+    else {
+      const seg = document.createElement('div');
+      seg.className = 'segmented segmented-sub';
+      seg.setAttribute('role', 'tablist');
+      for (const k of ['relics', 'cursed'] as const) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'segmented-btn';
+        b.setAttribute('role', 'tab');
+        b.setAttribute('aria-selected', String(k === this.relicSeg));
+        toggleClass(b, 'is-active', k === this.relicSeg);
+        b.textContent = k === 'relics' ? 'Relics' : 'Cursed';
+        b.addEventListener('click', () => {
+          this.relicSeg = k;
+          this.render();
+        });
+        seg.append(b);
+      }
+      return [seg, ...(this.relicSeg === 'cursed' ? this.cursed(p) : this.plainRelics(p))];
+    }
+    return this.plainRelics(p);
+  }
+
+  /**
+   * The Cursed segment (plans/late-game/03 §2): the slot, Bound and found
+   * counts, then each relic: boon, ☾ curse, rank. Tapping one wears it; with
+   * the slot full, the compare sheet. Unfound ones are silhouettes.
+   */
+  private cursed(p: Profile): HTMLElement[] {
+    const all = listedCursed();
+    const slots = cursedSlots(p);
+    const owned = ownedCursed(p);
+    const bound = owned.filter((r) => isBound(p, r.id)).length;
+    const head = document.createElement('p');
+    head.className = 'collection-note';
+    head.textContent = `Cursed slot ${p.cursedWorn.length}/${slots} · Bound ${bound} · Found ${owned.length}/${all.length}. `
+      + 'They hold only in the Abyss. Tap one to wear it.';
+    const list = document.createElement('ul');
+    list.className = 'entry-list';
+    for (const r of all) {
+      const rank = relicRank(p, r.id);
+      const li = document.createElement('li');
+      if (rank === 0) {
+        li.className = 'entry is-unknown';
+        const h = document.createElement('div');
+        h.className = 'entry-head';
+        const n = document.createElement('span');
+        n.className = 'entry-name';
+        n.textContent = '???';
+        h.append(icon('locked-chest'), n);
+        const t = document.createElement('p');
+        t.className = 'entry-text';
+        t.textContent = cursedWhere(r);
+        li.append(h, t);
+        list.append(li);
+        continue;
+      }
+      const inSlot = p.cursedWorn.includes(r.id);
+      const inOrdinary = p.equipped.includes(r.id);
+      const worn = inSlot || inOrdinary;
+      li.className = `entry is-cursed${worn ? ' is-worn' : ''}`;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'entry-btn';
+      btn.setAttribute('aria-pressed', String(inSlot));
+      btn.append(cursedCard(p, r, { worn, tag: inOrdinary ? 'relic slot' : undefined }));
+      const full = !inSlot && p.cursedWorn.length >= slots;
+      const capped = !worn && cursesWorn(p) >= BALANCE.cursed.maxWorn;
+      btn.disabled = inOrdinary || (capped && !full);
+      btn.addEventListener('click', () => {
+        if (full && p.cursedWorn.length > 0) {
+          this.actions.compareCursed(p.cursedWorn[0] as RelicId, r.id, () => this.render());
+          return;
+        }
+        if (this.actions.toggleCursed(r.id)) this.render();
+      });
+      li.append(btn);
+      // A Bound relic (§3.3) may sit in an ordinary relic slot too: its curse stays.
+      if (isBound(p, r.id) && !inSlot) {
+        const alt = document.createElement('button');
+        alt.type = 'button';
+        alt.className = 'btn cursed-alt';
+        alt.textContent = inOrdinary ? 'Take off' : 'Wear in a relic slot';
+        alt.disabled = !inOrdinary && (p.equipped.length >= relicSlots(p) || cursesWorn(p) >= BALANCE.cursed.maxWorn);
+        alt.addEventListener('click', () => {
+          if (this.actions.toggleRelic(r.id)) this.render();
+        });
+        li.append(alt);
+      }
+      list.append(li);
+    }
+    return [head, list];
+  }
+
+  private plainRelics(p: Profile): HTMLElement[] {
     const slots = relicSlots(p);
     const head = document.createElement('p');
     head.className = 'collection-note';

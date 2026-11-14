@@ -74,6 +74,8 @@ export interface IdleReport {
   activeOnly: Partial<Record<ActiveOnlyKind, number>>;
   /** Shards rifts paid, reported apart (plans/late-game/02 §8: I5, I7). */
   riftShards: number;
+  /** Reliquaries that faded (plans/late-game/03 §9): the hands-off bot claims none, so all it meets fade. */
+  reliquariesFaded: number;
   /** Shards runs paid, in all. */
   played: number;
   checkins: number;
@@ -104,7 +106,7 @@ export function runIdle(
   const policy: PlayPolicy = mode === 'engaged' ? 'active' : 'idle';
   const report: IdleReport = {
     mode, bossKills: {}, screen: {}, offline: 0, stored: 0, burned: 0, poolAtEnd: 0,
-    tally: { engaged: 0, handsOff: 0 }, activeOnly: {}, riftShards: 0, played: 0, checkins: 0, runs: 0,
+    tally: { engaged: 0, handsOff: 0 }, activeOnly: {}, riftShards: 0, reliquariesFaded: 0, played: 0, checkins: 0, runs: 0,
   };
   /** Session wall seconds before this check-in's. */
   let screenBefore = 0;
@@ -163,7 +165,10 @@ export function runIdle(
       if (policy === 'idle' && (run.shardsFrom.rifts > 0 || run.riftLog.some((e) => e.tapped))) {
         throw new Error('I9: the hands-off bot opened a rift');
       }
+      // I9 (plans/late-game/03 §9): nor claims a reliquary. A hard fail.
+      if (policy === 'idle' && run.reliquariesClaimed > 0) throw new Error('I9: the hands-off bot claimed a reliquary');
       report.riftShards += run.shardsFrom.rifts;
+      report.reliquariesFaded += summary.reliquaries.faded;
       marchOn(profile, summary);
       if (mode === 'engaged') {
         // A present player looks over the results and shops between runs, as the pacing bot does.

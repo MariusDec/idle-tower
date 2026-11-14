@@ -7,6 +7,8 @@
  */
 export interface ClaimTarget<K extends string = string> {
   kind: K;
+  /** Which one, when several of a kind may be up at once (reliquaries). */
+  id?: number;
   /** Where it is, in world units. */
   x: number;
   y: number;
@@ -19,7 +21,7 @@ export interface ClaimHost<K extends string = string> {
   targets(): readonly ClaimTarget<K>[];
   /** World point → CSS pixel, relative to the canvas's top-left corner. */
   toScreen(x: number, y: number): { x: number; y: number };
-  claim(kind: K): void;
+  claim(target: ClaimTarget<K>): void;
 }
 
 /** How far from a target a tap still lands on it, in CSS pixels (the 44 px touch floor). */
@@ -66,7 +68,7 @@ export function bindClaim<K extends string>(el: HTMLElement, host: ClaimHost<K>)
     if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > TAP_MOVE || ev.timeStamp - start.at > TAP_MS) return;
     const rect = el.getBoundingClientRect();
     const hit = nearestClaim(host.targets(), ev.clientX - rect.left, ev.clientY - rect.top, host.toScreen);
-    if (hit) host.claim(hit.kind);
+    if (hit) host.claim(hit);
   };
 
   const onCancel = (ev: PointerEvent): void => {

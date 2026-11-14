@@ -450,8 +450,52 @@ export const rifts: LintRule = (tables) => {
   return out;
 };
 
+/**
+ * Cursed relics (plans/late-game/03 §6): a cursed source has a curse and
+ * nothing else does; boon and curse share R4's fifteen words; no damage boon
+ * is a `pct` (it would vanish in the meta bucket, §3.5); `leans` names a
+ * weapon. A stratum that has any holds three elite relics and one guardian's
+ * (the Gate one, the Below four), so a half-shipped stratum fails.
+ */
+export const cursedRelics: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const relics = (tables.relics as readonly RelicDef[] | undefined) ?? [];
+  const weapons = new Set(((tables.weapons as readonly WeaponDef[] | undefined) ?? []).map((w) => w.id as string));
+  const byStratum = new Map<string, { elite: number; boss: number }>();
+  for (const x of relics) {
+    const cursed = x.source.kind === 'cursed';
+    if (cursed !== (x.curse !== undefined)) {
+      out.push({ table: 'relics', id: x.id, problem: cursed ? 'cursed source but no curse' : 'a curse on a relic that is not cursed' });
+    }
+    if (x.source.kind !== 'cursed' || !x.curse) continue;
+    const words = wordCount(x.text) + wordCount(x.curse.text);
+    if (words > MAX_TEXT_WORDS) out.push({ table: 'relics', id: x.id, problem: `boon and curse are ${words} words (max ${MAX_TEXT_WORDS})` });
+    if (!/^Curse:/.test(x.curse.text)) out.push({ table: 'relics', id: x.id, problem: 'curse text must start "Curse:"' });
+    for (const e of [...x.effects, ...x.perRank, ...x.curse.effects]) {
+      if (e.kind === 'stat' && e.mod.key === 'damage' && e.mod.pct !== undefined) {
+        out.push({ table: 'relics', id: x.id, problem: 'a damage boon must be a mult, not a pct' });
+      }
+    }
+    if (x.leans !== undefined && weapons.size > 0 && !weapons.has(x.leans)) {
+      out.push({ table: 'relics', id: x.id, problem: `leans on unknown weapon "${x.leans}"` });
+    }
+    const n = byStratum.get(x.source.stratum) ?? { elite: 0, boss: 0 };
+    if (x.source.boss) n.boss++;
+    else n.elite++;
+    byStratum.set(x.source.stratum, n);
+  }
+  for (const [stratum, n] of byStratum) {
+    const want = stratum === 'gate' ? { elite: 0, boss: 1 } : stratum === 'below' ? { elite: 4, boss: 0 } : { elite: 3, boss: 1 };
+    if (n.elite !== want.elite || n.boss !== want.boss) {
+      out.push({ table: 'relics', id: stratum, problem: `stratum has ${n.elite} elite and ${n.boss} guardian cursed relics (want ${want.elite} and ${want.boss})` });
+    }
+  }
+  return out;
+};
+
 export const RULES: readonly LintRule[] = [
   uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking, rifts,
+  cursedRelics,
 ];
 
 /**

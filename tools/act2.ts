@@ -19,7 +19,7 @@
  */
 import { ABYSS_INDEX } from '../src/content/abyss';
 import { RUSH_INDEX } from '../src/content/rush';
-import { rushOpen } from '../src/meta/collection';
+import { cursedSlots, ownedCursed, relicRank, rushOpen, toggleCursed } from '../src/meta/collection';
 import { PACTS } from '../src/content/pacts';
 import { REGIONS, regionByIndex } from '../src/content/regions';
 import { STARS } from '../src/content/stars';
@@ -125,6 +125,10 @@ export interface Act2Report {
   rush: { best: number; time: number | null };
   /** Each region's heat record at the end, by index. */
   best: Record<number, number>;
+  /** Reliquaries met in the Abyss (plans/late-game/03 §9): dropped, claimed by the bot, faded. */
+  reliquaries: { seen: number; claimed: number; faded: number };
+  /** Cursed relics owned at the end, by id: rank and binding points. */
+  cursed: Record<string, { rank: number; bound: number }>;
   /** A line every hour: wall hour, stars lit, mastery levels, deepest floor, frontier heat. */
   hourly: { hour: number; stars: number; masteries: number; floor: number; frontier: number; starlight: number }[];
 }
@@ -149,6 +153,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   const sources: Act2Report['sources'] = { heat: {}, abyss: 0, rush: 0, feats: 0 };
   let rushRuns = 0;
   let lastStar: number | null = null;
+  const reliquaries = { seen: 0, claimed: 0, faded: 0 };
 
   while (clock < end) {
     if (hourly.length < Math.floor(clock / 3600)) {
@@ -185,6 +190,10 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     clock += played.wall;
     const summary = bankRun(profile, run, played.newCards, speed);
     runs++;
+    reliquaries.claimed += summary.reliquaries.claimed;
+    reliquaries.faded += summary.reliquaries.faded;
+    reliquaries.seen += summary.reliquaries.claimed + summary.reliquaries.faded;
+    wearPolicy(profile);
     const fromHeat = summary.heatRecord?.starlight ?? 0;
     const fromFloor = summary.floorRecord?.starlight ?? 0;
     if (fromHeat > 0) sources.heat[profile.region] = (sources.heat[profile.region] ?? 0) + fromHeat;
@@ -224,5 +233,21 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   return {
     seconds: clock, runs, abyssRuns, heatAny, heatFrontier, starlight: earned, sources, lastStar, stars: starsLit(profile),
     masteries: masteryLevels(profile), floor: profile.abyss.best, rushRuns, rush: { ...profile.rush }, best, hourly,
+    reliquaries,
+    cursed: Object.fromEntries(ownedCursed(profile).map((r) => [r.id, { rank: relicRank(profile, r.id), bound: profile.bound[r.id] ?? 0 }])),
   };
+}
+
+/**
+ * The bot's wear policy for cursed relics (plans/late-game/03 §6): fill a
+ * free cursed slot with the highest-ranked one owned. T5's readings will
+ * pick per build once the strata's relics ship; with Glass Crown alone this
+ * is the whole choice.
+ */
+export function wearPolicy(profile: Profile): void {
+  if (profile.cursedWorn.length >= cursedSlots(profile)) return;
+  const best = ownedCursed(profile)
+    .filter((r) => !profile.cursedWorn.includes(r.id))
+    .sort((a, b) => relicRank(profile, b.id) - relicRank(profile, a.id))[0];
+  if (best) toggleCursed(profile, best.id);
 }

@@ -234,6 +234,13 @@
   --rarity-uncommon: #4ec97a; /* = --green-400 */
   --rarity-rare: #4a9eff; /* = --azure-400 */
   --rarity-epic: #a95cff; /* = --violet-400 */
+  /*
+   * A cursed relic's curse line (plans/late-game/03): its own token, always
+   * beside the ☾ glyph so it never reads by colour alone. A light violet:
+   * apart from the hostile red and the gold, and bright on the dark cards
+   * for every common form of colour blindness.
+   */
+  --curse: #c78bff;
   --rarity-legendary: #f0b23c; /* = --amber-400 */
 
   /* ── Status ───────────────────────────────────────────────────────────────

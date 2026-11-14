@@ -1,3 +1,4 @@
+import { CURSED_RELICS } from './cursed';
 import type { BossId, RelicDef, RelicId, RelicSetDef } from './types';
 
 /**
@@ -229,6 +230,8 @@ export const RELICS: readonly RelicDef[] = [
     source: { kind: 'abyss', set: 4 },
     effects: [{ kind: 'behaviour', id: 'drilled' }], perRank: [{ kind: 'behaviour', id: 'reroll' }],
   },
+  // Cursed relics (plans/late-game/03): their own file, spread in so lookups and banking just work.
+  ...CURSED_RELICS,
 ];
 
 export const RELIC_BY_ID: Readonly<Record<RelicId, RelicDef>> = Object.fromEntries(
