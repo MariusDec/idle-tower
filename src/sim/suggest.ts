@@ -1,4 +1,5 @@
 import { BALANCE } from '../content/balance';
+import { ANOMALY_BY_ID } from '../content/anomalies';
 import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../content/evolutions';
 import { FUSION_BY_ID } from '../content/fusions';
 import { ENEMY_BY_ID } from '../content/enemies';
@@ -94,6 +95,21 @@ const SLOT_VALUE = 0.15;
 const RECIPE_VALUE = 0.6;
 /** An evolution on offer: its spike, and this much for the new pattern. */
 const EVOLUTION_VALUE = 1;
+/**
+ * Anomalies (plans/late-game/04 §6), fitted by calibrate like the rest:
+ * bodies Whiteout's storm finds per 100 units of its pulse (it sits on the
+ * crowd); bodies a Gyre blade's pass cuts round its quarry; bodies on
+ * Lighthouse's ray when it fires; and the blasts of a Creeping Barrage line
+ * that land on someone (a crowd stands at one point of the line), and its
+ * bomblets' (scattered among the crowd it walks through).
+ */
+const WHITEOUT_BODIES_PER_100 = 1.17;
+const GYRE_BODIES = 1.6;
+const LIGHTHOUSE_BODIES = 0.8;
+const BARRAGE_LINE_HITS = 1.2;
+const BARRAGE_BOMBLET_RATE = 1.45;
+/** An anomaly on offer (never suggested; `arsenal --anomalies` and the long-press read it): a new rule's worth. */
+const ANOMALY_VALUE = 0.6;
 
 /**
  * What a hit meets this wave (S2): each type in the region's pool by now,
@@ -130,7 +146,7 @@ export function landedOn(foes: Foes | undefined, raw: number, id?: WeaponId): nu
  * With `foes`, what lands through their armour (S2): a weapon of small hits
  * is worth less where the bodies are plated.
  */
-export function weaponDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stats: TowerStats, foes?: Foes): number {
+export function weaponDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved' | 'anomaly'>, stats: TowerStats, foes?: Foes): number {
   return damageDps(w, stats, foes) * utility(w, stats);
 }
 
@@ -145,7 +161,7 @@ function beamHeat(p: { rampCap: number; ramp: number }): number {
  * pay off in kills or at the wall rather than in damage (Hive's drones,
  * Bulwark Runes, Lifebloom's mending).
  */
-export function utility(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stats: TowerStats): number {
+export function utility(w: Pick<WeaponState, 'id' | 'level' | 'evolved' | 'anomaly'>, stats: TowerStats): number {
   const p = armed(stats, w);
   const pattern = WEAPON_BY_ID[w.id].pattern;
   switch (pattern) {
@@ -179,7 +195,7 @@ export function utility(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stats:
  * (T2: `npm run calibrate` checks it against the sim's own tally). With
  * `foes`, through their armour.
  */
-export function damageDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stats: TowerStats, foes?: Foes): number {
+export function damageDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved' | 'anomaly'>, stats: TowerStats, foes?: Foes): number {
   const p = armed(stats, w);
   const E = BALANCE.evolutions;
   const crit = 1 + stats.critChance * (stats.critMult - 1);
@@ -209,20 +225,35 @@ export function damageDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stat
         return perAttack * rate * bodies * storms;
       }
       case 'pulse':
+        // Whiteout: a smaller storm, sat on the thickest crowd.
+        if (w.anomaly === 'whiteout') return perAttack * rate * ((p.radius * BALANCE.anomalies.whiteout.radius) / 100) * WHITEOUT_BODIES_PER_100;
         return perAttack * rate * (p.radius / 100) * PULSE_BODIES_PER_100;
       case 'lob': {
         const bodies = 1 + p.radius * LOB_BODIES_PER_UNIT;
         const bomblets = 1 + p.bomblets * BALANCE.weapons.bombletDamage * BOMBLET_HIT_RATE;
+        if (w.anomaly === 'creeping-barrage') {
+          // Each shell walks a line in; a blast or so of it meets the crowd, and its bomblets scatter through it.
+          const C = BALANCE.anomalies['creeping-barrage'];
+          const scatter = 1 + p.bomblets * BALANCE.weapons.bombletDamage * BARRAGE_BOMBLET_RATE;
+          return perAttack * rate * p.count * C.damage * BARRAGE_LINE_HITS * bodies * scatter;
+        }
         const M = E.meteorfall;
         const meteors = w.evolved ? (perAttack * M.meteor * (1 + M.radius * LOB_BODIES_PER_UNIT)) / M.every : 0;
         return perAttack * rate * p.count * bodies * bomblets + meteors;
       }
       case 'beam': {
+        // Lighthouse: every fire burns whatever lies on its ray.
+        if (w.anomaly === 'lighthouse') {
+          const L = BALANCE.anomalies.lighthouse;
+          return perAttack * rate * beamHeat(p) * LIGHTHOUSE_BODIES * (w.level >= 4 ? L.turnStep : 1);
+        }
         const judgment = w.evolved ? 1 + E.judgment.splits * JUDGMENT_SPLIT_VALUE : 1;
         return perAttack * rate * beamHeat(p) * (p.pierce > 0 ? 1 + BEAM_PIERCE_VALUE : 1) * judgment;
       }
       case 'orbit': {
         const passes = (p.count * p.spin * stats.fireRateMult) / (Math.PI * 2);
+        // Gyre: every pass is round its quarry, so it never cuts air.
+        if (w.anomaly === 'gyre') return perAttack * passes * GYRE_BODIES;
         const bodies = 1 + p.blade * ORBIT_BODIES_PER_UNIT;
         // Halo sweeps the whole field instead of the ring at the wall.
         return perAttack * passes * bodies * (w.evolved ? HALO_VALUE : 1);
@@ -250,7 +281,7 @@ export function damageDps(w: Pick<WeaponState, 'id' | 'level' | 'evolved'>, stat
   }
 }
 
-export function buildDps(weapons: readonly Pick<WeaponState, 'id' | 'level' | 'evolved'>[], stats: TowerStats, foes?: Foes): number {
+export function buildDps(weapons: readonly Pick<WeaponState, 'id' | 'level' | 'evolved' | 'anomaly'>[], stats: TowerStats, foes?: Foes): number {
   let dps = 0;
   for (const w of weapons) dps += weaponDps(w, stats, foes);
   return dps;
@@ -299,7 +330,7 @@ function knows(run: RunState, id: WeaponId): boolean {
 function recipeBonus(run: RunState, passive: PassiveId, level: number): number {
   const at = BALANCE.evolutions.passiveAt;
   for (const w of run.weapons) {
-    if (w.evolved || !knows(run, w.id) || EVOLUTION_OF[w.id].passive !== passive) continue;
+    if (w.evolved || w.anomaly || !knows(run, w.id) || EVOLUTION_OF[w.id].passive !== passive) continue;
     return RECIPE_VALUE * (readiness(level, at) - readiness(level - 1, at));
   }
   return 0;
@@ -312,6 +343,8 @@ function recipeBonus(run: RunState, passive: PassiveId, level: number): number {
  */
 export type CardBadge =
   | { readonly kind: 'recipe'; readonly evolution: EvolutionId; readonly completes: boolean }
+  /** An anomaly ends this known evolution (plans/late-game/04 §2). */
+  | { readonly kind: 'fork'; readonly evolution: EvolutionId }
   | { readonly kind: 'counter' }
   | { readonly kind: 'slot'; readonly slot: number; readonly of: number };
 
@@ -321,7 +354,7 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
     case 'weapon': {
       const owned = run.weapons.find((w) => w.id === card.id);
       const evo = EVOLUTION_OF[card.id];
-      if (owned && !owned.evolved && knows(run, card.id) && run.passives.some((p) => p.id === evo.passive)) {
+      if (owned && !owned.evolved && !owned.anomaly && knows(run, card.id) && run.passives.some((p) => p.id === evo.passive)) {
         out.push({ kind: 'recipe', evolution: evo.id, completes: completes(card.level, partnerLevel(run, card.id)) });
       }
       if (!owned) {
@@ -333,11 +366,16 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
     case 'passive': {
       for (const w of run.weapons) {
         const evo = EVOLUTION_OF[w.id];
-        if (w.evolved || !knows(run, w.id) || evo.passive !== card.id) continue;
+        if (w.evolved || w.anomaly || !knows(run, w.id) || evo.passive !== card.id) continue;
         out.push({ kind: 'recipe', evolution: evo.id, completes: completes(w.level, card.level) });
         break;
       }
       if (card.level === 1) out.push({ kind: 'slot', slot: run.passives.length + 1, of: run.passiveSlots });
+      return out;
+    }
+    case 'anomaly': {
+      const weapon = ANOMALY_BY_ID[card.id].weapon;
+      if (knows(run, weapon)) out.push({ kind: 'fork', evolution: EVOLUTION_OF[weapon].id });
       return out;
     }
     case 'evolution':
@@ -361,12 +399,12 @@ export function scoreCard(run: RunState, card: Card): number {
   switch (card.kind) {
     case 'weapon': {
       const owned = run.weapons.find((w) => w.id === card.id);
-      const next = { id: card.id, level: card.level, evolved: owned?.evolved ?? false, signature: owned?.signature } as WeaponState;
+      const next = { id: card.id, level: card.level, evolved: owned?.evolved ?? false, anomaly: owned?.anomaly ?? null, signature: owned?.signature } as WeaponState;
       const weapons = run.weapons.filter((w) => w.id !== card.id).concat(next);
       let score = buildDps(weapons, run.stats, foes) / before - 1;
       if (!owned) {
         score += counterShare(run, card.id) * COUNTER_VALUE + SLOT_VALUE;
-      } else if (!owned.evolved && knows(run, card.id) && run.passives.some((p) => p.id === EVOLUTION_OF[card.id].passive)) {
+      } else if (!owned.evolved && !owned.anomaly && knows(run, card.id) && run.passives.some((p) => p.id === EVOLUTION_OF[card.id].passive)) {
         // Each level toward an evolution whose partner is already owned.
         const at = BALANCE.evolutions.evolveAt;
         score += RECIPE_VALUE * (readiness(card.level, at) - readiness(owned.level, at));
@@ -396,6 +434,14 @@ export function scoreCard(run: RunState, card: Card): number {
     case 'evolution': {
       const id = EVOLUTION_BY_ID[card.id].weapon;
       return buildDps(evolved(run.weapons, id), run.stats, foes) / before - 1 + EVOLUTION_VALUE;
+    }
+    case 'anomaly': {
+      // Its spike and new rule, less the evolution it forbids, by how near that was (plans/late-game/04 §6).
+      const weapon = ANOMALY_BY_ID[card.id].weapon;
+      const weapons = run.weapons.map((w) => (w.id === weapon ? { ...w, anomaly: card.id } : w));
+      const owned = run.weapons.find((w) => w.id === weapon);
+      const forgone = owned && knows(run, weapon) ? EVOLUTION_VALUE * readiness(owned.level, BALANCE.evolutions.evolveAt) : 0;
+      return buildDps(weapons, run.stats, foes) / before - 1 + ANOMALY_VALUE - forgone;
     }
     case 'fusion': {
       // A fusion (N9): both halves' spike, a slot freed, and its own step past evolution.
@@ -433,7 +479,7 @@ export function scoreCard(run: RunState, card: Card): number {
  */
 function rank(priority: readonly string[], card: Card): number {
   if (card.kind === 'evolution' || card.kind === 'fusion') return -1;
-  if (card.kind === 'fallback') return Infinity;
+  if (card.kind === 'fallback' || card.kind === 'anomaly') return Infinity;
   const i = priority.indexOf(card.id);
   return i < 0 ? Infinity : i;
 }
@@ -446,7 +492,8 @@ function rank(priority: readonly string[], card: Card): number {
  */
 export function suggest(run: RunState, cards: readonly Card[]): number {
   const never = run.never;
-  const ruledOut = (c: Card): boolean => !!never && (c.kind === 'weapon' || c.kind === 'passive') && never.includes(c.id);
+  // An anomaly is never suggested (plans/late-game/04 §3): a timeout, Take-all and every bot pass it by.
+  const ruledOut = (c: Card): boolean => c.kind === 'anomaly' || (!!never && (c.kind === 'weapon' || c.kind === 'passive') && never.includes(c.id));
   const open = cards.some((c) => !ruledOut(c)) ? (c: Card): boolean => !ruledOut(c) : (): boolean => true;
   const priority = run.priority;
   if (priority) {

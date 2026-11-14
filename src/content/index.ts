@@ -1,3 +1,4 @@
+import { ANOMALIES } from './anomalies';
 import { BOSSES } from './bosses';
 import { AURAS, ENEMIES } from './enemies';
 import { EVOLUTIONS } from './evolutions';
@@ -38,4 +39,5 @@ export const CONTENT: Readonly<Record<string, readonly ContentEntry[]>> = {
   stars: STARS,
   trials: TRIALS,
   rifts: RIFTS,
+  anomalies: ANOMALIES,
 };

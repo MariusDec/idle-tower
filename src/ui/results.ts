@@ -1,3 +1,4 @@
+import { ANOMALY_BY_ID } from '../content/anomalies';
 import { RIFT_BY_ID } from '../content/rifts';
 import type { RunSummary } from '../meta/results';
 import type { DamageBy, HurtBy } from '../sim/state';
@@ -14,7 +15,7 @@ import { RELIC_BY_ID } from '../content/relics';
 import { TRIAL_BY_ID } from '../content/trials';
 import { FALLBACKS, PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
-import type { ContentEntry, PassiveId, RelicId, WeaponId } from '../content/types';
+import type { AnomalyId, ContentEntry, PassiveId, RelicId, WeaponId } from '../content/types';
 import { curseLine, isCursed } from '../content/cursed';
 import { formatDuration, formatNumber } from '../core/format';
 import { setStyle, setText } from './dom';
@@ -28,6 +29,7 @@ function cardEntry(key: string): ContentEntry | null {
   if (kind === 'passive') return PASSIVE_BY_ID[id as PassiveId] ?? null;
   // An evolution or fusion card shows as its recipe, from `newRecipes` and `newFusions`.
   if (kind === 'evolution' || kind === 'fusion') return null;
+  if (kind === 'anomaly') return ANOMALY_BY_ID[id as AnomalyId] ?? null;
   return FALLBACKS.find((f) => f.id === id) ?? null;
 }
 
@@ -95,6 +97,8 @@ export class ResultsScreen {
   private readonly storedLine: HTMLElement;
   private readonly riftLine: HTMLElement;
   private readonly reliquaryLine: HTMLElement;
+  /** "An anomaly came and went" (plans/late-game/04 §2): no timer, no cost, it can come again. */
+  private readonly anomalyLine: HTMLElement;
   private readonly finds: HTMLElement;
   private readonly next: HTMLElement;
   private readonly nextIcon: HTMLElement;
@@ -134,6 +138,7 @@ export class ResultsScreen {
       <p class="results-stored" hidden></p>
       <p class="results-rifts" hidden></p>
       <p class="results-rifts results-reliquaries" hidden></p>
+      <p class="results-rifts results-anomaly" hidden></p>
       <p class="results-breakdown" hidden></p>
       <ul class="results-finds"></ul>
       <div class="results-build"></div>
@@ -169,6 +174,7 @@ export class ResultsScreen {
     this.storedLine = q('.results-stored');
     this.riftLine = q('.results-rifts');
     this.reliquaryLine = q('.results-reliquaries');
+    this.anomalyLine = q('.results-anomaly');
     this.finds = q('.results-finds');
     this.next = q('.results-next');
     this.nextIcon = q('.results-next-icon');
@@ -330,6 +336,9 @@ export class ResultsScreen {
     const faded = s.reliquaries.faded;
     this.reliquaryLine.hidden = faded === 0;
     if (faded > 0) setText(this.reliquaryLine, `${faded} reliquar${faded === 1 ? 'y' : 'ies'} faded.`);
+    const gone = s.anomaly && !s.anomaly.taken ? ANOMALY_BY_ID[s.anomaly.id] : null;
+    this.anomalyLine.hidden = gone === null;
+    if (gone) setText(this.anomalyLine, `An anomaly came and went: ${gone.name}.`);
     const f = s.shardsFrom;
     const parts = [`Kills ${formatNumber(f.kills)}`, `Waves ${formatNumber(f.waves)}`];
     if (f.elites > 0) parts.push(`Elites ${formatNumber(f.elites)}`);
@@ -345,7 +354,9 @@ export class ResultsScreen {
       ...s.newRecipes.map((id) => chip(EVOLUTION_BY_ID[id], 'recipe')),
       ...s.newFusions.map((id) => chip(FUSION_BY_ID[id], 'recipe')),
       ...s.newEnemies.map((id) => chip(ENEMY_BY_ID[id], 'enemy')),
-      ...s.newCards.map(cardEntry).filter((e): e is ContentEntry => e !== null).map((e) => chip(e, 'card')),
+      // An anomaly is a find only once taken (plans/late-game/04 §2); let go, it has its own line.
+      ...s.newCards.filter((k) => !k.startsWith('anomaly:') || s.anomaly?.taken)
+        .map(cardEntry).filter((e): e is ContentEntry => e !== null).map((e) => chip(e, 'card')),
     );
     this.finds.hidden = this.finds.childElementCount === 0;
 

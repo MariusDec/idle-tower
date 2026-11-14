@@ -2,7 +2,7 @@ import { ABYSS_INDEX } from './abyss';
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
 import type {
-  AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, RiftDef, TrialDef, WeaponDef, WebNodeDef,
+  AnomalyDef, AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, RiftDef, TrialDef, WeaponDef, WebNodeDef,
 } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
@@ -493,9 +493,32 @@ export const cursedRelics: LintRule = (tables) => {
   return out;
 };
 
+/**
+ * Anomalies (plans/late-game/04 §6): each names a real weapon, at most one a
+ * weapon, with a rule line and step re-wordings inside R4. Names are
+ * `uniqueNames`'s, across evolutions, fusions, frames and ultimates.
+ */
+export const anomalies: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const list = (tables.anomalies as readonly AnomalyDef[] | undefined) ?? [];
+  const weapons = new Set(((tables.weapons as readonly WeaponDef[] | undefined) ?? []).map((w) => w.id as string));
+  const seen = new Set<string>();
+  for (const a of list) {
+    if (weapons.size > 0 && !weapons.has(a.weapon)) out.push({ table: 'anomalies', id: a.id, problem: `unknown weapon "${a.weapon}"` });
+    if (seen.has(a.weapon)) out.push({ table: 'anomalies', id: a.id, problem: `a second anomaly for ${a.weapon}` });
+    seen.add(a.weapon);
+    if (!a.rule.trim()) out.push({ table: 'anomalies', id: a.id, problem: 'missing rule line' });
+    if ((a.steps?.length ?? 0) > BALANCE.maxLevel - 1) out.push({ table: 'anomalies', id: a.id, problem: 'more step lines than levels' });
+    for (const s of a.steps ?? []) {
+      if (s !== null && wordCount(s) > MAX_TEXT_WORDS) out.push({ table: 'anomalies', id: a.id, problem: `step "${s}" is over ${MAX_TEXT_WORDS} words` });
+    }
+  }
+  return out;
+};
+
 export const RULES: readonly LintRule[] = [
   uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking, rifts,
-  cursedRelics,
+  cursedRelics, anomalies,
 ];
 
 /**

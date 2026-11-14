@@ -1,3 +1,4 @@
+import { ANOMALY_BY_ID } from '../content/anomalies';
 import { FORGE_BY_ID } from '../content/forge';
 import { BALANCE } from '../content/balance';
 import { EVOLUTION_OF } from '../content/evolutions';
@@ -20,7 +21,7 @@ import { icon } from './icon';
 
 /** A stable key for a build as drawn, so a per-frame view redraws only when it changes. */
 export function buildKey(build: BuildSummary, silenced: ReadonlySet<WeaponId> = new Set()): string {
-  const w = build.weapons.map((x) => `${x.id}:${x.level}:${x.evolved ? 1 : 0}:${silenced.has(x.id) ? 1 : 0}`);
+  const w = build.weapons.map((x) => `${x.id}:${x.level}:${x.evolved ? 1 : 0}:${x.anomaly ?? ''}:${silenced.has(x.id) ? 1 : 0}`);
   const p = build.passives.map((x) => `${x.id}:${x.level}`);
   return `${w.join(',')}|${p.join(',')}`;
 }
@@ -47,12 +48,14 @@ export function buildChips(build: BuildSummary, silenced: ReadonlySet<WeaponId> 
   const out: HTMLElement[] = [];
   for (const w of build.weapons) {
     const evo = w.evolved ? EVOLUTION_OF[w.id] : null;
-    const def = evo ?? WEAPON_BY_ID[w.id];
-    const cls = ['is-weapon', w.evolved ? 'is-evolved' : '', silenced.has(w.id) ? 'is-silenced' : ''].filter(Boolean).join(' ');
+    // An anomalised weapon (plans/late-game/04) wears its anomaly's name and icon.
+    const odd = w.anomaly ? ANOMALY_BY_ID[w.anomaly] : null;
+    const def = evo ?? odd ?? WEAPON_BY_ID[w.id];
+    const cls = ['is-weapon', w.evolved ? 'is-evolved' : '', odd ? 'is-anomaly' : '', silenced.has(w.id) ? 'is-silenced' : ''].filter(Boolean).join(' ');
     const el = chip(def.icon, def.name, w.level, cls);
     if (silenced.has(w.id)) el.setAttribute('aria-label', `${def.name}, level ${w.level}, silenced`);
     // What the chip stands for, for the hold-to-peek card (src/ui/peek.ts).
-    Object.assign(el.dataset, { kind: 'weapon', id: w.id, level: String(w.level), fusion: w.fusion ?? '' });
+    Object.assign(el.dataset, { kind: 'weapon', id: w.id, level: String(w.level), fusion: w.fusion ?? '', anomaly: w.anomaly ?? '' });
     out.push(el);
   }
   for (const p of build.passives) {

@@ -1,6 +1,7 @@
 # 04. Anomaly cards
 
-**Status:** 2026-11-14. Plan, not built. Supersedes §2 of
+**Status:** 2026-11-14. P1–P4 built (see [docs/anomalies.md](../../docs/anomalies.md)
+for what changed in the numbers); P5–P6 not built. Supersedes §2 of
 [b-moments.md](b-moments.md) (Anomaly cards) and answers its Open question
 "Can an anomalised weapon still fuse?".
 

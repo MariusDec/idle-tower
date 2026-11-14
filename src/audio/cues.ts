@@ -149,6 +149,17 @@ export class Cues {
         case 'picked':
           if (this.ready('picked', now)) s.tone({ freq: 740, freqEnd: 880, type: 'sine', duration: 0.08, volume: 0.1 });
           break;
+        case 'anomalyOffer':
+          // A detuned bell (plans/late-game/04 §2): two partials a beat apart, so a half-watching player looks down.
+          s.tone({ freq: 880, type: 'sine', duration: 1.1, volume: 0.09, attack: 0.005 });
+          s.tone({ freq: 893, type: 'sine', duration: 1.0, volume: 0.07, attack: 0.005 });
+          s.tone({ freq: 2217, type: 'triangle', duration: 0.5, volume: 0.025, attack: 0.005 });
+          break;
+        case 'anomaly':
+          // Taken: a reversed swell, rising into a cut.
+          s.tone({ freq: 330, freqEnd: 660, type: 'sine', duration: 0.7, volume: 0.12, attack: 0.65 });
+          s.tone({ freq: 337, freqEnd: 674, type: 'triangle', duration: 0.7, volume: 0.06, attack: 0.65 });
+          break;
         case 'evolve':
         case 'fuse':
           for (const [i, f] of [392, 523, 659, 784, 1047].entries()) {

@@ -9,7 +9,7 @@ import type { TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 18;
+  version: 19;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -67,6 +67,12 @@ export interface Profile {
   bound: Record<string, number>;
   /** The deepest Abyss floor each cursed relic was worn to, for the compare sheet. */
   cursedBest: Record<string, number>;
+  /**
+   * Anomalies (plans/late-game/04): those taken (the Book's), those offered
+   * and let go (glimpsed, until taken), runs since the last offer (the dry
+   * ramp), and how many have been taken in all (the feats).
+   */
+  anomalies: { found: string[]; glimpsed: string[]; dry: number; taken: number };
   /** Wall-clock ms the game was last open, for offline earnings (§6.1). */
   lastSeen: number;
   /**
@@ -159,7 +165,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 18;
+export const PROFILE_VERSION = 19;
 
 /** One rift's journal entry (plans/late-game/02 §5). */
 export interface RiftRecord {
@@ -210,6 +216,7 @@ export function newProfile(now: number): Profile {
     cursedWorn: [],
     bound: {},
     cursedBest: {},
+    anomalies: { found: [], glimpsed: [], dry: 0, taken: 0 },
     recipes: { found: [], carried: {}, readied: {} },
     lastSeen: now,
     ceremony: null,

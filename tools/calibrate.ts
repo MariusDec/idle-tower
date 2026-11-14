@@ -20,7 +20,8 @@
 import { SIM_DT } from '../src/app/loop';
 import { WEAPONS } from '../src/content/weapons';
 import { regionByIndex } from '../src/content/regions';
-import type { WeaponId } from '../src/content/types';
+import type { AnomalyId, WeaponId } from '../src/content/types';
+import { ANOMALIES } from '../src/content/anomalies';
 import { createRun } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile } from '../src/meta/profile';
@@ -47,11 +48,15 @@ const WARMUP = 3;
 const SECONDS = 20;
 /** Levels each weapon is measured at; the last is measured evolved too. */
 const LEVELS = [1, 3, 5] as const;
+/** Levels each shipped anomaly is measured at (plans/late-game/04 §9): where it is first offered, and maxed. */
+const ANOMALY_LEVELS = [3, 5] as const;
 
 export interface CalibrationRow {
   weapon: WeaponId;
   level: number;
   evolved: boolean;
+  /** The anomaly measured (plans/late-game/04), if any. */
+  anomaly?: AnomalyId;
   measured: number;
   estimate: number;
   /** estimate ÷ measured. */
@@ -66,11 +71,11 @@ interface Arena {
 }
 
 /** A fresh tower, its stats as a new profile's, with this one weapon and the fixed crowd. */
-function arena(id: WeaponId, level: number, evolved: boolean): Arena {
+function arena(id: WeaponId, level: number, evolved: boolean, anomaly: AnomalyId | null = null): Arena {
   const p = newProfile(0);
   p.tutorial.firstDraft = true;
   const run = createRun({ ...buildRunConfig(p), pool: [id] }, 1);
-  run.weapons = [{ ...newWeapon(id, level), evolved }];
+  run.weapons = [{ ...newWeapon(id, level), evolved, anomaly }];
   // The same crowd for a weapon evolved or not: an evolution's step shows as faster kills.
   const w = armed(run.stats, newWeapon(id, level));
   const hp = BODY_HITS * w.damage * run.stats.damageMult * Math.max(1, w.rampCap);
@@ -98,8 +103,8 @@ function stand(run: RunState, x: number, y: number, hp: number): Enemy {
 }
 
 /** What one weapon lands per second on the crowd, after the warm-up. */
-export function measure(id: WeaponId, level: number, evolved: boolean): number {
-  const { run, spots, hp } = arena(id, level, evolved);
+export function measure(id: WeaponId, level: number, evolved: boolean, anomaly: AnomalyId | null = null): number {
+  const { run, spots, hp } = arena(id, level, evolved, anomaly);
   let counted = 0;
   const total = (): number => Object.values(run.damageBy).reduce((a, b) => a + (b ?? 0), 0);
   const n = Math.round((WARMUP + SECONDS) / SIM_DT);
@@ -136,6 +141,15 @@ export function calibrate(weapons: readonly WeaponId[] = WEAPONS.map((w) => w.id
       const estimate = damageDps({ id: weapon, level, evolved }, run.stats);
       out.push({ weapon, level, evolved, measured, estimate, ratio: estimate / Math.max(1e-9, measured) });
     }
+    // Its anomaly, where one ships (plans/late-game/04 §9): at its first offer's level and maxed.
+    const odd = ANOMALIES.find((a) => a.weapon === weapon);
+    if (!odd) continue;
+    for (const level of ANOMALY_LEVELS) {
+      const { run } = arena(weapon, level, false, odd.id);
+      const measured = measure(weapon, level, false, odd.id);
+      const estimate = damageDps({ id: weapon, level, evolved: false, anomaly: odd.id }, run.stats);
+      out.push({ weapon, level, evolved: false, anomaly: odd.id, measured, estimate, ratio: estimate / Math.max(1e-9, measured) });
+    }
   }
   return out;
 }
@@ -150,7 +164,7 @@ function main(): void {
   console.log('weapon            lvl  evo   measured  estimate   ratio');
   for (const r of rows) {
     const flag = Math.abs(r.ratio - 1) > MAX_DRIFT ? '  ✗' : '';
-    console.log(`${r.weapon.padEnd(17)} ${String(r.level).padStart(3)}  ${r.evolved ? 'yes' : '   '}  ${r.measured.toFixed(1).padStart(9)} ${r.estimate.toFixed(1).padStart(9)}  ${r.ratio.toFixed(2).padStart(6)}${flag}`);
+    console.log(`${(r.anomaly ? `${r.weapon}~${r.anomaly}` : r.weapon).padEnd(17)} ${String(r.level).padStart(3)}  ${r.evolved ? 'yes' : r.anomaly ? 'ano' : '   '}  ${r.measured.toFixed(1).padStart(9)} ${r.estimate.toFixed(1).padStart(9)}  ${r.ratio.toFixed(2).padStart(6)}${flag}`);
   }
   const bad = drifted(rows);
   console.log(`T2 ${bad.length === 0 ? 'PASS' : 'FAIL'}: ${bad.length} of ${rows.length} estimates drift more than ${MAX_DRIFT * 100}%`);

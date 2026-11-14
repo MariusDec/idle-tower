@@ -7,7 +7,7 @@ import { FRAMES } from '../content/frames';
 import { REGIONS } from '../content/regions';
 import { RELIC_BY_ID, RELIC_SETS, bossRelic, setOf } from '../content/relics';
 import { isCursed } from '../content/cursed';
-import type { BossId, EnemyId, EvolutionId, FeatDef, FusionId, PassiveId, RelicId, RiftId, WeaponId } from '../content/types';
+import type { AnomalyId, BossId, EnemyId, EvolutionId, FeatDef, FusionId, PassiveId, RelicId, RiftId, WeaponId } from '../content/types';
 import type { DamageBy, HurtBy, RunState } from '../sim/state';
 import {
   act2Open, bossDown, frameUnlocked, gainRelic, wornCursed, hubUnlocks, regionUnlocked, relicSlots, rushOpen, setOwned, setRank, trophiesAt,
@@ -41,14 +41,14 @@ export interface BossResult {
 
 /** The tower as the run left it (U3, U5): its weapons and passives, with their levels. */
 export interface BuildSummary {
-  weapons: { id: WeaponId; level: number; evolved: boolean; fusion: FusionId | null }[];
+  weapons: { id: WeaponId; level: number; evolved: boolean; fusion: FusionId | null; anomaly?: AnomalyId | null }[];
   passives: { id: PassiveId; level: number }[];
 }
 
 /** The build a run holds now, for the HUD strip, the pause menu and the results. */
 export function buildOf(run: RunState): BuildSummary {
   return {
-    weapons: run.weapons.map((w) => ({ id: w.id, level: w.level, evolved: w.evolved, fusion: w.fusion })),
+    weapons: run.weapons.map((w) => ({ id: w.id, level: w.level, evolved: w.evolved, fusion: w.fusion, anomaly: w.anomaly ?? null })),
     passives: run.passives.map((p) => ({ id: p.id, level: p.level })),
   };
 }
@@ -57,7 +57,7 @@ export function buildOf(run: RunState): BuildSummary {
  * A reward only a present player can earn (I9, plans/late-game/01 §9.1).
  * Each late-game plan adds its own kind; the hands-off bot must never see one.
  */
-export type ActiveOnlyKind = 'stored-played' | 'rift' | 'reliquary';
+export type ActiveOnlyKind = 'stored-played' | 'rift' | 'reliquary' | 'anomaly';
 
 /** What Stored Light paid this run (plans/late-game/01 §2). */
 export interface StoredSummary {
@@ -131,6 +131,11 @@ export interface RunSummary {
    * (the results' "1 reliquary faded", a count). Zero outside the Abyss.
    */
   reliquaries: { claimed: number; faded: number };
+  /**
+   * The run's anomaly (plans/late-game/04): the one offered, whether it was
+   * taken, and whether it is new to the Book. Null when none was dealt.
+   */
+  anomaly: { id: AnomalyId; taken: boolean; fresh: boolean } | null;
   /** Feats earned this run, waiting in the Feats tab. */
   feats: FeatDef[];
   /** True once the Feats tab is open: before it, feats are earned quietly, for the tab's first burst (§5.4). */
@@ -323,6 +328,7 @@ export function bankRun(
   const rifts = recordRifts(profile, run);
   const newRecipes = recordRecipes(profile, run);
   const newFusions = recordFusions(profile, run);
+  const anomaly = recordAnomaly(profile, run);
   const feats = checkFeats(profile, run);
   // Stored Light (plans/late-game/01): after everything that reads the run's
   // own shards, before the Foreman, so a played run feeds the wishlist.
@@ -340,6 +346,8 @@ export function bankRun(
   // Reliquaries (plans/late-game/03, I9): one entry per tap; the lesson's window is spent once one is claimed.
   for (let i = 0; i < run.reliquariesClaimed; i++) activeOnly.push({ kind: 'reliquary', amount: 1 });
   if (run.reliquariesClaimed > 0) profile.tutorial.firstReliquary = true;
+  // Anomalies (plans/late-game/04, I9): only a present player takes one.
+  if (anomaly?.taken) activeOnly.push({ kind: 'anomaly', amount: 1 });
   // The deepest floor each worn curse went to, for the compare sheet.
   if (abyss) {
     const floor = floorOf(Math.max(1, wave));
@@ -374,6 +382,7 @@ export function bankRun(
     boss,
     relics,
     reliquaries: { claimed: run.reliquariesClaimed, faded: run.reliquariesFaded + run.reliquaries.length },
+    anomaly,
     feats,
     featsOpen: hubUnlocks(profile).feats,
     unlocks,
@@ -388,6 +397,34 @@ export function bankRun(
     foreman,
     trial,
   };
+}
+
+/**
+ * Bank a run's anomaly (plans/late-game/04 §3, §6): taken, it is found (and
+ * no longer glimpsed); let go, it is glimpsed. Any offer resets the dry
+ * ramp; a run that could have dealt one and didn't adds a step. Checked
+ * before the feats, which count what was taken.
+ */
+export function recordAnomaly(profile: Profile, run: RunState): RunSummary['anomaly'] {
+  const plan = run.anomaly;
+  const A = profile.anomalies;
+  if (!plan) return null;
+  const id = plan.taken ?? plan.offered;
+  if (!id) {
+    A.dry++;
+    return null;
+  }
+  A.dry = 0;
+  const taken = plan.taken !== null;
+  const fresh = taken ? !A.found.includes(id) : !A.found.includes(id) && !A.glimpsed.includes(id);
+  if (taken) {
+    A.taken++;
+    if (!A.found.includes(id)) A.found.push(id);
+    A.glimpsed = A.glimpsed.filter((x) => x !== id);
+  } else if (!A.found.includes(id) && !A.glimpsed.includes(id)) {
+    A.glimpsed.push(id);
+  }
+  return { id, taken, fresh };
 }
 
 /**

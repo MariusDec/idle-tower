@@ -5,7 +5,7 @@ import { frameById } from '../content/frames';
 import { isRush } from '../content/rush';
 import { WEAPON_BY_ID } from '../content/weapons';
 import type { BehaviourId, EnemyId, RegionDef, WeaponId } from '../content/types';
-import type { RunConfig, RunInput, RunState, WeaponState } from './state';
+import type { AnomalyPlan, RunConfig, RunInput, RunState, WeaponState } from './state';
 import { newWeapon } from './systems/arms';
 import { allMods, resolveStats } from './stats';
 import { pactLoad, ruleSurge, surgeMods } from './pacts';
@@ -46,6 +46,12 @@ export function twinSpares(spares: readonly WeaponId[], region: RegionDef): read
   return answers.length > 0 ? answers : clear;
 }
 
+/** The run's anomaly roll (plans/late-game/04 §3): held or not, then its wait in eligible drafts. */
+function rollAnomaly(rng: Rng, chance: number): AnomalyPlan {
+  const held = chance >= 1 || rng.chance(chance);
+  return { held, delay: held ? rng.int(0, BALANCE.anomalies.delay) : 0, offered: null, taken: null };
+}
+
 /**
  * The sim's entry points. The same `(config, seed, inputs)` always gives the
  * same run: nothing in `sim/` reads a clock, the DOM or `Math.random`.
@@ -78,6 +84,10 @@ export function createRun(config: RunConfig, seed: number): RunState {
   const twinOffer = owned('twin-mount') > 0 && config.weaponSlots >= 2 && spares.length > 0
     ? root.split('loadout').pick(twinSpares(spares, region))
     : null;
+  // Anomalies (plans/late-game/04 §3): whether this run holds one, and how
+  // many eligible drafts it waits. A split leaves the root as it is.
+  const anomalyStream = root.split('anomaly');
+  const anomaly = config.anomaly ? rollAnomaly(anomalyStream, config.anomaly.chance) : null;
   return {
     seed,
     regionId: config.regionId,
@@ -158,6 +168,8 @@ export function createRun(config: RunConfig, seed: number): RunState {
       riftFx: root.split('riftFx').state,
       // Cursed relics (plans/late-game/03): their own stream, so a run with none draws as before.
       curse: root.split('curse').state,
+      // Anomalies (plans/late-game/04): the roll, the wait and the weapon, on their own stream.
+      anomaly: anomalyStream.state,
     },
     riftCfg: config.rifts ?? null,
     rift: null,
@@ -170,6 +182,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     reliquaryCount: 0,
     reliquariesClaimed: 0,
     reliquariesFaded: 0,
+    anomaly,
     outcome: null,
     events: [],
   };

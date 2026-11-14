@@ -1,7 +1,7 @@
 import type { RngState } from '../core/rng';
 import type { Oval } from '../content/arena';
 import type {
-  AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, RiftEffect, RiftId,
+  AnomalyId, AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, RiftEffect, RiftId,
   StatMod, WeaponId,
 } from '../content/types';
 
@@ -80,6 +80,46 @@ export interface RunConfig {
    * may leave, filtered to the run's pool. Null outside the Abyss. Absent: none.
    */
   readonly reliquaries?: ReliquaryConfig | null;
+  /**
+   * Anomalies (plans/late-game/04): the chance this run holds one. Null
+   * before the gate (the first recipe), in Trials and in Boss Rush. Absent: none.
+   */
+  readonly anomaly?: AnomalyConfig | null;
+}
+
+/** What a run's anomaly roll reads (plans/late-game/04 §3). */
+export interface AnomalyConfig {
+  /** 0–1: the profile's rate (`meta/runConfig.ts#anomalyChance`). */
+  readonly chance: number;
+}
+
+/** The run's anomaly (plans/late-game/04 §3): rolled at `createRun`, offered once, maybe taken. */
+export interface AnomalyPlan {
+  /** True when this run holds one. */
+  held: boolean;
+  /** Eligible drafts it still waits. */
+  delay: number;
+  /** The one offered, once it has been. */
+  offered: AnomalyId | null;
+  /** The one taken; at most one a run. */
+  taken: AnomalyId | null;
+}
+
+/** An anomaly's moving centre (plans/late-game/04 §4): Whiteout's storm, Gyre's ring. */
+export interface AnomalyCell {
+  x: number;
+  y: number;
+  px: number;
+  py: number;
+  /** Where it heads. */
+  tx: number;
+  ty: number;
+  /** The body it holds (Gyre), 0 for none. */
+  target: number;
+  /** Whiteout: run time it next looks for the thickest crowd. Lighthouse: radians swept since the beam last hit anything. */
+  idle: number;
+  /** Lighthouse: the beam's angle at its last fire, where the next fire's sweep starts. */
+  arc: number;
 }
 
 /** What a run's reliquaries hold (plans/late-game/03 §3.1). */
@@ -447,6 +487,10 @@ export interface WeaponState {
   dampedUntil: number;
   /** Soul Tether: the bodies its threads hold, by id. Empty for every other weapon. */
   tethers: number[];
+  /** The anomaly taken for it (plans/late-game/04): it never evolves. Absent on runs saved before it. */
+  anomaly?: AnomalyId | null;
+  /** The anomaly's moving centre, once it has one. */
+  cell?: AnomalyCell;
 }
 
 export interface PassiveState {
@@ -467,6 +511,8 @@ export type Card =
   | { readonly kind: 'evolution'; readonly id: EvolutionId }
   /** Two evolved weapons made one (N9): offered once both are evolved and its star is lit. */
   | { readonly kind: 'fusion'; readonly id: FusionId }
+  /** A weapon's rule broken (plans/late-game/04): rare, never suggested, never taken for you. */
+  | { readonly kind: 'anomaly'; readonly id: AnomalyId }
   | { readonly kind: 'fallback'; readonly id: FallbackId };
 
 export interface DraftOffer {
@@ -555,8 +601,8 @@ export type SimEvent =
   | { kind: 'firstSight'; enemy: EnemyId }
   /** Second Wind: the tower rose again instead of falling. */
   | { kind: 'revive' }
-  /** A Frost Ring pulse. */
-  | { kind: 'pulse'; radius: number }
+  /** A Frost Ring pulse: round the tower, or (Whiteout) round its storm at x, y. */
+  | { kind: 'pulse'; radius: number; x?: number; y?: number }
   /** A Mender's heal. */
   | { kind: 'mend'; x: number; y: number; radius: number }
   /** A Splitter, or a Split elite, came apart. */
@@ -589,6 +635,9 @@ export type SimEvent =
   | { kind: 'blast'; x: number; y: number; radius: number; weapon: WeaponId; style: 'shell' | 'bomblet' | 'meteor' | 'shatter' }
   /** A weapon evolved (§10.3: the tower's spotlight). */
   | { kind: 'evolve'; weapon: WeaponId; evolution: EvolutionId }
+  /** An anomaly was dealt into the hand, or taken (plans/late-game/04). */
+  | { kind: 'anomalyOffer'; anomaly: AnomalyId }
+  | { kind: 'anomaly'; weapon: WeaponId; anomaly: AnomalyId }
   /** Two weapons fused (N9): the tower's spotlight, on the mount they share. */
   | { kind: 'fuse'; weapon: WeaponId; fusion: FusionId }
   /** A body caught fire. */
@@ -770,6 +819,8 @@ export interface RunState {
   /** Reliquaries claimed by a tap, and those that faded (the results' count). */
   reliquariesClaimed: number;
   reliquariesFaded: number;
+  /** The run's anomaly (plans/late-game/04); null when none can come (the gate shut, a Trial, Boss Rush). */
+  anomaly: AnomalyPlan | null;
   /** How the run ended: the tower fell, withdrew, or (Boss Rush, N8) cleared every stage. */
   outcome: null | { kind: 'fell' | 'retreat' | 'cleared'; wave: number; time: number };
   events: SimEvent[];

@@ -1,3 +1,4 @@
+import { ANOMALY_BY_ID } from '../content/anomalies';
 import {
   clearRunSnapshot, loadProfile, loadResume, saveProfile, saveRunSnapshot, snapshotRun, type SnapshotBurn,
 } from '../meta/save';
@@ -30,7 +31,7 @@ import { RELIC_BY_ID } from '../content/relics';
 import { TRIAL_BY_ID } from '../content/trials';
 import { formatNumber } from '../core/format';
 import { applyInput, createRun, step } from '../sim/run';
-import { banishable, cardKey } from '../sim/systems/draft';
+import { banishable, cardKey, holdsAnomaly } from '../sim/systems/draft';
 import { autoUltWanted } from '../sim/systems/ultimate';
 import { cardBadges } from '../sim/suggest';
 import type { DraftOffer, RunState } from '../sim/state';
@@ -630,7 +631,8 @@ export class App {
           cards: run.draft.cards,
           suggested: run.draft.suggested,
           timed: this.profile.tutorial.firstDraft,
-          seconds: draftSeconds(this.profile),
+          // A hand with an anomaly gets the full time, the Tactician's too (plans/late-game/04 §3).
+          seconds: holdsAnomaly(run.draft.cards) ? Math.max(draftSeconds(this.profile), BALANCE.anomalies.seconds) : draftSeconds(this.profile),
           seen: (key) => seen.has(key),
           rerolls: run.rerolls,
           banishes: run.banishes,
@@ -639,6 +641,8 @@ export class App {
           opening: opening ? { at: run.draftsOpened, of: this.opening } : null,
           autoTake: null,
           badges: run.draft.cards.map((c) => cardBadges(run, c)),
+          anomalies: Object.fromEntries(run.weapons.filter((w) => w.anomaly).map((w) => [w.id, w.anomaly])),
+          anomalyFirst: this.profile.anomalies.found.length + this.profile.anomalies.glimpsed.length === 0,
         });
         for (const c of run.draft.cards) {
           const key = cardKey(c);
@@ -869,6 +873,12 @@ export class App {
           // Taught by the toast (plans/late-game/03 §2), as the Champion's is; the first says where to look.
           this.toasts.show('locked-chest', 'A reliquary', ev.first ? 'Tap the chest, or the chip by your ultimate, before it fades.' : 'Tap it before it fades.', 'relic');
           break;
+        case 'anomaly': {
+          // Taken (plans/late-game/04 §2): the toast names it; the renderer flashes the mount.
+          const def = ANOMALY_BY_ID[ev.anomaly];
+          this.toasts.show(def.icon, `Anomaly · ${def.name}`, def.rule, 'relic');
+          break;
+        }
         case 'reliquaryClaim': {
           const def = RELIC_BY_ID[ev.relic];
           this.toasts.show(def.icon, `Cursed · ${def.name}`, `${def.text} ${curseLine(def)}`, 'relic');

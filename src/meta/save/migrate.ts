@@ -94,6 +94,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   17: (raw) => ({
     ...raw, version: 18, cursedWorn: [], bound: {}, cursedBest: {}, tutorial: { firstReliquary: false, ...(raw.tutorial as object) },
   }),
+  // v19: anomalies (plans/late-game/04): none found or glimpsed, no dry runs.
+  18: (raw) => ({ ...raw, version: 19, anomalies: { found: [], glimpsed: [], dry: 0, taken: 0 } }),
 };
 
 export class MigrationError extends Error {}

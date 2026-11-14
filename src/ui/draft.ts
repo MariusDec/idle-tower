@@ -1,9 +1,10 @@
 import { BALANCE } from '../content/balance';
+import { ANOMALY_BY_ID } from '../content/anomalies';
 import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../content/evolutions';
 import { FUSION_BY_ID } from '../content/fusions';
 import { FALLBACKS, PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
-import type { ContentEntry } from '../content/types';
+import type { AnomalyId, ContentEntry, WeaponId } from '../content/types';
 import type { Card } from '../sim/state';
 import type { CardBadge } from '../sim/suggest';
 import { cardKey } from '../sim/systems/draft';
@@ -36,7 +37,14 @@ export interface DraftView {
   autoTake?: number | null;
   /** How each card fits the build (U4), by card index. */
   badges?: readonly (readonly CardBadge[])[];
+  /** Anomalies already taken this run, by weapon (plans/late-game/04): their level lines may read differently. */
+  anomalies?: Readonly<Partial<Record<WeaponId, AnomalyId>>>;
+  /** The profile's first anomaly: one line under it says what it is. */
+  anomalyFirst?: boolean;
 }
+
+/** The line under the profile's first anomaly (plans/late-game/04 §2). */
+const ANOMALY_FIRST = 'Rare. Breaks its weapon’s rule. Never taken for you.';
 
 /** A badge's word on the card, and its line in the long-press details (R4). */
 function badgeText(b: CardBadge): { short: string; long: string } {
@@ -49,6 +57,10 @@ function badgeText(b: CardBadge): { short: string; long: string } {
       return { short: 'Strong here', long: 'Strong against what walks in this region.' };
     case 'slot':
       return { short: `Slot ${b.slot}/${b.of}`, long: `Fills slot ${b.slot} of ${b.of}.` };
+    case 'fork': {
+      const name = EVOLUTION_BY_ID[b.evolution].name;
+      return { short: `Ends ${name}`, long: `Ends ${name}: no evolution or fusion this run.` };
+    }
     default: {
       const exhaustive: never = b;
       return exhaustive;
@@ -62,13 +74,20 @@ export type DraftTick = 'timeout' | 'take-all' | null;
 /** The first number-ish token in a card line, highlighted (§10.1). */
 const KEY_NUMBER = /[+×]?\d+(?:\.\d+)?%?(?: s\b)?/;
 
+/** A weapon's line for `level`: its anomaly's re-wording where it has one (plans/late-game/04 §4). */
+function weaponLine(id: WeaponId, level: number, anomaly?: AnomalyId): string {
+  const def = WEAPON_BY_ID[id];
+  if (level === 1) return def.text;
+  return (anomaly ? ANOMALY_BY_ID[anomaly].steps?.[level - 2] : null) ?? def.steps[level - 2].text;
+}
+
 /** The card's content entry and its one line for the level it leads to. */
-function describe(card: Card): { entry: ContentEntry; line: string; kind: string } {
+function describe(card: Card, anomaly?: AnomalyId): { entry: ContentEntry; line: string; kind: string } {
   switch (card.kind) {
-    case 'weapon': {
-      const def = WEAPON_BY_ID[card.id];
-      return { entry: def, line: card.level === 1 ? def.text : def.steps[card.level - 2].text, kind: 'Weapon' };
-    }
+    case 'weapon':
+      return { entry: WEAPON_BY_ID[card.id], line: weaponLine(card.id, card.level, anomaly), kind: anomaly ? `Weapon · ${ANOMALY_BY_ID[anomaly].name}` : 'Weapon' };
+    case 'anomaly':
+      return { entry: ANOMALY_BY_ID[card.id], line: ANOMALY_BY_ID[card.id].text, kind: 'Anomaly' };
     case 'passive':
       return { entry: PASSIVE_BY_ID[card.id], line: PASSIVE_BY_ID[card.id].text, kind: 'Passive' };
     case 'evolution':
@@ -87,11 +106,15 @@ function describe(card: Card): { entry: ContentEntry; line: string; kind: string
 }
 
 /** The long-press details (R4): everything the one line leaves out. */
-function details(card: Card): string[] {
+function details(card: Card, anomaly?: AnomalyId): string[] {
   switch (card.kind) {
     case 'weapon': {
-      const def = WEAPON_BY_ID[card.id];
-      return [def.text, ...def.steps.map((s) => s.text)].map((t, i) => `${i + 1 === card.level ? '▸' : ' '} L${i + 1}  ${t}`);
+      const lines = Array.from({ length: BALANCE.maxLevel }, (_, i) => weaponLine(card.id, i + 1, anomaly));
+      return lines.map((t, i) => `${i + 1 === card.level ? '▸' : ' '} L${i + 1}  ${t}`);
+    }
+    case 'anomaly': {
+      const a = ANOMALY_BY_ID[card.id];
+      return [`${WEAPON_BY_ID[a.weapon].name}.`, a.rule, 'No evolution or fusion this run.', 'Never taken for you.'];
     }
     case 'passive':
       return [`Level ${card.level} of ${BALANCE.maxLevel}.`, `Each level: ${PASSIVE_BY_ID[card.id].text}`];
@@ -139,6 +162,8 @@ export class DraftPanel {
   private readonly title: HTMLElement;
   private readonly hint: HTMLElement;
   private readonly row: HTMLElement;
+  /** The anomaly's own row, above the hand (plans/late-game/04 §2). */
+  private readonly anomalyRow: HTMLElement;
   private readonly timer: HTMLElement;
   private readonly timerFill: HTMLElement;
   private remaining = 0;
@@ -175,6 +200,7 @@ export class DraftPanel {
     this.root.innerHTML = `
       <h2 class="draft-title"></h2>
       <p class="draft-hint"></p>
+      <div class="draft-anomaly" hidden></div>
       <div class="draft-row"></div>
       <div class="draft-actions">
         <button type="button" class="btn draft-reroll" hidden></button>
@@ -204,9 +230,10 @@ export class DraftPanel {
     this.title = this.root.querySelector('.draft-title')!;
     this.hint = this.root.querySelector('.draft-hint')!;
     this.row = this.root.querySelector('.draft-row')!;
+    this.anomalyRow = this.root.querySelector('.draft-anomaly')!;
     this.timer = this.root.querySelector('.draft-timer')!;
     this.timerFill = this.root.querySelector('.draft-timer-fill')!;
-    this.row.addEventListener('click', (ev) => {
+    const onCard = (ev: MouseEvent): void => {
       const el = (ev.target as HTMLElement).closest<HTMLElement>('.draft-card');
       if (!el) return;
       if (!this.banishing) {
@@ -217,18 +244,21 @@ export class DraftPanel {
       const index = Number(el.dataset.index);
       this.setBanishing(false);
       if (el.classList.contains('is-banishable')) this.onBanish(index);
-    });
-    bindLongPress(this.row, {
-      selector: '.draft-card',
-      onLongPress: (el) => {
-        el.classList.add('is-detail');
-        this.holding = true;
-      },
-      onRelease: (el) => {
-        el.classList.remove('is-detail');
-        this.holding = false;
-      },
-    });
+    };
+    for (const row of [this.row, this.anomalyRow]) {
+      row.addEventListener('click', onCard);
+      bindLongPress(row, {
+        selector: '.draft-card',
+        onLongPress: (el) => {
+          el.classList.add('is-detail');
+          this.holding = true;
+        },
+        onRelease: (el) => {
+          el.classList.remove('is-detail');
+          this.holding = false;
+        },
+      });
+    }
     host.appendChild(this.root);
     this.hide();
   }
@@ -268,14 +298,30 @@ export class DraftPanel {
     this.takeLabel = opening ? `Take all ${banked} suggested` : `Take suggested ×${banked}`;
     this.autoTake = opening && view.timed ? view.autoTake ?? null : null;
     this.paintTake();
-    this.row.replaceChildren(...view.cards.map((c, i) => {
-      const el = cardFace(c, { suggested: i === view.suggested, isNew: !view.seen(cardKey(c)), badges: view.badges?.[i] ?? [] });
+    const face = (c: Card, i: number): HTMLElement => {
+      const el = cardFace(c, {
+        suggested: i === view.suggested, isNew: !view.seen(cardKey(c)), badges: view.badges?.[i] ?? [],
+        anomaly: c.kind === 'weapon' ? view.anomalies?.[c.id] : undefined,
+      });
       el.dataset.index = String(i);
       toggleClass(el, 'is-banishable', banishes > 0 && (view.banishable?.[i] ?? false));
       return el;
-    }));
+    };
+    const hand: HTMLElement[] = [];
+    const odd: HTMLElement[] = [];
+    view.cards.forEach((c, i) => (c.kind === 'anomaly' ? odd : hand).push(face(c, i)));
+    this.row.replaceChildren(...hand);
+    // An anomaly (plans/late-game/04 §2): a row of its own above the hand, never the suggestion.
+    if (odd.length > 0 && view.anomalyFirst) {
+      const note = document.createElement('p');
+      note.className = 'draft-anomaly-note';
+      note.textContent = ANOMALY_FIRST;
+      odd.push(note);
+    }
+    this.anomalyRow.replaceChildren(...odd);
+    this.anomalyRow.hidden = odd.length === 0;
     // Past four cards (Choice, Foresight, Jackpot), the hand wraps into rows of three.
-    toggleClass(this.row, 'is-many', view.cards.length > 4);
+    toggleClass(this.row, 'is-many', hand.length > 4);
     this.root.hidden = false;
   }
 
@@ -336,12 +382,14 @@ export interface CardFaceOptions {
   badges?: readonly CardBadge[];
   /** Drawn for something already held (the build strip's peek): its level is owned, not offered. */
   owned?: boolean;
+  /** The anomaly its weapon carries this run (plans/late-game/04), for its level lines. */
+  anomaly?: AnomalyId;
 }
 
 /** A card's face, as the draft draws it; the build strip's peek draws the same. */
 export function cardFace(card: Card, opts: CardFaceOptions = {}): HTMLElement {
-  const { suggested = false, isNew = false, badges = [], owned = false } = opts;
-  const { entry, line, kind } = describe(card);
+  const { suggested = false, isNew = false, badges = [], owned = false, anomaly } = opts;
+  const { entry, line, kind } = describe(card, anomaly);
   const el = document.createElement('button');
   el.type = 'button';
   el.className = `draft-card draft-card-${card.kind}${suggested ? ' is-suggested' : ''}`;
@@ -411,7 +459,7 @@ export function cardFace(card: Card, opts: CardFaceOptions = {}): HTMLElement {
 
   const more = document.createElement('div');
   more.className = 'draft-card-details';
-  for (const d of [...details(card), ...badges.map((b) => badgeText(b).long)]) {
+  for (const d of [...details(card, anomaly), ...badges.map((b) => badgeText(b).long)]) {
     const p = document.createElement('p');
     p.textContent = d;
     more.appendChild(p);

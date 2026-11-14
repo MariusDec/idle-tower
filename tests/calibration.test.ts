@@ -8,7 +8,7 @@ import { calibrate, drifted, MAX_DRIFT } from '../tools/calibrate';
  */
 describe('the scorer knows its own accuracy (T2)', () => {
   it(`every weapon's estimate is within ${MAX_DRIFT * 100}% of the sim`, () => {
-    const off = drifted(calibrate()).map((r) => `${r.weapon} L${r.level}${r.evolved ? ' evolved' : ''}: ×${r.ratio.toFixed(2)}`);
+    const off = drifted(calibrate()).map((r) => `${r.weapon} L${r.level}${r.evolved ? ' evolved' : ''}${r.anomaly ? ` ${r.anomaly}` : ''}: ×${r.ratio.toFixed(2)}`);
     expect(off).toEqual([]);
   });
 });

@@ -424,7 +424,7 @@ async function idleMain(seeds: number, activeHours: number): Promise<void> {
     console.log(`  seed ${k + 1} screen to the Blight: hands-off ${hm(h.screen[FINALE])} · engaged ${hm(e.screen[FINALE])}`
       + ` · engaged Act 1 ${days(e.bossKills[FINALE])}`);
     for (const r of [h, e]) {
-      console.log(`           ${r.mode.padEnd(9)} instant ${r.offline} · stored ${r.stored} · burned ${r.burned} · pool at the Blight ${r.poolAtEnd} · rifts ${Math.round(r.riftShards)}`);
+      console.log(`           ${r.mode.padEnd(9)} instant ${r.offline} · stored ${r.stored} · burned ${r.burned} · pool at the Blight ${r.poolAtEnd} · rifts ${Math.round(r.riftShards)} · anomalies ${r.anomalies.offered} offered, ${r.anomalies.taken} taken`);
     }
   }
   const screens = verdicts
@@ -522,7 +522,7 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
     }
     const ladder = Array.from({ length: 10 }, (_, i) => fmt(r.heatFrontier[i + 1])).join(' ');
     console.log(`  seed ${k + 1}: Blight at ${fmt(v.act1)} · runs ${r.runs} (${r.abyssRuns} Abyss) · stars ${r.stars} · masteries ${r.masteries} · floor ${r.floor} · Starlight ${r.starlight}`
-      + ` · reliquaries ${r.reliquaries.claimed}/${r.reliquaries.seen} claimed`);
+      + ` · reliquaries ${r.reliquaries.claimed}/${r.reliquaries.seen} claimed · anomalies ${r.anomalies.offered} (${r.anomalies.abyss} Abyss) / ${r.runs} runs`);
     console.log(`           frontier heat 1–10: ${ladder}`);
     console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')} · last star ${fmt(r.lastStar)}`);
     const src = r.sources;

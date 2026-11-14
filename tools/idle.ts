@@ -76,6 +76,8 @@ export interface IdleReport {
   riftShards: number;
   /** Reliquaries that faded (plans/late-game/03 §9): the hands-off bot claims none, so all it meets fade. */
   reliquariesFaded: number;
+  /** Anomalies dealt into a hand, and taken (plans/late-game/04 §9): the hands-off bot takes none, so I9 isn't vacuous only while some are offered. */
+  anomalies: { offered: number; taken: number };
   /** Shards runs paid, in all. */
   played: number;
   checkins: number;
@@ -106,7 +108,7 @@ export function runIdle(
   const policy: PlayPolicy = mode === 'engaged' ? 'active' : 'idle';
   const report: IdleReport = {
     mode, bossKills: {}, screen: {}, offline: 0, stored: 0, burned: 0, poolAtEnd: 0,
-    tally: { engaged: 0, handsOff: 0 }, activeOnly: {}, riftShards: 0, reliquariesFaded: 0, played: 0, checkins: 0, runs: 0,
+    tally: { engaged: 0, handsOff: 0 }, activeOnly: {}, riftShards: 0, reliquariesFaded: 0, anomalies: { offered: 0, taken: 0 }, played: 0, checkins: 0, runs: 0,
   };
   /** Session wall seconds before this check-in's. */
   let screenBefore = 0;
@@ -167,6 +169,10 @@ export function runIdle(
       }
       // I9 (plans/late-game/03 §9): nor claims a reliquary. A hard fail.
       if (policy === 'idle' && run.reliquariesClaimed > 0) throw new Error('I9: the hands-off bot claimed a reliquary');
+      // I9 (plans/late-game/04 §9): nor takes an anomaly. A hard fail.
+      if (policy === 'idle' && run.anomaly?.taken) throw new Error('I9: the hands-off bot took an anomaly');
+      if (run.anomaly?.offered) report.anomalies.offered++;
+      if (run.anomaly?.taken) report.anomalies.taken++;
       report.riftShards += run.shardsFrom.rifts;
       report.reliquariesFaded += summary.reliquaries.faded;
       marchOn(profile, summary);

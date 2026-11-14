@@ -1263,6 +1263,7 @@ body {
 .draft-title,
 .draft-hint,
 .draft-row,
+.draft-anomaly,
 .draft-actions {
   pointer-events: auto;
 }
@@ -1530,6 +1531,84 @@ body {
 .draft-timer.is-halted .draft-timer-fill {
   background: var(--text-3);
 }
+
+/* An anomaly (plans/late-game/04 §2): a row of its own above the hand, full
+   width and 64 px tall, icon left. A dark face with a split rim: the border
+   drawn twice, 1.5 px apart, in mana and ember, slowly drifting. No new hue. */
+.draft-anomaly {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.draft-anomaly[hidden] { display: none; }
+
+.draft-card-anomaly {
+  border-color: rgba(var(--rgb-mana), 0.7);
+  background: linear-gradient(90deg, rgba(var(--rgb-mana), 0.12), transparent 55%), var(--surface-0);
+  box-shadow: -1.5px 0 0 0 var(--fx-mana), 1.5px 0 0 0 var(--fx-ember);
+  animation: card-in var(--dur-slow) var(--ease-spring) both, anomaly-split 3.2s ease-in-out 0.4s infinite alternate;
+}
+
+.draft-anomaly .draft-card {
+  width: 100%;
+  height: 64px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: var(--space-2);
+  row-gap: 0;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+}
+
+/* Never suggested, and its first showing has a line of its own: no stamp. */
+.draft-anomaly .draft-card-head { display: none; }
+
+.draft-anomaly .draft-card-icon {
+  grid-row: 1 / span 2;
+  width: 44px;
+  height: 44px;
+  color: var(--fx-mana);
+  background: var(--surface-2);
+}
+
+.draft-anomaly .draft-card-icon .icon { --icon-size: 28px; }
+.draft-anomaly .draft-card-name { grid-column: 2; grid-row: 1; font-size: var(--text-md); }
+.draft-anomaly .draft-card-text { grid-column: 2 / span 2; grid-row: 2; font-size: var(--text-xs); }
+.draft-anomaly .draft-card-kind { grid-column: 3; grid-row: 1; color: var(--fx-ember); }
+.draft-anomaly .draft-card-badges { grid-column: 3; grid-row: 1; justify-content: flex-end; flex-wrap: nowrap; white-space: nowrap; }
+.draft-anomaly .draft-card-kind:has(~ .draft-card-badges) { display: none; }
+
+/* Held for details, the row grows to hold them. */
+.draft-anomaly .draft-card.is-detail { height: auto; min-height: 64px; }
+.draft-anomaly .draft-card.is-detail .draft-card-details { position: static; grid-column: 1 / -1; }
+
+.draft-anomaly-note {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-1);
+  text-align: center;
+}
+
+.draft-card-badge.is-fork { color: var(--fx-ember); }
+
+@keyframes anomaly-split {
+  from { box-shadow: -1.5px 0 0 0 var(--fx-mana), 1.5px 0 0 0 var(--fx-ember); }
+  to { box-shadow: 0 -1.5px 0 0 var(--fx-mana), 0 1.5px 0 0 var(--fx-ember); }
+}
+
+:root[data-motion='reduce'] .draft-card-anomaly { animation: none; }
+[data-arena='stopped'] .draft-card-anomaly { animation-play-state: paused; }
+
+/* The anomaly's chip and Book entry wear the same split. */
+.build-chip.is-anomaly { box-shadow: -1.5px 0 0 0 var(--fx-mana), 1.5px 0 0 0 var(--fx-ember); }
+.build-chip.is-anomaly .icon { color: var(--fx-mana); }
+.entry.is-anomaly { border-color: var(--fx-mana); box-shadow: 1.5px 0 0 0 var(--fx-ember); }
+.entry.is-anomaly .entry-head .icon { color: var(--fx-mana); }
+.entry.is-anomaly.is-glimpsed { background: var(--surface-sunken); color: var(--text-2); box-shadow: none; }
 
 /* Reduced motion: the device's setting or the player's (src/app/settings.ts). */
 :root[data-motion='reduce'] .draft-card,

@@ -696,6 +696,23 @@ export interface EvolutionDef extends ContentEntry {
   readonly hint: string;
 }
 
+/**
+ * An anomaly (plans/late-game/04): a rare card that breaks one weapon's rule
+ * for the rest of the run. Never suggested, never taken for the player. It
+ * forbids the weapon's evolution, so its fusions too. What each one does is
+ * `sim/systems/combat.ts`'s; its numbers, `BALANCE.anomalies`.
+ */
+export type AnomalyId = 'whiteout' | 'gyre' | 'lighthouse' | 'creeping-barrage';
+
+export interface AnomalyDef extends ContentEntry {
+  readonly id: AnomalyId;
+  readonly weapon: WeaponId;
+  /** The rule it breaks, for the long-press details: "pulses round the tower → a moving storm". */
+  readonly rule: string;
+  /** Level lines that would be false for it (levels 2–5, in order); null keeps the weapon's own. */
+  readonly steps?: readonly (string | null)[];
+}
+
 export type FusionId = 'blizzard' | 'firestorm' | 'dawnstar' | 'sky-hive';
 
 /**
@@ -898,6 +915,8 @@ export type FeatGoal =
   | { readonly kind: 'lone'; readonly wave: number }
   /** Evolve any weapon. */
   | { readonly kind: 'evolve' }
+  /** Take n anomalies in all (plans/late-game/04): only a watching player can. */
+  | { readonly kind: 'anomalies'; readonly n: number }
   /** Find n different recipes. */
   | { readonly kind: 'recipes'; readonly n: number }
   /** Own n frames. */

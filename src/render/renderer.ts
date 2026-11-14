@@ -1,4 +1,5 @@
 import { BOSS_BY_ID } from '../content/bosses';
+import { ANOMALY_BY_ID } from '../content/anomalies';
 import { EVOLUTION_BY_ID } from '../content/evolutions';
 import { FUSION_BY_ID } from '../content/fusions';
 import { ENEMY_BY_ID } from '../content/enemies';
@@ -240,7 +241,13 @@ export class Renderer {
           this.camera.zoomPunch();
           break;
         case 'pulse':
-          this.effects.ring(0, 0, run.stats.radius, ev.radius, withAlpha(FX.frost, 0.7), 0.4, 10);
+          // Whiteout's storm pulses where it stands, with the anomaly's split (plans/late-game/04 §4).
+          if (ev.x !== undefined && ev.y !== undefined) {
+            this.effects.ring(ev.x, ev.y, 12, ev.radius, withAlpha(FX.frost, 0.7), 0.4, 8);
+            if (QUALITY[this.tier].additive) this.effects.ring(ev.x + 1.5, ev.y, 12, ev.radius, withAlpha(FX.ember, 0.25), 0.4, 3);
+          } else {
+            this.effects.ring(0, 0, run.stats.radius, ev.radius, withAlpha(FX.frost, 0.7), 0.4, 10);
+          }
           break;
         case 'mend':
           this.effects.ring(ev.x, ev.y, 10, ev.radius, withAlpha(FX.nature, 0.55), 0.5, 4);
@@ -392,6 +399,20 @@ export class Renderer {
           this.effects.evolve(run.stats.radius);
           this.camera.zoomPunch();
           this.showBanner('Evolved', EVOLUTION_BY_ID[ev.evolution].name, 'gold');
+          break;
+        case 'anomaly': {
+          // Taken (plans/late-game/04 §2): the mount flashes in the split rim, a ring and a spray roll out.
+          const w = run.weapons.find((x) => x.id === ev.weapon);
+          const o = w ? mountOf(run, w) : { x: 0, y: 0 };
+          this.effects.ring(o.x, o.y, 6, run.stats.radius * 2.2, withAlpha(FX.mana, 0.8), 0.7, 5);
+          this.effects.ring(o.x + 1.5, o.y, 6, run.stats.radius * 2.2, withAlpha(FX.ember, 0.6), 0.7, 3);
+          this.effects.spray(o.x, o.y, FX.mana, 18, 220, 4);
+          this.effects.spray(o.x, o.y, FX.ember, 12, 180, 3);
+          this.camera.zoomPunch();
+          this.showBanner('Anomaly', ANOMALY_BY_ID[ev.anomaly].name, 'gold');
+          break;
+        }
+        case 'anomalyOffer':
           break;
         case 'fuse':
           // A fusion (N9): the evolution's spotlight, twice over.

@@ -101,6 +101,8 @@ export function featMet(profile: Profile, goal: FeatGoal, run: RunState | null):
       return RIFTS.some((r) => r.rarity === goal.rarity && (profile.rifts[r.id]?.seen ?? 0) > 0);
     case 'riftsTaken':
       return riftsTaken(profile) >= goal.n;
+    case 'anomalies':
+      return profile.anomalies.taken >= goal.n;
     default: {
       const exhaustive: never = goal;
       return exhaustive;
@@ -160,6 +162,8 @@ export function featProgress(profile: Profile, feat: FeatDef): number {
     }
     case 'riftsTaken':
       return Math.min(1, riftsTaken(profile) / g.n);
+    case 'anomalies':
+      return Math.min(1, profile.anomalies.taken / g.n);
     case 'riftOpened':
     case 'bossNoUlt':
     case 'bareArsenal':

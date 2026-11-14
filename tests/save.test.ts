@@ -270,6 +270,12 @@ describe('migration ladder', () => {
     expect(out.tutorial).toEqual({ firstDraft: true, forgeIntro: true, explained: [], firstRift: true, firstReliquary: false });
   });
 
+  it('walks a v18 profile to v19: no anomalies found or glimpsed, no dry runs (plans/late-game/04)', () => {
+    const out = migrate({ version: 18, createdAt: 5, shards: 50 }, MIGRATIONS, 19);
+    expect(out.version).toBe(19);
+    expect(out.anomalies).toEqual({ found: [], glimpsed: [], dry: 0, taken: 0 });
+  });
+
   it('the shipped ladder takes a v1 profile to the current version, shaped like a new one', () => {
     const out = migrate({ version: 1, createdAt: 0, shards: 4, records: { runs: 2, bestWave: 5 }, settings: { speed: 1 } });
     expect(out.version).toBe(PROFILE_VERSION);

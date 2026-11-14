@@ -2,11 +2,12 @@ import { Rng } from '../../core/rng';
 import { BALANCE } from '../../content/balance';
 import { lightRadius } from '../../content/arena';
 import { FALLBACKS } from '../../content/passives';
+import { ANOMALY_BY_ID, ANOMALY_OF } from '../../content/anomalies';
 import { EVOLUTION_BY_ID, EVOLUTION_OF } from '../../content/evolutions';
 import { FUSION_BY_ID } from '../../content/fusions';
 import { WEAPON_BY_ID } from '../../content/weapons';
 import type { CardItemId, WeaponId } from '../../content/types';
-import type { Card, RunState } from '../state';
+import type { Card, RunState, WeaponState } from '../state';
 import { allMods, resolveStats, runMods } from '../stats';
 import { pactLoad } from '../pacts';
 import { suggest } from '../suggest';
@@ -61,7 +62,8 @@ export function evolutionCards(run: RunState): Card[] {
   const E = BALANCE.evolutions;
   const out: Card[] = [];
   for (const w of run.weapons) {
-    if (w.evolved || w.level < E.evolveAt) continue;
+    // An anomaly (plans/late-game/04 §5) is the weapon's other road: it never evolves.
+    if (w.evolved || w.anomaly || w.level < E.evolveAt) continue;
     const evo = EVOLUTION_OF[w.id];
     if (run.passives.some((p) => p.id === evo.passive && p.level >= E.passiveAt)) out.push({ kind: 'evolution', id: evo.id });
   }
@@ -159,7 +161,7 @@ export function forgedOffer(run: RunState, rng: Rng): Card[] {
   const out: Card[] = [];
   if (run.behaviours.alchemy) {
     for (const w of run.weapons) {
-      if (w.evolved || w.joined || w.level < BALANCE.rifts.forgedFrom) continue;
+      if (w.evolved || w.joined || w.anomaly || w.level < BALANCE.rifts.forgedFrom) continue;
       out.push({ kind: 'evolution', id: EVOLUTION_OF[w.id].id });
     }
   }
@@ -168,6 +170,44 @@ export function forgedOffer(run: RunState, rng: Rng): Card[] {
   const rest = rollOffer(run, rng, forged.length > 0 ? n : n + 1)
     .filter((c) => !forged.some((f) => cardKey(f) === cardKey(c)));
   return [...forged, ...rest].slice(0, forged.length > 0 ? n : n + 1);
+}
+
+/**
+ * Weapons an anomaly may come for (plans/late-game/04 §3): carried, at
+ * `minLevel` or more, not evolved, not half of a fusion, and with one
+ * authored.
+ */
+export function anomalyEligible(run: RunState): WeaponState[] {
+  return run.weapons.filter((w) => !w.evolved && !w.fusion && !w.joined && !w.anomaly
+    && w.level >= BALANCE.anomalies.minLevel && ANOMALY_OF[w.id] !== undefined);
+}
+
+/** True for a hand that holds an anomaly. */
+export function holdsAnomaly(cards: readonly Card[]): boolean {
+  return cards.some((c) => c.kind === 'anomaly');
+}
+
+/**
+ * The anomaly this hand deals, if any (plans/late-game/04 §3): once a run,
+ * after its wait in eligible drafts. A forged hand (Blood Price, plan 02 §7)
+ * deals one whenever none has been taken, held or not. Every draw is on the
+ * `anomaly` stream, so the hand and its suggestion are the same either way.
+ */
+function anomalyCard(run: RunState, forged: boolean): Card | null {
+  const plan = run.anomaly;
+  if (!plan || plan.taken) return null;
+  if (!forged && (!plan.held || plan.offered)) return null;
+  const eligible = anomalyEligible(run);
+  if (eligible.length === 0) return null;
+  if (!forged && plan.delay > 0) {
+    plan.delay--;
+    return null;
+  }
+  const w = eligible.length === 1 ? eligible[0] : Rng.wrap(run.streams.anomaly).pick(eligible);
+  const id = ANOMALY_OF[w.id]!.id;
+  plan.offered = id;
+  run.events.push({ kind: 'anomalyOffer', anomaly: id });
+  return { kind: 'anomaly', id };
 }
 
 /** True while the open draft is the profile's first, authored one: no reroll, no Banish. */
@@ -180,12 +220,17 @@ export function tickDraft(run: RunState): void {
   // A rift being chosen (plans/late-game/02) holds the next draft back.
   if (run.draft || run.pendingDrafts <= 0 || run.rift?.phase === 'choosing') return;
   const first = run.firstDraft !== null && run.draftsOpened === 0;
-  const rolled = run.forgedHand ? forgedOffer(run, Rng.wrap(run.streams.draft)) : rollOffer(run, Rng.wrap(run.streams.draft));
+  const forged = run.forgedHand;
+  const rolled = forged ? forgedOffer(run, Rng.wrap(run.streams.draft)) : rollOffer(run, Rng.wrap(run.streams.draft));
   run.forgedHand = false;
   const cards = first ? rolled : autoBanish(run, rolled);
+  const suggested = suggest(run, cards);
+  // The anomaly joins after the hand is rolled and scored (plans/late-game/04
+  // §6), at its end: the `draft` stream and the suggestion are untouched.
+  const anomaly = first ? null : anomalyCard(run, forged);
   run.draft = {
-    cards,
-    suggested: suggest(run, cards),
+    cards: anomaly ? [...cards, anomaly] : cards,
+    suggested,
     level: run.level - run.pendingDrafts + 1,
   };
   run.draftsOpened++;
@@ -201,8 +246,10 @@ export function rerollDraft(run: RunState): void {
   if (!d || run.rerolls <= 0 || authored(run)) return;
   run.rerolls--;
   const cards = autoBanish(run, rollOffer(run, Rng.wrap(run.streams.draft)));
+  // An anomaly isn't from the deck (plans/late-game/04 §3): a reroll keeps it.
+  const kept = d.cards.filter((c) => c.kind === 'anomaly');
   // A new offer object, so presentation sees a new hand.
-  run.draft = { cards, suggested: suggest(run, cards), level: d.level };
+  run.draft = { cards: [...cards, ...kept], suggested: suggest(run, cards), level: d.level };
   run.events.push({ kind: 'draftOpen' });
 }
 
@@ -282,9 +329,13 @@ export function pickCard(run: RunState, index: number): void {
  */
 export function takeSuggested(run: RunState): number {
   let n = 0;
+  // The hand open now is the one the player is looking at; a later one that
+  // deals an anomaly is left open, so it is never passed by unseen (plans/late-game/04 §3).
+  const shown = run.draft;
   while (run.pendingDrafts > 0) {
     if (!run.draft) tickDraft(run);
     if (!run.draft) break;
+    if (run.draft !== shown && holdsAnomaly(run.draft.cards)) break;
     pickCard(run, run.draft.suggested);
     n++;
   }
@@ -303,7 +354,7 @@ export function applyCard(run: RunState, card: Card): void {
     case 'evolution': {
       const evo = EVOLUTION_BY_ID[card.id];
       const w = run.weapons.find((x) => x.id === evo.weapon);
-      if (!w || w.evolved) return;
+      if (!w || w.evolved || w.anomaly) return;
       w.evolved = true;
       run.evolved.push(evo.id);
       run.events.push({ kind: 'evolve', weapon: w.id, evolution: evo.id });
@@ -320,6 +371,16 @@ export function applyCard(run: RunState, card: Card): void {
       partner.joined = true;
       run.fused.push(card.id);
       run.events.push({ kind: 'fuse', weapon: host.id, fusion: card.id });
+      return;
+    }
+    case 'anomaly': {
+      // The weapon keeps its slot and its level, and never evolves (plans/late-game/04 §3).
+      const def = ANOMALY_BY_ID[card.id];
+      const w = run.weapons.find((x) => x.id === def.weapon);
+      if (!w || w.evolved || w.fusion || w.anomaly || !run.anomaly || run.anomaly.taken) return;
+      w.anomaly = card.id;
+      run.anomaly.taken = card.id;
+      run.events.push({ kind: 'anomaly', weapon: w.id, anomaly: card.id });
       return;
     }
     case 'passive': {

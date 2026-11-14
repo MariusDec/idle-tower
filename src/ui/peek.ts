@@ -1,5 +1,5 @@
 import { EVOLUTION_OF } from '../content/evolutions';
-import type { FusionId, PassiveId, WeaponId } from '../content/types';
+import type { AnomalyId, FusionId, PassiveId, WeaponId } from '../content/types';
 import type { Card } from '../sim/state';
 import { cardFace } from './draft';
 import { bindLongPress } from './longPress';
@@ -13,11 +13,12 @@ import { bindLongPress } from './longPress';
 
 /** What a chip stands for, as a card: `buildChips` writes it on the chip. */
 function chipCard(el: HTMLElement): Card | null {
-  const { kind, id, level, fusion } = el.dataset;
+  const { kind, id, level, fusion, anomaly } = el.dataset;
   if (!id) return null;
   if (kind === 'passive') return { kind: 'passive', id: id as PassiveId, level: Number(level) };
   if (kind !== 'weapon') return null;
   if (fusion) return { kind: 'fusion', id: fusion as FusionId };
+  if (anomaly) return { kind: 'anomaly', id: anomaly as AnomalyId };
   if (el.classList.contains('is-evolved')) return { kind: 'evolution', id: EVOLUTION_OF[id as WeaponId].id };
   return { kind: 'weapon', id: id as WeaponId, level: Number(level) };
 }

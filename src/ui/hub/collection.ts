@@ -15,7 +15,7 @@ import {
 import { cursedCard, cursedWhere } from '../cursed';
 import type { Profile } from '../../meta/profile';
 import { levelOf } from '../../meta/forge';
-import { fusionBook, recipeBook } from '../../meta/recipes';
+import { anomalyBook, fusionBook, recipeBook } from '../../meta/recipes';
 import { wonTrims } from '../../meta/trials';
 import { toggleClass } from '../dom';
 import { icon } from '../icon';
@@ -461,7 +461,44 @@ export class CollectionView {
       }
       list.append(li);
     }
-    return [head, list, ...this.fusions(p)];
+    return [head, list, ...this.fusions(p), ...this.anomalies(p)];
+  }
+
+  /**
+   * The Book's third page (plans/late-game/04 §6): anomalies taken, in full;
+   * glimpsed ones by name and weapon. Never a total, never a "???" row.
+   */
+  private anomalies(p: Profile): HTMLElement[] {
+    const book = anomalyBook(p);
+    if (book.length === 0) return [];
+    const head = document.createElement('h3');
+    head.className = 'collection-heading';
+    head.textContent = `Anomalies · ${book.filter((r) => r.found).length} found`;
+    const list = document.createElement('ul');
+    list.className = 'entry-list';
+    for (const r of book) {
+      const a = r.anomaly;
+      const li = document.createElement('li');
+      li.className = `entry is-anomaly${r.found ? '' : ' is-glimpsed'}`;
+      const h = document.createElement('div');
+      h.className = 'entry-head';
+      const n = document.createElement('span');
+      n.className = 'entry-name';
+      n.textContent = a.name;
+      h.append(icon(a.icon), n);
+      const weapon = document.createElement('p');
+      weapon.className = 'entry-text';
+      weapon.textContent = r.found ? `${WEAPON_BY_ID[a.weapon].name}. ${a.text}` : `${WEAPON_BY_ID[a.weapon].name}. Not yet taken.`;
+      li.append(h, weapon);
+      if (r.found) {
+        const line = document.createElement('p');
+        line.className = 'entry-lore';
+        line.textContent = `${a.rule} No evolution or fusion that run.`;
+        li.append(line);
+      }
+      list.append(li);
+    }
+    return [head, list];
   }
 
   /** The Book's second page (N9): fusions, their halves once their star is lit, the riddle once both are evolved. */

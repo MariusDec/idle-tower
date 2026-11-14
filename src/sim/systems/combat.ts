@@ -7,9 +7,9 @@ import { AURA_BY_ID, ENEMIES, ENEMY_BY_ID } from '../../content/enemies';
 import { eliteRelics } from '../../content/relics';
 import { frameById } from '../../content/frames';
 import { WEAPONS, WEAPON_BY_ID } from '../../content/weapons';
-import type { EnemyId, EnemyVerb, FusionId, Targeting, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
+import type { AnomalyId, EnemyId, EnemyVerb, FusionId, Targeting, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
 import { BOSS_BY_ID } from '../../content/bosses';
-import type { DamageBy, Enemy, FirePatch, Projectile, RunState, WeaponState } from '../state';
+import type { AnomalyCell, DamageBy, Enemy, FirePatch, Projectile, RunState, WeaponState } from '../state';
 import { pactLoad, ruleSurge } from '../pacts';
 import { armed, mountOf, muzzle } from './arms';
 import { bossBody, dropPlate, onBossKilled, phasesOf, plateGuard, reflectShot } from './boss';
@@ -368,6 +368,11 @@ export function tickWeapons(run: RunState, dt: number): void {
     }
     const p = armed(run.stats, w);
     const rate = w.dampedUntil > run.time ? rateMult * 0.5 : rateMult;
+    // An anomaly (plans/late-game/04) breaks its weapon's rule: its own routine.
+    if (w.anomaly) {
+      tickAnomaly(run, w, w.anomaly, p, dt, rate, crit);
+      continue;
+    }
     const pattern = WEAPON_BY_ID[w.id].pattern;
     switch (pattern) {
       case 'orbit':
@@ -397,6 +402,211 @@ export function tickWeapons(run: RunState, dt: number): void {
         return exhaustive;
       }
     }
+  }
+}
+
+/**
+ * An anomalised weapon, one step (plans/late-game/04 §4). Each reuses its
+ * pattern's hit routine with a new centre or path; the hits are credited to
+ * the weapon's own pattern (T1), so Bog Lantern and Brittle read them as before.
+ */
+function tickAnomaly(run: RunState, w: WeaponState, id: AnomalyId, p: WeaponParams, dt: number, rate: number, crit: Rng): void {
+  switch (id) {
+    case 'whiteout':
+      tickWhiteout(run, w, p, dt, rate, crit);
+      return;
+    case 'gyre':
+      tickGyre(run, w, p, dt * rate, crit);
+      return;
+    case 'lighthouse':
+      tickLighthouse(run, w, p, dt, rate, crit);
+      return;
+    case 'creeping-barrage':
+      fireOnCooldown(run, w, p, 'lob', dt, rate, crit);
+      return;
+    default: {
+      const exhaustive: never = id;
+      return exhaustive;
+    }
+  }
+}
+
+/** An anomaly's moving centre, made at the tower the first time it is asked for. */
+export function cellOf(w: WeaponState): AnomalyCell {
+  return (w.cell ??= { x: 0, y: 0, px: 0, py: 0, tx: 0, ty: 0, target: 0, idle: 0, arc: w.spin });
+}
+
+/** Move (x, y) toward (tx, ty) by at most `step`. */
+function approach(c: AnomalyCell, tx: number, ty: number, step: number): void {
+  const dx = tx - c.x;
+  const dy = ty - c.y;
+  const d = Math.hypot(dx, dy);
+  if (d <= step) {
+    c.x = tx;
+    c.y = ty;
+    return;
+  }
+  c.x += (dx / d) * step;
+  c.y += (dy / d) * step;
+}
+
+/** How often Whiteout's storm looks again for the thickest crowd, seconds. */
+const WHITEOUT_LOOK = 0.5;
+
+/**
+ * Whiteout (Frost Ring's anomaly): the ring leaves the tower as a storm that
+ * drifts toward the thickest crowd, no farther out than `reach` × range, and
+ * pulses there, smaller and harder, whenever anything is inside it.
+ */
+function tickWhiteout(run: RunState, w: WeaponState, p: WeaponParams, dt: number, rate: number, crit: Rng): void {
+  const A = BALANCE.anomalies.whiteout;
+  const c = cellOf(w);
+  c.px = c.x;
+  c.py = c.y;
+  approach(c, c.tx, c.ty, A.drift * dt);
+  const r = p.radius * A.radius;
+  if (c.idle <= run.time) {
+    c.idle = run.time + WHITEOUT_LOOK;
+    const goal = densest(run, r, []);
+    if (goal) {
+      const d = Math.hypot(goal.x, goal.y);
+      const max = run.stats.range * A.reach;
+      const k = d > max ? max / d : 1;
+      c.tx = goal.x * k;
+      c.ty = goal.y * k;
+    }
+  }
+  w.cooldown -= dt;
+  if (w.cooldown > 0) return;
+  if (!nearestEnemy(run, c.x, c.y, r)) {
+    w.cooldown = 0;
+    return;
+  }
+  w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * rate));
+  const m = mountOf(run, w);
+  w.aim = Math.atan2(c.y - m.y, c.x - m.x);
+  frostPulse(run, w, p, crit, c.x, c.y, r);
+  run.events.push({ kind: 'fire', weapon: w.id, angle: w.aim });
+}
+
+/**
+ * Gyre (Glaives' anomaly): the blades leave the tower to circle the toughest
+ * body in range, flying `travel` u/s to the next when it falls. With none in
+ * range they come home and circle the tower as before.
+ */
+function tickGyre(run: RunState, w: WeaponState, p: WeaponParams, dt: number, crit: Rng): void {
+  const A = BALANCE.anomalies.gyre;
+  const c = cellOf(w);
+  c.px = c.x;
+  c.py = c.y;
+  const range2 = run.stats.range * run.stats.range;
+  let t = c.target ? enemyById(run, c.target) : null;
+  if (t && t.x * t.x + t.y * t.y > range2) t = null;
+  // It holds its quarry unless something that matters more is in range, as Sunlance does.
+  if (!t || toughness(t) < 3) {
+    const best = toughest(run, run.stats.range);
+    if (best && (!t || toughness(best) > toughness(t))) t = best;
+  }
+  c.target = t ? t.id : 0;
+  approach(c, t ? t.x : 0, t ? t.y : 0, A.travel * dt);
+  sweepBlades(run, w, p, dt, crit, c.x, c.y, gyreOrbit(w, p, t));
+}
+
+/** How wide Gyre's blades circle: round its quarry, past its body; round the tower, the weapon's own orbit. */
+export function gyreOrbit(w: WeaponState, p: WeaponParams, quarry: Enemy | null): number {
+  if (!quarry) return p.radius;
+  // A level that widens the orbit widens it round the quarry too.
+  const G = BALANCE.anomalies.gyre;
+  return quarry.radius + G.orbit + G.widen * (p.radius - WEAPON_BY_ID[w.id].base.radius);
+}
+
+/**
+ * Lighthouse (Sunlance's anomaly): the beam turns from its mount like a
+ * lighthouse's, and each fire burns every body in the wedge it swept since
+ * the last, out to range. It heats while the sweep finds bodies, cools over
+ * empty ground, and is cold after a whole empty turn.
+ */
+function tickLighthouse(run: RunState, w: WeaponState, p: WeaponParams, dt: number, rate: number, crit: Rng): void {
+  const A = BALANCE.anomalies.lighthouse;
+  const TAU = Math.PI * 2;
+  const c = cellOf(w);
+  const turn = A.turn * rate * (w.level >= 4 ? A.turnStep : 1) * dt;
+  w.spin += turn;
+  if (w.spin > TAU) {
+    w.spin -= TAU;
+    c.arc -= TAU;
+  }
+  w.aim = w.spin;
+  // It heats while the sweep finds bodies and cools as fast over empty ground; a whole empty turn and it is cold.
+  if (c.idle === 0) w.heat = Math.min(p.rampCap, w.heat + p.ramp * dt);
+  else if ((c.idle += turn) >= TAU) w.heat = 1;
+  else w.heat = Math.max(1, w.heat - p.ramp * dt);
+  w.cooldown -= dt;
+  if (w.cooldown > 0) return;
+  w.cooldown = Math.max(0, w.cooldown + 1 / (p.fireRate * rate));
+  const from = c.arc;
+  const sweep = w.spin - from;
+  c.arc = w.spin;
+  const m = mountOf(run, w);
+  const range = run.stats.range;
+  const hit = rollHit(run, p, crit);
+  const damage = hit.damage * w.heat;
+  let any = false;
+  const n = run.enemies.length;
+  for (let i = 0; i < n; i++) {
+    const e = run.enemies[i];
+    if (!targetable(run, e)) continue;
+    const dx = e.x - m.x;
+    const dy = e.y - m.y;
+    const d = Math.hypot(dx, dy);
+    if (d > range + e.radius) continue;
+    // Inside the swept wedge, widened by the beam's half-width and the body's.
+    const pad = (A.width + e.radius) / Math.max(d, 1);
+    const off = ((Math.atan2(dy, dx) - from) % TAU + TAU) % TAU;
+    if (off > sweep + pad && off < TAU - pad) continue;
+    damageEnemy(run, e, damage, hit.crit, 'beam');
+    any = true;
+  }
+  c.idle = any ? 0 : Math.max(c.idle, 1e-9);
+  run.events.push({ kind: 'fire', weapon: w.id, angle: w.aim });
+}
+
+/**
+ * Creeping Barrage (Mortar's anomaly): each shell of the salvo becomes a
+ * line of blasts from the edge of range to the wall, through a crowd (the
+ * densest, then the next, as a salvo spreads), landing one by one `stagger`
+ * s apart, the far end first.
+ */
+function walkBarrage(run: RunState, w: WeaponState, p: WeaponParams, first: Enemy, crit: Rng): void {
+  const taken: { x: number; y: number }[] = [];
+  const crowd: Crowd = { counted: false, bodies: [], counts: [] };
+  let target: Enemy | null = first;
+  for (let i = 0; i < p.count; i++) {
+    const t: Enemy = target ?? first;
+    taken.push({ x: t.x, y: t.y });
+    walkLine(run, w, p, Math.atan2(t.y, t.x), crit);
+    if (i < p.count - 1) target = densest(run, p.radius, taken, crowd);
+  }
+}
+
+/** One walking line along angle `a`: every shell leaves at once, each paced to land in turn. */
+function walkLine(run: RunState, w: WeaponState, p: WeaponParams, a: number, crit: Rng): void {
+  const C = BALANCE.anomalies['creeping-barrage'];
+  const n = C.blasts;
+  const near = run.stats.radius + p.radius * 0.6;
+  const far = Math.max(near, run.stats.range);
+  const { x: sx, y: sy } = muzzle(run, w, a);
+  const flight = Math.hypot(Math.cos(a) * far - sx, Math.sin(a) * far - sy) / p.projectileSpeed;
+  const bomblets = p.bomblets + BALANCE.behaviours.heavyShells * (run.behaviours['heavy-shells'] ?? 0);
+  for (let i = 0; i < n; i++) {
+    const d = far - ((far - near) * i) / Math.max(1, n - 1);
+    const tx = Math.cos(a) * d;
+    const ty = Math.sin(a) * d;
+    const life = flight + i * C.stagger;
+    const hit = rollHit(run, p, crit);
+    launch(run, w, sx, sy, Math.atan2(ty - sy, tx - sx), Math.hypot(tx - sx, ty - sy) / life, {
+      damage: hit.damage * C.damage, crit: hit.crit, blast: p.radius, tx, ty, bomblets, life,
+    });
   }
 }
 
@@ -458,10 +668,11 @@ function fireOnCooldown(
       break;
     }
     case 'pulse':
-      frostPulse(run, w, p, crit);
+      frostPulse(run, w, p, crit, 0, 0, p.radius);
       break;
     case 'lob':
-      lobShells(run, w, p, target, crit);
+      if (w.anomaly === 'creeping-barrage') walkBarrage(run, w, p, target, crit);
+      else lobShells(run, w, p, target, crit);
       break;
     case 'boomerang':
       throwCrescents(run, w, p, angle, crit);
@@ -594,15 +805,15 @@ function unearth(run: RunState, x: number, y: number, radius: number): Enemy | n
  * Absolute Zero freezes them solid instead, once per body: a thawed body is
  * only slowed after, or it would never move again. A boss is only slowed.
  */
-function frostPulse(run: RunState, w: WeaponState, p: WeaponParams, crit: Rng): void {
-  const r2 = p.radius * p.radius;
+function frostPulse(run: RunState, w: WeaponState, p: WeaponParams, crit: Rng, cx: number, cy: number, radius: number): void {
+  const r2 = radius * radius;
   const freeze = w.evolved ? BALANCE.evolutions['absolute-zero'].freeze * run.stats.durationMult : 0;
   // Only what was there when it went off: a Splitter's fragments, born of
   // this pulse's kill, are the next pulse's (§11.1: AoE *after* the split).
   const n = run.enemies.length;
   for (let i = 0; i < n; i++) {
     const e = run.enemies[i];
-    if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
+    if (!targetable(run, e) || (e.x - cx) ** 2 + (e.y - cy) ** 2 > r2) continue;
     // Frozen before the hit lands, so a pulse that kills can shatter.
     if (freeze > 0 && !e.boss && e.frozenUntil === 0) {
       e.frozenUntil = run.time + freeze;
@@ -615,7 +826,7 @@ function frostPulse(run: RunState, w: WeaponState, p: WeaponParams, crit: Rng): 
       e.slowUntil = run.time + p.slowSeconds;
     }
   }
-  run.events.push({ kind: 'pulse', radius: p.radius });
+  run.events.push(cx === 0 && cy === 0 ? { kind: 'pulse', radius } : { kind: 'pulse', radius, x: cx, y: cy });
 }
 
 function nearestUnstruck(run: RunState, x: number, y: number, radius: number, struck: readonly number[]): Enemy | null {
@@ -1116,23 +1327,24 @@ export function bladeOrbit(run: RunState, w: WeaponState, p: WeaponParams): numb
  * is hit when a blade's sweep this step crosses it, so the hit rate is the
  * blades' turn rate, and attack speed turns them faster.
  */
-function sweepBlades(run: RunState, w: WeaponState, p: WeaponParams, dt: number, crit: Rng): void {
+function sweepBlades(
+  run: RunState, w: WeaponState, p: WeaponParams, dt: number, crit: Rng, cx = 0, cy = 0, r = bladeOrbit(run, w, p),
+): void {
   const from = w.spin;
   const sweep = p.spin * dt;
   w.spin = (w.spin + sweep) % (Math.PI * 2);
   w.aim = w.spin;
-  const r = bladeOrbit(run, w, p);
   const TAU = Math.PI * 2;
   const n = run.enemies.length;
   let cut = false;
   for (let i = 0; i < n; i++) {
     const e = run.enemies[i];
     if (!targetable(run, e)) continue;
-    const d = Math.hypot(e.x, e.y);
+    const d = Math.hypot(e.x - cx, e.y - cy);
     const reach = p.blade + e.radius;
     if (Math.abs(d - r) > reach) continue;
     // A blade cuts once per pass: when its centre crosses the body's near edge.
-    const edge = Math.atan2(e.y, e.x) - reach / Math.max(r, 1);
+    const edge = Math.atan2(e.y - cy, e.x - cx) - reach / Math.max(r, 1);
     for (let k = 0; k < p.count; k++) {
       const start = from + (k / p.count) * TAU;
       const delta = (((edge - start) % TAU) + TAU) % TAU;

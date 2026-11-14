@@ -35,6 +35,8 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
       return collectionPages(profile).rifts;
     case 'cursed':
       return ownedCursed(profile).length > 0;
+    case 'anomalies':
+      return profile.anomalies.found.length + profile.anomalies.glimpsed.length > 0;
     case 'feats':
       return hubUnlocks(profile).feats;
     case 'stars':

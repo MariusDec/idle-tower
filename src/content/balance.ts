@@ -165,6 +165,40 @@ export const BALANCE = {
     'midas-lance': { damage: 1.25, seconds: 4, vulnerable: 0.3, shards: 2 },
   },
   /**
+   * Anomalies (plans/late-game/04 §3): a rare card that breaks a weapon's
+   * rule. One roll a run on the `anomaly` stream, once the gate is open (the
+   * first recipe found). `damage` is a spike on the weapon's hit, as an
+   * evolution's is; the rest is each one's shape.
+   */
+  anomalies: {
+    /** A weapon is eligible from this level: before `evolveAt`, so the fork comes early. */
+    minLevel: 3,
+    /** The first run after the gate that reaches `minLevel` deals one for certain. */
+    first: 1,
+    /** The chance a run holds one, +`dryStep` per run since the last offer, capped at `dryCap`. */
+    chance: 0.05,
+    dryStep: 0.01,
+    dryCap: 0.25,
+    /** The Abyss: twice as likely. */
+    abyss: 2,
+    /** Eligible drafts the offer may wait, rolled 0…delay. */
+    delay: 2,
+    /** The draft timer's floor, wall seconds, while an anomaly is in the hand (the Tactician's 6 s too). */
+    seconds: 10,
+    /** Frost Ring's: a storm that drifts `drift` u/s toward the thickest crowd, no farther than `reach` × range, pulsing `radius` × the ring's. */
+    whiteout: { damage: 1.3, drift: 80, reach: 0.6, radius: 0.8 },
+    /**
+     * Glaives': blades circle the toughest body `orbit` past its edge (inside
+     * a blade's reach, so they cut it), `widen` of a level's wider orbit on
+     * top, and fly `travel` u/s to the next.
+     */
+    gyre: { damage: 1.35, orbit: 6, widen: 0.3, travel: 700 },
+    /** Sunlance's: the beam turns `turn` rad/s (× attack speed, ×`turnStep` at level 4), `width` wide, out to range. */
+    lighthouse: { damage: 1.45, turn: 1.2, turnStep: 1.15, width: 18 },
+    /** Mortar's: each shell is a line of `blasts` walking in from range to the wall, `stagger` s apart, each `damage` × the shell. */
+    'creeping-barrage': { damage: 1.1, blasts: 5, stagger: 0.12 },
+  },
+  /**
    * Hard caps on what a weapon puts on screen (§12.5). Anything past a cap
    * becomes damage instead, so a late build keeps its frame rate.
    */

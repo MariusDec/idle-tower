@@ -3,7 +3,8 @@ import { BOSSES } from '../content/bosses';
 import { EVOLUTIONS, EVOLUTION_OF } from '../content/evolutions';
 import { FUSIONS } from '../content/fusions';
 import { STAR_CARDS } from '../content/stars';
-import type { EvolutionDef, EvolutionId, FusionDef, FusionId } from '../content/types';
+import { ANOMALIES } from '../content/anomalies';
+import type { AnomalyDef, EvolutionDef, EvolutionId, FusionDef, FusionId } from '../content/types';
 import type { RunState } from '../sim/state';
 import type { Profile } from './profile';
 import { automations } from './automation';
@@ -46,7 +47,7 @@ export function recipeBook(profile: Profile): RecipeEntry[] {
 
 /** True once the Book has anything on it: the Recipes page opens (§7.1). */
 export function recipesOpen(profile: Profile): boolean {
-  return recipeBook(profile).some((r) => r.found || r.weapon);
+  return recipeBook(profile).some((r) => r.found || r.weapon) || anomalyBook(profile).length > 0;
 }
 
 /** Bank a run into the Book. Returns the evolutions found for the first time. */
@@ -88,4 +89,24 @@ export function recordFusions(profile: Profile, run: RunState): FusionId[] {
   const fresh = run.fused.filter((id) => !profile.fusions.includes(id));
   profile.fusions.push(...fresh);
   return fresh;
+}
+
+/** An anomaly on the Recipe Book's third page (plans/late-game/04 §6): taken, or only glimpsed. */
+export interface AnomalyEntry {
+  anomaly: AnomalyDef;
+  /** Taken at least once: shown in full. Else glimpsed: its name and weapon. */
+  found: boolean;
+}
+
+/**
+ * The third page: only what has been met, found first, in table order. Never
+ * a total and never a "???" row: nobody says how many there are (§2).
+ */
+export function anomalyBook(profile: Profile): AnomalyEntry[] {
+  const A = profile.anomalies;
+  const met = ANOMALIES.filter((a) => A.found.includes(a.id) || A.glimpsed.includes(a.id));
+  return [
+    ...met.filter((a) => A.found.includes(a.id)).map((anomaly) => ({ anomaly, found: true })),
+    ...met.filter((a) => !A.found.includes(a.id)).map((anomaly) => ({ anomaly, found: false })),
+  ];
 }

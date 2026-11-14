@@ -2,7 +2,7 @@ import { BALANCE } from '../../content/balance';
 import { EVOLUTION_OF } from '../../content/evolutions';
 import { mountOffset, muzzleAt } from '../../content/mounts';
 import { WEAPON_BY_ID, weaponParams } from '../../content/weapons';
-import type { FusionId, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
+import type { AnomalyId, FusionId, WeaponId, WeaponParams, WeaponPattern } from '../../content/types';
 import type { RunState, TowerStats, WeaponState } from '../state';
 
 /**
@@ -58,14 +58,22 @@ export function evolutionSpike(id: WeaponId, evolved: boolean): number {
   return evolved ? BALANCE.evolutions[EVOLUTION_OF[id].id].damage : 1;
 }
 
-export function armed(stats: TowerStats, w: Pick<WeaponState, 'id' | 'level' | 'evolved' | 'signature'> & { fusion?: FusionId | null }): WeaponParams {
+/** An anomaly's damage spike (plans/late-game/04 §4), once taken. */
+export function anomalySpike(anomaly: AnomalyId | null | undefined): number {
+  return anomaly ? BALANCE.anomalies[anomaly].damage : 1;
+}
+
+export function armed(
+  stats: TowerStats,
+  w: Pick<WeaponState, 'id' | 'level' | 'evolved' | 'signature'> & { fusion?: FusionId | null; anomaly?: AnomalyId | null },
+): WeaponParams {
   const base = weaponParams(w.id, w.level);
   const pattern = WEAPON_BY_ID[w.id].pattern;
   // A fusion (N9): both halves hit harder.
   const fused = w.fusion ? BALANCE.fusions.damage : 1;
   // Specialist (§11.4): the node's stat lowers all damage; its starting weapon is lifted back past it.
   const signature = w.signature ? BALANCE.behaviours.specialistDamage / BALANCE.behaviours.specialistOthers : 1;
-  let damage = base.damage * evolutionSpike(w.id, w.evolved) * fused * signature;
+  let damage = base.damage * evolutionSpike(w.id, w.evolved) * anomalySpike(w.anomaly) * fused * signature;
   let count = base.count;
   // Past the cap, every extra body becomes damage on the ones that fly (§12.5).
   const cap = countCap(pattern);
@@ -94,7 +102,7 @@ export function armed(stats: TowerStats, w: Pick<WeaponState, 'id' | 'level' | '
 export function newWeapon(id: WeaponId, level: number): WeaponState {
   return {
     id, level, cooldown: 0, aim: -Math.PI / 2, evolved: false, fusion: null, joined: false,
-    spin: 0, beamTarget: 0, heat: 1, meteor: 0, drones: [], silencedUntil: 0, dampedUntil: 0, tethers: [],
+    spin: 0, beamTarget: 0, heat: 1, meteor: 0, drones: [], silencedUntil: 0, dampedUntil: 0, tethers: [], anomaly: null,
   };
 }
 

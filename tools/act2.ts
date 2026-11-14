@@ -127,6 +127,8 @@ export interface Act2Report {
   best: Record<number, number>;
   /** Reliquaries met in the Abyss (plans/late-game/03 §9): dropped, claimed by the bot, faded. */
   reliquaries: { seen: number; claimed: number; faded: number };
+  /** Anomalies dealt (plans/late-game/04 §9), all runs and the Abyss's; the bot never takes one. */
+  anomalies: { offered: number; abyss: number };
   /** Cursed relics owned at the end, by id: rank and binding points. */
   cursed: Record<string, { rank: number; bound: number }>;
   /** A line every hour: wall hour, stars lit, mastery levels, deepest floor, frontier heat. */
@@ -154,6 +156,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   let rushRuns = 0;
   let lastStar: number | null = null;
   const reliquaries = { seen: 0, claimed: 0, faded: 0 };
+  const anomalies = { offered: 0, abyss: 0 };
 
   while (clock < end) {
     if (hourly.length < Math.floor(clock / 3600)) {
@@ -193,6 +196,10 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     reliquaries.claimed += summary.reliquaries.claimed;
     reliquaries.faded += summary.reliquaries.faded;
     reliquaries.seen += summary.reliquaries.claimed + summary.reliquaries.faded;
+    if (summary.anomaly) {
+      anomalies.offered++;
+      if (summary.abyss) anomalies.abyss++;
+    }
     wearPolicy(profile);
     const fromHeat = summary.heatRecord?.starlight ?? 0;
     const fromFloor = summary.floorRecord?.starlight ?? 0;
@@ -234,6 +241,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     seconds: clock, runs, abyssRuns, heatAny, heatFrontier, starlight: earned, sources, lastStar, stars: starsLit(profile),
     masteries: masteryLevels(profile), floor: profile.abyss.best, rushRuns, rush: { ...profile.rush }, best, hourly,
     reliquaries,
+    anomalies,
     cursed: Object.fromEntries(ownedCursed(profile).map((r) => [r.id, { rank: relicRank(profile, r.id), bound: profile.bound[r.id] ?? 0 }])),
   };
 }

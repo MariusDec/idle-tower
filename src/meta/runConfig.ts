@@ -17,7 +17,7 @@ import { runPacts } from './pacts';
 import { pactLoad } from '../sim/pacts';
 import type { Profile } from './profile';
 import { STAR_WEB, starGifts } from './stars';
-import type { Card, ReliquaryConfig, RiftConfig, RunConfig } from '../sim/state';
+import type { AnomalyConfig, Card, ReliquaryConfig, RiftConfig, RunConfig } from '../sim/state';
 import { BOSSES } from '../content/bosses';
 import type { BossId, RelicId, RiftId } from '../content/types';
 import { RELIC_BY_ID } from '../content/relics';
@@ -157,7 +157,32 @@ export function buildRunConfig(profile: Profile): RunConfig {
     abyssRelics: Object.freeze(abyss ? abyssRelics(starGifts(profile).relicSets) : []),
     rifts: riftConfig(profile, trial !== null),
     reliquaries: abyss ? reliquaryConfig(profile, pool) : null,
+    anomaly: anomalyConfig(profile, trial !== null),
   });
+}
+
+/** True once anomalies can come (plans/late-game/04 §2): the profile has found its first recipe. */
+export function anomaliesOpen(profile: Profile): boolean {
+  return profile.recipes.found.length > 0;
+}
+
+/**
+ * The chance a run holds an anomaly (plans/late-game/04 §3): 0 before the
+ * gate, in a Trial and in Boss Rush; certain until the first is offered;
+ * then the base, plus a step per dry run up to the cap, doubled in the Abyss.
+ */
+export function anomalyChance(profile: Profile, trial: boolean): number {
+  if (trial || inRush(profile) || !anomaliesOpen(profile)) return 0;
+  const A = BALANCE.anomalies;
+  const met = profile.anomalies.found.length + profile.anomalies.glimpsed.length > 0;
+  const base = met ? Math.min(A.dryCap, A.chance + profile.anomalies.dry * A.dryStep) : A.first;
+  return Math.min(1, base * (inAbyss(profile) ? A.abyss : 1));
+}
+
+/** The run's anomaly roll (plans/late-game/04): null where none can come. */
+export function anomalyConfig(profile: Profile, trial: boolean): AnomalyConfig | null {
+  const chance = anomalyChance(profile, trial);
+  return chance > 0 ? Object.freeze({ chance }) : null;
 }
 
 /**

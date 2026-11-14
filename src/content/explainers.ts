@@ -24,6 +24,7 @@ export type ExplainerId =
   | 'frames'
   | 'rifts'
   | 'cursed'
+  | 'anomalies'
   | 'feats'
   | 'stars'
   | 'tactics'
@@ -134,6 +135,15 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
       'The Abyss’s elites, Keepers and guardians can leave a reliquary. Tap it before it fades to claim a cursed relic.',
       'Each has a boon and a curse. They hold only in the Abyss, in their own slot. Duplicates rank the boon up; the curse never changes.',
       'Past rank III, five more duplicates bind a cursed relic: it may then sit in an ordinary slot too. At most three curses are worn at once.',
+    ],
+  },
+  {
+    id: 'anomalies', view: 'collection', title: 'Anomalies',
+    lines: [
+      'Some cards break a weapon’s rule. They’re rare: one run in nine or so, and never twice in a run.',
+      'They’re never suggested, and a draft that runs out of time won’t take one. You have to be there.',
+      'An anomalised weapon keeps levelling, but it never evolves or fuses. It’s the weapon’s other road.',
+      'Anomalies you take are kept here. Nobody says how many there are.',
     ],
   },
   {
