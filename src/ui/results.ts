@@ -1,3 +1,4 @@
+import { RIFT_BY_ID } from '../content/rifts';
 import type { RunSummary } from '../meta/results';
 import type { DamageBy, HurtBy } from '../sim/state';
 import { frameById } from '../content/frames';
@@ -91,6 +92,7 @@ export class ResultsScreen {
   private readonly shardsN: HTMLElement;
   private readonly breakdown: HTMLElement;
   private readonly storedLine: HTMLElement;
+  private readonly riftLine: HTMLElement;
   private readonly finds: HTMLElement;
   private readonly next: HTMLElement;
   private readonly nextIcon: HTMLElement;
@@ -124,6 +126,7 @@ export class ResultsScreen {
         </button>
       </div>
       <p class="results-stored" hidden></p>
+      <p class="results-rifts" hidden></p>
       <p class="results-breakdown" hidden></p>
       <ul class="results-finds"></ul>
       <div class="results-build"></div>
@@ -157,6 +160,7 @@ export class ResultsScreen {
     this.shardsN = q('.results-shards-n');
     this.breakdown = q('.results-breakdown');
     this.storedLine = q('.results-stored');
+    this.riftLine = q('.results-rifts');
     this.finds = q('.results-finds');
     this.next = q('.results-next');
     this.nextIcon = q('.results-next-icon');
@@ -289,11 +293,16 @@ export class ResultsScreen {
       const played = st.engagedBonus > 0 ? ` · ×${st.rate} played` : '';
       setText(this.storedLine, `Stored Light +${formatNumber(st.bonus)}${played} · ${formatNumber(st.left)} left`);
     }
+    // Rifts (plans/late-game/02 §2): "Rifts · Wager taken · one closed unseen".
+    const line = riftLine(s.rifts);
+    this.riftLine.hidden = line === null;
+    if (line) setText(this.riftLine, line);
     const f = s.shardsFrom;
     const parts = [`Kills ${formatNumber(f.kills)}`, `Waves ${formatNumber(f.waves)}`];
     if (f.elites > 0) parts.push(`Elites ${formatNumber(f.elites)}`);
     if (f.boss > 0) parts.push(`Boss ${formatNumber(f.boss)}`);
     if (f.cards > 0) parts.push(`Cards ${formatNumber(f.cards)}`);
+    if (f.rifts > 0) parts.push(`Rifts ${formatNumber(f.rifts)}`);
     if (st) parts.push(`Stored ${formatNumber(st.bonus)}`);
     this.breakdown.textContent = parts.join(' · ');
     this.breakdown.hidden = true;
@@ -362,4 +371,19 @@ export class ResultsScreen {
   private paintAgain(): void {
     setText(this.again, this.countdown === null ? 'Run again' : `Run again · ${Math.ceil(this.countdown)}`);
   }
+}
+
+const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five'];
+
+/** The results' rift line, or null when the run met none (plans/late-game/02 §2). */
+export function riftLine(rifts: RunSummary['rifts']): string | null {
+  if (rifts.length === 0) return null;
+  const parts: string[] = [];
+  for (const r of rifts) {
+    if (!r.tapped) continue;
+    parts.push(`${RIFT_BY_ID[r.id].name} ${r.choice === null ? 'left' : 'taken'}`);
+  }
+  const unseen = rifts.filter((r) => !r.tapped).length;
+  if (unseen > 0) parts.push(`${COUNT_WORDS[unseen] ?? unseen} closed unseen`);
+  return `Rifts · ${parts.join(' · ')}`;
 }

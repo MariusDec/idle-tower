@@ -30,9 +30,9 @@
  * Times are the player's wall clock: sim time divided by the game speed,
  * plus the moments a person spends on drafts and between runs.
  */
+import { RIFT_BY_ID } from '../src/content/rifts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRun } from '../src/sim/run';
-import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile, type Profile } from '../src/meta/profile';
 import { migrate, type RawProfile } from '../src/meta/save/migrate';
 import { runSpeed } from '../src/meta/automation';
@@ -50,7 +50,7 @@ import { chooseTrial, trialWon, trialsOpen } from '../src/meta/trials';
 import { Rng } from '../src/core/rng';
 import { formatDuration } from '../src/core/format';
 import type { BranchId } from '../src/content/types';
-import { FAST_STEPS, playRun } from './play';
+import { FAST_STEPS, playRun, toolConfig } from './play';
 import { shop } from './shop';
 import { CHECKIN_EVERY, SESSION, farmRatio, runIdle, type IdleReport } from './idle';
 import { runAct2, type Act2Report } from './act2';
@@ -167,6 +167,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
   const bossKills: Record<string, number> = {};
   const metBosses = new Set<string>();
   const seenAuras = new Set<string>();
+  const metRifts = new Set<string>();
   let tabs = hubUnlocks(profile);
   let i3 = true;
   const checkpoints: PacingReport['checkpoints'] = [];
@@ -191,7 +192,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
   while (clock < end) {
     const start = clock;
     const speed = runSpeed(profile);
-    const run = createRun(buildRunConfig(profile), seeds.nextU32());
+    const run = createRun(toolConfig(profile), seeds.nextU32());
     const played = playRun(profile, run, {
       policy: 'active',
       speed,
@@ -224,6 +225,10 @@ export function runPacing(hours: number, seed: number): PacingReport {
         } else if (ev.kind === 'evolve' && !profile.recipes.found.includes(ev.evolution)) {
           firstEvolution ??= at;
           reveals.push({ at, what: `evolution: ${EVOLUTION_BY_ID[ev.evolution].name}` });
+        } else if ((ev.kind === 'riftAppear' || ev.kind === 'riftTaken') && !(ev.id in profile.rifts) && !metRifts.has(ev.id)) {
+          // Each rift's first meeting is a journal entry (plans/late-game/02 §8: the reveal gap after hour 2).
+          metRifts.add(ev.id);
+          reveals.push({ at, what: `rift: ${RIFT_BY_ID[ev.id].name}` });
         } else if (ev.kind === 'relicDrop' && !(profile.relics[ev.relic] > 0)) {
           reveals.push({ at, what: `relic: ${RELIC_BY_ID[ev.relic].name}` });
         }
@@ -419,7 +424,7 @@ async function idleMain(seeds: number, activeHours: number): Promise<void> {
     console.log(`  seed ${k + 1} screen to the Blight: hands-off ${hm(h.screen[FINALE])} · engaged ${hm(e.screen[FINALE])}`
       + ` · engaged Act 1 ${days(e.bossKills[FINALE])}`);
     for (const r of [h, e]) {
-      console.log(`           ${r.mode.padEnd(9)} instant ${r.offline} · stored ${r.stored} · burned ${r.burned} · pool at the Blight ${r.poolAtEnd}`);
+      console.log(`           ${r.mode.padEnd(9)} instant ${r.offline} · stored ${r.stored} · burned ${r.burned} · pool at the Blight ${r.poolAtEnd} · rifts ${Math.round(r.riftShards)}`);
     }
   }
   const screens = verdicts

@@ -29,6 +29,15 @@ export interface HudActions {
   zoomIn(): void;
   zoomOut(): void;
   zoomFit(): void;
+  /** Open the rift on the field (plans/late-game/02): the chip's path. */
+  rift(): void;
+}
+
+/** The HUD's rift chip (plans/late-game/02 §2): its rarity, the share of its window left, and whether a draft holds it shut. */
+export interface RiftChip {
+  rarity: 'common' | 'rare' | 'legendary';
+  left: number;
+  blocked: boolean;
 }
 
 export class Hud {
@@ -56,6 +65,8 @@ export class Hud {
   private readonly storedChip: HTMLElement;
   private readonly stored: HTMLElement;
   private readonly storedFill: HTMLElement;
+  private readonly rift: HTMLButtonElement;
+  private readonly riftLabel: HTMLElement;
   /** The build as last drawn (`buildKey`), so the strip redraws only when it changes. */
   private buildDrawn = '';
 
@@ -97,6 +108,7 @@ export class Hud {
             <button type="button" class="hud-speed" hidden>1×</button>
             <button type="button" class="hud-auto" hidden>Auto</button>
           </div>
+          <button type="button" class="hud-rift" hidden aria-label="Open the rift"><span class="hud-rift-label">Rift</span></button>
           <button type="button" class="hud-ult"><span class="hud-ult-label"></span></button>
         </div>
         <ul class="hud-build" aria-label="Build"></ul>
@@ -132,6 +144,9 @@ export class Hud {
     this.auto.addEventListener('click', () => actions.autoUlt());
     this.root.querySelector('.hud-pause')!.addEventListener('click', () => actions.pause());
     this.ult.addEventListener('click', () => actions.ult());
+    this.rift = this.root.querySelector('.hud-rift')!;
+    this.riftLabel = this.root.querySelector('.hud-rift-label')!;
+    this.rift.addEventListener('click', () => actions.rift());
     host.appendChild(this.root);
     this.hide();
   }
@@ -182,6 +197,22 @@ export class Hud {
       this.stored.setAttribute('aria-valuenow', now);
       this.stored.setAttribute('aria-valuetext', `${formatNumber(Math.floor(left))} left`);
     }
+  }
+
+  /**
+   * The rift chip (plans/late-game/02 §2): beside the ultimate while a rift
+   * waits, its ring draining with the window and coloured by rarity; dimmed,
+   * "after the draft", while a draft is open.
+   */
+  setRift(chip: RiftChip | null): void {
+    this.rift.hidden = chip === null;
+    if (!chip) return;
+    setStyle(this.rift, '--left', chip.left.toFixed(3));
+    for (const r of ['common', 'rare', 'legendary'] as const) toggleClass(this.rift, `is-${r}`, chip.rarity === r);
+    toggleClass(this.rift, 'is-blocked', chip.blocked);
+    this.rift.disabled = chip.blocked;
+    setText(this.riftLabel, chip.blocked ? 'After draft' : 'Rift');
+    setAriaLabel(this.rift, chip.blocked ? 'A rift: after the draft' : `Open the rift (${chip.rarity})`);
   }
 
   /**

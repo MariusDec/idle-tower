@@ -482,6 +482,14 @@ body {
   margin: 0;
 }
 
+/* Rifts met this run (plans/late-game/02 §2). */
+.results-rifts {
+  color: var(--rarity-rare);
+  font-size: var(--text-sm);
+  text-align: center;
+  margin: 0;
+}
+
 /* The speed toggle and the Autocaster switch (§6.2), centred between level and ultimate. */
 .hud-toggles {
   display: flex;
@@ -2575,4 +2583,129 @@ body {
   margin: 0;
   font-family: var(--font-display);
   color: var(--text-0);
+}
+
+/* ── Rifts (plans/late-game/02) ─────────────────────────────────────────── */
+
+/* The HUD chip beside the ultimate: a draining ring in the rift's rarity. */
+.hud-rift {
+  --left: 1;
+  --rift: var(--rarity-common);
+  pointer-events: auto;
+  width: 52px;
+  height: 52px;
+  min-width: 44px;
+  min-height: 44px;
+  margin-right: var(--space-2);
+  padding: 0;
+  border: 2px solid var(--rift);
+  border-radius: var(--radius-full);
+  background:
+    radial-gradient(circle, var(--surface-1) 58%, transparent 60%),
+    conic-gradient(var(--rift) calc(var(--left) * 1turn), var(--surface-overlay) 0);
+  color: var(--rift);
+  font-family: var(--font-display);
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.hud-rift.is-rare { --rift: var(--rarity-rare); }
+.hud-rift.is-legendary { --rift: var(--rarity-legendary); }
+
+.hud-rift.is-blocked {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The offer: the draft's shell, rows instead of cards. */
+.rift-panel .draft-row {
+  grid-auto-flow: row;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rift-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-3xl);
+}
+
+.rift-title .icon { --icon-size: 28px; }
+
+.rift-rarity {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--surface-overlay);
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+  color: var(--rarity-common);
+}
+
+.rift-rarity.is-rare { color: var(--rarity-rare); }
+.rift-rarity.is-legendary { color: var(--rarity-legendary); }
+
+.rift-whisper {
+  font-style: italic;
+}
+
+.rift-choice {
+  width: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* A full-width row at 375 px: 343 × ≥ 64 (plans/late-game/02 §2). */
+.rift-panel .rift-choice {
+  min-height: 64px;
+}
+
+.rift-choice:focus-visible,
+.rift-choice:hover:not(:disabled) {
+  border-color: var(--fx-gold);
+}
+
+.rift-choice:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rift-choice p {
+  margin: 0;
+}
+
+.rift-choice-text {
+  font-size: var(--text-md);
+}
+
+.rift-choice-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.rift-choice-figures .is-cost { color: var(--fx-blood); }
+.rift-choice-figures .is-reward { color: var(--fx-gold); }
+
+.rift-choice-reason {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.rift-leave {
+  min-height: 44px;
+  font-size: var(--text-md);
 }

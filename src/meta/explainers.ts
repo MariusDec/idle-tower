@@ -31,6 +31,8 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
       return collectionPages(profile).recipes;
     case 'frames':
       return collectionPages(profile).frames;
+    case 'rifts':
+      return collectionPages(profile).rifts;
     case 'feats':
       return hubUnlocks(profile).feats;
     case 'stars':

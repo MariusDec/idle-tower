@@ -16,6 +16,7 @@ import { tickBoss, tickPools, tickRings } from './systems/boss';
 import { tickShots } from './systems/tower';
 import { castUltimate, tickUltimate } from './systems/ultimate';
 import { regionAt, regionMods, runRegion, tickWaves } from './systems/waves';
+import { chooseRift, shutRift, tapRift, tickRifts } from './systems/rifts';
 
 export { regionMods };
 
@@ -105,7 +106,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     // Primed (§11.4): the first ultimate is ready the moment the run starts.
     ult: { charge: owned('charged-start') > 0 ? 1 : 0, need: BALANCE.ultimate.charge, casts: 0, until: 0, timer: 0 },
     shards: 0,
-    shardsFrom: { kills: 0, waves: 0, cards: 0, elites: 0, boss: 0 },
+    shardsFrom: { kills: 0, waves: 0, cards: 0, elites: 0, boss: 0, rifts: 0 },
     firstKill: config.firstKill,
     relicDrops: config.relicDrops,
     boss: null,
@@ -151,7 +152,16 @@ export function createRun(config: RunConfig, seed: number): RunState {
       loot: root.split('loot').state,
       arms: root.split('arms').state,
       foes: root.split('foes').state,
+      // Rifts (plans/late-game/02): `split` leaves the root as it is, so older seeds play as before.
+      rifts: root.split('rifts').state,
+      riftFx: root.split('riftFx').state,
     },
+    riftCfg: config.rifts ?? null,
+    rift: null,
+    riftRoll: { wave: 0, miss: 0, count: 0, last: 0, floor: 0 },
+    riftHolds: [],
+    riftLog: [],
+    forgedHand: false,
     outcome: null,
     events: [],
   };
@@ -166,9 +176,12 @@ export function createRun(config: RunConfig, seed: number): RunState {
 export function applyInput(run: RunState, input: RunInput): void {
   if (run.outcome) return;
   if (input.retreat) {
+    shutRift(run);
     run.outcome = { kind: 'retreat', wave: run.wave, time: run.time };
     return;
   }
+  if (input.tapRift) tapRift(run);
+  if (input.chooseRift !== undefined) chooseRift(run, input.chooseRift);
   if (input.reroll) rerollDraft(run);
   if (input.banish !== undefined) banishCard(run, input.banish);
   if (input.pick !== undefined) pickCard(run, input.pick);
@@ -196,6 +209,8 @@ export function step(run: RunState, dt: number, input: RunInput = {}, weaponStep
   if (run.outcome) return;
   const region = runRegion(run);
   tickWaves(run, region);
+  // Step 2b: rifts roll at a wave's start, show, and shut (plans/late-game/02).
+  tickRifts(run, runRegion(run));
   tickBoss(run, region, dt);
   tickEnemies(run, dt);
   separateEnemies(run);
@@ -221,6 +236,7 @@ export function step(run: RunState, dt: number, input: RunInput = {}, weaponStep
   if (t.hp <= 0) {
     t.hp = 0;
     run.draft = null;
+    shutRift(run);
     run.outcome = { kind: 'fell', wave: run.wave, time: run.time };
     run.events.push({ kind: 'fell' });
     return;

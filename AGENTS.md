@@ -27,7 +27,8 @@ P9 deleted the `legacy/` copy.
 | `tests/` | Vitest, node environment | — |
 
 The sim's step order (`sim/run.ts`): input → waves place bodies (wave 20 is
-the boss, `systems/boss.ts`; overtime follows) → the boss acts → enemies walk
+the boss, `systems/boss.ts`; overtime follows) → rifts roll, show and shut
+(`systems/rifts.ts`, step 2b) → the boss acts → enemies walk
 and act on their verb (hit the wall, lob a shot, mend) → separation spreads
 crowds (tangentially at the wall) → weapons fire → projectiles fly and kill
 (kills feed XP, shards and the ultimate; a Splitter bursts, an elite's aura

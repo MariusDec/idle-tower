@@ -15,6 +15,7 @@ import { armed, mountOf, muzzle } from './arms';
 import { bossBody, dropPlate, onBossKilled, phasesOf, plateGuard, reflectShot } from './boss';
 import { mitigate } from './damage';
 import { gainXp, refreshStats } from './draft';
+import { riftShardMult } from './rifts';
 import { hurtTower } from './tower';
 import { regionRule, runRegion, spawnEnemy } from './waves';
 
@@ -1691,6 +1692,12 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   if (e.boss) run.shardsFrom.boss += shards;
   else if (e.elite) run.shardsFrom.elites += shards;
   else run.shardsFrom.kills += shards;
+  // A rift's bounty (plans/late-game/02): the extra is the rift's.
+  if (run.riftHolds.length > 0) {
+    const extra = shards * (riftShardMult(run, e) - 1);
+    run.shards += extra;
+    run.shardsFrom.rifts += extra;
+  }
   const u = run.ult;
   if (u.charge < 1) {
     // Last Light (§11.5): below half HP, the ultimate fills faster.

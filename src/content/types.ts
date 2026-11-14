@@ -885,6 +885,10 @@ export type FeatGoal =
   | { readonly kind: 'bossNoUlt' }
   /** Defeat a boss carrying `weapons` weapons, all at their last level, and no passives. */
   | { readonly kind: 'bareArsenal'; readonly weapons: number }
+  /** Open a rift of this rarity (plans/late-game/02). */
+  | { readonly kind: 'riftOpened'; readonly rarity: 'legendary' }
+  /** Take n rifts' offers, in all. */
+  | { readonly kind: 'riftsTaken'; readonly n: number }
   // Act 2 (§9).
   /** Clear any region at heat n or more. */
   | { readonly kind: 'heat'; readonly heat: number }
@@ -981,4 +985,92 @@ export interface TrialDef extends ContentEntry {
   readonly region: number;
   readonly rules: readonly TrialRule[];
   readonly reward: TrialReward;
+}
+
+/** A rift (plans/late-game/02): a tear that opens mid-wave, for a watching player to tap. */
+export type RiftId =
+  | 'first-tear'
+  | 'wager'
+  | 'glimmer-cache'
+  | 'stillness'
+  | 'old-coin'
+  | 'ashfall'
+  | 'loaded-dice'
+  | 'drowned-bell'
+  | 'marsh-wisp'
+  | 'blood-price'
+  | 'hungry-dark'
+  | 'cracked-mirror'
+  | 'shatterglass'
+  | 'split-sky'
+  | 'open-flame'
+  | 'cinder-oath'
+  | 'whispering-shade'
+  | 'blight-bloom'
+  | 'heart-vein';
+
+/** How long a rift's effect lasts: the rest of this wave and n more, until the region's boss falls, or the run. */
+export type RiftSpan = { readonly waves: number } | 'boss' | 'run';
+
+/**
+ * What a rift's choice does (plans/late-game/02 §3). A closed union;
+ * `sim/systems/rifts.ts#applyRiftEffect` is its one consumer.
+ */
+export type RiftEffect =
+  /** `waves` × this wave's wave pay; with `atWave`, paid on reaching that wave. */
+  | { readonly kind: 'shards'; readonly waves: number; readonly atWave?: number }
+  /** A share of Max HP lost (never below `BALANCE.rifts.hurtFloor`) or mended. */
+  | { readonly kind: 'hurt' | 'heal'; readonly fraction: number }
+  /** A stat contribution for a span (a true `mult`). */
+  | { readonly kind: 'stat'; readonly mod: StatMod; readonly span: RiftSpan }
+  /** The next `waves` waves bring `count` times the bodies. */
+  | { readonly kind: 'horde'; readonly count: number; readonly waves: number }
+  /** Kills (or only elites) pay `mult` times for a span. */
+  | { readonly kind: 'bounty'; readonly mult: number; readonly span: RiftSpan; readonly on?: 'elites' }
+  /** The next `n` bodies are crowned, or with `perWave` n more each wave of the span; a Champion optionally. */
+  | { readonly kind: 'elites'; readonly n: number; readonly perWave?: boolean; readonly champion?: boolean; readonly span?: RiftSpan }
+  /** `n` drafts banked; `forged`: the next offers the evolution of any carried weapon at `forgedFrom`. */
+  | { readonly kind: 'draft'; readonly n: number; readonly hand?: 'forged' }
+  /** ±1 level on unevolved weapons. */
+  | { readonly kind: 'levels'; readonly target: 'all' | 'others' | 'weakest' | 'strongest'; readonly delta: 1 | -1 }
+  | { readonly kind: 'charges'; readonly rerolls?: number; readonly banishes?: number; readonly revives?: number }
+  /** The ultimate's charge, set. */
+  | { readonly kind: 'ult'; readonly charge: number }
+  /** Every body on the field stops for `seconds`. */
+  | { readonly kind: 'stun'; readonly seconds: number }
+  /** The region's boss arrives with `hp` times its HP. */
+  | { readonly kind: 'boss'; readonly hp: number };
+
+export interface RiftChoice {
+  /** ≤ 15 words (R4). */
+  readonly text: string;
+  /** Costs first, then rewards. */
+  readonly effects: readonly RiftEffect[];
+}
+
+export type RiftRarity = 'common' | 'rare' | 'legendary';
+
+/** Where a rift may open. No `regions`, `from`, `act2` or `abyss`: anywhere. */
+export interface RiftWhere {
+  /** Only in these regions (by index). */
+  readonly regions?: readonly number[];
+  /** Only from this region index on (the Abyss and Act 2 count as past every region). */
+  readonly from?: number;
+  /** Only once Act 2 is open. */
+  readonly act2?: boolean;
+  /** Only in the Abyss. */
+  readonly abyss?: boolean;
+  /** Only with Alchemy owned, or a relic slot open. */
+  readonly needs?: 'alchemy' | 'relics';
+  /** Never rolled: the First Tear is placed, not drawn. */
+  readonly placed?: boolean;
+}
+
+/** A rift (plans/late-game/02 §4). `text` is its whisper, ≤ 8 words. */
+export interface RiftDef extends ContentEntry {
+  readonly id: RiftId;
+  readonly rarity: RiftRarity;
+  readonly where: RiftWhere;
+  /** One or two; "Leave it" is always there and is not one of them. */
+  readonly choices: readonly RiftChoice[];
 }

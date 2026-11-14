@@ -6,7 +6,7 @@ import { FORGE } from '../content/forge';
 import { FRAMES } from '../content/frames';
 import { REGIONS } from '../content/regions';
 import { RELIC_SETS, bossRelic, setOf } from '../content/relics';
-import type { BossId, EnemyId, EvolutionId, FeatDef, FusionId, PassiveId, RelicId, WeaponId } from '../content/types';
+import type { BossId, EnemyId, EvolutionId, FeatDef, FusionId, PassiveId, RelicId, RiftId, WeaponId } from '../content/types';
 import type { DamageBy, HurtBy, RunState } from '../sim/state';
 import {
   act2Open, bossDown, frameUnlocked, gainRelic, hubUnlocks, regionUnlocked, relicSlots, rushOpen, setOwned, setRank, trophiesAt,
@@ -56,7 +56,7 @@ export function buildOf(run: RunState): BuildSummary {
  * A reward only a present player can earn (I9, plans/late-game/01 §9.1).
  * Each late-game plan adds its own kind; the hands-off bot must never see one.
  */
-export type ActiveOnlyKind = 'stored-played';
+export type ActiveOnlyKind = 'stored-played' | 'rift';
 
 /** What Stored Light paid this run (plans/late-game/01 §2). */
 export interface StoredSummary {
@@ -68,6 +68,16 @@ export interface StoredSummary {
   left: number;
   /** The multiple a played wave ran at. */
   rate: number;
+}
+
+/** A rift a run met (plans/late-game/02 §2): taken (with its choice), left, or glimpsed. */
+export interface RiftSummary {
+  id: RiftId;
+  /** The choice taken; null when left or never opened. */
+  choice: number | null;
+  tapped: boolean;
+  /** True the first time this rift is in the journal at all. */
+  fresh: boolean;
 }
 
 /** Everything the results screen shows (§4.6), resolved once at the run's end. */
@@ -93,7 +103,9 @@ export interface RunSummary {
   /** Rewards only a present player earns (I9): empty for a run left alone. */
   activeOnly: { kind: ActiveOnlyKind; amount: number }[];
   /** The breakdown behind `shards`, unrounded. */
-  shardsFrom: { kills: number; waves: number; cards: number; elites: number; boss: number };
+  shardsFrom: { kills: number; waves: number; cards: number; elites: number; boss: number; rifts: number };
+  /** The run's rifts (plans/late-game/02): each met, in order. Empty when none opened. */
+  rifts: RiftSummary[];
   /**
    * The wave record is this region's own (§7.3); past its boss it is told as
    * overtime, waves beyond the boss. None in the Abyss, whose record is the floor.
@@ -295,6 +307,7 @@ export function bankRun(
   const rushTime = run.outcome?.kind === 'cleared' ? run.outcome.time : null;
   const rushRecord = rush ? recordRush(profile, stages, rushTime ?? time) : null;
 
+  const rifts = recordRifts(profile, run);
   const newRecipes = recordRecipes(profile, run);
   const newFusions = recordFusions(profile, run);
   const feats = checkFeats(profile, run);
@@ -308,6 +321,9 @@ export function bankRun(
     r.storedBurned += burn.bonus;
     if (burn.engagedBonus > 0) activeOnly.push({ kind: 'stored-played', amount: burn.engagedBonus });
   }
+  // Rifts (I9): what they paid, and one entry per taken rift.
+  if (run.shardsFrom.rifts > 0) activeOnly.push({ kind: 'rift', amount: run.shardsFrom.rifts });
+  for (const x of rifts) if (x.choice !== null) activeOnly.push({ kind: 'rift', amount: 0 });
   // The Foreman (N7) spends the run's shards on the wishlist before the Next line is read.
   const foreman = foremanBuy(profile);
   const after = unlockList(profile);
@@ -328,6 +344,7 @@ export function bankRun(
     stored: burn,
     activeOnly,
     shardsFrom: { ...run.shardsFrom },
+    rifts,
     records,
     newEnemies,
     newCards: [...newCards],
@@ -349,4 +366,26 @@ export function bankRun(
     foreman,
     trial,
   };
+}
+
+/**
+ * The rift journal (plans/late-game/02 §5): each rift the run met, glimpsed,
+ * seen or taken; the First Tear's lesson once one is opened. Checked before
+ * the feats, which read the journal.
+ */
+export function recordRifts(profile: Profile, run: RunState): RiftSummary[] {
+  const out: RiftSummary[] = [];
+  for (const e of run.riftLog) {
+    const fresh = !(e.id in profile.rifts);
+    const rec = (profile.rifts[e.id] ??= { glimpsed: 0, seen: 0, taken: [] });
+    if (e.tapped) rec.seen++;
+    else rec.glimpsed++;
+    if (e.choice !== null) {
+      while (rec.taken.length <= e.choice) rec.taken.push(0);
+      rec.taken[e.choice]++;
+    }
+    if (e.tapped) profile.tutorial.firstRift = true;
+    out.push({ id: e.id, choice: e.choice, tapped: e.tapped, fresh });
+  }
+  return out;
 }

@@ -6,7 +6,7 @@ import { PASSIVE_BY_ID } from '../content/passives';
 import { WEAPON_BY_ID } from '../content/weapons';
 import type { EnemyId, EvolutionId, PassiveId, WeaponId } from '../content/types';
 import type { Card, RunState, TowerStats, WeaponState } from './state';
-import { allMods, resolveStats } from './stats';
+import { allMods, resolveStats, runMods } from './stats';
 import { armed, slotsUsed } from './systems/arms';
 import { landedShare } from './systems/damage';
 import { localWave, runRegion, waveDamage, waveHp } from './systems/waves';
@@ -379,7 +379,7 @@ export function scoreCard(run: RunState, card: Card): number {
       const owned = run.passives.find((p) => p.id === card.id);
       const ahead = PASSIVE_BY_ID[card.id].perWave ? Math.max(0, RUN_WAVES - run.wave) / 2 : 0;
       const passives = run.passives.filter((p) => p.id !== card.id).concat({ id: card.id, level: card.level, waves: (owned?.waves ?? 0) + ahead });
-      const stats = resolveStats(allMods(run.mods, passives));
+      const stats = resolveStats(allMods(runMods(run), passives));
       const offence = buildDps(run.weapons, stats, foes) / before - 1;
       const hp = stats.maxHp / run.stats.maxHp - 1;
       // Ten seconds of regen, as a fraction of Max HP.

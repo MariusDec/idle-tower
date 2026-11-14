@@ -9,7 +9,7 @@ import type { TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 16;
+  version: 17;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -52,6 +52,12 @@ export interface Profile {
    * Night Watch III on, paid out only as runs burn it. Never fades, no cap.
    */
   storedLight: number;
+  /**
+   * The rift journal (plans/late-game/02), by rift id: times it closed
+   * untouched (glimpsed), times it was opened (seen), and how often each
+   * choice was taken, by index.
+   */
+  rifts: Record<string, RiftRecord>;
   /** Wall-clock ms the game was last open, for offline earnings (§6.1). */
   lastSeen: number;
   /**
@@ -114,6 +120,8 @@ export interface Profile {
     forgeIntro: boolean;
     /** Explainers read (`content/explainers.ts`), by id: each is told unasked once. */
     explained: string[];
+    /** The First Tear has been opened (plans/late-game/02 §2): rifts roll from now on. */
+    firstRift: boolean;
   };
   settings: {
     /** Sim speed multiplier, 1–3 (§12.3). */
@@ -140,7 +148,14 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 16;
+export const PROFILE_VERSION = 17;
+
+/** One rift's journal entry (plans/late-game/02 §5). */
+export interface RiftRecord {
+  glimpsed: number;
+  seen: number;
+  taken: number[];
+}
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
@@ -180,6 +195,7 @@ export function newProfile(now: number): Profile {
     feats: {},
     farm: [],
     storedLight: 0,
+    rifts: {},
     recipes: { found: [], carried: {}, readied: {} },
     lastSeen: now,
     ceremony: null,
@@ -198,7 +214,7 @@ export function newProfile(now: number): Profile {
     sets: {},
     region: 1,
     frame: 'arcanist',
-    tutorial: { firstDraft: false, forgeIntro: false, explained: [] },
+    tutorial: { firstDraft: false, forgeIntro: false, explained: [], firstRift: false },
     settings: defaultSettings(),
   };
 }

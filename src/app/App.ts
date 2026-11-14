@@ -54,6 +54,9 @@ import { Synth } from '../audio/synth';
 import { Cues } from '../audio/cues';
 import { assertTransition, type Screen } from './screens';
 import { bindZoom } from '../ui/zoom';
+import { bindClaim } from '../ui/claim';
+import { RiftPanel } from '../ui/rift';
+import { RIFT_BY_ID } from '../content/rifts';
 
 /** Autosave cadence (§12.4), on the wall clock. */
 const AUTOSAVE_SECONDS = 30;
@@ -135,6 +138,7 @@ export class App {
   private readonly results: ResultsScreen;
   private readonly modal: Modal;
   private readonly draft: DraftPanel;
+  private readonly riftPanel: RiftPanel;
   private readonly toasts: Toasts;
   private readonly synth = new Synth();
   private readonly cues = new Cues(this.synth);
@@ -156,6 +160,7 @@ export class App {
       zoomIn: () => this.renderer.camera.zoomBy(ZOOM_STEP),
       zoomOut: () => this.renderer.camera.zoomBy(1 / ZOOM_STEP),
       zoomFit: () => this.renderer.camera.fitView(),
+      rift: () => this.tapRift(),
     });
     // Manual zoom (camera-and-fog §5): during a run only; the framing is a
     // setting, saved with the next autosave rather than on every wheel tick.
@@ -163,6 +168,13 @@ export class App {
       zoomBy: (factor) => this.renderer.camera.zoomBy(factor, true),
       settle: () => this.renderer.camera.settle(),
       active: () => this.screen === 'run',
+    });
+    // Rifts (plans/late-game/02 §2): a one-finger tap near the tear opens it; the HUD chip is the other path.
+    bindClaim<'rift'>(els.canvas, {
+      active: () => this.screen === 'run' && this.simSpeed() > 0,
+      targets: () => (this.run?.rift?.phase === 'shown' ? [{ kind: 'rift', x: this.run.rift.x, y: this.run.rift.y }] : []),
+      toScreen: (x, y) => this.renderer.camera.worldToScreen(x, y),
+      claim: () => this.tapRift(),
     });
     this.renderer.camera.onFraming = (framing) => this.changeSettings((s) => { s.framing = framing; }, false);
     this.hub = new HubScreen(els.screens, {
@@ -214,6 +226,7 @@ export class App {
       els.overlay, (i) => this.pick(i), () => this.reroll(), () => this.takeAll(), (i) => this.banish(i),
       () => {},
     );
+    this.riftPanel = new RiftPanel(els.overlay, (i) => this.chooseRift(i));
     this.modal = new Modal(els.overlay);
     // Hold a build chip for its card: the HUD strip, the pause menu, the results.
     for (const host of [els.hud, els.overlay, els.screens]) bindBuildPeek(host, els.overlay);
@@ -451,6 +464,7 @@ export class App {
     this.poolAtStart = this.profile.storedLight;
     this.poolDry = false;
     this.draft.hide();
+    this.riftPanel.hide();
     this.loop.resetClock();
     this.go('run');
     this.hud.setSpeed(maxSpeed(this.profile), runSpeed(this.profile));
@@ -465,13 +479,54 @@ export class App {
   private simSpeed(): number {
     const run = this.run;
     if (this.screen !== 'run' || this.paused || !run || run.outcome) return 0;
-    const speed = (this.devSpeed ?? runSpeed(this.profile)) * (this.slowMo.left > 0 ? this.slowMo.speed : 1);
+    // A rift being chosen stops the arena, with no timer (plans/late-game/02 §2).
+    if (run.rift?.phase === 'choosing') return 0;
+    let speed = (this.devSpeed ?? runSpeed(this.profile)) * (this.slowMo.left > 0 ? this.slowMo.speed : 1);
+    // While a rift waits, a watching player gets its window in wall seconds; a hands-off screen keeps its speed.
+    if (run.rift?.phase === 'shown' && this.engaged()) speed = Math.min(speed, BALANCE.rifts.engagedCap);
     if (run.draft) {
       // The game never waits (§4.5), except for the first draft it ever shows.
       if (!this.profile.tutorial.firstDraft || this.draft.stopped) return 0;
       return BALANCE.draft.slowMotion * speed;
     }
     return speed;
+  }
+
+  /** A touch this recent counts as a watching player (plans/late-game/01 §3.3). */
+  private engaged(): boolean {
+    return Date.now() - this.lastTouch <= BALANCE.offline.engagedSeconds * 1000;
+  }
+
+  /** Open the rift on the field: the canvas tap or the HUD chip. Never on a stopped arena, nor over a draft. */
+  private tapRift(): void {
+    const run = this.run;
+    if (!run || this.screen !== 'run' || run.rift?.phase !== 'shown' || run.draft || this.simSpeed() === 0) return;
+    applyInput(run, { tapRift: true });
+    this.runDirty = true;
+  }
+
+  /** Take choice `index` of the open rift, or leave it (−1). */
+  private chooseRift(index: number): void {
+    const run = this.run;
+    if (!run || this.screen !== 'run' || this.paused || run.rift?.phase !== 'choosing') return;
+    applyInput(run, { chooseRift: index });
+    this.runDirty = true;
+    this.loop.resetClock();
+  }
+
+  /** Keep the rift's chip and panel in step with the run (plans/late-game/02 §2). */
+  private syncRift(run: RunState): void {
+    const r = run.rift;
+    const shown = r?.phase === 'shown';
+    this.hud.setRift(shown ? {
+      rarity: RIFT_BY_ID[r.id].rarity,
+      left: Math.max(0, Math.min(1, (r.closesAt - run.time) / Math.max(0.001, r.closesAt - r.at))),
+      blocked: run.draft !== null,
+    } : null);
+    const choosing = r?.phase === 'choosing';
+    if (choosing) this.riftPanel.show(run);
+    else if (this.riftPanel.open) this.riftPanel.hide();
+    this.music.duck(choosing);
   }
 
   /** The HUD's speed toggle (§6.2): steps through what is unlocked. */
@@ -659,6 +714,7 @@ export class App {
       // Cards taken since the last snapshot: one more, at most every couple of seconds.
       if (this.runDirty && !run.outcome && now - this.snapshotAt >= PICK_SNAPSHOT_MS) this.snapshot(run);
       this.syncDraft(run, realDt);
+      this.syncRift(run);
       this.hud.update(run);
       this.showStored(run);
       this.hud.setZoomed(this.renderer.camera.zoomedIn, this.renderer.camera.atClose);
@@ -728,6 +784,10 @@ export class App {
         case 'eliteSpawn':
           if (ev.champion) this.toasts.show('vertical-banner', 'A Champion comes', 'Slay it for a relic.', 'relic');
           break;
+        case 'riftAppear':
+          // The First Tear teaches itself (plans/late-game/02 §2): a toast, never an arena stop.
+          if (ev.id === 'first-tear') this.toasts.show(RIFT_BY_ID[ev.id].icon, 'A rift!', 'Tap it before it closes.', 'relic');
+          break;
         case 'bossKill':
           this.slowMo = { left: BOSS_KILL_SLOWMO.seconds, speed: BOSS_KILL_SLOWMO.speed };
           break;
@@ -758,6 +818,9 @@ export class App {
     this.write(() => pushBackup(kept));
     this.modal.close();
     this.draft.hide();
+    this.riftPanel.hide();
+    this.hud.setRift(null);
+    this.music.duck(false);
     this.shownDraft = null;
     this.go('results');
     // A first boss kill holds the results for its ceremony: no auto-restart

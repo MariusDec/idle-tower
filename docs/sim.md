@@ -24,8 +24,9 @@ between steps.
 
 The order is part of the contract (`sim/run.ts#step`):
 
-1. input (`applyInput`: retreat, reroll, pick, ultimate)
+1. input (`applyInput`: retreat, tap or choose a rift, reroll, pick, ultimate)
 2. `tickWaves` — waves place bodies; wave 20 brings the boss
+   2b. `tickRifts` — at a wave's start, spans expire and a rift may be rolled; a rolled rift appears after its delay and shuts at `closesAt` ([rifts.md](rifts.md))
 3. `tickBoss` — the boss's patterns
 4. `tickEnemies` — walk, and act on their verb (hit the wall, lob, mend…)
 5. `separateEnemies` — crowds spread (tangentially at the wall)

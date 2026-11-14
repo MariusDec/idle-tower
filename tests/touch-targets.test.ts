@@ -76,6 +76,8 @@ describe('44 px floor', () => {
     { sel: '.btn', axes: ['min-width', 'min-height'] },
     { sel: '.hud-pause', axes: ['min-width', 'min-height'] },
     { sel: '.hud-ult', axes: ['min-width', 'min-height'] },
+    { sel: '.hud-rift', axes: ['min-width', 'min-height'] },
+    { sel: '.rift-choice', axes: ['min-width', 'min-height'] },
     { sel: '.draft-card', axes: ['min-width', 'min-height'] },
     { sel: '.hud-speed', axes: ['min-width', 'min-height'] },
     { sel: '.hud-auto', axes: ['min-width', 'min-height'] },

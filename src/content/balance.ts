@@ -548,6 +548,46 @@ export const BALANCE = {
     packStagger: 0.12,
   },
   /**
+   * Rifts (plans/late-game/02 §3): a tear opens mid-wave; a watching player
+   * taps it for an authored offer. One roll per eligible wave on the `rifts`
+   * stream, at `chance + ramp × (eligible waves since the last rift)`.
+   */
+  rifts: {
+    /** No rift before this wave (a floor's own wave in the Abyss). */
+    from: 4,
+    /** Sim seconds into the wave it appears. */
+    delay: [3, 7] as readonly [number, number],
+    /** Sim seconds it waits for a tap. */
+    openSeconds: 8,
+    /** The First Tear's wait, and the wave it opens at. */
+    firstOpenSeconds: 20,
+    firstWave: 4,
+    /** Waves between two rifts. */
+    gap: { act1: 4, act2: 3 },
+    chance: { act1: 0.12, act2: 0.15, abyss: 0.25 },
+    ramp: { act1: 0.06, act2: 0.06, abyss: 0.1 },
+    /** Rifts a run may see; overtime adds one more. */
+    perRun: { act1: 2, overtime: 1, act2: 3 },
+    /** In the Abyss: one a floor, on its waves `from`…`floorLast`. */
+    perFloor: 1,
+    floorFrom: 2,
+    floorLast: 9,
+    /** Rarity weights; rares from this region index on, legendaries from that. */
+    rarity: { common: 70, rare: 25, legendary: 5 },
+    rareFrom: 2,
+    legendaryFrom: 3,
+    /** A rift not yet in the journal is this much likelier, within its rarity. */
+    unseenWeight: 2,
+    /** Where it opens, × the light's radius, in the upper 240° of the light. */
+    radius: [0.45, 0.7] as readonly [number, number],
+    /** A cost leaves at least this share of Max HP. */
+    hurtFloor: 0.1,
+    /** A forged hand offers the evolution of any carried weapon at this level or more. */
+    forgedFrom: 3,
+    /** The app: arena speed while a rift waits, for an engaged player only. */
+    engagedCap: 1,
+  },
+  /**
    * How hard overlapping bodies push apart per step, as a fraction of their
    * radius per unit of overlap. Presentation-driven, but it moves bodies, so
    * it lives in the sim and is deterministic.

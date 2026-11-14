@@ -1,3 +1,4 @@
+import { RIFT_BY_ID } from '../content/rifts';
 import type { WeaponId } from '../content/types';
 import type { SimEvent } from '../sim/state';
 import type { Synth } from './synth';
@@ -193,6 +194,28 @@ export class Cues {
         case 'hordeEnrage':
           s.tone({ freq: 120, freqEnd: 400, type: 'sawtooth', duration: 0.45, volume: 0.15 });
           break;
+        case 'riftAppear': {
+          // A rising shimmer, panned by where the tear opened.
+          const pan = Math.max(-1, Math.min(1, ev.x / 300));
+          s.tone({ freq: 700, freqEnd: 1400, type: 'sine', duration: 0.5, volume: 0.07, attack: 0.15, pan });
+          s.tone({ freq: 1050, freqEnd: 2100, type: 'triangle', duration: 0.4, volume: 0.04, attack: 0.1, delay: 0.08, pan });
+          break;
+        }
+        case 'riftShut':
+          // A soft inhale.
+          s.noise(0.35, 0.04, 900, 'bandpass');
+          break;
+        case 'riftTaken': {
+          if (ev.choice === null) {
+            s.noise(0.25, 0.03, 900, 'bandpass');
+            break;
+          }
+          // A chord whose interval widens with rarity.
+          const rarity = RIFT_BY_ID[ev.id].rarity;
+          const top = rarity === 'legendary' ? 784 : rarity === 'rare' ? 659 : 587;
+          for (const [i, f] of [392, 494, top].entries()) s.tone({ freq: f, type: 'triangle', duration: 0.6, volume: 0.09, delay: i * 0.05 });
+          break;
+        }
         case 'relicDrop':
           s.tone({ freq: 880, type: 'sine', duration: 0.4, volume: 0.1 });
           s.tone({ freq: 1320, type: 'sine', duration: 0.5, volume: 0.08, delay: 0.1 });

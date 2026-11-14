@@ -31,10 +31,9 @@ import { claimAll } from '../src/meta/feats';
 import { bestHeat, setPactRank } from '../src/meta/pacts';
 import type { Profile } from '../src/meta/profile';
 import { bankRun } from '../src/meta/results';
-import { buildRunConfig } from '../src/meta/runConfig';
 import { STAR_WEB, starsLit } from '../src/meta/stars';
 import { createRun } from '../src/sim/run';
-import { playRun } from './play';
+import { playRun, toolConfig } from './play';
 import { shop } from './shop';
 
 /** The bot's order of pacts, the mildest first for a strong tower: Scarcity first (it has cards to spare), Vigour last. */
@@ -181,7 +180,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     }
     const start = clock;
     const speed = runSpeed(profile);
-    const run = createRun(buildRunConfig(profile), seeds.nextU32());
+    const run = createRun(toolConfig(profile), seeds.nextU32());
     const played = playRun(profile, run, { policy: 'active', speed });
     clock += played.wall;
     const summary = bankRun(profile, run, played.newCards, speed);

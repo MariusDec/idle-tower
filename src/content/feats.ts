@@ -68,6 +68,9 @@ export const FEATS: readonly FeatDef[] = [
     id: 'untouchable', name: 'Untouchable', icon: 'temporary-shield', text: 'Take no damage before wave 20.',
     riddle: 'Let nothing touch the stone until the boss comes.', after: 'forgeheart', goal: { kind: 'untouched', wave: 20 }, reward: 10000,
   },
+  // Rifts (plans/late-game/02): only a watching player opens one.
+  { id: 'through-the-tear', name: 'Through the Tear', icon: 'star-gate', text: 'Open a legendary rift.', goal: { kind: 'riftOpened', rarity: 'legendary' }, reward: 3000 },
+  { id: 'riftwalker', name: 'Riftwalker', icon: 'teleport', text: 'Take 25 rifts’ offers.', goal: { kind: 'riftsTaken', n: 25 }, reward: 4000 },
   // ── Act 2 (§9): surface once the Blight has fallen ────────────────────
   { id: 'kindled', name: 'Kindled', icon: 'fire-bowl', text: 'Clear a region under any pact.', after: 'blight', goal: { kind: 'heat', heat: 1 }, reward: 50_000, starlight: 5 },
   { id: 'heat-5', name: 'Fevered', icon: 'frostfire', text: 'Clear a region at heat 5.', after: 'blight', goal: { kind: 'heat', heat: 5 }, reward: 150_000, starlight: 10 },

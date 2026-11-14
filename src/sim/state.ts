@@ -1,7 +1,8 @@
 import type { RngState } from '../core/rng';
 import type { Oval } from '../content/arena';
 import type {
-  AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, StatMod, WeaponId,
+  AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, RiftEffect, RiftId,
+  StatMod, WeaponId,
 } from '../content/types';
 
 /**
@@ -67,6 +68,45 @@ export interface RunConfig {
   readonly pacts: Readonly<Partial<Record<PactId, number>>>;
   /** What the Abyss's elites may drop (§9): the relics of the lit sets. */
   readonly abyssRelics: readonly RelicId[];
+  /**
+   * Rifts (plans/late-game/02): null in Trials, Boss Rush and before the
+   * Gatekeeper's first fall. `first`: the First Tear is still owed.
+   * `known`: rifts in the journal (no unseen weight on them). `act2`: Act 2's
+   * rates. `rate`: a multiplier on the chance (a Daily Omen's boon). Absent: none.
+   */
+  readonly rifts?: RiftConfig | null;
+}
+
+/** What a run's rifts are rolled from (plans/late-game/02 §5). */
+export interface RiftConfig {
+  readonly first: boolean;
+  readonly known: readonly RiftId[];
+  readonly act2: boolean;
+  readonly rate?: number;
+}
+
+/** A rift on the field (plans/late-game/02 §3): rolled at a wave's start, shown, then perhaps tapped. */
+export interface RiftState {
+  id: RiftId;
+  /** Where it opens, in world units from the tower. */
+  x: number;
+  y: number;
+  /** Run time it appears, and the time it shuts if untouched. */
+  at: number;
+  closesAt: number;
+  /** The wave it was rolled in. */
+  wave: number;
+  phase: 'pending' | 'shown' | 'choosing';
+}
+
+/** A taken rift's effect still running (plans/late-game/02 §3): until a wave, the boss's fall, or the run's end. */
+export interface RiftHold {
+  effect: RiftEffect;
+  /** The last wave it covers; 'boss' until a boss falls (`felled` counts them at the take); 'run' to the end. */
+  until: number | 'boss' | 'run';
+  felled: number;
+  /** A `shards` effect waiting for its wave: the pay, fixed at the take. */
+  pay?: number;
 }
 
 /**
@@ -557,7 +597,11 @@ export type SimEvent =
   /** A Maw fed on the fallen. */
   | { kind: 'feed'; x: number; y: number }
   /** A floor of the Abyss was cleared (§9). */
-  | { kind: 'floor'; floor: number };
+  | { kind: 'floor'; floor: number }
+  /** A rift opened, shut untouched, or was taken (choice null: left). */
+  | { kind: 'riftAppear'; id: RiftId; x: number; y: number }
+  | { kind: 'riftShut'; id: RiftId; x: number; y: number }
+  | { kind: 'riftTaken'; id: RiftId; choice: number | null; x: number; y: number };
 
 export interface RunState {
   seed: number;
@@ -598,7 +642,7 @@ export interface RunState {
   /** Shards earned this run (§8.3), unrounded; banked at the run's end. */
   shards: number;
   /** Where `shards` came from, for the results breakdown (§4.6). */
-  shardsFrom: { kills: number; waves: number; cards: number; elites: number; boss: number };
+  shardsFrom: { kills: number; waves: number; cards: number; elites: number; boss: number; rifts: number };
   /** True while this region's boss has never fallen (from the config). */
   firstKill: boolean;
   /** True when elites may drop relics (from the config). */
@@ -668,6 +712,22 @@ export interface RunState {
   rng: RngState;
   /** Named child-stream states, so each system's draws stay independent. */
   streams: Record<string, RngState>;
+  /** What this run's rifts roll from (from the config); null: none open. */
+  riftCfg: RiftConfig | null;
+  /** The rift on the field, or rolled to come this wave. */
+  rift: RiftState | null;
+  /**
+   * The rift roll: the last wave rolled for, eligible waves missed since the
+   * last rift (the ramp), rifts this run, the wave of the last, the floor of
+   * the last (the Abyss), and bosses seen arrive (for `boss` effects).
+   */
+  riftRoll: { wave: number; miss: number; count: number; last: number; floor: number };
+  /** Taken rifts' effects still running. */
+  riftHolds: RiftHold[];
+  /** Every rift this run met, in order: glimpsed (not tapped), left (tapped, no choice) or taken. */
+  riftLog: { id: RiftId; wave: number; choice: number | null; tapped: boolean }[];
+  /** A forged hand is owed (Blood Price): the next draft offers evolutions, ready or not. */
+  forgedHand: boolean;
   /** How the run ended: the tower fell, withdrew, or (Boss Rush, N8) cleared every stage. */
   outcome: null | { kind: 'fell' | 'retreat' | 'cleared'; wave: number; time: number };
   events: SimEvent[];
@@ -686,4 +746,8 @@ export interface RunInput {
   takeAll?: boolean;
   /** Fire the ultimate, if charged. */
   ult?: boolean;
+  /** Open the rift on the field (plans/late-game/02), if one is shown and no draft is open. */
+  tapRift?: boolean;
+  /** Take choice `chooseRift` of the open rift; −1 leaves it. */
+  chooseRift?: number;
 }

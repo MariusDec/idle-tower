@@ -2,7 +2,7 @@ import { ABYSS_INDEX } from './abyss';
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
 import type {
-  AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, TrialDef, WeaponDef, WebNodeDef,
+  AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, RiftDef, TrialDef, WeaponDef, WebNodeDef,
 } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
@@ -412,8 +412,46 @@ export const stacking: LintRule = (tables) => {
   return out;
 };
 
+/** Longest a rift's whisper may be (plans/late-game/02 §4). */
+export const MAX_WHISPER_WORDS = 8;
+
+/**
+ * Rifts (plans/late-game/02 §4): a whisper of ≤ 8 words, one or two choices
+ * of ≤ 15 words each, real regions, every Act 1 region with at least two
+ * rifts of its own (its regional ones, or ones that start there or before
+ * it), and no level or boss swing on a common, which may open where no
+ * legendary can.
+ */
+export const rifts: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const list = (tables.rifts as readonly RiftDef[] | undefined) ?? [];
+  const regions = ((tables.regions as readonly RegionDef[] | undefined) ?? []).map((r) => r.index);
+  for (const r of list) {
+    const words = wordCount(r.text);
+    if (words > MAX_WHISPER_WORDS) out.push({ table: 'rifts', id: r.id, problem: `whisper is ${words} words (max ${MAX_WHISPER_WORDS})` });
+    if (r.choices.length < 1 || r.choices.length > 2) out.push({ table: 'rifts', id: r.id, problem: `has ${r.choices.length} choices (want 1–2)` });
+    r.choices.forEach((c, i) => {
+      const n = wordCount(c.text);
+      if (n === 0 || n > MAX_TEXT_WORDS) out.push({ table: 'rifts', id: r.id, problem: `choice ${i + 1} is ${n} words` });
+      if (c.effects.length === 0) out.push({ table: 'rifts', id: r.id, problem: `choice ${i + 1} does nothing` });
+      if (r.rarity === 'common' && c.effects.some((e) => e.kind === 'levels' || e.kind === 'boss')) {
+        out.push({ table: 'rifts', id: r.id, problem: `choice ${i + 1}: a level or boss swing on a common` });
+      }
+    });
+    for (const idx of r.where.regions ?? []) {
+      if (!regions.includes(idx)) out.push({ table: 'rifts', id: r.id, problem: `names unknown region ${idx}` });
+    }
+  }
+  for (const idx of regions) {
+    const own = list.filter((r) => !r.where.placed && !r.where.abyss && !r.where.act2
+      && (r.where.regions?.includes(idx) || (r.where.from !== undefined && r.where.from <= idx)));
+    if (own.length < 2) out.push({ table: 'regions', id: String(idx), problem: `has ${own.length} rifts of its own (want ≥ 2)` });
+  }
+  return out;
+};
+
 export const RULES: readonly LintRule[] = [
-  uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking,
+  uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking, rifts,
 ];
 
 /**

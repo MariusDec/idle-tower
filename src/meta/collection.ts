@@ -6,7 +6,8 @@ import { REGIONS, regionByIndex } from '../content/regions';
 import { RUSH_INDEX, rushStage } from '../content/rush';
 import { RELICS, RELIC_BY_ID, RELIC_SETS, eliteRelics } from '../content/relics';
 import { BALANCE } from '../content/balance';
-import type { BossId, FrameDef, RegionDef, RelicDef, RelicId, RelicSetDef } from '../content/types';
+import { RIFTS } from '../content/rifts';
+import type { BossId, FrameDef, RegionDef, RelicDef, RelicId, RelicSetDef, RiftDef } from '../content/types';
 import type { Profile } from './profile';
 import { recipesOpen } from './recipes';
 import { starGifts } from './stars';
@@ -240,8 +241,10 @@ export function hubUnlocks(profile: Profile): HubUnlocks {
 }
 
 /** The Collection's pages (§5.3), each once it has something on it. */
-export function collectionPages(profile: Profile): { bestiary: boolean; relics: boolean; recipes: boolean; frames: boolean } {
+export function collectionPages(profile: Profile): { bestiary: boolean; relics: boolean; recipes: boolean; frames: boolean; rifts: boolean } {
   return {
+    // Rifts (plans/late-game/02): once one has been opened.
+    rifts: Object.values(profile.rifts).some((r) => r.seen > 0),
     bestiary: profile.seenEnemies.length >= BESTIARY_AT,
     relics: Object.keys(profile.relics).length > 0,
     recipes: recipesOpen(profile),
@@ -277,3 +280,61 @@ export function listedFrames(profile: Profile): FrameDef[] {
   return FRAMES.filter((f) => act2 || f.unlock.kind !== 'star');
 }
 
+
+/** One rift in the journal (plans/late-game/02 §2): unknown, glimpsed (its name only), or seen. */
+export interface RiftJournalRow {
+  rift: RiftDef;
+  state: 'unknown' | 'glimpsed' | 'seen';
+  taken: number;
+}
+
+/** A group of the journal: a region's own rifts, or those that open anywhere. */
+export interface RiftJournalGroup {
+  /** A region's index, or 0 for rifts that may open anywhere. */
+  region: number;
+  name: string;
+  /** Commons and rares, found of all (Open 4: legendaries stay hidden until found). */
+  found: number;
+  of: number;
+  rows: RiftJournalRow[];
+  /** Legendaries not yet found, once every other rift of the group is: "something rarer opens here". */
+  rarer: boolean;
+}
+
+/**
+ * The rift journal (plans/late-game/02 §2), grouped by region: each region's
+ * own (listed under the first region they can open in), then the rest. Act
+ * 2's and the Abyss's join once Act 2 is open. A legendary shows only once
+ * met.
+ */
+export function riftJournal(profile: Profile): RiftJournalGroup[] {
+  const act2 = act2Open(profile);
+  const home = (r: RiftDef): number => r.where.regions?.[0] ?? r.where.from ?? 0;
+  const groups = new Map<number, RiftDef[]>();
+  for (const r of RIFTS) {
+    if (r.where.placed || ((r.where.act2 || r.where.abyss) && !act2)) continue;
+    const k = r.where.abyss ? ABYSS_INDEX : home(r);
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const out: RiftJournalGroup[] = [];
+  for (const [region, list] of [...groups].sort((a, b) => a[0] - b[0])) {
+    const rows: RiftJournalRow[] = list.map((rift) => {
+      const rec = profile.rifts[rift.id];
+      const state = !rec ? 'unknown' : rec.seen > 0 ? 'seen' : 'glimpsed';
+      return { rift, state, taken: rec ? rec.taken.reduce((a, b) => a + b, 0) : 0 };
+    });
+    const plain = rows.filter((x) => x.rift.rarity !== 'legendary');
+    const found = plain.filter((x) => x.state !== 'unknown').length;
+    const hiddenLegend = rows.some((x) => x.rift.rarity === 'legendary' && x.state === 'unknown');
+    const name = region === 0 ? 'Anywhere' : region === ABYSS_INDEX ? 'The Abyss' : REGIONS.find((x) => x.index === region)?.name ?? '';
+    out.push({
+      region,
+      name,
+      found,
+      of: plain.length,
+      rows: rows.filter((x) => x.rift.rarity !== 'legendary' || x.state !== 'unknown'),
+      rarer: hiddenLegend && found === plain.length,
+    });
+  }
+  return out;
+}

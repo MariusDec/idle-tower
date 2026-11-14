@@ -16,7 +16,8 @@
 import { SIM_DT } from '../src/app/loop';
 import { BALANCE } from '../src/content/balance';
 import { applyInput, step } from '../src/sim/run';
-import type { RunInput, RunState, SimEvent } from '../src/sim/state';
+import type { RunConfig, RunInput, RunState, SimEvent } from '../src/sim/state';
+import { buildRunConfig } from '../src/meta/runConfig';
 import { cardKey } from '../src/sim/systems/draft';
 import { autoUltWanted } from '../src/sim/systems/ultimate';
 import type { Profile } from '../src/meta/profile';
@@ -29,7 +30,20 @@ export type PlayPolicy = 'active' | 'idle';
  * plan that adds one lists it here, and the idle branch below asserts it
  * never sets one. Stored Light adds none: it is app-side.
  */
-export const ACTIVE_INPUTS: readonly (keyof RunInput)[] = [];
+export const ACTIVE_INPUTS: readonly (keyof RunInput)[] = ['tapRift', 'chooseRift'];
+
+/** Wall seconds an active player spends reading a tapped rift: the arena is stopped meanwhile (plans/late-game/02 §8). */
+export const RIFT_SECONDS = 3;
+
+/**
+ * The run config the bots play: the game's, without rifts when the tool was
+ * started with `--no-rifts` (plans/late-game/02 §8's comparisons).
+ */
+export const NO_RIFTS = process.argv.includes('--no-rifts');
+export function toolConfig(profile: Profile): RunConfig {
+  const config = buildRunConfig(profile);
+  return NO_RIFTS ? { ...config, rifts: null } : config;
+}
 
 /** Wall seconds an active player spends on a draft, and anyone on the first (paused) one. */
 export const DRAFT_SECONDS = 2;
@@ -144,10 +158,15 @@ export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayRe
       for (const k of ACTIVE_INPUTS) if (input[k] !== undefined) throw new Error(`I9: the idle policy sent ${k}`);
     }
     const drafting = o.policy === 'idle' && run.draft !== null && input.pick === undefined && !input.takeAll;
+    // A rift tapped: the arena stops while it is read (plans/late-game/02 §2).
+    if (input.tapRift && run.rift?.phase === 'shown') wall += RIFT_SECONDS;
+    // While a rift waits, a watching player's arena runs at 1× (§2): the active bot is always watching.
+    const capped = o.policy === 'active' && run.rift?.phase === 'shown';
     const before = run.wave;
     step(run, PLAY_DT, input, FAST_STEPS);
     // An idle draft runs the arena at 15% while its timer counts wall seconds.
-    const dt = PLAY_DT / (o.speed * (drafting ? slow : 1));
+    const speed = capped ? Math.min(o.speed, BALANCE.rifts.engagedCap) : o.speed;
+    const dt = PLAY_DT / (speed * (drafting ? slow : 1));
     wall += dt;
     if (drafting) draftUp += dt;
     for (const ev of run.events) {

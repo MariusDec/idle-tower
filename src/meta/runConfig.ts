@@ -6,13 +6,15 @@ import { frameById } from '../content/frames';
 import type { BehaviourId, CardItemId, Effect, FrameId, FusionId, PactId, StatMod, TrialDef, WeaponId } from '../content/types';
 import { isWeaponId } from '../sim/systems/draft';
 import { selectedTrial, trialEffects } from './trials';
-import { activeSets, bossDown, equippedRelics, inAbyss, pastRegions, relicSlots, selectedFrame, selectedRegion } from './collection';
+import { act2Open, activeSets, bossDown, equippedRelics, inAbyss, inRush, pastRegions, relicSlots, selectedFrame, selectedRegion } from './collection';
 import { FORGE_WEB, activeNodes } from './forge';
 import { neverList, priorityList } from './automation';
 import { runPacts } from './pacts';
 import type { Profile } from './profile';
 import { STAR_WEB, starGifts } from './stars';
-import type { Card, RunConfig } from '../sim/state';
+import type { Card, RiftConfig, RunConfig } from '../sim/state';
+import { BOSSES } from '../content/bosses';
+import type { RiftId } from '../content/types';
 
 export type { RunConfig };
 
@@ -140,6 +142,7 @@ export function buildRunConfig(profile: Profile): RunConfig {
     // A Trial's omens stand in for the pacts (N5): it is authored, and pays no heat.
     pacts: Object.freeze(trial ? rules.pacts : runPacts(profile)),
     abyssRelics: Object.freeze(abyss ? abyssRelics(starGifts(profile).relicSets) : []),
+    rifts: riftConfig(profile, trial !== null),
   });
 }
 
@@ -183,4 +186,18 @@ function trialRules(trial: TrialDef | null): TrialRules {
 function tactics(list: CardItemId[] | null, pool: readonly CardItemId[]): readonly CardItemId[] | null {
   const ranked = list?.filter((id) => pool.includes(id)) ?? [];
   return ranked.length > 0 ? Object.freeze(ranked) : null;
+}
+
+/**
+ * Rifts (plans/late-game/02 §3): none before the Gatekeeper's first fall,
+ * in a Trial or in Boss Rush. The First Tear is owed until one is opened;
+ * the journal's rifts lose the unseen weight; Act 2 rolls at its own rates.
+ */
+export function riftConfig(profile: Profile, trial: boolean): RiftConfig | null {
+  if (trial || inRush(profile) || !bossDown(profile, BOSSES[0].id)) return null;
+  return Object.freeze({
+    first: !profile.tutorial.firstRift,
+    known: Object.freeze(Object.keys(profile.rifts) as RiftId[]),
+    act2: act2Open(profile),
+  });
 }

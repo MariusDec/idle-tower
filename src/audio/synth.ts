@@ -16,6 +16,8 @@ export interface Tone {
   attack?: number;
   /** Seconds after `delay` before it starts: for arpeggios. */
   delay?: number;
+  /** Stereo position, −1 (left) to 1 (right). Absent: centred. */
+  pan?: number;
 }
 
 /** The master level with the sound on and the slider full. */
@@ -132,7 +134,14 @@ export class Synth {
     g.gain.linearRampToValueAtTime(vol, t0 + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     osc.connect(g);
-    g.connect(this.sfx!);
+    if (t.pan !== undefined && t.pan !== 0) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, t.pan));
+      g.connect(p);
+      p.connect(this.sfx!);
+    } else {
+      g.connect(this.sfx!);
+    }
     osc.start(t0);
     osc.stop(t0 + dur + 0.02);
   }

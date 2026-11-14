@@ -2,7 +2,7 @@ import { lightRadius } from '../content/arena';
 import { BALANCE } from '../content/balance';
 import { PASSIVE_BY_ID } from '../content/passives';
 import type { PassiveId, StatKey, StatMod } from '../content/types';
-import type { PassiveState, TowerStats } from './state';
+import type { PassiveState, RunState, TowerStats } from './state';
 import { scaleMod } from './pacts';
 
 /**
@@ -111,4 +111,16 @@ export function passiveMods(id: PassiveId, level: number, waves = 0): StatMod[] 
 
 export function allMods(base: readonly StatMod[], passives: readonly PassiveState[]): StatMod[] {
   return [...base, ...passives.flatMap((p) => passiveMods(p.id, p.level, p.waves ?? 0))];
+}
+
+/**
+ * The run's mods as the resolver sees them: its own (frame, Forge, rule,
+ * pacts) and any taken rift's running stat (plans/late-game/02). Passives
+ * are added on top by `allMods`.
+ */
+export function runMods(run: Pick<RunState, 'mods' | 'riftHolds'>): StatMod[] {
+  if (run.riftHolds.length === 0) return run.mods;
+  const out = [...run.mods];
+  for (const h of run.riftHolds) if (h.effect.kind === 'stat') out.push(h.effect.mod);
+  return out;
 }

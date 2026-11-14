@@ -88,6 +88,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   14: (raw) => ({ ...raw, version: 15, keystonesOff: [] }),
   // v16: Stored Light (plans/late-game/01): an empty pool, nothing burned yet.
   15: (raw) => ({ ...raw, version: 16, storedLight: 0, records: { storedBurned: 0, ...(raw.records as object) } }),
+  // v17: rifts (plans/late-game/02): an empty journal, the First Tear still owed.
+  16: (raw) => ({ ...raw, version: 17, rifts: {}, tutorial: { firstRift: false, ...(raw.tutorial as object) } }),
 };
 
 export class MigrationError extends Error {}

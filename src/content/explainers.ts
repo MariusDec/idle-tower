@@ -22,6 +22,7 @@ export type ExplainerId =
   | 'relics'
   | 'recipes'
   | 'frames'
+  | 'rifts'
   | 'feats'
   | 'stars'
   | 'tactics'
@@ -115,6 +116,15 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
     lines: [
       'A frame is the tower’s body. Each has its own starting weapon, stats and ultimate.',
       'Choose one here; the next run uses it.',
+    ],
+  },
+  {
+    id: 'rifts', view: 'collection', title: 'Rifts',
+    lines: [
+      'A rift is a tear that opens mid-wave. Tap it before it closes and it makes you an offer.',
+      'Some offers are gifts; most are wagers. Leaving is always free.',
+      'Only a player who is watching can open one. The Autocaster never does.',
+      'Each region has its own rifts. The ones you have met are kept here.',
     ],
   },
   {

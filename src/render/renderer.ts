@@ -8,7 +8,7 @@ import { formatDuration } from '../core/format';
 import type { RunState } from '../sim/state';
 import { Camera, stageOval } from './camera';
 import { Effects } from './effects';
-import { FX, INK, lighten, mix, setPaletteMode, withAlpha, type PaletteMode } from './palette';
+import { FX, INK, RARITY, lighten, mix, setPaletteMode, withAlpha, type PaletteMode } from './palette';
 import { paintDark, paintGround, paintRim, type WorldBox } from './painters/arena';
 import { EnemyPainter } from './painters/enemies';
 import { paintProjectiles } from './painters/projectiles';
@@ -21,6 +21,8 @@ import { WEAPON_BY_ID } from '../content/weapons';
 import { PLAIN_LOOK, paintRangeRing, paintTower, type Mount, type TowerLook } from './painters/tower';
 import type { WeaponId } from '../content/types';
 import { QUALITY, type QualityTier } from './quality';
+import { paintRift } from './painters/rift';
+import { RIFT_BY_ID } from '../content/rifts';
 import { ARENA, type Oval } from '../content/arena';
 
 /** Sim ticks the crystal stays flared after a contact hit. */
@@ -436,6 +438,25 @@ export class Renderer {
           this.effects.pulse(0, 0, run.stats.radius * 2, FX.arcane);
           this.camera.zoomPunch();
           break;
+        case 'riftAppear':
+          // It unzips on its own (the painter); a small ring marks where.
+          this.effects.ring(ev.x, ev.y, 6, 40, withAlpha(RARITY[RIFT_BY_ID[ev.id].rarity], 0.7), 0.4, 3);
+          break;
+        case 'riftShut':
+          // It zips closed with a small implosion.
+          this.effects.ring(ev.x, ev.y, 40, 4, withAlpha(RARITY[RIFT_BY_ID[ev.id].rarity], 0.6), 0.35, 3);
+          break;
+        case 'riftTaken': {
+          // Taken, it bursts into a ring; left, it simply closes.
+          const color = RARITY[RIFT_BY_ID[ev.id].rarity];
+          if (ev.choice !== null) {
+            this.effects.ring(ev.x, ev.y, 8, 120, withAlpha(color, 0.9), 0.6, 5);
+            this.effects.spray(ev.x, ev.y, color, 18, 200, 3);
+          } else {
+            this.effects.ring(ev.x, ev.y, 40, 4, withAlpha(color, 0.6), 0.35, 3);
+          }
+          break;
+        }
         case 'fire':
         case 'waveStart':
         case 'firstSight':
@@ -513,6 +534,7 @@ export class Renderer {
       paintTower(ctx, run.stats.radius, mounts, this.clock, hurt, fallen, this.look);
       if (run.tower.invulnUntil > run.time) paintAegis(ctx, run.stats.radius, run.tower.invulnUntil - run.time, this.clock);
       paintProjectiles(ctx, run.projectiles, alpha, additive);
+      paintRift(ctx, run.rift, run.time, this.clock, { reducedMotion: this.reducedMotion, plain: !additive, px });
     } else {
       paintTower(ctx, 46, this.idle, this.clock, 0, 0, this.look);
     }

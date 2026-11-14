@@ -31,7 +31,6 @@ import type { RunState } from '../src/sim/state';
 import { BALANCE } from '../src/content/balance';
 import { BOSS_BY_ID } from '../src/content/bosses';
 import { Rng } from '../src/core/rng';
-import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile, type Profile } from '../src/meta/profile';
 import { autoUlt, automations, draftSeconds, marchOn, openingSeconds, runSpeed } from '../src/meta/automation';
 import { bankRun } from '../src/meta/results';
@@ -40,7 +39,7 @@ import { claimAll } from '../src/meta/feats';
 import { offlineEarnings } from '../src/meta/offline';
 import type { ActiveOnlyKind } from '../src/meta/results';
 import type { BurnTally } from '../src/meta/storedLight';
-import { playRun, snapshotOf, type PlayPolicy } from './play';
+import { playRun, snapshotOf, type PlayPolicy, toolConfig } from './play';
 import { shop } from './shop';
 
 /** Hours between check-ins: two a day. */
@@ -73,6 +72,8 @@ export interface IdleReport {
   tally: BurnTally;
   /** Every run's `RunSummary.activeOnly`, summed by kind (I9). */
   activeOnly: Partial<Record<ActiveOnlyKind, number>>;
+  /** Shards rifts paid, reported apart (plans/late-game/02 §8: I5, I7). */
+  riftShards: number;
   /** Shards runs paid, in all. */
   played: number;
   checkins: number;
@@ -103,7 +104,7 @@ export function runIdle(
   const policy: PlayPolicy = mode === 'engaged' ? 'active' : 'idle';
   const report: IdleReport = {
     mode, bossKills: {}, screen: {}, offline: 0, stored: 0, burned: 0, poolAtEnd: 0,
-    tally: { engaged: 0, handsOff: 0 }, activeOnly: {}, played: 0, checkins: 0, runs: 0,
+    tally: { engaged: 0, handsOff: 0 }, activeOnly: {}, riftShards: 0, played: 0, checkins: 0, runs: 0,
   };
   /** Session wall seconds before this check-in's. */
   let screenBefore = 0;
@@ -124,7 +125,7 @@ export function runIdle(
     let clock = checkin;
     const close = checkin + SESSION;
     while (clock < close) {
-      const run = pending ?? createRun(buildRunConfig(profile), seeds.nextU32());
+      const run = pending ?? createRun(toolConfig(profile), seeds.nextU32());
       pending = null;
       let snap = snapshotOf(run);
       const speed = runSpeed(profile);
@@ -158,6 +159,11 @@ export function runIdle(
       report.tally.handsOff += tally.handsOff;
       report.burned += summary.stored?.bonus ?? 0;
       for (const a of summary.activeOnly) report.activeOnly[a.kind] = (report.activeOnly[a.kind] ?? 0) + a.amount;
+      // I9 (plans/late-game/02 §8): the hands-off bot never opens a rift. A hard fail.
+      if (policy === 'idle' && (run.shardsFrom.rifts > 0 || run.riftLog.some((e) => e.tapped))) {
+        throw new Error('I9: the hands-off bot opened a rift');
+      }
+      report.riftShards += run.shardsFrom.rifts;
       marchOn(profile, summary);
       if (mode === 'engaged') {
         // A present player looks over the results and shops between runs, as the pacing bot does.
@@ -201,7 +207,7 @@ export function farmRate(profile: Profile, policy: PlayPolicy, n: number, seed: 
     // I5 measures run efficiency alone: no pool, so no burn.
     p.storedLight = 0;
     const speed = runSpeed(p);
-    const run = createRun(buildRunConfig(p), seeds.nextU32());
+    const run = createRun(toolConfig(p), seeds.nextU32());
     const played = playRun(p, run, {
       policy, speed, autoUlt: autoUlt(p), draftSeconds: draftSeconds(p), openingSeconds: openingSeconds(p),
     });

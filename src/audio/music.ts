@@ -53,12 +53,20 @@ export class Music {
   private step = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private filter: BiquadFilterNode | null = null;
+  /** The pad's duck (plans/late-game/02: −6 dB while a rift is chosen). */
+  private duckGain: GainNode | null = null;
+  private ducked = false;
 
   constructor(private readonly synth: Synth) {}
 
   start(): void {
     if (this.timer !== null) return;
     this.timer = setInterval(() => this.tick(), TICK_MS);
+  }
+
+  /** Duck the pad 6 dB (a rift being chosen), or bring it back. */
+  duck(on: boolean): void {
+    this.ducked = on;
   }
 
   /** The mood and region to play; a change lands on the next chord. */
@@ -78,8 +86,11 @@ export class Music {
     if (!this.filter) {
       this.filter = ctx.createBiquadFilter();
       this.filter.type = 'lowpass';
-      this.filter.connect(bus);
+      this.duckGain = ctx.createGain();
+      this.filter.connect(this.duckGain);
+      this.duckGain.connect(bus);
     }
+    this.duckGain!.gain.setTargetAtTime(this.ducked ? 0.5 : 1, ctx.currentTime, 0.08);
     const now = ctx.currentTime;
     if (this.next < now) this.next = now + 0.05;
     while (this.next < now + LOOKAHEAD) {

@@ -18,6 +18,7 @@ depends on. [AGENTS.md](../AGENTS.md) is the short version for agents.
 | [collection.md](collection.md) | The Map, frames, relics, the Bestiary, the Recipe Book |
 | [feats.md](feats.md) | Feats and their rewards |
 | [idle.md](idle.md) | Automation, the Tactician, offline earnings |
+| [rifts.md](rifts.md) | Rifts: the mid-wave tear, its roll, its offers, the journal |
 | [act2.md](act2.md) | Pacts and heat, Starlight, the Constellations, the Abyss |
 | [save.md](save.md) | Profile, migration ladder, run snapshot, storage backends |
 | [render.md](render.md) | Renderer, painters, effects, camera, palette, quality tiers |

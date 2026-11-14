@@ -9,6 +9,7 @@ import { PACTS } from './pacts';
 import { FALLBACKS, PASSIVES } from './passives';
 import { REGIONS } from './regions';
 import { RELICS, RELIC_SETS } from './relics';
+import { RIFTS } from './rifts';
 import { STARS } from './stars';
 import { TRIALS } from './trials';
 import { WEAPONS } from './weapons';
@@ -36,4 +37,5 @@ export const CONTENT: Readonly<Record<string, readonly ContentEntry[]>> = {
   pacts: PACTS,
   stars: STARS,
   trials: TRIALS,
+  rifts: RIFTS,
 };

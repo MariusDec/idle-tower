@@ -1,6 +1,7 @@
 import { ABYSS_INDEX, NATIVES } from '../content/abyss';
 import { BALANCE } from '../content/balance';
 import { FEATS } from '../content/feats';
+import { RIFTS } from '../content/rifts';
 import { REGIONS, regionByIndex } from '../content/regions';
 import type { FeatDef, FeatGoal } from '../content/types';
 import type { RunState } from '../sim/state';
@@ -25,6 +26,13 @@ function coolestRegion(profile: Profile): number {
 /** The highest heat any region's boss has fallen at. */
 function hottestRegion(profile: Profile): number {
   return Math.max(0, ...REGIONS.map((r) => profile.pacts.best[r.index] ?? 0));
+}
+
+/** Rifts' offers taken in all (plans/late-game/02). */
+export function riftsTaken(profile: Profile): number {
+  let n = 0;
+  for (const rec of Object.values(profile.rifts)) for (const k of rec.taken) n += k;
+  return n;
 }
 
 /** Mastery levels owned in all (§9). */
@@ -89,6 +97,10 @@ export function featMet(profile: Profile, goal: FeatGoal, run: RunState | null):
       return starsLit(profile) >= goal.n;
     case 'mastery':
       return masteryLevels(profile) >= goal.levels;
+    case 'riftOpened':
+      return RIFTS.some((r) => r.rarity === goal.rarity && (profile.rifts[r.id]?.seen ?? 0) > 0);
+    case 'riftsTaken':
+      return riftsTaken(profile) >= goal.n;
     default: {
       const exhaustive: never = goal;
       return exhaustive;
@@ -146,6 +158,9 @@ export function featProgress(profile: Profile, feat: FeatDef): number {
       const all = branchNotables(g.branch);
       return all.filter((n) => levelOf(profile, n.id) > 0).length / Math.max(1, all.length);
     }
+    case 'riftsTaken':
+      return Math.min(1, riftsTaken(profile) / g.n);
+    case 'riftOpened':
     case 'bossNoUlt':
     case 'bareArsenal':
     case 'boss':

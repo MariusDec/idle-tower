@@ -14,6 +14,7 @@
  *
  * Headless: it drives the real sim, not a model of it.
  */
+import { RIFT_BY_ID } from '../src/content/rifts';
 import { createRun, step } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile, type Profile } from '../src/meta/profile';
@@ -48,6 +49,8 @@ interface WaveRow {
   kills: number;
   hpAtEnd: number;
   duration: number;
+  /** The rift met in this wave (`--rifts`): taken (#choice), left or shut. */
+  rift: string;
 }
 
 export interface RunReport {
@@ -80,8 +83,16 @@ export function veteran(preset: ForgePreset = 'none'): Profile {
   return p;
 }
 
-export function simulate(seed: number, maxSeconds: number, policy: Policy, preset: ForgePreset = 'none', regionIndex = 1): RunReport {
-  const run = createRun({ ...buildRunConfig(veteran(preset)), regionId: regionIndex }, seed);
+/**
+ * `--rifts` (plans/late-game/02 §8): the run rolls rifts as a profile past
+ * the First Tear would, and the active bot opens them.
+ */
+const RIFTS_ON = { first: false, known: [], act2: false } as const;
+
+export function simulate(
+  seed: number, maxSeconds: number, policy: Policy, preset: ForgePreset = 'none', regionIndex = 1, rifts = false,
+): RunReport {
+  const run = createRun({ ...buildRunConfig(veteran(preset)), regionId: regionIndex, rifts: rifts ? RIFTS_ON : null }, seed);
   const region = regionByIndex(run.regionId);
   const rows: WaveRow[] = [];
   const levelUps: number[] = [];
@@ -110,6 +121,7 @@ export function simulate(seed: number, maxSeconds: number, policy: Policy, prese
           kills: 0,
           hpAtEnd: 0,
           duration: 0,
+          rift: '',
         };
         rows.push(row);
       } else if (ev.kind === 'towerHit' && row) {
@@ -121,6 +133,10 @@ export function simulate(seed: number, maxSeconds: number, policy: Policy, prese
         levelUps.push(run.time);
       } else if (ev.kind === 'nova') {
         ultCasts++;
+      } else if (ev.kind === 'riftTaken' && row) {
+        row.rift = `${ev.id}${ev.choice === null ? '·left' : `#${ev.choice + 1}`}`;
+      } else if (ev.kind === 'riftShut' && row) {
+        row.rift = `${ev.id}·shut`;
       }
     }
     run.events.length = 0;
@@ -164,7 +180,13 @@ function main(): void {
   const fi = process.argv.indexOf('--forge');
   const preset = (fi >= 0 ? process.argv[fi + 1] : 'none') as ForgePreset;
   const region = arg('region', 1);
+  const rifts = flag('rifts');
   if (seeds > 0) {
+    const riftCounts: number[] = [];
+    let past12 = 0;
+    let past12Rift = 0;
+    let onBoss = 0;
+    const legend = { runs: 0, fell: 0 };
     const deaths = new Map<number, number>();
     const firsts: number[] = [];
     const firstLevel: number[] = [];
@@ -175,7 +197,20 @@ function main(): void {
     const lengths: number[] = [];
     const dealt: Partial<Record<DamageBy, number>> = {};
     for (let s = 1; s <= seeds; s++) {
-      const r = simulate(s, maxSeconds, policy, preset, region);
+      const r = simulate(s, maxSeconds, policy, preset, region, rifts);
+      if (rifts) {
+        const log = r.run.riftLog;
+        riftCounts.push(log.filter((e) => e.wave <= 20).length);
+        if (r.run.wave > 12) {
+          past12++;
+          if (log.some((e) => e.wave <= 12)) past12Rift++;
+        }
+        onBoss += log.filter((e) => e.wave === 20).length;
+        if (log.some((e) => e.choice !== null && RIFT_BY_ID[e.id].rarity === 'legendary')) {
+          legend.runs++;
+          if (r.run.outcome?.kind === 'fell' && r.run.wave <= 20) legend.fell++;
+        }
+      }
       deaths.set(r.run.wave, (deaths.get(r.run.wave) ?? 0) + 1);
       waves.push(r.run.wave);
       lengths.push(r.run.time);
@@ -201,18 +236,25 @@ function main(): void {
     }
     console.log('loadouts: ' + [...loadouts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ×${n}`).join('  ·  '));
     if (flag('by-weapon')) console.log(`damage by: ${describeDamage(dealt)}`);
+    if (rifts) {
+      const mean = riftCounts.reduce((a, b) => a + b, 0) / Math.max(1, riftCounts.length);
+      const fell = [...deaths.entries()].filter(([w]) => w <= 20).reduce((a, [, n]) => a + n, 0);
+      console.log(`rifts: ${mean.toFixed(2)} a run to wave 20 (want 1.5–2.5) · ${past12Rift}/${past12} runs past wave 12 saw one by then (want ≥ 90%)`
+        + ` · ${onBoss} on boss waves (want 0)`);
+      console.log(`rifts: a taken legendary in ${legend.runs} runs, ${legend.fell} fell by wave 20 · all runs: ${fell}/${seeds} fell by wave 20`);
+    }
     return;
   }
   const seed = arg('seed', 1);
-  const r = simulate(seed, maxSeconds, policy, preset, region);
+  const r = simulate(seed, maxSeconds, policy, preset, region, rifts);
   console.log(`seed ${seed} · policy ${policy} · forge ${preset} · region ${region} · first kill ${r.firstKill?.toFixed(2) ?? '—'}s · ${r.levelUps.length} level-ups · ${r.ultCasts} novas`);
-  console.log('wave  start  dur  lvl    dps  bodies   pool   clear  carried  taken  kills  hp');
+  console.log(`wave  start  dur  lvl    dps  bodies   pool   clear  carried  taken  kills  hp${rifts ? '  rift' : ''}`);
   for (const w of r.rows) {
     const clear = w.hpPool / w.dps;
     console.log(
       `${pad(w.wave, 4)} ${pad(w.start.toFixed(1), 6)} ${pad(w.duration.toFixed(1), 4)} ${pad(w.level, 4)} ${pad(w.dps.toFixed(0), 6)}`
       + ` ${pad(w.bodies, 7)} ${pad(Math.round(w.hpPool), 6)} ${pad(clear.toFixed(1), 7)} ${pad(w.carried, 8)}`
-      + ` ${pad(Math.round(w.damageTaken), 6)} ${pad(w.kills, 6)} ${pad(Math.round(w.hpAtEnd), 4)}`,
+      + ` ${pad(Math.round(w.damageTaken), 6)} ${pad(w.kills, 6)} ${pad(Math.round(w.hpAtEnd), 4)}${rifts && w.rift ? `  ${w.rift}` : ''}`,
     );
   }
   console.log(`build: ${describeBuild(r.run)}`);

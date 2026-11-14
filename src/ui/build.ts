@@ -8,7 +8,7 @@ import type { StatKey, WeaponId } from '../content/types';
 import { formatNumber } from '../core/format';
 import type { BuildSummary } from '../meta/results';
 import type { RunState } from '../sim/state';
-import { allMods, resolveStat } from '../sim/stats';
+import { allMods, resolveStat, runMods } from '../sim/stats';
 import { icon } from './icon';
 
 /**
@@ -110,7 +110,7 @@ const STATS: readonly { key: StatKey; show: (v: number) => string }[] = [
 
 /** The tower's stats now: each value, and the share this run's passives add (the `run` bucket, S1). */
 export function statsList(run: RunState): HTMLElement {
-  const mods = allMods(run.mods, run.passives);
+  const mods = allMods(runMods(run), run.passives);
   const dl = document.createElement('dl');
   dl.className = 'build-stats';
   for (const s of STATS) {

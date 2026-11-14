@@ -7,7 +7,7 @@ import { FUSION_BY_ID } from '../../content/fusions';
 import { WEAPON_BY_ID } from '../../content/weapons';
 import type { CardItemId, WeaponId } from '../../content/types';
 import type { Card, RunState } from '../state';
-import { allMods, resolveStats } from '../stats';
+import { allMods, resolveStats, runMods } from '../stats';
 import { pactLoad } from '../pacts';
 import { suggest } from '../suggest';
 import { newWeapon, slotsUsed } from './arms';
@@ -124,9 +124,9 @@ export function draftChoices(run: RunState): number {
 }
 
 /** Roll a hand: distinct cards from the candidates, padded with fallbacks. */
-export function rollOffer(run: RunState, rng: Rng): Card[] {
+export function rollOffer(run: RunState, rng: Rng, size?: number): Card[] {
   const candidates = candidateCards(run);
-  const n = draftChoices(run);
+  const n = size ?? draftChoices(run);
   if (run.firstDraft && run.draftsOpened === 0) {
     const legal = new Set(candidates.map((c) => `${cardKey(c)}:${'level' in c ? c.level : 0}`));
     const scripted = run.firstDraft.filter((c) => legal.has(`${cardKey(c)}:${'level' in c ? c.level : 0}`));
@@ -150,6 +150,26 @@ export function rollOffer(run: RunState, rng: Rng): Card[] {
   return out;
 }
 
+/**
+ * A forged hand (Blood Price, plans/late-game/02 §3): the evolution of every
+ * carried weapon at `forgedFrom` or more, partner or not, padded with a
+ * normal roll; with none to forge, a normal hand with one more card.
+ */
+export function forgedOffer(run: RunState, rng: Rng): Card[] {
+  const out: Card[] = [];
+  if (run.behaviours.alchemy) {
+    for (const w of run.weapons) {
+      if (w.evolved || w.joined || w.level < BALANCE.rifts.forgedFrom) continue;
+      out.push({ kind: 'evolution', id: EVOLUTION_OF[w.id].id });
+    }
+  }
+  const n = draftChoices(run);
+  const forged = out.slice(0, n);
+  const rest = rollOffer(run, rng, forged.length > 0 ? n : n + 1)
+    .filter((c) => !forged.some((f) => cardKey(f) === cardKey(c)));
+  return [...forged, ...rest].slice(0, forged.length > 0 ? n : n + 1);
+}
+
 /** True while the open draft is the profile's first, authored one: no reroll, no Banish. */
 function authored(run: RunState): boolean {
   return run.firstDraft !== null && run.draftsOpened === 1;
@@ -157,9 +177,11 @@ function authored(run: RunState): boolean {
 
 /** Open the next banked draft, if none is open. */
 export function tickDraft(run: RunState): void {
-  if (run.draft || run.pendingDrafts <= 0) return;
+  // A rift being chosen (plans/late-game/02) holds the next draft back.
+  if (run.draft || run.pendingDrafts <= 0 || run.rift?.phase === 'choosing') return;
   const first = run.firstDraft !== null && run.draftsOpened === 0;
-  const rolled = rollOffer(run, Rng.wrap(run.streams.draft));
+  const rolled = run.forgedHand ? forgedOffer(run, Rng.wrap(run.streams.draft)) : rollOffer(run, Rng.wrap(run.streams.draft));
+  run.forgedHand = false;
   const cards = first ? rolled : autoBanish(run, rolled);
   run.draft = {
     cards,
@@ -340,7 +362,7 @@ export function applyCard(run: RunState, card: Card): void {
  */
 export function refreshStats(run: RunState): void {
   const oldMax = run.stats.maxHp;
-  run.stats = resolveStats(allMods(run.mods, run.passives));
+  run.stats = resolveStats(allMods(runMods(run), run.passives));
   // A Fog-caller closes the light in with the range: the fog is its look.
   if (run.enemies.some((e) => e.alive && e.aura === 'fog')) {
     const dim = 1 - BALANCE.elites.fog;

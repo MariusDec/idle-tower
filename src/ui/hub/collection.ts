@@ -9,7 +9,7 @@ import { EVOLUTION_OF } from '../../content/evolutions';
 import type { BossId, EnemyId, FrameUnlock, RelicDef, RelicId, TrimId } from '../../content/types';
 import { formatNumber } from '../../core/format';
 import {
-  activeSets, bestiary, collectionPages, frameUnlocked, listedFrames, listedRelics, relicRank, relicSlots, selectedFrame, setRank,
+  activeSets, bestiary, collectionPages, riftJournal, frameUnlocked, listedFrames, listedRelics, relicRank, relicSlots, selectedFrame, setRank,
 } from '../../meta/collection';
 import type { Profile } from '../../meta/profile';
 import { levelOf } from '../../meta/forge';
@@ -53,7 +53,7 @@ function relicWhere(r: RelicDef): string {
   }
 }
 
-export type CollectionPage = 'bestiary' | 'relics' | 'recipes' | 'frames';
+export type CollectionPage = 'bestiary' | 'relics' | 'recipes' | 'frames' | 'rifts';
 
 export interface CollectionActions {
   toggleRelic(id: RelicId): boolean;
@@ -61,7 +61,7 @@ export interface CollectionActions {
   toggleTrim(trim: TrimId): void;
 }
 
-const PAGE_NAME: Record<CollectionPage, string> = { bestiary: 'Bestiary', relics: 'Relics', recipes: 'Recipes', frames: 'Frames' };
+const PAGE_NAME: Record<CollectionPage, string> = { bestiary: 'Bestiary', relics: 'Relics', recipes: 'Recipes', frames: 'Frames', rifts: 'Rifts' };
 
 /**
  * The Collection (§5.3): one tab, its pages appearing as they fill. The
@@ -133,11 +133,70 @@ export class CollectionView {
       case 'frames':
         this.body.replaceChildren(this.frames(p), ...this.trims(p));
         break;
+      case 'rifts':
+        this.body.replaceChildren(...this.rifts(p));
+        break;
       default: {
         const exhaustive: never = this.page;
         return exhaustive;
       }
     }
+  }
+
+  /**
+   * The rift journal (plans/late-game/02 §2): by region, "2 of 4" found of
+   * its commons and rares; a glimpsed rift shows its name only, a legendary
+   * nothing until met.
+   */
+  private rifts(p: Profile): HTMLElement[] {
+    const out: HTMLElement[] = [];
+    const note = document.createElement('p');
+    note.className = 'collection-note';
+    note.textContent = 'Tears that open mid-wave. Tap one before it closes for its offer; leaving is always free.';
+    out.push(note);
+    for (const g of riftJournal(p)) {
+      const head = document.createElement('h3');
+      head.className = 'collection-heading';
+      head.textContent = `${g.name} · ${g.found} of ${g.of}`;
+      const list = document.createElement('ul');
+      list.className = 'entry-list';
+      for (const row of g.rows) {
+        const r = row.rift;
+        const li = document.createElement('li');
+        li.className = `entry${row.state === 'unknown' ? ' is-unknown' : ''}${r.rarity === 'legendary' && row.state !== 'unknown' ? ' is-evolution' : ''}`;
+        const h = document.createElement('div');
+        h.className = 'entry-head';
+        const n = document.createElement('span');
+        n.className = 'entry-name';
+        n.textContent = row.state === 'unknown' ? '???' : r.name;
+        const count = document.createElement('span');
+        count.className = 'entry-count';
+        count.textContent = row.state === 'seen' ? `${r.rarity}${row.taken > 0 ? ` · taken ${formatNumber(row.taken)}` : ''}` : r.rarity;
+        h.append(icon(row.state === 'unknown' ? 'locked-chest' : r.icon), n, count);
+        li.append(h);
+        const t = document.createElement('p');
+        t.className = 'entry-text';
+        if (row.state === 'seen') t.textContent = r.choices.map((c) => c.text).join(' Or: ');
+        else if (row.state === 'glimpsed') t.textContent = 'It closed before you reached it.';
+        else t.textContent = 'Not yet met.';
+        li.append(t);
+        if (row.state === 'seen') {
+          const lore = document.createElement('p');
+          lore.className = 'entry-lore';
+          lore.textContent = r.text;
+          li.append(lore);
+        }
+        list.append(li);
+      }
+      out.push(head, list);
+      if (g.rarer) {
+        const more = document.createElement('p');
+        more.className = 'collection-note';
+        more.textContent = 'Something rarer opens here.';
+        out.push(more);
+      }
+    }
+    return out;
   }
 
   private bestiary(p: Profile): HTMLElement {
