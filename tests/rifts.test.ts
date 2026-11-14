@@ -73,6 +73,15 @@ describe('rifts: when they open (plans/late-game/02 §3)', () => {
     expect(riftConfig(p, false)?.known).toEqual(['wager']);
   });
 
+  it('Act 2 rates only under heat: a heat-0 run past the Blight rolls as Act 1 does', () => {
+    const p = gatePast();
+    for (const id of ['bog-mother', 'prism', 'forgeheart', 'hollow-king', 'blight']) p.bosses[id] = { kills: 1, fastest: 60 };
+    p.region = 6;
+    expect(riftConfig(p, false)?.act2).toBe(false);
+    p.pacts.ranks = { hordes: 1 };
+    expect(riftConfig(p, false)?.act2).toBe(true);
+  });
+
   it('the First Tear opens at wave 4, waits 20 s, and is the run\'s only rift', () => {
     const run = createRun(config({ first: true, known: [], act2: false }), 5);
     const opened: number[] = [];

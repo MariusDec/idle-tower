@@ -162,8 +162,9 @@ export const RIFTS: readonly RiftDef[] = [
     id: 'blight-bloom', name: 'Blight Bloom', icon: 'pentagram-rose', rarity: 'rare', text: 'It flowers, and the dead crown.',
     where: { regions: [6] },
     choices: [{
-      text: 'Until the boss, every wave brings two more elites. Elites pay double.',
-      effects: [{ kind: 'elites', n: 2, perWave: true, span: 'boss' }, { kind: 'bounty', mult: 2, span: 'boss', on: 'elites' }],
+      // Bounded (I5): two more elites every wave until the boss paid ~2.4× a whole Blight run.
+      text: 'For three waves, each brings another elite. Elites pay double.',
+      effects: [{ kind: 'elites', n: 1, perWave: true, span: { waves: 3 } }, { kind: 'bounty', mult: 2, span: { waves: 3 }, on: 'elites' }],
     }],
   },
   {

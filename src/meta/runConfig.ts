@@ -10,6 +10,7 @@ import { act2Open, activeSets, bossDown, equippedRelics, inAbyss, inRush, pastRe
 import { FORGE_WEB, activeNodes } from './forge';
 import { neverList, priorityList } from './automation';
 import { runPacts } from './pacts';
+import { pactLoad } from '../sim/pacts';
 import type { Profile } from './profile';
 import { STAR_WEB, starGifts } from './stars';
 import type { Card, RiftConfig, RunConfig } from '../sim/state';
@@ -191,13 +192,15 @@ function tactics(list: CardItemId[] | null, pool: readonly CardItemId[]): readon
 /**
  * Rifts (plans/late-game/02 §3): none before the Gatekeeper's first fall,
  * in a Trial or in Boss Rush. The First Tear is owed until one is opened;
- * the journal's rifts lose the unseen weight; Act 2 rolls at its own rates.
+ * the journal's rifts lose the unseen weight. Act 2's rates are for a
+ * region run under heat (§3's table): a heat-0 run past the Blight rolls as
+ * Act 1 does, and the Abyss has its own (`sim/systems/rifts.ts#rates`).
  */
 export function riftConfig(profile: Profile, trial: boolean): RiftConfig | null {
   if (trial || inRush(profile) || !bossDown(profile, BOSSES[0].id)) return null;
   return Object.freeze({
     first: !profile.tutorial.firstRift,
     known: Object.freeze(Object.keys(profile.rifts) as RiftId[]),
-    act2: act2Open(profile),
+    act2: act2Open(profile) && pactLoad(runPacts(profile)).heat > 0,
   });
 }

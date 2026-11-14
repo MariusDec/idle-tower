@@ -28,7 +28,8 @@ one (I9).
 One roll at each eligible wave's start on the `rifts` stream:
 `chance + ramp × (eligible waves since the last rift)`, times the config's
 `rate`. Act 1: waves 4–19 and overtime, at least 4 waves apart, 2 a run (3
-with overtime). Act 2: 0.15, 3 apart, 3 a run. The Abyss: floor waves 2–9,
+with overtime). Act 2 (a region run under heat): 0.15, 3 apart, 3 a run;
+a heat-0 run past the Blight rolls at Act 1's rates. The Abyss: floor waves 2–9,
 one a floor. Never on a boss wave. A profile that has never opened a rift
 gets only the First Tear, at wave 4, with a 20 s window, until it opens one.
 
