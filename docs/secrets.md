@@ -12,9 +12,9 @@ The margin never says how many there are.
 | Secret | Kind | Trigger | Reward |
 |---|---|---|---|
 | Shatterfall | resonance | 60 Mortar kills of frozen bodies, Frost Ring and Mortar carried | shells finish frozen bodies at ≤ 50% HP; 8,000 shards |
-| Beacon Road | region (Mire) | 150 Sunlance kills in the Drowned Mire | Sunlance range ×1.25 there; 6,000 |
+| Beacon Road | region (Mire) | 580 Sunlance kills in the Drowned Mire | Sunlance range ×1.25 there; 6,000 |
 | Glassfrost | region (Wastes) | 40 frozen Shardlings slain in the Glass Wastes | a frozen Shardling's shards hit its kin; 8,000 |
-| Bellows | region (Rift) | 200 Scattershot kills of burning bodies in the Ember Rift | pellets spread a burning body's fire; 10,000 |
+| Bellows | region (Rift) | 55 Scattershot kills of burning bodies in the Ember Rift | pellets spread a burning body's fire; 10,000 |
 | The Lens | Prism form | reach the Prism with no weapon its mirror turns | relic Lens Shard (ranks on repeat falls); 10,000 |
 | The Banked Forge | Forgeheart form | reach Forgeheart with Absolute Zero | trim Rime; 12,000 |
 | Kintsugi | trim | fell a boss after the tower fell below 5% | trim Kintsugi |
@@ -33,9 +33,18 @@ name in any feat, star, trial, region or explainer text.
 `pierce` trigger), phase 7 (tuning each `n`), the `seek` bot policy and the
 pacing tool counting finds as reveals.
 
-**First readings** (`npm run inspect -- --seeds 10 --forge all --region R
---secrets`, every recipe known): Beacon Road found in 4/10 Mire runs, far
-above the 2–8% target, so its `n` needs raising; Bellows stirred in 1/10 Rift
-runs; Shatterfall, Glassfrost, both forms, Kintsugi and Wayward 0/10 (the bot
-always carries Arcane Bolt, so the Lens never comes to it; Wayward is
-active-only by design). Small samples on a maxed Forge: not a tuning.
+**Readings** (`npm run inspect -- --seeds 60 --forge all --region R --secrets
+--max 1500`, every recipe known; add `--uncapped` for each tally's raw spread):
+
+| Secret | Raw spread per run (maxed Forge) | Goal | Stirred | Found | ring4 Forge |
+|---|---|---|---|---|---|
+| Beacon Road (Mire) | 21/60 runs carry Sunlance; p50 490, p90 597, max 673 | 580 (was 150: found 37.5%) | 35% | 6.7% | stirred 13%, found 0% |
+| Bellows (Rift) | 60/60 runs; p50 21, p90 43, max 67 | 55 (was 200: never found) | 78% | 5.0% | stirred 63%, found 0% |
+
+Both are inside the plan's targets (found 2–8%, stirred ≥ 25%) on the maxed
+Forge. A ring4 Forge dies around wave 15 in the Rift, before its boss, so it
+is weaker than anyone past Forgeheart: there they stir but are not found yet.
+Shatterfall and Glassfrost need frozen bodies (Absolute Zero), which the bot
+rarely evolves: 0–2% stir, unmeasured. Both forms, Kintsugi and Wayward stay at
+0 for the bot (it always carries Arcane Bolt; Wayward is active-only by
+design). The `seek` policy and the idle/pacing checks of §8 remain to run.

@@ -28,7 +28,8 @@ export const SECRETS: readonly SecretDef[] = [
     text: 'In the Drowned Mire, Sunlance reaches 25% farther.',
     hint: 'A steady beam could burn a road through the mist.',
     after: 'forgeheart',
-    trigger: { kind: 'tally', by: 'sunlance', region: 2, n: 150 },
+    // n from `inspect --secrets --uncapped` (plans/late-game/05 §8): Sunlance runs in the Mire, maxed Forge, p50 490, p90 597.
+    trigger: { kind: 'tally', by: 'sunlance', region: 2, n: 580 },
     reward: { kind: 'effects', effects: [{ kind: 'behaviour', id: 'beacon-road' }] },
     shards: 6000,
   },
@@ -46,7 +47,8 @@ export const SECRETS: readonly SecretDef[] = [
     text: 'In the Ember Rift, pellets spread a burning body’s fire to its neighbours.',
     hint: 'Shot fired through embers comes out burning.',
     after: 'forgeheart',
-    trigger: { kind: 'tally', by: 'scattershot', on: 'burning', region: 4, n: 200 },
+    // n as above: burning Scattershot kills in the Rift, maxed Forge, p50 21, p90 43, max 67; 200 was never reached.
+    trigger: { kind: 'tally', by: 'scattershot', on: 'burning', region: 4, n: 55 },
     reward: { kind: 'effects', effects: [{ kind: 'behaviour', id: 'bellows' }] },
     shards: 10000,
   },

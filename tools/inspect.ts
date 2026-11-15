@@ -13,7 +13,8 @@
  *                                          the share of damage landed by each weapon (T1)
  *   npm run inspect -- --seeds 200 --forge ring4 --region 3 --secrets
  *                                          every secret live (plans/late-game/05 §8):
- *                                          how often each is stirred and found
+ *                                          how often each is stirred and found;
+ *                                          add --uncapped for each tally's raw spread
  *
  * Headless: it drives the real sim, not a model of it.
  */
@@ -197,9 +198,13 @@ function main(): void {
   const region = arg('region', 1);
   const rifts = flag('rifts');
   const secrets = flag('secrets');
+  // `--uncapped`: lift every tally's goal, so the counts show each run's raw spread (a tool's view only).
+  if (secrets && flag('uncapped')) for (const def of SECRETS) if (def.trigger.kind === 'tally') (def.trigger as { n: number }).n = 1e9;
   if (seeds > 0) {
     /** Per secret: runs whose tally reached its stir share, and runs that found it. */
     const met = new Map<string, { stir: number; found: number }>(SECRETS.map((x) => [x.id, { stir: 0, found: 0 }]));
+    /** Per tally secret: each run's count, to pick a goal from (plans/late-game/05 §8). */
+    const counts = new Map<string, number[]>(SECRETS.map((x) => [x.id, []]));
     const riftCounts: number[] = [];
     let past12 = 0;
     let past12Rift = 0;
@@ -219,6 +224,7 @@ function main(): void {
       if (secrets && r.run.secrets) {
         const S = r.run.secrets;
         for (const def of SECRETS) {
+          counts.get(def.id)!.push(S.counts[def.id] ?? 0);
           const m = met.get(def.id)!;
           const t = def.trigger;
           const reached = t.kind === 'tally' ? (S.counts[def.id] ?? 0) >= Math.ceil(t.n * BALANCE.secrets.stirAt) : S.stirred === def.id || S.sighted.includes(def.id);
@@ -268,6 +274,11 @@ function main(): void {
       // Targets (plans/late-game/05 §8): a bot-reachable secret found in 2–8% of eligible runs, stirred in ≥ 25%.
       console.log('secrets (stirred or sighted / found, of runs): ' + [...met.entries()]
         .map(([id, m]) => `${id} ${(100 * m.stir / seeds).toFixed(0)}%/${(100 * m.found / seeds).toFixed(1)}%`).join('  ·  '));
+      const pct = (xs: number[], q: number): number => [...xs].sort((x, y) => x - y)[Math.min(xs.length - 1, Math.floor(q * xs.length))] ?? 0;
+      console.log('tallies (runs counting / p50 / p90 / max): ' + [...counts.entries()]
+        .filter(([, xs]) => xs.some((x) => x > 0))
+        .map(([id, xs]) => { const on = xs.filter((x) => x > 0); return `${id} ${on.length} / ${pct(on, 0.5)} / ${pct(on, 0.9)} / ${Math.max(...on)}`; })
+        .join('  ·  '));
     }
     if (rifts) {
       const mean = riftCounts.reduce((a, b) => a + b, 0) / Math.max(1, riftCounts.length);
