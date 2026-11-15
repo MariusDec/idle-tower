@@ -6,7 +6,7 @@ import { RIFTS, RIFT_BY_ID } from '../../content/rifts';
 import type { AuraId, RegionDef, RiftDef, RiftEffect, RiftRarity, RiftSpan } from '../../content/types';
 import type { Enemy, RiftHold, RunState } from '../state';
 import { refreshStats } from './draft';
-import { BOSS_WAVE, isBossWave, localWave, regionAt, rollWave, runRegion, waveBonus, wavePace } from './waves';
+import { BOSS_WAVE, isBossWave, localWave, regionAt, rollWave, runRegion, runWave, waveBonus, wavePace } from './waves';
 
 /**
  * Rifts (plans/late-game/02): a tear opens mid-wave; tapped before it shuts,
@@ -374,7 +374,7 @@ export function chooseRift(run: RunState, index: number): void {
  * the tower's stats need resolving again.
  */
 export function applyRiftEffect(run: RunState, f: RiftEffect, strongest: RunState['weapons'][number] | null): boolean {
-  const n = Math.max(1, run.wave);
+  const n = runWave(run);
   const region = runRegion(run);
   const hold = (until: RiftHold['until'], pay?: number): void => {
     run.riftHolds.push({ effect: f, until, felled: run.felled.length, ...(pay !== undefined ? { pay } : {}) });

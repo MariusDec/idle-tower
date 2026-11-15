@@ -10,7 +10,7 @@ import type { Card, RunState, TowerStats, WeaponState } from './state';
 import { allMods, resolveStats, runMods } from './stats';
 import { armed, slotsUsed } from './systems/arms';
 import { landedShare } from './systems/damage';
-import { localWave, runRegion, waveDamage, waveHp } from './systems/waves';
+import { localWave, runRegion, runWave, waveDamage, waveHp } from './systems/waves';
 
 /**
  * The draft scorer (§4.5, §13). One scorer powers both the card the game
@@ -120,7 +120,7 @@ export type Foes = readonly { readonly enemy: EnemyId; readonly armor: number; r
 
 export function foesOf(run: RunState): Foes {
   const region = runRegion(run);
-  const wave = Math.max(1, run.wave);
+  const wave = runWave(run);
   const hp = waveHp(region, wave);
   const live = region.pool.filter((p) => p.from <= Math.max(1, localWave(region, wave)));
   const total = live.reduce((a, p) => a + p.weight * ENEMY_BY_ID[p.enemy].hp, 0) || 1;
@@ -423,7 +423,7 @@ export function scoreCard(run: RunState, card: Card): number {
       // Ten seconds of regen, as a fraction of Max HP.
       const sustain = ((stats.regen / stats.maxHp) - (run.stats.regen / run.stats.maxHp)) * 10;
       // Armour as a share of a typical contact hit this wave.
-      const hit = Math.max(1, waveDamage(runRegion(run), Math.max(1, run.wave)));
+      const hit = Math.max(1, waveDamage(runRegion(run), runWave(run)));
       const armor = Math.min(1, (stats.armor - run.stats.armor) / hit);
       const xp = (stats.xpMult / run.stats.xpMult - 1) * XP_VALUE;
       const shards = (stats.shardMult / run.stats.shardMult - 1) * GREED_VALUE;

@@ -2,6 +2,7 @@ import { ABYSS_INDEX } from './abyss';
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
 import { EXPLAINERS } from './explainers';
+import { STRATA, STRATUM_FLOORS, type StratumDef } from './strata';
 import type {
   AnomalyDef, AuraDef, BossDef, BossPhase, SecretDef, SecretNeeds, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, RiftDef, TrialDef, WeaponDef, WebNodeDef,
 } from './types';
@@ -233,7 +234,7 @@ export const bossesAndLoot: LintRule = (tables) => {
         if (p.kind === 'summon' && !enemies.has(p.enemy)) out.push({ table: 'bosses', id: b.id, problem: `summons unknown enemy "${p.enemy}"` });
       }
     });
-    // An Abyss boss (§9) holds the Abyss's fifth floors, not a region.
+    // An Abyss boss (§9) guards a stratum, not a region.
     if (!b.abyss && !regions.some((r) => r.boss === b.id)) out.push({ table: 'bosses', id: b.id, problem: 'no region has this boss' });
   }
   for (const x of relics) {
@@ -627,9 +628,59 @@ export const forms: LintRule = (tables) => {
   return out;
 };
 
+/**
+ * The strata (plans/late-game/08 §6): each has six floors, its guests are
+ * Act 1 types and its natives the Abyss's own, floors 1–5 end on a native
+ * Keeper and the sixth on its guardian (an Abyss boss), the rule's line
+ * fits R4, a Gates floor has gates, and a guardian's `rule` pattern wears a
+ * rule of its own stratum or one above.
+ */
+export function strataRule(strata: readonly StratumDef[] = STRATA): LintRule {
+  return (tables) => {
+    const out: LintIssue[] = [];
+    const bosses = new Map(((tables.bosses as readonly BossDef[] | undefined) ?? []).map((b) => [b.id as string, b]));
+    const enemies = new Set(((tables.enemies as readonly EnemyDef[] | undefined) ?? []).map((e) => e.id as string));
+    const auras = new Set(((tables.auras as readonly AuraDef[] | undefined) ?? []).map((a) => a.id as string));
+    const act1 = new Set(((tables.regions as readonly RegionDef[] | undefined) ?? []).flatMap((r) => r.pool.map((p) => p.enemy as string)));
+    const above = new Set<string>();
+    for (const st of strata) {
+      const id = st.id;
+      const say = (problem: string): void => {
+        out.push({ table: 'strata', id, problem });
+      };
+      if (st.floors.length !== STRATUM_FLOORS) say(`has ${st.floors.length} floors (want ${STRATUM_FLOORS})`);
+      const words = wordCount(st.rule.text);
+      if (words === 0 || words > MAX_TEXT_WORDS) say(`rule line is ${words} words`);
+      for (const n of st.natives) {
+        if (!enemies.has(n)) say(`unknown native "${n}"`);
+        if (act1.has(n)) say(`native "${n}" walks in an Act 1 region`);
+      }
+      for (const a of [...st.auras, st.keeperAura]) if (!auras.has(a)) say(`unknown aura "${a}"`);
+      const boss = bosses.get(st.boss);
+      if (!boss) say(`unknown guardian "${st.boss}"`);
+      else if (!boss.abyss) say(`guardian "${st.boss}" is not an Abyss boss`);
+      for (const r of st.floors.flatMap((f) => f.rules)) above.add(r.kind);
+      for (const ph of boss?.phases ?? []) {
+        for (const p of ph.patterns) if (p.kind === 'rule' && !above.has(p.rule.kind)) say(`guardian wears "${p.rule.kind}", a rule from no stratum at or above it`);
+      }
+      st.floors.forEach((f, i) => {
+        const at = `floor ${i + 1}`;
+        for (const g of f.guests) if (!act1.has(g)) say(`${at}: guest "${g}" is no Act 1 type`);
+        for (const n of f.natives) if (!st.natives.includes(n)) say(`${at}: "${n}" is not its stratum's native`);
+        const last = i === STRATUM_FLOORS - 1;
+        if (last && f.keeper !== null) say(`${at}: the guardian's floor has a Keeper`);
+        if (!last && (f.keeper === null || !st.natives.includes(f.keeper))) say(`${at}: its Keeper must be a native`);
+        if (f.rules.some((r) => r.kind === 'gates') && (!f.gates || f.gates.length === 0)) say(`${at}: the Gates with no gates`);
+        for (const b of Object.values(f.beats)) if (b.kind === 'introduce' && !f.natives.includes(b.enemy)) say(`${at}: introduces "${b.enemy}", not on the floor`);
+      });
+    }
+    return out;
+  };
+}
+
 export const RULES: readonly LintRule[] = [
   uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking, rifts,
-  cursedRelics, anomalies, forms, secretsRule(EXPLAINERS.flatMap((x) => [x.title, ...x.lines])),
+  cursedRelics, anomalies, forms, secretsRule(EXPLAINERS.flatMap((x) => [x.title, ...x.lines])), strataRule(),
 ];
 
 /**

@@ -54,6 +54,8 @@ import { FAST_STEPS, playRun, toolConfig } from './play';
 import { shop } from './shop';
 import { CHECKIN_EVERY, SESSION, farmRatio, runIdle, type IdleReport } from './idle';
 import { runAct2, type Act2Report } from './act2';
+import { STRATA } from '../src/content/strata';
+import { BALANCE } from '../src/content/balance';
 import { IN_WORKER, parallel, workerJobs } from './parallel';
 
 /** Wall seconds between runs: the results screen, plus shopping when there is shopping. */
@@ -555,7 +557,10 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
     console.log(`           frontier heat 1–10: ${ladder}`);
     console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')} · last star ${fmt(r.lastStar)}`);
     const src = r.sources;
-    console.log(`           Starlight from: ${Object.entries(src.heat).map(([i, n]) => `R${i} ${n}`).join(' · ')} · Abyss ${src.abyss} · Rush ${src.rush} · feats ${src.feats}`);
+    console.log(`           Starlight from: ${Object.entries(src.heat).map(([i, n]) => `R${i} ${n}`).join(' · ')} · Abyss ${src.abyss} · strata ${src.strata} · Rush ${src.rush} · feats ${src.feats}`);
+    const fell = STRATA.map((st) => `${BOSS_BY_ID[st.boss].name} ${fmt(r.strata.fell[st.boss])}`).join(' · ');
+    const entry = Object.entries(r.strata.entry).map(([f, ls]) => `floor ${f} level ${[...ls].sort((a, b) => a - b)[ls.length >> 1]} (${ls.length})`).join(' · ');
+    console.log(`           strata: ${fell}${entry ? ` · entered ${entry}` : ''}`);
     const rush = r.rush.time !== null ? formatDuration(r.rush.time) : `${r.rush.best} bosses`;
     console.log(`           Boss Rush: ${r.rushRuns} runs · record ${rush}`);
     if (k === 0) {
@@ -575,6 +580,19 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
   const floors = reports.map((r) => r.floor);
   const okFloor = med(floors) >= ABYSS_FLOOR_12H;
   console.log(`  ${okFloor ? 'PASS' : 'FAIL'}  best Abyss floor at ${hours} h: median ${med(floors)} (want ≥ ${ABYSS_FLOOR_12H} at 12 h; ${floors.join(' ')})`);
+  // The strata (plans/late-game/08 §9): each guardian's first fall, the waypoints' levels, the strata's share of Starlight.
+  for (const st of STRATA) {
+    const times = reports.map((r) => r.strata.fell[st.boss] ?? Infinity);
+    const m = med(times);
+    console.log(`        ${BOSS_BY_ID[st.boss].name} first falls: median ${Number.isFinite(m) ? formatDuration(m) : `not in ${hours} h`} (${times.map((t) => fmt(Number.isFinite(t) ? t : null)).join(' ')})`);
+  }
+  const feet = [...new Set(reports.flatMap((r) => Object.keys(r.strata.entry).map(Number)))].sort((a, b) => a - b);
+  for (const f of feet) {
+    const levels = reports.flatMap((r) => r.strata.entry[f] ?? []);
+    console.log(`        level entering floor ${f} from the top: median ${med(levels)} over ${levels.length} descents (waypoint now ${BALANCE.strata.waypoint.level[Math.floor((f - 1) / 6)]})`);
+  }
+  const share = reports.map((r) => (r.sources.abyss + r.sources.strata) / Math.max(1, r.starlight));
+  console.log(`        the Abyss's share of Starlight: median ${(med(share) * 100).toFixed(0)}% (want ≤ 25%)`);
   const last = reports.map((r) => r.lastStar ?? Infinity);
   const mLast = med(last);
   const okLast = mLast >= LAST_STAR_HOURS.min * 3600 && mLast <= LAST_STAR_HOURS.max * 3600;

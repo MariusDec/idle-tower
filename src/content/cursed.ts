@@ -43,9 +43,9 @@ export function curseLine(relic: RelicDef): string {
 }
 
 /**
- * What a stratum drops (§3.1): its elites' relics, and each guardian's. Until
- * plan 08 lands every Abyss floor counts as the Gate, whose elites drop
- * nothing cursed: the Deepwarden is the lesson.
+ * What a stratum drops (§3.1): its elites' relics, and each guardian's. Only
+ * the Gate's ship so far, whose elites drop nothing cursed: the Deepwarden
+ * is the lesson.
  */
 export function cursedTable(stratum: StratumId | 'below'): { elite: RelicId[]; boss: Partial<Record<BossId, RelicId>> } {
   const elite: RelicId[] = [];

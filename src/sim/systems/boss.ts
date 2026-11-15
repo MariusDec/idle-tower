@@ -2,12 +2,14 @@ import { Rng } from '../../core/rng';
 import { BALANCE } from '../../content/balance';
 import { BOSS_BY_ID } from '../../content/bosses';
 import { ENEMY_BY_ID } from '../../content/enemies';
-import { guardianFloor } from '../../content/abyss';
+import { shimGuardianFloor } from '../../content/abyss';
+import { STRATUM_BY_ID } from '../../content/strata';
 import { spawnPoint } from '../../content/arena';
 import type { BossDef, BossPattern, BossPhase, RegionDef } from '../../content/types';
 import type { BossState, Enemy, RunState } from '../state';
 import { bossPhases, pactLoad } from '../pacts';
-import { foeHp, runRegion, spawnEnemy, waveDamage, waveHp, waveShardMult } from './waves';
+import { clearFloor, foeHp, mayInvert, runRegion, spawnEnemy, waveDamage, waveHp, waveShardMult } from './waves';
+import { gateAngle, ruleLoad } from '../strata';
 import { hurtTower } from './tower';
 import { guardianReliquary } from './reliquaries';
 import { formFor, secretsOnBossKill, sightForm } from './secrets';
@@ -43,9 +45,9 @@ function formOf(run: RunState, def: BossDef): BossDef {
   return form ? { ...def, phases: form.phases } : def;
 }
 
-/** How often a pattern acts: 0 for once, on entering its phase (a mirror is always on). */
+/** How often a pattern acts: 0 for once, on entering its phase (a mirror and a rule are always on). */
 function period(p: BossPattern): number {
-  return p.kind === 'mirror' ? 0 : p.every;
+  return p.kind === 'mirror' || p.kind === 'rule' ? 0 : p.every;
 }
 
 function phaseTimers(patterns: readonly BossPattern[]): number[] {
@@ -55,14 +57,17 @@ function phaseTimers(patterns: readonly BossPattern[]): number[] {
 }
 
 /**
- * A boss's HP share in the Abyss (§9): a floor's boss is lighter than its
- * region's, and a guardian lighter still (S7.5). Boss Rush's are all sized
- * like guardians (N8).
+ * A boss's HP share in the Abyss (§9): a stratum's guardian takes its
+ * stratum's share (plans/late-game/08); past the strata a floor's boss is
+ * lighter than its region's, and a guardian lighter still (S7.5). Boss
+ * Rush's are all sized like guardians (N8).
  */
 function abyssBossHp(region: RegionDef): number {
   if (region.rush) return BALANCE.abyss.guardianHp;
   if (!region.abyss) return 1;
-  return guardianFloor(region.abyss.floor) ? BALANCE.abyss.guardianHp : BALANCE.abyss.bossHp;
+  const s = region.abyss.stratum ? STRATUM_BY_ID[region.abyss.stratum] : undefined;
+  if (s) return s.bossHp;
+  return shimGuardianFloor(region.abyss.floor) ? BALANCE.abyss.guardianHp : BALANCE.abyss.bossHp;
 }
 
 export function arriveBoss(run: RunState, region: RegionDef): void {
@@ -131,6 +136,9 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     gildedUntil: 0,
     feeds: 0,
     auraTimer: 0,
+    heading: 1,
+    fled: false,
+    keeper: false,
   };
   run.enemies.push(body);
   if (run.current) run.current.alive++;
@@ -307,12 +315,14 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
         const rng = Rng.wrap(run.streams.waves);
         const pack = ENEMY_BY_ID[p.enemy].pack;
         const spread = BALANCE.waves.packSpread;
+        // The strata's rules hold on a guardian's call too: through its gates, and turned at the wall.
+        const gates = ruleLoad(run).gates;
         for (let k = 0; k < p.packs; k++) {
-          const a = rng.range(0, Math.PI * 2);
+          const a = gateAngle(gates, rng);
           const size = rng.int(pack[0], pack[1]);
           for (let j = 0; j < size; j++) {
             const at = spawnPoint(a + rng.range(-spread, spread), run.stats.light, run.arena);
-            spawnEnemy(run, region, p.enemy, b.wave, at.x, at.y);
+            mayInvert(run, spawnEnemy(run, region, p.enemy, b.wave, at.x, at.y));
           }
         }
         break;
@@ -342,6 +352,10 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
       }
       case 'court':
         holdCourt(run, region, e, p.shades);
+        break;
+      case 'rule':
+        // Always on while its phase lasts: `ruleLoad` reads it.
+        b.timers[i] = ONCE;
         break;
       default: {
         const exhaustive: never = p;
@@ -491,14 +505,6 @@ export function onBossKilled(run: RunState, e: Enemy): void {
   guardianReliquary(run, b.id, e.x, e.y);
   // Secrets (plans/late-game/05): a form felled, a brink, a wayward road.
   if (run.secrets) secretsOnBossKill(run, e.x, e.y);
-  if (runRegion(run).abyss) {
-    run.floors++;
-    run.events.push({ kind: 'floor', floor: run.floors });
-    // Abyssal Pearl (§9): each floor cleared mends the tower.
-    const pearl = run.behaviours['floor-heal'] ?? 0;
-    if (pearl > 0) {
-      const R = BALANCE.relics.floorHeal;
-      run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * R[Math.min(pearl, R.length) - 1]);
-    }
-  }
+  const abyss = runRegion(run).abyss;
+  if (abyss) clearFloor(run, abyss.floor);
 }

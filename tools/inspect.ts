@@ -21,6 +21,10 @@
  *                                          wave and how many weapons were evolved at the end;
  *                                          --recipes act1|all marks recipes found (act1: those
  *                                          the Forge's pool can draw), --frame artificer picks a frame
+ *   npm run inspect -- --seeds 20 --forge all --floor 7
+ *                                          the Abyss from waypoint floor 7 (plans/late-game/08 §9):
+ *                                          the deepest floor reached, Lurkers fled and healed,
+ *                                          bodies that escaped (the Inversion), Keepers that held
  *
  * Headless: it drives the real sim, not a model of it.
  */
@@ -38,8 +42,8 @@ import { newProfile, type Profile } from '../src/meta/profile';
 import { FORGE } from '../src/content/forge';
 import { SIM_DT } from '../src/app/loop';
 import { ENEMY_BY_ID } from '../src/content/enemies';
-import { regionByIndex } from '../src/content/regions';
-import { waveHp } from '../src/sim/systems/waves';
+import { regionAt, waveHp } from '../src/sim/systems/waves';
+import { ABYSS_INDEX } from '../src/content/abyss';
 import { buildDps } from '../src/sim/suggest';
 import type { DamageBy, RunState } from '../src/sim/state';
 import { botInput, type Policy } from './bot';
@@ -72,6 +76,8 @@ interface WaveRow {
 
 export interface RunReport {
   rows: WaveRow[];
+  /** The strata (`--floor`): Lurkers met, fled and healed; bodies that escaped; Keepers met and slain. */
+  strata: { lurkers: number; fled: number; healed: number; escapes: number; keepers: number };
   firstKill: number | null;
   /** Run time of each level-up. */
   levelUps: number[];
@@ -116,6 +122,8 @@ export type RecipePreset = 'none' | 'act1' | 'all';
 export interface ProbeOptions {
   readonly recipes?: RecipePreset;
   readonly frame?: string;
+  /** The Abyss from this waypoint floor (plans/late-game/08 §4.4), in place of `regionIndex`. */
+  readonly startFloor?: number;
 }
 
 /** The recipes a preset marks found, against the run's pool. */
@@ -139,13 +147,17 @@ export function simulate(
   const base = buildRunConfig(vet);
   const recipes = probe.recipes && probe.recipes !== 'none' ? presetRecipes(probe.recipes, base.pool) : null;
   const run = createRun({
-    ...base, regionId: regionIndex, rifts: rifts ? RIFTS_ON : null,
+    ...base, regionId: probe.startFloor ? ABYSS_INDEX : regionIndex, rifts: rifts ? RIFTS_ON : null,
+    ...(probe.startFloor ? { startFloor: probe.startFloor } : {}),
     ...(recipes ? { recipes } : {}),
     // A late-Act-1 player knows every recipe, so the suggestion steers toward evolutions (frost needs Absolute Zero).
     ...(secrets ? { secrets: SECRETS_ON, firstKill: false, recipes: EVOLUTIONS.map((e) => e.id) } : {}),
   }, seed);
-  const region = regionByIndex(run.regionId);
   const rows: WaveRow[] = [];
+  const lurkers = new Set<number>();
+  const fled = new Set<number>();
+  const healed = new Set<number>();
+  const strata = { lurkers: 0, fled: 0, healed: 0, escapes: 0, keepers: 0 };
   const levelUps: number[] = [];
   let row: WaveRow | null = null;
   let firstKill: number | null = null;
@@ -153,7 +165,17 @@ export function simulate(
   const maxTicks = Math.round(maxSeconds / SIM_DT);
   while (!run.outcome && run.tick < maxTicks) {
     step(run, SIM_DT, botInput(run, policy));
+    if (run.regionId === ABYSS_INDEX) {
+      for (const e of run.enemies) {
+        if (e.type !== 'lurker') continue;
+        lurkers.add(e.id);
+        if (e.heading < 0) fled.add(e.id);
+        if (e.fled) healed.add(e.id);
+      }
+    }
     for (const ev of run.events) {
+      if (ev.kind === 'escape') strata.escapes++;
+      if (ev.kind === 'eliteSpawn' && ev.keeper !== undefined) strata.keepers++;
       if (ev.kind === 'waveStart') {
         if (row) {
           row.duration = run.time - row.start;
@@ -166,7 +188,7 @@ export function simulate(
           level: run.level,
           dps: buildDps(run.weapons, run.stats),
           bodies: cur.spawns.length,
-          hpPool: cur.spawns.reduce((sum, sp) => sum + ENEMY_BY_ID[sp.enemy].hp * waveHp(region, ev.wave), 0),
+          hpPool: cur.spawns.reduce((sum, sp) => sum + ENEMY_BY_ID[sp.enemy].hp * waveHp(regionAt(run.regionId, ev.wave), ev.wave), 0),
           carried: run.enemies.filter((e) => e.alive).length,
           damageTaken: 0,
           kills: 0,
@@ -196,7 +218,8 @@ export function simulate(
     row.duration = run.time - row.start;
     row.hpAtEnd = Math.max(0, run.tower.hp);
   }
-  return { rows, firstKill, levelUps, ultCasts, run };
+  Object.assign(strata, { lurkers: lurkers.size, fled: fled.size, healed: healed.size });
+  return { rows, strata, firstKill, levelUps, ultCasts, run };
 }
 
 /** The build, e.g. "arcane-bolt 5 · scattershot 3 | power 4 · fortify 2". */
@@ -239,6 +262,7 @@ function main(): void {
   const probe: ProbeOptions = {
     recipes: (ri >= 0 ? process.argv[ri + 1] : 'none') as RecipePreset,
     frame: fr >= 0 ? process.argv[fr + 1] : undefined,
+    startFloor: arg('floor', 0) || undefined,
   };
   // `--uncapped`: lift every tally's goal, so the counts show each run's raw spread (a tool's view only).
   if (secrets && flag('uncapped')) for (const def of SECRETS) if (def.trigger.kind === 'tally') (def.trigger as { n: number }).n = 1e9;
@@ -265,8 +289,12 @@ function main(): void {
     const formWaves: number[] = [];
     let formable = 0;
     const evolvedAtEnd = new Map<number, number>();
+    const deep: number[] = [];
+    const strata = { lurkers: 0, fled: 0, healed: 0, escapes: 0, keepers: 0 };
     for (let s = 1; s <= seeds; s++) {
       const r = simulate(s, maxSeconds, policy, preset, region, rifts, secrets, probe);
+      deep.push(r.run.floors);
+      for (const k of Object.keys(strata) as (keyof typeof strata)[]) strata[k] += r.strata[k];
       if (r.run.form.need > 0) formable++;
       if (r.run.form.wave !== null) formWaves.push(r.run.form.wave);
       const ev = formCount(r.run);
@@ -320,6 +348,14 @@ function main(): void {
     }
     console.log('loadouts: ' + [...loadouts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ×${n}`).join('  ·  '));
     if (flag('by-weapon')) console.log(`damage by: ${describeDamage(dealt)}`);
+    if (probe.startFloor) {
+      // Targets (plans/late-game/08 §9): a waypoint run reaches two floors on as often as a top start; Lurkers heal < 25% with Forge `all`.
+      const from = probe.startFloor;
+      const on = deep.filter((f) => f >= from + 1).length;
+      console.log(`the Abyss from floor ${from}: deepest cleared median ${median(deep)} · cleared floor ${from + 1} in ${on}/${seeds} runs · ${(strata.keepers / seeds).toFixed(1)} Keepers a run`);
+      console.log(`lurkers: ${strata.lurkers} met · ${strata.fled} fled (${(100 * strata.fled / Math.max(1, strata.lurkers)).toFixed(0)}%) · ${strata.healed} healed in the dark (${(100 * strata.healed / Math.max(1, strata.lurkers)).toFixed(0)}%)`
+        + ` · escapes ${(strata.escapes / seeds).toFixed(1)} a run`);
+    }
     if (form) {
       // Targets (plans/late-game/07 §8): R2 ≤ 5%, R4 15–35% with median ≤ 20, R5 20–40% with median 15–19.
       const rate = (100 * formWaves.length) / seeds;

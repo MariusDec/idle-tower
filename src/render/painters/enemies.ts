@@ -44,6 +44,8 @@ const GAIT: Record<EnemyId, { freq: number; bob: number }> = {
   ram: { freq: 6, bob: 1.2 },
   wardstone: { freq: 1.4, bob: 0.6 },
   maw: { freq: 4, bob: 1.6 },
+  lurker: { freq: 10, bob: 1 },
+  tidecaller: { freq: 1.8, bob: 2.2 },
 };
 
 /** How see-through a phased-out body, and a risen shade, is drawn. */
@@ -71,8 +73,20 @@ interface Sprite {
   half: number;
 }
 
+/**
+ * The deep's mark on a floor's guests (plans/late-game/08 §2): their colours
+ * lean `mix` toward the stratum's ground. Natives keep their own.
+ */
+export interface GuestLook {
+  /** The stratum, for the sprite cache's key. */
+  key: string;
+  tint: string;
+  mix: number;
+  natives: ReadonlySet<EnemyId>;
+}
+
 export class EnemyPainter {
-  private cache = new Map<EnemyId, Sprite>();
+  private cache = new Map<string, Sprite>();
   private scale = 0;
 
   /** Drop the cache when the view scale changes; sprites rebake lazily. */
@@ -87,11 +101,15 @@ export class EnemyPainter {
     this.cache.clear();
   }
 
-  private sprite(type: EnemyId): Sprite {
-    let s = this.cache.get(type);
+  /** A type's sprite, keyed by type and, for a stratum's guest, by stratum. */
+  private sprite(type: EnemyId, guest: GuestLook | null): Sprite {
+    const mixed = guest !== null && !guest.natives.has(type);
+    const key = mixed ? `${type}|${guest.key}` : type;
+    let s = this.cache.get(key);
     if (!s) {
-      s = bake(ENEMY_BY_ID[type], this.scale);
-      this.cache.set(type, s);
+      const def = ENEMY_BY_ID[type];
+      s = bake(mixed ? { ...def, color: mix(def.color, guest.tint, guest.mix), borderColor: mix(def.borderColor, guest.tint, guest.mix) } : def, this.scale);
+      this.cache.set(key, s);
     }
     return s;
   }
@@ -108,6 +126,8 @@ export class EnemyPainter {
     oval: Oval,
     /** The region's boss colours, which a Champion wears (N4). */
     champion: { color: string; border: string } | null = null,
+    /** A stratum's guests, leaning toward its ground (plans/late-game/08). */
+    guest: GuestLook | null = null,
   ): void {
     drawChorusLinks(ctx, enemies, alpha, time);
     for (const e of enemies) {
@@ -130,7 +150,7 @@ export class EnemyPainter {
         drawHalo(ctx, x, y, e.radius, champion.color, time + e.id);
       }
       if (e.elite) drawHalo(ctx, x, y, e.radius, FX[e.aura ? AURA_COLOR[e.aura] : 'gold'], time + e.id);
-      const s = this.sprite(e.type);
+      const s = this.sprite(e.type, guest);
       // Sprites are baked at the type's radius; elites and fragments scale it.
       const k = e.radius / ENEMY_BY_ID[e.type].radius;
       ctx.drawImage(s.canvas, x - s.half * k, y - s.half * k, s.half * 2 * k, s.half * 2 * k);
@@ -720,6 +740,37 @@ function paintDetail(g: CanvasRenderingContext2D, def: EnemyDef, r: number, pen:
       g.moveTo(-r * 0.5, 0);
       g.lineTo(r * 0.5, 0);
       g.stroke();
+      break;
+    }
+    // Lurker: two slit eyes, slanted, and a seam down its back.
+    case 'lurker': {
+      g.fillStyle = withAlpha(def.borderColor, 0.95);
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.ellipse(dir * r * 0.24, -r * 0.08, r * 0.17, r * 0.05, dir * 0.4, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.strokeStyle = dark(0.6);
+      g.lineWidth = pen(r * 0.06);
+      g.beginPath();
+      g.moveTo(0, r * 0.12);
+      g.lineTo(0, r * 0.6);
+      g.stroke();
+      break;
+    }
+    // Tidecaller: rings rolling out from a bright core, the current it calls.
+    case 'tidecaller': {
+      g.strokeStyle = withAlpha(def.borderColor, 0.8);
+      g.lineWidth = pen(r * 0.07);
+      for (const k of [0.3, 0.52]) {
+        g.beginPath();
+        g.arc(0, 0, r * k, -Math.PI * 0.8, Math.PI * 0.3);
+        g.stroke();
+      }
+      g.fillStyle = pale(0.9);
+      g.beginPath();
+      g.arc(0, 0, r * 0.13, 0, Math.PI * 2);
+      g.fill();
       break;
     }
     // Maw: a wide mouth, all teeth.

@@ -3,7 +3,7 @@ import { RIFT_BY_ID } from '../content/rifts';
 import type { RiftEffect, RiftSpan, StatKey } from '../content/types';
 import { formatNumber } from '../core/format';
 import { riftLegal } from '../sim/systems/rifts';
-import { regionAt, waveBonus } from '../sim/systems/waves';
+import { regionAt, runWave, waveBonus } from '../sim/systems/waves';
 import type { RunState } from '../sim/state';
 import { icon } from './icon';
 import { toggleClass } from './dom';
@@ -32,7 +32,7 @@ function spanText(span: RiftSpan): string {
 
 /** One line per effect, cost or reward, with the live figure (§2: "HP 2,000 → 1,600", "≈ 1,240 shards"). */
 export function riftFigures(run: RunState, effects: readonly RiftEffect[]): { text: string; cost: boolean }[] {
-  const n = Math.max(1, run.wave);
+  const n = runWave(run);
   const max = run.stats.maxHp;
   const hp = run.tower.hp;
   const wavePay = waveBonus(regionAt(run.regionId, n), n) * run.stats.shardMult;

@@ -12,7 +12,7 @@ import {
 import { buyNode, canAfford, isBuyable, levelOf, nodeCost, refundNode, toggleKeystone, towerTier } from '../meta/forge';
 import { bankRun, buildOf } from '../meta/results';
 import { buildList, foremanLine, statsList } from '../ui/build';
-import { cursedSlots, frameUnlocked, frontier, regionUnlocked, selectedFrame, swapCursed, toggleCursed, toggleRelic, trophyCount } from '../meta/collection';
+import { chooseWaypoint, cursedSlots, frameUnlocked, frontier, regionUnlocked, selectedFrame, swapCursed, toggleCursed, toggleRelic, trophyCount } from '../meta/collection';
 import { cursedCard } from '../ui/cursed';
 import { curseLine } from '../content/cursed';
 import { claimAll, claimFeat } from '../meta/feats';
@@ -38,7 +38,7 @@ import type { DraftOffer, RunState } from '../sim/state';
 import { BALANCE } from '../content/balance';
 import { Renderer } from '../render/renderer';
 import { QualityScaler, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
-import { runRegion } from '../sim/systems/waves';
+import { runRegion, runWave } from '../sim/systems/waves';
 import { SettingsPanel } from '../ui/settings';
 import { Music } from '../audio/music';
 import { bench, type BenchOptions, type BenchResult } from './bench';
@@ -47,6 +47,8 @@ import { DraftPanel } from '../ui/draft';
 import { bindBuildPeek } from '../ui/peek';
 import { Hud } from '../ui/hud';
 import { HubScreen, type HubView } from '../ui/hub/hub';
+import type { MapSpread } from '../ui/hub/map';
+import { STRATUM_BY_ID, guardianStratum } from '../content/strata';
 import { Modal, type ModalButton } from '../ui/modal';
 import { explainerBody } from '../ui/explainer';
 import { ResultsScreen } from '../ui/results';
@@ -200,6 +202,7 @@ export class App {
       selectRegion: (index) => this.between(() => {
         if (regionUnlocked(this.profile, index)) this.profile.region = index;
       }),
+      chooseWaypoint: (floor) => this.between(() => chooseWaypoint(this.profile, floor)),
       trial: (id) => {
         if (this.between(() => chooseTrial(this.profile, id))) this.startRun();
       },
@@ -300,7 +303,7 @@ export class App {
     if (!run || this.screen !== 'run') throw new Error('form needs a run');
     for (const w of run.weapons) if (!w.anomaly) w.evolved = true;
     if (run.form.wave === null) {
-      run.form.wave = Math.max(1, run.wave);
+      run.form.wave = runWave(run);
       run.events.push({ kind: 'finalForm', frame: run.frameId as FrameId });
     }
     // Let the ceremony play out before a bench starts.
@@ -427,7 +430,9 @@ export class App {
     const boss = this.profile.ceremony;
     this.profile.ceremony = null;
     if (boss !== null) void this.save();
-    this.go('hub', boss !== null ? 'map' : 'forge', boss !== null);
+    // A stratum's guardian (plans/late-game/08 §3.2): its band on the shaft lights, not a region's light.
+    const band = boss !== null ? guardianStratum(boss as BossId) : -1;
+    this.go('hub', boss !== null ? 'map' : 'forge', band >= 0 ? { band } : boss !== null);
     if (boss !== null && BOSS_BY_ID[boss as BossId]?.finale) this.ending();
   }
 
@@ -449,7 +454,7 @@ export class App {
     ]), 2400);
   }
 
-  private go(to: Screen, view: HubView = 'home', spread = false): void {
+  private go(to: Screen, view: HubView = 'home', spread: MapSpread = false): void {
     assertTransition(this.screen, to);
     this.screen = to;
     this.dressTower();
@@ -856,7 +861,10 @@ export class App {
     // Final Form's layer (plans/late-game/07): from the form until the run ends, and again on a resume.
     this.music.setFormed(run.form.wave !== null);
     const boss = run.boss !== null && run.boss.killedIn === null;
-    this.music.set(boss ? 'boss' : 'run', runRegion(run).index);
+    // A stratum of the Abyss has its own voice (plans/late-game/08 §5.1).
+    const region = runRegion(run);
+    const stratum = region.abyss?.stratum ? STRATUM_BY_ID[region.abyss.stratum] : undefined;
+    this.music.set(boss ? 'boss' : 'run', region.index, stratum?.tone ?? null);
   }
 
   /** Feed the quality scaler a real frame: its wall time and the ms spent drawing it. */
@@ -896,7 +904,9 @@ export class App {
           break;
         }
         case 'eliteSpawn':
-          if (ev.champion) this.toasts.show('vertical-banner', 'A Champion comes', 'Slay it for a relic.', 'relic');
+          // A Keeper (plans/late-game/08 §3.1) holds its floor: its own toast.
+          if (ev.keeper !== undefined) this.toasts.show('vertical-banner', `The Keeper of floor ${ev.keeper}`, 'The next floor waits until it falls.', 'relic');
+          else if (ev.champion) this.toasts.show('vertical-banner', 'A Champion comes', 'Slay it for a relic.', 'relic');
           break;
         case 'reliquary':
           // Taught by the toast (plans/late-game/03 §2), as the Champion's is; the first says where to look.

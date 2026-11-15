@@ -3,7 +3,8 @@ import { applyInput, createRun, step } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile, type Profile } from '../src/meta/profile';
 import { SIM_DT } from '../src/app/loop';
-import { ABYSS_INDEX, FLOOR_WAVES, NATIVES, abyssFloor, abyssStarlight, floorBoss, floorOf, floorTemplate, floorWave } from '../src/content/abyss';
+import { ABYSS_INDEX, FLOOR_WAVES, NATIVES, abyssFloor, abyssStarlight, floorBoss, floorOf, floorWave } from '../src/content/abyss';
+import { STRATA } from '../src/content/strata';
 import { BALANCE } from '../src/content/balance';
 import { BOSSES, BOSS_BY_ID } from '../src/content/bosses';
 import { ENEMY_BY_ID } from '../src/content/enemies';
@@ -95,13 +96,13 @@ describe('Act 2 opens with the Blight (§9)', () => {
 
   it("Act 1's lists keep Act 2's entries out until then", () => {
     const p = newProfile(0);
-    const natives = new Set<string>(NATIVES.map((n) => n.enemy));
+    const natives = new Set<string>(NATIVES);
     expect(bestiary(p).some((r) => natives.has(r.id))).toBe(false);
     expect(bestiary(p).some((r) => BOSS_BY_ID[r.id as keyof typeof BOSS_BY_ID]?.abyss)).toBe(false);
     expect(listedRelics(p).some((r) => r.source.kind === 'abyss')).toBe(false);
     expect(recipeBook(p)).toHaveLength(8);
     const q = act2Profile();
-    expect(bestiary(q).filter((r) => natives.has(r.id))).toHaveLength(4);
+    expect(bestiary(q).filter((r) => natives.has(r.id))).toHaveLength(NATIVES.length);
     // Cursed relics (plans/late-game/03) are the Relics page's own segment, not this list;
     // a secret relic (plans/late-game/05) has no silhouette until owned.
     expect(listedRelics(q)).toHaveLength(RELICS.filter((r) => r.source.kind !== 'cursed' && r.source.kind !== 'secret').length);
@@ -207,22 +208,25 @@ describe('Starlight (§9)', () => {
     expect(p.starlight).toBe(16);
   });
 
-  it('a new deepest floor pays per floor, and more for each guardian (S7, D-6)', () => {
+  it('a new deepest floor pays per floor, less past the bottom (S7, D-6, plans/late-game/08)', () => {
     const p = act2Profile();
     expect(abyssStarlight(4)).toBe(8);
-    expect(abyssStarlight(5)).toBe(20);
-    expect(abyssStarlight(10)).toBe(40);
+    expect(abyssStarlight(5)).toBe(10);
+    expect(abyssStarlight(30)).toBe(60);
+    expect(abyssStarlight(32)).toBe(62);
     expect(recordFloor(p, 3)?.starlight).toBe(abyssStarlight(3));
     expect(recordFloor(p, 7)?.starlight).toBe(abyssStarlight(7) - abyssStarlight(3));
     expect(recordFloor(p, 2)).toBeNull();
   });
 
-  it('every star can be lit (B7): every region at the top heat, floor 75 and the feats pay past the sky', () => {
+  it('every star can be lit (B7): every region at the top heat, the strata to the bottom and the feats pay past the sky', () => {
     const p = act2Profile();
     const heatAll = REGIONS.reduce((s, r) => s + recordStarlight(p, r.index, MAX_HEAT), 0);
     const feats = FEATS.reduce((s, f) => s + (f.starlight ?? 0), 0);
     const sky = STARS.reduce((s, n) => s + STAR_WEB.spentOn(n, n.maxLevel), 0);
-    expect(heatAll + abyssStarlight(30) + feats).toBeGreaterThanOrEqual(sky);
+    // The guardians' lumps that ship: one per authored stratum.
+    const lumps = BALANCE.strata.starlight.lump.slice(0, STRATA.length).reduce((a, b) => a + b, 0);
+    expect(heatAll + abyssStarlight(30) + lumps + feats).toBeGreaterThanOrEqual(sky);
   });
 
   it('the Stargazers grow every payout', () => {
@@ -314,48 +318,57 @@ describe('the Constellations (§9)', () => {
 });
 
 describe('the Abyss (§9)', () => {
-  it('floors are ten waves on a template, the tenth a boss; every fifth an Abyss boss', () => {
+  it('floors are ten waves in a stratum, the tenth a Keeper’s, the sixth floor’s a guardian’s (plans/late-game/08)', () => {
     expect(floorOf(1)).toBe(1);
     expect(floorOf(10)).toBe(1);
     expect(floorOf(11)).toBe(2);
     expect(floorWave(23)).toBe(3);
     const f = abyssFloor(2);
-    expect(f.abyss).toEqual({ floor: 2 });
-    expect(f.rule).toBe(floorTemplate(2).rule);
-    expect(isBossWave(f, 20)).toBe(true);
-    expect(isBossWave(f, 19)).toBe(false);
-    expect(floorBoss(5)).toBe('deepwarden');
-    expect(floorBoss(10)).toBe('hunger');
-    expect(BOSS_BY_ID[floorBoss(3)].abyss).toBeFalsy();
+    expect(f.abyss).toMatchObject({ floor: 2, stratum: 'gate', from: 1, keeper: 'lurker' });
+    expect(f.rule).toBeNull();
+    expect(isBossWave(f, 20)).toBe(false);
+    expect(isBossWave(abyssFloor(6), 60)).toBe(true);
+    expect(floorBoss(6)).toBe('deepwarden');
+    expect(floorBoss(12)).toBe('undertow');
+    // Past the authored strata, today's cycle: a boss every floor, an Abyss boss every fifth.
+    expect(isBossWave(abyssFloor(14), 140)).toBe(true);
+    expect(BOSS_BY_ID[floorBoss(14)].abyss).toBeFalsy();
+    expect(floorBoss(15)).toBe('deepwarden');
+    expect(floorBoss(20)).toBe('hunger');
     // Elites on a floor's third, sixth and ninth waves.
     expect([11, 12, 13, 16, 19, 20].map((n) => isEliteWave(abyssFloor(2), n))).toEqual([false, false, true, true, true, false]);
   });
 
-  it('the natives join the floors one by one', () => {
-    for (const n of NATIVES) {
-      expect(abyssFloor(n.from).pool.some((p) => p.enemy === n.enemy)).toBe(true);
-      if (n.from > 1) expect(abyssFloor(n.from - 1).pool.some((p) => p.enemy === n.enemy)).toBe(false);
+  it('each stratum’s natives walk its floors; a native a beat introduces joins the pool after it', () => {
+    for (const [k, st] of STRATA.entries()) {
+      for (let i = 0; i < 6; i++) {
+        const floor = k * 6 + i + 1;
+        const pool = abyssFloor(floor).pool.map((p) => p.enemy);
+        for (const n of st.floors[i].natives) expect(pool, `${floor} ${n}`).toContain(n);
+        for (const g of st.floors[i].guests) expect(ENEMY_BY_ID[g], g).toBeDefined();
+      }
     }
+    expect(abyssFloor(2).pool.find((p) => p.enemy === 'lurker')?.from).toBe(6);
+    expect(abyssFloor(3).pool.find((p) => p.enemy === 'lurker')?.from).toBe(1);
   });
 
-  it('a run goes floor to floor: the boss falls, the next floor starts deeper', () => {
+  it('a run goes floor to floor: the guardian falls, the next floor starts deeper', () => {
     const run = runIn(ABYSS_INDEX);
     expect(run.regionId).toBe(ABYSS_INDEX);
-    startWave(run, abyssFloor(1), FLOOR_WAVES);
+    startWave(run, abyssFloor(6), 6 * FLOOR_WAVES);
     const boss = run.enemies.find((e) => e.boss)!;
-    expect(boss.boss).toBe(floorBoss(1));
-    expect(run.boss!.wave).toBe(FLOOR_WAVES);
+    expect(boss.boss).toBe('deepwarden');
+    expect(run.boss!.wave).toBe(6 * FLOOR_WAVES);
     damageEnemy(run, boss, boss.maxHp * 10, false);
-    expect(run.floors).toBe(1);
-    expect(run.felled).toEqual([floorBoss(1)]);
-    for (let i = 0; i < 4 / SIM_DT && run.wave === FLOOR_WAVES; i++) step(run, SIM_DT);
-    expect(run.wave).toBe(FLOOR_WAVES + 1);
-    expect(run.enemies.every((e) => e.wave === FLOOR_WAVES || e.wave === FLOOR_WAVES + 1)).toBe(true);
+    expect(run.floors).toBe(6);
+    expect(run.felled).toEqual(['deepwarden']);
+    for (let i = 0; i < 4 / SIM_DT && run.wave === 6 * FLOOR_WAVES; i++) step(run, SIM_DT);
+    expect(run.wave).toBe(6 * FLOOR_WAVES + 1);
   });
 
-  it('a floor brings its own rule: the Mire floor sees less far', () => {
+  it('past the strata a floor brings its template’s rule: the Mire floor sees less far', () => {
     const run = runIn(ABYSS_INDEX);
-    const mireFloor = [1, 2, 3, 4, 5, 6].find((f) => floorTemplate(f).index === 2)!;
+    const mireFloor = [13, 14, 15, 16, 17, 18].find((f) => abyssFloor(f).rule?.name === regionByIndex(2).rule?.name)!;
     const range = run.stats.range;
     startWave(run, abyssFloor(mireFloor), (mireFloor - 1) * FLOOR_WAVES + 1);
     expect(run.stats.range).toBeLessThan(range);
@@ -367,11 +380,10 @@ describe('the Abyss (§9)', () => {
     const run = createRun(buildRunConfig(p), 1);
     expect(run.firstKill).toBe(false);
     run.floors = 3;
-    run.felled = [floorBoss(1), floorBoss(2), floorBoss(3)];
     run.wave = 34;
     run.outcome = { kind: 'fell', wave: 34, time: 900 };
     const s = bankRun(p, run);
-    expect(s.abyss).toEqual({ floor: 4, cleared: 3 });
+    expect(s.abyss).toEqual({ floor: 4, cleared: 3, start: 1 });
     expect(s.floorRecord?.starlight).toBe(abyssStarlight(3));
     expect(p.records.bestWave).toBe(0);
     expect(p.abyss.best).toBe(3);

@@ -10,8 +10,12 @@ import type { RunState } from '../sim/state';
 import { Camera, stageOval } from './camera';
 import { Effects } from './effects';
 import { FX, INK, RARITY, lighten, mix, setPaletteMode, withAlpha, type PaletteMode } from './palette';
-import { paintDark, paintGround, paintRim, type WorldBox } from './painters/arena';
-import { EnemyPainter } from './painters/enemies';
+import { paintDark, paintGates, paintGround, paintRim, type WorldBox } from './painters/arena';
+import { STRATUM_BY_ID, stratumTitle, type StratumDef } from '../content/strata';
+import { ruleLoad } from '../sim/strata';
+import { BALANCE } from '../content/balance';
+import type { StratumId } from '../content/types';
+import { EnemyPainter, type GuestLook } from './painters/enemies';
 import { paintProjectiles } from './painters/projectiles';
 import { paintArsenal, paintFires, paintRunes, paintStatus } from './painters/arsenal';
 import { paintAegis, paintBoss, paintCourt, paintFacets, paintPlates, paintPools, paintRings, paintShots } from './painters/bosses';
@@ -48,6 +52,8 @@ const ABYSS_DARK = INK['950'];
 /** The boss's edge marker (camera-and-fog §5.3): inset from the stage's edge, and its size, CSS px. */
 const MARKER_INSET = 26;
 const MARKER_SIZE = 11;
+/** Wall-clock seconds the gates take to slide round the rim between waves (plans/late-game/08 §3.1). */
+const GATE_SLIDE = 0.6;
 /** Final Form's beat (plans/late-game/07 §5.2): wall-clock seconds after the evolve spotlight. */
 const FORM_BEAT = 0.35;
 /** Seconds the crown grows in; under reduced motion, it fades in. */
@@ -92,6 +98,10 @@ export class Renderer {
   /** Wall-clock seconds since the tower fell; null while it stands. */
   private fallT: number | null = null;
   private banner: Banner | null = null;
+  /** The gates as drawn, sliding toward the sim's (plans/late-game/08): from, to, and how far along. */
+  private gates: { from: number[]; to: number[]; t: number } | null = null;
+  /** Each stratum's guests' look, built once. */
+  private readonly guests = new Map<StratumId, GuestLook>();
   /** Reduced motion (the OS's or the player's): the letterbox is the moving part, so it goes. */
   private reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   /** The settings' text size, for the banners and damage numbers. */
@@ -208,9 +218,51 @@ export class Renderer {
     this.effects.clear();
     this.fallT = null;
     this.banner = null;
+    this.gates = null;
     // A run resumed in its Final Form (a snapshot) wears the crown at once, with no ceremony.
     this.formBeat = null;
     this.formAt = run && run.form.wave !== null ? -Infinity : null;
+  }
+
+  /** A stratum's guests' look (plans/late-game/08 §2), or null outside the strata. */
+  private guestLook(s: StratumDef | null): GuestLook | null {
+    if (!s) return null;
+    let g = this.guests.get(s.id);
+    if (!g) {
+      g = { key: s.id, tint: s.tint, mix: BALANCE.strata.guestMix, natives: new Set(s.natives) };
+      this.guests.set(s.id, g);
+    }
+    return g;
+  }
+
+  /**
+   * The gates to draw now: the sim's, reached by sliding each arch the short
+   * way round over `GATE_SLIDE` s when they turn (at once under reduced motion,
+   * or when their number changes).
+   */
+  private slideGates(run: RunState, realDt: number): number[] {
+    const target = [...(ruleLoad(run).gates ?? [])];
+    const g = this.gates;
+    if (!g || g.to.length !== target.length || this.reducedMotion) {
+      this.gates = { from: target, to: target, t: 1 };
+      return target;
+    }
+    if (target.some((a, i) => Math.abs(a - g.to[i]) > 1e-6)) {
+      g.from = this.drawnGates(g);
+      g.to = target;
+      g.t = 0;
+    }
+    g.t = Math.min(1, g.t + realDt / GATE_SLIDE);
+    return this.drawnGates(g);
+  }
+
+  private drawnGates(g: { from: number[]; to: number[]; t: number }): number[] {
+    const k = g.t * g.t * (3 - 2 * g.t);
+    return g.to.map((b, i) => {
+      const a = g.from[i] ?? b;
+      const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+      return a + d * k;
+    });
   }
 
   private showBanner(title: string, line: string, tone: Banner['tone'], letterbox = false): void {
@@ -530,6 +582,20 @@ export class Renderer {
           this.effects.ring(ev.x, ev.y, 8, 110, withAlpha(CURSE_COLOR, 0.9), 0.6, 5);
           this.effects.spray(ev.x, ev.y, CURSE_COLOR, 16, 180, 3);
           break;
+        case 'stratumEnter': {
+          // A stratum's banner (plans/late-game/08 §3): its name, and its rule.
+          const s = STRATUM_BY_ID[ev.stratum];
+          if (s) this.showBanner(stratumTitle(s), s.rule.text, 'gold', !this.reducedMotion);
+          break;
+        }
+        case 'escape':
+          // Gone into the dark: a streak at the rim, and the ultimate's drain.
+          this.effects.spray(ev.x, ev.y, FX.mana, 10, 160, 3);
+          this.effects.ring(ev.x, ev.y, 30, 4, withAlpha(FX.mana, 0.7), 0.4, 4);
+          break;
+        case 'tide':
+          this.effects.ring(ev.x, ev.y, 20, ev.radius, withAlpha(FX.ember, 0.55), 0.6, 4);
+          break;
         case 'reliquaryFade':
           // It sinks: a small implosion.
           this.effects.ring(ev.x, ev.y, 40, 4, withAlpha(CURSE_COLOR, 0.5), 0.45, 3);
@@ -577,9 +643,10 @@ export class Renderer {
     ctx.fillStyle = INK['950'];
     ctx.fillRect(0, 0, view.pixelWidth, view.pixelHeight);
 
-    // An Abyss floor wears its template's ground, gone dark (§9).
+    // A stratum wears its own ground (plans/late-game/08); past the strata, a template's, gone dark (§9).
     const region = run ? runRegion(run) : regionByIndex(1);
-    const tint = region.abyss ? mix(region.tint ?? INK['800'], ABYSS_DARK, 0.55) : region.tint;
+    const stratum = region.abyss?.stratum ? STRATUM_BY_ID[region.abyss.stratum] ?? null : null;
+    const tint = stratum ? region.tint : region.abyss ? mix(region.tint ?? INK['800'], ABYSS_DARK, 0.55) : region.tint;
     this.camera.applyWorld(ctx);
     paintGround(ctx, light, oval, tint, px, this.palette);
     const additive = QUALITY[this.tier].additive;
@@ -591,7 +658,7 @@ export class Renderer {
       paintRunes(ctx, run.runes, run.time, this.clock);
       paintPools(ctx, run.pools, run.time, this.clock);
       const lord = BOSS_BY_ID[region.boss];
-      this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock, light, oval, { color: lord.color, border: lord.borderColor });
+      this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock, light, oval, { color: lord.color, border: lord.borderColor }, this.guestLook(stratum));
       paintStatus(ctx, run.enemies, alpha, run.time, this.clock);
       const b = run.boss;
       if (b && b.killedIn === null) {
@@ -620,7 +687,8 @@ export class Renderer {
     this.effects.drawWorld(ctx);
     // The dark over everything out there: bodies fade in as they walk out of it.
     paintDark(ctx, light, oval, box, this.palette, form && run && form.frame === 'lamplighter' ? SUNRISE_DARK : 1);
-    paintRim(ctx, light, oval, px);
+    paintRim(ctx, light, oval, px, stratum ? FX[stratum.rim] : FX.arcane);
+    if (run && stratum) paintGates(ctx, light, oval, px, this.slideGates(run, realDt), FX[stratum.rim], this.clock);
     // Reliquaries (plans/late-game/03): above the dark, so no floor's fog hides one.
     if (run && run.reliquaries.length > 0) {
       paintReliquaries(ctx, run.reliquaries, run.time, this.clock, { reducedMotion: this.reducedMotion, px });

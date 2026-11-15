@@ -6,7 +6,7 @@ import { Rng } from '../../core/rng';
 import { BOSS_BY_ID } from '../../content/bosses';
 import { phasesOf, staggerBoss } from './boss';
 import { damageEnemy, knockBack, targetable } from './combat';
-import { runRegion, waveHp } from './waves';
+import { runRegion, runWave, waveHp } from './waves';
 
 /**
  * The frame's ultimate (§4.4): charged by kills (see `kill`), fired on the
@@ -166,7 +166,7 @@ export function autoUltWanted(run: RunState): boolean {
       const r2 = run.stats.range * run.stats.range;
       let hp = 0;
       for (const e of run.enemies) if (targetable(run, e) && !e.court && e.x * e.x + e.y * e.y <= r2) hp += e.hp;
-      return hp >= rule.bodies * waveHp(runRegion(run), Math.max(1, run.wave));
+      return hp >= rule.bodies * waveHp(runRegion(run), runWave(run));
     }
     case 'crowd':
       return boss !== null || enemiesInRange(run) >= rule.crowd;

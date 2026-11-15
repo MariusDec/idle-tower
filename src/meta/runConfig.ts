@@ -8,7 +8,7 @@ import { isWeaponId } from '../sim/systems/draft';
 import { selectedTrial, trialEffects } from './trials';
 import { secretConfig, secretEffects } from './secrets';
 import {
-  act2Open, activeSets, bossDown, equippedRelics, inAbyss, inRush, pastRegions, relicRank, relicSlots, selectedFrame, selectedRegion, wornCursed,
+  abyssStart, act2Open, activeSets, bossDown, equippedRelics, inAbyss, inRush, pastRegions, relicRank, relicSlots, selectedFrame, selectedRegion, wornCursed,
 } from './collection';
 import { cursedTable, isCursed } from '../content/cursed';
 import { WEAPON_BY_ID } from '../content/weapons';
@@ -140,6 +140,8 @@ export function buildRunConfig(profile: Profile): RunConfig {
   return Object.freeze({
     frameId: frame.id,
     regionId: region.index,
+    // A waypoint (plans/late-game/08 §4.4): the descent starts at a stratum's foot.
+    ...(abyss && abyssStart(profile) > 1 ? { startFloor: abyssStart(profile) } : {}),
     startingWeapon: first,
     trial: trial?.id ?? null,
     mods: Object.freeze(mods),
@@ -191,8 +193,8 @@ export function anomalyConfig(profile: Profile, trial: boolean): AnomalyConfig |
 }
 
 /**
- * Reliquaries (plans/late-game/03 §3.1): the Abyss only. Until plan 08's
- * strata ship every floor is the Gate's, so only the Deepwarden leaves one.
+ * Reliquaries (plans/late-game/03 §3.1): the Abyss only. Only the Gate's
+ * cursed relics ship so far, so only the Deepwarden leaves one.
  * A relic leaning on a weapon missing from the pool never drops.
  */
 export function reliquaryConfig(profile: Profile, pool: readonly CardItemId[]): ReliquaryConfig {

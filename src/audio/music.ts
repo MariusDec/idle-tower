@@ -1,10 +1,13 @@
 import type { Synth } from './synth';
+import type { StratumTone } from '../content/strata';
 
 /**
  * The music (§10.4): no tracks, a slow generative pad on the synth's music
  * bus. Three moods, each a short chord loop in a minor key: the hub drifts,
  * a run walks, a boss fight churns over a pulsing bass. Each region shifts
- * the key, so the Glass Wastes do not sound like the Ashen Fields.
+ * the key, so the Glass Wastes do not sound like the Ashen Fields. A
+ * stratum of the Abyss (plans/late-game/08) brings its own tone: its key,
+ * its run loop, and a drone, a bell or a pulse under it.
  *
  * A wall-clock timer schedules each chord a little ahead on the audio
  * clock. Nothing is scheduled while the music could not be heard, so a
@@ -58,6 +61,8 @@ export class Music {
   private ducked = false;
   /** Final Form (plans/late-game/07): a high voice over each run chord until the run ends. */
   private formed = false;
+  /** A stratum's tone (plans/late-game/08), or null for the region's. */
+  private tone: StratumTone | null = null;
 
   constructor(private readonly synth: Synth) {}
 
@@ -76,11 +81,26 @@ export class Music {
     this.formed = on;
   }
 
-  /** The mood and region to play; a change lands on the next chord. */
-  set(mood: Mood, region: number): void {
-    if (mood !== this.mood) this.step = 0;
+  /** The mood and region to play, and a stratum's tone over them; a change lands on the next chord. */
+  set(mood: Mood, region: number, tone: StratumTone | null = null): void {
+    if (mood !== this.mood || tone !== this.tone) this.step = 0;
     this.mood = mood;
-    this.shift = REGION_SHIFT[region] ?? REGION_SHIFT[REGION_SHIFT.length - 1];
+    this.tone = tone;
+    this.shift = tone ? tone.shift : REGION_SHIFT[region] ?? REGION_SHIFT[REGION_SHIFT.length - 1];
+  }
+
+  /** The mood as played now: a stratum's tone recasts the run's loop; a boss keeps its churn, in the stratum's key. */
+  private def(): MoodDef {
+    const base = MOODS[this.mood];
+    const t = this.tone;
+    if (!t || this.mood !== 'run') return base;
+    return {
+      ...base,
+      loop: t.loop ?? base.loop,
+      chord: t.chord ?? base.chord,
+      cutoff: t.cutoff ?? base.cutoff,
+      pulse: t.pulse ?? base.pulse,
+    };
   }
 
   private tick(): void {
@@ -101,16 +121,17 @@ export class Music {
     const now = ctx.currentTime;
     if (this.next < now) this.next = now + 0.05;
     while (this.next < now + LOOKAHEAD) {
+      const len = this.def().chord;
       this.chord(ctx, this.next);
-      this.next += MOODS[this.mood].chord;
+      this.next += len;
     }
   }
 
   /** One chord at `t0`: soft triangle voices that swell and fade into the next. */
   private chord(ctx: AudioContext, t0: number): void {
-    const def = MOODS[this.mood];
+    const def = this.def();
     const notes = def.loop[this.step % def.loop.length];
-    this.step++;
+    const step = this.step++;
     this.filter!.frequency.setTargetAtTime(def.cutoff, t0, 0.5);
     const end = t0 + def.chord * 1.35;
     for (const [i, n] of [...notes, notes[0] - 12].entries()) {
@@ -142,6 +163,35 @@ export class Music {
       g.connect(this.filter!);
       osc.start(t0);
       osc.stop(end + 0.05);
+    }
+    const tone = this.mood === 'hub' ? null : this.tone;
+    if (tone?.drone) {
+      // A low root, sustained under the floor: two octaves down, overlapping the next.
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = hz(this.shift - 24);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(def.level * 1.4, t0 + def.chord * 0.3);
+      g.gain.linearRampToValueAtTime(0, end);
+      osc.connect(g);
+      g.connect(this.filter!);
+      osc.start(t0);
+      osc.stop(end + 0.05);
+    }
+    if (tone?.bell && this.mood === 'run' && step % 2 === 0) {
+      // The gate's bell: a sine a tenth over the octave, struck and let ring.
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = hz(notes[0] + 19 + this.shift);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(def.level * 1.6, t0 + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.4);
+      osc.connect(g);
+      g.connect(this.filter!);
+      osc.start(t0);
+      osc.stop(t0 + 2.5);
     }
     if (def.pulse > 0) {
       for (let t = t0; t < t0 + def.chord - 1e-6; t += def.pulse) {

@@ -17,6 +17,7 @@ export type ExplainerId =
   | 'map'
   | 'trials'
   | 'abyss'
+  | 'waypoints'
   | 'rush'
   | 'bestiary'
   | 'relics'
@@ -83,8 +84,15 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
   {
     id: 'abyss', view: 'map', title: 'The Abyss',
     lines: [
-      'An endless descent, floor after floor of ten waves, with a boss closing each. There is no end, only how deep you get.',
-      'A new deepest floor pays Starlight. Pacts don’t apply here.',
+      'The Abyss falls in strata of six floors, each with its own rule, natives and guardian. Floors are ten waves; a Keeper ends each, and the guardian the sixth.',
+      'A new deepest floor pays Starlight, and a guardian’s first fall pays more. Pacts don’t apply.',
+    ],
+  },
+  {
+    id: 'waypoints', view: 'map', title: 'Waypoints',
+    lines: [
+      'A fallen guardian opens its stratum’s foot. Start your next descent there, with the tower already grown.',
+      'Records and Starlight count from the floor you reach, wherever you started.',
     ],
   },
   {

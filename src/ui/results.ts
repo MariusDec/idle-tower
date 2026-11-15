@@ -246,8 +246,8 @@ export class ResultsScreen {
       this.bossLine.classList.toggle('is-first', s.rushRecord !== null);
     } else if (s.abyss) {
       const n = s.abyss.cleared;
-      this.bossLine.textContent = n > 0 ? `${n} floor${n === 1 ? '' : 's'} of the Abyss cleared.` : 'The first floor holds.';
-      this.bossLine.classList.toggle('is-first', s.floorRecord !== null);
+      this.bossLine.textContent = n >= s.abyss.start ? `Down to floor ${n} of the Abyss.` : `Floor ${s.abyss.start} holds.`;
+      this.bossLine.classList.toggle('is-first', s.floorRecord !== null || s.stratumRecord !== null);
     } else if (b) {
       const name = BOSS_BY_ID[b.id].name;
       this.bossLine.textContent = b.killedIn === null
@@ -272,6 +272,12 @@ export class ResultsScreen {
     }
     if (s.floorRecord) {
       starlight.push(reward('round-star', `Deepest floor ${s.floorRecord.now} · +${formatNumber(s.floorRecord.starlight)} Starlight`, 'unlock'));
+    }
+    // A stratum's guardian, felled for the first time (plans/late-game/08): its lump, and its waypoint.
+    if (s.stratumRecord) {
+      const names = s.stratumRecord.felled.map((id) => BOSS_BY_ID[id].name).join(', ');
+      starlight.push(reward('round-star', `${names} fell · +${formatNumber(s.stratumRecord.starlight)} Starlight`, 'unlock'));
+      starlight.push(reward('star-gate', 'A waypoint opens on the Map', 'unlock'));
     }
     if (s.rushRecord) {
       const now = s.rushRecord.now;

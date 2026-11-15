@@ -1,3 +1,4 @@
+import type { RimColor } from '../content/types';
 /**
  * The single source of truth for every colour that both the canvas renderer and
  * the DOM need to agree on.
@@ -24,16 +25,11 @@
  * - hot scarlet → the tower in peril, and nothing else (see `critical`)
  */
 
-/** Semantic effect colours shared by the canvas and the DOM. */
-export type FxColorName =
-  | 'gold'
-  | 'ember'
-  | 'mana'
-  | 'arcane'
-  | 'blood'
-  | 'frost'
-  | 'nature'
-  | 'critical';
+/**
+ * Semantic effect colours shared by the canvas and the DOM. Content names
+ * them too (a stratum's rim, plans/late-game/08), so the union lives there.
+ */
+export type FxColorName = RimColor;
 
 /**
  * `--fx-*`. Every entry has a matching custom property in `tokens.css`.

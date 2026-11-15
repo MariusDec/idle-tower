@@ -1,4 +1,6 @@
 import { abyssStarlight } from '../content/abyss';
+import { STRATA, guardianStratum } from '../content/strata';
+import type { BossId } from '../content/types';
 import { RUSH_STAGES, rushStarlight } from '../content/rush';
 import { BALANCE } from '../content/balance';
 import { heatShardMult } from '../sim/pacts';
@@ -92,6 +94,32 @@ export function recordFloor(profile: Profile, floors: number): StarRecord | null
   const starlight = payStarlight(profile, abyssStarlight(floors) - abyssStarlight(old));
   profile.abyss.best = floors;
   return { old, now: floors, starlight };
+}
+
+/** The strata's guardians a run felled for the first time (plans/late-game/08), and what their lumps paid. */
+export interface StratumRecord {
+  felled: BossId[];
+  starlight: number;
+}
+
+/**
+ * A run in the Abyss felled `felled`, in order: each guardian that is the
+ * next of the strata to fall (`profile.abyss.felled`) opens its foot as a
+ * waypoint and pays its stratum's lump, once. A guardian met again, or past
+ * the strata, pays nothing here.
+ */
+export function recordStratum(profile: Profile, felled: readonly BossId[]): StratumRecord | null {
+  const lump = BALANCE.strata.starlight.lump;
+  const out: BossId[] = [];
+  let paid = 0;
+  for (const id of felled) {
+    const k = guardianStratum(id);
+    if (k < 0 || k !== profile.abyss.felled || k >= STRATA.length) continue;
+    profile.abyss.felled = k + 1;
+    paid += payStarlight(profile, lump[k] ?? 0);
+    out.push(id);
+  }
+  return out.length > 0 ? { felled: out, starlight: paid } : null;
 }
 
 /** A Boss Rush record (N8): stages cleared, the full clear's time, and the Starlight the record paid. */

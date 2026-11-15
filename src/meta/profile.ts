@@ -9,7 +9,7 @@ import type { TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 21;
+  version: 22;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -117,8 +117,13 @@ export interface Profile {
     /** The highest heat each region's boss has fallen at, by region index: the records Starlight pays for. */
     best: Record<string, number>;
   };
-  /** The Abyss (§9): the deepest floor whose boss has fallen. */
-  abyss: { best: number };
+  /**
+   * The Abyss (§9): `best`, the deepest floor cleared (what Starlight was
+   * paid against); `felled`, the strata's guardians felled in order
+   * (plans/late-game/08 §4.4), whose feet open as waypoints; `start`, the
+   * waypoint floor the next descent begins at.
+   */
+  abyss: { best: number; felled: number; start: number };
   /** Boss Rush (N8): the most stages cleared in one run, and the fastest full clear in sim seconds. */
   rush: { best: number; time: number | null };
   /** Fusions found (N9), by id, in the order found: the Recipe Book's second page. */
@@ -177,7 +182,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 21;
+export const PROFILE_VERSION = 22;
 
 /** One rift's journal entry (plans/late-game/02 §5). */
 export interface RiftRecord {
@@ -239,7 +244,7 @@ export function newProfile(now: number): Profile {
     starlight: 0,
     stars: {},
     pacts: { ranks: {}, best: {} },
-    abyss: { best: 0 },
+    abyss: { best: 0, felled: 0, start: 1 },
     rush: { best: 0, time: null },
     fusions: [],
     wishlist: [],

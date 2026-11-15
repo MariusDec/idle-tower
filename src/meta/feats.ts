@@ -15,7 +15,7 @@ import { payStarlight, starsLit } from './stars';
 
 /** A region's enemy types, or the Abyss's own four (§9). */
 function poolOf(region: number): string[] {
-  return region === ABYSS_INDEX ? NATIVES.map((n) => n.enemy) : regionByIndex(region).pool.map((p) => p.enemy);
+  return region === ABYSS_INDEX ? [...NATIVES] : regionByIndex(region).pool.map((p) => p.enemy);
 }
 
 /** The heat each region's boss has fallen at, at worst: what "every region" feats read. */

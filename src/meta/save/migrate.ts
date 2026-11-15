@@ -100,6 +100,10 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   19: (raw) => ({ ...raw, version: 20, secrets: { found: {}, heard: [], tally: {}, sighted: [] } }),
   // v21: Final Forms (plans/late-game/07): none reached.
   20: (raw) => ({ ...raw, version: 21, forms: {} }),
+  // v22: the Abyss's strata (plans/late-game/08). `best` stays (Starlight was
+  // paid against it, so no floor pays twice); the guardians' fights are new,
+  // so none counts as felled, and every descent starts at the top.
+  21: (raw) => ({ ...raw, version: 22, abyss: { ...(raw.abyss as object), felled: 0, start: 1 } }),
 };
 
 export class MigrationError extends Error {}

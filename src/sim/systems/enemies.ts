@@ -5,8 +5,10 @@ import { AURA_BY_ID, ENEMIES, ENEMY_BY_ID } from '../../content/enemies';
 import { BOSS_BY_ID } from '../../content/bosses';
 import type { EnemyVerb } from '../../content/types';
 import type { Enemy, RunState } from '../state';
+import { inLight } from '../../content/arena';
 import { hurtTower } from './tower';
 import { runRegion, spawnEnemy } from './waves';
+import { ruleLoad, turnable } from '../strata';
 
 /**
  * Rebuilt from scratch every step, so it carries nothing between steps and
@@ -39,6 +41,7 @@ function stopDistance(run: RunState, e: Enemy): number {
     case 'summon':
     case 'silence':
     case 'ward':
+    case 'tide':
       return Math.max(wall, verb.standoff);
     default:
       return wall;
@@ -133,7 +136,12 @@ export function tickEnemies(run: RunState, dt: number): void {
     // A submerged boss holds still; a phased or buried body walks on.
     if (e.boss && isHidden(run, e)) continue;
     const verb = e.boss || e.court ? null : ENEMY_BY_ID[e.type].verb;
-    if (verb) before(run, e, verb, dt);
+    if (verb && e.heading > 0) before(run, e, verb, dt);
+    // Walking out (plans/late-game/08): a fleeing Lurker, an inverted body, one a Tidecaller turned.
+    if (e.heading < 0) {
+      walkOut(run, e, verb, dt);
+      continue;
+    }
 
     const d = Math.hypot(e.x, e.y);
     const stop = stopDistance(run, e);
@@ -171,8 +179,8 @@ export function tickEnemies(run: RunState, dt: number): void {
       silence(run, e, verb, dt);
       continue;
     }
-    // A Wardstone stands off and wards; it never touches the wall.
-    if (verb?.kind === 'ward') continue;
+    // A Wardstone stands off and wards, a Tidecaller turns the tide; neither touches the wall.
+    if (verb?.kind === 'ward' || verb?.kind === 'tide') continue;
     if (e.court) continue;
     if (e.boss && !run.boss?.enraged) continue;
     // Phased out, it can't touch the wall either.
@@ -234,6 +242,16 @@ function before(run: RunState, e: Enemy, verb: EnemyVerb, dt: number): void {
       run.events.push({ kind: 'blink', x: fx, y: fy, tx: e.x, ty: e.y });
       return;
     }
+    case 'retreat':
+      // A Lurker (plans/late-game/08): hurt past `below`, it turns for the dark, once.
+      if (!e.fled && e.hp < e.maxHp * verb.below) {
+        e.heading = -1;
+        e.inContact = false;
+      }
+      return;
+    case 'tide':
+      tide(run, e, verb, dt);
+      return;
     case 'charge': {
       // Slowed, it winds up more slowly and charges less far: frost and knockback answer it (§9).
       const slow = e.slowUntil > run.time ? 1 - e.slow : 1;
@@ -264,6 +282,56 @@ function before(run: RunState, e: Enemy, verb: EnemyVerb, dt: number): void {
       return exhaustive;
     }
   }
+}
+
+/**
+ * A body walking out (plans/late-game/08 §4.2, §5.1): straight away from the
+ * tower, slowed by frost like any walk. Fully dark, a Lurker that has not
+ * yet fled heals whole and turns back; anything else escapes.
+ */
+function walkOut(run: RunState, e: Enemy, verb: EnemyVerb | null, dt: number): void {
+  e.inContact = false;
+  const d = Math.hypot(e.x, e.y) || 1;
+  const slow = e.slowUntil > run.time ? 1 - e.slow : 1;
+  const pace = verb?.kind === 'retreat' ? verb.pace : 1;
+  const len = e.speed * e.buffSpeed * e.fury * slow * pace * dt;
+  e.x += (e.x / d) * len;
+  e.y += (e.y / d) * len;
+  e.moving = len > 0;
+  if (inLight(e.x, e.y, e.radius, run.stats.light, run.arena)) return;
+  if (verb?.kind === 'retreat' && !e.fled) {
+    e.hp = e.maxHp;
+    e.heading = 1;
+    e.fled = true;
+    return;
+  }
+  escape(run, e);
+}
+
+/** A body got away into the dark: gone, with no kill and no pay, and the ultimate drained. */
+function escape(run: RunState, e: Enemy): void {
+  e.alive = false;
+  if (run.current && e.wave === run.current.n) run.current.alive--;
+  const drain = ruleLoad(run).inversion?.drain ?? BALANCE.strata.inversion.drain;
+  run.ult.charge = Math.max(0, run.ult.charge - drain);
+  run.events.push({ kind: 'escape', x: e.x, y: e.y });
+}
+
+/** A Tidecaller's turn (plans/late-game/08 §5.2): every walking body near it heads the other way. */
+function tide(run: RunState, e: Enemy, verb: Extract<EnemyVerb, { kind: 'tide' }>, dt: number): void {
+  e.actTimer -= dt;
+  if (e.actTimer > 0) return;
+  e.actTimer += verb.interval;
+  const r2 = verb.radius * verb.radius;
+  let turned = false;
+  for (const o of run.enemies) {
+    if (o === e || !turnable(o) || isHidden(run, o)) continue;
+    if ((o.x - e.x) ** 2 + (o.y - e.y) ** 2 > r2) continue;
+    o.heading = -o.heading;
+    o.inContact = false;
+    turned = true;
+  }
+  if (turned) run.events.push({ kind: 'tide', x: e.x, y: e.y, radius: verb.radius });
 }
 
 /** A Summoner at its post calls its servants beside it, while the field has room. */

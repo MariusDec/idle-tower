@@ -22,6 +22,8 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
       return REGIONS.some((r) => trialsOpen(profile, r.index));
     case 'abyss':
       return act2Open(profile);
+    case 'waypoints':
+      return profile.abyss.felled >= 1;
     case 'rush':
       return rushOpen(profile);
     case 'bestiary':

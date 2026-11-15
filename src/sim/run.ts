@@ -3,6 +3,8 @@ import { BALANCE } from '../content/balance';
 import { PHONE_OVAL } from '../content/arena';
 import { frameById } from '../content/frames';
 import { isRush } from '../content/rush';
+import { ABYSS_INDEX, floorStart } from '../content/abyss';
+import { waypointLevel } from '../content/strata';
 import { WEAPON_BY_ID } from '../content/weapons';
 import type { BehaviourId, EnemyId, RegionDef, WeaponId } from '../content/types';
 import type { AnomalyPlan, RunConfig, RunInput, RunState, WeaponState } from './state';
@@ -60,7 +62,10 @@ function rollAnomaly(rng: Rng, chance: number): AnomalyPlan {
 export function createRun(config: RunConfig, seed: number): RunState {
   const root = new Rng(seed);
   const frame = frameById(config.frameId);
-  const region = regionAt(config.regionId, 1);
+  // A waypoint (plans/late-game/08 §4.4): an Abyss run may start at a stratum's foot.
+  const startFloor = config.regionId === ABYSS_INDEX ? Math.max(1, Math.floor(config.startFloor ?? 1)) : 1;
+  const startWave = floorStart(startFloor);
+  const region = regionAt(config.regionId, startWave);
   // The pacts' tolls (§9) sit with the Forge's; the rule's share is kept
   // apart, so an Abyss floor can swap its rule for the next one's.
   const load = pactLoad(config.pacts);
@@ -70,8 +75,9 @@ export function createRun(config: RunConfig, seed: number): RunState {
   const owned = (id: BehaviourId): number => config.behaviours[id] ?? 0;
   const B = BALANCE.behaviours;
   // Head Start and Gatekeeper's Seal: the levels are real, so each banks its draft at once.
-  // Boss Rush (N8) has no waves to grow on: the tower starts high.
-  const rush = isRush(config.regionId) ? BALANCE.rush.level : 1;
+  // Boss Rush (N8) has no waves to grow on: the tower starts high. So does a
+  // run from a waypoint, at the level a descent from the top reaches there.
+  const rush = isRush(config.regionId) ? BALANCE.rush.level : startFloor > 1 ? waypointLevel(startFloor) : 1;
   const level = Math.max(rush, 1 + B.headStart * owned('head-start') + owned('extra-level'));
   const startLevel = Math.min(BALANCE.maxLevel, 1 + B.openingSalvo * owned('opening-salvo'));
   // A Trial (N5) may mount another weapon than the frame's.
@@ -123,7 +129,8 @@ export function createRun(config: RunConfig, seed: number): RunState {
     relicDrops: config.relicDrops,
     boss: null,
     felled: [],
-    floors: 0,
+    floors: startFloor - 1,
+    startWave,
     pacts: { ...config.pacts },
     abyssRelics: [...config.abyssRelics],
     runes: [],
@@ -171,6 +178,8 @@ export function createRun(config: RunConfig, seed: number): RunState {
       curse: root.split('curse').state,
       // Anomalies (plans/late-game/04): the roll, the wait and the weapon, on their own stream.
       anomaly: anomalyStream.state,
+      // The strata (plans/late-game/08): which bodies the Inversion turns, on their own stream.
+      strata: root.split('strata').state,
     },
     riftCfg: config.rifts ?? null,
     rift: null,

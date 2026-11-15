@@ -127,16 +127,55 @@ export function paintDark(ctx: CanvasRenderingContext2D, light: number, oval: Ov
 /**
  * The rim of the light, where the Blight begins: a thin violet line with a
  * soft glow either side, its widths in CSS pixels (`px` world units each).
+ * A stratum of the Abyss wears its own colour (plans/late-game/08).
  */
-export function paintRim(ctx: CanvasRenderingContext2D, light: number, oval: Oval, px: number): void {
+export function paintRim(ctx: CanvasRenderingContext2D, light: number, oval: Oval, px: number, color: string = FX.arcane): void {
   const rim = rimAxes(light, oval);
   ctx.save();
   ctx.beginPath();
   ctx.ellipse(0, 0, rim.x, rim.y, 0, 0, Math.PI * 2);
   for (const [width, alpha] of [[14, 0.035], [7, 0.07], [3, 0.14], [1.25, 0.42]] as const) {
     ctx.lineWidth = width * px;
-    ctx.strokeStyle = withAlpha(FX.arcane, alpha);
+    ctx.strokeStyle = withAlpha(color, alpha);
     ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** How wide a gate's arch is on the rim, radians (plans/late-game/08 §3.1). */
+export const GATE_WIDTH = 0.4;
+
+/**
+ * The Gates (plans/late-game/08): a glowing arch on the rim at each angle,
+ * `GATE_WIDTH` wide, in the stratum's rim colour. Angles are on the circle
+ * the rim is stretched from, so an arch sits where its bodies walk in.
+ */
+export function paintGates(ctx: CanvasRenderingContext2D, light: number, oval: Oval, px: number, angles: readonly number[], color: string, time: number): void {
+  if (angles.length === 0) return;
+  const rim = rimAxes(light, oval);
+  ctx.save();
+  ctx.lineCap = 'round';
+  const glow = 0.75 + 0.25 * Math.sin(time * 2.2);
+  for (const a of angles) {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rim.x, rim.y, 0, a - GATE_WIDTH / 2, a + GATE_WIDTH / 2);
+    for (const [width, alpha] of [[22, 0.08], [12, 0.18], [5, 0.45], [2, 0.95]] as const) {
+      ctx.lineWidth = width * px;
+      ctx.strokeStyle = withAlpha(color, alpha * glow);
+      ctx.stroke();
+    }
+    // The arch's posts: two short ticks pointing in, so it reads as a doorway.
+    for (const side of [-1, 1]) {
+      const b = a + (side * GATE_WIDTH) / 2;
+      const x = Math.cos(b);
+      const y = Math.sin(b);
+      ctx.beginPath();
+      ctx.moveTo(x * rim.x, y * rim.y);
+      ctx.lineTo(x * (rim.x - 18 * px * 4), y * (rim.y - 18 * px * 4));
+      ctx.lineWidth = 3 * px;
+      ctx.strokeStyle = withAlpha(color, 0.7 * glow);
+      ctx.stroke();
+    }
   }
   ctx.restore();
 }

@@ -1,4 +1,5 @@
 import { abyssFloor } from './abyss';
+import { stratumHome } from './strata';
 import { BALANCE } from './balance';
 import { BOSS_BY_ID } from './bosses';
 import { REGIONS } from './regions';
@@ -32,8 +33,11 @@ export const RUSH_STAGES = RUSH_BOSSES.length;
 function homeOf(boss: BossId): RegionDef {
   const own = REGIONS.find((r) => r.boss === boss);
   if (own) return own;
-  // An Abyss boss holds every fifth floor in turn: the first it holds.
-  for (let f = 5; ; f += 5) if (abyssFloor(f).boss === boss) return abyssFloor(f);
+  // A stratum's guardian: the floor it guards (plans/late-game/08).
+  const guard = stratumHome(boss);
+  if (guard !== null) return abyssFloor(guard);
+  // One no stratum holds yet: the first fifth floor past the strata it holds.
+  for (let f = 5; ; f += 5) if (abyssFloor(f).boss === boss && !abyssFloor(f).abyss?.stratum) return abyssFloor(f);
 }
 
 const STAGES = new Map<number, RegionDef>();

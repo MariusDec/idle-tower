@@ -40,7 +40,8 @@ Act 2's currency (the third and last, §8.1). It comes from four places
 | Source | Pays |
 |---|---|
 | A region's boss felled at a new heat record | `1 + floor(h / 5)` for each heat level h the record passes, once, the same in every region (D-8: the hard part is the high heat, not the late region) (`heatStarlight`, `recordHeat`) |
-| A new deepest Abyss floor | 2 for each floor it passes, and 10 more for each guardian's (every fifth) (`abyssStarlight`, `recordFloor`) |
+| A new deepest Abyss floor | 2 for each floor it passes down to floor 30, 1 past it (`abyssStarlight`, `recordFloor`) |
+| A stratum's guardian, first felled in order | its stratum's lump: 20, 25, 30, 35, 60 (`BALANCE.strata.starlight.lump`, `recordStratum`) |
 | A Boss Rush record | 4 for each stage first cleared, and a full clear's time on a curve (`rushStarlight`, `recordRush`) |
 | Act 2's feats | 5–40 each, on top of their shards, when claimed |
 
@@ -78,15 +79,30 @@ wiped (D5) ([forge.md](forge.md)).
 
 Region index 7: the only endless mode, and the only place big numbers live.
 
-- Each **floor** is ten waves on one region's template (its enemies and
-  rule) with the Abyss's four natives (Husk, Ram, Wardstone, Maw) mixed in.
-  Its tenth wave is a boss: the template region's, or every fifth floor one
-  of the Abyss's own two (the Deepwarden, the Hunger).
+- **Strata** ([plans/late-game/08](../plans/late-game/08-abyss-strata.md),
+  `content/strata.ts`): six floors each, with its own rule, natives, two
+  Act 1 guests a floor, ground, rim and music. Built: I, **the Gate**
+  (floors 1–6; *Gates*: waves come only through the floor's gates; the
+  Lurker; the Deepwarden) and II, **the Inversion** (7–12; some walkers
+  start at the wall and walk out, and one that escapes drains the
+  ultimate; the Tidecaller; the Undertow). The rules fold in
+  `sim/strata.ts#ruleLoad`, with a guardian phase's `rule` pattern.
+- Each **floor** is ten waves. Floors 1–5 of a stratum end on a **Keeper**:
+  a Champion of a native whose wave holds the next floor until it falls,
+  or 45 s after its spawns (`BALANCE.strata.keeper`). Floor 6 ends on the
+  stratum's guardian at `bossHp` × its last wave's HP.
+- **Past the strata** (floor 13 on, until III–V are built) the old cycle
+  holds behind a shim: an Act 1 region's template and rule, the old four
+  natives, a boss every floor (× 0.35) and the Deepwarden or the Hunger
+  every fifth (× 0.25).
 - **Depth sets the size.** Wave numbers run on across floors (floor 3's
-  first wave is wave 21); HP, damage and shards grow per global wave with
-  no cap, counts and elites by the floor's own wave. A floor's boss is its
-  last wave's HP × `def.hp` × 0.35; a guardian's (every fifth floor) × 0.25
-  (S7.5: the Deepwarden was a wall at floor 5).
+  first wave is wave 21); damage and shards grow per global wave. HP runs
+  on each stratum's own curve (`strataCurve`: 1.08, then 1.07 a wave),
+  each starting a step on from the last stratum's last wave, so a boundary
+  has no cliff; the shim continues on `BALANCE.abyss.hpGrowth`.
+- **Waypoints.** A guardian's first fall in order (`profile.abyss.felled`)
+  opens the floor below it; the Map's shaft offers Start here, and the run
+  begins there at `BALANCE.strata.waypoint.level` with its drafts banked.
 - A new floor re-resolves the run's stats with its rule (`enterFloor`).
 - No overtime: the descent goes on until the tower falls.
 - `core/format.ts#formatNumber` writes big numbers with suffixes up to

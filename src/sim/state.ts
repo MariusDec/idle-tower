@@ -1,6 +1,7 @@
 import type { RngState } from '../core/rng';
 import type { Oval } from '../content/arena';
 import type {
+  StratumId,
   AnomalyId, AuraId, FrameId, BehaviourId, BossId, SecretId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, RiftEffect, RiftId,
   StatMod, WeaponId,
 } from '../content/types';
@@ -64,6 +65,11 @@ export interface RunConfig {
    * anything else is offered. Null: nothing is ruled out.
    */
   readonly never: readonly CardItemId[] | null;
+  /**
+   * The Abyss floor the run starts on (plans/late-game/08 §4.4): a waypoint,
+   * with the tower already grown. Absent: floor 1.
+   */
+  readonly startFloor?: number;
   /** The pacts this run is under (§9), by rank; absent is 0. Always empty in the Abyss. */
   readonly pacts: Readonly<Partial<Record<PactId, number>>>;
   /** What the Abyss's elites may drop (§9): the relics of the lit sets. */
@@ -339,6 +345,16 @@ export interface Enemy {
   feeds: number;
   /** Seconds until a Wraith elite next phases out (N3). */
   auraTimer: number;
+  /**
+   * 1 walking in, −1 walking out (plans/late-game/08): a fleeing Lurker, an
+   * inverted body, or one a Tidecaller turned. Out in the dark, a Lurker
+   * heals and turns back; anything else escapes.
+   */
+  heading: number;
+  /** A Lurker that has fled once: it never flees again. */
+  fled: boolean;
+  /** A stratum's Keeper (plans/late-game/08 §4.3): its floor's tenth wave holds for it. */
+  keeper: boolean;
 }
 
 export interface Projectile {
@@ -580,8 +596,8 @@ export interface SpawnEntry {
   at: number;
   enemy: EnemyId;
   angle: number;
-  /** An elite (§4.3), with its aura, or null for a plain elite; a Champion (N4) is one too. Absent for a plain body. */
-  elite?: { aura: AuraId | null; champion?: boolean };
+  /** An elite (§4.3), with its aura, or null for a plain elite; a Champion (N4) is one too, and a Keeper one of those. Absent for a plain body. */
+  elite?: { aura: AuraId | null; champion?: boolean; keeper?: boolean };
 }
 
 export interface WaveState {
@@ -646,7 +662,8 @@ export type SimEvent =
   | { kind: 'mend'; x: number; y: number; radius: number }
   /** A Splitter, or a Split elite, came apart. */
   | { kind: 'split'; x: number; y: number; n: number }
-  | { kind: 'eliteSpawn'; x: number; y: number; aura: AuraId | null; champion: boolean }
+  /** An elite walked in; a Keeper (plans/late-game/08) names the floor it keeps. */
+  | { kind: 'eliteSpawn'; x: number; y: number; aura: AuraId | null; champion: boolean; keeper?: number }
   | { kind: 'eliteKill'; x: number; y: number }
   /** A Vengeful elite's death enraged its neighbours. */
   | { kind: 'fury'; x: number; y: number; radius: number }
@@ -715,6 +732,12 @@ export type SimEvent =
   | { kind: 'feed'; x: number; y: number }
   /** A floor of the Abyss was cleared (§9). */
   | { kind: 'floor'; floor: number }
+  /** A run entered a stratum of the Abyss (plans/late-game/08): its banner. */
+  | { kind: 'stratumEnter'; stratum: StratumId; floor: number }
+  /** A body walked out into the dark and got away (the Inversion): no kill, no pay, the ultimate drained. */
+  | { kind: 'escape'; x: number; y: number }
+  /** A Tidecaller turned the bodies round it. */
+  | { kind: 'tide'; x: number; y: number; radius: number }
   /** A rift opened, shut untouched, or was taken (choice null: left). */
   | { kind: 'riftAppear'; id: RiftId; x: number; y: number }
   | { kind: 'riftShut'; id: RiftId; x: number; y: number }
@@ -776,8 +799,13 @@ export interface RunState {
   boss: BossState | null;
   /** Bosses felled this run, in order: one in a region, a floor's each in the Abyss. */
   felled: BossId[];
-  /** Floors of the Abyss cleared this run (§9); 0 in a region. */
+  /**
+   * The deepest Abyss floor cleared (§9): a run started at a waypoint
+   * (plans/late-game/08 §4.4) begins at the floor above it. 0 in a region.
+   */
   floors: number;
+  /** The run's first wave: 1, or a waypoint floor's first. */
+  startWave: number;
   /** The pacts this run is under (from the config). */
   pacts: Partial<Record<PactId, number>>;
   /** What the Abyss's elites may drop (from the config). */

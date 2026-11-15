@@ -47,6 +47,8 @@ const PROFILE: Record<BossId, (a: number, t: number) => number> = {
     const off = Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));
     return off < open ? 0.55 + 0.45 * (off / open) : 1 + 0.04 * Math.sin(a * 12);
   },
+  // The Undertow: three crests that roll round it, a sea that never settles.
+  undertow: (a, t) => 1 + 0.1 * Math.max(0, Math.sin(a * 3 - t * 1.6)) - 0.04 * Math.sin(a * 6 + t),
 };
 
 function traceBoss(ctx: CanvasRenderingContext2D, id: BossId, r: number, t: number): void {
@@ -198,6 +200,28 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
         ctx.closePath();
         ctx.fill();
       }
+      break;
+    }
+    case 'undertow': {
+      // A whirl of currents drawn into a dark eye.
+      ctx.strokeStyle = withAlpha(def.borderColor, 0.55);
+      ctx.lineWidth = r * 0.06;
+      for (let i = 0; i < 3; i++) {
+        const a0 = (i / 3) * Math.PI * 2 - t * 0.8;
+        ctx.beginPath();
+        for (let k = 0; k <= 12; k++) {
+          const q = k / 12;
+          const a = a0 + q * 2.2;
+          const d = r * (0.75 - q * 0.5);
+          if (k === 0) ctx.moveTo(Math.cos(a) * d, Math.sin(a) * d);
+          else ctx.lineTo(Math.cos(a) * d, Math.sin(a) * d);
+        }
+        ctx.stroke();
+      }
+      ctx.fillStyle = withAlpha(INK['950'], 0.8);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.2, 0, Math.PI * 2);
+      ctx.fill();
       break;
     }
     default: {

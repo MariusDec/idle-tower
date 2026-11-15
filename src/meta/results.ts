@@ -20,7 +20,7 @@ import { nextGoal, type ForgeGoal } from './forge';
 import { recordFarm } from './offline';
 import { burnBonus, type BurnTally } from './storedLight';
 import { recipesOpen, recordFusions, recordRecipes } from './recipes';
-import { recordFloor, recordHeat, recordRush, type RushRecord, type StarRecord } from './pacts';
+import { recordFloor, recordHeat, recordRush, recordStratum, type RushRecord, type StarRecord, type StratumRecord } from './pacts';
 import type { Profile } from './profile';
 import { pactLoad } from '../sim/pacts';
 import { BOSS_WAVE, regionAt, waveBonus } from '../sim/systems/waves';
@@ -160,10 +160,12 @@ export interface RunSummary {
   heat: number;
   /** A region cleared at a new heat record, and the Starlight it paid (§9). */
   heatRecord: StarRecord | null;
-  /** In the Abyss (§9): the floor the run ended on, and floors cleared. Null in a region. */
-  abyss: { floor: number; cleared: number } | null;
+  /** In the Abyss (§9): the floor the run ended on, the deepest cleared, and the floor it started on (a waypoint). Null in a region. */
+  abyss: { floor: number; cleared: number; start: number } | null;
   /** A new deepest floor, and the Starlight it paid. */
   floorRecord: StarRecord | null;
+  /** The strata's guardians felled for the first time (plans/late-game/08): their waypoints open, and their lumps. */
+  stratumRecord: StratumRecord | null;
   /** In Boss Rush (N8): stages cleared, and the full clear's time. Null elsewhere. */
   rush: { stages: number; time: number | null } | null;
   /** A Boss Rush record, and the Starlight it paid. */
@@ -352,6 +354,9 @@ export function bankRun(
     profile.trial = null;
   }
   const floorRecord = abyss ? recordFloor(profile, run.floors) : null;
+  // A guardian's first fall in the strata (plans/late-game/08 §4.5): its lump, its waypoint, and the shaft's ceremony.
+  const stratumRecord = abyss ? recordStratum(profile, run.felled) : null;
+  if (stratumRecord) profile.ceremony = stratumRecord.felled[stratumRecord.felled.length - 1];
   const stages = run.felled.length;
   const rushTime = run.outcome?.kind === 'cleared' ? run.outcome.time : null;
   const rushRecord = rush ? recordRush(profile, stages, rushTime ?? time) : null;
@@ -426,8 +431,9 @@ export function bankRun(
     next: nextGoal(profile),
     heat,
     heatRecord,
-    abyss: abyss ? { floor: floorOf(Math.max(1, wave)), cleared: run.floors } : null,
+    abyss: abyss ? { floor: floorOf(Math.max(1, wave)), cleared: run.floors, start: floorOf(run.startWave) } : null,
     floorRecord,
+    stratumRecord,
     rush: rush ? { stages, time: rushTime } : null,
     rushRecord,
     trophies,

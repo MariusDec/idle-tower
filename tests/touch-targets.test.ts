@@ -91,6 +91,7 @@ describe('44 px floor', () => {
     { sel: '.settings-slider', axes: ['min-height'] },
     { sel: '.forge-recentre', axes: ['min-width', 'min-height'] },
     { sel: '.settings-paste', axes: ['min-height'] },
+    { sel: '.map-band-go', axes: ['min-height'] },
   ];
 
   for (const { sel, axes } of AUDIT) {

@@ -313,7 +313,7 @@ export const BOSSES: readonly BossDef[] = [
     id: 'deepwarden',
     name: 'The Deepwarden',
     icon: 'nested-hexagons',
-    text: 'Raises Wardstones, sinks into the dark, and turns its mirror on you.',
+    text: 'Raises Wardstones, sinks into the dark, turns its mirror, and opens every gate.',
     hp: 60,
     armor: 0.02,
     speed: 24,
@@ -328,26 +328,35 @@ export const BOSSES: readonly BossDef[] = [
     phases: [
       {
         below: 1,
-        line: 'It raises Wardstones around itself. Break them, then it.',
+        line: 'It raises Wardstones at its gates. Break them, then it.',
         patterns: [
           { kind: 'summon', enemy: 'wardstone', packs: 1, every: 9 },
           { kind: 'slam', every: 5.5, windup: 1.2, speed: 440, damage: 3.5 },
         ],
       },
       {
-        below: 0.6,
-        line: 'It sinks into the dark, and Husks crawl out.',
+        below: 0.7,
+        line: 'It sinks into the dark. Lurkers slip out of the gates.',
         patterns: [
           { kind: 'submerge', every: 8, seconds: 3 },
-          { kind: 'summon', enemy: 'husk', packs: 2, every: 7 },
+          { kind: 'summon', enemy: 'lurker', packs: 2, every: 7 },
         ],
       },
       {
-        below: 0.3,
+        below: 0.4,
         line: 'Its mirror turns. Shots that strike the glass come back.',
         patterns: [
           { kind: 'mirror', facets: 3, arc: 0.8, spin: 1, damage: 0.4 },
-          { kind: 'slam', every: 4, windup: 1.1, speed: 480, damage: 3.5 },
+          { kind: 'slam', every: 4.5, windup: 1.1, speed: 480, damage: 3.5 },
+        ],
+      },
+      {
+        below: 0.15,
+        line: 'It throws every gate open. Hold the wall.',
+        patterns: [
+          { kind: 'rule', rule: { kind: 'gates', count: 6 } },
+          { kind: 'summon', enemy: 'husk', packs: 2, every: 6 },
+          { kind: 'slam', every: 3.5, windup: 1, speed: 500, damage: 3.5 },
         ],
       },
     ],
@@ -400,6 +409,53 @@ export const BOSSES: readonly BossDef[] = [
     color: '#3a0f22',
     borderColor: '#ff8fb0',
     lore: 'The Blight was only its appetite. This is what was doing the eating.',
+  },
+  {
+    id: 'undertow',
+    name: 'The Undertow',
+    icon: 'echo-ripples',
+    text: 'Sinks and rises in its own wake, and turns the tide on the wall.',
+    hp: 60,
+    armor: 0,
+    speed: 26,
+    radius: 64,
+    standoff: 240,
+    damage: 4,
+    xp: 80,
+    shards: 400,
+    mass: 16,
+    relicSlot: false,
+    abyss: true,
+    phases: [
+      {
+        below: 1,
+        line: 'It sinks, and rises elsewhere. Tidecallers ride its wake.',
+        patterns: [
+          { kind: 'submerge', every: 8, seconds: 3 },
+          { kind: 'summon', enemy: 'tidecaller', packs: 1, every: 10 },
+        ],
+      },
+      {
+        below: 0.6,
+        line: 'It drags the deep behind it. Rams break from the current.',
+        patterns: [
+          { kind: 'slam', every: 5, windup: 1.2, speed: 460, damage: 3.5 },
+          { kind: 'summon', enemy: 'ram', packs: 2, every: 8 },
+        ],
+      },
+      {
+        below: 0.25,
+        line: 'The tide turns. What reaches the wall walks back out.',
+        patterns: [
+          { kind: 'rule', rule: { kind: 'inversion', share: 0.6, drain: 0.06 } },
+          { kind: 'summon', enemy: 'grunt', packs: 3, every: 6 },
+          { kind: 'slam', every: 4, windup: 1, speed: 500, damage: 3.5 },
+        ],
+      },
+    ],
+    color: '#3a1a12',
+    borderColor: '#ffb37a',
+    lore: 'The deep breathes in and out. This is the breath, and it is drowning.',
   },
 ];
 

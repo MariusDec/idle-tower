@@ -2,6 +2,7 @@ import { BALANCE } from '../../content/balance';
 import type { FrameId } from '../../content/types';
 import type { RunState } from '../state';
 import { refreshStats } from './draft';
+import { runWave } from './waves';
 
 /**
  * Final Form (plans/late-game/07 §3). Evolve `need` weapons in one run and
@@ -33,7 +34,7 @@ export function checkFinalForm(run: RunState): void {
   const f = run.form;
   if (f.need <= 0 || f.wave !== null) return;
   if (formCount(run) < f.need) return;
-  f.wave = Math.max(1, run.wave);
+  f.wave = runWave(run);
   run.events.push({ kind: 'finalForm', frame: run.frameId as FrameId });
   const bonus = BALANCE.finalForm.ultCharge;
   if (bonus > 0) {

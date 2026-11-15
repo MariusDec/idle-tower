@@ -1,4 +1,5 @@
 import { ABYSS_INDEX, NATIVES, abyssFloor } from '../content/abyss';
+import { waypoints } from '../content/strata';
 import { BOSSES } from '../content/bosses';
 import { ENEMIES } from '../content/enemies';
 import { FRAMES, frameById } from '../content/frames';
@@ -75,9 +76,23 @@ export function frontier(profile: Profile): RegionDef {
   return best;
 }
 
-/** The region the next run goes to: the chosen one, if it is still unlocked; the first floor or stage past the regions. */
+/** The waypoint the next descent starts at (plans/late-game/08 §4.4): the chosen one while it is open, else the top. */
+export function abyssStart(profile: Profile): number {
+  const start = profile.abyss.start;
+  return waypoints(profile.abyss.felled).includes(start) ? start : 1;
+}
+
+/** Choose the waypoint `floor` for the next descent, and send the next run into the Abyss. False if it is not open. */
+export function chooseWaypoint(profile: Profile, floor: number): boolean {
+  if (!act2Open(profile) || !waypoints(profile.abyss.felled).includes(floor)) return false;
+  profile.abyss.start = floor;
+  profile.region = ABYSS_INDEX;
+  return true;
+}
+
+/** The region the next run goes to: the chosen one, if it is still unlocked; the waypoint's floor or the first stage past the regions. */
 export function selectedRegion(profile: Profile): RegionDef {
-  if (inAbyss(profile)) return abyssFloor(1);
+  if (inAbyss(profile)) return abyssFloor(abyssStart(profile));
   if (inRush(profile)) return rushStage(1);
   return regionUnlocked(profile, profile.region) && profile.region !== ABYSS_INDEX && profile.region !== RUSH_INDEX
     ? regionByIndex(profile.region)
@@ -352,7 +367,7 @@ export function collectionPages(profile: Profile): { bestiary: boolean; relics: 
 export function bestiary(profile: Profile): { id: string; seen: boolean; kills: number; boss: boolean }[] {
   const seen = new Set(profile.seenEnemies);
   const act2 = act2Open(profile);
-  const native = new Set<string>(NATIVES.map((n) => n.enemy));
+  const native = new Set<string>([...NATIVES]);
   return [
     ...ENEMIES.filter((e) => act2 || !native.has(e.id))
       .map((e) => ({ id: e.id as string, seen: seen.has(e.id), kills: profile.killsBy[e.id] ?? 0, boss: false })),

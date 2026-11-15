@@ -355,7 +355,9 @@ export type EnemyId =
   | 'phantom' | 'leech' | 'summoner' | 'imp'
   | 'harbinger' | 'chorus'
   // The Abyss's own (§9).
-  | 'husk' | 'ram' | 'wardstone' | 'maw';
+  | 'husk' | 'ram' | 'wardstone' | 'maw'
+  // The strata's (plans/late-game/08): the Gate's Lurker, the Inversion's Tidecaller.
+  | 'lurker' | 'tidecaller';
 
 /** Silhouettes the enemy painter knows. A closed union: a new one must be drawn first. */
 export type EnemyShape = 'circle' | 'diamond' | 'plated' | 'hexagon' | 'triangle' | 'square';
@@ -406,7 +408,14 @@ export type EnemyVerb =
    * Feeds on bodies that fall within `radius`: each heals it `heal` of its
    * Max HP and grows it by `grow`, up to `feeds` times.
    */
-  | { readonly kind: 'devour'; readonly radius: number; readonly heal: number; readonly grow: number; readonly feeds: number };
+  | { readonly kind: 'devour'; readonly radius: number; readonly heal: number; readonly grow: number; readonly feeds: number }
+  /**
+   * Below `below` of its Max HP it turns and walks back out at `pace` times
+   * its speed; fully dark, it heals whole and comes back, once (the Lurker).
+   */
+  | { readonly kind: 'retreat'; readonly below: number; readonly pace: number }
+  /** Stops at `standoff`; every `interval` s, turns round each walking body within `radius` (the Tidecaller). */
+  | { readonly kind: 'tide'; readonly standoff: number; readonly interval: number; readonly radius: number };
 
 /**
  * An enemy type (§4.3). Each has one verb that makes one answer right.
@@ -459,8 +468,8 @@ export interface AuraDef extends ContentEntry {
 }
 
 export type BossId = 'gatekeeper' | 'bog-mother' | 'prism' | 'forgeheart' | 'hollow-king' | 'blight'
-  // The Abyss's own (§9): they hold every fifth floor.
-  | 'deepwarden' | 'hunger';
+  // The Abyss's own (§9): its strata's guardians (plans/late-game/08).
+  | 'deepwarden' | 'hunger' | 'undertow';
 
 /**
  * One thing a boss does (§4.3: one readable pattern per phase). A closed
@@ -488,7 +497,9 @@ export type BossPattern =
    * Splits into `shades` bodies (itself one) sharing its HP; one wears the
    * crown, moving every `every` s. Hits on the others land at `share`.
    */
-  | { readonly kind: 'court'; readonly shades: number; readonly every: number; readonly share: number };
+  | { readonly kind: 'court'; readonly shades: number; readonly every: number; readonly share: number }
+  /** While its phase lasts, a stratum's rule holds (plans/late-game/08 §4.5): on its summons, and on the field. */
+  | { readonly kind: 'rule'; readonly rule: StratumRule };
 
 export interface BossPhase {
   /** The phase begins once the boss is at or below this fraction of its HP. */
@@ -545,7 +556,7 @@ export interface BossDef extends ContentEntry {
   readonly relicSlot: boolean;
   /** Its first kill ends Act 1 (§7.1): the ending plays on the Map. */
   readonly finale?: boolean;
-  /** An Abyss boss (§9): no region of its own; it holds the Abyss's fifth floors. */
+  /** An Abyss boss (§9): no region of its own; it guards a stratum's last floor. */
   readonly abyss?: boolean;
   readonly color: string;
   readonly borderColor: string;
@@ -807,8 +818,8 @@ export interface RegionDef extends ContentEntry {
   readonly rule: { readonly name: string; readonly text: string; readonly effect: RegionRule } | null;
   /** What the Blight Surge pact does here, per rank (§9), in one line. */
   readonly surge: { readonly text: string; readonly effect: SurgeEffect };
-  /** Set on a floor of the Abyss (§9): a region's template, sized for that depth. */
-  readonly abyss?: { readonly floor: number };
+  /** Set on a floor of the Abyss (§9, plans/late-game/08): its stratum, its curve's start, its Keeper, rules and gates. */
+  readonly abyss?: AbyssFloor;
   /** Set on a stage of Boss Rush (N8): a boss's home region, sized like an Abyss guardian. */
   readonly rush?: { readonly stage: number };
   /** Wave 20 (§4.2). */
@@ -846,10 +857,40 @@ export type RelicId =
   | 'lens-shard';
 
 /**
- * The Abyss's strata (plans/late-game/08), as cursed relics name where they
- * drop. Until 08 lands, the Gate stands for today's Deepwarden floors.
+ * The Abyss's strata (plans/late-game/08): six floors each, each with its
+ * own rule, natives and guardian. Cursed relics name where they drop.
  */
 export type StratumId = 'gate' | 'inversion' | 'narrowing' | 'lightless' | 'root';
+
+/**
+ * A stratum's rule (plans/late-game/08 §4.2). A closed union with one switch,
+ * `sim/strata.ts#ruleLoad`; the systems read the load it folds.
+ */
+export type StratumRule =
+  /** Waves come only through the floor's gates; `count` throws that many open, evenly round the rim. */
+  | { readonly kind: 'gates'; readonly count?: number }
+  /**
+   * `share` of a wave's walking bodies start at the wall and walk out; one
+   * that reaches the dark escapes, draining `drain` of the ultimate.
+   */
+  | { readonly kind: 'inversion'; readonly share: number; readonly drain: number };
+
+/** The colours a stratum's rim may wear: the canvas's semantic ones, so the safe palette swaps them. */
+export type RimColor = 'gold' | 'ember' | 'mana' | 'arcane' | 'blood' | 'frost' | 'nature' | 'critical';
+
+/** A floor of the Abyss as the sim runs it (`RegionDef.abyss`). */
+export interface AbyssFloor {
+  readonly floor: number;
+  /** Its stratum; null past the authored strata (today's cycle, behind the shim). */
+  readonly stratum: StratumId | null;
+  /** The global wave its HP curve starts at: wave n is `hpBase × hpGrowth^(n − from)`. */
+  readonly from: number;
+  /** The Champion that ends floors 1–5 of a stratum; null where a boss ends it. */
+  readonly keeper: EnemyId | null;
+  readonly rules: readonly StratumRule[];
+  /** Its gates' angles (0 right, π/2 down) and their turn a wave; null without the Gates. */
+  readonly gates: { readonly angles: readonly number[]; readonly turn: number } | null;
+}
 
 /**
  * Where a relic drops (§5.3): its boss's first kill, that region's elites,

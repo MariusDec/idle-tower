@@ -2073,6 +2073,8 @@ function lastWord(run: RunState, e: Enemy, verb: EnemyVerb, frozen = false): voi
     case 'charge':
     case 'ward':
     case 'devour':
+    case 'retreat':
+    case 'tide':
       return;
     default: {
       const exhaustive: never = verb;
@@ -2170,7 +2172,8 @@ function eliteDeath(run: RunState, e: Enemy): void {
     run.events.push({ kind: 'relicDrop', relic, x: e.x, y: e.y });
   }
   // A cursed relic's reliquary (plans/late-game/03 §3.1): its own roll, its own stream.
-  eliteReliquary(run, e);
+  // A Keeper (plans/late-game/08) rolls at its own, higher chance.
+  eliteReliquary(run, e, e.keeper);
 }
 
 export function sweepProjectiles(run: RunState): void {

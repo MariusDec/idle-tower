@@ -112,8 +112,15 @@ export interface Act2Report {
   heatFrontier: Record<number, number>;
   /** Starlight earned in all, and stars lit, at the end. */
   starlight: number;
-  /** Where the Starlight came from (S7): heat records by region index, the Abyss, feats. */
-  sources: { heat: Record<number, number>; abyss: number; rush: number; feats: number };
+  /** Where the Starlight came from (S7): heat records by region index, the Abyss's floors, its guardians' lumps, feats. */
+  sources: { heat: Record<number, number>; abyss: number; strata: number; rush: number; feats: number };
+  /**
+   * The strata (plans/late-game/08 §9): wall seconds since the Blight fell
+   * when each guardian first fell, by boss id; and the tower's level on
+   * entering each stratum's first floor from a descent begun at the top, by
+   * floor (the waypoints' levels are read off these).
+   */
+  strata: { fell: Record<string, number>; entry: Record<number, number[]> };
   /** Wall seconds since the Blight fell when the last star was lit; null if it wasn't (B7). */
   lastStar: number | null;
   stars: number;
@@ -152,7 +159,8 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   const heatFrontier: Record<number, number> = {};
   const hourly: Act2Report['hourly'] = [];
   let earned = 0;
-  const sources: Act2Report['sources'] = { heat: {}, abyss: 0, rush: 0, feats: 0 };
+  const sources: Act2Report['sources'] = { heat: {}, abyss: 0, strata: 0, rush: 0, feats: 0 };
+  const strata: Act2Report['strata'] = { fell: {}, entry: {} };
   let rushRuns = 0;
   let lastStar: number | null = null;
   const reliquaries = { seen: 0, claimed: 0, faded: 0 };
@@ -189,7 +197,13 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     const start = clock;
     const speed = runSpeed(profile);
     const run = createRun(toolConfig(profile), seeds.nextU32());
-    const played = playRun(profile, run, { policy: 'active', speed });
+    const played = playRun(profile, run, {
+      policy: 'active', speed,
+      // A stratum's first floor, reached from the top: the level a waypoint there should start at.
+      onEvent: (ev) => {
+        if (ev.kind === 'stratumEnter' && ev.floor > 1 && run.startWave === 1) (strata.entry[ev.floor] ??= []).push(run.level);
+      },
+    });
     clock += played.wall;
     const summary = bankRun(profile, run, played.newCards, speed);
     runs++;
@@ -205,9 +219,12 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     const fromFloor = summary.floorRecord?.starlight ?? 0;
     if (fromHeat > 0) sources.heat[profile.region] = (sources.heat[profile.region] ?? 0) + fromHeat;
     const fromRush = summary.rushRecord?.starlight ?? 0;
+    const fromStrata = summary.stratumRecord?.starlight ?? 0;
+    for (const id of summary.stratumRecord?.felled ?? []) strata.fell[id] ??= start + played.wall;
     sources.abyss += fromFloor;
+    sources.strata += fromStrata;
     sources.rush += fromRush;
-    earned += fromHeat + fromFloor + fromRush;
+    earned += fromHeat + fromFloor + fromRush + fromStrata;
     if (!abyss && !rush && target) {
       const key = `${target.region}:${target.heat}`;
       if (summary.heatRecord) {
@@ -242,6 +259,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     masteries: masteryLevels(profile), floor: profile.abyss.best, rushRuns, rush: { ...profile.rush }, best, hourly,
     reliquaries,
     anomalies,
+    strata,
     cursed: Object.fromEntries(ownedCursed(profile).map((r) => [r.id, { rank: relicRank(profile, r.id), bound: profile.bound[r.id] ?? 0 }])),
   };
 }

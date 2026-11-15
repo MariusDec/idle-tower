@@ -1,11 +1,12 @@
 import type { RunState } from '../sim/state';
-import { FLOOR_WAVES, floorOf, floorTemplate, floorWave } from '../content/abyss';
+import { FLOOR_WAVES, floorOf, floorWave } from '../content/abyss';
+import { STRATUM_BY_ID } from '../content/strata';
 import { BOSS_BY_ID } from '../content/bosses';
 import { RUSH_STAGES } from '../content/rush';
 import { frameById } from '../content/frames';
 import { pactLoad } from '../sim/pacts';
 import { phasesOf } from '../sim/systems/boss';
-import { BOSS_WAVE, runRegion } from '../sim/systems/waves';
+import { BOSS_WAVE, runRegion, runWave } from '../sim/systems/waves';
 import { formatDuration, formatNumber } from '../core/format';
 import type { WeaponId } from '../content/types';
 import { buildOf } from '../meta/results';
@@ -260,13 +261,14 @@ export class Hud {
 
   update(run: RunState): void {
     const region = runRegion(run);
-    const wave = Math.max(1, run.wave);
+    const wave = runWave(run);
     if (region.abyss) {
-      // The Abyss (§9): "Floor 3 · 7/10", and the template's rule.
-      setText(this.waveLabel, `Floor ${floorOf(wave)}`);
+      // The Abyss (§9): "Floor 3 · I", "7/10", and the stratum's rule (plans/late-game/08); past the strata, the template's.
+      const s = region.abyss.stratum ? STRATUM_BY_ID[region.abyss.stratum] : undefined;
+      setText(this.waveLabel, s ? `Floor ${floorOf(wave)} · ${s.numeral}` : `Floor ${floorOf(wave)}`);
       setText(this.wave, `${floorWave(wave)}/${FLOOR_WAVES}`);
-      const rule = floorTemplate(floorOf(wave)).rule;
-      setText(this.region, rule ? `The Abyss · ${rule.name}` : 'The Abyss');
+      const rule = s ? s.rule.name : region.rule?.name;
+      setText(this.region, s ? `${s.name} · ${rule}` : rule ? `The Abyss · ${rule}` : 'The Abyss');
     } else if (region.rush) {
       // Boss Rush (N8): "Boss 3/8", and the clock, which is the record.
       setText(this.waveLabel, 'Boss');

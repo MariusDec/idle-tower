@@ -10,7 +10,7 @@ import { icon, iconMarkup } from '../icon';
 import { CollectionView } from './collection';
 import { FeatsView, featsBadge } from './feats';
 import { ForgeView, StarsView, forgeBadge, starsBadge } from './forge';
-import { MapView } from './map';
+import { MapView, type MapSpread } from './map';
 import { PactsView } from './pacts';
 import { TacticsView } from './tactics';
 import { automations, tacticsKey } from '../../meta/automation';
@@ -36,6 +36,8 @@ export interface HubActions {
   /** The first time the Forge opens (§7.1): the app records the lesson. */
   forgeOpened(): boolean;
   selectRegion(index: number): void;
+  /** Start the next descent at an Abyss waypoint (plans/late-game/08 §4.4). */
+  chooseWaypoint(floor: number): void;
   /** Begin a Trial (N5): the next run, at once. */
   trial(id: string): void;
   toggleRelic(id: RelicId): boolean;
@@ -193,7 +195,11 @@ export class HubScreen {
       actions.selectRegion(index);
       if (this.profile) this.map.show(this.profile);
       this.refresh();
-    }, (id) => actions.trial(id));
+    }, (id) => actions.trial(id), (floor) => {
+      actions.chooseWaypoint(floor);
+      if (this.profile) this.map.show(this.profile);
+      this.refresh();
+    });
     this.collection = new CollectionView(this.root, {
       toggleRelic: (id) => refreshing(() => actions.toggleRelic(id)),
       toggleCursed: (id) => refreshing(() => actions.toggleCursed(id)),
@@ -248,7 +254,7 @@ export class HubScreen {
   }
 
   /** Open the hub on `view`. `spread` plays the map's light spreading (§7.3). */
-  show(profile: Profile, view: HubView = 'home', spread = false): void {
+  show(profile: Profile, view: HubView = 'home', spread: MapSpread = false): void {
     this.profile = profile;
     this.root.hidden = false;
     this.renderTabs(hubUnlocks(profile));
@@ -293,7 +299,7 @@ export class HubScreen {
   }
 
   /** `tell`: tell the view's unread explainers (§7.1), after the light spreads when it does. */
-  private setView(view: HubView, spread = false, tell = true): void {
+  private setView(view: HubView, spread: MapSpread = false, tell = true): void {
     const p = this.profile;
     if (!p) return;
     this.view = view;

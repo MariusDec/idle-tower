@@ -1,38 +1,31 @@
 import { BALANCE } from './balance';
 import { REGIONS } from './regions';
+import { BOTTOM, STRATA, stratumIndex, stratumOf, strataCurve, STRATUM_FLOORS, type StratumDef } from './strata';
 import type { BossId, EnemyId, RegionDef, WaveBeat } from './types';
 
 /**
- * The Abyss (§9): Act 2's endless descent, and the only place big numbers
- * live. Each floor is ten waves on one region's template (its enemies, its
- * rule), with the Abyss's own four types mixed in, and the tenth is a boss:
- * the template region's, or on every fifth floor one of the Abyss's two.
+ * The Abyss (§9, plans/late-game/08): Act 2's descent. Each floor is ten
+ * waves. The authored strata (`content/strata.ts`) give a floor its rule,
+ * natives, two Act 1 guests and a Keeper or guardian at the bottom; each
+ * stratum's HP runs on its own curve, picked up from the last.
  *
- * Depth, not the region, sets the size: HP, damage and shards grow per wave
- * (`BALANCE.abyss`) with no cap, and wave numbers run on across floors, so
- * floor 3's first wave is wave 21. Floor records pay Starlight per floor,
- * and more for each guardian. Pacts hold only in the regions.
+ * Past the authored strata the Abyss keeps its old cycle behind a shim
+ * (`shimFloor`): an Act 1 region's template, the old four natives, a boss
+ * every floor and an Abyss boss every fifth, on `BALANCE.abyss`'s curve
+ * from where the strata end. Wave numbers run on across floors, so floor
+ * 3's first wave is wave 21. Pacts hold only in the regions.
  */
 
 /** The Abyss's place on the Map and in a run's `regionId`: past the six regions. */
 export const ABYSS_INDEX = 7;
 
-/** Waves to a floor; the last is its boss. */
+/** Waves to a floor; the last is its Keeper's or its boss's. */
 export const FLOOR_WAVES = 10;
 
-/** The template each floor wears, in turn: a mix, so neighbouring floors ask different answers. */
-const ORDER: readonly number[] = [1, 3, 2, 5, 4, 6];
-
-/** The Abyss's own types (§9), and the floor each first walks on. */
-export const NATIVES: readonly { readonly enemy: EnemyId; readonly from: number }[] = [
-  { enemy: 'husk', from: 1 },
-  { enemy: 'ram', from: 2 },
-  { enemy: 'wardstone', from: 3 },
-  { enemy: 'maw', from: 4 },
+/** Every type that is the Abyss's own, in the order a descent meets them: the Bestiary's Abyss page. */
+export const NATIVES: readonly EnemyId[] = [
+  ...new Set<EnemyId>([...STRATA.flatMap((s) => s.natives), 'husk', 'ram', 'wardstone', 'maw']),
 ];
-
-/** The Abyss's bosses, holding every fifth floor in turn. */
-export const ABYSS_BOSSES: readonly BossId[] = ['deepwarden', 'hunger'];
 
 /** The floor wave `wave` is on, from 1. */
 export function floorOf(wave: number): number {
@@ -44,38 +37,119 @@ export function floorWave(wave: number): number {
   return ((Math.max(1, wave) - 1) % FLOOR_WAVES) + 1;
 }
 
-/** The region whose template floor `floor` wears. */
-export function floorTemplate(floor: number): RegionDef {
-  const index = ORDER[(floor - 1) % ORDER.length];
-  return REGIONS.find((r) => r.index === index) ?? REGIONS[0];
+/** The first global wave of floor `floor`. */
+export function floorStart(floor: number): number {
+  return (Math.max(1, floor) - 1) * FLOOR_WAVES + 1;
 }
 
-/** The boss at the bottom of floor `floor`. */
+/** The boss at the bottom of floor `floor`: its stratum's guardian (seen only on the sixth), or the shim's. */
 export function floorBoss(floor: number): BossId {
-  if (guardianFloor(floor)) return ABYSS_BOSSES[(floor / 5 - 1) % ABYSS_BOSSES.length];
-  return floorTemplate(floor).boss;
+  const s = stratumOf(floor);
+  return s ? s.boss : shimBoss(floor);
+}
+
+/** True for a floor whose tenth wave is a boss: a stratum's sixth, or every shim floor. */
+export function bossFloor(floor: number): boolean {
+  return stratumOf(floor) ? floor % STRATUM_FLOORS === 0 : true;
 }
 
 const FLOORS = new Map<number, RegionDef>();
 
 /**
- * Floor `floor` as a region the sim can run (§9): the template's enemies,
- * rule and look, the natives the floor has reached, its boss, and the depth's
- * numbers. `waves.ts` reads `abyss` and sizes every wave by its global number.
- * Built once per floor and kept: pure, so the same floor is the same region.
+ * Floor `floor` as a region the sim can run. `waves.ts` reads `abyss` and
+ * sizes every wave by its global number. Built once per floor and kept:
+ * pure, so the same floor is the same region.
  */
 export function abyssFloor(floor: number): RegionDef {
   const hit = FLOORS.get(floor);
   if (hit) return hit;
+  const s = stratumOf(floor);
+  const region = s ? strataFloor(floor, s) : shimFloor(floor);
+  FLOORS.set(floor, region);
+  return region;
+}
+
+/** A floor of an authored stratum (plans/late-game/08 §5). */
+function strataFloor(floor: number, s: StratumDef): RegionDef {
   const A = BALANCE.abyss;
-  const base = floorTemplate(floor);
-  const natives = NATIVES.filter((n) => floor >= n.from);
-  // The newest native is introduced on the floor it arrives; later floors swarm.
-  const fresh = NATIVES.find((n) => n.from === floor);
-  const beats: Record<number, WaveBeat> = fresh
-    ? { 5: { kind: 'introduce', enemy: fresh.enemy, packs: 2 }, 8: { kind: 'swarm', countMult: 1.4 } }
-    : { 5: { kind: 'swarm', countMult: 1.3 }, 8: { kind: 'swarm', countMult: 1.5 } };
-  const region: RegionDef = {
+  const S = BALANCE.strata;
+  const k = stratumIndex(floor);
+  const f = s.floors[(floor - 1) % STRATUM_FLOORS];
+  const curve = strataCurve(k);
+  // A native a beat introduces walks on its own first, then joins the pool after the beat.
+  const fresh = new Set<EnemyId>(Object.values(f.beats).flatMap((b) => (b.kind === 'introduce' ? [b.enemy] : [])));
+  return {
+    ...REGIONS[0],
+    id: `abyss-${floor}`,
+    index: ABYSS_INDEX,
+    icon: 'over-infinity',
+    name: `The Abyss · Floor ${floor}`,
+    text: `Floor ${floor}, in ${s.name}.`,
+    shardBase: A.shardBase,
+    waveShards: A.waveShards,
+    hpBase: curve.hpBase,
+    hpGrowth: curve.hpGrowth,
+    damageBase: A.damageBase,
+    damageGrowth: A.damageGrowth,
+    count: A.count,
+    pool: [
+      ...f.guests.map((enemy) => ({ enemy, from: 1, weight: 1 })),
+      ...f.natives.map((enemy) => ({ enemy, from: fresh.has(enemy) ? 6 : 1, weight: S.nativeWeight })),
+    ],
+    beats: f.beats,
+    // A stratum's rule is no region rule: the sim reads it from `abyss.rules` (`sim/strata.ts`).
+    rule: null,
+    boss: s.boss,
+    tint: s.tint,
+    elites: { from: A.elites.from, every: A.elites.every, auras: s.auras },
+    abyss: {
+      floor,
+      stratum: s.id,
+      from: curve.from,
+      keeper: f.keeper,
+      rules: f.rules,
+      gates: f.gates ? { angles: f.gates, turn: f.turn ?? 0 } : null,
+    },
+  };
+}
+
+// ── The shim: today's cycle, past the authored strata ──────────────────
+
+/** The template a shim floor wears, in turn. */
+const ORDER: readonly number[] = [1, 3, 2, 5, 4, 6];
+
+/** The old four natives: by the shim's floors, every one has arrived. */
+const SHIM_NATIVES: readonly EnemyId[] = ['husk', 'ram', 'wardstone', 'maw'];
+
+/** The Abyss bosses the shim's every fifth floor holds, in turn. */
+const SHIM_GUARDIANS: readonly BossId[] = ['deepwarden', 'hunger'];
+
+function shimTemplate(floor: number): RegionDef {
+  const index = ORDER[(floor - 1) % ORDER.length];
+  return REGIONS.find((r) => r.index === index) ?? REGIONS[0];
+}
+
+/** True for a shim floor one of the Abyss's own bosses holds: every fifth. */
+export function shimGuardianFloor(floor: number): boolean {
+  return floor % 5 === 0;
+}
+
+function shimBoss(floor: number): BossId {
+  if (shimGuardianFloor(floor)) return SHIM_GUARDIANS[(floor / 5 - 1) % SHIM_GUARDIANS.length];
+  return shimTemplate(floor).boss;
+}
+
+/**
+ * A floor past the authored strata (plans/late-game/08 §8 step 1): a
+ * region's template, its rule and look, the old natives and its boss, on
+ * `BALANCE.abyss`'s curve from the strata's last wave.
+ */
+function shimFloor(floor: number): RegionDef {
+  const A = BALANCE.abyss;
+  const base = shimTemplate(floor);
+  const curve = strataCurve(stratumIndex(floor));
+  const beats: Record<number, WaveBeat> = { 5: { kind: 'swarm', countMult: 1.3 }, 8: { kind: 'swarm', countMult: 1.5 } };
+  return {
     ...base,
     id: `abyss-${floor}`,
     index: ABYSS_INDEX,
@@ -83,32 +157,29 @@ export function abyssFloor(floor: number): RegionDef {
     text: `Floor ${floor}, on the ${base.name}'s pattern.`,
     shardBase: A.shardBase,
     waveShards: A.waveShards,
-    hpBase: A.hpBase,
-    hpGrowth: A.hpGrowth,
+    hpBase: curve.hpBase,
+    hpGrowth: curve.hpGrowth,
     damageBase: A.damageBase,
     damageGrowth: A.damageGrowth,
     count: A.count,
     pool: [
       ...base.pool.map((p) => ({ enemy: p.enemy, from: 1, weight: p.weight })),
-      ...natives.map((n) => ({ enemy: n.enemy, from: n.enemy === fresh?.enemy ? 6 : 1, weight: A.nativeWeight })),
+      ...SHIM_NATIVES.map((enemy) => ({ enemy, from: 1, weight: A.nativeWeight })),
     ],
     beats,
-    boss: floorBoss(floor),
+    boss: shimBoss(floor),
     elites: { ...base.elites, from: A.elites.from, every: A.elites.every },
-    abyss: { floor },
+    abyss: { floor, stratum: null, from: curve.from, keeper: null, rules: [], gates: null },
   };
-  FLOORS.set(floor, region);
-  return region;
 }
 
-/** True for a floor one of the Abyss's own guardians holds: every fifth. */
-export function guardianFloor(floor: number): boolean {
-  return floor % 5 === 0;
-}
-
-/** The Starlight a best floor of `floor` has paid in all (S7): per floor, and more for each guardian. */
+/**
+ * The Starlight a best floor of `floor` has paid in all (S7): per floor down
+ * to the bottom, less past it. A guardian's lump is paid apart, on its first
+ * fall in the strata (`meta/pacts.ts#recordStratum`).
+ */
 export function abyssStarlight(floor: number): number {
   if (floor <= 0) return 0;
-  const S = BALANCE.abyss.starlight;
-  return S.perFloor * floor + S.perGuardian * Math.floor(floor / 5);
+  const S = BALANCE.strata.starlight;
+  return S.perFloor * Math.min(floor, BOTTOM) + S.below * Math.max(0, floor - BOTTOM);
 }

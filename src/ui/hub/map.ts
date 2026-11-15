@@ -1,4 +1,5 @@
 import { ABYSS_INDEX, abyssStarlight } from '../../content/abyss';
+import { STRATA, guardianFloorOf, stratumFoot } from '../../content/strata';
 import { BOSS_BY_ID } from '../../content/bosses';
 import { ENEMY_BY_ID } from '../../content/enemies';
 import { REGIONS } from '../../content/regions';
@@ -6,7 +7,7 @@ import { RUSH_INDEX, RUSH_STAGES, rushStarlight } from '../../content/rush';
 import type { RegionDef } from '../../content/types';
 import { formatDuration, formatNumber } from '../../core/format';
 import {
-  act2Open, bossDown, inAbyss, inRush, regionRelics, regionTrophies, regionUnlocked, relicRank, rushOpen, selectedRegion,
+  abyssStart, act2Open, bossDown, inAbyss, inRush, regionRelics, regionTrophies, regionUnlocked, relicRank, rushOpen, selectedRegion,
 } from '../../meta/collection';
 import { BALANCE } from '../../content/balance';
 import { bestHeat } from '../../meta/pacts';
@@ -37,6 +38,13 @@ function rewardText(r: TrialReward): string {
 const ACT_REGIONS = 6;
 
 /**
+ * What the Map plays as it opens: nothing, the light spreading to a region
+ * just cleared (§7.3), or a stratum's band lighting, top down, for a
+ * guardian's first fall (plans/late-game/08 §3.2), by stratum index.
+ */
+export type MapSpread = boolean | { band: number };
+
+/**
  * The Map (§5.2): the regions from the Fields upward, the light reaching as
  * far as the bosses have fallen. Each unlocked region is a card — best
  * wave, the boss trophy, enemies and relics found, its rule — and tapping
@@ -58,6 +66,8 @@ export class MapView {
     private readonly onSelect: (region: number) => void,
     /** Begin a Trial (N5): the next run, at once. */
     private readonly onTrial: (id: string) => void = () => {},
+    /** Start the next descent at waypoint `floor` (plans/late-game/08 §4.4). */
+    private readonly onWaypoint: (floor: number) => void = () => {},
   ) {
     this.root = document.createElement('div');
     this.root.className = 'map';
@@ -76,8 +86,10 @@ export class MapView {
    * Draw the map. `spread` names a region just cleared: the light starts at
    * its old reach and rolls outward to the new one (§7.3).
    */
-  show(profile: Profile, spread = false): void {
+  show(profile: Profile, spread: MapSpread = false): void {
     this.profile = profile;
+    const band = typeof spread === 'object' ? spread.band : null;
+    spread = spread === true;
     const cleared = REGIONS.filter((r) => bossDown(profile, r.boss)).length;
     const reach = (n: number): string => `${Math.min(100, ((n + 0.5) / ACT_REGIONS) * 100).toFixed(1)}%`;
     if (spread && !motionReduced()) {
@@ -106,19 +118,101 @@ export class MapView {
       const last = REGIONS[REGIONS.length - 1];
       if (bossDown(profile, last.boss)) items.push(this.silhouette(`Region ${REGIONS.length + 1}`, 'The Blight runs deeper still.'));
     }
-    if (act2Open(profile)) items.push(this.abyss(profile, chosen === ABYSS_INDEX));
+    if (act2Open(profile)) items.push(this.abyss(profile, chosen === ABYSS_INDEX, band));
     if (rushOpen(profile)) items.push(this.rush(profile, chosen === RUSH_INDEX));
     // The Fields at the bottom, the frontier at the top: the light climbs.
     this.list.replaceChildren(...items.reverse());
   }
 
-  /** The Abyss's card (§9): the deepest floor cleared, and what the next record pays. */
-  private abyss(profile: Profile, chosen: boolean): HTMLElement {
+  /** The Abyss's card (§9): the deepest floor cleared, what the next record pays, and its shaft. */
+  private abyss(profile: Profile, chosen: boolean, band: number | null): HTMLElement {
     const best = profile.abyss.best;
-    return this.pastCard(ABYSS_INDEX, 'The Abyss', 'over-infinity', chosen, [
+    const start = abyssStart(profile);
+    const rows: [string, string][] = [
       ['Deepest floor', String(best)],
       ['Next floor pays', `${formatNumber(abyssStarlight(best + 1) - abyssStarlight(best))} ✦`],
-    ], 'Endless. Ten waves a floor, a boss at the bottom of each; every floor deeper than the last.');
+    ];
+    if (start > 1) rows.push(['Starts at', `Floor ${start}`]);
+    const card = this.pastCard(ABYSS_INDEX, 'The Abyss', 'over-infinity', chosen, rows,
+      'Strata of six floors, each with its own rule. A Keeper ends each floor, a guardian each sixth.');
+    card.append(this.shaft(profile, band));
+    return card;
+  }
+
+  /**
+   * The shaft (plans/late-game/08 §3.2): a band per stratum, descending from
+   * the top. A felled guardian's band is lit and offers its waypoint; a
+   * reached one shows dimmed; the next waits as a silhouette; deeper is dark.
+   * `band`: a stratum whose guardian just fell lights from the top down.
+   */
+  private shaft(profile: Profile, band: number | null): HTMLElement {
+    const ol = document.createElement('ol');
+    ol.className = 'map-shaft';
+    ol.setAttribute('aria-label', 'The strata');
+    const felled = profile.abyss.felled;
+    const best = profile.abyss.best;
+    const start = abyssStart(profile);
+    let silhouette = false;
+    STRATA.forEach((s, k) => {
+      const li = document.createElement('li');
+      const boss = BOSS_BY_ID[s.boss];
+      const g = guardianFloorOf(k);
+      setStyle(li, '--band', s.tint);
+      const reached = best >= stratumFoot(k) - 1;
+      if (k < felled) {
+        // Guardian down: lit, and its foot is a waypoint.
+        li.className = `map-band is-felled${band === k && !motionReduced() ? ' is-lighting' : ''}`;
+        const foot = g + 1;
+        const here = start === foot;
+        const go = document.createElement('button');
+        go.type = 'button';
+        go.className = `btn map-band-go${here ? ' btn-primary' : ''}`;
+        go.textContent = here ? 'From the top' : 'Start here';
+        go.setAttribute('aria-label', here ? 'Start the next descent at floor 1' : `Start the next descent at floor ${foot}`);
+        go.addEventListener('click', () => this.onWaypoint(here ? 1 : foot));
+        li.append(this.bandHead(s.numeral, s.name, icon(boss.icon)), this.bandLine(`${boss.name} fell · floors ${stratumFoot(k)}–${g}`), go);
+      } else if (reached) {
+        li.className = 'map-band is-reached';
+        li.append(this.bandHead(s.numeral, s.name, null), this.bandLine(`Guardian: floor ${g}`));
+      } else if (!silhouette) {
+        silhouette = true;
+        li.className = 'map-band is-silhouette';
+        const shadow = icon(boss.icon);
+        shadow.classList.add('map-band-shadow');
+        li.append(shadow, this.bandLine(`Something waits at floor ${g}.`));
+      } else {
+        li.className = 'map-band is-deeper';
+        li.setAttribute('aria-hidden', 'true');
+      }
+      ol.append(li);
+    });
+    // Past the authored strata, the dark goes on.
+    const deeper = document.createElement('li');
+    deeper.className = 'map-band is-deeper';
+    deeper.setAttribute('aria-hidden', 'true');
+    ol.append(deeper);
+    return ol;
+  }
+
+  private bandHead(numeral: string, name: string, mark: Element | null): HTMLElement {
+    const head = document.createElement('p');
+    head.className = 'map-band-head';
+    const n = document.createElement('span');
+    n.className = 'map-band-numeral';
+    n.textContent = numeral;
+    const t = document.createElement('span');
+    t.className = 'map-band-name';
+    t.textContent = name;
+    head.append(n, t);
+    if (mark) head.append(mark);
+    return head;
+  }
+
+  private bandLine(text: string): HTMLElement {
+    const p = document.createElement('p');
+    p.className = 'map-band-line';
+    p.textContent = text;
+    return p;
   }
 
   /** Boss Rush's card (N8): the record, and what the next stage pays. */

@@ -1,3 +1,4 @@
+import { STRATA } from '../src/content/strata';
 import { describe, expect, it } from 'vitest';
 import { newProfile, type Profile } from '../src/meta/profile';
 import { buildRunConfig } from '../src/meta/runConfig';
@@ -72,7 +73,7 @@ describe("Act 2's economy (S7, B7)", () => {
     expect(Math.pow(1.25, 9)).toBeCloseTo(Math.pow(1.5, 5), 0);
   });
 
-  it("the Abyss's guardians are lighter than a floor's other bosses (S7.5)", () => {
+  it("the Abyss's guardians are lighter than a floor's other bosses (S7.5); a stratum's take its own share", () => {
     const run = createRun({ ...buildRunConfig(act2Profile()), regionId: 7 }, 1);
     const hpOf = (floor: number): number => {
       const region = abyssFloor(floor);
@@ -82,8 +83,11 @@ describe("Act 2's economy (S7, B7)", () => {
       b.alive = false;
       return share;
     };
-    expect(hpOf(4)).toBeCloseTo(BALANCE.abyss.bossHp);
-    expect(hpOf(5)).toBeCloseTo(BALANCE.abyss.guardianHp);
+    // Past the authored strata (the shim): today's shares.
+    expect(hpOf(14)).toBeCloseTo(BALANCE.abyss.bossHp);
+    expect(hpOf(15)).toBeCloseTo(BALANCE.abyss.guardianHp);
+    // A stratum's guardian (plans/late-game/08 §4.1).
+    expect(hpOf(6)).toBeCloseTo(STRATA[0].bossHp);
   });
 
   it('Firmament asks for every star', () => {

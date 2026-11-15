@@ -489,8 +489,43 @@ export const BALANCE = {
     bossHp: 0.35,
     /** …and the Abyss's own guardians, every fifth floor, times this instead (S7.5: the first is passable). */
     guardianHp: 0.25,
-    /** Starlight (S7, D-6): each new deepest floor pays `perFloor`, and each guardian's (every fifth) `perGuardian` more. */
-    starlight: { perFloor: 2, perGuardian: 10 },
+  },
+  /**
+   * The Abyss's strata (plans/late-game/08): five authored strata of six
+   * floors, each with its own curve (`content/strata.ts`), down to a bottom
+   * at floor 30; past it, the Below.
+   */
+  strata: {
+    /**
+     * Starlight: each new deepest floor pays `perFloor` down to the bottom
+     * and `below` past it; each guardian's first fall in the strata pays its
+     * stratum's `lump`, in order.
+     */
+    starlight: { perFloor: 2, below: 1, lump: [20, 25, 30, 35, 60] },
+    /**
+     * A Keeper (§4.3): a Champion of a native, `hp` times a Champion's, that
+     * ends floors 1–5 of a stratum. Wave 10 holds the next floor until it
+     * falls, or `hold` s after its spawns finish.
+     */
+    keeper: { hp: 1.5, hold: 45, at: 0.3 },
+    /** Gates: a body comes through within `arc` rad either side of a gate. */
+    gates: { arc: 0.2 },
+    /**
+     * Inversion: an inverted body starts `gap` outside the wall. A body a
+     * Tidecaller turned out that escapes drains `drain` of the ultimate
+     * where no Inversion rule says otherwise.
+     */
+    inversion: { gap: 12, drain: 0.05 },
+    /** How often a native walks against a guest's 1. */
+    nativeWeight: 0.45,
+    /** How far a guest's colours lean to the stratum's ground: the deep has changed them. */
+    guestMix: 0.3,
+    /**
+     * Waypoints (§4.4): the level a run started at a stratum's foot begins
+     * at, by stratum (I, II, …, then the Below). Placeholders until the act2
+     * bot's median level on entering that floor replaces them.
+     */
+    waypoint: { level: [1, 22, 26, 30, 33, 36] },
   },
   /**
    * Boss Rush (N8): the six Act 1 bosses, then the Abyss's two, back to

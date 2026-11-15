@@ -1,6 +1,8 @@
 # 08. The Abyss strata
 
-**Status:** 2026-11-14. Plan, not built. Idea 8 of the late-game review
+**Status:** 2026-11-15. Steps 1–4 and 8 built (strata I and II, Keepers,
+waypoints, the shaft, the tools); III–V wait on §8 step 4's decision.
+Floors 13+ keep today's cycle behind the shim. Idea 8 of the late-game review
 ([README](README.md)). Supersedes [c-abyss-strata.md](c-abyss-strata.md)
 except its §6 (cursed relics), which is now
 [03-cursed-relics.md](03-cursed-relics.md).
