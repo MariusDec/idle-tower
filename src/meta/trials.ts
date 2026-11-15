@@ -3,6 +3,7 @@ import { RELIC_BY_ID } from '../content/relics';
 import { TRIALS, TRIAL_BY_ID } from '../content/trials';
 import type { Effect, TrialDef, TrimId } from '../content/types';
 import { bossDown, gainRelic, regionUnlocked } from './collection';
+import { contractTrims } from './contracts';
 import { secretTrims } from './secrets';
 import type { Profile } from './profile';
 
@@ -48,6 +49,8 @@ export function chooseTrial(profile: Profile, id: string | null): boolean {
   const t = TRIAL_BY_ID[id];
   if (!t || !trialsOpen(profile, t.region)) return false;
   profile.trial = id;
+  // A run is a Trial or a contract, never both (plans/late-game/10 §4.5).
+  profile.contracts.taken = null;
   profile.region = t.region;
   return true;
 }
@@ -61,7 +64,8 @@ export function trims(profile: Profile): TrimId[] {
 export function wonTrims(profile: Profile): { trim: TrimId; name: string }[] {
   const trials = TRIALS.flatMap((t) => (trialWon(profile, t.id) && t.reward.kind === 'trim' ? [{ trim: t.reward.trim, name: t.reward.name }] : []));
   // Secrets' trims (plans/late-game/05) join the list once found: it only ever shows what is owned.
-  return [...trials, ...secretTrims(profile)];
+  // …and the Contract board's milestones (plans/late-game/10 §4.4).
+  return [...trials, ...secretTrims(profile), ...contractTrims(profile)];
 }
 
 /** The trims the tower wears: every one paid, less those taken off. */

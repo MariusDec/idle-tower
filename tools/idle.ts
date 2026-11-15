@@ -179,6 +179,10 @@ export function runIdle(
       if (policy === 'idle' && run.anomaly?.taken) throw new Error('I9: the hands-off bot took an anomaly');
       // I9 (plans/late-game/05 §2): nor finds the Wayward Banner, which only picks of one's own earn. A hard fail.
       if (policy === 'idle' && run.secrets?.fresh.includes('wayward')) throw new Error('I9: the hands-off bot found the Wayward Banner');
+      // I9 (plans/late-game/10 §4.7): the Contract board is active-only: no run of this bot is ever one. A hard fail.
+      if (run.contract !== null || profile.contracts.done > 0 || summary.contract !== null) {
+        throw new Error('I9: an idle-bot run settled a contract');
+      }
       const f = (report.forms[run.regionId] ??= { runs: 0, could: 0, formed: 0, waves: [], evolved: [0, 0, 0, 0], recipes: 0 });
       f.runs++;
       f.evolved[Math.min(3, formCount(run))]++;
@@ -209,6 +213,8 @@ export function runIdle(
     if (bosses.every((b) => b in report.bossKills)) break;
   }
   report.poolAtEnd = profile.storedLight;
+  // …nor wears a trim its milestones pay (plans/late-game/10 §9).
+  if (profile.contracts.done !== 0 || profile.contracts.taken !== null) throw new Error('I9: the idle bot touched the Contract board');
   return report;
 }
 

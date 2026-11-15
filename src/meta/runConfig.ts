@@ -3,9 +3,10 @@ import { EVOLUTIONS } from '../content/evolutions';
 import { PASSIVES } from '../content/passives';
 import { abyssRelics } from '../content/relics';
 import { frameById } from '../content/frames';
-import type { BehaviourId, CardItemId, Effect, FrameId, FusionId, PactId, StatMod, TrialDef, WeaponId } from '../content/types';
+import type { BehaviourId, CardItemId, Effect, FrameId, FusionId, PactId, StatMod, TrialRule, WeaponId } from '../content/types';
 import { isWeaponId } from '../sim/systems/draft';
 import { selectedTrial, trialEffects } from './trials';
+import { contractRules, takenContract } from './contracts';
 import { secretConfig, secretEffects } from './secrets';
 import {
   abyssStart, act2Open, activeSets, bossDown, equippedRelics, inAbyss, inRush, pastRegions, relicRank, relicSlots, selectedFrame, selectedRegion, wornCursed,
@@ -41,8 +42,10 @@ export const FIRST_DRAFT: readonly Card[] = [
 export function buildRunConfig(profile: Profile): RunConfig {
   const abyss = inAbyss(profile);
   // A Trial (N5) sets the frame, the weapons, the slots and the omens; never in the Abyss or Boss Rush.
-  const trial = pastRegions(profile) ? null : selectedTrial(profile);
-  const rules = trialRules(trial);
+  // A contract (plans/late-game/10 §4.5) sets the same, in the Abyss and Boss Rush too; a run is one or the other.
+  const contract = takenContract(profile);
+  const trial = pastRegions(profile) || contract ? null : selectedTrial(profile);
+  const rules = trialRules([...(trial?.rules ?? []), ...contractRules(contract)]);
   const frame = rules.frame ? frameById(rules.frame) : selectedFrame(profile);
   const region = selectedRegion(profile);
   const mods: StatMod[] = [];
@@ -144,6 +147,7 @@ export function buildRunConfig(profile: Profile): RunConfig {
     ...(abyss && abyssStart(profile) > 1 ? { startFloor: abyssStart(profile) } : {}),
     startingWeapon: first,
     trial: trial?.id ?? null,
+    contract: contract?.id ?? null,
     mods: Object.freeze(mods),
     weaponSlots,
     passiveSlots,
@@ -158,7 +162,8 @@ export function buildRunConfig(profile: Profile): RunConfig {
     priority: tactics(priorityList(profile), pool),
     never: tactics(neverList(profile), pool),
     // A Trial's omens stand in for the pacts (N5): it is authored, and pays no heat.
-    pacts: Object.freeze(trial ? rules.pacts : runPacts(profile)),
+    // A contract's omens are Act 1's (plans/late-game/10 §3): its heat is the player's own pacts.
+    pacts: Object.freeze(trial ? rules.pacts : { ...runPacts(profile), ...rules.pacts }),
     abyssRelics: Object.freeze(abyss ? abyssRelics(starGifts(profile).relicSets) : []),
     rifts: riftConfig(profile, trial !== null),
     reliquaries: abyss ? reliquaryConfig(profile, pool) : null,
@@ -213,8 +218,8 @@ export function reliquaryConfig(profile: Profile, pool: readonly CardItemId[]): 
   });
 }
 
-/** What a Trial's rules (N5) come to, for `buildRunConfig`; empty for an ordinary run. */
-interface TrialRules {
+/** What a Trial's or a contract's rules (N5, plans/late-game/10) come to, for `buildRunConfig`; empty for an ordinary run. */
+export interface TrialRules {
   frame?: FrameId;
   weapons?: readonly WeaponId[];
   weaponSlots?: number;
@@ -222,10 +227,10 @@ interface TrialRules {
   pacts: Partial<Record<PactId, number>>;
 }
 
-/** Fold a Trial's rules into one set of overrides: the rules' one consumer. */
-function trialRules(trial: TrialDef | null): TrialRules {
+/** Fold a list of rules into one set of overrides: the rules' one consumer (shared with plans/late-game/11). */
+export function trialRules(list: readonly TrialRule[]): TrialRules {
   const out: TrialRules = { pacts: {} };
-  for (const r of trial?.rules ?? []) {
+  for (const r of list) {
     switch (r.kind) {
       case 'frame':
         out.frame = r.frame;

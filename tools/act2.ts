@@ -13,6 +13,9 @@
  *                 its floors pay Starlight, and its shards buy masteries
  *   Boss Rush     once the Deepwarden falls, now and then (N8): its records
  *                 pay Starlight too
+ *   contracts     with `--contracts <share>`, that share of runs is a card
+ *                 off the Contract board (plans/late-game/10 §9's bar):
+ *                 0 by default, so the gate's readings are unchanged
  *
  * Pacts are taken in a fixed order, the mildest first for a strong tower
  * (`PACT_LADDER`), so heat h always means the same pacts.
@@ -33,8 +36,17 @@ import type { Profile } from '../src/meta/profile';
 import { bankRun } from '../src/meta/results';
 import { STAR_WEB, starsLit } from '../src/meta/stars';
 import { createRun } from '../src/sim/run';
+import { boardOpen } from '../src/meta/contracts';
 import { playRun, toolConfig } from './play';
 import { shop } from './shop';
+import { botTake, emptyContractTally, holdsUlt, tallyContract, type ContractTally } from './contractBot';
+
+/** The share of runs the bot plays off the Contract board (`--contracts 0.33`); 0 without the flag. */
+export const CONTRACT_SHARE = ((): number => {
+  const i = process.argv.indexOf('--contracts');
+  const v = i >= 0 ? Number(process.argv[i + 1]) : 0;
+  return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;
+})();
 
 /** The bot's order of pacts, the mildest first for a strong tower: Scarcity first (it has cards to spare), Vigour last. */
 const ORDER: readonly PactId[] = ['scarcity', 'elites', 'haste', 'tyranny', 'hordes', 'frailty', 'surge', 'vigour'];
@@ -113,7 +125,7 @@ export interface Act2Report {
   /** Starlight earned in all, and stars lit, at the end. */
   starlight: number;
   /** Where the Starlight came from (S7): heat records by region index, the Abyss's floors, its guardians' lumps, feats. */
-  sources: { heat: Record<number, number>; abyss: number; strata: number; rush: number; feats: number };
+  sources: { heat: Record<number, number>; abyss: number; strata: number; rush: number; feats: number; contracts: number };
   /**
    * The strata (plans/late-game/08 §9): wall seconds since the Blight fell
    * when each guardian first fell, by boss id; and the tower's level on
@@ -138,6 +150,8 @@ export interface Act2Report {
   anomalies: { offered: number; abyss: number };
   /** Cursed relics owned at the end, by id: rank and binding points. */
   cursed: Record<string, { rank: number; bound: number }>;
+  /** The Contract board (plans/late-game/10 §9): runs taken off it, success by tier, what it paid. */
+  contracts: { runs: number } & ContractTally;
   /** A line every hour: wall hour, stars lit, mastery levels, deepest floor, frontier heat. */
   hourly: { hour: number; stars: number; masteries: number; floor: number; frontier: number; starlight: number }[];
 }
@@ -159,7 +173,8 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   const heatFrontier: Record<number, number> = {};
   const hourly: Act2Report['hourly'] = [];
   let earned = 0;
-  const sources: Act2Report['sources'] = { heat: {}, abyss: 0, strata: 0, rush: 0, feats: 0 };
+  const sources: Act2Report['sources'] = { heat: {}, abyss: 0, strata: 0, rush: 0, feats: 0, contracts: 0 };
+  const contracts = { runs: 0, ...emptyContractTally() };
   const strata: Act2Report['strata'] = { fell: {}, entry: {} };
   let rushRuns = 0;
   let lastStar: number | null = null;
@@ -182,9 +197,14 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
       target = { region: r.index, heat: h };
       break;
     }
-    const rush = rushOpen(profile) && runs % RUSH_EVERY === RUSH_EVERY - 1;
-    const abyss = !rush && (target === null || runs % ABYSS_EVERY === ABYSS_EVERY - 1);
-    if (rush) {
+    // A contract run (plans/late-game/10 §9): its share of runs, spread evenly.
+    const due = CONTRACT_SHARE > 0 && boardOpen(profile) && Math.floor((runs + 1) * CONTRACT_SHARE) > Math.floor(runs * CONTRACT_SHARE);
+    const contract = due ? botTake(profile, contracts.runs, (p, h, region) => takePacts(p, h, region)) : null;
+    const rush = !contract && rushOpen(profile) && runs % RUSH_EVERY === RUSH_EVERY - 1;
+    const abyss = !contract && !rush && (target === null || runs % ABYSS_EVERY === ABYSS_EVERY - 1);
+    if (contract) {
+      contracts.runs++;
+    } else if (rush) {
       profile.region = RUSH_INDEX;
       rushRuns++;
     } else if (abyss) {
@@ -198,7 +218,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     const speed = runSpeed(profile);
     const run = createRun(toolConfig(profile), seeds.nextU32());
     const played = playRun(profile, run, {
-      policy: 'active', speed,
+      policy: 'active', speed, holdUlt: holdsUlt(contract?.card),
       // A stratum's first floor, reached from the top: the level a waypoint there should start at.
       onEvent: (ev) => {
         if (ev.kind === 'stratumEnter' && ev.floor > 1 && run.startWave === 1) (strata.entry[ev.floor] ??= []).push(run.level);
@@ -207,6 +227,11 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     clock += played.wall;
     const summary = bankRun(profile, run, played.newCards, speed);
     runs++;
+    if (contract) {
+      tallyContract(contracts, contract.tier, summary);
+      sources.contracts += summary.contract?.pay?.starlight ?? 0;
+      earned += summary.contract?.pay?.starlight ?? 0;
+    }
     reliquaries.claimed += summary.reliquaries.claimed;
     reliquaries.faded += summary.reliquaries.faded;
     reliquaries.seen += summary.reliquaries.claimed + summary.reliquaries.faded;
@@ -225,7 +250,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     sources.strata += fromStrata;
     sources.rush += fromRush;
     earned += fromHeat + fromFloor + fromRush + fromStrata;
-    if (!abyss && !rush && target) {
+    if (!contract && !abyss && !rush && target) {
       const key = `${target.region}:${target.heat}`;
       if (summary.heatRecord) {
         fails.delete(key);
@@ -260,6 +285,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     reliquaries,
     anomalies,
     strata,
+    contracts,
     cursed: Object.fromEntries(ownedCursed(profile).map((r) => [r.id, { rank: relicRank(profile, r.id), bound: profile.bound[r.id] ?? 0 }])),
   };
 }

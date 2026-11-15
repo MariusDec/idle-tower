@@ -84,6 +84,8 @@ export interface PlayOptions {
   draftSeconds?: number;
   /** Wall seconds the idle Opening waits before taking every banked draft (`openingSeconds`); null: one by one. */
   openingSeconds?: number | null;
+  /** The active policy never casts the ultimate: a contract asks it not to (plans/late-game/10 §9). */
+  holdUlt?: boolean;
   /** Stop once the wall clock passes this many seconds of play (a session ends), the run unfinished. */
   until?: number;
   /** Every sim event, with the wall seconds into play it happened at. */
@@ -149,6 +151,7 @@ export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayRe
     let input: RunInput;
     if (o.policy === 'active') {
       input = botInput(run, 'active');
+      if (o.holdUlt) delete input.ult;
     } else {
       const inOpening = run.draft !== null && run.draftsOpened <= opening && opening > 1;
       const takeAll = inOpening && o.openingSeconds != null && draftUp >= o.openingSeconds;

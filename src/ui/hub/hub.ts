@@ -12,6 +12,8 @@ import { FeatsView, featsBadge } from './feats';
 import { ForgeView, StarsView, forgeBadge, starsBadge } from './forge';
 import { MapView, type MapSpread } from './map';
 import { PactsView } from './pacts';
+import { ContractsView } from './contracts';
+import { boardOpen } from '../../meta/contracts';
 import { TacticsView } from './tactics';
 import { automations, tacticsKey } from '../../meta/automation';
 import { explainersFor } from '../../meta/explainers';
@@ -19,10 +21,11 @@ import { canSwitch, isSwitchedOff } from '../../meta/forge';
 
 /**
  * The hub's views. A tab exists only once its view is unlocked (R3);
- * Tactics and Pacts have no tab: they open from the home view once the
- * Tactician is owned, and once Act 2 opens (§9).
+ * Tactics, Pacts and Contracts have no tab: they open from the home view
+ * once the Tactician is owned, once Act 2 opens (§9), and once the board
+ * opens (plans/late-game/10 §2).
  */
-export type HubView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'stars' | 'tactics' | 'pacts';
+export type HubView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'stars' | 'tactics' | 'pacts' | 'contracts';
 
 /** Everything the hub can ask the app to do. */
 export interface HubActions {
@@ -53,6 +56,12 @@ export interface HubActions {
   buyStar(id: string): boolean;
   /** Set a pact's rank for the next run (§9). */
   setPact(id: PactId, rank: number): boolean;
+  /** Take a contract (plans/late-game/10): its run starts at once. */
+  takeContract(id: string): void;
+  /** Reroll a contract, free. */
+  rerollContract(id: string): boolean;
+  /** Pin a contract to the Next line, or unpin it. */
+  pinContract(id: string): boolean;
   /** Open the settings (§10.1: behind the gear). */
   settings(): void;
   /**
@@ -69,7 +78,7 @@ export interface HubActions {
 const SPREAD_MS = 2600;
 
 /** Tabs in the order they unlock and sit (§10.1). */
-const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics' | 'pacts'>; label: string }[] = [
+const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics' | 'pacts' | 'contracts'>; label: string }[] = [
   { view: 'forge', label: 'Forge' },
   { view: 'map', label: 'Map' },
   { view: 'collection', label: 'Collection' },
@@ -104,6 +113,8 @@ export class HubScreen {
   private readonly stars: StarsView;
   private readonly pacts: PactsView;
   private readonly pactsBtn: HTMLButtonElement;
+  private readonly contracts: ContractsView;
+  private readonly contractsBtn: HTMLButtonElement;
   private readonly starlightStat: HTMLElement;
   private readonly starlightN: HTMLElement;
   private readonly storedStat: HTMLElement;
@@ -135,6 +146,7 @@ export class HubScreen {
           <div class="hub-actions">
             <button type="button" class="btn hub-tactics" hidden>Tactics</button>
             <button type="button" class="btn hub-pacts" hidden>Pacts</button>
+            <button type="button" class="btn hub-contracts" hidden>Contracts</button>
           </div>
           <div class="hub-goal" hidden>
             <span class="hub-goal-label">Next</span>
@@ -163,6 +175,19 @@ export class HubScreen {
     this.tacticsBtn.addEventListener('click', () => this.setView('tactics'));
     this.pactsBtn = q('.hub-pacts');
     this.pactsBtn.addEventListener('click', () => this.setView('pacts'));
+    this.contractsBtn = q('.hub-contracts');
+    this.contractsBtn.addEventListener('click', () => this.setView('contracts'));
+    // The Next line opens what it names, when it names a view (plans/late-game/10 §4.6).
+    this.goal.addEventListener('click', () => {
+      const open = this.goal.dataset.open as HubView | undefined;
+      if (open) this.setView(open);
+    });
+    this.goal.addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && this.goal.dataset.open) {
+        e.preventDefault();
+        this.setView(this.goal.dataset.open as HubView);
+      }
+    });
     this.starlightStat = q('.hub-starlight');
     this.starlightN = q('.hub-starlight-n');
     this.storedStat = q('.hub-stored');
@@ -223,9 +248,16 @@ export class HubScreen {
       setPact: (id, rank) => refreshing(() => actions.setPact(id, rank)),
       done: () => this.setView('home'),
     });
+    this.contracts = new ContractsView(this.root, {
+      take: (id) => actions.takeContract(id),
+      reroll: (id) => refreshing(() => actions.rerollContract(id)),
+      pin: (id) => refreshing(() => actions.pinContract(id)),
+      pacts: () => this.setView('pacts'),
+      done: () => this.setView('home'),
+    });
     const views: [HubView, HTMLElement][] = [
       ['forge', this.forge.root], ['map', this.map.root], ['collection', this.collection.root], ['feats', this.feats.root],
-      ['stars', this.stars.root], ['tactics', this.tactics.root], ['pacts', this.pacts.root],
+      ['stars', this.stars.root], ['tactics', this.tactics.root], ['pacts', this.pacts.root], ['contracts', this.contracts.root],
     ];
     for (const [view, v] of views) {
       this.root.insertBefore(v, dock);
@@ -259,7 +291,9 @@ export class HubScreen {
     this.root.hidden = false;
     this.renderTabs(hubUnlocks(profile));
     const open = view === 'home'
-      || (view === 'tactics' ? tacticsKey(profile) !== null : view === 'pacts' ? act2Open(profile) : hubUnlocks(profile)[view]);
+      || (view === 'tactics' ? tacticsKey(profile) !== null
+        : view === 'pacts' ? act2Open(profile)
+          : view === 'contracts' ? boardOpen(profile) : hubUnlocks(profile)[view]);
     this.setView(open ? view : 'home', spread);
   }
 
@@ -312,6 +346,7 @@ export class HubScreen {
     this.stars.root.hidden = view !== 'stars';
     this.tactics.root.hidden = view !== 'tactics';
     this.pacts.root.hidden = view !== 'pacts';
+    this.contracts.root.hidden = view !== 'contracts';
     for (const t of this.tabs.querySelectorAll<HTMLElement>('.hub-tab')) {
       const on = t.dataset.view === view;
       toggleClass(t, 'is-active', on);
@@ -324,6 +359,7 @@ export class HubScreen {
     if (view === 'tactics') this.tactics.show(p);
     if (view === 'stars') this.stars.show(p, false);
     if (view === 'pacts') this.pacts.show(p);
+    if (view === 'contracts') this.contracts.show(p);
     this.refresh();
     if (tell) this.actions.explain(view, false, spread ? SPREAD_MS : 0);
   }
@@ -353,9 +389,21 @@ export class HubScreen {
     this.storedStat.hidden = p.storedLight <= 0;
     setText(this.storedN, formatNumber(Math.floor(p.storedLight)));
     setText(this.pactsBtn, `Pacts · Heat ${heat(p)}`);
+    this.contractsBtn.hidden = !boardOpen(p);
     const goal = p.records.runs > 0 ? hubGoal(p) : null;
     this.goal.hidden = goal === null;
     if (goal) {
+      // A line that opens a view is a button to the reader (plans/late-game/10 §4.6).
+      if (goal.open) {
+        this.goal.dataset.open = goal.open;
+        this.goal.setAttribute('role', 'button');
+        this.goal.tabIndex = 0;
+      } else {
+        delete this.goal.dataset.open;
+        this.goal.removeAttribute('role');
+        this.goal.removeAttribute('tabindex');
+      }
+      toggleClass(this.goal, 'is-link', goal.open !== undefined);
       this.goalIcon.replaceChildren(icon(goal.icon));
       setText(this.goalText, goal.text);
       this.goalFill.parentElement!.hidden = goal.progress === null;

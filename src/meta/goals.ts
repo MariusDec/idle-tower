@@ -3,6 +3,8 @@ import { FEATS } from '../content/feats';
 import { REGIONS } from '../content/regions';
 import type { IconId } from '../content/icons';
 import { act2Open, bossDown, frontier, regionRelics, relicRank } from './collection';
+import { contractText } from '../content/contracts';
+import { boardOpen, contractById } from './contracts';
 import { featProgress, featVisible } from './feats';
 import { nextGoal } from './forge';
 import { bestHeat } from './pacts';
@@ -15,17 +17,28 @@ export interface HubGoal {
   text: string;
   /** 0–1 when the goal has a measure, else null. */
   progress: number | null;
+  /** The hub view a tap on the line opens (plans/late-game/10 §4.6); absent: the line is no link. */
+  open?: 'contracts';
+}
+
+/** A contract as the Next line reads it. */
+function contractGoal(text: string): HubGoal {
+  return { icon: 'wanted-reward', text: `Contract: ${text}`, progress: null, open: 'contracts' };
 }
 
 /**
- * Chosen in this order (§7.4): an affordable Forge node; the frontier's boss
- * while it stands; in Act 2 (§9), a star that can be lit; the closest
- * unfinished feat; a relic still to find in a region already cleared; and
- * in Act 2, the frontier's next heat record.
+ * Chosen in this order (§7.4): an affordable Forge node; the pinned
+ * contract (plans/late-game/10 §4.6: the player's own choice); the
+ * frontier's boss while it stands; in Act 2 (§9), a star that can be lit;
+ * the closest unfinished feat; once the board is open, its Quick card (so
+ * the line never runs dry); a relic still to find in a region already
+ * cleared; and in Act 2, the frontier's next heat record.
  */
 export function hubGoal(profile: Profile): HubGoal | null {
   const node = nextGoal(profile);
   if (node && node.progress >= 1) return { icon: node.node.icon, text: `Forge: ${node.node.name} is ready`, progress: 1 };
+  const pinned = contractById(profile, profile.contracts.pinned);
+  if (pinned) return contractGoal(contractText(pinned));
   const region = frontier(profile);
   if (!bossDown(profile, region.boss)) {
     const boss = BOSS_BY_ID[region.boss];
@@ -44,6 +57,8 @@ export function hubGoal(profile: Profile): HubGoal | null {
     if (!feat || p > feat.progress) feat = { icon: f.icon, text: `Feat: ${f.text}`, progress: p };
   }
   if (feat) return feat;
+  const quick = boardOpen(profile) ? profile.contracts.board.find((c) => c.slot === 'quick') : undefined;
+  if (quick) return contractGoal(contractText(quick));
   for (const r of REGIONS) {
     if (!bossDown(profile, r.boss)) continue;
     const missing = regionRelics(r.index).find((x) => relicRank(profile, x.id) === 0);

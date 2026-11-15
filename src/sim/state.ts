@@ -26,6 +26,8 @@ export interface RunConfig {
   readonly startingWeapon?: WeaponId;
   /** The Trial this run is (N5), or null. Absent: none. */
   readonly trial?: string | null;
+  /** The contract this run was taken for (plans/late-game/10), or null. Absent: none. */
+  readonly contract?: string | null;
   /** Every stat contribution from outside the run: frame quirk, Forge, relics. */
   readonly mods: readonly StatMod[];
   readonly weaponSlots: number;
@@ -758,6 +760,8 @@ export interface RunState {
   readonly arena: Oval;
   /** The Trial this run is (N5), or null (from the config). */
   trial: string | null;
+  /** The contract this run was taken for (plans/late-game/10), or null (from the config): `bankRun` settles it. */
+  contract: string | null;
   /** Sim steps taken. `time` is derived from it so it never drifts. */
   tick: number;
   time: number;

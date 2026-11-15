@@ -2,9 +2,17 @@ import { ABYSS_INDEX } from './abyss';
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
 import { EXPLAINERS } from './explainers';
+import { CONTRACT_OMENS, QUARRY, contractText } from './contracts';
+import { BOSSES } from './bosses';
+import { EVOLUTIONS } from './evolutions';
+import { FRAMES } from './frames';
+import { FUSIONS } from './fusions';
+import { REGIONS } from './regions';
+import { RUSH_STAGES } from './rush';
+import { WEAPONS } from './weapons';
 import { STRATA, STRATUM_FLOORS, type StratumDef } from './strata';
 import type {
-  AnomalyDef, AuraDef, BossDef, BossPhase, SecretDef, SecretNeeds, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, RiftDef, TrialDef, WeaponDef, WebNodeDef,
+  ContractMod, ContractTarget, AnomalyDef, AuraDef, BossDef, BossPhase, SecretDef, SecretNeeds, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, RiftDef, TrialDef, WeaponDef, WebNodeDef,
 } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
@@ -678,9 +686,58 @@ export function strataRule(strata: readonly StratumDef[] = STRATA): LintRule {
   };
 }
 
+/**
+ * The Contract board (plans/late-game/10 §6): every target template with
+ * each modifier at its longest fill stays within R4's fifteen words (two
+ * modifiers are the generator's to prove, card by card: `meta/contracts.ts#valid`);
+ * every quarry is a type its region brings; and the slots' bands cover T1–T4.
+ */
+export const contractsRule: LintRule = () => {
+  const out: LintIssue[] = [];
+  const longest = <T>(xs: readonly T[], name: (x: T) => string): T => xs.reduce((a, b) => (name(b).length > name(a).length ? b : a));
+  const weapon = longest(WEAPONS, (w) => w.name).id;
+  const evolving = longest(EVOLUTIONS.map((e) => WEAPONS.find((w) => w.id === e.weapon)!), (w) => w.name).id;
+  const pair = [...WEAPONS].sort((a, b) => b.name.length - a.name.length).slice(0, 2).map((w) => w.id);
+  const targets: ContractTarget[] = [
+    ...REGIONS.flatMap((r): ContractTarget[] => [
+      { kind: 'boss', region: r.index }, { kind: 'wave', region: r.index, wave: 20 }, { kind: 'overtime', region: r.index, k: 15 },
+    ]),
+    { kind: 'floor', floor: 30 },
+    ...BOSSES.filter((b) => b.abyss).map((b): ContractTarget => ({ kind: 'guardian', boss: b.id })),
+    { kind: 'rush', stages: RUSH_STAGES, within: 59 * 60 },
+    { kind: 'rush', stages: RUSH_STAGES - 1, within: null },
+  ];
+  const mods: ContractMod[] = [
+    { kind: 'heat', heat: 33 }, { kind: 'within', seconds: 999 }, { kind: 'healthy', pct: 70 }, { kind: 'noUlt' },
+    { kind: 'carry', weapon }, { kind: 'evolve', weapon: evolving },
+    { kind: 'fuse', fusion: longest(FUSIONS, (f) => f.name).id },
+    ...FRAMES.map((f): ContractMod => ({ kind: 'rule', rule: { kind: 'frame', frame: f.id as never } })),
+    { kind: 'rule', rule: { kind: 'weapons', ids: pair } },
+    { kind: 'rule', rule: { kind: 'slots', weapon: 2 } }, { kind: 'rule', rule: { kind: 'slots', passive: 0 } },
+    ...CONTRACT_OMENS.map((o): ContractMod => ({ kind: 'rule', rule: { kind: 'omen', pact: o.pact, rank: o.rank } })),
+  ];
+  const say = (id: string, text: string): void => {
+    const n = wordCount(text);
+    if (n > MAX_TEXT_WORDS) out.push({ table: 'contracts', id, problem: `"${text}" is ${n} words (max ${MAX_TEXT_WORDS})` });
+  };
+  for (const t of targets) for (const m of mods) say(`${t.kind}+${m.kind}`, contractText({ target: t, mods: [m] }));
+  for (const r of REGIONS) {
+    // A run reads as its tally (§3), with a modifier after it.
+    const tallies: ContractMod[] = [{ kind: 'untouched', wave: 14 }, ...(QUARRY[r.index] ?? []).map((q): ContractMod => ({ kind: 'slay', enemy: q.enemy, n: q.n }))];
+    for (const tally of tallies) for (const m of mods) say(`run+${tally.kind}+${m.kind}`, contractText({ target: { kind: 'run', region: r.index }, mods: [tally, m] }));
+    const pool = new Set<string>([...r.pool.map((p) => p.enemy), ...Object.values(r.beats).flatMap((b) => (b.kind === 'introduce' ? [b.enemy] : []))]);
+    for (const q of QUARRY[r.index] ?? []) {
+      if (q.enemy !== 'elite' && !pool.has(q.enemy)) out.push({ table: 'contracts', id: `quarry-${r.index}`, problem: `${q.enemy} is not in ${r.name}'s pool` });
+    }
+  }
+  const tiers = new Set(BALANCE.contracts.bands.flatMap(([lo, hi]) => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i)));
+  for (const t of [1, 2, 3, 4]) if (!tiers.has(t)) out.push({ table: 'contracts', id: 'bands', problem: `no slot holds tier ${t}` });
+  return out;
+};
+
 export const RULES: readonly LintRule[] = [
   uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking, rifts,
-  cursedRelics, anomalies, forms, secretsRule(EXPLAINERS.flatMap((x) => [x.title, ...x.lines])), strataRule(),
+  cursedRelics, anomalies, forms, secretsRule(EXPLAINERS.flatMap((x) => [x.title, ...x.lines])), strataRule(), contractsRule,
 ];
 
 /**

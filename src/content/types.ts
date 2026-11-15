@@ -1060,7 +1060,9 @@ export interface PactDef extends ContentEntry {
  */
 export type TrimId = 'ivy' | 'pennants' | 'runes' | 'gilt' | 'embers' | 'starlit'
   // Secrets' (plans/late-game/05): found, never listed before.
-  | 'rime' | 'kintsugi' | 'wayward';
+  | 'rime' | 'kintsugi' | 'wayward'
+  // The Contract board's milestones (plans/late-game/10 §4.4).
+  | 'seals' | 'lanterns';
 
 /**
  * A Trial's constraint (N5), applied to the run's config. A closed union;
@@ -1093,6 +1095,57 @@ export interface TrialDef extends ContentEntry {
   readonly region: number;
   readonly rules: readonly TrialRule[];
   readonly reward: TrialReward;
+}
+
+/** The Contract board's three slots (plans/late-game/10 §3), easiest first. */
+export type ContractSlot = 'quick' | 'steady' | 'hard';
+
+/**
+ * What a contract asks for (plans/late-game/10 §3): where, and how far. A
+ * closed union; `meta/contracts.ts#contractMet` is its exhaustive consumer.
+ */
+export type ContractTarget =
+  /** Fell a region's boss (already felled once). */
+  | { readonly kind: 'boss'; readonly region: number }
+  /** Reach wave `wave` (≤ 20) in a region. */
+  | { readonly kind: 'wave'; readonly region: number; readonly wave: number }
+  /** Hold a region to wave 20 + `k`. */
+  | { readonly kind: 'overtime'; readonly region: number; readonly k: number }
+  /** Any run in a region: the tally condition beside it is the ask. */
+  | { readonly kind: 'run'; readonly region: number }
+  /** Clear Abyss floor `floor`. */
+  | { readonly kind: 'floor'; readonly floor: number }
+  /** Fell an Abyss guardian again. */
+  | { readonly kind: 'guardian'; readonly boss: BossId }
+  /** Clear `stages` Boss Rush stages; with `within`, all of them under that many seconds. */
+  | { readonly kind: 'rush'; readonly stages: number; readonly within: number | null };
+
+/**
+ * A contract's modifier (plans/late-game/10 §3): a condition checked on the
+ * finished run, or a Trial's rule the run's config enforces.
+ */
+export type ContractMod =
+  | { readonly kind: 'heat'; readonly heat: number }
+  | { readonly kind: 'within'; readonly seconds: number }
+  | { readonly kind: 'healthy'; readonly pct: number }
+  | { readonly kind: 'noUlt' }
+  | { readonly kind: 'untouched'; readonly wave: number }
+  | { readonly kind: 'carry'; readonly weapon: WeaponId }
+  | { readonly kind: 'evolve'; readonly weapon: WeaponId }
+  | { readonly kind: 'fuse'; readonly fusion: FusionId }
+  /** Slay `n` of an enemy type, or `n` elites, in the one run. */
+  | { readonly kind: 'slay'; readonly enemy: EnemyId | 'elite'; readonly n: number }
+  /** One of a Trial's rules (frame, weapons, slots, omen). */
+  | { readonly kind: 'rule'; readonly rule: TrialRule };
+
+/** One card on the board, stored concretely on the profile so a reload shows the same three. */
+export interface ContractSpec {
+  readonly id: string;
+  readonly slot: ContractSlot;
+  readonly target: ContractTarget;
+  readonly mods: readonly ContractMod[];
+  /** The Hard slot's rider (§4.4): a rank of this relic on top of the pay; fixed to the slot until done. */
+  readonly rider: RelicId | null;
 }
 
 /** A rift (plans/late-game/02): a tear that opens mid-wave, for a watching player to tap. */

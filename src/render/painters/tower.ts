@@ -224,6 +224,37 @@ function paintTrim(ctx: CanvasRenderingContext2D, R: number, trim: TrimId, time:
       ctx.fill();
       return;
     }
+    // The Contract board's milestones (plans/late-game/10 §4.4).
+    case 'seals':
+      // Wax seals on the plinth: six red discs, each with a pressed gold mark.
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        const x = Math.cos(a) * R * 1.02;
+        const y = Math.sin(a) * R * 1.02;
+        ctx.fillStyle = withAlpha(FX.blood, 0.9);
+        ctx.beginPath();
+        ctx.arc(x, y, R * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = withAlpha(lighten(FX.gold, 0.1), 0.8);
+        ctx.beginPath();
+        ctx.arc(x, y, R * 0.025, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    case 'lanterns':
+      // Four lanterns at the course, glowing warm and breathing slowly.
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        const x = Math.cos(a) * R * 1.3;
+        const y = Math.sin(a) * R * 1.3;
+        ctx.fillStyle = withAlpha(FX.ember, 0.18 + 0.08 * Math.sin(time * 1.2 + i));
+        ctx.beginPath();
+        ctx.arc(x, y, R * 0.13, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = withAlpha(lighten(FX.gold, 0.25), 0.9);
+        ctx.fillRect(x - R * 0.035, y - R * 0.05, R * 0.07, R * 0.1);
+      }
+      return;
     default: {
       const exhaustive: never = trim;
       return exhaustive;

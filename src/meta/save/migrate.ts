@@ -104,6 +104,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   // paid against it, so no floor pays twice); the guardians' fights are new,
   // so none counts as felled, and every descent starts at the top.
   21: (raw) => ({ ...raw, version: 22, abyss: { ...(raw.abyss as object), felled: 0, start: 1 } }),
+  // v23: the Contract board (plans/late-game/10): empty, filled on the next bank or boot once it is open.
+  22: (raw) => ({ ...raw, version: 23, contracts: { seq: 0, board: [], pinned: null, taken: null, done: 0 } }),
 };
 
 export class MigrationError extends Error {}

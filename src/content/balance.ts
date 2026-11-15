@@ -403,6 +403,25 @@ export const BALANCE = {
    * mark on the Map and a light on the hub tower, once, paying `pay` times
    * that wave's wave pay.
    */
+  /**
+   * The Contract board (plans/late-game/10 §4.4). Opens at `opensAfter`'s
+   * fall. A contract's score is its target's base, its stretch against the
+   * player's own records, and its modifiers' points; `tiers` are the score
+   * ceilings of T1–T3 (T4 above), and `bands` the tiers each slot (Quick,
+   * Steady, Hard) may hold. Pay is `minutes` of the farm rate in shards, and
+   * in Act 2 `starlight` too, by tier, read at payout.
+   */
+  contracts: {
+    opensAfter: 'forgeheart',
+    attempts: 24,
+    bands: [[1, 2], [2, 3], [3, 4]],
+    tiers: [2.5, 4, 5.5],
+    minutes: [6, 10, 15, 22],
+    starlight: [4, 8, 13, 20],
+    minWithin: 20,
+    milestones: { trims: [10, 30], relicEvery: 10 },
+    weights: { boss: 3, floor: 2, overtime: 1.5, guardian: 1, wave: 1, run: 1, rush: 1 },
+  },
   trophies: {
     overtime: [5, 10, 15],
     pay: 10,

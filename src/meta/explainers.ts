@@ -1,6 +1,7 @@
 import { EXPLAINERS, type ExplainerDef, type ExplainerId, type ExplainerView } from '../content/explainers';
 import { REGIONS } from '../content/regions';
 import { tacticsKey } from './automation';
+import { boardOpen } from './contracts';
 import { act2Open, collectionPages, hubUnlocks, ownedCursed, rushOpen, trophyCount } from './collection';
 import { towerTier } from './forge';
 import type { Profile } from './profile';
@@ -53,6 +54,8 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
       return tacticsKey(profile) !== null;
     case 'pacts':
       return act2Open(profile);
+    case 'contracts':
+      return boardOpen(profile);
     default: {
       const exhaustive: never = id;
       return exhaustive;

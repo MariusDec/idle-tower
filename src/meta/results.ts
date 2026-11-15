@@ -16,6 +16,7 @@ import {
 import { checkFeats } from './feats';
 import { foremanBuy } from './automation';
 import { trialsOpen, winTrial, type TrialPaid } from './trials';
+import { boardOpen, ensureBoard, pendingTier, settleContract, type ContractSettled } from './contracts';
 import { nextGoal, type ForgeGoal } from './forge';
 import { recordFarm } from './offline';
 import { burnBonus, type BurnTally } from './storedLight';
@@ -58,7 +59,7 @@ export function buildOf(run: RunState): BuildSummary {
  * A reward only a present player can earn (I9, plans/late-game/01 §9.1).
  * Each late-game plan adds its own kind; the hands-off bot must never see one.
  */
-export type ActiveOnlyKind = 'stored-played' | 'rift' | 'reliquary' | 'anomaly' | 'wayward';
+export type ActiveOnlyKind = 'stored-played' | 'rift' | 'reliquary' | 'anomaly' | 'wayward' | 'contract';
 
 /** What Stored Light paid this run (plans/late-game/01 §2). */
 export interface StoredSummary {
@@ -172,6 +173,8 @@ export interface RunSummary {
   rushRecord: RushRecord | null;
   /** The Trial this run was (N5): whether it was won, and what it paid the first time. Null for an ordinary run. */
   trial: { id: string; won: boolean; paid: TrialPaid | null } | null;
+  /** The contract this run was taken for (plans/late-game/10): met and paid, or why not. Null for an ordinary run. */
+  contract: ContractSettled | null;
   /** What the Foreman bought as the run banked (N7): Forge node ids, one per level. */
   foreman: string[];
   /** Overtime trophies earned this run (N4): the overtime wave each marks, and its one-time shards. */
@@ -196,6 +199,7 @@ function unlockList(profile: Profile): Map<string, string> {
     add('The Abyss');
   }
   if (rushOpen(profile)) add('Boss Rush');
+  if (boardOpen(profile)) add('Contracts');
   if (recipesOpen(profile)) add('The Recipe Book');
   for (const r of REGIONS) if (r.index > 1 && regionUnlocked(profile, r.index)) add(r.name);
   for (const r of REGIONS) if (trialsOpen(profile, r.index)) add(`Trials: ${r.name}`);
@@ -252,6 +256,8 @@ export function bankRun(
   const time = run.outcome?.time ?? run.time;
   const shards = Math.floor(run.shards);
   const before = unlockList(profile);
+  // A contract pays at its tier before this run's own records move (plans/late-game/10 §3).
+  const contractTier = pendingTier(profile, run);
   const r = profile.records;
   // The Abyss counts its waves across floors (§9), and Boss Rush its bosses (N8): they are no region's record.
   const abyss = run.regionId === ABYSS_INDEX;
@@ -287,7 +293,8 @@ export function bankRun(
     }
   }
   for (const [type, n] of Object.entries(run.killsBy)) profile.killsBy[type] = (profile.killsBy[type] ?? 0) + (n ?? 0);
-  recordFarm(profile, shards, time / Math.max(1, speed));
+  // A contract run often plays behind the frontier: it never cuts the next night's pay (plans/late-game/10 §4.4).
+  if (!run.contract) recordFarm(profile, shards, time / Math.max(1, speed));
 
   const known = new Set(profile.seenEnemies);
   const newEnemies = run.seen.filter((id) => !known.has(id));
@@ -353,6 +360,8 @@ export function bankRun(
     trial = { id: run.trial, won, paid: won ? winTrial(profile, run.trial) : null };
     profile.trial = null;
   }
+  // A contract (plans/late-game/10 §4.5): settled on the run it was taken for; either way the next run is ordinary.
+  const contract = settleContract(profile, run, contractTier);
   const floorRecord = abyss ? recordFloor(profile, run.floors) : null;
   // A guardian's first fall in the strata (plans/late-game/08 §4.5): its lump, its waypoint, and the shaft's ceremony.
   const stratumRecord = abyss ? recordStratum(profile, run.felled) : null;
@@ -388,6 +397,10 @@ export function bankRun(
   if (anomaly?.taken) activeOnly.push({ kind: 'anomaly', amount: 1 });
   // The Wayward Banner (plans/late-game/05, I9): found only by picks of one's own.
   if (secrets?.found.includes('wayward')) activeOnly.push({ kind: 'wayward', amount: 1 });
+  // Contracts (plans/late-game/10 §4.7, I9): only a tap on Take or Retry starts one.
+  if (contract?.pay) activeOnly.push({ kind: 'contract', amount: contract.pay.shards + contract.pay.starlight });
+  // The board fills once it opens, and refills a slot just done.
+  ensureBoard(profile);
   // The deepest floor each worn curse went to, for the compare sheet.
   if (abyss) {
     const floor = floorOf(Math.max(1, wave));
@@ -439,6 +452,7 @@ export function bankRun(
     trophies,
     foreman,
     trial,
+    contract,
   };
 }
 

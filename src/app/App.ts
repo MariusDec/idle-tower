@@ -20,6 +20,8 @@ import { offlineEarnings, offlineTier, storedRates } from '../meta/offline';
 import { emptyTally, storedWant, tallyWave, waveEngaged, type BurnTally } from '../meta/storedLight';
 import { setPactRank } from '../meta/pacts';
 import { chooseTrial, toggleTrim, wornTrims } from '../meta/trials';
+import { contractById, ensureBoard, pin as pinContract, reroll as rerollContract, takeContract } from '../meta/contracts';
+import { contractText } from '../content/contracts';
 import { explainersFor, markExplained, unreadExplainers } from '../meta/explainers';
 import { STAR_WEB } from '../meta/stars';
 import { FORGE, FORGE_BY_ID } from '../content/forge';
@@ -235,10 +237,18 @@ export class App {
         return bought;
       },
       setPact: (id, rank) => this.between(() => setPactRank(this.profile, id, rank)) ?? false,
+      // Contracts (plans/late-game/10): only a tap here or on Retry ever starts one (§4.7).
+      takeContract: (id) => {
+        if (this.between(() => takeContract(this.profile, id))) this.startRun();
+      },
+      rerollContract: (id) => this.between(() => rerollContract(this.profile, id)) ?? false,
+      pinContract: (id) => this.between(() => pinContract(this.profile, id)) ?? false,
       settings: () => this.openSettings(),
       explain: (view, asked, wait) => this.explain(view, asked, wait),
     });
-    this.results = new ResultsScreen(els.screens, () => this.leaveResults(), () => this.startRun(), (id, done) => this.wearFromResults(id, done));
+    this.results = new ResultsScreen(
+      els.screens, () => this.leaveResults(), () => this.startRun(), (id, done) => this.wearFromResults(id, done), (id) => this.retryContract(id),
+    );
     this.toasts = new Toasts(els.overlay);
     this.draft = new DraftPanel(
       els.overlay, (i) => this.pick(i), () => this.reroll(), () => this.takeAll(), (i) => this.banish(i),
@@ -328,6 +338,8 @@ export class App {
         : '[save] no backup would read; starting a fresh profile');
     }
     const resume = await loadResume(this.profile);
+    // A save from before the Contract board, or one that opened it unbanked: draw its cards (deterministic, plans/late-game/10 §4.1).
+    ensureBoard(this.profile);
     this.bindLifecycle();
     this.loop.start();
     this.go('hub');
@@ -425,6 +437,16 @@ export class App {
     this.startRun();
   }
 
+  /**
+   * The results' Retry (plans/late-game/10 §2): take the same card again and
+   * run it at once. The auto-restart countdown never comes here.
+   */
+  private retryContract(id: string): void {
+    if (this.screen !== 'results' || !takeContract(this.profile, id)) return;
+    void this.save();
+    this.startRun();
+  }
+
   /** Results → hub: the Forge, or after a first boss kill, the Map and its light (§7.3). */
   private leaveResults(): void {
     const boss = this.profile.ceremony;
@@ -518,6 +540,8 @@ export class App {
     else this.snapshot(this.run);
     const trial = this.run.trial ? TRIAL_BY_ID[this.run.trial] : null;
     if (trial) this.toasts.show(trial.icon, `Trial · ${trial.name}`, trial.text);
+    const contract = contractById(this.profile, this.run.contract);
+    if (contract) this.toasts.show('wanted-reward', 'Contract', contractText(contract));
   }
 
   private simSpeed(): number {
@@ -1050,7 +1074,18 @@ export class App {
       p.textContent = note;
       body.append(p);
     }
-    if (this.run) body.append(buildList(buildOf(this.run)), statsList(this.run));
+    if (this.run) {
+      body.append(buildList(buildOf(this.run)));
+      // The contract this run was taken for (plans/late-game/10 §2), under the build.
+      const contract = contractById(this.profile, this.run.contract);
+      if (contract) {
+        const c = document.createElement('p');
+        c.className = 'modal-body pause-contract';
+        c.textContent = `Contract · ${contractText(contract)}`;
+        body.append(c);
+      }
+      body.append(statsList(this.run));
+    }
     this.modal.show('Paused', body, [
       { label: 'Retreat', onClick: () => this.retreat() },
       { label: 'Settings', onClick: () => this.openSettings() },

@@ -8,7 +8,7 @@
  */
 
 /** Where an explainer is told: one of the hub's views (`ui/hub/hub.ts#HubView`). */
-export type ExplainerView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'stars' | 'tactics' | 'pacts';
+export type ExplainerView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'stars' | 'tactics' | 'pacts' | 'contracts';
 
 export type ExplainerId =
   | 'tower'
@@ -31,7 +31,8 @@ export type ExplainerId =
   | 'feats'
   | 'stars'
   | 'tactics'
-  | 'pacts';
+  | 'pacts'
+  | 'contracts';
 
 export interface ExplainerDef {
   readonly id: ExplainerId;
@@ -197,6 +198,14 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
       'Pacts make the regions harder, rank by rank. Their total is your heat.',
       'Each point of heat adds 10% shards. Defeating a region’s boss at a new heat record pays Starlight.',
       'Pacts apply to the regions only, not the Abyss or Boss Rush.',
+    ],
+  },
+  {
+    id: 'contracts', view: 'contracts', title: 'Contracts',
+    lines: [
+      'Three contracts wait here. Each asks for one run played a certain way, and pays when you manage it.',
+      'Take one to start its run at once. Fail, and it stays. Finish it, and a new one takes its place.',
+      'Rerolling is free. It changes what you do, not what you earn: harder asks pay more.',
     ],
   },
 ];

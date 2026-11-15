@@ -91,6 +91,13 @@ function formFind(form: { wave: number; first: boolean; record: boolean }): HTML
  * the damage each weapon dealt and what wore the tower down; the countdown
  * waits while that is open.
  */
+/** What a met contract paid (plans/late-game/10 §2): "Contract done · ✦ 8 · 2.0M". */
+function contractLine(c: NonNullable<RunSummary['contract']>): string {
+  if (!c.pay) return `Contract not met: ${c.why ?? 'not yet'}`;
+  const star = c.pay.starlight > 0 ? ` · ✦ ${formatNumber(c.pay.starlight)}` : '';
+  return `Contract done${star} · ${formatNumber(c.pay.shards)} shards`;
+}
+
 /** What became of a Trial (N5), in one line. */
 function trialLine(t: NonNullable<RunSummary['trial']>): string {
   const name = TRIAL_BY_ID[t.id]?.name ?? t.id;
@@ -121,6 +128,9 @@ export class ResultsScreen {
   private readonly nextFill: HTMLElement;
   private readonly nextValue: HTMLElement;
   private readonly again: HTMLButtonElement;
+  /** Retry an unmet contract (plans/late-game/10 §2): the same card, at once. */
+  private readonly retry: HTMLButtonElement;
+  private retryId: string | null = null;
   private readonly hubBtn: HTMLButtonElement;
   private readonly reportBtn: HTMLButtonElement;
   private readonly report: HTMLElement;
@@ -134,6 +144,8 @@ export class ResultsScreen {
     host: HTMLElement, onForge: () => void, private readonly onAgain: () => void,
     /** Wear a cursed relic just claimed (plans/late-game/03 §2); `done(worn)` redraws its button. */
     private readonly onWear: (id: RelicId, done: (worn: boolean) => void) => void = () => {},
+    /** Retry a contract not met (plans/late-game/10 §2). */
+    onRetry: (id: string) => void = () => {},
   ) {
     this.root = document.createElement('section');
     this.root.className = 'screen results';
@@ -174,6 +186,7 @@ export class ResultsScreen {
       </div>
       <div class="results-actions">
         <button type="button" class="btn results-forge">Forge</button>
+        <button type="button" class="btn results-retry" hidden>Retry</button>
         <button type="button" class="btn btn-primary results-again">Run again</button>
       </div>`;
     const q = <T extends HTMLElement>(sel: string): T => this.root.querySelector<T>(sel)!;
@@ -197,6 +210,7 @@ export class ResultsScreen {
     this.nextFill = q('.results-next-fill');
     this.nextValue = q('.results-next-value');
     this.again = q('.results-again');
+    this.retry = q('.results-retry');
     this.hubBtn = q('.results-forge');
     this.reportBtn = q('.results-report-btn');
     this.report = q('.results-report');
@@ -219,6 +233,10 @@ export class ResultsScreen {
     this.again.addEventListener('click', () => {
       this.countdown = null;
       onAgain();
+    });
+    this.retry.addEventListener('click', () => {
+      this.countdown = null;
+      if (this.retryId) onRetry(this.retryId);
     });
     host.appendChild(this.root);
     this.hide();
@@ -291,6 +309,11 @@ export class ResultsScreen {
       ...(s.foreman.length > 0 ? [reward('shop', `The Foreman bought ${foremanLine(s.foreman)}`, 'unlock')] : []),
       // A Trial (N5): won, and what it paid the first time; or what still stands.
       ...(s.trial ? [reward('checkered-flag', trialLine(s.trial), s.trial.paid ? 'unlock' : 'feat')] : []),
+      // A contract (plans/late-game/10 §2): what it paid, its rider and milestone, and the card in its place; or why not.
+      ...(s.contract ? [reward('wanted-reward', contractLine(s.contract), s.contract.pay ? 'unlock' : 'feat')] : []),
+      ...(s.contract?.rider ? [reward('locked-chest', s.contract.rider, 'relic')] : []),
+      ...(s.contract?.milestone ? [reward('star-medal', s.contract.milestone, 'unlock')] : []),
+      ...(s.contract?.next ? [reward('wanted-reward', `New contract: ${s.contract.next}`, 'feat')] : []),
       ...s.unlocks.map((u) => reward('star-gate', u, 'unlock')),
       ...s.relics.map((r) => {
         const def = RELIC_BY_ID[r.id];
@@ -417,6 +440,9 @@ export class ResultsScreen {
     this.report.hidden = true;
     this.reportBtn.setAttribute('aria-expanded', 'false');
 
+    // Retry only for a contract not met; the auto-restart countdown never retries one (§2).
+    this.retryId = s.contract && !s.contract.met ? s.contract.id : null;
+    this.retry.hidden = this.retryId === null;
     this.countdown = autoRestart ? BALANCE.automation.restartSeconds : null;
     this.paintAgain();
     this.root.hidden = false;

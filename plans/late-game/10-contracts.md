@@ -1,6 +1,12 @@
 # 10. The Contract board
 
-**Status:** 2026-11-14. Plan, not built. Supersedes §1 of
+**Status:** 2026-11-15. Steps 1–6 built (the grammar, the board, Act 1 from
+Forgeheart and Act 2, milestones, the bots' policy); readings in
+[docs/contracts.md](../../docs/contracts.md). Step 4's gate (the bar) is read
+but not tuned. Deviations: the plan's slot bands are kept as pay clamps; a
+full Boss Rush clear reads "Clear Boss Rush" and `untouched` reads "Reach
+wave w unhurt", for R4; an overtime past the region's record gets +1 stretch.
+Plan written 2026-11-14. Supersedes §1 of
 [d-come-back.md](d-come-back.md) (the Contract board), and answers two of its
 Open questions (Act 1, pinning). Idea 10 of the late-game review
 ([README](README.md)).

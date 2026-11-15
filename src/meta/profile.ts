@@ -1,4 +1,4 @@
-import type { TrimId } from '../content/types';
+import type { ContractSpec, TrimId } from '../content/types';
 
 /**
  * The profile: all meta state (§12.4). Owned by `meta/`; `sim/` never sees it,
@@ -9,7 +9,7 @@ import type { TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 22;
+  version: 23;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -134,6 +134,12 @@ export interface Profile {
   trials: Record<string, true>;
   /** The trial the next run is (N5), or null for an ordinary run. Cleared once that run banks. */
   trial: string | null;
+  /**
+   * The Contract board (plans/late-game/10): the meta RNG's counter, the three
+   * cards (empty until the board opens), the one pinned to the Next line, the
+   * one the next run is taken for, and how many have been done in all.
+   */
+  contracts: { seq: number; board: ContractSpec[]; pinned: string | null; taken: string | null; done: number };
   /** Trims the player has taken off the tower (N5): every won trim is worn unless listed here. */
   trimsOff: TrimId[];
   /**
@@ -182,7 +188,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 22;
+export const PROFILE_VERSION = 23;
 
 /** One rift's journal entry (plans/late-game/02 §5). */
 export interface RiftRecord {
@@ -250,6 +256,7 @@ export function newProfile(now: number): Profile {
     wishlist: [],
     trials: {},
     trial: null,
+    contracts: { seq: 0, board: [], pinned: null, taken: null, done: 0 },
     trimsOff: [],
     sets: {},
     region: 1,

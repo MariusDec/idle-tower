@@ -53,7 +53,9 @@ import type { BranchId } from '../src/content/types';
 import { FAST_STEPS, playRun, toolConfig } from './play';
 import { shop } from './shop';
 import { CHECKIN_EVERY, SESSION, farmRatio, runIdle, type IdleReport } from './idle';
-import { runAct2, type Act2Report } from './act2';
+import { CONTRACT_SHARE, runAct2, takePacts, type Act2Report } from './act2';
+import { botTake, emptyContractTally, holdsUlt, successLine, tallyContract, type ContractTally } from './contractBot';
+import { boardOpen } from '../src/meta/contracts';
 import { STRATA } from '../src/content/strata';
 import { BALANCE } from '../src/content/balance';
 import { IN_WORKER, parallel, workerJobs } from './parallel';
@@ -77,6 +79,11 @@ const I6_LATE = { from: 2 * 3600, to: 10 * 3600, gap: 30 * 60 };
  */
 const TRIAL_EVERY = 8;
 const TRIAL_TRIES = 2;
+/**
+ * Once the Contract board opens (plans/late-game/10 §9), the active bot
+ * takes a card every this many runs, offset from the Trials' turn.
+ */
+const CONTRACT_EVERY = 4;
 
 export interface Reveal {
   /** Wall seconds since the profile was made. */
@@ -105,6 +112,8 @@ export interface RunRow {
 
 export interface PacingReport {
   seconds: number;
+  /** The Contract board's runs (plans/late-game/10 §9): success by tier, what it paid. */
+  contracts: { runs: number } & ContractTally;
   runs: RunRow[];
   reveals: Reveal[];
   firstWave20: number | null;
@@ -175,6 +184,8 @@ export function runPacing(hours: number, seed: number): PacingReport {
   const checkpoints: PacingReport['checkpoints'] = [];
   const trials: Record<string, number> = {};
   const tries: Record<string, number> = {};
+  const contracts = { runs: 0, ...emptyContractTally() };
+  let taken: ReturnType<typeof botTake> = null;
   const checkpoint = (label: string): void => {
     if (!checkpoints.some((c) => c.label === label)) checkpoints.push({ label, at: clock, profile: structuredClone(profile) });
   };
@@ -198,6 +209,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
     const played = playRun(profile, run, {
       policy: 'active',
       speed,
+      holdUlt: holdsUlt(taken?.card),
       onDraft: (fresh, first, wall) => {
         if (first) reveals.push({ at: start + wall, what: 'the draft' });
         for (const key of fresh) reveals.push({ at: start + wall, what: `card: ${key}` });
@@ -244,6 +256,13 @@ export function runPacing(hours: number, seed: number): PacingReport {
     if (progress < 0.5) i3 = false;
     for (const u of summary.unlocks) reveals.push({ at: clock, what: `unlock: ${u}` });
     for (const t of summary.trophies) reveals.push({ at: clock, what: `trophy: Region ${summary.regionId} +${t.overtime}` });
+    if (taken) {
+      tallyContract(contracts, taken.tier, summary);
+      // A card done is a reveal (plans/late-game/10 §9, I6), and so is a milestone.
+      if (summary.contract?.met) reveals.push({ at: clock, what: `contract done: ${summary.contract.text}` });
+      if (summary.contract?.milestone) reveals.push({ at: clock, what: `contract milestone: ${summary.contract.milestone}` });
+      taken = null;
+    }
     if (summary.trial?.paid) {
       trials[summary.trial.id] = clock;
       reveals.push({ at: clock, what: `trial: ${TRIAL_BY_ID[summary.trial.id].name} · ${summary.trial.paid.line}` });
@@ -261,6 +280,11 @@ export function runPacing(hours: number, seed: number): PacingReport {
       const t = TRIALS.find((x) => x.region < profile.region && trialsOpen(profile, x.region)
         && !trialWon(profile, x.id) && (tries[x.id] ?? 0) < TRIAL_TRIES);
       if (t && chooseTrial(profile, t.id)) tries[t.id] = (tries[t.id] ?? 0) + 1;
+    }
+    // And once the board is open, a contract every `CONTRACT_EVERY` runs (never over a Trial).
+    if (!profile.trial && boardOpen(profile) && runs.length % CONTRACT_EVERY === 1) {
+      taken = botTake(profile, contracts.runs, (p, h, region) => takePacts(p, h, region));
+      if (taken) contracts.runs++;
     }
 
     const bought = shop(profile);
@@ -298,6 +322,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
   const stretchGap = king !== null && finale !== null ? worstGapIn(reveals, king, finale) : null;
   return {
     seconds: clock,
+    contracts,
     runs,
     reveals,
     firstWave20,
@@ -557,7 +582,12 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
     console.log(`           frontier heat 1–10: ${ladder}`);
     console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')} · last star ${fmt(r.lastStar)}`);
     const src = r.sources;
-    console.log(`           Starlight from: ${Object.entries(src.heat).map(([i, n]) => `R${i} ${n}`).join(' · ')} · Abyss ${src.abyss} · strata ${src.strata} · Rush ${src.rush} · feats ${src.feats}`);
+    console.log(`           Starlight from: ${Object.entries(src.heat).map(([i, n]) => `R${i} ${n}`).join(' · ')} · Abyss ${src.abyss} · strata ${src.strata} · Rush ${src.rush} · feats ${src.feats} · contracts ${src.contracts}`);
+    if (r.contracts.runs > 0) {
+      // The board's bar (plans/late-game/10 §9): success by tier, contract-only rewards per hour.
+      const c = r.contracts;
+      console.log(`           contracts: ${c.runs} runs · ${successLine(c)} · ${(c.only / (r.seconds / 3600)).toFixed(2)} riders+milestones/h · ${c.shards} shards`);
+    }
     const fell = STRATA.map((st) => `${BOSS_BY_ID[st.boss].name} ${fmt(r.strata.fell[st.boss])}`).join(' · ');
     const entry = Object.entries(r.strata.entry).map(([f, ls]) => `floor ${f} level ${[...ls].sort((a, b) => a - b)[ls.length >> 1]} (${ls.length})`).join(' · ');
     console.log(`           strata: ${fell}${entry ? ` · entered ${entry}` : ''}`);
@@ -577,6 +607,21 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
   }
   const reports = verdicts.flatMap((v) => (v.report ? [v.report] : []));
   const med = (xs: number[]): number => [...xs].sort((a, b) => a - b)[xs.length >> 1] ?? 0;
+  // The Contract board's bar (plans/late-game/10 §9): read against a run without `--contracts`.
+  const starPerHour = (r: Act2Report): number => r.starlight / (r.seconds / 3600);
+  console.log(`        Starlight per hour: median ${med(reports.map(starPerHour)).toFixed(1)}${CONTRACT_SHARE > 0 ? ` with ${Math.round(CONTRACT_SHARE * 100)}% contract runs` : ''} (${reports.map((r) => starPerHour(r).toFixed(1)).join(' ')})`);
+  if (CONTRACT_SHARE > 0) {
+    const only = reports.map((r) => r.contracts.only / (r.seconds / 3600));
+    console.log(`  ${med(only) >= 1 ? 'PASS' : 'FAIL'}  contract-only rewards per hour: median ${med(only).toFixed(2)} (want ≥ 1)`);
+    const all = reports.reduce((t, r) => {
+      for (const k of [1, 2, 3, 4]) {
+        t.tries[k] = (t.tries[k] ?? 0) + (r.contracts.tries[k] ?? 0);
+        t.met[k] = (t.met[k] ?? 0) + (r.contracts.met[k] ?? 0);
+      }
+      return t;
+    }, emptyContractTally());
+    console.log(`        contract success by tier: ${successLine(all)} (want ~85 / 65 / 45 / 30%)`);
+  }
   const floors = reports.map((r) => r.floor);
   const okFloor = med(floors) >= ABYSS_FLOOR_12H;
   console.log(`  ${okFloor ? 'PASS' : 'FAIL'}  best Abyss floor at ${hours} h: median ${med(floors)} (want ≥ ${ABYSS_FLOOR_12H} at 12 h; ${floors.join(' ')})`);
@@ -630,6 +675,14 @@ async function main(): Promise<void> {
       const st = reports.map((r) => (r.stretchGap ? formatDuration(r.stretchGap.seconds) : '—'));
       console.log(`  Hollow King → Blight worst gap (want ≤ 30:00): ${st.join(' ')}`);
       console.log(`  trials won: ${reports.map((r) => Object.keys(r.trials).length).join(' ')}`);
+      const all = reports.reduce((t, r) => {
+        for (const k of [1, 2, 3, 4]) {
+          t.tries[k] = (t.tries[k] ?? 0) + (r.contracts.tries[k] ?? 0);
+          t.met[k] = (t.met[k] ?? 0) + (r.contracts.met[k] ?? 0);
+        }
+        return t;
+      }, emptyContractTally());
+      console.log(`  contracts (every ${CONTRACT_EVERY}th run from Forgeheart): ${reports.map((r) => r.contracts.runs).join(' ')} runs · ${successLine(all)}`);
     }
     console.log(`  first wave 20: ${w20.join(' ')}`);
     console.log(`  ${median !== null && median >= 900 && median <= 1800 ? 'PASS' : 'FAIL'}  P3  median first wave 20 ${median === null ? 'never' : formatDuration(median)} (want 15:00–30:00)`);

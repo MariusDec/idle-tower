@@ -2464,6 +2464,40 @@ body {
 .pacts-row .entry-name { flex: 1 1 auto; min-width: 0; font-size: var(--text-xl); }
 .pacts-pips { color: var(--fx-ember); letter-spacing: 0.1em; }
 
+/* ── The Contract board (plans/late-game/10 §2): three stacked cards ─────── */
+
+.contracts-done {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  color: var(--fx-gold);
+}
+.contracts-card { display: flex; flex-direction: column; gap: var(--space-1); }
+.contracts-card .entry-head { gap: var(--space-2); }
+.contracts-card .icon { --icon-size: 22px; color: var(--fx-gold); }
+.contracts-slot {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.contracts-pips { flex: 1 1 auto; color: var(--fx-gold); letter-spacing: 0.1em; }
+.contracts-pay { color: var(--fx-gold); white-space: nowrap; }
+.contracts-card.is-hard .contracts-pips { color: var(--fx-ember); }
+.contracts-card.is-pinned { border-color: var(--fx-gold); }
+.contracts-text { color: var(--text-1); font-size: var(--text-md); }
+.contracts-heat,
+.contracts-rider { margin: 0; color: var(--text-2); }
+.contracts-rider { color: var(--fx-arcane); }
+.contracts-pacts { min-height: 44px; }
+.contracts-actions { display: flex; align-items: center; gap: var(--space-2); }
+.contracts-take { flex: 1 1 auto; }
+.contracts-pin[aria-pressed='true'] { color: var(--fx-gold); }
+
+/* The Next line opens the board when it names a contract (§4.6). */
+.hub-goal.is-link { cursor: pointer; }
+.hub-goal.is-link:hover,
+.hub-goal.is-link:focus-visible { border-color: var(--fx-gold); }
+
 .map-region.is-abyss {
   border-color: rgba(var(--rgb-arcane), 0.6);
   background: linear-gradient(to bottom, var(--surface-1), var(--surface-sunken));

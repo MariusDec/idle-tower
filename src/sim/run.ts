@@ -25,7 +25,7 @@ import { claimReliquary, fadeReliquaries, tickReliquaries } from './systems/reli
 export { regionMods };
 
 /** The enemy types a region's first `twinMountOpening` waves can bring: its pool, and any type a beat introduces. */
-function openingTypes(region: RegionDef): Set<EnemyId> {
+export function openingTypes(region: RegionDef): Set<EnemyId> {
   const last = BALANCE.behaviours.twinMountOpening;
   const types = new Set<EnemyId>(region.pool.filter((p) => p.from <= last).map((p) => p.enemy));
   for (const [wave, beat] of Object.entries(region.beats)) {
@@ -100,6 +100,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     regionId: config.regionId,
     arena: config.arena ?? PHONE_OVAL,
     trial: config.trial ?? null,
+    contract: config.contract ?? null,
     tick: 0,
     time: 0,
     wave: 0,
