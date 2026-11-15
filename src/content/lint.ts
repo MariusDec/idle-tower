@@ -1,8 +1,9 @@
 import { ABYSS_INDEX } from './abyss';
 import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
+import { EXPLAINERS } from './explainers';
 import type {
-  AnomalyDef, AuraDef, BossDef, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, RiftDef, TrialDef, WeaponDef, WebNodeDef,
+  AnomalyDef, AuraDef, BossDef, BossPhase, SecretDef, SecretNeeds, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, RiftDef, TrialDef, WeaponDef, WebNodeDef,
 } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
@@ -516,9 +517,100 @@ export const anomalies: LintRule = (tables) => {
   return out;
 };
 
+/**
+ * Secrets (plans/late-game/05 §5): hint and text inside R4; every weapon,
+ * enemy, region, boss, frame and evolution named is real; a form's phases
+ * step down from full HP; a relic reward is a `secret` relic, which no other
+ * source drops. No spoilers: no secret's name in any feat, star, trial or
+ * region text, nor in an explainer (`EXPLAINERS`, passed in by the caller).
+ */
+export function secretsRule(explainerText: readonly string[] = []): LintRule {
+  return (tables) => {
+    const out: LintIssue[] = [];
+    const list = (tables.secrets as readonly SecretDef[] | undefined) ?? [];
+    const ids = (t: string): Set<string> => new Set(((tables[t] as readonly ContentEntry[] | undefined) ?? []).map((e) => e.id));
+    const weapons = ids('weapons');
+    const enemies = ids('enemies');
+    const bosses = ids('bosses');
+    const frames = ids('frames');
+    const evolutions = ids('evolutions');
+    const regions = new Set(((tables.regions as readonly RegionDef[] | undefined) ?? []).map((r) => r.index));
+    const relics = (tables.relics as readonly RelicDef[] | undefined) ?? [];
+    const known = (set: Set<string | number>, v: string | number | undefined, what: string, id: string): void => {
+      if (v !== undefined && set.size > 0 && !set.has(v)) out.push({ table: 'secrets', id, problem: `unknown ${what} "${v}"` });
+    };
+    const phases = (id: string, ph: readonly BossPhase[]): void => {
+      if (ph.length === 0 || ph[0].below !== 1) out.push({ table: 'secrets', id, problem: 'form: first phase must start at full HP' });
+      ph.forEach((p, i) => {
+        if (i > 0 && p.below >= ph[i - 1].below) out.push({ table: 'secrets', id, problem: `form: phase ${i + 1} does not step down` });
+      });
+    };
+    for (const s of list) {
+      const issue = (problem: string): void => { out.push({ table: 'secrets', id: s.id, problem }); };
+      const hw = wordCount(s.hint);
+      if (hw === 0 || hw > MAX_TEXT_WORDS) issue(`hint is ${hw} words`);
+      known(bosses, s.after, 'boss', s.id);
+      const needs = (n: SecretNeeds | undefined): void => {
+        for (const w of n?.carried ?? []) known(weapons, w, 'weapon', s.id);
+        for (const e of n?.evolved ?? []) known(evolutions, e, 'evolution', s.id);
+        known(frames, n?.frame, 'frame', s.id);
+      };
+      const t = s.trigger;
+      switch (t.kind) {
+        case 'tally':
+          known(weapons, t.by, 'weapon', s.id);
+          known(enemies, t.enemy, 'enemy', s.id);
+          known(regions, t.region, 'region', s.id);
+          needs(t.needs);
+          if (t.n <= 0) issue('a tally goal must be positive');
+          break;
+        case 'form':
+          known(bosses, t.boss, 'boss', s.id);
+          if (t.when.kind === 'needs') needs(t.when.needs);
+          if (!s.form) issue('a form secret needs its form');
+          else phases(s.id, s.form.phases);
+          break;
+        case 'brink':
+          if (!(t.hp > 0 && t.hp < t.stir && t.stir < 1)) issue('brink: 0 < hp < stir < 1');
+          break;
+        case 'wayward':
+          if (!(t.stir > 0 && t.stir < t.drafts)) issue('wayward: 0 < stir < drafts');
+          break;
+        default: {
+          const exhaustive: never = t;
+          return exhaustive;
+        }
+      }
+      if (s.form && t.kind !== 'form') issue('only a form secret has a form');
+      if (s.reward.kind === 'relic') {
+        const r = relics.find((x) => x.id === (s.reward as { relic: string }).relic);
+        if (relics.length > 0 && !r) issue('unknown relic');
+        else if (r && r.source.kind !== 'secret') issue(`relic ${r.id} is not a secret relic`);
+      }
+    }
+    // A secret relic is some secret's reward, and only one's.
+    for (const r of relics) {
+      if (r.source.kind !== 'secret') continue;
+      const n = list.filter((s) => s.reward.kind === 'relic' && s.reward.relic === r.id).length;
+      if (list.length > 0 && n !== 1) out.push({ table: 'relics', id: r.id, problem: `a secret relic paid by ${n} secrets` });
+    }
+    // No spoilers: a count, a name or a hint elsewhere says a secret exists.
+    const texts: { table: string; id: string; text: string }[] = explainerText.map((text, i) => ({ table: 'explainers', id: String(i), text }));
+    for (const table of ['feats', 'stars', 'trials', 'regions']) {
+      for (const e of (tables[table] as readonly ContentEntry[] | undefined) ?? []) texts.push({ table, id: e.id, text: `${e.name} ${e.text}` });
+    }
+    for (const s of list) {
+      for (const x of texts) {
+        if (x.text.includes(s.name)) out.push({ table: x.table, id: x.id, problem: `names the secret "${s.name}"` });
+      }
+    }
+    return out;
+  };
+}
+
 export const RULES: readonly LintRule[] = [
   uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking, rifts,
-  cursedRelics, anomalies,
+  cursedRelics, anomalies, secretsRule(EXPLAINERS.flatMap((x) => [x.title, ...x.lines])),
 ];
 
 /**

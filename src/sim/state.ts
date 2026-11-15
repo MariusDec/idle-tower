@@ -1,7 +1,7 @@
 import type { RngState } from '../core/rng';
 import type { Oval } from '../content/arena';
 import type {
-  AnomalyId, AuraId, BehaviourId, BossId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, RiftEffect, RiftId,
+  AnomalyId, AuraId, BehaviourId, BossId, SecretId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, RiftEffect, RiftId,
   StatMod, WeaponId,
 } from '../content/types';
 
@@ -85,6 +85,43 @@ export interface RunConfig {
    * before the gate (the first recipe), in Trials and in Boss Rush. Absent: none.
    */
   readonly anomaly?: AnomalyConfig | null;
+  /**
+   * Secrets (plans/late-game/05): those surfaced and still to find (`live`),
+   * the riddles already heard, and each lifetime tally so far. Null in Trials
+   * and Boss Rush, and while none has surfaced. Absent: none.
+   */
+  readonly secrets?: SecretConfig | null;
+}
+
+/** What a run's secrets read (plans/late-game/05 §3). */
+export interface SecretConfig {
+  /** Surfaced and not yet found: their triggers are checked. A form stays here once found, for its repeat falls. */
+  readonly live: readonly SecretId[];
+  /** Riddles the margin already holds: they never stir again. */
+  readonly heard: readonly SecretId[];
+  /** Found already (a form's repeat fall drops another rank of its relic, but finds nothing new). */
+  readonly found: readonly SecretId[];
+  /** Lifetime tallies banked so far, by id. */
+  readonly tally: Readonly<Partial<Record<SecretId, number>>>;
+}
+
+/** A run's secrets (plans/late-game/05 §3): rolled from the config, tallied as it plays. */
+export interface SecretRun {
+  live: SecretId[];
+  heard: SecretId[];
+  found: SecretId[];
+  /** This run's count for each tally (a lifetime one starts from its banked count). */
+  counts: Partial<Record<SecretId, number>>;
+  /** Found this run, in order. */
+  fresh: SecretId[];
+  /** The one riddle stirred this run, if any. */
+  stirred: SecretId | null;
+  /** Forms that arrived this run, and those felled. */
+  sighted: SecretId[];
+  felled: SecretId[];
+  /** Draft picks that took the suggestion, and those that didn't (Wayward). */
+  on: number;
+  off: number;
 }
 
 /** What a run's anomaly roll reads (plans/late-game/04 §3). */
@@ -455,6 +492,8 @@ export interface BossState {
   killedIn: number | null;
   /** The wave it holds: 20 in a region, a floor's tenth in the Abyss. */
   wave: number;
+  /** The other form it arrived in (plans/late-game/05), or null. Absent on runs saved before it. */
+  form?: SecretId | null;
 }
 
 export interface WeaponState {
@@ -683,7 +722,9 @@ export type SimEvent =
   /** A reliquary dropped, was claimed by a tap, or faded untouched (plans/late-game/03). */
   | { kind: 'reliquary'; id: number; relic: RelicId; x: number; y: number; first: boolean }
   | { kind: 'reliquaryClaim'; id: number; relic: RelicId; x: number; y: number }
-  | { kind: 'reliquaryFade'; id: number; relic: RelicId; x: number; y: number };
+  | { kind: 'reliquaryFade'; id: number; relic: RelicId; x: number; y: number }
+  /** A secret stirred (its riddle written), was found, or a boss arrived in its other form (plans/late-game/05). */
+  | { kind: 'secret'; id: SecretId; stage: 'stir' | 'found' | 'sighted' };
 
 export interface RunState {
   seed: number;
@@ -821,6 +862,8 @@ export interface RunState {
   reliquariesFaded: number;
   /** The run's anomaly (plans/late-game/04); null when none can come (the gate shut, a Trial, Boss Rush). */
   anomaly: AnomalyPlan | null;
+  /** The run's secrets (plans/late-game/05); null when none is live (a fresh profile, a Trial, Boss Rush). */
+  secrets: SecretRun | null;
   /** How the run ended: the tower fell, withdrew, or (Boss Rush, N8) cleared every stage. */
   outcome: null | { kind: 'fell' | 'retreat' | 'cleared'; wave: number; time: number };
   events: SimEvent[];

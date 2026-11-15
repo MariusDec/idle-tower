@@ -17,6 +17,7 @@ import type { Profile } from '../../meta/profile';
 import { levelOf } from '../../meta/forge';
 import { anomalyBook, fusionBook, recipeBook } from '../../meta/recipes';
 import { wonTrims } from '../../meta/trials';
+import { bossLore, formsSeen, margin } from '../../meta/secrets';
 import { toggleClass } from '../dom';
 import { icon } from '../icon';
 
@@ -50,6 +51,9 @@ function relicWhere(r: RelicDef): string {
       return `the Abyss's elites, once Lantern ${['I', 'II', 'III', 'IV'][s.set - 1] ?? s.set} is lit`;
     case 'cursed':
       return s.boss ? BOSS_BY_ID[s.boss].name : 'the Abyss';
+    case 'secret':
+      // Never shown as a silhouette (plans/late-game/05): owned, it was found.
+      return 'a secret';
     default: {
       const exhaustive: never = s;
       return exhaustive;
@@ -234,6 +238,22 @@ export class CollectionView {
         lore.className = 'entry-lore';
         lore.textContent = def.lore;
         li.append(verb, lore);
+        // A boss's other forms (plans/late-game/05): named once seen; before that, a lore line after a few falls.
+        if (row.boss) {
+          const seen = formsSeen(p, row.id as BossId);
+          if (seen.length > 0) {
+            const also = document.createElement('p');
+            also.className = 'entry-lore';
+            also.textContent = `Also seen as: ${seen.join(', ')}`;
+            li.append(also);
+          }
+          for (const line of bossLore(p, row.id as BossId)) {
+            const l = document.createElement('p');
+            l.className = 'entry-lore is-whisper';
+            l.textContent = line;
+            li.append(l);
+          }
+        }
       }
       list.append(li);
     }
@@ -461,7 +481,44 @@ export class CollectionView {
       }
       list.append(li);
     }
-    return [head, list, ...this.fusions(p), ...this.anomalies(p)];
+    return [head, list, ...this.fusions(p), ...this.anomalies(p), ...this.margin(p)];
+  }
+
+  /**
+   * The margin (plans/late-game/05 §2): secrets found, in full, then riddles
+   * heard. Never a count, never a "???" row: only what was met.
+   */
+  private margin(p: Profile): HTMLElement[] {
+    const rows = margin(p);
+    if (rows.length === 0) return [];
+    const head = document.createElement('h3');
+    head.className = 'collection-heading';
+    head.textContent = 'Margin';
+    const list = document.createElement('ul');
+    list.className = 'entry-list';
+    for (const r of rows) {
+      const s = r.secret;
+      const li = document.createElement('li');
+      li.className = `entry is-margin${r.found ? ' is-evolution' : ' is-whisper'}`;
+      const h = document.createElement('div');
+      h.className = 'entry-head';
+      const n = document.createElement('span');
+      n.className = 'entry-name';
+      n.textContent = r.found ? s.name : 'A whisper';
+      h.append(icon(r.found ? s.icon : 'all-seeing-eye'), n);
+      if (r.where) {
+        const where = document.createElement('span');
+        where.className = 'entry-count';
+        where.textContent = r.where;
+        h.append(where);
+      }
+      const line = document.createElement('p');
+      line.className = r.found ? 'entry-text' : 'entry-lore';
+      line.textContent = r.found ? s.text : s.hint;
+      li.append(h, line);
+      list.append(li);
+    }
+    return [head, list];
   }
 
   /**

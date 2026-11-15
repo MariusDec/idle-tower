@@ -170,6 +170,28 @@ export const BALANCE = {
    * first recipe found). `damage` is a spike on the weapon's hit, as an
    * evolution's is; the rest is each one's shape.
    */
+  /**
+   * Secrets (plans/late-game/05). Tally goals `n` live in `content/secrets.ts`.
+   * A stir writes the riddle at `stirAt` of the goal, at most `stirsPerRun`
+   * a run; a boss's lore line shows after `loreKills` kills of it.
+   */
+  secrets: {
+    stirAt: 0.25,
+    stirsPerRun: 1,
+    loreKills: 3,
+    /** Highest relic rank a form's repeat falls pay; past it, the duplicate melts. */
+    formRelicMax: 3,
+    /** Shatterfall: a shell finishes a frozen body at or below this share of its max HP. */
+    shatterfall: { share: 0.5 },
+    /** Beacon Road: Sunlance's reach in the Mire, as a multiplier on range. */
+    beaconRoad: { range: 1.25 },
+    /** Glassfrost: a frozen Shardling's shards hit this many of its kin, each for this share of its max HP, within `reach`. */
+    glassfrost: { share: 1, reach: 120 },
+    /** Bellows: a pellet on a burning body sets bodies this close alight with its fire. */
+    bellows: { radius: 40 },
+    /** Lens Shard, by rank: extra damage beams and chains deal bosses. */
+    lensShard: [0.15, 0.22, 0.3],
+  },
   anomalies: {
     /** A weapon is eligible from this level: before `evolveAt`, so the fork comes early. */
     minLevel: 3,

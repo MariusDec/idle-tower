@@ -289,6 +289,9 @@ export function regionRelics(region: number): RelicDef[] {
       case 'abyss':
       case 'cursed':
         return region === ABYSS_INDEX;
+      case 'secret':
+        // No region card counts it (plans/late-game/05): a count says it exists.
+        return false;
       default: {
         const exhaustive: never = s;
         return exhaustive;
@@ -361,7 +364,8 @@ export function bestiary(profile: Profile): { id: string; seen: boolean; kills: 
 /** Relics the Collection's Relics segment lists: the Abyss's (§9) only once Act 2 opens; the cursed have their own. */
 export function listedRelics(profile: Profile): RelicDef[] {
   const act2 = act2Open(profile);
-  return RELICS.filter((r) => !isCursed(r) && (act2 || r.source.kind !== 'abyss'));
+  // A secret relic (plans/late-game/05) has no silhouette: it is listed once owned.
+  return RELICS.filter((r) => !isCursed(r) && (act2 || r.source.kind !== 'abyss') && (r.source.kind !== 'secret' || relicRank(profile, r.id) > 0));
 }
 
 /** The Collection's Cursed segment (plans/late-game/03 §2): every cursed relic, owned or a silhouette. */

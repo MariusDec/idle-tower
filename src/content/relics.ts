@@ -232,6 +232,13 @@ export const RELICS: readonly RelicDef[] = [
   },
   // Cursed relics (plans/late-game/03): their own file, spread in so lookups and banking just work.
   ...CURSED_RELICS,
+  // Secrets (plans/late-game/05): a boss's other form drops it. No silhouette until owned.
+  {
+    id: 'lens-shard', name: 'Lens Shard', icon: 'crystal-shine',
+    text: 'Beams and chains hit bosses 15% harder.',
+    source: { kind: 'secret' },
+    effects: [{ kind: 'behaviour', id: 'lens-shard' }], perRank: [{ kind: 'behaviour', id: 'lens-shard' }],
+  },
 ];
 
 export const RELIC_BY_ID: Readonly<Record<RelicId, RelicDef>> = Object.fromEntries(

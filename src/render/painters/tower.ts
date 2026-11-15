@@ -173,6 +173,52 @@ function paintTrim(ctx: CanvasRenderingContext2D, R: number, trim: TrimId, time:
     case 'starlit':
       // Drawn over the crystal, in `paintCrown`.
       return;
+    // Secrets' trims (plans/late-game/05).
+    case 'rime':
+      // Frost on the plinth: a ring of pale crystals, a slow glint.
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 + 0.13;
+        const r = R * 1.06;
+        ctx.fillStyle = withAlpha(FX.frost, 0.55 + 0.25 * Math.sin(time * 0.8 + i));
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        ctx.lineTo(Math.cos(a + 0.06) * (r + R * 0.09), Math.sin(a + 0.06) * (r + R * 0.09));
+        ctx.lineTo(Math.cos(a + 0.12) * r, Math.sin(a + 0.12) * r);
+        ctx.fill();
+      }
+      return;
+    case 'kintsugi':
+      // Gold seams in the stone: a few jagged lines from the rim inward.
+      ctx.strokeStyle = withAlpha(lighten(FX.gold, 0.15), 0.85);
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + 0.6;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * R, Math.sin(a) * R);
+        ctx.lineTo(Math.cos(a + 0.12) * R * 0.82, Math.sin(a + 0.12) * R * 0.82);
+        ctx.lineTo(Math.cos(a - 0.05) * R * 0.66, Math.sin(a - 0.05) * R * 0.66);
+        ctx.stroke();
+      }
+      return;
+    case 'wayward': {
+      // One banner off true, flying its own way.
+      const a = -Math.PI / 2 + 0.5 + 0.08 * Math.sin(time * 1.3);
+      const bx = Math.cos(a) * R * 1.3;
+      const by = Math.sin(a) * R * 1.3;
+      ctx.strokeStyle = withAlpha(INK['200'], 0.9);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * R * 1.02, Math.sin(a) * R * 1.02);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      ctx.fillStyle = withAlpha(FX.arcane, 0.85);
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx + R * 0.22, by + R * 0.04 + R * 0.03 * Math.sin(time * 3));
+      ctx.lineTo(bx + R * 0.02, by + R * 0.12);
+      ctx.fill();
+      return;
+    }
     default: {
       const exhaustive: never = trim;
       return exhaustive;

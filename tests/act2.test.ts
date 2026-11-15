@@ -102,8 +102,9 @@ describe('Act 2 opens with the Blight (§9)', () => {
     expect(recipeBook(p)).toHaveLength(8);
     const q = act2Profile();
     expect(bestiary(q).filter((r) => natives.has(r.id))).toHaveLength(4);
-    // Cursed relics (plans/late-game/03) are the Relics page's own segment, not this list.
-    expect(listedRelics(q)).toHaveLength(RELICS.filter((r) => r.source.kind !== 'cursed').length);
+    // Cursed relics (plans/late-game/03) are the Relics page's own segment, not this list;
+    // a secret relic (plans/late-game/05) has no silhouette until owned.
+    expect(listedRelics(q)).toHaveLength(RELICS.filter((r) => r.source.kind !== 'cursed' && r.source.kind !== 'secret').length);
     expect(recipeBook(q)).toHaveLength(EVOLUTIONS.length);
   });
 

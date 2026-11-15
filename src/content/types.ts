@@ -106,6 +106,17 @@ export type BehaviourId =
   | 'elite-bane'
   | 'boss-bane'
   | 'level-heal'
+  // Secrets (plans/late-game/05): each switched on by its find, never bought.
+  /** In the Glass Wastes, a frozen Shardling bursts at its kin. */
+  | 'glassfrost'
+  /** A Mortar shell landing on a frozen body shatters it. */
+  | 'shatterfall'
+  /** In the Drowned Mire, Sunlance reaches farther. */
+  | 'beacon-road'
+  /** In the Ember Rift, pellets spread a burning body's fire. */
+  | 'bellows'
+  /** Lens Shard (a secret relic): beams and chains hit bosses harder. */
+  | 'lens-shard'
   // Later Forge notables (P7).
   | 'rampart'
   | 'oath'
@@ -828,7 +839,9 @@ export type RelicId =
   | 'ward-breaker' | 'maw-tooth' | 'abyssal-pearl'
   | 'executioners-coin' | 'phoenix-feather' | 'whetstone'
   // Cursed relics (plans/late-game/03): a boon and a curse, worn in the Abyss only.
-  | 'glass-crown';
+  | 'glass-crown'
+  // Secrets (plans/late-game/05): a boss's other form drops it, and nothing lists it until owned.
+  | 'lens-shard';
 
 /**
  * The Abyss's strata (plans/late-game/08), as cursed relics name where they
@@ -845,7 +858,9 @@ export type RelicSource =
   | { readonly kind: 'elite'; readonly region: number }
   | { readonly kind: 'abyss'; readonly set: number }
   /** A cursed relic (plans/late-game/03 §3.1): a stratum's elites, or its guardian (`boss`). */
-  | { readonly kind: 'cursed'; readonly stratum: StratumId | 'below'; readonly boss: BossId | null };
+  | { readonly kind: 'cursed'; readonly stratum: StratumId | 'below'; readonly boss: BossId | null }
+  /** A secret's (plans/late-game/05): a boss's other form, felled. No silhouette until owned. */
+  | { readonly kind: 'secret' };
 
 /**
  * A cursed relic's curse (plans/late-game/03): its line, drawn after a ☾,
@@ -996,7 +1011,9 @@ export interface PactDef extends ContentEntry {
  * A hub-tower trim (N2, N5): a decoration a Trial pays, worn by the tower in
  * the hub and in every run. A closed union; `render/painters/tower.ts` draws each.
  */
-export type TrimId = 'ivy' | 'pennants' | 'runes' | 'gilt' | 'embers' | 'starlit';
+export type TrimId = 'ivy' | 'pennants' | 'runes' | 'gilt' | 'embers' | 'starlit'
+  // Secrets' (plans/late-game/05): found, never listed before.
+  | 'rime' | 'kintsugi' | 'wayward';
 
 /**
  * A Trial's constraint (N5), applied to the run's config. A closed union;
@@ -1117,4 +1134,82 @@ export interface RiftDef extends ContentEntry {
   readonly where: RiftWhere;
   /** One or two; "Leave it" is always there and is not one of them. */
   readonly choices: readonly RiftChoice[];
+}
+
+// ── Secrets (plans/late-game/05) ───────────────────────────────────────
+
+/**
+ * A secret: a combination, a boss's other form or a cosmetic that no star,
+ * shop or list reveals. Found by playing; the Recipe Book's margin writes a
+ * riddle when one stirs, and never says how many there are.
+ */
+export type SecretId =
+  | 'shatterfall' | 'beacon-road' | 'glassfrost' | 'bellows'
+  | 'the-lens' | 'banked-forge' | 'kintsugi' | 'wayward';
+
+/** A mark a body wears at its death, read off fields the sim already keeps. */
+export type BodyMark = 'frozen' | 'burning' | 'gilded' | 'tethered' | 'elite' | 'shade' | 'inContact';
+
+/** What the run must hold for a tally or a form to count. */
+export interface SecretNeeds {
+  readonly carried?: readonly WeaponId[];
+  readonly evolved?: readonly EvolutionId[];
+  readonly frame?: FrameId;
+}
+
+/**
+ * How a secret is found. A closed union: `sim/systems/secrets.ts` switches on
+ * it. A tally counts kills (`by` a weapon, `on` a marked body, of an `enemy`
+ * type, in a `region`); `lifetime` adds up across runs.
+ */
+export type SecretTrigger =
+  | {
+    readonly kind: 'tally'; readonly by?: WeaponId; readonly on?: BodyMark; readonly enemy?: EnemyId; readonly region?: number;
+    readonly needs?: SecretNeeds; readonly n: number; readonly lifetime?: boolean;
+  }
+  /** A boss arrives in another form when the run meets `when`; felling it is the find. */
+  | { readonly kind: 'form'; readonly boss: BossId; readonly when: FormCondition }
+  /** A boss felled after the tower fell below `hp` of its max (`BossState.minHp`); it stirs below `stir`. */
+  | { readonly kind: 'brink'; readonly hp: number; readonly stir: number }
+  /** A boss felled with no suggested card taken in at least `drafts` drafts; it stirs at `stir` off picks. */
+  | { readonly kind: 'wayward'; readonly drafts: number; readonly stir: number };
+
+/** What brings a boss's other form. */
+export type FormCondition =
+  /** No weapon carried whose shots its mirror turns back. */
+  | { readonly kind: 'unturned' }
+  | { readonly kind: 'needs'; readonly needs: SecretNeeds };
+
+/** A boss's other form: its name and banner line, a look, and its own phases (existing patterns only). */
+export interface BossFormDef {
+  readonly name: string;
+  readonly line: string;
+  /** Multiplier on the boss's HP. */
+  readonly hp: number;
+  /** The body's tint, and its border's. */
+  readonly color: string;
+  readonly borderColor: string;
+  readonly phases: readonly BossPhase[];
+}
+
+/** What a find pays, besides its one-off shards. */
+export type SecretReward =
+  /** Effects every run from then on, as a Trial notable's. */
+  | { readonly kind: 'effects'; readonly effects: readonly Effect[] }
+  | { readonly kind: 'relic'; readonly relic: RelicId }
+  | { readonly kind: 'trim'; readonly trim: TrimId; readonly name: string };
+
+export interface SecretDef extends ContentEntry {
+  readonly id: SecretId;
+  /** The riddle the margin writes when it stirs, or the Bestiary's lore line for a form. ≤ 15 words. */
+  readonly hint: string;
+  /** Before this boss first falls, the secret isn't checked. */
+  readonly after: BossId;
+  readonly trigger: SecretTrigger;
+  readonly reward: SecretReward;
+  /** One-off pay at the find, outside the run's shards. */
+  readonly shards?: number;
+  readonly starlight?: number;
+  /** A form secret's form. */
+  readonly form?: BossFormDef;
 }

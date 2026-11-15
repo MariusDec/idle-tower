@@ -6,6 +6,7 @@ import { frameById } from '../content/frames';
 import type { BehaviourId, CardItemId, Effect, FrameId, FusionId, PactId, StatMod, TrialDef, WeaponId } from '../content/types';
 import { isWeaponId } from '../sim/systems/draft';
 import { selectedTrial, trialEffects } from './trials';
+import { secretConfig, secretEffects } from './secrets';
 import {
   act2Open, activeSets, bossDown, equippedRelics, inAbyss, inRush, pastRegions, relicRank, relicSlots, selectedFrame, selectedRegion, wornCursed,
 } from './collection';
@@ -68,6 +69,8 @@ export function buildRunConfig(profile: Profile): RunConfig {
   }
   // The notables Trials paid (N5) apply to every run, like a Forge node's.
   effects.push(...trialEffects(profile));
+  // Found secrets (plans/late-game/05) do the same: a sideways rule, never bought.
+  effects.push(...secretEffects(profile));
   // A relic's effects at rank I, and its per-rank effects once per rank past it (§5.3).
   // A cursed relic (plans/late-game/03) holds only in the Abyss: its boon at rank, its curse once.
   for (const { relic, rank } of equippedRelics(profile)) {
@@ -158,6 +161,8 @@ export function buildRunConfig(profile: Profile): RunConfig {
     rifts: riftConfig(profile, trial !== null),
     reliquaries: abyss ? reliquaryConfig(profile, pool) : null,
     anomaly: anomalyConfig(profile, trial !== null),
+    // Secrets (plans/late-game/05): never in an authored or shared run.
+    secrets: secretConfig(profile, trial !== null || inRush(profile)),
   });
 }
 

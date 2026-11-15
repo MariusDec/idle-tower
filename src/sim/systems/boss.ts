@@ -10,6 +10,8 @@ import { bossPhases, pactLoad } from '../pacts';
 import { foeHp, runRegion, spawnEnemy, waveDamage, waveHp, waveShardMult } from './waves';
 import { hurtTower } from './tower';
 import { guardianReliquary } from './reliquaries';
+import { formFor, secretsOnBossKill, sightForm } from './secrets';
+import { SECRET_BY_ID } from '../../content/secrets';
 
 /**
  * Bosses (§4.3): wave 20. A boss walks in from a flank to its standoff and
@@ -31,7 +33,14 @@ const ONCE = 1e9;
 
 /** The boss's phases as this run fights them: Tyranny adds more (§9). */
 export function phasesOf(run: RunState, def: BossDef): readonly BossPhase[] {
-  return bossPhases(def, pactLoad(run.pacts).tyranny);
+  return bossPhases(formOf(run, def), pactLoad(run.pacts).tyranny);
+}
+
+/** The boss as this run meets it: its other form's phases (plans/late-game/05), or its own. */
+function formOf(run: RunState, def: BossDef): BossDef {
+  const id = run.boss && run.boss.id === def.id ? run.boss.form : null;
+  const form = id ? SECRET_BY_ID[id].form : undefined;
+  return form ? { ...def, phases: form.phases } : def;
 }
 
 /** How often a pattern acts: 0 for once, on entering its phase (a mirror is always on). */
@@ -66,7 +75,11 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
   // guardian is a lighter fight (§9). Vigour and Tyranny swell it.
   const wave = run.wave;
   const load = pactLoad(run.pacts);
-  const hp = waveHp(region, wave) * def.hp * abyssBossHp(region) * foeHp(run) * load.bossHp;
+  // Its other form (plans/late-game/05): no die, only what the run carries.
+  const formId = formFor(run, def.id);
+  const form = formId ? SECRET_BY_ID[formId].form ?? null : null;
+  const hp = waveHp(region, wave) * def.hp * abyssBossHp(region) * foeHp(run) * load.bossHp * (form?.hp ?? 1);
+  const phases = form?.phases ?? def.phases;
   const body: Enemy = {
     id: run.nextEnemyId++,
     type: region.pool[0].enemy,
@@ -126,7 +139,7 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     enemy: body.id,
     phase: 0,
     arrivedAt: run.time,
-    timers: phaseTimers(def.phases[0].patterns),
+    timers: phaseTimers(phases[0].patterns),
     windup: 0,
     windupPattern: -1,
     submerged: false,
@@ -138,10 +151,12 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     minHp: Math.max(0, run.tower.hp) / run.stats.maxHp,
     killedIn: null,
     wave,
+    form: formId,
   };
   run.boss = state;
-  wearPlates(run, region, body, def, def.phases[0].plates, true);
+  wearPlates(run, region, body, def, phases[0].plates, true);
   run.events.push({ kind: 'bossArrive', boss: def.id });
+  if (formId) sightForm(run, formId);
 }
 
 /** How far out a plate hangs off its boss's rim, and how wide its plates fan, radians either side of the line to the tower. */
@@ -226,7 +241,7 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
     b.windup = 0;
     if (ph.armor !== undefined) e.armor = waveHp(region, b.wave) * ph.armor;
     // Plates crack away (Forgeheart); a phase Tyranny replays hangs them anew.
-    wearPlates(run, region, e, def, ph.plates, b.phase >= def.phases.length);
+    wearPlates(run, region, e, def, ph.plates, b.phase >= formOf(run, def).phases.length);
     // A phase with no court gathers the shades back in.
     if (!ph.patterns.some((p) => p.kind === 'court')) dismissCourt(run);
     run.events.push({ kind: 'bossPhase', boss: b.id, phase: b.phase });
@@ -474,6 +489,8 @@ export function onBossKilled(run: RunState, e: Enemy): void {
   run.events.push({ kind: 'bossKill', boss: b.id, first: run.firstKill, x: e.x, y: e.y });
   // A guardian's reliquary (plans/late-game/03 §3.1): only the Abyss's config holds any.
   guardianReliquary(run, b.id, e.x, e.y);
+  // Secrets (plans/late-game/05): a form felled, a brink, a wayward road.
+  if (run.secrets) secretsOnBossKill(run, e.x, e.y);
   if (runRegion(run).abyss) {
     run.floors++;
     run.events.push({ kind: 'floor', floor: run.floors });

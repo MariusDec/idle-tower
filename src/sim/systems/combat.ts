@@ -19,6 +19,7 @@ import { riftShardMult } from './rifts';
 import { hurtTower } from './tower';
 import { regionRule, runRegion, spawnEnemy } from './waves';
 import { eliteReliquary } from './reliquaries';
+import { tallyKill } from './secrets';
 
 /** How close a projectile must pass, beyond the body radius, to hit. */
 const HIT_PAD = 6;
@@ -1251,6 +1252,17 @@ function detonate(run: RunState, p: Projectile): void {
   }
 }
 
+/** The Drowned Mire's region index, the Glass Wastes' and the Ember Rift's: where three secrets work (plans/late-game/05). */
+const DROWNED_MIRE = 2;
+const GLASS_WASTES = 3;
+const EMBER_RIFT = 4;
+
+/** Sunlance's reach: its range, or farther in the Mire once Beacon Road is found (plans/late-game/05). */
+export function beamRange(run: RunState): number {
+  const road = run.behaviours['beacon-road'] && run.regionId === DROWNED_MIRE ? BALANCE.secrets.beaconRoad.range : 1;
+  return run.stats.range * road;
+}
+
 /**
  * Sunlance (§11.2): a beam that holds one body and burns hotter the longer it
  * holds. It lands on the cooldown; it heats every step. Judgment splits the
@@ -1258,12 +1270,13 @@ function detonate(run: RunState, p: Projectile): void {
  */
 function holdBeam(run: RunState, w: WeaponState, p: WeaponParams, dt: number, rateMult: number, crit: Rng): void {
   let target = w.beamTarget ? enemyById(run, w.beamTarget) : null;
-  const range2 = run.stats.range * run.stats.range;
+  const range = beamRange(run);
+  const range2 = range * range;
   if (target && target.x * target.x + target.y * target.y > range2) target = null;
   // Its doctrine (U14): it holds what it has, unless something that matters
   // more (a plate, a boss, an elite) is in range.
   const doctrine = WEAPON_BY_ID[w.id].targeting;
-  const best = !target || (doctrine === 'toughest' && toughness(target) < 3) ? aim(run, doctrine, run.stats.range, 0, mountOf(run, w)) : target;
+  const best = !target || (doctrine === 'toughest' && toughness(target) < 3) ? aim(run, doctrine, range, 0, mountOf(run, w)) : target;
   if (best && (!target || toughness(best) > toughness(target))) {
     target = best;
     w.heat = 1;
@@ -1594,6 +1607,9 @@ function strike(run: RunState, p: Projectile, e: Enemy): void {
   }
   // Point-blank (S5): Scattershot's pellets bite harder inside a third of range.
   const close = WEAPON_BY_ID[p.weapon].pointBlank;
+  // Bellows (a secret, plans/late-game/05): read before the hit, which may kill it.
+  const bellows = p.weapon === 'scattershot' && run.behaviours.bellows && run.regionId === EMBER_RIFT && e.burnUntil > run.time
+    ? { burn: e.burn, left: e.burnUntil - run.time } : null;
   const near = close !== undefined && ex * ex + ey * ey <= (run.stats.range * BALANCE.weapons.pointBlankReach) ** 2;
   damageEnemy(run, e, p.damage * (near ? close : 1), p.crit, WEAPON_BY_ID[p.weapon].pattern);
   // Prism Heart (§11.5): a share of shots refract into a second target.
@@ -1607,6 +1623,12 @@ function strike(run: RunState, p: Projectile, e: Enemy): void {
           damage: p.damage, crit: p.crit, homing: true, target: t.id, ignore: e.id, life: BALANCE.projectiles.homingLife, seeker: true,
         });
       }
+    }
+  }
+  if (bellows) {
+    const r2 = BALANCE.secrets.bellows.radius ** 2;
+    for (const o of run.enemies) {
+      if (o !== e && targetable(run, o) && (o.x - ex) ** 2 + (o.y - ey) ** 2 <= r2) ignite(run, o, bellows.burn, bellows.left);
     }
   }
   // An enraged boss's fury carries it through any shove: it reaches the wall (§4.3).
@@ -1768,6 +1790,10 @@ function damageTaken(run: RunState, e: Enemy, raw: number, source: DamageSource)
   if (b.kindling && e.burnUntil > run.time) out *= 1 + rankValue(R.kindling, b.kindling);
   if (b['elite-bane'] && e.elite) out *= 1 + rankValue(R.eliteBane, b['elite-bane']);
   if (b['boss-bane'] && (e.boss || e.court || e.plate)) out *= 1 + rankValue(R.bossBane, b['boss-bane']);
+  // Lens Shard (a secret relic, plans/late-game/05): beams and chains bite bosses harder.
+  if (b['lens-shard'] && (source === 'beam' || source === 'chain') && (e.boss || e.court || e.plate)) {
+    out *= 1 + rankValue(BALANCE.secrets.lensShard, b['lens-shard']);
+  }
   // Forgeheart's plates (S2): while one stands, the heart takes its guard's share.
   if (e.boss) out *= plateGuard(run);
   return out * fusionTaken(run, e, source);
@@ -1862,6 +1888,9 @@ function hitBody(run: RunState, e: Enemy, raw: number, crit: boolean, source: Da
   // Two sources at most: the Coin stands in for Executioner, never a third line.
   const execute = Math.min(B.executeMax, run.behaviours.executioner ?? 0);
   if (execute > 0 && !e.boss && e.hp - amount > 0 && e.hp <= e.maxHp * B.executeBelow * execute) amount = e.hp;
+  // Shatterfall (a secret, plans/late-game/05): a shell landing on a frozen body shatters what it leaves.
+  if (source === 'lob' && run.behaviours.shatterfall && !e.boss && !e.plate && e.frozenUntil > run.time
+    && e.hp - amount > 0 && e.hp - amount <= e.maxHp * BALANCE.secrets.shatterfall.share) amount = e.hp;
   e.hp -= amount;
   e.hitTick = run.tick;
   fusionHit(run, e, source, amount);
@@ -1893,6 +1922,9 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   if (!e.alive) return;
   e.alive = false;
   run.kills++;
+  // Read before its death's own effects: a shatter thaws it (plans/late-game/05).
+  const frozen = e.frozenUntil > run.time;
+  if (run.secrets) tallyKill(run, e, damageBy(source));
   if (run.current && e.wave === run.current.n) run.current.alive--;
   run.events.push({ kind: 'kill', x: e.x, y: e.y, enemy: e.type, radius: e.radius });
   const lantern = run.behaviours['storm-xp'] ?? 0;
@@ -1948,7 +1980,7 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
     burst(run, e, verb.count, { fragment: { hp, scale: verb.scale, share: verb.reward } });
   }
   if (e.elite) eliteDeath(run, e);
-  lastWord(run, e, verb);
+  lastWord(run, e, verb, frozen);
   ruleOnKill(run, e);
 }
 
@@ -1984,7 +2016,7 @@ function feedHungering(run: RunState, dead: Enemy): void {
 }
 
 /** What a body's verb does as it dies: a Bomber's blast, a Shardling's shards (§11.1). */
-function lastWord(run: RunState, e: Enemy, verb: EnemyVerb): void {
+function lastWord(run: RunState, e: Enemy, verb: EnemyVerb, frozen = false): void {
   const shield = run.behaviours['blast-shield'] ?? 0;
   const soften = shield > 0 ? rankValue(BALANCE.relics.blastShield, shield) : 1;
   switch (verb.kind) {
@@ -2000,6 +2032,19 @@ function lastWord(run: RunState, e: Enemy, verb: EnemyVerb): void {
     }
     case 'shards': {
       run.events.push({ kind: 'explode', x: e.x, y: e.y, radius: e.radius * 2 });
+      // Glassfrost (a secret, plans/late-game/05): in the Wastes, frozen glass breaks the other way.
+      if (frozen && run.behaviours.glassfrost && run.regionId === GLASS_WASTES) {
+        const G = BALANCE.secrets.glassfrost;
+        const struck: number[] = [e.id];
+        for (let i = 0; i < verb.count; i++) {
+          const t = nearestUnstruck(run, e.x, e.y, G.reach, struck);
+          if (!t) break;
+          struck.push(t.id);
+          run.events.push({ kind: 'chain', points: [e.x, e.y, t.x, t.y] });
+          damageEnemy(run, t, e.maxHp * G.share, false, 'shatter');
+        }
+        return;
+      }
       // They fly only so far: slain far from the wall, they fall short (§11.1).
       const speed = BALANCE.foes.shardSpeed;
       const at = Math.atan2(-e.y, -e.x);

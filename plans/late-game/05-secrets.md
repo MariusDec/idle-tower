@@ -1,7 +1,9 @@
 # 05. Real secrets
 
-**Status:** 2026-11-14. Plan, not built. Idea 5 of the late-game review
-([README](README.md)). It has no outline section; this is the first write-up.
+**Status:** 2026-11-15. Phases 1–5 built (Act 1's eight; see
+[docs/secrets.md](../../docs/secrets.md)); phases 6–7 not built. Idea 5 of
+the late-game review ([README](README.md)). `lighthouse` shipped as
+`beacon-road` (Lighthouse is an anomaly's name).
 
 **In one line:** combinations, boss forms and cosmetics that no star, shop
 or list reveals: you stumble on them by playing, a "something stirred"

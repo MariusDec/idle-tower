@@ -9,7 +9,7 @@ import type { TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 19;
+  version: 20;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -73,6 +73,12 @@ export interface Profile {
    * ramp), and how many have been taken in all (the feats).
    */
   anomalies: { found: string[]; glimpsed: string[]; dry: number; taken: number };
+  /**
+   * Secrets (plans/late-game/05): each found, with the run number it was
+   * found in (the margin's order); riddles heard, in order; lifetime tallies;
+   * forms sighted. Unknown ids are ignored, as recipes are.
+   */
+  secrets: { found: Record<string, number>; heard: string[]; tally: Record<string, number>; sighted: string[] };
   /** Wall-clock ms the game was last open, for offline earnings (§6.1). */
   lastSeen: number;
   /**
@@ -165,7 +171,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 19;
+export const PROFILE_VERSION = 20;
 
 /** One rift's journal entry (plans/late-game/02 §5). */
 export interface RiftRecord {
@@ -217,6 +223,7 @@ export function newProfile(now: number): Profile {
     bound: {},
     cursedBest: {},
     anomalies: { found: [], glimpsed: [], dry: 0, taken: 0 },
+    secrets: { found: {}, heard: [], tally: {}, sighted: [] },
     recipes: { found: [], carried: {}, readied: {} },
     lastSeen: now,
     ceremony: null,

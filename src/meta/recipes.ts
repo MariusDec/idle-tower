@@ -4,6 +4,7 @@ import { EVOLUTIONS, EVOLUTION_OF } from '../content/evolutions';
 import { FUSIONS } from '../content/fusions';
 import { STAR_CARDS } from '../content/stars';
 import { ANOMALIES } from '../content/anomalies';
+import { margin } from './secrets';
 import type { AnomalyDef, EvolutionDef, EvolutionId, FusionDef, FusionId } from '../content/types';
 import type { RunState } from '../sim/state';
 import type { Profile } from './profile';
@@ -47,7 +48,7 @@ export function recipeBook(profile: Profile): RecipeEntry[] {
 
 /** True once the Book has anything on it: the Recipes page opens (§7.1). */
 export function recipesOpen(profile: Profile): boolean {
-  return recipeBook(profile).some((r) => r.found || r.weapon) || anomalyBook(profile).length > 0;
+  return recipeBook(profile).some((r) => r.found || r.weapon) || anomalyBook(profile).length > 0 || margin(profile).length > 0;
 }
 
 /** Bank a run into the Book. Returns the evolutions found for the first time. */

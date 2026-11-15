@@ -96,6 +96,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   }),
   // v19: anomalies (plans/late-game/04): none found or glimpsed, no dry runs.
   18: (raw) => ({ ...raw, version: 19, anomalies: { found: [], glimpsed: [], dry: 0, taken: 0 } }),
+  // v20: secrets (plans/late-game/05): none found, heard, tallied or sighted.
+  19: (raw) => ({ ...raw, version: 20, secrets: { found: {}, heard: [], tally: {}, sighted: [] } }),
 };
 
 export class MigrationError extends Error {}

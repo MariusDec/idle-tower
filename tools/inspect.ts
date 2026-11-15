@@ -11,10 +11,17 @@
  *   npm run inspect -- --region 2          a region other than the first (its rule applies)
  *   npm run inspect -- --seeds 20 --by-weapon
  *                                          the share of damage landed by each weapon (T1)
+ *   npm run inspect -- --seeds 200 --forge ring4 --region 3 --secrets
+ *                                          every secret live (plans/late-game/05 §8):
+ *                                          how often each is stirred and found
  *
  * Headless: it drives the real sim, not a model of it.
  */
 import { RIFT_BY_ID } from '../src/content/rifts';
+import { BALANCE } from '../src/content/balance';
+import { SECRETS } from '../src/content/secrets';
+import { EVOLUTIONS } from '../src/content/evolutions';
+import type { SecretConfig } from '../src/sim/state';
 import { createRun, step } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile, type Profile } from '../src/meta/profile';
@@ -89,10 +96,18 @@ export function veteran(preset: ForgePreset = 'none'): Profile {
  */
 const RIFTS_ON = { first: false, known: [], act2: false } as const;
 
+/** `--secrets` (plans/late-game/05 §8): every secret live, none heard, and no boss's first kill (so forms may come). */
+const SECRETS_ON: SecretConfig = { live: SECRETS.map((x) => x.id), heard: [], found: [], tally: {} };
+
 export function simulate(
-  seed: number, maxSeconds: number, policy: Policy, preset: ForgePreset = 'none', regionIndex = 1, rifts = false,
+  seed: number, maxSeconds: number, policy: Policy, preset: ForgePreset = 'none', regionIndex = 1, rifts = false, secrets = false,
 ): RunReport {
-  const run = createRun({ ...buildRunConfig(veteran(preset)), regionId: regionIndex, rifts: rifts ? RIFTS_ON : null }, seed);
+  const base = buildRunConfig(veteran(preset));
+  const run = createRun({
+    ...base, regionId: regionIndex, rifts: rifts ? RIFTS_ON : null,
+    // A late-Act-1 player knows every recipe, so the suggestion steers toward evolutions (frost needs Absolute Zero).
+    ...(secrets ? { secrets: SECRETS_ON, firstKill: false, recipes: EVOLUTIONS.map((e) => e.id) } : {}),
+  }, seed);
   const region = regionByIndex(run.regionId);
   const rows: WaveRow[] = [];
   const levelUps: number[] = [];
@@ -181,7 +196,10 @@ function main(): void {
   const preset = (fi >= 0 ? process.argv[fi + 1] : 'none') as ForgePreset;
   const region = arg('region', 1);
   const rifts = flag('rifts');
+  const secrets = flag('secrets');
   if (seeds > 0) {
+    /** Per secret: runs whose tally reached its stir share, and runs that found it. */
+    const met = new Map<string, { stir: number; found: number }>(SECRETS.map((x) => [x.id, { stir: 0, found: 0 }]));
     const riftCounts: number[] = [];
     let past12 = 0;
     let past12Rift = 0;
@@ -197,7 +215,17 @@ function main(): void {
     const lengths: number[] = [];
     const dealt: Partial<Record<DamageBy, number>> = {};
     for (let s = 1; s <= seeds; s++) {
-      const r = simulate(s, maxSeconds, policy, preset, region, rifts);
+      const r = simulate(s, maxSeconds, policy, preset, region, rifts, secrets);
+      if (secrets && r.run.secrets) {
+        const S = r.run.secrets;
+        for (const def of SECRETS) {
+          const m = met.get(def.id)!;
+          const t = def.trigger;
+          const reached = t.kind === 'tally' ? (S.counts[def.id] ?? 0) >= Math.ceil(t.n * BALANCE.secrets.stirAt) : S.stirred === def.id || S.sighted.includes(def.id);
+          if (reached || S.fresh.includes(def.id)) m.stir++;
+          if (S.fresh.includes(def.id)) m.found++;
+        }
+      }
       if (rifts) {
         const log = r.run.riftLog;
         riftCounts.push(log.filter((e) => e.wave <= 20).length);
@@ -236,6 +264,11 @@ function main(): void {
     }
     console.log('loadouts: ' + [...loadouts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ×${n}`).join('  ·  '));
     if (flag('by-weapon')) console.log(`damage by: ${describeDamage(dealt)}`);
+    if (secrets) {
+      // Targets (plans/late-game/05 §8): a bot-reachable secret found in 2–8% of eligible runs, stirred in ≥ 25%.
+      console.log('secrets (stirred or sighted / found, of runs): ' + [...met.entries()]
+        .map(([id, m]) => `${id} ${(100 * m.stir / seeds).toFixed(0)}%/${(100 * m.found / seeds).toFixed(1)}%`).join('  ·  '));
+    }
     if (rifts) {
       const mean = riftCounts.reduce((a, b) => a + b, 0) / Math.max(1, riftCounts.length);
       const fell = [...deaths.entries()].filter(([w]) => w <= 20).reduce((a, [, n]) => a + n, 0);

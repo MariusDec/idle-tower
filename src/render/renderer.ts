@@ -16,6 +16,7 @@ import { paintProjectiles } from './painters/projectiles';
 import { paintArsenal, paintFires, paintRunes, paintStatus } from './painters/arsenal';
 import { paintAegis, paintBoss, paintCourt, paintFacets, paintPlates, paintPools, paintRings, paintShots } from './painters/bosses';
 import { mirrorFacets, phasesOf } from '../sim/systems/boss';
+import { SECRET_BY_ID } from '../content/secrets';
 import { runRegion } from '../sim/systems/waves';
 import { mountOf } from '../sim/systems/arms';
 import { WEAPON_BY_ID } from '../content/weapons';
@@ -272,14 +273,21 @@ export class Renderer {
           break;
         case 'bossArrive': {
           const def = BOSS_BY_ID[ev.boss];
-          this.showBanner(def.name, def.phases[0].line, 'blood', !this.reducedMotion);
+          // In its other form (plans/late-game/05) the banner names the form: the sighting.
+          const form = run.boss?.form ? SECRET_BY_ID[run.boss.form].form : undefined;
+          this.showBanner(form?.name ?? def.name, form?.line ?? def.phases[0].line, 'blood', !this.reducedMotion);
           this.camera.shake(8);
           break;
         }
+        case 'secret':
+          // A find (plans/late-game/05): a gold banner, the evolve chime's cousin. A stir is the app's toast; a sighting, the arrival's banner.
+          if (ev.stage === 'found') this.showBanner(`Found: ${SECRET_BY_ID[ev.id].name}`, SECRET_BY_ID[ev.id].text, 'gold');
+          break;
         case 'bossPhase': {
           // A brief jolt on each phase change (§10.3), and its one line (Tyranny's too, §9).
           const def = BOSS_BY_ID[ev.boss];
-          this.showBanner(def.name, phasesOf(run, def)[ev.phase]?.line ?? '', 'blood');
+          const name = run.boss?.form ? SECRET_BY_ID[run.boss.form].form?.name ?? def.name : def.name;
+          this.showBanner(name, phasesOf(run, def)[ev.phase]?.line ?? '', 'blood');
           this.camera.shake(10);
           this.camera.zoomPunch();
           break;

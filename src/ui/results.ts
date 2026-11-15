@@ -18,6 +18,7 @@ import { WEAPON_BY_ID } from '../content/weapons';
 import type { AnomalyId, ContentEntry, PassiveId, RelicId, WeaponId } from '../content/types';
 import { curseLine, isCursed } from '../content/cursed';
 import { formatDuration, formatNumber } from '../core/format';
+import { SECRET_BY_ID } from '../content/secrets';
 import { setStyle, setText } from './dom';
 import { icon, iconMarkup } from './icon';
 
@@ -354,6 +355,10 @@ export class ResultsScreen {
       ...s.newRecipes.map((id) => chip(EVOLUTION_BY_ID[id], 'recipe')),
       ...s.newFusions.map((id) => chip(FUSION_BY_ID[id], 'recipe')),
       ...s.newEnemies.map((id) => chip(ENEMY_BY_ID[id], 'enemy')),
+      // Secrets (plans/late-game/05): a find by name; a new riddle as "Written in the margin".
+      ...(s.secrets?.found ?? []).map((id) => chip(SECRET_BY_ID[id], 'secret')),
+      ...(s.secrets?.heard && !s.secrets.found.includes(s.secrets.heard)
+        ? [chip({ id: 'margin', name: 'Written in the margin', icon: 'all-seeing-eye', text: '' }, 'whisper')] : []),
       // An anomaly is a find only once taken (plans/late-game/04 §2); let go, it has its own line.
       ...s.newCards.filter((k) => !k.startsWith('anomaly:') || s.anomaly?.taken)
         .map(cardEntry).filter((e): e is ContentEntry => e !== null).map((e) => chip(e, 'card')),

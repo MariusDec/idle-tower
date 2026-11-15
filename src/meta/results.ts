@@ -9,6 +9,7 @@ import { RELIC_BY_ID, RELIC_SETS, bossRelic, setOf } from '../content/relics';
 import { isCursed } from '../content/cursed';
 import type { AnomalyId, BossId, EnemyId, EvolutionId, FeatDef, FusionId, PassiveId, RelicId, RiftId, WeaponId } from '../content/types';
 import type { DamageBy, HurtBy, RunState } from '../sim/state';
+import { recordSecrets, type SecretsBanked } from './secrets';
 import {
   act2Open, bossDown, frameUnlocked, gainRelic, wornCursed, hubUnlocks, regionUnlocked, relicSlots, rushOpen, setOwned, setRank, trophiesAt,
 } from './collection';
@@ -57,7 +58,7 @@ export function buildOf(run: RunState): BuildSummary {
  * A reward only a present player can earn (I9, plans/late-game/01 §9.1).
  * Each late-game plan adds its own kind; the hands-off bot must never see one.
  */
-export type ActiveOnlyKind = 'stored-played' | 'rift' | 'reliquary' | 'anomaly';
+export type ActiveOnlyKind = 'stored-played' | 'rift' | 'reliquary' | 'anomaly' | 'wayward';
 
 /** What Stored Light paid this run (plans/late-game/01 §2). */
 export interface StoredSummary {
@@ -136,6 +137,11 @@ export interface RunSummary {
    * taken, and whether it is new to the Book. Null when none was dealt.
    */
   anomaly: { id: AnomalyId; taken: boolean; fresh: boolean } | null;
+  /**
+   * Secrets (plans/late-game/05): the riddle written this run and the finds,
+   * with their one-off pay. Null when the run had none live.
+   */
+  secrets: SecretsBanked | null;
   /** Feats earned this run, waiting in the Feats tab. */
   feats: FeatDef[];
   /** True once the Feats tab is open: before it, feats are earned quietly, for the tab's first burst (§5.4). */
@@ -329,6 +335,7 @@ export function bankRun(
   const newRecipes = recordRecipes(profile, run);
   const newFusions = recordFusions(profile, run);
   const anomaly = recordAnomaly(profile, run);
+  const secrets = recordSecrets(profile, run);
   const feats = checkFeats(profile, run);
   // Stored Light (plans/late-game/01): after everything that reads the run's
   // own shards, before the Foreman, so a played run feeds the wishlist.
@@ -348,6 +355,8 @@ export function bankRun(
   if (run.reliquariesClaimed > 0) profile.tutorial.firstReliquary = true;
   // Anomalies (plans/late-game/04, I9): only a present player takes one.
   if (anomaly?.taken) activeOnly.push({ kind: 'anomaly', amount: 1 });
+  // The Wayward Banner (plans/late-game/05, I9): found only by picks of one's own.
+  if (secrets?.found.includes('wayward')) activeOnly.push({ kind: 'wayward', amount: 1 });
   // The deepest floor each worn curse went to, for the compare sheet.
   if (abyss) {
     const floor = floorOf(Math.max(1, wave));
@@ -383,6 +392,7 @@ export function bankRun(
     relics,
     reliquaries: { claimed: run.reliquariesClaimed, faded: run.reliquariesFaded + run.reliquaries.length },
     anomaly,
+    secrets,
     feats,
     featsOpen: hubUnlocks(profile).feats,
     unlocks,

@@ -160,6 +160,17 @@ export class Cues {
           s.tone({ freq: 330, freqEnd: 660, type: 'sine', duration: 0.7, volume: 0.12, attack: 0.65 });
           s.tone({ freq: 337, freqEnd: 674, type: 'triangle', duration: 0.7, volume: 0.06, attack: 0.65 });
           break;
+        case 'secret':
+          // A stir (plans/late-game/05): a soft whisper, filtered breath and one low sine. A find: the evolve chime.
+          if (ev.stage === 'stir') {
+            s.noise(0.6, 0.05, 900, 'bandpass');
+            s.tone({ freq: 294, type: 'sine', duration: 0.9, volume: 0.05, attack: 0.3 });
+          } else if (ev.stage === 'found') {
+            for (const [i, f] of [392, 523, 659, 784, 1047].entries()) {
+              s.tone({ freq: f, type: 'triangle', duration: 0.5 - i * 0.05, volume: 0.12, delay: i * 0.08 });
+            }
+          }
+          break;
         case 'evolve':
         case 'fuse':
           for (const [i, f] of [392, 523, 659, 784, 1047].entries()) {

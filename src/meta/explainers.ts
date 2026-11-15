@@ -4,6 +4,7 @@ import { tacticsKey } from './automation';
 import { act2Open, collectionPages, hubUnlocks, ownedCursed, rushOpen, trophyCount } from './collection';
 import { towerTier } from './forge';
 import type { Profile } from './profile';
+import { margin } from './secrets';
 import { trims, trialsOpen } from './trials';
 
 /** True once the player can meet the mechanic an explainer tells of (§7.1). */
@@ -35,6 +36,8 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
       return collectionPages(profile).rifts;
     case 'cursed':
       return ownedCursed(profile).length > 0;
+    case 'whispers':
+      return margin(profile).length > 0;
     case 'anomalies':
       return profile.anomalies.found.length + profile.anomalies.glimpsed.length > 0;
     case 'feats':

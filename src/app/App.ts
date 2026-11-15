@@ -873,6 +873,10 @@ export class App {
           // Taught by the toast (plans/late-game/03 §2), as the Champion's is; the first says where to look.
           this.toasts.show('locked-chest', 'A reliquary', ev.first ? 'Tap the chest, or the chip by your ultimate, before it fades.' : 'Tap it before it fades.', 'relic');
           break;
+        case 'secret':
+          // A stir (plans/late-game/05 §2): a quiet toast, nothing else changes. A find is the renderer's gold banner.
+          if (ev.stage === 'stir') this.toasts.show('all-seeing-eye', 'Something stirred', 'A line is written in the Recipe Book.', 'gold');
+          break;
         case 'anomaly': {
           // Taken (plans/late-game/04 §2): the toast names it; the renderer flashes the mount.
           const def = ANOMALY_BY_ID[ev.anomaly];

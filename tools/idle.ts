@@ -171,6 +171,8 @@ export function runIdle(
       if (policy === 'idle' && run.reliquariesClaimed > 0) throw new Error('I9: the hands-off bot claimed a reliquary');
       // I9 (plans/late-game/04 §9): nor takes an anomaly. A hard fail.
       if (policy === 'idle' && run.anomaly?.taken) throw new Error('I9: the hands-off bot took an anomaly');
+      // I9 (plans/late-game/05 §2): nor finds the Wayward Banner, which only picks of one's own earn. A hard fail.
+      if (policy === 'idle' && run.secrets?.fresh.includes('wayward')) throw new Error('I9: the hands-off bot found the Wayward Banner');
       if (run.anomaly?.offered) report.anomalies.offered++;
       if (run.anomaly?.taken) report.anomalies.taken++;
       report.riftShards += run.shardsFrom.rifts;

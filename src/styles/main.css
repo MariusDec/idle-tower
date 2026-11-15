@@ -1610,6 +1610,11 @@ body {
 .entry.is-anomaly .entry-head .icon { color: var(--fx-mana); }
 .entry.is-anomaly.is-glimpsed { background: var(--surface-sunken); color: var(--text-2); box-shadow: none; }
 
+/* The margin (plans/late-game/05): a heard whisper is quieter than a found secret. */
+.entry.is-margin.is-whisper { background: var(--surface-sunken); color: var(--text-2); }
+.entry.is-margin.is-whisper .entry-lore,
+.entry-lore.is-whisper { font-style: italic; }
+
 /* Reduced motion: the device's setting or the player's (src/app/settings.ts). */
 :root[data-motion='reduce'] .draft-card,
 :root[data-motion='reduce'] .hud-ult.is-ready,

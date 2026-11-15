@@ -1,4 +1,5 @@
 import { BOSS_BY_ID } from '../../content/bosses';
+import { SECRET_BY_ID } from '../../content/secrets';
 import type { BossDef, BossId } from '../../content/types';
 import type { BossState, Enemy, HostileShot, MoltenPool, RunState, SlamRing } from '../../sim/state';
 import { FX, INK, lighten, mix, withAlpha } from '../palette';
@@ -228,12 +229,19 @@ export function paintFacets(ctx: CanvasRenderingContext2D, x: number, y: number,
  * The Hollow King's shades: his silhouette, see-through, at his size. The
  * crowned body, his own or a shade, wears a gold ring above it.
  */
+/** The boss as it looks this run: its other form's tint (plans/late-game/05), or its own. */
+function bossLook(b: BossState): BossDef {
+  const def = BOSS_BY_ID[b.id];
+  const form = b.form ? SECRET_BY_ID[b.form].form : undefined;
+  return form ? { ...def, color: form.color, borderColor: form.borderColor } : def;
+}
+
 export function paintCourt(
   ctx: CanvasRenderingContext2D, run: RunState, alpha: number, time: number,
 ): void {
   const b = run.boss;
   if (!b || b.killedIn !== null) return;
-  const def = BOSS_BY_ID[b.id];
+  const def = bossLook(b);
   for (const e of run.enemies) {
     if (!e.alive || (e.court === 0 && e.id !== b.enemy)) continue;
     const x = e.px + (e.x - e.px) * alpha;
@@ -267,7 +275,7 @@ export function paintCourt(
 export function paintPlates(ctx: CanvasRenderingContext2D, run: RunState, alpha: number): void {
   const b = run.boss;
   if (!b || b.plates === 0) return;
-  const def = BOSS_BY_ID[b.id];
+  const def = bossLook(b);
   for (const e of run.enemies) {
     if (!e.alive || !e.plate) continue;
     const x = e.px + (e.x - e.px) * alpha;
@@ -330,7 +338,7 @@ export function paintBoss(
   light: number,
   oval: Oval,
 ): void {
-  const def = BOSS_BY_ID[b.id];
+  const def = bossLook(b);
   const x = e.px + (e.x - e.px) * alpha;
   const y = e.py + (e.y - e.py) * alpha;
   const r = e.radius;

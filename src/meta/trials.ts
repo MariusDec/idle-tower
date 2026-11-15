@@ -3,6 +3,7 @@ import { RELIC_BY_ID } from '../content/relics';
 import { TRIALS, TRIAL_BY_ID } from '../content/trials';
 import type { Effect, TrialDef, TrimId } from '../content/types';
 import { bossDown, gainRelic, regionUnlocked } from './collection';
+import { secretTrims } from './secrets';
 import type { Profile } from './profile';
 
 /**
@@ -58,7 +59,9 @@ export function trims(profile: Profile): TrimId[] {
 
 /** The trims Trials have paid, with their names: the Collection's list to wear or take off. */
 export function wonTrims(profile: Profile): { trim: TrimId; name: string }[] {
-  return TRIALS.flatMap((t) => (trialWon(profile, t.id) && t.reward.kind === 'trim' ? [{ trim: t.reward.trim, name: t.reward.name }] : []));
+  const trials = TRIALS.flatMap((t) => (trialWon(profile, t.id) && t.reward.kind === 'trim' ? [{ trim: t.reward.trim, name: t.reward.name }] : []));
+  // Secrets' trims (plans/late-game/05) join the list once found: it only ever shows what is owned.
+  return [...trials, ...secretTrims(profile)];
 }
 
 /** The trims the tower wears: every one paid, less those taken off. */

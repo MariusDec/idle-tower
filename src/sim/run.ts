@@ -183,6 +183,18 @@ export function createRun(config: RunConfig, seed: number): RunState {
     reliquariesClaimed: 0,
     reliquariesFaded: 0,
     anomaly,
+    secrets: config.secrets ? {
+      live: [...config.secrets.live],
+      heard: [...config.secrets.heard],
+      found: [...config.secrets.found],
+      counts: { ...config.secrets.tally },
+      fresh: [],
+      stirred: null,
+      sighted: [],
+      felled: [],
+      on: 0,
+      off: 0,
+    } : null,
     outcome: null,
     events: [],
   };

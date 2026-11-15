@@ -25,6 +25,7 @@ export type ExplainerId =
   | 'rifts'
   | 'cursed'
   | 'anomalies'
+  | 'whispers'
   | 'feats'
   | 'stars'
   | 'tactics'
@@ -144,6 +145,13 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
       'They’re never suggested, and a draft that runs out of time won’t take one. You have to be there.',
       'An anomalised weapon keeps levelling, but it never evolves or fuses. It’s the weapon’s other road.',
       'Anomalies you take are kept here. Nobody says how many there are.',
+    ],
+  },
+  {
+    id: 'whispers', view: 'collection', title: 'Whispers',
+    lines: [
+      'Some things in the tower are in no book until you find them. When one stirs, a line is written in the Recipe Book’s margin.',
+      'The margin never says how many there are. A whisper points at a pair, a place, or a way of fighting.',
     ],
   },
   {

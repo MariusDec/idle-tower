@@ -13,6 +13,7 @@ import { pactLoad } from '../pacts';
 import { suggest } from '../suggest';
 import { newWeapon, slotsUsed } from './arms';
 import { runRegion, waveBonus } from './waves';
+import { notePick } from './secrets';
 
 /**
  * XP, level-ups and the draft (§4.5). The sim only offers and applies cards;
@@ -314,6 +315,8 @@ export function pickCard(run: RunState, index: number): void {
   const d = run.draft;
   if (!d) return;
   const card = d.cards[index] ?? d.cards[d.suggested];
+  // Secrets (plans/late-game/05): the Wayward road counts the player's own picks.
+  if (run.secrets) notePick(run, index === d.suggested || d.cards[index] === undefined);
   applyCard(run, card);
   // Twin Mount's offer stands for one draft, whatever was taken from it.
   run.twinOffer = null;
