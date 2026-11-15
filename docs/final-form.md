@@ -49,5 +49,26 @@ at 1 and is not read by the scorer.
 
 Rates sit in band for Regions 4–5; the waves are late (R4's median is 25,
 past the boss; R5's is 20, one over). That is expected while the suggestion
-doesn't chase (§3.4). The idle reach reading (`pacing --idle`) and the
-reveal timeline were not run.
+doesn't chase (§3.4). The reveal timeline was not run.
+
+### Idle reach (`pacing --idle --hours 12 --seeds 4`, 2026-11-15)
+
+Fresh profiles played to the Blight; each region's runs summed over the four
+seeds. "Evolved" is weapons evolved at each run's end (0 / 1 / 2 / 3+);
+"recipes" is the most any run there knew going in.
+
+| Region | Hands-off: formed / runs | evolved | recipes | Engaged: formed / runs | evolved | recipes |
+|---|---|---|---|---|---|---|
+| R3 | 0 / 25 (9 could) | 25 / 0 / 0 / 0 | 0 | 0 / 17 (7 could) | 14 / 3 / 0 / 0 | 1 |
+| R4 | 0 / 110 (95 could) | 108 / 2 / 0 / 0 | 0 | 0 / 92 (90 could) | 83 / 9 / 0 / 0 | 1 |
+| R5 | 0 / 69 | 66 / 3 / 0 / 0 | 1 | 0 / 21 | 11 / 10 / 0 / 0 | 2 |
+| R6 | 0 / 64 | 49 / 15 / 0 / 0 | 1 | 0 / 42 | 19 / 23 / 0 / 0 | 2 |
+
+**FAIL: 0% in Region 5 (want ≥ 10%).** The bottleneck is recipe discovery,
+not the second-evolution chase: a profile played by the bots knows at most
+one or two recipes by the Blight, and the suggestion steers only toward
+known ones (`suggest.ts`), so most Region 5 runs don't evolve even once.
+§3.4's lever (a 1.5× second-recipe bonus) needs a second known recipe to
+steer toward, so on its own it would barely move this. The F0 table above
+marks every Act 1 recipe found, which is why it reads 22–26%. Deciding what
+to do (Open 3, or a recipe-discovery change) is open.

@@ -34,6 +34,7 @@ import { Rng } from '../src/core/rng';
 import { newProfile, type Profile } from '../src/meta/profile';
 import { autoUlt, automations, draftSeconds, marchOn, openingSeconds, runSpeed } from '../src/meta/automation';
 import { bankRun } from '../src/meta/results';
+import { formCount } from '../src/sim/systems/form';
 import { frontier, hubUnlocks } from '../src/meta/collection';
 import { claimAll } from '../src/meta/feats';
 import { offlineEarnings } from '../src/meta/offline';
@@ -78,6 +79,11 @@ export interface IdleReport {
   reliquariesFaded: number;
   /** Anomalies dealt into a hand, and taken (plans/late-game/04 §9): the hands-off bot takes none, so I9 isn't vacuous only while some are offered. */
   anomalies: { offered: number; taken: number };
+  /**
+   * Final Form (plans/late-game/07 §8), by region index: runs banked, runs
+   * that could form (`need` > 0), runs that formed, and the waves they formed at.
+   */
+  forms: Record<number, { runs: number; could: number; formed: number; waves: number[]; evolved: number[]; recipes: number }>;
   /** Shards runs paid, in all. */
   played: number;
   checkins: number;
@@ -108,7 +114,7 @@ export function runIdle(
   const policy: PlayPolicy = mode === 'engaged' ? 'active' : 'idle';
   const report: IdleReport = {
     mode, bossKills: {}, screen: {}, offline: 0, stored: 0, burned: 0, poolAtEnd: 0,
-    tally: { engaged: 0, handsOff: 0 }, activeOnly: {}, riftShards: 0, reliquariesFaded: 0, anomalies: { offered: 0, taken: 0 }, played: 0, checkins: 0, runs: 0,
+    tally: { engaged: 0, handsOff: 0 }, activeOnly: {}, riftShards: 0, reliquariesFaded: 0, anomalies: { offered: 0, taken: 0 }, forms: {}, played: 0, checkins: 0, runs: 0,
   };
   /** Session wall seconds before this check-in's. */
   let screenBefore = 0;
@@ -173,6 +179,15 @@ export function runIdle(
       if (policy === 'idle' && run.anomaly?.taken) throw new Error('I9: the hands-off bot took an anomaly');
       // I9 (plans/late-game/05 §2): nor finds the Wayward Banner, which only picks of one's own earn. A hard fail.
       if (policy === 'idle' && run.secrets?.fresh.includes('wayward')) throw new Error('I9: the hands-off bot found the Wayward Banner');
+      const f = (report.forms[run.regionId] ??= { runs: 0, could: 0, formed: 0, waves: [], evolved: [0, 0, 0, 0], recipes: 0 });
+      f.runs++;
+      f.evolved[Math.min(3, formCount(run))]++;
+      f.recipes = Math.max(f.recipes, run.recipes.length);
+      if (run.form.need > 0) f.could++;
+      if (run.form.wave !== null) {
+        f.formed++;
+        f.waves.push(run.form.wave);
+      }
       if (run.anomaly?.offered) report.anomalies.offered++;
       if (run.anomaly?.taken) report.anomalies.taken++;
       report.riftShards += run.shardsFrom.rifts;

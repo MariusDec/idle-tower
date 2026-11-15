@@ -401,6 +401,23 @@ export function idleVerdict(seed: number, runsPerPolicy = 6, activeHours = 3): I
 }
 
 /** Each seed's job, run in its own worker (`tools/parallel.ts`). */
+/** Every seed's Final Form tallies (plans/late-game/07 §8) summed, as one report's `forms`. */
+function formTotals(verdicts: readonly IdleVerdict[], which: 'handsOff' | 'engaged'): { mode: string; forms: IdleReport['forms'] } {
+  const forms: IdleReport['forms'] = {};
+  for (const v of verdicts) {
+    for (const [region, f] of Object.entries(v[which].forms)) {
+      const t = (forms[Number(region)] ??= { runs: 0, could: 0, formed: 0, waves: [], evolved: [0, 0, 0, 0], recipes: 0 });
+      t.runs += f.runs;
+      f.evolved.forEach((n, i) => (t.evolved[i] += n));
+      t.recipes = Math.max(t.recipes, f.recipes);
+      t.could += f.could;
+      t.formed += f.formed;
+      t.waves.push(...f.waves);
+    }
+  }
+  return { mode: verdicts[0]?.[which].mode ?? which, forms };
+}
+
 const JOBS = { pacing: runPacing, idle: idleVerdict, act2: act2Verdict };
 const seedsOf = (n: number): number[] => Array.from({ length: n }, (_, k) => k + 1);
 const runSeeds = <T>(name: keyof typeof JOBS, argLists: unknown[][]): Promise<T[]> => parallel<T>(process.argv[1], name, argLists);
@@ -441,6 +458,18 @@ async function idleMain(seeds: number, activeHours: number): Promise<void> {
   const ok8 = tail.every((d) => d >= I8_DAYS.min && d <= I8_DAYS.max);
   const inTarget = m !== null && m >= I8_DAYS.target.min && m <= I8_DAYS.target.max;
   console.log(`  ${ok8 ? 'PASS' : 'FAIL'}  I8  every hands-off Act 1 in ${I8_DAYS.min}–${I8_DAYS.max} d (${tail.map((d) => (Number.isFinite(d) ? d.toFixed(1) : 'never')).join(' ')}) · median ${m?.toFixed(1) ?? 'never'} d ${inTarget ? 'in' : 'outside'} the ${I8_DAYS.target.min}–${I8_DAYS.target.max} d target`);
+  // Final Form (plans/late-game/07 §8): the idle reach rate per region, want ≥ 10% of Region 5 runs (hands-off).
+  for (const r of [formTotals(verdicts, 'handsOff'), formTotals(verdicts, 'engaged')]) {
+    const rows = Object.entries(r.forms).sort((a, b) => Number(a[0]) - Number(b[0])).map(([region, f]) => {
+      const sorted = [...f.waves].sort((x, y) => x - y);
+      const med = sorted.length > 0 ? ` w${sorted[sorted.length >> 1]}` : '';
+      return `R${region} ${f.formed}/${f.runs}${f.could < f.runs ? ` (${f.could} could)` : ''}${med} [evolved ${f.evolved.join('/')}, recipes ≤ ${f.recipes}]`;
+    });
+    const r5 = r.forms[5];
+    const rate5 = r5 && r5.runs > 0 ? r5.formed / r5.runs : 0;
+    const mark = r.mode === 'hands-off' ? (rate5 >= 0.1 ? 'PASS' : 'FAIL') : '    ';
+    console.log(`  ${mark}  Final Form ${r.mode.padEnd(9)} reached/runs, median wave: ${rows.join(' · ')} (want ≥ 10% in R5; ${(rate5 * 100).toFixed(0)}%)`);
+  }
   const leaks = verdicts.filter((v) => v.handsOff.tally.engaged > 0 || Object.keys(v.handsOff.activeOnly).length > 0);
   console.log(`  ${leaks.length === 0 ? 'PASS' : 'FAIL'}  I9  no active-only reward reached the hands-off bot${leaks.length > 0 ? ` (${leaks.length} seeds leaked)` : ''}`);
   const perHour = verdicts.map((v) => {

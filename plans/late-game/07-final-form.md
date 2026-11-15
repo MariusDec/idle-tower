@@ -2,6 +2,7 @@
 
 **Status:** 2026-11-15. F0–F4 built, and the seventh-slot mount fix
 (docs/final-form.md has the readings); F5 not built (`ultCharge` stays 0).
+The idle reading fails §8 (0% in Region 5): bot profiles know ≤ 2 recipes.
 Plan written 2026-11-14. Supersedes §3 of
 [b-moments.md](b-moments.md) (and answers its last Open question).
 
