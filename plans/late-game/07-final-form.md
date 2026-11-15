@@ -1,6 +1,8 @@
 # 07. Final Form
 
-**Status:** 2026-11-14. Plan, not built. Supersedes §3 of
+**Status:** 2026-11-15. F0–F4 built, and the seventh-slot mount fix
+(docs/final-form.md has the readings); F5 not built (`ultCharge` stays 0).
+Plan written 2026-11-14. Supersedes §3 of
 [b-moments.md](b-moments.md) (and answers its last Open question).
 
 **In one line:** evolve two weapons in one run and the tower takes its

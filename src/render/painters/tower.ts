@@ -1,8 +1,11 @@
 import { weaponParams } from '../../content/weapons';
 import { mountOffset, mountRadius } from '../../content/mounts';
-import type { TrimId, WeaponId } from '../../content/types';
+import type { FrameId, TrimId, WeaponId } from '../../content/types';
 import { FX, INK, lighten, mix, withAlpha } from '../palette';
 import { LIGHT_ANGLE } from './enemies';
+import { formAccent, paintForm, type FormPaint } from './form';
+
+export type { FormPaint };
 
 /** What the tower painter needs of a mounted weapon. */
 export interface Mount {
@@ -22,6 +25,8 @@ export interface TowerLook {
   readonly tier: number;
   readonly trophies: number;
   readonly trims: readonly TrimId[];
+  /** The selected frame, once it has reached Final Form (plans/late-game/07 F4): the hub draws its crown, still and dimmed. */
+  readonly form?: FrameId | null;
 }
 
 export const PLAIN_LOOK: TowerLook = { tier: 1, trophies: 0, trims: [] };
@@ -279,6 +284,7 @@ export function paintTower(
   hurt: number,
   fallen: number,
   look: TowerLook = PLAIN_LOOK,
+  form: FormPaint | null = null,
 ): void {
   const lx = Math.cos(LIGHT_ANGLE);
   const ly = Math.sin(LIGHT_ANGLE);
@@ -322,16 +328,19 @@ export function paintTower(
   ctx.lineWidth = 3;
   ctx.stroke();
 
+  // Final Form (plans/late-game/07 §4): the evolved halos take the form's accent.
+  const halo = form ? formAccent(form.frame) : FX.gold;
   // Pods under the turret, so the turret's barrel reads on top.
   for (let i = 1; i < mounts.length; i++) {
     const o = mountOffset(i, R);
     ctx.save();
     ctx.translate(o.x, o.y);
     paintPod(ctx, mountRadius(i, R), lx, ly);
-    paintMount(ctx, mounts[i], mountRadius(i, R), time, fallen);
+    paintMount(ctx, mounts[i], mountRadius(i, R), time, fallen, halo);
     ctx.restore();
   }
-  if (mounts.length > 0) paintMount(ctx, mounts[0], mountRadius(0, R), time, fallen);
+  if (mounts.length > 0) paintMount(ctx, mounts[0], mountRadius(0, R), time, fallen, halo);
+  if (form && fallen < 1) paintForm(ctx, R, form, time, 'under');
 
   // Crystal: pulses slowly; flares scarlet when hit.
   const pulse = 0.85 + 0.15 * Math.sin(time * 2.4);
@@ -351,6 +360,7 @@ export function paintTower(
   ctx.fill();
 
   if (fallen < 1) paintCrown(ctx, R, look, time);
+  if (form && fallen < 1) paintForm(ctx, R, form, time, 'over');
   if (fallen > 0) paintCracks(ctx, R, fallen);
 }
 
@@ -373,12 +383,12 @@ function paintPod(ctx: CanvasRenderingContext2D, r: number, lx: number, ly: numb
  * the radius it may fill. Each weapon has its own silhouette, and its level
  * shows in the silhouette itself: more barrels, a wider bell, more coils.
  */
-function paintMount(ctx: CanvasRenderingContext2D, m: Mount, r: number, time: number, fallen: number): void {
+function paintMount(ctx: CanvasRenderingContext2D, m: Mount, r: number, time: number, fallen: number, halo: string = FX.gold): void {
   const p = weaponParams(m.id, m.level);
   const dim = (c: string): string => (fallen > 0 ? mix(c, INK['700'], fallen) : c);
   if (m.evolved) {
-    // The evolved weapon's halo: gold, slowly breathing.
-    ctx.strokeStyle = withAlpha(FX.gold, (0.55 + 0.25 * Math.sin(time * 3)) * (1 - fallen));
+    // The evolved weapon's halo: gold (in Final Form, its accent), slowly breathing.
+    ctx.strokeStyle = withAlpha(halo, (0.55 + 0.25 * Math.sin(time * 3)) * (1 - fallen));
     ctx.lineWidth = Math.max(2, r * 0.1);
     ctx.beginPath();
     ctx.arc(0, 0, r * 1.02, 0, Math.PI * 2);
@@ -666,13 +676,16 @@ function paintCracks(ctx: CanvasRenderingContext2D, R: number, t: number): void 
   ctx.restore();
 }
 
-/** The faint ring that shows how far the tower reaches (§4.1). */
-export function paintRangeRing(ctx: CanvasRenderingContext2D, range: number, px: number): void {
+/**
+ * The faint ring that shows how far the tower reaches (§4.1). In Final Form
+ * (`accent` set) it is the form's colour at 0.45, solid rather than dashed.
+ */
+export function paintRangeRing(ctx: CanvasRenderingContext2D, range: number, px: number, accent: string | null = null): void {
   ctx.save();
-  ctx.strokeStyle = withAlpha(FX.arcane, 0.3);
+  ctx.strokeStyle = accent ? withAlpha(accent, 0.45) : withAlpha(FX.arcane, 0.3);
   // Sized in CSS pixels (`px` world units each), so it stays thin and evenly dashed at any zoom.
   ctx.lineWidth = px;
-  ctx.setLineDash([5 * px, 4 * px]);
+  if (!accent) ctx.setLineDash([5 * px, 4 * px]);
   ctx.beginPath();
   ctx.arc(0, 0, range, 0, Math.PI * 2);
   ctx.stroke();

@@ -343,6 +343,8 @@ export interface FrameDef extends ContentEntry {
   readonly effects: readonly Effect[];
   readonly ultimate: UltimateDef;
   readonly unlock: FrameUnlock;
+  /** Its Final Form (plans/late-game/07): ≤ 3 words, and a line of ≤ 15. */
+  readonly form: { readonly name: string; readonly text: string };
 }
 
 export type EnemyId =
@@ -930,6 +932,10 @@ export type FeatGoal =
   | { readonly kind: 'lone'; readonly wave: number }
   /** Evolve any weapon. */
   | { readonly kind: 'evolve' }
+  /** Reach any frame's Final Form (plans/late-game/07). */
+  | { readonly kind: 'finalForm' }
+  /** Reach n frames' Final Forms. */
+  | { readonly kind: 'forms'; readonly n: number }
   /** Take n anomalies in all (plans/late-game/04): only a watching player can. */
   | { readonly kind: 'anomalies'; readonly n: number }
   /** Find n different recipes. */

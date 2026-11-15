@@ -73,10 +73,12 @@ export const FEATS: readonly FeatDef[] = [
   { id: 'riftwalker', name: 'Riftwalker', icon: 'teleport', text: 'Take 25 rifts’ offers.', goal: { kind: 'riftsTaken', n: 25 }, reward: 4000 },
   // Anomalies (plans/late-game/04): never taken for you.
   { id: 'anomalous', name: 'Anomalous', icon: 'glowing-artifact', text: 'Take an anomaly.', goal: { kind: 'anomalies', n: 1 }, reward: 2500 },
+  { id: 'final-form', name: 'Final Form', icon: 'crown', text: "Reach any frame's Final Form.", goal: { kind: 'finalForm' }, reward: 10_000 },
   { id: 'strange-arsenal', name: 'Strange Arsenal', icon: 'interleaved-arrows', text: 'Take five anomalies.', goal: { kind: 'anomalies', n: 5 }, reward: 8000 },
   // ── Act 2 (§9): surface once the Blight has fallen ────────────────────
   { id: 'kindled', name: 'Kindled', icon: 'fire-bowl', text: 'Clear a region under any pact.', after: 'blight', goal: { kind: 'heat', heat: 1 }, reward: 50_000, starlight: 5 },
   { id: 'heat-5', name: 'Fevered', icon: 'frostfire', text: 'Clear a region at heat 5.', after: 'blight', goal: { kind: 'heat', heat: 5 }, reward: 150_000, starlight: 10 },
+  { id: 'every-form', name: 'Six Crowns', icon: 'crown-coin', text: "Reach all six frames' Final Forms.", after: 'blight', goal: { kind: 'forms', n: 6 }, reward: 1_500_000, starlight: 15 },
   { id: 'heat-10', name: 'White Heat', icon: 'sun', text: 'Clear a region at heat 10.', after: 'blight', goal: { kind: 'heat', heat: 10 }, reward: 500_000, starlight: 15 },
   { id: 'heat-20', name: 'Furnace Heart', icon: 'burning-meteor', text: 'Clear a region at heat 20.', after: 'blight', goal: { kind: 'heat', heat: 20 }, reward: 3_000_000, starlight: 30 },
   { id: 'heat-all-5', name: 'Wildfire', icon: 'explosion-rays', text: 'Clear every region at heat 5 or more.', after: 'blight', goal: { kind: 'heatAll', heat: 5 }, reward: 2_000_000, starlight: 20 },

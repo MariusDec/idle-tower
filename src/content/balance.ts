@@ -192,6 +192,14 @@ export const BALANCE = {
     /** Lens Shard, by rank: extra damage beams and chains deal bosses. */
     lensShard: [0.15, 0.22, 0.3],
   },
+  /**
+   * Final Form (plans/late-game/07): evolve `need` weapons in one run (an
+   * anomaly counts) and the tower takes its frame's form until the run ends.
+   * Only with Alchemy, `minSlots` weapon slots and `need` passive slots.
+   * `ultCharge` (0: cosmetic) is the ult's extra charge rate once formed;
+   * `chase` (1: off) the suggestion's second-recipe bonus.
+   */
+  finalForm: { need: 2, minSlots: 2, ultCharge: 0, chase: 1 },
   anomalies: {
     /** A weapon is eligible from this level: before `evolveAt`, so the fork comes early. */
     minLevel: 3,

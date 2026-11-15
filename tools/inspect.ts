@@ -15,6 +15,12 @@
  *                                          every secret live (plans/late-game/05 §8):
  *                                          how often each is stirred and found;
  *                                          add --uncapped for each tally's raw spread
+ *   npm run inspect -- --seeds 50 --forge ring5 --region 4 --recipes act1 --form
+ *                                          Final Form (plans/late-game/07 §8): the wave
+ *                                          each run formed, the reach rate, the median
+ *                                          wave and how many weapons were evolved at the end;
+ *                                          --recipes act1|all marks recipes found (act1: those
+ *                                          the Forge's pool can draw), --frame artificer picks a frame
  *
  * Headless: it drives the real sim, not a model of it.
  */
@@ -23,6 +29,9 @@ import { BALANCE } from '../src/content/balance';
 import { SECRETS } from '../src/content/secrets';
 import { EVOLUTIONS } from '../src/content/evolutions';
 import type { SecretConfig } from '../src/sim/state';
+import type { EvolutionId } from '../src/content/types';
+import { formCount } from '../src/sim/systems/form';
+import { frameById } from '../src/content/frames';
 import { createRun, step } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile, type Profile } from '../src/meta/profile';
@@ -100,12 +109,38 @@ const RIFTS_ON = { first: false, known: [], act2: false } as const;
 /** `--secrets` (plans/late-game/05 §8): every secret live, none heard, and no boss's first kill (so forms may come). */
 const SECRETS_ON: SecretConfig = { live: SECRETS.map((x) => x.id), heard: [], found: [], tally: {} };
 
+/** `--recipes` (plans/late-game/07 §8): none found (a fresh `veteran`), those the pool can draw, or every one. */
+export type RecipePreset = 'none' | 'act1' | 'all';
+
+/** What else a probe sets on its veteran: recipes found and the frame (Final Form's readings). */
+export interface ProbeOptions {
+  readonly recipes?: RecipePreset;
+  readonly frame?: string;
+}
+
+/** The recipes a preset marks found, against the run's pool. */
+function presetRecipes(preset: RecipePreset, pool: readonly string[]): EvolutionId[] {
+  if (preset === 'all') return EVOLUTIONS.map((e) => e.id);
+  if (preset === 'act1') return EVOLUTIONS.filter((e) => pool.includes(e.weapon)).map((e) => e.id);
+  return [];
+}
+
 export function simulate(
   seed: number, maxSeconds: number, policy: Policy, preset: ForgePreset = 'none', regionIndex = 1, rifts = false, secrets = false,
+  probe: ProbeOptions = {},
 ): RunReport {
-  const base = buildRunConfig(veteran(preset));
+  const vet = veteran(preset);
+  if (probe.frame) {
+    // A probe's frame is owned: a feat's frame (the Artificer's Tinkerer) counts as earned. Boss and star frames need their own preset.
+    const unlock = frameById(probe.frame).unlock;
+    if (unlock.kind === 'feat') vet.feats[unlock.feat] = 'claimed';
+    vet.frame = probe.frame;
+  }
+  const base = buildRunConfig(vet);
+  const recipes = probe.recipes && probe.recipes !== 'none' ? presetRecipes(probe.recipes, base.pool) : null;
   const run = createRun({
     ...base, regionId: regionIndex, rifts: rifts ? RIFTS_ON : null,
+    ...(recipes ? { recipes } : {}),
     // A late-Act-1 player knows every recipe, so the suggestion steers toward evolutions (frost needs Absolute Zero).
     ...(secrets ? { secrets: SECRETS_ON, firstKill: false, recipes: EVOLUTIONS.map((e) => e.id) } : {}),
   }, seed);
@@ -198,6 +233,13 @@ function main(): void {
   const region = arg('region', 1);
   const rifts = flag('rifts');
   const secrets = flag('secrets');
+  const form = flag('form');
+  const ri = process.argv.indexOf('--recipes');
+  const fr = process.argv.indexOf('--frame');
+  const probe: ProbeOptions = {
+    recipes: (ri >= 0 ? process.argv[ri + 1] : 'none') as RecipePreset,
+    frame: fr >= 0 ? process.argv[fr + 1] : undefined,
+  };
   // `--uncapped`: lift every tally's goal, so the counts show each run's raw spread (a tool's view only).
   if (secrets && flag('uncapped')) for (const def of SECRETS) if (def.trigger.kind === 'tally') (def.trigger as { n: number }).n = 1e9;
   if (seeds > 0) {
@@ -219,8 +261,16 @@ function main(): void {
     const waves: number[] = [];
     const lengths: number[] = [];
     const dealt: Partial<Record<DamageBy, number>> = {};
+    /** Final Form (`--form`): the wave each formed run formed at, runs that could, and evolved weapons at each run's end. */
+    const formWaves: number[] = [];
+    let formable = 0;
+    const evolvedAtEnd = new Map<number, number>();
     for (let s = 1; s <= seeds; s++) {
-      const r = simulate(s, maxSeconds, policy, preset, region, rifts, secrets);
+      const r = simulate(s, maxSeconds, policy, preset, region, rifts, secrets, probe);
+      if (r.run.form.need > 0) formable++;
+      if (r.run.form.wave !== null) formWaves.push(r.run.form.wave);
+      const ev = formCount(r.run);
+      evolvedAtEnd.set(ev, (evolvedAtEnd.get(ev) ?? 0) + 1);
       if (secrets && r.run.secrets) {
         const S = r.run.secrets;
         for (const def of SECRETS) {
@@ -270,6 +320,14 @@ function main(): void {
     }
     console.log('loadouts: ' + [...loadouts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ×${n}`).join('  ·  '));
     if (flag('by-weapon')) console.log(`damage by: ${describeDamage(dealt)}`);
+    if (form) {
+      // Targets (plans/late-game/07 §8): R2 ≤ 5%, R4 15–35% with median ≤ 20, R5 20–40% with median 15–19.
+      const rate = (100 * formWaves.length) / seeds;
+      console.log(`final form (recipes ${probe.recipes}${probe.frame ? `, ${probe.frame}` : ''}): ${formWaves.length}/${seeds} runs (${rate.toFixed(0)}%)`
+        + ` · ${formable}/${seeds} could · median wave ${formWaves.length > 0 ? median(formWaves) : '—'}`
+        + ` · waves ${[...formWaves].sort((a, b) => a - b).join(' ') || '—'}`);
+      console.log('evolved at the end: ' + [...evolvedAtEnd.entries()].sort((a, b) => a[0] - b[0]).map(([n, k]) => `${n}×${k}`).join('  '));
+    }
     if (secrets) {
       // Targets (plans/late-game/05 §8): a bot-reachable secret found in 2–8% of eligible runs, stirred in ≥ 25%.
       console.log('secrets (stirred or sighted / found, of runs): ' + [...met.entries()]
@@ -290,7 +348,7 @@ function main(): void {
     return;
   }
   const seed = arg('seed', 1);
-  const r = simulate(seed, maxSeconds, policy, preset, region, rifts);
+  const r = simulate(seed, maxSeconds, policy, preset, region, rifts, false, probe);
   console.log(`seed ${seed} · policy ${policy} · forge ${preset} · region ${region} · first kill ${r.firstKill?.toFixed(2) ?? '—'}s · ${r.levelUps.length} level-ups · ${r.ultCasts} novas`);
   console.log(`wave  start  dur  lvl    dps  bodies   pool   clear  carried  taken  kills  hp${rifts ? '  rift' : ''}`);
   for (const w of r.rows) {
@@ -305,6 +363,7 @@ function main(): void {
   console.log(`damage by: ${describeDamage(r.run.damageBy)}`);
   const b = r.run.boss;
   if (b) console.log(`boss ${b.id}: ${b.killedIn === null ? 'stood' : `fell in ${b.killedIn.toFixed(1)}s`}${b.enraged ? ' (enraged)' : ''}`);
+  if (form) console.log(`final form: ${r.run.form.wave !== null ? `wave ${r.run.form.wave}` : r.run.form.need > 0 ? 'not reached' : 'out of reach'} · ${formCount(r.run)} evolved`);
   const o = r.run.outcome;
   console.log(o ? `${o.kind} at wave ${o.wave}, ${o.time.toFixed(1)}s` : `still standing at ${r.run.time.toFixed(0)}s`);
 }

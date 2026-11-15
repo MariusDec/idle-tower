@@ -221,6 +221,11 @@ body {
 .build-chip.is-passive { background: none; }
 .build-chip.is-evolved { box-shadow: 0 0 6px 1px var(--fx-frost); }
 .build-chip.is-evolved .icon { color: var(--fx-frost); }
+/* Final Form's chip (plans/late-game/07): a crown, its pips, gold once formed. */
+.build-chip.is-form { background: none; }
+.build-chip.is-form .icon { color: var(--text-2); }
+.build-chip.is-formed .icon { color: var(--fx-gold); }
+.build-chip.is-formed { box-shadow: 0 0 6px 1px var(--fx-gold); }
 
 /* Hold a chip (src/ui/peek.ts): its card, drawn as the draft drew it, above the chip. */
 .build-peek {
@@ -885,6 +890,11 @@ body {
   --icon-size: 20px;
   color: var(--fx-arcane);
 }
+
+/* Final Form (plans/late-game/07): NEW, RECORD, or no tag on a repeat. */
+.results-find.is-form::after { content: attr(data-tag); }
+.results-find.is-form:not([data-tag])::after { display: none; }
+.results-find.is-form .icon { color: var(--fx-gold); }
 
 /* "Next:" — one line, one bar (§4.6). */
 .results-next {

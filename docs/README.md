@@ -22,6 +22,7 @@ depends on. [AGENTS.md](../AGENTS.md) is the short version for agents.
 | [cursed.md](cursed.md) | Cursed relics: reliquaries, the claim, the cursed slot, binding |
 | [anomalies.md](anomalies.md) | Anomalies: the rare card that breaks a weapon's rule, never taken for you |
 | [secrets.md](secrets.md) | Secrets: combinations, boss forms and trims found by playing, written in the Book's margin |
+| [final-form.md](final-form.md) | Final Form: two evolutions in a run crown the tower in its frame's form |
 | [act2.md](act2.md) | Pacts and heat, Starlight, the Constellations, the Abyss |
 | [save.md](save.md) | Profile, migration ladder, run snapshot, storage backends |
 | [render.md](render.md) | Renderer, painters, effects, camera, palette, quality tiers |

@@ -608,9 +608,28 @@ export function secretsRule(explainerText: readonly string[] = []): LintRule {
   };
 }
 
+/** Final Form names may run to three words (plans/late-game/07 §4, R4). */
+const MAX_FORM_NAME_WORDS = 3;
+
+/** Final Forms (plans/late-game/07 §4): every frame has one, its name ≤ 3 words and its line inside R4. */
+export const forms: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  for (const f of (tables.frames as readonly FrameDef[] | undefined) ?? []) {
+    const form = f.form as FrameDef['form'] | undefined;
+    if (!form || !form.name.trim() || !form.text.trim()) {
+      out.push({ table: 'frames', id: f.id, problem: 'missing Final Form' });
+      continue;
+    }
+    if (wordCount(form.name) > MAX_FORM_NAME_WORDS) out.push({ table: 'frames', id: f.id, problem: `form name is over ${MAX_FORM_NAME_WORDS} words` });
+    const words = wordCount(form.text);
+    if (words > MAX_TEXT_WORDS) out.push({ table: 'frames', id: f.id, problem: `form text is ${words} words (max ${MAX_TEXT_WORDS})` });
+  }
+  return out;
+};
+
 export const RULES: readonly LintRule[] = [
   uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking, rifts,
-  cursedRelics, anomalies, secretsRule(EXPLAINERS.flatMap((x) => [x.title, ...x.lines])),
+  cursedRelics, anomalies, forms, secretsRule(EXPLAINERS.flatMap((x) => [x.title, ...x.lines])),
 ];
 
 /**

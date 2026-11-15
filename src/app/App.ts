@@ -25,7 +25,7 @@ import { STAR_WEB } from '../meta/stars';
 import { FORGE, FORGE_BY_ID } from '../content/forge';
 import { ENEMY_BY_ID } from '../content/enemies';
 import { BOSS_BY_ID } from '../content/bosses';
-import type { BossId, RelicId } from '../content/types';
+import type { BossId, FrameId, RelicId } from '../content/types';
 import { frameById } from '../content/frames';
 import { RELIC_BY_ID } from '../content/relics';
 import { TRIAL_BY_ID } from '../content/trials';
@@ -74,6 +74,8 @@ const ZOOM_STEP = 1.4;
 const STALL_SECONDS = 60;
 /** The killing blow on a boss plays out slowly (§7.3): wall seconds, at this speed. */
 const BOSS_KILL_SLOWMO = { seconds: 0.9, speed: 0.2 };
+/** Final Form's ceremony (plans/late-game/07 §5.2): wall-clock seconds, multiplied with the draft's slow-down. */
+const FORM_SLOWMO = { seconds: 0.9, speed: 0.25 };
 /** A boss's phase change stops the arena for a beat (§10.3). */
 const PHASE_HITSTOP = { seconds: 0.12, speed: 0 };
 
@@ -288,6 +290,23 @@ export class App {
     });
   }
 
+  /**
+   * Dev only (plans/late-game/07 §8): put the live run in its Final Form at
+   * once, with its ceremony, so `bench()` can measure the crown. Every
+   * weapon is marked evolved, the bench's "4-weapon evolved" case.
+   */
+  async form(): Promise<void> {
+    const run = this.run;
+    if (!run || this.screen !== 'run') throw new Error('form needs a run');
+    for (const w of run.weapons) if (!w.anomaly) w.evolved = true;
+    if (run.form.wave === null) {
+      run.form.wave = Math.max(1, run.wave);
+      run.events.push({ kind: 'finalForm', frame: run.frameId as FrameId });
+    }
+    // Let the ceremony play out before a bench starts.
+    await new Promise((r) => window.setTimeout(r, 1500));
+  }
+
   /** The profile, for the dev console. */
   get currentProfile(): Profile {
     return this.profile;
@@ -440,7 +459,10 @@ export class App {
     this.toasts.clear();
     this.els.stage.dataset.screen = to;
     if (to === 'hub') this.hub.show(this.profile, view, spread);
-    if (to === 'run') this.hud.show();
+    if (to === 'run') {
+      this.hud.setFormChip(this.profile.tutorial.explained.includes('forms'));
+      this.hud.show();
+    }
   }
 
   /**
@@ -450,7 +472,11 @@ export class App {
    */
   private dressTower(): void {
     const p = this.profile;
-    this.renderer.setTower({ tier: towerTier(p), trophies: trophyCount(p), trims: wornTrims(p) }, selectedFrame(p).startingWeapon);
+    const frame = selectedFrame(p);
+    // Final Form (plans/late-game/07 F4): the hub's tower wears the selected frame's crown once it has formed.
+    const form = (p.forms[frame.id]?.count ?? 0) > 0 ? frame.id : null;
+    this.renderer.setTower({ tier: towerTier(p), trophies: trophyCount(p), trims: wornTrims(p), form }, frame.startingWeapon);
+    this.renderer.setFormsSeen(Object.keys(p.forms));
   }
 
   /** Start a fresh run, or carry on with `resumed` from its snapshot. */
@@ -824,8 +850,11 @@ export class App {
   private tune(run: RunState | null): void {
     if (!run || this.screen !== 'run') {
       this.music.set('hub', this.profile.region);
+      this.music.setFormed(false);
       return;
     }
+    // Final Form's layer (plans/late-game/07): from the form until the run ends, and again on a resume.
+    this.music.setFormed(run.form.wave !== null);
     const boss = run.boss !== null && run.boss.killedIn === null;
     this.music.set(boss ? 'boss' : 'run', runRegion(run).index);
   }
@@ -895,6 +924,15 @@ export class App {
         case 'bossKill':
           this.slowMo = { left: BOSS_KILL_SLOWMO.seconds, speed: BOSS_KILL_SLOWMO.speed };
           break;
+        case 'finalForm': {
+          // Final Form (plans/late-game/07 §2): the arena slows; the first per frame gets a toast too.
+          this.slowMo = { left: FORM_SLOWMO.seconds, speed: FORM_SLOWMO.speed };
+          if (!this.profile.forms[ev.frame]) {
+            const frame = frameById(ev.frame);
+            this.toasts.show('crown', `Final Form · ${frame.form.name}`, frame.form.text, 'gold');
+          }
+          break;
+        }
         case 'bossPhase':
           this.slowMo = { left: PHASE_HITSTOP.seconds, speed: PHASE_HITSTOP.speed };
           break;
@@ -911,6 +949,7 @@ export class App {
     this.burn = emptyTally();
     this.poolAtStart = 0;
     const marched = marchOn(this.profile, summary);
+    if (summary.finalForm) this.dressTower();
     // The banked profile lands before the snapshot is cleared: killed between
     // the two, the snapshot is stale (its run count is behind) and is dropped
     // on boot, so the run is paid exactly once.

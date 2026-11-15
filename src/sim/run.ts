@@ -17,6 +17,7 @@ import { tickShots } from './systems/tower';
 import { castUltimate, tickUltimate } from './systems/ultimate';
 import { regionAt, regionMods, runRegion, tickWaves } from './systems/waves';
 import { chooseRift, shutRift, tapRift, tickRifts } from './systems/rifts';
+import { formNeed } from './systems/form';
 import { claimReliquary, fadeReliquaries, tickReliquaries } from './systems/reliquaries';
 
 export { regionMods };
@@ -195,6 +196,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
       on: 0,
       off: 0,
     } : null,
+    form: { need: formNeed(config), wave: null },
     outcome: null,
     events: [],
   };

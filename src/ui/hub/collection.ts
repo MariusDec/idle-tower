@@ -6,7 +6,7 @@ import { BALANCE } from '../../content/balance';
 import { PASSIVE_BY_ID } from '../../content/passives';
 import { WEAPON_BY_ID } from '../../content/weapons';
 import { EVOLUTION_OF } from '../../content/evolutions';
-import type { BossId, EnemyId, FrameUnlock, RelicDef, RelicId, TrimId } from '../../content/types';
+import type { BossId, EnemyId, FrameDef, FrameUnlock, RelicDef, RelicId, TrimId } from '../../content/types';
 import { formatNumber } from '../../core/format';
 import {
   activeSets, bestiary, collectionPages, cursedSlots, cursesWorn, isBound, riftJournal, frameUnlocked, listedCursed, listedFrames, listedRelics,
@@ -20,6 +20,21 @@ import { wonTrims } from '../../meta/trials';
 import { bossLore, formsSeen, margin } from '../../meta/secrets';
 import { toggleClass } from '../dom';
 import { icon } from '../icon';
+
+/** A frame's Final Form line: "Final Form: Astral Spire · earliest wave 15 · ×4", or "Final Form: ?". */
+export function formText(p: Profile, f: FrameDef): string {
+  const rec = p.forms[f.id];
+  if (!rec || rec.count === 0) return 'Final Form: ?';
+  const wave = rec.wave !== null ? ` · earliest wave ${rec.wave}` : '';
+  return `Final Form: ${f.form.name}${wave} · ×${rec.count}`;
+}
+
+function formLine(p: Profile, f: FrameDef): HTMLElement {
+  const el = document.createElement('p');
+  el.className = 'entry-lore entry-form';
+  el.textContent = formText(p, f);
+  return el;
+}
 
 /** How a locked frame is earned, in words (§11.6). */
 function lockedLine(u: FrameUnlock): string {
@@ -624,6 +639,8 @@ export class CollectionView {
       u.className = 'entry-lore';
       u.textContent = `${f.ultimate.name}: ${f.ultimate.text}`;
       btn.append(h, t, u);
+      // Final Form (plans/late-game/07): its name once reached, else "?" — once forms have been told.
+      if (open && p.tutorial.explained.includes('forms')) btn.append(formLine(p, f));
       btn.addEventListener('click', () => {
         this.actions.selectFrame(f.id);
         this.render();

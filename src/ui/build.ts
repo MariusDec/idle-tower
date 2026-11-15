@@ -11,6 +11,7 @@ import type { BuildSummary } from '../meta/results';
 import type { RunState } from '../sim/state';
 import { allMods, resolveStat, runMods } from '../sim/stats';
 import { icon } from './icon';
+import { formCount } from '../sim/systems/form';
 
 /**
  * The build, drawn (U3, U5): one icon per weapon and passive with its level
@@ -64,6 +65,36 @@ export function buildChips(build: BuildSummary, silenced: ReadonlySet<WeaponId> 
     out.push(el);
   }
   return out;
+}
+
+/**
+ * The Final Form chip (plans/late-game/07 §2): a crown with one pip per
+ * evolved weapon it needs; gold once formed. Null when the run can't form.
+ */
+export function formChip(run: RunState): HTMLElement | null {
+  const need = run.form.need;
+  if (need <= 0) return null;
+  const formed = run.form.wave !== null;
+  const have = Math.min(need, formCount(run));
+  const el = document.createElement('li');
+  el.className = formed ? 'build-chip is-form is-formed' : 'build-chip is-form';
+  el.setAttribute('aria-label', formed ? 'Final Form reached' : `Final Form: ${have} of ${need} weapons evolved`);
+  el.append(icon('crown'));
+  const pips = document.createElement('span');
+  pips.className = 'build-pips';
+  pips.setAttribute('aria-hidden', 'true');
+  for (let i = 1; i <= need; i++) {
+    const pip = document.createElement('span');
+    pip.className = i <= have ? 'build-pip is-owned' : 'build-pip';
+    pips.append(pip);
+  }
+  el.append(pips);
+  return el;
+}
+
+/** The form chip's key, for `buildKey`'s callers: changes when a pip lights or the crown turns gold. */
+export function formKey(run: RunState): string {
+  return `${run.form.need}:${formCount(run)}:${run.form.wave ?? ''}`;
 }
 
 /** The build as a list, for the pause menu and the results. */

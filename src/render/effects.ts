@@ -244,6 +244,16 @@ export class Effects {
     this.spray(0, 0, FX.gold, 50, 360, 5, 80);
   }
 
+  /**
+   * Final Form (plans/late-game/07 §5.2): a ring in the form's accent rolls
+   * out to the rim, a white one behind it, and sparks (the tier's share of 60).
+   */
+  formBurst(radius: number, light: number, accent: string): void {
+    this.pushRing({ x: 0, y: 0, age: 0, life: 0.9, from: radius, to: light, color: withAlpha(accent, 0.9), width: 12 });
+    this.pushRing({ x: 0, y: 0, age: 0, life: 1.1, from: radius * 0.8, to: light * 0.85, color: withAlpha(INK['050'], 0.5), width: 5 });
+    this.spray(0, 0, accent, 60, 380, 5, 90);
+  }
+
   /** XP leaving a kill for the tower (§4.5: collected automatically, never picked up). */
   xpMote(x: number, y: number): void {
     if (this.motes.length >= MAX_MOTES * this.scale) return;

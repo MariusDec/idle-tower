@@ -9,7 +9,7 @@ import { BOSS_WAVE, runRegion } from '../sim/systems/waves';
 import { formatDuration, formatNumber } from '../core/format';
 import type { WeaponId } from '../content/types';
 import { buildOf } from '../meta/results';
-import { buildChips, buildKey } from './build';
+import { buildChips, buildKey, formChip, formKey } from './build';
 import { setAriaLabel, setStyle, setText, toggleClass } from './dom';
 import { icon, iconMarkup } from './icon';
 
@@ -77,6 +77,8 @@ export class Hud {
   private readonly riftLabel: HTMLElement;
   private readonly reliquary: HTMLButtonElement;
   private readonly reliquaryCount: HTMLElement;
+  /** True once the `forms` explainer has been told: the strip ends in the Final Form chip (plans/late-game/07). */
+  private formTold = false;
   /** The build as last drawn (`buildKey`), so the strip redraws only when it changes. */
   private buildDrawn = '';
 
@@ -173,6 +175,13 @@ export class Hud {
 
   hide(): void {
     this.root.hidden = true;
+  }
+
+  /** Whether the build strip ends in the Final Form chip: once its explainer has been told. */
+  setFormChip(on: boolean): void {
+    if (on === this.formTold) return;
+    this.formTold = on;
+    this.buildDrawn = '';
   }
 
   /** The speed toggle (§6.2): hidden until Overdrive is owned. */
@@ -296,10 +305,13 @@ export class Hud {
   private updateBuild(run: RunState): void {
     const silenced = new Set<WeaponId>(run.weapons.filter((w) => w.silencedUntil > run.time).map((w) => w.id));
     const build = buildOf(run);
-    const key = buildKey(build, silenced);
+    const key = this.formTold ? `${buildKey(build, silenced)}|${formKey(run)}` : buildKey(build, silenced);
     if (key === this.buildDrawn) return;
     this.buildDrawn = key;
-    this.build.replaceChildren(...buildChips(build, silenced));
+    const chips = buildChips(build, silenced);
+    const crown = this.formTold ? formChip(run) : null;
+    if (crown) chips.push(crown);
+    this.build.replaceChildren(...chips);
   }
 
   /** The boss bar (§4.3): its name, its HP, a pip per phase. Only while it stands. */

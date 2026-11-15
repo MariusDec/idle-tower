@@ -68,6 +68,20 @@ function chip(entry: ContentEntry, kind: string): HTMLElement {
   return el;
 }
 
+/** Final Form's chip (plans/late-game/07): "Final Form · wave 17", tagged NEW on the frame's first, RECORD on an earlier wave. */
+function formFind(form: { wave: number; first: boolean; record: boolean }): HTMLElement {
+  const el = document.createElement('li');
+  el.className = 'results-find is-form';
+  const tag = form.first ? 'New' : form.record ? 'Record' : '';
+  if (tag) el.dataset.tag = tag;
+  el.setAttribute('aria-label', `Final Form at wave ${form.wave}${tag ? `, ${tag.toLowerCase()}` : ''}`);
+  el.append(icon('crown'));
+  const name = document.createElement('span');
+  name.textContent = `Final Form · wave ${form.wave}`;
+  el.append(name);
+  return el;
+}
+
 /**
  * The results screen (§4.6). One screen, no scrolling on mobile, no failure
  * language: the wave, the haul (tap for the breakdown), records with the old
@@ -352,6 +366,7 @@ export class ResultsScreen {
     this.shards.setAttribute('aria-expanded', 'false');
 
     this.finds.replaceChildren(
+      ...(s.finalForm ? [formFind(s.finalForm)] : []),
       ...s.newRecipes.map((id) => chip(EVOLUTION_BY_ID[id], 'recipe')),
       ...s.newFusions.map((id) => chip(FUSION_BY_ID[id], 'recipe')),
       ...s.newEnemies.map((id) => chip(ENEMY_BY_ID[id], 'enemy')),

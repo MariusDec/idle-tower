@@ -10,6 +10,9 @@ import type { Synth } from './synth';
  * on the wall clock: past a few a second the ear hears one.
  */
 
+/** Seconds after the evolve spotlight the Final Form beat lands (the renderer's too). */
+export const FORM_BEAT = 0.35;
+
 /** Least milliseconds between two plays of the same cue. */
 const GAP_MS: Readonly<Record<string, number>> = {
   shot: 55,
@@ -169,6 +172,13 @@ export class Cues {
             for (const [i, f] of [392, 523, 659, 784, 1047].entries()) {
               s.tone({ freq: f, type: 'triangle', duration: 0.5 - i * 0.05, volume: 0.12, delay: i * 0.08 });
             }
+          }
+          break;
+        case 'finalForm':
+          // Final Form (plans/late-game/07 §5.2): at the ceremony's beat, a low swell, then the rise 392–1568 Hz.
+          s.tone({ freq: 98, freqEnd: 131, type: 'triangle', duration: 0.8, volume: 0.12, attack: 0.4, delay: FORM_BEAT });
+          for (const [i, f] of [392, 523, 659, 784, 1047, 1568].entries()) {
+            s.tone({ freq: f, type: 'triangle', duration: 0.6 - i * 0.05, volume: 0.11, delay: FORM_BEAT + 0.3 + i * 0.09 });
           }
           break;
         case 'evolve':

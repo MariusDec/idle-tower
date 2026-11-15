@@ -95,7 +95,7 @@ export function paintGround(
  * The dark past the rim, over the bodies out there: clear just inside the
  * rim, opaque at `darkScale` times it, so a body walking in comes out of it.
  */
-export function paintDark(ctx: CanvasRenderingContext2D, light: number, oval: Oval, box: WorldBox, palette: string): void {
+export function paintDark(ctx: CanvasRenderingContext2D, light: number, oval: Oval, box: WorldBox, palette: string, alpha = 1): void {
   const blur = light * (ARENA.darkScale - 1);
   const inner = Math.max(1, light - blur * 0.4);
   const outer = light * ARENA.darkScale;
@@ -113,6 +113,8 @@ export function paintDark(ctx: CanvasRenderingContext2D, light: number, oval: Ov
   // A close-up that sees nothing past the rim draws none of it.
   if (w * w + h * h <= inner * inner) return;
   ctx.save();
+  // Sunrise (plans/late-game/07 §4) draws the dark back: render only, the light is the sim's.
+  if (alpha < 1) ctx.globalAlpha *= alpha;
   ctx.scale(kx, ky);
   ctx.fillStyle = darkMemo.gradient;
   ctx.beginPath();

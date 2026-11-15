@@ -14,6 +14,7 @@ import { suggest } from '../suggest';
 import { newWeapon, slotsUsed } from './arms';
 import { runRegion, waveBonus } from './waves';
 import { notePick } from './secrets';
+import { checkFinalForm } from './form';
 
 /**
  * XP, level-ups and the draft (§4.5). The sim only offers and applies cards;
@@ -361,6 +362,7 @@ export function applyCard(run: RunState, card: Card): void {
       w.evolved = true;
       run.evolved.push(evo.id);
       run.events.push({ kind: 'evolve', weapon: w.id, evolution: evo.id });
+      checkFinalForm(run);
       return;
     }
     case 'fusion': {
@@ -384,6 +386,7 @@ export function applyCard(run: RunState, card: Card): void {
       w.anomaly = card.id;
       run.anomaly.taken = card.id;
       run.events.push({ kind: 'anomaly', weapon: w.id, anomaly: card.id });
+      checkFinalForm(run);
       return;
     }
     case 'passive': {

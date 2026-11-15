@@ -1,7 +1,7 @@
 import type { RngState } from '../core/rng';
 import type { Oval } from '../content/arena';
 import type {
-  AnomalyId, AuraId, BehaviourId, BossId, SecretId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, RiftEffect, RiftId,
+  AnomalyId, AuraId, FrameId, BehaviourId, BossId, SecretId, CardItemId, EnemyId, EvolutionId, FallbackId, FusionId, PactId, PassiveId, RelicId, RiftEffect, RiftId,
   StatMod, WeaponId,
 } from '../content/types';
 
@@ -724,7 +724,9 @@ export type SimEvent =
   | { kind: 'reliquaryClaim'; id: number; relic: RelicId; x: number; y: number }
   | { kind: 'reliquaryFade'; id: number; relic: RelicId; x: number; y: number }
   /** A secret stirred (its riddle written), was found, or a boss arrived in its other form (plans/late-game/05). */
-  | { kind: 'secret'; id: SecretId; stage: 'stir' | 'found' | 'sighted' };
+  | { kind: 'secret'; id: SecretId; stage: 'stir' | 'found' | 'sighted' }
+  /** The run reached its frame's Final Form (plans/late-game/07): once, and for good. */
+  | { kind: 'finalForm'; frame: FrameId };
 
 export interface RunState {
   seed: number;
@@ -864,6 +866,11 @@ export interface RunState {
   anomaly: AnomalyPlan | null;
   /** The run's secrets (plans/late-game/05); null when none is live (a fresh profile, a Trial, Boss Rush). */
   secrets: SecretRun | null;
+  /**
+   * Final Form (plans/late-game/07): the evolved weapons it needs (0: out of
+   * reach this run), and the wave it was reached, or null.
+   */
+  form: { need: number; wave: number | null };
   /** How the run ended: the tower fell, withdrew, or (Boss Rush, N8) cleared every stage. */
   outcome: null | { kind: 'fell' | 'retreat' | 'cleared'; wave: number; time: number };
   events: SimEvent[];

@@ -56,6 +56,8 @@ export class Music {
   /** The pad's duck (plans/late-game/02: −6 dB while a rift is chosen). */
   private duckGain: GainNode | null = null;
   private ducked = false;
+  /** Final Form (plans/late-game/07): a high voice over each run chord until the run ends. */
+  private formed = false;
 
   constructor(private readonly synth: Synth) {}
 
@@ -67,6 +69,11 @@ export class Music {
   /** Duck the pad 6 dB (a rift being chosen), or bring it back. */
   duck(on: boolean): void {
     this.ducked = on;
+  }
+
+  /** Final Form's layer on or off; it lands on the next chord. Never over the hub. */
+  setFormed(on: boolean): void {
+    this.formed = on;
   }
 
   /** The mood and region to play; a change lands on the next chord. */
@@ -116,6 +123,20 @@ export class Music {
       g.gain.setValueAtTime(0, t0);
       g.gain.linearRampToValueAtTime(def.level, t0 + def.chord * 0.35);
       g.gain.linearRampToValueAtTime(def.level * 0.7, t0 + def.chord);
+      g.gain.linearRampToValueAtTime(0, end);
+      osc.connect(g);
+      g.connect(this.filter!);
+      osc.start(t0);
+      osc.stop(end + 0.05);
+    }
+    if (this.formed && this.mood !== 'hub') {
+      // One more triangle, an octave over the chord's third voice, entering late and soft.
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = hz(notes[2] + 12 + this.shift);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(def.level * 0.6, t0 + def.chord * 0.5);
       g.gain.linearRampToValueAtTime(0, end);
       osc.connect(g);
       g.connect(this.filter!);

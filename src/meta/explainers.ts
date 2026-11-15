@@ -38,6 +38,9 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
       return ownedCursed(profile).length > 0;
     case 'whispers':
       return margin(profile).length > 0;
+    case 'forms':
+      // One evolution done: Alchemy is owned, and Scattershot's second slot too (plans/late-game/07 §2).
+      return profile.recipes.found.length >= 1;
     case 'anomalies':
       return profile.anomalies.found.length + profile.anomalies.glimpsed.length > 0;
     case 'feats':

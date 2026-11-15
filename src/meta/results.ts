@@ -142,6 +142,12 @@ export interface RunSummary {
    * with their one-off pay. Null when the run had none live.
    */
   secrets: SecretsBanked | null;
+  /**
+   * Final Form (plans/late-game/07): the wave it came at, whether it was the
+   * frame's first, and whether it set the earliest-wave record (a region run's
+   * alone). Null when the run never formed.
+   */
+  finalForm: { wave: number; first: boolean; record: boolean } | null;
   /** Feats earned this run, waiting in the Feats tab. */
   feats: FeatDef[];
   /** True once the Feats tab is open: before it, feats are earned quietly, for the tab's first burst (§5.4). */
@@ -208,6 +214,25 @@ function unlockList(profile: Profile): Map<string, string> {
     if (n > 0) add(`${n} Forge node${n === 1 ? '' : 's'} unsealed`, `seal:${b.id}`);
   }
   return out;
+}
+
+/**
+ * Bank a run's Final Form (plans/late-game/07 §5.1): its count, and in a
+ * region (`past` false) the earliest wave. The Abyss and Boss Rush start
+ * high or run across floors, so they only count.
+ */
+export function recordForm(profile: Profile, run: RunState, past: boolean): RunSummary['finalForm'] {
+  const wave = run.form.wave;
+  if (wave === null) return null;
+  const prev = profile.forms[run.frameId];
+  const first = !prev || prev.count === 0;
+  const best = prev?.wave ?? null;
+  const record = !past && best !== null && wave < best;
+  profile.forms[run.frameId] = {
+    wave: past ? best : best === null ? wave : Math.min(best, wave),
+    count: (prev?.count ?? 0) + 1,
+  };
+  return { wave, first, record };
 }
 
 /**
@@ -336,6 +361,7 @@ export function bankRun(
   const newFusions = recordFusions(profile, run);
   const anomaly = recordAnomaly(profile, run);
   const secrets = recordSecrets(profile, run);
+  const finalForm = recordForm(profile, run, past);
   const feats = checkFeats(profile, run);
   // Stored Light (plans/late-game/01): after everything that reads the run's
   // own shards, before the Foreman, so a played run feeds the wishlist.
@@ -393,6 +419,7 @@ export function bankRun(
     reliquaries: { claimed: run.reliquariesClaimed, faded: run.reliquariesFaded + run.reliquaries.length },
     anomaly,
     secrets,
+    finalForm,
     feats,
     featsOpen: hubUnlocks(profile).feats,
     unlocks,

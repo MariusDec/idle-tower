@@ -19,6 +19,7 @@ export const FRAMES: readonly FrameDef[] = [
       knockback: 160,
     },
     unlock: { kind: 'start' },
+    form: { name: 'Astral Spire', text: 'A violet spire rises from the crystal; stars wheel around it.' },
   },
   {
     id: 'bastion',
@@ -39,6 +40,7 @@ export const FRAMES: readonly FrameDef[] = [
       reflect: 1,
     },
     unlock: { kind: 'boss', boss: 'bog-mother' },
+    form: { name: 'Rampart Crown', text: 'A second wall of frost-lit stone rings the plinth.' },
   },
   {
     id: 'stormcaller',
@@ -58,6 +60,7 @@ export const FRAMES: readonly FrameDef[] = [
       floor: 0.15,
     },
     unlock: { kind: 'boss', boss: 'forgeheart' },
+    form: { name: 'Storm Tines', text: 'Three lightning rods crown the drum, arcing between them.' },
   },
   {
     id: 'artificer',
@@ -78,6 +81,7 @@ export const FRAMES: readonly FrameDef[] = [
       speed: 2,
     },
     unlock: { kind: 'feat', feat: 'tinkerer' },
+    form: { name: 'Engine Ring', text: 'A geared ring turns round the tower, catching the light.' },
   },
   {
     id: 'lamplighter',
@@ -99,6 +103,7 @@ export const FRAMES: readonly FrameDef[] = [
       vulnerable: 2,
     },
     unlock: { kind: 'star' },
+    form: { name: 'Sunrise', text: 'A halo of rays turns slowly; the dark at the rim draws back.' },
   },
   {
     id: 'gravekeeper',
@@ -116,6 +121,7 @@ export const FRAMES: readonly FrameDef[] = [
       bossFraction: 0.05,
     },
     unlock: { kind: 'star' },
+    form: { name: 'Eclipse Crown', text: 'A dark disc rings the crystal, edged with a cold corona.' },
   },
 ];
 

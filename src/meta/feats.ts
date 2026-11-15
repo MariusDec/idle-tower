@@ -35,6 +35,11 @@ export function riftsTaken(profile: Profile): number {
   return n;
 }
 
+/** Frames whose Final Form has been reached (plans/late-game/07). */
+export function formsReached(profile: Profile): number {
+  return FRAMES.filter((f) => (profile.forms[f.id]?.count ?? 0) > 0).length;
+}
+
 /** Mastery levels owned in all (§9). */
 function masteryLevels(profile: Profile): number {
   return FORGE_WEB.ownedNodes(profile).filter((o) => o.node.type === 'mastery').reduce((s, o) => s + o.level, 0);
@@ -103,6 +108,10 @@ export function featMet(profile: Profile, goal: FeatGoal, run: RunState | null):
       return riftsTaken(profile) >= goal.n;
     case 'anomalies':
       return profile.anomalies.taken >= goal.n;
+    case 'finalForm':
+      return formsReached(profile) > 0;
+    case 'forms':
+      return formsReached(profile) >= goal.n;
     default: {
       const exhaustive: never = goal;
       return exhaustive;
@@ -164,6 +173,9 @@ export function featProgress(profile: Profile, feat: FeatDef): number {
       return Math.min(1, riftsTaken(profile) / g.n);
     case 'anomalies':
       return Math.min(1, profile.anomalies.taken / g.n);
+    case 'forms':
+      return Math.min(1, formsReached(profile) / g.n);
+    case 'finalForm':
     case 'riftOpened':
     case 'bossNoUlt':
     case 'bareArsenal':

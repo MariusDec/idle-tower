@@ -26,6 +26,7 @@ export type ExplainerId =
   | 'cursed'
   | 'anomalies'
   | 'whispers'
+  | 'forms'
   | 'feats'
   | 'stars'
   | 'tactics'
@@ -152,6 +153,13 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
     lines: [
       'Some things in the tower are in no book until you find them. When one stirs, a line is written in the Recipe Book’s margin.',
       'The margin never says how many there are. A whisper points at a pair, a place, or a way of fighting.',
+    ],
+  },
+  {
+    id: 'forms', view: 'collection', title: 'Final Forms',
+    lines: [
+      'Evolve two weapons in one run and the tower takes its Final Form until the run ends.',
+      'Each frame has its own form. The Collection keeps the earliest wave you reached it.',
     ],
   },
   {

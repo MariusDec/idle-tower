@@ -98,6 +98,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   18: (raw) => ({ ...raw, version: 19, anomalies: { found: [], glimpsed: [], dry: 0, taken: 0 } }),
   // v20: secrets (plans/late-game/05): none found, heard, tallied or sighted.
   19: (raw) => ({ ...raw, version: 20, secrets: { found: {}, heard: [], tally: {}, sighted: [] } }),
+  // v21: Final Forms (plans/late-game/07): none reached.
+  20: (raw) => ({ ...raw, version: 21, forms: {} }),
 };
 
 export class MigrationError extends Error {}

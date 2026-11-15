@@ -6,9 +6,10 @@ import type { WeaponId } from './types';
  * mounts here and the sim fires from them, so a shot leaves the barrel it
  * is drawn from. Slot 0 is the turret on the drum; the rest are pods on the
  * plinth's lower corners and its crown, so a new weapon lands somewhere the
- * eye already rests; Act 2's fifth and sixth (§9) sit at its flanks.
+ * eye already rests; Act 2's fifth and sixth (§9) sit at its flanks, and a
+ * seventh (Artificer, Fifth Mount and Heart of Light) under the drum.
  */
-const POD_ANGLES = [Math.PI * 0.75, Math.PI * 0.25, -Math.PI * 0.5, Math.PI, 0];
+const POD_ANGLES = [Math.PI * 0.75, Math.PI * 0.25, -Math.PI * 0.5, Math.PI, 0, Math.PI * 0.5];
 const POD_DISTANCE = 1.04;
 /** Pod radius, as a multiple of the wall radius: big enough to read on a phone. */
 export const POD_RADIUS = 0.52;

@@ -21,7 +21,9 @@ import { runRegion } from '../sim/systems/waves';
 import { mountOf } from '../sim/systems/arms';
 import { WEAPON_BY_ID } from '../content/weapons';
 import { PLAIN_LOOK, paintRangeRing, paintTower, type Mount, type TowerLook } from './painters/tower';
-import type { WeaponId } from '../content/types';
+import type { FrameId, WeaponId } from '../content/types';
+import { frameById } from '../content/frames';
+import { formAccent, type FormPaint } from './painters/form';
 import { QUALITY, type QualityTier } from './quality';
 import { paintRift } from './painters/rift';
 import { CURSE_COLOR, paintReliquaries } from './painters/reliquary';
@@ -46,6 +48,13 @@ const ABYSS_DARK = INK['950'];
 /** The boss's edge marker (camera-and-fog §5.3): inset from the stage's edge, and its size, CSS px. */
 const MARKER_INSET = 26;
 const MARKER_SIZE = 11;
+/** Final Form's beat (plans/late-game/07 §5.2): wall-clock seconds after the evolve spotlight. */
+const FORM_BEAT = 0.35;
+/** Seconds the crown grows in; under reduced motion, it fades in. */
+const FORM_GROW = 0.8;
+const FORM_FADE = 0.4;
+/** Sunrise draws the dark back (render only). */
+const SUNRISE_DARK = 0.85;
 
 /**
  * The scale enemy sprites are baked at: the view's, rounded up to a step of
@@ -96,6 +105,11 @@ export class Renderer {
   private dirty = true;
   /** The camera's `version` the last frame was drawn at. */
   private drawnView = -1;
+  /** Final Form's beat, waiting on the wall clock (§5.2), and the clock time its crown began to grow (−∞: grown). */
+  private formBeat: { at: number; frame: FrameId } | null = null;
+  private formAt: number | null = null;
+  /** Frames whose Final Form the profile has seen: the first per frame letterboxes (set by the app). */
+  private formsSeen: ReadonlySet<string> = new Set();
 
   constructor(canvas: HTMLCanvasElement, host: HTMLElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
@@ -152,6 +166,11 @@ export class Renderer {
     this.idle = [{ id: weapon, level: Math.min(5, look.tier), aim: IDLE_AIM }];
   }
 
+  /** The frames whose Final Form the profile has (plans/late-game/07): a repeat's banner has no letterbox. */
+  setFormsSeen(frames: Iterable<string>): void {
+    this.formsSeen = new Set(frames);
+  }
+
   get quality(): QualityTier {
     return this.tier;
   }
@@ -163,7 +182,13 @@ export class Renderer {
    */
   get settled(): boolean {
     return !this.dirty && this.camera.version === this.drawnView && this.camera.still
-      && this.effects.idle && this.banner === null && (this.fallT === null || this.fallDone);
+      && this.effects.idle && this.banner === null && (this.fallT === null || this.fallDone)
+      && this.formBeat === null && !this.formGrowing;
+  }
+
+  /** True while a crown is still growing in. */
+  private get formGrowing(): boolean {
+    return this.formAt !== null && this.clock - this.formAt < FORM_GROW;
   }
 
   /** True once the fall animation has played out. */
@@ -183,6 +208,9 @@ export class Renderer {
     this.effects.clear();
     this.fallT = null;
     this.banner = null;
+    // A run resumed in its Final Form (a snapshot) wears the crown at once, with no ceremony.
+    this.formBeat = null;
+    this.formAt = run && run.form.wave !== null ? -Infinity : null;
   }
 
   private showBanner(title: string, line: string, tone: Banner['tone'], letterbox = false): void {
@@ -192,6 +220,8 @@ export class Renderer {
   /** Turn `run`'s pending sim events into effects. The caller clears the list. */
   consume(run: RunState): void {
     this.attach(run);
+    // Final Form's banner replaces the evolve's, never stacks on it (§5.2).
+    const forming = run.events.some((e) => e.kind === 'finalForm');
     for (const ev of run.events) {
       switch (ev.kind) {
         case 'hit':
@@ -406,7 +436,12 @@ export class Renderer {
           // The spotlight (§10.3): the light gathers on the tower as the weapon turns.
           this.effects.evolve(run.stats.radius);
           this.camera.zoomPunch();
-          this.showBanner('Evolved', EVOLUTION_BY_ID[ev.evolution].name, 'gold');
+          if (!forming) this.showBanner('Evolved', EVOLUTION_BY_ID[ev.evolution].name, 'gold');
+          break;
+        case 'finalForm':
+          // The beat lands a moment after the spotlight (§5.2); `render` plays it on the wall clock.
+          this.formBeat = { at: this.clock + FORM_BEAT, frame: ev.frame };
+          this.dirty = true;
           break;
         case 'anomaly': {
           // Taken (plans/late-game/04 §2): the mount flashes in the split rim, a ring and a spray roll out.
@@ -531,6 +566,7 @@ export class Renderer {
     this.camera.setLight(light, oval, run !== null);
     this.camera.update(realDt);
     this.effects.tick(realDt);
+    if (run && this.formBeat && this.clock >= this.formBeat.at) this.playForm(run, this.formBeat.frame);
     const view = this.camera.transform;
     this.enemies.setScale(spriteScale(view.scale));
     /** World units per CSS pixel: thin lines are drawn live at this width. */
@@ -547,8 +583,9 @@ export class Renderer {
     this.camera.applyWorld(ctx);
     paintGround(ctx, light, oval, tint, px, this.palette);
     const additive = QUALITY[this.tier].additive;
+    const form = this.formPaint(run);
     if (run) {
-      paintRangeRing(ctx, run.stats.range, px);
+      paintRangeRing(ctx, run.stats.range, px, form ? formAccent(form.frame) : null);
       paintRings(ctx, run.rings);
       paintFires(ctx, run.fires, run.time, this.clock);
       paintRunes(ctx, run.runes, run.time, this.clock);
@@ -573,16 +610,16 @@ export class Renderer {
       const fallen = this.fallT === null ? 0 : Math.min(1, this.fallT / (FALL_SECONDS * 0.6));
       // A fusion's second half (N9) rides on its partner's mount: no pod of its own.
       const mounts = run.fused.length > 0 ? run.weapons.filter((w) => !w.joined) : run.weapons;
-      paintTower(ctx, run.stats.radius, mounts, this.clock, hurt, fallen, this.look);
+      paintTower(ctx, run.stats.radius, mounts, this.clock, hurt, fallen, this.look, form);
       if (run.tower.invulnUntil > run.time) paintAegis(ctx, run.stats.radius, run.tower.invulnUntil - run.time, this.clock);
       paintProjectiles(ctx, run.projectiles, alpha, additive);
       paintRift(ctx, run.rift, run.time, this.clock, { reducedMotion: this.reducedMotion, plain: !additive, px });
     } else {
-      paintTower(ctx, 46, this.idle, this.clock, 0, 0, this.look);
+      paintTower(ctx, 46, this.idle, this.clock, 0, 0, this.look, form);
     }
     this.effects.drawWorld(ctx);
     // The dark over everything out there: bodies fade in as they walk out of it.
-    paintDark(ctx, light, oval, box, this.palette);
+    paintDark(ctx, light, oval, box, this.palette, form && run && form.frame === 'lamplighter' ? SUNRISE_DARK : 1);
     paintRim(ctx, light, oval, px);
     // Reliquaries (plans/late-game/03): above the dark, so no floor's fog hides one.
     if (run && run.reliquaries.length > 0) {
@@ -598,6 +635,35 @@ export class Renderer {
     this.drawBanner(ctx, realDt);
     this.dirty = false;
     this.drawnView = this.camera.version;
+  }
+
+  /**
+   * The crown to draw now, if any: a run's once formed (growing in after its
+   * beat), or the hub's selected frame, still and dimmed, once it has formed (F4).
+   */
+  private formPaint(run: RunState | null): FormPaint | null {
+    if (!run) {
+      const frame = this.look.form;
+      return frame ? { frame, grow: 1, still: true, alpha: 0.6 } : null;
+    }
+    if (this.formAt === null || run.form.wave === null) return null;
+    const since = this.clock - this.formAt;
+    const grow = this.reducedMotion ? since / FORM_FADE : since / FORM_GROW;
+    return { frame: run.frameId as FrameId, grow: Math.min(1, grow), still: this.reducedMotion, alpha: 1 };
+  }
+
+  /** Final Form's beat (§5.2): the burst, the punch, the crown begins to grow, the banner. */
+  private playForm(run: RunState, frame: FrameId): void {
+    this.formBeat = null;
+    this.formAt = this.clock;
+    const def = frameById(frame);
+    if (!this.reducedMotion) {
+      this.effects.formBurst(run.stats.radius, run.stats.light, formAccent(frame));
+      this.camera.zoomPunch();
+    }
+    // Letterboxed the first time per frame; `showBanner`'s caller drops it under reduced motion.
+    const first = !this.formsSeen.has(frame);
+    this.showBanner('Final Form', def.form.name, 'gold', first && !this.reducedMotion);
   }
 
   /**
