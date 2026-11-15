@@ -522,10 +522,11 @@ export const BALANCE = {
     guestMix: 0.3,
     /**
      * Waypoints (§4.4): the level a run started at a stratum's foot begins
-     * at, by stratum (I, II, …, then the Below). Placeholders until the act2
-     * bot's median level on entering that floor replaces them.
+     * at, by stratum (I, II, …, then the Below). II's 30 is the act2 bot's
+     * median level entering floor 7 from the top (12 h, 4 seeds); the rest
+     * are placeholders, kept rising, until III–V are built and read.
      */
-    waypoint: { level: [1, 22, 26, 30, 33, 36] },
+    waypoint: { level: [1, 30, 33, 36, 39, 42] },
   },
   /**
    * Boss Rush (N8): the six Act 1 bosses, then the Abyss's two, back to
