@@ -2,7 +2,8 @@ import { SLOT_NAMES, contractText } from '../../content/contracts';
 import { RELIC_BY_ID } from '../../content/relics';
 import { formatNumber } from '../../core/format';
 import { relicRank } from '../../meta/collection';
-import { contractPay, contractTier, heatNeeded, takeBlocked } from '../../meta/contracts';
+import { contractLead, contractPay, contractTier, heatNeeded, takeBlocked } from '../../meta/contracts';
+import { WEAPON_BY_ID } from '../../content/weapons';
 import { heat } from '../../meta/pacts';
 import type { Profile } from '../../meta/profile';
 import { starGifts } from '../../meta/stars';
@@ -110,6 +111,14 @@ export class ContractsView {
       } else {
         line.textContent = `Your heat: ${heat(p)} ✓`;
       }
+      li.append(line);
+    }
+    // A card that names a weapon hands it over: the run starts with it mounted.
+    const lead = contractLead(c);
+    if (lead) {
+      const line = document.createElement('p');
+      line.className = 'entry-text contracts-lead';
+      line.textContent = `Starts with ${WEAPON_BY_ID[lead].name} mounted.`;
       li.append(line);
     }
     if (c.rider) {

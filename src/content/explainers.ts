@@ -92,7 +92,7 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
   {
     id: 'waypoints', view: 'map', title: 'Waypoints',
     lines: [
-      'A fallen guardian opens its stratum’s foot. Start your next descent there, with the tower already grown.',
+      'A fallen guardian opens the stratum below it. Start your next descent there, with the tower already grown.',
       'Records and Starlight count from the floor you reach, wherever you started.',
     ],
   },

@@ -507,3 +507,44 @@ per-screen-hour diagnostic reads 0.85–3.65: it compares *total* income to
 the Blight, and the hands-off bot's extra late days dominate it, so it is
 not yet the README's 2–3× reading. Untuned: the three dials stay at the
 plan's defaults.
+
+### Late-game review, 2026-11-15
+
+Every late-game plan on (01 Stored Light, 02 Rifts, 03 Glass Crown, 04
+anomalies, 05 secrets, 07 Final Form, 08 strata I–II, 10 contracts), read
+before and after the review's changes to the Contract board
+([contracts.md](contracts.md)); nothing else in the sim moved.
+
+`npm run pacing -- --idle --hours 12 --seeds 4` (the board never reaches
+the hands-off bot, and the engaged idle bot takes no cards, so this reading
+is the same on both sides of the review):
+
+| | Reading | Want |
+|---|---|---|
+| I2 | median 6.0 d (6.5 5.5 6.0 5.5) PASS | 5–10 d |
+| I7 | engaged ÷ hands-off screen time to the Blight, median **0.55** (0.49 0.53 0.55 0.57) PASS; engaged 123–131 min over 3.0 days, hands-off 223–269 min | ≤ 0.70 |
+| I8 | every seed 5.5–6.5 d PASS; median 6.0 d, the target's floor | 5–10 d, median 6–8 |
+| I9 | no active-only reward reached the hands-off bot (rifts 0, anomalies offered 0–1 and taken 0, no card) PASS | empty |
+| I5 | Region 2 1.35 · Bog Mother 1.27 · Prism 1.26 · Forgeheart 1.24 · Hollow King 1.41 · Blight 1.34 (one seed 0.70), PASS at every gated checkpoint | 1.15–1.5 |
+| Final Form, hands-off | 0 of 69 Region 5 runs FAIL (recipes known ≤ 1) | ≥ 10% |
+
+`npm run pacing -- --hours 12 --seeds 8`: the Blight's first fall, median
+262:01 without the board, 252:45 with it (I1b FAIL either way: 7–12 h
+wanted; Tempering's open item). P3 27:51 PASS, I1a 8/8, I3 8/8, I6 (first
+2 h) 5/8, first evolution 90:17: all as before the late-game plans' last
+commit, to the second.
+
+What the review settled, and what it leaves:
+
+- **The Contract board** asked for things it had not checked the tower
+  could do and paid for fifteen-minute runs that last three; both fixed,
+  with readings, in [contracts.md](contracts.md).
+- **Final Form's chase** (07 §3.4) was measured and does nothing
+  ([final-form.md](final-form.md)); hands-off reach is bounded by recipe
+  discovery, which is Act 1 pacing's to change, not this plan's.
+- **Open, the owner's:** I1b (the Blight at ~4.2 h); the three tests that
+  fail on every commit since Tempering (`arsenal`'s frontier evolutions, the
+  CI I6 and P3 medians); the full Act 2 reading with the board.
+- **Thin content, by plan:** the cursed chase holds one relic (03's phase 3
+  can follow the Inversion now), anomalies four of twelve, secrets Act 1's
+  eight, strata two of five.

@@ -1,6 +1,10 @@
 # 03. Cursed relics
 
-**Status:** 2026-11-14. Plan, not built. Idea 3 of the late-game review
+**Status:** 2026-11-15. Phases 1–2 built: the whole frame, and Glass Crown
+from the Deepwarden (see [docs/cursed.md](../../docs/cursed.md)). Phase 3
+(stratum II's four, Keeper drops, `curseArms`, `bias`, T5) can now follow,
+since plan 08's Inversion is built; until it does the chase holds one relic.
+Plan written 2026-11-14. Idea 3 of the late-game review
 ([README](README.md)). Supersedes §6 of [c-abyss-strata.md](c-abyss-strata.md);
 the strata themselves are [08-abyss-strata.md](08-abyss-strata.md).
 

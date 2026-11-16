@@ -64,6 +64,8 @@ export function placeName(name: string): string {
 /** An enemy's name, counted: "Grunts", "Siege Engines", "elites". */
 export function plural(name: string): string {
   if (name.endsWith('s')) return name;
+  // "Leech" → "Leeches".
+  if (/(ch|sh|x)$/.test(name)) return `${name}es`;
   return `${name}s`;
 }
 

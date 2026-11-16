@@ -6,7 +6,7 @@ import { frameById } from '../content/frames';
 import type { BehaviourId, CardItemId, Effect, FrameId, FusionId, PactId, StatMod, TrialRule, WeaponId } from '../content/types';
 import { isWeaponId } from '../sim/systems/draft';
 import { selectedTrial, trialEffects } from './trials';
-import { contractRules, takenContract } from './contracts';
+import { contractLead, contractRules, takenContract } from './contracts';
 import { secretConfig, secretEffects } from './secrets';
 import {
   abyssStart, act2Open, activeSets, bossDown, equippedRelics, inAbyss, inRush, pastRegions, relicRank, relicSlots, selectedFrame, selectedRegion, wornCursed,
@@ -49,7 +49,9 @@ export function buildRunConfig(profile: Profile): RunConfig {
   const frame = rules.frame ? frameById(rules.frame) : selectedFrame(profile);
   const region = selectedRegion(profile);
   const mods: StatMod[] = [];
-  const first: WeaponId = rules.weapons?.[0] ?? frame.startingWeapon;
+  // A card that names a weapon (carry, evolve, a fusion's half) starts with it mounted, inside a `weapons` rule too.
+  const lead = contractLead(contract);
+  const first: WeaponId = lead && (!rules.weapons || rules.weapons.includes(lead)) ? lead : rules.weapons?.[0] ?? frame.startingWeapon;
   const pool: CardItemId[] = [first];
   let weaponSlots: number = BALANCE.slots.weapon;
   let passiveSlots: number = BALANCE.slots.passive;

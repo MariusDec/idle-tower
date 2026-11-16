@@ -52,7 +52,7 @@ parse or migrate is never dropped silently: it is copied to
 ## The migration ladder
 
 `MIGRATIONS[n]` takes a raw object at version `n` to `n + 1`; `migrate`
-walks it to `PROFILE_VERSION` (16) and throws on a version from the future
+walks it to `PROFILE_VERSION` (24) and throws on a version from the future
 or a missing rung. Every rung has a fixture in `tests/save.test.ts`, and a
 test walks a v1 profile all the way up and checks it has every field a new
 profile has, settings included.
@@ -74,6 +74,14 @@ profile has, settings included.
 | 13 → 14 | — | trims taken off (`trimsOff`) |
 | 14 → 15 | — | keystones switched off (`keystonesOff`) |
 | 15 → 16 | — | Stored Light (`storedLight`, `records.storedBurned`) |
+| 16 → 17 | — | the rift journal (`rifts`), `tutorial.firstRift` |
+| 17 → 18 | — | cursed relics (`cursedWorn`, `bound`, `cursedBest`), `tutorial.firstReliquary` |
+| 18 → 19 | — | anomalies found, glimpsed and taken, the dry-run count |
+| 19 → 20 | — | secrets found, heard, tallied and sighted |
+| 20 → 21 | — | Final Forms reached (`forms`) |
+| 21 → 22 | — | the strata (`abyss.felled`, `abyss.start`) |
+| 22 → 23 | — | the Contract board (`contracts`) |
+| 23 → 24 | — | where a taken contract goes back to (`contracts.back`) |
 
 **Rules:** a rung writes literal values, never a call to today's defaults
 (those may change; the rung must not); and fields the player already set
