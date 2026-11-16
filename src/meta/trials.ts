@@ -51,6 +51,7 @@ export function chooseTrial(profile: Profile, id: string | null): boolean {
   profile.trial = id;
   // A run is a Trial or a contract, never both (plans/late-game/10 §4.5).
   profile.contracts.taken = null;
+  profile.contracts.back = null;
   profile.region = t.region;
   return true;
 }

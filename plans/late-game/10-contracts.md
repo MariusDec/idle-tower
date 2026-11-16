@@ -2,11 +2,20 @@
 
 **Status:** 2026-11-15. Steps 1–6 built (the grammar, the board, Act 1 from
 Forgeheart and Act 2, milestones, the bots' policy); readings in
-[docs/contracts.md](../../docs/contracts.md). Step 4's gate (the bar) is read
-but not tuned. Deviations: the plan's slot bands are kept as pay clamps; a
+[docs/contracts.md](../../docs/contracts.md). Step 4's gate (the bar) holds after
+the review: `minutes` 2.5 / 3.5 / 5 / 8 (a card's run lasts ~3 minutes, not
+15), and Act 2's Starlight per hour reads 1.23× with a third of runs on cards
+(12 h × 4). Deviations: the plan's slot bands are kept as pay clamps; a
 full Boss Rush clear reads "Clear Boss Rush" and `untouched` reads "Reach
-wave w unhurt", for R4; an overtime past the region's record gets +1 stretch.
-Plan written 2026-11-14. Supersedes §1 of
+wave w unhurt", for R4. From the 2026-11-15 review (docs/contracts.md): a
+card's run is a detour (the next run goes back to the region and waypoint the
+player was at); a card that names a weapon (`carry`, `evolve`, a fusion's
+half) starts with it mounted; the stretch at the edge of one's records is
+scored (a boss felled under three times +2, a wave near the region's best up
+to +1.5, a hold past it +3; an omen 0.75 a rank; `carry` 2), the Quick slot
+draws only targets well inside them, `slay` waits for a region whose boss
+falls reliably, a `wave` stays two under the best, and `within` never rides
+a build handicap. Plan written 2026-11-14. Supersedes §1 of
 [d-come-back.md](d-come-back.md) (the Contract board), and answers two of its
 Open questions (Act 1, pinning). Idea 10 of the late-game review
 ([README](README.md)).

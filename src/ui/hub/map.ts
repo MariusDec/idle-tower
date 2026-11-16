@@ -141,8 +141,10 @@ export class MapView {
 
   /**
    * The shaft (plans/late-game/08 §3.2): a band per stratum, descending from
-   * the top. A felled guardian's band is lit and offers its waypoint; a
-   * reached one shows dimmed; the next waits as a silhouette; deeper is dark.
+   * the top. A felled guardian's band is lit; a reached one shows dimmed; the
+   * next waits as a silhouette; deeper is dark. Once a guardian has fallen,
+   * every band whose top is an open waypoint carries its own button, so
+   * "Start here" always means the band it sits on.
    * `band`: a stratum whose guardian just fell lights from the top down.
    */
   private shaft(profile: Profile, band: number | null): HTMLElement {
@@ -152,28 +154,37 @@ export class MapView {
     const felled = profile.abyss.felled;
     const best = profile.abyss.best;
     const start = abyssStart(profile);
+    /** The waypoint button for the band whose first floor is `foot`; null while the top is the only way in. */
+    const go = (foot: number): HTMLButtonElement | null => {
+      if (felled < 1) return null;
+      const here = start === foot;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `btn map-band-go${here ? ' btn-primary' : ''}`;
+      b.textContent = here ? 'Starts here' : 'Start here';
+      b.setAttribute('aria-pressed', String(here));
+      b.setAttribute('aria-label', here ? `The next descent starts at floor ${foot}` : `Start the next descent at floor ${foot}`);
+      b.addEventListener('click', () => this.onWaypoint(foot));
+      return b;
+    };
     let silhouette = false;
     STRATA.forEach((s, k) => {
       const li = document.createElement('li');
       const boss = BOSS_BY_ID[s.boss];
       const g = guardianFloorOf(k);
+      const foot = stratumFoot(k);
       setStyle(li, '--band', s.tint);
-      const reached = best >= stratumFoot(k) - 1;
+      const reached = best >= foot - 1;
+      const way = k <= felled ? go(foot) : null;
       if (k < felled) {
-        // Guardian down: lit, and its foot is a waypoint.
+        // Guardian down: lit.
         li.className = `map-band is-felled${band === k && !motionReduced() ? ' is-lighting' : ''}`;
-        const foot = g + 1;
-        const here = start === foot;
-        const go = document.createElement('button');
-        go.type = 'button';
-        go.className = `btn map-band-go${here ? ' btn-primary' : ''}`;
-        go.textContent = here ? 'From the top' : 'Start here';
-        go.setAttribute('aria-label', here ? 'Start the next descent at floor 1' : `Start the next descent at floor ${foot}`);
-        go.addEventListener('click', () => this.onWaypoint(here ? 1 : foot));
-        li.append(this.bandHead(s.numeral, s.name, icon(boss.icon)), this.bandLine(`${boss.name} fell · floors ${stratumFoot(k)}–${g}`), go);
+        li.append(this.bandHead(s.numeral, s.name, icon(boss.icon)), this.bandLine(`${boss.name} fell · floors ${foot}–${g}`));
+        if (way) li.append(way);
       } else if (reached) {
         li.className = 'map-band is-reached';
         li.append(this.bandHead(s.numeral, s.name, null), this.bandLine(`Guardian: floor ${g}`));
+        if (way) li.append(way);
       } else if (!silhouette) {
         silhouette = true;
         li.className = 'map-band is-silhouette';
@@ -186,10 +197,16 @@ export class MapView {
       }
       ol.append(li);
     });
-    // Past the authored strata, the dark goes on.
+    // Past the authored strata, the dark goes on; the last guardian's fall opens a way straight into it.
     const deeper = document.createElement('li');
-    deeper.className = 'map-band is-deeper';
-    deeper.setAttribute('aria-hidden', 'true');
+    const below = felled >= STRATA.length ? go(stratumFoot(STRATA.length)) : null;
+    if (below) {
+      deeper.className = 'map-band is-reached is-below';
+      deeper.append(this.bandHead('', 'Deeper', null), this.bandLine(`Floor ${stratumFoot(STRATA.length)} and below`), below);
+    } else {
+      deeper.className = 'map-band is-deeper';
+      deeper.setAttribute('aria-hidden', 'true');
+    }
     ol.append(deeper);
     return ol;
   }

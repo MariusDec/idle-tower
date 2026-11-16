@@ -713,6 +713,8 @@ body {
 
 .hub-stats {
   display: flex;
+  /* Four stats on a phone wrap a label ("Best wave", "Stored Light"): the numbers still share a line. */
+  align-items: flex-end;
   gap: var(--space-7);
   margin: var(--space-2) 0 var(--space-2);
 }
@@ -2486,6 +2488,7 @@ body {
 .contracts-card.is-pinned { border-color: var(--fx-gold); }
 .contracts-text { color: var(--text-1); font-size: var(--text-md); }
 .contracts-heat,
+.contracts-lead,
 .contracts-rider { margin: 0; color: var(--text-2); }
 .contracts-rider { color: var(--fx-arcane); }
 .contracts-pacts { min-height: 44px; }
@@ -2541,6 +2544,8 @@ body {
   justify-items: start;
 }
 .map-band.is-deeper { background: var(--ink-950); min-height: 32px; }
+/* Past the last authored stratum, once its guardian has fallen: a way in, still dark. */
+.map-band.is-below { background: var(--ink-950); }
 /* A guardian's first fall: the band lights from the top down. */
 .map-band.is-lighting { animation: map-band-light 0.8s ease-out both; }
 @keyframes map-band-light {

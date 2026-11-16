@@ -1,6 +1,8 @@
 # Late game: screen time and the endgame
 
-**Status:** 2026-11-14. Nine plans, one per idea, none built. The
+**Status:** 2026-11-15. Nine plans, one per idea. Built in whole or in
+their first phases: 01, 02, 03, 04, 05, 07, 08 and 10 (each plan's own
+Status line says how far); 11 is not started. Written 2026-11-14. The
 2026-11-03 outlines A–D are kept for their history; each plan below says
 which part of them it supersedes. They come from a review of the economy and a late-game
 Abyss session, which found two problems with one cause: **after the

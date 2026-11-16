@@ -39,7 +39,7 @@ import { createRun } from '../src/sim/run';
 import { boardOpen } from '../src/meta/contracts';
 import { playRun, toolConfig } from './play';
 import { shop } from './shop';
-import { botTake, emptyContractTally, holdsUlt, tallyContract, type ContractTally } from './contractBot';
+import { botTake, emptyContractTally, holdsUlt, steerConfig, tallyContract, type ContractTally } from './contractBot';
 
 /** The share of runs the bot plays off the Contract board (`--contracts 0.33`); 0 without the flag. */
 export const CONTRACT_SHARE = ((): number => {
@@ -216,7 +216,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     }
     const start = clock;
     const speed = runSpeed(profile);
-    const run = createRun(toolConfig(profile), seeds.nextU32());
+    const run = createRun(steerConfig(toolConfig(profile), contract?.card), seeds.nextU32());
     const played = playRun(profile, run, {
       policy: 'active', speed, holdUlt: holdsUlt(contract?.card),
       // A stratum's first floor, reached from the top: the level a waypoint there should start at.

@@ -46,6 +46,17 @@ import { STAR_WEB, payStarlight } from './stars';
 
 export const SLOTS: readonly ContractSlot[] = ['quick', 'steady', 'hard'];
 const C = BALANCE.contracts;
+/** A region's boss wave: where a run "held to the boss" has been. */
+const BOSS_AT = 20;
+/** Waves a `wave` target keeps under the region's best: a card adds a handicap on top. */
+const WAVE_ROOM = 2;
+/**
+ * The waves a `wave` target asks for, and an `untouched` tally's. None is
+ * short: a card pays farm minutes, so one met in half a minute and retreated
+ * from would out-earn any run, and free rerolls would find it every time.
+ */
+const WAVES: readonly number[] = [15, 18, 20];
+const UNTOUCHED: readonly number[] = [10, 12, 14, 16];
 type TargetKind = ContractTarget['kind'];
 
 // ── Opening and places ───────────────────────────────────────────────────
@@ -134,6 +145,11 @@ function bestWave(profile: Profile, region: number): number {
   return profile.regions[region]?.bestWave ?? 0;
 }
 
+/** True where a `slay` may be asked: the region's boss falls often enough that a run reaches its wave as a matter of course. */
+function quarryOpen(profile: Profile, region: number): boolean {
+  return bestWave(profile, region) >= BOSS_AT && (profile.bosses[regionByIndex(region).boss]?.kills ?? 0) >= C.freshKills;
+}
+
 /** Abyss guardians felled at least once: the only ones a contract may name (§3, never a first fall). */
 function felledGuardians(profile: Profile): BossId[] {
   return BOSSES.filter((b) => b.abyss && bossDown(profile, b.id)).map((b) => b.id);
@@ -141,13 +157,15 @@ function felledGuardians(profile: Profile): BossId[] {
 
 // ── Score and tier (§3) ──────────────────────────────────────────────────
 
-/** Points for asking `d` above one's own record: heat, or a floor (§3's table). */
-function stretchPoints(d: number): number {
-  if (d <= -3) return 0;
-  if (d === -2) return 0.5;
-  if (d === -1) return 1;
-  if (d === 0) return 1.5;
-  return 2.5;
+/**
+ * Points for asking `d` above one's own record: heat, or a floor (§3's
+ * table). `ask` is the heat or floor itself: a stretch is worth no more than
+ * half its own height, so heat 1 or floor 2 past a record of nothing (Act 2
+ * just opened) is not scored as a wall.
+ */
+function stretchPoints(d: number, ask: number): number {
+  const points = d <= -3 ? 0 : d === -2 ? 0.5 : d === -1 ? 1 : d === 0 ? 1.5 : 2.5;
+  return Math.min(points, ask * 0.5);
 }
 
 /** Points for a time `ratio` of one's own fastest (§3): 1.4 → 0.5, 1.15 → 1, 1.0 → 2, 0.85 → 3, between them in a line. */
@@ -167,16 +185,25 @@ export function targetPoints(profile: Profile, t: ContractTarget): number {
   switch (t.kind) {
     case 'boss': {
       const latest = !act2Open(profile) && latestCleared(profile)?.index === t.region;
-      return 1 + (latest ? 1 : 0);
+      // A boss felled only once or twice is not yet a reliable kill: a stretch, as a record is.
+      const fresh = (profile.bosses[regionByIndex(t.region).boss]?.kills ?? 0) < C.freshKills;
+      return 1 + (latest ? 1 : 0) + (fresh ? 2 : 0);
     }
-    case 'wave':
+    case 'wave': {
+      // A wave near the region's own best is the edge of what the tower does there.
+      const margin = bestWave(profile, t.region) - t.wave;
+      return 0.5 + (margin <= 0 ? 1.5 : margin <= 2 ? 1 : margin <= 5 ? 0.5 : 0);
+    }
     case 'run':
       return 0.5;
-    case 'overtime':
-      // Past the region's own best wave is a record to break: a stretch, as heat's and the floors' are.
-      return 1 + t.k / 5 + (20 + t.k > bestWave(profile, t.region) ? 1 : 0);
+    case 'overtime': {
+      // Past the region's own best wave is a record to break, and just under it nearly one:
+      // a stretch, as heat's and the floors' are.
+      const margin = bestWave(profile, t.region) - (20 + t.k);
+      return 1 + t.k / 5 + (margin < 0 ? 3 : margin < 3 ? 1 : 0);
+    }
     case 'floor':
-      return 1 + stretchPoints(t.floor - profile.abyss.best);
+      return 1 + stretchPoints(t.floor - profile.abyss.best, t.floor);
     case 'guardian':
       return 2;
     case 'rush':
@@ -194,7 +221,7 @@ export function modPoints(profile: Profile, c: Pick<ContractSpec, 'target' | 'mo
   switch (m.kind) {
     case 'heat': {
       const place = placeOf(c.target);
-      return stretchPoints(m.heat - bestHeat(profile, place));
+      return stretchPoints(m.heat - bestHeat(profile, place), m.heat);
     }
     case 'within': {
       const boss = c.target.kind === 'boss' ? regionByIndex(c.target.region).boss : null;
@@ -208,6 +235,8 @@ export function modPoints(profile: Profile, c: Pick<ContractSpec, 'target' | 'mo
     case 'untouched':
       return m.wave / 10;
     case 'carry':
+      // Every other weapon's damage counts against the half: the build is the handicap.
+      return 2;
     case 'evolve':
     case 'fuse':
       return 1.5;
@@ -224,7 +253,7 @@ export function modPoints(profile: Profile, c: Pick<ContractSpec, 'target' | 'mo
           if (r.passive === 0) return 1.5;
           return r.weapon === 1 ? 2 : 1;
         case 'omen':
-          return 0.5 * r.rank;
+          return 0.75 * r.rank;
         default: {
           const exhaustive: never = r;
           return exhaustive;
@@ -303,10 +332,14 @@ function compatible(profile: Profile, t: ContractTarget, a: ContractMod, b: Cont
   if (h && either('within') && t.kind === 'boss' && h.heat > bestHeat(profile, t.region) - 2) return false;
   const weapons = rule('weapons');
   const slots = rule('slots');
+  // The fastest kill was set with the whole build: never asked again under a build's handicap.
+  if (either('within') && (weapons || slots || either('carry'))) return false;
   // A weapons rule and a weapon-slot ceiling say the same thing twice.
   if (weapons && slots && slots.weapon !== undefined) return false;
   const carry = either('carry');
   const evolve = either('evolve');
+  // One weapon leads a run (it starts mounted): a carry and an evolve name the same one.
+  if (carry && evolve && carry.weapon !== evolve.weapon) return false;
   // A weapon the rule excludes can neither carry nor evolve (§4.2).
   if (weapons && carry && !weapons.ids.includes(carry.weapon)) return false;
   if (weapons && evolve && !weapons.ids.includes(evolve.weapon)) return false;
@@ -342,7 +375,9 @@ function modValid(profile: Profile, c: ContractSpec, m: ContractMod, owned: read
     case 'fuse':
       return profile.fusions.includes(m.fusion) && FUSION_BY_ID[m.fusion].weapons.every((w) => owned.includes(w));
     case 'slay':
-      return t.kind === 'run' && (QUARRY[t.region] ?? []).some((q) => q.enemy === m.enemy && q.n === m.n);
+      // The quarry's counts are a run held to the boss wave: only where the tower holds that long as a matter of course.
+      return t.kind === 'run' && quarryOpen(profile, t.region)
+        && (QUARRY[t.region] ?? []).some((q) => q.enemy === m.enemy && q.n === m.n);
     case 'rule': {
       const r = m.rule;
       switch (r.kind) {
@@ -424,6 +459,35 @@ export function trivial(profile: Profile, c: ContractSpec): boolean {
   return c.mods.length === 0 || c.mods.every((m) => modPoints(profile, c, m) <= 0);
 }
 
+/**
+ * True when a target sits well inside the player's records: a boss felled
+ * often enough to count on, a wave or a hold well under the region's best, a
+ * floor well above the deepest. The Quick slot draws only these (§3: Quick is
+ * the card for a short session, not a wall).
+ */
+export function comfortable(profile: Profile, t: ContractTarget): boolean {
+  switch (t.kind) {
+    case 'boss':
+      return (profile.bosses[regionByIndex(t.region).boss]?.kills ?? 0) >= C.freshKills;
+    case 'wave':
+      return bestWave(profile, t.region) - t.wave >= 3;
+    case 'overtime':
+      return bestWave(profile, t.region) - (20 + t.k) >= 3;
+    case 'run':
+      return true;
+    case 'floor':
+      return t.floor <= profile.abyss.best - 2;
+    case 'guardian':
+      return guardianFloor(t.boss) <= profile.abyss.best - 2;
+    case 'rush':
+      return t.within === null && t.stages <= profile.rush.best - 1;
+    default: {
+      const exhaustive: never = t;
+      return exhaustive;
+    }
+  }
+}
+
 /** No two cards share a target kind or a place (§4.1). */
 function clash(board: readonly ContractSpec[], c: ContractSpec): boolean {
   return board.some((o) => o.id !== c.id && (o.target.kind === c.target.kind || placeOf(o.target) === placeOf(c.target)));
@@ -455,8 +519,12 @@ function drawTarget(profile: Profile, rng: Rng, k: TargetKind): ContractTarget |
       return rs.length ? { kind: 'boss', region: rng.pick(rs).index } : null;
     }
     case 'wave': {
-      const r = rng.pick(regionsOpen(profile, false));
-      const waves = [10, 12, 15, 18, 20].filter((w) => w <= Math.max(10, bestWave(profile, r.index)));
+      // Only where the tower has been: never a wave past the region's own best.
+      // Nor the record itself: a card rides a handicap, so it asks for a wave the tower passes with room.
+      const rs = regionsOpen(profile, false).filter((x) => bestWave(profile, x.index) >= WAVES[0] + WAVE_ROOM);
+      if (!rs.length) return null;
+      const r = rng.pick(rs);
+      const waves = WAVES.filter((w) => w <= bestWave(profile, r.index) - WAVE_ROOM);
       return { kind: 'wave', region: r.index, wave: rng.pick(waves) };
     }
     case 'overtime': {
@@ -467,7 +535,7 @@ function drawTarget(profile: Profile, rng: Rng, k: TargetKind): ContractTarget |
       return { kind: 'overtime', region: r.index, k: rng.pick(ks) };
     }
     case 'run': {
-      const rs = regionsOpen(profile, false).filter((r) => QUARRY[r.index] || bestWave(profile, r.index) >= 4);
+      const rs = regionsOpen(profile, false).filter((r) => bestWave(profile, r.index) >= UNTOUCHED[0]);
       return rs.length ? { kind: 'run', region: rng.pick(rs).index } : null;
     }
     case 'floor': {
@@ -541,8 +609,8 @@ function drawMods(profile: Profile, rng: Rng, t: ContractTarget, owned: readonly
 /** A run target's tally (§3): a clean opening, or a quarry. */
 function drawTally(profile: Profile, rng: Rng, t: Extract<ContractTarget, { kind: 'run' }>): ContractMod | null {
   const best = Math.min(20, bestWave(profile, t.region));
-  const quarry = QUARRY[t.region] ?? [];
-  const untouched = best >= 6 ? [6, 8, 10, 12, 14].filter((w) => w <= best) : [];
+  const quarry = quarryOpen(profile, t.region) ? QUARRY[t.region] ?? [] : [];
+  const untouched = UNTOUCHED.filter((w) => w <= best);
   if (quarry.length && (untouched.length === 0 || rng.chance(0.5))) {
     const q = rng.pick(quarry);
     return { kind: 'slay', enemy: q.enemy, n: q.n };
@@ -578,7 +646,8 @@ function fallback(profile: Profile, slot: ContractSlot, id: string, rider: Relic
   const targets: ContractTarget[] = [
     ...felled.map((r): ContractTarget => ({ kind: 'boss', region: r.index })),
     ...felled.map((r): ContractTarget => ({ kind: 'overtime', region: r.index, k: 5 })),
-    ...[...regionsOpen(profile, false)].reverse().map((r): ContractTarget => ({ kind: 'wave', region: r.index, wave: 10 })),
+    ...[...regionsOpen(profile, false)].reverse().filter((r) => bestWave(profile, r.index) >= WAVES[0] + WAVE_ROOM)
+      .map((r): ContractTarget => ({ kind: 'wave', region: r.index, wave: WAVES[0] })),
   ];
   const pads: ContractMod[][] = [
     [],
@@ -590,6 +659,8 @@ function fallback(profile: Profile, slot: ContractSlot, id: string, rider: Relic
   const samePlace = (c: ContractSpec): boolean => others.some((o) => placeOf(o.target) === placeOf(c.target));
   for (const strict of [true, false]) {
     for (const target of targets) {
+      // Quick stays inside the records here too.
+      if (slot === 'quick' && !comfortable(profile, target)) continue;
       const h = act2Open(profile) ? bestHeat(profile, placeOf(target)) : 0;
       const leads: ContractMod[] = [...(h >= 1 ? [{ kind: 'heat', heat: h } as ContractMod] : []), { kind: 'noUlt' }];
       if (target.kind === 'boss') leads.push({ kind: 'healthy', pct: 70 });
@@ -636,6 +707,7 @@ export function generate(profile: Profile, slot: ContractSlot, others: readonly 
   for (let attempt = 0; attempt < C.attempts && kinds.length; attempt++) {
     const target = drawTarget(profile, rng, kinds[rng.weighted(weights)]);
     if (!target) continue;
+    if (slot === 'quick' && !comfortable(profile, target)) continue;
     const mods: ContractMod[] = [];
     if (target.kind === 'run') {
       const tally = drawTally(profile, rng, target);
@@ -722,17 +794,48 @@ export function takeBlocked(profile: Profile, c: ContractSpec): string | null {
 export function takeContract(profile: Profile, id: string): boolean {
   const c = contractById(profile, id);
   if (!c || !boardOpen(profile) || takeBlocked(profile, c) !== null || !targetValid(profile, c.target)) return false;
-  profile.contracts.taken = id;
+  const B = profile.contracts;
+  // Where the player was, to go back to once the card's run is banked. A Retry
+  // (a Take straight after a settle) finds it already restored.
+  B.back = { region: profile.region, start: profile.abyss.start };
+  B.taken = id;
   profile.trial = null;
   profile.region = placeOf(c.target);
   if (profile.region === ABYSS_INDEX) profile.abyss.start = contractStart(profile, c);
   return true;
 }
 
+/**
+ * A card's run is a detour: once it is banked, the next run goes back to
+ * where the player was (the region, and the Abyss's waypoint), so Run again
+ * and auto-restart never farm the card's place by accident.
+ */
+function goBack(profile: Profile, ran: boolean): void {
+  const B = profile.contracts;
+  const back = B.back ?? null;
+  B.back = null;
+  if (!ran || !back) return;
+  profile.abyss.start = back.start;
+  if (regionUnlocked(profile, back.region)) profile.region = back.region;
+}
+
 /** The card the next run is taken for, while it is still in its place; null for an ordinary run. */
 export function takenContract(profile: Profile): ContractSpec | null {
   const c = contractById(profile, profile.contracts.taken);
   return c && profile.region === placeOf(c.target) && regionUnlocked(profile, profile.region) ? c : null;
+}
+
+/**
+ * The weapon a card's run starts with, mounted (§4.5): the one it asks to
+ * carry or evolve, or a fusion's first half. A card that names a weapon
+ * hands it over, so the ask is a plan from wave 1 and never waits on the
+ * draft's luck; null leaves the frame's (or a `weapons` rule's first).
+ */
+export function contractLead(c: ContractSpec | null): WeaponId | null {
+  for (const m of c?.mods ?? []) if (m.kind === 'carry') return m.weapon;
+  for (const m of c?.mods ?? []) if (m.kind === 'evolve') return m.weapon;
+  for (const m of c?.mods ?? []) if (m.kind === 'fuse') return FUSION_BY_ID[m.fusion].weapons[0];
+  return null;
 }
 
 /** A card's rules, for `buildRunConfig` (§4.5): the Trial rules among its modifiers. */
@@ -895,6 +998,7 @@ export function settleContract(profile: Profile, run: RunState, tier: 1 | 2 | 3 
   const B = profile.contracts;
   const c = run.contract ? contractById(profile, run.contract) : null;
   B.taken = null;
+  goBack(profile, c !== null);
   if (!c) return null;
   const check = contractMet(c, run);
   const text = contractText(c);

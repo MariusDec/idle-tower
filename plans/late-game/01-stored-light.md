@@ -1,6 +1,9 @@
 # 01. Stored Light
 
-**Status:** 2026-11-14. Plan, not built. Supersedes all of
+**Status:** 2026-11-15. P0–P3 built (the optional tower glow is not);
+readings in [docs/balancing.md](../../docs/balancing.md), the mechanics in
+[docs/idle.md](../../docs/idle.md). The three dials stand at this plan's
+defaults. Plan written 2026-11-14. Supersedes all of
 [a-stored-light.md](a-stored-light.md), including its I5 rewrite: I7–I9
 are defined here (§9.1) and the sibling plans use these definitions.
 

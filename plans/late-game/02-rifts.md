@@ -1,6 +1,11 @@
 # 02. Rifts
 
-**Status:** 2026-11-14. Plan, not built. Supersedes §1 of
+**Status:** 2026-11-15. R1–R4 built (batch 1's 19 rifts, the journal, the
+explainer, two feats), and R5's rates; batch 2 (Act 2, the Abyss, plans 03
+and 05) is not. See [docs/rifts.md](../../docs/rifts.md). Deviations found
+by measuring, all for I5: Wager's kills pay double (not triple), Glimmering
+Cache pays three waves (not five), and Blight Bloom lasts three waves with
+one more elite each (not two until the boss). Plan written 2026-11-14. Supersedes §1 of
 [b-moments.md](b-moments.md) (Rifts), and answers that plan's first Open
 question (Rift rates in Act 2 and the Abyss).
 

@@ -101,7 +101,8 @@ Region index 7: the only endless mode, and the only place big numbers live.
   each starting a step on from the last stratum's last wave, so a boundary
   has no cliff; the shim continues on `BALANCE.abyss.hpGrowth`.
 - **Waypoints.** A guardian's first fall in order (`profile.abyss.felled`)
-  opens the floor below it; the Map's shaft offers Start here, and the run
+  opens the floor below it; on the Map's shaft every open stratum's band
+  carries its own Start here (the chosen one reads Starts here), and the run
   begins there at `BALANCE.strata.waypoint.level` with its drafts banked.
 - A new floor re-resolves the run's stats with its rule (`enterFloor`).
 - No overtime: the descent goes on until the tower falls.

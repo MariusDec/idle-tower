@@ -64,6 +64,8 @@ export function placeName(name: string): string {
 /** An enemy's name, counted: "Grunts", "Siege Engines", "elites". */
 export function plural(name: string): string {
   if (name.endsWith('s')) return name;
+  // "Leech" → "Leeches".
+  if (/(ch|sh|x)$/.test(name)) return `${name}es`;
   return `${name}s`;
 }
 
@@ -159,13 +161,24 @@ export function modText(m: ContractMod): string {
  * second after a comma.
  */
 export function contractText(c: Pick<ContractSpec, 'target' | 'mods'>): string {
+  const full = cardText(c, false);
+  // After the comma a weapon list or a carry drops its "with" only when the card
+  // would run past R4's 15 words with it (§2: "at heat 5, Frost Ring and Glaives
+  // only"). Kept otherwise: "as the Bastion, Mortar, Glaives and Scattershot only"
+  // reads as four things.
+  return full.split(/\s+/).length <= CARD_WORDS ? full : cardText(c, true);
+}
+
+/** R4's cap on a card's words (`MAX_TEXT_WORDS` in lint.ts, which imports this file). */
+const CARD_WORDS = 15;
+
+function cardText(c: Pick<ContractSpec, 'target' | 'mods'>, terse: boolean): string {
   const prefix = c.mods.find((m) => m.kind === 'evolve' || m.kind === 'fuse');
   const tally = c.target.kind === 'run' ? c.mods.find((m) => m.kind === 'untouched' || m.kind === 'slay') : undefined;
   let s = targetText(c.target, tally);
   c.mods.filter((m) => m !== prefix && m !== tally).forEach((m, i) => {
-    // After the comma a weapon list or a carry drops its "with" (§2: "at heat 5, Frost Ring and Glaives only").
     const text = modText(m);
-    const bare = i > 0 && (m.kind === 'carry' || (m.kind === 'rule' && m.rule.kind === 'weapons'));
+    const bare = terse && i > 0 && (m.kind === 'carry' || (m.kind === 'rule' && m.rule.kind === 'weapons'));
     s += `${i === 0 ? ' ' : ', '}${bare ? text.replace(/^with /, '') : text}`;
   });
   if (prefix) s = `${modText(prefix)}, then ${s[0].toLowerCase()}${s.slice(1)}`;

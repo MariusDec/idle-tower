@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { ABYSS_INDEX } from '../src/content/abyss';
 import { BOSSES } from '../src/content/bosses';
-import { contractText } from '../src/content/contracts';
+import { contractText, plural } from '../src/content/contracts';
 import { FORGE } from '../src/content/forge';
 import { MAX_TEXT_WORDS } from '../src/content/lint';
 import { REGIONS } from '../src/content/regions';
 import type { ContractMod, ContractSpec, ContractTarget, WeaponId } from '../src/content/types';
 import {
-  SLOTS, placeOf, boardOpen, contractMet, contractTier, ensureBoard, ownedWeapons, pin, reroll, score, slotBand, takeContract, takenContract, tierOf, trivial, valid,
+  SLOTS, placeOf, boardOpen, comfortable, contractLead, contractMet, contractTier, ensureBoard, ownedWeapons, pin, reroll, score, slotBand, takeContract, takenContract, tierOf, trivial, valid,
 } from '../src/meta/contracts';
 import { hubGoal } from '../src/meta/goals';
 import { newProfile, type Profile } from '../src/meta/profile';
@@ -137,7 +137,8 @@ describe('the board (plans/late-game/10 §4.1)', () => {
       expect(share, w).toBeGreaterThanOrEqual(0.04);
       expect(share, w).toBeLessThanOrEqual(0.3);
     }
-  });
+    // Ten thousand draws: a few seconds beside the other suites' sims.
+  }, 30_000);
 });
 
 /** A profile with a board, and a run built for card `c` (taken), unfinished. */
@@ -401,5 +402,133 @@ describe('the save (§6)', () => {
     const out = migrate({ version: 22, createdAt: 5, shards: 50 }, MIGRATIONS, 23);
     expect(out.version).toBe(23);
     expect(out.contracts).toEqual({ seq: 0, board: [], pinned: null, taken: null, done: 0 });
+  });
+
+  it('v23 → v24: a board gains its way back, and keeps its cards', () => {
+    const board = { seq: 7, board: [{ id: 'c6' }], pinned: 'c6', taken: null, done: 4 };
+    const out = migrate({ version: 23, createdAt: 5, contracts: board }, MIGRATIONS, 24);
+    expect(out.version).toBe(24);
+    expect(out.contracts).toEqual({ ...board, back: null });
+  });
+});
+
+describe('a card is a detour (review of plan 10)', () => {
+  it('the run after a card goes back to where the player was, met or not', () => {
+    const p = cleared(6);
+    p.region = 6;
+    const c = spec({ kind: 'wave', region: 2, wave: 10 }, [{ kind: 'noUlt' }]);
+    p.contracts.board = [c];
+    expect(takeContract(p, c.id)).toBe(true);
+    expect(p.region).toBe(2);
+    const lost = createRun(buildRunConfig(p), 3);
+    lost.wave = 4;
+    expect(bankRun(p, lost).contract?.met).toBe(false);
+    // Run again and auto-restart farm the frontier, not the card's place.
+    expect(p.region).toBe(6);
+    expect(buildRunConfig(p).contract).toBeNull();
+    // Retry: the same detour, and back again.
+    expect(takeContract(p, c.id)).toBe(true);
+    const won = createRun(buildRunConfig(p), 4);
+    won.wave = 12;
+    expect(bankRun(p, won).contract?.met).toBe(true);
+    expect(p.region).toBe(6);
+    expect(p.contracts.back).toBeNull();
+  });
+
+  it('an Abyss card puts the waypoint back too', () => {
+    const p = fixtures().floor12;
+    p.region = ABYSS_INDEX;
+    p.abyss.start = 1;
+    const c = spec({ kind: 'floor', floor: 10 }, [{ kind: 'noUlt' }]);
+    p.contracts.board = [c];
+    expect(takeContract(p, c.id)).toBe(true);
+    expect(p.abyss.start).toBe(7);
+    const run = createRun(buildRunConfig(p), 3);
+    bankRun(p, run);
+    expect(p.region).toBe(ABYSS_INDEX);
+    expect(p.abyss.start).toBe(1);
+  });
+
+  it('an ordinary run, or a Trial chosen instead, drops the way back', () => {
+    const p = cleared(4);
+    p.region = 4;
+    const c = spec({ kind: 'wave', region: 2, wave: 10 }, [{ kind: 'noUlt' }]);
+    p.contracts.board = [c];
+    expect(takeContract(p, c.id)).toBe(true);
+    expect(chooseTrial(p, 'lone-light')).toBe(true);
+    expect(p.contracts.back).toBeNull();
+    const region = p.region;
+    bankRun(p, createRun(buildRunConfig(p), 3));
+    expect(p.region).toBe(region);
+  });
+
+  it('a card that names a weapon starts the run with it mounted', () => {
+    const p = cleared(4);
+    const carry = spec({ kind: 'boss', region: 2 }, [{ kind: 'carry', weapon: 'mortar' }, { kind: 'rule', rule: { kind: 'frame', frame: 'bastion' } }]);
+    p.contracts.board = [carry];
+    expect(contractLead(carry)).toBe('mortar');
+    expect(takeContract(p, carry.id)).toBe(true);
+    const cfg = buildRunConfig(p);
+    expect(cfg.frameId).toBe('bastion');
+    expect(cfg.startingWeapon).toBe('mortar');
+    expect(createRun(cfg, 3).weapons[0].id).toBe('mortar');
+    // Inside a weapons rule the named weapon leads; outside it the rule's first does.
+    const evolve = spec({ kind: 'boss', region: 2 }, [{ kind: 'evolve', weapon: 'arcane-bolt' }, { kind: 'rule', rule: { kind: 'weapons', ids: ['glaives', 'arcane-bolt'] } }], 'c2');
+    p.contracts.board = [evolve];
+    expect(takeContract(p, evolve.id)).toBe(true);
+    expect(buildRunConfig(p).startingWeapon).toBe('arcane-bolt');
+    expect(contractLead(spec({ kind: 'boss', region: 2 }, [{ kind: 'noUlt' }]))).toBeNull();
+  });
+
+  it('a carry and an evolve name one weapon; a speed record never rides a build handicap', () => {
+    const p = cleared(6);
+    const at = { kind: 'boss', region: 2 } as const;
+    expect(valid(p, spec(at, [{ kind: 'carry', weapon: 'mortar' }, { kind: 'evolve', weapon: 'arcane-bolt' }]))).toBe(false);
+    expect(valid(p, spec(at, [{ kind: 'carry', weapon: 'arcane-bolt' }, { kind: 'evolve', weapon: 'arcane-bolt' }]))).toBe(true);
+    expect(valid(p, spec(at, [{ kind: 'within', seconds: 60 }, { kind: 'rule', rule: { kind: 'slots', weapon: 1 } }]))).toBe(false);
+    expect(valid(p, spec(at, [{ kind: 'within', seconds: 60 }, { kind: 'carry', weapon: 'mortar' }]))).toBe(false);
+    expect(valid(p, spec(at, [{ kind: 'within', seconds: 60 }, { kind: 'noUlt' }]))).toBe(true);
+  });
+
+  it('a boss felled once or twice, a wave at the record and a hold past it score as stretches', () => {
+    const p = cleared(4);
+    const rule: ContractMod = { kind: 'rule', rule: { kind: 'slots', weapon: 2 } };
+    const known = score(p, spec({ kind: 'boss', region: 2 }, [rule]));
+    p.bosses[REGIONS[1].boss].kills = 1;
+    expect(score(p, spec({ kind: 'boss', region: 2 }, [rule]))).toBe(known + 2);
+    expect(comfortable(p, { kind: 'boss', region: 2 })).toBe(false);
+    p.regions[3] = { bestWave: 20 };
+    const far = score(p, spec({ kind: 'wave', region: 3, wave: 10 }, [rule]));
+    expect(score(p, spec({ kind: 'wave', region: 3, wave: 20 }, [rule]))).toBe(far + 1.5);
+    expect(comfortable(p, { kind: 'wave', region: 3, wave: 20 })).toBe(false);
+    expect(comfortable(p, { kind: 'wave', region: 3, wave: 15 })).toBe(true);
+    p.regions[1] = { bestWave: 30 };
+    const inside = score(p, spec({ kind: 'overtime', region: 1, k: 5 }, [rule]));
+    p.regions[1] = { bestWave: 22 };
+    expect(score(p, spec({ kind: 'overtime', region: 1, k: 5 }, [rule]))).toBe(inside + 3);
+  });
+
+  it('Quick draws only what the tower does with room; no card asks a wave past the record or a quarry it cannot reach', () => {
+    // The board has just opened: Forgeheart fell once, the Hollow is new ground.
+    const p = cleared(4);
+    p.bosses[REGIONS[3].boss].kills = 1;
+    p.regions[5] = { bestWave: 9 };
+    ensureBoard(p);
+    for (let i = 0; i < 1500; i++) {
+      const c = p.contracts.board[i % 3];
+      const t = c.target;
+      if (c.slot === 'quick') expect(comfortable(p, t), contractText(c)).toBe(true);
+      if (t.kind === 'wave') expect(t.wave, contractText(c)).toBeLessThanOrEqual((p.regions[t.region]?.bestWave ?? 0) - 2);
+      if (c.mods.some((m) => m.kind === 'slay') && t.kind === 'run') {
+        expect(p.bosses[REGIONS[t.region - 1].boss]?.kills ?? 0, contractText(c)).toBeGreaterThanOrEqual(3);
+      }
+      reroll(p, c.id);
+    }
+  });
+
+  it('a counted name reads as a plural', () => {
+    expect(plural('Leech')).toBe('Leeches');
+    expect(plural('Grunt')).toBe('Grunts');
+    expect(plural('Glaives')).toBe('Glaives');
   });
 });

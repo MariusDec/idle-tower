@@ -72,3 +72,26 @@ known ones (`suggest.ts`), so most Region 5 runs don't evolve even once.
 steer toward, so on its own it would barely move this. The F0 table above
 marks every Act 1 recipe found, which is why it reads 22–26%. Deciding what
 to do (Open 3, or a recipe-discovery change) is open.
+
+### The chase, measured (2026-11-15, review)
+
+§3.4's lever was built on a branch and read with `inspect --seeds 50
+--recipes act1 --form` (active bot, every Act 1 recipe known), then taken
+out again: it does not move the reading.
+
+| `chase` | ring6, R5 | ring5, R4 |
+|---|---|---|
+| 1 (off) | 24%, median wave 20 | 22%, median wave 25 |
+| 1.5 | 26%, median wave 20 | 22%, median wave 25 |
+| 2.5 | 26%, median wave 20 | 22%, median wave 25 |
+
+With the recipes known the suggestion already takes the second recipe's
+steps when they are dealt; what a run lacks is picks (18–21 of its ~20–26),
+not the scorer's weight. So the knob stays at 1 and unread, and Final Form's
+reach is set by two things the scorer can't change: how many recipes the
+profile knows, and how many drafts a run gets. For a player who follows the
+suggestion that makes it a late-game sight (once two carried weapons'
+recipes are known, about one run in four in Regions 4–5); the Tactician's
+list is the way to chase it sooner. Whether recipe discovery should be
+easier for hands-off play is the open question, and it is Act 1 pacing's
+(the first evolution at 90–120 min), not this plan's.

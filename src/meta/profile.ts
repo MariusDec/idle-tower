@@ -9,7 +9,7 @@ import type { ContractSpec, TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 23;
+  version: 24;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -139,7 +139,11 @@ export interface Profile {
    * cards (empty until the board opens), the one pinned to the Next line, the
    * one the next run is taken for, and how many have been done in all.
    */
-  contracts: { seq: number; board: ContractSpec[]; pinned: string | null; taken: string | null; done: number };
+  contracts: {
+    seq: number; board: ContractSpec[]; pinned: string | null; taken: string | null; done: number;
+    /** Where the player was when the taken card sent the next run elsewhere: the region, and the Abyss's waypoint. */
+    back: { region: number; start: number } | null;
+  };
   /** Trims the player has taken off the tower (N5): every won trim is worn unless listed here. */
   trimsOff: TrimId[];
   /**
@@ -188,7 +192,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 23;
+export const PROFILE_VERSION = 24;
 
 /** One rift's journal entry (plans/late-game/02 §5). */
 export interface RiftRecord {
@@ -256,7 +260,7 @@ export function newProfile(now: number): Profile {
     wishlist: [],
     trials: {},
     trial: null,
-    contracts: { seq: 0, board: [], pinned: null, taken: null, done: 0 },
+    contracts: { seq: 0, board: [], pinned: null, taken: null, done: 0, back: null },
     trimsOff: [],
     sets: {},
     region: 1,

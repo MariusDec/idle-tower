@@ -7,13 +7,17 @@
  * by tier; a card it can't take (heat it can't reach) passes to the next.
  * In Act 2 it sets its pacts to the heat a card asks, or none for a card in
  * a region that asks none (the board pays the same either way). It holds
- * its ultimate when a card asks (`holdsUlt`), as a player would; it never
- * aims for `untouched` or steers its drafts to a `carry`, so it understates
- * those asks (§10).
+ * its ultimate when a card asks (`holdsUlt`), and steers its drafts to the
+ * weapon a card names (`steerConfig`), as a player would; it never aims for
+ * `untouched`, so it understates that ask (§10).
  */
 import { SLOTS, contractTier, heatNeeded, placeOf, takeContract } from '../src/meta/contracts';
 import { REGIONS } from '../src/content/regions';
-import type { ContractSpec } from '../src/content/types';
+import { EVOLUTION_OF } from '../src/content/evolutions';
+import { FUSION_BY_ID } from '../src/content/fusions';
+import type { CardItemId, ContractSpec } from '../src/content/types';
+import { isWeaponId } from '../src/sim/systems/draft';
+import type { RunConfig } from '../src/sim/state';
 import { act2Open } from '../src/meta/collection';
 import type { Profile } from '../src/meta/profile';
 import type { RunSummary } from '../src/meta/results';
@@ -56,6 +60,37 @@ export function botTake(
 /** True when a card asks for no ultimate: the bot's run passes `holdUlt`. */
 export function holdsUlt(card: ContractSpec | null | undefined): boolean {
   return card?.mods.some((m) => m.kind === 'noUlt') ?? false;
+}
+
+/**
+ * The run config a player would steer a card's run with: the weapon it names
+ * (and, for an evolve or a fusion, its partner passives) first on the
+ * Tactician's list, so the suggestion the bot follows takes them when
+ * offered; a `carry` also holds other weapons back (the Never list), since
+ * every other weapon's damage counts against the half. The game's own rules
+ * are untouched: this is only what the bot taps.
+ */
+export function steerConfig(config: RunConfig, card: ContractSpec | null | undefined): RunConfig {
+  if (!card) return config;
+  const first: CardItemId[] = [];
+  let carry = false;
+  for (const m of card.mods) {
+    if (m.kind === 'carry') {
+      first.push(m.weapon);
+      carry = true;
+    } else if (m.kind === 'evolve') {
+      first.push(m.weapon, EVOLUTION_OF[m.weapon].passive);
+    } else if (m.kind === 'fuse') {
+      for (const w of FUSION_BY_ID[m.fusion].weapons) first.push(w, EVOLUTION_OF[w].passive);
+    }
+  }
+  if (first.length === 0) return config;
+  const wanted = [...new Set(first)].filter((id) => config.pool.includes(id));
+  const priority = [...wanted, ...(config.priority ?? []).filter((id) => !wanted.includes(id))];
+  const never = carry
+    ? [...new Set([...(config.never ?? []), ...config.pool.filter((id) => isWeaponId(id) && !wanted.includes(id))])]
+    : config.never;
+  return { ...config, priority, never };
 }
 
 /** Count a banked contract run into the tally. */

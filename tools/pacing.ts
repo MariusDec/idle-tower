@@ -54,7 +54,7 @@ import { FAST_STEPS, playRun, toolConfig } from './play';
 import { shop } from './shop';
 import { CHECKIN_EVERY, SESSION, farmRatio, runIdle, type IdleReport } from './idle';
 import { CONTRACT_SHARE, runAct2, takePacts, type Act2Report } from './act2';
-import { botTake, emptyContractTally, holdsUlt, successLine, tallyContract, type ContractTally } from './contractBot';
+import { botTake, emptyContractTally, holdsUlt, steerConfig, successLine, tallyContract, type ContractTally } from './contractBot';
 import { boardOpen } from '../src/meta/contracts';
 import { STRATA } from '../src/content/strata';
 import { BALANCE } from '../src/content/balance';
@@ -205,7 +205,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
   while (clock < end) {
     const start = clock;
     const speed = runSpeed(profile);
-    const run = createRun(toolConfig(profile), seeds.nextU32());
+    const run = createRun(steerConfig(toolConfig(profile), taken?.card), seeds.nextU32());
     const played = playRun(profile, run, {
       policy: 'active',
       speed,
@@ -566,6 +566,15 @@ export function medianHeat(verdicts: readonly Act2Verdict[], h: number): number 
   return Number.isFinite(m) ? m : null;
 }
 
+/**
+ * The wall hours a report spent on cards, as their share of its runs: the
+ * bar asks for a contract-only reward per hour *of contracts* (plans/late-game/10
+ * §4.4), not per hour of a session two thirds of which is something else.
+ */
+function contractHours(r: Act2Report): number {
+  return Math.max(1e-9, (r.seconds / 3600) * (r.contracts.runs / Math.max(1, r.runs)));
+}
+
 async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<void> {
   const fmt = (t: number | null | undefined): string => (t == null ? 'never' : formatDuration(t));
   console.log(`act 2 · ${hours} h after the Blight · ${seeds} profiles${reuse ? ' · saved starts' : ''}`);
@@ -586,7 +595,7 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
     if (r.contracts.runs > 0) {
       // The board's bar (plans/late-game/10 §9): success by tier, contract-only rewards per hour.
       const c = r.contracts;
-      console.log(`           contracts: ${c.runs} runs · ${successLine(c)} · ${(c.only / (r.seconds / 3600)).toFixed(2)} riders+milestones/h · ${c.shards} shards`);
+      console.log(`           contracts: ${c.runs} runs · ${successLine(c)} · ${(c.only / contractHours(r)).toFixed(2)} riders+milestones per contract hour · ${c.shards} shards`);
     }
     const fell = STRATA.map((st) => `${BOSS_BY_ID[st.boss].name} ${fmt(r.strata.fell[st.boss])}`).join(' · ');
     const entry = Object.entries(r.strata.entry).map(([f, ls]) => `floor ${f} level ${[...ls].sort((a, b) => a - b)[ls.length >> 1]} (${ls.length})`).join(' · ');
@@ -611,8 +620,8 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
   const starPerHour = (r: Act2Report): number => r.starlight / (r.seconds / 3600);
   console.log(`        Starlight per hour: median ${med(reports.map(starPerHour)).toFixed(1)}${CONTRACT_SHARE > 0 ? ` with ${Math.round(CONTRACT_SHARE * 100)}% contract runs` : ''} (${reports.map((r) => starPerHour(r).toFixed(1)).join(' ')})`);
   if (CONTRACT_SHARE > 0) {
-    const only = reports.map((r) => r.contracts.only / (r.seconds / 3600));
-    console.log(`  ${med(only) >= 1 ? 'PASS' : 'FAIL'}  contract-only rewards per hour: median ${med(only).toFixed(2)} (want ≥ 1)`);
+    const only = reports.map((r) => r.contracts.only / contractHours(r));
+    console.log(`  ${med(only) >= 1 ? 'PASS' : 'FAIL'}  contract-only rewards per hour of contracts: median ${med(only).toFixed(2)} (want ≥ 1)`);
     const all = reports.reduce((t, r) => {
       for (const k of [1, 2, 3, 4]) {
         t.tries[k] = (t.tries[k] ?? 0) + (r.contracts.tries[k] ?? 0);

@@ -416,9 +416,17 @@ export const BALANCE = {
     attempts: 24,
     bands: [[1, 2], [2, 3], [3, 4]],
     tiers: [2.5, 4, 5.5],
-    minutes: [6, 10, 15, 22],
+    /**
+     * Farm minutes a met card pays, by tier. A card's run is about three wall
+     * minutes at 3×, not the fifteen the plan sized these on: at 6/10/15/22 a
+     * card hour earned 2–4.4× the frontier's farm (docs/contracts.md), against
+     * the plan's ceiling of 1.5×.
+     */
+    minutes: [2.5, 3.5, 5, 8],
     starlight: [4, 8, 13, 20],
     minWithin: 20,
+    /** A boss felled fewer times than this is not yet a kill to count on: it scores as a stretch, and never rides the Quick slot. */
+    freshKills: 3,
     milestones: { trims: [10, 30], relicEvery: 10 },
     weights: { boss: 3, floor: 2, overtime: 1.5, guardian: 1, wave: 1, run: 1, rush: 1 },
   },
