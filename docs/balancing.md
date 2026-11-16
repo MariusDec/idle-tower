@@ -544,7 +544,9 @@ What the review settled, and what it leaves:
   discovery, which is Act 1 pacing's to change, not this plan's.
 - **Open, the owner's:** I1b (the Blight at ~4.2 h); the three tests that
   fail on every commit since Tempering (`arsenal`'s frontier evolutions, the
-  CI I6 and P3 medians); the full Act 2 reading with the board.
+  CI I6 and P3 medians). The full Act 2 reading with the board was taken on
+  2026-11-16: Starlight per hour 1.23× with a third of runs on cards, inside
+  the bar ([contracts.md](contracts.md)).
 - **Thin content, by plan:** the cursed chase holds one relic (03's phase 3
   can follow the Inversion now), anomalies four of twelve, secrets Act 1's
   eight, strata two of five.

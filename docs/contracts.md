@@ -120,6 +120,7 @@ none (`--act2 --reuse`):
 |---|---|---|---|---|---|
 | First build, 12 h × 4 seeds | 56.5 | 58.4 | 1.03× | 30 / 52 / 23 / 57% | 0.25 an hour |
 | Review, `--fast`, 8 h × 2 seeds | 78.3 | 92.1 | 1.18× (1.18, 1.11) | 6/6 · 15/15 · 10/12 · none dealt | 0.62 an hour: 1.9 per hour of contracts |
+| Review, full, 12 h × 4 seeds (2026-11-16) | 56.5 | 69.3 | **1.23×** (1.21, 1.16, 1.23, 1.28) | 23/23 · 24/32 · 16/22 · 5/10 | 1.51 per hour of contracts PASS |
 
 - The first build's board was worth nothing in Act 2 (1.03×): its cards
   were missed two times in three. With the asks fixed it reads 1.1–1.2×
@@ -131,24 +132,45 @@ none (`--act2 --reuse`):
   `starlight` (4 / 8 / 13 / 20) is therefore left as it is: the board sits
   under the bar's floor early and over its ceiling late, and inside it on a
   12–20 h average.
-- The two readings are not like for like (the review's is `--fast`, shorter
-  and on two seeds, read before the heat and floor stretch was capped): the
-  full 12 h × 4 at this commit is owed.
+- The full reading (2026-11-16, at 4fecf33) settles it: **1.23×**, inside
+  the bar (1.2–1.5×), on every seed 1.16–1.28. Its 0% line is the first
+  build's to the decimal (56.5), so the two are like for like. Cards earned
+  173–235 Starlight a seed, about a quarter of the session's; 20–24 card
+  runs in 63–73. `starlight` stays at 4 / 8 / 13 / 20.
 - **Contract-only rewards** are now read per hour of contracts, as the plan
   asks (`pacing.ts#contractHours`); the first build divided by the whole
   session, a third of which was cards.
-- Heat 10 at the frontier comes later with the board (86 → 198 min): a card
-  run is a run not spent on the ladder. That gate (3–12 h) failed short
-  before the board and passes with it.
-- No T4 card was dealt in 33 draws: in Act 2 the Hard slot fills from T3.
-  Worth a look once the stretch cap has been read over a full session.
+- Heat 10 at the frontier comes later with the board: a card run is a run
+  not spent on the ladder. The `--fast` reading had it 86 → 198 min and the
+  gate (3–12 h) passing with the board; the full one reads 1:45 → 2:57, so
+  the gate fails short either way. The ladder is quick, not the board's.
+- T4 is dealt over a full session (10 of 87 cards; none in the `--fast`
+  reading's 33), so Act 2's Hard slot needs nothing added.
+- Success reads over the plan's 85 / 65 / 45 / 30% at T2–T4 (75 / 73 /
+  50%), on small samples. Hard is easier in Act 2 than its pay assumes, but
+  the bar holds with it, so it is left: a T3 or T4 card is still the one a
+  player picks for its rider.
+
+## 2026-11-16, review: the texts
+
+A read of ~600 cards (150 rerolls at Forgeheart's, the Hollow King's and
+the Blight's checkpoints, and at a saved Act 2 start).
+
+- After the comma, a weapon list or a `carry` dropped its "with" (§2's "at
+  heat 5, Frost Ring and Glaives only"). After a name that reads as a list:
+  "Fell Forgeheart as the Bastion, Mortar, Glaives and Scattershot only" is
+  four things, as is "above 70% HP, Arcane Bolt, Chain Lightning and Glaives
+  only". The "with" now stays, and is dropped only where keeping it would
+  pass 15 words (R4). The cards drawn are the same: every card that was
+  valid still is, so no reading moves.
+- The rest read as meant. "Starts with X mounted." sits under every card
+  that names a weapon; no card asks a wave past the region's best.
 
 ## Open
 
-- The full Act 2 reading at this commit (`--act2 --reuse --hours 12 --seeds
-  4`, with and without `--contracts 0.33`: about three hours each), then
-  `starlight` against the bar, and whether Act 2's Hard slot needs T4 cards.
+- Act 2's Hard success (T3 73%, T4 50% against 45 / 30%): read again over
+  more seeds before tightening its asks; the pay is inside the bar as it is.
 - I7 (screen time to the Blight with contracts) is not read: the idle tool's
   engaged mode doesn't take cards.
 - A human pass on `carry` (40% for the steering bot, which can only refuse
-  every other weapon) and on a dump of ~200 boards' texts.
+  every other weapon).

@@ -2,8 +2,10 @@
 
 **Status:** 2026-11-15. Steps 1–6 built (the grammar, the board, Act 1 from
 Forgeheart and Act 2, milestones, the bots' policy); readings in
-[docs/contracts.md](../../docs/contracts.md). Step 4's gate (the bar) is read
-but not tuned. Deviations: the plan's slot bands are kept as pay clamps; a
+[docs/contracts.md](../../docs/contracts.md). Step 4's gate (the bar) holds after
+the review: `minutes` 2.5 / 3.5 / 5 / 8 (a card's run lasts ~3 minutes, not
+15), and Act 2's Starlight per hour reads 1.23× with a third of runs on cards
+(12 h × 4). Deviations: the plan's slot bands are kept as pay clamps; a
 full Boss Rush clear reads "Clear Boss Rush" and `untouched` reads "Reach
 wave w unhurt", for R4. From the 2026-11-15 review (docs/contracts.md): a
 card's run is a detour (the next run goes back to the region and waypoint the
