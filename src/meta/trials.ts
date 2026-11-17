@@ -5,6 +5,7 @@ import type { Effect, TrialDef, TrimId } from '../content/types';
 import { bossDown, gainRelic, regionUnlocked } from './collection';
 import { contractTrims } from './contracts';
 import { secretTrims } from './secrets';
+import { omenTrims } from './omen';
 import type { Profile } from './profile';
 
 /**
@@ -65,8 +66,9 @@ export function trims(profile: Profile): TrimId[] {
 export function wonTrims(profile: Profile): { trim: TrimId; name: string }[] {
   const trials = TRIALS.flatMap((t) => (trialWon(profile, t.id) && t.reward.kind === 'trim' ? [{ trim: t.reward.trim, name: t.reward.name }] : []));
   // Secrets' trims (plans/late-game/05) join the list once found: it only ever shows what is owned.
-  // …and the Contract board's milestones (plans/late-game/10 §4.4).
-  return [...trials, ...secretTrims(profile), ...contractTrims(profile)];
+  // …the Contract board's milestones (plans/late-game/10 §4.4)…
+  // …and the Daily Omen's (plans/late-game/11 §5).
+  return [...trials, ...secretTrims(profile), ...contractTrims(profile), ...omenTrims(profile)];
 }
 
 /** The trims the tower wears: every one paid, less those taken off. */

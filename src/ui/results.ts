@@ -20,6 +20,8 @@ import { curseLine, isCursed } from '../content/cursed';
 import { formatDuration, formatNumber } from '../core/format';
 import { SECRET_BY_ID } from '../content/secrets';
 import { setStyle, setText } from './dom';
+import { regionByIndex } from '../content/regions';
+import { bandDots, digits } from '../meta/omen';
 import { icon, iconMarkup } from './icon';
 
 
@@ -117,6 +119,9 @@ export class ResultsScreen {
   private readonly shardsN: HTMLElement;
   private readonly breakdown: HTMLElement;
   private readonly storedLine: HTMLElement;
+  /** The Daily Omen's block (plans/late-game/11 §2), in place of the shards. */
+  private readonly omen: HTMLElement;
+  private omenLine = '';
   private readonly riftLine: HTMLElement;
   private readonly reliquaryLine: HTMLElement;
   /** "An anomaly came and went" (plans/late-game/04 §2): no timer, no cost, it can come again. */
@@ -146,6 +151,8 @@ export class ResultsScreen {
     private readonly onWear: (id: RelicId, done: (worn: boolean) => void) => void = () => {},
     /** Retry a contract not met (plans/late-game/10 §2). */
     onRetry: (id: string) => void = () => {},
+    /** Copy a Daily Omen's result line (plans/late-game/11 §2); true when it landed. */
+    private readonly onCopy: (text: string) => Promise<boolean> = async () => false,
   ) {
     this.root = document.createElement('section');
     this.root.className = 'screen results';
@@ -161,6 +168,13 @@ export class ResultsScreen {
           <span class="results-stat-n">${iconMarkup('crystal-cluster')}<span class="results-shards-n"></span></span>
           <span class="results-stat-l">Shards</span>
         </button>
+      </div>
+      <div class="results-omen" hidden>
+        <p class="results-omen-head"></p>
+        <p class="results-omen-score"><span class="results-omen-wave"></span><span class="results-omen-band"></span></p>
+        <p class="results-omen-pay"></p>
+        <p class="results-omen-note"></p>
+        <button type="button" class="btn results-omen-copy">Copy result</button>
       </div>
       <p class="results-stored" hidden></p>
       <p class="results-rifts" hidden></p>
@@ -200,6 +214,14 @@ export class ResultsScreen {
     this.shardsN = q('.results-shards-n');
     this.breakdown = q('.results-breakdown');
     this.storedLine = q('.results-stored');
+    this.omen = q('.results-omen');
+    const copy = q<HTMLButtonElement>('.results-omen-copy');
+    copy.addEventListener('click', () => {
+      void this.onCopy(this.omenLine).then((ok) => {
+        copy.textContent = ok ? 'Copied' : 'Couldn’t copy';
+        window.setTimeout(() => { copy.textContent = 'Copy result'; }, 1600);
+      });
+    });
     this.riftLine = q('.results-rifts');
     this.reliquaryLine = q('.results-reliquaries');
     this.anomalyLine = q('.results-anomaly');
@@ -443,7 +465,9 @@ export class ResultsScreen {
     // Retry only for a contract not met; the auto-restart countdown never retries one (§2).
     this.retryId = s.contract && !s.contract.met ? s.contract.id : null;
     this.retry.hidden = this.retryId === null;
-    this.countdown = autoRestart ? BALANCE.automation.restartSeconds : null;
+    this.showOmen(s);
+    // Auto-restart never follows an Omen (plans/late-game/11 §2): Done returns to its view.
+    this.countdown = autoRestart && !s.omen ? BALANCE.automation.restartSeconds : null;
     this.paintAgain();
     this.root.hidden = false;
   }
@@ -451,6 +475,31 @@ export class ResultsScreen {
   hide(): void {
     this.root.hidden = true;
     this.countdown = null;
+  }
+
+  /** The Omen's block (plans/late-game/11 §2): the day, the score and its band, the pay, and Copy result. */
+  private showOmen(s: RunSummary): void {
+    const o = s.omen;
+    this.omen.hidden = o === null;
+    this.shards.hidden = o !== null;
+    this.again.hidden = o !== null;
+    if (o === null) return;
+    this.next.hidden = true;
+    this.hubBtn.textContent = 'Done';
+    this.omenLine = o.line;
+    const q = (sel: string): HTMLElement => this.omen.querySelector<HTMLElement>(sel)!;
+    setText(q('.results-omen-head'), `${o.practice ? 'Practice' : 'Omen'} · ${o.label} · ${regionByIndex(o.region).name}`);
+    setText(q('.results-omen-wave'), `Wave ${o.wave} · ${digits(o.kills)} slain`);
+    setText(q('.results-omen-band'), bandDots(o.band));
+    const pay = q('.results-omen-pay');
+    pay.hidden = o.starlight <= 0 && o.trims.length === 0;
+    setText(pay, [o.starlight > 0 ? `+${formatNumber(o.starlight)} ✦ Starlight` : '', ...o.trims.map((t) => `Tower trim: ${t}`)].filter(Boolean).join(' · '));
+    const note = !o.practice
+      ? 'This is the day’s score.'
+      : o.standing
+        ? `Practice · the day’s score stays wave ${o.standing.wave}.${o.best ? ` Practice best: wave ${o.best.wave}.` : ''}`
+        : `Practice · it pays nothing.${o.best ? ` Practice best: wave ${o.best.wave}.` : ''}`;
+    setText(q('.results-omen-note'), note);
   }
 
   /** Run the auto-restart countdown on the wall clock. */

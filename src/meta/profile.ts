@@ -9,7 +9,7 @@ import type { ContractSpec, TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 24;
+  version: 25;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -144,6 +144,19 @@ export interface Profile {
     /** Where the player was when the taken card sent the next run elsewhere: the region, and the Abyss's waypoint. */
     back: { region: number; start: number } | null;
   };
+  /**
+   * The Daily Omen (plans/late-game/11): the day it first opened (0: not
+   * yet; no earlier date pays), the last days played by day number (pruned
+   * to `BALANCE.omen.keep`), scored Omens in all, the best band ever, and
+   * the run in flight, if any.
+   */
+  omen: {
+    since: number;
+    days: Record<string, OmenDay>;
+    played: number;
+    best: number;
+    pending: { day: number; practice: boolean } | null;
+  };
   /** Trims the player has taken off the tower (N5): every won trim is worn unless listed here. */
   trimsOff: TrimId[];
   /**
@@ -192,7 +205,13 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 24;
+export const PROFILE_VERSION = 25;
+
+/** One day of the Daily Omen (plans/late-game/11 §4.5): its scored try, and the practice best beside it. */
+export interface OmenDay {
+  score: { wave: number; kills: number; resumes: number; starlight: number } | null;
+  practice: { wave: number; kills: number } | null;
+}
 
 /** One rift's journal entry (plans/late-game/02 §5). */
 export interface RiftRecord {
@@ -261,6 +280,7 @@ export function newProfile(now: number): Profile {
     trials: {},
     trial: null,
     contracts: { seq: 0, board: [], pinned: null, taken: null, done: 0, back: null },
+    omen: { since: 0, days: {}, played: 0, best: 0, pending: null },
     trimsOff: [],
     sets: {},
     region: 1,

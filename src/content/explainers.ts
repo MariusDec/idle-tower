@@ -8,7 +8,7 @@
  */
 
 /** Where an explainer is told: one of the hub's views (`ui/hub/hub.ts#HubView`). */
-export type ExplainerView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'stars' | 'tactics' | 'pacts' | 'contracts';
+export type ExplainerView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'stars' | 'tactics' | 'pacts' | 'contracts' | 'omen';
 
 export type ExplainerId =
   | 'tower'
@@ -32,7 +32,8 @@ export type ExplainerId =
   | 'stars'
   | 'tactics'
   | 'pacts'
-  | 'contracts';
+  | 'contracts'
+  | 'omen';
 
 export interface ExplainerDef {
   readonly id: ExplainerId;
@@ -206,6 +207,14 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
       'Three contracts wait here. Each asks for one run played a certain way, and pays when you manage it.',
       'Take one to start its run at once. Fail, and it stays. Finish it, and a new one takes its place.',
       'Rerolling is free. It changes what you do, not what you earn: harder asks pay more.',
+    ],
+  },
+  {
+    id: 'omen', view: 'omen', title: 'The Daily Omen',
+    lines: [
+      'Each day brings one Omen: a run that everyone playing on that date faces too. Same place, same rules, same waves, and the same tower, whatever you have built.',
+      'Your first try of the day is the one that counts. After it, practise as much as you like.',
+      'Copy your result to send to a friend. Paste theirs to compare, or to play their day.',
     ],
   },
 ];

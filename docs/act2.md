@@ -132,3 +132,54 @@ regions'. No pacts, no Trials.
 Twenty more feats, pointing at heat, the Abyss, the Constellations and the
 masteries; they surface once the Blight has fallen, and pay Starlight as
 well as shards (S7.2): by then shards buy only masteries.
+
+## The Daily Omen (plans/late-game/11)
+
+One run a day, built from the local calendar date alone (`meta/omen.ts`).
+It opens with Act 2: an **Omen** button beside Pacts on the home view,
+with a dot while today's scored try is free, and nothing else nudging.
+
+**The day.** `omenDay(now)` is the device's local date as a day number.
+Region and frame each come from a six-day cycle (every one once per six
+days, never two days running); the day's stream (`hashString('omen/n')`)
+splits into `rules` (the pool, one boon, one twist, the banes) and `run`
+(the seed). The pool is the frame's weapon and four others, redrawn until
+one counters the region's opening and not all are blunted by it; a fusion
+boon forces its two weapons in. Banes are pacts as omens, at most rank II,
+drawn until the day's points (banes + twist + boon) reach a target in
+`BALANCE.omen.points`. The modifiers are `content/omens.ts`.
+
+**The tower is the day's, not the player's.** `omenConfig(n)` builds a
+fresh profile with the Forge bought out to `BALANCE.omen.ring[region]`,
+keystones aside unless the twist sets one, and every recipe known; then
+fixes each field a sibling reads from a profile: rifts at Act 2's rates
+with an empty journal (`rate` on a Rift-touched day), no anomaly unless
+Strange Stars deals one, no secrets, reliquaries, relic drops or first
+kill, and the phone's oval. A test holds it deep-equal beside a fresh Act 2
+profile and a full sky.
+
+**Scored and practice.** The first run started for today or yesterday (the
+grace day) is the scored one; after it, practice is unlimited and pays
+nothing. A date pays once, ever, and none before `omen.since` (the day the
+Omen first opened), so moving the clock can match a daily player but never
+beat one. The score is the wave the run ends in, then kills. Bands follow
+the overtime trophies: I the boss felled, II five overtime waves, III ten.
+A scored try pays `2 + band` Starlight (×the Stargazers), and nothing else:
+`bankOmen` keeps the run count, kills and Bestiary sightings, and leaves
+shards, records, trophies, the farm rate, relics, feats, recipes, fusions,
+the rift journal and the Foreman alone. Seven scored Omens wear the
+Augur's Veil; the first band III, Starfall.
+
+**Comparing.** Copy result puts one line on the clipboard: the date, the
+region, the wave and kills, and an 18-character Crockford code (format,
+a 16-bit rules tag of the tables and `OMEN_SIM`, the day, wave, kills,
+resumes, practice, and a keyed 20-bit check). Pasting a friend's message
+finds the code anywhere in it, ignores the line's own numbers, compares,
+and offers to play their day (scored if it's still free, else practice).
+A code from another build says so. No network: the app still has no
+INTERNET permission.
+
+**Tuning.** `npm run omen -- --days 28` plays each day with the active bot
+and the hands-off policy and reads §9's targets (`--ring`, `--points` to
+try other numbers).
+

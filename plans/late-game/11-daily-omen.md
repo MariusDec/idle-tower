@@ -1,6 +1,14 @@
 # 11. The Daily Omen
 
-**Status:** 2026-11-14. Plan, not built. Supersedes §2 of
+**Status:** 2026-11-17. Built: steps 1–4, and step 6's Rift-touched,
+Strange Stars and Lent: Glass Crown. Not built: phase 5 (proof codes and
+the replay worker; `replayOmen` exists and is tested), `tools/act2.ts
+--omen`, and the modifiers whose seams don't exist yet (Gates, Narrowing,
+Hollow Bell, Early Bloom). Tuning: the tower is every ring to 6 (the start
+below fell near wave 13), points [6, 8]; `npm run omen -- --days 28`
+meets the median run and median wave, but not band III ≤ 25% (46%), the
+earliest fall (wave 10, on Blight Heart and The Hollow days) or the
+active/hands-off gap (0). Planned 2026-11-14. Supersedes §2 of
 [d-come-back.md](d-come-back.md), and its Omen lines in §3 (Checks) and
 Open.
 

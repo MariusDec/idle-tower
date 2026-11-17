@@ -23,6 +23,7 @@ import { burnBonus, type BurnTally } from './storedLight';
 import { recipesOpen, recordFusions, recordRecipes } from './recipes';
 import { recordFloor, recordHeat, recordRush, recordStratum, type RushRecord, type StarRecord, type StratumRecord } from './pacts';
 import type { Profile } from './profile';
+import { bankOmen, omenOpen, type OmenBanked } from './omen';
 import { pactLoad } from '../sim/pacts';
 import { BOSS_WAVE, regionAt, waveBonus } from '../sim/systems/waves';
 
@@ -59,7 +60,7 @@ export function buildOf(run: RunState): BuildSummary {
  * A reward only a present player can earn (I9, plans/late-game/01 §9.1).
  * Each late-game plan adds its own kind; the hands-off bot must never see one.
  */
-export type ActiveOnlyKind = 'stored-played' | 'rift' | 'reliquary' | 'anomaly' | 'wayward' | 'contract';
+export type ActiveOnlyKind = 'stored-played' | 'rift' | 'reliquary' | 'anomaly' | 'wayward' | 'contract' | 'omen';
 
 /** What Stored Light paid this run (plans/late-game/01 §2). */
 export interface StoredSummary {
@@ -179,6 +180,8 @@ export interface RunSummary {
   foreman: string[];
   /** Overtime trophies earned this run (N4): the overtime wave each marks, and its one-time shards. */
   trophies: { overtime: number; shards: number }[];
+  /** The Daily Omen (plans/late-game/11 §2): its day, score and pay. Null for every other run. */
+  omen: OmenBanked | null;
 }
 
 /**
@@ -198,6 +201,7 @@ function unlockList(profile: Profile): Map<string, string> {
     add('The Constellations');
     add('The Abyss');
   }
+  if (omenOpen(profile)) add('The Daily Omen');
   if (rushOpen(profile)) add('Boss Rush');
   if (boardOpen(profile)) add('Contracts');
   if (recipesOpen(profile)) add('The Recipe Book');
@@ -252,6 +256,8 @@ export function recordForm(profile: Profile, run: RunState, past: boolean): RunS
 export function bankRun(
   profile: Profile, run: RunState, newCards: readonly string[] = [], speed = 1, tally?: BurnTally,
 ): RunSummary {
+  // The Daily Omen (plans/late-game/11 §4.8): a sealed room, banked on its own.
+  if (run.omen) return omenSummary(profile, run, newCards);
   const wave = run.outcome?.wave ?? run.wave;
   const time = run.outcome?.time ?? run.time;
   const shards = Math.floor(run.shards);
@@ -453,6 +459,64 @@ export function bankRun(
     foreman,
     trial,
     contract,
+    omen: null,
+  };
+}
+
+/**
+ * An Omen's summary (plans/late-game/11 §4.8): `bankOmen` keeps only what
+ * is harmless, so everything else reads as nothing happened. The boss line
+ * and the build still show.
+ */
+function omenSummary(profile: Profile, run: RunState, newCards: readonly string[]): RunSummary {
+  const known = new Set(profile.seenEnemies);
+  const newEnemies = run.seen.filter((id) => !known.has(id));
+  const omen = bankOmen(profile, run);
+  const b = run.boss;
+  return {
+    outcome: run.outcome?.kind ?? 'retreat',
+    regionId: run.regionId,
+    frameId: run.frameId,
+    build: buildOf(run),
+    damageBy: { ...run.damageBy },
+    takenBy: { ...run.takenBy },
+    wave: omen.wave,
+    time: run.outcome?.time ?? run.time,
+    kills: run.kills,
+    level: run.level,
+    shards: 0,
+    stored: null,
+    // I9: only a tap starts an Omen, so its Starlight is a present player's.
+    activeOnly: omen.starlight > 0 ? [{ kind: 'omen', amount: omen.starlight }] : [],
+    shardsFrom: { kills: 0, waves: 0, cards: 0, elites: 0, boss: 0, rifts: 0 },
+    rifts: [],
+    records: { wave: null, overtime: null, shards: null },
+    newEnemies,
+    newCards: [...newCards],
+    newRecipes: [],
+    newFusions: [],
+    boss: b ? { id: b.id, killedIn: b.killedIn, first: false } : null,
+    relics: [],
+    reliquaries: { claimed: 0, faded: 0 },
+    anomaly: null,
+    secrets: null,
+    finalForm: null,
+    feats: [],
+    featsOpen: hubUnlocks(profile).feats,
+    unlocks: [],
+    next: nextGoal(profile),
+    heat: 0,
+    heatRecord: null,
+    abyss: null,
+    floorRecord: null,
+    stratumRecord: null,
+    rush: null,
+    rushRecord: null,
+    trial: null,
+    contract: null,
+    foreman: [],
+    trophies: [],
+    omen,
   };
 }
 

@@ -6,6 +6,7 @@ import { act2Open, collectionPages, hubUnlocks, ownedCursed, rushOpen, trophyCou
 import { towerTier } from './forge';
 import type { Profile } from './profile';
 import { margin } from './secrets';
+import { omenOpen } from './omen';
 import { trims, trialsOpen } from './trials';
 
 /** True once the player can meet the mechanic an explainer tells of (§7.1). */
@@ -56,6 +57,8 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
       return act2Open(profile);
     case 'contracts':
       return boardOpen(profile);
+    case 'omen':
+      return omenOpen(profile);
     default: {
       const exhaustive: never = id;
       return exhaustive;

@@ -207,6 +207,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
       off: 0,
     } : null,
     form: { need: formNeed(config), wave: null },
+    omen: config.omen ? { day: config.omen.day, practice: config.omen.practice, log: [], resumes: 0 } : null,
     outcome: null,
     events: [],
   };
@@ -220,6 +221,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
  */
 export function applyInput(run: RunState, input: RunInput): void {
   if (run.outcome) return;
+  if (run.omen) logInput(run.omen.log, run.tick, input);
   if (input.retreat) {
     shutRift(run);
     fadeReliquaries(run);
@@ -234,6 +236,57 @@ export function applyInput(run: RunState, input: RunInput): void {
   if (input.pick !== undefined) pickCard(run, input.pick);
   if (input.takeAll) takeSuggested(run);
   if (input.ult) castUltimate(run);
+}
+
+/**
+ * The Daily Omen's input ops (plans/late-game/11 §4.7): one number each, an
+ * index added to its base. `resume` is the app's, never the player's.
+ */
+export const OMEN_OP = {
+  retreat: 1, reroll: 2, takeAll: 3, ult: 4, tapRift: 5, resume: 6,
+  pick: 100, banish: 200, chooseRift: 300, claim: 1000,
+} as const;
+
+/** Append `input` to an Omen's log at `tick`, one pair per part, in the order `applyInput` applies them. */
+function logInput(log: number[], tick: number, input: RunInput): void {
+  const O = OMEN_OP;
+  if (input.retreat) {
+    log.push(tick, O.retreat);
+    return;
+  }
+  if (input.claim !== undefined) log.push(tick, O.claim + input.claim);
+  if (input.tapRift) log.push(tick, O.tapRift);
+  // −1 leaves the rift: stored one up, so every op stays positive.
+  if (input.chooseRift !== undefined) log.push(tick, O.chooseRift + input.chooseRift + 1);
+  if (input.reroll) log.push(tick, O.reroll);
+  if (input.banish !== undefined) log.push(tick, O.banish + input.banish);
+  if (input.pick !== undefined) log.push(tick, O.pick + input.pick);
+  if (input.takeAll) log.push(tick, O.takeAll);
+  if (input.ult) log.push(tick, O.ult);
+}
+
+/** One logged op back to its input; null for the app's `resume`. */
+export function omenInput(op: number): RunInput | null {
+  const O = OMEN_OP;
+  if (op >= O.claim) return { claim: op - O.claim };
+  if (op >= O.chooseRift) return { chooseRift: op - O.chooseRift - 1 };
+  if (op >= O.banish) return { banish: op - O.banish };
+  if (op >= O.pick) return { pick: op - O.pick };
+  switch (op) {
+    case O.retreat: return { retreat: true };
+    case O.reroll: return { reroll: true };
+    case O.takeAll: return { takeAll: true };
+    case O.ult: return { ult: true };
+    case O.tapRift: return { tapRift: true };
+    default: return null;
+  }
+}
+
+/** The app resumed this Omen from a snapshot (§4.5): counted, logged, never punished. */
+export function noteResume(run: RunState): void {
+  if (!run.omen) return;
+  run.omen.resumes++;
+  run.omen.log.push(run.tick, OMEN_OP.resume);
 }
 
 /**

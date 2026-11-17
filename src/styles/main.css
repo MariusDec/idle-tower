@@ -2285,6 +2285,7 @@ body {
 /* Tactics and, in Act 2, the Pacts (§9): side by side, so the home view keeps its height. */
 .hub-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: var(--space-2);
 }
@@ -2495,6 +2496,103 @@ body {
 .contracts-actions { display: flex; align-items: center; gap: var(--space-2); }
 .contracts-take { flex: 1 1 auto; }
 .contracts-pin[aria-pressed='true'] { color: var(--fx-gold); }
+
+/* ── The Daily Omen (plans/late-game/11 §2): the day's card, the score, a friend's ── */
+
+/* The home button's one nudge: a dot while today's scored try is free. */
+.hub-omen { position: relative; }
+.hub-omen.has-badge::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--fx-arcane);
+}
+.omen-date {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  color: var(--fx-arcane);
+}
+.omen-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.omen-card { display: flex; flex-direction: column; gap: var(--space-1); }
+.omen-card .entry-head .icon { color: var(--fx-arcane); }
+.omen-card .entry-name { font-size: var(--text-xl); }
+.omen-frame { margin: 0; color: var(--text-2); }
+.omen-pool { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.omen-pool-label { margin-right: var(--space-1); color: var(--text-2); font-size: var(--text-sm); }
+.omen-mods { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.omen-mod { display: flex; gap: var(--space-2); color: var(--text-1); font-size: var(--text-md); }
+.omen-mark { flex: 0 0 auto; width: 1em; text-align: center; }
+.omen-mod.is-boon .omen-mark { color: var(--fx-nature); }
+.omen-mod.is-twist .omen-mark { color: var(--fx-arcane); }
+.omen-mod.is-bane .omen-mark { color: var(--fx-ember); }
+.omen-note { margin: 0; color: var(--text-2); }
+.omen-score {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  color: var(--text-0);
+  white-space: pre-wrap;
+}
+.omen-practice { margin: 0; color: var(--text-2); }
+.omen-begin { align-self: stretch; }
+.omen-actions { display: flex; gap: var(--space-2); }
+.omen-actions > .btn { flex: 1 1 0; }
+.omen-yesterday {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--text-1);
+}
+.omen-strip-head { margin: var(--space-2) 0 0; color: var(--text-2); font-size: var(--text-sm); }
+.omen-strip-days {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+  text-align: center;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.omen-paste {
+  min-height: 44px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2);
+  border: 1px solid var(--surface-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  color: var(--text-0);
+  font: inherit;
+  resize: vertical;
+}
+.omen-paste-error { margin: 0; color: var(--fx-blood); }
+.omen-compare-card { display: flex; flex-direction: column; gap: var(--space-1); }
+.omen-compare-card .entry-text { margin: 0; white-space: pre-wrap; }
+.omen-verdict { color: var(--fx-gold); }
+.omen-version { color: var(--text-2); }
+
+/* The results' Omen block, in place of the shards. */
+.results-omen { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
+.results-omen p { margin: 0; }
+.results-omen-head { color: var(--fx-arcane); font-family: var(--font-display); font-size: var(--text-lg); }
+.results-omen-score { display: flex; gap: var(--space-3); font-family: var(--font-display); font-size: var(--text-2xl); color: var(--text-0); }
+.results-omen-band { color: var(--fx-gold); letter-spacing: 0.1em; }
+.results-omen-pay { color: var(--fx-gold); }
+.results-omen-note { color: var(--text-2); }
 
 /* The Next line opens the board when it names a contract (§4.6). */
 .hub-goal.is-link { cursor: pointer; }

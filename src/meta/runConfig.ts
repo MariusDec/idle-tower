@@ -38,14 +38,17 @@ export const FIRST_DRAFT: readonly Card[] = [
  * and every Forge, Constellation and relic effect once per run, so the sim
  * never sees the profile. The region's rule is the sim's: it reads the
  * region it runs in; so are the pacts' numbers (`sim/pacts.ts`).
+ *
+ * `extra` rules fold in after a Trial's and a contract's: the Daily Omen
+ * (plans/late-game/11) builds its day's tower this way, through the one consumer.
  */
-export function buildRunConfig(profile: Profile): RunConfig {
+export function buildRunConfig(profile: Profile, extra: readonly TrialRule[] = []): RunConfig {
   const abyss = inAbyss(profile);
   // A Trial (N5) sets the frame, the weapons, the slots and the omens; never in the Abyss or Boss Rush.
   // A contract (plans/late-game/10 §4.5) sets the same, in the Abyss and Boss Rush too; a run is one or the other.
   const contract = takenContract(profile);
   const trial = pastRegions(profile) || contract ? null : selectedTrial(profile);
-  const rules = trialRules([...(trial?.rules ?? []), ...contractRules(contract)]);
+  const rules = trialRules([...(trial?.rules ?? []), ...contractRules(contract), ...extra]);
   const frame = rules.frame ? frameById(rules.frame) : selectedFrame(profile);
   const region = selectedRegion(profile);
   const mods: StatMod[] = [];

@@ -255,6 +255,30 @@ function paintTrim(ctx: CanvasRenderingContext2D, R: number, trim: TrimId, time:
         ctx.fillRect(x - R * 0.035, y - R * 0.05, R * 0.07, R * 0.1);
       }
       return;
+    // The Daily Omen's (plans/late-game/11 §5).
+    case 'veil':
+      // The Augur's Veil: a thin violet gauze round the course, drifting slowly.
+      ctx.strokeStyle = withAlpha(FX.arcane, 0.35 + 0.15 * Math.sin(time * 0.6));
+      ctx.lineWidth = R * 0.05;
+      for (let i = 0; i < 3; i++) {
+        const a = time * 0.15 + (i / 3) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, R * 1.18, a, a + Math.PI * 0.45);
+        ctx.stroke();
+      }
+      return;
+    case 'starfall':
+      // Starfall: three small stars falling past the plinth, one after another.
+      for (let i = 0; i < 3; i++) {
+        const t = (time * 0.35 + i / 3) % 1;
+        const a = -Math.PI * 0.75 + (i - 1) * 0.5;
+        const r = R * (1.6 - t * 0.5);
+        ctx.fillStyle = withAlpha(lighten(FX.gold, 0.3), 0.9 * (1 - t));
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * r, Math.sin(a) * r, R * 0.035, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
     default: {
       const exhaustive: never = trim;
       return exhaustive;

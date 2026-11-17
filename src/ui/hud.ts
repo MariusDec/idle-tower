@@ -59,6 +59,7 @@ export class Hud {
   private readonly ult: HTMLButtonElement;
   private readonly ultLabel: HTMLElement;
   private readonly region: HTMLElement;
+  private readonly shardsChip: HTMLElement;
   private readonly shards: HTMLElement;
   private readonly speed: HTMLButtonElement;
   private readonly auto: HTMLButtonElement;
@@ -136,6 +137,7 @@ export class Hud {
     this.ult = this.root.querySelector('.hud-ult')!;
     this.ultLabel = this.root.querySelector('.hud-ult-label')!;
     this.region = this.root.querySelector('.hud-region')!;
+    this.shardsChip = this.root.querySelector('.hud-shards')!;
     this.shards = this.root.querySelector('.hud-shards-n')!;
     this.speed = this.root.querySelector('.hud-speed')!;
     this.auto = this.root.querySelector('.hud-auto')!;
@@ -281,11 +283,15 @@ export class Hud {
       setText(this.wave, overtime ? `+${run.wave - BOSS_WAVE}` : `${wave}/${BOSS_WAVE}`);
       const heat = pactLoad(run.pacts).heat;
       const name = region.rule ? `${region.name} · ${region.rule.name}` : region.name;
-      setText(this.region, heat > 0 ? `${name} · Heat ${heat}` : name);
+      // The Daily Omen (plans/late-game/11 §2): a small tag; its omens are no heat of the player's.
+      const tag = run.omen ? (run.omen.practice ? 'Practice' : 'Omen') : null;
+      setText(this.region, tag ? `${tag} · ${name}` : heat > 0 ? `${name} · Heat ${heat}` : name);
     }
     this.updateBoss(run);
     this.updateBuild(run);
     setText(this.shards, formatNumber(Math.floor(run.shards)));
+    // An Omen banks no shards (plans/late-game/11 §4.8): the counter would only mislead.
+    this.shardsChip.hidden = !!run.omen;
     const hp = Math.max(0, run.tower.hp);
     const max = run.stats.maxHp;
     const frac = max > 0 ? hp / max : 0;

@@ -6,6 +6,8 @@ import { newProfile, type Profile } from '../meta/profile';
 import { exportProfile, listBackups, pushBackup, readBackup } from '../meta/save/transfer';
 import { copyText, pickTextFile, saveTextFile } from '../platform/files';
 import { buildRunConfig } from '../meta/runConfig';
+import { beginOmen, omenConfig, omenLabel, omenSeed, openOmen, rollOmen, settlePending } from '../meta/omen';
+import { regionByIndex } from '../content/regions';
 import {
   autoUlt, automations, draftSeconds, foremanBuy, marchOn, maxSpeed, runSpeed, tacticsScopes, togglePin,
 } from '../meta/automation';
@@ -32,11 +34,11 @@ import { frameById } from '../content/frames';
 import { RELIC_BY_ID } from '../content/relics';
 import { TRIAL_BY_ID } from '../content/trials';
 import { formatNumber } from '../core/format';
-import { applyInput, createRun, step } from '../sim/run';
+import { applyInput, createRun, noteResume, step } from '../sim/run';
 import { banishable, cardKey, holdsAnomaly } from '../sim/systems/draft';
 import { autoUltWanted } from '../sim/systems/ultimate';
 import { cardBadges } from '../sim/suggest';
-import type { DraftOffer, RunState } from '../sim/state';
+import type { DraftOffer, RunConfig, RunState } from '../sim/state';
 import { BALANCE } from '../content/balance';
 import { Renderer } from '../render/renderer';
 import { QualityScaler, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
@@ -139,6 +141,8 @@ export class App {
   private poolAtStart = 0;
   /** The pool ran dry this run: its toast has been told. */
   private poolDry = false;
+  /** The run just banked was a Daily Omen: Done goes back to its view (plans/late-game/11 §2). */
+  private fromOmen = false;
 
   private readonly renderer: Renderer;
   private readonly loop: Loop;
@@ -243,11 +247,15 @@ export class App {
       },
       rerollContract: (id) => this.between(() => rerollContract(this.profile, id)) ?? false,
       pinContract: (id) => this.between(() => pinContract(this.profile, id)) ?? false,
+      // The Daily Omen (plans/late-game/11): only a tap here or on a friend's code starts one (I9).
+      omen: (n) => this.startOmen(n),
+      copy: (text) => copyText(text),
       settings: () => this.openSettings(),
       explain: (view, asked, wait) => this.explain(view, asked, wait),
     });
     this.results = new ResultsScreen(
       els.screens, () => this.leaveResults(), () => this.startRun(), (id, done) => this.wearFromResults(id, done), (id) => this.retryContract(id),
+      (text) => copyText(text),
     );
     this.toasts = new Toasts(els.overlay);
     this.draft = new DraftPanel(
@@ -338,6 +346,8 @@ export class App {
         : '[save] no backup would read; starting a fresh profile');
     }
     const resume = await loadResume(this.profile);
+    // A scored Omen whose snapshot was lost opens its try again (plans/late-game/11 §4.5).
+    settlePending(this.profile, resume?.run ?? null);
     // A save from before the Contract board, or one that opened it unbanked: draw its cards (deterministic, plans/late-game/10 §4.1).
     ensureBoard(this.profile);
     this.bindLifecycle();
@@ -447,8 +457,13 @@ export class App {
     this.startRun();
   }
 
-  /** Results → hub: the Forge, or after a first boss kill, the Map and its light (§7.3). */
+  /** Results → hub: the Forge, or after a first boss kill, the Map and its light (§7.3); after an Omen, its view. */
   private leaveResults(): void {
+    if (this.fromOmen) {
+      this.fromOmen = false;
+      this.go('hub', 'omen');
+      return;
+    }
     const boss = this.profile.ceremony;
     this.profile.ceremony = null;
     if (boss !== null) void this.save();
@@ -485,6 +500,8 @@ export class App {
     this.hud.hide();
     this.toasts.clear();
     this.els.stage.dataset.screen = to;
+    // The day the Omen first opened (plans/late-game/11 §4.2): no date before it pays.
+    if (to === 'hub') openOmen(this.profile, Date.now());
     if (to === 'hub') this.hub.show(this.profile, view, spread);
     if (to === 'run') {
       this.hud.setFormChip(this.profile.tutorial.explained.includes('forms'));
@@ -506,11 +523,25 @@ export class App {
     this.renderer.setFormsSeen(Object.keys(p.forms));
   }
 
-  /** Start a fresh run, or carry on with `resumed` from its snapshot. */
-  private startRun(resumed?: RunState, burn?: SnapshotBurn | null): void {
+  /**
+   * Start day `n`'s Daily Omen (plans/late-game/11 §4.5): its scored try if
+   * still free, else practice. The config and seed are the day's alone.
+   */
+  private startOmen(n: number): void {
+    if (this.screen !== 'hub') return;
+    const { practice } = beginOmen(this.profile, n, Date.now());
+    void this.save();
+    this.startRun(undefined, null, { config: omenConfig(n, practice), seed: omenSeed(n) });
+  }
+
+  /** Start a fresh run, or carry on with `resumed` from its snapshot; `authored` is a Daily Omen's config and seed. */
+  private startRun(resumed?: RunState, burn?: SnapshotBurn | null, authored?: { config: RunConfig; seed: number }): void {
     // A fresh seed per run; the sim is deterministic *given* it.
     const seed = (Math.random() * 2 ** 32) >>> 0;
-    this.run = resumed ?? createRun({ ...buildRunConfig(this.profile), arena: this.renderer.stageOval() }, seed);
+    this.run = resumed
+      ?? (authored ? createRun(authored.config, authored.seed) : createRun({ ...buildRunConfig(this.profile), arena: this.renderer.stageOval() }, seed));
+    // A resumed Omen counts it (§4.5): shown on the code, never punished.
+    if (resumed) noteResume(this.run);
     // Run again past a first kill skips the Map's ceremony rather than
     // owing it to a later run, whose results would hold auto-restart for it.
     // Under Frontier March nothing holds auto-restart, so the ceremony waits
@@ -527,7 +558,8 @@ export class App {
     this.burn = burn ? { engaged: burn.engaged, handsOff: burn.handsOff } : emptyTally();
     this.waveShards = burn ? burn.waveShards : this.run.shards;
     this.waveWall = Date.now();
-    this.poolAtStart = this.profile.storedLight;
+    // An Omen banks no shards (§4.8): Stored Light has nothing to match, so its gauge stays down.
+    this.poolAtStart = this.run.omen ? 0 : this.profile.storedLight;
     this.poolDry = false;
     this.draft.hide();
     this.riftPanel.hide();
@@ -542,6 +574,11 @@ export class App {
     if (trial) this.toasts.show(trial.icon, `Trial · ${trial.name}`, trial.text);
     const contract = contractById(this.profile, this.run.contract);
     if (contract) this.toasts.show('wanted-reward', 'Contract', contractText(contract));
+    const omen = this.run.omen;
+    if (omen) {
+      const where = regionByIndex(rollOmen(omen.day).region).name;
+      this.toasts.show('crystal-ball', `${omen.practice ? 'Practice' : 'Omen'} · ${omenLabel(omen.day)}`, where);
+    }
   }
 
   private simSpeed(): number {
@@ -774,7 +811,13 @@ export class App {
     // results screen (§4.6), see `frame`. The Autocaster casts on the same
     // rule as the idle bot (§6.2).
     const ult = autoUlt(this.profile) && autoUltWanted(run);
-    step(run, SIM_DT, ult ? { ult } : undefined);
+    if (run.omen) {
+      // An Omen's every input lands between steps (plans/late-game/11 §4.7), the Autocaster's too, so its log replays.
+      if (ult) applyInput(run, { ult });
+      step(run, SIM_DT);
+    } else {
+      step(run, SIM_DT, ult ? { ult } : undefined);
+    }
     // A new wave: tally the one just ended, and snapshot on this step boundary (§12.4).
     if (run.wave > this.snapshotWave && !run.outcome) {
       this.snapshotWave = run.wave;
@@ -982,7 +1025,10 @@ export class App {
     const summary = bankRun(this.profile, run, this.newCards, runSpeed(this.profile), this.burn);
     this.burn = emptyTally();
     this.poolAtStart = 0;
-    const marched = marchOn(this.profile, summary);
+    this.fromOmen = summary.omen !== null;
+    if (summary.omen?.trims.length) this.dressTower();
+    // An Omen never marches the frontier on (§2): it is no region's run.
+    const marched = !summary.omen && marchOn(this.profile, summary);
     if (summary.finalForm) this.dressTower();
     // The banked profile lands before the snapshot is cleared: killed between
     // the two, the snapshot is stale (its run count is behind) and is dropped
@@ -1004,7 +1050,8 @@ export class App {
     // A first boss kill holds the results for its ceremony: no auto-restart
     // past it, unless Frontier March is carrying the next run onward.
     const ceremony = this.profile.ceremony !== null;
-    const restart = automations(this.profile).has('auto-restart') && (!ceremony || marched);
+    // Auto-restart never follows an Omen (plans/late-game/11 §2).
+    const restart = automations(this.profile).has('auto-restart') && (!ceremony || marched) && !summary.omen;
     this.results.show(summary, restart, ceremony ? 'Map' : 'Forge');
     if (summary.unlocks.length > 0) this.cues.unlock();
   }

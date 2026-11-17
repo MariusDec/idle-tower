@@ -1062,7 +1062,9 @@ export type TrimId = 'ivy' | 'pennants' | 'runes' | 'gilt' | 'embers' | 'starlit
   // Secrets' (plans/late-game/05): found, never listed before.
   | 'rime' | 'kintsugi' | 'wayward'
   // The Contract board's milestones (plans/late-game/10 §4.4).
-  | 'seals' | 'lanterns';
+  | 'seals' | 'lanterns'
+  // The Daily Omen's (plans/late-game/11 §5): seven scored Omens, and the first band III.
+  | 'veil' | 'starfall';
 
 /**
  * A Trial's constraint (N5), applied to the run's config. A closed union;
@@ -1146,6 +1148,47 @@ export interface ContractSpec {
   readonly mods: readonly ContractMod[];
   /** The Hard slot's rider (§4.4): a rank of this relic on top of the pay; fixed to the slot until done. */
   readonly rider: RelicId | null;
+}
+
+// ── The Daily Omen (plans/late-game/11) ───────────────────────────────
+
+/** Where a day's modifier sits (§4.1): one boon, one twist, then banes until the points fit. */
+export type OmenSlot = 'boon' | 'twist' | 'bane';
+
+/**
+ * One of an Omen modifier's rules (§6): a Trial's, or one only the Omen
+ * sets. A closed union; `meta/omen.ts#omenConfig` is its one consumer.
+ */
+export type OmenRule =
+  | TrialRule
+  /** A keystone is set, owned or not. */
+  | { readonly kind: 'keystone'; readonly id: string }
+  /** A fusion is lit: the draft may offer it. */
+  | { readonly kind: 'fusion'; readonly id: FusionId }
+  /** A relic rides with the tower at this rank (a cursed one with its curse). */
+  | { readonly kind: 'relic'; readonly relic: RelicId; readonly rank: number }
+  /** The tower starts this many levels higher, the drafts banked. */
+  | { readonly kind: 'level'; readonly n: number }
+  /** Rifts (plans/late-game/02) open this many times as often. */
+  | { readonly kind: 'rifts'; readonly rate: number }
+  /** An anomaly (plans/late-game/04) is dealt with this chance. */
+  | { readonly kind: 'anomaly'; readonly chance: number };
+
+/** A Daily Omen modifier (§5): its line is ≤ 15 words (R4); a bane is a pact, ranked by the day. */
+export interface OmenModDef extends ContentEntry {
+  readonly slot: OmenSlot;
+  /** A boon's or twist's rules; a bane's is its pact (`pact`), at the day's rank. */
+  readonly rules: readonly OmenRule[];
+  /** The pact a bane ranks up. */
+  readonly pact?: PactId;
+  /** A bane's highest rank in an Omen (under `BALANCE.omen.maxRank`). */
+  readonly maxRank?: number;
+  /** Difficulty: a boon's are negative; a bane's is per rank. */
+  readonly points: number;
+  /** How often it is drawn within its slot. */
+  readonly weight: number;
+  /** Modifiers it never shares a day with. */
+  readonly clashes?: readonly string[];
 }
 
 /** A rift (plans/late-game/02): a tear that opens mid-wave, for a watching player to tap. */

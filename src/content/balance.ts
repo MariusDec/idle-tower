@@ -738,6 +738,34 @@ export const BALANCE = {
     engagedCap: 1,
   },
   /**
+   * The Daily Omen (plans/late-game/11 §4.3): one profile-free run a day.
+   * Tuned with `npm run omen`.
+   */
+  omen: {
+    /** Weapons in the day's pool, the frame's included. */
+    pool: 5,
+    /**
+     * Forge rings bought out for the Omen's tower, by region index (0 unused).
+     * The plan's start ([0, 1, 2, 3, 4, 5, 6]) fell near wave 13 on the median
+     * day; every ring to 6 meets the median targets (`npm run omen`, 28 days).
+     */
+    ring: [0, 6, 6, 6, 6, 6, 6] as readonly number[],
+    /** The day's difficulty: banes + twist + boon (a boon's are negative). */
+    points: [6, 8] as readonly [number, number],
+    /** No pact past this rank in an Omen. */
+    maxRank: 2,
+    /** Band I: the boss felled (wave 20 held); II, III: this many overtime waves held. */
+    bands: [0, 5, 10] as readonly number[],
+    /** Starlight for the scored try: the base, plus each band's; × the Stargazers (`payStarlight`). */
+    starlight: { base: 2, band: [1, 2, 3] as readonly number[] },
+    /** The Augur's Veil: this many scored Omens, on any days. */
+    trims: { played: 7 },
+    /** Days of history kept. */
+    keep: 60,
+    /** Redraws before the twist is dropped (§4.1). */
+    redraws: 8,
+  },
+  /**
    * How hard overlapping bodies push apart per step, as a fraction of their
    * radius per unit of overlap. Presentation-driven, but it moves bodies, so
    * it lives in the sim and is deterministic.

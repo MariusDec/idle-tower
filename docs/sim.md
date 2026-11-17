@@ -20,6 +20,19 @@ in `systems/enemies.ts`, the `DEVOURERS` set in `systems/combat.ts`) keeps
 it outside `RunState` and rebuilds or derives it, never carrying state
 between steps.
 
+## The Omen's input log
+
+A Daily Omen run (`RunConfig.omen`, plans/late-game/11 §4.7) logs every
+input `applyInput` takes into `RunState.omen.log`, as flat `[tick, op]`
+pairs (`sim/run.ts#OMEN_OP`): retreat, reroll, take-all, the ultimate, a
+rift tapped or chosen, a pick or banish by index, a claim by id, and the
+app's `resume`. Every Omen input lands *between* steps, the Autocaster's
+too (the app casts it with `applyInput` rather than through `step`'s
+input, which would apply after `tick++`), so a logged op means "after
+step `tick`". `meta/omen.ts#replayOmen` plays a log back to the same state
+hash; `tests/omen.test.ts` checks it, a resume included. Every other run
+has `omen: null` and logs nothing.
+
 ## Step order
 
 The order is part of the contract (`sim/run.ts#step`):

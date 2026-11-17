@@ -108,6 +108,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   22: (raw) => ({ ...raw, version: 23, contracts: { seq: 0, board: [], pinned: null, taken: null, done: 0 } }),
   // v24: a taken card remembers where the player was, to go back once its run is banked.
   23: (raw) => ({ ...raw, version: 24, contracts: { ...(raw.contracts as object), back: null } }),
+  // v25: the Daily Omen (plans/late-game/11): not yet opened, nothing played.
+  24: (raw) => ({ ...raw, version: 25, omen: { since: 0, days: {}, played: 0, best: 0, pending: null } }),
 };
 
 export class MigrationError extends Error {}

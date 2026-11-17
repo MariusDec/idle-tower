@@ -99,6 +99,30 @@ export interface RunConfig {
    * and Boss Rush, and while none has surfaced. Absent: none.
    */
   readonly secrets?: SecretConfig | null;
+  /**
+   * The Daily Omen (plans/late-game/11): the day this run is, and whether
+   * it is practice. Null on every other run. Absent: none.
+   */
+  readonly omen?: OmenConfig | null;
+}
+
+/** What an Omen run carries from its config (plans/late-game/11 §4.5). */
+export interface OmenConfig {
+  /** Days since 1970-01-01 of the local date it was started for. */
+  readonly day: number;
+  readonly practice: boolean;
+}
+
+/**
+ * An Omen run's own record (plans/late-game/11 §4.7): its day, whether it is
+ * practice, every input as flat `[tick, op]` pairs (`sim/run.ts#OMEN_OP`),
+ * and how many times the app resumed it from a snapshot.
+ */
+export interface OmenRun {
+  day: number;
+  practice: boolean;
+  log: number[];
+  resumes: number;
 }
 
 /** What a run's secrets read (plans/late-game/05 §3). */
@@ -903,6 +927,8 @@ export interface RunState {
    * reach this run), and the wave it was reached, or null.
    */
   form: { need: number; wave: number | null };
+  /** The Daily Omen (plans/late-game/11): null on every other run. Absent on snapshots from before it. */
+  omen?: OmenRun | null;
   /** How the run ended: the tower fell, withdrew, or (Boss Rush, N8) cleared every stage. */
   outcome: null | { kind: 'fell' | 'retreat' | 'cleared'; wave: number; time: number };
   events: SimEvent[];

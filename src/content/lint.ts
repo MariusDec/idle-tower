@@ -3,6 +3,7 @@ import { BALANCE } from './balance';
 import { ICON_IDS } from './icons';
 import { EXPLAINERS } from './explainers';
 import { CONTRACT_OMENS, QUARRY, contractText } from './contracts';
+import { OMEN_MODS } from './omens';
 import { BOSSES } from './bosses';
 import { EVOLUTIONS } from './evolutions';
 import { FRAMES } from './frames';
@@ -12,7 +13,7 @@ import { RUSH_STAGES } from './rush';
 import { WEAPONS } from './weapons';
 import { STRATA, STRATUM_FLOORS, type StratumDef } from './strata';
 import type {
-  ContractMod, ContractTarget, AnomalyDef, AuraDef, BossDef, BossPhase, SecretDef, SecretNeeds, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, RiftDef, TrialDef, WeaponDef, WebNodeDef,
+  ContractMod, ContractTarget, OmenModDef, AnomalyDef, AuraDef, BossDef, BossPhase, SecretDef, SecretNeeds, ContentEntry, EnemyDef, EvolutionDef, FeatDef, FrameDef, FusionDef, PactDef, PassiveDef, RegionDef, RelicDef, RiftDef, TrialDef, WeaponDef, WebNodeDef,
 } from './types';
 
 /** Longest a card, node or relic line may be (§12.6). */
@@ -735,9 +736,51 @@ export const contractsRule: LintRule = () => {
   return out;
 };
 
+/**
+ * The Daily Omen's modifiers (plans/late-game/11 §6): not a `CONTENT` table
+ * (a mod is named for the keystone, relic or pact it sets), so this rule
+ * holds them to the others' basics, R4 included, and checks every id a
+ * rule names exists, points are whole and signed by slot, and each slot has
+ * something to draw.
+ */
+export const omensRule = (mods: readonly OmenModDef[] = OMEN_MODS): LintRule => (tables) => {
+  const out: LintIssue[] = [];
+  const say = (id: string, problem: string): void => {
+    out.push({ table: 'omens', id, problem });
+  };
+  const forge = (tables.forge as readonly WebNodeDef[] | undefined) ?? [];
+  const has = (table: string, id: string): boolean => (tables[table] ?? []).some((e) => e.id === id);
+  const ids = new Set<string>();
+  for (const m of mods) {
+    if (ids.has(m.id)) say(m.id, 'duplicate id');
+    ids.add(m.id);
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(m.id)) say(m.id, 'id is not kebab-case');
+    if (!ICONS.has(m.icon)) say(m.id, `unknown icon "${m.icon}"`);
+    const words = wordCount(m.text);
+    if (words === 0 || words > MAX_TEXT_WORDS) say(m.id, `text is ${words} words (max ${MAX_TEXT_WORDS})`);
+    if (!Number.isInteger(m.points)) say(m.id, `points ${m.points} are not whole`);
+    if (m.slot === 'boon' && m.points >= 0) say(m.id, 'a boon makes the day easier: its points are negative');
+    if (m.slot !== 'boon' && m.points < 0) say(m.id, `a ${m.slot}'s points are never negative`);
+    if (!(m.weight > 0)) say(m.id, 'weight must be positive');
+    if (m.slot === 'bane') {
+      if (!m.pact || !has('pacts', m.pact)) say(m.id, `bane names unknown pact "${m.pact}"`);
+      if (m.rules.length > 0) say(m.id, 'a bane is its pact alone');
+    }
+    for (const r of m.rules) {
+      if (r.kind === 'keystone' && !forge.some((n) => n.id === r.id && n.type === 'keystone')) say(m.id, `unknown keystone "${r.id}"`);
+      if (r.kind === 'fusion' && !has('fusions', r.id)) say(m.id, `unknown fusion "${r.id}"`);
+      if (r.kind === 'relic' && !has('relics', r.relic)) say(m.id, `unknown relic "${r.relic}"`);
+      if (r.kind === 'omen' && !has('pacts', r.pact)) say(m.id, `unknown pact "${r.pact}"`);
+    }
+  }
+  for (const m of mods) for (const c of m.clashes ?? []) if (!ids.has(c)) say(m.id, `clashes with unknown mod "${c}"`);
+  for (const slot of ['boon', 'twist', 'bane'] as const) if (!mods.some((m) => m.slot === slot)) say(slot, `no ${slot} to draw`);
+  return out;
+};
+
 export const RULES: readonly LintRule[] = [
   uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking, rifts,
-  cursedRelics, anomalies, forms, secretsRule(EXPLAINERS.flatMap((x) => [x.title, ...x.lines])), strataRule(), contractsRule,
+  cursedRelics, anomalies, forms, secretsRule(EXPLAINERS.flatMap((x) => [x.title, ...x.lines])), strataRule(), contractsRule, omensRule(),
 ];
 
 /**
