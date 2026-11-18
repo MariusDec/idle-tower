@@ -12,7 +12,7 @@ nothing tests a model of the game.
 |---|---|
 | `sim.test.ts` | determinism (the final-state hash), damage and armour, the overlap rule, wave templates, the P1 gate, fire rates |
 | `draft.test.ts` | the stat resolver, XP and levels, offers (no new item for a full slot), the ultimate, determinism with inputs, the P2 gate |
-| `arsenal.test.ts` | weapon patterns, count caps, evolutions (offered iff the recipe holds), keystones, the growing pool, the Recipe Book, I4 |
+| `arsenal.test.ts` | weapon patterns, count caps, evolutions (offered iff the recipe holds), keystones, the growing pool, the Recipe Book, I4 on the frontier profiles (`tools/frontier.ts`) |
 | `enemies.test.ts`, `act1.test.ts` | every region's verbs, elites and auras, Act 1's bosses, frames |
 | `bosses.test.ts` | the boss wave and every pattern |
 | `behaviours.test.ts` | shard sources, every Forge behaviour |
@@ -20,7 +20,7 @@ nothing tests a model of the game.
 | `collection.test.ts` | unlocks, seals, relics, feats, offline, banking a boss |
 | `idle.test.ts` | automation, the Autocaster rule, the Tactician, Frontier March, the kill-safe snapshot, the idle bot |
 | `act2.test.ts`, `act2-bot.test.ts` | pacts and heat, Starlight, the Constellations, the Abyss and its enemies; the Act 2 bot |
-| `pacing.test.ts` | a CI-sized pacing run: I3, I6 and I1a in the first hour; the idle bot's verdicts |
+| `pacing.test.ts` | a CI-sized pacing run, the gates' eight profiles: I3 and I1a on each, P3 and I6 on the median (R4, `docs/balancing.md`), in the first hour; the idle bot's verdicts |
 | `perf.test.ts` | the sim's frame budget against 300 bodies ([performance.md](performance.md)) |
 | `content.test.ts` | the content lint: unique ids, icons, names, text ≤ 15 words, effects with consumers, 3 enemies and a boss per region, evolution partners exist, every Forge node reachable |
 | `save.test.ts` | save round-trip, every migration rung with a fixture, the run snapshot |

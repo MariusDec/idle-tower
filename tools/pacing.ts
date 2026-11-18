@@ -26,6 +26,9 @@
  *   npm run pacing -- --act2 --reuse     …from the post-Blight profiles the last
  *                                        --act2 saved (T4): minutes, not half an
  *                                        hour, but only while Act 1 is unchanged
+ *   npm run pacing -- --frontiers        rewrite the arsenal's frontier profiles
+ *                                        (tools/frontier.ts, R4): each Act 1
+ *                                        boss's first fall, on FRONTIER_SEEDS
  *
  * Times are the player's wall clock: sim time divided by the game speed,
  * plus the moments a person spends on drafts and between runs.
@@ -59,6 +62,8 @@ import { boardOpen } from '../src/meta/contracts';
 import { STRATA } from '../src/content/strata';
 import { BALANCE } from '../src/content/balance';
 import { IN_WORKER, parallel, workerJobs } from './parallel';
+import { FRONTIER_FILE, FRONTIER_HOURS, FRONTIER_SEEDS, saveFrontiers, type FrontierSave } from './frontier';
+import { REGIONS } from '../src/content/regions';
 
 /** Wall seconds between runs: the results screen, plus shopping when there is shopping. */
 const BETWEEN_RUNS = { idle: 6, shopping: 15 };
@@ -363,6 +368,11 @@ export function medianWave20(reports: readonly PacingReport[]): number | null {
   return medianOf(reports, (r) => r.firstWave20);
 }
 
+/** I6's CI reading (R4): the median profile's worst gap between reveals in the first two hours, in seconds. */
+export function medianWorstGap(reports: readonly PacingReport[]): number {
+  return medianOf(reports, (r) => r.worstGap.seconds)!;
+}
+
 /** The P4 gate's reading: the median first kill of a boss. */
 export function medianBossKill(reports: readonly PacingReport[], boss: string): number | null {
   return medianOf(reports, (r) => r.bossKills[boss] ?? null);
@@ -445,7 +455,30 @@ function formTotals(verdicts: readonly IdleVerdict[], which: 'handsOff' | 'engag
   return { mode: verdicts[0]?.[which].mode ?? which, forms };
 }
 
-const JOBS = { pacing: runPacing, idle: idleVerdict, act2: act2Verdict };
+/**
+ * One seed's frontier profiles (`tools/frontier.ts`): its checkpoint at each
+ * Act 1 boss's first fall, the Forge shopped after it.
+ */
+export function frontierRun(seed: number, hours = FRONTIER_HOURS): FrontierSave[] {
+  const r = runPacing(hours, seed);
+  return REGIONS.flatMap((region) => {
+    const c = r.checkpoints.find((x) => x.label === region.boss);
+    return c ? [{ seed, boss: region.boss, at: Math.round(c.at), profile: c.profile as unknown as RawProfile }] : [];
+  });
+}
+
+async function frontiersMain(): Promise<void> {
+  if (FAST_STEPS > 1) throw new Error('--frontiers is a gate fixture: read it without --fast');
+  const runs = await runSeeds<FrontierSave[]>('frontiers', FRONTIER_SEEDS.map((k) => [k]));
+  for (const [k, seed] of FRONTIER_SEEDS.entries()) {
+    console.log(`  seed ${seed}: ${runs[k].map((s) => `${BOSS_BY_ID[s.boss as keyof typeof BOSS_BY_ID].name} ${formatDuration(s.at)}`).join(' · ')}`);
+    if (runs[k].length < REGIONS.length) throw new Error(`seed ${seed}: not every boss fell in ${FRONTIER_HOURS} h`);
+  }
+  saveFrontiers(runs.flat());
+  console.log(`frontier profiles written to ${FRONTIER_FILE}`);
+}
+
+const JOBS = { pacing: runPacing, idle: idleVerdict, act2: act2Verdict, frontiers: frontierRun };
 const seedsOf = (n: number): number[] => Array.from({ length: n }, (_, k) => k + 1);
 const runSeeds = <T>(name: keyof typeof JOBS, argLists: unknown[][]): Promise<T[]> => parallel<T>(process.argv[1], name, argLists);
 
@@ -662,6 +695,10 @@ async function main(): Promise<void> {
   const hours = Number(arg('hours', '1'));
   const seed = Number(arg('seed', '1'));
   const seeds = Number(arg('seeds', '0'));
+  if (process.argv.includes('--frontiers')) {
+    await frontiersMain();
+    return;
+  }
   if (process.argv.includes('--act2')) {
     await act2Main(Math.max(1, seeds || 1), hours, process.argv.includes('--reuse'));
     return;
@@ -678,7 +715,7 @@ async function main(): Promise<void> {
     const median = medianWave20(reports);
     console.log(`pacing · ${hours} h · ${seeds} profiles`);
     console.log(`  I3 passes ${count((r) => r.i3)} · I6 passes ${count((r) => r.i6)}`);
-    console.log(`  worst reveal gaps: ${reports.map((r) => formatDuration(r.worstGap.seconds)).join(' ')}`);
+    console.log(`  worst reveal gaps: ${reports.map((r) => formatDuration(r.worstGap.seconds)).join(' ')} · median ${formatDuration(medianWorstGap(reports))} (CI's I6 reading, ≤ 10:00)`);
     if (hours > 2) {
       console.log(`  I6 (2–10 h, ≤ 30:00) passes ${count((r) => r.i6late)} · worst: ${reports.map((r) => formatDuration(r.worstLateGap.seconds)).join(' ')}`);
       const st = reports.map((r) => (r.stretchGap ? formatDuration(r.stretchGap.seconds) : '—'));
