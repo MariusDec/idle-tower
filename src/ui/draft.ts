@@ -415,11 +415,7 @@ export function cardFace(card: Card, opts: CardFaceOptions = {}): HTMLElement {
   art.appendChild(icon(entry.icon));
   el.appendChild(art);
 
-  const name = document.createElement('h3');
-  name.className = 'draft-card-name';
-  name.textContent = entry.name;
-  el.appendChild(name);
-
+  // The type label over the name (plans/visual-identity.md §6.3): "WEAPON", "NEW PASSIVE".
   if (kind) {
     const k = document.createElement('p');
     k.className = 'draft-card-kind';
@@ -427,6 +423,11 @@ export function cardFace(card: Card, opts: CardFaceOptions = {}): HTMLElement {
     k.textContent = fresh ? `New ${kind.toLowerCase()}` : kind;
     el.appendChild(k);
   }
+
+  const name = document.createElement('h3');
+  name.className = 'draft-card-name';
+  name.textContent = entry.name;
+  el.appendChild(name);
 
   el.appendChild(lineWithNumber(line));
 

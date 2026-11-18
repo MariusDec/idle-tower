@@ -2,11 +2,13 @@ import type { Profile } from '../../meta/profile';
 import { formatDuration, formatNumber } from '../../core/format';
 import { act2Open, hubUnlocks, inAbyss, inRush, selectedFrame, selectedRegion, type HubUnlocks } from '../../meta/collection';
 import { RUSH_STAGES } from '../../content/rush';
+import { BOSS_WAVE } from '../../sim/systems/waves';
 import { hubGoal } from '../../meta/goals';
 import { heat } from '../../meta/pacts';
 import type { PactId, RelicId, TrimId } from '../../content/types';
 import { setStyle, setText, toggleClass } from '../dom';
 import { icon, iconMarkup } from '../icon';
+import type { IconId } from '../../content/icons';
 import { CollectionView } from './collection';
 import { FeatsView, featsBadge } from './feats';
 import { ForgeView, StarsView, forgeBadge, starsBadge } from './forge';
@@ -85,13 +87,24 @@ export interface HubActions {
 const SPREAD_MS = 2600;
 
 /** Tabs in the order they unlock and sit (§10.1). */
-const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics' | 'pacts' | 'contracts' | 'omen'>; label: string }[] = [
-  { view: 'forge', label: 'Forge' },
-  { view: 'map', label: 'Map' },
-  { view: 'collection', label: 'Collection' },
-  { view: 'feats', label: 'Feats' },
-  { view: 'stars', label: 'Stars' },
+const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics' | 'pacts' | 'contracts' | 'omen'>; label: string; icon: IconId }[] = [
+  { view: 'forge', label: 'Forge', icon: 'hammer-nails' },
+  { view: 'map', label: 'Map', icon: 'treasure-map' },
+  { view: 'collection', label: 'Collection', icon: 'book-pile' },
+  { view: 'feats', label: 'Feats', icon: 'trophy' },
+  { view: 'stars', label: 'Stars', icon: 'star-formation' },
 ];
+
+/** A tab: its glyph over its label (plans/visual-identity.md §5.2). */
+function tabButton(view: HubView, label: string, glyph: IconId): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'hub-tab';
+  b.setAttribute('role', 'tab');
+  b.dataset.view = view;
+  b.innerHTML = `<span class="hub-tab-icon">${iconMarkup(glyph)}</span><span class="hub-tab-label">${label}</span>`;
+  return b;
+}
 
 /**
  * The hub (§10.1): the home view (title, shards, best wave, the next run's
@@ -105,12 +118,15 @@ export class HubScreen {
   private readonly shards: HTMLElement;
   private readonly best: HTMLElement;
   private readonly bestLabel: HTMLElement;
-  private readonly loadout: HTMLElement;
+  private readonly loadout: HTMLButtonElement;
+  private readonly loadoutValue: HTMLElement;
+  private readonly eyebrow: HTMLElement;
   private readonly goal: HTMLElement;
   private readonly goalIcon: HTMLElement;
   private readonly goalText: HTMLElement;
   private readonly goalFill: HTMLElement;
   private readonly tabs: HTMLElement;
+  private readonly start: HTMLButtonElement;
   private readonly forge: ForgeView;
   private readonly map: MapView;
   private readonly collection: CollectionView;
@@ -141,34 +157,40 @@ export class HubScreen {
       <button type="button" class="help-btn hub-help" data-view="home" aria-label="How this works" hidden>?</button>
       <div class="hub-home">
         <div class="hub-group">
+          <p class="eyebrow hub-eyebrow"></p>
           <h1 class="hub-title">The Tower</h1>
           <p class="hub-sub">The Blight is closing in. Hold the light.</p>
         </div>
         <div class="hub-group">
-          <dl class="hub-stats">
+          <dl class="hub-stats glass">
             <div><dt>Shards</dt><dd class="hub-shards">0</dd></div>
             <div><dt class="hub-best-label">Best wave</dt><dd class="hub-best">—</dd></div>
             <div class="hub-starlight" hidden><dt>Starlight</dt><dd class="hub-starlight-n">0</dd></div>
             <div class="hub-stored" hidden><dt>Stored Light</dt><dd class="hub-stored-n">0</dd></div>
           </dl>
-          <p class="hub-loadout"></p>
-          <div class="hub-actions">
-            <button type="button" class="btn hub-tactics" hidden>Tactics</button>
-            <button type="button" class="btn hub-pacts" hidden>Pacts</button>
-            <button type="button" class="btn hub-contracts" hidden>Contracts</button>
-            <button type="button" class="btn hub-omen" hidden>Omen</button>
-          </div>
-          <div class="hub-goal" hidden>
-            <span class="hub-goal-label">Next</span>
+          <div class="hub-goal callout" hidden>
+            <span class="callout-title hub-goal-label">Next goal</span>
             <span class="hub-goal-icon"></span>
             <span class="hub-goal-text"></span>
-            <div class="hub-goal-bar"><div class="hub-goal-fill"></div></div>
+            <div class="progress hub-goal-bar"><div class="progress-fill hub-goal-fill"></div></div>
+          </div>
+          <button type="button" class="hub-loadout">
+            <span class="hub-loadout-label">Next run</span>
+            <span class="hub-loadout-value"></span>
+          </button>
+          <div class="hub-actions">
+            <button type="button" class="btn btn-sm hub-tactics" hidden>Tactics</button>
+            <button type="button" class="btn btn-sm hub-pacts" hidden>Pacts</button>
+            <button type="button" class="btn btn-sm hub-contracts" hidden>Contracts</button>
+            <button type="button" class="btn btn-sm hub-omen" hidden>Omen</button>
           </div>
         </div>
       </div>
       <nav class="hub-dock">
+        <div class="hub-action-bar">
+          <button type="button" class="btn btn-primary btn-big hub-start">Begin run</button>
+        </div>
         <div class="hub-tabs" role="tablist" hidden></div>
-        <button type="button" class="btn btn-primary btn-big hub-start">Begin run</button>
       </nav>`;
     const q = <T extends HTMLElement>(sel: string): T => this.root.querySelector<T>(sel)!;
     this.home = q('.hub-home');
@@ -176,11 +198,18 @@ export class HubScreen {
     this.best = q('.hub-best');
     this.bestLabel = q('.hub-best-label');
     this.loadout = q('.hub-loadout');
+    this.loadoutValue = q('.hub-loadout-value');
+    this.eyebrow = q('.hub-eyebrow');
+    // The next run's frame and region: the Map, where both are chosen, once it is open.
+    this.loadout.addEventListener('click', () => {
+      if (this.profile && hubUnlocks(this.profile).map) this.setView('map');
+    });
     this.goal = q('.hub-goal');
     this.goalIcon = q('.hub-goal-icon');
     this.goalText = q('.hub-goal-text');
     this.goalFill = q('.hub-goal-fill');
     this.tabs = q('.hub-tabs');
+    this.start = q('.hub-start');
     this.tacticsBtn = q('.hub-tactics');
     this.tacticsBtn.addEventListener('click', () => this.setView('tactics'));
     this.pactsBtn = q('.hub-pacts');
@@ -278,6 +307,7 @@ export class HubScreen {
       ['omen', this.omen.root],
     ];
     for (const [view, v] of views) {
+      v.dataset.hubView = view;
       this.root.insertBefore(v, dock);
       // Each view's "?" (§7.1) sits in its title.
       const help = document.createElement('button');
@@ -297,7 +327,7 @@ export class HubScreen {
       const tab = (e.target as HTMLElement).closest<HTMLElement>('.hub-tab');
       if (tab) this.setView(tab.dataset.view as HubView);
     });
-    q('.hub-start').addEventListener('click', () => actions.start());
+    this.start.addEventListener('click', () => actions.start());
     q('.hub-gear').addEventListener('click', () => actions.settings());
     host.appendChild(this.root);
     this.hide();
@@ -334,21 +364,7 @@ export class HubScreen {
     const shown = TABS.filter((t) => unlocks[t.view]);
     this.tabs.hidden = shown.length === 0;
     toggleClass(this.tabs, 'is-crowded', shown.length >= TABS.length);
-    const home = document.createElement('button');
-    home.type = 'button';
-    home.className = 'hub-tab';
-    home.setAttribute('role', 'tab');
-    home.dataset.view = 'home';
-    home.textContent = 'Tower';
-    this.tabs.replaceChildren(home, ...shown.map((t) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'hub-tab';
-      b.setAttribute('role', 'tab');
-      b.dataset.view = t.view;
-      b.textContent = t.label;
-      return b;
-    }));
+    this.tabs.replaceChildren(tabButton('home', 'Tower', 'castle'), ...shown.map((t) => tabButton(t.view, t.label, t.icon)));
   }
 
   /** `tell`: tell the view's unread explainers (§7.1), after the light spreads when it does. */
@@ -396,9 +412,16 @@ export class HubScreen {
     const best = abyss ? p.abyss.best : rush ? p.rush.best : (p.regions[selectedRegion(p).index]?.bestWave ?? 0);
     setText(this.bestLabel, abyss ? 'Deepest floor' : rush ? 'Record' : 'Best wave');
     const record = rush && p.rush.time !== null ? formatDuration(p.rush.time) : rush && best > 0 ? `${best}/${RUSH_STAGES}` : null;
-    setText(this.best, record ?? (best > 0 ? String(best) : '—'));
-    const where = abyss ? 'The Abyss' : rush ? 'Boss Rush' : selectedRegion(p).name;
-    setText(this.loadout, `${selectedFrame(p).name} · ${where}`);
+    // Past the boss, a region's record is told as the boss wave and its overtime: "20 · +4".
+    const regionBest = !abyss && !rush && best > BOSS_WAVE ? `${BOSS_WAVE} · +${best - BOSS_WAVE}` : null;
+    setText(this.best, record ?? regionBest ?? (best > 0 ? String(best) : '—'));
+    const region = selectedRegion(p);
+    const where = abyss ? 'The Abyss' : rush ? 'Boss Rush' : region.name;
+    setText(this.eyebrow, abyss || rush ? where : `Region ${region.index + 1} · ${where}`);
+    setText(this.loadoutValue, `${selectedFrame(p).name} · ${where}`);
+    const mapOpen = hubUnlocks(p).map;
+    this.loadout.disabled = !mapOpen;
+    toggleClass(this.loadout, 'is-link', mapOpen);
     for (const help of this.root.querySelectorAll<HTMLElement>('.help-btn')) {
       help.hidden = explainersFor(p, help.dataset.view as HubView).length === 0;
     }
@@ -433,6 +456,11 @@ export class HubScreen {
       this.goalFill.parentElement!.hidden = goal.progress === null;
       setStyle(this.goalFill, 'transform', `scaleX(${(goal.progress ?? 0).toFixed(3)})`);
     }
+    // One primary per screen (plans/visual-identity.md §5.5): a view's own forward action
+    // (Claim all, Begin the Omen) takes it while it shows, and Begin run steps back to secondary.
+    const open = this.root.querySelector<HTMLElement>(`:scope > [data-hub-view="${this.view}"]`);
+    const own = [...(open?.querySelectorAll<HTMLElement>('.btn-primary') ?? [])].some((b) => !b.closest('[hidden]'));
+    toggleClass(this.start, 'btn-primary', !own);
     for (const t of this.tabs.querySelectorAll<HTMLElement>('.hub-tab')) {
       const v = t.dataset.view;
       const dot = v !== this.view && ((v === 'forge' && forgeBadge(p)) || (v === 'feats' && featsBadge(p)) || (v === 'stars' && starsBadge(p)));

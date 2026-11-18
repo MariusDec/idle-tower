@@ -19,7 +19,7 @@ import type { AnomalyId, ContentEntry, PassiveId, RelicId, WeaponId } from '../c
 import { curseLine, isCursed } from '../content/cursed';
 import { formatDuration, formatNumber } from '../core/format';
 import { SECRET_BY_ID } from '../content/secrets';
-import { setStyle, setText } from './dom';
+import { motionReduced, setAriaLabel, setStyle, setText } from './dom';
 import { regionByIndex } from '../content/regions';
 import { bandDots, digits } from '../meta/omen';
 import { icon, iconMarkup } from './icon';
@@ -109,7 +109,14 @@ function trialLine(t: NonNullable<RunSummary['trial']>): string {
 
 export class ResultsScreen {
   private readonly root: HTMLElement;
+  private readonly heroN: HTMLElement;
+  private readonly heroL: HTMLElement;
   private readonly headline: HTMLElement;
+  private readonly againRing: SVGElement;
+  private readonly againFill: SVGElement;
+  private readonly againLabel: HTMLElement;
+  /** The hero number's count-up (plans/visual-identity.md §2.6), cancelled by a newer one. */
+  private countUp = 0;
   private readonly bossLine: HTMLElement;
   private readonly rewards: HTMLElement;
   private readonly records: HTMLElement;
@@ -157,10 +164,11 @@ export class ResultsScreen {
     this.root = document.createElement('section');
     this.root.className = 'screen results';
     this.root.innerHTML = `
+      <p class="results-hero"><span class="results-hero-n"></span><span class="results-hero-l"></span></p>
       <p class="results-headline"></p>
       <p class="results-boss" hidden></p>
-      <ul class="results-rewards" hidden></ul>
-      <ul class="results-records"></ul>
+      <section class="results-section" hidden><h3 class="section-head">Rewards</h3><ul class="results-rewards"></ul></section>
+      <section class="results-section" hidden><h3 class="section-head">Records</h3><ul class="results-records"></ul></section>
       <div class="results-stats">
         <div><span class="results-stat-n results-kills"></span><span class="results-stat-l">Kills</span></div>
         <div><span class="results-stat-n results-time"></span><span class="results-stat-l">Held</span></div>
@@ -180,8 +188,8 @@ export class ResultsScreen {
       <p class="results-rifts" hidden></p>
       <p class="results-rifts results-reliquaries" hidden></p>
       <p class="results-rifts results-anomaly" hidden></p>
-      <p class="results-breakdown" hidden></p>
-      <ul class="results-finds"></ul>
+      <dl class="results-breakdown inset" hidden></dl>
+      <section class="results-section" hidden><h3 class="section-head">Discoveries</h3><ul class="results-finds"></ul></section>
       <div class="results-build"></div>
       <button type="button" class="btn results-report-btn" aria-expanded="false">How it went</button>
       <div class="results-report" role="dialog" aria-label="How it went" hidden>
@@ -201,10 +209,21 @@ export class ResultsScreen {
       <div class="results-actions">
         <button type="button" class="btn results-forge">Forge</button>
         <button type="button" class="btn results-retry" hidden>Retry</button>
-        <button type="button" class="btn btn-primary results-again">Run again</button>
+        <button type="button" class="btn btn-primary results-again">
+          <svg class="ring results-again-ring" viewBox="0 0 36 36" aria-hidden="true" hidden>
+            <circle class="ring-track" cx="18" cy="18" r="15"></circle>
+            <circle class="ring-fill results-again-fill" cx="18" cy="18" r="15" pathLength="100" stroke-dasharray="100"></circle>
+          </svg>
+          <span class="results-again-label">Run again</span>
+        </button>
       </div>`;
     const q = <T extends HTMLElement>(sel: string): T => this.root.querySelector<T>(sel)!;
+    this.heroN = q('.results-hero-n');
+    this.heroL = q('.results-hero-l');
     this.headline = q('.results-headline');
+    this.againRing = this.root.querySelector<SVGElement>('.results-again-ring')!;
+    this.againFill = this.root.querySelector<SVGElement>('.results-again-fill')!;
+    this.againLabel = q('.results-again-label');
     this.bossLine = q('.results-boss');
     this.rewards = q('.results-rewards');
     this.records = q('.results-records');
@@ -267,15 +286,19 @@ export class ResultsScreen {
   /** `hubLabel` names where the other button goes: the Forge, or the Map after a first kill. */
   show(s: RunSummary, autoRestart: boolean, hubLabel = 'Forge'): void {
     this.hubBtn.textContent = hubLabel;
-    const where = s.abyss
-      ? `Floor ${s.abyss.floor}, wave ${floorWave(s.wave)}`
-      : s.rush ? `Boss Rush, stage ${s.wave} of ${RUSH_STAGES}`
-        : s.wave > 20 ? `Overtime +${s.wave - 20}` : `Wave ${s.wave}`;
+    // The hero number (plans/visual-identity.md §6.7): how far the run got, counted up.
+    if (s.outcome === 'cleared') {
+      this.hero(null, formatDuration(s.rush?.time ?? s.time), 'Boss Rush cleared');
+    } else if (s.abyss) {
+      this.hero(s.abyss.floor, '', `Floor reached · wave ${floorWave(s.wave)}`);
+    } else if (s.rush) {
+      this.hero(s.wave, '', `Stage reached · of ${RUSH_STAGES}`);
+    } else {
+      this.hero(s.wave, '', s.wave > 20 ? `Wave reached · overtime +${s.wave - 20}` : 'Wave reached');
+    }
     this.headline.textContent = s.outcome === 'cleared'
-      ? `Boss Rush cleared in ${formatDuration(s.rush?.time ?? s.time)}.`
-      : s.outcome === 'retreat'
-        ? `The tower withdraws. ${where}.`
-        : `The light recedes. ${where}.`;
+      ? 'Every boss fell.'
+      : s.outcome === 'retreat' ? 'The tower withdraws.' : 'The light recedes.';
 
     // The boss: felled (and how fast), or still standing. The Abyss counts floors (§9).
     const b = s.boss;
@@ -367,7 +390,7 @@ export class ResultsScreen {
       // Before the Feats tab opens, feats are earned quietly: the tab opens on the batch (§5.4).
       ...(s.featsOpen ? s.feats : []).map((f) => reward(f.icon, `Feat: ${f.name}`, 'feat')),
     );
-    this.rewards.hidden = this.rewards.childElementCount === 0;
+    this.rewards.parentElement!.hidden = this.rewards.childElementCount === 0;
 
     this.records.replaceChildren();
     const rec = (label: string, r: { old: number; now: number } | null, fmt = formatNumber): void => {
@@ -382,7 +405,7 @@ export class ResultsScreen {
     rec('wave', s.records.wave);
     rec('overtime', s.records.overtime, (n) => `+${formatNumber(n)}`);
     rec('shards', s.records.shards);
-    this.records.hidden = this.records.childElementCount === 0;
+    this.records.parentElement!.hidden = this.records.childElementCount === 0;
 
     setText(this.kills, formatNumber(s.kills));
     setText(this.time, formatDuration(s.time));
@@ -405,14 +428,23 @@ export class ResultsScreen {
     const gone = s.anomaly && !s.anomaly.taken ? ANOMALY_BY_ID[s.anomaly.id] : null;
     this.anomalyLine.hidden = gone === null;
     if (gone) setText(this.anomalyLine, `An anomaly came and went: ${gone.name}.`);
+    // Where the shards came from: inset rows, a source and its figure each.
     const f = s.shardsFrom;
-    const parts = [`Kills ${formatNumber(f.kills)}`, `Waves ${formatNumber(f.waves)}`];
-    if (f.elites > 0) parts.push(`Elites ${formatNumber(f.elites)}`);
-    if (f.boss > 0) parts.push(`Boss ${formatNumber(f.boss)}`);
-    if (f.cards > 0) parts.push(`Cards ${formatNumber(f.cards)}`);
-    if (f.rifts > 0) parts.push(`Rifts ${formatNumber(f.rifts)}`);
-    if (st) parts.push(`Stored ${formatNumber(st.bonus)}`);
-    this.breakdown.textContent = parts.join(' · ');
+    const parts: [string, number][] = [['Kills', f.kills], ['Waves', f.waves]];
+    if (f.elites > 0) parts.push(['Elites', f.elites]);
+    if (f.boss > 0) parts.push(['Boss', f.boss]);
+    if (f.cards > 0) parts.push(['Cards', f.cards]);
+    if (f.rifts > 0) parts.push(['Rifts', f.rifts]);
+    if (st) parts.push(['Stored', st.bonus]);
+    this.breakdown.replaceChildren(...parts.map(([label, n]) => {
+      const row = document.createElement('div');
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      dd.textContent = formatNumber(n);
+      row.append(dt, dd);
+      return row;
+    }));
     this.breakdown.hidden = true;
     this.shards.setAttribute('aria-expanded', 'false');
 
@@ -429,7 +461,7 @@ export class ResultsScreen {
       ...s.newCards.filter((k) => !k.startsWith('anomaly:') || s.anomaly?.taken)
         .map(cardEntry).filter((e): e is ContentEntry => e !== null).map((e) => chip(e, 'card')),
     );
-    this.finds.hidden = this.finds.childElementCount === 0;
+    this.finds.parentElement!.hidden = this.finds.childElementCount === 0;
 
     const goal = s.next;
     this.next.hidden = goal === null;
@@ -475,6 +507,35 @@ export class ResultsScreen {
   hide(): void {
     this.root.hidden = true;
     this.countdown = null;
+    this.countUp++;
+  }
+
+  /**
+   * The hero: `n` counted up from zero over 420ms (snapped under reduced
+   * motion), or `text` as it is, with its label under it.
+   */
+  private hero(n: number | null, text: string, label: string): void {
+    setText(this.heroL, label);
+    const run = ++this.countUp;
+    if (n === null) {
+      setText(this.heroN, text);
+      return;
+    }
+    if (motionReduced() || n <= 0) {
+      setText(this.heroN, formatNumber(n));
+      return;
+    }
+    const start = performance.now();
+    const step = (now: number): void => {
+      if (run !== this.countUp) return;
+      const t = Math.min(1, (now - start) / COUNT_UP_MS);
+      // Decelerate: quick to start, settling on the figure.
+      const eased = 1 - (1 - t) ** 3;
+      setText(this.heroN, formatNumber(Math.round(n * eased)));
+      if (t < 1) requestAnimationFrame(step);
+    };
+    setText(this.heroN, '0');
+    requestAnimationFrame(step);
   }
 
   /** The Omen's block (plans/late-game/11 §2): the day, the score and its band, the pay, and Copy result. */
@@ -513,12 +574,24 @@ export class ResultsScreen {
     }
   }
 
+  /** Auto-restart's countdown is a ring on the primary button, draining to the restart. */
   private paintAgain(): void {
-    setText(this.again, this.countdown === null ? 'Run again' : `Run again · ${Math.ceil(this.countdown)}`);
+    const c = this.countdown;
+    this.againRing.toggleAttribute('hidden', c === null);
+    setText(this.againLabel, 'Run again');
+    if (c === null) {
+      this.again.removeAttribute('aria-label');
+      return;
+    }
+    this.againFill.setAttribute('stroke-dashoffset', (100 * (1 - c / BALANCE.automation.restartSeconds)).toFixed(1));
+    setAriaLabel(this.again, `Run again, starting in ${Math.ceil(c)}`);
   }
 }
 
 const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five'];
+
+/** The identity's count-up duration (plans/visual-identity.md §2.6). */
+const COUNT_UP_MS = 420;
 
 /** The results' rift line, or null when the run met none (plans/late-game/02 §2). */
 export function riftLine(rifts: RunSummary['rifts']): string | null {

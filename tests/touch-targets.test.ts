@@ -99,10 +99,18 @@ describe('44 px floor', () => {
   // invisible 44px overlay instead (see `.btn-sm::after`).
   const FLOOR = '(?:44px|48px|52px|var\\(--hit-target\\)|var\\(--control-h-(?:md|lg)\\))';
 
+  /** A 40px control that lays the identity's 44px hit area over itself (plans/visual-identity.md §4.10). */
+  const overlaid = (sel: string): boolean => RULES.some(r =>
+    r.selector.includes(sel) && r.selector.includes('::after')
+    && /width:\s*max\(100%,\s*var\(--hit-target\)\)/.test(r.body)
+    && /height:\s*max\(100%,\s*var\(--hit-target\)\)/.test(r.body));
+
   for (const { sel, axes } of AUDIT) {
     for (const axis of axes) {
       it(`${sel} declares a 44px ${axis}`, () => {
-        expect(declares(sel, new RegExp(`${axis}:\\s*${FLOOR}`))).toBe(true);
+        const floor = declares(sel, new RegExp(`${axis}:\\s*${FLOOR}`));
+        const small = declares(sel, new RegExp(`${axis}:\\s*var\\(--control-h-sm\\)`)) && overlaid(sel);
+        expect(floor || small).toBe(true);
       });
     }
   }

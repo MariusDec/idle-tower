@@ -298,7 +298,8 @@ body {
    The accent outline means *selected* and only that: callouts and containers
    never wear it. */
 .is-selected-surface,
-.glass.is-selected {
+.glass.is-selected,
+.btn.is-selected {
   border: 2px solid var(--accent);
   background: var(--glass-fill-strong);
 }
@@ -448,16 +449,19 @@ body {
   align-items: flex-end;
 }
 
+/* No panels over the battlefield (plans/visual-identity.md §6.1): text on the
+   arena with a soft navy shadow. */
 .hud-level {
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
   font-size: var(--fs-2xl);
-  color: var(--fx-gold);
+  color: var(--text-primary);
   text-shadow: var(--text-shadow);
 }
 
+/* The run's main progress: 6px, round, the accent. */
 .hud-xp {
-  height: 8px;
+  height: 6px;
   border-radius: var(--radius-round);
   background: var(--glass-fill-solid);
   overflow: hidden;
@@ -465,7 +469,8 @@ body {
 
 .hud-xp-fill {
   height: 100%;
-  background: var(--fx-gold);
+  border-radius: inherit;
+  background: var(--accent);
   transform-origin: left center;
   transition: transform var(--dur-instant) var(--ease-decelerate);
 }
@@ -497,30 +502,48 @@ body {
   margin-bottom: var(--space-3);
 }
 
+/* A 32px icon tile per item (plans/visual-identity.md §6.2), its level as bars
+   under it. The tile's tint is the item's colour at 12%, over the no-blur glass. */
 .build-chip {
+  --item: var(--text-secondary);
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  width: 30px;
-  padding: 2px 0;
+  gap: 3px;
+  width: 32px;
+  color: var(--item);
+}
+
+.build-chip::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-sm);
-  background: var(--glass-fill-solid);
+  background:
+    linear-gradient(color-mix(in srgb, var(--item) 12%, transparent), color-mix(in srgb, var(--item) 12%, transparent)),
+    var(--glass-fill-solid);
+}
+
+.build-chip > .icon {
+  position: relative;
+  --icon-size: 20px;
+  margin: 6px;
+  color: var(--item);
 }
 
 /* The draft cards' colours (§10.1): weapons arcane, passives gold, evolutions frost. */
-.build-chip .icon { --icon-size: 22px; color: var(--text-secondary); }
-.build-chip.is-weapon .icon { color: var(--fx-arcane); }
-.build-chip.is-passive .icon { color: var(--fx-gold); }
-.build-chip.is-passive { background: none; }
-.build-chip.is-evolved { box-shadow: 0 0 6px 1px var(--fx-frost); }
-.build-chip.is-evolved .icon { color: var(--fx-frost); }
+.build-chip.is-weapon { --item: var(--fx-arcane); }
+.build-chip.is-passive { --item: var(--fx-gold); }
+.build-chip.is-evolved { --item: var(--fx-frost); }
+.build-chip.is-evolved::before { box-shadow: 0 0 6px 1px var(--fx-frost); }
 /* Final Form's chip (plans/late-game/07): a crown, its pips, gold once formed. */
-.build-chip.is-form { background: none; }
-.build-chip.is-form .icon { color: var(--text-dim); }
-.build-chip.is-formed .icon { color: var(--fx-gold); }
-.build-chip.is-formed { box-shadow: 0 0 6px 1px var(--fx-gold); }
+.build-chip.is-form { --item: var(--text-dim); }
+.build-chip.is-formed { --item: var(--fx-gold); }
+.build-chip.is-formed::before { box-shadow: 0 0 6px 1px var(--fx-gold); }
 
 /* Hold a chip (src/ui/peek.ts): its card, drawn as the draft drew it, above the chip. */
 .build-peek {
@@ -557,19 +580,22 @@ body {
   transform: rotate(-35deg);
 }
 
+/* Level pips are bars, not text: 3px, in the item's colour. */
 .build-pips {
+  position: relative;
   display: flex;
   gap: 1px;
+  width: 32px;
 }
 
 .build-pip {
-  width: 4px;
+  flex: 1 1 0;
   height: 3px;
-  border-radius: 1px;
-  background: var(--glass-fill-strong);
+  border-radius: var(--radius-xs);
+  background: var(--glass-fill-solid);
 }
 
-.build-pip.is-owned { background: var(--fx-gold); }
+.build-pip.is-owned { background: var(--item, var(--fx-gold)); }
 
 .build-stats {
   display: grid;
@@ -674,31 +700,53 @@ body {
   justify-content: space-between;
 }
 
+/* "Wave 7 / 20": sentence case, the number 28px and tabular. */
 .hud-wave {
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-3xl);
+  font-size: var(--fs-hero);
+  line-height: var(--lh-tight);
   text-shadow: var(--text-shadow);
 }
 
 .hud-label {
-  font-size: var(--fs-sm);
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  color: var(--text-secondary);
 }
 
-.hud-pause {
+/* Pause, speed, the Autocaster and zoom: 40px round-rect glass, a 44px target. */
+.hud-pause,
+.hud-speed,
+.hud-auto,
+.hud-zoom-step,
+.hud-zoom-fit {
+  position: relative;
   pointer-events: auto;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: var(--control-h-sm);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-3);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-round);
+  border-radius: var(--radius-button);
   background: var(--glass-fill-solid);
+  box-shadow: var(--glass-shadow);
   color: var(--text-secondary);
-  font-size: var(--fs-sm);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-lg);
   cursor: pointer;
 }
+
+:is(.hud-pause, .hud-speed, .hud-auto, .hud-zoom-step, .hud-zoom-fit)::after {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: max(100%, var(--hit-target));
+  height: max(100%, var(--hit-target));
+  transform: translate(-50%, -50%);
+}
+
+.hud-pause { padding: 0; font-size: var(--fs-sm); }
 
 .hud-hp {
   position: relative;
@@ -733,12 +781,14 @@ body {
   text-shadow: var(--text-shadow);
 }
 
+/* The player's: gold. */
 .hud-shards {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  color: var(--fx-frost);
+  color: var(--fx-gold);
   font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
 }
 
 .hud-shards .icon {
@@ -802,32 +852,15 @@ body {
   margin: 0 auto var(--space-2);
 }
 
-.hud-speed,
-.hud-auto {
-  pointer-events: auto;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-round);
-  background: var(--glass-fill-solid);
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-weight: var(--fw-bold);
-  font-size: var(--fs-lg);
-  cursor: pointer;
-}
-
+/* On: the selected state, an accent border and label. */
 .hud-speed.is-fast,
 .hud-auto.is-on {
-  border-color: var(--fx-gold);
-  color: var(--fx-gold);
+  border-color: var(--accent);
+  color: var(--accent-text);
 }
 
 .hud-auto {
-  font-size: var(--fs-xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--fs-sm);
   color: var(--text-muted);
 }
 
@@ -851,33 +884,15 @@ body {
   gap: var(--space-2);
 }
 
-.hud-zoom-step,
-.hud-zoom-fit {
-  pointer-events: auto;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-round);
-  background: var(--glass-fill-solid);
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-weight: var(--fw-bold);
-  font-size: var(--fs-lg);
-  cursor: pointer;
-}
-
 .hud-zoom-step:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
 .hud-zoom-fit {
-  font-size: var(--fs-xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  border-color: var(--fx-gold);
-  color: var(--fx-gold);
+  font-size: var(--fs-sm);
+  border-color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ── Full-stage screens (hub, results) ───────────────────────────────────── */
@@ -902,11 +917,8 @@ body {
   background: linear-gradient(to bottom, var(--scrim), transparent 45%, var(--scrim));
 }
 
-.hub[data-view="forge"],
-.hub[data-view="map"],
-.hub[data-view="collection"],
-.hub[data-view="feats"],
-.hub[data-view="tactics"] {
+/* Every view but the home sits on the plain ground: its glass rows never sit on the arena. */
+.hub:not([data-view="home"]) {
   background: var(--bg-stop-2) var(--bg-gradient) fixed;
 }
 
@@ -919,68 +931,106 @@ body {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-7) * 2.5);
+  gap: calc(var(--space-7) * 1.75);
   /* Clear the dock below, and match it above so the centre stays put. */
   padding-block: var(--dock-h);
 }
 
-/* Tabs and the always-visible Run button (§10.1). */
+/* The dock (plans/visual-identity.md §5.1–5.2): the one primary in a sticky
+   action bar, and the tabs under it on a glass bar. The bar sits over the
+   arena, so it only blurs where §2.4 allows. */
 .hub-dock {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
+  z-index: var(--z-dock);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4) max(var(--space-5), var(--safe-b));
+  align-items: stretch;
 }
+
+.hub-action-bar {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-3) var(--space-4);
+}
+
+.hub-start { width: min(100%, 340px); }
 
 .hub-tabs {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-1);
+  justify-content: space-around;
+  gap: 2px;
+  padding: var(--space-1) max(var(--space-2), var(--safe-l)) max(var(--space-2), var(--safe-b)) max(var(--space-2), var(--safe-r));
+  border-top: 1px solid var(--glass-border-subtle);
+  background: var(--glass-fill-solid);
+  box-shadow: var(--glass-shadow-up);
 }
 
-/* Five tabs must fit 375 px (D4): tight padding, a smaller face. */
+:root[data-quality='high'] .hub-tabs {
+  background: var(--glass-fill-sheet);
+  backdrop-filter: blur(var(--blur)) saturate(140%);
+}
+
+/* No tabs yet: the action bar keeps the safe area itself. */
+.hub-dock:has(> .hub-tabs[hidden]) .hub-action-bar {
+  padding-bottom: max(var(--space-5), var(--safe-b));
+}
+
+/* A glyph over its label. Seven must fit 375 px (§9), so each takes an equal share. */
 .hub-tab {
   position: relative;
+  flex: 1 1 0;
   min-width: 44px;
-  min-height: 44px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-round);
-  background: var(--glass-fill);
-  color: var(--text-secondary);
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--space-1) 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
   font-family: var(--font-sans);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
   cursor: pointer;
 }
 
-/* The active tab: accent label, bold, a soft accent pill. */
+.hub-tab-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 28px;
+  border-radius: var(--radius-round);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+
+.hub-tab-icon .icon { --icon-size: 20px; }
+
+.hub-tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The active tab: accent label, bold, a soft accent pill behind its glyph. */
 .hub-tab.is-active {
-  border-color: var(--accent-tint-border);
-  background: var(--accent-tint);
   color: var(--accent-text);
   font-weight: var(--fw-bold);
 }
 
-/* Act 2's Stars make seven (§9): tighter still, so one row still holds them at 375 px. */
-.hub-tabs.is-crowded { gap: 2px; }
-.hub-tabs.is-crowded .hub-tab {
-  padding: 0 var(--space-2);
-  font-size: var(--fs-xs);
-  letter-spacing: 0;
-}
+.hub-tab.is-active .hub-tab-icon { background: var(--accent-tint); }
 
-/* Something in the Forge is affordable. */
+/* Something is ready (an affordable node, a claimable feat): an accent dot. */
 .hub-tab.has-badge::after {
   content: '';
   position: absolute;
-  top: 6px;
-  right: 10px;
+  top: 4px;
+  left: calc(50% + 12px);
   width: 8px;
   height: 8px;
   border-radius: var(--radius-round);
@@ -993,41 +1043,55 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .hub-group + .hub-group {
   justify-content: flex-start;
 }
 
+.hub-group > * { width: min(100%, 340px); }
+
+/* The wordmark: sentence case, the one exception to the eyebrow rule. */
 .hub-title {
   margin: 0;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
   font-size: var(--fs-display);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fx-gold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+  text-shadow: var(--text-shadow);
 }
 
 .hub-sub {
   margin: 0;
-  color: var(--text-dim);
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
 }
 
 .hub-stats {
   display: flex;
-  /* Four stats on a phone wrap a label ("Best wave", "Stored Light"): the numbers still share a line. */
-  align-items: flex-end;
-  gap: var(--space-7);
-  margin: var(--space-2) 0 var(--space-2);
+  justify-content: space-around;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  background: var(--glass-fill-solid);
+}
+
+.hub-stats > div {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  min-width: 0;
 }
 
 .hub-stats dt {
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
   color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .hub-stats dd {
@@ -1035,7 +1099,12 @@ body {
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
   font-size: var(--fs-title);
+  line-height: var(--lh-tight);
+  white-space: nowrap;
 }
+
+/* Shards are the player's: gold. */
+.hub-stats dd.hub-shards { color: var(--fx-gold); }
 
 .results {
   background: var(--scrim);
@@ -1080,17 +1149,55 @@ body {
 .results-report-head {
   margin: var(--space-2) 0 0;
   font-family: var(--font-sans);
-  font-size: var(--fs-lg);
-  font-weight: normal;
-  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The hero (plans/visual-identity.md §6.7): the wave reached, counted up. */
+.results-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0;
+}
+
+.results-hero-n {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-giant);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+}
+
+.results-hero-l {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 .results-headline {
   margin: 0;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-hero);
+  font-size: var(--fs-xl);
+  color: var(--text-secondary);
 }
+
+/* Rewards, records, discoveries: each a section under an uppercase header. */
+.results-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: min(360px, 100%);
+}
+
+.results-section[hidden] { display: none; }
 
 .results-records {
   margin: 0;
@@ -1101,9 +1208,7 @@ body {
 .results-record {
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-xl);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
+  font-size: var(--fs-lg);
   color: var(--fx-gold);
 }
 
@@ -1134,20 +1239,22 @@ body {
 
 .results-stat-l {
   font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   color: var(--text-muted);
 }
 
-/* The haul: a button, because a tap opens the breakdown (§4.6). */
+/* The haul: a button, because a tap opens the breakdown (§4.6). Shards are gold. */
 .results-shards {
   min-width: 44px;
   min-height: 44px;
   padding: 0 var(--space-2);
-  border: 1px dashed var(--glass-border);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
-  background: none;
-  color: var(--fx-frost);
+  background: var(--glass-fill);
+  color: var(--fx-gold);
+  font-family: var(--font-sans);
   cursor: pointer;
 }
 
@@ -1155,11 +1262,25 @@ body {
   --icon-size: 22px;
 }
 
+/* Where the shards came from: inset rows. */
 .results-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: min(300px, 100%);
   margin: 0;
-  color: var(--text-dim);
+  padding: var(--space-2) var(--space-3);
   font-size: var(--fs-sm);
 }
+
+.results-breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.results-breakdown dt { color: var(--text-dim); }
+.results-breakdown dd { margin: 0; font-weight: var(--fw-bold); color: var(--fx-gold); }
 
 .results-finds {
   display: flex;
@@ -1228,8 +1349,9 @@ body {
 .results-next-label {
   grid-area: label;
   font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   color: var(--text-muted);
 }
 
@@ -1263,6 +1385,11 @@ body {
   padding-block: var(--space-2);
 }
 
+/* Auto-restart: a white ring on the primary, draining to the restart. */
+.results-again-ring { width: 20px; height: 20px; }
+.results-again-ring .ring-track { stroke: color-mix(in srgb, var(--text-on-fill) 30%, transparent); stroke-width: 3.5; }
+.results-again-ring .ring-fill { stroke: var(--text-on-fill); stroke-width: 3.5; }
+
 /* ── Forge (§5.1) ────────────────────────────────────────────────────────── */
 
 .forge {
@@ -1284,21 +1411,23 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-title);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--fx-gold);
+  font-size: var(--fs-hero);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
 }
 
+/* The player's: gold. */
 .forge-shards {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-3xl);
-  color: var(--fx-frost);
+  font-size: var(--fs-2xl);
+  color: var(--fx-gold);
 }
+
+.forge-shards .icon { --icon-size: 20px; }
 
 .forge-hint {
   margin: 0;
@@ -1326,11 +1455,11 @@ body {
 .forge-hit { fill: transparent; }
 .forge-base { fill: var(--web-bg); }
 
+/* Glass rims (plans/visual-identity.md §5.3): the branch colour only once owned. */
 .forge-shape {
   fill: var(--glass-fill);
-  stroke: var(--branch);
+  stroke: var(--glass-border);
   stroke-width: 2;
-  stroke-opacity: 0.55;
 }
 
 .forge-ring {
@@ -1341,15 +1470,18 @@ body {
 
 .forge-node use { fill: var(--text-dim); }
 .forge-node.is-open use { fill: var(--text-secondary); }
-.forge-node.is-owned .forge-shape { fill: var(--branch); fill-opacity: 0.22; stroke-opacity: 1; }
+.forge-node.is-owned .forge-shape { fill: var(--branch); fill-opacity: 0.22; stroke: var(--branch); stroke-opacity: 1; }
 .forge-node.is-owned use { fill: var(--branch); }
 .forge-node.is-maxed .forge-shape { fill-opacity: 0.4; }
 /* An ascended star (N10): past its last level, ringed in gold. */
 .forge-node.is-ascended .forge-shape { fill-opacity: 0.4; stroke: var(--fx-gold); stroke-opacity: 0.9; stroke-width: 3; }
 .forge-node.is-ascended .forge-level { fill: var(--fx-gold); }
-.forge-node.is-affordable .forge-shape { stroke: var(--fx-gold); stroke-opacity: 1; stroke-width: 3; }
-.forge-node.is-fog .forge-shape { fill: var(--bg-stop-2); stroke-dasharray: 4 4; stroke-opacity: 0.45; }
-.forge-node.is-selected .forge-shape { stroke: var(--text-primary); stroke-width: 3; stroke-opacity: 1; }
+/* Affordable: --success, the identity's "done / can do" (§2.3). */
+.forge-node.is-affordable .forge-shape { stroke: var(--success); stroke-opacity: 1; stroke-width: 3; }
+.forge-node.is-fog .forge-shape { fill: var(--bg-stop-2); stroke: var(--text-muted); stroke-dasharray: 4 4; stroke-opacity: 0.6; }
+/* Selected: an accent wash (SVG takes no gradient fill) and the accent ring. */
+.forge-node.is-selected .forge-shape { fill: rgba(var(--rgb-accent), 0.18); stroke: var(--accent); stroke-width: 3; stroke-opacity: 1; }
+.forge-node.is-owned.is-selected .forge-shape { fill: var(--branch); }
 
 .forge-unknown {
   fill: var(--branch);
@@ -1373,16 +1505,14 @@ body {
 }
 
 /* The Foreman's wishlist (N7): a pinned node wears its place in the queue. */
+/* Its queue number on a flat accent badge; the rim stays as it is. */
+.forge-pin-badge { fill: var(--accent); }
+
 .forge-pin {
-  fill: var(--fx-gold);
+  fill: var(--bg-stop-2);
   font-family: var(--font-sans);
   font-size: var(--fs-xs);
   font-weight: var(--fw-bold);
-}
-
-.forge-node.is-pinned .forge-shape {
-  stroke: var(--fx-gold);
-  stroke-dasharray: 4 3;
 }
 
 /*
@@ -1458,7 +1588,7 @@ body {
 /* The purchase ripple (§10.3). */
 .forge-ripple {
   fill: none;
-  stroke: var(--fx-gold);
+  stroke: var(--accent);
   stroke-width: 4;
   transform-box: fill-box;
   transform-origin: center;
@@ -1472,17 +1602,25 @@ body {
 }
 
 /* The selected node's card, above the dock. Its branch class sets --branch. */
+/* A sheet over the web: the web never shows through its text. */
 .forge-detail {
   position: absolute;
   left: 0;
   right: 0;
   bottom: var(--dock-h);
-  padding: var(--space-3) var(--space-4);
+  z-index: 1;
+  padding: var(--space-4);
   border: 1px solid var(--glass-border);
   border-top: 3px solid var(--branch);
-  border-radius: var(--radius-card);
-  background: var(--glass-fill);
+  border-radius: var(--radius-sheet);
+  background: var(--glass-fill-sheet-solid);
+  box-shadow: var(--glass-shadow);
   text-align: left;
+}
+
+:root[data-quality='high'] .forge-detail {
+  background: var(--glass-fill-sheet);
+  backdrop-filter: blur(var(--blur)) saturate(140%);
 }
 
 .forge-detail-head {
@@ -1499,21 +1637,26 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-xl);
 }
 
 .forge-detail-kind {
   margin: var(--space-1) 0 0;
   font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   color: var(--text-muted);
 }
 
+/* The web's running total: an inset, so it reads as a figure, not prose. */
 .forge-detail-total {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--panel-subtle);
   font-size: var(--fs-sm);
-  color: var(--fx-gold);
+  color: var(--text-secondary);
 }
 
 /* Recentre (U8): back to the fitted view after a pan. */
@@ -1524,8 +1667,9 @@ body {
   min-width: 44px;
   min-height: 44px;
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-round);
-  background: var(--glass-fill);
+  border-radius: var(--radius-button);
+  background: var(--glass-fill-solid);
+  box-shadow: var(--glass-shadow);
   color: var(--text-secondary);
   font-size: var(--fs-lg);
   cursor: pointer;
@@ -1559,19 +1703,23 @@ body {
   gap: var(--space-1);
 }
 
+.forge-buy .icon { --icon-size: 18px; color: var(--fx-gold); }
+
+/* The cost says whether it is in reach: --success, or muted (never red, §2.3). */
+.forge-buy.is-affordable { color: var(--success); }
+
 .forge-buy:disabled {
-  background: var(--glass-fill);
-  border-color: var(--glass-border);
+  opacity: 1;
   color: var(--text-muted);
-  cursor: default;
 }
+
+.forge-buy:disabled .icon { color: var(--text-muted); }
 
 .forge-detail-done {
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
   font-size: var(--fs-lg);
-  text-transform: uppercase;
-  color: var(--fx-gold);
+  color: var(--success);
 }
 
 /* ── Draft (§4.5, §10.1) ──────────────────────────────────────────────────── */
@@ -1602,15 +1750,15 @@ body {
   pointer-events: auto;
 }
 
+/* "Level 2": a 22/700 sentence-case title (plans/visual-identity.md §6.3). */
 .draft-title {
   margin: 0;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-title);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--fx-gold);
-  text-shadow: 0 2px 6px var(--scrim);
+  font-size: var(--fs-3xl);
+  line-height: var(--lh-snug);
+  color: var(--text-primary);
+  text-shadow: var(--text-shadow);
 }
 
 .draft-hint {
@@ -1636,9 +1784,16 @@ body {
 
 .draft-row.is-many .draft-card {
   height: 196px;
+  gap: 2px;
 }
 
+/* Two rows on a phone: a smaller tile, so a four-line effect still clears its slot badge. */
+.draft-row.is-many .draft-card-icon { width: 36px; height: 36px; border-radius: var(--radius-lg); }
+.draft-row.is-many .draft-card-icon .icon { --icon-size: 24px; }
+.draft-row.is-many .draft-card-kind { margin-top: 0; }
+
 .draft-card {
+  --item: var(--fx-gold);
   position: relative;
   min-width: 44px;
   min-height: 44px;
@@ -1659,17 +1814,21 @@ body {
   animation: card-in var(--dur-slow) var(--ease-decelerate) both;
 }
 
+/* The identity's stagger: 60ms a card, capped at 240ms. */
 .draft-card:nth-child(2) { animation-delay: 60ms; }
 .draft-card:nth-child(3) { animation-delay: 120ms; }
+.draft-card:nth-child(4) { animation-delay: 180ms; }
+.draft-card:nth-child(n + 5) { animation-delay: 240ms; }
 
 @keyframes card-in {
   from { transform: perspective(600px) rotateY(80deg); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
 
+/* The suggested card wears the selected state: strong glass and a 2px accent border. */
 .draft-card.is-suggested {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), var(--glass-shadow);
+  padding: calc(var(--space-2) - 1px);
+  border: 2px solid var(--accent);
   background: var(--glass-fill-strong), var(--glass-fill-solid);
 }
 
@@ -1701,44 +1860,44 @@ body {
   color: var(--accent-text);
 }
 
+/* The identity's icon tile: a rounded square tinted with the item's colour. */
 .draft-card-icon {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-round);
-  background: var(--glass-fill);
-  color: var(--fx-gold);
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-2xl);
+  background: color-mix(in srgb, var(--item) 12%, transparent);
+  color: var(--item);
 }
 
 .draft-card-icon .icon {
-  --icon-size: 34px;
+  --icon-size: 30px;
 }
 
-.draft-card-weapon .draft-card-icon { color: var(--fx-arcane); }
-.draft-card-fallback .draft-card-icon { color: var(--fx-nature); }
+/* The draft's colour coding (§10.1): weapons arcane, passives gold. */
+.draft-card-weapon { --item: var(--fx-arcane); }
+.draft-card-fallback { --item: var(--fx-nature); }
 
 /* Evolutions glow (§10.1): the one card worth stopping for. A fusion (N9) too.
-   Frost, not gold: gold already means passives, and the suggested card. */
+   In arcane (plans/visual-identity.md §6.3), on a lit tile and rim. */
 .draft-card-evolution,
 .draft-card-fusion {
-  border-color: var(--fx-frost);
-  background: linear-gradient(180deg, rgba(var(--rgb-frost), 0.16), transparent 60%), var(--glass-fill-solid);
+  --item: var(--fx-arcane);
+  border-color: var(--fx-arcane);
+  background: linear-gradient(180deg, rgba(var(--rgb-arcane), 0.18), transparent 60%), var(--glass-fill-solid);
 }
 
 .draft-card-evolution .draft-card-icon,
 .draft-card-fusion .draft-card-icon {
   color: var(--bg-stop-2);
-  background: var(--fx-frost);
+  background: var(--fx-arcane);
   animation: evolution-glow 1.4s ease-in-out infinite alternate;
 }
 
-.draft-card-evolution .draft-card-num,
-.draft-card-fusion .draft-card-num { color: var(--fx-frost); }
-
 @keyframes evolution-glow {
-  from { box-shadow: 0 0 6px rgba(var(--rgb-frost), 0.4); }
-  to { box-shadow: 0 0 22px rgba(var(--rgb-frost), 0.9); }
+  from { box-shadow: 0 0 6px rgba(var(--rgb-arcane), 0.4); }
+  to { box-shadow: 0 0 22px rgba(var(--rgb-arcane), 0.9); }
 }
 
 :root[data-motion='reduce'] .draft-card-evolution .draft-card-icon,
@@ -1761,10 +1920,12 @@ body {
 }
 
 .draft-card-kind {
-  margin: 0;
+  margin: var(--space-1) 0 0;
   font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-badge);
   color: var(--text-muted);
 }
 
@@ -1776,11 +1937,13 @@ body {
   color: var(--text-secondary);
 }
 
+/* The key number, bold in the item's colour. */
 .draft-card-num {
-  color: var(--fx-gold);
+  color: var(--item);
   font-weight: var(--fw-bold);
 }
 
+/* Pips are bars in the item's colour; the level this card gives is white. */
 .draft-card-pips {
   display: flex;
   gap: 3px;
@@ -1788,12 +1951,12 @@ body {
 
 .draft-card-pips .pip {
   width: 10px;
-  height: 4px;
+  height: 3px;
   border-radius: var(--radius-round);
-  background: var(--glass-fill-strong);
+  background: var(--surface);
 }
 
-.draft-card-pips .pip.is-owned { background: var(--fx-gold); }
+.draft-card-pips .pip.is-owned { background: var(--item); }
 .draft-card-pips .pip.is-next { background: var(--text-primary); }
 
 /* Hold for details (R4): the card turns over to its full text. */
@@ -1843,8 +2006,8 @@ body {
   white-space: nowrap;
 }
 
-.draft-card-badge .icon { --icon-size: 12px; color: var(--fx-frost); }
-.draft-card-badge.is-complete { color: var(--fx-frost); }
+.draft-card-badge .icon { --icon-size: 12px; color: var(--fx-arcane); }
+.draft-card-badge.is-complete { background: rgba(var(--rgb-arcane), 0.16); color: var(--fx-arcane); }
 .draft-card-badge.is-counter { color: var(--success); }
 
 .draft-timer {
@@ -1855,9 +2018,11 @@ body {
   overflow: hidden;
 }
 
+/* The countdown: a 4px accent bar. */
 .draft-timer-fill {
   height: 100%;
-  background: var(--fx-gold);
+  border-radius: inherit;
+  background: var(--accent);
   transform-origin: left center;
 }
 
@@ -1977,11 +2142,12 @@ body {
 
 /* Pause (the timer and the arena both wait): lit while it holds. */
 .draft-hold.is-active {
-  border-color: var(--fx-gold);
-  color: var(--fx-gold);
+  border-color: var(--accent);
+  background: var(--glass-fill-strong);
+  color: var(--accent-text);
 }
 
-/* Banish (N1): while armed, the cards it may strike wear a scarlet mark; the rest dim. */
+/* Banish (N1): while armed, the cards it may strike are the selected set; the rest dim. */
 .draft-banish.is-active {
   border-color: var(--error);
   color: var(--error);
@@ -1991,9 +2157,11 @@ body {
   opacity: 0.45;
 }
 
+/* The armed target set wears the selected state (plans/visual-identity.md §4.3). */
 .draft-row.is-banishing .draft-card.is-banishable {
-  border-color: var(--error);
-  box-shadow: 0 0 0 1px var(--error);
+  padding: calc(var(--space-2) - 1px);
+  border: 2px solid var(--accent);
+  background: var(--glass-fill-strong), var(--glass-fill-solid);
 }
 
 .draft-row.is-banishing .draft-card.is-banishable::after {
@@ -2001,7 +2169,7 @@ body {
   position: absolute;
   top: var(--space-1);
   right: var(--space-2);
-  color: var(--error);
+  color: var(--accent-text);
   font-size: var(--fs-lg);
   font-weight: var(--fw-bold);
 }
@@ -2019,6 +2187,7 @@ body {
 }
 
 .modal-card {
+  animation: reveal-in var(--dur-base) var(--ease-decelerate) both;
   width: min(360px, calc(100% - var(--space-6) - var(--safe-l) - var(--safe-r)));
   max-height: calc(100% - var(--space-6));
   overflow: auto;
@@ -2031,18 +2200,27 @@ body {
   text-align: center;
 }
 
+/* Sentence case, 22/700 (plans/visual-identity.md §2.5). */
 .modal-title {
   margin: 0 0 var(--space-3);
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-title);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-3xl);
+  line-height: var(--lh-snug);
 }
+
+:root[data-motion='reduce'] .modal-card { animation: none; }
 
 .modal-body {
   margin: 0 0 var(--space-4);
-  color: var(--text-dim);
+  color: var(--text-secondary);
+}
+
+/* The pause menu's build stats: inset rows inside the sheet. */
+.modal-card .build-stats {
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--panel-subtle);
 }
 
 .modal-actions {
@@ -2074,10 +2252,10 @@ body {
   margin: var(--space-4) 0 var(--space-2);
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-xl);
+  font-size: var(--fs-xs);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
+  letter-spacing: var(--tracking-label);
+  color: var(--text-muted);
 }
 
 /* ── HUD: the boss bar (§4.3) ────────────────────────────────────────────── */
@@ -2091,10 +2269,17 @@ body {
   text-shadow: var(--text-shadow);
 }
 
+/* The boss keeps blood (§6.4), on the no-blur glass with a blood hairline. */
+.hud-boss {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid rgba(var(--rgb-blood), 0.6);
+  border-radius: var(--radius-card);
+  background: var(--glass-fill-solid);
+  box-shadow: var(--glass-shadow);
+}
+
 .hud-boss-name {
   font-size: var(--fs-lg);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--text-primary);
 }
 
@@ -2104,10 +2289,9 @@ body {
 }
 
 .hud-boss-bar {
-  height: 10px;
-  border: 1px solid var(--fx-blood);
+  height: 8px;
   border-radius: var(--radius-round);
-  background: var(--glass-fill-solid);
+  background: rgba(var(--rgb-blood), 0.18);
   overflow: hidden;
 }
 
@@ -2135,43 +2319,44 @@ body {
   pointer-events: none;
 }
 
+/* Glass, radius 16, an icon tile, a title and a meta line (§6.5). Over the
+   running arena, so the no-blur glass. */
 .toast {
-  width: min(100%, 340px);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--glass-border);
-  border-left: 3px solid var(--fx-gold);
-  border-radius: var(--radius-card);
-  background: var(--glass-fill-solid);
-  text-align: left;
-  animation: toast-in var(--dur-base) var(--ease-decelerate) both;
-}
-
-.toast-enemy { border-left-color: var(--fx-blood); }
-.toast-relic { border-left-color: var(--fx-arcane); }
-
-.toast-head {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  width: min(100%, 340px);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-2xl);
+  background: var(--glass-fill-solid);
+  box-shadow: var(--glass-shadow);
+  color: var(--fx-gold);
+  text-align: left;
+  animation: toast-in var(--dur-slow) var(--ease-decelerate) both;
 }
 
-.toast-head .icon { --icon-size: 20px; }
-.toast-enemy .toast-head .icon { color: var(--fx-blood); }
-.toast-relic .toast-head .icon { color: var(--fx-arcane); }
+.toast-enemy { color: var(--fx-blood); }
+.toast-relic { color: var(--fx-arcane); }
+
+.toast-tile { width: 40px; height: 40px; border-radius: var(--radius-lg); }
+.toast-tile .icon { --icon-size: 24px; }
+.toast-text { min-width: 0; }
 
 .toast-title {
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
   font-size: var(--fs-lg);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--text-primary);
 }
 
 .toast-line {
-  margin: var(--space-1) 0 0;
+  margin: 2px 0 0;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
 }
+
+:root[data-motion='reduce'] .toast { animation: none; }
 
 @keyframes toast-in {
   from { transform: translateY(-8px); opacity: 0; }
@@ -2180,14 +2365,40 @@ body {
 
 /* ── Hub home: the next run, and the Next goal line (§7.4) ───────────────── */
 
+/* The next run's frame and region: a secondary row, with a chevron once it opens the Map. */
 .hub-loadout {
-  margin: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--hit-target);
+  padding: 0 var(--space-7) 0 var(--space-4);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  background: var(--glass-fill-solid);
+  color: var(--text-primary);
   font-family: var(--font-sans);
-  font-weight: var(--fw-bold);
-  font-size: var(--fs-lg);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-dim);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub-loadout:disabled { cursor: default; padding-right: var(--space-4); }
+.hub-loadout-label { color: var(--text-muted); }
+.hub-loadout-value { font-weight: var(--fw-bold); }
+
+.chevron::after,
+.hub-loadout.is-link::after {
+  content: '';
+  position: absolute;
+  right: var(--space-4);
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid var(--text-muted);
+  border-right: 2px solid var(--text-muted);
+  transform: translateY(-50%) rotate(45deg);
 }
 
 .hub-goal {
@@ -2196,39 +2407,16 @@ body {
   grid-template-areas: 'label icon text' 'bar bar bar';
   align-items: center;
   gap: var(--space-1) var(--space-2);
-  width: min(100%, 340px);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-card);
-  background: var(--glass-fill-subtle);
+  padding-block: var(--space-2);
+  background: var(--glass-fill-solid);
   text-align: left;
 }
 
-.hub-goal-label {
-  grid-area: label;
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-
+.hub-goal-label { grid-area: label; }
 .hub-goal-icon { grid-area: icon; color: var(--fx-gold); }
-.hub-goal-text { grid-area: text; font-size: var(--fs-sm); }
-
-.hub-goal-bar {
-  grid-area: bar;
-  height: 4px;
-  border-radius: var(--radius-round);
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.hub-goal-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: inherit;
-  transform-origin: left center;
-}
+.hub-goal-icon .icon { --icon-size: 20px; }
+.hub-goal-text { grid-area: text; font-size: var(--fs-md); }
+.hub-goal-bar { grid-area: bar; margin-top: var(--space-1); }
 
 /* ── Shared view chrome: Map, Collection, Feats ──────────────────────────── */
 
@@ -2255,10 +2443,9 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-title);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--fx-gold);
+  font-size: var(--fs-hero);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
 }
 
 /* ── The Map (§5.2) ──────────────────────────────────────────────────────── */
@@ -2322,8 +2509,11 @@ body {
   box-shadow: var(--glass-shadow);
 }
 
-.map-region.is-cleared { border-color: rgba(var(--rgb-gold), 0.5); }
-.map-region.is-chosen { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--glass-shadow); background: var(--glass-fill-strong); }
+/* The selected region: strong glass and the 2px accent border (§4.3). */
+.map-region.is-chosen {
+  border: 2px solid var(--accent);
+  background: var(--glass-fill-strong);
+}
 
 .map-region.is-dark {
   padding: var(--space-3);
@@ -2358,15 +2548,8 @@ body {
   flex: 1 1 auto;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-xl);
   color: var(--text-primary);
-}
-
-.map-region-tag {
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--fx-gold);
 }
 
 .map-region-stats {
@@ -2378,8 +2561,9 @@ body {
 
 .map-region-stats dt {
   font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   color: var(--text-muted);
 }
 
@@ -2387,7 +2571,7 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-xl);
+  font-size: var(--fs-lg);
 }
 
 .map-region-trophy,
@@ -2409,7 +2593,6 @@ body {
 .map-trials-toggle {
   width: 100%;
   justify-content: flex-start;
-  font-size: var(--fs-sm);
 }
 
 .map-trials-toggle .icon { color: var(--fx-gold); }
@@ -2445,7 +2628,7 @@ body {
   color: var(--text-primary);
 }
 
-.map-trial.is-won .map-trial-name { color: var(--fx-gold); }
+.map-trial.is-won .map-trial-name { color: var(--success); }
 
 .map-trial-rule {
   font-size: var(--fs-xs);
@@ -2460,7 +2643,6 @@ body {
 .map-trial-go {
   grid-column: 2;
   grid-row: 1 / span 3;
-  font-size: var(--fs-sm);
 }
 
 /* ── Collection and Feats lists (§5.3, §5.4) ─────────────────────────────── */
@@ -2557,9 +2739,11 @@ body {
 .collection-heading {
   margin: var(--space-4) 0 var(--space-2);
   font-family: var(--font-sans);
-  font-size: var(--fs-lg);
-  font-weight: normal;
-  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .entry-list {
@@ -2572,7 +2756,7 @@ body {
 }
 
 .entry {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
   background: var(--glass-fill);
@@ -2590,7 +2774,7 @@ body {
   width: 100%;
   min-width: 44px;
   min-height: 44px;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3);
   border: 0;
   background: none;
   color: inherit;
@@ -2609,11 +2793,25 @@ body {
 
 .entry-head .icon { --icon-size: 22px; color: var(--fx-gold); }
 
+/* A list row (plans/visual-identity.md §5.5): the artwork in a 32px icon tile,
+   its title beside it, the row's text aligned under the title. */
+.entry-list .entry-head > .icon:first-child {
+  --icon-size: 20px;
+  box-sizing: content-box;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.entry-list .entry-head:has(> .icon:first-child) ~ :is(.entry-text, .entry-lore, .feat-bar, .feat-claim) {
+  margin-left: calc(32px + var(--space-2));
+}
+
 .entry-name {
   flex: 1 1 auto;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-xl);
+  font-size: var(--fs-lg);
 }
 
 .entry-count {
@@ -2624,7 +2822,7 @@ body {
   color: var(--text-dim);
 }
 
-.entry-count .icon { --icon-size: 14px; color: var(--fx-frost); }
+.entry-count .icon { --icon-size: 14px; color: var(--fx-gold); }
 
 .entry-text {
   margin: var(--space-1) 0 0;
@@ -2642,8 +2840,8 @@ body {
 .feats-count {
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-xl);
-  color: var(--text-dim);
+  font-size: var(--fs-lg);
+  color: var(--text-secondary);
 }
 
 .feats-all { align-self: stretch; }
@@ -2654,6 +2852,8 @@ body {
 .feat-claim {
   margin-top: var(--space-2);
 }
+
+.feat.is-ready .entry-count { color: var(--success); }
 
 .feat-bar {
   height: 4px;
@@ -2673,20 +2873,29 @@ body {
 /* ── Tactics: the Tactician's priority list (§6.2) ───────────────────────── */
 
 /* Tactics and, in Act 2, the Pacts (§9): side by side, so the home view keeps its height. */
+/* One row of secondaries on a phone; it wraps only at a larger text size. */
 .hub-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--space-2);
 }
+
+.hub-actions .btn {
+  flex: 1 1 auto;
+  padding: 0 var(--space-2);
+  font-size: var(--fs-sm);
+}
 .hub-actions:not(:has(> :not([hidden]))) { display: none; }
 
 .tactics-head {
   margin: var(--space-3) 0 var(--space-2);
   font-family: var(--font-sans);
-  font-size: var(--fs-lg);
-  font-weight: normal;
-  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .tactics-head:first-child { margin-top: 0; }
@@ -2707,7 +2916,7 @@ body {
 
 .tactics-row .icon { --icon-size: 22px; color: var(--fx-gold); }
 .tactics-row .entry-name { min-width: 0; font-size: var(--fs-lg); }
-.tactics-row.is-dragging { border-color: var(--fx-gold); opacity: 0.8; }
+.tactics-row.is-dragging { border: 2px solid var(--accent); background: var(--glass-fill-strong); opacity: 0.9; }
 
 .tactics-grip {
   touch-action: none;
@@ -2720,7 +2929,7 @@ body {
   min-width: 1.5em;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  color: var(--fx-gold);
+  color: var(--accent-text);
 }
 
 .tactics-btn {
@@ -2764,8 +2973,6 @@ body {
 
 .results-boss.is-first {
   color: var(--fx-gold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .results-rewards {
@@ -2830,7 +3037,6 @@ body {
     radial-gradient(1px 1px at 84% 82%, rgba(255, 255, 255, 0.45), transparent),
     var(--bg-stop-2);
 }
-.forge.stars .forge-title { color: var(--fx-frost); }
 .branch-smith { --branch: var(--fx-gold); }
 .branch-warden { --branch: var(--fx-nature); }
 .branch-lantern { --branch: var(--fx-ember); }
@@ -2885,7 +3091,7 @@ body {
 .contracts-pips { flex: 1 1 auto; color: var(--fx-gold); letter-spacing: 0.1em; }
 .contracts-pay { color: var(--fx-gold); white-space: nowrap; }
 .contracts-card.is-hard .contracts-pips { color: var(--fx-ember); }
-.contracts-card.is-pinned { border-color: var(--fx-gold); }
+.contracts-card.is-pinned { border: 2px solid var(--accent); background: var(--glass-fill-strong); }
 .contracts-text { color: var(--text-secondary); font-size: var(--fs-sm); }
 .contracts-heat,
 .contracts-lead,
@@ -2894,7 +3100,7 @@ body {
 .contracts-pacts { min-height: 44px; }
 .contracts-actions { display: flex; align-items: center; gap: var(--space-2); }
 .contracts-take { flex: 1 1 auto; }
-.contracts-pin[aria-pressed='true'] { color: var(--fx-gold); }
+.contracts-pin[aria-pressed='true'] { color: var(--accent-text); }
 
 /* ── The Daily Omen (plans/late-game/11 §2): the day's card, the score, a friend's ── */
 
@@ -2997,8 +3203,7 @@ body {
 
 /* The Next line opens the board when it names a contract (§4.6). */
 .hub-goal.is-link { cursor: pointer; }
-.hub-goal.is-link:hover,
-.hub-goal.is-link:focus-visible { border-color: var(--fx-gold); }
+.hub-goal.is-link:hover { border-color: var(--accent-tint-border); }
 
 .map-region.is-abyss {
   border-color: rgba(var(--rgb-arcane), 0.6);
@@ -3084,21 +3289,26 @@ body {
 /* ── Settings (§10.1, P9) ────────────────────────────────────────────────── */
 
 /* The gear: the home view's top-right corner, clear of the safe area. */
+/* A round-rect glass icon button (plans/visual-identity.md §5.1). */
 .hub-gear {
   position: absolute;
   top: max(var(--space-3), var(--safe-t));
   right: max(var(--space-3), var(--safe-r));
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 44px;
   min-height: 44px;
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-round);
+  border-radius: var(--radius-button);
   background: var(--glass-fill-solid);
+  box-shadow: var(--glass-shadow);
   color: var(--text-secondary);
   cursor: pointer;
 }
+
+.hub-gear .icon { --icon-size: 22px; }
 
 /* A view's "?" (§7.1): in its title, or on the home view beside the gear. */
 .help-btn {
@@ -3137,9 +3347,12 @@ body {
   position: absolute;
   top: max(var(--space-3), var(--safe-t));
   right: calc(max(var(--space-3), var(--safe-r)) + 44px + var(--space-2));
+  z-index: 1;
   width: 44px;
   height: 44px;
   margin: 0;
+  border-radius: var(--radius-button);
+  box-shadow: var(--glass-shadow);
 }
 
 .hub-help::after {
@@ -3183,17 +3396,22 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-sm);
-  letter-spacing: 0.08em;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--text-muted);
 }
 
-/* Label above its control, so a control keeps the full width at 130% text. */
+/* A glass row; its label above its control, so a control keeps the full
+   width at 130% text. Inside the sheet, so it never blurs. */
 .settings-row {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--glass-fill);
 }
 
 .settings-label {
@@ -3206,17 +3424,69 @@ body {
   padding: 0 var(--space-1);
 }
 
+/* The volume sliders: a round track, the accent fill to the thumb, a round thumb. */
 .settings-slider {
+  --fill: 50%;
   width: 100%;
   min-height: 44px;
   margin: 0;
-  accent-color: var(--accent);
+  background: none;
+  cursor: pointer;
+  appearance: none;
+}
+
+.settings-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: linear-gradient(to right, var(--accent) var(--fill), var(--surface) var(--fill));
+}
+
+.settings-slider::-moz-range-track {
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: var(--surface);
+}
+
+.settings-slider::-moz-range-progress {
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: var(--accent);
+}
+
+.settings-slider::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  margin-top: -8px;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--text-primary);
+  box-shadow: var(--glass-shadow);
+  appearance: none;
+}
+
+.settings-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-round);
+  background: var(--text-primary);
+  box-shadow: var(--glass-shadow);
 }
 
 .settings-note {
   margin: 0;
   color: var(--text-dim);
   font-size: var(--fs-xs);
+}
+
+/* A refused import: --error on an --error-bg inset, the identity's one legitimate red. */
+.settings-error {
+  flex-basis: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: var(--fs-sm);
 }
 
 .settings-reset,
@@ -3260,11 +3530,6 @@ body {
   color: var(--text-secondary);
 }
 
-.btn-danger {
-  border-color: var(--error);
-  color: var(--error);
-}
-
 .settings-stats {
   display: flex;
   flex-direction: column;
@@ -3277,7 +3542,7 @@ body {
   justify-content: space-between;
   gap: var(--space-3);
   padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--glass-border);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .settings-stats dt {
@@ -3446,7 +3711,7 @@ body {
   gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-card);
   background: var(--glass-fill-solid);
   color: var(--text-secondary);
   text-align: left;
@@ -3458,9 +3723,9 @@ body {
   min-height: 64px;
 }
 
-.rift-choice:focus-visible,
 .rift-choice:hover:not(:disabled) {
-  border-color: var(--fx-gold);
+  border-color: var(--accent-tint-border);
+  background: var(--glass-fill-strong), var(--glass-fill-solid);
 }
 
 .rift-choice:disabled {

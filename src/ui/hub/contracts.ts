@@ -133,7 +133,8 @@ export class ContractsView {
     row.className = 'contracts-actions';
     const take = document.createElement('button');
     take.type = 'button';
-    take.className = 'btn btn-primary contracts-take';
+    // One of three: a secondary each, so Begin run stays the screen's one primary.
+    take.className = 'btn contracts-take';
     take.textContent = 'Take';
     take.disabled = blocked !== null;
     if (blocked) take.title = blocked;

@@ -160,7 +160,8 @@ export class MapView {
       const here = start === foot;
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = `btn map-band-go${here ? ' btn-primary' : ''}`;
+      // Secondary, selected while it is the start: Begin run stays the one primary (plans/visual-identity.md §4.1).
+      b.className = `btn btn-sm map-band-go${here ? ' is-selected' : ''}`;
       b.textContent = here ? 'Starts here' : 'Start here';
       b.setAttribute('aria-pressed', String(here));
       b.setAttribute('aria-label', here ? `The next descent starts at floor ${foot}` : `Start the next descent at floor ${foot}`);
@@ -262,8 +263,9 @@ export class MapView {
     name.className = 'map-region-name';
     name.textContent = title;
     const tag = document.createElement('span');
-    tag.className = 'map-region-tag';
-    tag.textContent = chosen ? 'Next run' : '';
+    tag.className = 'badge badge-accent map-region-tag';
+    tag.textContent = 'Next run';
+    tag.hidden = !chosen;
     head.append(icon(iconId), name, tag);
     const stats = document.createElement('dl');
     stats.className = 'map-region-stats';
@@ -299,8 +301,9 @@ export class MapView {
     name.className = 'map-region-name';
     name.textContent = r.name;
     const tag = document.createElement('span');
-    tag.className = 'map-region-tag';
-    tag.textContent = chosen ? 'Next run' : '';
+    tag.className = 'badge badge-accent map-region-tag';
+    tag.textContent = 'Next run';
+    tag.hidden = !chosen;
     head.append(icon(r.icon), name, tag);
 
     const boss = BOSS_BY_ID[r.boss];
@@ -359,7 +362,7 @@ export class MapView {
     box.className = 'map-trials';
     const toggle = document.createElement('button');
     toggle.type = 'button';
-    toggle.className = 'btn map-trials-toggle';
+    toggle.className = 'btn btn-sm map-trials-toggle';
     toggle.setAttribute('aria-expanded', String(open));
     toggle.append(icon('checkered-flag'), ` Trials ${won}/${list.length}`);
     toggle.addEventListener('click', () => {
@@ -386,7 +389,8 @@ export class MapView {
       pays.textContent = `${done ? 'Paid' : 'Pays'}: ${rewardText(t.reward)}`;
       const go = document.createElement('button');
       go.type = 'button';
-      go.className = `btn map-trial-go${done ? '' : ' btn-primary'}`;
+      // A secondary per Trial: the hub's one primary is Begin run (plans/visual-identity.md §5.4).
+      go.className = `btn btn-sm map-trial-go${done ? ' btn-tertiary' : ''}`;
       go.textContent = done ? 'Again' : 'Begin';
       go.setAttribute('aria-label', `${done ? 'Run again' : 'Begin'}: ${t.name}`);
       go.addEventListener('click', () => this.onTrial(t.id));

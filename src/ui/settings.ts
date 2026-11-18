@@ -95,6 +95,8 @@ export class SettingsPanel {
   private pending: Pending | null = null;
   /** U12: the last thing the save controls did, or what went wrong. */
   private message = '';
+  /** The message is a refusal (an import that would not read): the identity's one legitimate red. */
+  private failed = false;
   private backupList: BackupInfo[] = [];
 
   constructor(private readonly host: HTMLElement, private readonly actions: SettingsActions) {}
@@ -110,6 +112,7 @@ export class SettingsPanel {
     this.loading = null;
     this.pending = null;
     this.message = '';
+    this.failed = false;
     this.page = 'options';
     if (canReset) {
       void this.actions.backups().then((list) => {
@@ -205,11 +208,11 @@ export class SettingsPanel {
     if (this.confirming) {
       reset.append(
         note('Erase every shard, node, relic and record? This cannot be undone.'),
-        button('Keep it', 'btn', () => { this.confirming = false; this.render(); }),
+        button('Keep it', 'btn btn-tertiary', () => { this.confirming = false; this.render(); }),
         button('Erase', 'btn btn-danger', () => this.actions.reset()),
       );
     } else {
-      reset.append(button('Reset progress', 'btn', () => { this.confirming = true; this.render(); }));
+      reset.append(button('Reset progress', 'btn btn-tertiary btn-danger', () => { this.confirming = true; this.render(); }));
     }
     body.append(section('Progress', reset));
   }
@@ -220,6 +223,7 @@ export class SettingsPanel {
     box.className = 'settings-transfer';
     const say = (text: string): void => {
       this.message = text;
+      this.failed = false;
       this.render();
     };
     const take = (text: string, from: string): void => {
@@ -229,6 +233,7 @@ export class SettingsPanel {
         this.message = '';
       } catch (err) {
         this.message = err instanceof Error ? err.message : 'That is not a saved profile.';
+        this.failed = true;
       }
       this.render();
     };
@@ -236,7 +241,7 @@ export class SettingsPanel {
       const p = this.pending.profile;
       box.append(
         note(`Replace this profile with ${this.pending.from}? ${formatNumber(p.records.runs)} run${p.records.runs === 1 ? '' : 's'}, ${formatNumber(p.shards)} shards, best wave ${p.records.bestWave}. This one is lost unless you saved it.`),
-        button('Keep mine', 'btn', () => { this.pending = null; this.render(); }),
+        button('Keep mine', 'btn btn-tertiary', () => { this.pending = null; this.render(); }),
         button('Replace', 'btn btn-danger', () => this.actions.replace(p)),
       );
       return box;
@@ -255,8 +260,8 @@ export class SettingsPanel {
         button('Choose file', 'btn', () => void this.actions.pickFile().then((text) => {
           if (text !== null) take(text, 'the one in the file');
         })),
-        button('Cancel', 'btn', () => { this.loading = null; this.message = ''; this.render(); }),
-        note(this.message),
+        button('Cancel', 'btn btn-tertiary', () => { this.loading = null; this.message = ''; this.failed = false; this.render(); }),
+        note(this.message, this.failed),
       );
       return box;
     }
@@ -264,8 +269,8 @@ export class SettingsPanel {
       note('Take your progress to another install, or bring it back.'),
       button('Copy save', 'btn', () => void this.actions.copySave().then((ok) => say(ok ? 'Copied. Paste it somewhere safe.' : 'The clipboard said no. Try Save file.'))),
       button('Save file', 'btn', () => void this.actions.saveFile().then((where) => say(`Saved to ${where}.`), () => say('The file could not be saved.'))),
-      button('Load save', 'btn', () => { this.loading = { text: '' }; this.message = ''; this.render(); }),
-      note(this.message),
+      button('Load save', 'btn', () => { this.loading = { text: '' }; this.message = ''; this.failed = false; this.render(); }),
+      note(this.message, this.failed),
     );
     if (this.backupList.length > 0) {
       const list = document.createElement('ul');
@@ -275,7 +280,7 @@ export class SettingsPanel {
         const li = document.createElement('li');
         const label = document.createElement('span');
         label.textContent = `Run ${formatNumber(b.runs)} · ${formatNumber(b.shards)} shards · ${ago(b.savedAt)}`;
-        li.append(label, button('Restore', 'btn', () => void this.actions.readBackup(b.slot).then((profile) => {
+        li.append(label, button('Restore', 'btn btn-sm', () => void this.actions.readBackup(b.slot).then((profile) => {
           if (!profile) return say('That backup does not read any more.');
           this.pending = { profile, from: `the backup from ${ago(b.savedAt)}` };
           this.render();
@@ -340,9 +345,9 @@ function row(label: string, control: HTMLElement): HTMLElement {
   return r;
 }
 
-function note(text: string): HTMLElement {
+function note(text: string, error = false): HTMLElement {
   const p = document.createElement('p');
-  p.className = 'settings-note';
+  p.className = error ? 'settings-note settings-error' : 'settings-note';
   p.textContent = text;
   p.hidden = text === '';
   return p;
@@ -370,7 +375,13 @@ function slider(value: number, change: (v: number, save: boolean) => void, label
   input.step = '5';
   input.value = String(Math.round(value * 100));
   input.setAttribute('aria-label', label);
-  input.addEventListener('input', () => change(Number(input.value) / 100, false));
+  // The accent fill up to the thumb (plans/visual-identity.md §5.6).
+  const fill = (): void => input.style.setProperty('--fill', `${input.value}%`);
+  fill();
+  input.addEventListener('input', () => {
+    fill();
+    change(Number(input.value) / 100, false);
+  });
   input.addEventListener('change', () => change(Number(input.value) / 100, true));
   return input;
 }

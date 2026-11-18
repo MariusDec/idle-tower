@@ -80,7 +80,7 @@ export class FeatsView {
       if (state === 'done') {
         const claim = document.createElement('button');
         claim.type = 'button';
-        claim.className = 'btn btn-primary feat-claim';
+        claim.className = 'btn btn-sm feat-claim';
         claim.textContent = 'Claim';
         claim.addEventListener('click', () => {
           if (this.actions.claim(f.id) > 0) this.render();

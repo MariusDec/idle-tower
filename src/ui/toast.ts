@@ -26,16 +26,20 @@ export class Toasts {
   show(iconId: IconId, title: string, line: string, tone: 'enemy' | 'relic' | 'gold' = 'gold'): void {
     const el = document.createElement('div');
     el.className = `toast toast-${tone}`;
-    const head = document.createElement('div');
-    head.className = 'toast-head';
+    // The identity's toast (plans/visual-identity.md §6.5): an icon tile, a title, a meta line.
+    const tile = document.createElement('span');
+    tile.className = 'icon-tile toast-tile';
+    tile.append(icon(iconId));
+    const text = document.createElement('div');
+    text.className = 'toast-text';
     const t = document.createElement('span');
     t.className = 'toast-title';
     t.textContent = title;
-    head.append(icon(iconId), t);
     const p = document.createElement('p');
     p.className = 'toast-line';
     p.textContent = line;
-    el.append(head, p);
+    text.append(t, p);
+    el.append(tile, text);
     this.root.append(el);
     this.live.push({ el, t: 0 });
     while (this.live.length > MAX_TOASTS) this.live.shift()!.el.remove();

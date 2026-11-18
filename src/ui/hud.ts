@@ -117,7 +117,7 @@ export class Hud {
       </div>
       <div class="hud-bottom">
         <div class="hud-row hud-row-bottom">
-          <div class="hud-level"><span class="hud-label">Lv</span> <span class="hud-level-n">1</span></div>
+          <div class="hud-level"><span class="hud-label">Level</span> <span class="hud-level-n">1</span></div>
           <div class="hud-toggles">
             <button type="button" class="hud-speed" hidden>1×</button>
             <button type="button" class="hud-auto" hidden>Auto</button>
@@ -268,19 +268,19 @@ export class Hud {
       // The Abyss (§9): "Floor 3 · I", "7/10", and the stratum's rule (plans/late-game/08); past the strata, the template's.
       const s = region.abyss.stratum ? STRATUM_BY_ID[region.abyss.stratum] : undefined;
       setText(this.waveLabel, s ? `Floor ${floorOf(wave)} · ${s.numeral}` : `Floor ${floorOf(wave)}`);
-      setText(this.wave, `${floorWave(wave)}/${FLOOR_WAVES}`);
+      setText(this.wave, `${floorWave(wave)} / ${FLOOR_WAVES}`);
       const rule = s ? s.rule.name : region.rule?.name;
       setText(this.region, s ? `${s.name} · ${rule}` : rule ? `The Abyss · ${rule}` : 'The Abyss');
     } else if (region.rush) {
       // Boss Rush (N8): "Boss 3/8", and the clock, which is the record.
       setText(this.waveLabel, 'Boss');
-      setText(this.wave, `${region.rush.stage}/${RUSH_STAGES}`);
+      setText(this.wave, `${region.rush.stage} / ${RUSH_STAGES}`);
       setText(this.region, `Boss Rush · ${formatDuration(run.time)}`);
     } else {
-      // "7/20" in the region; past the boss, overtime counts on (§4.2).
+      // "Wave 7 / 20" in the region; past the boss, overtime counts on (§4.2).
       const overtime = run.wave > BOSS_WAVE;
       setText(this.waveLabel, overtime ? 'Overtime' : 'Wave');
-      setText(this.wave, overtime ? `+${run.wave - BOSS_WAVE}` : `${wave}/${BOSS_WAVE}`);
+      setText(this.wave, overtime ? `+${run.wave - BOSS_WAVE}` : `${wave} / ${BOSS_WAVE}`);
       const heat = pactLoad(run.pacts).heat;
       const name = region.rule ? `${region.name} · ${region.rule.name}` : region.name;
       // The Daily Omen (plans/late-game/11 §2): a small tag; its omens are no heat of the player's.

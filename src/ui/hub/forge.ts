@@ -327,8 +327,12 @@ export class WebView<N extends WebNodeDef> {
     }
     // The Foreman's wishlist (N7): its place in the queue, on a tag over the node.
     if (pin >= 0) {
-      const t = el('text', { class: 'forge-pin', y: -r - 6, 'text-anchor': 'middle' });
-      t.textContent = `#${pin + 1}`;
+      // A flat accent badge (plans/visual-identity.md §5.3), its width from the digits.
+      const label = `#${pin + 1}`;
+      const w = 10 + label.length * 7;
+      g.appendChild(el('rect', { class: 'forge-pin-badge', x: -w / 2, y: -r - 20, width: w, height: 16, rx: 8 }));
+      const t = el('text', { class: 'forge-pin', y: -r - 12, 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+      t.textContent = label;
       g.appendChild(t);
     }
     // A keystone switched off (§11.4): struck through, and tagged under the node.
@@ -412,8 +416,9 @@ export class WebView<N extends WebNodeDef> {
       const cost = web.cost(n, level);
       const buy = document.createElement('button');
       buy.type = 'button';
-      buy.className = 'btn btn-primary forge-buy';
+      // A secondary: Begin run is the screen's one primary (plans/visual-identity.md §4.1).
       const affordable = web.canAfford(p, id);
+      buy.className = `btn forge-buy${affordable ? ' is-affordable' : ''}`;
       buy.disabled = !affordable;
       buy.innerHTML = `${iconMarkup(this.src.currencyIcon)}<span>${formatNumber(cost)}</span>`;
       const verb = level >= n.maxLevel ? this.src.beyond.verb : level > 0 ? 'Upgrade' : 'Buy';
