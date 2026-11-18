@@ -559,6 +559,9 @@ body {
   height: auto;
   min-height: 200px;
   animation: none;
+  /* Opaque: the peek floats over busy text with no blur behind it, so the
+     draft's 90% glass lets the screen underneath read through. */
+  background: var(--bg-stop-2);
   box-shadow: var(--glass-shadow);
 }
 
