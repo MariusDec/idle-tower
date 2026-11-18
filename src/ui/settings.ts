@@ -1,6 +1,7 @@
 import type { MotionSetting, Profile } from '../meta/profile';
 import { TEXT_SCALES } from '../meta/profile';
 import type { QualityTier } from '../render/quality';
+import type { CanvasMode } from '../render/canvasMode';
 import { formatNumber } from '../core/format';
 import { importProfile, type BackupInfo } from '../meta/save/transfer';
 import { segmented, type Choice } from './controls';
@@ -17,6 +18,9 @@ export interface SettingsActions {
   /** The stored quality preference and the tier in force. */
   quality(): { pref: 'auto' | QualityTier; tier: QualityTier };
   setQuality(pref: 'auto' | QualityTier): void;
+  /** Where the canvas draws: the stored choice, and the mode this launch runs in. */
+  canvas(): { pref: CanvasMode; active: CanvasMode };
+  setCanvas(mode: CanvasMode): void;
   /** Erase the profile and start over (P9). Only offered between runs. */
   reset(): void;
   /** Copy the profile to the clipboard as text (U12); false if the platform refused. */
@@ -39,6 +43,10 @@ const QUALITY_CHOICES: readonly Choice<'auto' | QualityTier>[] = [
   { value: 'high', label: 'High' },
   { value: 'medium', label: 'Medium' },
   { value: 'low', label: 'Low' },
+];
+const CANVAS_CHOICES: readonly Choice<CanvasMode>[] = [
+  { value: 'gpu', label: 'GPU' },
+  { value: 'cpu', label: 'CPU' },
 ];
 const MOTION_CHOICES: readonly Choice<MotionSetting>[] = [
   { value: 'system', label: 'Device' },
@@ -165,6 +173,7 @@ export class SettingsPanel {
       this.render();
     };
     const q = this.actions.quality();
+    const c = this.actions.canvas();
     body.append(
       section('Sound',
         row('Sound', segmented(ON_OFF, s.sound, (v) => set((x) => { x.sound = v; }), 'Sound')),
@@ -175,6 +184,8 @@ export class SettingsPanel {
       section('Display',
         row('Quality', segmented(QUALITY_CHOICES, q.pref, (v) => { this.actions.setQuality(v); this.render(); }, 'Quality')),
         note(q.pref === 'auto' ? `Running at ${q.tier}.` : ''),
+        row('Drawing', segmented(CANVAS_CHOICES, c.pref, (v) => { this.actions.setCanvas(v); this.render(); }, 'Canvas drawing')),
+        note(c.pref !== c.active ? `Applies on the next launch. Drawing on the ${c.active.toUpperCase()} now.` : ''),
         row('Text size', segmented(TEXT_SCALES.map((k) => ({ value: k, label: `${Math.round(k * 100)}%` })), s.textScale,
           (v) => set((x) => { x.textScale = v; }), 'Text size')),
         row('Colours', segmented(PALETTE_CHOICES, s.palette, (v) => set((x) => { x.palette = v; }), 'Weapon colours')),

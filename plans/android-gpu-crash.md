@@ -196,6 +196,23 @@ resumes exactly, not only at a wave start.
   logs a warning, so it can't block a boot.
 - The sim is untouched, so no pacing run is needed.
 
+## 3. Less for the driver to chew on (built)
+
+- **No gradient per glow per frame.** Fires, molten pools, Whiteout, the
+  rift and Aegis stamp a glow baked once (`src/render/glow.ts`,
+  `drawGlow`), faded by `globalAlpha`; meteors stamp a baked strip
+  (`drawStreak`). The tower's stone, drum and pods, a boss's body, the
+  Forgeheart's heat and the low-HP vignette reuse one gradient per key
+  (`cachedGradient`). Within 2/255 of the old pixels.
+- **Android tiers draw less** (`qualityFor` in `src/render/quality.ts`):
+  DPR cap 1.5 on `high` (56% of the pixels of 2×), 1.25 on `medium`, and
+  `lighter` blending only on `high`.
+- **No frames while away:** `App.hidden` stops the loop outright and
+  `App.absent` starts it once the page is visible again, rather than
+  trusting the WebView to stop rAF behind the launcher.
+- **A GPU reset:** on the canvas's `contextrestored`, every baked glow and
+  enemy sprite is dropped and rebakes, so none comes back blank.
+
 ## Order
 
 1. **1a + 1b:** the core change, about 60 lines plus tests.

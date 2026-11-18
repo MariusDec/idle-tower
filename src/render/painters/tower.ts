@@ -2,6 +2,7 @@ import { weaponParams } from '../../content/weapons';
 import { mountOffset, mountRadius } from '../../content/mounts';
 import type { FrameId, TrimId, WeaponId } from '../../content/types';
 import { FX, INK, lighten, mix, withAlpha } from '../palette';
+import { cachedGradient } from '../glow';
 import { LIGHT_ANGLE } from './enemies';
 import { formAccent, paintForm, type FormPaint } from './form';
 
@@ -360,10 +361,12 @@ export function paintTower(
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.closePath();
-  const stone = ctx.createLinearGradient(lx * R, ly * R, -lx * R, -ly * R);
-  stone.addColorStop(0, INK['400']);
-  stone.addColorStop(1, INK['600']);
-  ctx.fillStyle = stone;
+  ctx.fillStyle = cachedGradient(`stone|${R}|${INK['400']}|${INK['600']}`, () => {
+    const g = ctx.createLinearGradient(lx * R, ly * R, -lx * R, -ly * R);
+    g.addColorStop(0, INK['400']);
+    g.addColorStop(1, INK['600']);
+    return g;
+  });
   ctx.fill();
   ctx.strokeStyle = INK['300'];
   ctx.lineWidth = 2.5;
@@ -371,11 +374,13 @@ export function paintTower(
   paintDress(ctx, R, look, time);
 
   // Drum.
-  const drum = ctx.createRadialGradient(lx * R * 0.35, ly * R * 0.35, R * 0.1, 0, 0, R * 0.85);
-  drum.addColorStop(0, lighten(FX.gold, 0.3));
-  drum.addColorStop(0.7, FX.gold);
-  drum.addColorStop(1, mix(FX.gold, INK['900'], 0.45));
-  ctx.fillStyle = fallen > 0 ? mix(FX.gold, INK['700'], fallen) : drum;
+  ctx.fillStyle = fallen > 0 ? mix(FX.gold, INK['700'], fallen) : cachedGradient(`drum|${R}|${FX.gold}|${INK['900']}`, () => {
+    const g = ctx.createRadialGradient(lx * R * 0.35, ly * R * 0.35, R * 0.1, 0, 0, R * 0.85);
+    g.addColorStop(0, lighten(FX.gold, 0.3));
+    g.addColorStop(0.7, FX.gold);
+    g.addColorStop(1, mix(FX.gold, INK['900'], 0.45));
+    return g;
+  });
   ctx.beginPath();
   ctx.arc(0, 0, R * 0.82, 0, Math.PI * 2);
   ctx.fill();
@@ -421,10 +426,12 @@ export function paintTower(
 
 /** A small stone socket a pod-mounted weapon sits in. */
 function paintPod(ctx: CanvasRenderingContext2D, r: number, lx: number, ly: number): void {
-  const g = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
-  g.addColorStop(0, INK['200']);
-  g.addColorStop(1, INK['500']);
-  ctx.fillStyle = g;
+  ctx.fillStyle = cachedGradient(`pod|${r}|${lx}|${ly}|${INK['200']}|${INK['500']}`, () => {
+    const g = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+    g.addColorStop(0, INK['200']);
+    g.addColorStop(1, INK['500']);
+    return g;
+  });
   ctx.beginPath();
   ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();

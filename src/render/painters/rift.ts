@@ -1,6 +1,7 @@
 import { RIFT_BY_ID } from '../../content/rifts';
 import type { RiftState } from '../../sim/state';
 import { INK, RARITY, lighten, withAlpha } from '../palette';
+import { drawGlow } from '../glow';
 
 /**
  * A rift (plans/late-game/02 §5): a vertical jagged slit about 34 world
@@ -55,15 +56,13 @@ export function paintRift(ctx: CanvasRenderingContext2D, rift: RiftState | null,
   // The glow behind it.
   if (look.plain) {
     ctx.fillStyle = withAlpha(color, 0.18);
+    ctx.beginPath();
+    ctx.arc(x, y, HEIGHT * 0.9, 0, Math.PI * 2);
+    ctx.fill();
   } else {
-    const g = ctx.createRadialGradient(x, y, 2, x, y, HEIGHT * 0.9);
-    g.addColorStop(0, withAlpha(color, 0.45));
-    g.addColorStop(1, withAlpha(color, 0));
-    ctx.fillStyle = g;
+    const R = HEIGHT * 0.9;
+    drawGlow(ctx, [{ at: 0, color: withAlpha(color, 0.45) }, { at: 1, color: withAlpha(color, 0) }], x, y, R, 1, 2 / R);
   }
-  ctx.beginPath();
-  ctx.arc(x, y, HEIGHT * 0.9, 0, Math.PI * 2);
-  ctx.fill();
 
   slit(ctx, x, y, h, width, INK['950'], lighten(color, 0.25));
   // A rare's second hairline crack beside it.

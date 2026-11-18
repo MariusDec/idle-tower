@@ -3,6 +3,7 @@ import { SECRET_BY_ID } from '../../content/secrets';
 import type { BossDef, BossId } from '../../content/types';
 import type { BossState, Enemy, HostileShot, MoltenPool, RunState, SlamRing } from '../../sim/state';
 import { FX, INK, lighten, mix, withAlpha } from '../palette';
+import { cachedGradient, drawGlow } from '../glow';
 import { LIGHT_ANGLE } from './enemies';
 import { emergence } from './arena';
 import type { Oval } from '../../content/arena';
@@ -119,9 +120,12 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
     }
     case 'forgeheart': {
       // A molten heart behind a grille.
-      const heat = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.55);
-      heat.addColorStop(0, lighten(FX.gold, 0.3));
-      heat.addColorStop(1, withAlpha(FX.ember, 0));
+      const heat = cachedGradient(`forgeheart|${r}|${FX.gold}|${FX.ember}`, () => {
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.55);
+        g.addColorStop(0, lighten(FX.gold, 0.3));
+        g.addColorStop(1, withAlpha(FX.ember, 0));
+        return g;
+      });
       ctx.fillStyle = heat;
       ctx.beginPath();
       ctx.arc(0, 0, r * (0.5 + 0.04 * Math.sin(t * 6)), 0, Math.PI * 2);
@@ -342,14 +346,11 @@ export function paintPlates(ctx: CanvasRenderingContext2D, run: RunState, alpha:
 export function paintPools(ctx: CanvasRenderingContext2D, pools: readonly MoltenPool[], simTime: number, time: number): void {
   for (const p of pools) {
     const left = Math.min(1, (p.until - simTime) / 1.5);
-    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius);
-    g.addColorStop(0, withAlpha(lighten(FX.gold, 0.2), 0.75 * left));
-    g.addColorStop(0.6, withAlpha(FX.ember, 0.55 * left));
-    g.addColorStop(1, withAlpha(FX.ember, 0));
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.radius * (1 + 0.04 * Math.sin(time * 4 + p.x)), 0, Math.PI * 2);
-    ctx.fill();
+    drawGlow(ctx, [
+      { at: 0, color: withAlpha(lighten(FX.gold, 0.2), 0.75) },
+      { at: 0.6, color: withAlpha(FX.ember, 0.55) },
+      { at: 1, color: withAlpha(FX.ember, 0) },
+    ], p.x, p.y, p.radius * (1 + 0.04 * Math.sin(time * 4 + p.x)), left);
   }
 }
 
@@ -404,10 +405,13 @@ export function paintBoss(
   traceBoss(ctx, def.id, r * breathe, time);
   const lx = Math.cos(LIGHT_ANGLE);
   const ly = Math.sin(LIGHT_ANGLE);
-  const body = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
-  body.addColorStop(0, lighten(def.color, 0.25));
-  body.addColorStop(0.55, def.color);
-  body.addColorStop(1, mix(def.color, INK['950'], 0.55));
+  const body = cachedGradient(`boss|${r}|${def.color}`, () => {
+    const g = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+    g.addColorStop(0, lighten(def.color, 0.25));
+    g.addColorStop(0.55, def.color);
+    g.addColorStop(1, mix(def.color, INK['950'], 0.55));
+    return g;
+  });
   ctx.fillStyle = body;
   ctx.fill();
   ctx.save();
@@ -499,14 +503,11 @@ export function paintRings(ctx: CanvasRenderingContext2D, rings: readonly SlamRi
 export function paintAegis(ctx: CanvasRenderingContext2D, R: number, left: number, time: number): void {
   const fade = Math.min(1, left * 2);
   ctx.save();
-  const g = ctx.createRadialGradient(0, 0, R * 0.6, 0, 0, R * 1.9);
-  g.addColorStop(0, withAlpha(FX.gold, 0));
-  g.addColorStop(0.75, withAlpha(FX.gold, 0.22 * fade));
-  g.addColorStop(1, withAlpha(FX.gold, 0));
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(0, 0, R * 1.9, 0, Math.PI * 2);
-  ctx.fill();
+  drawGlow(ctx, [
+    { at: 0, color: withAlpha(FX.gold, 0) },
+    { at: 0.75, color: withAlpha(FX.gold, 0.22) },
+    { at: 1, color: withAlpha(FX.gold, 0) },
+  ], 0, 0, R * 1.9, fade, 0.6 / 1.9);
   ctx.strokeStyle = withAlpha(lighten(FX.gold, 0.3), (0.6 + 0.3 * Math.sin(time * 6)) * fade);
   ctx.lineWidth = 4;
   ctx.beginPath();

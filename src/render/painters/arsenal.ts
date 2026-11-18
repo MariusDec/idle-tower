@@ -3,6 +3,7 @@ import { armed, mountOf, muzzle } from '../../sim/systems/arms';
 import { bladeOrbit, gyreOrbit, storms } from '../../sim/systems/combat';
 import { BALANCE } from '../../content/balance';
 import { FX, INK, lighten, mix, withAlpha } from '../palette';
+import { drawGlow } from '../glow';
 
 /**
  * What the arsenal puts in the field besides projectiles (§4.4, §10.5): the
@@ -47,14 +48,11 @@ export function paintFires(ctx: CanvasRenderingContext2D, fires: readonly FirePa
   for (const f of fires) {
     const left = Math.min(1, (f.until - time) / 0.6);
     const flicker = 0.85 + 0.15 * Math.sin(clock * 11 + f.x);
-    const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.radius);
-    g.addColorStop(0, withAlpha(FX.gold, 0.45 * left * flicker));
-    g.addColorStop(0.55, withAlpha(FX.ember, 0.35 * left * flicker));
-    g.addColorStop(1, withAlpha(FX.ember, 0));
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
-    ctx.fill();
+    drawGlow(ctx, [
+      { at: 0, color: withAlpha(FX.gold, 0.45) },
+      { at: 0.55, color: withAlpha(FX.ember, 0.35) },
+      { at: 1, color: withAlpha(FX.ember, 0) },
+    ], f.x, f.y, f.radius, left * flicker);
   }
   ctx.restore();
 }
@@ -237,13 +235,10 @@ function paintWhiteout(ctx: CanvasRenderingContext2D, run: RunState, w: WeaponSt
   const y = c.py + (c.y - c.py) * alpha;
   const r = armed(run.stats, w).radius * BALANCE.anomalies.whiteout.radius;
   ctx.save();
-  const g = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
-  g.addColorStop(0, withAlpha(lighten(FX.frost, 0.5), 0.28));
-  g.addColorStop(1, withAlpha(FX.frost, 0));
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
+  drawGlow(ctx, [
+    { at: 0, color: withAlpha(lighten(FX.frost, 0.5), 0.28) },
+    { at: 1, color: withAlpha(FX.frost, 0) },
+  ], x, y, r, 1, 0.1);
   const flakes = additive ? 14 : 6;
   ctx.fillStyle = withAlpha(lighten(FX.frost, 0.7), 0.75);
   for (let i = 0; i < flakes; i++) {

@@ -4,6 +4,7 @@ import type { Oval } from '../../content/arena';
 import type { Enemy } from '../../sim/state';
 import { FX, INK, mix, withAlpha, type FxColorName } from '../palette';
 import { emergence } from './arena';
+import { context2dOptions } from '../canvasMode';
 
 /**
  * Enemy bodies, salvaged from the legacy renderer's `paintEnemyBody`: a base
@@ -302,7 +303,7 @@ function bake(def: EnemyDef, scale: number): Sprite {
   const canvas = document.createElement('canvas');
   canvas.width = px;
   canvas.height = px;
-  const g = canvas.getContext('2d')!;
+  const g = canvas.getContext('2d', context2dOptions())!;
   // Paint in world units about the centre.
   const k = px / (half * 2);
   g.setTransform(k, 0, 0, k, px / 2, px / 2);

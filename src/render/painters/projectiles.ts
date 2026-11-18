@@ -1,5 +1,6 @@
 import type { Projectile } from '../../sim/state';
 import { FX, INK, lighten, withAlpha } from '../palette';
+import { drawStreak } from '../glow';
 
 /** Trail length, as seconds of travel behind the shot. */
 const TRAIL_SECONDS = 0.05;
@@ -143,15 +144,8 @@ export function paintProjectiles(
 /** A meteor: a white-hot head and a long ember tail along its fall. */
 function paintMeteor(ctx: CanvasRenderingContext2D, x: number, y: number, vx: number, vy: number): void {
   const tail = 0.12;
-  const g = ctx.createLinearGradient(x - vx * tail, y - vy * tail, x, y);
-  g.addColorStop(0, withAlpha(FX.ember, 0));
-  g.addColorStop(1, withAlpha(FX.ember, 0.9));
-  ctx.strokeStyle = g;
-  ctx.lineWidth = 14;
-  ctx.beginPath();
-  ctx.moveTo(x - vx * tail, y - vy * tail);
-  ctx.lineTo(x, y);
-  ctx.stroke();
+  // A baked strip, not a gradient per meteor per frame; the head covers its end.
+  drawStreak(ctx, FX.ember, 0.9, x - vx * tail, y - vy * tail, x, y, 14);
   ctx.fillStyle = lighten(FX.gold, 0.6);
   ctx.beginPath();
   ctx.arc(x, y, 9, 0, Math.PI * 2);

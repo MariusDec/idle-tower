@@ -42,6 +42,7 @@ import type { DraftOffer, RunConfig, RunState } from '../sim/state';
 import { BALANCE } from '../content/balance';
 import { Renderer } from '../render/renderer';
 import { QualityScaler, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
+import { CANVAS_MODE, readStoredCanvasMode, storeCanvasMode } from '../render/canvasMode';
 import { runRegion, runWave } from '../sim/systems/waves';
 import { SettingsPanel } from '../ui/settings';
 import { Music } from '../audio/music';
@@ -126,6 +127,8 @@ export class App {
   private slowMo = { left: 0, speed: 1 };
   /** Wall-clock ms of the last frame, to notice a stall (§6.1). */
   private lastFrame = Date.now();
+  /** The loop has been started once: a lifecycle event before that leaves it alone. */
+  private booted = false;
   /**
    * Stored Light (plans/late-game/01 §3.3): wall-clock ms of the player's last
    * touch or key on the run screen. Nothing the app does by itself (the draft
@@ -164,6 +167,8 @@ export class App {
 
   constructor(private readonly els: AppElements) {
     this.renderer = new Renderer(els.canvas, els.stage);
+    // In logcat as a chromium console line: which mode a crash happened under.
+    console.info(`[canvas] drawing on the ${CANVAS_MODE.toUpperCase()}`);
     this.renderer.setQuality(resolveQuality());
     this.hud = new Hud(els.hud, {
       pause: () => this.openPause(),
@@ -275,6 +280,8 @@ export class App {
         this.scaler.reset();
         this.renderer.setQuality(resolveQuality());
       },
+      canvas: () => ({ pref: readStoredCanvasMode(), active: CANVAS_MODE }),
+      setCanvas: (mode) => storeCanvasMode(mode),
       reset: () => void this.replace(newProfile(Date.now())),
       copySave: () => copyText(exportProfile(this.profile)),
       saveFile: () => saveTextFile(`tower-save-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.txt`, exportProfile(this.profile)),
@@ -351,6 +358,7 @@ export class App {
     // A save from before the Contract board, or one that opened it unbanked: draw its cards (deterministic, plans/late-game/10 §4.1).
     ensureBoard(this.profile);
     this.bindLifecycle();
+    this.booted = true;
     this.loop.start();
     this.go('hub');
     // A run the app was killed in resumes at its last wave boundary (§12.4).
@@ -1257,6 +1265,11 @@ export class App {
 
   /** Going away (§6.1): the run pauses, and the profile is stamped and saved. */
   private hidden(): Promise<void> {
+    // No frames at all while away. A browser stops rAF for a hidden page, but
+    // a WebView behind the launcher is not always told it is hidden, and a
+    // frame drawn while its surface is being torn down or rebuilt is a known
+    // way into a GPU driver crash. `absent` starts the loop again.
+    if (this.booted) this.loop.stop();
     // A hidden page's frames are not real frames: the scaler's window is dropped.
     this.scaler.reset();
     if (this.screen === 'run' && !this.settings.open) this.openPause();
@@ -1273,6 +1286,8 @@ export class App {
    * first call stamps the profile.
    */
   private absent(now: number): void {
+    // Only once the page can be seen: the native resume may come first.
+    if (this.booted && document.visibilityState !== 'hidden') this.loop.start();
     this.loop.resetClock();
     this.lastFrame = now;
     this.welcomeBack(now);

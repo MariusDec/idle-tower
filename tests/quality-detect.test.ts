@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { initialQualityTier, readStoredQuality } from '../src/render/quality';
-import { QUALITY, QualityScaler, type QualityTier } from '../src/render/quality';
+import { BASE_QUALITY, QUALITY, QualityScaler, qualityFor, type QualityTier } from '../src/render/quality';
 
 describe('initialQualityTier', () => {
   const originalNavigator = globalThis.navigator;
@@ -161,5 +161,22 @@ describe('the quality scaler', () => {
     s.reset();
     // The slow window was dropped; fast frames after the warm-up hold.
     expect(run(s, 16.7, 10, 'high')).toBeNull();
+  });
+});
+
+describe('qualityFor (Android caps)', () => {
+  it('leaves the desktop tiers as they are', () => {
+    expect(qualityFor(false)).toBe(BASE_QUALITY);
+  });
+
+  it('draws a smaller surface on Android, and lighter blending only on high', () => {
+    const q = qualityFor(true);
+    expect(q.high.dprCap).toBe(1.5);
+    expect(q.high.additive).toBe(true);
+    expect(q.medium.dprCap).toBe(1.25);
+    expect(q.medium.additive).toBe(false);
+    expect(q.low).toEqual(BASE_QUALITY.low);
+    // Never more than the desktop tier asks for.
+    for (const t of ['high', 'medium', 'low'] as const) expect(q[t].dprCap).toBeLessThanOrEqual(BASE_QUALITY[t].dprCap);
   });
 });

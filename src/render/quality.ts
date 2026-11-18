@@ -18,11 +18,46 @@ export interface QualityProfile {
   shadows: boolean;
 }
 
-export const QUALITY: Record<QualityTier, QualityProfile> = {
+export const BASE_QUALITY: Record<QualityTier, QualityProfile> = {
   high:   { particleScale: 1.00, maxParticles: 600, additive: true,  dprCap: 2.0, shadows: true  },
   medium: { particleScale: 0.50, maxParticles: 360, additive: true,  dprCap: 1.5, shadows: true  },
   low:    { particleScale: 0.25, maxParticles: 200, additive: false, dprCap: 1.0, shadows: false },
 };
+
+/**
+ * Android's tiers draw less (plans/android-gpu-crash.md). The WebView runs
+ * its GPU thread inside the app, so a driver fault (Adreno, Mali) kills the
+ * game outright; what it is fed matters more than on a desktop.
+ *
+ * - **A smaller surface.** Its pixels grow with the square of the density
+ *   cap, and running a driver out of memory is a common way to crash it:
+ *   1.5× on `high` is 56% of the pixels of 2×, and a phone's screen is
+ *   dense enough that it barely shows.
+ * - **Additive glow on `high` only.** `lighter` blending costs fill rate
+ *   and is a blend state some mobile drivers get wrong; a phone the scaler
+ *   has moved down to `medium` is one already short of headroom.
+ */
+const ANDROID: Record<QualityTier, Partial<QualityProfile>> = {
+  high:   { dprCap: 1.5 },
+  medium: { dprCap: 1.25, additive: false },
+  low:    {},
+};
+
+export function isAndroid(): boolean {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+}
+
+export function qualityFor(android: boolean): Record<QualityTier, QualityProfile> {
+  if (!android) return BASE_QUALITY;
+  return {
+    high: { ...BASE_QUALITY.high, ...ANDROID.high },
+    medium: { ...BASE_QUALITY.medium, ...ANDROID.medium },
+    low: { ...BASE_QUALITY.low, ...ANDROID.low },
+  };
+}
+
+/** The tiers on this device. */
+export const QUALITY: Record<QualityTier, QualityProfile> = qualityFor(isAndroid());
 
 export const DEFAULT_QUALITY: QualityTier = 'high';
 

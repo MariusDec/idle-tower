@@ -25,6 +25,7 @@ function stubCanvas(w: number, h: number): HTMLCanvasElement {
     height: 0,
     getBoundingClientRect: () => ({ width: w, height: h }),
     getContext: () => ctx,
+    addEventListener: () => {},
   } as unknown as HTMLCanvasElement;
 }
 

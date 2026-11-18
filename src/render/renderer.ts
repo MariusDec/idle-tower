@@ -33,6 +33,8 @@ import { paintRift } from './painters/rift';
 import { CURSE_COLOR, paintReliquaries } from './painters/reliquary';
 import { RIFT_BY_ID } from '../content/rifts';
 import { ARENA, type Oval } from '../content/arena';
+import { context2dOptions } from './canvasMode';
+import { cachedGradient, clearGlows } from './glow';
 
 /** Sim ticks the crystal stays flared after a contact hit. */
 const HURT_TICKS = 12;
@@ -122,9 +124,19 @@ export class Renderer {
   private formsSeen: ReadonlySet<string> = new Set();
 
   constructor(canvas: HTMLCanvasElement, host: HTMLElement) {
-    this.ctx = canvas.getContext('2d', { alpha: false })!;
+    this.ctx = canvas.getContext('2d', context2dOptions(false))!;
     this.camera = new Camera(canvas);
     this.camera.setHost(host);
+    // A GPU reset (often on a return from the background) can blank every
+    // baked canvas. Chrome restores the main canvas itself; the bakes are
+    // dropped so they repaint, and the next frame draws in full.
+    canvas.addEventListener('contextlost', () => console.warn('[canvas] context lost'));
+    canvas.addEventListener('contextrestored', () => {
+      console.info('[canvas] context restored');
+      clearGlows();
+      this.enemies.clear();
+      this.dirty = true;
+    });
   }
 
   setQuality(tier: QualityTier): void {
@@ -157,6 +169,7 @@ export class Renderer {
     this.dirty = true;
     setPaletteMode(mode);
     this.enemies.clear();
+    clearGlows();
   }
 
   /** The settings' text size, applied to text painted on the canvas. */
@@ -836,10 +849,16 @@ export class Renderer {
     const strength = (1 - frac / VIGNETTE_FROM) * 0.5;
     const w = this.camera.transform.cssWidth;
     const h = this.camera.transform.cssHeight;
-    const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.7);
-    g.addColorStop(0, withAlpha(FX.critical, 0));
-    g.addColorStop(1, withAlpha(FX.critical, strength));
-    ctx.fillStyle = g;
+    // One gradient per screen size, faded by alpha: not a new one each frame.
+    ctx.fillStyle = cachedGradient(`vignette|${w}|${h}|${FX.critical}`, () => {
+      const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.7);
+      g.addColorStop(0, withAlpha(FX.critical, 0));
+      g.addColorStop(1, FX.critical);
+      return g;
+    });
+    const was = ctx.globalAlpha;
+    ctx.globalAlpha = was * strength;
     ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = was;
   }
 }
