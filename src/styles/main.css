@@ -1401,6 +1401,9 @@ body {
 .results-again-ring { width: 20px; height: 20px; }
 .results-again-ring .ring-track { stroke: color-mix(in srgb, var(--text-on-fill) 30%, transparent); stroke-width: 3.5; }
 .results-again-ring .ring-fill { stroke: var(--text-on-fill); stroke-width: 3.5; }
+/* Held: the ring stops where it was and dims. */
+.results-again.is-held .results-again-ring { opacity: 0.55; }
+.results-hold { padding: 0 var(--space-3); }
 
 /* ── Forge (§5.1) ────────────────────────────────────────────────────────── */
 

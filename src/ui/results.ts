@@ -89,7 +89,7 @@ function formFind(form: { wave: number; first: boolean; record: boolean }): HTML
  * language: the wave, the haul (tap for the breakdown), records with the old
  * value struck through, what was discovered, and one "Next:" line. Two
  * buttons, Forge and Run again; once auto-restart is owned, Run again fires
- * itself after a short countdown. The build shows (U5), and behind a tap
+ * itself after a short countdown, which a pause button beside it holds. The build shows (U5), and behind a tap
  * the damage each weapon dealt and what wore the tower down; the countdown
  * waits while that is open.
  */
@@ -150,6 +150,10 @@ export class ResultsScreen {
   private readonly build: HTMLElement;
   /** Seconds left before auto-restart; null when it is off. */
   private countdown: number | null = null;
+  /** The countdown held by the player, to read the results at leisure. */
+  private paused = false;
+  /** Pause / resume the auto-restart countdown; shown only while it runs. */
+  private readonly hold: HTMLButtonElement;
 
   /** `onForge` leads to the hub (the Map, after a first boss kill); `onAgain` starts the next run. */
   constructor(
@@ -209,6 +213,7 @@ export class ResultsScreen {
       <div class="results-actions">
         <button type="button" class="btn results-forge">Forge</button>
         <button type="button" class="btn results-retry" hidden>Retry</button>
+        <button type="button" class="btn results-hold" hidden></button>
         <button type="button" class="btn btn-primary results-again">
           <svg class="ring results-again-ring" viewBox="0 0 36 36" aria-hidden="true" hidden>
             <circle class="ring-track" cx="18" cy="18" r="15"></circle>
@@ -270,6 +275,11 @@ export class ResultsScreen {
     q('.results-forge').addEventListener('click', () => {
       this.countdown = null;
       onForge();
+    });
+    this.hold = q<HTMLButtonElement>('.results-hold');
+    this.hold.addEventListener('click', () => {
+      this.paused = !this.paused;
+      this.paintAgain();
     });
     this.again.addEventListener('click', () => {
       this.countdown = null;
@@ -500,6 +510,7 @@ export class ResultsScreen {
     this.showOmen(s);
     // Auto-restart never follows an Omen (plans/late-game/11 §2): Done returns to its view.
     this.countdown = autoRestart && !s.omen ? BALANCE.automation.restartSeconds : null;
+    this.paused = false;
     this.paintAgain();
     this.root.hidden = false;
   }
@@ -565,7 +576,7 @@ export class ResultsScreen {
 
   /** Run the auto-restart countdown on the wall clock. */
   tick(realDt: number): void {
-    if (this.countdown === null || this.root.hidden || !this.report.hidden) return;
+    if (this.countdown === null || this.paused || this.root.hidden || !this.report.hidden) return;
     this.countdown = Math.max(0, this.countdown - realDt);
     this.paintAgain();
     if (this.countdown === 0) {
@@ -578,13 +589,22 @@ export class ResultsScreen {
   private paintAgain(): void {
     const c = this.countdown;
     this.againRing.toggleAttribute('hidden', c === null);
+    this.hold.hidden = c === null;
     setText(this.againLabel, 'Run again');
     if (c === null) {
       this.again.removeAttribute('aria-label');
       return;
     }
     this.againFill.setAttribute('stroke-dashoffset', (100 * (1 - c / BALANCE.automation.restartSeconds)).toFixed(1));
-    setAriaLabel(this.again, `Run again, starting in ${Math.ceil(c)}`);
+    this.again.classList.toggle('is-held', this.paused);
+    setAriaLabel(this.again, this.paused ? 'Run again, countdown paused' : `Run again, starting in ${Math.ceil(c)}`);
+    const want = this.paused ? 'resume' : 'pause';
+    if (this.hold.dataset.state !== want) {
+      this.hold.dataset.state = want;
+      this.hold.innerHTML = iconMarkup(this.paused ? 'io-play' : 'io-pause', { size: 20 });
+      setAriaLabel(this.hold, this.paused ? 'Resume the countdown' : 'Pause the countdown');
+      this.hold.setAttribute('aria-pressed', String(this.paused));
+    }
   }
 }
 
