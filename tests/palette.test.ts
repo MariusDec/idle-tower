@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-  FX, INK, RARITY, SAFE_FX, fxVar, inkVar, lighten, mix, rarityVar, setPaletteMode, toRgb, withAlpha,
+  ACCENT, FX, GROUND, INK, RARITY, SAFE_FX, fxVar, inkVar, lighten, mix, rarityVar, setPaletteMode, toRgb, withAlpha,
 } from '../src/render/palette';
 
 /**
@@ -127,6 +127,53 @@ describe('the retired token names stay retired', () => {
       expect(hits, `${rel} still uses a removed token (plans/visual-identity.md §2.1)`).toEqual([]);
     });
   }
+});
+
+describe('the canvas wears the page\'s ground (plans/visual-identity.md §7)', () => {
+  const decls = declarations();
+
+  it('paints the sky past the light from the same stops as --bg-stop-1…3', () => {
+    expect(GROUND.stop1).toBe(decls.get('--bg-stop-1')!.toLowerCase());
+    expect(GROUND.stop2).toBe(decls.get('--bg-stop-2')!.toLowerCase());
+    expect(GROUND.stop3).toBe(decls.get('--bg-stop-3')!.toLowerCase());
+  });
+
+  it('draws the rim of the light in --accent', () => {
+    expect(ACCENT).toBe(decls.get('--accent')!.toLowerCase());
+  });
+
+  /**
+   * The blue-grey ramp the ink was re-hued from (2026-11-18). The re-hue keeps
+   * each step's luminance, so nothing on the battlefield reads worse: no
+   * effect colour, in either palette, may lose more than 0.3 of contrast on
+   * the lit ground's three stops, under any region's tint.
+   */
+  const BLUE_GREY = { '600': '#212734', '700': '#181d28', '800': '#12161f' } as const;
+  const TINTS = [null, '#1d4a3c', '#4a5a66', '#4a2416', '#1e1a33', '#3a0f1a'];
+  const luminance = (hex: string): number => {
+    const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    const { r, g, b } = toRgb(hex);
+    return 0.2126 * lin(r / 255) + 0.7152 * lin(g / 255) + 0.0722 * lin(b / 255);
+  };
+  const contrast = (a: string, b: string): number => {
+    const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+
+  it('keeps every effect colour readable on the re-hued ground', () => {
+    // The ground's stops and how much tint each takes, as paintGround mixes them.
+    const stops = [['600', 0.45], ['700', 0.35], ['800', 0.25]] as const;
+    for (const tint of TINTS) {
+      for (const [step, k] of stops) {
+        const before = tint ? mix(BLUE_GREY[step], tint, k) : BLUE_GREY[step];
+        const after = tint ? mix(INK[step], tint, k) : INK[step];
+        for (const [name, hex] of [...Object.entries(FX), ...Object.entries(SAFE_FX)]) {
+          const loss = contrast(hex, before) - contrast(hex, after);
+          expect(loss, `${name} on ink ${step} (tint ${tint})`).toBeLessThanOrEqual(0.3);
+        }
+      }
+    }
+  });
 });
 
 describe('the colourblind-safe palette (P9)', () => {

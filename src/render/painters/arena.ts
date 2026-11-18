@@ -1,5 +1,5 @@
 import { ARENA, rimAxes, type Oval } from '../../content/arena';
-import { FX, INK, mix, withAlpha } from '../palette';
+import { ACCENT, GROUND, INK, mix, withAlpha } from '../palette';
 
 /**
  * The ground, the dark and the rim (plans/camera-and-fog.md §4), drawn live
@@ -36,6 +36,11 @@ export function emergence(x: number, y: number, light: number, oval: Oval): numb
   return Math.min(1, Math.max(0, ((1 - q) * Math.min(ax, ay)) / EMERGE));
 }
 
+/** How far past its opaque edge the dark stays opaque, as a multiple of that edge. */
+const DARK_HOLD = 1.08;
+/** Where the dark has thinned into the sky, as a multiple of its opaque edge. */
+const DARK_FADE = 1.6;
+
 /** A gradient keeps its stops; rebuild it only when what it shows changes. */
 interface Memo {
   key: string;
@@ -43,6 +48,33 @@ interface Memo {
 }
 let groundMemo: Memo | null = null;
 let darkMemo: Memo | null = null;
+let skyMemo: Memo | null = null;
+
+/**
+ * Past the dark, the sky (plans/visual-identity.md §7.3): the page's own
+ * ground, Blue hour's three stops and the region's last light at 135°, dimmed
+ * by `dim` toward the ink so the light stays the brightest thing on screen.
+ * Drawn first, under the identity transform, over the whole backing store:
+ * the same one fill the flat clear was, and memoised on what it shows.
+ */
+export function paintSky(ctx: CanvasRenderingContext2D, width: number, height: number, horizon: string, dim: number): void {
+  const key = `${width}|${height}|${horizon}|${dim}`;
+  if (!skyMemo || skyMemo.key !== key) {
+    // CSS's `135deg`: top-left to bottom-right, the line long enough that the corners sit on the end stops.
+    const half = (width + height) / 4;
+    const cx = width / 2;
+    const cy = height / 2;
+    const g = ctx.createLinearGradient(cx - half, cy - half, cx + half, cy + half);
+    const sky = (c: string): string => mix(c, INK['950'], dim);
+    g.addColorStop(0, sky(GROUND.stop1));
+    g.addColorStop(0.34, sky(GROUND.stop2));
+    g.addColorStop(0.66, sky(GROUND.stop3));
+    g.addColorStop(1, sky(horizon));
+    skyMemo = { key, gradient: g };
+  }
+  ctx.fillStyle = skyMemo.gradient;
+  ctx.fillRect(0, 0, width, height);
+}
 
 /** How the rim stretches a circle of radius `L` on each axis: the gradients are drawn as circles under it. */
 function stretch(light: number, oval: Oval): { kx: number; ky: number } {
@@ -94,6 +126,9 @@ export function paintGround(
 /**
  * The dark past the rim, over the bodies out there: clear just inside the
  * rim, opaque at `darkScale` times it, so a body walking in comes out of it.
+ * It holds opaque a little past that, over anything a knockback pushed out,
+ * then thins into the sky (`paintSky`), so the dark presses in round the
+ * light and the sky shows beyond it without a seam.
  */
 export function paintDark(ctx: CanvasRenderingContext2D, light: number, oval: Oval, box: WorldBox, palette: string, alpha = 1): void {
   const blur = light * (ARENA.darkScale - 1);
@@ -101,11 +136,15 @@ export function paintDark(ctx: CanvasRenderingContext2D, light: number, oval: Ov
   const outer = light * ARENA.darkScale;
   const key = `${light}|${palette}`;
   if (!darkMemo || darkMemo.key !== key) {
-    const g = ctx.createRadialGradient(0, 0, inner, 0, 0, outer);
+    const far = outer * DARK_FADE;
+    const at = (r: number): number => (r - inner) / (far - inner);
+    const g = ctx.createRadialGradient(0, 0, inner, 0, 0, far);
     const dark = INK['950'];
     g.addColorStop(0, withAlpha(dark, 0));
-    g.addColorStop(0.5, withAlpha(dark, 0.55));
-    g.addColorStop(1, dark);
+    g.addColorStop(at((inner + outer) / 2), withAlpha(dark, 0.55));
+    g.addColorStop(at(outer), dark);
+    g.addColorStop(at(outer * DARK_HOLD), dark);
+    g.addColorStop(1, withAlpha(dark, 0));
     darkMemo = { key, gradient: g };
   }
   const { kx, ky } = stretch(light, oval);
@@ -125,11 +164,12 @@ export function paintDark(ctx: CanvasRenderingContext2D, light: number, oval: Ov
 }
 
 /**
- * The rim of the light, where the Blight begins: a thin violet line with a
- * soft glow either side, its widths in CSS pixels (`px` world units each).
+ * The rim of the light, where the Blight begins: a thin line of the
+ * identity's violet (`--accent`) with a soft glow either side, the violet
+ * holding back the dark. Its widths are CSS pixels (`px` world units each).
  * A stratum of the Abyss wears its own colour (plans/late-game/08).
  */
-export function paintRim(ctx: CanvasRenderingContext2D, light: number, oval: Oval, px: number, color: string = FX.arcane): void {
+export function paintRim(ctx: CanvasRenderingContext2D, light: number, oval: Oval, px: number, color: string = ACCENT): void {
   const rim = rimAxes(light, oval);
   ctx.save();
   ctx.beginPath();

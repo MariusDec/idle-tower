@@ -3,14 +3,14 @@ import { ANOMALY_BY_ID } from '../content/anomalies';
 import { EVOLUTION_BY_ID } from '../content/evolutions';
 import { FUSION_BY_ID } from '../content/fusions';
 import { ENEMY_BY_ID } from '../content/enemies';
-import { regionByIndex } from '../content/regions';
+import { LAST_LIGHT, regionByIndex } from '../content/regions';
 import { RUSH_STAGES } from '../content/rush';
 import { formatDuration } from '../core/format';
 import type { RunState } from '../sim/state';
 import { Camera, stageOval } from './camera';
 import { Effects } from './effects';
-import { FX, INK, RARITY, lighten, mix, setPaletteMode, withAlpha, type PaletteMode } from './palette';
-import { paintDark, paintGates, paintGround, paintRim, type WorldBox } from './painters/arena';
+import { FX, GROUND, INK, RARITY, lighten, mix, setPaletteMode, withAlpha, type PaletteMode } from './palette';
+import { paintDark, paintGates, paintGround, paintRim, paintSky, type WorldBox } from './painters/arena';
 import { STRATUM_BY_ID, stratumTitle, type StratumDef } from '../content/strata';
 import { ruleLoad } from '../sim/strata';
 import { BALANCE } from '../content/balance';
@@ -51,6 +51,9 @@ const BANNER_SECONDS = 2.4;
 const DISPLAY_FONT = 'Oswald, "Arial Narrow", sans-serif';
 /** What the Abyss's ground darkens toward (§9). */
 const ABYSS_DARK = INK['950'];
+/** How far the sky past the light dims toward the ink (plans/visual-identity.md §7.3); the Abyss's, further. */
+const SKY_DIM = 0.4;
+const ABYSS_SKY_DIM = 0.7;
 /** The boss's edge marker (camera-and-fog §5.3): inset from the stage's edge, and its size, CSS px. */
 const MARKER_INSET = 26;
 const MARKER_SIZE = 11;
@@ -110,6 +113,8 @@ export class Renderer {
   private textScale = 1;
   /** The palette the canvas wears, and its baked sprites were drawn in. */
   private palette: PaletteMode = 'standard';
+  /** The sky's last stop: the region's last light, as the page's ground wears it (set by the app). */
+  private horizon: string = LAST_LIGHT['ashen-fields'];
   /** What the tower wears (N2), and the hub's mount: the profile's, set by the app. */
   private look: TowerLook = PLAIN_LOOK;
   private idle: readonly Mount[] = [{ id: 'arcane-bolt', level: 1, aim: IDLE_AIM }];
@@ -170,6 +175,17 @@ export class Renderer {
     setPaletteMode(mode);
     this.enemies.clear();
     clearGlows();
+  }
+
+  /**
+   * The sky's horizon (plans/visual-identity.md §7.3): the region's last
+   * light, the same colour the page's ground ends on, so the hub's glass and
+   * the run share one sky.
+   */
+  setHorizon(color: string): void {
+    if (color === this.horizon) return;
+    this.horizon = color;
+    this.dirty = true;
   }
 
   /** The settings' text size, applied to text painted on the canvas. */
@@ -652,12 +668,11 @@ export class Renderer {
     const px = view.dpr / view.scale;
     const box: WorldBox = { halfWidth: this.camera.viewHalfWidth, halfHeight: this.camera.viewHalfHeight };
 
-    this.camera.applyDevice(ctx);
-    ctx.fillStyle = INK['950'];
-    ctx.fillRect(0, 0, view.pixelWidth, view.pixelHeight);
-
     // A stratum wears its own ground (plans/late-game/08); past the strata, a template's, gone dark (§9).
     const region = run ? runRegion(run) : regionByIndex(1);
+    this.camera.applyDevice(ctx);
+    paintSky(ctx, view.pixelWidth, view.pixelHeight, this.horizon, run && region.abyss ? ABYSS_SKY_DIM : SKY_DIM);
+
     const stratum = region.abyss?.stratum ? STRATUM_BY_ID[region.abyss.stratum] ?? null : null;
     const tint = stratum ? region.tint : region.abyss ? mix(region.tint ?? INK['800'], ABYSS_DARK, 0.55) : region.tint;
     this.camera.applyWorld(ctx);
@@ -767,7 +782,7 @@ export class Renderer {
     ctx.save();
     if (b.letterbox) {
       const barH = h * 0.1 * p;
-      ctx.fillStyle = withAlpha(INK['950'], 0.92);
+      ctx.fillStyle = withAlpha(GROUND.stop2, 0.92);
       ctx.fillRect(0, 0, w, barH);
       ctx.fillRect(0, h - barH, w, barH);
     }

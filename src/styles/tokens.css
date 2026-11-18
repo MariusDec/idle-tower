@@ -118,18 +118,19 @@
      Component blocks must not reference these; go through the semantic layer.
      ═════════════════════════════════════════════════════════════════════════ */
 
-  /* Ink — the canvas's rock and stone. Mirrored in palette.ts as INK. */
-  --ink-050: #e8ecf4;
-  --ink-100: #b4bcca;
-  --ink-200: #838d9e;
-  --ink-300: #5a6476;
-  --ink-400: #3b4457;
-  --ink-500: #2a3141;
-  --ink-600: #212734;
-  --ink-700: #181d28;
-  --ink-800: #12161f;
-  --ink-900: #0a0d14;
-  --ink-950: #070a10;
+  /* Ink — the canvas's rock and stone: navy-indigo darks, lavender-grey lights
+     (the Blue hour family). Mirrored in palette.ts as INK. */
+  --ink-050: #e9ecf7;
+  --ink-100: #b7bbce;
+  --ink-200: #878ba3;
+  --ink-300: #5e637d;
+  --ink-400: #3e435d;
+  --ink-500: #2c304a;
+  --ink-600: #22263e;
+  --ink-700: #191b33;
+  --ink-800: #12152a;
+  --ink-900: #0a0c1d;
+  --ink-950: #070916;
 
   /* Amber — everything the player owns: the tower, shards, physical shots, XP. */
   --amber-100: #ffeec2;
@@ -314,7 +315,7 @@
 
   /* ── Rarity (--rarity-*) ──────────────────────────────────────────────────
      One ladder for equipment and blessings. Also mirrored in palette.ts. */
-  --rarity-common: #838d9e; /* = --ink-200 */
+  --rarity-common: #838d9e; /* the old blue-grey ink 200: rarity is not re-hued */
   --rarity-uncommon: #4ec97a; /* = --green-400 */
   --rarity-rare: #4a9eff; /* = --azure-400 */
   --rarity-epic: #a95cff; /* = --violet-400 */

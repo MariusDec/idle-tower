@@ -103,7 +103,10 @@ export type InkStep =
   | '600' | '700' | '800' | '900' | '950';
 
 /**
- * `--ink-*`: the deep desaturated blue-black the whole game sits on.
+ * `--ink-*`: the navy-indigo the whole game sits on, in the identity's Blue
+ * hour family: indigo darks, lavender-grey lights (plans/visual-identity.md
+ * §7). Each step keeps the relative luminance of the blue-grey ramp it
+ * replaced, so every `FX` colour's contrast on the ground is unchanged.
  *
  * The `--fx-*` group answers "what does this colour *mean*"; this one answers
  * "what is the ground made of". Part 3's battlefield needs both — the layered
@@ -116,18 +119,32 @@ export type InkStep =
  * painted battlefield has no "surface" to speak of — it has rock.
  */
 export const INK: Record<InkStep, string> = {
-  '050': '#e8ecf4',
-  '100': '#b4bcca',
-  '200': '#838d9e',
-  '300': '#5a6476',
-  '400': '#3b4457',
-  '500': '#2a3141',
-  '600': '#212734',
-  '700': '#181d28',
-  '800': '#12161f',
-  '900': '#0a0d14',
-  '950': '#070a10',
+  '050': '#e9ecf7',
+  '100': '#b7bbce',
+  '200': '#878ba3',
+  '300': '#5e637d',
+  '400': '#3e435d',
+  '500': '#2c304a',
+  '600': '#22263e',
+  '700': '#191b33',
+  '800': '#12152a',
+  '900': '#0a0c1d',
+  '950': '#070916',
 };
+
+/**
+ * The page's ground (`--bg-stop-1…3` in `tokens.css`): the first three stops
+ * of the identity's Blue hour gradient. The canvas paints the same sky past
+ * the light, with the region's last light as the fourth stop.
+ */
+export const GROUND = {
+  stop1: '#2a1e4c',
+  stop2: '#1d2148',
+  stop3: '#211d3f',
+} as const;
+
+/** `--accent`: the identity's violet. On the canvas, the rim of the light. */
+export const ACCENT = '#b3a5ff';
 
 /** The five equipment rarities, weakest first. */
 export type RarityTier = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';

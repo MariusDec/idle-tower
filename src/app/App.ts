@@ -47,7 +47,7 @@ import { runRegion, runWave } from '../sim/systems/waves';
 import { SettingsPanel } from '../ui/settings';
 import { Music } from '../audio/music';
 import { bench, type BenchOptions, type BenchResult } from './bench';
-import { applyGround, applyQuality, applySettings, onOsMotionChange, type Settings } from './settings';
+import { applyGround, applyQuality, applySettings, lastLightFor, onOsMotionChange, type Settings } from './settings';
 import { DraftPanel } from '../ui/draft';
 import { bindBuildPeek } from '../ui/peek';
 import { Hud } from '../ui/hud';
@@ -945,13 +945,16 @@ export class App {
 
   /**
    * The root's two presentation attributes (plans/visual-identity.md §2): the
-   * ground's last light follows the hub's region or the run's, and the quality
+   * ground's last light follows the hub's region or the run's (the canvas's
+   * sky too), and the quality
    * tier decides whether glass may blur. Both write only on a change.
    */
   private dress(run: RunState | null): void {
     const root = document.documentElement;
     const inRun = run !== null && (this.screen === 'run' || this.screen === 'results');
-    applyGround(root, inRun ? runRegion(run).index : this.profile.region);
+    const region = inRun ? runRegion(run).index : this.profile.region;
+    applyGround(root, region);
+    this.renderer.setHorizon(lastLightFor(region));
     applyQuality(root, this.renderer.quality);
   }
 
