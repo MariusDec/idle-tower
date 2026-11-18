@@ -294,7 +294,6 @@ export class DraftPanel {
     // Two or more banked (U2): one tap takes every suggestion. In the Opening it leads.
     const banked = view.banked ?? 1;
     this.take.hidden = banked < 2 || !view.timed;
-    toggleClass(this.take, 'btn-primary', opening !== null);
     this.takeLabel = opening ? `Take all ${banked} suggested` : `Take suggested ×${banked}`;
     this.autoTake = opening && view.timed ? view.autoTake ?? null : null;
     this.paintTake();

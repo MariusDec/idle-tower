@@ -21,6 +21,9 @@ import type { BossId, RegionDef } from './types';
 /** Boss Rush's place on the Map and in a run's `regionId`: past the Abyss. */
 export const RUSH_INDEX = 8;
 
+/** Boss Rush's last light (plans/visual-identity.md §2.2): a blood dusk. */
+export const RUSH_LAST_LIGHT = '#3a1a22';
+
 /** The bosses in the order they come: one a wave. */
 export const RUSH_BOSSES: readonly BossId[] = [
   'gatekeeper', 'bog-mother', 'prism', 'forgeheart', 'hollow-king', 'blight', 'deepwarden', 'hunger',

@@ -13,7 +13,7 @@ import type { RimColor } from '../content/types';
  * **Why a test rather than generating the CSS at boot?** Generating the custom
  * properties from JS would make the first paint depend on the bundle: the app
  * would flash unstyled chrome before `main.ts` ran, the Capacitor splash would
- * not be able to read `--surface-0`, and a stylesheet that cannot be understood
+ * not be able to read `--bg-stop-2`, and a stylesheet that cannot be understood
  * without running the game is a bad stylesheet. Declaring the values in CSS and
  * asserting the agreement in CI keeps both files readable on their own and still
  * makes drift a build failure. See `docs/render.md`.
@@ -112,7 +112,7 @@ export type InkStep =
  * `#5b6b7a` typed into it with nothing tying them to the panels behind.
  *
  * It is a **primitive**, not a semantic token: a DOM rule must go through
- * `--surface-*` / `--text-*` instead. The canvas is the exception, because a
+ * `--glass-*` / `--text-*` instead. The canvas is the exception, because a
  * painted battlefield has no "surface" to speak of — it has rock.
  */
 export const INK: Record<InkStep, string> = {

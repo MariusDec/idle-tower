@@ -198,6 +198,22 @@ export const REGIONS: readonly RegionDef[] = [
   },
 ];
 
+/**
+ * Each region's last light (plans/visual-identity.md §2.2): the fourth stop of
+ * the page's ground, the horizon the hub and a run sit under. Each is the
+ * region's `tint` mixed 60% into the ember dusk, then darkened until every text
+ * token clears 5:1 on it; `tests/contrast.test.ts` holds them there. Presentation
+ * only, so it lives beside the regions rather than on them: the sim never reads it.
+ */
+export const LAST_LIGHT: Readonly<Record<string, string>> = {
+  'ashen-fields': '#3b2422',
+  'drowned-mire': '#24312f',
+  'glass-wastes': '#2f2c39',
+  'ember-rift': '#44241b',
+  'the-hollow': '#2a1e2c',
+  'blight-heart': '#3a171d',
+};
+
 export function regionByIndex(index: number): RegionDef {
   const r = REGIONS.find((x) => x.index === index);
   if (!r) throw new Error(`no region ${index}`);

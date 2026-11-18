@@ -1,0 +1,336 @@
+/**
+ * tokens.css — the visual identity as CSS custom properties.
+ *
+ * Light theme: "sunrise" (lavender → periwinkle → mint).
+ * Dark theme:  "blue hour" (afterglow violet → indigo → navy → petrol teal).
+ *
+ * Theme selection, in order of precedence:
+ *   1. <html data-theme="light">  or  <html data-theme="dark">  (explicit user choice)
+ *   2. the OS preference (prefers-color-scheme), when no data-theme is set
+ *
+ * Extracted from Learn Thai (src/styles/global.css + src/styles/theme.ts).
+ * Every text token is checked to be >= 4.5:1 against every stop of its gradient.
+ */
+
+/* ── Scheme-independent tokens ─────────────────────────────────────────────── */
+:root {
+  /* Type. Sarabun is the house face (Latin + Thai, looped, friendly);
+     Kanit is the alternative "modern" face. Both on Google Fonts, OFL. */
+  --font-sans: "Sarabun", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans-alt: "Kanit", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --fs-xs: 12px; /* eyebrows, section labels, badges, captions */
+  --fs-sm: 13px; /* segment labels, chips, small meta */
+  --fs-md: 14px; /* secondary body, subtitles */
+  --fs-lg: 16px; /* body, button label (md) */
+  --fs-xl: 18px; /* button label (lg), card title */
+  --fs-2xl: 20px;
+  --fs-3xl: 22px;
+  --fs-title: 24px; /* card hero title */
+  --fs-hero: 28px; /* page <h1> */
+  --fs-display: 36px; /* wordmark, big numbers */
+  --fs-giant: 48px;
+
+  --fw-regular: 400;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* Unitless line heights only: px line heights clip diacritics under text zoom. */
+  --lh-tight: 1.2; /* headings */
+  --lh-snug: 1.25; /* button labels */
+  --lh-body: 1.4; /* body, subtitles */
+
+  --tracking-label: 1px; /* uppercase eyebrows / section headers */
+  --tracking-badge: 0.06em; /* uppercase badges */
+
+  /* Spacing — a 4px grid. */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+  --space-giant: 48px;
+  --page-gutter: 16px;
+  --content-max-width: 720px;
+
+  /* Radii — and which surface takes which. */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px; /* cards, rows, callouts, options */
+  --radius-xl: 14px; /* buttons */
+  --radius-2xl: 16px; /* sheets, toasts */
+  --radius-pill: 20px;
+  --radius-round: 999px; /* chips, badges, segmented controls, progress bars */
+
+  --radius-card: var(--radius-lg);
+  --radius-button: var(--radius-xl);
+  --radius-chip: var(--radius-round);
+  --radius-sheet: var(--radius-2xl);
+
+  /* Control sizes. 48px is the minimum touch target. */
+  --control-h-lg: 52px;
+  --control-h-md: 48px;
+  --control-h-sm: 40px; /* still gets a 44px invisible hit area */
+  --hit-target: 44px;
+
+  /* Motion. Durations are the brand's tempo; never use the named CSS easings. */
+  --dur-instant: 120ms; /* taps, hovers, press feedback */
+  --dur-fast: 180ms; /* toggles, "pop" on success */
+  --dur-base: 280ms; /* default transition, progress fills, segment slide */
+  --dur-slow: 420ms; /* page-level reveals, count-ups */
+  --dur-deliberate: 700ms; /* celebrations, boot */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1);
+  --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --stagger-step: 60ms;
+  --stagger-cap: 240ms;
+
+  /* The one opaque surface: the primary action. White label on it. */
+  --accent-gradient: linear-gradient(135deg, #6b5bd9 0%, #4a5fd0 100%);
+
+  --white: #ffffff;
+  --black: #000000;
+}
+
+/* ── Light: "sunrise" ───────────────────────────────────────────────────────── */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Page ground. Applied to <body> with `background-attachment: fixed`. */
+  --bg-gradient: linear-gradient(135deg, #e8deff 0%, #c8dcff 50%, #d4f5e2 100%);
+  --bg-stop-1: #e8deff;
+  --bg-stop-2: #c8dcff;
+  --bg-stop-3: #d4f5e2;
+  --theme-color: #6b5bd9; /* <meta name="theme-color"> */
+
+  /* Glass — translucent white washes over the gradient. */
+  --glass-fill: rgba(255, 255, 255, 0.18);
+  --glass-fill-strong: rgba(255, 255, 255, 0.38); /* elevated / selected */
+  --glass-fill-subtle: rgba(255, 255, 255, 0.1); /* quiet, idle options */
+  --glass-fill-accent: rgba(101, 91, 217, 0.25);
+  --glass-fill-sheet: linear-gradient(
+    135deg,
+    rgba(232, 222, 255, 0.72) 0%,
+    rgba(200, 220, 255, 0.72) 50%,
+    rgba(212, 245, 226, 0.72) 100%
+  );
+  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-border-subtle: rgba(255, 255, 255, 0.3);
+  --glass-shadow: 0 8px 24px rgba(75, 58, 158, 0.18);
+  --blur: 25px;
+
+  /* Text. */
+  --text-primary: #2a1f4a; /* 10.9–12.9:1 */
+  --text-secondary: #5b5380; /* 5.1–6.0:1 */
+  --text-muted: #625a86; /* 4.6–5.4:1 — labels, eyebrows */
+  --text-dim: #4a4170; /* 6.6–7.9:1 — sub-headings, secondary meta */
+
+  /* Accent. `--accent` is for fills, borders, icons (3:1 is enough there);
+     `--accent-text` is the accent as a text color (5.2–6.1:1). */
+  --accent: #6b5bd9;
+  --accent-strong: #5246b8;
+  --accent-text: #5246b8;
+  --accent-tint: rgba(107, 91, 217, 0.12); /* badge / chip fill */
+  --accent-tint-border: rgba(107, 91, 217, 0.25);
+
+  /* Surfaces inside surfaces. */
+  --surface: rgba(255, 255, 255, 0.45); /* progress track, segmented track */
+  --panel-subtle: rgba(255, 255, 255, 0.45); /* the "inset" surface */
+  --border: rgba(255, 255, 255, 0.7);
+  --border-light: rgba(255, 255, 255, 0.35);
+  --progress-track: rgba(75, 58, 158, 0.18);
+
+  /* Status. In light, success/error/warning are for icons, borders and bold
+     labels on their own tint — not small body text on the bare gradient. */
+  --success: #2e7d32;
+  --success-bg: rgba(200, 240, 210, 0.55);
+  --success-border: rgba(120, 200, 140, 0.7);
+  --error: #c62828;
+  --error-bg: rgba(255, 215, 220, 0.55);
+  --error-border: rgba(230, 150, 160, 0.7);
+  --warning: #ef6c00;
+  --warning-bg: rgba(239, 108, 0, 0.14);
+  --info: #1e5a8b; /* "reading" blue: info, secondary highlight */
+  --info-bg: rgba(200, 225, 250, 0.55);
+
+  /* Category tints (badges, section washes). */
+  --tint-violet: rgba(232, 220, 255, 0.55);
+  --tint-blue: rgba(200, 220, 255, 0.55);
+  --tint-pink: rgba(255, 220, 240, 0.55);
+  --tint-mint: rgba(200, 245, 225, 0.55);
+
+  /* Icon hues — each is a light/dark pair, always used as a pair. */
+  --hue-teal: #00838f;
+  --hue-pine: #00695c;
+  --hue-orange: #e65100;
+  --hue-amber: #ef6c00;
+  --hue-coral: #ff7043;
+  --hue-orchid: #8e24aa;
+  --hue-violet: #7b1fa2;
+  --hue-azure: #0277bd;
+  --hue-rose: #e53935;
+
+  /* Scrollbar (pointer: fine only). */
+  --scrollbar-thumb-from: rgba(75, 58, 158, 0.42);
+  --scrollbar-thumb-to: rgba(75, 58, 158, 0.22);
+  --scrollbar-thumb-hover-from: #6b5bd9;
+  --scrollbar-thumb-hover-to: #4a5fd0;
+}
+
+/* ── Dark: "blue hour" ─────────────────────────────────────────────────────────
+   Written once as a mixin-like block and applied twice: for an explicit
+   data-theme="dark", and for the OS preference when nothing is chosen. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-gradient: linear-gradient(135deg, #2a1e4c 0%, #1d2148 32%, #16294a 66%, #0f2b3c 100%);
+  --bg-stop-1: #2a1e4c;
+  --bg-stop-2: #1d2148;
+  --bg-stop-3: #16294a;
+  --bg-stop-4: #0f2b3c;
+  --theme-color: #1d2148;
+  --glass-fill: rgba(173, 190, 255, 0.07);
+  --glass-fill-strong: linear-gradient(
+    135deg,
+    rgba(198, 208, 255, 0.2) 0%,
+    rgba(150, 170, 255, 0.09) 100%
+  );
+  --glass-fill-subtle: rgba(173, 190, 255, 0.035);
+  --glass-fill-accent: linear-gradient(
+    135deg,
+    rgba(160, 145, 255, 0.32) 0%,
+    rgba(120, 160, 255, 0.2) 100%
+  );
+  --glass-fill-sheet: linear-gradient(
+    135deg,
+    rgba(42, 30, 76, 0.76) 0%,
+    rgba(29, 33, 72, 0.76) 32%,
+    rgba(22, 41, 74, 0.76) 66%,
+    rgba(15, 43, 60, 0.76) 100%
+  );
+  --glass-border: rgba(196, 208, 255, 0.24);
+  --glass-border-subtle: rgba(196, 208, 255, 0.11);
+  --glass-shadow: 0 8px 24px rgba(6, 8, 24, 0.5);
+  --blur: 20px;
+  --text-primary: #e9e6f7;
+  --text-secondary: #b0b8d8;
+  --text-muted: #949dbd;
+  --text-dim: #9ea7c8;
+  --accent: #b3a5ff;
+  --accent-strong: #8f7fe8;
+  --accent-text: #b3a5ff;
+  --accent-tint: rgba(179, 165, 255, 0.12);
+  --accent-tint-border: rgba(179, 165, 255, 0.25);
+  --accent-gradient: linear-gradient(135deg, #7a6ae4 0%, #5a71dd 100%);
+  --surface: rgba(173, 190, 255, 0.09);
+  --panel-subtle: rgba(173, 190, 255, 0.075);
+  --border: rgba(196, 208, 255, 0.24);
+  --border-light: rgba(196, 208, 255, 0.12);
+  --progress-track: #949dbd;
+  --success: #6fd9a6;
+  --success-bg: rgba(111, 217, 166, 0.16);
+  --success-border: rgba(111, 217, 166, 0.38);
+  --error: #ff9a94;
+  --error-bg: rgba(255, 154, 148, 0.16);
+  --error-border: rgba(255, 154, 148, 0.38);
+  --warning: #ffc078;
+  --warning-bg: rgba(255, 192, 120, 0.14);
+  --info: #7fc4f5;
+  --info-bg: rgba(127, 196, 245, 0.18);
+  --tint-violet: rgba(122, 106, 228, 0.28);
+  --tint-blue: rgba(90, 113, 221, 0.28);
+  --tint-pink: rgba(196, 122, 214, 0.26);
+  --tint-mint: rgba(90, 196, 162, 0.24);
+  --hue-teal: #6fd0de;
+  --hue-pine: #6fd3c3;
+  --hue-orange: #ffa366;
+  --hue-amber: #ffb570;
+  --hue-coral: #ffa183;
+  --hue-orchid: #d79be0;
+  --hue-violet: #c79be8;
+  --hue-azure: #7fc0ee;
+  --hue-rose: #ff8a80;
+  --scrollbar-thumb-from: rgba(196, 208, 255, 0.34);
+  --scrollbar-thumb-to: rgba(196, 208, 255, 0.16);
+  --scrollbar-thumb-hover-from: #b3a5ff;
+  --scrollbar-thumb-hover-to: #7a6ae4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg-gradient: linear-gradient(135deg, #2a1e4c 0%, #1d2148 32%, #16294a 66%, #0f2b3c 100%);
+    --bg-stop-1: #2a1e4c;
+    --bg-stop-2: #1d2148;
+    --bg-stop-3: #16294a;
+    --bg-stop-4: #0f2b3c;
+    --theme-color: #1d2148;
+    --glass-fill: rgba(173, 190, 255, 0.07);
+    --glass-fill-strong: linear-gradient(
+      135deg,
+      rgba(198, 208, 255, 0.2) 0%,
+      rgba(150, 170, 255, 0.09) 100%
+    );
+    --glass-fill-subtle: rgba(173, 190, 255, 0.035);
+    --glass-fill-accent: linear-gradient(
+      135deg,
+      rgba(160, 145, 255, 0.32) 0%,
+      rgba(120, 160, 255, 0.2) 100%
+    );
+    --glass-fill-sheet: linear-gradient(
+      135deg,
+      rgba(42, 30, 76, 0.76) 0%,
+      rgba(29, 33, 72, 0.76) 32%,
+      rgba(22, 41, 74, 0.76) 66%,
+      rgba(15, 43, 60, 0.76) 100%
+    );
+    --glass-border: rgba(196, 208, 255, 0.24);
+    --glass-border-subtle: rgba(196, 208, 255, 0.11);
+    --glass-shadow: 0 8px 24px rgba(6, 8, 24, 0.5);
+    --blur: 20px;
+    --text-primary: #e9e6f7;
+    --text-secondary: #b0b8d8;
+    --text-muted: #949dbd;
+    --text-dim: #9ea7c8;
+    --accent: #b3a5ff;
+    --accent-strong: #8f7fe8;
+    --accent-text: #b3a5ff;
+    --accent-tint: rgba(179, 165, 255, 0.12);
+    --accent-tint-border: rgba(179, 165, 255, 0.25);
+    --accent-gradient: linear-gradient(135deg, #7a6ae4 0%, #5a71dd 100%);
+    --surface: rgba(173, 190, 255, 0.09);
+    --panel-subtle: rgba(173, 190, 255, 0.075);
+    --border: rgba(196, 208, 255, 0.24);
+    --border-light: rgba(196, 208, 255, 0.12);
+    --progress-track: #949dbd;
+    --success: #6fd9a6;
+    --success-bg: rgba(111, 217, 166, 0.16);
+    --success-border: rgba(111, 217, 166, 0.38);
+    --error: #ff9a94;
+    --error-bg: rgba(255, 154, 148, 0.16);
+    --error-border: rgba(255, 154, 148, 0.38);
+    --warning: #ffc078;
+    --warning-bg: rgba(255, 192, 120, 0.14);
+    --info: #7fc4f5;
+    --info-bg: rgba(127, 196, 245, 0.18);
+    --tint-violet: rgba(122, 106, 228, 0.28);
+    --tint-blue: rgba(90, 113, 221, 0.28);
+    --tint-pink: rgba(196, 122, 214, 0.26);
+    --tint-mint: rgba(90, 196, 162, 0.24);
+    --hue-teal: #6fd0de;
+    --hue-pine: #6fd3c3;
+    --hue-orange: #ffa366;
+    --hue-amber: #ffb570;
+    --hue-coral: #ffa183;
+    --hue-orchid: #d79be0;
+    --hue-violet: #c79be8;
+    --hue-azure: #7fc0ee;
+    --hue-rose: #ff8a80;
+    --scrollbar-thumb-from: rgba(196, 208, 255, 0.34);
+    --scrollbar-thumb-to: rgba(196, 208, 255, 0.16);
+    --scrollbar-thumb-hover-from: #b3a5ff;
+    --scrollbar-thumb-hover-to: #7a6ae4;
+  }
+}

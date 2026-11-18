@@ -13,11 +13,11 @@ const config: CapacitorConfig = {
   appId: 'com.mariusdonci.thetower',
   appName: 'The Tower',
   webDir: 'dist',
-  // Matches --surface-0 / the theme-color meta. This is what shows for the
+  // Matches --theme-color / the theme-color meta (Blue hour's indigo). This is what shows for the
   // frame between the native splash going away and the first canvas paint.
-  backgroundColor: '#0a0d14',
+  backgroundColor: '#1d2148',
   android: {
-    backgroundColor: '#0a0d14',
+    backgroundColor: '#1d2148',
     // The canvas owns its own pinch/zoom semantics; the WebView must not add any.
     zoomEnabled: false,
   },
@@ -30,7 +30,7 @@ const config: CapacitorConfig = {
       // The game hides it itself once the icon sprite is injected and the UI has
       // mounted (src/platform/native.ts), so there is no white gap.
       launchAutoHide: false,
-      backgroundColor: '#0a0d14',
+      backgroundColor: '#1d2148',
       androidSplashResourceName: 'splash',
       androidScaleType: 'CENTER_CROP',
       showSpinner: false,
@@ -40,7 +40,7 @@ const config: CapacitorConfig = {
     StatusBar: {
       // Dark ground, light glyphs.
       style: 'DARK',
-      backgroundColor: '#0a0d14',
+      backgroundColor: '#1d2148',
       overlaysWebView: true,
     },
   },

@@ -251,7 +251,7 @@ export class SettingsPanel {
       area.addEventListener('input', () => { if (this.loading) this.loading.text = area.value; });
       box.append(
         area,
-        button('Check', 'btn btn-primary', () => take(area.value, 'the pasted one')),
+        button('Check', 'btn', () => take(area.value, 'the pasted one')),
         button('Choose file', 'btn', () => void this.actions.pickFile().then((text) => {
           if (text !== null) take(text, 'the one in the file');
         })),

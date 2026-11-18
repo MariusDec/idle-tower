@@ -19,6 +19,9 @@ import type { BossId, EnemyId, RegionDef, WaveBeat } from './types';
 /** The Abyss's place on the Map and in a run's `regionId`: past the six regions. */
 export const ABYSS_INDEX = 7;
 
+/** The Abyss's last light (plans/visual-identity.md §2.2): a deep violet, below every region's. */
+export const ABYSS_LAST_LIGHT = '#1f1a33';
+
 /** Waves to a floor; the last is its Keeper's or its boss's. */
 export const FLOOR_WAVES = 10;
 

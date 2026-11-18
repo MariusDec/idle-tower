@@ -94,13 +94,23 @@ describe('44 px floor', () => {
     { sel: '.map-band-go', axes: ['min-height'] },
   ];
 
+  // 44px, or one of the identity's control heights that clear it (48 / 52;
+  // tokens.css). The 40px `--control-h-sm` does not count: it needs the
+  // invisible 44px overlay instead (see `.btn-sm::after`).
+  const FLOOR = '(?:44px|48px|52px|var\\(--hit-target\\)|var\\(--control-h-(?:md|lg)\\))';
+
   for (const { sel, axes } of AUDIT) {
     for (const axis of axes) {
       it(`${sel} declares a 44px ${axis}`, () => {
-        expect(declares(sel, new RegExp(`${axis}:\\s*44px`))).toBe(true);
+        expect(declares(sel, new RegExp(`${axis}:\\s*${FLOOR}`))).toBe(true);
       });
     }
   }
+
+  it('a 40px button lays a 44px hit area over itself', () => {
+    expect(declares('.btn-sm::after', /width:\s*max\(100%,\s*var\(--hit-target\)\)/)).toBe(true);
+    expect(declares('.btn-sm::after', /height:\s*max\(100%,\s*var\(--hit-target\)\)/)).toBe(true);
+  });
 
   it('the modal card caps its width against the side insets', () => {
     const card = RULES.find(r => r.selector === '.modal-card' && /width:/.test(r.body));

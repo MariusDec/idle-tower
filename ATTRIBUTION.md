@@ -301,6 +301,8 @@ Icons made by [Cathelineau](https://game-icons.net), licensed **CC BY 3.0**.
 
 ## Fonts
 
-The display face is [Oswald](https://fonts.google.com/specimen/Oswald) by Vernon Adams,
-Kalapi Gajjar and Cyreal, licensed under the
-[SIL Open Font License 1.1](https://openfontlicense.org) — see `public/fonts/OFL.txt`.
+The UI face is [Sarabun](https://fonts.google.com/specimen/Sarabun) by Cadson Demak,
+licensed under the [SIL Open Font License 1.1](https://openfontlicense.org) — see
+`public/fonts/OFL.txt`. The woff2 files (latin and latin-ext, weights 400, 600 and
+700) come from the `@fontsource/sarabun` 5.3.0 package. It is the shared visual
+identity's house face (`docs/visual-identity/`).

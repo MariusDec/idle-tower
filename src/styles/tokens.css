@@ -8,56 +8,117 @@
    font size inside a component block is a bug.** If you need a value that is not
    here, add it here first.
 
+   The semantic layer speaks the shared visual identity's names ("Sunrise /
+   Blue hour", vendored in docs/visual-identity/), in its dark *Blue hour*
+   variant with a warm "last light" horizon (plans/visual-identity.md §2). A
+   rule written for a sibling app reads the same here. Dark only: there is no
+   Sunrise theme and no prefers-color-scheme block.
+
    Three layers, in order:
      1. Primitives  — the raw hue ramps (--ink-*, --amber-*, …). Never referenced
                       from a component block; only the semantic layer reads them.
-     2. Semantic    — what a thing *means* (--surface-2, --fx-blood, --warn).
-                      This is the layer components use.
-     3. Layout      — sizes the JS also knows about (--panel-width, …).
+     2. Semantic    — what a thing *means*: the identity's ground, glass, text,
+                      accent and status, plus the game's own groups (--fx-*,
+                      --rarity-*, --rgb-*, --z-*). This is the layer components use.
+     3. Layout      — sizes the JS also knows about (--stage-max-width, …).
 
-   The --fx-* and --rarity-* groups are mirrored in src/render/palette.ts so the
-   canvas renderer and the DOM cannot drift. tests/palette.test.ts fails if the
-   two lists disagree, so edit both together.
+   The --fx-*, --rarity-* and --ink-* groups are mirrored in src/render/palette.ts
+   so the canvas renderer and the DOM cannot drift. tests/palette.test.ts fails if
+   the two lists disagree, so edit both together. tests/contrast.test.ts holds
+   every text token at 4.5:1 on every ground stop, each region's last light
+   included.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Display face ───────────────────────────────────────────────────────────
-   Oswald, a condensed grotesque, for numbers and headings. Self-hosted (the
-   Capacitor build must have no runtime network dependency) as the variable
-   woff2, latin + latin-ext, ~40 KB total. SIL Open Font License 1.1 —
-   public/fonts/OFL.txt.
-
-   `font-display: swap` plus a genuinely condensed fallback stack so the layout
-   the player sees during the swap is close to the one they end up with.        */
+/* ── The face ───────────────────────────────────────────────────────────────
+   Sarabun, the identity's house face: a friendly humanist sans. Self-hosted
+   (the Capacitor build has no network), latin + latin-ext, 400 / 600 / 700,
+   about 11 KB per file. SIL Open Font License 1.1 — public/fonts/OFL.txt.
+   index.html preloads the latin 700, the weight of titles and buttons.       */
 
 @font-face {
-  font-family: 'Oswald';
+  font-family: 'Sarabun';
   font-style: normal;
-  font-weight: 400 700;
+  font-weight: 400;
   font-display: swap;
-  src: url('/fonts/oswald-latin.woff2') format('woff2');
+  src: url('/fonts/sarabun-latin-400.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
-  font-family: 'Oswald';
+  font-family: 'Sarabun';
   font-style: normal;
-  font-weight: 400 700;
+  font-weight: 400;
   font-display: swap;
-  src: url('/fonts/oswald-latin-ext.woff2') format('woff2');
+  src: url('/fonts/sarabun-latin-ext-400.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
+@font-face {
+  font-family: 'Sarabun';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/sarabun-latin-600.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Sarabun';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/sarabun-latin-ext-600.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Sarabun';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/sarabun-latin-700.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Sarabun';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/sarabun-latin-ext-700.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* The horizon: the ground's last stop. Registered as a colour so a region
+   change moves it rather than cutting (plans/visual-identity.md §2.2). Written
+   from TS by app/settings.ts#applyGround, from each region's `lastLight`. */
+@property --bg-last-light {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #3b2422;
+}
+
 :root {
+  color-scheme: dark;
+
   /* ═════════════════════════════════════════════════════════════════════════
      1. PRIMITIVES — hue ramps. 100 is the lightest step, 900 the darkest.
      Component blocks must not reference these; go through the semantic layer.
      ═════════════════════════════════════════════════════════════════════════ */
 
-  /* Ink — the deep desaturated blue-black ground the whole game sits on. */
+  /* Ink — the canvas's rock and stone. Mirrored in palette.ts as INK. */
   --ink-050: #e8ecf4;
   --ink-100: #b4bcca;
   --ink-200: #838d9e;
@@ -70,7 +131,7 @@
   --ink-900: #0a0d14;
   --ink-950: #070a10;
 
-  /* Amber — everything the player owns: the tower, gold, physical shots, XP. */
+  /* Amber — everything the player owns: the tower, shards, physical shots, XP. */
   --amber-100: #ffeec2;
   --amber-200: #ffdf9a;
   --amber-300: #ffc879;
@@ -82,119 +143,155 @@
   --amber-900: #2b2110;
 
   /* Ember — fire, burn, enrage. Warm, urgent, but not hostile. */
-  --ember-100: #ffd9bf;
-  --ember-200: #ffc9a3;
-  --ember-300: #ffa96f;
   --ember-400: #ff8b46;
-  --ember-500: #d9752b;
-  --ember-600: #a4551c;
-  --ember-700: #6d3a12;
-  --ember-800: #46240c;
-  --ember-900: #2a1608;
 
   /* Violet — the arcane: mana, magic, blessings, research, transcendence. */
-  --violet-100: #ece0ff;
-  --violet-200: #d8c3ff;
-  --violet-300: #c08cff;
   --violet-400: #a95cff;
-  --violet-500: #8a44d6;
-  --violet-600: #6446b8;
-  --violet-700: #46308a;
-  --violet-800: #2a2042;
-  --violet-900: #17102b;
 
-  /* Azure — frost, shields, information. The cool counterweight to amber. */
-  --azure-100: #d6e7ff;
-  --azure-200: #9fe3ff;
+  /* Azure — frost, shields, information. */
   --azure-300: #79d2ff;
   --azure-400: #4a9eff;
-  --azure-500: #2f7fb8;
-  --azure-600: #2c4f7d;
-  --azure-700: #1f3a5c;
-  --azure-800: #15263d;
-  --azure-900: #0d1826;
 
-  /* Green — healing, buffs, affordability, progress. */
-  --green-100: #dff8e8;
-  --green-200: #c9f5da;
-  --green-300: #7bdd9d;
+  /* Green — healing, buffs. */
   --green-400: #4ec97a;
-  --green-500: #3ba463;
-  --green-600: #2f7d47;
-  --green-700: #1f5c33;
-  --green-800: #143d22;
-  --green-900: #0e2a19;
 
   /* Blood — enemies and damage. Reserved; see --fx-blood. */
-  --blood-100: #ffd7d0;
-  --blood-200: #f9b8b3;
-  --blood-300: #ef7a72;
   --blood-400: #d9534f;
-  --blood-500: #b53b36;
-  --blood-600: #8f2f2c;
-  --blood-700: #6b2626;
-  --blood-800: #4a1a1a;
-  --blood-900: #2d0f10;
-
-  /* Rose — generic negative UI: destructive buttons, a stat downside, a cancel.
-     Deliberately *not* red: red belongs to the battlefield. */
-  --rose-050: #fdeef0;
-  --rose-100: #f7e2e5;
-  --rose-200: #f0cdd2;
-  --rose-300: #d99aa3;
-  --rose-400: #c46a72;
-  --rose-500: #9c5a66;
-  --rose-600: #7a4550;
-  --rose-700: #55303a;
-  --rose-800: #3a2026;
 
   /* Absolutes. Only for shadows, inset highlights and text on a tinted fill. */
   --white: #ffffff;
   --black: #000000;
 
   /* ═════════════════════════════════════════════════════════════════════════
-     2. SEMANTIC
+     2. SEMANTIC — the identity's layer
      ═════════════════════════════════════════════════════════════════════════ */
 
-  /* ── Surfaces ─────────────────────────────────────────────────────────────
-     0 is the ground the app sits on and each step is one level nearer the
-     viewer. `raised` and `sunken` are the explicit pair for a control that
-     stands off its parent or a well that recedes into it. */
-  --surface-0: var(--ink-900);
-  --surface-1: var(--ink-800);
-  --surface-2: var(--ink-700);
-  --surface-3: var(--ink-600);
-  /* One step above --surface-3: the hover lift for a control that already sits
-     on the topmost surface. */
-  --surface-4: var(--ink-500);
-  --surface-raised: var(--ink-600);
-  --surface-sunken: var(--ink-950);
-  /* A scrim over the whole viewport, under a modal. */
-  --surface-scrim: rgba(0, 0, 0, 0.62);
-  /* A translucent panel that lets the battlefield show through. */
-  --surface-overlay: rgba(16, 20, 30, 0.9);
-  --surface-overlay-deep: rgba(10, 13, 20, 0.92);
+  /* ── The ground: Blue hour with a last light ─────────────────────────────
+     A 135° gradient on <body>, `background-attachment: fixed`. The first
+     three stops are Blue hour's (the third pulled a little toward violet so
+     the warm stop blends); the fourth is the region's horizon. */
+  --bg-stop-1: #2a1e4c;
+  --bg-stop-2: #1d2148;
+  --bg-stop-3: #211d3f;
+  --bg-last-light: #3b2422;
+  --bg-stop-4: var(--bg-last-light);
+  --bg-gradient: linear-gradient(
+    135deg,
+    var(--bg-stop-1) 0%,
+    var(--bg-stop-2) 34%,
+    var(--bg-stop-3) 66%,
+    var(--bg-last-light) 100%
+  );
+  /* <meta name="theme-color">, the Capacitor background, the splash. */
+  --theme-color: #1d2148;
 
-  /* ── Strokes ───────────────────────────────────────────────────────────── */
-  --stroke-subtle: var(--ink-500);
-  --stroke-strong: var(--ink-400);
-  /* A 1px light line along a top edge, for a lit-from-above surface. */
-  --stroke-hairline: rgba(255, 255, 255, 0.08);
+  /* ── Glass ────────────────────────────────────────────────────────────────
+     Cool blue-white washes over the ground, never neutral white. */
+  --glass-fill: rgba(173, 190, 255, 0.07);
+  --glass-fill-strong: linear-gradient(
+    135deg,
+    rgba(198, 208, 255, 0.2) 0%,
+    rgba(150, 170, 255, 0.09) 100%
+  );
+  --glass-fill-subtle: rgba(173, 190, 255, 0.035);
+  --glass-fill-accent: linear-gradient(
+    135deg,
+    rgba(160, 145, 255, 0.32) 0%,
+    rgba(120, 160, 255, 0.2) 100%
+  );
+  /* Sheets: the page gradient at 76%, so a sheet is the same sky. */
+  --glass-fill-sheet: linear-gradient(
+    135deg,
+    rgba(42, 30, 76, 0.76) 0%,
+    rgba(29, 33, 72, 0.76) 34%,
+    rgba(33, 29, 63, 0.76) 66%,
+    color-mix(in srgb, var(--bg-last-light) 76%, transparent) 100%
+  );
+  /* The game's addition (§2.4): glass that never blurs, for anything over the
+     running arena or on a quality tier below high. The identity's no-blur
+     fallback, an indigo glass; the exact opacity is to tune on device (88–92%). */
+  --glass-fill-solid: rgba(29, 33, 72, 0.9);
+  /* The same sheet without blur: what a sheet wears below the high tier. */
+  --glass-fill-sheet-solid: linear-gradient(
+    135deg,
+    rgba(42, 30, 76, 0.94) 0%,
+    rgba(29, 33, 72, 0.94) 34%,
+    rgba(33, 29, 63, 0.94) 66%,
+    color-mix(in srgb, var(--bg-last-light) 94%, transparent) 100%
+  );
+  --glass-border: rgba(196, 208, 255, 0.24);
+  --glass-border-subtle: rgba(196, 208, 255, 0.11);
+  --glass-shadow: 0 8px 24px rgba(6, 8, 24, 0.5);
+  /* A sheet rising from the bottom edge casts its shadow upward. */
+  --glass-shadow-up: 0 -8px 24px rgba(6, 8, 24, 0.5);
+  /* A soft navy text shadow, for text straight on the arena. */
+  --text-shadow: 0 1px 3px rgba(6, 8, 24, 0.8);
+  /* Only where data-quality='high' and the arena is not running (§2.4). */
+  --blur: 20px;
+
+  /* A scrim over the whole viewport, under a modal: navy, not black. */
+  --scrim: rgba(9, 10, 28, 0.62);
 
   /* ── Text ─────────────────────────────────────────────────────────────────
-     0 primary, 3 the faintest still-readable step. */
-  --text-0: var(--ink-050);
-  --text-1: var(--ink-100);
-  --text-2: var(--ink-200);
-  --text-3: var(--ink-300);
-  /* Text sitting on a saturated fill. */
+     Each ≥ 4.5:1 on every ground stop (tests/contrast.test.ts). */
+  --text-primary: #e9e6f7;
+  --text-secondary: #b0b8d8;
+  --text-dim: #9ea7c8; /* sub-headings, secondary meta */
+  --text-muted: #949dbd; /* uppercase labels, eyebrows, locked */
+  /* Text sitting on a saturated fill (the primary button, a solid badge). */
   --text-on-fill: var(--white);
+  /* Text on a gold or frost fill. */
   --text-on-amber: var(--amber-900);
 
+  /* ── Accent ───────────────────────────────────────────────────────────────
+     Interactive, selected, progress, focus. Gold is not the UI's accent: it
+     is the player's colour (--fx-gold). */
+  --accent: #b3a5ff;
+  --accent-strong: #8f7fe8;
+  --accent-text: #b3a5ff;
+  --accent-tint: rgba(179, 165, 255, 0.12);
+  --accent-tint-border: rgba(179, 165, 255, 0.25);
+  /* The one opaque surface: the primary action. White label, always bold and
+     ≥ 16px (white on it is 4.2:1). */
+  --accent-gradient: linear-gradient(135deg, #7a6ae4 0%, #5a71dd 100%);
+  --rgb-accent: 179, 165, 255;
+
+  /* ── Surfaces inside surfaces ─────────────────────────────────────────── */
+  --surface: rgba(173, 190, 255, 0.09); /* progress and segmented tracks */
+  --panel-subtle: rgba(173, 190, 255, 0.075); /* the "inset" surface */
+  --border: rgba(196, 208, 255, 0.24);
+  --border-light: rgba(196, 208, 255, 0.12);
+  --progress-track: #949dbd; /* a ring's track */
+
+  /* ── Status ───────────────────────────────────────────────────────────────
+     Red only for real faults and destructive actions. "Can't afford yet" and
+     "locked" get no colour: --text-muted and the lock glyph. */
+  --success: #6fd9a6;
+  --success-bg: rgba(111, 217, 166, 0.16);
+  --success-border: rgba(111, 217, 166, 0.38);
+  --error: #ff9a94;
+  --error-bg: rgba(255, 154, 148, 0.16);
+  --error-border: rgba(255, 154, 148, 0.38);
+  --warning: #ffc078;
+  --warning-bg: rgba(255, 192, 120, 0.14);
+  --info: #7fc4f5;
+  --info-bg: rgba(127, 196, 245, 0.18);
+
+  /* ── Scrollbar (pointer: fine only) ──────────────────────────────────── */
+  --scrollbar-thumb-from: rgba(196, 208, 255, 0.34);
+  --scrollbar-thumb-to: rgba(196, 208, 255, 0.16);
+  --scrollbar-thumb-hover-from: #b3a5ff;
+  --scrollbar-thumb-hover-to: #7a6ae4;
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     2b. SEMANTIC — the game's own groups
+     ═════════════════════════════════════════════════════════════════════════ */
+
   /* ── Effect colours (--fx-*) ──────────────────────────────────────────────
-     Mirrored in src/render/palette.ts. Edit both, or tests/palette.test.ts fails.
-     Written as literals rather than `var(--amber-400)` precisely so that test
-     can compare them without resolving the cascade. */
+     The battlefield's category hues. Mirrored in src/render/palette.ts. Edit
+     both, or tests/palette.test.ts fails. Written as literals so that test can
+     compare them without resolving the cascade. --fx-gold is also the player's
+     colour in the UI: shards, the tower, rewards, XP, legendary. */
   --fx-gold: #f0b23c; /* = --amber-400 */
   --fx-ember: #ff8b46; /* = --ember-400 */
   --fx-mana: #7f6cff; /* blue-violet, between --violet-400 and --azure-400 */
@@ -214,19 +311,6 @@
   --rgb-frost: 121, 210, 255;
   --rgb-nature: 78, 201, 122;
   --rgb-critical: 255, 77, 61;
-  --rgb-shadow: 0, 0, 0;
-  --rgb-light: 255, 255, 255;
-  /* Status and surface triplets, for the same reason: a translucent panel or a
-     pulsing destructive button needs the channels, not the colour. */
-  --rgb-warn: 224, 155, 46;
-  --rgb-bad: 196, 106, 114;
-  --rgb-surface-0: 10, 13, 20;
-  --rgb-surface-1: 18, 22, 31;
-  --rgb-surface-2: 24, 29, 40;
-  --rgb-surface-3: 33, 39, 52;
-  --rgb-surface-sunken: 7, 10, 16;
-  /* The near-black end of the blood ramp, for the boss bar's tinted panel. */
-  --rgb-blood-deep: 45, 15, 16;
 
   /* ── Rarity (--rarity-*) ──────────────────────────────────────────────────
      One ladder for equipment and blessings. Also mirrored in palette.ts. */
@@ -234,6 +318,7 @@
   --rarity-uncommon: #4ec97a; /* = --green-400 */
   --rarity-rare: #4a9eff; /* = --azure-400 */
   --rarity-epic: #a95cff; /* = --violet-400 */
+  --rarity-legendary: #f0b23c; /* = --amber-400 */
   /*
    * A cursed relic's curse line (plans/late-game/03): its own token, always
    * beside the ☾ glyph so it never reads by colour alone. A light violet:
@@ -241,79 +326,44 @@
    * for every common form of colour blindness.
    */
   --curse: #c78bff;
-  --rarity-legendary: #f0b23c; /* = --amber-400 */
 
-  /* ── Status ───────────────────────────────────────────────────────────────
-     `--bad` is the *generic* negative: unaffordable, destructive, a downside.
-     It is rose, not red, because red is the battlefield's. When the thing being
-     signalled is the tower taking real damage, use `--fx-critical` instead. */
-  --accent: var(--fx-gold);
-  --accent-2: var(--fx-arcane);
-  --good: var(--fx-nature);
-  --good-dark: var(--green-900);
-  --warn: var(--amber-500);
-  --bad: var(--rose-400);
-  --critical: var(--fx-critical);
   /* Stored Light (plans/late-game/01): a night kept back for runs to burn. Warm amber. */
   --stored: var(--amber-300);
   --stored-dim: var(--amber-700);
 
-  /* Domain accents, used as the default for a `--x-color` a component sets
-     per-item from the data tables. */
-  --research-color: var(--fx-arcane);
-  --ability-color: var(--fx-mana);
-  --perk-color: var(--fx-nature);
-  --passive-color: var(--fx-mana);
-  --mod-banner-color: var(--warn);
-
   /* ── Typography ───────────────────────────────────────────────────────────
-     Body text keeps the system stack: it is already the most legible face on
-     every platform and costs nothing to load. The display face is condensed, so
-     a five-digit gold number fits where the UI face needs six digits' room. */
-  --font-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
-  --font-display: 'Oswald', 'Arial Narrow', 'Roboto Condensed',
-    'Helvetica Neue Condensed', var(--font-ui);
-  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
-    'Liberation Mono', monospace;
+     One face, Sarabun, two weights (600 only for inline links). Every figure
+     that changes in place takes tabular numerals (set on <body>). */
+  --font-sans: 'Sarabun', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
   /* The settings' text size (P9): every step of the ramp below scales with
      it. Set on :root by src/app/settings.ts. */
   --text-scale: 1;
 
-  /* Type scale. These are the sizes the UI actually uses today; Parts 7-8 of the
-     UI plan tighten the ramp as they rebuild each surface. */
-  --text-3xs: calc(9px * var(--text-scale));
-  --text-2xs: calc(10px * var(--text-scale));
-  --text-xs: calc(11px * var(--text-scale));
-  --text-sm: calc(12px * var(--text-scale));
-  --text-md: calc(13px * var(--text-scale));
-  --text-base: calc(14px * var(--text-scale));
-  --text-lg: calc(15px * var(--text-scale));
-  --text-xl: calc(16px * var(--text-scale));
-  --text-2xl: calc(18px * var(--text-scale));
-  --text-3xl: calc(20px * var(--text-scale));
-  --text-4xl: calc(22px * var(--text-scale));
-  --text-5xl: calc(24px * var(--text-scale));
-  --text-6xl: calc(28px * var(--text-scale));
-  /* Added by Part 7 for the wave number, which is the one figure in the HUD
-     that has to read as a focal element rather than as a large label. The ramp
-     stopped at 28px because nothing before Part 7 asked for more. */
-  --text-7xl: calc(34px * var(--text-scale));
+  /* The identity's ramp. The floor is 12px: nothing reads smaller. */
+  --fs-xs: calc(12px * var(--text-scale)); /* eyebrows, section labels, badges */
+  --fs-sm: calc(13px * var(--text-scale)); /* segment labels, chips, small meta */
+  --fs-md: calc(14px * var(--text-scale)); /* secondary body, subtitles */
+  --fs-lg: calc(16px * var(--text-scale)); /* body, button label (md) */
+  --fs-xl: calc(18px * var(--text-scale)); /* button label (lg), card title */
+  --fs-2xl: calc(20px * var(--text-scale));
+  --fs-3xl: calc(22px * var(--text-scale));
+  --fs-title: calc(24px * var(--text-scale)); /* card hero title */
+  --fs-hero: calc(28px * var(--text-scale)); /* page title, the wave number */
+  --fs-display: calc(36px * var(--text-scale)); /* the wordmark, big numbers */
+  --fs-giant: calc(48px * var(--text-scale));
 
-  --weight-regular: 400;
-  --weight-medium: 500;
-  --weight-semibold: 600;
-  --weight-bold: 700;
+  --fw-regular: 400;
+  --fw-semibold: 600;
+  --fw-bold: 700;
 
-  --leading-tight: 1.15;
-  --leading-normal: 1.4;
-  --leading-loose: 1.6;
+  /* Unitless line heights only: px line heights clip under text zoom. */
+  --lh-tight: 1.2; /* headings */
+  --lh-snug: 1.25; /* button labels */
+  --lh-body: 1.4; /* body, subtitles */
 
-  --tracking-tight: -0.01em;
-  --tracking-normal: 0;
-  --tracking-wide: 0.04em;
-  --tracking-caps: 0.08em;
+  --tracking-label: 1px; /* uppercase eyebrows, section headers */
+  --tracking-badge: 0.06em; /* uppercase badges */
 
   /* ── Spacing — a 4px baseline ─────────────────────────────────────────── */
   --space-0: 0;
@@ -326,47 +376,42 @@
   --space-7: 32px;
   --space-8: 40px;
 
-  /* ── Radii ────────────────────────────────────────────────────────────── */
-  --radius-2xs: 2px;
-  --radius-xs: 3px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 10px;
-  --radius-2xl: 12px;
-  --radius-full: 999px;
-  --radius-circle: 50%;
+  /* ── Radii — and which surface takes which ────────────────────────────── */
+  --radius-xs: 4px; /* a pip, a sliver */
+  --radius-sm: 8px; /* an inset */
+  --radius-md: 10px;
+  --radius-lg: 12px; /* cards, rows, callouts, options */
+  --radius-xl: 14px; /* buttons */
+  --radius-2xl: 16px; /* sheets, toasts, icon tiles */
+  --radius-pill: 20px;
+  --radius-round: 999px; /* chips, badges, segmented controls, progress bars */
 
-  /* ── Elevation ────────────────────────────────────────────────────────────
-     A drop shadow *and* an inset top highlight, so a raised surface reads as lit
-     from above rather than as a rectangle with a blur behind it. */
-  --elev-0: none;
-  --elev-1: 0 1px 2px rgba(var(--rgb-shadow), 0.35),
-    inset 0 1px 0 rgba(var(--rgb-light), 0.04);
-  --elev-2: 0 6px 18px rgba(var(--rgb-shadow), 0.45),
-    inset 0 1px 0 rgba(var(--rgb-light), 0.05);
-  --elev-3: 0 8px 24px rgba(var(--rgb-shadow), 0.5),
-    inset 0 1px 0 rgba(var(--rgb-light), 0.05);
-  --elev-4: 0 12px 32px rgba(var(--rgb-shadow), 0.55),
-    inset 0 1px 0 rgba(var(--rgb-light), 0.06);
-  --elev-5: 0 18px 40px rgba(var(--rgb-shadow), 0.6),
-    inset 0 1px 0 rgba(var(--rgb-light), 0.06);
-  /* A sheet rising from the bottom edge casts its shadow upward. */
-  --elev-up: 0 -12px 32px rgba(var(--rgb-shadow), 0.5);
-  /* An inset hairline on its own, for a surface that must not float. */
-  --elev-inset: inset 0 1px 0 rgba(var(--rgb-light), 0.06);
+  --radius-card: var(--radius-lg);
+  --radius-button: var(--radius-xl);
+  --radius-chip: var(--radius-round);
+  --radius-sheet: var(--radius-2xl);
+
+  /* ── Controls. 48px is the identity's target; 44px the hard floor. ───── */
+  --control-h-lg: 52px;
+  --control-h-md: 48px;
+  --control-h-sm: 40px; /* still gets a 44px invisible hit area */
+  --hit-target: 44px;
 
   /* ── Motion ───────────────────────────────────────────────────────────────
-     `fast` is a state change the player is already looking at, `base` is
-     something entering or leaving, `slow` is a deliberate reveal. The last two
-     are for ambient loops (a pulsing badge), not for interaction. */
-  --dur-instant: 60ms;
-  --dur-fast: 120ms;
-  --dur-base: 220ms;
-  --dur-slow: 420ms;
-  --dur-slower: 800ms;
+     The identity's tempo. Canvas juice (hit-stop, shake) is the renderer's. */
+  --dur-instant: 120ms; /* taps, hovers, press feedback */
+  --dur-fast: 180ms; /* toggles, the "pop" */
+  --dur-base: 280ms; /* default transition, progress fills, the segment slide */
+  --dur-slow: 420ms; /* page-level reveals, count-ups, the horizon */
+  --dur-deliberate: 700ms; /* celebrations, boot */
+  /* Ambient loops (a pulsing badge, the map's dawn): the game's, not the identity's. */
   --dur-pulse: 1200ms;
   --dur-ambient: 1600ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1);
+  --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --stagger-step: 60ms;
+  --stagger-cap: 240ms;
 
   /* ── Stacking ladder (UI plan §8.F) ───────────────────────────────────────
      The rungs, in the order things sit in front of each other: the HUD strip,
@@ -374,10 +419,7 @@
      (boss bar, banners, the placement prompt), the ability dock and bottom
      nav, the corner overlay stack (contracts, milestones), hover tooltips,
      interactive popovers, the mobile sheet, body-level menus, modals, and
-     toasts on top of everything so a warning is readable while a modal is up.
-     Component rules quote a rung instead of inventing a number, which is how
-     `z-index: 110` and `z-index: 112` came to sit next to each other in the
-     first place.
+     toasts. Component rules quote a rung instead of inventing a number.
 
      A literal `z-index` survives in `main.css` only for stacking *inside* one
      component's own stacking context (a fill behind its label, the badges on
@@ -393,18 +435,10 @@
   --z-sheet: 75;
   --z-menu: 80;
   --z-modal: 110;
-  /* Toasts used to top the ladder, which put a "wave restarted" notice over
-     the mobile sheet the player was reading and over every dialog. A toast is
-     an *ambient* report on the run, so it belongs above the play area and the
-     docked chrome and below anything the player deliberately opened: the sheet
-     (75) and the modal root (110) both outrank it now. Still above the corner
-     stack, the dock and the popovers, which is where it has to cover things
-     the way a snackbar does. */
+  /* A toast is an *ambient* report on the run: above the play area and the
+     docked chrome, below anything the player deliberately opened (the sheet
+     at 75 and the modal root at 110). */
   --z-toast: 74;
-
-  --ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* ═════════════════════════════════════════════════════════════════════════
      3. LAYOUT — sizes the JS also reads or writes. Not art direction; kept here
@@ -417,11 +451,8 @@
   --hub-width: 420px;
 
   /* Safe-area insets (UI plan §9.A). The browser only reports these on a
-     viewport with `viewport-fit=cover` (index.html), and a notch, a gesture bar
-     or a rounded corner is the only reason any of them is non-zero. Every
-     component rule that needs them reads one of these tokens rather than
-     calling `env()` itself — the same single-source-of-truth rule that already
-     applies to colours and durations. */
+     viewport with `viewport-fit=cover` (index.html). Every component rule that
+     needs them reads one of these tokens rather than calling `env()` itself. */
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);

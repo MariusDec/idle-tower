@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Visual identity</title>
+    <meta name="theme-color" content="#6B5BD9" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1D2148" media="(prefers-color-scheme: dark)" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="tokens/tokens.css" />
+    <link rel="stylesheet" href="components.css" />
+    <style>
+      /* Preview-only layout. */
+      .demo {
+        padding-top: calc(64px + 24px);
+        padding-bottom: 120px;
+      }
+      .header-row {
+        max-width: var(--content-max-width);
+        margin-inline: auto;
+        height: 64px;
+        padding-inline: var(--page-gutter);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .header-row h2 {
+        margin: 0;
+        font-size: var(--fs-xl);
+      }
+      .icon-btn {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        color: var(--accent);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+      }
+      .row {
+        display: flex;
+        gap: var(--space-md);
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-md);
+      }
+      .grid2 > :last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+      }
+      .swatches {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        gap: var(--space-sm);
+      }
+      .swatch {
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        border: 1px solid var(--glass-border);
+        font-size: var(--fs-xs);
+      }
+      .swatch div:first-child {
+        height: 44px;
+      }
+      .swatch div:last-child {
+        padding: 6px 8px;
+        color: var(--text-secondary);
+        background: var(--panel-subtle);
+      }
+      .tile {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--space-xs);
+      }
+      .tile h3 {
+        margin: 0;
+        font-size: var(--fs-xl);
+      }
+      .tile p {
+        margin: 0;
+        font-size: var(--fs-md);
+        color: var(--text-secondary);
+      }
+      .feature {
+        display: flex;
+        align-items: center;
+        gap: var(--space-lg);
+      }
+      .tabs {
+        max-width: var(--tab-bar-max-width, 480px);
+        margin-inline: auto;
+        display: flex;
+        justify-content: space-around;
+        padding: 8px 0;
+      }
+      .ring {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+        color: var(--accent-text);
+      }
+      svg.i {
+        width: 22px;
+        height: 22px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 32;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      @media (max-width: 420px) {
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-row">
+        <h2>Visual identity</h2>
+        <button type="button" class="glass icon-btn" id="theme" aria-label="Toggle theme" style="padding: 0">
+          <svg class="i" viewBox="0 0 512 512" aria-hidden="true">
+            <path
+              d="M160 136c0-30.62 4.51-61.61 16-88C99.57 81.27 48 159.32 48 248c0 119.29 96.71 216 216 216 88.68 0 166.73-51.57 200-128-26.39 11.49-57.38 16-88 16-119.29 0-216-96.71-216-216z"
+            />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="page demo">
+      <span class="eyebrow" style="margin-bottom: 4px">Sunrise · Blue hour</span>
+      <h1 class="page-title">One look, every app</h1>
+      <p class="page-subtitle">Frosted glass on a soft sky gradient, one accent, one filled button.</p>
+
+      <section class="section">
+        <div class="glass reveal-in">
+          <span class="eyebrow">Today's session</span>
+          <h2 class="card-title" style="margin-top: 4px">Lesson 13 · Prices &amp; money</h2>
+          <p class="page-subtitle" style="margin-bottom: 8px">~14 min · 8 new · 34 reviews</p>
+          <button class="text-link" type="button">What's in it</button>
+          <div class="stack" style="margin-top: 16px">
+            <button class="btn btn--primary btn--lg" type="button">
+              <svg class="i" viewBox="0 0 512 512" aria-hidden="true">
+                <path d="M112 111v290c0 17.44 17 28.52 31 20.16l247.9-148.37c12.12-7.25 12.12-26.33 0-33.58L143 90.84c-14-8.36-31 2.72-31 20.16z" />
+              </svg>
+              Start today's session
+            </button>
+            <button class="btn btn--tertiary" type="button">Adjust today's session</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="row" style="justify-content: space-between">
+          <h2 class="section-label">Shortcuts</h2>
+          <button class="btn btn--tertiary btn--hug btn--sm" type="button">Edit</button>
+        </div>
+        <div class="grid2">
+          <button class="btn btn--pill" type="button">
+            <svg class="i" viewBox="0 0 512 512" style="color: var(--hue-rose)" aria-hidden="true">
+              <path d="M352.92 80C288 80 256 144 256 144s-32-64-96.92-64c-52.76 0-94.54 44.14-95.08 96.81-1.1 109.33 86.73 187.08 183 252.42a16 16 0 0018 0c96.26-65.34 184.09-143.09 183-252.42-.54-52.67-42.32-96.81-95.08-96.81z" />
+            </svg>
+            Favorites
+          </button>
+          <button class="btn btn--pill" type="button">
+            <svg class="i" viewBox="0 0 512 512" style="color: var(--accent)" aria-hidden="true">
+              <path d="M352 48H160a48 48 0 00-48 48v368l144-128 144 128V96a48 48 0 00-48-48z" />
+            </svg>
+            My Phrases
+          </button>
+        </div>
+      </section>
+
+      <section class="section">
+        <div>
+          <h2 class="section-label">Review</h2>
+          <p class="section-subtitle">Tiles, an icon tile and a featured row.</p>
+        </div>
+        <div class="glass feature">
+          <div class="icon-tile">
+            <svg class="i" viewBox="0 0 512 512" aria-hidden="true">
+              <path d="M461.81 53.81a4.4 4.4 0 00-3.3-3.39c-54.38-13.3-180 34.09-248.13 102.17a294.9 294.9 0 00-33.09 39.08c-21-1.9-42-.3-59.88 7.5-50.49 22.2-65.18 80.18-69.28 105.07a9 9 0 009.8 10.4l81.07-8.9a180.29 180.29 0 001.1 18.3 18.15 18.15 0 005.3 11.09l31.39 31.39a18.15 18.15 0 0011.1 5.3 179.91 179.91 0 0018.19 1.1l-8.89 81a9 9 0 0010.39 9.79c24.9-4 83-18.69 105.07-69.17 7.8-17.9 9.4-38.79 7.6-59.69a293.91 293.91 0 0039.19-33.09c68.38-68 115.47-190.86 102.37-247.95z" />
+            </svg>
+          </div>
+          <div style="flex: 1">
+            <span class="eyebrow">Start here</span>
+            <div style="font-size: var(--fs-xl); font-weight: 700">Today's session first</div>
+            <div class="text-secondary" style="font-size: var(--fs-md)">Lesson 13 · Prices &amp; money</div>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="glass tile">
+            <svg class="i" viewBox="0 0 512 512" style="color: var(--accent)" aria-hidden="true">
+              <path d="M400 304l48 48-48 48M400 112l48 48-48 48M64 352h85.19a80 80 0 0066.56-35.62L256 256M64 160h85.19a80 80 0 0166.56 35.62l80.5 120.76A80 80 0 00362.81 352H416M416 160h-53.19a80 80 0 00-66.56 35.62L288 208" />
+            </svg>
+            <h3>Trainer Review</h3>
+            <p>Your trainers, extra on what needs practice</p>
+          </div>
+          <div class="glass tile">
+            <svg class="i" viewBox="0 0 512 512" style="color: var(--hue-teal)" aria-hidden="true">
+              <rect x="48" y="80" width="416" height="384" rx="48" />
+              <path d="M128 48v32M384 48v32M464 160H48" />
+            </svg>
+            <h3>Daily Words</h3>
+            <p>A few a day, on top of your lessons</p>
+          </div>
+          <div class="glass tile">
+            <svg class="i" viewBox="0 0 512 512" style="color: var(--hue-orange)" aria-hidden="true">
+              <path d="M256 48v416M48 256h416" />
+            </svg>
+            <h3>Odd tile spans</h3>
+            <p>The last tile of an odd count takes the full row</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-label">Choose · answer states</h2>
+        <div class="segmented" role="tablist" aria-label="Length" style="--count: 3; --index: 1" id="seg">
+          <div class="segmented__indicator" aria-hidden="true"></div>
+          <button class="segmented__option" role="tab" aria-selected="false" type="button">Short</button>
+          <button class="segmented__option" role="tab" aria-selected="true" type="button">Normal</button>
+          <button class="segmented__option" role="tab" aria-selected="false" type="button">Long</button>
+        </div>
+        <button class="glass option option--idle" type="button">Idle option</button>
+        <button class="glass option option--selected" type="button">Selected option</button>
+        <button class="glass option option--correct pop" type="button">✓ Correct answer</button>
+        <button class="glass option option--wrong" type="button">✕ The miss: muted, never red</button>
+        <button class="glass option option--close" type="button">! Almost (tone marks off)</button>
+        <button class="glass option option--faded" type="button">Other option, faded</button>
+      </section>
+
+      <section class="section">
+        <h2 class="section-label">Badges, chips, progress</h2>
+        <div class="row">
+          <span class="badge">Neutral</span>
+          <span class="badge badge--accent">Learning</span>
+          <span class="badge badge--success">Learned</span>
+          <span class="badge badge--warning">Due</span>
+          <span class="badge badge--error">Failed to save</span>
+          <span class="badge badge--accent badge--upper">Word</span>
+        </div>
+        <div class="row">
+          <button class="chip" type="button">Why?</button>
+          <span class="ring">
+            <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
+              <circle cx="14" cy="14" r="12.75" fill="none" stroke="var(--progress-track)" stroke-width="2.5" />
+              <circle
+                cx="14"
+                cy="14"
+                r="12.75"
+                fill="none"
+                stroke="var(--accent)"
+                stroke-width="3.5"
+                stroke-linecap="round"
+                pathLength="100"
+                stroke-dasharray="100"
+                stroke-dashoffset="35"
+                transform="rotate(-90 14 14)"
+              />
+            </svg>
+            13/20
+          </span>
+        </div>
+        <div class="progress"><div class="progress__fill" style="width: 62%"></div></div>
+        <div class="progress progress--md"><div class="progress__fill" style="width: 100%; background: var(--success)"></div></div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-label">Surfaces</h2>
+        <div class="glass">
+          <strong>Card</strong> is the default glass container.
+          <div class="inset" style="margin-top: 12px">
+            <strong>Inset</strong> is a quiet panel inside a card.
+          </div>
+        </div>
+        <div class="callout">
+          <span class="callout__title">Tip</span>
+          <span><strong>Callout</strong> is subtle glass with a hairline, used for hints and explanations.</span>
+        </div>
+        <div class="glass glass--strong"><strong>Strong</strong> means selected or elevated.</div>
+        <div class="glass glass--accent"><strong>Accent</strong> is a featured card. Use it rarely.</div>
+        <div class="row">
+          <button class="btn btn--hug" type="button">Secondary</button>
+          <button class="btn btn--hug btn--danger" type="button">Delete everything</button>
+          <button class="btn btn--hug btn--sm" type="button">Small</button>
+          <button class="btn btn--hug btn--primary" type="button" disabled>Disabled</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-label">Palette</h2>
+        <div class="swatches" id="swatches"></div>
+      </section>
+    </main>
+
+    <nav class="app-tabbar" aria-label="Tabs">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" aria-selected="true" type="button">
+          <span class="tab__icon">
+            <svg class="i" viewBox="0 0 512 512" aria-hidden="true">
+              <path d="M80 212v236a16 16 0 0016 16h96V328a24 24 0 0124-24h80a24 24 0 0124 24v136h96a16 16 0 0016-16V212" />
+              <path d="M480 256L266.89 52c-5-5.28-16.69-5.34-21.78 0L32 256" />
+            </svg>
+          </span>
+          Home
+        </button>
+        <button class="tab" role="tab" aria-selected="false" type="button">
+          <span class="tab__icon">
+            <svg class="i" viewBox="0 0 512 512" aria-hidden="true">
+              <path d="M256 160c16-63.16 76.43-95.41 208-96a15.94 15.94 0 0116 16v288a16 16 0 01-16 16c-128 0-177.45 25.81-208 64-30.37-38-80-64-208-64-9.88 0-16-8.05-16-17.93V80a15.94 15.94 0 0116-16c131.57.59 192 32.84 208 96zM256 160v288" />
+            </svg>
+          </span>
+          Learn
+        </button>
+        <button class="tab" role="tab" aria-selected="false" type="button">
+          <span class="tab__icon">
+            <svg class="i" viewBox="0 0 512 512" aria-hidden="true">
+              <path d="M48 256h416M112 176v160M400 176v160M160 144v224M352 144v224" />
+            </svg>
+          </span>
+          Practice
+        </button>
+        <button class="tab" role="tab" aria-selected="false" type="button">
+          <span class="tab__icon">
+            <svg class="i" viewBox="0 0 512 512" aria-hidden="true">
+              <circle cx="256" cy="256" r="208" />
+              <circle cx="256" cy="208" r="64" />
+              <path d="M128 400c32-48 72-64 128-64s96 16 128 64" />
+            </svg>
+          </span>
+          Progress
+        </button>
+      </div>
+    </nav>
+
+    <script>
+      const root = document.documentElement;
+      const dark = () =>
+        root.dataset.theme
+          ? root.dataset.theme === 'dark'
+          : matchMedia('(prefers-color-scheme: dark)').matches;
+      document.getElementById('theme').addEventListener('click', () => {
+        root.dataset.theme = dark() ? 'light' : 'dark';
+        paintSwatches();
+      });
+      matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintSwatches);
+
+      const seg = document.getElementById('seg');
+      seg.querySelectorAll('.segmented__option').forEach((btn, i) => {
+        btn.addEventListener('click', () => {
+          seg.style.setProperty('--index', i);
+          seg.querySelectorAll('.segmented__option').forEach((b, j) => {
+            b.setAttribute('aria-selected', String(i === j));
+          });
+        });
+      });
+
+      const tokens = [
+        'bg-stop-1', 'bg-stop-2', 'bg-stop-3', 'bg-stop-4', 'text-primary', 'text-secondary',
+        'text-muted', 'text-dim', 'accent', 'accent-text', 'success', 'warning', 'info', 'error',
+        'hue-teal', 'hue-pine', 'hue-orange', 'hue-coral', 'hue-orchid', 'hue-violet', 'hue-azure', 'hue-rose',
+      ];
+      function paintSwatches() {
+        const cs = getComputedStyle(root);
+        const host = document.getElementById('swatches');
+        host.innerHTML = '';
+        for (const t of tokens) {
+          const value = cs.getPropertyValue(`--${t}`).trim();
+          if (!value) continue;
+          const el = document.createElement('div');
+          el.className = 'swatch';
+          el.innerHTML = `<div style="background:${value}"></div><div>--${t}<br>${value}</div>`;
+          host.appendChild(el);
+        }
+      }
+      paintSwatches();
+    </script>
+  </body>
+</html>

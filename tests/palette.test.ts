@@ -88,16 +88,45 @@ describe('palette ↔ tokens.css', () => {
     }
   });
 
-  it('reserves red for the battlefield: --bad is not the enemy red', () => {
-    // Art direction §2.1: hostile red belongs to enemies and damage. A generic
-    // "you cannot afford this" or "this button deletes your save" must not
-    // borrow it, or the two most urgent signals in the game read the same.
-    const bad = decls.get('--bad');
-    expect(bad).toBeDefined();
-    expect(bad).not.toBe(FX.blood);
-    expect(bad).not.toBe(FX.critical);
+  it('reserves red for the battlefield: --error is not the enemy red', () => {
+    // Art direction §2.1: hostile red belongs to enemies and damage. A real
+    // fault ("the save failed") or a destructive button must not borrow it,
+    // or the two most urgent signals in the game read the same. "Can't afford
+    // yet" gets no colour at all (plans/visual-identity.md §2.3).
+    const error = decls.get('--error');
+    expect(error).toBeDefined();
+    expect(error!.toLowerCase()).not.toBe(FX.blood.toLowerCase());
+    expect(error!.toLowerCase()).not.toBe(FX.critical.toLowerCase());
     expect(FX.critical).not.toBe(FX.blood);
   });
+});
+
+/**
+ * plans/visual-identity.md §2.1: the old semantic names were removed, not
+ * aliased. A stylesheet or a `setProperty` that still names one would paint
+ * nothing, silently, so naming one is a failure.
+ */
+describe('the retired token names stay retired', () => {
+  const RETIRED = [
+    /--rose-\d/, /--surface-(?:\d|raised|sunken|scrim|overlay)/, /--stroke-(?:subtle|strong|hairline)/,
+    /--text-[0-3]\b/, /--text-(?:\dxs|xs|sm|md|base|lg|xl|\dxl)\b/, /--elev-/, /--font-(?:display|ui)\b/,
+    /--accent-2\b/, /--(?:good|bad|warn)\b/, /--weight-/, /--leading-/, /--ease-(?:out|in-out|spring)\b/,
+    /--radius-(?:full|circle|2xs)\b/, /--dur-slower\b/,
+  ];
+  const walk = (rel: string): string[] => {
+    const abs = resolve(__dirname, '..', rel);
+    return readdirSync(abs, { withFileTypes: true }).flatMap(e =>
+      e.isDirectory() ? walk(`${rel}/${e.name}`) : /\.(ts|css)$/.test(e.name) ? [`${rel}/${e.name}`] : []);
+  };
+  const FILES = [...walk('src'), 'index.html'];
+
+  for (const rel of FILES) {
+    it(`${rel} names no retired token`, () => {
+      const body = readFileSync(resolve(__dirname, '..', rel), 'utf8');
+      const hits = RETIRED.flatMap(re => [...body.matchAll(new RegExp(re.source, 'g'))].map(m => m[0]));
+      expect(hits, `${rel} still uses a removed token (plans/visual-identity.md §2.1)`).toEqual([]);
+    });
+  }
 });
 
 describe('the colourblind-safe palette (P9)', () => {

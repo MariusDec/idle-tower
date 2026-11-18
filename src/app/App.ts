@@ -47,7 +47,7 @@ import { runRegion, runWave } from '../sim/systems/waves';
 import { SettingsPanel } from '../ui/settings';
 import { Music } from '../audio/music';
 import { bench, type BenchOptions, type BenchResult } from './bench';
-import { applySettings, onOsMotionChange, type Settings } from './settings';
+import { applyGround, applyQuality, applySettings, onOsMotionChange, type Settings } from './settings';
 import { DraftPanel } from '../ui/draft';
 import { bindBuildPeek } from '../ui/peek';
 import { Hud } from '../ui/hud';
@@ -890,6 +890,7 @@ export class App {
     }
     this.slowMo.left = Math.max(0, this.slowMo.left - realDt);
     this.tune(run);
+    this.dress(run);
     this.toasts.tick(realDt);
     // A stopped arena draws until what still moves has finished, then rests
     // the GPU until something changes (plans/android-gpu-crash.md §1).
@@ -940,6 +941,18 @@ export class App {
     const region = runRegion(run);
     const stratum = region.abyss?.stratum ? STRATUM_BY_ID[region.abyss.stratum] : undefined;
     this.music.set(boss ? 'boss' : 'run', region.index, stratum?.tone ?? null);
+  }
+
+  /**
+   * The root's two presentation attributes (plans/visual-identity.md §2): the
+   * ground's last light follows the hub's region or the run's, and the quality
+   * tier decides whether glass may blur. Both write only on a change.
+   */
+  private dress(run: RunState | null): void {
+    const root = document.documentElement;
+    const inRun = run !== null && (this.screen === 'run' || this.screen === 'results');
+    applyGround(root, inRun ? runRegion(run).index : this.profile.region);
+    applyQuality(root, this.renderer.quality);
   }
 
   /** Feed the quality scaler a real frame: its wall time and the ms spent drawing it. */

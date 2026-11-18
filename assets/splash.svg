@@ -1,5 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732" width="2732" height="2732">
-  <rect width="2732" height="2732" fill="#0a0d14"/>
+  <!-- The identity's ground (plans/visual-identity.md §2.2): Blue hour with the
+       Ashen Fields' last light, at 135°, as in tokens.css. -->
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2a1e4c"/>
+      <stop offset="0.34" stop-color="#1d2148"/>
+      <stop offset="0.66" stop-color="#211d3f"/>
+      <stop offset="1" stop-color="#3b2422"/>
+    </linearGradient>
+  </defs>
+  <rect width="2732" height="2732" fill="url(#ground)"/>
   <g transform="translate(1366 1366) scale(0.6) translate(-512 -491)">
     <g stroke="#2a2f38" stroke-width="26" stroke-linejoin="round" stroke-linecap="round">
       <!-- roof -->
@@ -13,7 +23,7 @@
     </g>
     <!-- arrow slit -->
     <path d="M512 560 a30 30 0 0 1 30 30 v110 a30 30 0 0 1 -60 0 v-110 a30 30 0 0 1 30 -30 Z"
-          fill="#0a0d14"/>
+          fill="#1d2148"/>
     <!-- pennant -->
     <rect x="502" y="130" width="20" height="100" fill="#c0c4cc"/>
     <path d="M522 140 L612 168 L522 196 Z" fill="#a95cff"/>

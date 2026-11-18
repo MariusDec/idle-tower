@@ -10,6 +10,14 @@ async function main(): Promise<void> {
     return el as T;
   };
   await loadIconSprite();
+  // Dev only: the component specimen (plans/visual-identity.md §4). The branch
+  // is dead in a production build, so the module never ships.
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has('specimen')) {
+    const { mountSpecimen } = await import('../ui/specimen');
+    mountSpecimen(byId('app'));
+    void hideNativeSplash();
+    return;
+  }
   const app = new App({
     canvas: byId<HTMLCanvasElement>('game-canvas'),
     stage: byId('stage'),

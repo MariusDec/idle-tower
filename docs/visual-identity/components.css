@@ -1,0 +1,633 @@
+/**
+ * components.css — the identity's base styles and core components, in plain
+ * CSS on top of tokens/tokens.css. Framework-free: use the classes directly,
+ * or port each block into your component library.
+ *
+ * Load order:  tokens/tokens.css  →  components.css  →  your app's CSS.
+ */
+
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  min-height: 100%;
+}
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-lg);
+  line-height: var(--lh-body);
+  color: var(--text-primary);
+  /* `fixed`: the gradient is the sky behind the whole app, not a strip per page. */
+  background: var(--bg-gradient) fixed;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Form controls don't inherit the font by default. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* ── Typography roles ───────────────────────────────────────────────────────── */
+.eyebrow,
+.section-label {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-muted);
+  margin: 0;
+}
+.page-title {
+  font-size: var(--fs-hero);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+  margin: 0;
+}
+.page-subtitle {
+  font-size: var(--fs-md);
+  color: var(--text-secondary);
+  line-height: var(--lh-body);
+  margin: var(--space-xs) 0 0;
+}
+.card-title {
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  margin: 0;
+}
+.section-subtitle {
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  line-height: var(--lh-body);
+  margin: var(--space-xs) 0 0;
+}
+.text-secondary {
+  color: var(--text-secondary);
+}
+.text-muted {
+  color: var(--text-muted);
+}
+.text-link {
+  display: inline;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-weight: var(--fw-semibold);
+  color: var(--accent-text);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────────── */
+.page {
+  max-width: var(--content-max-width);
+  margin-inline: auto;
+  padding-inline: var(--page-gutter);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-top: var(--space-2xl);
+}
+
+/* ── Glass: the default container ─────────────────────────────────────────────
+   The fill lives on ::before so the border and content are never filtered.
+   In-page glass only *saturates* what's behind it (cheap); glass over moving
+   content (header, tab bar, sheets, toasts, sticky bars) also blurs. */
+.glass {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+  padding: var(--space-lg);
+}
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: saturate(140%);
+  backdrop-filter: saturate(140%);
+}
+/* A <button class="glass">: drop the UA's opaque button face so the glass shows. */
+:where(button).glass {
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.glass--float::before {
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+  backdrop-filter: blur(var(--blur)) saturate(140%);
+}
+/* Glass inside glass: keep the fill, drop the (invisible, expensive) filter. */
+.glass .glass::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.glass--strong::before {
+  background: var(--glass-fill-strong);
+}
+.glass--subtle::before {
+  background: var(--glass-fill-subtle);
+}
+.glass--sheet {
+  border-radius: var(--radius-sheet);
+}
+.glass--sheet::before {
+  background: var(--glass-fill-sheet);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+  backdrop-filter: blur(var(--blur)) saturate(140%);
+}
+.glass--accent {
+  border-color: var(--accent);
+}
+.glass--accent::before {
+  background: var(--glass-fill-accent);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .glass::before {
+    background: rgba(255, 255, 255, 0.85);
+  }
+  :root[data-theme="dark"] .glass::before {
+    background: rgba(29, 33, 72, 0.92);
+  }
+}
+
+/* The inset: a quiet panel *inside* a card (a readout, a row). No border, no shadow. */
+.inset {
+  background: var(--panel-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-md);
+}
+
+/* The callout: tips, hints, "why" explanations. Subtle glass + hairline. */
+.callout {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md) var(--space-lg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glass-shadow);
+}
+.callout::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-fill-subtle);
+}
+.callout__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ── Buttons: three weights ───────────────────────────────────────────────────
+   primary   — opaque accent gradient, white label. At most ONE per screen.
+   secondary — plain glass, accent label.
+   tertiary  — text only, accent label (Not now, Skip, Cancel). */
+.btn {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  width: 100%;
+  min-height: var(--control-h-md);
+  padding: var(--space-sm) var(--space-lg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-button);
+  box-shadow: var(--glass-shadow);
+  background: none;
+  color: var(--accent-text);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-snug);
+  text-align: center;
+  cursor: pointer;
+  transition: transform var(--dur-instant) ease-out;
+}
+.btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: saturate(140%);
+  backdrop-filter: saturate(140%);
+}
+.btn:active {
+  transform: scale(0.98);
+}
+.btn--primary {
+  border-color: transparent;
+  color: var(--white);
+}
+.btn--primary::before {
+  background: var(--accent-gradient);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.btn--tertiary {
+  border: none;
+  box-shadow: none;
+}
+.btn--tertiary::before {
+  display: none;
+}
+.btn--danger {
+  color: var(--error);
+  border-color: var(--error-border);
+}
+.btn--lg {
+  min-height: var(--control-h-lg);
+  font-size: var(--fs-xl);
+}
+.btn--sm {
+  min-height: var(--control-h-sm);
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--fs-md);
+}
+.btn--hug {
+  width: auto;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+.btn--primary:disabled {
+  box-shadow: none;
+}
+.btn__caption {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  opacity: 0.85;
+}
+
+/* Pill shortcut (Home's "Survival Card", "Favorites"): class="btn btn--pill". */
+.btn--pill {
+  border-radius: var(--radius-round);
+  justify-content: flex-start;
+  color: var(--text-primary);
+}
+
+/* ── Chip (tinted pill, an aside action) ─────────────────────────────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: var(--control-h-md);
+  padding: var(--space-xs) var(--space-md);
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-border);
+  border-radius: var(--radius-pill);
+  color: var(--accent-text);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+}
+
+/* ── Badge (flat, never looks tappable: no border, no glass) ─────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-round);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-body);
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--panel-subtle);
+}
+.badge--accent {
+  color: var(--accent-text);
+  background: var(--accent-tint);
+}
+.badge--success {
+  color: var(--success);
+  background: var(--success-bg);
+}
+.badge--warning {
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+.badge--error {
+  color: var(--error);
+  background: var(--error-bg);
+}
+.badge--upper {
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-badge);
+}
+
+/* ── Segmented control ─────────────────────────────────────────────────────
+   A track with one sliding gradient indicator. Set --count and --index inline. */
+.segmented {
+  --pad: 4px;
+  --gap: 4px;
+  position: relative;
+  display: flex;
+  gap: var(--gap);
+  padding: var(--pad);
+  border-radius: var(--radius-round);
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+}
+.segmented__indicator {
+  position: absolute;
+  top: var(--pad);
+  bottom: var(--pad);
+  left: var(--pad);
+  width: calc((100% - 2 * var(--pad) - (var(--count) - 1) * var(--gap)) / var(--count));
+  transform: translateX(calc(var(--index) * (100% + var(--gap))));
+  border-radius: var(--radius-round);
+  background: var(--accent-gradient);
+  transition: transform var(--dur-base) var(--ease-standard);
+  pointer-events: none;
+}
+.segmented__option {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--control-h-sm);
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-round);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  cursor: pointer;
+  transition: color var(--dur-base) var(--ease-standard);
+}
+.segmented__option[aria-checked="true"],
+.segmented__option[aria-selected="true"] {
+  color: var(--white);
+  cursor: default;
+}
+
+/* ── Progress ─────────────────────────────────────────────────────────────── */
+.progress {
+  height: 4px; /* 6px for the main progress of a run: .progress--md */
+  border-radius: var(--radius-round);
+  overflow: hidden;
+  background: var(--surface);
+}
+.progress--md {
+  height: 6px;
+}
+.progress__fill {
+  height: 100%;
+  border-radius: var(--radius-round);
+  background: var(--accent); /* --success only for a goal that is met */
+  transition: width var(--dur-base) var(--ease-decelerate);
+}
+
+/* ── Choice options (quiz answers, pickers) ───────────────────────────────────
+   class="glass option option--idle" etc. */
+.option {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.option--idle::before {
+  background: var(--glass-fill-subtle);
+}
+.option--selected {
+  border: 2px solid var(--accent);
+}
+.option--selected::before {
+  background: var(--glass-fill-strong);
+}
+.option--correct {
+  border: 2px solid var(--success);
+  color: var(--success);
+  font-weight: var(--fw-bold);
+}
+.option--correct::before {
+  background: var(--success-bg);
+}
+/* A miss is NOT red: muted outline, the right answer is what lights up. */
+.option--wrong {
+  border: 2px solid var(--text-muted);
+}
+.option--close {
+  border: 2px solid var(--warning);
+  font-weight: var(--fw-bold);
+}
+.option--faded {
+  opacity: 0.45;
+}
+
+/* ── App chrome ───────────────────────────────────────────────────────────── */
+.app-header,
+.app-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+  backdrop-filter: blur(var(--blur)) saturate(140%);
+}
+.app-header {
+  top: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  border-bottom: 1px solid var(--glass-border);
+}
+.app-tabbar {
+  bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid var(--glass-border);
+}
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+.tab[aria-selected="true"] {
+  color: var(--accent-text);
+  font-weight: var(--fw-bold);
+}
+/* The active tab's icon sits in a soft accent pill. */
+.tab__icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 28px;
+  border-radius: var(--radius-round);
+}
+.tab[aria-selected="true"] .tab__icon {
+  background: var(--accent-tint-border);
+}
+.tab:active {
+  transform: scale(0.94);
+}
+
+/* Icon tile — a rounded square holding a line icon, tinted with --accent-tint. */
+.icon-tile {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-2xl);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+/* ── Accessibility ─────────────────────────────────────────────────────────── */
+:where(
+  button,
+  a,
+  [role="button"],
+  [role="tab"],
+  [role="radio"],
+  [role="switch"],
+  input,
+  select,
+  textarea
+):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-lg);
+}
+/* An invisible 44×44 hit area on anything smaller, without changing its look. */
+:where(button, [role="button"], [role="tab"], [role="switch"], .hit-target) {
+  position: relative;
+}
+:where(button, [role="button"], [role="tab"], [role="switch"], .hit-target)::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--hit-target));
+  height: max(100%, var(--hit-target));
+  transform: translate(-50%, -50%);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Scrollbars (mouse/trackpad only; touch keeps the native overlay bar) ── */
+@media (pointer: fine) {
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-color: var(--scrollbar-thumb-from) transparent;
+    }
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--scrollbar-thumb-from), var(--scrollbar-thumb-to));
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+    min-height: 24px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(
+      180deg,
+      var(--scrollbar-thumb-hover-from),
+      var(--scrollbar-thumb-hover-to)
+    );
+    background-clip: padding-box;
+  }
+}
+
+/* ── Motion helpers ────────────────────────────────────────────────────────── */
+@keyframes vi-reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes vi-pop {
+  0% {
+    transform: scale(0.92);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.reveal-in {
+  animation: vi-reveal-in var(--dur-base) var(--ease-decelerate) both;
+}
+.pop {
+  animation: vi-pop var(--dur-fast) var(--ease-standard) both;
+}
