@@ -462,10 +462,12 @@ describe('determinism with the whole arsenal', () => {
 
 /**
  * I4 (§8.4), across every region: the active bot, with every weapon in its
- * pool, never leans on one. The full report is `npm run arsenal`.
+ * pool, never leans on one. The towers are the pacing bot's own at each
+ * region's arrival and clearing (`tools/frontier.ts`); the reading is
+ * `npm run arsenal`'s own, at its 16 seeds.
  */
 describe('I4: no dominant weapon', () => {
-  const r = arsenalReport(ALL_REGIONS, 12);
+  const r = arsenalReport(ALL_REGIONS, 16);
 
   it(`no weapon takes more than ${I4_MAX_SHARE * 100}% of the new-weapon picks`, () => {
     expect(r.worst.share).toBeLessThanOrEqual(I4_MAX_SHARE);
