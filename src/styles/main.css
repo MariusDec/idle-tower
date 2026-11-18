@@ -1107,7 +1107,8 @@ body {
 .hub-stats dd.hub-shards { color: var(--fx-gold); }
 
 .results {
-  background: var(--scrim);
+  /* Near-opaque: the shared scrim let the arena's swarm read through the text. */
+  background: rgba(9, 10, 28, 0.92);
   /* A long summary scrolls; `safe` keeps its top reachable instead of
      centring it off-screen, and the actions stay pinned below. */
   overflow-y: auto;
