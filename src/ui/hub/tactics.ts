@@ -1,6 +1,7 @@
 import { PASSIVE_BY_ID } from '../../content/passives';
 import { WEAPON_BY_ID } from '../../content/weapons';
 import type { CardItemId, ContentEntry, PassiveId, WeaponId } from '../../content/types';
+import { isUiGlyph, type IconId } from '../../content/icons';
 import { TACTICS_ALL, hasOwnTactics, tacticsFor, tacticsScopes } from '../../meta/automation';
 import { selectedFrame, selectedRegion } from '../../meta/collection';
 import type { Profile } from '../../meta/profile';
@@ -150,11 +151,13 @@ export class TacticsView {
     this.rest.replaceChildren(...pool.filter((id) => !listed.includes(id) && !banned.includes(id)).map((id) => this.restRow(id)));
   }
 
-  private btn(label: string, aria: string, disabled: boolean, fn: () => void): HTMLButtonElement {
+  /** A row button: an Ionicons glyph (`io-…`), or a short text label. */
+  private btn(label: IconId | string, aria: string, disabled: boolean, fn: () => void): HTMLButtonElement {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'tactics-btn';
-    b.textContent = label;
+    if (isUiGlyph(label)) b.append(icon(label as IconId));
+    else b.textContent = label;
     b.setAttribute('aria-label', aria);
     b.disabled = disabled;
     b.addEventListener('click', fn);
@@ -176,7 +179,7 @@ export class TacticsView {
     const grip = document.createElement('span');
     grip.className = 'tactics-grip';
     grip.setAttribute('aria-hidden', 'true');
-    grip.textContent = '⠿';
+    grip.append(icon('io-reorder-three'));
     const rank = document.createElement('span');
     rank.className = 'tactics-rank';
     rank.textContent = String(i + 1);
@@ -188,9 +191,9 @@ export class TacticsView {
     };
     li.append(
       grip, rank, icon(def.icon), this.nameOf(def),
-      this.btn('▲', `Raise ${def.name}`, i === 0, () => move(i - 1)),
-      this.btn('▼', `Lower ${def.name}`, i === n - 1, () => move(i + 1)),
-      this.btn('✕', `Unlist ${def.name}`, false, () => this.commit(this.list.filter((x) => x !== id))),
+      this.btn('io-chevron-up', `Raise ${def.name}`, i === 0, () => move(i - 1)),
+      this.btn('io-chevron-down', `Lower ${def.name}`, i === n - 1, () => move(i + 1)),
+      this.btn('io-close', `Unlist ${def.name}`, false, () => this.commit(this.list.filter((x) => x !== id))),
     );
     this.bindDrag(grip, li);
     return li;
@@ -203,7 +206,7 @@ export class TacticsView {
     li.className = `entry tactics-row is-never${offered ? '' : ' is-unknown'}`;
     li.append(
       icon(def.icon), this.nameOf(def),
-      this.btn('✕', `Allow ${def.name} again`, false, () => this.commit(this.list, this.banned.filter((x) => x !== id))),
+      this.btn('io-close', `Allow ${def.name} again`, false, () => this.commit(this.list, this.banned.filter((x) => x !== id))),
     );
     return li;
   }
@@ -212,7 +215,7 @@ export class TacticsView {
     const def = entryOf(id)!;
     const li = document.createElement('li');
     li.className = 'entry tactics-row is-rest';
-    const add = this.btn('+ List', `List ${def.name}`, false, () => this.commit([...this.list, id]));
+    const add = this.btn('List', `List ${def.name}`, false, () => this.commit([...this.list, id]));
     add.classList.add('tactics-btn-wide');
     const ban = this.btn('Never', `Never take ${def.name}`, false, () => this.commit(this.list, [...this.banned, id]));
     ban.classList.add('tactics-btn-wide');

@@ -1,9 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Adaptive icon background: the Last light ground (plans/visual-identity.md §2.2). -->
   <defs>
-    <radialGradient id="ground" cx="50%" cy="42%" r="62%">
-      <stop offset="0%" stop-color="#1a2030"/>
-      <stop offset="100%" stop-color="#0a0d14"/>
-    </radialGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2a1e4c"/>
+      <stop offset="0.34" stop-color="#1d2148"/>
+      <stop offset="0.66" stop-color="#211d3f"/>
+      <stop offset="1" stop-color="#3b2422"/>
+    </linearGradient>
   </defs>
   <rect width="1024" height="1024" fill="url(#ground)"/>
 </svg>

@@ -2,10 +2,15 @@
 /**
  * Icon pipeline (UI plan §6).
  *
- * Pulls a *pinned* set of icons from https://github.com/game-icons/icons and
- * bakes them into three committed artefacts:
+ * Pulls two *pinned* icon sets and bakes them into three committed artefacts:
  *
- *   public/icons/sprite.svg   one <symbol> per icon, referenced by <use href="#gi-…">
+ *   - content artwork from https://github.com/game-icons/icons (`gi-…`):
+ *     weapons, passives, relics, enemies, Forge nodes;
+ *   - UI chrome glyphs from Ionicons Outline (`io-…`), the shared visual
+ *     identity's icon set (plans/visual-identity.md §8.1): gear, pause, close,
+ *     chevrons, tabs, lock.
+ *
+ *   public/icons/sprite.svg   one <symbol> per icon, referenced by <use href="#gi-…"> / "#io-…"
  *   src/content/icons.ts         the closed `IconId` union + per-icon credit metadata
  *   ATTRIBUTION.md            the CC BY 3.0 credit the licence actually requires
  *
@@ -26,6 +31,11 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RAW_BASE = 'https://raw.githubusercontent.com/game-icons/icons/master';
 const REPO_URL = 'https://github.com/game-icons/icons';
+
+/** Ionicons is pinned by package version, so a re-run fetches the same strokes. */
+const IONICONS_VERSION = '7.4.0';
+const IONICONS_BASE = `https://cdn.jsdelivr.net/npm/ionicons@${IONICONS_VERSION}/dist/svg`;
+const IONICONS_URL = 'https://ionic.io/ionicons';
 
 /**
  * Contributors, as named by the upstream `license.txt`.
@@ -173,6 +183,27 @@ const MANIFEST = dedupe([
   ['delapouite', 'beehive'], ['lorc', 'sun'], ['delapouite', 'castle'],
 ]);
 
+/**
+ * The UI chrome set: Ionicons, always the *Outline* variant. The id is the
+ * icon's name with an `io-` prefix (`io-settings` is `settings-outline.svg`),
+ * so chrome and content can never collide in the one `IconId` union and a
+ * reader can tell at a glance which family a call site uses. Content tables
+ * must not name an `io-` icon (`content/lint.ts`).
+ */
+const IONICONS = [
+  // Chrome buttons
+  'settings', 'help-circle', 'information-circle', 'close', 'pause', 'play',
+  'speedometer', 'flash', 'add', 'remove', 'scan', 'locate', 'refresh', 'flag',
+  'share', 'download', 'lock-closed', 'reorder-three',
+  // Chevrons
+  'chevron-back', 'chevron-forward', 'chevron-up', 'chevron-down',
+  // Hub tabs
+  'home', 'hammer', 'map', 'library', 'trophy', 'sparkles',
+  // Currency mark
+  'diamond',
+].map((name) => ({ id: `io-${name}`, file: `${name}-outline.svg` }))
+  .sort((a, b) => (a.id < b.id ? -1 : 1));
+
 function dedupe(pairs) {
   const seen = new Map();
   for (const [author, slug] of pairs) {
@@ -215,6 +246,29 @@ function toSymbol(id, svg) {
   return `<symbol id="gi-${id}" viewBox="${viewBox}">${inner}</symbol>`;
 }
 
+/**
+ * Ionicons Outline files are already `currentColor` strokes with
+ * `fill="none"` on every path, at the same 512 viewBox as game-icons, so they
+ * drop into the sprite as they are. The `fill="none"` attributes matter: they
+ * beat the `.icon { fill: currentColor }` the sprite's users inherit.
+ */
+function toIoSymbol(id, svg) {
+  const viewBox = VIEWBOX.exec(svg)?.[1] ?? '0 0 512 512';
+  const open = svg.indexOf('>');
+  const close = svg.lastIndexOf('</svg>');
+  if (open < 0 || close < 0) throw new Error(`${id}: not an <svg> document`);
+  if (viewBox !== '0 0 512 512') throw new Error(`${id}: unexpected viewBox ${viewBox}`);
+  const inner = svg.slice(open + 1, close).replace(/\s+/g, ' ').trim();
+  return `<symbol id="${id}" viewBox="${viewBox}">${inner}</symbol>`;
+}
+
+async function fetchIonicon({ id, file }) {
+  const url = `${IONICONS_BASE}/${file}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${id}: ${res.status} ${res.statusText} for ${url}`);
+  return toIoSymbol(id, await res.text());
+}
+
 async function fetchIcon({ id, author, slug }) {
   const url = `${RAW_BASE}/${author}/${slug}.svg`;
   const res = await fetch(url);
@@ -222,7 +276,7 @@ async function fetchIcon({ id, author, slug }) {
   return toSymbol(id, await res.text());
 }
 
-function attributionMarkdown(entries) {
+function attributionMarkdown(entries, ionicons) {
   const byAuthor = new Map();
   for (const e of entries) {
     if (!byAuthor.has(e.author)) byAuthor.set(e.author, []);
@@ -253,8 +307,11 @@ function attributionMarkdown(entries) {
     '',
     '## Icons',
     '',
-    `The ${entries.length} icons in \`public/icons/sprite.svg\` come from`,
-    `[game-icons.net](https://game-icons.net) (source: [${REPO_URL}](${REPO_URL})).`,
+    `\`public/icons/sprite.svg\` holds ${entries.length} content icons from`,
+    `[game-icons.net](https://game-icons.net) (source: [${REPO_URL}](${REPO_URL})) and`,
+    `${ionicons.length} UI icons from [Ionicons](${IONICONS_URL}) ${IONICONS_VERSION} (see below).`,
+    '',
+    '### game-icons.net',
     '',
     'Icons marked **CC BY 3.0** are used under the',
     '[Creative Commons Attribution 3.0 Unported](https://creativecommons.org/licenses/by/3.0/)',
@@ -266,18 +323,32 @@ function attributionMarkdown(entries) {
     'path inherits `currentColor` from CSS.',
     '',
     ...sections.flatMap((s) => [s, '']),
+    '### Ionicons',
+    '',
+    `The UI glyphs (\`io-…\`) are [Ionicons](${IONICONS_URL}) ${IONICONS_VERSION}, *Outline* variant,`,
+    'by Ionic, licensed **MIT**: Copyright (c) 2015-present Ionic (http://ionic.io/).',
+    'They are unmodified apart from whitespace.',
+    '',
+    `${ionicons.map((e) => `\`${e.id}\``).join(' · ')}`,
+    '',
     '## Fonts',
     '',
-    'The display face is [Oswald](https://fonts.google.com/specimen/Oswald) by Vernon Adams,',
-    'Kalapi Gajjar and Cyreal, licensed under the',
-    '[SIL Open Font License 1.1](https://openfontlicense.org) — see `public/fonts/OFL.txt`.',
+    'The UI face is [Sarabun](https://fonts.google.com/specimen/Sarabun) by Cadson Demak,',
+    'licensed under the [SIL Open Font License 1.1](https://openfontlicense.org) — see',
+    '`public/fonts/OFL.txt`. The woff2 files (latin and latin-ext, weights 400, 600 and',
+    '700) come from the `@fontsource/sarabun` 5.3.0 package. It is the shared visual',
+    'identity\'s house face (`docs/visual-identity/`).',
   ].join('\n')}\n`;
 }
 
-function iconsModule(entries) {
-  const ids = entries.map((e) => `  '${e.id}',`).join('\n');
-  const meta = entries
-    .map((e) => `  '${e.id}': { author: '${AUTHORS[e.author].name}', slug: '${e.slug}', license: '${AUTHORS[e.author].license}' },`)
+function iconsModule(entries, ionicons) {
+  const all = [
+    ...entries.map((e) => ({ id: e.id, author: AUTHORS[e.author].name, slug: e.slug, license: AUTHORS[e.author].license })),
+    ...ionicons.map((e) => ({ id: e.id, author: 'Ionic', slug: e.file.replace(/\.svg$/, ''), license: 'MIT' })),
+  ].sort((a, b) => (a.id < b.id ? -1 : 1));
+  const ids = all.map((e) => `  '${e.id}',`).join('\n');
+  const meta = all
+    .map((e) => `  '${e.id}': { author: '${e.author}', slug: '${e.slug}', license: '${e.license}' },`)
     .join('\n');
 
   return `/**
@@ -287,7 +358,9 @@ function iconsModule(entries) {
  * names but nobody fetched is a \`tsc\` error rather than an empty box in a
  * panel. Add an entry to the manifest in the script and re-run it.
  *
- * The matching artwork lives in \`public/icons/sprite.svg\` as \`#gi-<id>\`;
+ * Two families share the union: game-icons content artwork (bare ids, symbol
+ * \`#gi-<id>\`) and Ionicons Outline UI glyphs (ids that start \`io-\`, symbol
+ * \`#<id>\`). Both live in \`public/icons/sprite.svg\`;
  * \`src/ui/Icon.ts\` is the only thing that should build those references.
  */
 
@@ -303,12 +376,15 @@ ${meta}
 };
 
 /** The \`<symbol>\` id an \`<use>\` must point at. */
-export const iconSymbolId = (id: IconId): string => \`gi-\${id}\`;
+export const iconSymbolId = (id: IconId): string => (id.startsWith('io-') ? id : \`gi-\${id}\`);
+
+/** True for a UI chrome glyph (Ionicons), false for content artwork (game-icons). */
+export const isUiGlyph = (id: string): boolean => id.startsWith('io-');
 `;
 }
 
 async function main() {
-  console.log(`Fetching ${MANIFEST.length} icons from ${REPO_URL} …`);
+  console.log(`Fetching ${MANIFEST.length} icons from ${REPO_URL} and ${IONICONS.length} from Ionicons ${IONICONS_VERSION} …`);
   for (const e of MANIFEST) {
     if (!AUTHORS[e.author]) throw new Error(`${e.id}: unknown author "${e.author}" — add it to AUTHORS with its licence`);
   }
@@ -318,23 +394,28 @@ async function main() {
     symbols.push(await fetchIcon(entry));
     process.stdout.write('.');
   }
+  for (const entry of IONICONS) {
+    symbols.push(await fetchIonicon(entry));
+    process.stdout.write('.');
+  }
   process.stdout.write('\n');
 
   const sprite = [
     '<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">',
     '<!-- Generated by scripts/fetch-icons.mjs from https://github.com/game-icons/icons -->',
     '<!-- Icons by Lorc, Delapouite and contributors, CC BY 3.0 / CC0. See ATTRIBUTION.md. -->',
+    `<!-- io-* symbols: Ionicons ${IONICONS_VERSION} Outline, MIT, Copyright (c) 2015-present Ionic. -->`,
     ...symbols,
     '</svg>',
   ].join('\n');
 
   await mkdir(resolve(ROOT, 'public/icons'), { recursive: true });
   await writeFile(resolve(ROOT, 'public/icons/sprite.svg'), `${sprite}\n`);
-  await writeFile(resolve(ROOT, 'ATTRIBUTION.md'), attributionMarkdown(MANIFEST));
-  await writeFile(resolve(ROOT, 'src/content/icons.ts'), iconsModule(MANIFEST));
+  await writeFile(resolve(ROOT, 'ATTRIBUTION.md'), attributionMarkdown(MANIFEST, IONICONS));
+  await writeFile(resolve(ROOT, 'src/content/icons.ts'), iconsModule(MANIFEST, IONICONS));
 
   const kb = (sprite.length / 1024).toFixed(1);
-  console.log(`public/icons/sprite.svg  ${MANIFEST.length} symbols, ${kb} KB`);
+  console.log(`public/icons/sprite.svg  ${MANIFEST.length} + ${IONICONS.length} symbols, ${kb} KB`);
   console.log('ATTRIBUTION.md           regenerated');
   console.log('src/content/icons.ts        regenerated');
 }

@@ -1,6 +1,6 @@
 # Visual identity — "Last light"
 
-**Status:** 2026-11-18. Planned, not started. Brings the shared identity
+**Status:** 2026-11-18. Built: parts 1–6 are in. Brings the shared identity
 ("Sunrise / Blue hour", from Learn Thai, copied into `visual identity/`)
 to The Tower. The game won't look like Learn Thai, but it should read as
 part of the same family.
@@ -489,7 +489,8 @@ other once Part 2 is in (different files, apart from their own blocks in
 
 ## 11. Still open
 
-- **App icon:** two or three drafts to pick from in Part 6.
+- ~~**App icon:** two or three drafts to pick from in Part 6.~~ Decided
+  2026-11-18: "the halo", the gold tower inside a full accent ring.
 - **The exact `--glass-fill-solid` opacity** over the arena: to tune on
   device. Somewhere between 88% (more glass) and 92% (more legible).
 - **A Sunrise (light) theme** isn't planned. The token names allow it

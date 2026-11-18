@@ -152,7 +152,7 @@ export class WebView<N extends WebNodeDef> {
         <span class="forge-shards" aria-label="${src.currencyName}">${iconMarkup(src.currencyIcon)}<span class="forge-shards-n">0</span></span>
       </header>
       <p class="forge-hint" hidden>${src.hint}</p>
-      <button type="button" class="forge-recentre" aria-label="Recentre the web">⌖</button>
+      <button type="button" class="forge-recentre" aria-label="Recentre the web">${iconMarkup('io-locate')}</button>
       <div class="forge-detail" hidden></div>`;
     this.shards = this.root.querySelector('.forge-shards-n')!;
     this.hint = this.root.querySelector('.forge-hint')!;
@@ -309,7 +309,7 @@ export class WebView<N extends WebNodeDef> {
       t.textContent = '?';
       g.appendChild(t);
     } else if (state === 'sealed') {
-      g.appendChild(iconUse('locked-chest', r * 1.1));
+      g.appendChild(iconUse('io-lock-closed', r * 1.1));
     } else {
       g.appendChild(iconUse(n.icon, r * 1.1));
       if (n.maxLevel > 1) {
@@ -370,7 +370,7 @@ export class WebView<N extends WebNodeDef> {
     kind.className = 'forge-detail-kind';
     const typeName = n.type[0].toUpperCase() + n.type.slice(1);
     if (state === 'fog') {
-      head.append(icon('locked-chest'));
+      head.append(icon('io-lock-closed'));
       name.textContent = `Unknown ${n.type}`;
       kind.textContent = this.src.branchName(n.branch);
       head.append(name);
@@ -383,7 +383,7 @@ export class WebView<N extends WebNodeDef> {
     }
     if (state === 'sealed') {
       // Sealed (§5.1): what it is shows; it waits for its boss, or its star (§9).
-      head.append(icon('locked-chest'));
+      head.append(icon('io-lock-closed'));
       name.textContent = n.name;
       head.append(name);
       kind.textContent = `${this.src.branchName(n.branch)} · ${typeName}`;
@@ -426,6 +426,14 @@ export class WebView<N extends WebNodeDef> {
       buy.addEventListener('click', () => this.buy(id));
       if (!web.isBuyable(p, id)) buy.disabled = true;
       actions.append(buy);
+      // Short of the cost: say how far, never a red "can't" (plans/visual-identity.md §8.3).
+      const short = cost - this.src.wallet(p);
+      if (web.isBuyable(p, id) && short > 0) {
+        const togo = document.createElement('span');
+        togo.className = 'forge-detail-togo';
+        togo.textContent = `Not enough ${this.src.currencyName.toLowerCase()} yet · ${formatNumber(short)} to go`;
+        actions.append(togo);
+      }
     } else {
       const done = document.createElement('span');
       done.className = 'forge-detail-done';
@@ -637,7 +645,7 @@ export class ForgeView extends WebView<ForgeNodeDef> {
       web: FORGE_WEB,
       className: 'forge',
       title: 'Forge',
-      currencyIcon: 'crystal-cluster',
+      currencyIcon: 'io-diamond',
       currencyName: 'Shards',
       wallet: (p) => p.shards,
       hint: 'Spend shards on the web. Every node applies from your next run.',

@@ -5,6 +5,8 @@ import type { CanvasMode } from '../render/canvasMode';
 import { formatNumber } from '../core/format';
 import { importProfile, type BackupInfo } from '../meta/save/transfer';
 import { segmented, type Choice } from './controls';
+import { icon } from './icon';
+import type { IconId } from '../content/icons';
 
 type Settings = Profile['settings'];
 
@@ -268,8 +270,8 @@ export class SettingsPanel {
     box.append(
       note('Take your progress to another install, or bring it back.'),
       button('Copy save', 'btn', () => void this.actions.copySave().then((ok) => say(ok ? 'Copied. Paste it somewhere safe.' : 'The clipboard said no. Try Save file.'))),
-      button('Save file', 'btn', () => void this.actions.saveFile().then((where) => say(`Saved to ${where}.`), () => say('The file could not be saved.'))),
-      button('Load save', 'btn', () => { this.loading = { text: '' }; this.message = ''; this.failed = false; this.render(); }),
+      button('Save file', 'btn', () => void this.actions.saveFile().then((where) => say(`Saved to ${where}.`), () => say('The file couldn’t be saved. Try Copy save.')), 'io-share'),
+      button('Load save', 'btn', () => { this.loading = { text: '' }; this.message = ''; this.failed = false; this.render(); }, 'io-download'),
       note(this.message, this.failed),
     );
     if (this.backupList.length > 0) {
@@ -353,11 +355,13 @@ function note(text: string, error = false): HTMLElement {
   return p;
 }
 
-function button(label: string, cls: string, onClick: () => void): HTMLButtonElement {
+/** A labelled button, with an optional leading UI glyph (plans/visual-identity.md §8.1). */
+function button(label: string, cls: string, onClick: () => void, glyph?: IconId): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = cls;
   b.textContent = label;
+  if (glyph) b.prepend(icon(glyph, { size: 20 }));
   b.addEventListener('click', onClick);
   return b;
 }

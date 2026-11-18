@@ -142,7 +142,7 @@ export class ContractsView {
     const reroll = document.createElement('button');
     reroll.type = 'button';
     reroll.className = 'tactics-btn contracts-reroll';
-    reroll.textContent = '↻';
+    reroll.append(icon('io-refresh'));
     reroll.setAttribute('aria-label', `Reroll the ${SLOT_NAMES[c.slot]} contract`);
     reroll.addEventListener('click', () => {
       if (this.actions.reroll(c.id)) this.render();
@@ -150,7 +150,7 @@ export class ContractsView {
     const pin = document.createElement('button');
     pin.type = 'button';
     pin.className = 'tactics-btn contracts-pin';
-    pin.textContent = '⚑';
+    pin.append(icon('io-flag'));
     const pinned = p.contracts.pinned === c.id;
     pin.setAttribute('aria-pressed', String(pinned));
     pin.setAttribute('aria-label', pinned ? 'Unpin from the Next line' : 'Pin to the Next line');

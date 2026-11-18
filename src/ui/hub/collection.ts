@@ -201,7 +201,7 @@ export class CollectionView {
         const count = document.createElement('span');
         count.className = 'entry-count';
         count.textContent = row.state === 'seen' ? `${r.rarity}${row.taken > 0 ? ` · taken ${formatNumber(row.taken)}` : ''}` : r.rarity;
-        h.append(icon(row.state === 'unknown' ? 'locked-chest' : r.icon), n, count);
+        h.append(icon(row.state === 'unknown' ? 'io-lock-closed' : r.icon), n, count);
         li.append(h);
         const t = document.createElement('p');
         t.className = 'entry-text';
@@ -243,7 +243,7 @@ export class CollectionView {
       const count = document.createElement('span');
       count.className = 'entry-count';
       count.textContent = row.seen ? `${formatNumber(row.kills)} slain` : '';
-      head.append(icon(row.seen ? def.icon : 'locked-chest'), name, count);
+      head.append(icon(row.seen ? def.icon : 'io-lock-closed'), name, count);
       li.append(head);
       if (row.seen) {
         const verb = document.createElement('p');
@@ -327,7 +327,7 @@ export class CollectionView {
         const n = document.createElement('span');
         n.className = 'entry-name';
         n.textContent = '???';
-        h.append(icon('locked-chest'), n);
+        h.append(icon('io-lock-closed'), n);
         const t = document.createElement('p');
         t.className = 'entry-text';
         t.textContent = cursedWhere(r);
@@ -392,7 +392,7 @@ export class CollectionView {
         const n = document.createElement('span');
         n.className = 'entry-name';
         n.textContent = '???';
-        h.append(icon('locked-chest'), n);
+        h.append(icon('io-lock-closed'), n);
         const t = document.createElement('p');
         t.className = 'entry-text';
         t.textContent = `Drops from ${where}.`;
@@ -481,7 +481,7 @@ export class CollectionView {
       const n = document.createElement('span');
       n.className = 'entry-name';
       n.textContent = r.found ? e.name : '???';
-      h.append(icon(r.found ? e.icon : r.weapon ? WEAPON_BY_ID[e.weapon].icon : 'locked-chest'), n);
+      h.append(icon(r.found ? e.icon : r.weapon ? WEAPON_BY_ID[e.weapon].icon : 'io-lock-closed'), n);
       const recipe = document.createElement('p');
       recipe.className = 'entry-text';
       const weapon = r.weapon ? `${WEAPON_BY_ID[e.weapon].name} (level ${BALANCE.evolutions.evolveAt})` : '???';
@@ -594,7 +594,7 @@ export class CollectionView {
       const n = document.createElement('span');
       n.className = 'entry-name';
       n.textContent = r.found || r.lit ? f.name : '???';
-      h.append(icon(r.found || r.lit ? f.icon : 'locked-chest'), n);
+      h.append(icon(r.found || r.lit ? f.icon : 'io-lock-closed'), n);
       const recipe = document.createElement('p');
       recipe.className = 'entry-text';
       recipe.textContent = r.lit ? f.weapons.map((w) => EVOLUTION_OF[w].name).join(' + ') : '??? + ???';
@@ -631,7 +631,7 @@ export class CollectionView {
       const tag = document.createElement('span');
       tag.className = 'entry-count';
       tag.textContent = f.id === chosen ? 'Next run' : '';
-      h.append(icon(open ? f.icon : 'locked-chest'), n, tag);
+      h.append(icon(open ? f.icon : 'io-lock-closed'), n, tag);
       const t = document.createElement('p');
       t.className = 'entry-text';
       t.textContent = open ? f.text : lockedLine(f.unlock);

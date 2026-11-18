@@ -267,7 +267,10 @@ describe('no runtime network', () => {
   for (const [label, rel] of SOURCES) {
     it(`${label} references no http(s) URL`, () => {
       const body = stripComments(readFileSync(resolve(__dirname, rel), 'utf8'));
-      const hits = [...body.matchAll(/https?:\/\/[^\s"')]*/g)].map(m => m[0]);
+      // The SVG namespace in a `data:` glyph mask (`--glyph-close`) is an
+      // identifier, never fetched.
+      const hits = [...body.matchAll(/https?:\/\/[^\s"')]*/g)].map(m => m[0])
+        .filter((url) => url !== 'http://www.w3.org/2000/svg');
       expect(hits, `${label} would fetch from the network at runtime`).toEqual([]);
     });
   }

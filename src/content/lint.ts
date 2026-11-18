@@ -1,6 +1,6 @@
 import { ABYSS_INDEX } from './abyss';
 import { BALANCE } from './balance';
-import { ICON_IDS } from './icons';
+import { ICON_IDS, isUiGlyph } from './icons';
 import { EXPLAINERS } from './explainers';
 import { CONTRACT_OMENS, QUARRY, contractText } from './contracts';
 import { OMEN_MODS } from './omens';
@@ -60,6 +60,8 @@ export const entryBasics: LintRule = (tables) => {
       if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(e.id)) out.push({ table, id: e.id, problem: 'id is not kebab-case' });
       if (!e.name.trim()) out.push({ table, id: e.id, problem: 'missing name' });
       if (!ICONS.has(e.icon)) out.push({ table, id: e.id, problem: `unknown icon "${e.icon}"` });
+      // Content is illustrated with game-icons; Ionicons are UI chrome (plans/visual-identity.md §8.1).
+      if (isUiGlyph(e.icon)) out.push({ table, id: e.id, problem: `"${e.icon}" is a UI glyph, not content artwork` });
       const words = wordCount(e.text);
       if (words === 0) out.push({ table, id: e.id, problem: 'missing text' });
       if (words > MAX_TEXT_WORDS) out.push({ table, id: e.id, problem: `text is ${words} words (max ${MAX_TEXT_WORDS})` });

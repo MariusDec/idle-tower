@@ -88,11 +88,11 @@ const SPREAD_MS = 2600;
 
 /** Tabs in the order they unlock and sit (§10.1). */
 const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics' | 'pacts' | 'contracts' | 'omen'>; label: string; icon: IconId }[] = [
-  { view: 'forge', label: 'Forge', icon: 'hammer-nails' },
-  { view: 'map', label: 'Map', icon: 'treasure-map' },
-  { view: 'collection', label: 'Collection', icon: 'book-pile' },
-  { view: 'feats', label: 'Feats', icon: 'trophy' },
-  { view: 'stars', label: 'Stars', icon: 'star-formation' },
+  { view: 'forge', label: 'Forge', icon: 'io-hammer' },
+  { view: 'map', label: 'Map', icon: 'io-map' },
+  { view: 'collection', label: 'Collection', icon: 'io-library' },
+  { view: 'feats', label: 'Feats', icon: 'io-trophy' },
+  { view: 'stars', label: 'Stars', icon: 'io-sparkles' },
 ];
 
 /** A tab: its glyph over its label (plans/visual-identity.md §5.2). */
@@ -153,8 +153,8 @@ export class HubScreen {
     // Two groups, above and below the centre, so the backdrop tower the
     // renderer draws there stays in the clear between them.
     this.root.innerHTML = `
-      <button type="button" class="hub-gear" aria-label="Settings">${iconMarkup('cog')}</button>
-      <button type="button" class="help-btn hub-help" data-view="home" aria-label="How this works" hidden>?</button>
+      <button type="button" class="hub-gear" aria-label="Settings">${iconMarkup('io-settings')}</button>
+      <button type="button" class="help-btn hub-help" data-view="home" aria-label="How this works" hidden>${iconMarkup('io-help-circle')}</button>
       <div class="hub-home">
         <div class="hub-group">
           <p class="eyebrow hub-eyebrow"></p>
@@ -315,7 +315,7 @@ export class HubScreen {
       help.className = 'help-btn';
       help.dataset.view = view;
       help.setAttribute('aria-label', 'How this works');
-      help.textContent = '?';
+      help.innerHTML = iconMarkup('io-help-circle');
       help.hidden = true;
       v.querySelector('h2')?.append(help);
     }
@@ -364,7 +364,7 @@ export class HubScreen {
     const shown = TABS.filter((t) => unlocks[t.view]);
     this.tabs.hidden = shown.length === 0;
     toggleClass(this.tabs, 'is-crowded', shown.length >= TABS.length);
-    this.tabs.replaceChildren(tabButton('home', 'Tower', 'castle'), ...shown.map((t) => tabButton(t.view, t.label, t.icon)));
+    this.tabs.replaceChildren(tabButton('home', 'Tower', 'io-home'), ...shown.map((t) => tabButton(t.view, t.label, t.icon)));
   }
 
   /** `tell`: tell the view's unread explainers (§7.1), after the light spreads when it does. */

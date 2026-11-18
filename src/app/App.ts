@@ -421,7 +421,7 @@ export class App {
       this.paused = true;
       if (!this.settings.open && !this.modal.open) this.openPause();
       const more = earned.stored > 0 ? ` · +${formatNumber(earned.stored)} stored` : '';
-      this.toasts.show('crystal-cluster', 'Welcome back', `Away ${gone} · +${formatNumber(earned.shards)} shards${more}`);
+      this.toasts.show('io-diamond', 'Welcome back', `Away ${gone} · +${formatNumber(earned.shards)} shards${more}`);
       return;
     }
     const buttons: ModalButton[] = [{ label: 'Close', onClick: () => {} }];
@@ -872,7 +872,7 @@ export class App {
     this.hud.setStored(left / this.poolAtStart, played ? rates.engaged : rates.handsOff, left, played);
     if (left <= 0 && !this.poolDry) {
       this.poolDry = true;
-      this.toasts.show('crystal-cluster', 'Stored Light spent', 'The rest of the run earns its own shards.');
+      this.toasts.show('io-diamond', 'Stored Light spent', 'The rest of the run earns its own shards.');
       this.cues.storedDry();
     }
   }

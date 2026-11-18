@@ -5,7 +5,9 @@
  * names but nobody fetched is a `tsc` error rather than an empty box in a
  * panel. Add an entry to the manifest in the script and re-run it.
  *
- * The matching artwork lives in `public/icons/sprite.svg` as `#gi-<id>`;
+ * Two families share the union: game-icons content artwork (bare ids, symbol
+ * `#gi-<id>`) and Ionicons Outline UI glyphs (ids that start `io-`, symbol
+ * `#<id>`). Both live in `public/icons/sprite.svg`;
  * `src/ui/Icon.ts` is the only thing that should build those references.
  */
 
@@ -114,6 +116,35 @@ export const ICON_IDS = [
   'hourglass',
   'imbricated-arrows',
   'interleaved-arrows',
+  'io-add',
+  'io-chevron-back',
+  'io-chevron-down',
+  'io-chevron-forward',
+  'io-chevron-up',
+  'io-close',
+  'io-diamond',
+  'io-download',
+  'io-flag',
+  'io-flash',
+  'io-hammer',
+  'io-help-circle',
+  'io-home',
+  'io-information-circle',
+  'io-library',
+  'io-locate',
+  'io-lock-closed',
+  'io-map',
+  'io-pause',
+  'io-play',
+  'io-refresh',
+  'io-remove',
+  'io-reorder-three',
+  'io-scan',
+  'io-settings',
+  'io-share',
+  'io-sparkles',
+  'io-speedometer',
+  'io-trophy',
   'knapsack',
   'knight-banner',
   'land-mine',
@@ -326,6 +357,35 @@ export const ICON_CREDITS: Record<IconId, { author: string; slug: string; licens
   'hourglass': { author: 'Lorc', slug: 'hourglass', license: 'CC BY 3.0' },
   'imbricated-arrows': { author: 'Lorc', slug: 'imbricated-arrows', license: 'CC BY 3.0' },
   'interleaved-arrows': { author: 'Lorc', slug: 'interleaved-arrows', license: 'CC BY 3.0' },
+  'io-add': { author: 'Ionic', slug: 'add-outline', license: 'MIT' },
+  'io-chevron-back': { author: 'Ionic', slug: 'chevron-back-outline', license: 'MIT' },
+  'io-chevron-down': { author: 'Ionic', slug: 'chevron-down-outline', license: 'MIT' },
+  'io-chevron-forward': { author: 'Ionic', slug: 'chevron-forward-outline', license: 'MIT' },
+  'io-chevron-up': { author: 'Ionic', slug: 'chevron-up-outline', license: 'MIT' },
+  'io-close': { author: 'Ionic', slug: 'close-outline', license: 'MIT' },
+  'io-diamond': { author: 'Ionic', slug: 'diamond-outline', license: 'MIT' },
+  'io-download': { author: 'Ionic', slug: 'download-outline', license: 'MIT' },
+  'io-flag': { author: 'Ionic', slug: 'flag-outline', license: 'MIT' },
+  'io-flash': { author: 'Ionic', slug: 'flash-outline', license: 'MIT' },
+  'io-hammer': { author: 'Ionic', slug: 'hammer-outline', license: 'MIT' },
+  'io-help-circle': { author: 'Ionic', slug: 'help-circle-outline', license: 'MIT' },
+  'io-home': { author: 'Ionic', slug: 'home-outline', license: 'MIT' },
+  'io-information-circle': { author: 'Ionic', slug: 'information-circle-outline', license: 'MIT' },
+  'io-library': { author: 'Ionic', slug: 'library-outline', license: 'MIT' },
+  'io-locate': { author: 'Ionic', slug: 'locate-outline', license: 'MIT' },
+  'io-lock-closed': { author: 'Ionic', slug: 'lock-closed-outline', license: 'MIT' },
+  'io-map': { author: 'Ionic', slug: 'map-outline', license: 'MIT' },
+  'io-pause': { author: 'Ionic', slug: 'pause-outline', license: 'MIT' },
+  'io-play': { author: 'Ionic', slug: 'play-outline', license: 'MIT' },
+  'io-refresh': { author: 'Ionic', slug: 'refresh-outline', license: 'MIT' },
+  'io-remove': { author: 'Ionic', slug: 'remove-outline', license: 'MIT' },
+  'io-reorder-three': { author: 'Ionic', slug: 'reorder-three-outline', license: 'MIT' },
+  'io-scan': { author: 'Ionic', slug: 'scan-outline', license: 'MIT' },
+  'io-settings': { author: 'Ionic', slug: 'settings-outline', license: 'MIT' },
+  'io-share': { author: 'Ionic', slug: 'share-outline', license: 'MIT' },
+  'io-sparkles': { author: 'Ionic', slug: 'sparkles-outline', license: 'MIT' },
+  'io-speedometer': { author: 'Ionic', slug: 'speedometer-outline', license: 'MIT' },
+  'io-trophy': { author: 'Ionic', slug: 'trophy-outline', license: 'MIT' },
   'knapsack': { author: 'Lorc', slug: 'knapsack', license: 'CC BY 3.0' },
   'knight-banner': { author: 'Delapouite', slug: 'knight-banner', license: 'CC BY 3.0' },
   'land-mine': { author: 'Lorc', slug: 'land-mine', license: 'CC BY 3.0' },
@@ -431,4 +491,7 @@ export const ICON_CREDITS: Record<IconId, { author: string; slug: string; licens
 };
 
 /** The `<symbol>` id an `<use>` must point at. */
-export const iconSymbolId = (id: IconId): string => `gi-${id}`;
+export const iconSymbolId = (id: IconId): string => (id.startsWith('io-') ? id : `gi-${id}`);
+
+/** True for a UI chrome glyph (Ionicons), false for content artwork (game-icons). */
+export const isUiGlyph = (id: string): boolean => id.startsWith('io-');

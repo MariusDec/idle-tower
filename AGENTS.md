@@ -86,6 +86,28 @@ a run (docs/performance.md).
 - Effects are data (a tagged union) with exhaustive consumers ending in `never`.
 - Colours come from `render/palette.ts` or `--tokens` in `styles/tokens.css`;
   `tests/palette.test.ts` fails on a literal colour in `render/` or `ui/`.
+- The UI follows the shared visual identity, Last light variant
+  (`docs/visual-identity/`, its `VARIANT.md`, `plans/visual-identity.md`):
+  - Ground: `body { background: var(--bg-gradient) fixed }`, Blue hour with
+    a per-region warm last stop (`--bg-last-light`). Dark only, no theme switch.
+  - Surfaces, only three: glass card (`--glass-fill`, 1px `--glass-border`,
+    radius 12), inset (`--panel-subtle`), callout. Strong glass plus a 2px
+    `--accent` border means *selected*, nothing else.
+  - Blur: never over the running arena (use `--glass-fill-solid`); over a
+    stopped arena only under `:root[data-quality='high']`; never glass in glass.
+  - Buttons: at most ONE `.btn-primary` (accent gradient, white bold ≥ 16px)
+    per screen; `.btn` secondary, `.btn-tertiary` text. Radius 14.
+  - Colour jobs: accent = interactive/selected/progress/focus; gold
+    (`--fx-gold`) = the player's (shards, tower, rewards, legendary), never a
+    button; can't-afford is muted, never red; `--error` only for real faults
+    and destructive actions; red (`--fx-blood`) is enemies only.
+  - Type: Sarabun, tabular numerals on changing figures, 12px floor, sentence
+    case; uppercase only for eyebrows, section headers, type badges.
+  - Icons: content is game-icons (`gi-`, bare ids) in an icon tile; UI chrome
+    is Ionicons Outline (`io-…`), added to `scripts/fetch-icons.mjs`'s manifest
+    and regenerated, never hand-drawn. No emoji as UI icons.
+  - Copy: a verb on every button, ` · ` in meta lines, encouraging, never
+    scolding. Lore voice stays the game's.
 - Every screen is checked at 375×812 first (D4).
 
 ## Commands

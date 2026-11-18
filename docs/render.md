@@ -108,6 +108,19 @@ zoom punch (3% for 180 ms). Both run on the wall clock.
 `setMotion(reduced, shake)` turns them off: reduced motion stops both and
 makes zoom changes instant, the shake switch stops shake only.
 
+## The ground's colours
+
+The canvas shares the DOM's ground (plans/visual-identity.md §7). `INK`
+(and `--ink-*`) is the Blue hour family: navy-indigo darks and
+lavender-grey lights, at the old blue-grey ramp's lightness steps, so no
+`FX` colour lost contrast against it. Inside the light the ground is the
+same radial (ink 600 → 800 mixed with the region's tint). Outside it, the
+dark is the Last light gradient (`GROUND`: the three Blue hour stops and the
+region's last light), dimmed by the fog, one memoised linear fill; the
+Abyss keeps its darker mix (`ABYSS_DARK`). The rim is the identity's
+violet (`ACCENT`, `--accent`), and the boss intro's letterbox bars are the
+indigo stop at 92%.
+
 ## Palette
 
 `palette.ts` is the single source of colour. `FX` (the effect colours by

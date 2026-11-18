@@ -72,7 +72,7 @@ export class FeatsView {
       const reward = document.createElement('span');
       reward.className = 'entry-count';
       reward.innerHTML = rewardMarkup(f.reward, f.starlight ?? 0);
-      head.append(icon(secret ? 'locked-chest' : f.icon), name, reward);
+      head.append(icon(secret ? 'io-lock-closed' : f.icon), name, reward);
       const text = document.createElement('p');
       text.className = secret ? 'entry-lore' : 'entry-text';
       text.textContent = secret ? `“${f.riddle}”` : f.text;
@@ -105,7 +105,7 @@ export class FeatsView {
 
 /** Shards, and Starlight when there is any (S7.2). */
 function rewardMarkup(shards: number, starlight: number): string {
-  const out = `${iconMarkup('crystal-cluster')} ${formatNumber(shards)}`;
+  const out = `${iconMarkup('io-diamond')} ${formatNumber(shards)}`;
   return starlight > 0 ? `${out} ${iconMarkup('round-star')} ${formatNumber(starlight)}` : out;
 }
 

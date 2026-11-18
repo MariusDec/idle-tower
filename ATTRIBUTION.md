@@ -4,8 +4,11 @@
 
 ## Icons
 
-The 206 icons in `public/icons/sprite.svg` come from
-[game-icons.net](https://game-icons.net) (source: [https://github.com/game-icons/icons](https://github.com/game-icons/icons)).
+`public/icons/sprite.svg` holds 206 content icons from
+[game-icons.net](https://game-icons.net) (source: [https://github.com/game-icons/icons](https://github.com/game-icons/icons)) and
+29 UI icons from [Ionicons](https://ionic.io/ionicons) 7.4.0 (see below).
+
+### game-icons.net
 
 Icons marked **CC BY 3.0** are used under the
 [Creative Commons Attribution 3.0 Unported](https://creativecommons.org/licenses/by/3.0/)
@@ -298,6 +301,14 @@ Icons made by [Cathelineau](https://game-icons.net), licensed **CC BY 3.0**.
 | Icon id | Source | Licence |
 |---|---|---|
 | `transparent-slime` | [transparent-slime](https://github.com/game-icons/icons/blob/master/cathelineau/transparent-slime.svg) | CC BY 3.0 |
+
+### Ionicons
+
+The UI glyphs (`io-…`) are [Ionicons](https://ionic.io/ionicons) 7.4.0, *Outline* variant,
+by Ionic, licensed **MIT**: Copyright (c) 2015-present Ionic (http://ionic.io/).
+They are unmodified apart from whitespace.
+
+`io-add` · `io-chevron-back` · `io-chevron-down` · `io-chevron-forward` · `io-chevron-up` · `io-close` · `io-diamond` · `io-download` · `io-flag` · `io-flash` · `io-hammer` · `io-help-circle` · `io-home` · `io-information-circle` · `io-library` · `io-locate` · `io-lock-closed` · `io-map` · `io-pause` · `io-play` · `io-refresh` · `io-remove` · `io-reorder-three` · `io-scan` · `io-settings` · `io-share` · `io-sparkles` · `io-speedometer` · `io-trophy`
 
 ## Fonts
 

@@ -36,7 +36,7 @@ export function mountSpecimen(host: HTMLElement): void {
         <button type="button" class="btn btn-tertiary">Not now</button>
       </div>
       <div class="specimen-row">
-        <button type="button" class="btn btn-sm">${iconMarkup('crystal-cluster', { size: 16 })} Claim</button>
+        <button type="button" class="btn btn-sm">${iconMarkup('io-diamond', { size: 16 })} Claim</button>
         <button type="button" class="btn btn-danger">Erase save</button>
         <button type="button" class="btn btn-tertiary btn-danger">Delete backup</button>
         <button type="button" class="btn" disabled>Disabled</button>
@@ -104,7 +104,7 @@ export function mountSpecimen(host: HTMLElement): void {
           <span class="specimen-card-title">Ashen Fields</span>
           <span class="specimen-meta">Region 1 · best wave 20 · cleared</span>
         </span>
-        <span class="specimen-chevron" aria-hidden="true">›</span>
+        <span class="specimen-chevron">${iconMarkup('io-chevron-forward')}</span>
       </div>
     </section>
 
@@ -129,7 +129,7 @@ export function mountSpecimen(host: HTMLElement): void {
       </ul>
       <div class="hub-goal">
         <span class="hub-goal-label">Next</span>
-        <span class="hub-goal-icon">${iconMarkup('crystal-cluster', { size: 18 })}</span>
+        <span class="hub-goal-icon">${iconMarkup('io-diamond', { size: 18 })}</span>
         <span class="hub-goal-text">Sharpened Shot · 80 to go</span>
         <div class="hub-goal-bar"><div class="hub-goal-fill specimen-fill-40"></div></div>
       </div>

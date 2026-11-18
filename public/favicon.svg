@@ -1,6 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#1a1d24"/>
-  <circle cx="16" cy="20" r="8" fill="#5b6b7a" stroke="#2a2f38" stroke-width="2"/>
-  <polygon points="16,4 8,14 24,14" fill="#7a4a2a" stroke="#2a2f38" stroke-width="2"/>
-  <rect x="15" y="2" width="1" height="6" fill="#c0c4cc"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- The app icon ("the halo", assets/icon.svg) cut for 16–32px: a heavier
+       ring and no glow, which would only muddy it at this size. -->
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2a1e4c"/>
+      <stop offset="0.34" stop-color="#1d2148"/>
+      <stop offset="0.66" stop-color="#211d3f"/>
+      <stop offset="1" stop-color="#3b2422"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="192" fill="url(#ground)"/>
+  <circle cx="512" cy="512" r="380" fill="none" stroke="#b3a5ff" stroke-width="56"/>
+  <g transform="translate(512 540) scale(0.86) translate(-512 -491)" fill="#f0b23c">
+    <path fill-rule="evenodd" d="M512 210 L706 400 L676 400 L676 496 L652 496 L688 796 L712 796 L712 852 L312 852 L312 796 L336 796 L372 496 L348 496 L348 400 L318 400 Z
+             M512 560 a30 30 0 0 1 30 30 v110 a30 30 0 0 1 -60 0 v-110 a30 30 0 0 1 30 -30 Z"/>
+    <rect x="502" y="130" width="20" height="100"/>
+    <path d="M522 140 L612 168 L522 196 Z"/>
+  </g>
 </svg>

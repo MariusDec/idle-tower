@@ -173,7 +173,7 @@ export class ResultsScreen {
         <div><span class="results-stat-n results-kills"></span><span class="results-stat-l">Kills</span></div>
         <div><span class="results-stat-n results-time"></span><span class="results-stat-l">Held</span></div>
         <button type="button" class="results-shards" aria-expanded="false">
-          <span class="results-stat-n">${iconMarkup('crystal-cluster')}<span class="results-shards-n"></span></span>
+          <span class="results-stat-n">${iconMarkup('io-diamond')}<span class="results-shards-n"></span></span>
           <span class="results-stat-l">Shards</span>
         </button>
       </div>

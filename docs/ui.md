@@ -112,6 +112,42 @@ relics, evolutions, feats, the deepest Abyss floor, days played.
 - Buttons are real `<button>`s; segmented controls are radio groups with
   `aria-checked`; dialogs are `role="dialog"` with `aria-modal`.
 
+## Visual identity
+
+The UI wears the shared identity ("Sunrise / Blue hour", vendored in
+[`docs/visual-identity/`](visual-identity/), with The Tower's changes in its
+`VARIANT.md`), as the "Last light" variant
+([plans/visual-identity.md](../plans/visual-identity.md)):
+
+- **Ground.** Blue hour at 135° with a warm fourth stop, `--bg-last-light`,
+  that each region tints (`LAST_LIGHT` in `content/regions.ts`, written by
+  `applyGround`). Dark only.
+- **Surfaces.** Glass card, inset, callout, plus the sheet for modals.
+  Over the running arena glass is `--glass-fill-solid` and never blurs;
+  over a stopped arena it blurs only on the `high` quality tier.
+- **Colour jobs.** The violet accent is the UI's (interactive, selected,
+  progress, focus); one `.btn-primary` per screen. Gold (`--fx-gold`) stays
+  the player's: shards, the tower, rewards, legendary. Can't-afford is
+  muted, never red; `--error` is for real faults and destructive actions.
+- **Type.** Sarabun 400/600/700, self-hosted, tabular numerals, a 12px
+  floor, sentence case (uppercase only for eyebrows, section headers and
+  type badges).
+- **Icons.** Two families in one sprite and one `IconId` union
+  (`scripts/fetch-icons.mjs`): game-icons.net artwork for content (`gi-…`,
+  bare ids: weapons, passives, relics, enemies, Forge nodes), drawn inside
+  the identity's icon tile; Ionicons 7.4.0 *Outline* for UI chrome (`io-…`:
+  gear, pause, close, chevrons, tabs, lock, the shard mark). Content tables
+  may not name an `io-` icon (`content/lint.ts`). No emoji as UI icons. The
+  few glyphs CSS paints itself are `mask` tokens (`--glyph-close`).
+  Content marks stay text: ☾ on a cursed relic, ✦ Starlight, ★ trophies.
+- **Copy.** Sentence case, a verb on every button, meta lines joined with
+  ` · `, encouraging rather than scolding ("Not enough shards yet · 80 to
+  go"). Lore voice (taglines, boss intros) stays the game's own.
+- **App icon.** "The halo": the tower in gold inside the accent ring, on
+  the Last light ground (`assets/icon*.svg`, `public/favicon.svg`). Edit
+  the SVGs, render the PNGs with `rsvg-convert`, then run
+  `npx capacitor-assets generate --android` with `#1d2148` backgrounds.
+
 ## Rules
 
 - Colours come from tokens; no literal colour in `ui/` (`palette.test.ts`).

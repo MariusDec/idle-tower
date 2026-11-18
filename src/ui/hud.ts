@@ -91,7 +91,7 @@ export class Hud {
       <div class="hud-top">
         <div class="hud-row">
           <div class="hud-wave"><span class="hud-label hud-wave-label">Wave</span> <span class="hud-wave-n">1</span></div>
-          <button type="button" class="hud-pause" aria-label="Pause">❚❚</button>
+          <button type="button" class="hud-pause" aria-label="Pause">${iconMarkup('io-pause')}</button>
         </div>
         <div class="hud-hp" role="meter" aria-label="Tower health">
           <div class="hud-hp-fill"></div>
@@ -101,7 +101,7 @@ export class Hud {
           <span class="hud-region"></span>
           <span class="hud-shards-group">
             <span class="hud-stored-chip" hidden></span>
-            <span class="hud-shards" aria-label="Shards this run">${iconMarkup('crystal-cluster')}<span class="hud-shards-n">0</span></span>
+            <span class="hud-shards" aria-label="Shards this run">${iconMarkup('io-diamond')}<span class="hud-shards-n">0</span></span>
           </span>
         </div>
         <div class="hud-stored" role="meter" aria-label="Stored Light" aria-valuemin="0" aria-valuemax="100" hidden><div class="hud-stored-fill"></div></div>
@@ -111,16 +111,16 @@ export class Hud {
         </div>
       </div>
       <div class="hud-zoom">
-        <button type="button" class="hud-zoom-step hud-zoom-in" aria-label="Zoom in">+</button>
-        <button type="button" class="hud-zoom-step hud-zoom-out" aria-label="Zoom out" disabled>−</button>
-        <button type="button" class="hud-zoom-fit" aria-label="Show the whole light" hidden>Fit</button>
+        <button type="button" class="hud-zoom-step hud-zoom-in" aria-label="Zoom in">${iconMarkup('io-add')}</button>
+        <button type="button" class="hud-zoom-step hud-zoom-out" aria-label="Zoom out" disabled>${iconMarkup('io-remove')}</button>
+        <button type="button" class="hud-zoom-fit" aria-label="Show the whole light" hidden>${iconMarkup('io-scan')}</button>
       </div>
       <div class="hud-bottom">
         <div class="hud-row hud-row-bottom">
           <div class="hud-level"><span class="hud-label">Level</span> <span class="hud-level-n">1</span></div>
           <div class="hud-toggles">
             <button type="button" class="hud-speed" hidden>1×</button>
-            <button type="button" class="hud-auto" hidden>Auto</button>
+            <button type="button" class="hud-auto" hidden>${iconMarkup('io-flash')}</button>
           </div>
           <button type="button" class="hud-reliquary" hidden aria-label="Claim the reliquary"><span class="hud-reliquary-count" hidden></span></button>
           <button type="button" class="hud-rift" hidden aria-label="Open the rift"><span class="hud-rift-label">Rift</span></button>
