@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Android 12+ system splash icon: "the halo" (assets/icon-foreground.svg)
+     as a vector, so it stays sharp at the 288dp the system draws it at. The
+     system masks it to a centred circle 2/3 of the canvas (radius 341 here);
+     the outer group shrinks the mark to 0.8 so the ring (outer radius 344)
+     lands at 275, clear of that edge. Keep in step with the SVG. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <group
+        android:pivotX="512"
+        android:pivotY="512"
+        android:scaleX="0.8"
+        android:scaleY="0.8">
+        <!-- The light: a soft violet glow inside the accent ring. -->
+        <path android:pathData="M512,182a330,330 0,1 1,0 660a330,330 0,1 1,0 -660z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="radial"
+                    android:centerX="512"
+                    android:centerY="512"
+                    android:gradientRadius="330">
+                    <item android:offset="0" android:color="#47B3A5FF" />
+                    <item android:offset="1" android:color="#00B3A5FF" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path
+            android:pathData="M512,182a330,330 0,1 1,0 660a330,330 0,1 1,0 -660z"
+            android:strokeColor="#B3A5FF"
+            android:strokeWidth="28" />
+        <!-- The tower in gold, the arrow slit cut through:
+             translate(512 528) scale(0.74) translate(-512 -491). -->
+        <group
+            android:pivotX="512"
+            android:pivotY="491"
+            android:scaleX="0.74"
+            android:scaleY="0.74"
+            android:translateY="37">
+            <path
+                android:fillColor="#F0B23C"
+                android:fillType="evenOdd"
+                android:pathData="M512,210L706,400L676,400L676,496L652,496L688,796L712,796L712,852L312,852L312,796L336,796L372,496L348,496L348,400L318,400Z M512,560a30,30 0,0 1,30 30v110a30,30 0,0 1,-60 0v-110a30,30 0,0 1,30 -30Z" />
+            <path
+                android:fillColor="#F0B23C"
+                android:pathData="M502,130h20v100h-20z" />
+            <path
+                android:fillColor="#F0B23C"
+                android:pathData="M522,140L612,168L522,196Z" />
+        </group>
+    </group>
+</vector>
