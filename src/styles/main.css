@@ -2487,6 +2487,10 @@ body {
   overscroll-behavior: contain;
   border-radius: var(--radius-card);
   background: var(--panel-subtle);
+  /* One stacked cell for the light and the list: the auto row stretches to
+     fill a short map and grows with a tall one (an open Trials list), so the
+     light always spans the whole content, not just the first screenful. */
+  display: grid;
 }
 
 /* Registered so the light's reach can transition (§7.3). */
@@ -2499,8 +2503,7 @@ body {
 /* The light climbs from the bottom as bosses fall; the Blight is the rest. */
 .map-light {
   --lit: 0%;
-  position: absolute;
-  inset: 0;
+  grid-area: 1 / 1;
   pointer-events: none;
   background: linear-gradient(to top,
     rgba(var(--rgb-gold), 0.22) 0%,
@@ -2520,8 +2523,8 @@ body {
 
 /* Anchored to the bottom: the Fields sit in the light, the frontier above. */
 .map-list {
+  grid-area: 1 / 1;
   position: relative;
-  min-height: 100%;
   margin: 0;
   padding: var(--space-3);
   list-style: none;
