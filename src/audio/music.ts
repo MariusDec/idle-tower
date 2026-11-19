@@ -7,7 +7,10 @@ import type { StratumTone } from '../content/strata';
  * a run walks, a boss fight churns over a pulsing bass. Each region shifts
  * the key, so the Glass Wastes do not sound like the Ashen Fields. A
  * stratum of the Abyss (plans/late-game/08) brings its own tone: its key,
- * its run loop, and a drone, a bell or a pulse under it.
+ * its run loop, and a drone, a bell or a pulse under it. Each Act 1 region
+ * has a voice too (R10, plans/review-risks.md): a second run loop the run
+ * alternates with its own, and a figure over the pad, so four hours in Act 1
+ * are not one 16-second loop.
  *
  * A wall-clock timer schedules each chord a little ahead on the audio
  * clock. Nothing is scheduled while the music could not be heard, so a
@@ -37,6 +40,46 @@ const MOODS: Readonly<Record<Mood, MoodDef>> = {
   boss: { chord: 3, loop: [[0, 3, 7], [1, 5, 8], [0, 3, 7], [1, 5, 10]], cutoff: 1700, level: 0.05, pulse: 0.5 },
 };
 
+/** A region's figure over the run's pad (R10): one small ornament each. */
+export type Figure = 'arp' | 'drone' | 'chime' | 'pulse' | 'echo' | 'toll';
+
+/** An Act 1 region's voice in a run (R10). A stratum's tone replaces it. */
+export interface RegionVoice {
+  /** The run's B section, chords as semitones over the key: two passes of the run's loop, then two of this. */
+  readonly loop: readonly (readonly number[])[];
+  readonly figure: Figure;
+}
+
+/** By region index, 1–6. The Abyss has its strata instead. */
+export const REGION_VOICES: Readonly<Record<number, RegionVoice>> = {
+  // Ashen Fields: i – VII – VI – VII, a plain walk; a rising arpeggio, the first light.
+  1: { loop: [[0, 3, 7], [-2, 2, 5], [-4, 0, 3], [-2, 2, 5]], figure: 'arp' },
+  // Drowned Mire: i – v – iv – i, heavy and low; a sunk drone.
+  2: { loop: [[0, 3, 7], [-5, -2, 2], [-7, -4, 0], [0, 3, 7]], figure: 'drone' },
+  // Glass Wastes: i – III – VII – iv, open; a high chime, glass struck.
+  3: { loop: [[0, 3, 7], [3, 7, 10], [-2, 2, 5], [5, 8, 12]], figure: 'chime' },
+  // Ember Rift: i – VI – iv – V, driven; a slow bass pulse, embers breathing.
+  4: { loop: [[0, 3, 7], [-4, 0, 3], [-7, -4, 0], [-5, -1, 2]], figure: 'pulse' },
+  // The Hollow: i – iv – i – ♭VI, empty; a note and its echoes, as the Hollow's dead rise again.
+  5: { loop: [[0, 3, 7], [5, 8, 12], [0, 3, 7], [-4, 0, 3]], figure: 'echo' },
+  // Blight Heart: i – ♭II – ♭vii° – i, sour; a low toll a tritone off the root.
+  6: { loop: [[0, 3, 7], [1, 5, 8], [-2, 1, 4], [0, 3, 7]], figure: 'toll' },
+};
+
+/** Passes of each section before the other: A A B B. */
+const SECTION_PASSES = 2;
+
+/**
+ * The chord a run plays at `step`: the run loop `a` for two passes, then the
+ * region's `b` for two, and round again. Without a `b`, `a` loops.
+ */
+export function chordAt(a: readonly (readonly number[])[], b: readonly (readonly number[])[] | null, step: number): readonly number[] {
+  if (!b) return a[step % a.length];
+  const lenA = a.length * SECTION_PASSES;
+  const s = step % (lenA + b.length * SECTION_PASSES);
+  return s < lenA ? a[s % a.length] : b[(s - lenA) % b.length];
+}
+
 /** The key's root: A2, shifted per region (by region index; the Abyss is its own). */
 const ROOT_HZ = 110;
 const REGION_SHIFT: readonly number[] = [0, 0, 2, -2, 3, -4, 5, 1];
@@ -63,6 +106,8 @@ export class Music {
   private formed = false;
   /** A stratum's tone (plans/late-game/08), or null for the region's. */
   private tone: StratumTone | null = null;
+  /** The region's voice (R10), or null: the hub, a boss, the Abyss. */
+  private voice: RegionVoice | null = null;
 
   constructor(private readonly synth: Synth) {}
 
@@ -83,9 +128,11 @@ export class Music {
 
   /** The mood and region to play, and a stratum's tone over them; a change lands on the next chord. */
   set(mood: Mood, region: number, tone: StratumTone | null = null): void {
-    if (mood !== this.mood || tone !== this.tone) this.step = 0;
+    const voice = mood === 'run' && !tone ? REGION_VOICES[region] ?? null : null;
+    if (mood !== this.mood || tone !== this.tone || voice !== this.voice) this.step = 0;
     this.mood = mood;
     this.tone = tone;
+    this.voice = voice;
     this.shift = tone ? tone.shift : REGION_SHIFT[region] ?? REGION_SHIFT[REGION_SHIFT.length - 1];
   }
 
@@ -105,6 +152,9 @@ export class Music {
 
   private tick(): void {
     const out = this.synth.musicOut;
+    // Suspended (the app hidden): the audio clock stands still, so the
+    // schedule is kept and picks up where it stopped.
+    if (out?.ctx.state === 'suspended') return;
     if (!out || !this.synth.audible || !this.synth.musicOn) {
       this.next = 0;
       return;
@@ -130,7 +180,7 @@ export class Music {
   /** One chord at `t0`: soft triangle voices that swell and fade into the next. */
   private chord(ctx: AudioContext, t0: number): void {
     const def = this.def();
-    const notes = def.loop[this.step % def.loop.length];
+    const notes = chordAt(def.loop, this.voice?.loop ?? null, this.step);
     const step = this.step++;
     this.filter!.frequency.setTargetAtTime(def.cutoff, t0, 0.5);
     const end = t0 + def.chord * 1.35;
@@ -193,6 +243,7 @@ export class Music {
       osc.start(t0);
       osc.stop(t0 + 2.5);
     }
+    if (this.voice) this.figure(ctx, this.voice.figure, notes, def, t0, step);
     if (def.pulse > 0) {
       for (let t = t0; t < t0 + def.chord - 1e-6; t += def.pulse) {
         const osc = ctx.createOscillator();
@@ -207,6 +258,65 @@ export class Music {
         osc.start(t);
         osc.stop(t + def.pulse);
       }
+    }
+  }
+
+  /** One voice of a figure: an oscillator with a gain envelope into the pad's filter. */
+  private voiceAt(ctx: AudioContext, type: OscillatorType, semis: number, t0: number, attack: number, peak: number, end: number, ring = false): void {
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.value = hz(semis + this.shift);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + attack);
+    if (ring) g.gain.exponentialRampToValueAtTime(0.0001, end);
+    else g.gain.linearRampToValueAtTime(0, end);
+    osc.connect(g);
+    g.connect(this.filter!);
+    osc.start(t0);
+    osc.stop(end + 0.05);
+  }
+
+  /** A region's figure (R10) over one run chord. */
+  private figure(ctx: AudioContext, kind: Figure, notes: readonly number[], def: MoodDef, t0: number, step: number): void {
+    const len = def.chord;
+    const lv = def.level;
+    switch (kind) {
+      case 'arp': {
+        // The chord's tones up an octave, one per beat, in the chord's back half every other chord.
+        if (step % 2 === 1) return;
+        const beat = len / 4;
+        notes.forEach((n, i) => this.voiceAt(ctx, 'sine', n + 12, t0 + beat * (i + 1), 0.01, lv * 0.9, t0 + beat * (i + 1) + beat * 1.6, true));
+        return;
+      }
+      case 'drone':
+        // The root two octaves down, sustained into the next chord.
+        this.voiceAt(ctx, 'sine', notes[0] - 24, t0, len * 0.3, lv * 1.3, t0 + len * 1.35);
+        return;
+      case 'chime':
+        // The fifth two octaves up, struck, on every chord; a fainter third a beat later.
+        this.voiceAt(ctx, 'sine', notes[2] + 24, t0 + 0.02, 0.005, lv * 0.8, t0 + 2.2, true);
+        this.voiceAt(ctx, 'sine', notes[1] + 24, t0 + len / 2, 0.005, lv * 0.5, t0 + len / 2 + 1.6, true);
+        return;
+      case 'pulse':
+        // A bass beat each second, softer than the boss's.
+        for (let t = t0; t < t0 + len - 1e-6; t += 1) this.voiceAt(ctx, 'sine', notes[0] - 12, t, 0.03, lv * 1.5, t + 0.8, true);
+        return;
+      case 'echo': {
+        // The chord's top, an octave up, and three echoes, each softer, every other chord.
+        if (step % 2 === 1) return;
+        for (let k = 0; k < 4; k++) {
+          const t = t0 + len * 0.25 + k * 0.45;
+          this.voiceAt(ctx, 'triangle', notes[notes.length - 1] + 12, t, 0.01, lv * 0.8 * Math.pow(0.5, k), t + 0.9, true);
+        }
+        return;
+      }
+      case 'toll':
+        // A low bell a tritone off the root, every second chord.
+        if (step % 2 === 1) return;
+        this.voiceAt(ctx, 'sine', notes[0] - 6, t0, 0.01, lv * 1.6, t0 + 3, true);
+        this.voiceAt(ctx, 'sine', notes[0] + 6, t0, 0.01, lv * 0.6, t0 + 2, true);
+        return;
     }
   }
 }

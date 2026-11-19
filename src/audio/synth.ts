@@ -70,6 +70,21 @@ export class Synth {
     }
   }
 
+  /**
+   * The app hidden or back (minimised on Android, a tab switched away): the
+   * context is suspended, so nothing plays behind the launcher and the
+   * audio thread sleeps, then resumed. A WebView keeps a running context
+   * playing in the background, so this is not left to the browser. Before
+   * the first gesture there is no context, and nothing to do.
+   */
+  setHidden(hidden: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (hidden && ctx.state === 'running') void ctx.suspend().catch(() => {});
+    // A refused resume (no recent gesture) is retried by the next touch's `start`.
+    else if (!hidden && ctx.state === 'suspended') void ctx.resume().catch(() => {});
+  }
+
   setEnabled(on: boolean): void {
     this.on = on;
     this.glide(this.master, this.masterLevel());

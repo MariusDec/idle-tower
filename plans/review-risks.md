@@ -682,6 +682,25 @@ per region for Act 1 when the audio gets a pass. Not before R1–R8.
 
 **Check.** Playtest: "did you turn the music off? when?"
 
+**Status (2026-11-19): built, ahead of the audio pass (owner's call), with
+the audio pausing while the app is hidden.**
+
+- **A voice per Act 1 region** (`audio/music.ts#REGION_VOICES`): a B
+  section the run plays against its own loop, A A B B (64 s round, was
+  16 s), and a figure over the pad: an arpeggio (Ashen Fields), a drone
+  (Drowned Mire), a chime (Glass Wastes), a bass pulse (Ember Rift),
+  echoes (The Hollow), a tritone toll (Blight Heart). The hub and a boss
+  are unchanged; a stratum's tone still replaces the region's voice.
+- **Hidden, silent.** `Synth.setHidden` suspends the context from
+  `App#hidden` (the page hidden, or Android's pause) and resumes it from
+  `App#absent` once the page can be seen. A WebView kept playing behind
+  the launcher before. While suspended, `Music` keeps its schedule instead
+  of resetting it, so the pad picks up mid-chord with no doubled chord.
+- `tests/r10.test.ts`: the voices, the A A B B order, the suspend/resume
+  and the wiring. Not heard on a phone yet, and not listened to in the
+  browser pane this time (no dev server free); the playtest's music
+  question still stands.
+
 ---
 
 ## 2. Tensions between items

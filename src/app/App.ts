@@ -1362,6 +1362,8 @@ export class App {
     // frame drawn while its surface is being torn down or rebuilt is a known
     // way into a GPU driver crash. `absent` starts the loop again.
     if (this.booted) this.loop.stop();
+    // No sound behind the launcher either (the music and every cue).
+    this.synth.setHidden(true);
     // A hidden page's frames are not real frames: the scaler's window is dropped.
     this.scaler.reset();
     if (this.screen === 'run' && !this.settings.open) this.openPause();
@@ -1379,7 +1381,10 @@ export class App {
    */
   private absent(now: number): void {
     // Only once the page can be seen: the native resume may come first.
-    if (this.booted && document.visibilityState !== 'hidden') this.loop.start();
+    if (document.visibilityState !== 'hidden') {
+      if (this.booted) this.loop.start();
+      this.synth.setHidden(false);
+    }
     this.loop.resetClock();
     this.awake.shown();
     this.lastFrame = now;
