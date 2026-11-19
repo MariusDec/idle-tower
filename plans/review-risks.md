@@ -639,9 +639,10 @@ Reading (`npm run pacing -- --idle --hours 12 --seeds 4`, before → after):
 
 **The premise "must not move I2/I8" did not hold.** The Gatekeeper falls a
 check-in earlier on seeds 1 and 3 (1.5 → 1.0 d), and seed 1's Act 1 is
-5.0 d, on I8's floor. Both gates pass, but with no margin on that seed. If
-it needs margin back: 5% for 1 h, or stop Night Watch 0 once the
-Gatekeeper falls (the first session is what it's for). Final Form's
+5.0 d, on I8's floor. Both gates pass, but with no margin on that seed.
+**Kept at 10% for 1 h (owner, 2026-11-19).** If I8 slips under 5 d later,
+the levers are 5% for 1 h, or ending Night Watch 0 once the Gatekeeper
+falls (the first session is what it's for). Final Form's
 hands-off reach failed (0% in R5) before and after; not R8's.
 
 ### R9. "Lost everything when I changed phones" (medium) — new
