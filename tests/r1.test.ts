@@ -5,7 +5,7 @@ import { newProfile, PROFILE_VERSION, type Profile } from '../src/meta/profile';
 import { AFTER_GATEKEEPER, hubUnlocks, runsPastFirst } from '../src/meta/collection';
 import { trialsOpen } from '../src/meta/trials';
 import { explainerOpen, markExplained } from '../src/meta/explainers';
-import { draftSeconds, LONG_DRAFT_SECONDS, playerDraftSeconds } from '../src/meta/automation';
+import { draftSeconds, LONG_DRAFT_SECONDS, playerDraftSeconds, SHORT_DRAFT_SECONDS } from '../src/meta/automation';
 import { hubGoal } from '../src/meta/goals';
 import { bankRun } from '../src/meta/results';
 import { buildRunConfig } from '../src/meta/runConfig';
@@ -91,6 +91,9 @@ describe('R1 §5: the draft timer', () => {
     const p = newProfile(0);
     expect(p.settings.draftTimer).toBe('on');
     expect(playerDraftSeconds(p)).toBe(draftSeconds(p));
+    p.settings.draftTimer = 'short';
+    expect(playerDraftSeconds(p)).toBe(SHORT_DRAFT_SECONDS);
+    expect(SHORT_DRAFT_SECONDS).toBe(5);
     p.settings.draftTimer = 'long';
     expect(playerDraftSeconds(p)).toBe(LONG_DRAFT_SECONDS);
     expect(LONG_DRAFT_SECONDS).toBe(BALANCE.draft.seconds * 2);

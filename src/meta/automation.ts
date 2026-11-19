@@ -151,6 +151,9 @@ export function draftSeconds(profile: Profile): number {
 /** The draft timer's Long setting (R1 §5), in wall seconds: twice the usual clock. */
 export const LONG_DRAFT_SECONDS = BALANCE.draft.seconds * 2;
 
+/** The draft timer's Short setting, in wall seconds: half the usual clock. An anomaly's floor still holds. */
+export const SHORT_DRAFT_SECONDS = 5;
+
 /**
  * The draft's clock as the player has set it (R1 §5): wall seconds, or null
  * for none (the arena waits for the pick). Off still auto-picks once the
@@ -161,6 +164,8 @@ export function playerDraftSeconds(profile: Profile): number | null {
   switch (profile.settings.draftTimer) {
     case 'off':
       return automations(profile).has('tactician') ? LONG_DRAFT_SECONDS : null;
+    case 'short':
+      return SHORT_DRAFT_SECONDS;
     case 'long':
       return LONG_DRAFT_SECONDS;
     default:

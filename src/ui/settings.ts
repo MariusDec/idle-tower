@@ -1,6 +1,6 @@
 import type { DraftTimer, FrameRate, MotionSetting, Profile } from '../meta/profile';
 import { TEXT_SCALES } from '../meta/profile';
-import { LONG_DRAFT_SECONDS } from '../meta/automation';
+import { LONG_DRAFT_SECONDS, SHORT_DRAFT_SECONDS } from '../meta/automation';
 import { BALANCE } from '../content/balance';
 import type { QualityTier } from '../render/quality';
 import type { CanvasMode } from '../render/canvasMode';
@@ -54,12 +54,14 @@ const CANVAS_CHOICES: readonly Choice<CanvasMode>[] = [
 ];
 /** The draft's clock (R1 §5). */
 const DRAFT_TIMER_CHOICES: readonly Choice<DraftTimer>[] = [
-  { value: 'on', label: 'On' },
-  { value: 'long', label: 'Long' },
   { value: 'off', label: 'Off' },
+  { value: 'short', label: 'Short' },
+  { value: 'on', label: 'Standard' },
+  { value: 'long', label: 'Long' },
 ];
 
 const DRAFT_TIMER_NOTE: Readonly<Record<DraftTimer, string>> = {
+  short: `The suggested card is taken after ${SHORT_DRAFT_SECONDS} seconds.`,
   on: `The suggested card is taken after ${BALANCE.draft.seconds} seconds (fewer with the Tactician).`,
   long: `The suggested card is taken after ${LONG_DRAFT_SECONDS} seconds.`,
   off: `The arena waits for your pick. Once you own the Tactician, it picks after ${LONG_DRAFT_SECONDS} seconds.`,
@@ -71,12 +73,6 @@ const FRAME_RATE_CHOICES: readonly Choice<FrameRate>[] = [
   { value: 60, label: '60' },
   { value: 'device', label: 'Device' },
 ];
-
-const FRAME_RATE_NOTE: Readonly<Record<FrameRate, string>> = {
-  30: 'Half the drawing of 60: the most battery saved. The game plays the same.',
-  60: '',
-  device: 'As fast as the screen refreshes: twice the drawing of 60 on a 120 Hz phone.',
-};
 
 const MOTION_CHOICES: readonly Choice<MotionSetting>[] = [
   { value: 'system', label: 'Device' },
@@ -194,8 +190,11 @@ export class SettingsPanel {
     done.textContent = 'Done';
     done.addEventListener('click', () => this.close());
     card.append(title, pages, body, done);
-    // A redraw keeps the player's place in the list.
-    const scroll = this.el.querySelector('.settings')?.scrollTop ?? 0;
+    // A redraw keeps the player's place in the list, and doesn't replay the
+    // card's opening animation: only a card that wasn't up yet reveals.
+    const prev = this.el.querySelector<HTMLElement>('.settings');
+    const scroll = prev?.scrollTop ?? 0;
+    if (prev) card.style.animation = 'none';
     this.el.replaceChildren(card);
     card.scrollTop = scroll;
   }
@@ -223,7 +222,6 @@ export class SettingsPanel {
           (v) => set((x) => { x.textScale = v; }), 'Text size')),
         row('Colours', segmented(PALETTE_CHOICES, s.palette, (v) => set((x) => { x.palette = v; }), 'Weapon colours')),
         row('Frame rate', segmented(FRAME_RATE_CHOICES, s.frameRate, (v) => set((x) => { x.frameRate = v; }), 'Frame rate')),
-        note(FRAME_RATE_NOTE[s.frameRate]),
         row('Screen on', segmented(ON_OFF, s.keepAwake, (v) => set((x) => { x.keepAwake = v; }), 'Keep the screen on in runs')),
         note(s.keepAwake
           ? 'The screen stays on while a run plays, so a run left alone keeps going. Off in the hub and when paused.'

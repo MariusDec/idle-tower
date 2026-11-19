@@ -90,8 +90,10 @@ at 15% speed (`BALANCE.draft.slowMotion`) and the panel counts down
 then picks the suggestion. Picks and rerolls go through `applyInput`.
 
 Settings › Gameplay › **Draft timer** (R1 §5, `settings.draftTimer`,
-`meta/automation.ts#playerDraftSeconds`): *On* is the above; *Long* is
-20 s; *Off* hides the clock and holds the arena until a pick (the panel
+`meta/automation.ts#playerDraftSeconds`), Off / Short / Standard / Long:
+*Standard* (stored as `'on'`) is the above; *Short* is 5 s, the Tactician
+or not; *Long* is 20 s; an anomaly in the hand still holds any of them to
+10 s (`BALANCE.anomalies.seconds`); *Off* hides the clock and holds the arena until a pick (the panel
 starts halted), until the Tactician is owned, when it picks on the Long
 clock so a run left alone goes on. The bots read `draftSeconds`, never the
 setting.

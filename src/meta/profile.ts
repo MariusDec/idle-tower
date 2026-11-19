@@ -241,7 +241,8 @@ export interface RiftRecord {
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
-export type DraftTimer = 'on' | 'long' | 'off';
+/** The draft timer (R1 §5): 'on' is the Standard clock (kept as 'on' so older saves read it). */
+export type DraftTimer = 'off' | 'short' | 'on' | 'long';
 
 export type FrameRate = 30 | 60 | 'device';
 
