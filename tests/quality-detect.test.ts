@@ -89,14 +89,14 @@ describe('readStoredQuality', () => {
   });
 
   it('returns the stored tier verbatim', () => {
-    store['the-tower-quality'] = 'low';
+    store['blue-hour-quality'] = 'low';
     expect(readStoredQuality()).toBe('low');
-    store['the-tower-quality'] = 'high';
+    store['blue-hour-quality'] = 'high';
     expect(readStoredQuality()).toBe('high');
   });
 
   it('returns "auto" for any unrecognised value', () => {
-    store['the-tower-quality'] = 'ultra';
+    store['blue-hour-quality'] = 'ultra';
     expect(readStoredQuality()).toBe('auto');
   });
 });

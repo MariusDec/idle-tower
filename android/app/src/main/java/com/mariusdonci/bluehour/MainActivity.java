@@ -1,4 +1,4 @@
-package com.mariusdonci.thetower;
+package com.mariusdonci.bluehour;
 
 import android.os.Bundle;
 import androidx.core.view.WindowCompat;

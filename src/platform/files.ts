@@ -8,7 +8,7 @@ import { isNative } from './native';
  */
 export async function saveTextFile(name: string, text: string): Promise<string> {
   if (isNative()) {
-    const path = `TheTower/${name}`;
+    const path = `BlueHour/${name}`;
     await Filesystem.writeFile({ path, data: text, directory: Directory.Documents, encoding: Encoding.UTF8, recursive: true });
     return `Documents/${path}`;
   }

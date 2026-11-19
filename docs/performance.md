@@ -29,7 +29,7 @@ four-weapon build, at 3× speed. Code: `render/quality.ts`,
 cores at `high`, and anything weaker at `low`; the scaler settles it from
 real frames. (The legacy guess, which needed 16 cores on a touch device and
 demoted any phone above DPR 2, kept every phone, flagships included, at
-`medium` or below.) A stored preference (`the-tower-quality` in
+`medium` or below.) A stored preference (`blue-hour-quality` in
 `localStorage`, per device) overrides the guess and idles the scaler.
 
 **The quality scaler.** `QualityScaler`, while the preference is Auto and

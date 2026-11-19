@@ -61,8 +61,8 @@ export const QUALITY: Record<QualityTier, QualityProfile> = qualityFor(isAndroid
 
 export const DEFAULT_QUALITY: QualityTier = 'high';
 
-/** Same key as the legacy game, so a player's explicit choice carries over. Legacy name, never rename (R6). */
-export const QUALITY_PREF_KEY = 'the-tower-quality';
+/** The player's explicit choice. Fixed from the first store upload, like every storage key (R6). */
+export const QUALITY_PREF_KEY = 'blue-hour-quality';
 
 export function isQualityTier(value: unknown): value is QualityTier {
   return value === 'high' || value === 'medium' || value === 'low';

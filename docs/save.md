@@ -40,7 +40,7 @@ frame, the one-time lessons and the **settings**:
 | `textScale` | 1, 1.15 or 1.3 |
 
 The quality tier is a device's, not a profile's: it lives in
-`localStorage` under `the-tower-quality` ([performance.md](performance.md)).
+`localStorage` under `blue-hour-quality` ([performance.md](performance.md)).
 
 ## Loading
 
@@ -114,7 +114,7 @@ open again.
 `meta/save/transfer.ts`. Settings → Save, between runs only:
 
 - **Copy save** puts the profile's JSON on the clipboard; **Save file**
-  writes it to `Documents/TheTower/` in the Android shell, or downloads it
+  writes it to `Documents/BlueHour/` in the Android shell, or downloads it
   in a browser (`platform/files.ts`).
 - **Load save** takes a paste or a picked file through `importProfile`:
   parsed, walked up the ladder, checked with `isProfile`. Nothing is

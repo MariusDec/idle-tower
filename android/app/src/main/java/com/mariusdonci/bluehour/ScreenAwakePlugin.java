@@ -1,4 +1,4 @@
-package com.mariusdonci.thetower;
+package com.mariusdonci.bluehour;
 
 import android.view.WindowManager;
 import com.getcapacitor.Plugin;

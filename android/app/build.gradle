@@ -7,10 +7,10 @@ if (keystorePropertiesFile.exists()) {
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.mariusdonci.thetower"
+    namespace = "com.mariusdonci.bluehour"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.mariusdonci.thetower"
+        applicationId "com.mariusdonci.bluehour"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

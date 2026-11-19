@@ -1,7 +1,7 @@
 /**
- * R6 (`plans/review-risks.md`): the game is shown as "Blue Hour", but every
- * name that keys a player's data keeps the legacy one. Renaming any of these
- * orphans every save, so this test pins them.
+ * R6 (`plans/review-risks.md`): the game is "Blue Hour", in what a player
+ * sees and in every name that keys their data. From the first store upload,
+ * renaming any of the latter orphans every save, so this test pins them.
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -23,14 +23,14 @@ describe('R6: the display name', () => {
   });
 });
 
-describe('R6: the legacy names that must never change', () => {
+describe('R6: the names that key a player\'s data', () => {
   it('keeps the Play identity and the WebView origin', () => {
-    expect(config.appId).toBe('com.mariusdonci.thetower');
+    expect(config.appId).toBe('com.mariusdonci.bluehour');
     expect(config.server?.androidScheme).toBe('https');
     expect(config.server?.hostname).toBe('localhost');
     const strings = read('android/app/src/main/res/values/strings.xml');
-    expect(strings).toContain('<string name="package_name">com.mariusdonci.thetower</string>');
-    expect(read('android/app/build.gradle')).toContain('applicationId "com.mariusdonci.thetower"');
+    expect(strings).toContain('<string name="package_name">com.mariusdonci.bluehour</string>');
+    expect(read('android/app/build.gradle')).toContain('applicationId "com.mariusdonci.bluehour"');
   });
 
   it('keeps every storage key', () => {
@@ -39,8 +39,8 @@ describe('R6: the legacy names that must never change', () => {
     expect(SEALED_KEY).toBe('tower-sealed');
     expect(LEGACY_KEY).toBe('the-tower-save');
     expect(LEGACY_BACKUP_KEY).toBe('the-tower-save-legacy-backup');
-    expect(QUALITY_PREF_KEY).toBe('the-tower-quality');
-    expect(CANVAS_MODE_KEY).toBe('the-tower-canvas');
-    expect(read('src/meta/save/stores/IdbStore.ts')).toContain("const DB_NAME = 'the-tower';");
+    expect(QUALITY_PREF_KEY).toBe('blue-hour-quality');
+    expect(CANVAS_MODE_KEY).toBe('blue-hour-canvas');
+    expect(read('src/meta/save/stores/IdbStore.ts')).toContain("const DB_NAME = 'blue-hour';");
   });
 });

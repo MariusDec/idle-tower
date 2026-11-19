@@ -9,13 +9,14 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * `localStorage` is keyed by. Changing `https`/`localhost` here would orphan every
  * player's save (`src/meta/save/index.ts`).
  *
- * The game was called "The Tower" until R6 (`plans/review-risks.md`). Only
- * the display name changed: `appId`, the scheme and hostname, and every
- * storage key (`the-tower-*`, IndexedDB `the-tower`, `tower-*`) keep the
- * legacy name for good.
+ * The game was called "The Tower" (`com.mariusdonci.thetower`) until R6
+ * (`plans/review-risks.md`), before any release; the new `appId` installs as
+ * a separate app with its own empty storage. From the first store upload,
+ * `appId`, the scheme and hostname, and every storage key are fixed
+ * (`tests/r6.test.ts`).
  */
 const config: CapacitorConfig = {
-  appId: 'com.mariusdonci.thetower',
+  appId: 'com.mariusdonci.bluehour',
   appName: 'Blue Hour',
   webDir: 'dist',
   // Matches --theme-color / the theme-color meta (Blue hour's indigo). This is what shows for the

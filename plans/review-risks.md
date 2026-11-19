@@ -461,8 +461,8 @@ phones.** Save v27.
 **Check.** A store search for the new name shows this game first; an
 upgrade install over the old build keeps its save.
 
-**Status (2026-11-19): §1–§3 built; the Play search and the upgrade
-install wait for a device and the first upload.**
+**Status (2026-11-19): §1–§3 built; the Play search waits for the first
+upload.**
 
 - §1: **Blue Hour**, the owner's pick. It's already the palette's name
   (`--theme-color`, "Blue hour's indigo"). A web search found no game
@@ -471,10 +471,22 @@ install wait for a device and the first upload.**
 - §2: the display name in `capacitor.config.ts`, `strings.xml`,
   `index.html`, the hub and specimen headings, README, AGENTS,
   `docs/README.md` and `tokens.css`'s header. Each storage key has a
-  "legacy name, never rename" comment, and `tests/r6.test.ts` pins them,
-  plus the `appId`, scheme and hostname. Left on the old name on purpose:
-  the npm package name, the Java package and the release keystore's alias
-  (all are identities, not display strings), and the plans' history.
+  comment that it's fixed from the first upload, and `tests/r6.test.ts`
+  pins them with the `appId`, scheme and hostname.
+- §2, widened by the owner (nothing is released, so a wiped save is fine):
+  the identities moved too. `appId` and the Java package
+  `com.mariusdonci.bluehour` (installs beside the old build, with empty
+  storage; uninstall the old one by hand), the deep-link scheme in
+  `strings.xml`, the storage keys `blue-hour-quality`, `blue-hour-canvas`
+  and IndexedDB `blue-hour`, the export folder `Documents/BlueHour/`, the
+  npm name. Unchanged: `androidScheme: 'https'` and `hostname: 'localhost'`
+  (Capacitor's defaults, they hold no name, and https gives the secure
+  context IndexedDB and Wake Lock rely on); `tower-profile`/`tower-run`/
+  `tower-sealed` (generic); `the-tower-save` (the pre-rebuild game's key
+  the D3 import reads, now dead with the new origin); the release
+  keystore's file and alias (local, never shown; a new Play app can use a
+  new upload key or the old one). The upgrade-install check no longer
+  applies.
 - §3: `docs/store-listing.md`: short and full description (first line
   "No ads. No purchases. Plays offline."), six screenshots with captions,
   category and Data safety answers. Its length line is a placeholder until
@@ -607,7 +619,7 @@ data layout isn't something the game controls.
 **Proposal.**
 
 1. **Test a real restore** (S): play, `adb shell bmgr backupnow
-   com.mariusdonci.thetower`, uninstall, reinstall, confirm the save
+   com.mariusdonci.bluehour`, uninstall, reinstall, confirm the save
    comes back. Also test a fresh device with the same Google account.
 2. **If it doesn't restore**: add `dataExtractionRules` /
    `fullBackupContent` that include the WebView's storage, or write the

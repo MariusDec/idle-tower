@@ -13,8 +13,8 @@
  */
 export type CanvasMode = 'gpu' | 'cpu';
 
-/** Legacy name, never rename (R6). */
-export const CANVAS_MODE_KEY = 'the-tower-canvas';
+/** Fixed from the first store upload, like every storage key (R6). */
+export const CANVAS_MODE_KEY = 'blue-hour-canvas';
 
 /** The stored preference. Anything unrecognised reads as `'gpu'`. */
 export function readStoredCanvasMode(): CanvasMode {
