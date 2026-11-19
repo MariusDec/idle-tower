@@ -948,6 +948,11 @@ body {
   gap: calc(var(--space-7) * 1.75);
   /* Clear the dock below, and match it above so the centre stays put. */
   padding-block: var(--dock-h);
+  /* A short phone at 130% text (R7: 360×640) can't fit both groups between
+     the two paddings: scroll, rather than slide the lower one under the dock. */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* The dock (plans/visual-identity.md §5.1–5.2): the one primary in a sticky
@@ -1024,7 +1029,15 @@ body {
 
 .hub-tab-icon .icon { --icon-size: 20px; }
 
+/* Six tabs share a phone's width, but a label grows with the text size and
+   its tab doesn't: "Collection" at 130% needs 69px of a 56px tab (R7). The
+   label's size is capped at what its own tab fits (≈ 4.7em for the longest,
+   bold when active), so the cap loosens as the bar gets wider or holds fewer
+   tabs. */
+.hub-tab { container-type: inline-size; }
+
 .hub-tab-label {
+  font-size: min(var(--fs-xs), 21cqi);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1769,6 +1782,12 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  /* Bottom-anchored, but a draft taller than the stage (two rows of cards at
+     130% text, R7) starts at the top and scrolls, rather than losing its title
+     off the top edge. */
+  justify-content: safe flex-end;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-3) calc(max(var(--space-3), var(--safe-b)) + var(--hud-bottom-clear));
@@ -1816,7 +1835,7 @@ body {
 }
 
 .draft-row.is-many .draft-card {
-  height: 196px;
+  min-height: 196px;
   gap: 2px;
 }
 
@@ -1845,6 +1864,23 @@ body {
   cursor: pointer;
   overflow: hidden;
   animation: card-in var(--dur-slow) var(--ease-decelerate) both;
+}
+
+/* In the draft's own row the height is a floor, not a size: at 130% text a
+   four-line effect needs ~270px, and a fixed card cut it mid-sentence (R7).
+   The row's cards stretch to the tallest, so they stay even. */
+.draft-row .draft-card {
+  height: auto;
+  min-height: 232px;
+}
+
+/* A card's pills can't wrap: "SUGGESTED" and "Strong here" at 130% are wider
+   than a 110px card. They grow with the text size only as far as the card
+   allows (≈ 7.5em with padding), and never below their 100% size. */
+.draft-card { container-type: inline-size; }
+
+.draft-card :is(.draft-card-new, .draft-card-suggested, .draft-card-badge) {
+  font-size: max(min(var(--fs-xs), 11.5cqi), min(var(--fs-xs), 12px));
 }
 
 /* The identity's stagger: 60ms a card, capped at 240ms. */
@@ -1946,6 +1982,10 @@ body {
 
 .draft-card-name {
   margin: 0;
+  /* "Scattershot" at 130% is wider than a 110px card: hyphenate, never clip. */
+  max-width: 100%;
+  hyphens: auto;
+  overflow-wrap: break-word;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
   font-size: var(--fs-lg);

@@ -514,6 +514,45 @@ install wait for a device and the first upload.**
 **Check.** No clipped text and no target under 44 px at any size; a
 tablet and a foldable show the game portrait and centred.
 
+**Status (2026-11-19): §1–§3 built in the browser; the device checks (system
+font scale, a tablet and a foldable emulator) still need Android.**
+
+- §1: `android:appCategory="game"` on `<application>`,
+  `android:screenOrientation="portrait"` on the activity. Android's docs
+  confirm the exemption: an app targeting SDK 36 has its orientation lock
+  ignored at ≥ 600 dp unless `appCategory` says it's a game (also true under
+  Android 17, where the temporary opt-out property goes away). Not yet seen
+  on a tablet emulator.
+- §2: swept in the browser pane with seed 1's post-Blight bot profile (every
+  tab open): the hub's six views, Settings (both tabs), the HUD, the draft,
+  the pause, the results and *How it went*, at 360×640, 375×812 and 412×915,
+  each at 100% and 130%. A script flagged elements past the stage's edge,
+  clipped text (`scrollWidth > clientWidth`) and buttons under 44 px without
+  a hit area. Found and fixed:
+  - **The draft's cards cut their text** at 130%: a fixed 232 px (196 px in
+    the five-to-six-card layout) against ~270–300 px of content. The height
+    is now a floor; the row's cards stretch to the tallest.
+  - **The draft lost its title off the top** when taller than the stage,
+    since it's anchored to the bottom. That happened at 360×640 *even at
+    100%* with five cards (108 px over), and 107 px over at 375×812 at 130%.
+    It's now `justify-content: safe flex-end` with `overflow-y: auto`: it
+    starts at its title and scrolls (309 px at 360×640, 130%, the worst).
+  - **The hub's home ran under the dock** at 360×640: the Tactics / Pacts /
+    Contracts row by 23 px at 100%, 138 px at 130%. The home now scrolls.
+  - **"Collection" in the tab bar ellipsized** at 130% with six tabs (69 px
+    in a 56–64 px tab). The label's size is capped at `21cqi` of its tab.
+  - **"SUGGESTED" and "Strong here" pills ran past a card's edge** at 130%.
+    Capped at `11.5cqi` of the card, never below their 100% size.
+  - Clean already: Settings (its rows stack), the results, *How it went*,
+    the HUD (its 40 px buttons carry 44 px hit areas, as the audit expects).
+  - Not done: the system font at 1.3 on a device (does Android's WebView
+    text zoom stack with `--text-scale`?). It needs an emulator.
+- §3: **already true, nothing added.** `.stage` caps at `--stage-max-width`
+  (480 px) and `#app` centres it on the body's gradient, so a portrait
+  tablet (800×1280) shows a 480×1280 stage at x = 160, and a landscape one
+  (1280×800) a 480×800 stage at x = 400. `tests/r7.test.ts` pins the
+  manifest lines, the letterbox and each fix above.
+
 ### R8. "Idle progress is weak / the offline report confused me" (medium)
 
 **What the repo shows.**
@@ -620,7 +659,8 @@ per region for Act 1 when the audio gets a pass. Not before R1–R8.
    band.
 6. **R8 §1–2, R1 §4–5**: small UI and offline changes, best done before
    playtest #3 so it can test them.
-7. **R5, R7 §2–3**: one pass on real devices.
+7. **R5, R7's device checks**: one pass on real devices (R7 §2–3's browser
+   part is done).
 8. **R10**: with the next audio pass.
 
 ## 4. The check that matters most: real players

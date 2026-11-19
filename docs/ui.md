@@ -2,8 +2,11 @@
 
 Vanilla DOM over the canvas. Code: `src/ui/`, styles in
 `src/styles/tokens.css` (tokens) and `src/styles/main.css`. Portrait
-mobile first: every screen is checked at 375×812 (D4); on desktop the same
-portrait arena is centred.
+mobile first: every screen is checked at 375×812 (D4), and swept at 360×640
+and 412×915 at 100% and 130% text (R7). On desktop, a tablet or an unfolded
+foldable the same portrait stage (`--stage-max-width`, 480 px) is centred on
+the brand gradient; Android keeps it portrait (`appCategory="game"`, so
+Android 16 honours the lock on large screens).
 
 ## Layers (`index.html`)
 
@@ -109,7 +112,12 @@ relics, evolutions, feats, the deepest Abyss floor, days played.
 - **Text size.** Every step of the type ramp in `tokens.css` is
   `calc(Npx * var(--text-scale))`; `applySettings` sets `--text-scale`, and
   the renderer scales its banners and damage numbers by the same factor.
-  Settings rows stack label over control so 130% still fits 375 px.
+  Settings rows stack label over control so 130% still fits 375 px. What
+  can't wrap is capped at what its box fits, never below its 100% size: the
+  hub's tab labels and a draft card's pills, via container units (`cqi`).
+  What grows past the stage scrolls instead of clipping: the hub's home and
+  the draft (`justify-content: safe flex-end`, so a tall draft keeps its
+  title), and a draft card's height is a floor, not a size.
 - **Colourblind-safe colours** for the canvas ([render.md](render.md)).
 - **Touch targets.** Every control declares a 44 px floor;
   `tests/touch-targets.test.ts` audits the list.

@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- R7 (plans/review-risks.md): a game, and portrait only. Apps targeting
+         SDK 36 have their orientation lock ignored on displays >= 600 dp,
+         except games declared by android:appCategory. With both lines a tablet
+         or an unfolded foldable shows the portrait game letterboxed. -->
     <application
+        android:appCategory="game"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -14,6 +19,7 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
