@@ -46,8 +46,9 @@ search on 2026-11-19 found none; Play itself wasn't searched.
 If Act 1 stays ~4–5 h, use: *"About five hours to the first ending, then
 an endless second act."* Don't upload with the placeholder.
 
-The backup sentence assumes R9 §1's restore test passes. If it doesn't,
-drop "or let Android's backup carry it" until R9 §2 lands.
+The backup sentence stands: R9's restore test passed on API 30 and 33
+(local transport). A restore through Google's own backup on a second
+device is still to be seen on the closed track.
 
 ## Screenshots
 

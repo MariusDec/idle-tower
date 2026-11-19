@@ -669,6 +669,36 @@ data layout isn't something the game controls.
 
 **Check.** The restore test passes on two Android versions.
 
+**Status (2026-11-19): §1–§3 built; the Google-transport restore waits for a
+second device or the closed track.**
+
+- **The premise was half wrong.** The save doesn't live in the WebView's
+  storage on Android: `FilesystemSaveStore` already writes it to the app's
+  `files/` dir (the profile, the run snapshot, the three rolling backups, the
+  seal flag). Only the render preferences sit in the WebView's
+  `localStorage`. So §2's "a file in `filesDir`" was already the design.
+- §2, built anyway, as rules rather than a fix: `backup_rules.xml`
+  (`fullBackupContent`, Android ≤ 11) and `data_extraction_rules.xml`
+  (`dataExtractionRules`, 12+: cloud and device transfer) include only
+  `files/`. Without rules Auto Backup takes the WebView's caches too, and a
+  set over its 25 MB cap is not backed up at all; the render preferences are
+  per-device (a CPU-canvas fallback should not follow a player to a new
+  GPU). `tests/r9.test.ts` pins the rules and the store's directory.
+- §1: on API 30 and API 33 emulators with the local transport, `bmgr
+  backupnow`, uninstall, install: the files are back before the first launch,
+  `app_webview/` isn't, and the game opens on the restored profile (API 33:
+  byte-identical, unchanged after launch; API 30: same size, created before
+  the reinstall, the app was still saving during the backup). **A
+  force-stopped app is refused** ("Backup is not allowed"), so test with the
+  app in the background. API 35's emulator crashes headless on the
+  WebView, so not read there. **Not done:** the owner's phone (Android 17,
+  Google's transport), since the test uninstalls the app; and a fresh device
+  on the same Google account. Both fit the closed track (§4). Each profile
+  tested was a fresh one (0 runs, ~1.7 KB).
+- §3: Settings › Save on Android: "Moves to a new phone with Android backup,
+  or copy your save here." A browser keeps the old line.
+  `docs/store-listing.md`'s backup sentence stands.
+
 ### R10. "Music gets repetitive" (low) — new
 
 **What the repo shows.** `audio/music.ts` is a generative pad: three
@@ -720,7 +750,7 @@ the audio pausing while the app is hidden.**
 1. **R4** (S–M): a green suite and a fixture that measures real towers,
    before anything else is tuned. Also fixes I4's reading.
 2. **R6** (S + the owner's name): must happen before any store upload.
-3. **R7 §1, R9 §1** (S each): manifest lines and a restore test; cheap
+3. **R7 §1, R9 §1** (S each, both built): manifest lines and a restore test; cheap
    and they affect the first upload.
 4. **R2 and R1 §1–2** together: the reveal split, the staggered
    Gatekeeper unlocks, the in-run Trial reveals. They share the pacing

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- R9 (plans/review-risks.md): what Android's Auto Backup carries, on
+     Android 11 and older (android:fullBackupContent). Android 12+ reads
+     data_extraction_rules.xml instead; keep the two the same.
+
+     Only the private files dir: the save (tower-profile.json), the run
+     snapshot (tower-run.json) and the seal flag, written there by
+     FilesystemSaveStore. Everything else stays behind on purpose:
+     - app_webview/ (localStorage: blue-hour-quality, blue-hour-canvas) holds
+       per-device render choices; a CPU-canvas fallback from a crashy GPU
+       should not follow the player to a new phone. It also holds the
+       WebView's caches, which could push the set past Auto Backup's 25 MB
+       cap, and a set over the cap is not backed up at all.
+     - shared_prefs/ is the WebView's and Capacitor's own state. -->
+<full-backup-content>
+    <include domain="file" path="." />
+</full-backup-content>

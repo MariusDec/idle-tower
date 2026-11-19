@@ -93,7 +93,7 @@ dragged and saved when it is let go.
 | Sound | sound on/off; master, effects and music sliders |
 | Display | quality (Auto / High / Medium / Low, with the tier in force under Auto); text size (100 / 115 / 130%); colours (Standard / Colourblind); frame rate (30 / 60 / Device, default 60: [performance.md](performance.md#frame-cap)); screen on in runs (On / Off, default On) |
 | Motion | screen shake on/off; motion (Device / Reduced / Full) |
-| Save | between runs only (U12): copy save, save file, load save (paste or file, then confirm), restore one of the last three runs' backups ([save.md](save.md)) |
+| Save | between runs only (U12): copy save, save file, load save (paste or file, then confirm), restore one of the last three runs' backups; on Android, a line that Android backup carries the save (R9) ([save.md](save.md)) |
 | Progress | reset, between runs only, asking twice |
 
 A **Stats** page lists the numbers the HUD leaves out (§10.2): runs, best

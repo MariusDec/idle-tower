@@ -4,6 +4,7 @@ import { LONG_DRAFT_SECONDS, SHORT_DRAFT_SECONDS } from '../meta/automation';
 import { BALANCE } from '../content/balance';
 import type { QualityTier } from '../render/quality';
 import type { CanvasMode } from '../render/canvasMode';
+import { Capacitor } from '@capacitor/core';
 import { formatNumber } from '../core/format';
 import { importProfile, type BackupInfo } from '../meta/save/transfer';
 import { segmented, type Choice } from './controls';
@@ -304,7 +305,12 @@ export class SettingsPanel {
       return box;
     }
     box.append(
-      note('Take your progress to another install, or bring it back.'),
+      note(
+        // R9: Auto Backup carries files/ (the save) to a new phone; see res/xml/backup_rules.xml.
+        Capacitor.getPlatform() === 'android'
+          ? 'Moves to a new phone with Android backup, or copy your save here.'
+          : 'Take your progress to another install, or bring it back.',
+      ),
       button('Copy save', 'btn', () => void this.actions.copySave().then((ok) => say(ok ? 'Copied. Paste it somewhere safe.' : 'The clipboard said no. Try Save file.'))),
       button('Save file', 'btn', () => void this.actions.saveFile().then((where) => say(`Saved to ${where}.`), () => say('The file couldn’t be saved. Try Copy save.')), 'io-share'),
       button('Load save', 'btn', () => { this.loading = { text: '' }; this.message = ''; this.failed = false; this.render(); }, 'io-download'),
