@@ -1,4 +1,4 @@
-import type { DraftTimer, MotionSetting, Profile } from '../meta/profile';
+import type { DraftTimer, FrameRate, MotionSetting, Profile } from '../meta/profile';
 import { TEXT_SCALES } from '../meta/profile';
 import { LONG_DRAFT_SECONDS } from '../meta/automation';
 import { BALANCE } from '../content/balance';
@@ -63,6 +63,19 @@ const DRAFT_TIMER_NOTE: Readonly<Record<DraftTimer, string>> = {
   on: `The suggested card is taken after ${BALANCE.draft.seconds} seconds (fewer with the Tactician).`,
   long: `The suggested card is taken after ${LONG_DRAFT_SECONDS} seconds.`,
   off: `The arena waits for your pick. Once you own the Tactician, it picks after ${LONG_DRAFT_SECONDS} seconds.`,
+};
+
+/** Frames drawn a second (R5 §2). */
+const FRAME_RATE_CHOICES: readonly Choice<FrameRate>[] = [
+  { value: 30, label: '30' },
+  { value: 60, label: '60' },
+  { value: 'device', label: 'Device' },
+];
+
+const FRAME_RATE_NOTE: Readonly<Record<FrameRate, string>> = {
+  30: 'Half the drawing of 60: the most battery saved. The game plays the same.',
+  60: '',
+  device: 'As fast as the screen refreshes: twice the drawing of 60 on a 120 Hz phone.',
 };
 
 const MOTION_CHOICES: readonly Choice<MotionSetting>[] = [
@@ -209,6 +222,12 @@ export class SettingsPanel {
         row('Text size', segmented(TEXT_SCALES.map((k) => ({ value: k, label: `${Math.round(k * 100)}%` })), s.textScale,
           (v) => set((x) => { x.textScale = v; }), 'Text size')),
         row('Colours', segmented(PALETTE_CHOICES, s.palette, (v) => set((x) => { x.palette = v; }), 'Weapon colours')),
+        row('Frame rate', segmented(FRAME_RATE_CHOICES, s.frameRate, (v) => set((x) => { x.frameRate = v; }), 'Frame rate')),
+        note(FRAME_RATE_NOTE[s.frameRate]),
+        row('Screen on', segmented(ON_OFF, s.keepAwake, (v) => set((x) => { x.keepAwake = v; }), 'Keep the screen on in runs')),
+        note(s.keepAwake
+          ? 'The screen stays on while a run plays, so a run left alone keeps going. Off in the hub and when paused.'
+          : 'The screen turns off on the phone’s usual timeout, and the run pauses until you come back.'),
       ),
       section('Gameplay',
         row('Draft timer', segmented(DRAFT_TIMER_CHOICES, s.draftTimer, (v) => set((x) => { x.draftTimer = v; }), 'Draft timer')),

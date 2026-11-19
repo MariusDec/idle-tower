@@ -9,7 +9,7 @@ import type { ContractSpec, TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 26;
+  version: 27;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -214,10 +214,17 @@ export interface Profile {
      * only while this is 'on'. The bots never read it.
      */
     draftTimer: DraftTimer;
+    /**
+     * Frames drawn a second (R5 §2): 30, 60, or the display's own rate. The
+     * sim steps at 60 a second whatever this says; only drawing is capped.
+     */
+    frameRate: FrameRate;
+    /** Keep the screen awake while a run plays (R5 §4), so a hands-off run is not cut by the timeout. */
+    keepAwake: boolean;
   };
 }
 
-export const PROFILE_VERSION = 26;
+export const PROFILE_VERSION = 27;
 
 /** One day of the Daily Omen (plans/late-game/11 §4.5): its scored try, and the practice best beside it. */
 export interface OmenDay {
@@ -236,6 +243,8 @@ export type MotionSetting = 'system' | 'reduce' | 'full';
 
 export type DraftTimer = 'on' | 'long' | 'off';
 
+export type FrameRate = 30 | 60 | 'device';
+
 /** The text sizes the settings offer. */
 export const TEXT_SCALES: readonly number[] = [1, 1.15, 1.3];
 
@@ -252,6 +261,8 @@ export function defaultSettings(): Profile['settings'] {
     textScale: 1,
     framing: null,
     draftTimer: 'on',
+    frameRate: 60,
+    keepAwake: true,
   };
 }
 

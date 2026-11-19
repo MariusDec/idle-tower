@@ -120,6 +120,8 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
     regions: Object.fromEntries(Object.entries((raw.regions ?? {}) as Record<string, object>)
       .map(([k, r]) => [k, { runs: 2, ...r }])),
   }),
+  // v27 (R5): a 60 fps cap and the screen kept awake in runs, as a new profile starts.
+  26: (raw) => ({ ...raw, version: 27, settings: { frameRate: 60, keepAwake: true, ...(raw.settings as object) } }),
 };
 
 export class MigrationError extends Error {}

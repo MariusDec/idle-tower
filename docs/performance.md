@@ -45,8 +45,11 @@ two-second windows of real frames, timing `Renderer.render` alongside.
 - A tier dropped from may not be retried for 30 measured seconds, then 60,
   120…, for the session: a device on a tier's edge settles below it rather
   than oscillating, and each change rebakes the sprites.
-- Every change, a hidden page, a paused arena or a dev `bench()` drops the
-  window under way and warms up again. Speeds above 1× are measured: the
+- Under the player's frame cap (below) the budget is the cap's own frame
+  plus 2% (`frameBudget`): 34 ms at 30 fps, still 17 ms at 60. A 30 fps
+  cap read against 17 ms would drop a tier every two seconds.
+- Every change, a hidden page, a paused arena, a new frame cap or a dev
+  `bench()` drops the window under way and warms up again. Speeds above 1× are measured: the
   sim's extra steps are part of the frame the player feels.
 
 Settings shows the tier in force under Auto, so the scaler's moves are
@@ -94,3 +97,52 @@ set lookup, so a kill no longer walks the field.
 
 **Caveats.** These are desktop numbers; the phone check (P1's gate, now
 with four-weapon evolved builds) is still open.
+
+## Frame cap
+
+Settings › Display › Frame rate: 30, 60 (the default) or Device (R5 §2).
+`Loop.setFrameCap` skips vsyncs that come sooner than the cap's interval
+(less 2 ms of slack for rAF's jitter), and stamps each drawn frame on the
+ideal grid (`capGate`: one interval on from the last, not `now`), so a
+display that is no multiple of the cap still averages it: 90 and 144 Hz
+under 60 draw 60, 120 Hz under 30 draws 30. A skipped vsync banks no time,
+so the next drawn frame pays out both frames' sim steps, each still
+`SIM_DT`: the sim, and so every bot reading, is the same at any cap.
+Measured in the browser on a 60 Hz display: 30 / 60 / 60 draws a second at
+30 / 60 / Device; a run at 30 kept its sim rate and stayed on `high`.
+
+On a 120 Hz phone the default halves the GPU's work against Device. The
+battery and temperature it saves are part of the phone check.
+
+## Screen kept on in runs
+
+Settings › Display › Screen on (R5 §4), default On: the screen stays awake
+while a run's arena moves, and keeps the device's timeout in the hub, on
+the results, when paused and while a choice holds the arena. A hands-off
+run is a designed way to play (Stored Light's ×2 left alone), and a screen
+that sleeps hides the page, which pauses the run; so On is the default and
+the battery cost is what the frame cap is for. `platform/awake.ts` asks
+the web's Screen Wake Lock in a browser, and inside the Android app the
+game's own `ScreenAwake` plugin (`ScreenAwakePlugin.java`), which sets the
+window's `FLAG_KEEP_SCREEN_ON`: a WebView need not grant the web lock, and
+the flag needs no permission. A refusal is asked again after 30 s or on
+the page's return, not every frame.
+
+## The hub's `tile memory limits exceeded`
+
+Chromium's compositor logs it when the tiles a frame needs exceed the GPU
+memory budget, which the WebView sizes from the device; it is not
+reproducible on a desktop, and was not reproduced for R5. What the hub
+composites, read in the browser at 375×812 on a post-Blight profile
+(seed 2): the canvas (563×1218 at Android's 1.5 cap), the tab bar's glass
+(`backdrop-filter` on `high`, over a canvas redrawn every frame), and
+three long scrollers: the Feats list (5869 px of content), the Collection
+(3925 px) and the Map (2073 px). No view keeps an infinite animation on a
+large element; the Forge's only one is a node's 72×62 hint. Hidden hub
+views are `display: none` and cost no tiles.
+
+To place it on the phone (part of the phone check): `adb logcat | grep -i
+tile` while opening each hub view in turn, then again on Quality › Low (no
+glass). If it follows the Feats or the Collection, the next step is
+`content-visibility: auto` on their entries; if it follows the glass, no
+`backdrop-filter` on Android, as the arena already has none.

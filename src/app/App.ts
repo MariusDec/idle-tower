@@ -41,7 +41,7 @@ import { cardBadges } from '../sim/suggest';
 import type { DraftOffer, RunConfig, RunState } from '../sim/state';
 import { BALANCE } from '../content/balance';
 import { Renderer } from '../render/renderer';
-import { QualityScaler, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
+import { QualityScaler, frameBudget, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
 import { CANVAS_MODE, readStoredCanvasMode, storeCanvasMode } from '../render/canvasMode';
 import { runRegion, runWave } from '../sim/systems/waves';
 import { SettingsPanel } from '../ui/settings';
@@ -60,6 +60,7 @@ import { EXPLAINER_BY_ID, type ExplainerId } from '../content/explainers';
 import { ResultsScreen } from '../ui/results';
 import { Toasts } from '../ui/toast';
 import { bindNativeLifecycle } from '../platform/native';
+import { ScreenAwake } from '../platform/awake';
 import { Loop, SIM_DT } from './loop';
 import { Synth } from '../audio/synth';
 import { Cues } from '../audio/cues';
@@ -165,6 +166,8 @@ export class App {
   private readonly settings: SettingsPanel;
   /** On `'auto'`: moves the quality tier with the frame rate (docs/performance.md). */
   private readonly scaler = new QualityScaler();
+  /** The screen held awake while a run plays (R5 §4). */
+  private readonly awake = new ScreenAwake();
   /** A dev `bench()` is running: it owns the quality tier. */
   private benching = false;
 
@@ -903,6 +906,8 @@ export class App {
     // the GPU until something changes (plans/android-gpu-crash.md §1).
     const stopped = this.screen === 'run' && this.simSpeed() === 0;
     this.setArena(stopped ? 'stopped' : 'live');
+    // Awake only while the arena moves: a paused run, the hub and the results keep the usual timeout.
+    this.awake.want(this.profile.settings.keepAwake && this.screen === 'run' && !stopped);
     if (!(stopped && this.renderer.settled)) {
       const t0 = performance.now();
       this.renderer.render(run, alpha, realDt);
@@ -976,7 +981,7 @@ export class App {
       return;
     }
     const from = this.renderer.quality;
-    const to = this.scaler.tick(realDt, drawMs, from);
+    const to = this.scaler.tick(realDt, drawMs, from, frameBudget(this.loop.frameInterval));
     if (to) {
       console.info(`[quality] ${from} → ${to}`);
       this.renderer.setQuality(to);
@@ -1237,7 +1242,14 @@ export class App {
   }
 
   private applySettings(): void {
-    applySettings(this.profile.settings, { synth: this.synth, renderer: this.renderer, root: document.documentElement });
+    const s = this.profile.settings;
+    applySettings(s, { synth: this.synth, renderer: this.renderer, root: document.documentElement });
+    const cap = s.frameRate === 'device' ? null : s.frameRate;
+    if ((cap ? 1000 / cap : 0) !== this.loop.frameInterval) {
+      this.loop.setFrameCap(cap);
+      // The old window's frames were timed against the old cap.
+      this.scaler.reset();
+    }
   }
 
   /**
@@ -1356,6 +1368,7 @@ export class App {
     // Only once the page can be seen: the native resume may come first.
     if (this.booted && document.visibilityState !== 'hidden') this.loop.start();
     this.loop.resetClock();
+    this.awake.shown();
     this.lastFrame = now;
     this.welcomeBack(now);
   }

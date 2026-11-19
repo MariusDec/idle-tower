@@ -399,6 +399,33 @@ last 1–3 minutes. I4's "PASS" there says little.
 **Check.** No crash in 60 min; under 10% battery per hour at 60 fps on
 the mid-range phone; no thermal throttling reported.
 
+**Status (2026-11-19): §2 and §4 built, §3 looked at, §1 still needs the
+phones.** Save v27.
+
+- §2: Settings › Display › Frame rate 30 / 60 / Device, default 60.
+  `Loop.setFrameCap` skips early vsyncs and stamps drawn frames on the
+  ideal grid (`capGate`), so 90 and 144 Hz under 60 still draw 60; the sim
+  pays the skipped frames' steps on the next one, so no reading moves. The
+  quality scaler's budget follows the cap (`frameBudget`), or a 30 fps cap
+  would read as a slow device and drop a tier every two seconds. Read in
+  the browser: 30 / 60 / 60 draws a second at each setting on a 60 Hz
+  display; a run at 30 kept its sim rate and stayed on `high`.
+- §4, decided: **on during a run, off elsewhere**, as a setting (Display ›
+  Screen on, default On). The lock is held only while the arena moves; the
+  hub, the results, a pause and a held choice keep the device's timeout.
+  On by default because a hands-off run is designed play and a sleeping
+  screen pauses it; the frame cap is the battery answer. Web Wake Lock in
+  a browser, and in the app a local Capacitor plugin
+  (`ScreenAwakePlugin.java`, `FLAG_KEEP_SCREEN_ON`), since a WebView need
+  not grant the web lock (the desktop app's browser pane refuses it). The
+  Java compiles; not yet run on a phone.
+- §3: not reproduced; the warning needs the WebView's own GPU budget.
+  What the hub composites, and the logcat steps to pin it to a view, are
+  in `docs/performance.md` (§ The hub's `tile memory limits exceeded`).
+  No speculative change made.
+- §1: still open. It now also measures 30 vs 60 vs Device, and runs the
+  tile-memory steps above.
+
 ### R6. "It's a copy of The Tower" / can't find it (medium, store)
 
 **What the repo shows.**

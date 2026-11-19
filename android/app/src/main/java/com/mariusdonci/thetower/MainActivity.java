@@ -10,10 +10,14 @@ import com.getcapacitor.BridgeActivity;
  * windows. The game's HUD, ability bar and bottom nav are all positioned off
  * those insets (--safe-t/r/b/l in src/styles/tokens.css), so without this line
  * the status bar and the gesture bar sit on top of the two most-tapped surfaces.
+ *
+ * The game's own plugin (the screen kept on in runs) is registered before the
+ * bridge starts, as Capacitor asks of local plugins.
  */
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(ScreenAwakePlugin.class);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         super.onCreate(savedInstanceState);
     }
