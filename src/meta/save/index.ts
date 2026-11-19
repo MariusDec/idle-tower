@@ -11,7 +11,11 @@ import { listBackups, readBackup } from './transfer';
 export const PROFILE_KEY = 'tower-profile';
 /** Where a broken or unreadable profile is parked before a fresh one replaces it. */
 export const CORRUPT_KEY = 'tower-profile-corrupt';
-/** The legacy game's save key, and where it is copied to once (D3). */
+/**
+ * The legacy game's save key, and where it is copied to once (D3).
+ * Legacy name, never rename: every key in this file names data already on
+ * players' devices (R6, `plans/review-risks.md`).
+ */
 export const LEGACY_KEY = 'the-tower-save';
 export const LEGACY_BACKUP_KEY = 'the-tower-save-legacy-backup';
 /**

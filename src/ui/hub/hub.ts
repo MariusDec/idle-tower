@@ -158,7 +158,7 @@ export class HubScreen {
       <div class="hub-home">
         <div class="hub-group">
           <p class="eyebrow hub-eyebrow"></p>
-          <h1 class="hub-title">The Tower</h1>
+          <h1 class="hub-title">Blue Hour</h1>
           <p class="hub-sub">The Blight is closing in. Hold the light.</p>
         </div>
         <div class="hub-group">

@@ -1,6 +1,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import type { SaveStore } from './SaveStore';
 
+/** Legacy name, never rename: it is where every save lives (R6). */
 const DB_NAME = 'the-tower';
 const DB_VERSION = 1;
 const STORE = 'kv';

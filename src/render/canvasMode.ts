@@ -13,6 +13,7 @@
  */
 export type CanvasMode = 'gpu' | 'cpu';
 
+/** Legacy name, never rename (R6). */
 export const CANVAS_MODE_KEY = 'the-tower-canvas';
 
 /** The stored preference. Anything unrecognised reads as `'gpu'`. */

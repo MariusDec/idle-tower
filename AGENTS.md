@@ -1,6 +1,6 @@
 # Source Code Documentation for AI Agents
 
-**The Tower** is an incremental roguelite tower defence, rebuilt from
+**Blue Hour** (formerly *The Tower*) is an incremental roguelite tower defence, rebuilt from
 scratch on the `rebuild` branch (P0–P9). The design, the phase plan and every
 confirmed decision live in [plans/rebuild.md](plans/rebuild.md) — read it
 first. [docs/](docs/README.md) has one file per system, describing the code

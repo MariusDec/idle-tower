@@ -1,6 +1,6 @@
 # idle-tower
 
-**The Tower** — an incremental roguelite tower defence. TypeScript + Vite,
+**Blue Hour** (formerly *The Tower*) — an incremental roguelite tower defence. TypeScript + Vite,
 canvas renderer, no runtime network. Two acts: six regions to the Blight's
 fall, then pacts, the Constellations and the Abyss. See `plans/rebuild.md`.
 

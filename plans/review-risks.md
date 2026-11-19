@@ -461,6 +461,25 @@ phones.** Save v27.
 **Check.** A store search for the new name shows this game first; an
 upgrade install over the old build keeps its save.
 
+**Status (2026-11-19): §1–§3 built; the Play search and the upgrade
+install wait for a device and the first upload.**
+
+- §1: **Blue Hour**, the owner's pick. It's already the palette's name
+  (`--theme-color`, "Blue hour's indigo"). A web search found no game
+  under it; *Last Light* and *Lamplighter* each have small itch.io or
+  indie namesakes, and *Night Watch* is already a Forge notable.
+- §2: the display name in `capacitor.config.ts`, `strings.xml`,
+  `index.html`, the hub and specimen headings, README, AGENTS,
+  `docs/README.md` and `tokens.css`'s header. Each storage key has a
+  "legacy name, never rename" comment, and `tests/r6.test.ts` pins them,
+  plus the `appId`, scheme and hostname. Left on the old name on purpose:
+  the npm package name, the Java package and the release keystore's alias
+  (all are identities, not display strings), and the plans' history.
+- §3: `docs/store-listing.md`: short and full description (first line
+  "No ads. No purchases. Plays offline."), six screenshots with captions,
+  category and Data safety answers. Its length line is a placeholder until
+  R3's decision, and its backup sentence depends on R9 §1.
+
 ### R7. "Text too small / can't tap that / broken on my tablet" (medium)
 
 **What the repo shows.**

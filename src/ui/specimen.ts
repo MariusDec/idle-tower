@@ -19,7 +19,7 @@ export function mountSpecimen(host: HTMLElement): void {
   page.innerHTML = `
     <header class="specimen-head">
       <p class="eyebrow">Specimen · plans/visual-identity.md §4</p>
-      <h1 class="specimen-title">The Tower</h1>
+      <h1 class="specimen-title">Blue Hour</h1>
       <p class="specimen-sub">Every base component, in the game's classes.
         Compare with <a class="specimen-link" href="/docs/visual-identity/preview.html">the identity's preview</a>.</p>
       <div class="specimen-ground"></div>
