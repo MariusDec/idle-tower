@@ -107,11 +107,30 @@ function trialLine(t: NonNullable<RunSummary['trial']>): string {
   return t.paid ? `Trial won: ${name} · ${t.paid.line}` : `Trial won again: ${name}`;
 }
 
+/**
+ * A plateau's line (R2 §4): on a run short of the region's best, what did
+ * move: the wave against the last few runs there, and the Forge's next node
+ * nearer. Null when neither moved.
+ */
+export function plateauLine(s: Pick<RunSummary, 'wave' | 'plateau'>): string | null {
+  const p = s.plateau;
+  if (!p) return null;
+  const parts: string[] = [];
+  if (s.wave > p.median) parts.push(`Further than your last ${p.runs} runs here (wave ${p.median})`);
+  if (p.forge) {
+    const pct = (x: number): string => `${Math.floor(x * 100)}%`;
+    parts.push(`${p.forge.name} ${pct(p.forge.from)} → ${p.forge.to >= 1 ? 'ready' : pct(p.forge.to)}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 export class ResultsScreen {
   private readonly root: HTMLElement;
   private readonly heroN: HTMLElement;
   private readonly heroL: HTMLElement;
   private readonly headline: HTMLElement;
+  /** What moved on a plateau (R2 §4), under the headline. */
+  private readonly plateau: HTMLElement;
   private readonly againRing: SVGElement;
   private readonly againFill: SVGElement;
   private readonly againLabel: HTMLElement;
@@ -170,6 +189,7 @@ export class ResultsScreen {
     this.root.innerHTML = `
       <p class="results-hero"><span class="results-hero-n"></span><span class="results-hero-l"></span></p>
       <p class="results-headline"></p>
+      <p class="results-plateau" hidden></p>
       <p class="results-boss" hidden></p>
       <section class="results-section" hidden><h3 class="section-head">Rewards</h3><ul class="results-rewards"></ul></section>
       <section class="results-section" hidden><h3 class="section-head">Records</h3><ul class="results-records"></ul></section>
@@ -226,6 +246,7 @@ export class ResultsScreen {
     this.heroN = q('.results-hero-n');
     this.heroL = q('.results-hero-l');
     this.headline = q('.results-headline');
+    this.plateau = q('.results-plateau');
     this.againRing = this.root.querySelector<SVGElement>('.results-again-ring')!;
     this.againFill = this.root.querySelector<SVGElement>('.results-again-fill')!;
     this.againLabel = q('.results-again-label');
@@ -309,6 +330,10 @@ export class ResultsScreen {
     this.headline.textContent = s.outcome === 'cleared'
       ? 'Every boss fell.'
       : s.outcome === 'retreat' ? 'The tower withdraws.' : 'The light recedes.';
+    // Short of the best (R2 §4): lead with what did improve.
+    const plateau = plateauLine(s);
+    this.plateau.hidden = plateau === null;
+    this.plateau.textContent = plateau ?? '';
 
     // The boss: felled (and how fast), or still standing. The Abyss counts floors (§9).
     const b = s.boss;

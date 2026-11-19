@@ -26,14 +26,17 @@ function killed(...bosses: string[]): Profile {
 }
 
 describe('unlocks (§5.2, §7.1)', () => {
-  it('Region 2, the Map, Feats and relic slot 1 open with the Gatekeeper', () => {
+  it('Region 2, the Map and relic slot 1 open with the Gatekeeper; Feats a run later (R1 §2)', () => {
     const fresh = newProfile(0);
     expect(regionUnlocked(fresh, 2)).toBe(false);
     expect(hubUnlocks(fresh)).toEqual({ forge: false, map: false, collection: false, feats: false, stars: false });
     expect(relicSlots(fresh)).toBe(0);
     const p = killed('gatekeeper');
     expect(regionUnlocked(p, 2)).toBe(true);
-    expect(hubUnlocks(p).map && hubUnlocks(p).feats).toBe(true);
+    expect(hubUnlocks(p).map).toBe(true);
+    expect(hubUnlocks(p).feats).toBe(false);
+    p.regions['2'] = { bestWave: 8, runs: 1 };
+    expect(hubUnlocks(p).feats).toBe(true);
     expect(relicSlots(p)).toBe(1);
     expect(relicSlots(killed('gatekeeper', 'bog-mother'))).toBe(2);
   });

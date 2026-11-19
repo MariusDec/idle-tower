@@ -89,6 +89,13 @@ at 15% speed (`BALANCE.draft.slowMotion`) and the panel counts down
 `BALANCE.draft.seconds` (10 s) of wall time, or 6 s with the Tactician,
 then picks the suggestion. Picks and rerolls go through `applyInput`.
 
+Settings › Gameplay › **Draft timer** (R1 §5, `settings.draftTimer`,
+`meta/automation.ts#playerDraftSeconds`): *On* is the above; *Long* is
+20 s; *Off* hides the clock and holds the arena until a pick (the panel
+starts halted), until the Tactician is owned, when it picks on the Long
+clock so a run left alone goes on. The bots read `draftSeconds`, never the
+setting.
+
 **Take suggested ×N** (U2): with two or more drafts banked, one tap takes
 every suggestion (`applyInput({ takeAll })` → `takeSuggested`): each hand
 is rolled and scored in turn, exactly as one-by-one picks would be. A run

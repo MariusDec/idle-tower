@@ -18,11 +18,19 @@ Feats → Stars (`hubUnlocks`):
 | Forge | after the first run |
 | Map | the Gatekeeper has fallen |
 | Collection | enough enemy types seen for a Bestiary |
-| Feats | the Gatekeeper has fallen |
+| Feats | the Gatekeeper has fallen and a run past Region 1 has ended (R1 §2; it opens with claims ready) |
 | Stars | the Blight has fallen (Act 2) |
 
 Tactics and Pacts have no tab: they open from the home view once the
 Tactician is owned, and once Act 2 opens.
+
+The Gatekeeper's fall used to open five things at once. They are staggered
+(plans/review-risks.md R1 §2, `AFTER_GATEKEEPER`): the fall opens the Map
+and its sealed nodes (and relic slot 1, which holds its own relic); Feats
+wait for the first run ended past Region 1, and the first Trials
+(`trialsOpen`) for the second. `runsPastFirst` counts them from
+`profile.regions[i].runs`; v26 counts an old save's regions as played twice
+so nothing it had open closes.
 
 ## Explainers (§7.1)
 
@@ -38,6 +46,13 @@ aside by another (welcome back, the ending) comes back next visit. A view
 with any open shows a **?** in its title (on the home view, beside the
 gear) that tells them all again. `tests/explainers.test.ts` fails when a
 tab, a Collection page, Tactics or Pacts has none.
+
+Three are told mid-run instead (view `run`, R1 §4): the first rift, the
+first Champion and the first elite aura each hold the arena with a
+one-sentence card (`App#tellInRun`), as the first draft does. Only a
+player who touched the screen in the last 30 s gets one: a run left alone
+never stops, and the next meeting while watching tells it. The first
+anomaly needs no card: the draft's own line under it teaches it.
 
 ## The Map (§5.2)
 

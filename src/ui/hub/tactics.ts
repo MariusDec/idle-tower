@@ -24,6 +24,11 @@ function entryOf(id: string): ContentEntry | null {
   return WEAPON_BY_ID[id as WeaponId] ?? PASSIVE_BY_ID[id as PassiveId] ?? null;
 }
 
+/** The draft's colour coding (§10.1): weapons arcane, passives gold. */
+function kindClass(id: string): string {
+  return id in WEAPON_BY_ID ? 'is-weapon' : 'is-passive';
+}
+
 /**
  * The Tactician's priority editor (§6.2). Every weapon and passive the next
  * run's draft can offer sits in one of three lists: the player's priority,
@@ -174,7 +179,7 @@ export class TacticsView {
   private rankedRow(id: string, i: number, n: number, offered: boolean): HTMLLIElement {
     const def = entryOf(id)!;
     const li = document.createElement('li');
-    li.className = `entry tactics-row${offered ? '' : ' is-unknown'}`;
+    li.className = `entry tactics-row ${kindClass(id)}${offered ? '' : ' is-unknown'}`;
     li.dataset.id = id;
     const grip = document.createElement('span');
     grip.className = 'tactics-grip';
@@ -203,7 +208,7 @@ export class TacticsView {
   private neverRow(id: string, offered: boolean): HTMLLIElement {
     const def = entryOf(id)!;
     const li = document.createElement('li');
-    li.className = `entry tactics-row is-never${offered ? '' : ' is-unknown'}`;
+    li.className = `entry tactics-row ${kindClass(id)} is-never${offered ? '' : ' is-unknown'}`;
     li.append(
       icon(def.icon), this.nameOf(def),
       this.btn('io-close', `Allow ${def.name} again`, false, () => this.commit(this.list, this.banned.filter((x) => x !== id))),
@@ -214,7 +219,7 @@ export class TacticsView {
   private restRow(id: string): HTMLLIElement {
     const def = entryOf(id)!;
     const li = document.createElement('li');
-    li.className = 'entry tactics-row is-rest';
+    li.className = `entry tactics-row ${kindClass(id)} is-rest`;
     const add = this.btn('List', `List ${def.name}`, false, () => this.commit([...this.list, id]));
     add.classList.add('tactics-btn-wide');
     const ban = this.btn('Never', `Never take ${def.name}`, false, () => this.commit(this.list, [...this.banned, id]));

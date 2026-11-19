@@ -14,7 +14,7 @@ verdict is the game's, not a model's (§13). Every tunable number lives in
 | I3 | every Act 1 results screen shows an affordable node or ≥ 50% toward one | the pacing report |
 | I4 | no weapon takes over 40% of the bot's new-weapon picks; every weapon is taken somewhere | `npm run arsenal` |
 | I5 | active shards per hour ÷ idle shards per hour within 1.15–1.5 | the idle report, from Region 2 on |
-| I6 | no gap between reveals longer than 10 min in the first 2 h | the pacing report (CI gates the median profile's worst gap until R2's content lands: R4 below) |
+| I6 | no gap between reveals longer than 10 min in the first 2 h; none longer than 30 min from 2 h to the Blight's first fall (R2 §5). Each a gate on ≥ 6 of 8 profiles | `npm run pacing -- --hours 6 --seeds 8` (CI gates every profile's first hour: R2 below) |
 | I7 | the engaged idle-schedule bot reaches the Blight with ≤ 0.70× the hands-off bot's screen time (median, 4 seeds) | `npm run pacing -- --idle --hours 12 --seeds 4` |
 | I8 | the hands-off bot finishes Act 1 in 5–10 days for every seed; median aims at 6–8 | the same |
 | I9 | no active-only reward (`RunSummary.activeOnly`, `tools/play.ts#ACTIVE_INPUTS`) reaches the hands-off bot | the same, and `tests/storedLight.test.ts` |
@@ -628,3 +628,21 @@ retune: this change moves no number.
 
 `npm test`: 844 passed, 0 failed (67 s on an idle machine).
 `npm run typecheck`: clean.
+
+## R2: reveals in the plateaus (2026-11-19)
+
+`plans/review-risks.md` R2. Read on 8 seeds × 6 h, no `--fast`, with R1
+in. The first two hours' gaps were Region 2's and Region 4's plateaus,
+not Region 3 (now 8–18 min long). Each region from the Mire on holds one
+rift back for its middle run (`docs/rifts.md`, held beats). A Trial's win
+and an overtime trophy are told in the run. I6's later clause reads from
+2 h to the Blight's first fall.
+
+| | before | after |
+|---|---|---|
+| I6, first 2 h | 6/8 (worst 12:37, 10:12) | **8/8** (6:07–8:20) |
+| I6, 2 h → Blight | 8/8 (to 6 h: 7:32–24:02) | **8/8** (7:02–13:24) |
+| I5, 4 seeds | — | 1.15–1.47, every gated checkpoint |
+
+CI's I6 gates every profile again. The idle report was not re-read.
+

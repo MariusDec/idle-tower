@@ -34,6 +34,7 @@ import { Rng } from '../src/core/rng';
 import { newProfile, type Profile } from '../src/meta/profile';
 import { autoUlt, automations, draftSeconds, marchOn, openingSeconds, runSpeed } from '../src/meta/automation';
 import { bankRun } from '../src/meta/results';
+import { heldBeat } from '../src/meta/runConfig';
 import { formCount } from '../src/sim/systems/form';
 import { frontier, hubUnlocks } from '../src/meta/collection';
 import { claimAll } from '../src/meta/feats';
@@ -229,7 +230,8 @@ export interface FarmRate {
 /**
  * Shards per wall hour for `policy` at this Forge state: `n` runs, each on a
  * copy of `profile`, nothing bought between them. A first boss kill's bonus
- * is left out, so one lucky kill doesn't decide the comparison.
+ * is left out, so one lucky kill doesn't decide the comparison; a held rift
+ * owed is taken as met, or every copy would meet it.
  */
 export function farmRate(profile: Profile, policy: PlayPolicy, n: number, seed: number): FarmRate {
   const seeds = new Rng(seed);
@@ -240,6 +242,9 @@ export function farmRate(profile: Profile, policy: PlayPolicy, n: number, seed: 
     const p = structuredClone(profile);
     // I5 measures run efficiency alone: no pool, so no burn.
     p.storedLight = 0;
+    // A region's held rift (R2 §2–3) comes once in its life, as a first kill does: met, it joins the draw.
+    const beat = heldBeat(p);
+    if (beat) p.rifts[beat] = { glimpsed: 1, seen: 0, taken: [] };
     const speed = runSpeed(p);
     const run = createRun(toolConfig(p), seeds.nextU32());
     const played = playRun(p, run, {

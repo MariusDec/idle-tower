@@ -1211,7 +1211,13 @@ export type RiftId =
   | 'cinder-oath'
   | 'whispering-shade'
   | 'blight-bloom'
-  | 'heart-vein';
+  | 'heart-vein'
+  // A region's held beat (R2 §2–3): one each, Regions 2–6.
+  | 'sunken-shrine'
+  | 'glass-oracle'
+  | 'ashen-anvil'
+  | 'hollow-choir'
+  | 'last-lantern';
 
 /** How long a rift's effect lasts: the rest of this wave and n more, until the region's boss falls, or the run. */
 export type RiftSpan = { readonly waves: number } | 'boss' | 'run';
@@ -1268,6 +1274,12 @@ export interface RiftWhere {
   readonly needs?: 'alchemy' | 'relics';
   /** Never rolled: the First Tear is placed, not drawn. */
   readonly placed?: boolean;
+  /**
+   * A region's beat (R2 §2–3): held back until that region's run number
+   * `held`, placed on it (and each run after until met), then rolled like
+   * any other. Names exactly one region.
+   */
+  readonly held?: number;
 }
 
 /** A rift (plans/late-game/02 §4). `text` is its whisper, ≤ 8 words. */

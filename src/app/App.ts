@@ -9,10 +9,10 @@ import { buildRunConfig } from '../meta/runConfig';
 import { beginOmen, omenConfig, omenLabel, omenSeed, openOmen, rollOmen, settlePending } from '../meta/omen';
 import { regionByIndex } from '../content/regions';
 import {
-  autoUlt, automations, draftSeconds, foremanBuy, marchOn, maxSpeed, runSpeed, tacticsScopes, togglePin,
+  autoUlt, automations, foremanBuy, playerDraftSeconds, marchOn, maxSpeed, runSpeed, tacticsScopes, togglePin,
 } from '../meta/automation';
 import { buyNode, canAfford, isBuyable, levelOf, nodeCost, refundNode, toggleKeystone, towerTier } from '../meta/forge';
-import { bankRun, buildOf } from '../meta/results';
+import { bankRun, buildOf, trophyAt } from '../meta/results';
 import { buildList, foremanLine, statsList } from '../ui/build';
 import { chooseWaypoint, cursedSlots, frameUnlocked, frontier, regionUnlocked, selectedFrame, swapCursed, toggleCursed, toggleRelic, trophyCount } from '../meta/collection';
 import { cursedCard } from '../ui/cursed';
@@ -21,7 +21,7 @@ import { claimAll, claimFeat } from '../meta/feats';
 import { offlineEarnings, offlineTier, storedRates } from '../meta/offline';
 import { emptyTally, storedWant, tallyWave, waveEngaged, type BurnTally } from '../meta/storedLight';
 import { setPactRank } from '../meta/pacts';
-import { chooseTrial, toggleTrim, wornTrims } from '../meta/trials';
+import { chooseTrial, toggleTrim, trialPrize, wornTrims } from '../meta/trials';
 import { contractById, ensureBoard, pin as pinContract, reroll as rerollContract, takeContract } from '../meta/contracts';
 import { contractText } from '../content/contracts';
 import { explainersFor, markExplained, unreadExplainers } from '../meta/explainers';
@@ -56,6 +56,7 @@ import type { MapSpread } from '../ui/hub/map';
 import { STRATUM_BY_ID, guardianStratum } from '../content/strata';
 import { Modal, type ModalButton } from '../ui/modal';
 import { explainerBody } from '../ui/explainer';
+import { EXPLAINER_BY_ID, type ExplainerId } from '../content/explainers';
 import { ResultsScreen } from '../ui/results';
 import { Toasts } from '../ui/toast';
 import { bindNativeLifecycle } from '../platform/native';
@@ -103,6 +104,8 @@ export class App {
   private profile!: Profile;
   private run: RunState | null = null;
   private paused = false;
+  /** Mid-run explainers waiting for a free arena (R1 §4), in the order met. */
+  private runCards: ExplainerId[] = [];
   private sinceSave = 0;
   /** The offer the draft panel is showing, so a new one is noticed. */
   private shownDraft: DraftOffer | null = null;
@@ -556,6 +559,7 @@ export class App {
     // for the player's next visit to the Map instead (§6.2).
     if (!automations(this.profile).has('frontier-march')) this.profile.ceremony = null;
     this.paused = false;
+    this.runCards = [];
     this.shownDraft = null;
     this.newCards = [];
     this.opening = resumed ? 0 : this.run.pendingDrafts;
@@ -726,13 +730,16 @@ export class App {
       if (run.draft) {
         const seen = new Set(this.profile.seenCards);
         const opening = this.opening > 1 && run.draftsOpened <= this.opening;
+        // The player's draft timer (R1 §5): null is no clock at all.
+        const clock = playerDraftSeconds(this.profile);
         this.draft.show({
           level: run.draft.level,
           cards: run.draft.cards,
           suggested: run.draft.suggested,
           timed: this.profile.tutorial.firstDraft,
           // A hand with an anomaly gets the full time, the Tactician's too (plans/late-game/04 §3).
-          seconds: holdsAnomaly(run.draft.cards) ? Math.max(draftSeconds(this.profile), BALANCE.anomalies.seconds) : draftSeconds(this.profile),
+          seconds: holdsAnomaly(run.draft.cards) ? Math.max(clock ?? 0, BALANCE.anomalies.seconds) : clock ?? 0,
+          clock: clock !== null,
           seen: (key) => seen.has(key),
           rerolls: run.rerolls,
           banishes: run.banishes,
@@ -904,6 +911,7 @@ export class App {
     if (this.screen === 'run' && run) {
       // Cards taken since the last snapshot: one more, at most every couple of seconds.
       if (this.runDirty && !run.outcome && now - this.snapshotAt >= PICK_SNAPSHOT_MS) this.snapshot(run);
+      this.showRunCard(run);
       this.syncDraft(run, realDt);
       this.syncRift(run);
       this.syncReliquaries(run);
@@ -997,7 +1005,10 @@ export class App {
         case 'eliteSpawn':
           // A Keeper (plans/late-game/08 §3.1) holds its floor: its own toast.
           if (ev.keeper !== undefined) this.toasts.show('vertical-banner', `The Keeper of floor ${ev.keeper}`, 'The next floor waits until it falls.', 'relic');
-          else if (ev.champion) this.toasts.show('vertical-banner', 'A Champion comes', 'Slay it for a relic.', 'relic');
+          else if (ev.champion) {
+            this.toasts.show('vertical-banner', 'A Champion comes', 'Slay it for a relic.', 'relic');
+            this.tellInRun('champion');
+          } else if (ev.aura !== null) this.tellInRun('aura');
           break;
         case 'reliquary':
           // Taught by the toast (plans/late-game/03 §2), as the Champion's is; the first says where to look.
@@ -1019,12 +1030,24 @@ export class App {
           break;
         }
         case 'riftAppear':
-          // The First Tear teaches itself (plans/late-game/02 §2): a toast, never an arena stop.
+          // The first rift a watching player meets gets its card (R1 §4); the First Tear's toast
+          // keeps teaching it after that, until it is opened (plans/late-game/02 §2).
+          if (this.tellInRun('tear')) break;
           if (ev.id === 'first-tear') this.toasts.show(RIFT_BY_ID[ev.id].icon, 'A rift!', 'Tap it before it closes.', 'relic');
           break;
-        case 'bossKill':
+        case 'bossKill': {
           this.slowMo = { left: BOSS_KILL_SLOWMO.seconds, speed: BOSS_KILL_SLOWMO.speed };
+          // A Trial is won here (R2 §1): the run says what it pays, not only the results.
+          const prize = run.trial ? trialPrize(this.profile, run.trial) : null;
+          if (prize) this.toasts.show(TRIAL_BY_ID[prize.id].icon, `Trial won · ${TRIAL_BY_ID[prize.id].name}`, prize.line, 'gold');
           break;
+        }
+        case 'waveStart': {
+          // An overtime trophy (N4) is told as it is earned (R2 §1); the results pay it.
+          const t = trophyAt(this.profile, run, ev.wave);
+          if (t) this.toasts.show('trophy', `Trophy · overtime +${t.overtime}`, `A light on the tower · +${formatNumber(t.shards)} shards`, 'gold');
+          break;
+        }
         case 'finalForm': {
           // Final Form (plans/late-game/07 §2): the arena slows; the first per frame gets a toast too.
           this.slowMo = { left: FORM_SLOWMO.seconds, speed: FORM_SLOWMO.speed };
@@ -1121,6 +1144,34 @@ export class App {
       onClick: () => {
         markExplained(this.profile, defs.map((d) => d.id));
         void this.save();
+      },
+    }]);
+  }
+
+  /**
+   * Queue a mid-run explainer (R1 §4), unless it has been told. Only to a
+   * player who is watching: a run left alone never stops for a card, and the
+   * next meeting while they watch tells it instead. True when queued.
+   */
+  private tellInRun(id: ExplainerId): boolean {
+    if (this.profile.tutorial.explained.includes(id) || this.runCards.includes(id) || !this.engaged()) return false;
+    this.runCards.push(id);
+    return true;
+  }
+
+  /** Show the next mid-run explainer once the arena is free: the run holds still until it is read, as the first draft does. */
+  private showRunCard(run: RunState): void {
+    if (this.runCards.length === 0 || this.paused || this.modal.open || this.settings.open || run.outcome) return;
+    const def = EXPLAINER_BY_ID[this.runCards.shift()!];
+    this.paused = true;
+    this.modal.show(def.title, explainerBody([def]), [{
+      label: 'Got it',
+      primary: true,
+      onClick: () => {
+        markExplained(this.profile, [def.id]);
+        void this.save();
+        this.paused = false;
+        this.loop.resetClock();
       },
     }]);
   }

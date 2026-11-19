@@ -67,6 +67,9 @@ to shards). Reaching overtime +5, +10 and +15 in a region earns a
 **trophy** (`meta/collection.ts#trophiesAt`, read off the region's best
 wave): `bankRun` pays it once, `BALANCE.trophies.pay` × that wave's wave
 pay; the Map card shows its stars and the tower wears a light for each.
+The run tells it as the wave starts (R2 §1: a toast, `meta/results.ts#trophyAt`),
+as it tells a Trial won at its boss's fall (`meta/trials.ts#trialPrize`);
+the results screen still pays both.
 
 ## Enemy verbs
 

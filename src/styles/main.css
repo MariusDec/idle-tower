@@ -1203,6 +1203,13 @@ body {
   color: var(--text-secondary);
 }
 
+/* A plateau's line (R2 §4): what moved on a run short of the best. */
+.results-plateau {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--fx-gold);
+}
+
 /* Rewards, records, discoveries: each a section under an uppercase header. */
 .results-section {
   display: flex;
@@ -2950,7 +2957,15 @@ body {
   padding-bottom: 0;
 }
 
-.tactics-row .icon { --icon-size: 22px; color: var(--fx-gold); }
+.tactics-row .icon { --icon-size: 22px; color: var(--item, var(--fx-gold)); }
+/* The draft's colour coding (§10.1): weapons arcane, passives gold. */
+.tactics-row.is-weapon { --item: var(--fx-arcane); }
+.tactics-row.is-passive { --item: var(--fx-gold); }
+.tactics-row.is-weapon,
+.tactics-row.is-passive {
+  border-left: 3px solid color-mix(in srgb, var(--item) 70%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--item) 10%, transparent), transparent 45%), var(--glass-fill, transparent);
+}
 .tactics-row .entry-name { min-width: 0; font-size: var(--fs-lg); }
 .tactics-row.is-dragging { border: 2px solid var(--accent); background: var(--glass-fill-strong); opacity: 0.9; }
 

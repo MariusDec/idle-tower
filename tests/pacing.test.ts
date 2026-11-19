@@ -19,15 +19,14 @@ describe('pacing: the first hour (§8.4, P3 and P4 gates)', () => {
   });
 
   /*
-   * I6 asks it of every profile (§8.4), and the full report still prints
-   * that count. CI gates the median profile's worst gap instead, for now:
-   * the first two hours reveal something every 8–10 minutes, so a seed
-   * passes or fails by seconds (docs/balancing.md, Q1 and Tempering), and
-   * numbers alone can't fix it. Restore the every-seed rule once new
-   * content fills the first hour (review-risks R2) and 8/8 seeds pass
-   * `npm run pacing -- --seeds 8`.
+   * I6 asks it of every profile (§8.4). From R4 to R2 CI gated the median
+   * profile's worst gap instead: Region 2's plateau left 10–13 min with
+   * nothing new on two seeds. R2's held rift (the Sunken Shrine, Region 2's
+   * 11th run) lands in it, and `npm run pacing -- --hours 6 --seeds 8` reads
+   * 8/8 (2026-11-19), so the every-seed rule is back.
    */
-  it('I6: the median profile goes no longer than 10 minutes between reveals', () => {
+  it('I6: no profile goes longer than 10 minutes between reveals', () => {
+    for (const [k, r] of reports.entries()) expect(r.worstGap.seconds, `seed ${PACING_SEEDS[k]}`).toBeLessThanOrEqual(600);
     expect(medianWorstGap(reports)).toBeLessThanOrEqual(600);
   });
 

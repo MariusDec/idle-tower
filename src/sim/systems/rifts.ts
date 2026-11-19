@@ -60,6 +60,8 @@ export function riftCanOpen(run: RunState, region: RegionDef, def: RiftDef): boo
   const w = def.where;
   const R = BALANCE.rifts;
   if (w.placed) return false;
+  // A held rift (R2 §2–3) is placed until met; only then may it be drawn.
+  if (w.held !== undefined && !run.riftCfg?.known.includes(def.id)) return false;
   if (w.abyss && !region.abyss) return false;
   if (w.act2 && !run.riftCfg?.act2) return false;
   const idx = regionIndex(region);
@@ -116,6 +118,16 @@ function rollRift(run: RunState, region: RegionDef, n: number): void {
       placeRift(run, rng, RIFT_BY_ID['first-tear'], n, true);
     }
     return;
+  }
+  // A region's beat (R2 §2–3): the run's first rift, at the First Tear's wave; owed again until met.
+  if (cfg.beat) {
+    if (localWave(region, n) === R.firstWave && run.riftRoll.count === 0) {
+      run.riftRoll.count++;
+      run.riftRoll.last = n;
+      placeRift(run, rng, RIFT_BY_ID[cfg.beat], n, true);
+      return;
+    }
+    if (run.riftRoll.count === 0) return;
   }
   const roll = run.riftRoll;
   const k = rates(run, region);

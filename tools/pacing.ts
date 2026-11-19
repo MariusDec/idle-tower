@@ -8,8 +8,17 @@
  *   I1b the Act 1 finale first falls within 7–12 h (needs --hours 12)
  *   I3  every results screen shows an affordable node, or ≥ 50% toward one
  *   I6  no gap between reveals longer than 10 min (in the first 2 h), and
- *       none longer than 30 min from 2 h to 10 h (S6, Q3's gate; needs --hours 10)
+ *       none longer than 30 min from 2 h to the Blight's first fall (S6, R2 §5;
+ *       needs --hours 6). Both are gates on 8 profiles: at least 6 must pass.
  *   P3  wave 20 is first reached within 15–30 min
+ *
+ * And R1's reading (plans/review-risks.md §R1): each reveal is content (an
+ * enemy, a card, a relic, a rift kind, a wave) or a system (a tab, an
+ * explainer, a mechanic notable, an unlock that adds a screen or a rule).
+ * Systems are counted per 15 min over the first 3 h, against "at most one
+ * new system per 10 min, never two within 2 min", the Gatekeeper's fall
+ * allowed two. Explainer opens are logged as systems but never count as
+ * I6's reveals, so I6 reads as it did.
  *
  *   npm run pacing                       one hour, seed 1
  *   npm run pacing -- --hours 2 --seed 3
@@ -40,7 +49,7 @@ import { newProfile, type Profile } from '../src/meta/profile';
 import { migrate, type RawProfile } from '../src/meta/save/migrate';
 import { runSpeed } from '../src/meta/automation';
 import { levelOf, nodeStates } from '../src/meta/forge';
-import { bankRun } from '../src/meta/results';
+import { bankRun, trophyAt } from '../src/meta/results';
 import { frontier, hubUnlocks } from '../src/meta/collection';
 import { claimAll } from '../src/meta/feats';
 import { BRANCH_NAME, FORGE, FORGE_BY_ID } from '../src/content/forge';
@@ -49,7 +58,7 @@ import { ENEMY_BY_ID } from '../src/content/enemies';
 import { EVOLUTION_BY_ID } from '../src/content/evolutions';
 import { RELIC_BY_ID } from '../src/content/relics';
 import { TRIALS, TRIAL_BY_ID } from '../src/content/trials';
-import { chooseTrial, trialWon, trialsOpen } from '../src/meta/trials';
+import { chooseTrial, trialPrize, trialWon, trialsOpen } from '../src/meta/trials';
 import { Rng } from '../src/core/rng';
 import { formatDuration } from '../src/core/format';
 import type { BranchId } from '../src/content/types';
@@ -64,6 +73,8 @@ import { BALANCE } from '../src/content/balance';
 import { IN_WORKER, parallel, workerJobs } from './parallel';
 import { FRONTIER_FILE, FRONTIER_HOURS, FRONTIER_SEEDS, saveFrontiers, type FrontierSave } from './frontier';
 import { REGIONS } from '../src/content/regions';
+import { EXPLAINERS, type ExplainerId } from '../src/content/explainers';
+import { explainerOpen } from '../src/meta/explainers';
 
 /** Wall seconds between runs: the results screen, plus shopping when there is shopping. */
 const BETWEEN_RUNS = { idle: 6, shopping: 15 };
@@ -76,8 +87,13 @@ const CHECKPOINT_REGION_1 = 20 * 60;
 const CHECKPOINT_REGION_2 = 50 * 60;
 /** I6 only applies to the first two hours… */
 const I6_WINDOW = 2 * 3600;
-/** …and past them, to ten hours, at one reveal per 30 min (S6). */
-const I6_LATE = { from: 2 * 3600, to: 10 * 3600, gap: 30 * 60 };
+/**
+ * …and past them, to the Blight's first fall, at one reveal per 30 min (S6,
+ * R2 §5). A report the Blight never fell in reads to its end, ten hours at most.
+ */
+export const I6_LATE = { from: 2 * 3600, to: 10 * 3600, gap: 30 * 60 };
+/** I6's gates (R2 §5): this share of the profiles must pass each clause. */
+export const I6_GATE_SHARE = 6 / 8;
 /**
  * The active bot tries an open Trial (N5) every this many runs: one it has
  * not won, in a region behind the frontier, at most `TRIAL_TRIES` times.
@@ -94,6 +110,89 @@ export interface Reveal {
   /** Wall seconds since the profile was made. */
   at: number;
   what: string;
+  /**
+   * The system this reveal teaches (R1 §1), keyed so a tab, its unlock line
+   * and its explainer count once; absent for content.
+   */
+  system?: string;
+}
+
+/** R1's target (plans/review-risks.md §R1): systems over the first 3 h, at most one per 10 min, never two within 2. */
+export const SYSTEM_PACE = { window: 3 * 3600, quarter: 15 * 60, spacing: 10 * 60, crowd: 2 * 60 };
+
+/** Results-screen unlock lines that add a screen or a rule (R1 §1), by their system; the rest are content. */
+const UNLOCK_SYSTEMS: Readonly<Record<string, string>> = {
+  'The Map': 'map', Feats: 'feats', Pacts: 'pacts', 'The Constellations': 'stars', 'The Abyss': 'abyss',
+  'The Daily Omen': 'omen', 'Boss Rush': 'rush', Contracts: 'contracts', 'The Recipe Book': 'recipes',
+};
+
+function unlockSystem(label: string): string | undefined {
+  if (label in UNLOCK_SYSTEMS) return UNLOCK_SYSTEMS[label];
+  if (label.startsWith('Trials: ')) return 'trials';
+  if (label.startsWith('Relic slot')) return 'relics';
+  if (label.startsWith('Relic set: ')) return 'relic sets';
+  if (label.endsWith(' frame')) return 'frames';
+  // A region, a set's rank, a boss's unsealed nodes: more of what the player already knows.
+  return undefined;
+}
+
+/** An explainer's system, where its id differs from the key the tabs and unlocks use. */
+const EXPLAINER_SYSTEMS: Partial<Record<ExplainerId, string>> = { bestiary: 'collection', rifts: 'tear', tactics: 'tactician' };
+
+/** A notable's system (R1 §1): an automation or a slot is one; a weapon or a behaviour is content. Tiers share their first's key. */
+function notableSystem(id: string): string | undefined {
+  for (const e of FORGE_BY_ID[id].effects) {
+    if (e.kind === 'slot') return e.slot === 'relic' ? 'relics' : `slot: ${e.slot}`;
+    if (e.kind === 'automation') {
+      if (e.id === 'offline-3' || e.id === 'offline-4') return 'stored';
+      return e.id.replace(/-\d$/, '');
+    }
+  }
+  return undefined;
+}
+
+/** Each system's first appearance (R1 §1), reveals and explainer opens together, in order. */
+export function systemsOf(r: Pick<PacingReport, 'reveals' | 'explainers'>): Reveal[] {
+  const seen = new Set<string>();
+  const out: Reveal[] = [];
+  for (const v of [...r.reveals, ...r.explainers].sort((a, b) => a.at - b.at)) {
+    if (!v.system || seen.has(v.system)) continue;
+    seen.add(v.system);
+    out.push(v);
+  }
+  return out;
+}
+
+export interface SystemPace {
+  /** New systems in each 15 min of the first 3 h. */
+  perQuarter: number[];
+  /** Consecutive systems closer than 10 min, and of those, closer than 2 min (the Gatekeeper's one pair aside). */
+  close: number;
+  crowded: number;
+  pass: boolean;
+}
+
+/** R1's reading of one report: systems per 15 min, and the pairs that come too close. */
+export function systemPace(r: Pick<PacingReport, 'reveals' | 'explainers' | 'gateFall'>): SystemPace {
+  const P = SYSTEM_PACE;
+  const sys = systemsOf(r).filter((v) => v.at <= P.window);
+  const perQuarter = Array.from({ length: Math.ceil(P.window / P.quarter) }, () => 0);
+  for (const v of sys) perQuarter[Math.min(perQuarter.length - 1, Math.floor(v.at / P.quarter))]++;
+  let close = 0;
+  let crowded = 0;
+  // The first boss may open two at once: its fall's results screen gets one pair for free.
+  let spare = r.gateFall === null ? 0 : 1;
+  for (let i = 1; i < sys.length; i++) {
+    const gap = sys[i].at - sys[i - 1].at;
+    if (gap >= P.spacing) continue;
+    if (spare > 0 && sys[i].at === r.gateFall && sys[i - 1].at === r.gateFall) {
+      spare--;
+      continue;
+    }
+    close++;
+    if (gap < P.crowd) crowded++;
+  }
+  return { perQuarter, close, crowded, pass: close === 0 };
 }
 
 export interface RunRow {
@@ -121,6 +220,10 @@ export interface PacingReport {
   contracts: { runs: number } & ContractTally;
   runs: RunRow[];
   reveals: Reveal[];
+  /** Explainers as each first opens (R1 §1): systems, never I6's reveals. */
+  explainers: Reveal[];
+  /** Wall seconds of the results screen the Gatekeeper first fell before, or null. */
+  gateFall: number | null;
   firstWave20: number | null;
   /** Wall seconds when each boss first fell, by id. */
   bossKills: Record<string, number>;
@@ -128,7 +231,7 @@ export interface PacingReport {
   firstEvolution: number | null;
   /** The longest gap between reveals inside I6's window, and where it starts. */
   worstGap: { seconds: number; from: number };
-  /** The same from 2 h to 10 h (or the report's end), I6's later clause (S6). */
+  /** The same from 2 h to the Blight's first fall (or the report's end, 10 h at most), I6's later clause (S6, R2 §5). */
   worstLateGap: { seconds: number; from: number };
   /** The longest gap between reveals from the Hollow King's first fall to the Blight's (Q3's gate); null if either never fell. */
   stretchGap: { seconds: number; from: number } | null;
@@ -146,13 +249,22 @@ export interface PacingReport {
   i1b: boolean;
   i3: boolean;
   i6: boolean;
-  /** I6's later clause: no gap over 30 min from 2 h to 10 h. True when the report never got past 2 h. */
+  /** I6's later clause: no gap over 30 min from 2 h to the Blight. True when the report never got past 2 h. */
   i6late: boolean;
   wave20: boolean;
 }
 
+/**
+ * I6's later window (R2 §5): from 2 h to the Blight's first fall, or to the
+ * report's end (ten hours at most) if it never fell; null before 2 h.
+ */
+export function lateWindow(end: number, blight: number | null): { from: number; to: number } | null {
+  const to = Math.min(blight ?? end, end, I6_LATE.to);
+  return to > I6_LATE.from ? { from: I6_LATE.from, to } : null;
+}
+
 /** The longest gap between reveals in [from, to], and where it starts. */
-function worstGapIn(reveals: readonly Reveal[], from: number, to: number): { seconds: number; from: number } {
+export function worstGapIn(reveals: readonly Reveal[], from: number, to: number): { seconds: number; from: number } {
   let worst = { seconds: 0, from };
   let prev = from;
   for (const r of [...reveals.filter((x) => x.at > from && x.at <= to), { at: to, what: 'end' }]) {
@@ -174,6 +286,9 @@ export function runPacing(hours: number, seed: number): PacingReport {
   const seeds = new Rng(seed);
   const end = hours * 3600;
   const reveals: Reveal[] = [];
+  const explainers: Reveal[] = [];
+  const explained = new Set<ExplainerId>();
+  let gateFall: number | null = null;
   const runs: RunRow[] = [];
   const reached = new Set<number>();
   const branches = new Set<BranchId>();
@@ -185,6 +300,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
   const seenAuras = new Set<string>();
   const metRifts = new Set<string>();
   let tabs = hubUnlocks(profile);
+  let anomalySeen = false;
   let i3 = true;
   const checkpoints: PacingReport['checkpoints'] = [];
   const trials: Record<string, number> = {};
@@ -205,6 +321,14 @@ export function runPacing(hours: number, seed: number): PacingReport {
       }
     }
   };
+  /** The hub's explainers that have opened (R1 §1); the mid-run ones are logged on their events. */
+  const logExplainers = (): void => {
+    for (const e of EXPLAINERS) {
+      if (e.view === 'run' || explained.has(e.id) || !explainerOpen(profile, e.id)) continue;
+      explained.add(e.id);
+      explainers.push({ at: clock, what: `explainer: ${e.title}`, system: EXPLAINER_SYSTEMS[e.id] ?? e.id });
+    }
+  };
   revealBranches(false);
 
   while (clock < end) {
@@ -216,11 +340,19 @@ export function runPacing(hours: number, seed: number): PacingReport {
       speed,
       holdUlt: holdsUlt(taken?.card),
       onDraft: (fresh, first, wall) => {
-        if (first) reveals.push({ at: start + wall, what: 'the draft' });
+        if (first) reveals.push({ at: start + wall, what: 'the draft', system: 'draft' });
         for (const key of fresh) reveals.push({ at: start + wall, what: `card: ${key}` });
       },
       onEvent: (ev, wall) => {
         const at = start + wall;
+        // R2 §1: a Trial's win and an overtime trophy are told in the run, as they happen.
+        if (ev.kind === 'bossKill' && run.trial) {
+          const prize = trialPrize(profile, run.trial);
+          if (prize) reveals.push({ at, what: `trial won: ${TRIAL_BY_ID[prize.id].name} · ${prize.line}` });
+        } else if (ev.kind === 'waveStart') {
+          const t = trophyAt(profile, run, ev.wave);
+          if (t) reveals.push({ at, what: `trophy: Region ${run.regionId} +${t.overtime}` });
+        }
         if (ev.kind === 'firstSight' && !profile.seenEnemies.includes(ev.enemy)) {
           reveals.push({ at, what: `enemy: ${ENEMY_BY_ID[ev.enemy].name}` });
         } else if (ev.kind === 'waveStart' && MILESTONE_WAVES.includes(ev.wave) && !reached.has(ev.wave)) {
@@ -235,19 +367,29 @@ export function runPacing(hours: number, seed: number): PacingReport {
           reveals.push({ at, what: `boss: ${BOSS_BY_ID[ev.boss].name} falls` });
         } else if (ev.kind === 'eliteSpawn' && ev.champion && !seenAuras.has(`champion@${run.regionId}`)) {
           // A region's first Champion (N4) is its own reveal.
+          // The first ever is a system too: its card holds the arena (R1 §4).
+          const first = ![...seenAuras].some((k) => k.startsWith('champion@'));
           seenAuras.add(`champion@${run.regionId}`);
-          reveals.push({ at, what: `champion: Region ${run.regionId}` });
+          reveals.push({ at, what: `champion: Region ${run.regionId}`, ...(first ? { system: 'champion' } : {}) });
         } else if (ev.kind === 'eliteSpawn' && !seenAuras.has(ev.aura ?? 'plain')) {
           // Each aura is a new enemy to read (§7.2), the plain elite included.
+          // The first aura is a system (its card, R1 §4); each after it is content.
+          const first = ev.aura !== null && [...seenAuras].every((k) => k === 'plain' || k.startsWith('champion@'));
           seenAuras.add(ev.aura ?? 'plain');
-          reveals.push({ at, what: `elite: ${ev.aura ?? 'plain'}` });
+          reveals.push({ at, what: `elite: ${ev.aura ?? 'plain'}`, ...(first ? { system: 'aura' } : {}) });
         } else if (ev.kind === 'evolve' && !profile.recipes.found.includes(ev.evolution)) {
           firstEvolution ??= at;
           reveals.push({ at, what: `evolution: ${EVOLUTION_BY_ID[ev.evolution].name}` });
         } else if ((ev.kind === 'riftAppear' || ev.kind === 'riftTaken') && !(ev.id in profile.rifts) && !metRifts.has(ev.id)) {
           // Each rift's first meeting is a journal entry (plans/late-game/02 §8: the reveal gap after hour 2).
+          // The first rift is a system (its card, R1 §4); each kind after it is content.
+          const first = metRifts.size === 0 && Object.keys(profile.rifts).length === 0;
           metRifts.add(ev.id);
-          reveals.push({ at, what: `rift: ${RIFT_BY_ID[ev.id].name}` });
+          reveals.push({ at, what: `rift: ${RIFT_BY_ID[ev.id].name}`, ...(first ? { system: 'tear' } : {}) });
+        } else if (ev.kind === 'anomalyOffer' && !anomalySeen) {
+          // The first anomaly in a hand teaches its rule in the draft's own line: a system, not I6's reveal.
+          anomalySeen = true;
+          explainers.push({ at, what: 'anomaly in the draft', system: 'anomalies' });
         } else if (ev.kind === 'relicDrop' && !(profile.relics[ev.relic] > 0)) {
           reveals.push({ at, what: `relic: ${RELIC_BY_ID[ev.relic].name}` });
         }
@@ -256,11 +398,14 @@ export function runPacing(hours: number, seed: number): PacingReport {
     const wall = played.wall;
     clock = start + wall;
     const summary = bankRun(profile, run, played.newCards, speed);
-    if (runs.length === 0) reveals.push({ at: clock, what: 'results and the Forge' });
+    if (runs.length === 0) reveals.push({ at: clock, what: 'results and the Forge', system: 'forge' });
+    if (summary.boss?.first && summary.boss.id === 'gatekeeper') gateFall = clock;
     const progress = summary.next?.progress ?? 1;
     if (progress < 0.5) i3 = false;
-    for (const u of summary.unlocks) reveals.push({ at: clock, what: `unlock: ${u}` });
-    for (const t of summary.trophies) reveals.push({ at: clock, what: `trophy: Region ${summary.regionId} +${t.overtime}` });
+    for (const u of summary.unlocks) {
+      const system = unlockSystem(u);
+      reveals.push({ at: clock, what: `unlock: ${u}`, ...(system ? { system } : {}) });
+    }
     if (taken) {
       tallyContract(contracts, taken.tier, summary);
       // A card done is a reveal (plans/late-game/10 §9, I6), and so is a milestone.
@@ -268,13 +413,11 @@ export function runPacing(hours: number, seed: number): PacingReport {
       if (summary.contract?.milestone) reveals.push({ at: clock, what: `contract milestone: ${summary.contract.milestone}` });
       taken = null;
     }
-    if (summary.trial?.paid) {
-      trials[summary.trial.id] = clock;
-      reveals.push({ at: clock, what: `trial: ${TRIAL_BY_ID[summary.trial.id].name} · ${summary.trial.paid.line}` });
-    }
+    // Its reveal was the boss's fall, in the run (R2 §1).
+    if (summary.trial?.paid) trials[summary.trial.id] = clock;
     const now = hubUnlocks(profile);
     for (const k of ['map', 'collection', 'feats'] as const) {
-      if (now[k] && !tabs[k]) reveals.push({ at: clock, what: `tab: ${k}` });
+      if (now[k] && !tabs[k]) reveals.push({ at: clock, what: `tab: ${k}`, system: k });
     }
     tabs = now;
     // The active player claims what waits in Feats, and pushes the frontier.
@@ -295,9 +438,13 @@ export function runPacing(hours: number, seed: number): PacingReport {
     const bought = shop(profile);
     for (const id of bought) {
       const n = FORGE_BY_ID[id];
-      if (n.type !== 'minor' && levelOf(profile, id) === 1) reveals.push({ at: clock, what: `notable: ${n.name}` });
+      if (n.type !== 'minor' && levelOf(profile, id) === 1) {
+        const system = notableSystem(id);
+        reveals.push({ at: clock, what: `notable: ${n.name}`, ...(system ? { system } : {}) });
+      }
     }
     revealBranches(true);
+    logExplainers();
     if (clock >= CHECKPOINT_REGION_1) checkpoint('region-1');
     if (clock >= CHECKPOINT_REGION_2 && profile.region === 2) checkpoint('region-2');
     if (summary.boss?.first) checkpoint(summary.boss.id);
@@ -319,10 +466,10 @@ export function runPacing(hours: number, seed: number): PacingReport {
 
   reveals.sort((a, b) => a.at - b.at);
   const worstGap = worstGapIn(reveals, 0, Math.min(clock, I6_WINDOW));
-  const lateEnd = Math.min(clock, I6_LATE.to);
-  const worstLateGap = lateEnd > I6_LATE.from ? worstGapIn(reveals, I6_LATE.from, lateEnd) : { seconds: 0, from: I6_LATE.from };
   const boss1 = bossKills.gatekeeper ?? null;
   const finale = bossKills[FINALE] ?? null;
+  const late = lateWindow(clock, finale);
+  const worstLateGap = late ? worstGapIn(reveals, late.from, late.to) : { seconds: 0, from: I6_LATE.from };
   const king = bossKills['hollow-king'] ?? null;
   const stretchGap = king !== null && finale !== null ? worstGapIn(reveals, king, finale) : null;
   return {
@@ -330,6 +477,8 @@ export function runPacing(hours: number, seed: number): PacingReport {
     contracts,
     runs,
     reveals,
+    explainers,
+    gateFall,
     firstWave20,
     bossKills,
     firstEvolution,
@@ -714,10 +863,15 @@ async function main(): Promise<void> {
     const w20 = reports.map((r) => (r.firstWave20 === null ? 'never' : formatDuration(r.firstWave20)));
     const median = medianWave20(reports);
     console.log(`pacing · ${hours} h · ${seeds} profiles`);
-    console.log(`  I3 passes ${count((r) => r.i3)} · I6 passes ${count((r) => r.i6)}`);
-    console.log(`  worst reveal gaps: ${reports.map((r) => formatDuration(r.worstGap.seconds)).join(' ')} · median ${formatDuration(medianWorstGap(reports))} (CI's I6 reading, ≤ 10:00)`);
+    const gate = (f: (r: PacingReport) => boolean): string => (reports.filter(f).length >= Math.ceil(seeds * I6_GATE_SHARE) ? 'PASS' : 'FAIL');
+    const want = `want ≥ ${Math.ceil(seeds * I6_GATE_SHARE)}/${seeds}`;
+    console.log(`  I3 passes ${count((r) => r.i3)}`);
+    console.log(`  ${gate((r) => r.i6)}  I6  no gap over 10:00 in the first 2 h: ${count((r) => r.i6)} (${want}) · worst: ${reports.map((r) => formatDuration(r.worstGap.seconds)).join(' ')} · median ${formatDuration(medianWorstGap(reports))} (CI's reading)`);
     if (hours > 2) {
-      console.log(`  I6 (2–10 h, ≤ 30:00) passes ${count((r) => r.i6late)} · worst: ${reports.map((r) => formatDuration(r.worstLateGap.seconds)).join(' ')}`);
+      // R2 §5: a gate from 2 h to the Blight, with the Contract board on (the bot takes cards once it opens).
+      const short = reports.filter((r) => r.bossKills[FINALE] === undefined).length;
+      const note = short > 0 ? ` · ${short} never saw the Blight, read to the report's end` : '';
+      console.log(`  ${gate((r) => r.i6late)}  I6  no gap over 30:00 from 2 h to the Blight: ${count((r) => r.i6late)} (${want}) · worst: ${reports.map((r) => `${formatDuration(r.worstLateGap.seconds)}@${formatDuration(r.worstLateGap.from)}`).join(' ')}${note}`);
       const st = reports.map((r) => (r.stretchGap ? formatDuration(r.stretchGap.seconds) : '—'));
       console.log(`  Hollow King → Blight worst gap (want ≤ 30:00): ${st.join(' ')}`);
       console.log(`  trials won: ${reports.map((r) => Object.keys(r.trials).length).join(' ')}`);
@@ -730,6 +884,13 @@ async function main(): Promise<void> {
       }, emptyContractTally());
       console.log(`  contracts (every ${CONTRACT_EVERY}th run from Forgeheart): ${reports.map((r) => r.contracts.runs).join(' ')} runs · ${successLine(all)}`);
     }
+    const paces = reports.map(systemPace);
+    const quarters = paces[0].perQuarter.map((_, q) => {
+      const xs = paces.map((p) => p.perQuarter[q]).sort((a, b) => a - b);
+      return xs[xs.length >> 1];
+    });
+    console.log(`  ${count((r) => systemPace(r).pass)} R1  ≤ 1 new system per 10 min in the first 3 h · pairs too close: ${paces.map((p) => p.close).join(' ')} · within 2 min: ${paces.map((p) => p.crowded).join(' ')}`);
+    console.log(`        new systems per 15 min (median): ${quarters.join(' ')}`);
     console.log(`  first wave 20: ${w20.join(' ')}`);
     console.log(`  ${median !== null && median >= 900 && median <= 1800 ? 'PASS' : 'FAIL'}  P3  median first wave 20 ${median === null ? 'never' : formatDuration(median)} (want 15:00–30:00)`);
     const fmt = (t: number | null): string => (t === null ? 'never' : formatDuration(t));
@@ -766,21 +927,31 @@ async function main(): Promise<void> {
   }
   console.log('\nreveals:');
   for (const v of r.reveals) console.log(`  ${pad(formatDuration(v.at), 7)}  ${v.what}`);
+  console.log('\nsystems (R1):');
+  for (const v of systemsOf(r)) console.log(`  ${pad(formatDuration(v.at), 7)}  ${pad(v.system!, 12)}  ${v.what}`);
+  const pace = systemPace(r);
+  console.log(`  per 15 min, first 3 h: ${pace.perQuarter.join(' ')}`);
   console.log('\nverdicts:');
   const mark = (ok: boolean): string => (ok ? 'PASS' : 'FAIL');
   console.log(`  ${mark(r.i3)}  I3  every results screen shows a node at ≥ 50%`);
   console.log(`  ${mark(r.i6)}  I6  longest gap between reveals ${formatDuration(r.worstGap.seconds)} (from ${formatDuration(r.worstGap.from)}; max 10:00)`);
   if (hours > 2) {
-    console.log(`  ${mark(r.i6late)}  I6  from 2 h: longest gap ${formatDuration(r.worstLateGap.seconds)} (from ${formatDuration(r.worstLateGap.from)}; max 30:00)`);
+    console.log(`  ${mark(r.i6late)}  I6  from 2 h to the Blight: longest gap ${formatDuration(r.worstLateGap.seconds)} (from ${formatDuration(r.worstLateGap.from)}; max 30:00)`);
     if (r.stretchGap) console.log(`        Hollow King → Blight: longest gap ${formatDuration(r.stretchGap.seconds)} (from ${formatDuration(r.stretchGap.from)})`);
   }
+  console.log(`  ${mark(pace.pass)}  R1  ≤ 1 new system per 10 min in the first 3 h (${pace.close} pairs closer, ${pace.crowded} within 2 min; the Gatekeeper's fall may open two)`);
   console.log(`  ${mark(r.wave20)}  P3  wave 20 first reached at ${r.firstWave20 === null ? 'never' : formatDuration(r.firstWave20)} (want 15:00–30:00)`);
   const g = r.bossKills.gatekeeper;
   console.log(`  ${mark(r.i1a)}  I1a the Gatekeeper first falls at ${g === undefined ? 'never' : formatDuration(g)} (want 20:00–40:00)`);
   const f = r.bossKills[FINALE];
   console.log(`  ${mark(r.i1b)}  I1b ${BOSS_BY_ID[FINALE].name} first falls at ${f === undefined ? 'never' : formatDuration(f)} (want 7:00:00–12:00:00)`);
   if (csv) {
-    writeFileSync(csv, ['seconds,reveal', ...r.reveals.map((v) => `${v.at.toFixed(1)},"${v.what}"`)].join('\n') + '\n');
+    // `kind` (R1 §1): content or system; explainer opens are listed too, as `explainer` (not I6's reveals).
+    const rows = [
+      ...r.reveals.map((v) => ({ ...v, kind: v.system ? 'system' : 'content' })),
+      ...r.explainers.map((v) => ({ ...v, kind: 'explainer' })),
+    ].sort((a, b) => a.at - b.at);
+    writeFileSync(csv, ['seconds,kind,system,reveal', ...rows.map((v) => `${v.at.toFixed(1)},${v.kind},${v.system ?? ''},"${v.what}"`)].join('\n') + '\n');
     console.log(`\nreveal timeline written to ${csv}`);
   }
 }

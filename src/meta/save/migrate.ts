@@ -110,6 +110,16 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   23: (raw) => ({ ...raw, version: 24, contracts: { ...(raw.contracts as object), back: null } }),
   // v25: the Daily Omen (plans/late-game/11): not yet opened, nothing played.
   24: (raw) => ({ ...raw, version: 25, omen: { since: 0, days: {}, played: 0, best: 0, pending: null } }),
+  // v26 (R1): the draft timer setting, and runs per region. A region an old
+  // save has a record for counts as played twice, so nothing it had open
+  // (Feats, Trials: R1 §2) closes on the upgrade.
+  25: (raw) => ({
+    ...raw,
+    version: 26,
+    settings: { draftTimer: 'on', ...(raw.settings as object) },
+    regions: Object.fromEntries(Object.entries((raw.regions ?? {}) as Record<string, object>)
+      .map(([k, r]) => [k, { runs: 2, ...r }])),
+  }),
 };
 
 export class MigrationError extends Error {}

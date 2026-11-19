@@ -1,5 +1,7 @@
-import type { MotionSetting, Profile } from '../meta/profile';
+import type { DraftTimer, MotionSetting, Profile } from '../meta/profile';
 import { TEXT_SCALES } from '../meta/profile';
+import { LONG_DRAFT_SECONDS } from '../meta/automation';
+import { BALANCE } from '../content/balance';
 import type { QualityTier } from '../render/quality';
 import type { CanvasMode } from '../render/canvasMode';
 import { formatNumber } from '../core/format';
@@ -50,6 +52,19 @@ const CANVAS_CHOICES: readonly Choice<CanvasMode>[] = [
   { value: 'gpu', label: 'GPU' },
   { value: 'cpu', label: 'CPU' },
 ];
+/** The draft's clock (R1 §5). */
+const DRAFT_TIMER_CHOICES: readonly Choice<DraftTimer>[] = [
+  { value: 'on', label: 'On' },
+  { value: 'long', label: 'Long' },
+  { value: 'off', label: 'Off' },
+];
+
+const DRAFT_TIMER_NOTE: Readonly<Record<DraftTimer, string>> = {
+  on: `The suggested card is taken after ${BALANCE.draft.seconds} seconds (fewer with the Tactician).`,
+  long: `The suggested card is taken after ${LONG_DRAFT_SECONDS} seconds.`,
+  off: `The arena waits for your pick. Once you own the Tactician, it picks after ${LONG_DRAFT_SECONDS} seconds.`,
+};
+
 const MOTION_CHOICES: readonly Choice<MotionSetting>[] = [
   { value: 'system', label: 'Device' },
   { value: 'reduce', label: 'Reduced' },
@@ -194,6 +209,10 @@ export class SettingsPanel {
         row('Text size', segmented(TEXT_SCALES.map((k) => ({ value: k, label: `${Math.round(k * 100)}%` })), s.textScale,
           (v) => set((x) => { x.textScale = v; }), 'Text size')),
         row('Colours', segmented(PALETTE_CHOICES, s.palette, (v) => set((x) => { x.palette = v; }), 'Weapon colours')),
+      ),
+      section('Gameplay',
+        row('Draft timer', segmented(DRAFT_TIMER_CHOICES, s.draftTimer, (v) => set((x) => { x.draftTimer = v; }), 'Draft timer')),
+        note(DRAFT_TIMER_NOTE[s.draftTimer]),
       ),
       section('Motion',
         row('Screen shake', segmented(ON_OFF, s.shake, (v) => set((x) => { x.shake = v; }), 'Screen shake')),

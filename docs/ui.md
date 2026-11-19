@@ -36,7 +36,11 @@ portrait arena is centred.
   *Banish · n* beside Reroll arms the panel: the cards it may strike (new
   items) wear a scarlet ✕ and the rest dim; the next tap on one strikes
   it, any other tap disarms.
-- **Results** (`results.ts`, §4.6): wave reached, shards and where they came
+- **Results** (`results.ts`, §4.6): wave reached; on a run short of the
+  region's best, a gold line under the headline with what did move
+  (R2 §4, `plateauLine`): the wave against the median of the last 3–5
+  ordinary runs there (`regions[i].recent`), and the Forge's next node
+  before → after; shards and where they came
   from, records broken (the region's own wave record, told as overtime
   past the boss), discoveries, what opened up (feat chips only once the
   Feats tab is open), trophies (N4), what the Foreman bought (N7), a

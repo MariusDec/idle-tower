@@ -11,6 +11,12 @@ import type { RiftDef, RiftId, RiftRarity } from './types';
  * 10%, a legendary about 20% or a run-changing swing. Wagers pay about 1.5×
  * that when they come off.
  *
+ * Each region from the Mire on holds one rift back (`where.held`, R2 §2–3):
+ * its beat, placed on the region's run number `held`, where a plateau has
+ * shown every wave it has. They are rares, an offer worth stopping for, and
+ * their whispers belong to the region. After the first meeting they roll
+ * like the rest.
+ *
  * Batch 2 (Act 2, the Abyss, plans 03/05/08: Far Glimpse, Hollow Echo,
  * Star-Tear, Deep Current, Cursed Gift, Whisper) waits for the systems it
  * hooks into.
@@ -176,6 +182,47 @@ export const RIFTS: readonly RiftDef[] = [
         { kind: 'stat', mod: { key: 'regen', mult: 0 }, span: 'run' },
         { kind: 'stat', mod: { key: 'maxHp', mult: 2 }, span: 'boss' },
       ],
+    }],
+  },
+  // ── The regions' held beats (R2 §2–3) ───────────────────────────────────
+  {
+    id: 'sunken-shrine', name: 'Sunken Shrine', icon: 'well', rarity: 'rare', text: 'A shrine the mire took back.',
+    where: { regions: [2], held: 11 },
+    choices: [
+      { text: 'Pray: your weakest weapon gains a level, and you mend 30%.', effects: [{ kind: 'levels', target: 'weakest', delta: 1 }, { kind: 'heal', fraction: 0.3 }] },
+      { text: 'Take the offering: five waves’ pay in shards.', effects: [{ kind: 'shards', waves: 5 }] },
+    ],
+  },
+  {
+    id: 'glass-oracle', name: 'Glass Oracle', icon: 'floating-crystal', rarity: 'rare', text: 'It shows you the wave after next.',
+    where: { regions: [3], held: 3 },
+    choices: [{
+      text: 'Look: the next wave comes half again as thick. Bank two level-ups.',
+      effects: [{ kind: 'horde', count: 1.5, waves: 1 }, { kind: 'draft', n: 2 }],
+    }],
+  },
+  {
+    id: 'ashen-anvil', name: 'Ashen Anvil', icon: 'hammer-nails', rarity: 'rare', text: 'Still hot from someone else’s work.',
+    where: { regions: [4], held: 12 },
+    choices: [{
+      text: 'Strike: your strongest weapon gains a level. Max HP −15% for the run.',
+      effects: [{ kind: 'stat', mod: { key: 'maxHp', mult: 0.85 }, span: 'run' }, { kind: 'levels', target: 'strongest', delta: 1 }],
+    }],
+  },
+  {
+    id: 'hollow-choir', name: 'Hollow Choir', icon: 'prayer', rarity: 'rare', text: 'Voices, singing your tower’s name.',
+    where: { regions: [5], held: 8 },
+    choices: [
+      { text: 'Join in: the ultimate fills now, and charges 30% faster this run.', effects: [{ kind: 'ult', charge: 1 }, { kind: 'stat', mod: { key: 'ultCharge', mult: 1.3 }, span: 'run' }] },
+      { text: 'Silence them: elites pay triple for three waves.', effects: [{ kind: 'bounty', mult: 3, span: { waves: 3 }, on: 'elites' }] },
+    ],
+  },
+  {
+    id: 'last-lantern', name: 'The Last Lantern', icon: 'sunbeams', rarity: 'rare', text: 'Someone held the line here once.',
+    where: { regions: [6], held: 9 },
+    choices: [{
+      text: 'Take up their lantern: range and damage +15% until the boss falls.',
+      effects: [{ kind: 'stat', mod: { key: 'range', mult: 1.15 }, span: 'boss' }, { kind: 'stat', mod: { key: 'damage', mult: 1.15 }, span: 'boss' }],
     }],
   },
 ];
