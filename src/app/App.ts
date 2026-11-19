@@ -18,7 +18,7 @@ import { chooseWaypoint, cursedSlots, frameUnlocked, frontier, regionUnlocked, s
 import { cursedCard } from '../ui/cursed';
 import { curseLine } from '../content/cursed';
 import { claimAll, claimFeat } from '../meta/feats';
-import { offlineEarnings, offlineTier, storedRates } from '../meta/offline';
+import { farmRate, offlineEarnings, offlineTier, paidTier, storedRates } from '../meta/offline';
 import { emptyTally, storedWant, tallyWave, waveEngaged, type BurnTally } from '../meta/storedLight';
 import { setPactRank } from '../meta/pacts';
 import { chooseTrial, toggleTrim, trialPrize, wornTrims } from '../meta/trials';
@@ -59,6 +59,7 @@ import { explainerBody } from '../ui/explainer';
 import { EXPLAINER_BY_ID, type ExplainerId } from '../content/explainers';
 import { ResultsScreen } from '../ui/results';
 import { Toasts } from '../ui/toast';
+import { awayText, welcomeBody, welcomeCard } from '../ui/welcome';
 import { bindNativeLifecycle } from '../platform/native';
 import { ScreenAwake } from '../platform/awake';
 import { Loop, SIM_DT } from './loop';
@@ -148,6 +149,8 @@ export class App {
   private poolAtStart = 0;
   /** The pool ran dry this run: its toast has been told. */
   private poolDry = false;
+  /** The Stored Light chip has shown the played rate this run: a dim after it is a flip the player can see (R8 §3). */
+  private storedLit = false;
   /** The run just banked was a Daily Omen: Done goes back to its view (plans/late-game/11 §2). */
   private fromOmen = false;
 
@@ -405,22 +408,23 @@ export class App {
     void this.save();
     this.hub.update();
     const fresh = FORGE.filter((n) => canAfford(this.profile, n.id) && !before.has(n.id)).map((n) => n.name);
-    const hours = Math.floor(earned.away / 3600);
-    const mins = Math.floor((earned.away % 3600) / 60);
-    const gone = hours > 0 ? `${hours} h ${mins} min` : `${mins} min`;
-    const rates = storedRates(this.profile);
-    const stored = earned.stored > 0 && rates
-      ? `, and stored ${formatNumber(earned.stored)} as Stored Light. Play to spend it: ×${rates.engaged} while you play, ×${rates.handsOff} left alone.`
-      : '.';
-    const holds = this.foremanHeld();
-    // The cap note names the longest part that applies: from Night Watch III, the store's.
-    const tier = offlineTier(this.profile);
-    const capHours = tier?.stored?.capHours ?? tier?.capHours ?? 0;
-    const body = `You were away ${gone}. The tower gathered ${formatNumber(earned.shards)} shards${stored}`
-      + (earned.away > capHours * 3600 ? ` (Night Watch holds ${capHours} hours at most.)` : '')
-      + (bought.length > 0 ? ` The Foreman bought ${foremanLine(bought)}.` : '')
-      + (holds !== null ? ` The Foreman's next pin needs ${formatNumber(holds)}: Stored Light holds it.` : '')
-      + (fresh.length > 0 ? ` Now affordable: ${fresh.slice(0, 4).join(', ')}.` : '');
+    const gone = awayText(earned.away);
+    // The cap note names the longest part that applies: from Night Watch III, the store's; before any, Night Watch 0's.
+    const tier = paidTier(this.profile);
+    const card = welcomeCard({
+      away: earned.away,
+      shards: earned.shards,
+      stored: earned.stored,
+      pool: this.profile.storedLight,
+      farm: farmRate(this.profile),
+      rates: storedRates(this.profile),
+      capHours: tier.stored?.capHours ?? tier.capHours,
+      nightWatch: offlineTier(this.profile) !== null,
+      bought: foremanLine(bought),
+      boughtCount: bought.length,
+      held: this.foremanHeld(),
+      fresh,
+    });
     if (this.screen === 'run') {
       // Mid-run the pause menu (or the Settings over it) stays where it is:
       // the welcome is a toast on top, and only the pause menu resumes (B4).
@@ -437,7 +441,7 @@ export class App {
     }
     // A night stored: the way to spend it is a run at the frontier.
     if (play) buttons.push({ label: 'Play', primary: true, onClick: () => this.playFrontier() });
-    this.modal.show('Welcome back', body, buttons);
+    this.modal.show('Welcome back', welcomeBody(card), buttons);
   }
 
   /**
@@ -576,6 +580,7 @@ export class App {
     // An Omen banks no shards (§4.8): Stored Light has nothing to match, so its gauge stays down.
     this.poolAtStart = this.run.omen ? 0 : this.profile.storedLight;
     this.poolDry = false;
+    this.storedLit = false;
     this.draft.hide();
     this.riftPanel.hide();
     this.loop.resetClock();
@@ -880,6 +885,14 @@ export class App {
     tallyWave(tally, run.shards - this.waveShards, played);
     const left = Math.max(0, this.profile.storedLight - storedWant(this.profile, tally));
     this.hud.setStored(left / this.poolAtStart, played ? rates.engaged : rates.handsOff, left, played);
+    // R8 §3: the first time the chip dims, say why, once per profile.
+    if (played) this.storedLit = true;
+    else if (this.storedLit && left > 0 && !this.profile.tutorial.storedDim) {
+      this.profile.tutorial.storedDim = true;
+      void this.save();
+      this.toasts.show('io-diamond', `Stored Light ×${rates.handsOff}`,
+        `Left alone, it pays ×${rates.handsOff}. A touch in the last ${BALANCE.offline.engagedSeconds} s plays at ×${rates.engaged}.`);
+    }
     if (left <= 0 && !this.poolDry) {
       this.poolDry = true;
       this.toasts.show('io-diamond', 'Stored Light spent', 'The rest of the run earns its own shards.');

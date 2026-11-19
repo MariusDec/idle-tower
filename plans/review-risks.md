@@ -606,6 +606,44 @@ font scale, a tablet and a foldable emulator) still need Android.**
 went, and what "×5 while you play" asks of them? Idle readings (I2, I5,
 I7–I9) unchanged.
 
+**Status (2026-11-19): §1–§3 built; the playtest question waits for #3.**
+
+- §1: **Night Watch 0**, 10% for 1 h, built in (`BALANCE.offline.base`,
+  `meta/offline.ts#paidTier`). `offlineTier` stays "owned only", so
+  Stored Light and the Forge read as before. Nothing is paid before the
+  first counted run (no farm rate). Before any Night Watch, the
+  welcome-back ends "Night Watch (in the Forge) makes this bigger."
+- §2: `ui/welcome.ts`. The headline is the shards gathered, with the time
+  away and, when it bit, the cap under it. Then one line each, an empty one
+  left out: *Stored Light* (+N, "Next ~25 min of play: ×5. Left alone:
+  ×2.", from the whole pool against the farm rate), *Foreman* (what it
+  bought, and a pin Stored Light holds) and *Now affordable* (four names
+  and "and N more"). *Gathered* is the headline, not a line. Mid-run it is
+  still the one-line toast. Checked in the browser pane at 360×640, 130%
+  text: no clipping, no scroll.
+- §3: **already built** by the late-game plan: the HUD's Stored Light chip
+  reads ×5 lit or ×2 dimmed as `waveEngaged` changes. What was missing was
+  the why, so the first time the chip dims after being lit, a toast says
+  it once per profile ("Left alone, it pays ×2. A touch in the last 30 s
+  plays at ×5."). `tutorial.storedDim` is optional, so no save rung.
+
+Reading (`npm run pacing -- --idle --hours 12 --seeds 4`, before → after):
+
+| | before | after |
+|---|---|---|
+| I2 | 6.5 d (6.5 5.5 7.0 6.0) PASS | **6.0 d** (5.0 5.5 6.0 6.0) PASS |
+| I7 | 0.52 PASS | 0.55 PASS |
+| I8 | every seed in 5–10 d, median 6.5 | every seed in 5–10 d, median 6.0 (the target's floor) |
+| I9 | PASS | PASS |
+| I5 | PASS at every gated checkpoint | unchanged (the farm comparison never goes offline) |
+
+**The premise "must not move I2/I8" did not hold.** The Gatekeeper falls a
+check-in earlier on seeds 1 and 3 (1.5 → 1.0 d), and seed 1's Act 1 is
+5.0 d, on I8's floor. Both gates pass, but with no margin on that seed. If
+it needs margin back: 5% for 1 h, or stop Night Watch 0 once the
+Gatekeeper falls (the first session is what it's for). Final Form's
+hands-off reach failed (0% in R5) before and after; not R8's.
+
 ### R9. "Lost everything when I changed phones" (medium) — new
 
 **What the repo shows.** There's no account and no network, so the

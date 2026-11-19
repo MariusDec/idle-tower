@@ -161,7 +161,12 @@ describe('offline (§6.3)', () => {
     for (const s of [100, 300, 200, 50, 400, 250]) recordFarm(p, s, 60);
     expect(p.farm).toHaveLength(BALANCE.offline.runs);
     expect(farmRate(p)).toBe(250);
-    expect(offlineEarnings(p, 3600)).toBeNull();
+    // Night Watch 0 (R8 §1): built in, before any tier is owned.
+    const base = BALANCE.offline.base;
+    expect(offlineEarnings(p, 3600)!.shards).toBe(Math.floor(250 * 60 * base.efficiency));
+    expect(offlineEarnings(p, 24 * 3600)!.paid).toBe(base.capHours * 3600);
+    expect(offlineEarnings(p, 24 * 3600)!.stored).toBe(0);
+    expect(offlineEarnings(newProfile(0), 3600)).toBeNull(); // no run yet: no farm rate
     p.forge.offline = 1;
     const tier = BALANCE.offline.tiers[0];
     expect(offlineEarnings(p, 3600)!.shards).toBe(Math.floor(250 * 60 * tier.efficiency));

@@ -185,6 +185,8 @@ export interface Profile {
     firstRift: boolean;
     /** A reliquary has been claimed (plans/late-game/03 §2): the next one's window is no longer the lesson's. */
     firstReliquary: boolean;
+    /** The HUD's Stored Light chip has dimmed once and said why (R8 §3). Optional: no save rung. */
+    storedDim?: boolean;
   };
   settings: {
     /** Sim speed multiplier, 1–3 (§12.3). */

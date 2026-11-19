@@ -646,3 +646,21 @@ and an overtime trophy are told in the run. I6's later clause reads from
 
 CI's I6 gates every profile again. The idle report was not re-read.
 
+
+## R8: Night Watch 0 (2026-11-19)
+
+`plans/review-risks.md` R8 §1: offline pays 10% for 1 h before any Night
+Watch (`BALANCE.offline.base`). `npm run pacing -- --idle --hours 12
+--seeds 4`, before → after (this reading is also R2's missing idle
+re-read):
+
+| | before | after |
+|---|---|---|
+| I2 | 6.5 d (6.5 5.5 7.0 6.0) PASS | 6.0 d (5.0 5.5 6.0 6.0) PASS |
+| I7 | 0.52 PASS | 0.55 PASS |
+| I8 | 5.5–7.0 d, median 6.5 | 5.0–6.0 d, median 6.0 (the target's floor) |
+| I5 | 1.19–1.47 at every gated checkpoint | unchanged |
+
+The Gatekeeper falls one check-in sooner on seeds 1 and 3, and seed 1's
+Act 1 lands on I8's 5.0 d floor. Final Form's hands-off reach is 0% in R5
+in both readings.

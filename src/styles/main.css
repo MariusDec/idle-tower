@@ -2292,6 +2292,63 @@ body {
   color: var(--text-secondary);
 }
 
+/* The welcome-back card (R8 §2): a headline number, then a line per what else happened. */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+}
+
+.welcome-head {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--fx-gold);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-bold);
+}
+
+.welcome-head .icon { --icon-size: 26px; align-self: center; }
+.welcome-n { font-size: var(--fs-display); line-height: 1; font-variant-numeric: tabular-nums; }
+.welcome-unit { font-size: var(--fs-lg); color: var(--text-secondary); }
+
+.welcome-caption {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
+.welcome-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.welcome-lines > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: var(--space-3);
+}
+
+.welcome-lines dt { color: var(--text-dim); }
+.welcome-lines dd { margin: 0; }
+.welcome-value { font-weight: var(--fw-bold); color: var(--fx-gold); text-align: right; }
+.welcome-lines > .is-stored .welcome-value { color: var(--stored); }
+.welcome-note { grid-column: 1 / -1; color: var(--text-secondary); }
+
+.welcome-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
 /* The pause menu's build stats: inset rows inside the sheet. */
 .modal-card .build-stats {
   padding: var(--space-3);

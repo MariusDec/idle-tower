@@ -603,8 +603,12 @@ export const BALANCE = {
    * Light, which only runs burn, at `engaged`× a played wave's base shards
    * and `handsOff`× a wave left alone. The instant part is frozen at tier
    * II's: buying III or IV adds a store, it never shrinks the first number.
+   * `base` is Night Watch 0 (R8 §1): built in, paid before any tier is owned,
+   * so a first session closed before the Gatekeeper still comes back to
+   * something.
    */
   offline: {
+    base: { efficiency: 0.1, capHours: 1, stored: null } as OfflineTier,
     tiers: [
       { efficiency: 0.15, capHours: 2, stored: null },
       { efficiency: 0.15, capHours: 4, stored: null },

@@ -18,7 +18,7 @@ them; `automations(profile)` is their one consumer.
 | `frontier-march` | after a first boss kill, the next run moves to the new frontier | `marchOn` |
 | `auto-ult` | the Autocaster casts the ultimate on its own rule (U13, below) | `autoUlt`, `autoUltWanted` |
 | `tactician`, `tactician-2` | the player's priority and Never lists for draft picks; II keeps them per frame, and per frame in a region; the Opening takes itself (U2) | `tacticsScopes`, `priorityList`, `neverList`, `openingSeconds` |
-| `offline` … `offline-4` | Night Watch I–IV: offline earnings | `offlineTier` |
+| `offline` … `offline-4` | Night Watch I–IV: offline earnings (Night Watch 0 before them) | `offlineTier`, `paidTier` |
 | `foreman` | the Foreman's wishlist (N7, below) | `togglePin`, `foremanBuy` |
 
 Auto-restart waits while a card (welcome back) is up, and a first boss kill
@@ -74,8 +74,12 @@ off the list. Never mid-run.
 - **Farm rate.** `bankRun` records shards per minute of every run of at
   least 60 s; the farm rate is the median of the last five.
 - **Earnings.** `rate × minutes away × efficiency`, with time capped by the
-  tier: 15% for 2 h, then 15% for 4 h from Night Watch II on. Absences
-  under 60 s pay nothing. Kept low on
+  tier (`paidTier`): **Night Watch 0**, built in before any tier is owned,
+  10% for 1 h (R8 §1, `BALANCE.offline.base`), so a first session closed
+  before the Gatekeeper still comes back to something; then 15% for 2 h
+  from Night Watch I, and 15% for 4 h from II on. Absences under 60 s, and
+  any before the first counted run (no farm rate), pay nothing.
+  `offlineTier` stays *owned only*: Stored Light reads it. Kept low on
   purpose: at 60% a night away bought a late Forge ring out whole, and a
   player who sat out did as well as one who farmed. Time away tops the
   Forge up; tempering ([forge.md](forge.md)) is where farming goes.
@@ -87,7 +91,10 @@ off the list. Never mid-run.
   a played wave and ×2 / ×2.5 on one left alone (`BALANCE.offline.tiers`'
   `stored`). A wave counts as played after any trusted touch or key on the
   run screen during it or in the 30 s before it ended (`App#lastTouch`,
-  `meta/storedLight.ts#waveEngaged`); the draft timer, the Opening, the
+  `meta/storedLight.ts#waveEngaged`). The HUD's chip shows the rate live,
+  ×5 lit or ×2 dimmed, and the first time it dims after being lit a toast
+  says why, once per profile (R8 §3, `tutorial.storedDim`). The draft
+  timer, the Opening, the
   Autocaster and auto-restart never stamp it. The pool never fades and has
   no cap. Records, the farm rate and feats read base shards only, so a
   burn never raises the next night's store. The tally rides in the run
@@ -95,7 +102,12 @@ off the list. Never mid-run.
 - **Shards only.** No simulated combat, no bosses, relics or feats offline.
 - **When.** On boot and on every return from an absence (`App#absent`):
   the page shown again, the native resume, or a stalled frame. The
-  welcome-back card says what was earned and what became affordable.
+  welcome-back card (`ui/welcome.ts`, R8 §2) leads with the shards gathered
+  and how long the absence was (with the cap, when it bit), then one line
+  each, any that's empty left out: *Stored Light* (with how long the pool
+  lasts at the played rate, from the farm rate), *Foreman* (bought, and a
+  pin Stored Light holds) and *Now affordable*. Before any Night Watch it
+  ends with a pointer to Night Watch.
   Mid-run it is a toast over the pause menu (or the Settings over it), and
   only the pause menu's Resume resumes.
 
