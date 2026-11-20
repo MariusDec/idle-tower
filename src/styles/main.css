@@ -578,6 +578,11 @@ body {
   align-items: flex-end;
 }
 
+/* The bottom row's right-hand controls, grouped so a large stage can move
+   them as one (plans/large-screens.md §8.2); on a phone the group is not a
+   box and they stay items of the row. */
+.hud-actions { display: contents; }
+
 /* No panels over the battlefield (plans/visual-identity.md §6.1): text on the
    arena with a soft navy shadow. */
 .hud-level {
@@ -4200,32 +4205,98 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Large screens: `medium`, a tablet held upright (plans/large-screens.md §4.1,
-   §7.1, §8.1, §9). `<html data-form>` comes from src/app/formFactor.ts and a
-   phone is always `compact`, so nothing below can reach one. The arena spans
-   the whole stage; the HUD, the hub's views and the overlays keep to a
-   centred column of `--content-max`.
+   Large screens (plans/large-screens.md). `<html data-form>` comes from
+   src/app/formFactor.ts and a phone is always `compact`, so nothing below can
+   reach one. `medium` is a tablet held upright (§4.1, §7.1, §8.1): the arena
+   spans the whole stage and the HUD, the hub's views and the overlays keep to
+   a centred column of `--content-max`. `expanded` is landscape (§4.2, §7.2,
+   §8.2): the HUD goes to the corners in a run, and the hub docks as a panel
+   on the right with the arena in the rest.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* No letterbox: the stage is the viewport. */
 :root[data-form='medium'] { --stage-max-width: none; }
+:root[data-form='expanded'] { --stage-max-width: none; }
+
+/* The docked hub widens on a big monitor (§4.2). */
+@media (min-width: 1600px) {
+  :root[data-form='expanded'] { --hub-width: 480px; }
+}
 
 /* Read from arm's length on touch (§8.3); a mouse keeps 1. */
 @media (pointer: coarse) {
-  :root[data-form='medium'] { --form-text-scale: 1.1; }
+  :root:is([data-form='medium'], [data-form='expanded']) { --form-text-scale: 1.1; }
 }
 
-/* ── HUD (§8.1): the same rows in the column; the zoom stays on the stage's edge. */
+/* ── HUD, medium (§8.1): the same rows in the column; the zoom stays on the stage's edge. */
 :root[data-form='medium'] :is(.hud-top, .hud-bottom) {
   width: 100%;
   max-width: var(--content-max);
   margin-inline: auto;
 }
 
-/* ── Screens: the hub's views and the results in the column. The dock stays
-   full width (it is absolutely placed); the Forge's web takes the whole
-   stage, since a bigger screen should show more of it (§7.1). */
+/* ── HUD, expanded (§8.2): the long axis is horizontal, so the rim runs near
+   the left and right edges and the corners are free. One grid, the markup's
+   rows dissolved into it:
+
+     wave · HP · region · Stored    boss bar     pause, zoom below
+                 …                     …               …
+     level · build · XP                          speed … ultimate
+
+   The outer columns cap at 360 px and the middle at 520; spare width goes
+   between them, so the boss bar stays on the stage's centre line. Rows are
+   spaced by margins, not a gap, so a hidden row (Stored Light) costs nothing. */
+:root[data-form='expanded'] .hud {
+  display: grid;
+  grid-template-columns: minmax(0, 360px) minmax(0, 520px) minmax(0, 360px);
+  grid-template-rows: repeat(4, auto) 1fr repeat(3, auto);
+  justify-content: space-between;
+  column-gap: var(--space-4);
+  padding-inline: max(var(--space-4), var(--safe-l)) max(var(--space-4), var(--safe-r));
+}
+
+:root[data-form='expanded'] :is(.hud-top, .hud-bottom, .hud-head, .hud-row-bottom) { display: contents; }
+
+:root[data-form='expanded'] .hud-wave { grid-area: 1 / 1; align-self: center; }
+:root[data-form='expanded'] .hud-hp { grid-area: 2 / 1; margin-top: var(--space-2); }
+:root[data-form='expanded'] .hud-meta { grid-area: 3 / 1; margin-top: var(--space-2); }
+:root[data-form='expanded'] .hud-stored { grid-area: 4 / 1; margin-top: var(--space-2); }
+:root[data-form='expanded'] .hud-boss { grid-area: 1 / 2 / 5 / 3; align-self: start; }
+:root[data-form='expanded'] .hud-pause { grid-area: 1 / 3; justify-self: end; align-self: start; }
+:root[data-form='expanded'] .hud-level { grid-area: 6 / 1; }
+:root[data-form='expanded'] .hud-build { grid-area: 7 / 1; margin-top: var(--space-2); }
+:root[data-form='expanded'] .hud-xp { grid-area: 8 / 1; margin-top: var(--space-2); }
+
+/* Speed, the Autocaster, the reliquary, the rift and the ultimate: one row in the bottom-right corner. */
+:root[data-form='expanded'] .hud-actions {
+  grid-area: 6 / 3 / 9 / 4;
+  justify-self: end;
+  align-self: end;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+}
+:root[data-form='expanded'] .hud-toggles { margin: 0; }
+:root[data-form='expanded'] :is(.hud-reliquary, .hud-rift) { margin-right: 0; }
+
+/* The zoom column under pause, not at mid-height: the rim's ends are there. */
+:root[data-form='expanded'] .hud-zoom {
+  top: calc(max(var(--space-3), var(--safe-t)) + var(--control-h-sm) + var(--space-3));
+  right: max(var(--space-4), var(--safe-r));
+  transform: none;
+}
+
+/* ── Screens, medium: the hub's views and the results in the column. The dock
+   stays full width (it is absolutely placed); the Forge's web takes the
+   whole stage, since a bigger screen should show more of it (§7.1). */
 :root[data-form='medium'] .screen:not(.hub[data-view='forge']) {
+  padding-inline: max(var(--space-4), calc((100% - var(--content-max)) / 2));
+}
+
+/* Expanded: the results float centred over the arena, in the same column (§4.2). */
+:root[data-form='expanded'] .screen:not(.hub) {
   padding-inline: max(var(--space-4), calc((100% - var(--content-max)) / 2));
 }
 
@@ -4237,13 +4308,13 @@ body {
 :root[data-form='medium'] .hub-tab { flex: 0 1 120px; }
 
 /* The Map: regions two to a row; anything that isn't a region card spans both. */
-:root[data-form='medium'] .map-list {
+:root:is([data-form='medium'], [data-form='expanded']) .map-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: end;
 }
-:root[data-form='medium'] .map-list > :not(.map-region),
-:root[data-form='medium'] .map-list > .map-region:has(.map-shaft) {
+:root:is([data-form='medium'], [data-form='expanded']) .map-list > :not(.map-region),
+:root:is([data-form='medium'], [data-form='expanded']) .map-list > .map-region:has(.map-shaft) {
   grid-column: 1 / -1;
 }
 
@@ -4261,23 +4332,78 @@ body {
   width: 360px;
 }
 
+/* ── The hub, expanded (§7.2): a docked glass panel on the right, full
+   height, `--hub-width` wide. The arena takes the rest and the renderer
+   centres the backdrop tower there (HubScreen reports the panel's width,
+   App passes it to the camera as an inset, §6.3). Every view lives in the
+   panel; the home view's two groups stack from the top, since there is no
+   tower between them to frame. */
+:root[data-form='expanded'] .hub {
+  left: auto;
+  width: min(var(--hub-width), 50%);
+  padding-inline: max(var(--space-4), var(--safe-l)) max(var(--space-4), var(--safe-r));
+  border-left: 1px solid var(--glass-border);
+  background: var(--glass-fill-sheet-solid);
+  box-shadow: var(--glass-shadow);
+}
+
+:root[data-form='expanded'][data-quality='high'] .hub[data-view='home'] {
+  background: var(--glass-fill-sheet);
+  backdrop-filter: blur(var(--blur)) saturate(140%);
+}
+
+:root[data-form='expanded'] .hub-home {
+  gap: var(--space-5);
+  /* The gear above, the dock below. */
+  padding-block: calc(var(--control-h-sm) + var(--space-4)) var(--dock-h);
+}
+
+:root[data-form='expanded'] .hub-group {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+}
+
+:root[data-form='expanded'] .hub-group > * { width: 100%; }
+:root[data-form='expanded'] .hub-start { width: 100%; }
+
+/* The panel draws its own glass: the tab bar needs no second layer or blur. */
+:root[data-form='expanded'] .hub-tabs {
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
 /* ── Results (§7.3) */
-:root[data-form='medium'] .results-report-card {
+:root:is([data-form='medium'], [data-form='expanded']) .results-report-card {
   width: min(520px, calc(100% - var(--space-6) - var(--safe-l) - var(--safe-r)));
 }
-:root[data-form='medium'] .results-breakdown {
+:root:is([data-form='medium'], [data-form='expanded']) .results-breakdown {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: var(--space-5);
   width: min(520px, 100%);
 }
 
+/* Expanded: How it went opens as a side sheet, so the report stays in view beside it. */
+:root[data-form='expanded'] .results-report { justify-content: flex-end; }
+:root[data-form='expanded'] .results-report-card {
+  width: min(480px, 50%);
+  height: 100%;
+  max-height: none;
+  padding-top: max(var(--space-5), var(--safe-t));
+  padding-right: max(var(--space-5), var(--safe-r));
+  padding-bottom: max(var(--space-5), var(--safe-b));
+  border-block: 0;
+  border-right: 0;
+  border-radius: 0;
+}
+
 /* ── Modals and settings (§9.2) */
-:root[data-form='medium'] :is(.modal-card, .settings) {
+:root:is([data-form='medium'], [data-form='expanded']) :is(.modal-card, .settings) {
   width: min(520px, calc(100% - var(--space-6) - var(--safe-l) - var(--safe-r)));
 }
 
-/* ── Toasts (§9.3): top-centre, the column's width at most. */
+/* ── Toasts (§9.3). Medium: top-centre, the column's width at most. */
 :root[data-form='medium'] .toasts {
   left: 50%;
   right: auto;
@@ -4285,26 +4411,43 @@ body {
   transform: translateX(-50%);
 }
 
-/* ── The draft (§9.1): still anchored low for the thumbs, but cards at a set
-   width, centred, in one row of up to six when the stage has room (≈ 960 px);
-   otherwise Foresight's six keep two rows of three. */
-:root[data-form='medium'] .draft { container: draft / inline-size; }
+/* Expanded: top-right, under pause and the zoom column (three 40 px steps),
+   so they never cover the HP bar. */
+:root[data-form='expanded'] .toasts {
+  top: calc(max(var(--space-3), var(--safe-t)) + 4 * var(--control-h-sm) + 3 * var(--space-2) + var(--space-5));
+  left: auto;
+  right: max(var(--space-4), var(--safe-r));
+  width: min(360px, calc(100% - 2 * var(--space-4)));
+  align-items: flex-end;
+}
 
-:root[data-form='medium'] .draft-row,
-:root[data-form='medium'] .draft-row.is-many {
+/* ── The draft (§9.1): cards at a set width, centred, in one row of up to six
+   when the stage has room (≈ 960 px); otherwise Foresight's six keep two rows
+   of three. Anchored low on `medium` for the thumbs; centred on `expanded`
+   for the eyes, clear of the corner clusters. */
+:root:is([data-form='medium'], [data-form='expanded']) .draft { container: draft / inline-size; }
+
+:root:is([data-form='medium'], [data-form='expanded']) .draft-row,
+:root:is([data-form='medium'], [data-form='expanded']) .draft-row.is-many {
   width: auto;
   max-width: 960px;
   justify-content: center;
   grid-auto-columns: minmax(150px, 170px);
 }
 
-:root[data-form='medium'] .draft-row.is-many {
+:root:is([data-form='medium'], [data-form='expanded']) .draft-row.is-many {
   grid-template-columns: repeat(3, minmax(150px, 170px));
 }
 
 @container draft (min-width: 984px) {
-  :root[data-form='medium'] .draft-row.is-many {
+  :root:is([data-form='medium'], [data-form='expanded']) .draft-row.is-many {
     grid-auto-flow: column;
     grid-template-columns: none;
   }
+}
+
+:root[data-form='expanded'] .draft {
+  justify-content: safe center;
+  padding-bottom: max(var(--space-4), var(--safe-b));
+  background: linear-gradient(to bottom, transparent, var(--scrim) 25%, var(--scrim) 75%, transparent);
 }

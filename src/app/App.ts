@@ -214,6 +214,8 @@ export class App {
     this.renderer.camera.onFraming = (framing) => this.changeSettings((s) => { s.framing = framing; }, false);
     this.hub = new HubScreen(els.screens, {
       start: () => this.startRun(),
+      // The docked panel (plans/large-screens.md §6.3): the tower slides to the arena region it leaves.
+      cover: (px) => this.renderer.setArenaInset(px),
       buy: (id) => this.buy(id),
       refund: (id) => this.refund(id),
       pin: (id) => this.between(() => togglePin(this.profile, id)) ?? false,

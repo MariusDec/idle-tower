@@ -89,7 +89,7 @@ export class Hud {
     this.root.className = 'hud';
     this.root.innerHTML = `
       <div class="hud-top">
-        <div class="hud-row">
+        <div class="hud-row hud-head">
           <div class="hud-wave"><span class="hud-label hud-wave-label">Wave</span> <span class="hud-wave-n">1</span></div>
           <button type="button" class="hud-pause" aria-label="Pause">${iconMarkup('io-pause')}</button>
         </div>
@@ -118,13 +118,15 @@ export class Hud {
       <div class="hud-bottom">
         <div class="hud-row hud-row-bottom">
           <div class="hud-level"><span class="hud-label">Level</span> <span class="hud-level-n">1</span></div>
-          <div class="hud-toggles">
-            <button type="button" class="hud-speed" hidden>1×</button>
-            <button type="button" class="hud-auto" hidden>${iconMarkup('io-flash')}</button>
+          <div class="hud-actions">
+            <div class="hud-toggles">
+              <button type="button" class="hud-speed" hidden>1×</button>
+              <button type="button" class="hud-auto" hidden>${iconMarkup('io-flash')}</button>
+            </div>
+            <button type="button" class="hud-reliquary" hidden aria-label="Claim the reliquary"><span class="hud-reliquary-count" hidden></span></button>
+            <button type="button" class="hud-rift" hidden aria-label="Open the rift"><span class="hud-rift-label">Rift</span></button>
+            <button type="button" class="hud-ult"><span class="hud-ult-label"></span></button>
           </div>
-          <button type="button" class="hud-reliquary" hidden aria-label="Claim the reliquary"><span class="hud-reliquary-count" hidden></span></button>
-          <button type="button" class="hud-rift" hidden aria-label="Open the rift"><span class="hud-rift-label">Rift</span></button>
-          <button type="button" class="hud-ult"><span class="hud-ult-label"></span></button>
         </div>
         <ul class="hud-build" aria-label="Build"></ul>
         <div class="hud-xp" role="meter" aria-label="Experience"><div class="hud-xp-fill"></div></div>

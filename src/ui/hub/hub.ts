@@ -23,6 +23,7 @@ import { automations, tacticsKey } from '../../meta/automation';
 import { explainersFor } from '../../meta/explainers';
 import { canSwitch, isSwitchedOff } from '../../meta/forge';
 import { firstPaint, navigate, type NavDirection } from '../pageNav';
+import { currentForm, onFormChange } from '../../app/formFactor';
 
 /**
  * The hub's views. A tab exists only once its view is unlocked (R3);
@@ -79,6 +80,12 @@ export interface HubActions {
    * explainers, unread ones only unless `asked`, after `wait` ms.
    */
   explain(view: HubView, asked: boolean, wait: number): void;
+  /**
+   * CSS px of the stage the hub covers on its right: the docked panel's
+   * width on an `expanded` stage (plans/large-screens.md §7.2), else 0. The
+   * app hands it to the camera, so the backdrop tower centres in the rest.
+   */
+  cover?(px: number): void;
 }
 
 /**
@@ -164,6 +171,8 @@ export class HubScreen {
   private view: HubView = 'home';
   /** The hub has been on screen once: only the first show fades in. */
   private painted = false;
+  /** The width last reported through `HubActions.cover`. */
+  private covered = 0;
 
   constructor(host: HTMLElement, private readonly actions: HubActions) {
     this.root = document.createElement('section');
@@ -261,6 +270,10 @@ export class HubScreen {
     });
     fitDock.observe(dock);
     fitDock.observe(this.root);
+    // The docked panel (expanded only): report its width whenever it shows, hides or resizes.
+    const cover = new ResizeObserver(() => this.reportCover());
+    cover.observe(this.root);
+    onFormChange(() => this.reportCover());
     const refreshing = <T>(fn: () => T): T => {
       const out = fn();
       this.refresh();
@@ -357,6 +370,7 @@ export class HubScreen {
     // Already up (a card's "Forge" button over the hub): slide to the view. Coming in from a run: no slide.
     const slide = !this.root.hidden;
     this.root.hidden = false;
+    this.reportCover();
     if (!this.painted) {
       this.painted = true;
       firstPaint(this.root);
@@ -372,6 +386,15 @@ export class HubScreen {
 
   hide(): void {
     this.root.hidden = true;
+    this.reportCover();
+  }
+
+  /** Tell the app how much of the stage the hub covers on the right (`HubActions.cover`). */
+  private reportCover(): void {
+    const px = !this.root.hidden && currentForm() === 'expanded' ? this.root.getBoundingClientRect().width : 0;
+    if (px === this.covered) return;
+    this.covered = px;
+    this.actions.cover?.(px);
   }
 
   /** Redraw the open view after the profile changed underneath it (offline shards, say). */

@@ -73,9 +73,20 @@ describe('view transform', () => {
       const half = { w: w / 2, h: h / 2 };
       const raw = half.h >= half.w
         ? { hw: half.w * RIM.sideShare, hh: half.h - RIM.endInset }
-        : { hw: half.w - RIM.endInset, hh: half.h * RIM.sideShare };
+        : { hw: half.w * RIM.sideShare, hh: half.h * RIM.sideShare };
       expect(rim.hw / rim.hh).toBeCloseTo(raw.hw / raw.hh, 9);
     }
+  });
+
+  it('frees the long axis\'s ends on an expanded stage, whose HUD is in the corners (large-screens §8.2)', () => {
+    // Landscape and expanded: the same side margin on both axes, so the box has the stage's aspect.
+    for (const [w, h] of [[1280, 800], [1440, 900], [1024, 700]] as const) {
+      const rim = rimBox(w, h);
+      expect(rim.hw / rim.hh).toBeCloseTo(w / h, 9);
+    }
+    // A short landscape window is compact: the HP bar runs full width, so the inset stays.
+    const short = rimBox(900, 400);
+    expect(450 - short.hw).toBeCloseTo(RIM.endInset, 6);
   });
 
   it('never caps a phone: compact stages draw as they always have', () => {

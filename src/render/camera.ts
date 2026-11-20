@@ -55,11 +55,16 @@ export const RIM = {
 export function rimBox(cssWidth: number, cssHeight: number): { hw: number; hh: number } {
   const w = Math.max(1, cssWidth) / 2;
   const h = Math.max(1, cssHeight) / 2;
+  const form = formOf(cssWidth, cssHeight);
+  // `endInset` keeps the long axis's ends level with a full-width HP bar. An
+  // `expanded` stage's HUD sits in its corners (plans/large-screens.md §8.2),
+  // so the ends of its horizontal long axis are free: the side margin there too.
+  const longEnd = form === 'expanded' ? w * RIM.sideShare : w - RIM.endInset;
   const box = h >= w
     ? { hw: w * RIM.sideShare, hh: Math.max(w * RIM.sideShare, h - RIM.endInset) }
-    : { hw: Math.max(h * RIM.sideShare, w - RIM.endInset), hh: h * RIM.sideShare };
+    : { hw: Math.max(h * RIM.sideShare, longEnd), hh: h * RIM.sideShare };
   // The base light's short half-axis is `lightBase`, and it spans the box's short side.
-  const cap = RIM.maxScale[formOf(cssWidth, cssHeight)] * ARENA.lightBase;
+  const cap = RIM.maxScale[form] * ARENA.lightBase;
   const short = Math.min(box.hw, box.hh);
   if (short <= cap) return box;
   const k = cap / short;
