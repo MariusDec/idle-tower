@@ -190,7 +190,7 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
       // A skull's two hollows and the band of the crown.
       // Winding up, they glow toward blood; a pinpoint of light in each looks out.
       for (const dir of [-1, 1]) {
-        ctx.fillStyle = mix(INK['950'], FX.blood, 0.7 * tell);
+        ctx.fillStyle = withAlpha(mix(INK['950'], FX.blood, 0.7 * tell), 0.85);
         ctx.beginPath();
         ctx.ellipse(dir * r * 0.3, 0, r * 0.15, r * 0.2, 0, 0, Math.PI * 2);
         ctx.fill();

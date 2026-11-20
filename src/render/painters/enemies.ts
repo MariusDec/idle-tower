@@ -275,7 +275,7 @@ export class EnemyPainter {
       const t = this.track(e, time, bx, by);
       const born = this.born && !seeding;
       if (e.under) {
-        armPop(t, born, true, e.shade, bx, by, e.radius, 0, time, popArmed);
+        armPop(t, born, true, e.shade, bx, by, e.radius, false, 0, time, popArmed);
         drawMound(ctx, bx, by, e.radius, time + e.id);
         continue;
       }
@@ -302,7 +302,8 @@ export class EnemyPainter {
       const x = bx + m.dx;
       const y = by + m.dy;
       const rise = emergence(x, y, light, oval);
-      armPop(t, born, false, e.shade, bx, by, e.radius, rise, time, popArmed);
+      const verb = ENEMY_BY_ID[e.type].verb;
+      armPop(t, born, false, e.shade, bx, by, e.radius, verb.kind === 'blink', rise, time, popArmed);
       if (rise <= 0) continue;
       // Walking in from the dark, from `rise` (stateless), times any pop inside the light, from the clock.
       const pop = level === 'reduced' ? 1 : popFromRise(rise) * (popArmed ? popFromTime(time - t.popAt) : 1);
@@ -323,7 +324,6 @@ export class EnemyPainter {
       const sy = m.sy * pop;
       const cy = y + e.radius * (1 - sy);
       ctx.drawImage(s.canvas, x - half * sx, cy - half * sy, 2 * half * sx, 2 * half * sy);
-      const verb = ENEMY_BY_ID[e.type].verb;
       if (verb.kind === 'shield') drawShield(ctx, x, y, e.radius);
       // A Husk's shell (§9): plates round it while it still swallows hits, a notch per hit.
       if (e.shell > 0) drawShell(ctx, x, y, e.radius, e.shell);

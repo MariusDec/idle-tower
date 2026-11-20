@@ -120,7 +120,8 @@ weight, the hit squish's re-arm (a damped spring over 0.16 s, started at
 most every 0.2 s, so a body under a beam pulses rather than sticking) and
 what a pop inside the light watches for: first sight already in the light
 (Splitter fragments, imps, Chorus), a Burrower surfacing, a shade rising, a
-Blinker landing. The first frame after a reset seeds every body without a
+Blinker landing (a jump of more than 3 radii in one frame, watched on `blink`
+bodies only, so a knockback never pops). The first frame after a reset seeds every body without a
 pop, so a resumed save doesn't pop the whole field.
 
 **Bosses.** A boss is drawn live, so its "frames" are poses: the

@@ -204,21 +204,23 @@ export const POP_JUMP_RADII = 3;
 /**
  * Watch a body for an entrance inside the light and start its pop at `clock`
  * (§5.2.2). The triggers: first sight (`born`) already in the light, a
- * Burrower surfacing, a body rising as a shade, a Blinker landing. The
+ * Burrower surfacing, a body rising as a shade, a Blinker landing (only
+ * `blinks` bodies: a knockback or a slow frame can also move a body more
+ * than `POP_JUMP_RADII` in one frame, and must not pop it). The
  * remembered state is always brought up to date, so a level change (`armed`
  * false on `lite` and reduced motion) never replays a stale entrance.
  * Returns whether a pop started.
  */
 export function armPop(
   t: PopTrack, born: boolean, under: boolean, shade: boolean, x: number, y: number, radius: number,
-  rise: number, clock: number, armed: boolean,
+  blinks: boolean, rise: number, clock: number, armed: boolean,
 ): boolean {
   const surfaced = t.under && !under;
   const risen = !t.shade && shade;
   const jx = x - t.lx;
   const jy = y - t.ly;
   const lim = POP_JUMP_RADII * radius;
-  const jumped = jx * jx + jy * jy > lim * lim;
+  const jumped = blinks && jx * jx + jy * jy > lim * lim;
   t.under = under;
   t.shade = shade;
   t.lx = x;

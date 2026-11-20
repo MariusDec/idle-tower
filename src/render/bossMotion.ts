@@ -17,7 +17,7 @@ export interface BossPose {
   sx: number;
   sy: number;
   shear: number;
-  /** Afterimage alpha (`high` only), and its offset from the body's base position. */
+  /** Afterimage alpha (`high` only), and its offset from the body as drawn (`dx`, `dy`): where it stood before the lunge. */
   after: number;
   ax: number;
   ay: number;
