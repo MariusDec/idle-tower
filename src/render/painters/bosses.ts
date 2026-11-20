@@ -7,6 +7,8 @@ import { cachedGradient, drawGlow } from '../glow';
 import { LIGHT_ANGLE } from './enemies';
 import { emergence } from './arena';
 import type { Oval } from '../../content/arena';
+import { AFTER_SX, AFTER_SY, type BossPose } from '../bossMotion';
+import { gait, type BodyMotion } from '../motion';
 
 /**
  * Bosses (§4.3, §10.3), the hostile shots and the shockwaves. A boss is
@@ -264,8 +266,12 @@ function bossLook(b: BossState): BossDef {
   return form ? { ...def, color: form.color, borderColor: form.borderColor } : def;
 }
 
+/** Scratch for the shades' drift: reused, never allocated per frame. */
+const drift: BodyMotion = { dx: 0, dy: 0, sx: 1, sy: 1 };
+const NO_HEADING = { nx: 0, ny: 1 };
+
 export function paintCourt(
-  ctx: CanvasRenderingContext2D, run: RunState, alpha: number, time: number,
+  ctx: CanvasRenderingContext2D, run: RunState, alpha: number, time: number, float = false,
 ): void {
   const b = run.boss;
   if (!b || b.killedIn !== null) return;
@@ -274,9 +280,12 @@ export function paintCourt(
     if (!e.alive || (e.court === 0 && e.id !== b.enemy)) continue;
     const x = e.px + (e.x - e.px) * alpha;
     const y = e.py + (e.y - e.py) * alpha;
+    // Shades drift like any floating body (plans/enemy-animation.md §6.4): offsets only. The crown rides along.
+    if (float && e.court) gait(drift, 'float', e.radius * 0.04, time * 1.2 + e.id, 1, NO_HEADING, 'lite', 1);
+    else drift.dx = drift.dy = 0;
     if (e.court) {
       ctx.save();
-      ctx.translate(x, y);
+      ctx.translate(x + drift.dx, y + drift.dy);
       ctx.globalAlpha = 0.45;
       traceBoss(ctx, def.id, e.radius, time);
       ctx.fillStyle = mix(def.color, INK['950'], 0.3);
@@ -290,7 +299,7 @@ export function paintCourt(
       ctx.strokeStyle = lighten(FX.gold, 0.2);
       ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.ellipse(x, y - e.radius * 1.3, e.radius * 0.45, e.radius * 0.14, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + drift.dx, y + drift.dy - e.radius * 1.3, e.radius * 0.45, e.radius * 0.14, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
@@ -356,12 +365,16 @@ export function paintPools(ctx: CanvasRenderingContext2D, pools: readonly Molten
 
 /**
  * The boss: its body, its wind-up tell, its enrage, or — under the water —
- * only the ripples where it went down.
+ * only the ripples where it went down. `pose` (plans/enemy-animation.md §6)
+ * moves and squashes it: the shadow takes only `dx` and `sx`, the rings and
+ * stars follow the offset, and the body, its detail, stroke, flash and
+ * wind-up glow go through the whole transform, anchored at its base.
  */
 export function paintBoss(
   ctx: CanvasRenderingContext2D, e: Enemy, b: BossState, alpha: number, tick: number, simTime: number, time: number,
   light: number,
   oval: Oval,
+  pose: BossPose,
 ): void {
   const def = bossLook(b);
   const x = e.px + (e.x - e.px) * alpha;
@@ -382,27 +395,21 @@ export function paintBoss(
       ctx.stroke();
     }
     ctx.restore();
-    return;
+    // The sim hides it at once; the body still sinks into its ripples for a beat.
+    if (pose.sink <= 0) return;
   }
+  const show = rise * (e.hiddenUntil > simTime ? pose.sink : pose.fade);
 
   ctx.save();
   ctx.translate(x, y);
-  ctx.globalAlpha = rise;
-  // Shadow.
+  ctx.globalAlpha = show;
+  // Shadow: on the ground, so only the sideways part of the pose.
   ctx.fillStyle = withAlpha(INK['950'], 0.45);
   ctx.beginPath();
-  ctx.ellipse(-Math.cos(LIGHT_ANGLE) * 8, -Math.sin(LIGHT_ANGLE) * 8, r * 1.15, r * 1.15, 0, 0, Math.PI * 2);
+  ctx.ellipse(pose.dx - Math.cos(LIGHT_ANGLE) * 8, -Math.sin(LIGHT_ANGLE) * 8, r * 1.15 * pose.sx, r * 1.15, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  if (b.enraged) {
-    ctx.fillStyle = withAlpha(FX.blood, 0.18 + 0.1 * Math.sin(time * 8));
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 1.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
   const breathe = 1 + 0.02 * Math.sin(time * 2.2);
-  traceBoss(ctx, def.id, r * breathe, time);
   const lx = Math.cos(LIGHT_ANGLE);
   const ly = Math.sin(LIGHT_ANGLE);
   const body = cachedGradient(`boss|${r}|${def.color}`, () => {
@@ -412,6 +419,35 @@ export function paintBoss(
     g.addColorStop(1, mix(def.color, INK['950'], 0.55));
     return g;
   });
+
+  // The release's afterimage (high only): one faint fill where it stood before the lunge.
+  if (pose.after > 0) {
+    ctx.save();
+    ctx.translate(pose.dx + pose.ax, pose.dy + pose.ay);
+    ctx.translate(0, r);
+    ctx.scale(AFTER_SX, AFTER_SY);
+    ctx.translate(0, -r);
+    ctx.globalAlpha = pose.after * show;
+    traceBoss(ctx, def.id, r * breathe, time);
+    ctx.fillStyle = body;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.translate(pose.dx, pose.dy);
+  if (b.enraged) {
+    ctx.fillStyle = withAlpha(FX.blood, 0.18 + 0.1 * Math.sin(time * 8));
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // The pose's squash and shear, anchored at the base so it stays on the ground.
+  ctx.save();
+  ctx.translate(0, r);
+  ctx.transform(pose.sx, 0, pose.shear, pose.sy, 0, 0);
+  ctx.translate(0, -r);
+  traceBoss(ctx, def.id, r * breathe, time);
   ctx.fillStyle = body;
   ctx.fill();
   ctx.save();
@@ -427,26 +463,31 @@ export function paintBoss(
   // Hit flash.
   const sinceHit = tick - e.hitTick;
   if (e.hitTick >= 0 && sinceHit < 4) {
-    ctx.globalAlpha = 0.35 * (1 - sinceHit / 4) * rise;
+    ctx.globalAlpha = 0.35 * (1 - sinceHit / 4) * show;
     traceBoss(ctx, def.id, r * breathe, time);
     ctx.fillStyle = INK['050'];
     ctx.fill();
-    ctx.globalAlpha = rise;
+    ctx.globalAlpha = show;
   }
 
-  // The wind-up: a tightening ring and a glowing body — the tell a Nova answers.
+  // The wind-up's glowing body.
+  const pulse = 0.5 + 0.5 * Math.sin(time * 18);
   if (b.windup > 0) {
-    const pulse = 0.5 + 0.5 * Math.sin(time * 18);
+    ctx.globalAlpha = (0.25 + 0.2 * pulse) * show;
+    traceBoss(ctx, def.id, r * breathe, time);
+    ctx.fillStyle = lighten(FX.blood, 0.3);
+    ctx.fill();
+    ctx.globalAlpha = show;
+  }
+  ctx.restore();
+
+  // The wind-up's tightening ring — the tell a Nova answers. Unsquashed, so it stays crisp.
+  if (b.windup > 0) {
     ctx.strokeStyle = withAlpha(FX.blood, 0.6 + 0.4 * pulse);
     ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.arc(0, 0, r * (1.25 + b.windup * 0.5), 0, Math.PI * 2);
     ctx.stroke();
-    ctx.globalAlpha = (0.25 + 0.2 * pulse) * rise;
-    traceBoss(ctx, def.id, r * breathe, time);
-    ctx.fillStyle = lighten(FX.blood, 0.3);
-    ctx.fill();
-    ctx.globalAlpha = rise;
   }
   if (b.staggeredUntil > simTime) {
     // Staggered: stars of light circling its crown.

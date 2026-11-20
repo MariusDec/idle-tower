@@ -29,7 +29,8 @@ import type { FrameId, WeaponId } from '../content/types';
 import { frameById } from '../content/frames';
 import { formAccent, type FormPaint } from './painters/form';
 import { QUALITY, type QualityTier } from './quality';
-import { motionLevel } from './motion';
+import { motionLevel, type MotionLevel } from './motion';
+import { BossAnimator } from './bossMotion';
 import { paintRift } from './painters/rift';
 import { CURSE_COLOR, paintReliquaries } from './painters/reliquary';
 import { RIFT_BY_ID } from '../content/rifts';
@@ -108,6 +109,9 @@ export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly effects = new Effects();
   private readonly enemies = new EnemyPainter();
+  /** The boss's poses (plans/enemy-animation.md §6): presentation only, reset per run. */
+  private readonly bossMotion = new BossAnimator();
+  private motion: MotionLevel = 'full';
   private tier: QualityTier = 'high';
   private clock = 0;
   private lastRun: RunState | null = null;
@@ -175,7 +179,9 @@ export class Renderer {
     const tierMotion = QUALITY[this.tier].motion;
     const o = this.benchMotion;
     const level = o === 'off' ? 'reduced' : o !== null ? tierMotion : motionLevel(this.reducedMotion, tierMotion);
+    this.motion = level;
     this.enemies.setMotion(level, this.tier);
+    this.bossMotion.setMotion(level, this.tier);
   }
 
   /** Dev only (the bench): override enemy motion, or hand it back to the setting with null. */
@@ -297,6 +303,7 @@ export class Renderer {
     this.effects.clear();
     // Enemy ids restart per run: the painter's per-body tracks would alias.
     this.enemies.reset();
+    this.bossMotion.reset();
     this.fallT = null;
     this.banner = null;
     this.gates = null;
@@ -440,6 +447,7 @@ export class Renderer {
           const form = run.boss?.form ? SECRET_BY_ID[run.boss.form].form : undefined;
           this.showBanner(form?.name ?? def.name, form?.line ?? def.phases[0].line, 'blood', !this.reducedMotion);
           this.camera.shake(8);
+          this.bossMotion.event('bossArrive', this.clock);
           break;
         }
         case 'secret':
@@ -453,14 +461,17 @@ export class Renderer {
           this.showBanner(name, phasesOf(run, def)[ev.phase]?.line ?? '', 'blood');
           this.camera.shake(10);
           this.camera.zoomPunch();
+          this.bossMotion.event('bossPhase', this.clock);
           break;
         }
         case 'windup':
           this.effects.ring(ev.x, ev.y, 120, 60, withAlpha(FX.blood, 0.6), ev.seconds, 5);
+          this.bossMotion.event('windup', this.clock, ev.seconds);
           break;
         case 'slam':
           this.effects.spray(ev.x, ev.y, INK['300'], 22, 200, 5);
           this.camera.shake(9);
+          this.bossMotion.event('slam', this.clock);
           break;
         case 'stagger':
           this.effects.ring(ev.x, ev.y, 40, 140, withAlpha(FX.gold, 0.9), 0.5, 7);
@@ -469,6 +480,7 @@ export class Renderer {
         case 'submerge':
         case 'emerge':
           this.effects.ring(ev.x, ev.y, 20, 140, withAlpha(FX.frost, 0.5), 0.6, 5);
+          this.bossMotion.event(ev.kind, this.clock);
           break;
         case 'enrage':
           this.showBanner('Enraged', 'It has had enough. It comes for the wall.', 'blood');
@@ -743,11 +755,18 @@ export class Renderer {
       const b = run.boss;
       if (b && b.killedIn === null) {
         const body = run.enemies.find((e) => e.id === b.enemy && e.alive);
-        paintCourt(ctx, run, alpha, this.clock);
+        paintCourt(ctx, run, alpha, this.clock, this.motion !== 'reduced');
         paintPlates(ctx, run, alpha);
         if (body) {
-          paintBoss(ctx, body, b, alpha, run.tick, run.time, this.clock, light, oval);
-          paintFacets(ctx, body.px + (body.x - body.px) * alpha, body.py + (body.y - body.py) * alpha, body.radius, mirrorFacets(run));
+          const bx = body.px + (body.x - body.px) * alpha;
+          const by = body.py + (body.y - body.py) * alpha;
+          const pose = this.bossMotion.update(b.id, {
+            x: bx, y: by, radius: body.radius, moving: body.moving, hitTick: body.hitTick,
+            windup: b.windup, staggered: b.staggeredUntil > run.time, enraged: b.enraged,
+          }, this.clock);
+          paintBoss(ctx, body, b, alpha, run.tick, run.time, this.clock, light, oval, pose);
+          // The mirror stays on the body: the pose's offset, not its squash.
+          paintFacets(ctx, bx + pose.dx, by + pose.dy, body.radius, mirrorFacets(run));
         }
       }
       paintShots(ctx, run.shots, alpha);

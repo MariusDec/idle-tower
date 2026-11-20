@@ -99,6 +99,18 @@ describe('renderer enemy motion', () => {
     expect(motionOf(r).level).toBe('full');
   });
 
+  it('the boss animator follows the same level as the enemies', () => {
+    const r = settledRenderer();
+    const boss = (r as unknown as { bossMotion: { motion: { level: string; tier: string } } }).bossMotion;
+    r.setMotion(false, true);
+    r.setQuality('high');
+    expect(boss.motion).toEqual({ level: 'full', tier: 'high' });
+    r.setQuality('low');
+    expect(boss.motion).toEqual({ level: 'lite', tier: 'low' });
+    r.setMotion(true, true);
+    expect(boss.motion.level).toBe('reduced');
+  });
+
   it('still settles: the motion state never keeps it drawing', () => {
     const r = settledRenderer();
     r.setBenchMotion('base');
