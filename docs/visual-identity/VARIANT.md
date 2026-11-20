@@ -1,14 +1,15 @@
-# The Tower's variant: "Last light"
+# Blue Hour's variant: "Last light"
 
 This folder is a **vendored copy** of the shared visual identity ("Sunrise /
-Blue hour"), copied from Learn Thai's `visual identity/` on **2026-11-18**.
+Blue hour"), copied from Learn Thai's `visual identity/` on **2026-11-18**,
+and updated on **2026-11-20** with the page change and the switch row.
 Nothing in `src/` imports it and the build never reads it. It is the
 reference the game's own `src/styles/tokens.css` and `main.css` were ported
 from. To take a later update from Learn Thai, diff that folder against this
 one, then port what changed into the game's files by hand.
 
 The full plan is [`plans/visual-identity.md`](../../plans/visual-identity.md).
-In short, The Tower:
+In short, Blue Hour:
 
 **Keeps the identity's**
 
@@ -18,7 +19,22 @@ In short, The Tower:
 - semantic token names (`--text-primary`, `--glass-fill`, `--accent-text`,
   `--panel-subtle`, …), so a rule written for a sibling app reads the same;
 - motion tempo (120 / 180 / 280 / 420 / 700) and easings, the focus ring,
-  the scrollbars and the 44px hit areas.
+  the scrollbars and the 44px hit areas;
+- the page change (280ms, decelerate; push slides the new page over from
+  100% while the old drifts to −25% and dims to 0.55, back reverses it):
+  the hub's views, tabs by tab order, Tactics / Pacts / Contracts / Omen as
+  pushes over the Tower. It runs as a View Transition (`src/ui/pageNav.ts`),
+  whose root snapshot keeps each layer opaque with the backdrop tower in it;
+  the dock and the overlays hold still; first paint is a 200ms fade. Runs,
+  results and the draft keep their own entrances. Settings' Options and
+  Stats turn inside the sheet (`turnPage`): a sheet is glass, so instead of
+  each layer painting a ground, the page underneath is clipped where the top
+  one has reached (worth sending upstream);
+- the segment slide, also for a control rebuilt on change (`glide` in
+  `src/ui/controls.ts`: one frame at the old option, then the new);
+- the switch row (40 × 24 track, 18px thumb, 16px travel, 180ms) for every
+  yes-or-no setting (`switchRow` in `src/ui/controls.ts`): Sound, Keep the
+  screen on, Screen shake, a Forge keystone's "Use in runs".
 
 **Changes**
 

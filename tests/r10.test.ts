@@ -13,6 +13,9 @@ import { REGIONS } from '../src/content/regions';
 
 const read = (path: string): string => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
+/** Let every pending promise and zero-delay timer land. */
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
 const RUN_LOOP = [[0, 3, 7], [5, 8, 12], [-4, 0, 3], [-5, -1, 2]];
 
 describe('R10: a voice per Act 1 region', () => {
@@ -85,14 +88,42 @@ describe('R10: hidden, the audio stops', () => {
     const synth = new Synth();
     (synth as unknown as { ctx: typeof ctx }).ctx = ctx;
     synth.setHidden(true);
-    await Promise.resolve();
+    await flush();
     synth.setHidden(true);
     expect(synth.audible).toBe(false);
     synth.setHidden(false);
-    await Promise.resolve();
+    await flush();
     synth.setHidden(false);
+    await flush();
     expect(calls).toEqual(['suspend', 'resume']);
     expect(synth.audible).toBe(true);
+  });
+
+  it('a hide and a show inside one call settle on the latest (a quick app switch)', async () => {
+    const calls: string[] = [];
+    // As a real context: `state` moves only once the call lands.
+    const ctx = {
+      state: 'running' as AudioContextState,
+      suspend: () => { calls.push('suspend'); return flush().then(() => { ctx.state = 'suspended'; }); },
+      resume: () => { calls.push('resume'); return flush().then(() => { ctx.state = 'running'; }); },
+    };
+    const synth = new Synth();
+    (synth as unknown as { ctx: typeof ctx }).ctx = ctx;
+    synth.setHidden(true);
+    synth.setHidden(false);
+    await flush();
+    await flush();
+    expect(calls).toEqual(['suspend', 'resume']);
+    expect(ctx.state).toBe('running');
+    // And the other way: shown then hidden again before the resume lands.
+    synth.setHidden(true);
+    await flush();
+    await flush();
+    synth.setHidden(false);
+    synth.setHidden(true);
+    await flush();
+    await flush();
+    expect(ctx.state).toBe('suspended');
   });
 
   it('does nothing before the first gesture made a context', () => {

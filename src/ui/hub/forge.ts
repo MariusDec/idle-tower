@@ -11,7 +11,7 @@ import { WISHLIST_MAX } from '../../meta/automation';
 import type { Profile } from '../../meta/profile';
 import { STAR_WEB } from '../../meta/stars';
 import type { NodeState, Web } from '../../meta/web';
-import { segmented } from '../controls';
+import { settled, switchRow } from '../controls';
 import { motionReduced, setText } from '../dom';
 import { icon, iconMarkup, iconUse } from '../icon';
 
@@ -443,12 +443,22 @@ export class WebView<N extends WebNodeDef> {
       if (!switchable) actions.append(done);
     }
     if (switchable) {
-      actions.append(segmented([{ value: true, label: 'On' }, { value: false, label: 'Off' }], !off, () => {
-        if (this.actions.toggle?.(id)) {
-          this.redraw();
-          this.renderDetail();
+      // The switch slides first; the detail (its "· Off", the preview) redraws once the thumb lands.
+      const sw = switchRow('Use in runs', !off, () => {
+        if (!this.actions.toggle?.(id)) {
+          // Refused: the thumb goes back.
+          sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true'));
+          return;
         }
-      }, `${n.name}: on or off`));
+        this.redraw();
+        const focused = document.activeElement === sw;
+        settled(sw, () => {
+          this.renderDetail();
+          if (focused) this.detail.querySelector<HTMLElement>('.switch-row')?.focus({ preventScroll: true });
+        });
+      });
+      sw.setAttribute('aria-label', `${n.name}: use in runs`);
+      actions.append(sw);
     }
     // The Foreman (N7): pin it, and the Forge buys it as shards arrive.
     const pinned = this.actions.pinned?.(p) ?? null;

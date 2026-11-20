@@ -1,9 +1,11 @@
 # Review risks: what a player would complain about
 
-**Status:** 2026-11-18. Second draft. Nothing here is built. It's written
-from the repo (plans, `docs/balancing.md`'s readings, git history) and
-from readings taken for this draft (below), not from players: no build
-has had outside players yet, and playtest #3 (Q2's gate) is still open.
+**Status:** 2026-11-18, second draft; built 2026-11-18–19 (each item's
+*Status* says what, and what's left: R1 §3, the device checks in R5 and R7,
+R9's Google-transport restore, and the playtest). It's written from the
+repo (plans, `docs/balancing.md`'s readings, git history) and from readings
+taken for this draft (below), not from players: no build has had outside
+players yet, and playtest #3 (Q2's gate) is still open.
 
 **In one line:** guess the reviews before they're written. List the
 complaints a store reviewer is most likely to make, say which ones the
@@ -153,8 +155,10 @@ day, **M** a few days, **L** a week or more.
 - §4: first rift, Champion and elite aura get a one-sentence card that
   holds the arena, only for a player who touched in the last 30 s. The
   first anomaly already has the draft's own line, so it gets no card.
-- §5: Settings › Gameplay › Draft timer On / Long (20 s) / Off. Off
-  picks on the Long clock once the Tactician is owned.
+- §5: Settings › Gameplay › Draft timer Off / Short (5 s) / Standard /
+  Long (20 s); Standard is the old clock (stored as `'on'`). Off picks on
+  the Long clock once the Tactician is owned; an anomaly in the hand still
+  gets at least 10 s.
 
 Reading (8 seeds, 3 h, `--fast`): R1 0/8, 19–22 pairs closer than 10 min
 per seed, 8–12 within 2 min; median systems per 15 min `5 3 11 1 2 1 3 1 0
@@ -361,6 +365,18 @@ last 1–3 minutes. I4's "PASS" there says little.
 **Check.** `npm test` green; the re-read I4 and keystone sweep in
 `docs/balancing.md`.
 
+**Status (2026-11-18): §1–§3 built (`cede8ac`); §4 is a working rule.**
+
+- §1: the arsenal and the keystone sweep play the pacing bot's own
+  profiles at each Act 1 boss's first fall (`tools/frontier.ts`, stored in
+  `tools/fixtures/frontiers.json`, seeds 1–3; regenerate with `npm run
+  pacing -- --frontiers`), arrival and cleared towers in turn. I4 PASS
+  (34%); evolutions 0/3/6/8 in Regions 3–6. The keystone sweep now FAILS
+  (Fortress is a trap on real towers), recorded in `docs/balancing.md`.
+- §2: `tests/pacing.test.ts` reads the gates' eight profiles: P3 27:51.
+- §3: I6 gated the median profile until R2 landed; R2 put the every-seed
+  rule back.
+
 ### R5. "Drains my battery / gets hot / crashed" (medium, Android)
 
 **What the repo shows.**
@@ -489,8 +505,9 @@ upload.**
   applies.
 - §3: `docs/store-listing.md`: short and full description (first line
   "No ads. No purchases. Plays offline."), six screenshots with captions,
-  category and Data safety answers. Its length line is a placeholder until
-  R3's decision, and its backup sentence depends on R9 §1.
+  category and Data safety answers. Its length line follows R3's decision
+  ("About five hours to the first ending, then an endless second act."),
+  and its backup sentence R9 §1's restore test.
 
 ### R7. "Text too small / can't tap that / broken on my tablet" (medium)
 

@@ -12,7 +12,7 @@ other apps, by people or by AI agents.
 | [`GUIDELINES.md`](GUIDELINES.md) | The design language: principles, color roles, the three surfaces, type, spacing, components, states, motion, a11y, how to adapt | You need to know *how* and *why* |
 | [`AI_BRIEF.md`](AI_BRIEF.md) | A compact rules block to paste into another project's `CLAUDE.md` / agent instructions, plus prompt starters and non-web notes | You hand the work to Claude or another AI |
 | [`tokens/tokens.css`](tokens/tokens.css) | All tokens as CSS variables, light + dark (`data-theme` or OS preference) | Any web app |
-| [`components.css`](components.css) | Framework-free base styles: glass, buttons, chips, badges, segmented control, options, progress, chrome, focus, hit areas, scrollbars, motion | You want the components without a framework, or as a porting reference |
+| [`components.css`](components.css) | Framework-free base styles: glass, buttons, chips, badges, segmented control, switch, options, progress, chrome, focus, hit areas, scrollbars, motion (reveal, pop, page change) | You want the components without a framework, or as a porting reference |
 | [`tokens/theme.ts`](tokens/theme.ts) | The same values as a typed JS object (`getPalette('dark')`, `spacing`, `motion`, …) | JS-styled UIs, React Native, charts, canvas |
 | [`tokens/tokens.json`](tokens/tokens.json) | W3C design-token JSON, generated from `theme.ts` | Figma (Tokens Studio), Style Dictionary → Swift/Kotlin/Dart |
 | [`tokens/tailwind.preset.js`](tokens/tailwind.preset.js) | Tailwind preset mapped to the CSS variables (v4 note inside) | Tailwind projects |
@@ -45,7 +45,8 @@ To see the specimen, open `preview.html` from a local server (for example,
 ## Keeping it in sync
 
 The source of truth in this repo is still the app: `src/styles/theme.ts`,
-`src/styles/global.css` and `src/styles/motion.ts`. If the app's theme
+`src/styles/global.css` and `src/styles/motion.ts` (page change:
+`src/components/PageTransition.tsx`; switch: `src/components/controls/SwitchRow.tsx`). If the app's theme
 changes, update `tokens/theme.ts` and `tokens/tokens.css` to match, then
 regenerate the JSON:
 

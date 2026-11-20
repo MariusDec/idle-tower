@@ -277,6 +277,22 @@ export function waypointLevel(floor: number): number {
   return L[Math.min(stratumIndex(floor), L.length - 1)];
 }
 
+const NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
+
+/**
+ * The shaft's honest end (plans/review-risks.md R3): below the last built
+ * stratum, say that the strata stop there for now, so "nothing new after
+ * floor 12" is something the Map said first. Null once the strata reach
+ * the bottom; then the band goes.
+ */
+export function strataStillDug(): string | null {
+  const planned = BOTTOM / STRATUM_FLOORS;
+  if (STRATA.length >= planned) return null;
+  const from = NUMERALS[STRATA.length];
+  const to = NUMERALS[planned - 1];
+  return from === to ? `Stratum ${from} is still being dug.` : `Strata ${from}–${to} are still being dug.`;
+}
+
 /** The rule line a stratum's entry banner shows. */
 export function stratumTitle(s: StratumDef): string {
   return `Stratum ${s.numeral} · ${s.name}`;

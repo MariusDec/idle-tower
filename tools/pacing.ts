@@ -5,7 +5,7 @@
  * invariants (§8.4):
  *
  *   I1a boss 1 first falls within 20–40 min (P4's gate: 25–40)
- *   I1b the Act 1 finale first falls within 7–12 h (needs --hours 12)
+ *   I1b the Act 1 finale first falls within 3.5–6 h (needs --hours 6)
  *   I3  every results screen shows an affordable node, or ≥ 50% toward one
  *   I6  no gap between reveals longer than 10 min (in the first 2 h), and
  *       none longer than 30 min from 2 h to the Blight's first fall (S6, R2 §5;
@@ -68,7 +68,7 @@ import { CHECKIN_EVERY, SESSION, farmRatio, runIdle, type IdleReport } from './i
 import { CONTRACT_SHARE, runAct2, takePacts, type Act2Report } from './act2';
 import { botTake, emptyContractTally, holdsUlt, steerConfig, successLine, tallyContract, type ContractTally } from './contractBot';
 import { boardOpen } from '../src/meta/contracts';
-import { STRATA } from '../src/content/strata';
+import { STRATA, stratumFoot } from '../src/content/strata';
 import { BALANCE } from '../src/content/balance';
 import { IN_WORKER, parallel, workerJobs } from './parallel';
 import { FRONTIER_FILE, FRONTIER_HOURS, FRONTIER_SEEDS, saveFrontiers, type FrontierSave } from './frontier';
@@ -277,7 +277,9 @@ export function worstGapIn(reveals: readonly Reveal[], from: number, to: number)
 /** I1's first half (§8.4): boss 1's first kill, in wall seconds. */
 const I1A = { min: 20 * 60, max: 40 * 60 };
 /** I1's second half (§8.4): the Act 1 finale's first kill, in wall seconds. */
-export const I1B = { min: 7 * 3600, max: 12 * 3600 };
+/** R3 (plans/review-risks.md, 2026-11-19): the owner's call, Act 1 is ~4–5 h of active play; was 7–12 h. */
+export const I1B = { min: 3.5 * 3600, max: 6 * 3600 };
+const I1B_WANT = `want ${formatDuration(I1B.min)}–${formatDuration(I1B.max)}`;
 /** The boss whose fall ends Act 1. */
 export const FINALE = BOSSES.find((b) => b.finale)!.id;
 
@@ -822,6 +824,16 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
     const m = med(times);
     console.log(`        ${BOSS_BY_ID[st.boss].name} first falls: median ${Number.isFinite(m) ? formatDuration(m) : `not in ${hours} h`} (${times.map((t) => fmt(Number.isFinite(t) ? t : null)).join(' ')})`);
   }
+  // R3 (plans/review-risks.md): past the last built stratum the old cycle takes over, and the
+  // new content stops. Its guardian's fall opens that floor; read as play from a new save.
+  const deep = stratumFoot(STRATA.length);
+  const lastGuardian = STRATA[STRATA.length - 1].boss;
+  const arrive = verdicts.map((v) => {
+    const t = v.report?.strata.fell[lastGuardian];
+    return v.act1 !== null && t !== undefined ? v.act1 + t : Infinity;
+  });
+  const mDeep = med(arrive);
+  console.log(`        floor ${deep} (past the built strata) first reached: median ${Number.isFinite(mDeep) ? formatDuration(mDeep) : `not in ${hours} h of Act 2`} of play from a new save (${arrive.map((t) => fmt(Number.isFinite(t) ? t : null)).join(' ')})`);
   const feet = [...new Set(reports.flatMap((r) => Object.keys(r.strata.entry).map(Number)))].sort((a, b) => a - b);
   for (const f of feet) {
     const levels = reports.flatMap((r) => r.strata.entry[f] ?? []);
@@ -904,7 +916,7 @@ async function main(): Promise<void> {
     console.log(`        median first Bog Mother kill ${fmt(b2)} (§7.1 aims at 60:00–75:00)`);
     const fin = medianBossKill(reports, FINALE);
     const okFin = fin !== null && fin >= I1B.min && fin <= I1B.max;
-    console.log(`  ${okFin ? 'PASS' : 'FAIL'}  I1b median first ${BOSS_BY_ID[FINALE].name} kill ${fmt(fin)} (want 7:00:00–12:00:00) · passes ${count((r) => r.i1b)}`);
+    console.log(`  ${okFin ? 'PASS' : 'FAIL'}  I1b median first ${BOSS_BY_ID[FINALE].name} kill ${fmt(fin)} (${I1B_WANT}) · passes ${count((r) => r.i1b)}`);
     console.log(`  first evolution: ${reports.map((r) => fmt(r.firstEvolution)).join(' ')}`);
     console.log(`        median first evolution ${fmt(medianOf(reports, (r) => r.firstEvolution))} (§7.1 aims at 1:30:00–2:00:00)`);
     return;
@@ -944,7 +956,7 @@ async function main(): Promise<void> {
   const g = r.bossKills.gatekeeper;
   console.log(`  ${mark(r.i1a)}  I1a the Gatekeeper first falls at ${g === undefined ? 'never' : formatDuration(g)} (want 20:00–40:00)`);
   const f = r.bossKills[FINALE];
-  console.log(`  ${mark(r.i1b)}  I1b ${BOSS_BY_ID[FINALE].name} first falls at ${f === undefined ? 'never' : formatDuration(f)} (want 7:00:00–12:00:00)`);
+  console.log(`  ${mark(r.i1b)}  I1b ${BOSS_BY_ID[FINALE].name} first falls at ${f === undefined ? 'never' : formatDuration(f)} (${I1B_WANT})`);
   if (csv) {
     // `kind` (R1 §1): content or system; explainer opens are listed too, as `explainer` (not I6's reveals).
     const rows = [

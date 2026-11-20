@@ -9,7 +9,7 @@ verdict is the game's, not a model's (§13). Every tunable number lives in
 | | Rule | Measured by |
 |---|---|---|
 | I1a | boss 1 first falls within 20–40 min | `npm run pacing -- --seeds 8` |
-| I1b | the Act 1 finale first falls within 7–12 h | `npm run pacing -- --hours 12 --seeds 8` |
+| I1b | the Act 1 finale first falls within 3.5–6 h (R3; was 7–12 h) | `npm run pacing -- --hours 6 --seeds 8` |
 | I2 | the idle bot finishes Act 1 in 5–10 days | `npm run pacing -- --idle --hours 12 --seeds 4` |
 | I3 | every Act 1 results screen shows an affordable node or ≥ 50% toward one | the pacing report |
 | I4 | no weapon takes over 40% of the bot's new-weapon picks; every weapon is taken somewhere | `npm run arsenal` |

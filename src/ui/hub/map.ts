@@ -1,5 +1,5 @@
 import { ABYSS_INDEX, abyssStarlight } from '../../content/abyss';
-import { STRATA, guardianFloorOf, stratumFoot } from '../../content/strata';
+import { STRATA, guardianFloorOf, strataStillDug, stratumFoot } from '../../content/strata';
 import { BOSS_BY_ID } from '../../content/bosses';
 import { ENEMY_BY_ID } from '../../content/enemies';
 import { REGIONS } from '../../content/regions';
@@ -199,11 +199,17 @@ export class MapView {
       ol.append(li);
     });
     // Past the authored strata, the dark goes on; the last guardian's fall opens a way straight into it.
+    // Until III–V are built, the band says so (R3): the floors work, the new strata stop.
     const deeper = document.createElement('li');
     const below = felled >= STRATA.length ? go(stratumFoot(STRATA.length)) : null;
+    const dug = strataStillDug();
     if (below) {
       deeper.className = 'map-band is-reached is-below';
-      deeper.append(this.bandHead('', 'Deeper', null), this.bandLine(`Floor ${stratumFoot(STRATA.length)} and below`), below);
+      const line = `Floor ${stratumFoot(STRATA.length)} and below${dug ? `: the old bosses, on and on. ${dug}` : ''}`;
+      deeper.append(this.bandHead('', 'Deeper', null), this.bandLine(line), below);
+    } else if (dug) {
+      deeper.className = 'map-band is-sealed';
+      deeper.append(this.bandLine(`The deep goes on. ${dug}`));
     } else {
       deeper.className = 'map-band is-deeper';
       deeper.setAttribute('aria-hidden', 'true');

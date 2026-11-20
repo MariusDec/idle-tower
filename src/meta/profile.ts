@@ -211,7 +211,8 @@ export interface Profile {
      */
     framing: number | null;
     /**
-     * The draft's clock (R1 §5): the usual seconds, twice them, or none (the
+     * The draft's clock (R1 §5): half the usual seconds ('short'), the usual
+     * ('on', shown as Standard), twice them ('long'), or none ('off': the
      * arena holds still until a pick). The Tactician's shorter clock applies
      * only while this is 'on'. The bots never read it.
      */

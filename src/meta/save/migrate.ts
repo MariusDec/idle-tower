@@ -112,7 +112,10 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   24: (raw) => ({ ...raw, version: 25, omen: { since: 0, days: {}, played: 0, best: 0, pending: null } }),
   // v26 (R1): the draft timer setting, and runs per region. A region an old
   // save has a record for counts as played twice, so nothing it had open
-  // (Feats, Trials: R1 §2) closes on the upgrade.
+  // (Feats, Trials: R1 §2) closes on the upgrade. The one exception: a save
+  // that felled the Gatekeeper but never ended a run past Region 1 has no
+  // record to count, so its Feats and Trials close until it does (one run,
+  // two). Accepted: no released build wrote v25.
   25: (raw) => ({
     ...raw,
     version: 26,

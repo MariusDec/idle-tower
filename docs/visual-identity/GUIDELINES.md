@@ -197,6 +197,15 @@ neutral, accent, success, warning, and error.
 **one** sliding `--accent-gradient` indicator behind the options. The selected
 label is white, the others are `--text-secondary`, and the visible height is 40px.
 
+**Switch.** Every yes-or-no setting is a switch row: a subtle glass row
+(radius 16, at least 48px tall) holding a bold label, an optional muted
+one-line hint, and a 40 × 24 track at the end. Off is `--surface` with a
+`--border` hairline; on fills with `--accent`. The white 18px thumb carries a
+small drop shadow and travels 16px. The whole row is the hit target and has
+`role="switch"` with `aria-checked`, so a screen reader announces on/off rather
+than a choice. The label says what the switch turns on and never changes with
+the state. Don't use On/Off segmented pairs or ON/OFF pills for this.
+
 **Options (choices / quiz answers).**
 
 | State | Surface | Border | Text |
@@ -252,6 +261,30 @@ Use these signature moves:
 - **Pop:** scale 0.92 → 1.06 → 1 over 180ms, for a correct answer or a completed item.
 - **Count-up:** numbers ramp with ease-out-cubic over 420ms.
 - **Celebration:** a confetti burst from the stat row, used only on real milestones.
+- **Switch:** the thumb slides 16px while the track fills with the accent, both
+  over 180ms on `standard`, so the fill lands with the thumb.
+- **Segment slide:** the gradient indicator glides to the chosen option over
+  280ms on `standard`, and the labels cross-fade their color with it.
+- **Page change:** a push lays the new page over the old one like a card; back
+  lifts the top card off. Both layers move over 280ms on `decelerate`, locked
+  together:
+
+  | | Leaving page | Entering page |
+  | --- | --- | --- |
+  | Forward (push) | 0 → −25%, opacity 1 → 0.55, *underneath* | 100% → 0, opaque, *on top* |
+  | Backward (back) | 0 → 100%, opaque, *on top* | −25% → 0, opacity 0.55 → 1, *underneath* |
+
+  The page underneath moves a quarter as far as the one on top, and that
+  parallax is what reads as depth. The top layer stays fully opaque (a card,
+  not a cross-fade), and each sliding layer paints the background gradient
+  itself, or the two pages show through each other. The leaving page keeps the
+  scroll position it was left at. Switching tabs uses the same slide, its
+  direction set by tab order (a tab to the right slides forward). An in-page
+  screen swap (setup → run → results) slides forward too, even with no URL
+  change. The header and tab bar don't move. The first paint after launch is a
+  plain 200ms fade. A rapid second navigation cancels the first; never let two
+  leaving pages stack. `components.css` has both a class-based version
+  (`.page-enter--forward` …) and a View Transitions one (`<html data-nav>`).
 
 A mistake never shakes, buzzes, or turns red. Under `prefers-reduced-motion`
 everything snaps to its end state.

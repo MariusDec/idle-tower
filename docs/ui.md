@@ -122,12 +122,17 @@ relics, evolutions, feats, the deepest Abyss floor, days played.
 - **Touch targets.** Every control declares a 44 px floor;
   `tests/touch-targets.test.ts` audits the list.
 - Buttons are real `<button>`s; segmented controls are radio groups with
-  `aria-checked`; dialogs are `role="dialog"` with `aria-modal`.
+  `aria-checked`; a yes-or-no setting is a switch row (`role="switch"`,
+  the whole row the target, its label fixed whatever the state), never an
+  On/Off pair; dialogs are `role="dialog"` with `aria-modal`.
+- **Page change.** The hub's views slide like stacked cards (tabs by tab
+  order; Tactics, Pacts, Contracts and the Omen push over the Tower), the
+  dock still; `src/ui/pageNav.ts`. Reduced motion swaps at once.
 
 ## Visual identity
 
 The UI wears the shared identity ("Sunrise / Blue hour", vendored in
-[`docs/visual-identity/`](visual-identity/), with The Tower's changes in its
+[`docs/visual-identity/`](visual-identity/), with Blue Hour's changes in its
 `VARIANT.md`), as the "Last light" variant
 ([plans/visual-identity.md](../plans/visual-identity.md)):
 

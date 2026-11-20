@@ -94,7 +94,12 @@ Region index 7: the only endless mode, and the only place big numbers live.
 - **Past the strata** (floor 13 on, until III–V are built) the old cycle
   holds behind a shim: an Act 1 region's template and rule, the old four
   natives, a boss every floor (× 0.35) and the Deepwarden or the Hunger
-  every fifth (× 0.25).
+  every fifth (× 0.25). The Map's shaft says so (R3,
+  `content/strata.ts#strataStillDug`): below the last built stratum a
+  sealed band reads *The deep goes on. Strata III–V are still being dug.*,
+  and once its guardian falls, the Deeper band's line carries the same
+  sentence. The text follows `STRATA.length` and goes when the strata
+  reach `BOTTOM`.
 - **Depth sets the size.** Wave numbers run on across floors (floor 3's
   first wave is wave 21); damage and shards grow per global wave. HP runs
   on each stratum's own curve (`strataCurve`: 1.08, then 1.07 a wave),

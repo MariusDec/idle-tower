@@ -37,14 +37,15 @@ search on 2026-11-19 found none; Play itself wasn't searched.
 > - **Made for a phone**: one hand, portrait, text size and colourblind
 >   settings, a frame-rate cap for the battery.
 >
-> LENGTH_CLAIM
+> About five hours to the first ending, then an endless second act.
 >
 > No account, no network, no tracking. Your save lives on your phone; copy
 > it out from Settings › Save, or let Android's backup carry it.
 
-`LENGTH_CLAIM` waits on the owner's R3 decision (Act 1's intended length).
-If Act 1 stays ~4–5 h, use: *"About five hours to the first ending, then
-an endless second act."* Don't upload with the placeholder.
+The length line follows R3's decision (Act 1 is ~4–5 h of active play;
+I1b gates 3.5–6 h). If I1b's band moves, re-word it. "Endless" holds: past
+the built strata the Abyss's floors go on, and the Map says the strata
+stop there for now.
 
 The backup sentence stands: R9's restore test passed on API 30 and 33
 (local transport). A restore through Google's own backup on a second

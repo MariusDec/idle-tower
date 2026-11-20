@@ -56,6 +56,14 @@ Hard rules:
 - Motion: 120/180/280/420/700ms; easings standard cubic-bezier(.2,0,0,1),
   decelerate (0,0,0,1). Reveal = fade + 8px rise, stagger 60ms capped 240ms.
   Success "pop" 0.92→1.06→1. Errors never shake. Honor prefers-reduced-motion.
+- Page change (280ms, decelerate, both layers locked): push = new page slides
+  in from 100% on top while the old one drifts to -25% and dims to 0.55
+  underneath; back = the reverse (top page slides off to 100%, the one beneath
+  comes from -25%/0.55). Top layer opaque, each layer paints the gradient.
+  Tabs slide by tab order. Header and tab bar stay still. First paint: 200ms fade.
+- Yes/no = switch row (glass row, role="switch", whole row tappable): 40×24
+  track, 18px white thumb travels 16px, track fills `--accent`, 180ms standard.
+  The label never changes with the state.
 - Accessibility: every text token ≥ 4.5:1 on every gradient stop (re-check if
   you add colors); 44px min hit area; 2px `--accent` focus ring, offset 2.
 - Copy: sentence case, short, warm, encouraging; buttons are verbs.

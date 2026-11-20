@@ -6,7 +6,7 @@ import { SIM_DT } from '../src/app/loop';
 import { ABYSS_INDEX, FLOOR_WAVES, abyssFloor, abyssStarlight, floorStart } from '../src/content/abyss';
 import { BALANCE } from '../src/content/balance';
 import { BOSSES, BOSS_BY_ID } from '../src/content/bosses';
-import { STRATA, stratumOf, strataCurve, waypointLevel, waypoints } from '../src/content/strata';
+import { BOTTOM, STRATA, STRATUM_FLOORS, strataStillDug, stratumOf, strataCurve, waypointLevel, waypoints } from '../src/content/strata';
 import { Rng } from '../src/core/rng';
 import { abyssStart, chooseWaypoint, selectedRegion } from '../src/meta/collection';
 import { recordStratum } from '../src/meta/pacts';
@@ -216,5 +216,13 @@ describe('the strata (plans/late-game/08)', () => {
   it('an old save keeps its record and pays no guardian twice', () => {
     const raw = migrate({ ...JSON.parse(JSON.stringify(newProfile(0))), version: 21, abyss: { best: 9 } });
     expect(raw.abyss).toEqual({ best: 9, felled: 0, start: 1 });
+  });
+
+  it('the shaft says the strata stop until III–V are built (R3)', () => {
+    const left = BOTTOM / STRATUM_FLOORS - STRATA.length;
+    const line = strataStillDug();
+    if (left === 0) expect(line).toBeNull();
+    else if (STRATA.length === 2) expect(line).toBe('Strata III–V are still being dug.');
+    else expect(line).toMatch(left === 1 ? /^Stratum [IVX]+ is still being dug\.$/ : /^Strata [IVX]+–[IVX]+ are still being dug\.$/);
   });
 });
