@@ -22,6 +22,8 @@ import { cardKey } from '../src/sim/systems/draft';
 import { autoUltWanted } from '../src/sim/systems/ultimate';
 import type { Profile } from '../src/meta/profile';
 import { botInput } from './bot';
+import { PHONE_OVAL, meanRim, type Oval, type Squareness } from '../src/content/arena';
+import { stageOval } from '../src/render/camera';
 
 export type PlayPolicy = 'active' | 'idle';
 
@@ -42,7 +44,51 @@ export const RIFT_SECONDS = 3;
 export const NO_RIFTS = process.argv.includes('--no-rifts');
 export function toolConfig(profile: Profile): RunConfig {
   const config = buildRunConfig(profile);
-  return NO_RIFTS ? { ...config, rifts: null } : config;
+  const arena = TOOL_ARENA === PHONE_OVAL ? config : { ...config, arena: TOOL_ARENA };
+  return NO_RIFTS ? { ...arena, rifts: null } : arena;
+}
+
+/**
+ * The stages a bot can play on (plans/large-screens.md §11.2), each the
+ * shape `stageOval` takes from that CSS box, so `n` follows the same
+ * form-factor rule as the game. `phone` is `PHONE_OVAL`, what every tool
+ * plays by default.
+ */
+export const ARENA_SHAPES: Readonly<Record<string, (n?: Squareness) => Oval>> = {
+  phone: (n) => (n === undefined ? PHONE_OVAL : { ...PHONE_OVAL, n }),
+  /** Today's desktop or tablet: the 480 px column, letterboxed. */
+  letterbox: (n) => stageOval(480, 900, n),
+  'tablet-p': (n) => stageOval(768, 1024, n),
+  'tablet-l': (n) => stageOval(1280, 800, n),
+  desktop: (n) => stageOval(1920, 1080, n),
+  /** An unfolded book-style foldable. */
+  square: (n) => stageOval(1000, 1000, n),
+};
+
+/**
+ * The arena the bots play: `--arena <shape>` (one of `ARENA_SHAPES`), and
+ * `--fog 2|3|4` to force its squareness. Neither: a phone's.
+ */
+export const TOOL_ARENA: Oval = toolArena(process.argv);
+
+function toolArena(argv: readonly string[]): Oval {
+  const at = (flag: string): string | undefined => {
+    const i = argv.indexOf(flag);
+    return i >= 0 ? argv[i + 1] : undefined;
+  };
+  const name = at('--arena') ?? 'phone';
+  const fog = at('--fog');
+  const shape = ARENA_SHAPES[name];
+  if (!shape) throw new Error(`--arena wants one of ${Object.keys(ARENA_SHAPES).join(', ')}, not ${name}`);
+  if (fog !== undefined && fog !== '2' && fog !== '3' && fog !== '4') throw new Error(`--fog wants 2, 3 or 4, not ${fog}`);
+  return shape(fog === undefined ? undefined : (Number(fog) as Squareness));
+}
+
+/** One line on the arena a tool plays, for its report's header. */
+export function arenaLine(oval: Oval = TOOL_ARENA): string {
+  const phone = meanRim(500, PHONE_OVAL);
+  const mean = meanRim(500, oval);
+  return `arena ${oval.sx.toFixed(2)} × ${oval.sy.toFixed(2)}, n = ${oval.n}: mean rim ${mean.toFixed(0)} (phone ${phone.toFixed(0)}, ${(((mean / phone) - 1) * 100).toFixed(1)} %)`;
 }
 
 /** Wall seconds an active player spends on a draft, and anyone on the first (paused) one. */

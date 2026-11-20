@@ -25,7 +25,8 @@ const BIGGEST = Math.max(
 
 describe('the light (camera-and-fog §2)', () => {
   it('no body is hit outside the light, and range + margin ≤ L on every tick', () => {
-    for (const [regionId, arena] of [[1, PHONE_OVAL], [6, ovalOf(1.6, false)]] as const) {
+    // And the squarer lights of large screens (plans/large-screens.md §11.3).
+    for (const [regionId, arena] of [[1, PHONE_OVAL], [6, ovalOf(1.6, false)], [6, ovalOf(1.24, true, 4)], [1, ovalOf(1.54, false, 3)]] as const) {
       const run = createRun({ ...buildRunConfig(veteran('all')), regionId, arena }, 3);
       let hits = 0;
       while (!run.outcome && run.time < 150) {
@@ -42,10 +43,10 @@ describe('the light (camera-and-fog §2)', () => {
       }
       expect(hits).toBeGreaterThan(100);
     }
-  }, 60_000);
+  }, 120_000);
 
   it('a body in the full dark cannot be hit; one just spawned, under the rim, can', () => {
-    for (const arena of [PHONE_OVAL, ovalOf(1.6, false)]) {
+    for (const arena of [PHONE_OVAL, ovalOf(1.6, false), ovalOf(1, true, 3), ovalOf(1.24, true, 4), ovalOf(1.78, false, 4)]) {
       const run = createRun({ ...buildRunConfig(veteran('none')), arena }, 5);
       const region = runRegion(run);
       for (const angle of [0, Math.PI / 2, 2.4]) {

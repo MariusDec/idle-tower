@@ -1,4 +1,5 @@
-import { ARENA, PHONE_OVAL, ovalOf, rimAxes, type Oval } from '../content/arena';
+import { ARENA, PHONE_OVAL, ovalOf, rimAxes, type Oval, type Squareness } from '../content/arena';
+import { formOf } from '../app/formFactor';
 
 /**
  * The camera: backing-store size, the transforms every draw pass runs under,
@@ -43,10 +44,28 @@ export function rimBox(cssWidth: number, cssHeight: number): { hw: number; hh: n
   return { hw: Math.max(h * RIM.sideShare, w - RIM.endInset), hh: h * RIM.sideShare };
 }
 
-/** The light's shape for a stage: the rim box's own (a run takes it once, at its start). */
-export function stageOval(cssWidth: number, cssHeight: number): Oval {
+/**
+ * How square the light is on a stage (plans/large-screens.md §5.1): an
+ * ellipse on every phone-sized stage, a superellipse on a large one, where
+ * an ellipse would leave big dark corners. Starting values, chosen by eye
+ * with the dev `?fog=` override (§14).
+ */
+export function stageSquareness(cssWidth: number, cssHeight: number, aspect: number): Squareness {
+  switch (formOf(cssWidth, cssHeight)) {
+    case 'compact': return 2;
+    case 'medium': return 3;
+    case 'expanded': return aspect <= 1.4 ? 4 : 3;
+  }
+}
+
+/**
+ * The light's shape for a stage: the rim box's own (a run takes it once, at
+ * its start). `n` overrides the squareness (the dev `?fog=` switch, the tools).
+ */
+export function stageOval(cssWidth: number, cssHeight: number, n?: Squareness): Oval {
   const { hw, hh } = rimBox(cssWidth, cssHeight);
-  return ovalOf(Math.max(hw, hh) / Math.min(hw, hh), hh >= hw);
+  const aspect = Math.max(hw, hh) / Math.min(hw, hh);
+  return ovalOf(aspect, hh >= hw, n ?? stageSquareness(cssWidth, cssHeight, aspect));
 }
 
 /** The extent at which a light `light` of shape `oval` fills the rim box of a stage. */

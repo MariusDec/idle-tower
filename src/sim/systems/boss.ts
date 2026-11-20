@@ -4,7 +4,7 @@ import { BOSS_BY_ID } from '../../content/bosses';
 import { ENEMY_BY_ID } from '../../content/enemies';
 import { shimGuardianFloor } from '../../content/abyss';
 import { STRATUM_BY_ID } from '../../content/strata';
-import { spawnPoint } from '../../content/arena';
+import { shortEnds, spawnPoint } from '../../content/arena';
 import type { BossDef, BossPattern, BossPhase, RegionDef } from '../../content/types';
 import type { BossState, Enemy, RunState } from '../state';
 import { bossPhases, pactLoad } from '../pacts';
@@ -73,8 +73,8 @@ function abyssBossHp(region: RegionDef): number {
 export function arriveBoss(run: RunState, region: RegionDef): void {
   const def = BOSS_BY_ID[region.boss];
   const rng = Rng.wrap(run.streams.waves);
-  // From a flank, level with the tower (see `waves.openingArc`).
-  const angle = rng.pick([0, Math.PI]);
+  // From an end of the light's short axis: a flank on a phone (see `waves.openingArc`).
+  const angle = rng.pick(shortEnds(run.arena));
   const p = spawnPoint(angle, run.stats.light, run.arena);
   // The wave it holds: 20, or the floor's tenth in the Abyss, where a
   // guardian is a lighter fight (§9). Vigour and Tyranny swell it.

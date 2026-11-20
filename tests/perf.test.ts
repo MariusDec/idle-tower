@@ -6,6 +6,7 @@ import { runRegion, spawnEnemy } from '../src/sim/systems/waves';
 import { SIM_DT } from '../src/app/loop';
 import { botInput } from '../tools/bot';
 import { veteran } from '../tools/inspect';
+import { PHONE_OVAL, ovalOf } from '../src/content/arena';
 
 /**
  * The frame budget (§12.5), headless: the sim's share of a frame with a
@@ -23,9 +24,15 @@ const STEP_BUDGET_MS = 2;
 const WARMUP = 120;
 const MEASURE = 600;
 
+/**
+ * A phone's ellipse, and a squircle (plans/large-screens.md §5.4): `inLight`
+ * runs in every targeting loop, and n = 4 must cost no more than n = 2.
+ */
+const ARENAS = [['a phone', PHONE_OVAL], ['a tablet\'s squircle', ovalOf(1.24, true, 4)]] as const;
+
 describe('frame budget (§12.5)', () => {
-  it(`steps a late build against ${BALANCE.maxEnemies} bodies inside ${STEP_BUDGET_MS} ms`, () => {
-    const run = createRun({ ...buildRunConfig(veteran('all')), regionId: 6 }, 11);
+  it.each(ARENAS)(`steps a late build against ${BALANCE.maxEnemies} bodies inside ${STEP_BUDGET_MS} ms on %s`, (_, arena) => {
+    const run = createRun({ ...buildRunConfig(veteran('all')), regionId: 6, arena }, 11);
     // A real late build: an endless node bought "out" would make every stat infinite.
     for (const [key, v] of Object.entries(run.stats)) expect(Number.isFinite(v), key).toBe(true);
     // Play until the build is grown: four weapons, or the boss wave's door.

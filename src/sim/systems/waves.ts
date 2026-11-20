@@ -4,7 +4,7 @@ import { ABYSS_INDEX, FLOOR_WAVES, abyssFloor, floorOf, floorWave } from '../../
 import { STRATUM_BY_ID, STRATUM_FLOORS, stratumOf } from '../../content/strata';
 import { BALANCE } from '../../content/balance';
 import { ENEMY_BY_ID } from '../../content/enemies';
-import { spawnPoint } from '../../content/arena';
+import { shortEndsOf, spawnPoint } from '../../content/arena';
 import type { AuraId, EnemyId, EnemyVerb, RegionDef, RegionRule, StatMod } from '../../content/types';
 import { regionByIndex } from '../../content/regions';
 import { RUSH_STAGES, isRush, rushStage } from '../../content/rush';
@@ -173,6 +173,12 @@ export interface WaveExtra {
   elites: number;
   /** The run's first wave: it opens from the flanks. Absent: wave 1 is. */
   opening?: boolean;
+  /**
+   * The light is wider than tall (a landscape stage): the opening comes from
+   * the top and bottom instead, the ends of the short axis, so the first
+   * body arrives as soon as it does on a phone (plans/large-screens.md §5.5).
+   */
+  wide?: boolean;
 }
 
 const PLAIN: WaveExtra = { count: 1, elites: 0 };
@@ -203,8 +209,10 @@ export function rollWave(region: RegionDef, n: number, rng: Rng, pace = 1, extra
   const opening = extra.opening ?? n === 1;
   // The Gates (plans/late-game/08): bodies come only through the floor's gates.
   const gates = floorGates(region, n);
+  // The ends of the light's short axis: the flanks on a tall light, top and bottom on a wide one.
+  const ends = shortEndsOf(extra.wide === true);
   const angle = (): number => (opening
-    ? rng.pick([0, Math.PI]) + rng.range(-W.openingArc, W.openingArc)
+    ? rng.pick(ends) + rng.range(-W.openingArc, W.openingArc)
     : gates ? gateAngle(gates, rng) : rng.range(0, TAU));
 
   const addPack = (enemy: EnemyId, at: number): number => {
@@ -263,9 +271,9 @@ export function rollWave(region: RegionDef, n: number, rng: Rng, pace = 1, extra
   out.sort((a, b) => a.at - b.at);
   // The first body of every wave arrives at once: a wave that opens with
   // several seconds of nothing reads as a stall. The run's very first body
-  // comes dead level with the tower, where a phone's stage is narrowest.
+  // comes from an end of the light's short axis, where the stage is narrowest.
   if (out.length > 0) {
-    out[0] = { ...out[0], at: 0, angle: opening ? rng.pick([0, Math.PI]) : out[0].angle };
+    out[0] = { ...out[0], at: 0, angle: opening ? rng.pick(ends) : out[0].angle };
   }
   return out;
 }
@@ -286,7 +294,9 @@ export function waveBonus(region: RegionDef, n: number): number {
 function waveExtra(run: RunState, region: RegionDef, n: number): WaveExtra {
   const load = pactLoad(run.pacts);
   const surge = region.rule?.effect.kind === 'blight' ? ruleSurge(load, region) : 0;
-  return { count: load.count, elites: load.elites + surge, opening: n === run.startWave };
+  return {
+    count: load.count, elites: load.elites + surge, opening: n === run.startWave, wide: run.arena.sx > run.arena.sy,
+  };
 }
 
 export function startWave(run: RunState, region: RegionDef, n: number): void {

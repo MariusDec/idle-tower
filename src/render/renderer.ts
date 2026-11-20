@@ -32,9 +32,19 @@ import { QUALITY, type QualityTier } from './quality';
 import { paintRift } from './painters/rift';
 import { CURSE_COLOR, paintReliquaries } from './painters/reliquary';
 import { RIFT_BY_ID } from '../content/rifts';
-import { ARENA, type Oval } from '../content/arena';
+import { ARENA, type Oval, type Squareness } from '../content/arena';
 import { context2dOptions } from './canvasMode';
 import { cachedGradient, clearGlows } from './glow';
+
+/**
+ * Dev only: `?fog=2`, `3` or `4` forces the light's squareness on any stage,
+ * to choose the large screens' `n` by eye (plans/large-screens.md §12 step 3).
+ */
+const FOG_OVERRIDE: Squareness | undefined = (() => {
+  if (!import.meta.env.DEV || typeof location === 'undefined') return undefined;
+  const n = Number(new URLSearchParams(location.search).get('fog'));
+  return n === 2 || n === 3 || n === 4 ? n : undefined;
+})();
 
 /** Sim ticks the crystal stays flared after a contact hit. */
 const HURT_TICKS = 12;
@@ -154,7 +164,7 @@ export class Renderer {
   /** The light's shape for the stage as it is now: what a new run takes (`RunConfig.arena`). */
   stageOval(): Oval {
     const t = this.camera.transform;
-    return stageOval(t.cssWidth, t.cssHeight);
+    return stageOval(t.cssWidth, t.cssHeight, FOG_OVERRIDE);
   }
 
   /** The player's motion settings (reduced motion, screen shake). */

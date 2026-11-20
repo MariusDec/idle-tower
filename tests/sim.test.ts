@@ -138,6 +138,16 @@ describe('wave templates', () => {
       expect(Math.abs(Math.sin(first.angle))).toBeLessThan(1e-9);
     }
   });
+
+  it('on a wide light, wave 1 opens from the top or bottom: the short axis (plans/large-screens.md §5.5)', () => {
+    for (let seed = 1; seed < 20; seed++) {
+      const wave = rollWave(REGIONS[0], 1, new Rng(seed), 1, { count: 1, elites: 0, wide: true });
+      expect(wave[0].at).toBe(0);
+      expect(Math.abs(Math.cos(wave[0].angle))).toBeLessThan(1e-9);
+      // The rest of the opening comes in round the same ends, never from the long axis's.
+      for (const s of wave) expect(Math.abs(Math.sin(s.angle))).toBeGreaterThan(0.5);
+    }
+  });
 });
 
 describe('the P1 gate, measured on the real sim', () => {

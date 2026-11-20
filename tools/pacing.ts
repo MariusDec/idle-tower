@@ -35,6 +35,9 @@
  *   npm run pacing -- --act2 --reuse     …from the post-Blight profiles the last
  *                                        --act2 saved (T4): minutes, not half an
  *                                        hour, but only while Act 1 is unchanged
+ *   npm run pacing -- --arena tablet-l   play on another stage's light (tools/play.ts's
+ *                                        ARENA_SHAPES); --fog 2|3|4 forces its squareness
+ *                                        (plans/large-screens.md §11.2)
  *   npm run pacing -- --frontiers        rewrite the arsenal's frontier profiles
  *                                        (tools/frontier.ts, R4): each Act 1
  *                                        boss's first fall, on FRONTIER_SEEDS
@@ -62,7 +65,8 @@ import { chooseTrial, trialPrize, trialWon, trialsOpen } from '../src/meta/trial
 import { Rng } from '../src/core/rng';
 import { formatDuration } from '../src/core/format';
 import type { BranchId } from '../src/content/types';
-import { FAST_STEPS, playRun, toolConfig } from './play';
+import { FAST_STEPS, TOOL_ARENA, arenaLine, playRun, toolConfig } from './play';
+import { PHONE_OVAL } from '../src/content/arena';
 import { shop } from './shop';
 import { CHECKIN_EVERY, SESSION, farmRatio, runIdle, type IdleReport } from './idle';
 import { CONTRACT_SHARE, runAct2, takePacts, type Act2Report } from './act2';
@@ -853,6 +857,7 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
 
 async function main(): Promise<void> {
   if (FAST_STEPS > 1) console.log(`--fast: the bots step ${FAST_STEPS} game steps at a time; medians, not seeds, compare with a full reading\n`);
+  if (TOOL_ARENA !== PHONE_OVAL) console.log(`--arena: ${arenaLine()}\n`);
   const hours = Number(arg('hours', '1'));
   const seed = Number(arg('seed', '1'));
   const seeds = Number(arg('seeds', '0'));

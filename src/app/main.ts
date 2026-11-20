@@ -1,4 +1,5 @@
 import { App } from './App';
+import { watchFormFactor } from './formFactor';
 import { loadIconSprite } from '../ui/icon';
 import { hideNativeSplash, initNativeShell } from '../platform/native';
 
@@ -9,6 +10,8 @@ async function main(): Promise<void> {
     if (!el) throw new Error(`#${id} missing from index.html`);
     return el as T;
   };
+  // The form factor first, so the first layout already has `<html data-form>` (plans/large-screens.md §3).
+  watchFormFactor(byId('app'));
   await loadIconSprite();
   // Dev only: the component specimen (plans/visual-identity.md §4). The branch
   // is dead in a production build, so the module never ships.
