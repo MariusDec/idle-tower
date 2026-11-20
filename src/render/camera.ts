@@ -1,5 +1,5 @@
 import { ARENA, PHONE_OVAL, ovalOf, rimAxes, type Oval, type Squareness } from '../content/arena';
-import { formOf } from '../app/formFactor';
+import { formOf, type FormFactor } from '../app/formFactor';
 
 /**
  * The camera: backing-store size, the transforms every draw pass runs under,
@@ -35,13 +35,35 @@ export const RIM = {
   sideShare: 0.926,
   /** CSS px from each end of the long axis: the HP bar's middle. */
   endInset: 70,
+  /**
+   * The most CSS px per world unit the fit may draw the base light at, per
+   * form factor (plans/large-screens.md §6.2). Bodies were sized for a
+   * phone's ~0.35; a large stage would draw them 2–3× that. Past the cap the
+   * rim box shrinks uniformly about its centre and the dark and the sky take
+   * the margin. Phones: no cap, so nothing about them changes. Tuned by eye
+   * (§14); manual zoom still goes closer.
+   */
+  maxScale: { compact: Infinity, medium: 0.6, expanded: 0.6 } as Readonly<Record<FormFactor, number>>,
 } as const;
 
+/**
+ * Where the light's rim sits when fully out, as half-sizes in CSS px, for a
+ * region `cssWidth` × `cssHeight` (the stage, or the part of it a docked
+ * panel leaves). Shrunk uniformly past `RIM.maxScale`: the aspect, and so
+ * the light's shape (`stageOval`), is the same either way.
+ */
 export function rimBox(cssWidth: number, cssHeight: number): { hw: number; hh: number } {
   const w = Math.max(1, cssWidth) / 2;
   const h = Math.max(1, cssHeight) / 2;
-  if (h >= w) return { hw: w * RIM.sideShare, hh: Math.max(w * RIM.sideShare, h - RIM.endInset) };
-  return { hw: Math.max(h * RIM.sideShare, w - RIM.endInset), hh: h * RIM.sideShare };
+  const box = h >= w
+    ? { hw: w * RIM.sideShare, hh: Math.max(w * RIM.sideShare, h - RIM.endInset) }
+    : { hw: Math.max(h * RIM.sideShare, w - RIM.endInset), hh: h * RIM.sideShare };
+  // The base light's short half-axis is `lightBase`, and it spans the box's short side.
+  const cap = RIM.maxScale[formOf(cssWidth, cssHeight)] * ARENA.lightBase;
+  const short = Math.min(box.hw, box.hh);
+  if (short <= cap) return box;
+  const k = cap / short;
+  return { hw: box.hw * k, hh: box.hh * k };
 }
 
 /**
@@ -76,6 +98,22 @@ export function fitExtent(light: number, oval: Oval, cssWidth: number, cssHeight
   return Math.min(Math.max(1, cssWidth), Math.max(1, cssHeight)) / 2 / k;
 }
 
+/**
+ * Backing-store pixels at most, per quality tier (plans/large-screens.md
+ * §10.4): a 2560×1600 tablet at DPR 2 is 16 MP of gradients. Past the
+ * budget the effective DPR drops below the tier's cap, never below 1. No
+ * phone reaches it.
+ */
+export const PIXEL_BUDGET = { high: 4_000_000, medium: 2_500_000, low: 1_500_000 } as const;
+
+/** What the camera's frame leaves out, and how many pixels it may cost. */
+export interface ViewOptions {
+  /** CSS px a docked panel covers on the stage's right (§6.3): the tower centres in the rest. */
+  insetRight?: number;
+  /** The most backing-store pixels (`PIXEL_BUDGET`). Default: none. */
+  pixelBudget?: number;
+}
+
 /** Everything needed to place world coordinates on the backing store. */
 export interface ViewTransform {
   /** Capped `devicePixelRatio`. Backing-store pixels per CSS pixel. */
@@ -91,6 +129,15 @@ export interface ViewTransform {
   /** Backing-store pixel the world origin (the tower) lands on. */
   offsetX: number;
   offsetY: number;
+  /** CSS px covered on the right (a docked panel); the arena region is the rest. */
+  insetRight: number;
+}
+
+/** The DPR for a CSS box: the device's, under the cap, lowered to fit a pixel budget, never below 1. */
+function effectiveDpr(cssW: number, cssH: number, devicePixelRatio: number, cap: number, budget: number | undefined): number {
+  let dpr = Math.min(cap, devicePixelRatio || 1);
+  if (budget !== undefined && budget > 0 && cssW * cssH * dpr * dpr > budget) dpr = Math.sqrt(budget / (cssW * cssH));
+  return Math.max(1, dpr);
 }
 
 /** Derive the whole transform from a CSS box, a device pixel ratio and an extent. Pure. */
@@ -100,15 +147,19 @@ export function makeViewTransform(
   devicePixelRatio: number,
   dprCap: number = ARENA.maxDevicePixelRatio,
   extent?: number,
+  options: ViewOptions = {},
 ): ViewTransform {
   const cssW = cssWidth > 0 ? cssWidth : 1;
   const cssH = cssHeight > 0 ? cssHeight : 1;
   const cap = dprCap > 0 ? dprCap : ARENA.maxDevicePixelRatio;
-  const dpr = Math.max(1, Math.min(cap, devicePixelRatio || 1));
+  const dpr = effectiveDpr(cssW, cssH, devicePixelRatio, cap, options.pixelBudget);
   const pixelWidth = Math.max(1, Math.round(cssW * dpr));
   const pixelHeight = Math.max(1, Math.round(cssH * dpr));
-  const e = extent !== undefined && extent > 0 ? extent : fitExtent(ARENA.lightBase, PHONE_OVAL, cssW, cssH);
-  const scale = Math.min(pixelWidth, pixelHeight) / (2 * e);
+  // The arena region: the stage less a docked panel, kept at least half the stage.
+  const inset = Math.min(cssW / 2, Math.max(0, options.insetRight ?? 0));
+  const regionW = inset > 0 ? Math.max(1, pixelWidth - inset * dpr) : pixelWidth;
+  const e = extent !== undefined && extent > 0 ? extent : fitExtent(ARENA.lightBase, PHONE_OVAL, cssW - inset, cssH);
+  const scale = Math.min(regionW, pixelHeight) / (2 * e);
   return {
     dpr,
     cssWidth: cssW,
@@ -117,9 +168,15 @@ export function makeViewTransform(
     pixelHeight,
     extent: e,
     scale,
-    offsetX: pixelWidth / 2,
+    offsetX: regionW / 2,
     offsetY: pixelHeight / 2,
+    insetRight: inset,
   };
+}
+
+/** The arena region's CSS width: the stage less what a docked panel covers. */
+export function regionWidth(t: ViewTransform): number {
+  return t.cssWidth - t.insetRight;
 }
 
 /** World point → CSS pixel, relative to the canvas element's top-left corner. */
@@ -150,6 +207,9 @@ export class Camera {
   private host: HTMLElement | null = null;
   private observer: ResizeObserver | null = null;
   private dprCap: number = ARENA.maxDevicePixelRatio;
+  private pixelBudget: number | undefined = undefined;
+  /** Where the right inset is heading; the view's own eases toward it. */
+  private insetTarget = 0;
   private view: ViewTransform;
   private shakeAmount = 0;
   private shakeTime = 0;
@@ -199,9 +259,13 @@ export class Camera {
     return this.view;
   }
 
-  /** Half-extents of what is actually visible, in world units. */
+  /**
+   * Half-extents of what is actually visible, in world units. With an inset
+   * the tower is off-centre: the wider side, so culling keeps all of it.
+   */
   get viewHalfWidth(): number {
-    return this.view.pixelWidth / (2 * this.view.scale);
+    const t = this.view;
+    return Math.max(t.offsetX, t.pixelWidth - t.offsetX) / t.scale;
   }
 
   get viewHalfHeight(): number {
@@ -220,7 +284,8 @@ export class Camera {
 
   /** True when nothing moves the view on its own: no shake, no punch, no ease left. */
   get still(): boolean {
-    return this.shakeTime === 0 && this.punchTime === 0 && this.view.extent === this.target();
+    return this.shakeTime === 0 && this.punchTime === 0 && this.view.extent === this.target()
+      && this.view.insetRight === this.insetGoal();
   }
 
   /** True while the view is closer than fully out. */
@@ -243,8 +308,19 @@ export class Camera {
    * the player's framing applies. Called every frame; cheap.
    */
   setLight(light: number, oval: Oval, framingOn: boolean): void {
-    this.fit = fitExtent(light, oval, this.view.cssWidth, this.view.cssHeight);
+    this.fit = fitExtent(light, oval, regionWidth(this.view), this.view.cssHeight);
     this.framingOn = framingOn;
+  }
+
+  /**
+   * CSS px of the stage a docked panel covers on the right (plans/large-
+   * screens.md §6.3): the tower moves to the centre of the rest and the fit
+   * shrinks to it. Eases like the extent, so the tower slides over.
+   */
+  setInsets(insets: { right?: number }): void {
+    const right = Math.max(0, insets.right ?? 0);
+    if (right === this.insetTarget) return;
+    this.insetTarget = right;
   }
 
   /** Restore a saved framing (settings), without firing `onFraming`. */
@@ -289,10 +365,16 @@ export class Camera {
     return Math.min(this.framing, this.fit);
   }
 
-  private setExtent(extent: number): void {
-    if (extent === this.view.extent) return;
+  /** The inset the view eases to: the target, clamped as `makeViewTransform` clamps it. */
+  private insetGoal(): number {
+    return Math.min(this.view.cssWidth / 2, this.insetTarget);
+  }
+
+  private setExtent(extent: number, insetRight: number = this.view.insetRight): void {
+    if (extent === this.view.extent && insetRight === this.view.insetRight) return;
     const t = this.view;
-    this.view = makeViewTransform(t.cssWidth, t.cssHeight, t.dpr, this.dprCap, extent);
+    // `t.dpr` is already capped and budgeted for this box: pass it through as is.
+    this.view = makeViewTransform(t.cssWidth, t.cssHeight, t.dpr, t.dpr, extent, { insetRight });
     this.viewVersion++;
   }
 
@@ -372,12 +454,19 @@ export class Camera {
     }
     if (this.punchTime > 0) this.punchTime = Math.max(0, this.punchTime - realDt);
     // Ease toward the framing (or the light, fully out); reduced motion jumps.
+    // The inset slides on the same ease (§6.3).
     const target = this.target();
     const cur = this.view.extent;
-    if (cur !== target) {
+    const insetCur = this.view.insetRight;
+    const insetGoal = this.insetGoal();
+    if (cur !== target || insetCur !== insetGoal) {
       const k = this.reducedMotion ? 1 : 1 - Math.exp(-ZOOM.ease * Math.max(0, realDt));
       const next = cur + (target - cur) * k;
-      this.setExtent(Math.abs(target - next) < 0.5 ? target : next);
+      const inset = insetCur + (insetGoal - insetCur) * k;
+      this.setExtent(
+        Math.abs(target - next) < 0.5 ? target : next,
+        Math.abs(insetGoal - inset) < 0.5 ? insetGoal : inset,
+      );
     }
   }
 
@@ -391,12 +480,14 @@ export class Camera {
       globalThis.devicePixelRatio ?? 1,
       this.dprCap,
       this.view.extent,
+      { insetRight: this.view.insetRight, pixelBudget: this.pixelBudget },
     );
     const prev = this.view;
     if (
       next.pixelWidth === prev.pixelWidth
       && next.pixelHeight === prev.pixelHeight
       && next.scale === prev.scale
+      && next.offsetX === prev.offsetX
     ) return;
     this.view = next;
     this.viewVersion++;
@@ -404,10 +495,11 @@ export class Camera {
     this.onResize?.(next);
   }
 
-  /** The `devicePixelRatio` ceiling, fed by the quality tier. */
-  setDprCap(cap: number): void {
-    if (!(cap > 0) || cap === this.dprCap) return;
+  /** The `devicePixelRatio` ceiling and the pixel budget, fed by the quality tier. */
+  setDprCap(cap: number, pixelBudget?: number): void {
+    if (!(cap > 0) || (cap === this.dprCap && pixelBudget === this.pixelBudget)) return;
     this.dprCap = cap;
+    this.pixelBudget = pixelBudget;
     this.measure();
   }
 

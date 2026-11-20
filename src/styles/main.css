@@ -4198,3 +4198,113 @@ body {
   border-radius: var(--radius-round);
   background: var(--bg-gradient);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Large screens: `medium`, a tablet held upright (plans/large-screens.md §4.1,
+   §7.1, §8.1, §9). `<html data-form>` comes from src/app/formFactor.ts and a
+   phone is always `compact`, so nothing below can reach one. The arena spans
+   the whole stage; the HUD, the hub's views and the overlays keep to a
+   centred column of `--content-max`.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* No letterbox: the stage is the viewport. */
+:root[data-form='medium'] { --stage-max-width: none; }
+
+/* Read from arm's length on touch (§8.3); a mouse keeps 1. */
+@media (pointer: coarse) {
+  :root[data-form='medium'] { --form-text-scale: 1.1; }
+}
+
+/* ── HUD (§8.1): the same rows in the column; the zoom stays on the stage's edge. */
+:root[data-form='medium'] :is(.hud-top, .hud-bottom) {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+}
+
+/* ── Screens: the hub's views and the results in the column. The dock stays
+   full width (it is absolutely placed); the Forge's web takes the whole
+   stage, since a bigger screen should show more of it (§7.1). */
+:root[data-form='medium'] .screen:not(.hub[data-view='forge']) {
+  padding-inline: max(var(--space-4), calc((100% - var(--content-max)) / 2));
+}
+
+:root[data-form='medium'] .hub-group > * { width: min(100%, 420px); }
+:root[data-form='medium'] .hub-start { width: min(100%, 420px); }
+
+/* Seven tabs, not stretched across 1024 px: each caps, and the bar centres them. */
+:root[data-form='medium'] .hub-tabs { justify-content: center; }
+:root[data-form='medium'] .hub-tab { flex: 0 1 120px; }
+
+/* The Map: regions two to a row; anything that isn't a region card spans both. */
+:root[data-form='medium'] .map-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: end;
+}
+:root[data-form='medium'] .map-list > :not(.map-region),
+:root[data-form='medium'] .map-list > .map-region:has(.map-shaft) {
+  grid-column: 1 / -1;
+}
+
+/* Collection, Feats, Stars, Contracts: cards two to a row. */
+:root[data-form='medium'] .entry-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+/* The Forge's node card docks bottom-right instead of spanning the stage. */
+:root[data-form='medium'] .forge-detail {
+  left: auto;
+  right: max(var(--space-4), var(--safe-r));
+  width: 360px;
+}
+
+/* ── Results (§7.3) */
+:root[data-form='medium'] .results-report-card {
+  width: min(520px, calc(100% - var(--space-6) - var(--safe-l) - var(--safe-r)));
+}
+:root[data-form='medium'] .results-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-5);
+  width: min(520px, 100%);
+}
+
+/* ── Modals and settings (§9.2) */
+:root[data-form='medium'] :is(.modal-card, .settings) {
+  width: min(520px, calc(100% - var(--space-6) - var(--safe-l) - var(--safe-r)));
+}
+
+/* ── Toasts (§9.3): top-centre, the column's width at most. */
+:root[data-form='medium'] .toasts {
+  left: 50%;
+  right: auto;
+  width: min(var(--content-max), calc(100% - 2 * var(--space-4)));
+  transform: translateX(-50%);
+}
+
+/* ── The draft (§9.1): still anchored low for the thumbs, but cards at a set
+   width, centred, in one row of up to six when the stage has room (≈ 960 px);
+   otherwise Foresight's six keep two rows of three. */
+:root[data-form='medium'] .draft { container: draft / inline-size; }
+
+:root[data-form='medium'] .draft-row,
+:root[data-form='medium'] .draft-row.is-many {
+  width: auto;
+  max-width: 960px;
+  justify-content: center;
+  grid-auto-columns: minmax(150px, 170px);
+}
+
+:root[data-form='medium'] .draft-row.is-many {
+  grid-template-columns: repeat(3, minmax(150px, 170px));
+}
+
+@container draft (min-width: 984px) {
+  :root[data-form='medium'] .draft-row.is-many {
+    grid-auto-flow: column;
+    grid-template-columns: none;
+  }
+}

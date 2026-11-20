@@ -34,6 +34,12 @@ describe('R7: tablets and foldables', () => {
     expect(rule('.stage')).toMatch(/max-width:\s*var\(--stage-max-width\)/);
     expect(rule('#app')).toMatch(/justify-content:\s*center/);
   });
+
+  it('lifts the letterbox only on a large portrait stage (plans/large-screens.md §4.1)', () => {
+    expect(rule(":root[data-form='medium']")).toMatch(/--stage-max-width:\s*none/);
+    expect(CSS).not.toMatch(/:root\[data-form='compact'\][^{]*\{[^}]*--stage-max-width/);
+    expect(TOKENS).toMatch(/--content-max:\s*640px/);
+  });
 });
 
 describe('R7: 130% text on a small phone', () => {

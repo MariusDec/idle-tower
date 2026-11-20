@@ -7,7 +7,7 @@ import { LAST_LIGHT, regionByIndex } from '../content/regions';
 import { RUSH_STAGES } from '../content/rush';
 import { formatDuration } from '../core/format';
 import type { RunState } from '../sim/state';
-import { Camera, stageOval } from './camera';
+import { Camera, PIXEL_BUDGET, regionWidth, stageOval } from './camera';
 import { Effects } from './effects';
 import { FX, GROUND, INK, RARITY, lighten, mix, setPaletteMode, withAlpha, type PaletteMode } from './palette';
 import { paintDark, paintGates, paintGround, paintRim, paintSky, type WorldBox } from './painters/arena';
@@ -157,7 +157,7 @@ export class Renderer {
   setQuality(tier: QualityTier): void {
     this.tier = tier;
     this.dirty = true;
-    this.camera.setDprCap(QUALITY[tier].dprCap);
+    this.camera.setDprCap(QUALITY[tier].dprCap, PIXEL_BUDGET[tier]);
     this.effects.setQuality(tier);
   }
 
@@ -165,6 +165,17 @@ export class Renderer {
   stageOval(): Oval {
     const t = this.camera.transform;
     return stageOval(t.cssWidth, t.cssHeight, FOG_OVERRIDE);
+  }
+
+  /** The hub's backdrop light: the shape of the arena region a docked panel leaves (plans/large-screens.md §6.3). */
+  private regionOval(): Oval {
+    const t = this.camera.transform;
+    return stageOval(regionWidth(t), t.cssHeight, FOG_OVERRIDE);
+  }
+
+  /** CSS px of the stage a docked panel covers on the right; 0 in a run. The tower slides to the rest. */
+  setArenaInset(right: number): void {
+    this.camera.setInsets({ right });
   }
 
   /** The player's motion settings (reduced motion, screen shake). */
@@ -667,7 +678,7 @@ export class Renderer {
     // The hub has no run: the base light, fully out.
     // A run's light keeps the shape of the stage it started on; the hub's follows the stage.
     const light = run ? run.stats.light : ARENA.lightBase;
-    const oval = run ? run.arena : this.stageOval();
+    const oval = run ? run.arena : this.regionOval();
     this.camera.setLight(light, oval, run !== null);
     this.camera.update(realDt);
     this.effects.tick(realDt);
@@ -838,12 +849,16 @@ export class Renderer {
     const w = t.cssWidth;
     const h = t.cssHeight;
     if (at.x + r >= 0 && at.x - r <= w && at.y + r >= 0 && at.y - r <= h) return;
-    // Where the line from the centre to the boss leaves the inset box.
-    const cx = w / 2;
-    const cy = h / 2;
+    // Where the line from the tower to the boss leaves the inset box.
+    const tower = this.camera.worldToScreen(0, 0);
+    const cx = tower.x;
+    const cy = tower.y;
     const dx = at.x - cx;
     const dy = at.y - cy;
-    const k = Math.min((cx - MARKER_INSET) / Math.max(1e-6, Math.abs(dx)), (cy - MARKER_INSET) / Math.max(1e-6, Math.abs(dy)));
+    // The tower may sit off-centre (a docked panel): the room on the side the boss is on.
+    const roomX = (dx >= 0 ? w - cx : cx) - MARKER_INSET;
+    const roomY = (dy >= 0 ? h - cy : cy) - MARKER_INSET;
+    const k = Math.min(roomX / Math.max(1e-6, Math.abs(dx)), roomY / Math.max(1e-6, Math.abs(dy)));
     const mx = cx + dx * k;
     const my = cy + dy * k;
     const a = Math.atan2(dy, dx);

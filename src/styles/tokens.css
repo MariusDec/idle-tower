@@ -340,19 +340,22 @@
   /* The settings' text size (P9): every step of the ramp below scales with
      it. Set on :root by src/app/settings.ts. */
   --text-scale: 1;
+  /* A large touch screen reads from further away (plans/large-screens.md
+     §8.3): 1.1 on a tablet, multiplying the player's choice; 1 elsewhere. */
+  --form-text-scale: 1;
 
   /* The identity's ramp. The floor is 12px: nothing reads smaller. */
-  --fs-xs: calc(12px * var(--text-scale)); /* eyebrows, section labels, badges */
-  --fs-sm: calc(13px * var(--text-scale)); /* segment labels, chips, small meta */
-  --fs-md: calc(14px * var(--text-scale)); /* secondary body, subtitles */
-  --fs-lg: calc(16px * var(--text-scale)); /* body, button label (md) */
-  --fs-xl: calc(18px * var(--text-scale)); /* button label (lg), card title */
-  --fs-2xl: calc(20px * var(--text-scale));
-  --fs-3xl: calc(22px * var(--text-scale));
-  --fs-title: calc(24px * var(--text-scale)); /* card hero title */
-  --fs-hero: calc(28px * var(--text-scale)); /* page title, the wave number */
-  --fs-display: calc(36px * var(--text-scale)); /* the wordmark, big numbers */
-  --fs-giant: calc(48px * var(--text-scale));
+  --fs-xs: calc(12px * var(--text-scale) * var(--form-text-scale)); /* eyebrows, section labels, badges */
+  --fs-sm: calc(13px * var(--text-scale) * var(--form-text-scale)); /* segment labels, chips, small meta */
+  --fs-md: calc(14px * var(--text-scale) * var(--form-text-scale)); /* secondary body, subtitles */
+  --fs-lg: calc(16px * var(--text-scale) * var(--form-text-scale)); /* body, button label (md) */
+  --fs-xl: calc(18px * var(--text-scale) * var(--form-text-scale)); /* button label (lg), card title */
+  --fs-2xl: calc(20px * var(--text-scale) * var(--form-text-scale));
+  --fs-3xl: calc(22px * var(--text-scale) * var(--form-text-scale));
+  --fs-title: calc(24px * var(--text-scale) * var(--form-text-scale)); /* card hero title */
+  --fs-hero: calc(28px * var(--text-scale) * var(--form-text-scale)); /* page title, the wave number */
+  --fs-display: calc(36px * var(--text-scale) * var(--form-text-scale)); /* the wordmark, big numbers */
+  --fs-giant: calc(48px * var(--text-scale) * var(--form-text-scale));
 
   --fw-regular: 400;
   --fw-semibold: 600;
@@ -463,6 +466,9 @@
      (D4). A phone gets the whole viewport for the stage. */
   --stage-max-width: 480px;
   --hub-width: 420px;
+  /* On a large stage (plans/large-screens.md §4.1) the arena spans it all, but
+     the HUD, the hub's views and the overlays keep to a centred column. */
+  --content-max: 640px;
 
   /* Safe-area insets (UI plan §9.A). The browser only reports these on a
      viewport with `viewport-fit=cover` (index.html). Every component rule that

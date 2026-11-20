@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ARENA, PHONE_OVAL, inLight, lightRadius, rimAxes, spawnPoint, type Oval } from '../src/content/arena';
-import { Camera, RIM, ZOOM, fitExtent, makeViewTransform, rimBox, screenToWorld, stageOval, worldToScreen } from '../src/render/camera';
+import { Camera, PIXEL_BUDGET, RIM, ZOOM, fitExtent, makeViewTransform, rimBox, screenToWorld, stageOval, worldToScreen } from '../src/render/camera';
+import { formOf } from '../src/app/formFactor';
 import { QUALITY } from '../src/render/quality';
 
 /**
@@ -9,7 +10,10 @@ import { QUALITY } from '../src/render/quality';
  * either end, whatever the window's shape. All of it is arithmetic, so a
  * stub canvas stands in for the DOM.
  */
-const VIEWPORTS: [number, number][] = [[375, 812], [375, 640], [1280, 800], [480, 900], [900, 400]];
+const VIEWPORTS: [number, number][] = [
+  [375, 812], [375, 640], [1280, 800], [480, 900], [900, 400],
+  [768, 1024], [1440, 900], [2560, 1440],
+];
 
 function stubCanvas(w: number, h: number): HTMLCanvasElement {
   return {
@@ -39,9 +43,11 @@ describe('view transform', () => {
       const grown = rimAxes(light, oval);
       expect(grown.x * t.scale).toBeLessThanOrEqual(rim.hw + 1e-6);
       expect(grown.y * t.scale).toBeLessThanOrEqual(rim.hh + 1e-6);
-      // The long axis ends `endInset` from the stage's edges, top and bottom alike.
-      const long = Math.max(w, h) / 2 - Math.max(rim.hw, rim.hh);
-      expect(long).toBeCloseTo(RIM.endInset, 6);
+      // The long axis ends `endInset` from the stage's edges, top and bottom alike (uncapped stages).
+      if (formOf(w, h) === 'compact') {
+        const long = Math.max(w, h) / 2 - Math.max(rim.hw, rim.hh);
+        expect(long).toBeCloseTo(RIM.endInset, 6);
+      }
     }
   });
 
@@ -52,6 +58,65 @@ describe('view transform', () => {
     const wide = stageOval(1280, 600);
     expect(wide.sy).toBe(1);
     expect(wide.sx).toBeGreaterThan(1);
+  });
+
+  it('caps how big a large stage draws the base light, keeping its shape (large-screens §6.2)', () => {
+    for (const [w, h] of [[768, 1024], [1440, 900], [2560, 1440]] as const) {
+      const form = formOf(w, h);
+      const oval = stageOval(w, h);
+      const t = makeViewTransform(w, h, 1, 2, fitExtent(ARENA.lightBase, oval, w, h));
+      const axes = rimAxes(ARENA.lightBase, oval);
+      // CSS px per world unit on the short axis: at the cap, never past it.
+      expect(Math.min(axes.x, axes.y) * t.scale / ARENA.lightBase).toBeCloseTo(RIM.maxScale[form], 6);
+      // Shrunk uniformly: the box keeps the uncapped box's aspect.
+      const rim = rimBox(w, h);
+      const half = { w: w / 2, h: h / 2 };
+      const raw = half.h >= half.w
+        ? { hw: half.w * RIM.sideShare, hh: half.h - RIM.endInset }
+        : { hw: half.w - RIM.endInset, hh: half.h * RIM.sideShare };
+      expect(rim.hw / rim.hh).toBeCloseTo(raw.hw / raw.hh, 9);
+    }
+  });
+
+  it('never caps a phone: compact stages draw as they always have', () => {
+    for (const [w, h] of [[360, 640], [375, 812], [412, 915], [430, 932], [480, 900]] as const) {
+      const half = { w: w / 2, h: h / 2 };
+      expect(rimBox(w, h)).toEqual({ hw: half.w * RIM.sideShare, hh: Math.max(half.w * RIM.sideShare, half.h - RIM.endInset) });
+      expect(RIM.maxScale[formOf(w, h)]).toBe(Infinity);
+    }
+  });
+
+  it('centres the tower in the region a docked panel leaves (large-screens §6.3)', () => {
+    const [w, h, right] = [1440, 900, 420];
+    const region = w - right;
+    const oval = stageOval(region, h);
+    const t = makeViewTransform(w, h, 2, 2, fitExtent(ARENA.lightBase, oval, region, h), { insetRight: right });
+    const p = worldToScreen(t, 0, 0);
+    expect(p.x).toBeCloseTo(region / 2, 6);
+    expect(p.y).toBeCloseTo(h / 2, 6);
+    // The base light fits the region's rim box, not the stage's.
+    const rim = rimBox(region, h);
+    const axes = rimAxes(ARENA.lightBase, oval);
+    expect(axes.x * t.scale / t.dpr).toBeCloseTo(rim.hw, 3);
+    expect(p.x + rim.hw).toBeLessThanOrEqual(region);
+    // Round-trips with the origin moved.
+    const back = screenToWorld(t, 100, 200);
+    const again = worldToScreen(t, back.x, back.y);
+    expect(again.x).toBeCloseTo(100, 6);
+    expect(again.y).toBeCloseTo(200, 6);
+  });
+
+  it('keeps a large backing store inside the pixel budget, never below DPR 1', () => {
+    const big = makeViewTransform(1280, 800, 2, 2, undefined, { pixelBudget: PIXEL_BUDGET.high });
+    expect(big.pixelWidth * big.pixelHeight).toBeLessThanOrEqual(PIXEL_BUDGET.high * 1.001);
+    expect(big.dpr).toBeLessThan(2);
+    const huge = makeViewTransform(2560, 1440, 1, 1, undefined, { pixelBudget: PIXEL_BUDGET.low });
+    expect(huge.dpr).toBe(1);
+    // No phone reaches any tier's budget.
+    for (const tier of ['high', 'medium', 'low'] as const) {
+      const cap = QUALITY[tier].dprCap;
+      expect(makeViewTransform(430, 932, 3, cap, undefined, { pixelBudget: PIXEL_BUDGET[tier] }).dpr).toBe(makeViewTransform(430, 932, 3, cap).dpr);
+    }
   });
 
   it('puts the tower at the centre of the screen', () => {
@@ -160,6 +225,40 @@ describe('the camera follows the light, or the player', () => {
     cam.setLight(ARENA.lightBase, PHONE_OVAL, false);
     settle(cam);
     expect(cam.transform.extent).toBeCloseTo(fit(ARENA.lightBase), 3);
+  });
+});
+
+describe('the docked panel inset', () => {
+  const settle = (cam: Camera): void => {
+    for (let i = 0; i < 200; i++) cam.update(0.05);
+  };
+
+  it('slides the tower over on the zoom ease, then is still', () => {
+    const cam = new Camera(stubCanvas(1440, 900));
+    cam.setLight(ARENA.lightBase, stageOval(1440, 900), false);
+    settle(cam);
+    expect(cam.worldToScreen(0, 0).x).toBeCloseTo(720, 6);
+    cam.setInsets({ right: 420 });
+    cam.setLight(ARENA.lightBase, stageOval(1020, 900), false);
+    expect(cam.still).toBe(false);
+    cam.update(0.05);
+    const mid = cam.worldToScreen(0, 0).x;
+    expect(mid).toBeLessThan(720);
+    expect(mid).toBeGreaterThan(510);
+    settle(cam);
+    expect(cam.still).toBe(true);
+    expect(cam.worldToScreen(0, 0).x).toBeCloseTo(510, 6);
+    expect(cam.transform.extent).toBeCloseTo(fitExtent(ARENA.lightBase, stageOval(1020, 900), 1020, 900), 3);
+    // Culling keeps the wider side, right of the tower.
+    expect(cam.viewHalfWidth * cam.transform.scale / cam.transform.dpr).toBeCloseTo(1440 - 510, 3);
+  });
+
+  it('never covers more than half the stage', () => {
+    const cam = new Camera(stubCanvas(800, 600));
+    cam.setInsets({ right: 2000 });
+    settle(cam);
+    expect(cam.still).toBe(true);
+    expect(cam.transform.insetRight).toBe(400);
   });
 });
 
