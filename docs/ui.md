@@ -107,7 +107,10 @@ relics, evolutions, feats, the deepest Abyss floor, days played.
   `applySettings` writes `data-motion` on the root; CSS animations key off
   `:root[data-motion='reduce']`, the UI asks `ui/dom.ts#motionReduced`
   (the Forge ripple, the Map's light spreading), and the renderer drops
-  shake, the zoom punch and the boss intro's letterbox.
+  shake, the zoom punch and the boss intro's letterbox. Enemies keep only
+  their plain bob (no gait styles, squash, hit squish or pops), and bosses
+  only the wind-up's crouch, the stagger's droop and the wind-up tells,
+  which carry information ([render.md](render.md#motion)).
 - **Screen shake** can be turned off on its own.
 - **Text size.** Every step of the type ramp in `tokens.css` is
   `calc(Npx * var(--text-scale))`; `applySettings` sets `--text-scale`, and

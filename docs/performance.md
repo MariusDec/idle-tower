@@ -14,16 +14,17 @@ four-weapon build, at 3× speed. Code: `render/quality.ts`,
 | pooled effects | `effects.ts`: capped arrays, swap-remove, round-robin overwrite at the cap |
 | crowd separation | a spatial grid rebuilt each step (`core/spatialGrid.ts`) |
 | enemy drawing | one baked sprite per type and view scale |
+| enemy motion | gait, squash and pops change only the `drawImage` rectangle; per-body memory in a pooled map; amplitudes halved by 300 bodies ([render.md](render.md#motion)) |
 | DOM updates | cached setters in `ui/dom.ts`: no write when nothing changed |
 | a busy frame | the loop pays at most 12 steps a frame; past that, time is dropped and the game slows rather than freezing |
 
 ## Quality tiers
 
-| Tier | Particles | Particle cap | Additive glow | DPR cap |
-|---|---|---|---|---|
-| high | ×1 | 600 | yes | 2 |
-| medium | ×0.5 | 360 | yes | 1.5 |
-| low | ×0.25 | 200 | no | 1 |
+| Tier | Particles | Particle cap | Additive glow | DPR cap | Motion |
+|---|---|---|---|---|---|
+| high | ×1 | 600 | yes | 2 | full |
+| medium | ×0.5 | 360 | yes | 1.5 | full |
+| low | ×0.25 | 200 | no | 1 | lite |
 
 **Starting tier.** `initialQualityTier()` starts every device with ≥ 4
 cores at `high`, and anything weaker at `low`; the scaler settles it from
@@ -70,9 +71,14 @@ mid-range phone is several times slower.
 **Dev: `tower.bench()`.** In a dev build, during a run:
 
 ```js
-await tower.bench({ enemies: 300, seconds: 6, tier: 'low' })
-// → { tier, frames, p50, p95, worst, drawP50, drawP95, enemies }   ms
+await tower.bench({ enemies: 300, seconds: 6, tier: 'low', motion: 'base' })
+// → { tier, motion, frames, p50, p95, worst, drawP50, drawP95, enemies }   ms
 ```
+
+`motion` (optional) overrides the enemy animation for the measurement:
+`off` is the look before it (reduced motion's), `base` the tier's own,
+`lean` the tilt still on trial (until it exists, the same as `base`).
+Unset, the player's setting holds. The bench puts it back afterwards.
 
 It keeps `enemies` bodies on the field through the sim's own
 `spawnEnemy` (a spread of the region's types, so the sprite cache and every
@@ -97,6 +103,15 @@ set lookup, so a kill no longer walks the field.
 
 **Caveats.** These are desktop numbers; the phone check (P1's gate, now
 with four-weapon evolved builds) is still open.
+
+### Enemy motion (to measure)
+
+The enemy and boss animation landed on 2026-11-20 without a measurement;
+its check is step 7 of [plans/enemy-animation.md](../plans/enemy-animation.md)
+(§10): `off` against `base` (and `lean`) on each tier at 300 bodies, on
+desktop with 4× CPU throttling and on a mid-range phone, plus a two-minute
+soak on Auto. `base` passes if it adds at most 0.15 ms `drawP95` over `off`
+on `low` on the phone, with the frame `p95` unchanged. The numbers go here.
 
 ## Frame cap
 

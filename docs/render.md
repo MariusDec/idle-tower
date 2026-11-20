@@ -28,8 +28,8 @@ backdrop.
 |---|---|
 | `arena.ts` | the baked ground: tint, light, rim |
 | `tower.ts` | the tower by tier (N2: a stone course, banners, a gilt edge, buttresses, lamps, a crown of light, one stage per Forge ring), a light per trophy (N4), the Trials' trims (N5), its mounts (one per weapon, aimed), hurt flare, fall |
-| `enemies.ts` | bodies from a sprite cache per type and view scale, gait, elite halos by aura (a Champion's in its region's boss colours too, N4), shields, shells, wards, slows, hit flash, HP bars |
-| `bosses.ts` | the boss, its court, facets, pools, hostile shots, Aegis |
+| `enemies.ts` | bodies from a sprite cache per type and view scale, moved by their gait style, squash, hit squish and pops (see Motion below), elite halos by aura (a Champion's in its region's boss colours too, N4), shields, shells, wards, slows, hit flash, HP bars |
+| `bosses.ts` | the boss in its pose, with its wind-up tells, follow-through and gaze (see Motion below), its court, facets, pools, hostile shots, Aegis |
 | `projectiles.ts` | one look per weapon; crits burn gold |
 | `arsenal.ts` | weapons that are not projectiles: orbits, drones, beams, tethers, runes, fires, statuses |
 
@@ -68,6 +68,88 @@ damage reads as `1.2Qa` rather than twenty digits.
 | Nova, revive, fall | shockwaves, zoom punch, shake |
 | boss | letterboxed intro, phase lines with a hit-stop, a slow killing blow |
 | low HP | a scarlet vignette that deepens below 35% |
+
+## Motion
+
+See [plans/enemy-animation.md](../plans/enemy-animation.md). Code:
+`render/motion.ts` (the enemy curves and the `MOTION` table, pure),
+`render/bossMotion.ts` (`BossAnimator`, `BOSS_MOTION`, `BOSS_POSE`, pure),
+`painters/enemies.ts`, `painters/bosses.ts`. Presentation only: it reads
+the wall clock, `e.id` (or `e.group`, so a Chorus hops as one) and
+render-side state, never the sim's RNG, and never sets `dirty`, so a paused
+arena still settles and freezes it.
+
+**The level.** `MotionLevel` is derived once whenever the tier or the
+setting changes (`Renderer.pushMotion`), never per body: `reduced` under
+reduced motion, whatever the tier; otherwise `QUALITY[tier].motion`, which
+is `full` on `high` and `medium` and `lite` on `low`. A lower level only
+drops animations, it never swaps in different ones:
+
+| Animation | high | medium | low | reduced motion |
+|---|---|---|---|---|
+| gait style offsets (dx, dy) | ✓ | ✓ | ✓ | the plain bob of before |
+| gait squash and stretch | ✓ | ✓ | — | — |
+| easing into and out of the gait | ✓ | ✓ | — (snaps) | — |
+| hit squish | ✓ | ✓ | ✓ (half amplitude) | — (flash only) |
+| pop walking in from the dark (from `rise`) | ✓ | ✓ | ✓ | — (fade only) |
+| pop appearing inside the light (from time) | ✓ | ✓ | — | — |
+| crowd damping | ✓ | ✓ | ✓ | n/a |
+| boss poses | ✓ | ✓ | ✓ | wind-up compression and stagger droop only |
+| slam afterimage | ✓ | — | — | — |
+| boss wind-up tells | ✓ | ✓ | ✓ | ✓ (driven by progress) |
+| boss follow-through | ✓ | ✓ | — | — |
+| boss gaze | ✓ | ✓ | — | — (pupils centred) |
+
+**Regular enemies.** `GAIT` gives each type a style, a frequency and an
+amplitude: `hop` (an arc, flattening on landing, stretching at the apex),
+`waddle` (a sideways sway with a dip and a light squash each step),
+`slither` (a wave across the heading), `float` (a slow Lissajous drift) and
+`skitter` (smooth sums of sines, never `Math.random`, which would flicker
+between interpolated frames). Squash is one signed amount turned into
+area-preserving scales (`sy = 1 − q`, `sx = 1/(1 − q)`, held to
+`[0.85, 1.18]`), anchored at the sprite's foot, so it costs nothing but a
+different `drawImage` rectangle. Every amplitude is damped by the crowd:
+full up to 60 bodies, half at 300. Halos, shields, shells, rings and the HP
+bar follow the offset only, so they stay crisp; the hit flash, an ellipse,
+follows the squash too.
+
+The painter keeps a little memory per body, never in the sim: a track map
+by id, its entries pooled and swept every 30 frames, cleared by
+`EnemyPainter.reset()` when a run is attached. It holds the gait's eased
+weight, the hit squish's re-arm (a damped spring over 0.16 s, started at
+most every 0.2 s, so a body under a beam pulses rather than sticking) and
+what a pop inside the light watches for: first sight already in the light
+(Splitter fragments, imps, Chorus), a Burrower surfacing, a shade rising, a
+Blinker landing. The first frame after a reset seeds every body without a
+pop, so a resumed save doesn't pop the whole field.
+
+**Bosses.** A boss is drawn live, so its "frames" are poses: the
+`BossAnimator` takes the boss events from `consume` (arrive, wind-up, slam,
+phase, submerge, emerge) and reads the boss each frame (wind-up progress,
+stagger, enrage, moving, hit), and returns one `BossPose`. The walk runs
+underneath per its `BOSS_MOTION` character (stomp, lurch, glide, slide,
+pulse, roll); the event poses add on top, clamped to ±25% scale and ±0.08
+shear. `paintBoss` draws the shadow with the offset and `sx` only, then
+puts the pose on as one transform anchored at the base: body, detail,
+stroke, flash and glow go through it unchanged, and no pose adds a trace
+(but the `high`-only afterimage on a slam). The Prism's facets follow the
+offset; Forgeheart's plates are their own bodies and don't, which is why
+its lunge is the shortest. The pose also carries the parts:
+
+- **tell** (wind-up progress): what the charging part shows, at every tier
+  and under reduced motion, since it carries information. See
+  [bosses.md](bosses.md#presentation).
+- **lag**: one damped spring per boss driven by the pose; it lifts the
+  top-side samples of `PROFILE`, so a crown or crest wobbles a beat behind a
+  landing.
+- **gaze**: pupils that drift toward the nearest live projectile, or the
+  tower, and lock on during a wind-up.
+
+**The bench.** `tower.bench({ motion })` overrides the level for a
+measurement: `off` forces `reduced` (the look before all this), `base` the
+tier's own level. `lean` is reserved for the tilt in the plan's option 5
+and, until that path exists, measures the same as `base`. See
+[performance.md](performance.md#measuring).
 
 ## The light, the dark and the rim
 
@@ -141,4 +223,5 @@ the next frame; the ground's gradients are keyed by palette.
 ## Quality
 
 `quality.ts` defines three tiers: particle scale and cap, the additive
-glow pass, the DPR cap. See [performance.md](performance.md).
+glow pass, the DPR cap, and how much enemy motion runs (`motion`, see
+Motion above). See [performance.md](performance.md).

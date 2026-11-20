@@ -51,6 +51,49 @@ stops the arena for a 0.12 s hit-stop; the killing blow plays at 20% speed
 for 0.9 s with a shatter and a shard fountain. The game never waits for any
 of it: the boss walks in underneath its intro.
 
+**Poses.** A boss is drawn live, so it moves through poses rather than
+frames (`render/bossMotion.ts`, [render.md](render.md#motion)). Each has a
+character (`BOSS_MOTION`): the Gatekeeper and Forgeheart stomp, the Bog
+Mother (soft as jelly) and the Hunger lurch, the Prism and the Hollow King
+glide, the Deepwarden grinds and shudders rather than squashes, the Blight
+pulses on its heartbeat, the Undertow rolls with its crests.
+
+| Pose | When | What it does | Reduced motion |
+|---|---|---|---|
+| arrive | `bossArrive` | drops in, lands with a squash, settles over two bounces | fades in place |
+| walk | moving | footfall squash and bob by character; enraged, a faster cadence and a tremble | still |
+| wind-up | a slam charging | crouches (squashes) and backs off from the tower, trembling more as it charges | the crouch only |
+| release | `slam` | snaps to a stretch with a lunge at the tower, overshoots and settles; on `high`, an afterimage of the crouch | still |
+| stagger | staggered | droops and sways, the stars over it | the droop only |
+| phase | `bossPhase` | a shudder and a scale punch, over the shake | still |
+| hit | hit | a 4% squish, at most every 0.25 s | — |
+| sink, rise | `submerge`, `emerge` (Undertow) | flattens as it sinks, springs up as it rises | fades |
+
+Forgeheart's lunge is the shortest: its plates are their own bodies and
+don't follow the pose, so it presses into them without parting.
+
+**Wind-up tells.** The part that charges shows the charge, at every tier
+and under reduced motion (it is driven by the wind-up's progress, not an
+oscillation, and it is what tells the player a slam is coming):
+
+| Boss | Tell |
+|---|---|
+| Gatekeeper | the portcullis rises and slams down on release; the eye flares |
+| Bog Mother | the eggs bulge |
+| Prism | the inner rays stop turning and converge on the tower |
+| Forgeheart | the grille's bars spread round a swelling, brightening heart |
+| Hollow King | the hollows burn toward blood |
+| Blight | the core burns toward blood |
+| Deepwarden | the ward glyph brightens and its ring closes |
+| Hunger | the mouth gapes before the bite |
+| Undertow | the crests pull in |
+
+On `high` and `medium`, the outer parts follow through (crown, thorns,
+crests, merlons, and the Bog Mother's whole outline wobble a beat behind a
+landing or a release), and the Gatekeeper, Hollow King, Undertow and Hunger
+watch: their pupils drift toward the nearest shot, or the tower, and lock
+on and narrow during a wind-up.
+
 ## After the fall
 
 The boss's shards pay ×5 on the first kill. `bankRun` records kills and the
