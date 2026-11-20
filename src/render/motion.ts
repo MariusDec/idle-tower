@@ -153,6 +153,28 @@ export function hitSquish(since: number, level: MotionLevel, crowd: number): num
   return amp * Math.exp(-since / MOTION.squishDecay) * Math.cos((since * TAU) / MOTION.squishPeriod);
 }
 
+/** The part of a body's track the hit squish reads and writes (§5.1). */
+export interface SquishTrack {
+  /** The `e.hitTick` last answered with a squish. */
+  hitSeen: number;
+  /** Clock the current squish began (−∞: none yet). */
+  squishAt: number;
+}
+
+/**
+ * Start a squish when the body was hit since the last one began, but at most
+ * once per `squishRearm`: under a beam `hitTick` changes every tick, and a
+ * squish restarted every tick would sit at its peak. A hit inside the gap
+ * stays pending (`hitSeen` isn't updated), so it plays once the gap ends.
+ * Returns whether a squish started.
+ */
+export function armSquish(t: SquishTrack, hitTick: number, clock: number): boolean {
+  if (hitTick < 0 || hitTick === t.hitSeen || clock - t.squishAt < MOTION.squishRearm) return false;
+  t.hitSeen = hitTick;
+  t.squishAt = clock;
+  return true;
+}
+
 /**
  * The scale of a body walking in from the dark (§5.2.1), from its `rise`
  * (0..1): 0.82 at the rim, an overshoot of 1.08 at 0.7, settling to 1.

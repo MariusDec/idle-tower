@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  MOTION, applySquash, crowdDamping, gait, hitSquish, motionLevel, popFromRise, popFromTime,
+  MOTION, applySquash, armSquish, crowdDamping, gait, hitSquish, motionLevel, popFromRise, popFromTime,
   type BodyMotion, type GaitStyle, type MotionLevel,
 } from '../src/render/motion';
 
@@ -154,20 +154,45 @@ describe('hitSquish', () => {
 
   it('re-armed by a beam every tick, it pulses and returns near rest between pulses', () => {
     // hitTick changes every sim tick (1/60 s) for 2 s; the painter re-arms at most every `squishRearm`.
-    let squishAt = -Infinity;
+    const t = { hitSeen: -1, squishAt: -Infinity };
     let peak = 0;
     let lowBetween = Infinity;
+    let pulses = 0;
     for (let tick = 0; tick < 120; tick++) {
       const clock = tick / 60;
-      if (clock - squishAt >= MOTION.squishRearm) {
-        if (squishAt > -Infinity) lowBetween = Math.min(lowBetween, Math.abs(hitSquish(clock - squishAt - 1e-9, 'full', 1)));
-        squishAt = clock;
+      const before = t.squishAt;
+      if (armSquish(t, tick, clock)) {
+        pulses++;
+        if (before > -Infinity) lowBetween = Math.min(lowBetween, Math.abs(hitSquish(clock - before, 'full', 1)));
       }
-      peak = Math.max(peak, hitSquish(clock - squishAt, 'full', 1));
+      peak = Math.max(peak, hitSquish(clock - t.squishAt, 'full', 1));
     }
     expect(peak).toBeCloseTo(MOTION.squishAmp);
+    // About 5 a second: pummelled, not stuck.
+    expect(pulses).toBeGreaterThanOrEqual(8);
+    expect(pulses).toBeLessThanOrEqual(10);
     // Right before each re-arm the spring is all but spent: never stuck at its peak.
     expect(lowBetween).toBeLessThan(0.01);
+  });
+
+  it('arms once per hit, and a hit inside the gap plays once the gap ends', () => {
+    const t = { hitSeen: -1, squishAt: -Infinity };
+    expect(armSquish(t, -1, 0)).toBe(false); // never hit
+    expect(armSquish(t, 10, 1)).toBe(true);
+    expect(armSquish(t, 10, 1.5)).toBe(false); // same hit, read again
+    expect(armSquish(t, 11, 1.6)).toBe(true);
+    expect(armSquish(t, 12, 1.65)).toBe(false); // inside the gap: pending
+    expect(t.hitSeen).toBe(11);
+    expect(armSquish(t, 12, 1.81)).toBe(true);
+    expect(t.squishAt).toBe(1.81);
+  });
+
+  it('adds onto a gait squash inside the clamp', () => {
+    const m = body();
+    gait(m, 'hop', 3, 0, 1, HEADING, 'full', 1); // landing: the most flattened
+    applySquash(m, 1 - m.sy + hitSquish(0, 'full', 1));
+    expect(m.sy).toBeGreaterThanOrEqual(MOTION.minScale);
+    expect(m.sx).toBeLessThanOrEqual(MOTION.maxScale);
   });
 });
 

@@ -5,7 +5,7 @@ import type { Enemy } from '../../sim/state';
 import { FX, INK, mix, withAlpha, type FxColorName } from '../palette';
 import { emergence } from './arena';
 import { context2dOptions } from '../canvasMode';
-import { crowdDamping, gait, type BodyMotion, type GaitStyle, type MotionLevel } from '../motion';
+import { applySquash, armSquish, crowdDamping, gait, hitSquish, type BodyMotion, type GaitStyle, type MotionLevel } from '../motion';
 import type { QualityTier } from '../quality';
 
 /**
@@ -268,6 +268,16 @@ export class EnemyPainter {
       HEADING.nx = -bx / d;
       HEADING.ny = -by / d;
       gait(m, g.style, g.bob, time * g.freq + seed, t.weight, HEADING, level, crowd);
+      // A hit squishes on top of the gait (§5.1), on the wall clock (D-2); reduced motion keeps the flash only.
+      if (level !== 'reduced') {
+        armSquish(t, e.hitTick, time);
+        const q = hitSquish(time - t.squishAt, level, crowd);
+        // The gait's own squash is `1 − sy`; the sum goes back through the same clamp.
+        if (q !== 0) applySquash(m, 1 - m.sy + q);
+      } else {
+        // Keep up, so leaving reduced motion doesn't replay a stale hit.
+        t.hitSeen = e.hitTick;
+      }
       // Overlays (halos, rings, the HP bar) follow the offset, not the squash (§4.3).
       const x = bx + m.dx;
       const y = by + m.dy;
