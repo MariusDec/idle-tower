@@ -56,7 +56,7 @@ describe('gesture guards', () => {
   });
 
   it('contains scroll chaining in every scroller', () => {
-    for (const sel of ['.modal-card', '.map-scroll', '.collection-body', '.feats-list', '.results-report-card']) {
+    for (const sel of ['.modal-card', '.modal-scroll', '.map-scroll', '.collection-body', '.feats-list', '.results-report-card']) {
       expect(declares(sel, /overscroll-behavior:\s*contain/), sel).toBe(true);
     }
   });

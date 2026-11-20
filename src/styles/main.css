@@ -2274,7 +2274,20 @@ body {
   background: var(--glass-fill-sheet-solid);
   box-shadow: var(--glass-shadow);
   text-align: center;
+  display: flex;
+  flex-direction: column;
 }
+
+/* A tall body scrolls inside the card, so the title and the buttons never leave it. */
+.modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.modal-title,
+.modal-actions { flex-shrink: 0; }
 
 /* Sentence case, 22/700 (plans/visual-identity.md §2.5). */
 .modal-title {

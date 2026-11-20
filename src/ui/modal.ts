@@ -31,13 +31,19 @@ export class Modal {
     h.className = 'modal-title';
     h.textContent = title;
     card.appendChild(h);
-    if (typeof body !== 'string') {
-      card.appendChild(body);
-    } else if (body) {
-      const p = document.createElement('p');
-      p.className = 'modal-body';
-      p.textContent = body;
-      card.appendChild(p);
+    // The body scrolls on its own; the title and the buttons stay in view.
+    if (typeof body !== 'string' || body) {
+      const scroll = document.createElement('div');
+      scroll.className = 'modal-scroll';
+      if (typeof body !== 'string') {
+        scroll.appendChild(body);
+      } else {
+        const p = document.createElement('p');
+        p.className = 'modal-body';
+        p.textContent = body;
+        scroll.appendChild(p);
+      }
+      card.appendChild(scroll);
     }
     const row = document.createElement('div');
     row.className = 'modal-actions';
