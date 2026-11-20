@@ -16,12 +16,18 @@ export interface QualityProfile {
   dprCap: number;
   /** Cached drop shadows under entities. */
   shadows: boolean;
+  /**
+   * How much enemy motion runs (plans/enemy-animation.md §2): `full`, or
+   * `lite` (offsets and a half hit squish, no squash, easing or timed pops).
+   * A lower tier only drops animations, never swaps in different ones.
+   */
+  motion: 'full' | 'lite';
 }
 
 export const BASE_QUALITY: Record<QualityTier, QualityProfile> = {
-  high:   { particleScale: 1.00, maxParticles: 600, additive: true,  dprCap: 2.0, shadows: true  },
-  medium: { particleScale: 0.50, maxParticles: 360, additive: true,  dprCap: 1.5, shadows: true  },
-  low:    { particleScale: 0.25, maxParticles: 200, additive: false, dprCap: 1.0, shadows: false },
+  high:   { particleScale: 1.00, maxParticles: 600, additive: true,  dprCap: 2.0, shadows: true,  motion: 'full' },
+  medium: { particleScale: 0.50, maxParticles: 360, additive: true,  dprCap: 1.5, shadows: true,  motion: 'full' },
+  low:    { particleScale: 0.25, maxParticles: 200, additive: false, dprCap: 1.0, shadows: false, motion: 'lite' },
 };
 
 /**

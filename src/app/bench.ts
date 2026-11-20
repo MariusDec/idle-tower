@@ -20,10 +20,17 @@ export interface BenchOptions {
   enemies?: number;
   seconds?: number;
   tier?: QualityTier;
+  /**
+   * Enemy motion (plans/enemy-animation.md §3.4, §10): `off` is today's look,
+   * `base` the new animations on this tier, `lean` adds option 5. Unset: the
+   * player's setting.
+   */
+  motion?: 'off' | 'base' | 'lean';
 }
 
 export interface BenchResult {
   tier: QualityTier;
+  motion: 'off' | 'base' | 'lean' | 'setting';
   frames: number;
   /** Milliseconds per frame. */
   p50: number;
@@ -43,6 +50,8 @@ export async function bench(run: RunState, renderer: Renderer, opts: BenchOption
   const before = renderer.quality;
   const tier = opts.tier ?? before;
   renderer.setQuality(tier);
+  const motionBefore = renderer.benchMotionMode;
+  if (opts.motion) renderer.setBenchMotion(opts.motion);
   const region = runRegion(run);
   const types = region.pool.map((p) => p.enemy);
   const samples: number[] = [];
@@ -75,11 +84,12 @@ export async function bench(run: RunState, renderer: Renderer, opts: BenchOption
   });
   renderer.render = render;
   renderer.setQuality(before);
+  renderer.setBenchMotion(motionBefore);
   const kept = samples.slice(WARMUP).sort((x, y) => x - y);
   const drawn = draws.slice(WARMUP).sort((x, y) => x - y);
   const at = (xs: number[], q: number): number => Math.round(xs[Math.min(xs.length - 1, Math.floor(q * xs.length))] * 10) / 10;
   return {
-    tier, frames: kept.length, p50: at(kept, 0.5), p95: at(kept, 0.95), worst: at(kept, 1),
+    tier, motion: opts.motion ?? 'setting', frames: kept.length, p50: at(kept, 0.5), p95: at(kept, 0.95), worst: at(kept, 1),
     drawP50: at(drawn, 0.5), drawP95: at(drawn, 0.95), enemies: target,
   };
 }

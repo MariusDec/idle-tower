@@ -179,4 +179,12 @@ describe('qualityFor (Android caps)', () => {
     // Never more than the desktop tier asks for.
     for (const t of ['high', 'medium', 'low'] as const) expect(q[t].dprCap).toBeLessThanOrEqual(BASE_QUALITY[t].dprCap);
   });
+
+  it('keeps the enemy motion level of the desktop tiers (plans/enemy-animation.md §2)', () => {
+    expect(BASE_QUALITY.high.motion).toBe('full');
+    expect(BASE_QUALITY.medium.motion).toBe('full');
+    expect(BASE_QUALITY.low.motion).toBe('lite');
+    const q = qualityFor(true);
+    for (const t of ['high', 'medium', 'low'] as const) expect(q[t].motion).toBe(BASE_QUALITY[t].motion);
+  });
 });

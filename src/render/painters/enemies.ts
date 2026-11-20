@@ -5,6 +5,8 @@ import type { Enemy } from '../../sim/state';
 import { FX, INK, mix, withAlpha, type FxColorName } from '../palette';
 import { emergence } from './arena';
 import { context2dOptions } from '../canvasMode';
+import type { MotionLevel } from '../motion';
+import type { QualityTier } from '../quality';
 
 /**
  * Enemy bodies, salvaged from the legacy renderer's `paintEnemyBody`: a base
@@ -86,9 +88,100 @@ export interface GuestLook {
   natives: ReadonlySet<EnemyId>;
 }
 
+/**
+ * What the painter remembers of one body between frames (plans/enemy-animation.md
+ * §3.3): render-side only, so the sim never holds it. Pooled, never dropped.
+ */
+interface Track {
+  /** Last frame this id was drawn, for the sweep. */
+  frame: number;
+  /** Clock when first drawn. */
+  seenAt: number;
+  /** Clock a time-driven pop began (−∞: none). */
+  popAt: number;
+  /** The `e.hitTick` last read. */
+  hitSeen: number;
+  /** Clock the current hit squish began. */
+  squishAt: number;
+  /** Gait weight 0..1, eased toward `e.moving`. */
+  weight: number;
+  /** Last frame's `e.under` (Burrower) and `e.shade` (Echoes). */
+  under: boolean;
+  shade: boolean;
+  /** Last drawn position, to spot a Blinker's jump. */
+  lx: number;
+  ly: number;
+}
+
+/** Frames between sweeps of the tracks no longer drawn. */
+const SWEEP_FRAMES = 30;
+
 export class EnemyPainter {
   private cache = new Map<string, Sprite>();
   private scale = 0;
+  /** What runs (§2): reduced motion wins over the tier's profile. */
+  private level: MotionLevel = 'full';
+  private tier: QualityTier = 'high';
+  /** Per-body render state by enemy id, and a free list so 300 bodies × thousands per run make no garbage. */
+  private tracks = new Map<number, Track>();
+  private pool: Track[] = [];
+  private frame = 0;
+
+  /** The motion level and the tier, set when either the setting or the tier changes, never per body. */
+  setMotion(level: MotionLevel, tier: QualityTier): void {
+    this.level = level;
+    this.tier = tier;
+  }
+
+  get motion(): { level: MotionLevel; tier: QualityTier } {
+    return { level: this.level, tier: this.tier };
+  }
+
+  /** Forget every body: the run changed, and ids restart per run. */
+  reset(): void {
+    for (const t of this.tracks.values()) this.pool.push(t);
+    this.tracks.clear();
+  }
+
+  /** Bodies tracked now (tests, and the bench's eye on the pool). */
+  get tracked(): number {
+    return this.tracks.size;
+  }
+
+  /** The track for `e`, made (from the pool) on its first frame drawn, and stamped as seen now. */
+  private track(e: Enemy, clock: number, x: number, y: number): Track {
+    let t = this.tracks.get(e.id);
+    if (!t) {
+      t = this.pool.pop() ?? {
+        frame: 0, seenAt: 0, popAt: -Infinity, hitSeen: -1, squishAt: -Infinity, weight: 0,
+        under: false, shade: false, lx: 0, ly: 0,
+      };
+      t.seenAt = clock;
+      // A body already on the field when a run is attached or resumed never pops.
+      t.popAt = -Infinity;
+      t.hitSeen = e.hitTick;
+      t.squishAt = -Infinity;
+      t.weight = e.moving ? 1 : 0;
+      t.under = e.under;
+      t.shade = e.shade;
+      t.lx = x;
+      t.ly = y;
+      this.tracks.set(e.id, t);
+    }
+    t.frame = this.frame;
+    return t;
+  }
+
+  /** Every `SWEEP_FRAMES`, hand the tracks of bodies no longer drawn back to the pool. */
+  private sweep(): void {
+    if (this.frame % SWEEP_FRAMES !== 0) return;
+    const stale = this.frame - SWEEP_FRAMES;
+    for (const [id, t] of this.tracks) {
+      if (t.frame > stale) continue;
+      this.tracks.delete(id);
+      this.pool.push(t);
+    }
+  }
 
   /** Drop the cache when the view scale changes; sprites rebake lazily. */
   setScale(scale: number): void {
@@ -131,6 +224,8 @@ export class EnemyPainter {
     guest: GuestLook | null = null,
   ): void {
     drawChorusLinks(ctx, enemies, alpha, time);
+    this.frame++;
+    this.sweep();
     for (const e of enemies) {
       // Bosses, the Hollow King's court and Forgeheart's plates have their own painter (`bosses.ts`).
       if (!e.alive || e.boss || e.court || e.plate) continue;
@@ -143,6 +238,8 @@ export class EnemyPainter {
       const y = e.py + (e.y - e.py) * alpha + (e.moving ? Math.sin(time * g.freq + e.id) * g.bob : 0);
       const rise = emergence(x, y, light, oval);
       if (rise <= 0) continue;
+      // Step 0 only keeps the track alive; steps 1–3 read it (plans/enemy-animation.md §3.3).
+      this.track(e, time, x, y);
       const fade = (e.hiddenUntil > simTime ? PHASED_ALPHA : e.shade ? SHADE_ALPHA : 1) * rise;
       ctx.globalAlpha = fade;
       // A Champion (N4) wears its region's boss colours: a second, wider halo outside its aura's.

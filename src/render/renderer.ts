@@ -29,6 +29,7 @@ import type { FrameId, WeaponId } from '../content/types';
 import { frameById } from '../content/frames';
 import { formAccent, type FormPaint } from './painters/form';
 import { QUALITY, type QualityTier } from './quality';
+import { motionLevel } from './motion';
 import { paintRift } from './painters/rift';
 import { CURSE_COLOR, paintReliquaries } from './painters/reliquary';
 import { RIFT_BY_ID } from '../content/rifts';
@@ -119,6 +120,12 @@ export class Renderer {
   private readonly guests = new Map<StratumId, GuestLook>();
   /** Reduced motion (the OS's or the player's): the letterbox is the moving part, so it goes. */
   private reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /**
+   * Dev only: the bench's say over enemy motion (plans/enemy-animation.md §3.4).
+   * `off` forces today's look, `base` the tier's own whatever the setting,
+   * `lean` adds the option-5 path once it exists (§10). Null: the player's setting.
+   */
+  private benchMotion: 'off' | 'base' | 'lean' | null = null;
   /** The settings' text size, for the banners and damage numbers. */
   private textScale = 1;
   /** The palette the canvas wears, and its baked sprites were drawn in. */
@@ -142,6 +149,7 @@ export class Renderer {
     this.ctx = canvas.getContext('2d', context2dOptions(false))!;
     this.camera = new Camera(canvas);
     this.camera.setHost(host);
+    this.pushMotion();
     // A GPU reset (often on a return from the background) can blank every
     // baked canvas. Chrome restores the main canvas itself; the bakes are
     // dropped so they repaint, and the next frame draws in full.
@@ -159,6 +167,26 @@ export class Renderer {
     this.dirty = true;
     this.camera.setDprCap(QUALITY[tier].dprCap, PIXEL_BUDGET[tier]);
     this.effects.setQuality(tier);
+    this.pushMotion();
+  }
+
+  /** Recompute the enemy motion level from the setting, the tier and any bench override; once per change. */
+  private pushMotion(): void {
+    const tierMotion = QUALITY[this.tier].motion;
+    const o = this.benchMotion;
+    const level = o === 'off' ? 'reduced' : o !== null ? tierMotion : motionLevel(this.reducedMotion, tierMotion);
+    this.enemies.setMotion(level, this.tier);
+  }
+
+  /** Dev only (the bench): override enemy motion, or hand it back to the setting with null. */
+  setBenchMotion(mode: 'off' | 'base' | 'lean' | null): void {
+    this.benchMotion = mode;
+    this.dirty = true;
+    this.pushMotion();
+  }
+
+  get benchMotionMode(): 'off' | 'base' | 'lean' | null {
+    return this.benchMotion;
   }
 
   /** The light's shape for the stage as it is now: what a new run takes (`RunConfig.arena`). */
@@ -183,6 +211,7 @@ export class Renderer {
     this.reducedMotion = reduced;
     this.dirty = true;
     this.camera.setMotion(reduced, shake);
+    this.pushMotion();
   }
 
   /**
@@ -266,6 +295,8 @@ export class Renderer {
     this.lastRun = run;
     this.dirty = true;
     this.effects.clear();
+    // Enemy ids restart per run: the painter's per-body tracks would alias.
+    this.enemies.reset();
     this.fallT = null;
     this.banner = null;
     this.gates = null;

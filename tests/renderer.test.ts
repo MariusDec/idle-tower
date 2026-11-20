@@ -67,3 +67,42 @@ describe('renderer settled', () => {
     expect(r.settled).toBe(true);
   });
 });
+
+/** The painter's motion level (plans/enemy-animation.md §2, §3.4), read through the private field. */
+const motionOf = (r: Renderer): { level: string; tier: string } =>
+  (r as unknown as { enemies: { motion: { level: string; tier: string } } }).enemies.motion;
+
+describe('renderer enemy motion', () => {
+  it('follows the tier and the reduced-motion setting, which wins', () => {
+    const r = settledRenderer();
+    r.setMotion(false, true);
+    r.setQuality('high');
+    expect(motionOf(r)).toEqual({ level: 'full', tier: 'high' });
+    r.setQuality('low');
+    expect(motionOf(r)).toEqual({ level: 'lite', tier: 'low' });
+    r.setMotion(true, true);
+    expect(motionOf(r).level).toBe('reduced');
+    r.setQuality('high');
+    expect(motionOf(r).level).toBe('reduced');
+  });
+
+  it('the bench override wins, and hands back to the setting', () => {
+    const r = settledRenderer();
+    r.setMotion(true, true);
+    r.setQuality('medium');
+    r.setBenchMotion('base');
+    expect(motionOf(r).level).toBe('full');
+    r.setMotion(false, true);
+    r.setBenchMotion('off');
+    expect(motionOf(r).level).toBe('reduced');
+    r.setBenchMotion(null);
+    expect(motionOf(r).level).toBe('full');
+  });
+
+  it('still settles: the motion state never keeps it drawing', () => {
+    const r = settledRenderer();
+    r.setBenchMotion('base');
+    r.render(null, 1, 0.05);
+    expect(r.settled).toBe(true);
+  });
+});
