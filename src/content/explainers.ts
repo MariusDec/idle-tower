@@ -7,8 +7,12 @@
  * Not a `CONTENT` table: these run past R4's fifteen words by design.
  */
 
-/** Where an explainer is told: one of the hub's views (`ui/hub/hub.ts#HubView`). */
-export type ExplainerView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'stars' | 'tactics' | 'pacts' | 'contracts' | 'omen';
+/**
+ * Where an explainer is told: one of the hub's views (`ui/hub/hub.ts#HubView`),
+ * or `run`: a one-line card that holds the arena the first time the player
+ * meets the thing mid-run (R1 §4), as the first draft does.
+ */
+export type ExplainerView = 'home' | 'forge' | 'map' | 'collection' | 'feats' | 'stars' | 'tactics' | 'pacts' | 'contracts' | 'omen' | 'run';
 
 export type ExplainerId =
   | 'tower'
@@ -33,7 +37,10 @@ export type ExplainerId =
   | 'tactics'
   | 'pacts'
   | 'contracts'
-  | 'omen';
+  | 'omen'
+  | 'tear'
+  | 'champion'
+  | 'aura';
 
 export interface ExplainerDef {
   readonly id: ExplainerId;
@@ -216,6 +223,19 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
       'Your first try of the day is the one that counts. After it, practise as much as you like.',
       'Copy your result to send to a friend. Paste theirs to compare, or to play their day.',
     ],
+  },
+  // Mid-run (R1 §4): one sentence each, told as the thing first appears. The Collection's pages say more later.
+  {
+    id: 'tear', view: 'run', title: 'A rift',
+    lines: ['A rift has opened: tap it before it closes and it makes you an offer, which you are always free to leave.'],
+  },
+  {
+    id: 'champion', view: 'run', title: 'A Champion',
+    lines: ['Past the boss, every fifth wave sends a Champion: a tougher elite in the boss’s colours, sure to drop one of this region’s relics.'],
+  },
+  {
+    id: 'aura', view: 'run', title: 'Elite auras',
+    lines: ['This elite wears an aura, shown by its halo: a power for itself or its neighbours, so it is often worth killing first.'],
   },
 ];
 

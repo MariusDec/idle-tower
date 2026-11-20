@@ -148,6 +148,31 @@ export function draftSeconds(profile: Profile): number {
   return automations(profile).has('tactician') ? BALANCE.automation.tacticianSeconds : BALANCE.draft.seconds;
 }
 
+/** The draft timer's Long setting (R1 §5), in wall seconds: twice the usual clock. */
+export const LONG_DRAFT_SECONDS = BALANCE.draft.seconds * 2;
+
+/** The draft timer's Short setting, in wall seconds: half the usual clock. An anomaly's floor still holds. */
+export const SHORT_DRAFT_SECONDS = BALANCE.draft.seconds / 2;
+
+/**
+ * The draft's clock as the player has set it (R1 §5): wall seconds, or null
+ * for none (the arena waits for the pick). Off still auto-picks once the
+ * Tactician is owned, on the Long clock, so a run left alone goes on. The
+ * app's only: the bots read `draftSeconds`, so no reading moves with it.
+ */
+export function playerDraftSeconds(profile: Profile): number | null {
+  switch (profile.settings.draftTimer) {
+    case 'off':
+      return automations(profile).has('tactician') ? LONG_DRAFT_SECONDS : null;
+    case 'short':
+      return SHORT_DRAFT_SECONDS;
+    case 'long':
+      return LONG_DRAFT_SECONDS;
+    default:
+      return draftSeconds(profile);
+  }
+}
+
 /** How many Forge nodes the Foreman's wishlist holds (N7). */
 export const WISHLIST_MAX = 5;
 

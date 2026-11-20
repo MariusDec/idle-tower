@@ -2,8 +2,11 @@
 
 Vanilla DOM over the canvas. Code: `src/ui/`, styles in
 `src/styles/tokens.css` (tokens) and `src/styles/main.css`. Portrait
-mobile first: every screen is checked at 375×812 (D4); on desktop the same
-portrait arena is centred.
+mobile first: every screen is checked at 375×812 (D4), and swept at 360×640
+and 412×915 at 100% and 130% text (R7). On desktop, a tablet or an unfolded
+foldable the same portrait stage (`--stage-max-width`, 480 px) is centred on
+the brand gradient; Android keeps it portrait (`appCategory="game"`, so
+Android 16 honours the lock on large screens).
 
 ## Layers (`index.html`)
 
@@ -36,7 +39,11 @@ portrait arena is centred.
   *Banish · n* beside Reroll arms the panel: the cards it may strike (new
   items) wear a scarlet ✕ and the rest dim; the next tap on one strikes
   it, any other tap disarms.
-- **Results** (`results.ts`, §4.6): wave reached, shards and where they came
+- **Results** (`results.ts`, §4.6): wave reached; on a run short of the
+  region's best, a gold line under the headline with what did move
+  (R2 §4, `plateauLine`): the wave against the median of the last 3–5
+  ordinary runs there (`regions[i].recent`), and the Forge's next node
+  before → after; shards and where they came
   from, records broken (the region's own wave record, told as overtime
   past the boss), discoveries, what opened up (feat chips only once the
   Feats tab is open), trophies (N4), what the Foreman bought (N7), a
@@ -84,9 +91,9 @@ dragged and saved when it is let go.
 | Section | Controls |
 |---|---|
 | Sound | sound on/off; master, effects and music sliders |
-| Display | quality (Auto / High / Medium / Low, with the tier in force under Auto); text size (100 / 115 / 130%); colours (Standard / Colourblind) |
+| Display | quality (Auto / High / Medium / Low, with the tier in force under Auto); text size (100 / 115 / 130%); colours (Standard / Colourblind); frame rate (30 / 60 / Device, default 60: [performance.md](performance.md#frame-cap)); screen on in runs (On / Off, default On) |
 | Motion | screen shake on/off; motion (Device / Reduced / Full) |
-| Save | between runs only (U12): copy save, save file, load save (paste or file, then confirm), restore one of the last three runs' backups ([save.md](save.md)) |
+| Save | between runs only (U12): copy save, save file, load save (paste or file, then confirm), restore one of the last three runs' backups; on Android, a line that Android backup carries the save (R9) ([save.md](save.md)) |
 | Progress | reset, between runs only, asking twice |
 
 A **Stats** page lists the numbers the HUD leaves out (§10.2): runs, best
@@ -105,17 +112,27 @@ relics, evolutions, feats, the deepest Abyss floor, days played.
 - **Text size.** Every step of the type ramp in `tokens.css` is
   `calc(Npx * var(--text-scale))`; `applySettings` sets `--text-scale`, and
   the renderer scales its banners and damage numbers by the same factor.
-  Settings rows stack label over control so 130% still fits 375 px.
+  Settings rows stack label over control so 130% still fits 375 px. What
+  can't wrap is capped at what its box fits, never below its 100% size: the
+  hub's tab labels and a draft card's pills, via container units (`cqi`).
+  What grows past the stage scrolls instead of clipping: the hub's home and
+  the draft (`justify-content: safe flex-end`, so a tall draft keeps its
+  title), and a draft card's height is a floor, not a size.
 - **Colourblind-safe colours** for the canvas ([render.md](render.md)).
 - **Touch targets.** Every control declares a 44 px floor;
   `tests/touch-targets.test.ts` audits the list.
 - Buttons are real `<button>`s; segmented controls are radio groups with
-  `aria-checked`; dialogs are `role="dialog"` with `aria-modal`.
+  `aria-checked`; a yes-or-no setting is a switch row (`role="switch"`,
+  the whole row the target, its label fixed whatever the state), never an
+  On/Off pair; dialogs are `role="dialog"` with `aria-modal`.
+- **Page change.** The hub's views slide like stacked cards (tabs by tab
+  order; Tactics, Pacts, Contracts and the Omen push over the Tower), the
+  dock still; `src/ui/pageNav.ts`. Reduced motion swaps at once.
 
 ## Visual identity
 
 The UI wears the shared identity ("Sunrise / Blue hour", vendored in
-[`docs/visual-identity/`](visual-identity/), with The Tower's changes in its
+[`docs/visual-identity/`](visual-identity/), with Blue Hour's changes in its
 `VARIANT.md`), as the "Last light" variant
 ([plans/visual-identity.md](../plans/visual-identity.md)):
 

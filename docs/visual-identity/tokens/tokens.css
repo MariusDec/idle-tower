@@ -86,6 +86,13 @@
   --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
   --stagger-step: 60ms;
   --stagger-cap: 240ms;
+  /* Page change: the card on top slides the full width while the page under it
+     moves a quarter as far and dims, so the parallax reads as depth. */
+  --page-duration: var(--dur-base);
+  --page-ease: var(--ease-decelerate);
+  --page-parallax: -25%;
+  --page-under-opacity: 0.55;
+  --page-first-fade: 200ms; /* first paint only: a plain fade, no slide */
 
   /* The one opaque surface: the primary action. White label on it. */
   --accent-gradient: linear-gradient(135deg, #6b5bd9 0%, #4a5fd0 100%);

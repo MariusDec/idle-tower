@@ -44,6 +44,10 @@ export class Synth {
   private volumes: Volumes = { master: 1, sfx: 1, music: 1 };
   /** One cached second of white noise, sliced for every burst. */
   private noiseBuffer: AudioBuffer | null = null;
+  /** The app is hidden (R10): the context stays suspended. */
+  private hidden = false;
+  /** A suspend or resume is in flight (`settleHidden`). */
+  private settling = false;
 
   /** Start the context; call from a user gesture. Safe to call again. */
   start(): void {
@@ -68,6 +72,41 @@ export class Synth {
       console.warn('[audio] no AudioContext', err);
       this.ctx = null;
     }
+  }
+
+  /**
+   * The app hidden or back (minimised on Android, a tab switched away): the
+   * context is suspended, so nothing plays behind the launcher and the
+   * audio thread sleeps, then resumed. A WebView keeps a running context
+   * playing in the background, so this is not left to the browser. Before
+   * the first gesture there is no context, and nothing to do.
+   */
+  setHidden(hidden: boolean): void {
+    this.hidden = hidden;
+    this.settleHidden();
+  }
+
+  /**
+   * Bring the context to the app's visibility. `state` only changes once a
+   * suspend or resume lands, so a hide and a show inside one call's flight
+   * (a quick app switch) would otherwise leave it playing behind the
+   * launcher, or silent on return: the call in flight is let land, then the
+   * latest wish applied. A refused resume (no recent gesture) is not retried
+   * here; the next touch's `start` does it.
+   */
+  private settleHidden(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.settling) return;
+    const want = this.hidden;
+    const call = want
+      ? (ctx.state === 'running' ? ctx.suspend() : null)
+      : (ctx.state === 'suspended' ? ctx.resume() : null);
+    if (!call) return;
+    this.settling = true;
+    void call.catch(() => {}).finally(() => {
+      this.settling = false;
+      if (this.hidden !== want) this.settleHidden();
+    });
   }
 
   setEnabled(on: boolean): void {

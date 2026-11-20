@@ -222,4 +222,19 @@ export const motion = {
   },
   staggerStep: 60,
   staggerCap: 240,
+  /**
+   * Page change. A push lays the new page over the old one (new: 100% → 0,
+   * old: 0 → -25% while dimming to 0.55); a pop lifts the top page off and the
+   * page underneath runs the same moves in reverse. Both layers share one
+   * duration and curve so they stay locked together.
+   */
+  page: {
+    duration: 280,
+    ease: 'cubic-bezier(0, 0, 0, 1)',
+    parallax: -0.25,
+    underOpacity: 0.55,
+    firstFade: 200,
+  },
+  /** On/off switch: the thumb slides and the track fills together. */
+  switch: { duration: 180, ease: 'cubic-bezier(0.2, 0, 0, 1)' },
 } as const;

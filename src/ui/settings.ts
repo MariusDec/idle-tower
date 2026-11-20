@@ -1,10 +1,14 @@
-import type { MotionSetting, Profile } from '../meta/profile';
+import type { DraftTimer, FrameRate, MotionSetting, Profile } from '../meta/profile';
 import { TEXT_SCALES } from '../meta/profile';
+import { LONG_DRAFT_SECONDS, SHORT_DRAFT_SECONDS } from '../meta/automation';
+import { BALANCE } from '../content/balance';
 import type { QualityTier } from '../render/quality';
 import type { CanvasMode } from '../render/canvasMode';
+import { Capacitor } from '@capacitor/core';
 import { formatNumber } from '../core/format';
 import { importProfile, type BackupInfo } from '../meta/save/transfer';
-import { segmented, type Choice } from './controls';
+import { segmented, switchRow, type Choice } from './controls';
+import { turnPage } from './pageNav';
 import { icon } from './icon';
 import type { IconId } from '../content/icons';
 
@@ -50,6 +54,28 @@ const CANVAS_CHOICES: readonly Choice<CanvasMode>[] = [
   { value: 'gpu', label: 'GPU' },
   { value: 'cpu', label: 'CPU' },
 ];
+/** The draft's clock (R1 §5). */
+const DRAFT_TIMER_CHOICES: readonly Choice<DraftTimer>[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'short', label: 'Short' },
+  { value: 'on', label: 'Standard' },
+  { value: 'long', label: 'Long' },
+];
+
+const DRAFT_TIMER_NOTE: Readonly<Record<DraftTimer, string>> = {
+  short: `The suggested card is taken after ${SHORT_DRAFT_SECONDS} seconds.`,
+  on: `The suggested card is taken after ${BALANCE.draft.seconds} seconds (fewer with the Tactician).`,
+  long: `The suggested card is taken after ${LONG_DRAFT_SECONDS} seconds.`,
+  off: `The arena waits for your pick. Once you own the Tactician, it picks after ${LONG_DRAFT_SECONDS} seconds.`,
+};
+
+/** Frames drawn a second (R5 §2). */
+const FRAME_RATE_CHOICES: readonly Choice<FrameRate>[] = [
+  { value: 30, label: '30' },
+  { value: 60, label: '60' },
+  { value: 'device', label: 'Device' },
+];
+
 const MOTION_CHOICES: readonly Choice<MotionSetting>[] = [
   { value: 'system', label: 'Device' },
   { value: 'reduce', label: 'Reduced' },
@@ -59,10 +85,10 @@ const PALETTE_CHOICES: readonly Choice<Settings['palette']>[] = [
   { value: 'standard', label: 'Standard' },
   { value: 'safe', label: 'Colourblind' },
 ];
-const ON_OFF: readonly Choice<boolean>[] = [
-  { value: true, label: 'On' },
-  { value: false, label: 'Off' },
-];
+const KEEP_AWAKE_NOTE = {
+  on: 'The screen stays on while a run plays, so a run left alone keeps going. Off in the hub and when paused.',
+  off: 'The screen turns off on the phone’s usual timeout, and the run pauses until you come back.',
+} as const;
 
 /** A loaded profile waiting for the player's word, and where it came from. */
 interface Pending {
@@ -88,6 +114,8 @@ function ago(ms: number): string {
 export class SettingsPanel {
   private el: HTMLElement | null = null;
   private page: 'options' | 'stats' = 'options';
+  /** The page the card on screen shows: a redraw onto the other one turns the page. */
+  private drawn: 'options' | 'stats' | null = null;
   private profile: Profile | null = null;
   private canReset = false;
   private confirming = false;
@@ -136,6 +164,7 @@ export class SettingsPanel {
     if (!this.el) return;
     this.el.remove();
     this.el = null;
+    this.drawn = null;
     this.actions.closed();
   }
 
@@ -160,16 +189,29 @@ export class SettingsPanel {
     body.className = 'settings-body';
     if (this.page === 'options') this.options(body, p.settings);
     else this.stats(body, p);
+    // The pages turn inside this box; the title, the tabs and Done stay put.
+    const box = document.createElement('div');
+    box.className = 'settings-pages';
+    box.append(body);
     const done = document.createElement('button');
     done.type = 'button';
     done.className = 'btn btn-primary settings-done';
     done.textContent = 'Done';
     done.addEventListener('click', () => this.close());
-    card.append(title, pages, body, done);
-    // A redraw keeps the player's place in the list.
-    const scroll = this.el.querySelector('.settings')?.scrollTop ?? 0;
+    card.append(title, pages, box, done);
+    // A redraw keeps the player's place in the list, and doesn't replay the
+    // card's opening animation: only a card that wasn't up yet reveals.
+    const prev = this.el.querySelector<HTMLElement>('.settings');
+    const scroll = prev?.scrollTop ?? 0;
+    if (prev) card.style.animation = 'none';
+    // Options → Stats is a tab to the right: forward. The live page only, never one still leaving.
+    const left = prev && this.drawn && this.drawn !== this.page
+      ? prev.querySelector<HTMLElement>('.settings-pages > .settings-body:not(.page-leaving)')
+      : null;
     this.el.replaceChildren(card);
     card.scrollTop = scroll;
+    if (left) turnPage(box, left, body, this.page === 'stats' ? 'forward' : 'backward');
+    this.drawn = this.page;
   }
 
   private options(body: HTMLElement, s: Settings): void {
@@ -177,11 +219,17 @@ export class SettingsPanel {
       this.actions.change(edit);
       this.render();
     };
+    // A switch flips in place and saves without a redraw, so its thumb slides; what it governs follows here.
+    const flip = (edit: (s: Settings, on: boolean) => void, after?: (on: boolean) => void) => (on: boolean): void => {
+      this.actions.change((x) => edit(x, on));
+      after?.(on);
+    };
     const q = this.actions.quality();
     const c = this.actions.canvas();
+    const awakeNote = note(s.keepAwake ? KEEP_AWAKE_NOTE.on : KEEP_AWAKE_NOTE.off);
     body.append(
       section('Sound',
-        row('Sound', segmented(ON_OFF, s.sound, (v) => set((x) => { x.sound = v; }), 'Sound')),
+        switchRow('Sound', s.sound, flip((x, on) => { x.sound = on; })),
         row('Master', slider(s.volume.master, (v, save) => this.actions.change((x) => { x.volume.master = v; }, save), 'Master volume')),
         row('Effects', slider(s.volume.sfx, (v, save) => this.actions.change((x) => { x.volume.sfx = v; }, save), 'Effects volume')),
         row('Music', slider(s.volume.music, (v, save) => this.actions.change((x) => { x.volume.music = v; }, save), 'Music volume')),
@@ -194,9 +242,18 @@ export class SettingsPanel {
         row('Text size', segmented(TEXT_SCALES.map((k) => ({ value: k, label: `${Math.round(k * 100)}%` })), s.textScale,
           (v) => set((x) => { x.textScale = v; }), 'Text size')),
         row('Colours', segmented(PALETTE_CHOICES, s.palette, (v) => set((x) => { x.palette = v; }), 'Weapon colours')),
+        row('Frame rate', segmented(FRAME_RATE_CHOICES, s.frameRate, (v) => set((x) => { x.frameRate = v; }), 'Frame rate')),
+        switchRow('Keep the screen on', s.keepAwake, flip((x, on) => { x.keepAwake = on; }, (on) => {
+          awakeNote.textContent = on ? KEEP_AWAKE_NOTE.on : KEEP_AWAKE_NOTE.off;
+        }), 'In runs'),
+        awakeNote,
+      ),
+      section('Gameplay',
+        row('Draft timer', segmented(DRAFT_TIMER_CHOICES, s.draftTimer, (v) => set((x) => { x.draftTimer = v; }), 'Draft timer')),
+        note(DRAFT_TIMER_NOTE[s.draftTimer]),
       ),
       section('Motion',
-        row('Screen shake', segmented(ON_OFF, s.shake, (v) => set((x) => { x.shake = v; }), 'Screen shake')),
+        switchRow('Screen shake', s.shake, flip((x, on) => { x.shake = on; })),
         row('Motion', segmented(MOTION_CHOICES, s.motion, (v) => set((x) => { x.motion = v; }), 'Reduced motion')),
       ),
     );
@@ -268,7 +325,12 @@ export class SettingsPanel {
       return box;
     }
     box.append(
-      note('Take your progress to another install, or bring it back.'),
+      note(
+        // R9: Auto Backup carries files/ (the save) to a new phone; see res/xml/backup_rules.xml.
+        Capacitor.getPlatform() === 'android'
+          ? 'Moves to a new phone with Android backup, or copy your save here.'
+          : 'Take your progress to another install, or bring it back.',
+      ),
       button('Copy save', 'btn', () => void this.actions.copySave().then((ok) => say(ok ? 'Copied. Paste it somewhere safe.' : 'The clipboard said no. Try Save file.'))),
       button('Save file', 'btn', () => void this.actions.saveFile().then((where) => say(`Saved to ${where}.`), () => say('The file couldn’t be saved. Try Copy save.')), 'io-share'),
       button('Load save', 'btn', () => { this.loading = { text: '' }; this.message = ''; this.failed = false; this.render(); }, 'io-download'),

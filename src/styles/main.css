@@ -415,6 +415,135 @@ body {
 :root[data-motion='reduce'] .reveal-in,
 :root[data-motion='reduce'] .pop { animation: none; }
 
+/* ── Page change (src/ui/pageNav.ts) ─────────────────────────────────────────
+   The identity's page change (docs/visual-identity/GUIDELINES.md, Motion). A
+   push lays the new page down like a card over the old one; a back lifts the
+   top card off. The page underneath moves a quarter as far and dims, and that
+   parallax is what sells the depth. Both layers share one duration and curve
+   (280ms, decelerate) so they stay locked together.
+
+     forward:  leaving 0 → -25%, opacity 1 → 0.55  (under) | entering 100% → 0 (over)
+     backward: leaving 0 → 100%                    (over)  | entering -25% → 0, 0.55 → 1 (under)
+
+   It runs as a View Transition: the root snapshot is the whole stage, so each
+   layer carries the ground's gradient (and, on the Tower, the backdrop tower)
+   and stays opaque, a card rather than a cross-fade. The dock (Begin run and
+   the tabs) and the overlays (an explainer opening with the view, a toast)
+   don't move: they show their new state at once. Tabs slide by tab order.
+   The first paint after launch is a plain 200ms fade instead. */
+@keyframes page-over-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes page-under-out {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(var(--page-parallax)); opacity: var(--page-under-opacity); }
+}
+@keyframes page-under-in {
+  from { transform: translateX(var(--page-parallax)); opacity: var(--page-under-opacity); }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes page-over-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+@keyframes page-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* The same change inside a panel (Settings' Options and Stats, pageNav.ts
+   `turnPage`): the live page slides in its box while a still copy of the page
+   left slides out. A sheet is glass, so a layer can't paint a ground of its
+   own to hide the one under it; the page underneath is clipped instead, where
+   the page on top has reached. Both move on one curve, so that edge is linear
+   in the progress: it travels (100% + parallax) = 75% of the width. */
+@keyframes page-under-out-clipped {
+  from { transform: translateX(0); opacity: 1; clip-path: inset(0 0 0 0); }
+  to {
+    transform: translateX(var(--page-parallax));
+    opacity: var(--page-under-opacity);
+    clip-path: inset(0 calc(100% + var(--page-parallax)) 0 0);
+  }
+}
+@keyframes page-under-in-clipped {
+  from {
+    transform: translateX(var(--page-parallax));
+    opacity: var(--page-under-opacity);
+    clip-path: inset(0 calc(100% + var(--page-parallax)) 0 0);
+  }
+  to { transform: translateX(0); opacity: 1; clip-path: inset(0 0 0 0); }
+}
+
+/* Clip only while turning: a row's focus ring stays whole otherwise. */
+.is-turning {
+  position: relative;
+  overflow-x: clip;
+}
+.page-leaving {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.page-enter--forward {
+  position: relative;
+  z-index: 1;
+  animation: page-over-in var(--page-duration) var(--page-ease) both;
+}
+.page-exit--forward {
+  z-index: 0;
+  animation: page-under-out-clipped var(--page-duration) var(--page-ease) both;
+}
+.page-enter--backward {
+  position: relative;
+  z-index: 0;
+  animation: page-under-in-clipped var(--page-duration) var(--page-ease) both;
+}
+.page-exit--backward {
+  z-index: 2;
+  animation: page-over-out var(--page-duration) var(--page-ease) both;
+}
+
+.page-first-paint { animation: page-fade-in var(--page-first-fade) var(--ease-decelerate) both; }
+:root[data-motion='reduce'] .page-first-paint { animation: none; }
+
+.hub-dock { view-transition-name: hub-dock; }
+.overlay-root { view-transition-name: overlay; }
+
+/* The live page is already the new one: a tap during the slide reaches it
+   (the dock doesn't move, so a tab is where it looks) and starts the next
+   change, which cuts this one short. */
+::view-transition { pointer-events: none; }
+
+::view-transition-group(hub-dock),
+::view-transition-group(overlay),
+::view-transition-new(hub-dock),
+::view-transition-new(overlay) {
+  animation: none;
+}
+::view-transition-old(hub-dock),
+::view-transition-old(overlay) {
+  animation: none;
+  opacity: 0;
+}
+
+:root[data-nav]::view-transition-old(root),
+:root[data-nav]::view-transition-new(root) {
+  /* The UA's cross-fade blends the pair with plus-lighter; a slide must not. */
+  mix-blend-mode: normal;
+  animation-duration: var(--page-duration);
+  animation-timing-function: var(--page-ease);
+  animation-fill-mode: both;
+}
+:root[data-nav='forward']::view-transition-old(root) { animation-name: page-under-out; }
+:root[data-nav='forward']::view-transition-new(root) { animation-name: page-over-in; }
+:root[data-nav='backward']::view-transition-old(root) {
+  z-index: 1;
+  animation-name: page-over-out;
+}
+:root[data-nav='backward']::view-transition-new(root) { animation-name: page-under-in; }
+
 /* ── Icons ───────────────────────────────────────────────────────────────── */
 
 .icon {
@@ -948,6 +1077,11 @@ body {
   gap: calc(var(--space-7) * 1.75);
   /* Clear the dock below, and match it above so the centre stays put. */
   padding-block: var(--dock-h);
+  /* A short phone at 130% text (R7: 360×640) can't fit both groups between
+     the two paddings: scroll, rather than slide the lower one under the dock. */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* The dock (plans/visual-identity.md §5.1–5.2): the one primary in a sticky
@@ -1024,7 +1158,15 @@ body {
 
 .hub-tab-icon .icon { --icon-size: 20px; }
 
+/* Six tabs share a phone's width, but a label grows with the text size and
+   its tab doesn't: "Collection" at 130% needs 69px of a 56px tab (R7). The
+   label's size is capped at what its own tab fits (≈ 4.7em for the longest,
+   bold when active), so the cap loosens as the bar gets wider or holds fewer
+   tabs. */
+.hub-tab { container-type: inline-size; }
+
 .hub-tab-label {
+  font-size: min(var(--fs-xs), 21cqi);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1201,6 +1343,13 @@ body {
   font-weight: var(--fw-bold);
   font-size: var(--fs-xl);
   color: var(--text-secondary);
+}
+
+/* A plateau's line (R2 §4): what moved on a run short of the best. */
+.results-plateau {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--fx-gold);
 }
 
 /* Rewards, records, discoveries: each a section under an uppercase header. */
@@ -1762,6 +1911,12 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  /* Bottom-anchored, but a draft taller than the stage (two rows of cards at
+     130% text, R7) starts at the top and scrolls, rather than losing its title
+     off the top edge. */
+  justify-content: safe flex-end;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-3) calc(max(var(--space-3), var(--safe-b)) + var(--hud-bottom-clear));
@@ -1809,7 +1964,7 @@ body {
 }
 
 .draft-row.is-many .draft-card {
-  height: 196px;
+  min-height: 196px;
   gap: 2px;
 }
 
@@ -1838,6 +1993,23 @@ body {
   cursor: pointer;
   overflow: hidden;
   animation: card-in var(--dur-slow) var(--ease-decelerate) both;
+}
+
+/* In the draft's own row the height is a floor, not a size: at 130% text a
+   four-line effect needs ~270px, and a fixed card cut it mid-sentence (R7).
+   The row's cards stretch to the tallest, so they stay even. */
+.draft-row .draft-card {
+  height: auto;
+  min-height: 232px;
+}
+
+/* A card's pills can't wrap: "SUGGESTED" and "Strong here" at 130% are wider
+   than a 110px card. They grow with the text size only as far as the card
+   allows (≈ 7.5em with padding), and never below their 100% size. */
+.draft-card { container-type: inline-size; }
+
+.draft-card :is(.draft-card-new, .draft-card-suggested, .draft-card-badge) {
+  font-size: max(min(var(--fs-xs), 11.5cqi), min(var(--fs-xs), 12px));
 }
 
 /* The identity's stagger: 60ms a card, capped at 240ms. */
@@ -1939,6 +2111,10 @@ body {
 
 .draft-card-name {
   margin: 0;
+  /* "Scattershot" at 130% is wider than a 110px card: hyphenate, never clip. */
+  max-width: 100%;
+  hyphens: auto;
+  overflow-wrap: break-word;
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
   font-size: var(--fs-lg);
@@ -2227,7 +2403,20 @@ body {
   background: var(--glass-fill-sheet-solid);
   box-shadow: var(--glass-shadow);
   text-align: center;
+  display: flex;
+  flex-direction: column;
 }
+
+/* A tall body scrolls inside the card, so the title and the buttons never leave it. */
+.modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.modal-title,
+.modal-actions { flex-shrink: 0; }
 
 /* Sentence case, 22/700 (plans/visual-identity.md §2.5). */
 .modal-title {
@@ -2243,6 +2432,63 @@ body {
 .modal-body {
   margin: 0 0 var(--space-4);
   color: var(--text-secondary);
+}
+
+/* The welcome-back card (R8 §2): a headline number, then a line per what else happened. */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+}
+
+.welcome-head {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--fx-gold);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-bold);
+}
+
+.welcome-head .icon { --icon-size: 26px; align-self: center; }
+.welcome-n { font-size: var(--fs-display); line-height: 1; font-variant-numeric: tabular-nums; }
+.welcome-unit { font-size: var(--fs-lg); color: var(--text-secondary); }
+
+.welcome-caption {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
+.welcome-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.welcome-lines > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: var(--space-3);
+}
+
+.welcome-lines dt { color: var(--text-dim); }
+.welcome-lines dd { margin: 0; }
+.welcome-value { font-weight: var(--fw-bold); color: var(--fx-gold); text-align: right; }
+.welcome-lines > .is-stored .welcome-value { color: var(--stored); }
+.welcome-note { grid-column: 1 / -1; color: var(--text-secondary); }
+
+.welcome-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
 }
 
 /* The pause menu's build stats: inset rows inside the sheet. */
@@ -2505,10 +2751,13 @@ body {
   --lit: 0%;
   grid-area: 1 / 1;
   pointer-events: none;
+  /* A glow pooled at the foot that thins out fast: even at full reach the
+     upper map keeps only a trace, so the cards above stay their own colour. */
   background: linear-gradient(to top,
-    rgba(var(--rgb-gold), 0.22) 0%,
-    rgba(var(--rgb-gold), 0.08) var(--lit),
-    transparent calc(var(--lit) + 12%));
+    rgba(var(--rgb-gold), 0.13) 0%,
+    rgba(var(--rgb-gold), 0.05) calc(var(--lit) * 0.3),
+    rgba(var(--rgb-gold), 0.018) calc(var(--lit) * 0.75),
+    transparent var(--lit));
 }
 
 .map-light.is-spreading {
@@ -2752,6 +3001,89 @@ body {
   color: var(--text-on-fill);
 }
 
+/*
+ * The switch (src/ui/controls.ts `switchRow`): every yes-or-no setting. The
+ * whole glass row is the control and the hit target, role="switch" with
+ * aria-checked; the track and thumb follow aria-checked. The label says what
+ * it turns on and never changes with the state: the track says which way.
+ */
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--control-h-md);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--glass-fill);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.switch-row:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.switch-row-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.switch-row-label {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+}
+
+.switch-row-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* A 40 × 24 track; off is the surface with a hairline, on fills with the accent. */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  /* Track and thumb share one 180ms pluck, so the fill lands as the thumb does. */
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+
+/* The white 18px thumb travels 16px. */
+.switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+[aria-checked='true'] > .switch {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+[aria-checked='true'] > .switch::before { transform: translateX(16px); }
+
+:root[data-motion='reduce'] .switch,
+:root[data-motion='reduce'] .switch::before { transition: none; }
+
 .collection-body,
 .feats-list,
 .tactics-body {
@@ -2950,7 +3282,15 @@ body {
   padding-bottom: 0;
 }
 
-.tactics-row .icon { --icon-size: 22px; color: var(--fx-gold); }
+.tactics-row .icon { --icon-size: 22px; color: var(--item, var(--fx-gold)); }
+/* The draft's colour coding (§10.1): weapons arcane, passives gold. */
+.tactics-row.is-weapon { --item: var(--fx-arcane); }
+.tactics-row.is-passive { --item: var(--fx-gold); }
+.tactics-row.is-weapon,
+.tactics-row.is-passive {
+  border-left: 3px solid color-mix(in srgb, var(--item) 70%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--item) 10%, transparent), transparent 45%), var(--glass-fill, transparent);
+}
 .tactics-row .entry-name { min-width: 0; font-size: var(--fs-lg); }
 .tactics-row.is-dragging { border: 2px solid var(--accent); background: var(--glass-fill-strong); opacity: 0.9; }
 
@@ -3244,20 +3584,19 @@ body {
 .hub-goal.is-link { cursor: pointer; }
 .hub-goal.is-link:hover { border-color: var(--accent-tint-border); }
 
-.map-region.is-abyss {
-  border-color: rgba(var(--rgb-arcane), 0.6);
-  background: linear-gradient(to bottom, var(--glass-fill), var(--bg-stop-2));
-}
+.map-region.is-abyss { border-color: rgba(var(--rgb-arcane), 0.45); }
 .map-region.is-abyss.is-chosen { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--glass-shadow); }
 .map-region.is-abyss .map-region-name { color: var(--fx-arcane); }
 
-/* The shaft (plans/late-game/08 §3.2): the strata as bands, descending. */
+/* The shaft (plans/late-game/08 §3.2): the strata as bands, descending.
+   Bands are insets inside the card, like the Trials rows: the design's quiet
+   surface, not the arena's ground tints. State shows in text and edge only. */
 .map-shaft {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: var(--space-2) 0 0;
-  padding: 0;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
   list-style: none;
 }
 .map-band {
@@ -3273,27 +3612,32 @@ body {
   color: var(--text-dim);
   overflow: hidden;
 }
+/* Guardian down: the inset with a faint accent sheen (progress), which is
+   what lights from the top down on a first fall. */
 .map-band.is-felled {
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--band) 70%, white 18%), var(--band)) no-repeat;
-  background-size: 100% 100%;
+  background:
+    linear-gradient(to bottom, rgba(var(--rgb-accent), 0.10), rgba(var(--rgb-accent), 0.03)) no-repeat,
+    var(--panel-subtle);
+  background-size: 100% 100%, auto;
   color: var(--text-secondary);
 }
-.map-band.is-reached {
-  background: color-mix(in srgb, var(--band) 50%, var(--bg-stop-2));
+.map-band.is-felled .map-band-name { color: var(--text-primary); }
+.map-band.is-felled .map-band-numeral { color: var(--success); }
+/* Not yet reached, or past the last built stratum: quieter than the inset. */
+.map-band.is-silhouette,
+.map-band.is-sealed {
+  background: var(--glass-fill-subtle);
+  border: 1px dashed var(--border-light);
 }
-.map-band.is-silhouette {
-  background: var(--ink-950);
-  box-shadow: inset 0 0 18px rgba(var(--rgb-arcane), 0.18);
-  justify-items: start;
-}
-.map-band.is-deeper { background: var(--ink-950); min-height: 32px; }
-/* Past the last authored stratum, once its guardian has fallen: a way in, still dark. */
-.map-band.is-below { background: var(--ink-950); }
+.map-band.is-silhouette { justify-items: start; }
+.map-band.is-deeper { background: var(--glass-fill-subtle); min-height: 32px; }
+.map-band.is-sealed { min-height: 44px; }
+.map-band.is-sealed .map-band-line { font-style: italic; }
 /* A guardian's first fall: the band lights from the top down. */
 .map-band.is-lighting { animation: map-band-light 0.8s ease-out both; }
 @keyframes map-band-light {
-  from { background-size: 100% 0%; }
-  to { background-size: 100% 100%; }
+  from { background-size: 100% 0%, auto; }
+  to { background-size: 100% 100%, auto; }
 }
 .map-band-head {
   grid-column: 1;
@@ -3307,7 +3651,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.map-band-numeral { min-width: 2ch; color: var(--fx-gold); }
+.map-band-numeral { min-width: 2ch; color: var(--text-muted); }
 .map-band-head .icon { --icon-size: 18px; color: var(--text-secondary); }
 .map-band-line {
   grid-column: 1;
@@ -3320,7 +3664,7 @@ body {
   min-height: 44px;
   font-size: var(--fs-xs);
 }
-.map-band-shadow { --icon-size: 22px; color: var(--ink-700); }
+.map-band-shadow { --icon-size: 22px; color: var(--text-muted); opacity: 0.5; }
 @media (prefers-reduced-motion: reduce) {
   .map-band.is-lighting { animation: none; }
 }
@@ -3820,6 +4164,7 @@ body {
 .specimen-section { display: flex; flex-direction: column; gap: var(--space-3); }
 .specimen-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .specimen-pad { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); }
+.specimen-switches { display: flex; flex-direction: column; gap: var(--space-2); }
 .specimen-pad-sm { padding: var(--space-2) var(--space-3); font-size: var(--fs-md); }
 .specimen-list-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
 .specimen-list-text { display: flex; flex: 1 1 auto; flex-direction: column; }

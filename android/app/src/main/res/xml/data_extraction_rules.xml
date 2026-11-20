@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- R9 (plans/review-risks.md): what Android 12+ carries to the cloud and to
+     a new phone in a device-to-device transfer. Same set as backup_rules.xml
+     (Android 11 and older); see there for why only the files dir. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="." />
+    </device-transfer>
+</data-extraction-rules>

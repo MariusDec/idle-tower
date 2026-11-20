@@ -120,6 +120,51 @@
         stroke-linecap: round;
         stroke-linejoin: round;
       }
+      .phone {
+        position: relative;
+        height: 340px;
+        max-width: 360px;
+        margin-inline: auto;
+        border-radius: var(--radius-2xl);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--glass-shadow);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-gradient);
+      }
+      .phone .page-stack {
+        flex: 1;
+        min-height: 0;
+      }
+      .phone .page-layer {
+        height: 100%;
+        padding: var(--space-lg);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-sm);
+        /* The frame is not the viewport, so the gradient is local to it. */
+        background: var(--bg-gradient);
+      }
+      .phone .page-layer h3 {
+        margin: 0 0 var(--space-xs);
+        font-size: var(--fs-xl);
+      }
+      .phone .tabs {
+        padding: 4px 0;
+      }
+      .phone-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding: var(--space-md);
+        font: inherit;
+        font-weight: var(--fw-semibold);
+        color: var(--text-primary);
+        text-align: left;
+        cursor: pointer;
+      }
       @media (max-width: 420px) {
         .grid2 {
           grid-template-columns: 1fr;
@@ -303,6 +348,51 @@
       </section>
 
       <section class="section">
+        <div>
+          <h2 class="section-label">Switches</h2>
+          <p class="section-subtitle">The whole row is the switch. Thumb and track move together in 180ms.</p>
+        </div>
+        <button class="glass glass--subtle switch-row" role="switch" aria-checked="true" type="button">
+          <span class="switch-row__text">
+            <span class="switch-row__label">Daily reminder</span>
+            <span class="switch-row__hint">A nudge at 7:30 pm if you haven't practiced</span>
+          </span>
+          <span class="switch" aria-hidden="true"></span>
+        </button>
+        <button class="glass glass--subtle switch-row" role="switch" aria-checked="false" type="button">
+          <span class="switch-row__text">
+            <span class="switch-row__label">Show romanization</span>
+          </span>
+          <span class="switch" aria-hidden="true"></span>
+        </button>
+        <button class="glass glass--subtle switch-row" role="switch" aria-checked="false" type="button" disabled>
+          <span class="switch-row__text">
+            <span class="switch-row__label">Disabled</span>
+          </span>
+          <span class="switch" aria-hidden="true"></span>
+        </button>
+      </section>
+
+      <section class="section">
+        <div>
+          <h2 class="section-label">Page change</h2>
+          <p class="section-subtitle">
+            Tap a row to push, Back to pop, or a tab to switch. The page underneath moves a quarter as far and dims.
+          </p>
+        </div>
+        <div class="phone" id="phone">
+          <div class="page-stack" id="stack">
+            <div class="page-layer" id="live"></div>
+          </div>
+          <div class="tabs" role="tablist" id="phone-tabs">
+            <button class="tab" role="tab" aria-selected="true" type="button" data-tab="0">Home</button>
+            <button class="tab" role="tab" aria-selected="false" type="button" data-tab="1">Learn</button>
+            <button class="tab" role="tab" aria-selected="false" type="button" data-tab="2">Practice</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
         <h2 class="section-label">Palette</h2>
         <div class="swatches" id="swatches"></div>
       </section>
@@ -369,6 +459,79 @@
           });
         });
       });
+
+      document.querySelectorAll('.switch-row').forEach((row) => {
+        row.addEventListener('click', () => {
+          row.setAttribute('aria-checked', String(row.getAttribute('aria-checked') !== 'true'));
+        });
+      });
+
+      // Page change demo. The live layer gets the new content; a static copy of
+      // the old content slides out beside it and is dropped when it finishes.
+      const stack = document.getElementById('stack');
+      const live = document.getElementById('live');
+      const tabNames = ['Home', 'Learn', 'Practice'];
+      const chevron =
+        '<svg class="i" viewBox="0 0 512 512" style="width:18px;height:18px;color:var(--text-muted)" aria-hidden="true"><path d="M184 112l144 144-144 144"/></svg>';
+      let tab = 0;
+      let depth = 0;
+      let leaving = null;
+      function render() {
+        if (depth === 0) {
+          const rows = ['Prices & money', 'At the market', 'Taking a taxi']
+            .map((t) => `<button class="glass phone-row" type="button" data-push>${tabNames[tab]} · ${t}${chevron}</button>`)
+            .join('');
+          live.innerHTML = `<span class="eyebrow">${tabNames[tab]}</span><h3>Pick a page</h3>${rows}`;
+        } else {
+          live.innerHTML = `<span class="eyebrow">${tabNames[tab]} · level ${depth}</span><h3>A page on top</h3>
+            <div class="glass">Opaque all the way in, so it reads as a card laid over the last page.</div>
+            <button class="glass phone-row" type="button" data-push>Go one deeper${chevron}</button>
+            <button class="btn btn--tertiary" type="button" data-back>Back</button>`;
+        }
+      }
+      function go(dir, change) {
+        // A rapid second navigation owns the frame: never stack two ghosts.
+        if (leaving) leaving.remove();
+        const copy = document.createElement('div');
+        copy.className = `page-layer page-layer--leaving page-exit--${dir}`;
+        copy.innerHTML = live.innerHTML;
+        copy.setAttribute('aria-hidden', 'true');
+        stack.appendChild(copy);
+        leaving = copy;
+        copy.addEventListener('animationend', () => {
+          copy.remove();
+          if (leaving === copy) leaving = null;
+        });
+        change();
+        render();
+        live.classList.remove('page-enter--forward', 'page-enter--backward', 'page-first-paint');
+        void live.offsetWidth; // restart the animation on a repeat
+        live.classList.add(`page-enter--${dir}`);
+      }
+      live.addEventListener('animationend', () => {
+        // Release the filled transform so the live page is not left composited.
+        live.classList.remove('page-enter--forward', 'page-enter--backward', 'page-first-paint');
+      });
+      live.addEventListener('click', (e) => {
+        if (e.target.closest('[data-push]')) go('forward', () => depth++);
+        else if (e.target.closest('[data-back]')) go('backward', () => depth--);
+      });
+      document.getElementById('phone-tabs').addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-tab]');
+        if (!btn) return;
+        const to = Number(btn.dataset.tab);
+        if (to === tab) return;
+        // Direction follows tab order: a tab to the right slides forward.
+        go(to > tab ? 'forward' : 'backward', () => {
+          tab = to;
+          depth = 0;
+        });
+        document.querySelectorAll('#phone-tabs .tab').forEach((b) => {
+          b.setAttribute('aria-selected', String(b === btn));
+        });
+      });
+      render();
+      live.classList.add('page-first-paint');
 
       const tokens = [
         'bg-stop-1', 'bg-stop-2', 'bg-stop-3', 'bg-stop-4', 'text-primary', 'text-secondary',

@@ -75,6 +75,17 @@ const tokens = {
       Object.entries(motion.duration).map(([k, v]) => [k, { $value: `${v}ms`, $type: 'duration' }]),
     ),
     ease: leafs(motion.ease, 'cubicBezier'),
+    page: {
+      duration: { $value: `${motion.page.duration}ms`, $type: 'duration' },
+      ease: { $value: motion.page.ease, $type: 'cubicBezier' },
+      parallax: { $value: motion.page.parallax, $type: 'number' },
+      underOpacity: { $value: motion.page.underOpacity, $type: 'number' },
+      firstFade: { $value: `${motion.page.firstFade}ms`, $type: 'duration' },
+    },
+    switch: {
+      duration: { $value: `${motion.switch.duration}ms`, $type: 'duration' },
+      ease: { $value: motion.switch.ease, $type: 'cubicBezier' },
+    },
   },
 };
 

@@ -11,7 +11,13 @@ import { listBackups, readBackup } from './transfer';
 export const PROFILE_KEY = 'tower-profile';
 /** Where a broken or unreadable profile is parked before a fresh one replaces it. */
 export const CORRUPT_KEY = 'tower-profile-corrupt';
-/** The legacy game's save key, and where it is copied to once (D3). */
+/**
+ * The pre-rebuild game's save key, and where it is copied to once (D3).
+ * They keep that game's name because that is what it wrote; since R6's new
+ * `appId` gives the app a fresh origin, nothing there has them any more.
+ * Every other key here is fixed from the first store upload: renaming one
+ * orphans every save (`plans/review-risks.md` R6).
+ */
 export const LEGACY_KEY = 'the-tower-save';
 export const LEGACY_BACKUP_KEY = 'the-tower-save-legacy-backup';
 /**

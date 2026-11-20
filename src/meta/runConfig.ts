@@ -23,6 +23,7 @@ import type { AnomalyConfig, Card, ReliquaryConfig, RiftConfig, RunConfig } from
 import { BOSSES } from '../content/bosses';
 import type { BossId, RelicId, RiftId } from '../content/types';
 import { RELIC_BY_ID } from '../content/relics';
+import { RIFTS } from '../content/rifts';
 
 export type { RunConfig };
 
@@ -274,9 +275,25 @@ function tactics(list: CardItemId[] | null, pool: readonly CardItemId[]): readon
  */
 export function riftConfig(profile: Profile, trial: boolean): RiftConfig | null {
   if (trial || inRush(profile) || !bossDown(profile, BOSSES[0].id)) return null;
+  const beat = heldBeat(profile);
   return Object.freeze({
     first: !profile.tutorial.firstRift,
     known: Object.freeze(Object.keys(profile.rifts) as RiftId[]),
     act2: act2Open(profile) && pactLoad(runPacts(profile)).heat > 0,
+    ...(beat ? { beat } : {}),
   });
+}
+
+/**
+ * The region's held rift owed to the next run (R2 §2–3): one a region,
+ * placed from its run number `held` on until it is met. A plateau is more
+ * runs in one region, so the beat comes due in the middle of one, where the
+ * waves have nothing new left to show. Null in the Abyss and once met.
+ */
+export function heldBeat(profile: Profile): RiftId | null {
+  if (inAbyss(profile)) return null;
+  const region = selectedRegion(profile).index;
+  const next = (profile.regions[region]?.runs ?? 0) + 1;
+  const def = RIFTS.find((d) => d.where.held !== undefined && d.where.regions?.includes(region));
+  return def && next >= def.where.held! && !(def.id in profile.rifts) ? def.id : null;
 }

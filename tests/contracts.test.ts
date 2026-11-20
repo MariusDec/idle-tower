@@ -25,9 +25,9 @@ function cleared(upTo: number): Profile {
   for (const r of REGIONS) {
     if (r.index > upTo) break;
     p.bosses[r.boss] = { kills: 3, fastest: 40 + r.index * 10 };
-    p.regions[r.index] = { bestWave: 26 - r.index };
+    p.regions[r.index] = { bestWave: 26 - r.index, runs: 3 };
   }
-  p.regions[upTo + 1] ??= { bestWave: 12 };
+  p.regions[upTo + 1] ??= { bestWave: 12, runs: 3 };
   for (const n of FORGE) if (n.effects.some((e) => e.kind === 'unlockCard')) p.forge[n.id] = 1;
   p.recipes.found = ['seeker-swarm'];
   p.relics = { 'mothers-tear': 1, 'gatekeepers-seal': 2 };

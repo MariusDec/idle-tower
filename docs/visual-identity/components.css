@@ -404,6 +404,83 @@ textarea {
   cursor: default;
 }
 
+/* ── Switch (every yes-or-no setting) ─────────────────────────────────────────
+   The whole row is the control and the hit target:
+   <button class="glass glass--subtle switch-row" role="switch" aria-checked="false">
+     <span class="switch-row__text"><span class="switch-row__label">Daily reminder</span>
+       <span class="switch-row__hint">One line of why</span></span>
+     <span class="switch" aria-hidden="true"></span>
+   </button>
+   Toggle aria-checked; the track and thumb follow it. The label never flips with
+   the state ("Can listen" must not become "Can't listen now"): the track says
+   which way it is. A bare <button class="switch" role="switch"> also works. */
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  min-height: var(--control-h-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-lg);
+  font: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.switch-row:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.switch-row__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.switch-row__label {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+}
+.switch-row__hint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* Track and thumb share one 180ms pluck, so the fill lands as the thumb does. */
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.switch::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+[aria-checked="true"] > .switch,
+.switch[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+[aria-checked="true"] > .switch::before,
+.switch[aria-checked="true"]::before {
+  transform: translateX(16px);
+}
+
 /* ── Progress ─────────────────────────────────────────────────────────────── */
 .progress {
   height: 4px; /* 6px for the main progress of a run: .progress--md */
@@ -630,4 +707,156 @@ textarea {
 }
 .pop {
   animation: vi-pop var(--dur-fast) var(--ease-standard) both;
+}
+
+/* ── Page change ───────────────────────────────────────────────────────────────
+   A push lays the new page down like a card over the old one; a back lifts the
+   top card off. The page underneath moves a quarter as far and dims, and that
+   parallax is what sells the depth. Both layers share one duration and curve
+   (280ms, decelerate) so they stay locked together.
+
+     forward:  leaving 0 → -25%, opacity 1 → 0.55  (under) | entering 100% → 0 (over)
+     backward: leaving 0 → 100%                    (over)  | entering -25% → 0, 0.55 → 1 (under)
+
+   The layer on top is opaque throughout: it is a card, not a cross-fade. Each
+   sliding layer paints the background gradient itself, or the two pages read
+   through each other. Tab switches use the same slide, its direction set by tab
+   order (to a tab on the right = forward). In-page screen swaps (setup → run →
+   results) slide too. The very first paint is a plain 200ms fade. The header
+   and tab bar stay still. */
+@keyframes vi-page-over-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes vi-page-under-out {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(var(--page-parallax));
+    opacity: var(--page-under-opacity);
+  }
+}
+@keyframes vi-page-under-in {
+  from {
+    transform: translateX(var(--page-parallax));
+    opacity: var(--page-under-opacity);
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes vi-page-over-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes vi-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Class-based: a .page-stack holding the live page and, while it animates, a
+   static copy of the page being left (.page-layer--leaving, removed on
+   animationend). Put the copy's content at the scroll offset the learner left
+   it at, or a long list snaps to its top as it slides away. */
+.page-stack {
+  position: relative;
+  overflow-x: hidden;
+}
+@supports (overflow-x: clip) {
+  /* clip, not hidden: hidden makes this the scroll container and breaks
+     position: sticky inside pages. */
+  .page-stack {
+    overflow-x: clip;
+  }
+}
+.page-layer {
+  position: relative;
+  background: var(--bg-gradient) fixed;
+}
+.page-layer--leaving {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.page-enter--forward {
+  z-index: 1;
+  animation: vi-page-over-in var(--page-duration) var(--page-ease) both;
+}
+.page-exit--forward {
+  z-index: 0;
+  animation: vi-page-under-out var(--page-duration) var(--page-ease) both;
+}
+.page-enter--backward {
+  z-index: 0;
+  animation: vi-page-under-in var(--page-duration) var(--page-ease) both;
+}
+.page-exit--backward {
+  z-index: 2;
+  animation: vi-page-over-out var(--page-duration) var(--page-ease) both;
+}
+.page-first-paint {
+  animation: vi-fade-in var(--page-first-fade) var(--ease-decelerate) both;
+}
+
+/* View Transitions (multi-page apps, or document.startViewTransition): set
+   <html data-nav="forward|backward"> before the swap and the same slide plays. */
+.app-header {
+  view-transition-name: vi-header;
+}
+.app-tabbar {
+  view-transition-name: vi-tabbar;
+}
+::view-transition-group(vi-header),
+::view-transition-group(vi-tabbar),
+::view-transition-old(vi-header),
+::view-transition-new(vi-header),
+::view-transition-old(vi-tabbar),
+::view-transition-new(vi-tabbar) {
+  animation: none;
+}
+:root[data-nav]::view-transition-old(root),
+:root[data-nav]::view-transition-new(root) {
+  /* The UA's cross-fade blends the pair with plus-lighter; a slide must not. */
+  mix-blend-mode: normal;
+  animation-duration: var(--page-duration);
+  animation-timing-function: var(--page-ease);
+  animation-fill-mode: both;
+}
+:root[data-nav="forward"]::view-transition-old(root) {
+  animation-name: vi-page-under-out;
+}
+:root[data-nav="forward"]::view-transition-new(root) {
+  animation-name: vi-page-over-in;
+}
+:root[data-nav="backward"]::view-transition-old(root) {
+  z-index: 1;
+  animation-name: vi-page-over-out;
+}
+:root[data-nav="backward"]::view-transition-new(root) {
+  animation-name: vi-page-under-in;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The universal rule above does not reach these pseudo-elements. Without
+     motion, a page change is an instant swap: no slide, no fade. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }

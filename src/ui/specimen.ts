@@ -1,4 +1,4 @@
-import { segmented } from './controls';
+import { segmented, switchRow } from './controls';
 import { iconMarkup } from './icon';
 
 /**
@@ -19,7 +19,7 @@ export function mountSpecimen(host: HTMLElement): void {
   page.innerHTML = `
     <header class="specimen-head">
       <p class="eyebrow">Specimen · plans/visual-identity.md §4</p>
-      <h1 class="specimen-title">The Tower</h1>
+      <h1 class="specimen-title">Blue Hour</h1>
       <p class="specimen-sub">Every base component, in the game's classes.
         Compare with <a class="specimen-link" href="/docs/visual-identity/preview.html">the identity's preview</a>.</p>
       <div class="specimen-ground"></div>
@@ -87,7 +87,11 @@ export function mountSpecimen(host: HTMLElement): void {
     <section class="specimen-section">
       <h2 class="section-head">Segmented control</h2>
       <div class="specimen-seg"></div>
-      <div class="specimen-seg"></div>
+    </section>
+
+    <section class="specimen-section">
+      <h2 class="section-head">Switches</h2>
+      <div class="specimen-switches"></div>
     </section>
 
     <section class="specimen-section">
@@ -161,8 +165,15 @@ export function mountSpecimen(host: HTMLElement): void {
     };
     render(current);
   };
-  mount(segs[0], [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], 'on');
-  mount(segs[1], [
+  // Yes-or-no is a switch row, never an On/Off pair.
+  const disabled = switchRow('Disabled', false, () => {});
+  disabled.disabled = true;
+  page.querySelector('.specimen-switches')!.append(
+    switchRow('Keep the screen on', true, () => {}, 'In runs'),
+    switchRow('Screen shake', false, () => {}),
+    disabled,
+  );
+  mount(segs[0], [
     { value: 'auto', label: 'Auto' }, { value: 'high', label: 'High' },
     { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' },
   ], 'high');

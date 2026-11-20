@@ -454,6 +454,15 @@ export const rifts: LintRule = (tables) => {
     for (const idx of r.where.regions ?? []) {
       if (!regions.includes(idx)) out.push({ table: 'rifts', id: r.id, problem: `names unknown region ${idx}` });
     }
+    // A held beat (R2 §2–3) belongs to one region, from a run number on.
+    if (r.where.held !== undefined) {
+      if (r.where.regions?.length !== 1) out.push({ table: 'rifts', id: r.id, problem: 'is held but names no single region' });
+      if (!Number.isInteger(r.where.held) || r.where.held < 1) out.push({ table: 'rifts', id: r.id, problem: `held from run ${r.where.held}` });
+    }
+  }
+  for (const idx of regions) {
+    const held = list.filter((r) => r.where.held !== undefined && r.where.regions?.includes(idx));
+    if (held.length > 1) out.push({ table: 'regions', id: String(idx), problem: `holds ${held.length} rifts back (want at most one beat)` });
   }
   for (const idx of regions) {
     const own = list.filter((r) => !r.where.placed && !r.where.abyss && !r.where.act2

@@ -9,7 +9,7 @@ import type { ContractSpec, TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 25;
+  version: 27;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -35,8 +35,14 @@ export interface Profile {
   seenEnemies: string[];
   /** Lifetime kills by enemy type, for the Bestiary. */
   killsBy: Record<string, number>;
-  /** Best wave per region, by region index (§5.2). */
-  regions: Record<string, { bestWave: number }>;
+  /**
+   * Best wave per region, by region index (§5.2), and the runs ended there
+   * (R1 §2: the Gatekeeper's later unlocks count them). `runs` is absent on
+   * records made by hand in tests; v26 fills it in for old saves.
+   * `recent`: the waves of its last few ordinary runs (R2 §4), oldest
+   * first; absent until one ends there, so it needs no rung of its own.
+   */
+  regions: Record<string, { bestWave: number; runs?: number; recent?: number[] }>;
   /** Bosses met, by id: kills and the fastest kill in seconds (§5.2's trophy). */
   bosses: Record<string, { kills: number; fastest: number | null }>;
   /** Relics owned, by id, at their rank 1–3 (§5.3). */
@@ -179,6 +185,8 @@ export interface Profile {
     firstRift: boolean;
     /** A reliquary has been claimed (plans/late-game/03 §2): the next one's window is no longer the lesson's. */
     firstReliquary: boolean;
+    /** The HUD's Stored Light chip has dimmed once and said why (R8 §3). Optional: no save rung. */
+    storedDim?: boolean;
   };
   settings: {
     /** Sim speed multiplier, 1–3 (§12.3). */
@@ -202,10 +210,24 @@ export interface Profile {
      * the tower to the screen's short edge; null follows the light, fully out.
      */
     framing: number | null;
+    /**
+     * The draft's clock (R1 §5): half the usual seconds ('short'), the usual
+     * ('on', shown as Standard), twice them ('long'), or none ('off': the
+     * arena holds still until a pick). The Tactician's shorter clock applies
+     * only while this is 'on'. The bots never read it.
+     */
+    draftTimer: DraftTimer;
+    /**
+     * Frames drawn a second (R5 §2): 30, 60, or the display's own rate. The
+     * sim steps at 60 a second whatever this says; only drawing is capped.
+     */
+    frameRate: FrameRate;
+    /** Keep the screen awake while a run plays (R5 §4), so a hands-off run is not cut by the timeout. */
+    keepAwake: boolean;
   };
 }
 
-export const PROFILE_VERSION = 25;
+export const PROFILE_VERSION = 27;
 
 /** One day of the Daily Omen (plans/late-game/11 §4.5): its scored try, and the practice best beside it. */
 export interface OmenDay {
@@ -222,6 +244,11 @@ export interface RiftRecord {
 
 export type MotionSetting = 'system' | 'reduce' | 'full';
 
+/** The draft timer (R1 §5): 'on' is the Standard clock (kept as 'on' so older saves read it). */
+export type DraftTimer = 'off' | 'short' | 'on' | 'long';
+
+export type FrameRate = 30 | 60 | 'device';
+
 /** The text sizes the settings offer. */
 export const TEXT_SCALES: readonly number[] = [1, 1.15, 1.3];
 
@@ -237,6 +264,9 @@ export function defaultSettings(): Profile['settings'] {
     palette: 'standard',
     textScale: 1,
     framing: null,
+    draftTimer: 'on',
+    frameRate: 60,
+    keepAwake: true,
   };
 }
 

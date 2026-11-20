@@ -59,6 +59,11 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
       return boardOpen(profile);
     case 'omen':
       return omenOpen(profile);
+    // Told mid-run, on the event itself (R1 §4): open once told.
+    case 'tear':
+    case 'champion':
+    case 'aura':
+      return profile.tutorial.explained.includes(id);
     default: {
       const exhaustive: never = id;
       return exhaustive;

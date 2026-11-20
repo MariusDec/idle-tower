@@ -21,6 +21,8 @@ export interface DraftView {
   timed: boolean;
   /** Seconds before the suggestion is taken (shorter once the Tactician writes it, §6.2). */
   seconds: number;
+  /** False when the player turned the draft timer off (R1 §5): no clock, and the arena waits for the pick. */
+  clock?: boolean;
   /** True for a card the player has seen before (no NEW stamp). */
   seen: (key: string) => boolean;
   /** Rerolls left this run; the button shows only when there are some. */
@@ -281,7 +283,8 @@ export class DraftPanel {
     this.seconds = view.seconds;
     this.remaining = view.seconds;
     this.holding = false;
-    this.timer.hidden = !view.timed;
+    const clock = view.timed && view.clock !== false;
+    this.timer.hidden = !clock;
     setStyle(this.timerFill, 'transform', 'scaleX(1)');
     this.reroll.hidden = view.rerolls <= 0 || !view.timed;
     this.reroll.textContent = `Reroll · ${view.rerolls}`;
@@ -289,8 +292,9 @@ export class DraftPanel {
     this.banish.hidden = banishes <= 0 || !view.timed || !(view.banishable ?? []).some(Boolean);
     this.banish.textContent = `Banish · ${banishes}`;
     this.setBanishing(false);
-    this.hold.hidden = !view.timed;
-    this.setHalted(false);
+    // No clock (R1 §5): held from the start, so the arena waits, and there is nothing to pause.
+    this.hold.hidden = !clock;
+    this.setHalted(view.timed && !clock);
     // Two or more banked (U2): one tap takes every suggestion. In the Opening it leads.
     const banked = view.banked ?? 1;
     this.take.hidden = banked < 2 || !view.timed;

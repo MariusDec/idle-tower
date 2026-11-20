@@ -45,6 +45,15 @@ export function storedRates(profile: Profile): StoredTier | null {
   return BALANCE.offline.tiers.find((t) => t.stored !== null)?.stored ?? null;
 }
 
+/**
+ * The tier an absence is paid at: the highest owned Night Watch, or the
+ * built-in Night Watch 0 before any (R8 §1). `offlineTier` stays "owned
+ * only", so Stored Light and the Forge's text read as before.
+ */
+export function paidTier(profile: Profile): OfflineTier {
+  return offlineTier(profile) ?? BALANCE.offline.base;
+}
+
 export interface OfflineEarnings {
   /** Seconds away, as measured. */
   away: number;
@@ -62,8 +71,8 @@ export interface OfflineEarnings {
  * away, each with its own efficiency and cap (plans/late-game/01 §3.1).
  */
 export function offlineEarnings(profile: Profile, awaySeconds: number): OfflineEarnings | null {
-  const tier = offlineTier(profile);
-  if (!tier || awaySeconds < BALANCE.offline.minSeconds) return null;
+  const tier = paidTier(profile);
+  if (awaySeconds < BALANCE.offline.minSeconds) return null;
   const rate = farmRate(profile);
   const paid = Math.min(awaySeconds, tier.capHours * 3600);
   const shards = Math.floor(rate * (paid / 60) * tier.efficiency);

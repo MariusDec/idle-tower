@@ -61,8 +61,8 @@ export const QUALITY: Record<QualityTier, QualityProfile> = qualityFor(isAndroid
 
 export const DEFAULT_QUALITY: QualityTier = 'high';
 
-/** Same key as the legacy game, so a player's explicit choice carries over. */
-export const QUALITY_PREF_KEY = 'the-tower-quality';
+/** The player's explicit choice. Fixed from the first store upload, like every storage key (R6). */
+export const QUALITY_PREF_KEY = 'blue-hour-quality';
 
 export function isQualityTier(value: unknown): value is QualityTier {
   return value === 'high' || value === 'medium' || value === 'low';
@@ -106,7 +106,12 @@ export function storeQuality(pref: 'auto' | QualityTier): void {
 const TIERS: readonly QualityTier[] = ['low', 'medium', 'high'];
 
 /** The mean frame in ms over a window that demotes a tier: 60 fps with a little slack. */
-const FRAME_BUDGET_MS = 17;
+export const FRAME_BUDGET_MS = 17;
+
+/** The scaler's budget under a frame cap of `intervalMs` (0: none): the cap's frame, with the same slack. */
+export function frameBudget(intervalMs: number): number {
+  return Math.max(FRAME_BUDGET_MS, intervalMs * 1.02);
+}
 /**
  * The mean ms inside `Renderer.render` under which a tier may climb. The next
  * tier up costs roughly twice the fill (1.5× → 2× DPR is 1.8× the pixels,
@@ -144,8 +149,10 @@ export class QualityScaler {
   /**
    * Feed one frame: its wall seconds and the ms spent drawing it. Returns
    * the tier to move to when a window settles on a change; null otherwise.
+   * `budgetMs` is the mean frame a window may reach before a drop: a player's
+   * 30 fps cap (R5 §2) passes its own, or every window would read as slow.
    */
-  tick(realDt: number, drawMs: number, tier: QualityTier): QualityTier | null {
+  tick(realDt: number, drawMs: number, tier: QualityTier, budgetMs = FRAME_BUDGET_MS): QualityTier | null {
     if (this.warmup > 0) {
       this.warmup--;
       return null;
@@ -161,7 +168,7 @@ export class QualityScaler {
     this.time = 0;
     this.draw = 0;
     const i = TIERS.indexOf(tier);
-    if (frameMean > FRAME_BUDGET_MS) {
+    if (frameMean > budgetMs) {
       this.steady = 0;
       if (i === 0) return null;
       this.failures[tier]++;

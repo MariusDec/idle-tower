@@ -1,8 +1,9 @@
 import { REGIONS, regionByIndex } from '../content/regions';
 import { RELIC_BY_ID } from '../content/relics';
+import { BALANCE } from '../content/balance';
 import { TRIALS, TRIAL_BY_ID } from '../content/trials';
 import type { Effect, TrialDef, TrimId } from '../content/types';
-import { bossDown, gainRelic, regionUnlocked } from './collection';
+import { AFTER_GATEKEEPER, bossDown, gainRelic, regionUnlocked, relicRank, runsPastFirst } from './collection';
 import { contractTrims } from './contracts';
 import { secretTrims } from './secrets';
 import { omenTrims } from './omen';
@@ -14,9 +15,14 @@ import type { Profile } from './profile';
  * `bankRun` (the reward) all ask here.
  */
 
-/** True once a region's boss has fallen: its trials are open. */
+/**
+ * True once a region's boss has fallen: its trials are open. The first
+ * Trials wait a little longer, for the second run past Region 1 (R1 §2), so
+ * the Gatekeeper's fall doesn't open them alongside the Map.
+ */
 export function trialsOpen(profile: Profile, region: number): boolean {
-  return REGIONS.some((r) => r.index === region) && bossDown(profile, regionByIndex(region).boss);
+  return REGIONS.some((r) => r.index === region) && bossDown(profile, regionByIndex(region).boss)
+    && runsPastFirst(profile) >= AFTER_GATEKEEPER.trials;
 }
 
 /** A region's trials, in order. */
@@ -107,16 +113,34 @@ export function winTrial(profile: Profile, id: string): TrialPaid | null {
   if (!t || trialWon(profile, id)) return null;
   profile.trials[id] = true;
   const r = t.reward;
+  return { id, line: rewardLine(t, r.kind === 'relic' ? gainRelic(profile, r.relic) : 0) };
+}
+
+/**
+ * What winning trial `id` would pay now, in `winTrial`'s words, without
+ * paying it: the run says so at the boss's fall (R2 §1), the results pay it.
+ * Null when it is already won.
+ */
+export function trialPrize(profile: Profile, id: string): TrialPaid | null {
+  const t = TRIAL_BY_ID[id];
+  if (!t || trialWon(profile, id)) return null;
+  const r = t.reward;
+  const rank = r.kind === 'relic' ? relicRank(profile, r.relic) : 0;
+  return { id, line: rewardLine(t, r.kind === 'relic' && rank < BALANCE.relics.maxRank ? rank + 1 : 0) };
+}
+
+/** A trial's reward in words; `rank` is a relic's rank once paid, 0 when it was already at its peak. */
+function rewardLine(t: TrialDef, rank: number): string {
+  const r = t.reward;
   switch (r.kind) {
     case 'relic': {
-      const rank = gainRelic(profile, r.relic);
       const name = RELIC_BY_ID[r.relic].name;
-      return { id, line: rank === 0 ? `${name} · already at its peak` : `${name} · ${rank === 1 ? 'new relic' : `rank ${'I'.repeat(rank)}`}` };
+      return rank === 0 ? `${name} · already at its peak` : `${name} · ${rank === 1 ? 'new relic' : `rank ${'I'.repeat(rank)}`}`;
     }
     case 'trim':
-      return { id, line: `Tower trim: ${r.name} (cosmetic)` };
+      return `Tower trim: ${r.name} (cosmetic)`;
     case 'notable':
-      return { id, line: `${r.name}: ${r.text}` };
+      return `${r.name}: ${r.text}`;
     default: {
       const exhaustive: never = r;
       return exhaustive;

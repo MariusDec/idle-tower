@@ -20,7 +20,8 @@ nothing tests a model of the game.
 | `collection.test.ts` | unlocks, seals, relics, feats, offline, banking a boss |
 | `idle.test.ts` | automation, the Autocaster rule, the Tactician, Frontier March, the kill-safe snapshot, the idle bot |
 | `act2.test.ts`, `act2-bot.test.ts` | pacts and heat, Starlight, the Constellations, the Abyss and its enemies; the Act 2 bot |
-| `pacing.test.ts` | a CI-sized pacing run, the gates' eight profiles: I3 and I1a on each, P3 and I6 on the median (R4, `docs/balancing.md`), in the first hour; the idle bot's verdicts |
+| `r1.test.ts`, `r2.test.ts` | review-risks R1 (staggered unlocks, the draft timer, in-run cards) and R2 (a Trial and a trophy told in the run, the held rifts, the plateau line, I6's later window) |
+| `pacing.test.ts` | a CI-sized pacing run, the gates' eight profiles: I3, I1a and I6 on each (I6 back to every seed with R2), P3 on the median (R4, `docs/balancing.md`), in the first hour; the idle bot's verdicts |
 | `perf.test.ts` | the sim's frame budget against 300 bodies ([performance.md](performance.md)) |
 | `content.test.ts` | the content lint: unique ids, icons, names, text ≤ 15 words, effects with consumers, 3 enemies and a boss per region, evolution partners exist, every Forge node reachable |
 | `save.test.ts` | save round-trip, every migration rung with a fixture, the run snapshot |

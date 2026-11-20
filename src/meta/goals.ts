@@ -2,7 +2,7 @@ import { BOSS_BY_ID } from '../content/bosses';
 import { FEATS } from '../content/feats';
 import { REGIONS } from '../content/regions';
 import type { IconId } from '../content/icons';
-import { act2Open, bossDown, frontier, regionRelics, relicRank } from './collection';
+import { act2Open, bossDown, frontier, hubUnlocks, regionRelics, relicRank } from './collection';
 import { contractText } from '../content/contracts';
 import { boardOpen, contractById } from './contracts';
 import { featProgress, featVisible } from './feats';
@@ -51,7 +51,8 @@ export function hubGoal(profile: Profile): HubGoal | null {
     if (star && star.progress >= 1) return { icon: star.node.icon, text: `Stars: ${star.node.name} is ready`, progress: 1 };
   }
   let feat: { icon: IconId; text: string; progress: number } | null = null;
-  for (const f of FEATS) {
+  // Not before the Feats tab opens (R1 §2): a goal shouldn't name a screen the player can't see yet.
+  for (const f of hubUnlocks(profile).feats ? FEATS : []) {
     if (profile.feats[f.id] || f.riddle || !featVisible(profile, f)) continue;
     const p = featProgress(profile, f);
     if (!feat || p > feat.progress) feat = { icon: f.icon, text: `Feat: ${f.text}`, progress: p };

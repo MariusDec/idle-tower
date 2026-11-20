@@ -219,6 +219,8 @@ export interface ReliquaryState {
 export interface RiftConfig {
   readonly first: boolean;
   readonly known: readonly RiftId[];
+  /** A region's held rift owed this run (R2 §2–3): placed, as the First Tear is. */
+  readonly beat?: RiftId;
   readonly act2: boolean;
   readonly rate?: number;
 }

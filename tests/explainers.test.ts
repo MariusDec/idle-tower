@@ -8,6 +8,8 @@ function killed(...bosses: string[]): Profile {
   const p = newProfile(0);
   p.records.runs = 1;
   for (const b of bosses) p.bosses[b] = { kills: 1, fastest: 50 };
+  // Played on past the Gatekeeper: Feats and Trials wait for runs beyond it (R1 §2).
+  if (bosses.includes('gatekeeper')) p.regions['2'] = { bestWave: 10, runs: 2 };
   return p;
 }
 
@@ -37,6 +39,11 @@ describe('explainers (§7.1)', () => {
     expect(EXPLAINERS.filter((e) => explainerOpen(fresh, e.id))).toEqual([]);
     expect(ids(explainersFor(killed(), 'forge'))).toEqual(['forge']);
     expect(ids(explainersFor(killed('gatekeeper'), 'map'))).toEqual(['map', 'trials']);
+    // The fall alone tells only the Map: Feats and Trials come a run or two later (R1 §2).
+    const fell = killed('gatekeeper');
+    fell.regions = {};
+    expect(ids(explainersFor(fell, 'map'))).toEqual(['map']);
+    expect(explainersFor(fell, 'feats')).toEqual([]);
     expect(ids(explainersFor(killed('gatekeeper'), 'feats'))).toEqual(['feats']);
     // The Abyss and Boss Rush wait on Act 2 and the Deepwarden.
     const act2 = killed('gatekeeper', 'bog-mother', 'prism', 'forgeheart', 'hollow-king', 'blight');

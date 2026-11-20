@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   The Tower — design tokens
+   Blue Hour — design tokens
    ───────────────────────────────────────────────────────────────────────────
    The vocabulary every other stylesheet speaks. Nothing here styles anything;
    it only names values.
@@ -413,6 +413,13 @@
   --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
   --stagger-step: 60ms;
   --stagger-cap: 240ms;
+  /* Page change: the card on top slides the full width while the page under it
+     moves a quarter as far and dims, so the parallax reads as depth. */
+  --page-duration: var(--dur-base);
+  --page-ease: var(--ease-decelerate);
+  --page-parallax: -25%;
+  --page-under-opacity: 0.55;
+  --page-first-fade: 200ms; /* first paint only: a plain fade, no slide */
 
   /* ── Stacking ladder (UI plan §8.F) ───────────────────────────────────────
      The rungs, in the order things sit in front of each other: the HUD strip,

@@ -40,7 +40,7 @@ frame, the one-time lessons and the **settings**:
 | `textScale` | 1, 1.15 or 1.3 |
 
 The quality tier is a device's, not a profile's: it lives in
-`localStorage` under `the-tower-quality` ([performance.md](performance.md)).
+`localStorage` under `blue-hour-quality` ([performance.md](performance.md)).
 
 ## Loading
 
@@ -114,7 +114,7 @@ open again.
 `meta/save/transfer.ts`. Settings → Save, between runs only:
 
 - **Copy save** puts the profile's JSON on the clipboard; **Save file**
-  writes it to `Documents/TheTower/` in the Android shell, or downloads it
+  writes it to `Documents/BlueHour/` in the Android shell, or downloads it
   in a browser (`platform/files.ts`).
 - **Load save** takes a paste or a picked file through `importProfile`:
   parsed, walked up the ladder, checked with `isProfile`. Nothing is
@@ -126,6 +126,25 @@ open again.
 
 Moving from the debug APK to a signed release needs an uninstall, which
 wipes the app's data: export first, import after.
+
+## Android backup (R9)
+
+On Android the save is a file in the app's private files dir
+(`FilesystemSaveStore`), so Auto Backup can carry it to a new phone or
+back after a reinstall. `res/xml/backup_rules.xml` (Android 11 and older)
+and `res/xml/data_extraction_rules.xml` (12+: cloud and device-to-device)
+include only `files/`: the profile, the run snapshot, the three rolling
+backups and the seal flag. The WebView's data stays behind on purpose: its
+`localStorage` holds per-device render choices (`blue-hour-quality`,
+`blue-hour-canvas`), and its caches could push the set past Auto Backup's
+25 MB cap, which stops the whole backup. `tests/r9.test.ts` pins the rules.
+Settings › Save says so on Android.
+
+Tested with the local transport (`bmgr backupnow`, uninstall, install) on
+API 30 and 33 emulators: the files are back before the first launch, and
+on API 33 the game opened on the restored profile. Android skips a force-stopped app ("Backup is not
+allowed"), so a manual test backs up with the app in the background, not
+stopped.
 
 ## Reset
 

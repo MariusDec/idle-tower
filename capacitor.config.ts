@@ -7,11 +7,17 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * permanent once published. `server.androidScheme` is pinned rather than left to
  * default because it decides the WebView's *origin* — and the origin is what
  * `localStorage` is keyed by. Changing `https`/`localhost` here would orphan every
- * player's save (`the-tower-save`, `src/systems/SaveManager.ts`).
+ * player's save (`src/meta/save/index.ts`).
+ *
+ * The game was called "The Tower" (`com.mariusdonci.thetower`) until R6
+ * (`plans/review-risks.md`), before any release; the new `appId` installs as
+ * a separate app with its own empty storage. From the first store upload,
+ * `appId`, the scheme and hostname, and every storage key are fixed
+ * (`tests/r6.test.ts`).
  */
 const config: CapacitorConfig = {
-  appId: 'com.mariusdonci.thetower',
-  appName: 'The Tower',
+  appId: 'com.mariusdonci.bluehour',
+  appName: 'Blue Hour',
   webDir: 'dist',
   // Matches --theme-color / the theme-color meta (Blue hour's indigo). This is what shows for the
   // frame between the native splash going away and the first canvas paint.

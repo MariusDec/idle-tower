@@ -52,7 +52,29 @@ lowpass:
 | run | in a run | i – iv – VI – V, 4 s a chord |
 | boss | a boss stands | i – ♭II (Phrygian), 3 s a chord, over a pulsing bass |
 
-Each region shifts the key. A wall-clock timer (200 ms) schedules chords
+Each region shifts the key. In a run, each Act 1 region also has a voice
+(`REGION_VOICES`, R10): a second loop the run alternates with its own,
+two passes each (A A B B, 64 s round), and a figure over the pad. A boss
+keeps its churn, the hub its drift, and a stratum of the Abyss its own
+tone instead.
+
+| Region | B section | Figure |
+|---|---|---|
+| Ashen Fields | i – VII – VI – VII | a rising arpeggio, every other chord |
+| Drowned Mire | i – v – iv – i | a drone two octaves under the root |
+| Glass Wastes | i – III – VII – iv | a high chime on the fifth, then the third |
+| Ember Rift | i – VI – iv – V | a bass pulse each second |
+| The Hollow | i – iv – i – ♭VI | a note and three fading echoes |
+| Blight Heart | i – ♭II – ♭vii° – i | a low toll a tritone off the root |
+
+Hidden (minimised on Android, the tab switched away), `App#hidden` suspends
+the context with `Synth.setHidden(true)`: no music and no cues behind the
+launcher, as a WebView would otherwise keep playing. `App#absent` resumes
+it once the page can be seen; a resume refused for want of a gesture is
+retried by the next touch. While suspended the audio clock stands still,
+so the music keeps its schedule and picks up mid-chord.
+
+A wall-clock timer (200 ms) schedules chords
 0.6 s ahead on the audio clock; nothing is scheduled while the music could
 not be heard (sound off, master or music at zero), so a muted game costs
 only the timer. `App#tune` sets the mood each frame.

@@ -9,19 +9,19 @@ import { buildRunConfig } from '../meta/runConfig';
 import { beginOmen, omenConfig, omenLabel, omenSeed, openOmen, rollOmen, settlePending } from '../meta/omen';
 import { regionByIndex } from '../content/regions';
 import {
-  autoUlt, automations, draftSeconds, foremanBuy, marchOn, maxSpeed, runSpeed, tacticsScopes, togglePin,
+  autoUlt, automations, foremanBuy, playerDraftSeconds, marchOn, maxSpeed, runSpeed, tacticsScopes, togglePin,
 } from '../meta/automation';
 import { buyNode, canAfford, isBuyable, levelOf, nodeCost, refundNode, toggleKeystone, towerTier } from '../meta/forge';
-import { bankRun, buildOf } from '../meta/results';
+import { bankRun, buildOf, trophyAt } from '../meta/results';
 import { buildList, foremanLine, statsList } from '../ui/build';
 import { chooseWaypoint, cursedSlots, frameUnlocked, frontier, regionUnlocked, selectedFrame, swapCursed, toggleCursed, toggleRelic, trophyCount } from '../meta/collection';
 import { cursedCard } from '../ui/cursed';
 import { curseLine } from '../content/cursed';
 import { claimAll, claimFeat } from '../meta/feats';
-import { offlineEarnings, offlineTier, storedRates } from '../meta/offline';
+import { farmRate, offlineEarnings, offlineTier, paidTier, storedRates } from '../meta/offline';
 import { emptyTally, storedWant, tallyWave, waveEngaged, type BurnTally } from '../meta/storedLight';
 import { setPactRank } from '../meta/pacts';
-import { chooseTrial, toggleTrim, wornTrims } from '../meta/trials';
+import { chooseTrial, toggleTrim, trialPrize, wornTrims } from '../meta/trials';
 import { contractById, ensureBoard, pin as pinContract, reroll as rerollContract, takeContract } from '../meta/contracts';
 import { contractText } from '../content/contracts';
 import { explainersFor, markExplained, unreadExplainers } from '../meta/explainers';
@@ -41,7 +41,7 @@ import { cardBadges } from '../sim/suggest';
 import type { DraftOffer, RunConfig, RunState } from '../sim/state';
 import { BALANCE } from '../content/balance';
 import { Renderer } from '../render/renderer';
-import { QualityScaler, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
+import { QualityScaler, frameBudget, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
 import { CANVAS_MODE, readStoredCanvasMode, storeCanvasMode } from '../render/canvasMode';
 import { runRegion, runWave } from '../sim/systems/waves';
 import { SettingsPanel } from '../ui/settings';
@@ -56,9 +56,12 @@ import type { MapSpread } from '../ui/hub/map';
 import { STRATUM_BY_ID, guardianStratum } from '../content/strata';
 import { Modal, type ModalButton } from '../ui/modal';
 import { explainerBody } from '../ui/explainer';
+import { EXPLAINER_BY_ID, type ExplainerId } from '../content/explainers';
 import { ResultsScreen } from '../ui/results';
 import { Toasts } from '../ui/toast';
+import { awayText, welcomeBody, welcomeCard } from '../ui/welcome';
 import { bindNativeLifecycle } from '../platform/native';
+import { ScreenAwake } from '../platform/awake';
 import { Loop, SIM_DT } from './loop';
 import { Synth } from '../audio/synth';
 import { Cues } from '../audio/cues';
@@ -103,6 +106,8 @@ export class App {
   private profile!: Profile;
   private run: RunState | null = null;
   private paused = false;
+  /** Mid-run explainers waiting for a free arena (R1 §4), in the order met. */
+  private runCards: ExplainerId[] = [];
   private sinceSave = 0;
   /** The offer the draft panel is showing, so a new one is noticed. */
   private shownDraft: DraftOffer | null = null;
@@ -144,6 +149,8 @@ export class App {
   private poolAtStart = 0;
   /** The pool ran dry this run: its toast has been told. */
   private poolDry = false;
+  /** The Stored Light chip has shown the played rate this run: a dim after it is a flip the player can see (R8 §3). */
+  private storedLit = false;
   /** The run just banked was a Daily Omen: Done goes back to its view (plans/late-game/11 §2). */
   private fromOmen = false;
 
@@ -162,6 +169,8 @@ export class App {
   private readonly settings: SettingsPanel;
   /** On `'auto'`: moves the quality tier with the frame rate (docs/performance.md). */
   private readonly scaler = new QualityScaler();
+  /** The screen held awake while a run plays (R5 §4). */
+  private readonly awake = new ScreenAwake();
   /** A dev `bench()` is running: it owns the quality tier. */
   private benching = false;
 
@@ -399,22 +408,23 @@ export class App {
     void this.save();
     this.hub.update();
     const fresh = FORGE.filter((n) => canAfford(this.profile, n.id) && !before.has(n.id)).map((n) => n.name);
-    const hours = Math.floor(earned.away / 3600);
-    const mins = Math.floor((earned.away % 3600) / 60);
-    const gone = hours > 0 ? `${hours} h ${mins} min` : `${mins} min`;
-    const rates = storedRates(this.profile);
-    const stored = earned.stored > 0 && rates
-      ? `, and stored ${formatNumber(earned.stored)} as Stored Light. Play to spend it: ×${rates.engaged} while you play, ×${rates.handsOff} left alone.`
-      : '.';
-    const holds = this.foremanHeld();
-    // The cap note names the longest part that applies: from Night Watch III, the store's.
-    const tier = offlineTier(this.profile);
-    const capHours = tier?.stored?.capHours ?? tier?.capHours ?? 0;
-    const body = `You were away ${gone}. The tower gathered ${formatNumber(earned.shards)} shards${stored}`
-      + (earned.away > capHours * 3600 ? ` (Night Watch holds ${capHours} hours at most.)` : '')
-      + (bought.length > 0 ? ` The Foreman bought ${foremanLine(bought)}.` : '')
-      + (holds !== null ? ` The Foreman's next pin needs ${formatNumber(holds)}: Stored Light holds it.` : '')
-      + (fresh.length > 0 ? ` Now affordable: ${fresh.slice(0, 4).join(', ')}.` : '');
+    const gone = awayText(earned.away);
+    // The cap note names the longest part that applies: from Night Watch III, the store's; before any, Night Watch 0's.
+    const tier = paidTier(this.profile);
+    const card = welcomeCard({
+      away: earned.away,
+      shards: earned.shards,
+      stored: earned.stored,
+      pool: this.profile.storedLight,
+      farm: farmRate(this.profile),
+      rates: storedRates(this.profile),
+      capHours: tier.stored?.capHours ?? tier.capHours,
+      nightWatch: offlineTier(this.profile) !== null,
+      bought: foremanLine(bought),
+      boughtCount: bought.length,
+      held: this.foremanHeld(),
+      fresh,
+    });
     if (this.screen === 'run') {
       // Mid-run the pause menu (or the Settings over it) stays where it is:
       // the welcome is a toast on top, and only the pause menu resumes (B4).
@@ -431,7 +441,7 @@ export class App {
     }
     // A night stored: the way to spend it is a run at the frontier.
     if (play) buttons.push({ label: 'Play', primary: true, onClick: () => this.playFrontier() });
-    this.modal.show('Welcome back', body, buttons);
+    this.modal.show('Welcome back', welcomeBody(card), buttons);
   }
 
   /**
@@ -556,6 +566,7 @@ export class App {
     // for the player's next visit to the Map instead (§6.2).
     if (!automations(this.profile).has('frontier-march')) this.profile.ceremony = null;
     this.paused = false;
+    this.runCards = [];
     this.shownDraft = null;
     this.newCards = [];
     this.opening = resumed ? 0 : this.run.pendingDrafts;
@@ -569,6 +580,7 @@ export class App {
     // An Omen banks no shards (§4.8): Stored Light has nothing to match, so its gauge stays down.
     this.poolAtStart = this.run.omen ? 0 : this.profile.storedLight;
     this.poolDry = false;
+    this.storedLit = false;
     this.draft.hide();
     this.riftPanel.hide();
     this.loop.resetClock();
@@ -726,13 +738,16 @@ export class App {
       if (run.draft) {
         const seen = new Set(this.profile.seenCards);
         const opening = this.opening > 1 && run.draftsOpened <= this.opening;
+        // The player's draft timer (R1 §5): null is no clock at all.
+        const clock = playerDraftSeconds(this.profile);
         this.draft.show({
           level: run.draft.level,
           cards: run.draft.cards,
           suggested: run.draft.suggested,
           timed: this.profile.tutorial.firstDraft,
           // A hand with an anomaly gets the full time, the Tactician's too (plans/late-game/04 §3).
-          seconds: holdsAnomaly(run.draft.cards) ? Math.max(draftSeconds(this.profile), BALANCE.anomalies.seconds) : draftSeconds(this.profile),
+          seconds: holdsAnomaly(run.draft.cards) ? Math.max(clock ?? 0, BALANCE.anomalies.seconds) : clock ?? 0,
+          clock: clock !== null,
           seen: (key) => seen.has(key),
           rerolls: run.rerolls,
           banishes: run.banishes,
@@ -870,6 +885,14 @@ export class App {
     tallyWave(tally, run.shards - this.waveShards, played);
     const left = Math.max(0, this.profile.storedLight - storedWant(this.profile, tally));
     this.hud.setStored(left / this.poolAtStart, played ? rates.engaged : rates.handsOff, left, played);
+    // R8 §3: the first time the chip dims, say why, once per profile.
+    if (played) this.storedLit = true;
+    else if (this.storedLit && left > 0 && !this.profile.tutorial.storedDim) {
+      this.profile.tutorial.storedDim = true;
+      void this.save();
+      this.toasts.show('io-diamond', `Stored Light ×${rates.handsOff}`,
+        `Left alone, it pays ×${rates.handsOff}. A touch in the last ${BALANCE.offline.engagedSeconds} s plays at ×${rates.engaged}.`);
+    }
     if (left <= 0 && !this.poolDry) {
       this.poolDry = true;
       this.toasts.show('io-diamond', 'Stored Light spent', 'The rest of the run earns its own shards.');
@@ -896,6 +919,8 @@ export class App {
     // the GPU until something changes (plans/android-gpu-crash.md §1).
     const stopped = this.screen === 'run' && this.simSpeed() === 0;
     this.setArena(stopped ? 'stopped' : 'live');
+    // Awake only while the arena moves: a paused run, the hub and the results keep the usual timeout.
+    this.awake.want(this.profile.settings.keepAwake && this.screen === 'run' && !stopped);
     if (!(stopped && this.renderer.settled)) {
       const t0 = performance.now();
       this.renderer.render(run, alpha, realDt);
@@ -904,6 +929,7 @@ export class App {
     if (this.screen === 'run' && run) {
       // Cards taken since the last snapshot: one more, at most every couple of seconds.
       if (this.runDirty && !run.outcome && now - this.snapshotAt >= PICK_SNAPSHOT_MS) this.snapshot(run);
+      this.showRunCard(run);
       this.syncDraft(run, realDt);
       this.syncRift(run);
       this.syncReliquaries(run);
@@ -968,7 +994,7 @@ export class App {
       return;
     }
     const from = this.renderer.quality;
-    const to = this.scaler.tick(realDt, drawMs, from);
+    const to = this.scaler.tick(realDt, drawMs, from, frameBudget(this.loop.frameInterval));
     if (to) {
       console.info(`[quality] ${from} → ${to}`);
       this.renderer.setQuality(to);
@@ -997,7 +1023,10 @@ export class App {
         case 'eliteSpawn':
           // A Keeper (plans/late-game/08 §3.1) holds its floor: its own toast.
           if (ev.keeper !== undefined) this.toasts.show('vertical-banner', `The Keeper of floor ${ev.keeper}`, 'The next floor waits until it falls.', 'relic');
-          else if (ev.champion) this.toasts.show('vertical-banner', 'A Champion comes', 'Slay it for a relic.', 'relic');
+          else if (ev.champion) {
+            this.toasts.show('vertical-banner', 'A Champion comes', 'Slay it for a relic.', 'relic');
+            this.tellInRun('champion');
+          } else if (ev.aura !== null) this.tellInRun('aura');
           break;
         case 'reliquary':
           // Taught by the toast (plans/late-game/03 §2), as the Champion's is; the first says where to look.
@@ -1019,12 +1048,24 @@ export class App {
           break;
         }
         case 'riftAppear':
-          // The First Tear teaches itself (plans/late-game/02 §2): a toast, never an arena stop.
+          // The first rift a watching player meets gets its card (R1 §4); the First Tear's toast
+          // keeps teaching it after that, until it is opened (plans/late-game/02 §2).
+          if (this.tellInRun('tear')) break;
           if (ev.id === 'first-tear') this.toasts.show(RIFT_BY_ID[ev.id].icon, 'A rift!', 'Tap it before it closes.', 'relic');
           break;
-        case 'bossKill':
+        case 'bossKill': {
           this.slowMo = { left: BOSS_KILL_SLOWMO.seconds, speed: BOSS_KILL_SLOWMO.speed };
+          // A Trial is won here (R2 §1): the run says what it pays, not only the results.
+          const prize = run.trial ? trialPrize(this.profile, run.trial) : null;
+          if (prize) this.toasts.show(TRIAL_BY_ID[prize.id].icon, `Trial won · ${TRIAL_BY_ID[prize.id].name}`, prize.line, 'gold');
           break;
+        }
+        case 'waveStart': {
+          // An overtime trophy (N4) is told as it is earned (R2 §1); the results pay it.
+          const t = trophyAt(this.profile, run, ev.wave);
+          if (t) this.toasts.show('trophy', `Trophy · overtime +${t.overtime}`, `A light on the tower · +${formatNumber(t.shards)} shards`, 'gold');
+          break;
+        }
         case 'finalForm': {
           // Final Form (plans/late-game/07 §2): the arena slows; the first per frame gets a toast too.
           this.slowMo = { left: FORM_SLOWMO.seconds, speed: FORM_SLOWMO.speed };
@@ -1125,6 +1166,34 @@ export class App {
     }]);
   }
 
+  /**
+   * Queue a mid-run explainer (R1 §4), unless it has been told. Only to a
+   * player who is watching: a run left alone never stops for a card, and the
+   * next meeting while they watch tells it instead. True when queued.
+   */
+  private tellInRun(id: ExplainerId): boolean {
+    if (this.profile.tutorial.explained.includes(id) || this.runCards.includes(id) || !this.engaged()) return false;
+    this.runCards.push(id);
+    return true;
+  }
+
+  /** Show the next mid-run explainer once the arena is free: the run holds still until it is read, as the first draft does. */
+  private showRunCard(run: RunState): void {
+    if (this.runCards.length === 0 || this.paused || this.modal.open || this.settings.open || run.outcome) return;
+    const def = EXPLAINER_BY_ID[this.runCards.shift()!];
+    this.paused = true;
+    this.modal.show(def.title, explainerBody([def]), [{
+      label: 'Got it',
+      primary: true,
+      onClick: () => {
+        markExplained(this.profile, [def.id]);
+        void this.save();
+        this.paused = false;
+        this.loop.resetClock();
+      },
+    }]);
+  }
+
   /** The Forge opened. True the very first time, when it teaches (§7.1). */
   private forgeOpened(): boolean {
     if (this.profile.tutorial.forgeIntro) return false;
@@ -1186,7 +1255,14 @@ export class App {
   }
 
   private applySettings(): void {
-    applySettings(this.profile.settings, { synth: this.synth, renderer: this.renderer, root: document.documentElement });
+    const s = this.profile.settings;
+    applySettings(s, { synth: this.synth, renderer: this.renderer, root: document.documentElement });
+    const cap = s.frameRate === 'device' ? null : s.frameRate;
+    if ((cap ? 1000 / cap : 0) !== this.loop.frameInterval) {
+      this.loop.setFrameCap(cap);
+      // The old window's frames were timed against the old cap.
+      this.scaler.reset();
+    }
   }
 
   /**
@@ -1286,6 +1362,8 @@ export class App {
     // frame drawn while its surface is being torn down or rebuilt is a known
     // way into a GPU driver crash. `absent` starts the loop again.
     if (this.booted) this.loop.stop();
+    // No sound behind the launcher either (the music and every cue).
+    this.synth.setHidden(true);
     // A hidden page's frames are not real frames: the scaler's window is dropped.
     this.scaler.reset();
     if (this.screen === 'run' && !this.settings.open) this.openPause();
@@ -1303,8 +1381,12 @@ export class App {
    */
   private absent(now: number): void {
     // Only once the page can be seen: the native resume may come first.
-    if (this.booted && document.visibilityState !== 'hidden') this.loop.start();
+    if (document.visibilityState !== 'hidden') {
+      if (this.booted) this.loop.start();
+      this.synth.setHidden(false);
+    }
     this.loop.resetClock();
+    this.awake.shown();
     this.lastFrame = now;
     this.welcomeBack(now);
   }

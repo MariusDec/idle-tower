@@ -24,6 +24,28 @@ const MAX_STEPS_PER_FRAME = 12;
 /** A wall-clock frame longer than this (a backgrounded tab) is clamped. */
 const MAX_FRAME_SECONDS = 0.1;
 
+/**
+ * A capped frame is drawn this many ms early rather than skipped: rAF's
+ * timestamps jitter around the vsync, and a 60 Hz frame read at 16.5 ms must
+ * not be dropped by a 60 fps cap (R5 §2).
+ */
+const CAP_SLACK_MS = 2;
+
+/**
+ * The frame cap's verdict for one vsync: `null` to skip it, or the time to
+ * stamp as the last drawn frame. The stamp is the ideal grid point, one
+ * interval on from the last, not `now`: a frame let through a little early
+ * must not pull the grid forward (144 Hz under 60 would creep to 62), and one
+ * drawn late must not push it back (90 Hz under 60 would halve to 45).
+ */
+export function capGate(now: number, lastDraw: number, interval: number): number | null {
+  const elapsed = now - lastDraw;
+  if (elapsed < interval - CAP_SLACK_MS) return null;
+  // A long gap (a hitch, a resume) starts the rhythm afresh.
+  if (elapsed > interval * 2) return now;
+  return lastDraw + interval;
+}
+
 export interface LoopHooks {
   /** Advance the sim by exactly `SIM_DT`. */
   step(): void;
@@ -38,6 +60,9 @@ export class Loop {
   private last = 0;
   private acc = 0;
   private running = false;
+  /** ms between drawn frames under the player's cap; 0 draws every vsync (R5 §2). */
+  private interval = 0;
+  private lastDraw = 0;
 
   constructor(private readonly hooks: LoopHooks) {}
 
@@ -45,6 +70,7 @@ export class Loop {
     if (this.running) return;
     this.running = true;
     this.last = performance.now();
+    this.lastDraw = 0;
     this.acc = 0;
     this.rafId = requestAnimationFrame(this.frame);
   }
@@ -52,6 +78,20 @@ export class Loop {
   stop(): void {
     this.running = false;
     cancelAnimationFrame(this.rafId);
+  }
+
+  /**
+   * Draw at most `fps` frames a second, or every vsync on null. The sim is
+   * untouched: a skipped vsync banks no time, so the next drawn frame pays
+   * out the steps of both, each still exactly `SIM_DT`.
+   */
+  setFrameCap(fps: number | null): void {
+    this.interval = fps ? 1000 / fps : 0;
+  }
+
+  /** The cap in force, as the ms between frames (0: none). */
+  get frameInterval(): number {
+    return this.interval;
   }
 
   /** Drop banked time, e.g. when a run starts or resumes from a pause screen. */
@@ -62,6 +102,14 @@ export class Loop {
 
   private readonly frame = (now: number): void => {
     if (!this.running) return;
+    if (this.interval > 0) {
+      const drawn = capGate(now, this.lastDraw, this.interval);
+      if (drawn === null) {
+        this.rafId = requestAnimationFrame(this.frame);
+        return;
+      }
+      this.lastDraw = drawn;
+    }
     const realDt = Math.min(MAX_FRAME_SECONDS, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.acc += realDt * this.hooks.speed();

@@ -1,7 +1,8 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import type { SaveStore } from './SaveStore';
 
-const DB_NAME = 'the-tower';
+/** Where every save lives. Fixed from the first store upload: renaming it orphans every save (R6). */
+const DB_NAME = 'blue-hour';
 const DB_VERSION = 1;
 const STORE = 'kv';
 

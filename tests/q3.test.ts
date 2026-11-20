@@ -25,6 +25,8 @@ function profile(forge: Record<string, number> = {}, bosses: string[] = []): Pro
   p.tutorial.firstDraft = true;
   p.forge = { ...forge };
   for (const b of bosses) p.bosses[b] = { kills: 1, fastest: 50 };
+  // Played on past the Gatekeeper: Trials wait for two runs beyond it (R1 §2).
+  if (bosses.includes('gatekeeper')) p.regions['2'] = { bestWave: 10, runs: 2 };
   return p;
 }
 

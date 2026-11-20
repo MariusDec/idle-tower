@@ -337,13 +337,27 @@ export interface HubUnlocks {
 /** Enemy types seen before the Bestiary opens (§7.1: "after 3+ enemy types seen"). */
 export const BESTIARY_AT = 3;
 
+/**
+ * The Gatekeeper's later unlocks (R1 §2), by runs ended past Region 1: its
+ * fall opens the Map and its sealed nodes; Feats wait for the first run
+ * beyond it (and open with claims ready), Trials for the second.
+ */
+export const AFTER_GATEKEEPER = { feats: 1, trials: 2 } as const;
+
+/** Runs ended in the regions past the first (R1 §2). The Abyss, Boss Rush and the Omen keep no region record. */
+export function runsPastFirst(profile: Profile): number {
+  let n = 0;
+  for (const [index, r] of Object.entries(profile.regions)) if (Number(index) > 1) n += r.runs ?? 0;
+  return n;
+}
+
 export function hubUnlocks(profile: Profile): HubUnlocks {
   const firstBoss = BOSSES[0].id;
   return {
     forge: profile.records.runs > 0,
     map: bossDown(profile, firstBoss),
     collection: profile.seenEnemies.length >= BESTIARY_AT,
-    feats: bossDown(profile, firstBoss),
+    feats: bossDown(profile, firstBoss) && runsPastFirst(profile) >= AFTER_GATEKEEPER.feats,
     stars: act2Open(profile),
   };
 }

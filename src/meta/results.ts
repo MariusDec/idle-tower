@@ -182,6 +182,27 @@ export interface RunSummary {
   trophies: { overtime: number; shards: number }[];
   /** The Daily Omen (plans/late-game/11 §2): its day, score and pay. Null for every other run. */
   omen: OmenBanked | null;
+  /**
+   * A run that ended short of its region's best (R2 §4), with what did move:
+   * the region's best, the median of its last `runs` ordinary runs there
+   * (before this one), and the Forge's next node before and after this run's
+   * shards, when it is the same node. Null for any other run.
+   */
+  plateau: {
+    best: number;
+    runs: number;
+    median: number;
+    forge: { id: string; name: string; from: number; to: number } | null;
+  } | null;
+}
+
+/** R2 §4: a plateau is read against the last `runs` ordinary runs in a region, once there are `least`. */
+export const PLATEAU = { runs: 5, least: 3 };
+
+/** The middle of a few waves; the lower middle of an even count. */
+function medianWave(waves: readonly number[]): number {
+  const s = [...waves].sort((a, b) => a - b);
+  return s[(s.length - 1) >> 1];
 }
 
 /**
@@ -245,6 +266,26 @@ export function recordForm(profile: Profile, run: RunState, past: boolean): RunS
   return { wave, first, record };
 }
 
+/** An overtime trophy's one-time pay (N4): `BALANCE.trophies.pay` times its wave's pay. */
+function trophyPay(run: RunState, k: number): number {
+  const n = BOSS_WAVE + k;
+  return Math.floor(BALANCE.trophies.pay * waveBonus(regionAt(run.regionId, n), n) * run.stats.shardMult);
+}
+
+/**
+ * The overtime trophy wave `wave` earns as it starts (R2 §1: the run says so
+ * then, the results pay it), with its pay; null when it marks none, the
+ * region already holds it, or the run is no region's (the Abyss, Boss Rush,
+ * an Omen). What `bankRun` pays for the same wave.
+ */
+export function trophyAt(profile: Profile, run: RunState, wave: number): { overtime: number; shards: number } | null {
+  if (run.omen || run.regionId === ABYSS_INDEX || isRush(run.regionId)) return null;
+  const k = wave - BOSS_WAVE;
+  if (!(BALANCE.trophies.overtime as readonly number[]).includes(k)) return null;
+  if ((profile.regions[run.regionId]?.bestWave ?? 0) >= wave) return null;
+  return { overtime: k, shards: trophyPay(run, k) };
+}
+
 /**
  * Bank a finished run into the profile and describe it (§4.6). The one place
  * a run's rewards reach the profile, for the app and the pacing bot alike.
@@ -262,6 +303,8 @@ export function bankRun(
   const time = run.outcome?.time ?? run.time;
   const shards = Math.floor(run.shards);
   const before = unlockList(profile);
+  // The Forge's next node before this run's shards land (R2 §4: a plateau shows how far they moved it).
+  const goalBefore = nextGoal(profile);
   // A contract pays at its tier before this run's own records move (plans/late-game/10 §3).
   const contractTier = pendingTier(profile, run);
   const r = profile.records;
@@ -285,15 +328,25 @@ export function bankRun(
   r.bestShards = Math.max(r.bestShards, shards);
   profile.shards += shards;
   const trophies: { overtime: number; shards: number }[] = [];
+  let plateau: RunSummary['plateau'] = null;
   if (!past) {
-    const region = (profile.regions[run.regionId] ??= { bestWave: 0 });
+    const region = (profile.regions[run.regionId] ??= { bestWave: 0, runs: 0 });
+    region.runs = (region.runs ?? 0) + 1;
     const had = trophiesAt(region.bestWave);
+    // A plateau (R2 §4): an ordinary run short of the region's best, set against its last few.
+    // A Trial's or a contract's rules make their waves no measure of the tower, so they keep no place in the line.
+    if (!run.trial && !run.contract) {
+      const recent = region.recent ?? [];
+      if (wave < region.bestWave && recent.length >= PLATEAU.least) {
+        plateau = { best: region.bestWave, runs: recent.length, median: medianWave(recent), forge: null };
+      }
+      region.recent = [...recent, wave].slice(-PLATEAU.runs);
+    }
     region.bestWave = Math.max(region.bestWave, wave);
     // Overtime trophies (N4): each threshold first passed pays once, by that wave's pay.
     for (const k of trophiesAt(region.bestWave)) {
       if (had.includes(k)) continue;
-      const n = BOSS_WAVE + k;
-      const pay = Math.floor(BALANCE.trophies.pay * waveBonus(regionAt(run.regionId, n), n) * run.stats.shardMult);
+      const pay = trophyPay(run, k);
       profile.shards += pay;
       trophies.push({ overtime: k, shards: pay });
     }
@@ -416,6 +469,11 @@ export function bankRun(
   const foreman = foremanBuy(profile);
   const after = unlockList(profile);
   const unlocks = [...after].filter(([key]) => !before.has(key)).map(([, label]) => label);
+  const next = nextGoal(profile);
+  // The same node, nearer (R2 §4): how far this run's shards moved it. One the Foreman bought is gone from the line.
+  if (plateau && goalBefore && next && next.node.id === goalBefore.node.id && next.progress > goalBefore.progress) {
+    plateau.forge = { id: next.node.id, name: next.node.name, from: goalBefore.progress, to: next.progress };
+  }
 
   return {
     outcome: run.outcome?.kind ?? 'retreat',
@@ -447,7 +505,7 @@ export function bankRun(
     feats,
     featsOpen: hubUnlocks(profile).feats,
     unlocks,
-    next: nextGoal(profile),
+    next,
     heat,
     heatRecord,
     abyss: abyss ? { floor: floorOf(Math.max(1, wave)), cleared: run.floors, start: floorOf(run.startWave) } : null,
@@ -460,6 +518,7 @@ export function bankRun(
     trial,
     contract,
     omen: null,
+    plateau,
   };
 }
 
@@ -517,6 +576,7 @@ function omenSummary(profile: Profile, run: RunState, newCards: readonly string[
     foreman: [],
     trophies: [],
     omen,
+    plateau: null,
   };
 }
 

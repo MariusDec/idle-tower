@@ -22,6 +22,7 @@ import { omenDot, omenOpen } from '../../meta/omen';
 import { automations, tacticsKey } from '../../meta/automation';
 import { explainersFor } from '../../meta/explainers';
 import { canSwitch, isSwitchedOff } from '../../meta/forge';
+import { firstPaint, navigate, type NavDirection } from '../pageNav';
 
 /**
  * The hub's views. A tab exists only once its view is unlocked (R3);
@@ -95,6 +96,21 @@ const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics' | 'pacts' | 'co
   { view: 'stars', label: 'Stars', icon: 'io-sparkles' },
 ];
 
+/** The tab bar's order, the Tower first: a page change to a tab on the right slides forward. */
+const TAB_ORDER: readonly HubView[] = ['home', ...TABS.map((t) => t.view)];
+
+/**
+ * Which way a page change slides. Tabs go by tab order. Tactics, Pacts,
+ * Contracts and the Omen open over the page they came from (a push), and
+ * leaving one for the Tower lifts it off (a back).
+ */
+function direction(from: HubView, to: HubView): NavDirection {
+  const tab = (v: HubView): boolean => TAB_ORDER.includes(v);
+  if (!tab(to)) return 'forward';
+  if (!tab(from)) return to === 'home' ? 'backward' : 'forward';
+  return TAB_ORDER.indexOf(to) > TAB_ORDER.indexOf(from) ? 'forward' : 'backward';
+}
+
 /** A tab: its glyph over its label (plans/visual-identity.md §5.2). */
 function tabButton(view: HubView, label: string, glyph: IconId): HTMLButtonElement {
   const b = document.createElement('button');
@@ -146,6 +162,8 @@ export class HubScreen {
   private readonly storedN: HTMLElement;
   private profile: Profile | null = null;
   private view: HubView = 'home';
+  /** The hub has been on screen once: only the first show fades in. */
+  private painted = false;
 
   constructor(host: HTMLElement, private readonly actions: HubActions) {
     this.root = document.createElement('section');
@@ -158,7 +176,7 @@ export class HubScreen {
       <div class="hub-home">
         <div class="hub-group">
           <p class="eyebrow hub-eyebrow"></p>
-          <h1 class="hub-title">The Tower</h1>
+          <h1 class="hub-title">Blue Hour</h1>
           <p class="hub-sub">The Blight is closing in. Hold the light.</p>
         </div>
         <div class="hub-group">
@@ -336,14 +354,20 @@ export class HubScreen {
   /** Open the hub on `view`. `spread` plays the map's light spreading (§7.3). */
   show(profile: Profile, view: HubView = 'home', spread: MapSpread = false): void {
     this.profile = profile;
+    // Already up (a card's "Forge" button over the hub): slide to the view. Coming in from a run: no slide.
+    const slide = !this.root.hidden;
     this.root.hidden = false;
+    if (!this.painted) {
+      this.painted = true;
+      firstPaint(this.root);
+    }
     this.renderTabs(hubUnlocks(profile));
     const open = view === 'home'
       || (view === 'tactics' ? tacticsKey(profile) !== null
         : view === 'pacts' ? act2Open(profile)
           : view === 'contracts' ? boardOpen(profile)
             : view === 'omen' ? omenOpen(profile) : hubUnlocks(profile)[view]);
-    this.setView(open ? view : 'home', spread);
+    this.setView(open ? view : 'home', spread, true, slide);
   }
 
   hide(): void {
@@ -367,11 +391,23 @@ export class HubScreen {
     this.tabs.replaceChildren(tabButton('home', 'Tower', 'io-home'), ...shown.map((t) => tabButton(t.view, t.label, t.icon)));
   }
 
-  /** `tell`: tell the view's unread explainers (§7.1), after the light spreads when it does. */
-  private setView(view: HubView, spread: MapSpread = false, tell = true): void {
+  /**
+   * `tell`: tell the view's unread explainers (§7.1), after the light spreads when it does.
+   * `slide`: a change to another view plays the page change (pageNav.ts).
+   */
+  private setView(view: HubView, spread: MapSpread = false, tell = true, slide = true): void {
     const p = this.profile;
     if (!p) return;
+    const from = this.view;
+    // The view counts as open at once (the explainers ask); only the DOM waits for the old page's snapshot.
     this.view = view;
+    if (slide && from !== view && !this.root.hidden) navigate(direction(from, view), () => this.apply(p, view, spread));
+    else this.apply(p, view, spread);
+    if (tell) this.actions.explain(view, false, spread ? SPREAD_MS : 0);
+  }
+
+  /** Put `view` on screen. */
+  private apply(p: Profile, view: HubView, spread: MapSpread): void {
     this.root.dataset.view = view;
     this.home.hidden = view !== 'home';
     this.forge.root.hidden = view !== 'forge';
@@ -398,7 +434,6 @@ export class HubScreen {
     if (view === 'contracts') this.contracts.show(p);
     if (view === 'omen') this.omen.show(p);
     this.refresh();
-    if (tell) this.actions.explain(view, false, spread ? SPREAD_MS : 0);
   }
 
   /** Numbers that move when shards are spent, and the tabs' dots. */
@@ -417,7 +452,7 @@ export class HubScreen {
     setText(this.best, record ?? regionBest ?? (best > 0 ? String(best) : '—'));
     const region = selectedRegion(p);
     const where = abyss ? 'The Abyss' : rush ? 'Boss Rush' : region.name;
-    setText(this.eyebrow, abyss || rush ? where : `Region ${region.index + 1} · ${where}`);
+    setText(this.eyebrow, abyss || rush ? where : `Region ${region.index} · ${where}`);
     setText(this.loadoutValue, `${selectedFrame(p).name} · ${where}`);
     const mapOpen = hubUnlocks(p).map;
     this.loadout.disabled = !mapOpen;

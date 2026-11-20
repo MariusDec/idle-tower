@@ -19,6 +19,7 @@ import { anomalyBook, fusionBook, recipeBook } from '../../meta/recipes';
 import { wonTrims } from '../../meta/trials';
 import { bossLore, formsSeen, margin } from '../../meta/secrets';
 import { toggleClass } from '../dom';
+import { glide, noteGlide } from '../controls';
 import { icon } from '../icon';
 
 /** A frame's Final Form line: "Final Form: Astral Spire · earliest wave 15 · ×4", or "Final Form: ?". */
@@ -291,11 +292,14 @@ export class CollectionView {
         toggleClass(b, 'is-active', k === this.relicSeg);
         b.textContent = k === 'relics' ? 'Relics' : 'Cursed';
         b.addEventListener('click', () => {
+          if (k === this.relicSeg) return;
+          noteGlide('collection-relics', k === 'relics' ? 1 : 0);
           this.relicSeg = k;
           this.render();
         });
         seg.append(b);
       }
+      glide(seg, 'collection-relics');
       return [seg, ...(this.relicSeg === 'cursed' ? this.cursed(p) : this.plainRelics(p))];
     }
     return this.plainRelics(p);
