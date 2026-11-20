@@ -5,7 +5,10 @@ import type { Enemy } from '../../sim/state';
 import { FX, INK, mix, withAlpha, type FxColorName } from '../palette';
 import { emergence } from './arena';
 import { context2dOptions } from '../canvasMode';
-import { applySquash, armSquish, crowdDamping, gait, hitSquish, type BodyMotion, type GaitStyle, type MotionLevel } from '../motion';
+import {
+  applySquash, armPop, armSquish, crowdDamping, gait, hitSquish, popFromRise, popFromTime,
+  type BodyMotion, type GaitStyle, type MotionLevel,
+} from '../motion';
 import type { QualityTier } from '../quality';
 
 /**
@@ -135,6 +138,14 @@ export class EnemyPainter {
   private tracks = new Map<number, Track>();
   private pool: Track[] = [];
   private frame = 0;
+  /**
+   * True for the first frame after a reset (and the first ever): every body
+   * then is one already on the field, from a resumed save or a re-attached
+   * run, so none of them pops (§3.3).
+   */
+  private seeding = true;
+  /** Whether the last `track()` call made the track: the body's first frame drawn. */
+  private born = false;
   /** The wall clock at the last frame drawn, for the gait's easing. */
   private lastTime = 0;
   /** One body's motion this frame, reused per body: nothing allocated per frame. */
@@ -154,6 +165,7 @@ export class EnemyPainter {
   reset(): void {
     for (const t of this.tracks.values()) this.pool.push(t);
     this.tracks.clear();
+    this.seeding = true;
   }
 
   /** Bodies tracked now (tests, and the bench's eye on the pool). */
@@ -164,6 +176,7 @@ export class EnemyPainter {
   /** The track for `e`, made (from the pool) on its first frame drawn, and stamped as seen now. */
   private track(e: Enemy, clock: number, x: number, y: number): Track {
     let t = this.tracks.get(e.id);
+    this.born = !t;
     if (!t) {
       t = this.pool.pop() ?? {
         frame: 0, seenAt: 0, popAt: -Infinity, hitSeen: -1, squishAt: -Infinity, weight: 0,
@@ -248,17 +261,24 @@ export class EnemyPainter {
     for (const e of enemies) if (e.alive && !e.boss && !e.court && !e.plate) alive++;
     const crowd = crowdDamping(alive);
     const m = this.m;
+    const seeding = this.seeding;
+    this.seeding = false;
+    // Entrances inside the light pop on `full` only (§5.2.2); walking in from the dark pops everywhere but reduced motion.
+    const popArmed = level === 'full';
     for (const e of enemies) {
       // Bosses, the Hollow King's court and Forgeheart's plates have their own painter (`bosses.ts`).
       if (!e.alive || e.boss || e.court || e.plate) continue;
       const bx = e.px + (e.x - e.px) * alpha;
       const by = e.py + (e.y - e.py) * alpha;
       const g = GAIT[e.type];
+      // Tracked underground too, so the frame it surfaces is seen (§5.2.2).
+      const t = this.track(e, time, bx, by);
+      const born = this.born && !seeding;
       if (e.under) {
+        armPop(t, born, true, e.shade, bx, by, e.radius, 0, time, popArmed);
         drawMound(ctx, bx, by, e.radius, time + e.id);
         continue;
       }
-      const t = this.track(e, time, bx, by);
       // `full` eases into and out of the gait (§4.2); `lite` and reduced motion snap, as before.
       const target = e.moving ? 1 : 0;
       t.weight = level === 'full' ? t.weight + (target - t.weight) * ease : target;
@@ -282,7 +302,10 @@ export class EnemyPainter {
       const x = bx + m.dx;
       const y = by + m.dy;
       const rise = emergence(x, y, light, oval);
+      armPop(t, born, false, e.shade, bx, by, e.radius, rise, time, popArmed);
       if (rise <= 0) continue;
+      // Walking in from the dark, from `rise` (stateless), times any pop inside the light, from the clock.
+      const pop = level === 'reduced' ? 1 : popFromRise(rise) * (popArmed ? popFromTime(time - t.popAt) : 1);
       const fade = (e.hiddenUntil > simTime ? PHASED_ALPHA : e.shade ? SHADE_ALPHA : 1) * rise;
       ctx.globalAlpha = fade;
       // A Champion (N4) wears its region's boss colours: a second, wider halo outside its aura's.
@@ -295,9 +318,11 @@ export class EnemyPainter {
       // Sprites are baked at the type's radius; elites and fragments scale it.
       const k = e.radius / ENEMY_BY_ID[e.type].radius;
       const half = s.half * k;
-      // Squash keeps the body's foot planted: the bottom of its silhouette (`e.radius` below) stays put.
-      const cy = y + e.radius * (1 - m.sy);
-      ctx.drawImage(s.canvas, x - half * m.sx, cy - half * m.sy, 2 * half * m.sx, 2 * half * m.sy);
+      // Squash and pop keep the body's foot planted: the bottom of its silhouette (`e.radius` below) stays put.
+      const sx = m.sx * pop;
+      const sy = m.sy * pop;
+      const cy = y + e.radius * (1 - sy);
+      ctx.drawImage(s.canvas, x - half * sx, cy - half * sy, 2 * half * sx, 2 * half * sy);
       const verb = ENEMY_BY_ID[e.type].verb;
       if (verb.kind === 'shield') drawShield(ctx, x, y, e.radius);
       // A Husk's shell (§9): plates round it while it still swallows hits, a notch per hit.
@@ -343,7 +368,7 @@ export class EnemyPainter {
         ctx.fillStyle = INK['050'];
         // The flash follows the squash too, so it covers the body as drawn (§4.3).
         ctx.beginPath();
-        ctx.ellipse(x, cy, e.radius * m.sx, e.radius * m.sy, 0, 0, Math.PI * 2);
+        ctx.ellipse(x, cy, e.radius * sx, e.radius * sy, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = rise;
       }

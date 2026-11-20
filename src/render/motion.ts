@@ -2,9 +2,6 @@
  * Enemy motion curves (plans/enemy-animation.md §3.1). Pure and DOM-free, so
  * every curve is testable in Node. Presentation only: inputs are the wall
  * clock, an id-derived phase and render-side state, never the sim's RNG.
- *
- * Step 0 lands the curves and the wiring; the painter starts reading them
- * from step 1 on.
  */
 
 export type GaitStyle = 'hop' | 'waddle' | 'slither' | 'float' | 'skitter';
@@ -185,6 +182,53 @@ export function popFromRise(rise: number): number {
   if (rise <= 0) return 0.82;
   if (rise < 0.7) return 0.82 + (1.08 - 0.82) * smoothstep(rise / 0.7);
   return 1.08 + (1 - 1.08) * smoothstep((rise - 0.7) / 0.3);
+}
+
+/** The part of a body's track the time-driven pop reads and writes (§5.2.2). */
+export interface PopTrack {
+  /** Clock the current pop began (−∞: none). */
+  popAt: number;
+  /** Last frame's `e.under` (Burrower) and `e.shade` (Echoes). */
+  under: boolean;
+  shade: boolean;
+  /** Last drawn position (sim, before the gait), to spot a Blinker's jump. */
+  lx: number;
+  ly: number;
+}
+
+/** Readiness inside the light at which a newly seen body pops rather than walking in. */
+export const POP_FIRST_SIGHT = 0.98;
+/** A jump between frames longer than this many radii is a Blinker landing. */
+export const POP_JUMP_RADII = 3;
+
+/**
+ * Watch a body for an entrance inside the light and start its pop at `clock`
+ * (§5.2.2). The triggers: first sight (`born`) already in the light, a
+ * Burrower surfacing, a body rising as a shade, a Blinker landing. The
+ * remembered state is always brought up to date, so a level change (`armed`
+ * false on `lite` and reduced motion) never replays a stale entrance.
+ * Returns whether a pop started.
+ */
+export function armPop(
+  t: PopTrack, born: boolean, under: boolean, shade: boolean, x: number, y: number, radius: number,
+  rise: number, clock: number, armed: boolean,
+): boolean {
+  const surfaced = t.under && !under;
+  const risen = !t.shade && shade;
+  const jx = x - t.lx;
+  const jy = y - t.ly;
+  const lim = POP_JUMP_RADII * radius;
+  const jumped = jx * jx + jy * jy > lim * lim;
+  t.under = under;
+  t.shade = shade;
+  t.lx = x;
+  t.ly = y;
+  if (!armed || under) return false;
+  if ((born && rise >= POP_FIRST_SIGHT) || surfaced || risen || jumped) {
+    t.popAt = clock;
+    return true;
+  }
+  return false;
 }
 
 /**

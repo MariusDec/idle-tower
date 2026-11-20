@@ -4,8 +4,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  MOTION, applySquash, armSquish, crowdDamping, gait, hitSquish, motionLevel, popFromRise, popFromTime,
-  type BodyMotion, type GaitStyle, type MotionLevel,
+  MOTION, applySquash, armPop, armSquish, crowdDamping, gait, hitSquish, motionLevel, popFromRise, popFromTime,
+  type BodyMotion, type GaitStyle, type MotionLevel, type PopTrack,
 } from '../src/render/motion';
 
 const STYLES: readonly GaitStyle[] = ['hop', 'waddle', 'slither', 'float', 'skitter'];
@@ -215,6 +215,52 @@ describe('pops', () => {
   it('are continuous', () => {
     for (let r = 0; r < 1; r += 0.001) expect(Math.abs(popFromRise(r + 0.001) - popFromRise(r))).toBeLessThan(0.01);
     for (let t = -0.01; t < 0.3; t += 0.0005) expect(Math.abs(popFromTime(t + 0.0005) - popFromTime(t))).toBeLessThan(0.02);
+  });
+});
+
+describe('armPop (§5.2.2)', () => {
+  const R = 10;
+  const fresh = (x = 100, y = 0, under = false, shade = false): PopTrack => ({ popAt: -Infinity, under, shade, lx: x, ly: y });
+
+  it('pops a body first seen inside the light, not one walking in from the dark', () => {
+    const a = fresh();
+    expect(armPop(a, true, false, false, 100, 0, R, 1, 2, true)).toBe(true);
+    expect(a.popAt).toBe(2);
+    const b = fresh();
+    expect(armPop(b, true, false, false, 100, 0, R, 0.4, 2, true)).toBe(false);
+    expect(b.popAt).toBe(-Infinity);
+  });
+
+  it('never pops a body it has seen before, standing still in the light', () => {
+    const t = fresh();
+    for (let i = 0; i < 10; i++) expect(armPop(t, false, false, false, 100, 0, R, 1, i, true)).toBe(false);
+  });
+
+  it('pops a Burrower the frame it surfaces, not while it digs', () => {
+    const t = fresh(100, 0, true);
+    expect(armPop(t, true, true, false, 100, 0, R, 0, 1, true)).toBe(false); // born underground
+    expect(armPop(t, false, true, false, 98, 0, R, 0, 1.1, true)).toBe(false);
+    expect(armPop(t, false, false, false, 96, 0, R, 1, 1.2, true)).toBe(true);
+    expect(t.popAt).toBe(1.2);
+  });
+
+  it('pops a body rising as a shade', () => {
+    const t = fresh();
+    expect(armPop(t, false, false, true, 100, 0, R, 1, 3, true)).toBe(true);
+    expect(armPop(t, false, false, true, 100, 0, R, 1, 3.1, true)).toBe(false);
+  });
+
+  it('pops a Blinker landing, but not a body walking', () => {
+    const t = fresh();
+    expect(armPop(t, false, false, false, 99, 0, R, 1, 1, true)).toBe(false);
+    expect(armPop(t, false, false, false, 99 - 3 * R - 1, 0, R, 1, 1.1, true)).toBe(true);
+  });
+
+  it('disarmed, it pops nothing but keeps up, so arming later replays nothing', () => {
+    const t = fresh(100, 0, true);
+    expect(armPop(t, true, false, true, 0, 0, R, 1, 1, false)).toBe(false);
+    expect(t).toEqual({ popAt: -Infinity, under: false, shade: true, lx: 0, ly: 0 });
+    expect(armPop(t, false, false, true, 0, 0, R, 1, 2, true)).toBe(false);
   });
 });
 
