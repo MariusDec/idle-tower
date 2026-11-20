@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- R7 (plans/review-risks.md): a game, and portrait only. Apps targeting
-         SDK 36 have their orientation lock ignored on displays >= 600 dp,
-         except games declared by android:appCategory. With both lines a tablet
-         or an unfolded foldable shows the portrait game letterboxed.
+    <!-- R7 (plans/review-risks.md), revised by plans/large-screens.md §10.1:
+         a game. Apps targeting SDK 36 have their orientation lock ignored on
+         displays >= 600 dp, except games declared by android:appCategory. The
+         lock itself is MainActivity's: portrait below 600 dp, free at or above,
+         so a tablet or an unfolded foldable plays either way up.
          R9: Auto Backup carries the save (files/) to a new phone; the rules
          in res/xml say what else stays behind. -->
     <application
@@ -23,7 +24,6 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
-            android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

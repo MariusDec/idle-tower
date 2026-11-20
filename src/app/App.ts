@@ -41,6 +41,8 @@ import { cardBadges } from '../sim/suggest';
 import type { DraftOffer, RunConfig, RunState } from '../sim/state';
 import { BALANCE } from '../content/balance';
 import { Renderer } from '../render/renderer';
+import { shapeDrifted } from '../render/camera';
+import { onFormChange } from './formFactor';
 import { QualityScaler, frameBudget, readStoredQuality, resolveQuality, storeQuality } from '../render/quality';
 import { CANVAS_MODE, readStoredCanvasMode, storeCanvasMode } from '../render/canvasMode';
 import { runRegion, runWave } from '../sim/systems/waves';
@@ -124,6 +126,10 @@ export class App {
   private runDirty = false;
   /** What `data-arena` on the stage says now: the CSS glows pause while stopped. */
   private arena: 'stopped' | 'live' = 'live';
+  /** The stage changed class (turned, folded): the next frame compares the run's light with it (§10.3). */
+  private formChanged = false;
+  /** "The light keeps its shape" has been told this session. */
+  private shapeTold = false;
   /** Dev only: a sim speed that overrides the unlocked one. */
   private devSpeed: number | null = null;
   /** Writes go out in order, so a late snapshot never lands after its clear. */
@@ -211,6 +217,8 @@ export class App {
       toScreen: (x, y) => this.renderer.camera.worldToScreen(x, y),
       claim: (t) => (t.kind === 'rift' ? this.tapRift() : this.claimReliquary(t.id)),
     });
+    // A tablet turned or a foldable folded mid-run (plans/large-screens.md §10.3).
+    onFormChange(() => { this.formChanged = true; });
     this.renderer.camera.onFraming = (framing) => this.changeSettings((s) => { s.framing = framing; }, false);
     this.hub = new HubScreen(els.screens, {
       start: () => this.startRun(),
@@ -916,6 +924,7 @@ export class App {
     this.slowMo.left = Math.max(0, this.slowMo.left - realDt);
     this.tune(run);
     this.dress(run);
+    if (this.formChanged) this.tellShape();
     this.toasts.tick(realDt);
     // A stopped arena draws until what still moves has finished, then rests
     // the GPU until something changes (plans/android-gpu-crash.md §1).
@@ -977,6 +986,23 @@ export class App {
    * sky too), and the quality
    * tier decides whether glass may blur. Both write only on a change.
    */
+  /**
+   * The stage turned or folded (plans/large-screens.md §10.3). A run's light
+   * keeps the shape it started with, for determinism; the camera already
+   * refits it whole. The first time that leaves a visibly different shape,
+   * one toast says so. A Daily Omen's light never followed the stage, so it
+   * says nothing. Checked a frame after the change, once the camera has
+   * measured the new stage.
+   */
+  private tellShape(): void {
+    this.formChanged = false;
+    const run = this.run;
+    if (this.shapeTold || this.screen !== 'run' || !run || run.omen) return;
+    if (!shapeDrifted(run.arena, this.renderer.stageOval())) return;
+    this.shapeTold = true;
+    this.toasts.show('io-locate', 'The light holds', 'The light keeps its shape until the next run.');
+  }
+
   private dress(run: RunState | null): void {
     const root = document.documentElement;
     const inRun = run !== null && (this.screen === 'run' || this.screen === 'results');

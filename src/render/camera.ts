@@ -95,6 +95,24 @@ export function stageOval(cssWidth: number, cssHeight: number, n?: Squareness): 
   return ovalOf(aspect, hh >= hw, n ?? stageSquareness(cssWidth, cssHeight, aspect));
 }
 
+/** How far two lights' aspects may differ before a player would see a different shape. */
+const SHAPE_TOLERANCE = 0.15;
+
+/**
+ * True when a run's light (`run`, fixed at its start) no longer looks like
+ * the light the stage would give now (`stage`): the stage turned or folded
+ * (plans/large-screens.md §10.3). A different squareness, a light that was
+ * tall and is now wide or the other way, or an aspect off by more than 15 %.
+ * A desktop window nudged a few pixels is not a change.
+ */
+export function shapeDrifted(run: Oval, stage: Oval): boolean {
+  if (run.n !== stage.n) return true;
+  const tall = (o: Oval): number => Math.sign(o.sy - o.sx);
+  if (tall(run) * tall(stage) < 0) return true;
+  const aspect = (o: Oval): number => Math.max(o.sx, o.sy) / Math.min(o.sx, o.sy);
+  return Math.abs(aspect(run) / aspect(stage) - 1) > SHAPE_TOLERANCE;
+}
+
 /** The extent at which a light `light` of shape `oval` fills the rim box of a stage. */
 export function fitExtent(light: number, oval: Oval, cssWidth: number, cssHeight: number): number {
   const { hw, hh } = rimBox(cssWidth, cssHeight);

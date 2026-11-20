@@ -134,6 +134,9 @@ export class WebView<N extends WebNodeDef> {
   private readonly shards: HTMLElement;
   private readonly hint: HTMLElement;
   private readonly detail: HTMLElement;
+  private readonly empty: HTMLElement;
+  private readonly queue: HTMLElement;
+  private readonly queueList: HTMLOListElement;
   private profile: Profile | null = null;
   private selected: string | null = null;
   private hinted: string | null = null;
@@ -153,10 +156,22 @@ export class WebView<N extends WebNodeDef> {
       </header>
       <p class="forge-hint" hidden>${src.hint}</p>
       <button type="button" class="forge-recentre" aria-label="Recentre the web">${iconMarkup('io-locate')}</button>
-      <div class="forge-detail" hidden></div>`;
+      <div class="forge-detail" hidden></div>
+      <p class="forge-empty">Tap a node to see what it does.</p>
+      <section class="forge-queue" hidden>
+        <h3 class="forge-queue-title">The Foreman's queue</h3>
+        <ol class="forge-queue-list"></ol>
+        <p class="forge-queue-none">Pin a node and the Foreman buys it as ${src.currencyName.toLowerCase()} arrive.</p>
+      </section>`;
     this.shards = this.root.querySelector('.forge-shards-n')!;
     this.hint = this.root.querySelector('.forge-hint')!;
     this.detail = this.root.querySelector('.forge-detail')!;
+    // On a landscape screen the web takes the arena and the hub's panel keeps the
+    // rest (plans/large-screens.md §7.2): a line in place of no card, and the queue.
+    // CSS shows them only there; a phone's Forge is unchanged.
+    this.empty = this.root.querySelector('.forge-empty')!;
+    this.queue = this.root.querySelector('.forge-queue')!;
+    this.queueList = this.root.querySelector('.forge-queue-list')!;
     this.root.querySelector('.forge-recentre')!.addEventListener('click', () => this.fit());
     this.svg = el('svg', { class: 'forge-web', role: 'application', 'aria-label': `${src.title} web` });
     this.world = el('g', { class: 'forge-world' });
@@ -262,6 +277,7 @@ export class WebView<N extends WebNodeDef> {
     nodes.appendChild(root);
     this.world.replaceChildren(links, nodes);
     if (this.fitted) this.applyView();
+    this.renderQueue();
   }
 
   private node(n: N, state: NodeState, p: Profile): SVGGElement {
@@ -350,10 +366,48 @@ export class WebView<N extends WebNodeDef> {
     return g;
   }
 
+  /**
+   * The Foreman's wishlist (N7), in the order it buys: each row selects its
+   * node. Hidden before the Foreman, and for a web without one.
+   */
+  private renderQueue(): void {
+    const p = this.profile;
+    const pinned = p ? this.actions.pinned?.(p) ?? null : null;
+    this.queue.hidden = pinned === null;
+    if (!p || pinned === null) return;
+    const web = this.src.web;
+    const rows = pinned.flatMap((id, i) => {
+      const n = web.node(id);
+      if (!n) return [];
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `forge-queue-item branch-${n.branch}${id === this.selected ? ' is-selected' : ''}`;
+      b.dataset.id = id;
+      const place = document.createElement('span');
+      place.className = 'forge-queue-place';
+      place.textContent = `#${i + 1}`;
+      const name = document.createElement('span');
+      name.className = 'forge-queue-name';
+      name.textContent = n.name;
+      const level = document.createElement('span');
+      level.className = 'forge-queue-level';
+      level.textContent = levelText(web.levelOf(p, id), web.maxOf(p, n));
+      b.append(place, icon(n.icon), name, level);
+      b.addEventListener('click', () => this.select(id));
+      li.append(b);
+      return [li];
+    });
+    this.queueList.replaceChildren(...rows);
+    this.queueList.hidden = rows.length === 0;
+    this.queue.querySelector<HTMLElement>('.forge-queue-none')!.hidden = rows.length > 0;
+  }
+
   /** The card for the selected node: what it does, what it costs, Buy or Refund. */
   private renderDetail(): void {
     const p = this.profile;
     const id = this.selected;
+    this.empty.hidden = !!(p && id);
     if (!p || !id) {
       this.detail.hidden = true;
       return;
@@ -583,6 +637,9 @@ export class WebView<N extends WebNodeDef> {
     this.selected = id;
     for (const g of this.world.querySelectorAll<SVGGElement>('.forge-node')) {
       g.classList.toggle('is-selected', g.dataset.id === id);
+    }
+    for (const b of this.queueList.querySelectorAll<HTMLElement>('.forge-queue-item')) {
+      b.classList.toggle('is-selected', b.dataset.id === id);
     }
     this.renderDetail();
   }

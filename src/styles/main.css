@@ -4373,6 +4373,112 @@ body {
   backdrop-filter: none;
 }
 
+/* ── The Forge and the Constellations, expanded (§7.2): a web wants space, so
+   it takes the arena region, full height, left of the panel, on the plain
+   ground (the arena's tower would only sit under the web's root). The panel
+   keeps the title and wallet, the node's card and the Foreman's queue. The
+   web and its recentre button place themselves on the panel's box: they sit
+   right of nothing, `--arena-w` wide (HubScreen measures it). Phones and
+   tablets held upright never match these rules, and the extra panel parts
+   (.forge-empty, .forge-queue) stay hidden there. */
+.forge-empty,
+.forge-queue { display: none; }
+
+:root[data-form='expanded'] .hub .forge {
+  position: static;
+  overflow-y: auto;
+  gap: var(--space-4);
+  /* The gear above. */
+  padding-top: calc(var(--control-h-sm) + var(--space-4));
+}
+
+:root[data-form='expanded'] .hub .forge-web {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  /* An <svg> is replaced: top and bottom alone leave it at its intrinsic 150 px. */
+  height: 100%;
+  width: var(--arena-w, 0px);
+}
+
+:root[data-form='expanded'] .hub .forge:not(.stars) .forge-web {
+  background: var(--bg-stop-2) var(--bg-gradient) fixed;
+}
+
+:root[data-form='expanded'] .hub .forge-recentre {
+  top: max(var(--space-3), var(--safe-t));
+  right: calc(100% + var(--space-3));
+}
+
+:root[data-form='expanded'] .hub .forge-detail {
+  position: static;
+  flex: 0 0 auto;
+}
+
+:root[data-form='expanded'] .forge-empty:not([hidden]) {
+  display: block;
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px dashed var(--glass-border);
+  border-radius: var(--radius-sheet);
+  color: var(--text-dim);
+}
+
+:root[data-form='expanded'] .forge-queue:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: left;
+}
+
+.forge-queue-title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.forge-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.forge-queue-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--glass-border);
+  border-left: 3px solid var(--branch, var(--text-dim));
+  border-radius: var(--radius-button);
+  background: var(--glass-fill-solid);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.forge-queue-item.is-selected { border-color: var(--accent); border-left-color: var(--branch, var(--text-dim)); }
+.forge-queue-item .icon { --icon-size: 20px; color: var(--branch, var(--text-dim)); }
+.forge-queue-place { min-width: 2ch; color: var(--accent); font-weight: var(--fw-bold); }
+.forge-queue-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.forge-queue-level { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.forge-queue-none {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
 /* ── Results (§7.3) */
 :root:is([data-form='medium'], [data-form='expanded']) .results-report-card {
   width: min(520px, calc(100% - var(--space-6) - var(--safe-l) - var(--safe-r)));

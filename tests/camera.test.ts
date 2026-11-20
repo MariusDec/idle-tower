@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ARENA, PHONE_OVAL, inLight, lightRadius, rimAxes, spawnPoint, type Oval } from '../src/content/arena';
-import { Camera, PIXEL_BUDGET, RIM, ZOOM, fitExtent, makeViewTransform, rimBox, screenToWorld, stageOval, worldToScreen } from '../src/render/camera';
+import { Camera, PIXEL_BUDGET, RIM, ZOOM, fitExtent, makeViewTransform, rimBox, screenToWorld, shapeDrifted, stageOval, worldToScreen } from '../src/render/camera';
 import { formOf } from '../src/app/formFactor';
 import { QUALITY } from '../src/render/quality';
 
@@ -360,5 +360,26 @@ describe('the light (camera-and-fog §3)', () => {
     const big = rimAxes(900, PHONE_OVAL);
     expect(small.y).toBeCloseTo(960, 6);
     expect(big.y - big.x).toBeCloseTo(small.y - small.x, 6);
+  });
+});
+
+describe('a run\'s light after the stage turns (plans/large-screens.md §10.3)', () => {
+  const at = (w: number, h: number): Oval => stageOval(w, h);
+
+  it('is unchanged on a phone and on a desktop window nudged a little', () => {
+    expect(shapeDrifted(at(375, 812), at(375, 812))).toBe(false);
+    expect(shapeDrifted(at(1440, 900), at(1400, 880))).toBe(false);
+    expect(shapeDrifted(PHONE_OVAL, at(412, 915))).toBe(false);
+  });
+
+  it('has drifted when a tablet turns, or a foldable folds', () => {
+    expect(shapeDrifted(at(1024, 768), at(768, 1024))).toBe(true);
+    expect(shapeDrifted(at(768, 1024), at(1280, 800))).toBe(true);
+    // Unfolded (about square) to folded (a phone).
+    expect(shapeDrifted(at(840, 900), at(375, 812))).toBe(true);
+  });
+
+  it('has drifted when only the squareness differs', () => {
+    expect(shapeDrifted({ ...PHONE_OVAL, n: 2 }, { ...PHONE_OVAL, n: 3 })).toBe(true);
   });
 });

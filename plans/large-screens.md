@@ -605,6 +605,9 @@ pacing run. Steps 0, 3 and 4 do.
   inset exists.
 - **The Forge in the arena region** (§7.2): does the web go over a dimmed
   arena (the backdrop tower stays visible) or over the plain ground?
+  *Built (step 10) on the plain ground*, as the phone's Forge is: the web's
+  root glyph is the tower already, and node bases wear `--web-bg`, which
+  would show as dark discs over a lit arena. Revisit by eye if wanted.
 - **Hover details** on mouse for draft cards, Forge nodes and relics: a
   general tooltip pattern, or per component?
 

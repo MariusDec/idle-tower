@@ -273,6 +273,8 @@ export class HubScreen {
     // The docked panel (expanded only): report its width whenever it shows, hides or resizes.
     const cover = new ResizeObserver(() => this.reportCover());
     cover.observe(this.root);
+    // The stage too: the arena region (`--arena-w`) changes with it while a capped panel doesn't.
+    cover.observe(host);
     onFormChange(() => this.reportCover());
     const refreshing = <T>(fn: () => T): T => {
       const out = fn();
@@ -389,9 +391,15 @@ export class HubScreen {
     this.reportCover();
   }
 
-  /** Tell the app how much of the stage the hub covers on the right (`HubActions.cover`). */
+  /**
+   * Tell the app how much of the stage the hub covers on the right
+   * (`HubActions.cover`), and tell the panel's CSS how wide the arena region
+   * left of it is (`--arena-w`): the Forge's web goes there (plans/large-screens.md §7.2).
+   */
   private reportCover(): void {
     const px = !this.root.hidden && currentForm() === 'expanded' ? this.root.getBoundingClientRect().width : 0;
+    const host = this.root.parentElement;
+    if (px > 0 && host) this.root.style.setProperty('--arena-w', `${Math.max(0, host.clientWidth - px)}px`);
     if (px === this.covered) return;
     this.covered = px;
     this.actions.cover?.(px);

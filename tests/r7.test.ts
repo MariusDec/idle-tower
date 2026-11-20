@@ -1,6 +1,6 @@
 /**
- * R7 (`plans/review-risks.md`): text that fits, and a tablet that stays a
- * portrait phone. The size sweep itself runs in a browser (360×640, 375×812,
+ * R7 (`plans/review-risks.md`): text that fits, and a phone that stays
+ * portrait (a tablet turns since plans/large-screens.md §10.1). The size sweep itself runs in a browser (360×640, 375×812,
  * 412×915 at 100% and 130%); this pins what it found, so a later edit to the
  * manifest or the stylesheet can't quietly undo it.
  */
@@ -11,6 +11,7 @@ const read = (path: string): string => readFileSync(new URL(`../${path}`, import
 const MANIFEST = read('android/app/src/main/AndroidManifest.xml');
 const CSS = read('src/styles/main.css').replace(/\/\*[\s\S]*?\*\//g, '');
 const TOKENS = read('src/styles/tokens.css');
+const ACTIVITY = read('android/app/src/main/java/com/mariusdonci/bluehour/MainActivity.java');
 
 /** Every declaration in the rules whose selector is exactly `sel`, joined. */
 function rule(sel: string): string {
@@ -25,8 +26,15 @@ describe('R7: tablets and foldables', () => {
     expect(MANIFEST).toMatch(/<application[^>]*android:appCategory="game"/);
   });
 
-  it('locks the activity to portrait', () => {
-    expect(MANIFEST).toMatch(/<activity[^>]*android:screenOrientation="portrait"/);
+  it('locks a phone to portrait and frees a large screen (plans/large-screens.md §10.1)', () => {
+    // The manifest leaves orientation to the activity: a fixed lock there would hold tablets too.
+    expect(MANIFEST).not.toMatch(/android:screenOrientation=/);
+    expect(ACTIVITY).toMatch(/LARGE_SCREEN_DP\s*=\s*600/);
+    expect(ACTIVITY).toMatch(/smallestScreenWidthDp\s*<\s*LARGE_SCREEN_DP\s*\?\s*ActivityInfo\.SCREEN_ORIENTATION_PORTRAIT\s*:\s*ActivityInfo\.SCREEN_ORIENTATION_FULL_USER/);
+    // Applied at start and again on a fold or unfold, which the activity handles itself.
+    expect(ACTIVITY).toMatch(/onCreate[\s\S]*applyOrientation\(/);
+    expect(ACTIVITY).toMatch(/onConfigurationChanged[\s\S]*applyOrientation\(newConfig\)/);
+    expect(MANIFEST).toMatch(/android:configChanges="[^"]*\borientation\b[^"]*\bscreenSize\b[^"]*\bsmallestScreenSize\b/);
   });
 
   it('centres a phone-width stage on anything wider', () => {
@@ -40,6 +48,14 @@ describe('R7: tablets and foldables', () => {
     expect(rule(":root[data-form='expanded']")).toMatch(/--stage-max-width:\s*none/);
     expect(CSS).not.toMatch(/:root\[data-form='compact'\][^{]*\{[^}]*--stage-max-width/);
     expect(TOKENS).toMatch(/--content-max:\s*640px/);
+  });
+
+  it('puts the Forge web in the arena region only on an expanded stage (plans/large-screens.md §7.2)', () => {
+    const web = rule(":root[data-form='expanded'] .hub .forge-web");
+    expect(web).toMatch(/right:\s*100%/);
+    expect(web).toMatch(/width:\s*var\(--arena-w/);
+    // The panel-only parts stay hidden on every other stage.
+    expect(CSS).toMatch(/\.forge-empty,\s*\.forge-queue\s*\{\s*display:\s*none;\s*\}/);
   });
 });
 
