@@ -5,7 +5,7 @@ import type { Enemy } from '../../sim/state';
 import { FX, INK, mix, withAlpha, type FxColorName } from '../palette';
 import { emergence } from './arena';
 import { context2dOptions } from '../canvasMode';
-import type { MotionLevel } from '../motion';
+import { crowdDamping, gait, type BodyMotion, type GaitStyle, type MotionLevel } from '../motion';
 import type { QualityTier } from '../quality';
 
 /**
@@ -23,32 +23,35 @@ export const LIGHT_ANGLE = -Math.PI * 0.62;
 /** Least a detail stroke may measure, in device pixels, before it dissolves. */
 const MIN_STROKE_PX = 1.25;
 
-/** Per-type gait: bob frequency (Hz) and amplitude (world units). */
-const GAIT: Record<EnemyId, { freq: number; bob: number }> = {
-  grunt: { freq: 7, bob: 1.2 },
-  runner: { freq: 15, bob: 2 },
-  brute: { freq: 3.4, bob: 0.8 },
-  splitter: { freq: 4.5, bob: 1.6 },
-  spitter: { freq: 5, bob: 1 },
-  mender: { freq: 5.5, bob: 1.4 },
-  shieldbearer: { freq: 4, bob: 0.8 },
-  burrower: { freq: 9, bob: 1.4 },
-  shardling: { freq: 12, bob: 1.6 },
-  bomber: { freq: 6, bob: 1.8 },
-  blinker: { freq: 3, bob: 2.4 },
-  'siege-engine': { freq: 2.4, bob: 0.6 },
-  phantom: { freq: 2, bob: 3 },
-  leech: { freq: 14, bob: 1.2 },
-  summoner: { freq: 2.6, bob: 1.8 },
-  imp: { freq: 16, bob: 1.4 },
-  harbinger: { freq: 1.6, bob: 2 },
-  chorus: { freq: 3.2, bob: 2.2 },
-  husk: { freq: 3.8, bob: 0.8 },
-  ram: { freq: 6, bob: 1.2 },
-  wardstone: { freq: 1.4, bob: 0.6 },
-  maw: { freq: 4, bob: 1.6 },
-  lurker: { freq: 10, bob: 1 },
-  tidecaller: { freq: 1.8, bob: 2.2 },
+/**
+ * Per-type gait (plans/enemy-animation.md §4.1): how it moves, its bob
+ * frequency (rad/s, as `sin(time·freq)`) and amplitude (world units).
+ */
+export const GAIT: Record<EnemyId, { style: GaitStyle; freq: number; bob: number }> = {
+  grunt: { style: 'hop', freq: 7, bob: 1.2 },
+  runner: { style: 'skitter', freq: 15, bob: 2 },
+  brute: { style: 'waddle', freq: 3.4, bob: 0.8 },
+  splitter: { style: 'hop', freq: 4.5, bob: 1.6 },
+  spitter: { style: 'hop', freq: 5, bob: 1 },
+  mender: { style: 'float', freq: 5.5, bob: 1.4 },
+  shieldbearer: { style: 'waddle', freq: 4, bob: 0.8 },
+  burrower: { style: 'slither', freq: 9, bob: 1.4 },
+  shardling: { style: 'skitter', freq: 12, bob: 1.6 },
+  bomber: { style: 'hop', freq: 6, bob: 1.8 },
+  blinker: { style: 'float', freq: 3, bob: 2.4 },
+  'siege-engine': { style: 'waddle', freq: 2.4, bob: 0.6 },
+  phantom: { style: 'float', freq: 2, bob: 3 },
+  leech: { style: 'slither', freq: 14, bob: 1.2 },
+  summoner: { style: 'float', freq: 2.6, bob: 1.8 },
+  imp: { style: 'hop', freq: 16, bob: 1.4 },
+  harbinger: { style: 'float', freq: 1.6, bob: 2 },
+  chorus: { style: 'hop', freq: 3.2, bob: 2.2 },
+  husk: { style: 'waddle', freq: 3.8, bob: 0.8 },
+  ram: { style: 'hop', freq: 6, bob: 1.2 },
+  wardstone: { style: 'float', freq: 1.4, bob: 0.6 },
+  maw: { style: 'waddle', freq: 4, bob: 1.6 },
+  lurker: { style: 'slither', freq: 10, bob: 1 },
+  tidecaller: { style: 'float', freq: 1.8, bob: 2.2 },
 };
 
 /** How see-through a phased-out body, and a risen shade, is drawn. */
@@ -116,6 +119,12 @@ interface Track {
 /** Frames between sweeps of the tracks no longer drawn. */
 const SWEEP_FRAMES = 30;
 
+/** How fast (1/s) a body eases into and out of its gait (§4.2): settled in about 150 ms. */
+const WEIGHT_RATE = 8;
+
+/** The heading toward the tower, reused per body. */
+const HEADING = { nx: 0, ny: -1 };
+
 export class EnemyPainter {
   private cache = new Map<string, Sprite>();
   private scale = 0;
@@ -126,6 +135,10 @@ export class EnemyPainter {
   private tracks = new Map<number, Track>();
   private pool: Track[] = [];
   private frame = 0;
+  /** The wall clock at the last frame drawn, for the gait's easing. */
+  private lastTime = 0;
+  /** One body's motion this frame, reused per body: nothing allocated per frame. */
+  private readonly m: BodyMotion = { dx: 0, dy: 0, sx: 1, sy: 1 };
 
   /** The motion level and the tier, set when either the setting or the tier changes, never per body. */
   setMotion(level: MotionLevel, tier: QualityTier): void {
@@ -226,20 +239,40 @@ export class EnemyPainter {
     drawChorusLinks(ctx, enemies, alpha, time);
     this.frame++;
     this.sweep();
+    const level = this.level;
+    // The gait's easing runs on the wall clock; a long gap (a pause, a hidden tab) just settles it.
+    const dt = Math.min(0.1, Math.max(0, time - this.lastTime));
+    this.lastTime = time;
+    const ease = 1 - Math.exp(-WEIGHT_RATE * dt);
+    let alive = 0;
+    for (const e of enemies) if (e.alive && !e.boss && !e.court && !e.plate) alive++;
+    const crowd = crowdDamping(alive);
+    const m = this.m;
     for (const e of enemies) {
       // Bosses, the Hollow King's court and Forgeheart's plates have their own painter (`bosses.ts`).
       if (!e.alive || e.boss || e.court || e.plate) continue;
-      const x = e.px + (e.x - e.px) * alpha;
+      const bx = e.px + (e.x - e.px) * alpha;
+      const by = e.py + (e.y - e.py) * alpha;
       const g = GAIT[e.type];
       if (e.under) {
-        drawMound(ctx, x, e.py + (e.y - e.py) * alpha, e.radius, time + e.id);
+        drawMound(ctx, bx, by, e.radius, time + e.id);
         continue;
       }
-      const y = e.py + (e.y - e.py) * alpha + (e.moving ? Math.sin(time * g.freq + e.id) * g.bob : 0);
+      const t = this.track(e, time, bx, by);
+      // `full` eases into and out of the gait (§4.2); `lite` and reduced motion snap, as before.
+      const target = e.moving ? 1 : 0;
+      t.weight = level === 'full' ? t.weight + (target - t.weight) * ease : target;
+      // Reduced motion keeps today's bob to the digit (D-1); otherwise a Chorus hops as one (D-3).
+      const seed = level === 'reduced' ? e.id : e.group || e.id;
+      const d = Math.hypot(bx, by) || 1;
+      HEADING.nx = -bx / d;
+      HEADING.ny = -by / d;
+      gait(m, g.style, g.bob, time * g.freq + seed, t.weight, HEADING, level, crowd);
+      // Overlays (halos, rings, the HP bar) follow the offset, not the squash (§4.3).
+      const x = bx + m.dx;
+      const y = by + m.dy;
       const rise = emergence(x, y, light, oval);
       if (rise <= 0) continue;
-      // Step 0 only keeps the track alive; steps 1–3 read it (plans/enemy-animation.md §3.3).
-      this.track(e, time, x, y);
       const fade = (e.hiddenUntil > simTime ? PHASED_ALPHA : e.shade ? SHADE_ALPHA : 1) * rise;
       ctx.globalAlpha = fade;
       // A Champion (N4) wears its region's boss colours: a second, wider halo outside its aura's.
@@ -251,7 +284,10 @@ export class EnemyPainter {
       const s = this.sprite(e.type, guest);
       // Sprites are baked at the type's radius; elites and fragments scale it.
       const k = e.radius / ENEMY_BY_ID[e.type].radius;
-      ctx.drawImage(s.canvas, x - s.half * k, y - s.half * k, s.half * 2 * k, s.half * 2 * k);
+      const half = s.half * k;
+      // Squash keeps the body's foot planted: the bottom of its silhouette (`e.radius` below) stays put.
+      const cy = y + e.radius * (1 - m.sy);
+      ctx.drawImage(s.canvas, x - half * m.sx, cy - half * m.sy, 2 * half * m.sx, 2 * half * m.sy);
       const verb = ENEMY_BY_ID[e.type].verb;
       if (verb.kind === 'shield') drawShield(ctx, x, y, e.radius);
       // A Husk's shell (§9): plates round it while it still swallows hits, a notch per hit.
@@ -295,8 +331,9 @@ export class EnemyPainter {
       if (e.hitTick >= 0 && sinceHit < 5) {
         ctx.globalAlpha = 0.65 * (1 - sinceHit / 5) * rise;
         ctx.fillStyle = INK['050'];
+        // The flash follows the squash too, so it covers the body as drawn (§4.3).
         ctx.beginPath();
-        ctx.arc(x, y, e.radius, 0, Math.PI * 2);
+        ctx.ellipse(x, cy, e.radius * m.sx, e.radius * m.sy, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = rise;
       }

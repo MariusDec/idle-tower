@@ -192,3 +192,13 @@ describe('pops', () => {
     for (let t = -0.01; t < 0.3; t += 0.0005) expect(Math.abs(popFromTime(t + 0.0005) - popFromTime(t))).toBeLessThan(0.02);
   });
 });
+
+describe('GAIT styles (plans/enemy-animation.md §4.1)', () => {
+  it('every enemy type has a style, and every style is used', async () => {
+    const { GAIT } = await import('../src/render/painters/enemies');
+    const { ENEMY_BY_ID } = await import('../src/content/enemies');
+    expect(Object.keys(GAIT).sort()).toEqual(Object.keys(ENEMY_BY_ID).sort());
+    const used = new Set(Object.values(GAIT).map((g) => g.style));
+    for (const s of STYLES) expect(used.has(s)).toBe(true);
+  });
+});
