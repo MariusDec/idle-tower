@@ -71,4 +71,5 @@ profile; the app and every bot call it. See [forge.md](forge.md) and
   `behaviour`, …) with exhaustive consumers ending in `never`.
 - **Colours come from `render/palette.ts`** or a `--token` in
   `styles/tokens.css`; `tests/palette.test.ts` fails on a literal.
-- **Every screen is checked at 375×812 first** (D4).
+- **Every screen is checked at 375×812 first** (D4), then at the large-screen
+  sizes of plans/large-screens.md §13 when it has a `medium` or `expanded` layout.

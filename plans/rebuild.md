@@ -1465,6 +1465,9 @@ boss each), so if the schedule has to slip, Act 2 goes first.
   (§12.4).
 - **D4: Portrait mobile first.** Design and test at 375×812. Desktop uses the
   same portrait arena, centred, with the hub docked to its right (§10.1).
+  *Superseded for large screens by plans/large-screens.md (2026-11-20): a
+  tablet or desktop gets the whole screen, the light takes its shape, and in
+  landscape the hub docks on the right as first written here.*
   - Every screen's P-phase gate is checked at 375×812 first.
 - **D5: Pacts, Constellations and the Abyss, with no wiping prestige** (§9).
   - **Revisit trigger:** if the Act 2 playtest shows the tail going flat

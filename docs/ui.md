@@ -3,10 +3,19 @@
 Vanilla DOM over the canvas. Code: `src/ui/`, styles in
 `src/styles/tokens.css` (tokens) and `src/styles/main.css`. Portrait
 mobile first: every screen is checked at 375×812 (D4), and swept at 360×640
-and 412×915 at 100% and 130% text (R7). On desktop, a tablet or an unfolded
-foldable the same portrait stage (`--stage-max-width`, 480 px) is centred on
-the brand gradient; Android keeps it portrait (`appCategory="game"`, so
-Android 16 honours the lock on large screens).
+and 412×915 at 100% and 130% text (R7). Large screens get their own
+layouts (plans/large-screens.md): `src/app/formFactor.ts` classifies the
+`#app` box as `compact` (short side < 600 px, or landscape under 500 px
+tall: every phone, which keeps the 480 px portrait stage), `medium` (a
+tablet held upright: the arena spans the stage, the HUD, the hub's views
+and the results keep to a centred `--content-max` column of 640 px) or
+`expanded` (landscape: the HUD in the corners, the hub docked as a
+`--hub-width` panel on the right with the arena in the rest, the Forge's
+web in that arena region). It writes `<html data-form>`; every large-screen
+rule sits at the end of `main.css` under it, so none can reach a phone.
+Android locks portrait below 600 dp smallest width and turns freely above
+(`MainActivity.applyOrientation`; `appCategory="game"` keeps Android 16
+from overriding the phone's lock).
 
 ## Layers (`index.html`)
 

@@ -4490,10 +4490,22 @@ body {
   width: min(520px, 100%);
 }
 
-/* Expanded: How it went opens as a side sheet, so the report stays in view beside it. */
-:root[data-form='expanded'] .results-report { justify-content: flex-end; }
+/* Expanded: How it went opens as a side sheet, so the report stays in view
+   beside it: the sheet covers only its own strip (no scrim over the report),
+   and the results' column recentres in what is left. */
+:root[data-form='expanded'] { --report-sheet-w: min(480px, 50%); }
+:root[data-form='expanded'] .results-report {
+  left: auto;
+  width: var(--report-sheet-w);
+  background: none;
+}
+:root[data-form='expanded'] .results:has(.results-report:not([hidden])) {
+  --report-gutter: max(var(--space-4), calc((100% - var(--report-sheet-w) - var(--content-max)) / 2));
+  padding-left: var(--report-gutter);
+  padding-right: calc(var(--report-sheet-w) + var(--report-gutter));
+}
 :root[data-form='expanded'] .results-report-card {
-  width: min(480px, 50%);
+  width: 100%;
   height: 100%;
   max-height: none;
   padding-top: max(var(--space-5), var(--safe-t));

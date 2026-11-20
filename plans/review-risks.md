@@ -545,6 +545,10 @@ tablet and a foldable show the game portrait and centred.
 
 **Status (2026-11-19): §1–§3 built in the browser; the device checks (system
 font scale, a tablet and a foldable emulator) still need Android.**
+*Revised 2026-11-20 by plans/large-screens.md: the portrait lock (§1) moved
+to `MainActivity` and applies below 600 dp only, and the letterbox (§3) gave
+way to tablet and landscape layouts. `appCategory="game"` and the sweep (§2)
+stand.*
 
 - §1: `android:appCategory="game"` on `<application>`,
   `android:screenOrientation="portrait"` on the activity. Android's docs

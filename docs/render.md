@@ -161,25 +161,45 @@ once when the run starts (`Renderer.stageOval` → `RunConfig.arena`;
 headless tools use `PHONE_OVAL`). Enemies spawn just past the rim, and
 `targetable` refuses anything outside it: what the tower can hit is lit.
 
-`painters/arena.ts` draws it live in world units, nothing baked: the lit
+On a large stage the oval squares off (plans/large-screens.md §5): the
+shape is a superellipse `|x/a|ⁿ + |y/b|ⁿ = 1` with `n` in `Oval.n`, 2 on
+every `compact` stage (a phone's ellipse, its arithmetic unchanged), 3 on
+`medium` and `expanded`, 4 on an `expanded` stage of aspect ≤ 1.4
+(`stageSquareness`; dev `?fog=2|3|4` forces it). Everything on the rim
+goes through `rimPoint`; `inLight` grows the axes by `2^(1/n − 1/2)·r`
+for n > 2, exact on the diagonal and safe on the axes. The run's opening
+and each boss come from the ends of the short axis (`shortEnds`), so a
+wide light starts as soon as a tall one. The Daily Omen and the headless
+tools play `PHONE_OVAL`; `tools/pacing.ts --arena` plays another stage's.
+
+`painters/arena.ts` draws it live in world units: the lit
 ground, the faint guides, then — after bodies, shots and effects — the dark
 past the rim (a soft gradient over the bodies, so they walk out of it) and
-the thin violet rim with its glow. `emergence` fades a body in over its
+the thin violet rim with its glow. For n > 2 the ground is the same
+gradient clipped to the shape, the rim and guides stroke a cached `Path2D`,
+and the dark is a 512² texture baked once per squareness and palette in rim
+units and stretched over the rim. `emergence` fades a body in over its
 first steps in from the spawn line. Thin lines (rim, guides, range ring)
 are sized in CSS pixels, so they stay thin at any zoom.
 
 ## Camera
 
-`camera.ts` sets the backing store at `min(devicePixelRatio, dprCap)` and
-holds one value, the **extent**: world units from the tower to the stage's
+`camera.ts` sets the backing store at `min(devicePixelRatio, dprCap)`,
+lowered on a large screen to the tier's pixel budget (`PIXEL_BUDGET`: 4,
+2.5 or 1.5 MP, never below DPR 1), and holds one value, the **extent**: world units from the tower to the stage's
 short edge. Fully out (`fitExtent`), the rim sits just inside the stage's
 sides and level with the HP bar at each end of the long axis (`rimBox`),
-and the camera eases after the light as it grows. Manual zoom
+and the camera eases after the light as it grows. On a `medium` or
+`expanded` stage the fit draws the base light at no more than
+`RIM.maxScale` (0.6 CSS px per world unit), so bodies sized for a phone
+don't draw 2–3× bigger; the rim box shrinks uniformly and the dark and the
+sky take the margin. `setInsets({ right })` takes out what the hub's docked
+panel covers: the tower eases to the centre of the rest. Manual zoom
 (`ui/zoom.ts`: pinch, wheel, trackpad pinch; the HUD's `+ / −` with a
 mouse and a Fit chip while zoomed in) frames as close as `ZOOM.close` (270);
-that framing holds while the light changes, clamped if the light shrinks
-inside it, and near fully out snaps back to following. Always centred on
-the tower, no panning. The framing is a setting (`settings.framing`, v12).
+the framing is kept at the base light and grows with it, so as range pushes
+the fog back the camera draws back too, and near fully out it snaps back to
+following. Always centred on the tower, no panning. The framing is a setting (`settings.framing`, v12).
 While zoomed in, a marker on the stage's edge points at an off-screen boss.
 Enemy sprites bake at the view scale rounded up to a step of √2, so a
 pinch never rebakes every frame.

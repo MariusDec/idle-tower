@@ -1,6 +1,38 @@
 # Large screens: tablets, desktops, foldables
 
-**Status:** 2026-11-19. Plan only, nothing built. It reverses one earlier
+**Status (2026-11-20): built**, steps 0–10 and 12 (`5241c9b`, `e11d989`,
+`ba1d6ef`, `386548e`; the framing fix `1aa5d0b`). Reviewed the same day:
+the *How it went* side sheet covered the results' column, now it sits beside
+them and the column recentres. Left: §9.4 (the specimen only shows base
+components, where nothing but the 1.1× touch text changes with the form),
+§9.1's hover details and §9.5's shortcuts (optional, §14), and every Android
+emulator check of §13 (rotation, fold, `?bench` at 2560×1600). Two notes on
+what was built against what's written below: `rimPoint` keeps the ellipse's
+own parameter (`a·sgn(cos t)·|cos t|^(2/n)`), not the polar angle of §5.2,
+since n = 2 must stay bit-for-bit and an ellipse's spawn angle was never
+polar either; and so the mean rim distances `--arena` prints (phone 748)
+are the parametric ones, not §1's table (677). The `< 500 px tall` guard of
+§3 can never fire: a landscape box that short already has a short side
+under 600.
+
+**D-4, measured (2026-11-20), no normalisation.** `npm run pacing --
+--hours 6 --seeds 8 --fast --arena <shape>` on all five shapes, then
+`--idle --hours 12 --seeds 4 --fast` on the extremes (phone, square):
+
+| Shape | Mean rim | Gatekeeper | Blight (I1b) | Wave 20 (P3) | I2 | I5 misses |
+|---|---|---|---|---|---|---|
+| phone | 748 | 31:00 | 264:22 | 27:59 | 5.5 d | prism 1.15 |
+| tablet-p (n 3) | −19 % | 31:24 | 266:54 | 30:27 | | |
+| tablet-l (n 3) | −5 % | 29:30 | 271:01 | 28:50 | | |
+| desktop (n 3) | +2 % | 34:10 | 277:30 | 26:47 | | |
+| square (n 3) | −28 % | 31:01 | 271:43 | 28:32 | 6.5 d | hollow-king 1.53 |
+
+I1a 8/8 and I1b 8/8 everywhere; I6 and I7 pass everywhere. The walk is a
+small share of a run's time against a build that kills at range, so even a
+28 % shorter rim moves nothing past seed noise. The square reads I5 a few
+hundredths higher at most checkpoints; worth a look if the gate tightens.
+
+It reverses one earlier
 call: R7 §3 (`plans/review-risks.md`) and D4 (`plans/rebuild.md`) settled
 large screens as a **letterbox**, the 480 px portrait stage centred on the
 brand gradient. That works, but the game looks like a phone app on a tablet
@@ -30,7 +62,7 @@ Each has a recommendation; §14 has the smaller open questions.
 | D-1 | Unlock landscape on Android tablets and foldables, or stay portrait-only? | **Decided (owner, 2026-11-19): unlock at ≥ 600 dp** (§10). Phones stay portrait. |
 | D-2 | The light's shape on large screens: keep the ellipse, or a squarer shape? | **Decided (owner, 2026-11-20): a superellipse ("squircle") whose squareness grows with the stage** (§5.1). Phones keep today's ellipse exactly. The exact `n` per class is still tuned by eye (§14). |
 | D-3 | Should a bigger screen show the same world bigger, or more world? | **The same world, bigger, up to a cap** of ~0.6 CSS px per world unit (§6.2). Past the cap the light stays centred and the dark and sky take the margin. |
-| D-4 | A stage shape changes how far enemies walk. Normalise it? | **Measure first** (§11.2). If any of I1/I2/I5 moves, normalise the mean spawn distance to the phone's. |
+| D-4 | A stage shape changes how far enemies walk. Normalise it? | **Measured (2026-11-20): no.** Nothing moves past seed noise on any shape (Status above). |
 | D-5 | Where does the hub go in landscape? | **Docked beside the arena** (D4's original idea, `--hub-width` already exists and is unused). |
 
 ## 1. Where things stand
