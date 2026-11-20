@@ -763,7 +763,7 @@ export class Renderer {
           const pose = this.bossMotion.update(b.id, {
             x: bx, y: by, radius: body.radius, moving: body.moving, hitTick: body.hitTick,
             windup: b.windup, staggered: b.staggeredUntil > run.time, enraged: b.enraged,
-          }, this.clock);
+          }, this.clock, run.projectiles);
           paintBoss(ctx, body, b, alpha, run.tick, run.time, this.clock, light, oval, pose);
           // The mirror stays on the body: the pose's offset, not its squash.
           paintFacets(ctx, bx + pose.dx, by + pose.dy, body.radius, mirrorFacets(run));

@@ -23,8 +23,14 @@ export interface BossPose {
   ay: number;
   /** Wind-up progress 0..1: what the charging part shows (§7, 8c). */
   tell: number;
-  /** Follow-through spring displacement, in radii (§7, 8a). */
+  /** Follow-through spring displacement, in radii, already scaled by the boss's `follow` (§7, 8a). */
   lag: number;
+  /** Gaze (§7, 8b): where the pupils look, a unit-ish offset in world axes, and how narrowed they are (0..1). */
+  gx: number;
+  gy: number;
+  narrow: number;
+  /** Angle toward the tower, radians: what a charging part turns to. */
+  aim: number;
   /** Alpha of the body as it rises out of the water (Undertow); 1 otherwise. */
   fade: number;
   /** Alpha of the body as it sinks, drawn over the ripples while the sim already hides it; 0 otherwise. */
@@ -63,19 +69,28 @@ export interface BossCharacter {
   shudder: number;
   /** The walk's sway, as shear. */
   sway: number;
+  /** How far its outer parts lag the body (8a): 0 for none. */
+  follow: number;
+}
+
+/** Anything the gaze can follow: a live projectile. */
+export interface GazeTarget {
+  alive: boolean;
+  x: number;
+  y: number;
 }
 
 export const BOSS_MOTION: Record<BossId, BossCharacter> = {
-  gatekeeper: { gait: 'stomp', hz: 1.4, squash: 0.05, bob: 0.03, give: 0.8, lunge: 0.08, shudder: 0.04, sway: 0 },
-  'bog-mother': { gait: 'lurch', hz: 1.0, squash: 0.06, bob: 0.02, give: 1.5, lunge: 0.08, shudder: 0, sway: 0.02 },
-  prism: { gait: 'glide', hz: 0.8, squash: 0, bob: 0.02, give: 0.2, lunge: 0.06, shudder: 0, sway: 0 },
+  gatekeeper: { gait: 'stomp', hz: 1.4, squash: 0.05, bob: 0.03, give: 0.8, lunge: 0.08, shudder: 0.04, sway: 0, follow: 0.5 },
+  'bog-mother': { gait: 'lurch', hz: 1.0, squash: 0.06, bob: 0.02, give: 1.5, lunge: 0.08, shudder: 0, sway: 0.02, follow: 1.0 },
+  prism: { gait: 'glide', hz: 0.8, squash: 0, bob: 0.02, give: 0.2, lunge: 0.06, shudder: 0, sway: 0, follow: 0 },
   // Its plates are their own bodies and stay put: a short lunge presses into them without parting (§6.4).
-  forgeheart: { gait: 'stomp', hz: 1.2, squash: 0.05, bob: 0.025, give: 0.8, lunge: 0.04, shudder: 0.02, sway: 0 },
-  'hollow-king': { gait: 'glide', hz: 0.7, squash: 0, bob: 0.025, give: 1, lunge: 0.08, shudder: 0, sway: 0.03 },
-  blight: { gait: 'pulse', hz: 5 / (Math.PI * 2), squash: 0.04, bob: 0, give: 1.2, lunge: 0.08, shudder: 0, sway: 0 },
-  deepwarden: { gait: 'slide', hz: 1.0, squash: 0, bob: 0, give: 0.25, lunge: 0.06, shudder: 0.05, sway: 0 },
-  hunger: { gait: 'lurch', hz: 1.6, squash: 0.06, bob: 0.03, give: 1.2, lunge: 0.12, shudder: 0, sway: 0.02 },
-  undertow: { gait: 'roll', hz: 1.6 / (Math.PI * 2), squash: 0.03, bob: 0.02, give: 1, lunge: 0.08, shudder: 0, sway: 0.04 },
+  forgeheart: { gait: 'stomp', hz: 1.2, squash: 0.05, bob: 0.025, give: 0.8, lunge: 0.04, shudder: 0.02, sway: 0, follow: 0 },
+  'hollow-king': { gait: 'glide', hz: 0.7, squash: 0, bob: 0.025, give: 1, lunge: 0.08, shudder: 0, sway: 0.03, follow: 1.0 },
+  blight: { gait: 'pulse', hz: 5 / (Math.PI * 2), squash: 0.04, bob: 0, give: 1.2, lunge: 0.08, shudder: 0, sway: 0, follow: 0.6 },
+  deepwarden: { gait: 'slide', hz: 1.0, squash: 0, bob: 0, give: 0.25, lunge: 0.06, shudder: 0.05, sway: 0, follow: 0 },
+  hunger: { gait: 'lurch', hz: 1.6, squash: 0.06, bob: 0.03, give: 1.2, lunge: 0.12, shudder: 0, sway: 0.02, follow: 0 },
+  undertow: { gait: 'roll', hz: 1.6 / (Math.PI * 2), squash: 0.03, bob: 0.02, give: 1, lunge: 0.08, shudder: 0, sway: 0.04, follow: 0.6 },
 };
 
 /** Every tunable in one table (§6.3). */
@@ -105,6 +120,13 @@ export const BOSS_POSE = {
   /** `|1 − sx|`, `|1 − sy|` and `|shear|` stay inside these, whatever adds up. */
   maxScale: 0.25,
   maxShear: 0.08,
+  /** The follow-through spring (8a): frequency (Hz), damping ratio, and its reach (radii). */
+  followHz: 3.5,
+  followDamping: 0.25,
+  maxLag: 0.2,
+  /** The gaze (8b): how far it looks for a projectile (radii), and how fast it turns (1/s). */
+  gazeReach: 2.5,
+  gazeEase: 6,
   /** Enraged: the walk's cadence, and a tremble (world units). */
   enragedCadence: 1.6,
   enragedTremble: 1,
@@ -135,6 +157,10 @@ export function identityPose(out: BossPose): BossPose {
   out.ay = 0;
   out.tell = 0;
   out.lag = 0;
+  out.gx = 0;
+  out.gy = 0;
+  out.narrow = 0;
+  out.aim = 0;
   out.fade = 1;
   out.sink = 0;
   return out;
@@ -161,6 +187,12 @@ export class BossAnimator {
   private riseAt = -Infinity;
   private hitSeen = -1;
   private hitAt = -Infinity;
+  /** The follow-through spring: where the outer parts are, and how fast they move (world units). */
+  private part = NaN;
+  private partV = 0;
+  /** The pupils, eased toward their target. */
+  private gx = 0;
+  private gy = 0;
 
   setMotion(level: MotionLevel, tier: QualityTier): void {
     this.level = level;
@@ -180,6 +212,9 @@ export class BossAnimator {
     this.windTotal = 0;
     this.arriveAt = this.releaseAt = this.phaseAt = this.sinkAt = this.riseAt = this.hitAt = -Infinity;
     this.hitSeen = -1;
+    this.part = NaN;
+    this.partV = 0;
+    this.gx = this.gy = 0;
   }
 
   /** A boss event from `consume`, on the wall clock. `seconds` is a wind-up's total. */
@@ -211,8 +246,12 @@ export class BossAnimator {
     }
   }
 
-  /** This frame's pose for boss `id`. The returned object is reused: read it before the next call. */
-  update(id: BossId, b: BossInput, clock: number): BossPose {
+  /**
+   * This frame's pose for boss `id`. `targets` are what its gaze may follow
+   * (the live projectiles). The returned object is reused: read it before
+   * the next call.
+   */
+  update(id: BossId, b: BossInput, clock: number, targets: readonly GazeTarget[] = []): BossPose {
     const out = identityPose(this.pose);
     const dt = clamp(clock - this.last, 0, 0.1);
     this.last = clock;
@@ -224,6 +263,7 @@ export class BossAnimator {
     const d = Math.hypot(b.x, b.y) || 1;
     const nx = -b.x / d;
     const ny = -b.y / d;
+    out.aim = Math.atan2(ny, nx);
 
     // Wind-up progress. A resumed save winds up without the event: its first frame stands in for the total.
     if (b.windup > 0) this.windTotal = Math.max(this.windTotal, b.windup);
@@ -254,6 +294,9 @@ export class BossAnimator {
       this.finish(out, squash);
       // Sinking and rising: fade only.
       this.sinkRise(out, clock, false);
+      // No follow-through, and the pupils stay centred.
+      this.part = NaN;
+      this.gx = this.gy = 0;
       return out;
     }
 
@@ -363,7 +406,71 @@ export class BossAnimator {
 
     this.finish(out, squash, punch);
     this.sinkRise(out, clock, true);
+
+    if (this.level === 'full') {
+      this.followThrough(out, c, r, dt);
+      this.gaze(out, b, nx, ny, q, dt, targets);
+    } else {
+      this.part = NaN;
+      this.gx = this.gy = 0;
+    }
     return out;
+  }
+
+  /**
+   * 8a: the outer parts hang on a damped spring off the top of the body.
+   * When the top drops (a landing, a release), they lag above it, and the
+   * profile lifts its top samples by `lag`: the crown wobbles a beat behind.
+   */
+  private followThrough(out: BossPose, c: BossCharacter, r: number, dt: number): void {
+    const P = BOSS_POSE;
+    // The top of the body, anchored at its base: it moves with dy and drops as sy shrinks.
+    const top = out.dy + 2 * r * (1 - out.sy);
+    if (Number.isNaN(this.part)) {
+      this.part = top;
+      this.partV = 0;
+    }
+    const w = TAU * P.followHz;
+    // Substeps keep the spring stable on a slow frame.
+    const n = Math.max(1, Math.ceil(dt / (1 / 120)));
+    const h = dt / n;
+    for (let i = 0; i < n; i++) {
+      const acc = w * w * (top - this.part) - 2 * P.followDamping * w * this.partV;
+      this.partV += acc * h;
+      this.part += this.partV * h;
+    }
+    out.lag = c.follow > 0 ? clamp(((top - this.part) / r) * c.follow, -P.maxLag, P.maxLag) : 0;
+  }
+
+  /**
+   * 8b: the pupils drift toward the nearest live projectile within reach,
+   * or the tower otherwise. During a wind-up they lock onto the tower and narrow.
+   */
+  private gaze(out: BossPose, b: BossInput, nx: number, ny: number, q: number, dt: number, targets: readonly GazeTarget[]): void {
+    let tx = nx;
+    let ty = ny;
+    if (q === 0) {
+      const reach = BOSS_POSE.gazeReach * b.radius;
+      let best = reach * reach;
+      for (const t of targets) {
+        if (!t.alive) continue;
+        const dx = t.x - b.x;
+        const dy = t.y - b.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < best && d2 > 1e-6) {
+          best = d2;
+          const k = 1 / Math.sqrt(d2);
+          tx = dx * k;
+          ty = dy * k;
+        }
+      }
+    }
+    const e = 1 - Math.exp(-BOSS_POSE.gazeEase * dt);
+    this.gx += (tx - this.gx) * e;
+    this.gy += (ty - this.gy) * e;
+    out.gx = this.gx;
+    out.gy = this.gy;
+    out.narrow = q;
   }
 
   /** Squash to scales (`sy = 1 − q`, `sx = 1 + 0.72q`: the volume about holds), then the clamps. */

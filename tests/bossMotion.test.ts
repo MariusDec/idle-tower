@@ -186,4 +186,59 @@ describe('BossAnimator', () => {
     expect(p.after).toBe(0);
     expect(p.sy).toBe(1);
   });
+
+  it('8a: the outer parts lag a landing, then settle; never on lite or reduced', () => {
+    const run = (level: MotionLevel): number[] => {
+      const a = animator(level, level === 'lite' ? 'low' : 'high');
+      const lags: number[] = [];
+      a.update('hollow-king', input(), 0);
+      a.event('bossArrive', 0);
+      for (let i = 1; i <= 120; i++) lags.push(a.update('hollow-king', input(), i * DT).lag);
+      return lags;
+    };
+    const full = run('full');
+    expect(Math.max(...full.map(Math.abs))).toBeGreaterThan(0.02);
+    for (const l of full) expect(Math.abs(l)).toBeLessThanOrEqual(BOSS_POSE.maxLag + 1e-9);
+    expect(Math.abs(full[full.length - 1])).toBeLessThan(0.005);
+    for (const l of [...run('lite'), ...run('reduced')]) expect(l).toBe(0);
+  });
+
+  it('8a: a boss with no follow-through never lags', () => {
+    const a = animator();
+    a.event('bossArrive', 0);
+    for (let i = 1; i <= 60; i++) expect(a.update('prism', input(), i * DT).lag).toBe(0);
+  });
+
+  it('8b: looks at a near projectile, else the tower, and locks on during a wind-up', () => {
+    const a = animator();
+    // Boss at (300, 0): the tower is at −x. A shot just above it, within reach.
+    const shot = [{ alive: true, x: 300, y: -80 }];
+    let p!: BossPose;
+    for (let i = 1; i <= 60; i++) p = a.update('gatekeeper', input(), i * DT, shot);
+    expect(p.gy).toBeLessThan(-0.9);
+    for (let i = 61; i <= 120; i++) p = a.update('gatekeeper', input(), i * DT, [{ alive: false, x: 300, y: -80 }]);
+    expect(p.gx).toBeLessThan(-0.9);
+    a.event('windup', 2, 1);
+    for (let i = 121; i <= 150; i++) p = a.update('gatekeeper', input({ windup: 1 - (i - 120) * DT }), i * DT, shot);
+    expect(p.gx).toBeLessThan(-0.9);
+    expect(p.narrow).toBeGreaterThan(0.4);
+  });
+
+  it('8b: the pupils stay centred on lite and under reduced motion', () => {
+    for (const [level, tier] of [['lite', 'low'], ['reduced', 'high']] as const) {
+      const a = animator(level, tier);
+      let p!: BossPose;
+      for (let i = 1; i <= 60; i++) p = a.update('undertow', input(), i * DT, [{ alive: true, x: 300, y: -80 }]);
+      expect(p.gx).toBe(0);
+      expect(p.gy).toBe(0);
+    }
+  });
+
+  it('8c: the tell is the wind-up progress on every level', () => {
+    for (const level of ['full', 'lite', 'reduced'] as const) {
+      const a = animator(level);
+      a.event('windup', 0, 2);
+      expect(a.update('forgeheart', input({ windup: 0.5 }), 1.5).tell).toBeCloseTo(0.75, 6);
+    }
+  });
 });

@@ -16,8 +16,11 @@ import { gait, type BodyMotion } from '../motion';
  * profile, so it reads as a boss at a glance and as *this* boss on a second.
  */
 
-/** A boss's outline: radius multiplier at angle `a` (0 = right), and a breathing amount. */
-const PROFILE: Record<BossId, (a: number, t: number) => number> = {
+/**
+ * A boss's outline: radius multiplier at angle `a` (0 = right), at clock
+ * `t`, with `tell` (0..1) its wind-up's progress (plans/enemy-animation.md 8c).
+ */
+const PROFILE: Record<BossId, (a: number, t: number, tell: number) => number> = {
   // The Gatekeeper: a crenellated keep, eight square merlons round a heavy drum.
   gatekeeper: (a) => {
     const k = (((a / (Math.PI * 2)) * 8) % 1 + 1) % 1;
@@ -45,56 +48,86 @@ const PROFILE: Record<BossId, (a: number, t: number) => number> = {
     return 0.95 * Math.cos(k / 2) / Math.cos(((((a % k) + k) % k) - k / 2));
   },
   // The Hunger: a mouth that opens and closes, a gap in the ring.
-  hunger: (a, t) => {
-    const open = 0.35 + 0.25 * Math.sin(t * 2.2);
+  // Winding up, it gapes before the bite.
+  hunger: (a, t, tell) => {
+    const rest = 0.35 + 0.25 * Math.sin(t * 2.2);
+    const open = rest + (0.9 - rest) * tell;
     const off = Math.abs(Math.atan2(Math.sin(a), Math.cos(a)));
     return off < open ? 0.55 + 0.45 * (off / open) : 1 + 0.04 * Math.sin(a * 12);
   },
   // The Undertow: three crests that roll round it, a sea that never settles.
-  undertow: (a, t) => 1 + 0.1 * Math.max(0, Math.sin(a * 3 - t * 1.6)) - 0.04 * Math.sin(a * 6 + t),
+  // Winding up, its crests pull in toward the centre.
+  undertow: (a, t, tell) => 1 + 0.1 * (1 - 0.8 * tell) * Math.max(0, Math.sin(a * 3 - t * 1.6)) - 0.04 * Math.sin(a * 6 + t),
 };
 
-function traceBoss(ctx: CanvasRenderingContext2D, id: BossId, r: number, t: number): void {
+/**
+ * Trace the outline. `lag` (8a, in radii) lifts the top-side samples, the
+ * crown or thorns or crests lagging the body; the Bog Mother's whole jelly
+ * outline gives with it.
+ */
+function traceBoss(ctx: CanvasRenderingContext2D, id: BossId, r: number, t: number, tell = 0, lag = 0): void {
   const f = PROFILE[id];
   const n = 64;
+  const whole = id === 'bog-mother';
   ctx.beginPath();
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
-    const rad = r * f(a, t);
+    let rad = r * f(a, t, tell);
+    if (lag !== 0) {
+      const up = -Math.sin(a);
+      rad *= 1 + lag * (whole ? up : up > 0.3 ? (up - 0.3) / 0.7 : 0);
+    }
     if (i === 0) ctx.moveTo(Math.cos(a) * rad, Math.sin(a) * rad);
     else ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
   }
   ctx.closePath();
 }
 
-/** The detail that says which boss this is, inside its silhouette. */
-function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: number): void {
+/** A pupil (8b): a dot shifted along the gaze, narrowed to a slit as a wind-up charges. */
+function pupil(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, reach: number, pose: BossPose, color: string): void {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(x + pose.gx * reach, y + pose.gy * reach, size * (1 - 0.6 * pose.narrow), size, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/**
+ * The detail that says which boss this is, inside its silhouette. The part
+ * that charges shows the charge (8c): `pose.tell` is the wind-up's progress,
+ * so it reads under reduced motion too. Eyes look where `pose` says (8b).
+ */
+function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: number, pose: BossPose): void {
+  const tell = pose.tell;
   switch (def.id) {
     case 'gatekeeper': {
-      // A barred gate across the drum, and one burning eye above it.
+      // A barred gate across the drum, and one burning eye above it. Winding
+      // up, the portcullis rises (and slams down on the release) and the eye flares.
       ctx.fillStyle = withAlpha(INK['950'], 0.6);
       ctx.fillRect(-r * 0.42, -r * 0.1, r * 0.84, r * 0.62);
       ctx.strokeStyle = withAlpha(def.borderColor, 0.55);
       ctx.lineWidth = r * 0.06;
+      const foot = r * (0.52 - 0.5 * tell);
       for (let i = -1; i <= 1; i++) {
         ctx.beginPath();
         ctx.moveTo(i * r * 0.22, -r * 0.1);
-        ctx.lineTo(i * r * 0.22, r * 0.52);
+        ctx.lineTo(i * r * 0.22, foot);
         ctx.stroke();
       }
-      ctx.fillStyle = lighten(FX.blood, 0.4);
+      ctx.fillStyle = lighten(FX.blood, 0.4 + 0.3 * tell);
       ctx.beginPath();
-      ctx.arc(0, -r * 0.42, r * (0.11 + 0.02 * Math.sin(t * 4)), 0, Math.PI * 2);
+      ctx.arc(0, -r * 0.42, r * (0.11 + 0.02 * Math.sin(t * 4)) * (1 + 0.5 * tell), 0, Math.PI * 2);
       ctx.fill();
+      pupil(ctx, 0, -r * 0.42, r * 0.045, r * 0.05, pose, INK['950']);
       break;
     }
     case 'bog-mother': {
       // Clutches of eggs under the skin, and a wide, wet maw.
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2 + t * 0.2;
-        ctx.fillStyle = withAlpha(lighten(def.borderColor, 0.2), 0.35 + 0.15 * Math.sin(t * 2 + i));
+        // Winding up, the eggs bulge.
+        ctx.fillStyle = withAlpha(lighten(def.borderColor, 0.2), 0.35 + 0.15 * Math.sin(t * 2 + i) + 0.3 * tell);
         ctx.beginPath();
-        ctx.arc(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55, r * 0.13, 0, Math.PI * 2);
+        ctx.arc(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55, r * 0.13 * (1 + 0.5 * tell), 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.fillStyle = withAlpha(INK['950'], 0.8);
@@ -104,11 +137,14 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
       break;
     }
     case 'prism': {
-      // Light caught inside the glass: rays from the core.
-      ctx.strokeStyle = withAlpha(INK['050'], 0.45);
+      // Light caught inside the glass: rays from the core. Winding up, they
+      // converge on the tower and burn brighter.
+      ctx.strokeStyle = withAlpha(INK['050'], 0.45 + 0.4 * tell);
       ctx.lineWidth = r * 0.04;
       for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + t * 0.3;
+        const free = (i / 6) * Math.PI * 2 + t * 0.3;
+        const off = Math.atan2(Math.sin(pose.aim - free), Math.cos(pose.aim - free));
+        const a = free + off * 0.85 * tell;
         ctx.beginPath();
         ctx.moveTo(0, 0);
         ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
@@ -132,23 +168,33 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
       ctx.beginPath();
       ctx.arc(0, 0, r * (0.5 + 0.04 * Math.sin(t * 6)), 0, Math.PI * 2);
       ctx.fill();
+      // Winding up, the heart swells and brightens and the bars spread apart.
+      if (tell > 0) {
+        ctx.fillStyle = withAlpha(lighten(FX.gold, 0.5), 0.6 * tell);
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.3 * (1 + 0.4 * tell), 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.strokeStyle = withAlpha(INK['950'], 0.7);
       ctx.lineWidth = r * 0.07;
+      const spread = r * 0.18 * (1 + 0.5 * tell);
       for (let i = -2; i <= 2; i++) {
         ctx.beginPath();
-        ctx.moveTo(i * r * 0.18, -r * 0.45);
-        ctx.lineTo(i * r * 0.18, r * 0.45);
+        ctx.moveTo(i * spread, -r * 0.45);
+        ctx.lineTo(i * spread, r * 0.45);
         ctx.stroke();
       }
       break;
     }
     case 'hollow-king': {
       // A skull's two hollows and the band of the crown.
-      ctx.fillStyle = withAlpha(INK['950'], 0.85);
+      // Winding up, they glow toward blood; a pinpoint of light in each looks out.
       for (const dir of [-1, 1]) {
+        ctx.fillStyle = mix(INK['950'], FX.blood, 0.7 * tell);
         ctx.beginPath();
         ctx.ellipse(dir * r * 0.3, 0, r * 0.15, r * 0.2, 0, 0, Math.PI * 2);
         ctx.fill();
+        pupil(ctx, dir * r * 0.3, 0, r * 0.04, r * 0.08, pose, lighten(FX.gold, 0.4));
       }
       ctx.fillStyle = lighten(FX.gold, 0.1);
       ctx.fillRect(-r * 0.7, -r * 0.62, r * 1.4, r * 0.14);
@@ -165,9 +211,10 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
         ctx.quadraticCurveTo(Math.cos(a + 0.4) * r * 0.5, Math.sin(a + 0.4) * r * 0.5, Math.cos(a) * r, Math.sin(a) * r);
         ctx.stroke();
       }
-      ctx.fillStyle = lighten(FX.blood, 0.15 + 0.15 * Math.sin(t * 5));
+      // Winding up, the core swells and burns toward blood.
+      ctx.fillStyle = lighten(FX.blood, 0.15 + 0.15 * Math.sin(t * 5) + 0.3 * tell);
       ctx.beginPath();
-      ctx.arc(0, 0, r * 0.28, 0, Math.PI * 2);
+      ctx.arc(0, 0, r * 0.28 * (1 + 0.2 * tell), 0, Math.PI * 2);
       ctx.fill();
       break;
     }
@@ -181,10 +228,11 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
         ctx.lineTo(r * 0.7, i * r * 0.35);
         ctx.stroke();
       }
-      ctx.strokeStyle = withAlpha(lighten(FX.frost, 0.3), 0.6 + 0.3 * Math.sin(t * 2));
-      ctx.lineWidth = r * 0.07;
+      // Winding up, the glyph brightens and its ring closes.
+      ctx.strokeStyle = withAlpha(lighten(FX.frost, 0.3 + 0.3 * tell), Math.min(1, 0.6 + 0.3 * Math.sin(t * 2) + 0.4 * tell));
+      ctx.lineWidth = r * 0.07 * (1 + 0.4 * tell);
       ctx.beginPath();
-      ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+      ctx.arc(0, 0, r * 0.3 * (1 - 0.35 * tell), 0, Math.PI * 2);
       ctx.stroke();
       break;
     }
@@ -194,6 +242,8 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
       ctx.beginPath();
       ctx.arc(r * 0.2, 0, r * 0.45, 0, Math.PI * 2);
       ctx.fill();
+      // Something deep in the gullet watches.
+      pupil(ctx, r * 0.2, 0, r * 0.07, r * 0.2, pose, withAlpha(lighten(FX.ember, 0.3), 0.85));
       ctx.fillStyle = INK['050'];
       for (let i = 0; i < 9; i++) {
         const a = (i / 9) * Math.PI * 2 + t * 0.3;
@@ -218,7 +268,7 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
         for (let k = 0; k <= 12; k++) {
           const q = k / 12;
           const a = a0 + q * 2.2;
-          const d = r * (0.75 - q * 0.5);
+          const d = r * (0.75 - q * 0.5) * (1 - 0.3 * tell);
           if (k === 0) ctx.moveTo(Math.cos(a) * d, Math.sin(a) * d);
           else ctx.lineTo(Math.cos(a) * d, Math.sin(a) * d);
         }
@@ -228,6 +278,7 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
       ctx.beginPath();
       ctx.arc(0, 0, r * 0.2, 0, Math.PI * 2);
       ctx.fill();
+      pupil(ctx, 0, 0, r * 0.06, r * 0.1, pose, withAlpha(lighten(FX.frost, 0.4), 0.8));
       break;
     }
     default: {
@@ -428,7 +479,8 @@ export function paintBoss(
     ctx.scale(AFTER_SX, AFTER_SY);
     ctx.translate(0, -r);
     ctx.globalAlpha = pose.after * show;
-    traceBoss(ctx, def.id, r * breathe, time);
+    // The pre-lunge outline: at full charge (a Hunger's gape), before any follow-through.
+    traceBoss(ctx, def.id, r * breathe, time, 1, 0);
     ctx.fillStyle = body;
     ctx.fill();
     ctx.restore();
@@ -447,14 +499,14 @@ export function paintBoss(
   ctx.translate(0, r);
   ctx.transform(pose.sx, 0, pose.shear, pose.sy, 0, 0);
   ctx.translate(0, -r);
-  traceBoss(ctx, def.id, r * breathe, time);
+  traceBoss(ctx, def.id, r * breathe, time, pose.tell, pose.lag);
   ctx.fillStyle = body;
   ctx.fill();
   ctx.save();
   ctx.clip();
-  paintDetail(ctx, def, r, time);
+  paintDetail(ctx, def, r, time, pose);
   ctx.restore();
-  traceBoss(ctx, def.id, r * breathe, time);
+  traceBoss(ctx, def.id, r * breathe, time, pose.tell, pose.lag);
   ctx.strokeStyle = def.borderColor;
   ctx.lineWidth = 4;
   ctx.lineJoin = 'round';
@@ -464,7 +516,7 @@ export function paintBoss(
   const sinceHit = tick - e.hitTick;
   if (e.hitTick >= 0 && sinceHit < 4) {
     ctx.globalAlpha = 0.35 * (1 - sinceHit / 4) * show;
-    traceBoss(ctx, def.id, r * breathe, time);
+    traceBoss(ctx, def.id, r * breathe, time, pose.tell, pose.lag);
     ctx.fillStyle = INK['050'];
     ctx.fill();
     ctx.globalAlpha = show;
@@ -474,7 +526,7 @@ export function paintBoss(
   const pulse = 0.5 + 0.5 * Math.sin(time * 18);
   if (b.windup > 0) {
     ctx.globalAlpha = (0.25 + 0.2 * pulse) * show;
-    traceBoss(ctx, def.id, r * breathe, time);
+    traceBoss(ctx, def.id, r * breathe, time, pose.tell, pose.lag);
     ctx.fillStyle = lighten(FX.blood, 0.3);
     ctx.fill();
     ctx.globalAlpha = show;
