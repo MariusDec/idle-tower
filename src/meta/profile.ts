@@ -207,7 +207,8 @@ export interface Profile {
     textScale: number;
     /**
      * The player's camera framing (camera-and-fog §5.4), in world units from
-     * the tower to the screen's short edge; null follows the light, fully out.
+     * the tower to the screen's short edge at the base light (it grows with
+     * the light); null follows the light, fully out.
      */
     framing: number | null;
     /**

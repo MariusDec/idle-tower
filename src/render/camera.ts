@@ -10,8 +10,10 @@ import { formOf, type FormFactor } from '../app/formFactor';
  * out (`fitExtent`), the light's rim runs close to the stage's edges: near
  * the sides on the short axis, level with the HP bar on the long one, as
  * `rimBox` lays out. The camera follows the light as it grows.
- * The player may frame closer, down to `ZOOM.close`; that framing holds while
- * the light changes underneath, clamped only if the light shrinks inside it.
+ * The player may frame closer, down to `ZOOM.close`. The framing is kept as
+ * the extent it would be at the base light and grows with the light: as range
+ * pushes the fog back, the camera draws back with it, so the zoom stays the
+ * player's and the fog stays on screen past the range ring.
  * Always centred on the tower: no panning.
  */
 
@@ -245,7 +247,12 @@ export class Camera {
   private shakeOn = true;
   /** The extent that shows the whole light: where "fully out" is. */
   private fit: number;
-  /** The player's framing, in world units; null follows the light. */
+  /** The fit at the base light, for the same shape and stage: what a framing is measured against. */
+  private baseFit: number;
+  /**
+   * The player's framing, in world units at the base light (`baseFit`'s
+   * scale); null follows the light. On screen it is `framing × fit / baseFit`.
+   */
   private framing: number | null = null;
   /** False on screens with no run (the hub): the framing waits for the next run. */
   private framingOn = false;
@@ -265,6 +272,7 @@ export class Camera {
       globalThis.devicePixelRatio ?? 1,
     );
     this.fit = this.view.extent;
+    this.baseFit = this.fit;
     this.applyBackingSize();
     this.reducedMotion = typeof matchMedia === 'function'
       && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -318,7 +326,7 @@ export class Camera {
 
   /** True while the framing sits at the close limit: nothing nearer to zoom to. */
   get atClose(): boolean {
-    return this.framingOn && this.framing !== null && Math.min(this.framing, this.fit) <= ZOOM.close + 0.5;
+    return this.framingOn && this.framing !== null && this.framed(this.framing) <= ZOOM.close + 0.5;
   }
 
   /** How far in the view is from fully out: 1 at the fit, 2 at half the extent. */
@@ -331,8 +339,23 @@ export class Camera {
    * the player's framing applies. Called every frame; cheap.
    */
   setLight(light: number, oval: Oval, framingOn: boolean): void {
-    this.fit = fitExtent(light, oval, regionWidth(this.view), this.view.cssHeight);
+    const w = regionWidth(this.view);
+    this.fit = fitExtent(light, oval, w, this.view.cssHeight);
+    this.baseFit = light === ARENA.lightBase ? this.fit : fitExtent(ARENA.lightBase, oval, w, this.view.cssHeight);
     this.framingOn = framingOn;
+  }
+
+  /** How much the light has grown the view since the base light: framings scale by it. */
+  private growth(): number {
+    return this.baseFit > 0 ? this.fit / this.baseFit : 1;
+  }
+
+  /**
+   * A framing (at the base light) as an extent on screen now: grown with the
+   * light, never closer than `ZOOM.close` (bodies don't grow), never past the fit.
+   */
+  private framed(framing: number): number {
+    return Math.min(this.fit, Math.max(ZOOM.close, framing * this.growth()));
   }
 
   /**
@@ -348,7 +371,8 @@ export class Camera {
 
   /** Restore a saved framing (settings), without firing `onFraming`. */
   setFraming(framing: number | null): void {
-    this.framing = framing !== null && framing > 0 ? Math.max(ZOOM.close, framing) : null;
+    // At the base light: `framed` keeps it past `ZOOM.close` on screen, whatever the light.
+    this.framing = framing !== null && framing > 0 ? framing : null;
   }
 
   /**
@@ -360,9 +384,9 @@ export class Camera {
    */
   zoomBy(factor: number, gesture = false): void {
     if (!(factor > 0)) return;
-    const from = this.framing !== null ? Math.min(this.framing, this.fit) : this.fit;
+    const from = this.framing !== null ? this.framed(this.framing) : this.fit;
     const next = Math.min(this.fit, Math.max(ZOOM.close, from / factor));
-    this.framing = next >= this.fit ? null : next;
+    this.framing = next >= this.fit ? null : next / this.growth();
     if (gesture) this.setExtent(this.target());
     else this.settle();
     this.onFraming?.(this.framing);
@@ -370,7 +394,7 @@ export class Camera {
 
   /** A gesture ended: within the snap of fully out, follow the light again. */
   settle(): void {
-    if (this.framing === null || this.framing < this.fit * ZOOM.snap) return;
+    if (this.framing === null || this.framed(this.framing) < this.fit * ZOOM.snap) return;
     this.framing = null;
     this.onFraming?.(null);
   }
@@ -382,10 +406,10 @@ export class Camera {
     this.onFraming?.(null);
   }
 
-  /** Where the extent is heading: the framing, never past the fit; the fit on a screen without a run. */
+  /** Where the extent is heading: the framing grown with the light, never past the fit; the fit on a screen without a run. */
   private target(): number {
     if (!this.framingOn || this.framing === null) return this.fit;
-    return Math.min(this.framing, this.fit);
+    return this.framed(this.framing);
   }
 
   /** The inset the view eases to: the target, clamped as `makeViewTransform` clamps it. */

@@ -186,7 +186,9 @@ describe('the camera follows the light, or the player', () => {
     settle(cam);
     cam.zoomBy(100, true);
     expect(cam.transform.extent).toBe(ZOOM.close);
-    expect(cam.userFraming).toBe(ZOOM.close);
+    // Saved at the base light: the close limit scaled back by the light's growth.
+    expect(cam.userFraming).toBeCloseTo((ZOOM.close * fit(ARENA.lightBase)) / fit(700), 6);
+    expect(cam.atClose).toBe(true);
     expect(cam.zoomedIn).toBe(true);
     cam.zoomBy(0.01, true);
     expect(cam.userFraming).toBeNull();
@@ -211,23 +213,46 @@ describe('the camera follows the light, or the player', () => {
     expect(cam.transform.extent).toBeCloseTo(fit(700) / 1.02 ** 40, 3);
   });
 
-  it('holds a framing while the light grows, and clamps it when the light shrinks inside it', () => {
+  it('draws a framing back as the light grows: the fog is pushed back, the zoom holds', () => {
     const cam = new Camera(stubCanvas(375, 812));
     cam.setLight(900, PHONE_OVAL, true);
     settle(cam);
     cam.zoomBy(2, true);
+    expect(cam.transform.extent).toBeCloseTo(fit(900) / 2, 6);
     const framing = cam.userFraming!;
-    expect(framing).toBeCloseTo(fit(900) / 2, 6);
+    // Range grows: the light, and the view with it, by the same share of the fit.
     cam.setLight(1400, PHONE_OVAL, true);
     settle(cam);
-    expect(cam.transform.extent).toBeCloseTo(framing, 6);
-    // A Fog-caller pulls the light in past the framing.
-    const small = 200;
-    cam.setLight(small, PHONE_OVAL, true);
-    settle(cam);
-    expect(fit(small)).toBeLessThan(framing);
-    expect(cam.transform.extent).toBeCloseTo(fit(small), 3);
+    expect(cam.transform.extent).toBeCloseTo(fit(1400) / 2, 3);
+    expect(cam.zoom).toBeCloseTo(2, 3);
+    expect(cam.zoomedIn).toBe(true);
+    // The saved framing itself doesn't move: it is measured at the base light.
     expect(cam.userFraming).toBe(framing);
+    // Back to the base light (a new run): the framing as it was saved.
+    cam.setLight(ARENA.lightBase, PHONE_OVAL, true);
+    settle(cam);
+    expect(cam.transform.extent).toBeCloseTo(Math.max(ZOOM.close, framing), 3);
+  });
+
+  it('a saved framing (at the base light) follows a run whose range has grown', () => {
+    const cam = new Camera(stubCanvas(375, 812));
+    cam.setFraming(fit(ARENA.lightBase) / 1.5);
+    cam.setLight(2000, PHONE_OVAL, true);
+    settle(cam);
+    expect(cam.zoom).toBeCloseTo(1.5, 3);
+  });
+
+  it('never frames closer than the close limit, even when the light shrinks', () => {
+    const cam = new Camera(stubCanvas(375, 812));
+    cam.setLight(ARENA.lightBase, PHONE_OVAL, true);
+    settle(cam);
+    cam.zoomBy(100, true);
+    expect(cam.transform.extent).toBe(ZOOM.close);
+    // A Fog-caller closes the light in under the base.
+    cam.setLight(ARENA.lightBase * 0.9, PHONE_OVAL, true);
+    settle(cam);
+    expect(cam.transform.extent).toBeCloseTo(ZOOM.close, 3);
+    expect(cam.atClose).toBe(true);
   });
 
   it('shows the whole light on a screen without a run, whatever the saved framing', () => {
