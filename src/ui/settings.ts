@@ -202,14 +202,14 @@ export class SettingsPanel {
     // A redraw keeps the player's place in the list, and doesn't replay the
     // card's opening animation: only a card that wasn't up yet reveals.
     const prev = this.el.querySelector<HTMLElement>('.settings');
-    const scroll = prev?.scrollTop ?? 0;
+    const scroll = prev?.querySelector<HTMLElement>('.settings-pages')?.scrollTop ?? 0;
     if (prev) card.style.animation = 'none';
     // Options → Stats is a tab to the right: forward. The live page only, never one still leaving.
     const left = prev && this.drawn && this.drawn !== this.page
       ? prev.querySelector<HTMLElement>('.settings-pages > .settings-body:not(.page-leaving)')
       : null;
     this.el.replaceChildren(card);
-    card.scrollTop = scroll;
+    box.scrollTop = scroll;
     if (left) turnPage(box, left, body, this.page === 'stats' ? 'forward' : 'backward');
     this.drawn = this.page;
   }

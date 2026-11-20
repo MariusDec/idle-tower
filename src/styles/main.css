@@ -3761,6 +3761,19 @@ body {
   text-align: center;
 }
 
+/* The pages scroll on their own, so the title, the tabs and Done stay in the
+   card. A few px of inline padding (given back by the margin) keeps a row's
+   focus ring from being clipped by the scroller. */
+.settings-pages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-inline: calc(-1 * var(--space-1));
+  padding-inline: var(--space-1);
+}
+.settings > :not(.settings-pages) { flex-shrink: 0; }
+
 .settings-body {
   display: flex;
   flex-direction: column;
