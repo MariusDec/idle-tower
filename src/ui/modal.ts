@@ -11,6 +11,7 @@ export interface ModalButton {
 
 export class Modal {
   private el: HTMLElement | null = null;
+  private tag = '';
 
   constructor(private readonly host: HTMLElement) {}
 
@@ -18,9 +19,18 @@ export class Modal {
     return this.el !== null;
   }
 
-  /** `body` is a line of text, or a node drawn as given (the pause menu's build, U3). */
-  show(title: string, body: string | Node, buttons: ModalButton[]): void {
+  /** The `kind` the open dialog was shown with ('' when untagged); null when none is open. */
+  get kind(): string | null {
+    return this.el ? this.tag : null;
+  }
+
+  /**
+   * `body` is a line of text, or a node drawn as given (the pause menu's build, U3).
+   * `kind` tags the dialog, so a caller can tell which one is up and redraw it.
+   */
+  show(title: string, body: string | Node, buttons: ModalButton[], kind = ''): void {
     this.close();
+    this.tag = kind;
     const scrim = document.createElement('div');
     scrim.className = 'modal-scrim';
     const card = document.createElement('div');

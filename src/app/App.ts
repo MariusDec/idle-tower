@@ -108,6 +108,10 @@ export class App {
   private profile!: Profile;
   private run: RunState | null = null;
   private paused = false;
+  /** An absence mid-run's welcome-back card, shown on the pause menu until the run resumes (§6.3, B4). */
+  private awayCard: HTMLElement | null = null;
+  /** The open pause menu's note, so it can be redrawn with `awayCard` on it. */
+  private pauseNote = '';
   /** Mid-run explainers waiting for a free arena (R1 §4), in the order met. */
   private runCards: ExplainerId[] = [];
   private sinceSave = 0;
@@ -436,12 +440,23 @@ export class App {
       fresh,
     });
     if (this.screen === 'run') {
-      // Mid-run the pause menu (or the Settings over it) stays where it is:
-      // the welcome is a toast on top, and only the pause menu resumes (B4).
+      // Mid-run the card rides on the pause menu, since only the pause menu
+      // resumes (B4). A toast alone was gone before the WebView had faded back in.
       this.paused = true;
-      if (!this.settings.open && !this.modal.open) this.openPause();
-      const more = earned.stored > 0 ? ` · +${formatNumber(earned.stored)} stored` : '';
-      this.toasts.show('io-diamond', 'Welcome back', `Away ${gone} · +${formatNumber(earned.shards)} shards${more}`);
+      this.awayCard = welcomeBody(card);
+      // Under the Settings: the menu they return to carries it.
+      if (this.settings.open) return;
+      if (this.modal.kind === 'pause') {
+        // Already up (the app was hidden, or killed and resumed): redrawn with the card, its note kept.
+        this.modal.close();
+        this.openPause(this.pauseNote);
+      } else if (!this.modal.open) {
+        this.openPause();
+      } else {
+        // Some other dialog is up: it keeps the screen, and the pause menu after it shows the card.
+        const more = earned.stored > 0 ? ` · +${formatNumber(earned.stored)} stored` : '';
+        this.toasts.show('io-diamond', 'Welcome back', `Away ${gone} · +${formatNumber(earned.shards)} shards${more}`);
+      }
       return;
     }
     const buttons: ModalButton[] = [{ label: 'Close', onClick: () => {} }];
@@ -575,7 +590,7 @@ export class App {
     // Under Frontier March nothing holds auto-restart, so the ceremony waits
     // for the player's next visit to the Map instead (§6.2).
     if (!automations(this.profile).has('frontier-march')) this.profile.ceremony = null;
-    this.paused = false;
+    this.unpause();
     this.runCards = [];
     this.shownDraft = null;
     this.newCards = [];
@@ -1233,6 +1248,7 @@ export class App {
   private openPause(note = ''): void {
     if (this.screen !== 'run' || this.modal.open) return;
     this.paused = true;
+    this.pauseNote = note;
     // The full build and the tower's stats (U3): what the HUD strip only hints at.
     const body = document.createElement('div');
     body.className = 'pause-body';
@@ -1242,6 +1258,9 @@ export class App {
       p.textContent = note;
       body.append(p);
     }
+    // Back from an absence: what it paid, above the build.
+    const away = this.awayCard;
+    if (away) body.append(away);
     if (this.run) {
       body.append(buildList(buildOf(this.run)));
       // The contract this run was taken for (plans/late-game/10 §2), under the build.
@@ -1254,11 +1273,17 @@ export class App {
       }
       body.append(statsList(this.run));
     }
-    this.modal.show('Paused', body, [
+    this.modal.show(away ? 'Welcome back' : 'Paused', body, [
       { label: 'Retreat', onClick: () => this.retreat() },
       { label: 'Settings', onClick: () => this.openSettings() },
-      { label: 'Resume', primary: true, onClick: () => { this.paused = false; this.loop.resetClock(); } },
-    ]);
+      { label: 'Resume', primary: true, onClick: () => { this.unpause(); this.loop.resetClock(); } },
+    ], 'pause');
+  }
+
+  /** Off the pause menu: the run plays on, and the welcome-back card is spent. */
+  private unpause(): void {
+    this.paused = false;
+    this.awayCard = null;
   }
 
   /** The settings (§10.1): from the hub's gear, or from the pause menu mid-run. */
@@ -1309,7 +1334,7 @@ export class App {
   /** A retreat banks at once, exactly like a fall (§4.2), even mid-draft. */
   private retreat(): void {
     const run = this.run;
-    this.paused = false;
+    this.unpause();
     if (!run || run.outcome || this.screen !== 'run') return;
     applyInput(run, { retreat: true });
     this.endRun(run);
@@ -1323,7 +1348,7 @@ export class App {
     }
     if (this.modal.open) {
       this.modal.close();
-      this.paused = false;
+      this.unpause();
       return true;
     }
     if (this.screen === 'run') {
