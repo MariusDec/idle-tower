@@ -72,6 +72,7 @@ import { bindZoom } from '../ui/zoom';
 import { bindClaim, type ClaimTarget } from '../ui/claim';
 import { RiftPanel } from '../ui/rift';
 import { RIFT_BY_ID } from '../content/rifts';
+import { EXIT_WINDOW_MS, exitGuard } from './exitGuard';
 
 /** Autosave cadence (§12.4), on the wall clock. */
 const AUTOSAVE_SECONDS = 30;
@@ -173,6 +174,10 @@ export class App {
   private readonly draft: DraftPanel;
   private readonly riftPanel: RiftPanel;
   private readonly toasts: Toasts;
+  /** Two backs at the Tower to leave (Android); the first only shows `exitHint`. */
+  private readonly exit = exitGuard();
+  private exitHint: HTMLElement | null = null;
+  private exitHintTimer = 0;
   private readonly synth = new Synth();
   private readonly cues = new Cues(this.synth);
   private readonly music = new Music(this.synth);
@@ -1340,7 +1345,12 @@ export class App {
     this.endRun(run);
   }
 
-  /** Close whatever is open. True when something was closed (the back button). */
+  /**
+   * One step back (the back button, Escape): the settings, then a dialog,
+   * then the screen's own step (a run pauses, the results leave for the hub,
+   * a hub page goes back toward the Tower). True when it took a step; false
+   * at the Tower with nothing open.
+   */
   private back(): boolean {
     if (this.settings.open) {
       this.settings.close();
@@ -1355,7 +1365,47 @@ export class App {
       this.openPause();
       return true;
     }
+    if (this.screen === 'results') return this.results.back();
+    if (this.screen === 'hub') return this.hub.back();
     return false;
+  }
+
+  /**
+   * The native back button. Any step back forgets a pending exit; at the
+   * Tower the first press only says a second one leaves (true: consumed).
+   */
+  private nativeBack(): boolean {
+    if (this.back()) {
+      this.exit.reset();
+      this.hideExitHint();
+      return true;
+    }
+    if (this.screen !== 'hub') return false;
+    if (this.exit.press()) {
+      this.hideExitHint();
+      return false;
+    }
+    this.showExitHint();
+    return true;
+  }
+
+  private showExitHint(): void {
+    if (!this.exitHint) {
+      const el = document.createElement('div');
+      el.className = 'exit-hint';
+      el.setAttribute('role', 'status');
+      el.textContent = 'Press back again to exit';
+      this.els.overlay.append(el);
+      this.exitHint = el;
+    }
+    this.exitHint.hidden = false;
+    window.clearTimeout(this.exitHintTimer);
+    this.exitHintTimer = window.setTimeout(() => this.hideExitHint(), EXIT_WINDOW_MS);
+  }
+
+  private hideExitHint(): void {
+    window.clearTimeout(this.exitHintTimer);
+    if (this.exitHint) this.exitHint.hidden = true;
   }
 
   /** Queue a write behind every earlier one. */
@@ -1402,7 +1452,7 @@ export class App {
       }
     });
     bindNativeLifecycle({
-      onBack: () => this.back(),
+      onBack: () => this.nativeBack(),
       onPause: () => this.hidden(),
       onResume: () => this.absent(Date.now()),
     });
@@ -1415,6 +1465,9 @@ export class App {
     // frame drawn while its surface is being torn down or rebuilt is a known
     // way into a GPU driver crash. `absent` starts the loop again.
     if (this.booted) this.loop.stop();
+    // Back in front later starts the two-back count over.
+    this.exit.reset();
+    this.hideExitHint();
     // No sound behind the launcher either (the music and every cue).
     this.synth.setHidden(true);
     // A hidden page's frames are not real frames: the scaler's window is dropped.

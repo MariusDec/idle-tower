@@ -140,6 +140,10 @@ export function plateauLine(s: Pick<RunSummary, 'wave' | 'plateau'>): string | n
  */
 export class ResultsScreen {
   private readonly root: HTMLElement;
+  /** The hub button's leave (Forge, Map, or the Omen's view). */
+  private readonly leave: () => void;
+  /** Close Run details' sheet; false when it wasn't open. */
+  private readonly closeReport: () => boolean;
   private readonly heroN: HTMLElement;
   private readonly heroL: HTMLElement;
   private readonly headline: HTMLElement;
@@ -279,10 +283,16 @@ export class ResultsScreen {
     };
     this.reportBtn.addEventListener('click', () => setReport(true));
     q('.results-report-close').addEventListener('click', () => setReport(false));
-    q('.results-forge').addEventListener('click', () => {
+    this.leave = () => {
       this.countdown = null;
       onForge();
-    });
+    };
+    this.closeReport = () => {
+      if (this.report.hidden) return false;
+      setReport(false);
+      return true;
+    };
+    q('.results-forge').addEventListener('click', this.leave);
     this.hold = q<HTMLButtonElement>('.results-hold');
     this.hold.addEventListener('click', () => {
       this.paused = !this.paused;
@@ -444,6 +454,16 @@ export class ResultsScreen {
     this.root.hidden = true;
     this.countdown = null;
     this.countUp++;
+  }
+
+  /**
+   * The back button: Run details' sheet closes first; else the screen is
+   * left the way its hub button leaves it, never by starting another run.
+   */
+  back(): boolean {
+    if (this.root.hidden) return false;
+    if (!this.closeReport()) this.leave();
+    return true;
   }
 
   /**

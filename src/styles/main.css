@@ -2571,6 +2571,34 @@ body {
 
 :root[data-motion='reduce'] .toast { animation: none; }
 
+/* The Tower's first back press (Android): a second one leaves. Above the hub's dock. */
+.exit-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(var(--space-3), var(--safe-b)) + 168px);
+  z-index: var(--z-toast);
+  transform: translateX(-50%);
+  max-width: calc(100% - 2 * var(--space-4));
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-round);
+  background: var(--glass-fill-solid);
+  box-shadow: var(--glass-shadow);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: exit-hint-in var(--dur-fast) var(--ease-decelerate) both;
+}
+
+.exit-hint[hidden] { display: none; }
+
+:root[data-motion='reduce'] .exit-hint { animation: none; }
+
+@keyframes exit-hint-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+}
+
 @keyframes toast-in {
   from { transform: translateY(-8px); opacity: 0; }
   to { transform: none; opacity: 1; }

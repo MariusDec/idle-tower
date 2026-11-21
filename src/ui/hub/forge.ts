@@ -633,6 +633,13 @@ export class WebView<N extends WebNodeDef> {
     }
   }
 
+  /** The back button: close the open node's card. False when none is open. */
+  back(): boolean {
+    if (this.selected === null) return false;
+    this.select(null);
+    return true;
+  }
+
   private select(id: string | null): void {
     this.selected = id;
     for (const g of this.world.querySelectorAll<SVGGElement>('.forge-node')) {
