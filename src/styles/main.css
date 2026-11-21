@@ -981,16 +981,14 @@ body {
 .results-stored {
   color: var(--stored);
   font-size: var(--fs-xs);
-  text-align: center;
   margin: 0;
 }
 
-/* Rifts met this run (plans/late-game/02 §2). */
-.results-rifts {
-  color: var(--rarity-rare);
-  font-size: var(--fs-xs);
-  text-align: center;
+/* Run details' "Along the way": rifts, reliquaries faded, an anomaly let go. */
+.results-along {
   margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
 }
 
 /* The speed toggle and the Autocaster switch (§6.2), centred between level and ultimate. */
@@ -1278,9 +1276,9 @@ body {
 
 .results > * { flex-shrink: 0; }
 
-.results-build .build-list { margin: 0; }
+.results-report-body .build-list { margin: 0; }
 
-/* How it went (U5): a sheet over the results, so the screen stays one screen. */
+/* Run details (U5): a sheet over the results, so the screen stays one screen. */
 .results-report {
   position: fixed;
   inset: 0;
@@ -1368,34 +1366,25 @@ body {
 
 .results-section[hidden] { display: none; }
 
-.results-records {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.results-record {
-  font-family: var(--font-sans);
-  font-weight: var(--fw-bold);
-  font-size: var(--fs-lg);
-  color: var(--fx-gold);
-}
-
-.results-record s {
-  color: var(--text-muted);
-}
-
+/* Kills, time held, shards: one card, three equal columns split by hairlines. */
 .results-stats {
   display: flex;
-  gap: var(--space-6);
-  align-items: flex-start;
+  width: min(360px, 100%);
+  padding: var(--space-3) 0;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  background: var(--glass-fill);
 }
 
 .results-stats > * {
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
+
+.results-stats > * + * { border-left: 1px solid var(--glass-border); }
+.results-stats > [hidden] { display: none; }
 
 .results-stat-n {
   display: inline-flex;
@@ -1414,29 +1403,16 @@ body {
   color: var(--text-muted);
 }
 
-/* The haul: a button, because a tap opens the breakdown (§4.6). Shards are gold. */
-.results-shards {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-card);
-  background: var(--glass-fill);
-  color: var(--fx-gold);
-  font-family: var(--font-sans);
-  cursor: pointer;
-}
-
-.results-shards .icon {
-  --icon-size: 22px;
-}
+/* Shards are the player's: gold. Where they came from is in Run details. */
+.results-shards .results-stat-n { color: var(--fx-gold); }
+.results-shards .icon { --icon-size: 20px; }
 
 /* Where the shards came from: inset rows. */
 .results-breakdown {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  width: min(300px, 100%);
+  width: 100%;
   margin: 0;
   padding: var(--space-2) var(--space-3);
   font-size: var(--fs-sm);
@@ -1451,58 +1427,7 @@ body {
 .results-breakdown dt { color: var(--text-dim); }
 .results-breakdown dd { margin: 0; font-weight: var(--fw-bold); color: var(--fx-gold); }
 
-.results-finds {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.results-find {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: var(--control-h-md);
-  padding: 0 var(--space-4) 0 var(--space-3);
-  border: 1px solid var(--accent-tint-border);
-  border-radius: var(--radius-chip);
-  background: var(--accent-tint);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-}
-
-.results-find::after {
-  content: 'New';
-  position: absolute;
-  top: -8px;
-  right: -4px;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-round);
-  background: var(--accent);
-  color: var(--bg-stop-2);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  line-height: 18px;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-badge);
-}
-
-.results-find .icon {
-  --icon-size: 20px;
-  color: var(--fx-arcane);
-}
-
-/* Final Form (plans/late-game/07): NEW, RECORD, or no tag on a repeat. */
-.results-find.is-form::after { content: attr(data-tag); }
-.results-find.is-form:not([data-tag])::after { display: none; }
-.results-find.is-form .icon { color: var(--fx-gold); }
-
-/* "Next:" — one line, one bar (§4.6). */
+/* "Next upgrade" — one line, one bar (§4.6). */
 .results-next {
   width: min(340px, 100%);
   display: grid;
@@ -1545,13 +1470,21 @@ body {
   transform-origin: left center;
 }
 
+/* Run details: a quiet link under the list, not a third big button. */
+.results-report-btn { font-size: var(--fs-md); }
+.results-report-btn .icon { --icon-size: 18px; }
+
+/* Pinned to the bottom; a long list scrolls under a fade, not into the buttons. */
 .results-actions {
   position: sticky;
   bottom: 0;
+  align-self: stretch;
   display: flex;
+  justify-content: center;
   gap: var(--space-3);
-  margin-top: var(--space-4);
-  padding-block: var(--space-2);
+  margin-top: var(--space-2);
+  padding-block: var(--space-5) var(--space-2);
+  background: linear-gradient(to bottom, transparent, rgb(9, 10, 28) var(--space-5));
 }
 
 /* Auto-restart: a white ring on the primary, draining to the restart. */
@@ -2638,6 +2571,34 @@ body {
 
 :root[data-motion='reduce'] .toast { animation: none; }
 
+/* The Tower's first back press (Android): a second one leaves. Above the hub's dock. */
+.exit-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(var(--space-3), var(--safe-b)) + 168px);
+  z-index: var(--z-toast);
+  transform: translateX(-50%);
+  max-width: calc(100% - 2 * var(--space-4));
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-round);
+  background: var(--glass-fill-solid);
+  box-shadow: var(--glass-shadow);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: exit-hint-in var(--dur-fast) var(--ease-decelerate) both;
+}
+
+.exit-hint[hidden] { display: none; }
+
+:root[data-motion='reduce'] .exit-hint { animation: none; }
+
+@keyframes exit-hint-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+}
+
 @keyframes toast-in {
   from { transform: translateY(-8px); opacity: 0; }
   to { transform: none; opacity: 1; }
@@ -3359,40 +3320,66 @@ body {
   color: var(--fx-gold);
 }
 
-.results-rewards {
+/* "New this run": one row per gain, the icon, the name (and a dimmer note),
+   and on the right a tag saying what kind of gain it is. */
+.results-gains {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
   margin: 0;
   padding: 0;
   list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
-  max-width: 360px;
 }
 
-.results-reward {
-  display: inline-flex;
+.results-gain {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-3);
   min-height: var(--control-h-md);
-  padding: 0 var(--space-4) 0 var(--space-3);
-  border: 1px solid var(--accent-tint-border);
-  border-radius: var(--radius-chip);
-  background: var(--accent-tint);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-card);
+  background: var(--panel-subtle);
+  text-align: left;
   animation: toast-in var(--dur-slow) var(--ease-decelerate) both;
 }
 
-.results-reward.is-unlock { border-color: var(--fx-gold); color: var(--fx-gold); }
-.results-reward.is-relic { border-color: var(--fx-arcane); }
-.results-reward.is-relic .icon { color: var(--fx-arcane); }
-.results-reward.is-feat .icon { color: var(--fx-gold); }
-.results-reward:nth-child(2) { animation-delay: 120ms; }
-.results-reward:nth-child(3) { animation-delay: 240ms; }
-.results-reward:nth-child(4) { animation-delay: 360ms; }
-.results-reward:nth-child(n + 5) { animation-delay: 480ms; }
+.results-gain > .icon { --icon-size: 24px; color: var(--accent-text); }
+.results-gain-text { display: flex; flex-direction: column; min-width: 0; }
+.results-gain-name {
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+.results-gain-note { font-size: var(--fs-xs); color: var(--text-dim); }
+.results-gain-note.is-curse { color: var(--curse); }
+.results-gain-tag {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.results-gain-tag s { color: var(--text-muted); font-weight: normal; }
+.results-gain-tag:empty { display: none; }
+
+.results-gain:is(.is-record, .is-unlock) > .icon,
+.results-gain:is(.is-record, .is-unlock) .results-gain-tag { color: var(--fx-gold); }
+.results-gain.is-relic > .icon,
+.results-gain.is-relic .results-gain-tag { color: var(--fx-arcane); }
+.results-gain.is-feat > .icon { color: var(--fx-gold); }
+.results-gain.is-find > .icon,
+.results-gain.is-find .results-gain-tag { color: var(--accent-text); }
+.results-gain.is-miss { background: none; border: 1px dashed var(--glass-border); }
+.results-gain.is-miss > .icon { color: var(--text-muted); }
+
+.results-gain:nth-child(2) { animation-delay: 60ms; }
+.results-gain:nth-child(3) { animation-delay: 120ms; }
+.results-gain:nth-child(4) { animation-delay: 180ms; }
+.results-gain:nth-child(n + 5) { animation-delay: 240ms; }
 
 /* ── Forge: sealed nodes (§5.1) ──────────────────────────────────────────── */
 

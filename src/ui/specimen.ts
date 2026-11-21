@@ -143,9 +143,9 @@ export function mountSpecimen(host: HTMLElement): void {
         <span class="draft-card-badge">Completes</span>
         <span class="rift-rarity is-rare">Rare</span>
       </div>
-      <ul class="results-rewards">
-        <li class="results-reward is-feat">${iconMarkup('trophy', { size: 18 })} A feat</li>
-        <li class="results-find">${iconMarkup('crossed-swords', { size: 18 })} A find</li>
+      <ul class="results-gains">
+        <li class="results-gain is-feat">${iconMarkup('trophy')}<span class="results-gain-text"><span class="results-gain-name">A feat</span></span><span class="results-gain-tag">Feat</span></li>
+        <li class="results-gain is-find">${iconMarkup('crossed-swords')}<span class="results-gain-text"><span class="results-gain-name">A find</span><span class="results-gain-note">With a note</span></span><span class="results-gain-tag">New weapon</span></li>
       </ul>
       <div class="modal-card">
         <h2 class="modal-title">Paused</h2>

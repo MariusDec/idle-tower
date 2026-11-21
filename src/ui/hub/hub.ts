@@ -106,6 +106,9 @@ const TABS: readonly { view: Exclude<HubView, 'home' | 'tactics' | 'pacts' | 'co
 /** The tab bar's order, the Tower first: a page change to a tab on the right slides forward. */
 const TAB_ORDER: readonly HubView[] = ['home', ...TABS.map((t) => t.view)];
 
+/** The pages with no tab: they open over the page they came from. */
+const isPushed = (v: HubView): boolean => !TAB_ORDER.includes(v);
+
 /**
  * Which way a page change slides. Tabs go by tab order. Tactics, Pacts,
  * Contracts and the Omen open over the page they came from (a push), and
@@ -169,6 +172,8 @@ export class HubScreen {
   private readonly storedN: HTMLElement;
   private profile: Profile | null = null;
   private view: HubView = 'home';
+  /** The page under a page opened from one page to another (Contracts → Pacts): back returns to it. */
+  private opener: HubView | null = null;
   /** The hub has been on screen once: only the first show fades in. */
   private painted = false;
   /** The width last reported through `HubActions.cover`. */
@@ -415,6 +420,20 @@ export class HubScreen {
     return this.root.hidden ? null : this.view;
   }
 
+  /**
+   * The back button, one step at a time: a web's open node first (Forge, Stars), then
+   * a page opened over another goes back to that page, and any page goes
+   * to the Tower. False at the Tower, where there is nothing to leave.
+   */
+  back(): boolean {
+    if (this.root.hidden) return false;
+    if (this.view === 'forge' && this.forge.back()) return true;
+    if (this.view === 'stars' && this.stars.back()) return true;
+    if (this.view === 'home') return false;
+    this.setView(this.opener ?? 'home', false, false);
+    return true;
+  }
+
   private renderTabs(unlocks: HubUnlocks): void {
     const shown = TABS.filter((t) => unlocks[t.view]);
     this.tabs.hidden = shown.length === 0;
@@ -430,6 +449,8 @@ export class HubScreen {
     const p = this.profile;
     if (!p) return;
     const from = this.view;
+    // A page opened from another page remembers it; going anywhere else forgets.
+    if (from !== view) this.opener = isPushed(from) && isPushed(view) ? from : null;
     // The view counts as open at once (the explainers ask); only the DOM waits for the old page's snapshot.
     this.view = view;
     if (slide && from !== view && !this.root.hidden) navigate(direction(from, view), () => this.apply(p, view, spread));
