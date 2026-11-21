@@ -774,7 +774,7 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
       continue;
     }
     const ladder = Array.from({ length: 10 }, (_, i) => fmt(r.heatFrontier[i + 1])).join(' ');
-    console.log(`  seed ${k + 1}: Blight at ${fmt(v.act1)} · runs ${r.runs} (${r.abyssRuns} Abyss) · stars ${r.stars} · masteries ${r.masteries} · floor ${r.floor} · Starlight ${r.starlight}`
+    console.log(`  seed ${k + 1}: Blight at ${fmt(v.act1)} · runs ${r.runs} (${r.abyssRuns} Abyss) · stars ${r.stars} · capstones ${r.growth.capstones}/12 · Fortune ${r.growth.fortune} · tempered ${r.growth.tempered} · floor ${r.floor} · Starlight ${r.starlight}`
       + ` · reliquaries ${r.reliquaries.claimed}/${r.reliquaries.seen} claimed · anomalies ${r.anomalies.offered} (${r.anomalies.abyss} Abyss) / ${r.runs} runs`);
     console.log(`           frontier heat 1–10: ${ladder}`);
     console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')} · last star ${fmt(r.lastStar)}`);
@@ -792,7 +792,7 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
     console.log(`           Boss Rush: ${r.rushRuns} runs · record ${rush}`);
     if (k === 0) {
       for (const h of r.hourly) {
-        console.log(`           hour ${pad(h.hour, 2)}: stars ${pad(h.stars, 2)} · masteries ${pad(h.masteries, 3)} · floor ${pad(h.floor, 2)} · frontier heat ${pad(h.frontier, 2)} · Starlight ${h.starlight}`);
+        console.log(`           hour ${pad(h.hour, 2)}: stars ${pad(h.stars, 2)} · capstones ${pad(h.capstones, 2)} · Fortune ${pad(h.fortune, 3)} · tempered ${pad(h.tempered, 4)} · floor ${pad(h.floor, 2)} · frontier heat ${pad(h.frontier, 2)} · Starlight ${h.starlight}`);
       }
     }
   }
@@ -849,10 +849,11 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
   const mLast = med(last);
   const okLast = mLast >= LAST_STAR_HOURS.min * 3600 && mLast <= LAST_STAR_HOURS.max * 3600;
   console.log(`  ${okLast ? 'PASS' : 'FAIL'}  last star lit: median ${Number.isFinite(mLast) ? formatDuration(mLast) : `not in ${hours} h`} (want ${LAST_STAR_HOURS.min}–${LAST_STAR_HOURS.max} h; ${last.map((t) => fmt(Number.isFinite(t) ? t : null)).join(' ')})`);
-  const perHour = reports.map((r) => r.hourly.map((h, i) => h.masteries - (i > 0 ? r.hourly[i - 1].masteries : r.hourly[0].masteries)));
+  const sunk = (h: Act2Report['hourly'][number]): number => h.capstones + h.fortune + h.tempered;
+  const perHour = reports.map((r) => r.hourly.map((h, i) => sunk(h) - (i > 0 ? sunk(r.hourly[i - 1]) : sunk(r.hourly[0]))));
   const cols = Math.max(0, ...perHour.map((p) => p.length));
   const line = Array.from({ length: cols }, (_, i) => med(perHour.flatMap((p) => (i < p.length ? [p[i]] : [])))).join(' ');
-  console.log(`        mastery levels per hour (median by hour, from hour 2): ${line}`);
+  console.log(`        capstone ranks + Fortune + tempered levels per hour (median by hour, from hour 2): ${line}`);
 }
 
 async function main(): Promise<void> {

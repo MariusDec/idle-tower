@@ -136,7 +136,9 @@ export const levels: LintRule = (tables) => {
  * A web holds together (§12.6): links name real nodes one ring in or on the
  * same ring, every node is reachable from the root, the costs and levels are
  * sane, the unlocks name real cards, minors stay at most 60% of the web
- * (§5.1), and a mastery (§9) is endless and hangs from its own branch.
+ * (§5.1), and a mastery (§9) hangs from its own branch and is either endless
+ * (Fortune) or a capstone: three ranks, each a behaviour, its rule written
+ * per rank (plans/mastery-capstones.md).
  */
 function webRule(table: 'forge' | 'stars'): LintRule {
   return (tables) => lintWeb(tables, table);
@@ -155,10 +157,15 @@ function lintWeb(tables: Readonly<Record<string, readonly ContentEntry[]>>, tabl
   for (const n of nodes) {
     if (n.maxLevel < 1) issue(n.id, 'max level below 1');
     if (n.type === 'mastery') {
-      if (n.maxLevel !== Infinity) issue(n.id, 'a mastery has no last level');
+      if (n.maxLevel !== Infinity) {
+        if (n.ranks?.length !== n.maxLevel) issue(n.id, 'a capstone writes one rule a rank');
+        if (!n.effects.every((e) => e.kind === 'behaviour')) issue(n.id, 'a capstone rank is a rule, not a stat');
+      }
       if (n.links.some((l) => byId.get(l)?.branch !== n.branch)) issue(n.id, 'a mastery hangs from its own branch');
     } else if (n.maxLevel === Infinity) {
       issue(n.id, 'only a mastery is endless');
+    } else if (n.ranks) {
+      issue(n.id, 'only a capstone has ranks');
     }
     if (n.type !== 'minor' && n.type !== 'mastery' && n.effects.some((e) => e.kind === 'stat') && n.maxLevel > 1) {
       issue(n.id, 'a stat with levels is a minor');

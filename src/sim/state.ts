@@ -574,6 +574,32 @@ export interface WeaponState {
   anomaly?: AnomalyId | null;
   /** The anomaly's moving centre, once it has one. */
   cell?: AnomalyCell;
+  /** Overlevels taken (Arsenal Mastery, plans/mastery-capstones.md): +damage each. Absent until one is. */
+  overlevel?: number;
+  /** Of those, the ones taken at rank 2 or more: +1 count each (or area, for a weapon without one). */
+  overcount?: number;
+}
+
+/**
+ * The mastery capstones' run state (plans/mastery-capstones.md). All zero
+ * on a run that owns no rank; each is read only by its own capstone.
+ */
+export interface CapstoneState {
+  /** Might: overkill held for the next weapon hit, and that last hit's size (the bank's cap). */
+  bank: number;
+  lastHit: number;
+  /** Bulwark: the overflow shield, in HP, struck before the wall. */
+  shield: number;
+  /** Bulwark rank 3: the last ten waves (Abyss: three floors) Second Wind recharged on. */
+  windMark: number;
+  /** Engineering: run time the ultimate's echo goes off; -1 when none waits. */
+  echoAt: number;
+  /** Engineering rank 3: charge gained while full, added after the next cast (≤ `chargeBank`). */
+  chargeBank: number;
+  /** Engineering rank 2: refunds earned while the charge stood full mid-cast, added after it. */
+  refund: number;
+  /** True while a cast or its echo is going off: its kills refund (rank 2). */
+  casting: boolean;
 }
 
 export interface PassiveState {
@@ -596,7 +622,9 @@ export type Card =
   | { readonly kind: 'fusion'; readonly id: FusionId }
   /** A weapon's rule broken (plans/late-game/04): rare, never suggested, never taken for you. */
   | { readonly kind: 'anomaly'; readonly id: AnomalyId }
-  | { readonly kind: 'fallback'; readonly id: FallbackId };
+  | { readonly kind: 'fallback'; readonly id: FallbackId }
+  /** Arsenal Mastery (plans/mastery-capstones.md): Windfall's place, +damage to a weapon past its last level. */
+  | { readonly kind: 'overlevel'; readonly id: WeaponId };
 
 export interface DraftOffer {
   cards: Card[];
@@ -654,7 +682,9 @@ export interface WaveState {
  * ultimate, the wall's own answer (Thorns, Aegis), a burn, or a rule's
  * extra (Overkill's carry, Stormcaller's leap, a shatter or a relic's burst).
  */
-export type DamageBy = WeaponId | 'ult' | 'thorns' | 'burn' | 'rule';
+export type DamageBy = WeaponId | 'ult' | 'thorns' | 'burn' | 'rule'
+  /** Bulwark Mastery's shield bursting (plans/mastery-capstones.md). */
+  | 'burst';
 
 /**
  * What hurt the tower (U5): a body at the wall, a hostile shot, a boss's
@@ -878,6 +908,8 @@ export interface RunState {
   banished: CardItemId[];
   /** Second Winds left this run. */
   revives: number;
+  /** The mastery capstones' state (plans/mastery-capstones.md). */
+  capstones: CapstoneState;
   enemies: Enemy[];
   projectiles: Projectile[];
   /** The wave currently spawning or most recently spawned; null before wave 1. */

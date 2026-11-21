@@ -16,8 +16,9 @@ import { bossBody, dropPlate, onBossKilled, phasesOf, plateGuard, reflectShot } 
 import { mitigate } from './damage';
 import { gainXp, refreshStats } from './draft';
 import { riftShardMult } from './rifts';
-import { hurtTower } from './tower';
+import { healTower, hurtTower } from './tower';
 import { regionRule, runRegion, spawnEnemy } from './waves';
+import { addUltCharge, ultGoing } from './ultimate';
 import { eliteReliquary } from './reliquaries';
 import { tallyKill } from './secrets';
 
@@ -129,7 +130,9 @@ const DRONE_REST = 1.8;
 export type DamageSource =
   | WeaponPattern | 'nova' | 'tempest' | 'eclipse' | 'thorns' | 'reflect' | 'overkill' | 'burn' | 'shatter'
   /** Stormcaller's quirk: a crit's leap to the next body. It never leaps again. */
-  | 'leap';
+  | 'leap'
+  /** Bulwark Mastery's full shield, bursting on everything in range (plans/mastery-capstones.md). */
+  | 'burst';
 
 /** Each weapon has its own pattern, so a pattern names the weapon a hit is credited to (T1). */
 const PATTERN_WEAPON = new Map<DamageSource, WeaponId>(WEAPONS.map((w) => [w.pattern, w.id]));
@@ -148,6 +151,8 @@ export function damageBy(source: DamageSource): DamageBy {
       return 'thorns';
     case 'burn':
       return 'burn';
+    case 'burst':
+      return 'burst';
     default:
       return 'rule';
   }
@@ -1141,7 +1146,7 @@ function holdTethers(run: RunState, w: WeaponState, p: WeaponParams, dt: number,
   }
   if (w.evolved) {
     const L = BALANCE.evolutions.lifebloom;
-    run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * L.heal * w.tethers.length * dt);
+    healTower(run, run.stats.maxHp * L.heal * w.tethers.length * dt);
   }
   const first = enemyById(run, w.tethers[0]);
   if (first) {
@@ -1806,6 +1811,9 @@ function damageTaken(run: RunState, e: Enemy, raw: number, source: DamageSource)
 export function damageEnemy(run: RunState, e: Enemy, raw: number, crit: boolean, source: DamageSource = 'homing'): number {
   if (!targetable(run, e)) return 0;
   const B = BALANCE.behaviours;
+  // Might Mastery (plans/mastery-capstones.md): a weapon's hit spends the bank.
+  const banked = run.capstones.bank > 0 || run.behaviours['might-capstone'] ? spendBank(run, raw, source) : 0;
+  raw += banked;
   // The Hollow King's court: a hit on any of his bodies is a hit on him, full
   // on the crowned one and a share on the rest.
   const court = courtShare(run, e);
@@ -1820,6 +1828,8 @@ export function damageEnemy(run: RunState, e: Enemy, raw: number, crit: boolean,
     crit = true;
   }
   const amount = hitBody(run, e, raw * court, crit, source);
+  // Might rank 3: a banked hit that kills runs Executioner on everything near.
+  if (banked > 0 && !e.alive && (run.behaviours['might-capstone'] ?? 0) >= 3) executeAround(run, e, source);
   // Field Kit (N6): a crit shoves its body back.
   if (crit && run.behaviours['set-fields'] && e.alive && !e.boss && !e.plate) knockBack(e, BALANCE.sets.fieldsPush);
   // Stormcaller (§11.6): a crit leaps to one more body.
@@ -1909,13 +1919,82 @@ function hitBody(run: RunState, e: Enemy, raw: number, crit: boolean, source: Da
   if (e.hp <= 0) {
     kill(run, e, source);
     // Overkill (§11.4): what the kill didn't need lands on the nearest body.
+    // An overkill carry never carries again, unless Might Mastery chains it (rank 2).
     const excess = amount - before;
-    if (run.behaviours.overkill && source !== 'overkill' && excess > 0) {
-      const next = nearestEnemy(run, e.x, e.y, B.overkillRange, e.id);
-      if (next) damageEnemy(run, next, excess, false, 'overkill');
+    if (excess > 0) {
+      const rank = run.behaviours['might-capstone'] ?? 0;
+      const carry = source === 'overkill';
+      let landed = false;
+      if (run.behaviours.overkill && (!carry || (rank >= 2 && leapDepth < BALANCE.capstones.chainLeaps))) {
+        const next = nearestEnemy(run, e.x, e.y, B.overkillRange, e.id);
+        if (next) {
+          const depth = leapDepth;
+          leapDepth = carry ? depth + 1 : 1;
+          damageEnemy(run, next, excess, false, 'overkill');
+          leapDepth = depth;
+          landed = true;
+        }
+      }
+      // Might rank 1: what lands nowhere is banked for the next weapon hit.
+      if (!landed && rank >= 1) bankOverkill(run, excess);
     }
   }
   return amount;
+}
+
+/** Leaps the overkill landing now has made (Might Mastery's chain, rank 2): 1 on the first. */
+let leapDepth = 0;
+
+/**
+ * Might Mastery's bank (plans/mastery-capstones.md): at most `bankCap` times
+ * the tower's last weapon hit, twice that at rank 3 without Executioner.
+ */
+function bankCap(run: RunState): number {
+  const C = BALANCE.capstones;
+  const rank = run.behaviours['might-capstone'] ?? 0;
+  const loose = rank >= 3 && !run.behaviours.executioner ? C.bankCapNoExecute : 1;
+  return run.capstones.lastHit * C.bankCap * loose;
+}
+
+function bankOverkill(run: RunState, excess: number): void {
+  const c = run.capstones;
+  c.bank = Math.min(bankCap(run), c.bank + excess);
+}
+
+/** A weapon's hit notes its size (the bank's cap) and takes the whole bank with it. Returns what it took. */
+function spendBank(run: RunState, raw: number, source: DamageSource): number {
+  if (!PATTERN_WEAPON.has(source)) return 0;
+  const c = run.capstones;
+  c.lastHit = raw;
+  const out = c.bank;
+  c.bank = 0;
+  return out;
+}
+
+/**
+ * Might rank 3: a banked kill runs the Executioner check on every body within
+ * Overkill's reach of it. Not a boss, its parts, a Chorus or a shelled Husk.
+ */
+function executeAround(run: RunState, at: Enemy, source: DamageSource): void {
+  const B = BALANCE.behaviours;
+  const execute = Math.min(B.executeMax, run.behaviours.executioner ?? 0);
+  if (execute === 0) return;
+  const r2 = B.overkillRange * B.overkillRange;
+  const by = damageBy(source);
+  const n = run.enemies.length;
+  for (let i = 0; i < n; i++) {
+    const o = run.enemies[i];
+    if (o === at || !o.alive || o.boss || o.court || o.plate || o.group || o.shell > 0 || !targetable(run, o)) continue;
+    const dx = o.x - at.x;
+    const dy = o.y - at.y;
+    if (dx * dx + dy * dy > r2 || o.hp > o.maxHp * B.executeBelow * execute) continue;
+    const left = Math.max(0, o.hp);
+    o.hp = 0;
+    o.hitTick = run.tick;
+    run.damageBy[by] = (run.damageBy[by] ?? 0) + left;
+    run.events.push({ kind: 'hit', x: o.x, y: o.y, amount: left, crit: false, by });
+    kill(run, o, source);
+  }
 }
 
 export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): void {
@@ -1944,21 +2023,36 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
     run.shardsFrom.rifts += extra;
   }
   const u = run.ult;
-  if (u.charge < 1) {
+  const engineering = run.behaviours['engineering-capstone'] ?? 0;
+  if (u.charge < 1 || engineering > 0) {
     // Last Light (§11.5): below half HP, the ultimate fills faster.
     const light = run.behaviours['last-light'] ?? 0;
     const low = light > 0 && run.tower.hp < run.stats.maxHp / 2 ? rankValue(BALANCE.relics.lastLight, light) : 1;
-    u.charge = Math.min(1, u.charge + (e.xp * run.stats.ultChargeMult * low) / u.need);
-    if (u.charge >= 1) run.events.push({ kind: 'ultReady' });
+    const gain = (e.xp * run.stats.ultChargeMult * low) / u.need;
+    if (engineering === 0) {
+      u.charge = Math.min(1, u.charge + gain);
+      if (u.charge >= 1) run.events.push({ kind: 'ultReady' });
+    } else {
+      // Engineering Mastery (plans/mastery-capstones.md): rank 2 refunds a
+      // share of a kill made while the ultimate goes off; mid-cast, the charge
+      // still stands full, so it waits for the cast to end.
+      const refund = engineering >= 2 && ultGoing(run, source) ? gain * BALANCE.capstones.refund : 0;
+      if (run.capstones.casting) {
+        run.capstones.refund += refund;
+        addUltCharge(run, gain);
+      } else {
+        addUltCharge(run, gain + refund);
+      }
+    }
   }
   // Soul Jar (§11.5): every so many kills, the tower mends.
   const jar = run.behaviours['soul-jar'] ?? 0;
   if (jar > 0 && run.kills % BALANCE.relics.soulKills === 0) {
-    run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * rankValue(BALANCE.relics.soulJar, jar));
+    healTower(run, run.stats.maxHp * rankValue(BALANCE.relics.soulJar, jar));
   }
   // The Gravekeeper (§9): every kill mends the tower a little.
   if (run.behaviours.siphon) {
-    run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * BALANCE.behaviours.siphon);
+    healTower(run, run.stats.maxHp * BALANCE.behaviours.siphon);
   }
   evolvedDeath(run, e, source);
   feedMaws(run, e);
@@ -2134,7 +2228,7 @@ function burst(run: RunState, e: Enemy, n: number, opts: Parameters<typeof spawn
 function eliteDeath(run: RunState, e: Enemy): void {
   run.elitesKilled++;
   // Blightbane (N6): each elite slain mends the tower.
-  if (run.behaviours['set-blight']) run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * BALANCE.sets.blightHeal);
+  if (run.behaviours['set-blight']) healTower(run, run.stats.maxHp * BALANCE.sets.blightHeal);
   run.events.push({ kind: 'eliteKill', x: e.x, y: e.y });
   const E = BALANCE.elites;
   if (e.aura === 'split') burst(run, e, E.split, {});

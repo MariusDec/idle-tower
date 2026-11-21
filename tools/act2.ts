@@ -8,7 +8,7 @@
  *   heat          climbs each region's record one heat level at a time, the
  *                 frontier first (it pays the most Starlight a level); a
  *                 region whose next level failed twice is set aside until
- *                 the tower grows (a star lit, a mastery level bought)
+ *                 the tower grows (a star lit, a capstone rank, a Fortune or tempered level bought)
  *   the Abyss     every few runs, and whenever every ladder is set aside:
  *                 its floors pay Starlight, and its shards buy masteries
  *   Boss Rush     once the Deepwarden falls, now and then (N8): its records
@@ -29,7 +29,7 @@ import { STARS } from '../src/content/stars';
 import type { PactId } from '../src/content/types';
 import { Rng } from '../src/core/rng';
 import { runSpeed } from '../src/meta/automation';
-import { FORGE_WEB } from '../src/meta/forge';
+import { FORGE_WEB, isCapstone, temperable } from '../src/meta/forge';
 import { claimAll } from '../src/meta/feats';
 import { bestHeat, setPactRank } from '../src/meta/pacts';
 import type { Profile } from '../src/meta/profile';
@@ -99,9 +99,27 @@ export function shopStars(profile: Profile): string[] {
   return bought;
 }
 
-/** Mastery levels owned in all. */
-export function masteryLevels(profile: Profile): number {
-  return FORGE_WEB.ownedNodes(profile).filter((o) => o.node.type === 'mastery').reduce((s, o) => s + o.level, 0);
+/**
+ * How the tower has grown through the Forge's sinks (plans/mastery-capstones.md
+ * §4): capstone ranks (12 at most), Fortune Mastery's levels, and levels
+ * tempered past a minor's last.
+ */
+export function forgeGrowth(profile: Profile): { capstones: number; fortune: number; tempered: number } {
+  let capstones = 0;
+  let fortune = 0;
+  let tempered = 0;
+  for (const { node, level } of FORGE_WEB.ownedNodes(profile)) {
+    if (isCapstone(node)) capstones += level;
+    else if (node.type === 'mastery') fortune += level;
+    else if (temperable(node)) tempered += Math.max(0, level - node.maxLevel);
+  }
+  return { capstones, fortune, tempered };
+}
+
+/** The bot's measure of growth: a star lit, a capstone rank, a Fortune or tempered level bought. */
+export function power(profile: Profile): number {
+  const g = forgeGrowth(profile);
+  return starsLit(profile) + g.capstones + g.fortune + g.tempered;
 }
 
 /** Wall seconds between runs, as the Act 1 report reads them. */
@@ -136,7 +154,8 @@ export interface Act2Report {
   /** Wall seconds since the Blight fell when the last star was lit; null if it wasn't (B7). */
   lastStar: number | null;
   stars: number;
-  masteries: number;
+  /** The Forge's sinks at the end: capstone ranks, Fortune levels, tempered levels. */
+  growth: { capstones: number; fortune: number; tempered: number };
   /** The deepest floor of the Abyss, at the end. */
   floor: number;
   /** Boss Rush runs, and its record at the end: stages cleared, and a full clear's time (N8). */
@@ -152,8 +171,8 @@ export interface Act2Report {
   cursed: Record<string, { rank: number; bound: number }>;
   /** The Contract board (plans/late-game/10 §9): runs taken off it, success by tier, what it paid. */
   contracts: { runs: number } & ContractTally;
-  /** A line every hour: wall hour, stars lit, mastery levels, deepest floor, frontier heat. */
-  hourly: { hour: number; stars: number; masteries: number; floor: number; frontier: number; starlight: number }[];
+  /** A line every hour: wall hour, stars lit, the Forge's sinks, deepest floor, frontier heat. */
+  hourly: { hour: number; stars: number; capstones: number; fortune: number; tempered: number; floor: number; frontier: number; starlight: number }[];
 }
 
 /**
@@ -165,7 +184,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   const end = hours * 3600;
   const frontier = REGIONS[REGIONS.length - 1].index;
   const fails = new Map<string, number>();
-  let power = starsLit(profile) + masteryLevels(profile);
+  let grown = power(profile);
   let clock = 0;
   let runs = 0;
   let abyssRuns = 0;
@@ -184,7 +203,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   while (clock < end) {
     if (hourly.length < Math.floor(clock / 3600)) {
       hourly.push({
-        hour: hourly.length + 1, stars: starsLit(profile), masteries: masteryLevels(profile),
+        hour: hourly.length + 1, stars: starsLit(profile), ...forgeGrowth(profile),
         floor: profile.abyss.best, frontier: bestHeat(profile, frontier), starlight: earned,
       });
     }
@@ -269,9 +288,9 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     sources.feats += profile.starlight - before;
     earned += profile.starlight - before;
     const bought = [...shop(profile), ...shopStars(profile)];
-    const now = starsLit(profile) + masteryLevels(profile);
-    if (now > power) {
-      power = now;
+    const now = power(profile);
+    if (now > grown) {
+      grown = now;
       fails.clear();
     }
     clock += bought.length > 0 ? BETWEEN_RUNS.shopping : BETWEEN_RUNS.idle;
@@ -281,7 +300,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   for (const r of REGIONS) best[r.index] = bestHeat(profile, r.index);
   return {
     seconds: clock, runs, abyssRuns, heatAny, heatFrontier, starlight: earned, sources, lastStar, stars: starsLit(profile),
-    masteries: masteryLevels(profile), floor: profile.abyss.best, rushRuns, rush: { ...profile.rush }, best, hourly,
+    growth: forgeGrowth(profile), floor: profile.abyss.best, rushRuns, rush: { ...profile.rush }, best, hourly,
     reliquaries,
     anomalies,
     strata,

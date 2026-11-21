@@ -85,6 +85,12 @@ function levelText(level: number, max: number): string {
   return level > max ? `${max}+${level - max}` : `${level}/${max}`;
 }
 
+/** A capstone's line: the next rank's rule, or, with every rank owned, the last one's. */
+function rankLine(ranks: readonly string[], level: number): string {
+  if (level >= ranks.length) return `Rank ${ranks.length}: ${ranks[ranks.length - 1]}`;
+  return `${level === 0 ? 'Rank 1' : `Next, rank ${level + 1}`}: ${ranks[level]}`;
+}
+
 function position(n: WebNodeDef): { x: number; y: number } {
   const a = (n.angle * Math.PI) / 180;
   const r = ringRadius(n.ring);
@@ -304,7 +310,7 @@ export class WebView<N extends WebNodeDef> {
       }).join(' ');
       shape = el('polygon', { class: 'forge-shape', points: pts });
     } else if (n.type === 'mastery') {
-      // A mastery (§9): an eight-pointed star, endless.
+      // A mastery (§9): an eight-pointed star.
       const pts = Array.from({ length: 16 }, (_, i) => {
         const a = (Math.PI / 8) * i - Math.PI / 2;
         const rr = i % 2 === 0 ? r : r * 0.72;
@@ -458,10 +464,12 @@ export class WebView<N extends WebNodeDef> {
     head.append(icon(n.icon));
     name.textContent = n.name;
     head.append(name);
-    kind.textContent = `${this.src.branchName(n.branch)} · ${typeName}${n.maxLevel > 1 ? ` · Level ${levelText(level, n.maxLevel)}` : ''}${switchable ? (off ? ' · Off' : ' · On') : ''}`;
+    const step = n.ranks ? ` · Rank ${level} of ${n.maxLevel}` : n.maxLevel > 1 ? ` · Level ${levelText(level, n.maxLevel)}` : '';
+    kind.textContent = `${this.src.branchName(n.branch)} · ${typeName}${step}${switchable ? (off ? ' · Off' : ' · On') : ''}`;
     const text = document.createElement('p');
     text.className = 'forge-detail-text';
-    text.textContent = n.text;
+    // A capstone (plans/mastery-capstones.md) shows the rule its next rank brings, or its last once all are owned.
+    text.textContent = n.ranks ? rankLine(n.ranks, level) : n.text;
     const total = this.totals(p, n, level);
     const actions = document.createElement('div');
     actions.className = 'forge-detail-actions';

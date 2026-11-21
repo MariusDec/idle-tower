@@ -11,10 +11,11 @@ import type { Card, RunState, WeaponState } from '../state';
 import { allMods, resolveStats, runMods } from '../stats';
 import { pactLoad } from '../pacts';
 import { suggest } from '../suggest';
-import { newWeapon, slotsUsed } from './arms';
+import { newWeapon, passiveAt, slotsUsed } from './arms';
 import { runRegion, waveBonus } from './waves';
 import { notePick } from './secrets';
 import { checkFinalForm } from './form';
+import { healTower } from './tower';
 
 /**
  * XP, level-ups and the draft (§4.5). The sim only offers and applies cards;
@@ -45,7 +46,7 @@ export function gainXp(run: RunState, amount: number): void {
     const seed = run.behaviours['level-heal'] ?? 0;
     if (seed > 0) {
       const R = BALANCE.relics.levelHeal;
-      run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * R[Math.min(seed, R.length) - 1]);
+      healTower(run, run.stats.maxHp * R[Math.min(seed, R.length) - 1]);
     }
   }
 }
@@ -67,7 +68,38 @@ export function evolutionCards(run: RunState): Card[] {
     // An anomaly (plans/late-game/04 §5) is the weapon's other road: it never evolves.
     if (w.evolved || w.anomaly || w.level < E.evolveAt) continue;
     const evo = EVOLUTION_OF[w.id];
-    if (run.passives.some((p) => p.id === evo.passive && p.level >= E.passiveAt)) out.push({ kind: 'evolution', id: evo.id });
+    if (run.passives.some((p) => p.id === evo.passive && p.level >= passiveAt(run))) out.push({ kind: 'evolution', id: evo.id });
+  }
+  return out;
+}
+
+/** Weapons an Overlevel may lift (Arsenal Mastery): at their last level or evolved, on a mount of their own. */
+export function overlevelable(run: RunState): WeaponState[] {
+  return run.weapons.filter((w) => !w.joined && (w.evolved || w.level >= BALANCE.maxLevel));
+}
+
+/**
+ * The fallbacks, in the order they pad a hand (§4.5): Mend, then Windfall;
+ * at Arsenal Mastery's rank 1, an Overlevel for each weapon that may take
+ * one in Windfall's place, shuffled on `rng` when there is one. Windfall
+ * stays for a tower with none.
+ */
+export function fallbackCards(run: RunState, rng?: Rng): Card[] {
+  const out: Card[] = [];
+  const over = (run.behaviours['arsenal-capstone'] ?? 0) > 0 ? overlevelable(run) : [];
+  for (const f of FALLBACKS) {
+    if (f.id === 'shards' && over.length > 0) {
+      const cards: Card[] = over.map((w) => ({ kind: 'overlevel', id: w.id }));
+      if (rng) {
+        for (let i = 0; i < cards.length - 1; i++) {
+          const j = rng.int(i, cards.length - 1);
+          [cards[i], cards[j]] = [cards[j], cards[i]];
+        }
+      }
+      out.push(...cards);
+    } else {
+      out.push({ kind: 'fallback', id: f.id });
+    }
   }
   return out;
 }
@@ -147,9 +179,10 @@ export function rollOffer(run: RunState, rng: Rng, size?: number): Card[] {
     [hand[i], hand[j]] = [hand[j], hand[i]];
   }
   const out = [...forced, ...hand.slice(0, n - forced.length)];
-  for (const f of FALLBACKS) {
+  if (out.length >= n) return out;
+  for (const f of fallbackCards(run, rng)) {
     if (out.length >= n) break;
-    out.push({ kind: 'fallback', id: f.id });
+    out.push(f);
   }
   return out;
 }
@@ -291,8 +324,8 @@ function strike(run: RunState, cards: readonly Card[], index: number): Card[] {
     out[index] = Rng.wrap(run.streams.draft).pick(fresh);
     return out;
   }
-  const f = FALLBACKS.find((x) => !held.has(`fallback:${x.id}`));
-  if (f) out[index] = { kind: 'fallback', id: f.id };
+  const f = fallbackCards(run).find((x) => !held.has(cardKey(x)));
+  if (f) out[index] = f;
   else if (out.length > 1) out.splice(index, 1);
   return out;
 }
@@ -400,7 +433,7 @@ export function applyCard(run: RunState, card: Card): void {
       const id = card.id;
       switch (id) {
         case 'heal':
-          run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * BALANCE.draft.healFraction);
+          healTower(run, run.stats.maxHp * BALANCE.draft.healFraction);
           return;
         case 'shards': {
           // Worth a few waves' pay where it is drawn, so it keeps pace with the region.
@@ -415,6 +448,14 @@ export function applyCard(run: RunState, card: Card): void {
           return exhaustive;
         }
       }
+    }
+    case 'overlevel': {
+      // Arsenal Mastery (plans/mastery-capstones.md): +damage; from rank 2, a body more (or area) too.
+      const w = run.weapons.find((x) => x.id === card.id);
+      if (!w) return;
+      w.overlevel = (w.overlevel ?? 0) + 1;
+      if ((run.behaviours['arsenal-capstone'] ?? 0) >= 2) w.overcount = (w.overcount ?? 0) + 1;
+      return;
     }
     default: {
       const exhaustive: never = card;

@@ -791,7 +791,7 @@ export class App {
         });
         for (const c of run.draft.cards) {
           const key = cardKey(c);
-          if (!seen.has(key) && c.kind !== 'fallback') this.newCards.push(key);
+          if (!seen.has(key) && c.kind !== 'fallback' && c.kind !== 'overlevel') this.newCards.push(key);
           seen.add(key);
         }
         this.profile.seenCards = [...seen];
@@ -827,7 +827,7 @@ export class App {
     this.runDirty = true;
     const seen = new Set(this.profile.seenCards);
     for (const ev of run.events.slice(from)) {
-      if (ev.kind !== 'picked' || ev.card.kind === 'fallback' || seen.has(cardKey(ev.card))) continue;
+      if (ev.kind !== 'picked' || ev.card.kind === 'fallback' || ev.card.kind === 'overlevel' || seen.has(cardKey(ev.card))) continue;
       seen.add(cardKey(ev.card));
       this.newCards.push(cardKey(ev.card));
     }

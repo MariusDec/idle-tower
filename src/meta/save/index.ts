@@ -101,7 +101,7 @@ export const RUN_KEY = 'tower-run';
  * to survive the app being killed mid-run — so it has no ladder: bump this
  * when `RunState` changes shape, and an older snapshot is dropped.
  */
-export const SNAPSHOT_VERSION = 21;
+export const SNAPSHOT_VERSION = 22;
 
 interface RunSnapshot {
   version: number;

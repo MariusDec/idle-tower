@@ -15,7 +15,7 @@ import { separateEnemies, sweepEnemies, tickEnemies } from './systems/enemies';
 import { sweepProjectiles, tickBurns, tickProjectiles, tickRunes, tickWeapons } from './systems/combat';
 import { banishCard, isWeaponId, pickCard, rerollDraft, takeSuggested, tickDraft, xpToNext } from './systems/draft';
 import { tickBoss, tickPools, tickRings } from './systems/boss';
-import { tickShots } from './systems/tower';
+import { healTower, tickBulwark, tickShots, windMark } from './systems/tower';
 import { castUltimate, tickUltimate } from './systems/ultimate';
 import { regionAt, regionMods, runRegion, tickWaves } from './systems/waves';
 import { chooseRift, shutRift, tapRift, tickRifts } from './systems/rifts';
@@ -155,6 +155,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     banishes: owned('banish'),
     banished: [],
     revives: owned('second-wind'),
+    capstones: { bank: 0, lastHit: 0, shield: 0, windMark: windMark(config.regionId, startWave - 1, startFloor - 1), echoAt: -1, chargeBank: 0, refund: 0, casting: false },
     enemies: [],
     projectiles: [],
     current: null,
@@ -344,7 +345,8 @@ export function step(run: RunState, dt: number, input: RunInput = {}, weaponStep
     run.events.push({ kind: 'fell' });
     return;
   }
-  t.hp = Math.min(run.stats.maxHp, t.hp + run.stats.regen * regenMult(run) * dt);
+  healTower(run, run.stats.regen * regenMult(run) * dt);
+  tickBulwark(run, dt);
 }
 
 /**

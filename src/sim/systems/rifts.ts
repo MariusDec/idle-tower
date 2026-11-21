@@ -7,6 +7,7 @@ import type { AuraId, RegionDef, RiftDef, RiftEffect, RiftRarity, RiftSpan } fro
 import type { Enemy, RiftHold, RunState } from '../state';
 import { refreshStats } from './draft';
 import { BOSS_WAVE, isBossWave, localWave, regionAt, rollWave, runRegion, runWave, waveBonus, wavePace } from './waves';
+import { healTower } from './tower';
 
 /**
  * Rifts (plans/late-game/02): a tear opens mid-wave; tapped before it shuts,
@@ -405,7 +406,7 @@ export function applyRiftEffect(run: RunState, f: RiftEffect, strongest: RunStat
       return false;
     }
     case 'heal':
-      run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * f.fraction);
+      healTower(run, run.stats.maxHp * f.fraction);
       return false;
     case 'stat':
       hold(spanUntil(f.span, n));

@@ -61,7 +61,7 @@ figures, paid in Starlight, and nothing refunds:
 | The Smith | Act 2's four weapons and two passives, the fifth weapon slot, the four fusions (N9, [combat.md](combat.md)) |
 | The Warden | the Lamplighter and Gravekeeper frames, the walls |
 | The Lantern | the Abyss's four relic sets, a sixth relic slot |
-| The Crown | the Forge's five masteries |
+| The Crown | the Forge's five masteries: four capstones and Fortune's endless one |
 | The Deep | the descent, and the Stargazers: more Starlight per payout |
 
 Every figure has a node on the root, so the sky opens five ways at once.
@@ -135,8 +135,10 @@ regions'. No pacts, no Trials.
 ## Act 2 feats
 
 Twenty more feats, pointing at heat, the Abyss, the Constellations and the
-masteries; they surface once the Blight has fallen, and pay Starlight as
-well as shards (S7.2): by then shards buy only masteries.
+masteries (Journeyman: 5 capstone ranks; Grandmaster: all 12; Fortune's
+levels don't count); they surface once the Blight has fallen, and pay
+Starlight as well as shards (S7.2): by then shards buy masteries and
+tempered levels.
 
 ## The Daily Omen (plans/late-game/11)
 

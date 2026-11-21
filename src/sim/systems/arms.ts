@@ -65,7 +65,7 @@ export function anomalySpike(anomaly: AnomalyId | null | undefined): number {
 
 export function armed(
   stats: TowerStats,
-  w: Pick<WeaponState, 'id' | 'level' | 'evolved' | 'signature'> & { fusion?: FusionId | null; anomaly?: AnomalyId | null },
+  w: Pick<WeaponState, 'id' | 'level' | 'evolved' | 'signature' | 'overlevel' | 'overcount'> & { fusion?: FusionId | null; anomaly?: AnomalyId | null },
 ): WeaponParams {
   const base = weaponParams(w.id, w.level);
   const pattern = WEAPON_BY_ID[w.id].pattern;
@@ -73,22 +73,32 @@ export function armed(
   const fused = w.fusion ? BALANCE.fusions.damage : 1;
   // Specialist (§11.4): the node's stat lowers all damage; its starting weapon is lifted back past it.
   const signature = w.signature ? BALANCE.behaviours.specialistDamage / BALANCE.behaviours.specialistOthers : 1;
-  let damage = base.damage * evolutionSpike(w.id, w.evolved) * anomalySpike(w.anomaly) * fused * signature;
-  let count = base.count;
-  // Past the cap, every extra body becomes damage on the ones that fly (§12.5).
+  // Overlevels (Arsenal Mastery, plans/mastery-capstones.md): damage each, and from rank 2 a body each,
+  // a leap for a chain, or area for a pattern that puts no count on screen.
+  const C = BALANCE.capstones;
+  const over = 1 + C.overlevelDamage * (w.overlevel ?? 0);
+  let damage = base.damage * evolutionSpike(w.id, w.evolved) * anomalySpike(w.anomaly) * fused * signature * over;
   const cap = countCap(pattern);
+  const extra = w.overcount ?? 0;
+  let count = base.count + (cap !== Infinity ? extra : 0);
+  const wider = cap === Infinity && pattern !== 'chain' ? 1 + C.overlevelArea * extra : 1;
+  // Past the cap, every extra body becomes damage on the ones that fly (§12.5).
   if (count > cap) {
     damage *= count / cap;
     count = cap;
   }
   const flies = shoots(pattern);
+  // An orbit's reach is where it circles, not how wide it cuts: area widens the blades.
+  // A pulse's radius is its reach from the tower, so area grows it no farther than range.
+  let radius = pattern === 'orbit' ? base.radius : base.radius * stats.areaMult * wider;
+  if (pattern === 'pulse') radius = Math.min(radius, stats.range);
   return {
     ...base,
     damage,
     count,
-    // An orbit's reach is where it circles, not how wide it cuts: area widens the blades.
-    radius: pattern === 'orbit' ? base.radius : base.radius * stats.areaMult,
-    blade: base.blade * stats.areaMult,
+    jumps: pattern === 'chain' ? base.jumps + extra : base.jumps,
+    radius,
+    blade: base.blade * stats.areaMult * wider,
     slowSeconds: base.slowSeconds * stats.durationMult,
     stun: base.stun * stats.durationMult,
     ramp: base.ramp * stats.durationMult,
@@ -97,6 +107,11 @@ export function armed(
   };
 }
 
+
+/** The partner passive's level an evolution needs this run: lower at Arsenal Mastery's rank 3 (plans/mastery-capstones.md). */
+export function passiveAt(run: Pick<RunState, 'behaviours'>): number {
+  return (run.behaviours['arsenal-capstone'] ?? 0) >= 3 ? BALANCE.capstones.passiveAt : BALANCE.evolutions.passiveAt;
+}
 
 /** A weapon freshly mounted. */
 export function newWeapon(id: WeaponId, level: number): WeaponState {

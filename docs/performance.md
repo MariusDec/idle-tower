@@ -59,7 +59,7 @@ visible.
 ## Measuring
 
 **CI: `tests/perf.test.ts`.** The sim's share of a frame, headless: a run
-with every Forge node bought out (the keystones and the endless masteries
+with every Forge node bought out (the keystones and the masteries
 aside: `inspect`'s `all` preset), the bot's draft and its evolutions,
 against 300 bodies that never fall, 600 steps after a warm-up. It first
 checks that every stat is finite: a mastery "bought out" to its endless

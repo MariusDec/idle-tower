@@ -10,6 +10,9 @@
  *                                       (the frontier profiles), 8 seeds each: median
  *                                       wave, shards and boss time. A keystone that only
  *                                       gains is free; one that only loses is a trap
+ *   npm run arsenal -- --capstones      either report with every mastery capstone at
+ *                                       rank 3 (plans/mastery-capstones.md): Overlevels
+ *                                       in the draft, the bank, the shield, the echo
  *
  * The loadout is each region's frontier one (`tools/frontier.ts`, R4): the
  * profile the pacing bot first enters the region with, its Forge as it
@@ -25,6 +28,8 @@ import { createRun, step } from '../src/sim/run';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { SIM_DT } from '../src/app/loop';
 import { FORGE } from '../src/content/forge';
+import { isCapstone } from '../src/meta/forge';
+import type { Profile } from '../src/meta/profile';
 import { PASSIVES } from '../src/content/passives';
 import { WEAPONS } from '../src/content/weapons';
 import { REGIONS } from '../src/content/regions';
@@ -61,11 +66,21 @@ export interface ArsenalReport {
   worst: { weapon: WeaponId; share: number; region: number };
   /** Weapons the bot never took anywhere. */
   unpicked: WeaponId[];
+  /** Overlevels taken (Arsenal Mastery, `--capstones`), by weapon, all regions. */
+  overlevels: Partial<Record<WeaponId, number>>;
+}
+
+/** `--capstones`: every mastery capstone at its last rank, on top of the frontier Forge. */
+const CAPSTONES = process.argv.includes('--capstones');
+
+function withCapstones(profile: Profile, on: boolean): Profile {
+  if (on) for (const n of FORGE) if (isCapstone(n)) profile.forge[n.id] = n.maxLevel;
+  return profile;
 }
 
 /** A region's frontier loadout (`tools/frontier.ts`), its `k`th profile: the tower a player first pushing it owns. */
 function frontierConfig(region: number, k = 0) {
-  const base = buildRunConfig(frontierProfile(region, k));
+  const base = buildRunConfig(withCapstones(frontierProfile(region, k), CAPSTONES));
   return {
     ...base,
     regionId: region,
@@ -79,6 +94,7 @@ export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 
   const picks: ArsenalReport['picks'] = {};
   const twin: ArsenalReport['twin'] = {};
   const evolutions: ArsenalReport['evolutions'] = {};
+  const overlevels: ArsenalReport['overlevels'] = {};
   for (const region of regions) {
     const tally: Partial<Record<WeaponId, number>> = (picks[region] = {});
     const twins: Partial<Record<WeaponId, number>> = (twin[region] = {});
@@ -96,6 +112,7 @@ export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 
             offer = null;
           }
           if (ev.card.kind === 'evolution') evolutions[region]++;
+          if (ev.card.kind === 'overlevel') overlevels[ev.card.id] = (overlevels[ev.card.id] ?? 0) + 1;
         }
         run.events.length = 0;
       }
@@ -114,7 +131,7 @@ export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 
   }
   // The starting weapon is mounted, never picked: it counts as taken.
   taken.add(frontierConfig(regions[0]).pool[0] as WeaponId);
-  return { picks, twin, evolutions, worst, unpicked: ACT1_WEAPONS.map((w) => w.id).filter((id) => !taken.has(id)) };
+  return { picks, twin, evolutions, worst, unpicked: ACT1_WEAPONS.map((w) => w.id).filter((id) => !taken.has(id)), overlevels };
 }
 
 /** The keystones (§11.4): builds a player picks on purpose, so the sweep measures what each trades. */
@@ -135,9 +152,9 @@ export interface SweepCell {
 }
 
 /** One region and one keystone (or none), on the region's frontier profiles (taken in turn), over `seeds` runs of the active bot. */
-export function sweepCell(region: number, keystone: string | null, seeds: number): SweepCell {
+export function sweepCell(region: number, keystone: string | null, seeds: number, capstones = false): SweepCell {
   const config = (k: number): RunConfig => {
-    const profile = frontierProfile(region, k);
+    const profile = withCapstones(frontierProfile(region, k), capstones);
     if (keystone) profile.forge[keystone] = 1;
     return { ...buildRunConfig(profile), regionId: region };
   };
@@ -185,11 +202,11 @@ export function judge(cell: SweepCell, base: SweepCell): SweepVerdict {
 }
 
 async function keystoneMain(seeds: number): Promise<void> {
-  const jobs = KEYSTONE_REGIONS.flatMap((r) => [null, ...KEYSTONES].map((k) => [r, k, seeds]));
+  const jobs = KEYSTONE_REGIONS.flatMap((r) => [null, ...KEYSTONES].map((k) => [r, k, seeds, CAPSTONES]));
   const cells = await parallel<SweepCell>(process.argv[1], 'sweep', jobs);
   const at = (r: number, k: string | null): SweepCell => cells.find((c) => c.region === r && c.keystone === k)!;
   const fmtBoss = (c: SweepCell): string => c.boss.map((b) => (b === null ? '—' : Math.round(b))).join(' ');
-  console.log(`keystones · Regions ${KEYSTONE_REGIONS.join(', ')} · frontier profiles · ${seeds} seeds`);
+  console.log(`keystones · Regions ${KEYSTONE_REGIONS.join(', ')} · frontier profiles${CAPSTONES ? ' + every capstone' : ''} · ${seeds} seeds`);
   console.log('region  keystone        wave   shards   ×shards  boss (s)');
   const gains = new Map<string, number>();
   const losses = new Map<string, number>();
@@ -238,6 +255,7 @@ async function main(): Promise<void> {
       console.log(`  ${w.name.padEnd(16)} ${String(n).padStart(4)}  ${((n / Math.max(1, total)) * 100).toFixed(0).padStart(3)}%`);
     }
   }
+  if (CAPSTONES) console.log(`Overlevels taken: ${Object.entries(r.overlevels).map(([id, n]) => `${id} ${n}`).join(', ') || 'none'}`);
   const ok = r.worst.share <= I4_MAX_SHARE && r.unpicked.length === 0;
   console.log(`I4 ${ok ? 'PASS' : 'FAIL'}: worst ${r.worst.weapon} at ${(r.worst.share * 100).toFixed(0)}% in Region ${r.worst.region}`
     + (r.unpicked.length > 0 ? `; never taken: ${r.unpicked.join(', ')}` : ''));

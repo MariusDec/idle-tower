@@ -13,10 +13,11 @@ import type { BranchId, ForgeNodeDef } from './types';
  * minors. Night Watch II keeps I's 25% and only stretches the cap; the
  * better rates wait for the Prism (III) and Forgeheart (IV), so time away
  * never outpaces the frontier.
- * P8 adds a mastery at the end of each branch (§9): unlimited levels at
- * ×1.03 each, compounding (S1: the Abyss is exponential, so its sink is
- * too), every level ×1.2 the cost of the last, unsealed by its Crown
- * constellation. Q1 (S1) turned rings 4–6's percentage minors into two
+ * P8 adds a mastery at the end of each branch (§9), unsealed by its Crown
+ * constellation. Might, Bulwark, Arsenal and Engineering are capstones of
+ * three ranks, each a rule, at ×10 the cost a rank (plans/mastery-capstones.md);
+ * tempering is the endless numeric sink. Fortune alone is endless: shards
+ * +3% a level, added, never compounded, every level ×1.2 the cost. Q1 (S1) turned rings 4–6's percentage minors into two
  * levels of a true multiplier each, so every late purchase is a step of
  * ~10% rather than a sliver of a big sum: level 1 at three times the old
  * first level's price, level 2 at three times that.
@@ -680,31 +681,55 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'behaviour', id: 'oath' }], sealed: 'hollow-king',
   },
 
-  // ── Masteries (§9): the idle-forever sink, one per branch ──────────────
+  // ── Masteries (§9): a capstone per combat branch, Fortune endless ───────
+  // A capstone (plans/mastery-capstones.md) is three ranks, each a rule that
+  // turns something the game throws away into power. Its numbers live in
+  // `BALANCE.capstones`; each rank is one count of its behaviour.
   {
-    id: 'might-mastery', name: 'Might Mastery', icon: 'mighty-force', text: 'Damage ×1.03 per level, without end.',
-    branch: 'might', type: 'mastery', ring: 7, angle: 4, links: ['might-damage-6'], maxLevel: Infinity, cost: 1_500_000, growth: 1.2,
-    effects: [{ kind: 'stat', mod: { key: 'damage', mult: 1.03 } }],
+    id: 'might-mastery', name: 'Might Mastery', icon: 'mighty-force', text: 'Overkill that lands nowhere is banked for the next hit.',
+    branch: 'might', type: 'mastery', ring: 7, angle: 4, links: ['might-damage-6'], maxLevel: 3, cost: 1_500_000, growth: 10,
+    effects: [{ kind: 'behaviour', id: 'might-capstone' }],
+    ranks: [
+      'Overkill that finds no enemy is banked: your next weapon hit adds it (at most twice your last hit).',
+      'Overkill chains: a leaping excess may leap again, three leaps in all.',
+      'A banked hit that kills runs Executioner on every enemy near it. Without Executioner, the bank holds twice as much.',
+    ],
   },
   {
-    id: 'arsenal-mastery', name: 'Arsenal Mastery', icon: 'quiver', text: 'Attack speed ×1.03 per level, without end.',
-    branch: 'arsenal', type: 'mastery', ring: 7, angle: 90, links: ['weapon-slot-4'], maxLevel: Infinity, cost: 1_500_000, growth: 1.2,
-    effects: [{ kind: 'stat', mod: { key: 'attackSpeed', mult: 1.03 } }],
+    id: 'arsenal-mastery', name: 'Arsenal Mastery', icon: 'quiver', text: 'Windfall gives way to Overlevels for your maxed weapons.',
+    branch: 'arsenal', type: 'mastery', ring: 7, angle: 90, links: ['weapon-slot-4'], maxLevel: 3, cost: 1_500_000, growth: 10,
+    effects: [{ kind: 'behaviour', id: 'arsenal-capstone' }],
+    ranks: [
+      'Windfall becomes Overlevel: +25% damage to a weapon at level 5 or evolved. It stacks.',
+      'Each Overlevel also adds a bolt, blade or drone to its weapon, or +10% area to one without a count.',
+      'A weapon evolves with its partner passive at level 3.',
+    ],
   },
   {
-    id: 'engineering-mastery', name: 'Engineering Mastery', icon: 'clockwork', text: 'Ultimate charge ×1.03 per level, without end.',
-    branch: 'engineering', type: 'mastery', ring: 7, angle: 150, links: ['ult-charge-4'], maxLevel: Infinity, cost: 1_500_000, growth: 1.2,
-    effects: [{ kind: 'stat', mod: { key: 'ultCharge', mult: 1.03 } }],
+    id: 'engineering-mastery', name: 'Engineering Mastery', icon: 'clockwork', text: 'Your ultimate echoes, and its charge is never wasted.',
+    branch: 'engineering', type: 'mastery', ring: 7, angle: 150, links: ['ult-charge-4'], maxLevel: 3, cost: 1_500_000, growth: 10,
+    effects: [{ kind: 'behaviour', id: 'engineering-capstone' }],
+    ranks: [
+      'Your ultimate echoes 3 s later at 40% strength, for no charge.',
+      'Kills during your ultimate or its echo refund 25% of their charge.',
+      'Charge gained while full is banked, up to +50%, and added after your next cast.',
+    ],
   },
   {
-    id: 'fortune-mastery', name: 'Fortune Mastery', icon: 'gold-mine', text: 'Shards ×1.03 per level, without end.',
+    id: 'fortune-mastery', name: 'Fortune Mastery', icon: 'gold-mine', text: 'Shards +3% per level, without end.',
     branch: 'fortune', type: 'mastery', ring: 7, angle: 210, links: ['fortune-shards-6'], maxLevel: Infinity, cost: 1_500_000, growth: 1.2,
-    effects: [{ kind: 'stat', mod: { key: 'shardGain', mult: 1.03 } }],
+    // Added to the other shard percentages, never compounded: the pay never compounds with what earns it.
+    effects: [{ kind: 'stat', mod: { key: 'shardGain', pct: 0.03 } }],
   },
   {
-    id: 'bulwark-mastery', name: 'Bulwark Mastery', icon: 'magic-shield', text: 'Max HP ×1.03 per level, without end.',
-    branch: 'bulwark', type: 'mastery', ring: 7, angle: 294, links: ['bulwark-hp-6'], maxLevel: Infinity, cost: 1_500_000, growth: 1.2,
-    effects: [{ kind: 'stat', mod: { key: 'maxHp', mult: 1.03 } }],
+    id: 'bulwark-mastery', name: 'Bulwark Mastery', icon: 'magic-shield', text: 'Healing at full HP becomes a shield.',
+    branch: 'bulwark', type: 'mastery', ring: 7, angle: 294, links: ['bulwark-hp-6'], maxLevel: 3, cost: 1_500_000, growth: 10,
+    effects: [{ kind: 'behaviour', id: 'bulwark-capstone' }],
+    ranks: [
+      'Healing at full HP becomes a shield, up to 30% of Max HP, that fades 5% a second.',
+      'A full shield bursts: its value as damage to every enemy in range.',
+      'Second Wind recharges every 10 waves (every 3 floors in the Abyss).',
+    ],
   },
 ];
 

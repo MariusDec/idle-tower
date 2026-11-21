@@ -25,6 +25,11 @@ import { Web, type NodeState, type WebGoal } from './web';
  */
 export type { NodeState };
 
+/** A mastery with a last level (plans/mastery-capstones.md): ranks that change rules, not an endless sink. */
+export function isCapstone(node: ForgeNodeDef): boolean {
+  return node.type === 'mastery' && node.maxLevel !== Infinity;
+}
+
 /** True while a node waits for its boss's first fall (§5.1), or a mastery for its star (§9). */
 export function isSealed(profile: Profile, node: ForgeNodeDef): boolean {
   if (node.type === 'mastery' && !starGifts(profile).masteries.includes(node.branch)) return true;

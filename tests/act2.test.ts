@@ -27,6 +27,7 @@ import { recipeBook } from '../src/meta/recipes';
 import { bankRun } from '../src/meta/results';
 import { STAR_WEB, starGifts } from '../src/meta/stars';
 import { bossPhases, pactLoad } from '../src/sim/pacts';
+import { resolveStats } from '../src/sim/stats';
 import { damageEnemy, tickProjectiles, tickRunes, tickWeapons } from '../src/sim/systems/combat';
 import { draftChoices, evolutionCards } from '../src/sim/systems/draft';
 import { tickEnemies } from '../src/sim/systems/enemies';
@@ -291,20 +292,38 @@ describe('the Constellations (§9)', () => {
     expect(buildRunConfig(p).weaponSlots).toBe(weapons + 1);
   });
 
-  it('a mastery waits for its star, then costs ×1.2 a level and compounds without end, as one contribution', () => {
+  it('a capstone waits for its star, then has three ranks at ×10 a rank, each one count of its rule (plans/mastery-capstones.md)', () => {
     const p = act2Profile();
     const node = FORGE_BY_ID['might-mastery'];
     expect(isSealed(p, node)).toBe(true);
     p.stars = { 'crown-might': 1 };
     expect(isSealed(p, node)).toBe(false);
-    expect(nodeCost(node, 10) / nodeCost(node, 9)).toBeCloseTo(1.2, 2);
+    expect(node.maxLevel).toBe(3);
+    expect([0, 1, 2].map((n) => nodeCost(node, n))).toEqual([1_500_000, 15_000_000, 150_000_000]);
     expect(FORGE_WEB.canRefund(p, 'might-mastery')).toBe(false);
     p.forge['might-damage-6'] = 1;
     p.shards = 1e12;
-    expect(buyNode(p, 'might-mastery')).toBe(true);
-    p.forge['might-mastery'] = 200;
-    const damage = buildRunConfig(p).mods.filter((m) => m.key === 'damage' && m.mult && Math.abs(m.mult / Math.pow(1.03, 200) - 1) < 1e-9);
-    expect(damage).toHaveLength(1);
+    for (let i = 0; i < 3; i++) expect(buyNode(p, 'might-mastery')).toBe(true);
+    // Never tempered: a capstone ends at its last rank.
+    expect(buyNode(p, 'might-mastery')).toBe(false);
+    const config = buildRunConfig(p);
+    expect(config.behaviours['might-capstone']).toBe(3);
+    expect(node.effects.every((e) => e.kind === 'behaviour')).toBe(true);
+  });
+
+  it('Fortune Mastery stays endless, ×1.2 a level, and adds shards rather than compounding them (D-1)', () => {
+    const p = act2Profile();
+    const node = FORGE_BY_ID['fortune-mastery'];
+    expect(node.maxLevel).toBe(Infinity);
+    expect(nodeCost(node, 10) / nodeCost(node, 9)).toBeCloseTo(1.2, 2);
+    p.stars = { 'crown-might': 1, 'crown-fortune': 1 };
+    const without = resolveStats(buildRunConfig(p).mods).shardMult;
+    p.forge['fortune-mastery'] = 20;
+    const config = buildRunConfig(p);
+    expect(config.mods.filter((m) => m.key === 'shardGain' && m.pct !== undefined && Math.abs(m.pct - 0.6) < 1e-9)).toHaveLength(1);
+    // +60% beside the other shard percentages (none here), not ×1.03^20 = ×1.81.
+    const others = config.mods.filter((m) => m.key === 'shardGain' && m.bucket !== 'run').reduce((s, m) => s + (m.pct ?? 0), 0) - 0.6;
+    expect(resolveStats(config.mods).shardMult / without).toBeCloseTo((1 + others + 0.6) / (1 + others), 9);
   });
 
   it('the Lantern lights the Abyss relic sets', () => {

@@ -181,7 +181,7 @@ export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayRe
         const key = cardKey(c);
         if (seen.has(key)) continue;
         seen.add(key);
-        if (c.kind !== 'fallback') fresh.push(key);
+        if (c.kind !== 'fallback' && c.kind !== 'overlevel') fresh.push(key);
       }
       newCards.push(...fresh);
       o.onDraft?.(fresh, first, wall);
@@ -221,7 +221,7 @@ export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayRe
     for (const ev of run.events) {
       o.onEvent?.(ev, wall);
       // A card taken unseen (U2's take-all) is seen now: it is on the tower.
-      if (ev.kind === 'picked' && ev.card.kind !== 'fallback' && !seen.has(cardKey(ev.card))) {
+      if (ev.kind === 'picked' && ev.card.kind !== 'fallback' && ev.card.kind !== 'overlevel' && !seen.has(cardKey(ev.card))) {
         seen.add(cardKey(ev.card));
         newCards.push(cardKey(ev.card));
         o.onDraft?.([cardKey(ev.card)], false, wall);

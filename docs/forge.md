@@ -35,9 +35,22 @@ A fresh Forge shows three nodes (§7.1). Node types:
   (ring 4, 2 levels, the Prism) for N1's charges, and the **Foreman**
   (Engineering ring 4, off Tactician II, the Bog Mother) for N7's
   wishlist ([idle.md](idle.md));
-- **mastery** (5, Act 2): unlimited levels at ×1.03 each, compounding,
-  ×1.2 the cost a level: the idle-forever sink (§9; S1: the Abyss is
-  exponential, so its sink is too).
+- **mastery** (5, Act 2, ring 7), each sealed by its Crown star
+  (plans/mastery-capstones.md). Might, Bulwark, Arsenal and Engineering are
+  **capstones**: three ranks at ×10 the cost a rank (1.5M, 15M, 150M), each
+  rank a rule (one count of its `*-capstone` behaviour, `BALANCE.capstones`)
+  that turns something the game throws away into power. Might banks overkill
+  that lands nowhere, chains Overkill's leap, and lets a banked kill
+  execute around it; Bulwark turns overflow healing into a shield that
+  bursts when full and recharges Second Wind; Arsenal swaps Windfall for
+  Overlevel cards, adds counts to them and evolves at passive level 3;
+  Engineering echoes the ultimate, refunds charge during it and banks charge
+  past full ([combat.md](combat.md), [draft.md](draft.md)). The Forge's
+  detail shows "Rank n of 3" and the next rank's rule (`ranks` on the node).
+  **Fortune Mastery** alone stays endless: shards +3% a level, added to the
+  other shard percentages, never compounded (the pay never compounds with
+  what earns it), ×1.2 the cost a level. Tempering is the endless numeric
+  sink for the rest.
 
 Rings 1–2 are open from the start; ring 3 is sealed until the Gatekeeper
 falls (a few nodes until the Bog Mother), rings 4–6 by the Prism,

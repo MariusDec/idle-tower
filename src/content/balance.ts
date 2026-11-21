@@ -85,6 +85,37 @@ export const BALANCE = {
      */
     temper: { cost: 2, share: 0.2 },
   },
+  /**
+   * The mastery capstones (plans/mastery-capstones.md): each rank a rule that
+   * turns what the game throws away into power. Placeholders for the pacing pass.
+   */
+  capstones: {
+    /** Might 1: the bank holds at most this many times the tower's last weapon hit. */
+    bankCap: 2,
+    /** Might 2: leaps an overkill may make in all. */
+    chainLeaps: 3,
+    /** Might 3, without Executioner: the bank's cap multiplies by this. */
+    bankCapNoExecute: 2,
+    /** Bulwark 1: the shield's cap, a fraction of Max HP, and the share of itself it loses a second. */
+    shieldCap: 0.3,
+    shieldDecay: 0.05,
+    /** Bulwark 3: Second Wind recharges every this many waves, or Abyss floors. */
+    windWaves: 10,
+    windFloors: 3,
+    /** Arsenal 1: damage each Overlevel adds to its weapon. */
+    overlevelDamage: 0.25,
+    /** Arsenal 2: area each Overlevel adds to a weapon without a count. */
+    overlevelArea: 0.1,
+    /** Arsenal 3: the partner passive's level an evolution needs. */
+    passiveAt: 3,
+    /** Engineering 1: the echo's delay, and its share of the cast's strength (Aegis and the lasting ones: of its time). */
+    echoDelay: 3,
+    echoShare: 0.4,
+    /** Engineering 2: the share of a kill's charge refunded during an ultimate. */
+    refund: 0.25,
+    /** Engineering 3: charge banked while full, at most this share of a charge. */
+    chargeBank: 0.5,
+  },
   /** Numbers behind the Forge's behaviour notables (§11.4). */
   behaviours: {
     /** Opening Salvo: levels the starting weapon begins above 1. */

@@ -9,7 +9,7 @@ import { FORGE } from '../content/forge';
 import { FRAMES } from '../content/frames';
 import type { BranchId, ForgeNodeDef } from '../content/types';
 import { bossDown, frameUnlocked } from './collection';
-import { FORGE_WEB, levelOf } from './forge';
+import { FORGE_WEB, isCapstone, levelOf } from './forge';
 import type { Profile } from './profile';
 import { payStarlight, starsLit } from './stars';
 
@@ -40,9 +40,9 @@ export function formsReached(profile: Profile): number {
   return FRAMES.filter((f) => (profile.forms[f.id]?.count ?? 0) > 0).length;
 }
 
-/** Mastery levels owned in all (§9). */
-function masteryLevels(profile: Profile): number {
-  return FORGE_WEB.ownedNodes(profile).filter((o) => o.node.type === 'mastery').reduce((s, o) => s + o.level, 0);
+/** Capstone ranks owned in all (plans/mastery-capstones.md): masteries with a last level, so not Fortune. */
+export function capstoneRanks(profile: Profile): number {
+  return FORGE_WEB.ownedNodes(profile).filter((o) => isCapstone(o.node)).reduce((s, o) => s + o.level, 0);
 }
 
 /**
@@ -100,8 +100,8 @@ export function featMet(profile: Profile, goal: FeatGoal, run: RunState | null):
       return profile.abyss.best >= goal.floor;
     case 'stars':
       return starsLit(profile) >= goal.n;
-    case 'mastery':
-      return masteryLevels(profile) >= goal.levels;
+    case 'capstones':
+      return capstoneRanks(profile) >= goal.ranks;
     case 'riftOpened':
       return RIFTS.some((r) => r.rarity === goal.rarity && (profile.rifts[r.id]?.seen ?? 0) > 0);
     case 'riftsTaken':
@@ -157,8 +157,8 @@ export function featProgress(profile: Profile, feat: FeatDef): number {
       return Math.min(1, profile.abyss.best / g.floor);
     case 'stars':
       return Math.min(1, starsLit(profile) / g.n);
-    case 'mastery':
-      return Math.min(1, masteryLevels(profile) / g.levels);
+    case 'capstones':
+      return Math.min(1, capstoneRanks(profile) / g.ranks);
     case 'recipes':
       return Math.min(1, profile.recipes.found.length / g.n);
     case 'frames':

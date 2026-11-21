@@ -189,7 +189,7 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
   {
     id: 'stars', view: 'stars', title: 'The Constellations',
     lines: [
-      'A second web, paid in Starlight. Its stars bring new weapons and fusions, frames, relic sets and an extra slot, and endless Forge masteries.',
+      'A second web, paid in Starlight. Its stars bring new weapons and fusions, frames, relic sets and an extra slot, and the Forge’s masteries.',
       'Starlight comes from beating regions at a new heat record, new Abyss depths, Boss Rush records and Act 2’s feats. Nothing here refunds.',
     ],
   },

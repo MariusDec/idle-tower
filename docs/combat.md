@@ -80,6 +80,33 @@ frozen, slowed, burning) and behaviours from the Forge and relics
 
 `tower.ts#hurtTower` is the single way the tower takes damage: contact
 hits, Spitter shots, Shardling shards, Bomber blasts and boss shockwaves.
+`tower.ts#healTower` is the single way it heals: regen, Mend, the relics',
+sets' and evolutions' mending.
+
+## Mastery capstones (plans/mastery-capstones.md)
+
+Each rank is a count of its behaviour; `RunState.capstones` holds what they
+carry, all zero on a run without a rank. Numbers in `BALANCE.capstones`.
+
+- **Might** (`combat.ts`). Rank 1: overkill that doesn't leap (no Overkill
+  notable, no body in reach, or the chain spent) is **banked**, up to twice
+  the last weapon hit; the next weapon hit (a pattern's own source) adds it
+  all. Rank 2: an Overkill carry may leap again, three leaps in all
+  (`leapDepth`). Rank 3: a banked hit that kills runs Executioner's check on
+  every body within Overkill's reach (not bosses, plates, Choruses or
+  shells); without Executioner, the bank's cap doubles instead.
+- **Bulwark** (`tower.ts`). Rank 1: healing past Max HP becomes a **shield**,
+  up to 30% of Max HP, losing 5% of itself a second; a hit strikes it before
+  the wall (Thorns still answer the whole blow). Rank 2: a shield that fills
+  **bursts** for its value on every body in range, ranged or not (`burst`,
+  tallied as "Shield bursts"), and empties. Rank 3: every ten waves (every
+  three Abyss floors) Second Wind comes back to its owned count.
+- **Engineering** (`ultimate.ts`). Rank 1: each cast **echoes** 3 s later
+  at 40% strength for no charge (Aegis and the lasting ultimates: 40% of
+  their time, added to what's left). Rank 2: a kill while the ultimate or
+  its echo is going off refunds 25% of its charge; mid-cast the charge still
+  stands full, so the refund lands after. Rank 3: charge gained while full
+  is banked, up to half a charge, and added after the next cast.
 
 ## Kills
 
@@ -93,7 +120,10 @@ effect (Cinders, Echoes), Maws feeding nearby, and Gravekeeper's siphon.
 Weapons whose count scales have hard caps in `BALANCE.caps`: bolts 6,
 blades 8, drones 8, crescents 6, runes 8, tethers 6, slugs 4. Anything
 past a cap converts into damage, so a late build keeps its frame rate and
-its strength.
+its strength. An **Overlevel** (Arsenal Mastery, [draft.md](draft.md)) is
++25% damage to its weapon; from rank 2 each also adds one to its count
+(past the cap, damage, as above), a leap to a chain, or +10% area to a
+pattern with no count.
 
 ## Evolutions
 

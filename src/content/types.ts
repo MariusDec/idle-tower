@@ -64,6 +64,11 @@ export type CardItemId = WeaponId | PassiveId;
  */
 export type BehaviourId =
   | 'opening-salvo'
+  // Mastery capstones (plans/mastery-capstones.md): the count is the rank, 0–3.
+  | 'might-capstone'
+  | 'bulwark-capstone'
+  | 'arsenal-capstone'
+  | 'engineering-capstone'
   | 'head-start'
   | 'overkill'
   | 'executioner'
@@ -215,13 +220,15 @@ export interface WebNodeDef<B extends string = string> extends ContentEntry {
   readonly angle: number;
   /** Nodes it hangs from, toward the root. Empty: it hangs from the root. */
   readonly links: readonly string[];
-  /** Levels it may be bought to; Infinity for a mastery. */
+  /** Levels it may be bought to; Infinity for Fortune's mastery, 3 for a capstone. */
   readonly maxLevel: number;
   /** Level 1's price; each further level costs `growth` (or the web's default) more. */
   readonly cost: number;
   /** Cost growth per level, when not the web's default (a mastery's ×1.2, §9; a two-level late minor's ×3, S1). */
   readonly growth?: number;
   readonly effects: readonly Effect[];
+  /** A capstone's rules, one a rank (plans/mastery-capstones.md): the Forge shows the next. */
+  readonly ranks?: readonly string[];
   /**
    * Sealed until this boss first falls (§5.1): "Sealed — defeat the
    * Gatekeeper". A sealed node shows, but cannot be bought.
@@ -1004,8 +1011,8 @@ export type FeatGoal =
   | { readonly kind: 'abyss'; readonly floor: number }
   /** Own n Constellation nodes. */
   | { readonly kind: 'stars'; readonly n: number }
-  /** Own n mastery levels in all. */
-  | { readonly kind: 'mastery'; readonly levels: number };
+  /** Own n capstone ranks in all (Fortune's levels don't count). */
+  | { readonly kind: 'capstones'; readonly ranks: number };
 
 /** A feat (§5.4): one finite list, each paying shards once. */
 export interface FeatDef extends ContentEntry {

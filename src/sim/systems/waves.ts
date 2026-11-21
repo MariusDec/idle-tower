@@ -14,6 +14,7 @@ import { pactLoad, ruleSurge, scaleMod } from '../pacts';
 import { arriveBoss } from './boss';
 import { floorGates, gateAngle, invert, inverts, ruleLoad } from '../strata';
 import { refreshStats } from './draft';
+import { healTower } from './tower';
 
 /**
  * Waves (§4.2): pre-rolled from the region template at wave start, placed on
@@ -135,7 +136,7 @@ export function clearFloor(run: RunState, floor: number): void {
   const pearl = run.behaviours['floor-heal'] ?? 0;
   if (pearl > 0) {
     const R = BALANCE.relics.floorHeal;
-    run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * R[Math.min(pearl, R.length) - 1]);
+    healTower(run, run.stats.maxHp * R[Math.min(pearl, R.length) - 1]);
   }
 }
 

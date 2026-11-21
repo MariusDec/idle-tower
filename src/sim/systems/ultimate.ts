@@ -7,6 +7,7 @@ import { BOSS_BY_ID } from '../../content/bosses';
 import { phasesOf, staggerBoss } from './boss';
 import { damageEnemy, knockBack, targetable } from './combat';
 import { runRegion, runWave, waveHp } from './waves';
+import { healTower } from './tower';
 
 /**
  * The frame's ultimate (§4.4): charged by kills (see `kill`), fired on the
@@ -15,12 +16,46 @@ import { runRegion, runWave, waveHp } from './waves';
 export function castUltimate(run: RunState): boolean {
   const u = run.ult;
   if (u.charge < 1) return false;
+  const c = run.capstones;
+  // Engineering Mastery (plans/mastery-capstones.md): kills while it goes off refund (rank 2).
+  c.casting = true;
+  unleash(run, false);
+  c.casting = false;
+  u.charge = 0;
+  u.casts++;
+  u.need *= BALANCE.ultimate.growth;
+  // Hollow Crown (§11.5): each cast mends the tower.
+  const crown = run.behaviours['ult-heal'] ?? 0;
+  if (crown > 0) {
+    const R = BALANCE.relics.ultHeal;
+    healTower(run, run.stats.maxHp * R[Math.min(crown, R.length) - 1]);
+  }
+  const rank = run.behaviours['engineering-capstone'] ?? 0;
+  if (rank > 0) {
+    // Rank 1: an echo, for no charge. Ranks 2–3: what the full charge couldn't hold comes back now.
+    c.echoAt = run.time + BALANCE.capstones.echoDelay;
+    const carry = c.chargeBank + c.refund;
+    c.chargeBank = 0;
+    c.refund = 0;
+    if (carry > 0) addUltCharge(run, carry);
+  }
+  return true;
+}
+
+/**
+ * The ultimate going off: the cast, or (`echo`) Engineering Mastery's echo
+ * at `echoShare` of its strength. Aegis and the lasting ones echo shorter,
+ * not weaker: their time is the share.
+ */
+function unleash(run: RunState, echo: boolean): void {
+  const u = run.ult;
   const frame = frameById(run.frameId);
   const ult = frame.ultimate;
+  const share = echo ? BALANCE.capstones.echoShare : 1;
   switch (ult.id) {
     case 'nova': {
       const level = run.weapons.find((w) => w.id === frame.startingWeapon)?.level ?? 1;
-      const damage = weaponParams(frame.startingWeapon, level).damage * ult.damage * run.stats.damageMult;
+      const damage = weaponParams(frame.startingWeapon, level).damage * ult.damage * run.stats.damageMult * share;
       const r2 = run.stats.range * run.stats.range;
       // A Nova into a boss's wind-up staggers it (§4.3).
       staggerBoss(run);
@@ -29,24 +64,30 @@ export function castUltimate(run: RunState): boolean {
       for (let i = 0; i < n; i++) {
         const e = run.enemies[i];
         if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
-        damageEnemy(run, e, floored(e, damage, ult.floor), false, 'nova');
+        damageEnemy(run, e, floored(e, damage, ult.floor * share), false, 'nova');
         if (e.alive && !e.boss) knockBack(e, ult.knockback);
       }
       run.events.push({ kind: 'nova', radius: run.stats.range });
       break;
     }
     case 'aegis':
-      run.tower.invulnUntil = run.time + ult.seconds;
-      run.events.push({ kind: 'aegis', seconds: ult.seconds });
+      if (echo) run.tower.invulnUntil = Math.max(run.tower.invulnUntil, run.time) + ult.seconds * share;
+      else run.tower.invulnUntil = run.time + ult.seconds;
+      run.events.push({ kind: 'aegis', seconds: ult.seconds * share });
       break;
     case 'tempest':
     case 'overclock':
     case 'daybreak':
       // Lasting: `tickUltimate` strikes (Tempest) and slows (Daybreak); the
       // weapons read Overclock, `damageTaken` Daybreak's vulnerability.
-      u.until = run.time + ult.seconds;
-      u.timer = 0;
-      run.events.push({ kind: 'ultStart', seconds: ult.seconds });
+      // An echo adds its share of the time to what is left.
+      if (echo && u.until > run.time) {
+        u.until += ult.seconds * share;
+      } else {
+        u.until = run.time + ult.seconds * share;
+        u.timer = 0;
+      }
+      run.events.push({ kind: 'ultStart', seconds: ult.seconds * share });
       break;
     case 'eclipse': {
       // A share of what each body has left (§9): a boss loses less. A pool
@@ -62,7 +103,7 @@ export function castUltimate(run: RunState): boolean {
           if (groups.has(e.group)) continue;
           groups.add(e.group);
         }
-        damageEnemy(run, e, e.hp * (e.boss ? ult.bossFraction : ult.fraction), false, 'eclipse');
+        damageEnemy(run, e, e.hp * (e.boss ? ult.bossFraction : ult.fraction) * share, false, 'eclipse');
       }
       run.events.push({ kind: 'eclipse', radius: run.stats.range });
       break;
@@ -72,16 +113,49 @@ export function castUltimate(run: RunState): boolean {
       return exhaustive;
     }
   }
-  u.charge = 0;
-  u.casts++;
-  u.need *= BALANCE.ultimate.growth;
-  // Hollow Crown (§11.5): each cast mends the tower.
-  const crown = run.behaviours['ult-heal'] ?? 0;
-  if (crown > 0) {
-    const R = BALANCE.relics.ultHeal;
-    run.tower.hp = Math.min(run.stats.maxHp, run.tower.hp + run.stats.maxHp * R[Math.min(crown, R.length) - 1]);
+}
+
+/** Engineering rank 1: the echo goes off when its time comes. Its kills refund like the cast's (rank 2). */
+function tickEcho(run: RunState): void {
+  const c = run.capstones;
+  if (c.echoAt < 0 || run.time < c.echoAt) return;
+  c.echoAt = -1;
+  c.casting = true;
+  unleash(run, true);
+  c.casting = false;
+  const carry = c.refund;
+  c.refund = 0;
+  if (carry > 0) addUltCharge(run, carry);
+}
+
+/**
+ * Charge into the ultimate, as a share of a full one. Past full it is lost,
+ * or at Engineering rank 3 banked, up to `chargeBank`, for after the next cast.
+ */
+export function addUltCharge(run: RunState, gain: number): void {
+  const u = run.ult;
+  const room = 1 - u.charge;
+  if (gain < room) {
+    u.charge += gain;
+    return;
   }
-  return true;
+  const was = u.charge;
+  u.charge = 1;
+  if (was < 1) run.events.push({ kind: 'ultReady' });
+  if ((run.behaviours['engineering-capstone'] ?? 0) >= 3) {
+    const c = run.capstones;
+    c.chargeBank = Math.min(BALANCE.capstones.chargeBank, c.chargeBank + gain - room);
+  }
+}
+
+/**
+ * True while the ultimate (or its echo) is going off, for Engineering's
+ * refund (rank 2): a cast's own hits, a lasting one's time, Aegis's guard.
+ */
+export function ultGoing(run: RunState, source: string): boolean {
+  if (run.capstones.casting || source === 'nova' || source === 'tempest' || source === 'eclipse') return true;
+  if (run.ult.until > run.time) return true;
+  return frameById(run.frameId).ultimate.id === 'aegis' && run.tower.invulnUntil > run.time;
 }
 
 /**
@@ -90,6 +164,7 @@ export function castUltimate(run: RunState): boolean {
  */
 export function tickUltimate(run: RunState, dt: number): void {
   const u = run.ult;
+  if (run.capstones.echoAt >= 0) tickEcho(run);
   if (u.until <= run.time) return;
   const frame = frameById(run.frameId);
   const ult = frame.ultimate;

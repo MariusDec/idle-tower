@@ -50,7 +50,7 @@ function dealtRows(s: RunSummary): TallyRow[] {
     const id = by as DamageBy;
     const weapon = WEAPON_BY_ID[id as WeaponId];
     if (weapon) return { label: weapon.name, icon: weapon.icon, value: value ?? 0 };
-    const label = id === 'ult' ? frameById(s.frameId).ultimate.name : id === 'thorns' ? 'Thorns' : id === 'burn' ? 'Burns' : 'Other';
+    const label = id === 'ult' ? frameById(s.frameId).ultimate.name : id === 'thorns' ? 'Thorns' : id === 'burn' ? 'Burns' : id === 'burst' ? 'Shield bursts' : 'Other';
     return { label, value: value ?? 0 };
   });
 }

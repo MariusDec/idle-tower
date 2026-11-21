@@ -28,7 +28,13 @@ and Gatekeeper's Seal start a run above level 1, each level a banked draft.
 
 `rollOffer` fills the hand: fusions first, then a uniform sample by
 partial Fisher–Yates on the `draft` stream, padded with **fallback** cards
-(heal 30%, a pinch of shards) when nothing else is left. The hand is
+(heal 30%, a pinch of shards) when nothing else is left. With Arsenal
+Mastery (plans/mastery-capstones.md), Windfall's place goes to an
+**Overlevel** card for each weapon at its last level or evolved, never two
+alike, shuffled on the `draft` stream; Mend stays, and Windfall stays for a
+tower with none. Banish's replacement follows the same order. The scorer
+values an Overlevel by the build's DPS. At its rank 3 the partner passive
+needs only level 3 for an evolution (`arms.ts#passiveAt`). The hand is
 `BALANCE.draft.choices` (3), plus Choice and Foresight and Jackpot, less
 Scarcity, clamped to 2–6. Past four cards the panel wraps into
 two rows of three.

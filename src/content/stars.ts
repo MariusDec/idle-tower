@@ -178,7 +178,7 @@ export const STARS: readonly StarNodeDef[] = [
 
   // ── The Crown: the Forge's masteries ──────────────────────────────────
   {
-    id: 'crown-might', name: 'Might Mastery', icon: 'mighty-force', text: 'The Forge’s Might branch gains its endless mastery.',
+    id: 'crown-might', name: 'Might Mastery', icon: 'mighty-force', text: 'The Forge’s Might branch gains its mastery capstone.',
     branch: 'crown', type: 'notable', ring: 1, angle: 216, links: [], maxLevel: 1, cost: 5,
     effects: [{ kind: 'mastery', branch: 'might' }],
   },
@@ -188,7 +188,7 @@ export const STARS: readonly StarNodeDef[] = [
     effects: [{ kind: 'stat', mod: { key: 'critDamage', add: 0.3 } }],
   },
   {
-    id: 'crown-bulwark', name: 'Bulwark Mastery', icon: 'magic-shield', text: 'The Forge’s Bulwark branch gains its endless mastery.',
+    id: 'crown-bulwark', name: 'Bulwark Mastery', icon: 'magic-shield', text: 'The Forge’s Bulwark branch gains its mastery capstone.',
     branch: 'crown', type: 'notable', ring: 2, angle: 204, links: ['crown-might'], maxLevel: 1, cost: 10,
     effects: [{ kind: 'mastery', branch: 'bulwark' }],
   },
@@ -203,12 +203,12 @@ export const STARS: readonly StarNodeDef[] = [
     effects: [{ kind: 'stat', mod: { key: 'critChance', add: 0.04 } }],
   },
   {
-    id: 'crown-arsenal', name: 'Arsenal Mastery', icon: 'quiver', text: 'The Forge’s Arsenal branch gains its endless mastery.',
+    id: 'crown-arsenal', name: 'Arsenal Mastery', icon: 'quiver', text: 'The Forge’s Arsenal branch gains its mastery capstone.',
     branch: 'crown', type: 'notable', ring: 3, angle: 204, links: ['crown-bulwark'], maxLevel: 1, cost: 18,
     effects: [{ kind: 'mastery', branch: 'arsenal' }],
   },
   {
-    id: 'crown-engineering', name: 'Engineering Mastery', icon: 'clockwork', text: 'The Forge’s Engineering branch gains its endless mastery.',
+    id: 'crown-engineering', name: 'Engineering Mastery', icon: 'clockwork', text: 'The Forge’s Engineering branch gains its mastery capstone.',
     branch: 'crown', type: 'notable', ring: 3, angle: 222, links: ['crown-fortune'], maxLevel: 1, cost: 18,
     effects: [{ kind: 'mastery', branch: 'engineering' }],
   },

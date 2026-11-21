@@ -1,7 +1,8 @@
+import { ABYSS_INDEX } from '../../content/abyss';
 import { BALANCE } from '../../content/balance';
 import { frameById } from '../../content/frames';
 import type { Enemy, HurtBy, RunState } from '../state';
-import { damageEnemy, wallRune } from './combat';
+import { damageEnemy, targetable, wallRune } from './combat';
 import { mitigate } from './damage';
 
 /**
@@ -30,6 +31,15 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
   let amount = mitigate(raw * hordeFury(run), run.stats.armor);
   // Rampart (§11.4): no contact hit takes more than a slice of the wall.
   if (source && run.behaviours.rampart) amount = Math.min(amount, run.stats.maxHp * BALANCE.behaviours.rampartCap);
+  // Thorns answer the blow, shield or not.
+  const struck = amount;
+  // Bulwark Mastery (plans/mastery-capstones.md): the shield takes the hit first.
+  const c = run.capstones;
+  if (c.shield > 0) {
+    const absorbed = Math.min(c.shield, amount);
+    c.shield -= absorbed;
+    amount -= absorbed;
+  }
   // Warding Salt (§11.5): what strikes the wall is slowed.
   const salt = run.behaviours.salt ?? 0;
   if (source && salt > 0 && !source.boss) {
@@ -50,7 +60,7 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
   const B = BALANCE.behaviours;
   const fortress = (run.behaviours.fortress ?? 0) > 0;
   if (source && (run.behaviours.thorns || fortress)) {
-    damageEnemy(run, source, amount * B.thorns * (fortress ? B.fortressThorns : 1), false, 'thorns');
+    damageEnemy(run, source, struck * B.thorns * (fortress ? B.fortressThorns : 1), false, 'thorns');
   }
   // Bulwark Runes (§9): what strikes the wall sets off a rune where it stands.
   if (source && source.alive) wallRune(run, source);
@@ -74,4 +84,64 @@ export function tickShots(run: RunState, dt: number): void {
     if (s.life > 0) run.shots[w++] = s;
   }
   run.shots.length = w;
+}
+
+/**
+ * Every heal on the tower comes through here. Bulwark Mastery
+ * (plans/mastery-capstones.md): what Max HP can't hold becomes a shield, up
+ * to its cap; at rank 2, a shield that fills bursts on everything in range.
+ */
+export function healTower(run: RunState, amount: number): void {
+  const t = run.tower;
+  const max = run.stats.maxHp;
+  const room = Math.max(0, max - t.hp);
+  t.hp = Math.min(max, t.hp + amount);
+  const rank = run.behaviours['bulwark-capstone'] ?? 0;
+  const over = amount - room;
+  if (rank === 0 || over <= 0) return;
+  const C = BALANCE.capstones;
+  const cap = max * C.shieldCap;
+  const c = run.capstones;
+  c.shield = Math.min(cap, c.shield + over);
+  if (rank >= 2 && c.shield >= cap) burstShield(run);
+}
+
+/** Bulwark rank 2: the full shield's worth to every enemy in range, at range too; then it empties. */
+function burstShield(run: RunState): void {
+  const c = run.capstones;
+  const damage = c.shield;
+  c.shield = 0;
+  const r2 = run.stats.range * run.stats.range;
+  // Only what was there when it went off, not what its kills burst into.
+  const n = run.enemies.length;
+  for (let i = 0; i < n; i++) {
+    const e = run.enemies[i];
+    if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
+    damageEnemy(run, e, damage, false, 'burst');
+  }
+  // Drawn as a Nova's ring: the same reach, the same shape of harm.
+  run.events.push({ kind: 'nova', radius: run.stats.range });
+}
+
+/**
+ * The capstones' clock on the wall, each step: the shield fades (Bulwark 1),
+ * and every ten waves, or three Abyss floors, Second Wind comes back (Bulwark 3).
+ */
+export function tickBulwark(run: RunState, dt: number): void {
+  const rank = run.behaviours['bulwark-capstone'] ?? 0;
+  if (rank === 0) return;
+  const c = run.capstones;
+  if (c.shield > 0) c.shield *= Math.pow(1 - BALANCE.capstones.shieldDecay, dt);
+  if (rank < 3) return;
+  const mark = windMark(run.regionId, run.wave, run.floors);
+  if (mark <= c.windMark) return;
+  c.windMark = mark;
+  const owned = run.behaviours['second-wind'] ?? 0;
+  if (owned > 0) run.revives = Math.max(run.revives, owned);
+}
+
+/** Which stretch of ten waves (or three Abyss floors) the run is in: Second Wind recharges on each new one. */
+export function windMark(regionId: number, wave: number, floors: number): number {
+  const C = BALANCE.capstones;
+  return regionId === ABYSS_INDEX ? Math.floor(floors / C.windFloors) : Math.floor(wave / C.windWaves);
 }

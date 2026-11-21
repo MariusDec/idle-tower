@@ -8,7 +8,7 @@ import { WEAPON_BY_ID } from '../content/weapons';
 import type { EnemyId, EvolutionId, PassiveId, WeaponId } from '../content/types';
 import type { Card, RunState, TowerStats, WeaponState } from './state';
 import { allMods, resolveStats, runMods } from './stats';
-import { armed, slotsUsed } from './systems/arms';
+import { armed, passiveAt, slotsUsed } from './systems/arms';
 import { landedShare } from './systems/damage';
 import { localWave, runRegion, runWave, waveDamage, waveHp } from './systems/waves';
 
@@ -316,9 +316,8 @@ function partnerLevel(run: RunState, id: WeaponId): number {
 }
 
 /** True when both halves of a recipe have reached their evolving levels. */
-function completes(weaponLevel: number, passiveLevel: number): boolean {
-  const E = BALANCE.evolutions;
-  return weaponLevel >= E.evolveAt && passiveLevel >= E.passiveAt;
+function completes(run: RunState, weaponLevel: number, passiveLevel: number): boolean {
+  return weaponLevel >= BALANCE.evolutions.evolveAt && passiveLevel >= passiveAt(run);
 }
 
 /** True when the profile has found this weapon's recipe, so the suggestion may steer for it. */
@@ -328,7 +327,7 @@ function knows(run: RunState, id: WeaponId): boolean {
 
 /** Each level of a carried weapon's known partner passive is a step toward its evolution. */
 function recipeBonus(run: RunState, passive: PassiveId, level: number): number {
-  const at = BALANCE.evolutions.passiveAt;
+  const at = passiveAt(run);
   for (const w of run.weapons) {
     if (w.evolved || w.anomaly || !knows(run, w.id) || EVOLUTION_OF[w.id].passive !== passive) continue;
     return RECIPE_VALUE * (readiness(level, at) - readiness(level - 1, at));
@@ -355,7 +354,7 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
       const owned = run.weapons.find((w) => w.id === card.id);
       const evo = EVOLUTION_OF[card.id];
       if (owned && !owned.evolved && !owned.anomaly && knows(run, card.id) && run.passives.some((p) => p.id === evo.passive)) {
-        out.push({ kind: 'recipe', evolution: evo.id, completes: completes(card.level, partnerLevel(run, card.id)) });
+        out.push({ kind: 'recipe', evolution: evo.id, completes: completes(run, card.level, partnerLevel(run, card.id)) });
       }
       if (!owned) {
         if (counterShare(run, card.id) > 0) out.push({ kind: 'counter' });
@@ -367,7 +366,7 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
       for (const w of run.weapons) {
         const evo = EVOLUTION_OF[w.id];
         if (w.evolved || w.anomaly || !knows(run, w.id) || evo.passive !== card.id) continue;
-        out.push({ kind: 'recipe', evolution: evo.id, completes: completes(w.level, card.level) });
+        out.push({ kind: 'recipe', evolution: evo.id, completes: completes(run, w.level, card.level) });
         break;
       }
       if (card.level === 1) out.push({ kind: 'slot', slot: run.passives.length + 1, of: run.passiveSlots });
@@ -381,6 +380,7 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
     case 'evolution':
     case 'fusion':
     case 'fallback':
+    case 'overlevel':
       return out;
     default: {
       const exhaustive: never = card;
@@ -464,6 +464,14 @@ export function scoreCard(run: RunState, card: Card): number {
         }
       }
     }
+    case 'overlevel': {
+      // Arsenal Mastery (plans/mastery-capstones.md): what the weapon's damage (and, from rank 2, its count) adds.
+      const counts = (run.behaviours['arsenal-capstone'] ?? 0) >= 2 ? 1 : 0;
+      const weapons = run.weapons.map((w) => (w.id === card.id
+        ? { ...w, overlevel: (w.overlevel ?? 0) + 1, overcount: (w.overcount ?? 0) + counts }
+        : w));
+      return buildDps(weapons, run.stats, foes) / before - 1;
+    }
     default: {
       const exhaustive: never = card;
       return exhaustive;
@@ -479,7 +487,7 @@ export function scoreCard(run: RunState, card: Card): number {
  */
 function rank(priority: readonly string[], card: Card): number {
   if (card.kind === 'evolution' || card.kind === 'fusion') return -1;
-  if (card.kind === 'fallback' || card.kind === 'anomaly') return Infinity;
+  if (card.kind === 'fallback' || card.kind === 'overlevel' || card.kind === 'anomaly') return Infinity;
   const i = priority.indexOf(card.id);
   return i < 0 ? Infinity : i;
 }

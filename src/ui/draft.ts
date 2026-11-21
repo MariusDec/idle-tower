@@ -83,6 +83,13 @@ function weaponLine(id: WeaponId, level: number, anomaly?: AnomalyId): string {
   return (anomaly ? ANOMALY_BY_ID[anomaly].steps?.[level - 2] : null) ?? def.steps[level - 2].text;
 }
 
+/** Arsenal Mastery's card (plans/mastery-capstones.md): a weapon lifted past its last level. */
+function overlevelEntry(id: WeaponId): ContentEntry {
+  const w = WEAPON_BY_ID[id];
+  const more = Math.round(BALANCE.capstones.overlevelDamage * 100);
+  return { id: `overlevel-${id}`, name: `Overlevel ${w.name}`, icon: w.icon, text: `+${more}% damage to ${w.name}.` };
+}
+
 /** The card's content entry and its one line for the level it leads to. */
 function describe(card: Card, anomaly?: AnomalyId): { entry: ContentEntry; line: string; kind: string } {
   switch (card.kind) {
@@ -100,6 +107,8 @@ function describe(card: Card, anomaly?: AnomalyId): { entry: ContentEntry; line:
       const def = FALLBACKS.find((f) => f.id === card.id)!;
       return { entry: def, line: def.text, kind: '' };
     }
+    case 'overlevel':
+      return { entry: overlevelEntry(card.id), line: overlevelEntry(card.id).text, kind: 'Overlevel' };
     default: {
       const exhaustive: never = card;
       return exhaustive;
@@ -132,6 +141,8 @@ function details(card: Card, anomaly?: AnomalyId): string[] {
     }
     case 'fallback':
       return [describe(card).line];
+    case 'overlevel':
+      return [describe(card).line, 'It stacks: take it again for more.', 'From Arsenal Mastery’s rank 2, each also adds a bolt, blade or drone (or area).'];
     default: {
       const exhaustive: never = card;
       return exhaustive;

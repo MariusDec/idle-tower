@@ -664,3 +664,47 @@ re-read):
 The Gatekeeper falls one check-in sooner on seeds 1 and 3, and seed 1's
 Act 1 lands on I8's 5.0 d floor. Final Form's hands-off reach is 0% in R5
 in both readings.
+
+## Mastery capstones (2026-11-21)
+
+`plans/mastery-capstones.md`. Might, Bulwark, Arsenal and Engineering
+Mastery are three-rank capstones (1.5M / 15M / 150M). Fortune is endless
+and additive (shards +3% a level).
+
+`npm run pacing -- --act2 --hours 12 --seeds 4`, before → after:
+
+| | before | after |
+|---|---|---|
+| heat 10 at the frontier | 112:40 FAIL | **84:09** FAIL (want 3–12 h) |
+| best Abyss floor at 12 h | 17 (17 17 14 16) PASS | **13** (13 13 13 12) PASS |
+| The Undertow first falls | 189:27 | 297:39 |
+| Starlight per hour | 56.6 | 55.5 |
+| the Abyss's share of Starlight | 14% | 13% |
+| growth at 12 h | 230–285 mastery levels | capstones 12/12 by hour 6, Fortune 37–40, tempered 398–422 |
+
+Heat 10 was already failing (74–93 h in the readings above). The capstones
+bring it nearer: Overlevels, the bank and the echo help at the frontier's
+bosses. **The Abyss is the regression.** Before, the bot kept stacking
+×1.03 damage, HP and attack speed, which compounds without end and carried
+floors 14 → 17 between hours 6 and 10. After, the capstones are full by
+hour 6, and Fortune plus tempering don't carry the Abyss past floor 13.
+Floor 13 is past the built strata, and the gate still passes (≥ 10), but it
+is short of the plan's "no worse than today". This is open for the owner:
+the levers are the tempering price (`BALANCE.forge.temper`), or a
+cheaper Fortune curve so more shards reach tempering.
+
+`npm run arsenal` (16 seeds), without → with all 12 capstone ranks:
+I4 PASS both (worst Frost Ring 34%, Region 4). Evolutions in Regions 4 /
+5 / 6 go from 3 / 6 / 8 to 4 / 8 / 13 (Arsenal rank 3's passive at level 3).
+No Overlevel was taken in 600 s runs, because the hand never runs dry that early.
+Without capstones the readings match R4's exactly, so the rank-0 path is
+unchanged.
+
+`npm run arsenal -- --keystones` (8 seeds): FAIL both, as in R4 (Fortress
+a trap). With capstones, Glass Cannon gains in four regions (two before),
+Fortress costs in two regions (three before), and Region 5's bare tower is
+much stronger (wave 16 → 22, shards 41k → 96k).
+
+`npm test`, `npm run typecheck`: green. `tests/capstones.test.ts` covers
+each rank, rank 0, the feats, and a snapshot round-trip with a bank, a
+shield and a charge bank held.
