@@ -59,52 +59,54 @@ function takenRows(s: RunSummary): TallyRow[] {
   return Object.entries(s.takenBy).map(([by, value]) => ({ label: TAKEN[by as HurtBy], value: value ?? 0 }));
 }
 
-function chip(entry: ContentEntry, kind: string): HTMLElement {
-  const el = document.createElement('li');
-  el.className = 'results-find';
-  el.setAttribute('aria-label', `New ${kind}: ${entry.name}`);
-  el.append(icon(entry.icon));
-  const name = document.createElement('span');
-  name.textContent = entry.name;
-  el.append(name);
-  return el;
-}
-
-/** Final Form's chip (plans/late-game/07): "Final Form · wave 17", tagged NEW on the frame's first, RECORD on an earlier wave. */
-function formFind(form: { wave: number; first: boolean; record: boolean }): HTMLElement {
-  const el = document.createElement('li');
-  el.className = 'results-find is-form';
-  const tag = form.first ? 'New' : form.record ? 'Record' : '';
-  if (tag) el.dataset.tag = tag;
-  el.setAttribute('aria-label', `Final Form at wave ${form.wave}${tag ? `, ${tag.toLowerCase()}` : ''}`);
-  el.append(icon('crown'));
-  const name = document.createElement('span');
-  name.textContent = `Final Form · wave ${form.wave}`;
-  el.append(name);
-  return el;
-}
+/** A gain's colour: gold for records and what opened up, arcane for relics, accent for finds, dim for a miss. */
+type GainTone = 'record' | 'unlock' | 'relic' | 'feat' | 'find' | 'miss';
 
 /**
- * The results screen (§4.6). One screen, no scrolling on mobile, no failure
- * language: the wave, the haul (tap for the breakdown), records with the old
- * value struck through, what was discovered, and one "Next:" line. Two
- * buttons, Forge and Run again; once auto-restart is owned, Run again fires
- * itself after a short countdown, which a pause button beside it holds. The build shows (U5), and behind a tap
- * the damage each weapon dealt and what wore the tower down; the countdown
- * waits while that is open.
+ * One row of "New this run": the icon, what it is, and on the right a short
+ * tag saying which kind of gain it is ("New relic", "Feat", "Record"). A
+ * `note` adds a second, dimmer line under the name.
  */
-/** What a met contract paid (plans/late-game/10 §2): "Contract done · ✦ 8 · 2.0M". */
-function contractLine(c: NonNullable<RunSummary['contract']>): string {
-  if (!c.pay) return `Contract not met: ${c.why ?? 'not yet'}`;
-  const star = c.pay.starlight > 0 ? ` · ✦ ${formatNumber(c.pay.starlight)}` : '';
-  return `Contract done${star} · ${formatNumber(c.pay.shards)} shards`;
+function gain(iconId: Parameters<typeof icon>[0], name: string, tag: string | Node, tone: GainTone, note = ''): HTMLLIElement {
+  const li = document.createElement('li');
+  li.className = `results-gain is-${tone}`;
+  li.append(icon(iconId));
+  const text = document.createElement('span');
+  text.className = 'results-gain-text';
+  const n = document.createElement('span');
+  n.className = 'results-gain-name';
+  n.textContent = name;
+  text.append(n);
+  if (note) {
+    const sub = document.createElement('span');
+    sub.className = 'results-gain-note';
+    sub.textContent = note;
+    text.append(sub);
+  }
+  li.append(text);
+  const t = document.createElement('span');
+  t.className = 'results-gain-tag';
+  if (tag !== '') t.append(tag);
+  li.append(t);
+  return li;
 }
 
-/** What became of a Trial (N5), in one line. */
-function trialLine(t: NonNullable<RunSummary['trial']>): string {
-  const name = TRIAL_BY_ID[t.id]?.name ?? t.id;
-  if (!t.won) return `Trial: ${name} · not yet`;
-  return t.paid ? `Trial won: ${name} · ${t.paid.line}` : `Trial won again: ${name}`;
+/** What a discovered card is called in its tag, from its `cardKey` kind. */
+const CARD_TAG: Readonly<Record<string, string>> = { weapon: 'New weapon', passive: 'New passive', anomaly: 'New anomaly' };
+
+/** A record's tag: the old value struck through, then the new one. */
+function recordTag(r: { old: number; now: number }, fmt: (n: number) => string): Node {
+  const frag = document.createDocumentFragment();
+  const old = document.createElement('s');
+  old.textContent = fmt(r.old);
+  frag.append(old, ` ${fmt(r.now)}`);
+  return frag;
+}
+
+/** What a met contract paid (plans/late-game/10 §2): "✦ 8 · 2.0M shards". */
+function contractPay(pay: NonNullable<NonNullable<RunSummary['contract']>['pay']>): string {
+  const star = pay.starlight > 0 ? `✦ ${formatNumber(pay.starlight)} · ` : '';
+  return `${star}${formatNumber(pay.shards)} shards`;
 }
 
 /**
@@ -124,6 +126,18 @@ export function plateauLine(s: Pick<RunSummary, 'wave' | 'plateau'>): string | n
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
+/**
+ * The results screen (§4.6). One screen, no failure language, read top to
+ * bottom: the wave, the boss, three stats (kills, time held, shards), then
+ * one list of everything new this run (records, rewards, relics, feats and
+ * discoveries), each row tagged with what it is. *Run details* opens a sheet
+ * with the rest: where the shards came from, the build (U5), the damage
+ * dealt and taken, and what happened along the way (rifts, reliquaries,
+ * anomalies); the countdown waits while it is open. Then one "Next upgrade"
+ * line, and two buttons, Forge and Run again; once auto-restart is owned,
+ * Run again fires itself after a short countdown, which a pause button
+ * beside it holds.
+ */
 export class ResultsScreen {
   private readonly root: HTMLElement;
   private readonly heroN: HTMLElement;
@@ -137,22 +151,15 @@ export class ResultsScreen {
   /** The hero number's count-up (plans/visual-identity.md §2.6), cancelled by a newer one. */
   private countUp = 0;
   private readonly bossLine: HTMLElement;
-  private readonly rewards: HTMLElement;
-  private readonly records: HTMLElement;
+  /** "New this run": records, rewards and discoveries, one tagged row each. */
+  private readonly gains: HTMLElement;
   private readonly kills: HTMLElement;
   private readonly time: HTMLElement;
-  private readonly shards: HTMLButtonElement;
+  private readonly shards: HTMLElement;
   private readonly shardsN: HTMLElement;
-  private readonly breakdown: HTMLElement;
-  private readonly storedLine: HTMLElement;
   /** The Daily Omen's block (plans/late-game/11 §2), in place of the shards. */
   private readonly omen: HTMLElement;
   private omenLine = '';
-  private readonly riftLine: HTMLElement;
-  private readonly reliquaryLine: HTMLElement;
-  /** "An anomaly came and went" (plans/late-game/04 §2): no timer, no cost, it can come again. */
-  private readonly anomalyLine: HTMLElement;
-  private readonly finds: HTMLElement;
   private readonly next: HTMLElement;
   private readonly nextIcon: HTMLElement;
   private readonly nextName: HTMLElement;
@@ -166,7 +173,6 @@ export class ResultsScreen {
   private readonly reportBtn: HTMLButtonElement;
   private readonly report: HTMLElement;
   private readonly reportBody: HTMLElement;
-  private readonly build: HTMLElement;
   /** Seconds left before auto-restart; null when it is off. */
   private countdown: number | null = null;
   /** The countdown held by the player, to read the results at leisure. */
@@ -191,15 +197,13 @@ export class ResultsScreen {
       <p class="results-headline"></p>
       <p class="results-plateau" hidden></p>
       <p class="results-boss" hidden></p>
-      <section class="results-section" hidden><h3 class="section-head">Rewards</h3><ul class="results-rewards"></ul></section>
-      <section class="results-section" hidden><h3 class="section-head">Records</h3><ul class="results-records"></ul></section>
       <div class="results-stats">
         <div><span class="results-stat-n results-kills"></span><span class="results-stat-l">Kills</span></div>
         <div><span class="results-stat-n results-time"></span><span class="results-stat-l">Held</span></div>
-        <button type="button" class="results-shards" aria-expanded="false">
+        <div class="results-shards">
           <span class="results-stat-n">${iconMarkup('io-diamond')}<span class="results-shards-n"></span></span>
           <span class="results-stat-l">Shards</span>
-        </button>
+        </div>
       </div>
       <div class="results-omen" hidden>
         <p class="results-omen-head"></p>
@@ -208,23 +212,17 @@ export class ResultsScreen {
         <p class="results-omen-note"></p>
         <button type="button" class="btn results-omen-copy">Copy result</button>
       </div>
-      <p class="results-stored" hidden></p>
-      <p class="results-rifts" hidden></p>
-      <p class="results-rifts results-reliquaries" hidden></p>
-      <p class="results-rifts results-anomaly" hidden></p>
-      <dl class="results-breakdown inset" hidden></dl>
-      <section class="results-section" hidden><h3 class="section-head">Discoveries</h3><ul class="results-finds"></ul></section>
-      <div class="results-build"></div>
-      <button type="button" class="btn results-report-btn" aria-expanded="false">How it went</button>
-      <div class="results-report" role="dialog" aria-label="How it went" hidden>
+      <section class="results-section" hidden><h3 class="section-head">New this run</h3><ul class="results-gains"></ul></section>
+      <button type="button" class="btn btn-tertiary results-report-btn" aria-expanded="false">Run details${iconMarkup('io-chevron-forward', { size: 18 })}</button>
+      <div class="results-report" role="dialog" aria-label="Run details" hidden>
         <div class="results-report-card">
-          <h2 class="modal-title">How it went</h2>
+          <h2 class="modal-title">Run details</h2>
           <div class="results-report-body"></div>
           <button type="button" class="btn btn-primary results-report-close">Close</button>
         </div>
       </div>
       <div class="results-next">
-        <span class="results-next-label">Next</span>
+        <span class="results-next-label">Next upgrade</span>
         <span class="results-next-icon"></span>
         <span class="results-next-name"></span>
         <div class="results-next-bar"><div class="results-next-fill"></div></div>
@@ -251,14 +249,11 @@ export class ResultsScreen {
     this.againFill = this.root.querySelector<SVGElement>('.results-again-fill')!;
     this.againLabel = q('.results-again-label');
     this.bossLine = q('.results-boss');
-    this.rewards = q('.results-rewards');
-    this.records = q('.results-records');
+    this.gains = q('.results-gains');
     this.kills = q('.results-kills');
     this.time = q('.results-time');
     this.shards = q('.results-shards');
     this.shardsN = q('.results-shards-n');
-    this.breakdown = q('.results-breakdown');
-    this.storedLine = q('.results-stored');
     this.omen = q('.results-omen');
     const copy = q<HTMLButtonElement>('.results-omen-copy');
     copy.addEventListener('click', () => {
@@ -267,10 +262,6 @@ export class ResultsScreen {
         window.setTimeout(() => { copy.textContent = 'Copy result'; }, 1600);
       });
     });
-    this.riftLine = q('.results-rifts');
-    this.reliquaryLine = q('.results-reliquaries');
-    this.anomalyLine = q('.results-anomaly');
-    this.finds = q('.results-finds');
     this.next = q('.results-next');
     this.nextIcon = q('.results-next-icon');
     this.nextName = q('.results-next-name');
@@ -282,17 +273,12 @@ export class ResultsScreen {
     this.reportBtn = q('.results-report-btn');
     this.report = q('.results-report');
     this.reportBody = q('.results-report-body');
-    this.build = q('.results-build');
     const setReport = (open: boolean): void => {
       this.report.hidden = !open;
       this.reportBtn.setAttribute('aria-expanded', String(open));
     };
     this.reportBtn.addEventListener('click', () => setReport(true));
     q('.results-report-close').addEventListener('click', () => setReport(false));
-    this.shards.addEventListener('click', () => {
-      this.breakdown.hidden = !this.breakdown.hidden;
-      this.shards.setAttribute('aria-expanded', String(!this.breakdown.hidden));
-    });
     q('.results-forge').addEventListener('click', () => {
       this.countdown = null;
       onForge();
@@ -354,149 +340,80 @@ export class ResultsScreen {
       this.bossLine.classList.toggle('is-first', b.first);
     }
 
-    // The rewards stack (§7.3): what opened up, relics found, feats earned.
-    const reward = (iconId: Parameters<typeof icon>[0], text: string, tone: string): HTMLElement => {
-      const li = document.createElement('li');
-      li.className = `results-reward is-${tone}`;
-      li.append(icon(iconId));
-      const t = document.createElement('span');
-      t.textContent = text;
-      li.append(t);
-      return li;
-    };
-    const starlight: HTMLElement[] = [];
-    if (s.heatRecord) {
-      starlight.push(reward('round-star', `Heat record ${s.heatRecord.now} · +${formatNumber(s.heatRecord.starlight)} Starlight`, 'unlock'));
-    }
-    if (s.floorRecord) {
-      starlight.push(reward('round-star', `Deepest floor ${s.floorRecord.now} · +${formatNumber(s.floorRecord.starlight)} Starlight`, 'unlock'));
-    }
+    // "New this run" (§7.3): records first, then what the run paid and opened up, then what it discovered.
+    const fmtOver = (n: number): string => `+${formatNumber(n)}`;
+    const records: HTMLElement[] = [];
+    if (s.records.wave) records.push(gain('trophy', 'Best wave', recordTag(s.records.wave, formatNumber), 'record'));
+    if (s.records.overtime) records.push(gain('trophy', 'Best overtime', recordTag(s.records.overtime, fmtOver), 'record'));
+    if (s.records.shards) records.push(gain('trophy', 'Most shards', recordTag(s.records.shards, formatNumber), 'record'));
+
+    const starlight = (n: number): string => `+${formatNumber(n)} ✦`;
+    const rewards: HTMLElement[] = [];
+    if (s.heatRecord) rewards.push(gain('round-star', `Heat record ${s.heatRecord.now}`, starlight(s.heatRecord.starlight), 'record'));
+    if (s.floorRecord) rewards.push(gain('round-star', `Deepest floor ${s.floorRecord.now}`, starlight(s.floorRecord.starlight), 'record'));
     // A stratum's guardian, felled for the first time (plans/late-game/08): its lump, and its waypoint.
     if (s.stratumRecord) {
       const names = s.stratumRecord.felled.map((id) => BOSS_BY_ID[id].name).join(', ');
-      starlight.push(reward('round-star', `${names} fell · +${formatNumber(s.stratumRecord.starlight)} Starlight`, 'unlock'));
-      starlight.push(reward('star-gate', 'A waypoint opens on the Map', 'unlock'));
+      rewards.push(gain('round-star', `${names} fell`, starlight(s.stratumRecord.starlight), 'unlock'));
+      rewards.push(gain('star-gate', 'A waypoint opens on the Map', 'Unlocked', 'unlock'));
     }
     if (s.rushRecord) {
       const now = s.rushRecord.now;
-      const what = now.time !== null ? `Boss Rush record ${formatDuration(now.time)}` : `Boss Rush record: ${now.stages} bosses`;
-      starlight.push(reward('round-star', `${what} · +${formatNumber(s.rushRecord.starlight)} Starlight`, 'unlock'));
+      const what = now.time !== null ? `Boss Rush in ${formatDuration(now.time)}` : `Boss Rush: ${now.stages} bosses`;
+      rewards.push(gain('round-star', what, starlight(s.rushRecord.starlight), 'record'));
     }
-    this.rewards.replaceChildren(
-      ...starlight,
-      // Overtime trophies (N4): a mark on the Map, a light on the tower, once.
-      ...s.trophies.map((t) => reward('star-medal', `Trophy · overtime +${t.overtime} · +${formatNumber(t.shards)} shards`, 'unlock')),
-      ...(s.foreman.length > 0 ? [reward('shop', `The Foreman bought ${foremanLine(s.foreman)}`, 'unlock')] : []),
-      // A Trial (N5): won, and what it paid the first time; or what still stands.
-      ...(s.trial ? [reward('checkered-flag', trialLine(s.trial), s.trial.paid ? 'unlock' : 'feat')] : []),
-      // A contract (plans/late-game/10 §2): what it paid, its rider and milestone, and the card in its place; or why not.
-      ...(s.contract ? [reward('wanted-reward', contractLine(s.contract), s.contract.pay ? 'unlock' : 'feat')] : []),
-      ...(s.contract?.rider ? [reward('locked-chest', s.contract.rider, 'relic')] : []),
-      ...(s.contract?.milestone ? [reward('star-medal', s.contract.milestone, 'unlock')] : []),
-      ...(s.contract?.next ? [reward('wanted-reward', `New contract: ${s.contract.next}`, 'feat')] : []),
-      ...s.unlocks.map((u) => reward('star-gate', u, 'unlock')),
-      ...s.relics.map((r) => {
-        const def = RELIC_BY_ID[r.id];
-        const peak = r.bound !== undefined
-          ? `binding ${r.bound}/${BALANCE.cursed.bindAt}${r.bound >= BALANCE.cursed.bindAt ? ' · Bound' : ''}`
-          : r.set ? `at its peak · ${r.set} grows` : `at its peak · +${formatNumber(r.shards ?? 0)} shards`;
-        const rank = r.rank === 0 ? peak : r.rank === 1 ? (isCursed(def) ? 'new cursed relic' : 'new relic') : `rank ${'I'.repeat(r.rank)}`;
-        const li = reward(def.icon, `${def.name} · ${rank}`, 'relic');
-        // A cursed relic (plans/late-game/03 §2): its curse, and a Wear button; never worn by itself.
-        if (isCursed(def)) {
-          const curse = document.createElement('span');
-          curse.className = 'entry-curse';
-          curse.textContent = ` ${curseLine(def)}`;
-          li.append(curse);
-          if (r.rank === 1) {
-            const wear = document.createElement('button');
-            wear.type = 'button';
-            wear.className = 'btn results-wear';
-            wear.textContent = 'Wear';
-            wear.addEventListener('click', () => this.onWear(r.id, (worn) => {
-              wear.textContent = worn ? 'Worn' : 'Wear';
-              wear.disabled = worn;
-            }));
-            li.append(wear);
-          }
-        }
-        return li;
-      }),
-      // Before the Feats tab opens, feats are earned quietly: the tab opens on the batch (§5.4).
-      ...(s.featsOpen ? s.feats : []).map((f) => reward(f.icon, `Feat: ${f.name}`, 'feat')),
-    );
-    this.rewards.parentElement!.hidden = this.rewards.childElementCount === 0;
+    // Overtime trophies (N4): a mark on the Map, a light on the tower, once.
+    for (const t of s.trophies) rewards.push(gain('star-medal', `Overtime trophy +${t.overtime}`, `+${formatNumber(t.shards)} shards`, 'unlock'));
+    if (s.foreman.length > 0) rewards.push(gain('shop', foremanLine(s.foreman), 'Foreman bought', 'unlock'));
+    // A Trial (N5): won, and what it paid the first time; or what still stands.
+    if (s.trial) {
+      const t = s.trial;
+      const name = TRIAL_BY_ID[t.id]?.name ?? t.id;
+      rewards.push(t.won
+        ? gain('checkered-flag', name, t.paid ? 'Trial won' : 'Won again', t.paid ? 'unlock' : 'feat', t.paid?.line ?? '')
+        : gain('checkered-flag', name, 'Trial · not yet', 'miss'));
+    }
+    // A contract (plans/late-game/10 §2): what it paid, its rider and milestone, and the card in its place; or why not.
+    const c = s.contract;
+    if (c) {
+      rewards.push(c.pay
+        ? gain('wanted-reward', 'Contract done', contractPay(c.pay), 'unlock')
+        : gain('wanted-reward', 'Contract not met', '', 'miss', c.why ?? 'not yet'));
+      if (c.rider) rewards.push(gain('locked-chest', c.rider, 'Contract', 'relic'));
+      if (c.milestone) rewards.push(gain('star-medal', c.milestone, 'Milestone', 'unlock'));
+      if (c.next) rewards.push(gain('wanted-reward', c.next, 'New contract', 'feat'));
+    }
+    for (const u of s.unlocks) rewards.push(gain('star-gate', u, 'Unlocked', 'unlock'));
+    for (const r of s.relics) rewards.push(this.relicGain(r));
+    // Before the Feats tab opens, feats are earned quietly: the tab opens on the batch (§5.4).
+    if (s.featsOpen) for (const f of s.feats) rewards.push(gain(f.icon, f.name, 'Feat', 'feat'));
 
-    this.records.replaceChildren();
-    const rec = (label: string, r: { old: number; now: number } | null, fmt = formatNumber): void => {
-      if (!r) return;
-      const li = document.createElement('li');
-      li.className = 'results-record';
-      const old = document.createElement('s');
-      old.textContent = fmt(r.old);
-      li.append(`New record · ${label} `, old, ` ${fmt(r.now)}`);
-      this.records.append(li);
-    };
-    rec('wave', s.records.wave);
-    rec('overtime', s.records.overtime, (n) => `+${formatNumber(n)}`);
-    rec('shards', s.records.shards);
-    this.records.parentElement!.hidden = this.records.childElementCount === 0;
+    const finds: HTMLElement[] = [];
+    // Final Form (plans/late-game/07): NEW on the frame's first, RECORD on an earlier wave.
+    if (s.finalForm) {
+      const f = s.finalForm;
+      finds.push(gain('crown', `Final Form · wave ${f.wave}`, f.first ? 'New' : f.record ? 'Record' : '', 'find'));
+    }
+    const find = (e: ContentEntry, tag: string): HTMLElement => gain(e.icon, e.name, tag, 'find');
+    for (const id of s.newRecipes) finds.push(find(EVOLUTION_BY_ID[id], 'New recipe'));
+    for (const id of s.newFusions) finds.push(find(FUSION_BY_ID[id], 'New recipe'));
+    for (const id of s.newEnemies) finds.push(find(ENEMY_BY_ID[id], 'New enemy'));
+    // Secrets (plans/late-game/05): a find by name; a new riddle as "Written in the margin".
+    for (const id of s.secrets?.found ?? []) finds.push(find(SECRET_BY_ID[id], 'Secret'));
+    if (s.secrets?.heard && !s.secrets.found.includes(s.secrets.heard)) finds.push(gain('all-seeing-eye', 'Written in the margin', 'New riddle', 'find'));
+    // An anomaly is a find only once taken (plans/late-game/04 §2); let go, it is told in Run details.
+    for (const k of s.newCards) {
+      if (k.startsWith('anomaly:') && !s.anomaly?.taken) continue;
+      const e = cardEntry(k);
+      if (e) finds.push(find(e, CARD_TAG[k.split(':')[0]] ?? 'New card'));
+    }
+    this.gains.replaceChildren(...records, ...rewards, ...finds);
+    this.gains.parentElement!.hidden = this.gains.childElementCount === 0;
 
     setText(this.kills, formatNumber(s.kills));
     setText(this.time, formatDuration(s.time));
     const st = s.stored;
     setText(this.shardsN, formatNumber(s.shards + (st?.bonus ?? 0)));
-    // Stored Light (plans/late-game/01 §2): what the pool paid, at what rate, and what is left.
-    this.storedLine.hidden = st === null;
-    if (st) {
-      const played = st.engagedBonus > 0 ? ` · ×${st.rate} played` : '';
-      setText(this.storedLine, `Stored Light +${formatNumber(st.bonus)}${played} · ${formatNumber(st.left)} left`);
-    }
-    // Rifts (plans/late-game/02 §2): "Rifts · Wager taken · one closed unseen".
-    const line = riftLine(s.rifts);
-    this.riftLine.hidden = line === null;
-    if (line) setText(this.riftLine, line);
-    // Reliquaries (plans/late-game/03 §2): a count, not a scolding.
-    const faded = s.reliquaries.faded;
-    this.reliquaryLine.hidden = faded === 0;
-    if (faded > 0) setText(this.reliquaryLine, `${faded} reliquar${faded === 1 ? 'y' : 'ies'} faded.`);
-    const gone = s.anomaly && !s.anomaly.taken ? ANOMALY_BY_ID[s.anomaly.id] : null;
-    this.anomalyLine.hidden = gone === null;
-    if (gone) setText(this.anomalyLine, `An anomaly came and went: ${gone.name}.`);
-    // Where the shards came from: inset rows, a source and its figure each.
-    const f = s.shardsFrom;
-    const parts: [string, number][] = [['Kills', f.kills], ['Waves', f.waves]];
-    if (f.elites > 0) parts.push(['Elites', f.elites]);
-    if (f.boss > 0) parts.push(['Boss', f.boss]);
-    if (f.cards > 0) parts.push(['Cards', f.cards]);
-    if (f.rifts > 0) parts.push(['Rifts', f.rifts]);
-    if (st) parts.push(['Stored', st.bonus]);
-    this.breakdown.replaceChildren(...parts.map(([label, n]) => {
-      const row = document.createElement('div');
-      const dt = document.createElement('dt');
-      dt.textContent = label;
-      const dd = document.createElement('dd');
-      dd.textContent = formatNumber(n);
-      row.append(dt, dd);
-      return row;
-    }));
-    this.breakdown.hidden = true;
-    this.shards.setAttribute('aria-expanded', 'false');
-
-    this.finds.replaceChildren(
-      ...(s.finalForm ? [formFind(s.finalForm)] : []),
-      ...s.newRecipes.map((id) => chip(EVOLUTION_BY_ID[id], 'recipe')),
-      ...s.newFusions.map((id) => chip(FUSION_BY_ID[id], 'recipe')),
-      ...s.newEnemies.map((id) => chip(ENEMY_BY_ID[id], 'enemy')),
-      // Secrets (plans/late-game/05): a find by name; a new riddle as "Written in the margin".
-      ...(s.secrets?.found ?? []).map((id) => chip(SECRET_BY_ID[id], 'secret')),
-      ...(s.secrets?.heard && !s.secrets.found.includes(s.secrets.heard)
-        ? [chip({ id: 'margin', name: 'Written in the margin', icon: 'all-seeing-eye', text: '' }, 'whisper')] : []),
-      // An anomaly is a find only once taken (plans/late-game/04 §2); let go, it has its own line.
-      ...s.newCards.filter((k) => !k.startsWith('anomaly:') || s.anomaly?.taken)
-        .map(cardEntry).filter((e): e is ContentEntry => e !== null).map((e) => chip(e, 'card')),
-    );
-    this.finds.parentElement!.hidden = this.finds.childElementCount === 0;
 
     const goal = s.next;
     this.next.hidden = goal === null;
@@ -508,24 +425,7 @@ export class ResultsScreen {
       this.next.classList.toggle('is-ready', goal.progress >= 1);
     }
 
-    // The build (U5) on the screen; behind a tap, what dealt the damage and what took it.
-    this.build.replaceChildren(buildList(s.build));
-    const section = (title: string, node: HTMLElement): HTMLElement[] => {
-      const h = document.createElement('h3');
-      h.className = 'results-report-head';
-      h.textContent = title;
-      return [h, node];
-    };
-    const taken = tallyBars(takenRows(s), 'Damage taken');
-    taken.classList.add('is-taken');
-    const tookNone = takenRows(s).every((r) => r.value === 0);
-    const none = document.createElement('p');
-    none.className = 'tactics-empty';
-    none.textContent = 'Nothing touched the tower.';
-    this.reportBody.replaceChildren(
-      ...section('Damage dealt', tallyBars(dealtRows(s), 'Damage dealt')),
-      ...section('What wore it down', tookNone ? none : taken),
-    );
+    this.reportBody.replaceChildren(...this.details(s));
     this.report.hidden = true;
     this.reportBtn.setAttribute('aria-expanded', 'false');
 
@@ -544,6 +444,113 @@ export class ResultsScreen {
     this.root.hidden = true;
     this.countdown = null;
     this.countUp++;
+  }
+
+  /**
+   * A relic's row: new, ranked up, or at its peak (feeding its set, or paid
+   * in shards, or binding a cursed one, N6). A newly found cursed relic
+   * (plans/late-game/03 §2) shows its curse and a Wear button in place of the
+   * tag; it is never worn by itself.
+   */
+  private relicGain(r: RunSummary['relics'][number]): HTMLElement {
+    const def = RELIC_BY_ID[r.id];
+    const cursed = isCursed(def);
+    let tag: string;
+    let note = '';
+    if (r.rank === 0) {
+      tag = r.bound !== undefined ? 'Binding' : 'At its peak';
+      note = r.bound !== undefined
+        ? `${r.bound}/${BALANCE.cursed.bindAt}${r.bound >= BALANCE.cursed.bindAt ? ' · Bound' : ''}`
+        : r.set ? `${r.set} grows` : `+${formatNumber(r.shards ?? 0)} shards`;
+    } else {
+      tag = r.rank === 1 ? (cursed ? 'New cursed relic' : 'New relic') : `Rank ${'I'.repeat(r.rank)}`;
+    }
+    if (cursed) note = [note, curseLine(def)].filter(Boolean).join(' · ');
+    const wearable = cursed && r.rank === 1;
+    if (wearable) note = `${tag} · ${note}`;
+    const li = gain(def.icon, def.name, wearable ? '' : tag, 'relic', note);
+    if (cursed) li.querySelector('.results-gain-note')?.classList.add('is-curse');
+    if (wearable) {
+      const wear = document.createElement('button');
+      wear.type = 'button';
+      wear.className = 'btn btn-sm results-wear';
+      wear.textContent = 'Wear';
+      wear.addEventListener('click', () => this.onWear(r.id, (worn) => {
+        wear.textContent = worn ? 'Worn' : 'Wear';
+        wear.disabled = worn;
+      }));
+      li.querySelector('.results-gain-tag')!.replaceChildren(wear);
+    }
+    return li;
+  }
+
+  /**
+   * Run details' sheet: where the shards came from (with Stored Light's pay,
+   * plans/late-game/01 §2), the build (U5), what dealt the damage and what
+   * wore the tower down, and what came and went along the way (rifts,
+   * reliquaries, a let-go anomaly).
+   */
+  private details(s: RunSummary): HTMLElement[] {
+    const section = (title: string, ...nodes: HTMLElement[]): HTMLElement[] => {
+      const h = document.createElement('h3');
+      h.className = 'results-report-head';
+      h.textContent = title;
+      return [h, ...nodes];
+    };
+    const p = (cls: string, text: string): HTMLElement => {
+      const el = document.createElement('p');
+      el.className = cls;
+      el.textContent = text;
+      return el;
+    };
+
+    // Where the shards came from: inset rows, a source and its figure each.
+    const st = s.stored;
+    const f = s.shardsFrom;
+    const parts: [string, number][] = [['Kills', f.kills], ['Waves', f.waves]];
+    if (f.elites > 0) parts.push(['Elites', f.elites]);
+    if (f.boss > 0) parts.push(['Boss', f.boss]);
+    if (f.cards > 0) parts.push(['Cards', f.cards]);
+    if (f.rifts > 0) parts.push(['Rifts', f.rifts]);
+    if (st) parts.push(['Stored Light', st.bonus]);
+    const breakdown = document.createElement('dl');
+    breakdown.className = 'results-breakdown inset';
+    breakdown.append(...parts.map(([label, n]) => {
+      const row = document.createElement('div');
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      dd.textContent = formatNumber(n);
+      row.append(dt, dd);
+      return row;
+    }));
+    const shards = s.omen ? [] : section('Shards', breakdown);
+    if (st) {
+      const played = st.engagedBonus > 0 ? ` · ×${st.rate} played` : '';
+      shards.push(p('results-stored', `Stored Light${played} · ${formatNumber(st.left)} left`));
+    }
+
+    const taken = tallyBars(takenRows(s), 'Damage taken');
+    taken.classList.add('is-taken');
+    const tookNone = takenRows(s).every((r) => r.value === 0);
+
+    // Along the way: rifts (plans/late-game/02 §2), reliquaries faded (03 §2, a count, not a scolding),
+    // and an anomaly let go (04 §2: no timer, no cost, it can come again).
+    const along: HTMLElement[] = [];
+    const rifts = riftLine(s.rifts);
+    if (rifts) along.push(p('results-along', rifts));
+    const faded = s.reliquaries.faded;
+    if (faded > 0) along.push(p('results-along', `${faded} reliquar${faded === 1 ? 'y' : 'ies'} faded.`));
+    const gone = s.anomaly && !s.anomaly.taken ? ANOMALY_BY_ID[s.anomaly.id] : null;
+    if (gone) along.push(p('results-along', `An anomaly came and went: ${gone.name}.`));
+
+    return [
+      ...shards,
+      ...section('Build', buildList(s.build)),
+      ...section('Damage dealt', tallyBars(dealtRows(s), 'Damage dealt')),
+      ...section('What wore it down', tookNone ? p('tactics-empty', 'Nothing touched the tower.') : taken),
+      ...(along.length > 0 ? section('Along the way', ...along) : []),
+    ];
   }
 
   /**

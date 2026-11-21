@@ -52,17 +52,24 @@ from overriding the phone's lock).
   region's best, a gold line under the headline with what did move
   (R2 §4, `plateauLine`): the wave against the median of the last 3–5
   ordinary runs there (`regions[i].recent`), and the Forge's next node
-  before → after; shards and where they came
-  from, records broken (the region's own wave record, told as overtime
-  past the boss), discoveries, what opened up (feat chips only once the
-  Feats tab is open), trophies (N4), what the Foreman bought (N7), a
-  Trial won or not yet (N5), a relic at its peak feeding its set (N6),
-  the build, the Next goal, and Run
-  again / Forge (or Map after a first boss kill); auto-restart counts down
-  when owned. *How it went* (U5) opens a sheet over it: damage dealt by
-  weapon (T1's tally) and what wore the tower down (`run.takenBy`: at the
-  wall, shots, shockwaves, molten pools, blasts); the countdown waits while
-  it is open.
+  before → after; the boss line; one card of three stats (kills, time
+  held, shards). Then **New this run**, one list of rows, each an icon, a
+  name (and a dimmer note) and a tag on the right saying what kind of gain
+  it is: records broken first (old value struck through; the region's own
+  wave record, told as overtime past the boss), then Starlight records,
+  trophies (N4), what the Foreman bought (N7), a Trial won or not yet (N5),
+  a contract paid or not, what opened up, relics (new, ranked up, or at
+  their peak feeding a set, N6; a new cursed one with Wear), feats (only
+  once the Feats tab is open), then discoveries (recipes, enemies,
+  secrets, cards). A miss (Trial not yet, contract not met) is a dashed
+  row. *Run details* (U5) opens a sheet over it: where the shards came
+  from (with Stored Light), the build, damage dealt by weapon (T1's
+  tally), what wore the tower down (`run.takenBy`: at the wall, shots,
+  shockwaves, molten pools, blasts), and *Along the way* (rifts,
+  reliquaries faded, an anomaly let go); the countdown waits while it is
+  open. Last, the Next upgrade bar, and Run again / Forge (or Map after a
+  first boss kill) pinned under a fade; auto-restart counts down when
+  owned.
 - **Toasts** (`toast.ts`): a new enemy's Bestiary card, a relic found, a
   Champion's coming (N4), a Trial beginning (N5).
 - **Modal** (`modal.ts`): pause (with the build and stats, U3), welcome

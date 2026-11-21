@@ -83,7 +83,6 @@ describe('44 px floor', () => {
     { sel: '.hud-auto', axes: ['min-width', 'min-height'] },
     { sel: '.tactics-btn', axes: ['min-width', 'min-height'] },
     { sel: '.hub-tab', axes: ['min-width', 'min-height'] },
-    { sel: '.results-shards', axes: ['min-width', 'min-height'] },
     { sel: '.map-region-btn', axes: ['min-width', 'min-height'] },
     { sel: '.entry-btn', axes: ['min-width', 'min-height'] },
     { sel: '.segmented-btn', axes: ['min-width', 'min-height'] },
