@@ -127,6 +127,14 @@ open again.
 Moving from the debug APK to a signed release needs an uninstall, which
 wipes the app's data: export first, import after.
 
+## The purchase is not in the profile
+
+The full-game entitlement's cache is its own key in the save store,
+`tower-entitlement` (`app/entitlement.ts`), never a `Profile` field. So
+export and import, the rolling backups, a reset and a corrupt profile never
+carry, grant or lose a purchase. There is no founder flag: the game had no
+players before the purchase existed (plans/monetization.md D-2).
+
 ## Android backup (R9)
 
 On Android the save is a file in the app's private files dir
@@ -137,7 +145,10 @@ include only `files/`: the profile, the run snapshot, the three rolling
 backups and the seal flag. The WebView's data stays behind on purpose: its
 `localStorage` holds per-device render choices (`blue-hour-quality`,
 `blue-hour-canvas`), and its caches could push the set past Auto Backup's
-25 MB cap, which stops the whole backup. `tests/r9.test.ts` pins the rules.
+25 MB cap, which stops the whole backup. The purchase's cache
+(`tower-entitlement.json`) is excluded: a purchase belongs to a Google
+account, and a new phone asks Google Play for it ([monetization.md](monetization.md)).
+`tests/r9.test.ts` pins the rules.
 Settings › Save says so on Android.
 
 Tested with the local transport (`bmgr backupnow`, uninstall, install) on

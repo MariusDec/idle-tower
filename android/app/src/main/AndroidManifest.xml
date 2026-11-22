@@ -41,7 +41,10 @@
     </application>
 
     <!-- Permissions -->
-    <!-- No INTERNET permission: the app is fully offline (plans/capacitor.md §5.3).
-         Capacitor serves the bundle through WebViewAssetLoader, which never
-         reaches the network stack. -->
+    <!-- INTERNET is for the one purchase only (plans/monetization.md §5): RevenueCat
+         and Google Play Billing. Play needs no network: Capacitor serves the bundle
+         through WebViewAssetLoader, and the game never goes online for anything
+         else. com.android.vending.BILLING comes from the RevenueCat plugin's
+         manifest merge. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 </manifest>

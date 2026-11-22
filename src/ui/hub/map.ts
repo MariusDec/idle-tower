@@ -15,6 +15,7 @@ import { regionTrials, trialWon, trialsOpen } from '../../meta/trials';
 import { RELIC_BY_ID } from '../../content/relics';
 import type { TrialReward } from '../../content/types';
 import type { Profile } from '../../meta/profile';
+import { planAllows, type Plan } from '../../meta/plan';
 import { motionReduced, setStyle } from '../dom';
 import { icon } from '../icon';
 
@@ -44,6 +45,18 @@ const ACT_REGIONS = 6;
  */
 export type MapSpread = boolean | { band: number };
 
+/** The plan the Map draws for (plans/monetization.md §3.1), and the locked card's door. */
+export interface MapGate {
+  plan(): Plan;
+  /** The store's price for the locked card, or null while unknown. */
+  price(): string | null;
+  /** The locked card was tapped: open the paywall. */
+  sealed(): void;
+}
+
+/** The whole game: the Map as the tools and tests see it. */
+const FULL: MapGate = { plan: () => 'full', price: () => null, sealed: () => {} };
+
 /**
  * The Map (§5.2): the regions from the Fields upward, the light reaching as
  * far as the bosses have fallen. Each unlocked region is a card — best
@@ -68,6 +81,7 @@ export class MapView {
     private readonly onTrial: (id: string) => void = () => {},
     /** Start the next descent at waypoint `floor` (plans/late-game/08 §4.4). */
     private readonly onWaypoint: (floor: number) => void = () => {},
+    private readonly gate: MapGate = FULL,
   ) {
     this.root = document.createElement('div');
     this.root.className = 'map';
@@ -105,8 +119,15 @@ export class MapView {
     }
 
     const chosen = inAbyss(profile) ? ABYSS_INDEX : inRush(profile) ? RUSH_INDEX : selectedRegion(profile).index;
+    const plan = this.gate.plan();
     const items: HTMLElement[] = [];
     for (const r of REGIONS) {
+      if (regionUnlocked(profile, r.index) && !planAllows(plan, r.index)) {
+        // Earned, past the gate (plans/monetization.md §3.1): visible but sealed, and the paywall's door.
+        // Nothing past it shows: the fog keeps Regions 5–6 as it always has.
+        items.push(this.sealed(r));
+        break;
+      }
       if (regionUnlocked(profile, r.index)) items.push(this.card(profile, r, r.index === chosen));
       else {
         // The next region shows as a silhouette with its boss's shadow (§5.2).
@@ -118,10 +139,17 @@ export class MapView {
       const last = REGIONS[REGIONS.length - 1];
       if (bossDown(profile, last.boss)) items.push(this.silhouette(`Region ${REGIONS.length + 1}`, 'The Blight runs deeper still.'));
     }
-    if (act2Open(profile)) items.push(this.abyss(profile, chosen === ABYSS_INDEX, band));
-    if (rushOpen(profile)) items.push(this.rush(profile, chosen === RUSH_INDEX));
+    if (act2Open(profile) && plan === 'full') items.push(this.abyss(profile, chosen === ABYSS_INDEX, band));
+    if (rushOpen(profile) && plan === 'full') items.push(this.rush(profile, chosen === RUSH_INDEX));
     // The Fields at the bottom, the frontier at the top: the light climbs.
-    this.list.replaceChildren(...items.reverse());
+    // Each card sits in a cell: on two columns the cell reserves its row's
+    // height (an open Trials list included) while the card inside keeps its own.
+    this.list.replaceChildren(...items.reverse().map((card) => {
+      const cell = document.createElement('li');
+      cell.className = 'map-cell';
+      cell.append(card);
+      return cell;
+    }));
   }
 
   /** The Abyss's card (§9): the deepest floor cleared, what the next record pays, and its shaft. */
@@ -256,7 +284,7 @@ export class MapView {
     index: number, title: string, iconId: Parameters<typeof icon>[0], chosen: boolean,
     rows: readonly (readonly [string, string])[], text: string,
   ): HTMLElement {
-    const li = document.createElement('li');
+    const li = document.createElement('div');
     li.className = `map-region is-abyss${chosen ? ' is-chosen' : ''}`;
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -293,7 +321,7 @@ export class MapView {
   }
 
   private card(profile: Profile, r: RegionDef, chosen: boolean): HTMLElement {
-    const li = document.createElement('li');
+    const li = document.createElement('div');
     li.className = `map-region${chosen ? ' is-chosen' : ''}${bossDown(profile, r.boss) ? ' is-cleared' : ''}`;
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -407,8 +435,45 @@ export class MapView {
     return box;
   }
 
+  /**
+   * The first region past the free plan (plans/monetization.md §3.1): its
+   * name, its rule and its boss's silhouette behind a lock, so the player
+   * sees what the purchase opens. Tapping it opens the paywall.
+   */
+  private sealed(r: RegionDef): HTMLElement {
+    const li = document.createElement('div');
+    li.className = 'map-region is-sealed';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'map-region-btn';
+    btn.setAttribute('aria-label', `${r.name}: locked. Open the full game`);
+    btn.addEventListener('click', () => this.gate.sealed());
+    const head = document.createElement('div');
+    head.className = 'map-region-head';
+    const name = document.createElement('span');
+    name.className = 'map-region-name';
+    name.textContent = r.name;
+    const tag = document.createElement('span');
+    tag.className = 'badge map-region-tag map-region-lock';
+    tag.append(icon('io-lock-closed'), document.createTextNode(this.gate.price() ?? 'Locked'));
+    head.append(icon(r.icon), name, tag);
+    const rule = document.createElement('p');
+    rule.className = 'map-region-rule';
+    rule.textContent = r.rule ? `${r.rule.name}: ${r.rule.text}` : r.text;
+    const boss = BOSS_BY_ID[r.boss];
+    const shadow = document.createElement('p');
+    shadow.className = 'map-region-trophy map-region-shadow';
+    shadow.append(icon(boss.icon), ` ${boss.name} waits beyond.`);
+    const door = document.createElement('p');
+    door.className = 'map-region-door';
+    door.textContent = 'The rest of the tower is one purchase away.';
+    btn.append(head, rule, shadow, door);
+    li.append(btn);
+    return li;
+  }
+
   private silhouette(title: string, line: string): HTMLElement {
-    const li = document.createElement('li');
+    const li = document.createElement('div');
     li.className = 'map-region is-dark';
     const h = document.createElement('p');
     h.className = 'map-region-name';

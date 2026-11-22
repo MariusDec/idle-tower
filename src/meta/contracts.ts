@@ -28,6 +28,7 @@ import { activeNodes } from './forge';
 import { farmRate } from './offline';
 import { bestHeat, heat } from './pacts';
 import type { Profile } from './profile';
+import { planAllows, type Plan } from './plan';
 import { STAR_WEB, payStarlight } from './stars';
 
 /**
@@ -496,9 +497,10 @@ function clash(board: readonly ContractSpec[], c: ContractSpec): boolean {
 // ── Generation (§4.1) ────────────────────────────────────────────────────
 
 /** Target kinds open to this profile now. */
-function openKinds(profile: Profile): TargetKind[] {
+function openKinds(profile: Profile, plan: Plan): TargetKind[] {
   const out: TargetKind[] = ['boss', 'wave', 'overtime', 'run'];
-  if (act2Open(profile)) {
+  // The Abyss and Boss Rush are past the gate (plans/monetization.md D-6): the free plan draws none.
+  if (act2Open(profile) && plan === 'full') {
     out.push('floor');
     if (felledGuardians(profile).some((b) => guardianFloor(b) <= profile.abyss.best + 1)) out.push('guardian');
     if (rushOpen(profile)) out.push('rush');
@@ -506,36 +508,36 @@ function openKinds(profile: Profile): TargetKind[] {
   return out;
 }
 
-/** Regions unlocked, and those whose boss is down. */
-function regionsOpen(profile: Profile, felled: boolean): RegionDef[] {
-  return REGIONS.filter((r) => regionUnlocked(profile, r.index) && (!felled || bossDown(profile, r.boss)));
+/** Regions unlocked and playable on `plan`, and those whose boss is down. */
+function regionsOpen(profile: Profile, felled: boolean, plan: Plan): RegionDef[] {
+  return REGIONS.filter((r) => regionUnlocked(profile, r.index) && planAllows(plan, r.index) && (!felled || bossDown(profile, r.boss)));
 }
 
 /** A target of kind `k`, drawn from what is open; null when none is. */
-function drawTarget(profile: Profile, rng: Rng, k: TargetKind): ContractTarget | null {
+function drawTarget(profile: Profile, rng: Rng, k: TargetKind, plan: Plan): ContractTarget | null {
   switch (k) {
     case 'boss': {
-      const rs = regionsOpen(profile, true);
+      const rs = regionsOpen(profile, true, plan);
       return rs.length ? { kind: 'boss', region: rng.pick(rs).index } : null;
     }
     case 'wave': {
       // Only where the tower has been: never a wave past the region's own best.
       // Nor the record itself: a card rides a handicap, so it asks for a wave the tower passes with room.
-      const rs = regionsOpen(profile, false).filter((x) => bestWave(profile, x.index) >= WAVES[0] + WAVE_ROOM);
+      const rs = regionsOpen(profile, false, plan).filter((x) => bestWave(profile, x.index) >= WAVES[0] + WAVE_ROOM);
       if (!rs.length) return null;
       const r = rng.pick(rs);
       const waves = WAVES.filter((w) => w <= bestWave(profile, r.index) - WAVE_ROOM);
       return { kind: 'wave', region: r.index, wave: rng.pick(waves) };
     }
     case 'overtime': {
-      const rs = regionsOpen(profile, true);
+      const rs = regionsOpen(profile, true, plan);
       if (!rs.length) return null;
       const r = rng.pick(rs);
       const ks = [5, 10, 15].filter((x) => x <= Math.max(0, bestWave(profile, r.index) - 20) + 5);
       return { kind: 'overtime', region: r.index, k: rng.pick(ks) };
     }
     case 'run': {
-      const rs = regionsOpen(profile, false).filter((r) => bestWave(profile, r.index) >= UNTOUCHED[0]);
+      const rs = regionsOpen(profile, false, plan).filter((r) => bestWave(profile, r.index) >= UNTOUCHED[0]);
       return rs.length ? { kind: 'run', region: rng.pick(rs).index } : null;
     }
     case 'floor': {
@@ -641,12 +643,12 @@ function inBand(slot: ContractSlot, tier: number): boolean {
  * when the other two cards hold both kinds, a last pass shares a kind (never
  * a place).
  */
-function fallback(profile: Profile, slot: ContractSlot, id: string, rider: RelicId | null, others: readonly ContractSpec[]): ContractSpec {
-  const felled = [...regionsOpen(profile, true)].reverse();
+function fallback(profile: Profile, slot: ContractSlot, id: string, rider: RelicId | null, others: readonly ContractSpec[], plan: Plan): ContractSpec {
+  const felled = [...regionsOpen(profile, true, plan)].reverse();
   const targets: ContractTarget[] = [
     ...felled.map((r): ContractTarget => ({ kind: 'boss', region: r.index })),
     ...felled.map((r): ContractTarget => ({ kind: 'overtime', region: r.index, k: 5 })),
-    ...[...regionsOpen(profile, false)].reverse().filter((r) => bestWave(profile, r.index) >= WAVES[0] + WAVE_ROOM)
+    ...[...regionsOpen(profile, false, plan)].reverse().filter((r) => bestWave(profile, r.index) >= WAVES[0] + WAVE_ROOM)
       .map((r): ContractTarget => ({ kind: 'wave', region: r.index, wave: WAVES[0] })),
   ];
   const pads: ContractMod[][] = [
@@ -694,18 +696,21 @@ function boardRng(profile: Profile, label: string, seq: number): Rng {
 /**
  * Draw a card for `slot`, beside `others`. Takes one `seq`, so the result is
  * deterministic. `rider` is kept (a reroll); `undefined` draws a fresh one
- * for the Hard slot.
+ * for the Hard slot. `plan` keeps the card inside what the player can play
+ * (plans/monetization.md D-6); the default is the whole game, as the tools see it.
  */
-export function generate(profile: Profile, slot: ContractSlot, others: readonly ContractSpec[], rider?: RelicId | null): ContractSpec {
+export function generate(
+  profile: Profile, slot: ContractSlot, others: readonly ContractSpec[], rider?: RelicId | null, plan: Plan = 'full',
+): ContractSpec {
   const seq = profile.contracts.seq++;
   const rng = boardRng(profile, 'contract', seq);
   const id = `c${seq}`;
   const ride = slot === 'hard' ? (rider === undefined ? drawRider(profile, rng) : rider) : null;
   const owned = ownedWeapons(profile);
-  const kinds = openKinds(profile).filter((k) => !others.some((o) => o.target.kind === k));
+  const kinds = openKinds(profile, plan).filter((k) => !others.some((o) => o.target.kind === k));
   const weights = kinds.map((k) => C.weights[k]);
   for (let attempt = 0; attempt < C.attempts && kinds.length; attempt++) {
-    const target = drawTarget(profile, rng, kinds[rng.weighted(weights)]);
+    const target = drawTarget(profile, rng, kinds[rng.weighted(weights)], plan);
     if (!target) continue;
     if (slot === 'quick' && !comfortable(profile, target)) continue;
     const mods: ContractMod[] = [];
@@ -725,17 +730,17 @@ export function generate(profile: Profile, slot: ContractSlot, others: readonly 
     if (!inBand(slot, tierOf(score(profile, c)))) continue;
     if (valid(profile, c) && !trivial(profile, c) && !clash(others, c)) return c;
   }
-  return fallback(profile, slot, id, ride, others);
+  return fallback(profile, slot, id, ride, others, plan);
 }
 
 /** Fill the board's empty slots, once it is open. True when a card was drawn. */
-export function ensureBoard(profile: Profile): boolean {
+export function ensureBoard(profile: Profile, plan: Plan = 'full'): boolean {
   if (!boardOpen(profile)) return false;
   const board = profile.contracts.board;
   let drawn = false;
   for (const slot of SLOTS) {
     if (board.some((c) => c.slot === slot)) continue;
-    board.push(generate(profile, slot, board));
+    board.push(generate(profile, slot, board, undefined, plan));
     drawn = true;
   }
   board.sort((a, b) => SLOTS.indexOf(a.slot) - SLOTS.indexOf(b.slot));
@@ -759,12 +764,27 @@ function replace(profile: Profile, c: ContractSpec, next: ContractSpec): void {
  * Reroll a card, free (§4.3): its slot's band and its rider stay; only the
  * target and modifiers change. False for a card not on the board.
  */
-export function reroll(profile: Profile, id: string): boolean {
+export function reroll(profile: Profile, id: string, plan: Plan = 'full'): boolean {
   const c = contractById(profile, id);
   if (!c) return false;
   const others = profile.contracts.board.filter((x) => x.id !== id);
-  replace(profile, c, generate(profile, c.slot, others, c.rider));
+  replace(profile, c, generate(profile, c.slot, others, c.rider, plan));
   return true;
+}
+
+/**
+ * Redraw every card whose place `plan` doesn't play (plans/monetization.md
+ * D-6): after a downgrade, a board drawn on the full plan holds cards past
+ * the gate, and those are never shown locked. True when a card was redrawn.
+ */
+export function fitBoard(profile: Profile, plan: Plan): boolean {
+  let redrawn = false;
+  for (const c of [...profile.contracts.board]) {
+    if (planAllows(plan, placeOf(c.target))) continue;
+    reroll(profile, c.id, plan);
+    redrawn = true;
+  }
+  return redrawn;
 }
 
 /** Pin a card to the Next line, or unpin it (§2: only one at a time). */
@@ -791,9 +811,10 @@ export function takeBlocked(profile: Profile, c: ContractSpec): string | null {
  * the Abyss the descent starts at the deepest waypoint at or above its
  * floor. False, and nothing changes, when it can't be taken.
  */
-export function takeContract(profile: Profile, id: string): boolean {
+export function takeContract(profile: Profile, id: string, plan: Plan = 'full'): boolean {
   const c = contractById(profile, id);
   if (!c || !boardOpen(profile) || takeBlocked(profile, c) !== null || !targetValid(profile, c.target)) return false;
+  if (!planAllows(plan, placeOf(c.target))) return false;
   const B = profile.contracts;
   // Where the player was, to go back to once the card's run is banked. A Retry
   // (a Take straight after a settle) finds it already restored.
@@ -994,7 +1015,7 @@ export function pendingTier(profile: Profile, run: RunState): 1 | 2 | 3 | 4 | nu
  * reach a milestone, and a fresh card takes its slot; either way the next
  * run is ordinary. Null for a run not taken for a card.
  */
-export function settleContract(profile: Profile, run: RunState, tier: 1 | 2 | 3 | 4 | null): ContractSettled | null {
+export function settleContract(profile: Profile, run: RunState, tier: 1 | 2 | 3 | 4 | null, plan: Plan = 'full'): ContractSettled | null {
   const B = profile.contracts;
   const c = run.contract ? contractById(profile, run.contract) : null;
   B.taken = null;
@@ -1009,7 +1030,7 @@ export function settleContract(profile: Profile, run: RunState, tier: 1 | 2 | 3 
   const rider = c.rider ? relicLine(profile, c.rider) : null;
   B.done++;
   const reached = milestone(profile, B.done);
-  const next = generate(profile, c.slot, B.board.filter((x) => x.id !== c.id));
+  const next = generate(profile, c.slot, B.board.filter((x) => x.id !== c.id), undefined, plan);
   replace(profile, c, next);
   return { id: c.id, text, met: true, why: null, pay, rider, milestone: reached, next: contractText(next) };
 }

@@ -128,9 +128,11 @@ export function plateauLine(s: Pick<RunSummary, 'wave' | 'plateau'>): string | n
 
 /**
  * The results screen (§4.6). One screen, no failure language, read top to
- * bottom: the wave, the boss, three stats (kills, time held, shards), then
- * one list of everything new this run (records, rewards, relics, feats and
- * discoveries), each row tagged with what it is. *Run details* opens a sheet
+ * bottom: the wave, the boss, three stats (kills, time held, shards), a
+ * *Run details* link, then one list of everything new this run (records,
+ * rewards, relics, feats and discoveries), each row tagged with what it is.
+ * The link sits above the list so a long one never pushes it out of view;
+ * it opens a sheet
  * with the rest: where the shards came from, the build (U5), the damage
  * dealt and taken, and what happened along the way (rifts, reliquaries,
  * anomalies); the countdown waits while it is open. Then one "Next upgrade"
@@ -193,6 +195,8 @@ export class ResultsScreen {
     onRetry: (id: string) => void = () => {},
     /** Copy a Daily Omen's result line (plans/late-game/11 §2); true when it landed. */
     private readonly onCopy: (text: string) => Promise<boolean> = async () => false,
+    /** Open the paywall from the gate's prompt (plans/monetization.md §3.2). */
+    private readonly onPaywall: () => void = () => {},
   ) {
     this.root = document.createElement('section');
     this.root.className = 'screen results';
@@ -216,8 +220,8 @@ export class ResultsScreen {
         <p class="results-omen-note"></p>
         <button type="button" class="btn results-omen-copy">Copy result</button>
       </div>
-      <section class="results-section" hidden><h3 class="section-head">New this run</h3><ul class="results-gains"></ul></section>
       <button type="button" class="btn btn-tertiary results-report-btn" aria-expanded="false">Run details${iconMarkup('io-chevron-forward', { size: 18 })}</button>
+      <section class="results-section" hidden><h3 class="section-head">New this run</h3><ul class="results-gains"></ul></section>
       <div class="results-report" role="dialog" aria-label="Run details" hidden>
         <div class="results-report-card">
           <h2 class="modal-title">Run details</h2>
@@ -310,8 +314,11 @@ export class ResultsScreen {
     this.hide();
   }
 
-  /** `hubLabel` names where the other button goes: the Forge, or the Map after a first kill. */
-  show(s: RunSummary, autoRestart: boolean, hubLabel = 'Forge'): void {
+  /**
+   * `hubLabel` names where the other button goes: the Forge, or the Map after a first kill.
+   * `gate` names the region the free plan holds shut: its "opens" line becomes the paywall's prompt (§3.2).
+   */
+  show(s: RunSummary, autoRestart: boolean, hubLabel = 'Forge', gate: string | null = null): void {
     this.hubBtn.textContent = hubLabel;
     // The hero number (plans/visual-identity.md §6.7): how far the run got, counted up.
     if (s.outcome === 'cleared') {
@@ -393,7 +400,7 @@ export class ResultsScreen {
       if (c.milestone) rewards.push(gain('star-medal', c.milestone, 'Milestone', 'unlock'));
       if (c.next) rewards.push(gain('wanted-reward', c.next, 'New contract', 'feat'));
     }
-    for (const u of s.unlocks) rewards.push(gain('star-gate', u, 'Unlocked', 'unlock'));
+    for (const u of s.unlocks) rewards.push(u === gate ? this.gateRow(u) : gain('star-gate', u, 'Unlocked', 'unlock'));
     for (const r of s.relics) rewards.push(this.relicGain(r));
     // Before the Feats tab opens, feats are earned quietly: the tab opens on the batch (§5.4).
     if (s.featsOpen) for (const f of s.feats) rewards.push(gain(f.icon, f.name, 'Feat', 'feat'));
@@ -472,6 +479,27 @@ export class ResultsScreen {
    * (plans/late-game/03 §2) shows its curse and a Wear button in place of the
    * tag; it is never worn by itself.
    */
+  /**
+   * The free plan's gate (plans/monetization.md §3.2): the region the light
+   * reaches, and the one button that opens the paywall. It rides the run that
+   * first opens the region, so it shows once; after that the Map's locked
+   * card is the only door.
+   */
+  private gateRow(region: string): HTMLLIElement {
+    const row = gain('star-gate', `The light reaches ${region}`, '', 'unlock', 'The rest of the tower is one purchase away.');
+    row.classList.add('results-gate');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn btn-sm';
+    open.textContent = 'See what’s ahead';
+    open.addEventListener('click', () => {
+      this.countdown = null;
+      this.onPaywall();
+    });
+    row.append(open);
+    return row;
+  }
+
   private relicGain(r: RunSummary['relics'][number]): HTMLElement {
     const def = RELIC_BY_ID[r.id];
     const cursed = isCursed(def);

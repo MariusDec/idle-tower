@@ -63,6 +63,13 @@ The regions as a path from the tower's light toward the Blight Heart.
 boss trophy (kills, fastest kill). A first boss kill's ceremony plays here:
 the light spreads to the next region (skipped under reduced motion).
 
+On the free plan ([monetization.md](monetization.md)) the first region past
+the gate, Ember Rift once the Prism falls, draws as a **locked card**:
+visible but sealed, with its rule, its boss's silhouette and the store's
+price behind a lock. Tapping it opens the paywall; nothing past it shows,
+and the Abyss and Boss Rush cards wait for the full game. The Map's
+`sealed` explainer tells of it once.
+
 ## Frames (§4.4, §11.6)
 
 | Frame | Unlock |

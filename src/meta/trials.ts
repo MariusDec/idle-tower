@@ -8,6 +8,7 @@ import { contractTrims } from './contracts';
 import { secretTrims } from './secrets';
 import { omenTrims } from './omen';
 import type { Profile } from './profile';
+import { planAllows, type Plan } from './plan';
 
 /**
  * Trials (N5): authored runs, three per region, opened by its boss. Pure
@@ -48,13 +49,14 @@ export function selectedTrial(profile: Profile): TrialDef | null {
  * Make the next run trial `id` (its region with it), or an ordinary run
  * again with null. False, and nothing changes, for a trial not yet open.
  */
-export function chooseTrial(profile: Profile, id: string | null): boolean {
+export function chooseTrial(profile: Profile, id: string | null, plan: Plan = 'full'): boolean {
   if (id === null) {
     profile.trial = null;
     return true;
   }
   const t = TRIAL_BY_ID[id];
-  if (!t || !trialsOpen(profile, t.region)) return false;
+  // A Trial past the gate isn't offered on the free plan (plans/monetization.md).
+  if (!t || !trialsOpen(profile, t.region) || !planAllows(plan, t.region)) return false;
   profile.trial = id;
   // A run is a Trial or a contract, never both (plans/late-game/10 §4.5).
   profile.contracts.taken = null;

@@ -24,11 +24,19 @@ describe('R9: Android backup', () => {
   });
 
   it('carries exactly the files dir, the same way in every rule set', () => {
-    expect(includes(LEGACY)).toEqual(['include file:.']);
+    // Less the purchase's cache (plans/monetization.md Principle 3): a purchase
+    // belongs to a Google account, and a new phone asks Google Play for it.
+    const rules = ['include file:.', 'exclude file:tower-entitlement.json', 'exclude file:tower-entitlement.json.tmp'];
+    expect(includes(LEGACY)).toEqual(rules);
     const cloud = MODERN.match(/<cloud-backup>([\s\S]*?)<\/cloud-backup>/)![1];
     const d2d = MODERN.match(/<device-transfer>([\s\S]*?)<\/device-transfer>/)![1];
-    expect(includes(cloud)).toEqual(['include file:.']);
-    expect(includes(d2d)).toEqual(['include file:.']);
+    expect(includes(cloud)).toEqual(rules);
+    expect(includes(d2d)).toEqual(rules);
+  });
+
+  it('leaves behind the key the entitlement cache is written under', async () => {
+    const { ENTITLEMENT_KEY } = await import('../src/app/entitlement');
+    expect(`${ENTITLEMENT_KEY}.json`).toBe('tower-entitlement.json');
   });
 
   it('the save on Android is written to that files dir', () => {

@@ -5,8 +5,12 @@
 <data-extraction-rules>
     <cloud-backup>
         <include domain="file" path="." />
+        <exclude domain="file" path="tower-entitlement.json" />
+        <exclude domain="file" path="tower-entitlement.json.tmp" />
     </cloud-backup>
     <device-transfer>
         <include domain="file" path="." />
+        <exclude domain="file" path="tower-entitlement.json" />
+        <exclude domain="file" path="tower-entitlement.json.tmp" />
     </device-transfer>
 </data-extraction-rules>

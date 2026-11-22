@@ -34,8 +34,10 @@ Always go through these scripts rather than `gradlew` directly — each one runs
 `npm run cap:sync` first, which rebuilds `dist/` and copies it into the native
 project.
 
-The shipped app is fully offline: it is built without the `INTERNET`
-permission.
+The game plays fully offline. The `INTERNET` permission is there for the one
+purchase only (Google Play Billing through RevenueCat; docs/monetization.md).
+To sell from a device build: `npm run android:test-store` uses RevenueCat's
+Test Store, and `npm run check:release` must pass before a release.
 
 ### Signing a release build
 

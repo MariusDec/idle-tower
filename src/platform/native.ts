@@ -15,6 +15,13 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 export const isNative = (): boolean => Capacitor.isNativePlatform();
 
 /**
+ * True inside a debuggable native build: Capacitor sets `DEBUG` from the
+ * app's `FLAG_DEBUGGABLE`, so it is false for any release APK or AAB. Billing
+ * uses it to keep debug builds away from the real store (plans/monetization.md §2.4).
+ */
+export const isNativeDebugBuild = (): boolean => isNative() && (Capacitor as { DEBUG?: boolean }).DEBUG === true;
+
+/**
  * Called once, as early as the bundle runs — before the sprite fetch resolves.
  * The status bar has to be told to overlay the WebView *and* to draw light
  * glyphs; the config's `StatusBar` block covers a cold start, but a config-only

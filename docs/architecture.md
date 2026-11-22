@@ -12,12 +12,14 @@ src/
   sim/       RunState · createRun · step · systems/ · stats      (core, content)
   meta/      profile · forge · collection · feats · offline ·
              automation · pacts · stars · results · runConfig ·
-             save/                                               (core, content, sim types)
+             plan (pure: what each plan plays) · save/           (core, content, sim types)
   render/    renderer · painters/ · effects · camera ·
              palette · quality                                   (core, content, sim types)
   audio/     synth · cues · music                                (sim types)
   ui/        hud · draft · results · hub/ · settings · modal     (anything but sim internals)
-  app/       main · App · loop · screens · settings · bench      (anything)
+  app/       main · App · loop · screens · settings · bench ·
+             entitlement (the plan's cache and checks)          (anything)
+  billing/   the purchase: adapters (mock, RevenueCat), ids    (platform)
   platform/  native.ts (Capacitor hooks)
 tools/       headless bots and reports over the real sim
 tests/       Vitest, node environment
@@ -34,6 +36,9 @@ The import rules are what keep the sim honest:
 - **`meta/` owns the profile.** `sim/` never sees it, only the frozen
   `RunConfig` that `buildRunConfig` derives from it.
 - **`app/` is the only place that holds both the sim and the presentation.**
+- **The plan never reaches the sim** ([monetization.md](monetization.md)).
+  `meta/plan.ts` is pure and the plan is passed as an argument at the
+  doors that start a run; `buildRunConfig` and `tools/` never see one.
 
 ## One frame
 

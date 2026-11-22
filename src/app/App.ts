@@ -14,7 +14,11 @@ import {
 import { buyNode, canAfford, isBuyable, levelOf, nodeCost, refundNode, toggleKeystone, towerTier } from '../meta/forge';
 import { bankRun, buildOf, trophyAt } from '../meta/results';
 import { buildList, foremanLine, statsList } from '../ui/build';
-import { chooseWaypoint, cursedSlots, frameUnlocked, frontier, regionUnlocked, selectedFrame, swapCursed, toggleCursed, toggleRelic, trophyCount } from '../meta/collection';
+import { chooseWaypoint, cursedSlots, frameUnlocked, selectedFrame, swapCursed, toggleCursed, toggleRelic, trophyCount } from '../meta/collection';
+import { act2Playable, clampToPlan, playableFrontier, regionPlayable, sealedRegion, type Plan } from '../meta/plan';
+import { entitlement } from './entitlement';
+import { Paywall } from '../ui/paywall';
+import type { PurchaseResult } from '../billing';
 import { cursedCard } from '../ui/cursed';
 import { curseLine } from '../content/cursed';
 import { claimAll, claimFeat } from '../meta/feats';
@@ -22,7 +26,7 @@ import { farmRate, offlineEarnings, offlineTier, paidTier, storedRates } from '.
 import { emptyTally, storedWant, tallyWave, waveEngaged, type BurnTally } from '../meta/storedLight';
 import { setPactRank } from '../meta/pacts';
 import { chooseTrial, toggleTrim, trialPrize, wornTrims } from '../meta/trials';
-import { contractById, ensureBoard, pin as pinContract, reroll as rerollContract, takeContract } from '../meta/contracts';
+import { contractById, ensureBoard, fitBoard, pin as pinContract, reroll as rerollContract, takeContract } from '../meta/contracts';
 import { contractText } from '../content/contracts';
 import { explainersFor, markExplained, unreadExplainers } from '../meta/explainers';
 import { STAR_WEB } from '../meta/stars';
@@ -171,6 +175,8 @@ export class App {
   private readonly hub: HubScreen;
   private readonly results: ResultsScreen;
   private readonly modal: Modal;
+  /** The one purchase's sheet (plans/monetization.md §3.3). */
+  private readonly paywall: Paywall;
   private readonly draft: DraftPanel;
   private readonly riftPanel: RiftPanel;
   private readonly toasts: Toasts;
@@ -238,12 +244,13 @@ export class App {
       pin: (id) => this.between(() => togglePin(this.profile, id)) ?? false,
       toggleKeystone: (id) => this.between(() => toggleKeystone(this.profile, id)) ?? false,
       forgeOpened: () => this.forgeOpened(),
+      // The doors (plans/monetization.md §2.2): each asks the plan, never `regionUnlocked` alone.
       selectRegion: (index) => this.between(() => {
-        if (regionUnlocked(this.profile, index)) this.profile.region = index;
+        if (regionPlayable(this.profile, index, this.plan())) this.profile.region = index;
       }),
-      chooseWaypoint: (floor) => this.between(() => chooseWaypoint(this.profile, floor)),
+      chooseWaypoint: (floor) => this.between(() => act2Playable(this.profile, this.plan()) && chooseWaypoint(this.profile, floor)),
       trial: (id) => {
-        if (this.between(() => chooseTrial(this.profile, id))) this.startRun();
+        if (this.between(() => chooseTrial(this.profile, id, this.plan()))) this.startRun();
       },
       toggleRelic: (id) => this.between(() => toggleRelic(this.profile, id)) ?? false,
       toggleCursed: (id) => this.between(() => toggleCursed(this.profile, id)) ?? false,
@@ -276,19 +283,22 @@ export class App {
       setPact: (id, rank) => this.between(() => setPactRank(this.profile, id, rank)) ?? false,
       // Contracts (plans/late-game/10): only a tap here or on Retry ever starts one (§4.7).
       takeContract: (id) => {
-        if (this.between(() => takeContract(this.profile, id))) this.startRun();
+        if (this.between(() => takeContract(this.profile, id, this.plan()))) this.startRun();
       },
-      rerollContract: (id) => this.between(() => rerollContract(this.profile, id)) ?? false,
+      rerollContract: (id) => this.between(() => rerollContract(this.profile, id, this.plan())) ?? false,
       pinContract: (id) => this.between(() => pinContract(this.profile, id)) ?? false,
       // The Daily Omen (plans/late-game/11): only a tap here or on a friend's code starts one (I9).
       omen: (n) => this.startOmen(n),
       copy: (text) => copyText(text),
       settings: () => this.openSettings(),
       explain: (view, asked, wait) => this.explain(view, asked, wait),
+      plan: () => this.plan(),
+      price: () => entitlement.priceString(),
+      paywall: () => this.openPaywall(),
     });
     this.results = new ResultsScreen(
       els.screens, () => this.leaveResults(), () => this.startRun(), (id, done) => this.wearFromResults(id, done), (id) => this.retryContract(id),
-      (text) => copyText(text),
+      (text) => copyText(text), () => this.openPaywall(),
     );
     this.toasts = new Toasts(els.overlay);
     this.draft = new DraftPanel(
@@ -297,6 +307,14 @@ export class App {
     );
     this.riftPanel = new RiftPanel(els.overlay, (i) => this.chooseRift(i));
     this.modal = new Modal(els.overlay);
+    this.paywall = new Paywall(this.modal, {
+      price: () => entitlement.loadPrice(),
+      buy: () => entitlement.purchase(),
+      restore: () => entitlement.restore(),
+      opened: () => {
+        if (this.screen === 'hub') this.hub.show(this.profile, 'map');
+      },
+    });
     // Hold a build chip for its card: the HUD strip, the pause menu, the results.
     for (const host of [els.hud, els.overlay, els.screens]) bindBuildPeek(host, els.overlay);
     this.settings = new SettingsPanel(els.overlay, {
@@ -318,6 +336,10 @@ export class App {
       readBackup: (slot) => readBackup(slot),
       replace: (profile) => void this.replace(profile),
       closed: () => this.settingsClosed(),
+      purchase: () => ({ plan: this.plan(), devSwitch: entitlement.devSwitch(), devPlan: entitlement.devPlan() }),
+      paywall: () => this.openPaywall(),
+      restore: () => entitlement.restore().then(restoreText),
+      setDevPlan: (plan) => entitlement.setDevPlan(plan),
     });
     this.loop = new Loop({
       step: () => this.step(),
@@ -371,6 +393,8 @@ export class App {
   async boot(): Promise<void> {
     const loaded = await loadProfile(Date.now());
     this.profile = loaded.profile;
+    // The plan renders from its cache; the store is asked in the background (plans/monetization.md Principle 2).
+    await entitlement.load();
     this.applySettings();
     onOsMotionChange(() => this.applySettings());
     this.music.start();
@@ -384,7 +408,13 @@ export class App {
     // A scored Omen whose snapshot was lost opens its try again (plans/late-game/11 §4.5).
     settlePending(this.profile, resume?.run ?? null);
     // A save from before the Contract board, or one that opened it unbanked: draw its cards (deterministic, plans/late-game/10 §4.1).
-    ensureBoard(this.profile);
+    ensureBoard(this.profile, this.plan());
+    // The next run inside the plan, before anything can start one (resume, offline, the hub).
+    this.fitPlan();
+    entitlement.subscribe(() => this.planChanged());
+    void entitlement.refresh().catch((e) => console.warn('[Billing] refresh failed:', e));
+    entitlement.watch();
+    void entitlement.loadPrice().catch(() => null);
     this.bindLifecycle();
     this.booted = true;
     this.loop.start();
@@ -491,7 +521,7 @@ export class App {
   /** The welcome-back's Play: a run at the frontier, to spend what the night stored. */
   private playFrontier(): void {
     if (this.screen !== 'hub') return;
-    this.profile.region = frontier(this.profile).index;
+    this.profile.region = playableFrontier(this.profile, this.plan()).index;
     this.startRun();
   }
 
@@ -500,7 +530,7 @@ export class App {
    * run it at once. The auto-restart countdown never comes here.
    */
   private retryContract(id: string): void {
-    if (this.screen !== 'results' || !takeContract(this.profile, id)) return;
+    if (this.screen !== 'results' || !takeContract(this.profile, id, this.plan())) return;
     void this.save();
     this.startRun();
   }
@@ -537,6 +567,36 @@ export class App {
       { label: 'The stars', onClick: () => this.hub.show(this.profile, 'stars') },
       { label: 'Onward', primary: true, onClick: () => {} },
     ]), 2400);
+  }
+
+  /** The plan the player is on (plans/monetization.md): the entitlement's cache, or the dev switch. */
+  private plan(): Plan {
+    return entitlement.plan();
+  }
+
+  /**
+   * Bring the profile inside the plan (plans/monetization.md §2.2): the next
+   * run's region, and any contract past the gate. Only between runs; a run
+   * under way plays out where it is. True when anything moved.
+   */
+  private fitPlan(): boolean {
+    if (this.screen === 'run') return false;
+    const plan = this.plan();
+    const moved = clampToPlan(this.profile, plan);
+    const redrawn = fitBoard(this.profile, plan);
+    return moved || redrawn;
+  }
+
+  /** The store, a refund or the dev switch changed the plan: the hub redraws for it at once. */
+  private planChanged(): void {
+    if (this.fitPlan()) void this.save();
+    if (this.screen === 'hub') this.hub.show(this.profile, this.hub.current ?? 'home');
+  }
+
+  /** The paywall (plans/monetization.md §3.3): from the Map's locked card, the results' prompt, or Settings. */
+  private openPaywall(): void {
+    if (this.screen === 'run' || this.plan() === 'full') return;
+    this.paywall.open();
   }
 
   private go(to: Screen, view: HubView = 'home', spread: MapSpread = false): void {
@@ -576,7 +636,7 @@ export class App {
    * still free, else practice. The config and seed are the day's alone.
    */
   private startOmen(n: number): void {
-    if (this.screen !== 'hub') return;
+    if (this.screen !== 'hub' || !act2Playable(this.profile, this.plan())) return;
     const { practice } = beginOmen(this.profile, n, Date.now());
     void this.save();
     this.startRun(undefined, null, { config: omenConfig(n, practice), seed: omenSeed(n) });
@@ -1135,13 +1195,15 @@ export class App {
   private endRun(run: RunState): void {
     // The last part-wave goes to its bucket like the others (plans/late-game/01 §3.3).
     this.tallyWave(run);
-    const summary = bankRun(this.profile, run, this.newCards, runSpeed(this.profile), this.burn);
+    const summary = bankRun(this.profile, run, this.newCards, runSpeed(this.profile), this.burn, this.plan());
     this.burn = emptyTally();
     this.poolAtStart = 0;
     this.fromOmen = summary.omen !== null;
     if (summary.omen?.trims.length) this.dressTower();
     // An Omen never marches the frontier on (§2): it is no region's run.
-    const marched = !summary.omen && marchOn(this.profile, summary);
+    const marched = !summary.omen && marchOn(this.profile, summary, this.plan());
+    // A downgrade that landed mid-run takes effect now, between runs.
+    this.fitPlan();
     if (summary.finalForm) this.dressTower();
     // The banked profile lands before the snapshot is cleared: killed between
     // the two, the snapshot is stale (its run count is behind) and is dropped
@@ -1165,7 +1227,7 @@ export class App {
     const ceremony = this.profile.ceremony !== null;
     // Auto-restart never follows an Omen (plans/late-game/11 §2).
     const restart = automations(this.profile).has('auto-restart') && (!ceremony || marched) && !summary.omen;
-    this.results.show(summary, restart, ceremony ? 'Map' : 'Forge');
+    this.results.show(summary, restart, ceremony ? 'Map' : 'Forge', sealedRegion(this.profile, this.plan())?.name ?? null);
     if (summary.unlocks.length > 0) this.cues.unlock();
   }
 
@@ -1202,7 +1264,7 @@ export class App {
       return;
     }
     if (this.screen !== 'hub' || this.hub.current !== view || this.modal.open) return;
-    const defs = asked ? explainersFor(this.profile, view) : unreadExplainers(this.profile, view);
+    const defs = asked ? explainersFor(this.profile, view, this.plan()) : unreadExplainers(this.profile, view, this.plan());
     if (defs.length === 0) return;
     this.modal.show(defs[0].title, explainerBody(defs), [{
       label: 'Got it',
@@ -1502,5 +1564,27 @@ export class App {
     this.profile.settings.autoUlt = !this.profile.settings.autoUlt;
     this.hud.setAutoUlt(automations(this.profile).has('auto-ult'), this.profile.settings.autoUlt);
     void this.save();
+  }
+}
+
+/** What Restore purchase came to, in Settings' words. */
+function restoreText(r: PurchaseResult): string {
+  switch (r.status) {
+    case 'purchased':
+    case 'already-owned':
+      return 'Restored. The full game is yours.';
+    case 'not-found':
+      return 'No purchase was found on this Google account.';
+    case 'pending':
+      return 'Your payment is still pending with Google Play.';
+    case 'cancelled':
+      return '';
+    case 'unavailable':
+    case 'error':
+      return r.message;
+    default: {
+      const exhaustive: never = r;
+      return exhaustive;
+    }
   }
 }

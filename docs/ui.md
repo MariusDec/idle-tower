@@ -62,7 +62,8 @@ from overriding the phone's lock).
   their peak feeding a set, N6; a new cursed one with Wear), feats (only
   once the Feats tab is open), then discoveries (recipes, enemies,
   secrets, cards). A miss (Trial not yet, contract not met) is a dashed
-  row. *Run details* (U5) opens a sheet over it: where the shards came
+  row. *Run details* (U5), a link above the list (so a long list never
+  pushes it out of view), opens a sheet over it: where the shards came
   from (with Stored Light), the build, damage dealt by weapon (T1's
   tally), what wore the tower down (`run.takenBy`: at the wall, shots,
   shockwaves, molten pools, blasts), and *Along the way* (rifts,
@@ -73,7 +74,11 @@ from overriding the phone's lock).
 - **Toasts** (`toast.ts`): a new enemy's Bestiary card, a relic found, a
   Champion's coming (N4), a Trial beginning (N5).
 - **Modal** (`modal.ts`): pause (with the build and stats, U3), welcome
-  back, the Act 1 ending.
+  back, the Act 1 ending, and the **paywall** (`paywall.ts`): what one
+  purchase opens in three lines, the store's price, Buy, Restore purchase
+  and Not now; back closes it. On the free plan the run that first opens
+  Ember Rift says so on the results with one button to it, and the Map's
+  locked card is its door after that ([monetization.md](monetization.md)).
 - **Forge** (`hub/forge.ts`, U8): it opens fitted to what is on show (every
   node, else all but the fog, else what can be bought), never zoomed out
   past a tappable 0.7; ⌖ recentres. A stat node's card adds the web's
@@ -109,6 +114,7 @@ dragged and saved when it is let go.
 | Sound | sound on/off; master, effects and music sliders |
 | Display | quality (Auto / High / Medium / Low, with the tier in force under Auto); text size (100 / 115 / 130%); colours (Standard / Colourblind); frame rate (30 / 60 / Device, default 60: [performance.md](performance.md#frame-cap)); screen on in runs (On / Off, default On) |
 | Motion | screen shake on/off; motion (Device / Reduced / Full) |
+| Full game | the plan (Full game, or Free: Regions 1–3); Restore purchase; between runs on free, a button to the paywall; in dev and debug builds, a Plan (dev) switch (Store / Free / Full) ([monetization.md](monetization.md)) |
 | Save | between runs only (U12): copy save, save file, load save (paste or file, then confirm), restore one of the last three runs' backups; on Android, a line that Android backup carries the save (R9) ([save.md](save.md)) |
 | Progress | reset, between runs only, asking twice |
 

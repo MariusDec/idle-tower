@@ -23,6 +23,7 @@ import { burnBonus, type BurnTally } from './storedLight';
 import { recipesOpen, recordFusions, recordRecipes } from './recipes';
 import { recordFloor, recordHeat, recordRush, recordStratum, type RushRecord, type StarRecord, type StratumRecord } from './pacts';
 import type { Profile } from './profile';
+import type { Plan } from './plan';
 import { bankOmen, omenOpen, type OmenBanked } from './omen';
 import { pactLoad } from '../sim/pacts';
 import { BOSS_WAVE, regionAt, waveBonus } from '../sim/systems/waves';
@@ -296,6 +297,8 @@ export function trophyAt(profile: Profile, run: RunState, wave: number): { overt
  */
 export function bankRun(
   profile: Profile, run: RunState, newCards: readonly string[] = [], speed = 1, tally?: BurnTally,
+  /** The plan the player is on: a fresh contract is drawn inside it (plans/monetization.md D-6). */
+  plan: Plan = 'full',
 ): RunSummary {
   // The Daily Omen (plans/late-game/11 §4.8): a sealed room, banked on its own.
   if (run.omen) return omenSummary(profile, run, newCards);
@@ -420,7 +423,7 @@ export function bankRun(
     profile.trial = null;
   }
   // A contract (plans/late-game/10 §4.5): settled on the run it was taken for; either way the next run is ordinary.
-  const contract = settleContract(profile, run, contractTier);
+  const contract = settleContract(profile, run, contractTier, plan);
   const floorRecord = abyss ? recordFloor(profile, run.floors) : null;
   // A guardian's first fall in the strata (plans/late-game/08 §4.5): its lump, its waypoint, and the shaft's ceremony.
   const stratumRecord = abyss ? recordStratum(profile, run.felled) : null;
@@ -459,7 +462,7 @@ export function bankRun(
   // Contracts (plans/late-game/10 §4.7, I9): only a tap on Take or Retry starts one.
   if (contract?.pay) activeOnly.push({ kind: 'contract', amount: contract.pay.shards + contract.pay.starlight });
   // The board fills once it opens, and refills a slot just done.
-  ensureBoard(profile);
+  ensureBoard(profile, plan);
   // The deepest floor each worn curse went to, for the compare sheet.
   if (abyss) {
     const floor = floorOf(Math.max(1, wave));

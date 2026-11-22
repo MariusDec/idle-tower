@@ -2,15 +2,19 @@ import { EXPLAINERS, type ExplainerDef, type ExplainerId, type ExplainerView } f
 import { REGIONS } from '../content/regions';
 import { tacticsKey } from './automation';
 import { boardOpen } from './contracts';
-import { act2Open, collectionPages, hubUnlocks, ownedCursed, rushOpen, trophyCount } from './collection';
+import { collectionPages, hubUnlocks, ownedCursed, rushOpen, trophyCount } from './collection';
+import { act2Playable, hubUnlocksFor, sealedRegion, type Plan } from './plan';
 import { towerTier } from './forge';
 import type { Profile } from './profile';
 import { margin } from './secrets';
 import { omenOpen } from './omen';
 import { trims, trialsOpen } from './trials';
 
-/** True once the player can meet the mechanic an explainer tells of (§7.1). */
-export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
+/**
+ * True once the player can meet the mechanic an explainer tells of (§7.1).
+ * On the free plan, Act 2's wait behind the purchase (plans/monetization.md).
+ */
+export function explainerOpen(profile: Profile, id: ExplainerId, plan: Plan = 'full'): boolean {
   switch (id) {
     case 'tower':
       return towerTier(profile) > 1 || trophyCount(profile) > 0 || trims(profile).length > 0;
@@ -22,12 +26,14 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
       return hubUnlocks(profile).map;
     case 'trials':
       return REGIONS.some((r) => trialsOpen(profile, r.index));
+    case 'sealed':
+      return sealedRegion(profile, plan) !== null;
     case 'abyss':
-      return act2Open(profile);
+      return act2Playable(profile, plan);
     case 'waypoints':
       return profile.abyss.felled >= 1;
     case 'rush':
-      return rushOpen(profile);
+      return rushOpen(profile) && plan === 'full';
     case 'bestiary':
       return collectionPages(profile).bestiary;
     case 'relics':
@@ -50,15 +56,15 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
     case 'feats':
       return hubUnlocks(profile).feats;
     case 'stars':
-      return hubUnlocks(profile).stars;
+      return hubUnlocksFor(profile, plan).stars;
     case 'tactics':
       return tacticsKey(profile) !== null;
     case 'pacts':
-      return act2Open(profile);
+      return act2Playable(profile, plan);
     case 'contracts':
       return boardOpen(profile);
     case 'omen':
-      return omenOpen(profile);
+      return omenOpen(profile) && plan === 'full';
     // Told mid-run, on the event itself (R1 §4): open once told.
     case 'tear':
     case 'champion':
@@ -72,14 +78,14 @@ export function explainerOpen(profile: Profile, id: ExplainerId): boolean {
 }
 
 /** A view's explainers the player can meet, in order: what its "?" tells. */
-export function explainersFor(profile: Profile, view: ExplainerView): ExplainerDef[] {
-  return EXPLAINERS.filter((e) => e.view === view && explainerOpen(profile, e.id));
+export function explainersFor(profile: Profile, view: ExplainerView, plan: Plan = 'full'): ExplainerDef[] {
+  return EXPLAINERS.filter((e) => e.view === view && explainerOpen(profile, e.id, plan));
 }
 
 /** A view's explainers not yet read: what opening it tells unasked. */
-export function unreadExplainers(profile: Profile, view: ExplainerView): ExplainerDef[] {
+export function unreadExplainers(profile: Profile, view: ExplainerView, plan: Plan = 'full'): ExplainerDef[] {
   const seen = new Set(profile.tutorial.explained);
-  return explainersFor(profile, view).filter((e) => !seen.has(e.id));
+  return explainersFor(profile, view, plan).filter((e) => !seen.has(e.id));
 }
 
 /** Mark explainers read, once the player has dismissed them. */

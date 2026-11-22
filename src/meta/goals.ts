@@ -2,7 +2,8 @@ import { BOSS_BY_ID } from '../content/bosses';
 import { FEATS } from '../content/feats';
 import { REGIONS } from '../content/regions';
 import type { IconId } from '../content/icons';
-import { act2Open, bossDown, frontier, hubUnlocks, regionRelics, relicRank } from './collection';
+import { bossDown, hubUnlocks, regionRelics, relicRank } from './collection';
+import { act2Playable, playableFrontier, type Plan } from './plan';
 import { contractText } from '../content/contracts';
 import { boardOpen, contractById } from './contracts';
 import { featProgress, featVisible } from './feats';
@@ -32,20 +33,21 @@ function contractGoal(text: string): HubGoal {
  * frontier's boss while it stands; in Act 2 (§9), a star that can be lit;
  * the closest unfinished feat; once the board is open, its Quick card (so
  * the line never runs dry); a relic still to find in a region already
- * cleared; and in Act 2, the frontier's next heat record.
+ * cleared; and in Act 2, the frontier's next heat record. On the free plan
+ * the frontier stops at the gate, and Act 2 is not named (plans/monetization.md).
  */
-export function hubGoal(profile: Profile): HubGoal | null {
+export function hubGoal(profile: Profile, plan: Plan = 'full'): HubGoal | null {
   const node = nextGoal(profile);
   if (node && node.progress >= 1) return { icon: node.node.icon, text: `Forge: ${node.node.name} is ready`, progress: 1 };
   const pinned = contractById(profile, profile.contracts.pinned);
   if (pinned) return contractGoal(contractText(pinned));
-  const region = frontier(profile);
+  const region = playableFrontier(profile, plan);
   if (!bossDown(profile, region.boss)) {
     const boss = BOSS_BY_ID[region.boss];
     const best = profile.regions[region.index]?.bestWave ?? 0;
     return { icon: boss.icon, text: `Defeat ${boss.name} at wave 20`, progress: Math.min(1, best / 20) };
   }
-  const act2 = act2Open(profile);
+  const act2 = act2Playable(profile, plan);
   if (act2) {
     const star = STAR_WEB.nextGoal(profile);
     if (star && star.progress >= 1) return { icon: star.node.icon, text: `Stars: ${star.node.name} is ready`, progress: 1 };

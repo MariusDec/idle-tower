@@ -1,6 +1,7 @@
 import { BALANCE } from '../content/balance';
 import type { AutomationId, CardItemId } from '../content/types';
-import { frontier, selectedFrame } from './collection';
+import { selectedFrame } from './collection';
+import { playableFrontier, type Plan } from './plan';
 import { FORGE_BY_ID } from '../content/forge';
 import { FORGE_WEB, buyNode, isBuyable, levelOf, ownedNodes } from './forge';
 import type { Profile } from './profile';
@@ -126,9 +127,10 @@ export function neverList(profile: Profile): CardItemId[] | null {
  * Frontier March (§6.2): after a boss's first fall, the next run goes to the
  * new frontier. Called once a run is banked; true when it moved.
  */
-export function marchOn(profile: Profile, summary: RunSummary): boolean {
+export function marchOn(profile: Profile, summary: RunSummary, plan: Plan = 'full'): boolean {
   if (!summary.boss?.first || !automations(profile).has('frontier-march')) return false;
-  const to = frontier(profile).index;
+  // Never past the gate (plans/monetization.md): the free plan's march stops at the last region it plays.
+  const to = playableFrontier(profile, plan).index;
   if (to === profile.region) return false;
   profile.region = to;
   return true;

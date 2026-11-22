@@ -11,6 +11,7 @@ import { segmented, switchRow, type Choice } from './controls';
 import { turnPage } from './pageNav';
 import { icon } from './icon';
 import type { IconId } from '../content/icons';
+import { FREE_REGIONS, type Plan } from '../meta/plan';
 
 type Settings = Profile['settings'];
 
@@ -42,7 +43,22 @@ export interface SettingsActions {
   replace(profile: Profile): void;
   /** The panel closed. */
   closed(): void;
+  /** The plan, and whether this build has the dev switch (plans/monetization.md §3.4). */
+  purchase(): { plan: Plan; devSwitch: boolean; devPlan: Plan | null };
+  /** Open the paywall. Between runs only. */
+  paywall(): void;
+  /** Ask Google Play for the purchase again; how it ended, in words. */
+  restore(): Promise<string>;
+  /** Dev and debug builds: play as `plan`, or null for what the store says. */
+  setDevPlan(plan: Plan | null): void;
 }
+
+/** The dev switch's choices: the store's answer, or a plan forced. */
+const DEV_PLAN_CHOICES: readonly Choice<'store' | Plan>[] = [
+  { value: 'store', label: 'Store' },
+  { value: 'free', label: 'Free' },
+  { value: 'full', label: 'Full' },
+];
 
 const QUALITY_CHOICES: readonly Choice<'auto' | QualityTier>[] = [
   { value: 'auto', label: 'Auto' },
@@ -127,6 +143,8 @@ export class SettingsPanel {
   private message = '';
   /** The message is a refusal (an import that would not read): the identity's one legitimate red. */
   private failed = false;
+  /** What Restore purchase last said. */
+  private restoreMessage = '';
   private backupList: BackupInfo[] = [];
 
   constructor(private readonly host: HTMLElement, private readonly actions: SettingsActions) {}
@@ -143,6 +161,7 @@ export class SettingsPanel {
     this.pending = null;
     this.message = '';
     this.failed = false;
+    this.restoreMessage = '';
     this.page = 'options';
     if (canReset) {
       void this.actions.backups().then((list) => {
@@ -257,6 +276,7 @@ export class SettingsPanel {
         row('Motion', segmented(MOTION_CHOICES, s.motion, (v) => set((x) => { x.motion = v; }), 'Reduced motion')),
       ),
     );
+    body.append(section('Full game', this.purchase()));
     if (!this.canReset) {
       body.append(section('Progress', note('Reset is in the hub\'s settings, between runs.')));
       return;
@@ -274,6 +294,45 @@ export class SettingsPanel {
       reset.append(button('Reset progress', 'btn btn-tertiary btn-danger', () => { this.confirming = true; this.render(); }));
     }
     body.append(section('Progress', reset));
+  }
+
+  /**
+   * The purchase (plans/monetization.md §3.4): the plan, Restore purchase,
+   * and between runs the way to the paywall. Dev and debug builds add the
+   * plan switch, so the free plan can be played without a store.
+   */
+  private purchase(): HTMLElement {
+    const box = document.createElement('div');
+    box.className = 'settings-transfer';
+    const { plan, devSwitch, devPlan } = this.actions.purchase();
+    box.append(note(plan === 'full' ? 'Full game. Thank you for playing.' : `Free: Regions 1–${FREE_REGIONS}, their bosses and Trials.`));
+    // Not mid-run: the paywall would stand over a run the pause menu can't resume.
+    if (plan === 'free' && this.canReset) {
+      box.append(button('Open the full game', 'btn', () => {
+        this.close();
+        this.actions.paywall();
+      }));
+    }
+    box.append(
+      button('Restore purchase', 'btn', () => {
+        this.restoreMessage = 'Asking Google Play…';
+        this.render();
+        void this.actions.restore().then((said) => {
+          this.restoreMessage = said;
+          if (this.open) this.render();
+        });
+      }),
+      note(this.restoreMessage),
+    );
+    if (devSwitch) {
+      box.append(
+        row('Plan (dev)', segmented(DEV_PLAN_CHOICES, devPlan ?? 'store', (v) => {
+          this.actions.setDevPlan(v === 'store' ? null : v);
+          this.render();
+        }, 'Plan (dev)')),
+      );
+    }
+    return box;
   }
 
   /** The save (U12): take the profile elsewhere as text or a file, bring one back, or restore a backup. */

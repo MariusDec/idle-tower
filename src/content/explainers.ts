@@ -20,6 +20,7 @@ export type ExplainerId =
   | 'forge'
   | 'map'
   | 'trials'
+  | 'sealed'
   | 'abyss'
   | 'waypoints'
   | 'rush'
@@ -88,6 +89,14 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
     lines: [
       'A defeated region offers three Trials: runs there under a fixed rule, such as one weapon or no passives. Defeat the region’s boss to win one.',
       'Each pays once. A relic rank and a notable change your runs; a tower trim is cosmetic.',
+    ],
+  },
+  {
+    // The free plan's gate (plans/monetization.md §3.5): told once, when the locked card first shows.
+    id: 'sealed', view: 'map', title: 'The rest of the tower',
+    lines: [
+      'The first three regions are yours to keep, with their bosses, Trials, relics and trophies, and the Forge and Feats go on growing.',
+      'Ember Rift and everything past it open with one purchase: three more regions, the Blight, and all of Act 2. Yours for good, offline, with no ads.',
     ],
   },
   {

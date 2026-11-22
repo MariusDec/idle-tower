@@ -25,6 +25,7 @@ depends on. [AGENTS.md](../AGENTS.md) is the short version for agents.
 | [final-form.md](final-form.md) | Final Form: two evolutions in a run crown the tower in its frame's form |
 | [act2.md](act2.md) | Pacts and heat, Starlight, the Constellations, the Abyss |
 | [save.md](save.md) | Profile, migration ladder, run snapshot, storage backends |
+| [monetization.md](monetization.md) | The free plan and the one purchase: `meta/plan.ts`, the doors, `billing/`, the entitlement cache, the paywall |
 | [store-listing.md](store-listing.md) | The Play listing: name, descriptions, screenshots, Data safety |
 | [render.md](render.md) | Renderer, painters, effects, camera, palette, quality tiers |
 | [audio.md](audio.md) | The synth, its buses, the cue map, the music |

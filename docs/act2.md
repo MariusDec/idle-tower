@@ -183,8 +183,9 @@ a 16-bit rules tag of the tables and `OMEN_SIM`, the day, wave, kills,
 resumes, practice, and a keyed 20-bit check). Pasting a friend's message
 finds the code anywhere in it, ignores the line's own numbers, compares,
 and offers to play their day (scored if it's still free, else practice).
-A code from another build says so. No network: the app still has no
-INTERNET permission.
+A code from another build says so. No network: the Omen's codes travel by
+copy and paste, and the game goes online only for the purchase
+([monetization.md](monetization.md)).
 
 **Tuning.** `npm run omen -- --days 28` plays each day with the active bot
 and the hands-off policy and reads §9's targets (`--ring`, `--points` to

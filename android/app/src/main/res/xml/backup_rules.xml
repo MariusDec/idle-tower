@@ -11,7 +11,12 @@
        should not follow the player to a new phone. It also holds the
        WebView's caches, which could push the set past Auto Backup's 25 MB
        cap, and a set over the cap is not backed up at all.
-     - shared_prefs/ is the WebView's and Capacitor's own state. -->
+     - shared_prefs/ is the WebView's and Capacitor's own state.
+     - tower-entitlement.json, the purchase's cache (plans/monetization.md
+       Principle 3): a purchase belongs to a Google account, not to a save.
+       A new phone asks Google Play, which restores it to its owner. -->
 <full-backup-content>
     <include domain="file" path="." />
+    <exclude domain="file" path="tower-entitlement.json" />
+    <exclude domain="file" path="tower-entitlement.json.tmp" />
 </full-backup-content>

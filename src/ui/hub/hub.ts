@@ -1,6 +1,7 @@
 import type { Profile } from '../../meta/profile';
 import { formatDuration, formatNumber } from '../../core/format';
-import { act2Open, hubUnlocks, inAbyss, inRush, selectedFrame, selectedRegion, type HubUnlocks } from '../../meta/collection';
+import { hubUnlocks, inAbyss, inRush, selectedFrame, selectedRegion, type HubUnlocks } from '../../meta/collection';
+import { act2Playable, hubUnlocksFor, type Plan } from '../../meta/plan';
 import { RUSH_STAGES } from '../../content/rush';
 import { BOSS_WAVE } from '../../sim/systems/waves';
 import { hubGoal } from '../../meta/goals';
@@ -75,6 +76,12 @@ export interface HubActions {
   copy(text: string): Promise<boolean>;
   /** Open the settings (§10.1: behind the gear). */
   settings(): void;
+  /** The plan the player is on (plans/monetization.md): what the tabs and the Map show. */
+  plan(): Plan;
+  /** The store's price, for the Map's locked card; null while unknown. */
+  price(): string | null;
+  /** Open the paywall (the Map's locked card). */
+  paywall(): void;
   /**
    * A view opened, or its "?" was pressed (§7.1): the app tells its
    * explainers, unread ones only unless `asked`, after `wait` ms.
@@ -303,7 +310,7 @@ export class HubScreen {
       actions.chooseWaypoint(floor);
       if (this.profile) this.map.show(this.profile);
       this.refresh();
-    });
+    }, { plan: () => actions.plan(), price: () => actions.price(), sealed: () => actions.paywall() });
     this.collection = new CollectionView(this.root, {
       toggleRelic: (id) => refreshing(() => actions.toggleRelic(id)),
       toggleCursed: (id) => refreshing(() => actions.toggleCursed(id)),
@@ -382,12 +389,15 @@ export class HubScreen {
       this.painted = true;
       firstPaint(this.root);
     }
-    this.renderTabs(hubUnlocks(profile));
+    // Act 2's tabs and pages wait behind the purchase (plans/monetization.md D-5).
+    const plan = this.actions.plan();
+    const unlocks = hubUnlocksFor(profile, plan);
+    this.renderTabs(unlocks);
     const open = view === 'home'
       || (view === 'tactics' ? tacticsKey(profile) !== null
-        : view === 'pacts' ? act2Open(profile)
+        : view === 'pacts' ? act2Playable(profile, plan)
           : view === 'contracts' ? boardOpen(profile)
-            : view === 'omen' ? omenOpen(profile) : hubUnlocks(profile)[view]);
+            : view === 'omen' ? omenOpen(profile) && plan === 'full' : unlocks[view]);
     this.setView(open ? view : 'home', spread, true, slide);
   }
 
@@ -492,6 +502,7 @@ export class HubScreen {
   private refresh(): void {
     const p = this.profile;
     if (!p) return;
+    const plan = this.actions.plan();
     setText(this.shards, formatNumber(p.shards));
     // The selected region's own best (§7.3), the deepest floor in the Abyss, or Boss Rush's record (N8).
     const abyss = inAbyss(p);
@@ -510,10 +521,10 @@ export class HubScreen {
     this.loadout.disabled = !mapOpen;
     toggleClass(this.loadout, 'is-link', mapOpen);
     for (const help of this.root.querySelectorAll<HTMLElement>('.help-btn')) {
-      help.hidden = explainersFor(p, help.dataset.view as HubView).length === 0;
+      help.hidden = explainersFor(p, help.dataset.view as HubView, plan).length === 0;
     }
     this.tacticsBtn.hidden = tacticsKey(p) === null;
-    const act2 = act2Open(p);
+    const act2 = act2Playable(p, plan);
     this.pactsBtn.hidden = !act2;
     this.starlightStat.hidden = !act2;
     setText(this.starlightN, formatNumber(p.starlight));
@@ -522,9 +533,9 @@ export class HubScreen {
     setText(this.pactsBtn, `Pacts · Heat ${heat(p)}`);
     this.contractsBtn.hidden = !boardOpen(p);
     // The Omen's one nudge (plans/late-game/11 §2): a dot while today's scored try is free. No toast, count or timer.
-    this.omenBtn.hidden = !omenOpen(p);
+    this.omenBtn.hidden = !(omenOpen(p) && plan === 'full');
     toggleClass(this.omenBtn, 'has-badge', omenDot(p, Date.now()));
-    const goal = p.records.runs > 0 ? hubGoal(p) : null;
+    const goal = p.records.runs > 0 ? hubGoal(p, plan) : null;
     this.goal.hidden = goal === null;
     if (goal) {
       // A line that opens a view is a button to the reader (plans/late-game/10 §4.6).

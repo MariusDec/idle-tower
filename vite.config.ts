@@ -1,7 +1,13 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   root: '.',
+  define: {
+    // A debug APK built for RevenueCat's Test Store (`npm run android:test-store`).
+    // Fixed at build time, so any other build compiles the Test Store key out
+    // (src/billing/revenuecat.ts); `npm run check:release` refuses it set.
+    __REVENUECAT_TEST_STORE__: JSON.stringify(loadEnv(mode, process.cwd(), '').REVENUECAT_TEST_STORE === '1'),
+  },
   // UI plan §9.E: relative base path so `dist/` can be served from anywhere
   // (Capacitor's `capacitor://` or `https://` host, a sub-path on a static
   // site, etc.) without re-bundling. The icon sprite is already relative —
@@ -19,4 +25,4 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
   },
-});
+}));

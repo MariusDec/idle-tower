@@ -1470,7 +1470,7 @@ body {
   transform-origin: left center;
 }
 
-/* Run details: a quiet link under the list, not a third big button. */
+/* Run details: a quiet link above the list (so a long list never hides it), not a third big button. */
 .results-report-btn { font-size: var(--fs-md); }
 .results-report-btn .icon { --icon-size: 18px; }
 
@@ -2383,6 +2383,33 @@ body {
   color: var(--text-secondary);
 }
 
+/* The paywall sheet (plans/monetization.md §3.3): what one purchase opens, its price, the last attempt's reason. */
+.paywall { margin: 0 0 var(--space-4); }
+.paywall-lead { margin-bottom: var(--space-3); }
+.paywall-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  list-style: none;
+  text-align: left;
+}
+.paywall-lines li { display: flex; align-items: center; gap: var(--space-2); }
+.paywall-lines .icon { --icon-size: 18px; flex-shrink: 0; color: var(--fx-gold); }
+.paywall-price {
+  margin: var(--space-3) 0 0;
+  color: var(--fx-gold);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-lg);
+}
+.paywall-note { margin: var(--space-3) 0 0; color: var(--text-secondary); font-size: var(--fs-sm); }
+
+/* The results' prompt at the gate (§3.2): the one line that opens the paywall. */
+.results-gate { flex-wrap: wrap; }
+.results-gate .btn { margin-left: auto; }
+
 /* The welcome-back card (R8 §2): a headline number, then a line per what else happened. */
 .welcome {
   display: flex;
@@ -2844,6 +2871,22 @@ body {
 
 .map-region-trophy .icon { color: var(--fx-blood); }
 .map-region-enemies { color: var(--text-dim); }
+
+/* The first region past the free plan (plans/monetization.md §3.1): seen, sealed, and the paywall's door. */
+.map-region.is-sealed {
+  border-style: dashed;
+  background: var(--panel-subtle);
+}
+.map-region.is-sealed .map-region-head > .icon,
+.map-region.is-sealed .map-region-name { color: var(--text-muted); }
+.map-region-lock { background: rgba(var(--rgb-gold), 0.16); color: var(--fx-gold); }
+.map-region-lock .icon { --icon-size: 14px; }
+.map-region-shadow .icon { color: var(--text-muted); opacity: 0.5; }
+.map-region-door {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--fx-gold);
+}
 
 /* A cleared region's Trials (N5): a toggle under the card, and the list it opens. */
 .map-trials {
@@ -4312,10 +4355,68 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: end;
+  /* Rows are spaced by margins, not gaps: a card's tracks are a subgrid with no gaps of its own. */
+  row-gap: 0;
+  padding-top: 0;
 }
-:root:is([data-form='medium'], [data-form='expanded']) .map-list > :not(.map-region),
-:root:is([data-form='medium'], [data-form='expanded']) .map-list > .map-region:has(.map-shaft) {
+:root:is([data-form='medium'], [data-form='expanded']) .map-list > * {
+  margin-top: var(--space-3);
+}
+:root:is([data-form='medium'], [data-form='expanded']) .map-list > :not(.map-cell),
+:root:is([data-form='medium'], [data-form='expanded']) .map-list > .map-cell:has(.map-shaft) {
   grid-column: 1 / -1;
+}
+/*
+ * A row of two cards shares three tracks: body, Trials toggle, open Trials list.
+ * The cell spans all three, so an open list reserves the row's height; the
+ * card spans the first two (all three when its list is open), so its
+ * neighbour stays its own height with the toggle on its bottom edge.
+ */
+:root:is([data-form='medium'], [data-form='expanded']) .map-cell:not(:has(.map-shaft)) {
+  grid-row: span 3;
+  display: grid;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+}
+:root:is([data-form='medium'], [data-form='expanded']) .map-cell:not(:has(.map-shaft)) > .map-region {
+  grid-row: 1 / 3;
+}
+:root:is([data-form='medium'], [data-form='expanded']) .map-cell:not(:has(.map-shaft)) > .map-region:has(> .map-region-btn) {
+  display: grid;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+}
+:root:is([data-form='medium'], [data-form='expanded']) .map-cell > .map-region:has(.map-trials-list) {
+  grid-row: 1 / 4;
+}
+:root:is([data-form='medium'], [data-form='expanded']) .map-cell > .map-region > .map-trials {
+  grid-row: 2 / -1;
+  display: grid;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  padding-bottom: 0;
+}
+/* The toggle's track and the list's track each carry their own bottom space,
+   so the toggle's track is the same height open or closed, beside either. */
+:root:is([data-form='medium'], [data-form='expanded']) .map-cell .map-trials-toggle {
+  align-self: start;
+  margin-bottom: var(--space-3);
+}
+:root:is([data-form='medium'], [data-form='expanded']) .map-cell .map-trials-list {
+  margin: 0 0 var(--space-3);
+}
+/* A body stretched to its neighbour's height keeps its content at the top (buttons centre it). */
+:root:is([data-form='medium'], [data-form='expanded']) .map-cell .map-region-btn {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+:root:is([data-form='medium'], [data-form='expanded']) .map-cell .map-region-btn > * {
+  flex: none;
+}
+/* Flex margins don't collapse: drop the one that collapsed into the stats' margin. */
+:root:is([data-form='medium'], [data-form='expanded']) .map-cell .map-region-stats + * {
+  margin-top: 0;
 }
 
 /* Collection, Feats, Stars, Contracts: cards two to a row. */
@@ -4323,6 +4424,8 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
+  /* A short list in a flex-grown box: pack rows at the top, don't stretch them. */
+  align-content: start;
 }
 
 /* The Forge's node card docks bottom-right instead of spanning the stage. */
