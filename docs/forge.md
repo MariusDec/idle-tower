@@ -87,7 +87,12 @@ read). The Forge does the same once the Gatekeeper falls (**tempering**,
 Act 1's sink past the ring, so time spent farming keeps buying an easier
 run instead of piling up once a ring is full. Only combat stats temper:
 shard and XP gain stop at their last level, so the pay never compounds
-with the power that earns it. Its card says Temper and
+with the power that earns it. Once the Blight falls (`EASE_BOSS`), a
+tempered level costs `temper.easedGrowth` (×1.2) the one before instead
+of the node's own growth (`beyond.eased`; `Web#cost` reads it when given
+the profile): Act 2's endless combat sink, on the curve the old endless
+masteries had (plans/mastery-capstones.md). Act 1's prices don't move.
+Its card says Temper and
 Tempered where a star's says Ascend and Ascended (`WebViewSource.beyond`);
 the Foreman keeps a pinned tempered node and buys it on. **Refunds:** notables and
 keystones refund in full, between runs; minors and masteries never do, so

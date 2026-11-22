@@ -483,7 +483,7 @@ export class App {
     if (p.storedLight <= 0 || !automations(p).has('foreman')) return null;
     const id = p.wishlist.find((x) => FORGE_BY_ID[x] && isBuyable(p, x));
     if (id === undefined) return null;
-    const cost = nodeCost(FORGE_BY_ID[id], levelOf(p, id));
+    const cost = nodeCost(FORGE_BY_ID[id], levelOf(p, id), p);
     const short = cost - p.shards;
     return short > 0 && p.storedLight >= short ? cost : null;
   }

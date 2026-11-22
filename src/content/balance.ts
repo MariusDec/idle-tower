@@ -82,8 +82,13 @@ export const BALANCE = {
      * fell at ~2 h even with shard and XP gain left out (8 profiles,
      * 2:04–2:33). At 0.2 it is a slope: each region from the Prism takes
      * ~1 h, the Blight ~5 h (docs/balancing.md, "Tempering").
+     *
+     * `easedGrowth`: past the Blight, each tempered level costs ×1.2 the one
+     * before (the old endless masteries' curve), not the node's ×1.7. Act 1
+     * is untouched; Act 2 keeps an endless combat sink once the capstones
+     * are full (plans/mastery-capstones.md, docs/balancing.md).
      */
-    temper: { cost: 2, share: 0.2 },
+    temper: { cost: 2, share: 0.2, easedGrowth: 1.2 },
   },
   /**
    * The mastery capstones (plans/mastery-capstones.md): each rank a rule that

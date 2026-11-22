@@ -54,6 +54,11 @@ export interface WebSpec<N extends WebNodeDef> {
     open(profile: Profile): boolean;
     readonly cost: number;
     readonly share: number;
+    /**
+     * A gentler curve for levels past the last, once `easy(profile)` holds:
+     * each such level costs `growth` times the one before, not the node's own.
+     */
+    readonly eased?: { easy(profile: Profile): boolean; readonly growth: number };
   };
 }
 
@@ -93,10 +98,18 @@ export class Web<N extends WebNodeDef> {
     return this.spec.sealed(profile, node);
   }
 
-  /** The price of the next level of `node`, given `owned` levels already bought; past its last, ascension's. */
-  cost(node: N, owned: number): number {
-    const past = owned >= node.maxLevel && this.spec.beyond ? this.spec.beyond.cost : 1;
-    return Math.round(node.cost * Math.pow(node.growth ?? this.spec.growth, owned) * past);
+  /**
+   * The price of the next level of `node`, given `owned` levels already
+   * bought; past its last, ascension's. With `profile`, past its last on the
+   * eased curve once that profile has earned it (`beyond.eased`).
+   */
+  cost(node: N, owned: number, profile?: Profile): number {
+    const b = this.spec.beyond;
+    const growth = node.growth ?? this.spec.growth;
+    if (!b || owned < node.maxLevel) return Math.round(node.cost * Math.pow(growth, owned));
+    const e = b.eased;
+    if (!profile || !e || !e.easy(profile)) return Math.round(node.cost * Math.pow(growth, owned) * b.cost);
+    return Math.round(node.cost * Math.pow(growth, node.maxLevel) * Math.pow(e.growth, owned - node.maxLevel) * b.cost);
   }
 
   /** The levels `node` may be bought to now: its last, or without end once it may ascend (N10). */
@@ -167,7 +180,7 @@ export class Web<N extends WebNodeDef> {
 
   canAfford(profile: Profile, id: string): boolean {
     const node = this.byId.get(id);
-    return !!node && this.isBuyable(profile, id) && this.spec.wallet(profile) >= this.cost(node, this.levelOf(profile, id));
+    return !!node && this.isBuyable(profile, id) && this.spec.wallet(profile) >= this.cost(node, this.levelOf(profile, id), profile);
   }
 
   /** Buy the next level. False, and nothing changes, if it isn't allowed. */
@@ -175,7 +188,7 @@ export class Web<N extends WebNodeDef> {
     if (!this.canAfford(profile, id)) return false;
     const node = this.byId.get(id)!;
     const owned = this.levelOf(profile, id);
-    this.spec.pay(profile, this.cost(node, owned));
+    this.spec.pay(profile, this.cost(node, owned, profile));
     this.spec.owned(profile)[id] = owned + 1;
     return true;
   }
@@ -224,7 +237,7 @@ export class Web<N extends WebNodeDef> {
     const held = this.spec.wallet(profile);
     for (const n of this.spec.nodes) {
       if (!this.isBuyable(profile, n.id)) continue;
-      const cost = this.cost(n, this.levelOf(profile, n.id));
+      const cost = this.cost(n, this.levelOf(profile, n.id), profile);
       if (!best || cost < best.cost) best = { node: n, cost, progress: Math.min(1, held / cost) };
     }
     return best;

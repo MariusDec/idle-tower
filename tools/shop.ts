@@ -19,7 +19,7 @@ export function shop(profile: Profile): string[] {
     let bestCost = Infinity;
     for (const n of FORGE) {
       if (n.type === 'keystone' || !canAfford(profile, n.id)) continue;
-      const cost = nodeCost(n, levelOf(profile, n.id));
+      const cost = nodeCost(n, levelOf(profile, n.id), profile);
       if (cost < bestCost) {
         bestCost = cost;
         best = n.id;

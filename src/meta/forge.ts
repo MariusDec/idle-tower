@@ -49,11 +49,16 @@ export const FORGE_WEB = new Web<ForgeNodeDef>({
     open: (p) => bossDown(p, TEMPER_BOSS),
     cost: BALANCE.forge.temper.cost,
     share: BALANCE.forge.temper.share,
+    // Act 2: once the Blight falls, tempering is the endless combat sink the
+    // masteries were (plans/mastery-capstones.md), on their gentler curve.
+    eased: { easy: (p) => bossDown(p, EASE_BOSS), growth: BALANCE.forge.temper.easedGrowth },
   },
 });
 
 /** The boss whose first fall opens tempering. */
 export const TEMPER_BOSS: BossId = 'gatekeeper';
+/** The boss whose first fall puts tempering on its gentler curve (Act 2). */
+export const EASE_BOSS: BossId = 'blight';
 
 /** Stats that never temper: the economy, which would feed back into itself. */
 const UNTEMPERED: ReadonlySet<StatKey> = new Set<StatKey>(['shardGain', 'xpGain']);
@@ -72,9 +77,9 @@ export function levelOf(profile: Profile, id: string): number {
   return FORGE_WEB.levelOf(profile, id);
 }
 
-/** Shards for the next level of `node`, given `owned` levels already bought. */
-export function nodeCost(node: ForgeNodeDef, owned: number): number {
-  return FORGE_WEB.cost(node, owned);
+/** Shards for the next level of `node`, given `owned` levels already bought, at `profile`'s prices. */
+export function nodeCost(node: ForgeNodeDef, owned: number, profile?: Profile): number {
+  return FORGE_WEB.cost(node, owned, profile);
 }
 
 /** Everything spent on a node's `owned` levels: what a refund returns. */

@@ -1296,7 +1296,7 @@ body {
   flex-direction: column;
   gap: var(--space-2);
   width: min(360px, calc(100% - var(--space-6) - var(--safe-l) - var(--safe-r)));
-  max-height: calc(100% - var(--space-6));
+  max-height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
   padding: var(--space-5);
@@ -1901,6 +1901,15 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* Exactly four (Choice): two rows of two. The cards are twice as wide, so
+   the effect text wraps far less and a shorter floor still fits it. */
+.draft-row.is-quad {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.draft-row.is-quad .draft-card { min-height: 196px; }
+
 .draft-row.is-many .draft-card {
   min-height: 196px;
   gap: 2px;
@@ -2326,6 +2335,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Clear the status bar and gesture bar, so a tall card never tucks under them. */
+  padding: max(var(--space-3), var(--safe-t)) var(--space-3) max(var(--space-3), var(--safe-b));
   background: var(--scrim);
 }
 
@@ -2439,6 +2450,8 @@ body {
 .modal-actions {
   display: flex;
   justify-content: center;
+  /* A gap from the scrolled body, which may be cut off mid-line above it. */
+  padding-top: var(--space-3);
   gap: var(--space-3);
 }
 
@@ -4542,6 +4555,12 @@ body {
 
 :root:is([data-form='medium'], [data-form='expanded']) .draft-row.is-many {
   grid-template-columns: repeat(3, minmax(150px, 170px));
+}
+
+/* Wider stages have room for four abreast: keep them in one row. */
+:root:is([data-form='medium'], [data-form='expanded']) .draft-row.is-quad {
+  grid-auto-flow: column;
+  grid-template-columns: none;
 }
 
 @container draft (min-width: 984px) {

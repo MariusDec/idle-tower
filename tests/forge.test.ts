@@ -111,6 +111,27 @@ describe('Forge: tempering past the last level', () => {
       expect(p.forge[id]).toBe(FORGE_BY_ID[id].maxLevel);
     }
   });
+
+  it('past the Blight, tempered levels go on a gentler curve; Act 1 prices are untouched', () => {
+    const p = rich(1e9);
+    p.bosses.gatekeeper = { kills: 1, fastest: null };
+    const n = FORGE_BY_ID['might-damage'];
+    const g = n.growth ?? BALANCE.forge.levelGrowth;
+    const T = BALANCE.forge.temper;
+    const at = n.maxLevel + 3;
+    const act1 = Math.round(n.cost * Math.pow(g, at) * T.cost);
+    expect(nodeCost(n, at, p)).toBe(act1);
+    // Below the last level, or with no profile to read, nothing changes.
+    p.bosses.blight = { kills: 1, fastest: null };
+    expect(nodeCost(n, at)).toBe(act1);
+    expect(nodeCost(n, 1, p)).toBe(nodeCost(n, 1));
+    expect(nodeCost(n, at, p)).toBe(Math.round(n.cost * Math.pow(g, n.maxLevel) * Math.pow(T.easedGrowth, 3) * T.cost));
+    // And the purchase pays the eased price.
+    p.forge['might-damage'] = at;
+    const before = p.shards;
+    expect(buyNode(p, 'might-damage')).toBe(true);
+    expect(before - p.shards).toBe(nodeCost(n, at, p));
+  });
 });
 
 describe('Forge: refunds (§5.1)', () => {

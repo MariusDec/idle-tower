@@ -336,6 +336,8 @@ export class DraftPanel {
     this.anomalyRow.hidden = odd.length === 0;
     // Past four cards (Choice, Foresight, Jackpot), the hand wraps into rows of three.
     toggleClass(this.row, 'is-many', hand.length > 4);
+    // Exactly four (Choice): two rows of two on a phone, so each card gets twice the width.
+    toggleClass(this.row, 'is-quad', hand.length === 4);
     this.root.hidden = false;
   }
 

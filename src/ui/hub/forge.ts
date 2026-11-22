@@ -475,7 +475,7 @@ export class WebView<N extends WebNodeDef> {
     actions.className = 'forge-detail-actions';
     const max = web.maxOf(p, n);
     if (level < max) {
-      const cost = web.cost(n, level);
+      const cost = web.cost(n, level, p);
       const buy = document.createElement('button');
       buy.type = 'button';
       // A secondary: Begin run is the screen's one primary (plans/visual-identity.md §4.1).
