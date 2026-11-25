@@ -30,7 +30,7 @@ mid-game, nothing is left that only playing can get you.**
 | [08. Abyss strata](08-abyss-strata.md) | Five authored strata, the Hunger at floor 30 as Act 2's ending, the Below after | L | C (not §6) |
 | [10. Contracts](10-contracts.md) | Three generated goals on the hub, replaced the moment one is done | L | D §1 |
 | [11. Daily Omen](11-daily-omen.md) | One date-seeded run a day, compared with friends by a short code, offline | M | D §2 |
-| [12. The Wake](12-the-wake.md) | Five regions between the Blight and the Abyss (Toll, Orbit, Glide, Giants, Storm), with Trials and relics; the Thunderhead opens the Abyss. Built (untuned) | XL | new |
+| [12. The Wake](12-the-wake.md) | Five regions between the Blight and the Abyss (Toll, Orbit, Glide, Giants, Storm), with Trials and relics; the Thunderhead opens the Abyss. Built, tuned (first pass; pace and Omen readings open) | XL | new |
 
 The outlines, for history: [A](a-stored-light.md), [B](b-moments.md),
 [C](c-abyss-strata.md), [D](d-come-back.md).

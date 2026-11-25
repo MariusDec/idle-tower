@@ -709,12 +709,39 @@ much stronger (wave 16 → 22, shards 41k → 96k).
 each rank, rank 0, the feats, and a snapshot round-trip with a bank, a
 shield and a charge bank held.
 
-## The Wake: readings pending (2026-11-25)
+## The Wake: first tuning (2026-11-25)
 
-The Wake (plans/late-game/12) is built but not tuned. §14's readings
-(the bot's clear times, idle gates, Starlight per hour, the arsenal on the
-Wake fixture) are not taken yet. The numbers in `BALANCE.wake`, the Wake
-regions' sizes and the bosses' HP multipliers are first guesses. A quick
-`npm run omen -- --days 12 --from 20786` across the cutover at ring 7 fell
-early on Wake days: Stormcrown wave 11, the Bell Marches 18, the Frozen
-Sea 20. `BALANCE.omen.stars` is the planned lever for that.
+The Wake (plans/late-game/12 §14), first pass. The Act 2 bot is too slow to
+read here: `--act2 --reuse --seeds 4 --hours 1.5` did not finish in 15 min,
+and neither did a single `--fast` seed over 1 h. So the boss fights were read
+with the Act 1 fixture's towers at the Blight's fall (the Carillon's arrival
+tower; for the later bosses, a lower bound), three profiles × two runs per
+region, with a scratch probe: wave-20 boss HP ÷ `buildDps` at arrival. The
+`inspect --forge all` tower is no reference: it dies at wave 13–17 in the
+Blight Heart itself.
+
+Before: the Blight-fall tower felled the Carillon 5/6, the Astrolabe 6/6,
+the Colossus 6/6, the Thunderhead 6/6 and the Leviathan 1/6. Boss HP ÷ DPS
+medians were 18 / 15 / 20 / 28 / 19, and the Bell Marches and Orrery dealt
+0 damage before wave 20. That matches the single `--act2` seed that cleared
+the Wake 23–53 min after the Blight.
+
+Changes: the Bell Marches and Orrery `hpBase` 2400 → 2600 (D-6's top). Boss
+`hp`: Carillon 60 → 90, Astrolabe 55 → 100, Leviathan 58 → 75, Thunderhead
+65 → 100; the Colossus stays at 62. `BALANCE.omen.stars` for regions 9–13:
+the Sky's stat stars plus Undimmed. `shardBase` and the rule numbers are
+unchanged.
+
+| Reading | Command | Target | Result |
+|---|---|---|---|
+| Boss HP ÷ expected DPS | probe, Blight-fall towers | 25–35 s | Carillon 29, Astrolabe 29, Leviathan 26, Colossus 28, Thunderhead 30 (medians) |
+| Blight-fall tower fells | same | Carillon reachable within 1 h | Carillon 1/6, Astrolabe 6/6, Leviathan 0/6, Thunderhead 5/6 |
+| Carillon / Thunderhead after the Blight | `npm run pacing -- --act2 --hours 16 --seeds 4` | ≤ 1 h / 6–10 h | not read (cost). Before tuning, one seed: 0:23 / 0:53. Off: D-6's flat HP can't stretch the Wake to 6 h |
+| Hands-off idle | `--idle --wake` | Thunderhead ≤ 4 days | no such tool yet |
+| The Omen, Wake days | `npm run omen -- --days 28 --from 20788` | median fall wave 26–34 | Wake days median ~20 (15–29), before 11–20; OFF. Ring 7 + stars is too weak for wave-20 Wake bosses on 6–8 point days |
+| Arsenal `--wake` | needs `tools/fixtures/wake-frontiers.json` | ≥ 10 pt shift | not read |
+| Act 1 | `npm test`, `npm run typecheck` | unchanged | green (1198); Wake-only data |
+
+Next: generate the Wake fixture (`--act2 --wake-frontiers`, hours of CPU)
+and re-read the bosses at their own arrival towers. The 6–10 h pace needs a
+decision: lift D-6's flat HP (a Wake staircase), or move the target.

@@ -19,6 +19,9 @@ export interface OfflineTier {
   readonly stored: StoredTier | null;
 }
 
+/** The Omen's Wake towers (plans/late-game/12 §14): the Sky's stat stars and Undimmed, at max level — a Wake player has spent Starlight. */
+const WAKE_OMEN_STARS: readonly string[] = ['smith-damage', 'smith-speed', 'deep-damage', 'crown-crit', 'crown-crit-damage', 'deep-area', 'warden-hp', 'warden-hp-2', 'warden-regen', 'warden-armor', 'warden-undying'];
+
 export const BALANCE = {
   tower: {
     maxHp: 100,
@@ -847,7 +850,7 @@ export const BALANCE = {
      */
     ring: [0, 6, 6, 6, 6, 6, 6, 0, 0, 7, 7, 7, 7, 7] as readonly number[],
     /** Star node ids lit at max level on the Omen's tower, by region (Wake days, if `npm run omen` says they fall short). */
-    stars: {} as Partial<Record<number, readonly string[]>>,
+    stars: Object.fromEntries([9, 10, 11, 12, 13].map((r) => [r, WAKE_OMEN_STARS])) as Partial<Record<number, readonly string[]>>,
     /**
      * The first Omen day (days since 1970-01-01 UTC) that draws the Wake's
      * regions: 2026-12-01 (plans/late-game/12 §8.10). Days before it keep

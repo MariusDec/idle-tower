@@ -1,8 +1,11 @@
 # 12. The Wake: five regions between the Blight and the Abyss
 
-**Status:** 2026-11-25. Built (untuned): steps 1–6 are in the code. The
-Omen's cutover (`BALANCE.omen.wakeFrom`) is day 20788, 2026-12-01. Step 7
-(§14's readings, `QUARRY` for 9–13, `BALANCE.omen.stars`) is still to do.
+**Status:** 2026-11-25. Built and tuned (first pass): steps 1–7 are in the
+code. The Omen's cutover (`BALANCE.omen.wakeFrom`) is day 20788, 2026-12-01.
+Step 7 set the bosses' HP, the Bell Marches' and Orrery's `hpBase` and
+`BALANCE.omen.stars` (`docs/balancing.md`, "The Wake: first tuning"). Still
+open: the Act 2 bot's 6–10 h pace, the idle gate (no tool yet), the Omen's
+Wake days (median wave ~20) and `QUARRY` for 9–13.
 Originally 2026-11-23: planned, nothing built. Comes out of the "3–4 more
 maps before the Abyss" brainstorm. The owner settled the decisions in §0.1 on
 2026-11-23. §0.2 lists the smaller calls made while detailing the plan

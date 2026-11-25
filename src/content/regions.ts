@@ -221,7 +221,7 @@ export const REGIONS: readonly RegionDef[] = [
     // D-6: flat, like the Blight Heart; the difficulty is the rule (§14 tunes).
     shardBase: 66,
     waveShards: 132,
-    hpBase: 2400,
+    hpBase: 2600,
     hpGrowth: 1.17,
     damageBase: 46,
     damageGrowth: 1.06,
@@ -253,7 +253,7 @@ export const REGIONS: readonly RegionDef[] = [
     text: 'A field that turns like a wheel.',
     shardBase: 66,
     waveShards: 132,
-    hpBase: 2400,
+    hpBase: 2600,
     hpGrowth: 1.17,
     damageBase: 46,
     damageGrowth: 1.06,
