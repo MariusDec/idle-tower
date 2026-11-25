@@ -11,7 +11,7 @@ import type { AnomalyId, BossId, EnemyId, EvolutionId, FeatDef, FusionId, Passiv
 import type { DamageBy, HurtBy, RunState } from '../sim/state';
 import { recordSecrets, type SecretsBanked } from './secrets';
 import {
-  act2Open, bossDown, frameUnlocked, gainRelic, wornCursed, hubUnlocks, regionUnlocked, relicSlots, rushOpen, setOwned, setRank, trophiesAt,
+  abyssOpen, act2Open, bossDown, frameUnlocked, gainRelic, wornCursed, hubUnlocks, regionUnlocked, relicSlots, rushOpen, setOwned, setRank, trophiesAt,
 } from './collection';
 import { checkFeats } from './feats';
 import { foremanBuy } from './automation';
@@ -23,6 +23,7 @@ import { burnBonus, type BurnTally } from './storedLight';
 import { recipesOpen, recordFusions, recordRecipes } from './recipes';
 import { recordFloor, recordHeat, recordRush, recordStratum, type RushRecord, type StarRecord, type StratumRecord } from './pacts';
 import type { Profile } from './profile';
+import { payStarlight } from './stars';
 import type { Plan } from './plan';
 import { bankOmen, omenOpen, type OmenBanked } from './omen';
 import { pactLoad } from '../sim/pacts';
@@ -173,6 +174,8 @@ export interface RunSummary {
   rush: { stages: number; time: number | null } | null;
   /** A Boss Rush record, and the Starlight it paid. */
   rushRecord: RushRecord | null;
+  /** A Wake boss's first fall (plans/late-game/12 D-5): which, and the Starlight lump it paid. Null otherwise. */
+  wakeRecord: { boss: BossId; starlight: number } | null;
   /** The Trial this run was (N5): whether it was won, and what it paid the first time. Null for an ordinary run. */
   trial: { id: string; won: boolean; paid: TrialPaid | null } | null;
   /** The contract this run was taken for (plans/late-game/10): met and paid, or why not. Null for an ordinary run. */
@@ -221,8 +224,8 @@ function unlockList(profile: Profile): Map<string, string> {
   if (act2Open(profile)) {
     add('Pacts');
     add('The Constellations');
-    add('The Abyss');
   }
+  if (abyssOpen(profile)) add('The Abyss');
   if (omenOpen(profile)) add('The Daily Omen');
   if (rushOpen(profile)) add('Boss Rush');
   if (boardOpen(profile)) add('Contracts');
@@ -366,6 +369,7 @@ export function bankRun(
   // In the Abyss only its own bosses keep records (§9): the floors' guardians are their regions'.
   // Boss Rush's (N8) keep none: they are their regions' and the Abyss's, met again.
   let boss: BossResult | null = null;
+  let wakeRecord: RunSummary['wakeRecord'] = null;
   const relics: RunSummary['relics'] = [];
   if (abyss) {
     for (const id of run.felled) {
@@ -388,6 +392,9 @@ export function bankRun(
       profile.ceremony = b.id;
       const relic = bossRelic(b.id);
       if (relic) relics.push({ id: relic, rank: gainRelic(profile, relic) });
+      if (regionAt(run.regionId, run.wave).act === 2) {
+        wakeRecord = { boss: b.id, starlight: payStarlight(profile, BALANCE.wake.lump) };
+      }
     }
   }
   for (const id of run.relics) relics.push({ id, rank: gainRelic(profile, id) });
@@ -516,6 +523,7 @@ export function bankRun(
     stratumRecord,
     rush: rush ? { stages, time: rushTime } : null,
     rushRecord,
+    wakeRecord,
     trophies,
     foreman,
     trial,
@@ -574,6 +582,7 @@ function omenSummary(profile: Profile, run: RunState, newCards: readonly string[
     stratumRecord: null,
     rush: null,
     rushRecord: null,
+    wakeRecord: null,
     trial: null,
     contract: null,
     foreman: [],

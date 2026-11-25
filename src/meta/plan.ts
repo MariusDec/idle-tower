@@ -1,6 +1,6 @@
 import { REGIONS, regionByIndex } from '../content/regions';
 import type { RegionDef } from '../content/types';
-import { act2Open, hubUnlocks, regionUnlocked, type HubUnlocks } from './collection';
+import { abyssOpen, act2Open, hubUnlocks, regionUnlocked, type HubUnlocks } from './collection';
 import type { Profile } from './profile';
 
 /**
@@ -45,6 +45,11 @@ export function regionPlayable(profile: Profile, index: number, plan: Plan): boo
 /** Act 2 (pacts, the Constellations, the Abyss, Boss Rush, the Omen) on this plan. */
 export function act2Playable(profile: Profile, plan: Plan): boolean {
   return act2Open(profile) && plan === 'full';
+}
+
+/** The Abyss (and Boss Rush) on this plan (plans/late-game/12 §8.2). */
+export function abyssPlayable(profile: Profile, plan: Plan): boolean {
+  return abyssOpen(profile) && plan === 'full';
 }
 
 /** The furthest region this plan plays: `frontier`, stopped at the gate. */

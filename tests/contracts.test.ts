@@ -4,7 +4,7 @@ import { BOSSES } from '../src/content/bosses';
 import { contractText, plural } from '../src/content/contracts';
 import { FORGE } from '../src/content/forge';
 import { MAX_TEXT_WORDS } from '../src/content/lint';
-import { REGIONS } from '../src/content/regions';
+import { REGIONS, WAKE_REGIONS } from '../src/content/regions';
 import type { ContractMod, ContractSpec, ContractTarget, WeaponId } from '../src/content/types';
 import {
   SLOTS, placeOf, boardOpen, comfortable, contractLead, contractMet, contractTier, ensureBoard, ownedWeapons, pin, reroll, score, slotBand, takeContract, takenContract, tierOf, trivial, valid,
@@ -42,6 +42,8 @@ function fixtures(): Record<string, Profile> {
   const heat10 = cleared(6);
   for (const r of REGIONS) heat10.pacts.best[r.index] = 10;
   heat10.pacts.ranks = { scarcity: 3, elites: 3, haste: 3, tyranny: 1 };
+  // The Abyss opens on the Thunderhead (plans/late-game/12 D-1): the Wake walked, then the descent.
+  for (const r of WAKE_REGIONS) heat10.bosses[r.boss] = { kills: 1, fastest: null };
   heat10.bosses.deepwarden = { kills: 1, fastest: null };
   heat10.abyss.best = 6;
   heat10.abyss.felled = 1;
@@ -530,5 +532,45 @@ describe('a card is a detour (review of plan 10)', () => {
     expect(plural('Leech')).toBe('Leeches');
     expect(plural('Grunt')).toBe('Grunts');
     expect(plural('Glaives')).toBe('Glaives');
+  });
+});
+
+describe('the Wake on the board (plans/late-game/12 §8.11)', () => {
+  /** The Blight down and the Wake walked to the Giants' Rest: the Thunderhead stands. */
+  function midWake(): Profile {
+    const p = cleared(6);
+    for (const r of REGIONS) p.pacts.best[r.index] = 4;
+    for (const r of WAKE_REGIONS.slice(0, -1)) {
+      p.bosses[r.boss] = { kills: 2, fastest: 90 };
+      p.regions[r.index] = { bestWave: 22, runs: 3 };
+    }
+    p.regions[WAKE_REGIONS[WAKE_REGIONS.length - 1].index] = { bestWave: 12, runs: 2 };
+    return p;
+  }
+
+  it('no floor, guardian or Rush card before the Thunderhead; Wake regions appear as regional targets', () => {
+    const p = midWake();
+    ensureBoard(p);
+    const wake = new Set(WAKE_REGIONS.map((r) => r.index));
+    const places = new Set<number>();
+    for (let i = 0; i < 1500; i++) {
+      for (const c of p.contracts.board) {
+        expect(['floor', 'guardian', 'rush'], contractText(c)).not.toContain(c.target.kind);
+        expect(valid(p, c), contractText(c)).toBe(true);
+        if ('region' in c.target && wake.has(c.target.region)) places.add(c.target.region);
+      }
+      for (const s of SLOTS) reroll(p, p.contracts.board.find((c) => c.slot === s)!.id);
+    }
+    expect([...places].sort((a, b) => a - b)).toEqual(WAKE_REGIONS.map((r) => r.index));
+  });
+
+  it('the free plan draws no Wake region', () => {
+    const p = midWake();
+    ensureBoard(p, 'free');
+    const wake = new Set(WAKE_REGIONS.map((r) => r.index));
+    for (let i = 0; i < 300; i++) {
+      for (const c of p.contracts.board) expect('region' in c.target && wake.has(c.target.region), contractText(c)).toBe(false);
+      for (const s of SLOTS) reroll(p, p.contracts.board.find((c) => c.slot === s)!.id, 'free');
+    }
   });
 });

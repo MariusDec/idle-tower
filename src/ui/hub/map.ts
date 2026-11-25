@@ -2,7 +2,7 @@ import { ABYSS_INDEX, abyssStarlight } from '../../content/abyss';
 import { STRATA, guardianFloorOf, strataStillDug, stratumFoot } from '../../content/strata';
 import { BOSS_BY_ID } from '../../content/bosses';
 import { ENEMY_BY_ID } from '../../content/enemies';
-import { REGIONS } from '../../content/regions';
+import { ACT1_REGIONS, WAKE_REGIONS } from '../../content/regions';
 import { RUSH_INDEX, RUSH_STAGES, rushStarlight } from '../../content/rush';
 import type { RegionDef } from '../../content/types';
 import { formatDuration, formatNumber } from '../../core/format';
@@ -15,7 +15,7 @@ import { regionTrials, trialWon, trialsOpen } from '../../meta/trials';
 import { RELIC_BY_ID } from '../../content/relics';
 import type { TrialReward } from '../../content/types';
 import type { Profile } from '../../meta/profile';
-import { planAllows, type Plan } from '../../meta/plan';
+import { abyssPlayable, act2Playable, planAllows, type Plan } from '../../meta/plan';
 import { motionReduced, setStyle } from '../dom';
 import { icon } from '../icon';
 
@@ -35,15 +35,16 @@ function rewardText(r: TrialReward): string {
   }
 }
 
-/** Six regions in Act 1 (§5.2); the ones not yet built show as the Blight. */
-const ACT_REGIONS = 6;
+/** Act 1's regions (§5.2): the light bar is theirs (plans/late-game/12 §8.3). */
+const ACT_REGIONS = ACT1_REGIONS.length;
 
 /**
  * What the Map plays as it opens: nothing, the light spreading to a region
- * just cleared (§7.3), or a stratum's band lighting, top down, for a
- * guardian's first fall (plans/late-game/08 §3.2), by stratum index.
+ * just cleared (§7.3), a stratum's band lighting, top down, for a
+ * guardian's first fall (plans/late-game/08 §3.2), by stratum index, or a
+ * Wake region just opened rising into view (plans/late-game/12 §8.3), by index.
  */
-export type MapSpread = boolean | { band: number };
+export type MapSpread = boolean | { band: number } | { wake: number };
 
 /** The plan the Map draws for (plans/monetization.md §3.1), and the locked card's door. */
 export interface MapGate {
@@ -102,9 +103,10 @@ export class MapView {
    */
   show(profile: Profile, spread: MapSpread = false): void {
     this.profile = profile;
-    const band = typeof spread === 'object' ? spread.band : null;
+    const band = typeof spread === 'object' && 'band' in spread ? spread.band : null;
+    const arriving = typeof spread === 'object' && 'wake' in spread ? spread.wake : null;
     spread = spread === true;
-    const cleared = REGIONS.filter((r) => bossDown(profile, r.boss)).length;
+    const cleared = ACT1_REGIONS.filter((r) => bossDown(profile, r.boss)).length;
     const reach = (n: number): string => `${Math.min(100, ((n + 0.5) / ACT_REGIONS) * 100).toFixed(1)}%`;
     if (spread && !motionReduced()) {
       setStyle(this.light, '--lit', reach(Math.max(0, cleared - 1)));
@@ -121,7 +123,7 @@ export class MapView {
     const chosen = inAbyss(profile) ? ABYSS_INDEX : inRush(profile) ? RUSH_INDEX : selectedRegion(profile).index;
     const plan = this.gate.plan();
     const items: HTMLElement[] = [];
-    for (const r of REGIONS) {
+    for (const r of ACT1_REGIONS) {
       if (regionUnlocked(profile, r.index) && !planAllows(plan, r.index)) {
         // Earned, past the gate (plans/monetization.md §3.1): visible but sealed, and the paywall's door.
         // Nothing past it shows: the fog keeps Regions 5–6 as it always has.
@@ -135,11 +137,23 @@ export class MapView {
         break;
       }
     }
-    if (REGIONS.every((r) => regionUnlocked(profile, r.index)) && REGIONS.length < ACT_REGIONS) {
-      const last = REGIONS[REGIONS.length - 1];
-      if (bossDown(profile, last.boss)) items.push(this.silhouette(`Region ${REGIONS.length + 1}`, 'The Blight runs deeper still.'));
+    // The Wake (plans/late-game/12 §8.3): its band above Act 1, in the order its chain opens.
+    if (act2Playable(profile, plan) && WAKE_REGIONS.length > 0) {
+      for (const r of WAKE_REGIONS) {
+        if (regionUnlocked(profile, r.index)) {
+          const card = this.card(profile, r, r.index === chosen);
+          if (r.index === arriving && !motionReduced()) card.classList.add('is-arriving');
+          items.push(card);
+        } else {
+          items.push(this.silhouette(r.name, r.veil ?? r.text));
+          break;
+        }
+      }
+      // Pushed after its cards: the list is reversed, so the heading shows above them.
+      items.push(this.wakeHead());
     }
-    if (act2Open(profile) && plan === 'full') items.push(this.abyss(profile, chosen === ABYSS_INDEX, band));
+    if (abyssPlayable(profile, plan)) items.push(this.abyss(profile, chosen === ABYSS_INDEX, band));
+    else if (act2Playable(profile, plan)) items.push(this.sealedShaft());
     if (rushOpen(profile) && plan === 'full') items.push(this.rush(profile, chosen === RUSH_INDEX));
     // The Fields at the bottom, the frontier at the top: the light climbs.
     // Each card sits in a cell: on two columns the cell reserves its row's
@@ -469,6 +483,31 @@ export class MapView {
     door.textContent = 'The rest of the tower is one purchase away.';
     btn.append(head, rule, shadow, door);
     li.append(btn);
+    return li;
+  }
+
+  /** The Wake's heading (plans/late-game/12 §8.3): an eyebrow and a line, no surface of its own. */
+  private wakeHead(): HTMLElement {
+    const h = document.createElement('div');
+    h.className = 'map-act-head';
+    h.innerHTML = '<p class="eyebrow">The Wake</p><p class="map-act-line">What the Blight held</p>';
+    return h;
+  }
+
+  /** The Abyss before the Wake is done (plans/late-game/12 §8.3): its shaft, sealed, with no way in. */
+  private sealedShaft(): HTMLElement {
+    const li = document.createElement('div');
+    li.className = 'map-region is-abyss is-sealed';
+    const head = document.createElement('div');
+    head.className = 'map-region-head';
+    const name = document.createElement('span');
+    name.className = 'map-region-name';
+    name.textContent = 'The Abyss';
+    head.append(icon('over-infinity'), name);
+    const line = document.createElement('p');
+    line.className = 'map-region-rule';
+    line.textContent = 'Stormcrown stands over the way down.';
+    li.append(head, line);
     return li;
   }
 

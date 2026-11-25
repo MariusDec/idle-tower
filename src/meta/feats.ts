@@ -2,7 +2,7 @@ import { ABYSS_INDEX, NATIVES } from '../content/abyss';
 import { BALANCE } from '../content/balance';
 import { FEATS } from '../content/feats';
 import { RIFTS } from '../content/rifts';
-import { REGIONS, regionByIndex } from '../content/regions';
+import { ACT1_REGIONS, regionByIndex } from '../content/regions';
 import type { FeatDef, FeatGoal } from '../content/types';
 import type { RunState } from '../sim/state';
 import { FORGE } from '../content/forge';
@@ -18,14 +18,14 @@ function poolOf(region: number): string[] {
   return region === ABYSS_INDEX ? [...NATIVES] : regionByIndex(region).pool.map((p) => p.enemy);
 }
 
-/** The heat each region's boss has fallen at, at worst: what "every region" feats read. */
+/** The heat each Act 1 region's boss has fallen at, at worst: what "every region" feats read (plans/late-game/12 D-15). */
 function coolestRegion(profile: Profile): number {
-  return Math.min(...REGIONS.map((r) => profile.pacts.best[r.index] ?? 0));
+  return Math.min(...ACT1_REGIONS.map((r) => profile.pacts.best[r.index] ?? 0));
 }
 
-/** The highest heat any region's boss has fallen at. */
+/** The highest heat any Act 1 region's boss has fallen at (D-15: `heat` feats keep their meaning). */
 function hottestRegion(profile: Profile): number {
-  return Math.max(0, ...REGIONS.map((r) => profile.pacts.best[r.index] ?? 0));
+  return Math.max(0, ...ACT1_REGIONS.map((r) => profile.pacts.best[r.index] ?? 0));
 }
 
 /** Rifts' offers taken in all (plans/late-game/02). */

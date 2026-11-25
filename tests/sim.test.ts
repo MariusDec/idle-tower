@@ -4,7 +4,7 @@ import { buildRunConfig } from '../src/meta/runConfig';
 import { newProfile } from '../src/meta/profile';
 import { SIM_DT } from '../src/app/loop';
 import { BALANCE } from '../src/content/balance';
-import { REGIONS, regionByIndex } from '../src/content/regions';
+import { REGIONS, WAKE_REGIONS, regionByIndex } from '../src/content/regions';
 import { ENEMY_BY_ID } from '../src/content/enemies';
 import { hashString, Rng } from '../src/core/rng';
 import { mitigate } from '../src/sim/systems/damage';
@@ -13,6 +13,7 @@ import { tickWeapons } from '../src/sim/systems/combat';
 import { weaponParams } from '../src/content/weapons';
 import type { RunState, WaveState } from '../src/sim/state';
 import { body } from './helpers/body';
+import { initWake } from '../src/sim/systems/wake';
 
 const config = () => buildRunConfig(newProfile(0));
 
@@ -39,6 +40,21 @@ describe('determinism', () => {
 
   it('different seeds give different runs', () => {
     expect(stateHash(runFor(1, 30))).not.toBe(stateHash(runFor(2, 30)));
+  });
+
+  it.each(WAKE_REGIONS.map((r) => [r.name, r.index] as const))('the same seed gives the same final state in %s (plans/late-game/12)', (_, index) => {
+    const wake = (): RunState => {
+      const run = createRun({ ...config(), regionId: index }, 4242);
+      for (let i = 0; i < Math.round(90 / SIM_DT) && !run.outcome; i++) {
+        step(run, SIM_DT);
+        run.events.length = 0;
+      }
+      // Only the rules with a clock keep Wake state (Giants has none, §4.4).
+      expect(run.wake === null).toBe(initWake(regionByIndex(index)) === null);
+      expect(run.enemies.length + run.kills).toBeGreaterThan(0);
+      return run;
+    };
+    expect(stateHash(wake())).toBe(stateHash(wake()));
   });
 
   it('is independent of whether events are drained', () => {

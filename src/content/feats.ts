@@ -10,7 +10,8 @@ import type { FeatDef } from './types';
  * fallen (§7.1). *Tinkerer* also earns the Artificer frame (§11.6).
  *
  * Act 2 (§9) adds twenty, pointing at heat, the Abyss, the Constellations
- * and the masteries. They surface once the Blight has fallen, and pay
+ * and the masteries, and the Wake (plans/late-game/12 §8.6) a naturalist
+ * for each of its regions and one for felling them all. They surface once the Blight has fallen, and pay
  * Starlight on top of their shards (S7.2): by then shards buy only
  * masteries.
  */
@@ -81,13 +82,22 @@ export const FEATS: readonly FeatDef[] = [
   { id: 'every-form', name: 'Six Crowns', icon: 'crown-coin', text: "Reach all six frames' Final Forms.", after: 'blight', goal: { kind: 'forms', n: 6 }, reward: 1_500_000, starlight: 15 },
   { id: 'heat-10', name: 'White Heat', icon: 'sun', text: 'Clear a region at heat 10.', after: 'blight', goal: { kind: 'heat', heat: 10 }, reward: 500_000, starlight: 15 },
   { id: 'heat-20', name: 'Furnace Heart', icon: 'burning-meteor', text: 'Clear a region at heat 20.', after: 'blight', goal: { kind: 'heat', heat: 20 }, reward: 3_000_000, starlight: 30 },
-  { id: 'heat-all-5', name: 'Wildfire', icon: 'explosion-rays', text: 'Clear every region at heat 5 or more.', after: 'blight', goal: { kind: 'heatAll', heat: 5 }, reward: 2_000_000, starlight: 20 },
-  { id: 'heat-all-10', name: 'World Aflame', icon: 'spiky-explosion', text: 'Clear every region at heat 10 or more.', after: 'blight', goal: { kind: 'heatAll', heat: 10 }, reward: 8_000_000, starlight: 40 },
-  { id: 'the-descent', name: 'The Descent', icon: 'well', text: 'Clear the first floor of the Abyss.', after: 'blight', goal: { kind: 'abyss', floor: 1 }, reward: 100_000, starlight: 5 },
-  { id: 'warden-fallen', name: 'Warden Fallen', icon: 'nested-hexagons', text: 'Defeat the Deepwarden.', after: 'blight', goal: { kind: 'boss', boss: 'deepwarden' }, reward: 400_000, starlight: 15 },
-  { id: 'hunger-sated', name: 'Hunger Sated', icon: 'fangs-circle', text: 'Defeat the Hunger.', after: 'blight', goal: { kind: 'boss', boss: 'hunger' }, reward: 2_000_000, starlight: 25 },
-  { id: 'abyss-20', name: 'Bottomless', icon: 'over-infinity', text: 'Clear floor 20 of the Abyss.', after: 'blight', goal: { kind: 'abyss', floor: 20 }, reward: 10_000_000, starlight: 40 },
-  { id: 'abyss-naturalist', name: 'Abyss Naturalist', icon: 'telescope', text: 'Discover every enemy of the Abyss.', after: 'blight', goal: { kind: 'bestiary', region: ABYSS_INDEX }, reward: 500_000, starlight: 15 },
+  { id: 'heat-all-5', name: 'Wildfire', icon: 'explosion-rays', text: 'Clear all six Act 1 regions at heat 5 or more.', after: 'blight', goal: { kind: 'heatAll', heat: 5 }, reward: 2_000_000, starlight: 20 },
+  { id: 'heat-all-10', name: 'World Aflame', icon: 'spiky-explosion', text: 'Clear all six Act 1 regions at heat 10 or more.', after: 'blight', goal: { kind: 'heatAll', heat: 10 }, reward: 8_000_000, starlight: 40 },
+  // The Wake's (plans/late-game/12 §8.6): a naturalist per region as it lands.
+  { id: 'bell-naturalist', name: 'Bell Naturalist', icon: 'telescope', text: 'Discover every enemy in the Bell Marches.', after: 'blight', goal: { kind: 'bestiary', region: 9 }, reward: 300_000, starlight: 5 },
+  { id: 'orrery-naturalist', name: 'Orrery Naturalist', icon: 'telescope', text: 'Discover every enemy in the Orrery.', after: 'blight', goal: { kind: 'bestiary', region: 10 }, reward: 300_000, starlight: 5 },
+  { id: 'sea-naturalist', name: 'Sea Naturalist', icon: 'telescope', text: 'Discover every enemy in the Frozen Sea.', after: 'blight', goal: { kind: 'bestiary', region: 11 }, reward: 300_000, starlight: 5 },
+  { id: 'giant-naturalist', name: 'Giant Naturalist', icon: 'telescope', text: 'Discover every enemy in Giants’ Rest.', after: 'blight', goal: { kind: 'bestiary', region: 12 }, reward: 300_000, starlight: 5 },
+  { id: 'storm-naturalist', name: 'Storm Naturalist', icon: 'telescope', text: 'Discover every enemy in Stormcrown.', after: 'blight', goal: { kind: 'bestiary', region: 13 }, reward: 300_000, starlight: 5 },
+  // The chain means the Thunderhead's fall implies every Wake boss's.
+  { id: 'wake-walker', name: 'Wake Walker', icon: 'lightning-tear', text: 'Fell every boss of the Wake.', after: 'blight', goal: { kind: 'boss', boss: 'thunderhead' }, reward: 3_000_000, starlight: 25 },
+  // The Abyss's: surface once the Thunderhead, the Wake's last boss, has fallen (plans/late-game/12 D-16).
+  { id: 'the-descent', name: 'The Descent', icon: 'well', text: 'Clear the first floor of the Abyss.', after: 'thunderhead', goal: { kind: 'abyss', floor: 1 }, reward: 100_000, starlight: 5 },
+  { id: 'warden-fallen', name: 'Warden Fallen', icon: 'nested-hexagons', text: 'Defeat the Deepwarden.', after: 'thunderhead', goal: { kind: 'boss', boss: 'deepwarden' }, reward: 400_000, starlight: 15 },
+  { id: 'hunger-sated', name: 'Hunger Sated', icon: 'fangs-circle', text: 'Defeat the Hunger.', after: 'thunderhead', goal: { kind: 'boss', boss: 'hunger' }, reward: 2_000_000, starlight: 25 },
+  { id: 'abyss-20', name: 'Bottomless', icon: 'over-infinity', text: 'Clear floor 20 of the Abyss.', after: 'thunderhead', goal: { kind: 'abyss', floor: 20 }, reward: 10_000_000, starlight: 40 },
+  { id: 'abyss-naturalist', name: 'Abyss Naturalist', icon: 'telescope', text: 'Discover every enemy of the Abyss.', after: 'thunderhead', goal: { kind: 'bestiary', region: ABYSS_INDEX }, reward: 500_000, starlight: 15 },
   { id: 'starlit', name: 'Starlit', icon: 'sparkles', text: 'Light 10 stars.', after: 'blight', goal: { kind: 'stars', n: 10 }, reward: 100_000, starlight: 10 },
   { id: 'constellations', name: 'Constellations', icon: 'star-formation', text: 'Light 25 stars.', after: 'blight', goal: { kind: 'stars', n: 25 }, reward: 1_000_000, starlight: 25 },
   { id: 'firmament', name: 'Firmament', icon: 'star-swirl', text: 'Light every star.', after: 'blight', goal: { kind: 'stars', n: STARS.length }, reward: 10_000_000, starlight: 40 },

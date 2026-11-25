@@ -148,6 +148,10 @@ describe('the doors (plans/monetization.md §2.2)', () => {
     const deep = cleared(6);
     expect(explainersFor(deep, 'map', 'free').map((e) => e.id)).not.toContain('abyss');
     expect(explainersFor(deep, 'pacts', 'free')).toEqual([]);
+    // The Abyss waits for the Thunderhead (plans/late-game/12 D-1), on either plan.
+    expect(explainersFor(deep, 'map').map((e) => e.id)).not.toContain('abyss');
+    deep.bosses.thunderhead = { kills: 1, fastest: 60 };
+    expect(explainersFor(deep, 'map', 'free').map((e) => e.id)).not.toContain('abyss');
     expect(explainersFor(deep, 'map').map((e) => e.id)).toContain('abyss');
   });
 });

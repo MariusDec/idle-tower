@@ -8,7 +8,7 @@ import { BOSSES } from './bosses';
 import { EVOLUTIONS } from './evolutions';
 import { FRAMES } from './frames';
 import { FUSIONS } from './fusions';
-import { REGIONS } from './regions';
+import { REGIONS, WAKE_FINALE } from './regions';
 import { RUSH_STAGES } from './rush';
 import { WEAPONS } from './weapons';
 import { STRATA, STRATUM_FLOORS, type StratumDef } from './strata';
@@ -214,6 +214,66 @@ export const pacts: LintRule = (tables) => {
     const words = wordCount(r.surge.text);
     if (words === 0 || words > MAX_TEXT_WORDS) out.push({ table: 'regions', id: r.id, problem: `surge text is ${words} words` });
     if (r.surge.effect.kind === 'rule' && !r.rule) out.push({ table: 'regions', id: r.id, problem: 'surges a rule it does not have' });
+  }
+  return out;
+};
+
+/**
+ * The regions' chain (plans/late-game/12 §8.1): only Region 1 starts it;
+ * every other region opens after an existing one of its act or an earlier
+ * one, no two after the same; every chain leads back to Region 1; and each
+ * Wake region has a veil inside R4.
+ */
+export const regionChain: LintRule = (tables) => {
+  const out: LintIssue[] = [];
+  const regions = (tables.regions as readonly RegionDef[] | undefined) ?? [];
+  const byIndex = new Map(regions.map((r) => [r.index, r]));
+  const say = (r: RegionDef, problem: string): void => {
+    out.push({ table: 'regions', id: r.id, problem });
+  };
+  const heads = regions.filter((r) => r.after === null);
+  if (heads.length !== 1 || heads[0].index !== 1) {
+    out.push({ table: 'regions', id: '*', problem: `want exactly one region with no \`after\`, Region 1 (found ${heads.map((r) => r.index).join(', ') || 'none'})` });
+  }
+  const followers = new Map<number, RegionDef>();
+  for (const r of regions) {
+    if (r.after !== null) {
+      const prev = byIndex.get(r.after);
+      if (!prev) say(r, `opens after Region ${r.after}, which does not exist`);
+      else if (prev.act > r.act) say(r, `opens after Region ${r.after}, of a later act`);
+      const twin = followers.get(r.after);
+      if (twin) say(r, `shares its \`after\` (${r.after}) with ${twin.id}`);
+      followers.set(r.after, r);
+    }
+    // Following `after` reaches Region 1, with no cycle.
+    const seen = new Set<number>();
+    let at: RegionDef | undefined = r;
+    while (at && at.after !== null && !seen.has(at.index)) {
+      seen.add(at.index);
+      at = byIndex.get(at.after);
+    }
+    if (!at || at.index !== 1) say(r, 'its chain does not lead back to Region 1');
+    if (r.act === 2) {
+      const words = r.veil ? wordCount(r.veil) : 0;
+      if (words === 0 || words > MAX_TEXT_WORDS) say(r, `veil is ${words} words (want 1–${MAX_TEXT_WORDS})`);
+    }
+  }
+  // The Act 2 chain ends on the Wake's finale: its boss opens the Abyss (plans/late-game/12 §8.1).
+  const wake = regions.filter((r) => r.act === 2);
+  if (wake.length > 0) {
+    const inWake = new Set(wake.map((r) => r.index));
+    let last = wake.find((r) => r.after !== null && !inWake.has(r.after));
+    const seen = new Set<number>();
+    while (last && !seen.has(last.index)) {
+      seen.add(last.index);
+      const at: number = last.index;
+      const next = wake.find((r) => r.after === at);
+      if (!next) break;
+      last = next;
+    }
+    if (!last || last.boss !== WAKE_FINALE) {
+      out.push({ table: 'regions', id: last?.id ?? '*', problem: `the Wake's chain must end on ${WAKE_FINALE}` });
+    }
   }
   return out;
 };
@@ -797,7 +857,7 @@ export const omensRule = (mods: readonly OmenModDef[] = OMEN_MODS): LintRule => 
 };
 
 export const RULES: readonly LintRule[] = [
-  uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking, rifts,
+  uniqueIds, entryBasics, references, levels, forgeWeb, starWeb, pacts, regionChain, bossesAndLoot, evolutions, fusions, counters, uniqueNames, stacking, rifts,
   cursedRelics, anomalies, forms, secretsRule(EXPLAINERS.flatMap((x) => [x.title, ...x.lines])), strataRule(), contractsRule, omensRule(),
 ];
 

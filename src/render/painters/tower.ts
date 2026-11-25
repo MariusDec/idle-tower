@@ -280,6 +280,111 @@ function paintTrim(ctx: CanvasRenderingContext2D, R: number, trim: TrimId, time:
         ctx.fill();
       }
       return;
+    // The Wake's Trials' (plans/late-game/12 §8.8).
+    case 'bells':
+      // Four small bronze bells hung round the rim, each swaying a little.
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        const x = Math.cos(a) * R * 1.02;
+        const y = Math.sin(a) * R * 1.02;
+        const sway = Math.sin(time * 2 + i * 1.7) * 0.25;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(a - Math.PI / 2 + sway);
+        ctx.fillStyle = withAlpha(FX.gold, 0.8);
+        ctx.beginPath();
+        ctx.moveTo(-R * 0.05, R * 0.06);
+        ctx.quadraticCurveTo(-R * 0.045, -R * 0.06, 0, -R * 0.06);
+        ctx.quadraticCurveTo(R * 0.045, -R * 0.06, R * 0.05, R * 0.06);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(0, R * 0.075, R * 0.016, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      return;
+    case 'ribs':
+      // Giant's Ribs: three great curved bones rising behind the drum.
+      ctx.strokeStyle = withAlpha(FX.critical, 0.35);
+      ctx.lineWidth = R * 0.07;
+      ctx.lineCap = 'round';
+      for (let i = -1; i <= 1; i++) {
+        const a = -Math.PI / 2 + i * 0.55;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * R * 0.95, Math.sin(a) * R * 0.95);
+        ctx.quadraticCurveTo(
+          Math.cos(a - 0.35) * R * 1.45, Math.sin(a - 0.35) * R * 1.45,
+          Math.cos(a + 0.12) * R * 1.6, Math.sin(a + 0.12) * R * 1.6,
+        );
+        ctx.stroke();
+      }
+      return;
+    case 'orrery':
+      // Brass Rings: two thin rings tilted round the drum, turning slowly against each other,
+      // each with a small bead riding it.
+      ctx.lineWidth = R * 0.035;
+      for (const [i, turn] of [[0, 0.25], [1, -0.18]] as const) {
+        const tilt = time * turn + i * Math.PI / 2;
+        const rx = R * (1.32 + i * 0.1);
+        const ry = R * 0.42;
+        ctx.strokeStyle = withAlpha(FX.gold, 0.55);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx, ry, tilt, 0, Math.PI * 2);
+        ctx.stroke();
+        const b = time * (0.9 - i * 0.4);
+        const bx = Math.cos(b) * rx;
+        const by = Math.sin(b) * ry;
+        ctx.fillStyle = withAlpha(lighten(FX.gold, 0.25), 0.9);
+        ctx.beginPath();
+        ctx.arc(bx * Math.cos(tilt) - by * Math.sin(tilt), bx * Math.sin(tilt) + by * Math.cos(tilt), R * 0.045, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    case 'rods':
+      // Storm Rods: three thin rods rising from the top of the drum, a spark flickering on each tip.
+      ctx.strokeStyle = withAlpha(FX.mana, 0.7);
+      ctx.lineWidth = R * 0.035;
+      ctx.lineCap = 'round';
+      for (let i = -1; i <= 1; i++) {
+        const a = -Math.PI / 2 + i * 0.5;
+        const x0 = Math.cos(a) * R * 0.9;
+        const y0 = Math.sin(a) * R * 0.9;
+        const x1 = Math.cos(a) * R * 1.5;
+        const y1 = Math.sin(a) * R * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+        const flicker = 0.5 + 0.5 * Math.sin(time * 9 + i * 2.3) * Math.sin(time * 5.3 + i);
+        ctx.fillStyle = withAlpha(lighten(FX.mana, 0.3), 0.35 + 0.55 * Math.max(0, flicker));
+        ctx.beginPath();
+        ctx.arc(x1, y1, R * (0.04 + 0.025 * Math.max(0, flicker)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    case 'icicles': {
+      // Icicles: a fringe of them hanging under the parapet, longer and shorter in turn, each catching a glint.
+      ctx.fillStyle = withAlpha(FX.frost, 0.6);
+      for (let i = 0; i < 9; i++) {
+        const a = Math.PI * (0.15 + (i / 8) * 0.7);
+        const x = Math.cos(a) * R * 0.98;
+        const y = Math.sin(a) * R * 0.98;
+        const len = R * (i % 2 === 0 ? 0.3 : 0.18);
+        const w = R * 0.05;
+        ctx.beginPath();
+        ctx.moveTo(x - w, y);
+        ctx.lineTo(x + w, y);
+        ctx.lineTo(x, y + len);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = withAlpha(lighten(FX.frost, 0.4), 0.35 + 0.3 * Math.max(0, Math.sin(time * 1.7)));
+      ctx.beginPath();
+      ctx.arc(0, R * 0.98 + R * 0.08, R * 0.025, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
     default: {
       const exhaustive: never = trim;
       return exhaustive;

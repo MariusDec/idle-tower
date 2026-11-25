@@ -286,6 +286,8 @@ export interface TowerState {
   hp: number;
   /** Tick of the last contact hit taken, for the hurt flash. */
   hurtTick: number;
+  /** Run time of the last hit taken (0 before any): the Metronome's clock (plans/late-game/12 §8.9). */
+  hurtAt: number;
   /** Run time until which the tower takes no damage (Aegis). */
   invulnUntil: number;
 }
@@ -383,6 +385,26 @@ export interface Enemy {
   fled: boolean;
   /** A stratum's Keeper (plans/late-game/08 §4.3): its floor's tenth wave holds for it. */
   keeper: boolean;
+  /** Glide (plans/late-game/12 §4.3): slide velocity, world units/s; 0 when not sliding. */
+  slideX: number;
+  slideY: number;
+  /** Run time of its last impact while sliding, for the cooldown. */
+  impactAt: number;
+  /** A Sledge's load: the id it pushes (on the Sledge), and the Sledge's id (on the load). 0: none. */
+  towing: number;
+  towedBy: number;
+  /** A Tick: 0 looking for a host, > 0 the host's id while riding, −1 once it has ridden. */
+  riding: number;
+  /** A Moon: radians swept in its lane so far; ≥ its `sweep` once done. */
+  lane: number;
+  /** Per step, from auras (reset in `applyAuras`): Tidal's tangent multiplier, Anchored, Charged. */
+  buffOrbit: number;
+  braced: boolean;
+  grounded: boolean;
+  /** Tick Bite (a relic): marked by a crit, it takes more. */
+  marked: boolean;
+  /** Skate Blade (a relic): run time until which a pushed body takes more. */
+  pushedUntil: number;
 }
 
 export interface Projectile {
@@ -690,7 +712,9 @@ export type DamageBy = WeaponId | 'ult' | 'thorns' | 'burn' | 'rule'
  * What hurt the tower (U5): a body at the wall, a hostile shot, a boss's
  * shockwave, a molten pool, or a blast (a Bomber).
  */
-export type HurtBy = 'contact' | 'shots' | 'slams' | 'pools' | 'blasts';
+export type HurtBy = 'contact' | 'shots' | 'slams' | 'pools' | 'blasts'
+  /** Stormcrown's lightning, through a Conductor, or the Thunderhead's bolt (plans/late-game/12 §4.5). */
+  | 'storm';
 
 /**
  * What happened this step, for presentation. Not part of the run's identity:
@@ -807,7 +831,22 @@ export type SimEvent =
   /** A secret stirred (its riddle written), was found, or a boss arrived in its other form (plans/late-game/05). */
   | { kind: 'secret'; id: SecretId; stage: 'stir' | 'found' | 'sighted' }
   /** The run reached its frame's Final Form (plans/late-game/07): once, and for good. */
-  | { kind: 'finalForm'; frame: FrameId };
+  | { kind: 'finalForm'; frame: FrameId }
+  // The Wake (plans/late-game/12 §3.4).
+  /** The bell tolled (no x/y: from the rim); the Clapper relic's own (relic: true). */
+  | { kind: 'toll'; x?: number; y?: number; relic?: boolean }
+  /** Lightning landed, on a body or on the tower. */
+  | { kind: 'strike'; x: number; y: number; tower: boolean }
+  /** Two bodies collided on the ice. */
+  | { kind: 'impact'; x: number; y: number; shatter: boolean }
+  /** A Titan or the Colossus swallowed a body. */
+  | { kind: 'trample'; x: number; y: number }
+  /** A Tick leapt off its host. */
+  | { kind: 'hop'; x: number; y: number }
+  /** The Astrolabe reversed the field's spin. */
+  | { kind: 'orbitTurn'; spin: number }
+  /** The Leviathan cracked a floe loose. */
+  | { kind: 'floe'; x: number; y: number };
 
 export interface RunState {
   seed: number;
@@ -963,9 +1002,21 @@ export interface RunState {
   form: { need: number; wave: number | null };
   /** The Daily Omen (plans/late-game/11): null on every other run. Absent on snapshots from before it. */
   omen?: OmenRun | null;
+  /** The Wake's rule state (plans/late-game/12 §3.2); null outside a Wake region. */
+  wake: WakeState | null;
   /** How the run ended: the tower fell, withdrew, or (Boss Rush, N8) cleared every stage. */
   outcome: null | { kind: 'fell' | 'retreat' | 'cleared'; wave: number; time: number };
   events: SimEvent[];
+}
+
+/** The Wake's rule clocks (plans/late-game/12 §3.2): only the one matching the region's rule is non-null. */
+export interface WakeState {
+  /** Toll: the next toll's time, the last toll's, the boss's quickening (×, starts 1), and the last interval used. */
+  toll: { next: number; last: number; pace: number; interval: number } | null;
+  /** Orbit: the spin (+1 counter-clockwise, −1 clockwise) and the wave it was rolled for. */
+  orbit: { spin: 1 | -1; wave: number } | null;
+  /** Storm: the next strike's time. */
+  storm: { next: number } | null;
 }
 
 /** What the player can do to a run between steps. */

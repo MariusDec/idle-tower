@@ -21,6 +21,7 @@ export type ExplainerId =
   | 'map'
   | 'trials'
   | 'sealed'
+  | 'wake'
   | 'abyss'
   | 'waypoints'
   | 'rush'
@@ -97,6 +98,13 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
     lines: [
       'The first three regions are yours to keep, with their bosses, Trials, relics and trophies, and the Forge and Feats go on growing.',
       'Ember Rift and everything past it open with one purchase: three more regions, the Blight, and all of Act 2. Yours for good, offline, with no ads.',
+    ],
+  },
+  {
+    id: 'wake', view: 'map', title: 'The Wake',
+    lines: [
+      'The Blight’s death changed the land it held. Each region of the Wake bends one rule of the fight.',
+      'Each boss opens the next. Stormcrown’s opens the Abyss. Heat records here pay half the Starlight.',
     ],
   },
   {

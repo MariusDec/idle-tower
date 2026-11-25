@@ -24,6 +24,14 @@ one line of text and one or two readable patterns:
 | `mirror` | facets that throw shots back at the tower |
 | `pool` | burning ground |
 | `court` | the Hollow King's shades, which carry a share of its HP |
+| `peal` | always on: each toll rolls a ring at the wall (the Carillon) |
+| `quicken` | the toll's interval shrinks on a timer (the Carillon) |
+| `reverse` | the Orbit's spin flips on a timer (the Astrolabe) |
+| `floes` | cracks Floes loose, once in a ring or on a timer (the Leviathan) |
+| `weakpoint` | always on: a turning arc; hits while it faces the tower land ×3 (the Colossus) |
+| `feast` | eats a nearby Titan and heals by its HP (the Colossus) |
+| `bolt` | a wind-up, then a strike on the tower (the Thunderhead) |
+| `tempest` | always on: the storm runs at double pace and each strike forks (the Thunderhead) |
 
 Patterns fire on timers; a phase opens with its new pattern half-way
 charged, so it never starts with a lull. A **Nova** landing during a slam's
@@ -36,6 +44,19 @@ while one stands the heart takes half of every hit (`plateGuard`). Phase 2
 wears one plate, phase 3 none: the extra crack away. A phase Tyranny
 replays hangs them anew. Plates ride on the boss (`placePlates`), never
 walk or get shoved, pay nothing, and fall with it (`plateBreak`).
+
+**The Wake's five** (plans/late-game/12 §7) are the Carillon (Bell
+Marches, 60×), the Astrolabe (Orrery, 55×), the Leviathan Under the Ice
+(Frozen Sea, 58×), the Sleeping Colossus (Giants' Rest, 62×) and the
+Thunderhead (Stormcrown, 65×). Each uses its region's rule against the
+tower, through the eight pattern kinds from `peal` down. The always-on ones
+(`peal`, `weakpoint`, `tempest`) have `period` 0, like `mirror`. The
+Thunderhead's first fall opens the Abyss. The multipliers are untuned.
+
+**The Astrolabe's rings** use Forgeheart's plates with `plates.orbit` set:
+six small plates (6% HP each, guard 0.4) circle the boss at 0.9 rad/s
+instead of hanging toward the tower. `placePlates` spaces them evenly.
+Phase 3 drops them.
 
 **Enrage.** A boss that outlasts `BALANCE.boss.enrageAfter` (90 s) enrages:
 its slams hit ×1.25 harder every further 10 s, and it walks to the wall.

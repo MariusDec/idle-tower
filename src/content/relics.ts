@@ -2,7 +2,8 @@ import { CURSED_RELICS } from './cursed';
 import type { BossId, RelicDef, RelicId, RelicSetDef } from './types';
 
 /**
- * Relics (§5.3, §11.5): twenty-four, four per region: the boss's first-kill relic and
+ * Relics (§5.3, §11.5): four per region, Act 1's six and the Wake's
+ * (plans/late-game/12 §8.9): the boss's first-kill relic and
  * three its elites drop; and Act 2's twelve (§9), in four sets of three that
  * the Lantern's stars light, dropped by the Abyss's elites. Qualitative, 15 words or fewer, each leaning on a
  * weapon family or the region's verb. Duplicates rank a relic up to III;
@@ -156,6 +157,131 @@ export const RELICS: readonly RelicDef[] = [
     text: 'Each level-up restores 10% of Max HP.',
     source: { kind: 'elite', region: 6 },
     effects: [{ kind: 'behaviour', id: 'level-heal' }], perRank: [{ kind: 'behaviour', id: 'level-heal' }],
+  },
+  // ── The Wake (plans/late-game/12 §8.9): the Bell Marches ──────────────
+  {
+    id: 'carillons-clapper', name: "Carillon's Clapper", icon: 'alarm-clock',
+    text: 'Every 8 s, a toll stuns every enemy in range for half a second.',
+    source: { kind: 'boss', boss: 'carillon' },
+    effects: [{ kind: 'behaviour', id: 'clapper' }], perRank: [{ kind: 'behaviour', id: 'clapper' }],
+  },
+  {
+    id: 'tuning-fork', name: 'Tuning Fork', icon: 'vibrating-ball',
+    text: 'Stunned and frozen enemies take +30% damage.',
+    source: { kind: 'elite', region: 9 },
+    effects: [{ kind: 'behaviour', id: 'tuning-fork' }], perRank: [{ kind: 'behaviour', id: 'tuning-fork' }],
+  },
+  {
+    id: 'muffled-bell', name: 'Muffled Bell', icon: 'sound-off',
+    text: 'Slows, stuns and burns last 20% longer.',
+    source: { kind: 'elite', region: 9 },
+    effects: [{ kind: 'stat', mod: { key: 'duration', pct: 0.2 } }], perRank: [{ kind: 'stat', mod: { key: 'duration', pct: 0.1 } }],
+  },
+  {
+    id: 'metronome', name: 'Metronome', icon: 'metronome',
+    text: '+2% damage for every 10 s the tower goes unhurt, up to 20%.',
+    source: { kind: 'elite', region: 9 },
+    effects: [{ kind: 'behaviour', id: 'metronome' }], perRank: [{ kind: 'behaviour', id: 'metronome' }],
+  },
+  // ── The Orrery ──
+  {
+    id: 'astrolabe-ring', name: 'Astrolabe Ring', icon: 'orbital',
+    text: 'Glaives and drones circle 30% faster.',
+    source: { kind: 'boss', boss: 'astrolabe' },
+    effects: [{ kind: 'behaviour', id: 'astrolabe' }], perRank: [{ kind: 'behaviour', id: 'astrolabe' }],
+  },
+  {
+    id: 'star-chart', name: 'Star Chart', icon: 'night-sky',
+    text: 'Homing bolts that lose their mark seek a new one twice as far.',
+    source: { kind: 'elite', region: 10 },
+    effects: [{ kind: 'behaviour', id: 'star-chart' }], perRank: [{ kind: 'behaviour', id: 'star-chart' }],
+  },
+  {
+    id: 'tidal-lock', name: 'Tidal Lock', icon: 'vortex',
+    text: 'Enemies within half your range move 15% slower.',
+    source: { kind: 'elite', region: 10 },
+    effects: [{ kind: 'behaviour', id: 'tidal-lock' }], perRank: [{ kind: 'behaviour', id: 'tidal-lock' }],
+  },
+  {
+    id: 'comet-tail', name: 'Comet Tail', icon: 'meteor-impact',
+    text: 'Enemies slain by Glaives leave burning ground for 2 s.',
+    source: { kind: 'elite', region: 10 },
+    effects: [{ kind: 'behaviour', id: 'comet-tail' }], perRank: [{ kind: 'behaviour', id: 'comet-tail' }],
+  },
+  // ── The Frozen Sea ──
+  {
+    id: 'leviathan-scale', name: 'Leviathan Scale', icon: 'fish-scales',
+    text: 'Knockback pushes 50% farther; heavy enemies are pushed as if light.',
+    source: { kind: 'boss', boss: 'leviathan' },
+    effects: [{ kind: 'behaviour', id: 'leviathan' }], perRank: [{ kind: 'behaviour', id: 'leviathan' }],
+  },
+  {
+    id: 'skate-blade', name: 'Skate Blade', icon: 'ice-spear',
+    text: 'Enemies you knock back take +25% damage for 2 s.',
+    source: { kind: 'elite', region: 11 },
+    effects: [{ kind: 'behaviour', id: 'skate-blade' }], perRank: [{ kind: 'behaviour', id: 'skate-blade' }],
+  },
+  {
+    id: 'floe-shard', name: 'Floe Shard', icon: 'frozen-orb',
+    text: 'Enemies slain while slowed chill those near them by 30%.',
+    source: { kind: 'elite', region: 11 },
+    effects: [{ kind: 'behaviour', id: 'floe-shard' }], perRank: [{ kind: 'behaviour', id: 'floe-shard' }],
+  },
+  {
+    id: 'anchor-chain', name: 'Anchor Chain', icon: 'crossed-chains',
+    text: '+20% Max HP.',
+    source: { kind: 'elite', region: 11 },
+    effects: [{ kind: 'stat', mod: { key: 'maxHp', pct: 0.2 } }], perRank: [{ kind: 'stat', mod: { key: 'maxHp', pct: 0.1 } }],
+  },
+  // ── Giants' Rest ──
+  {
+    id: 'colossus-heart', name: 'Colossus Heart', icon: 'heart-organ',
+    text: '+30% damage against enemies above half their health.',
+    source: { kind: 'boss', boss: 'colossus' },
+    effects: [{ kind: 'behaviour', id: 'colossus' }], perRank: [{ kind: 'behaviour', id: 'colossus' }],
+  },
+  {
+    id: 'tick-bite', name: 'Tick Bite', icon: 'bone-gnawer',
+    text: 'A crit marks its enemy: marked enemies take +15% damage.',
+    source: { kind: 'elite', region: 12 },
+    effects: [{ kind: 'behaviour', id: 'tick-bite' }], perRank: [{ kind: 'behaviour', id: 'tick-bite' }],
+  },
+  {
+    id: 'herd-bell', name: 'Herd Bell', icon: 'cow',
+    text: 'Large enemies pay 30% more shards.',
+    source: { kind: 'elite', region: 12 },
+    effects: [{ kind: 'behaviour', id: 'herd-bell' }], perRank: [{ kind: 'behaviour', id: 'herd-bell' }],
+  },
+  {
+    id: 'giants-toe', name: "Giant's Toe", icon: 'foot-plaster',
+    text: 'Sunlance keeps half its heat-up when it turns to a new target.',
+    source: { kind: 'elite', region: 12 },
+    effects: [{ kind: 'behaviour', id: 'giants-toe' }], perRank: [{ kind: 'behaviour', id: 'giants-toe' }],
+  },
+  // ── Stormcrown ──
+  {
+    id: 'thunderhead-core', name: 'Thunderhead Core', icon: 'lightning-dome',
+    text: 'Every 10 s, lightning strikes the toughest non-boss enemy for 5% of its health.',
+    source: { kind: 'boss', boss: 'thunderhead' },
+    effects: [{ kind: 'behaviour', id: 'thunder-core' }], perRank: [{ kind: 'behaviour', id: 'thunder-core' }],
+  },
+  {
+    id: 'lightning-rod', name: 'Lightning Rod', icon: 'lightning-helix',
+    text: 'Chain Lightning leaps to one more enemy.',
+    source: { kind: 'elite', region: 13 },
+    effects: [{ kind: 'behaviour', id: 'extra-leap' }], perRank: [{ kind: 'behaviour', id: 'extra-leap' }],
+  },
+  {
+    id: 'grounding-wire', name: 'Grounding Wire', icon: 'plug',
+    text: 'The tower takes 30% less from lightning and hostile shots.',
+    source: { kind: 'elite', region: 13 },
+    effects: [{ kind: 'behaviour', id: 'grounding' }], perRank: [{ kind: 'behaviour', id: 'grounding' }],
+  },
+  {
+    id: 'static-charge', name: 'Static Charge', icon: 'static',
+    text: 'Every 20 crits charge the ultimate by 1%.',
+    source: { kind: 'elite', region: 13 },
+    effects: [{ kind: 'behaviour', id: 'static' }], perRank: [{ kind: 'behaviour', id: 'static' }],
   },
   // ── Act 2 (§9): the Abyss's, set by set ───────────────────────────────
   {

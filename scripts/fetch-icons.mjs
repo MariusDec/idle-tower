@@ -181,6 +181,26 @@ const MANIFEST = dedupe([
   ['delapouite', 'mortar'], ['lorc', 'sunbeams'], ['lorc', 'spinning-blades'],
   ['delapouite', 'delivery-drone'], ['lorc', 'dragon-breath'], ['lorc', 'lightning-storm'],
   ['delapouite', 'beehive'], ['lorc', 'sun'], ['delapouite', 'castle'],
+
+  // ── The Wake (plans/late-game/12 §9.4): the Bell Marches ──
+  ['lorc', 'ringing-bell'], ['lorc', 'sonic-shout'], ['lorc', 'sleepy'],
+  ['lorc', 'footprint'], ['lorc', 'resonance'], ['delapouite', 'alarm-clock'],
+  ['lorc', 'vibrating-ball'], ['delapouite', 'sound-off'], ['delapouite', 'metronome'],
+  // Giants' Rest
+  ['delapouite', 'giant'], ['lorc', 'stomp'], ['lorc', 'mite'], ['delapouite', 'sheep'],
+  ['delapouite', 'body-height'], ['lorc', 'heart-organ'], ['lorc', 'bone-gnawer'], ['delapouite', 'cow'],
+  ['delapouite', 'foot-plaster'],
+  // The Orrery
+  ['lorc', 'ringed-planet'], ['lorc', 'satellite'], ['lorc', 'comet-spark'], ['delapouite', 'moon-orbit'],
+  ['lorc', 'wave-crest'], ['lorc', 'orbital'], ['lorc', 'night-sky'], ['lorc', 'vortex'], ['lorc', 'meteor-impact'],
+  // The Frozen Sea
+  ['delapouite', 'iceberg'], ['delapouite', 'ice-skate'], ['lorc', 'frozen-block'], ['delapouite', 'push'],
+  ['lorc', 'anchor'], ['delapouite', 'sperm-whale'], ['delapouite', 'fish-scales'], ['lorc', 'ice-spear'],
+  ['lorc', 'crossed-chains'],
+  // Stormcrown
+  ['lorc', 'lightning-tear'], ['lorc', 'ground-sprout'], ['lorc', 'thunder-struck'], ['lorc', 'lightning-shout'],
+  ['lorc', 'lightning-electron'], ['lorc', 'cloudy-fork'], ['delapouite', 'lightning-dome'], ['lorc', 'lightning-helix'],
+  ['delapouite', 'plug'], ['lorc', 'static'],
 ]);
 
 /**

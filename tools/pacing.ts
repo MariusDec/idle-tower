@@ -32,6 +32,9 @@
  *                                        Act 2 (tools/act2.ts, P8's gate): from the
  *                                        Blight's fall, N hours of heat, stars and the
  *                                        Abyss; heat 1–10 at the frontier, timed
+ *   npm run pacing -- --act2 --wake-frontiers
+ *                                        …and write the Wake's frontier profiles
+ *                                        (tools/fixtures/wake-frontiers.json, arsenal --wake)
  *   npm run pacing -- --act2 --reuse     …from the post-Blight profiles the last
  *                                        --act2 saved (T4): minutes, not half an
  *                                        hour, but only while Act 1 is unchanged
@@ -75,8 +78,8 @@ import { boardOpen } from '../src/meta/contracts';
 import { STRATA, stratumFoot } from '../src/content/strata';
 import { BALANCE } from '../src/content/balance';
 import { IN_WORKER, parallel, workerJobs } from './parallel';
-import { FRONTIER_FILE, FRONTIER_HOURS, FRONTIER_SEEDS, saveFrontiers, type FrontierSave } from './frontier';
-import { REGIONS } from '../src/content/regions';
+import { FRONTIER_FILE, FRONTIER_HOURS, FRONTIER_SEEDS, WAKE_FRONTIER_FILE, saveFrontiers, type FrontierSave } from './frontier';
+import { ACT1_REGIONS, WAKE_FINALE, WAKE_REGIONS } from '../src/content/regions';
 import { EXPLAINERS, type ExplainerId } from '../src/content/explainers';
 import { explainerOpen } from '../src/meta/explainers';
 
@@ -616,7 +619,7 @@ function formTotals(verdicts: readonly IdleVerdict[], which: 'handsOff' | 'engag
  */
 export function frontierRun(seed: number, hours = FRONTIER_HOURS): FrontierSave[] {
   const r = runPacing(hours, seed);
-  return REGIONS.flatMap((region) => {
+  return ACT1_REGIONS.flatMap((region) => {
     const c = r.checkpoints.find((x) => x.label === region.boss);
     return c ? [{ seed, boss: region.boss, at: Math.round(c.at), profile: c.profile as unknown as RawProfile }] : [];
   });
@@ -627,7 +630,7 @@ async function frontiersMain(): Promise<void> {
   const runs = await runSeeds<FrontierSave[]>('frontiers', FRONTIER_SEEDS.map((k) => [k]));
   for (const [k, seed] of FRONTIER_SEEDS.entries()) {
     console.log(`  seed ${seed}: ${runs[k].map((s) => `${BOSS_BY_ID[s.boss as keyof typeof BOSS_BY_ID].name} ${formatDuration(s.at)}`).join(' · ')}`);
-    if (runs[k].length < REGIONS.length) throw new Error(`seed ${seed}: not every boss fell in ${FRONTIER_HOURS} h`);
+    if (runs[k].length < ACT1_REGIONS.length) throw new Error(`seed ${seed}: not every boss fell in ${FRONTIER_HOURS} h`);
   }
   saveFrontiers(runs.flat());
   console.log(`frontier profiles written to ${FRONTIER_FILE}`);
@@ -713,6 +716,13 @@ export const HEAT_10_HOURS = { min: 3, max: 12 };
 /** S7's readings: the best Abyss floor at 12 h, and the hours of Act 2 the last star should take (B7). */
 const ABYSS_FLOOR_12H = 10;
 const LAST_STAR_HOURS = { min: 20, max: 40 };
+/** The Wake's readings (plans/late-game/12 §14): its first boss's fall, and its last's (so the Abyss), in wall hours after the Blight. */
+const WAKE_FIRST_HOURS = { min: 0, max: 1 };
+const WAKE_LAST_HOURS = { min: 6, max: 10 };
+/** Wall seconds as hours, one decimal ("0.6 h"); "never" for none. */
+function hoursOf(t: number | null | undefined): string {
+  return t == null ? 'never' : `${(t / 3600).toFixed(1)} h`;
+}
 /** Wall hours the Act 1 bot is given to fell the Blight before Act 2 starts. */
 const ACT1_HOURS = 14;
 
@@ -726,7 +736,7 @@ export interface Act2Verdict {
 const ACT2_STARTS = 'node_modules/.tmp/act2-starts';
 
 /** Act 1 to the Blight's fall (or the saved fall, with `reuse`), then `hours` of Act 2 (§9). */
-export function act2Verdict(seed: number, hours: number, reuse = false): Act2Verdict {
+export function act2Verdict(seed: number, hours: number, reuse = false, keep = false): Act2Verdict {
   // A --fast start is kept apart, so a full reading never reuses one.
   const file = `${ACT2_STARTS}/seed-${seed}${FAST_STEPS > 1 ? `-fast${FAST_STEPS}` : ''}.json`;
   let start: { at: number; profile: Profile } | null = null;
@@ -744,7 +754,7 @@ export function act2Verdict(seed: number, hours: number, reuse = false): Act2Ver
   }
   if (!start) return { act1: null, report: null };
   const profile = structuredClone(start.profile);
-  return { act1: start.at, report: runAct2(profile, hours, seed) };
+  return { act1: start.at, report: runAct2(profile, hours, seed, keep) };
 }
 
 /** P8's reading: the median time to heat `h` at the frontier, in wall seconds after the Blight; null for never. */
@@ -763,10 +773,15 @@ function contractHours(r: Act2Report): number {
   return Math.max(1e-9, (r.seconds / 3600) * (r.contracts.runs / Math.max(1, r.runs)));
 }
 
-async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<void> {
+async function act2Main(seeds: number, hours: number, reuse: boolean, keep = false): Promise<void> {
   const fmt = (t: number | null | undefined): string => (t == null ? 'never' : formatDuration(t));
   console.log(`act 2 · ${hours} h after the Blight · ${seeds} profiles${reuse ? ' · saved starts' : ''}`);
-  const verdicts = await runSeeds<Act2Verdict>('act2', seedsOf(seeds).map((k) => [k, hours, reuse]));
+  const verdicts = await runSeeds<Act2Verdict>('act2', seedsOf(seeds).map((k) => [k, hours, reuse, keep]));
+  if (keep) {
+    // The Wake's frontier fixture (plans/late-game/12 §10.3): the Blight's fall and each Wake boss's.
+    saveFrontiers(verdicts.flatMap((v) => v.report?.saves ?? []), true);
+    console.log(`Wake frontier profiles written to ${WAKE_FRONTIER_FILE}`);
+  }
   for (const [k, v] of verdicts.entries()) {
     const r = v.report;
     if (!r) {
@@ -779,7 +794,8 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
     console.log(`           frontier heat 1–10: ${ladder}`);
     console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')} · last star ${fmt(r.lastStar)}`);
     const src = r.sources;
-    console.log(`           Starlight from: ${Object.entries(src.heat).map(([i, n]) => `R${i} ${n}`).join(' · ')} · Abyss ${src.abyss} · strata ${src.strata} · Rush ${src.rush} · feats ${src.feats} · contracts ${src.contracts}`);
+    console.log(`           Starlight from: ${Object.entries(src.heat).map(([i, n]) => `R${i} ${n}`).join(' · ')} · Abyss ${src.abyss} · strata ${src.strata} · Rush ${src.rush} · feats ${src.feats} · contracts ${src.contracts} · Wake ${src.wake}`);
+    console.log(`           Wake: ${WAKE_REGIONS.map((w) => `${BOSS_BY_ID[w.boss].name.replace(/^The /, '')} ${hoursOf(r.wake[w.boss])}`).join(' · ')}`);
     if (r.contracts.runs > 0) {
       // The board's bar (plans/late-game/10 §9): success by tier, contract-only rewards per hour.
       const c = r.contracts;
@@ -818,6 +834,16 @@ async function act2Main(seeds: number, hours: number, reuse: boolean): Promise<v
       return t;
     }, emptyContractTally());
     console.log(`        contract success by tier: ${successLine(all)} (want ~85 / 65 / 45 / 30%)`);
+  }
+  // The Wake (plans/late-game/12 §14): each boss's first fall after the Blight; the Carillon within 1 h, the last within 6–10 h.
+  for (const [i, w] of WAKE_REGIONS.entries()) {
+    const times = reports.map((r) => r.wake[w.boss] ?? Infinity);
+    const m = med(times);
+    const last = i === WAKE_REGIONS.length - 1 && w.boss === WAKE_FINALE;
+    const want = i === 0 ? WAKE_FIRST_HOURS : last ? WAKE_LAST_HOURS : null;
+    const ok = want !== null && Number.isFinite(m) && m >= want.min * 3600 && m <= want.max * 3600;
+    const mark = want === null ? '    ' : ok ? '  ✓ ' : '  ✗ ';
+    console.log(`${mark}    ${BOSS_BY_ID[w.boss].name} first falls: median ${Number.isFinite(m) ? hoursOf(m) : `not in ${hours} h`}${want ? ` (want ${want.min}–${want.max} h)` : ''} (${times.map((t) => hoursOf(Number.isFinite(t) ? t : undefined)).join(' ')})`);
   }
   const floors = reports.map((r) => r.floor);
   const okFloor = med(floors) >= ABYSS_FLOOR_12H;
@@ -867,7 +893,7 @@ async function main(): Promise<void> {
     return;
   }
   if (process.argv.includes('--act2')) {
-    await act2Main(Math.max(1, seeds || 1), hours, process.argv.includes('--reuse'));
+    await act2Main(Math.max(1, seeds || 1), hours, process.argv.includes('--reuse'), process.argv.includes('--wake-frontiers'));
     return;
   }
   if (process.argv.includes('--idle')) {

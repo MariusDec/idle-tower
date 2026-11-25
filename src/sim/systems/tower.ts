@@ -29,6 +29,9 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
     return 0;
   }
   let amount = mitigate(raw * hordeFury(run), run.stats.armor);
+  // Grounding Wire (plans/late-game/12 §8.9): lightning and hostile shots land lighter.
+  const wire = run.behaviours.grounding ?? 0;
+  if (wire > 0 && (by === 'storm' || by === 'shots')) amount *= 1 - BALANCE.relics.grounding[Math.min(wire, BALANCE.relics.grounding.length) - 1];
   // Rampart (§11.4): no contact hit takes more than a slice of the wall.
   if (source && run.behaviours.rampart) amount = Math.min(amount, run.stats.maxHp * BALANCE.behaviours.rampartCap);
   // Thorns answer the blow, shield or not.
@@ -50,6 +53,7 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
   run.takenBy[by] = (run.takenBy[by] ?? 0) + Math.min(amount, Math.max(0, t.hp));
   t.hp -= amount;
   t.hurtTick = run.tick;
+  t.hurtAt = run.time;
   if (run.firstHurtWave === null) run.firstHurtWave = run.wave;
   // Steady Hand reads the low point here, before Second Wind can lift it.
   const b = run.boss;

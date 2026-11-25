@@ -28,9 +28,11 @@ P9 deleted the `legacy/` copy.
 
 The sim's step order (`sim/run.ts`): input → waves place bodies (wave 20 is
 the boss, `systems/boss.ts`; overtime follows) → rifts roll, show and shut
-(`systems/rifts.ts`, step 2b) → the boss acts → enemies walk
+(`systems/rifts.ts`, step 2b) → the boss acts → the Wake's clocks tick
+(`systems/wake.ts`: the toll, the orbit's spin, the storm, the Wake relics) → enemies walk
 and act on their verb (hit the wall, lob a shot, mend) → separation spreads
-crowds (tangentially at the wall) → weapons fire → projectiles fly and kill
+crowds (tangentially at the wall) → Glide's impacts and the Titans' trample
+(`enemies.ts`) → weapons fire → projectiles fly and kill
 (kills feed XP, shards and the ultimate; a Splitter bursts, an elite's aura
 has its last word and may drop a relic; reaching a wave pays for the last) →
 hostile shots and shockwaves land (`systems/tower.ts#hurtTower` is the one
@@ -131,6 +133,9 @@ npm run pacing -- --hours 12 --seeds 8 --fast  # any pacing report in a fraction
 npm run arsenal     # I4: the bot's weapon picks per region
 npm run arsenal -- --keystones  # T4: each keystone against none, Regions 3–6; free or trap fails
 npm run pacing -- --frontiers    # rewrite tools/fixtures/frontiers.json (the arsenal's towers) after an Act 1 balance change
+npm run pacing -- --act2 --wake-frontiers --hours 12 --seeds 3  # also write tools/fixtures/wake-frontiers.json (the Wake's towers)
+npm run arsenal -- --wake        # I4 in the Wake's regions (9–13), on the Wake frontier fixture
+npm run omen -- --days 28        # the Daily Omen's days from today (--from N: a day number; the Wake joins at BALANCE.omen.wakeFrom)
 npm run calibrate   # T2: the scorer's damage estimate against the sim, every weapon and level
 npm run inspect -- --seeds 20 --by-weapon  # damage landed by each weapon (T1)
 npm run android:release  # release APK (signing: README.md)
@@ -140,7 +145,7 @@ npm run icons       # re-fetch public/icons/sprite.svg from the pinned manifest 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **idle-tower** (5844 symbols, 18594 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **idle-tower** (6349 symbols, 19994 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 

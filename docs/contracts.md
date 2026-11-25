@@ -166,6 +166,14 @@ the Blight's checkpoints, and at a saved Act 2 start).
 - The rest read as meant. "Starts with X mounted." sits under every card
   that names a weapon; no card asks a wave past the region's best.
 
+## 2026-11-25, the Wake joins (plans/late-game/12 §8.11)
+
+Regional cards draw the Wake's five regions as they open (`regionsOpen`;
+the free plan never draws them). Floor, guardian and Rush cards now wait
+for the Thunderhead (`abyssOpen`), not the Blight; `tests/contracts.test.ts`
+holds both. `QUARRY` has no Wake entries yet, so a Wake card never asks for a
+slay. The contract bot is not yet read with the Wake in the pool.
+
 ## Open
 
 - Act 2's Hard success (T3 73%, T4 50% against 45 / 30%): read again over

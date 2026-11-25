@@ -1,8 +1,9 @@
 # Late game: screen time and the endgame
 
-**Status:** 2026-11-15. Nine plans, one per idea. Built in whole or in
-their first phases: 01, 02, 03, 04, 05, 07, 08 and 10 (each plan's own
-Status line says how far); 11 is not started. Written 2026-11-14. The
+**Status:** 2026-11-25. Ten plans, one per idea. Built in whole or in
+their first phases: 01, 02, 03, 04, 05, 07, 08, 10 and 11 (each plan's own
+Status line says how far). 12 is built through step 6 but not tuned yet
+(step 7, §14). Written 2026-11-14. The
 2026-11-03 outlines A–D are kept for their history; each plan below says
 which part of them it supersedes. They come from a review of the economy and a late-game
 Abyss session, which found two problems with one cause: **after the
@@ -29,7 +30,7 @@ mid-game, nothing is left that only playing can get you.**
 | [08. Abyss strata](08-abyss-strata.md) | Five authored strata, the Hunger at floor 30 as Act 2's ending, the Below after | L | C (not §6) |
 | [10. Contracts](10-contracts.md) | Three generated goals on the hub, replaced the moment one is done | L | D §1 |
 | [11. Daily Omen](11-daily-omen.md) | One date-seeded run a day, compared with friends by a short code, offline | M | D §2 |
-| [12. The Wake](12-the-wake.md) | Five regions between the Blight and the Abyss (Toll, Orbit, Glide, Giants, Storm), with Trials and relics; the Thunderhead opens the Abyss | XL | new |
+| [12. The Wake](12-the-wake.md) | Five regions between the Blight and the Abyss (Toll, Orbit, Glide, Giants, Storm), with Trials and relics; the Thunderhead opens the Abyss. Built (untuned) | XL | new |
 
 The outlines, for history: [A](a-stored-light.md), [B](b-moments.md),
 [C](c-abyss-strata.md), [D](d-come-back.md).

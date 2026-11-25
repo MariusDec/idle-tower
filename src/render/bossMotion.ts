@@ -91,6 +91,12 @@ export const BOSS_MOTION: Record<BossId, BossCharacter> = {
   deepwarden: { gait: 'slide', hz: 1.0, squash: 0, bob: 0, give: 0.25, lunge: 0.06, shudder: 0.05, sway: 0, follow: 0 },
   hunger: { gait: 'lurch', hz: 1.6, squash: 0.06, bob: 0.03, give: 1.2, lunge: 0.12, shudder: 0, sway: 0.02, follow: 0 },
   undertow: { gait: 'roll', hz: 1.6 / (Math.PI * 2), squash: 0.03, bob: 0.02, give: 1, lunge: 0.08, shudder: 0, sway: 0.04, follow: 0.6 },
+  // The Wake's (plans/late-game/12 §7.3).
+  carillon: { gait: 'stomp', hz: 0.9, squash: 0.06, bob: 0.02, give: 0.8, lunge: 0.06, shudder: 0.03, sway: 0.02, follow: 0.4 },
+  astrolabe: { gait: 'glide', hz: 0.6, squash: 0, bob: 0.02, give: 0.3, lunge: 0.05, shudder: 0, sway: 0, follow: 0 },
+  leviathan: { gait: 'roll', hz: 0.8 / (Math.PI * 2), squash: 0.03, bob: 0.03, give: 1, lunge: 0.1, shudder: 0, sway: 0.03, follow: 0.6 },
+  colossus: { gait: 'stomp', hz: 0.8, squash: 0.05, bob: 0.03, give: 0.8, lunge: 0.06, shudder: 0.04, sway: 0, follow: 0.3 },
+  thunderhead: { gait: 'pulse', hz: 0.5, squash: 0.03, bob: 0.02, give: 1.2, lunge: 0.08, shudder: 0.02, sway: 0.03, follow: 0.8 },
 };
 
 /** Every tunable in one table (§6.3). */

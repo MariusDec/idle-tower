@@ -6,8 +6,10 @@ import { SIM_DT } from '../src/app/loop';
 import { BALANCE } from '../src/content/balance';
 import { BOSS_BY_ID } from '../src/content/bosses';
 import { regionByIndex } from '../src/content/regions';
-import { BOSS_WAVE, rollWave, startWave, waveHp, waveShardMult } from '../src/sim/systems/waves';
-import { bossBody, tickBoss, tickRings } from '../src/sim/systems/boss';
+import { BOSS_WAVE, rollWave, startWave, waveDamage, waveHp, waveShardMult } from '../src/sim/systems/waves';
+import { tickWake } from '../src/sim/systems/wake';
+import { bossBody, tickBoss, tickRings, weakPoint, weakPointMult } from '../src/sim/systems/boss';
+import { body } from './helpers/body';
 import { damageEnemy } from '../src/sim/systems/combat';
 import { hurtTower } from '../src/sim/systems/tower';
 import { Rng } from '../src/core/rng';
@@ -150,5 +152,312 @@ describe('boss patterns', () => {
     expect(run.outcome).toBeNull();
     expect(run.tower.hp).toBeGreaterThan(0);
     expect(run.boss!.minHp).toBe(0);
+  });
+});
+
+describe('the Carillon (plans/late-game/12 §7.1)', () => {
+  /** The Carillon at its post, in phase `phase`, with the bell about to toll. */
+  function carillon(phase: number): RunState {
+    const run = atBoss(9);
+    toPost(run);
+    const e = bossBody(run)!;
+    const below = [1, 0.6, 0.3][phase];
+    e.hp = e.maxHp * below;
+    tickBoss(run, regionByIndex(9), SIM_DT);
+    expect(run.boss!.phase).toBe(phase);
+    run.events.length = 0;
+    run.rings.length = 0;
+    return run;
+  }
+
+  /** Step the boss and the bell until the bell tolls. */
+  function untilToll(run: RunState): void {
+    for (let i = 0; i < 30 / SIM_DT && !run.events.some((ev) => ev.kind === 'toll'); i++) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, regionByIndex(9), SIM_DT);
+      tickWake(run, regionByIndex(9), SIM_DT);
+    }
+  }
+
+  it('rolls a peal at the wall on each toll, from its second phase, and not before', () => {
+    const calm = carillon(0);
+    untilToll(calm);
+    expect(calm.rings).toHaveLength(0);
+    const run = carillon(1);
+    untilToll(run);
+    expect(run.rings).toHaveLength(1);
+    const e = bossBody(run)!;
+    const p = BOSS_BY_ID.carillon.phases[1].patterns[0];
+    expect(p.kind).toBe('peal');
+    expect(run.rings[0].speed).toBe(p.kind === 'peal' ? p.speed : NaN);
+    expect(run.rings[0].damage).toBeCloseTo((p.kind === 'peal' ? p.damage : NaN) * waveDamage(regionByIndex(9), BOSS_WAVE));
+    expect(run.rings[0].x).toBe(e.x);
+    expect(run.events.some((ev) => ev.kind === 'slam')).toBe(true);
+  });
+
+  it('quickens the bell: the next interval halves, never below the floor', () => {
+    const run = carillon(2);
+    untilToll(run);
+    const before = run.wake!.toll!.interval;
+    // Its first quickening comes `every` seconds into the phase.
+    for (let i = 0; i < 21 / SIM_DT; i++) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, regionByIndex(9), SIM_DT);
+    }
+    expect(run.wake!.toll!.pace).toBeCloseTo(0.5);
+    run.events.length = 0;
+    run.wake!.toll!.next = run.time;
+    untilToll(run);
+    const rule = regionByIndex(9).rule!.effect;
+    const floor = rule.kind === 'toll' ? rule.window * BALANCE.wake.toll.minInterval : NaN;
+    expect(run.wake!.toll!.interval).toBeCloseTo(Math.max(floor, before * 0.5));
+  });
+});
+
+describe('the Sleeping Colossus (plans/late-game/12 §7.1)', () => {
+  function colossus(phase: number): RunState {
+    const run = atBoss(12);
+    toPost(run);
+    const e = bossBody(run)!;
+    e.hp = e.maxHp * [1, 0.6, 0.3][phase];
+    tickBoss(run, regionByIndex(12), SIM_DT);
+    expect(run.boss!.phase).toBe(phase);
+    run.events.length = 0;
+    return run;
+  }
+
+  it('its heart turns, and a hit lands ×3 only while the heart faces the tower', () => {
+    const run = colossus(0);
+    const e = bossBody(run)!;
+    const p = BOSS_BY_ID.colossus.phases[0].patterns[0];
+    if (p.kind !== 'weakpoint') throw new Error('phase 0 is the weak point');
+    // At its post on +x, the tower lies at angle π from it.
+    run.boss!.facet = Math.PI;
+    expect(weakPoint(run)!.facing).toBe(true);
+    expect(weakPointMult(run, e)).toBe(p.mult);
+    e.armor = 0;
+    const facing = damageEnemy(run, e, 100, false);
+    run.boss!.facet = 0;
+    expect(weakPoint(run)!.facing).toBe(false);
+    expect(weakPointMult(run, e)).toBe(1);
+    const away = damageEnemy(run, e, 100, false);
+    expect(facing / away).toBeCloseTo(p.mult);
+    // It turns at its spin.
+    const f0 = run.boss!.facet;
+    tickBoss(run, regionByIndex(12), SIM_DT);
+    expect(run.boss!.facet - f0).toBeCloseTo(p.spin * SIM_DT);
+    // Anything but the boss's body is untouched.
+    expect(weakPointMult(run, body(run))).toBe(1);
+  });
+
+  it('its last phase has no heart; it feasts on a Titan near it, healing by its HP with no kill', () => {
+    const run = colossus(2);
+    expect(weakPoint(run)).toBeNull();
+    const e = bossBody(run)!;
+    e.hp = e.maxHp * 0.2;
+    const titan = body(run, { type: 'titan', x: e.x - 100, y: 0, hp: 5000, maxHp: 5000 });
+    const far = body(run, { type: 'titan', x: e.x - 600, y: 0, hp: 5000, maxHp: 5000 });
+    const grunt = body(run, { x: e.x - 50, y: 0 });
+    const kills = run.kills;
+    const shards = run.shards;
+    const hp = e.hp;
+    for (let i = 0; i < 5 / SIM_DT && titan.alive; i++) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, regionByIndex(12), SIM_DT);
+    }
+    expect(titan.alive).toBe(false);
+    expect(far.alive).toBe(true);
+    expect(grunt.alive).toBe(true);
+    expect(e.hp).toBeCloseTo(Math.min(e.maxHp, hp + 5000));
+    expect(run.kills).toBe(kills);
+    expect(run.shards).toBe(shards);
+    expect(run.events.some((ev) => ev.kind === 'trample')).toBe(true);
+  });
+});
+
+describe('the Astrolabe (plans/late-game/12 §7.1, §7.2)', () => {
+  it('wears six plates spaced evenly round it, turning on the clock', () => {
+    const run = atBoss(10);
+    toPost(run);
+    const e = bossBody(run)!;
+    const spec = BOSS_BY_ID.astrolabe.plates!;
+    const plates = () => run.enemies.filter((o) => o.alive && o.plate === e.id);
+    expect(plates()).toHaveLength(6);
+    expect(run.boss!.plates).toBe(6);
+    tickBoss(run, regionByIndex(10), SIM_DT);
+    const angles = (): number[] => plates().map((o) => Math.atan2(o.y - e.y, o.x - e.x));
+    const at0 = angles();
+    // Evenly spaced: each a sixth of a turn from the next, and all at one distance off the rim.
+    const sorted = [...at0].sort((a, b) => a - b);
+    for (let k = 1; k < sorted.length; k++) expect(sorted[k] - sorted[k - 1]).toBeCloseTo(Math.PI / 3, 5);
+    for (const o of plates()) expect(Math.hypot(o.x - e.x, o.y - e.y)).toBeCloseTo(e.radius + spec.radius * 0.6, 5);
+    // A second later, each has turned `orbit` radians about the boss.
+    const t0 = run.time;
+    for (let i = 0; i < 1 / SIM_DT; i++) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, regionByIndex(10), SIM_DT);
+    }
+    const turned = angles().map((a, k) => Math.atan2(Math.sin(a - at0[k]), Math.cos(a - at0[k])));
+    for (const d of turned) expect(d).toBeCloseTo((run.time - t0) * spec.orbit!, 5);
+  });
+
+  it('reverses the field from its second phase: the spin flips, every `every` s', () => {
+    const run = atBoss(10);
+    toPost(run);
+    const e = bossBody(run)!;
+    e.hp = e.maxHp * 0.6;
+    tickBoss(run, regionByIndex(10), SIM_DT);
+    expect(run.boss!.phase).toBe(1);
+    // The second phase cracks every plate away.
+    expect(run.enemies.some((o) => o.alive && o.plate === e.id)).toBe(false);
+    const spin = run.wake!.orbit!.spin;
+    const flips: number[] = [];
+    for (let i = 0; i < 20 / SIM_DT; i++) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      run.events.length = 0;
+      tickBoss(run, regionByIndex(10), SIM_DT);
+      for (const ev of run.events) if (ev.kind === 'orbitTurn') flips.push(ev.spin);
+    }
+    const p = BOSS_BY_ID.astrolabe.phases[1].patterns[0];
+    expect(p.kind).toBe('reverse');
+    // Half a period in, then every period: 4 s, 12 s, 20 s.
+    expect(flips).toEqual([-spin, spin, -spin].slice(0, flips.length));
+    expect(flips.length).toBeGreaterThanOrEqual(2);
+    expect(run.wake!.orbit!.spin).toBe(flips[flips.length - 1]);
+  });
+});
+
+describe('the Leviathan (plans/late-game/12 §7.1)', () => {
+  const F = BALANCE.wake.floes;
+  const floes = (run: RunState) => run.enemies.filter((o) => o.alive && o.type === 'floe');
+
+  it('cracks stationary Floes loose in its first phase: unpaid, between the wall and its post', () => {
+    const run = atBoss(11);
+    toPost(run);
+    const def = BOSS_BY_ID.leviathan;
+    const p = def.phases[0].patterns.find((q) => q.kind === 'floes')!;
+    expect(p.kind === 'floes' && !p.ring).toBe(true);
+    for (let i = 0; i < 6 / SIM_DT; i++) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, regionByIndex(11), SIM_DT);
+    }
+    const out = floes(run);
+    expect(out).toHaveLength(p.kind === 'floes' ? p.count : 0);
+    expect(run.events.filter((ev) => ev.kind === 'floe')).toHaveLength(out.length);
+    for (const f of out) {
+      expect(f).toMatchObject({ speed: 0, xp: 0, shards: 0, wave: BOSS_WAVE });
+      const d = Math.hypot(f.x, f.y);
+      expect(d).toBeGreaterThanOrEqual(run.stats.radius + F.near - 1e-6);
+      expect(d).toBeLessThanOrEqual(def.standoff - F.far + 1e-6);
+    }
+  });
+
+  it('rings the wall with eight Floes, once, on entering its last phase', () => {
+    const run = atBoss(11);
+    toPost(run);
+    const e = bossBody(run)!;
+    e.hp = e.maxHp * 0.3;
+    tickBoss(run, regionByIndex(11), SIM_DT);
+    expect(run.boss!.phase).toBe(2);
+    const ring = floes(run);
+    expect(ring).toHaveLength(8);
+    for (const [k, f] of ring.entries()) {
+      expect(Math.hypot(f.x, f.y)).toBeCloseTo(run.stats.radius + F.ring, 6);
+      const a = Math.atan2(f.y, f.x) - Math.atan2(e.y, e.x) - (k / 8) * Math.PI * 2;
+      expect(Math.cos(a)).toBeCloseTo(1, 6);
+    }
+    for (let i = 0; i < 20 / SIM_DT; i++) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, regionByIndex(11), SIM_DT);
+    }
+    expect(floes(run)).toHaveLength(8);
+  });
+
+  it('opens no relic slot (D-13)', () => {
+    expect(BOSS_BY_ID.leviathan.relicSlot).toBe(false);
+  });
+});
+
+describe('the Thunderhead (plans/late-game/12 §7.1)', () => {
+  function thunderhead(phase: number): RunState {
+    const run = atBoss(13);
+    toPost(run);
+    const e = bossBody(run)!;
+    e.hp = e.maxHp * [1, 0.66, 0.33][phase];
+    tickBoss(run, regionByIndex(13), SIM_DT);
+    expect(run.boss!.phase).toBe(phase);
+    run.events.length = 0;
+    return run;
+  }
+
+  function advance(run: RunState, seconds: number): void {
+    for (let i = 0; i < seconds / SIM_DT; i++) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, regionByIndex(13), SIM_DT);
+      tickWake(run, regionByIndex(13), SIM_DT);
+    }
+  }
+
+  it('its bolt winds up from its post, then strikes the tower through `hurtTower`', () => {
+    const run = thunderhead(0);
+    const p = BOSS_BY_ID.thunderhead.phases[0].patterns[0];
+    if (p.kind !== 'bolt') throw new Error('phase 0 is the bolt');
+    run.stats = { ...run.stats, armor: 0 };
+    // Its timer opens at half its period; the windup shows first.
+    const hp = run.tower.hp;
+    const until = p.every * 0.5 + SIM_DT;
+    advance(run, until);
+    expect(run.events.some((ev) => ev.kind === 'windup')).toBe(true);
+    expect(run.tower.hp).toBe(hp);
+    expect(run.events.some((ev) => ev.kind === 'strike')).toBe(false);
+    advance(run, p.windup);
+    const strike = run.events.find((ev) => ev.kind === 'strike');
+    expect(strike).toMatchObject({ kind: 'strike', tower: true });
+    expect(hp - run.tower.hp).toBeCloseTo(p.damage * waveDamage(regionByIndex(13), BOSS_WAVE));
+    expect(run.takenBy.storm).toBeGreaterThan(0);
+  });
+
+  it('off its post, a bolt waits', () => {
+    const run = thunderhead(0);
+    const e = bossBody(run)!;
+    e.x = e.px = 900;
+    const hp = run.tower.hp;
+    advance(run, 6);
+    expect(run.events.some((ev) => ev.kind === 'windup')).toBe(false);
+    expect(run.tower.hp).toBe(hp);
+  });
+
+  it('its tempest halves the storm\'s clock and forks each strike', () => {
+    const run = thunderhead(2);
+    const p = BOSS_BY_ID.thunderhead.phases[2].patterns[0];
+    if (p.kind !== 'tempest') throw new Error('phase 2 is the tempest');
+    const rule = regionByIndex(13).rule!.effect;
+    if (rule.kind !== 'storm') throw new Error('Stormcrown storms');
+    const a = body(run, { x: 300, y: 0, hp: 1000, maxHp: 1000 });
+    const b = body(run, { x: -300, y: 0, hp: 900, maxHp: 900 });
+    const c = body(run, { x: 0, y: 300, hp: 800, maxHp: 800 });
+    run.time = run.wake!.storm!.next;
+    tickWake(run, regionByIndex(13), SIM_DT);
+    expect(run.wake!.storm!.next - run.time).toBeCloseTo(rule.every * p.pace);
+    // Forked: the two toughest are struck, the third is spared.
+    expect(run.events.filter((ev) => ev.kind === 'strike')).toHaveLength(p.forks);
+    expect(a.hp).toBeCloseTo(1000 - 1000 * rule.damage);
+    expect(b.hp).toBeCloseTo(900 - 900 * rule.damage);
+    expect(c.hp).toBe(800);
+    // Never on the boss itself (D-19).
+    expect(bossBody(run)!.hp).toBeCloseTo(bossBody(run)!.maxHp * 0.33);
+  });
+
+  it('only its fall opens a relic slot in the Wake (D-13)', () => {
+    for (const id of ['carillon', 'astrolabe', 'colossus'] as const) expect(BOSS_BY_ID[id].relicSlot).toBe(false);
+    expect(BOSS_BY_ID.thunderhead.relicSlot).toBe(true);
   });
 });

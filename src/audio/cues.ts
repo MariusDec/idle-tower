@@ -26,6 +26,11 @@ const GAP_MS: Readonly<Record<string, number>> = {
   lance: 120,
   rune: 70,
   shell: 60,
+  trample: 90,
+  strike: 90,
+  hop: 60,
+  impact: 70,
+  floe: 80,
   // Several drafts taken at once (U2) chime once.
   picked: 150,
 };
@@ -97,8 +102,8 @@ export class Cues {
     return true;
   }
 
-  /** Sound this frame's sim events. */
-  play(events: readonly SimEvent[]): void {
+  /** Sound this frame's sim events. `root` is the music's key (Hz), for cues that sit on it. */
+  play(events: readonly SimEvent[], root = 110): void {
     const s = this.synth;
     if (!s.live || events.length === 0) return;
     const now = performance.now();
@@ -262,6 +267,47 @@ export class Cues {
         case 'reliquaryFade':
           // It sinks: a soft falling breath.
           s.noise(0.45, 0.03, 500, 'bandpass');
+          break;
+        case 'toll': {
+          // The Bell Marches' bell (plans/late-game/12 §9.2): a struck partial a
+          // fifth above the run's root; the Clapper's an octave up, and quieter.
+          const f = root * 1.5 * (ev.relic ? 4 : 2);
+          const v = ev.relic ? 0.05 : 0.1;
+          s.tone({ freq: f, type: 'sine', duration: 1.1, volume: v });
+          s.tone({ freq: f * 2.76, type: 'sine', duration: 0.4, volume: v * 0.35 });
+          s.tone({ freq: f / 2, type: 'triangle', duration: 0.8, volume: v * 0.5 });
+          break;
+        }
+        case 'trample':
+          // A giant swallows a body (plans/late-game/12 §9.2): a low thump.
+          if (this.ready('trample', now)) s.tone({ freq: 70, freqEnd: 40, type: 'sine', duration: 0.25, volume: 0.14 });
+          break;
+        case 'hop':
+          if (this.ready('hop', now)) s.tone({ freq: 700, freqEnd: 1100, type: 'triangle', duration: 0.05, volume: 0.04 });
+          break;
+        case 'orbitTurn':
+          // The Astrolabe turns the field (plans/late-game/12 §9.2): a slow glide, rising one way and falling the other.
+          s.tone({ freq: root * 2, freqEnd: root * (ev.spin > 0 ? 3 : 4 / 3), type: 'triangle', duration: 0.6, volume: 0.07 });
+          break;
+        case 'strike':
+          // Stormcrown's lightning (plans/late-game/12 §9.2): a crack and a low rumble;
+          // louder on the tower, where the tower-hurt cue lands with it.
+          if (this.ready('strike', now)) {
+            const v = ev.tower ? 1.6 : 1;
+            s.noise(0.08, 0.06 * v, 3200, 'highpass');
+            s.noise(0.6, 0.05 * v, 180, 'lowpass');
+          }
+          break;
+        case 'impact':
+          // Two bodies collide on the ice (plans/late-game/12 §9.2): a dull thud; into a Floe, glassy noise too.
+          if (this.ready('impact', now)) {
+            s.tone({ freq: 95, freqEnd: 60, type: 'sine', duration: 0.12, volume: 0.09 });
+            if (ev.shatter) s.noise(0.18, 0.04, 4200, 'highpass');
+          }
+          break;
+        case 'floe':
+          // The Leviathan cracks a floe loose: a short crack of ice.
+          if (this.ready('floe', now)) s.noise(0.12, 0.05, 2600, 'bandpass');
           break;
         case 'relicDrop':
           s.tone({ freq: 880, type: 'sine', duration: 0.4, volume: 0.1 });

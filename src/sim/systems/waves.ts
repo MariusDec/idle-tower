@@ -15,6 +15,7 @@ import { arriveBoss } from './boss';
 import { floorGates, gateAngle, invert, inverts, ruleLoad } from '../strata';
 import { refreshStats } from './draft';
 import { healTower } from './tower';
+import { giantsOf } from './wake';
 
 /**
  * Waves (§4.2): pre-rolled from the region template at wave start, placed on
@@ -116,6 +117,12 @@ export function regionMods(region: RegionDef, surge = 0): StatMod[] {
     case 'cinders':
     case 'echoes':
     case 'blight':
+    // The Wake's (plans/late-game/12 §3.1): read where they act, in `systems/wake.ts`.
+    case 'toll':
+    case 'orbit':
+    case 'glide':
+    case 'giants':
+    case 'storm':
       return [];
     default: {
       const exhaustive: never = e;
@@ -202,6 +209,9 @@ export function rollWave(region: RegionDef, n: number, rng: Rng, pace = 1, extra
   const beat = region.beats[w];
   let count = Math.round((region.count.base + region.count.perWave * (w - 1)) * extra.count);
   if (beat?.kind === 'swarm') count = Math.round(count * beat.countMult);
+  // Giants (plans/late-game/12 §4.4): fewer bodies; the beat's introductions and the elites stand.
+  const rule = region.rule?.effect;
+  if (rule?.kind === 'giants') count = Math.max(1, Math.round(count * rule.count));
 
   const pool = region.pool.filter((p) => p.from <= w);
   const weights = pool.map((p) => p.weight);
@@ -376,10 +386,17 @@ export function spawnEnemy(
     hp = opts.fragment.hp;
     radius = def.radius * opts.fragment.scale;
   }
+  // Giants (plans/late-game/12 §4.4): larger, tougher, better paid, and heavier with the size. Not a split's fragments.
+  const g = opts.fragment ? null : giantsOf(run, region);
+  if (g) {
+    hp *= g.hp;
+    radius *= g.size;
+  }
+  const reward = g ? g.reward : 1;
   const share = opts.fragment?.share ?? 1;
   // A Chorus (§11.1) arrives as its bodies at once; each pays its share.
   const chorus = def.verb.kind === 'chorus' && !elite && !opts.fragment && !opts.single ? def.verb.count : 1;
-  const xp = (def.xp * (elite ? E.xp : 1) * share) / chorus;
+  const xp = (def.xp * (elite ? E.xp : 1) * share * reward) / chorus;
   const bounty = elite && run.behaviours.bounty ? BALANCE.behaviours.bounty : 1;
   const enemy: Enemy = {
     id: run.nextEnemyId++,
@@ -403,8 +420,8 @@ export function spawnEnemy(
     damage: waveDamage(region, wave) * def.damage,
     attackInterval: def.attackInterval,
     xp,
-    shards: (region.shardBase * def.xp * share * waveShardMult(wave, region) * (elite ? E.shards * bounty : 1) * (champion ? C.shards : 1)) / chorus,
-    mass: def.mass * (elite ? E.scale * E.scale : 1),
+    shards: (region.shardBase * def.xp * share * reward * waveShardMult(wave, region) * (elite ? E.shards * bounty : 1) * (champion ? C.shards : 1)) / chorus,
+    mass: def.mass * (elite ? E.scale * E.scale : 1) * (g ? g.size * g.size : 1),
     stunnedUntil: 0,
     slow: 0,
     slowUntil: 0,
@@ -435,6 +452,18 @@ export function spawnEnemy(
     heading: 1,
     fled: false,
     keeper,
+    slideX: 0,
+    slideY: 0,
+    impactAt: 0,
+    towing: 0,
+    towedBy: 0,
+    riding: 0,
+    lane: 0,
+    buffOrbit: 1,
+    braced: false,
+    grounded: false,
+    marked: false,
+    pushedUntil: 0,
   };
   run.enemies.push(enemy);
   // A Fog-caller (N3): the mist closes in while it lives.
@@ -459,6 +488,16 @@ export function spawnEnemy(
   return enemy;
 }
 
+/**
+ * A body swallowed whole (plans/late-game/12 §4.4: a Titan's trample, the
+ * Colossus's feast): gone, with no kill, no pay and no XP. It was never the tower's.
+ */
+export function swallow(run: RunState, o: Enemy): void {
+  o.alive = false;
+  if (run.current && o.wave === run.current.n) run.current.alive--;
+  run.events.push({ kind: 'trample', x: o.x, y: o.y });
+}
+
 /** Husk Splinter (§9): hits a Husk's shell swallows fewer. */
 function brittleShell(run: RunState): number {
   const rank = run.behaviours['brittle-shell'] ?? 0;
@@ -476,6 +515,7 @@ function firstAct(verb: EnemyVerb): number {
     case 'silence':
     case 'charge':
     case 'tide':
+    case 'squall':
       return verb.interval * 0.5;
     case 'phase':
       return verb.cycle - verb.hidden;
@@ -491,6 +531,19 @@ function firstAct(verb: EnemyVerb): number {
     case 'ward':
     case 'devour':
     case 'retreat':
+    // The Wake's (plans/late-game/12 §5).
+    case 'ring':
+    case 'sleepwalk':
+    case 'offbeat':
+    case 'streak':
+    case 'lane':
+    case 'slab':
+    case 'sledge':
+    case 'trample':
+    case 'ride':
+    case 'herd':
+    case 'grounded':
+    case 'conduct':
       return 0;
     default: {
       const exhaustive: never = verb;

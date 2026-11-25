@@ -346,6 +346,37 @@ describe('run snapshot (§12.4)', () => {
     expect(hash(resumed!)).toBe(hash(run));
   });
 
+  it('a snapshot taken mid-slide in the Frozen Sea (plans/late-game/12 §11) resumes exactly', async () => {
+    const store = new MemorySaveStore();
+    const profile = newProfile(7);
+    profile.tutorial.firstDraft = true;
+    const run = createRun({ ...buildRunConfig(profile), regionId: 11 }, 23);
+    play(run, (r) => r.enemies.filter((e) => e.alive).length >= 3);
+    // Set them sliding, as a push would: one fast, one slow, one into the next.
+    const live = run.enemies.filter((e) => e.alive);
+    live[0].slideX = 260;
+    live[0].slideY = -40;
+    live[1].slideX = -90;
+    live[2].slideY = 150;
+    live[2].impactAt = run.time;
+    step(run, SIM_DT, botInput(run, 'active'));
+    run.events.length = 0;
+    expect(run.enemies.some((e) => e.alive && (e.slideX !== 0 || e.slideY !== 0))).toBe(true);
+    await saveRunSnapshot(snapshotRun(run, profile), store);
+    const resumed = await loadRunSnapshot(profile, store);
+    expect(resumed).not.toBeNull();
+    expect(hash(resumed!)).toBe(hash(run));
+    const sliding = (r: RunState) => r.enemies.map((e) => [e.id, e.slideX, e.slideY, e.impactAt]);
+    expect(sliding(resumed!)).toEqual(sliding(run));
+    for (let i = 0; i < 1200 && !run.outcome; i++) {
+      step(run, SIM_DT, botInput(run, 'active'));
+      step(resumed!, SIM_DT, botInput(resumed!, 'active'));
+      run.events.length = 0;
+      resumed!.events.length = 0;
+    }
+    expect(hash(resumed!)).toBe(hash(run));
+  });
+
   it('keeps Stored Light\'s tally in the envelope; a snapshot without one resumes with none', async () => {
     const store = new MemorySaveStore();
     const profile = newProfile(7);
@@ -373,6 +404,19 @@ describe('run snapshot (§12.4)', () => {
     expect(await loadRunSnapshot(profile, store)).toBeNull();
     await saveRunSnapshot(snapshotRun(run, profile), store);
     await clearRunSnapshot(store);
+    expect(await loadRunSnapshot(profile, store)).toBeNull();
+  });
+
+  it('refuses a v22 snapshot, from before the Wake (plans/late-game/12 §3.2), as stale', async () => {
+    expect(SNAPSHOT_VERSION).toBe(23);
+    const store = new MemorySaveStore();
+    const profile = newProfile(7);
+    const run = createRun(buildRunConfig(profile), 1);
+    expect(run.wake).toBeNull();
+    const snap = (version: number): string => seal(JSON.stringify({ version, profile: profile.createdAt, runs: profile.records.runs, run: { ...run, events: [] } }));
+    await store.set(RUN_KEY, snap(SNAPSHOT_VERSION));
+    expect(await loadRunSnapshot(profile, store)).not.toBeNull();
+    await store.set(RUN_KEY, snap(22));
     expect(await loadRunSnapshot(profile, store)).toBeNull();
   });
 });

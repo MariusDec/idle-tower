@@ -1,4 +1,4 @@
-# Act 2: pacts, Starlight, the Constellations, the Abyss, Boss Rush
+# Act 2: pacts, Starlight, the Constellations, the Wake, the Abyss, Boss Rush
 
 Act 2 opens when the Blight falls (`act2Open`). There is no wiping
 prestige (D5): the player chooses their own difficulty instead, the
@@ -8,6 +8,27 @@ prestige (D5): the player chooses their own difficulty instead, the
 `content/stars.ts`, `content/abyss.ts`, `content/rush.ts`,
 `content/fusions.ts`, `BALANCE.pacts`, `BALANCE.starlight`,
 `BALANCE.abyss`, `BALANCE.rush`, `BALANCE.fusions`, `BALANCE.ascend`.
+
+## The Wake (plans/late-game/12)
+
+Five regions between the Blight and the Abyss, walked in order: the Bell
+Marches (9), the Orrery (10), the Frozen Sea (11), Giants' Rest (12) and
+Stormcrown (13). `RegionDef.after` chains them, so 9 opens on the Blight's
+fall and each later one on the one before. Their rules, natives, auras and
+bosses are in [enemies-and-waves.md](enemies-and-waves.md) and
+[bosses.md](bosses.md). The sim's part is `sim/systems/wake.ts`. The
+numbers are `BALANCE.wake`.
+
+**The gate moved.** The Abyss, its floor and guardian contracts, and Boss
+Rush now open on the Thunderhead's first fall (`abyssOpen`), not the
+Blight's. Pacts, Starlight, the Constellations and the Omen still open with
+`act2Open`. On the free plan the Wake is behind the purchase, like Regions
+4–6 ([monetization.md](monetization.md)).
+
+**Starlight in the Wake.** Heat records there pay ×0.5
+(`BALANCE.wake.heatStarlight`, `recordStarlight`). Each Wake boss's first
+fall pays a lump of 25 (`BALANCE.wake.lump`; `summary.wakeRecord`). The
+Map shows the Wake as its own band above Act 1, in chain order.
 
 ## Pacts and heat
 
@@ -42,6 +63,7 @@ Act 2's currency (the third and last, §8.1). It comes from four places
 | A region's boss felled at a new heat record | `1 + floor(h / 5)` for each heat level h the record passes, once, the same in every region (D-8: the hard part is the high heat, not the late region) (`heatStarlight`, `recordHeat`) |
 | A new deepest Abyss floor | 2 for each floor it passes down to floor 30, 1 past it (`abyssStarlight`, `recordFloor`) |
 | A stratum's guardian, first felled in order | its stratum's lump: 20, 25, 30, 35, 60 (`BALANCE.strata.starlight.lump`, `recordStratum`) |
+| A Wake boss's first fall | 25, once each (`BALANCE.wake.lump`); a Wake heat record pays ×0.5 |
 | A Boss Rush record | 4 for each stage first cleared, and a full clear's time on a curve (`rushStarlight`, `recordRush`) |
 | Act 2's feats | 5–40 each, on top of their shards, when claimed |
 
@@ -148,7 +170,13 @@ with a dot while today's scored try is free, and nothing else nudging.
 
 **The day.** `omenDay(now)` is the device's local date as a day number.
 Region and frame each come from a six-day cycle (every one once per six
-days, never two days running); the day's stream (`hashString('omen/n')`)
+days, never two days running). From `BALANCE.omen.wakeFrom` (day 20788,
+2026-12-01), the region cycle takes all eleven regions in blocks of eleven,
+on its own shuffle (`'region-wake'`). Days before the cutover keep the Act 1
+cycle, so an old code still names its region (golden days in
+`tests/omen.test.ts`). The cutover day may repeat the day before's region.
+A Wake day's tower has Forge ring 7 (`BALANCE.omen.ring`). `BALANCE.omen.stars`
+can light star nodes for a region, but it is empty for now; the day's stream (`hashString('omen/n')`)
 splits into `rules` (the pool, one boon, one twist, the banes) and `run`
 (the seed). The pool is the frame's weapon and four others, redrawn until
 one counters the region's opening and not all are blunted by it; a fusion

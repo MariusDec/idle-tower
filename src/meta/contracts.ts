@@ -23,7 +23,7 @@ import { pactLoad } from '../sim/pacts';
 import { openingTypes } from '../sim/run';
 import type { RunState } from '../sim/state';
 import { isWeaponId } from '../sim/systems/draft';
-import { act2Open, bossDown, frameUnlocked, gainRelic, regionUnlocked, relicRank, rushOpen } from './collection';
+import { abyssOpen, act2Open, bossDown, frameUnlocked, gainRelic, regionUnlocked, relicRank, rushOpen } from './collection';
 import { activeNodes } from './forge';
 import { farmRate } from './offline';
 import { bestHeat, heat } from './pacts';
@@ -422,9 +422,9 @@ function targetValid(profile: Profile, t: ContractTarget): boolean {
     case 'run':
       return regionUnlocked(profile, t.region);
     case 'floor':
-      return act2Open(profile) && t.floor >= 1 && t.floor <= Math.min(BOTTOM, profile.abyss.best + 1);
+      return abyssOpen(profile) && t.floor >= 1 && t.floor <= Math.min(BOTTOM, profile.abyss.best + 1);
     case 'guardian':
-      return act2Open(profile) && felledGuardians(profile).includes(t.boss) && guardianFloor(t.boss) <= profile.abyss.best + 1;
+      return abyssOpen(profile) && felledGuardians(profile).includes(t.boss) && guardianFloor(t.boss) <= profile.abyss.best + 1;
     case 'rush':
       if (!rushOpen(profile)) return false;
       if (t.within !== null) return t.stages === RUSH_STAGES && profile.rush.time !== null && t.within >= 60;
@@ -500,7 +500,7 @@ function clash(board: readonly ContractSpec[], c: ContractSpec): boolean {
 function openKinds(profile: Profile, plan: Plan): TargetKind[] {
   const out: TargetKind[] = ['boss', 'wave', 'overtime', 'run'];
   // The Abyss and Boss Rush are past the gate (plans/monetization.md D-6): the free plan draws none.
-  if (act2Open(profile) && plan === 'full') {
+  if (abyssOpen(profile) && plan === 'full') {
     out.push('floor');
     if (felledGuardians(profile).some((b) => guardianFloor(b) <= profile.abyss.best + 1)) out.push('guardian');
     if (rushOpen(profile)) out.push('rush');

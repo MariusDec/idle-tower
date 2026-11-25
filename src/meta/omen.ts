@@ -10,8 +10,9 @@ import { FUSIONS, FUSION_BY_ID } from '../content/fusions';
 import { OMEN_MODS, OMEN_MOD_BY_ID, OMEN_SIM, OMEN_TRIMS } from '../content/omens';
 import { PACTS } from '../content/pacts';
 import { PASSIVES } from '../content/passives';
-import { REGIONS, regionByIndex } from '../content/regions';
+import { ACT1_REGIONS, REGIONS, regionByIndex } from '../content/regions';
 import { RELICS, RELIC_BY_ID } from '../content/relics';
+import { STARS } from '../content/stars';
 import { WEAPONS, WEAPON_BY_ID } from '../content/weapons';
 import type {
   BehaviourId, CardItemId, Effect, FrameId, FusionId, OmenModDef, OmenRule, PactId, StatMod, TrialRule, TrimId, WeaponId,
@@ -93,9 +94,15 @@ function cycle<T>(items: readonly T[], n: number, label: string): T {
   return order[((n % size) + size) % size];
 }
 
-/** The region of day `n`: every region once in six days. */
+/**
+ * The region of day `n`. Before `BALANCE.omen.wakeFrom`, every Act 1 region
+ * once in six days, exactly as before the Wake, so old codes still name their
+ * region. From it, every region once in eleven days, on its own shuffle
+ * (plans/late-game/12 §8.10). The seam may repeat a region for two days.
+ */
 export function omenRegion(n: number): number {
-  return cycle(REGIONS.map((r) => r.index), n, 'region');
+  if (n < BALANCE.omen.wakeFrom) return cycle(ACT1_REGIONS.map((r) => r.index), n, 'region');
+  return cycle(REGIONS.map((r) => r.index), n, 'region-wake');
 }
 
 /** The frame of day `n`: every frame once in six days. */
@@ -240,6 +247,10 @@ function omenProfile(roll: OmenRoll): Profile {
   p.tutorial.firstDraft = true;
   const ring = BALANCE.omen.ring[roll.region] ?? 0;
   for (const node of FORGE) if (node.type !== 'keystone' && node.type !== 'mastery' && node.ring <= ring) p.forge[node.id] = node.maxLevel;
+  for (const id of BALANCE.omen.stars[roll.region] ?? []) {
+    const star = STARS.find((s) => s.id === id);
+    if (star) p.stars[id] = star.maxLevel;
+  }
   // A keystone twist is set for the day, owned or not.
   for (const { def } of omenMods(roll)) for (const r of def.rules) if (r.kind === 'keystone') p.forge[r.id] = 1;
   return p;

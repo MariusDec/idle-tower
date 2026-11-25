@@ -38,6 +38,7 @@ clock (`GAP_MS`: a shot every 55 ms per weapon, hits 45 ms, kills 40 ms…).
 | Tower | tower hit, the fall |
 | Progression | level-up, card pick, evolution, ultimate, floor cleared, relic drop |
 | Bosses | arrival, enrage, the kill |
+| The Wake | `toll`: a struck bell a fifth above the run's root (the music's key, `Music#rootHz`); the Clapper relic's toll an octave up, quieter; `trample`: a low thump; `hop`: a short tick; `orbitTurn`: a slow glide on the root, up a fifth or down a fourth with the new spin; `strike`: a crack and a low rumble, louder on the tower (with the tower-hurt cue); `impact`: a dull thud, with glassy noise into a Floe; `floe`: a short crack of ice |
 | Meta (called by the app) | `purchase` (Forge and stars), `unlock` (a run opened something up), `claim` (a feat paid) |
 
 ## Music
@@ -66,6 +67,11 @@ tone instead.
 | Ember Rift | i – VI – iv – V | a bass pulse each second |
 | The Hollow | i – iv – i – ♭VI | a note and three fading echoes |
 | Blight Heart | i – ♭II – ♭vii° – i | a low toll a tritone off the root |
+| The Bell Marches | i – v – i – ♭VII | the toll |
+| The Orrery | i – III – iv – III | a rising arpeggio |
+| The Frozen Sea | i – ♭VI – ♭VII – ♭VI | the high chime |
+| Giants' Rest | i – iv – v – iv | the drone |
+| Stormcrown | i – ♭II – i – ♭VII | the bass pulse |
 
 Hidden (minimised on Android, the tab switched away), `App#hidden` suspends
 the context with `Synth.setHidden(true)`: no music and no cues behind the

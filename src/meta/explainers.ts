@@ -3,7 +3,7 @@ import { REGIONS } from '../content/regions';
 import { tacticsKey } from './automation';
 import { boardOpen } from './contracts';
 import { collectionPages, hubUnlocks, ownedCursed, rushOpen, trophyCount } from './collection';
-import { act2Playable, hubUnlocksFor, sealedRegion, type Plan } from './plan';
+import { abyssPlayable, act2Playable, hubUnlocksFor, sealedRegion, type Plan } from './plan';
 import { towerTier } from './forge';
 import type { Profile } from './profile';
 import { margin } from './secrets';
@@ -28,8 +28,10 @@ export function explainerOpen(profile: Profile, id: ExplainerId, plan: Plan = 'f
       return REGIONS.some((r) => trialsOpen(profile, r.index));
     case 'sealed':
       return sealedRegion(profile, plan) !== null;
-    case 'abyss':
+    case 'wake':
       return act2Playable(profile, plan);
+    case 'abyss':
+      return abyssPlayable(profile, plan);
     case 'waypoints':
       return profile.abyss.felled >= 1;
     case 'rush':

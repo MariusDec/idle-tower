@@ -47,9 +47,12 @@ describe('explainers (§7.1)', () => {
     expect(ids(explainersFor(killed('gatekeeper'), 'feats'))).toEqual(['feats']);
     // The Abyss and Boss Rush wait on Act 2 and the Deepwarden.
     const act2 = killed('gatekeeper', 'bog-mother', 'prism', 'forgeheart', 'hollow-king', 'blight');
-    expect(ids(explainersFor(act2, 'map'))).toEqual(['map', 'trials', 'abyss']);
+    // The Wake opens with Act 2 (plans/late-game/12 §8.4); the Abyss waits for the Thunderhead.
+    expect(ids(explainersFor(act2, 'map'))).toEqual(['map', 'trials', 'wake']);
+    act2.bosses.thunderhead = { kills: 1, fastest: 50 };
+    expect(ids(explainersFor(act2, 'map'))).toEqual(['map', 'trials', 'wake', 'abyss']);
     act2.bosses.deepwarden = { kills: 1, fastest: 50 };
-    expect(ids(explainersFor(act2, 'map'))).toEqual(['map', 'trials', 'abyss', 'rush']);
+    expect(ids(explainersFor(act2, 'map'))).toEqual(['map', 'trials', 'wake', 'abyss', 'rush']);
   });
 
   it('tell of the tower’s look once it wears something: a trim is cosmetic', () => {

@@ -11,7 +11,7 @@ import type { AnomalyPlan, RunConfig, RunInput, RunState, WeaponState } from './
 import { newWeapon } from './systems/arms';
 import { allMods, resolveStats } from './stats';
 import { pactLoad, ruleSurge, surgeMods } from './pacts';
-import { separateEnemies, sweepEnemies, tickEnemies } from './systems/enemies';
+import { glideImpacts, separateEnemies, sweepEnemies, tickEnemies, trampleAll } from './systems/enemies';
 import { sweepProjectiles, tickBurns, tickProjectiles, tickRunes, tickWeapons } from './systems/combat';
 import { banishCard, isWeaponId, pickCard, rerollDraft, takeSuggested, tickDraft, xpToNext } from './systems/draft';
 import { tickBoss, tickPools, tickRings } from './systems/boss';
@@ -21,6 +21,7 @@ import { regionAt, regionMods, runRegion, tickWaves } from './systems/waves';
 import { chooseRift, shutRift, tapRift, tickRifts } from './systems/rifts';
 import { formNeed } from './systems/form';
 import { claimReliquary, fadeReliquaries, tickReliquaries } from './systems/reliquaries';
+import { initWake, tickWake } from './systems/wake';
 
 export { regionMods };
 
@@ -108,7 +109,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     outerMods,
     mods,
     stats,
-    tower: { hp: stats.maxHp, hurtTick: -1, invulnUntil: 0 },
+    tower: { hp: stats.maxHp, hurtTick: -1, hurtAt: 0, invulnUntil: 0 },
     weaponSlots: config.weaponSlots,
     passiveSlots: config.passiveSlots,
     pool: [...config.pool],
@@ -182,6 +183,8 @@ export function createRun(config: RunConfig, seed: number): RunState {
       anomaly: anomalyStream.state,
       // The strata (plans/late-game/08): which bodies the Inversion turns, on their own stream.
       strata: root.split('strata').state,
+      // The Wake (plans/late-game/12 §3.3): the Orbit's spin and where floes land, on their own stream.
+      wake: root.split('wake').state,
     },
     riftCfg: config.rifts ?? null,
     rift: null,
@@ -209,6 +212,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     } : null,
     form: { need: formNeed(config), wave: null },
     omen: config.omen ? { day: config.omen.day, practice: config.omen.practice, log: [], resumes: 0 } : null,
+    wake: initWake(region),
     outcome: null,
     events: [],
   };
@@ -313,8 +317,13 @@ export function step(run: RunState, dt: number, input: RunInput = {}, weaponStep
   // Step 2b: rifts roll at a wave's start, show, and shut (plans/late-game/02).
   tickRifts(run, runRegion(run));
   tickBoss(run, region, dt);
+  // The Wake's clocks (plans/late-game/12 §4): after the boss acts, before bodies move.
+  tickWake(run, region, dt);
   tickEnemies(run, dt);
   separateEnemies(run);
+  // Glide's collisions (plans/late-game/12 §4.3), on the grid the separation just built.
+  glideImpacts(run);
+  trampleAll(run);
   for (let k = 0; k < weaponSteps; k++) tickWeapons(run, dt / weaponSteps);
   tickUltimate(run, dt);
   tickProjectiles(run, dt);

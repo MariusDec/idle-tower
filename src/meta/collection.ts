@@ -3,7 +3,7 @@ import { waypoints } from '../content/strata';
 import { BOSSES } from '../content/bosses';
 import { ENEMIES } from '../content/enemies';
 import { FRAMES, frameById } from '../content/frames';
-import { REGIONS, regionByIndex } from '../content/regions';
+import { REGIONS, WAKE_FINALE, WAKE_REGIONS, regionByIndex } from '../content/regions';
 import { RUSH_INDEX, rushStage } from '../content/rush';
 import { RELICS, RELIC_BY_ID, RELIC_SETS, eliteRelics } from '../content/relics';
 import { BALANCE } from '../content/balance';
@@ -32,19 +32,27 @@ export function bossDown(profile: Profile, id: BossId): boolean {
 /** The boss whose fall ends Act 1 (§7.1). */
 const FINALE = BOSSES.find((b) => b.finale)!.id;
 
-/** Act 2 (§9): open once the Blight has fallen. Pacts, Starlight, the Constellations and the Abyss. */
+/** Act 2 (§9): open once the Blight has fallen. Pacts, Starlight, the Constellations and the Wake. */
 export function act2Open(profile: Profile): boolean {
   return bossDown(profile, FINALE);
 }
 
+/**
+ * The Abyss (and so Boss Rush, waypoints, cursed relics): open once the
+ * Thunderhead, the Wake's last boss, has fallen (plans/late-game/12 D-1).
+ */
+export function abyssOpen(profile: Profile): boolean {
+  return act2Open(profile) && bossDown(profile, WAKE_FINALE);
+}
+
 /** True when the next run goes down into the Abyss (§9). */
 export function inAbyss(profile: Profile): boolean {
-  return profile.region === ABYSS_INDEX && act2Open(profile);
+  return profile.region === ABYSS_INDEX && abyssOpen(profile);
 }
 
 /** Boss Rush (N8): open once the Deepwarden, the Abyss's first guardian, has fallen. */
 export function rushOpen(profile: Profile): boolean {
-  return act2Open(profile) && bossDown(profile, 'deepwarden');
+  return abyssOpen(profile) && bossDown(profile, 'deepwarden');
 }
 
 /** True when the next run is Boss Rush (N8). */
@@ -58,15 +66,18 @@ export function pastRegions(profile: Profile): boolean {
 }
 
 /**
- * Region 1 always; each later region once the one before it has been
- * cleared; the Abyss once Act 2 is open; Boss Rush once the Deepwarden falls.
+ * Region 1 always; each later region once its `after` region's boss has
+ * fallen (plans/late-game/12 §8.1); the Abyss once the Wake is done; Boss
+ * Rush once the Deepwarden falls.
  */
 export function regionUnlocked(profile: Profile, index: number): boolean {
   if (index === 1) return true;
-  if (index === ABYSS_INDEX) return act2Open(profile);
+  if (index === ABYSS_INDEX) return abyssOpen(profile);
   if (index === RUSH_INDEX) return rushOpen(profile);
-  const prev = REGIONS.find((r) => r.index === index - 1);
-  return !!prev && REGIONS.some((r) => r.index === index) && bossDown(profile, prev.boss);
+  const r = REGIONS.find((x) => x.index === index);
+  if (!r || r.after === null) return false;
+  const prev = REGIONS.find((x) => x.index === r.after);
+  return !!prev && bossDown(profile, prev.boss);
 }
 
 /** The furthest unlocked region: where pushing pays best (§5.2). */
@@ -84,7 +95,7 @@ export function abyssStart(profile: Profile): number {
 
 /** Choose the waypoint `floor` for the next descent, and send the next run into the Abyss. False if it is not open. */
 export function chooseWaypoint(profile: Profile, floor: number): boolean {
-  if (!act2Open(profile) || !waypoints(profile.abyss.felled).includes(floor)) return false;
+  if (!abyssOpen(profile) || !waypoints(profile.abyss.felled).includes(floor)) return false;
   profile.abyss.start = floor;
   profile.region = ABYSS_INDEX;
   return true;
@@ -374,27 +385,40 @@ export function collectionPages(profile: Profile): { bestiary: boolean; relics: 
   };
 }
 
+/** The Wake's natives (every enemy in a Wake region's pool) and bosses (plans/late-game/12 §8.6). */
+const WAKE_NATIVES = new Set<string>(WAKE_REGIONS.flatMap((r) => r.pool.map((p) => p.enemy)));
+const WAKE_BOSSES = new Set<string>(WAKE_REGIONS.map((r) => r.boss));
+
 /**
- * Bestiary rows: every enemy and boss, revealed on first sight. The Abyss's
- * own (§9) join the list once Act 2 opens, so Act 1's list is Act 1's.
+ * Bestiary rows: every enemy and boss, revealed on first sight. The Wake's
+ * own join the list once Act 2 opens, and the Abyss's (§9) once the Abyss
+ * does, so Act 1's list is Act 1's (plans/late-game/12 §8.6).
  */
 export function bestiary(profile: Profile): { id: string; seen: boolean; kills: number; boss: boolean }[] {
   const seen = new Set(profile.seenEnemies);
   const act2 = act2Open(profile);
+  const abyss = abyssOpen(profile);
   const native = new Set<string>([...NATIVES]);
+  const listed = (id: string, isAbyss: boolean): boolean => (isAbyss ? abyss : WAKE_NATIVES.has(id) || WAKE_BOSSES.has(id) ? act2 : true);
   return [
-    ...ENEMIES.filter((e) => act2 || !native.has(e.id))
+    ...ENEMIES.filter((e) => listed(e.id, native.has(e.id)))
       .map((e) => ({ id: e.id as string, seen: seen.has(e.id), kills: profile.killsBy[e.id] ?? 0, boss: false })),
-    ...BOSSES.filter((b) => act2 || !b.abyss)
+    ...BOSSES.filter((b) => listed(b.id, !!b.abyss))
       .map((b) => ({ id: b.id as string, seen: b.id in profile.bosses, kills: bossKills(profile, b.id), boss: true })),
   ];
 }
 
-/** Relics the Collection's Relics segment lists: the Abyss's (§9) only once Act 2 opens; the cursed have their own. */
+/** A relic from a Wake region's elites or a Wake boss (plans/late-game/12 §8.6). */
+function wakeRelic(r: RelicDef): boolean {
+  const s = r.source;
+  return (s.kind === 'elite' && WAKE_REGIONS.some((w) => w.index === s.region)) || (s.kind === 'boss' && WAKE_BOSSES.has(s.boss));
+}
+
+/** Relics the Collection's Relics segment lists: the Abyss's (§9) and the Wake's only once Act 2 opens; the cursed have their own. */
 export function listedRelics(profile: Profile): RelicDef[] {
   const act2 = act2Open(profile);
   // A secret relic (plans/late-game/05) has no silhouette: it is listed once owned.
-  return RELICS.filter((r) => !isCursed(r) && (act2 || r.source.kind !== 'abyss') && (r.source.kind !== 'secret' || relicRank(profile, r.id) > 0));
+  return RELICS.filter((r) => !isCursed(r) && (act2 || (r.source.kind !== 'abyss' && !wakeRelic(r))) && (r.source.kind !== 'secret' || relicRank(profile, r.id) > 0));
 }
 
 /** The Collection's Cursed segment (plans/late-game/03 §2): every cursed relic, owned or a silhouette. */

@@ -274,7 +274,9 @@ describe('GAIT styles (plans/enemy-animation.md §4.1)', () => {
   it('every enemy type has a style, and every style is used', async () => {
     const { GAIT } = await import('../src/render/painters/enemies');
     const { ENEMY_BY_ID } = await import('../src/content/enemies');
-    expect(Object.keys(GAIT).sort()).toEqual(Object.keys(ENEMY_BY_ID).sort());
+    // The Wake's natives (plans/late-game/12 §5) have their gait ahead of their defs, which land region by region.
+    const wake = ['ringer', 'sleepwalker', 'straggler', 'satellite', 'comet', 'moon', 'skater', 'floe', 'sledge', 'titan', 'tick', 'herdkeeper', 'groundling', 'conductor', 'squallcaller'];
+    expect(Object.keys(GAIT).filter((k) => k in ENEMY_BY_ID || !wake.includes(k)).sort()).toEqual(Object.keys(ENEMY_BY_ID).sort());
     const used = new Set(Object.values(GAIT).map((g) => g.style));
     for (const s of STYLES) expect(used.has(s)).toBe(true);
   });

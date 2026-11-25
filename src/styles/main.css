@@ -2802,6 +2802,27 @@ body {
   background: var(--glass-fill-strong);
 }
 
+/* The Wake's heading (plans/late-game/12 §8.3): an eyebrow and a line, no surface. */
+.map-act-head {
+  padding: var(--space-3) var(--space-1) 0;
+}
+.map-act-head .eyebrow { margin: 0; }
+.map-act-line {
+  margin: var(--space-1) 0 0;
+  color: var(--text-dim);
+}
+
+/* A Wake region just opened rises into view, once. */
+.map-region.is-arriving { animation: map-arrive 400ms ease-out both; }
+@keyframes map-arrive {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+:root[data-motion='reduce'] .map-region.is-arriving { animation: none; }
+
+/* The Abyss before the Wake is done: a sealed shaft with no way in. */
+.map-region.is-abyss.is-sealed:not(:has(.map-region-btn)) { padding: var(--space-3); }
+
 .map-region.is-dark {
   padding: var(--space-3);
   border-style: dashed;
@@ -4385,6 +4406,12 @@ body {
   display: grid;
   grid-template-rows: subgrid;
   row-gap: 0;
+}
+:root:is([data-form='medium'], [data-form='expanded']) .map-list > .map-cell:has(.map-act-head),
+:root:is([data-form='medium'], [data-form='expanded']) .map-list > .map-cell:has(> .map-region.is-abyss.is-sealed) {
+  grid-column: 1 / -1;
+  grid-row: auto;
+  display: block;
 }
 :root:is([data-form='medium'], [data-form='expanded']) .map-cell > .map-region:has(.map-trials-list) {
   grid-row: 1 / 4;

@@ -22,11 +22,11 @@
  */
 import { ABYSS_INDEX } from '../src/content/abyss';
 import { RUSH_INDEX } from '../src/content/rush';
-import { cursedSlots, ownedCursed, relicRank, rushOpen, toggleCursed } from '../src/meta/collection';
+import { abyssOpen, bossDown, cursedSlots, frontier as frontierOf, ownedCursed, regionUnlocked, relicRank, rushOpen, toggleCursed } from '../src/meta/collection';
 import { PACTS } from '../src/content/pacts';
 import { REGIONS, regionByIndex } from '../src/content/regions';
 import { STARS } from '../src/content/stars';
-import type { PactId } from '../src/content/types';
+import type { BossId, PactId } from '../src/content/types';
 import { Rng } from '../src/core/rng';
 import { runSpeed } from '../src/meta/automation';
 import { FORGE_WEB, isCapstone, temperable } from '../src/meta/forge';
@@ -39,6 +39,8 @@ import { createRun } from '../src/sim/run';
 import { boardOpen } from '../src/meta/contracts';
 import { playRun, toolConfig } from './play';
 import { shop } from './shop';
+import type { FrontierSave } from './frontier';
+import type { RawProfile } from '../src/meta/save/migrate';
 import { botTake, emptyContractTally, holdsUlt, steerConfig, tallyContract, type ContractTally } from './contractBot';
 
 /** The share of runs the bot plays off the Contract board (`--contracts 0.33`); 0 without the flag. */
@@ -142,8 +144,10 @@ export interface Act2Report {
   heatFrontier: Record<number, number>;
   /** Starlight earned in all, and stars lit, at the end. */
   starlight: number;
-  /** Where the Starlight came from (S7): heat records by region index, the Abyss's floors, its guardians' lumps, feats. */
-  sources: { heat: Record<number, number>; abyss: number; strata: number; rush: number; feats: number; contracts: number };
+  /** Where the Starlight came from (S7): heat records by region index, the Abyss's floors, its guardians' lumps, feats, the Wake bosses' lumps. */
+  sources: { heat: Record<number, number>; abyss: number; strata: number; rush: number; feats: number; contracts: number; wake: number };
+  /** The Wake (plans/late-game/12 §10.1): wall seconds since the Blight fell when each Wake boss first fell, by boss id. */
+  wake: Partial<Record<BossId, number>>;
   /**
    * The strata (plans/late-game/08 §9): wall seconds since the Blight fell
    * when each guardian first fell, by boss id; and the tower's level on
@@ -173,16 +177,20 @@ export interface Act2Report {
   contracts: { runs: number } & ContractTally;
   /** A line every hour: wall hour, stars lit, the Forge's sinks, deepest floor, frontier heat. */
   hourly: { hour: number; stars: number; capstones: number; fortune: number; tempered: number; floor: number; frontier: number; starlight: number }[];
+  /**
+   * With `keep` (`--wake-frontiers`, plans/late-game/12 §10.3): the profile at
+   * the Blight's fall, then at each Wake boss's first fall, the Forge shopped.
+   */
+  saves: FrontierSave[];
 }
 
 /**
  * Play Act 2 for `hours` wall hours from `profile`, which must have the
  * Blight down. The profile is played on in place.
  */
-export function runAct2(profile: Profile, hours: number, seed: number): Act2Report {
+export function runAct2(profile: Profile, hours: number, seed: number, keep = false): Act2Report {
   const seeds = new Rng(seed * 7919 + 1);
   const end = hours * 3600;
-  const frontier = REGIONS[REGIONS.length - 1].index;
   const fails = new Map<string, number>();
   let grown = power(profile);
   let clock = 0;
@@ -192,7 +200,13 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   const heatFrontier: Record<number, number> = {};
   const hourly: Act2Report['hourly'] = [];
   let earned = 0;
-  const sources: Act2Report['sources'] = { heat: {}, abyss: 0, strata: 0, rush: 0, feats: 0, contracts: 0 };
+  const sources: Act2Report['sources'] = { heat: {}, abyss: 0, strata: 0, rush: 0, feats: 0, contracts: 0, wake: 0 };
+  const wake: Act2Report['wake'] = {};
+  const saves: FrontierSave[] = [];
+  const keepAt = (boss: string, at: number): void => {
+    if (keep && !saves.some((s) => s.boss === boss)) saves.push({ seed, boss, at: Math.round(at), profile: structuredClone(profile) as unknown as RawProfile });
+  };
+  keepAt(regionByIndex(6).boss, 0);
   const contracts = { runs: 0, ...emptyContractTally() };
   const strata: Act2Report['strata'] = { fell: {}, entry: {} };
   let rushRuns = 0;
@@ -201,6 +215,9 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
   const anomalies = { offered: 0, abyss: 0 };
 
   while (clock < end) {
+    // The frontier moves with the Wake (plans/late-game/12 §10.1): the newest region opened.
+    const front = frontierOf(profile);
+    const frontier = front.index;
     if (hourly.length < Math.floor(clock / 3600)) {
       hourly.push({
         hour: hourly.length + 1, stars: starsLit(profile), ...forgeGrowth(profile),
@@ -209,7 +226,13 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     }
     // Where next: the best-paying ladder not set aside, or the Abyss.
     let target: { region: number; heat: number } | null = null;
-    for (const r of [...REGIONS].sort((a, b) => b.index - a.index)) {
+    // A Wake boss still standing at the frontier comes first, at heat 0 (§10.1).
+    if (!bossDown(profile, front.boss) && (fails.get(`${front.index}:0`) ?? 0) < FAIL_LIMIT) {
+      target = { region: front.index, heat: 0 };
+    }
+    // The ladders: only regions opened whose boss has fallen.
+    for (const r of target ? [] : [...REGIONS].sort((a, b) => b.index - a.index)) {
+      if (!regionUnlocked(profile, r.index) || !bossDown(profile, r.boss)) continue;
       const h = bestHeat(profile, r.index) + 1;
       if (h > PACT_LADDER.length) continue;
       if ((fails.get(`${r.index}:${h}`) ?? 0) >= FAIL_LIMIT) continue;
@@ -220,7 +243,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     const due = CONTRACT_SHARE > 0 && boardOpen(profile) && Math.floor((runs + 1) * CONTRACT_SHARE) > Math.floor(runs * CONTRACT_SHARE);
     const contract = due ? botTake(profile, contracts.runs, (p, h, region) => takePacts(p, h, region)) : null;
     const rush = !contract && rushOpen(profile) && runs % RUSH_EVERY === RUSH_EVERY - 1;
-    const abyss = !contract && !rush && (target === null || runs % ABYSS_EVERY === ABYSS_EVERY - 1);
+    const abyss = !contract && !rush && abyssOpen(profile) && (target === null || runs % ABYSS_EVERY === ABYSS_EVERY - 1);
     if (contract) {
       contracts.runs++;
     } else if (rush) {
@@ -229,9 +252,13 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     } else if (abyss) {
       profile.region = ABYSS_INDEX;
       abyssRuns++;
+    } else if (target) {
+      profile.region = target.region;
+      takePacts(profile, target.heat, target.region);
     } else {
-      profile.region = target!.region;
-      takePacts(profile, target!.heat, target!.region);
+      // Nothing to climb and no Abyss yet: farm the frontier at no heat.
+      profile.region = frontier;
+      takePacts(profile, 0, frontier);
     }
     const start = clock;
     const speed = runSpeed(profile);
@@ -268,13 +295,17 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     sources.abyss += fromFloor;
     sources.strata += fromStrata;
     sources.rush += fromRush;
-    earned += fromHeat + fromFloor + fromRush + fromStrata;
+    // A Wake boss's first fall (plans/late-game/12 §8.5): its lump, and when.
+    const fromWake = summary.wakeRecord?.starlight ?? 0;
+    if (summary.wakeRecord) wake[summary.wakeRecord.boss] ??= start + played.wall;
+    sources.wake += fromWake;
+    earned += fromHeat + fromFloor + fromRush + fromStrata + fromWake;
     if (!contract && !abyss && !rush && target) {
       const key = `${target.region}:${target.heat}`;
-      if (summary.heatRecord) {
+      if (target.heat === 0 ? summary.boss?.killedIn != null : summary.heatRecord) {
         fails.delete(key);
         const at = start + played.wall;
-        for (let h = 1; h <= summary.heatRecord.now; h++) {
+        for (let h = 1; h <= (summary.heatRecord?.now ?? 0); h++) {
           heatAny[h] ??= at;
           if (target.region === frontier) heatFrontier[h] ??= at;
         }
@@ -295,6 +326,7 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     }
     clock += bought.length > 0 ? BETWEEN_RUNS.shopping : BETWEEN_RUNS.idle;
     if (lastStar === null && starsLit(profile) === STARS.length) lastStar = clock;
+    if (summary.wakeRecord) keepAt(summary.wakeRecord.boss, start + played.wall);
   }
   const best: Record<number, number> = {};
   for (const r of REGIONS) best[r.index] = bestHeat(profile, r.index);
@@ -304,6 +336,8 @@ export function runAct2(profile: Profile, hours: number, seed: number): Act2Repo
     reliquaries,
     anomalies,
     strata,
+    wake,
+    saves,
     contracts,
     cursed: Object.fromEntries(ownedCursed(profile).map((r) => [r.id, { rank: relicRank(profile, r.id), bound: profile.bound[r.id] ?? 0 }])),
   };

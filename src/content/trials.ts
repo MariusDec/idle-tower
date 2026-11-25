@@ -140,6 +140,116 @@ export const TRIALS: readonly TrialDef[] = [
       effects: [{ kind: 'behaviour', id: 'head-start' }],
     },
   },
+  // ── The Wake (plans/late-game/12 §8.8): the Bell Marches ──────────────
+  {
+    id: 'held-breath', name: 'Held Breath', icon: 'checkered-flag', region: 9,
+    text: 'The Bastion frame, and no other.',
+    rules: [{ kind: 'frame', frame: 'bastion' }],
+    reward: { kind: 'relic', relic: 'carillons-clapper' },
+  },
+  {
+    id: 'off-the-beat', name: 'Off the Beat', icon: 'checkered-flag', region: 9,
+    text: 'Sunlance and Chain Lightning only.',
+    rules: [{ kind: 'weapons', ids: ['sunlance', 'chain-lightning'] }],
+    reward: { kind: 'trim', trim: 'bells', name: 'Bronze Bells' },
+  },
+  {
+    id: 'quickstep', name: 'Quickstep', icon: 'checkered-flag', region: 9,
+    text: 'Enemies move 30% faster.',
+    rules: [{ kind: 'omen', pact: 'haste', rank: 2 }],
+    reward: {
+      kind: 'notable', name: 'Bell-Ringer', text: '+5% attack speed.',
+      effects: [{ kind: 'stat', mod: { key: 'attackSpeed', pct: 0.05 } }],
+    },
+  },
+  // ── The Orrery ──
+  {
+    id: 'fixed-star', name: 'Fixed Star', icon: 'checkered-flag', region: 10,
+    text: 'The Arcanist frame, and no other.',
+    rules: [{ kind: 'frame', frame: 'arcanist' }],
+    reward: { kind: 'relic', relic: 'astrolabe-ring' },
+  },
+  {
+    id: 'straight-lines', name: 'Straight Lines', icon: 'checkered-flag', region: 10,
+    text: 'Sunlance and Arcane Bolt only.',
+    rules: [{ kind: 'weapons', ids: ['sunlance', 'arcane-bolt'] }],
+    reward: { kind: 'trim', trim: 'orrery', name: 'Brass Rings' },
+  },
+  {
+    id: 'crowded-sky', name: 'Crowded Sky', icon: 'checkered-flag', region: 10,
+    text: 'Waves bring 60% more enemies.',
+    rules: [{ kind: 'omen', pact: 'hordes', rank: 2 }],
+    reward: {
+      kind: 'notable', name: 'Wide Sky', text: '+5% range.',
+      effects: [{ kind: 'stat', mod: { key: 'range', pct: 0.05 } }],
+    },
+  },
+  // ── The Frozen Sea ──
+  {
+    id: 'thin-ice', name: 'Thin Ice', icon: 'checkered-flag', region: 11,
+    text: 'The Lamplighter frame, and no other.',
+    rules: [{ kind: 'frame', frame: 'lamplighter' }],
+    reward: { kind: 'relic', relic: 'leviathan-scale' },
+  },
+  {
+    id: 'no-push', name: 'No Push', icon: 'checkered-flag', region: 11,
+    text: 'Arcane Bolt, Chain Lightning and Sunlance only: nothing that pushes.',
+    rules: [{ kind: 'weapons', ids: ['arcane-bolt', 'chain-lightning', 'sunlance'] }],
+    reward: { kind: 'trim', trim: 'icicles', name: 'Icicles' },
+  },
+  {
+    id: 'hard-frost', name: 'Hard Frost', icon: 'checkered-flag', region: 11,
+    text: 'Enemies have nearly twice as much health.',
+    rules: [{ kind: 'omen', pact: 'vigour', rank: 3 }],
+    reward: {
+      kind: 'notable', name: 'Cold Blood', text: '+10% Max HP.',
+      effects: [{ kind: 'stat', mod: { key: 'maxHp', pct: 0.1 } }],
+    },
+  },
+  // ── Giants' Rest ──
+  {
+    id: 'small-fry', name: 'Small Fry', icon: 'checkered-flag', region: 12,
+    text: 'The Artificer frame, and no other.',
+    rules: [{ kind: 'frame', frame: 'artificer' }],
+    reward: { kind: 'relic', relic: 'colossus-heart' },
+  },
+  {
+    id: 'many-hands', name: 'Many Hands', icon: 'checkered-flag', region: 12,
+    text: 'Chain Lightning and Mortar only.',
+    rules: [{ kind: 'weapons', ids: ['chain-lightning', 'mortar'] }],
+    reward: { kind: 'trim', trim: 'ribs', name: 'Giant’s Ribs' },
+  },
+  {
+    id: 'old-bones', name: 'Old Bones', icon: 'checkered-flag', region: 12,
+    text: 'The Colossus rises twice more, with 50% more health.',
+    rules: [{ kind: 'omen', pact: 'tyranny', rank: 2 }],
+    reward: {
+      kind: 'notable', name: 'Bonebreaker', text: 'Crits deal +10% damage.',
+      effects: [{ kind: 'stat', mod: { key: 'critDamage', add: 0.1 } }],
+    },
+  },
+  // ── Stormcrown ──
+  {
+    id: 'bare-mast', name: 'Bare Mast', icon: 'checkered-flag', region: 13,
+    text: 'The Gravekeeper frame, and no other.',
+    rules: [{ kind: 'frame', frame: 'gravekeeper' }],
+    reward: { kind: 'relic', relic: 'thunderhead-core' },
+  },
+  {
+    id: 'blind-fire', name: 'Blind Fire', icon: 'checkered-flag', region: 13,
+    text: 'Scattershot and Mortar only.',
+    rules: [{ kind: 'weapons', ids: ['scattershot', 'mortar'] }],
+    reward: { kind: 'trim', trim: 'rods', name: 'Storm Rods' },
+  },
+  {
+    id: 'gathering-storm', name: 'Gathering Storm', icon: 'checkered-flag', region: 13,
+    text: 'Every elite wave brings two more elites.',
+    rules: [{ kind: 'omen', pact: 'elites', rank: 2 }],
+    reward: {
+      kind: 'notable', name: 'Stormward', text: '+5% damage.',
+      effects: [{ kind: 'stat', mod: { key: 'damage', pct: 0.05 } }],
+    },
+  },
 ];
 
 export const TRIAL_BY_ID: Readonly<Record<string, TrialDef>> = Object.fromEntries(TRIALS.map((t) => [t.id, t]));

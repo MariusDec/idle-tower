@@ -13,13 +13,14 @@ import { FORGE_BY_ID } from '../src/content/forge';
 import { FRAME_BY_ID } from '../src/content/frames';
 import { MAX_HEAT, PACTS } from '../src/content/pacts';
 import { RELICS, abyssRelics } from '../src/content/relics';
-import { REGIONS, regionByIndex } from '../src/content/regions';
+import { ACT1_REGIONS, REGIONS, WAKE_FINALE, WAKE_REGIONS, regionByIndex } from '../src/content/regions';
 import { STARS } from '../src/content/stars';
 import { EVOLUTIONS } from '../src/content/evolutions';
 import { formatNumber } from '../src/core/format';
 import { Rng } from '../src/core/rng';
 import type { EnemyVerb, PactId, WeaponId } from '../src/content/types';
-import { act2Open, bestiary, frameUnlocked, inAbyss, listedRelics, regionUnlocked, relicSlots } from '../src/meta/collection';
+import { abyssOpen, act2Open, bestiary, frameUnlocked, inAbyss, listedRelics, regionUnlocked, relicSlots, rushOpen } from '../src/meta/collection';
+import { abyssPlayable, act2Playable } from '../src/meta/plan';
 import { checkFeats, featVisible } from '../src/meta/feats';
 import { FORGE_WEB, buyNode, isSealed, nodeCost } from '../src/meta/forge';
 import { bestHeat, heat, heatShards, heatStarlight, recordFloor, recordHeat, recordStarlight, runPacts, setPactRank } from '../src/meta/pacts';
@@ -114,6 +115,53 @@ describe('Act 2 opens with the Blight (§9)', () => {
     const kindled = FEATS.find((f) => f.id === 'kindled')!;
     expect(featVisible(newProfile(0), kindled)).toBe(false);
     expect(featVisible(act2Profile(), kindled)).toBe(true);
+  });
+  it('the Abyss waits for the Thunderhead, the Wake\'s last boss (plans/late-game/12 D-1)', () => {
+    // Every Act 1 boss down, and the Wake's up to the Colossus: Act 2 is open, the Abyss is not.
+    const q = act2Profile();
+    delete q.bosses[WAKE_FINALE];
+    expect(REGIONS.some((r) => r.boss === WAKE_FINALE)).toBe(true);
+    expect(act2Open(q)).toBe(true);
+    expect(regionUnlocked(q, 9)).toBe(true);
+    expect(regionUnlocked(q, 13)).toBe(true);
+    expect(abyssOpen(q)).toBe(false);
+    expect(regionUnlocked(q, ABYSS_INDEX)).toBe(false);
+    expect(abyssPlayable(q, 'full')).toBe(false);
+    expect(act2Playable(q, 'full')).toBe(true);
+    q.bosses.deepwarden = { kills: 1, fastest: 60 };
+    expect(rushOpen(q)).toBe(false);
+    // The Thunderhead falls: the way down opens.
+    q.bosses[WAKE_FINALE] = { kills: 1, fastest: 60 };
+    expect(abyssOpen(q)).toBe(true);
+    expect(regionUnlocked(q, ABYSS_INDEX)).toBe(true);
+    expect(abyssPlayable(q, 'full')).toBe(true);
+    expect(abyssPlayable(q, 'free')).toBe(false);
+    expect(rushOpen(q)).toBe(true);
+    // The Thunderhead without the Blight (no real save can hold that) opens nothing.
+    const odd = newProfile(0);
+    odd.bosses[WAKE_FINALE] = { kills: 1, fastest: 60 };
+    expect(abyssOpen(odd)).toBe(false);
+    expect(abyssOpen(newProfile(0))).toBe(false);
+  });
+
+  it('the Abyss feats surface only after the Thunderhead (plans/late-game/12 D-16)', () => {
+    const ids = ['the-descent', 'warden-fallen', 'hunger-sated', 'abyss-20', 'abyss-naturalist'];
+    const q = act2Profile();
+    delete q.bosses[WAKE_FINALE];
+    for (const id of ids) {
+      const f = FEATS.find((x) => x.id === id)!;
+      expect(f.after).toBe(WAKE_FINALE);
+      expect(featVisible(q, f)).toBe(false);
+    }
+    q.bosses[WAKE_FINALE] = { kills: 1, fastest: 60 };
+    for (const id of ids) expect(featVisible(q, FEATS.find((x) => x.id === id)!)).toBe(true);
+  });
+
+  it("the regions split into Act 1's six and the Wake's chain (plans/late-game/12 §8.1)", () => {
+    expect(ACT1_REGIONS.map((r) => r.index)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(ACT1_REGIONS.map((r) => r.after)).toEqual([null, 1, 2, 3, 4, 5]);
+    expect(WAKE_REGIONS.every((r) => r.act === 2)).toBe(true);
+    expect(WAKE_REGIONS).toHaveLength(REGIONS.filter((r) => r.act === 2).length);
   });
 });
 
@@ -227,7 +275,53 @@ describe('Starlight (§9)', () => {
     const sky = STARS.reduce((s, n) => s + STAR_WEB.spentOn(n, n.maxLevel), 0);
     // The guardians' lumps that ship: one per authored stratum.
     const lumps = BALANCE.strata.starlight.lump.slice(0, STRATA.length).reduce((a, b) => a + b, 0);
-    expect(heatAll + abyssStarlight(30) + lumps + feats).toBeGreaterThanOrEqual(sky);
+    // The Wake's bosses' first falls (plans/late-game/12 D-5); its heat records pay half, in `recordStarlight`.
+    const wake = BALANCE.wake.lump * WAKE_REGIONS.length;
+    expect(heatAll + abyssStarlight(30) + lumps + feats + wake).toBeGreaterThanOrEqual(sky);
+  });
+
+  it("a Wake region's heat records pay half the Starlight (plans/late-game/12 D-5)", () => {
+    const p = act2Profile();
+    for (const w of WAKE_REGIONS) {
+      expect(recordStarlight(p, w.index, 10)).toBeCloseTo(recordStarlight(p, 6, 10) * BALANCE.wake.heatStarlight);
+    }
+    expect(recordStarlight(p, 6, 10)).toBe(Array.from({ length: 10 }, (_, i) => heatStarlight(i + 1)).reduce((a, b) => a + b, 0));
+  });
+
+  it("a Wake boss's first fall pays its lump, once, and opens nothing past the chain (plans/late-game/12 §8.5)", () => {
+    const p = newProfile(0);
+    p.tutorial.firstDraft = true;
+    for (const b of ACT1_REGIONS) p.bosses[b.boss] = { kills: 1, fastest: 60 };
+    const first = WAKE_REGIONS[0];
+    expect(regionUnlocked(p, first.index)).toBe(true);
+    p.region = first.index;
+    const fell = (): ReturnType<typeof bankRun> => {
+      const run = createRun(buildRunConfig(p), 1);
+      run.boss = {
+        id: first.boss, enemy: 1, phase: 0, arrivedAt: 0, timers: [], windup: 0, submerged: false, enraged: false,
+        windupPattern: -1, staggeredUntil: 0, facet: 0, crown: 0, plates: 0, minHp: 1, killedIn: 40, wave: 20,
+      };
+      run.wave = 20;
+      run.outcome = { kind: 'fell', wave: 22, time: 500 };
+      return bankRun(p, run);
+    };
+    const before = p.starlight;
+    const s = fell();
+    expect(s.wakeRecord).toEqual({ boss: first.boss, starlight: BALANCE.wake.lump });
+    expect(p.starlight - before).toBeGreaterThanOrEqual(BALANCE.wake.lump);
+    expect(p.ceremony).toBe(first.boss);
+    expect(fell().wakeRecord).toBeNull();
+    // An Act 1 boss's first fall pays none.
+    const q = act2Profile();
+    delete q.bosses.gatekeeper;
+    q.region = 1;
+    const run = createRun(buildRunConfig(q), 1);
+    run.boss = {
+      id: 'gatekeeper', enemy: 1, phase: 0, arrivedAt: 0, timers: [], windup: 0, submerged: false, enraged: false,
+      windupPattern: -1, staggeredUntil: 0, facet: 0, crown: 0, plates: 0, minHp: 1, killedIn: 40, wave: 20,
+    };
+    run.outcome = { kind: 'fell', wave: 22, time: 500 };
+    expect(bankRun(q, run).wakeRecord).toBeNull();
   });
 
   it('the Stargazers grow every payout', () => {

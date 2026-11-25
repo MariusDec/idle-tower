@@ -57,7 +57,8 @@ anomaly needs no card: the draft's own line under it teaches it.
 ## The Map (§5.2)
 
 The regions as a path from the tower's light toward the Blight Heart.
-`regionUnlocked(profile, k)` is true once region k − 1's boss has fallen;
+`regionUnlocked(profile, k)` is true once the boss of region k's `after`
+has fallen (k − 1 in Act 1; the Wake chains 6 → 9 → 10 → 11 → 12 → 13);
 `frontier` is the furthest one open. Selecting a region sets
 `profile.region` for the next run. Each region shows its best wave and its
 boss trophy (kills, fastest kill). A first boss kill's ceremony plays here:
@@ -85,7 +86,10 @@ The selected frame is `profile.frame`. Each Tactician II list is per frame.
 ## Relics (§5.3)
 
 Twenty-four in Act 1, four per region: the boss's first-kill relic and
-three its elites drop. Act 2 adds twelve in four sets, dropped by the
+three its elites drop. The Wake adds twenty the same way, four per region
+(the Carillon's Clapper, the Astrolabe Ring, the Leviathan Scale, the
+Colossus Heart and the Thunderhead Core, plus three elite relics each). They
+belong to no set (plans/late-game/12 D-14). Act 2 adds twelve in four sets, dropped by the
 Abyss's elites once their Lantern stars are lit. Relics are qualitative and
 each leans on a weapon family or the region's verb. A duplicate ranks a
 relic up to III; `perRank` is what each rank adds. A duplicate past III is
@@ -131,6 +135,11 @@ rules, won by felling the boss, and pays once:
 | `relic` | a rank of the region's boss relic |
 | `trim` | a decoration on the tower, in the hub and in runs (N2); cosmetic only, and the Map and results say so |
 | `notable` | effects no Forge node gives, applied to every run like a node's: Drill Sergeant (starting weapon +1 level), Mire Sight (+1 reroll), Deep Arc (Chain Lightning leaps to burrowed bodies first and surfaces them), Heavy Shells (+2 bomblets), Clear Mind (+1 Banish), Dawn Muster (start two levels higher) |
+
+The Wake adds fifteen, three per region. Each rewards one relic rank, one
+trim (Bronze Bells, Brass Rings, Icicles, Giant's Ribs, Storm Rods) and one
+notable (Bell-Ringer +5% attack speed, Wide Sky +5% range, Cold Blood +10%
+Max HP, Bonebreaker crits +10%, Stormward +5% damage).
 
 The Map's region card lists them; **Begin** sets `profile.trial` (and the
 region) and starts the run at once. `bankRun` marks a win, pays it

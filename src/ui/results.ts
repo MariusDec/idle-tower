@@ -43,6 +43,7 @@ const TAKEN: Readonly<Record<HurtBy, string>> = {
   slams: 'Shockwaves',
   pools: 'Molten pools',
   blasts: 'Blasts',
+  storm: 'Lightning',
 };
 
 function dealtRows(s: RunSummary): TallyRow[] {
@@ -369,6 +370,10 @@ export class ResultsScreen {
     if (s.heatRecord) rewards.push(gain('round-star', `Heat record ${s.heatRecord.now}`, starlight(s.heatRecord.starlight), 'record'));
     if (s.floorRecord) rewards.push(gain('round-star', `Deepest floor ${s.floorRecord.now}`, starlight(s.floorRecord.starlight), 'record'));
     // A stratum's guardian, felled for the first time (plans/late-game/08): its lump, and its waypoint.
+    // A Wake boss's first fall (plans/late-game/12 §8.5): its lump of Starlight.
+    if (s.wakeRecord) {
+      rewards.push(gain('round-star', `${BOSS_BY_ID[s.wakeRecord.boss].name} fell`, starlight(s.wakeRecord.starlight), 'unlock'));
+    }
     if (s.stratumRecord) {
       const names = s.stratumRecord.felled.map((id) => BOSS_BY_ID[id].name).join(', ');
       rewards.push(gain('round-star', `${names} fell`, starlight(s.stratumRecord.starlight), 'unlock'));

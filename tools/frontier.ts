@@ -29,10 +29,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { newProfile, type Profile } from '../src/meta/profile';
 import { migrate, type RawProfile } from '../src/meta/save/migrate';
-import { REGIONS, regionByIndex } from '../src/content/regions';
+import { ACT1_REGIONS, WAKE_REGIONS, regionByIndex } from '../src/content/regions';
 
 /** The stored profiles: every seed's, at every Act 1 boss's first fall. */
 export const FRONTIER_FILE = 'tools/fixtures/frontiers.json';
+/**
+ * The Wake's (plans/late-game/12 §10.3): every `--act2` seed's profile at the
+ * Blight's fall and at each Wake boss's first fall.
+ *
+ *   npm run pacing -- --act2 --wake-frontiers --hours 12 --seeds 3
+ *   npm run arsenal -- --wake
+ */
+export const WAKE_FRONTIER_FILE = 'tools/fixtures/wake-frontiers.json';
 /** The pacing profiles kept. A report's seeds take them in turn, so one profile's luck doesn't decide a region. */
 export const FRONTIER_SEEDS: readonly number[] = [1, 2, 3];
 /** Hours of pacing play given to reach the Blight's fall (~4–5 h on these seeds). */
@@ -47,28 +55,34 @@ export interface FrontierSave {
 }
 
 /** Write the profiles, one per line so a regeneration's diff reads boss by boss. */
-export function saveFrontiers(saves: readonly FrontierSave[]): void {
-  mkdirSync(dirname(FRONTIER_FILE), { recursive: true });
-  const order = (s: FrontierSave): number => REGIONS.findIndex((r) => r.boss === s.boss);
+export function saveFrontiers(saves: readonly FrontierSave[], wake = false): void {
+  const file = wake ? WAKE_FRONTIER_FILE : FRONTIER_FILE;
+  mkdirSync(dirname(file), { recursive: true });
+  const bosses = [regionByIndex(6).boss, ...(wake ? WAKE_REGIONS : ACT1_REGIONS).map((r) => r.boss)];
+  const order = (s: FrontierSave): number => (bosses as readonly string[]).indexOf(s.boss);
   const sorted = [...saves].sort((a, b) => order(a) - order(b) || a.seed - b.seed);
-  writeFileSync(FRONTIER_FILE, `[\n${sorted.map((s) => JSON.stringify(s)).join(',\n')}\n]\n`);
+  writeFileSync(file, `[\n${sorted.map((s) => JSON.stringify(s)).join(',\n')}\n]\n`);
 }
 
-let cache: readonly FrontierSave[] | null = null;
+const cache = new Map<string, readonly FrontierSave[]>();
 
-function stored(): readonly FrontierSave[] {
-  if (cache) return cache;
-  if (!existsSync(FRONTIER_FILE)) throw new Error(`${FRONTIER_FILE} is missing: npm run pacing -- --frontiers`);
-  const saves = JSON.parse(readFileSync(FRONTIER_FILE, 'utf8')) as FrontierSave[];
-  for (const r of REGIONS) {
-    if (!saves.some((s) => s.boss === r.boss)) throw new Error(`${FRONTIER_FILE} has no profile at ${r.boss}'s fall: npm run pacing -- --frontiers`);
+function stored(wake: boolean): readonly FrontierSave[] {
+  const file = wake ? WAKE_FRONTIER_FILE : FRONTIER_FILE;
+  const hit = cache.get(file);
+  if (hit) return hit;
+  const how = wake ? 'npm run pacing -- --act2 --wake-frontiers' : 'npm run pacing -- --frontiers';
+  if (!existsSync(file)) throw new Error(`${file} is missing: ${how}`);
+  const saves = JSON.parse(readFileSync(file, 'utf8')) as FrontierSave[];
+  for (const r of wake ? WAKE_REGIONS : ACT1_REGIONS) {
+    if (!saves.some((s) => s.boss === r.boss)) throw new Error(`${file} has no profile at ${r.boss}'s fall: ${how}`);
   }
-  return (cache = saves);
+  cache.set(file, saves);
+  return saves;
 }
 
-/** The stored profiles at `boss`'s first fall, by seed. */
-export function savesAt(boss: string): readonly FrontierSave[] {
-  return stored().filter((s) => s.boss === boss);
+/** The stored profiles at `boss`'s first fall, by seed: the Wake's fixture for a Wake region's `wake`. */
+export function savesAt(boss: string, wake = false): readonly FrontierSave[] {
+  return stored(wake).filter((s) => s.boss === boss);
 }
 
 /**
@@ -79,12 +93,14 @@ export function savesAt(boss: string): readonly FrontierSave[] {
  */
 export function frontierProfile(region: number, k = 0): Profile {
   const arrival = k % 2 === 0;
-  const boss = arrival ? (region > 1 ? regionByIndex(region - 1).boss : null) : regionByIndex(region).boss;
+  const def = regionByIndex(region);
+  const wake = WAKE_REGIONS.some((r) => r.index === region);
+  const boss = arrival ? (def.after !== null ? regionByIndex(def.after).boss : null) : def.boss;
   let profile: Profile;
   if (boss === null) {
     profile = newProfile(0);
   } else {
-    const saves = savesAt(boss);
+    const saves = savesAt(boss, wake);
     profile = migrate(structuredClone(saves[(k >> 1) % saves.length].profile)) as unknown as Profile;
   }
   // The first draft's tutorial pauses for a tap: past it, as the bots' later runs are.

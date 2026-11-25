@@ -10,7 +10,7 @@ import type { RunState } from '../sim/state';
 import { Camera, PIXEL_BUDGET, regionWidth, stageOval } from './camera';
 import { Effects } from './effects';
 import { FX, GROUND, INK, RARITY, lighten, mix, setPaletteMode, withAlpha, type PaletteMode } from './palette';
-import { paintDark, paintGates, paintGround, paintRim, paintSky, type WorldBox } from './painters/arena';
+import { paintDark, paintGates, paintGround, paintIceCracks, paintOrbitRings, paintRim, paintSky, type WorldBox } from './painters/arena';
 import { STRATUM_BY_ID, stratumTitle, type StratumDef } from '../content/strata';
 import { ruleLoad } from '../sim/strata';
 import { BALANCE } from '../content/balance';
@@ -18,8 +18,8 @@ import type { StratumId } from '../content/types';
 import { EnemyPainter, type GuestLook } from './painters/enemies';
 import { paintProjectiles } from './painters/projectiles';
 import { paintArsenal, paintFires, paintRunes, paintStatus } from './painters/arsenal';
-import { paintAegis, paintBoss, paintCourt, paintFacets, paintPlates, paintPools, paintRings, paintShots } from './painters/bosses';
-import { mirrorFacets, phasesOf } from '../sim/systems/boss';
+import { paintAegis, paintBoss, paintCourt, paintFacets, paintPlates, paintPools, paintRings, paintShots, paintWeakPoint } from './painters/bosses';
+import { mirrorFacets, phasesOf, weakPoint } from '../sim/systems/boss';
 import { SECRET_BY_ID } from '../content/secrets';
 import { runRegion } from '../sim/systems/waves';
 import { mountOf } from '../sim/systems/arms';
@@ -65,6 +65,8 @@ const DISPLAY_FONT = 'Oswald, "Arial Narrow", sans-serif';
 const ABYSS_DARK = INK['950'];
 /** How far the sky past the light dims toward the ink (plans/visual-identity.md §7.3); the Abyss's, further. */
 const SKY_DIM = 0.4;
+/** The Orrery's ground rings turn this fast, radians per second, the way the field spins (plans/late-game/12 §9.1). */
+const ORBIT_TURN = 0.05;
 const ABYSS_SKY_DIM = 0.7;
 /** The boss's edge marker (camera-and-fog §5.3): inset from the stage's edge, and its size, CSS px. */
 const MARKER_INSET = 26;
@@ -114,6 +116,8 @@ export class Renderer {
   private motion: MotionLevel = 'full';
   private tier: QualityTier = 'high';
   private clock = 0;
+  /** How far the Orrery's ground rings have turned (radians): they follow the field's spin, and turn back when it flips. */
+  private orbitTurn = 0;
   private lastRun: RunState | null = null;
   /** Wall-clock seconds since the tower fell; null while it stands. */
   private fallT: number | null = null;
@@ -700,6 +704,45 @@ export class Renderer {
         case 'ultReady':
         case 'shot':
           break;
+        // The Wake's (plans/late-game/12 §9.1).
+        case 'toll':
+          // The bell: a thin ring rolling in from the rim. The Clapper's: a smaller one at the tower.
+          if (ev.relic) this.effects.ring(0, 0, 30, 110, withAlpha(FX.gold, 0.7), 0.4, 3);
+          else this.effects.ring(0, 0, run.stats.range * 1.1, run.stats.range * 0.7, withAlpha(FX.gold, 0.45), 0.5, 2);
+          break;
+        case 'trample':
+          // A Titan (or the Colossus) swallows a body: dust kicked up, and a heavy ring.
+          this.effects.spray(ev.x, ev.y, FX.gold, 10, 120, 4);
+          this.effects.ring(ev.x, ev.y, 10, 50, withAlpha(FX.gold, 0.5), 0.4, 5);
+          break;
+        case 'hop':
+          // A Tick leaps off its fallen host.
+          this.effects.ring(ev.x, ev.y, 4, 22, withAlpha(FX.blood, 0.6), 0.3, 2);
+          break;
+        case 'orbitTurn':
+          // The Astrolabe turns the field: a ring sweeps out from the tower, and the ground's rings turn back.
+          this.effects.ring(0, 0, run.stats.radius, run.stats.range * 1.1, withAlpha(FX.mana, 0.45), 0.7, 3);
+          break;
+        case 'strike': {
+          // Stormcrown's lightning (plans/late-game/12 §9.1): a jagged bolt from the top of the view
+          // onto the body, or the tower's crown; and, motion allowing, a brief flash round the rim.
+          const top = -run.stats.range * 1.6;
+          const y = ev.tower ? -run.stats.radius * 0.6 : ev.y;
+          this.effects.lightning([ev.x + (ev.tower ? 0 : ev.x * 0.15), top, ev.x, y], FX.mana);
+          if (this.motion !== 'reduced') this.effects.ring(0, 0, run.stats.range, run.stats.range * 1.04, withAlpha(FX.mana, 0.3), 0.25, 6);
+          if (ev.tower) this.camera.shake(4);
+          break;
+        }
+        case 'impact':
+          // Two bodies collide on the ice (plans/late-game/12 §9.1): a small frost burst; into a Floe, shards fly.
+          this.effects.ring(ev.x, ev.y, 4, 26, withAlpha(FX.frost, 0.7), 0.25, 3);
+          if (ev.shatter) this.effects.spray(ev.x, ev.y, FX.frost, 12, 200, 3);
+          break;
+        case 'floe':
+          // The Leviathan cracks a floe loose: a ring of broken ice where it rises.
+          this.effects.ring(ev.x, ev.y, 10, 50, withAlpha(FX.frost, 0.6), 0.45, 4);
+          this.effects.spray(ev.x, ev.y, FX.frost, 8, 120, 3);
+          break;
         default: {
           const exhaustive: never = ev;
           return exhaustive;
@@ -741,6 +784,13 @@ export class Renderer {
     const tint = stratum ? region.tint : region.abyss ? mix(region.tint ?? INK['800'], ABYSS_DARK, 0.55) : region.tint;
     this.camera.applyWorld(ctx);
     paintGround(ctx, light, oval, tint, px, this.palette);
+    const orbit = run?.wake?.orbit;
+    if (orbit) {
+      if (this.motion !== 'reduced') this.orbitTurn += realDt * ORBIT_TURN * orbit.spin;
+      paintOrbitRings(ctx, light, oval, px, this.orbitTurn);
+    }
+    // The Frozen Sea's ground is cracked ice (plans/late-game/12 §2.3).
+    if (region.rule?.effect.kind === 'glide') paintIceCracks(ctx, light, oval, px);
     const additive = QUALITY[this.tier].additive;
     const form = this.formPaint(run);
     if (run) {
@@ -750,7 +800,7 @@ export class Renderer {
       paintRunes(ctx, run.runes, run.time, this.clock);
       paintPools(ctx, run.pools, run.time, this.clock);
       const lord = BOSS_BY_ID[region.boss];
-      this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock, light, oval, { color: lord.color, border: lord.borderColor }, this.guestLook(stratum));
+      this.enemies.draw(ctx, run.enemies, alpha, run.tick, run.time, this.clock, light, oval, { color: lord.color, border: lord.borderColor }, this.guestLook(stratum), !!run.wake?.orbit);
       paintStatus(ctx, run.enemies, alpha, run.time, this.clock);
       const b = run.boss;
       if (b && b.killedIn === null) {
@@ -767,6 +817,7 @@ export class Renderer {
           paintBoss(ctx, body, b, alpha, run.tick, run.time, this.clock, light, oval, pose);
           // The mirror stays on the body: the pose's offset, not its squash.
           paintFacets(ctx, bx + pose.dx, by + pose.dy, body.radius, mirrorFacets(run));
+          paintWeakPoint(ctx, bx + pose.dx, by + pose.dy, body.radius, weakPoint(run), this.clock);
         }
       }
       paintShots(ctx, run.shots, alpha);

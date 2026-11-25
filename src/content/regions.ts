@@ -1,4 +1,4 @@
-import type { RegionDef } from './types';
+import type { BossId, RegionDef } from './types';
 
 /**
  * Regions (§4.2, §11.1). Each is 20 waves; wave 20 is the boss, and overtime
@@ -11,6 +11,8 @@ export const REGIONS: readonly RegionDef[] = [
   {
     id: 'ashen-fields',
     index: 1,
+    act: 1,
+    after: null,
     name: 'Ashen Fields',
     icon: 'level-end-flag',
     text: 'Where the Blight first broke through. No rule.',
@@ -40,6 +42,8 @@ export const REGIONS: readonly RegionDef[] = [
   {
     id: 'drowned-mire',
     index: 2,
+    act: 1,
+    after: 1,
     name: 'Drowned Mire',
     icon: 'droplets',
     text: 'A drowned valley under a mist that never lifts.',
@@ -69,6 +73,8 @@ export const REGIONS: readonly RegionDef[] = [
   {
     id: 'glass-wastes',
     index: 3,
+    act: 1,
+    after: 2,
     name: 'Glass Wastes',
     icon: 'crystal-shine',
     text: 'A desert fired to glass. Everything here cracks.',
@@ -98,6 +104,8 @@ export const REGIONS: readonly RegionDef[] = [
   {
     id: 'ember-rift',
     index: 4,
+    act: 1,
+    after: 3,
     name: 'Ember Rift',
     icon: 'fire-bowl',
     text: 'A wound in the world that never stopped burning.',
@@ -130,6 +138,8 @@ export const REGIONS: readonly RegionDef[] = [
   {
     id: 'the-hollow',
     index: 5,
+    act: 1,
+    after: 4,
     name: 'The Hollow',
     icon: 'eclipse',
     text: 'The dark at the bottom of the world, where the dead keep house.',
@@ -162,6 +172,8 @@ export const REGIONS: readonly RegionDef[] = [
   {
     id: 'blight-heart',
     index: 6,
+    act: 1,
+    after: 5,
     name: 'Blight Heart',
     icon: 'glass-heart',
     text: 'Where the Blight began. It is listening.',
@@ -196,7 +208,203 @@ export const REGIONS: readonly RegionDef[] = [
       types: ['spitter', 'mender', 'shieldbearer', 'blinker', 'leech'],
     },
   },
+  // ── The Wake (plans/late-game/12): the lands the Blight held ──────────
+  {
+    id: 'bell-marches',
+    index: 9,
+    act: 2,
+    after: 6,
+    veil: 'A bell still rings past the Blight Heart.',
+    name: 'The Bell Marches',
+    icon: 'ringing-bell',
+    text: 'Where the Blight’s bell still rings.',
+    // D-6: flat, like the Blight Heart; the difficulty is the rule (§14 tunes).
+    shardBase: 66,
+    waveShards: 132,
+    hpBase: 2400,
+    hpGrowth: 1.17,
+    damageBase: 46,
+    damageGrowth: 1.06,
+    count: { base: 6, perWave: 2 },
+    pool: [
+      { enemy: 'ringer', from: 1, weight: 1 },
+      { enemy: 'sleepwalker', from: 5, weight: 0.3 },
+      { enemy: 'straggler', from: 10, weight: 0.35 },
+    ],
+    beats: {
+      5: { kind: 'introduce', enemy: 'sleepwalker', packs: 2 },
+      10: { kind: 'introduce', enemy: 'straggler', packs: 2 },
+      15: { kind: 'swarm', countMult: 1.5 },
+    },
+    rule: { name: 'Toll', text: 'Bodies move only when the bell tolls.', effect: { kind: 'toll', every: 3, window: 0.6 } },
+    surge: { text: 'The lurch carries further: a quarter more each toll.', effect: { kind: 'rule' } },
+    boss: 'carillon',
+    tint: '#4a3a22',
+    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'resonant', 'vengeful'] },
+  },
+  {
+    id: 'orrery',
+    index: 10,
+    act: 2,
+    after: 9,
+    veil: 'Beyond the bell, the ground turns like a wheel.',
+    name: 'The Orrery',
+    icon: 'ringed-planet',
+    text: 'A field that turns like a wheel.',
+    shardBase: 66,
+    waveShards: 132,
+    hpBase: 2400,
+    hpGrowth: 1.17,
+    damageBase: 46,
+    damageGrowth: 1.06,
+    count: { base: 6, perWave: 2 },
+    pool: [
+      { enemy: 'satellite', from: 1, weight: 1 },
+      { enemy: 'comet', from: 5, weight: 0.35 },
+      { enemy: 'moon', from: 10, weight: 0.12 },
+    ],
+    beats: {
+      5: { kind: 'introduce', enemy: 'comet', packs: 2 },
+      10: { kind: 'introduce', enemy: 'moon', packs: 1 },
+      15: { kind: 'swarm', countMult: 1.5 },
+    },
+    rule: { name: 'Orbit', text: 'Nothing walks straight here; everything spirals in.', effect: { kind: 'orbit', tangent: 0.6 } },
+    surge: { text: 'The spiral tightens: bodies swing wider as they close.', effect: { kind: 'rule' } },
+    boss: 'astrolabe',
+    tint: '#1e2a4a',
+    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'tidal', 'vengeful'] },
+  },
+  {
+    id: 'frozen-sea',
+    index: 11,
+    act: 2,
+    after: 10,
+    veil: 'Past the turning field, the Mire lies frozen.',
+    name: 'The Frozen Sea',
+    icon: 'iceberg',
+    text: 'The Mire, frozen hard. Nothing stops where it is pushed.',
+    shardBase: 66,
+    waveShards: 132,
+    hpBase: 2400,
+    hpGrowth: 1.17,
+    damageBase: 46,
+    damageGrowth: 1.06,
+    count: { base: 6, perWave: 2 },
+    pool: [
+      { enemy: 'skater', from: 1, weight: 1 },
+      { enemy: 'floe', from: 5, weight: 0.15 },
+      { enemy: 'sledge', from: 10, weight: 0.12 },
+    ],
+    beats: {
+      5: { kind: 'introduce', enemy: 'floe', packs: 2 },
+      10: { kind: 'introduce', enemy: 'sledge', packs: 1 },
+      15: { kind: 'swarm', countMult: 1.5 },
+    },
+    rule: {
+      name: 'Glide',
+      text: 'Pushed bodies slide on the ice and bowl over others.',
+      effect: { kind: 'glide', carry: 3, friction: 4, impact: 0.25 },
+    },
+    surge: { text: 'The cold bites: the tower attacks 10% slower.', effect: { kind: 'stat', mod: { key: 'attackSpeed', pct: -0.1 } } },
+    boss: 'leviathan',
+    tint: '#2e4a5a',
+    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'anchored', 'vengeful'] },
+  },
+  {
+    id: 'giants-rest',
+    index: 12,
+    act: 2,
+    after: 11,
+    veil: 'Beyond the ice, the great dead stir.',
+    name: 'Giants’ Rest',
+    icon: 'giant',
+    text: 'Where the Blight laid its largest dead.',
+    shardBase: 66,
+    waveShards: 132,
+    hpBase: 2400,
+    hpGrowth: 1.17,
+    damageBase: 46,
+    damageGrowth: 1.06,
+    count: { base: 6, perWave: 2 },
+    pool: [
+      { enemy: 'titan', from: 1, weight: 1 },
+      { enemy: 'tick', from: 5, weight: 0.3 },
+      { enemy: 'herdkeeper', from: 10, weight: 0.12 },
+    ],
+    beats: {
+      5: { kind: 'introduce', enemy: 'tick', packs: 2 },
+      10: { kind: 'introduce', enemy: 'herdkeeper', packs: 1 },
+      15: { kind: 'swarm', countMult: 1.4 },
+    },
+    rule: { name: 'Giants', text: 'Half the bodies, each three times as tough.', effect: { kind: 'giants', count: 0.5, size: 1.6, hp: 3, reward: 2 } },
+    surge: { text: 'The giants grow: a quarter larger, a quarter tougher.', effect: { kind: 'rule' } },
+    boss: 'colossus',
+    tint: '#4a4236',
+    elites: { from: 5, every: 4, auras: ['haste', 'towering', 'shield', 'split', 'vengeful'] },
+  },
+  {
+    id: 'stormcrown',
+    index: 13,
+    act: 2,
+    // The Wake's finale (plans/late-game/12 §2.5): its boss opens the Abyss.
+    after: 12,
+    veil: 'A storm sits on the high ground. It never breaks.',
+    name: 'Stormcrown',
+    icon: 'lightning-tear',
+    text: 'The Blight’s last breath, raging over the high ground.',
+    shardBase: 66,
+    waveShards: 132,
+    hpBase: 2400,
+    hpGrowth: 1.17,
+    damageBase: 46,
+    damageGrowth: 1.06,
+    count: { base: 6, perWave: 2 },
+    pool: [
+      { enemy: 'groundling', from: 1, weight: 1 },
+      { enemy: 'conductor', from: 5, weight: 0.1 },
+      { enemy: 'squallcaller', from: 10, weight: 0.25 },
+    ],
+    beats: {
+      5: { kind: 'introduce', enemy: 'conductor', packs: 1 },
+      10: { kind: 'introduce', enemy: 'squallcaller', packs: 2 },
+      15: { kind: 'swarm', countMult: 1.5 },
+    },
+    rule: {
+      name: 'Storm',
+      text: 'Lightning strikes the toughest body, unless a Conductor stands.',
+      effect: { kind: 'storm', every: 5, damage: 0.1, wall: 3 },
+    },
+    surge: { text: 'The storm quickens: strikes come a fifth sooner.', effect: { kind: 'rule' } },
+    boss: 'thunderhead',
+    tint: '#26303a',
+    elites: { from: 5, every: 4, auras: ['haste', 'regen', 'shield', 'charged', 'vengeful'] },
+  },
 ];
+
+/**
+ * Follow the `after` links (plans/late-game/12 §8.1): start at the region
+ * whose `after` is outside `list` (an Act 1 index), then each region whose
+ * `after` is the one before. A region off the chain is left out (the lint
+ * fails it).
+ */
+function chainOrder(list: readonly RegionDef[]): RegionDef[] {
+  const inList = new Set(list.map((r) => r.index));
+  const out: RegionDef[] = [];
+  let next = list.find((r) => r.after !== null && !inList.has(r.after));
+  while (next && !out.includes(next)) {
+    out.push(next);
+    const at = next.index;
+    next = list.find((r) => r.after === at);
+  }
+  return out;
+}
+
+/** Act 1's regions, in order (the Map's light, the Act 1 feats and lines). */
+export const ACT1_REGIONS: readonly RegionDef[] = REGIONS.filter((r) => r.act === 1);
+/** The Wake's regions, in the order their chain opens them (plans/late-game/12). */
+export const WAKE_REGIONS: readonly RegionDef[] = chainOrder(REGIONS.filter((r) => r.act === 2));
+/** The Wake's last boss: its first fall opens the Abyss (plans/late-game/12 D-1). */
+export const WAKE_FINALE: BossId = 'thunderhead';
 
 /**
  * Each region's last light (plans/visual-identity.md §2.2): the fourth stop of
@@ -212,6 +420,12 @@ export const LAST_LIGHT: Readonly<Record<string, string>> = {
   'ember-rift': '#44241b',
   'the-hollow': '#2a1e2c',
   'blight-heart': '#3a171d',
+  // The Wake's (plans/late-game/12 §2.0).
+  'bell-marches': '#3c2b1e',
+  'orrery': '#262a3a',
+  'frozen-sea': '#24323a',
+  'giants-rest': '#3a3128',
+  'stormcrown': '#262b33',
 };
 
 export function regionByIndex(index: number): RegionDef {

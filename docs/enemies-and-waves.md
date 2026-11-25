@@ -20,8 +20,23 @@ follows. Each has three enemy types, a rule and a ground tint.
 | 5 | The Hollow | Echoes: one kill in ten rises as a shade | The Hollow King |
 | 6 | Blight Heart | Blight: every wave brings an elite | The Blight |
 
-Region 7 is the Abyss ([act2.md](act2.md)). Each region's `surge` is what
-the Blight Surge pact does there.
+Five more come after the Blight: the Wake (`act: 2`, plans/late-game/12).
+Each one opens when the one before it falls (`after`). Each rule changes how
+bodies move or how big they are, not a number on the tower. The rules live in
+`sim/systems/wake.ts` and are listed in `content/regions.ts`.
+
+| # | Region | Rule | Natives (1 / 5 / 10) | Boss |
+|---|---|---|---|---|
+| 9 | The Bell Marches | Toll: bodies move only when the bell tolls (every 3 s, 0.6 s lurch) | Ringer, Sleepwalker, Straggler | The Carillon |
+| 10 | The Orrery | Orbit: everything spirals in (`tangent` 0.6) | Satellite, Comet, Moon | The Astrolabe |
+| 11 | The Frozen Sea | Glide: pushed bodies slide and bowl others over | Skater, Floe, Sledge | The Leviathan Under the Ice |
+| 12 | Giants' Rest | Giants: half the bodies, ×3 HP, ×1.6 size, ×2 reward | Titan, Tick, Herdkeeper | The Sleeping Colossus |
+| 13 | Stormcrown | Storm: lightning strikes the toughest body every 5 s (10% Max HP); a standing Conductor turns it on the tower | Groundling, Conductor, Squallcaller | The Thunderhead |
+
+The Thunderhead's first fall opens the Abyss (`abyssOpen`). Indices 7 and 8
+are the Abyss and Boss Rush ([act2.md](act2.md)). Each region's `surge` is
+what the Blight Surge pact does there. The Frozen Sea's is a `stat` surge
+(attacks 10% slower); the other four's are `rule` surges.
 
 A region's sizes are per-region data: `hpBase` (95, 290, 1450 and 1300 HP
 for Regions 3–6), `hpGrowth` per wave (1.17), `damageBase` and
@@ -105,6 +120,18 @@ an elite's:
 | Ember Rift | Molten | split | slain within half range of the wall, it opens a molten pool there | `eliteDeath` |
 | The Hollow | Wraith | regen | phases out 1.5 s of every 4, like a Phantom: untargetable and harmless | `applyAuras` |
 | Blight Heart | Hungering | regen | heals 8% of its Max HP for each body that falls within 160 (Maw Tooth starves it too) | `feedHungering` |
+
+The Wake's five do the same against its own rules:
+
+| Region | Aura | In place of | What it does |
+|---|---|---|---|
+| The Bell Marches | Resonant | shield | its neighbours lurch twice as far on every toll |
+| The Orrery | Tidal | shield | its neighbours swing round faster, but close in no sooner |
+| The Frozen Sea | Anchored | shield | it and its neighbours can't be pushed |
+| Giants' Rest | Towering | regen | 40% less damage from anything but a crit |
+| Stormcrown | Charged | shield | it and its neighbours are grounded: the storm passes them by |
+
+The auras apply in `applyAuras` (`enemies.ts`). Towering applies in `combat.ts`.
 
 Their numbers are in `BALANCE.elites`. An elite kill
 may drop one of its region's relics once a relic slot exists (30%, more

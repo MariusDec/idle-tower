@@ -1,11 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { CONTENT } from '../src/content';
-import { lintContent } from '../src/content/lint';
-import type { BossDef, ContentEntry, EvolutionDef, WeaponDef } from '../src/content/types';
+import { lintContent, regionChain } from '../src/content/lint';
+import { REGIONS, WAKE_FINALE } from '../src/content/regions';
+import type { BossDef, ContentEntry, EvolutionDef, RegionDef, WeaponDef } from '../src/content/types';
 
 describe('content lint (§12.6)', () => {
   it('the shipped content is clean', () => {
     expect(lintContent(CONTENT)).toEqual([]);
+  });
+
+  it("the regions' chain (plans/late-game/12 §8.1): one head, Region 1; no shared `after`; no cycle; a veil on each Wake region", () => {
+    const six = REGIONS.filter((r) => r.act === 1);
+    const wake = (index: number, after: number | null, veil?: string): RegionDef => ({ ...six[5], id: `wake-${index}`, index, act: 2, after, boss: WAKE_FINALE, ...(veil !== undefined ? { veil } : {}) });
+    const lint = (regions: readonly RegionDef[]): string[] => regionChain({ regions }).map((i) => i.problem);
+    expect(lint(REGIONS)).toEqual([]);
+    expect(lint([...six, wake(9, 6, 'The bells still ring.'), wake(10, 9, 'A sky of wheels.')])).toEqual([]);
+    expect(lint([...six, wake(9, 6)])).toContain('veil is 0 words (want 1–15)');
+    expect(lint([...six, wake(9, 6, 'Bells.'), wake(10, 6, 'Wheels.')])).toContain('shares its `after` (6) with wake-9');
+    expect(lint([...six, wake(9, 42, 'Bells.')])).toContain('opens after Region 42, which does not exist');
+    expect(lint([...six, wake(9, 10, 'Bells.'), wake(10, 9, 'Wheels.')])).toContain('its chain does not lead back to Region 1');
+    expect(lint([...six, wake(9, null, 'Bells.')]).some((p) => p.startsWith('want exactly one region with no'))).toBe(true);
+    expect(lint([{ ...six[0], after: null }, { ...six[1], act: 1, after: 9 }, wake(9, 1, 'Bells.')])).toContain('opens after Region 9, of a later act');
+    // The Wake's chain ends on its finale, whose fall opens the Abyss.
+    expect(lint([...six, { ...wake(9, 6, 'Bells.'), boss: 'carillon' }])).toContain(`the Wake's chain must end on ${WAKE_FINALE}`);
+    expect(lint([...six, wake(9, 6, 'Bells.'), { ...wake(10, 9, 'Wheels.'), boss: 'astrolabe' }])).toContain(`the Wake's chain must end on ${WAKE_FINALE}`);
   });
 
   it('catches what it claims to catch', () => {

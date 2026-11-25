@@ -50,7 +50,7 @@ export interface RegionVoice {
   readonly figure: Figure;
 }
 
-/** By region index, 1–6. The Abyss has its strata instead. */
+/** By region index, 1–6 and the Wake's 9 on. The Abyss has its strata instead. */
 export const REGION_VOICES: Readonly<Record<number, RegionVoice>> = {
   // Ashen Fields: i – VII – VI – VII, a plain walk; a rising arpeggio, the first light.
   1: { loop: [[0, 3, 7], [-2, 2, 5], [-4, 0, 3], [-2, 2, 5]], figure: 'arp' },
@@ -64,6 +64,16 @@ export const REGION_VOICES: Readonly<Record<number, RegionVoice>> = {
   5: { loop: [[0, 3, 7], [5, 8, 12], [0, 3, 7], [-4, 0, 3]], figure: 'echo' },
   // Blight Heart: i – ♭II – ♭vii° – i, sour; a low toll a tritone off the root.
   6: { loop: [[0, 3, 7], [1, 5, 8], [-2, 1, 4], [0, 3, 7]], figure: 'toll' },
+  // The Wake (plans/late-game/12 §2). The Bell Marches: i – v – i – ♭VII, the bell answered; the toll.
+  9: { loop: [[0, 3, 7], [-5, -2, 2], [0, 3, 7], [-2, 2, 5]], figure: 'toll' },
+  // The Orrery: i – III – iv – III, turning round and back; a rising arpeggio, the wheel.
+  10: { loop: [[0, 3, 7], [3, 7, 10], [5, 8, 12], [3, 7, 10]], figure: 'arp' },
+  // The Frozen Sea: i – ♭VI – ♭VII – ♭VI, cold and wide; a high chime, ice struck.
+  11: { loop: [[0, 3, 7], [-4, 0, 3], [-2, 2, 5], [-4, 0, 3]], figure: 'chime' },
+  // Giants' Rest: i – iv – v – iv, slow and heavy; a low drone under the great dead.
+  12: { loop: [[0, 3, 7], [-7, -4, 0], [-5, -2, 2], [-7, -4, 0]], figure: 'drone' },
+  // Stormcrown: i – ♭II – i – ♭VII, restless; a driving pulse under the storm.
+  13: { loop: [[0, 3, 7], [1, 5, 8], [0, 3, 7], [-2, 1, 5]], figure: 'pulse' },
 };
 
 /** Passes of each section before the other: A A B B. */
@@ -82,7 +92,8 @@ export function chordAt(a: readonly (readonly number[])[], b: readonly (readonly
 
 /** The key's root: A2, shifted per region (by region index; the Abyss is its own). */
 const ROOT_HZ = 110;
-const REGION_SHIFT: readonly number[] = [0, 0, 2, -2, 3, -4, 5, 1];
+// 7 and 8 (the Abyss, Boss Rush) read their own; 9 on is the Wake (plans/late-game/12 §9.2).
+const REGION_SHIFT: readonly number[] = [0, 0, 2, -2, 3, -4, 5, 1, 1, -1, 2, 4, -3, 6];
 /** How far ahead of the audio clock chords are scheduled, and how often the timer looks. */
 const LOOKAHEAD = 0.6;
 const TICK_MS = 200;
@@ -114,6 +125,11 @@ export class Music {
   start(): void {
     if (this.timer !== null) return;
     this.timer = setInterval(() => this.tick(), TICK_MS);
+  }
+
+  /** The key's root now, in Hz: the cues that sit on the music's key read it. */
+  rootHz(): number {
+    return hz(this.shift);
   }
 
   /** Duck the pad 6 dB (a rift being chosen), or bring it back. */

@@ -95,6 +95,18 @@ export function walksIn(verb: EnemyVerb): boolean {
     case 'devour':
     case 'blink':
     case 'retreat':
+    // The Wake's walkers (plans/late-game/12 §5).
+    case 'ring':
+    case 'sleepwalk':
+    case 'offbeat':
+    case 'streak':
+    case 'lane':
+    case 'slab':
+    case 'sledge':
+    case 'trample':
+    case 'ride':
+    case 'herd':
+    case 'grounded':
       return true;
     case 'ranged':
     case 'heal':
@@ -106,6 +118,8 @@ export function walksIn(verb: EnemyVerb): boolean {
     case 'chorus':
     case 'ward':
     case 'tide':
+    case 'conduct':
+    case 'squall':
       return false;
     default: {
       const exhaustive: never = verb;

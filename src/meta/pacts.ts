@@ -3,6 +3,7 @@ import { STRATA, guardianStratum } from '../content/strata';
 import type { BossId } from '../content/types';
 import { RUSH_STAGES, rushStarlight } from '../content/rush';
 import { BALANCE } from '../content/balance';
+import { REGIONS } from '../content/regions';
 import { heatShardMult } from '../sim/pacts';
 import { PACTS, PACT_BY_ID } from '../content/pacts';
 import type { PactId } from '../content/types';
@@ -61,11 +62,14 @@ export function heatStarlight(h: number): number {
   return h <= 0 ? 0 : 1 + Math.floor(h / BALANCE.starlight.every);
 }
 
-/** Starlight a record of `h` in `region` pays before the Stargazers: each level past the old record, once. */
+/**
+ * Starlight a record of `h` in `region` pays before the Stargazers: each level
+ * past the old record, once. A Wake region's pays half (plans/late-game/12 D-5).
+ */
 export function recordStarlight(profile: Profile, region: number, h: number): number {
   let sum = 0;
   for (let l = bestHeat(profile, region) + 1; l <= h; l++) sum += heatStarlight(l);
-  return sum;
+  return REGIONS.find((r) => r.index === region)?.act === 2 ? sum * BALANCE.wake.heatStarlight : sum;
 }
 
 /** A record broken, and the Starlight it paid. */

@@ -111,6 +111,43 @@ export type BehaviourId =
   | 'elite-bane'
   | 'boss-bane'
   | 'level-heal'
+  // The Wake's relics (plans/late-game/12 §8.9).
+  /** Carillon's Clapper: every few seconds a toll stuns every enemy in range. */
+  | 'clapper'
+  /** Tuning Fork: stunned and frozen bodies take more. */
+  | 'tuning-fork'
+  /** Metronome: more damage for every stretch the tower goes unhurt. */
+  | 'metronome'
+  /** Astrolabe Ring: Glaives and drones circle faster. */
+  | 'astrolabe'
+  /** Star Chart: homing bolts turn more sharply. */
+  | 'star-chart'
+  /** Tidal Lock: bodies within half the range move slower. */
+  | 'tidal-lock'
+  /** Comet Tail: Glaive kills leave burning ground. */
+  | 'comet-tail'
+  /** Leviathan Scale: knockback pushes farther, and heavy bodies as if light. */
+  | 'leviathan'
+  /** Skate Blade: a body knocked back takes more for a while. */
+  | 'skate-blade'
+  /** Floe Shard: a body slain while slowed chills those near it. */
+  | 'floe-shard'
+  /** Colossus Heart: more damage against bodies above half their health. */
+  | 'colossus'
+  /** Tick Bite: a crit marks its body, and marked bodies take more. */
+  | 'tick-bite'
+  /** Herd Bell: large bodies pay more shards. */
+  | 'herd-bell'
+  /** Giant's Toe: Sunlance keeps part of its heat-up on a new target. */
+  | 'giants-toe'
+  /** Thunderhead Core: lightning strikes the toughest non-boss body on a clock. */
+  | 'thunder-core'
+  /** Lightning Rod: Chain Lightning leaps to more bodies (the rank is the count). */
+  | 'extra-leap'
+  /** Grounding Wire: the tower takes less from lightning and hostile shots. */
+  | 'grounding'
+  /** Static Charge: crits charge the ultimate. */
+  | 'static'
   // Secrets (plans/late-game/05): each switched on by its find, never bought.
   /** In the Glass Wastes, a frozen Shardling bursts at its kin. */
   | 'glassfrost'
@@ -364,7 +401,13 @@ export type EnemyId =
   // The Abyss's own (§9).
   | 'husk' | 'ram' | 'wardstone' | 'maw'
   // The strata's (plans/late-game/08): the Gate's Lurker, the Inversion's Tidecaller.
-  | 'lurker' | 'tidecaller';
+  | 'lurker' | 'tidecaller'
+  // The Wake's (plans/late-game/12 §2): three natives per region.
+  | 'ringer' | 'sleepwalker' | 'straggler'
+  | 'satellite' | 'comet' | 'moon'
+  | 'skater' | 'floe' | 'sledge'
+  | 'titan' | 'tick' | 'herdkeeper'
+  | 'groundling' | 'conductor' | 'squallcaller';
 
 /** Silhouettes the enemy painter knows. A closed union: a new one must be drawn first. */
 export type EnemyShape = 'circle' | 'diamond' | 'plated' | 'hexagon' | 'triangle' | 'square';
@@ -422,7 +465,34 @@ export type EnemyVerb =
    */
   | { readonly kind: 'retreat'; readonly below: number; readonly pace: number }
   /** Stops at `standoff`; every `interval` s, turns round each walking body within `radius` (the Tidecaller). */
-  | { readonly kind: 'tide'; readonly standoff: number; readonly interval: number; readonly radius: number };
+  | { readonly kind: 'tide'; readonly standoff: number; readonly interval: number; readonly radius: number }
+  // The Wake's (plans/late-game/12 §3.1).
+  /** Each alive multiplies the toll's interval by `hasten` (the Ringer). */
+  | { readonly kind: 'ring'; readonly hasten: number }
+  /** Ignores the Toll and walks at `pace` × its speed (the Sleepwalker). */
+  | { readonly kind: 'sleepwalk'; readonly pace: number }
+  /** Its own toll, half an interval after the bell's (the Straggler). */
+  | { readonly kind: 'offbeat' }
+  /** Ignores the Orbit (the Comet). */
+  | { readonly kind: 'streak' }
+  /** Circles at `radius` for `sweep` radians first (the Moon). */
+  | { readonly kind: 'lane'; readonly radius: number; readonly sweep: number }
+  /** A body slid into it takes `shatter` × the impact; it never slides (the Floe). */
+  | { readonly kind: 'slab'; readonly shatter: number }
+  /** Latches the body within `reach` ahead and pushes it as one (the Sledge). */
+  | { readonly kind: 'sledge'; readonly reach: number }
+  /** Swallows bodies under `smaller` × its radius that it overlaps (the Titan). */
+  | { readonly kind: 'trample'; readonly smaller: number }
+  /** Rides a host within `reach`, untargetable, until the host falls (the Tick). */
+  | { readonly kind: 'ride'; readonly reach: number }
+  /** A walking ward: every other body within `radius` takes only `shield` of its damage (the Herdkeeper). */
+  | { readonly kind: 'herd'; readonly radius: number; readonly shield: number }
+  /** The storm never strikes it (the Groundling). */
+  | { readonly kind: 'grounded' }
+  /** Stops at `standoff`; while it lives, the storm's strikes hit the tower (the Conductor). */
+  | { readonly kind: 'conduct'; readonly standoff: number }
+  /** Stops at `standoff`, lobs a shot every `interval` s at `shotSpeed`; each alive quickens the storm by `hasten` (the Squallcaller). */
+  | { readonly kind: 'squall'; readonly standoff: number; readonly interval: number; readonly shotSpeed: number; readonly hasten: number };
 
 /**
  * An enemy type (§4.3). Each has one verb that makes one answer right.
@@ -466,7 +536,9 @@ export interface EnemyDef extends ContentEntry {
  * each one region's own (N3), in place of one of the first five there.
  */
 export type AuraId = 'haste' | 'regen' | 'shield' | 'split' | 'vengeful'
-  | 'fog' | 'mirrored' | 'molten' | 'wraith' | 'hungering';
+  | 'fog' | 'mirrored' | 'molten' | 'wraith' | 'hungering'
+  // The Wake's own (plans/late-game/12 §6).
+  | 'resonant' | 'tidal' | 'anchored' | 'towering' | 'charged';
 
 export interface AuraDef extends ContentEntry {
   readonly id: AuraId;
@@ -476,7 +548,9 @@ export interface AuraDef extends ContentEntry {
 
 export type BossId = 'gatekeeper' | 'bog-mother' | 'prism' | 'forgeheart' | 'hollow-king' | 'blight'
   // The Abyss's own (§9): its strata's guardians (plans/late-game/08).
-  | 'deepwarden' | 'hunger' | 'undertow';
+  | 'deepwarden' | 'hunger' | 'undertow'
+  // The Wake's (plans/late-game/12 §2).
+  | 'carillon' | 'astrolabe' | 'leviathan' | 'colossus' | 'thunderhead';
 
 /**
  * One thing a boss does (§4.3: one readable pattern per phase). A closed
@@ -506,7 +580,24 @@ export type BossPattern =
    */
   | { readonly kind: 'court'; readonly shades: number; readonly every: number; readonly share: number }
   /** While its phase lasts, a stratum's rule holds (plans/late-game/08 §4.5): on its summons, and on the field. */
-  | { readonly kind: 'rule'; readonly rule: StratumRule };
+  | { readonly kind: 'rule'; readonly rule: StratumRule }
+  // The Wake's (plans/late-game/12 §7.1).
+  /** Always on: each toll rolls a ring from the boss at `speed`, for `damage` × the wave's contact damage. */
+  | { readonly kind: 'peal'; readonly speed: number; readonly damage: number }
+  /** Every `every` s, the toll's interval × `factor`. */
+  | { readonly kind: 'quicken'; readonly every: number; readonly factor: number }
+  /** Every `every` s, the Orbit's spin flips. */
+  | { readonly kind: 'reverse'; readonly every: number }
+  /** Cracks `count` stationary Floes loose (in a ring, with `ring`). `every` 0: once, on entering the phase. */
+  | { readonly kind: 'floes'; readonly count: number; readonly every: number; readonly ring: boolean }
+  /** Always on: a weak point `arc` wide turns at `spin` rad/s; hits while it faces the tower land × `mult`. */
+  | { readonly kind: 'weakpoint'; readonly arc: number; readonly spin: number; readonly mult: number }
+  /** Every `every` s, eats a Titan within `radius` and heals `heal` × its HP. */
+  | { readonly kind: 'feast'; readonly every: number; readonly radius: number; readonly heal: number }
+  /** Winds up for `windup` s, then a strike on the tower for `damage` × the wave's contact damage. */
+  | { readonly kind: 'bolt'; readonly every: number; readonly windup: number; readonly damage: number }
+  /** Always on: the storm's clock × `pace`, and each strike forks to `forks` more. */
+  | { readonly kind: 'tempest'; readonly pace: number; readonly forks: number };
 
 export interface BossPhase {
   /** The phase begins once the boss is at or below this fraction of its HP. */
@@ -534,6 +625,8 @@ export interface BossPlates {
   readonly guard: number;
   /** Radius of a plate's body. */
   readonly radius: number;
+  /** Rad/s the plates circle the boss at, evenly spaced, in place of a fan toward the tower (plans/late-game/12 §7.2). */
+  readonly orbit?: number;
 }
 
 /** A region's boss (§4.3, §11.1): wave 20. */
@@ -783,7 +876,18 @@ export type RegionRule =
   /** Echoes: `chance` of a kill rises once as a shade with `hp` of its Max HP, paying `reward` of its worth. */
   | { readonly kind: 'echoes'; readonly chance: number; readonly hp: number; readonly reward: number }
   /** Blight: every wave brings an elite. */
-  | { readonly kind: 'blight' };
+  | { readonly kind: 'blight' }
+  // The Wake's (plans/late-game/12 §3.1): read where they act, as Cinders and Echoes are.
+  /** Toll: bodies move only in the `window` s after each toll, every `every` s. */
+  | { readonly kind: 'toll'; readonly every: number; readonly window: number }
+  /** Orbit: a body's step turns sideways by `tangent` of its inward part. */
+  | { readonly kind: 'orbit'; readonly tangent: number }
+  /** Glide: a push becomes a slide of `carry` × the push, decaying at `friction` per s; touching bodies take `impact`. */
+  | { readonly kind: 'glide'; readonly carry: number; readonly friction: number; readonly impact: number }
+  /** Giants: `count` × the bodies, each `size` × the radius, `hp` × the HP and `reward` × the pay. */
+  | { readonly kind: 'giants'; readonly count: number; readonly size: number; readonly hp: number; readonly reward: number }
+  /** Storm: every `every` s a strike takes `damage` of the toughest body's Max HP; with a Conductor up, `wall` × the wave's hit lands on the tower. */
+  | { readonly kind: 'storm'; readonly every: number; readonly damage: number; readonly wall: number };
 
 /**
  * What the Blight Surge pact does in a region (§9), once per rank: the
@@ -802,8 +906,14 @@ export type WaveBeat =
   | { readonly kind: 'swarm'; readonly countMult: number };
 
 export interface RegionDef extends ContentEntry {
-  /** 1–6, the order on the map. */
+  /** 1–6 Act 1's, 9–13 the Wake's; the Map's order comes from `after` (plans/late-game/12 §8.1). */
   readonly index: number;
+  /** 1: Act 1's six. 2: the Wake (plans/late-game/12). The Abyss and Boss Rush build their own and set 1. */
+  readonly act: 1 | 2;
+  /** The region whose boss's first fall opens this one; null for the first (plans/late-game/12 §8.1). */
+  readonly after: number | null;
+  /** The Map's silhouette line before it opens (≤ 15 words); Act 1's silhouettes use their boss instead. */
+  readonly veil?: string;
   /** Shards a weight-1 kill drops (§8.3); an enemy's weight is its `xp`. */
   readonly shardBase: number;
   /** Shards for reaching wave n + 1: `waveShards × n` (§8.3). */
@@ -861,7 +971,13 @@ export type RelicId =
   // Cursed relics (plans/late-game/03): a boon and a curse, worn in the Abyss only.
   | 'glass-crown'
   // Secrets (plans/late-game/05): a boss's other form drops it, and nothing lists it until owned.
-  | 'lens-shard';
+  | 'lens-shard'
+  // The Wake (plans/late-game/12 §8.9): four per region, a boss's and three elites'.
+  | 'carillons-clapper' | 'tuning-fork' | 'muffled-bell' | 'metronome'
+  | 'astrolabe-ring' | 'star-chart' | 'tidal-lock' | 'comet-tail'
+  | 'leviathan-scale' | 'skate-blade' | 'floe-shard' | 'anchor-chain'
+  | 'colossus-heart' | 'tick-bite' | 'herd-bell' | 'giants-toe'
+  | 'thunderhead-core' | 'lightning-rod' | 'grounding-wire' | 'static-charge';
 
 /**
  * The Abyss's strata (plans/late-game/08): six floors each, each with its
@@ -1071,7 +1187,9 @@ export type TrimId = 'ivy' | 'pennants' | 'runes' | 'gilt' | 'embers' | 'starlit
   // The Contract board's milestones (plans/late-game/10 §4.4).
   | 'seals' | 'lanterns'
   // The Daily Omen's (plans/late-game/11 §5): seven scored Omens, and the first band III.
-  | 'veil' | 'starfall';
+  | 'veil' | 'starfall'
+  // The Wake's Trials (plans/late-game/12 §8.8).
+  | 'bells' | 'orrery' | 'icicles' | 'ribs' | 'rods';
 
 /**
  * A Trial's constraint (N5), applied to the run's config. A closed union;

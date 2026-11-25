@@ -85,6 +85,9 @@ function strataFloor(floor: number, s: StratumDef): RegionDef {
     ...REGIONS[0],
     id: `abyss-${floor}`,
     index: ABYSS_INDEX,
+    // Not on the Act 1 chain or the Wake's: `regionUnlocked` reads neither for 7 or 8.
+    act: 1,
+    after: null,
     icon: 'over-infinity',
     name: `The Abyss · Floor ${floor}`,
     text: `Floor ${floor}, in ${s.name}.`,
@@ -156,6 +159,9 @@ function shimFloor(floor: number): RegionDef {
     ...base,
     id: `abyss-${floor}`,
     index: ABYSS_INDEX,
+    // Not on the Act 1 chain or the Wake's: `regionUnlocked` reads neither for 7 or 8.
+    act: 1,
+    after: null,
     name: `The Abyss · Floor ${floor}`,
     text: `Floor ${floor}, on the ${base.name}'s pattern.`,
     shardBase: A.shardBase,

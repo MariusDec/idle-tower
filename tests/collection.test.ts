@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { newProfile, type Profile } from '../src/meta/profile';
 import {
-  equippedRelics, gainRelic, hubUnlocks, regionUnlocked, relicSlots, selectedFrame, selectedRegion, toggleRelic,
+  equippedRelics, frontier, gainRelic, hubUnlocks, regionUnlocked, relicSlots, selectedFrame, selectedRegion, toggleRelic,
 } from '../src/meta/collection';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { buyNode, isBuyable, nodeStates } from '../src/meta/forge';
@@ -13,7 +13,7 @@ import { createRun, step } from '../src/sim/run';
 import { damageEnemy } from '../src/sim/systems/combat';
 import { bossBody } from '../src/sim/systems/boss';
 import { BOSS_WAVE, startWave } from '../src/sim/systems/waves';
-import { regionByIndex } from '../src/content/regions';
+import { REGIONS, WAKE_REGIONS, regionByIndex } from '../src/content/regions';
 import { BALANCE } from '../src/content/balance';
 import { FEATS } from '../src/content/feats';
 import { FORGE } from '../src/content/forge';
@@ -222,5 +222,52 @@ describe('banking a boss (§4.6, §7.3)', () => {
     const p = newProfile(0);
     p.records.runs = 1;
     expect(hubGoal(p)?.text).toMatch(/Gatekeeper/);
+  });
+});
+
+describe("the regions' chain (plans/late-game/12 §8.1)", () => {
+  it("Act 1's chain is unchanged: each region opens on the boss before it", () => {
+    const order = ['gatekeeper', 'bog-mother', 'prism', 'forgeheart', 'hollow-king'];
+    for (let k = 2; k <= 6; k++) {
+      expect(regionUnlocked(killed(...order.slice(0, k - 2)), k)).toBe(false);
+      expect(regionUnlocked(killed(...order.slice(0, k - 1)), k)).toBe(true);
+    }
+    expect(regionUnlocked(killed(...order, 'blight'), 9)).toBe(REGIONS.some((r) => r.index === 9));
+  });
+
+  it('a Wake region opens on its `after` region\'s boss, and the frontier walks the chain', () => {
+    // The whole chain (plans/late-game/12 §12, after step 5): 6 → 9 → 10 → 11 → 12 → 13.
+    const act1 = ['gatekeeper', 'bog-mother', 'prism', 'forgeheart', 'hollow-king'];
+    expect(regionUnlocked(killed(...act1), 9)).toBe(false);
+    const p = killed(...act1, 'blight');
+    expect(regionUnlocked(p, 9)).toBe(true);
+    expect(regionUnlocked(p, 10)).toBe(false);
+    expect(regionUnlocked(p, 11)).toBe(false);
+    expect(frontier(p).index).toBe(9);
+    p.bosses.carillon = { kills: 1, fastest: 50 };
+    expect(regionUnlocked(p, 10)).toBe(true);
+    expect(regionUnlocked(p, 11)).toBe(false);
+    expect(frontier(p).index).toBe(10);
+    // The Frozen Sea opens on the Astrolabe; Giants' Rest now waits for the Leviathan.
+    p.bosses.astrolabe = { kills: 1, fastest: 50 };
+    expect(regionUnlocked(p, 11)).toBe(true);
+    expect(regionUnlocked(p, 12)).toBe(false);
+    expect(frontier(p).index).toBe(11);
+    p.bosses.leviathan = { kills: 1, fastest: 50 };
+    expect(regionUnlocked(p, 12)).toBe(true);
+    expect(frontier(p).index).toBe(12);
+    // Stormcrown opens on the Colossus, and ends the chain.
+    expect(regionUnlocked(p, 13)).toBe(false);
+    p.bosses.colossus = { kills: 1, fastest: 50 };
+    expect(regionUnlocked(p, 13)).toBe(true);
+    expect(frontier(p).index).toBe(13);
+    p.bosses.thunderhead = { kills: 1, fastest: 50 };
+    expect(frontier(p).index).toBe(13);
+  });
+
+  it('the Astrolabe alone no longer opens Giants\' Rest: the chain runs through the ice', () => {
+    const p = killed('gatekeeper', 'bog-mother', 'prism', 'forgeheart', 'hollow-king', 'blight', 'carillon', 'astrolabe', 'colossus');
+    expect(regionUnlocked(p, 12)).toBe(false);
+    expect(WAKE_REGIONS.map((r) => r.index)).toEqual([9, 10, 11, 12, 13]);
   });
 });

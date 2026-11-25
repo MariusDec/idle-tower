@@ -708,3 +708,13 @@ much stronger (wave 16 → 22, shards 41k → 96k).
 `npm test`, `npm run typecheck`: green. `tests/capstones.test.ts` covers
 each rank, rank 0, the feats, and a snapshot round-trip with a bank, a
 shield and a charge bank held.
+
+## The Wake: readings pending (2026-11-25)
+
+The Wake (plans/late-game/12) is built but not tuned. §14's readings
+(the bot's clear times, idle gates, Starlight per hour, the arsenal on the
+Wake fixture) are not taken yet. The numbers in `BALANCE.wake`, the Wake
+regions' sizes and the bosses' HP multipliers are first guesses. A quick
+`npm run omen -- --days 12 --from 20786` across the cutover at ring 7 fell
+early on Wake days: Stormcrown wave 11, the Bell Marches 18, the Frozen
+Sea 20. `BALANCE.omen.stars` is the planned lever for that.

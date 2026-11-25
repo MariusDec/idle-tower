@@ -133,6 +133,61 @@ export function paintGround(
   }
 }
 
+/**
+ * The Orrery's ground (plans/late-game/12 §9.1): four faint dashed rings,
+ * the oval's shape, drawn over the cached ground. `turn` (radians) slides the
+ * dashes round, so the rings turn with the field's spin without the ground
+ * itself being redrawn.
+ */
+export function paintOrbitRings(ctx: CanvasRenderingContext2D, light: number, oval: Oval, px: number, turn: number): void {
+  const { kx, ky } = stretch(light, oval);
+  ctx.save();
+  ctx.lineWidth = 1.5 * px;
+  ctx.strokeStyle = withAlpha(INK['300'], 0.1);
+  for (let i = 1; i <= 4; i++) {
+    const r = light * (i / 5);
+    const dash = (Math.PI * 2 * r) / (12 + i * 4);
+    ctx.setLineDash([dash * 0.6, dash * 0.4]);
+    // Alternate rings turn against each other, as an orrery's wheels do.
+    ctx.lineDashOffset = turn * r * (i % 2 === 0 ? -1 : 1);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * kx, r * ky, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
+ * The Frozen Sea's ground (plans/late-game/12 §2.3): faint cracks in the ice,
+ * a fixed pattern of forked lines out from near the tower, the oval's shape.
+ */
+export function paintIceCracks(ctx: CanvasRenderingContext2D, light: number, oval: Oval, px: number): void {
+  const { kx, ky } = stretch(light, oval);
+  ctx.save();
+  ctx.lineWidth = 1.2 * px;
+  ctx.strokeStyle = withAlpha(INK['200'], 0.08);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < CRACKS; i++) {
+    // A golden-angle spread, so the cracks never line up.
+    const a = i * 2.39996;
+    const r0 = light * (0.22 + 0.05 * (i % 3));
+    const r1 = light * (0.55 + 0.08 * (i % 4));
+    const bend = 0.08 * ((i % 2) * 2 - 1);
+    const mx = Math.cos(a + bend) * (r0 + r1) * 0.5;
+    const my = Math.sin(a + bend) * (r0 + r1) * 0.5;
+    ctx.moveTo(Math.cos(a) * r0 * kx, Math.sin(a) * r0 * ky);
+    ctx.lineTo(mx * kx, my * ky);
+    ctx.lineTo(Math.cos(a - bend) * r1 * kx, Math.sin(a - bend) * r1 * ky);
+    // A fork off the middle.
+    ctx.moveTo(mx * kx, my * ky);
+    ctx.lineTo(Math.cos(a + 3 * bend) * r1 * 0.85 * kx, Math.sin(a + 3 * bend) * r1 * 0.85 * ky);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+const CRACKS = 9;
+
 /** Points on a superellipse's outline: enough that its curve never shows a facet at a rim's size. */
 const RIM_POINTS = 192;
 let rimMemo: { key: string; path: Path2D } | null = null;

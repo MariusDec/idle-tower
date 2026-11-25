@@ -55,11 +55,30 @@ export const GAIT: Record<EnemyId, { style: GaitStyle; freq: number; bob: number
   maw: { style: 'waddle', freq: 4, bob: 1.6 },
   lurker: { style: 'slither', freq: 10, bob: 1 },
   tidecaller: { style: 'float', freq: 1.8, bob: 2.2 },
+  // The Wake's (plans/late-game/12 §5).
+  ringer: { style: 'hop', freq: 6, bob: 1.2 },
+  sleepwalker: { style: 'float', freq: 1.4, bob: 1.6 },
+  straggler: { style: 'skitter', freq: 10, bob: 1.4 },
+  satellite: { style: 'float', freq: 3, bob: 1.2 },
+  comet: { style: 'skitter', freq: 18, bob: 1 },
+  moon: { style: 'float', freq: 1.2, bob: 1 },
+  skater: { style: 'slither', freq: 8, bob: 1 },
+  floe: { style: 'waddle', freq: 1.6, bob: 0.4 },
+  sledge: { style: 'waddle', freq: 3, bob: 0.8 },
+  titan: { style: 'waddle', freq: 2.6, bob: 1 },
+  tick: { style: 'skitter', freq: 16, bob: 1.6 },
+  herdkeeper: { style: 'waddle', freq: 3.2, bob: 0.8 },
+  groundling: { style: 'hop', freq: 6, bob: 1 },
+  conductor: { style: 'waddle', freq: 2.4, bob: 0.6 },
+  squallcaller: { style: 'float', freq: 2.4, bob: 1.6 },
 };
 
 /** How see-through a phased-out body, and a risen shade, is drawn. */
 const PHASED_ALPHA = 0.22;
 const SHADE_ALPHA = 0.55;
+
+/** Seconds of a slide's speed its streak shows (world units per unit/s), up to four radii. */
+const SLIDE_STREAK = 0.12;
 
 /** Each aura's colour on an elite's halo (§4.3); a plain elite wears gold. */
 const AURA_COLOR: Record<AuraId, FxColorName> = {
@@ -74,6 +93,12 @@ const AURA_COLOR: Record<AuraId, FxColorName> = {
   molten: 'critical',
   wraith: 'mana',
   hungering: 'nature',
+  // The Wake's own (plans/late-game/12 §6).
+  resonant: 'gold',
+  tidal: 'mana',
+  anchored: 'frost',
+  towering: 'critical',
+  charged: 'arcane',
 };
 
 interface Sprite {
@@ -248,8 +273,11 @@ export class EnemyPainter {
     champion: { color: string; border: string } | null = null,
     /** A stratum's guests, leaning toward its ground (plans/late-game/08). */
     guest: GuestLook | null = null,
+    /** The Orrery's field turns (plans/late-game/12 §9.1): on the high tier, bodies leave a short trail. */
+    orbiting = false,
   ): void {
     drawChorusLinks(ctx, enemies, alpha, time);
+    const trails = orbiting && this.tier === 'high';
     this.frame++;
     this.sweep();
     const level = this.level;
@@ -265,9 +293,11 @@ export class EnemyPainter {
     this.seeding = false;
     // Entrances inside the light pop on `full` only (§5.2.2); walking in from the dark pops everywhere but reduced motion.
     const popArmed = level === 'full';
-    for (const e of enemies) {
+    // Riders (Ticks, plans/late-game/12 §9.1) on a second pass, so each sits on top of its host.
+    for (let pass = 0; pass < 2; pass++) for (const e of enemies) {
       // Bosses, the Hollow King's court and Forgeheart's plates have their own painter (`bosses.ts`).
       if (!e.alive || e.boss || e.court || e.plate) continue;
+      if ((e.riding > 0) !== (pass === 1)) continue;
       const bx = e.px + (e.x - e.px) * alpha;
       const by = e.py + (e.y - e.py) * alpha;
       const g = GAIT[e.type];
@@ -315,6 +345,33 @@ export class EnemyPainter {
         drawHalo(ctx, x, y, e.radius, champion.color, time + e.id);
       }
       if (e.elite) drawHalo(ctx, x, y, e.radius, FX[e.aura ? AURA_COLOR[e.aura] : 'gold'], time + e.id);
+      // An Orbit trail: a short line back along its motion, so the spiral reads.
+      if (trails && e.moving) {
+        const mx = e.x - e.px;
+        const my = e.y - e.py;
+        const ml = Math.hypot(mx, my);
+        if (ml > 1e-3) {
+          ctx.strokeStyle = withAlpha(ENEMY_BY_ID[e.type].borderColor, 0.3);
+          ctx.lineWidth = e.radius * 0.35;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x - (mx / ml) * e.radius * 2.2, y - (my / ml) * e.radius * 2.2);
+          ctx.stroke();
+        }
+      }
+      // A slide on the ice (plans/late-game/12 §9.1): a frost streak behind it, as long as it is fast.
+      if (e.slideX !== 0 || e.slideY !== 0) {
+        const v = Math.hypot(e.slideX, e.slideY);
+        const len = Math.min(e.radius * 4, v * SLIDE_STREAK);
+        ctx.strokeStyle = withAlpha(FX.frost, 0.45);
+        ctx.lineWidth = e.radius * 0.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - (e.slideX / v) * len, y - (e.slideY / v) * len);
+        ctx.stroke();
+      }
       const s = this.sprite(e.type, guest);
       // Sprites are baked at the type's radius; elites and fragments scale it.
       const k = e.radius / ENEMY_BY_ID[e.type].radius;
@@ -328,7 +385,7 @@ export class EnemyPainter {
       // A Husk's shell (§9): plates round it while it still swallows hits, a notch per hit.
       if (e.shell > 0) drawShell(ctx, x, y, e.radius, e.shell);
       // A Wardstone's ward: a faint ring as wide as it reaches.
-      if (verb.kind === 'ward' && e.hiddenUntil <= simTime) {
+      if ((verb.kind === 'ward' || verb.kind === 'herd') && e.hiddenUntil <= simTime) {
         ctx.strokeStyle = withAlpha(FX.frost, 0.22);
         ctx.lineWidth = 2;
         ctx.setLineDash([6, 8]);
@@ -336,6 +393,23 @@ export class EnemyPainter {
         ctx.arc(x, y, verb.radius, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
+      }
+      // A Conductor's rod (plans/late-game/12 §9.1): a rod above it and a pulsing gold ring, so it
+      // reads from across the arena on a phone.
+      if (verb.kind === 'conduct' && e.hiddenUntil <= simTime) {
+        const beat = 0.5 + 0.5 * Math.sin(time * 4 + e.id);
+        ctx.strokeStyle = withAlpha(FX.gold, 0.85);
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x, y - e.radius);
+        ctx.lineTo(x, y - e.radius * 2.1);
+        ctx.stroke();
+        ctx.strokeStyle = withAlpha(FX.gold, 0.35 + 0.45 * beat);
+        ctx.lineWidth = 2 + 2 * beat;
+        ctx.beginPath();
+        ctx.arc(x, y, e.radius * 1.6, 0, Math.PI * 2);
+        ctx.stroke();
       }
       // A Ram mid-charge: a streak behind it.
       if (e.dashUntil > simTime) {
@@ -963,6 +1037,271 @@ function paintDetail(g: CanvasRenderingContext2D, def: EnemyDef, r: number, pen:
         g.lineTo(x, r * 0.18);
         g.fill();
       }
+      break;
+    }
+    // The Wake's natives (plans/late-game/12 §9.1).
+    // Ringer: a small bell on its chest, its clapper hanging, and the rings it passes on.
+    case 'ringer': {
+      g.fillStyle = dark(0.45);
+      g.beginPath();
+      g.moveTo(-r * 0.36, r * 0.24);
+      g.quadraticCurveTo(-r * 0.3, -r * 0.42, 0, -r * 0.44);
+      g.quadraticCurveTo(r * 0.3, -r * 0.42, r * 0.36, r * 0.24);
+      g.closePath();
+      g.fill();
+      g.fillStyle = withAlpha(def.borderColor, 0.85);
+      g.beginPath();
+      g.arc(0, r * 0.3, r * 0.1, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = withAlpha(def.borderColor, 0.4);
+      g.lineWidth = pen(r * 0.07);
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.arc(0, -r * 0.08, r * 0.62, Math.PI / 2 - dir * Math.PI * 0.42 - 0.3, Math.PI / 2 - dir * Math.PI * 0.42 + 0.3);
+        g.stroke();
+      }
+      break;
+    }
+    // Sleepwalker: closed eyes, two lidded arcs, and a drowsy slack mouth.
+    case 'sleepwalker': {
+      g.strokeStyle = withAlpha(def.borderColor, 0.8);
+      g.lineWidth = pen(r * 0.09);
+      g.lineCap = 'round';
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.arc(dir * r * 0.3, -r * 0.18, r * 0.16, 0.15, Math.PI - 0.15);
+        g.stroke();
+      }
+      g.fillStyle = dark(0.45);
+      g.beginPath();
+      g.ellipse(0, r * 0.28, r * 0.14, r * 0.09, 0, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Straggler: a limping gait, one long stride mark trailing the other.
+    case 'straggler': {
+      g.strokeStyle = dark(0.45);
+      g.lineWidth = pen(r * 0.14);
+      g.lineCap = 'round';
+      g.beginPath();
+      g.moveTo(-r * 0.46, -r * 0.2);
+      g.lineTo(r * 0.12, -r * 0.2);
+      g.moveTo(-r * 0.2, r * 0.22);
+      g.lineTo(r * 0.46, r * 0.22);
+      g.stroke();
+      g.fillStyle = pale(0.7);
+      g.beginPath();
+      g.arc(r * 0.3, -r * 0.2, r * 0.09, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Giants' Rest's (plans/late-game/12 §9.1).
+    // Titan: a heavy brow over two deep sockets, and a cracked slab of a jaw.
+    case 'titan': {
+      g.fillStyle = dark(0.5);
+      g.fillRect(-r * 0.6, -r * 0.34, r * 1.2, r * 0.16);
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.ellipse(dir * r * 0.28, -r * 0.08, r * 0.14, r * 0.11, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.fillStyle = withAlpha(def.borderColor, 0.85);
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.arc(dir * r * 0.28, -r * 0.08, r * 0.045, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.strokeStyle = dark(0.45);
+      g.lineWidth = pen(r * 0.08);
+      g.lineCap = 'round';
+      g.beginPath();
+      g.moveTo(-r * 0.4, r * 0.3);
+      g.lineTo(r * 0.4, r * 0.3);
+      g.moveTo(-r * 0.1, r * 0.3);
+      g.lineTo(-r * 0.02, r * 0.46);
+      g.stroke();
+      break;
+    }
+    // Tick: a hard little shell split down the back, and its biting head.
+    case 'tick': {
+      g.strokeStyle = dark(0.5);
+      g.lineWidth = pen(r * 0.12);
+      g.beginPath();
+      g.moveTo(0, -r * 0.1);
+      g.lineTo(0, r * 0.5);
+      g.stroke();
+      g.fillStyle = withAlpha(def.borderColor, 0.9);
+      g.beginPath();
+      g.arc(0, -r * 0.32, r * 0.16, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Herdkeeper: a shepherd's crook across it, and a calm eye.
+    case 'herdkeeper': {
+      g.strokeStyle = withAlpha(def.borderColor, 0.8);
+      g.lineWidth = pen(r * 0.1);
+      g.lineCap = 'round';
+      g.beginPath();
+      g.moveTo(-r * 0.3, r * 0.55);
+      g.lineTo(r * 0.12, -r * 0.3);
+      g.arc(r * 0.26, -r * 0.3, r * 0.14, Math.PI, Math.PI * 2.2);
+      g.stroke();
+      g.fillStyle = dark(0.55);
+      g.beginPath();
+      g.arc(-r * 0.18, -r * 0.12, r * 0.09, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Satellite: a small round body caught in a tilted ring, a little world of its own.
+    case 'satellite': {
+      g.strokeStyle = withAlpha(def.borderColor, 0.7);
+      g.lineWidth = pen(r * 0.1);
+      g.beginPath();
+      g.ellipse(0, 0, r * 0.95, r * 0.3, -0.4, 0, Math.PI * 2);
+      g.stroke();
+      g.fillStyle = dark(0.45);
+      g.beginPath();
+      g.arc(0, 0, r * 0.38, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = withAlpha(def.borderColor, 0.85);
+      g.beginPath();
+      g.arc(-r * 0.1, -r * 0.1, r * 0.1, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Comet: a bright head and three streaks of tail behind it, so it reads as straight-line speed.
+    case 'comet': {
+      g.strokeStyle = withAlpha(def.borderColor, 0.75);
+      g.lineWidth = pen(r * 0.12);
+      g.lineCap = 'round';
+      for (const dx of [-0.32, 0, 0.32]) {
+        g.beginPath();
+        g.moveTo(dx * r, r * 0.05);
+        g.lineTo(dx * r * 1.3, r * (0.6 - Math.abs(dx) * 0.4));
+        g.stroke();
+      }
+      g.fillStyle = pale(0.9);
+      g.beginPath();
+      g.arc(0, -r * 0.22, r * 0.2, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Moon: pale craters, and a dark crescent of shadow down one side.
+    case 'moon': {
+      g.fillStyle = dark(0.3);
+      g.beginPath();
+      g.arc(0, 0, r * 0.82, -Math.PI / 2, Math.PI / 2);
+      g.arc(r * 0.3, 0, r * 0.88, Math.PI / 2, -Math.PI / 2, true);
+      g.closePath();
+      g.fill();
+      g.fillStyle = dark(0.25);
+      for (const [cx, cy, cr] of [[-0.3, -0.25, 0.16], [-0.12, 0.3, 0.12], [-0.45, 0.15, 0.08]] as const) {
+        g.beginPath();
+        g.arc(cx * r, cy * r, cr * r, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.strokeStyle = withAlpha(def.borderColor, 0.5);
+      g.lineWidth = pen(r * 0.05);
+      g.beginPath();
+      g.arc(-r * 0.3, -r * 0.25, r * 0.16, Math.PI * 0.9, Math.PI * 1.6);
+      g.stroke();
+      break;
+    }
+    // The Frozen Sea's (plans/late-game/12 §9.1).
+    // Skater: two runner blades under it, and a scarf of cold streaming back.
+    case 'skater': {
+      g.strokeStyle = pale(0.8);
+      g.lineWidth = pen(r * 0.08);
+      g.lineCap = 'round';
+      for (const dx of [-0.28, 0.28]) {
+        g.beginPath();
+        g.moveTo(dx * r - r * 0.18, r * 0.5);
+        g.lineTo(dx * r + r * 0.2, r * 0.5);
+        g.stroke();
+      }
+      g.fillStyle = dark(0.45);
+      g.beginPath();
+      g.ellipse(0, -r * 0.12, r * 0.34, r * 0.14, 0, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Floe: a slab of ice, cracked across, with a pale bevel on its top edge.
+    case 'floe': {
+      g.strokeStyle = pale(0.55);
+      g.lineWidth = pen(r * 0.06);
+      g.beginPath();
+      g.moveTo(-r * 0.6, -r * 0.55);
+      g.lineTo(r * 0.6, -r * 0.55);
+      g.stroke();
+      g.strokeStyle = withAlpha(def.borderColor, 0.7);
+      g.lineWidth = pen(r * 0.05);
+      g.lineJoin = 'round';
+      g.beginPath();
+      g.moveTo(-r * 0.5, -r * 0.2);
+      g.lineTo(-r * 0.1, r * 0.05);
+      g.lineTo(r * 0.05, -r * 0.3);
+      g.lineTo(r * 0.45, r * 0.25);
+      g.moveTo(-r * 0.1, r * 0.05);
+      g.lineTo(-r * 0.2, r * 0.45);
+      g.stroke();
+      break;
+    }
+    // Sledge: a broad push-plate across its front, braced by two struts.
+    case 'sledge': {
+      g.fillStyle = withAlpha(def.borderColor, 0.8);
+      g.fillRect(-r * 0.62, -r * 0.62, r * 1.24, r * 0.18);
+      g.strokeStyle = dark(0.5);
+      g.lineWidth = pen(r * 0.1);
+      g.lineCap = 'round';
+      for (const dx of [-0.3, 0.3]) {
+        g.beginPath();
+        g.moveTo(dx * r, -r * 0.44);
+        g.lineTo(dx * r * 0.6, r * 0.3);
+        g.stroke();
+      }
+      break;
+    }
+    // Groundling: a squat block with roots spread beneath it, held to the ground.
+    case 'groundling': {
+      g.strokeStyle = withAlpha(def.borderColor, 0.75);
+      g.lineWidth = pen(r * 0.09);
+      g.lineCap = 'round';
+      for (const dx of [-0.45, 0, 0.45]) {
+        g.beginPath();
+        g.moveTo(dx * r, r * 0.2);
+        g.quadraticCurveTo(dx * r * 1.3, r * 0.55, dx * r * 1.5 + (dx === 0 ? r * 0.1 : 0), r * 0.85);
+        g.stroke();
+      }
+      g.fillStyle = dark(0.45);
+      g.fillRect(-r * 0.4, -r * 0.35, r * 0.8, r * 0.18);
+      break;
+    }
+    // Conductor: a rod of old iron through its middle, its tip gilt (the halo is drawn each frame).
+    case 'conductor': {
+      g.strokeStyle = dark(0.6);
+      g.lineWidth = pen(r * 0.16);
+      g.lineCap = 'round';
+      g.beginPath();
+      g.moveTo(0, r * 0.6);
+      g.lineTo(0, -r * 0.55);
+      g.stroke();
+      g.fillStyle = withAlpha(def.borderColor, 0.95);
+      g.beginPath();
+      g.arc(0, -r * 0.6, r * 0.16, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    // Squallcaller: a forked bolt down its face.
+    case 'squallcaller': {
+      g.strokeStyle = withAlpha(def.borderColor, 0.9);
+      g.lineWidth = pen(r * 0.1);
+      g.lineJoin = 'round';
+      g.beginPath();
+      g.moveTo(r * 0.1, -r * 0.55);
+      g.lineTo(-r * 0.15, r * 0.02);
+      g.lineTo(r * 0.12, r * 0.02);
+      g.lineTo(-r * 0.08, r * 0.5);
+      g.stroke();
       break;
     }
     default: {

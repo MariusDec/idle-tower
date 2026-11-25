@@ -65,7 +65,7 @@ function unleash(run: RunState, echo: boolean): void {
         const e = run.enemies[i];
         if (!targetable(run, e) || e.x * e.x + e.y * e.y > r2) continue;
         damageEnemy(run, e, floored(e, damage, ult.floor * share), false, 'nova');
-        if (e.alive && !e.boss) knockBack(e, ult.knockback);
+        if (e.alive && !e.boss) knockBack(run, e, ult.knockback);
       }
       run.events.push({ kind: 'nova', radius: run.stats.range });
       break;

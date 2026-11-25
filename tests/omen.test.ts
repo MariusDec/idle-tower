@@ -7,12 +7,12 @@ import { EVOLUTIONS } from '../src/content/evolutions';
 import { FRAMES, frameById } from '../src/content/frames';
 import { FUSION_BY_ID } from '../src/content/fusions';
 import { OMEN_MODS, OMEN_MOD_BY_ID } from '../src/content/omens';
-import { REGIONS } from '../src/content/regions';
+import { ACT1_REGIONS, REGIONS, WAKE_REGIONS } from '../src/content/regions';
 import { STARS } from '../src/content/stars';
 import { SIM_DT } from '../src/app/loop';
 import {
   bankOmen, beginOmen, decodeResult, encodeResult, findResult, omenBand, omenConfig, omenDay, omenLabel, omenSeed, omenTrims,
-  openOmen, poolAnswers, replayOmen, resultLine, rollOmen, scoredFree, settlePending,
+  omenRegion, openOmen, poolAnswers, replayOmen, resultLine, rollOmen, scoredFree, settlePending,
 } from '../src/meta/omen';
 import { bankRun } from '../src/meta/results';
 import { newProfile, type Profile } from '../src/meta/profile';
@@ -103,14 +103,22 @@ describe('the roll (§4.1, §6)', () => {
   });
 
   it('brings every region and frame once per six-day block, never two days running', () => {
-    const start = Math.ceil(N / 6) * 6;
-    for (let b = start; b < start + 360; b += 6) {
+    // Regions: Act 1's six-day cycle, on the days before the Wake joins.
+    const wake = BALANCE.omen.wakeFrom;
+    const start = Math.ceil((wake - 366) / 6) * 6;
+    for (let b = start; b + 6 <= wake; b += 6) {
+      const block = Array.from({ length: 6 }, (_, i) => omenRegion(b + i));
+      expect(new Set(block).size).toBe(ACT1_REGIONS.length);
+      for (const r of block) expect(ACT1_REGIONS.map((x) => x.index)).toContain(r);
+    }
+    const fStart = Math.ceil(N / 6) * 6;
+    for (let b = fStart; b < fStart + 360; b += 6) {
       const block = Array.from({ length: 6 }, (_, i) => rollOmen(b + i));
-      expect(new Set(block.map((r) => r.region)).size).toBe(REGIONS.length);
       expect(new Set(block.map((r) => r.frame)).size).toBe(FRAMES.length);
     }
     for (const n of days) {
-      expect(rollOmen(n + 1).region, `${n}`).not.toBe(rollOmen(n).region);
+      // The seam (§8.10 step 3): the day before the cutover and the cutover day may share a region.
+      if (n + 1 !== wake) expect(rollOmen(n + 1).region, `${n}`).not.toBe(rollOmen(n).region);
       expect(rollOmen(n + 1).frame, `${n}`).not.toBe(rollOmen(n).frame);
     }
   });
@@ -378,5 +386,33 @@ describe('the save', () => {
     const out = migrate({ version: 24, createdAt: 5, shards: 50 }, MIGRATIONS, 25);
     expect(out.version).toBe(25);
     expect(out.omen).toEqual({ since: 0, days: {}, played: 0, best: 0, pending: null });
+  });
+});
+
+describe('the Wake joins the Omen (plans/late-game/12 §8.10)', () => {
+  /** omenRegion(20700 + i), recorded before the cutover code: Act 1's days never move. */
+  const GOLDEN = '1543623541625342613154262653413541623215462461351632543154621265436452132135461543264312';
+
+  it('days before the cutover name the regions they always did', () => {
+    expect(20700 + GOLDEN.length).toBeLessThanOrEqual(BALANCE.omen.wakeFrom);
+    for (let i = 0; i < GOLDEN.length; i++) expect(omenRegion(20700 + i), `${20700 + i}`).toBe(Number(GOLDEN[i]));
+  });
+
+  it('from the cutover, every block of eleven days names each region once', () => {
+    const size = REGIONS.length;
+    const start = Math.ceil(BALANCE.omen.wakeFrom / size) * size;
+    for (let b = start; b < start + size * 40; b += size) {
+      const block = Array.from({ length: size }, (_, i) => omenRegion(b + i));
+      expect([...block].sort((x, y) => x - y)).toEqual(REGIONS.map((r) => r.index).sort((x, y) => x - y));
+    }
+  });
+
+  it('a Wake day builds and runs 60 s headless', () => {
+    const wake = new Set(WAKE_REGIONS.map((r) => r.index));
+    let n = BALANCE.omen.wakeFrom;
+    while (!wake.has(omenRegion(n))) n++;
+    const run = createRun(omenConfig(n), omenSeed(n));
+    for (let t = 0; t < Math.round(60 / SIM_DT) && !run.outcome; t++) step(run, SIM_DT);
+    expect(run.tick).toBeGreaterThan(0);
   });
 });

@@ -32,7 +32,7 @@ import { isCapstone } from '../src/meta/forge';
 import type { Profile } from '../src/meta/profile';
 import { PASSIVES } from '../src/content/passives';
 import { WEAPONS } from '../src/content/weapons';
-import { REGIONS } from '../src/content/regions';
+import { ACT1_REGIONS, WAKE_REGIONS } from '../src/content/regions';
 import { STAR_CARDS } from '../src/content/stars';
 import type { WeaponId } from '../src/content/types';
 import type { RunConfig } from '../src/sim/state';
@@ -44,8 +44,10 @@ import { IN_WORKER, parallel, workerJobs } from './parallel';
 const RUN_SECONDS = 600;
 /** I4's ceiling on one weapon's share of the picks. */
 export const I4_MAX_SHARE = 0.4;
-/** Every Act 1 region (§11.1). */
-export const ALL_REGIONS: readonly number[] = REGIONS.map((r) => r.index);
+/** Every Act 1 region (§11.1): the frontier fixtures' own. */
+export const ALL_REGIONS: readonly number[] = ACT1_REGIONS.map((r) => r.index);
+/** `--wake`: the Wake's regions, on `tools/fixtures/wake-frontiers.json` (plans/late-game/12 §10.3). */
+export const WAKE_INDICES: readonly number[] = WAKE_REGIONS.map((r) => r.index);
 /** Act 1's weapons and passives: none a Constellation lights (§9). */
 const ACT1_WEAPONS = WEAPONS.filter((w) => !STAR_CARDS.has(w.id));
 const ACT1_PASSIVES = PASSIVES.filter((p) => !STAR_CARDS.has(p.id));
@@ -244,7 +246,7 @@ async function main(): Promise<void> {
   }
   const seedsAt = args.indexOf('--seeds');
   const seeds = seedsAt >= 0 ? Number(args[seedsAt + 1]) : 16;
-  const r = arsenalReport(ALL_REGIONS, seeds);
+  const r = arsenalReport(args.includes('--wake') ? WAKE_INDICES : ALL_REGIONS, seeds);
   for (const [region, tally] of Object.entries(r.picks)) {
     const total = Object.values(tally).reduce((a, b) => a + (b ?? 0), 0);
     const twins = r.twin[Number(region)];

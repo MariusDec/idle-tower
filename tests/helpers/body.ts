@@ -10,6 +10,8 @@ export function body(run: RunState, over: Partial<Enemy> = {}): Enemy {
     moving: false, buffSpeed: 1, buffShield: 1, fury: 1, attackTimer: 0, inContact: false, hitTick: -1,
     burn: 0, burnUntil: 0, burnTimer: 0, frozenUntil: 0, under: false, group: 0, shade: false, court: 0,
     plate: 0, slot: 0, shell: 0, dashUntil: 0, gildedUntil: 0, feeds: 0, auraTimer: 0, heading: 1, fled: false, keeper: false,
+    slideX: 0, slideY: 0, impactAt: 0, towing: 0, towedBy: 0, riding: 0, lane: 0,
+    buffOrbit: 1, braced: false, grounded: false, marked: false, pushedUntil: 0,
     ...over,
   };
   run.enemies.push(e);

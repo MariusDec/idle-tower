@@ -3,7 +3,8 @@ import { BOSSES } from '../src/content/bosses';
 import { FORGE } from '../src/content/forge';
 import { buyNode } from '../src/meta/forge';
 import { newProfile } from '../src/meta/profile';
-import { runAct2 } from '../tools/act2';
+import { PACT_LADDER, runAct2 } from '../tools/act2';
+import { WAKE_REGIONS } from '../src/content/regions';
 
 /**
  * The CI-sized Act 2 check (§9, P8): a profile with Act 1 behind it and its
@@ -18,6 +19,9 @@ describe('pacing: Act 2 (§9, P8 gate)', () => {
   p.shards = 1e12;
   for (let k = 0; k < 8; k++) for (const n of FORGE) if (n.type !== 'keystone' && n.type !== 'mastery') while (buyNode(p, n.id)) { /* buy out */ }
   p.shards = 0;
+  // The Wake's ladders topped out, so half an hour climbs Act 1's as it always has
+  // (a Wake run's overtime is long: two runs would fill the half hour).
+  for (const w of WAKE_REGIONS) p.pacts.best[w.index] = PACT_LADDER.length;
   const r = runAct2(p, 0.5, 1);
 
   it('climbs the heat, earns Starlight and lights stars', () => {

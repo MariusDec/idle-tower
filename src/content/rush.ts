@@ -64,6 +64,9 @@ export function rushStage(n: number): RegionDef {
     ...home,
     id: `rush-${stage}`,
     index: RUSH_INDEX,
+    // Not on the Act 1 chain or the Wake's: `regionUnlocked` reads neither for 7 or 8.
+    act: 1,
+    after: null,
     name: `Boss Rush · ${BOSS_BY_ID[boss].name}`,
     text: `Stage ${stage} of ${RUSH_STAGES}.`,
     shardBase: A.shardBase * Math.pow(A.shardGrowth, wave - 1),

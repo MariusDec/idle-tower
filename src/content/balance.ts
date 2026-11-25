@@ -374,6 +374,55 @@ export const BALANCE = {
     wardbreak: [0.5, 0.75, 1],
     /** Abyssal Pearl: Max HP restored as a floor's boss falls. */
     floorHeal: [0.25, 0.35, 0.5],
+    // The Wake's (plans/late-game/12 §8.9).
+    /** Carillon's Clapper: every `clapperEvery` s, every body in range is stunned this long. */
+    clapper: [0.5, 0.65, 0.8],
+    clapperEvery: 8,
+    /** Tuning Fork: damage taken by stunned and frozen bodies. */
+    tuningFork: [0.3, 0.4, 0.5],
+    /** Metronome: damage per `metronomeEvery` s the tower goes unhurt, up to `metronomeSteps` steps. */
+    metronome: [0.02, 0.025, 0.03],
+    metronomeEvery: 10,
+    metronomeSteps: 10,
+    /** Colossus Heart: damage against bodies above half their health. */
+    colossus: [0.3, 0.4, 0.5],
+    /** Tick Bite: damage taken by a body a crit has marked. */
+    tickBite: [0.15, 0.2, 0.25],
+    /** Herd Bell: extra shards from a body at least `herdBellRadius` across (a giant). */
+    herdBell: [0.3, 0.45, 0.6],
+    herdBellRadius: 30,
+    /** Giant's Toe: the share of Sunlance's heat-up kept when it turns to a new target. */
+    giantsToe: [0.5, 0.7, 0.9],
+    // The Orrery's.
+    /** Astrolabe Ring: how much faster Glaives turn and drones fly. */
+    astrolabe: [0.3, 0.45, 0.6],
+    /** Star Chart: how much farther a homing bolt that lost its mark looks for another. */
+    starChart: [2, 2.5, 3],
+    /** Tidal Lock: how much slower bodies within half the range walk. */
+    tidalLock: [0.15, 0.2, 0.25],
+    /** Comet Tail: a Glaive kill's burning ground, its DPS as a share of the body's Max HP, for `cometTailSeconds` s, `cometTailRadius` wide. */
+    cometTail: [0.1, 0.15, 0.2],
+    cometTailSeconds: 2,
+    cometTailRadius: 40,
+    // The Frozen Sea's.
+    /** Leviathan Scale: how much farther knockback pushes, and the most mass a pushed (non-boss) body counts. */
+    leviathan: [0.5, 0.75, 1],
+    leviathanMass: 2,
+    /** Skate Blade: damage taken by a body knocked back within the last `skateSeconds` s. */
+    skateBlade: [0.25, 0.35, 0.45],
+    skateSeconds: 2,
+    /** Floe Shard: a body slain while slowed slows those within `floeShardRadius` by this, for `floeShardSeconds` s. */
+    floeShard: [0.3, 0.4, 0.5],
+    floeShardRadius: 80,
+    floeShardSeconds: 2,
+    // Stormcrown's.
+    /** Thunderhead Core: every `thunderCoreEvery` s, a strike takes this share of the toughest non-boss body's Max HP. */
+    thunderCore: [0.05, 0.07, 0.1],
+    thunderCoreEvery: 10,
+    /** Grounding Wire: the share of lightning and hostile shots the tower turns aside. */
+    grounding: [0.3, 0.4, 0.5],
+    /** Static Charge: ultimate charge (a share of full) each crit adds. */
+    static: [0.0005, 0.00075, 0.001],
     /** Chance an elite kill drops one of its region's relics (§4.3). */
     eliteDrop: 0.3,
     /** Ranks top out here (§5.3: I → III). */
@@ -424,6 +473,13 @@ export const BALANCE = {
     wraith: { cycle: 4, hidden: 1.5 },
     /** Hungering: Max HP it heals for each body that falls near it. */
     hunger: 0.08,
+    // The Wake's own (plans/late-game/12 §6).
+    /** Resonant: its neighbours' speed multiplier, at least (under Toll, a longer lurch). */
+    resonant: 1.8,
+    /** Tidal: its neighbours' Orbit tangent multiplier, at least (before the cap). */
+    tidal: 2,
+    /** Towering: a non-crit hit on it lands at this share. */
+    towering: 0.6,
   },
   /**
    * Overtime Champions (N4): every `every`th wave past the boss brings one, an
@@ -789,7 +845,15 @@ export const BALANCE = {
      * The plan's start ([0, 1, 2, 3, 4, 5, 6]) fell near wave 13 on the median
      * day; every ring to 6 meets the median targets (`npm run omen`, 28 days).
      */
-    ring: [0, 6, 6, 6, 6, 6, 6] as readonly number[],
+    ring: [0, 6, 6, 6, 6, 6, 6, 0, 0, 7, 7, 7, 7, 7] as readonly number[],
+    /** Star node ids lit at max level on the Omen's tower, by region (Wake days, if `npm run omen` says they fall short). */
+    stars: {} as Partial<Record<number, readonly string[]>>,
+    /**
+     * The first Omen day (days since 1970-01-01 UTC) that draws the Wake's
+     * regions: 2026-12-01 (plans/late-game/12 §8.10). Days before it keep
+     * the Act 1 six-day cycle unchanged.
+     */
+    wakeFrom: 20788,
     /** The day's difficulty: banes + twist + boon (a boon's are negative). */
     points: [6, 8] as readonly [number, number],
     /** No pact past this rank in an Omen. */
@@ -804,6 +868,56 @@ export const BALANCE = {
     keep: 60,
     /** Redraws before the twist is dropped (§4.1). */
     redraws: 8,
+  },
+  /** The Wake (plans/late-game/12): its rules' per-rank surges and limits, its Starlight. */
+  wake: {
+    /** D-5: a Wake region's heat record pays this share of Starlight. */
+    heatStarlight: 0.5,
+    /** D-5: Starlight for each Wake boss's first fall. */
+    lump: 25,
+    toll: {
+      /** The lurch keeps a tolled body's average speed at this share of its own. */
+      average: 0.9,
+      /** Blight Surge: the lurch carries this much further per rank. */
+      surge: 1.25,
+      /** Each Ringer alive multiplies the interval by its `hasten`, down to this share. */
+      floor: 0.6,
+      /** The Carillon's quickening never takes the interval below the window × this. */
+      minInterval: 1.2,
+    },
+    orbit: {
+      /** Blight Surge: the tangent's multiplier per rank, and its ceiling (below 1: a spiral, never a ring). */
+      surge: 1.3,
+      max: 0.95,
+    },
+    glide: {
+      /** Below this speed (units/s) a slide ends and the body walks again. */
+      min: 12,
+      /** Seconds between one body's impacts. */
+      cooldown: 0.3,
+      /** The share of a slider's velocity passed to what it hits. */
+      transfer: 0.5,
+      /** Impact damage reads speed up to this (units/s), as a share of it. */
+      cap: 600,
+      /** Under Glide, a blast (Mortar, a rune, a shatter) pushes what it hits this far out from its centre… */
+      blastPush: 24,
+      /** …and a Frost Ring pulse pushes this far out from the tower. */
+      pulsePush: 10,
+    },
+    /** The Leviathan's `floes` (§7.1): loose ones land between the wall + `near` and its standoff − `far`; a ring sits at the wall + `ring`. */
+    floes: { near: 80, far: 40, ring: 70 },
+    giants: {
+      /** Blight Surge: size and HP multiply by this per rank. */
+      surge: 1.25,
+      /** A Tick rides only a body at least this wide (a giant, §4.4)… */
+      host: 30,
+      /** …sitting this share of its host's radius toward the tower. */
+      seat: 0.4,
+    },
+    storm: {
+      /** Blight Surge: the interval multiplies by this per rank. */
+      surge: 0.8,
+    },
   },
   /**
    * How hard overlapping bodies push apart per step, as a fraction of their

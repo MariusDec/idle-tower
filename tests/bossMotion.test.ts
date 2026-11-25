@@ -55,7 +55,8 @@ function fight(a: BossAnimator, id: BossId): BossPose[] {
 
 describe('BossAnimator', () => {
   it('every boss has a character', () => {
-    expect(IDS.length).toBe(9);
+    // Act 1's six, the Abyss's three and the Wake's five (plans/late-game/12 §7.3).
+    expect(IDS.length).toBe(14);
   });
 
   it('stays inside the clamps through a whole fight, for every boss and level', () => {

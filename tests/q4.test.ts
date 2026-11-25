@@ -4,7 +4,7 @@ import { newProfile, type Profile } from '../src/meta/profile';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { bankRun } from '../src/meta/results';
 import { claimFeat } from '../src/meta/feats';
-import { inRush, regionUnlocked } from '../src/meta/collection';
+import { inRush, regionUnlocked, rushOpen } from '../src/meta/collection';
 import { recordRush, runPacts, setPactRank } from '../src/meta/pacts';
 import { fusionBook } from '../src/meta/recipes';
 import { STAR_WEB, skyWhole } from '../src/meta/stars';
@@ -61,7 +61,8 @@ describe("Act 2's economy (S7, B7)", () => {
     claimFeat(p, 'first-light');
     expect(p.starlight).toBe(kindled.starlight);
     for (const f of FEATS) {
-      if (f.after === 'blight') expect(f.starlight).toBeGreaterThanOrEqual(5);
+      // The Abyss's feats surface after the Thunderhead (plans/late-game/12 D-16): Act 2's all the same.
+      if (f.after === 'blight' || f.after === 'thunderhead') expect(f.starlight).toBeGreaterThanOrEqual(5);
       else expect(f.starlight).toBeUndefined();
     }
   });
@@ -96,6 +97,18 @@ describe("Act 2's economy (S7, B7)", () => {
 });
 
 describe('Boss Rush (N8)', () => {
+  it('needs the Thunderhead and the Deepwarden both (plans/late-game/12 D-1)', () => {
+    const p = act2Profile();
+    delete p.bosses.thunderhead;
+    p.bosses.deepwarden = { kills: 1, fastest: 60 };
+    expect(rushOpen(p)).toBe(false);
+    expect(regionUnlocked(p, RUSH_INDEX)).toBe(false);
+    p.bosses.thunderhead = { kills: 1, fastest: 60 };
+    expect(rushOpen(p)).toBe(true);
+    delete p.bosses.deepwarden;
+    expect(rushOpen(p)).toBe(false);
+  });
+
   it('opens once the Deepwarden falls; no pacts, no Trial, and no first kill there', () => {
     const p = act2Profile();
     expect(regionUnlocked(p, RUSH_INDEX)).toBe(false);

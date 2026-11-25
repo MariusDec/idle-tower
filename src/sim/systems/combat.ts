@@ -12,7 +12,7 @@ import { BOSS_BY_ID } from '../../content/bosses';
 import type { AnomalyCell, DamageBy, Enemy, FirePatch, Projectile, RunState, WeaponState } from '../state';
 import { pactLoad, ruleSurge } from '../pacts';
 import { armed, mountOf, muzzle } from './arms';
-import { bossBody, dropPlate, onBossKilled, phasesOf, plateGuard, reflectShot } from './boss';
+import { bossBody, dropPlate, onBossKilled, phasesOf, plateGuard, reflectShot, weakPointMult } from './boss';
 import { mitigate } from './damage';
 import { gainXp, refreshStats } from './draft';
 import { riftShardMult } from './rifts';
@@ -21,6 +21,7 @@ import { regionRule, runRegion, spawnEnemy } from './waves';
 import { addUltCharge, ultGoing } from './ultimate';
 import { eliteReliquary } from './reliquaries';
 import { tallyKill } from './secrets';
+import { towPartner, untow, wakeRule } from './wake';
 
 /** How close a projectile must pass, beyond the body radius, to hit. */
 const HIT_PAD = 6;
@@ -132,7 +133,11 @@ export type DamageSource =
   /** Stormcaller's quirk: a crit's leap to the next body. It never leaps again. */
   | 'leap'
   /** Bulwark Mastery's full shield, bursting on everything in range (plans/mastery-capstones.md). */
-  | 'burst';
+  | 'burst'
+  /** Glide: two bodies colliding on the ice (plans/late-game/12 §4.3). Credited to the rule. */
+  | 'impact'
+  /** Storm: lightning's strike (plans/late-game/12 §4.5). Credited to the rule. */
+  | 'storm';
 
 /** Each weapon has its own pattern, so a pattern names the weapon a hit is credited to (T1). */
 const PATTERN_WEAPON = new Map<DamageSource, WeaponId>(WEAPONS.map((w) => [w.pattern, w.id]));
@@ -171,7 +176,8 @@ const AREA: ReadonlySet<DamageSource> = new Set<DamageSource>(['lob', 'pulse', '
  * never reaches into the fog.
  */
 export function targetable(run: RunState, e: Enemy): boolean {
-  if (!e.alive || e.hiddenUntil > run.time || e.under) return false;
+  // A Tick on its host (plans/late-game/12 §4.4) is out of reach until it leaps.
+  if (!e.alive || e.hiddenUntil > run.time || e.under || e.riding > 0) return false;
   return inLight(e.x, e.y, e.radius, run.stats.light, run.arena);
 }
 
@@ -218,9 +224,15 @@ function aim(run: RunState, doctrine: Targeting, radius: number, width: number, 
   }
 }
 
-/** How much a body matters to a weapon that hunts the toughest: a plate (it guards its boss), a boss, an elite, the rest. */
+/** Types that conduct the storm (plans/late-game/12 §4.5): a weapon that hunts the toughest breaks their rods first. */
+const CONDUCTORS: ReadonlySet<EnemyId> = new Set(ENEMIES.filter((d) => d.verb.kind === 'conduct').map((d) => d.id));
+
+/**
+ * How much a body matters to a weapon that hunts the toughest: a plate (it
+ * guards its boss), a boss, a Conductor (D-18: above an elite), an elite, the rest.
+ */
 function toughness(e: Enemy): number {
-  return e.plate ? 3 : e.boss ? 2 : e.elite ? 1 : 0;
+  return e.plate ? 3 : e.boss ? 2 : !e.court && CONDUCTORS.has(e.type) ? 1.5 : e.elite ? 1 : 0;
 }
 
 /** The toughest targetable body within `radius` of the tower: the highest `toughness`, then the most HP. */
@@ -775,7 +787,9 @@ function chainStrike(run: RunState, x: number, y: number, first: Enemy, p: Weapo
   const struck: number[] = [];
   const points = [x, y];
   let cur: Enemy | null = first;
-  for (let j = 0; j < p.jumps && cur; j++) {
+  // Lightning Rod (plans/late-game/12 §8.9): one more leap a rank.
+  const jumps = p.jumps + (run.behaviours['extra-leap'] ?? 0);
+  for (let j = 0; j < jumps && cur; j++) {
     const hit = rollHit(run, p, crit);
     points.push(cur.x, cur.y);
     struck.push(cur.id);
@@ -814,6 +828,8 @@ function unearth(run: RunState, x: number, y: number, radius: number): Enemy | n
 function frostPulse(run: RunState, w: WeaponState, p: WeaponParams, crit: Rng, cx: number, cy: number, radius: number): void {
   const r2 = radius * radius;
   const freeze = w.evolved ? BALANCE.evolutions['absolute-zero'].freeze * run.stats.durationMult : 0;
+  // Under Glide a pulse pushes out from where it went off (plans/late-game/12 D-22): the tower, for the ring's own.
+  const push = glidePush(run, 'pulse');
   // Only what was there when it went off: a Splitter's fragments, born of
   // this pulse's kill, are the next pulse's (§11.1: AoE *after* the split).
   const n = run.enemies.length;
@@ -831,6 +847,7 @@ function frostPulse(run: RunState, w: WeaponState, p: WeaponParams, crit: Rng, c
       e.slow = Math.max(e.slowUntil > run.time ? e.slow : 0, p.slow);
       e.slowUntil = run.time + p.slowSeconds;
     }
+    if (push > 0) blastPush(run, e, push, cx, cy);
   }
   run.events.push(cx === 0 && cy === 0 ? { kind: 'pulse', radius } : { kind: 'pulse', radius, x: cx, y: cy });
 }
@@ -1050,6 +1067,8 @@ function layRune(run: RunState, p: WeaponParams, target: Enemy, crit: Rng): void
 /** A rune bursts: everything in reach is hit and, from level 5, stunned. Rune Chalk leaves an echo. */
 function burstRune(run: RunState, r: (typeof run.runes)[number]): void {
   run.events.push({ kind: 'rune', x: r.x, y: r.y, burst: true, radius: r.radius });
+  // Under Glide the burst pushes too (plans/late-game/12 D-22).
+  const push = glidePush(run, 'mine');
   const n = run.enemies.length;
   for (let i = 0; i < n; i++) {
     const e = run.enemies[i];
@@ -1058,6 +1077,7 @@ function burstRune(run: RunState, r: (typeof run.runes)[number]): void {
     if ((e.x - r.x) ** 2 + (e.y - r.y) ** 2 > reach * reach) continue;
     damageEnemy(run, e, r.damage, r.crit, 'mine');
     if (r.stun > 0 && e.alive && !e.boss) e.stunnedUntil = Math.max(e.stunnedUntil, run.time + r.stun * run.stats.durationMult);
+    if (push > 0) blastPush(run, e, push, r.x, r.y);
   }
   const chalk = run.behaviours['echo-rune'] ?? 0;
   if (chalk > 0 && !r.echo) {
@@ -1222,12 +1242,16 @@ function rainMeteors(run: RunState, w: WeaponState, p: WeaponParams, dt: number,
 
 /** Damage every body within `radius` of (x, y). Only those there when it lands. */
 function burstAt(run: RunState, x: number, y: number, radius: number, damage: number, crit: boolean, source: DamageSource, skip = 0): void {
+  // Under Glide a blast pushes too (plans/late-game/12 D-22); elsewhere 0, and nothing moves.
+  const push = glidePush(run, source);
   const n = run.enemies.length;
   for (let i = 0; i < n; i++) {
     const e = run.enemies[i];
     if (!targetable(run, e) || e.id === skip) continue;
     const r = radius + e.radius;
-    if ((e.x - x) ** 2 + (e.y - y) ** 2 <= r * r) damageEnemy(run, e, damage, crit, source);
+    if ((e.x - x) ** 2 + (e.y - y) ** 2 > r * r) continue;
+    damageEnemy(run, e, damage, crit, source);
+    if (push > 0) blastPush(run, e, push, x, y);
   }
 }
 
@@ -1283,8 +1307,10 @@ function holdBeam(run: RunState, w: WeaponState, p: WeaponParams, dt: number, ra
   const doctrine = WEAPON_BY_ID[w.id].targeting;
   const best = !target || (doctrine === 'toughest' && toughness(target) < 3) ? aim(run, doctrine, range, 0, mountOf(run, w)) : target;
   if (best && (!target || toughness(best) > toughness(target))) {
+    // Giant's Toe (plans/late-game/12 §8.9): a turn keeps part of the heat-up.
+    const toe = run.behaviours['giants-toe'] ?? 0;
+    w.heat = toe > 0 && w.beamTarget !== 0 ? 1 + (w.heat - 1) * rankValue(BALANCE.relics.giantsToe, toe) : 1;
     target = best;
-    w.heat = 1;
     w.beamTarget = target.id;
   } else if (!target) {
     w.heat = 1;
@@ -1349,7 +1375,9 @@ function sweepBlades(
   run: RunState, w: WeaponState, p: WeaponParams, dt: number, crit: Rng, cx = 0, cy = 0, r = bladeOrbit(run, w, p),
 ): void {
   const from = w.spin;
-  const sweep = p.spin * dt;
+  // Astrolabe Ring (plans/late-game/12 §8.9): the blades turn faster.
+  const ring = run.behaviours.astrolabe ?? 0;
+  const sweep = p.spin * dt * (ring > 0 ? 1 + rankValue(BALANCE.relics.astrolabe, ring) : 1);
   w.spin = (w.spin + sweep) % (Math.PI * 2);
   w.aim = w.spin;
   const TAU = Math.PI * 2;
@@ -1426,7 +1454,9 @@ function flyDrones(run: RunState, w: WeaponState, p: WeaponParams, dt: number, r
     const mx = gx - d.x;
     const my = gy - d.y;
     const md = Math.hypot(mx, my);
-    const stepLen = Math.min(md, W.droneSpeed * dt);
+    // Astrolabe Ring (plans/late-game/12 §8.9): the drones fly faster.
+    const ring = run.behaviours.astrolabe ?? 0;
+    const stepLen = Math.min(md, W.droneSpeed * (ring > 0 ? 1 + rankValue(BALANCE.relics.astrolabe, ring) : 1) * dt);
     if (md > 1e-6) {
       d.x += (mx / md) * stepLen;
       d.y += (my / md) * stepLen;
@@ -1499,7 +1529,10 @@ export function tickProjectiles(run: RunState, dt: number): void {
     if (p.homing) {
       let target = p.target ? enemyById(run, p.target) : null;
       if (!target) {
-        target = nearestEnemy(run, p.x, p.y, RETARGET_RADIUS, p.ignore);
+        // Star Chart (plans/late-game/12 §8.9): a bolt that lost its mark looks farther for another.
+        const chart = run.behaviours['star-chart'] ?? 0;
+        const reach = RETARGET_RADIUS * (chart > 0 ? rankValue(BALANCE.relics.starChart, chart) : 1);
+        target = nearestEnemy(run, p.x, p.y, reach, p.ignore);
         p.target = target ? target.id : 0;
       }
       if (target) {
@@ -1637,7 +1670,7 @@ function strike(run: RunState, p: Projectile, e: Enemy): void {
     }
   }
   // An enraged boss's fury carries it through any shove: it reaches the wall (§4.3).
-  if (p.knockback > 0 && e.alive && !(e.boss && run.boss?.enraged)) knockBack(e, p.knockback);
+  if (p.knockback > 0 && e.alive && !(e.boss && run.boss?.enraged)) knockBack(run, e, p.knockback);
   // Dragonbreath (§11.2): the pellets set what they hit alight.
   if (p.weapon === 'scattershot' && e.alive && evolvedWeapon(run, 'scattershot')) {
     const D = BALANCE.evolutions.dragonbreath;
@@ -1720,13 +1753,72 @@ export function tickBurns(run: RunState, dt: number): void {
   }
 }
 
-/** Shove a body straight away from the tower; heavy bodies move less. */
-export function knockBack(e: Enemy, push: number): void {
-  const d = Math.hypot(e.x, e.y) || 1;
-  const move = push / e.mass;
-  e.x += (e.x / d) * move;
-  e.y += (e.y / d) * move;
+/**
+ * Shove a body away from the tower; heavy bodies move less. An Anchored
+ * elite's neighbours hold (plans/late-game/12 §6), and the Leviathan Scale
+ * shoves harder and treats heavy bodies as light (§8.9). Under Glide (§4.3)
+ * the shove becomes a slide, away from `from` (the tower when absent): a
+ * velocity `tickEnemies` decays, worth `carry` × the old shove in all. A Floe
+ * never slides, and a Sledge and its load slide as one, sharing the push.
+ * Bosses, their court and plates are only ever shoved.
+ */
+export function knockBack(run: RunState, e: Enemy, push: number, from?: { x: number; y: number }): void {
+  if (e.braced) return;
+  const R = BALANCE.relics;
+  const lev = run.behaviours.leviathan ?? 0;
+  const skate = run.behaviours['skate-blade'] ?? 0;
+  const lord = e.boss !== null || e.court !== 0 || e.plate !== 0;
+  const glide = lord ? null : wakeRule(run, 'glide');
+  if (!glide) {
+    const d = Math.hypot(e.x, e.y) || 1;
+    // Without the Scale, exactly the old shove: `push / mass`, straight out.
+    const move = lev > 0 ? (push * (1 + rankValue(R.leviathan, lev))) / (lord ? e.mass : Math.min(e.mass, R.leviathanMass)) : push / e.mass;
+    e.x += (e.x / d) * move;
+    e.y += (e.y / d) * move;
+    e.inContact = false;
+    if (skate > 0) e.pushedUntil = run.time + R.skateSeconds;
+    return;
+  }
+  if (ENEMY_BY_ID[e.type].verb.kind === 'slab') return;
+  const pair = towPartner(run, e);
+  if (pair?.braced) return;
+  const dx = e.x - (from?.x ?? 0);
+  const dy = e.y - (from?.y ?? 0);
+  const d = Math.hypot(dx, dy) || 1;
+  let mass = e.mass + (pair ? pair.mass : 0);
+  let strength = push;
+  if (lev > 0) {
+    strength *= 1 + rankValue(R.leviathan, lev);
+    mass = Math.min(mass, R.leviathanMass);
+  }
+  // × friction: under exponential decay the slide covers `v / friction`, so `carry × push / mass` in all.
+  const v = (strength / mass) * glide.rule.carry * glide.rule.friction;
+  e.slideX += (dx / d) * v;
+  e.slideY += (dy / d) * v;
   e.inContact = false;
+  if (skate > 0) e.pushedUntil = run.time + R.skateSeconds;
+  if (pair) {
+    pair.slideX = e.slideX;
+    pair.slideY = e.slideY;
+    pair.inContact = false;
+    if (skate > 0) pair.pushedUntil = e.pushedUntil;
+  }
+}
+
+/** The sources whose blasts push under Glide (plans/late-game/12 D-22): shells, rune bursts, shatters. */
+const BLASTS: ReadonlySet<DamageSource> = new Set<DamageSource>(['lob', 'mine', 'shatter']);
+
+/** How far a blast from `source` (or a Frost Ring pulse) pushes under Glide (D-22): 0 outside Glide, or for anything else. */
+function glidePush(run: RunState, source: DamageSource): number {
+  if (source !== 'pulse' && !BLASTS.has(source)) return 0;
+  if (!wakeRule(run, 'glide')) return 0;
+  const G = BALANCE.wake.glide;
+  return source === 'pulse' ? G.pulsePush : G.blastPush;
+}
+
+/** A blast's push (D-22): what it hit and left standing slides out from (x, y). Never a boss's bodies. */
+function blastPush(run: RunState, e: Enemy, push: number, x: number, y: number): void {
+  if (push > 0 && e.alive && !e.boss && !e.court && !e.plate) knockBack(run, e, push, { x, y });
 }
 
 /**
@@ -1753,6 +1845,12 @@ function evolvedDeath(run: RunState, e: Enemy, source: DamageSource): void {
       run.events.push({ kind: 'blast', x: e.x, y: e.y, radius: r, weapon: 'frost-ring', style: 'shatter' });
       burstAt(run, e.x, e.y, r, hit, false, 'shatter', e.id);
     }
+  }
+  // Comet Tail (plans/late-game/12 §8.9): a blade's kill leaves burning ground.
+  const tail = run.behaviours['comet-tail'] ?? 0;
+  if (tail > 0 && source === 'orbit') {
+    const R = BALANCE.relics;
+    run.fires.push({ x: e.x, y: e.y, radius: R.cometTailRadius, dps: e.maxHp * rankValue(R.cometTail, tail), until: run.time + R.cometTailSeconds });
   }
   // Sky Hive (N9): a blade's kill calls one too.
   if (source === 'drone' || (source === 'orbit' && fused(run, 'sky-hive'))) callHiveDrone(run, e.x, e.y);
@@ -1795,12 +1893,24 @@ function damageTaken(run: RunState, e: Enemy, raw: number, source: DamageSource)
   if (b.kindling && e.burnUntil > run.time) out *= 1 + rankValue(R.kindling, b.kindling);
   if (b['elite-bane'] && e.elite) out *= 1 + rankValue(R.eliteBane, b['elite-bane']);
   if (b['boss-bane'] && (e.boss || e.court || e.plate)) out *= 1 + rankValue(R.bossBane, b['boss-bane']);
+  // The Wake's (plans/late-game/12 §8.9): the Tuning Fork, on the stunned and frozen; the Metronome, on the clock.
+  if (b['tuning-fork'] && (e.stunnedUntil > run.time || e.frozenUntil > run.time)) out *= 1 + rankValue(R.tuningFork, b['tuning-fork']);
+  if (b.metronome) {
+    const steps = Math.min(R.metronomeSteps, Math.floor((run.time - run.tower.hurtAt) / R.metronomeEvery));
+    out *= 1 + rankValue(R.metronome, b.metronome) * steps;
+  }
+  // Giants' Rest's: the Colossus Heart, on the hale; the Tick Bite, on what a crit marked.
+  if (b.colossus && e.hp > e.maxHp / 2) out *= 1 + rankValue(R.colossus, b.colossus);
+  if (b['tick-bite'] && e.marked) out *= 1 + rankValue(R.tickBite, b['tick-bite']);
+  // The Frozen Sea's: the Skate Blade, on what was knocked back lately.
+  if (b['skate-blade'] && e.pushedUntil > run.time) out *= 1 + rankValue(R.skateBlade, b['skate-blade']);
   // Lens Shard (a secret relic, plans/late-game/05): beams and chains bite bosses harder.
   if (b['lens-shard'] && (source === 'beam' || source === 'chain') && (e.boss || e.court || e.plate)) {
     out *= 1 + rankValue(BALANCE.secrets.lensShard, b['lens-shard']);
   }
   // Forgeheart's plates (S2): while one stands, the heart takes its guard's share.
-  if (e.boss) out *= plateGuard(run);
+  // The Colossus's heart (plans/late-game/12 §7.1): facing the tower, it takes its multiple.
+  if (e.boss) out *= plateGuard(run) * weakPointMult(run, e);
   return out * fusionTaken(run, e, source);
 }
 
@@ -1827,11 +1937,18 @@ export function damageEnemy(run: RunState, e: Enemy, raw: number, crit: boolean,
     raw *= run.stats.critMult;
     crit = true;
   }
+  // A Towering elite (plans/late-game/12 §6): only a crit lands whole.
+  if (e.aura === 'towering' && !crit) raw *= BALANCE.elites.towering;
   const amount = hitBody(run, e, raw * court, crit, source);
+  // Tick Bite (§8.9): a crit marks its body for every later hit.
+  if (crit && run.behaviours['tick-bite'] && e.alive) e.marked = true;
+  // Static Charge (§8.9): every crit charges the ultimate a little.
+  const charge = run.behaviours.static ?? 0;
+  if (crit && charge > 0) chargeUlt(run, rankValue(BALANCE.relics.static, charge), source);
   // Might rank 3: a banked hit that kills runs Executioner on everything near.
   if (banked > 0 && !e.alive && (run.behaviours['might-capstone'] ?? 0) >= 3) executeAround(run, e, source);
   // Field Kit (N6): a crit shoves its body back.
-  if (crit && run.behaviours['set-fields'] && e.alive && !e.boss && !e.plate) knockBack(e, BALANCE.sets.fieldsPush);
+  if (crit && run.behaviours['set-fields'] && e.alive && !e.boss && !e.plate) knockBack(run, e, BALANCE.sets.fieldsPush);
   // Stormcaller (§11.6): a crit leaps to one more body.
   if (crit && run.behaviours.stormcaller && source !== 'leap' && source !== 'overkill') {
     const o = nearestEnemy(run, e.x, e.y, B.stormLeap, e.id);
@@ -1997,6 +2114,32 @@ function executeAround(run: RunState, at: Enemy, source: DamageSource): void {
   }
 }
 
+/**
+ * Charge the ultimate by `gain` (a share of full): a kill's, or Static
+ * Charge's on a crit (plans/late-game/12 §8.9). Full, it holds, unless the
+ * Engineering capstone banks past full.
+ */
+function chargeUlt(run: RunState, gain: number, source: DamageSource): void {
+  const u = run.ult;
+  const engineering = run.behaviours['engineering-capstone'] ?? 0;
+  if (u.charge >= 1 && engineering === 0) return;
+  if (engineering === 0) {
+    u.charge = Math.min(1, u.charge + gain);
+    if (u.charge >= 1) run.events.push({ kind: 'ultReady' });
+    return;
+  }
+  // Engineering Mastery (plans/mastery-capstones.md): rank 2 refunds a
+  // share of a kill made while the ultimate goes off; mid-cast, the charge
+  // still stands full, so it waits for the cast to end.
+  const refund = engineering >= 2 && ultGoing(run, source) ? gain * BALANCE.capstones.refund : 0;
+  if (run.capstones.casting) {
+    run.capstones.refund += refund;
+    addUltCharge(run, gain);
+  } else {
+    addUltCharge(run, gain + refund);
+  }
+}
+
 export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): void {
   if (!e.alive) return;
   e.alive = false;
@@ -2011,7 +2154,9 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   gainXp(run, e.xp * xpMult);
   // Midas Lance (§9): slain gilded, it pays more.
   const gilt = e.gildedUntil > run.time ? BALANCE.evolutions['midas-lance'].shards : 1;
-  const shards = e.shards * run.stats.shardMult * gilt;
+  // Herd Bell (plans/late-game/12 §8.9): a large body pays more.
+  const herd = run.behaviours['herd-bell'] && e.radius >= BALANCE.relics.herdBellRadius ? 1 + rankValue(BALANCE.relics.herdBell, run.behaviours['herd-bell']) : 1;
+  const shards = e.shards * run.stats.shardMult * gilt * herd;
   run.shards += shards;
   if (e.boss) run.shardsFrom.boss += shards;
   else if (e.elite) run.shardsFrom.elites += shards;
@@ -2022,29 +2167,10 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
     run.shards += extra;
     run.shardsFrom.rifts += extra;
   }
-  const u = run.ult;
-  const engineering = run.behaviours['engineering-capstone'] ?? 0;
-  if (u.charge < 1 || engineering > 0) {
-    // Last Light (§11.5): below half HP, the ultimate fills faster.
-    const light = run.behaviours['last-light'] ?? 0;
-    const low = light > 0 && run.tower.hp < run.stats.maxHp / 2 ? rankValue(BALANCE.relics.lastLight, light) : 1;
-    const gain = (e.xp * run.stats.ultChargeMult * low) / u.need;
-    if (engineering === 0) {
-      u.charge = Math.min(1, u.charge + gain);
-      if (u.charge >= 1) run.events.push({ kind: 'ultReady' });
-    } else {
-      // Engineering Mastery (plans/mastery-capstones.md): rank 2 refunds a
-      // share of a kill made while the ultimate goes off; mid-cast, the charge
-      // still stands full, so it waits for the cast to end.
-      const refund = engineering >= 2 && ultGoing(run, source) ? gain * BALANCE.capstones.refund : 0;
-      if (run.capstones.casting) {
-        run.capstones.refund += refund;
-        addUltCharge(run, gain);
-      } else {
-        addUltCharge(run, gain + refund);
-      }
-    }
-  }
+  // Last Light (§11.5): below half HP, the ultimate fills faster.
+  const light = run.behaviours['last-light'] ?? 0;
+  const low = light > 0 && run.tower.hp < run.stats.maxHp / 2 ? rankValue(BALANCE.relics.lastLight, light) : 1;
+  chargeUlt(run, (e.xp * run.stats.ultChargeMult * low) / run.ult.need, source);
   // Soul Jar (§11.5): every so many kills, the tower mends.
   const jar = run.behaviours['soul-jar'] ?? 0;
   if (jar > 0 && run.kills % BALANCE.relics.soulKills === 0) {
@@ -2057,6 +2183,9 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   evolvedDeath(run, e, source);
   feedMaws(run, e);
   feedHungering(run, e);
+  floeShard(run, e);
+  // A Sledge and its load part when either falls (plans/late-game/12 §4.3).
+  if (e.towing !== 0 || e.towedBy !== 0) untow(run, e);
   if (e.boss) {
     onBossKilled(run, e);
     return;
@@ -2076,6 +2205,23 @@ export function kill(run: RunState, e: Enemy, source: DamageSource = 'homing'): 
   if (e.elite) eliteDeath(run, e);
   lastWord(run, e, verb, frozen);
   ruleOnKill(run, e);
+}
+
+/**
+ * Floe Shard (plans/late-game/12 §8.9): a body slain while slowed chills
+ * every body near it, as frost does.
+ */
+function floeShard(run: RunState, dead: Enemy): void {
+  const rank = run.behaviours['floe-shard'] ?? 0;
+  if (rank === 0 || dead.slowUntil <= run.time || dead.slow <= 0) return;
+  const R = BALANCE.relics;
+  const chill = rankValue(R.floeShard, rank);
+  const r2 = R.floeShardRadius * R.floeShardRadius;
+  for (const o of run.enemies) {
+    if (o === dead || !targetable(run, o) || (o.x - dead.x) ** 2 + (o.y - dead.y) ** 2 > r2) continue;
+    o.slow = Math.max(o.slowUntil > run.time ? o.slow : 0, chill);
+    o.slowUntil = Math.max(o.slowUntil, run.time + R.floeShardSeconds);
+  }
 }
 
 /** The types that feed on the fallen: every kill looks for them, so the look is one set lookup a body. */
@@ -2169,6 +2315,20 @@ function lastWord(run: RunState, e: Enemy, verb: EnemyVerb, frozen = false): voi
     case 'devour':
     case 'retreat':
     case 'tide':
+    // The Wake's (plans/late-game/12 §5): none acts at its death.
+    case 'ring':
+    case 'sleepwalk':
+    case 'offbeat':
+    case 'streak':
+    case 'lane':
+    case 'slab':
+    case 'sledge':
+    case 'trample':
+    case 'ride':
+    case 'herd':
+    case 'grounded':
+    case 'conduct':
+    case 'squall':
       return;
     default: {
       const exhaustive: never = verb;
@@ -2204,6 +2364,12 @@ function ruleOnKill(run: RunState, e: Enemy): void {
     case 'stat':
     case 'areaDamage':
     case 'blight':
+    // The Wake's rules act where they move bodies or strike (`systems/wake.ts`), never at a kill.
+    case 'toll':
+    case 'orbit':
+    case 'glide':
+    case 'giants':
+    case 'storm':
       return;
     default: {
       const exhaustive: never = rule;

@@ -8,7 +8,7 @@ import { shortEnds, spawnPoint } from '../../content/arena';
 import type { BossDef, BossPattern, BossPhase, RegionDef } from '../../content/types';
 import type { BossState, Enemy, RunState } from '../state';
 import { bossPhases, pactLoad } from '../pacts';
-import { clearFloor, foeHp, mayInvert, runRegion, spawnEnemy, waveDamage, waveHp, waveShardMult } from './waves';
+import { clearFloor, foeHp, mayInvert, runRegion, spawnEnemy, swallow, waveDamage, waveHp, waveShardMult } from './waves';
 import { gateAngle, ruleLoad } from '../strata';
 import { hurtTower } from './tower';
 import { guardianReliquary } from './reliquaries';
@@ -45,9 +45,18 @@ function formOf(run: RunState, def: BossDef): BossDef {
   return form ? { ...def, phases: form.phases } : def;
 }
 
-/** How often a pattern acts: 0 for once, on entering its phase (a mirror and a rule are always on). */
+/** How often a pattern acts: 0 for once, on entering its phase (a mirror, a rule, a peal, a weak point and a tempest are always on). */
 function period(p: BossPattern): number {
-  return p.kind === 'mirror' || p.kind === 'rule' ? 0 : p.every;
+  switch (p.kind) {
+    case 'mirror':
+    case 'rule':
+    case 'peal':
+    case 'weakpoint':
+    case 'tempest':
+      return 0;
+    default:
+      return p.every;
+  }
 }
 
 function phaseTimers(patterns: readonly BossPattern[]): number[] {
@@ -139,6 +148,18 @@ export function arriveBoss(run: RunState, region: RegionDef): void {
     heading: 1,
     fled: false,
     keeper: false,
+    slideX: 0,
+    slideY: 0,
+    impactAt: 0,
+    towing: 0,
+    towedBy: 0,
+    riding: 0,
+    lane: 0,
+    buffOrbit: 1,
+    braced: false,
+    grounded: false,
+    marked: false,
+    pushedUntil: 0,
   };
   run.enemies.push(body);
   if (run.current) run.current.alive++;
@@ -186,7 +207,8 @@ function wearPlates(run: RunState, region: RegionDef, boss: Enemy, def: BossDef,
   for (let k = worn.length; k < n; k++) {
     const s = spawnEnemy(run, region, boss.type, b.wave, boss.x, boss.y, { single: true });
     Object.assign(s, {
-      plate: boss.id, slot: n === 1 ? 0 : PLATE_FAN * (2 * (k / (n - 1)) - 1),
+      // Orbiting plates (the Astrolabe's rings, plans/late-game/12 §7.2) spread evenly round it; the rest fan toward the tower.
+      plate: boss.id, slot: spec.orbit ? (k / n) * Math.PI * 2 : n === 1 ? 0 : PLATE_FAN * (2 * (k / (n - 1)) - 1),
       hp: boss.maxHp * spec.hp, maxHp: boss.maxHp * spec.hp, armor: waveHp(region, b.wave) * spec.armor,
       radius: spec.radius, speed: 0, mass: def.mass, xp: 0, shards: 0, under: false, shell: 0, hiddenUntil: 0,
     });
@@ -195,10 +217,11 @@ function wearPlates(run: RunState, region: RegionDef, boss: Enemy, def: BossDef,
   placePlates(run, boss);
 }
 
-/** Plates ride on their boss, facing the tower. */
+/** Plates ride on their boss, facing the tower; orbiting plates (§7.2) circle it on the run's clock. */
 function placePlates(run: RunState, boss: Enemy): void {
   if (!run.boss || run.boss.plates === 0) return;
-  const toward = Math.atan2(-boss.y, -boss.x);
+  const orbit = BOSS_BY_ID[run.boss.id].plates?.orbit;
+  const toward = orbit ? run.time * orbit : Math.atan2(-boss.y, -boss.x);
   for (const o of run.enemies) {
     if (!o.alive || o.plate !== boss.id) continue;
     const a = toward + o.slot;
@@ -255,8 +278,8 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
     run.events.push({ kind: 'bossPhase', boss: b.id, phase: b.phase });
   }
   placePlates(run, e);
-  // The mirror turns all the time, not on a timer.
-  for (const p of phases[b.phase].patterns) if (p.kind === 'mirror') b.facet += p.spin * dt;
+  // The mirror, and the Colossus's heart (plans/late-game/12 §7.1), turn all the time, not on a timer.
+  for (const p of phases[b.phase].patterns) if (p.kind === 'mirror' || p.kind === 'weakpoint') b.facet += p.spin * dt;
 
   const B = BALANCE.boss;
   const since = run.time - b.arrivedAt;
@@ -287,6 +310,11 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
       if (p?.kind === 'slam') {
         run.rings.push({ x: e.x, y: e.y, radius: e.radius, speed: p.speed, damage: p.damage * waveDamage(region, b.wave) * fury, hit: false });
         run.events.push({ kind: 'slam', x: e.x, y: e.y });
+      }
+      // The Thunderhead's bolt (plans/late-game/12 §7.1): lightning on the wall.
+      if (p?.kind === 'bolt') {
+        hurtTower(run, p.damage * waveDamage(region, b.wave) * fury, 0, 0, null, 'storm');
+        run.events.push({ kind: 'strike', x: 0, y: 0, tower: true });
       }
     }
     return;
@@ -357,11 +385,74 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
         // Always on while its phase lasts: `ruleLoad` reads it.
         b.timers[i] = ONCE;
         break;
+      // The Wake's (plans/late-game/12 §7.1).
+      case 'peal':
+        // Always on: the Toll clock rolls its ring on each toll (Wake step 1, with the Carillon).
+        b.timers[i] = ONCE;
+        break;
+      case 'weakpoint':
+        // Always on: see the turn above and `weakPointMult`.
+        b.timers[i] = ONCE;
+        break;
+      case 'tempest':
+        // Always on: `tickWake`'s storm clock reads it through `bossTempest`.
+        b.timers[i] = ONCE;
+        break;
+      case 'quicken':
+        // The toll comes sooner; §4.1's floor still holds when the next interval is set.
+        if (run.wake?.toll) run.wake.toll.pace *= p.factor;
+        break;
+      case 'reverse':
+        if (run.wake?.orbit) {
+          run.wake.orbit.spin = run.wake.orbit.spin === 1 ? -1 : 1;
+          run.events.push({ kind: 'orbitTurn', spin: run.wake.orbit.spin });
+        }
+        break;
+      case 'feast':
+        feast(run, e, p);
+        break;
+      case 'bolt':
+        // As a slam: only from its post, a windup, then the strike (above).
+        if (!atPost(e, def)) {
+          b.timers[i] = 0.5;
+          break;
+        }
+        b.windup = p.windup;
+        b.windupPattern = i;
+        run.events.push({ kind: 'windup', x: e.x, y: e.y, seconds: p.windup });
+        return;
+      case 'floes':
+        crackFloes(run, region, e, def, p);
+        break;
       default: {
         const exhaustive: never = p;
         return exhaustive;
       }
     }
+  }
+}
+
+/**
+ * The Leviathan cracks Floes loose (plans/late-game/12 §7.1): stationary
+ * slabs that pay nothing, to slide bodies into. Loose ones land at random
+ * (the `wake` stream) between the wall and the boss's post; a ring sits
+ * evenly round the wall, starting at the boss's angle.
+ */
+function crackFloes(run: RunState, region: RegionDef, boss: Enemy, def: BossDef, p: Extract<BossPattern, { kind: 'floes' }>): void {
+  const F = BALANCE.wake.floes;
+  const rng = Rng.wrap(run.streams.wake);
+  const wall = run.stats.radius;
+  const from = Math.atan2(boss.y, boss.x);
+  const near = wall + F.near;
+  const far = Math.max(near, def.standoff - F.far);
+  for (let k = 0; k < p.count && run.enemies.length < BALANCE.maxEnemies; k++) {
+    const a = p.ring ? from + (k / p.count) * Math.PI * 2 : rng.range(0, Math.PI * 2);
+    const d = p.ring ? wall + F.ring : rng.range(near, far);
+    const x = Math.cos(a) * d;
+    const y = Math.sin(a) * d;
+    const f = spawnEnemy(run, region, 'floe', run.boss!.wave, x, y);
+    Object.assign(f, { speed: 0, xp: 0, shards: 0 });
+    run.events.push({ kind: 'floe', x, y });
   }
 }
 
@@ -468,6 +559,52 @@ export function mirrorFacets(run: RunState): { angle: number; arc: number }[] {
   const p = phasesOf(run, BOSS_BY_ID[b.id])[b.phase].patterns.find((q) => q.kind === 'mirror');
   if (p?.kind !== 'mirror') return [];
   return Array.from({ length: p.facets }, (_, k) => ({ angle: b.facet + (k / p.facets) * Math.PI * 2, arc: p.arc }));
+}
+
+/** The Colossus's heart now (plans/late-game/12 §7.1), for the painter: where it faces, its arc, and whether it faces the tower; null without one. */
+export function weakPoint(run: RunState): { angle: number; arc: number; facing: boolean } | null {
+  const b = run.boss;
+  const e = bossBody(run);
+  if (!b || !e || b.killedIn !== null) return null;
+  const p = phasesOf(run, BOSS_BY_ID[b.id])[b.phase].patterns.find((q) => q.kind === 'weakpoint');
+  if (p?.kind !== 'weakpoint') return null;
+  return { angle: b.facet, arc: p.arc, facing: facesTower(b.facet, e, p.arc) };
+}
+
+/** True when a heart at `facet` on `e` points within `arc / 2` of the tower. */
+function facesTower(facet: number, e: Enemy, arc: number): boolean {
+  const toward = Math.atan2(-e.y, -e.x);
+  return Math.abs(Math.atan2(Math.sin(toward - facet), Math.cos(toward - facet))) <= arc / 2;
+}
+
+/**
+ * What a hit on the boss's body is worth against its heart (§7.1): `mult`
+ * while the heart faces the tower, else 1. Every hit comes from the tower,
+ * so the heart facing it is when every weapon's hit counts.
+ */
+export function weakPointMult(run: RunState, e: Enemy): number {
+  const b = run.boss;
+  if (!b || b.enemy !== e.id) return 1;
+  const p = phasesOf(run, BOSS_BY_ID[b.id])[b.phase].patterns.find((q) => q.kind === 'weakpoint');
+  if (p?.kind !== 'weakpoint') return 1;
+  return facesTower(b.facet, e, p.arc) ? p.mult : 1;
+}
+
+/** The Colossus feasts (§7.1): it swallows the nearest Titan within reach, and heals by its HP. */
+function feast(run: RunState, e: Enemy, p: Extract<BossPattern, { kind: 'feast' }>): void {
+  const r2 = p.radius * p.radius;
+  let best: Enemy | null = null;
+  let bestD = r2;
+  for (const o of run.enemies) {
+    if (!o.alive || o.boss || o.court || o.plate || ENEMY_BY_ID[o.type].verb.kind !== 'trample') continue;
+    const d = (o.x - e.x) ** 2 + (o.y - e.y) ** 2;
+    if (d > bestD) continue;
+    bestD = d;
+    best = o;
+  }
+  if (!best) return;
+  swallow(run, best);
+  e.hp = Math.min(e.maxHp, e.hp + p.heal * best.hp);
 }
 
 /** Shockwaves roll out; each hits the tower once, as it reaches the wall. */

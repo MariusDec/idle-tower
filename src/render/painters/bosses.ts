@@ -58,6 +58,17 @@ const PROFILE: Record<BossId, (a: number, t: number, tell: number) => number> = 
   // The Undertow: three crests that roll round it, a sea that never settles.
   // Winding up, its crests pull in toward the centre.
   undertow: (a, t, tell) => 1 + 0.1 * (1 - 0.8 * tell) * Math.max(0, Math.sin(a * 3 - t * 1.6)) - 0.04 * Math.sin(a * 6 + t),
+  // The Wake's (plans/late-game/12 §7.3).
+  // The Carillon: a bell, wide at the bottom.
+  carillon: (a) => 1 + 0.18 * Math.max(0, Math.sin(a)),
+  // The Astrolabe: a toothed wheel.
+  astrolabe: (a) => 0.92 + 0.08 * Math.sign(Math.sin(a * 12)),
+  // The Leviathan: a back breaking the ice.
+  leviathan: (a, t) => 1 + 0.1 * Math.max(0, Math.sin(a * 3 + t)),
+  // The Colossus: a great head with a jaw.
+  colossus: (a) => 1 + 0.08 * (-Math.sin(a) > 0.5 ? 1 : 0),
+  // The Thunderhead: a cloud that never holds still.
+  thunderhead: (a, t) => 1 + 0.07 * Math.sin(a * 5 + t * 0.8) + 0.04 * Math.sin(a * 9 - t),
 };
 
 /**
@@ -281,6 +292,160 @@ function paintDetail(ctx: CanvasRenderingContext2D, def: BossDef, r: number, t: 
       pupil(ctx, 0, 0, r * 0.06, r * 0.1, pose, withAlpha(lighten(FX.frost, 0.4), 0.8));
       break;
     }
+    // The Wake's bosses (plans/late-game/12 §7.3).
+    case 'carillon': {
+      // A bell's lip across the bottom, bands round the waist, and the
+      // clapper swinging inside; winding up, the mouth glows.
+      ctx.strokeStyle = withAlpha(def.borderColor, 0.6);
+      ctx.lineWidth = r * 0.07;
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.62, r * 0.9, r * 0.16, 0, 0, Math.PI);
+      ctx.stroke();
+      ctx.strokeStyle = withAlpha(def.borderColor, 0.3);
+      ctx.lineWidth = r * 0.04;
+      for (const y of [-0.3, 0.1]) {
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.62, r * y);
+        ctx.quadraticCurveTo(0, r * (y + 0.12), r * 0.62, r * y);
+        ctx.stroke();
+      }
+      ctx.fillStyle = withAlpha(INK['950'], 0.55);
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.5, r * 0.6, r * 0.18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const swing = Math.sin(t * 2.1) * 0.5;
+      const cx = Math.sin(swing) * r * 0.5;
+      const cy = -r * 0.1 + Math.cos(swing) * r * 0.5;
+      ctx.strokeStyle = withAlpha(INK['950'], 0.7);
+      ctx.lineWidth = r * 0.05;
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.1);
+      ctx.lineTo(cx, cy);
+      ctx.stroke();
+      ctx.fillStyle = lighten(FX.gold, 0.2 + 0.4 * tell);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * (0.1 + 0.04 * tell), 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'colossus': {
+      // A great sleeping head: a heavy brow, lidded eyes, and a jaw that
+      // grinds; winding up (or waking), the lids part on a pale glow.
+      ctx.fillStyle = withAlpha(INK['950'], 0.4);
+      ctx.beginPath();
+      ctx.ellipse(0, -r * 0.3, r * 0.75, r * 0.16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      for (const dir of [-1, 1]) {
+        ctx.fillStyle = withAlpha(INK['950'], 0.65);
+        ctx.beginPath();
+        ctx.ellipse(dir * r * 0.32, -r * 0.08, r * 0.17, r * 0.1, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = withAlpha(lighten(FX.gold, 0.35), 0.25 + 0.6 * tell);
+        ctx.beginPath();
+        ctx.ellipse(dir * r * 0.32, -r * 0.08, r * 0.12, r * 0.02 + r * 0.06 * tell, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const grind = Math.sin(t * 0.9) * r * 0.03;
+      ctx.strokeStyle = withAlpha(def.borderColor, 0.45);
+      ctx.lineWidth = r * 0.05;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.55, r * 0.42 + grind);
+      ctx.quadraticCurveTo(0, r * 0.58 + grind, r * 0.55, r * 0.42 + grind);
+      ctx.stroke();
+      ctx.lineWidth = r * 0.03;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * r * 0.16, r * 0.42 + grind);
+        ctx.lineTo(i * r * 0.16, r * 0.52 + grind);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'astrolabe': {
+      // An astrolabe's face: an hour ring of ticks, a pierced star-plate, and
+      // a pointer turning over it; winding up (or turning the field), the
+      // centre jewel brightens.
+      ctx.strokeStyle = withAlpha(def.borderColor, 0.45);
+      ctx.lineWidth = r * 0.035;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.68, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = r * 0.025;
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        const inner = i % 6 === 0 ? 0.52 : 0.6;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * r * inner, Math.sin(a) * r * inner);
+        ctx.lineTo(Math.cos(a) * r * 0.68, Math.sin(a) * r * 0.68);
+        ctx.stroke();
+      }
+      // The rete: a tilted ring turning slowly the other way.
+      ctx.strokeStyle = withAlpha(lighten(FX.gold, 0.15), 0.5);
+      ctx.lineWidth = r * 0.04;
+      ctx.beginPath();
+      ctx.ellipse(r * 0.1, -r * 0.05, r * 0.4, r * 0.32, -t * 0.25, 0, Math.PI * 2);
+      ctx.stroke();
+      const a = t * 0.6;
+      ctx.strokeStyle = withAlpha(INK['950'], 0.7);
+      ctx.lineWidth = r * 0.05;
+      ctx.beginPath();
+      ctx.moveTo(-Math.cos(a) * r * 0.2, -Math.sin(a) * r * 0.2);
+      ctx.lineTo(Math.cos(a) * r * 0.62, Math.sin(a) * r * 0.62);
+      ctx.stroke();
+      ctx.fillStyle = withAlpha(lighten(FX.mana, 0.2), 0.55 + 0.4 * tell);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * (0.09 + 0.04 * tell), 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'thunderhead': {
+      // A storm cloud: darker billows inside it, and a bolt in its belly
+      // that brightens as it winds up, then flickers on the throw.
+      ctx.fillStyle = withAlpha(INK['950'], 0.4);
+      for (const [cx, cy, cr] of [[-0.35, 0.1, 0.32], [0.1, -0.05, 0.38], [0.42, 0.15, 0.26]] as const) {
+        ctx.beginPath();
+        ctx.arc(cx * r, cy * r + Math.sin(t * 0.8 + cx * 4) * r * 0.03, cr * r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const flicker = 0.5 + 0.5 * Math.sin(t * 7) * Math.sin(t * 3.1);
+      ctx.strokeStyle = withAlpha(lighten(FX.mana, 0.3), 0.35 + 0.35 * flicker + 0.3 * tell);
+      ctx.lineWidth = r * (0.05 + 0.03 * tell);
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(r * 0.08, -r * 0.3);
+      ctx.lineTo(-r * 0.12, r * 0.12);
+      ctx.lineTo(r * 0.1, r * 0.12);
+      ctx.lineTo(-r * 0.06, r * 0.55);
+      ctx.stroke();
+      break;
+    }
+    case 'leviathan': {
+      // A back breaking the ice: ridges of pale plates along its spine, a
+      // blowhole that mists, and, winding up, a cold eye opening.
+      ctx.strokeStyle = withAlpha(def.borderColor, 0.5);
+      ctx.lineWidth = r * 0.05;
+      ctx.lineCap = 'round';
+      for (let i = -2; i <= 2; i++) {
+        const x = i * r * 0.22;
+        const lift = Math.sin(t * 0.8 + i * 0.9) * r * 0.03;
+        ctx.beginPath();
+        ctx.moveTo(x - r * 0.08, -r * 0.05 + lift);
+        ctx.lineTo(x, -r * 0.22 + lift);
+        ctx.lineTo(x + r * 0.08, -r * 0.05 + lift);
+        ctx.stroke();
+      }
+      ctx.fillStyle = withAlpha(INK['950'], 0.6);
+      ctx.beginPath();
+      ctx.ellipse(0, -r * 0.45, r * 0.08, r * 0.04, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const mist = 0.5 + 0.5 * Math.sin(t * 1.3);
+      ctx.fillStyle = withAlpha(lighten(FX.frost, 0.3), 0.15 + 0.2 * mist);
+      ctx.beginPath();
+      ctx.arc(0, -r * 0.6 - mist * r * 0.08, r * (0.08 + 0.05 * mist), 0, Math.PI * 2);
+      ctx.fill();
+      pupil(ctx, -r * 0.42, r * 0.18, r * 0.05, r * (0.03 + 0.07 * tell), pose, withAlpha(lighten(FX.frost, 0.4), 0.85));
+      break;
+    }
     default: {
       const exhaustive: never = def.id;
       return exhaustive;
@@ -303,6 +468,28 @@ export function paintFacets(ctx: CanvasRenderingContext2D, x: number, y: number,
     ctx.lineWidth = 3;
     ctx.stroke();
   }
+  ctx.restore();
+}
+
+/**
+ * The Colossus's heart (plans/late-game/12 §9.1): a glowing arc on its rim,
+ * dim as it turns away, bright while it faces the tower and every hit counts.
+ */
+export function paintWeakPoint(
+  ctx: CanvasRenderingContext2D, x: number, y: number, r: number, wp: { angle: number; arc: number; facing: boolean } | null, time: number,
+): void {
+  if (!wp) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  const glow = wp.facing ? 0.75 + 0.25 * Math.sin(time * 8) : 0.35;
+  ctx.strokeStyle = withAlpha(FX.critical, glow * 0.5);
+  ctx.lineWidth = wp.facing ? 12 : 7;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 1.08, wp.angle - wp.arc / 2, wp.angle + wp.arc / 2);
+  ctx.stroke();
+  ctx.strokeStyle = withAlpha(lighten(FX.critical, 0.4), glow);
+  ctx.lineWidth = wp.facing ? 4 : 2;
+  ctx.stroke();
   ctx.restore();
 }
 

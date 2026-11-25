@@ -7,7 +7,7 @@ import { exportProfile, listBackups, pushBackup, readBackup } from '../meta/save
 import { copyText, pickTextFile, saveTextFile } from '../platform/files';
 import { buildRunConfig } from '../meta/runConfig';
 import { beginOmen, omenConfig, omenLabel, omenSeed, openOmen, rollOmen, settlePending } from '../meta/omen';
-import { regionByIndex } from '../content/regions';
+import { WAKE_FINALE, WAKE_REGIONS, regionByIndex, regionOfBoss } from '../content/regions';
 import {
   autoUlt, automations, foremanBuy, playerDraftSeconds, marchOn, maxSpeed, runSpeed, tacticsScopes, togglePin,
 } from '../meta/automation';
@@ -15,7 +15,7 @@ import { buyNode, canAfford, isBuyable, levelOf, nodeCost, refundNode, toggleKey
 import { bankRun, buildOf, trophyAt } from '../meta/results';
 import { buildList, foremanLine, statsList } from '../ui/build';
 import { chooseWaypoint, cursedSlots, frameUnlocked, selectedFrame, swapCursed, toggleCursed, toggleRelic, trophyCount } from '../meta/collection';
-import { act2Playable, clampToPlan, playableFrontier, regionPlayable, sealedRegion, type Plan } from '../meta/plan';
+import { abyssPlayable, act2Playable, clampToPlan, playableFrontier, regionPlayable, sealedRegion, type Plan } from '../meta/plan';
 import { entitlement } from './entitlement';
 import { Paywall } from '../ui/paywall';
 import type { PurchaseResult } from '../billing';
@@ -248,7 +248,7 @@ export class App {
       selectRegion: (index) => this.between(() => {
         if (regionPlayable(this.profile, index, this.plan())) this.profile.region = index;
       }),
-      chooseWaypoint: (floor) => this.between(() => act2Playable(this.profile, this.plan()) && chooseWaypoint(this.profile, floor)),
+      chooseWaypoint: (floor) => this.between(() => abyssPlayable(this.profile, this.plan()) && chooseWaypoint(this.profile, floor)),
       trial: (id) => {
         if (this.between(() => chooseTrial(this.profile, id, this.plan()))) this.startRun();
       },
@@ -547,8 +547,21 @@ export class App {
     if (boss !== null) void this.save();
     // A stratum's guardian (plans/late-game/08 §3.2): its band on the shaft lights, not a region's light.
     const band = boss !== null ? guardianStratum(boss as BossId) : -1;
-    this.go('hub', boss !== null ? 'map' : 'forge', band >= 0 ? { band } : boss !== null);
+    // A Wake boss (plans/late-game/12 §8.3): Act 1's light is already full, so the region it opens rises instead.
+    const home = boss !== null ? regionOfBoss(boss) : undefined;
+    const opened = home?.act === 2 ? WAKE_REGIONS.find((r) => r.after === home.index) : undefined;
+    this.go('hub', boss !== null ? 'map' : 'forge', band >= 0 ? { band } : opened ? { wake: opened.index } : boss !== null);
     if (boss !== null && BOSS_BY_ID[boss as BossId]?.finale) this.ending();
+    if (boss === WAKE_FINALE) this.abyssOpens();
+  }
+
+  /** The Abyss opens (plans/late-game/12 §8.4): the Thunderhead's first fall, once the Map has drawn. */
+  private abyssOpens(): void {
+    const body = 'The Thunderhead breaks, and the storm over Stormcrown dies. Below the high ground, something stirs. '
+      + 'The Abyss is open: descend floor by floor, for Starlight.';
+    window.setTimeout(() => this.modal.show('The way down', body, [
+      { label: 'Onward', primary: true, onClick: () => {} },
+    ]), 2400);
   }
 
   /**
@@ -561,8 +574,8 @@ export class App {
     const body = 'The Blight is broken. Its heart goes dark, and the light runs out to the edge of the world. '
       + `It took ${formatNumber(r.runs)} runs, ${formatNumber(r.kills)} enemies and ${days} day${days === 1 ? '' : 's'}. `
       + 'The tower stands. Act 1 is complete. '
-      + 'But the stars have come out, and something stirs below. Act 2 begins: take on Pacts for Starlight, '
-      + 'light the Constellations, and descend into the Abyss.';
+      + 'But the stars have come out, and the land the Blight held is turning. Act 2 begins: take on Pacts for Starlight, '
+      + 'light the Constellations, and walk the Wake.';
     window.setTimeout(() => this.modal.show('The light returns', body, [
       { label: 'The stars', onClick: () => this.hub.show(this.profile, 'stars') },
       { label: 'Onward', primary: true, onClick: () => {} },
@@ -997,7 +1010,7 @@ export class App {
     const run = this.screen === 'run' || this.screen === 'results' ? this.run : null;
     if (run) {
       if (this.screen === 'run') this.announce(run);
-      this.cues.play(run.events);
+      this.cues.play(run.events, this.music.rootHz());
       this.renderer.consume(run);
       run.events.length = 0;
     }
