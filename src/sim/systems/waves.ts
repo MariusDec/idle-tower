@@ -498,6 +498,12 @@ export function swallow(run: RunState, o: Enemy): void {
   run.events.push({ kind: 'trample', x: o.x, y: o.y });
 }
 
+/** A Floe melts (D-28): gone, with no kill, no pay and no XP, as a swallowed body. */
+export function melt(run: RunState, o: Enemy): void {
+  o.alive = false;
+  if (run.current && o.wave === run.current.n) run.current.alive--;
+}
+
 /** Husk Splinter (§9): hits a Husk's shell swallows fewer. */
 function brittleShell(run: RunState): number {
   const rank = run.behaviours['brittle-shell'] ?? 0;

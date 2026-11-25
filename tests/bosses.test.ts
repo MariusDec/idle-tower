@@ -10,7 +10,7 @@ import { BOSS_WAVE, rollWave, startWave, waveDamage, waveHp, waveShardMult } fro
 import { tickWake } from '../src/sim/systems/wake';
 import { bossBody, tickBoss, tickRings, weakPoint, weakPointMult } from '../src/sim/systems/boss';
 import { body } from './helpers/body';
-import { damageEnemy } from '../src/sim/systems/combat';
+import { damageEnemy, targetable } from '../src/sim/systems/combat';
 import { hurtTower } from '../src/sim/systems/tower';
 import { Rng } from '../src/core/rng';
 import type { RunState } from '../src/sim/state';
@@ -214,6 +214,14 @@ describe('the Carillon (plans/late-game/12 §7.1)', () => {
     const floor = rule.kind === 'toll' ? rule.window * BALANCE.wake.toll.minInterval : NaN;
     expect(run.wake!.toll!.interval).toBeCloseTo(Math.max(floor, before * 0.5));
   });
+
+  it('its quickened toll never comes sooner than 1.5 s (D-27)', () => {
+    const run = carillon(2);
+    run.wake!.toll!.pace = 1e-3;
+    run.wake!.toll!.next = run.time;
+    untilToll(run);
+    expect(run.wake!.toll!.interval).toBeGreaterThanOrEqual(1.5 - 1e-9);
+  });
 });
 
 describe('the Sleeping Colossus (plans/late-game/12 §7.1)', () => {
@@ -378,6 +386,49 @@ describe('the Leviathan (plans/late-game/12 §7.1)', () => {
       tickBoss(run, regionByIndex(11), SIM_DT);
     }
     expect(floes(run)).toHaveLength(8);
+  });
+
+  it('its Floes melt `melt` s after they crack, and all of them when it falls, unpaid (D-28)', () => {
+    const run = atBoss(11);
+    toPost(run);
+    const e = bossBody(run)!;
+    e.hp = e.maxHp * 0.3;
+    tickBoss(run, regionByIndex(11), SIM_DT);
+    const ring = floes(run);
+    expect(ring).toHaveLength(8);
+    for (const f of ring) {
+      expect(f.meltAt).toBeCloseTo(run.time + F.melt, 9);
+      expect(targetable(run, f)).toBe(false);
+    }
+    // A wave's Floe is no terrain: it doesn't melt with the boss.
+    const stray = body(run, { type: 'floe', x: 400, y: 0, radius: 34 });
+    const kills = run.kills;
+    damageEnemy(run, e, 1e12, false);
+    expect(run.boss?.killedIn).not.toBeNull();
+    expect(floes(run)).toEqual([stray]);
+    // Only the boss's own kill counts: a Floe melts unkilled.
+    expect(run.kills).toBe(kills + 1);
+    expect(run.killsBy.floe).toBeUndefined();
+  });
+
+  it('its Floes melt on their own `melt` s after they crack', () => {
+    const run = atBoss(11);
+    toPost(run);
+    const e = bossBody(run)!;
+    e.hp = e.maxHp * 0.3;
+    tickBoss(run, regionByIndex(11), SIM_DT);
+    expect(floes(run)).toHaveLength(8);
+    const t0 = run.time;
+    while ((run.tick + 1) * SIM_DT < t0 + F.melt - SIM_DT / 2) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickWake(run, regionByIndex(11), SIM_DT);
+    }
+    expect(floes(run)).toHaveLength(8);
+    run.tick++;
+    run.time = run.tick * SIM_DT;
+    tickWake(run, regionByIndex(11), SIM_DT);
+    expect(floes(run)).toHaveLength(0);
   });
 
   it('opens no relic slot (D-13)', () => {

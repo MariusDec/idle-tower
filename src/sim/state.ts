@@ -405,6 +405,12 @@ export interface Enemy {
   marked: boolean;
   /** Skate Blade (a relic): run time until which a pushed body takes more. */
   pushedUntil: number;
+  /**
+   * A Floe the Leviathan cracked (`crackFloes`, D-28): run time it melts, with
+   * no kill and no pay; while set, nothing can target it. Unset on every other
+   * body, a wave's Floe included.
+   */
+  meltAt?: number;
 }
 
 export interface Projectile {

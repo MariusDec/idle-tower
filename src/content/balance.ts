@@ -890,7 +890,7 @@ export const BALANCE = {
       /** Each Ringer alive multiplies the interval by its `hasten`, down to this share. */
       floor: 0.6,
       /** The Carillon's quickening never takes the interval below the window × this. */
-      minInterval: 1.2,
+      minInterval: 2.5,
     },
     orbit: {
       /** Blight Surge: the tangent's multiplier per rank, and its ceiling (below 1: a spiral, never a ring). */
@@ -911,8 +911,11 @@ export const BALANCE = {
       /** …and a Frost Ring pulse pushes this far out from the tower. */
       pulsePush: 10,
     },
-    /** The Leviathan's `floes` (§7.1): loose ones land between the wall + `near` and its standoff − `far`; a ring sits at the wall + `ring`. */
-    floes: { near: 80, far: 40, ring: 70 },
+    /**
+     * The Leviathan's `floes` (§7.1): loose ones land between the wall + `near` and its standoff − `far`; a ring sits at the wall + `ring`.
+     * The Floes it cracks are terrain (D-28): nothing aims at one, so each melts `melt` s after it cracks, and all melt when it falls.
+     */
+    floes: { near: 80, far: 40, ring: 70, melt: 20 },
     giants: {
       /** Blight Surge: size and HP multiply by this per rank. */
       surge: 1.25,

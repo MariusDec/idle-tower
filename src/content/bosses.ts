@@ -334,7 +334,7 @@ export const BOSSES: readonly BossDef[] = [
         below: 0.66,
         line: 'Each toll now rolls a shockwave at the wall.',
         patterns: [
-          { kind: 'peal', speed: 420, damage: 2.5 },
+          { kind: 'peal', speed: 420, damage: 1 },
           { kind: 'summon', enemy: 'straggler', packs: 1, every: 10 },
         ],
       },
@@ -342,7 +342,7 @@ export const BOSSES: readonly BossDef[] = [
         below: 0.33,
         line: 'It rings faster and faster. Nothing stands still.',
         patterns: [
-          { kind: 'peal', speed: 460, damage: 2.5 },
+          { kind: 'peal', speed: 460, damage: 1 },
           { kind: 'quicken', every: 20, factor: 0.5 },
         ],
       },
@@ -381,6 +381,7 @@ export const BOSSES: readonly BossDef[] = [
         patterns: [
           { kind: 'reverse', every: 8 },
           { kind: 'summon', enemy: 'satellite', packs: 2, every: 8 },
+          { kind: 'slam', every: 7, windup: 1.3, speed: 420, damage: 1 },
         ],
       },
       {
@@ -389,6 +390,7 @@ export const BOSSES: readonly BossDef[] = [
         patterns: [
           { kind: 'reverse', every: 8 },
           { kind: 'summon', enemy: 'comet', packs: 3, every: 6 },
+          { kind: 'slam', every: 6, windup: 1.3, speed: 420, damage: 1 },
         ],
       },
     ],
@@ -401,7 +403,7 @@ export const BOSSES: readonly BossDef[] = [
     name: 'The Leviathan Under the Ice',
     icon: 'sperm-whale',
     text: 'Cracks floes from the ice, dives out of reach, and rings the wall with ice.',
-    hp: 75,
+    hp: 65,
     armor: 0.03,
     speed: 22,
     radius: 74,
@@ -446,7 +448,7 @@ export const BOSSES: readonly BossDef[] = [
     name: 'The Sleeping Colossus',
     icon: 'giant',
     text: 'Hit its heart when it turns to you. It sheds Titans, then eats them.',
-    hp: 62,
+    hp: 78,
     armor: 0.04,
     speed: 18,
     radius: 82,

@@ -101,7 +101,8 @@ describe('the Toll (plans/late-game/12 §4.1)', () => {
     const run = bellRun();
     for (let i = 0; i < 10; i++) body(run, { type: 'ringer', x: 1000, y: i * 50 });
     while (!run.events.some((ev) => ev.kind === 'toll')) tick(run);
-    expect(run.wake!.toll!.interval).toBeCloseTo(EVERY * BALANCE.wake.toll.floor);
+    // The Ringers' floor, unless the bell's own (the window × `minInterval`, D-27) is higher.
+    expect(run.wake!.toll!.interval).toBeCloseTo(Math.max(EVERY * BALANCE.wake.toll.floor, WINDOW * BALANCE.wake.toll.minInterval));
     // One Ringer: one step of its hasten.
     const one = bellRun();
     body(one, { type: 'ringer', x: 1000, y: 0 });
@@ -689,6 +690,64 @@ describe('Glide (plans/late-game/12 §4.3)', () => {
     knockBack(run, floe, 100);
     expect(floe.slideX).toBe(0);
     expect(floe.x).toBe(at);
+  });
+
+  it('a cracked Floe (D-28) is never a target: nearest, toughest and Drones all pass it by', () => {
+    const tough = { hp: 1e6, maxHp: 1e6 };
+    const floeAt = { type: 'floe' as const, x: 120, y: 0, radius: 34, mass: 8, hp: 1e7, maxHp: 1e7, meltAt: 1e9 };
+    for (const id of ['arcane-bolt', 'sunlance', 'sentinel-drones'] as const) {
+      const run = seaRun();
+      run.weapons = [newWeapon(id, 1)];
+      run.stats = { ...run.stats, critChance: 0 };
+      const floe = body(run, floeAt);
+      const grunt = body(run, { x: -200, y: 0, ...tough });
+      expect(targetable(run, floe)).toBe(false);
+      for (let i = 0; i < 3 / SIM_DT; i++) {
+        run.tick++;
+        run.time = run.tick * SIM_DT;
+        tickWeapons(run, SIM_DT);
+        tickProjectiles(run, SIM_DT);
+      }
+      expect(floe.hp, id).toBe(1e7);
+      expect(grunt.hp, id).toBeLessThan(1e6);
+    }
+  });
+
+  it("a wave's Floe stays an ordinary body: nearest aims at it, and it never melts", () => {
+    const run = seaRun();
+    run.weapons = [newWeapon('arcane-bolt', 1)];
+    run.stats = { ...run.stats, critChance: 0 };
+    const floe = body(run, { type: 'floe', x: 120, y: 0, radius: 34, mass: 8, hp: 1e7, maxHp: 1e7 });
+    const grunt = body(run, { x: -300, y: 0, hp: 1e6, maxHp: 1e6 });
+    expect(targetable(run, floe)).toBe(true);
+    for (let i = 0; i < (BALANCE.wake.floes.melt + 1) / SIM_DT; i++) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickWake(run, regionByIndex(11), SIM_DT);
+      tickWeapons(run, SIM_DT);
+      tickProjectiles(run, SIM_DT);
+    }
+    expect(floe.alive).toBe(true);
+    expect(floe.meltAt).toBeUndefined();
+    expect(floe.hp).toBeLessThan(1e7);
+    expect(grunt.hp).toBe(1e6);
+  });
+
+  it('a slider into a cracked Floe still deals its shatter, and the Floe takes the hit (D-28)', () => {
+    const run = seaRun();
+    run.time = 1;
+    const s = body(run, { x: 300, y: 0, hp: 1e6, maxHp: 1e6, mass: 1 });
+    const floe = body(run, { type: 'floe', x: 352, y: 0, radius: 34, hp: 1e6, maxHp: 1e6, mass: 8, speed: 0, meltAt: 1e9 });
+    s.slideX = 300;
+    separateEnemies(run);
+    const speed = Math.hypot(s.slideX, s.slideY);
+    glideImpacts(run);
+    const hit = rule.impact * (speed / 100) * 1 * waveHp(regionByIndex(11), 1);
+    const verb = ENEMY_BY_ID.floe.verb as { shatter: number };
+    expect(1e6 - floe.hp).toBeCloseTo(hit, 6);
+    expect(1e6 - s.hp).toBeCloseTo(hit * verb.shatter, 6);
+    // Only an impact: any other hit on it lands nothing.
+    expect(damageEnemy(run, floe, 100, false, 'homing')).toBe(0);
   });
 
   it('no impacts, and no slides, outside Glide', () => {
