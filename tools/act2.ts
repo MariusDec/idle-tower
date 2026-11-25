@@ -190,9 +190,10 @@ export interface Act2Report {
 
 /**
  * Play Act 2 for `hours` wall hours from `profile`, which must have the
- * Blight down. The profile is played on in place.
+ * Blight down. The profile is played on in place. With `stopAt`
+ * (`--stop-at`, plans/late-game/12a W2), it ends early once that boss is down.
  */
-export function runAct2(profile: Profile, hours: number, seed: number, keep = false): Act2Report {
+export function runAct2(profile: Profile, hours: number, seed: number, keep = false, stopAt?: BossId): Act2Report {
   const seeds = new Rng(seed * 7919 + 1);
   const end = hours * 3600;
   const fails = new Map<string, number>();
@@ -336,6 +337,8 @@ export function runAct2(profile: Profile, hours: number, seed: number, keep = fa
     clock += bought.length > 0 ? BETWEEN_RUNS.shopping : BETWEEN_RUNS.idle;
     if (lastStar === null && starsLit(profile) === STARS.length) lastStar = clock;
     if (summary.wakeRecord) keepAt(summary.wakeRecord.boss, start + played.wall);
+    // After `keepAt`, so the fixture still gets that boss's save.
+    if (stopAt && bossDown(profile, stopAt)) break;
   }
   const best: Record<number, number> = {};
   for (const r of REGIONS) best[r.index] = bestHeat(profile, r.index);
