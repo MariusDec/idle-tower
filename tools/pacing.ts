@@ -219,6 +219,8 @@ export interface RunRow {
   region: number;
   /** Seconds the boss took to fall, or null if it stood or never came. */
   bossKilledIn: number | null;
+  /** The run ended won: overtime's last wave held, or its time run out (D-26). */
+  cleared: boolean;
 }
 
 export interface PacingReport {
@@ -469,6 +471,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
       bought,
       region: summary.regionId,
       bossKilledIn: summary.boss?.killedIn ?? null,
+      cleared: summary.outcome === 'cleared',
     });
     clock += bought.length > 0 ? BETWEEN_RUNS.shopping : BETWEEN_RUNS.idle;
   }
@@ -792,6 +795,9 @@ async function act2Main(seeds: number, hours: number, reuse: boolean, keep = fal
     console.log(`  seed ${k + 1}: Blight at ${fmt(v.act1)} · runs ${r.runs} (${r.abyssRuns} Abyss) · stars ${r.stars} · capstones ${r.growth.capstones}/12 · Fortune ${r.growth.fortune} · tempered ${r.growth.tempered} · floor ${r.floor} · Starlight ${r.starlight}`
       + ` · reliquaries ${r.reliquaries.claimed}/${r.reliquaries.seen} claimed · anomalies ${r.anomalies.offered} (${r.anomalies.abyss} Abyss) / ${r.runs} runs`);
     console.log(`           frontier heat 1–10: ${ladder}`);
+    // D-26: no run should hit the tools' safety net; the Abyss's longest is O-6's reading.
+    const mins = (s: number): string => (s / 60).toFixed(1);
+    console.log(`           runs cut off: ${r.cutOff} · longest run: region ${mins(r.longest.region)} min, Abyss ${mins(r.longest.abyss)} min`);
     console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')} · last star ${fmt(r.lastStar)}`);
     const src = r.sources;
     console.log(`           Starlight from: ${Object.entries(src.heat).map(([i, n]) => `R${i} ${n}`).join(' · ')} · Abyss ${src.abyss} · strata ${src.strata} · Rush ${src.rush} · feats ${src.feats} · contracts ${src.contracts} · Wake ${src.wake}`);
@@ -951,6 +957,10 @@ async function main(): Promise<void> {
     console.log(`  ${okFin ? 'PASS' : 'FAIL'}  I1b median first ${BOSS_BY_ID[FINALE].name} kill ${fmt(fin)} (${I1B_WANT}) · passes ${count((r) => r.i1b)}`);
     console.log(`  first evolution: ${reports.map((r) => fmt(r.firstEvolution)).join(' ')}`);
     console.log(`        median first evolution ${fmt(medianOf(reports, (r) => r.firstEvolution))} (§7.1 aims at 1:30:00–2:00:00)`);
+    // D-26: how long runs last in sim time, and how many ended won (overtime's last wave held, or its time out).
+    const sims = reports.flatMap((r) => r.runs.map((x) => x.simSeconds)).sort((a, b) => a - b);
+    const simMin = (s: number | undefined): string => ((s ?? 0) / 60).toFixed(1);
+    console.log(`  run sim minutes: median ${simMin(sims[sims.length >> 1])} · max ${simMin(sims[sims.length - 1])} · cleared ${reports.map((r) => r.runs.filter((x) => x.cleared).length).join(' ')}`);
     return;
   }
   const csv = arg('csv', '');

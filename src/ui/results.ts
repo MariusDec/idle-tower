@@ -322,7 +322,7 @@ export class ResultsScreen {
   show(s: RunSummary, autoRestart: boolean, hubLabel = 'Forge', gate: string | null = null): void {
     this.hubBtn.textContent = hubLabel;
     // The hero number (plans/visual-identity.md §6.7): how far the run got, counted up.
-    if (s.outcome === 'cleared') {
+    if (s.outcome === 'cleared' && s.rush) {
       this.hero(null, formatDuration(s.rush?.time ?? s.time), 'Boss Rush cleared');
     } else if (s.abyss) {
       this.hero(s.abyss.floor, '', `Floor reached · wave ${floorWave(s.wave)}`);
@@ -332,7 +332,7 @@ export class ResultsScreen {
       this.hero(s.wave, '', s.wave > 20 ? `Wave reached · overtime +${s.wave - 20}` : 'Wave reached');
     }
     this.headline.textContent = s.outcome === 'cleared'
-      ? 'Every boss fell.'
+      ? (s.rush ? 'Every boss fell.' : 'The region holds.')
       : s.outcome === 'retreat' ? 'The tower withdraws.' : 'The light recedes.';
     // Short of the best (R2 §4): lead with what did improve.
     const plateau = plateauLine(s);

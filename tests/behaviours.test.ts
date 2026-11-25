@@ -105,7 +105,7 @@ describe('Forge behaviours (§11.4)', () => {
       let shots = 0;
       for (let i = 0; i < 600; i++) {
         run.tower.hp = low ? run.stats.maxHp * 0.1 : run.stats.maxHp;
-        run.current = { n: 99, startedAt: 0, spawns: [], next: 0, doneAt: 0, alive: 1 };
+        run.current = { n: 99, startedAt: 0, spawns: [], next: 0, doneAt: null, alive: 1 };
         step(run, SIM_DT);
         shots += run.events.filter((e) => e.kind === 'fire').length;
         run.events.length = 0;

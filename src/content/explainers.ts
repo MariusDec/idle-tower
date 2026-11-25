@@ -83,6 +83,7 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
       'Each boss you defeat opens the next region. Pick a region here: the next run is fought there.',
       'Later regions are harder and pay more shards. Each one has its own enemies and a rule that bends the fight.',
       'Holding out past a region’s boss (overtime) earns trophies at +5, +10 and +15 waves: a one-time shard payout and a light on the tower.',
+      'Twenty waves past the boss, the region holds and the run is won.',
     ],
   },
   {

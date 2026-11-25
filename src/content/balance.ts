@@ -571,6 +571,10 @@ export const BALANCE = {
     stallAfter: 30,
     stallEvery: 5,
     stallGrowth: 1.25,
+    /** D-26 (plans/late-game/12a): the last overtime wave is BOSS_WAVE + this; holding it ends the run, won. */
+    maxWaves: 20,
+    /** …and sim seconds from the boss's fall after which the run ends, won, at the wave it's on (a stalled field can't hold a run forever). */
+    maxSeconds: 600,
   },
   /** Pacts (§9): heat, and what it pays. */
   pacts: {

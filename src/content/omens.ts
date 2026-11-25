@@ -125,7 +125,7 @@ export const OMEN_MOD_BY_ID: Readonly<Record<string, OmenModDef>> = Object.fromE
  * (plans/late-game/11 §4.6): it joins the rules tag, so a code from
  * another build says so.
  */
-export const OMEN_SIM = 1;
+export const OMEN_SIM = 2;
 
 /** The Omen's trims (§5): cosmetic, earned once. */
 export const OMEN_TRIMS = [

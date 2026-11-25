@@ -182,6 +182,10 @@ export interface Act2Report {
    * the Blight's fall, then at each Wake boss's first fall, the Forge shopped.
    */
   saves: FrontierSave[];
+  /** Runs that hit the tools' safety net (`MAX_RUN_SECONDS`) rather than ending (D-26: expect 0). */
+  cutOff: number;
+  /** The longest run's sim seconds, by kind: a region (Act 1 or the Wake), the Abyss, Boss Rush. */
+  longest: { region: number; abyss: number; rush: number };
 }
 
 /**
@@ -213,6 +217,8 @@ export function runAct2(profile: Profile, hours: number, seed: number, keep = fa
   let lastStar: number | null = null;
   const reliquaries = { seen: 0, claimed: 0, faded: 0 };
   const anomalies = { offered: 0, abyss: 0 };
+  let cutOff = 0;
+  const longest = { region: 0, abyss: 0, rush: 0 };
 
   while (clock < end) {
     // The frontier moves with the Wake (plans/late-game/12 §10.1): the newest region opened.
@@ -273,6 +279,9 @@ export function runAct2(profile: Profile, hours: number, seed: number, keep = fa
     clock += played.wall;
     const summary = bankRun(profile, run, played.newCards, speed);
     runs++;
+    if (played.cutOff) cutOff++;
+    const kind = summary.abyss ? 'abyss' : summary.rush ? 'rush' : 'region';
+    longest[kind] = Math.max(longest[kind], run.time);
     if (contract) {
       tallyContract(contracts, contract.tier, summary);
       sources.contracts += summary.contract?.pay?.starlight ?? 0;
@@ -339,6 +348,8 @@ export function runAct2(profile: Profile, hours: number, seed: number, keep = fa
     wake,
     saves,
     contracts,
+    cutOff,
+    longest,
     cursed: Object.fromEntries(ownedCursed(profile).map((r) => [r.id, { rank: relicRank(profile, r.id), bound: profile.bound[r.id] ?? 0 }])),
   };
 }
