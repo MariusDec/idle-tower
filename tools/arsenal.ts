@@ -32,12 +32,14 @@ import { isCapstone } from '../src/meta/forge';
 import type { Profile } from '../src/meta/profile';
 import { PASSIVES } from '../src/content/passives';
 import { WEAPONS } from '../src/content/weapons';
-import { ACT1_REGIONS, WAKE_REGIONS } from '../src/content/regions';
+import { ACT1_REGIONS, WAKE_REGIONS, regionByIndex } from '../src/content/regions';
+import { runRegion } from '../src/sim/systems/waves';
+import { migrate } from '../src/meta/save/migrate';
 import { STAR_CARDS } from '../src/content/stars';
 import type { WeaponId } from '../src/content/types';
 import type { RunConfig } from '../src/sim/state';
 import { botInput } from './bot';
-import { frontierProfile } from './frontier';
+import { frontierProfile, savesAt } from './frontier';
 import { IN_WORKER, parallel, workerJobs } from './parallel';
 
 /** Most of a run's drafts happen before this; the overtime tail adds no new weapons. */
@@ -48,6 +50,8 @@ export const I4_MAX_SHARE = 0.4;
 export const ALL_REGIONS: readonly number[] = ACT1_REGIONS.map((r) => r.index);
 /** `--wake`: the Wake's regions, on `tools/fixtures/wake-frontiers.json` (plans/late-game/12 §10.3). */
 export const WAKE_INDICES: readonly number[] = WAKE_REGIONS.map((r) => r.index);
+/** `--wake`'s reference row: the Blight Heart, the last Act 1 region, which the Wake's shares are read against. */
+export const WAKE_REFERENCE = 6;
 /** Act 1's weapons and passives: none a Constellation lights (§9). */
 const ACT1_WEAPONS = WEAPONS.filter((w) => !STAR_CARDS.has(w.id));
 const ACT1_PASSIVES = PASSIVES.filter((p) => !STAR_CARDS.has(p.id));
@@ -80,9 +84,31 @@ function withCapstones(profile: Profile, on: boolean): Profile {
   return profile;
 }
 
+/** Picks a region's `k`th profile for a report. */
+export type ProfileOf = (region: number, k: number) => Profile;
+
+/**
+ * `--wake`'s profiles: the Wake fixture's, and for the Blight Heart's reference
+ * row that fixture's own profiles at the Blight's fall (every `k`), the towers
+ * Region 9 is entered with. The Act 1 fixture's Blight Heart towers come from
+ * another pacing run, and its arrival half is a Hollow King tower, so a shift
+ * against them would read the tower as much as the region.
+ */
+export const wakeProfileOf: ProfileOf = (region, k) => {
+  if (region !== WAKE_REFERENCE) return frontierProfile(region, k);
+  const saves = savesAt(regionByIndex(WAKE_REFERENCE).boss, true);
+  const profile = migrate(structuredClone(saves[k % saves.length].profile)) as unknown as Profile;
+  // As `frontierProfile` sets any frontier profile to play its region.
+  profile.tutorial.firstDraft = true;
+  profile.region = region;
+  profile.trial = null;
+  profile.contracts.taken = null;
+  return profile;
+};
+
 /** A region's frontier loadout (`tools/frontier.ts`), its `k`th profile: the tower a player first pushing it owns. */
-function frontierConfig(region: number, k = 0) {
-  const base = buildRunConfig(withCapstones(frontierProfile(region, k), CAPSTONES));
+function frontierConfig(region: number, k = 0, profileOf: ProfileOf = frontierProfile) {
+  const base = buildRunConfig(withCapstones(profileOf(region, k), CAPSTONES));
   return {
     ...base,
     regionId: region,
@@ -92,7 +118,21 @@ function frontierConfig(region: number, k = 0) {
   };
 }
 
-export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 16): ArsenalReport {
+export interface ArsenalOptions {
+  /** Picks the profiles: the stored frontier ones by default. */
+  profileOf?: ProfileOf;
+  /**
+   * Every run must play the region asked for, under that region's own rule: a
+   * profile whose region isn't unlocked would otherwise fall back to Region 1
+   * somewhere on the way and the report would read the wrong place.
+   */
+  strict?: boolean;
+  /** A region played only to be read against: left out of I4's worst and unpicked. */
+  reference?: number;
+}
+
+export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 16, opts: ArsenalOptions = {}): ArsenalReport {
+  const { profileOf = frontierProfile, strict = false, reference } = opts;
   const picks: ArsenalReport['picks'] = {};
   const twin: ArsenalReport['twin'] = {};
   const evolutions: ArsenalReport['evolutions'] = {};
@@ -102,7 +142,14 @@ export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 
     const twins: Partial<Record<WeaponId, number>> = (twin[region] = {});
     evolutions[region] = 0;
     for (let seed = 1; seed <= seeds; seed++) {
-      const run = createRun(frontierConfig(region, seed - 1), seed * 7919 + region);
+      const run = createRun(frontierConfig(region, seed - 1, profileOf), seed * 7919 + region);
+      if (strict) {
+        const want = regionByIndex(region).rule?.effect.kind ?? null;
+        const got = runRegion(run).rule?.effect.kind ?? null;
+        if (run.regionId !== region || got !== want) {
+          throw new Error(`Region ${region} seed ${seed}: the run plays Region ${run.regionId} under ${got ?? 'no rule'}, not ${want ?? 'no rule'}`);
+        }
+      }
       let offer = run.twinOffer;
       for (let i = 0; i < RUN_SECONDS / SIM_DT && !run.outcome; i++) {
         step(run, SIM_DT, botInput(run, 'active'));
@@ -120,9 +167,10 @@ export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 
       }
     }
   }
-  let worst: ArsenalReport['worst'] = { weapon: ACT1_WEAPONS[0].id, share: 0, region: regions[0] };
+  const judged = regions.filter((r) => r !== reference);
+  let worst: ArsenalReport['worst'] = { weapon: ACT1_WEAPONS[0].id, share: 0, region: judged[0] };
   const taken = new Set<WeaponId>();
-  for (const region of regions) {
+  for (const region of judged) {
     const tally = picks[region];
     const total = Object.values(tally).reduce((a, b) => a + (b ?? 0), 0);
     for (const [id, n] of Object.entries(tally) as [WeaponId, number][]) {
@@ -132,7 +180,7 @@ export function arsenalReport(regions: readonly number[] = ALL_REGIONS, seeds = 
     }
   }
   // The starting weapon is mounted, never picked: it counts as taken.
-  taken.add(frontierConfig(regions[0]).pool[0] as WeaponId);
+  taken.add(frontierConfig(judged[0], 0, profileOf).pool[0] as WeaponId);
   return { picks, twin, evolutions, worst, unpicked: ACT1_WEAPONS.map((w) => w.id).filter((id) => !taken.has(id)), overlevels };
 }
 
@@ -246,7 +294,14 @@ async function main(): Promise<void> {
   }
   const seedsAt = args.indexOf('--seeds');
   const seeds = seedsAt >= 0 ? Number(args[seedsAt + 1]) : 16;
-  const r = arsenalReport(args.includes('--wake') ? WAKE_INDICES : ALL_REGIONS, seeds);
+  const wake = args.includes('--wake');
+  const r = wake ? arsenalReport([WAKE_REFERENCE, ...WAKE_INDICES], seeds, { profileOf: wakeProfileOf, strict: true, reference: WAKE_REFERENCE }) : arsenalReport(ALL_REGIONS, seeds);
+  if (wake) console.log(`Every run played its own region under its own rule (Region ${WAKE_REFERENCE}, the reference, and ${WAKE_INDICES.join(', ')}).`);
+  const shares = (tally: Partial<Record<WeaponId, number>>): Map<WeaponId, number> => {
+    const total = Object.values(tally).reduce((a, b) => a + (b ?? 0), 0);
+    return new Map(ACT1_WEAPONS.map((w) => [w.id, (tally[w.id] ?? 0) / Math.max(1, total)]));
+  };
+  const reference = wake ? shares(r.picks[WAKE_REFERENCE]) : null;
   for (const [region, tally] of Object.entries(r.picks)) {
     const total = Object.values(tally).reduce((a, b) => a + (b ?? 0), 0);
     const twins = r.twin[Number(region)];
@@ -255,6 +310,16 @@ async function main(): Promise<void> {
     for (const w of ACT1_WEAPONS) {
       const n = tally[w.id] ?? 0;
       console.log(`  ${w.name.padEnd(16)} ${String(n).padStart(4)}  ${((n / Math.max(1, total)) * 100).toFixed(0).padStart(3)}%`);
+    }
+    if (reference && Number(region) !== WAKE_REFERENCE) {
+      let max = { id: ACT1_WEAPONS[0].id, shift: 0 };
+      for (const [id, share] of shares(tally)) {
+        const shift = share - reference.get(id)!;
+        if (Math.abs(shift) > Math.abs(max.shift)) max = { id, shift };
+      }
+      const name = ACT1_WEAPONS.find((w) => w.id === max.id)!.name;
+      const pts = Math.round(max.shift * 100);
+      console.log(`  vs ${regionByIndex(WAKE_REFERENCE).name}: max shift ${pts >= 0 ? '+' : ''}${pts} ${name}`);
     }
   }
   if (CAPSTONES) console.log(`Overlevels taken: ${Object.entries(r.overlevels).map(([id, n]) => `${id} ${n}`).join(', ') || 'none'}`);

@@ -462,7 +462,10 @@ export const BOSSES: readonly BossDef[] = [
       {
         below: 1,
         line: 'Its heart turns as it walks. Strike while it faces you.',
-        patterns: [{ kind: 'weakpoint', arc: 1.2, spin: 0.7, mult: 3 }],
+        patterns: [
+          { kind: 'weakpoint', arc: 1.2, spin: 0.7, mult: 3 },
+          { kind: 'slam', every: 6, windup: 1.3, speed: 420, damage: 5 },
+        ],
       },
       {
         below: 0.6,
@@ -470,6 +473,7 @@ export const BOSSES: readonly BossDef[] = [
         patterns: [
           { kind: 'weakpoint', arc: 1.2, spin: 0.9, mult: 3 },
           { kind: 'summon', enemy: 'titan', packs: 1, every: 7 },
+          { kind: 'slam', every: 5, windup: 1.2, speed: 440, damage: 5 },
         ],
       },
       {
@@ -478,6 +482,7 @@ export const BOSSES: readonly BossDef[] = [
         patterns: [
           { kind: 'summon', enemy: 'titan', packs: 1, every: 6 },
           { kind: 'feast', every: 4, radius: 220, heal: 1 },
+          { kind: 'slam', every: 4, windup: 1.1, speed: 480, damage: 5 },
         ],
       },
     ],
