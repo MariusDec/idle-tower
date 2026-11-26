@@ -855,6 +855,8 @@ export const BALANCE = {
     ring: [0, 6, 6, 6, 6, 6, 6, 0, 0, 7, 7, 7, 7, 7] as readonly number[],
     /** Star node ids lit at max level on the Omen's tower, by region (Wake days, if `npm run omen` says they fall short). */
     stars: Object.fromEntries([9, 10, 11, 12, 13].map((r) => [r, WAKE_OMEN_STARS])) as Partial<Record<number, readonly string[]>>,
+    /** The Wake's days: the Omen tower's damage multiplier by region (a Wake player's tower; plans/late-game/12a §5). */
+    might: { 9: 1.85, 10: 20.4, 11: 30.9, 12: 87.5, 13: 163.9 } as Partial<Record<number, number>>,
     /**
      * The first Omen day (days since 1970-01-01 UTC) that draws the Wake's
      * regions: 2026-12-01 (plans/late-game/12 §8.10). Days before it keep

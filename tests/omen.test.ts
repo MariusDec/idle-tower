@@ -415,4 +415,26 @@ describe('the Wake joins the Omen (plans/late-game/12 §8.10)', () => {
     for (let t = 0; t < Math.round(60 / SIM_DT) && !run.outcome; t++) step(run, SIM_DT);
     expect(run.tick).toBeGreaterThan(0);
   });
+
+  it("the Wake's might (D-31): an Act 1 day is unchanged by it, a Wake day carries it", () => {
+    const might = BALANCE.omen.might;
+    const saved = { ...might };
+    const act1 = new Set(ACT1_REGIONS.map((r) => r.index));
+    const wake = new Set(WAKE_REGIONS.map((r) => r.index));
+    let a = BALANCE.omen.wakeFrom;
+    while (!act1.has(omenRegion(a))) a++;
+    let w = BALANCE.omen.wakeFrom;
+    while (!wake.has(omenRegion(w))) w++;
+    const withMight = { a: JSON.stringify(omenConfig(a)), w: omenConfig(w) };
+    try {
+      for (const k of Object.keys(might)) delete might[Number(k)];
+      expect(JSON.stringify(omenConfig(a))).toBe(withMight.a);
+      expect(omenConfig(w).mods).not.toContainEqual({ key: 'damage', mult: saved[omenRegion(w)] });
+    } finally {
+      Object.assign(might, saved);
+    }
+    expect(saved[omenRegion(w)]).toBeGreaterThan(1);
+    expect(withMight.w.mods).toContainEqual({ key: 'damage', mult: saved[omenRegion(w)] });
+    for (const r of WAKE_REGIONS) expect(might[r.index], r.id).toBeGreaterThan(0);
+  });
 });
