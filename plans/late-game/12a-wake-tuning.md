@@ -1,5 +1,13 @@
 # 12a. The Wake: the four open tuning questions (decision memo and work plan)
 
+**Outcome (2026-11-26):** W1–W12 are done on branch `wake-tuning`. The
+readings, the owner's changes made along the way (D-28 corrected, the
+Colossus slam, rage past Rampart, per-boss `enrageAfter`, the final
+`hpBase`, `shardBase`, `might` and `QUARRY` numbers) and the misses the
+owner accepted are in `docs/balancing.md`, "The Wake: second tuning". Several
+numbers this memo proposes were changed there; that section is the source
+of truth, not this memo. D-26…D-31 are in plan 12 §0.2.
+
 **Status:** 2026-11-25. Decided, not built: nothing in `src/` or `tools/`
 has changed yet. It answers the four questions left open by plan 12's first
 tuning pass (`docs/balancing.md`, "The Wake: first tuning") and ends with an
@@ -183,7 +191,11 @@ would have (`startWave`'s "reaching wave n pays for n − 1", `waves.ts:314–31
 runs): before the Blight falls, no run gets past wave 39, the longest takes
 8.7 sim minutes (3.7 wall minutes at 3×), and only 2 of 102 runs pass wave
 35. So a cap at 40 leaves Act 1's pacing as it is, and 15 would cut real
-Act 1 runs. 20 also keeps every existing threshold reachable: the trophies
+Act 1 runs. **Correction (W1):** that held for seed 1 only, the one seed
+that didn't move. On 7 of 8 seeds pre-Blight runs reach wave 40, and W1
+moved I1b's median Blight 264:23 → 254:56 (still PASS 8/8). The owner
+accepted it and the post-W1 readings became the baseline
+(`docs/balancing.md`, "The Wake: second tuning"). 20 also keeps every existing threshold reachable: the trophies
 at +5/+10/+15, the contracts' overtime `k` ≤ 15, the Omen's bands (+10 at
 most), and the feats *Into the Dark* (wave 30) and *The Long Night* (wave
 40: reaching it is now clearing the region). The long runs are all Act 2

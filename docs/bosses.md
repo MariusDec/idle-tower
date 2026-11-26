@@ -46,21 +46,28 @@ replays hangs them anew. Plates ride on the boss (`placePlates`), never
 walk or get shoved, pay nothing, and fall with it (`plateBreak`).
 
 **The Wake's five** (plans/late-game/12 §7) are the Carillon (Bell
-Marches, 60×), the Astrolabe (Orrery, 55×), the Leviathan Under the Ice
-(Frozen Sea, 58×), the Sleeping Colossus (Giants' Rest, 62×) and the
-Thunderhead (Stormcrown, 65×). Each uses its region's rule against the
+Marches, 90×), the Astrolabe (Orrery, 100×), the Leviathan Under the Ice
+(Frozen Sea, 65×), the Sleeping Colossus (Giants' Rest, 78×) and the
+Thunderhead (Stormcrown, 100×). Each uses its region's rule against the
 tower, through the eight pattern kinds from `peal` down. The always-on ones
 (`peal`, `weakpoint`, `tempest`) have `period` 0, like `mirror`. The
-Thunderhead's first fall opens the Abyss. The multipliers are untuned.
+Thunderhead's first fall opens the Abyss. Each has a threat budget (D-27,
+plans/late-game/12a): the Colossus slams every 6 / 5 / 4 s by phase (damage
+5), the Astrolabe slams in phases 2–3, and the Carillon's peal does half
+what it did. Tuned in `docs/balancing.md`, "The Wake: second tuning".
 
 **The Astrolabe's rings** use Forgeheart's plates with `plates.orbit` set:
 six small plates (6% HP each, guard 0.4) circle the boss at 0.9 rad/s
 instead of hanging toward the tower. `placePlates` spaces them evenly.
 Phase 3 drops them.
 
-**Enrage.** A boss that outlasts `BALANCE.boss.enrageAfter` (90 s) enrages:
-its slams hit ×1.25 harder every further 10 s, and it walks to the wall.
-A fight the tower cannot win ends rather than stalls.
+**Enrage.** A boss that outlasts its `enrageAfter` enrages: its slams hit
+×1.25 harder every further 10 s, and it walks to the wall. A fight the
+tower cannot win ends rather than stalls. `BossDef.enrageAfter` is
+optional, `BALANCE.boss.enrageAfter` (90 s) when absent; only the Wake's
+bosses set it: Carillon 150 s, Astrolabe 165, Leviathan 105, Colossus 90,
+Thunderhead 105. The growth lands past Rampart's cap
+([enemies-and-waves.md](enemies-and-waves.md), overtime).
 
 **Tyranny** (a pact) gives each boss an extra phase (`phasesOf`).
 

@@ -1,11 +1,15 @@
 # 12. The Wake: five regions between the Blight and the Abyss
 
-**Status:** 2026-11-25. Built and tuned (first pass): steps 1–7 are in the
-code. The Omen's cutover (`BALANCE.omen.wakeFrom`) is day 20788, 2026-12-01.
-Step 7 set the bosses' HP, the Bell Marches' and Orrery's `hpBase` and
-`BALANCE.omen.stars` (`docs/balancing.md`, "The Wake: first tuning"). Still
-open: the Act 2 bot's 6–10 h pace, the idle gate (no tool yet), the Omen's
-Wake days (median wave ~20) and `QUARRY` for 9–13.
+**Status:** 2026-11-26. Built and tuned (second pass): steps 1–7 are in
+the code, and plan 12a (`12a-wake-tuning.md`, W1–W12) answered the four
+questions the first pass left open. The Omen's cutover
+(`BALANCE.omen.wakeFrom`) is day 20788, 2026-12-01. The owner accepted
+D-26…D-31 (§0.2) on 2026-11-25. The Thunderhead now falls 2.1 h after the
+Blight (median, active bot), the idle gate passes at 3.0 days, the Omen's
+Wake days reach a median wave 27, and `QUARRY` covers 9–13
+(`docs/balancing.md`, "The Wake: second tuning"; the first pass is "The
+Wake: first tuning"). Still open: O-6 (the Abyss's run length), and with it
+plan 08's 12 h reading.
 Originally 2026-11-23: planned, nothing built. Comes out of the "3–4 more
 maps before the Abyss" brainstorm. The owner settled the decisions in §0.1 on
 2026-11-23. §0.2 lists the smaller calls made while detailing the plan
@@ -100,7 +104,7 @@ re-deriving the design. Before you start:
 | D-3 | What opens when the Blight falls? | **Act 2, as today:** pacts, heat, Starlight, the Constellations and the Bell Marches. Only the Abyss (and so Boss Rush) waits for the Thunderhead. Each later Wake region opens when the previous region's boss falls. |
 | D-4 | Pacts and Trials there? | **Both.** These are regions: `pastRegions` stays false, heat records apply, and each region has three Trials (§8.8). |
 | D-5 | Starlight | **Heat records in the Wake pay ×0.5** (`BALANCE.wake.heatStarlight`), and **each Wake boss's first fall pays a lump of 25** (125 in all). |
-| D-6 | HP and pay curve | **Flat, like Blight Heart.** The difficulty is the rule, not the numbers. Start at `hpBase` 2300–2600 with `hpGrowth` 1.17, and pay between the Blight Heart and ×1.3 of it, tuned with the Act 2 bot (§14). |
+| D-6 | HP and pay curve | ~~**Flat, like Blight Heart.**~~ *Replaced by D-30 (2026-11-25): a staircase.* The difficulty is the rule, not the numbers. Start at `hpBase` 2300–2600 with `hpGrowth` 1.17, and pay between the Blight Heart and ×1.3 of it, tuned with the Act 2 bot (§14). |
 | D-7 | How many regions? | **Five:** the four from the brainstorm plus the Bell Marches. |
 | D-8 | Frontier March | **It marches into the Wake.** After each Wake boss's first fall, `marchOn` moves the next run to the newest Wake region. Once the Thunderhead falls, the march ends at Stormcrown. It never moves a run into the Abyss, as today. *(This needs no code: see §8.1.)* |
 | D-9 | Plan (monetization) | **Paid**, with no new code: `regionPaid(i)` is `i > 3`. |
@@ -125,6 +129,19 @@ re-deriving the design. Before you start:
 | D-23 | The idle gate for the Wake | **The hands-off idle bot fells the Thunderhead within 4 days of the Blight** (§14). | The original plan named an "Act 2 idle window" that doesn't exist yet. If §14's readings show 4 days is wrong, retune the Wake to meet it rather than moving the target. |
 | D-24 | Abyss Starlight the Lantern stars promise | The four Lantern stars ("relics start dropping in the Abyss") **stay where they are** and are accepted as investments made ahead. | Moving them reshapes the Lantern figure. The Wake's lumps cover the wait. |
 | D-25 | "Stormcrown" next to the Storm Crown evolution | **Both names stay** (D-10). | The risk was weighed and accepted: the names differ by a space and may confuse players in the Recipe Book. Don't rename either one while building. |
+
+D-26…D-31 come from plan 12a (`12a-wake-tuning.md`), the second tuning pass.
+**The owner accepted them on 2026-11-25.** The notes in *italics* are changes
+made while building them (W1–W11).
+
+| # | Question | Decision | Why |
+|---|---|---|---|
+| D-26 | Does overtime end? | **Yes, in every region, normal play included:** after 20 waves (wave 40, `BALANCE.overtime.maxWaves`) or 600 sim s past the boss's fall (`maxSeconds`), the run ends won (`cleared`). Not the Abyss or Boss Rush. *Added while building: a contact hit's rage (the horde's fury, the boss's enrage) now grows past Rampart's cap (`hurtTower` caps first), and each boss can set its own `enrageAfter`; the Wake's are 150 / 165 / 105 / 90 / 105 s. It moved Act 1: I1b 264:23 → 255:15, accepted.* | Runs in Giants' Rest and Stormcrown never ended, and paid 1.12^wave shards forever. The owner wants a full run to last 5–20 minutes. |
+| D-27 | What makes a Wake boss dangerous? | **A threat budget per boss:** each boss has an attack of its own, tuned by fells of 12 on the Blight-fall towers. Carillon peal 0.5 (both phases), Astrolabe slams in phases 2–3. *Added while building: the Colossus slams (every 6 / 5 / 4 s by phase, damage 5). It had no attack, and HP alone couldn't stop 11/12 fells.* | The Carillon's peal did 72–81% of the damage taken; the Astrolabe and the Colossus had no attack at all. |
+| D-28 | Floes | **Terrain:** untargetable, melting after 20 s. *Corrected while building: only the Floes the Leviathan cracks (`crackFloes`) are terrain, and they also melt when it falls; a Glide impact still damages and shatters one. The Frozen Sea's wave Floes are unchanged.* | The Leviathan's Floes soaked the `nearest` weapons' shots. The memo had assumed impacts bypass `targetable` and only the Leviathan makes Floes. |
+| D-29 | Orbit's inward pace | **Kept:** a body in the Orrery reaches the wall as fast as a walker (`wake.orbit.pace` 1). | The spiral alone shouldn't buy the tower time. |
+| D-30 | HP and pay curve (replaces D-6) | **A staircase:** `hpBase` 2600 / 32900 / 50000 / 107000 / 200000 and `shardBase` 66 / 150 / 200 / 300 / 400 for regions 9–13. | Flat HP couldn't hold a tower that gains 18 stars in 15 min; the Wake's target is now the Thunderhead in 2–4 h (§14). |
+| D-31 | The Omen's Wake days | **A tower damage `mult` per region** (`BALANCE.omen.might`: 1.85 / 20.4 / 30.9 / 87.5 / 163.9); `OMEN_SIM` 1 → 2. | Ring 7 and the stars can't reach wave 20 against the staircase. Read over the Wake's 25 Omen days. |
 
 ---
 
@@ -2046,14 +2063,18 @@ change (Glide) is built against a game whose Abyss gate is already final.
 
 | Reading | Command | Target |
 |---|---|---|
-| When each Wake boss first falls after the Blight (active bot) | `npm run pacing -- --act2 --hours 16 --seeds 4` | the Carillon within 1 h; the Thunderhead (so the Abyss) within 6–10 h. The strata's own targets then start from the Thunderhead, not the Blight. |
-| Hands-off idle | `npm run pacing -- --idle --wake --seeds 4` | the Thunderhead within 4 days of the Blight (D-23). **A gate.** |
-| Each rule moves the picks | `npm run arsenal -- --wake` | each region moves at least one weapon's share by ≥ 10 points against the Blight Heart's; I4's 40% cap holds per region, with relics on |
-| Boss fights | `npm run inspect -- --seeds 20 --forge all --region 9` (… 13) | each boss takes 25–35 s of expected DPS |
+| When each Wake boss first falls after the Blight (active bot) | `npm run pacing -- --act2 --reuse --stop-at thunderhead --hours 6 --seeds 4` | the Carillon within 30 min; the Thunderhead (so the Abyss) within **2–4 h** (O-1; was 6–10 h); 25–50 min from each boss to the next. The strata's own targets then start from the Thunderhead, not the Blight. |
+| Run length (D-26) | the same | no run cut off by the tools' 3600 s net; no region run over ~20 sim minutes |
+| Hands-off idle | `npm run pacing -- --idle --wake --seeds 4` (once `--make-starts` has saved the starts) | the Thunderhead within 4 days of the Blight (D-23). **A gate.** |
+| Each rule moves the picks | `npm run arsenal -- --wake` | each region moves at least one weapon's share by ≥ 10 points against the Blight Heart's (the reference row); I4's 40% cap holds per region, with relics on |
+| Boss fights | `npm run inspect -- --seeds 12 --frontier --fixture act1 --stop-boss --region 9` (… 13) | fells of 12 on the Blight-fall towers: Carillon ≥ 9, Astrolabe 7–9, Leviathan 5–8, Colossus 4–7, Thunderhead 2–5 |
+| Arrival towers | `npm run inspect -- --seeds 12 --frontier --arrival --stop-boss --region 9` (… 13) | **a reading, not a target** (revised 2026-11-26). It was boss HP ÷ DPS 25–35 s, but that conflicts with pace: for 25–50 min of farming, each boss must be out of reach when its region opens (40–139 s at the second tuning). |
+| Farm rate | each Wake fixture save, heat 0 | ×1.0–1.3 a step (missed at the second tuning: it follows each tower's own region; accepted) |
+| Contracts | `npm run pacing -- --act2 --reuse --hours 4 --seeds 2 --contracts 0.33` | the contract bot's targets |
 | Conductor lifetime | `inspect` with a probe on `conduct` bodies | median < 8 s from arrival in range |
-| The Omen | `npm run omen` (28 days across the cutover) | Wake days meet the median targets |
+| The Omen | `npm run omen -- --days 55 --from 20790` (the Wake's 25 days) | Wake days: median 26–34, band III ≤ 25%, earliest ≥ 15, active − hands-off ≥ 2 |
 | Frame budget | `npm test -- perf` | Glide at 300 bodies, the Bell's swarm, a Champion Titan |
-| Act 1 unchanged | `npm run pacing -- --hours 12 --seeds 8` | I1a, I1b, I3, I6 read as before this plan |
+| Act 1 unchanged | `npm run pacing -- --hours 12 --seeds 8` | I1a, I1b, I3, I6 read as before this plan (D-26 moved I1b's median 264:23 → 255:15, accepted) |
 
 Tune in this order: HP (`hpBase`) for the bot's pace, then pay
 (`shardBase`) for the farm rate, then each rule's own numbers (toll
@@ -2061,7 +2082,8 @@ interval, tangent, carry and impact, the giants' multipliers, the storm's
 interval and wall hit). Change one number at a time and re-read.
 
 `docs/balancing.md` gets a "The Wake" reading with the table above and its
-results.
+results: "The Wake: first tuning" (2026-11-25) and "The Wake: second
+tuning" (2026-11-26).
 
 ---
 

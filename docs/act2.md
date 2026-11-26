@@ -30,6 +30,30 @@ Blight's. Pacts, Starlight, the Constellations and the Omen still open with
 fall pays a lump of 25 (`BALANCE.wake.lump`; `summary.wakeRecord`). The
 Map shows the Wake as its own band above Act 1, in chain order.
 
+**The staircase (D-30, plans/late-game/12a).** Each Wake region is
+tougher and pays more than the one before, so the Wake takes hours, not
+minutes:
+
+| Region | `hpBase` | `shardBase` | Boss `enrageAfter` |
+|---|---|---|---|
+| 9 The Bell Marches | 2600 | 66 | 150 s |
+| 10 The Orrery | 32900 | 150 | 165 s |
+| 11 The Frozen Sea | 50000 | 200 | 105 s |
+| 12 Giants' Rest | 107000 | 300 | 90 s |
+| 13 Stormcrown | 200000 | 400 | 105 s |
+
+The active bot fells the Thunderhead 2.1 h after the Blight (median, 4
+seeds; target 2–4 h), about 30 min a step. Each Wake boss sets its own
+`enrageAfter` (`BALANCE.boss.enrageAfter`, 90 s, elsewhere): their fights
+run longer than Act 1's, and since the enrage now grows past Rampart's cap
+a 90 s enrage would end them all ([bosses.md](bosses.md)).
+
+**The idle gate (D-23).** The hands-off idle bot must fell the Thunderhead
+within 4 days of the Blight. `npm run pacing -- --idle --wake --seeds 4`
+reads it from idle starts saved at the Blight's fall (`--make-starts`
+first): **PASS at 3.0 days** (2.5 2.5 3.0 3.0; the Carillon at 0.0, the
+Astrolabe 0.5, the Leviathan 1.0, the Colossus 1.5 days).
+
 ## Pacts and heat
 
 Eight pacts, each with 3–9 ranks set between runs:

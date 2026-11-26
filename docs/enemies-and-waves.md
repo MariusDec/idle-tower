@@ -30,8 +30,14 @@ bodies move or how big they are, not a number on the tower. The rules live in
 | 9 | The Bell Marches | Toll: bodies move only when the bell tolls (every 3 s, 0.6 s lurch) | Ringer, Sleepwalker, Straggler | The Carillon |
 | 10 | The Orrery | Orbit: everything spirals in (`tangent` 0.6) | Satellite, Comet, Moon | The Astrolabe |
 | 11 | The Frozen Sea | Glide: pushed bodies slide and bowl others over | Skater, Floe, Sledge | The Leviathan Under the Ice |
-| 12 | Giants' Rest | Giants: half the bodies, ×3 HP, ×1.6 size, ×2 reward | Titan, Tick, Herdkeeper | The Sleeping Colossus |
-| 13 | Stormcrown | Storm: lightning strikes the toughest body every 5 s (10% Max HP); a standing Conductor turns it on the tower | Groundling, Conductor, Squallcaller | The Thunderhead |
+| 12 | Giants' Rest | Giants: half the bodies, ×3.5 HP, ×1.6 size, ×2 reward | Titan, Tick, Herdkeeper | The Sleeping Colossus |
+| 13 | Stormcrown | Storm: lightning strikes the toughest body every 5 s (8% Max HP); a standing Conductor turns it on the tower | Groundling, Conductor, Squallcaller | The Thunderhead |
+
+**Floes (D-28).** The Frozen Sea's wave Floes are ordinary bodies:
+targetable, and they don't melt. The Floes the Leviathan cracks loose
+(`crackFloes`) are terrain: no weapon targets them, and they melt after
+20 s (`BALANCE.wake.floes.melt`, `Enemy.meltAt`) or when the boss falls.
+A Glide impact (source `impact`) still damages and shatters one.
 
 The Thunderhead's first fall opens the Abyss (`abyssOpen`). Indices 7 and 8
 are the Abyss and Boss Rush ([act2.md](act2.md)). Each region's `surge` is
@@ -60,7 +66,17 @@ last straggler.
 
 Reaching a wave pays the last one's bonus (`waveBonus`). Wave 20 holds
 until its boss falls; the first overtime wave follows 3 s later, its HP
-growing ×1.25 and its shards ×1.12 a wave until the tower falls.
+growing ×1.25 and its shards ×1.12 a wave.
+
+**Overtime has an end (D-26, plans/late-game/12a).** In every region,
+Act 1 and the Wake, overtime lasts at most 20 waves
+(`BALANCE.overtime.maxWaves`) or 600 sim seconds past the boss's fall
+(`maxSeconds`). When wave 40 would advance under the overlap rule, the run
+ends instead of starting wave 41. Past 600 s it ends at the wave it is
+on. Either way it pays that wave's bonus, as reaching the next would have
+(`holdRegion`), and the run ends **won** (`outcome: 'cleared'`, a `cleared` event): the tower
+held the region. A tower that falls first ends the run as before. The
+Abyss and Boss Rush have no overtime, so neither limit applies there.
 
 **A stalled wave enrages its horde.** Overtime only ends a run while
 waves keep coming. A field full of bodies the tower can't kill (Menders
@@ -72,6 +88,16 @@ wave held back by the full field with no spawn placed for
 every hit on the tower grows ×1.25 each further 5 s (`hordeFury`) until
 the wall falls. A spawn getting in (the tower made room) restarts the
 clock. Before the boss a full field is only a hard wave.
+
+**Rage grows past Rampart.** Rampart caps a contact hit at a slice of
+Max HP (`BALANCE.behaviours.rampartCap`). `hurtTower` applies that cap
+*before* the rage, then multiplies by the horde's fury and the boss's
+enrage (`bossRage`: its current damage over its base hit), so a raging
+fight still ends. Before, the cap came after the rage and held every hit
+to the same slice, and a high-regen tower stalled at the boss for 25–60
+sim minutes. A boss enrages after its own `BossDef.enrageAfter`
+(`BALANCE.boss.enrageAfter`, 90 s, when absent): the Wake's five set 150,
+165, 105, 90 and 105 s ([bosses.md](bosses.md)).
 
 **Champions and trophies (N4).** Every fifth overtime wave (25, 30, …;
 `isChampionWave`, never in the Abyss) brings a **Champion**: an elite with
