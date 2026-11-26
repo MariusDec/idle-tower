@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ABYSS_INDEX } from '../src/content/abyss';
 import { BOSSES } from '../src/content/bosses';
-import { contractText, plural } from '../src/content/contracts';
+import { QUARRY, contractText, plural } from '../src/content/contracts';
 import { FORGE } from '../src/content/forge';
 import { MAX_TEXT_WORDS } from '../src/content/lint';
 import { REGIONS, WAKE_REGIONS } from '../src/content/regions';
@@ -562,6 +562,18 @@ describe('the Wake on the board (plans/late-game/12 §8.11)', () => {
       for (const s of SLOTS) reroll(p, p.contracts.board.find((c) => c.slot === s)!.id);
     }
     expect([...places].sort((a, b) => a - b)).toEqual(WAKE_REGIONS.map((r) => r.index));
+  });
+
+  it('every Wake region has its quarry: two types, each in its pool, each a count to work for', () => {
+    for (const r of WAKE_REGIONS) {
+      const q = QUARRY[r.index] ?? [];
+      expect(q.length, r.name).toBe(2);
+      const pool = new Set<string>([...r.pool.map((p) => p.enemy), ...Object.values(r.beats).flatMap((b) => (b.kind === 'introduce' ? [b.enemy] : []))]);
+      for (const { enemy, n } of q) {
+        expect(pool.has(enemy), `${r.name}: ${enemy}`).toBe(true);
+        expect(n, `${r.name}: ${enemy}`).toBeGreaterThanOrEqual(10);
+      }
+    }
   });
 
   it('the free plan draws no Wake region', () => {
