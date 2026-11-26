@@ -896,6 +896,8 @@ export const BALANCE = {
       /** Blight Surge: the tangent's multiplier per rank, and its ceiling (below 1: a spiral, never a ring). */
       surge: 1.3,
       max: 0.95,
+      /** D-29: the inward part of a spiral's step as a share of the walker's pace (1: no free time). */
+      pace: 1,
     },
     glide: {
       /** Below this speed (units/s) a slide ends and the body walks again. */

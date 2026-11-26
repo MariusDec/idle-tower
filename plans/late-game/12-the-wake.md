@@ -313,8 +313,9 @@ key. `REGION_VOICES[9]`: loop `[[0,3,7],[-5,-2,2],[0,3,7],[-2,2,5]]`, figure
 
 **The rule (§4.2).** Each orbiting body's step is split into an inward part
 and a sideways part. The sideways part is `tangent` (0.6) times the inward
-part, so the path is a spiral. The step keeps its length, so a body arrives
-about 1.17× later. That's the price of the geometry, not a speed change. The
+part, so the path is a spiral. The inward part keeps the walker's pace
+(D-29, `BALANCE.wake.orbit.pace` 1) and the sideways part rides on top, so a
+body arrives on time: Orbit strains leading shots without buying time. The
 spin direction is rolled per wave.
 
 **Natives**
@@ -1002,8 +1003,7 @@ with a helper `orbitStep(run, e, verb, len, d, stop)` from `wake.ts`:
 const k = orbitShare(run, e, verb);    // tangent × 1.3^s, capped at 0.95, × e.buffOrbit; 0 if exempt
 const rx = -e.x / d, ry = -e.y / d;    // inward unit
 const tx = -ry * spin, ty = rx * spin; // sideways unit
-const n = Math.hypot(1, k);
-const inward = Math.min(len / n, d - stop);   // never past the stop
+const inward = Math.min(len * BALANCE.wake.orbit.pace, d - stop);   // D-29: the walker's pace; never past the stop
 const side = (inward * k);
 e.x += rx * inward + tx * side;
 e.y += ry * inward + ty * side;
@@ -1024,8 +1024,8 @@ lane, orbit as everything else does).
 `lane` as walking in (`true`).
 
 **Tests:** under Orbit with `tangent 0.6`, a body's radial distance shrinks
-monotonically and its angle changes, and it reaches the wall in 1.12–1.22×
-the time a straight walker takes. A Comet's angle never changes. A Moon
+monotonically and its angle changes, and it reaches the wall within 2% of
+the time a straight walker takes (D-29: the inward part keeps the pace). A Comet's angle never changes. A Moon
 spends ≥ π × 320 / speed seconds at 320 ± 1.
 
 ### 4.3 Glide (M)

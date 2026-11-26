@@ -307,13 +307,14 @@ export function orbitShare(run: RunState, e: Enemy, verb: EnemyVerb | null, orbi
 /**
  * One step of `len` toward `stop` (§4.2): straight in when `k` is 0, else a
  * spiral whose sideways part is `k` of its inward part, turning the way the
- * field spins. The step keeps its length and never passes the stop. Returns
- * how far in it came.
+ * field spins. The inward part keeps the walker's pace (× `orbit.pace`, D-29),
+ * the sideways part rides on top, and it never passes the stop. Returns how
+ * far in it came.
  */
 export function orbitStep(run: RunState, e: Enemy, k: number, len: number, d: number, stop: number): number {
   const rx = -e.x / d;
   const ry = -e.y / d;
-  const inward = Math.min(len / Math.hypot(1, k), d - stop);
+  const inward = Math.min(len * BALANCE.wake.orbit.pace, d - stop);
   if (k === 0) {
     e.x += rx * inward;
     e.y += ry * inward;

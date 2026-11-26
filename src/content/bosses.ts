@@ -334,7 +334,7 @@ export const BOSSES: readonly BossDef[] = [
         below: 0.66,
         line: 'Each toll now rolls a shockwave at the wall.',
         patterns: [
-          { kind: 'peal', speed: 420, damage: 1 },
+          { kind: 'peal', speed: 420, damage: 0.5 },
           { kind: 'summon', enemy: 'straggler', packs: 1, every: 10 },
         ],
       },
@@ -342,7 +342,7 @@ export const BOSSES: readonly BossDef[] = [
         below: 0.33,
         line: 'It rings faster and faster. Nothing stands still.',
         patterns: [
-          { kind: 'peal', speed: 460, damage: 1 },
+          { kind: 'peal', speed: 460, damage: 0.5 },
           { kind: 'quicken', every: 20, factor: 0.5 },
         ],
       },

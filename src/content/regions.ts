@@ -336,7 +336,7 @@ export const REGIONS: readonly RegionDef[] = [
       10: { kind: 'introduce', enemy: 'herdkeeper', packs: 1 },
       15: { kind: 'swarm', countMult: 1.4 },
     },
-    rule: { name: 'Giants', text: 'Half the bodies, each three times as tough.', effect: { kind: 'giants', count: 0.5, size: 1.6, hp: 3, reward: 2 } },
+    rule: { name: 'Giants', text: 'Half the bodies, each three and a half times as tough.', effect: { kind: 'giants', count: 0.5, size: 1.6, hp: 3.5, reward: 2 } },
     surge: { text: 'The giants grow: a quarter larger, a quarter tougher.', effect: { kind: 'rule' } },
     boss: 'colossus',
     tint: '#4a4236',
@@ -372,7 +372,7 @@ export const REGIONS: readonly RegionDef[] = [
     rule: {
       name: 'Storm',
       text: 'Lightning strikes the toughest body, unless a Conductor stands.',
-      effect: { kind: 'storm', every: 5, damage: 0.1, wall: 3 },
+      effect: { kind: 'storm', every: 5, damage: 0.08, wall: 5 },
     },
     surge: { text: 'The storm quickens: strikes come a fifth sooner.', effect: { kind: 'rule' } },
     boss: 'thunderhead',

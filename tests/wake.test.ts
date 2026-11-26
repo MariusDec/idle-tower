@@ -186,11 +186,11 @@ describe('Giants (plans/late-game/12 §4.4)', () => {
     expect(five.filter((s) => s.enemy === 'tick').length).toBeGreaterThanOrEqual(2 * ENEMY_BY_ID.tick.pack[0]);
   });
 
-  it('a giant has ×3 HP, ×1.6 radius, ×2 shards and XP, and the mass of its size', () => {
+  it('a giant has ×3.5 HP, ×1.6 radius, ×2 shards and XP, and the mass of its size', () => {
     const run = giantsRun();
     const g = spawnEnemy(run, REST(), 'titan', 3, 900, 0);
     const p = spawnEnemy(run, PLAIN(), 'titan', 3, 900, 0);
-    expect(g.maxHp / p.maxHp).toBeCloseTo(3);
+    expect(g.maxHp / p.maxHp).toBeCloseTo(3.5);
     expect(g.radius / p.radius).toBeCloseTo(1.6);
     expect(g.shards / p.shards).toBeCloseTo(2);
     expect(g.xp / p.xp).toBeCloseTo(2);
@@ -205,7 +205,7 @@ describe('Giants (plans/late-game/12 §4.4)', () => {
     run.pacts = { surge: 2 };
     const g = giantsOf(run, REST())!;
     expect(g.size).toBeCloseTo(1.6 * 1.25 ** 2);
-    expect(g.hp).toBeCloseTo(3 * 1.25 ** 2);
+    expect(g.hp).toBeCloseTo(3.5 * 1.25 ** 2);
     expect(g.reward).toBe(2);
     expect(giantsOf(run, regionByIndex(1))).toBeNull();
   });
@@ -304,7 +304,7 @@ describe('the Orbit (plans/late-game/12 §4.2)', () => {
     expect(orreryRun().wake).toEqual({ toll: null, orbit: { spin: 1, wave: 0 }, storm: null });
   });
 
-  it('a body spirals in: always closer, always turning, about 1.17× as long as a straight walk', () => {
+  it('a body spirals in: always closer, always turning, within 2% of a straight walk (D-29)', () => {
     const run = orreryRun();
     const e = body(run, { type: 'satellite', x: 600, y: 0, px: 600, py: 0, speed: 80 });
     const s = body(run, { type: 'comet', x: 0, y: 600, px: 0, py: 600, speed: 80 });
@@ -333,8 +333,8 @@ describe('the Orbit (plans/late-game/12 §4.2)', () => {
     const straight = walkIn(b, comet);
     expect(Math.atan2(comet.y, comet.x)).toBe(0);
     const ratio = spiral / straight;
-    expect(ratio).toBeGreaterThan(1.12);
-    expect(ratio).toBeLessThan(1.22);
+    expect(ratio).toBeGreaterThan(0.98);
+    expect(ratio).toBeLessThan(1.02);
   });
 
   it('turns the way the field spins, and a fresh spin is rolled each wave on the wake stream', () => {
