@@ -52,7 +52,7 @@ parse or migrate is never dropped silently: it is copied to
 ## The migration ladder
 
 `MIGRATIONS[n]` takes a raw object at version `n` to `n + 1`; `migrate`
-walks it to `PROFILE_VERSION` (25) and throws on a version from the future
+walks it to `PROFILE_VERSION` (28) and throws on a version from the future
 or a missing rung. Every rung has a fixture in `tests/save.test.ts`, and a
 test walks a v1 profile all the way up and checks it has every field a new
 profile has, settings included.
@@ -83,6 +83,9 @@ profile has, settings included.
 | 22 → 23 | — | the Contract board (`contracts`) |
 | 23 → 24 | — | where a taken contract goes back to (`contracts.back`) |
 | 24 → 25 | — | the Daily Omen (`omen`: `since`, `days`, `played`, `best`, `pending`) |
+| 25 → 26 | R1 | the draft timer setting, runs per region (an old record counts as two) |
+| 26 → 27 | R5 | the 60 fps cap and keep-awake settings |
+| 27 → 28 | — | when each Forge weapon was bought (`forgedAt`, empty: nothing old is fresh; plans/forge-weapon-pacing.md) |
 
 **Rules:** a rung writes literal values, never a call to today's defaults
 (those may change; the rung must not); and fields the player already set

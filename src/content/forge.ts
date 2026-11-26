@@ -6,7 +6,9 @@ import type { BranchId, ForgeNodeDef } from './types';
  * P3; P4 adds ring 3, sealed until the Gatekeeper falls (a few nodes wait
  * for the Bog Mother), and Offline I. P5 adds the last four weapons, Alchemy
  * (evolutions, §4.4) and the keystones, one per branch but Engineering; the
- * last two sealed by the Bog Mother. P6 fills out Engineering (§6.2):
+ * last two sealed by the Bog Mother. Sentinel Drones wait for the Prism
+ * (ring 4) and Glaives for Forgeheart (ring 5), so a weapon still arrives
+ * after the Prism (plans/forge-weapon-pacing.md step 6). P6 fills out Engineering (§6.2):
  * Frontier March, Tactician I–II, Autocaster, Night Watch II and speed ×3.
  * P7 adds rings 4–6, sealed by the Prism, Forgeheart and the Hollow King:
  * weapon slots 3–4, Evolution Insight, Night Watch III–IV and the late
@@ -233,16 +235,6 @@ export const FORGE: readonly ForgeNodeDef[] = [
     effects: [{ kind: 'unlockCard', id: 'sunlance' }], sealed: 'gatekeeper',
   },
   {
-    id: 'glaives', name: 'Glaives', icon: 'spinning-blades', text: 'Glaives join the draft.',
-    branch: 'arsenal', type: 'notable', ring: 3, angle: 106, links: ['mortar'], maxLevel: 1, cost: 620,
-    effects: [{ kind: 'unlockCard', id: 'glaives' }], sealed: 'gatekeeper',
-  },
-  {
-    id: 'sentinel-drones', name: 'Sentinel Drones', icon: 'delivery-drone', text: 'Sentinel Drones join the draft.',
-    branch: 'arsenal', type: 'notable', ring: 3, angle: 116, links: ['glaives'], maxLevel: 1, cost: 1200,
-    effects: [{ kind: 'unlockCard', id: 'sentinel-drones' }], sealed: 'bog-mother',
-  },
-  {
     id: 'alchemy', name: 'Alchemy', icon: 'bubbling-flask', text: 'Weapons at level 5 can evolve once their partner passive is at level 5.',
     branch: 'arsenal', type: 'notable', ring: 3, angle: 72, links: ['passive-slot'], maxLevel: 1, cost: 2000,
     effects: [{ kind: 'behaviour', id: 'alchemy' }], sealed: 'bog-mother',
@@ -276,8 +268,14 @@ export const FORGE: readonly ForgeNodeDef[] = [
   },
   {
     id: 'arsenal-duration', name: "Lingering", icon: 'extra-time', text: "Slows, burns and stuns last 10% longer.",
-    branch: 'arsenal', type: 'minor', ring: 4, angle: 112, links: ['glaives'], maxLevel: 5, cost: 5200,
+    branch: 'arsenal', type: 'minor', ring: 4, angle: 112, links: ['sunlance'], maxLevel: 5, cost: 5200,
     effects: [{ kind: 'stat', mod: { key: 'duration', pct: 0.1 } }], sealed: 'prism',
+  },
+  {
+    // The Prism's prize (plans/forge-weapon-pacing.md step 6): Region 4's siege engines, Region 5's phantoms.
+    id: 'sentinel-drones', name: 'Sentinel Drones', icon: 'delivery-drone', text: 'Sentinel Drones join the draft.',
+    branch: 'arsenal', type: 'notable', ring: 4, angle: 119, links: ['arsenal-duration'], maxLevel: 1, cost: 6000,
+    effects: [{ kind: 'unlockCard', id: 'sentinel-drones' }], sealed: 'prism',
   },
   {
     id: 'drilled', name: "Drilled", icon: 'progression', text: "New weapons join at level 2.",
@@ -298,6 +296,12 @@ export const FORGE: readonly ForgeNodeDef[] = [
     id: 'arsenal-duration-2', name: "Enduring", icon: 'hourglass', text: "Slows, burns and stuns last 10% longer.",
     branch: 'arsenal', type: 'minor', ring: 5, angle: 114, links: ['arsenal-duration'], maxLevel: 5, cost: 44000,
     effects: [{ kind: 'stat', mod: { key: 'duration', pct: 0.1 } }], sealed: 'forgeheart',
+  },
+  {
+    // Forgeheart's prize (plans/forge-weapon-pacing.md step 6): Region 5's leeches; Region 4's bombers blunt it.
+    id: 'glaives', name: 'Glaives', icon: 'spinning-blades', text: 'Glaives join the draft.',
+    branch: 'arsenal', type: 'notable', ring: 5, angle: 124, links: ['sentinel-drones'], maxLevel: 1, cost: 36000,
+    effects: [{ kind: 'unlockCard', id: 'glaives' }], sealed: 'forgeheart',
   },
   {
     id: 'weapon-slot-4', name: "Fourth Mount", icon: 'nested-hexagons', text: "+1 weapon slot.",

@@ -75,6 +75,7 @@ export const EXPLAINERS: readonly ExplainerDef[] = [
       'Shards from every run are spent here, on upgrades that last forever. Buying a node reveals its neighbours.',
       'Minor nodes are stat steps you can level up. Notables unlock something new: a weapon, a slot, an automation. Keystones are big trades that shape a build.',
       'Some nodes are sealed until you defeat a particular boss.',
+      'Weapons come one at a time: a new one is offered in your next drafts, and the next weapon waits until you have carried it in three runs.',
     ],
   },
   {

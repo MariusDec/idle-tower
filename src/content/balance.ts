@@ -94,6 +94,13 @@ export const BALANCE = {
     temper: { cost: 2, share: 0.2, easedGrowth: 1.2 },
   },
   /**
+   * A weapon fresh from the Forge (plans/forge-weapon-pacing.md): every draft
+   * with a free slot offers it, and the other weapon nodes wait, until it has
+   * been carried in `runs` runs, or `maxRuns` runs have passed since it was
+   * forged (the way out for a player who keeps passing it by).
+   */
+  debut: { runs: 3, maxRuns: 5 },
+  /**
    * The mastery capstones (plans/mastery-capstones.md): each rank a rule that
    * turns what the game throws away into power. Placeholders for the pacing pass.
    */

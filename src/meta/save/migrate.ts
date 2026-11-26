@@ -125,6 +125,9 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   }),
   // v27 (R5): a 60 fps cap and the screen kept awake in runs, as a new profile starts.
   26: (raw) => ({ ...raw, version: 27, settings: { frameRate: 60, keepAwake: true, ...(raw.settings as object) } }),
+  // v28 (plans/forge-weapon-pacing.md): when each Forge weapon was bought. Empty: no weapon
+  // bought before the update is fresh, so nothing an old save owns is locked behind one.
+  27: (raw) => ({ ...raw, version: 28, forgedAt: {} }),
 };
 
 export class MigrationError extends Error {}

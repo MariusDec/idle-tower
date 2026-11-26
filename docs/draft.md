@@ -26,6 +26,14 @@ and Gatekeeper's Seal start a run above level 1, each level a banked draft.
 - a **new** weapon or passive from the pool, only while a slot of its kind
   is free.
 
+A weapon **fresh from the Forge** (`run.debutOffer`, from
+`RunConfig.debut`; plans/forge-weapon-pacing.md) is in every hand while a
+weapon slot is free, until it is taken, as one card on top of the hand (up
+to `maxChoices`), so trying it never costs a choice. It carries a **Fresh**
+badge. The scorer leans toward it (`DEBUT_VALUE`, 0.25 on top of a new
+weapon's counter and slot values) but never forces it: forcing auto-pick
+onto it cost Region 3 its shield counter and the Prism fell ~20 min later.
+
 `rollOffer` fills the hand: fusions first, then a uniform sample by
 partial Fisher–Yates on the `draft` stream, padded with **fallback** cards
 (heal 30%, a pinch of shards) when nothing else is left. With Arsenal

@@ -11,6 +11,8 @@
  *       none longer than 30 min from 2 h to the Blight's first fall (S6, R2 §5;
  *       needs --hours 6). Both are gates on 8 profiles: at least 6 must pass.
  *   P3  wave 20 is first reached within 15–30 min
+ *   W1  Forge weapons are bought at least 5 min apart, never two at once
+ *       (plans/forge-weapon-pacing.md); a gate on 8 profiles, as I6
  *
  * And R1's reading (plans/review-risks.md §R1): each reveal is content (an
  * enemy, a card, a relic, a rift kind, a wave) or a system (a tab, an
@@ -49,6 +51,8 @@
  *   npm run pacing -- --arena tablet-l   play on another stage's light (tools/play.ts's
  *                                        ARENA_SHAPES); --fog 2|3|4 forces its squareness
  *                                        (plans/large-screens.md §11.2)
+ *   npm run pacing -- --weapons-first    the bot buys every weapon it can first (W1,
+ *                                        plans/forge-weapon-pacing.md): the greedy player
  *   npm run pacing -- --frontiers        rewrite the arsenal's frontier profiles
  *                                        (tools/frontier.ts, R4): each Act 1
  *                                        boss's first fall, on FRONTIER_SEEDS
@@ -62,7 +66,7 @@ import { createRun } from '../src/sim/run';
 import { newProfile, type Profile } from '../src/meta/profile';
 import { migrate, type RawProfile } from '../src/meta/save/migrate';
 import { runSpeed } from '../src/meta/automation';
-import { levelOf, nodeStates } from '../src/meta/forge';
+import { levelOf, nodeStates, weaponOf } from '../src/meta/forge';
 import { bankRun, trophyAt } from '../src/meta/results';
 import { frontier, hubUnlocks } from '../src/meta/collection';
 import { claimAll } from '../src/meta/feats';
@@ -78,7 +82,7 @@ import { formatDuration } from '../src/core/format';
 import type { BossId, BranchId } from '../src/content/types';
 import { FAST_STEPS, TOOL_ARENA, arenaLine, playRun, toolConfig } from './play';
 import { PHONE_OVAL } from '../src/content/arena';
-import { shop } from './shop';
+import { WEAPONS_FIRST, shop } from './shop';
 import { CHECKIN_EVERY, IDLE_STARTS, SESSION, farmRatio, idleStartFile, loadIdleStart, runIdle, saveIdleStart, type IdleReport, type IdleStart } from './idle';
 import { CONTRACT_SHARE, runAct2, takePacts, type Act2Report } from './act2';
 import { botTake, emptyContractTally, holdsUlt, steerConfig, successLine, tallyContract, type ContractTally } from './contractBot';
@@ -254,6 +258,8 @@ export interface PacingReport {
   stretchGap: { seconds: number; from: number } | null;
   /** Trials won, by the wall second each was won (N5). */
   trials: Record<string, number>;
+  /** Each Forge weapon as it is bought (W1, plans/forge-weapon-pacing.md), wall seconds of its shop visit. */
+  weapons: { at: number; name: string }[];
   /**
    * Copies of the profile at moments I5 compares the players at (§8.4):
    * `region-1` and `region-2` at the first results past 20 and 50 min
@@ -269,6 +275,8 @@ export interface PacingReport {
   /** I6's later clause: no gap over 30 min from 2 h to the Blight. True when the report never got past 2 h. */
   i6late: boolean;
   wave20: boolean;
+  /** W1: no two weapons in one shop visit, none within `W1_GAP` of the last. */
+  w1: boolean;
 }
 
 /**
@@ -305,6 +313,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
   const seeds = new Rng(seed);
   const end = hours * 3600;
   const reveals: Reveal[] = [];
+  const weapons: { at: number; name: string }[] = [];
   const explainers: Reveal[] = [];
   const explained = new Set<ExplainerId>();
   let gateFall: number | null = null;
@@ -457,6 +466,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
     const bought = shop(profile);
     for (const id of bought) {
       const n = FORGE_BY_ID[id];
+      if (weaponOf(n) && levelOf(profile, id) === 1) weapons.push({ at: clock, name: n.name });
       if (n.type !== 'minor' && levelOf(profile, id) === 1) {
         const system = notableSystem(id);
         reveals.push({ at: clock, what: `notable: ${n.name}`, ...(system ? { system } : {}) });
@@ -506,6 +516,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
     worstLateGap,
     stretchGap,
     trials,
+    weapons,
     checkpoints,
     i1a: boss1 !== null && boss1 >= I1A.min && boss1 <= I1A.max,
     i1b: finale !== null && finale >= I1B.min && finale <= I1B.max,
@@ -513,7 +524,16 @@ export function runPacing(hours: number, seed: number): PacingReport {
     i6: worstGap.seconds <= MAX_REVEAL_GAP,
     i6late: worstLateGap.seconds <= I6_LATE.gap,
     wave20: firstWave20 !== null && firstWave20 >= 15 * 60 && firstWave20 <= 30 * 60,
+    w1: weaponGaps(weapons).every((g) => g >= W1_GAP),
   };
+}
+
+/** W1 (plans/forge-weapon-pacing.md): the least wall time between Forge weapons, so each is seen before the next. */
+export const W1_GAP = 5 * 60;
+
+/** The wall seconds between each Forge weapon bought and the one before it; 0 for two in one shop visit. */
+export function weaponGaps(weapons: readonly { at: number }[]): number[] {
+  return weapons.slice(1).map((w, i) => w.at - weapons[i].at);
 }
 
 function arg(name: string, fallback: string): string {
@@ -1002,6 +1022,11 @@ async function main(): Promise<void> {
     const gate = (f: (r: PacingReport) => boolean): string => (reports.filter(f).length >= Math.ceil(seeds * I6_GATE_SHARE) ? 'PASS' : 'FAIL');
     const want = `want ≥ ${Math.ceil(seeds * I6_GATE_SHARE)}/${seeds}`;
     console.log(`  I3 passes ${count((r) => r.i3)}`);
+    const least = (r: PacingReport): string => {
+      const gaps = weaponGaps(r.weapons);
+      return gaps.length === 0 ? '—' : formatDuration(Math.min(...gaps));
+    };
+    console.log(`  ${gate((r) => r.w1)}  W1  Forge weapons ≥ ${formatDuration(W1_GAP)} apart, never two at once${WEAPONS_FIRST ? ' (weapons-first)' : ''}: ${count((r) => r.w1)} (${want}) · least gap: ${reports.map(least).join(' ')}`);
     console.log(`  ${gate((r) => r.i6)}  I6  no gap over 10:00 in the first 2 h: ${count((r) => r.i6)} (${want}) · worst: ${reports.map((r) => formatDuration(r.worstGap.seconds)).join(' ')} · median ${formatDuration(medianWorstGap(reports))} (CI's reading)`);
     if (hours > 2) {
       // R2 §5: a gate from 2 h to the Blight, with the Contract board on (the bot takes cards once it opens).
@@ -1071,9 +1096,16 @@ async function main(): Promise<void> {
   for (const v of systemsOf(r)) console.log(`  ${pad(formatDuration(v.at), 7)}  ${pad(v.system!, 12)}  ${v.what}`);
   const pace = systemPace(r);
   console.log(`  per 15 min, first 3 h: ${pace.perQuarter.join(' ')}`);
+  console.log(`\nweapons (W1${WEAPONS_FIRST ? ', weapons-first' : ''}):`);
+  r.weapons.forEach((w, i) => {
+    const gap = i === 0 ? '' : `  (+${formatDuration(w.at - r.weapons[i - 1].at)})`;
+    console.log(`  ${pad(formatDuration(w.at), 7)}  ${w.name}${gap}`);
+  });
   console.log('\nverdicts:');
   const mark = (ok: boolean): string => (ok ? 'PASS' : 'FAIL');
   console.log(`  ${mark(r.i3)}  I3  every results screen shows a node at ≥ 50%`);
+  const gaps = weaponGaps(r.weapons);
+  console.log(`  ${mark(r.w1)}  W1  Forge weapons ≥ ${formatDuration(W1_GAP)} apart, never two at once (least gap ${gaps.length === 0 ? '—' : formatDuration(Math.min(...gaps))})`);
   console.log(`  ${mark(r.i6)}  I6  longest gap between reveals ${formatDuration(r.worstGap.seconds)} (from ${formatDuration(r.worstGap.from)}; max 10:00)`);
   if (hours > 2) {
     console.log(`  ${mark(r.i6late)}  I6  from 2 h to the Blight: longest gap ${formatDuration(r.worstLateGap.seconds)} (from ${formatDuration(r.worstLateGap.from)}; max 30:00)`);

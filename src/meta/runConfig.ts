@@ -13,7 +13,7 @@ import {
 } from './collection';
 import { cursedTable, isCursed } from '../content/cursed';
 import { WEAPON_BY_ID } from '../content/weapons';
-import { FORGE_WEB, activeNodes } from './forge';
+import { FORGE_WEB, activeNodes, freshWeapons } from './forge';
 import { neverList, priorityList } from './automation';
 import { runPacts } from './pacts';
 import { pactLoad } from '../sim/pacts';
@@ -146,6 +146,10 @@ export function buildRunConfig(profile: Profile, extra: readonly TrialRule[] = [
   // A Trial's slots (N5) are a ceiling on what the Forge gave.
   if (rules.weaponSlots !== undefined) weaponSlots = Math.min(weaponSlots, rules.weaponSlots);
   if (rules.passiveSlots !== undefined) passiveSlots = Math.min(passiveSlots, rules.passiveSlots);
+  // A weapon fresh from the Forge (plans/forge-weapon-pacing.md): never in an
+  // authored run (a Trial, a contract, the Daily Omen), the Abyss or Boss Rush.
+  const authored = trial !== null || !!contract || extra.length > 0 || abyss || inRush(profile);
+  const debut = authored ? null : freshWeapons(profile).find((w) => w !== first && pool.includes(w)) ?? null;
   return Object.freeze({
     frameId: frame.id,
     regionId: region.index,
@@ -158,6 +162,7 @@ export function buildRunConfig(profile: Profile, extra: readonly TrialRule[] = [
     weaponSlots,
     passiveSlots,
     pool: Object.freeze(pool),
+    debut,
     firstDraft: profile.tutorial.firstDraft ? null : FIRST_DRAFT,
     behaviours: Object.freeze(behaviours),
     // The Abyss's guardians and Boss Rush's bosses are never a first kill: their regions' are.

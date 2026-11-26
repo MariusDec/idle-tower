@@ -2,11 +2,13 @@ import { BOSS_BY_ID } from '../../content/bosses';
 import { BRANCH_NAME, FORGE } from '../../content/forge';
 import type { IconId } from '../../content/icons';
 import { CONSTELLATION_NAME, STARS } from '../../content/stars';
-import type { ForgeNodeDef, StarNodeDef, StatKey, StatMod, WebNodeDef } from '../../content/types';
+import type { EnemyId, ForgeNodeDef, StarNodeDef, StatKey, StatMod, WebNodeDef } from '../../content/types';
 import { resolveStat } from '../../sim/stats';
 import { STAT_LABEL } from '../build';
 import { formatNumber } from '../../core/format';
-import { FORGE_WEB, TEMPER_BOSS, canAfford } from '../../meta/forge';
+import { FORGE_WEB, TEMPER_BOSS, canAfford, forgingWait, weaponOf } from '../../meta/forge';
+import { ENEMY_BY_ID } from '../../content/enemies';
+import { WEAPON_BY_ID } from '../../content/weapons';
 import { WISHLIST_MAX } from '../../meta/automation';
 import type { Profile } from '../../meta/profile';
 import { STAR_WEB } from '../../meta/stars';
@@ -67,7 +69,11 @@ export interface WebViewSource<N extends WebNodeDef> {
   readonly rootIcon: IconId;
   branchName(branch: N['branch']): string;
   /** Why a sealed node waits, in words. */
-  sealLine(node: N): string;
+  sealLine(node: N, profile: Profile): string;
+  /** True when a sealed node only waits its turn, not on a boss or a star: the line is calmer (plans/forge-weapon-pacing.md). */
+  sealWait?(node: N, profile: Profile): boolean;
+  /** Lines under a node's text: the Forge's weapons say what they do and what they meet (plans/forge-weapon-pacing.md). */
+  extra?(node: N, profile: Profile): HTMLElement[];
   /** Levels past a node's last (the Forge's tempering, a star's ascension, N10), in words. */
   readonly beyond: {
     /** The buy button's verb past the last level. */
@@ -452,8 +458,9 @@ export class WebView<N extends WebNodeDef> {
       text.textContent = n.text;
       const seal = document.createElement('p');
       seal.className = 'forge-detail-seal';
-      seal.textContent = this.src.sealLine(n);
-      this.detail.append(head, kind, text, seal);
+      seal.textContent = this.src.sealLine(n, p);
+      if (this.src.sealWait?.(n, p)) seal.classList.add('is-wait');
+      this.detail.append(head, kind, text, ...(this.src.extra?.(n, p) ?? []), seal);
       this.detail.hidden = false;
       return;
     }
@@ -565,7 +572,7 @@ export class WebView<N extends WebNodeDef> {
       p2.textContent = 'Switched off: still yours, but no run feels it until you switch it back on.';
       note.push(p2);
     }
-    this.detail.append(head, kind, text, ...(total ? [total] : []), ...note, actions);
+    this.detail.append(head, kind, text, ...(this.src.extra?.(n, p) ?? []), ...(total ? [total] : []), ...note, actions);
     this.detail.hidden = false;
   }
 
@@ -733,12 +740,43 @@ export class ForgeView extends WebView<ForgeNodeDef> {
       hint: 'Spend shards on the web. Every node applies from your next run.',
       rootIcon: 'heart-tower',
       branchName: (b) => BRANCH_NAME[b],
-      sealLine: (n) => (n.type === 'mastery'
-        ? `Sealed — light ${n.name} in the Crown.`
-        : `Sealed — defeat ${n.sealed ? BOSS_BY_ID[n.sealed].name : 'its boss'}.`),
+      sealLine: (n, p) => {
+        if (n.type === 'mastery') return `Sealed — light ${n.name} in the Crown.`;
+        // One weapon at a time (plans/forge-weapon-pacing.md): the newest weapon is still being tried.
+        const wait = forgingWait(p, n);
+        if (wait) return `Forging — carry ${WEAPON_BY_ID[wait.weapon].name} in ${wait.runs} more run${wait.runs === 1 ? '' : 's'} first.`;
+        return `Sealed — defeat ${n.sealed ? BOSS_BY_ID[n.sealed].name : 'its boss'}.`;
+      },
+      sealWait: (n, p) => forgingWait(p, n) !== null,
+      extra: (n, p) => weaponLines(n, p),
       beyond: { verb: 'Temper', past: 'Tempered', waiting: `tempers once ${BOSS_BY_ID[TEMPER_BOSS].name} falls` },
     });
   }
+}
+
+/**
+ * A weapon node's card (plans/forge-weapon-pacing.md): what the weapon does,
+ * and the enemies already met that it answers, or that blunt it. Enemies not
+ * yet met stay unnamed, so the card spoils nothing.
+ */
+function weaponLines(n: ForgeNodeDef, p: Profile): HTMLElement[] {
+  const id = weaponOf(n);
+  if (!id) return [];
+  const w = WEAPON_BY_ID[id];
+  const out: HTMLElement[] = [];
+  const line = (cls: string, words: string): void => {
+    const el = document.createElement('p');
+    el.className = cls;
+    el.textContent = words;
+    out.push(el);
+  };
+  line('forge-detail-weapon', w.text);
+  const met = (ids: readonly string[] | undefined): string[] => (ids ?? []).filter((e) => p.seenEnemies.includes(e)).map((e) => ENEMY_BY_ID[e as EnemyId].name);
+  const strong = met(w.counters);
+  const weak = met(w.weakAgainst);
+  if (strong.length > 0) line('forge-detail-match is-strong', `Strong against: ${strong.join(', ')}.`);
+  if (weak.length > 0) line('forge-detail-match is-weak', `Blunted by: ${weak.join(', ')}.`);
+  return out;
 }
 
 /** The Constellations (§9): Act 2's web, paid in Starlight. */
