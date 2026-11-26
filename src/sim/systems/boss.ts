@@ -8,7 +8,7 @@ import { shortEnds, spawnPoint } from '../../content/arena';
 import type { BossDef, BossPattern, BossPhase, RegionDef } from '../../content/types';
 import type { BossState, Enemy, RunState } from '../state';
 import { bossPhases, pactLoad } from '../pacts';
-import { clearFloor, foeHp, mayInvert, runRegion, spawnEnemy, swallow, waveDamage, waveHp, waveShardMult } from './waves';
+import { clearFloor, foeHp, mayInvert, melt, runRegion, spawnEnemy, swallow, waveDamage, waveHp, waveShardMult } from './waves';
 import { gateAngle, ruleLoad } from '../strata';
 import { hurtTower } from './tower';
 import { guardianReliquary } from './reliquaries';
@@ -18,7 +18,7 @@ import { SECRET_BY_ID } from '../../content/secrets';
 /**
  * Bosses (§4.3): wave 20. A boss walks in from a flank to its standoff and
  * works from there, one readable pattern per phase; phases turn at HP
- * thresholds. A boss that outlasts `BALANCE.boss.enrageAfter` enrages and
+ * thresholds. A boss that outlasts its `enrageAfter` (`BALANCE.boss.enrageAfter` by default) enrages and
  * walks to the wall, so a fight the tower can't win ends rather than stalls.
  */
 
@@ -283,11 +283,12 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
 
   const B = BALANCE.boss;
   const since = run.time - b.arrivedAt;
-  if (!b.enraged && since >= B.enrageAfter) {
+  const enrageAfter = def.enrageAfter ?? B.enrageAfter;
+  if (!b.enraged && since >= enrageAfter) {
     b.enraged = true;
     run.events.push({ kind: 'enrage' });
   }
-  const fury = b.enraged ? Math.pow(B.enrageGrowth, Math.floor((since - B.enrageAfter) / B.enrageEvery) + 1) : 1;
+  const fury = b.enraged ? Math.pow(B.enrageGrowth, Math.floor((since - enrageAfter) / B.enrageEvery) + 1) : 1;
   e.damage = waveDamage(region, b.wave) * def.damage * fury;
 
   // Under the water: it rises somewhere else on the same ring.
@@ -451,7 +452,8 @@ function crackFloes(run: RunState, region: RegionDef, boss: Enemy, def: BossDef,
     const x = Math.cos(a) * d;
     const y = Math.sin(a) * d;
     const f = spawnEnemy(run, region, 'floe', run.boss!.wave, x, y);
-    Object.assign(f, { speed: 0, xp: 0, shards: 0 });
+    // Terrain (D-28): nothing aims at it, so it melts.
+    Object.assign(f, { speed: 0, xp: 0, shards: 0, meltAt: run.time + F.melt });
     run.events.push({ kind: 'floe', x, y });
   }
 }
@@ -635,6 +637,8 @@ export function onBossKilled(run: RunState, e: Enemy): void {
   b.windup = 0;
   dismissCourt(run);
   for (const o of run.enemies) if (o.alive && o.plate === e.id) dropPlate(run, o);
+  // The Floes it cracked melt with the Leviathan (D-28): nothing could aim at them.
+  for (const o of run.enemies) if (o.alive && o.meltAt !== undefined) melt(run, o);
   run.pools.length = 0;
   run.felled.push(b.id);
   run.events.push({ kind: 'bossKill', boss: b.id, first: run.firstKill, x: e.x, y: e.y });

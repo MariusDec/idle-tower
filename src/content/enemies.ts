@@ -759,7 +759,7 @@ export const ENEMIES: readonly EnemyDef[] = [
     name: 'Conductor',
     icon: 'thunder-struck',
     text: 'Plants a rod: while it stands, lightning strikes the tower.',
-    hp: 2.4,
+    hp: 3,
     speed: 40,
     radius: 26,
     damage: 0.8,

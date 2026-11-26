@@ -153,6 +153,8 @@ export interface PlayResult {
    * run, or one that never got clear.
    */
   opening: number | null;
+  /** True when the run hit the tools' safety net (`MAX_RUN_SECONDS`) rather than ending. */
+  cutOff: boolean;
 }
 
 /**
@@ -232,7 +234,7 @@ export function playRun(profile: Profile, run: RunState, o: PlayOptions): PlayRe
     if (run.wave > before && !run.outcome) o.onWave?.(run);
   }
   profile.seenCards = [...seen];
-  return { wall, newCards, opening: openingDone };
+  return { wall, newCards, opening: openingDone, cutOff: !run.outcome && run.tick >= maxTicks };
 }
 
 /** A deep copy of a run as the app's snapshot holds it: plain data, no events. */

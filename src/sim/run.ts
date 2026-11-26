@@ -314,6 +314,12 @@ export function step(run: RunState, dt: number, input: RunInput = {}, weaponStep
   if (run.outcome) return;
   const region = runRegion(run);
   tickWaves(run, region);
+  if ((run.outcome as RunState['outcome'])?.kind === 'cleared' && !region.rush) {
+    // The region holds (D-26): the run ends here, as a retreat does.
+    shutRift(run);
+    fadeReliquaries(run);
+    return;
+  }
   // Step 2b: rifts roll at a wave's start, show, and shut (plans/late-game/02).
   tickRifts(run, runRegion(run));
   tickBoss(run, region, dt);

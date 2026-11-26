@@ -29,6 +29,14 @@ export const QUARRY: Readonly<Record<number, readonly { readonly enemy: EnemyId 
   4: [{ enemy: 'bomber', n: 250 }, { enemy: 'blinker', n: 100 }],
   5: [{ enemy: 'phantom', n: 270 }, { enemy: 'leech', n: 130 }],
   6: [{ enemy: 'chorus', n: 750 }, { enemy: 'elite', n: 15 }],
+  // The Wake (plans/late-game/12a W11): the active bot on the Wake fixture's
+  // cleared towers, twenty seeds a region held to the boss (2026-11-26), at
+  // 0.8 of the median. The Frozen Sea asks Sledges, not elites (4 a run).
+  9: [{ enemy: 'ringer', n: 235 }, { enemy: 'straggler', n: 145 }],
+  10: [{ enemy: 'satellite', n: 285 }, { enemy: 'comet', n: 145 }],
+  11: [{ enemy: 'skater', n: 415 }, { enemy: 'sledge', n: 12 }],
+  12: [{ enemy: 'titan', n: 120 }, { enemy: 'tick', n: 70 }],
+  13: [{ enemy: 'groundling', n: 310 }, { enemy: 'conductor', n: 30 }],
 };
 
 /** Act 1's stand-in for heat (§3): an omen, a pact at a rank, with the words it reads as. */

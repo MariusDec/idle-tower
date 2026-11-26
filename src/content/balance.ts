@@ -571,6 +571,10 @@ export const BALANCE = {
     stallAfter: 30,
     stallEvery: 5,
     stallGrowth: 1.25,
+    /** D-26 (plans/late-game/12a): the last overtime wave is BOSS_WAVE + this; holding it ends the run, won. */
+    maxWaves: 20,
+    /** …and sim seconds from the boss's fall after which the run ends, won, at the wave it's on (a stalled field can't hold a run forever). */
+    maxSeconds: 600,
   },
   /** Pacts (§9): heat, and what it pays. */
   pacts: {
@@ -851,6 +855,8 @@ export const BALANCE = {
     ring: [0, 6, 6, 6, 6, 6, 6, 0, 0, 7, 7, 7, 7, 7] as readonly number[],
     /** Star node ids lit at max level on the Omen's tower, by region (Wake days, if `npm run omen` says they fall short). */
     stars: Object.fromEntries([9, 10, 11, 12, 13].map((r) => [r, WAKE_OMEN_STARS])) as Partial<Record<number, readonly string[]>>,
+    /** The Wake's days: the Omen tower's damage multiplier by region (a Wake player's tower; plans/late-game/12a §5). */
+    might: { 9: 1.85, 10: 20.4, 11: 30.9, 12: 87.5, 13: 163.9 } as Partial<Record<number, number>>,
     /**
      * The first Omen day (days since 1970-01-01 UTC) that draws the Wake's
      * regions: 2026-12-01 (plans/late-game/12 §8.10). Days before it keep
@@ -886,12 +892,14 @@ export const BALANCE = {
       /** Each Ringer alive multiplies the interval by its `hasten`, down to this share. */
       floor: 0.6,
       /** The Carillon's quickening never takes the interval below the window × this. */
-      minInterval: 1.2,
+      minInterval: 2.5,
     },
     orbit: {
       /** Blight Surge: the tangent's multiplier per rank, and its ceiling (below 1: a spiral, never a ring). */
       surge: 1.3,
       max: 0.95,
+      /** D-29: the inward part of a spiral's step as a share of the walker's pace (1: no free time). */
+      pace: 1,
     },
     glide: {
       /** Below this speed (units/s) a slide ends and the body walks again. */
@@ -907,8 +915,11 @@ export const BALANCE = {
       /** …and a Frost Ring pulse pushes this far out from the tower. */
       pulsePush: 10,
     },
-    /** The Leviathan's `floes` (§7.1): loose ones land between the wall + `near` and its standoff − `far`; a ring sits at the wall + `ring`. */
-    floes: { near: 80, far: 40, ring: 70 },
+    /**
+     * The Leviathan's `floes` (§7.1): loose ones land between the wall + `near` and its standoff − `far`; a ring sits at the wall + `ring`.
+     * The Floes it cracks are terrain (D-28): nothing aims at one, so each melts `melt` s after it cracks, and all melt when it falls.
+     */
+    floes: { near: 80, far: 40, ring: 70, melt: 20 },
     giants: {
       /** Blight Surge: size and HP multiply by this per rank. */
       surge: 1.25,

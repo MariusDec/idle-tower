@@ -3,7 +3,8 @@ import type { BossDef, BossId } from './types';
 /**
  * Bosses (§4.3, §11.1): wave 20 of each region. 2–3 phases, one readable
  * pattern each. A boss stops at its standoff and works from there; one that
- * outlasts `BALANCE.boss.enrageAfter` walks to the wall instead.
+ * outlasts its `enrageAfter` (`BALANCE.boss.enrageAfter` unless it sets
+ * its own, as the Wake's do: plans/late-game/12a) walks to the wall instead.
  *
  * HP is a multiple of the region's wave-20 HP (§8.2: about 25–35 s of the
  * DPS expected there); `npm run inspect -- --forge all --region 2` reads the fight.
@@ -320,6 +321,7 @@ export const BOSSES: readonly BossDef[] = [
     radius: 70,
     standoff: 240,
     damage: 4,
+    enrageAfter: 150,
     xp: 110,
     shards: 520,
     mass: 30,
@@ -334,7 +336,7 @@ export const BOSSES: readonly BossDef[] = [
         below: 0.66,
         line: 'Each toll now rolls a shockwave at the wall.',
         patterns: [
-          { kind: 'peal', speed: 420, damage: 2.5 },
+          { kind: 'peal', speed: 420, damage: 0.5 },
           { kind: 'summon', enemy: 'straggler', packs: 1, every: 10 },
         ],
       },
@@ -342,7 +344,7 @@ export const BOSSES: readonly BossDef[] = [
         below: 0.33,
         line: 'It rings faster and faster. Nothing stands still.',
         patterns: [
-          { kind: 'peal', speed: 460, damage: 2.5 },
+          { kind: 'peal', speed: 460, damage: 0.5 },
           { kind: 'quicken', every: 20, factor: 0.5 },
         ],
       },
@@ -362,6 +364,7 @@ export const BOSSES: readonly BossDef[] = [
     radius: 64,
     standoff: 240,
     damage: 4,
+    enrageAfter: 165,
     xp: 110,
     shards: 520,
     mass: 26,
@@ -381,6 +384,7 @@ export const BOSSES: readonly BossDef[] = [
         patterns: [
           { kind: 'reverse', every: 8 },
           { kind: 'summon', enemy: 'satellite', packs: 2, every: 8 },
+          { kind: 'slam', every: 7, windup: 1.3, speed: 420, damage: 1 },
         ],
       },
       {
@@ -389,6 +393,7 @@ export const BOSSES: readonly BossDef[] = [
         patterns: [
           { kind: 'reverse', every: 8 },
           { kind: 'summon', enemy: 'comet', packs: 3, every: 6 },
+          { kind: 'slam', every: 6, windup: 1.3, speed: 420, damage: 1 },
         ],
       },
     ],
@@ -401,12 +406,13 @@ export const BOSSES: readonly BossDef[] = [
     name: 'The Leviathan Under the Ice',
     icon: 'sperm-whale',
     text: 'Cracks floes from the ice, dives out of reach, and rings the wall with ice.',
-    hp: 75,
+    hp: 65,
     armor: 0.03,
     speed: 22,
     radius: 74,
     standoff: 250,
     damage: 4,
+    enrageAfter: 105,
     xp: 110,
     shards: 520,
     mass: 40,
@@ -446,12 +452,13 @@ export const BOSSES: readonly BossDef[] = [
     name: 'The Sleeping Colossus',
     icon: 'giant',
     text: 'Hit its heart when it turns to you. It sheds Titans, then eats them.',
-    hp: 62,
+    hp: 78,
     armor: 0.04,
     speed: 18,
     radius: 82,
     standoff: 250,
     damage: 4.5,
+    enrageAfter: 90,
     xp: 110,
     shards: 520,
     mass: 50,
@@ -460,7 +467,10 @@ export const BOSSES: readonly BossDef[] = [
       {
         below: 1,
         line: 'Its heart turns as it walks. Strike while it faces you.',
-        patterns: [{ kind: 'weakpoint', arc: 1.2, spin: 0.7, mult: 3 }],
+        patterns: [
+          { kind: 'weakpoint', arc: 1.2, spin: 0.7, mult: 3 },
+          { kind: 'slam', every: 6, windup: 1.3, speed: 420, damage: 5 },
+        ],
       },
       {
         below: 0.6,
@@ -468,6 +478,7 @@ export const BOSSES: readonly BossDef[] = [
         patterns: [
           { kind: 'weakpoint', arc: 1.2, spin: 0.9, mult: 3 },
           { kind: 'summon', enemy: 'titan', packs: 1, every: 7 },
+          { kind: 'slam', every: 5, windup: 1.2, speed: 440, damage: 5 },
         ],
       },
       {
@@ -476,6 +487,7 @@ export const BOSSES: readonly BossDef[] = [
         patterns: [
           { kind: 'summon', enemy: 'titan', packs: 1, every: 6 },
           { kind: 'feast', every: 4, radius: 220, heal: 1 },
+          { kind: 'slam', every: 4, windup: 1.1, speed: 480, damage: 5 },
         ],
       },
     ],
@@ -494,6 +506,7 @@ export const BOSSES: readonly BossDef[] = [
     radius: 78,
     standoff: 250,
     damage: 4,
+    enrageAfter: 105,
     xp: 130,
     shards: 600,
     mass: 30,

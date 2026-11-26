@@ -25,6 +25,15 @@
  *                                          the Abyss from waypoint floor 7 (plans/late-game/08 §9):
  *                                          the deepest floor reached, Lurkers fled and healed,
  *                                          bodies that escaped (the Inversion), Keepers that held
+ *   npm run inspect -- --seeds 6 --frontier --fixture act1 --region 9 --stop-boss
+ *                                          the Wake harness (plans/late-game/12a W3): run k plays
+ *                                          `frontierProfile(region, k)` (tools/frontier.ts), or with
+ *                                          --fixture act1 the Blight-fall profiles of frontiers.json
+ *                                          with the Wake opened up to the region; --arrival plays
+ *                                          arrivals only (even k); --stop-boss ends a run when the
+ *                                          boss falls (or wave 21 begins). Reads the fells, boss HP ÷
+ *                                          DPS at arrival, the boss's seconds, what hurt the tower and
+ *                                          the Conductors' lives
  *
  * Headless: it drives the real sim, not a model of it.
  */
@@ -45,8 +54,14 @@ import { ENEMY_BY_ID } from '../src/content/enemies';
 import { regionAt, waveHp } from '../src/sim/systems/waves';
 import { ABYSS_INDEX } from '../src/content/abyss';
 import { buildDps } from '../src/sim/suggest';
-import type { DamageBy, RunState } from '../src/sim/state';
+import type { DamageBy, HurtBy, RunState } from '../src/sim/state';
+import { PACTS } from '../src/content/pacts';
+import { WAKE_REGIONS, regionByIndex } from '../src/content/regions';
+import { selectedRegion } from '../src/meta/collection';
+import { setPactRank } from '../src/meta/pacts';
+import { migrate } from '../src/meta/save/migrate';
 import { botInput, type Policy } from './bot';
+import { frontierProfile, savesAt } from './frontier';
 
 function arg(name: string, fallback: number): number {
   const i = process.argv.indexOf(`--${name}`);
@@ -82,6 +97,10 @@ export interface RunReport {
   /** Run time of each level-up. */
   levelUps: number[];
   ultCasts: number;
+  /** The boss's max HP ÷ the build's DPS at its arrival; null if it never arrived. */
+  bossHpPerDps: number | null;
+  /** Each Conductor's seconds from first entering the tower's range to its death (plans/late-game/12a W3). */
+  conductLife: number[];
   run: RunState;
 }
 
@@ -124,6 +143,41 @@ export interface ProbeOptions {
   readonly frame?: string;
   /** The Abyss from this waypoint floor (plans/late-game/08 §4.4), in place of `regionIndex`. */
   readonly startFloor?: number;
+  /** Play this profile (`--frontier`) in place of a Forge preset's veteran. */
+  readonly profile?: Profile;
+  /** `--stop-boss`: end the run when the boss falls, or when wave 21 begins with it standing. */
+  readonly stopBoss?: boolean;
+}
+
+/** `--fixture`: where `--frontier` takes a Wake region's profiles from (plans/late-game/12a W3). */
+export type FrontierFixture = 'frontier' | 'act1';
+
+/**
+ * The `k`th profile `--frontier` plays in `region`. `act1` takes a Wake
+ * region from the Blight-fall saves of `frontiers.json` (in turn by seed,
+ * as `frontierProfile` takes its own), with every earlier Wake boss felled
+ * once so the region is open; any other region, or `frontier`, is
+ * `frontierProfile(region, k)`. Pacts are cleared: a boss fight at heat 0.
+ */
+export function frontierRunProfile(region: number, k: number, fixture: FrontierFixture = 'frontier'): Profile {
+  const wake = WAKE_REGIONS.findIndex((r) => r.index === region);
+  let profile: Profile;
+  if (fixture === 'act1' && wake >= 0) {
+    const saves = savesAt(regionByIndex(WAKE_REGIONS[0].after!).boss);
+    profile = migrate(structuredClone(saves[(k >> 1) % saves.length].profile)) as unknown as Profile;
+    for (const r of WAKE_REGIONS.slice(0, wake)) profile.bosses[r.boss] = { kills: 1, fastest: null };
+    profile.tutorial.firstDraft = true;
+    profile.region = region;
+    profile.trial = null;
+    profile.contracts.taken = null;
+  } else {
+    profile = frontierProfile(region, k);
+  }
+  for (const p of PACTS) setPactRank(profile, p.id, 0);
+  // Without the region open, `selectedRegion` silently falls back to Region 1.
+  const at = selectedRegion(profile).index;
+  if (at !== region) throw new Error(`frontier profile ${k} for region ${region} would play region ${at}`);
+  return profile;
 }
 
 /** The recipes a preset marks found, against the run's pool. */
@@ -137,7 +191,7 @@ export function simulate(
   seed: number, maxSeconds: number, policy: Policy, preset: ForgePreset = 'none', regionIndex = 1, rifts = false, secrets = false,
   probe: ProbeOptions = {},
 ): RunReport {
-  const vet = veteran(preset);
+  const vet = probe.profile ?? veteran(preset);
   if (probe.frame) {
     // A probe's frame is owned: a feat's frame (the Artificer's Tinkerer) counts as earned. Boss and star frames need their own preset.
     const unlock = frameById(probe.frame).unlock;
@@ -162,6 +216,10 @@ export function simulate(
   let row: WaveRow | null = null;
   let firstKill: number | null = null;
   let ultCasts = 0;
+  let bossHpPerDps: number | null = null;
+  /** Conductors seen in range: id → run time each first entered it. */
+  const conducting = new Map<number, number>();
+  const conductLife: number[] = [];
   const maxTicks = Math.round(maxSeconds / SIM_DT);
   while (!run.outcome && run.tick < maxTicks) {
     step(run, SIM_DT, botInput(run, policy));
@@ -173,7 +231,28 @@ export function simulate(
         if (e.fled) healed.add(e.id);
       }
     }
+    if (conducting.size > 0) {
+      // A Conductor gone from the field since the last step has died (they never walk to the wall).
+      for (const [id, at] of conducting) {
+        const e = run.enemies.find((x) => x.id === id);
+        if (!e || !e.alive) {
+          conductLife.push(run.time - at);
+          conducting.delete(id);
+        }
+      }
+    }
+    const r2 = run.stats.range * run.stats.range;
+    for (const e of run.enemies) {
+      if (!e.alive || conducting.has(e.id) || ENEMY_BY_ID[e.type]?.verb.kind !== 'conduct') continue;
+      if (e.x * e.x + e.y * e.y <= r2) conducting.set(e.id, run.time);
+    }
+    let stop = false;
     for (const ev of run.events) {
+      if (ev.kind === 'bossArrive' && run.boss) {
+        const body = run.enemies.find((e) => e.id === run.boss!.enemy);
+        if (body) bossHpPerDps = body.maxHp / buildDps(run.weapons, run.stats);
+      }
+      if (probe.stopBoss && ev.kind === 'waveStart' && ev.wave > 20) stop = true;
       if (ev.kind === 'escape') strata.escapes++;
       if (ev.kind === 'eliteSpawn' && ev.keeper !== undefined) strata.keepers++;
       if (ev.kind === 'waveStart') {
@@ -213,13 +292,14 @@ export function simulate(
       }
     }
     run.events.length = 0;
+    if (probe.stopBoss && (stop || run.boss?.killedIn != null)) break;
   }
   if (row) {
     row.duration = run.time - row.start;
     row.hpAtEnd = Math.max(0, run.tower.hp);
   }
   Object.assign(strata, { lurkers: lurkers.size, fled: fled.size, healed: healed.size });
-  return { rows, strata, firstKill, levelUps, ultCasts, run };
+  return { rows, strata, firstKill, levelUps, ultCasts, bossHpPerDps, conductLife, run };
 }
 
 /** The build, e.g. "arcane-bolt 5 · scattershot 3 | power 4 · fortify 2". */
@@ -247,6 +327,25 @@ function median(xs: number[]): number {
   return s[s.length >> 1] ?? NaN;
 }
 
+/** Each key's median share over runs (a run without it counts 0), largest first: "slams 75% · contact 20%". */
+function medianShares<K extends string>(runs: readonly Partial<Record<K, number>>[]): string {
+  const shares = runs.map((by) => {
+    const total = Object.values<number | undefined>(by).reduce<number>((a, b) => a + (b ?? 0), 0) || 1;
+    return Object.fromEntries(Object.entries<number | undefined>(by).map(([k, v]) => [k, (v ?? 0) / total])) as Partial<Record<K, number>>;
+  });
+  const keys = [...new Set(runs.flatMap((by) => Object.keys(by)))] as K[];
+  return keys
+    .map((k) => [k, median(shares.map((s) => s[k] ?? 0))] as const)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `${k} ${Math.round(v * 100)}%`)
+    .join(' · ') || '—';
+}
+
+/** "R9 carillon": the region and its boss, for the harness's line. */
+function regionLabel(region: number): string {
+  return `R${region} ${regionByIndex(region).boss}`;
+}
+
 function main(): void {
   const maxSeconds = arg('max', 1800);
   const seeds = arg('seeds', 0);
@@ -263,7 +362,19 @@ function main(): void {
     recipes: (ri >= 0 ? process.argv[ri + 1] : 'none') as RecipePreset,
     frame: fr >= 0 ? process.argv[fr + 1] : undefined,
     startFloor: arg('floor', 0) || undefined,
+    stopBoss: flag('stop-boss'),
   };
+  // `--frontier` (plans/late-game/12a W3): run k plays the region's kth frontier profile; `--arrival`, even k only.
+  const frontier = flag('frontier');
+  const fx = process.argv.indexOf('--fixture');
+  const fixture = (fx >= 0 ? process.argv[fx + 1] : 'frontier') as FrontierFixture;
+  if (fixture !== 'frontier' && fixture !== 'act1') throw new Error(`--fixture ${fixture}: want act1`);
+  const probeFor = (s: number): ProbeOptions => {
+    if (!frontier) return probe;
+    const k = flag('arrival') ? 2 * (s - 1) : s - 1;
+    return { ...probe, profile: frontierRunProfile(region, k, fixture) };
+  };
+  const forgeName = frontier ? `frontier${fixture === 'act1' ? ' (act1 fixture)' : ''}${flag('arrival') ? ' arrivals' : ''}` : preset;
   // `--uncapped`: lift every tally's goal, so the counts show each run's raw spread (a tool's view only).
   if (secrets && flag('uncapped')) for (const def of SECRETS) if (def.trigger.kind === 'tally') (def.trigger as { n: number }).n = 1e9;
   if (seeds > 0) {
@@ -291,8 +402,22 @@ function main(): void {
     const evolvedAtEnd = new Map<number, number>();
     const deep: number[] = [];
     const strata = { lurkers: 0, fled: 0, healed: 0, escapes: 0, keepers: 0 };
+    /** The Wake harness's readings (`--frontier`), one entry a run. */
+    const fight = { fells: 0, hpPerDps: [] as number[], bossSecs: [] as number[], hurt: [] as Partial<Record<HurtBy, number>>[], conduct: [] as number[], kills: [] as RunState['killsBy'][], elites: [] as number[] };
     for (let s = 1; s <= seeds; s++) {
-      const r = simulate(s, maxSeconds, policy, preset, region, rifts, secrets, probe);
+      const r = simulate(s, maxSeconds, policy, preset, region, rifts, secrets, probeFor(s));
+      if (frontier) {
+        const killedIn = r.run.boss?.killedIn;
+        if (killedIn != null) {
+          fight.fells++;
+          fight.bossSecs.push(killedIn);
+        }
+        if (r.bossHpPerDps !== null) fight.hpPerDps.push(r.bossHpPerDps);
+        fight.hurt.push(r.run.takenBy);
+        fight.conduct.push(...r.conductLife);
+        fight.kills.push(r.run.killsBy);
+        fight.elites.push(r.run.elitesKilled);
+      }
       deep.push(r.run.floors);
       for (const k of Object.keys(strata) as (keyof typeof strata)[]) strata[k] += r.strata[k];
       if (r.run.form.need > 0) formable++;
@@ -339,7 +464,7 @@ function main(): void {
       const key = r.run.weapons.map((w) => w.id).sort().join(' + ');
       loadouts.set(key, (loadouts.get(key) ?? 0) + 1);
     }
-    console.log(`${seeds} runs, policy ${policy}, forge ${preset}, region ${region}`);
+    console.log(`${seeds} runs, policy ${policy}, forge ${forgeName}, region ${region}${probe.stopBoss ? ', to the boss' : ''}`);
     console.log(`first kill: median ${median(firsts).toFixed(2)}s, worst ${Math.max(...firsts).toFixed(2)}s`);
     console.log(`death wave: median ${median(waves)} · ` + [...deaths.entries()].sort((a, b) => a[0] - b[0]).map(([w, n]) => `w${w}×${n}`).join('  '));
     console.log(`run length: median ${median(lengths).toFixed(0)}s`);
@@ -347,7 +472,18 @@ function main(): void {
       console.log(`level-ups: first median ${median(firstLevel).toFixed(1)}s · gap before 1:30 median ${median(early).toFixed(1)}s · after ${median(late).toFixed(1)}s`);
     }
     console.log('loadouts: ' + [...loadouts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ×${n}`).join('  ·  '));
-    if (flag('by-weapon')) console.log(`damage by: ${describeDamage(dealt)}`);
+    if (flag('by-weapon') || frontier) console.log(`damage by: ${describeDamage(dealt)}`);
+    if (frontier) {
+      // The Wake harness (plans/late-game/12a §1.3, W3): one line a region.
+      const f = fight;
+      const med1 = (xs: number[]): string => (xs.length > 0 ? median(xs).toFixed(1) : '—');
+      const name = regionLabel(region);
+      console.log(`${name}: fells ${f.fells}/${seeds} · HP÷DPS ${med1(f.hpPerDps)} s · boss ${med1(f.bossSecs)} s · hurt by ${medianShares(f.hurt)}`
+        + ` · Conductor life ${med1(f.conduct)} s (${f.conduct.length})`);
+      const types = [...new Set(f.kills.flatMap((k) => Object.keys(k)))] as (keyof RunState['killsBy'])[];
+      const kills = types.map((t) => [t, median(f.kills.map((k) => k[t] ?? 0))] as const).sort((a, b) => b[1] - a[1]);
+      console.log(`kills (median a run): ${kills.map(([t, n]) => `${t} ${n}`).join(' · ')} · elites ${median(f.elites)}`);
+    }
     if (probe.startFloor) {
       // Targets (plans/late-game/08 §9): a waypoint run reaches two floors on as often as a top start; Lurkers heal < 25% with Forge `all`.
       const from = probe.startFloor;
@@ -384,8 +520,8 @@ function main(): void {
     return;
   }
   const seed = arg('seed', 1);
-  const r = simulate(seed, maxSeconds, policy, preset, region, rifts, false, probe);
-  console.log(`seed ${seed} · policy ${policy} · forge ${preset} · region ${region} · first kill ${r.firstKill?.toFixed(2) ?? '—'}s · ${r.levelUps.length} level-ups · ${r.ultCasts} novas`);
+  const r = simulate(seed, maxSeconds, policy, preset, region, rifts, false, probeFor(seed));
+  console.log(`seed ${seed} · policy ${policy} · forge ${forgeName} · region ${region} · first kill ${r.firstKill?.toFixed(2) ?? '—'}s · ${r.levelUps.length} level-ups · ${r.ultCasts} novas`);
   console.log(`wave  start  dur  lvl    dps  bodies   pool   clear  carried  taken  kills  hp${rifts ? '  rift' : ''}`);
   for (const w of r.rows) {
     const clear = w.hpPool / w.dps;
@@ -399,6 +535,9 @@ function main(): void {
   console.log(`damage by: ${describeDamage(r.run.damageBy)}`);
   const b = r.run.boss;
   if (b) console.log(`boss ${b.id}: ${b.killedIn === null ? 'stood' : `fell in ${b.killedIn.toFixed(1)}s`}${b.enraged ? ' (enraged)' : ''}`);
+  if (frontier) {
+    console.log(`HP÷DPS at arrival ${r.bossHpPerDps?.toFixed(1) ?? '—'} s · hurt by ${medianShares([r.run.takenBy])} · Conductor lives ${r.conductLife.map((t) => t.toFixed(1)).join(' ') || '—'}`);
+  }
   if (form) console.log(`final form: ${r.run.form.wave !== null ? `wave ${r.run.form.wave}` : r.run.form.need > 0 ? 'not reached' : 'out of reach'} · ${formCount(r.run)} evolved`);
   const o = r.run.outcome;
   console.log(o ? `${o.kind} at wave ${o.wave}, ${o.time.toFixed(1)}s` : `still standing at ${r.run.time.toFixed(0)}s`);

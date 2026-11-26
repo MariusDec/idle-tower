@@ -29,9 +29,13 @@
 import { createRun } from '../src/sim/run';
 import type { RunState } from '../src/sim/state';
 import { BALANCE } from '../src/content/balance';
-import { BOSS_BY_ID } from '../src/content/bosses';
+import { BOSSES, BOSS_BY_ID } from '../src/content/bosses';
 import { Rng } from '../src/core/rng';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { newProfile, type Profile } from '../src/meta/profile';
+import { migrate, type RawProfile } from '../src/meta/save/migrate';
+import { starsLit } from '../src/meta/stars';
 import { autoUlt, automations, draftSeconds, marchOn, openingSeconds, runSpeed } from '../src/meta/automation';
 import { bankRun } from '../src/meta/results';
 import { heldBeat } from '../src/meta/runConfig';
@@ -41,7 +45,7 @@ import { claimAll } from '../src/meta/feats';
 import { offlineEarnings } from '../src/meta/offline';
 import type { ActiveOnlyKind } from '../src/meta/results';
 import type { BurnTally } from '../src/meta/storedLight';
-import { playRun, snapshotOf, type PlayPolicy, toolConfig } from './play';
+import { FAST_STEPS, playRun, snapshotOf, type PlayPolicy, toolConfig } from './play';
 import { shop } from './shop';
 
 /** Hours between check-ins: two a day. */
@@ -70,6 +74,8 @@ export interface IdleReport {
   burned: number;
   /** The pool when the bot stopped. */
   poolAtEnd: number;
+  /** Stars lit when the bot stopped (plans/late-game/12 §10.2: the idle bot buys none, so 0 unless a start had some). */
+  stars: number;
   /** The run tallies' totals: I9 holds `engaged` at 0 for the hands-off bot. */
   tally: BurnTally;
   /** Every run's `RunSummary.activeOnly`, summed by kind (I9). */
@@ -103,18 +109,27 @@ export function tallyOf(policy: PlayPolicy, shards: number): BurnTally {
   return policy === 'active' ? { engaged: shards, handsOff: 0 } : { engaged: 0, handsOff: shards };
 }
 
+/** The Act 1 finale, whose first fall `runIdle`'s `onFinale` marks. */
+const FINALE = BOSSES.find((b) => b.finale)!.id;
+
 /**
- * A fresh profile, played by the idle schedule until every boss in `bosses`
- * has fallen or `days` pass.
+ * A fresh profile (or a copy of `start`), played by the idle schedule until
+ * every boss in `bosses` has fallen or `days` pass. `onFinale` is handed a
+ * copy of the profile once the run the Blight first fell in is banked (its
+ * trophy and pay in), with the wall seconds then; the bot doesn't stop
+ * before that run is banked.
  */
 export function runIdle(
   days: number, seed: number, bosses: readonly string[] = Object.keys(BOSS_BY_ID), mode: IdleMode = 'hands-off',
+  start?: Profile, onFinale?: (profile: Profile, at: number) => void,
 ): IdleReport {
-  const profile = newProfile(0);
+  const profile = start ? structuredClone(start) : newProfile(0);
+  /** The finale fell in a run not yet banked (only tracked for `onFinale`). */
+  let finaleUnbanked = false;
   const seeds = new Rng(seed);
   const policy: PlayPolicy = mode === 'engaged' ? 'active' : 'idle';
   const report: IdleReport = {
-    mode, bossKills: {}, screen: {}, offline: 0, stored: 0, burned: 0, poolAtEnd: 0,
+    mode, bossKills: {}, screen: {}, offline: 0, stored: 0, burned: 0, poolAtEnd: 0, stars: 0,
     tally: { engaged: 0, handsOff: 0 }, activeOnly: {}, riftShards: 0, reliquariesFaded: 0, anomalies: { offered: 0, taken: 0 }, forms: {}, played: 0, checkins: 0, runs: 0,
   };
   /** Session wall seconds before this check-in's. */
@@ -140,7 +155,7 @@ export function runIdle(
       pending = null;
       let snap = snapshotOf(run);
       const speed = runSpeed(profile);
-      const start = clock;
+      const runStart = clock;
       const played = playRun(profile, run, {
         policy,
         speed,
@@ -151,8 +166,9 @@ export function runIdle(
         onWave: (r) => { snap = snapshotOf(r); },
         onEvent: (ev, wall) => {
           if (ev.kind === 'bossKill' && ev.first && !(ev.boss in report.bossKills)) {
-            report.bossKills[ev.boss] = start + wall;
-            report.screen[ev.boss] = screenBefore + (start - checkin) + wall;
+            report.bossKills[ev.boss] = runStart + wall;
+            report.screen[ev.boss] = screenBefore + (runStart - checkin) + wall;
+            if (onFinale && ev.boss === FINALE) finaleUnbanked = true;
           }
         },
       });
@@ -198,6 +214,10 @@ export function runIdle(
       report.riftShards += run.shardsFrom.rifts;
       report.reliquariesFaded += summary.reliquaries.faded;
       marchOn(profile, summary);
+      if (finaleUnbanked) {
+        finaleUnbanked = false;
+        onFinale!(structuredClone(profile), clock);
+      }
       if (mode === 'engaged') {
         // A present player looks over the results and shops between runs, as the pacing bot does.
         clock += ACTIVE_BETWEEN;
@@ -211,9 +231,10 @@ export function runIdle(
     }
     lastSeen = Math.min(clock, close);
     screenBefore += lastSeen - checkin;
-    if (bosses.every((b) => b in report.bossKills)) break;
+    if (bosses.every((b) => b in report.bossKills) && !finaleUnbanked) break;
   }
   report.poolAtEnd = profile.storedLight;
+  report.stars = starsLit(profile);
   // …nor wears a trim its milestones pay (plans/late-game/10 §9).
   if (profile.contracts.done !== 0 || profile.contracts.taken !== null) throw new Error('I9: the idle bot touched the Contract board');
   return report;
@@ -267,4 +288,30 @@ export function farmRatio(profile: Profile, n: number, seed: number): { active: 
   const active = farmRate(profile, 'active', n, seed).perHour;
   const idle = farmRate(profile, 'idle', n, seed);
   return { active, idle: idle.perHour, ratio: active / Math.max(1e-9, idle.perHour), opening: idle.opening };
+}
+
+/** A profile at the Blight's first fall, for the Wake's idle reading (plans/late-game/12a W9): `at` in wall seconds. */
+export interface IdleStart {
+  at: number;
+  profile: Profile;
+}
+
+/** Where `--idle --wake --make-starts` keeps each seed's idle profile at the Blight's fall. */
+export const IDLE_STARTS = 'node_modules/.tmp/idle-starts';
+
+/** A seed's idle start file; a --fast start is kept apart, so a full reading never uses one. */
+export function idleStartFile(seed: number, dir = IDLE_STARTS): string {
+  return `${dir}/seed-${seed}${FAST_STEPS > 1 ? `-fast${FAST_STEPS}` : ''}.json`;
+}
+
+export function saveIdleStart(file: string, start: IdleStart): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(start));
+}
+
+/** A saved start, walked up the save ladder (an older build may have written it); null if there is none. */
+export function loadIdleStart(file: string): IdleStart | null {
+  if (!existsSync(file)) return null;
+  const saved = JSON.parse(readFileSync(file, 'utf8')) as { at: number; profile: RawProfile };
+  return { at: saved.at, profile: migrate(saved.profile) as unknown as Profile };
 }

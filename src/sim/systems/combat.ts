@@ -177,7 +177,8 @@ const AREA: ReadonlySet<DamageSource> = new Set<DamageSource>(['lob', 'pulse', '
  */
 export function targetable(run: RunState, e: Enemy): boolean {
   // A Tick on its host (plans/late-game/12 §4.4) is out of reach until it leaps.
-  if (!e.alive || e.hiddenUntil > run.time || e.under || e.riding > 0) return false;
+  // A Floe the Leviathan cracked is terrain (D-28): nothing aims at it, and it melts.
+  if (!e.alive || e.hiddenUntil > run.time || e.under || e.riding > 0 || e.meltAt !== undefined) return false;
   return inLight(e.x, e.y, e.radius, run.stats.light, run.arena);
 }
 
@@ -1919,7 +1920,8 @@ function damageTaken(run: RunState, e: Enemy, raw: number, source: DamageSource)
  * body takes nothing.
  */
 export function damageEnemy(run: RunState, e: Enemy, raw: number, crit: boolean, source: DamageSource = 'homing'): number {
-  if (!targetable(run, e)) return 0;
+  // A cracked Floe (D-28) is no target, but a slider still breaks on it.
+  if (!targetable(run, e) && !(source === 'impact' && e.alive && e.meltAt !== undefined)) return 0;
   const B = BALANCE.behaviours;
   // Might Mastery (plans/mastery-capstones.md): a weapon's hit spends the bank.
   const banked = run.capstones.bank > 0 || run.behaviours['might-capstone'] ? spendBank(run, raw, source) : 0;

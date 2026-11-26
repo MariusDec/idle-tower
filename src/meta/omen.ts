@@ -330,12 +330,14 @@ export function omenConfig(n: number, practice = false): RunConfig {
   }
   const merged: Partial<Record<BehaviourId, number>> = { ...base.behaviours };
   for (const [id, k] of Object.entries(behaviours) as [BehaviourId, number][]) merged[id] = (merged[id] ?? 0) + k;
+  const might = BALANCE.omen.might[roll.region];
   return Object.freeze({
     ...base,
     regionId: roll.region,
     trial: null,
     contract: null,
-    mods: Object.freeze([...base.mods, ...mods]),
+    // The Wake's days: a Wake player's tower (D-31, plans/late-game/12a §5).
+    mods: Object.freeze([...base.mods, ...mods, ...(might ? [{ key: 'damage' as const, mult: might }] : [])]),
     pool: Object.freeze(pool),
     firstDraft: null,
     behaviours: Object.freeze(merged),

@@ -408,7 +408,6 @@ describe('run snapshot (§12.4)', () => {
   });
 
   it('refuses a v22 snapshot, from before the Wake (plans/late-game/12 §3.2), as stale', async () => {
-    expect(SNAPSHOT_VERSION).toBe(23);
     const store = new MemorySaveStore();
     const profile = newProfile(7);
     const run = createRun(buildRunConfig(profile), 1);
@@ -417,6 +416,18 @@ describe('run snapshot (§12.4)', () => {
     await store.set(RUN_KEY, snap(SNAPSHOT_VERSION));
     expect(await loadRunSnapshot(profile, store)).not.toBeNull();
     await store.set(RUN_KEY, snap(22));
+    expect(await loadRunSnapshot(profile, store)).toBeNull();
+  });
+
+  it("refuses a v23 snapshot, from before the Leviathan's Floes melt (D-28), as stale", async () => {
+    expect(SNAPSHOT_VERSION).toBe(24);
+    const store = new MemorySaveStore();
+    const profile = newProfile(7);
+    const run = createRun(buildRunConfig(profile), 1);
+    const snap = (version: number): string => seal(JSON.stringify({ version, profile: profile.createdAt, runs: profile.records.runs, run: { ...run, events: [] } }));
+    await store.set(RUN_KEY, snap(SNAPSHOT_VERSION));
+    expect(await loadRunSnapshot(profile, store)).not.toBeNull();
+    await store.set(RUN_KEY, snap(23));
     expect(await loadRunSnapshot(profile, store)).toBeNull();
   });
 });

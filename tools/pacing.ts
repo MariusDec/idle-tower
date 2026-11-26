@@ -28,6 +28,12 @@
  *   npm run pacing -- --hours 12 --seeds 8
  *                                        the full report, Act 1 to its end (P7's gate)
  *   npm run pacing -- --idle --seeds 4   the idle bot (tools/idle.ts): I2 and I5
+ *   npm run pacing -- --idle --wake --make-starts --seeds 4
+ *                                        the idle bot to the Blight's fall, each seed's
+ *                                        profile saved there (slow: days of sim per seed)
+ *   npm run pacing -- --idle --wake --seeds 4
+ *                                        …then from those saves, the Blight to the
+ *                                        Thunderhead (plans/late-game/12a W9, D-23)
  *   npm run pacing -- --act2 --hours 12 --seeds 4
  *                                        Act 2 (tools/act2.ts, P8's gate): from the
  *                                        Blight's fall, N hours of heat, stars and the
@@ -38,6 +44,8 @@
  *   npm run pacing -- --act2 --reuse     …from the post-Blight profiles the last
  *                                        --act2 saved (T4): minutes, not half an
  *                                        hour, but only while Act 1 is unchanged
+ *   npm run pacing -- --act2 --stop-at thunderhead
+ *                                        …each seed stops once that boss is down
  *   npm run pacing -- --arena tablet-l   play on another stage's light (tools/play.ts's
  *                                        ARENA_SHAPES); --fog 2|3|4 forces its squareness
  *                                        (plans/large-screens.md §11.2)
@@ -67,11 +75,11 @@ import { TRIALS, TRIAL_BY_ID } from '../src/content/trials';
 import { chooseTrial, trialPrize, trialWon, trialsOpen } from '../src/meta/trials';
 import { Rng } from '../src/core/rng';
 import { formatDuration } from '../src/core/format';
-import type { BranchId } from '../src/content/types';
+import type { BossId, BranchId } from '../src/content/types';
 import { FAST_STEPS, TOOL_ARENA, arenaLine, playRun, toolConfig } from './play';
 import { PHONE_OVAL } from '../src/content/arena';
 import { shop } from './shop';
-import { CHECKIN_EVERY, SESSION, farmRatio, runIdle, type IdleReport } from './idle';
+import { CHECKIN_EVERY, IDLE_STARTS, SESSION, farmRatio, idleStartFile, loadIdleStart, runIdle, saveIdleStart, type IdleReport, type IdleStart } from './idle';
 import { CONTRACT_SHARE, runAct2, takePacts, type Act2Report } from './act2';
 import { botTake, emptyContractTally, holdsUlt, steerConfig, successLine, tallyContract, type ContractTally } from './contractBot';
 import { boardOpen } from '../src/meta/contracts';
@@ -219,6 +227,8 @@ export interface RunRow {
   region: number;
   /** Seconds the boss took to fall, or null if it stood or never came. */
   bossKilledIn: number | null;
+  /** The run ended won: overtime's last wave held, or its time run out (D-26). */
+  cleared: boolean;
 }
 
 export interface PacingReport {
@@ -469,6 +479,7 @@ export function runPacing(hours: number, seed: number): PacingReport {
       bought,
       region: summary.regionId,
       bossKilledIn: summary.boss?.killedIn ?? null,
+      cleared: summary.outcome === 'cleared',
     });
     clock += bought.length > 0 ? BETWEEN_RUNS.shopping : BETWEEN_RUNS.idle;
   }
@@ -636,9 +647,79 @@ async function frontiersMain(): Promise<void> {
   console.log(`frontier profiles written to ${FRONTIER_FILE}`);
 }
 
-const JOBS = { pacing: runPacing, idle: idleVerdict, act2: act2Verdict, frontiers: frontierRun };
+/** D-23 (plans/late-game/12a W9): the idle bot's days from the Blight to the Thunderhead, at most (median), and how long it is given. */
+export const WAKE_IDLE_DAYS = 4;
+const WAKE_IDLE_CAP = 6;
+
+/** One seed's idle start: the hands-off bot from a fresh profile to the Blight's fall, saved there. Null if it never fell. */
+export function idleStartRun(seed: number): { at: number; file: string } | null {
+  let start: IdleStart | null = null;
+  runIdle(IDLE_DAYS_CAP, seed, [FINALE], 'hands-off', undefined, (profile, at) => { start ??= { at, profile }; });
+  if (!start) return null;
+  const file = idleStartFile(seed);
+  saveIdleStart(file, start);
+  return { at: (start as IdleStart).at, file };
+}
+
+export interface IdleWakeVerdict {
+  /** Wall seconds the idle bot took to the saved Blight start. */
+  act1: number;
+  /** The Wake's hands-off reading: `bossKills` are wall seconds after the start. */
+  report: IdleReport;
+}
+
+/** D-23's reading for one seed: from its saved idle start, the hands-off bot until the Thunderhead falls or the cap. Null with no start. */
+export function idleWakeVerdict(seed: number): IdleWakeVerdict | null {
+  const start = loadIdleStart(idleStartFile(seed));
+  if (!start) return null;
+  return { act1: start.at, report: runIdle(WAKE_IDLE_CAP, seed, [WAKE_FINALE], 'hands-off', start.profile) };
+}
+
+const JOBS = { pacing: runPacing, idle: idleVerdict, act2: act2Verdict, frontiers: frontierRun, idleStart: idleStartRun, idleWake: idleWakeVerdict };
 const seedsOf = (n: number): number[] => Array.from({ length: n }, (_, k) => k + 1);
 const runSeeds = <T>(name: keyof typeof JOBS, argLists: unknown[][]): Promise<T[]> => parallel<T>(process.argv[1], name, argLists);
+
+async function idleWakeMain(seeds: number, make: boolean): Promise<void> {
+  const days = (t: number | null | undefined): string => (t == null ? 'never' : `${(t / 86400).toFixed(1)} d`);
+  if (make) {
+    console.log(`idle starts · ${seeds} profiles · the hands-off bot to the Blight's fall (up to ${IDLE_DAYS_CAP} d each)`);
+    const t0 = Date.now();
+    const made = await runSeeds<{ at: number; file: string } | null>('idleStart', seedsOf(seeds).map((k) => [k]));
+    for (const [k, m] of made.entries()) {
+      console.log(`  seed ${k + 1}: ${m ? `Blight at ${days(m.at)} · saved to ${m.file}` : `the Blight never fell in ${IDLE_DAYS_CAP} d: no start`}`);
+    }
+    console.log(`  took ${((Date.now() - t0) / 60000).toFixed(1)} min`);
+    return;
+  }
+  const missing = seedsOf(seeds).filter((k) => !existsSync(idleStartFile(k)));
+  if (missing.length > 0) {
+    const fast = FAST_STEPS > 1 ? ` --fast=${FAST_STEPS}` : '';
+    console.log(`no idle start for seed${missing.length > 1 ? 's' : ''} ${missing.join(', ')} in ${IDLE_STARTS}. Make them first (slow: the idle bot's whole Act 1, per seed):`);
+    console.log(`  npm run pacing -- --idle --wake --make-starts --seeds ${seeds}${fast}`);
+    process.exitCode = 1;
+    return;
+  }
+  const wakeBosses = WAKE_REGIONS.map((w) => w.boss);
+  console.log(`idle · the Wake · ${seeds} profiles from their saved Blight starts · up to ${WAKE_IDLE_CAP} d each · check-ins every ${CHECKIN_EVERY / 3600} h, ${SESSION / 60} min each`);
+  const verdicts = await runSeeds<IdleWakeVerdict | null>('idleWake', seedsOf(seeds).map((k) => [k]));
+  for (const [k, v] of verdicts.entries()) {
+    if (!v) continue;
+    const bosses = wakeBosses.map((b) => `${BOSS_BY_ID[b].name.replace(/^The /, '')} ${days(v.report.bossKills[b])}`).join(' · ');
+    console.log(`  seed ${k + 1}: Blight at ${days(v.act1)} · after it: ${bosses} · runs ${v.report.runs} · stars lit ${v.report.stars}`);
+  }
+  const thunder = verdicts.map((v) => v?.report.bossKills[WAKE_FINALE] ?? Infinity).sort((a, b) => a - b);
+  const m = thunder[thunder.length >> 1];
+  const ok = Number.isFinite(m) && m <= WAKE_IDLE_DAYS * 86400;
+  const list = thunder.map((t) => (Number.isFinite(t) ? days(t) : 'never')).join(' ');
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  D-23  ${BOSS_BY_ID[WAKE_FINALE].name} first falls: median ${Number.isFinite(m) ? days(m) : `not in ${WAKE_IDLE_CAP} d`} after the Blight (want ≤ ${WAKE_IDLE_DAYS} d; ${list})`);
+  for (const b of wakeBosses) {
+    const ts = verdicts.map((v) => v?.report.bossKills[b] ?? Infinity).sort((x, y) => x - y);
+    const mb = ts[ts.length >> 1];
+    console.log(`        ${BOSS_BY_ID[b].name}: median ${Number.isFinite(mb) ? days(mb) : 'never'}`);
+  }
+  const lit = verdicts.reduce((n, v) => n + (v?.report.stars ?? 0), 0);
+  console.log(`        stars lit: ${lit} (the idle bot buys none: plans/late-game/12 §10.2)`);
+}
 
 async function idleMain(seeds: number, activeHours: number): Promise<void> {
   const days = (t: number | null | undefined): string => (t == null ? 'never' : `${(t / 86400).toFixed(1)} d`);
@@ -716,9 +797,9 @@ export const HEAT_10_HOURS = { min: 3, max: 12 };
 /** S7's readings: the best Abyss floor at 12 h, and the hours of Act 2 the last star should take (B7). */
 const ABYSS_FLOOR_12H = 10;
 const LAST_STAR_HOURS = { min: 20, max: 40 };
-/** The Wake's readings (plans/late-game/12 §14): its first boss's fall, and its last's (so the Abyss), in wall hours after the Blight. */
-const WAKE_FIRST_HOURS = { min: 0, max: 1 };
-const WAKE_LAST_HOURS = { min: 6, max: 10 };
+/** The Wake's readings (plans/late-game/12 §14, O-1 in 12a): its first boss's fall, and its last's (so the Abyss), in wall hours after the Blight. */
+const WAKE_FIRST_HOURS = { min: 0, max: 0.5 };
+const WAKE_LAST_HOURS = { min: 2, max: 4 };
 /** Wall seconds as hours, one decimal ("0.6 h"); "never" for none. */
 function hoursOf(t: number | null | undefined): string {
   return t == null ? 'never' : `${(t / 3600).toFixed(1)} h`;
@@ -736,7 +817,7 @@ export interface Act2Verdict {
 const ACT2_STARTS = 'node_modules/.tmp/act2-starts';
 
 /** Act 1 to the Blight's fall (or the saved fall, with `reuse`), then `hours` of Act 2 (§9). */
-export function act2Verdict(seed: number, hours: number, reuse = false, keep = false): Act2Verdict {
+export function act2Verdict(seed: number, hours: number, reuse = false, keep = false, stopAt?: BossId): Act2Verdict {
   // A --fast start is kept apart, so a full reading never reuses one.
   const file = `${ACT2_STARTS}/seed-${seed}${FAST_STEPS > 1 ? `-fast${FAST_STEPS}` : ''}.json`;
   let start: { at: number; profile: Profile } | null = null;
@@ -754,7 +835,7 @@ export function act2Verdict(seed: number, hours: number, reuse = false, keep = f
   }
   if (!start) return { act1: null, report: null };
   const profile = structuredClone(start.profile);
-  return { act1: start.at, report: runAct2(profile, hours, seed, keep) };
+  return { act1: start.at, report: runAct2(profile, hours, seed, keep, stopAt) };
 }
 
 /** P8's reading: the median time to heat `h` at the frontier, in wall seconds after the Blight; null for never. */
@@ -773,10 +854,10 @@ function contractHours(r: Act2Report): number {
   return Math.max(1e-9, (r.seconds / 3600) * (r.contracts.runs / Math.max(1, r.runs)));
 }
 
-async function act2Main(seeds: number, hours: number, reuse: boolean, keep = false): Promise<void> {
+async function act2Main(seeds: number, hours: number, reuse: boolean, keep = false, stopAt?: BossId): Promise<void> {
   const fmt = (t: number | null | undefined): string => (t == null ? 'never' : formatDuration(t));
-  console.log(`act 2 · ${hours} h after the Blight · ${seeds} profiles${reuse ? ' · saved starts' : ''}`);
-  const verdicts = await runSeeds<Act2Verdict>('act2', seedsOf(seeds).map((k) => [k, hours, reuse, keep]));
+  console.log(`act 2 · ${hours} h after the Blight · ${seeds} profiles${reuse ? ' · saved starts' : ''}${stopAt ? ` · stopped at ${stopAt}` : ''}`);
+  const verdicts = await runSeeds<Act2Verdict>('act2', seedsOf(seeds).map((k) => [k, hours, reuse, keep, stopAt]));
   if (keep) {
     // The Wake's frontier fixture (plans/late-game/12 §10.3): the Blight's fall and each Wake boss's.
     saveFrontiers(verdicts.flatMap((v) => v.report?.saves ?? []), true);
@@ -792,6 +873,9 @@ async function act2Main(seeds: number, hours: number, reuse: boolean, keep = fal
     console.log(`  seed ${k + 1}: Blight at ${fmt(v.act1)} · runs ${r.runs} (${r.abyssRuns} Abyss) · stars ${r.stars} · capstones ${r.growth.capstones}/12 · Fortune ${r.growth.fortune} · tempered ${r.growth.tempered} · floor ${r.floor} · Starlight ${r.starlight}`
       + ` · reliquaries ${r.reliquaries.claimed}/${r.reliquaries.seen} claimed · anomalies ${r.anomalies.offered} (${r.anomalies.abyss} Abyss) / ${r.runs} runs`);
     console.log(`           frontier heat 1–10: ${ladder}`);
+    // D-26: no run should hit the tools' safety net; the Abyss's longest is O-6's reading.
+    const mins = (s: number): string => (s / 60).toFixed(1);
+    console.log(`           runs cut off: ${r.cutOff} · longest run: region ${mins(r.longest.region)} min, Abyss ${mins(r.longest.abyss)} min`);
     console.log(`           records: ${Object.entries(r.best).map(([i, h]) => `R${i} ${h}`).join(' · ')} · last star ${fmt(r.lastStar)}`);
     const src = r.sources;
     console.log(`           Starlight from: ${Object.entries(src.heat).map(([i, n]) => `R${i} ${n}`).join(' · ')} · Abyss ${src.abyss} · strata ${src.strata} · Rush ${src.rush} · feats ${src.feats} · contracts ${src.contracts} · Wake ${src.wake}`);
@@ -835,7 +919,7 @@ async function act2Main(seeds: number, hours: number, reuse: boolean, keep = fal
     }, emptyContractTally());
     console.log(`        contract success by tier: ${successLine(all)} (want ~85 / 65 / 45 / 30%)`);
   }
-  // The Wake (plans/late-game/12 §14): each boss's first fall after the Blight; the Carillon within 1 h, the last within 6–10 h.
+  // The Wake (plans/late-game/12 §14): each boss's first fall after the Blight; the Carillon within 0.5 h, the last within 2–4 h (O-1).
   for (const [i, w] of WAKE_REGIONS.entries()) {
     const times = reports.map((r) => r.wake[w.boss] ?? Infinity);
     const m = med(times);
@@ -893,7 +977,15 @@ async function main(): Promise<void> {
     return;
   }
   if (process.argv.includes('--act2')) {
-    await act2Main(Math.max(1, seeds || 1), hours, process.argv.includes('--reuse'), process.argv.includes('--wake-frontiers'));
+    // `--stop-at <boss>` (plans/late-game/12a W2): each seed ends once that boss is down.
+    const stopAt = arg('stop-at', '');
+    if (stopAt && !(stopAt in BOSS_BY_ID)) throw new Error(`--stop-at ${stopAt}: no such boss`);
+    await act2Main(Math.max(1, seeds || 1), hours, process.argv.includes('--reuse'), process.argv.includes('--wake-frontiers'), (stopAt || undefined) as BossId | undefined);
+    return;
+  }
+  if (process.argv.includes('--idle') && process.argv.includes('--wake')) {
+    // D-23's gate (plans/late-game/12a W9): from saved idle starts, or `--make-starts` to save them.
+    await idleWakeMain(Math.max(1, seeds || 1), process.argv.includes('--make-starts'));
     return;
   }
   if (process.argv.includes('--idle')) {
@@ -951,6 +1043,10 @@ async function main(): Promise<void> {
     console.log(`  ${okFin ? 'PASS' : 'FAIL'}  I1b median first ${BOSS_BY_ID[FINALE].name} kill ${fmt(fin)} (${I1B_WANT}) · passes ${count((r) => r.i1b)}`);
     console.log(`  first evolution: ${reports.map((r) => fmt(r.firstEvolution)).join(' ')}`);
     console.log(`        median first evolution ${fmt(medianOf(reports, (r) => r.firstEvolution))} (§7.1 aims at 1:30:00–2:00:00)`);
+    // D-26: how long runs last in sim time, and how many ended won (overtime's last wave held, or its time out).
+    const sims = reports.flatMap((r) => r.runs.map((x) => x.simSeconds)).sort((a, b) => a - b);
+    const simMin = (s: number | undefined): string => ((s ?? 0) / 60).toFixed(1);
+    console.log(`  run sim minutes: median ${simMin(sims[sims.length >> 1])} · max ${simMin(sims[sims.length - 1])} · cleared ${reports.map((r) => r.runs.filter((x) => x.cleared).length).join(' ')}`);
     return;
   }
   const csv = arg('csv', '');

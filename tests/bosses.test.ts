@@ -10,8 +10,10 @@ import { BOSS_WAVE, rollWave, startWave, waveDamage, waveHp, waveShardMult } fro
 import { tickWake } from '../src/sim/systems/wake';
 import { bossBody, tickBoss, tickRings, weakPoint, weakPointMult } from '../src/sim/systems/boss';
 import { body } from './helpers/body';
-import { damageEnemy } from '../src/sim/systems/combat';
-import { hurtTower } from '../src/sim/systems/tower';
+import { damageEnemy, targetable } from '../src/sim/systems/combat';
+import { healTower, hurtTower } from '../src/sim/systems/tower';
+import { tickEnemies } from '../src/sim/systems/enemies';
+import { mitigate } from '../src/sim/systems/damage';
 import { Rng } from '../src/core/rng';
 import type { RunState } from '../src/sim/state';
 
@@ -155,6 +157,94 @@ describe('boss patterns', () => {
   });
 });
 
+describe('the enrage clock (plans/late-game/12a)', () => {
+  /** Seconds from the boss's arrival to its enrage, the clock alone moving. */
+  function enrageTime(region: number): number {
+    const run = atBoss(region);
+    const r = regionByIndex(region);
+    while (!run.boss!.enraged && run.time < 600) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, r, SIM_DT);
+    }
+    return run.time - run.boss!.arrivedAt;
+  }
+
+  it('an Act 1 boss enrages at the default', () => {
+    expect(BOSS_BY_ID.gatekeeper.enrageAfter).toBeUndefined();
+    expect(enrageTime(1)).toBeCloseTo(BALANCE.boss.enrageAfter, 1);
+  });
+
+  it('a Wake boss enrages at its own time', () => {
+    const own = BOSS_BY_ID.carillon.enrageAfter!;
+    expect(own).toBeGreaterThan(BALANCE.boss.enrageAfter);
+    expect(enrageTime(9)).toBeCloseTo(own, 1);
+  });
+});
+
+describe('Rampart against rage (§11.4)', () => {
+  /** The boss at the wall, `enraged` or not, against a tower with Rampart (or without). */
+  function atWall(rampart: boolean, enraged: boolean): RunState {
+    const run = atBoss();
+    if (rampart) run.behaviours = { ...run.behaviours, rampart: 1 };
+    run.weapons.length = 0;
+    const e = bossBody(run)!;
+    e.x = e.px = run.stats.radius + e.radius;
+    e.y = e.py = 0;
+    if (enraged) {
+      run.tick = Math.round((run.boss!.arrivedAt + BALANCE.boss.enrageAfter + 25) / SIM_DT);
+      run.time = run.tick * SIM_DT;
+    }
+    tickBoss(run, regionByIndex(1), SIM_DT);
+    expect(run.boss!.enraged).toBe(enraged);
+    return run;
+  }
+
+  it('caps an unenraged contact hit as before', () => {
+    const run = atWall(true, false);
+    const e = bossBody(run)!;
+    const hp = run.tower.hp;
+    hurtTower(run, 1e9, e.x, e.y, e, 'contact');
+    expect(hp - run.tower.hp).toBeCloseTo(run.stats.maxHp * BALANCE.behaviours.rampartCap);
+  });
+
+  it('caps the hit before the enrage grows it', () => {
+    const run = atWall(true, true);
+    const e = bossBody(run)!;
+    const rage = Math.pow(BALANCE.boss.enrageGrowth, 3);
+    expect(e.damage / (waveDamage(regionByIndex(1), BOSS_WAVE) * BOSS_BY_ID.gatekeeper.damage)).toBeCloseTo(rage);
+    run.stats.maxHp = run.tower.hp = 1e12;
+    hurtTower(run, 1e15, e.x, e.y, e, 'contact');
+    expect(1e12 - run.tower.hp).toBeCloseTo(1e12 * BALANCE.behaviours.rampartCap * rage, -3);
+  });
+
+  it('leaves a hit without Rampart as it was', () => {
+    const run = atWall(false, true);
+    const e = bossBody(run)!;
+    run.stats.maxHp = run.tower.hp = 1e12;
+    hurtTower(run, e.damage, e.x, e.y, e, 'contact');
+    expect(1e12 - run.tower.hp).toBeCloseTo(mitigate(e.damage, run.stats.armor), -3);
+  });
+
+  it('an enraged boss still ends a fight with a tower that out-heals the cap', () => {
+    const run = atWall(true, false);
+    const region = regionByIndex(1);
+    // Regen twice what capped hits take away: before the fix, a fight that never ends.
+    const cap = run.stats.maxHp * BALANCE.behaviours.rampartCap;
+    const regen = (2 * cap) / BALANCE.boss.attackInterval;
+    const enrageAt = run.boss!.arrivedAt + BALANCE.boss.enrageAfter;
+    while (run.tower.hp > 0 && run.time < enrageAt + 600) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, region, SIM_DT);
+      tickEnemies(run, SIM_DT);
+      if (run.tower.hp > 0) healTower(run, regen * SIM_DT);
+    }
+    expect(run.tower.hp).toBeLessThanOrEqual(0);
+    expect(run.time - enrageAt).toBeLessThan(240);
+  });
+});
+
 describe('the Carillon (plans/late-game/12 §7.1)', () => {
   /** The Carillon at its post, in phase `phase`, with the bell about to toll. */
   function carillon(phase: number): RunState {
@@ -213,6 +303,14 @@ describe('the Carillon (plans/late-game/12 §7.1)', () => {
     const rule = regionByIndex(9).rule!.effect;
     const floor = rule.kind === 'toll' ? rule.window * BALANCE.wake.toll.minInterval : NaN;
     expect(run.wake!.toll!.interval).toBeCloseTo(Math.max(floor, before * 0.5));
+  });
+
+  it('its quickened toll never comes sooner than 1.5 s (D-27)', () => {
+    const run = carillon(2);
+    run.wake!.toll!.pace = 1e-3;
+    run.wake!.toll!.next = run.time;
+    untilToll(run);
+    expect(run.wake!.toll!.interval).toBeGreaterThanOrEqual(1.5 - 1e-9);
   });
 });
 
@@ -378,6 +476,49 @@ describe('the Leviathan (plans/late-game/12 §7.1)', () => {
       tickBoss(run, regionByIndex(11), SIM_DT);
     }
     expect(floes(run)).toHaveLength(8);
+  });
+
+  it('its Floes melt `melt` s after they crack, and all of them when it falls, unpaid (D-28)', () => {
+    const run = atBoss(11);
+    toPost(run);
+    const e = bossBody(run)!;
+    e.hp = e.maxHp * 0.3;
+    tickBoss(run, regionByIndex(11), SIM_DT);
+    const ring = floes(run);
+    expect(ring).toHaveLength(8);
+    for (const f of ring) {
+      expect(f.meltAt).toBeCloseTo(run.time + F.melt, 9);
+      expect(targetable(run, f)).toBe(false);
+    }
+    // A wave's Floe is no terrain: it doesn't melt with the boss.
+    const stray = body(run, { type: 'floe', x: 400, y: 0, radius: 34 });
+    const kills = run.kills;
+    damageEnemy(run, e, 1e12, false);
+    expect(run.boss?.killedIn).not.toBeNull();
+    expect(floes(run)).toEqual([stray]);
+    // Only the boss's own kill counts: a Floe melts unkilled.
+    expect(run.kills).toBe(kills + 1);
+    expect(run.killsBy.floe).toBeUndefined();
+  });
+
+  it('its Floes melt on their own `melt` s after they crack', () => {
+    const run = atBoss(11);
+    toPost(run);
+    const e = bossBody(run)!;
+    e.hp = e.maxHp * 0.3;
+    tickBoss(run, regionByIndex(11), SIM_DT);
+    expect(floes(run)).toHaveLength(8);
+    const t0 = run.time;
+    while ((run.tick + 1) * SIM_DT < t0 + F.melt - SIM_DT / 2) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickWake(run, regionByIndex(11), SIM_DT);
+    }
+    expect(floes(run)).toHaveLength(8);
+    run.tick++;
+    run.time = run.tick * SIM_DT;
+    tickWake(run, regionByIndex(11), SIM_DT);
+    expect(floes(run)).toHaveLength(0);
   });
 
   it('opens no relic slot (D-13)', () => {

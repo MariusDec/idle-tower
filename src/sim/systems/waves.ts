@@ -498,6 +498,12 @@ export function swallow(run: RunState, o: Enemy): void {
   run.events.push({ kind: 'trample', x: o.x, y: o.y });
 }
 
+/** A Floe melts (D-28): gone, with no kill, no pay and no XP, as a swallowed body. */
+export function melt(run: RunState, o: Enemy): void {
+  o.alive = false;
+  if (run.current && o.wave === run.current.n) run.current.alive--;
+}
+
 /** Husk Splinter (§9): hits a Husk's shell swallows fewer. */
 function brittleShell(run: RunState): number {
   const rank = run.behaviours['brittle-shell'] ?? 0;
@@ -575,12 +581,30 @@ function keeperHolds(run: RunState, cur: WaveState): boolean {
   return run.enemies.some((e) => e.alive && e.keeper && e.wave === cur.n);
 }
 
+/** The region holds (D-26): overtime's last wave held, or its time run out. Won, as Boss Rush's last boss. */
+function holdRegion(run: RunState, region: RegionDef, n: number): void {
+  // As reaching wave n + 1 would pay (startWave).
+  const bonus = waveBonus(region, n) * run.stats.shardMult;
+  run.shards += bonus;
+  run.shardsFrom.waves += bonus;
+  run.outcome = { kind: 'cleared', wave: n, time: run.time };
+  run.draft = null;
+  run.events.push({ kind: 'cleared' });
+}
+
 /** Place due spawns, then start the next wave if the overlap rule allows. */
 export function tickWaves(run: RunState, region: RegionDef): void {
   const W = BALANCE.waves;
   const cur = run.current;
   if (!cur) {
     if (run.time >= W.firstWaveDelay) startWave(run, region, run.startWave);
+    return;
+  }
+  // Overtime's time runs out (D-26): the run ends, won, at the wave it's on.
+  const b0 = run.boss;
+  if (!region.abyss && !region.rush && cur.n > BOSS_WAVE && b0?.killedIn != null
+    && run.time - (b0.arrivedAt + b0.killedIn) >= BALANCE.overtime.maxSeconds) {
+    holdRegion(run, region, cur.n);
     return;
   }
   const elapsed = run.time - cur.startedAt;
@@ -630,6 +654,11 @@ export function tickWaves(run: RunState, region: RegionDef): void {
   if (cur.doneAt !== null && shouldAdvance(cur, run.time, wavePace(run, cur.n))) {
     // A Keeper's wave holds the next floor until it falls, or its hold runs out.
     if (isKeeperWave(region, cur.n) && keeperHolds(run, cur)) return;
+    // Overtime's last wave held (D-26): the region holds.
+    if (!region.abyss && !region.rush && cur.n >= BOSS_WAVE + BALANCE.overtime.maxWaves) {
+      holdRegion(run, region, cur.n);
+      return;
+    }
     startWave(run, next, cur.n + 1);
   }
 }

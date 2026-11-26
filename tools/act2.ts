@@ -182,13 +182,18 @@ export interface Act2Report {
    * the Blight's fall, then at each Wake boss's first fall, the Forge shopped.
    */
   saves: FrontierSave[];
+  /** Runs that hit the tools' safety net (`MAX_RUN_SECONDS`) rather than ending (D-26: expect 0). */
+  cutOff: number;
+  /** The longest run's sim seconds, by kind: a region (Act 1 or the Wake), the Abyss, Boss Rush. */
+  longest: { region: number; abyss: number; rush: number };
 }
 
 /**
  * Play Act 2 for `hours` wall hours from `profile`, which must have the
- * Blight down. The profile is played on in place.
+ * Blight down. The profile is played on in place. With `stopAt`
+ * (`--stop-at`, plans/late-game/12a W2), it ends early once that boss is down.
  */
-export function runAct2(profile: Profile, hours: number, seed: number, keep = false): Act2Report {
+export function runAct2(profile: Profile, hours: number, seed: number, keep = false, stopAt?: BossId): Act2Report {
   const seeds = new Rng(seed * 7919 + 1);
   const end = hours * 3600;
   const fails = new Map<string, number>();
@@ -213,6 +218,8 @@ export function runAct2(profile: Profile, hours: number, seed: number, keep = fa
   let lastStar: number | null = null;
   const reliquaries = { seen: 0, claimed: 0, faded: 0 };
   const anomalies = { offered: 0, abyss: 0 };
+  let cutOff = 0;
+  const longest = { region: 0, abyss: 0, rush: 0 };
 
   while (clock < end) {
     // The frontier moves with the Wake (plans/late-game/12 §10.1): the newest region opened.
@@ -273,6 +280,9 @@ export function runAct2(profile: Profile, hours: number, seed: number, keep = fa
     clock += played.wall;
     const summary = bankRun(profile, run, played.newCards, speed);
     runs++;
+    if (played.cutOff) cutOff++;
+    const kind = summary.abyss ? 'abyss' : summary.rush ? 'rush' : 'region';
+    longest[kind] = Math.max(longest[kind], run.time);
     if (contract) {
       tallyContract(contracts, contract.tier, summary);
       sources.contracts += summary.contract?.pay?.starlight ?? 0;
@@ -327,6 +337,8 @@ export function runAct2(profile: Profile, hours: number, seed: number, keep = fa
     clock += bought.length > 0 ? BETWEEN_RUNS.shopping : BETWEEN_RUNS.idle;
     if (lastStar === null && starsLit(profile) === STARS.length) lastStar = clock;
     if (summary.wakeRecord) keepAt(summary.wakeRecord.boss, start + played.wall);
+    // After `keepAt`, so the fixture still gets that boss's save.
+    if (stopAt && bossDown(profile, stopAt)) break;
   }
   const best: Record<number, number> = {};
   for (const r of REGIONS) best[r.index] = bestHeat(profile, r.index);
@@ -339,6 +351,8 @@ export function runAct2(profile: Profile, hours: number, seed: number, keep = fa
     wake,
     saves,
     contracts,
+    cutOff,
+    longest,
     cursed: Object.fromEntries(ownedCursed(profile).map((r) => [r.id, { rank: relicRank(profile, r.id), bound: profile.bound[r.id] ?? 0 }])),
   };
 }

@@ -510,7 +510,9 @@ export class Renderer {
           }
           break;
         case 'cleared':
-          this.showBanner('Boss Rush cleared', `Every boss down in ${formatDuration(run.outcome?.time ?? run.time)}.`, 'gold');
+          // Boss Rush's last boss (N8), or a region's last overtime wave held (D-26).
+          if (runRegion(run).rush) this.showBanner('Boss Rush cleared', `Every boss down in ${formatDuration(run.outcome?.time ?? run.time)}.`, 'gold');
+          else this.showBanner('The region holds', 'Twenty waves past the crown.', 'gold');
           break;
         case 'floor':
           // The Abyss (§9): a floor cleared; the next one is deeper still.

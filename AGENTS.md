@@ -134,7 +134,11 @@ npm run arsenal     # I4: the bot's weapon picks per region
 npm run arsenal -- --keystones  # T4: each keystone against none, Regions 3–6; free or trap fails
 npm run pacing -- --frontiers    # rewrite tools/fixtures/frontiers.json (the arsenal's towers) after an Act 1 balance change
 npm run pacing -- --act2 --wake-frontiers --hours 12 --seeds 3  # also write tools/fixtures/wake-frontiers.json (the Wake's towers)
-npm run arsenal -- --wake        # I4 in the Wake's regions (9–13), on the Wake frontier fixture
+npm run pacing -- --act2 --reuse --stop-at thunderhead --hours 6 --seeds 4  # the Wake's pace: each seed stops once that boss is down
+npm run pacing -- --idle --wake --make-starts --seeds 4  # save the idle bot's profile at the Blight's fall, per seed (plays its whole Act 1: ~20 s for 4 seeds)
+npm run pacing -- --idle --wake --seeds 4  # D-23's gate: from those starts, the hands-off bot to the Thunderhead (≤ 4 days)
+npm run arsenal -- --wake        # I4 in the Wake's regions (9–13), on the Wake frontier fixture, against a Blight Heart reference row
+npm run inspect -- --seeds 12 --frontier --fixture act1 --region 9 --stop-boss  # the Wake harness: fells, boss HP ÷ DPS, boss seconds, what hurt, Conductor lives (--arrival: arrival towers only; no --fixture: `frontierProfile`'s towers)
 npm run omen -- --days 28        # the Daily Omen's days from today (--from N: a day number; the Wake joins at BALANCE.omen.wakeFrom)
 npm run calibrate   # T2: the scorer's damage estimate against the sim, every weapon and level
 npm run inspect -- --seeds 20 --by-weapon  # damage landed by each weapon (T1)

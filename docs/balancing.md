@@ -26,6 +26,18 @@ Phase gates add their own readings: P3's first wave 20 within 15–30 min,
 P8's heat 1–10 at the frontier within the target time
 (`npm run pacing -- --act2 --hours 12 --seeds 4`).
 
+**Runs have an end (D-26, plans/late-game/12a).** In every region, Act 1
+and the Wake, normal play included, overtime ends after 20 waves (wave 40,
+`BALANCE.overtime.maxWaves`) or 600 sim seconds past the boss's fall
+(`maxSeconds`), whichever comes first. The run ends **won** (`cleared`).
+The Abyss and Boss Rush have no overtime and are not capped (O-6). The
+reading that goes with it: **no region run over 20 sim minutes**, and no
+run cut off by the tools' 3600 s safety net (the pacing report's "runs cut
+off" and "longest run" lines). One exception is accepted: pre-boss waves
+at high HP plus a full overtime take ~26 sim minutes (25.9 in the Wake,
+27.4 in the Act 1 sweep; "The Wake: second tuning" below). That is a long
+run, not a stall.
+
 ## The tools (`tools/`)
 
 | Tool | What it does |
@@ -68,10 +80,14 @@ bots' policy, so improving the bot improves idle play.
   Use it to look; read a gate without it. `--act2 --fast` keeps its saved
   starts apart from the full ones, per N.
 
-- A long reading's time goes on the late runs: past the Blight the bot
-  farms overtime against a full field (300 bodies) for 30–60 sim minutes a
-  run. One 4 h profile took 36:40 before the October 2026 sim speedups and
-  14:47 after (the same report to the byte); 5:34 with `--fast`.
+- A long reading's time goes on the late runs. Before D-26, past the
+  Blight the bot farmed overtime against a full field (300 bodies) for
+  30–60 sim minutes a run. One 4 h profile took 36:40 before the October
+  2026 sim speedups and 14:47 after (the same report to the byte); 5:34
+  with `--fast`. Since D-26 caps overtime, the Act 1 check (6 h × 8)
+  takes 41 s instead of 36.5 min, and the idle report 3 min
+  instead of over 45. The Abyss's runs are still uncapped (O-6), so
+  `--act2` readings that reach it are still slow.
 
 - Change one number, rerun the report that reads it, compare per profile
   (not only the median): the seeds are deterministic, so a profile that
@@ -745,3 +761,115 @@ unchanged.
 Next: generate the Wake fixture (`--act2 --wake-frontiers`, hours of CPU)
 and re-read the bosses at their own arrival towers. The 6–10 h pace needs a
 decision: lift D-6's flat HP (a Wake staircase), or move the target.
+
+## The Wake: second tuning (2026-11-26)
+
+`plans/late-game/12a-wake-tuning.md`, steps W1–W11 (branch `wake-tuning`).
+The owner settled O-1…O-5 on 2026-11-25; plan 12 §0.2 now holds D-26…D-31.
+O-6 (the Abyss's run length) is still open.
+
+**What changed.**
+
+- **D-26, overtime has an end:** +20 waves (wave 40) or 600 sim s past the
+  boss, then the run ends won, in every region, normal play included. It
+  moved Act 1 (below). `OMEN_SIM` 1 → 2.
+- **Rage past Rampart** (a D-26 follow-up). High-HP runs stalled at the
+  boss for 25–60 sim minutes: Rampart capped each hit at Max HP ×
+  `rampartCap` (689) *after* the enrage had grown it (×1e8 by +930 s), and
+  regen (1034/s) out-healed the cap. Now `hurtTower` caps first, then
+  multiplies by `hordeFury` and `bossRage` (the boss's current damage over
+  its base hit). The owner's pick: global, with no time limit.
+- **Per-boss enrage.** The rage fix took the fixture towers' overtime wins
+  away: their fights ran 110–170 s against a 90 s enrage. So
+  `BossDef.enrageAfter` (optional; `BALANCE.boss.enrageAfter`, 90 s, when
+  absent) is set on the Wake bosses only: Carillon 150 s, Astrolabe 165,
+  Leviathan 105, Colossus 90, Thunderhead 105.
+- **D-27, the boss threat budget.** Carillon peal damage 1.0 → 0.5 (both
+  phases). Astrolabe slam in phases 2–3: damage 1.0, every 7 / 6 s.
+  Leviathan `hp` 75 → 65. Colossus `hp` 78. **The Colossus slams:** it had no
+  attack, and the fixture towers felled it 11/12 at Giants `hp` 3.5, which
+  HP alone can't fix. It now slams every 6 / 5 / 4 s by phase (wind-up 1.3 /
+  1.2 / 1.1 s, speed 420 / 440 / 480), damage 5. Slam damage against fells
+  of 12: 2 → 11, 3 → 10, 4 → 9, 5 → 7.
+- **D-28 (corrected), Floes.** Only Floes the Leviathan cracks
+  (`crackFloes`) are untargetable, and they melt after 20 s
+  (`wake.floes.melt`) or when the boss falls (`Enemy.meltAt`;
+  `SNAPSHOT_VERSION` 23 → 24). An impact (`glideImpacts`, source `impact`)
+  still damages and shatters a cracked Floe. The Frozen Sea's wave Floes
+  are unchanged: targetable, no melt. The memo had assumed impacts bypass
+  `targetable` and that only the Leviathan makes Floes.
+- **D-29 and the rules.** Orbit keeps its pace (`wake.orbit.pace` 1).
+  `wake.toll.minInterval` 2.5. Giants `hp` 3.5. Storm `damage` 0.08,
+  `wall` 4 → 5. Conductor `hp` 2.4 → 3.
+- **D-30, the staircase.** `hpBase` for regions 9–13: 2600 / 32900 /
+  50000 / 107000 / 200000. `shardBase`: 66 / 150 / 200 / 300 / 400, a
+  smooth ladder (the owner's pick over a fit to the fixture towers). The
+  memo's first guess (×1.8 a region) put the Thunderhead at 0.3 h. Near
+  region 13 the response is a cliff: `hpBase` 200000 gives 2.1 h, 240000
+  gives 3.2 h.
+- **D-31, the Omen's might.** `BALANCE.omen.might`: 9: 1.85, 10: 20.4,
+  11: 30.9, 12: 87.5, 13: 163.9. Read over the Wake's 25 Omen days (the
+  owner's pick).
+- **`QUARRY`** for 9–13: ringer 235 / straggler 145; satellite 285 / comet
+  145; skater 415 / sledge 12; titan 120 / tick 70; groundling 310 /
+  conductor 30.
+
+**The readings** (plan 12 §14 as revised; ✓ met, ✗ missed):
+
+| Reading | Command | Target | Result | |
+|---|---|---|---|---|
+| Pace | `npm run pacing -- --act2 --reuse --stop-at thunderhead --hours 6 --seeds 4` | Carillon ≤ 0.5 h, Thunderhead 2–4 h after the Blight; each step 25–50 min | medians: Carillon 0.1 h, Astrolabe 0.6, Leviathan 1.1, Colossus 1.6, Thunderhead 2.1 h; each step +30 min; 0 runs cut off | ✓ |
+| Run length | the same, and the Act 1 sweep | no run cut off; no region run over ~20 sim min | none cut off; longest Wake run 25.9 min; longest Act 1 sweep run 27.4 min | ✗ (accepted) |
+| Idle, the Wake (D-23, a gate) | `npm run pacing -- --idle --wake --seeds 4` | Thunderhead ≤ 4 days after the Blight | PASS, 3.0 d (2.5 2.5 3.0 3.0). Carillon 0.0, Astrolabe 0.5, Leviathan 1.0, Colossus 1.5 d; stars lit 0 | ✓ |
+| Idle, Act 1 | `npm run pacing -- --idle --hours 12 --seeds 4 --fast` | I2, I7, I8, I5 | I2 5.5 d, I7 0.57, I8 5.5 d (all PASS); I5 Prism 1.15 (at the edge) | ✓ |
+| Arsenal | `npm run arsenal -- --wake` | I4's 40% cap per region; each region moves a weapon ≥ 10 points against the Blight Heart | I4 PASS, worst Sentinel Drones 32% (R11). R9 +17 Chain Lightning, R10 +21 Frost Ring, R11 +14 Frost Ring, R12 +19 Frost Ring, R13 −24 Mortar | ✓ |
+| Bosses (fells of 12, pre-staircase HP) | `npm run inspect -- --seeds 12 --frontier --fixture act1 --stop-boss` (each `--region`) | Carillon ≥ 9, Astrolabe 7–9, Leviathan 5–8, Colossus 4–7, Thunderhead 2–5 | 10 / 7 / 5 / 4 / 4 | ✓ |
+| Conductor | the same, Stormcrown | median life < 8 s | 4.2 s (act1 fixture); 14.1 s on Stormcrown's arrival towers | ✓ |
+| Arrival | `npm run inspect -- --seeds 12 --frontier --arrival --stop-boss` (each `--region`) | boss HP ÷ DPS 25–35 s (now a reading) | 40 / 139 / 25 / 30 / 43 s; fells 8 / 0 / 4 / 0 / 0 of 12 | ✗ (conflicts with pace) |
+| Farm rate | scratch probe, each fixture save, heat 0 | ×1.0–1.3 a step | Blight Heart 8.06M/h; R9 30.8M (×3.82), R10 25.4M (×0.83), R11 72.2M (×2.84), R12 28.3M (×0.39), R13 58.5M (×2.07) | ✗ (accepted) |
+| The Omen, Wake days | `npm run omen -- --days 55 --from 20790` | median 26–34, band III ≤ 25%, earliest ≥ 15, active − hands-off ≥ 2 | median 27, band III 20%, earliest 16, active − hands-off 0. Bell 27, Orrery 28, Frozen Sea 29, Giants 26, Stormcrown 22 | ✗ (one of four; accepted) |
+| Contracts | `npm run pacing -- --act2 --reuse --hours 4 --seeds 2 --contracts 0.33` | the contract bot's targets | PASS 3.87/h; T1 6/8, T2 8/8, T3 7/7, T4 4/4 | ✓ |
+| Act 2 (P8, plan 08) | `npm run pacing -- --act2 --reuse --hours 12 --seeds 4 --fast` | plan 08's readings | unread: timed out at 900 s and again at 2700 s | — |
+| Frame budget | `npm test -- perf` | Glide at 300 bodies, the Bell's swarm, a Champion Titan | 5/5 pass (the Glide, Bell and Titan cases included). In a full `npm test` under heavy machine load the 300-body case failed earlier; alone it always passes | ✓ |
+| Act 1, full (W12) | `npm run pacing -- --hours 6 --seeds 8` (87 s wall) | P3, P4, I1a, I1b, I3, I6 | P3 first wave 20 27:51 PASS, P4 Gatekeeper 32:09 PASS, I1a 8/8, I1b Blight 263:52 (PASS 8/8), I3 8/8, I6 8/8 (first 2 h, median worst gap 6:57) and 8/8 (2 h → Blight); first evolution 84:49 86:22 84:00 89:17 88:34 82:37 94:32 90:39 (median 87:28) | ✓ |
+| Act 1, `--fast` (W1–W11) | `npm run pacing -- --hours 6 --seeds 8 --fast` | I1a, I1b, I3, I6 as at W0 | first wave 20 27:59, I1a 8/8, I1b 255:15 (8/8), I3 8/8, I6 7/8 + 8/8, first evolution 87:52. W0: I1b 264:23, the rest the same | ✓ (I1b moved, accepted) |
+
+**Act 1 moved.** The memo (§2) said a cap at wave 40 leaves Act 1 as it
+is. That was read on seed 1 only, the one seed that didn't move: on 7 of
+8 seeds pre-Blight runs reach wave 40. W1 moved I1b's median Blight from
+264:23 to 254:56 (still PASS 8/8). The owner accepted it, and the post-W1
+readings became the baseline. The rage fix moved it again, to 255:15.
+Nothing else in Act 1 moved.
+
+**Idle was not read for W1–W4.** W0's idle baseline never finished (over
+45 min before W1, 3 min after). From W5 on, the idle check ran at every
+step. I2, I7 and I8 never moved, except I7 0.56 → 0.57 at the rage fix.
+
+**The misses the owner accepted:**
+
+- *Arrival vs pace.* For 25–50 min of farming between bosses, each boss
+  must be out of reach when its region opens. So the arrival towers read
+  40–139 s of boss HP ÷ DPS, not 25–35. The owner chose pace; §14's
+  arrival row is now a reading, not a target.
+- *Farm-rate steps* (×0.39 to ×3.82). The rate follows how each fixture
+  tower farms its own region, not `shardBase` alone.
+- *The Omen's active − hands-off is 0* on every Wake day: `might` scales
+  both bots alike. *Stormcrown* barely responds to damage (+52% moved its
+  median 16 → 22). Over all 55 days, band III is 35% and the earliest
+  fall wave 8: those are the frozen Act 1 days, as at W0 (33%, 8).
+- *The 25.9-min run:* pre-boss waves at high HP plus a full overtime. It
+  is within "~20" (no stall).
+
+**The arsenal's shifts come from the enemies, not the rules.** Every
+new-weapon pick is a banked draft at wave 0, before anything spawns. With
+the rules removed, the picks were identical. So each region's shift comes
+from its enemy list.
+
+**Still open.** Plan 08's 12 h reading is unread: it timed out at 900 s
+and again at 2700 s. The likely cause is O-6: the longest Abyss run was
+32.7 min (act2 1 h, at W1) and 32.1 min after the rage fix (so it isn't a
+Rampart stall), and one run per seed hit the tool's 60-min cap in the 4 h
+contract-bot reading. Abyss runs are uncapped; that is the owner's to
+decide. The Act 1 idle reading above used `--fast`; Act 1 itself was also read
+without it at W12 (the "full" row). W12's closing checks: `npm run
+typecheck` clean; `npm test` 59 files, 1222 tests, all pass.

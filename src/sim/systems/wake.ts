@@ -5,7 +5,7 @@ import { BOSS_BY_ID } from '../../content/bosses';
 import type { BossPattern, EnemyVerb, RegionDef, RegionRule } from '../../content/types';
 import type { Enemy, RunState, WakeState } from '../state';
 import { pactLoad, ruleSurge } from '../pacts';
-import { runRegion, waveDamage } from './waves';
+import { melt, runRegion, waveDamage } from './waves';
 import { bossBody, phasesOf } from './boss';
 import { damageEnemy, targetable } from './combat';
 import { hurtTower } from './tower';
@@ -96,6 +96,7 @@ export function wakeRelics(run: RunState): boolean {
  * and the Wake relics'.
  */
 export function tickWake(run: RunState, region: RegionDef, dt: number): void {
+  meltFloes(run);
   if (!run.wake && !wakeRelics(run)) return;
   const wake = run.wake;
   if (wake?.toll) tickToll(run, wake.toll);
@@ -107,6 +108,15 @@ export function tickWake(run: RunState, region: RegionDef, dt: number): void {
   if (wake?.storm) tickStorm(run, region, wake.storm);
   if ((run.behaviours.clapper ?? 0) > 0) tickClapper(run, dt);
   if ((run.behaviours['thunder-core'] ?? 0) > 0) tickThunderCore(run, dt);
+}
+
+/**
+ * The Leviathan's cracked Floes are terrain (D-28): nothing aims at one, so
+ * each melts at its `meltAt` (set as it cracks), with no kill and no pay.
+ * A wave's Floe has none and stays an ordinary body.
+ */
+function meltFloes(run: RunState): void {
+  for (const e of run.enemies) if (e.alive && e.meltAt !== undefined && run.time >= e.meltAt) melt(run, e);
 }
 
 /** The Thunderhead's tempest (§7.1): its current phase's `tempest` pattern while it stands, else null. */
@@ -297,13 +307,14 @@ export function orbitShare(run: RunState, e: Enemy, verb: EnemyVerb | null, orbi
 /**
  * One step of `len` toward `stop` (§4.2): straight in when `k` is 0, else a
  * spiral whose sideways part is `k` of its inward part, turning the way the
- * field spins. The step keeps its length and never passes the stop. Returns
- * how far in it came.
+ * field spins. The inward part keeps the walker's pace (× `orbit.pace`, D-29),
+ * the sideways part rides on top, and it never passes the stop. Returns how
+ * far in it came.
  */
 export function orbitStep(run: RunState, e: Enemy, k: number, len: number, d: number, stop: number): number {
   const rx = -e.x / d;
   const ry = -e.y / d;
-  const inward = Math.min(len / Math.hypot(1, k), d - stop);
+  const inward = Math.min(len * BALANCE.wake.orbit.pace, d - stop);
   if (k === 0) {
     e.x += rx * inward;
     e.y += ry * inward;
