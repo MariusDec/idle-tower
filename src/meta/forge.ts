@@ -1,6 +1,7 @@
 import { BALANCE } from '../content/balance';
 import { FORGE } from '../content/forge';
-import type { BossId, ForgeNodeDef, StatKey } from '../content/types';
+import type { BossId, ForgeNodeDef, StatKey, WeaponId } from '../content/types';
+import { WEAPON_BY_ID } from '../content/weapons';
 import { bossDown } from './collection';
 import type { Profile } from './profile';
 import { starGifts } from './stars';
@@ -30,10 +31,51 @@ export function isCapstone(node: ForgeNodeDef): boolean {
   return node.type === 'mastery' && node.maxLevel !== Infinity;
 }
 
+/** The weapon a Forge node unlocks, or null (plans/forge-weapon-pacing.md). */
+export function weaponOf(node: ForgeNodeDef): WeaponId | null {
+  for (const e of node.effects) if (e.kind === 'unlockCard' && e.id in WEAPON_BY_ID) return e.id as WeaponId;
+  return null;
+}
+
+/**
+ * Forge weapons still fresh (plans/forge-weapon-pacing.md), newest first:
+ * forged, carried in fewer than `BALANCE.debut.runs` runs, forged fewer than
+ * `maxRuns` runs ago, and on no Never list. `recipes.carried` is the Recipe
+ * Book's own count of runs that carried each weapon.
+ */
+export function freshWeapons(profile: Profile): WeaponId[] {
+  const D = BALANCE.debut;
+  const never = Object.values(profile.tacticsNever);
+  const fresh: { id: WeaponId; at: number }[] = [];
+  for (const n of FORGE) {
+    const id = weaponOf(n);
+    const at = profile.forgedAt[n.id];
+    if (!id || at === undefined || levelOf(profile, n.id) === 0) continue;
+    if ((profile.recipes.carried[id] ?? 0) >= D.runs) continue;
+    if (profile.records.runs - at >= D.maxRuns) continue;
+    if (never.some((list) => list.includes(id))) continue;
+    fresh.push({ id, at });
+  }
+  // Stable: ties keep the table's order.
+  return fresh.sort((a, b) => b.at - a.at).map((f) => f.id);
+}
+
 /** True while a node waits for its boss's first fall (§5.1), or a mastery for its star (§9). */
 export function isSealed(profile: Profile, node: ForgeNodeDef): boolean {
   if (node.type === 'mastery' && !starGifts(profile).masteries.includes(node.branch)) return true;
-  return !!node.sealed && !bossDown(profile, node.sealed);
+  if (node.sealed && !bossDown(profile, node.sealed)) return true;
+  // One weapon at a time (plans/forge-weapon-pacing.md): an unbought weapon
+  // node waits while another is still fresh from the Forge.
+  return weaponOf(node) !== null && levelOf(profile, node.id) === 0 && freshWeapons(profile).length > 0;
+}
+
+/** The weapon an unbought weapon node waits on (plans/forge-weapon-pacing.md), once its boss is down; null when none. */
+export function forgingWait(profile: Profile, node: ForgeNodeDef): { weapon: WeaponId; runs: number } | null {
+  if (!weaponOf(node) || levelOf(profile, node.id) > 0) return null;
+  if (node.sealed && !bossDown(profile, node.sealed)) return null;
+  const weapon = freshWeapons(profile)[0];
+  if (!weapon) return null;
+  return { weapon, runs: Math.max(1, BALANCE.debut.runs - (profile.recipes.carried[weapon] ?? 0)) };
 }
 
 export const FORGE_WEB = new Web<ForgeNodeDef>({
@@ -103,7 +145,12 @@ export function canAfford(profile: Profile, id: string): boolean {
 
 /** Buy the next level. False, and nothing changes, if it isn't allowed. */
 export function buyNode(profile: Profile, id: string): boolean {
-  return FORGE_WEB.buy(profile, id);
+  const first = levelOf(profile, id) === 0;
+  if (!FORGE_WEB.buy(profile, id)) return false;
+  // A weapon fresh from the Forge (plans/forge-weapon-pacing.md): stamped with the run count it was bought at.
+  const node = FORGE_WEB.node(id);
+  if (first && node && weaponOf(node)) profile.forgedAt[id] = profile.records.runs;
+  return true;
 }
 
 /** A refund may not strand an owned node (§5.1). */
@@ -115,6 +162,7 @@ export function refundNode(profile: Profile, id: string): boolean {
   if (!FORGE_WEB.refund(profile, id)) return false;
   // Bought again, a keystone starts on.
   profile.keystonesOff = profile.keystonesOff.filter((k) => k !== id);
+  delete profile.forgedAt[id];
   return true;
 }
 

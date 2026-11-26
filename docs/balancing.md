@@ -15,6 +15,7 @@ verdict is the game's, not a model's (§13). Every tunable number lives in
 | I4 | no weapon takes over 40% of the bot's new-weapon picks; every weapon is taken somewhere | `npm run arsenal` |
 | I5 | active shards per hour ÷ idle shards per hour within 1.15–1.5 | the idle report, from Region 2 on |
 | I6 | no gap between reveals longer than 10 min in the first 2 h; none longer than 30 min from 2 h to the Blight's first fall (R2 §5). Each a gate on ≥ 6 of 8 profiles | `npm run pacing -- --hours 6 --seeds 8` (CI gates every profile's first hour: R2 below) |
+| W1 | Forge weapons bought ≥ 5 min apart, never two in one shop visit (plans/forge-weapon-pacing.md). A gate on ≥ 6 of 8 profiles, for the bot and for `--weapons-first` | `npm run pacing -- --hours 2 --seeds 8 [--weapons-first]` |
 | I7 | the engaged idle-schedule bot reaches the Blight with ≤ 0.70× the hands-off bot's screen time (median, 4 seeds) | `npm run pacing -- --idle --hours 12 --seeds 4` |
 | I8 | the hands-off bot finishes Act 1 in 5–10 days for every seed; median aims at 6–8 | the same |
 | I9 | no active-only reward (`RunSummary.activeOnly`, `tools/play.ts#ACTIVE_INPUTS`) reaches the hands-off bot | the same, and `tests/storedLight.test.ts` |
@@ -873,3 +874,70 @@ contract-bot reading. Abyss runs are uncapped; that is the owner's to
 decide. The Act 1 idle reading above used `--fast`; Act 1 itself was also read
 without it at W12 (the "full" row). W12's closing checks: `npm run
 typecheck` clean; `npm test` 59 files, 1222 tests, all pass.
+
+## One weapon at a time (2026-11-26)
+
+plans/forge-weapon-pacing.md steps 1–5: a weapon fresh from the Forge seals
+the other weapon nodes until it is carried in 3 runs (or 5 runs pass), is a
+card on top of every hand while a slot is free, the scorer leans toward it
+(`DEBUT_VALUE` 0.25, beside `COUNTER_VALUE` and `SLOT_VALUE`), and the
+Forge card says what each weapon does. No price moved. 8 profiles, 2 h:
+
+| | Before | After |
+|---|---|---|
+| W1, bot | 0/8 (least gaps 0:00–3:41; Sunlance and Glaives in one visit) | **8/8** (6:55–9:16) |
+| W1, `--weapons-first` | 0/8 (every profile 0:00) | **8/8** (5:37–7:17) |
+| I6, first 2 h, bot | 8/8 (6:07–8:20) | 7/8 (5:12–7:58; seed 4 10:05 past the first hour) |
+| I6, first 2 h, `--weapons-first` | 5/8 | 7/8 |
+| CI (`tests/pacing.test.ts`, every profile's first hour) | pass | **pass** |
+| P3 median | 27:51 | 28:22 |
+| Gatekeeper / Bog Mother / Prism, bot | 25:41–35:05 / 65:40–75:06 / 74:51–86:14 | 27:23–34:06 / 63:34–81:04 / 76:28–98:37 (seed 4's slow Bog Mother) |
+| first evolution, median | 88:34 | 100:09 (§7.1 aims at 90–120) |
+| I5, 4 seeds, Region 2 / Bog Mother / Prism / Forgeheart | — | 1.35 / 1.26 / 1.23 / 1.24 (all PASS); I2, I7, I8 PASS |
+
+Rejected on the way, measured:
+- The suggestion forced onto the fresh weapon: the Prism at ~100 min,
+  because auto-pick took Sunlance over Twin Mount's Mortar in Region 3.
+- The fresh card taking a hand slot instead of adding one: I5 1.13 at the
+  Bog Mother (CI profile).
+- 2 runs instead of 3: W1 0/8 for `--weapons-first`.
+- A 4-run or 8-run escape: no better, and at 8 Frost Ring held Mortar back
+  20 min.
+- Twin Mount drawing the fresh weapon: no change.
+- `DEBUT_VALUE` 0.15: CI's seed 1 at 10:11 (the bot took Scattershot over
+  the fresh Mortar in Mortar's first run). 0.35 and up: I5 1.12 at the Bog
+  Mother. 0.25 and 0.3 read the same on 8 profiles; 0.25 sits mid-window.
+
+## Weapons past the Prism (2026-11-26)
+
+plans/forge-weapon-pacing.md step 6 ("D-rev"): Sentinel Drones became the
+Prism's prize (ring 4, 6000, off Lingering) and Glaives Forgeheart's (ring 5,
+36000, off Drones). Sunlance stays in Region 2. Before, the last Act 1 weapon
+came at ~90 min and nothing new for the 2.7–3.2 h to the Blight. 8 profiles,
+6 h, `npm run pacing -- --hours 6 --seeds 8` (and `--weapons-first`):
+
+| | Before (steps 1–5) | After |
+|---|---|---|
+| W1, bot / weapons-first | 8/8 / 8/8 | **8/8 / 8/8** (least gap 6:55 / 6:42) |
+| I6 first 2 h, bot / weapons-first | 7/8 / 7/8 | **8/8 / 8/8** (worst 7:33 / 8:30) |
+| I6 2 h → Blight | — | 8/8 / 8/8 |
+| Drones, bot / weapons-first | 87–92 / 71–92 min | 101–117 / at the Prism's fall (76–100) |
+| Glaives, bot / weapons-first | 78–84 / 47–64 min | 158–174 / at Forgeheart's fall (139–166) |
+| Prism median, weapons-first | 96:05 | **89:35** (worst 99:12; seeds 9–16, read on a copy: 82–95 min) |
+| Blight median, bot / weapons-first | 256:38 / 278:27 | 268:52 / 274:09 (I1b 8/8 both) |
+| First evolution median, bot / weapons-first | 100:09 / 105:09 | 96:07 / 104:40 |
+| I4 (`npm run arsenal`, fresh frontiers) | PASS, Sunlance 37% R3 | PASS, Sunlance 37% R3 |
+
+Unchanged: I1a 6/8 for weapons-first (seeds 2 and 7 reach the Gatekeeper
+at 46:32 and 45:41: that bot spends on weapons first), P3 FAIL for
+weapons-first (wave 20 at 32:42, the same times as before), and R1 FAIL.
+I4 can't see this change: `tools/arsenal.ts` puts every Act 1 weapon in
+the pool, whatever the Forge owns.
+
+Rejected on the way, measured on copies:
+- The plan's first D (Sunlance to the Bog Mother at 2500, Drones 12000,
+  Glaives 100000): Region 2 had nothing to forge after Mortar (bot seed 1,
+  I6 11:23 from 49:37); the bot bought Sunlance after the Prism, Drones near
+  Forgeheart and Glaives after the Hollow King; first evolution 87:07.
+- Glaives alone to Forgeheart (100000 or 36000): weapons-first Prism tail,
+  5 of 16 seeds past 110 min (worst 152:07).

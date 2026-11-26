@@ -10,7 +10,7 @@ import type { CardItemId, WeaponId } from '../../content/types';
 import type { Card, RunState, WeaponState } from '../state';
 import { allMods, resolveStats, runMods } from '../stats';
 import { pactLoad } from '../pacts';
-import { suggest } from '../suggest';
+import { isDebut, suggest } from '../suggest';
 import { newWeapon, passiveAt, slotsUsed } from './arms';
 import { runRegion, waveBonus } from './waves';
 import { notePick } from './secrets';
@@ -162,18 +162,24 @@ export function draftChoices(run: RunState): number {
 /** Roll a hand: distinct cards from the candidates, padded with fallbacks. */
 export function rollOffer(run: RunState, rng: Rng, size?: number): Card[] {
   const candidates = candidateCards(run);
-  const n = size ?? draftChoices(run);
+  const twin = (c: Card): boolean => c.kind === 'weapon' && c.id === run.twinOffer && c.level === 1;
+  const debut = (c: Card): boolean => isDebut(run, c) && !twin(c);
+  // A weapon fresh from the Forge (plans/forge-weapon-pacing.md) comes on top
+  // of the hand, up to the cap: trying it never costs the player a choice.
+  const extra = candidates.some(debut) ? 1 : 0;
+  const n = Math.min(BALANCE.draft.maxChoices, (size ?? draftChoices(run)) + extra);
   if (run.firstDraft && run.draftsOpened === 0) {
     const legal = new Set(candidates.map((c) => `${cardKey(c)}:${'level' in c ? c.level : 0}`));
     const scripted = run.firstDraft.filter((c) => legal.has(`${cardKey(c)}:${'level' in c ? c.level : 0}`));
     if (scripted.length > 0) return scripted.slice(0, n);
   }
   // A ready fusion is always offered, and so is Twin Mount's weapon while it
-  // is still a new card; the rest of the hand, a ready evolution among it,
-  // is a uniform sample, by partial Fisher–Yates.
-  const twin = (c: Card): boolean => c.kind === 'weapon' && c.id === run.twinOffer && c.level === 1;
-  const forced = [...candidates.filter(isForced), ...candidates.filter(twin)].slice(0, n);
-  const hand = candidates.filter((c) => !isForced(c) && !twin(c));
+  // is still a new card, and a weapon fresh from the Forge until it is taken
+  // (plans/forge-weapon-pacing.md: once owned, or banished, or with the slots
+  // full, it is no longer a candidate); the rest of the hand, a ready
+  // evolution among it, is a uniform sample, by partial Fisher–Yates.
+  const forced = [...candidates.filter(isForced), ...candidates.filter(twin), ...candidates.filter(debut)].slice(0, n);
+  const hand = candidates.filter((c) => !isForced(c) && !twin(c) && !debut(c));
   for (let i = 0; i < Math.min(n - forced.length, hand.length); i++) {
     const j = rng.int(i, hand.length - 1);
     [hand[i], hand[j]] = [hand[j], hand[i]];

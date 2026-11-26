@@ -4,20 +4,26 @@ import { BALANCE } from '../src/content/balance';
 import { lintContent } from '../src/content/lint';
 import { CONTENT } from '../src/content';
 import type { ContentEntry, ForgeNodeDef } from '../src/content/types';
-import { newProfile, type Profile } from '../src/meta/profile';
+import { newProfile, PROFILE_VERSION, type Profile } from '../src/meta/profile';
 import {
-  buyNode, canRefund, canSwitch, isBuyable, isSwitchedOff, nextGoal, nodeCost, nodeStates, refundNode, spentOn,
-  toggleKeystone,
+  buyNode, canRefund, canSwitch, forgingWait, freshWeapons, isBuyable, isSwitchedOff, nextGoal, nodeCost, nodeStates,
+  refundNode, spentOn, toggleKeystone,
 } from '../src/meta/forge';
 import { buildRunConfig } from '../src/meta/runConfig';
 import { automations, maxSpeed, runSpeed } from '../src/meta/automation';
 import { bankRun } from '../src/meta/results';
 import { createRun } from '../src/sim/run';
+import { MIGRATIONS, migrate } from '../src/meta/save/migrate';
 
 function rich(shards = 1e6): Profile {
   const p = newProfile(0);
   p.shards = shards;
   return p;
+}
+
+/** Mark `weapon` as tried: carried in enough runs that it is no longer fresh (plans/forge-weapon-pacing.md). */
+function tried(p: Profile, weapon: string): void {
+  p.recipes.carried[weapon] = BALANCE.debut.runs;
 }
 
 describe('Forge: fog and adjacency (§5.1)', () => {
@@ -148,9 +154,133 @@ describe('Forge: refunds (§5.1)', () => {
 
   it('refuses a refund that would strand an owned node', () => {
     const p = rich();
-    for (const id of ['might-damage', 'scattershot', 'chain-lightning']) expect(buyNode(p, id)).toBe(true);
+    for (const id of ['might-damage', 'scattershot']) expect(buyNode(p, id)).toBe(true);
+    tried(p, 'scattershot');
+    expect(buyNode(p, 'chain-lightning')).toBe(true);
     expect(canRefund(p, 'scattershot')).toBe(false);
     expect(canRefund(p, 'chain-lightning')).toBe(true);
+  });
+});
+
+describe('Forge: one weapon at a time (plans/forge-weapon-pacing.md)', () => {
+  it('a fresh profile has no fresh weapon', () => {
+    expect(freshWeapons(newProfile(0))).toEqual([]);
+  });
+
+  it('a weapon bought is fresh until carried in enough runs', () => {
+    const p = rich();
+    buyNode(p, 'might-damage');
+    buyNode(p, 'scattershot');
+    expect(p.forgedAt.scattershot).toBe(0);
+    expect(freshWeapons(p)).toEqual(['scattershot']);
+    p.recipes.carried.scattershot = BALANCE.debut.runs - 1;
+    expect(freshWeapons(p)).toEqual(['scattershot']);
+    tried(p, 'scattershot');
+    expect(freshWeapons(p)).toEqual([]);
+  });
+
+  it('is fresh no longer once maxRuns runs have passed, or once it is on a Never list', () => {
+    const p = rich();
+    buyNode(p, 'might-damage');
+    buyNode(p, 'scattershot');
+    p.records.runs += BALANCE.debut.maxRuns;
+    expect(freshWeapons(p)).toEqual([]);
+    p.records.runs -= BALANCE.debut.maxRuns;
+    p.tacticsNever = { all: ['scattershot'] };
+    expect(freshWeapons(p)).toEqual([]);
+  });
+
+  it('a weapon bought before the stamp existed (no forgedAt) is never fresh', () => {
+    const p = rich();
+    buyNode(p, 'might-damage');
+    buyNode(p, 'scattershot');
+    delete p.forgedAt.scattershot;
+    expect(freshWeapons(p)).toEqual([]);
+  });
+
+  it('the newest of two fresh weapons comes first', () => {
+    const p = rich();
+    buyNode(p, 'might-damage');
+    buyNode(p, 'scattershot');
+    tried(p, 'scattershot');
+    buyNode(p, 'chain-lightning');
+    p.recipes.carried.scattershot = 0;
+    p.forgedAt['chain-lightning'] = 5;
+    expect(freshWeapons(p)).toEqual(['chain-lightning', 'scattershot']);
+  });
+
+  it('while one weapon is fresh the next weapon node is sealed; other nodes are not', () => {
+    const p = rich();
+    buyNode(p, 'might-damage');
+    buyNode(p, 'scattershot');
+    expect(nodeStates(p).get('chain-lightning')).toBe('sealed');
+    expect(buyNode(p, 'chain-lightning')).toBe(false);
+    expect(forgingWait(p, FORGE_BY_ID['chain-lightning'])).toEqual({ weapon: 'scattershot', runs: BALANCE.debut.runs });
+    expect(nodeStates(p).get('passive-slot')).toBe('open');
+    expect(nextGoal(p)?.node.id).not.toBe('chain-lightning');
+    tried(p, 'scattershot');
+    expect(nodeStates(p).get('chain-lightning')).toBe('open');
+    expect(forgingWait(p, FORGE_BY_ID['chain-lightning'])).toBeNull();
+    expect(buyNode(p, 'chain-lightning')).toBe(true);
+  });
+
+  it("a boss seal keeps its own reason: forgingWait waits for the boss first", () => {
+    const p = rich();
+    buyNode(p, 'might-damage');
+    buyNode(p, 'scattershot');
+    expect(forgingWait(p, FORGE_BY_ID.mortar)).toBeNull();
+  });
+
+  it('Drones are the Prism\'s prize and Glaives Forgeheart\'s (step 6): sealed until their boss falls', () => {
+    const p = rich();
+    p.bosses = { gatekeeper: { kills: 1, fastest: 1 }, 'bog-mother': { kills: 1, fastest: 1 } };
+    for (const id of ['might-damage', 'scattershot', 'chain-lightning', 'frost-ring', 'mortar', 'sunlance'] as const) {
+      expect(buyNode(p, id)).toBe(true);
+      if (FORGE_BY_ID[id].effects.some((e) => e.kind === 'unlockCard')) tried(p, id);
+    }
+    // Lingering, the link to Drones, is itself the Prism's.
+    expect(nodeStates(p).get('arsenal-duration')).toBe('sealed');
+    expect(nodeStates(p).get('sentinel-drones')).not.toBe('open');
+    p.bosses.prism = { kills: 1, fastest: 1 };
+    expect(buyNode(p, 'arsenal-duration')).toBe(true);
+    expect(nodeStates(p).get('sentinel-drones')).toBe('open');
+    expect(buyNode(p, 'sentinel-drones')).toBe(true);
+    tried(p, 'sentinel-drones');
+    expect(nodeStates(p).get('glaives')).not.toBe('open');
+    expect(buyNode(p, 'glaives')).toBe(false);
+    p.bosses.forgeheart = { kills: 1, fastest: 1 };
+    expect(nodeStates(p).get('glaives')).toBe('open');
+    expect(buyNode(p, 'glaives')).toBe(true);
+  });
+
+  it('v27 → v28: an old save gets an empty stamp book, so nothing it owns is fresh', () => {
+    expect(PROFILE_VERSION).toBeGreaterThanOrEqual(28);
+    const out = migrate({ version: 27, createdAt: 5, forge: { scattershot: 1 } }, MIGRATIONS, 28);
+    expect(out.version).toBe(28);
+    expect(out.forgedAt).toEqual({});
+    expect(out.forge).toEqual({ scattershot: 1 });
+  });
+
+  it('a refund clears the stamp', () => {
+    const p = rich();
+    buyNode(p, 'might-damage');
+    buyNode(p, 'scattershot');
+    tried(p, 'scattershot');
+    buyNode(p, 'chain-lightning');
+    expect(refundNode(p, 'chain-lightning')).toBe(true);
+    expect(p.forgedAt['chain-lightning']).toBeUndefined();
+  });
+
+  it('the run offers the fresh weapon as its debut, never in an authored run', () => {
+    const p = rich();
+    buyNode(p, 'might-damage');
+    buyNode(p, 'scattershot');
+    expect(buildRunConfig(p).debut).toBe('scattershot');
+    // The Daily Omen's and a Trial's rules come in as `extra`: authored, so no debut.
+    expect(buildRunConfig(p, [{ kind: 'weapons', ids: ['arcane-bolt', 'scattershot'] }]).debut).toBeNull();
+    expect(createRun(buildRunConfig(p), 1).debutOffer).toBe('scattershot');
+    tried(p, 'scattershot');
+    expect(buildRunConfig(p).debut).toBeNull();
   });
 });
 

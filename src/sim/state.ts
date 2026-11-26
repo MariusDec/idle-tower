@@ -35,6 +35,11 @@ export interface RunConfig {
   /** Weapons and passives the draft may offer (§4.5: the pool grows with unlocks). */
   readonly pool: readonly CardItemId[];
   /**
+   * A weapon fresh from the Forge (plans/forge-weapon-pacing.md): every draft
+   * with a free weapon slot offers it until it is taken. Absent or null: none.
+   */
+  readonly debut?: WeaponId | null;
+  /**
    * The light's shape (plans/camera-and-fog.md): the stage's, taken when the
    * run starts. Absent: a phone's (`PHONE_OVAL`), as the headless tools play.
    */
@@ -891,6 +896,12 @@ export interface RunState {
   firstDraft: Card[] | null;
   /** Twin Mount's weapon (§11.4): sure to be in the next draft's hand, until a card is taken from one. */
   twinOffer: WeaponId | null;
+  /**
+   * A weapon fresh from the Forge (plans/forge-weapon-pacing.md): in every
+   * hand while a weapon slot is free, until it is taken. Absent in a run
+   * saved before it existed: read it as null.
+   */
+  debutOffer?: WeaponId | null;
   ult: UltimateState;
   /** Shards earned this run (§8.3), unrounded; banked at the run's end. */
   shards: number;

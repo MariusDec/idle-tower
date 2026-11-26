@@ -57,6 +57,8 @@ function badgeText(b: CardBadge): { short: string; long: string } {
     }
     case 'counter':
       return { short: 'Strong here', long: 'Strong against what walks in this region.' };
+    case 'debut':
+      return { short: 'Fresh', long: 'Fresh from the Forge: carry it in three runs and the Forge opens its next weapon.' };
     case 'slot':
       return { short: `Slot ${b.slot}/${b.of}`, long: `Fills slot ${b.slot} of ${b.of}.` };
     case 'fork': {

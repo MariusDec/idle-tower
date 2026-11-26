@@ -9,7 +9,7 @@ import type { ContractSpec, TrimId } from '../content/types';
  * `save/migrate.ts`.
  */
 export interface Profile {
-  version: 27;
+  version: 28;
   /** Wall-clock ms the profile was created. */
   createdAt: number;
   /** The meta currency (§8.1), spent in the Forge. Whole shards only. */
@@ -27,6 +27,12 @@ export interface Profile {
   };
   /** Forge levels owned, by node id (§5.1). A missing id is level 0. */
   forge: Record<string, number>;
+  /**
+   * Forge weapon nodes: `records.runs` when each was bought
+   * (plans/forge-weapon-pacing.md). A missing id was bought before this
+   * existed, and is never fresh.
+   */
+  forgedAt: Record<string, number>;
   /** Owned keystones switched off (§11.4): kept, but no run applies them. */
   keystonesOff: string[];
   /** Draft cards seen at least once, by `cardKey`, for the NEW stamp (§4.5). */
@@ -228,7 +234,7 @@ export interface Profile {
   };
 }
 
-export const PROFILE_VERSION = 27;
+export const PROFILE_VERSION = 28;
 
 /** One day of the Daily Omen (plans/late-game/11 §4.5): its scored try, and the practice best beside it. */
 export interface OmenDay {
@@ -278,6 +284,7 @@ export function newProfile(now: number): Profile {
     shards: 0,
     records: { runs: 0, bestWave: 0, bestShards: 0, kills: 0, elites: 0, storedBurned: 0 },
     forge: {},
+    forgedAt: {},
     keystonesOff: [],
     seenCards: [],
     seenEnemies: [],

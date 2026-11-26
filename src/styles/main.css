@@ -1791,6 +1791,11 @@ body {
 .forge-detail.is-off .forge-detail-head { color: var(--text-muted); }
 .forge-detail.is-off .forge-detail-total { color: var(--text-dim); }
 
+/* A weapon node (plans/forge-weapon-pacing.md): what it does, then what it meets. */
+.forge-detail-weapon { margin: 0 0 var(--space-1); color: var(--text-primary); }
+.forge-detail-match { margin: 0 0 var(--space-1); font-size: var(--fs-xs); color: var(--text-dim); }
+.forge-detail-match.is-strong { color: var(--success); }
+
 .forge-detail-off {
   margin: 0 0 var(--space-2);
   font-size: var(--fs-xs);
@@ -2158,6 +2163,8 @@ body {
 .draft-card-badge .icon { --icon-size: 12px; color: var(--fx-arcane); }
 .draft-card-badge.is-complete { background: rgba(var(--rgb-arcane), 0.16); color: var(--fx-arcane); }
 .draft-card-badge.is-counter { color: var(--success); }
+/* Fresh from the Forge (plans/forge-weapon-pacing.md): the Forge's gold. */
+.draft-card-badge.is-debut { background: rgba(var(--rgb-gold), 0.16); color: var(--fx-gold); }
 
 .draft-timer {
   width: 100%;
@@ -3472,6 +3479,8 @@ body {
   letter-spacing: 0.05em;
   color: var(--fx-blood);
 }
+/* Waiting its turn, not on a boss (plans/forge-weapon-pacing.md): the Forge's gold, in plain case. */
+.forge-detail-seal.is-wait { font-size: var(--fs-sm); text-transform: none; letter-spacing: 0; color: var(--fx-gold); }
 
 /* ── Act 2 (§9): the Constellations, the Pacts, the Abyss ────────────────── */
 

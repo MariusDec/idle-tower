@@ -106,6 +106,27 @@ hollow, dashed, struck through and tagged OFF; its card has an On/Off
 control and previews the totals with it switched the other way. `nextGoal` is the cheapest buyable node and how
 close the player is to it: the results screen's and hub's "Next" line.
 
+**One weapon at a time** (plans/forge-weapon-pacing.md). A weapon node
+(`weaponOf`: an `unlockCard` of a weapon) stamps `profile.forgedAt[id]` with
+`records.runs` when bought. The weapon is **fresh** (`freshWeapons`) while it
+has been carried in fewer than `BALANCE.debut.runs` (3) runs
+(`recipes.carried`, the Recipe Book's own count), fewer than `maxRuns` (5)
+runs have passed since it was forged, and no Never list holds it. While any
+weapon is fresh, every unbought weapon node is sealed (`isSealed`); its card
+says "Forging — carry X in n more runs first" in gold (`forgingWait`), once
+its own boss is down. Each fresh weapon is the run's debut card
+([draft.md](draft.md)), never in an authored run, the Abyss or Boss Rush.
+The results screen says "Ready to forge: X" when a weapon node opens. A
+weapon node's card shows the weapon's line and the enemies already met
+that it counters or that blunt it. Saves before v28 get an empty
+`forgedAt`, so nothing they own is fresh. Measured by **W1** in the pacing
+report ([balancing.md](balancing.md)); `--weapons-first` plays the greedy
+player who found the old Forge sold two or three weapons at once.
+Sentinel Drones are the Prism's prize (ring 4, off Lingering) and Glaives
+Forgeheart's (ring 5, off Drones), so a weapon still arrives after the
+Prism; with them come Velocity and Reach (`joinsWith`), Hive, Halo, Sky
+Hive and Gyre (step 6 of the plan).
+
 **Invariant (I3):** every Act 1 results screen shows an affordable node or
 at least 50% progress toward one.
 

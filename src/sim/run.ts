@@ -123,6 +123,7 @@ export function createRun(config: RunConfig, seed: number): RunState {
     draftsOpened: 0,
     firstDraft: config.firstDraft ? [...config.firstDraft] : null,
     twinOffer,
+    debutOffer: config.weaponSlots >= 2 && config.debut && config.debut !== first ? config.debut : null,
     // Primed (§11.4): the first ultimate is ready the moment the run starts.
     ult: { charge: owned('charged-start') > 0 ? 1 : 0, need: BALANCE.ultimate.charge, casts: 0, until: 0, timer: 0 },
     shards: 0,

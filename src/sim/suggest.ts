@@ -91,6 +91,14 @@ const WEAK_LANDED = 0.25;
 const COUNTER_VALUE = 0.35;
 /** A new weapon into an empty slot: another line of fire, worth this much beyond its DPS. */
 const SLOT_VALUE = 0.15;
+/**
+ * A weapon fresh from the Forge (plans/forge-weapon-pacing.md): auto-pick
+ * leans toward trying it, without forcing it over a weapon the region needs.
+ * 0.15 left it untried too often (a 10:11 reveal gap, CI's seed 1); 0.35
+ * pushed active play under I5's 1.15 at the Bog Mother; forcing it outright
+ * took Sunlance over Mortar against Region 3's shields.
+ */
+export const DEBUT_VALUE = 0.25;
 /** A step toward an evolution, scaled by how close the weapon is to evolving. */
 const RECIPE_VALUE = 0.6;
 /** An evolution on offer: its spike, and this much for the new pattern. */
@@ -340,11 +348,18 @@ function recipeBonus(run: RunState, passive: PassiveId, level: number): number {
  * a known recipe (or the one that completes it), a new weapon that answers
  * this region, and a new item into an empty slot.
  */
+/** True for the level-1 card of the weapon fresh from the Forge (plans/forge-weapon-pacing.md). */
+export function isDebut(run: RunState, c: Card): boolean {
+  return c.kind === 'weapon' && c.level === 1 && c.id === (run.debutOffer ?? null);
+}
+
 export type CardBadge =
   | { readonly kind: 'recipe'; readonly evolution: EvolutionId; readonly completes: boolean }
   /** An anomaly ends this known evolution (plans/late-game/04 §2). */
   | { readonly kind: 'fork'; readonly evolution: EvolutionId }
   | { readonly kind: 'counter' }
+  /** A weapon fresh from the Forge (plans/forge-weapon-pacing.md). */
+  | { readonly kind: 'debut' }
   | { readonly kind: 'slot'; readonly slot: number; readonly of: number };
 
 export function cardBadges(run: RunState, card: Card): CardBadge[] {
@@ -357,6 +372,7 @@ export function cardBadges(run: RunState, card: Card): CardBadge[] {
         out.push({ kind: 'recipe', evolution: evo.id, completes: completes(run, card.level, partnerLevel(run, card.id)) });
       }
       if (!owned) {
+        if (isDebut(run, card)) out.push({ kind: 'debut' });
         if (counterShare(run, card.id) > 0) out.push({ kind: 'counter' });
         out.push({ kind: 'slot', slot: slotsUsed(run) + 1, of: run.weaponSlots });
       }
@@ -403,7 +419,7 @@ export function scoreCard(run: RunState, card: Card): number {
       const weapons = run.weapons.filter((w) => w.id !== card.id).concat(next);
       let score = buildDps(weapons, run.stats, foes) / before - 1;
       if (!owned) {
-        score += counterShare(run, card.id) * COUNTER_VALUE + SLOT_VALUE;
+        score += counterShare(run, card.id) * COUNTER_VALUE + SLOT_VALUE + (isDebut(run, card) ? DEBUT_VALUE : 0);
       } else if (!owned.evolved && !owned.anomaly && knows(run, card.id) && run.passives.some((p) => p.id === EVOLUTION_OF[card.id].passive)) {
         // Each level toward an evolution whose partner is already owned.
         const at = BALANCE.evolutions.evolveAt;

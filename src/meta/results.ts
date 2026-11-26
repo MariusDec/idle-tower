@@ -17,7 +17,7 @@ import { checkFeats } from './feats';
 import { foremanBuy } from './automation';
 import { trialsOpen, winTrial, type TrialPaid } from './trials';
 import { boardOpen, ensureBoard, pendingTier, settleContract, type ContractSettled } from './contracts';
-import { nextGoal, type ForgeGoal } from './forge';
+import { nextGoal, nodeStates, weaponOf, type ForgeGoal } from './forge';
 import { recordFarm } from './offline';
 import { burnBonus, type BurnTally } from './storedLight';
 import { recipesOpen, recordFusions, recordRecipes } from './recipes';
@@ -247,6 +247,14 @@ function unlockList(profile: Profile): Map<string, string> {
     if (!bossDown(profile, b.id)) continue;
     const n = FORGE.filter((x) => x.sealed === b.id).length;
     if (n > 0) add(`${n} Forge node${n === 1 ? '' : 's'} unsealed`, `seal:${b.id}`);
+  }
+  // One weapon at a time (plans/forge-weapon-pacing.md): a weapon node that
+  // can be bought now. A run that lifts the wait (the last weapon carried
+  // enough, or a boss down) says so; buying it, or the next weapon's own
+  // wait, takes the line away until it opens again.
+  const states = nodeStates(profile);
+  for (const n of FORGE) {
+    if (weaponOf(n) && states.get(n.id) === 'open') add(`Ready to forge: ${n.name}`, `forge-weapon:${n.id}`);
   }
   return out;
 }

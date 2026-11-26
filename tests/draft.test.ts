@@ -4,14 +4,14 @@ import { buildRunConfig, FIRST_DRAFT } from '../src/meta/runConfig';
 import { newProfile, type Profile } from '../src/meta/profile';
 import { SIM_DT } from '../src/app/loop';
 import { BALANCE } from '../src/content/balance';
-import { hashString } from '../src/core/rng';
+import { Rng, hashString } from '../src/core/rng';
 import { allMods, passiveMods, resolveStat, resolveStats } from '../src/sim/stats';
 import { FORGE } from '../src/content/forge';
 import {
-  applyCard, candidateCards, cardKey, gainXp, pickCard, tickDraft, xpToNext,
+  applyCard, candidateCards, cardKey, gainXp, pickCard, rollOffer, tickDraft, xpToNext,
 } from '../src/sim/systems/draft';
 import { castUltimate } from '../src/sim/systems/ultimate';
-import { cardBadges } from '../src/sim/suggest';
+import { DEBUT_VALUE, cardBadges, scoreCard } from '../src/sim/suggest';
 import { EVOLUTION_OF } from '../src/content/evolutions';
 import { WEAPON_BY_ID } from '../src/content/weapons';
 import { runRegion } from '../src/sim/systems/waves';
@@ -194,6 +194,51 @@ describe('the draft (§4.5)', () => {
     levelUp(run);
     expect(run.draft!.cards).not.toEqual(FIRST_DRAFT);
     expect(buildRunConfig(veteran()).firstDraft).toBeNull();
+  });
+});
+
+describe('a weapon fresh from the Forge (plans/forge-weapon-pacing.md)', () => {
+  it('is in every hand while a weapon slot is free, and badged Fresh', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const run = fresh(seed);
+      run.debutOffer = 'chain-lightning';
+      const hand = rollOffer(run, new Rng(seed));
+      expect(hand.some((c) => c.kind === 'weapon' && c.id === 'chain-lightning' && c.level === 1), `seed ${seed}`).toBe(true);
+      expect(cardBadges(run, { kind: 'weapon', id: 'chain-lightning', level: 1 })).toContainEqual({ kind: 'debut' });
+    }
+  });
+
+  it('stops once taken, or once the slots are full', () => {
+    const run = fresh(3);
+    run.debutOffer = 'chain-lightning';
+    applyCard(run, { kind: 'weapon', id: 'chain-lightning', level: 1 });
+    expect(rollOffer(run, new Rng(3)).some((c) => c.kind === 'weapon' && c.id === 'chain-lightning' && c.level === 1)).toBe(false);
+    const full = fresh(4);
+    full.debutOffer = 'chain-lightning';
+    applyCard(full, { kind: 'weapon', id: 'scattershot', level: 1 });
+    expect(rollOffer(full, new Rng(4)).some((c) => c.kind === 'weapon' && c.id === 'chain-lightning')).toBe(false);
+  });
+
+  it('shows once when Twin Mount draws the same weapon', () => {
+    const run = fresh(6);
+    run.debutOffer = 'chain-lightning';
+    run.twinOffer = 'chain-lightning';
+    const hand = rollOffer(run, new Rng(6));
+    expect(hand.filter((c) => c.kind === 'weapon' && c.id === 'chain-lightning').length).toBe(1);
+  });
+
+  it('the scorer leans toward it by DEBUT_VALUE, and no further', () => {
+    const run = fresh(8);
+    const card: Card = { kind: 'weapon', id: 'chain-lightning', level: 1 };
+    const plain = scoreCard(run, card);
+    run.debutOffer = 'chain-lightning';
+    expect(scoreCard(run, card)).toBeCloseTo(plain + DEBUT_VALUE);
+  });
+
+  it('a run saved before the debut existed reads as none', () => {
+    const run = fresh(7);
+    delete run.debutOffer;
+    expect(() => rollOffer(run, new Rng(7))).not.toThrow();
   });
 });
 
