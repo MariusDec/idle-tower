@@ -546,7 +546,7 @@ export interface BossState {
   windup: number;
   /** True while it is under the water (Submerge); it rises somewhere else. */
   submerged: boolean;
-  /** True once it has outlasted `BALANCE.boss.enrageAfter` and walks to the wall. */
+  /** True once it has outlasted its `enrageAfter` (`BALANCE.boss.enrageAfter` by default) and walks to the wall. */
   enraged: boolean;
   /** The pattern index of the slam being wound up. */
   windupPattern: number;

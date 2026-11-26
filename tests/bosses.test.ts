@@ -11,7 +11,9 @@ import { tickWake } from '../src/sim/systems/wake';
 import { bossBody, tickBoss, tickRings, weakPoint, weakPointMult } from '../src/sim/systems/boss';
 import { body } from './helpers/body';
 import { damageEnemy, targetable } from '../src/sim/systems/combat';
-import { hurtTower } from '../src/sim/systems/tower';
+import { healTower, hurtTower } from '../src/sim/systems/tower';
+import { tickEnemies } from '../src/sim/systems/enemies';
+import { mitigate } from '../src/sim/systems/damage';
 import { Rng } from '../src/core/rng';
 import type { RunState } from '../src/sim/state';
 
@@ -152,6 +154,94 @@ describe('boss patterns', () => {
     expect(run.outcome).toBeNull();
     expect(run.tower.hp).toBeGreaterThan(0);
     expect(run.boss!.minHp).toBe(0);
+  });
+});
+
+describe('the enrage clock (plans/late-game/12a)', () => {
+  /** Seconds from the boss's arrival to its enrage, the clock alone moving. */
+  function enrageTime(region: number): number {
+    const run = atBoss(region);
+    const r = regionByIndex(region);
+    while (!run.boss!.enraged && run.time < 600) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, r, SIM_DT);
+    }
+    return run.time - run.boss!.arrivedAt;
+  }
+
+  it('an Act 1 boss enrages at the default', () => {
+    expect(BOSS_BY_ID.gatekeeper.enrageAfter).toBeUndefined();
+    expect(enrageTime(1)).toBeCloseTo(BALANCE.boss.enrageAfter, 1);
+  });
+
+  it('a Wake boss enrages at its own time', () => {
+    const own = BOSS_BY_ID.carillon.enrageAfter!;
+    expect(own).toBeGreaterThan(BALANCE.boss.enrageAfter);
+    expect(enrageTime(9)).toBeCloseTo(own, 1);
+  });
+});
+
+describe('Rampart against rage (§11.4)', () => {
+  /** The boss at the wall, `enraged` or not, against a tower with Rampart (or without). */
+  function atWall(rampart: boolean, enraged: boolean): RunState {
+    const run = atBoss();
+    if (rampart) run.behaviours = { ...run.behaviours, rampart: 1 };
+    run.weapons.length = 0;
+    const e = bossBody(run)!;
+    e.x = e.px = run.stats.radius + e.radius;
+    e.y = e.py = 0;
+    if (enraged) {
+      run.tick = Math.round((run.boss!.arrivedAt + BALANCE.boss.enrageAfter + 25) / SIM_DT);
+      run.time = run.tick * SIM_DT;
+    }
+    tickBoss(run, regionByIndex(1), SIM_DT);
+    expect(run.boss!.enraged).toBe(enraged);
+    return run;
+  }
+
+  it('caps an unenraged contact hit as before', () => {
+    const run = atWall(true, false);
+    const e = bossBody(run)!;
+    const hp = run.tower.hp;
+    hurtTower(run, 1e9, e.x, e.y, e, 'contact');
+    expect(hp - run.tower.hp).toBeCloseTo(run.stats.maxHp * BALANCE.behaviours.rampartCap);
+  });
+
+  it('caps the hit before the enrage grows it', () => {
+    const run = atWall(true, true);
+    const e = bossBody(run)!;
+    const rage = Math.pow(BALANCE.boss.enrageGrowth, 3);
+    expect(e.damage / (waveDamage(regionByIndex(1), BOSS_WAVE) * BOSS_BY_ID.gatekeeper.damage)).toBeCloseTo(rage);
+    run.stats.maxHp = run.tower.hp = 1e12;
+    hurtTower(run, 1e15, e.x, e.y, e, 'contact');
+    expect(1e12 - run.tower.hp).toBeCloseTo(1e12 * BALANCE.behaviours.rampartCap * rage, -3);
+  });
+
+  it('leaves a hit without Rampart as it was', () => {
+    const run = atWall(false, true);
+    const e = bossBody(run)!;
+    run.stats.maxHp = run.tower.hp = 1e12;
+    hurtTower(run, e.damage, e.x, e.y, e, 'contact');
+    expect(1e12 - run.tower.hp).toBeCloseTo(mitigate(e.damage, run.stats.armor), -3);
+  });
+
+  it('an enraged boss still ends a fight with a tower that out-heals the cap', () => {
+    const run = atWall(true, false);
+    const region = regionByIndex(1);
+    // Regen twice what capped hits take away: before the fix, a fight that never ends.
+    const cap = run.stats.maxHp * BALANCE.behaviours.rampartCap;
+    const regen = (2 * cap) / BALANCE.boss.attackInterval;
+    const enrageAt = run.boss!.arrivedAt + BALANCE.boss.enrageAfter;
+    while (run.tower.hp > 0 && run.time < enrageAt + 600) {
+      run.tick++;
+      run.time = run.tick * SIM_DT;
+      tickBoss(run, region, SIM_DT);
+      tickEnemies(run, SIM_DT);
+      if (run.tower.hp > 0) healTower(run, regen * SIM_DT);
+    }
+    expect(run.tower.hp).toBeLessThanOrEqual(0);
+    expect(run.time - enrageAt).toBeLessThan(240);
   });
 });
 

@@ -642,6 +642,8 @@ export interface BossDef extends ContentEntry {
   readonly standoff: number;
   /** Multiple of the wave's contact damage, per hit, once enraged and at the wall. */
   readonly damage: number;
+  /** Seconds it fights before it enrages (`BALANCE.boss.enrageAfter` when absent; the Wake's own, plans/late-game/12a). */
+  readonly enrageAfter?: number;
   /** XP and ultimate charge the kill gives. */
   readonly xp: number;
   /** Shards, as a multiple of the region's per-kill base (§8.3); ×5 on the first kill. */

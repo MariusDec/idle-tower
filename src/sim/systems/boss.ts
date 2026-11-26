@@ -18,7 +18,7 @@ import { SECRET_BY_ID } from '../../content/secrets';
 /**
  * Bosses (§4.3): wave 20. A boss walks in from a flank to its standoff and
  * works from there, one readable pattern per phase; phases turn at HP
- * thresholds. A boss that outlasts `BALANCE.boss.enrageAfter` enrages and
+ * thresholds. A boss that outlasts its `enrageAfter` (`BALANCE.boss.enrageAfter` by default) enrages and
  * walks to the wall, so a fight the tower can't win ends rather than stalls.
  */
 
@@ -283,11 +283,12 @@ export function tickBoss(run: RunState, region: RegionDef, dt: number): void {
 
   const B = BALANCE.boss;
   const since = run.time - b.arrivedAt;
-  if (!b.enraged && since >= B.enrageAfter) {
+  const enrageAfter = def.enrageAfter ?? B.enrageAfter;
+  if (!b.enraged && since >= enrageAfter) {
     b.enraged = true;
     run.events.push({ kind: 'enrage' });
   }
-  const fury = b.enraged ? Math.pow(B.enrageGrowth, Math.floor((since - B.enrageAfter) / B.enrageEvery) + 1) : 1;
+  const fury = b.enraged ? Math.pow(B.enrageGrowth, Math.floor((since - enrageAfter) / B.enrageEvery) + 1) : 1;
   e.damage = waveDamage(region, b.wave) * def.damage * fury;
 
   // Under the water: it rises somewhere else on the same ring.

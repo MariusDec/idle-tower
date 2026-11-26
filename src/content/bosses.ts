@@ -3,7 +3,8 @@ import type { BossDef, BossId } from './types';
 /**
  * Bosses (§4.3, §11.1): wave 20 of each region. 2–3 phases, one readable
  * pattern each. A boss stops at its standoff and works from there; one that
- * outlasts `BALANCE.boss.enrageAfter` walks to the wall instead.
+ * outlasts its `enrageAfter` (`BALANCE.boss.enrageAfter` unless it sets
+ * its own, as the Wake's do: plans/late-game/12a) walks to the wall instead.
  *
  * HP is a multiple of the region's wave-20 HP (§8.2: about 25–35 s of the
  * DPS expected there); `npm run inspect -- --forge all --region 2` reads the fight.
@@ -320,6 +321,7 @@ export const BOSSES: readonly BossDef[] = [
     radius: 70,
     standoff: 240,
     damage: 4,
+    enrageAfter: 150,
     xp: 110,
     shards: 520,
     mass: 30,
@@ -362,6 +364,7 @@ export const BOSSES: readonly BossDef[] = [
     radius: 64,
     standoff: 240,
     damage: 4,
+    enrageAfter: 165,
     xp: 110,
     shards: 520,
     mass: 26,
@@ -409,6 +412,7 @@ export const BOSSES: readonly BossDef[] = [
     radius: 74,
     standoff: 250,
     damage: 4,
+    enrageAfter: 105,
     xp: 110,
     shards: 520,
     mass: 40,
@@ -454,6 +458,7 @@ export const BOSSES: readonly BossDef[] = [
     radius: 82,
     standoff: 250,
     damage: 4.5,
+    enrageAfter: 90,
     xp: 110,
     shards: 520,
     mass: 50,
@@ -501,6 +506,7 @@ export const BOSSES: readonly BossDef[] = [
     radius: 78,
     standoff: 250,
     damage: 4,
+    enrageAfter: 105,
     xp: 130,
     shards: 600,
     mass: 30,

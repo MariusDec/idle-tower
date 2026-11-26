@@ -1,9 +1,11 @@
 import { ABYSS_INDEX } from '../../content/abyss';
 import { BALANCE } from '../../content/balance';
+import { BOSS_BY_ID } from '../../content/bosses';
 import { frameById } from '../../content/frames';
 import type { Enemy, HurtBy, RunState } from '../state';
 import { damageEnemy, targetable, wallRune } from './combat';
 import { mitigate } from './damage';
+import { runRegion, waveDamage } from './waves';
 
 /**
  * Everything that hurts the tower comes through here: contact hits, Spitter
@@ -19,6 +21,18 @@ export function hordeFury(run: RunState): number {
   return Math.pow(O.stallGrowth, Math.floor((run.time - cur.heldSince - O.stallAfter) / O.stallEvery) + 1);
 }
 
+/**
+ * How much harder the boss's body strikes than its unenraged hit: 1 until it
+ * enrages. `tickBoss` folds the enrage into `e.damage` (fresh: it runs before
+ * bodies act), so this is that over the boss's base hit, as `peal` reads it.
+ */
+function bossRage(run: RunState, source: Enemy): number {
+  const b = run.boss;
+  if (!source.boss || !b || source.id !== b.enemy) return 1;
+  const base = waveDamage(runRegion(run), b.wave) * BOSS_BY_ID[b.id].damage;
+  return base > 0 ? Math.max(1, source.damage / base) : 1;
+}
+
 export function hurtTower(run: RunState, raw: number, x: number, y: number, source: Enemy | null, by: HurtBy): number {
   const t = run.tower;
   if (run.time < t.invulnUntil) {
@@ -32,8 +46,13 @@ export function hurtTower(run: RunState, raw: number, x: number, y: number, sour
   // Grounding Wire (plans/late-game/12 §8.9): lightning and hostile shots land lighter.
   const wire = run.behaviours.grounding ?? 0;
   if (wire > 0 && (by === 'storm' || by === 'shots')) amount *= 1 - BALANCE.relics.grounding[Math.min(wire, BALANCE.relics.grounding.length) - 1];
-  // Rampart (§11.4): no contact hit takes more than a slice of the wall.
-  if (source && run.behaviours.rampart) amount = Math.min(amount, run.stats.maxHp * BALANCE.behaviours.rampartCap);
+  // Rampart (§11.4): no contact hit takes more than a slice of the wall. The
+  // cap holds the hit before rage grows it (the horde's fury, the boss's
+  // enrage), and the growth still lands, so a raging fight still ends.
+  if (source && run.behaviours.rampart) {
+    const rage = hordeFury(run) * bossRage(run, source);
+    amount = Math.min(amount, run.stats.maxHp * BALANCE.behaviours.rampartCap * rage);
+  }
   // Thorns answer the blow, shield or not.
   const struck = amount;
   // Bulwark Mastery (plans/mastery-capstones.md): the shield takes the hit first.
